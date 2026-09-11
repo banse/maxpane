@@ -42,6 +42,7 @@ from maxpane_dashboard.data.surf_cache import (
 from maxpane_dashboard.data.surf_pool4_client import DOCS_URL
 from maxpane_dashboard.data.surf_manager import (
     POOL4_COUNTER_IDENTITIES,
+    POOL4_DRIP_WINDOW_BLOCKS,
     POOL4_LOG_WINDOW_BLOCKS,
     POOL4_SEPOLIA_HOOK,
     POOL4_SEPOLIA_TOKEN,
@@ -60,6 +61,7 @@ from maxpane_dashboard.data.surf_models import (
     POOL4_FLOW_SIDES,
     POOL4_KEYS,
     POOL4_NETWORKS,
+    POOL4_STAKERS_KEYS,
     SURF_KEYS,
     SURF_ROW_KEYS,
     Pool4Discovery,
@@ -260,6 +262,13 @@ class FakePool4Client:
         self.calls: list[str] = []
         self.networks: list[tuple[str, str]] = []
         self.log_windows: list[tuple[int, int]] = []
+        #: Every log read WITH the address it was issued for. ``log_windows``
+        #: predates the dripper's delivery window and cannot tell the two
+        #: reads apart -- it was written when the pool4 sweep made exactly one
+        #: log read, and the tests built on it unpacked it as a one-tuple. A
+        #: second reader of the same list would have to guess; this one does
+        #: not have to.
+        self.log_reads: list[tuple[str, int, int]] = []
         self.verified: list[str] = []
         self.fetched: list[str] = []
         self.walked: list[str] = []
@@ -288,6 +297,10 @@ class FakePool4Client:
             # ``None`` is the client's own contract for every unreadable
             # outcome, and it must never read as a provenance verdict.
             "fetch_transaction": None,
+            # No reference-pool capture is committed for Sepolia, and `None`
+            # is the client's own word for "could not read" -- the four venue
+            # keys fold to `None` on their own from it.
+            "fetch_reference_slot0": None,
         }
         self._returns.update(overrides)
 
@@ -340,7 +353,29 @@ class FakePool4Client:
 
     async def fetch_flow_logs(self, addr, from_block, to_block, *, network):
         self.log_windows.append((from_block, to_block))
+        self.log_reads.append((addr, from_block, to_block))
         return self._answer("fetch_flow_logs", network)
+
+    async def fetch_reference_slot0(
+        self, pool_id, reference_pool_id=None, *, network, pool_manager,
+    ):
+        """The cross-venue read, present so the sweep does not log a warning.
+
+        This double had no such attribute until 2026-09-11, so every sweep in
+        this file logged ``SURF pool4 fetch_reference_slot0 raised:
+        'FakePool4Client' object has no attribute ...``. The behaviour was
+        correct -- ``_guard`` turns it into the honest ``None`` and the four
+        venue keys went dark -- but a WARNING on every healthy sweep is how a
+        reader learns to scroll past warnings, and the next one will be real.
+
+        It returns ``None`` by default rather than a fabricated pair of ticks:
+        the committed Sepolia corpus has no reference-pool capture behind it,
+        and inventing two ticks here would make ``pool4_venue_gap_pct`` a
+        number this suite asserts against a price nothing ever read. Override
+        it (``FakePool4Client(fetch_reference_slot0=...)``) in the tests that
+        are actually about the gap.
+        """
+        return self._answer("fetch_reference_slot0", network)
 
     async def resolve_vault_path(self, rewards_recipient, *, network):
         self.walked.append(rewards_recipient)
@@ -539,11 +574,29 @@ async def test_a_healthy_sweep_publishes_every_pool4_key(tmp_path) -> None:
     #                             the wrong reason, so the tests that exercise
     #                             them construct the answers instead and the
     #                             absence case is driven by a reverting getter.
+    #   cheaper_venue /        -- the `4` body's cross-venue keys (2026-09-11).
+    #   venue_gap_pct /           No reference-pool capture is committed for
+    #   reference_pool_tick       Sepolia, so `fetch_reference_slot0` answers
+    #                             `None` and all three fold to `None` from it
+    #                             — which is the *specified* degradation (PRD
+    #                             8.3: below-fees and unread are two different
+    #                             subtitles and must not merge), not a gap.
+    #                             `pool4_price_usd` is NOT here: it comes off
+    #                             the hook's own tick and survives.
+    #   trailing_return_pct    -- the realised 7d return needs `Dripped`
+    #                             events in the dripper's delivery window, and
+    #                             the committed corpus has none. `None`, never
+    #                             `0.0`: a quiet week that really returned
+    #                             nothing is a different claim from a window
+    #                             nothing was read in, and `pool4_implied_
+    #                             apr_pct` (the delivery CAP) is unaffected and
+    #                             still answers.
     assert missing == [
         "pool4_cap_decay_per_day",
         # ``cap_headroom`` needs BOTH operands, and the capture has no
         # ``inventoryCap`` — the same fixture gap, one key further on.
         "pool4_cap_headroom",
+        "pool4_cheaper_venue",
         "pool4_discovery_source",
         "pool4_discovery_source_tx",
         "pool4_distributor_addr",
@@ -556,9 +609,19 @@ async def test_a_healthy_sweep_publishes_every_pool4_key(tmp_path) -> None:
         "pool4_distributor_staking_bps",
         "pool4_distributor_staking_earned",
         "pool4_inventory_cap",
+        "pool4_reference_pool_tick",
         "pool4_share_price_delta_pct",
+        "pool4_trailing_return_pct",
+        "pool4_venue_gap_pct",
     ]
     assert payload["pool4_discovery_state"] == NOT_DISCOVERED
+    # The staker sweep's four keys ride their OWN tuple against their own
+    # slot, so they are absent from the list above by construction rather
+    # than by omission -- and this is what says so. A pool4 sweep does not
+    # run the long ``Transfer`` fold, so all four are `None` here, and that
+    # is the tier boundary working rather than a failed read.
+    assert [k for k in POOL4_STAKERS_KEYS if payload[k] is not None] == []
+    assert not set(POOL4_STAKERS_KEYS) & set(POOL4_KEYS)
 
 
 @pytest.mark.parametrize(
@@ -1686,11 +1749,40 @@ async def test_a_dead_log_pool_is_none_and_a_quiet_window_is_empty(
 async def test_the_log_window_is_the_trailing_span_from_the_head_block(
     tmp_path,
 ) -> None:
+    """The HOOK's window, selected rather than assumed to be the only one.
+
+    This read ``(start, end), = client.log_windows`` until 2026-09-11, which
+    was not an assertion about the window at all -- it was an unstated
+    assumption that the pool4 sweep makes exactly one log read. WP6 added the
+    dripper's delivery window (the realised trailing return is a sum of
+    ``Dripped`` events over a measured span), so there are two, and the
+    unpack raised ``ValueError: too many values to unpack`` before reaching a
+    single claim about either.
+
+    The claim itself was and is true, so it is selected rather than relaxed:
+    the *hook's* log window ends at the head block and spans
+    ``POOL4_LOG_WINDOW_BLOCKS``. The dripper's is a different span
+    (``POOL4_DRIP_WINDOW_BLOCKS``) for a different question, and asserting
+    "there is exactly one window" would now be pinning the absence of a
+    feature rather than the shape of this one.
+    """
     client = FakePool4Client()
     await _sweep(_manager(tmp_path, pool4_client=client))
-    (start, end), = client.log_windows
+
+    hook_reads = [r for r in client.log_reads if r[0] == POOL4_SEPOLIA_HOOK]
+    assert len(hook_reads) == 1, client.log_reads
+    _addr, start, end = hook_reads[0]
     assert end == HOOK_BLOCK
     assert end - start + 1 == POOL4_LOG_WINDOW_BLOCKS
+
+    # ...and the second read really is the dripper's, on its own span. Named
+    # rather than ignored: a third log read appearing with no owner is the
+    # thing the old one-tuple unpack was accidentally guarding.
+    others = [r for r in client.log_reads if r[0] != POOL4_SEPOLIA_HOOK]
+    assert [r[0] for r in others] == [DRIPPER_ADDR], client.log_reads
+    _addr, drip_start, drip_end = others[0]
+    assert drip_end == HOOK_BLOCK
+    assert drip_end - drip_start + 1 == POOL4_DRIP_WINDOW_BLOCKS
 
 
 async def test_a_window_that_opens_mid_settlement_publishes_no_legs(
@@ -1833,16 +1925,75 @@ async def test_no_derived_number_is_ever_an_infinity(tmp_path) -> None:
             assert value == value and abs(value) != float("inf"), key
 
 
-async def test_the_backstop_publishes_one_tri_state_and_no_tick_bounds(
+async def test_the_backstop_publishes_one_tri_state_and_the_rail_renders_only_that(
     tmp_path,
 ) -> None:
-    """Amendment A19: the bounds stay model-internal. ``centred`` / ``drifted``
-    / ``unknown`` is the decision-relevant fact; raw ticks on a rail panel are
-    noise, and adding them would be a ``POOL4_KEYS`` change for no reader.
+    """**Amendment A19, NARROWED on 2026-09-11 -- and the narrowing is the
+    point of this docstring.**
+
+    A19 said the backstop's tick bounds stay model-internal: ``centred`` /
+    ``drifted`` / ``unknown`` is the decision-relevant fact, raw ticks on a
+    rail panel are noise, and publishing them would be a ``POOL4_KEYS``
+    change for no reader. This test asserted exactly that -- ``no key named
+    backstop except the tri-state`` -- and it was right for the ``p`` body.
+
+    **The ``4`` body reverses it on purpose.** The depth ladder (PRD §6.5)
+    answers "if IMD falls N%, what does the hook actually pay", and it cannot
+    be computed from a word: it needs the band's lower tick and the band's
+    liquidity as numbers. So ``pool4_backstop_lower_tick``,
+    ``pool4_backstop_liquidity``, ``pool4_backstop_eth`` and
+    ``pool4_backstop_state`` are published **by design** since WP0's contract
+    freeze, and the reader they were "for no reader" about now exists.
+
+    A19's real claim survives intact and is what is asserted below: **the
+    rail still renders one tri-state and does not render the bounds.** The
+    decision that changed was about the payload, not about THE RATCHET, and
+    a test whose premise a later decision retired is rewritten with that
+    decision named -- never deleted (the claim is still live) and never
+    quietly relaxed to ``assert True``-shaped nothing.
+
+    The two halves are asserted against two different authorities on purpose:
+    the payload half against ``POOL4_KEYS``, and the rendering half against
+    ``POOL4_WIDGET_SIGNATURES``, which is what the ``p`` body's panels
+    actually take. A version that only re-checked ``POOL4_KEYS`` would have
+    had nothing left to say.
     """
+    from tests.data.test_surf_pool4_models import (
+        POOL4_USER_WIDGET_SIGNATURES,
+        POOL4_WIDGET_SIGNATURES,
+    )
+
     payload = await _sweep(_manager(tmp_path))
     assert payload["pool4_backstop_centred"] is True
-    assert not [k for k in POOL4_KEYS if "backstop" in k and k != "pool4_backstop_centred"]
+
+    # The four bounds ARE in the contract now, and named rather than counted
+    # so that a fifth appearing is a decision somebody has to make here.
+    published = sorted(k for k in POOL4_KEYS if "backstop" in k)
+    assert published == [
+        "pool4_backstop_centred",
+        "pool4_backstop_eth",
+        "pool4_backstop_liquidity",
+        "pool4_backstop_lower_tick",
+        "pool4_backstop_state",
+    ]
+
+    # A19's surviving half: THE RATCHET -- the rail panel A19 was written
+    # about -- takes the tri-state and nothing else backstop-shaped.
+    ratchet = set(POOL4_WIDGET_SIGNATURES["SurfPool4Ratchet"])
+    assert "pool4_backstop_centred" in ratchet
+    assert not [k for k in ratchet if "backstop" in k and k != "pool4_backstop_centred"]
+    # ...and no OTHER `p` body panel picked them up either, which is the
+    # claim "model-internal" was really making about that body.
+    for panel, kwargs in POOL4_WIDGET_SIGNATURES.items():
+        stray = [k for k in kwargs if "backstop" in k and k != "pool4_backstop_centred"]
+        assert not stray, f"{panel} renders a backstop bound on the `p` body: {stray}"
+
+    # ...and the body that DID need them really does take them, so this test
+    # fails if the reversal is ever undone by deleting the keys instead of by
+    # deleting their reader.
+    market = set().union(*(set(v) for v in POOL4_USER_WIDGET_SIGNATURES.values()))
+    assert {"pool4_backstop_lower_tick", "pool4_backstop_liquidity"} <= market
+    assert "pool4_backstop_centred" not in market
 
 
 # ---------------------------------------------------------------------------

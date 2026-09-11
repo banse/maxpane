@@ -472,22 +472,78 @@ EXPECTED_KEYS = {
     # the two row payloads
     "pool4_flow",
     "pool4_hatches",
+    # -- the `4` POOL4 MARKET body (2026-09-11) ---------------------------
+    #
+    # Nine on the fast pool4 tier and four on the staker sweep's own long
+    # one, which is why they are two blocks here rather than one: the second
+    # four come from ``POOL4_STAKERS_KEYS``, a separate tuple against a
+    # separate slot on a separate clock, and folding them together in this
+    # copy would make the count below stop distinguishing a tier failure
+    # from a contract change.
+    #
+    # cross-venue price (PRD 5.1, 6.3, 8.3)
+    #
+    # ⚠ ``pool4_reference_pool_tick`` is NOT ``pool4_ref_tick`` above. That
+    # one is the hook's own block-lagged anti-manipulation tick; this one is
+    # the hookless reference pool's. Two things called "ref tick" in one
+    # payload is how a wrong number renders confidently, which is why WP0
+    # froze the long spelling.
+    "pool4_reference_pool_tick",
+    "pool4_venue_gap_pct",
+    "pool4_cheaper_venue",
+    "pool4_price_usd",
+    # the backstop band itself -- only the derived ``pool4_backstop_centred``
+    # was exposed before, and the depth ladder needs the band
+    "pool4_backstop_lower_tick",
+    "pool4_backstop_liquidity",
+    "pool4_backstop_eth",
+    "pool4_backstop_state",
+    # realised staking return (PRD 8.1) -- the MEASURED one.
+    # ``pool4_implied_apr_pct`` above is the delivery cap and stays; they are
+    # two different numbers and the market body shows this one.
+    "pool4_trailing_return_pct",
+    # the staker sweep's own long-tier payload (``POOL4_STAKERS_KEYS``)
+    "pool4_stakers",
+    "pool4_staker_count",
+    "pool4_staker_top3_pct",
+    "pool4_stakers_as_of_hhmm",
 }
 
 
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    144 = the 82 that shipped through v0.8.3 plus pool4's 62. The count is
-    asserted beside the set membership on purpose: the set catches a rename,
-    the count catches a key added to both sides at once by someone editing
+    **158 = 83 + 71 + 4**: the 83 that shipped through v0.8.3, the ``p``
+    body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
+    cross-venue price, the backstop band and the realised return), and the
+    staker sweep's own four in ``POOL4_STAKERS_KEYS``. The count is asserted
+    beside the set membership on purpose: the set catches a rename, the
+    count catches a key added to both sides at once by someone editing
     ``EXPECTED_KEYS`` to make a red test green instead of asking why it was
     red.
+
+    ⚠ **The arithmetic in this docstring was wrong before it was grown, and
+    it is recorded rather than quietly corrected.** It read ``144 = the 82
+    that shipped through v0.8.3 plus pool4's 62`` while the assertion two
+    lines down said **145** -- so the prose said 82 non-pool4 keys where the
+    contract had 83, and the only reason nobody noticed is that prose does
+    not run. That is exactly the failure the *assertion* exists to catch and
+    exactly the failure a sentence beside it cannot, which is why the three
+    addends below are each a real tuple somebody can count rather than one
+    remembered total.
     """
     from maxpane_dashboard.data.surf_models import SURF_KEYS
+    from maxpane_dashboard.data.surf_models import (
+        POOL4_KEYS, POOL4_STAKERS_KEYS,
+    )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 145
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 158
+    # ...and the three addends really are the three tuples, so the total
+    # above cannot be kept honest by adjusting the sentence.
+    assert len(POOL4_KEYS) == 71
+    assert len(POOL4_STAKERS_KEYS) == 4
+    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) == 83
 
 
 def test_every_signal_has_all_three_facets() -> None:

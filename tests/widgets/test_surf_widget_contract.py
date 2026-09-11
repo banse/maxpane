@@ -57,6 +57,11 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4Hatches,
     SurfPool4Ratchet,
     SurfPool4Split,
+    SurfPool4UBurn,
+    SurfPool4UDepth,
+    SurfPool4USignals,
+    SurfPool4UStakers,
+    SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
 )
@@ -180,6 +185,13 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # to be a decision rather than an accident.
         SurfPool4Hatches, SurfPool4Flow, SurfPool4Split, SurfPool4Ratchet,
         SurfPool4Vault,
+        # The `4` POOL4 MARKET body's five (2026-09-11), all in the strict
+        # check for the same reason and none excused anything. The hero is
+        # in here too: it is a render-only widget taking contract keys like
+        # every other entry, and the fact that it happens to be a hero row
+        # rather than a panel changes nothing about what this list is for.
+        SurfPool4UserHero, SurfPool4UStakers, SurfPool4UBurn,
+        SurfPool4USignals, SurfPool4UDepth,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 
@@ -190,7 +202,12 @@ def _pool4_widgets() -> tuple[type, ...]:
     Derived from the package rather than typed, so a sixth pool4 panel is
     covered by the test below the day it is written -- which is the exact
     hole the three launchpad widgets fell through for the whole of their
-    existence.
+    existence. **Ten of them since 2026-09-11**, across two bodies: the
+    prefix matches ``SurfPool4U*`` as well, which is the derivation working
+    rather than a leak. The market body's panels take exactly the same
+    no-alias decision, so widening the claim to cover them is free and
+    narrowing it to the ``p`` body would have been the edit that quietly
+    stopped covering the new half.
     """
     return tuple(w for w in _ALL_WIDGETS if w.__name__.startswith("SurfPool4"))
 
@@ -216,8 +233,8 @@ def test_no_pool4_widget_needs_a_kwarg_alias():
     Three assertions, because each catches a different way of arriving there.
     """
     pool4 = _pool4_widgets()
-    assert len(pool4) == 5, (
-        f"expected five pool4 panels, found {[w.__name__ for w in pool4]} -- "
+    assert len(pool4) == 10, (
+        f"expected ten pool4 panels, found {[w.__name__ for w in pool4]} -- "
         "a derived sweep over an empty tuple proves nothing"
     )
     for cls in pool4:
@@ -240,6 +257,21 @@ def test_no_pool4_widget_needs_a_kwarg_alias():
             "already stands for `launchpad_as_of_hhmm` in "
             "_PREFIXED_KWARG_ALIASES and cannot stand for two keys"
         )
+        if cls is SurfPool4UserHero:
+            # THE ONE EXEMPTION, and it is from the clock rather than from
+            # the naming rule (carry-over C4). A hero card has no title to
+            # hang an `as of` marker on, four content lines to spend, and the
+            # title bar three rows up already renders the fast tier's marker.
+            # Assertions 1 and 2 above still apply to it in full -- it is not
+            # on `_SHORT_KWARG_WIDGETS` and every kwarg it takes is a contract
+            # key -- so what is excused here is the *presence* of the clock,
+            # never its spelling.
+            assert not [k for k in kwargs if k.endswith("as_of_hhmm")], (
+                "the market hero grew a clock kwarg; it has no title to "
+                "render one on -- either give it one on purpose and update "
+                "this test, or take the kwarg back out"
+            )
+            continue
         assert "pool4_as_of_hhmm" in kwargs, cls.__name__
 
     # ...and the alias list did not quietly grow to accommodate one.

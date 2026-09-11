@@ -37,8 +37,31 @@ variable panels out of the binder. The rail's ``1fr`` is still on the
 *fixed* panel (sIMD VAULT), which is the reverse of the other two bodies'
 rule -- see that constant for why.
 
-``#hero-row`` is never touched by either swap and stays on screen in all
-three modes. See "The 2026-08-23 ``l`` view" below.
+``4`` swaps the same three rows for a **fourth** body, the POOL4 MARKET
+view (2026-09-11), on bakery's shape rather than on the other two bodies'::
+
+    #surf-pool4-user-body  (a column of two rows)
+      #surf-pool4-user-middle  SurfPool4UStakers (1fr) | #surf-pool4-user-rail (1fr)
+                                                       |   SurfPool4UBurn    (auto, +1 m)
+                                                       |   SurfPool4USignals (1fr)
+      #surf-pool4-user-bottom  SurfPool4Flow     (1fr) | SurfPool4UDepth      (1fr)
+
+``SurfPool4Flow`` is the **same class** the ``p`` body uses, mounted a second
+time rather than copied (PRD §6.4): one panel, one set of rows, one place to
+fix a formatting bug. The screen dispatches to *every* mounted instance in one
+statement, so the two can never be handed different payloads -- which is the
+thing a second copy of the module could not have promised.
+
+**``#hero-row`` is NOT untouched any more, and this is the sentence that had
+to change.** It read "``#hero-row`` is never touched by either swap and stays
+on screen in all three modes" until 2026-09-11, and the ``4`` body is exactly
+the case that makes it false: the row now holds **two** heroes, ``SurfHero``
+and ``SurfPool4UserHero``, and ``_show_mode`` toggles which one shows. The row
+itself still never hides -- a hero is on screen in every mode, as it always
+was -- but *which* hero is a function of ``self._mode``, on curator's
+per-mode hero pattern. PRD §3 argues the break: surf's own headline metrics
+are the clearest thing on this body a reader does not act on. See "The
+2026-08-23 ``l`` view" below.
 
 The rail arrived 2026-08-24. The two summary panels were stacked *under*
 the coin table until then, which spent eleven of the body's rows on ten
@@ -195,6 +218,11 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4Hatches,
     SurfPool4Ratchet,
     SurfPool4Split,
+    SurfPool4UBurn,
+    SurfPool4UDepth,
+    SurfPool4USignals,
+    SurfPool4UStakers,
+    SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
 )
@@ -1023,6 +1051,28 @@ MODE_DASHBOARD = "dashboard"
 MODE_LAUNCHPAD = "launchpad"
 MODE_POOL4 = "pool4"
 
+#: The ``4`` POOL4 MARKET body (2026-09-11) -- the **fourth** mode, and the
+#: first one that also swaps the hero.
+#:
+#: It is a mode on the rule stated three paragraphs up rather than on the
+#: count: a whole second body with its own five panels, not two panels
+#: sharing a slot. ``p`` is the protocol and ``4`` is the market -- the two
+#: read off the same ``TIER_POOL4`` sweep and answer different questions,
+#: which is why the split is two bodies and not one crowded one.
+MODE_POOL4_USER = "pool4_user"
+
+#: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
+#:
+#: ``_show_mode`` could write ``SurfHero.display = self._mode !=
+#: MODE_POOL4_USER`` and it would be correct today. It is the ``not
+#: launchpad`` shape that docstring warns about, one layer out: the fifth
+#: body to arrive with a hero of its own would inherit ``True`` here and
+#: paint two heroes into one row. Enumerating instead makes that case render
+#: **no** hero, which is loud on screen and red in
+#: ``test_exactly_one_hero_shows_in_every_mode`` either way -- but only one of
+#: the two failures is visible to a reader who is not running the tests.
+_SURF_HERO_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4)
+
 #: The launchpad body's container id -- exported so the test module and any
 #: future consumer can query it without retyping the literal.
 LAUNCHPAD_BODY_ID = "surf-launchpad-body"
@@ -1140,6 +1190,51 @@ POOL4_LEFT_ID = "surf-pool4-left"
 #: recurring documentation defect was worth a test rather than a third
 #: correction.
 POOL4_RAIL_ID = "surf-pool4-rail"
+
+#: The ``4`` POOL4 MARKET body's container id (2026-09-11) -- the fourth body,
+#: on :data:`LAUNCHPAD_BODY_ID`'s contract: composed once, hidden by
+#: ``display``, swapped in by ``_show_mode``. Exported for that constant's
+#: reason: the id is queried from the test module, and retyping a literal in
+#: two files is how one of them goes stale.
+#:
+#: **A ``Vertical`` of two rows, where the other two alternate bodies are a
+#: single ``Horizontal``.** This body follows the *bakery* template (PRD §4) --
+#: a leaderboard beside a chart-over-signals column, then an activity log
+#: beside the EV table -- which is two rows, so the container that ``display``
+#: toggles has to be their common parent rather than either row.
+POOL4_USER_BODY_ID = "surf-pool4-user-body"
+
+#: The market body's TOP row: **STAKERS beside the rail**.
+#:
+#: ``#middle-row``'s opposite number in the fourth body, and named for it. It
+#: carries a ``min-height`` for the reason every ``1fr`` here does: a ``1fr``
+#: child cannot overflow a scroll container, it *shrinks*, so a row without a
+#: floor sheds a line per terminal row until it is a pair of bare titles --
+#: no scrollbar, no marker, no trace.
+POOL4_USER_MIDDLE_ID = "surf-pool4-user-middle"
+
+#: The market body's right rail: **BURN & SUPPLY over SIGNALS**.
+#:
+#: ``#surf-right-rail``'s opposite number in the fourth body. **SIGNALS
+#: carries the rail's ``1fr`` and it is the panel with the fixed line count
+#: on purpose** -- the same inversion ``sIMD VAULT`` makes in the ``p``
+#: body's rail, and for the same reason: of these two panels neither scrolls
+#: inside itself, so whichever takes the ``1fr`` must be one that can never
+#: actually be cut. SIGNALS renders a title, four state rows and one summary
+#: line and never more, so its ``min-height`` is both its floor and its
+#: ceiling. BURN & SUPPLY is ``auto`` above it with the one-row bottom margin
+#: ``SurfSignals`` and ``SurfCurveFlow`` carry in the other two rails, since
+#: flush the two read as one block.
+POOL4_USER_RAIL_ID = "surf-pool4-user-rail"
+
+#: The market body's BOTTOM row: **RECENT FLOW beside IF IMD FALLS**.
+#:
+#: ``#bottom-row``'s opposite number, and the one place in this screen where
+#: a widget class is mounted twice: ``SurfPool4Flow`` renders here and in the
+#: ``p`` body, reused rather than copied (PRD §6.4). The seam is ``1fr:1fr``
+#: so the reused panel needs no scoped width override at all -- the rule it
+#: already has in both CSS copies is the rule it wants here.
+POOL4_USER_BOTTOM_ID = "surf-pool4-user-bottom"
 
 
 # -- format helpers ----------------------------------------------------
@@ -1362,6 +1457,7 @@ class SurfScreen(RefreshGuard, Screen):
         Binding("r", "refresh", "Refresh", show=False),
         Binding("l", "toggle_launchpad", "Launchpad", show=False),
         Binding("p", "toggle_pool4", "Pool4", show=False),
+        Binding("4", "toggle_pool4_user", "Pool4 market", show=False),
         Binding("escape", "show_dashboard", show=False),
     ]
 
@@ -1401,7 +1497,14 @@ class SurfScreen(RefreshGuard, Screen):
     #: ``test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout``,
     #: which reads the phrase back off composited output at
     #: :data:`SURF_FULL_LAYOUT_COLUMNS` rather than counting characters.
-    KEY_HINTS = "[dim]l launchpad · p pool4[/]"
+    #: **``· 4 market`` joined it on 2026-09-11**, inside that same single
+    #: run and for both of those reasons again. It is the third and last
+    #: segment this label can afford: measured off composited output at
+    #: :data:`SURF_FULL_LAYOUT_COLUMNS` rather than counted, the whole phrase
+    #: still reaches a pixel, and ``4 market`` is the half that shortens if a
+    #: fourth ever has to fit -- ``l launchpad`` does not, because the
+    #: app-level acceptance test greps for that contiguous string.
+    KEY_HINTS = "[dim]l launchpad · p pool4 · 4 market[/]"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "surf-refresh"
@@ -1746,6 +1849,97 @@ class SurfScreen(RefreshGuard, Screen):
         min-height: 10;
         padding: 0 1;
     }
+
+    /* The ``4`` POOL4 MARKET body (2026-09-11): the FOURTH body, and the
+     * first one on the BAKERY template rather than on the `l` body's
+     * structure -- a leaderboard beside a chart-over-signals column, then an
+     * activity log beside the EV table (PRD section 4). That is two rows, so
+     * the container `_show_mode` toggles is a `Vertical` holding both of
+     * them rather than a single `Horizontal`. `margin: 1 0 0 0` matches
+     * `#middle-row`'s, `#surf-launchpad-body`'s and `#surf-pool4-body`'s, so
+     * moving between any two of the four bodies never also moves the hero's
+     * breathing room.
+     *
+     * THE SEAM IS `1fr:1fr` ON BOTH ROWS, AND THE BOTTOM ROW'S IS THE REASON.
+     * `SurfPool4Flow` is mounted here a SECOND time (PRD section 6.4: reuse
+     * the module, do not copy it), and the rule it already carries --
+     * `width: 1fr; height: 1fr; min-height: 6` -- is exactly the rule it
+     * wants in this row. A 7:6 seam would have needed a scoped width
+     * override, i.e. a second place where that panel's geometry is stated,
+     * which is the divergence reuse exists to avoid. The top row takes the
+     * same seam so the two rows read as one grid, the way `#middle-row` and
+     * `#bottom-row` do in the dashboard body.
+     *
+     * EVERY `1fr` CHILD IS FLOORED AND EVERY SCROLLING `Vertical` RESERVES
+     * ITS GUTTER. A `1fr` child cannot overflow a scroll container, it
+     * SHRINKS -- so without `min-height` each of these sheds a line per
+     * terminal row down to a bare title with no scrollbar and no trace,
+     * which is what the floor under `SurfDevActivity` exists to stop next
+     * door. And without `scrollbar-gutter: stable` the scrollbar takes its
+     * column out of the panel beside it only on terminals short enough to
+     * overflow, so the layout's WIDTH requirement would move with its
+     * HEIGHT (`#curator-right-rail`'s reason, inherited through
+     * `#surf-launchpad-left`).
+     *
+     * WHICH PANEL CARRIES THE RAIL'S `1fr` IS THE INVERTED CASE AGAIN.
+     * Neither BURN & SUPPLY nor SIGNALS scrolls inside itself, so the `1fr`
+     * goes to the one that can never be cut: SIGNALS renders a title, four
+     * state rows and one summary line and never more, so `min-height: 7` is
+     * both its floor and its ceiling. BURN & SUPPLY is `auto` above it --
+     * its sparkline row and its two text lines are content, not slack --
+     * with the one-row bottom margin `SurfSignals` and `SurfCurveFlow`
+     * carry in the other two rails. Same answer, same reasoning, as
+     * `SurfPool4Vault` one rule up.
+     */
+    SurfScreen #surf-pool4-user-body {
+        height: 1fr;
+        width: 100%;
+        margin: 1 0 0 0;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
+    SurfScreen #surf-pool4-user-middle {
+        height: 1fr;
+        min-height: 13;
+    }
+    SurfScreen SurfPool4UStakers {
+        width: 1fr;
+        height: 1fr;
+        min-height: 10;
+        padding: 0 1;
+    }
+    SurfScreen #surf-pool4-user-rail {
+        width: 1fr;
+        height: 1fr;
+        min-height: 13;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
+    SurfScreen SurfPool4UBurn {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
+    SurfScreen SurfPool4USignals {
+        width: 1fr;
+        height: 1fr;
+        min-height: 7;
+        padding: 0 1;
+    }
+    SurfScreen #surf-pool4-user-bottom {
+        height: 1fr;
+        min-height: 8;
+        margin: 0 0 1 0;
+    }
+    SurfScreen SurfPool4UDepth {
+        width: 1fr;
+        height: 1fr;
+        min-height: 7;
+        padding: 0 1;
+    }
     """
 
     def __init__(
@@ -1776,8 +1970,19 @@ class SurfScreen(RefreshGuard, Screen):
     def compose(self) -> ComposeResult:
         yield Static(INITIAL_TITLE, id="title-bar")
 
+        # TWO heroes, one row, exactly one of them showing (curator's
+        # per-mode hero pattern). `#hero-row` itself is never hidden -- a
+        # hero is on screen in every mode, as it always was -- but which one
+        # is a function of `self._mode`, and `_show_mode` derives both
+        # visibilities from the same comparison every other body does.
+        #
+        # The `surf-hero` class is what makes "exactly one hero shows" an
+        # assertion a test can write without naming either class, so a fifth
+        # body's hero is covered on the day it is composed rather than on the
+        # day somebody remembers to add it to a list.
         with Horizontal(id="hero-row"):
-            yield SurfHero()
+            yield SurfHero(classes="surf-hero")
+            yield SurfPool4UserHero(classes="surf-hero")
 
         with Horizontal(id="middle-row"):
             yield SurfFeed()
@@ -1861,6 +2066,29 @@ class SurfScreen(RefreshGuard, Screen):
                 yield SurfPool4Hatches()
                 yield SurfPool4Vault()
 
+        # The `4` POOL4 MARKET view (2026-09-11): the fourth body, composed
+        # once and hidden by `display` exactly like the two above it, so the
+        # first `4` paints a complete frame rather than a blank one. Unlike
+        # them it is a `Vertical` of two rows, because it follows the BAKERY
+        # template (PRD section 4) rather than the `l` body's shape.
+        #
+        # `SurfPool4Flow` below is the SAME CLASS the `p` body mounts, a
+        # second instance rather than a second module (PRD section 6.4). That
+        # is the reason `_do_refresh` dispatches RECENT FLOW with
+        # `self.query(SurfPool4Flow)` rather than `query_one`: one statement,
+        # one payload, both panels -- two instances that could be handed
+        # different rows is precisely the divergence a copied module would
+        # have made possible.
+        with Vertical(id=POOL4_USER_BODY_ID):
+            with Horizontal(id=POOL4_USER_MIDDLE_ID):
+                yield SurfPool4UStakers()
+                with Vertical(id=POOL4_USER_RAIL_ID):
+                    yield SurfPool4UBurn()
+                    yield SurfPool4USignals()
+            with Horizontal(id=POOL4_USER_BOTTOM_ID):
+                yield SurfPool4Flow()
+                yield SurfPool4UDepth()
+
         yield StatusBar()
 
     # ------------------------------------------------------------------
@@ -1906,23 +2134,38 @@ class SurfScreen(RefreshGuard, Screen):
     # ------------------------------------------------------------------
 
     def _show_mode(self) -> None:
-        """Apply ``self._mode`` to the three bodies' visibility.
+        """Apply ``self._mode`` to the four bodies' -- and both heroes' -- visibility.
 
-        Curator's ``y``/``f`` shape, minus the hero swap: curator mounts a
-        second hero per mode and toggles which one shows, but this screen
-        has exactly one hero and it is not part of any body -- it is
-        outside ``#surf-launchpad-body`` and ``#surf-pool4-body`` entirely
-        (see ``compose``) and this method never touches its ``display``, so
-        it is on in every mode.
+        **Curator's ``y``/``f`` shape, hero swap included since 2026-09-11.**
+        This docstring said the opposite until then: *"curator mounts a second
+        hero per mode and toggles which one shows, but this screen has exactly
+        one hero and it is not part of any body ... this method never touches
+        its ``display``, so it is on in every mode."* Every clause of that was
+        true when it was written and the ``4`` body made all of it false in one
+        commit -- ``#hero-row`` now holds ``SurfHero`` **and**
+        ``SurfPool4UserHero``, and the line below toggles both. The sentence is
+        replaced rather than annotated because a docstring asserting the
+        opposite of its own method is what the next reader trusts instead of
+        reading the code.
 
-        **A three-way since 2026-09-01, and written as one so it cannot
-        become a two-way plus an exception.** The obvious edit when the third
+        What is *still* true, and is the invariant worth stating: ``#hero-row``
+        itself is never hidden, so a hero is on screen in every mode. Only
+        *which* hero moved. PRD §3 argues the break -- on the market body
+        surf's LAUNCHPAD/FLOW/BURN/SUPPLY figures would be the clearest thing
+        on screen that a reader does not act on.
+
+        **A four-way now, and still written as ONE derivation so it cannot
+        become a three-way plus an exception.** The obvious edit when the third
         body arrived was to keep ``launchpad = self._mode == MODE_LAUNCHPAD``
         and add a second boolean beside it; the dashboard rows would then
         have read ``not launchpad``, which is *true* in MODE_POOL4, and the
         pool4 body would have painted on top of a dashboard body that was
-        still showing. Deriving all four visibilities from one comparison
-        against ``self._mode`` makes the modes exclusive by construction.
+        still showing. The fourth body offers the same edit one size larger,
+        and the heroes offer a new one: a ``self._pool4_user_hero_shown``
+        flag, or a ``hero.display = not body.display``, would each be a second
+        source of truth for the same fact. Every visibility here -- six of
+        them now -- is ``self._mode == <one mode word>`` and nothing else,
+        which makes the modes exclusive by construction rather than by care.
         """
         try:
             self.query_one("#middle-row").display = self._mode == MODE_DASHBOARD
@@ -1932,6 +2175,18 @@ class SurfScreen(RefreshGuard, Screen):
                 self._mode == MODE_LAUNCHPAD
             )
             self.query_one(f"#{POOL4_BODY_ID}").display = self._mode == MODE_POOL4
+            self.query_one(f"#{POOL4_USER_BODY_ID}").display = (
+                self._mode == MODE_POOL4_USER
+            )
+            # The heroes, each answering to ``self._mode`` and never to the
+            # other. ``SurfHero.display = not market_hero`` is available and
+            # is the ``not launchpad`` defect one layer out: it would show
+            # the wrong hero on a fifth body rather than no hero, and a wrong
+            # hero is the one of those two a reader cannot see is wrong.
+            self.query_one(SurfPool4UserHero).display = (
+                self._mode == MODE_POOL4_USER
+            )
+            self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("surf mode toggle failed: %s", exc)
         # The row marker is about whichever body is now showing (only the
@@ -1969,8 +2224,31 @@ class SurfScreen(RefreshGuard, Screen):
         self._mode = MODE_POOL4
         self._show_mode()
 
+    def action_toggle_pool4_user(self) -> None:
+        """``4`` -- swap the dashboard body for the POOL4 MARKET panels.
+
+        Idempotent on ``action_toggle_launchpad``'s contract: a second ``4``
+        returns to the dashboard rather than doing nothing, so the key is
+        also its own way back. Pressing ``4`` from any other body switches
+        directly, for ``action_toggle_pool4``'s reason -- requiring an
+        ``escape`` first would be the only place on this screen where a view
+        key did nothing.
+
+        A digit key, and verified free rather than assumed: this screen binds
+        ``r``/``l``/``p``/``escape`` and the app binds ``q``/``t``/``tab``/``m``.
+        Digits are an established per-screen pattern here (curator's filter
+        presets, ``frenpet_full``'s sub-views) and neither of those is
+        app-level, so neither collides. ``4`` reads off the protocol's own
+        name where ``u`` or ``i`` would have collided with ``p``'s meaning.
+        """
+        if self._mode == MODE_POOL4_USER:
+            self.action_show_dashboard()
+            return
+        self._mode = MODE_POOL4_USER
+        self._show_mode()
+
     def action_show_dashboard(self) -> None:
-        """``escape`` -- one-way back out of **either** alternate body."""
+        """``escape`` -- one-way back out of **any** alternate body."""
         self._mode = MODE_DASHBOARD
         self._show_mode()
 
@@ -1993,6 +2271,15 @@ class SurfScreen(RefreshGuard, Screen):
         MODE_DASHBOARD: ("#surf-right-rail",),
         MODE_LAUNCHPAD: (f"#{LAUNCHPAD_LEFT_ID}", f"#{LAUNCHPAD_RAIL_ID}"),
         MODE_POOL4: (f"#{POOL4_LEFT_ID}", f"#{POOL4_RAIL_ID}"),
+        # The market body scrolls at TWO levels and both are asked: the body
+        # itself is the `Vertical` holding its two rows (the row that goes
+        # off the bottom is a whole row, not a panel), and the rail scrolls
+        # inside the top row. Naming only the rail would light the marker for
+        # a cut SIGNALS panel and leave it dark for a cut bottom row, which
+        # is the larger loss of the two.
+        MODE_POOL4_USER: (
+            f"#{POOL4_USER_BODY_ID}", f"#{POOL4_USER_RAIL_ID}",
+        ),
     }
 
     def _rail_is_cut(self) -> bool:
@@ -2461,12 +2748,19 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfPool4Split: %s", exc)
 
+        # RECENT FLOW is mounted TWICE -- once in the `p` body's left column
+        # and once in the `4` body's bottom row (PRD section 6.4: reuse the
+        # module, never copy it). `query`, not `query_one`: one statement
+        # feeds both, so the two panels cannot be handed different rows, and
+        # a third mount tomorrow is fed without this block being touched.
+        # `query_one` would raise `TooManyMatches` here and blank both.
         try:
-            self.query_one(SurfPool4Flow).update_data(
-                pool4_flow=data.get("pool4_flow"),
-                pool4_network=data.get("pool4_network"),
-                pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
-            )
+            for _flow in self.query(SurfPool4Flow):
+                _flow.update_data(
+                    pool4_flow=data.get("pool4_flow"),
+                    pool4_network=data.get("pool4_network"),
+                    pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
+                )
         except Exception as exc:
             logger.debug("Failed to update SurfPool4Flow: %s", exc)
 
@@ -2567,6 +2861,106 @@ class SurfScreen(RefreshGuard, Screen):
             )
         except Exception as exc:
             logger.debug("Failed to update SurfPool4Hatches: %s", exc)
+
+        # POOL4 MARKET body (`4` view, 2026-09-11) -- the same contract as
+        # the two bodies above and for the same reason: dispatched on EVERY
+        # refresh, whether or not `4` is showing it, so the first keypress
+        # paints a complete frame. Each panel in its own `try` so one bad
+        # panel cannot blank the others. RECENT FLOW is not here -- it is
+        # dispatched with the `p` body's copy, in one statement, above.
+        #
+        # Every kwarg is the contract key verbatim, `pool4_as_of_hhmm` and
+        # `pool4_stakers_as_of_hhmm` included, on the `p` body's decision and
+        # for its reason: `_PREFIXED_KWARG_ALIASES` maps ONE kwarg name onto
+        # ONE contract key, and a body eliding either clock to `as_of_hhmm`
+        # would make one name stand for three different keys.
+        #
+        # TWO clocks reach this body and they are not interchangeable.
+        # `pool4_as_of_hhmm` is the 600 s pool4 sweep's; STAKERS carries
+        # `pool4_stakers_as_of_hhmm`, the long `Transfer`-fold tier's own and
+        # much slower one, which advances only when a new fold lands. The
+        # hero takes NEITHER (contract C4): a hero has no room for a clock
+        # and the title bar carries the fast tier's.
+        try:
+            self.query_one(SurfPool4UserHero).update_data(
+                pool4_price_usd=data.get("pool4_price_usd"),
+                pool4_venue_gap_pct=data.get("pool4_venue_gap_pct"),
+                pool4_cheaper_venue=data.get("pool4_cheaper_venue"),
+                pool4_backstop_state=data.get("pool4_backstop_state"),
+                pool4_backstop_eth=data.get("pool4_backstop_eth"),
+                pool4_backstop_lower_tick=data.get("pool4_backstop_lower_tick"),
+                pool4_current_tick=data.get("pool4_current_tick"),
+                pool4_trailing_return_pct=data.get("pool4_trailing_return_pct"),
+                pool4_vault_assets=data.get("pool4_vault_assets"),
+                pool4_staker_count=data.get("pool4_staker_count"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfPool4UserHero: %s", exc)
+
+        try:
+            self.query_one(SurfPool4UStakers).update_data(
+                pool4_stakers=data.get("pool4_stakers"),
+                pool4_staker_count=data.get("pool4_staker_count"),
+                pool4_staker_top3_pct=data.get("pool4_staker_top3_pct"),
+                # The long tier's own marker, NOT `pool4_as_of_hhmm`: this
+                # panel's rows can be half a day older than the five beside
+                # it, and a fast clock over slow data is a stale number
+                # presented as live.
+                pool4_stakers_as_of_hhmm=data.get("pool4_stakers_as_of_hhmm"),
+                pool4_network=data.get("pool4_network"),
+                pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfPool4UStakers: %s", exc)
+
+        try:
+            self.query_one(SurfPool4UBurn).update_data(
+                # Shared with RECENT FLOW, which renders the same rows as a
+                # log. Reuse of a KEY, not of a widget: two questions off one
+                # read, where folding a second copy into the payload would
+                # cost a sweep and buy nothing.
+                pool4_flow=data.get("pool4_flow"),
+                pool4_total_burned=data.get("pool4_total_burned"),
+                pool4_burned_supply_pct=data.get("pool4_burned_supply_pct"),
+                pool4_total_supply=data.get("pool4_total_supply"),
+                pool4_network=data.get("pool4_network"),
+                pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfPool4UBurn: %s", exc)
+
+        try:
+            self.query_one(SurfPool4USignals).update_data(
+                pool4_cap_headroom=data.get("pool4_cap_headroom"),
+                pool4_cheaper_venue=data.get("pool4_cheaper_venue"),
+                pool4_venue_gap_pct=data.get("pool4_venue_gap_pct"),
+                # ⚠ `pool4_reference_pool_tick`, NOT `pool4_ref_tick`. The
+                # second one is THE RATCHET's: the hook's own block-lagged
+                # anti-manipulation tick, a different number for a different
+                # job. `data.get` would hand either one over without a word.
+                pool4_reference_pool_tick=data.get("pool4_reference_pool_tick"),
+                pool4_current_tick=data.get("pool4_current_tick"),
+                pool4_backstop_state=data.get("pool4_backstop_state"),
+                pool4_backstop_lower_tick=data.get("pool4_backstop_lower_tick"),
+                pool4_backstop_eth=data.get("pool4_backstop_eth"),
+                pool4_backlog_days=data.get("pool4_backlog_days"),
+                pool4_network=data.get("pool4_network"),
+                pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfPool4USignals: %s", exc)
+
+        try:
+            self.query_one(SurfPool4UDepth).update_data(
+                pool4_current_tick=data.get("pool4_current_tick"),
+                pool4_position_liquidity=data.get("pool4_position_liquidity"),
+                pool4_backstop_lower_tick=data.get("pool4_backstop_lower_tick"),
+                pool4_backstop_liquidity=data.get("pool4_backstop_liquidity"),
+                pool4_network=data.get("pool4_network"),
+                pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfPool4UDepth: %s", exc)
 
         # Status bar. A refresh that reaches this line just fetched, so the
         # staleness is honestly 0 without consulting any clock; ``as_of`` is

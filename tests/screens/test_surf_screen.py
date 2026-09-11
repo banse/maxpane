@@ -42,9 +42,14 @@ from maxpane_dashboard.screens.surf import (
     MODE_DASHBOARD,
     MODE_LAUNCHPAD,
     MODE_POOL4,
+    MODE_POOL4_USER,
     POOL4_BODY_ID,
     POOL4_LEFT_ID,
     POOL4_RAIL_ID,
+    POOL4_USER_BODY_ID,
+    POOL4_USER_BOTTOM_ID,
+    POOL4_USER_MIDDLE_ID,
+    POOL4_USER_RAIL_ID,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
     SURF_LAUNCHPAD_FULL_LAYOUT_ROWS,
     SURF_POOL4_FULL_LAYOUT_COLUMNS,
@@ -73,6 +78,11 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4Hatches,
     SurfPool4Ratchet,
     SurfPool4Split,
+    SurfPool4UBurn,
+    SurfPool4UDepth,
+    SurfPool4USignals,
+    SurfPool4UStakers,
+    SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
 )
@@ -122,6 +132,31 @@ _POOL4_WIDGET_CLASSES = {
     "SurfPool4Vault": SurfPool4Vault,
 }
 
+#: The ``4`` POOL4 MARKET body's five widgets (2026-09-11).  A **fourth** role
+#: dict, for the third's own reason, plus one this body is the first to have:
+#: it includes a **hero**.  ``SurfPool4UserHero`` is mounted in ``#hero-row``
+#: beside ``SurfHero`` and is hidden in every mode but this one, so it belongs
+#: to a role -- "composed hidden, shown with a body" -- that ``_WIDGET_CLASSES``
+#: ("always mounted and visible") cannot describe.
+#:
+#: ``SurfPool4Flow`` is deliberately **absent**: the market body's RECENT FLOW
+#: is a second *instance* of the class already named in
+#: :data:`_POOL4_WIDGET_CLASSES`, not a second class (PRD §6.4 reuses the
+#: module rather than copying it).  These dicts are keyed by class name and a
+#: name can appear in exactly one of them -- which is what
+#: ``test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget``
+#: asserts -- so the instance that lives here is covered by the ``p`` body's
+#: entry and by ``tests/screens/test_surf_pool4_market_screen.py``'s
+#: ``test_recent_flow_is_the_same_class_mounted_twice``, which pins that there
+#: are exactly two of them and that both are handed the same rows.
+_POOL4_USER_WIDGET_CLASSES = {
+    "SurfPool4UserHero": SurfPool4UserHero,
+    "SurfPool4UStakers": SurfPool4UStakers,
+    "SurfPool4UBurn": SurfPool4UBurn,
+    "SurfPool4USignals": SurfPool4USignals,
+    "SurfPool4UDepth": SurfPool4UDepth,
+}
+
 #: Both halves together -- **derived from the package**, not from the two
 #: dicts above.  The two dicts have to stay hand-typed: they encode a *role*
 #: ("always mounted and visible" vs "composed hidden until ``l``") that no
@@ -156,8 +191,16 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
     written over the list rather than as one more ``&``.** Spelling it out per
     pair was already the shape that would rot: a fourth body would add three
     more comparisons and the one somebody forgot would be the hole.
+
+    **Four since 2026-09-11**, and the loop absorbed it without a line
+    changing, which is the whole of what that paragraph predicted.
     """
-    roles = (_WIDGET_CLASSES, _LAUNCHPAD_WIDGET_CLASSES, _POOL4_WIDGET_CLASSES)
+    roles = (
+        _WIDGET_CLASSES,
+        _LAUNCHPAD_WIDGET_CLASSES,
+        _POOL4_WIDGET_CLASSES,
+        _POOL4_USER_WIDGET_CLASSES,
+    )
     union: set[str] = set()
     for dict_ in roles:
         assert not (union & dict_.keys()), (
@@ -165,7 +208,7 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
         )
         union |= dict_.keys()
     assert union == _ALL_WIDGET_CLASSES.keys()
-    assert len(_ALL_WIDGET_CLASSES) >= 16
+    assert len(_ALL_WIDGET_CLASSES) >= 21
 
 #: The WP3<->WP5 dispatch contract: exactly the PRD §5 key groups.  Local copy
 #: until WP0 exports SURF_WIDGET_SIGNATURES beside SURF_KEYS (open issue) --
@@ -388,6 +431,87 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
     },
     "SurfPool4Flow": {
         "pool4_flow": "pool4_flow",
+        "pool4_network": "pool4_network",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
+    },
+    # -- the 4 POOL4 MARKET body's five panels (2026-09-11) ---------------
+    #
+    # Every kwarg is the contract key verbatim again, both clocks included,
+    # and for the `p` body's reason one size larger: the market body carries
+    # TWO `as_of` keys, so eliding either to `as_of_hhmm` would make one
+    # kwarg name stand for `launchpad_as_of_hhmm` on five widgets,
+    # `pool4_as_of_hhmm` on six and `pool4_stakers_as_of_hhmm` on one.
+    #
+    # WHAT IS RE-PRESENTED HERE IS THE DESIGN, NOT A DUPLICATE. Roughly two
+    # thirds of this body is the `p` body's own sweep read for a different
+    # reader (PRD section 7), so `pool4_current_tick` legitimately reaches
+    # four panels across the two bodies and `pool4_vault_assets` two. That is
+    # why WP0's contract-side copy keeps the two bodies in SEPARATE dicts --
+    # `POOL4_WIDGET_SIGNATURES` and `POOL4_USER_WIDGET_SIGNATURES` -- so its
+    # "exactly one renderer" claim stays a real claim about the `p` body
+    # instead of becoming an exception list.
+    "SurfPool4UserHero": {
+        "pool4_price_usd": "pool4_price_usd",
+        "pool4_venue_gap_pct": "pool4_venue_gap_pct",
+        "pool4_cheaper_venue": "pool4_cheaper_venue",
+        "pool4_backstop_state": "pool4_backstop_state",
+        "pool4_backstop_eth": "pool4_backstop_eth",
+        "pool4_backstop_lower_tick": "pool4_backstop_lower_tick",
+        "pool4_current_tick": "pool4_current_tick",
+        "pool4_trailing_return_pct": "pool4_trailing_return_pct",
+        "pool4_vault_assets": "pool4_vault_assets",
+        "pool4_staker_count": "pool4_staker_count",
+        # NO `pool4_network` and NO clock -- carry-over C4. This is the only
+        # panel on either body with no title to hang either on, and the title
+        # bar already carries the fast tier's marker. Pinned from the
+        # contract side by
+        # `test_the_market_hero_takes_no_clock_and_no_network_word`.
+    },
+    "SurfPool4UStakers": {
+        "pool4_stakers": "pool4_stakers",
+        "pool4_staker_count": "pool4_staker_count",
+        "pool4_staker_top3_pct": "pool4_staker_top3_pct",
+        # The LONG tier's own marker. The only panel on this screen that
+        # takes two clocks, and it renders this one: its rows come from a
+        # full `Transfer` fold and can be half a day older than the five
+        # panels beside them.
+        "pool4_stakers_as_of_hhmm": "pool4_stakers_as_of_hhmm",
+        "pool4_network": "pool4_network",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
+    },
+    "SurfPool4UBurn": {
+        # Shared with RECENT FLOW, which renders the same rows as a log:
+        # two questions off one read, not two copies of one read.
+        "pool4_flow": "pool4_flow",
+        "pool4_total_burned": "pool4_total_burned",
+        "pool4_burned_supply_pct": "pool4_burned_supply_pct",
+        "pool4_total_supply": "pool4_total_supply",
+        "pool4_network": "pool4_network",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
+    },
+    "SurfPool4USignals": {
+        "pool4_cap_headroom": "pool4_cap_headroom",
+        "pool4_cheaper_venue": "pool4_cheaper_venue",
+        "pool4_venue_gap_pct": "pool4_venue_gap_pct",
+        # ⚠ `pool4_reference_pool_tick`, NOT `pool4_ref_tick`. The second is
+        # THE RATCHET's, and it is the hook's own block-lagged
+        # anti-manipulation tick -- a different number for a different job.
+        # Two things called "ref tick" in one payload is how a wrong number
+        # renders confidently, which is why WP0 froze the long spelling.
+        "pool4_reference_pool_tick": "pool4_reference_pool_tick",
+        "pool4_current_tick": "pool4_current_tick",
+        "pool4_backstop_state": "pool4_backstop_state",
+        "pool4_backstop_lower_tick": "pool4_backstop_lower_tick",
+        "pool4_backstop_eth": "pool4_backstop_eth",
+        "pool4_backlog_days": "pool4_backlog_days",
+        "pool4_network": "pool4_network",
+        "pool4_as_of_hhmm": "pool4_as_of_hhmm",
+    },
+    "SurfPool4UDepth": {
+        "pool4_current_tick": "pool4_current_tick",
+        "pool4_position_liquidity": "pool4_position_liquidity",
+        "pool4_backstop_lower_tick": "pool4_backstop_lower_tick",
+        "pool4_backstop_liquidity": "pool4_backstop_liquidity",
         "pool4_network": "pool4_network",
         "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },
@@ -1190,6 +1314,72 @@ def _sample_data() -> dict:
             {"scope": "bond", "label": "deployed", "state": "unknown",
              "detail": None, "addr": None, "addr_known": False},
         ],
+        # -- the `4` POOL4 MARKET body (2026-09-11) -----------------------
+        #
+        # Nine fast-tier keys and four off the staker sweep's own long tier.
+        # Every value is derived from this fixture's own Sepolia numbers or
+        # from the research skill's live reads, never invented to look
+        # plausible.
+        #
+        # The cross-venue pair. `pool4_reference_pool_tick` is the HOOKLESS
+        # pool's tick, 567 ticks above the hook pool's `pool4_current_tick`
+        # (-34_567) -- and 567 ticks is ~5.8%, comfortably past the two
+        # pools' fees summed, so `pool4_cheaper_venue` has a venue to name.
+        # `pool4_venue_gap_pct` is signed with `+` meaning IMD is DEARER
+        # here, so the hook pool being cheaper reads negative.
+        "pool4_reference_pool_tick": -34_000,
+        "pool4_venue_gap_pct": -5.52,
+        "pool4_cheaper_venue": "here",
+        # USD per IMD. Deliberately NOT `imd_price_usd` (0.7074, mainnet IMD
+        # off the v4 launchpad pool): this is the pool4 market's own price
+        # and on this Sepolia fixture the two are different tokens on
+        # different chains. A fixture that shared one number would make a
+        # dispatch reading the wrong key invisible.
+        "pool4_price_usd": 2.845,
+        # The backstop band, broken out for the hero card and the ladder.
+        # The band sits 83 ticks under spot (~0.83%), which is the shape the
+        # research skill measured on mainnet, and its liquidity is a raw
+        # uint128 L like `pool4_position_liquidity` beside it -- NOT an
+        # amount. `pool4_backstop_state` is the third state's sibling: this
+        # fixture's band IS deployed, and `none` / `None` are exercised in
+        # the widget's own tests.
+        "pool4_backstop_lower_tick": -34_650,
+        "pool4_backstop_liquidity": 9_876_543_210_000_000,
+        "pool4_backstop_eth": 24.4,
+        "pool4_backstop_state": "deployed",
+        # PRD 8.1's REALISED return -- `Dripped` events over a measured 7-day
+        # span. Distinct from `pool4_implied_apr_pct` (4.15 above), which is
+        # the delivery CAP: a window under the cap must produce the smaller
+        # number, and this fixture honours that.
+        "pool4_trailing_return_pct": 3.4,
+        # The staker sweep's own four. Rows carry the WHOLE frozen
+        # `SURF_ROW_KEYS["pool4_stakers"]` shape -- `rank`/`address`/`imd`/
+        # `pct`, and `address` rather than `addr` (carry-over C2: the
+        # producer's spelling wins). `pct` is a share of the WHOLE vault, so
+        # these five do not add to 100 and must not be made to: the gap
+        # between the page and the vault is the dispersion the panel exists
+        # to show. Their IMD sums to 12.1% of `pool4_vault_assets`, and
+        # `pool4_staker_top3_pct` is the top three's share of the vault
+        # (8.9%), not of the page.
+        "pool4_stakers": [
+            {"rank": 1, "address": "0xf53c0a4E4b0F77D1a3Bc4d8e3F2a1B0c9D8e3364",
+             "imd": 1_240.0, "pct": 4.53},
+            {"rank": 2, "address": "0xa9c5B1d2E3f4A5b6C7d8E9f0A1b2C3d4E5f6f057",
+             "imd": 780.0, "pct": 2.85},
+            {"rank": 3, "address": "0x4c68D9e0F1a2B3c4D5e6F7a8B9c0D1e2F3a4dd08",
+             "imd": 420.0, "pct": 1.53},
+            {"rank": 4, "address": "0x1c3A0Ad54418Fe843953C71dF23637DE732Ce159",
+             "imd": 610.0, "pct": 2.23},
+            {"rank": 5, "address": "0x61CC704c7A5B7071c7B3f4Cc09A9CBC86373f14E",
+             "imd": 260.0, "pct": 0.95},
+        ],
+        "pool4_staker_count": 66,
+        "pool4_staker_top3_pct": 8.91,
+        # The LONG tier's own marker, and deliberately NOT `pool4_as_of_hhmm`
+        # (14:32 above): the staker fold runs on a slower clock, so a fixture
+        # sharing one string would make a panel reading the wrong clock
+        # invisible -- the same argument as `pool4_price_usd`'s.
+        "pool4_stakers_as_of_hhmm": "13:05",
     }
 
 
@@ -2596,7 +2786,21 @@ async def test_screen_mounts_all_six_widgets():
         # Slot grid: the hero owns the top row alone; the middle row is the
         # feed beside a rail of SIGNALS over DEV ACTIVITY; the bottom row is
         # the market beside the NFT panel.
-        assert len(screen.query_one("#hero-row").children) == 1
+        #
+        # ``#hero-row`` holds TWO children since 2026-09-11 and exactly one of
+        # them shows (curator's per-mode hero pattern -- the `4` body swaps
+        # the hero with the body, which is the first time a surf body has).
+        # The claim this line was making was never "one child", it was "the
+        # hero owns this row alone", so it is now asserted on what is
+        # SHOWING: a count of children would go green again the moment two
+        # heroes were visible at once, which is the defect.
+        shown_heroes = [
+            c for c in screen.query_one("#hero-row").children if c.display
+        ]
+        assert len(shown_heroes) == 1, [type(c).__name__ for c in shown_heroes]
+        assert isinstance(shown_heroes[0], SurfHero), (
+            "MODE_DASHBOARD must show the ordinary hero"
+        )
         assert len(screen.query_one("#middle-row").children) == 2
         assert len(screen.query_one("#surf-right-rail").children) == 2
         assert len(screen.query_one("#bottom-row").children) == 2
@@ -2825,8 +3029,16 @@ def _record_dispatches(screen) -> dict[str, list[dict]]:
         return recorder
 
     for name, cls in _ALL_WIDGET_CLASSES.items():
-        widget = screen.query_one(cls)
-        widget.update_data = _wrap(name, widget.update_data)
+        # EVERY instance, not `query_one`. `SurfPool4Flow` is mounted twice
+        # since 2026-09-11 -- the `4` body's RECENT FLOW reuses the class
+        # rather than copying the module -- and Textual's `query_one` returns
+        # the first match without complaining, so wrapping one instance would
+        # leave the other's dispatch unrecorded and this file's completeness
+        # sweeps would be measuring half of it.
+        widgets = list(screen.query(cls))
+        assert widgets, f"{name} is exported but never mounted"
+        for widget in widgets:
+            widget.update_data = _wrap(name, widget.update_data)
 
     return calls
 
@@ -3188,14 +3400,26 @@ class _screen_at:
 
 
 async def test_the_hero_owns_a_full_width_row_of_its_own():
-    """The hero is the whole top row -- nothing shares it."""
+    """The hero is the whole top row -- nothing VISIBLE shares it.
+
+    This asserted ``len(hero_row.children) == 1`` until 2026-09-11, which was
+    a count of what is mounted. ``#hero-row`` mounts two heroes now --
+    ``SurfHero`` and the ``4`` body's ``SurfPool4UserHero``, toggled together
+    with the body on curator's per-mode hero pattern -- so the count is no
+    longer the claim. The claim is that the hero showing owns the full width,
+    which is what the region assertion below has always really been about,
+    and it is strictly stronger than the count: two heroes visible at once
+    would each be half a row wide and fail here, where a count of one would
+    have been satisfied by mounting them in two different rows.
+    """
     async with _screen_at(150, 46) as (app, screen, _pilot):
         hero_row = screen.query_one("#hero-row")
         hero = screen.query_one(SurfHero)
 
-        assert len(hero_row.children) == 1, (
-            "something else is still sharing the hero row: "
-            f"{[type(c).__name__ for c in hero_row.children]}"
+        visible = [c for c in hero_row.children if c.display]
+        assert visible == [hero], (
+            "something else is visible in the hero row: "
+            f"{[type(c).__name__ for c in visible]}"
         )
         assert hero.region.width == hero_row.region.width == 150
         # All four boxes are laid out inside that full width, in order.
@@ -6124,7 +6348,7 @@ def _pool4_marked(app, screen) -> set[str]:
 
 
 def test_the_bindings_are_refresh_and_the_two_view_toggles():
-    """``c`` is still gone; ``l``, ``p`` and ``escape`` are not a return of it.
+    """``c`` is still gone; ``l``, ``p``, ``4`` and ``escape`` are not a return of it.
 
     ``c`` existed only because the announce feed and the dev-activity panel
     shared one slot, and a key that hides half a screen still has nothing to
@@ -6138,13 +6362,13 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "p", "escape"}
+    assert keys == {"r", "l", "p", "4", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
         "the old c-swap action outlived its binding -- an action with no key "
         "is a surface nobody can reach and nobody maintains"
     )
     for action in ("action_toggle_launchpad", "action_toggle_pool4",
-                   "action_show_dashboard"):
+                   "action_toggle_pool4_user", "action_show_dashboard"):
         assert hasattr(SurfScreen, action), action
 
 
@@ -7098,7 +7322,13 @@ async def test_the_pool4_floors_never_thin_a_panel_below_its_content() -> None:
         await pilot.press("p")
         await pilot.pause()
         screen = pilot.app.screen
-        flow = screen.query_one(SurfPool4Flow)
+        # Scoped to the `p` body's own column. `SurfPool4Flow` is mounted
+        # TWICE since 2026-09-11 (the `4` body's RECENT FLOW is a second
+        # instance of the same class, not a copy of the module), and
+        # Textual's `query_one` returns the FIRST match rather than raising
+        # on several -- so an unscoped query here would silently start
+        # measuring whichever instance `compose` happens to build first.
+        flow = screen.query_one(f"#{POOL4_LEFT_ID}").query_one(SurfPool4Flow)
         vault = screen.query_one(SurfPool4Vault)
         hatches = screen.query_one(SurfPool4Hatches)
 
@@ -7176,7 +7406,10 @@ def test_every_mode_names_its_scrolling_columns() -> None:
     this mapping does not raise, it silently answers ``()``.
 
     The mode list is discovered from the module rather than typed, so a
-    fourth ``MODE_*`` constant lands here the day it is written.
+    fourth ``MODE_*`` constant lands here the day it is written -- which is
+    what happened on 2026-09-11: ``MODE_POOL4_USER`` appeared in this set
+    before anybody thought about its ``_SCROLL_COLUMNS`` entry, and the
+    assertion below is what made it a decision rather than an omission.
     """
     import maxpane_dashboard.screens.surf as surf
 
@@ -7185,7 +7418,9 @@ def test_every_mode_names_its_scrolling_columns() -> None:
         for name in dir(surf)
         if name.startswith("MODE_") and isinstance(getattr(surf, name), str)
     }
-    assert modes == {MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4}, (
+    assert modes == {
+        MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER,
+    }, (
         f"a mode was added or removed: {modes}"
     )
     assert set(SurfScreen._SCROLL_COLUMNS) == modes, (
@@ -7227,7 +7462,12 @@ async def _pool4_column_widths(height: int, width: int = 150) -> dict:
         return {
             "split": screen.query_one(SurfPool4Split).region.width,
             "vault": screen.query_one(SurfPool4Vault).region.width,
-            "flow": screen.query_one(SurfPool4Flow).region.width,
+            # Scoped, for the reason given at the other call site: two
+            # instances of this class exist since 2026-09-11 and `query_one`
+            # silently answers with the first.
+            "flow": screen.query_one(
+                f"#{POOL4_LEFT_ID}"
+            ).query_one(SurfPool4Flow).region.width,
             "left_overflowing": screen.query_one(
                 f"#{POOL4_LEFT_ID}"
             ).show_vertical_scrollbar,
@@ -7361,6 +7601,171 @@ def test_the_pool4_body_css_agrees_between_default_css_and_the_stylesheet() -> N
                     f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
                     f"{right!r} in minimal.tcss"
                 )
+
+
+# -- the 4 body's CSS, in agreement --------------------------------------
+
+_POOL4_USER_CSS_SELECTORS = (
+    f"#{POOL4_USER_BODY_ID}", f"#{POOL4_USER_MIDDLE_ID}",
+    f"#{POOL4_USER_RAIL_ID}", f"#{POOL4_USER_BOTTOM_ID}",
+    "SurfPool4UStakers", "SurfPool4UBurn", "SurfPool4USignals",
+    "SurfPool4UDepth",
+    # `SurfPool4Flow` is deliberately NOT here. The market body's RECENT FLOW
+    # is a second instance of the class the `p` body already styles, and the
+    # seam was chosen `1fr:1fr` precisely so that the rule it already carries
+    # is the rule it wants here (see `#surf-pool4-user-bottom`'s block). A
+    # scoped override would be a SECOND place stating that panel's geometry,
+    # which is the divergence reuse exists to avoid -- so its absence from
+    # this list is the assertion, and
+    # `test_the_market_body_needs_no_scoped_rule_for_the_reused_flow_panel`
+    # is what makes it one.
+)
+
+
+def test_the_market_body_css_agrees_between_default_css_and_the_stylesheet() -> None:
+    """``SurfScreen.DEFAULT_CSS`` and the surf block in ``minimal.tcss`` must
+    describe the ``4`` body's geometry identically -- edit both or neither.
+
+    The app stylesheet is what actually renders (it outranks
+    ``DEFAULT_CSS``); ``DEFAULT_CSS`` is what keeps the screen correctly
+    proportioned when it is reviewed or mounted without it. A property
+    declared in one copy and not the other is *invisible* rather than
+    conflicting: Textual falls back to ``DEFAULT_CSS`` for anything the app
+    stylesheet never mentions, so the layout is right under both copies today
+    and wrong under one of them the moment either value changes.
+
+    Reuses the ``l`` body's comparator and property list, which already
+    covers ``overflow-y``, ``scrollbar-gutter`` and ``scrollbar-size`` -- all
+    three load-bearing here for the reasons they are in the other two bodies.
+    """
+    fallback = _css_rules(SurfScreen.DEFAULT_CSS)
+    block = _css_rules(_surf_stylesheet_block())
+
+    for selector in _POOL4_USER_CSS_SELECTORS:
+        assert selector in fallback, (
+            f"{selector} is not styled in SurfScreen.DEFAULT_CSS"
+        )
+        assert selector in block, (
+            f"{selector} is not styled in the surf block of minimal.tcss"
+        )
+        for prop in _LAUNCHPAD_CSS_STRUCTURAL:
+            default = _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS.get(prop)
+            left = fallback[selector].get(prop, default)
+            right = block[selector].get(prop, default)
+            if left is None and right is None:
+                continue
+            assert left is not None and right is not None, (
+                f"{selector}: {prop} is declared in only one copy "
+                f"(DEFAULT_CSS={left!r}, minimal.tcss={right!r})"
+            )
+            if prop in _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS:
+                assert _expand_css_box(left) == _expand_css_box(right), (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+            else:
+                assert left == right, (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+
+
+def test_every_fr_child_of_the_market_body_is_floored() -> None:
+    """A ``1fr`` child cannot overflow a scroll container -- it SHRINKS.
+
+    Without a ``min-height`` it sheds a line per terminal row down to a bare
+    title with no scrollbar, no marker and no other trace, which is what the
+    floor under ``SurfDevActivity`` exists to stop in the dashboard body and
+    what ``SurfPool4Flow``'s exists to stop in the ``p`` one. Asserted
+    against ``minimal.tcss``, the copy that actually renders, rather than
+    against ``compose``: this is the property a stylesheet edit removes
+    without touching a line of Python.
+
+    The two scrolling containers are checked here too, and the gutter is not
+    decoration: without ``scrollbar-gutter: stable`` the scrollbar takes
+    its column out of the panel beside it only on terminals short enough to
+    overflow, so the layout's WIDTH requirement would become a function of
+    its HEIGHT and a pin measured tall would be a column short when short.
+    """
+    block = _css_rules(_surf_stylesheet_block())
+
+    #: The ONE exemption, named rather than filtered by a rule: the body
+    #: container is a ``1fr`` sibling of ``#middle-row`` on the SCREEN, which
+    #: is not a scroll container -- exactly like ``#surf-launchpad-body`` and
+    #: ``#surf-pool4-body``, neither of which carries a floor either. Naming
+    #: it means a future ``1fr`` that really is inside a scrolling column
+    #: cannot join it by accident.
+    exempt = {f"#{POOL4_USER_BODY_ID}"}
+
+    for selector in _POOL4_USER_CSS_SELECTORS:
+        if selector in exempt or block[selector].get("height") != "1fr":
+            continue
+        assert block[selector].get("min-height"), (
+            f"{selector} carries a `1fr` with no `min-height`: it cannot "
+            "overflow a scroll container, it shrinks, so it sheds a line "
+            "per terminal row down to a bare title with no trace"
+        )
+
+    # ...and the walk really reached some, so a selector list that stopped
+    # matching cannot pass this vacuously.
+    floored = [
+        sel for sel in _POOL4_USER_CSS_SELECTORS
+        if sel not in exempt and block[sel].get("height") == "1fr"
+    ]
+    assert len(floored) >= 4, floored
+
+    for container in (POOL4_USER_BODY_ID, POOL4_USER_RAIL_ID):
+        rules = block[f"#{container}"]
+        assert rules.get("overflow-y") == "auto", container
+        assert rules.get("scrollbar-gutter") == "stable", container
+
+
+def test_the_rail_gives_its_fr_to_the_panel_that_can_never_be_cut() -> None:
+    """The ``p`` body's rail rule, inherited deliberately rather than copied.
+
+    Neither BURN & SUPPLY nor SIGNALS scrolls inside itself, so whichever
+    carries the rail's ``1fr`` must be the one that can never actually be
+    cut. SIGNALS renders a title, four state rows and one summary line and
+    never more, so its ``min-height`` is both its floor and its ceiling --
+    the same inversion ``sIMD VAULT`` makes next door, and the opposite of
+    the rule every other column on this screen follows.
+
+    Exactly one child per column may grow: two split the slack and neither
+    reaches the floor the layout was measured with, none at all strands the
+    column's spare rows above the fold, and both are silent.
+    """
+    block = _css_rules(_surf_stylesheet_block())
+    rail = ("SurfPool4UBurn", "SurfPool4USignals")
+    growing = [p for p in rail if block[p].get("height") == "1fr"]
+    assert growing == ["SurfPool4USignals"], growing
+    assert block["SurfPool4UBurn"].get("height") == "auto"
+    assert block["SurfPool4UBurn"].get("margin"), (
+        "BURN & SUPPLY has no bottom margin -- flush against SIGNALS the two "
+        "read as one block, which is what the margin in the other two rails "
+        "exists to stop"
+    )
+
+
+def test_the_market_body_needs_no_scoped_rule_for_the_reused_flow_panel() -> None:
+    """PRD §6.4's reuse, asserted as the absence it actually is.
+
+    RECENT FLOW is the ``p`` body's ``SurfPool4Flow`` mounted a second time,
+    and the market body's seam is ``1fr:1fr`` precisely so that the rule that
+    panel already carries is the rule it wants in the bottom row. If a future
+    seam change adds ``#surf-pool4-user-bottom SurfPool4Flow { ... }``, that
+    panel's geometry is stated in two places and the next fix reaches one of
+    them -- which is the divergence reusing the module was meant to avoid, so
+    it should be a decision somebody makes here rather than a line somebody
+    adds.
+    """
+    for css in (SurfScreen.DEFAULT_CSS, _surf_stylesheet_block()):
+        for selector in _css_rules(css):
+            if "SurfPool4Flow" not in selector:
+                continue
+            assert selector == "SurfPool4Flow", (
+                f"{selector!r} scopes the reused flow panel to one body -- "
+                "its geometry is now stated in two places"
+            )
 
 
 def test_exactly_one_pool4_child_per_column_carries_the_fr() -> None:

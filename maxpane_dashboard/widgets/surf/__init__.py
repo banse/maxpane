@@ -52,6 +52,28 @@ RATCHET gained the inventory ceiling above the reserve (it used to have only
 a floor and the backstop), and HATCHES gained a fifth address because the
 reward path now runs through a Distributor before the Dripper.
 
+And five more again for the ``4`` POOL4 MARKET view (2026-09-11) -- a
+**fourth** body, wired by ``screens/surf.py`` on the same
+composed-once-hidden contract, and the first surf body that swaps the hero
+with it (curator's per-mode hero pattern):
+
+=========================  ============================================
+Widget                     Data
+=========================  ============================================
+``SurfPool4UserHero``      IMD PRICE / DOWNSIDE BID / STAKING
+``SurfPool4UStakers``      the sIMD vault's depositors and its top-3 share
+``SurfPool4UBurn``         daily burn sparkline, pace, retired share
+``SurfPool4USignals``      the four market states a reader acts on
+``SurfPool4UDepth``        IF IMD FALLS -- the depth ladder
+=========================  ============================================
+
+**Only the five classes are re-exported here, for the reason the paragraph
+above gives and one more.** Every one of these modules has its own ``TITLE``
+and ``UNAVAILABLE_LINE`` too, so a bare re-export would rebind
+``SurfLaunchpadActivity``'s -- and ``pool4u_stakers``/``pool4u_burn`` would
+then collide with each other as well. Their tests import those constants from
+their own modules, which is where a per-panel string belongs.
+
 **Only the five classes are re-exported, and no pool4 module constant is.**
 That is the collision the paragraph below predicted arriving: ``pool4_flow``
 has its own ``TITLE``/``UNAVAILABLE_LINE``/``EMPTY_LINE`` and so do three of
@@ -96,6 +118,11 @@ from .pool4_hatches import SurfPool4Hatches
 from .pool4_ratchet import SurfPool4Ratchet
 from .pool4_split import SurfPool4Split
 from .pool4_vault import SurfPool4Vault
+from .pool4u_burn import SurfPool4UBurn
+from .pool4u_depth import SurfPool4UDepth
+from .pool4u_hero import SurfPool4UserHero
+from .pool4u_signals import SurfPool4USignals
+from .pool4u_stakers import SurfPool4UStakers
 from .signals import DETECTOR_LABELS, SurfSignals
 
 __all__ = [
@@ -118,6 +145,11 @@ __all__ = [
     "SurfPool4Hatches",
     "SurfPool4Ratchet",
     "SurfPool4Split",
+    "SurfPool4UBurn",
+    "SurfPool4UDepth",
+    "SurfPool4USignals",
+    "SurfPool4UStakers",
+    "SurfPool4UserHero",
     "SurfPool4Vault",
     "SurfSignals",
     "TITLE",

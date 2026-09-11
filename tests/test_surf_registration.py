@@ -1314,6 +1314,32 @@ _NON_NUMERIC_KEYS = frozenset(
         # dev-signed post. A `None` on either is "we do not know", which must
         # never render as the safer of the two answers.
         "pool4_reward_path", "pool4_distributor_addr", "pool4_discovery_source",
+        # -- the `4` POOL4 MARKET body (2026-09-11) ----------------------
+        #
+        # Four of the thirteen new keys, each here for this bucket's ordinary
+        # reason -- no numeric zero to confuse with a failed read. The other
+        # nine are numeric and eight of them carry real, screen-verified
+        # needles in `_POOL4_USER_ZERO_PROBES` below.
+        #
+        # `pool4_cheaper_venue` and `pool4_backstop_state` are CLOSED
+        # vocabularies, and both are load-bearing negatives rather than
+        # labels. `None` on the venue word means "the gap did not clear the
+        # two pools' fees summed" or "we could not read it" -- PRD 8.3 keeps
+        # those as two different subtitles, which is a claim about strings
+        # and is pinned in the widget's own tests. `None` on the backstop
+        # state is the third state of a THREE-state card (PRD 5.2): a
+        # deployed band renders its value, `none` renders `none deployed`,
+        # and neither may absorb the unread case -- the curator rail bug
+        # verbatim if they do.
+        "pool4_cheaper_venue", "pool4_backstop_state",
+        # A list payload and a clock string.
+        #
+        # `pool4_stakers_as_of_hhmm` is the LONG tier's own marker, not
+        # `pool4_as_of_hhmm`, and the two are both in this bucket for the
+        # same reason while meaning different things: this one advances only
+        # when a new `Transfer` fold lands, so a fresh time beside old rows
+        # would be a stale number presented as live.
+        "pool4_stakers", "pool4_stakers_as_of_hhmm",
     }
 )
 
@@ -1551,7 +1577,126 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "sig_decoy_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_burnready_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_hot_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    # -- the `4` POOL4 MARKET body (2026-09-11) --------------------------
+    #
+    # ONE exclusion out of nine numeric keys, and it is not this bucket's
+    # usual reason. The usual reason is "a zero here could never mislead a
+    # reader". This one can: it is here because **a zero and a failed read
+    # render identically today**, so a needle would pin the defect rather
+    # than the contract, and the honest thing is to name the defect where
+    # somebody will find it rather than to write a probe that passes.
+    #
+    # Measured, not reasoned about: rendered through the real ``SurfScreen``
+    # at (143, 60) on the ``4`` body with ``pool4_backstop_state``,
+    # ``pool4_current_tick``, ``pool4_backstop_lower_tick`` and
+    # ``pool4_position_liquidity`` set and this key ``0`` and then ``None``,
+    # the IF IMD FALLS column reads ``band used 0.0%`` in BOTH renders.
+    # ``analytics/surf_pool4_depth.depth_rows`` folds an unread band
+    # liquidity into ``has_band = False`` -- its docstring argues that case
+    # for "no band deployed", which is right, but ``pool4_backstop_state``
+    # is the key that distinguishes ``none`` from unread and the ladder
+    # never consults it. Filed against that module (WP1/WP9); NOT fixed
+    # here, and this entry goes away when it is.
+    "pool4_backstop_liquidity": (
+        "a zero band and an UNREAD band both render `band used 0.0%` -- "
+        "`analytics/surf_pool4_depth.depth_rows` treats `band_liquidity is "
+        "None` as `has_band = False` without consulting "
+        "`pool4_backstop_state`, so this key has no rendering that "
+        "distinguishes its zero from its failed read; a needle here would "
+        "pin that defect rather than the contract. Filed, not fixed"
+    ),
 }
+
+#: The ``4`` POOL4 MARKET body's zero probes: ``key -> (needle, enablers)``.
+#:
+#: **A separate dict with a THIRD element in each entry, and the third element
+#: is the reason it is separate.** Five of these eight keys do not render at
+#: all on their own: ``pool4_backstop_eth`` is gated on
+#: ``pool4_backstop_state`` (PRD §5.2's three-state card branches on the
+#: *state*, never on the amount), the tick keys render only as operands of a
+#: derived percentage, and ``pool4_staker_top3_pct`` needs a population to be
+#: a share *of*. Probing those with every other key ``None`` -- which is what
+#: :data:`_POOL4_ZERO_PROBES` does -- renders nothing and would have sent all
+#: five to ``_NUMERIC_KEYS_EXCLUDED`` as "no observable zero", which is the
+#: waiver this file's own comments call a judgement wearing a fact's clothes.
+#:
+#: So each entry names the *sibling reads that gate its render*, set to real
+#: non-zero values, and the probe below asserts **both directions**: with the
+#: key at ``0`` the needle must appear, and with the key at ``None`` and the
+#: same enablers it must **not**. The second half is what the ``p`` body's
+#: probe cannot do and is the stronger claim -- it proves the needle is about
+#: *this* key rather than about its enablers, which is exactly how ``lp_imd``
+#: ended up carrying ``imd_supply``'s needle and could only ever have gone
+#: red on its sibling's rendering.
+#:
+#: Every needle below was READ OFF composited output through the real
+#: ``SurfScreen`` at (143, 60) with ``4`` pressed. None was guessed.
+_POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
+    # IMD PRICE -- three decimals, not two: this card exists to compare two
+    # venues whose gap is routinely under 2% of a ~$2.85 token.
+    "pool4_price_usd": ("$0.000", {}),
+    # The venue clause. With a venue word to name, a zero gap renders as the
+    # magnitude; with the gap unread it renders `venue gap --`, and with the
+    # gap read but under combined fees it renders `no venue edge`. Three
+    # subtitles, three different statements (PRD 8.3).
+    "pool4_venue_gap_pct": (
+        "cheaper on reference 0.00%",
+        {"pool4_cheaper_venue": "reference", "pool4_current_tick": -34_567,
+         "pool4_reference_pool_tick": -34_000},
+    ),
+    # The SIGNALS row renders the tick PAIR only once there is a venue clause
+    # to hang it on, so the clause is the enabler and the needle carries the
+    # enabler's own tick -- which is what makes it specific to this key
+    # rather than to the row.
+    "pool4_reference_pool_tick": (
+        "-34567/0",
+        {"pool4_cheaper_venue": "reference", "pool4_venue_gap_pct": -1.5,
+         "pool4_current_tick": -34_567},
+    ),
+    # DOWNSIDE BID branches on the STATE, never on the amount -- reading
+    # `backstop_eth is None` instead would make an unread amount
+    # indistinguishable from a band that genuinely is not deployed. So the
+    # state is the enabler, and `0.00 ETH` vs `-- ETH` is the pair this
+    # probe pins.
+    "pool4_backstop_eth": (
+        "0.00 ETH", {"pool4_backstop_state": "deployed"},
+    ),
+    # The band's lower tick never renders as itself -- it renders as the
+    # distance under spot, which is why the enablers include the tick it is
+    # measured against. At tick 0 against a spot of -34567 that distance is
+    # 96.85%; unread it is `-- under`.
+    "pool4_backstop_lower_tick": (
+        "standing 96.85% under",
+        {"pool4_backstop_state": "deployed", "pool4_backstop_eth": 24.4,
+         "pool4_current_tick": -34_567},
+    ),
+    # STAKING's second line. `0 addrs` is a real, representable answer -- an
+    # empty vault -- and `None` renders nothing at all.
+    "pool4_staker_count": ("0 addrs", {}),
+    # The concentration footer. `top 3 = 0% of vault` against `top 3 = -- of
+    # vault`, which is the guard PRD 7.4 asks for: `None` on an INCOMPLETE
+    # fold, never a percentage computed from a partial sweep.
+    "pool4_staker_top3_pct": (
+        "top 3 = 0% of vault",
+        {"pool4_staker_count": 66,
+         "pool4_stakers": [
+             {"rank": 1, "address": "0x" + "ab" * 20, "imd": 1.0, "pct": 1.0},
+         ]},
+    ),
+    # PRD 8.1's realised return. `0.0` is a real answer -- the drip is lumpy
+    # and a quiet week genuinely returned nothing -- so the window word is
+    # part of the needle: it is what stops this reading as an APR.
+    "pool4_trailing_return_pct": ("0.0% trailing 7d", {}),
+}
+
+#: The ``4`` body's integer keys, for the same reason
+#: :data:`_POOL4_INTEGER_KEYS` exists: the difference between ``0`` and
+#: ``0.0`` is visible on screen, so a float fed to an int key renders a
+#: needle nobody wrote.
+_POOL4_USER_INTEGER_KEYS = frozenset({
+    "pool4_reference_pool_tick", "pool4_backstop_lower_tick",
+    "pool4_staker_count",
+})
 
 #: Numeric keys this test DOES probe: key -> the exact substring the real
 #: widget/screen formatter renders for a *genuine* ``0`` in that field, each
@@ -1832,7 +1977,11 @@ def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
     """
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
-    checked = set(_NUMERIC_ZERO_PROBES) | set(_POOL4_ZERO_PROBES)
+    checked = (
+        set(_NUMERIC_ZERO_PROBES)
+        | set(_POOL4_ZERO_PROBES)
+        | set(_POOL4_USER_ZERO_PROBES)
+    )
     excluded = set(_NUMERIC_KEYS_EXCLUDED)
     non_numeric = set(_NON_NUMERIC_KEYS)
     pending = set(_KEYS_PENDING_CONSUMERS)
@@ -1886,6 +2035,7 @@ def test_no_surf_key_is_still_waiting_for_a_consumer():
     triaged = (
         set(_NUMERIC_ZERO_PROBES)
         | set(_POOL4_ZERO_PROBES)
+        | set(_POOL4_USER_ZERO_PROBES)
         | set(_NUMERIC_KEYS_EXCLUDED)
         | set(_NON_NUMERIC_KEYS)
     )
@@ -2033,12 +2183,56 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             )
             assert "MAINNET" not in pool4_text
 
-            swept = "\n".join((dashboard_text, launchpad_text, pool4_text))
+            # ...and the FOURTH body (2026-09-11). `4` swaps in the POOL4
+            # MARKET panels AND the second hero, and every
+            # `_POOL4_USER_ZERO_PROBES` needle only ever renders in here.
+            # Sweeping three bodies would have left the whole market block
+            # asserting the absence of strings from a body that never
+            # composited -- the identical hole `l` left open until I3 and `p`
+            # until 2026-09-01, now repeated twice and closed twice. The
+            # `_body_reached` check below is what stops a fourth repeat.
+            await pilot.press("4")
+            await pilot.pause()
+            market_text = _screen_text(app)
+            from maxpane_dashboard.widgets.surf.pool4u_stakers import (
+                UNAVAILABLE_LINE as STAKERS_UNAVAILABLE,
+            )
 
-            probes = {**_NUMERIC_ZERO_PROBES, **_POOL4_ZERO_PROBES}
+            assert STAKERS_UNAVAILABLE in market_text, (
+                "pressing `4` did not reach the market body -- the sweep "
+                "below would be measuring the pool4 body twice"
+            )
+            # Explicit rather than blank, for the pool4 body's own reason.
+            for title in ("STAKERS", "BURN & SUPPLY", "SIGNALS",
+                          "POOL4 FLOW", "IF IMD FALLS"):
+                assert title in market_text, f"{title} vanished under outage"
+            # The hero swapped WITH the body, which is this body's one break
+            # of surf precedent -- and a swap that did not happen would leave
+            # the market needles being swept against LAUNCHPAD/FLOW/BURN.
+            assert "DOWNSIDE BID" in market_text, (
+                "the market hero did not swap in with the `4` body"
+            )
+            assert "LAUNCHPAD" not in market_text, (
+                "both heroes are showing at once on the `4` body"
+            )
+            assert "SEPOLIA" not in market_text
+            assert "MAINNET" not in market_text
+
+            swept = "\n".join(
+                (dashboard_text, launchpad_text, pool4_text, market_text)
+            )
+
+            probes = {
+                **_NUMERIC_ZERO_PROBES,
+                **_POOL4_ZERO_PROBES,
+                **{k: needle for k, (needle, _en) in
+                   _POOL4_USER_ZERO_PROBES.items()},
+            }
             assert len(probes) == (
-                len(_NUMERIC_ZERO_PROBES) + len(_POOL4_ZERO_PROBES)
-            ), "a needle key is in both probe dicts -- one of them is dead"
+                len(_NUMERIC_ZERO_PROBES)
+                + len(_POOL4_ZERO_PROBES)
+                + len(_POOL4_USER_ZERO_PROBES)
+            ), "a needle key is in more than one probe dict -- one is dead"
             for probe_key, needle in probes.items():
                 assert needle not in swept, (
                     f"{probe_key} rendered its zero-formatted string "
@@ -2127,6 +2321,81 @@ def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero(
         "zero -- the absence assertion in the outage sweep is therefore "
         "vacuous for this key. Re-read it off composited output rather than "
         "editing it to taste."
+    )
+
+
+@pytest.mark.parametrize(
+    "key",
+    sorted(_POOL4_USER_ZERO_PROBES),
+    ids=sorted(_POOL4_USER_ZERO_PROBES),
+)
+def test_every_market_zero_needle_renders_on_zero_and_not_on_none(
+    key: str,
+) -> None:
+    """The ``4`` body's positive control -- **and its negative one**.
+
+    ``test_a_full_outage_renders_explicit_states_not_zeros`` asserts every
+    needle is *absent* from an all-``None`` render, and an absence assertion
+    passes for two completely different reasons: "the panel correctly printed
+    a dash" and "this string could never have rendered anywhere". This file's
+    history is a list of needles that were quietly the second kind.
+
+    The ``p`` body's probe closes half of that by rendering each needle with
+    its key zeroed. This one closes the other half too, because five of these
+    eight keys do not render at all on their own -- DOWNSIDE BID branches on
+    ``pool4_backstop_state`` rather than on the amount, the tick keys render
+    only as operands of a derived percentage, and a top-3 share needs a
+    population to be a share *of*. Each entry therefore names its enabling
+    sibling reads, and the test runs the same frame **twice**:
+
+    * key ``0`` + enablers -> the needle MUST appear;
+    * key ``None`` + the same enablers -> the needle must NOT appear.
+
+    The second render is the one that makes the pairing real. Without it a
+    needle that is actually about an *enabler* passes both this test and the
+    outage sweep -- which is exactly how ``lp_imd`` came to carry
+    ``imd_supply``'s needle and could only ever have gone red on its
+    sibling's rendering.
+
+    Parametrised per key on A38's shape: a probe table is a collection of
+    independent claims and has to fail like one, or one bad needle hides the
+    seven behind it and the suite looks one edit from green six times over.
+    """
+    import asyncio
+
+    from tests.screens.test_surf_screen import (
+        _all_none_payload, _screen_text as _surf_screen_text, _surf_app,
+    )
+
+    needle, enablers = _POOL4_USER_ZERO_PROBES[key]
+
+    async def _render(value) -> str:
+        payload = _all_none_payload()
+        payload.update(enablers)
+        payload[key] = value
+        async with _surf_app(payload).run_test(size=(143, 60)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("4")
+            await pilot.pause()
+            await pilot.pause()
+            return _surf_screen_text(pilot.app)
+
+    zero = 0 if key in _POOL4_USER_INTEGER_KEYS else 0.0
+    on_zero = asyncio.run(_render(zero))
+    assert needle in on_zero, (
+        f"{key}'s zero needle {needle!r} does not render when the key IS "
+        "zero -- the absence assertion in the outage sweep is therefore "
+        "vacuous for this key. Re-read it off composited output rather than "
+        "editing it to taste."
+    )
+
+    on_none = asyncio.run(_render(None))
+    assert needle not in on_none, (
+        f"{key}'s needle {needle!r} renders with the key set to None and "
+        "only its enablers read -- so the needle is about an ENABLER, not "
+        "about this key, and both this test and the outage sweep are "
+        "measuring the wrong field"
     )
 
 

@@ -33,6 +33,7 @@ from maxpane_dashboard.data.surf_models import (
     POOL4_KEYS,
     POOL4_NETWORKS,
     POOL4_REWARD_PATHS,
+    POOL4_STAKERS_KEYS,
     SURF_KEYS,
     SURF_ROW_KEYS,
     Pool4Discovery,
@@ -1449,17 +1450,147 @@ POOL4_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 }
 
 
+#: The ``4`` POOL4 MARKET body's five ``update_data`` signatures, transcribed
+#: from the widgets exactly as :data:`POOL4_WIDGET_SIGNATURES` is from the
+#: ``p`` body's.
+#:
+#: **A SECOND dict rather than five more entries in the first, and the reason
+#: is that three of that dict's own tests state claims which are true of one
+#: body and false of both together.**
+#:
+#: * ``test_each_scalar_key_has_exactly_one_renderer_apart_from_the_two_
+#:   shared_ones`` says every scalar reaches exactly one panel, so there is
+#:   one place to fix a wrong number. That is a property of the ``p`` body and
+#:   it is worth keeping *as* a property of the ``p`` body. The ``4`` body is
+#:   a **re-presentation** of the same sweep for a different reader (PRD §7:
+#:   roughly two thirds of it is re-presented with no new read at all), so
+#:   ``pool4_current_tick`` reaching THE RATCHET, the hero, SIGNALS and the
+#:   depth ladder is the design rather than a defect. Merging the dicts would
+#:   have forced that test into a hardcoded exception list, and an exception
+#:   list is where the next real duplicate hides.
+#: * ``test_no_pool4_widget_kwarg_is_missing_from_the_payload`` checks kwargs
+#:   against ``POOL4_KEYS``. STAKERS takes four keys from
+#:   ``POOL4_STAKERS_KEYS`` -- a different tuple, a different tier, a
+#:   different clock -- so merging would have meant widening that check to the
+#:   union, at which point a ``p``-body panel could silently take a
+#:   long-tier key and nothing would say so.
+#:
+#: So the two dicts are compared against their own populations, and
+#: :func:`test_every_pool4_key_has_at_least_one_renderer` unions them,
+#: because "does anything render this key" is the one question that really is
+#: about both bodies at once.
+POOL4_USER_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    # ⚠ NO ``pool4_network`` and NO clock. A hero has neither room for one nor
+    # a title to hang it on, and the title bar already carries the fast
+    # tier's (carry-over C4). It is the only panel on this screen exempt from
+    # the network word, and it is exempt because it has no title, not because
+    # the word stopped mattering.
+    "SurfPool4UserHero": (
+        "pool4_price_usd", "pool4_venue_gap_pct", "pool4_cheaper_venue",
+        "pool4_backstop_state", "pool4_backstop_eth",
+        "pool4_backstop_lower_tick", "pool4_current_tick",
+        "pool4_trailing_return_pct", "pool4_vault_assets",
+        "pool4_staker_count",
+    ),
+    # The only panel that takes BOTH clocks, and it renders the slow one.
+    # ``pool4_stakers_as_of_hhmm`` is the long ``Transfer``-fold tier's; the
+    # fast ``pool4_as_of_hhmm`` is accepted and deliberately not rendered, so
+    # that no pool4 panel anywhere elides a clock to ``as_of_hhmm``.
+    "SurfPool4UStakers": (
+        "pool4_stakers", "pool4_staker_count", "pool4_staker_top3_pct",
+        "pool4_stakers_as_of_hhmm", "pool4_network", "pool4_as_of_hhmm",
+    ),
+    # ``pool4_flow`` is shared with RECENT FLOW, which renders the same rows
+    # as a log: two questions off one read, not two copies of one read.
+    "SurfPool4UBurn": (
+        "pool4_flow", "pool4_total_burned", "pool4_burned_supply_pct",
+        "pool4_total_supply", "pool4_network", "pool4_as_of_hhmm",
+    ),
+    "SurfPool4USignals": (
+        "pool4_cap_headroom", "pool4_cheaper_venue", "pool4_venue_gap_pct",
+        "pool4_reference_pool_tick", "pool4_current_tick",
+        "pool4_backstop_state", "pool4_backstop_lower_tick",
+        "pool4_backstop_eth", "pool4_backlog_days",
+        "pool4_network", "pool4_as_of_hhmm",
+    ),
+    "SurfPool4UDepth": (
+        "pool4_current_tick", "pool4_position_liquidity",
+        "pool4_backstop_lower_tick", "pool4_backstop_liquidity",
+        "pool4_network", "pool4_as_of_hhmm",
+    ),
+}
+
+
 def test_every_pool4_key_has_at_least_one_renderer() -> None:
     """§0.4: nothing joins ``_KEYS_WITHOUT_A_RENDERER``.
 
     A payload key nobody renders is a key the manager computes, persists and
     degrades for, that no reader will ever see.
+
+    **Both bodies and both key tuples since 2026-09-11.** The ``4`` body's
+    nine new fast-tier keys are rendered only there, and its four staker keys
+    come from ``POOL4_STAKERS_KEYS`` rather than ``POOL4_KEYS`` -- so a
+    version of this test that unioned only the ``p`` body's signatures, or
+    that subtracted only ``POOL4_KEYS``, would each leave one half of the
+    2026-09-11 contract growth uncovered.
     """
     rendered: set[str] = set()
     for kwargs in POOL4_WIDGET_SIGNATURES.values():
         rendered |= set(kwargs)
-    orphans = sorted(set(POOL4_KEYS) - rendered)
+    for kwargs in POOL4_USER_WIDGET_SIGNATURES.values():
+        rendered |= set(kwargs)
+    orphans = sorted((set(POOL4_KEYS) | set(POOL4_STAKERS_KEYS)) - rendered)
     assert not orphans, f"pool4 keys with no renderer: {orphans}"
+
+
+def test_no_market_widget_kwarg_is_missing_from_the_payload() -> None:
+    """The ``4`` body's half of the same handshake.
+
+    A kwarg with no key behind it is a panel line that is ``None`` forever and
+    raises nothing, because the screen splats and ``**_kwargs`` swallows. The
+    population here is the UNION of the two tuples, unlike the ``p`` body's
+    check one function up: STAKERS legitimately takes four long-tier keys,
+    and it is the only panel on either body that reaches across tiers.
+    """
+    population = set(POOL4_KEYS) | set(POOL4_STAKERS_KEYS)
+    for widget, kwargs in POOL4_USER_WIDGET_SIGNATURES.items():
+        unbacked = sorted(set(kwargs) - population)
+        assert not unbacked, f"{widget} takes keys not in the contract: {unbacked}"
+
+
+def test_no_market_widget_takes_a_short_kwarg() -> None:
+    """§0.1's no-new-alias decision again, for the fourth body.
+
+    The ``4`` body is where the elision would have been tempting: STAKERS
+    carries two clocks, and spelling either ``as_of_hhmm`` would make one
+    kwarg name answer for ``launchpad_as_of_hhmm`` on five widgets,
+    ``pool4_as_of_hhmm`` on five more and ``pool4_stakers_as_of_hhmm`` here.
+    """
+    for widget, kwargs in POOL4_USER_WIDGET_SIGNATURES.items():
+        short = [k for k in kwargs if not k.startswith("pool4_")]
+        assert not short, f"{widget} takes short kwarg(s) {short}"
+
+
+def test_the_market_hero_takes_no_clock_and_no_network_word() -> None:
+    """Carry-over C4, pinned rather than left as a comment.
+
+    Every other pool4 panel on both bodies carries ``pool4_network`` (its
+    title says which chain the numbers came from) and a clock. The hero has
+    no title to hang either on, and the title bar already renders the fast
+    tier's marker -- so this is the one deliberate exemption, and a later
+    agent adding either kwarg "for consistency" should have to delete this
+    test to do it.
+    """
+    hero = set(POOL4_USER_WIDGET_SIGNATURES["SurfPool4UserHero"])
+    assert "pool4_network" not in hero
+    assert not [k for k in hero if k.endswith("as_of_hhmm")]
+    # ...and every OTHER panel on this body does carry both, so the exemption
+    # is one panel's and not a habit.
+    for name, kwargs in POOL4_USER_WIDGET_SIGNATURES.items():
+        if name == "SurfPool4UserHero":
+            continue
+        assert "pool4_network" in kwargs, name
+        assert "pool4_as_of_hhmm" in kwargs, name
 
 
 def test_no_pool4_widget_kwarg_is_missing_from_the_payload() -> None:

@@ -2372,6 +2372,106 @@ SurfPool4Vault {
     padding: 0 1;
 }
 
+/* The `4` POOL4 MARKET body (2026-09-11): the FOURTH body on this screen and
+ * the first one built on the BAKERY template rather than on the `l` body's
+ * structure -- a leaderboard beside a chart-over-signals column, then an
+ * activity log beside the EV table (PRD section 4). That is two rows, so the
+ * container `_show_mode` toggles is a `Vertical` holding both of them rather
+ * than a single `Horizontal` like the two bodies above.
+ *
+ * `margin: 1 0 0 0` matches `#middle-row`'s, `#surf-launchpad-body`'s and
+ * `#surf-pool4-body`'s, so moving between any two of the four bodies never
+ * also moves the hero's breathing room.
+ *
+ * THE SEAM IS `1fr:1fr` ON BOTH ROWS, AND THE BOTTOM ROW'S IS THE REASON.
+ * `SurfPool4Flow` is mounted a SECOND time in that row (PRD section 6.4:
+ * reuse the module, do not copy it), and the rule it already carries above
+ * -- `width: 1fr; height: 1fr; min-height: 6` -- is exactly the rule it wants
+ * here. A 7:6 seam would have needed a scoped width override, i.e. a second
+ * place stating that panel's geometry, which is the divergence reuse exists
+ * to avoid. The top row takes the same seam so the two read as one grid, the
+ * way `#middle-row` and `#bottom-row` do in the dashboard body.
+ *
+ * EVERY `1fr` CHILD IS FLOORED AND EVERY SCROLLING `Vertical` RESERVES ITS
+ * GUTTER. A `1fr` child cannot overflow a scroll container, it SHRINKS, so
+ * without `min-height` each of these sheds a line per terminal row down to a
+ * bare title with no scrollbar and no trace. And without
+ * `scrollbar-gutter: stable` the scrollbar takes its column out of the panel
+ * beside it only on terminals short enough to overflow, which would make this
+ * layout's WIDTH pin a function of its HEIGHT.
+ *
+ * WHICH PANEL CARRIES THE RAIL'S `1fr` IS THE INVERTED CASE AGAIN. Neither
+ * BURN & SUPPLY nor SIGNALS scrolls inside itself, so the `1fr` goes to the
+ * one that can never be cut: SIGNALS renders a title, four state rows and one
+ * summary line and never more, so `min-height: 7` is both its floor and its
+ * ceiling. BURN & SUPPLY is `auto` above it with the one-row bottom margin
+ * `SurfSignals` and `SurfCurveFlow` carry in the other two rails. Same
+ * answer, same reasoning, as `SurfPool4Vault` one rule up.
+ *
+ * This copy is the one that RENDERS -- an app stylesheet outranks a screen's
+ * DEFAULT_CSS -- and `tests/screens/test_surf_screen.py` pins the two copies
+ * together property by property. Edit both or neither. */
+SurfScreen #surf-pool4-user-body {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
+}
+
+SurfScreen #surf-pool4-user-middle {
+    height: 1fr;
+    min-height: 13;
+    padding: 0 0;
+}
+
+SurfPool4UStakers {
+    width: 1fr;
+    height: 1fr;
+    min-height: 10;
+    padding: 0 1;
+}
+
+SurfScreen #surf-pool4-user-rail {
+    width: 1fr;
+    height: 1fr;
+    min-height: 13;
+    padding: 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
+}
+
+SurfPool4UBurn {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+SurfPool4USignals {
+    width: 1fr;
+    height: 1fr;
+    min-height: 7;
+    padding: 0 1;
+}
+
+SurfScreen #surf-pool4-user-bottom {
+    height: 1fr;
+    min-height: 8;
+    padding: 0 0;
+    margin: 0 0 1 0;
+}
+
+SurfPool4UDepth {
+    width: 1fr;
+    height: 1fr;
+    min-height: 7;
+    padding: 0 1;
+}
+
 /* ── Curator screen (THE LIST) ────────────────────────────────────────── */
 
 /* Structure only, restating CuratorScreen.DEFAULT_CSS. An app stylesheet
