@@ -271,11 +271,13 @@ no six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` 
 the table above still has eight rows. What makes something a mode here is the rule, not the
 count: a mode is a whole second body with its own panels, never two panels sharing one slot —
 that was `c`, and surf has no `c`. MODE_POOL4 is a third body on that rule, not a fourth key
-hiding half the screen. Surf's status hint is now `l launchpad · p pool4`, in one markup run
-rather than per-letter tags (adjacent differently-styled runs never share a composited line, and
-the acceptance test greps for the whole phrase), and it was read back off composited output
-against `StatusBar`'s left-label budget rather than counted: that label is the segment the bar
-cuts first and the new hint is nine columns longer than the one it replaced.
+hiding half the screen. Surf's status hint is now `l launchpad · p pool4 · 4 market`, in one
+markup run rather than per-letter tags (adjacent differently-styled runs never share a
+composited line, and the acceptance test greps for the whole phrase), and it was read back off
+composited output against `StatusBar`'s left-label budget rather than counted: that label is the
+segment the bar cuts first and each addition has lengthened it. `4 market` is the half that
+shortens if a fourth ever has to fit; `l launchpad` does not, because the app-level acceptance
+test greps for that contiguous string.
 
 **Every panel title carries the network word** — `THE RATCHET · MAINNET`, `· SEPOLIA`, or `· —`.
 The view was built against a live *Sepolia* deployment and still renders it whenever no mainnet
@@ -370,6 +372,63 @@ functional one — never invent a signature string for one, a wrong guess comput
 matches no log and the panel goes quiet rather than red). And some ceiling tests still have no
 mainnet fixture behind them.
 
+### surf's POOL4 MARKET view — the `4` body (2026-09-11)
+
+Surf grew a **fourth body**, on the same rule as the three before it: `4` swaps
+`#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4_USER — STAKERS beside BURN & SUPPLY over
+SIGNALS, then RECENT FLOW beside IF IMD FALLS — and `escape` backs out one-way. **There is no
+six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and the
+table above still has eight rows. `p` is the protocol and `4` is the market: the two read off the
+same `TIER_POOL4` sweep and answer different questions, which is why the split is two bodies and
+not one crowded one. A digit key is an established pattern on a *screen* here (curator's filter
+presets, the hidden `frenpet_full`'s sub-views) and neither is app-level, so neither collides.
+
+**It is the first surf body that swaps the HERO, and that is a deliberate break of precedent
+rather than a new pattern.** `l` and `p` both keep LAUNCHPAD/FLOW/BURN/SUPPLY in place so surf's
+headline metrics never go dark. Here they would be the clearest thing on screen a reader does not
+act on, so a **second hero widget** (`SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING) is
+composed once at startup and toggled with the body — **curator's existing per-mode hero**, not an
+invention, and not one widget with a mode branch inside it, which would couple two subjects into
+one class and make their tests share a fixture. `_SURF_HERO_MODES` **enumerates** the modes that
+get `SurfHero` rather than negating this one: a fifth body with a hero of its own would inherit
+`True` from a `!= MODE_POOL4_USER` and paint two heroes into one row, where enumerating makes it
+paint none — loud on screen, and red either way.
+
+**Three cards, not four, and the reason is a name collision.** Surf's own hero already says `BURN`
+and `SUPPLY`; a pool4 card called BURN shows hook trim burns rather than launchpad burns, and a
+reader tabbing between bodies would watch one word change value and read it as one metric moving.
+Burn lives in the chart panel instead.
+
+**`SurfPool4Flow` is the same class mounted twice**, once in each body, rather than a copied
+module — which is why `_do_refresh` dispatches RECENT FLOW with `self.query(SurfPool4Flow)` and
+never `query_one`: one statement, one payload, both panels. `query_one` does **not** raise on
+multiple matches in this Textual version, it returns the first, so two instances reddened nothing
+until a test resolved the panel through its own body container instead.
+
+**Its own tier and its own clock for the one thing that is new.** Two-thirds of this body is the
+62 keys `TIER_POOL4` already produces; the delta is four fast-tier reads, one pure depth-ladder
+analytics module, and a long-tier sIMD `Transfer` sweep on `TIER_POOL4_STAKERS` /
+`SLOT_POOL4_STAKERS` with its own `pool4_stakers_as_of_hhmm`. That slot is **not a ninth degraded
+group**: `SOURCE_POOL4` (`p4`) is the eighth and last name the worst-case title row has room for,
+so the staker fold serves last-good behind its own stale marker and folds into `p4` only when it
+has nothing at all to serve.
+
+**Two honesty contracts worth carrying in your head.** The ladder quotes the position *as it
+stands now* and never promises protection — a `rebalance()` closes the backstop band and redeploys
+it, so *guaranteed*, *protected*, *safe* and *floor* are forbidden in its composited body, checked
+against the pixels rather than by a source grep. And an **unread** band is not an **absent** one:
+both used to paint `band used 0.0%`, byte-identically, which is the curator rail bug — a real
+negative and a dead read reading the same. STAKING likewise reports a **realised** trailing return
+from `Dripped` events over a measured 7-day window, never the delivery cap, and never the bare
+word *APR*.
+
+**Its layout pins are its own**, measured in situ and never derived:
+`SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}`, each with its own `#:` block naming the binding
+panel and the sweep. The numbers are not repeated here; the terminal-layout skill's table names
+the constants. One result from that sweep is worth knowing before touching this body: it is the
+**smallest** of surf's four in both dimensions, which refutes half of the PRD's own prediction
+that a bakery-shaped body would be wide-and-short. The other half held.
+
 ## Build & run
 
 ```bash
@@ -406,8 +465,12 @@ curator's `y`/`f` precedent), with the hero (LAUNCHPAD/FLOW/BURN/SUPPLY)
 left in place so nothing it tracks ever goes dark (`esc` backs out, one-way);
 **`p` on surf** swaps the same three rows for the POOL4 body (THE SPLIT /
 THE RATCHET / POOL4 FLOW on the left; HATCHES over sIMD VAULT in the rail),
-also keeping the hero, also one-way; surf's status hint reads
-`l launchpad · p pool4`. Surf's own `l` and curator's own `l` (the
+also keeping the hero, also one-way; **`4` on surf** swaps them for the
+POOL4 MARKET body (STAKERS beside BURN & SUPPLY over SIGNALS; RECENT
+FLOW beside IF IMD FALLS) and is the one surf body that swaps the
+**hero** too, for its own IMD PRICE / DOWNSIDE BID / STAKING cards —
+curator's per-mode hero, not a new pattern; surf's status hint reads
+`l launchpad · p pool4 · 4 market`. Surf's own `l` and curator's own `l` (the
 record view, described below) are unrelated bindings on two different
 screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
 standing — ladder, share, and what passing the rank above would cost — with the
@@ -448,7 +511,7 @@ memory when a bug report cites one.
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest                    # 7,007 tests, ~11 min — see below
+.venv/bin/python -m pytest                    # 7,580 tests, ~13 min — see below
 .venv/bin/python -m pytest tests/analytics/   # pure math
 .venv/bin/python -m pytest -x                 # stop on first failure
 .venv/bin/python -m pytest sybilkit            # the second distribution, 428 tests + 1 xfail

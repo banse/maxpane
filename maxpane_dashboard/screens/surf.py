@@ -1035,6 +1035,137 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
 #: scrolling.
 SURF_POOL4_FULL_LAYOUT_ROWS = 44
 
+#: The ``4`` POOL4 MARKET body's own full-layout width, swept in situ on
+#: 2026-09-11. **Neither a restatement nor a derivation of
+#: :data:`SURF_FULL_LAYOUT_COLUMNS` (143), of
+#: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` (138), of
+#: :data:`SURF_POOL4_FULL_LAYOUT_COLUMNS` (106) or of
+#: ``__main__.FULL_LAYOUT_COLUMNS``** -- a fourth body gets a fourth
+#: measurement, on the rule in the terminal-layout skill.
+#:
+#: HOW IT WAS MEASURED. The composed body was rendered through ``run_test``
+#: at **every width from 56 to 152** -- forty-nine columns below the number
+#: it collected and forty-seven above, never starting at it, and crossing
+#: every other pin on this screen (106, 138, 143) so agreeing with any of
+#: them would have had to show up as a sweep result rather than as an
+#: assumption. At each width the five panels were read off composited output
+#: for a ``‹`` marker and for a CSS-truncated line. Arithmetic over the
+#: column constants was not used and must not be: a ``DataTable`` buys a
+#: cell gutter per column, and two of these five panels are tables.
+#:
+#: WHICH PANEL BINDS: ``SurfPool4Flow``, and it is the **sole** marked panel
+#: at 104 under every payload swept. That satisfies the standing rule that a
+#: panel which can bind must be able to *mark* -- the seam is not carried by
+#: a panel that would lose a column in silence.
+#:
+#: WHAT THE NUMBER IS MADE OF, measured panel by panel at the width where
+#: each one's own marker goes dark rather than added up from their
+#: ``FULL_WIDTH`` constants:
+#:
+#: ===================== ====== ==============================================
+#: panel                  needs  in which column
+#: ===================== ====== ==============================================
+#: ``SurfPool4Flow``         52  bottom row, left
+#: ``SurfPool4USignals``     50  top row, rail (51 with the rail's gutter)
+#: ``SurfPool4UStakers``     48  top row, left
+#: ``SurfPool4UBurn``        36  top row, rail
+#: ``SurfPool4UDepth``       31  bottom row, right
+#: ===================== ====== ==============================================
+#:
+#: Both rows are ``1fr:1fr``, so each half gets the same width and the pin is
+#: the widest single need, doubled, plus the one column
+#: ``#surf-pool4-user-body`` reserves for its own ``scrollbar-gutter:
+#: stable``: 1 + 2 x 52. The top row on its own would have collected
+#: 1 + 2 x 51 = 103, which is why FLOW binds and SIGNALS does not.
+#:
+#: **IT IS ONE COLUMN NARROWER THAN THE ``p`` BODY, AND THE SAME PANEL BINDS
+#: BOTH.** That looks like a contradiction and is the clearest argument
+#: against deriving a pin from a neighbour. In the ``p`` body FLOW sits in
+#: ``#surf-pool4-left``, a scrolling ``Vertical`` that reserves its own
+#: gutter, so that column has to buy 53 for a panel that needs 52; here the
+#: bottom row does not scroll and has no gutter, so the seam buys exactly 52
+#: and the body's single gutter is paid once at the top instead of twice.
+#: Transferring 106 across would have been wrong by one column in the
+#: direction that hides a clipped row.
+#:
+#: **The pin does not move with the data**, and that was measured rather than
+#: hoped: the sweep ran over seven payload magnitudes -- the committed
+#: capture, ``_ordinary_pool4_payload``'s widest flow formats, the mainnet
+#: capture, a twenty-row staker list at ``pool4u_stakers.MAX_ROWS`` with
+#: ``999.9B``-magnitude holdings, both of those at once, an unread staker
+#: list and an empty one -- and collected 105 for every one of them. Every
+#: column on both tables is floored at its own header label, so the widest
+#: value a cell can hold never exceeds the budget the header already bought.
+#: A capture-only sweep could not have told that apart from "we only ever
+#: measured one payload".
+#:
+#: 105 is the **narrowest pinned body in the repo**. It is well under
+#: ``__main__.FULL_LAYOUT_COLUMNS`` and therefore does not append to the
+#: app-wide width record the terminal-layout skill keeps.
+SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 105
+
+#: The ``4`` POOL4 MARKET body's own full-layout height, swept in situ on
+#: 2026-09-11 at 150 columns -- comfortably past the width pin above, so
+#: nothing here is measuring a width.
+#:
+#: HOW IT WAS MEASURED. Rows 22 to 45, never starting at the pin, over ten
+#: payload states (the committed capture; the mainnet capture; the widest
+#: flow formats; a twenty-row staker list; both at once; an unread staker
+#: list; an empty one; a deployed band, an absent band and an unread band).
+#: At each height the screen-wide ``‹ taller`` marker was read off the title
+#: row **and** every fixed-height panel's painted line count was compared
+#: against the same panel's count on a 60-row terminal, because the marker
+#: alone cannot see the loss this body actually has (below).
+#:
+#: WHICH PANEL BINDS: ``SurfPool4UDepth``. IF IMD FALLS paints nine lines --
+#: title, header, the five ``DEPTH_MOVES`` rows, the "quoted from the
+#: position as it stands now" caption and the ``as of`` marker -- and it sits
+#: in ``#surf-pool4-user-bottom``, whose ``min-height: 8`` hands it eight
+#: rows until the terminal reaches 33. **33 is tight**: at 32 the ladder's
+#: ``-50%`` row, the deepest quote on the panel, is not on screen.
+#:
+#: **THE ONE-ROW WINDOW AT 32 IS A FILED FINDING, NOT A PROPERTY OF THIS
+#: CONSTANT.** At 32 rows the screen-wide ``‹ taller`` is **dark** while that
+#: row goes behind the ``DataTable``'s own two-cell scrollbar nub.
+#: ``_rail_is_cut`` asks ``#surf-pool4-user-body`` and
+#: ``#surf-pool4-user-rail`` for ``show_vertical_scrollbar``, and neither
+#: container can see a table scrolling inside a panel. Pinning at 32 -- the
+#: height at which the marker goes out -- would have called that body whole
+#: and published a number that loses a row. The pin is therefore measured
+#: against the **content**, and the marker gap is recorded in
+#: ``docs/surf_pool4_followups.md`` (F6) rather than repaired here: the CSS
+#: belongs to WP7, and a package that fixes what it finds reviews its own
+#: work.
+#:
+#: WHICH PANELS ARE ALLOWED TO SCROLL INSIDE THEMSELVES, and therefore do
+#: **not** set this number: ``SurfPool4UStakers`` (its table caps at
+#: ``MAX_ROWS = 20`` against a floor of 10 -- a leaderboard is unbounded by
+#: design, the way FLOW's ``RichLog`` is next door) and ``SurfPool4Flow``
+#: itself. The pin covers the panels whose line count is a **constant**: the
+#: hero (6), BURN & SUPPLY (5), SIGNALS (7) and the ladder (9). That is the
+#: same allowance :data:`SURF_POOL4_FULL_LAYOUT_ROWS` gives FLOW one body
+#: over, applied to the two panels here that have it.
+#:
+#: **The pin does not move with the payload.** All ten states collect 33.
+#: Only a fully-unreadable ladder fits in 32, and it fits because it has
+#: collapsed to a single unavailable line -- a payload that needs *less* than
+#: the pin never lowers it.
+#:
+#: **W7, ANSWERED FOR THIS BODY -- the first evidence either way.** Open
+#: finding W7 asks whether a real laptop clears the ``p`` body's 44 rows, the
+#: tallest requirement in the repo. This body needs **33**: eleven rows under
+#: ``p`` and two over :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS` (31). The PRD
+#: predicted the bakery shape would be "wide-and-short" against ``p``'s
+#: "narrow-and-tall"; **the short half is confirmed and the wide half is
+#: refuted** -- at 105 x 33 this body is both shorter *and* one column
+#: narrower than ``p``'s 106 x 44, so it is simply the smaller of the two in
+#: both dimensions. The practical consequence, which is what W7 is really
+#: about: a terminal that clears the ``l`` body is two rows from clearing
+#: this one and eleven from clearing ``p``, and in every case the shortfall
+#: is announced by ``‹ taller`` rather than taken silently -- except in the
+#: single 32-row window named above.
+SURF_POOL4_USER_FULL_LAYOUT_ROWS = 33
+
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
 #: curator's MODE_DASHBOARD/MODE_ANALYSIS precedent.
 #:

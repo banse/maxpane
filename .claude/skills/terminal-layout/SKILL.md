@@ -18,6 +18,7 @@ it. This file is the method; the constants are the record.
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 | 106 cols · 44 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `4` pool4 market | 105 cols · 33 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
@@ -30,13 +31,33 @@ about 169 columns on a laptop — so 143 is reachable without `--font-size` /
 **The app-wide record, appended never rewritten: 198 → 172 → 143 → 176 → 152 →
 143.** FWA set the first three and the last; surf the two in between. It tracks
 *that* number only — a dashboard measuring under 143 does not append to it,
-which is why nothing has been added since 2026-08-12 despite four new bodies
-since. surf's `p` pool4 body is the newest of them and the narrowest thing in
-the table at 106; it does not touch the record. Its **row** requirement of 44
-is the largest pinned here, which is the one number about it worth carrying in
-your head — and unlike the other two it is a **worst case over payloads**
-rather than a constant, so it is re-swept when a panel's line count changes,
-not merely re-checked.
+which is why nothing has been added since 2026-08-12 despite five new bodies
+since. surf's `p` pool4 body holds the **row** record at 44, the largest pinned
+here, and unlike the column pins it is a **worst case over payloads** rather
+than a constant, so it is re-swept when a panel's line count changes, not
+merely re-checked. surf's `4` market body is the newest and is the narrowest
+thing in the table at 105; neither touches the app-wide record.
+
+**Two of those pins are one column apart with the same panel binding both, and
+that is the strongest argument here against deriving a pin from a neighbour.**
+`SurfPool4Flow` binds surf's `p` body and its `4` body. In `p` it sits in a
+scrolling `Vertical` that reserves its own scrollbar gutter, so that column has
+to buy a column more than the panel needs; in `4` the row it sits in does not
+scroll, so the seam buys the panel's need exactly and the body's single gutter
+is paid once instead of twice. Same panel, same need, two different pins.
+Transferring either body's number to the other would be wrong by one column, in
+the direction that hides a clipped row.
+
+**A body-level `‹ taller` does not see a table scrolling inside a panel.**
+`_rail_is_cut` asks the containers a mode names for `show_vertical_scrollbar`,
+so a `DataTable` or `RichLog` that overflows *within* a panel paints its own
+scrollbar nub and nothing screen-wide says so. That is fine for a panel whose
+content is unbounded by design — a log, a leaderboard page — and it is a silent
+loss for a panel whose line count is a **constant**, where `min-height` is
+meant to be floor and ceiling both. Measure a row pin against the body's
+**content**, not against the height at which the marker goes out: on surf's `4`
+body those two answers are one row apart, and the marker's is the optimistic
+one.
 
 ## The rules
 
@@ -174,10 +195,11 @@ adjusting the constant to match.
 
 `c` swaps a shared slot on FWA, TTT, Talismans and curator so three panels that
 cannot share a row do not have to. Surf does not: its 2026-08-10 restructure put
-all six panels on screen at once, which is why its `l` and `p` and curator's
-`y`/`f` swap whole *bodies* instead. Each swapped body gets its **own** pin,
-swept in situ against its own panels — surf's `p` is not derived from and does
-not equal its `l`, and its sweep deliberately straddles both neighbouring pins
-so agreeing with one would show up as a measurement rather than as an
-assumption. A swapped-in body is composed once and hidden, so
+all six panels on screen at once, which is why its `l`, `p` and `4` and
+curator's `y`/`f` swap whole *bodies* instead. Each swapped body gets its
+**own** pin, swept in situ against its own panels — surf's `p` is not derived
+from and does not equal its `l`, and its sweep deliberately straddles both
+neighbouring pins so agreeing with one would show up as a measurement rather
+than as an assumption. The `4` body's sweep straddles all three of them for the
+same reason, and it starts sixty-seven columns under the number it collects. A swapped-in body is composed once and hidden, so
 the first keypress paints a complete frame rather than a blank one.
