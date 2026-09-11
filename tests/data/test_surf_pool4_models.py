@@ -133,10 +133,20 @@ def test_pool4_keys_is_sixty_two_of_which_sixty_are_scalar() -> None:
     Distributor's *presence* is a fact no address can state. Then
     ``pool4_cap_headroom``, on evidence that retired the grounds it had twice
     been refused on. So 43 + 2 became **60 + 2**.
+
+    Then WP0 of the ``4`` market body froze nine more scalars in one block —
+    the cross-venue price (``pool4_reference_pool_tick``,
+    ``pool4_venue_gap_pct``, ``pool4_cheaper_venue``, ``pool4_price_usd``), the
+    backstop band broken out of the derived ``pool4_backstop_centred``
+    (``_lower_tick``, ``_liquidity``, ``_eth``, ``_state``) and the realised
+    ``pool4_trailing_return_pct``, which is a different number from the
+    delivery cap ``pool4_implied_apr_pct`` beside it. **69 + 2.** The staker
+    sweep did *not* join this tuple: it rides its own ``POOL4_STAKERS_KEYS``
+    against its own tier and slot, so the count above is untouched by it.
     """
     scalars = [k for k in POOL4_KEYS if k not in POOL4_ROW_PAYLOAD_KEYS]
-    assert len(scalars) == 60
-    assert len(POOL4_KEYS) == 62
+    assert len(scalars) == 69
+    assert len(POOL4_KEYS) == 71
 
 
 def test_every_pool4_key_appears_in_surf_keys_exactly_once() -> None:

@@ -6,7 +6,9 @@ survives a restart*. It holds no clients, does no I/O other than reading and
 writing its own JSON file, and imports nothing from the project except the
 dependency-free :mod:`maxpane_dashboard.data.series_points` leaf.
 
-Four refresh tiers, the first three sized from PRD §5:
+Six refresh tiers, the first three sized from PRD §5 (this line said "four"
+while the list below had five; the count is now derived from the list rather
+than remembered):
 
 ``fast``        every refresh (TTL 0). Three ``eth_getTransactionCount`` reads
                 plus one batched ``eth_call`` round. The announce channel
@@ -24,6 +26,10 @@ Four refresh tiers, the first three sized from PRD §5:
 ``pool4``       600 s, the same shape one layer out: discovery plus three
                 getter rounds plus a log window over the pool4 hook, detached,
                 with its own ``as of HH:MM``.
+``pool4_stakers`` 1800 s, curator's ``TIER_ANALYSIS`` interval for curator's
+                reason: a full sIMD ``Transfer`` history fold, far too
+                expensive for the pool4 tier, behind a panel that moves slowly.
+                Its own slot and its own ``as of HH:MM``.
 
 The pool4 reserve is **two series, one per network**, and that is the single
 least obvious thing in this module. ``pool4`` reads Sepolia until a mainnet
@@ -92,8 +98,16 @@ TIER_LAUNCHPAD = "launchpad"
 #: rate-limited Sepolia endpoint must not cost the panel a full ten minutes.
 TIER_POOL4 = "pool4"
 
+#: The staker sweep's own long tier, on curator's ``TIER_ANALYSIS`` precedent
+#: and for its reason: the fold is a full sIMD ``Transfer`` history walk, far
+#: too expensive for the 600 s pool4 tier, and the panel behind it moves
+#: slowly.  Its ``as of HH:MM`` is its own (``pool4_stakers_as_of_hhmm``) and
+#: advances only when a new fold actually lands.
+TIER_POOL4_STAKERS = "pool4_stakers"
+
 TIERS: tuple[str, ...] = (
     TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
+    TIER_POOL4_STAKERS,
 )
 
 TIER_TTL_SECONDS: dict[str, float] = {
@@ -102,6 +116,7 @@ TIER_TTL_SECONDS: dict[str, float] = {
     TIER_SLOW: 420.0,     # PRD §5 says 5-10 min
     TIER_LAUNCHPAD: 600.0,
     TIER_POOL4: 600.0,
+    TIER_POOL4_STAKERS: 1800.0,
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
@@ -110,6 +125,7 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
     TIER_SLOW: 120.0,
     TIER_LAUNCHPAD: 180.0,
     TIER_POOL4: 180.0,
+    TIER_POOL4_STAKERS: 300.0,
 }
 
 
@@ -125,6 +141,7 @@ SLOT_NFT = "nft"              # Blockscout token counters / holders
 SLOT_ACTIVITY = "activity"    # Blockscout dev tx pages
 SLOT_LAUNCHPAD = "launchpad"  # factory/hook/executor getters + log aggregates
 SLOT_POOL4 = "pool4"          # discovery + hook/vault/dripper getters + flow logs
+SLOT_POOL4_STAKERS = "pool4_stakers"  # the sIMD Transfer fold's last-good
 
 SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
@@ -135,6 +152,11 @@ SLOTS: tuple[str, ...] = (
     SLOT_ACTIVITY,
     SLOT_LAUNCHPAD,
     SLOT_POOL4,
+    # Not a ninth degraded *group* -- PRD 7.3: `SOURCE_POOL4` ("p4") is the
+    # eighth and last name the title row has room for. This slot exists so the
+    # staker fold can serve last-good behind its own stale marker; it folds
+    # into `p4` only when it has nothing at all to serve.
+    SLOT_POOL4_STAKERS,
 )
 
 
@@ -1066,6 +1088,7 @@ __all__ = [
     "SLOT_MARKET",
     "SLOT_NFT",
     "SLOT_POOL4",
+    "SLOT_POOL4_STAKERS",
     "SurfCache",
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",
@@ -1073,6 +1096,7 @@ __all__ = [
     "TIER_LAUNCHPAD",
     "TIER_MEDIUM",
     "TIER_POOL4",
+    "TIER_POOL4_STAKERS",
     "TIER_SLOW",
     "TIER_TTL_SECONDS",
     "pool4_reserve_series_name",

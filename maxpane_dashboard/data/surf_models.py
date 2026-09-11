@@ -640,6 +640,24 @@ POOL4_REWARD_PATHS: tuple[str, ...] = ("direct", "via-distributor")
 #: the whole problem A27 closed.
 POOL4_DISCOVERY_SOURCES: tuple[str, ...] = ("self-post", "docs", "unattributed")
 
+#: Which venue prices IMD more cheaply for a buyer, or None when the gap is
+#: below the two pools' fees summed.  A gap smaller than that is not
+#: arbitrageable, and telling a reader to switch venues over it is telling
+#: them to lose the spread -- so "no word" is a real answer here, not a
+#: missing one.  PRD 8.3.
+POOL4_VENUE_WORDS: tuple[str, ...] = ("here", "reference")
+
+#: THREE states, not two: ``deployed`` renders the band, ``none`` means no band
+#: exists right now, and ``None`` means the read failed.  Collapsing the middle
+#: into either of the others is the curator rail bug verbatim -- a real
+#: negative with no representable value reads confident and green through an
+#: outage.  PRD 5.2.
+POOL4_BACKSTOP_STATES: tuple[str, ...] = ("deployed", "none")
+
+#: ``off`` means headroom > 0 and was READ.  ``None`` means we could not look.
+#: Headroom zero is a representable zero and means burning is ON.
+POOL4_BURNING_STATES: tuple[str, ...] = ("on", "off")
+
 #: The two sides a flow row can have.  Producer-owned and closed: the widget
 #: sizes its ``side`` cell to the widest member exactly, so a third member is a
 #: layout change, not a data change.
@@ -1336,9 +1354,47 @@ POOL4_KEYS: tuple[str, ...] = (
     "pool4_backlog_imd",           # float | None — the dripper's own IMD balance
     "pool4_backlog_days",          # float | None — None on a 0/unread rate, never an infinity
     "pool4_implied_apr_pct",       # float | None — from drip rate and TVL only, never fee flow
+    # ---- the `4` market body: cross-venue price (PRD 5.1, 6.3, 8.3) --------
+    # NOT `pool4_ref_tick`, which sits up in THE RATCHET block and means the
+    # hook's own block-lagged anti-manipulation tick. Different number,
+    # different job, and two things called "ref tick" in one payload is how a
+    # wrong number renders confidently.
+    "pool4_reference_pool_tick",  # int | None — the hookless pool's tick
+    "pool4_venue_gap_pct",        # float | None — signed; + = IMD dearer here
+    "pool4_cheaper_venue",        # str | None — POOL4_VENUE_WORDS; None = below fees
+    "pool4_price_usd",            # float | None — USD per IMD
+    # ---- the backstop broken out, for the hero card and the ladder --------
+    # Only the derived `pool4_backstop_centred` was exposed before; the ladder
+    # needs the band itself.
+    "pool4_backstop_lower_tick",  # int | None
+    "pool4_backstop_liquidity",   # int | None — raw L, not scaled
+    "pool4_backstop_eth",         # float | None — whole ETH in the band
+    "pool4_backstop_state",       # str | None — POOL4_BACKSTOP_STATES
+    # ---- realised staking return (PRD 8.1) --------------------------------
+    # The measured one. `pool4_implied_apr_pct` above is the DELIVERY CAP and
+    # stays; these are two different numbers and the panel shows this one.
+    "pool4_trailing_return_pct",  # float | None — 7d realised drips / TVL
     # ---- the two row payloads -----------------------------------------------
     "pool4_flow",       # list[dict] | None — SURF_ROW_KEYS["pool4_flow"]
     "pool4_hatches",    # list[dict] | None — SURF_ROW_KEYS["pool4_hatches"]
+)
+
+
+#: The long-tier staker sweep's own payload, on :data:`CURATOR_ANALYSIS_KEYS`'s
+#: shape: a separate tuple against a separate slot, where the fixed count is
+#: itself the tripwire.  PRD 7.2.
+#:
+#: It is deliberately *not* spliced into :data:`POOL4_KEYS`.  These four come
+#: from a different tier on a different clock -- a full ``Transfer`` history
+#: fold, far too expensive for the 600 s pool4 sweep -- so folding them into
+#: that tuple would let a pool4-tier failure look like it had emptied them, and
+#: would put them behind ``pool4_as_of_hhmm``, a marker running on the wrong
+#: clock for this data.  They carry their own.
+POOL4_STAKERS_KEYS: tuple[str, ...] = (
+    "pool4_stakers",            # list[dict] | None — rank/addr/imd/pct
+    "pool4_staker_count",       # int | None
+    "pool4_staker_top3_pct",    # float | None — None on an INCOMPLETE fold
+    "pool4_stakers_as_of_hhmm", # str | None — its own, slower clock
 )
 
 
@@ -1461,6 +1517,9 @@ SURF_KEYS: tuple[str, ...] = (
     # five work packages import that tuple, and a hand-copied second spelling
     # here is exactly the drift the splice is meant to make impossible.
     *POOL4_KEYS,
+    # The staker sweep rides beside them on its own tier and its own slot, so
+    # it is its own tuple rather than nine more members of the one above.
+    *POOL4_STAKERS_KEYS,
     # ---- signals: three new detectors, state/detail/age each ----------------
     "sig_decoy_state",
     "sig_decoy_detail",

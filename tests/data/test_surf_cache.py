@@ -17,6 +17,7 @@ from maxpane_dashboard.data.surf_cache import (
     TIER_FAST,
     TIER_LAUNCHPAD,
     TIER_POOL4,
+    TIER_POOL4_STAKERS,
     TIER_MEDIUM,
     TIER_SLOW,
     TIERS,
@@ -68,16 +69,18 @@ def _cache(tmp_path, clock=None) -> SurfCache:
 def test_tier_ttls_match_the_prd(tmp_path):
     """fast is due every refresh; medium 90 s; slow 420 s; launchpad/pool4 600 s.
 
-    ``TIER_POOL4`` joined the tuple with WP7 (the surf ``p`` body). The
-    literal below is hand-typed rather than derived on purpose — deriving it
-    from ``TIERS`` would compare a constant against itself — so a new tier
-    reddens here first, which is what happened when this one landed.
+    ``TIER_POOL4`` joined the tuple with WP7 (the surf ``p`` body), and
+    ``TIER_POOL4_STAKERS`` with WP0 of the ``4`` market body. The literal
+    below is hand-typed rather than derived on purpose — deriving it from
+    ``TIERS`` would compare a constant against itself — so a new tier reddens
+    here first, which is what happened both times.
     """
     clock = FakeClock()
     c = _cache(tmp_path, clock)
 
     assert TIERS == (
         TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
+        TIER_POOL4_STAKERS,
     )
     assert TIER_TTL_SECONDS[TIER_FAST] == 0.0
     assert 60.0 <= TIER_TTL_SECONDS[TIER_MEDIUM] <= 120.0
@@ -101,6 +104,13 @@ def test_tier_ttls_match_the_prd(tmp_path):
     assert TIER_LAUNCHPAD not in c.tiers_due()
 
     clock.advance(TIER_TTL_SECONDS[TIER_LAUNCHPAD])
+    # The staker fold is the slowest tier of the six, so "everything is due"
+    # is not reached here — and saying so is the point: a walk that asserted
+    # `set(TIERS)` one advance too early would be green only because the
+    # slowest tier had not yet been added to the tuple.
+    assert TIER_POOL4_STAKERS not in c.tiers_due()
+
+    clock.advance(TIER_TTL_SECONDS[TIER_POOL4_STAKERS])
     assert set(c.tiers_due()) == set(TIERS)
 
 
@@ -206,8 +216,12 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     clock.advance(120.0)
     c.store_last_good(SLOT_MARKET, {})
     assert c.newest_as_of() == clock.t
-    # Seven source groups plus pool4's own slot (WP7).
-    assert len(SLOTS) == 8
+    # Seven source groups, plus pool4's own slot (WP7), plus the staker
+    # fold's (WP0 of the `4` body). The staker slot is deliberately NOT a
+    # ninth degraded *group*: `SOURCE_POOL4` ("p4") is the eighth and last
+    # name the title row has columns for, so the fold serves last-good behind
+    # its own stale marker and folds into `p4` only when it has nothing.
+    assert len(SLOTS) == 9
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):
