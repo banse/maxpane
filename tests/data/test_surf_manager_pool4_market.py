@@ -151,6 +151,38 @@ def _reference_answer(
     }
 
 
+def test_the_double_defaults_to_a_READABLE_venue_and_still_honours_both_overrides():
+    """F9's regression pin. Three claims, because the bug satisfied one of them.
+
+    The defect: the parent double seeds ``"fetch_reference_slot0": None`` to
+    silence a warning, which made this class's ``setdefault`` a no-op, so every
+    test that did not ask for a venue read swept an OUTAGE and died on
+    ``abs(None)``. A double that reports an outage by default is worse than a
+    missing method -- the missing method at least logged.
+
+    The two override paths are pinned beside it because the obvious repair (a
+    plain assignment) fixes the default and breaks both: one test wants its own
+    reference tick, and one wants ``None`` on purpose to drive the outage path.
+    A fix that satisfies only the first claim is the bug wearing a new shape.
+    """
+    default = MarketPool4Client()
+    assert default._returns["fetch_reference_slot0"] is not None, (
+        "the default must be a readable venue, not an outage"
+    )
+
+    shifted = MarketPool4Client(
+        fetch_reference_slot0=_reference_answer(reference_tick=HOOK_TICK + 5_000)
+    )
+    assert shifted._returns["fetch_reference_slot0"] is not default._returns[
+        "fetch_reference_slot0"
+    ], "an explicit answer must survive, not be replaced by the default"
+
+    outage = MarketPool4Client(fetch_reference_slot0=None)
+    assert outage._returns["fetch_reference_slot0"] is None, (
+        "an explicit None must survive -- it is how the outage path is driven"
+    )
+
+
 class MarketPool4Client(FakePool4Client):
     """The `p` body's double plus the two reads the `4` body added.
 
@@ -166,7 +198,21 @@ class MarketPool4Client(FakePool4Client):
         self.log_reads: list[tuple[str, int, int]] = []
         by_addr = overrides.pop("logs_by_addr", None)
         super().__init__(**overrides)
-        self._returns.setdefault("fetch_reference_slot0", _reference_answer())
+        # F9. This was ``self._returns.setdefault(...)`` and was correct when
+        # written: the parent had no ``fetch_reference_slot0`` key, so the
+        # setdefault installed the real answer. WP7 then seeded the parent with
+        # ``"fetch_reference_slot0": None`` to silence a per-sweep WARNING --
+        # a cosmetic cleanup that turned this line into a NO-OP, because the
+        # key now always exists. Three tests began sweeping a venue read that
+        # reports an outage and died on ``abs(None)``.
+        #
+        # Ask the CALLER's own kwargs, never ``self._returns``, which cannot
+        # tell "the test asked for this" from "a parent defaulted it". Two
+        # tests below depend on the distinction: one passes its own answer
+        # with a shifted tick, and one passes ``None`` deliberately to drive
+        # the outage path. A plain assignment would clobber both.
+        if "fetch_reference_slot0" not in overrides:
+            self._returns["fetch_reference_slot0"] = _reference_answer()
         self._logs_by_addr = by_addr if by_addr is not None else {
             str(HOOK_STATE.token or "").lower(): FLOW_LOGS,
             str(DRIPPER_ADDR).lower(): DRIPPED_LOGS,
