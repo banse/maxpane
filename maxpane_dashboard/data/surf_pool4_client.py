@@ -88,12 +88,26 @@ params" on another (``rpc_error_states.json``), and ``-32005`` is Tenderly's
 rate limit here and something else elsewhere.  A provider's *suggested* retry
 range is **never** followed: one decrements a single block per round trip and
 livelocks anything that obeys it.  This client halves its own window, bounded.
+
+**And a message that stops describing the request must stop driving the retry**
+(2026-09-12, the STAKERS defect).  Classifying on text is right; believing the
+text about a request it is not reading is not.  ``eth.drpc.org`` answers every
+archive ``eth_getLogs`` — a 300-block window included — with ``code 35 "ranges
+over 10000 blocks are not supported on free plan"``.  A 300-block window cannot
+be over 10,000, so the complaint is not about the window: it is about archive
+depth, which halving cannot fix.  :func:`_is_range_limitation` now reads the
+limit the message *names* and compares it with the span actually asked for; a
+complaint the request already satisfies **rotates** to the next endpoint
+instead of halving to the floor and returning ``None``.  The named limit is
+read for that comparison and for nothing else — never to size a window, which
+is what keeps the suggested-range ban intact.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlparse
@@ -282,9 +296,36 @@ _INTER_CALL_DELAY = 0.12
 #: Recent-window size for ``eth_getLogs`` (~8 h at 12 s blocks, on Sepolia as
 #: on mainnet).  Halved — never "suggested-range"-followed — on a range error,
 #: at most ``_LOG_MAX_SHRINKS`` times.  Transcribed from ``surf_client``.
+#:
+#: It is the **floor** on the starting window, not the window: see
+#: :data:`_LOG_MAX_PAGES`.
 LOG_WINDOW_BLOCKS = 2400
 _LOG_MIN_WINDOW = 300
 _LOG_MAX_SHRINKS = 3
+
+#: How many ``eth_getLogs`` round trips one sweep may cost.
+#:
+#: **A client that can only shrink cannot use an endpoint that would have
+#: served the whole sweep in one call**, and that is half of the 2026-09-12
+#: STAKERS defect.  :data:`LOG_WINDOW_BLOCKS` is a *recent-window* size: at
+#: 2400 blocks the staker sweep's 403,200-block history pages into 168
+#: requests, and Tenderly's mainnet gateway — measured that day — serves about
+#: 32 back to back before answering ``-32005 rate limit exceeded``.  The sweep
+#: could not finish, and the fallback below it (``eth.drpc.org``) cannot serve
+#: archive ``eth_getLogs`` at all any more, so there was nowhere to rotate to.
+#:
+#: So a sweep is bounded by a **page budget** as well as a page size: the
+#: starting window widens, if it must, so that the whole span fits in this many
+#: requests.  Measured the same day on ``gateway.tenderly.co/public/mainnet``,
+#: against the sIMD share token: 403,200 blocks answered in **one** request
+#: with 2,252 logs.  The width was never the problem; the request count was.
+#:
+#: Eight rather than one because the widest window is not always servable — a
+#: genuinely range-capped provider still has to be discovered by halving — and
+#: because a single enormous response is its own failure mode.  Narrower sweeps
+#: are untouched: the ``p`` body's 7,200-block window still pages at 2,400,
+#: because ``7200 / 8`` is under the floor.
+_LOG_MAX_PAGES = 8
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +351,30 @@ _RANGE_LIMITATION_PATTERNS = (
 
 _MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
 
+#: The block count a range complaint names: ``"ranges over 10000 blocks"``,
+#: ``"eth_getLogs is limited to 0 - 50 blocks range"``.
+#:
+#: Decimal digits immediately before the word *block(s)*, which is what makes
+#: this safe to read while a *suggested toBlock* stays unread: a suggestion is
+#: a hex block **number** (``"suggested toBlock 0xb12790"``) and matches
+#: nothing here.  The distinction is the whole point — this number is used
+#: **only to decide whether the message is about our request**, never to size a
+#: window, so no provider's arithmetic can steer this client's own.
+_NAMED_BLOCK_LIMIT_RE = re.compile(r"(\d[\d,_]*)\s*blocks?\b")
+
+
+def _named_block_limit(message: str) -> int | None:
+    """The largest block count *message* names, or ``None`` if it names none."""
+    best: int | None = None
+    for match in _NAMED_BLOCK_LIMIT_RE.finditer(message):
+        try:
+            value = int(match.group(1).replace(",", "").replace("_", ""))
+        except ValueError:  # pragma: no cover — the pattern is digits only
+            continue
+        if best is None or value > best:
+            best = value
+    return best
+
 
 def _looks_like_endpoint_limitation(err: Any) -> bool:
     """True if *err* reads as "this endpoint can't", not "this request is bad".
@@ -328,12 +393,42 @@ def _looks_like_endpoint_limitation(err: Any) -> bool:
     return err.get("code") not in _MALFORMED_REQUEST_CODES
 
 
-def _is_range_limitation(err: Any) -> bool:
-    """True only for "your block range is too wide" — the shrinkable class."""
+def _is_range_limitation(err: Any, requested_span: int | None = None) -> bool:
+    """True only for "your block range is too wide" — the shrinkable class.
+
+    *requested_span* is how many blocks the request that produced *err*
+    actually asked for.  Pass it, and the classification gains the second half
+    of CLAUDE.md's error rule: **classifying on message text is right, but a
+    message that no longer describes the request must not drive the retry.**
+
+    ``eth.drpc.org``, measured on 2026-09-12, answers *every* archive
+    ``eth_getLogs`` — a 300-block window included — with ``code 35 "ranges over
+    10000 blocks are not supported on free plan"``.  Its free plan now serves
+    roughly sixty-four blocks and blames the refusal on a range it is not
+    reading; the real limit is archive depth, not width.  A client that takes
+    that at face value halves 2400 → 1200 → 600 → 300, reports "window 300 is
+    already minimal: ranges over 10000 blocks", and returns ``None`` — which is
+    exactly how the STAKERS panel went dark while the data sat one endpoint
+    away.
+
+    So: a range complaint that names a limit the request **already satisfies**
+    is not about the window.  Halving it is provably useless, and this returns
+    ``False`` so the caller rotates to the next endpoint instead.  A complaint
+    that names no limit at all, or names one the request genuinely exceeds,
+    stays shrinkable — the conservative direction, and the behaviour that was
+    already here.
+    """
     if not isinstance(err, dict):
         return False
     message = str(err.get("message") or "").lower()
-    return any(frag in message for frag in _RANGE_LIMITATION_PATTERNS)
+    if not any(frag in message for frag in _RANGE_LIMITATION_PATTERNS):
+        return False
+    if requested_span is None:
+        return True
+    named = _named_block_limit(message)
+    if named is None:
+        return True
+    return requested_span > named
 
 
 class Pool4LogRangeError(RuntimeError):
@@ -509,12 +604,26 @@ class Pool4Client(OwnedHttpClient):
         )
         return None
 
-    async def _rpc_logs(self, network: str, method: str, params: list) -> Any:
+    async def _rpc_logs(
+        self,
+        network: str,
+        method: str,
+        params: list,
+        *,
+        requested_span: int | None = None,
+    ) -> Any:
         """One JSON-RPC call on this network's LOGS pool.
 
         Raises :class:`Pool4LogRangeError` when the message says the window is
-        too wide; the caller halves its **own** window.  A provider's suggested
-        range is never read, never stored and never followed.
+        too wide **and the message is describing this request**; the caller
+        halves its **own** window.  A provider's suggested range is never read,
+        never stored and never followed.
+
+        *requested_span* is how many blocks this call asked for.  A range
+        complaint naming a limit the request already satisfies is not about the
+        window (see :func:`_is_range_limitation`), so it falls through to the
+        ordinary endpoint-limitation branch and **rotates** rather than sending
+        the caller down a halving ladder that cannot terminate anywhere useful.
         """
         self._request_id += 1
         payload = jsonrpc_payload(self._request_id, method, params)
@@ -533,7 +642,7 @@ class Pool4Client(OwnedHttpClient):
                         pass
                     if isinstance(body, dict) and body.get("error"):
                         err = body["error"]
-                        if _is_range_limitation(err):
+                        if _is_range_limitation(err, requested_span):
                             raise Pool4LogRangeError(str(err.get("message") or err))
                         if _looks_like_endpoint_limitation(err):
                             last_err = RuntimeError(f"{url}: {err}")
@@ -1508,12 +1617,26 @@ class Pool4Client(OwnedHttpClient):
         A "your range is too wide" error halves this client's own window and
         pages, at most ``_LOG_MAX_SHRINKS`` times.  The provider's suggested
         range is never read: one of them decrements a single block per round
-        trip, so a client that follows it verbatim livelocks.
+        trip, so a client that follows it verbatim livelocks.  A range
+        complaint that is **not about this request** — one naming a limit the
+        request already satisfies — is not halved at all; it rotates, in
+        :meth:`_rpc_logs`.
+
+        **The starting window widens to fit the page budget**, which is the
+        other half of the same defect.  ``_LOG_WINDOW_BLOCKS`` is a recent-
+        window size, so a long history paged at 2,400 costs hundreds of round
+        trips and trips a rate limit long before it finishes; the widest
+        servable window is not something a shrink-only client can ever reach.
+        See :data:`_LOG_MAX_PAGES` for the measurement.
         """
         if to_block < from_block:
             return []
-        window = min(to_block - from_block + 1, self._log_window_blocks)
-        window = max(window, 1)
+        span = to_block - from_block + 1
+        # ``-(-a // b)`` is ceil-div: the narrowest window that still fits the
+        # whole span in _LOG_MAX_PAGES requests. It only ever WIDENS the
+        # recent-window size, so a short sweep pages exactly as it always did.
+        budgeted = max(self._log_window_blocks, -(-span // _LOG_MAX_PAGES))
+        window = max(min(span, budgeted), 1)
         for _shrink in range(_LOG_MAX_SHRINKS + 1):
             try:
                 return await self._sweep(
@@ -1567,6 +1690,9 @@ class Pool4Client(OwnedHttpClient):
                     "fromBlock": hex(start),
                     "toBlock": hex(end),
                 }],
+                # The span of THIS page, not of the whole sweep: it is what a
+                # provider's range complaint has to be measured against.
+                requested_span=end - start + 1,
             )
             if result is None:
                 raise RuntimeError("eth_getLogs returned no result")

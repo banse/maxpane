@@ -1,6 +1,6 @@
 {
  "generated_by": "scripts/capture_pool4.py --manifest",
- "generated_at": "2026-09-02T11:04:52.206303Z",
+ "generated_at": "2026-09-11T23:29:34.159081Z",
  "work_package": "WP1 of docs/surf_pool4_implementation_plan.md",
  "acceptance": "python3 scripts/capture_pool4.py --dry-run",
  "raw_captures_kept_verbatim": [
@@ -129,6 +129,16 @@
    "note": "The 'dead' quadrant, captured from real providers rather than imagined.  Four failures with four different meanings.  Two things WP6 must read out of this: the error CODES collide across unrelated meanings, so classification goes on message text (CLAUDE.md); and an eth_call to an address with no code SUCCEEDS with '0x', so 'the call did not error' is not 'the getter answered' -- a fingerprint gate that conflates the two adopts an empty address."
   },
   {
+   "fixture": "log_range_messages.json",
+   "synthetic": false,
+   "request_sibling": "log_range_messages.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-11T23:22:29.411716Z",
+   "endpoint": "several -- see probes[].url",
+   "note": "The mainnet STAKERS defect of 2026-09-12, captured rather than described.  eth.drpc.org answers EVERY archive eth_getLogs -- a 300-block window included -- with code 35 'ranges over 10000 blocks are not supported on free plan'.  A 300-block window cannot be over 10000 blocks, so the message is no longer describing the request: the real limit is archive depth (about sixty-four blocks here), which halving never reaches.  The client used to halve to _LOG_MIN_WINDOW and return None; it now compares the limit the message NAMES with the span it actually asked for, and rotates when the message cannot be about this request.  The tenderly rows are the other half: the same 403,200-block span it could not finish paging at 2400 is served whole, in one request."
+  },
+  {
    "fixture": "mainnet_hook_state.json",
    "synthetic": false,
    "request_sibling": "mainnet_hook_state.request.json",
@@ -237,6 +247,36 @@
    "captured_at": "2026-09-02T11:03:52.062125Z",
    "endpoint": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions",
    "note": "POOL4 IS LIVE ON MAINNET AND THE ANNOUNCE CHANNEL HAS NOT NAMED IT.  This is the complete channel history, captured after the deployment; no self-post mentions the live hook (0xc6c965bd164c483e87d0b550671798e9a3602840) and no self-post carries any 0x2840-shaped address at all.  Under A27 the discovery gate therefore refuses -- correctly -- and the view would show SEPOLIA while mainnet trades.  That refusal is not a bug and must not be 'fixed' by weakening the gate; it is the cost of provenance being the only unforgeable check, and it is the whole reason the operator accepted docs_site_page as a candidate source.  ADDITIVE: announce_undiscovered.json is untouched at its own bytes; it answered the question 'is pool4 live anywhere', which is now historical."
+  },
+  {
+   "fixture": "dripped_logs_7d.json",
+   "synthetic": false,
+   "request_sibling": "dripped_logs_7d.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-11T16:47:55.311166Z",
+   "endpoint": "https://gateway.tenderly.co/public/mainnet",
+   "note": "Seven days of the mainnet RewardDripper's delivery event, the corpus behind pool4_trailing_return_pct.  THE TOPIC0 HAS NO RECOVERED PRE-IMAGE and is recorded as a literal named for its operands, the same way data/surf_pool4.py records the three unresolved hook events -- a guessed signature hashes to a topic0 that matches no log.  The operands are MEASURED: operand_proof reconciles each sampled log's first data word against the IMD Transfer from the dripper TO THE VAULT in the same receipt, to the wei, and its second word against the Transfer to the indexed keeper.  window_seconds is read off the two boundary blocks rather than assumed from a block count: annualising a short window as though it were seven days overstates the return.  THIS IS NOT THE DELIVERY CAP.  dripRatePerSecond is a ceiling on how fast rewards can reach the vault and is already annualised into pool4_implied_apr_pct; this file is what actually arrived, and it is lumpy by construction -- a quiet window is a real 0.0%, never an unavailable."
+  },
+  {
+   "fixture": "simd_transfers_full.json",
+   "synthetic": false,
+   "request_sibling": "simd_transfers_full.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-11T16:50:58.504362Z",
+   "endpoint": "https://gateway.tenderly.co/public/mainnet",
+   "note": "Every Transfer the sIMD share token has emitted, the corpus the staker concentration fold sweeps.  Mints arrive from the zero address and burns go to it; neither is a holder.  COMPLETE IS MEASURED, not assumed -- see completeness_measured.  The share price beside it is read with the vault's OWN decimals: a hardcoded 1e18 divisor here renders 21 billion shares against 21,010 real ones and looks like an emissions farm rather than like an error."
+  },
+  {
+   "fixture": "simd_transfers_partial.json",
+   "synthetic": false,
+   "request_sibling": "simd_transfers_partial.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-11T16:50:58.714597Z",
+   "endpoint": "https://gateway.tenderly.co/public/mainnet",
+   "note": "DELIBERATELY TRUNCATED, AND THAT IS THE WHOLE POINT OF THE FILE.  A real capture of the last two days only, so it misses the history before from_block and its fold is NOT the vault.  It exists solely to drive the None concentration guard: ranking a subset understates how much the top three hold, which is the direction that makes a risk look smaller than it is.  Never 'refresh' this to the full range -- a fixture that stops being incomplete stops testing anything."
   },
   {
    "fixture": "hook_flags_reference.json",

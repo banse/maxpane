@@ -64,6 +64,7 @@ import pathlib
 import socket
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # --------------------------------------------------------------------------
@@ -1754,6 +1755,147 @@ def capture_rpc_errors(opener=_open) -> None:
 
 
 # --------------------------------------------------------------------------
+# The 2026-09-12 STAKERS defect: a range message that stopped describing the
+# request.  Captured from the two live mainnet log endpoints.
+# --------------------------------------------------------------------------
+
+#: The spans this probe asks every log endpoint for, and why each one is here.
+#:
+#: The point of the set is not "drpc is capped" -- that was already known and
+#: is why it is the fallback rather than the primary.  It is that **drpc's
+#: message names 10,000 blocks no matter what it was asked**, so a client that
+#: reads the message as a description of its own request halves 2400 -> 1200
+#: -> 600 -> 300, prints "window 300 is already minimal: ranges over 10000
+#: blocks", and returns None while the same window sits one endpoint away.
+_RANGE_PROBE_SPANS = (
+    (403_200, "the staker sweep's own window (POOL4_STAKERS_WINDOW_BLOCKS)"),
+    (10_000, "exactly the limit the message names -- refused anyway"),
+    (2_400, "LOG_WINDOW_BLOCKS, the recent-window size"),
+    (300, "_LOG_MIN_WINDOW: the floor the halving ladder lands on"),
+    (10, "small enough to be served, which is what makes the host alive "
+         "rather than dead"),
+)
+
+
+#: How many log rows a servable probe keeps verbatim.  See the truncation
+#: note in :func:`capture_log_range_messages`.
+_RANGE_PROBE_KEEP_ROWS = 6
+
+
+def capture_log_range_messages(opener=_open) -> None:
+    """What each mainnet log endpoint says to five different spans.  One table.
+
+    This is the evidence behind ``_is_range_limitation``'s second argument.
+    CLAUDE.md's rule is "classify on message text, not code", and it holds --
+    but a message is only evidence about the request it was actually reading.
+    Read the ``probes`` rows side by side: ``eth.drpc.org`` answers a 10-block
+    window with a result and every wider one with the *same* sentence about
+    10,000 blocks, including the 300-block window that sentence cannot
+    possibly be describing.  Its real constraint is archive depth, not width,
+    and no amount of halving reaches it.
+
+    Tenderly is in the same table on purpose: it serves the full 403,200-block
+    span in **one** request.  The data the STAKERS panel needed was never
+    unreachable; the client just could not get to the endpoint that had it.
+    """
+    print("capture: log-range-messages")
+    head, head_hash = _head(MAINNET_STATE_URL, opener=opener)
+    observed = []
+    for url in MAINNET_LOG_RPCS:
+        for span, why in _RANGE_PROBE_SPANS:
+            lo = max(head - span + 1, 0)
+            params = {"address": MAINNET_VAULT,
+                      "fromBlock": hex(lo), "toBlock": hex(head)}
+            body = {"jsonrpc": "2.0", "id": 1,
+                    "method": "eth_getLogs", "params": [params]}
+            entry = {
+                "label": f"{urllib.parse.urlparse(url).hostname}_span_{span}",
+                "url": url,
+                "requested_span_blocks": span,
+                "why": why,
+                "request": body,
+            }
+            try:
+                entry["response"] = post_json(url, body, opener=opener)
+            except urllib.error.HTTPError as exc:
+                # The JSON-RPC error rides an HTTP 400 here, so the BODY is the
+                # capture; discarding it and keeping the status would throw
+                # away the only thing this fixture exists for.
+                entry["http_status"] = exc.code
+                raw = exc.read()
+                try:
+                    entry["response"] = json.loads(raw)
+                except ValueError:
+                    entry["response"] = None
+                    entry["transport_error"] = raw.decode(
+                        "utf-8", errors="replace")[:400]
+            except Exception as exc:              # noqa: BLE001
+                entry["response"] = None
+                entry["transport_error"] = repr(exc)
+            r = entry.get("response")
+            if isinstance(r, dict) and r.get("error"):
+                entry["error_code"] = r["error"].get("code")
+                entry["error_message"] = r["error"].get("message")
+            elif isinstance(r, dict):
+                rows = r.get("result") or []
+                entry["log_count"] = len(rows)
+                # The subject of this fixture is the error-vs-span TABLE, not
+                # the logs: the widest row alone is 2,252 of them and ~3.8 MB.
+                # The count is the measurement; the head and tail rows are
+                # kept verbatim so the answer is still identifiably this
+                # address's, and the truncation is declared rather than
+                # silent. The complete Transfer corpus is committed
+                # separately, in simd_transfers_full.
+                if len(rows) > _RANGE_PROBE_KEEP_ROWS:
+                    keep = _RANGE_PROBE_KEEP_ROWS // 2
+                    entry["result_truncated"] = {
+                        "full_log_count": len(rows),
+                        "kept": "first %d and last %d" % (keep, keep),
+                        "complete_corpus": "simd_transfers_full.json",
+                    }
+                    r["result"] = rows[:keep] + rows[-keep:]
+            observed.append(entry)
+            print(f"  {entry['label']:36s} "
+                  f"{entry.get('error_message') or str(entry.get('log_count')) + ' logs'}")
+
+    write_pair(
+        "log_range_messages",
+        meta={
+            "captured_at": _now_iso(),
+            "chain": "mainnet",
+            "chain_id": MAINNET_CHAIN_ID,
+            "endpoint": "several -- see probes[].url",
+            "head_block": head,
+            "head_hash": head_hash,
+            "address": MAINNET_VAULT,
+            "note": (
+                "The mainnet STAKERS defect of 2026-09-12, captured rather "
+                "than described.  eth.drpc.org answers EVERY archive "
+                "eth_getLogs -- a 300-block window included -- with code 35 "
+                "'ranges over 10000 blocks are not supported on free plan'.  "
+                "A 300-block window cannot be over 10000 blocks, so the "
+                "message is no longer describing the request: the real limit "
+                "is archive depth (about sixty-four blocks here), which "
+                "halving never reaches.  The client used to halve to "
+                "_LOG_MIN_WINDOW and return None; it now compares the limit "
+                "the message NAMES with the span it actually asked for, and "
+                "rotates when the message cannot be about this request.  The "
+                "tenderly rows are the other half: the same 403,200-block "
+                "span it could not finish paging at 2400 is served whole, in "
+                "one request."
+            ),
+            "probes": observed,
+        },
+        request={"url": "several -- see probes[].url", "method": "POST",
+                 "headers": {"Content-Type": "application/json",
+                             "User-Agent": USER_AGENT},
+                 "body": [p["request"] for p in observed],
+                 "urls": [p["url"] for p in observed]},
+        response=[p.get("response") for p in observed],
+    )
+
+
+# --------------------------------------------------------------------------
 # WP3/WP4 of docs/superpowers/plans/2026-09-11-surf-pool4-market-view.md --
 # the two corpora the `4` market body folds: what the dripper actually
 # delivered, and who holds the vault.
@@ -2859,7 +3001,7 @@ _REQUIRED_REAL = [
     "hook_state_healthy", "hook_state_partial", "vault_state", "dripper_state",
     "token_state", "flow_logs_mixed", "flow_logs_full", "flow_logs_empty",
     "pool_slot0", "announce_undiscovered", "mainnet_absent",
-    "rpc_error_states",
+    "rpc_error_states", "log_range_messages",
     # mainnet -- pool4 went live 2026-09-02.  Additive.
     "mainnet_hook_state", "mainnet_vault_state", "mainnet_distributor_state",
     "mainnet_dripper_state", "mainnet_token_state", "mainnet_vault_path",
@@ -3578,6 +3720,7 @@ _CAPTURES = {
     "announce": capture_announce,
     "mainnet-absent": capture_mainnet_absent,
     "rpc-errors": capture_rpc_errors,
+    "log-range-messages": capture_log_range_messages,
     "vault-state": capture_vault_state,
     "mainnet-state": capture_mainnet_state,
     "vault-path": capture_vault_path,

@@ -2351,6 +2351,232 @@ async def test_the_shrink_ladder_stops_at_the_floor():
 
 
 # ---------------------------------------------------------------------------
+# 11b. The 2026-09-12 STAKERS defect: a message that stopped describing the
+#      request, and a client that could only ever shrink
+# ---------------------------------------------------------------------------
+#
+# Both halves are live measurements, committed in ``log_range_messages.json``:
+# ``eth.drpc.org`` answers every archive ``eth_getLogs`` -- a 300-block window
+# included -- with ``code 35 "ranges over 10000 blocks are not supported on
+# free plan"``, and ``gateway.tenderly.co/public/mainnet`` serves the staker
+# sweep's whole 403,200-block span in ONE request.  The panel was dark while
+# the data sat one endpoint away.
+
+_RANGE_PROBES = load("log_range_messages")["probes"]
+
+
+def _range_probe(host_fragment: str, span: int) -> dict:
+    for probe in _RANGE_PROBES:
+        if host_fragment in probe["url"] and probe["requested_span_blocks"] == span:
+            return probe
+    raise AssertionError(f"no {host_fragment} probe at span {span}")
+
+
+def test_the_captured_range_message_names_a_limit_the_request_already_met():
+    """The classifier's whole job, read off the live capture.
+
+    CLAUDE.md says classify on message text, not code, and that still holds.
+    This is the second half: **a message is only evidence about the request it
+    was actually reading.**  The captured 300-block probe carries a complaint
+    about 10,000 blocks, and 300 is not over 10,000 -- so halving it is
+    provably useless and the retry must not be driven by it.
+    """
+    narrow = _range_probe("drpc", 300)
+    err = narrow["response"]["error"]
+    assert "ranges over" in err["message"].lower()
+    assert C._named_block_limit(err["message"].lower()) == 10_000
+
+    # Span-blind, it is a range error -- which is exactly the old behaviour.
+    assert C._is_range_limitation(err) is True
+    # Told what was asked for, it stops being one.
+    assert C._is_range_limitation(err, 300) is False
+    assert C._is_range_limitation(err, C.LOG_WINDOW_BLOCKS) is False
+    assert C._is_range_limitation(err, C._LOG_MIN_WINDOW) is False
+    # A request that genuinely exceeds the named limit stays shrinkable.
+    assert C._is_range_limitation(err, 403_200) is True
+
+    # A suggested toBlock is a HEX block NUMBER and must stay unread: nothing
+    # in it is "N blocks", so no provider's arithmetic can size our window.
+    assert C._named_block_limit(
+        "eth_getlogs is limited to 0 - 50 blocks range, "
+        "suggested toblock 0xb12790"
+    ) == 50
+
+    # And the other half of the capture: the data was never unreachable.
+    wide = _range_probe("tenderly", 403_200)
+    assert wide.get("error_message") is None
+    assert wide["log_count"] > 1000, (
+        "the sweep the panel needed is one tenderly request, not 168"
+    )
+
+
+def _two_endpoint_log_transport(first, second):
+    """Dispatch on URL: pool position 0 gets *first*, position 1 gets *second*."""
+    head, tail = C.MAINNET_LOG_RPCS
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.startswith(head):
+            return first(request)
+        if url.startswith(tail):
+            return second(request)
+        raise AssertionError(f"unexpected endpoint {url}")
+
+    return RecordingTransport(handler)
+
+
+def _rate_limited(request: httpx.Request) -> httpx.Response:
+    """Tenderly's measured burst refusal: HTTP 429 carrying a JSON-RPC error."""
+    payload = json.loads(request.content)
+    return httpx.Response(429, json={
+        "jsonrpc": "2.0", "id": payload.get("id"),
+        "error": {"code": -32005, "message": "rate limit exceeded"},
+    })
+
+
+def _canned_range_complaint(request: httpx.Request) -> httpx.Response:
+    """drpc, verbatim: the same sentence whatever span it is handed."""
+    payload = json.loads(request.content)
+    return httpx.Response(400, json={
+        "jsonrpc": "2.0", "id": payload.get("id"),
+        "error": dict(_range_probe("drpc", 300)["response"]["error"]),
+    })
+
+
+async def test_a_range_complaint_about_this_request_is_not_halved_toward_nothing():
+    """The observed failure, on the real mainnet pool, with the real bodies.
+
+    Tenderly rate-limited (which is what 168 pages of a 2,400-block ladder
+    does to it) and drpc answering its canned sentence.  The read still fails
+    -- there is genuinely nowhere left to go -- but it must fail **once**, not
+    walk 2400 -> 1200 -> 600 -> 300 chasing a number that was never about the
+    window.  The ladder is the bug: it quadruples the load on the endpoint
+    that was rate-limited in the first place.
+    """
+    transport = _two_endpoint_log_transport(_rate_limited, _canned_range_complaint)
+    client = _client_on(transport)
+    assert await client.fetch_flow_logs(
+        HOOK, 11_000_000, 11_002_399, network=MAINNET) is None
+
+    spans = [hi - lo + 1 for lo, hi in transport.log_ranges()]
+    assert spans, "the client never asked at all"
+    assert set(spans) == {C.LOG_WINDOW_BLOCKS}, (
+        f"halved a window the complaint was not about: {spans}"
+    )
+    assert len(spans) == len(C.MAINNET_LOG_RPCS), (
+        f"{len(spans)} round trips for a complaint no window can satisfy: {spans}"
+    )
+
+
+async def test_a_complaint_that_cannot_be_about_this_request_rotates_to_the_next_host():
+    """And when there IS somewhere to rotate to, the sweep simply succeeds.
+
+    The pool is injected rather than the default two, because rotation is only
+    observable when a healthy host sits behind the one telling the story --
+    which is precisely the shape the constructor takes pools for.  The liar is
+    first and its body is the captured one.
+    """
+    healthy = log_handler("flow_logs_full")
+    transport = _two_endpoint_log_transport(_canned_range_complaint, healthy)
+    client = _client_on(transport)
+
+    logs = await client.fetch_flow_logs(
+        HOOK, 11_000_000, 11_002_399, network=MAINNET)
+    assert logs is not None, "rotated nowhere; halved to the floor instead"
+    assert len(logs) == load("flow_logs_full")["log_count"]
+
+    spans = [hi - lo + 1 for lo, hi in transport.log_ranges()]
+    assert set(spans) == {C.LOG_WINDOW_BLOCKS}, f"halved anyway: {spans}"
+    assert any(u.startswith(C.MAINNET_LOG_RPCS[1]) for u in transport.urls()), (
+        "the second endpoint was never reached"
+    )
+
+
+async def test_a_genuine_cap_is_reached_by_halving_rather_than_returning_none():
+    """The other side of the same classifier: a provider that means it.
+
+    10,001 blocks really is over 10,000, so the complaint IS about the window
+    and the ladder is the right answer.  The sweep must arrive at a servable
+    page size and return the whole span -- returning ``None`` because the
+    budget ran out would be the defect wearing the opposite sign.
+    """
+    cap = 10_000
+    asked: list[tuple[int, int]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        flt = payload["params"][0]
+        lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
+        if hi - lo + 1 > cap:
+            return httpx.Response(400, json={
+                "jsonrpc": "2.0", "id": payload.get("id"),
+                "error": {
+                    "code": 35,
+                    "message": "ranges over 10000 blocks are not supported "
+                               "on free plan",
+                },
+            })
+        asked.append((lo, hi))
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": payload.get("id"),
+            "result": [{"blockNumber": hex(lo), "logIndex": "0x0",
+                        "topics": [], "data": "0x"}],
+        })
+
+    lo_block, hi_block = 25_554_205, 25_554_205 + 403_200 - 1
+    client = _client_on(httpx.MockTransport(handler))
+    logs = await client.fetch_flow_logs(
+        VAULT, lo_block, hi_block, network=MAINNET)
+
+    assert logs is not None, "gave up on a cap the ladder can actually reach"
+    assert all(hi - lo + 1 <= cap for lo, hi in asked), asked
+    # Contiguous and complete: a sweep missing its middle is reported as None,
+    # so a short-but-non-None answer would be the worse failure.
+    assert asked[0][0] == lo_block and asked[-1][1] == hi_block
+    assert all(b[0] == a[1] + 1 for a, b in zip(asked, asked[1:])), asked
+    assert len(logs) == len(asked)
+
+
+async def test_a_long_sweep_widens_its_window_to_fit_the_page_budget():
+    """168 requests is what broke it; the budget is what fixes it.
+
+    ``LOG_WINDOW_BLOCKS`` is a *recent-window* size, and paging eight weeks of
+    history at 2,400 blocks costs 168 round trips -- about five times what
+    Tenderly served before answering ``-32005``.  A client that can only ever
+    shrink cannot reach the window that host would have served in one call, so
+    the starting window widens to fit the budget instead.
+    """
+    from maxpane_dashboard.data.surf_manager import (
+        POOL4_LOG_WINDOW_BLOCKS,
+        POOL4_STAKERS_WINDOW_BLOCKS,
+    )
+
+    head = 25_957_404
+    transport = RecordingTransport(log_handler("flow_logs_empty"))
+    client = _client_on(transport)
+    start = head - POOL4_STAKERS_WINDOW_BLOCKS + 1
+    assert await client.fetch_flow_logs(
+        VAULT, start, head, network=MAINNET) == []
+
+    pages = transport.log_ranges()
+    assert len(pages) <= C._LOG_MAX_PAGES, (
+        f"the staker sweep still costs {len(pages)} round trips"
+    )
+    assert pages[0][0] == start and pages[-1][1] == head
+    assert all(b[0] == a[1] + 1 for a, b in zip(pages, pages[1:])), pages
+
+    # And the `p` body is untouched: its window is short enough that the
+    # budget never binds, so it pages at the recent-window size exactly as it
+    # did before. This is the regression guard on the OTHER dashboard body.
+    recent = RecordingTransport(log_handler("flow_logs_empty"))
+    await _client_on(recent).fetch_flow_logs(
+        HOOK, head - POOL4_LOG_WINDOW_BLOCKS + 1, head, network=MAINNET)
+    assert {hi - lo + 1 for lo, hi in recent.log_ranges()} == {
+        C.LOG_WINDOW_BLOCKS
+    }, recent.log_ranges()
+
+
+# ---------------------------------------------------------------------------
 # 12. verify_hook — the second gate, and a forgeable one (A27)
 # ---------------------------------------------------------------------------
 
