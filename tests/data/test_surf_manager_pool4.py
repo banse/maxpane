@@ -615,12 +615,22 @@ async def test_a_healthy_sweep_publishes_every_pool4_key(tmp_path) -> None:
         "pool4_venue_gap_pct",
     ]
     assert payload["pool4_discovery_state"] == NOT_DISCOVERED
-    # The staker sweep's four keys ride their OWN tuple against their own
-    # slot, so they are absent from the list above by construction rather
-    # than by omission -- and this is what says so. A pool4 sweep does not
-    # run the long ``Transfer`` fold, so all four are `None` here, and that
+    # The staker sweep's keys ride their OWN tuple against their own slot, so
+    # they are absent from the list above by construction rather than by
+    # omission -- and this is what says so. A pool4 sweep does not run the
+    # long ``Transfer`` fold, so its four data keys are `None` here, and that
     # is the tier boundary working rather than a failed read.
-    assert [k for k in POOL4_STAKERS_KEYS if payload[k] is not None] == []
+    #
+    # ``pool4_stakers_state`` is the exception and it is the reason it exists:
+    # the four `None`s above are indistinguishable from an outage, so the
+    # fifth key says WHICH `None` this is. `pending` -- nothing swept, nothing
+    # in flight, nothing failed -- is the honest answer for a pool4-only sweep,
+    # and asserting it here is what stops the panel warning on tick 1. A bare
+    # "all five are None" would have re-frozen exactly the defect.
+    data_keys = [k for k in POOL4_STAKERS_KEYS if k != "pool4_stakers_state"]
+    assert len(data_keys) == 4
+    assert [k for k in data_keys if payload[k] is not None] == []
+    assert payload["pool4_stakers_state"] == "pending"
     assert not set(POOL4_STAKERS_KEYS) & set(POOL4_KEYS)
 
 

@@ -476,6 +476,10 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         # full `Transfer` fold and can be half a day older than the five
         # panels beside them.
         "pool4_stakers_as_of_hhmm": "pool4_stakers_as_of_hhmm",
+        # Why the panel has no rows, when it has none. The three data keys
+        # above come off one slot and go `None` together; this is what lets
+        # the footer say "not swept yet" instead of warning on tick 1.
+        "pool4_stakers_state": "pool4_stakers_state",
         "pool4_network": "pool4_network",
         "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },

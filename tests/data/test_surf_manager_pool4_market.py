@@ -931,6 +931,142 @@ async def test_the_sweep_does_nothing_at_all_before_a_vault_is_named(
 
 
 # ---------------------------------------------------------------------------
+# Why the panel is empty -- `pool4_stakers_state` (2026-09-12)
+# ---------------------------------------------------------------------------
+#
+# The four data keys above come off ONE slot, so they are `None` together and
+# nothing in the payload could say which `None` this was. The panel warned on
+# all of them, which made `⚠ stakers unavailable` the first thing a healthy
+# launch painted. These five tests are the producer half of the fix; the
+# renders are pinned in `tests/widgets/test_surf_pool4u_left.py`.
+
+
+async def test_a_cold_start_says_pending_and_not_failed(tmp_path) -> None:
+    """The defect's first case, and the trap in fixing it.
+
+    No vault has been named yet, so there was nothing to sweep and nothing
+    failed. ``_pool_pool4_stakers`` still calls ``mark_failed`` on that path —
+    purely to take the SHORT retry rather than the 1800 s TTL — so the cache's
+    clock is indistinguishable here from a dead log endpoint's. The assertion
+    on ``seconds_until_due`` is not decoration: it is what says a timing-based
+    reading of this state would have called every cold start a failure, which
+    is the warning this key exists to remove.
+    """
+    client = MarketPool4Client()
+    manager = _market_manager(tmp_path, pool4_client=client)
+    await manager.fetch_and_compute()
+    if manager._pool4_stakers_task is not None:
+        await manager._pool4_stakers_task
+    payload = await manager.fetch_and_compute()
+
+    assert payload["pool4_stakers"] is None
+    assert payload["pool4_stakers_state"] == "pending"
+    # The backoff really was taken — so the clock cannot be the source.
+    assert manager.cache.seconds_until_due(TIER_POOL4_STAKERS, POOL4_NOW) > 0
+    await manager._cancel_pool4()
+    await manager._cancel_pool4_stakers()
+
+
+async def test_a_sweep_in_flight_says_sweeping(tmp_path) -> None:
+    """The defect's second case: the walk is running, and it takes minutes.
+
+    The payload is built while the task is alive, which is exactly what tick 1
+    of every run looks like — the sweep is detached so first paint cannot sit
+    behind it. Saying `failed` here is saying *broken* about work in progress.
+    """
+    never = asyncio.Event()
+
+    async def _hangs(*_a, **_kw):
+        await never.wait()
+
+    client = MarketPool4Client()
+    manager = _market_manager(tmp_path, pool4_client=client)
+    await _sweep_pool4(manager)
+    client.fetch_block_number = _hangs
+    manager._clock_double.advance(TIER_FAILURE_BACKOFF_SECONDS[TIER_POOL4_STAKERS] + 1)
+
+    payload = await asyncio.wait_for(manager.fetch_and_compute(), timeout=2.0)
+    assert payload["pool4_stakers"] is None
+    assert payload["pool4_stakers_state"] == "sweeping"
+    await manager._cancel_pool4_stakers()
+    await manager._cancel_pool4()
+
+
+async def test_a_failed_sweep_with_nothing_to_serve_says_failed(tmp_path) -> None:
+    """The one state that earns the warning, and it has to still be reachable.
+
+    A fix that made every empty panel quiet would be the same defect pointing
+    the other way: a log endpoint refusing the share token with no last-good
+    behind it is a real fault and must read as one.
+    """
+    client = MarketPool4Client()
+    manager = _market_manager(tmp_path, pool4_client=client)
+    await _sweep_pool4(manager)
+    client._returns["fetch_flow_logs_" + str(VAULT_ADDR).lower()] = None
+    manager._clock_double.advance(TIER_FAILURE_BACKOFF_SECONDS[TIER_POOL4_STAKERS] + 1)
+    await manager.fetch_and_compute()
+    if manager._pool4_stakers_task is not None:
+        await manager._pool4_stakers_task
+    payload = await manager.fetch_and_compute()
+
+    assert manager.cache.get_last_good(SLOT_POOL4_STAKERS) is None
+    assert payload["pool4_stakers"] is None
+    assert payload["pool4_stakers_state"] == "failed"
+    await manager._cancel_pool4()
+
+
+async def test_rows_on_hand_leave_the_state_empty_however_the_last_try_went(
+    tmp_path,
+) -> None:
+    """With rows to serve, the rows ARE the state and the stale marker is the
+    signal — ``SOURCE_LAUNCHPAD``'s rule and curator's for its analysis.
+
+    Both halves matter. A landed fold says nothing (``None``), and a fold that
+    landed and was then followed by a failure STILL says nothing, because the
+    panel is showing real rows: turning the last-good render into a warning
+    would undo PRD 7.3's whole argument about false degradation.
+    """
+    client = MarketPool4Client()
+    manager = _market_manager(tmp_path, pool4_client=client)
+    good = await _sweep_stakers(manager)
+    assert good["pool4_stakers"]
+    assert good["pool4_stakers_state"] is None
+
+    client._returns["fetch_flow_logs_" + str(VAULT_ADDR).lower()] = RuntimeError(
+        "log endpoint is down"
+    )
+    manager._clock_double.advance(TIER_TTL_SECONDS[TIER_POOL4_STAKERS] + 1)
+    await manager.fetch_and_compute()
+    if manager._pool4_stakers_task is not None:
+        await manager._pool4_stakers_task
+    stale = await manager.fetch_and_compute()
+
+    assert manager._pool4_stakers_failed is True
+    assert stale["pool4_stakers"] == good["pool4_stakers"]
+    assert stale["pool4_stakers_state"] is None
+    await manager._cancel_pool4()
+
+
+async def test_the_state_word_is_always_one_the_contract_froze(tmp_path) -> None:
+    """A word the widget does not know falls through its ``else`` and renders
+    as ``pending`` — a new state silently wearing an old state's sentence."""
+    from maxpane_dashboard.data.surf_models import POOL4_STAKERS_STATES
+
+    manager = _market_manager(tmp_path)
+    seen = set()
+    payload = await manager.fetch_and_compute()
+    seen.add(payload["pool4_stakers_state"])
+    if manager._pool4_stakers_task is not None:
+        await manager._pool4_stakers_task
+    seen.add((await manager.fetch_and_compute())["pool4_stakers_state"])
+    seen.add((await _sweep_stakers(manager))["pool4_stakers_state"])
+
+    assert seen <= set(POOL4_STAKERS_STATES) | {None}
+    assert seen - {None}
+    await manager._cancel_pool4()
+
+
+# ---------------------------------------------------------------------------
 # The marker, and the degraded group that must not grow a ninth member
 # ---------------------------------------------------------------------------
 
@@ -1092,12 +1228,12 @@ async def test_the_two_markers_run_on_two_clocks(tmp_path) -> None:
     assert TIER_TTL_SECONDS[TIER_POOL4_STAKERS] > TIER_TTL_SECONDS[TIER_POOL4]
 
 
-async def test_the_four_staker_keys_are_exactly_what_the_contract_froze(
+async def test_the_five_staker_keys_are_exactly_what_the_contract_froze(
     tmp_path,
 ) -> None:
     """A fixed count is itself the tripwire — ``CURATOR_ANALYSIS_KEYS``'s shape."""
     payload = await _sweep_stakers(_market_manager(tmp_path))
-    assert len(POOL4_STAKERS_KEYS) == 4
+    assert len(POOL4_STAKERS_KEYS) == 5
     for key in POOL4_STAKERS_KEYS:
         assert key in payload
 

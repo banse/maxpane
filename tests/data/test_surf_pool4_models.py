@@ -1498,7 +1498,12 @@ POOL4_USER_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     # that no pool4 panel anywhere elides a clock to ``as_of_hhmm``.
     "SurfPool4UStakers": (
         "pool4_stakers", "pool4_staker_count", "pool4_staker_top3_pct",
-        "pool4_stakers_as_of_hhmm", "pool4_network", "pool4_as_of_hhmm",
+        "pool4_stakers_as_of_hhmm",
+        # Why the panel has no rows, when it has none (2026-09-12). The four
+        # above come off one slot and are ``None`` together, so nothing here
+        # could separate the detached fold's first tick from a failed sweep.
+        "pool4_stakers_state",
+        "pool4_network", "pool4_as_of_hhmm",
     ),
     # ``pool4_flow`` is shared with RECENT FLOW, which renders the same rows
     # as a log: two questions off one read, not two copies of one read.

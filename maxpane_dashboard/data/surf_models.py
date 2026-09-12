@@ -654,6 +654,43 @@ POOL4_VENUE_WORDS: tuple[str, ...] = ("here", "reference")
 #: outage.  PRD 5.2.
 POOL4_BACKSTOP_STATES: tuple[str, ...] = ("deployed", "none")
 
+#: Why the STAKERS panel has no rows, on the days it has none.  The sIMD
+#: ``Transfer`` fold is **detached** so first paint can never sit behind it
+#: (PRD 7.2), which makes an empty panel the ordinary state of a healthy
+#: launch rather than a fault -- and until this key existed the panel could
+#: not tell the two apart.  It painted ``⚠ stakers unavailable`` on tick 1 of
+#: every run, and again for the whole 300 s backoff after any transient
+#: endpoint failure, which is a warning triangle for "not finished yet".
+#:
+#: THREE words rather than two, because the manager already **knows** which of
+#: the three it is and does not have to infer any of them:
+#:
+#: * ``pending``  -- no fold has landed and none is in flight.  The usual
+#:                   cause is the honest one: ``_pool_pool4_stakers`` reads
+#:                   its vault address out of ``SLOT_POOL4``'s own last-good,
+#:                   and the pool4 sweep has not named one yet -- there was
+#:                   nothing to sweep and nothing failed.
+#: * ``sweeping`` -- a fold is in flight right now.  This is what a reader
+#:                   sees for the minutes the ``Transfer`` walk takes, which
+#:                   on a cold start is most of what they see.
+#: * ``failed``   -- an attempt was made and it failed.  The only one that
+#:                   earns the warning.
+#:
+#: **The third word is free, which is why it is taken rather than folded into
+#: ``pending``.**  ``sweeping`` is ``SurfManager._pool4_stakers_task`` being
+#: alive at payload-build time -- a fact the manager holds, not one it
+#: guesses.  ``failed`` is a flag set on the failure branches themselves, and
+#: deliberately **not** read off ``TierCache.seconds_until_due``: the sweep
+#: calls ``mark_failed`` on the "no vault named yet" path too, purely for the
+#: short retry, so a timing-based reading would call every cold start a
+#: failure and paint the exact warning this key exists to remove.
+#:
+#: ``None`` is not a fourth state and never warns.  It means there is nothing
+#: to explain -- a fold landed, and the rows are the answer -- or that the
+#: payload predates this key.  The widget's rule is ``⚠`` **iff** ``failed``,
+#: so an unknown can only ever fall to the quiet line, never to the alarm.
+POOL4_STAKERS_STATES: tuple[str, ...] = ("pending", "sweeping", "failed")
+
 #: ``off`` means headroom > 0 and was READ.  ``None`` means we could not look.
 #: Headroom zero is a representable zero and means burning is ON.
 POOL4_BURNING_STATES: tuple[str, ...] = ("on", "off")
@@ -1384,7 +1421,7 @@ POOL4_KEYS: tuple[str, ...] = (
 #: shape: a separate tuple against a separate slot, where the fixed count is
 #: itself the tripwire.  PRD 7.2.
 #:
-#: It is deliberately *not* spliced into :data:`POOL4_KEYS`.  These four come
+#: It is deliberately *not* spliced into :data:`POOL4_KEYS`.  These five come
 #: from a different tier on a different clock -- a full ``Transfer`` history
 #: fold, far too expensive for the 600 s pool4 sweep -- so folding them into
 #: that tuple would let a pool4-tier failure look like it had emptied them, and
@@ -1395,6 +1432,12 @@ POOL4_STAKERS_KEYS: tuple[str, ...] = (
     "pool4_staker_count",       # int | None
     "pool4_staker_top3_pct",    # float | None — None on an INCOMPLETE fold
     "pool4_stakers_as_of_hhmm", # str | None — its own, slower clock
+    # The fifth, added 2026-09-12. The four above are all `None` together —
+    # they come from one slot — so without this one the panel cannot tell
+    # "never swept", "sweeping now" and "the sweep failed" apart, and it
+    # warned on all three. See POOL4_STAKERS_STATES for why the split is
+    # three-way and why none of it is inferred from the cache's clock.
+    "pool4_stakers_state",      # str | None — POOL4_STAKERS_STATES; None = nothing to explain
 )
 
 

@@ -3057,6 +3057,13 @@ class SurfScreen(RefreshGuard, Screen):
                 # it, and a fast clock over slow data is a stale number
                 # presented as live.
                 pool4_stakers_as_of_hhmm=data.get("pool4_stakers_as_of_hhmm"),
+                # Why the panel has no rows, when it has none. All four keys
+                # above come from one slot and are `None` together, so this
+                # is the only thing that separates "the fold has not landed
+                # yet" -- the ordinary state of tick 1, because the sweep is
+                # detached -- from "the sweep failed". Only the second may
+                # render a warning.
+                pool4_stakers_state=data.get("pool4_stakers_state"),
                 pool4_network=data.get("pool4_network"),
                 pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
             )

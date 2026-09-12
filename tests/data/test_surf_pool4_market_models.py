@@ -56,6 +56,7 @@ def test_the_staker_sweep_keys_are_their_own_tuple():
         "pool4_staker_count",
         "pool4_staker_top3_pct",
         "pool4_stakers_as_of_hhmm",
+        "pool4_stakers_state",
     )
     for key in m.POOL4_STAKERS_KEYS:
         assert key in m.SURF_KEYS

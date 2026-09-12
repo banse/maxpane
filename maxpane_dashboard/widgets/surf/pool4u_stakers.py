@@ -7,7 +7,7 @@ other way round.
 
 Its own clock, deliberately
 ---------------------------
-The four keys behind this panel come from ``TIER_POOL4_STAKERS`` -- a full sIMD
+The rows behind this panel come from ``TIER_POOL4_STAKERS`` -- a full sIMD
 ``Transfer`` history fold on curator's ``TIER_ANALYSIS`` precedent, far too
 expensive for the 600 s pool4 sweep. So the panel carries
 ``pool4_stakers_as_of_hhmm``, **its own, slower marker**, and never the body's
@@ -17,6 +17,15 @@ the failure CLAUDE.md's "as of" rule exists to prevent. It takes
 ``pool4_as_of_hhmm`` too, because the pool4 contract requires every panel on
 this body to (``test_no_pool4_widget_needs_a_kwarg_alias``), and renders the
 staker one.
+
+Three reasons to be empty, three sentences
+------------------------------------------
+The sweep is **detached**, so tick 1's payload is always built before the first
+fold can land and an empty panel is the ordinary state of a healthy launch.
+``pool4_stakers`` is ``None`` for that, for a sweep in flight, and for a sweep
+that failed -- and this panel painted ``⚠ stakers unavailable`` for all three
+until 2026-09-12. ``pool4_stakers_state`` is what tells them apart, and the
+rule here is ``⚠`` **iff** ``failed``: see :func:`no_rows_line`.
 
 ``top 3 = --`` is a real state
 ------------------------------
@@ -67,19 +76,44 @@ __all__ = [
     "EMPTY_LINE",
     "FULL_WIDTH",
     "MAX_ROWS",
+    "PENDING_LINE",
+    "STAKER_STATES",
+    "SWEEPING_LINE",
     "TABLE_ID",
     "TITLE",
     "TOP_N",
     "UNAVAILABLE_LINE",
     "SurfPool4UStakers",
     "footer_line",
+    "no_rows_line",
     "staker_cells",
 ]
 
 TITLE = "STAKERS"
 
-#: Nothing was read at all -- ``pool4_stakers is None``.
+#: ``data/surf_models.POOL4_STAKERS_STATES`` **restated**, not imported: a
+#: widget may not import ``data/`` (it imports ``httpx`` two hops on), and
+#: ``_pool4.POOL4_NETWORKS`` records the same restatement one panel over.
+#: ``tests/widgets/test_surf_pool4u_left.py`` imports both and asserts they
+#: agree in both directions, so a fourth word reddens the suite instead of
+#: falling through this module's ``else`` and looking like ``pending``.
+STAKER_STATES: tuple[str, ...] = ("pending", "sweeping", "failed")
+_PENDING, _SWEEPING, _FAILED = STAKER_STATES
+
+#: An attempt was made and it FAILED. The only line on this panel that wears
+#: the warning, and the only state that has ever deserved it.
 UNAVAILABLE_LINE = "stakers unavailable"
+
+#: A fold is in flight right now. Neutral, dim, no ``⚠`` -- the sweep is a
+#: multi-minute ``Transfer`` walk and this is what a reader sees for most of a
+#: cold start.
+SWEEPING_LINE = "sweeping the vault …"
+
+#: Nothing has been swept yet and nothing is in flight -- usually because the
+#: pool4 sweep has not named a vault for this one to walk. Also the line an
+#: ``unknown`` state falls to, because the rule on this panel is ``⚠`` **iff**
+#: ``failed``: an absent word is not evidence of a fault.
+PENDING_LINE = "stakers not swept yet"
 
 #: The fold ran and found no holders. A **different** sentence from
 #: :data:`UNAVAILABLE_LINE`, and the distinction is the curator rail bug: an
@@ -199,6 +233,29 @@ def staker_cells(row: object) -> tuple[str, str, str, str] | None:
         return None
 
 
+def no_rows_line(state) -> tuple[str, str]:
+    """``(text, rich style)`` for an empty panel, from ``pool4_stakers_state``.
+
+    **The warning is earned, not the default.** ``pool4_stakers`` is ``None``
+    for three different reasons and they used to render as one: the fold is
+    detached so first paint cannot sit behind it (PRD 7.2), which makes an
+    empty panel the *ordinary* state of tick 1 -- and a transient failure backs
+    the tier off 300 s, so the panel stayed on that same warning for five
+    minutes afterwards. A reader acts differently on each, and the curator rail
+    bug is exactly this: one render for several different facts.
+
+    Only ``failed`` gets ``⚠`` and the yellow. Every other value -- including
+    an unrecognised word, and ``None`` from a payload that predates the key --
+    falls to the dim pending line, because an absent state is not evidence of
+    a fault and this panel must never invent one.
+    """
+    if state == _FAILED:
+        return f"⚠ {UNAVAILABLE_LINE}", "yellow"
+    if state == _SWEEPING:
+        return SWEEPING_LINE, "dim"
+    return PENDING_LINE, "dim"
+
+
 def footer_line(count, top_pct) -> str:
     """``66 addresses · top 3 = 32% of vault`` -- plain text, already fitted.
 
@@ -298,6 +355,7 @@ class SurfPool4UStakers(Vertical):
         pool4_staker_count=None,
         pool4_staker_top3_pct=None,
         pool4_stakers_as_of_hhmm=None,
+        pool4_stakers_state=None,
         pool4_network=None,
         pool4_as_of_hhmm=None,
         **_kwargs,
@@ -315,6 +373,7 @@ class SurfPool4UStakers(Vertical):
             "count": pool4_staker_count,
             "top3_pct": pool4_staker_top3_pct,
             "as_of": pool4_stakers_as_of_hhmm,
+            "state": pool4_stakers_state,
             "network": pool4_network,
             "seen": True,
         }
@@ -399,7 +458,12 @@ class SurfPool4UStakers(Vertical):
         rows = payload.get("rows")
         markup: list[str] = []
         if not payload.get("seen") or rows is None:
-            markup.append(f"[yellow]⚠ {safe_markup(UNAVAILABLE_LINE)}[/]")
+            # ``not seen`` shares the empty branch rather than the failed one:
+            # a panel the screen has not dispatched to yet knows of no fault,
+            # and its ``state`` is ``None``, which :func:`no_rows_line` reads
+            # as pending. The alarm has one trigger and this is not it.
+            text, style = no_rows_line(payload.get("state"))
+            markup.append(f"[{style}]{safe_markup(text)}[/]")
         elif not rows:
             markup.append(f"[dim]{safe_markup(EMPTY_LINE)}[/]")
         else:

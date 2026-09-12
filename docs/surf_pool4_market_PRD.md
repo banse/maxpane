@@ -140,6 +140,23 @@ Rank, address, IMD, share of vault, with a footer in the form `top 3 = NN% of va
 not the point; concentration is** — whether three wallets can walk out of this vault is a risk a
 reader acts on. Addresses are chain-sourced and still escaped.
 
+**AMENDED 2026-09-12 — the three-state contract belongs here too, and this panel shipped without it.**
+§5.2 gives the hero card three states and §7.4 gives the payload three; this panel was specified with
+two (`rows` / `unavailable`), and reported from a live screenshot: it painted `⚠ stakers unavailable`
+during an ordinary startup with nothing wrong. The sweep is **detached** (§7.2) so tick 1's payload is
+always built before the first fold can land, and a transient failure backs the tier off 300 s — so the
+warning stood on a healthy launch and for five minutes after any blip. `pool4_stakers`,
+`pool4_staker_count`, `pool4_staker_top3_pct` and `pool4_stakers_as_of_hhmm` all come off one slot and
+are `None` together, so the widget could not tell *never swept*, *sweeping now* and *failed* apart.
+
+The fix is one payload key, **`pool4_stakers_state`**, with a frozen `POOL4_STAKERS_STATES` vocabulary
+of `pending` / `sweeping` / `failed`. The split is three-way rather than two because the manager
+already holds both facts — `_pool4_stakers_task` being alive is *sweeping*, and a flag set on the
+failure branches themselves is *failed* — and neither is inferred from `TierCache`, which cannot tell
+them apart: `_pool_pool4_stakers` calls `mark_failed` on the "no vault named yet" path too, purely to
+take the short retry. The panel's rule is **`⚠` iff `failed`**; `None` and any unrecognised word fall
+to the quiet pending line, because an absent state is not evidence of a fault.
+
 ### 6.2 BURN & SUPPLY (chart slot)
 Daily burn sparkline, current pace, total retired, and that as a share of supply. **Imports
 `widgets/sparkline_common`; never copies the helpers** — three dashboards once carried byte-identical

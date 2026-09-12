@@ -474,9 +474,9 @@ EXPECTED_KEYS = {
     "pool4_hatches",
     # -- the `4` POOL4 MARKET body (2026-09-11) ---------------------------
     #
-    # Nine on the fast pool4 tier and four on the staker sweep's own long
+    # Nine on the fast pool4 tier and five on the staker sweep's own long
     # one, which is why they are two blocks here rather than one: the second
-    # four come from ``POOL4_STAKERS_KEYS``, a separate tuple against a
+    # five come from ``POOL4_STAKERS_KEYS``, a separate tuple against a
     # separate slot on a separate clock, and folding them together in this
     # copy would make the count below stop distinguishing a tier failure
     # from a contract change.
@@ -507,16 +507,22 @@ EXPECTED_KEYS = {
     "pool4_staker_count",
     "pool4_staker_top3_pct",
     "pool4_stakers_as_of_hhmm",
+    # The fifth, 2026-09-12. The four above come from one slot and are
+    # therefore ``None`` together, so the panel could not tell "the detached
+    # fold has not landed yet" -- the ordinary state of tick 1 -- from "the
+    # sweep failed", and warned on both. This key is the difference.
+    "pool4_stakers_state",
 }
 
 
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    **158 = 83 + 71 + 4**: the 83 that shipped through v0.8.3, the ``p``
+    **159 = 83 + 71 + 5**: the 83 that shipped through v0.8.3, the ``p``
     body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
     cross-venue price, the backstop band and the realised return), and the
-    staker sweep's own four in ``POOL4_STAKERS_KEYS``. The count is asserted
+    staker sweep's own five in ``POOL4_STAKERS_KEYS`` (four until
+    ``pool4_stakers_state`` joined them on 2026-09-12). The count is asserted
     beside the set membership on purpose: the set catches a rename, the
     count catches a key added to both sides at once by someone editing
     ``EXPECTED_KEYS`` to make a red test green instead of asking why it was
@@ -538,11 +544,11 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 158
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 159
     # ...and the three addends really are the three tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
-    assert len(POOL4_STAKERS_KEYS) == 4
+    assert len(POOL4_STAKERS_KEYS) == 5
     assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) == 83
 
 

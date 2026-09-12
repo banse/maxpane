@@ -1340,6 +1340,27 @@ _NON_NUMERIC_KEYS = frozenset(
         # when a new `Transfer` fold lands, so a fresh time beside old rows
         # would be a stale number presented as live.
         "pool4_stakers", "pool4_stakers_as_of_hhmm",
+        # -- the staker sweep's state word (2026-09-12) ------------------
+        #
+        # A closed vocabulary, so it belongs here for this bucket's ordinary
+        # reason -- no numeric zero to confuse with a failed read. It is in
+        # the same family as `pool4_counter_state` above and shares its
+        # caveat: `None` is not one of the three words. It means "there is
+        # nothing to explain" (a fold landed, and the rows are the answer),
+        # and the panel treats it as the quiet case rather than the alarm.
+        #
+        # `failed` is the ONLY member that may render a warning, and that is
+        # this key's whole job: `pool4_stakers` is `None` for three different
+        # reasons -- never swept, sweeping now, failed -- and the panel used
+        # to paint `⚠ stakers unavailable` for all three, which is a warning
+        # triangle for "not finished yet" on tick 1 of every launch. The
+        # three renders are pinned against composited output by
+        # `tests/widgets/test_surf_pool4u_left.py::
+        # test_the_three_reasons_for_an_empty_panel_are_three_sentences`,
+        # which also asserts that neither quiet line carries a `⚠` or the
+        # word `unavailable` -- a checker that only compared the `None` word
+        # would have passed the defect this key fixes.
+        "pool4_stakers_state",
     }
 )
 
@@ -2205,12 +2226,30 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             await pilot.pause()
             market_text = _screen_text(app)
             from maxpane_dashboard.widgets.surf.pool4u_stakers import (
+                PENDING_LINE as STAKERS_PENDING,
                 UNAVAILABLE_LINE as STAKERS_UNAVAILABLE,
             )
 
-            assert STAKERS_UNAVAILABLE in market_text, (
+            # The sentinel was `STAKERS_UNAVAILABLE` until 2026-09-12, and
+            # the swap is the fix rather than an accommodation of it. An
+            # all-`None` payload says nothing about the staker sweep: the
+            # four data keys come off one slot and `pool4_stakers_state` is
+            # `None` too, which is "there is nothing to explain", not
+            # "it failed". The panel's rule is `⚠` iff `failed`, so under a
+            # full outage it correctly says *not swept yet* -- and the
+            # outage itself is already named, by `p4` in the title row's
+            # degraded list, which is where PRD 7.3 decided it belongs.
+            assert STAKERS_PENDING in market_text, (
                 "pressing `4` did not reach the market body -- the sweep "
                 "below would be measuring the pool4 body twice"
+            )
+            # ...and the other half, which is the reported defect itself,
+            # asserted through the real screen: an outage with no failed
+            # sweep behind it must not paint the warning. This went red on
+            # the code as shipped.
+            assert STAKERS_UNAVAILABLE not in market_text, (
+                "STAKERS warned under an outage that says nothing about the "
+                "staker sweep -- `⚠` is for `failed` and nothing else"
             )
             # Explicit rather than blank, for the pool4 body's own reason.
             for title in ("STAKERS", "BURN & SUPPLY", "SIGNALS",

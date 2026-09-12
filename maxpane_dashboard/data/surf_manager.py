@@ -180,6 +180,7 @@ from maxpane_dashboard.data.surf_models import (
     POOL4_FLOW_LIMIT,
     POOL4_NETWORKS,
     POOL4_REWARD_PATHS,
+    POOL4_STAKERS_STATES,
     POOL4_VENUE_WORDS,
     SURF_KEYS,
     Pool4Discovery,
@@ -353,6 +354,14 @@ POOL4_STAKERS_LIMIT = 20
 #: band, ``None`` means the read failed. Collapsing the middle into either of
 #: the others is the curator rail bug verbatim.
 POOL4_BACKSTOP_DEPLOYED, POOL4_BACKSTOP_NONE = POOL4_BACKSTOP_STATES
+
+#: Unpacked from the contract, never retyped (A5). Why the STAKERS panel has
+#: no rows: nothing swept yet, a fold in flight, or an attempt that failed.
+#: Only the third of those is a fault, and only it may render a warning —
+#: which is the whole reason the key exists. See ``POOL4_STAKERS_STATES``.
+POOL4_STAKERS_PENDING, POOL4_STAKERS_SWEEPING, POOL4_STAKERS_FAILED = (
+    POOL4_STAKERS_STATES
+)
 
 #: Unpacked from the contract, never retyped (A5).  Four words, none a
 #: substring of another, and ``None`` is **not** one of them: ``None`` means
@@ -844,6 +853,20 @@ class SurfManager:
         #: The in-flight detached sIMD ``Transfer`` sweep, or ``None``. Same
         #: contract again, on its own much longer tier.
         self._pool4_stakers_task: Any = None
+        #: Whether the LAST staker sweep that reached a verdict actually
+        #: failed, as opposed to finding nothing to sweep.
+        #:
+        #: Set on the failure branches themselves rather than derived from
+        #: ``TierCache``, and that is the point: :meth:`_pool_pool4_stakers`
+        #: also calls ``mark_failed`` when no vault has been named yet —
+        #: purely to take the short retry — so the cache's clock reads
+        #: identically for a cold start and for a dead log endpoint. Reading
+        #: the state off the clock would paint the warning triangle on every
+        #: fresh launch, which is the defect ``pool4_stakers_state`` closes.
+        #:
+        #: In memory only. It describes this session's last attempt, and a
+        #: restored one would report a failure the reader never saw.
+        self._pool4_stakers_failed: bool = False
         #: ``(network, share price)`` this session's ``pool4_share_price_delta_pct``
         #: is measured against, and the count of successful share-price reads
         #: since it was seeded.
@@ -4740,6 +4763,11 @@ class SurfManager:
             raise
         except Exception as exc:            # noqa: BLE001 — nobody awaits this task
             self._error_count += 1
+            # A raise is a failure like any other, and the panel has to be
+            # able to say so: without this the only visible difference
+            # between a crashing sweep and one that has not started is the
+            # `as of` marker that neither of them has yet.
+            self._pool4_stakers_failed = True
             logger.warning("SURF staker sweep failed: %s", exc)
 
     async def _cancel_pool4_stakers(self) -> None:
@@ -4791,6 +4819,11 @@ class SurfManager:
             # 1800 s TTL: the pool4 sweep may name a vault at any moment and
             # this should be ready to walk it when it does.
             logger.debug("SURF staker sweep: no vault named yet; nothing to sweep")
+            # ...and the panel must say so in the same voice. `mark_failed`
+            # on the line below is the retry clock and nothing else; the
+            # verdict is cleared here so `pool4_stakers_state` reads
+            # `pending` rather than `failed` through every cold start.
+            self._pool4_stakers_failed = False
             self.cache.mark_failed(TIER_POOL4_STAKERS, now)
             return None
 
@@ -4802,6 +4835,7 @@ class SurfManager:
             )
         )
         if head is None:
+            self._pool4_stakers_failed = True
             self.cache.mark_failed(TIER_POOL4_STAKERS, now)
             return None
         start = max(0, head - POOL4_STAKERS_WINDOW_BLOCKS + 1)
@@ -4815,6 +4849,7 @@ class SurfManager:
             # a fold missing part of its history ranks a subset and understates
             # concentration, which is the direction that makes a risk look
             # smaller than it is.
+            self._pool4_stakers_failed = True
             self.cache.mark_failed(TIER_POOL4_STAKERS, now)
             return None
 
@@ -4843,6 +4878,7 @@ class SurfManager:
             self.cache.store_last_good(SLOT_POOL4_STAKERS, payload, ts=now)
         else:
             logger.debug("SURF staker sweep found nothing new; marker left alone")
+        self._pool4_stakers_failed = False
         self.cache.mark_fetched(TIER_POOL4_STAKERS, now)
         return payload
 
@@ -4986,12 +5022,13 @@ class SurfManager:
             return None
         return price / (10.0 ** places)
 
-    @staticmethod
-    def _pool4_stakers_keys(slot: dict[str, Any], entry: Any) -> dict[str, Any]:
-        """The four :data:`POOL4_STAKERS_KEYS`, off the staker slot.
+    def _pool4_stakers_keys(
+        self, slot: dict[str, Any], entry: Any
+    ) -> dict[str, Any]:
+        """The five :data:`POOL4_STAKERS_KEYS`, off the staker slot.
 
-        A separate method off a separate slot, deliberately: these four run on
-        a different clock from the rest of the pool4 payload, and folding them
+        A separate method off a separate slot, deliberately: these run on a
+        different clock from the rest of the pool4 payload, and folding them
         into :meth:`_pool4_keys` would put them behind ``pool4_as_of_hhmm`` — a
         marker that is right about the 600 s sweep and wrong about this one.
 
@@ -4999,6 +5036,12 @@ class SurfManager:
         fold (``mk.top_n_pct``'s guard, ``clean_routed_eth``'s rule) and is not
         re-guarded here; re-deriving it would be a second place for that rule
         to be got wrong.
+
+        **The fifth key is not off the slot**, which is why this stopped being
+        a ``staticmethod``: when the slot is empty there is nothing in it to
+        say *why*, and the four keys above are ``None`` together whichever the
+        reason. :meth:`_pool4_stakers_state` answers that from what this
+        manager knows about its own sweep.
         """
         return {
             "pool4_stakers": slot.get("stakers"),
@@ -5007,7 +5050,38 @@ class SurfManager:
             "pool4_stakers_as_of_hhmm": (
                 entry.as_of_hhmm() if entry is not None else None
             ),
+            "pool4_stakers_state": self._pool4_stakers_state(slot),
         }
+
+    def _pool4_stakers_state(self, slot: dict[str, Any]) -> str | None:
+        """Why STAKERS has no rows — or ``None`` when it has some.
+
+        The detached sweep means an empty panel is the **ordinary** state of a
+        healthy launch: tick 1's payload is always built before the first fold
+        can land. Painting the unavailable warning there says *broken* when the
+        truth is *not finished yet*, and it was the first thing a reader saw on
+        every fresh run.
+
+        **Failure wins over in-flight, on purpose.** A retry starting does not
+        un-fail the attempt before it, and the alternative flickers: the
+        warning would clear for the minutes of each retry walk and come back
+        when it lost, which reads as an intermittent panel rather than a
+        standing fault. Once a fold lands the rows are the answer and this
+        returns ``None``.
+
+        Nothing here consults the cache's clock — see
+        :data:`POOL4_STAKERS_STATES` for why it cannot: ``mark_failed`` is also
+        how the "no vault named yet" path takes its short retry, so the clock
+        reads the same for a cold start and for a dead endpoint.
+        """
+        if slot.get("stakers") is not None:
+            return None
+        if self._pool4_stakers_failed:
+            return POOL4_STAKERS_FAILED
+        task = self._pool4_stakers_task
+        if task is not None and not task.done():
+            return POOL4_STAKERS_SWEEPING
+        return POOL4_STAKERS_PENDING
 
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
         """Run the detectors and publish their rows plus exact feed targets."""

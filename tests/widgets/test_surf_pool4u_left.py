@@ -65,11 +65,15 @@ from maxpane_dashboard.widgets.surf.pool4u_stakers import (
     EMPTY_LINE as STAKERS_EMPTY_LINE,
     FULL_WIDTH as STAKERS_FULL_WIDTH,
     MAX_ROWS,
+    PENDING_LINE as STAKERS_PENDING_LINE,
+    STAKER_STATES,
+    SWEEPING_LINE as STAKERS_SWEEPING_LINE,
     TABLE_ID,
     TOP_N,
     UNAVAILABLE_LINE as STAKERS_UNAVAILABLE_LINE,
     SurfPool4UStakers,
     footer_line,
+    no_rows_line,
     staker_cells,
 )
 from maxpane_dashboard.widgets.surf.pool4u_stakers import TITLE as STAKERS_TITLE
@@ -172,14 +176,99 @@ async def test_unread_stakers_and_an_empty_vault_are_different_sentences() -> No
 
     The curator rail bug is these two rendering identically, which reads
     confident and green straight through an outage.
+
+    The unread half now carries ``pool4_stakers_state="failed"``, because that
+    is the only state the warning belongs to -- see the three-state test below
+    for the other two, which is where the rest of this claim went.
     """
-    _, unread = await _stakers(**dict(STAKERS_KW, pool4_stakers=None))
+    _, unread = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers=None, pool4_stakers_state="failed")
+    )
     assert STAKERS_UNAVAILABLE_LINE in unread
     assert STAKERS_EMPTY_LINE not in unread
 
     _, empty = await _stakers(**dict(STAKERS_KW, pool4_stakers=[]))
     assert STAKERS_EMPTY_LINE in empty
     assert STAKERS_UNAVAILABLE_LINE not in empty
+
+
+@pytest.mark.asyncio
+async def test_the_three_reasons_for_an_empty_panel_are_three_sentences() -> None:
+    """The 2026-09-12 defect, pinned where the reader actually meets it.
+
+    ``pool4_stakers`` is ``None`` for three different facts and this panel
+    painted ``⚠ stakers unavailable`` for all of them. Two of the three are
+    not faults at all: the sweep is **detached** so tick 1's payload is always
+    built before the first fold can land, and a transient failure backs the
+    tier off 300 s, so the warning then stood for five more minutes. A reader
+    acts differently on each, and a warning triangle for "not finished yet" is
+    the first thing a fresh launch shows.
+
+    **Asserting the three lines differ is not enough**, and this repo has a
+    logged defect class for exactly that shape: a checker that only compares
+    the words would pass a build where `pending` rendered
+    ``⚠ pending unavailable``. So the two quiet states are additionally
+    asserted to carry no ``⚠`` and not the word ``unavailable`` -- which is
+    the actual claim the screenshot was about.
+    """
+    _, failed = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers=None, pool4_stakers_state="failed")
+    )
+    _, sweeping = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers=None, pool4_stakers_state="sweeping")
+    )
+    _, pending = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers=None, pool4_stakers_state="pending")
+    )
+
+    assert STAKERS_UNAVAILABLE_LINE in failed
+    assert "⚠" in failed
+
+    assert STAKERS_SWEEPING_LINE in sweeping
+    assert STAKERS_PENDING_LINE in pending
+
+    # The half that bites. Neither quiet state may wear the alarm.
+    for quiet, word in ((sweeping, "sweeping"), (pending, "pending")):
+        assert "⚠" not in quiet, f"{word} paints a warning triangle"
+        assert "unavailable" not in quiet, f"{word} says unavailable"
+
+    # ...and the three really are three, not two that happen to share a line.
+    assert len({failed, sweeping, pending}) == 3
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_state_falls_to_the_quiet_line_and_never_the_alarm() -> None:
+    """``None``, and anything outside the vocabulary, is not evidence of a fault.
+
+    The direction matters: a producer bug that stopped setting the key, or a
+    payload written by an older build, must degrade to "we have not got there
+    yet" rather than to a standing warning that nothing is wrong with. ``⚠``
+    iff ``failed``, and this is the *iff* half.
+    """
+    for unknown in (None, "", "whatever", 0):
+        _, out = await _stakers(
+            **dict(STAKERS_KW, pool4_stakers=None, pool4_stakers_state=unknown)
+        )
+        assert STAKERS_PENDING_LINE in out, unknown
+        assert "⚠" not in out, unknown
+        assert STAKERS_UNAVAILABLE_LINE not in out, unknown
+
+
+def test_the_widget_restates_the_contracts_staker_vocabulary() -> None:
+    """The restatement is checked in BOTH directions, `_GAME_CYCLE`'s shape.
+
+    A widget may not import ``data/``, so the three words live twice. A fourth
+    word added to the contract and not to the widget would fall through
+    ``no_rows_line``'s ``else`` and render as ``pending`` -- a new state
+    silently wearing an old state's sentence. This is what reddens instead.
+    """
+    from maxpane_dashboard.data.surf_models import POOL4_STAKERS_STATES
+
+    assert STAKER_STATES == POOL4_STAKERS_STATES
+    assert set(STAKER_STATES) == set(POOL4_STAKERS_STATES)
+    # Only one of them may ever be the alarm.
+    alarming = [w for w in STAKER_STATES if "⚠" in no_rows_line(w)[0]]
+    assert alarming == ["failed"]
 
 
 @pytest.mark.asyncio
