@@ -410,7 +410,21 @@ until a test resolved the panel through its own body container instead.
 analytics module, and a long-tier sIMD `Transfer` sweep on `TIER_POOL4_STAKERS` /
 `SLOT_POOL4_STAKERS` with its own `pool4_stakers_as_of_hhmm`. That slot is **not a ninth degraded
 group**: `SOURCE_POOL4` (`p4`) is the eighth and last name the worst-case title row has room for,
-so the staker fold serves last-good and folds into `p4` only when it has nothing at all to serve.
+so the staker fold serves last-good and **names no degraded group at all** — not even when it has
+nothing to serve.
+
+That last clause is a correction, and the withdrawn version stood in this file until 2026-09-12.
+It read "folds into `p4` only when it has nothing at all to serve", which was the PRD's original
+design; it was implemented, then **removed**, and this file was not updated with it. The reason is
+worth keeping because it generalises: the sweep reads its `vault_addr` out of `SLOT_POOL4`'s own
+last-good, so **it cannot have nothing to serve unless the pool4 slot is already cold — a state
+`p4` already names.** The clause was unreachable in the case it was written for, and what it
+actually did was name the whole pool4 group degraded while seven panels were live and one log
+endpoint was refusing the share token. A *false* degradation is the same defect as a missed one
+pointing the other way, and the worse of the two here: it tells a reader eight panels are
+unreliable on the evidence of one slow tier.
+`tests/data/test_surf_manager_pool4_market.py::test_a_sweep_with_nothing_to_serve_names_no_group_at_all`
+pins it; `docs/surf_pool4_market_PRD.md` §7.3 carries the argument.
 
 **No panel on this body renders an `as of` marker (2026-09-12), and the one that had a reason to
 kept the claim without the row.** All five did until the owner read the live screen and asked for
