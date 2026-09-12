@@ -2316,9 +2316,14 @@ SurfPool4Hatches {
  * child cannot overflow a scroll container, it SHRINKS: without `min-height`
  * this log sheds a line per terminal row down to a bare title with no
  * scrollbar and no trace, which is what the floor under `SurfDevActivity`
- * exists to stop in the dashboard body. 6 == title, the legend note, and four
- * rows. A `RichLog` scrolls inside itself, so shrinking it hides rows behind
- * its own scrollbar rather than cutting them off the layout. */
+ * exists to stop in the dashboard body. 6 was title, the legend note and four
+ * rows until 2026-09-12; since the title took the repo-wide blank row under
+ * it (`margin: 0 0 1 0`, in this widget's own DEFAULT_CSS) the same 6 is
+ * title, BLANK, note and three rows. Raising it to 7 to buy the fourth row
+ * back was measured and rejected: it takes
+ * `screens/surf.SURF_POOL4_FULL_LAYOUT_ROWS` from 45 to 46, and a `RichLog`
+ * scrolls inside itself, so shrinking it hides rows behind its own scrollbar
+ * rather than cutting them off the layout. */
 SurfPool4Flow {
     width: 1fr;
     height: 1fr;
@@ -2361,10 +2366,15 @@ SurfPool4Ratchet {
  * and of this body's five panels only POOL4 FLOW does. HATCHES is the panel
  * whose line count moves with the data (ten levers today, twelve at the
  * widget's own cap), so it is `auto` above and takes exactly the rows it
- * needs; sIMD VAULT's nine lines and blank are a constant, so `min-height:
- * 10` is both its floor and its ceiling and it can never be cut. The rail's
- * spare rows land in it as blank space, which is the price of never cutting
- * a lever row in silence. */
+ * needs; sIMD VAULT's line count is a constant, so `min-height: 10` is both
+ * its floor and its ceiling and it can never be cut. Those ten are now FULL:
+ * the panel took the repo-wide blank row under its title on 2026-09-12 and
+ * renders title, blank, seven rows and the `as of` marker. There is no slack
+ * left, so an eleventh line here must raise this floor (and the copy in
+ * `screens/surf.SurfScreen.DEFAULT_CSS`) with it and be re-swept --
+ * `SURF_POOL4_FULL_LAYOUT_ROWS` records that an eleven-line VAULT needs 46.
+ * The rail's spare rows land in it as blank space, which is the price of
+ * never cutting a lever row in silence. */
 SurfPool4Vault {
     width: 1fr;
     height: 1fr;

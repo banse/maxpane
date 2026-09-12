@@ -496,14 +496,19 @@ class SurfPool4Ratchet(Vertical):
         else:
             self._widen = False
 
-        # No blank row under the title. It was there on ``SurfBurnPipeline``'s
-        # precedent -- "the rail's panels sat flush against their own headings
-        # and read as one block of text" -- and that argument holds for a panel
-        # whose body is prose. This one's body is a label/value grid in a dim-
-        # labelled column, which already separates itself from a dim title, so
-        # the row was buying less here than it costs: the pool4 body's height
-        # pin is the tallest requirement in the repo and W7 records that nobody
-        # has ever measured whether a real laptop clears it.
+        # THE BLANK ROW UNDER THE TITLE, the repo-wide convention. It is a
+        # rendered line rather than `margin: 0 0 1 0` because this panel
+        # paints its title and its body into ONE `Static` -- there is no
+        # separate title widget for CSS to hang a margin on, which is why
+        # the `p`-body panels of this shape were the ones the 2026-09-12
+        # survey found missing it -- three of the four, at any rate:
+        # `SurfPool4Split` is the same shape and has always opened its body
+        # with a blank line. The unavailable branch above has always had it
+        # too; only this healthy path went without.
+        #
+        # It costs a row on the tallest pinned body in the repo and the
+        # price is recorded rather than avoided -- see
+        # `SURF_POOL4_FULL_LAYOUT_ROWS`, which moved 44 -> 45 for it.
         body.update(
-            join_lines([Text(self._title_text(), style="dim"), *content])
+            join_lines([Text(self._title_text(), style="dim"), Text(""), *content])
         )

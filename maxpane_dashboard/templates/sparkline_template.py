@@ -13,6 +13,14 @@ ones (ocm, cattown, dota) carried a pre-hardening version that crashed on a
 ``None`` sample, and a fix applied to any one of them reached none of the
 others (MEDI-36).  One import is the whole remedy.
 
+**The blank row under the title is not optional.**  Every panel title in
+this repo is followed by one blank row (``margin: 0 0 1 0`` on the title's
+own class), so a panel is separated from whatever sits above it.  Keep that
+rule when you copy this file.  On 2026-09-12 a survey found 36 panel titles
+across the app missing it and **all six of these templates** missing it too,
+which is how it spread: a defect in a copy-source is a defect in every
+dashboard not yet written.
+
 Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_score_trends.py
   - maxpane_dashboard/widgets/cattown/ct_sparklines.py
@@ -40,11 +48,16 @@ class GameSparklines(Vertical):
     """
 
     DEFAULT_CSS = """
+    /* `margin: 0 0 1 0` IS THE BLANK ROW UNDER THE TITLE and it is
+       mandatory -- see the module docstring. It REPLACED a hand-rolled
+       `Static("")` spacer below the title: same one row on screen, stated
+       the way every other panel in the repo states it. */
     GameSparklines > .chart-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        margin: 0 0 1 0;
     }
     GameSparklines > .chart-line {
         padding: 0 1;
@@ -54,7 +67,6 @@ class GameSparklines(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("TRENDS", classes="chart-title")
-        yield Static("", classes="chart-line", id="game-chart-spacer")
         yield Static("[dim]Loading...[/]", classes="chart-line", id="game-chart-line-0")
         yield Static("", classes="chart-line", id="game-chart-line-1")
         yield Static("", classes="chart-line", id="game-chart-line-2")

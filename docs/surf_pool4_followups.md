@@ -852,7 +852,26 @@ pins the **current** behaviour and therefore reddens the moment this is fixed, w
 deliberate: the fix has to come with this note updated and that panel folded into
 `test_the_market_panels_leave_mainnet_unsaid_and_say_everything_else`'s sweep in the same diff.
 
-### F10b — the blank row under a title, in the `p` body
+### F10b — the blank row under a title, in the `p` body — **CLOSED 2026-09-12**
+
+**Closed by doing it.** The convention won. All five `p`-body panels now paint the blank row,
+`SURF_POOL4_FULL_LAYOUT_ROWS` was re-swept in situ over 36..55 and five payloads, and it moved
+**44 → 45 — one row, not "more than one"**, which is the part of the analysis below that was
+wrong and is worth keeping visible. The estimate assumed five panels growing a row each; the
+measurement found four (`SurfPool4Split` already opened its body with a blank line, so the
+survey's count was one high) and then found that only two of those four reach the pin: the left
+column took `SurfPool4Ratchet`'s row and the rail took `SurfPool4Hatches`', while `SurfPool4Vault`'s
+landed inside its own `min-height: 10` (which it now fills exactly, with no slack left) and
+`SurfPool4Flow`'s landed inside the floor its column already gives it — so FLOW's `RichLog` shows
+three lines at the pin where it showed four (its column heading plus two swaps rather than three),
+rather than the body growing for it. Raising
+FLOW's floor to buy that row back was measured too and costs a second row (45 → 46); it was not
+spent. W7 stays open and is now one row worse; `SurfPool4Vault` has no room left for an eleventh
+line, and the next one added there must raise the floor in **both** CSS copies and be re-swept.
+
+The original entry follows, unedited, because the estimate it contains is the useful half.
+
+---
 
 `margin: 0 0 1 0` on a panel's title class is a repo-wide convention — `ActivityFeed >
 .feed-title`, `VolumeSparklines > .volspark-title`, `PriceSparklines > .spark-title`,

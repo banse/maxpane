@@ -3,6 +3,14 @@
 Pattern: Vertical container with a title Static and a scrolling RichLog.
 De-duplicates events by a composite key.  Newest events appear on top.
 
+**The blank row under the title is not optional.**  Every panel title in
+this repo is followed by one blank row (``margin: 0 0 1 0`` on the title's
+own class), so a panel is separated from whatever sits above it.  Keep that
+rule when you copy this file.  On 2026-09-12 a survey found 36 panel titles
+across the app missing it and **all six of these templates** missing it too,
+which is how it spread: a defect in a copy-source is a defect in every
+dashboard not yet written.
+
 Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_battle_activity.py
   - maxpane_dashboard/widgets/cattown/ct_activity_feed.py
@@ -98,11 +106,15 @@ class GameActivityFeed(Vertical):
     """
 
     DEFAULT_CSS = """
+    /* `margin: 0 0 1 0` IS THE BLANK ROW UNDER THE TITLE and it is
+       mandatory -- see the module docstring. Do not drop it when you adapt
+       the selector name. */
     GameActivityFeed > .feed-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        margin: 0 0 1 0;
     }
     GameActivityFeed > RichLog {
         height: 1fr;

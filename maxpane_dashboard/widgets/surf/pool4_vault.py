@@ -434,12 +434,29 @@ class SurfPool4Vault(Vertical):
         else:
             self._widen = False
 
-        # No blank row under the title, matching RATCHET and HATCHES. It was
-        # `SurfBurnPipeline`'s heading-room idiom, which earns its row for a
-        # panel whose body is prose; this body is a dim-labelled label/value
-        # grid that already separates itself from a dim title. Removing it
-        # leaves this panel at nine rows against the rail's `min-height: 10`,
-        # so the next line added here fails a test instead of vanishing.
+        # THE BLANK ROW UNDER THE TITLE, the repo-wide convention. It is a
+        # rendered line rather than `margin: 0 0 1 0` because this panel
+        # paints its title and its body into ONE `Static` -- there is no
+        # separate title widget for CSS to hang a margin on, which is why
+        # the `p`-body panels of this shape were the ones the 2026-09-12
+        # survey found missing it -- three of the four, at any rate:
+        # `SurfPool4Split` is the same shape and has always opened its body
+        # with a blank line. The unavailable branch above has always had it
+        # too; only this healthy path went without.
+        #
+        # It costs a row on the tallest pinned body in the repo and the
+        # price is recorded rather than avoided -- see
+        # `SURF_POOL4_FULL_LAYOUT_ROWS`, which moved 44 -> 45 for it.
+        #
+        # THIS IS THE ROW THAT WAS DELETED ON 2026-09-02 to hold the pin at
+        # 44, and putting it back is what moved the pin. The panel is ten
+        # lines again, exactly the rail's `min-height: 10`. That floor is
+        # this panel's ceiling as well as its floor -- a `1fr` child cannot
+        # overflow, it shrinks -- so an eleventh line here would be LOST, not
+        # scrolled. `test_the_pool4_floors_never_thin_a_panel_below_its_
+        # content` compares the laid-out height against this content and is
+        # what catches that; it does not need slack to bite, but there is
+        # none left, so the next line added here must raise the floor with it.
         body.update(
-            join_lines([Text(self._title_text(), style="dim"), *content])
+            join_lines([Text(self._title_text(), style="dim"), Text(""), *content])
         )

@@ -17,7 +17,7 @@ it. This file is the method; the constants are the record.
 | app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `p` pool4 | 106 cols · 44 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `p` pool4 | 106 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market | 105 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
@@ -32,7 +32,7 @@ about 169 columns on a laptop — so 143 is reachable without `--font-size` /
 143.** FWA set the first three and the last; surf the two in between. It tracks
 *that* number only — a dashboard measuring under 143 does not append to it,
 which is why nothing has been added since 2026-08-12 despite five new bodies
-since. surf's `p` pool4 body holds the **row** record at 44, the largest pinned
+since. surf's `p` pool4 body holds the **row** record at 45, the largest pinned
 here, and unlike the column pins it is a **worst case over payloads** rather
 than a constant, so it is re-swept when a panel's line count changes, not
 merely re-checked. surf's `4` market body is the newest and is the narrowest
@@ -41,8 +41,20 @@ went 33 -> 35 on 2026-09-12 when every panel on it gained the repo-wide blank
 row under its title (`margin: 0 0 1 0`); four panels grew a row each and the
 pin moved two, because only the binding column's growth reaches it. **That
 number is the price of the convention, and it is the one to quote when asked
-whether a body can afford it** -- the `p` body cannot obviously afford the
-same change, which is why it still has no such blank (filed as F10b).
+whether a body can afford it.**
+
+surf's `p` body took the same change later the same day and **its pin went
+44 -> 45**, which closes F10b -- "the `p` body cannot obviously afford it" --
+by measurement rather than by argument. Four of its five panels grew a row
+each and the body grew one: THE SPLIT already had the blank, and POOL4 FLOW's
+landed inside the floor it already sits on, so the row came out of its
+`RichLog` (three log lines at the pin where there were four -- the column
+heading plus two swaps rather than three) instead of out of the layout. That is the general shape of this cost and the reason to measure
+it rather than multiply: **four panels x one row came to two rows on one body
+and one on the other**, because only the binding column's growth reaches a
+pin, and a row that lands inside an existing floor does not reach it at all.
+Raising FLOW's floor to buy its fourth log row back was measured too and
+costs a second row (45 -> 46); it was not spent.
 
 **Two of those pins are one column apart with the same panel binding both, and
 that is the strongest argument here against deriving a pin from a neighbour.**

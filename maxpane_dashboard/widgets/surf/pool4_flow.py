@@ -493,19 +493,8 @@ class SurfPool4Flow(Vertical):
     """Recent pool4 swaps and the three legs each one's fee was split into."""
 
     DEFAULT_CSS = """
-    SurfPool4Flow > .surf-p4flow-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    SurfPool4Flow > .surf-p4flow-note {
-        width: 100%;
-        padding: 0 1;
-        color: $text-muted;
-    }
-    /* The `4` body's blank row under its title, scoped to that instance by
-       the `market` class the screen sets at its mount site.
+    /* `margin: 0 0 1 0` IS THE BLANK ROW UNDER THE TITLE, and it is now
+       UNSCOPED -- both bodies that mount this class paint it.
 
        It is on the TITLE, not on the note line below it. Under the note read
        better -- title plus `as of HH:MM` as one header block, then the gap --
@@ -515,13 +504,26 @@ class SurfPool4Flow(Vertical):
        every panel. A panel that reads slightly better while breaking the rule
        every other panel keeps is how a convention stops being one.
 
-       Scoped rather than global because the `p` body mounts this same class
-       and its pin is 44 rows, the tallest in the repo, whose own note records
-       that VAULT's post-title blank was DELETED to hold that number. Making
-       this unconditional would spend a row there to satisfy a request about a
-       different body. See F10b. */
-    SurfPool4Flow.market > .surf-p4flow-title {
+       IT WAS SCOPED TO `.market` FOR ONE DAY (2026-09-11..12) so the `4` body
+       could have the row while the `p` body's 44-row pin did not have to pay
+       for it. That was the right call for a body-local request and the wrong
+       one for a repo-wide convention: the same class painted two different
+       header shapes depending on which key opened it. The scope is gone, the
+       `p` body's pin moved 44 -> 45 to pay for its share of it, and F10b --
+       "the `p` body cannot obviously afford the same change" -- is closed by
+       measurement rather than by argument. See `SURF_POOL4_FULL_LAYOUT_ROWS`
+       for what the row actually cost and to whom. */
+    SurfPool4Flow > .surf-p4flow-title {
+        width: 100%;
+        padding: 0 1;
+        text-style: bold;
+        color: $text-muted;
         margin: 0 0 1 0;
+    }
+    SurfPool4Flow > .surf-p4flow-note {
+        width: 100%;
+        padding: 0 1;
+        color: $text-muted;
     }
     SurfPool4Flow > RichLog {
         height: 1fr;

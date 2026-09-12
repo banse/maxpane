@@ -6249,7 +6249,7 @@ POOL4_RAIL_NEED = 50        # SurfPool4Hatches', plus the column's own gutter
 #: is one: a test that aliased the screen's constant would compare a number
 #: against itself and pin nothing.
 MEASURED_POOL4_COLUMNS = 106
-MEASURED_POOL4_ROWS = 44
+MEASURED_POOL4_ROWS = 45
 
 
 def _pool4_payload(**overrides) -> dict:
@@ -7098,10 +7098,11 @@ def test_the_pool4_body_fits_inside_the_documented_app_width() -> None:
 
 # -- the p body's own measured height (2026-09-01, re-swept 2026-09-02) ---
 #
-# The sweep runs 34..52 -- ten rows below the measured 44 and eight above,
-# never starting at it. It has been re-centred twice as the pin moved
-# (43 -> 46 -> 44); the rule is that the range straddles the pin generously
-# and never begins on it, not that the endpoints are fixed.
+# The sweep runs 36..55 -- nine rows below the measured 45 and ten above,
+# never starting at it, and never starting at the 44 it replaced either. It
+# has been re-centred three times as the pin moved (43 -> 46 -> 44 -> 45);
+# the rule is that the range straddles the pin generously and never begins on
+# it, not that the endpoints are fixed.
 
 
 #: The payloads the height sweep runs, and the last one is the pin's own.
@@ -7125,7 +7126,7 @@ _POOL4_HEIGHT_PAYLOADS = {
 
 
 @pytest.mark.parametrize("payload_name", sorted(_POOL4_HEIGHT_PAYLOADS))
-@pytest.mark.parametrize("rows", range(34, 53))
+@pytest.mark.parametrize("rows", range(36, 56))
 async def test_the_pool4_body_is_whole_from_its_pinned_height(
     rows, payload_name
 ) -> None:
@@ -7210,8 +7211,8 @@ async def test_the_pool4_height_pin_is_measured_against_the_column_it_describes(
                         rail.virtual_size.height)
             chrome = pilot.app.size.height - left.size.height
 
-    assert worst == 33, (
-        f"the body's worst-case content is {worst} rows, not the 33 the pin "
+    assert worst == 34, (
+        f"the body's worst-case content is {worst} rows, not the 34 the pin "
         "is derived from -- re-sweep it"
     )
     assert worst + chrome == SURF_POOL4_FULL_LAYOUT_ROWS
@@ -7361,6 +7362,86 @@ async def test_the_pool4_floors_never_thin_a_panel_below_its_content() -> None:
         ), "neither column is scrolling, so the floors are not being tested"
 
 
+# -- the blank row under every `p`-body title -----------------------------
+
+
+#: The five panels of the ``p`` POOL4 body, with the container each one is
+#: mounted in. The container is not decoration: ``SurfPool4Flow`` is mounted
+#: **twice** on this screen (the ``4`` body's RECENT FLOW is a second instance
+#: of the same class), and Textual's ``query_one`` returns the first match
+#: rather than raising on several -- so an unscoped query would silently
+#: assert about whichever instance ``compose`` happened to build first, which
+#: is the instance in the body that is not on screen.
+_POOL4_PANELS = (
+    (SurfPool4Split, POOL4_LEFT_ID),
+    (SurfPool4Ratchet, POOL4_LEFT_ID),
+    (SurfPool4Flow, POOL4_LEFT_ID),
+    (SurfPool4Hatches, POOL4_RAIL_ID),
+    (SurfPool4Vault, POOL4_RAIL_ID),
+)
+
+
+@pytest.mark.parametrize(
+    "cls, container_id", _POOL4_PANELS, ids=[c.__name__ for c, _ in _POOL4_PANELS]
+)
+async def test_every_pool4_panel_paints_a_blank_row_under_its_title(
+    cls, container_id
+) -> None:
+    """The repo-wide convention, on the body that used to be exempt from it.
+
+    ``ActivityFeed > .feed-title`` and five siblings carry ``margin: 0 0 1 0``
+    in ``minimal.tcss``; the ``4`` market body took the same row on
+    2026-09-12 (``test_every_market_panel_paints_a_blank_row_under_its_title``,
+    the sibling this is modelled on) and this body was the last holdout,
+    filed as **F10b** on the argument that its 44-row pin could not afford it.
+    It could: the pin moved to 45, which is one row, and
+    ``SURF_POOL4_FULL_LAYOUT_ROWS`` carries the measurement.
+
+    **PARAMETRISED PER PANEL, NOT LOOPED.** A single test looping over the
+    five would stop at the first failure and report one panel when three were
+    broken -- and worse, a fix that satisfied the first would turn the suite
+    green with the rest still flush. Five cases, five independent verdicts.
+
+    **Two mechanisms, one contract.** Four of these panels paint their title
+    and their body into ONE ``Static``, so their blank row is a rendered
+    ``Text("")`` and no CSS margin could produce it; ``SurfPool4Flow`` has a
+    separate title ``Static`` and takes the margin. That is exactly why the
+    assertion is made against **composited output on the real screen** rather
+    than against either source: it is the only question that is the same
+    question for both shapes, and the app stylesheet outranks a widget's
+    ``DEFAULT_CSS`` so nothing short of a pixel is evidence.
+
+    Row 0 title, row 1 blank, row 2 content. The third assertion is what
+    stops this passing on a panel that has simply gone dark, and the height
+    is comfortably past the pin so no panel here is scrolled or floored.
+    """
+    payload = _mainnet_pool4_payload(
+        pool4_hatches=_pool4_hatch_payload(12)["pool4_hatches"]
+    )
+    async with _pool4_app(payload).run_test(size=(150, 60)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        await pilot.pause()
+        container = pilot.app.screen.query_one(f"#{container_id}")
+        found = list(container.query(cls))
+        assert len(found) == 1, f"{cls.__name__}: {len(found)} instances"
+        rows = _region_text(pilot.app, found[0]).split("\n")
+
+    assert rows[0].strip(), f"{cls.__name__} has no title row"
+    assert not rows[1].strip(), (
+        f"{cls.__name__} paints content directly under its title -- the "
+        "blank row every other dashboard's title carries is missing. "
+        f"Composited rows: {rows[:4]}"
+    )
+    assert rows[2].strip(), (
+        f"{cls.__name__} paints nothing under the blank, so the blank above "
+        "is the panel being empty rather than its title's own row"
+    )
+
+
+
 # -- the row marker on the third body, and the mapping that feeds it ------
 
 
@@ -7377,7 +7458,8 @@ async def test_the_taller_marker_lights_on_the_pool4_body() -> None:
     Three heights, and the trio is what makes this bite rather than any one
     of them:
 
-    * **50 rows** -- whole for the pool4 body (43) and whole for the
+    * **50 rows** -- whole for the pool4 body (42 for this default Sepolia
+      payload, against a 45 pin measured on mainnet's) and whole for the
       dashboard body (36). The marker must be dark in both, or the test
       below cannot tell a wired marker from a stuck-on one.
     * **40 rows** -- short for pool4, whole for the dashboard. This is the

@@ -4,6 +4,14 @@ Pattern: Vertical container with individual Static widgets per signal
 row.  Each row shows a label, value, and colored indicator dot.
 A recommendation line appears at the bottom.
 
+**The blank row under the title is not optional.**  Every panel title in
+this repo is followed by one blank row (``margin: 0 0 1 0`` on the title's
+own class), so a panel is separated from whatever sits above it.  Keep that
+rule when you copy this file.  On 2026-09-12 a survey found 36 panel titles
+across the app missing it and **all six of these templates** missing it too,
+which is how it spread: a defect in a copy-source is a defect in every
+dashboard not yet written.
+
 Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_game_signals.py
   - maxpane_dashboard/widgets/cattown/ct_signals.py
@@ -53,11 +61,18 @@ class GameSignals(Vertical):
     """
 
     DEFAULT_CSS = """
+    /* `margin: 0 0 1 0` IS THE BLANK ROW UNDER THE TITLE and it is
+       mandatory -- see the module docstring. It REPLACED a hand-rolled
+       `Static("")` spacer below the title: same one row on screen, but a
+       spacer is a widget a copy can drop by accident and a margin is the
+       rule every other panel in the repo states the same way. The second
+       spacer, above the recommendation line, is not this row and stays. */
     GameSignals > .signals-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        margin: 0 0 1 0;
     }
     GameSignals > .signals-body {
         padding: 0 1;
@@ -73,7 +88,6 @@ class GameSignals(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("SIGNALS", classes="signals-title")
-        yield Static("", id="game-sig-spacer")
         yield Static("[dim]  Loading...[/]", classes="signals-body", id="game-sig-line-0")
         yield Static("", classes="signals-body", id="game-sig-line-1")
         yield Static("", classes="signals-body", id="game-sig-line-2")

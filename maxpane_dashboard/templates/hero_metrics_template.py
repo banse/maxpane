@@ -8,6 +8,17 @@ Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_hero_metrics.py
   - maxpane_dashboard/widgets/cattown/ct_hero_metrics.py
 
+**The blank row under the title is not optional**, and this is the one
+template where it is not a ``margin``.  A hero box has no separate title
+widget to hang ``margin: 0 0 1 0`` on -- the label and the value are one
+``Static`` -- so the blank row is the ``\n\n`` in every box string below,
+and it is load-bearing rather than typographic.  Do not collapse it to a
+single newline when you adapt the copy, and if you split the label into its
+own widget, put the margin on it instead.  Every other template in this
+directory states the same row as a margin on the title's own class; on
+2026-09-12 a survey found 36 panel titles across the app missing that row
+and all six of these templates missing it too, which is how it spread.
+
 Keep the explicit unavailable state when you copy this (MEDI-38).  A box
 that is skipped when its value is missing does not go blank -- it keeps
 whatever it last showed, or "Loading..." forever if the first poll was the

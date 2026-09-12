@@ -895,8 +895,61 @@ SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
 SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
 
 #: The ``p`` POOL4 body's own measured **height**, re-swept 2026-09-02 for
-#: the mainnet deployment and then again after the panels were shortened.
-#: **43 -> 44 -> 46 -> 44.**
+#: the mainnet deployment, again after the panels were shortened, and again
+#: on **2026-09-12** when this body took the repo-wide blank row under every
+#: panel title. **43 -> 44 -> 46 -> 44 -> 45.**
+#:
+#: **THE 2026-09-12 RE-SWEEP, AND THE 2026-09-02 NOTE IT REVERSES.** Until
+#: today this block recorded that ``sIMD VAULT``'s post-title blank row was
+#: **deleted** to hold the pin at 44, and cited that deletion as the standing
+#: "shorten the value, do not raise the pin" rule working. That row is back,
+#: and so are three more: the owner's convention is that **every** widget
+#: title on every dashboard is followed by one blank row, and a body that
+#: opts out because it is the tallest one is how a convention stops being a
+#: convention. ``SurfPool4Ratchet``, ``SurfPool4Hatches`` and
+#: ``SurfPool4Vault`` each grew a rendered blank line, and ``SurfPool4Flow``
+#: lost the ``.market`` scope on the ``margin: 0 0 1 0`` it had been painting
+#: in the ``4`` body alone. (``SurfPool4Split`` already had the row -- its
+#: ``_body_lines`` has always opened with one -- so the survey's count of
+#: four panels on this body was one high; see the report.)
+#:
+#: **THE PIN MOVED 44 -> 45 AND THAT IS THE WHOLE PRICE OF THE CONVENTION
+#: HERE.** Four panels each grew a row and the body grew one, because only
+#: the binding column's growth reaches the pin and the two columns grew one
+#: row each rather than two: on the binding mainnet payload the left column
+#: took RATCHET's row (SPLIT and FLOW are unchanged -- SPLIT already had its
+#: blank, and FLOW's lands inside a panel whose height is the column's
+#: ``1fr`` floor) and the rail took HATCHES' (VAULT's landed inside its own
+#: ``min-height: 10``, which it now fills exactly). The ``4`` market body
+#: paid two rows for the same change on 2026-09-12; this one pays one.
+#:
+#: SWEPT **36..55**, nine rows below the number it collected and ten above,
+#: never starting at either the old pin or the new one -- so agreeing with 44
+#: would have had to show up as a measurement rather than as an assumption.
+#: Five payloads at each height (no levers, ten, the widget's twelve-row cap,
+#: mainnet, and mainnet at the cap), reading the screen-wide ``‹ taller``
+#: marker off composited output **and** comparing every panel's laid-out
+#: height against its own ``virtual_size``, because the marker alone cannot
+#: see a panel cut inside a column that is not itself scrolling. No height in
+#: the sweep produced a cut panel with the marker dark. The three lighter
+#: payloads go whole earlier -- 42, 42 and 44 -- which is why the pin is a
+#: worst case over payloads and is collected from ``mainnet-capped``.
+#:
+#: **WHAT THE ROW COSTS A READER, named rather than buried.** Two things,
+#: and neither is free:
+#:
+#: * a terminal one row short of 45 that cleared 44 now loses this body --
+#:   ``‹ taller`` lit, both columns scrolling, degraded and never silent.
+#:   W7 (below) is still open, so nobody can say how many real laptops that
+#:   is; making the tallest pin in the repo taller is a real cost to a real
+#:   user and it is recorded here rather than estimated away.
+#: * at the pin itself ``SurfPool4Flow``'s log shows **three** lines where it
+#:   showed four -- its column heading plus **two** swaps instead of three.
+#:   Its floor stayed at 6 (raising it to 7 would have taken the pin to 46 --
+#:   measured, not guessed), so the header block's new blank row comes out of
+#:   the log. That is a row moved behind the ``RichLog``'s own scrollbar,
+#:   which is somewhere the reader can still reach, not a row lost -- the
+#:   distinction the ``1fr`` rules on this body turn on.
 #:
 #: **What mainnet did to this body.** The reward split became three-way
 #: inside a Distributor, so ``SurfPool4Split`` went 12 rows -> 15; the
@@ -920,22 +973,29 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
 #: Measured through the real app, every payload the widgets can render
 #: crossed with every network shape, at 150 columns and 34 rows (where both
 #: columns sit on their floors, so each column's ``virtual_size`` is its
-#: real content rather than the terminal's height):
+#: real content rather than the terminal's height). **Re-measured whole on
+#: 2026-09-12**, not adjusted by one:
 #:
 #: ===========================  =====  =======  ====  =====  =====  ====  ====  ====
 #: payload                      SPLIT  RATCHET  FLOW  HATCH  VAULT  left  rail  need
 #: ===========================  =====  =======  ====  =====  =====  ====  ====  ====
-#: sepolia, 0 levers            12     10       6     10     12     30    23    41
-#: sepolia, 8 levers            12     10       6     17     10     30    28    41
-#: sepolia, 10 levers           12     10       6     19     10     30    30    41
-#: sepolia, 12 levers           12     10       6     21     10     30    32    43
-#: mainnet, 0 levers            15     10       6     11     11     33    23    **44**
-#: mainnet, 8 levers            15     10       6     18     10     33    29    **44**
-#: mainnet, 10 levers           15     10       6     20     10     33    31    **44**
-#: mainnet, 12 levers           15     10       6     22     10     33    33    **44**
-#: mainnet, 12 levers, long     15     10       6     22     10     33    33    **44**
+#: sepolia, 0 levers            12     11       6     11     11     31    23    42
+#: sepolia, 8 levers            12     11       6     18     10     31    29    42
+#: sepolia, 10 levers           12     11       6     20     10     31    31    42
+#: sepolia, 12 levers           12     11       6     22     10     31    33    44
+#: mainnet, 0 levers            15     11       6     12     10     34    23    **45**
+#: mainnet, 8 levers            15     11       6     19     10     34    30    **45**
+#: mainnet, 10 levers           15     11       6     21     10     34    32    **45**
+#: mainnet, 12 levers           15     11       6     23     10     34    34    **45**
+#: mainnet, 12 levers, long     15     11       6     23     10     34    34    **45**
 #: flow log
 #: ===========================  =====  =======  ====  =====  =====  ====  ====  ====
+#:
+#: SPLIT and FLOW are the two columns that did **not** move on 2026-09-12,
+#: for two different reasons, and both are worth knowing: SPLIT already
+#: painted the blank row, and FLOW's new one is absorbed by the floor it sits
+#: on (its log gives the row up instead). RATCHET and HATCHES each grew one,
+#: and that is the whole of the +1 in every ``need`` above.
 #:
 #: ``need`` is ``max(left, rail) + 11``, and the **11 is chrome measured
 #: rather than assumed** -- the hero, the title bar, the status bar and this
@@ -948,8 +1008,18 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
 #: because its ``1fr`` child grows to fill the slack. Both rows where it
 #: happens are rows where the rail is nowhere near binding, so no ``need``
 #: in the table rests on one -- but a reader taking 23 as "the no-lever
-#: rail's content" would be reading the harness rather than the layout. Every
-#: other figure is a genuine ``virtual_size`` overflowing its column.
+#: rail's content" would be reading the harness rather than the layout.
+#:
+#: **The lone ``11`` in the VAULT column is the same artifact one level
+#: down**, and it moved when the blank rows landed (it used to sit on the
+#: mainnet no-lever row and now sits on the Sepolia one), which is the
+#: clearest possible demonstration that it is slack rather than content.
+#: VAULT carries the rail's ``1fr``, so on a row where the rail is not
+#: binding it absorbs whatever HATCHES did not take. Its **content** is ten
+#: lines on every payload -- title, blank, seven rows and the ``as of``
+#: marker -- and that is the figure ``min-height: 10`` is set against. Every
+#: other figure in the table is a genuine ``virtual_size`` overflowing its
+#: column.
 #:
 #: **The worst case is 33 rows of content and it is reached by BOTH columns**
 #: at the twelve-lever mainnet payload -- left 33 (SPLIT 15 + RATCHET 10 +
@@ -1004,11 +1074,19 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
 #: **That is not hypothetical -- it happened on 2026-09-02.** A rewording of
 #: the delivery row took VAULT to eleven lines, and the pin went on
 #: measuring 44 with the eleventh row being cut. Measured at the time:
-#: **an eleven-line VAULT needs a pin of 45.** It was fixed at source
-#: instead, by dropping the panel's post-title blank, which is the standing
-#: rule working -- shorten the value, do not raise the pin. VAULT now sits
-#: under its floor with a row of slack, so the next line added there fails a
-#: test rather than vanishing.
+#: **an eleven-line VAULT needs a pin of 45.** It was fixed at source then,
+#: by dropping the panel's post-title blank.
+#:
+#: **That blank came back on 2026-09-12 and the slack it bought is gone.**
+#: VAULT is ten lines again, which is exactly ``min-height: 10`` -- floor and
+#: ceiling both, with nothing spare. The eleventh line added to this panel
+#: will be cut, and the guard against that is still
+#: ``test_the_pool4_floors_never_thin_a_panel_below_its_content``, which
+#: compares the laid-out height against the panel's own content and does not
+#: need slack to bite. What the slack used to buy was a *warning shot*, and
+#: there is no longer one: raise the floor with the line, in this file and in
+#: ``themes/minimal.tcss``, and re-sweep. The 2026-09-02 measurement above
+#: says what that costs -- an eleven-line VAULT takes this pin to 46.
 #:
 #: The guard is not this constant, it is
 #: ``test_the_pool4_floors_never_thin_a_panel_below_its_content``, which
@@ -1016,8 +1094,12 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
 #: pin cannot detect this failure, because the failure is precisely a body
 #: that stops asking for the rows it needs.
 #:
-#: **44 is the tallest pinned requirement in this repo and nobody has
-#: measured whether a common laptop clears it.** The *columns* side of that
+#: **45 is the tallest pinned requirement in this repo and nobody has
+#: measured whether a common laptop clears it -- and on 2026-09-12 it got
+#: one row taller.** That is the part of W7 that changed today: the question
+#: was open at 44 and it is open at 45, but the answer can only have got
+#: worse, and the row was spent knowingly on a convention rather than on a
+#: number. The *columns* side of that
 #: question is answered in the terminal-layout skill (launch forces 17 pt,
 #: about 169 columns); the rows side is open, and it is filed as W7 rather
 #: than estimated here. What can be said is the consequence rather than the
@@ -1033,7 +1115,7 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
 #: where a one-row overflow settled a layout pass after the callback that
 #: composed the title, leaving ``‹ taller`` dark on a body that was
 #: scrolling.
-SURF_POOL4_FULL_LAYOUT_ROWS = 44
+SURF_POOL4_FULL_LAYOUT_ROWS = 45
 
 #: The ``4`` POOL4 MARKET body's own full-layout width, swept in situ on
 #: 2026-09-11. **Neither a restatement nor a derivation of
@@ -1936,11 +2018,18 @@ class SurfScreen(RefreshGuard, Screen):
      * overflow a scroll container, it SHRINKS, so one given fewer rows than
      * its content loses them with no scrollbar and no trace UNLESS it scrolls
      * inside itself. Only POOL4 FLOW does (it is a `RichLog`), so it takes
-     * the left column's `1fr` at a floor of 6 -- title, legend note, four
-     * rows -- exactly like LAUNCHPAD ACTIVITY next door. The rail's `1fr`
-     * goes to sIMD VAULT instead, which is the panel there with a FIXED line
-     * count: `min-height: 10` is both its floor and its ceiling, so it can
-     * never be cut. HATCHES is `auto` beside it, because its height answers
+     * the left column's `1fr` at a floor of 6 -- exactly like LAUNCHPAD
+     * ACTIVITY next door. That 6 was "title, legend note, four rows" until
+     * 2026-09-12; the blank row the title now carries (`margin: 0 0 1 0`,
+     * unscoped in the widget's own DEFAULT_CSS since that date) comes out of
+     * the log, so at the floor it is title, BLANK, note, three rows. The
+     * floor was deliberately NOT raised to 7 to buy the fourth row back:
+     * that was measured and it takes `SURF_POOL4_FULL_LAYOUT_ROWS` from 45
+     * to 46, and a `RichLog` row is behind the panel's own scrollbar rather
+     * than lost. The rail's `1fr` goes to sIMD VAULT instead, which is the
+     * panel there with a FIXED line count: `min-height: 10` is both its
+     * floor and its ceiling, so it can never be cut -- and since it took the
+     * same blank row it now fills those ten EXACTLY, with nothing spare. HATCHES is `auto` beside it, because its height answers
      * to the producer (ten rows with no levers, twenty at the ten emitted
      * today, twenty-two at the widget's own cap) and a floored `1fr` version
      * of it would silently cut rows in the narrow window where the column

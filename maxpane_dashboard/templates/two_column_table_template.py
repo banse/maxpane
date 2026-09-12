@@ -4,6 +4,14 @@ Pattern: Vertical container with side-by-side data displayed using
 Static widgets (not two DataTables).  A header row labels both columns,
 then N data rows each show left-side and right-side entries inline.
 
+**The blank row under the title is not optional.**  Every panel title in
+this repo is followed by one blank row (``margin: 0 0 1 0`` on the title's
+own class), so a panel is separated from whatever sits above it.  Keep that
+rule when you copy this file.  On 2026-09-12 a survey found 36 panel titles
+across the app missing it and **all six of these templates** missing it too,
+which is how it spread: a defect in a copy-source is a defect in every
+dashboard not yet written.
+
 Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_best_plays.py
   - maxpane_dashboard/widgets/cattown/ct_best_plays.py
@@ -34,11 +42,17 @@ class GameBestPlays(Vertical):
     """
 
     DEFAULT_CSS = """
+    /* `margin: 0 0 1 0` IS THE BLANK ROW UNDER THE TITLE and it is
+       mandatory -- see the module docstring. It REPLACED a hand-rolled
+       `Static("", classes="ev-body")` spacer below the title. The spacer
+       BELOW the header row is a different row -- it separates the column
+       headings from the data -- and stays. */
     GameBestPlays > .ev-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        margin: 0 0 1 0;
     }
     GameBestPlays > .ev-body {
         padding: 0 1;
@@ -48,7 +62,6 @@ class GameBestPlays(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("BEST PLAYS", classes="ev-title")
-        yield Static("", classes="ev-body")
         yield Static(
             f"  {'Left Column':<14} {'Value':>10}    {'Right Column':<14} {'Value':>8}",
             classes="ev-body",

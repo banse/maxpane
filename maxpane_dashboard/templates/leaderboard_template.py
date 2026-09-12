@@ -4,6 +4,14 @@ Pattern: Vertical container with a title Static and a DataTable.
 Uses fixed-width columns, zebra stripes, and cursor_type="row".
 Highlights the leader row with bold markup.
 
+**The blank row under the title is not optional.**  Every panel title in
+this repo is followed by one blank row (``margin: 0 0 1 0`` on the title's
+own class), so a panel is separated from whatever sits above it.  Keep that
+rule when you copy this file.  On 2026-09-12 a survey found 36 panel titles
+across the app missing it and **all six of these templates** missing it too,
+which is how it spread: a defect in a copy-source is a defect in every
+dashboard not yet written.
+
 Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_overview_leaderboard.py
   - maxpane_dashboard/widgets/cattown/ct_leaderboard.py
@@ -33,11 +41,16 @@ class GameLeaderboard(Vertical):
     """
 
     DEFAULT_CSS = """
+    /* The title. `margin: 0 0 1 0` IS THE BLANK ROW UNDER IT and it is
+       mandatory -- see the module docstring. The selector is the bare
+       `> Static` because the DataTable below is not one; give the title its
+       own class when you adapt this and the margin goes with the class. */
     GameLeaderboard > Static {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        margin: 0 0 1 0;
     }
     GameLeaderboard > DataTable {
         height: 1fr;
