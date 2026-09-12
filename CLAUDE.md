@@ -375,8 +375,10 @@ mainnet fixture behind them.
 ### surf's POOL4 MARKET view — the `4` body (2026-09-11)
 
 Surf grew a **fourth body**, on the same rule as the three before it: `4` swaps
-`#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4_USER — STAKERS beside BURN & SUPPLY over
-SIGNALS, then RECENT FLOW beside IF IMD FALLS — and `escape` backs out one-way. **There is no
+`#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4_USER — RECENT FLOW beside BURN & SUPPLY
+over SIGNALS, then STAKERS beside IF IMD FALLS — and `escape` backs out one-way. (The two
+left-hand panels traded rows on 2026-09-12, with STAKERS' addresses printed whole and the ladder
+cut to a **fixed** 45 columns; both pins moved with it, and PRD §4.1 carries the whole trade.) **There is no
 six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and the
 table above still has eight rows. `p` is the protocol and `4` is the market: the two read off the
 same `TIER_POOL4` sweep and answer different questions, which is why the split is two bodies and
@@ -454,9 +456,14 @@ word *APR*.
 **Its layout pins are its own**, measured in situ and never derived:
 `SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}`, each with its own `#:` block naming the binding
 panel and the sweep. The numbers are not repeated here; the terminal-layout skill's table names
-the constants. One result from that sweep is worth knowing before touching this body: it is the
-**smallest** of surf's four in both dimensions, which refutes half of the PRD's own prediction
-that a bakery-shaped body would be wide-and-short. The other half held.
+the constants. One result from those sweeps is worth knowing before touching this body, and it
+**reversed on 2026-09-12**: it was the *smallest* of surf's four in both dimensions, which refuted
+half of the PRD's own prediction that a bakery-shaped body would be wide-and-short. Then the owner
+asked for STAKERS' addresses whole — all 42 characters — and the width pin moved by more than the
+height pin came down, so the PRD's prediction is now half-right for a reason nobody foresaw: this
+body is the wide one. The binding panel changed with it, from RECENT FLOW to STAKERS. **A change
+to a cell's contents here is a change to a pin**, and neither number may be adjusted to match a
+guess — re-sweep.
 
 ## Build & run
 
@@ -495,8 +502,8 @@ left in place so nothing it tracks ever goes dark (`esc` backs out, one-way);
 **`p` on surf** swaps the same three rows for the POOL4 body (THE SPLIT /
 THE RATCHET / POOL4 FLOW on the left; HATCHES over sIMD VAULT in the rail),
 also keeping the hero, also one-way; **`4` on surf** swaps them for the
-POOL4 MARKET body (STAKERS beside BURN & SUPPLY over SIGNALS; RECENT
-FLOW beside IF IMD FALLS) and is the one surf body that swaps the
+POOL4 MARKET body (RECENT FLOW beside BURN & SUPPLY over SIGNALS;
+STAKERS beside IF IMD FALLS) and is the one surf body that swaps the
 **hero** too, for its own IMD PRICE / DOWNSIDE BID / STAKING cards —
 curator's per-mode hero, not a new pattern; surf's status hint reads
 `l launchpad · p pool4 · 4 market`. Surf's own `l` and curator's own `l` (the

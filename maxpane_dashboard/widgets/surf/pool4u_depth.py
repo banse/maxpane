@@ -63,6 +63,18 @@ something in the ``ETH paid`` column beside it; a reader scanning a column of
 percentages reads ``--`` as a small one far more readily than as an absent one.
 A word with no digits in it cannot be misread as a quantity at all.
 
+A fixed width, since 2026-09-12
+-------------------------------
+This is the one panel on the ``4`` body whose column is a **constant** rather
+than a share of the terminal: :data:`PANEL_COLUMNS`. The owner asked for it
+narrower off the live screen ("half of its space is empty") and for the
+columns to go to STAKERS beside it, and a ``fr`` seam cannot deliver that --
+a ratio hands this panel a proportion, so it grows straight back on a wide
+terminal. A fixed column hands every extra column to the leaderboard at every
+width. The number itself is the caption's, not the table's; see
+:data:`PANEL_COLUMNS` for why that is a floor and what it would take to move
+it.
+
 Shape, shared primitives and the ``$`` trap
 -------------------------------------------
 A ``DataTable`` under its own title and over a caption, on
@@ -110,6 +122,7 @@ __all__ = [
     "COMPACT_WIDTH",
     "FULL_WIDTH",
     "HEADERS",
+    "PANEL_COLUMNS",
     "TABLE_ID",
     "TITLE",
     "UNAVAILABLE_LINE",
@@ -134,6 +147,34 @@ TITLE = "IF IMD FALLS"
 #: standing commitment. ``as it stands`` rather than ``currently`` so the
 #: sentence names the **position** as the thing that may change, not the price.
 CAPTION = "quoted from the position as it stands now"
+
+#: How many terminal columns this panel is given on the ``4`` body, and the
+#: **only** panel on that body whose width is a constant rather than a share.
+#:
+#: Restated here, not imported -- the number lives in CSS, in
+#: ``SurfScreen.DEFAULT_CSS`` and in ``themes/minimal.tcss``, and a stylesheet
+#: cannot read Python. ``test_the_ladder_column_is_exactly_the_width_of_its_own
+#: _caption`` reads all three back off composited output and asserts they agree,
+#: so a seam edit in either CSS copy reddens rather than silently re-widening
+#: the panel the owner asked to shrink.
+#:
+#: WHAT IT IS MADE OF, and it is not the table. :data:`FULL_WIDTH` is 27 cells;
+#: :data:`CAPTION` is **41**, and the caption is the widest thing this panel
+#: paints. Add the two columns of the panel's own ``padding: 0 1`` and the two
+#: the caption's ``Static`` takes for its own and the answer is 45, measured in
+#: situ rather than added up.
+#:
+#: **AND IT IS A FLOOR, NOT A PREFERENCE.** Below 45 this panel's caption is cut
+#: by CSS with an ellipsis and **no ``‹`` marker**: the widen tier is decided
+#: from :data:`FULL_WIDTH`, the table's width, so between 31 and 44 columns the
+#: sentence that says these numbers are a quote rather than a promise goes
+#: quietly missing while the title claims everything fits. That is the standing
+#: "a panel that can bind must be able to mark" rule failing, and it is why the
+#: request to make this panel "quite less" wide stops at 45 rather than at the
+#: table's 29. Shortening :data:`CAPTION` would move this number; PRD §8.2 owns
+#: that sentence, so it was measured (29 cells or fewer would hold
+#: ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` at 105) and not spent.
+PANEL_COLUMNS = 45
 
 #: Nothing could be read -- ``depth_rows`` returned ``None`` because the tick or
 #: the position's liquidity was unavailable. A rendered sentence, never an empty

@@ -365,9 +365,17 @@ async def test_the_market_body_is_bakerys_two_rows() -> None:
     """Asserted on each container's own children, never on a screen-wide query.
 
     A panel mounted into the wrong row still answers ``query_one`` from the
-    screen and would leave this green. The arrangement is PRD §4's: a
-    leaderboard beside a chart-over-signals column, then an activity log
-    beside the EV table.
+    screen and would leave this green.
+
+    **The two left-hand panels traded rows on 2026-09-12** and PRD §4 was
+    amended with them. It is the activity log beside the chart-over-signals
+    column now, then the leaderboard beside the EV table -- the owner read the
+    live screen and asked for STAKERS under RECENT FLOW. The rail did not
+    move, which is the half that keeps ``_SCROLL_COLUMNS`` correct.
+
+    Asserted against the real screen rather than against ``compose``'s source,
+    and in both directions: each row's children **and** the geometry that says
+    they are where the ids claim.
     """
     async with _surf_app().run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
@@ -379,20 +387,29 @@ async def test_the_market_body_is_bakerys_two_rows() -> None:
         assert [c.id for c in body.children] == [
             POOL4_USER_MIDDLE_ID, POOL4_USER_BOTTOM_ID,
         ]
-        assert [type(w) for w in middle.children] == [SurfPool4UStakers, type(rail)]
+        assert [type(w) for w in middle.children] == [SurfPool4Flow, type(rail)]
         assert [type(w) for w in rail.children] == [
             SurfPool4UBurn, SurfPool4USignals,
         ]
         assert [type(w) for w in bottom.children] == [
-            SurfPool4Flow, SurfPool4UDepth,
+            SurfPool4UStakers, SurfPool4UDepth,
         ]
 
         # ...and the rows really are stacked and the columns really are side
         # by side, which the child lists above are identical either way.
-        stakers = screen.query_one(SurfPool4UStakers)
-        assert stakers.region.right <= rail.region.x
-        assert stakers.region.y == rail.region.y
+        flow = [w for w in middle.children if isinstance(w, SurfPool4Flow)][0]
+        stakers = [
+            w for w in bottom.children if isinstance(w, SurfPool4UStakers)
+        ][0]
+        depth = [w for w in bottom.children if isinstance(w, SurfPool4UDepth)][0]
+        assert flow.region.right <= rail.region.x
+        assert flow.region.y == rail.region.y
+        assert stakers.region.right <= depth.region.x
+        assert stakers.region.y == depth.region.y
         assert middle.region.y + middle.region.height <= bottom.region.y
+
+        # ...and the leaderboard really is BELOW the log, which is the ask.
+        assert flow.region.y < stakers.region.y
 
 
 async def test_every_market_panel_reaches_the_compositor() -> None:
@@ -431,7 +448,7 @@ async def test_recent_flow_is_the_same_class_mounted_twice() -> None:
         flows = list(screen.query(SurfPool4Flow))
         assert len(flows) == 2, [f.parent.id for f in flows]
         assert {f.parent.id for f in flows} == {
-            POOL4_LEFT_ID, POOL4_USER_BOTTOM_ID,
+            POOL4_LEFT_ID, POOL4_USER_MIDDLE_ID,
         }
         # One payload, both panels: compare what each actually holds rather
         # than trusting that one statement fed both.

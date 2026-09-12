@@ -2417,14 +2417,26 @@ SurfPool4Vault {
  * `#surf-pool4-body`'s, so moving between any two of the four bodies never
  * also moves the hero's breathing room.
  *
- * THE SEAM IS `1fr:1fr` ON BOTH ROWS, AND THE BOTTOM ROW'S IS THE REASON.
- * `SurfPool4Flow` is mounted a SECOND time in that row (PRD section 6.4:
- * reuse the module, do not copy it), and the rule it already carries above
- * -- `width: 1fr; height: 1fr; min-height: 6` -- is exactly the rule it wants
- * here. A 7:6 seam would have needed a scoped width override, i.e. a second
+ * THE TOP ROW'S SEAM IS `1fr:1fr` AND THE REUSED PANEL IS THE REASON.
+ * `SurfPool4Flow` is mounted in it a SECOND time (PRD section 6.4: reuse the
+ * module, do not copy it), and the rule it already carries above --
+ * `width: 1fr; height: 1fr; min-height: 6` -- is exactly the rule it wants
+ * there. A 7:6 seam would have needed a scoped width override, i.e. a second
  * place stating that panel's geometry, which is the divergence reuse exists
- * to avoid. The top row takes the same seam so the two read as one grid, the
- * way `#middle-row` and `#bottom-row` do in the dashboard body.
+ * to avoid.
+ *
+ * THE BOTTOM ROW'S SEAM IS NOT A RATIO AT ALL, SINCE 2026-09-12. Both rows
+ * were `1fr:1fr` and read as one grid until the owner asked, off the live
+ * screen, for STAKERS below RECENT FLOW, for its addresses whole, and for IF
+ * IMD FALLS narrower. The ladder is now a FIXED 45 columns --
+ * `pool4u_depth.CAPTION` plus its padding, measured, not chosen -- and
+ * STAKERS takes the rest as `1fr`. A ratio was measured and rejected: it
+ * hands the ladder a SHARE of the terminal, so on a 169-column screen a
+ * 73:45-shaped seam grows it to 65, wider than the 52 that prompted the
+ * request. A fixed column gives every extra column to the leaderboard at
+ * every width. The price is that the two rows' seams no longer line up -- 59
+ * in the top row against 73 in the bottom at the pin -- which is the visible
+ * consequence of asking for two differently-sized left panels.
  *
  * EVERY `1fr` CHILD IS FLOORED AND EVERY SCROLLING `Vertical` RESERVES ITS
  * GUTTER. A `1fr` child cannot overflow a scroll container, it SHRINKS, so
@@ -2448,6 +2460,17 @@ SurfPool4Vault {
  * middle row with it; the ladder's 10 -> 9 took `#surf-pool4-user-bottom`
  * down the same amount.
  *
+ * ...AND `#surf-pool4-user-bottom` WENT BACK UP, 9 -> 12, LATER THE SAME DAY,
+ * WHICH IS THE ONE FLOOR HERE THAT IS NOT A PANEL'S OWN CONTENT. STAKERS
+ * moved into that row and a leaderboard in a nine-row slot prints FIVE
+ * entries where it printed nine upstairs. 12 is the top row's floor, so the
+ * two `1fr` rows now have the same floor as well as the same growth, and the
+ * leaderboard prints as many rows as it ever did at every height.
+ * `SurfPool4UStakers`'s own floor went 11 -> 12 with it, because a child
+ * floored ABOVE its row is a child the row cannot hold. What the three rows
+ * cost is in `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_ROWS`, declared rather
+ * than absorbed.
+ *
  * This copy is the one that RENDERS -- an app stylesheet outranks a screen's
  * DEFAULT_CSS -- and `tests/screens/test_surf_screen.py` pins the two copies
  * together property by property. Edit both or neither. */
@@ -2470,7 +2493,7 @@ SurfScreen #surf-pool4-user-middle {
 SurfPool4UStakers {
     width: 1fr;
     height: 1fr;
-    min-height: 11;
+    min-height: 12;
     padding: 0 1;
 }
 
@@ -2500,13 +2523,13 @@ SurfPool4USignals {
 
 SurfScreen #surf-pool4-user-bottom {
     height: 1fr;
-    min-height: 9;
+    min-height: 12;
     padding: 0 0;
     margin: 0 0 1 0;
 }
 
 SurfPool4UDepth {
-    width: 1fr;
+    width: 45;
     height: 1fr;
     min-height: 9;
     padding: 0 1;

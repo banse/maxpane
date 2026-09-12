@@ -18,7 +18,7 @@ it. This file is the method; the constants are the record.
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 | 106 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `4` pool4 market | 105 cols · 32 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `4` pool4 market | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
@@ -35,8 +35,9 @@ which is why nothing has been added since 2026-08-12 despite five new bodies
 since. surf's `p` pool4 body holds the **row** record at 45, the largest pinned
 here, and unlike the column pins it is a **worst case over payloads** rather
 than a constant, so it is re-swept when a panel's line count changes, not
-merely re-checked. surf's `4` market body is the newest and is the narrowest
-thing in the table at 105; neither touches the app-wide record. Its row pin
+merely re-checked. surf's `4` market body is the newest, and **it was the
+narrowest thing in the table at 105 for one day**; neither touches the
+app-wide record. Its row pin
 went 33 -> 35 on 2026-09-12 when every panel on it gained the repo-wide blank
 row under its title (`margin: 0 0 1 0`); four panels grew a row each and the
 pin moved two, because only the binding column's growth reaches it. **That
@@ -67,9 +68,38 @@ pin, and a row that lands inside an existing floor does not reach it at all.
 Raising FLOW's floor to buy its fourth log row back was measured too and
 costs a second row (45 -> 46); it was not spent.
 
-**Two of those pins are one column apart with the same panel binding both, and
-that is the strongest argument here against deriving a pin from a neighbour.**
-`SurfPool4Flow` binds surf's `p` body and its `4` body. In `p` it sits in a
+Later still on the same day the owner asked for three layout changes on the
+`4` body at once and **both** its pins moved: 105 -> 119 and 32 -> 35. That
+entry is the worked example of three separate lessons in this file, so it is
+worth reading before touching a pin:
+
+* **A change to what a cell CONTAINS is a change to a pin.** The only code
+  change behind the fourteen columns is one table column going from a
+  17-cell address window to the whole 42-character address. Nothing about
+  the seam, the panels or the shape was touched by that half of it.
+* **"Make this panel narrower" has a floor, and it is usually not the thing
+  you are looking at.** IF IMD FALLS looks half-empty because its *table* is
+  27 cells. Its **caption** is 41, and below 45 columns the caption clips
+  with no `‹` -- the widen tier is computed from the table. That
+  disqualifies every narrower seam under the marking rule, and the gap
+  between "the table is 27" and "the panel needs 45" is exactly what a sweep
+  finds and arithmetic does not.
+* **A `fr` is the wrong instrument for "make it smaller".** A ratio hands a
+  panel a *share*, so a seam sized at the pin grows that panel straight back
+  on a wide terminal -- on a 169-column screen the ladder would have come
+  back at 65, wider than the 52 that prompted the request. The fix was a
+  **fixed** column for the panel whose content is a constant, and `1fr` for
+  the one that can use every spare column. It is the width-axis twin of the
+  "put the `1fr` on the child that scrolls inside itself" rule below.
+
+**Two of those pins WERE one column apart with the same panel binding both,
+and that was the strongest argument here against deriving a pin from a
+neighbour.** The example is kept because it is still the clearest one, even
+though the `4` body has since moved thirteen columns past the `p` body and
+handed its seam to a different panel -- which is itself the lesson, one layer
+out: a relation between two independently swept pins is a coincidence with a
+date on it, and nothing should be derived from it even while it holds.
+`SurfPool4Flow` bound surf's `p` body and its `4` body. In `p` it sits in a
 scrolling `Vertical` that reserves its own scrollbar gutter, so that column has
 to buy a column more than the panel needs; in `4` the row it sits in does not
 scroll, so the seam buys the panel's need exactly and the body's single gutter
@@ -98,6 +128,17 @@ floors: **give a fixed-line-count panel a floor equal to its content and the
 marker becomes honest for free; floor it lower and the gap comes straight
 back.** Still measure against content — the floor is what makes the two agree,
 and nothing enforces it from the marker's side.
+
+That row's floor is now 12 rather than the ladder's 9, which is **above** its
+tallest panel's content and is the one floor on that body that is not a
+measurement. It was bought for the leaderboard that moved into the row later
+the same day — a leaderboard in a nine-row slot prints five entries — and it
+widens the safety margin above rather than narrowing it, so the rule holds in
+the direction it was written. The rule's converse is the thing to watch: a
+floor *above* its panel's content costs the body rows, and the skill's answer
+to that is the one this file gives everywhere else — buy the margin
+deliberately and write down what it cost, which
+`SURF_POOL4_USER_FULL_LAYOUT_ROWS` does (32 -> 35).
 
 ## The rules
 
@@ -241,5 +282,6 @@ curator's `y`/`f` swap whole *bodies* instead. Each swapped body gets its
 from and does not equal its `l`, and its sweep deliberately straddles both
 neighbouring pins so agreeing with one would show up as a measurement rather
 than as an assumption. The `4` body's sweep straddles all three of them for the
-same reason, and it starts sixty-seven columns under the number it collects. A swapped-in body is composed once and hidden, so
+same reason, and it starts eighty-one columns under the number it collects --
+re-centred, like every sweep here, the day the pin moved. A swapped-in body is composed once and hidden, so
 the first keypress paints a complete frame rather than a blank one.

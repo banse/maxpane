@@ -371,9 +371,9 @@ ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand 
 hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way.
 **It binds `p`** the same way for pool4 — THE SPLIT, THE RATCHET and POOL4 FLOW on the left,
 HATCHES and sIMD VAULT in the rail, the same hero left where it was. **And it binds `4`** for the
-POOL4 MARKET view — the same protocol read as a market rather than as a machine: STAKERS beside
-BURN & SUPPLY over SIGNALS, then RECENT FLOW beside IF IMD FALLS, a ladder of what the hook bids
-as IMD falls. `4` is the one Surfboard view that swaps the **hero** too, for IMD PRICE, DOWNSIDE
+POOL4 MARKET view — the same protocol read as a market rather than as a machine: RECENT FLOW
+beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses, no shortening —
+beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` is the one Surfboard view that swaps the **hero** too, for IMD PRICE, DOWNSIDE
 BID and STAKING; `esc` backs out of any of the three. The status hint names all three:
 `l launchpad · p pool4 · 4 market`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two

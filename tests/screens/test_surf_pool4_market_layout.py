@@ -22,14 +22,34 @@ Three things this file exists to pin above the rest
    :data:`MEASURED_MARKET_ROWS`, which are hand-typed **on purpose**: a test
    that imported the constant it explains would compare a number with itself.
 3. **The sweeps do not start at the pin.** A range beginning on the constant
-   agrees with it by construction. The width sweep runs 38..144 -- sixty-seven
-   columns below the number it collects and thirty-nine above, crossing the
+   agrees with it by construction. The width sweep runs 38..156 -- eighty-one
+   columns below the number it collects and thirty-seven above, crossing the
    ``p`` body's 106, the ``l`` body's 138 and the screen's own 143 so
    agreeing with any of them would have to show up as a sweep result. The
-   height sweep runs **24..46**, eight rows under the number it collects and
-   fourteen over, and it is re-centred every time the pin moves -- it ran
-   24..45 against a pin of 35 and the same range against a pin of 32 would
-   have been eleven rows of margin on one side and three on the other.
+   height sweep runs **24..46**, eleven rows under the number it collects and
+   eleven over, and it is re-centred every time the pin moves -- it ran
+   24..45 against a pin of 35, then 24..46 against 32, and the straddle band
+   the payload magnitudes run moves with it every time.
+
+The 2026-09-12 restructure
+--------------------------
+The owner read the live screen and asked for three things: STAKERS below
+RECENT FLOW rather than above it, STAKERS wide enough to print a **whole**
+42-character address, and IF IMD FALLS narrower because "half of its space is
+empty". Both pins moved and both were re-swept from scratch: **105 -> 119**
+and **32 -> 35**. The binder of the width pin changed with them, from
+``SurfPool4Flow`` to ``SurfPool4UStakers``, which is why
+``test_the_market_binding_panel_is_the_flow_log`` is now
+``test_the_market_binding_panel_is_the_staker_table`` -- a renamed test rather
+than an edited assertion, because a pin whose binder silently changes identity
+is exactly what that test exists to catch.
+
+The third ask is the one that did not come free, and this file pins the reason.
+IF IMD FALLS's *table* is 27 cells, but its caption is 41, and below 45 columns
+that caption is cut by CSS with **no ``‹`` marker** -- the panel's widen tier is
+decided by its table. So 45 is a floor rather than a preference, it is spent
+rather than chosen, and ``test_the_ladder_column_is_exactly_the_width_of_its_
+own_caption`` measures it in both directions.
 
 The marker-dark window, and why it is gone
 ------------------------------------------
@@ -69,6 +89,7 @@ from __future__ import annotations
 
 import pytest
 
+from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.screens.surf import (
     POOL4_USER_BODY_ID,
     POOL4_USER_BOTTOM_ID,
@@ -91,6 +112,10 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UStakers,
     SurfPool4UserHero,
 )
+from maxpane_dashboard.widgets.surf.pool4u_depth import CAPTION as DEPTH_CAPTION
+from maxpane_dashboard.widgets.surf.pool4u_depth import (
+    PANEL_COLUMNS as DEPTH_PANEL_COLUMNS,
+)
 from maxpane_dashboard.widgets.surf.pool4u_stakers import MAX_ROWS as STAKER_MAX_ROWS
 
 # The screen-test module owns the payload fixtures and the themed harness.
@@ -99,6 +124,8 @@ from maxpane_dashboard.widgets.surf.pool4u_stakers import MAX_ROWS as STAKER_MAX
 # nothing the rest of the suite can see.
 from tests.screens.test_surf_screen import (
     TALLER_HINT,
+    _css_rules,
+    _surf_stylesheet_block,
     _frozen_payload,
     _mainnet_pool4_payload,
     _ordinary_pool4_payload,
@@ -110,14 +137,45 @@ from tests.screens.test_surf_screen import (
 #: Independent literals for the same reason ``MEASURED_POOL4_COLUMNS`` is one
 #: next door: a test that aliased the screen's constant would compare a
 #: number against itself and pin nothing.
-MEASURED_MARKET_COLUMNS = 105
-MEASURED_MARKET_ROWS = 32
+MEASURED_MARKET_COLUMNS = 119
+MEASURED_MARKET_ROWS = 35
+
+#: How many address rows ``SurfPool4UStakers`` painted at the body's pinned
+#: height **before** the 2026-09-12 swap, when it sat in the top row against
+#: that row's floor of 12. Measured on the pre-swap tree at (105, 32) with the
+#: twenty-row staker payload, and hand-typed here because there is nothing in
+#: this tree left to derive it from.
+#:
+#: It is the number the bottom row's raised floor was bought to protect: in a
+#: nine-row slot -- the ladder's own content height, which is what that row was
+#: floored at -- the same panel prints **five**.
+PRE_SWAP_STAKER_ROWS_AT_PIN = 9
+
+#: What ``SurfPool4UStakers`` needs for itself in this body, measured at the
+#: width where its own marker goes dark. Hand-typed rather than imported for
+#: the reason above.
+#:
+#: **48 until 2026-09-12, when the address column went whole.** ``_ADDR_COLS``
+#: 17 -> 42 took ``FULL_WIDTH`` 44 -> 69, and the panel needs four columns more
+#: than its table does: two for its own ``padding: 0 1`` and two for the
+#: ``Static``'s, since Textual's ``size`` is already the content size. That
+#: second pair is the arithmetic trap this file refuses to do -- the number is
+#: read off the sweep.
+MARKET_STAKERS_NEED = 73
+
+#: What the fixed ladder column is, restated from CSS. It is
+#: ``pool4u_depth.PANEL_COLUMNS``, which is ``CAPTION``'s 41 cells plus the
+#: same four columns of padding -- **not** the ladder table's 27.
+MARKET_DEPTH_COLUMNS = 45
 
 #: What ``SurfPool4Flow`` needs for itself in this body, measured at the width
-#: where its own marker goes dark. Hand-typed rather than imported for the
-#: reason above, and it is **not** the 53 the ``p`` body's
-#: ``POOL4_LEFT_NEED`` records: there the panel's column reserves a scrollbar
-#: gutter of its own and here the bottom row does not.
+#: where its own marker goes dark. It bound this pin until 2026-09-12 and no
+#: longer does: the top row is ``1fr:1fr`` so it asks for 1 + 2 x 52 = 105,
+#: fourteen columns under what the bottom row now asks for. Kept because "the
+#: binder changed" is only a claim if the old binder's need is still measured.
+#: It is **not** the 53 the ``p`` body's ``POOL4_LEFT_NEED`` records: there the
+#: panel's column reserves a scrollbar gutter of its own and here the top row
+#: does not.
 MARKET_FLOW_NEED = 52
 
 #: The panels whose painted line count is a **constant**, and what that
@@ -225,6 +283,25 @@ MARKET_PAYLOADS = {
 }
 
 
+#: The ladder's own five inputs, lifted off the committed capture, for the one
+#: measurement in this file made on the panel ALONE rather than on the body:
+#: how narrow IF IMD FALLS can be before its caption goes. A bare mount is the
+#: right harness for that -- it is a fact about the panel, not about the seam
+#: -- and ``css_path`` loads ``minimal.tcss`` so the panel carries the same
+#: ``padding: 0 1`` it has in the app.
+_DEPTH_KWARGS = {
+    key: _frozen_payload()[key]
+    for key in (
+        "pool4_current_tick",
+        "pool4_position_liquidity",
+        "pool4_backstop_lower_tick",
+        "pool4_backstop_liquidity",
+        "pool4_backstop_state",
+        "pool4_network",
+    )
+}
+
+
 # ---------------------------------------------------------------------------
 # Compositing
 # ---------------------------------------------------------------------------
@@ -299,6 +376,55 @@ def _painted_lines(app, widget) -> int:
     )
 
 
+async def _ladder_lines_at(width: int) -> list[str]:
+    """IF IMD FALLS alone at exactly *width* columns, composited.
+
+    **Not ``composite_lines``**, and the reason is the change this file is
+    about: ``minimal.tcss`` now pins ``SurfPool4UDepth`` to a fixed width, so
+    a bare mount inside a narrower terminal hands the panel its CSS width
+    anyway and overflows the screen rather than shrinking. An inline
+    ``styles.width`` is the one thing that outranks the stylesheet, which is
+    what makes "one column under its own pin" a question this harness can
+    actually ask.
+    """
+    from textual.app import App as _App
+
+    class _Solo(_App):
+        CSS_PATH = CSS_PATH
+
+        def compose(self):
+            yield SurfPool4UDepth()
+
+    async with _Solo().run_test(size=(width + 40, 20)) as pilot:
+        panel = pilot.app.query_one(SurfPool4UDepth)
+        panel.styles.width = width
+        panel.update_data(**_DEPTH_KWARGS)
+        await pilot.pause()
+        await pilot.pause()
+        assert panel.region.width == width, (
+            f"the inline width override did not take: {panel.region.width}"
+        )
+        return [
+            line.rstrip()
+            for line in _region_text(pilot.app, panel).split("\n")
+        ]
+
+
+def _staker_rows(app, widget) -> int:
+    """How many ADDRESS rows the leaderboard actually paints.
+
+    Counted off composited output rather than taken from the panel's height:
+    a twelve-row panel painting five entries is exactly the regression the
+    bottom row's floor was raised to prevent, and a height check cannot see
+    it. A row is one whose first painted character is its rank digit, which
+    excludes the title, the blank under it, the header and the footer.
+    """
+    return len([
+        line for line in _region_text(app, widget).split("\n")
+        if line.strip() and line.strip()[0].isdigit()
+    ])
+
+
 async def _render(payload, size):
     """Open the `4` body at *size* and hand back everything measured from it."""
     app = _surf_app(payload)
@@ -316,6 +442,9 @@ async def _render(payload, size):
             "text": _screen_text(pilot.app),
             "widths": {n: w.region.width for n, w in widgets.items()},
             "lines": {n: _painted_lines(pilot.app, w) for n, w in widgets.items()},
+            "staker_rows": _staker_rows(
+                pilot.app, widgets["SurfPool4UStakers"]
+            ),
             "depth_text": _region_text(pilot.app, widgets["SurfPool4UDepth"]),
         }
 
@@ -328,7 +457,7 @@ async def _render(payload, size):
 #: The width sweep, as an explicit ``(payload, width)`` list rather than two
 #: crossed ``parametrize`` decorators.
 #:
-#: The committed capture runs the **whole** range, 38..144. The widest flow
+#: The committed capture runs the **whole** range, 38..156. The widest flow
 #: magnitudes run the twenty-one columns either side of the pin, which is the
 #: only band where a payload that moved the threshold could show it -- a
 #: hundred more renders of a payload agreeing with the first one outside that
@@ -336,8 +465,8 @@ async def _render(payload, size):
 #: boundary itself is checked against **all nine** payload states by
 #: ``test_the_market_column_pin_does_not_move_with_the_payload`` below, which
 #: is the stronger of the two claims anyway.
-_WIDTH_SWEEP = [("capture", w) for w in range(38, 145)] + [
-    ("ordinary", w) for w in range(95, 116)
+_WIDTH_SWEEP = [("capture", w) for w in range(38, 157)] + [
+    ("ordinary", w) for w in range(109, 130)
 ]
 
 
@@ -360,11 +489,14 @@ async def test_the_market_body_is_whole_from_its_pinned_width(
     thirties, which is why this range starts there rather than at a
     comfortable width.
 
-    Swept against two payload magnitudes. ``ordinary`` is the one that could
-    move the *binding* panel: ``_fmt.fmt_imd`` compacts everything above
-    1,000, so the committed capture's ``1.2K`` is FLOW's narrow case and a
-    three-digit-and-two-decimals row is its widest. It does not move the pin,
-    and that is the result worth having.
+    Swept against two payload magnitudes. ``ordinary`` was the one that could
+    move the *old* binding panel, FLOW: ``_fmt.fmt_imd`` compacts everything
+    above 1,000, so the committed capture's ``1.2K`` is FLOW's narrow case and
+    a three-digit-and-two-decimals row is its widest. Since 2026-09-12 the
+    binder is the staker table, whose widest cell is an address, and an
+    address is 42 characters whatever the wallet. Both magnitudes are still
+    run: ``ordinary`` is the state that would show FLOW taking the seam back,
+    and a payload that cannot move a pin is worth having as a measurement.
     """
     r = await _render(MARKET_PAYLOADS[payload_name](), (width, 50))
     if width >= SURF_POOL4_USER_FULL_LAYOUT_COLUMNS:
@@ -406,33 +538,45 @@ async def test_the_market_column_pin_does_not_move_with_the_payload(
 
 
 @pytest.mark.parametrize("payload_name", sorted(MARKET_PAYLOADS))
-async def test_the_market_binding_panel_is_the_flow_log(payload_name) -> None:
+async def test_the_market_binding_panel_is_the_staker_table(payload_name) -> None:
     """Pinned by a test, not by a sentence, and under every payload.
 
     The sweep can only see the resulting number, so it stays green if a
     different panel became the binder -- which is the half that matters for
     the standing rule that a panel which can bind must be able to *mark*. One
-    column under the pin ``SurfPool4Flow`` is the only panel with anything to
-    say, and it says it.
+    column under the pin ``SurfPool4UStakers`` is the only panel with anything
+    to say, and it says it: it drops its ``share`` column and lights ``‹`` in
+    its own title.
+
+    **It was ``SurfPool4Flow`` until 2026-09-12** and this test was renamed
+    rather than edited, because a binder that changes identity while a test
+    keeps its old name is a pin nobody re-measured.
     """
     r = await _render(
         MARKET_PAYLOADS[payload_name](),
         (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS - 1, 50),
     )
-    assert r["marked"] == {"SurfPool4Flow"}, (payload_name, sorted(r["marked"]))
+    assert r["marked"] == {"SurfPool4UStakers"}, (
+        payload_name, sorted(r["marked"])
+    )
 
 
-async def test_the_market_column_pin_is_the_need_it_claims_doubled() -> None:
+async def test_the_market_column_pin_is_the_bottom_rows_two_needs() -> None:
     """The pin's *derivation*, not just its threshold.
 
-    Both rows are ``1fr:1fr``, so the pin is the widest single panel need,
-    doubled, plus the one column ``#surf-pool4-user-body`` reserves for its
-    own ``scrollbar-gutter: stable``. Measured at the pin itself, where that
-    arithmetic is visible on screen, and asserted with ``==`` so a need that
-    drifted in either direction reddens.
+    **It stopped being "the widest need, doubled" on 2026-09-12.** The top row
+    is still ``1fr:1fr`` and still asks for ``1 + 2 x 52 = 105``; the bottom
+    row is now a ``1fr`` leaderboard beside a **fixed** ladder column, so it
+    asks for ``STAKERS' need + the ladder's column``, and the body's own
+    ``scrollbar-gutter: stable`` adds the one column it always did. Measured
+    at the pin itself, where that arithmetic is visible on screen, and
+    asserted with ``==`` so a need that drifted in either direction reddens.
 
-    ``MARKET_FLOW_NEED`` is a hand-typed literal rather than an import of the
-    constant it explains, for the reason in this module's docstring.
+    ``MARKET_STAKERS_NEED``, ``MARKET_DEPTH_COLUMNS`` and ``MARKET_FLOW_NEED``
+    are hand-typed literals rather than imports of the constants they explain,
+    for the reason in this module's docstring. The old binder's need is still
+    asserted: "the binder changed" is only a measurement if the panel that
+    used to hold the seam is still measured holding less of it.
     """
     app = _surf_app(None)
     async with app.run_test(
@@ -447,27 +591,118 @@ async def test_the_market_column_pin_is_the_need_it_claims_doubled() -> None:
         widgets = _market_widgets(screen)
         flow = widgets["SurfPool4Flow"].region.width
         depth = widgets["SurfPool4UDepth"].region.width
+        stakers = widgets["SurfPool4UStakers"].region.width
         body = screen.query_one(f"#{POOL4_USER_BODY_ID}").region.width
         middle = screen.query_one(f"#{POOL4_USER_MIDDLE_ID}").region.width
         bottom = screen.query_one(f"#{POOL4_USER_BOTTOM_ID}").region.width
         rail = screen.query_one(f"#{POOL4_USER_RAIL_ID}").region.width
 
-    assert flow == MARKET_FLOW_NEED, (
-        f"FLOW gets {flow} columns at the pin, not the {MARKET_FLOW_NEED} the "
-        "constant is built from -- re-sweep it"
+    assert stakers == MARKET_STAKERS_NEED, (
+        f"STAKERS gets {stakers} columns at the pin, not the "
+        f"{MARKET_STAKERS_NEED} the constant is built from -- re-sweep it"
+    )
+    assert depth == MARKET_DEPTH_COLUMNS, (
+        f"the ladder is {depth} columns wide at the pin, not the fixed "
+        f"{MARKET_DEPTH_COLUMNS} its CSS declares"
     )
     # The body really does pay one column for its gutter, which is the whole
-    # of the difference between this pin and twice the binder's need.
+    # of the difference between this pin and the bottom row's two needs.
     assert body == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
     assert bottom == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS - 1
     assert middle == bottom
-    assert 1 + 2 * MARKET_FLOW_NEED == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
-    # ...and the seam really is even, so "doubled" is the right arithmetic
-    # rather than a coincidence of one particular ratio. The right-hand half
-    # of the bottom row absorbs the odd column when the row is odd-width.
-    assert abs(flow - depth) <= 1
+    assert (
+        1 + MARKET_STAKERS_NEED + MARKET_DEPTH_COLUMNS
+        == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
+    )
+    # The top row is still an even seam and still asks for less than the
+    # bottom one, which is what "the binder moved downstairs" means.
+    assert abs(flow - rail) <= 1
     assert abs(middle - 2 * rail) <= 1
+    assert 1 + 2 * MARKET_FLOW_NEED < SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
     assert MEASURED_MARKET_COLUMNS == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
+
+
+async def test_the_ladder_column_is_exactly_the_width_of_its_own_caption() -> None:
+    """IF IMD FALLS is a fixed column, and the number is the caption's.
+
+    Three claims, and the third is the one that makes the other two worth
+    asserting:
+
+    1. the ladder's column really is :data:`MARKET_DEPTH_COLUMNS` on screen,
+       and the caption is painted **whole** inside it -- the whole sentence,
+       not merely "no ellipsis", because an ellipsis check passes on a blank
+       line;
+    2. it does **not** grow with the terminal. That is the owner's actual
+       request -- a ``fr`` seam would have handed this panel a *share* and
+       grown it back past the 52 it started from on a wide screen -- so the
+       panel is measured at the pin, at ``SURF_FULL_LAYOUT_COLUMNS`` and at
+       200, and STAKERS is measured taking every one of those extra columns;
+    3. one column narrower the caption is **cut in silence**. The widen tier
+       on this panel is decided from its table's width, so between 31 and 44
+       columns it clips with no ``‹`` anywhere in its own region. That is the
+       standing "a panel that can bind must be able to mark" rule failing,
+       and it is the entire reason the ladder's column stops at 45 rather
+       than at the table's 29. Asserted, not narrated, so a future widen tier
+       that learned about the caption reddens this and gets the sentence in
+       ``pool4u_depth.PANEL_COLUMNS`` rewritten rather than left stale.
+    """
+    seen: dict[int, tuple[int, int]] = {}
+    for width in (
+        SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_FULL_LAYOUT_COLUMNS, 200
+    ):
+        app = _surf_app(None)
+        async with app.run_test(size=(width, 50)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("4")
+            await pilot.pause()
+            await pilot.pause()
+            widgets = _market_widgets(pilot.app.screen)
+            depth = widgets["SurfPool4UDepth"]
+            text = _region_text(pilot.app, depth)
+            seen[width] = (depth.region.width,
+                           widgets["SurfPool4UStakers"].region.width)
+        painted = [ln.rstrip() for ln in text.split("\n") if ln.strip()]
+        assert DEPTH_CAPTION in text, (
+            f"at {width} columns the ladder's caption is not painted whole: "
+            f"{painted}"
+        )
+
+    widths = {w for w, _ in seen.values()}
+    assert widths == {MARKET_DEPTH_COLUMNS}, (
+        f"the ladder's column moved with the terminal: {seen} -- a fixed "
+        "column is the whole point of this seam"
+    )
+    assert DEPTH_PANEL_COLUMNS == MARKET_DEPTH_COLUMNS
+    stakers_widths = [w for _, w in seen.values()]
+    assert stakers_widths == sorted(stakers_widths) and len(
+        set(stakers_widths)
+    ) == len(stakers_widths), (
+        f"STAKERS did not take every extra column: {seen}"
+    )
+
+    # ...and one column narrower the sentence goes, with nothing to say so.
+    lines = await _ladder_lines_at(MARKET_DEPTH_COLUMNS - 1)
+    joined = "\n".join(lines)
+    whole = await _ladder_lines_at(MARKET_DEPTH_COLUMNS)
+    assert DEPTH_CAPTION in "\n".join(whole), (
+        "the standalone harness does not paint the caption whole at the "
+        "pinned width either -- it is measuring something other than the seam"
+    )
+    assert DEPTH_CAPTION not in joined, (
+        "the caption still fits one column under the pinned ladder width, so "
+        f"{MARKET_DEPTH_COLUMNS} is loose -- re-measure it"
+    )
+    assert any(ln.rstrip().endswith("…") for ln in lines), (
+        "the caption is gone and nothing was truncated -- this test is no "
+        "longer measuring what it claims"
+    )
+    assert "‹" not in joined, (
+        "IF IMD FALLS now advertises the loss of its caption. That is a "
+        "FIX, not a failure: the fixed-column seam exists because it could "
+        "not, so update `pool4u_depth.PANEL_COLUMNS` and the seam's own "
+        "reasoning rather than re-widening the panel."
+    )
 
 
 def test_the_market_body_fits_inside_the_documented_app_width() -> None:
@@ -478,19 +713,28 @@ def test_the_market_body_fits_inside_the_documented_app_width() -> None:
     Four bodies, four independently measured pins. They are allowed to be
     equal -- but if two of them ever ARE it should be because somebody
     measured it, so the constants stay separate and this is the note that
-    says so rather than a test forbidding the coincidence. This one is the
-    narrowest of the four, one column under the ``p`` body's, and the same
-    panel binds both: see the constant's own block for why that is a
-    measurement and not a contradiction.
+    says so rather than a test forbidding the coincidence.
+
+    **This body was the narrowest of the four and is not any more.** At 105 it
+    sat one column under the ``p`` body's 106 with the same panel binding
+    both; at 119 it is thirteen over, and a different panel binds it. The
+    assertion that recorded the old relation is gone rather than inverted: a
+    ``>`` here would pin a fact about two independently swept numbers that
+    nobody has any reason to keep true. What is still asserted is the only
+    relation that decides anything for a reader -- the body fits the width the
+    app documents, so a terminal that can open surf can open this.
     """
     from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 
     assert SURF_POOL4_USER_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_POOL4_USER_FULL_LAYOUT_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS
-    assert SURF_POOL4_USER_FULL_LAYOUT_COLUMNS < SURF_POOL4_FULL_LAYOUT_COLUMNS
     assert (
         SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
         < SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
+    ), (
+        "the market body now needs a wider terminal than the `l` launchpad "
+        "body -- that is a real regression for a reader, not a constant to "
+        "adjust"
     )
 
 
@@ -503,12 +747,12 @@ def test_the_market_body_fits_inside_the_documented_app_width() -> None:
 #: capture over the whole 24..46 range, and the two payloads that move a
 #: panel's line count over the eight rows that straddle the pin.
 #:
-#: **Re-centred with the pin on 2026-09-12** (35 -> 32): the straddle band
-#: moved 29..36 -> 26..33, because a band that no longer contains the
-#: threshold checks the payload magnitudes at heights where nothing is under
-#: pressure and calls that agreement.
+#: **Re-centred with the pin twice on 2026-09-12** (35 -> 32 -> 35): the
+#: straddle band moved 29..36 -> 26..33 -> 29..36, because a band that no
+#: longer contains the threshold checks the payload magnitudes at heights
+#: where nothing is under pressure and calls that agreement.
 _HEIGHT_SWEEP = [("capture", r) for r in range(24, 47)] + [
-    (name, r) for name in ("mainnet", "widest") for r in range(26, 34)
+    (name, r) for name in ("mainnet", "widest") for r in range(29, 37)
 ]
 
 
@@ -549,18 +793,24 @@ async def test_the_market_body_is_whole_from_its_pinned_height(
         )
 
 
-async def test_the_market_height_pin_is_the_ladders_eighth_line() -> None:
+async def test_the_market_height_pin_is_the_two_rows_floors() -> None:
     """The pin's *derivation*, not just its threshold.
 
-    ``SurfPool4UDepth`` binds, and what it binds on is one specific line: the
-    ``-50%`` rung, the deepest quote the panel makes. It is on screen at the
-    pin and gone one row under it, which is the measurement the constant's
-    ``#:`` block records -- **eight** painted lines over nine rows, in a row
-    whose ``min-height`` is those same nine.
+    **What binds changed on 2026-09-12 and the test changed with it.** It used
+    to be one line -- the ladder's ``-50%`` rung, on screen at the pin and gone
+    one row under it -- because ``#surf-pool4-user-bottom``'s floor was the
+    ladder's own nine rows. STAKERS moved into that row and the floor was
+    raised to the top row's 12 so a leaderboard in it prints what it printed
+    upstairs, so the pin is now the two floors plus the bottom row's one-row
+    margin, and the first thing a row short of it takes is the pair of
+    **caption lines** at the bottom of the body.
 
-    Asserted on the **painted column** rather than on the panel's height,
-    because a panel that were merely one row taller with a blank in it would
-    satisfy a height check and still be missing the number.
+    Both are asserted, in both directions: at the pin the ladder's deepest
+    rung, the ladder's caption and STAKERS' concentration footer are all on
+    screen; one row under it at least one of them is gone. Asserted on the
+    **painted column** rather than on the panel's height, because a panel that
+    were merely one row taller with a blank in it would satisfy a height check
+    and still be missing the number.
     """
     at = await _render(None, (150, SURF_POOL4_USER_FULL_LAYOUT_ROWS))
     under = await _render(None, (150, SURF_POOL4_USER_FULL_LAYOUT_ROWS - 1))
@@ -569,12 +819,72 @@ async def test_the_market_height_pin_is_the_ladders_eighth_line() -> None:
         "the ladder's deepest rung is not on screen at the body's own pinned "
         "height -- re-sweep it"
     )
-    assert "-50%" not in under["depth_text"], (
-        "the ladder still paints its deepest rung one row below the pin, so "
-        "the pin is loose"
+    assert DEPTH_CAPTION in at["depth_text"], (
+        "the ladder's caption is not on screen at the pinned height"
     )
     assert at["lines"]["SurfPool4UDepth"] == FIXED_PANEL_LINES[SurfPool4UDepth]
+
+    lost_under = [
+        name
+        for name, present in (
+            ("the -50% rung", "-50%" in under["depth_text"]),
+            ("the ladder's caption", DEPTH_CAPTION in under["depth_text"]),
+        )
+        if not present
+    ]
+    assert lost_under, (
+        "the ladder still paints every line it has one row below the pin, so "
+        "the pin is loose"
+    )
     assert MEASURED_MARKET_ROWS == SURF_POOL4_USER_FULL_LAYOUT_ROWS
+
+
+async def test_the_bottom_rows_floor_is_bought_for_the_leaderboard() -> None:
+    """The one floor on this body that is **not** its panel's own content.
+
+    Every other ``min-height`` here is the height of the lines the panel
+    paints. ``#surf-pool4-user-bottom``'s is three rows over IF IMD FALLS's
+    eight-over-nine, and the three rows are spent so ``SurfPool4UStakers``
+    prints as many addresses in the bottom row as it did in the top one.
+    The terminal-layout skill's rule for that is to buy the margin
+    **deliberately and say so**, so this is the saying-so, asserted:
+
+    * at the pin the leaderboard paints at least as many address rows as the
+      body printed before the swap (nine, measured against the same payload on
+      the pre-swap tree);
+    * and the margin is real -- the row's floor is strictly greater than the
+      ladder's own, so a future edit that "tidied" the two back together would
+      redden here rather than quietly halve the leaderboard.
+
+    The row count is read off **composited output**, not off a height: a panel
+    can be twelve rows tall and painting five entries.
+    """
+    from maxpane_dashboard.screens.surf import SurfScreen as _S
+
+    r = await _render(_wide_staker_payload(),
+                      (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
+                       SURF_POOL4_USER_FULL_LAYOUT_ROWS))
+    assert r["staker_rows"] >= PRE_SWAP_STAKER_ROWS_AT_PIN, (
+        f"the leaderboard prints {r['staker_rows']} addresses at the pin "
+        f"against the {PRE_SWAP_STAKER_ROWS_AT_PIN} it printed in the top "
+        "row before the swap -- the rebalance has stopped paying for itself"
+    )
+
+    block = _css_rules(_surf_stylesheet_block())
+    row_floor = int(block[f"#{POOL4_USER_BOTTOM_ID}"]["min-height"])
+    ladder_floor = int(block["SurfPool4UDepth"]["min-height"])
+    stakers_floor = int(block["SurfPool4UStakers"]["min-height"])
+    assert row_floor > ladder_floor, (
+        f"#{POOL4_USER_BOTTOM_ID} is floored at {row_floor}, the ladder's own "
+        f"content height -- the margin bought for the leaderboard is gone"
+    )
+    assert stakers_floor == row_floor, (
+        "the leaderboard's own floor and its row's have drifted apart: a "
+        "child floored ABOVE its row is a child the row cannot hold, and one "
+        "floored below it gives the margin straight back"
+    )
+    assert int(_css_rules(_S.DEFAULT_CSS)[f"#{POOL4_USER_BOTTOM_ID}"]
+               ["min-height"]) == row_floor
 
 
 @pytest.mark.parametrize("rows", list(range(24, 47)))
@@ -590,11 +900,16 @@ async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
     behaviour so a fix could not land quietly, and named what to update when
     it reddened.
 
-    It reddened. ``#surf-pool4-user-bottom``'s floor is the ladder's own
-    content -- ten rows then, **nine** since the ``as of`` markers came off
-    this body -- so the panel cannot be squeezed into a height where its table
-    scrolls internally while the body does not -- every height under the pin
-    scrolls the body instead, which the marker *can* see.
+    It reddened. ``#surf-pool4-user-bottom``'s floor has been at or above the
+    ladder's own content ever since -- ten rows then, **nine** when the
+    ``as of`` markers came off this body, and **twelve** since STAKERS moved
+    into that row -- so the panel cannot be squeezed into a height where its
+    table scrolls internally while the body does not; every height under the
+    pin scrolls the body instead, which the marker *can* see.
+
+    The caption is checked alongside the ``-50%`` rung from 2026-09-12,
+    because with the row floored above the ladder's content it is the caption,
+    not the deepest rung, that the first missing row takes.
 
     So the claim is now the general one rather than the exception, and it is
     swept over the same range the pin was: **at no height does this body lose
@@ -609,8 +924,17 @@ async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
         for cls, expected in FIXED_PANEL_LINES.items()
         if r["lines"][cls.__name__] < expected
     }
-    lost = short or ("the ladder's -50% rung"
-                     if "-50%" not in r["depth_text"] else None)
+    lost = short or next(
+        (
+            name
+            for name, present in (
+                ("the ladder's -50% rung", "-50%" in r["depth_text"]),
+                ("the ladder's caption", DEPTH_CAPTION in r["depth_text"]),
+            )
+            if not present
+        ),
+        None,
+    )
     if lost:
         assert TALLER_HINT in r["text"], (
             f"at {rows} rows the body loses {lost} and the screen-wide "
@@ -618,27 +942,28 @@ async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
         )
 
 
-def test_the_market_body_is_the_shortest_surf_body_but_not_the_shortest_pin() -> None:
+def test_the_market_body_is_shorter_than_p_and_taller_than_the_launchpad() -> None:
     """W7's answer for this body, asserted rather than left in prose.
 
     The PRD predicted a bakery-shaped body would land nearer the ``l`` body's
-    31 rows than the ``p`` body's 45. It does -- **32, one row over ``l`` and
-    thirteen under ``p``** -- and the *other* half of that prediction, that it
-    would be wide-and-short, is refuted: this body is narrower than ``p`` as
-    well. Both halves are pinned so a future re-sweep that moved either one
-    has to come back to the W7 note in the constant's own block.
+    31 rows than the ``p`` body's 45. It still does -- **35**, ten rows under
+    ``p`` and four over ``l`` -- but the *other* half of that prediction, that
+    it would be wide-and-short, has now come true in the direction nobody
+    expected: after the whole-address change this body is the **widest** of
+    the three swapped bodies bar the launchpad's, and thirteen columns wider
+    than ``p``.
 
-    The ``> SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`` half now has exactly one row of
-    margin, where it had four. That is a fact about the next change rather
-    than this one, and it is stated here because this assertion is where it
-    will be discovered: one more row off this body and the two shortest surf
-    bodies need the same terminal, at which point the claim in the name of
-    this test stops being true and the name, not the constant, is what has to
-    move.
+    **The name of this test changed with the fact.** It was
+    ``..._but_not_the_shortest_pin`` and asserted
+    ``COLUMNS < SURF_POOL4_FULL_LAYOUT_COLUMNS``; that assertion is deleted
+    rather than inverted, because two independently swept pins have no reason
+    to hold an order. The margin note it carried is kept and re-measured: the
+    ``> SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`` half now has **four** rows of
+    margin where it had one, which is a fact about the next change rather than
+    this one.
     """
     assert SURF_POOL4_USER_FULL_LAYOUT_ROWS < SURF_POOL4_FULL_LAYOUT_ROWS
     assert SURF_POOL4_USER_FULL_LAYOUT_ROWS > SURF_LAUNCHPAD_FULL_LAYOUT_ROWS
-    assert SURF_POOL4_USER_FULL_LAYOUT_COLUMNS < SURF_POOL4_FULL_LAYOUT_COLUMNS
 
 
 # ---------------------------------------------------------------------------

@@ -81,16 +81,109 @@ wrong: the bakery shape is wide-and-short where the `p` body is narrow-and-tall 
 44 rows is the tallest requirement in the repo with open finding **W7** noting nobody has checked it
 against a real laptop. A two-column bakery body should land nearer the launchpad's 31 rows.
 
+**The prediction's verdict, in two parts.** As built (2026-09-11) it was **105 × 32** — nearer the
+launchpad's 31 rows, as predicted, but *narrower* than the `p` body rather than wider, which refuted
+the wide-and-short half. After the 2026-09-12 amendment (§4.1) it is **119 × 35**: still short, and
+now genuinely the wide one. The prediction ends up right for a reason it did not name — a request to
+print whole addresses, not the bakery shape.
+
 ## 4. Layout
 
-Bakery's shape exactly — hero, then `#middle-row` as leaderboard beside a chart-over-signals column,
-then `#bottom-row` as activity beside the EV table.
+**AMENDED 2026-09-12 — the two left-hand panels traded rows and the bottom seam stopped being a
+ratio.** What follows is the layout as built; the original specification, and why it changed, is in
+§4.1 below.
+
+Bakery's shape with its two left panels swapped — hero, then `#middle-row` as the activity log
+beside a chart-over-signals column, then `#bottom-row` as the leaderboard beside the EV table.
 
 ```
- IMD PRICE                DOWNSIDE BID             STAKING
- $2.845                   24.4 ETH                 4.0% trailing 7d
- cheaper on ref −1.5%     standing 0.8% under      1.36M IMD · 66 addrs
+ IMD PRICE                     DOWNSIDE BID                  STAKING
+ $2.845                        24.40 ETH                     3.4% trailing 7d
+ cheaper here 5.52%            standing 0.00% under          27.4K IMD · 66 addrs
 
+ POOL4 FLOW                              │  BURN & SUPPLY  ▁▁▁▁▁▁▁▁▁▁▁█  --/day
+                                         │  retired  102.0M · 3.24% of supply
+ AGE  SIDE  SIZE   BURNED  STAKERS  INF. │  supply   1.0B IMD
+ 2m   SELL  1.2K   111.42  12.38   …ETH  │
+ 7m   BUY   987.65   0.00   0.00   …IMD  │  SIGNALS
+ 14m  SELL~ 4.5K     0.00   0.00   …ETH  │   burning      ON · headroom 0
+                                         │   cheaper pool HERE −5.52%
+ ~ accrued, not settled yet              │   backstop     0.00% under · 24.40 ETH
+                                         │   drip backlog deep · 20.0d
+ ────────────────────────────────────────┴─────────────────┬──────────────────
+ STAKERS                                                   │ IF IMD FALLS
+                                                           │
+ #  address                                     IMD  share │ fall ETH paid band used
+ 1  0xf53c0a4E4b0F77D1a3Bc4d8e3F2a1B0c9D8e3364  1.2K  4.5% │ -1%   0.35     0.5%
+ 2  0xa9c5B1d2E3f4A5b6C7d8E9f0A1b2C3d4E5f6f057   780  2.9% │ -5%   1.76     2.5%
+ 3  0x4c68D9e0F1a2B3c4D5e6F7a8B9c0D1e2F3a4dd08   420  1.5% │ -10%  3.57     5.1%
+ 4  0x1c3A0Ad54418Fe843953C71dF23637DE732Ce159   610  2.2% │ -20%  7.35    10.5%
+ 5  0x61CC704c7A5B7071c7B3f4Cc09A9CBC86373f14E   260  0.9% │ -50% 20.38    29.2%
+ 66 addresses · top 3 = 9% of vault                        │ quoted from the position as it stands now
+```
+
+### 4.1 The 2026-09-12 amendment
+
+The owner read the live screen and asked for three things at once. Each is recorded with what it
+cost, because two of the three moved a pin.
+
+**1. STAKERS below RECENT FLOW.** The original specification put the leaderboard in the top row on
+bakery's shape. It is in the bottom row now and RECENT FLOW is beside the rail. The rail did not
+move, so `_SCROLL_COLUMNS` is unchanged and the `p` body's copy of `SurfPool4Flow` is untouched —
+that panel is still one module mounted twice (§6.4), and its three per-instance keywords
+(`quiet_mainnet`, `quiet_as_of`, `classes="market"`) travelled with the instance.
+
+**2. STAKERS shows the whole 42-character address.** `_fmt.long_addr`'s anti-poisoning window
+(`0xf53c0a4E…8e3364`, 17 cells) was the right compromise for a panel that mentions an address in
+passing, and this panel's whole subject is *which* wallets hold the vault. `_fmt.full_addr` is a
+**second** formatter, added beside the first rather than replacing it: `long_addr`'s other two
+callers — HATCHES on the `p` body and the dashboard body's activity feed — render exactly as they
+did, and the live spoof pairs its window defeats are still live.
+
+The cost is on the record and nothing was shortened elsewhere to hide it: the address column went
+17 → 42 cells, `SurfPool4UStakers.FULL_WIDTH` 44 → 69, that panel's on-screen need 48 → 73, and
+`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` **105 → 119**. The binding panel changed with it, from
+RECENT FLOW to STAKERS. 119 is still well inside `__main__.FULL_LAYOUT_COLUMNS` (143), which is the
+number that decides whether a reader can open the body at all.
+
+**3. IF IMD FALLS narrower — "half of its space is empty".** It is 45 columns now rather than a
+half-share of the row, and that is a **fixed** width rather than a `fr`: a ratio hands this panel a
+proportion of the terminal, so on the owner's own 169-column screen a `73:45`-shaped seam would have
+grown it back to 65 — wider than the 52 that prompted the request. A fixed column gives every extra
+column to the leaderboard at every width, which is what the ask actually means.
+
+**45 is a floor, and the request's own estimate was measuring the wrong thing.** The ladder *table*
+is 27 cells — the ask said "roughly 26", one out — but the caption under it,
+`quoted from the position as it stands now`, is **41**, and below 45 columns that caption is cut by
+CSS with an ellipsis and **no `‹` marker**: this panel decides its widen tier from its table's
+width, so between 31 and 44 columns it clips in silence. The standing rule is that a panel which can
+bind must be able to mark, so every seam narrower than 45 is disqualified. Shortening the caption to
+29 cells or fewer was measured as the alternative — it would hold the width pin at 105 and take the
+ladder to 33 — and was **not spent**: that sentence is §8.2's honesty contract, and rewriting it to
+protect a constant is the trade this repo makes in the other direction. It is available if the owner
+wants the extra twelve columns and will re-word it.
+
+**The height pin moved too, and it is the one number here that is a choice.** A leaderboard in the
+bottom row's nine-row slot — the ladder's own content height — prints **five** entries where it
+printed nine in the top row. `#surf-pool4-user-bottom`'s floor was therefore raised 9 → 12 to match
+the top row's, and `SurfPool4UStakers`'s own floor 11 → 12 with it, so the two `1fr` rows have the
+same floor as well as the same growth. Swept against the pre-swap tree at every height from 35 to
+46, STAKERS now prints the same number of rows or more than it did before the swap. The cost is
+three rows: `SURF_POOL4_USER_FULL_LAYOUT_ROWS` **32 → 35**. Ten rows under the `p` body, four over
+the `l` body's 31. At 12/9 floors the pin would still read 32 and the leaderboard would print 5, 6
+and 7 rows at 32, 33 and 34.
+
+**What this costs visually, said rather than smoothed over:** the two rows' seams no longer line up
+— 59 columns in the top row against 73 in the bottom, at the pin — because the ask is for two
+differently-sized left-hand panels. Making them agree would mean giving the rail 45 (SIGNALS needs
+51 and would clip) or giving the ladder 51 (which is the 52 the owner asked to shrink).
+
+### 4.2 As originally specified (2026-09-11, superseded)
+
+Bakery's shape exactly — hero, then `#middle-row` as leaderboard beside a chart-over-signals column,
+then `#bottom-row` as activity beside the EV table, both rows on a `1fr:1fr` seam.
+
+```
  STAKERS · 66 addresses        │  BURN & SUPPLY  ▁▂▃▅▇▅▃  3,156/day
  ─────────────────────────     │  26,289 retired · 0.12% of supply
   1  0xf53c..3364   184,200    │
@@ -140,6 +233,15 @@ Rank, address, IMD, share of vault, with a footer in the form `top 3 = NN% of va
 not the point; concentration is** — whether three wallets can walk out of this vault is a risk a
 reader acts on. Addresses are chain-sourced and still escaped.
 
+**AMENDED 2026-09-12 — the address is printed WHOLE**, all 42 characters, through `_fmt.full_addr`.
+The panel shipped on `_fmt.long_addr`'s 17-cell anti-poisoning window, which was itself chosen over
+the leaderboard template's colliding `0xABCD..1234`; the owner asked for the whole thing off the live
+screen, and the argument is the one that rejected `_short_addr` taken a step further — a panel whose
+entire subject is *which* wallets hold the vault is the last place to make a reader reconstruct an
+address, and the last place to leave a window an attacker gets to aim at. `long_addr` is unchanged
+for its other two callers. This panel is now the **binding** panel of the body's width pin; see §4.1
+for the columns it cost and §4's amendment for the row it moved into.
+
 **AMENDED 2026-09-12 — the three-state contract belongs here too, and this panel shipped without it.**
 §5.2 gives the hero card three states and §7.4 gives the payload three; this panel was specified with
 two (`rows` / `unavailable`), and reported from a live screenshot: it painted `⚠ stakers unavailable`
@@ -184,6 +286,12 @@ next fix reaches one of them.
 The depth ladder — price move, ETH the hook pays, share of the band consumed. Computed in
 `analytics/surf_pool4_depth.py` as a **pure function** over tick, full-range liquidity and the band:
 no I/O, no clock, stdlib only. Titled and labelled as a quote from the *current* position (§8.2).
+
+**AMENDED 2026-09-12 — this panel's column is a fixed 45 and the caption is what sets it.** See
+§4.1: a `fr` seam grows the panel back on a wide terminal, the table is 27 cells but the §8.2
+caption is 41, and below 45 that caption is cut with no `‹` marker because the widen tier is decided
+from the table. Shortening the caption is the only way to make this panel narrower and it is §8.2's
+sentence, so it was measured and left alone.
 
 **AMENDED 2026-09-11 — the three-state contract belongs here too, and this spec originally put it in
 only one place.** §5.2 gives the hero card three states and §7.4 gives the payload three; the ladder

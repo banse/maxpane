@@ -32,6 +32,7 @@ __all__ = [
     "fmt_compact",
     "fmt_imd",
     "fmt_liquidity",
+    "full_addr",
     "long_addr",
     "hhmm",
     "mmdd",
@@ -155,6 +156,36 @@ def long_addr(value) -> str:
     if len(s) <= 17:
         return s
     return f"{s[:10]}…{s[-6:]}"
+
+
+def full_addr(value) -> str:
+    """The address **whole** -- all 42 characters, no window, no ellipsis.
+
+    ``long_addr``'s opposite number, and it exists because one panel's whole
+    subject is *which* wallets hold the sIMD vault. The anti-poisoning window
+    is a compromise made for panels that mention an address in passing; a
+    leaderboard the reader is expected to copy an address out of should not
+    make them widen the terminal to find out what they are looking at. The
+    owner asked for it on 2026-09-12 off the live screen, and what it costs is
+    recorded rather than hidden: twenty-five columns of
+    ``SurfPool4UStakers.FULL_WIDTH`` (44 -> 69), which took
+    ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` from 105 to 119.
+
+    **``long_addr`` is deliberately left exactly as it was.** Three panels
+    read it -- HATCHES on the ``p`` body, the dashboard body's activity feed
+    and, until now, this one -- and the live spoof pairs its window defeats
+    are still live. This is a second formatter, not a widened contract: a
+    caller that wants the short form gets the short form, unchanged, and a
+    caller that wants the whole thing has to say so.
+
+    Returns raw, unescaped text -- ``long_addr``'s contract verbatim, and for
+    the same reason. The caller passes the result through ``safe_markup``.
+    ``--`` for an empty or missing value, never an empty cell.
+    """
+    if not value:
+        return DASH
+    s = str(value).strip()
+    return s or DASH
 
 
 def hhmm(timestamp) -> str:

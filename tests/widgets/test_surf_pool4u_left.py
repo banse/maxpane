@@ -47,7 +47,7 @@ from maxpane_dashboard.widgets import sparkline_common
 from maxpane_dashboard.widgets.surf import _pool4
 from maxpane_dashboard.widgets.surf import pool4u_burn as burn_mod
 from maxpane_dashboard.widgets.surf import pool4u_hero as hero_mod
-from maxpane_dashboard.widgets.surf._fmt import long_addr
+from maxpane_dashboard.widgets.surf._fmt import full_addr, long_addr
 from maxpane_dashboard.widgets.surf._rowfit import pad
 from maxpane_dashboard.widgets.surf.pool4u_burn import (
     COMPACT_WIDTH as BURN_COMPACT_WIDTH,
@@ -96,7 +96,20 @@ from tests.widgets.surf_compositing import composite_lines
 _lines = composite_lines
 
 
-async def _stakers(size=(60, 20), **kwargs) -> tuple[list[str], str]:
+#: The default width every STAKERS assertion below is made at.
+#:
+#: **60 until 2026-09-12, when the address column went whole.** ``FULL_WIDTH``
+#: is 69 now and a bare mount needs two columns more than that for its own
+#: ``padding: 0 1``, so 60 puts every one of these tests in the *compact*
+#: tier -- where the ``share`` column is gone and a ``DataTable`` scrolls the
+#: address out of the painted row. Tests that went on asserting an address
+#: were not asserting it about the panel the app renders. 80 clears the full
+#: tier with room and is deliberately not 71: a default sitting on a
+#: threshold makes every test in the file a width measurement by accident.
+_STAKERS_WIDTH = 80
+
+
+async def _stakers(size=(_STAKERS_WIDTH, 20), **kwargs) -> tuple[list[str], str]:
     kwargs.setdefault("pool4_network", "MAINNET")
     lines = await _lines(SurfPool4UStakers, size, **kwargs)
     return lines, "\n".join(lines)
@@ -304,20 +317,57 @@ async def test_an_unread_sweep_paints_no_rows_at_all() -> None:
 
 
 @pytest.mark.asyncio
-async def test_addresses_use_the_anti_poisoning_window() -> None:
-    """``_fmt.long_addr``, not the leaderboard template's ``_short_addr``.
+async def test_the_whole_address_reaches_the_screen() -> None:
+    """All 42 characters, painted, in one piece (2026-09-12).
 
-    Live spoofs of surf's own fee recipients collide with the real addresses on
-    first-6/last-4 -- what ``0xABCD..1234`` shows -- and do not collide on this
-    window. A panel whose whole subject is *which* wallets hold the vault is
-    the last place to use the colliding form. PRD §4.
+    **Asserted as the presence of the whole string, never as the absence of an
+    ellipsis.** "no ``…`` in this panel" passes on a blank cell, on a dropped
+    row and on a panel that failed to render at all, which is the
+    known-unfalsifiable shape in this repo's taxonomy. So the claim is that
+    ``0x`` + the forty hex characters the payload carries is *in* composited
+    output, and that it is in **one** composited row rather than split across
+    two by a wrap.
+
+    The panel shortened this with ``_fmt.long_addr`` until the owner read the
+    live screen and asked for the whole thing. Both shorter forms are still
+    asserted absent, and the older of the two matters most: ``0xABCD..1234``
+    is the leaderboard template's form and it *collides* with live spoofs of
+    surf's own fee recipients. Neither may come back by accident.
     """
-    _, out = await _stakers(**STAKERS_KW)
-    shown = long_addr(STAKER_ROWS[0]["address"])
-    assert shown in out
+    lines, out = await _stakers(**STAKERS_KW)
+    addr = STAKER_ROWS[0]["address"]
+    assert len(addr) == 42, "the fixture stopped being a real-length address"
+
+    assert addr in out, (
+        "the whole address did not reach the compositor: "
+        f"{[ln for ln in lines if ln.strip()]}"
+    )
+    assert sum(1 for line in lines if addr in line) == 1, (
+        "the address is on the screen but not on one row -- it wrapped"
+    )
+    assert full_addr(addr) == addr
+
+    # Neither shortener may come back, and the template's is the dangerous one.
+    assert long_addr(addr) not in out
+    assert f"{addr[:6]}..{addr[-4:]}" not in out
+
+
+@pytest.mark.asyncio
+async def test_the_other_callers_of_the_short_form_are_untouched() -> None:
+    """``_fmt.long_addr`` itself was **not** widened, and this is what says so.
+
+    Three panels read it -- HATCHES on the ``p`` body, the dashboard body's
+    activity feed, and this one until 2026-09-12. The change the owner asked
+    for was this panel's, so a second formatter was added beside the first
+    rather than the first being changed under two other callers. If somebody
+    "simplifies" the two into one, the anti-poisoning window disappears from
+    two panels that still need it and nothing else in the suite would say so.
+    """
+    addr = STAKER_ROWS[0]["address"]
+    shown = long_addr(addr)
     assert "…" in shown and len(shown) == 17
-    # The colliding form must not be what is painted.
-    assert f"{STAKER_ROWS[0]['address'][:6]}..{STAKER_ROWS[0]['address'][-4:]}" not in out
+    assert shown == f"{addr[:10]}…{addr[-6:]}"
+    assert long_addr(None) == full_addr(None) == "--"
 
 
 @pytest.mark.asyncio
@@ -334,7 +384,7 @@ async def test_a_hostile_address_is_escaped_rather_than_parsed() -> None:
         **dict(STAKERS_KW, pool4_stakers=[hostile, *STAKER_ROWS[1:]])
     )
     assert f"top {TOP_N} = 32% of vault" in out
-    assert sum(1 for line in lines if long_addr(STAKER_ROWS[1]["address"]) in line) == 1
+    assert sum(1 for line in lines if STAKER_ROWS[1]["address"] in line) == 1
 
 
 @pytest.mark.asyncio
@@ -342,7 +392,7 @@ async def test_a_malformed_row_costs_its_own_row_and_not_the_panel() -> None:
     _, out = await _stakers(
         **dict(STAKERS_KW, pool4_stakers=["not a row", None, *STAKER_ROWS])
     )
-    assert long_addr(STAKER_ROWS[0]["address"]) in out
+    assert STAKER_ROWS[0]["address"] in out
     assert f"top {TOP_N} = 32% of vault" in out
 
 
@@ -500,14 +550,21 @@ async def test_the_narrow_tier_removes_the_share_column_rather_than_blanking_it(
     overflow by exactly the width it claimed to have shed -- so the column is
     removed, and the header word goes with it.
     """
-    _, wide = await _stakers(size=(60, 20), **STAKERS_KW)
+    _, wide = await _stakers(size=(_STAKERS_WIDTH, 20), **STAKERS_KW)
     assert "share" in wide
     assert "18.4%" in wide
 
     _, narrow = await _stakers(size=(38, 20), **STAKERS_KW)
     assert "share" not in narrow
     assert "18.4%" not in narrow
-    assert long_addr(STAKER_ROWS[0]["address"]) in narrow
+    # The address COLUMN survives the tier drop -- it is the last thing this
+    # panel would give up. Asserted on the column and a prefix of its value
+    # rather than on the whole 42 characters, because 38 columns cannot paint
+    # 42 of anything: what the compact tier sheds is `share`, and what a
+    # too-narrow terminal does to the address on top of that is the `‹`
+    # marker's business, asserted on the line below.
+    assert "address" in narrow
+    assert STAKER_ROWS[0]["address"][:20] in narrow
     assert _pool4.WIDEN_HINT in narrow or _pool4.GLYPH_HINT in narrow
 
 
@@ -520,7 +577,12 @@ async def test_the_stakers_width_pins_are_what_the_table_actually_reserves() -> 
     row has its trailing spaces stripped, so its width moves with how long the last cell's
     *value* happens to be and an ``==`` on it would be pinning today's data.
     The composited half of the claim is the second assertion -- no row this
-    panel paints is ever wider than the pin that governs it.
+    panel paints is ever wider than the pin that governs it. **It used to look
+    only at rows carrying a ``…``** and went vacuous on 2026-09-12: with whole
+    addresses at the full tier nothing on this panel is truncated at all, so
+    the ``max`` fell through to its ``default=0`` and ``0 < painted`` was the
+    only thing keeping the test from passing on an empty panel. Every painted
+    row is measured now.
 
     ``DataTable`` pads every column including the last, which is why these two
     numbers are not ``_rowfit.row_cols``'s arithmetic: that charges a gap
@@ -543,7 +605,6 @@ async def test_the_stakers_width_pins_are_what_the_table_actually_reserves() -> 
                 (
                     cell_len("".join(seg.text for seg in strip).strip())
                     for strip in pilot.app.screen._compositor.render_strips()
-                    if "…" in "".join(seg.text for seg in strip)
                 ),
                 default=0,
             )
@@ -586,10 +647,10 @@ def test_the_row_address_is_read_under_the_declared_name_only() -> None:
     assert name == "address"
     addr = "0x" + "ab" * 20
     assert staker_cells({"rank": 1, name: addr, "imd": 1.0, "pct": 1.0})[1] == (
-        long_addr(addr)
+        full_addr(addr)
     )
     stale = staker_cells({"rank": 1, "addr": addr, "imd": 1.0, "pct": 1.0})
-    assert stale[1] == long_addr(None), stale
+    assert stale[1] == full_addr(None), stale
 
 
 def test_the_row_cap_is_below_the_producers_own_limit() -> None:

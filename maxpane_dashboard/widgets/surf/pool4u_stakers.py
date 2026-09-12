@@ -51,13 +51,29 @@ guard verbatim (PRD §7.4).
 
 Addresses
 ---------
-Chain-sourced, therefore escaped, and shortened with ``_fmt.long_addr`` rather
-than the leaderboard template's ``_short_addr``. That is a deliberate departure
-from the template and the reason is in ``_fmt``: live spoofs of surf's own fee
-recipients exist today which collide with the real addresses on first-6/last-4
--- exactly what ``0xABCD..1234`` shows -- and do not collide on ``long_addr``'s
-window. A panel whose whole subject is *which* wallets hold the vault is the
-last place to use the colliding form.
+Chain-sourced, therefore escaped, and **not shortened at all** since
+2026-09-12: ``_fmt.full_addr`` renders all 42 characters into a 42-cell column.
+
+It went through two shorteners before that. The leaderboard template's
+``_short_addr`` (``0xABCD..1234``) was rejected first, because live spoofs of
+surf's own fee recipients collide with the real addresses on first-6/last-4;
+``_fmt.long_addr``'s wider window (``0xf53c0a4E…8e3364``) survived that attack
+and was what this panel shipped with. The owner read the live screen and asked
+for the whole address, and the argument for it is the same one that rejected
+``_short_addr`` taken one step further: a panel whose entire subject is *which*
+wallets hold the vault is the last place to make a reader reconstruct an
+address, and the last place to leave a window an attacker gets to aim at.
+
+**It is paid for in columns and the number is on the record.** The address
+column went 17 -> 42, :data:`FULL_WIDTH` went 44 -> 69, what this panel
+needs on screen went 48 -> 73, and
+``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` went 105 -> 119
+(the body paid fourteen of the twenty-five; IF IMD FALLS gave seven back
+and the top row was already carrying the rest). Nothing
+else on the body was shortened to absorb it -- see that constant's block for
+what the bottom row's seam spends and what it got back from IF IMD FALLS.
+``long_addr`` itself is untouched and its other two callers (HATCHES on the
+``p`` body, the dashboard body's activity feed) render exactly as before.
 
 Purity
 ------
@@ -75,7 +91,12 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_compact, long_addr
+from maxpane_dashboard.widgets.surf._fmt import (
+    DASH,
+    as_float,
+    fmt_compact,
+    full_addr,
+)
 from maxpane_dashboard.widgets.surf._pool4 import (
     TITLE_CLASS,
     join_lines,
@@ -217,14 +238,17 @@ _TITLE_ID = "surf-pool4u-stakers-title"
 #:
 #: * rank -- ``MAX_ROWS`` is two digits, so three cells covers ``20`` and the
 #:   ``#`` header both;
-#: * address -- ``_fmt.long_addr``'s form exactly: ``0x`` + 8 hex + ``…`` +
-#:   6 hex;
+#: * address -- the **whole** address: ``0x`` + 40 hex is 42 cells, and
+#:   ``_fmt.full_addr`` never returns more than the chain can hold. It was 17
+#:   (``long_addr``'s window) until 2026-09-12; the twenty-five columns that
+#:   move is the single largest thing in this panel's width and the reason
+#:   ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` moved with it;
 #: * IMD -- ``fmt_compact`` tops out at ``999.9B`` (six) and a grouped integer
 #:   below 1000 at ``999`` (three), so ten cells leaves room for the header and
 #:   for a magnitude this vault has not reached;
 #: * share -- ``100.0%`` is six.
 _RANK_COLS = 3
-_ADDR_COLS = 17
+_ADDR_COLS = 42
 _IMD_COLS = 10
 _PCT_COLS = 6
 
@@ -306,7 +330,7 @@ def staker_cells(row: object) -> tuple[str, str, str, str] | None:
         addr = row.get("address")
         pct = as_float(row.get("pct"))
         pct_text = f"{pct:.1f}%" if pct is not None else DASH
-        return rank_text, long_addr(addr), _fmt_imd_cell(row.get("imd")), pct_text
+        return rank_text, full_addr(addr), _fmt_imd_cell(row.get("imd")), pct_text
     except Exception:
         return None
 
@@ -394,12 +418,22 @@ def footer_line(count, top_pct, stale: bool = False) -> str:
     :func:`fold_is_stale` for when it is true. It is **six cells plus the
     separator**, and that is the whole reason it is a word and not the age:
     the widest footer this panel can paint (``999,999 addresses · top 3 =
-    100% of vault``) is 41 cells, and the column is 50 at
-    ``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS``. ``· stale`` fits in the nine
-    that leaves; ``· stale 1h37m`` does not, and would have clipped the
-    concentration figure behind a CSS ellipsis at the pinned width. The
-    terminal-layout rule is to shorten the value rather than raise the pin,
-    and this is that rule applied before the pin was asked to move.
+    100% of vault``) is 41 cells, and ``· stale`` takes it to 49.
+
+    **The budget that sentence is measured against was wrong by two and is
+    corrected here** (2026-09-12). It read "the column is 50 at
+    ``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS``", which was this panel's *outer*
+    width of 52 less its own ``padding: 0 1``. Textual's ``size`` is already
+    the content size, so the footer ``Static``'s own ``padding: 0 1`` comes
+    off as well: the real budget at a 52-column panel was **48**, and the
+    49-cell worst case above was clipped to ``· sta…`` by CSS with no marker
+    to say so. It is visible in the ``wide-stakers`` fixture at the old pin.
+
+    The full address moved the panel to 73 columns and the budget to 69, so
+    the worst case now clears it by twenty and the defect is gone with the
+    layout rather than with a shortened value. ``· stale 1h37m`` is still not
+    on the table: the reason it is a word and not an age is that an age is a
+    per-panel clock, which this body does not have (see :data:`STALE_WORD`).
     """
     parts: list[str] = []
     n = as_float(count)
