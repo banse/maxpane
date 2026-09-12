@@ -423,6 +423,16 @@ class SurfPool4USignals(Vertical):
 
         ``**_kwargs`` is mandatory: the screen splats the whole payload, so a
         key added tomorrow must be ignored rather than raise.
+
+        **``pool4_as_of_hhmm`` is accepted and not rendered** (2026-09-12).
+        The ``4`` MARKET body prints one ``as of`` marker, on the screen's own
+        title row, and no panel repeats it -- see ``_pool4``'s *One clock on
+        the `4` body* section for the whole of that decision, and for the one
+        panel it does not settle.
+        The kwarg stays in the signature because every pool4 panel spells
+        every contract key in full (``test_no_pool4_widget_needs_a_kwarg_
+        alias``), and dropping it would leave the screen's splat handing it to
+        ``**_kwargs`` with nothing recording why.
         """
         self._payload = {
             "cap_headroom": pool4_cap_headroom,
@@ -435,7 +445,6 @@ class SurfPool4USignals(Vertical):
             "backstop_eth": pool4_backstop_eth,
             "backlog_days": pool4_backlog_days,
             "network": pool4_network,
-            "as_of": pool4_as_of_hhmm,
             "seen": True,
         }
         self._render_view()
@@ -506,9 +515,6 @@ class SurfPool4USignals(Vertical):
                 f"[dim]{safe_markup(pad(label, LABEL_COLS))}[/]"
                 f"[{style}]{safe_markup(cell)}[/]"
             )
-        as_of = strip_tags(self._payload.get("as_of"))
-        if as_of:
-            markup.append(f"[dim]as of {safe_markup(as_of)}[/]")
         return [t for t in (parse_line(m) for m in markup) if t is not None]
 
     def _render_view(self) -> None:

@@ -18,7 +18,7 @@ it. This file is the method; the constants are the record.
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 | 106 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `4` pool4 market | 105 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `4` pool4 market | 105 cols · 32 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
@@ -42,6 +42,17 @@ row under its title (`margin: 0 0 1 0`); four panels grew a row each and the
 pin moved two, because only the binding column's growth reaches it. **That
 number is the price of the convention, and it is the one to quote when asked
 whether a body can afford it.**
+
+Later the same day it went **35 -> 32**, which is the same arithmetic run
+backwards and is the better worked example of it. The owner asked for the
+per-panel `as of` markers on that body to go; **all five panels lost a row and
+the body gave back three**, because the rail lost two (two panels stack in it)
+and the bottom row lost one, and only the taller of the two reaches the pin.
+Five rows removed, three rows recovered — do not predict either number, sweep
+for it. The one marker that was *not* redundant with the title row (a 1800 s
+tier's, an hour and a half behind it) was replaced by a conditional word on a
+line the panel was already painting, which is the cheap way to keep a
+staleness claim when its own row has been taken away.
 
 surf's `p` body took the same change later the same day and **its pin went
 44 -> 45**, which closes F10b -- "the `p` body cannot obviously afford it" --

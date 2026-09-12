@@ -75,7 +75,6 @@ from maxpane_dashboard.widgets.surf._pool4 import (
     join_lines,
     market_title_text,
     parse_line,
-    strip_tags,
     widest_line,
 )
 from maxpane_dashboard.widgets.surf._rowfit import pad
@@ -318,6 +317,16 @@ class SurfPool4UBurn(Vertical):
         answer different questions off one read, and folding a second copy of
         the same events into the payload so this panel could have its own would
         buy nothing and cost a sweep.
+
+        **``pool4_as_of_hhmm`` is accepted and not rendered** (2026-09-12).
+        The ``4`` MARKET body prints one ``as of`` marker, on the screen's own
+        title row, and no panel repeats it -- see ``_pool4``'s *One clock on
+        the `4` body* section for the whole of that decision, and for the one
+        panel it does not settle.
+        The kwarg stays in the signature because every pool4 panel spells
+        every contract key in full (``test_no_pool4_widget_needs_a_kwarg_
+        alias``), and dropping it would leave the screen's splat handing it to
+        ``**_kwargs`` with nothing recording why.
         """
         self._payload = {
             "flow": pool4_flow,
@@ -325,7 +334,6 @@ class SurfPool4UBurn(Vertical):
             "burned_supply_pct": pool4_burned_supply_pct,
             "total_supply": pool4_total_supply,
             "network": pool4_network,
-            "as_of": pool4_as_of_hhmm,
             "seen": True,
         }
         self._render_view()
@@ -436,9 +444,6 @@ class SurfPool4UBurn(Vertical):
             self._totals_line(tier),
             self._supply_line(tier),
         ]
-        as_of = strip_tags(self._payload.get("as_of"))
-        if as_of:
-            markup.append(f"[dim]as of {safe_markup(as_of)}[/]")
         return [t for t in (parse_line(m) for m in markup) if t is not None]
 
     def _render_view(self) -> None:

@@ -101,7 +101,6 @@ from maxpane_dashboard.widgets.surf._pool4 import (
     TITLE_CLASS,
     join_lines,
     parse_line,
-    strip_tags,
     market_title_text,
 )
 from maxpane_dashboard.widgets.surf._rowfit import clip, pad
@@ -327,6 +326,16 @@ class SurfPool4UDepth(Vertical):
 
         ``**_kwargs`` is mandatory: the screen splats the whole payload, so a
         key added tomorrow must be ignored rather than raise.
+
+        **``pool4_as_of_hhmm`` is accepted and not rendered** (2026-09-12).
+        The ``4`` MARKET body prints one ``as of`` marker, on the screen's own
+        title row, and no panel repeats it -- see ``_pool4``'s *One clock on
+        the `4` body* section for the whole of that decision, and for the one
+        panel it does not settle.
+        The kwarg stays in the signature because every pool4 panel spells
+        every contract key in full (``test_no_pool4_widget_needs_a_kwarg_
+        alias``), and dropping it would leave the screen's splat handing it to
+        ``**_kwargs`` with nothing recording why.
         """
         self._payload = {
             "tick": pool4_current_tick,
@@ -335,7 +344,6 @@ class SurfPool4UDepth(Vertical):
             "band_liquidity": pool4_backstop_liquidity,
             "band_state": pool4_backstop_state,
             "network": pool4_network,
-            "as_of": pool4_as_of_hhmm,
             "seen": True,
         }
         self._render_view()
@@ -436,10 +444,6 @@ class SurfPool4UDepth(Vertical):
             markup.append(f"[yellow]⚠ {safe_markup(UNAVAILABLE_LINE)}[/]")
         else:
             markup.append(f"[dim]{safe_markup(CAPTION)}[/]")
-
-        as_of = strip_tags(self._payload.get("as_of"))
-        if as_of:
-            markup.append(f"[dim]as of {safe_markup(as_of)}[/]")
 
         lines = [t for t in (parse_line(m) for m in markup) if t is not None]
         try:

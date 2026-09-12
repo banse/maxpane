@@ -683,6 +683,21 @@ The test that pinned the open behaviour
 to, and was replaced by `test_no_height_loses_a_row_of_this_body_in_silence`, which sweeps the
 same range and asserts the general property rather than the exception.
 
+**ADDENDUM, later the same day — the trap was still armed on the panel itself.** The paragraph
+above says "a panel whose floor is its own content height", and that was true of
+`#surf-pool4-user-bottom` and **not** of `SurfPool4UDepth`, which went `7 → 8` against a content
+height of ten and stayed two rows under it. The window was closed by the *container*, so the panel
+was protected by a neighbour rather than by its own rule — exactly the configuration the "what is
+NOT closed" paragraph warns about, sitting inside the fix that closed it.
+
+It was disarmed when the `as of` markers came off this body: the ladder's content fell to nine
+rows, `#surf-pool4-user-bottom` came down `10 → 9` with it, and `SurfPool4UDepth`'s own floor was
+**raised** `8 → 9` in the same pass so the two agree at the content. Re-swept over rows 24..46 and
+all ten payloads: content whole from 32, marker dark from 32, no row between them. The pin moved
+`35 → 32`. Nothing here changes the "what is NOT closed" paragraph — `_rail_is_cut` still cannot
+see a table scrolling inside a panel, and the next panel floored under its own content brings the
+window back.
+
 ---
 
 ## F7 — `widgets/surf/hero.py:431` hands a markup **string** to `Static.update`

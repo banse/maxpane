@@ -47,6 +47,35 @@ and a shared default is a thing a body can forget to pass. The marker-fitting
 half is *not* duplicated -- both go through ``_with_hint`` -- which is this
 module's own founding lesson applied to its own growth.
 
+One clock on the `4` body
+-------------------------
+**The ``4`` MARKET body prints exactly one ``as of`` marker, on the screen's
+own title row.** Its five panels each carried their own until 2026-09-12; the
+owner read the live screen and asked for all of them gone, and they are.
+
+It costs almost nothing to give up, and that was measured rather than assumed.
+Four of the five ran on ``pool4_as_of_hhmm`` -- ``TIER_POOL4``'s 600 s clock --
+which on the live cache read **15:29 against a 15:33 title bar**. Four minutes
+apart is the same clock twice, and four panels saying so is four rows spent
+restating the title row.
+
+**STAKERS is the one this does not settle**, and it is why this section exists
+rather than a one-line note. Its rows come off ``TIER_POOL4_STAKERS``, a
+1800 s tier, and the same live cache had it at **13:52 against that 15:33
+title bar** -- an hour and thirty-seven minutes behind. Deleting its marker
+alone would leave hour-old rows sitting under a title row that reads *now*,
+which is precisely the failure CLAUDE.md's ``as of`` rule exists to prevent.
+So that panel keeps a **conditional** signal instead of a timestamp: its
+existing footer gains the word ``stale`` when, and only when, the fold is
+further behind than healthy operation can put it. See
+``pool4u_stakers.STALE_AFTER_S`` for the threshold and its derivation. The
+shape is :data:`QUIET_NETWORK`'s -- a word that prints when something is worth
+saying and is silent when it is not -- and it spends no row in the ordinary
+case, because it rides a line the panel was already painting.
+
+The ``p`` auditor body is untouched: all five of its panels keep their
+markers, exactly as they keep their network word.
+
 **Not** here, deliberately: ``FULL_WIDTH`` / ``COMPACT_WIDTH`` / ``TITLE`` /
 ``UNAVAILABLE_LINE`` (per-panel *measurements* and per-panel copy -- the whole
 point of a pin is that it lives beside the code it governs), each panel's

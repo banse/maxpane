@@ -5,18 +5,32 @@ wallets can walk out of this vault is a risk a reader acts on, and the footer
 is where this panel says so. The rows are the evidence for the footer, not the
 other way round.
 
-Its own clock, deliberately
----------------------------
+Its own clock, and what became of it (2026-09-12)
+-------------------------------------------------
 The rows behind this panel come from ``TIER_POOL4_STAKERS`` -- a full sIMD
 ``Transfer`` history fold on curator's ``TIER_ANALYSIS`` precedent, far too
-expensive for the 600 s pool4 sweep. So the panel carries
+expensive for the 600 s pool4 sweep. So the panel carried
 ``pool4_stakers_as_of_hhmm``, **its own, slower marker**, and never the body's
 ``pool4_as_of_hhmm``: a panel whose numbers can be half an hour old sitting
 under a clock that says seconds is a stale number presented as live, which is
-the failure CLAUDE.md's "as of" rule exists to prevent. It takes
-``pool4_as_of_hhmm`` too, because the pool4 contract requires every panel on
-this body to (``test_no_pool4_widget_needs_a_kwarg_alias``), and renders the
-staker one.
+the failure CLAUDE.md's "as of" rule exists to prevent.
+
+**The marker is gone; the property it protected is not.** The owner read the
+live screen and asked for every per-panel ``as of`` on the ``4`` body removed
+-- see ``_pool4``'s *One clock on the `4` body* for the request and for why it
+cost the other four panels nothing. It could not cost this one nothing: the
+same live cache had this fold at 13:52 against a title bar reading 15:33, so
+deleting the marker alone would have left hour-old rows under a clock that
+says *now*, which is exactly the sentence above.
+
+What replaced it is **conditional and rides a line that already exists**: the
+concentration footer gains the word ``stale`` when the two markers are further
+apart than healthy operation can put them, and says nothing when they are not
+(:data:`STALE_WORD`, :data:`STALE_AFTER_S`, :func:`fold_is_stale`). Both
+markers are therefore still taken -- one is subtracted from the other -- and
+neither is printed. The PRD's §7.2 decision to give this panel its own clock
+is amended rather than reversed: the *slower tier* is still the reason this
+panel is special, and the word is what says so on screen.
 
 Three reasons to be empty, three sentences
 ------------------------------------------
@@ -77,6 +91,8 @@ __all__ = [
     "FULL_WIDTH",
     "MAX_ROWS",
     "PENDING_LINE",
+    "STALE_AFTER_S",
+    "STALE_WORD",
     "STAKER_STATES",
     "SWEEPING_LINE",
     "TABLE_ID",
@@ -84,6 +100,7 @@ __all__ = [
     "TOP_N",
     "UNAVAILABLE_LINE",
     "SurfPool4UStakers",
+    "fold_is_stale",
     "footer_line",
     "no_rows_line",
     "staker_cells",
@@ -129,6 +146,67 @@ MAX_ROWS = 20
 #: The concentration question the footer answers. Three, because three wallets
 #: acting together is the smallest group a reader treats as one actor.
 TOP_N = 3
+
+#: The word the footer gains when this panel's fold has fallen further behind
+#: the body's own clock than healthy operation can put it -- and **nothing at
+#: all** when it has not.
+#:
+#: A word rather than a timestamp, on purpose. Until 2026-09-12 this panel
+#: printed ``as of 13:52`` under its rows; the owner read the live screen and
+#: asked for every per-panel ``as of`` on this body gone. The other four went
+#: and cost nothing (see ``_pool4``'s *One clock on the `4` body*), but this
+#: one was the one marker on the body that was **not** saying what the title
+#: row already said: measured off the live cache, the body's clock read 15:29
+#: against a 15:33 title bar and this panel's read **13:52**. Dropping it with
+#: no replacement would put hour-old rows under a title row that reads *now*,
+#: which is the failure CLAUDE.md's ``as of`` rule exists to prevent.
+#:
+#: So it is :data:`_pool4.QUIET_NETWORK`'s shape rather than a marker's: a word
+#: that prints only when there is something to say. In the ordinary case it is
+#: silent and the footer reads exactly as it did before, which is what the
+#: request asked for; it spends **no row** either way, because it rides the
+#: concentration line this panel was already painting.
+STALE_WORD = "stale"
+
+#: How far behind ``pool4_as_of_hhmm`` this panel's own marker has to fall
+#: before :data:`STALE_WORD` prints, in seconds.
+#:
+#: DERIVED, NOT FELT. The quantity is the **difference between two markers**,
+#: so each one contributes its own tier's worth of ordinary lag:
+#:
+#: * this panel's rows ride ``surf_cache.TIER_POOL4_STAKERS`` (**1800 s**), so
+#:   in perfect health the fold is anything from brand new to a full tier old
+#:   before the next one is even due;
+#: * the marker it is compared against rides ``TIER_POOL4`` (**600 s**), and
+#:   the worst case for this subtraction is that clock having *just* advanced
+#:   while the staker fold sits at its own age.
+#:
+#: 1800 + 600 = **2400 s**, and that is the largest gap healthy operation can
+#: produce. Anything past it means the staker tier came due and did not land --
+#: a missed cycle, not a slow one. The threshold is therefore not a taste
+#: judgement and cannot be tuned by feel: if either TTL moves, this number is
+#: wrong by exactly the amount that one moved, and
+#: ``test_the_stale_threshold_is_the_two_tiers_it_is_derived_from`` reddens.
+#:
+#: Deliberately **not** the bare 1800: a fold that is 1800 s old is a fold the
+#: tier has only just made due, which is the most ordinary state this panel
+#: has. Firing there would print the word most of the time and it would stop
+#: meaning anything -- which is the same reason ``⚠`` on this panel is
+#: reserved for ``failed`` and is not the default.
+#:
+#: The live case that motivated it sat at **5,820 s** (13:52 against 15:29),
+#: two and a half times past this line.
+STALE_AFTER_S = 2400.0
+
+#: HH:MM and nothing else. Both markers are formatted by the manager, but a
+#: *persisted* payload is third-party input too, so the parse is total.
+_HHMM_LEN = 5
+
+#: Half a day, in minutes -- the point past which a positive modular
+#: difference is better read as "this panel's marker is AHEAD of the body's"
+#: than as "it is twenty-three hours behind". Both markers are wall-clock
+#: HH:MM with no date, so midnight has to be crossed by arithmetic.
+_HALF_DAY_MIN = 12 * 60
 
 TABLE_ID = "surf-pool4u-stakers-table"
 _FOOTER_ID = "surf-pool4u-stakers-footer"
@@ -256,7 +334,52 @@ def no_rows_line(state) -> tuple[str, str]:
     return PENDING_LINE, "dim"
 
 
-def footer_line(count, top_pct) -> str:
+def _hhmm_minutes(value) -> int | None:
+    """``"14:32"`` -> 872 minutes past midnight; ``None`` for anything else.
+
+    Total by construction: a hand-edited cache file reaches this panel the
+    same way a fetched one does, and a marker that cannot be parsed must make
+    the comparison silent rather than raise inside a render.
+    """
+    text = strip_tags(value)
+    if len(text) != _HHMM_LEN or text[2] != ":":
+        return None
+    try:
+        hours = int(text[:2])
+        minutes = int(text[3:])
+    except ValueError:
+        return None
+    if not (0 <= hours < 24 and 0 <= minutes < 60):
+        return None
+    return hours * 60 + minutes
+
+
+def fold_is_stale(stakers_hhmm, body_hhmm) -> bool:
+    """Is the staker fold further behind the body's clock than :data:`STALE_AFTER_S`?
+
+    **Two payload strings, no clock.** The comparison is between the two
+    markers the screen already hands this panel, so nothing here calls
+    ``time.time()`` and the answer is reproducible from a payload alone --
+    CLAUDE.md's inject-the-clock rule, satisfied by not needing one.
+
+    ``False`` whenever the question cannot be answered: either marker missing
+    or malformed, or this panel's marker running *ahead* of the body's (which
+    is ordinary -- the staker sweep can land between two pool4 sweeps).
+    Silence is the safe default, because a word printed on a comparison
+    nobody could make is a warning about the renderer rather than the data.
+    """
+    mine = _hhmm_minutes(stakers_hhmm)
+    theirs = _hhmm_minutes(body_hhmm)
+    if mine is None or theirs is None:
+        return False
+    behind = (theirs - mine) % (24 * 60)
+    if behind > _HALF_DAY_MIN:
+        # Ahead of the body's clock, not most of a day behind it.
+        return False
+    return behind * 60 > STALE_AFTER_S
+
+
+def footer_line(count, top_pct, stale: bool = False) -> str:
     """``66 addresses · top 3 = 32% of vault`` -- plain text, already fitted.
 
     ``top_pct is None`` renders ``top 3 = --`` and never a number computed
@@ -266,6 +389,17 @@ def footer_line(count, top_pct) -> str:
     ``count is None`` drops the addresses clause rather than printing
     ``-- addresses``: the concentration half is the half a reader acts on and
     it should not be pushed along by a dash.
+
+    ``stale`` appends :data:`STALE_WORD` -- see that constant, and
+    :func:`fold_is_stale` for when it is true. It is **six cells plus the
+    separator**, and that is the whole reason it is a word and not the age:
+    the widest footer this panel can paint (``999,999 addresses · top 3 =
+    100% of vault``) is 41 cells, and the column is 50 at
+    ``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS``. ``· stale`` fits in the nine
+    that leaves; ``· stale 1h37m`` does not, and would have clipped the
+    concentration figure behind a CSS ellipsis at the pinned width. The
+    terminal-layout rule is to shorten the value rather than raise the pin,
+    and this is that rule applied before the pin was asked to move.
     """
     parts: list[str] = []
     n = as_float(count)
@@ -274,6 +408,8 @@ def footer_line(count, top_pct) -> str:
     pct = as_float(top_pct)
     shown = f"{pct:.0f}%" if pct is not None else DASH
     parts.append(f"top {TOP_N} = {shown} of vault")
+    if stale:
+        parts.append(STALE_WORD)
     return " · ".join(parts)
 
 
@@ -362,17 +498,24 @@ class SurfPool4UStakers(Vertical):
     ) -> None:
         """Refresh the panel from the manager's flat dict.
 
-        ``pool4_as_of_hhmm`` is accepted and **not rendered** -- see the module
-        docstring. It is in the signature because every pool4 panel spells that
-        key in full, and the contract test that pins it is what stops a second
-        body eliding it to ``as_of_hhmm`` and making one kwarg name answer for
-        two different contract keys.
+        **Neither marker is rendered as a marker** (2026-09-12). The ``4``
+        body prints one ``as of``, on the screen's own title row. The two are
+        kept because this panel is the one place on the body where they
+        *disagree* by more than a rounding: subtracting them is what
+        :func:`fold_is_stale` does, and the word it decides is the whole of
+        what is left of this panel's own clock. See :data:`STALE_AFTER_S`.
+
+        Both are spelled in full for the contract's reason as well -- every
+        pool4 panel does (``test_no_pool4_widget_needs_a_kwarg_alias``), and
+        that is what stops a second body eliding one to ``as_of_hhmm`` and
+        making one kwarg name answer for two different contract keys.
         """
         self._payload = {
             "rows": pool4_stakers,
             "count": pool4_staker_count,
             "top3_pct": pool4_staker_top3_pct,
             "as_of": pool4_stakers_as_of_hhmm,
+            "body_as_of": pool4_as_of_hhmm,
             "state": pool4_stakers_state,
             "network": pool4_network,
             "seen": True,
@@ -467,13 +610,17 @@ class SurfPool4UStakers(Vertical):
         elif not rows:
             markup.append(f"[dim]{safe_markup(EMPTY_LINE)}[/]")
         else:
-            markup.append(
-                f"[dim]{safe_markup(footer_line(payload.get('count'), payload.get('top3_pct')))}[/]"
+            # The staleness word rides THIS line and never one of its own, so
+            # a fold that has missed a cycle costs the layout nothing. It is
+            # attached only to the real footer: the three empty branches above
+            # are already saying something louder about the fold than "old".
+            text = footer_line(
+                payload.get("count"),
+                payload.get("top3_pct"),
+                stale=fold_is_stale(payload.get("as_of"),
+                                    payload.get("body_as_of")),
             )
-
-        as_of = strip_tags(payload.get("as_of"))
-        if as_of:
-            markup.append(f"[dim]as of {safe_markup(as_of)}[/]")
+            markup.append(f"[dim]{safe_markup(text)}[/]")
 
         lines = [t for t in (parse_line(m) for m in markup) if t is not None]
         try:

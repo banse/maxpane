@@ -1,6 +1,6 @@
 """WP7 -- the ``4`` POOL4 MARKET body: its key, its hero swap, its dispatch.
 
-Four claims this file exists for, and each of them is about the *screen*
+Five claims this file exists for, and each of them is about the *screen*
 rather than about a panel (the five panels have their own widget tests):
 
 1. ``4`` opens the body and ``escape`` backs out, one-way, exactly as ``l``
@@ -12,6 +12,11 @@ rather than about a panel (the five panels have their own widget tests):
 3. Every key the body declares reaches a **pixel**, not merely a widget.
 4. RECENT FLOW is the ``p`` body's own ``SurfPool4Flow`` mounted twice, never
    a second module -- and both instances are handed the same rows.
+5. **The two per-instance opt-ins set at that one mount site stay there.**
+   This body leaves ``MAINNET`` unsaid and prints no per-panel ``as of``; the
+   ``p`` body does neither. Both claims are swept per panel *and* from the
+   other side, because a "fix" applied to the shared helper or to the class
+   would satisfy every ``4``-body case and strip the auditor body in silence.
 
 Everything is asserted against **composited output** (``render_strips()``),
 joined per row and then by newline: a string that never reaches a pixel
@@ -42,11 +47,15 @@ from maxpane_dashboard.screens.surf import (
 from maxpane_dashboard.widgets.surf import (
     SurfHero,
     SurfPool4Flow,
+    SurfPool4Hatches,
+    SurfPool4Ratchet,
+    SurfPool4Split,
     SurfPool4UBurn,
     SurfPool4UDepth,
     SurfPool4USignals,
     SurfPool4UStakers,
     SurfPool4UserHero,
+    SurfPool4Vault,
 )
 
 # The screen-test module owns the payload fixture and the harness. Imported
@@ -84,6 +93,25 @@ _MARKET_PANELS = (
     SurfPool4UDepth,
     SurfPool4Flow,
 )
+
+#: The `p` AUDITOR body's five panels, in compose order -- the complement of
+#: the tuple above and the other half of every claim made about it. Two of the
+#: three per-instance decisions this screen makes (`quiet_mainnet`,
+#: `quiet_as_of`) are set at ONE mount site on a class that is mounted twice,
+#: and the failure mode both times is a "fix" applied to the shared helper or
+#: to the class instead -- which satisfies every `4`-body sweep and strips the
+#: `p` body in silence. A sweep with no complement cannot see that.
+_AUDITOR_PANELS = (
+    SurfPool4Split,
+    SurfPool4Ratchet,
+    SurfPool4Flow,
+    SurfPool4Hatches,
+    SurfPool4Vault,
+)
+
+#: The exact rendered prefix of a per-panel clock, as `_pool4` spells it. A
+#: bare `"as"` would match `ASSETS`; the space matters and so does the case.
+_AS_OF = "as of"
 
 
 async def _open_market(pilot):
@@ -591,6 +619,85 @@ async def test_every_market_panel_paints_a_blank_row_under_its_title(cls) -> Non
     assert rows[2].strip(), (
         f"{cls.__name__} paints nothing under the blank, so the blank above "
         "is the panel being empty rather than the title's margin"
+    )
+
+
+# ---------------------------------------------------------------------------
+# one clock on the body
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cls", _MARKET_PANELS, ids=[c.__name__ for c in _MARKET_PANELS])
+async def test_no_market_panel_renders_an_as_of_marker(cls) -> None:
+    """The `4` body prints ONE ``as of``, and it is the screen's title row.
+
+    All five panels carried their own until 2026-09-12 (`_pool4`'s *One clock
+    on the `4` body*). Parametrised per panel rather than joined into one
+    assertion so a panel that grows the line back reddens **its own** case and
+    names itself in the failure, instead of one opaque red for "somewhere on
+    this body".
+
+    Composited output, over the panel's own rectangle: a marker that is built
+    and never painted is not the thing the owner asked to have removed, and a
+    whole-screen grep would match the title row's own legitimate marker and
+    pass for a reason that is not the claim.
+    """
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
+        panel = list(body.query(cls))[0]
+        text = _region_text(pilot.app, panel)
+
+    assert _AS_OF not in text, (
+        f"{cls.__name__} is painting a per-panel clock again:\n{text}"
+    )
+
+
+async def test_the_market_title_row_still_carries_the_bodys_one_clock() -> None:
+    """The complement inside this body: removing five markers left one.
+
+    Without this, every assertion above is satisfied by a payload that simply
+    has no marker to print, and the sweep would be green on a body whose
+    freshness a reader cannot see at all -- which is the opposite of what was
+    asked for.
+    """
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        await _open_market(pilot)
+        whole = _screen_text(pilot.app)
+        body_only = _market_text(pilot.app)
+
+    assert _AS_OF in whole, whole.split("\n")[0]
+    assert _AS_OF not in body_only
+
+
+@pytest.mark.parametrize("cls", _AUDITOR_PANELS, ids=[c.__name__ for c in _AUDITOR_PANELS])
+async def test_every_auditor_panel_still_renders_its_own_as_of_marker(cls) -> None:
+    """The `p` body is untouched, and this is the only test that can say so.
+
+    ``SurfPool4Flow`` is mounted in both bodies and the ``4`` instance is quiet
+    because **the screen passes ``quiet_as_of=True`` at that one mount site**.
+    Quieting the class, its default, or the note helper instead would satisfy
+    every case in the sweep above and strip the auditor body's markers in
+    silence -- exactly the failure ``test_the_p_body_still_names_mainnet_on_
+    the_same_class`` exists for one field over.
+
+    Proven by mutation: flipping ``SurfPool4Flow.__init__``'s ``quiet_as_of``
+    default to ``True`` leaves every ``4``-body case green and reddens this
+    one, on ``SurfPool4Flow``.
+    """
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        await pilot.press("escape")
+        await pilot.press("p")
+        await pilot.pause()
+        await pilot.pause()
+        body = screen.query_one(f"#{POOL4_BODY_ID}")
+        panel = list(body.query(cls))[0]
+        text = _region_text(pilot.app, panel)
+
+    assert _AS_OF in text, (
+        f"the `p` body's {cls.__name__} lost its clock -- the `4` body's "
+        f"quiet-marker opt-in leaked out of its mount site:\n{text}"
     )
 
 

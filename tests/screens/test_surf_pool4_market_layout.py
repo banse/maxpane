@@ -26,7 +26,10 @@ Three things this file exists to pin above the rest
    columns below the number it collects and thirty-nine above, crossing the
    ``p`` body's 106, the ``l`` body's 138 and the screen's own 143 so
    agreeing with any of them would have to show up as a sweep result. The
-   height sweep runs 24..45.
+   height sweep runs **24..46**, eight rows under the number it collects and
+   fourteen over, and it is re-centred every time the pin moves -- it ran
+   24..45 against a pin of 35 and the same range against a pin of 32 would
+   have been eleven rows of margin on one side and three on the other.
 
 The marker-dark window, and why it is gone
 ------------------------------------------
@@ -42,8 +45,18 @@ It reddened. The screenshot-review pass raised
 ``#surf-pool4-user-bottom``'s floor from 8 to the ladder's own ten rows (the
 panel grew the repo-wide blank row under its title), and a panel that can no
 longer be squeezed under its own content can no longer scroll internally
-while the body does not. Every height below the pin now scrolls the **body**
-and lights the marker, swept over 24..45 and three payloads.
+while the body does not.
+
+**The same trap was still set on the panel itself and was disarmed later that
+day.** ``SurfPool4UDepth``'s own ``min-height`` stayed at 8 through all of
+that, one under its content, protected only by the container around it -- so
+the floor that closed the window was a neighbour's rather than its own. When
+the per-panel ``as of`` markers came off this body the ladder's content fell
+to nine rows and the container floor came down with it, and the panel's own
+floor was raised 8 -> 9 in the same pass. Both are now exactly the content
+they hold. Every height below the pin scrolls the **body** and lights the
+marker, swept over 24..46 and all ten payloads: content whole from 32, marker
+dark from 32, no row between them.
 
 What has **not** changed is ``_rail_is_cut`` itself, so the height pin is
 still measured against the body's **content** and never against the marker --
@@ -98,7 +111,7 @@ from tests.screens.test_surf_screen import (
 #: next door: a test that aliased the screen's constant would compare a
 #: number against itself and pin nothing.
 MEASURED_MARKET_COLUMNS = 105
-MEASURED_MARKET_ROWS = 35
+MEASURED_MARKET_ROWS = 32
 
 #: What ``SurfPool4Flow`` needs for itself in this body, measured at the width
 #: where its own marker goes dark. Hand-typed rather than imported for the
@@ -115,13 +128,19 @@ MARKET_FLOW_NEED = 52
 #: **Painted lines, not rows.** ``_painted_lines`` counts non-blank rows, so
 #: the blank each panel now carries under its title (2026-09-12) is not in
 #: these numbers even though it is very much in the pin -- which is exactly
-#: why the pin is swept rather than derived from this table. SIGNALS is 6
-#: rather than 7 because the same pass dropped its state-summary line.
+#: why the pin is swept rather than derived from this table.
+#:
+#: **Each of these came down one on 2026-09-12** when the body's per-panel
+#: ``as of`` markers were removed (``_pool4``'s *One clock on the `4` body*):
+#: BURN 5 -> 4, SIGNALS 6 -> 5, the ladder 9 -> 8. The hero never had one.
+#: SIGNALS is 5 rather than 7 for two separate reasons a day apart -- the
+#: state-summary line went first, the clock second -- and neither is
+#: recoverable from this table alone, which is why the pin is swept.
 FIXED_PANEL_LINES = {
     SurfPool4UserHero: 6,
-    SurfPool4UBurn: 5,
-    SurfPool4USignals: 6,
-    SurfPool4UDepth: 9,
+    SurfPool4UBurn: 4,
+    SurfPool4USignals: 5,
+    SurfPool4UDepth: 8,
 }
 
 #: The five panels of the `4` body plus its hero, by the name the failure
@@ -481,10 +500,15 @@ def test_the_market_body_fits_inside_the_documented_app_width() -> None:
 
 
 #: The height sweep, on :data:`_WIDTH_SWEEP`'s reasoning: the committed
-#: capture over the whole 24..45 range, and the two payloads that move a
+#: capture over the whole 24..46 range, and the two payloads that move a
 #: panel's line count over the eight rows that straddle the pin.
-_HEIGHT_SWEEP = [("capture", r) for r in range(24, 46)] + [
-    (name, r) for name in ("mainnet", "widest") for r in range(29, 37)
+#:
+#: **Re-centred with the pin on 2026-09-12** (35 -> 32): the straddle band
+#: moved 29..36 -> 26..33, because a band that no longer contains the
+#: threshold checks the payload magnitudes at heights where nothing is under
+#: pressure and calls that agreement.
+_HEIGHT_SWEEP = [("capture", r) for r in range(24, 47)] + [
+    (name, r) for name in ("mainnet", "widest") for r in range(26, 34)
 ]
 
 
@@ -525,14 +549,14 @@ async def test_the_market_body_is_whole_from_its_pinned_height(
         )
 
 
-async def test_the_market_height_pin_is_the_ladders_ninth_line() -> None:
+async def test_the_market_height_pin_is_the_ladders_eighth_line() -> None:
     """The pin's *derivation*, not just its threshold.
 
     ``SurfPool4UDepth`` binds, and what it binds on is one specific line: the
     ``-50%`` rung, the deepest quote the panel makes. It is on screen at the
     pin and gone one row under it, which is the measurement the constant's
-    ``#:`` block records -- nine painted lines in a row whose ``min-height``
-    is eight.
+    ``#:`` block records -- **eight** painted lines over nine rows, in a row
+    whose ``min-height`` is those same nine.
 
     Asserted on the **painted column** rather than on the panel's height,
     because a panel that were merely one row taller with a blank in it would
@@ -553,7 +577,7 @@ async def test_the_market_height_pin_is_the_ladders_ninth_line() -> None:
     assert MEASURED_MARKET_ROWS == SURF_POOL4_USER_FULL_LAYOUT_ROWS
 
 
-@pytest.mark.parametrize("rows", list(range(24, 46)))
+@pytest.mark.parametrize("rows", list(range(24, 47)))
 async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
     """Finding **F6, closed for this body on 2026-09-12** -- and this is what
     replaced the test that pinned it open.
@@ -566,8 +590,9 @@ async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
     behaviour so a fix could not land quietly, and named what to update when
     it reddened.
 
-    It reddened. ``#surf-pool4-user-bottom``'s floor is now the ladder's own
-    ten rows, so the panel cannot be squeezed into a height where its table
+    It reddened. ``#surf-pool4-user-bottom``'s floor is the ladder's own
+    content -- ten rows then, **nine** since the ``as of`` markers came off
+    this body -- so the panel cannot be squeezed into a height where its table
     scrolls internally while the body does not -- every height under the pin
     scrolls the body instead, which the marker *can* see.
 
@@ -597,11 +622,19 @@ def test_the_market_body_is_the_shortest_surf_body_but_not_the_shortest_pin() ->
     """W7's answer for this body, asserted rather than left in prose.
 
     The PRD predicted a bakery-shaped body would land nearer the ``l`` body's
-    31 rows than the ``p`` body's 44. It does -- 33 -- and the *other* half of
-    that prediction, that it would be wide-and-short, is refuted: this body is
-    narrower than ``p`` as well. Both halves are pinned so a future re-sweep
-    that moved either one has to come back to the W7 note in the constant's
-    own block.
+    31 rows than the ``p`` body's 45. It does -- **32, one row over ``l`` and
+    thirteen under ``p``** -- and the *other* half of that prediction, that it
+    would be wide-and-short, is refuted: this body is narrower than ``p`` as
+    well. Both halves are pinned so a future re-sweep that moved either one
+    has to come back to the W7 note in the constant's own block.
+
+    The ``> SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`` half now has exactly one row of
+    margin, where it had four. That is a fact about the next change rather
+    than this one, and it is stated here because this assertion is where it
+    will be discovered: one more row off this body and the two shortest surf
+    bodies need the same terminal, at which point the claim in the name of
+    this test stops being true and the name, not the constant, is what has to
+    move.
     """
     assert SURF_POOL4_USER_FULL_LAYOUT_ROWS < SURF_POOL4_FULL_LAYOUT_ROWS
     assert SURF_POOL4_USER_FULL_LAYOUT_ROWS > SURF_LAUNCHPAD_FULL_LAYOUT_ROWS

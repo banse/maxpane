@@ -1187,82 +1187,90 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 105
 
 #: The ``4`` POOL4 MARKET body's own full-layout height, swept in situ on
-#: 2026-09-11 and **re-swept on 2026-09-12**, at 150 columns -- comfortably
+#: 2026-09-11, re-swept twice on 2026-09-12, at 150 columns -- comfortably
 #: past the width pin above, so nothing here is measuring a width.
 #:
-#: HOW IT WAS MEASURED. Rows 24 to 45, never starting at the pin, over ten
-#: payload states (the committed capture; the mainnet capture; the widest
-#: flow formats; a twenty-row staker list; both at once; an unread staker
-#: list; an empty one; a deployed band, an absent band and an unread band).
-#: At each height the screen-wide ``‹ taller`` marker was read off the title
-#: row **and** every fixed-height panel's painted line count was compared
-#: against the same panel's count on a 60-row terminal, because the marker
-#: alone could not always see the loss this body had (below).
+#: HOW IT WAS MEASURED. Rows **24 to 46**, never starting at the pin and
+#: re-centred each time it moved, over ten payload states (the committed
+#: capture; the mainnet capture; the widest flow formats; a twenty-row staker
+#: list; both at once; an unread staker list; an empty one; a deployed band,
+#: an absent band and an unread band). At each height the screen-wide
+#: ``‹ taller`` marker was read off the title row **and** every fixed-height
+#: panel's painted line count was compared against the same panel's count on
+#: a 60-row terminal, because the marker alone could not always see the loss
+#: this body had (below).
 #:
-#: **RE-SWEPT 2026-09-12 AND THE PIN MOVED 33 -> 35.** The screenshot review
-#: gave every panel on this body the repo-wide blank row under its title
-#: (``_pool4.TITLE_CLASS``, ``margin: 0 0 1 0`` -- the rule
-#: ``ActivityFeed > .feed-title`` and five siblings already carried, which
-#: this body alone had missed). Four panels each grew a row, and because two
-#: of them stack in the rail and the fourth sits in its own row, the body's
-#: floors grew with them: the rail 13 -> 14 and ``#surf-pool4-user-bottom``
-#: 8 -> 10. **Two rows is what the convention costs and it was measured, not
-#: estimated** -- the naive arithmetic says four panels x one row and the
-#: answer is two, because only the binding column's growth reaches the pin.
-#: The same pass deleted SIGNALS' state-summary line, which bought one of
-#: those rows back; without it the pin would be 36.
+#: **33 -> 35 -> 32, and the second move is the one to read.** The first
+#: re-sweep paid for the repo-wide blank row under every panel title
+#: (``_pool4.TITLE_CLASS``, ``margin: 0 0 1 0``): four panels grew a row and
+#: the pin moved two, because only the binding column's growth reaches it.
+#: The second gave three rows back. The owner read the live screen and asked
+#: for the per-panel ``as of`` markers on this body to go, and **all five
+#: panels lost a row**: four printed ``pool4_as_of_hhmm``, which on the live
+#: cache read 15:29 against a 15:33 title bar, and STAKERS printed its own
+#: slower one (see ``pool4u_stakers.STALE_AFTER_S`` for what replaced that
+#: single genuinely-different marker, and why it costs no row). Every floor
+#: in the body's CSS came down with them -- SIGNALS 7 -> 6, the rail 14 ->
+#: 12, the middle row 14 -> 12, ``#surf-pool4-user-bottom`` 10 -> 9 -- and
+#: the ladder's own floor went **up**, 8 -> 9, onto its content, which is
+#: the rule three paragraphs down rather than an inconsistency.
 #:
-#: WHICH PANEL BINDS: ``SurfPool4UDepth``. IF IMD FALLS paints nine lines
-#: over ten rows -- title, **blank**, header, the five ``DEPTH_MOVES`` rows,
-#: the "quoted from the position as it stands now" caption and the ``as of``
-#: marker -- and it sits in ``#surf-pool4-user-bottom``, whose floor is now
-#: exactly those ten. **35 is tight**: at 34 the ladder's ``-50%`` row, the
-#: deepest quote on the panel, is not on screen.
+#: **Three rows back for five removed, and that asymmetry is the point of
+#: sweeping.** Naive arithmetic says one row per panel and the answer is
+#: three, for the same reason the blank row cost two and not four: the rail
+#: lost two (BURN and SIGNALS stack in it) and the bottom row lost one, and
+#: only the *taller* of the two rows reaches the pin.
 #:
-#: **THE ONE-ROW MARKER-DARK WINDOW IS GONE, AND NOT BECAUSE ANYONE FIXED
-#: THE MARKER.** Until 2026-09-12 the height under this pin lost the ladder's
-#: deepest rung behind the ``DataTable``'s own scrollbar nub while the
-#: screen-wide ``‹ taller`` stayed **dark** -- ``_rail_is_cut`` asks
+#: WHICH PANEL BINDS: ``SurfPool4UDepth``, still, and by more than before.
+#: IF IMD FALLS paints eight lines over nine rows -- title, **blank**,
+#: header, the five ``DEPTH_MOVES`` rows and the "quoted from the position as
+#: it stands now" caption -- and it sits in ``#surf-pool4-user-bottom``,
+#: whose floor is now exactly those nine. **32 is tight**: at 31 the
+#: ladder's ``-50%`` row, the deepest quote on the panel, is not on screen,
+#: and it is the only panel on the body that loses anything at any height in
+#: the sweep.
+#:
+#: **THE ONE-ROW MARKER-DARK WINDOW IS STILL GONE, AND STILL NOT BECAUSE
+#: ANYONE FIXED THE MARKER.** ``_rail_is_cut`` asks
 #: ``#surf-pool4-user-body`` and ``#surf-pool4-user-rail`` for
 #: ``show_vertical_scrollbar`` and neither container can see a table
-#: scrolling inside a panel. That was filed as F6. Raising
-#: ``#surf-pool4-user-bottom``'s floor to the ladder's own ten rows closed
-#: the *window*: the panel can no longer be squeezed into a height where its
-#: table scrolls internally while the body does not, so every height under
-#: the pin now scrolls the body and lights the marker. Swept over 24..45 and
-#: three payloads, there is no height where a row is lost and nothing says
-#: so. **``_rail_is_cut``'s blindness itself is unchanged** and will bite the
-#: next panel that is floored below its own content -- F6 is closed for this
-#: body, not for the mechanism.
+#: scrolling inside a panel (F6). What closes the window is the **floor**:
+#: a panel floored at its own content cannot be squeezed into a height where
+#: its table scrolls internally while the body does not, so the loss moves to
+#: the body's own scrollbar, which the marker can see. That is why the
+#: ladder's own ``min-height`` was raised to 9 in the same pass its content
+#: fell to 9 -- it had been sitting at 8, one under, protected only by the
+#: container around it. Swept over 24..46 and all ten payloads, the two
+#: answers now agree exactly: content whole from 32, marker dark from 32.
+#: **``_rail_is_cut``'s blindness itself is unchanged** and will bite the
+#: next panel floored below its own content.
 #:
 #: WHICH PANELS ARE ALLOWED TO SCROLL INSIDE THEMSELVES, and therefore do
 #: **not** set this number: ``SurfPool4UStakers`` (its table caps at
 #: ``MAX_ROWS = 20`` against a floor of 11 -- a leaderboard is unbounded by
 #: design, the way FLOW's ``RichLog`` is next door) and ``SurfPool4Flow``
 #: itself. The pin covers the panels whose line count is a **constant**: the
-#: hero (6 lines), BURN & SUPPLY (5 lines over 6 rows), SIGNALS (6 over 7)
-#: and the ladder (9 over 10). That is the same allowance
+#: hero (6 lines), BURN & SUPPLY (4 lines over 5 rows), SIGNALS (5 over 6)
+#: and the ladder (8 over 9). That is the same allowance
 #: :data:`SURF_POOL4_FULL_LAYOUT_ROWS` gives FLOW one body over, applied to
 #: the two panels here that have it.
 #:
-#: **The pin does not move with the payload.** All ten states collect 35.
+#: **The pin does not move with the payload.** All ten states collect 32.
 #: Only a fully-unreadable ladder fits in less, and it fits because it has
 #: collapsed to a single unavailable line -- a payload that needs *less* than
 #: the pin never lowers it.
 #:
-#: **W7, ANSWERED FOR THIS BODY -- the first evidence either way.** Open
-#: finding W7 asks whether a real laptop clears the ``p`` body's 44 rows, the
-#: tallest requirement in the repo. This body needs **35**: nine rows under
-#: ``p`` and four over :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS` (31). The PRD
-#: predicted the bakery shape would be "wide-and-short" against ``p``'s
-#: "narrow-and-tall"; **the short half is confirmed and the wide half is
-#: refuted** -- at 105 x 35 this body is both shorter *and* one column
-#: narrower than ``p``'s 106 x 44, so it is simply the smaller of the two in
-#: both dimensions. The practical consequence, which is what W7 is really
-#: about: a terminal that clears the ``l`` body is four rows from clearing
-#: this one and nine from clearing ``p``, and in every case the shortfall is
-#: announced by ``‹ taller`` rather than taken silently.
-SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
+#: **W7, ANSWERED FOR THIS BODY -- and the answer got better.** Open finding
+#: W7 asks whether a real laptop clears the ``p`` body's 45 rows, the tallest
+#: requirement in the repo. This body needs **32**: thirteen rows under ``p``
+#: and exactly one over :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS` (31), which
+#: is all the margin there now is between the shortest two bodies on this
+#: screen. At 105 x 32 this body is both shorter and one column narrower
+#: than ``p``'s 106 x 45, so it is simply the smaller of the two in both
+#: dimensions, and a terminal that clears the ``l`` body is one row from
+#: clearing this one. In every case the shortfall is announced by
+#: ``‹ taller`` rather than taken silently.
+SURF_POOL4_USER_FULL_LAYOUT_ROWS = 32
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
 #: curator's MODE_DASHBOARD/MODE_ANALYSIS precedent.
@@ -2119,13 +2127,23 @@ class SurfScreen(RefreshGuard, Screen):
      *
      * WHICH PANEL CARRIES THE RAIL'S `1fr` IS THE INVERTED CASE AGAIN.
      * Neither BURN & SUPPLY nor SIGNALS scrolls inside itself, so the `1fr`
-     * goes to the one that can never be cut: SIGNALS renders a title, four
-     * state rows and one summary line and never more, so `min-height: 7` is
-     * both its floor and its ceiling. BURN & SUPPLY is `auto` above it --
-     * its sparkline row and its two text lines are content, not slack --
-     * with the one-row bottom margin `SurfSignals` and `SurfCurveFlow`
-     * carry in the other two rails. Same answer, same reasoning, as
-     * `SurfPool4Vault` one rule up.
+     * goes to the one that can never be cut: SIGNALS renders a title, the
+     * blank row under it and four state rows and never more, so
+     * `min-height: 6` is both its floor and its ceiling. BURN & SUPPLY is
+     * `auto` above it -- its sparkline row and its two text lines are
+     * content, not slack -- with the one-row bottom margin `SurfSignals` and
+     * `SurfCurveFlow` carry in the other two rails. Same answer, same
+     * reasoning, as `SurfPool4Vault` one rule up.
+     *
+     * EVERY FLOOR IN THIS BLOCK CAME DOWN ONE ROW ON 2026-09-12 when the
+     * five panels lost their per-panel `as of` markers (`_pool4`'s *One
+     * clock on the `4` body*). SIGNALS 7 -> 6 and BURN 6 -> 5 took the rail
+     * 14 -> 12 and the middle row with it; the ladder's 10 -> 9 took
+     * `#surf-pool4-user-bottom` down the same amount. The floors are
+     * each panel's own content height, which is what makes the screen-wide
+     * `‹ taller` honest for free -- see `SURF_POOL4_USER_FULL_LAYOUT_ROWS`
+     * for why that property, and not the marker, is what the pin is swept
+     * against.
      */
     SurfScreen #surf-pool4-user-body {
         height: 1fr;
@@ -2137,7 +2155,7 @@ class SurfScreen(RefreshGuard, Screen):
     }
     SurfScreen #surf-pool4-user-middle {
         height: 1fr;
-        min-height: 14;
+        min-height: 12;
     }
     SurfScreen SurfPool4UStakers {
         width: 1fr;
@@ -2148,7 +2166,7 @@ class SurfScreen(RefreshGuard, Screen):
     SurfScreen #surf-pool4-user-rail {
         width: 1fr;
         height: 1fr;
-        min-height: 14;
+        min-height: 12;
         overflow-y: auto;
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
@@ -2162,18 +2180,18 @@ class SurfScreen(RefreshGuard, Screen):
     SurfScreen SurfPool4USignals {
         width: 1fr;
         height: 1fr;
-        min-height: 7;
+        min-height: 6;
         padding: 0 1;
     }
     SurfScreen #surf-pool4-user-bottom {
         height: 1fr;
-        min-height: 10;
+        min-height: 9;
         margin: 0 0 1 0;
     }
     SurfScreen SurfPool4UDepth {
         width: 1fr;
         height: 1fr;
-        min-height: 8;
+        min-height: 9;
         padding: 0 1;
     }
     """
@@ -2322,10 +2340,14 @@ class SurfScreen(RefreshGuard, Screen):
                     yield SurfPool4UBurn()
                     yield SurfPool4USignals()
             with Horizontal(id=POOL4_USER_BOTTOM_ID):
-                # The `p` body mounts this same class untouched, two blocks up.
-                # Only this instance leaves MAINNET unsaid -- see the widget's
-                # __init__ for why the opt-in is per instance and set here.
-                yield SurfPool4Flow(quiet_mainnet=True, classes="market")
+                # The `p` body mounts this same class untouched, two blocks
+                # up. Only this instance leaves MAINNET unsaid and only this
+                # one drops the `as of` note -- see the widget's __init__ for
+                # why each opt-in is its own per-instance keyword and set
+                # here rather than module-wide.
+                yield SurfPool4Flow(
+                    quiet_mainnet=True, quiet_as_of=True, classes="market"
+                )
                 yield SurfPool4UDepth()
 
         yield StatusBar()

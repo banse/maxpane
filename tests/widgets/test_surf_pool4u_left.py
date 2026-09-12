@@ -33,6 +33,11 @@ import pytest
 from rich.cells import cell_len
 from textual.app import App
 
+from maxpane_dashboard.data.surf_cache import (
+    TIER_POOL4,
+    TIER_POOL4_STAKERS,
+    TIER_TTL_SECONDS,
+)
 from maxpane_dashboard.data.surf_models import (
     POOL4_FLOW_LIMIT,
     SURF_KEYS,
@@ -66,12 +71,15 @@ from maxpane_dashboard.widgets.surf.pool4u_stakers import (
     FULL_WIDTH as STAKERS_FULL_WIDTH,
     MAX_ROWS,
     PENDING_LINE as STAKERS_PENDING_LINE,
+    STALE_AFTER_S,
+    STALE_WORD,
     STAKER_STATES,
     SWEEPING_LINE as STAKERS_SWEEPING_LINE,
     TABLE_ID,
     TOP_N,
     UNAVAILABLE_LINE as STAKERS_UNAVAILABLE_LINE,
     SurfPool4UStakers,
+    fold_is_stale,
     footer_line,
     no_rows_line,
     staker_cells,
@@ -339,17 +347,119 @@ async def test_a_malformed_row_costs_its_own_row_and_not_the_panel() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_panel_carries_its_own_slower_clock() -> None:
-    """PRD 7.2. ``pool4_stakers_as_of_hhmm`` rides a 1800 s tier; the body's
-    ``pool4_as_of_hhmm`` rides the 600 s one. Printing the faster marker beside
-    this data would be a stale number presented as live.
+async def test_the_panel_prints_neither_clock() -> None:
+    """PRD 7.2 as amended 2026-09-12: the ``4`` body prints one ``as of`` and
+    it is the screen's title row, not any panel's.
+
+    Both markers still arrive -- one is subtracted from the other -- and
+    **neither is rendered**. Asserted against both spellings rather than
+    against the phrase ``as of``, because a panel that printed a bare
+    ``14:32`` with no label would satisfy a phrase check and still be the
+    per-panel clock the owner asked to have removed.
     """
     _, out = await _stakers(
         **dict(STAKERS_KW, pool4_stakers_as_of_hhmm="14:32"),
-        pool4_as_of_hhmm="19:58",
+        pool4_as_of_hhmm="14:40",
     )
-    assert "as of 14:32" in out
-    assert "19:58" not in out
+    assert "as of" not in out
+    assert "14:32" not in out
+    assert "14:40" not in out
+
+
+@pytest.mark.asyncio
+async def test_the_footer_says_stale_when_the_fold_has_missed_a_cycle() -> None:
+    """What replaced the marker, and the half a one-directional test can see.
+
+    The rows ride an 1800 s tier and the body's clock a 600 s one, so a fold
+    an hour and a half behind really is what a reader would have been shown
+    under a title row reading *now* -- the live case this was built for sat at
+    13:52 against 15:29.
+    """
+    _, out = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers_as_of_hhmm="13:52"),
+        pool4_as_of_hhmm="15:29",
+    )
+    assert f"of vault · {STALE_WORD}" in out, out
+
+
+@pytest.mark.asyncio
+async def test_the_footer_says_nothing_when_the_fold_is_merely_not_yet_due()\
+        -> None:
+    """The half that cannot be checked by looking at a stale panel.
+
+    **This is the assertion the owner's request actually turns on.** The five
+    per-panel markers were removed because they were clutter; a word that
+    printed in the ordinary case would be the same clutter under a different
+    spelling, and a test that only ever renders an old fold cannot tell a
+    conditional word from an unconditional one.
+
+    Twenty-five minutes apart is inside a single ``TIER_POOL4_STAKERS``
+    period: the fold is not even due yet, which is the most ordinary state
+    this panel has.
+    """
+    _, out = await _stakers(
+        **dict(STAKERS_KW, pool4_stakers_as_of_hhmm="15:04"),
+        pool4_as_of_hhmm="15:29",
+    )
+    assert "of vault" in out, out
+    assert STALE_WORD not in out, out
+
+
+@pytest.mark.parametrize(
+    "mine,theirs,expected",
+    [
+        # Exactly at the threshold is NOT stale -- 2400 s is the largest gap
+        # healthy operation can produce, so the word starts one minute later.
+        ("14:00", "14:40", False),
+        ("14:00", "14:41", True),
+        # Across midnight, in both directions.
+        ("23:30", "00:31", True),
+        ("23:30", "00:10", False),
+        # This panel's marker AHEAD of the body's: ordinary, not 23h behind.
+        ("15:29", "13:52", False),
+        # Nothing to compare, and nothing said.
+        (None, "15:29", False),
+        ("13:52", None, False),
+        ("not a time", "15:29", False),
+        ("25:99", "15:29", False),
+        ("[/x]13:52", "15:29", True),
+    ],
+)
+def test_fold_is_stale_answers_from_two_payload_strings(mine, theirs, expected)\
+        -> None:
+    """The decision is pure, total, and takes **no clock**.
+
+    Every case here is a payload a persisted cache file can carry -- a
+    hand-edited one included, which is why the bracket-run case is in the
+    table and expects the same answer as the clean string beside it rather
+    than a crash or a silent ``False``.
+    """
+    assert fold_is_stale(mine, theirs) is expected
+
+
+def test_the_stale_threshold_is_the_two_tiers_it_is_derived_from() -> None:
+    """:data:`STALE_AFTER_S` is a derivation, not a taste judgement.
+
+    The quantity is the difference between two markers, so each contributes
+    its own tier's ordinary lag: the staker fold may be a full
+    ``TIER_POOL4_STAKERS`` old before the next one is due, and the marker it
+    is compared against may have just advanced on ``TIER_POOL4``. Their sum is
+    the largest gap healthy operation can produce.
+
+    Imported from ``data/`` **here and not in the widget** -- a widget may not
+    import that layer (contract §0.5), so the two numbers live apart and this
+    is the agreement test that keeps them honest. Move either TTL and the
+    threshold is wrong by exactly that amount, and this reddens rather than
+    the word quietly starting to fire in the ordinary case.
+    """
+    assert STALE_AFTER_S == (
+        TIER_TTL_SECONDS[TIER_POOL4_STAKERS] + TIER_TTL_SECONDS[TIER_POOL4]
+    )
+    assert STALE_AFTER_S > TIER_TTL_SECONDS[TIER_POOL4_STAKERS], (
+        "a threshold at or under the staker tier's own period fires on a fold "
+        "the tier has only just made due, which is the most ordinary state "
+        "this panel has"
+    )
 
 
 @pytest.mark.asyncio

@@ -532,7 +532,13 @@ class SurfPool4Flow(Vertical):
     }
     """
 
-    def __init__(self, *args, quiet_mainnet: bool = False, **kwargs) -> None:
+    def __init__(
+        self,
+        *args,
+        quiet_mainnet: bool = False,
+        quiet_as_of: bool = False,
+        **kwargs,
+    ) -> None:
         """``quiet_mainnet`` leaves ``MAINNET`` unsaid in this instance's title.
 
         **Per instance, and defaulting to False, because this widget is mounted
@@ -546,9 +552,27 @@ class SurfPool4Flow(Vertical):
         Only ``QUIET_NETWORK`` goes unsaid either way: ``SEPOLIA`` and the
         unknown em dash still print in both bodies, because mistaking testnet
         numbers for real ones is the failure the word was added to prevent.
+
+        ``quiet_as_of`` drops the note line entirely -- the ``4`` MARKET body
+        prints one ``as of`` marker and it is the screen's, not this panel's
+        (``_pool4``'s *One clock on the `4` body*). **A second flag rather
+        than a second meaning for the first**, because the two answers are
+        independent: a future body could want the network word and not the
+        marker, or the reverse, and one boolean standing for "is the market
+        instance" is a name that stops being true the day a third body mounts
+        this class. The mount site opts into both, one keyword each.
+
+        **It is the whole row, not a blanked line.** This panel's note used to
+        occupy the row its siblings spent on a spacer, so the marker was free;
+        since the blank row under the title became unconditional
+        (2026-09-12) it is a row of its own, and a blank one where the marker
+        used to be would be two blank rows under one title. So the ``Static``
+        is not composed at all when this is set, and the ``4`` body's copy of
+        the panel is a row shorter than the ``p`` body's.
         """
         super().__init__(*args, **kwargs)
         self._quiet_mainnet = quiet_mainnet
+        self._quiet_as_of = quiet_as_of
         # The raw rows, not formatted lines, so a resize re-lays them out.
         # Empty until the first ``update_data`` -- ``on_resize`` before that
         # has nothing to render and must not blank the panel.
@@ -556,7 +580,8 @@ class SurfPool4Flow(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static(TITLE, classes="surf-p4flow-title", id="surf-p4flow-title")
-        yield Static(" ", classes="surf-p4flow-note", id="surf-p4flow-note")
+        if not self._quiet_as_of:
+            yield Static(" ", classes="surf-p4flow-note", id="surf-p4flow-note")
         yield RichLog(
             id="surf-p4flow-log",
             wrap=False,
@@ -661,9 +686,17 @@ class SurfPool4Flow(Vertical):
 
         The pool4 sweep runs on a long detached tier, so this marker
         deliberately lags the title bar's; it advances only when new data
-        actually lands.  It occupies the line the sibling panels spend on a
-        blank spacer, so the panel is the same height with it as without.
+        actually lands.
+
+        **The ``p`` auditor body only.**  Under ``quiet_as_of`` there is no
+        note ``Static`` to update and this returns before asking for one --
+        ``_static`` would have swallowed the ``NoMatches`` in its own
+        ``try``, which is a render that works by accident rather than by
+        decision, and would go on working if the widget were later composed
+        wrong.
         """
+        if self._quiet_as_of:
+            return
         # ``strip_tags`` before ``safe_markup``: an *escaped* ``[/x]`` still
         # paints the literal text ``[/x]`` once Rich unescapes it for display,
         # so escaping alone stops the crash and not the bracket noise.  A

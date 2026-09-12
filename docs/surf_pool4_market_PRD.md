@@ -240,6 +240,32 @@ last-good slot, **spawned and never awaited** so first paint cannot sit behind i
 `as of HH:MM` that advances **only when a new fold lands** — never on a tick that found nothing,
 because a fresh time beside old data is a stale number presented as live.
 
+**AMENDED 2026-09-12 — no panel on this body renders an `as of` marker, STAKERS included.** The owner
+read the live screen and asked for every per-panel `as of` removed; the body now prints exactly one,
+on the screen's own title row. This paragraph's decision to give STAKERS its *own* clock is amended,
+not reversed, and the two halves have to be separated to see why:
+
+- **The tier is still the point.** A 1800 s fold under the same marker as a 600 s sweep would be a
+  stale number presented as live, and that sentence is as true today as when it was written.
+- **The marker was never the only way to say so.** Four of the five panels ran on `pool4_as_of_hhmm`,
+  which measured against the live cache read 15:29 beside a 15:33 title bar — the same clock twice,
+  four rows spent restating the title row, and nothing lost by deleting them. STAKERS was the one
+  that genuinely differed: **13:52 against that same 15:33**, an hour and thirty-seven minutes
+  behind. Deleting *its* marker with no replacement would have put hour-old rows under a clock that
+  reads now, which is exactly what this paragraph forbids.
+
+So STAKERS keeps the claim and loses the timestamp. Its concentration footer — a line it was already
+painting — gains the word `stale`, and **only** when the two markers are further apart than healthy
+operation can put them: `STALE_AFTER_S = 2400 s`, derived as `TIER_POOL4_STAKERS` (1800) + `TIER_POOL4`
+(600), because the quantity is a *difference between two markers* and each contributes its own tier's
+ordinary lag. Below that the fold is merely not yet due and the footer says nothing. The panel still
+takes both keys — one is subtracted from the other — and renders neither.
+
+This is the `· SEPOLIA` / silent-on-mainnet shape (§6.4's `QUIET_NETWORK`), applied to time instead of
+provenance: a word that prints when there is something to say and is silent when there is not. It
+spends **no row** in either case, which is why the body's height pin fell 35 → 32 on this change
+rather than 35 → 33.
+
 ### 7.3 The degraded group is full
 `SOURCE_POOL4` (`p4`) is the **eighth** degraded group, and CLAUDE.md records that the eighth name is
 what took the worst-case title row to exactly the pinned width. **There is no room for a ninth.** The

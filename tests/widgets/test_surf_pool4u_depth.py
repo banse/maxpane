@@ -521,11 +521,16 @@ async def test_a_hostile_network_word_is_escaped_rather_than_parsed() -> None:
     """Textual defers ``Content.from_markup`` into the message pump, so an
     unescaped ``[/x]`` raises *outside* this widget's ``try`` and takes the app
     down. Surviving the render at all is most of this assertion.
+
+    It fed a hostile ``pool4_as_of_hhmm`` too until 2026-09-12. That input is
+    now **inert** on this panel -- the marker is gone with the body's other
+    four -- so the clause is removed rather than left standing: a probe that
+    cannot reach a pixel is a probe that cannot fail, and leaving it in reads
+    as coverage this test no longer has.
     """
-    out = await _text({**ORACLE, "pool4_network": "[/x]MAINNET",
-                       "pool4_as_of_hhmm": "[bold red]14:07"})
+    out = await _text({**ORACLE, "pool4_network": "[/x]MAINNET"})
     assert TITLE in out
-    assert "[/x]" not in out and "[bold red]" not in out
+    assert "[/x]" not in out
 
 
 # ===========================================================================

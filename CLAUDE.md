@@ -405,13 +405,28 @@ never `query_one`: one statement, one payload, both panels. `query_one` does **n
 multiple matches in this Textual version, it returns the first, so two instances reddened nothing
 until a test resolved the panel through its own body container instead.
 
-**Its own tier and its own clock for the one thing that is new.** Two-thirds of this body is the
+**Its own tier, and one clock on the whole body.** Two-thirds of this body is the
 62 keys `TIER_POOL4` already produces; the delta is four fast-tier reads, one pure depth-ladder
 analytics module, and a long-tier sIMD `Transfer` sweep on `TIER_POOL4_STAKERS` /
 `SLOT_POOL4_STAKERS` with its own `pool4_stakers_as_of_hhmm`. That slot is **not a ninth degraded
 group**: `SOURCE_POOL4` (`p4`) is the eighth and last name the worst-case title row has room for,
-so the staker fold serves last-good behind its own stale marker and folds into `p4` only when it
-has nothing at all to serve.
+so the staker fold serves last-good and folds into `p4` only when it has nothing at all to serve.
+
+**No panel on this body renders an `as of` marker (2026-09-12), and the one that had a reason to
+kept the claim without the row.** All five did until the owner read the live screen and asked for
+them gone. Four printed `pool4_as_of_hhmm` — measured off the live cache at 15:29 against a 15:33
+title bar, i.e. the title row said four more times — and deleting those cost nothing. STAKERS was
+the exception and is the part worth knowing: its 1800 s fold read **13:52** against that same
+title bar, so dropping its marker alone would have put hour-old rows under a clock that says
+*now*, which is exactly what the "never a stale number presented as live" rule forbids. It
+therefore keeps a **conditional word** instead — its concentration footer gains `stale` only when
+the two markers are further apart than healthy operation can put them (`STALE_AFTER_S = 2400 s`,
+derived as the two tiers' TTLs summed, not chosen), and says nothing otherwise. That is
+`QUIET_NETWORK`'s shape applied to time, and it costs no row, which is why the body's height pin
+*fell* on this change rather than holding. The `p` body is untouched: all five of its panels keep
+their markers, and `SurfPool4Flow` — mounted in both — is quiet here only because the screen
+passes `quiet_as_of=True` at this one mount site, with a per-panel sweep on each side to catch a
+"fix" applied to the class instead.
 
 **Two honesty contracts worth carrying in your head.** The ladder quotes the position *as it
 stands now* and never promises protection — a `rebalance()` closes the backstop band and redeploys

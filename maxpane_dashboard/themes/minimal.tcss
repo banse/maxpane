@@ -2436,11 +2436,17 @@ SurfPool4Vault {
  *
  * WHICH PANEL CARRIES THE RAIL'S `1fr` IS THE INVERTED CASE AGAIN. Neither
  * BURN & SUPPLY nor SIGNALS scrolls inside itself, so the `1fr` goes to the
- * one that can never be cut: SIGNALS renders a title, four state rows and one
- * summary line and never more, so `min-height: 7` is both its floor and its
- * ceiling. BURN & SUPPLY is `auto` above it with the one-row bottom margin
- * `SurfSignals` and `SurfCurveFlow` carry in the other two rails. Same
+ * one that can never be cut: SIGNALS renders a title, the blank row under it
+ * and four state rows and never more, so `min-height: 6` is both its floor
+ * and its ceiling. BURN & SUPPLY is `auto` above it with the one-row bottom
+ * margin `SurfSignals` and `SurfCurveFlow` carry in the other two rails. Same
  * answer, same reasoning, as `SurfPool4Vault` one rule up.
+ *
+ * EVERY FLOOR IN THIS BLOCK CAME DOWN ONE ROW ON 2026-09-12 when the five
+ * panels lost their per-panel `as of` markers (`_pool4`'s *One clock on the
+ * `4` body*). SIGNALS 7 -> 6 and BURN 6 -> 5 took the rail 14 -> 12 and the
+ * middle row with it; the ladder's 10 -> 9 took `#surf-pool4-user-bottom`
+ * down the same amount.
  *
  * This copy is the one that RENDERS -- an app stylesheet outranks a screen's
  * DEFAULT_CSS -- and `tests/screens/test_surf_screen.py` pins the two copies
@@ -2457,7 +2463,7 @@ SurfScreen #surf-pool4-user-body {
 
 SurfScreen #surf-pool4-user-middle {
     height: 1fr;
-    min-height: 14;
+    min-height: 12;
     padding: 0 0;
 }
 
@@ -2471,7 +2477,7 @@ SurfPool4UStakers {
 SurfScreen #surf-pool4-user-rail {
     width: 1fr;
     height: 1fr;
-    min-height: 14;
+    min-height: 12;
     padding: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;
@@ -2488,13 +2494,13 @@ SurfPool4UBurn {
 SurfPool4USignals {
     width: 1fr;
     height: 1fr;
-    min-height: 7;
+    min-height: 6;
     padding: 0 1;
 }
 
 SurfScreen #surf-pool4-user-bottom {
     height: 1fr;
-    min-height: 10;
+    min-height: 9;
     padding: 0 0;
     margin: 0 0 1 0;
 }
@@ -2502,7 +2508,7 @@ SurfScreen #surf-pool4-user-bottom {
 SurfPool4UDepth {
     width: 1fr;
     height: 1fr;
-    min-height: 8;
+    min-height: 9;
     padding: 0 1;
 }
 

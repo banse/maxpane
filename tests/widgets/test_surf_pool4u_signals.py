@@ -396,28 +396,32 @@ def test_the_backlog_row_separates_zero_from_unread() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_panel_is_four_labelled_rows_and_a_clock_and_nothing_else()\
-        -> None:
-    """The state-summary line is gone, and this is what stops it drifting back.
+async def test_the_panel_is_four_labelled_rows_and_nothing_else() -> None:
+    """Two lines are gone from this panel, and this is what stops either
+    drifting back.
 
-    It was dropped on 2026-09-12 for two reasons the module docstring records:
-    it restated three of the four rows above it, and it was the one line on
-    the panel that did not sit in the label column -- on a body whose whole
-    screenshot-review complaint was ragged alignment.
+    The state-summary line went on 2026-09-12 for two reasons the module
+    docstring records: it restated three of the four rows above it, and it was
+    the one line on the panel that did not sit in the label column -- on a
+    body whose whole screenshot-review complaint was ragged alignment. The
+    ``as of`` marker went the same day, with the other four on this body: it
+    printed ``pool4_as_of_hhmm``, which measured against the live cache read
+    15:29 beside a 15:33 title bar, so it was the title row said twice.
 
     Asserted as a **line count and a shape**, not as the absence of a
     sentence: a check for one particular restated phrase would go green the
-    moment someone reworded it. Every content row either begins with one of
-    :data:`ROW_LABELS` or is the ``as of`` marker, and there are exactly as
-    many of them as there are labels plus that marker.
+    moment someone reworded it. **Every** content row begins with one of
+    :data:`ROW_LABELS`, and there are exactly as many of them as there are
+    labels -- which is a stronger claim than the ``+ 1`` this carried while
+    the clock was on the panel, because no row is exempt from the label
+    column any more.
     """
     lines = [ln.strip() for ln in await _lines(HEALTHY) if ln.strip()]
     assert lines[0].startswith(TITLE)
     body = lines[1:]
-    assert len(body) == len(ROW_LABELS) + 1, body
+    assert len(body) == len(ROW_LABELS), body
     for line, label in zip(body, ROW_LABELS):
         assert line.startswith(label), (line, label)
-    assert body[-1].startswith("as of")
 
 
 # ===========================================================================
@@ -461,13 +465,17 @@ async def test_a_hostile_state_word_is_escaped_rather_than_parsed() -> None:
     Textual defers ``Content.from_markup`` into the message pump, so an
     unescaped ``[/x]`` raises *outside* this widget's ``try`` and takes the app
     down. Surviving the render at all is most of this assertion.
+
+    A hostile ``pool4_as_of_hhmm`` was a third probe here until 2026-09-12.
+    This panel no longer renders that key, so the probe became one that cannot
+    fail and is removed rather than left looking like coverage. The two that
+    remain still reach pixels.
     """
     out = await _text(
         {
             **HEALTHY,
             "pool4_cheaper_venue": "[/x]reference",
             "pool4_backstop_state": "[bold red]deployed",
-            "pool4_as_of_hhmm": "[/]14:07",
         }
     )
     assert TITLE in out
