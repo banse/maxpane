@@ -442,6 +442,68 @@ def test_the_market_key_sweep_is_not_empty() -> None:
     assert all(k.startswith("pool4_") for k in _MARKET_KEYS), _MARKET_KEYS
 
 
+#: Keys the default probe cannot see, and the payload pair that can.
+#:
+#: The probe below renders twice and diffs: the frozen payload, then the same
+#: payload with one key set to ``None``. That works for a key whose value is
+#: unconditional. It cannot work for a key that is only *meaningful* under
+#: conditions the frozen payload does not meet, and asserting it anyway
+#: demands that a widget render something it is correct to ignore.
+#:
+#: ``pool4_stakers_state`` is the first such key and both halves bite:
+#:
+#: 1. **It is silent while there are rows.** With staker rows on hand the rows
+#:    ARE the answer, so the manager publishes ``None`` for the state (see
+#:    ``POOL4_STAKERS_STATES``). The frozen payload has rows.
+#: 2. **Its ``None`` aliases to ``pending`` on purpose.** An absent or
+#:    unrecognised state must fall to the quiet line, never the warning
+#:    triangle -- that is the whole point of the key. So even without rows,
+#:    flipping the value to ``None`` changes no pixel.
+#:
+#: The pair therefore drops the rows (so the state speaks) and flips ``failed``
+#: to ``None`` (so the two states it distinguishes actually differ on screen).
+#: An override is a claim that the default probe is wrong for this key, not a
+#: way to quiet it -- ``test_every_conditional_probe_really_needs_one`` proves
+#: each one is necessary by running the default probe and requiring it to fail.
+_CONDITIONAL_PROBES: dict[str, tuple[dict, dict]] = {
+    "pool4_stakers_state": (
+        {"pool4_stakers": None, "pool4_stakers_state": "failed"},
+        {"pool4_stakers": None, "pool4_stakers_state": None},
+    ),
+}
+
+
+@pytest.mark.parametrize("key", sorted(_CONDITIONAL_PROBES), ids=sorted(_CONDITIONAL_PROBES))
+def test_every_conditional_probe_really_needs_one(key) -> None:
+    """An override must be a necessity, never a convenience.
+
+    **This test was written once as "run the default probe and require it to
+    fail", and that version could not fail.** The default probe renders the
+    frozen payload, then the same payload with one key set to ``None``. For a
+    key the fixture never sets, *both* renders already carry ``None`` -- so the
+    two are identical no matter what the widget does, and the assertion held
+    for a reason that had nothing to do with the claim. Two separate mutations
+    to the widget left it green before that was noticed.
+
+    The falsifiable claim underneath is about the **fixture**, not the render:
+    the default probe is vacuous for this key precisely because the frozen
+    payload carries no distinguishable value to flip. Assert that directly.
+    Give the fixture a real value and this reddens, which is the moment to ask
+    whether the override is still earning its place.
+    """
+    payload = _frozen_payload()
+    assert payload.get(key) is None, (
+        f"{key} now has a real value in the frozen payload, so the default "
+        "flip-to-None probe is no longer vacuous for it. Re-check whether its "
+        "_CONDITIONAL_PROBES entry is still needed, and delete it if not."
+    )
+    present, absent = _CONDITIONAL_PROBES[key]
+    assert present.get(key) != absent.get(key), (
+        f"{key}'s override renders the same value twice -- it cannot see the "
+        "key any better than the default probe it replaced"
+    )
+
+
 @pytest.mark.parametrize("key", _MARKET_KEYS, ids=_MARKET_KEYS)
 async def test_the_market_body_dispatches_every_key_it_declares(key) -> None:
     """A ``**_kwargs`` widget can absorb a dispatched key with every signature
@@ -461,11 +523,15 @@ async def test_the_market_body_dispatches_every_key_it_declares(key) -> None:
     these keys are dispatched to the ``p`` body as well, and a whole-screen
     diff would report a change made in a view that is not on screen.
     """
-    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+    present, absent = _CONDITIONAL_PROBES.get(key, ({key: ...}, {key: None}))
+    if present.get(key) is ...:
+        present = {}
+
+    async with _surf_app(_frozen_payload(**present)).run_test(size=_SIZE) as pilot:
         await _open_market(pilot)
         full = _market_text(pilot.app)
 
-    async with _surf_app(_frozen_payload(**{key: None})).run_test(
+    async with _surf_app(_frozen_payload(**absent)).run_test(
         size=_SIZE
     ) as pilot:
         await _open_market(pilot)
