@@ -18,7 +18,7 @@ it. This file is the method; the constants are the record.
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 | 106 cols · 44 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `4` pool4 market | 105 cols · 33 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `4` pool4 market | 105 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
@@ -36,7 +36,13 @@ since. surf's `p` pool4 body holds the **row** record at 44, the largest pinned
 here, and unlike the column pins it is a **worst case over payloads** rather
 than a constant, so it is re-swept when a panel's line count changes, not
 merely re-checked. surf's `4` market body is the newest and is the narrowest
-thing in the table at 105; neither touches the app-wide record.
+thing in the table at 105; neither touches the app-wide record. Its row pin
+went 33 -> 35 on 2026-09-12 when every panel on it gained the repo-wide blank
+row under its title (`margin: 0 0 1 0`); four panels grew a row each and the
+pin moved two, because only the binding column's growth reaches it. **That
+number is the price of the convention, and it is the one to quote when asked
+whether a body can afford it** -- the `p` body cannot obviously afford the
+same change, which is why it still has no such blank (filed as F10b).
 
 **Two of those pins are one column apart with the same panel binding both, and
 that is the strongest argument here against deriving a pin from a neighbour.**
@@ -56,8 +62,19 @@ content is unbounded by design — a log, a leaderboard page — and it is a sil
 loss for a panel whose line count is a **constant**, where `min-height` is
 meant to be floor and ceiling both. Measure a row pin against the body's
 **content**, not against the height at which the marker goes out: on surf's `4`
-body those two answers are one row apart, and the marker's is the optimistic
+body those two answers were one row apart, and the marker's was the optimistic
 one.
+
+**The cure is the floor, not the marker**, and it was found by accident on
+2026-09-12. That one-row gap closed when `#surf-pool4-user-bottom`'s
+`min-height` was raised to the ladder panel's own content height — a panel that
+cannot be squeezed under its content cannot scroll *inside itself* while the
+body does not, so the loss moves to the body's own scrollbar, which
+`_rail_is_cut` can see. `_rail_is_cut` learned nothing, so this is a rule about
+floors: **give a fixed-line-count panel a floor equal to its content and the
+marker becomes honest for free; floor it lower and the gap comes straight
+back.** Still measure against content — the floor is what makes the two agree,
+and nothing enforces it from the marker's side.
 
 ## The rules
 

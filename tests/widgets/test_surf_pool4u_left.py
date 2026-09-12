@@ -43,11 +43,14 @@ from maxpane_dashboard.widgets.surf import _pool4
 from maxpane_dashboard.widgets.surf import pool4u_burn as burn_mod
 from maxpane_dashboard.widgets.surf import pool4u_hero as hero_mod
 from maxpane_dashboard.widgets.surf._fmt import long_addr
+from maxpane_dashboard.widgets.surf._rowfit import pad
 from maxpane_dashboard.widgets.surf.pool4u_burn import (
     COMPACT_WIDTH as BURN_COMPACT_WIDTH,
     EMPTY_LINE as BURN_EMPTY_LINE,
     FULL_WIDTH as BURN_FULL_WIDTH,
+    LABEL_COLS as BURN_LABEL_COLS,
     MIN_PACE_WINDOW_S,
+    ROW_LABELS as BURN_ROW_LABELS,
     PACE_UNAVAILABLE,
     SPARK_COLS,
     UNAVAILABLE_LINE as BURN_UNAVAILABLE_LINE,
@@ -265,9 +268,25 @@ async def test_the_title_carries_the_network_word_from_the_shared_helper() -> No
     """Imported from ``_pool4``, never restated: two packages once wrote
     ``network_word`` twice with different behaviour on unknown input, and one
     body painted ``THE SPLIT · —`` beside ``THE RATCHET · BASE``.
+
+    The ``4`` body calls ``market_title_text``, so ``MAINNET`` is the one word
+    it leaves unsaid (2026-09-12; see ``_pool4.QUIET_NETWORK``). Everything
+    the allowlist is careful about survives that, and all three cases are
+    asserted here rather than only the one that changed -- an implementation
+    that dropped the word unconditionally would pass a mainnet-only check.
     """
-    _, mainnet = await _stakers(**STAKERS_KW, pool4_network="MAINNET")
-    assert _pool4.panel_title(STAKERS_TITLE, "MAINNET") in mainnet
+    lines, mainnet = await _stakers(**STAKERS_KW, pool4_network="MAINNET")
+    assert _pool4.market_panel_title(STAKERS_TITLE, "MAINNET") in mainnet
+    assert STAKERS_TITLE in mainnet
+    assert "MAINNET" not in mainnet
+    # The separator is asserted against the **title row** rather than the
+    # panel: the footer's own `` · `` is a different line's punctuation, and
+    # a panel-wide check would be green for a reason that is not the claim.
+    title_row = next(ln for ln in lines if STAKERS_TITLE in ln)
+    assert _pool4.TITLE_SEP not in title_row
+
+    _, sepolia = await _stakers(**STAKERS_KW, pool4_network="SEPOLIA")
+    assert _pool4.panel_title(STAKERS_TITLE, "SEPOLIA") in sepolia
 
     _, unknown = await _stakers(**STAKERS_KW, pool4_network="BASE")
     assert f"{STAKERS_TITLE}{_pool4.TITLE_SEP}{_pool4.NETWORK_UNKNOWN}" in unknown
@@ -395,8 +414,9 @@ async def test_the_burn_panel_draws_its_sparkline_and_names_its_window() -> None
     _, out = await _burn(**BURN_KW)
     assert any(ch in out for ch in sparkline_common.SPARK_CHARS[1:])
     assert "/day over 11h" in out
-    assert "26.3K retired" in out
-    assert "0.12% of supply" in out
+    # Label/value columns since 2026-09-12: the label owns the left column and
+    # the number follows it, rather than the number carrying its own noun.
+    assert f"{pad('retired', BURN_LABEL_COLS)}26.3K · 0.12% of supply" in out
     assert POOL4_FLOW_LIMIT == 25
 
 
@@ -410,7 +430,7 @@ async def test_unread_flow_and_a_quiet_window_are_different_sentences() -> None:
     assert BURN_EMPTY_LINE not in unread
     # The totals were read and are still shown: one dead key must not black out
     # the whole panel.
-    assert "26.3K retired" in unread
+    assert f"{pad('retired', BURN_LABEL_COLS)}26.3K" in unread
 
     _, quiet = await _burn(**dict(BURN_KW, pool4_flow=[]))
     assert BURN_EMPTY_LINE in quiet
@@ -603,3 +623,63 @@ def test_the_burn_width_pins_are_ordered_and_distinct() -> None:
     # light the marker and still overflow by whatever the fixed-width line is
     # over budget -- which is what the first draft of this panel did.
     assert SPARK_COLS["compact"] < SPARK_COLS["full"] <= sparkline_common.SPARK_WIDTH
+
+
+# ===========================================================================
+# BURN & SUPPLY's label column (2026-09-12 screenshot review)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_the_burn_panel_paints_its_three_rows_in_one_label_column() -> None:
+    """The defect the 2026-09-12 screenshot review named on this panel.
+
+    It rendered as a ragged block -- a sparkline with a pace glued to it, then
+    a sentence carrying its own noun (``26.6K retired``), then a line that led
+    with a word (``supply 3.4M IMD``). Three lines, three different shapes,
+    nothing to run an eye down.
+
+    Asserted as an **alignment**, not as three separate string matches: every
+    row's value has to begin at the same column, which is the property a
+    reader actually sees and the one a reworded label cannot fake. Read off
+    composited output, and measured in ``cell_len`` rather than ``len`` --
+    a sparkline block is one cell per character here but the rule is the rule.
+    """
+    lines, _ = await _burn(size=(80, 12), **BURN_KW)
+    rows = [ln for ln in lines if any(
+        ln.strip().startswith(label) for label in BURN_ROW_LABELS)]
+    assert len(rows) == len(BURN_ROW_LABELS), rows
+
+    # in order, top to bottom
+    for row, label in zip(rows, BURN_ROW_LABELS):
+        assert row.strip().startswith(label), (row, label)
+
+    # and every value starts in the same column
+    starts = {cell_len(row[:row.index(label) + BURN_LABEL_COLS])
+              for row, label in zip(rows, BURN_ROW_LABELS)}
+    assert len(starts) == 1, (starts, rows)
+
+
+def test_the_rail_panels_share_one_label_column() -> None:
+    """BURN & SUPPLY sits directly above SIGNALS in the `4` body's rail, so a
+    reader's eye runs straight from one label column into the other.
+
+    Two different widths there is the ragged look the screenshot review named,
+    one panel further out. ``LABEL_COLS`` is **restated** in each module
+    rather than imported across the ownership seam (a widget importing a
+    sibling widget's constant is a coupling, not a hoist -- the reason
+    ``NO_BAND`` is spelled twice in this body too), and this is the agreement
+    test that shape requires. It compares the two constants in both
+    directions, so widening either one alone reddens here.
+    """
+    from maxpane_dashboard.widgets.surf.pool4u_signals import (
+        LABEL_COLS as SIGNALS_LABEL_COLS,
+    )
+
+    assert BURN_LABEL_COLS == SIGNALS_LABEL_COLS
+
+    # ...and it is actually wide enough for this panel's own labels, which the
+    # equality above cannot tell you: a matched pair of too-narrow columns
+    # agrees with itself while both panels run their labels into their values.
+    for label in BURN_ROW_LABELS:
+        assert cell_len(label) < BURN_LABEL_COLS, label

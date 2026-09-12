@@ -38,6 +38,15 @@ two widen-marker spellings and the fitter that chooses between them, the
 markup-escaping and ``Text``-building helpers every panel funnels its lines
 through, and the line-width measurement the tier decisions share.
 
+**Two title functions, one fitter (2026-09-12).** The ``p`` auditor body calls
+:func:`panel_title` and prints the network word on all five of its titles; the
+``4`` market body calls :func:`market_panel_title`, which leaves
+:data:`QUIET_NETWORK` unsaid and prints everything else. Two functions rather
+than a flag, because the two bodies want two different answers for one input
+and a shared default is a thing a body can forget to pass. The marker-fitting
+half is *not* duplicated -- both go through ``_with_hint`` -- which is this
+module's own founding lesson applied to its own growth.
+
 **Not** here, deliberately: ``FULL_WIDTH`` / ``COMPACT_WIDTH`` / ``TITLE`` /
 ``UNAVAILABLE_LINE`` (per-panel *measurements* and per-panel copy -- the whole
 point of a pin is that it lives beside the code it governs), each panel's
@@ -81,9 +90,13 @@ __all__ = [
     "GLYPH_HINT",
     "NETWORK_UNKNOWN",
     "NETWORK_WORDS",
+    "QUIET_NETWORK",
+    "TITLE_CLASS",
     "TITLE_SEP",
     "WIDEN_HINT",
     "join_lines",
+    "market_panel_title",
+    "market_title_text",
     "network_word",
     "panel_title",
     "parse_line",
@@ -126,6 +139,44 @@ WIDEN_HINT = "‹ widen"
 #: the same view would make one name stand for two spellings, which is the
 #: same class of defect as the network word this module exists to unify.
 GLYPH_HINT = "‹"
+
+#: The one network word the ``4`` MARKET body leaves **unsaid** -- and only
+#: that body, through :func:`market_panel_title`. The ``p`` auditor body goes
+#: on printing it.
+#:
+#: The request behind it was "mainnet shouldn't be mentioned", and the
+#: temptation was to delete the word from the title altogether. That would
+#: have thrown away the property the word exists for: this view was built
+#: against a live *Sepolia* deployment and still renders it whenever no
+#: mainnet hook has been adopted, so a reader must never be able to mistake
+#: testnet numbers for real ones. **Silence is therefore only ever available
+#: for the default case.** ``SEPOLIA`` still prints, ``—`` (nothing swept, or
+#: a network outside :data:`NETWORK_WORDS`) still prints, and the reader who
+#: sees no word at all is looking at mainnet -- the one state where the
+#: absence of a warning is itself correct.
+#:
+#: A member of :data:`NETWORK_WORDS` by construction rather than by comment:
+#: :func:`market_panel_title` compares against :func:`network_word`'s output,
+#: so this constant cannot go quiet on a word the allowlist does not know.
+#: ``test_the_quiet_network_is_one_the_allowlist_recognises`` pins that, and
+#: is what reddens if this is ever retyped as something the vocabulary
+#: dropped.
+QUIET_NETWORK = "MAINNET"
+
+#: The class every ``4``-body panel's title ``Static`` carries, so one CSS
+#: rule can put the mandatory blank line under it.
+#:
+#: The blank row under a panel title is a **repo-wide convention** this body
+#: missed: ``ActivityFeed > .feed-title``, ``VolumeSparklines >
+#: .volspark-title``, ``PriceSparklines > .spark-title``, ``TopMovers >
+#: .movers-title``, ``GeckoPools > .gecko-title`` and ``LaunchFeed >
+#: .launch-feed-title`` all carry ``margin: 0 0 1 0`` in ``minimal.tcss``.
+#: The name is restated in each panel's own ``DEFAULT_CSS`` (a CSS selector
+#: is text, not an import), and
+#: ``test_every_market_panel_paints_a_blank_row_under_its_title`` asserts the
+#: *rendered* consequence against composited output rather than the spelling
+#: -- so a panel that carries the class and loses the rule still reddens.
+TITLE_CLASS = "pool4u-title"
 
 #: A complete ``[...]`` bracket run with no nested bracket -- ``launchpad.py``'s
 #: ``_TAG_LIKE``, which ``burnkeepers.py`` already copies for the same reason:
@@ -186,6 +237,45 @@ def panel_title(title: str, network: object) -> str:
     return f"{title}{TITLE_SEP}{network_word(network)}"
 
 
+def market_panel_title(title: str, network: object) -> str:
+    """:func:`panel_title` with :data:`QUIET_NETWORK` left unsaid.
+
+    The ``4`` MARKET body's title, and **only** that body's -- the ``p``
+    auditor body calls :func:`panel_title` and goes on printing ``· MAINNET``
+    on all five of its panels. Two functions rather than a flag on one,
+    because the two bodies want two different answers for the same input and
+    a shared default would make whichever body forgot to pass the flag print
+    the other one's title.
+
+    Everything :func:`network_word` is careful about survives: the word is
+    still resolved through the allowlist first, so ``SEPOLIA`` prints,
+    anything outside :data:`NETWORK_WORDS` (``None`` included) prints
+    :data:`NETWORK_UNKNOWN`, and the *only* input that renders a bare title
+    is the one the allowlist itself resolved to :data:`QUIET_NETWORK`. See
+    that constant for why silence is available for exactly one network.
+    """
+    word = network_word(network)
+    if word == QUIET_NETWORK:
+        return title
+    return f"{title}{TITLE_SEP}{word}"
+
+
+def _with_hint(base: str, widen: bool, budget: int) -> str:
+    """Append the longest widen marker that fits *base* within *budget*.
+
+    The body of :func:`title_text`, factored out so
+    :func:`market_title_text` cannot acquire a second, subtly different
+    fitting rule -- which is the exact failure ``_pool4.py`` exists to have
+    fixed once already, one layer up.
+    """
+    if not widen:
+        return base
+    for candidate in (WIDEN_HINT, GLYPH_HINT):
+        if not budget or cell_len(base) + 2 + cell_len(candidate) <= budget:
+            return f"{base}  {candidate}"
+    return base
+
+
 def title_text(title: str, network: object, widen: bool, budget: int) -> str:
     """:func:`panel_title` with the widen marker **appended**, never
     substituted, and never wider than the panel it is marking.
@@ -201,13 +291,21 @@ def title_text(title: str, network: object, widen: bool, budget: int) -> str:
     ``budget`` of ``0`` means "not laid out yet": the marker is placed
     unconditionally rather than suppressed on a geometry nobody has measured.
     """
-    base = panel_title(title, network)
-    if not widen:
-        return base
-    for candidate in (WIDEN_HINT, GLYPH_HINT):
-        if not budget or cell_len(base) + 2 + cell_len(candidate) <= budget:
-            return f"{base}  {candidate}"
-    return base
+    return _with_hint(panel_title(title, network), widen, budget)
+
+
+def market_title_text(title: str, network: object, widen: bool,
+                      budget: int) -> str:
+    """:func:`title_text` over :func:`market_panel_title`'s base.
+
+    The ``4`` body's four panels call this and nothing else does. The marker
+    rules are :func:`title_text`'s, shared through ``_with_hint``: a bare
+    mainnet title is nine cells shorter than the ``p`` body's, so it reaches
+    the full ``‹ widen`` spelling at a width where the other body would only
+    fit the glyph -- which is a consequence of the shorter title, not a
+    second policy.
+    """
+    return _with_hint(market_panel_title(title, network), widen, budget)
 
 
 def parse_line(markup: str) -> Text | None:

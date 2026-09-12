@@ -431,6 +431,15 @@ async def test_the_title_carries_the_network_word_from_the_shared_helper() -> No
     assert _pool4.panel_title(TITLE, "BASE") in unknown
     assert "BASE" not in unknown
 
+    # ``MAINNET`` is the one word this body leaves unsaid (2026-09-12; see
+    # ``_pool4.QUIET_NETWORK``). Asserted beside the two that still print, so
+    # an implementation that dropped the word unconditionally -- which would
+    # let a reader take Sepolia numbers for real ones -- fails here.
+    mainnet = await _lines({**ORACLE, "pool4_network": "MAINNET"})
+    title_row = next(ln for ln in mainnet if TITLE in ln)
+    assert title_row.strip() == TITLE
+    assert "MAINNET" not in "\n".join(mainnet)
+
 
 @pytest.mark.asyncio
 async def test_the_narrow_tier_removes_the_band_column_rather_than_blanking_it() -> None:
@@ -446,10 +455,21 @@ async def test_the_narrow_tier_removes_the_band_column_rather_than_blanking_it()
     assert HEADERS[1] in narrow
     assert "-50%" in narrow
     # One column below the pin is still wide enough to *say* it lost one, and
-    # ``title_text`` places the longest hint that fits -- here the bare glyph,
-    # because the network word is on this title too and ``IF IMD FALLS ·
-    # MAINNET  ‹ widen`` does not fit a rail this narrow.
-    assert _pool4.GLYPH_HINT in narrow
+    # ``market_title_text`` places the longest hint that fits. ``ORACLE`` is a
+    # mainnet payload, whose title this body prints bare, so the full spelling
+    # fits at this width: ``IF IMD FALLS  ‹ widen``.
+    assert _pool4.WIDEN_HINT in narrow
+
+    # And the glyph tier is still reachable -- ``GLYPH_HINT`` is a *substring*
+    # of ``WIDEN_HINT``, so an ``in`` check against the glyph alone cannot
+    # tell the two tiers apart and would pass here whichever was placed. The
+    # network word is what makes the difference: ``IF IMD FALLS · SEPOLIA
+    # ‹ widen`` does not fit a rail this narrow and the bare glyph does.
+    sepolia = await _lines({**ORACLE, "pool4_network": "SEPOLIA"},
+                           size=(FULL_WIDTH + 1, 16))
+    title_row = next(ln for ln in sepolia if TITLE in ln)
+    assert title_row.endswith(_pool4.GLYPH_HINT)
+    assert _pool4.WIDEN_HINT not in title_row
 
     wide = await _text(ORACLE, size=(120, 16))
     assert HEADERS[2] in wide

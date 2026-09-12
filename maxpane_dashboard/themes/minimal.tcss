@@ -2423,21 +2423,21 @@ SurfScreen #surf-pool4-user-body {
 
 SurfScreen #surf-pool4-user-middle {
     height: 1fr;
-    min-height: 13;
+    min-height: 14;
     padding: 0 0;
 }
 
 SurfPool4UStakers {
     width: 1fr;
     height: 1fr;
-    min-height: 10;
+    min-height: 11;
     padding: 0 1;
 }
 
 SurfScreen #surf-pool4-user-rail {
     width: 1fr;
     height: 1fr;
-    min-height: 13;
+    min-height: 14;
     padding: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;
@@ -2460,7 +2460,7 @@ SurfPool4USignals {
 
 SurfScreen #surf-pool4-user-bottom {
     height: 1fr;
-    min-height: 8;
+    min-height: 10;
     padding: 0 0;
     margin: 0 0 1 0;
 }
@@ -2468,7 +2468,7 @@ SurfScreen #surf-pool4-user-bottom {
 SurfPool4UDepth {
     width: 1fr;
     height: 1fr;
-    min-height: 7;
+    min-height: 8;
     padding: 0 1;
 }
 

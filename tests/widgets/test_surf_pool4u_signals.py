@@ -1,4 +1,4 @@
-"""WP9 -- the `4` body's SIGNALS panel: four states and one flat summary.
+"""WP9 -- the `4` body's SIGNALS panel: four states in one label column.
 
 Every layout assertion here goes against **composited output**
 (``screen._compositor.render_strips()``), joining segments per *row* first and
@@ -15,13 +15,16 @@ wave landed.
 
 What this file exists to pin above everything else
 --------------------------------------------------
-1. **The summary line never gives advice** (PRD §8.4). Bakery's signals
-   template ends on ``→ Recommendation: BUY``; on a market panel in a
-   strictly read-only tool that would be the first thing on screen that reads
-   as a trade. The check greps the **composited body**, because a bare-word
-   grep over this module's source is the known-fake shape in this repo's
-   taxonomy: it passes while the reader sees something else, and it fails on
-   a docstring that merely *documents* the forbidden word.
+1. **The panel never gives advice** (PRD §8.4). Bakery's signals template
+   ends on ``→ Recommendation: BUY``; on a market panel in a strictly
+   read-only tool that would be the first thing on screen that reads as a
+   trade. This was aimed at the state-summary line until 2026-09-12, when
+   that line was dropped; the constraint was never about one line, so the
+   check is aimed at the whole panel and at five payload states. It greps the
+   **composited body**, because a bare-word grep over this module's source is
+   the known-fake shape in this repo's taxonomy: it passes while the reader
+   sees something else, and it fails on a docstring that merely *documents*
+   the forbidden word.
 2. **``burning`` tells three states apart, and all three are asserted.** A
    checker that compares only the ``None`` word is a logged defect here: it
    cannot distinguish "the cap binds" from "we could not read the cap", and
@@ -68,7 +71,6 @@ from maxpane_dashboard.widgets.surf.pool4u_signals import (
     backlog_cell,
     backstop_cell,
     burning_state,
-    compose_summary,
     venue_cell,
 )
 
@@ -146,7 +148,7 @@ async def test_burning_tells_all_three_states_apart() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_summary_line_never_gives_advice() -> None:
+async def test_the_panel_never_gives_advice() -> None:
     """PRD §8.4.
 
     Bakery's template ends with a recommendation. That is fine for a cookie
@@ -154,14 +156,27 @@ async def test_the_summary_line_never_gives_advice() -> None:
     strictly read-only tool, and a bottom-line "buy" would be the first thing
     on screen that reads as advice.
 
+    **This was ``test_the_summary_line_never_gives_advice`` until 2026-09-12**,
+    when the state-summary line it was named for was dropped (see the module
+    docstring). The constraint did not move with the line: §8.4 is about
+    anything on this panel reading as advice, not about one sentence, so the
+    check is aimed at the whole composited panel -- which is where it should
+    always have been pointed and is strictly the stronger claim. The
+    parametrised sweep below runs the same words over five payload states.
+
     Grep the **composited body**, not the source. A bare-word source grep is a
     known-fake shape here: it reddens on a docstring explaining the rule and
     stays green on a word that reaches a pixel through a payload value.
+
+    The positive half is what stops this passing on a blank panel: the four
+    rows have to be *there* for their absence of advice to mean anything.
     """
     out = await _text(HEALTHY)
     for forbidden in ("buy", "sell", "should", "recommend"):
         assert forbidden not in out.lower(), forbidden
-    assert "burning on" in out.lower()
+    for label in ROW_LABELS:
+        assert label in out, label
+    assert BURNING_ON in out
 
 
 @pytest.mark.asyncio
@@ -180,9 +195,9 @@ async def test_no_reachable_state_of_this_panel_gives_advice(payload) -> None:
     """The forbidden words are forbidden in **every** state, not one.
 
     One payload proves one painting. Each branch below reaches a different
-    combination of row words and a different summary, and the unavailable
-    state reaches neither -- which is where a "nothing to say, so here is what
-    to do" line would most plausibly be written by someone later.
+    combination of row words, and the unavailable state reaches none of them
+    -- which is where a "nothing to say, so here is what to do" line would
+    most plausibly be written by someone later.
     """
     out = (await _text(payload)).lower()
     for forbidden in ("buy", "sell", "should", "recommend"):
@@ -376,50 +391,33 @@ def test_the_backlog_row_separates_zero_from_unread() -> None:
 
 
 # ===========================================================================
-# The summary
+# The shape of the panel
 # ===========================================================================
 
 
-def test_the_summary_drops_an_unread_part_rather_than_dashing_it() -> None:
-    """A dash inside a sentence reads as a fact with a missing value; the
-    absence of a clause reads as an absence. The rows above already name which
-    input was unreadable, in their own words.
-    """
-    whole = compose_summary(0.0, "reference", 3.1, "deployed", 68196, 68280)
-    assert whole == "burning on · cheaper on reference · bid 0.84% under"
-
-    without_venue = compose_summary(0.0, None, None, "deployed", 68196, 68280)
-    assert "cheaper" not in without_venue
-    assert "--" not in without_venue
-    assert without_venue == "burning on · bid 0.84% under"
-
-    assert compose_summary(None, None, None, None, None, None) == ""
-
-
-def test_the_summary_says_no_bid_rather_than_going_quiet() -> None:
-    """``none deployed`` is the state a reader most needs in one sentence.
-
-    Dropping the clause would make "there is no bid under you" and "we could
-    not read the band" the same summary, which is the rail bug again.
-    """
-    assert "no bid deployed" in compose_summary(0.0, None, None, "none", None, None)
-    assert "bid" not in compose_summary(0.0, None, None, None, None, None)
-
-
 @pytest.mark.asyncio
-async def test_the_summary_is_composed_from_the_same_values_as_the_rows() -> None:
-    """Not a prose payload key.
+async def test_the_panel_is_four_labelled_rows_and_a_clock_and_nothing_else()\
+        -> None:
+    """The state-summary line is gone, and this is what stops it drifting back.
 
-    A sentence built in the data layer drifts from the rows above it the first
-    time one of them changes wording, and the reader sees a panel disagreeing
-    with itself. Proven by moving one input and watching **both** surfaces
-    move: the row and the summary come from one place or they do not.
+    It was dropped on 2026-09-12 for two reasons the module docstring records:
+    it restated three of the four rows above it, and it was the one line on
+    the panel that did not sit in the label column -- on a body whose whole
+    screenshot-review complaint was ragged alignment.
+
+    Asserted as a **line count and a shape**, not as the absence of a
+    sentence: a check for one particular restated phrase would go green the
+    moment someone reworded it. Every content row either begins with one of
+    :data:`ROW_LABELS` or is the ``as of`` marker, and there are exactly as
+    many of them as there are labels plus that marker.
     """
-    on = await _text({**HEALTHY, "pool4_cap_headroom": 0.0})
-    off = await _text({**HEALTHY, "pool4_cap_headroom": 1240.0})
-    assert "burning on" in on.lower() and f"{BURNING_ON} ·" in on
-    assert "burning off" in off.lower() and f"{BURNING_OFF} ·" in off
-    assert "burning on" not in off.lower()
+    lines = [ln.strip() for ln in await _lines(HEALTHY) if ln.strip()]
+    assert lines[0].startswith(TITLE)
+    body = lines[1:]
+    assert len(body) == len(ROW_LABELS) + 1, body
+    for line, label in zip(body, ROW_LABELS):
+        assert line.startswith(label), (line, label)
+    assert body[-1].startswith("as of")
 
 
 # ===========================================================================
@@ -492,6 +490,15 @@ async def test_the_title_carries_the_network_word_from_the_shared_helper() -> No
     assert _pool4.panel_title(TITLE, "BASE") in unknown
     assert "BASE" not in unknown
 
+    # ``MAINNET`` is the one word this body leaves unsaid (2026-09-12; see
+    # ``_pool4.QUIET_NETWORK``). Asserted beside the two that still print, so
+    # an implementation that dropped the word unconditionally -- which would
+    # let a reader take Sepolia numbers for real ones -- fails here.
+    mainnet = await _lines({**HEALTHY, "pool4_network": "MAINNET"})
+    title_row = next(ln for ln in mainnet if TITLE in ln)
+    assert title_row.strip() == TITLE
+    assert "MAINNET" not in "\n".join(mainnet)
+
 
 @pytest.mark.asyncio
 async def test_the_narrow_tier_sheds_detail_and_never_a_signal() -> None:
@@ -500,7 +507,7 @@ async def test_the_narrow_tier_sheds_detail_and_never_a_signal() -> None:
     that mattered.
 
     What goes is the tick tail, the backstop's ETH and the backlog's clause.
-    What stays is four labels, four states and the summary.
+    What stays is four labels and four states.
     """
     narrow = await _text(HEALTHY, size=(COMPACT_WIDTH + 6, 14))
     for label in ROW_LABELS:
@@ -530,9 +537,11 @@ async def test_the_width_pins_are_what_the_rows_actually_paint() -> None:
         "pool4_reference_pool_tick": 887272,
     }
     lines = await _lines(wide, size=(200, 14))
-    # Matched on the **padded** label, not the bare one: the summary line
-    # begins ``burning off ...`` and a bare prefix match would sweep it in and
-    # measure a sentence against a pin that describes rows.
+    # Matched on the **padded** label, not the bare one. The state-summary
+    # line that used to begin ``burning off ...`` is gone, but the padding is
+    # what makes this a match on a *row* rather than on any line that happens
+    # to start with a label word -- and the next line added under these four
+    # should have to answer for itself here rather than be swept in.
     rows = [
         line for line in lines
         if any(line.strip().startswith(pad(label, LABEL_COLS))

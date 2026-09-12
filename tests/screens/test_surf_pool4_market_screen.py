@@ -56,6 +56,7 @@ from maxpane_dashboard.widgets.surf import (
 from tests.screens.test_surf_screen import (
     SURF_WIDGET_SIGNATURES,
     _frozen_payload,
+    _mainnet_pool4_payload,
     _region_text,
     _screen_text,
     _surf_app,
@@ -469,4 +470,128 @@ async def test_the_market_body_dispatches_every_key_it_declares(key) -> None:
         "it: the body composites identically with the key set to None. "
         "Either render it or stop dispatching it -- an accepted-and-dropped "
         "kwarg is the S23 shape every name-based guard is blind to."
+    )
+
+
+# ---------------------------------------------------------------------------
+# the blank row under every panel title (2026-09-12 screenshot review)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "cls", _MARKET_PANELS, ids=[c.__name__ for c in _MARKET_PANELS]
+)
+async def test_every_market_panel_paints_a_blank_row_under_its_title(cls) -> None:
+    """The repo-wide convention this body shipped without.
+
+    ``ActivityFeed > .feed-title``, ``VolumeSparklines > .volspark-title``,
+    ``PriceSparklines > .spark-title``, ``TopMovers > .movers-title``,
+    ``GeckoPools > .gecko-title`` and ``LaunchFeed > .launch-feed-title`` all
+    carry ``margin: 0 0 1 0`` in ``minimal.tcss``; the `4` body's four panels
+    carried none, which is what the 2026-09-12 screenshot review reported
+    first.
+
+    Asserted against **composited output on the real screen**, not against the
+    CSS string and not against a panel mounted alone in a bare ``App``. The
+    app stylesheet outranks a widget's ``DEFAULT_CSS``, so the only honest
+    question is whether the row reaches a pixel *here*, with every rule in
+    play -- and two of these four paint their title into a ``Static`` they
+    share with nothing while the other two have a ``DataTable`` under it, so
+    a source-level check would have to know which shape it was looking at.
+
+    Row 0 carries the title, row 1 is blank, row 2 carries content. The third
+    assertion is the one that stops this passing on a panel that has simply
+    gone dark.
+    """
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
+        found = list(body.query(cls))
+        assert len(found) == 1, f"{cls.__name__}: {len(found)} instances"
+        rows = _region_text(pilot.app, found[0]).split("\n")
+
+    assert rows[0].strip(), f"{cls.__name__} has no title row"
+    assert not rows[1].strip(), (
+        f"{cls.__name__} paints content directly under its title -- the "
+        "`margin: 0 0 1 0` blank row every other dashboard's title class "
+        f"carries is missing. Composited rows: {rows[:4]}"
+    )
+    assert rows[2].strip(), (
+        f"{cls.__name__} paints nothing under the blank, so the blank above "
+        "is the panel being empty rather than the title's margin"
+    )
+
+
+# ---------------------------------------------------------------------------
+# the network word, and the one network this body leaves unsaid
+# ---------------------------------------------------------------------------
+
+
+async def test_the_market_panels_leave_mainnet_unsaid_and_say_everything_else()\
+        -> None:
+    """"mainnet shouldn't be mentioned" -- and the word still has a job.
+
+    The `4` body's four panels call ``_pool4.market_title_text``, which is
+    ``panel_title`` with :data:`~maxpane_dashboard.widgets.surf._pool4.
+    QUIET_NETWORK` left unsaid. The temptation was to delete the network word
+    from these titles altogether; that would have thrown away the property it
+    exists for, because this view renders a live **Sepolia** deployment
+    whenever no mainnet hook has been adopted and a reader must never take
+    those numbers for real ones.
+
+    So both halves are asserted against composited output on the real screen,
+    over the two committed captures: the mainnet one paints bare titles, and
+    the Sepolia one still paints ``· SEPOLIA`` on every panel that has a
+    network word.
+    """
+    async with _surf_app(_mainnet_pool4_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
+        for cls in _MARKET_PANELS:
+            panel = list(body.query(cls))[0]
+            rows = _region_text(pilot.app, panel).split("\n")
+            assert "MAINNET" not in rows[0], (cls.__name__, rows[0])
+            assert "·" not in rows[0], (cls.__name__, rows[0])
+
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
+        for cls in _MARKET_PANELS:
+            panel = list(body.query(cls))[0]
+            rows = _region_text(pilot.app, panel).split("\n")
+            assert "SEPOLIA" in rows[0], (cls.__name__, rows[0])
+
+
+async def test_recent_flow_still_names_mainnet_in_this_body() -> None:
+    """A **filed finding, pinned so it cannot rot** -- not an endorsement.
+
+    RECENT FLOW is ``SurfPool4Flow``, the ``p`` body's own panel mounted a
+    second time here (PRD §6.4: reuse the module, do not copy it). It calls
+    ``_pool4.panel_title`` directly, so it goes on painting ``· MAINNET`` in
+    a body whose other four titles are now bare -- which is the screenshot
+    review's defect surviving in the one panel this pass did not own. It was
+    reported rather than repaired: that module belongs to the ``p`` body, and
+    a pass that fixes what it finds in someone else's file reviews its own
+    work.
+
+    The fix is a *screen*-set opt-in on that widget (its default must stay
+    ``panel_title``, because the ``p`` body's five titles have to keep the
+    word), never a change to ``market_panel_title``, and never a different
+    ``pool4_network`` value handed to this instance -- which would be lying
+    about the provenance the word exists to state.
+
+    When this reddens the finding is fixed: delete this test and add the
+    panel to ``test_the_market_panels_leave_mainnet_unsaid_and_say_everything
+    _else``'s sweep instead.
+    """
+    async with _surf_app(_mainnet_pool4_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
+        flow = list(body.query(SurfPool4Flow))[0]
+        rows = _region_text(pilot.app, flow).split("\n")
+
+    assert "MAINNET" in rows[0], (
+        "RECENT FLOW no longer names MAINNET in the market body -- the "
+        "carried-over half of the 2026-09-12 network-word finding is fixed. "
+        "Delete this test and fold SurfPool4Flow into the sweep above."
     )

@@ -156,6 +156,91 @@ def test_a_title_never_goes_networkless():
 
 
 # ---------------------------------------------------------------------------
+# The `4` body's quieter title: one network unsaid, and only one
+# ---------------------------------------------------------------------------
+
+
+def test_the_quiet_network_is_one_the_allowlist_recognises():
+    """``QUIET_NETWORK`` cannot go quiet on a word the vocabulary dropped.
+
+    :func:`market_panel_title` compares against :func:`network_word`'s
+    *output*, so the constant has to be a member of the allowlist or the
+    comparison can never match and the ``4`` body silently starts printing
+    the word again. Pinned in both directions against the frozen contract
+    vocabulary, the same shape as the allowlist tripwire above.
+    """
+    assert P.QUIET_NETWORK in P.NETWORK_WORDS
+    assert P.QUIET_NETWORK in POOL4_NETWORKS
+    assert P.network_word(P.QUIET_NETWORK) == P.QUIET_NETWORK
+
+
+def test_the_market_title_leaves_exactly_one_network_unsaid():
+    """The request was "mainnet shouldn't be mentioned"; the safety property
+    the word carries is "a reader must never take testnet numbers for real
+    ones". Both hold only if the silence is available for **one** network.
+
+    Swept over the whole frozen vocabulary rather than over the two words
+    someone remembered, so a third network added to the contract arrives here
+    printing its own name rather than inheriting mainnet's silence.
+    """
+    for word in POOL4_NETWORKS:
+        title = P.market_panel_title("PANEL", word)
+        if word == P.QUIET_NETWORK:
+            assert title == "PANEL"
+        else:
+            assert title == f"PANEL{P.TITLE_SEP}{word}"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, "", "BASE", "base", "ETHEREUM", "sepolia-fork", 1, 0, True, object(),
+     ["SEPOLIA"], "SEPOLIA MAINNET", "[/x]", "$success"],
+)
+def test_the_market_title_keeps_the_allowlist_semantics(value):
+    """Anything outside the vocabulary still renders the dash here.
+
+    ``None`` is the case that matters: it means no sweep has ever completed,
+    and the tempting implementation -- "print the word unless it is mainnet"
+    -- would have made the *default* state indistinguishable from mainnet on
+    a view that renders Sepolia whenever no mainnet hook is adopted.
+    """
+    assert P.market_panel_title("PANEL", value).endswith(P.NETWORK_UNKNOWN)
+    assert P.TITLE_SEP in P.market_panel_title("PANEL", value)
+
+
+def test_the_p_body_title_is_untouched_by_the_market_body_s_silence():
+    """The two bodies want two different answers for one input.
+
+    ``p``'s five panels call :func:`panel_title` and must go on printing
+    ``· MAINNET``; only the ``4`` body's call site changed. Asserted here
+    rather than left to the panels' own files, because the failure this
+    guards -- a "simplification" that folds the two into one -- is a change
+    to *this* module.
+    """
+    assert P.panel_title("PANEL", "MAINNET") == f"PANEL{P.TITLE_SEP}MAINNET"
+    assert P.title_text("PANEL", "MAINNET", False, 0) == f"PANEL{P.TITLE_SEP}MAINNET"
+    assert P.market_panel_title("PANEL", "MAINNET") == "PANEL"
+
+
+def test_both_titles_fit_their_marker_by_the_same_rule():
+    """One fitter, shared: ``market_title_text`` is ``title_text`` over a
+    different base and must not acquire a second marker policy.
+
+    The shorter mainnet base is what lets the full ``‹ widen`` spelling fit
+    where the ``p`` body's title only has room for the glyph -- a consequence
+    of the base, which is the point, and not of a second rule.
+    """
+    budget = len("PANEL · MAINNET") + 2 + len(P.GLYPH_HINT)
+    assert P.title_text("PANEL", "MAINNET", True, budget).endswith(P.GLYPH_HINT)
+    assert P.market_title_text("PANEL", "MAINNET", True, budget).endswith(
+        P.WIDEN_HINT
+    )
+    # and with no geometry yet, both place the marker unconditionally
+    assert P.market_title_text("PANEL", "MAINNET", True, 0) == f"PANEL  {P.WIDEN_HINT}"
+    assert P.market_title_text("PANEL", "MAINNET", False, 0) == "PANEL"
+
+
+# ---------------------------------------------------------------------------
 # One implementation of the hoisted names
 # ---------------------------------------------------------------------------
 

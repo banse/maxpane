@@ -1,19 +1,30 @@
-"""SIGNALS: four states a reader changes behaviour on, and a flat summary.
+"""SIGNALS: four states a reader changes behaviour on, in label/value columns.
 
-``templates/signals_template.py``'s shape with its last line replaced. The
+``templates/signals_template.py``'s shape with its last line **deleted**. The
 template ends on a **recommendation** -- ``→ Recommendation: BUY`` -- which is
 fine for a cookie game and is something else entirely on a market panel. This
 repo ships a strictly read-only tool that never signs and never quotes a trade,
 so a bottom-line verdict would be the first thing on screen that reads as
-advice (PRD §8.4). What replaces it is a **state summary**: the same four rows,
-flattened into one descriptive sentence, with no imperative and no direction to
-act in.
+advice (PRD §8.4).
 
-The summary is composed **here, from the typed payload parts**, and never
-arrives as a prose payload key. A sentence built in the data layer drifts from
-the rows above it the first time one of them changes wording, and the reader
-then sees a panel disagreeing with itself. ``compose_summary`` takes the same
-values the rows take, so the two cannot separate.
+What replaced it until 2026-09-12 was a **state summary** -- the same four
+rows flattened into one descriptive sentence. It was dropped in the
+screenshot-review pass, and the reason is worth keeping because it is not the
+reason it was written for. PRD §8.4's constraint was that nothing here may
+read as advice, and that constraint is now held by
+``test_no_reachable_state_of_this_panel_gives_advice``, which greps the
+**whole composited panel** in five payload states -- a strictly stronger guard
+than one aimed at a single line, and one that does not depend on that line
+existing. What the summary had left to offer after that was a restatement of
+three of the four rows immediately above it, and once those rows were laid out
+in a label column it was also the one ragged line in a panel whose whole point
+had become that a reader's eye runs down a single column. It cost a row of
+``SURF_POOL4_USER_FULL_LAYOUT_ROWS`` for that.
+
+**This is a deliberate deviation from PRD §6.3**, which specifies "four rows
+and a flat state summary line beneath". Recorded here rather than quietly:
+if the summary comes back, it comes back as a line that says something the
+rows do not.
 
 The four rows, and why each earns a line (PRD §6.3)
 ---------------------------------------------------
@@ -97,10 +108,11 @@ from maxpane_dashboard.analytics.surf_pool4_depth import band_distance_pct
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float
 from maxpane_dashboard.widgets.surf._pool4 import (
+    TITLE_CLASS,
     join_lines,
+    market_title_text,
     parse_line,
     strip_tags,
-    title_text,
     widest_line,
 )
 from maxpane_dashboard.widgets.surf._rowfit import pad
@@ -125,7 +137,6 @@ __all__ = [
     "backstop_cell",
     "burning_cell",
     "burning_state",
-    "compose_summary",
     "venue_cell",
 ]
 
@@ -195,6 +206,7 @@ ROW_LABELS: tuple[str, ...] = (
 )
 
 _BODY_ID = "surf-pool4u-signals-body"
+_TITLE_ID = "surf-pool4u-signals-title"
 
 #: The label column, in **terminal cells**: ``drip backlog`` and ``cheaper
 #: pool`` are twelve, plus one so no value ever abuts its label.
@@ -209,12 +221,12 @@ LABEL_COLS = 13
 #: * drip backlog -- ``deep · 999.9d · return understates`` (34).
 _VALUE_COLS = 34
 
-#: Widest full-tier row. The **summary** can exceed it, which is why the tier
-#: decision below measures what was actually built instead of comparing the
-#: budget against this constant: a marker keyed off ``budget < FULL_WIDTH``
-#: would stay dark while an unusually long summary was clipped by CSS in
-#: silence. This pin is what the rows are laid out to, and a test compares it
-#: against composited output with ``==`` so it reddens in both directions.
+#: Widest full-tier row. The tier decision below still measures what was
+#: actually built rather than comparing the budget against this constant: the
+#: value cells are data-dependent, so a marker keyed off ``budget <
+#: FULL_WIDTH`` would stay dark while an unusually wide row was clipped by CSS
+#: in silence. This pin is what the rows are laid out to, and a test compares
+#: it against composited output with ``==`` so it reddens in both directions.
 FULL_WIDTH = LABEL_COLS + _VALUE_COLS
 
 #: One tier down. What is shed, in order, and what is not:
@@ -224,13 +236,11 @@ FULL_WIDTH = LABEL_COLS + _VALUE_COLS
 #: * the backstop row's ETH -- the hero's DOWNSIDE BID card carries it with
 #:   room to spare, and *distance* is the half this row exists for;
 #: * ``headroom`` shortens to ``hr`` and the backlog's ``return understates``
-#:   clause goes;
-#: * the summary drops each part's leading noun.
+#:   clause goes.
 #:
-#: **The four rows themselves never go, and neither does the summary.** A
-#: signals panel that sheds a signal has not got narrower, it has started
-#: lying by omission -- and the state that would be dropped is exactly as
-#: likely to be the one that mattered.
+#: **The four rows themselves never go.** A signals panel that sheds a signal
+#: has not got narrower, it has started lying by omission -- and the state
+#: that would be dropped is exactly as likely to be the one that mattered.
 COMPACT_WIDTH = LABEL_COLS + 21
 
 
@@ -351,53 +361,8 @@ def backlog_cell(backlog_days, tier: str = "full") -> tuple[str, str]:
     return cell, "yellow"
 
 
-def compose_summary(cap_headroom, cheaper_venue, venue_gap_pct,
-                    backstop_state, tick_now, band_lower_tick,
-                    tier: str = "full") -> str:
-    """``burning on · cheaper on reference · bid 0.84% under`` -- descriptive.
-
-    Built from the same values the rows are built from, so the sentence cannot
-    drift from what is printed above it, and built **here** rather than shipped
-    as a prose payload key for the same reason.
-
-    Flat and stateful throughout: no imperative, no direction to act in, no
-    verdict. PRD §8.4, pinned by a forbidden-word test against composited
-    output -- *buy*, *sell*, *should*, *recommend*.
-
-    A part whose input was not read is **dropped**, not rendered as a dash: the
-    summary is a sentence, and a dash inside one reads as a fact with a missing
-    value rather than as an absence. The rows above already say which input was
-    unreadable, in their own words.
-    """
-    parts: list[str] = []
-    state = burning_state(cap_headroom)
-    if state is not None:
-        word = state.lower()
-        parts.append(f"burning {word}" if tier == "full" else word)
-
-    venue = strip_tags(cheaper_venue)
-    if venue in VENUE_WORDS:
-        if tier == "full":
-            parts.append("cheaper here" if venue == "here"
-                         else "cheaper on reference")
-        else:
-            parts.append(venue)
-    elif as_float(venue_gap_pct) is not None:
-        parts.append("no venue edge" if tier == "full" else NO_EDGE)
-
-    band = strip_tags(backstop_state)
-    if band == "none":
-        parts.append("no bid deployed" if tier == "full" else "no bid")
-    elif band == "deployed":
-        distance = band_distance_pct(tick_now, band_lower_tick)
-        if distance is not None:
-            shown = f"{distance:.2f}% under"
-            parts.append(f"bid {shown}" if tier == "full" else shown)
-    return " · ".join(parts)
-
-
 class SurfPool4USignals(Vertical):
-    """SIGNALS: four market states over one flat summary of them."""
+    """SIGNALS: four market states in one label column, and nothing else."""
 
     DEFAULT_CSS = """
     SurfPool4USignals {
@@ -408,6 +373,9 @@ class SurfPool4USignals(Vertical):
         padding: 0 1;
         text-wrap: nowrap;
         text-overflow: ellipsis;
+    }
+    SurfPool4USignals > .pool4u-title {
+        margin: 0 0 1 0;
     }
     """
 
@@ -424,7 +392,9 @@ class SurfPool4USignals(Vertical):
         self._widen = False
 
     def compose(self) -> ComposeResult:
-        yield Static(Text(TITLE, style="dim"), id=_BODY_ID)
+        yield Static(Text(TITLE, style="dim"), id=_TITLE_ID,
+                     classes=TITLE_CLASS)
+        yield Static(Text(""), id=_BODY_ID)
 
     def on_resize(self, _event=None) -> None:
         if self._payload:
@@ -474,7 +444,14 @@ class SurfPool4USignals(Vertical):
         return max(self.size.width - self._TITLE_PADDING_COLS, 0)
 
     def _title_text(self) -> str:
-        return title_text(
+        """``market_title_text``, not ``title_text``: this is the ``4`` body.
+
+        The one difference is that ``MAINNET`` is left unsaid here while the
+        ``p`` body's five panels go on printing it -- see
+        ``_pool4.QUIET_NETWORK`` for why silence is available for exactly one
+        network and for nothing else.
+        """
+        return market_title_text(
             TITLE, self._payload.get("network"), self._widen, self._text_budget()
         )
 
@@ -529,17 +506,6 @@ class SurfPool4USignals(Vertical):
                 f"[dim]{safe_markup(pad(label, LABEL_COLS))}[/]"
                 f"[{style}]{safe_markup(cell)}[/]"
             )
-        summary = compose_summary(
-            self._payload.get("cap_headroom"),
-            self._payload.get("cheaper_venue"),
-            self._payload.get("venue_gap_pct"),
-            self._payload.get("backstop_state"),
-            self._payload.get("current_tick"),
-            self._payload.get("backstop_lower_tick"),
-            tier,
-        )
-        if summary:
-            markup.append(f"[dim]{safe_markup(summary)}[/]")
         as_of = strip_tags(self._payload.get("as_of"))
         if as_of:
             markup.append(f"[dim]as of {safe_markup(as_of)}[/]")
@@ -547,28 +513,38 @@ class SurfPool4USignals(Vertical):
 
     def _render_view(self) -> None:
         try:
+            title = self.query_one(f"#{_TITLE_ID}", Static)
             body = self.query_one(f"#{_BODY_ID}", Static)
         except Exception:  # not composed yet
             return
 
+        def paint(*content: Text) -> None:
+            """Title into its own ``Static``, content into the body's.
+
+            Two ``Static``s and not one joined ``Text``: the blank row under
+            the title is CSS (``margin: 0 0 1 0`` on :data:`TITLE_CLASS`),
+            the repo-wide convention every reference dashboard already
+            carries. A ``Text("")`` spliced between them would paint the same
+            pixels today and would be invisible to the rule that keeps the
+            eight other dashboards agreeing with each other.
+            """
+            title.update(Text(self._title_text(), style="dim"))
+            body.update(join_lines(list(content)))
+
         if not self._payload:
             self._widen = False
-            body.update(Text(self._title_text(), style="dim"))
+            paint()
             return
 
         if self._is_blank():
             self._widen = False
-            lines = [
-                Text(self._title_text(), style="dim"),
-                Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"),
-            ]
-            body.update(join_lines(lines))
+            paint(Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"))
             return
 
         # Measure what was actually built rather than comparing the budget
-        # against FULL_WIDTH: the summary is data-dependent and can be the
-        # widest line on the panel, so a marker keyed off the constant would
-        # stay dark while CSS clipped that line in silence.
+        # against FULL_WIDTH: every value cell is data-dependent, so a marker
+        # keyed off the constant would stay dark while CSS clipped a row in
+        # silence.
         budget = self._text_budget()
         content = self._content_lines("full")
         if budget and widest_line(content) > budget:
@@ -577,4 +553,4 @@ class SurfPool4USignals(Vertical):
         else:
             self._widen = False
 
-        body.update(join_lines([Text(self._title_text(), style="dim"), *content]))
+        paint(*content)

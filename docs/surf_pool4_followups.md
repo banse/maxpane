@@ -621,11 +621,12 @@ is the check that would have caught the `0x840` / `0x2840` flag error on day one
 
 ---
 
-## F6 — the `4` body loses a ladder rung at 32 rows with `‹ taller` dark
+## F6 — CLOSED 2026-09-12 — the `4` body lost a ladder rung with `‹ taller` dark
 
 **Found by:** WP10, while sweeping the market body's height. **Severity:** surf-local, one
-terminal height. **Not fixed here** — the market body's CSS belongs to WP7, and a package that
-fixes what it finds reviews its own work by the end of the pass.
+terminal height. **Closed 2026-09-12** by the screenshot-review pass, as a side effect of the
+title-margin work rather than as a repair aimed at it — see the bottom of this note. The
+description below is kept in the past tense as the record of what was wrong.
 
 At **32** rows — one under the measured pin `SURF_POOL4_USER_FULL_LAYOUT_ROWS = 33` — the
 `IF IMD FALLS` panel paints eight of its nine lines. The line it loses is the **`-50%` rung**, the
@@ -659,15 +660,28 @@ rather than against the marker, precisely so the published number does not promi
 loses a row. What is left is a one-row window in which a reader sees a four-rung ladder and
 nothing on screen says a rung is missing.
 
-**The fix, when it is scheduled.** `SurfPool4UDepth`'s `min-height` is `7` against nine painted
-lines, in **both** copies of the rule (`SurfScreen.DEFAULT_CSS` and `themes/minimal.tcss` — edit
-both or neither). Raising it to `9` and re-sweeping is the obvious shape, and it will move
-`SURF_POOL4_USER_FULL_LAYOUT_ROWS`; the standing rule says re-sweep rather than adjust the
-constant to match. `tests/screens/test_surf_pool4_market_layout.py::
-test_the_taller_marker_is_dark_in_the_one_row_window_below_the_pin` pins the **current**
-behaviour and therefore reddens the moment this is fixed, which is deliberate: the fix has to
-come with the constant's `#:` block, that module's docstring and this note updated in the same
-diff.
+**How it was closed (2026-09-12), and by a pass that was not looking for it.** The screenshot
+review gave every `4`-body panel the repo-wide blank row under its title (`margin: 0 0 1 0` on
+`_pool4.TITLE_CLASS`), which took `IF IMD FALLS` from nine painted lines over nine rows to nine
+over **ten**. Its containing row's floor was raised to match — `#surf-pool4-user-bottom`
+`min-height: 8 → 10`, and `SurfPool4UDepth` `7 → 8`, in **both** copies of each rule
+(`SurfScreen.DEFAULT_CSS` and `themes/minimal.tcss`). A panel whose floor is its own content
+height can no longer be squeezed into a height where its `DataTable` scrolls internally while the
+body does not; every height below the pin now scrolls the **body**, which `_rail_is_cut` *can*
+see. Re-swept over rows 24..45 and three payloads: there is no height at which a line is lost and
+nothing on screen says so. The pin moved `33 → 35` (see that constant's `#:` block for the full
+re-sweep, including why two rows and not four).
+
+**What is NOT closed.** `_rail_is_cut`'s blindness to a table scrolling inside a panel is
+unchanged. This body is safe because every panel's floor now covers its own content, not because
+the marker learned anything — the next panel floored below its content brings the window straight
+back, on any screen. That is why the height pin is still measured against the body's **content**
+and never against the marker.
+
+The test that pinned the open behaviour
+(`test_the_taller_marker_is_dark_in_the_one_row_window_below_the_pin`) reddened, as it was written
+to, and was replaced by `test_no_height_loses_a_row_of_this_body_in_silence`, which sweeps the
+same range and asserts the general property rather than the exception.
 
 ---
 
@@ -801,3 +815,62 @@ if "fetch_reference_slot0" not in overrides:
 `CLAUDE.md`, `README.md`, the terminal-layout skill and five test files under `tests/` —
 `git diff --name-only 1ab11da..HEAD` names nothing under `maxpane_dashboard/data/` and not the
 failing test module. Recorded here so the merge gate's result is not read as green.
+
+---
+
+## F10 — RECENT FLOW still prints `· MAINNET` in the `4` body, and the `p` body's five panels still have no blank row under their titles
+
+**Found by:** the 2026-09-12 screenshot review, while fixing the same two defects on the `4`
+body's own four panels. **Severity:** presentation, two surfaces. **Reported, not fixed** — both
+live in `widgets/surf/pool4_flow.py` and the other `pool4_*.py` modules, which belong to the `p`
+body, and a pass that repairs what it finds in another package's files reviews its own work.
+
+### F10a — the fifth title
+
+The repo owner's request was *"mainnet shouldn't be mentioned"*, and the `4` body's four own
+panels now leave it unsaid through `_pool4.market_title_text` (`STAKERS`, `BURN & SUPPLY`,
+`SIGNALS`, `IF IMD FALLS`). **`RECENT FLOW` is the fifth title on that body and it still reads
+`POOL4 FLOW · MAINNET`**, because it is `SurfPool4Flow` — the `p` body's own panel, mounted a
+second time here (PRD §6.4) — and it calls `_pool4.panel_title` directly.
+
+The `p` body **must keep** the word on all five of its titles, so the shared helper's behaviour
+was deliberately left alone: `panel_title` / `title_text` are unchanged and
+`market_panel_title` / `market_title_text` are new siblings.
+
+**The fix, when it is scheduled.** A screen-set opt-in on the widget — an attribute or a
+constructor flag whose *default* is today's `panel_title`, set by `SurfScreen` only on the
+instance it mounts inside `#surf-pool4-user-body`. Two things it must not be:
+
+* **not** a change to `market_panel_title`, and not a flag threaded into the shared helper with a
+  default either body could forget to pass — whichever one forgot would print the other's title;
+* **not** a different `pool4_network` value handed to the market instance. The word is that
+  panel's claim about the provenance of its own numbers, and the two instances are reading the
+  same sweep.
+
+`tests/screens/test_surf_pool4_market_screen.py::test_recent_flow_still_names_mainnet_in_this_body`
+pins the **current** behaviour and therefore reddens the moment this is fixed, which is
+deliberate: the fix has to come with this note updated and that panel folded into
+`test_the_market_panels_leave_mainnet_unsaid_and_say_everything_else`'s sweep in the same diff.
+
+### F10b — the blank row under a title, in the `p` body
+
+`margin: 0 0 1 0` on a panel's title class is a repo-wide convention — `ActivityFeed >
+.feed-title`, `VolumeSparklines > .volspark-title`, `PriceSparklines > .spark-title`,
+`TopMovers > .movers-title`, `GeckoPools > .gecko-title`, `LaunchFeed > .launch-feed-title`. The
+`4` body missed it and now has it. **The `p` body's five panels — `SurfPool4Split`,
+`SurfPool4Ratchet`, `SurfPool4Flow`, `SurfPool4Hatches`, `SurfPool4Vault` — do not**, and
+`SurfPool4Flow`'s `.surf-p4flow-title` rule is the one a reader will find first, since that panel
+is visible in both bodies and is therefore the only place where the two conventions sit side by
+side on one screen.
+
+**This one is not free and must not be applied without a re-sweep.** `SURF_POOL4_FULL_LAYOUT_ROWS`
+is **44**, the tallest pinned requirement in the repo, and its own `#:` block records that
+`sIMD VAULT`'s post-title blank was *deleted* on 2026-09-02 to keep the pin at 44 rather than 45
+— "shorten the value, do not raise the pin", applied in this exact place. Giving all five panels
+the blank row would therefore push that pin up by more than one row on a body nobody has yet
+confirmed a laptop clears (open finding W7). The `4` body absorbed the same change for two rows
+(33 → 35) and is nine rows under `p`, which is what made it affordable there.
+
+So F10b is a **decision**, not a cleanup: either the convention wins and the `p` body's pin is
+re-swept and re-published, or `p` stays as it is and the divergence is recorded as deliberate.
+The `4` body does not depend on the answer either way.

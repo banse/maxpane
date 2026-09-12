@@ -71,19 +71,23 @@ from maxpane_dashboard.widgets.sparkline_common import (
 )
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age, fmt_compact
 from maxpane_dashboard.widgets.surf._pool4 import (
+    TITLE_CLASS,
     join_lines,
+    market_title_text,
     parse_line,
     strip_tags,
-    title_text,
     widest_line,
 )
+from maxpane_dashboard.widgets.surf._rowfit import pad
 
 __all__ = [
     "COMPACT_WIDTH",
     "EMPTY_LINE",
     "FULL_WIDTH",
+    "LABEL_COLS",
     "MIN_PACE_WINDOW_S",
     "PACE_UNAVAILABLE",
+    "ROW_LABELS",
     "SPARK_COLS",
     "TITLE",
     "UNAVAILABLE_LINE",
@@ -125,30 +129,74 @@ MIN_PACE_WINDOW_S = 3600.0
 #: **The line itself is a tier.** It has to be: it is the widest fixed thing on
 #: the panel, so a compact tier that shed only words would light the widen
 #: marker and still overflow by however much the sparkline is over budget.
-SPARK_COLS = {"full": 16, "compact": 10}
+SPARK_COLS = {"full": 12, "compact": 10}
+
+#: The label column, in **terminal cells** -- ``SurfPool4USignals.LABEL_COLS``
+#: restated, deliberately, because the two panels are the rail's only two
+#: occupants and a reader's eye runs straight down from one to the other. Two
+#: different label widths one above the other is exactly the "ragged" the
+#: 2026-09-12 screenshot review named.
+#:
+#: **Restated and not imported.** A widget importing a sibling widget's
+#: constant is a coupling across an ownership seam, not a hoist (the reason
+#: ``NO_BAND`` is spelled twice in this body too); the repo's answer is
+#: redundancy plus an agreement test, and
+#: ``test_the_rail_panels_share_one_label_column`` imports both and compares
+#: them, so the two cannot drift apart in silence.
+#:
+#: Wide enough for this panel's own labels with room to spare -- ``burn rate``
+#: is nine -- because the number it has to match is the *neighbour's*.
+LABEL_COLS = 13
+
+#: The three row labels, in render order, at the full tier. A tuple so a test
+#: can assert the panel paints exactly these three and in this order.
+#:
+#: ``burn rate`` and not ``burn``: the value beside it is a per-day rate over
+#: a named window, and the two rows under it are cumulative quantities. A
+#: label that did not say which was which would put a rate and a total in one
+#: column and let the reader assume they were the same kind of number.
+ROW_LABELS: tuple[str, ...] = ("burn rate", "retired", "supply")
 
 _BODY_ID = "surf-pool4u-burn-body"
+_TITLE_ID = "surf-pool4u-burn-title"
 
 #: Widest part of each line, in cells: ``fmt_compact`` tops out at ``999.9B``
 #: and ``fmt_age`` at ``999d``.
 _AMOUNT_COLS = 6
 _AGE_COLS = 4
 
-#: Widest full-tier line: the pace line, ``{spark} {amount}/day over {age}``.
-#: The totals line (``999.9B retired · 100.00% of supply``, 34) and the supply
-#: line (``supply 999.9B IMD``, 17) both fit under it.
+#: Widest full-tier line: the label column plus the pace cell,
+#: ``{spark}  {amount}/day over {age}``. The retired cell (``999.9B ·
+#: 100.00% of supply``, 26) and the supply cell (``999.9B IMD``, 10) both fit
+#: under it.
+#:
+#: **The sparkline shed four cells (16 -> 12) to pay for the label column**,
+#: rather than the panel asking the body for four more. That is the standing
+#: "shorten the value, do not raise the pin" rule, and it costs nothing this
+#: panel had: ``pool4_flow`` is capped at ``POOL4_FLOW_LIMIT`` (25) events, so
+#: even twelve cells is half a cell per sample at the cap and the resolution
+#: lost is resolution that was never in the data. What it buys is the
+#: neighbour's alignment -- see :data:`LABEL_COLS`.
 FULL_WIDTH = (
-    SPARK_COLS["full"] + 1 + _AMOUNT_COLS + len("/day over ") + _AGE_COLS
-)                                                                        # 37
+    LABEL_COLS + SPARK_COLS["full"] + 2 + _AMOUNT_COLS
+    + len("/day over ") + _AGE_COLS
+)                                                                        # 47
 
 #: One tier down, and the pace line is still what sets it:
 #: ``{spark} {amount}/day {age}``.
 #:
+#: **The label column is a full-tier affordance and is the first thing shed.**
+#: That is not a retreat from the alignment above: a panel narrow enough to
+#: reach this tier has already lit its widen marker, and thirteen cells spent
+#: on labels at that width would come out of the *values*, which is where a
+#: reader is actually looking. Alignment is a full-width virtue; at the
+#: compact tier the panel's job is to keep every number whole.
+#:
 #: **The window is never what gets shed.** It is the clause that stops the pace
 #: reading as a measured daily rate -- the panel folds at most 25 events, so
 #: without it a reader would take a four-hour extrapolation for a daily burn
-#: figure. What goes instead is the word ``over``, the totals line's ``retired``
-#: and ``of supply``, the supply line's unit, and four cells of sparkline.
+#: figure. What goes instead is the label column, the word ``over``, the
+#: totals line's ``retired`` and ``of supply``, and the supply line's unit.
 COMPACT_WIDTH = (
     SPARK_COLS["compact"] + 1 + _AMOUNT_COLS + len("/day ") + _AGE_COLS
 )                                                                        # 26
@@ -228,6 +276,9 @@ class SurfPool4UBurn(Vertical):
         text-wrap: nowrap;
         text-overflow: ellipsis;
     }
+    SurfPool4UBurn > .pool4u-title {
+        margin: 0 0 1 0;
+    }
     """
 
     #: ``> Static``'s own ``padding: 0 1``: a fit decision compares against
@@ -242,7 +293,9 @@ class SurfPool4UBurn(Vertical):
         self._widen = False
 
     def compose(self) -> ComposeResult:
-        yield Static(Text(TITLE, style="dim"), id=_BODY_ID)
+        yield Static(Text(TITLE, style="dim"), id=_TITLE_ID,
+                     classes=TITLE_CLASS)
+        yield Static(Text(""), id=_BODY_ID)
 
     def on_resize(self, _event=None) -> None:
         if self._payload:
@@ -281,7 +334,14 @@ class SurfPool4UBurn(Vertical):
         return max(self.size.width - self._TITLE_PADDING_COLS, 0)
 
     def _title_text(self) -> str:
-        return title_text(
+        """``market_title_text``, not ``title_text``: this is the ``4`` body.
+
+        The one difference is that ``MAINNET`` is left unsaid here while the
+        ``p`` body's five panels go on printing it -- see
+        ``_pool4.QUIET_NETWORK`` for why silence is available for exactly one
+        network and for nothing else.
+        """
+        return market_title_text(
             TITLE, self._payload.get("network"), self._widen, self._text_budget()
         )
 
@@ -293,18 +353,18 @@ class SurfPool4UBurn(Vertical):
             for name in ("flow", "total_burned", "burned_supply_pct", "total_supply")
         )
 
-    def _spark_line(self, tier: str) -> str:
-        """The sparkline and the pace beside it.
+    def _spark_cell(self, tier: str) -> str | None:
+        """The sparkline and the pace beside it -- the ``burn rate`` value.
 
         Three states, kept apart: unread (``None`` flow), read-and-empty, and
         a real series. The first two would render the same flat baseline if
-        this branched on the point count alone.
+        this branched on the point count alone, and they return ``None`` here
+        so the caller can paint them as a whole line with no label rather
+        than filing a sentence under a column heading.
         """
         points = burn_points(self._payload.get("flow"))
-        if points is None:
-            return f"[yellow]⚠ {safe_markup(UNAVAILABLE_LINE)}[/]"
-        if not points:
-            return f"[dim]{safe_markup(EMPTY_LINE)}[/]"
+        if points is None or not points:
+            return None
 
         spark = build_sparkline_from_points(points, width=SPARK_COLS[tier])
         pace = pace_per_day(points)
@@ -313,31 +373,62 @@ class SurfPool4UBurn(Vertical):
         if window is not None:
             joiner = " over " if tier == "full" else " "
             pace_text = f"{pace_text}{joiner}{fmt_age(window)}"
-        return f"{safe_markup(spark)} [dim]{safe_markup(pace_text)}[/]"
+        gap = "  " if tier == "full" else " "
+        return f"{safe_markup(spark)}{gap}[dim]{safe_markup(pace_text)}[/]"
+
+    def _spark_line(self, tier: str) -> str:
+        """The ``burn rate`` row, label column included at the full tier.
+
+        The two flow states with no series of their own keep their own
+        sentence and lose the label: ``⚠ burn & supply unavailable`` under a
+        ``burn rate`` heading would read as a *value*, and the whole point of
+        keeping those two apart is that neither is one.
+        """
+        cell = self._spark_cell(tier)
+        if cell is None:
+            points = burn_points(self._payload.get("flow"))
+            if points is None:
+                return f"[yellow]⚠ {safe_markup(UNAVAILABLE_LINE)}[/]"
+            return f"[dim]{safe_markup(EMPTY_LINE)}[/]"
+        return f"{self._label(ROW_LABELS[0], tier)}{cell}"
+
+    def _label(self, label: str, tier: str) -> str:
+        """The padded, dimmed label column -- empty below the full tier.
+
+        Padded **raw and escaped after**: ``pad`` measures terminal cells and
+        an escaped ``\\[`` is two characters for one cell, so escaping first
+        would misalign the column. ``SurfPool4USignals._content_lines``
+        records the same order for the same reason.
+        """
+        if tier != "full":
+            return ""
+        return f"[dim]{safe_markup(pad(label, LABEL_COLS))}[/]"
 
     def _totals_line(self, tier: str) -> str:
-        """``26,289 retired · 0.12% of supply`` -- all-time, not the window.
+        """``retired      26.3K · 0.12% of supply`` -- all-time, not the window.
 
-        Each half degrades on its own: an unread total does not take the share
-        with it, because the two come from different reads and folding one
-        failure into both would overstate the outage.
+        Each half of the value degrades on its own: an unread total does not
+        take the share with it, because the two come from different reads and
+        folding one failure into both would overstate the outage.
         """
         burned = as_float(self._payload.get("total_burned"))
         shown = fmt_compact(burned) if burned is not None else DASH
         pct = as_float(self._payload.get("burned_supply_pct"))
         pct_shown = f"{pct:.2f}%" if pct is not None else DASH
         if tier == "full":
-            parts = [f"{shown} retired", f"{pct_shown} of supply"]
+            cell = f"{shown} · {pct_shown} of supply"
         else:
-            parts = [f"{shown} burned", pct_shown]
-        return f"[dim]{safe_markup(' · '.join(parts))}[/]"
+            cell = f"{shown} burned · {pct_shown}"
+        return f"{self._label(ROW_LABELS[1], tier)}[dim]{safe_markup(cell)}[/]"
 
     def _supply_line(self, tier: str) -> str:
         supply = as_float(self._payload.get("total_supply"))
         shown = fmt_compact(supply) if supply is not None else DASH
-        label = "supply" if tier == "full" else "sup"
-        unit = " IMD" if tier == "full" else ""
-        return f"[dim]{safe_markup(f'{label} {shown}{unit}')}[/]"
+        if tier == "full":
+            cell = f"{shown} IMD"
+        else:
+            cell = f"sup {shown}"
+        return f"{self._label(ROW_LABELS[2], tier)}[dim]{safe_markup(cell)}[/]"
 
     def _content_lines(self, tier: str) -> list[Text]:
         markup = [
@@ -352,22 +443,32 @@ class SurfPool4UBurn(Vertical):
 
     def _render_view(self) -> None:
         try:
+            title = self.query_one(f"#{_TITLE_ID}", Static)
             body = self.query_one(f"#{_BODY_ID}", Static)
         except Exception:  # not composed yet
             return
 
+        def paint(*content: Text) -> None:
+            """Title into its own ``Static``, content into the body's.
+
+            Two ``Static``s and not one joined ``Text``: the blank row under
+            the title is CSS (``margin: 0 0 1 0`` on :data:`TITLE_CLASS`),
+            the repo-wide convention every reference dashboard already
+            carries. A ``Text("")`` spliced between them would paint the same
+            pixels today and would be invisible to the rule that keeps the
+            eight other dashboards agreeing with each other.
+            """
+            title.update(Text(self._title_text(), style="dim"))
+            body.update(join_lines(list(content)))
+
         if not self._payload:
             self._widen = False
-            body.update(Text(self._title_text(), style="dim"))
+            paint()
             return
 
         if self._is_blank():
             self._widen = False
-            lines = [
-                Text(self._title_text(), style="dim"),
-                Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"),
-            ]
-            body.update(join_lines(lines))
+            paint(Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"))
             return
 
         # Measure what was actually built rather than comparing the budget
@@ -382,4 +483,4 @@ class SurfPool4UBurn(Vertical):
         else:
             self._widen = False
 
-        body.update(join_lines([Text(self._title_text(), style="dim"), *content]))
+        paint(*content)

@@ -28,18 +28,28 @@ Three things this file exists to pin above the rest
    agreeing with any of them would have to show up as a sweep result. The
    height sweep runs 24..45.
 
-What is deliberately NOT asserted here, and where it went instead
------------------------------------------------------------------
-At **32** rows -- one under the height pin -- the ladder's ``-50%`` row goes
-behind ``SurfPool4UDepth``'s own ``DataTable`` scrollbar while the
-screen-wide ``‹ taller`` marker is dark, because ``_rail_is_cut`` asks two
-containers for ``show_vertical_scrollbar`` and neither can see a table
-scrolling inside a panel. That is why the height pin is measured against the
-body's **content** rather than against the marker, and the gap itself is
-filed as F6 in ``docs/surf_pool4_followups.md``. It is pinned below by
-``test_the_taller_marker_is_dark_in_the_one_row_window_below_the_pin`` so a
-future CSS fix reddens this file and forces the note to be revisited, rather
-than leaving a stale paragraph behind.
+The marker-dark window, and why it is gone
+------------------------------------------
+Until 2026-09-12 this file carried a paragraph here about **32** rows -- one
+under the then-pin -- where the ladder's ``-50%`` row went behind
+``SurfPool4UDepth``'s own ``DataTable`` scrollbar while the screen-wide
+``‹ taller`` marker stayed dark, because ``_rail_is_cut`` asks two containers
+for ``show_vertical_scrollbar`` and neither can see a table scrolling inside a
+panel. It was filed as F6 and pinned by a test that was written to redden the
+day it was fixed.
+
+It reddened. The screenshot-review pass raised
+``#surf-pool4-user-bottom``'s floor from 8 to the ladder's own ten rows (the
+panel grew the repo-wide blank row under its title), and a panel that can no
+longer be squeezed under its own content can no longer scroll internally
+while the body does not. Every height below the pin now scrolls the **body**
+and lights the marker, swept over 24..45 and three payloads.
+
+What has **not** changed is ``_rail_is_cut`` itself, so the height pin is
+still measured against the body's **content** and never against the marker --
+the next panel floored below its own content brings the window straight back.
+That is why ``test_the_market_body_is_whole_from_its_pinned_height`` keeps
+both halves rather than simplifying to the marker now that the two agree.
 """
 
 from __future__ import annotations
@@ -88,7 +98,7 @@ from tests.screens.test_surf_screen import (
 #: next door: a test that aliased the screen's constant would compare a
 #: number against itself and pin nothing.
 MEASURED_MARKET_COLUMNS = 105
-MEASURED_MARKET_ROWS = 33
+MEASURED_MARKET_ROWS = 35
 
 #: What ``SurfPool4Flow`` needs for itself in this body, measured at the width
 #: where its own marker goes dark. Hand-typed rather than imported for the
@@ -102,10 +112,15 @@ MARKET_FLOW_NEED = 52
 #: ``FLOW`` are absent on purpose -- both scroll inside themselves by design
 #: (a leaderboard capped at ``MAX_ROWS`` and an unbounded log), so neither
 #: sets a height requirement, exactly as FLOW does not set the ``p`` body's.
+#: **Painted lines, not rows.** ``_painted_lines`` counts non-blank rows, so
+#: the blank each panel now carries under its title (2026-09-12) is not in
+#: these numbers even though it is very much in the pin -- which is exactly
+#: why the pin is swept rather than derived from this table. SIGNALS is 6
+#: rather than 7 because the same pass dropped its state-summary line.
 FIXED_PANEL_LINES = {
     SurfPool4UserHero: 6,
     SurfPool4UBurn: 5,
-    SurfPool4USignals: 7,
+    SurfPool4USignals: 6,
     SurfPool4UDepth: 9,
 }
 
@@ -538,30 +553,44 @@ async def test_the_market_height_pin_is_the_ladders_ninth_line() -> None:
     assert MEASURED_MARKET_ROWS == SURF_POOL4_USER_FULL_LAYOUT_ROWS
 
 
-async def test_the_taller_marker_is_dark_in_the_one_row_window_below_the_pin() -> None:
-    """Finding F6, pinned so it cannot rot quietly.
+@pytest.mark.parametrize("rows", list(range(24, 46)))
+async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
+    """Finding **F6, closed for this body on 2026-09-12** -- and this is what
+    replaced the test that pinned it open.
 
-    At one row under the pin the body loses a ladder rung and the screen-wide
-    ``‹ taller`` marker says nothing, because ``_rail_is_cut`` asks two
-    containers for ``show_vertical_scrollbar`` and a ``DataTable`` scrolling
-    inside a panel is invisible to both. This is recorded rather than
-    repaired -- the CSS belongs to another package, and this one does not fix
-    what it finds.
+    F6 was a one-row window under the old pin where the ladder's ``-50%``
+    rung went behind ``SurfPool4UDepth``'s own ``DataTable`` scrollbar while
+    the screen-wide ``‹ taller`` marker stayed **dark**: ``_rail_is_cut``
+    asks two containers for ``show_vertical_scrollbar``, and a table
+    scrolling inside a panel is invisible to both. The old test asserted that
+    behaviour so a fix could not land quietly, and named what to update when
+    it reddened.
 
-    The test asserts the **current** behaviour on purpose. When F6 is closed
-    it reddens, which is the point: the fix then has to come with the
-    constant's ``#:`` block and this module's docstring updated in the same
-    diff, instead of leaving two paragraphs describing a gap that no longer
-    exists.
+    It reddened. ``#surf-pool4-user-bottom``'s floor is now the ladder's own
+    ten rows, so the panel cannot be squeezed into a height where its table
+    scrolls internally while the body does not -- every height under the pin
+    scrolls the body instead, which the marker *can* see.
+
+    So the claim is now the general one rather than the exception, and it is
+    swept over the same range the pin was: **at no height does this body lose
+    a line with nothing on screen to say so.** That is strictly stronger than
+    the test it replaces, and it is the claim that reddens if a future floor
+    ever drops below its panel's content again -- which is the half of F6
+    that is *not* fixed, since ``_rail_is_cut`` is unchanged.
     """
-    under = await _render(None, (150, SURF_POOL4_USER_FULL_LAYOUT_ROWS - 1))
-    assert "-50%" not in under["depth_text"]
-    assert TALLER_HINT not in under["text"], (
-        "the taller marker now lights in the 32-row window -- F6 is fixed. "
-        "Update the F6 note in docs/surf_pool4_followups.md, the "
-        "SURF_POOL4_USER_FULL_LAYOUT_ROWS block and this module's docstring, "
-        "then delete this test."
-    )
+    r = await _render(None, (150, rows))
+    short = {
+        cls.__name__: (r["lines"][cls.__name__], expected)
+        for cls, expected in FIXED_PANEL_LINES.items()
+        if r["lines"][cls.__name__] < expected
+    }
+    lost = short or ("the ladder's -50% rung"
+                     if "-50%" not in r["depth_text"] else None)
+    if lost:
+        assert TALLER_HINT in r["text"], (
+            f"at {rows} rows the body loses {lost} and the screen-wide "
+            "taller marker is dark -- a row is being cut in silence"
+        )
 
 
 def test_the_market_body_is_the_shortest_surf_body_but_not_the_shortest_pin() -> None:

@@ -98,10 +98,11 @@ from maxpane_dashboard.analytics.surf_pool4_depth import depth_rows
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float
 from maxpane_dashboard.widgets.surf._pool4 import (
+    TITLE_CLASS,
     join_lines,
     parse_line,
     strip_tags,
-    title_text,
+    market_title_text,
 )
 from maxpane_dashboard.widgets.surf._rowfit import clip, pad
 
@@ -118,7 +119,8 @@ __all__ = [
     "ladder_cells",
 ]
 
-#: Panel title. The network word is appended by ``_pool4.title_text`` and a hint
+#: Panel title. The network word is appended by ``_pool4.market_title_text``
+#: -- on every network except ``MAINNET``, which this body leaves unsaid -- and a hint
 #: after that, both appended and never substituted, so ``"IF IMD FALLS" in
 #: text`` holds at every width and in every state.
 #:
@@ -249,6 +251,9 @@ class SurfPool4UDepth(Vertical):
         height: 1fr;
         min-height: 4;
     }
+    SurfPool4UDepth > .pool4u-title {
+        margin: 0 0 1 0;
+    }
     """
 
     #: ``> Static``'s own ``padding: 0 1`` eats a column each side of the
@@ -269,7 +274,8 @@ class SurfPool4UDepth(Vertical):
         self._columns_tier: str | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static(Text(TITLE, style="dim"), id=_TITLE_ID)
+        yield Static(Text(TITLE, style="dim"), id=_TITLE_ID,
+                     classes=TITLE_CLASS)
         yield DataTable(id=TABLE_ID)
         yield Static(Text(""), id=_CAPTION_ID)
 
@@ -372,9 +378,13 @@ class SurfPool4UDepth(Vertical):
             title = self.query_one(f"#{_TITLE_ID}", Static)
         except Exception:  # not composed yet
             return
+        # ``market_title_text``, not ``title_text``: this is the ``4`` body,
+        # and it is the one that leaves ``MAINNET`` unsaid. The ``p`` body's
+        # five panels go on printing it -- see ``_pool4.QUIET_NETWORK`` for
+        # why silence is available for exactly one network and nothing else.
         title.update(
             Text(
-                title_text(
+                market_title_text(
                     TITLE,
                     self._payload.get("network"),
                     self._widen,
