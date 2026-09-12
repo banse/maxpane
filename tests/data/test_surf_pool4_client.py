@@ -402,17 +402,87 @@ def test_a_banned_host_is_rejected_at_construction(url, kwarg):
         )
 
 
-def test_the_mainnet_drpc_log_endpoint_survives_the_sepolia_drpc_ban():
-    """``sepolia.drpc.org`` is banned; ``eth.drpc.org`` is not.
+def test_an_honest_range_cap_is_shrunk_and_not_abandoned():
+    """mevblocker's cap is real, and the client must chunk against it.
 
-    The ban is by hostname, so banning the Sepolia one must not take out the
-    mainnet log endpoint that works. This is the assertion that would have
-    caught a ban written as ``"drpc.org"``.
+    The mirror of the drpc defect. drpc names a limit the request already
+    meets, so shrinking is provably useless and the client must rotate.
+    mevblocker names one the request genuinely exceeds, so the client must
+    shrink -- and before this was fixed it did neither: the phrase matched
+    none of ``_RANGE_LIMITATION_PATTERNS`` and ``-32602`` is a malformed-request
+    code, so an endpoint that could serve the whole sweep was abandoned.
+
+    Measured with tenderly removed from the pool: ``None`` before, and 2,260
+    logs / 1,132 ``Transfer``s after -- the same answer the full pool gives.
+    """
+    cap = load("log_range_messages")["mevblocker_range_cap"]
+    err = cap["error"]
+    assert C._is_range_limitation(err, cap["requested_span"]) is True
+    # ...and once shrunk under the cap, the same message stops being about us
+    assert C._is_range_limitation(err, 6_300) is False
+
+
+def test_a_named_limit_is_read_as_the_cap_and_never_as_the_span():
+    """``range 50400 exceeds limit of 10000`` carries both numbers.
+
+    A parser that takes the first, or the largest, reads **50400** -- the span
+    we asked for -- then computes ``50400 > 50400`` and decides the complaint
+    was not about this request. The endpoint is then abandoned for naming an
+    honest cap. Anchoring on ``limit of`` is what separates the two, and this
+    is the assertion that stops a future "simplification" merging them.
+    """
+    cap = load("log_range_messages")["mevblocker_range_cap"]
+    named = C._named_block_limit(cap["error"]["message"].lower())
+    assert named == cap["named_limit"] == 10_000
+    assert named != cap["requested_span"], "the span was read as the cap"
+
+
+def test_both_measured_providers_are_classified_from_the_same_fixture():
+    """One table, two providers, opposite answers -- neither hardcoded here.
+
+    drpc at a 300-block span must be False (rotate) and at the full span True;
+    mevblocker at the full span must be True (shrink). A regression that makes
+    the classifier answer the same way for both reddens this whichever way it
+    collapses.
+    """
+    fx = load("log_range_messages")
+    drpc = {"code": 35, "message": fx["mevblocker_note"] and
+            "ranges over 10000 blocks are not supported on free plan"}
+    mev = fx["mevblocker_range_cap"]["error"]
+    assert C._is_range_limitation(drpc, 300) is False
+    assert C._is_range_limitation(drpc, 50_400) is True
+    assert C._is_range_limitation(mev, 50_400) is True
+
+
+def test_the_drpc_ban_is_by_hostname_and_not_by_the_bare_domain():
+    """``sepolia.drpc.org`` is banned; the bare ``drpc.org`` is not banned.
+
+    **This test's premise was narrowed on 2026-09-12 and the claim survived.**
+    It used to prove the point by asserting that ``eth.drpc.org`` was still in
+    the MAINNET log pool -- the ban is by hostname, so banning the Sepolia one
+    must not take out a mainnet endpoint that works. ``eth.drpc.org`` was then
+    removed from that pool for an unrelated reason (its free plan serves about
+    64 blocks of archive depth and answers everything older with a canned
+    sentence about 10,000 blocks), so pool membership can no longer carry the
+    argument.
+
+    The argument itself is unchanged and still worth pinning: a ban written as
+    ``"drpc.org"`` would match every subdomain, and the next person to add a
+    working ``*.drpc.org`` endpoint would find it silently unreachable. That is
+    asserted directly now rather than through a pool that has its own reasons
+    to change. Rewritten rather than deleted: a test whose premise a later
+    decision retired is the easiest place in a branch to lose an argument
+    nobody meant to lose.
     """
     assert "sepolia.drpc.org" in C._BANNED_RPC_HOSTS
-    assert "eth.drpc.org" not in C._BANNED_RPC_HOSTS
-    client = _raising_client()
-    assert any("eth.drpc.org" in u for u in client.log_endpoints(MAINNET))
+    assert "drpc.org" not in C._BANNED_RPC_HOSTS, (
+        "the ban is written as the bare domain -- every *.drpc.org host is now "
+        "unreachable, including any future one that works"
+    )
+    assert "eth.drpc.org" not in C._BANNED_RPC_HOSTS, (
+        "eth.drpc.org was removed from the log pool, not banned; banning it "
+        "would also block it as a STATE endpoint, which is a different question"
+    )
 
 
 def test_every_endpoint_is_keyless():
@@ -605,7 +675,19 @@ _EXPECTED_HOSTS = {
     (SEPOLIA, "logs"): {"ethereum-sepolia-rpc.publicnode.com", "gateway.tenderly.co"},
     (MAINNET, "state"): {"ethereum-rpc.publicnode.com", "gateway.tenderly.co",
                          "rpc.mevblocker.io"},
-    (MAINNET, "logs"): {"gateway.tenderly.co", "eth.drpc.org"},
+    # `eth.drpc.org` left this pool on 2026-09-12 and `rpc.mevblocker.io`
+    # replaced it. MEASURED, which is what this table is for: over the sIMD
+    # share token's 75,000-block history, mevblocker chunked at its honest
+    # 10,000-block cap returned 1,132 logs in 8 requests and 6.4 s --
+    # agreeing with tenderly's single-request answer to the log. drpc
+    # returned an error for the same span, and for a 300-block span, and for
+    # anything past ~64 blocks of archive depth.
+    #
+    # `rpc.mevblocker.io` is now in the mainnet STATE pool and the mainnet LOG
+    # pool. That is allowed and already true of `gateway.tenderly.co`; the
+    # prefix-in-order assertion in `_assert_reached` is what keeps a shared
+    # host from hiding which list was actually walked.
+    (MAINNET, "logs"): {"gateway.tenderly.co", "rpc.mevblocker.io"},
 }
 
 

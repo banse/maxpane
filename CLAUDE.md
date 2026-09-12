@@ -673,7 +673,30 @@ whether the template has drifted *ahead* of the widget, which also happens.
 `rpc.ankr.com/eth` (now keyed), `cloudflare-eth.com` (`-32046` on Ethereum), `api.reservoir.tools`
 (DNS gone, API sunset). Working keyless Ethereum: `ethereum-rpc.publicnode.com` for state (it
 batches, but **refuses archive `eth_getLogs`**), `gateway.tenderly.co/public/mainnet` and
-`eth.drpc.org` for logs. **State and logs need different endpoint pools.**
+`rpc.mevblocker.io` for logs. **State and logs need different endpoint pools.**
+
+**`eth.drpc.org` left surf's mainnet log pool on 2026-09-12, and the reason generalises.** It was
+listed here as a working log endpoint with "a hard 10k-block page cap". That was wrong in the way
+that matters: the free plan's limit is **archive depth, about 64 blocks**, not page width — and it
+answers *anything* older with `code 35 "ranges over 10000 blocks are not supported on free plan"`
+**whatever span you asked for**, so a 300-block request gets a sentence about 10,000 blocks. A
+client that classifies on message text — which is the rule two paragraphs down, and still the right
+rule — then halves its window forever chasing a limit it already satisfies. That livelocked the
+pool4 staker sweep into `2400 → 1200 → 600 → 300` and a silent `None`, and the panel read
+`unavailable` for a reachable dataset. **A provider's error message is only evidence about the
+request it was actually reading**: if the limit it names is one you already meet, the message is
+not about you — rotate, do not shrink.
+
+It is still in **FWA's and curator's** pools and that is correct: they read recent logs, where it
+works. Only surf's pool needed the depth.
+
+**Two more measured the same day, and one is worse than dead.** `rpc.flashbots.net` answered a
+75,000-block `eth_getLogs` with **46 logs where the truth was 1,132** — no error, no warning, a
+silently truncated result. Never add it to a log pool; a wrong answer that looks right defeats every
+degradation path in this repo. `ethereum.blockpi.network` returns non-JSON, and `eth.merkle.io`
+answers `-32601 Method not found` for `eth_getLogs`. `rpc.mevblocker.io` is honest where drpc is
+not (`range 75000 exceeds limit of 10000` — a real cap, truthfully named, so a client can chunk
+against it) and measured **1,132 logs in 8 chunked requests, agreeing with tenderly to the log**.
 
 **Sepolia does not inherit mainnet's endpoint story, and one keyless-looking URL is keyed.**
 `ethereum-sepolia-rpc.publicnode.com` batches `eth_call` **and** serves archive `eth_getLogs`,
@@ -681,9 +704,10 @@ unlike its mainnet sibling, so the state/logs split above does not transfer — 
 publicnode is the endpoint that works for both, and the pool4 plan's first draft banned it from
 the log pool on exactly that bad transfer. Measured and banned there: `sepolia.drpc.org` answers
 *every* method with `code 35 "chain is not available on free plan, please upgrade to paid plan"` —
-a **keyed endpoint wearing a keyless URL** — so ban it by hostname and never by `drpc.org`, since
-`eth.drpc.org` is a working mainnet log endpoint and a test pins that the broader spelling would
-have broken it; `rpc.sepolia.org` 404s; `omniatech` 521s; `1rpc.io` serves one 30-call batch then
+a **keyed endpoint wearing a keyless URL** — so ban it by hostname and never by `drpc.org`, which
+would match every subdomain including any future one that works. `eth.drpc.org` is no longer in
+surf's mainnet log pool (above), so that test no longer argues from pool membership; it asserts the
+narrow ban directly instead; `rpc.sepolia.org` 404s; `omniatech` 521s; `1rpc.io` serves one 30-call batch then
 429s and caps logs at 50 blocks, so it is a state fallback only. Tenderly's Sepolia gateway
 answers a 3-call batch and rate-limits the 30-call round the client actually issues — **probe with
 the batch you ship**, or you will "correct" a pool the wrong way with a toy one.

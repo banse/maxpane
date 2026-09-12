@@ -151,7 +151,22 @@ def test_state_and_log_pools_are_disjoint_roles():
     # it must never appear in the logs pool.
     assert all("publicnode" not in u for u in client.log_endpoints)
     assert "https://gateway.tenderly.co/public/mainnet" in client.log_endpoints
-    assert "https://eth.drpc.org" in client.log_endpoints
+    # `eth.drpc.org` stood here until 2026-09-12. It was replaced by
+    # `rpc.mevblocker.io`, not merely dropped: this assertion's job is to keep
+    # the pool from silently emptying down to one host, and a single-endpoint
+    # log pool is the outage this whole state/logs split exists to survive.
+    #
+    # Why drpc went: its free plan serves ~64 blocks of archive depth and
+    # answers anything older with `code 35 "ranges over 10000 blocks are not
+    # supported"` regardless of the span actually requested -- so a 300-block
+    # request gets a sentence about 10,000 blocks. Measured over 75,000
+    # blocks, mevblocker chunked at its honest cap returns 1,132 logs, the
+    # same answer tenderly gives in one request.
+    assert "https://rpc.mevblocker.io" in client.log_endpoints
+    assert len(client.log_endpoints) >= 2, (
+        "the log pool is down to one endpoint -- the state/logs split assumes "
+        "a second host to rotate to when the first refuses"
+    )
 
 
 @pytest.mark.parametrize(

@@ -173,7 +173,9 @@ MAINNET_STATE_RPCS = [
 #: asymmetry is the measurement, not an oversight.
 MAINNET_LOG_RPCS = [
     "https://gateway.tenderly.co/public/mainnet",
-    "https://eth.drpc.org",
+    # `eth.drpc.org` was removed 2026-09-12 -- see `surf_client.LOG_RPCS`,
+    # which this list transcribes and which carries the measurement.
+    "https://rpc.mevblocker.io",
 ]
 
 #: ``surf_client._BANNED_RPC_HOSTS`` transcribed, plus the three Sepolia hosts
@@ -347,6 +349,16 @@ _ENDPOINT_LIMITATION_PATTERNS = (
 
 _RANGE_LIMITATION_PATTERNS = (
     "limited to", "block range", "range is too large", "ranges over",
+    # mevblocker, measured 2026-09-12: ``range 50400 exceeds limit of 10000``.
+    # It matched NONE of the four above, and its code (-32602) is in
+    # ``_MALFORMED_REQUEST_CODES``, so an honest and perfectly shrinkable cap
+    # was classified as a bad request and the endpoint was abandoned instead of
+    # chunked. That is the mirror image of the drpc defect: there a message
+    # that was NOT about the window drove a shrink, here one that WAS about it
+    # drove none. Both come from a phrase list that only knows the providers it
+    # has already met, which is why each entry names the provider it was
+    # measured against and a new spelling gets measured, never guessed.
+    "exceeds limit of",
 )
 
 _MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
@@ -362,10 +374,26 @@ _MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
 #: window, so no provider's arithmetic can steer this client's own.
 _NAMED_BLOCK_LIMIT_RE = re.compile(r"(\d[\d,_]*)\s*blocks?\b")
 
+#: The same number when a provider names it without the word *block*:
+#: mevblocker's ``"range 50400 exceeds limit of 10000"``. Anchored on
+#: ``limit of`` **specifically** so it reads the cap and not the span — that
+#: message carries both numbers, and taking the first would compare the
+#: request against itself and conclude the complaint was never about it.
+#: Hex block *numbers* still match nothing: a suggested ``toBlock 0xb12790``
+#: has no ``limit of`` before it, and the suggestion stays unread.
+_NAMED_LIMIT_OF_RE = re.compile(r"limit of\s+(\d[\d,_]*)")
+
 
 def _named_block_limit(message: str) -> int | None:
     """The largest block count *message* names, or ``None`` if it names none."""
     best: int | None = None
+    for match in _NAMED_LIMIT_OF_RE.finditer(message):
+        try:
+            value = int(match.group(1).replace(",", "").replace("_", ""))
+        except ValueError:  # pragma: no cover — the pattern is digits only
+            continue
+        if best is None or value > best:
+            best = value
     for match in _NAMED_BLOCK_LIMIT_RE.finditer(message):
         try:
             value = int(match.group(1).replace(",", "").replace("_", ""))

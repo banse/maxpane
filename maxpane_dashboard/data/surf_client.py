@@ -89,7 +89,20 @@ STATE_RPC_FALLBACKS = [
 #: Logs pool. publicnode is deliberately absent: it 403s archive eth_getLogs.
 LOG_RPCS = [
     "https://gateway.tenderly.co/public/mainnet",
-    "https://eth.drpc.org",  # hard 10k-block page cap; fine at our window
+    # Replaced `eth.drpc.org` on 2026-09-12. That comment read "hard 10k-block
+    # page cap; fine at our window" and was wrong in the way that matters: the
+    # cap is not on the page, it is on ARCHIVE DEPTH -- about 64 blocks on the
+    # free plan. Anything older answers `code 35 "ranges over 10000 blocks are
+    # not supported"` whatever the span, so a 300-block request gets a sentence
+    # about 10,000 blocks. That canned message is what livelocked the staker
+    # sweep into halving 2400 -> 300 and giving up.
+    #
+    # mevblocker is honest where drpc is not: `range 75000 exceeds limit of
+    # 10000` names a real cap, truthfully, so the client can chunk against it.
+    # Measured 2026-09-12 over the sIMD share token's 75,000-block history:
+    # 8 chunked requests, 6.4 s, **1,132 logs -- agreeing with tenderly to the
+    # log**. Two endpoints that return the same answer is the point of a pool.
+    "https://rpc.mevblocker.io",  # honest 10k range cap; chunkable
 ]
 
 _BANNED_RPC_HOSTS = frozenset(
@@ -1089,6 +1102,10 @@ _ENDPOINT_LIMITATION_PATTERNS = (
 
 _RANGE_LIMITATION_PATTERNS = (
     "limited to", "block range", "range is too large", "ranges over",
+    # mevblocker, measured 2026-09-12: ``range 50400 exceeds limit of 10000``.
+    # Restated here and in ``surf_pool4_client`` with an agreement test between
+    # them -- which is what caught this being edited on one side only.
+    "exceeds limit of",
 )
 
 _MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}

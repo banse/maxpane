@@ -1061,5 +1061,16 @@
    "jsonrpc": "2.0",
    "result": []
   }
- ]
+ ],
+ "mevblocker_note": "Added 2026-09-12 when eth.drpc.org was replaced by rpc.mevblocker.io in surf's mainnet log pool. mevblocker's cap is HONEST and shrinkable -- 'range 50400 exceeds limit of 10000' names a real limit truthfully -- but it matched none of the four _RANGE_LIMITATION_PATTERNS and its code (-32602) is in _MALFORMED_REQUEST_CODES, so the client abandoned the endpoint instead of chunking against it. That is the MIRROR of the drpc defect above: there a message that was not about the window drove a shrink; here one that was drove none. Measured with tenderly removed from the pool: before the fix mevblocker alone returned None; after it, 2260 logs / 1132 Transfers -- byte-identical to the full pool's answer.",
+ "mevblocker_range_cap": {
+  "url": "https://rpc.mevblocker.io",
+  "requested_span": 50400,
+  "error": {
+   "code": -32602,
+   "message": "range 50400 exceeds limit of 10000"
+  },
+  "named_limit": 10000,
+  "trap": "the message carries BOTH numbers; a parser that takes the first reads 50400, compares the request against itself, and concludes the complaint was never about it"
+ }
 }
