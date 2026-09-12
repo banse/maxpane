@@ -75,11 +75,20 @@ class FPPerfVelocity(Vertical):
     """Per-pet velocity sparklines showing individual score velocity over time."""
 
     DEFAULT_CSS = """
+    /* `margin: 0 0 1 0` is the repo-wide blank row under a widget title, and
+       it is not optional -- every other panel on this screen paints one. The
+       four siblings in this dashboard family (TRENDS, SIGNALS, PETS, ACTIVITY)
+       have always had it; this panel was the one that composed its title
+       straight onto its body, so the first pet row sat flush under the word.
+       Stated as a margin rather than as a blank `Static`, because a widget
+       that is only sometimes present is a widget that is sometimes forgotten
+       -- and because the row then survives a body that renders nothing. */
     FPPerfVelocity > .fpp-vel-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        margin: 0 0 1 0;
     }
     FPPerfVelocity > .fpp-vel-body {
         padding: 0 1;

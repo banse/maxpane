@@ -1630,6 +1630,7 @@ FPPerfVelocity {
 
 FPPerfVelocity > .fpp-vel-title {
     color: $text-muted;
+    margin: 0 0 1 0;
 }
 
 /* ── Ten Thousand Tokens screen ─────────────────────────────────────── */
@@ -1669,7 +1670,17 @@ TTTSparkline {
     content-align: center top;
 }
 
-TTTSparkline > .chart-title {
+/* `.ttt-spark-title`, not `.chart-title`. This block read
+   `TTTSparkline > .chart-title` from the day it was seeded off the OCM
+   sparkline's and matched nothing: the widget composes its title with
+   `classes="ttt-spark-title"`. Dead since it was written, and harmless only
+   because `TTTSparkline.DEFAULT_CSS` already states the same colour -- which
+   is precisely what hid it. Corrected here so the selector describes the
+   widget it names; no rendered pixel moves.
+
+   No `margin: 0 0 1 0`: this panel paints its blank row from Python
+   (`#ttt-spark-spacer`), so the margin would give it two. */
+TTTSparkline > .ttt-spark-title {
     color: $text-muted;
 }
 
@@ -1681,8 +1692,12 @@ TTTSignals {
     content-align: center top;
 }
 
-TTTSignals > .signals-title {
+/* `.ttt-signals-title`, not `.signals-title` -- same dead-selector defect as
+   TTTSparkline above, and the reason the theme copy of this widget's title
+   rule could not have carried the blank row even if it had stated it. */
+TTTSignals > .ttt-signals-title {
     color: $text-muted;
+    margin: 0 0 1 0;
 }
 
 TTTActivityFeed {
@@ -1888,9 +1903,18 @@ FWAChaseBoard, FWASettlementTable {
     content-align: center top;
 }
 
-FWAChaseBoard > .fwa-chase-title,
+FWAChaseBoard > .fwa-chase-title {
+    color: $text-muted;
+}
+
+/* The settlement table states the blank row under its title as a margin; the
+   chase board above paints the same row from Python (`.fwa-chase-spacer`), so
+   giving it this margin too would give it two. Same row on screen, two
+   mechanisms -- which is why the convention is asserted against composited
+   output rather than against either source. */
 FWASettlementTable > .fwa-settle-title {
     color: $text-muted;
+    margin: 0 0 1 0;
 }
 
 FWAChaseBoard DataTable,

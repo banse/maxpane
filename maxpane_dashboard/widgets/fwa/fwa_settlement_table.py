@@ -287,11 +287,28 @@ class FWASettlementTable(Vertical):
     """Settlement outcome mix stacked above the crown history."""
 
     DEFAULT_CSS = """
+    /* `margin: 0 0 1 0` is the repo-wide blank row under a widget title, and
+       it is stated the way `FWAOddsBoard > #fwa-odds-title` states it, for the
+       same reason: a widget that is only sometimes present is a widget that is
+       sometimes forgotten.
+
+       The note below it used to be that row -- it composes empty, so at a
+       width where the title carries its own `as of` stamp it renders blank and
+       the convention looked satisfied. It is not the same row: the note fills
+       with the stamp the moment the title is too narrow to hold it, and with
+       the unavailable warning whenever the log source is dead, and in both of
+       those states the title had content flush underneath it. Those are the
+       states a reader is most likely to be looking at this panel in. The note
+       now collapses when it is empty (`display`, exactly as
+       `FWAChaseBoard`'s note does) so the margin is never doubled, and the
+       blank row is a property of the title instead of a property of the
+       payload. */
     FWASettlementTable > .fwa-settle-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        margin: 0 0 1 0;
     }
     FWASettlementTable > .fwa-settle-note {
         width: 100%;
@@ -313,7 +330,12 @@ class FWASettlementTable(Vertical):
             classes="fwa-settle-title",
             id="fwa-settle-title",
         )
-        yield Static("", classes="fwa-settle-note", id="fwa-settle-note")
+        note = Static("", classes="fwa-settle-note", id="fwa-settle-note")
+        # Collapsed until it has something to say -- the blank row under the
+        # title is the title's own margin now, so an always-present empty note
+        # would sit below that margin and read as a second blank.
+        note.display = False
+        yield note
         yield DataTable(id="fwa-settle-dt", classes="fwa-settle-table")
 
     def on_mount(self) -> None:
@@ -382,7 +404,15 @@ class FWASettlementTable(Vertical):
         self._title_suffix_shown = show_suffix
 
     def _set_note(self, text: str) -> None:
-        self.query_one("#fwa-settle-note", Static).update(text)
+        """Set the note, and collapse it entirely when there is nothing in it.
+
+        Same shape as ``FWAChaseBoard._set_note``: an empty note is *no row*,
+        not a blank one, because the blank row under the title is the title's
+        own ``margin: 0 0 1 0``.
+        """
+        note = self.query_one("#fwa-settle-note", Static)
+        note.update(text)
+        note.display = bool(text)
 
     # -- rendering -----------------------------------------------------
 

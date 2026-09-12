@@ -51,11 +51,21 @@ class TTTSignals(Vertical):
     """Analytical signals panel with up to four rows."""
 
     DEFAULT_CSS = """
+    /* `margin: 0 0 1 0` is the repo-wide blank row under a widget title and it
+       is not optional. CR2.2 deleted the dedicated spacer here and let the
+       optional fresh-launch row stand in for it, which is right exactly half
+       the time: with no fresh launch the row renders empty and the blank is
+       there, and the moment a launch IS fresh the row fills with content and
+       the title loses its blank without anything saying so. The state that
+       removes the row is the state the panel exists to announce. The margin
+       cannot be cancelled by a payload; the fresh row now hides itself when it
+       has nothing to say, so there is still exactly one blank row either way. */
     TTTSignals > .ttt-signals-title {
         width: 100%;
         padding: 0 1;
         text-style: bold;
         color: $text-muted;
+        margin: 0 0 1 0;
     }
     TTTSignals > .ttt-signals-body {
         padding: 0 1;
@@ -65,15 +75,14 @@ class TTTSignals(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("SIGNALS", classes="ttt-signals-title")
-        # The fresh-launch row doubles as the title spacer: when there is
-        # no fresh launch, _fmt_signal(None) returns "" and this Static
-        # renders as a single blank line (CR2.2 — was previously a
-        # dedicated spacer + always-empty fresh row → 2 blank lines).
-        yield Static(
-            "",
-            classes="ttt-signals-body",
-            id="ttt-sig-fresh",
-        )
+        # Optional row: present only when there IS a fresh launch. It used to
+        # double as the title spacer (CR2.2), which meant the blank row came
+        # and went with the payload -- see the note on the title's margin.
+        # `display = False` collapses it, so an absent launch costs no row at
+        # all and the panel is the same height it was before the margin.
+        fresh = Static("", classes="ttt-signals-body", id="ttt-sig-fresh")
+        fresh.display = False
+        yield fresh
         yield Static(
             "",
             classes="ttt-signals-body",
@@ -103,13 +112,18 @@ class TTTSignals(Vertical):
     ) -> None:
         """Refresh the four rows.
 
-        ``fresh_launch_signal`` may be ``None`` -- in that case the row
-        is hidden (rendered as an empty Static) and the panel shows only
-        the remaining three rows.
+        ``fresh_launch_signal`` may be ``None`` -- in that case the row is
+        collapsed with ``display = False`` and the panel shows only the
+        remaining three rows. It is collapsed rather than left empty because
+        the blank row under the title is now the title's own margin: an
+        always-present empty row would sit *below* that margin and read as a
+        second blank.
         """
         # Fresh launch (optional)
         fresh_widget = self.query_one("#ttt-sig-fresh", Static)
-        fresh_widget.update(_fmt_signal(fresh_launch_signal))
+        fresh_text = _fmt_signal(fresh_launch_signal)
+        fresh_widget.update(fresh_text)
+        fresh_widget.display = bool(fresh_text)
 
         # Buybacks ready
         bb_widget = self.query_one("#ttt-sig-buybacks", Static)
