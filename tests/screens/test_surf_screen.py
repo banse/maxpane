@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 import pytest
+from rich.cells import cell_len
 from textual.app import App
 
 from maxpane_dashboard import __version__
@@ -4939,16 +4940,21 @@ from maxpane_dashboard.widgets.surf.hero import (  # noqa: E402
 )
 
 
-def _region_text(app, widget) -> str:
+def _region_text(app, widget, region=None) -> str:
     """Composited text of just *widget*'s rectangle on the screen.
 
     ``_screen_text`` is the whole screen, which is useless for "nothing in
     the hero is truncated": the feed below it legitimately renders ``…`` on
     an over-long token. Slicing the compositor's strips to the widget's own
     region keeps the claim about the widget it is made about.
+
+    *region* overrides which rectangle is sliced, and exists for one caller:
+    :func:`_css_clipped_lines` asks for ``widget.content_region`` -- the box
+    inside the border and the padding, which is the only rectangle CSS is
+    allowed to truncate at. Everything else wants the default.
     """
     strips = app.screen._compositor.render_strips()
-    region = widget.region
+    region = widget.region if region is None else region
     # Rows of the region that are actually ON the composited screen.
     #
     # A widget's region can extend past the last strip -- a body taller than
@@ -4964,6 +4970,143 @@ def _region_text(app, widget) -> str:
         for y in range(region.y, min(region.y + region.height, len(strips)))
         if y >= 0
     )
+
+
+def _paint_leaves(widget):
+    """*widget* and its descendants that actually paint text, in DOM order.
+
+    A ``Vertical`` panel renders nothing of its own -- every line a reader
+    sees on it was painted by a ``Static``, a ``DataTable`` or a ``RichLog``
+    mounted inside it -- and those leaves carry their own border and padding
+    on top of the panel's. That is the whole of the 2026-09-12 blind spot:
+    a budget derived from the *panel's* rectangle is two columns too generous
+    for a line the panel did not paint.
+
+    Leaves only (``not node.children``), so a nested container is walked
+    through rather than measured; a container's own rectangle is exactly the
+    one that must never be used here, because it includes the cell reserved
+    by ``scrollbar-gutter: stable``.
+    """
+    for node in widget.walk_children(with_self=True):
+        if not node.children and node.region.width:
+            yield node
+
+
+def _leaf_source_lines(leaf) -> list[str] | None:
+    """The plain lines *leaf* handed the renderer, before CSS touched them.
+
+    ``Static.visual`` is the ``Content`` the widget composed -- the text as
+    the widget wrote it, with its own ``fit_cell``/``clip`` ellipses already
+    in place and no CSS truncation applied yet. That is the one thing
+    composited output cannot tell you, and it is what separates the two ways
+    a line can end in ``…``.
+
+    ``None`` for a leaf that has no such content -- a ``DataTable``, a
+    ``RichLog`` -- which is not the same answer as "nothing was too wide".
+    :func:`_css_clipped_lines` treats the two differently on purpose.
+    """
+    plain = getattr(getattr(leaf, "visual", None), "plain", None)
+    return plain.split("\n") if isinstance(plain, str) else None
+
+
+def _css_clipped_lines(app, widget) -> list[str]:
+    """Every composited line under *widget* that **CSS** truncated.
+
+    One detector for both bodies. It replaces two copies of
+
+    ``edge = widget.region.width - 1; body.endswith("…") and len(body) >= edge``
+
+    which decided truncation by subtracting a *guessed* padding depth from
+    the containing panel's rectangle, and which therefore could not see a
+    clip inside a leaf that carries padding of its own. ``SurfPool4UStakers``
+    is the worked example and it shipped a real defect: its footer ``Static``
+    has ``padding: 0 1`` inside a panel that also has ``padding: 0 1``, so
+    CSS cut the footer at ``region.width - 4`` while the composited row
+    right-stripped to ``region.width - 2`` -- one column short of ``edge``,
+    so the sweep stayed green while the reader saw ``· sta…``. Every pool4
+    panel is built that way, so the blind spot covered both bodies entire.
+
+    **The fix is to stop doing the arithmetic.** Textual publishes
+    ``content_region``: the exact box left after a widget's own border and
+    padding, whatever they happen to be. Nothing here subtracts a number a
+    stylesheet could change underneath it.
+
+    Three tests, and each one is a property the old rule defended or should
+    have:
+
+    1.  **Ask the leaf, never a container.** The original reason was
+        ``scrollbar-gutter: stable``: a container's rectangle includes the
+        reserved cell, so on any row where the scrollbar glyph is painted a
+        genuinely clipped line no longer *ends* in ``…`` and the check goes
+        quiet exactly when the layout is under most pressure. Walking to the
+        painting leaf is strictly more of that rule -- its content box is the
+        innermost rectangle in the chain and excludes every gutter, border
+        and padding above it.
+    2.  **``text-overflow: ellipsis`` or it was not CSS.** Nothing else in
+        Textual paints an ellipsis at a content edge, so a leaf whose
+        computed ``text_overflow`` is anything else cannot have been
+        CSS-ellipsised and any ``…`` on it is its own. This is why a
+        ``DataTable`` row ending in a ``_rowfit.clip``-fitted address cell is
+        not a hit even when the row fills the table.
+
+        **Measured inert today, and kept anyway.** Deleting this test
+        changes not one line of output on either body, over every payload at
+        38/50/60/80/100/118 and at both pins -- the tables and the log simply
+        do not happen to end a row in ``…`` at their own edge right now.
+        That is luck, not structure: the staker table's last column is
+        ``share`` in the full tier and ``IMD`` in the compact one, and
+        neither ever ellipsises. Move an address into last place and (3)'s
+        fallback would report the whole table as clipped at every width --
+        a permanently red sweep, and the kind somebody "fixes" by moving a
+        pin. The gate is what makes that safe by construction.
+    3.  **The widget must have offered more than the box could hold.** This
+        is the half a geometric check cannot supply, and it is why this is
+        not a bare ``endswith("…")``. These panels fit their own third-party
+        strings to their own width, and they fit them to *exactly* the
+        content box -- ``SurfPool4Hatches`` gives its discovery block
+        ``budget - indent`` cells and fills them -- so a correctly fitted
+        line and a CSS-severed one are the same string of the same length in
+        composited output. They differ only upstream: the severed one's
+        source line was wider than the box. So the painted line's stem must
+        be a prefix of a source line that did not fit. HATCHES' 47-cell line
+        in its 47-cell box is its own work and stays silent; the stakers'
+        49-cell footer in a 48-cell box does not.
+
+        A leaf with no readable source (:func:`_leaf_source_lines` returns
+        ``None``) falls back to the geometry alone rather than being skipped.
+        A detector that goes quiet on a widget it does not understand is the
+        failure this whole change is about; a hit that has to be explained is
+        the cheaper mistake. No leaf in either body reaches that branch
+        today, because (2) already excludes both widget types that lack a
+        ``visual``.
+
+    What it still cannot see is unchanged and worth stating: ``text-overflow:
+    clip`` cuts with no ellipsis at all, and so does the compositor when a
+    child is wider than its parent's box. Neither leaves a mark for *any*
+    ``endswith``-shaped detector to find.
+    """
+    out: list[str] = []
+    for leaf in _paint_leaves(widget):
+        if leaf.styles.text_overflow != "ellipsis":
+            continue
+        box = leaf.content_region
+        if not box.width:
+            continue
+        source = _leaf_source_lines(leaf)
+        overlong = (
+            None if source is None
+            else [line for line in source if cell_len(line) > box.width]
+        )
+        for line in _region_text(app, leaf, box).split("\n"):
+            body = line.rstrip()
+            if not body.endswith("…") or cell_len(body) < box.width:
+                continue
+            if overlong is not None and not any(
+                src.startswith(body[:-1]) for src in overlong
+            ):
+                continue
+            out.append(body)
+    return out
 
 
 async def _hero_text(width: int) -> str:
@@ -6306,32 +6449,24 @@ def _ordinary_pool4_payload() -> dict:
 def _clipped_pool4_lines(app, screen) -> list[str]:
     """Every composited line in the ``p`` body that **CSS** truncated.
 
-    Asked of the five panels, never of their two containers, for
-    ``_clipped_launchpad_lines``' reason: a container's rectangle includes
-    the cell reserved by ``scrollbar-gutter: stable``, so on any row where
-    the scrollbar glyph is painted a genuinely clipped line no longer *ends*
-    in ``…`` and the check goes quiet exactly when the layout is under most
-    pressure.
+    The five panels, never their two containers -- and through
+    :func:`_css_clipped_lines`, which walks each panel to the leaf that
+    actually painted the line and measures that leaf's own
+    ``content_region``. Read that function for why both halves of the old
+    rule survive the change; the half this body specifically depends on is
+    its third test -- the source line must have been wider than the box --
+    because four of these five panels fit their own third-party strings to
+    their own tier width and HATCHES means its ellipsis. Without it this
+    body reports 66 clipped lines it never lost a character to, measured.
 
-    **And it compares against the panel's own edge, which the launchpad's
-    version does not have to.** Four of this body's five panels fit their own
-    third-party strings to their own tier width with ``_fmt.fit_cell``, so a
-    trailing ``…`` is routinely the panel saying "this detail is longer than
-    the column I gave it" rather than CSS saying "this line is longer than
-    the panel". HATCHES paints exactly that at 47 cells inside a 99-cell
-    panel, and a bare ``endswith("…")`` reports this body as clipped at every
-    width including 200 -- a permanently red sweep that would have been
-    "fixed" by moving a pin. ``text-overflow: ellipsis`` can only cut at the
-    panel's content edge, so that is what the length is compared against.
+    It used to do the arithmetic here, as ``region.width - 1`` on the panel,
+    which is right only while the painting leaf sits flush against the
+    panel's content edge. It does not on the ``4`` body next door, and a
+    shipped clip hid in the two columns of difference.
     """
     out = []
     for cls in _POOL4_WIDGET_CLASSES.values():
-        widget = screen.query_one(cls)
-        edge = widget.region.width - 1
-        for line in _region_text(app, widget).split("\n"):
-            body = line.rstrip()
-            if body.endswith("…") and len(body) >= edge:
-                out.append(body)
+        out.extend(_css_clipped_lines(app, screen.query_one(cls)))
     return out
 
 

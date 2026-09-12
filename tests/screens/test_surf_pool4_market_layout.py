@@ -124,6 +124,7 @@ from maxpane_dashboard.widgets.surf.pool4u_stakers import MAX_ROWS as STAKER_MAX
 # nothing the rest of the suite can see.
 from tests.screens.test_surf_screen import (
     TALLER_HINT,
+    _css_clipped_lines,
     _css_rules,
     _surf_stylesheet_block,
     _frozen_payload,
@@ -346,27 +347,129 @@ def _market_marked(app, screen) -> set[str]:
 def _market_clipped(app, screen) -> list[tuple[str, str]]:
     """Every composited line in the `4` body that **CSS** truncated.
 
-    Asked of the panels, never of their containers: a container's rectangle
-    includes the cell reserved by ``scrollbar-gutter: stable``, so on any row
-    where the scrollbar glyph is painted a genuinely clipped line no longer
-    *ends* in ``…`` and the check goes quiet exactly when the layout is under
-    most pressure.
+    The panels, never their containers -- and through
+    :func:`_css_clipped_lines`, which walks each panel to the leaf that
+    actually painted the line and measures that leaf's own
+    ``content_region`` rather than subtracting a guessed padding depth from
+    the panel's rectangle. Read that function for both properties this
+    docstring used to state itself.
 
-    And the length is compared against the panel's own content edge rather
-    than a bare ``endswith("…")``, for ``_clipped_pool4_lines``' reason:
-    these panels fit their own third-party strings to their own tier width,
-    so a trailing ``…`` is routinely the panel saying "this detail is longer
-    than the column I gave it" rather than CSS saying "this line is longer
-    than the panel".
+    **This body is why it had to change.** ``SurfPool4UStakers`` paints its
+    concentration footer into a ``Static`` with ``padding: 0 1`` inside a
+    panel with ``padding: 0 1``, so CSS cuts that line four columns inside
+    the panel's rectangle and the composited row right-strips to two --
+    one short of the old ``region.width - 1`` edge, which made the clip
+    structurally invisible. The 49-cell worst-case footer shipped as
+    ``· sta…`` past a green sweep because of it.
     """
     out: list[tuple[str, str]] = []
     for name, widget in _market_widgets(screen).items():
-        edge = widget.region.width - 1
-        for line in _region_text(app, widget).split("\n"):
-            body = line.rstrip()
-            if body.endswith("…") and len(body) >= edge:
-                out.append((name, body))
+        out.extend((name, body) for body in _css_clipped_lines(app, widget))
     return out
+
+
+#: The narrowest ``SurfPool4UStakers`` that can paint its whole footer, and
+#: the width one column under it. Hand-typed, not derived: the point of the
+#: test below is that the two differ by exactly one column of *CSS* budget,
+#: and a pair computed from the panel's own constants would agree with the
+#: panel by construction and pin nothing.
+#:
+#: 52 is also the width this panel actually had until 2026-09-12, which is
+#: why the clip it produces is the shipped defect rather than an invented one.
+_STAKERS_FOOTER_CLIPS_AT = 52
+_STAKERS_FOOTER_FITS_AT = 53
+
+
+async def _stakers_clip_probe(width: int) -> dict:
+    """``SurfPool4UStakers`` alone at *width*, judged by both clip rules.
+
+    A bare mount with an inline ``styles.width``, on ``_ladder_lines_at``'s
+    reasoning: ``minimal.tcss`` pins this panel through the body's grid, so
+    only an inline width outranks the stylesheet, and only a solo mount can
+    ask "what does this panel do at exactly N columns".
+    """
+    from textual.app import App as _App
+
+    class _Solo(_App):
+        CSS_PATH = CSS_PATH
+
+        def compose(self):
+            yield SurfPool4UStakers()
+
+    async with _Solo().run_test(size=(width + 40, 24)) as pilot:
+        panel = pilot.app.query_one(SurfPool4UStakers)
+        panel.styles.width = width
+        panel.update_data(**_wide_staker_payload())
+        await pilot.pause()
+        await pilot.pause()
+        assert panel.region.width == width, (
+            f"the inline width override did not take: {panel.region.width}"
+        )
+        rows = [
+            line.rstrip()
+            for line in _region_text(pilot.app, panel).split("\n")
+        ]
+        # The rule this file carried until 2026-09-12, kept verbatim so the
+        # blind spot stays demonstrable rather than described.
+        edge = panel.region.width - 1
+        return {
+            "rows": rows,
+            "panel_edge_rule": [
+                body for body in rows
+                if body.endswith("\u2026") and len(body) >= edge
+            ],
+            "content_box_rule": _css_clipped_lines(pilot.app, panel),
+        }
+
+
+async def test_the_clip_detector_sees_a_clip_inside_a_doubly_padded_leaf() -> None:
+    """The detector's own regression lock, and the defect that bought it.
+
+    ``SurfPool4UStakers`` paints its concentration footer into a ``Static``
+    with ``padding: 0 1``, mounted in a panel with ``padding: 0 1``. CSS
+    therefore cuts that line **four** columns inside the panel's rectangle
+    and the composited row right-strips to **two** -- so the old rule, which
+    asked whether a line reached ``panel.region.width - 1``, was one column
+    short of ever seeing it. At the panel's pre-2026-09-12 width of 52 the
+    49-cell worst-case footer shipped as ``· sta…`` with no ``‹`` marker and
+    a green layout sweep.
+
+    Three assertions, and the middle one is the reason this test exists: it
+    pins the **blind spot**, not the fix. If somebody reintroduces the panel-
+    edge arithmetic, ``content_box_rule`` goes empty and this reddens; if
+    somebody widens ``_css_clipped_lines`` into a bare ``endswith("…")``,
+    ``panel_edge_rule`` is no longer the interesting half and the
+    ``_FITS_AT`` case below reddens instead.
+
+    The fourth assertion is what stops the detector from being a constant:
+    one column wider, the same payload in the same panel is clean. A
+    detector that fires at every width is not measuring anything.
+    """
+    clipped = await _stakers_clip_probe(_STAKERS_FOOTER_CLIPS_AT)
+    footer = clipped["rows"][-1]
+
+    assert footer.endswith("\u2026"), (
+        f"the fixture no longer clips at {_STAKERS_FOOTER_CLIPS_AT}: {footer!r} "
+        "-- the probe is measuring nothing"
+    )
+    assert not clipped["panel_edge_rule"], (
+        "the OLD panel-edge rule now sees this clip, so it is no longer the "
+        f"blind spot this test demonstrates: {clipped['panel_edge_rule']}"
+    )
+    assert clipped["content_box_rule"] == [footer.lstrip()], (
+        "the content-box rule missed the clip that motivated it: "
+        f"{clipped['content_box_rule']} vs {footer!r}"
+    )
+
+    fits = await _stakers_clip_probe(_STAKERS_FOOTER_FITS_AT)
+    assert not fits["content_box_rule"], (
+        f"one column wider nothing is cut, yet the detector still fires: "
+        f"{fits['content_box_rule']}"
+    )
+    assert fits["rows"][-1].endswith("stale"), (
+        f"the whole footer should be on screen at "
+        f"{_STAKERS_FOOTER_FITS_AT}: {fits['rows'][-1]!r}"
+    )
 
 
 def _painted_lines(app, widget) -> int:
