@@ -908,3 +908,32 @@ confirmed a laptop clears (open finding W7). The `4` body absorbed the same chan
 So F10b is a **decision**, not a cleanup: either the convention wins and the `p` body's pin is
 re-swept and re-published, or `p` stays as it is and the divergence is recorded as deliberate.
 The `4` body does not depend on the answer either way.
+
+---
+
+## F11 — the `4` body marks the wrong panel below its pin (measured, unfixed)
+
+Found 2026-09-12 while removing a dead assertion in
+`tests/screens/test_surf_pool4_market_layout.py`'s width sweep.
+
+That sweep asserts, below the column pin, that **something** on the body carries a `‹` marker. The
+stronger and more useful claim is that the panel which actually lost a line is the one advertising
+it — the terminal-layout skill's *"a panel that can bind must be able to mark"*, and exactly what
+the `p` body's `test_nothing_below_the_pool4_pin_clips_without_saying_so` says it exists to check.
+
+**Turning that claim on fails 43 of the sweep's 140 width/payload cases.** The body is marked; the
+marker is on a different widget from the one whose line CSS cut. Measured by asserting
+`{name for name, _ in clipped} <= marked` and running the sweep.
+
+This is **not** a missing assertion — it is an unmet property, and the repair belongs in the panels'
+own marker logic, not in the test. Filing rather than fixing for that reason: a test-hygiene pass
+that also changes four panels' marker behaviour is unreviewable.
+
+**Do not restore the old line** in that branch. It re-asserted `r["marked"]` inside
+`if r["clipped"]`, which the unconditional assertion above already guarantees, so it could never
+fail and its clip-specific message could never print. The comment now standing there records this.
+
+**Why it went unnoticed:** the clip detector it depends on was itself blind until `2760799` — it
+compared line length against the *panel's* edge, so any line inside a doubly-padded leaf was
+invisible. With the detector widened, the marker-attribution gap became measurable for the first
+time.

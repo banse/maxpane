@@ -610,11 +610,26 @@ async def test_the_market_body_is_whole_from_its_pinned_width(
         )
     else:
         assert r["marked"], width
-        if r["clipped"]:
-            assert r["marked"], (
-                f"at {width} the 4 body clips {r['clipped']} and no panel on "
-                "screen advertises the loss"
-            )
+        # There is deliberately no second assertion here, and the reason is
+        # worth more than the line that used to sit in this branch.
+        #
+        # It read `if r["clipped"]: assert r["marked"], "<clip-specific
+        # message>"` -- implied by the line above, so it could never fail
+        # independently and its message could never print. Decoration.
+        #
+        # The claim that is NOT implied is *which* panel advertises: a body
+        # can be marked because one panel lit `‹` while a different one lost
+        # the line. `p`'s sibling test says exactly that in its docstring, so
+        # the obvious repair is `{name for name, _ in r["clipped"]} <=
+        # r["marked"]`.
+        #
+        # **That was tried, and it is FALSE on this body: 43 of the 140
+        # width/payload cases in this sweep clip one panel while another
+        # carries the marker.** So it is not a missing assertion, it is an
+        # unmet property -- filed in docs/surf_pool4_followups.md rather than
+        # asserted here, because turning it on reddens a sweep that is
+        # otherwise green and the fix belongs in the panels' marker logic, not
+        # in this file. Do not "restore" the old line: it asserted nothing.
 
 
 @pytest.mark.parametrize("payload_name", sorted(MARKET_PAYLOADS))
