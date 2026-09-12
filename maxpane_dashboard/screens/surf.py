@@ -2233,7 +2233,10 @@ class SurfScreen(RefreshGuard, Screen):
                     yield SurfPool4UBurn()
                     yield SurfPool4USignals()
             with Horizontal(id=POOL4_USER_BOTTOM_ID):
-                yield SurfPool4Flow()
+                # The `p` body mounts this same class untouched, two blocks up.
+                # Only this instance leaves MAINNET unsaid -- see the widget's
+                # __init__ for why the opt-in is per instance and set here.
+                yield SurfPool4Flow(quiet_mainnet=True, classes="market")
                 yield SurfPool4UDepth()
 
         yield StatusBar()

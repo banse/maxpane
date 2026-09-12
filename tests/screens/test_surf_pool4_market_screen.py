@@ -69,14 +69,20 @@ from tests.screens.test_surf_screen import (
 _SIZE = (150, 50)
 
 #: The five panel classes that live in the `4` body, in compose order.
-#: `SurfPool4Flow` is deliberately absent -- see
-#: `test_recent_flow_is_the_same_class_mounted_twice`, which is where the
-#: reused instance is asserted instead.
+#: `SurfPool4Flow` JOINED this tuple on 2026-09-12 -- it was deliberately
+#: absent while it was the one panel still printing `· MAINNET` here. It is
+#: the `p` body's own panel mounted a second time, and it is quiet in this
+#: body *only* because the screen passes `quiet_mainnet=True` at this mount
+#: site. `test_the_p_body_still_names_mainnet_on_the_same_class` is the other
+#: half of that claim and has to be read beside this one: a fix that quieted
+#: the shared helper or the class would satisfy every sweep below and strip
+#: five `p`-body titles in silence.
 _MARKET_PANELS = (
     SurfPool4UStakers,
     SurfPool4UBurn,
     SurfPool4USignals,
     SurfPool4UDepth,
+    SurfPool4Flow,
 )
 
 
@@ -562,36 +568,30 @@ async def test_the_market_panels_leave_mainnet_unsaid_and_say_everything_else()\
             assert "SEPOLIA" in rows[0], (cls.__name__, rows[0])
 
 
-async def test_recent_flow_still_names_mainnet_in_this_body() -> None:
-    """A **filed finding, pinned so it cannot rot** -- not an endorsement.
+async def test_the_p_body_still_names_mainnet_on_the_same_class() -> None:
+    """The other half of the quiet-title claim, and why the opt-in is per instance.
 
-    RECENT FLOW is ``SurfPool4Flow``, the ``p`` body's own panel mounted a
-    second time here (PRD §6.4: reuse the module, do not copy it). It calls
-    ``_pool4.panel_title`` directly, so it goes on painting ``· MAINNET`` in
-    a body whose other four titles are now bare -- which is the screenshot
-    review's defect surviving in the one panel this pass did not own. It was
-    reported rather than repaired: that module belongs to the ``p`` body, and
-    a pass that fixes what it finds in someone else's file reviews its own
-    work.
+    ``SurfPool4Flow`` is mounted twice. The ``4`` body's instance leaves
+    ``MAINNET`` unsaid; the ``p`` body's must go on printing it, because that
+    body is an auditor's view where the network word is load-bearing. A fix
+    that quieted the shared helper, or the class itself, would pass the sweep
+    above and silently strip five ``p``-body titles -- so this test exists to
+    fail in that case, and it is the only test that can.
 
-    The fix is a *screen*-set opt-in on that widget (its default must stay
-    ``panel_title``, because the ``p`` body's five titles have to keep the
-    word), never a change to ``market_panel_title``, and never a different
-    ``pool4_network`` value handed to this instance -- which would be lying
-    about the provenance the word exists to state.
-
-    When this reddens the finding is fixed: delete this test and add the
-    panel to ``test_the_market_panels_leave_mainnet_unsaid_and_say_everything
-    _else``'s sweep instead.
+    It replaces ``test_recent_flow_still_names_mainnet_in_this_body``, which
+    pinned the finding open and instructed its own deletion on the day the
+    finding was fixed.
     """
     async with _surf_app(_mainnet_pool4_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
-        body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
+        await pilot.press("escape")
+        await pilot.press("p")
+        await pilot.pause()
+        body = screen.query_one(f"#{POOL4_BODY_ID}")
         flow = list(body.query(SurfPool4Flow))[0]
         rows = _region_text(pilot.app, flow).split("\n")
 
     assert "MAINNET" in rows[0], (
-        "RECENT FLOW no longer names MAINNET in the market body -- the "
-        "carried-over half of the 2026-09-12 network-word finding is fixed. "
-        "Delete this test and fold SurfPool4Flow into the sweep above."
+        "the `p` body's RECENT FLOW stopped naming MAINNET -- the quiet-title "
+        "opt-in leaked out of the `4` body's mount site: " + rows[0]
     )

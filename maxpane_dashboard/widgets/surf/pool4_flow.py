@@ -130,6 +130,7 @@ from maxpane_dashboard.widgets.surf._fmt import (
 )
 from maxpane_dashboard.widgets.surf._pool4 import (
     WIDEN_HINT,
+    market_panel_title,
     panel_title,
     parse_line,
     strip_tags,
@@ -503,6 +504,25 @@ class SurfPool4Flow(Vertical):
         padding: 0 1;
         color: $text-muted;
     }
+    /* The `4` body's blank row under its title, scoped to that instance by
+       the `market` class the screen sets at its mount site.
+
+       It is on the TITLE, not on the note line below it. Under the note read
+       better -- title plus `as of HH:MM` as one header block, then the gap --
+       but the convention the owner stated is "a blank line below the widget
+       titles", and `test_every_market_panel_paints_a_blank_row_under_its_title`
+       encodes it as row 0 title, row 1 blank, row 2 content, uniformly across
+       every panel. A panel that reads slightly better while breaking the rule
+       every other panel keeps is how a convention stops being one.
+
+       Scoped rather than global because the `p` body mounts this same class
+       and its pin is 44 rows, the tallest in the repo, whose own note records
+       that VAULT's post-title blank was DELETED to hold that number. Making
+       this unconditional would spend a row there to satisfy a request about a
+       different body. See F10b. */
+    SurfPool4Flow.market > .surf-p4flow-title {
+        margin: 0 0 1 0;
+    }
     SurfPool4Flow > RichLog {
         height: 1fr;
         padding: 0 1;
@@ -510,8 +530,23 @@ class SurfPool4Flow(Vertical):
     }
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args, quiet_mainnet: bool = False, **kwargs) -> None:
+        """``quiet_mainnet`` leaves ``MAINNET`` unsaid in this instance's title.
+
+        **Per instance, and defaulting to False, because this widget is mounted
+        twice.** The ``p`` body's five titles must keep printing the network
+        word -- that body is an auditor's view and the word is load-bearing
+        there -- while the ``4`` body's owner asked for it gone. A module-level
+        switch cannot express that; a different ``pool4_network`` value for this
+        instance could, and would be lying about the provenance the word exists
+        to state. So the *screen* opts in, once, at the mount site.
+
+        Only ``QUIET_NETWORK`` goes unsaid either way: ``SEPOLIA`` and the
+        unknown em dash still print in both bodies, because mistaking testnet
+        numbers for real ones is the failure the word was added to prevent.
+        """
         super().__init__(*args, **kwargs)
+        self._quiet_mainnet = quiet_mainnet
         # The raw rows, not formatted lines, so a resize re-lays them out.
         # Empty until the first ``update_data`` -- ``on_resize`` before that
         # has nothing to render and must not blank the panel.
@@ -603,7 +638,8 @@ class SurfPool4Flow(Vertical):
         ``"POOL4 FLOW" in text`` holds at every width, and so does the network
         word beside it.
         """
-        title = panel_title(TITLE, self._payload.get("network"))
+        _title = market_panel_title if self._quiet_mainnet else panel_title
+        title = _title(TITLE, self._payload.get("network"))
         width = max(self.content_size.width - 2, 0)
         text = title
         placed = not hint
