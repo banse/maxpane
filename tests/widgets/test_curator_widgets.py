@@ -5925,14 +5925,13 @@ def _cell_address(cell) -> str:
     ``None`` for every row until it was fixed the same way."""
     from rich.text import Text
 
+    from maxpane_dashboard.widgets.address import parse_copy_action
+
     if isinstance(cell, Text):
         for _start, _end, style in cell.spans:
-            match = re.search(
-                r"app\.copy_address\('(0x[0-9a-fA-F]{40})'\)",
-                str(style.meta.get("@click", "")),
-            )
-            if match:
-                return match.group(1)
+            address = parse_copy_action((getattr(style, "meta", None) or {}).get("@click"))
+            if address:
+                return address
         return cell.plain.split()[0] if cell.plain else cell.plain
     return cell
 

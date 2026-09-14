@@ -6,7 +6,12 @@ place and the 21 private formatters it replaced cannot drift apart again.
 
 Pure: Rich only. No Textual, no I/O, no clock, no ``data/``. The copy itself
 happens in ``maxpane_dashboard/clipboard.py`` via ``copy_action.CopyAddressMixin``;
-this module only renders the icon and names the action it triggers.
+this module only renders the icon and names the action it triggers, and
+:func:`parse_copy_action` is the one reader of that action.
+
+Surf's ``widgets/surf/_icons.py`` is not a second copy of this module: it marks
+the icon into *plain* text before surf's own row fitters cut a line, then links
+each glyph through :func:`copy_action`, so the format still lives only here.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from rich.text import Text
 __all__ = [
     "ADDRESS_RE", "COPY_GLYPH", "ICON_COLS", "MIN_SHORT_COLS", "PROSE_ADDRESS_RE",
     "address_prose", "address_text", "copy_action", "is_address", "is_copy_click",
-    "short_address", "short_hex",
+    "parse_copy_action", "short_address", "short_hex",
 ]
 
 #: An address, matched with ``fullmatch`` and **never** with ``^…$``: Python's
@@ -166,12 +171,30 @@ def address_prose(text: str, *, style: str | Style = "") -> Text:
     return out
 
 
+def parse_copy_action(action: object) -> str | None:
+    """The address a copy icon's ``@click`` action copies, or ``None``.
+
+    The exact inverse of :func:`copy_action`: the prefix, a quoted *valid*
+    address, the closing parenthesis and nothing else. Anything else --
+    another action, malformed hex, trailing text, a value that is not a
+    string (a span's style can be a plain style name) -- is ``None``, so a
+    reader never has to restate the format as a regex of its own.
+    """
+    if not isinstance(action, str) or not action.startswith(_ACTION_PREFIX):
+        return None
+    candidate = action[len(_ACTION_PREFIX) + 1:-2]
+    if is_address(candidate) and copy_action(candidate) == action:
+        return candidate
+    return None
+
+
 def is_copy_click(event: object) -> bool:
     """True when a click landed on a copy icon.
 
     A widget with its own ``on_click`` returns early when this is true, so the
     icon's copy fires and the widget's own behaviour does not (PRD §3.4).
     """
-    meta = getattr(getattr(event, "style", None), "meta", None) or {}
-    action = meta.get("@click")
-    return isinstance(action, str) and action.startswith(_ACTION_PREFIX)
+    meta = getattr(getattr(event, "style", None), "meta", None)
+    if not isinstance(meta, dict):
+        return False
+    return parse_copy_action(meta.get("@click")) is not None

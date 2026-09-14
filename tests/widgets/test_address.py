@@ -146,3 +146,57 @@ def test_an_invalid_value_cannot_break_its_row_or_fake_an_icon():
     t = A.address_text("not\nan ⧉ address")
     assert t.plain == "not an address"
     assert _actions(t) == []
+
+
+# -- the one copy-action parser (final review F4) ----------------------------------
+
+
+def test_parse_copy_action_is_the_inverse_of_copy_action():
+    assert A.parse_copy_action(A.copy_action(ADDR)) == ADDR
+    mixed = "0x" + "AbCdEf0123" * 4
+    assert A.parse_copy_action(A.copy_action(mixed)) == mixed
+
+
+def test_parse_copy_action_refuses_invalid_hex_and_trailing_junk():
+    good = A.copy_action(ADDR)
+    for bad in (
+        good.replace("a", "g", 1),             # not hex
+        A.copy_action(ADDR[:-1]),              # 39 hex
+        good + " ",                            # trailing junk
+        good + "; app.quit()",
+        good[:-1],                             # no closing parenthesis
+        good.replace("'", '"'),                # not what copy_action writes
+        "x" + good,                            # leading junk
+        "app.copy_address()",
+        "app.toggle()",
+        "",
+    ):
+        assert A.parse_copy_action(bad) is None, bad
+
+
+def test_parse_copy_action_tolerates_non_strings_and_str_styled_spans():
+    for value in (None, 5, b"app.copy_address('0x')", ["x"], object()):
+        assert A.parse_copy_action(value) is None
+    text = Text("name", style="bold")
+    text.append(" ")
+    text.append_text(A.address_text(ADDR))
+    text.stylize("italic", 0, 2)               # a span whose style is a plain str
+    found = [
+        A.parse_copy_action((getattr(span.style, "meta", None) or {}).get("@click"))
+        for span in text.spans
+    ]
+    assert [f for f in found if f] == [ADDR]
+    assert any(isinstance(span.style, str) for span in text.spans), "fixture sanity"
+
+
+def test_is_copy_click_uses_the_parser_and_tolerates_odd_meta():
+    assert not A.is_copy_click(_Evt({"@click": A.copy_action(ADDR) + "x"}))
+    assert not A.is_copy_click(_Evt({"@click": 12}))
+
+    class _OddStyle:
+        meta = "not a dict"
+
+    class _OddEvt:
+        style = _OddStyle()
+
+    assert not A.is_copy_click(_OddEvt())

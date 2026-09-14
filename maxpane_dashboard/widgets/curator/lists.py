@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import re
 
 from rich.cells import cell_len, set_cell_size
 from rich.text import Text
@@ -13,7 +12,7 @@ from textual.coordinate import Coordinate
 from textual.message import Message
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.widgets.address import ADDRESS_RE, ICON_COLS, address_text
+from maxpane_dashboard.widgets.address import ADDRESS_RE, ICON_COLS, address_text, parse_copy_action
 from maxpane_dashboard.widgets.curator._fmt import (
     DASH,
     fmt_eth_compact,
@@ -30,13 +29,6 @@ from maxpane_dashboard.widgets.curator._table import (
 )
 from maxpane_dashboard.widgets.curator.cleaned_list import EXPORT_FAILED
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
-
-#: The copy icon's own click action, read back off a windowed ADDRESS
-#: cell's ``Style(meta=...)`` span rather than off its (possibly
-#: ellipsis-broken) visible text -- see ``_ListTable._address_key``'s own
-#: docstring for why the visible-text pattern alone is not enough any
-#: more. Matches ``widgets.address.copy_action``'s own format exactly.
-_COPY_ACTION_RE = re.compile(r"app\.copy_address\('(0x[0-9a-fA-F]{40})'\)")
 
 RAW_LIST_TITLE = "THE RAW LIST"
 CLEANED_LIST_TITLE = "THE CLEANED LIST"
@@ -565,9 +557,9 @@ class _ListTable(Vertical):
                 # way `widgets.address.is_copy_click` guards the identical
                 # read.
                 meta = getattr(style, "meta", None) or {}
-                match = _COPY_ACTION_RE.search(str(meta.get("@click", "")))
-                if match:
-                    return match.group(1).casefold()
+                address = parse_copy_action(meta.get("@click"))
+                if address:
+                    return address.casefold()
             value = value.plain
         if not isinstance(value, str):
             return None

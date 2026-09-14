@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import re
-
 from rich.cells import cell_len
 
-from maxpane_dashboard.widgets.address import COPY_GLYPH
-
-_ACTION = re.compile(r"app\.copy_address\('(0x[0-9a-fA-F]{40})'\)")
+from maxpane_dashboard.widgets.address import COPY_GLYPH, parse_copy_action
 
 
 def icon_targets(app) -> list[tuple[int, int, str | None]]:
@@ -27,8 +23,7 @@ def icon_targets(app) -> list[tuple[int, int, str | None]]:
             for ch in segment.text:
                 if ch == COPY_GLYPH:
                     meta = app.screen.get_style_at(x, y).meta or {}
-                    match = _ACTION.fullmatch(str(meta.get("@click", "")))
-                    out.append((x, y, match.group(1) if match else None))
+                    out.append((x, y, parse_copy_action(meta.get("@click"))))
                 x += cell_len(ch)
     return out
 
