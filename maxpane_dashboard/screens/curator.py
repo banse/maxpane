@@ -328,6 +328,22 @@ CLUSTERS_ID = "curator-clusters"
 #: The `l` body's separate composited sweep clears every NFT-aligned column at
 #: **93** for both raw and cleaned tables. It therefore does not alter this
 #: dashboard-layout pin and remains comfortably inside the app-wide 143.
+#:
+#: **The 2026-09-14 address-copy-icon conversion (Task 3) came within one
+#: column of moving it, and the near-miss is the reason to re-sweep here
+#: rather than assume.** ``CuratorActivity`` and ``CuratorClosestCalls``
+#: absorbed their identity cell's two-column icon inside slack they already
+#: had (bottom row, comfortably under this pin) and never touched it.
+#: ``CuratorLeaderboard`` did not: it sits in the middle row's own ``3fr``
+#: share, swept to the column against ``CuratorSignals``' 84-column need
+#: with nothing spare, and growing its WALLET column outright (the same
+#: move that worked for the other two) put a marker on it at 137 --
+#: ``test_the_binding_panel_is_the_signal_rail`` caught it directly, with
+#: ``CuratorLeaderboard`` newly in the failing set. The fix stayed inside
+#: ``leaderboard.py`` (its CREDIT column was typed two columns past its own
+#: documented measured worst case; reclaiming both pays the icon at zero
+#: net cost to the row) rather than here, so this pin's own value and this
+#: paragraph's sweep are the only trace of it.
 CURATOR_FULL_LAYOUT_COLUMNS = 138
 
 #: The three flat-dict keys the screen renders itself -- the title bar's

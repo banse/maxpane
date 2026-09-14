@@ -3351,8 +3351,11 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         await pilot.pause()
         await pilot.click("#filter-nft-add")
         await pilot.pause()
+        # The fallback label is the full address now (Task 3's copy-icon
+        # conversion moved windowing to the widget: `data/` may not import
+        # `widgets/address`) -- was the pre-shortened "BASE 0xaaaa…aaaa".
         assert editor.values()["nft_collections"] == ({
-            "label": "BASE 0xaaaa…aaaa",
+            "label": f"BASE {address}",
             "chain": "base",
             "address": address,
         },)

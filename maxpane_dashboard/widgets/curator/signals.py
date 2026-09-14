@@ -58,20 +58,33 @@ for one payload in hand.  The two are different numbers and conflating them
 is what this module got wrong twice; :data:`SIGNALS_FULL_WIDTH`'s own
 docstring is the record.
 
+HOUR SAVED and WHALE carry the only two addresses on this rail, and their
+identity part is now a real, clickable ``address_text`` rather than an
+unclickable ``short_label`` string (the copy-icon conversion, Task 3,
+2026-09-14) — built by :func:`_identity_row`, whose own docstring records
+why the two extra icon columns never reach :data:`SIGNALS_FULL_WIDTH`:
+:func:`measure_signals_width` still measures the two builders' original
+``short_label`` string, unmodified, and both rows sit 30+ columns under YOU,
+the rail's actual binding row, in both the published worst case and the
+captured payload.
+
 Primitives only — this module imports nothing from ``data/`` or ``analytics/``.
 """
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.css.query import QueryError
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.curator._fmt import (
     COMPACT_ETH_PROBE,
     DASH,
     EMDASH,
+    NAME_COLS,
     as_float,
     fmt_age,
     fmt_countdown,
@@ -227,6 +240,30 @@ def _head(label: str, state) -> str:
     return f"  [{style}]{glyph}[/] [{style}]{label:<{LABEL_COLS}}[/]"
 
 
+#: ``_STATE_STYLE``'s three theme tokens, with a plain Rich colour name as
+#: the last-resort fallback (the ``surf/pool4u_hero`` "$ trap": Rich's own
+#: ``Text.from_markup`` -- unlike Textual's ``Content.from_markup``, which
+#: ``Static.update(str)`` uses for the other five rows -- does not resolve a
+#: ``$``-prefixed variable and raises ``MarkupError`` on it instead of
+#: degrading).  Used only by :func:`_identity_row`'s two callers: HOUR SAVED
+#: and WHALE are the two rows this dashboard's copy-icon conversion (Task 3)
+#: builds as a real ``Text`` rather than handing ``Static`` a markup string.
+_TOKEN_FALLBACK = {"error": "red", "warning": "yellow", "success": "green"}
+
+
+def _resolved_markup(markup: str, colors: dict[str, str] | None) -> str:
+    """*markup* with every ``$token`` in :data:`_TOKEN_FALLBACK` swapped for
+    a concrete colour -- the app's own current theme where available, the
+    fallback name otherwise (before the first mount, or a bare harness with
+    no theme wired)."""
+    table = {**_TOKEN_FALLBACK, **{
+        name: colors[name] for name in _TOKEN_FALLBACK if colors and name in colors
+    }}
+    for name, value in table.items():
+        markup = markup.replace(f"${name}", value)
+    return markup
+
+
 def _row(label: str, state, parts: list[str], width: int) -> tuple[str, bool]:
     """``(markup, starved)`` — the head plus as many parts as fit.
 
@@ -255,6 +292,93 @@ def _row(label: str, state, parts: list[str], width: int) -> tuple[str, bool]:
     if not kept:
         return head, True
     return f"{head}  {' · '.join(kept)}", len(kept) < len(usable)
+
+
+#: Which payload fields carry the wallet/name pair behind HOUR SAVED's and
+#: WHALE's identity part -- the two rows this dashboard's copy-icon
+#: conversion (Task 3) gives a real, clickable ``address_text`` instead of
+#: an unclickable ``short_label`` string.  Keyed by :data:`SIGNAL_KEYS` entry
+#: so :func:`_identity_row` can be called generically from the render loop.
+_IDENTITY_FIELDS = {
+    "hour_saved": ("last_saved_wallet", "last_saved_ens"),
+    "whale": ("whale_wallet", "whale_ens"),
+}
+
+
+def _fit_costed(items: list[tuple[object, int]], width: int) -> tuple[list[object], bool]:
+    """:func:`_row`'s drop-from-the-end algorithm, generalised over a
+    ``(content, cost)`` pair instead of a bare string.
+
+    ``cost`` lets a caller mix a plain markup string's :func:`visible_len`
+    with a pre-built :class:`~rich.text.Text` fragment's own ``cell_len``
+    (the identity part, its copy icon included) in the same budget, so the
+    part that carries the icon can still be the one dropped first under
+    width pressure -- exactly what happened to it as a string before this
+    function existed.
+    """
+    usable = [(c, n) for c, n in items if c]
+    if not usable:
+        return [], False
+    budget = width - _HEAD_COLS if width > 0 else 0
+    kept = list(usable)
+    if budget > 0:
+        def total(rows: list[tuple[object, int]]) -> int:
+            return sum(n for _c, n in rows) + 3 * (len(rows) - 1) if rows else 0
+        while kept and total(kept) > budget:
+            kept.pop()
+    return [c for c, _n in kept], len(kept) < len(usable)
+
+
+def _identity_row(
+    label: str, state, lead: list[str], wallet, name, trail: list[str], width: int,
+    colors: dict[str, str] | None = None,
+) -> tuple[Text, bool]:
+    """Like :func:`_row`, but the identity part is a real ``address_text``
+    with its own copy icon, dropped from the middle exactly like any other
+    part rather than kept as an unclickable ``short_label`` string.
+
+    ``lead``/``trail`` are the parts either side of the identity in the
+    builder's own order (``hour``/the amount before it, the age after), so
+    the existing drop-from-the-end rule still drops age first and the
+    identity next -- unchanged from when the identity was baked into
+    ``_hour_saved_row``/``_whale_row``'s own ``parts`` string.
+
+    This does **not** change what :func:`measure_signals_width` (and
+    therefore :data:`SIGNALS_FULL_WIDTH`) declares: those still run the
+    string-only ``_row`` over the two builders' own ``parts``, unmodified,
+    because the identity's old ``short_label`` length is what that published
+    worst case is measured against, and it must keep being measured that
+    way for the constant to mean what it says.  The two rows this touches
+    are nowhere near that panel's binding row (YOU, the widest by 30+
+    columns in both the worst-case probe and the captured payload -- see
+    task-3-report.md), so the two extra icon columns never touch the rail's
+    published width, only these two rows' own honestly-advertised slack.
+    """
+    items: list[tuple[object, int]] = [(p, visible_len(p)) for p in lead if p]
+    if wallet:
+        # Lower-cased on purpose, ``leaderboard.py``'s own reason: two
+        # sources spell one wallet two ways, and the icon copies whichever
+        # spelling this cell was given -- lower-case is an equally valid
+        # paste of the same address.
+        lowered = wallet.lower() if isinstance(wallet, str) else wallet
+        identity = address_text(lowered, label=(name or None), width=NAME_COLS)
+        items.append((identity, identity.cell_len))
+    items.extend((p, visible_len(p)) for p in trail if p)
+
+    head = _resolved_markup(_head(label, state), colors)
+    kept, starved = _fit_costed(items, width)
+    out = Text.from_markup(head)
+    if not kept:
+        return out, starved
+    out.append("  ")
+    for index, content in enumerate(kept):
+        if index:
+            out.append(" · ")
+        if isinstance(content, Text):
+            out.append_text(content)
+        else:
+            out.append_text(Text.from_markup(content))
+    return out, starved
 
 
 # -- the seven builders --------------------------------------------------
@@ -359,6 +483,51 @@ def _whale_row(data: dict) -> tuple[str | None, list[str]]:
     if age != DASH:
         parts.append(f"{age} ago")
     return "watch", parts
+
+
+def _hour_saved_content(
+    label: str, data: dict, width: int, colors: dict[str, str] | None = None,
+) -> tuple[Text, bool]:
+    """:func:`_hour_saved_row`'s row, rendered with a real, clickable
+    identity instead of the ``short_label`` string it still builds for
+    :func:`measure_signals_width`.
+
+    The lead/trail parts are restated here rather than threaded out of
+    ``_hour_saved_row``'s own ``parts`` list, because that list's contract
+    (a plain ``list[str]``) is what :data:`SIGNALS_FULL_WIDTH` is measured
+    against and must not change; see :func:`_identity_row`'s own docstring
+    for why splitting the measurement and the render path this way is safe.
+    """
+    state, parts = _hour_saved_row(data)
+    hour = data.get("last_saved_hour")
+    wallet = data.get("last_saved_wallet") if isinstance(hour, int) else None
+    if not wallet:
+        markup, starved = _row(label, state, parts, width)
+        return Text.from_markup(_resolved_markup(markup, colors)), starved
+    age = fmt_age(data.get("last_saved_age_s"))
+    return _identity_row(
+        label, state, [f"hour {hour}"], wallet, data.get("last_saved_ens"),
+        [f"{age} ago"] if age != DASH else [], width, colors,
+    )
+
+
+def _whale_content(
+    label: str, data: dict, width: int, colors: dict[str, str] | None = None,
+) -> tuple[Text, bool]:
+    """:func:`_whale_row`'s row, rendered with a real, clickable identity —
+    see :func:`_hour_saved_content` for why the lead/trail parts are
+    restated rather than shared."""
+    state, parts = _whale_row(data)
+    amount = as_float(data.get("whale_amount_eth"))
+    wallet = data.get("whale_wallet") if amount is not None else None
+    if not wallet:
+        markup, starved = _row(label, state, parts, width)
+        return Text.from_markup(_resolved_markup(markup, colors)), starved
+    age = fmt_age(data.get("whale_age_s"))
+    return _identity_row(
+        label, state, [f"[bold]{fmt_eth(amount)} ETH[/]"], wallet,
+        data.get("whale_ens"), [f"{age} ago"] if age != DASH else [], width, colors,
+    )
 
 
 def _clusters_row(data: dict) -> tuple[str | None, list[str]]:
@@ -658,25 +827,49 @@ class CuratorSignals(Vertical):
 
     # -- rendering ---------------------------------------------------------
 
+    def _theme_colors(self) -> dict[str, str]:
+        """The app's current concrete colours for :data:`_TOKEN_FALLBACK`'s
+        three tokens, or ``{}`` when unavailable (not yet mounted, or a bare
+        harness with no theme) -- :func:`_resolved_markup` falls back to the
+        plain colour names in that case."""
+        try:
+            return self.app.get_css_variables()
+        except Exception:
+            return {}
+
     def _render_view(self) -> None:
         payload = self._payload
         width = max(self.content_size.width - 2, 0)
         starved = False
+        # Resolved once per refresh, only for the two rows that build a real
+        # ``Text`` (see ``_TOKEN_FALLBACK``): the other five keep handing
+        # ``Static`` the plain markup string it has always used, parsed by
+        # Textual's own ``$``-aware ``Content.from_markup`` exactly as before.
+        colors = self._theme_colors()
 
         for key, label in zip(SIGNAL_KEYS, SIGNAL_LABELS):
             try:
-                state, parts = _BUILDERS[key](payload)
+                if key == "hour_saved":
+                    content, row_starved = _hour_saved_content(
+                        label, payload, width, colors
+                    )
+                elif key == "whale":
+                    content, row_starved = _whale_content(
+                        label, payload, width, colors
+                    )
+                else:
+                    state, parts = _BUILDERS[key](payload)
+                    content, row_starved = _row(label, state, parts, width)
             except Exception:
                 # One malformed value costs its row's value, never the rail.
-                state, parts = None, [f"{DASH} unknown"]
-            markup, row_starved = _row(label, state, parts, width)
+                content, row_starved = _head(label, None), False
             starved = starved or row_starved
             try:
                 row = self.query_one(f"#curator-sig-{key}", Static)
             except QueryError:
                 return  # not composed yet; none of the rows are
             try:
-                row.update(markup)
+                row.update(content)
             except Exception:
                 # A per-row failure, never a rail-wide one: the head is built
                 # entirely from this module's own strings and is always safe.

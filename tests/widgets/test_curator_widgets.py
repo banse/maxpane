@@ -99,7 +99,7 @@ from maxpane_dashboard.widgets.curator.list_hero import (
     LIST_EXPORT_SUBTITLE,
     _filter_lines,
     _raw_summary_lines,
-    _wallet_lines,
+    _wallet_text,
 )
 
 #: The package under test, as a directory — the AST guards glob it, so a
@@ -1027,27 +1027,31 @@ def test_raw_list_label_is_frozen_in_every_phase(phase):
 def test_raw_and_cleaned_wallet_cards_share_the_filtered_identity_and_value_rows(
     view, rank_key, rank, total_key, total, suffix
 ):
+    """``_wallet_text`` returns one composited ``Text`` now (the address
+    line's copy icon needs a real ``Style``, not a markup string -- see its
+    own docstring), so this checks the five lines' plain content instead of
+    the retired markup-tag strings. Colour spans get their own dedicated
+    test (``test_the_wallet_cards_lines_use_the_resolved_success_colours``)."""
     address = "0x" + "1" * 40
-    lines = _wallet_lines({
+    text = _wallet_text({
         "list_view": view, rank_key: rank, total_key: total,
         "filter_summary": ("points 10+",),
         "you_first_index": 8, "you_first_hour": 2,
         "you_address": address, "you_ens": "reader.eth",
         "you_points": 99, "you_credit_eth": 3.6,
     }, "full", 42)
-    assert lines == [
-        "[$success]reader.eth[/]",
-        f"[$success][bold]#{rank} of {total}[/][/] "
-        f"[$success-darken-2]· {suffix}[/]",
-        "[$success-darken-2]join #8 · hour 2[/]",
-        "[$success][bold]99 pts · 3.60 ETH[/][/]",
-        f"[$success]{address}[/]",
+    assert text.plain.split("\n") == [
+        "reader.eth",
+        f"#{rank} of {total} · {suffix}",
+        "join #8 · hour 2",
+        "99 pts · 3.60 ETH",
+        f"{address} ⧉",
     ]
 
 
 def test_filtered_wallet_card_promotes_ens_and_keeps_the_full_address():
     address = "0x1234567890abcdef1234567890abcdef12345678"
-    lines = _wallet_lines({
+    text = _wallet_text({
         "list_view": "filtered",
         "you_filtered_index": 4,
         "filtered_contributors": 12,
@@ -1057,19 +1061,18 @@ def test_filtered_wallet_card_promotes_ens_and_keeps_the_full_address():
         "you_points": 99,
         "you_credit_eth": 3.6,
     }, "full", 42)
-    assert lines == [
-        "[$success]reader.eth[/]",
-        "[$success][bold]#4 of 12[/][/] "
-        "[$success-darken-2]· filtered[/]",
-        "[$success-darken-2]points 10+[/]",
-        "[$success][bold]99 pts · 3.60 ETH[/][/]",
-        f"[$success]{address}[/]",
+    assert text.plain.split("\n") == [
+        "reader.eth",
+        "#4 of 12 · filtered",
+        "points 10+",
+        "99 pts · 3.60 ETH",
+        f"{address} ⧉",
     ]
 
 
 def test_filtered_wallet_card_keeps_your_wallet_title_without_ens():
     address = "0x1234567890abcdef1234567890abcdef12345678"
-    lines = _wallet_lines({
+    text = _wallet_text({
         "list_view": "filtered",
         "you_filtered_index": 4,
         "filtered_contributors": 12,
@@ -1077,8 +1080,54 @@ def test_filtered_wallet_card_keeps_your_wallet_title_without_ens():
         "you_address": address,
         "you_points": 99,
     }, "full", 42)
-    assert lines[0] == "[$success]YOUR WALLET[/]"
-    assert lines[4] == f"[$success]{address}[/]"
+    lines = text.plain.split("\n")
+    assert lines[0] == "YOUR WALLET"
+    assert lines[4] == f"{address} ⧉"
+
+
+def test_the_wallet_cards_address_line_carries_a_real_copy_icon():
+    """The recipe's own point: the identity line is a pre-built ``Text``
+    with a ``Style(meta={"@click": ...})`` span on the icon, not a markup
+    string with the glyph typed into it -- so the click action is real."""
+    from rich.console import Console
+
+    address = "0x1234567890abcdef1234567890abcdef12345678"
+    text = _wallet_text({"you_address": address}, "full", 42)
+    icon_index = text.plain.rindex("⧉")
+    meta = text.get_style_at_offset(Console(), icon_index).meta
+    assert meta.get("@click") == f"app.copy_address({address!r})"
+
+
+def test_the_wallet_cards_lines_use_the_resolved_success_colours():
+    """``$success``/``$success-darken-2`` never reach a Rich ``Style`` --
+    the caller resolves them first (Global Constraints; the ``surf/
+    pool4u_hero`` "$ trap").  Title/standing/points/address are the
+    resolved ``success``; the detail line and the standing line's
+    trailing ``· view`` word are ``success-darken-2``."""
+    from rich.console import Console
+
+    console = Console()
+    address = "0x" + "2" * 40
+    text = _wallet_text(
+        {
+            "you_rank": 2, "contributors_total": 10,
+            "you_first_index": 8, "you_first_hour": 2,
+            "you_address": address, "you_points": 99, "you_credit_eth": 3.6,
+        },
+        "full", 42, success="#123456", success_dim="#abcdef",
+    )
+    lines = text.plain.split("\n")
+
+    def colour_at(line_index: int, column: int) -> str:
+        offset = sum(len(lines[i]) + 1 for i in range(line_index)) + column
+        return text.get_style_at_offset(console, offset).color.name
+
+    assert colour_at(0, 0) == "#123456"                       # title
+    assert colour_at(1, 0) == "#123456"                        # "#2 of 10"
+    assert colour_at(1, lines[1].index("·")) == "#abcdef"       # "· raw"
+    assert colour_at(2, 0) == "#abcdef"                         # detail
+    assert colour_at(3, 0) == "#123456"                         # points/ETH
+    assert colour_at(4, 0) == "#123456"                         # address
 
 
 async def test_list_hero_note_changes_only_for_open_filter_editor():
@@ -1125,11 +1174,11 @@ async def test_filtered_wallet_summary_uses_one_overflow_phrase():
 
 
 def test_filtered_wallet_summary_counts_literal_brackets_toward_width():
-    lines = _wallet_lines({
+    text = _wallet_text({
         "list_view": "filtered",
         "filter_summary": ("NFT [red]1234[/]",),
     }, "full", 10)
-    assert lines[2] == "[$success-darken-2]multiple filters applied[/]"
+    assert text.plain.split("\n")[2] == "multiple filters applied"
 
 
 async def test_filtered_table_renders_the_specific_unavailable_source_reason():
@@ -2291,8 +2340,14 @@ async def _feed_at(width: int, rows) -> str:
 
 @pytest.mark.parametrize(
     "width,shed",
-    [(143, ""), (79, ""), (71, "credit wording"), (51, "credit + weight"),
-     (41, "credit, weight, tx"), (33, "kind, credit, weight, tx")],
+    # +2 at every boundary since the address-copy-icon conversion (Task 3,
+    # 2026-09-14): the identity cell keeps its old NAME_COLS display budget
+    # and adds ICON_COLS on top (activity.py's own `_IDENTITY_COLS`), which
+    # grows every tier's declared cost by two columns. `shed` is read as a
+    # bool below (`if shed:`), never compared as text, so only the boundary
+    # width itself had to move here.
+    [(143, ""), (81, ""), (73, "credit wording"), (53, "credit + weight"),
+     (43, "credit, weight, tx"), (35, "kind, credit, weight, tx")],
 )
 async def test_narrow_feeds_announce_the_fields_they_shed(width, shed):
     text = await _feed_at(width, _act_rows())
@@ -2305,15 +2360,18 @@ async def test_narrow_feeds_announce_the_fields_they_shed(width, shed):
 
 @pytest.mark.parametrize(
     "width,tail",
-    # Each boundary is ONE column wider than it was: the identity cell holds a
-    # name now (PRD §13 A9).  The tails are unchanged, which is the point --
-    # the largest real deposit still survives every tier.
+    # Each boundary moved another +2: the address-copy-icon conversion
+    # (Task 3, 2026-09-14) keeps the identity cell's old NAME_COLS display
+    # budget and adds ICON_COLS on top (activity.py's own
+    # `_IDENTITY_COLS`), which grows every tier's declared cost by two
+    # columns -- was 78/68/48/40/33.  The tails are unchanged, which is the
+    # point -- the largest real deposit still survives every tier.
     [(143, "(+461.10 credit → 899.00 wt)  tx#12"),
-     (78, "(+461.10 credit → 899.00 wt)  tx#12"),   # the full tier's floor
-     (68, "(+461.10 → 899.00)  tx#12"),             # compact's
-     (48, "461.10Ξ  tx#12"),                        # narrow's
-     (40, "461.10Ξ"),                               # minimal's
-     (33, "461.10Ξ")],                              # floor's
+     (80, "(+461.10 credit → 899.00 wt)  tx#12"),   # the full tier's floor
+     (70, "(+461.10 → 899.00)  tx#12"),             # compact's
+     (50, "461.10Ξ  tx#12"),                        # narrow's
+     (42, "461.10Ξ"),                               # minimal's
+     (35, "461.10Ξ")],                              # floor's
 )
 async def test_the_largest_captured_deposit_survives_every_tier_boundary(
     width, tail
@@ -2362,7 +2420,10 @@ def test_the_feeds_cells_are_sized_from_the_formatter_not_from_an_example():
     # the screen can afford -- see NAME_COLS' own note for the sweep.
     from maxpane_dashboard.widgets.curator._fmt import ADDR_COLS, NAME_COLS
     assert NAME_COLS - ADDR_COLS == 1
-    assert act_mod.FULL_WIDTH == 75
+    # 77, not 75: the address-copy-icon conversion (Task 3, 2026-09-14) adds
+    # ICON_COLS on top of the identity cell's unchanged NAME_COLS display
+    # budget (activity.py's own `_IDENTITY_COLS`), local to this panel.
+    assert act_mod.FULL_WIDTH == 77
 
 
 # ===========================================================================
@@ -3998,8 +4059,17 @@ def test_the_leaderboard_publishes_the_tier_it_actually_picks():
     from maxpane_dashboard.widgets.curator import leaderboard as lb
     from maxpane_dashboard.widgets.curator._table import pick_tier, tier_cost
 
+    # FULL_WIDTH is unchanged (49) since the address-copy-icon conversion
+    # (Task 3, 2026-09-14): WALLET keeps its NAME_COLS display cap and adds
+    # ICON_COLS on top, paid by shrinking CREDIT back to its own documented
+    # measured worst case in every tier that carries both columns (full,
+    # compact) -- net zero. MIN_WIDTH moved (33 -> 35): the minimal tier has
+    # no CREDIT column to absorb the icon's two columns, and that is fine --
+    # it is not part of the screen's 138 pin. See leaderboard.py's own
+    # width-behaviour docstring for the two designs that were tried first
+    # and did move the pin.
     assert lb.LEADERBOARD_FULL_WIDTH == tier_cost(lb._TIERS[0][2]) == 49
-    assert lb.LEADERBOARD_MIN_WIDTH == tier_cost(lb._TIERS[-1][2]) == 33
+    assert lb.LEADERBOARD_MIN_WIDTH == tier_cost(lb._TIERS[-1][2]) == 35
 
     name, _columns, hint = pick_tier(lb._TIERS, lb.LEADERBOARD_FULL_WIDTH)
     assert (name, hint) == ("full", "")

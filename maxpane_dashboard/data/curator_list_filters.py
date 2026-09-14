@@ -63,8 +63,24 @@ def nft_collection_key(chain: str, address: str) -> str:
 
 
 def custom_nft_label(chain: str, address: str) -> str:
+    """The fallback label for a custom NFT collection with no resolved name.
+
+    Publishes the **full** address rather than a pre-shortened one (this
+    used to return ``f"{prefix} {address[:6]}…{address[-4:]}"``, a 6/4 hand
+    slice outside the anti-poisoning window every other address cell in
+    this app now goes through).  ``data/`` may not import ``widgets/address``
+    -- the layering runs the other way -- so windowing the address for
+    display, and attaching a copy icon where a consuming widget can, is the
+    widget's job (the copy-icon conversion recipe's own rule: a data layer
+    that shortens an address before the widget reaches it is exactly the
+    pattern this app is removing). This label reaches
+    ``filter_summary()``'s flat "NFT ..." prose clause today, which no
+    widget in this task's scope parses back into a clickable region --
+    ``widgets/curator/list_filter.py``, the one place a *selected*
+    collection renders on its own line, is untouched by Task 3.
+    """
     prefix = "ETH" if chain == "ethereum" else "BASE"
-    return f"{prefix} {address[:6]}…{address[-4:]}"
+    return f"{prefix} {address}"
 
 
 def parse_nft_collection(value: object) -> NftCollectionRef:

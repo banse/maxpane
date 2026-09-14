@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from rich.cells import cell_len
+from rich.style import Style
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.curator._fmt import (
     DASH,
     fmt_eth,
@@ -19,7 +22,17 @@ from maxpane_dashboard.widgets.curator.hero import (
     LIST_EXPORT_SUBTITLE_TINY,
     WIDEN_HINT,
 )
-from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
+from maxpane_dashboard.widgets.markup_safety import visible_len
+
+#: ``$success``/``$success-darken-2``, with a plain Rich colour as the
+#: last-resort fallback (the ``surf/pool4u_hero`` "$ trap": Rich's own
+#: ``Text``/``Style`` cannot resolve a ``$``-prefixed theme token the way
+#: Textual's ``Content.from_markup`` can -- and the wallet box now builds a
+#: single ``Text`` for all five lines rather than handing ``Static`` a
+#: markup string, because the address line's copy icon lives in a
+#: ``Style(meta=...)`` span that only survives outside markup parsing).
+#: Used only by the wallet card's :func:`_wallet_text`.
+_TOKEN_FALLBACK = {"success": "green", "success-darken-2": "green"}
 
 FULL_WIDTH = 42
 COMPACT_WIDTH = 28
@@ -82,18 +95,26 @@ def _raw_summary_lines(data: dict, tier: str, _width: int = 0) -> list[str]:
     )
 
 
-def _wallet_address(data: dict) -> str:
-    address = data.get("you_address")
-    if not isinstance(address, str) or not address.strip():
-        return "WALLET NOT SET"
-    return safe_markup(address.strip())
+#: Shown when no wallet is configured -- the address line's non-address
+#: fallback, so the icon's absence there is the correct behaviour rather
+#: than a bug (``address_text`` only attaches one to a value that passes
+#: :func:`~maxpane_dashboard.widgets.address.is_address`).
+WALLET_NOT_SET = "WALLET NOT SET"
 
 
 def _wallet_title(data: dict) -> str:
+    """The verified ENS name, or ``YOUR WALLET``.
+
+    Returned raw, unescaped: the caller builds a literal ``Text`` from it
+    (never parsed as markup), so an attacker-chosen name with brackets in it
+    (PRD §13 A9) renders as those literal characters rather than needing
+    :func:`~maxpane_dashboard.widgets.markup_safety.safe_markup` to keep
+    Rich from reading them as tags.
+    """
     ens = data.get("you_ens")
     if not isinstance(ens, str) or not ens.strip():
         return "YOUR WALLET"
-    return safe_markup(" ".join(ens.split()))
+    return " ".join(ens.split())
 
 
 def _rank(value) -> str:
@@ -133,7 +154,7 @@ def _compact_filter_summary(summary, tier: str, width: int = 0) -> str:
     budget = width or (FULL_WIDTH if tier == "full" else COMPACT_WIDTH)
     complete = " · ".join(clauses)
     return (
-        safe_markup(complete)
+        complete
         if cell_len(complete) <= budget
         else "multiple filters applied"
     )
@@ -151,25 +172,54 @@ def _wallet_view(data: dict) -> tuple[str, object, object]:
     return "raw", data.get("you_rank"), data.get("contributors_total")
 
 
-def _wallet_lines(data: dict, tier: str, width: int = 0) -> list[str]:
+def _wallet_text(
+    data: dict, tier: str, width: int = 0,
+    success: str = _TOKEN_FALLBACK["success"],
+    success_dim: str = _TOKEN_FALLBACK["success-darken-2"],
+) -> Text:
+    """The wallet card's five lines as one composited ``Text``.
+
+    Built by direct ``Text.append``, never markup parsing: the title is a
+    reader-supplied ENS name (PRD §13 A9's attacker-controlled string, see
+    :func:`_wallet_title`), and the address line's copy icon lives in a
+    ``Style(meta=...)`` span that only survives outside markup parsing
+    anyway (``address_text``).  ``$success``/``$success-darken-2`` are
+    Textual theme tokens and Rich's own ``Text``/``Style`` cannot resolve a
+    ``$``-prefixed colour (the ``surf/pool4u_hero`` "$ trap"), so the
+    caller resolves both to the app's current concrete colours once and
+    hands them in here; :data:`_TOKEN_FALLBACK` is the default for a caller
+    with no app to ask (a bare unit test).
+
+    Matches the record-list hero contract (CLAUDE.md): title, standing,
+    points/ETH and the address in ``success``; the detail line (and the
+    standing line's trailing ``· view`` word) in ``success_dim``.
+    """
     view, rank, total = _wallet_view(data)
     detail = (
         _compact_filter_summary(data.get("filter_summary"), tier, width)
         if view == "filtered" else _join_detail(data)
     )
-    standing = (
-        f"[$success][bold]{_rank(rank)} of {_total(total)}[/][/] "
-        f"[$success-darken-2]· {view}[/]"
+
+    out = Text()
+    out.append(_wallet_title(data), style=Style(color=success))
+    out.append("\n")
+    out.append(f"{_rank(rank)} of {_total(total)}", style=Style(color=success, bold=True))
+    out.append(f" · {view}", style=Style(color=success_dim))
+    out.append("\n")
+    out.append(detail, style=Style(color=success_dim))
+    out.append("\n")
+    out.append(
+        f"{fmt_points(data.get('you_points'))} pts · "
+        f"{fmt_eth(data.get('you_credit_eth'))} ETH",
+        style=Style(color=success, bold=True),
     )
-    return _lines(
-        _wallet_title(data),
-        standing,
-        f"[$success-darken-2]{detail}[/]",
-        f"[$success][bold]{fmt_points(data.get('you_points'))} pts · "
-        f"{fmt_eth(data.get('you_credit_eth'))} ETH[/][/]",
-        f"[$success]{_wallet_address(data)}[/]",
-        title_style="$success",
-    )
+    out.append("\n")
+    address = data.get("you_address")
+    if isinstance(address, str) and address.strip():
+        out.append_text(address_text(address.strip(), width=None, style=success))
+    else:
+        out.append(WALLET_NOT_SET, style=Style(color=success))
+    return out
 
 
 def _cleaned_summary_lines(data: dict, _tier: str, _width: int = 0) -> list[str]:
@@ -227,7 +277,7 @@ def _filter_lines(_data: dict, _tier: str, _width: int = 0) -> list[str]:
 
 _BUILDERS = {
     "curator-list-hero-summary": _summary_lines,
-    "curator-list-hero-wallet": _wallet_lines,
+    "curator-list-hero-wallet": _wallet_text,
     "curator-list-hero-filter": _filter_lines,
 }
 
@@ -236,8 +286,25 @@ class CuratorListHeroBox(Static):
     """One of the list view's raw, wallet, or cleaned summary cards."""
 
     def render_lines_at_tier(self, build) -> None:
+        """``build`` is one of :data:`_BUILDERS`'s three functions, called
+        with this box's own width.  Two of them still return
+        ``list[str]`` markup lines, joined and handed to ``Static.update``
+        as a string exactly as before; the wallet card's :func:`_wallet_text`
+        returns a pre-built ``Text`` instead (the address line's copy icon
+        needs one), which ``Static.update`` also accepts directly and never
+        markup-parses -- so the ``over``/``WIDEN_HINT`` check below measures
+        the ``Text`` by splitting it on its own newlines rather than by
+        re-joining strings that do not exist for this box.
+        """
         width = self.content_size.width
-        lines = build(_tier_for(width), width)
+        content = build(_tier_for(width), width)
+        if isinstance(content, Text):
+            sub_lines = content.split("\n")
+            over = width > 0 and any(line.cell_len > width for line in sub_lines)
+            self.border_subtitle = WIDEN_HINT if over else ""
+            self.update(content)
+            return
+        lines = content
         over = width > 0 and any(visible_len(line) > width for line in lines)
         self.border_subtitle = WIDEN_HINT if over else ""
         self.update("\n".join(lines))
@@ -264,6 +331,21 @@ class CuratorListHero(Vertical):
         text-wrap: nowrap;
         text-overflow: ellipsis;
         border-subtitle-color: $warning;
+    }
+    /* The copy icon on the full, unshortened address (PRD's "address stays
+       visible even when ENS exists") needs exactly one column this card
+       did not have: content_size measured 43 against a 44-need (the
+       42-char address + ICON_COLS) at the documented 138-column screen.
+       Margin and a fixed width were both tried and neither changed the
+       box's measured content width at all -- this box sits in a Horizontal
+       of three `1fr` siblings, and its share is set once by that layout,
+       not by its own margin. Dropping only the shared left border (kept on
+       top/right/bottom, so it still reads as its own card) is the one
+       change that actually moved the measured number, and it costs exactly
+       the one column needed -- not two, which a full `border: none` would
+       have spent for nothing. Summary and filter are untouched. */
+    CuratorListHero #curator-list-hero-wallet {
+        border-left: none;
     }
     CuratorListHero #curator-list-hero-filter {
         color: $text;
@@ -348,6 +430,24 @@ class CuratorListHero(Vertical):
         if self._payload:
             self._render_view()
 
+    def _theme_colors(self) -> tuple[str, str]:
+        """The app's current concrete ``success``/``success-darken-2``
+        colours, or :data:`_TOKEN_FALLBACK`'s plain Rich names when
+        unavailable (not yet mounted, or a bare harness with no theme) --
+        Rich's own ``Style`` cannot resolve a ``$``-prefixed token the way
+        Textual's own markup parser can, which is the whole reason the
+        wallet card builds a ``Text`` instead of handing ``Static`` a
+        markup string.  Used only by :func:`_wallet_text`.
+        """
+        try:
+            variables = self.app.get_css_variables()
+            return (
+                variables.get("success", _TOKEN_FALLBACK["success"]),
+                variables.get("success-darken-2", _TOKEN_FALLBACK["success-darken-2"]),
+            )
+        except Exception:
+            return _TOKEN_FALLBACK["success"], _TOKEN_FALLBACK["success-darken-2"]
+
     def _render_view(self) -> None:
         try:
             boxes = {
@@ -358,11 +458,19 @@ class CuratorListHero(Vertical):
         except Exception:
             return
 
+        success, success_dim = self._theme_colors()
         for box_id, box in boxes.items():
             builder = _BUILDERS[box_id]
-            box.render_lines_at_tier(
-                lambda tier, width, fn=builder: fn(self._payload, tier, width)
-            )
+            if box_id == "curator-list-hero-wallet":
+                box.render_lines_at_tier(
+                    lambda tier, width, fn=builder: fn(
+                        self._payload, tier, width, success, success_dim
+                    )
+                )
+            else:
+                box.render_lines_at_tier(
+                    lambda tier, width, fn=builder: fn(self._payload, tier, width)
+                )
 
         width = max(self.content_size.width - 4, 0)
         if self._payload.get("filter_editor_open"):

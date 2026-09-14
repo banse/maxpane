@@ -236,10 +236,13 @@ def test_custom_nft_collections_validate_normalise_and_deduplicate():
         NftCollectionRef(
             chain="base",
             address=address.lower(),
-            label="BASE 0xabcd…abcd",
+            label=f"BASE {address.lower()}",
         ),
     )
-    assert custom_nft_label("ethereum", address.lower()) == "ETH 0xabcd…abcd"
+    # Full address, not the pre-shortened "ETH 0xabcd…abcd" this used to
+    # return: the copy-icon conversion (Task 3) moved windowing to the
+    # widget, since `data/` may not import `widgets/address`.
+    assert custom_nft_label("ethereum", address.lower()) == f"ETH {address.lower()}"
 
 
 @pytest.mark.parametrize(
