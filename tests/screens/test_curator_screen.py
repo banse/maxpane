@@ -101,6 +101,7 @@ from maxpane_dashboard.analytics.curator_signals import MANAGER_OWNED_KEYS
 from maxpane_dashboard.data.curator_list_filters import (
     PREDEFINED_NFT_COLLECTIONS,
     FilterContext,
+    custom_nft_label,
     empty_filter_values,
     filter_rows,
 )
@@ -2509,7 +2510,15 @@ async def test_the_address_appears_the_instant_it_is_typed(saved_wallets):
         await pilot.pause()
 
         text = _screen_text(app)
-        assert _WALLET.lower() in text, "the address waited for a refresh"
+        # Not a literal substring check any more: the identity line shows
+        # the full address when the rail has room and a windowed form
+        # (icon still attached) when it does not -- the surf STAKERS
+        # precedent, same fix round -- so "the address is known
+        # immediately" is proven by the copy icon actually naming it
+        # rather than by the 42-character string appearing verbatim.
+        from tests.widgets.address_probe import icon_targets
+        addresses = {t[2] for t in icon_targets(app)}
+        assert _WALLET.lower() in addresses, "the address waited for a refresh"
         assert NO_WALLET_SET not in text
         manager.release.set()
 
@@ -3351,13 +3360,18 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         await pilot.pause()
         await pilot.click("#filter-nft-add")
         await pilot.pause()
-        # The fallback label is the full address now (Task 3's copy-icon
-        # conversion moved windowing to the widget: `data/` may not import
-        # `widgets/address`) -- was the pre-shortened "BASE 0xaaaa…aaaa".
+        # The fallback label stays the short windowed form (reverted during
+        # the fix round: a full bare address here meant the editor's own
+        # tail-ellipsis CSS could clip it to a head-only string, the anti-
+        # poisoning window exists to prevent exactly that). The address is
+        # now published as its own field, and `is_fallback` tells the
+        # widget layer this label needs no further escaping -- it composes
+        # `address_text` for it instead of trusting the string verbatim.
         assert editor.values()["nft_collections"] == ({
-            "label": f"BASE {address}",
+            "label": custom_nft_label("base", address),
             "chain": "base",
             "address": address,
+            "is_fallback": True,
         },)
         assert screen._data_manager.collection_name_calls == [
             f"base:{address}"
@@ -3423,6 +3437,7 @@ async def test_custom_nft_add_renders_chain_markup_as_literal_text():
             "label": "[red]Reader Pass[/]",
             "chain": "base",
             "address": address,
+            "is_fallback": False,
         },)
         await pilot.click("#filter-apply")
         await pilot.pause()
@@ -3686,6 +3701,7 @@ async def test_pending_custom_name_preserves_newer_chain_and_address():
             "label": "Ethereum Reader Pass",
             "chain": "ethereum",
             "address": requested_address,
+            "is_fallback": False,
         },)
         assert chain.value == "base"
         assert nft_input.value == newer_address
@@ -3728,6 +3744,7 @@ async def test_pending_custom_name_clears_canonically_unchanged_address():
             "label": "Canonical Reader Pass",
             "chain": "ethereum",
             "address": canonical_address,
+            "is_fallback": False,
         },)
         assert nft_input.value == ""
         assert editor.query_one("#filter-nft-add", Button).disabled is False
@@ -3791,6 +3808,7 @@ async def test_overlapping_custom_names_only_commit_the_newest_generation():
                 "label": "Newest Reader Pass",
                 "chain": "base",
                 "address": second_address,
+                "is_fallback": False,
             },)
             assert "stale Ethereum NFT holder RPC unavailable" not in _region_text(
                 app, editor, screen
@@ -3822,6 +3840,7 @@ async def test_custom_nft_add_uses_resolved_name_and_retains_it_everywhere():
         assert screen._data_manager.collection_name_calls == [key]
         assert editor.values()["nft_collections"] == ({
             "label": "Reader Pass Deluxe", "chain": "base", "address": address,
+            "is_fallback": False,
         },)
         await pilot.click("#filter-apply")
         await pilot.pause()

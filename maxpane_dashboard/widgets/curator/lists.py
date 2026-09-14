@@ -5,12 +5,14 @@ from __future__ import annotations
 import math
 
 from rich.cells import cell_len, set_cell_size
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.coordinate import Coordinate
 from textual.message import Message
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ADDRESS_RE, ICON_COLS, address_text
 from maxpane_dashboard.widgets.curator._fmt import (
     DASH,
     fmt_eth_compact,
@@ -41,11 +43,40 @@ FILTERED_LIST_EMPTY = "no wallets match"
 
 MAX_ROWS = 1_000
 
-_INDEX_COLS = 6
+#: ``"1,000"`` (five characters) is the widest value this column ever
+#: carries (``_renumber_and_publish`` assigns ``1..MAX_ROWS``) and the
+#: header ``INDEX`` is five too -- an exact fit, not the six columns this
+#: was typed at.  The spare column is where the ADDRESS column's copy icon
+#: (below) is paid from: growing ADDRESS outright pushed the `l` body's own
+#: first-clean-width from 142 to 144 content columns, one column past the
+#: app-wide ``__main__.FULL_LAYOUT_COLUMNS`` (143) this body is documented
+#: to stay inside -- see the module docstring's own re-sweep note.
+_INDEX_COLS = 5
 _RANK_COLS = 6
 _JOIN_COLS = 6
+#: The address cell's own display width: exactly one whole address (``0x``
+#: + 40 hex), never windowed -- every row shows the full, bare address, in
+#: every tier. Unchanged by the copy-icon conversion (Task 3, 2026-09-14).
 _ADDRESS_COLS = 42
-_ENS_COLS = 19
+#: The ADDRESS column's total width: the display above plus the copy
+#: icon's two cells, local to this panel exactly like ``leaderboard.py``'s
+#: own ``_WALLET_COLS``.  Present in every tier (narrow/minimum both keep
+#: ADDRESS), so every declared cost below grows by ``ICON_COLS``.
+_ADDRESS_COLS_TOTAL = _ADDRESS_COLS + ICON_COLS
+#: A soft cap, not a measured worst case: ENS names are unbounded strings
+#: and this column ellipsis-truncates its own value past this width (see
+#: ``_ens_cell`` below), so shrinking it only moves where that truncation
+#: starts. Reclaimed one column here (2026-09-14 fix round) for the same
+#: reason ``_INDEX_COLS`` gave one up above: growing ADDRESS for its copy
+#: icon left the full tier one column over what fits beside this table's
+#: own vertical scrollbar at 100+ rows (``table.content_size`` reports the
+#: gutter-inclusive width, not the ``scrollable_content_region`` DataTable
+#: actually paints into, so a tier that costs exactly as much as
+#: ``content_size`` still shows a horizontal scrollbar) --
+#: ``test_every_143_column_list_header_fits_beside_the_active_scrollbar``
+#: is the tripwire, and every fixed/measured column above it was already
+#: exact-fit, so this unbounded one is the one with real slack to give.
+_ENS_COLS = 18
 _POINTS_COLS = 7
 _WEIGHT_COLS = 8
 _CREDIT_COLS = 6
@@ -57,7 +88,7 @@ _RAW_FULL = (
     ("index", "INDEX", _INDEX_COLS),
     ("rank", "RANK", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
-    ("address", "ADDRESS", _ADDRESS_COLS),
+    ("address", "ADDRESS", _ADDRESS_COLS_TOTAL),
     ("ens", "ENS", _ENS_COLS),
     ("points", "POINTS", _POINTS_COLS),
     ("weight", "WEIGHT Ξ", _WEIGHT_COLS),
@@ -98,7 +129,7 @@ _CLEANED_FULL = (
     ("index", "INDEX", _INDEX_COLS),
     ("rank", "RANK", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
-    ("address", "ADDRESS", _ADDRESS_COLS),
+    ("address", "ADDRESS", _ADDRESS_COLS_TOTAL),
     ("ens", "ENS", _ENS_COLS),
     ("points", "POINTS", _POINTS_COLS),
     ("weight", "WEIGHT Ξ", _WEIGHT_COLS),
@@ -198,10 +229,17 @@ def _rank(value) -> str:
         return DASH
 
 
-def _address(value) -> str:
+def _address(value):
     if not isinstance(value, str) or not value.strip():
         return DASH
-    return safe_markup(value.strip())
+    # Lower-cased on purpose, ``leaderboard.py``'s own reason: two sources
+    # spell one wallet two ways, and the icon copies whichever spelling
+    # this cell was given.  No label: ENS is this table's own separate
+    # column, so the cell is the address alone, whole (recipe step 6:
+    # `_ADDRESS_COLS` is the exact address length, so `address_text` never
+    # windows it -- see `_ADDRESS_COLS`'s own note for the icon's two
+    # columns).
+    return address_text(value.strip().lower(), width=_ADDRESS_COLS)
 
 
 def _ens(name) -> str:
@@ -470,9 +508,24 @@ class _ListTable(Vertical):
 
     @staticmethod
     def _address_key(value) -> str | None:
-        if not isinstance(value, str) or not value.strip():
+        """Normalise an address for the reverse row lookup.
+
+        ``value`` is either the row's own raw ``address`` field (a plain
+        ``str``) or the ADDRESS column's *rendered cell* read back off the
+        ``DataTable`` (``table.get_row_at(...)``), which is now a
+        pre-built ``Text`` (:func:`_address`'s copy icon needs a real
+        ``Style``, not a markup string) carrying the address plus a
+        trailing `` ⧉`` -- so this always extracts the ``0x`` address by
+        pattern rather than assuming the whole cell is one, which is what
+        broke ``_source_row``/``_apply_sort``/``_renumber_and_publish``'s
+        reverse lookup the first time this cell became a ``Text``.
+        """
+        if isinstance(value, Text):
+            value = value.plain
+        if not isinstance(value, str):
             return None
-        return value.strip().casefold()
+        match = ADDRESS_RE.search(value)
+        return match.group(0).casefold() if match else None
 
     def _source_row(self, values) -> dict | None:
         try:

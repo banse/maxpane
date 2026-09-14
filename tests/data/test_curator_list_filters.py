@@ -236,13 +236,22 @@ def test_custom_nft_collections_validate_normalise_and_deduplicate():
         NftCollectionRef(
             chain="base",
             address=address.lower(),
-            label=f"BASE {address.lower()}",
+            label="BASE 0xabcd…abcd",
         ),
     )
-    # Full address, not the pre-shortened "ETH 0xabcd…abcd" this used to
-    # return: the copy-icon conversion (Task 3) moved windowing to the
-    # widget, since `data/` may not import `widgets/address`.
-    assert custom_nft_label("ethereum", address.lower()) == f"ETH {address.lower()}"
+    # Windowed again (4/4), not the full bare address this became briefly
+    # during the copy-icon conversion (Task 3) and then during its own
+    # 2026-09-14 fix round: a full address here collapsed one nameless
+    # custom collection's filter-summary clause to "multiple filters
+    # applied" and let a too-narrow grid cell's CSS ellipsis cut the
+    # *tail*, leaving a head-only address -- the anti-poisoning window
+    # exists to prevent exactly that. The grid gets a real, clickable
+    # ``address_text`` composed over the collection's own ``.address``
+    # field instead (``widgets/curator/list_filter.py``); ``data/`` may not
+    # import ``widgets/address``, so this module keeps its own copy of the
+    # window (``_windowed``, kept in step by
+    # ``test_the_data_layer_window_matches_widgets_address``).
+    assert custom_nft_label("ethereum", address.lower()) == "ETH 0xabcd…abcd"
 
 
 @pytest.mark.parametrize(

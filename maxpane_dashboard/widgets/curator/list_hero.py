@@ -216,7 +216,12 @@ def _wallet_text(
     out.append("\n")
     address = data.get("you_address")
     if isinstance(address, str) and address.strip():
-        out.append_text(address_text(address.strip(), width=None, style=success))
+        # Lower-cased on purpose, ``leaderboard.py``'s own reason: two
+        # sources spell one wallet two ways, and the icon copies whichever
+        # spelling this cell was given.
+        out.append_text(
+            address_text(address.strip().lower(), width=None, style=success)
+        )
     else:
         out.append(WALLET_NOT_SET, style=Style(color=success))
     return out
@@ -320,10 +325,27 @@ class CuratorListHero(Vertical):
     CuratorListHero > #curator-list-hero-boxes {
         height: 7;
     }
+    /* The copy icon on the full, unshortened address (PRD's "address stays
+       visible even when ENS exists") needs exactly one column this row did
+       not have: content_size measured 43 against a 44-need (the 42-char
+       address + ICON_COLS) at the documented 138-column screen. An
+       asymmetric fix (dropping only the wallet card's left border) was
+       tried first and reverted: a three-sided card between two four-sided
+       ones is a visible asymmetry nobody signed off on. The margin here
+       (``0 1``, i.e. 2 columns per box) is what the reviewer named as the
+       cause: with three ``1fr`` siblings, all margin is summed and
+       subtracted from the row *before* the fr split, so six margin columns
+       came off 138 and three boxes shared what was left. Zeroing it
+       symmetrically -- one rule, all three cards, still four full borders
+       each -- gives every box back exactly 46 columns (138 / 3, evenly)
+       for 44 of content, matching the need with nothing to spare.  Measured
+       in situ: summary and filter grew from 42/43 to 44 too, so their own
+       five-line contracts (CLAUDE.md "THE LIST record-list hero cards")
+       have strictly more room than before, not less. */
     CuratorListHero CuratorListHeroBox {
         width: 1fr;
         height: 7;
-        margin: 0 1;
+        margin: 0;
         border: solid $panel;
         background: $surface;
         content-align: center middle;
@@ -331,21 +353,6 @@ class CuratorListHero(Vertical):
         text-wrap: nowrap;
         text-overflow: ellipsis;
         border-subtitle-color: $warning;
-    }
-    /* The copy icon on the full, unshortened address (PRD's "address stays
-       visible even when ENS exists") needs exactly one column this card
-       did not have: content_size measured 43 against a 44-need (the
-       42-char address + ICON_COLS) at the documented 138-column screen.
-       Margin and a fixed width were both tried and neither changed the
-       box's measured content width at all -- this box sits in a Horizontal
-       of three `1fr` siblings, and its share is set once by that layout,
-       not by its own margin. Dropping only the shared left border (kept on
-       top/right/bottom, so it still reads as its own card) is the one
-       change that actually moved the measured number, and it costs exactly
-       the one column needed -- not two, which a full `border: none` would
-       have spent for nothing. Summary and filter are untouched. */
-    CuratorListHero #curator-list-hero-wallet {
-        border-left: none;
     }
     CuratorListHero #curator-list-hero-filter {
         color: $text;

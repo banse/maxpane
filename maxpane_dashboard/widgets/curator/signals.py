@@ -59,14 +59,15 @@ is what this module got wrong twice; :data:`SIGNALS_FULL_WIDTH`'s own
 docstring is the record.
 
 HOUR SAVED and WHALE carry the only two addresses on this rail, and their
-identity part is now a real, clickable ``address_text`` rather than an
-unclickable ``short_label`` string (the copy-icon conversion, Task 3,
-2026-09-14) — built by :func:`_identity_row`, whose own docstring records
-why the two extra icon columns never reach :data:`SIGNALS_FULL_WIDTH`:
-:func:`measure_signals_width` still measures the two builders' original
-``short_label`` string, unmodified, and both rows sit 30+ columns under YOU,
-the rail's actual binding row, in both the published worst case and the
-captured payload.
+identity part is a real, clickable ``address_text`` rather than the
+unclickable ``short_label`` string this module built until the copy-icon
+conversion's own 2026-09-14 fix round (Task 3) — built by
+:func:`_identity_row`, and measured by :func:`measure_signals_width`
+through the exact same rendering path (:func:`_hour_saved_content` /
+:func:`_whale_content`), so the published :data:`SIGNALS_FULL_WIDTH` counts
+the icon.  It does not move: both rows sit 30+ columns under YOU, the
+rail's actual binding row, in both the published worst case and the
+captured payload, so the two extra icon columns never overtake it.
 
 Primitives only — this module imports nothing from ``data/`` or ``analytics/``.
 """
@@ -91,11 +92,9 @@ from maxpane_dashboard.widgets.curator._fmt import (
     fmt_eth,
     fmt_pct,
     fmt_points,
-    short_addr,
-    short_label,
 )
 from maxpane_dashboard.widgets.curator.hero import PHASE_UNAVAILABLE, PHASES
-from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
+from maxpane_dashboard.widgets.markup_safety import visible_len
 
 #: Panel title.  The hint is appended, never substituted.
 SIGNALS_TITLE = "SIGNALS"
@@ -343,16 +342,15 @@ def _identity_row(
     identity next -- unchanged from when the identity was baked into
     ``_hour_saved_row``/``_whale_row``'s own ``parts`` string.
 
-    This does **not** change what :func:`measure_signals_width` (and
-    therefore :data:`SIGNALS_FULL_WIDTH`) declares: those still run the
-    string-only ``_row`` over the two builders' own ``parts``, unmodified,
-    because the identity's old ``short_label`` length is what that published
-    worst case is measured against, and it must keep being measured that
-    way for the constant to mean what it says.  The two rows this touches
-    are nowhere near that panel's binding row (YOU, the widest by 30+
-    columns in both the worst-case probe and the captured payload -- see
-    task-3-report.md), so the two extra icon columns never touch the rail's
-    published width, only these two rows' own honestly-advertised slack.
+    :func:`measure_signals_width` (and therefore :data:`SIGNALS_FULL_WIDTH`)
+    measures exactly this render path (via :func:`_hour_saved_content` /
+    :func:`_whale_content`), icon included, since the fix round that closed
+    the gap where it measured the old ``short_label`` string instead and
+    silently under-counted these two rows by :data:`ICON_COLS`.  The two
+    rows this touches are nowhere near that panel's binding row (YOU, the
+    widest by 30+ columns in both the worst-case probe and the captured
+    payload -- see task-3-report.md), so the published width does not
+    actually move even though the measurement now counts the icon.
     """
     items: list[tuple[object, int]] = [(p, visible_len(p)) for p in lead if p]
     if wallet:
@@ -454,12 +452,13 @@ def _hour_saved_row(data: dict) -> tuple[str | None, list[str]]:
         # HourSaved has never fired on chain and may never; a blank row is
         # indistinguishable from a broken one.
         return "ok", [NEVER_SAVED]
-    wallet = data.get("last_saved_wallet")
+    # The identity part is never built here any more (it used to be
+    # ``by {short_label(...)}``): ``parts`` is only ever read by
+    # :func:`_hour_saved_content` in its *no-wallet* branch, where there was
+    # never an identity to add, so building one here was always dead once
+    # a wallet is present -- the icon-carrying identity is built directly
+    # by :func:`_identity_row` instead.
     parts = [f"hour {hour}"]
-    if wallet:
-        parts.append(
-            f"by {safe_markup(short_label(data.get('last_saved_ens'), wallet))}"
-        )
     age = fmt_age(data.get("last_saved_age_s"))
     if age != DASH:
         parts.append(f"{age} ago")
@@ -475,10 +474,9 @@ def _whale_row(data: dict) -> tuple[str | None, list[str]]:
             # events are older than the window the row is about.
             return None, [f"{DASH} unknown"]
         return "ok", [NO_WHALE]
+    # See `_hour_saved_row`'s own note: the identity part is never built
+    # here -- `_identity_row` builds the icon-carrying one directly.
     parts = [f"[bold]{fmt_eth(amount)} ETH[/]"]
-    wallet = data.get("whale_wallet")
-    if wallet:
-        parts.append(safe_markup(short_label(data.get("whale_ens"), wallet)))
     age = fmt_age(data.get("whale_age_s"))
     if age != DASH:
         parts.append(f"{age} ago")
@@ -489,14 +487,15 @@ def _hour_saved_content(
     label: str, data: dict, width: int, colors: dict[str, str] | None = None,
 ) -> tuple[Text, bool]:
     """:func:`_hour_saved_row`'s row, rendered with a real, clickable
-    identity instead of the ``short_label`` string it still builds for
-    :func:`measure_signals_width`.
+    identity (:func:`_identity_row`) instead of a ``short_label`` string.
 
-    The lead/trail parts are restated here rather than threaded out of
-    ``_hour_saved_row``'s own ``parts`` list, because that list's contract
-    (a plain ``list[str]``) is what :data:`SIGNALS_FULL_WIDTH` is measured
-    against and must not change; see :func:`_identity_row`'s own docstring
-    for why splitting the measurement and the render path this way is safe.
+    This is also :func:`measure_signals_width`'s own measurement path for
+    this row now, so the identity's icon counts toward
+    :data:`SIGNALS_FULL_WIDTH`.  The lead/trail parts are restated here
+    rather than threaded out of ``_hour_saved_row``'s own ``parts`` list,
+    because building the identity there would still leave the *no-wallet*
+    branch's plain-string ``parts`` (used below) needing the same shape
+    either way; see :func:`_identity_row`'s own docstring for the rest.
     """
     state, parts = _hour_saved_row(data)
     hour = data.get("last_saved_hour")
@@ -615,12 +614,31 @@ def measure_signals_width(payload: dict) -> int:
     data is normally in and lets the ``‹ widen`` marker cover the tail, the
     way CLAUDE.md's 143 clears every *layout* rather than every possible
     string.
+
+    HOUR SAVED and WHALE are measured through :func:`_hour_saved_content`
+    and :func:`_whale_content` -- the same functions ``_render_view`` calls
+    to paint them -- rather than through the plain-string ``_BUILDERS`` +
+    :func:`_row` path the other five rows still use: this rail's real,
+    icon-carrying identity is a ``Text``, and this function used to measure
+    the ``short_label`` string that identity replaced, silently
+    under-counting the two rows that ever carry a copy icon by
+    :data:`ICON_COLS`.  ``colors=None`` is fine for a *measurement* -- a
+    resolved colour changes no cell's width, only its foreground -- so the
+    icon-side fallback colours (:data:`_TOKEN_FALLBACK`) are never resolved
+    here.
     """
     widest = 0
     for key, label in zip(SIGNAL_KEYS, SIGNAL_LABELS):
-        state, parts = _BUILDERS[key](payload)
-        markup, _starved = _row(label, state, parts, 0)
-        widest = max(widest, visible_len(markup))
+        if key == "hour_saved":
+            content, _starved = _hour_saved_content(label, payload, 0)
+        elif key == "whale":
+            content, _starved = _whale_content(label, payload, 0)
+        else:
+            state, parts = _BUILDERS[key](payload)
+            markup, _starved = _row(label, state, parts, 0)
+            content = markup
+        width = content.cell_len if isinstance(content, Text) else visible_len(content)
+        widest = max(widest, width)
     return widest + 2
 
 
@@ -651,9 +669,11 @@ def measure_signals_width(payload: dict) -> int:
 #:   ``hour_seconds_left`` is 99 hours: ``hourDuration`` is an immutable, so
 #:   the countdown is not guaranteed to be the 3600 this deployment uses.
 WIDTH_PROBE = {
-    # `short_label` caps a name at ADDR_COLS, so the widest a name can render is
-    # exactly as wide as the hex it replaces -- which is why ENS cannot move any
-    # measured width on this screen (PRD §13 A9).
+    # `address_text`'s `label=` is capped at NAME_COLS (12) here (see
+    # `_identity_row`'s own `width=NAME_COLS` call); these two probe values
+    # are 11, one column under that cap and already the widest an ENS name
+    # can be measured at without moving `_IDENTITY_FIELDS`-shaped values
+    # here, so ENS still cannot move the measured worst case (PRD §13 A9).
     "whale_ens": "w" * 11,
     "last_saved_ens": "s" * 11,
     "phase": "judged",
@@ -861,8 +881,11 @@ class CuratorSignals(Vertical):
                     state, parts = _BUILDERS[key](payload)
                     content, row_starved = _row(label, state, parts, width)
             except Exception:
-                # One malformed value costs its row's value, never the rail.
-                content, row_starved = _head(label, None), False
+                # One malformed value costs its row's value, never the rail
+                # (CLAUDE.md: never a blank panel) -- the pre-Task-3 shape,
+                # restored: the head plus the explicit unknown value, not a
+                # bare head with nothing after it.
+                content, row_starved = _row(label, None, [f"{DASH} unknown"], width)
             starved = starved or row_starved
             try:
                 row = self.query_one(f"#curator-sig-{key}", Static)

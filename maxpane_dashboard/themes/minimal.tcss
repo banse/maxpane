@@ -2594,8 +2594,12 @@ CuratorHero {
     padding: 0 1;
 }
 
-/* The `l` record view owns a separate hero; no horizontal padding leaves a
- * full 42-column wallet address available in the middle card at 138 columns. */
+/* The `l` record view owns a separate hero; no horizontal padding here, and
+ * (since the 2026-09-14 address-copy-icon fix round) no per-box margin in
+ * `widgets/curator/list_hero.py`'s own DEFAULT_CSS either, together give the
+ * middle card the full 44-column wallet address + copy icon it needs at the
+ * documented 138-column screen (`CURATOR_FULL_LAYOUT_COLUMNS`'s `#:` block
+ * in `screens/curator.py` carries the measurement). */
 CuratorListHero {
     width: 1fr;
 }

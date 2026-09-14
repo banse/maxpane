@@ -62,25 +62,60 @@ def nft_collection_key(chain: str, address: str) -> str:
     return f"{chain}:{address.casefold()}"
 
 
+#: The anti-poisoning window (PRD §3.2 AMENDED), duplicated from
+#: ``widgets/address._window`` rather than imported: ``data/`` may not
+#: import ``widgets/address`` (the layering runs the other way), and this
+#: module's own :func:`custom_nft_label` needs it for the flat "NFT ..."
+#: prose ``filter_summary()`` builds, which no widget parses back into a
+#: clickable region.  ``width=11`` is :data:`MIN_SHORT_COLS`'s own value
+#: (curator's historic 4/4 form): kept in step by
+#: ``test_the_data_layer_window_matches_widgets_address`` on the test side,
+#: since neither module may import the other to share it directly.
+def _windowed(address: str, width: int = 11) -> str:
+    if len(address) <= width:
+        return address
+    budget = width - 3
+    tail = min(6, budget // 2)
+    head = budget - tail
+    return f"0x{address[2:2 + head]}…{address[-tail:]}"
+
+
 def custom_nft_label(chain: str, address: str) -> str:
     """The fallback label for a custom NFT collection with no resolved name.
 
-    Publishes the **full** address rather than a pre-shortened one (this
-    used to return ``f"{prefix} {address[:6]}…{address[-4:]}"``, a 6/4 hand
-    slice outside the anti-poisoning window every other address cell in
-    this app now goes through).  ``data/`` may not import ``widgets/address``
-    -- the layering runs the other way -- so windowing the address for
-    display, and attaching a copy icon where a consuming widget can, is the
-    widget's job (the copy-icon conversion recipe's own rule: a data layer
-    that shortens an address before the widget reaches it is exactly the
-    pattern this app is removing). This label reaches
-    ``filter_summary()``'s flat "NFT ..." prose clause today, which no
-    widget in this task's scope parses back into a clickable region --
-    ``widgets/curator/list_filter.py``, the one place a *selected*
-    collection renders on its own line, is untouched by Task 3.
+    Windowed again (4/4, :func:`_windowed`), not the full bare address this
+    briefly became: a full address here made one nameless custom collection
+    alone collapse ``filter_summary()``'s "NFT ..." clause to "multiple
+    filters applied" (the clause no longer fit the hero's filtered-view
+    budget), and in ``widgets/curator/list_filter.py``'s selected-collection
+    grid a too-long label lets CSS ellipsis cut the **tail**, leaving a
+    head-only address -- exactly the string an attacker mines a vanity
+    prefix to match, and exactly what the anti-poisoning window exists to
+    prevent.  ``data/`` may not import ``widgets/address``, so a widget that
+    wants the copy icon (``list_filter.py``'s grid does; the filter summary
+    does not, since it is prose, not a clickable row) composes
+    ``address_text`` itself over this collection's own ``.address`` field --
+    already published, unchanged, since before this task -- rather than
+    parsing an icon out of this string.
     """
     prefix = "ETH" if chain == "ethereum" else "BASE"
-    return f"{prefix} {address}"
+    return f"{prefix} {_windowed(address)}"
+
+
+def is_custom_nft_fallback_label(chain: str, address: str, label: str) -> bool:
+    """True when *label* is :func:`custom_nft_label`'s own fallback rather
+    than a real resolved or reader-chosen name.
+
+    The two are stored in the same ``NftCollectionRef.label`` field (nothing
+    upstream tags which one it is), so a consuming widget that wants to
+    treat them differently -- show the fallback as a real, clickable address
+    instead of static prose -- compares against what the fallback would
+    produce for this exact chain/address rather than guessing from shape.
+    A reader-chosen name that happens to collide is indistinguishable from
+    the fallback and renders as one; the two forms show the same substance
+    either way, so the collision is cosmetic, not a correctness bug.
+    """
+    return label == custom_nft_label(chain, address)
 
 
 def parse_nft_collection(value: object) -> NftCollectionRef:

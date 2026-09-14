@@ -52,8 +52,6 @@ __all__ = [
     "fmt_points",
     "fmt_pct",
     "hhmm",
-    "short_addr",
-    "short_label",
 ]
 
 #: Unknown scalar.  Two columns, so a dashed cell never re-flows a table.
@@ -64,7 +62,11 @@ DASH = "--"
 #: means "we could not read it".
 EMDASH = "—"
 
-#: Rendered width of :func:`short_addr`, i.e. of ``0x1234…abcd``.
+#: The anti-poisoning window's own width, i.e. of ``0x1234…abcd`` --
+#: :data:`~maxpane_dashboard.widgets.address.MIN_SHORT_COLS`'s value,
+#: matched here rather than imported (this module is pure/stdlib-only,
+#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS`-adjacent code lives
+#: in the widgets that call ``address_text`` with it).
 #:
 #: **Eleven, not thirteen.**  PRD §4 writes "``0x1234…abcd`` (13 cols)" and
 #: the two halves of that sentence disagree: the literal form it names is
@@ -281,50 +283,11 @@ def hhmm(timestamp) -> str:
     return f"{t.tm_hour:02d}:{t.tm_min:02d}"
 
 
-def short_label(name, address) -> str:
-    """A verified ENS name if there is one, else :func:`short_addr`.
-
-    **Exactly :data:`ADDR_COLS` columns or fewer, always.**  A name is
-    attacker-supplied and can be 255 characters, so it is truncated to the
-    address cell's own width rather than allowed to widen a table -- every
-    width in this dashboard was measured against a hex address, and a panel
-    that grows when a stranger registers a long name is a panel whose measured
-    width was fiction.  The full name has room in the wallet view's own panel,
-    which is where it is shown whole.
-
-    Returns raw, unescaped text: names are the most attacker-controlled strings
-    on this screen and the caller escapes, the same contract ``short_addr``
-    keeps.
-    """
-    if isinstance(name, str):
-        cleaned = " ".join(name.split())
-        if cleaned:
-            if len(cleaned) <= NAME_COLS:
-                return cleaned
-            return f"{cleaned[: NAME_COLS - 1]}…"
-    return short_addr(address)
-
-
-def short_addr(value) -> str:
-    """``0x1234…abcd`` — :data:`ADDR_COLS` columns, both ends kept.
-
-    Lower-cased on purpose.  Addresses reach this dashboard from two
-    sources with two spellings: ``eth_call`` returns are decoded to a
-    checksummed string and log topics decode to lowercase hex, so the same
-    wallet would otherwise render two ways in two panels and the
-    leaderboard's "this row is you" match would depend on which panel you
-    read.  One spelling, everywhere, and the comparison upstream is
-    case-insensitive for the same reason.
-
-    Returns raw, unescaped text — including for short inputs, which pass
-    through verbatim so a mangled payload is visible rather than dressed up
-    as an address.  The caller escapes.
-    """
-    if value is None:
-        return DASH
-    s = str(value).strip().lower()
-    if not s:
-        return DASH
-    if len(s) <= ADDR_COLS:
-        return s
-    return f"{s[:6]}…{s[-4:]}"
+# `short_label` and `short_addr` were deleted here in Task 3's own
+# 2026-09-14 fix round (recipe step 2, "delete the private formatter"):
+# every curator widget that used to call them now composes
+# `widgets.address.address_text` directly, which carries a real copy icon
+# neither of these plain-string formatters could. `ADDR_COLS`/`NAME_COLS`
+# stay -- they are still the measured width every identity cell in this
+# package is sized from, `address_text`'s own `width=` argument now rather
+# than these two functions' internal cap.

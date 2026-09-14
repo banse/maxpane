@@ -35,10 +35,18 @@ has, which is what one payload in hand needs.
 
 from __future__ import annotations
 
+from rich.style import Style
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import (
+    ICON_COLS,
+    MIN_SHORT_COLS,
+    address_text,
+    is_address,
+)
 from maxpane_dashboard.widgets.curator._fmt import (
     COMPACT_ETH_PROBE,
     DASH,
@@ -280,11 +288,21 @@ class _FactsPanel(Vertical):
     /* auto, never 1fr: inside an auto-height row a 1fr body claims the whole
        remaining screen and starves the panels beside it down to their title
        line -- measured, and it is the same shape as the `#bottom-row` note in
-       minimal.tcss. */
+       minimal.tcss. `nowrap` + `ellipsis` keep a too-long line to the one row
+       this panel's `height: auto` budgets for it: without them Static wraps
+       a line that does not fit, and `height: auto` grows to hold the wrapped
+       second row -- silently, since the rail's own contract already
+       announces a shed line with `‹ widen` rather than showing more of it.
+       That silence was latent until the wallet line's copy icon (Task 3's
+       fix round) pushed a line that fit *exactly* two columns over: the
+       body grew from 2 rows to 3, and the rail's own measured minimum
+       height pin (`WALLET_MIN_HEIGHT`) went stale under it. */
     _FactsPanel > .curator-facts-body {
         width: 100%;
         height: auto;
         padding: 0 1;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
     }
     """
 
@@ -509,6 +527,85 @@ class CuratorWalletAddress(_FactsPanel):
             lines.append(("ens", [ENS_PENDING if self._payload.get("pending")
                                   else NO_ENS]))
         return lines
+
+    def _success_color(self) -> str:
+        """The app's current concrete ``success`` colour, or the plain Rich
+        fallback when unavailable (not yet mounted, no theme) -- Rich's own
+        ``Style`` cannot resolve the ``$success`` token the shared
+        ``_FactsPanel._render_view`` embeds in markup for every other panel
+        here (the ``surf/pool4u_hero`` "$ trap"), which is why this one
+        widget overrides that renderer instead of reusing it."""
+        try:
+            return self.app.get_css_variables().get("success", "green")
+        except Exception:
+            return "green"
+
+    def _render_view(self) -> None:
+        """Overrides ``_FactsPanel``'s shared, markup-string renderer.
+
+        Only this panel's ``wallet`` line ever carries a real address (the
+        other three ``_FactsPanel`` widgets -- STANDING, NEXT, TARGET --
+        show facts about the reader's own wallet, never the address again),
+        so only this one needs a pre-built ``Text`` (the copy icon's
+        ``Style(meta=...)`` span only survives outside markup parsing) and
+        a resolved colour in place of the shared ``[bold $success]`` markup.
+        Every other behaviour (the label column, the gutter marker, the
+        ``‹ widen`` title/body placement) matches the shared renderer this
+        replaces -- this widget's own lines never carry more than one part
+        each, so the shared "drop parts from the end" shedding never has
+        anything to drop; a too-wide single part still renders whole and
+        only lights the marker, exactly as the shared renderer's own
+        single-part case already did.
+        """
+        try:
+            title = self.query_one(".curator-facts-title", Static)
+            body = self.query_one(".curator-facts-body", Static)
+        except Exception:  # not composed yet
+            return
+
+        width = max(self.content_size.width - 2, 0)
+        success = self._success_color()
+        line_texts: list[Text] = []
+        shed = False
+        for line in self._lines():
+            label, parts = line[0], line[1]
+            marker = line[2] if len(line) > 2 else GUTTER
+            head = f"{label:<{LABEL_COLS}}{marker}"
+            value = parts[0] if parts else ""
+            is_addr = is_address(value)
+            line_text = Text(head)
+            if label and is_addr:
+                # Full address when the panel has room (unchanged from
+                # before the copy icon existed); windowed -- never below
+                # the anti-poisoning floor -- when it does not, so the
+                # icon this line exists to add is never the thing that
+                # gets silently dropped (the surf STAKERS precedent: full
+                # form when there is room, a windowed form the icon still
+                # fits inside otherwise). `short_address`'s own clamp
+                # (``max(width, MIN_SHORT_COLS)``) makes a negative or
+                # tiny budget safe to pass through unclamped here -- a
+                # windowed line the icon still fits beside is the designed
+                # fallback, not a shed line, so only a budget too tight
+                # even for that (below the clamp) counts as one.
+                budget = width - len(head) - ICON_COLS if width else None
+                if budget is not None and budget < MIN_SHORT_COLS:
+                    shed = True
+                line_text.append_text(
+                    address_text(value, width=budget, style=success)
+                )
+            elif label:
+                if width and len(head) + len(value) > width:
+                    shed = True
+                line_text.append(value, style=Style(color=success, bold=True))
+            else:
+                line_text.append(value)
+            line_texts.append(line_text)
+
+        text, placed = title_with_hint(self.TITLE, WIDEN_HINT if shed else "", width)
+        title.update(text)
+        if shed and not placed:
+            line_texts.insert(0, Text(WIDEN_HINT, style="yellow"))
+        body.update(Text("\n").join(line_texts))
 
 
 #: The three verdicts ``you_linked_state`` may hold; ``None`` — the sweep has

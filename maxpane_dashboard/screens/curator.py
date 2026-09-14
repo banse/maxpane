@@ -170,6 +170,7 @@ from maxpane_dashboard.data.curator_list_filters import (
     FilterValidationError,
     empty_filter_values,
     filter_summary,
+    is_custom_nft_fallback_label,
     parse_filter_values,
     parse_nft_collection,
     preset_filter,
@@ -325,9 +326,27 @@ CLUSTERS_ID = "curator-clusters"
 #: lights ``‹ widen`` here at any width (the surf announce-feed precedent),
 #: which is correct and must never be silenced by raising this constant.
 #:
-#: The `l` body's separate composited sweep clears every NFT-aligned column at
-#: **93** for both raw and cleaned tables. It therefore does not alter this
-#: dashboard-layout pin and remains comfortably inside the app-wide 143.
+#: The `l` body's separate composited sweep clears every column at **143**
+#: (the app-wide binder, ``__main__.FULL_LAYOUT_COLUMNS``) for both raw and
+#: cleaned tables, at both a tall and a short terminal (WP6's `_HEIGHTS`).
+#: It therefore does not alter this dashboard-layout pin.
+#:
+#: **Corrected from "93" during the 2026-09-14 fix round on Task 3's
+#: address-copy-icon review.** "93" predated this re-sweep's own method (a
+#: composited, column-by-column measurement rather than an estimate) and
+#: was already wrong for the table's shape it describes: the RAW table's
+#: own DataTable full tier needed **140** content columns before this task
+#: ever touched ``lists.py`` (measured directly off
+#: ``widgets/curator/lists._RAW_TIERS``, git history at ``56a5df6``), which
+#: was already ~142 terminal columns, nowhere near 93 -- a stale number
+#: nobody had re-swept since the table grew past it. Growing the ADDRESS
+#: column for its copy icon (``_ADDRESS_COLS_TOTAL``, +2) pushed the real
+#: first-clean-width from 142 to 144, one column past the app-wide 143 this
+#: paragraph already claimed the body stayed inside. Reclaiming one column
+#: from ``_INDEX_COLS`` (it was typed at six for a value and header that
+#: both top out at five, "1,000") brought it back to exactly 143 --
+#: measured, not assumed, by the same column-by-column sweep this note
+#: replaces.
 #:
 #: **The 2026-09-14 address-copy-icon conversion (Task 3) came within one
 #: column of moving it, and the near-miss is the reason to re-sweep here
@@ -344,6 +363,53 @@ CLUSTERS_ID = "curator-clusters"
 #: documented measured worst case; reclaiming both pays the icon at zero
 #: net cost to the row) rather than here, so this pin's own value and this
 #: paragraph's sweep are the only trace of it.
+#:
+#: **The ``l`` view's own three-card hero (``CuratorListHero``) needed the
+#: same one column and was first paid for asymmetrically -- reverted during
+#: review.** The wallet card's address line measured content_size 43 against
+#: a 44-need (the 42-char address + ``ICON_COLS``) at this pin. The first
+#: fix dropped only that one card's left border (``border-left: none``),
+#: which worked but left a three-sided card between two four-sided ones --
+#: a visible asymmetry nobody had signed off on. The actual cause, per
+#: review: all three cards carry ``margin: 0 1`` (2 columns each), and with
+#: three ``1fr`` siblings in one ``Horizontal``, Textual sums every child's
+#: margin and subtracts it from the row *before* the fr split -- six margin
+#: columns came off this 138 before three boxes split what was left, on top
+#: of the two spent on each card's own left+right border. Zeroing the
+#: margin -- one rule, all three cards, every card keeping its full four
+#: borders -- gives each box exactly 46 columns (138 / 3, evenly, no
+#: remainder) for 44 of content: summary and filter grew from 42/43 to 44
+#: too, so their own five-line contracts (CLAUDE.md "THE LIST record-list
+#: hero cards") have strictly more room than before, not less, and no card
+#: composites a ``‹ widen`` marker at this pin. See
+#: ``widgets/curator/list_hero.py``'s own ``DEFAULT_CSS`` comment for the
+#: box-by-box numbers; the STAKERS-precedent windowed-fallback design was
+#: not needed.
+#:
+#: **The ``y`` view's identity panel (``CuratorWalletAddress``) hit the same
+#: shortfall and this time the STAKERS-precedent fallback is the fix.** Its
+#: "wallet" line measured a body content width of 51 at this pin (138), and
+#: the icon needs 53 (head 9 + address 42 + ``ICON_COLS`` 2) -- an exact-fit
+#: line before Task 3, so there was no slack for the icon to grow into.
+#: Unlike the list hero, this panel shares its width with three siblings
+#: (``CuratorWalletStanding``/``Next``/``Target``) inside one ``2fr`` rail
+#: column beside a ``3fr`` ladder table, and both the shared label column
+#: (``LABEL_COLS``, exactly ``len("to beat")``) and the gutter (exactly wide
+#: enough for the ``≥ `` glyph, see ``GE``/``GUTTER``) are already measured,
+#: load-bearing constants with nothing spare to reclaim -- widening the
+#: rail's own ``fr`` share would cost the ladder table's own measured tiers
+#: instead, a wider blast radius than one panel's copy icon should spend.
+#: So ``CuratorWalletAddress._render_view`` shows the full address when the
+#: panel has room (unchanged) and windows it -- never below
+#: ``MIN_SHORT_COLS``, icon always attached -- when it does not, exactly the
+#: surf STAKERS shape. Two pre-existing tests pinned the old exact-fit
+#: shape and were updated rather than the layout:
+#: ``test_the_wallet_view_clears_at_the_pinned_full_layout_width`` (the
+#: windowed line no longer lights ``‹ widen`` -- windowing to a size the
+#: icon still fits inside is the designed fallback, not a shed line) and
+#: ``test_the_address_appears_the_instant_it_is_typed`` (checks
+#: ``icon_targets`` now rather than a literal full-address substring, since
+#: the composited text may legitimately show the windowed form).
 CURATOR_FULL_LAYOUT_COLUMNS = 138
 
 #: The three flat-dict keys the screen renders itself -- the title bar's
@@ -1332,6 +1398,16 @@ class CuratorScreen(RefreshGuard, Screen):
             "label": item.label,
             "chain": item.chain,
             "address": item.address,
+            # Computed here, not in the widget: widgets may not import
+            # `data/` (test_no_curator_widget_imports_data_or_analytics),
+            # so `list_filter.py` cannot call
+            # `is_custom_nft_fallback_label` itself to tell a resolved/
+            # reader-chosen name apart from `custom_nft_label`'s own
+            # windowed fallback -- the screen computes the flag and hands
+            # it across as plain data.
+            "is_fallback": is_custom_nft_fallback_label(
+                item.chain, item.address, item.label
+            ),
         }
 
     def _custom_nft_values(self, editor) -> list[dict[str, str]]:

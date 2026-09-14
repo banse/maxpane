@@ -35,14 +35,20 @@ Width behaviour
 ==========  ====  ==============================================
 Tier        Cost  Columns
 ==========  ====  ==============================================
-full          39  RANK  WALLET(12)  POINTS  CREDIT
-no-credit     31  RANK  WALLET(12)  POINTS
-minimal       23  RANK  WALLET(12)
+full          41  RANK  WALLET(12) ⧉  POINTS  CREDIT
+no-credit     33  RANK  WALLET(12) ⧉  POINTS
+minimal       25  RANK  WALLET(12) ⧉
 ==========  ====  ==============================================
 
-The identity cell is the leaderboard's exactly: ``short_label`` over
-``NAME_COLS``, so a stranger's 255-character registration can never widen
-this table, and every cell is escaped before it reaches the ``DataTable``.
+The identity cell is the leaderboard's, sized the same way: the shown
+name/address is capped at :data:`NAME_COLS` (a stranger's 255-character
+registration can never widen this table) and the copy icon adds
+:data:`ICON_COLS` on top, local to this panel's own ``_WALLET_COLS`` rather
+than the shared constant.  Was 39/31/23 before the copy-icon conversion
+(Task 3, 2026-09-14); this panel is stacked full-width in the `f` body with
+no shared-row seam to starve, so it is a plain grow with no shortening.
+``address_text`` builds the cell as a pre-styled ``Text``, so escaping is
+its job now, not ``safe_markup``'s.
 
 Primitives only — this module imports nothing from ``data/`` or
 ``analytics/``.
@@ -55,13 +61,13 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.curator._fmt import (
     COMPACT_ETH_COLS,
     DASH,
     NAME_COLS,
     fmt_eth_compact,
     fmt_points,
-    short_label,
 )
 from maxpane_dashboard.widgets.curator._table import (
     WIDEN_HINT,
@@ -117,13 +123,23 @@ _PTS_COLS = len(f"{MAX_CURVE_POINTS:,}")
 #: both six.
 _CREDIT_COLS = max(COMPACT_ETH_COLS, len("CREDIT"))
 
+#: WALLET's total column width: the identity budget (:data:`NAME_COLS`,
+#: unchanged) plus the copy icon's two cells, local to this panel exactly
+#: like ``leaderboard.py``'s own ``_WALLET_COLS``.  This panel is stacked
+#: full-width in the `f` body (screens/curator.py: the analysis body stacks
+#: three panels so each reaches its own full tier at 138), so there is no
+#: shared-row seam to starve -- a plain grow, re-swept against the `f` body
+#: sweep (`test_the_analysis_binding_panel_is_the_operators_table`, which
+#: stays bound by OPERATORS' 82-column evidence cell, not this panel).
+_WALLET_COLS = NAME_COLS + ICON_COLS
+
 _TIERS = (
     (
         "full",
-        39,
+        41,
         (
             ("rank", "RANK", _RANK_COLS),
-            ("wallet", "WALLET", NAME_COLS),
+            ("wallet", "WALLET", _WALLET_COLS),
             ("points", "POINTS", _PTS_COLS),
             ("credit", "CREDIT", _CREDIT_COLS),
         ),
@@ -131,20 +147,20 @@ _TIERS = (
     ),
     (
         "no-credit",
-        31,
+        33,
         (
             ("rank", "RANK", _RANK_COLS),
-            ("wallet", "WALLET", NAME_COLS),
+            ("wallet", "WALLET", _WALLET_COLS),
             ("points", "POINTS", _PTS_COLS),
         ),
         "‹ widen: CREDIT",
     ),
     (
         "minimal",
-        23,
+        25,
         (
             ("rank", "RANK", _RANK_COLS),
-            ("wallet", "WALLET", NAME_COLS),
+            ("wallet", "WALLET", _WALLET_COLS),
         ),
         "‹ widen: CREDIT + POINTS",
     ),
@@ -173,9 +189,17 @@ def _row_values(row: dict) -> dict:
         rank_str = f"#{int(rank):,}"
     except (TypeError, ValueError):
         rank_str = DASH
+    address = row.get("address")
+    if isinstance(address, str):
+        # Lower-cased on purpose, ``leaderboard.py``'s own reason: two
+        # sources spell one wallet two ways, and the icon copies whichever
+        # spelling this cell was given.
+        address = address.lower()
     return {
         "rank": rank_str,
-        "wallet": safe_markup(short_label(row.get("name"), row.get("address"))),
+        "wallet": address_text(
+            address, label=(row.get("name") or None), width=NAME_COLS
+        ),
         "points": fmt_points(row.get("points")),
         "credit": fmt_eth_compact(row.get("credit_eth")),
     }
