@@ -988,3 +988,63 @@ catches it for flow only. The hook-log read on its own can still come back empty
 isn't reading. The new `flow-swaps` / `quiet-burn` modes use a corrected tuple at `:322-327`; the
 older modes do not. Script only, never imported, so no user impact. A re-capture through the old
 modes will simply waste attempts.
+
+## F15 — `SurfPool4Flow`'s per-instance flags are vestigial now that the `p` body has no copy (filed, deliberately unfixed)
+
+**Filed by:** the 2026-09-14 POOL4 FLOW removal. **Severity:** cleanup; no user impact today, one
+untested code path.
+
+`SurfPool4Flow.__init__` takes `quiet_mainnet` and `quiet_as_of`, both defaulting to `False`. The
+`4` body mounts it as `SurfPool4Flow(quiet_mainnet=True, quiet_as_of=True, classes="market")`
+(`screens/surf.py`, the `POOL4_USER_MIDDLE_ID` row). The flags exist because the class was mounted
+twice: the `p` body's copy had to keep `· MAINNET` and its `as of` note, while the `4` body's copy
+dropped both, and a module-level switch could not say that. The owner removed the `p` copy as a
+duplicate of RECENT FLOW, so the second mount is gone and three things are now vestigial:
+
+- **The `False` default path is rendered by nothing on screen.** Measured by mutation on
+  2026-09-14, restored and hash-checked afterwards. With `quiet_as_of` defaulting to `True`,
+  `test_surf_pool4_market_screen.py`, `test_surf_pool4_quiet_burn.py` and `test_surf_screen.py -k
+  "pool4 or flow or market"` report **328 passed, 0 failed**, and the same holds for `quiet_mainnet`.
+  Before the removal, the first of those mutations reddened
+  `test_every_auditor_panel_still_renders_its_own_as_of_marker[SurfPool4Flow]`; that case left with
+  the panel. Only the widget file that mounts the class bare still sees either default:
+  `tests/widgets/test_surf_pool4_left.py::test_a_hostile_as_of_marker_is_stripped_and_not_merely_escaped`
+  for `quiet_as_of` and `::test_the_panel_title_never_goes_networkless` for `quiet_mainnet`.
+- **`classes="market"` scopes nothing.** No rule in `SurfScreen.DEFAULT_CSS`, `themes/minimal.tcss`
+  or the widget's own `DEFAULT_CSS` selects `.market`. The one-day `.market` scope on the title margin
+  was removed on 2026-09-12.
+- **The unscoped `SurfPool4Flow { width: 1fr; height: 1fr; min-height: 6 }` rule** in both CSS copies
+  now styles one instance. That is harmless and it stays; it is noted so nobody reads it as a
+  `p`-body rule.
+
+**Why not collapsed in the removal commit.** Folding the flags away means making the market
+rendering (no network word on mainnet, no note `Static`) the widget's only rendering. That changes
+the class's standalone rendering, its `compose`, and the two widget tests above, which is a
+behaviour change to a panel the owner did not ask to change. It does not belong inside a diff whose
+claim is "one mount removed, the `4` body identical to the pixel". It is its own refactor with its
+own review.
+
+**When it is done:**
+
+- delete both keywords and the `classes="market"` argument;
+- re-point the two widget tests at the one rendering;
+- keep the Sepolia half of `test_the_market_panels_leave_mainnet_unsaid_and_say_everything_else`,
+  because `· SEPOLIA` must still print;
+- decide whether `_do_refresh`'s `self.query(SurfPool4Flow)` loop stays for a future second mount,
+  or becomes `query_one` resolved through `#surf-pool4-user-middle`. Either is defensible; it is
+  a choice to make, not a default to inherit.
+
+## F16 — `HATCHES_PINNED_PANEL_COLUMNS = 50` matches the screen at neither pin (measured, unfixed)
+
+**Found by:** the 2026-09-14 POOL4 FLOW removal, while re-sweeping the `p` body's width.
+
+`tests/widgets/test_surf_pool4_rail.py:199-210` says the literal is HATCHES' panel width "measured
+inside `#surf-pool4-left`" at `SURF_POOL4_FULL_LAYOUT_COLUMNS = 106`. Measured on the real screen
+(committed capture, 50 rows), HATCHES is **52** columns at 106 and **49** at 99, the new pin. So the
+literal was already two columns stale before this change. The comment also names the wrong container:
+HATCHES has been in `#surf-pool4-rail` since the mainnet rebalance. The widget tests stay green because
+they mount the panel alone at 50, one column wider than the screen now gives it. What actually proves
+HATCHES whole at 99 is the screen-level sweep (`test_the_pool4_body_is_whole_from_its_pinned_width`).
+The literal should be **re-measured** (49), not re-derived, and its comment's container corrected. It
+was not changed in the removal commit because doing so moves a widget test's premise in a file that
+diff has no other reason to touch.

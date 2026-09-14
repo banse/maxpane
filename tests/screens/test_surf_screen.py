@@ -118,17 +118,18 @@ _LAUNCHPAD_WIDGET_CLASSES = {
     "SurfBurnkeepers": SurfBurnkeepers,
 }
 
-#: The ``p`` POOL4 body's five widgets (2026-09-01).  A **third** role dict
-#: rather than five more entries in the launchpad one, for that dict's own
-#: reason: these two bodies are composed hidden alongside each other and only
-#: one of them can be showing, so "which body is this panel in" is a fact no
-#: introspection can recover and every geometry assertion below needs.
+#: The ``p`` POOL4 body's widgets (2026-09-01) -- **four** since 2026-09-14,
+#: when ``SurfPool4Flow`` left the body (see :data:`_POOL4_USER_WIDGET_CLASSES`
+#: for where it went).  A **third** role dict rather than more entries in the
+#: launchpad one, for that dict's own reason: these bodies are composed hidden
+#: alongside each other and only one of them can be showing, so "which body
+#: is this panel in" is a fact no introspection can recover and every
+#: geometry assertion below needs.
 #:
 #: In left-then-rail, top-to-bottom order, which is also the ``compose`` order.
 _POOL4_WIDGET_CLASSES = {
     "SurfPool4Split": SurfPool4Split,
     "SurfPool4Ratchet": SurfPool4Ratchet,
-    "SurfPool4Flow": SurfPool4Flow,
     "SurfPool4Hatches": SurfPool4Hatches,
     "SurfPool4Vault": SurfPool4Vault,
 }
@@ -140,22 +141,24 @@ _POOL4_WIDGET_CLASSES = {
 #: to a role -- "composed hidden, shown with a body" -- that ``_WIDGET_CLASSES``
 #: ("always mounted and visible") cannot describe.
 #:
-#: ``SurfPool4Flow`` is deliberately **absent**: the market body's RECENT FLOW
-#: is a second *instance* of the class already named in
-#: :data:`_POOL4_WIDGET_CLASSES`, not a second class (PRD §6.4 reuses the
-#: module rather than copying it).  These dicts are keyed by class name and a
-#: name can appear in exactly one of them -- which is what
+#: ``SurfPool4Flow`` **moved into this dict on 2026-09-14.** It was the one
+#: class mounted in both bodies (PRD §6.4 reuses the module rather than
+#: copying it), so it lived in :data:`_POOL4_WIDGET_CLASSES` as the ``p``
+#: body's entry and this body's instance was covered by that. The owner
+#: removed the ``p`` body's copy as a duplicate of RECENT FLOW, so the class
+#: has exactly one mount site now and it is here. A name still appears in
+#: exactly one role dict --
 #: ``test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget``
-#: asserts -- so the instance that lives here is covered by the ``p`` body's
-#: entry and by ``tests/screens/test_surf_pool4_market_screen.py``'s
-#: ``test_recent_flow_is_the_same_class_mounted_twice``, which pins that there
-#: are exactly two of them and that both are handed the same rows.
+#: -- and ``tests/screens/test_surf_pool4_market_screen.py``'s
+#: ``test_recent_flow_is_mounted_once_in_the_4_body_only`` pins the single
+#: instance.
 _POOL4_USER_WIDGET_CLASSES = {
     "SurfPool4UserHero": SurfPool4UserHero,
     "SurfPool4UStakers": SurfPool4UStakers,
     "SurfPool4UBurn": SurfPool4UBurn,
     "SurfPool4USignals": SurfPool4USignals,
     "SurfPool4UDepth": SurfPool4UDepth,
+    "SurfPool4Flow": SurfPool4Flow,
 }
 
 #: Both halves together -- **derived from the package**, not from the two
@@ -3037,12 +3040,12 @@ def _record_dispatches(screen) -> dict[str, list[dict]]:
         return recorder
 
     for name, cls in _ALL_WIDGET_CLASSES.items():
-        # EVERY instance, not `query_one`. `SurfPool4Flow` is mounted twice
-        # since 2026-09-11 -- the `4` body's RECENT FLOW reuses the class
-        # rather than copying the module -- and Textual's `query_one` returns
-        # the first match without complaining, so wrapping one instance would
-        # leave the other's dispatch unrecorded and this file's completeness
-        # sweeps would be measuring half of it.
+        # EVERY instance, not `query_one`. `SurfPool4Flow` was mounted twice
+        # from 2026-09-11 until 2026-09-14, when the `p` body's copy was
+        # removed, and Textual's `query_one` returns the first match without
+        # complaining -- so wrapping one instance would have left the other's
+        # dispatch unrecorded. One instance remains; the loop stays so a
+        # future second mount cannot halve this file's completeness sweeps.
         widgets = list(screen.query(cls))
         assert widgets, f"{name} is exported but never mounted"
         for widget in widgets:
@@ -6375,23 +6378,22 @@ def _pool4_app(payload: dict | None = None) -> App:
 #: mainnet rebalance by changing sides. It used to read "the rail needs 43
 #: *because* ``SurfPool4Hatches`` is in the other column". HATCHES is now in
 #: the rail, the rail needs 50 *because* it is, and quoting that 50 as
-#: evidence the swap was right is the identical circle mirrored. Rendered
-#: instead, in both directions: the pin is **106 either way**, with
-#: ``SurfPool4Flow`` binding at 105 either way under the pinned seam. The
+#: evidence the swap was right is the identical circle mirrored. The
 #: arrangement was chosen on rows, not columns --
 #: ``screens/surf.SURF_POOL4_FULL_LAYOUT_ROWS`` carries that measurement.
 #:
-#: Both were re-measured on 2026-09-02 against the layout the screen now
-#: builds, across all three payload magnitudes, and the rail's moved:
-#: left = max(FLOW 53, RATCHET 45, SPLIT 36); rail = max(HATCHES 50,
-#: VAULT 44).
-POOL4_LEFT_NEED = 53        # SurfPool4Flow's, plus the column's own gutter
+#: Re-measured on 2026-09-02 across all three payload magnitudes, and again on
+#: **2026-09-14** when POOL4 FLOW left the body: left = max(RATCHET 45,
+#: SPLIT 36) -- it was FLOW's 53 -- and rail = max(HATCHES 50, VAULT 44),
+#: unchanged. The rail binds now.
+POOL4_LEFT_NEED = 45        # SurfPool4Ratchet's, plus the column's own gutter
 POOL4_RAIL_NEED = 50        # SurfPool4Hatches', plus the column's own gutter
 
 #: An independent literal for the same reason ``MEASURED_FULL_LAYOUT_COLUMNS``
 #: is one: a test that aliased the screen's constant would compare a number
-#: against itself and pin nothing.
-MEASURED_POOL4_COLUMNS = 106
+#: against itself and pin nothing. 106 until 2026-09-14; swept 86..125 on
+#: three payloads when POOL4 FLOW left the body.
+MEASURED_POOL4_COLUMNS = 99
 MEASURED_POOL4_ROWS = 45
 
 
@@ -6449,14 +6451,15 @@ def _ordinary_pool4_payload() -> dict:
 def _clipped_pool4_lines(app, screen) -> list[str]:
     """Every composited line in the ``p`` body that **CSS** truncated.
 
-    The five panels, never their two containers -- and through
+    The panels, never their two containers -- four since POOL4 FLOW left
+    the body on 2026-09-14 -- and through
     :func:`_css_clipped_lines`, which walks each panel to the leaf that
     actually painted the line and measures that leaf's own
     ``content_region``. Read that function for why both halves of the old
     rule survive the change; the half this body specifically depends on is
     its third test -- the source line must have been wider than the box --
-    because four of these five panels fit their own third-party strings to
-    their own tier width and HATCHES means its ellipsis. Without it this
+    because these panels fit their own third-party strings to their own tier
+    width and HATCHES means its ellipsis. Without it this
     body reports 66 clipped lines it never lost a character to, measured.
 
     It used to do the arithmetic here, as ``region.width - 1`` on the panel,
@@ -6656,7 +6659,7 @@ async def test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout() -> No
 # -- the body's shape and its dispatch ------------------------------------
 
 
-async def test_the_pool4_body_holds_five_panels_in_two_columns() -> None:
+async def test_the_pool4_body_holds_four_panels_in_two_columns() -> None:
     """Asserted on each container's own children, never on a screen-wide
     query: a panel mounted into the wrong column still answers ``query_one``
     from the screen and would leave this green.
@@ -6665,15 +6668,20 @@ async def test_the_pool4_body_holds_five_panels_in_two_columns() -> None:
     leads the RAIL: plan section 5 R4's day-one state is *undiscovered*, and
     HATCHES is the panel that says so, so it sits at the top of its column
     rather than under a summary of numbers the view has not earned yet. The
-    left column stacks THE SPLIT and THE RATCHET above the flow log, and the
-    two columns then carry 33 rows each at the worst payload, which is what
-    ``SURF_POOL4_FULL_LAYOUT_ROWS`` is measured from.
+    left column is THE SPLIT over THE RATCHET.
+
+    **Four, not five, since 2026-09-14.** This was
+    ``test_the_pool4_body_holds_five_panels_in_two_columns`` and its left
+    column ended in the flow log; the owner removed POOL4 FLOW from ``p``
+    because the ``4`` body's RECENT FLOW renders the same rows. The columns no
+    longer balance -- 28 rows on the left against the rail's 34 at the worst
+    payload -- so the rail alone is what ``SURF_POOL4_FULL_LAYOUT_ROWS`` is
+    measured from.
 
     This docstring said "the rail stacks the three panels whose line count is
     a constant, which is what makes the pin the same number under every
     payload" until 2026-09-02. That property was real and is gone: mainnet's
-    three-way split made THE SPLIT payload-sized as well, and no two-column
-    cut of these five panels can keep both variable panels out of the binder.
+    three-way split made THE SPLIT payload-sized as well.
     """
     async with _pool4_app().run_test(size=(150, 50)) as pilot:
         await pilot.app.screen._do_refresh()
@@ -6683,7 +6691,7 @@ async def test_the_pool4_body_holds_five_panels_in_two_columns() -> None:
         left = screen.query_one(f"#{POOL4_LEFT_ID}")
         rail = screen.query_one(f"#{POOL4_RAIL_ID}")
         assert [type(w) for w in left.children] == [
-            SurfPool4Split, SurfPool4Ratchet, SurfPool4Flow,
+            SurfPool4Split, SurfPool4Ratchet,
         ]
         assert [type(w) for w in rail.children] == [
             SurfPool4Hatches, SurfPool4Vault,
@@ -6702,9 +6710,11 @@ async def test_the_pool4_body_holds_five_panels_in_two_columns() -> None:
 #: never fail. The prose names are the ones a reader sees on screen, which is
 #: why the blocks use them.
 _POOL4_PANEL_PROSE = {
+    # "POOL4 FLOW" left this map on 2026-09-14 with the panel: the owner
+    # removed it from the `p` body, so a column block that names it again is
+    # naming a panel this body does not have, and should fail as unknown.
     "THE SPLIT": SurfPool4Split,
     "THE RATCHET": SurfPool4Ratchet,
-    "POOL4 FLOW": SurfPool4Flow,
     "HATCHES": SurfPool4Hatches,
     "sIMD VAULT": SurfPool4Vault,
 }
@@ -6767,7 +6777,9 @@ async def test_the_pool4_column_blocks_name_the_panels_compose_builds(
     What this does NOT check, said plainly so nobody mistakes its scope: the
     blocks' claims about which child carries the ``1fr``. That is guarded one
     layer down by
-    ``test_exactly_one_pool4_child_per_column_carries_the_fr``, which reads
+    ``test_the_pool4_rail_has_one_floored_fr_and_the_left_column_none``
+    (``test_exactly_one_pool4_child_per_column_carries_the_fr`` until POOL4
+    FLOW left the body on 2026-09-14), which reads
     ``minimal.tcss`` -- the copy that actually renders. Asserting the prose
     version here as well was tried and dropped: every phrasing that survived
     a paragraph reflow also passed for a sentence naming the wrong panel,
@@ -6946,25 +6958,30 @@ async def test_every_pool4_panel_is_dispatched_before_p_is_pressed() -> None:
         await pilot.pause()
         text = _screen_text(pilot.app)
 
-    for title in ("HATCHES", "POOL4 FLOW", "THE SPLIT", "THE RATCHET",
-                  "sIMD VAULT"):
+    for title in ("HATCHES", "THE SPLIT", "THE RATCHET", "sIMD VAULT"):
         assert title in text, title
     # The payload, not just the titles -- a dispatched panel rendering its
-    # empty state would satisfy the five checks above.
-    assert "SELL" in text and "89.10%" in text and "1.302986" in text
+    # empty state would satisfy the four checks above. `SELL` was the third
+    # value here, off POOL4 FLOW, until the owner removed that panel from `p`
+    # on 2026-09-14; THE SPLIT's and sIMD VAULT's values still prove two
+    # panels in different columns rendered their payload, not a placeholder.
+    assert "SELL" not in text
+    assert "89.10%" in text and "1.302986" in text
 
 
 async def test_every_pool4_panel_titles_the_network_it_is_showing() -> None:
     """Plan section 5 R4, and it is a hard failure rather than a cosmetic one.
 
     There is no pool4 hook on mainnet, so what runs on day one is discovery
-    finding nothing and five panels rendering **Sepolia** numbers. A testnet
+    finding nothing and every panel rendering **Sepolia** numbers. A testnet
     number on an unmarked panel is not merely stale, it is fiction presented
     as live -- so the network word rides every panel's own title, not a
-    footnote and not a status-bar mention, and all five have to agree.
+    footnote and not a status-bar mention, and all of them have to agree
+    (four since POOL4 FLOW left the body on 2026-09-14; its title is checked
+    in the ``4`` body now).
 
     Asserted per panel region rather than on the whole screen: ``SEPOLIA``
-    appearing five times anywhere would pass a screen-wide count while four
+    appearing four times anywhere would pass a screen-wide count while three
     panels went networkless.
     """
     async with _pool4_app().run_test(size=(150, 50)) as pilot:
@@ -6987,6 +7004,13 @@ async def test_a_dead_pool4_sweep_leaves_every_panel_explicit() -> None:
     that has never landed looks like. Each panel must say so in its own
     words, and the network word falls back to the em dash rather than
     guessing a chain.
+
+    **Four unavailable lines, not five, since 2026-09-14.** POOL4 FLOW's was
+    one of them until the owner removed that panel from ``p`` as a duplicate
+    of the ``4`` body's RECENT FLOW. Its line is now asserted absent from
+    this body, so a flow panel that came back here would redden this test.
+    The ``4`` body's own outage state is pinned in
+    ``tests/test_surf_registration.py``.
     """
     from maxpane_dashboard.widgets.surf.pool4_flow import (
         UNAVAILABLE_LINE as FLOW_UNAVAILABLE,
@@ -7007,9 +7031,12 @@ async def test_a_dead_pool4_sweep_leaves_every_panel_explicit() -> None:
         await pilot.press("p")
         await pilot.pause()
         text = _screen_text(pilot.app)
-    for line in (FLOW_UNAVAILABLE, HATCHES_UNAVAILABLE, RATCHET_UNAVAILABLE,
-                 VAULT_UNAVAILABLE):
+    for line in (HATCHES_UNAVAILABLE, RATCHET_UNAVAILABLE, VAULT_UNAVAILABLE):
         assert line in text, line
+    assert FLOW_UNAVAILABLE not in text, (
+        "POOL4 FLOW's unavailable line composited on the `p` body, which has "
+        "not carried that panel since 2026-09-14"
+    )
     # The network word is the em dash, not a guessed chain.
     assert "SEPOLIA" not in text and "MAINNET" not in text
 
@@ -7024,6 +7051,12 @@ async def test_a_quiet_pool4_sweep_is_not_a_dead_one() -> None:
     *screen* hands the widget the distinction rather than flattening it on
     the way (``data.get`` returns ``None`` for a missing key and ``[]`` for
     an empty one, and only one of those is an outage).
+
+    **Read off the ``4`` body since 2026-09-14.** It pressed ``p`` until the
+    owner removed POOL4 FLOW from that body as a duplicate of RECENT FLOW. The
+    claim is about the screen's dispatch of ``pool4_flow``, which is
+    unchanged, so the test keeps its name and moves to the one body that
+    still composites the panel.
     """
     from maxpane_dashboard.widgets.surf.pool4_flow import (
         EMPTY_LINE, UNAVAILABLE_LINE,
@@ -7033,14 +7066,14 @@ async def test_a_quiet_pool4_sweep_is_not_a_dead_one() -> None:
         size=(150, 50)
     ) as pilot:
         await pilot.app.screen._do_refresh()
-        await pilot.press("p")
+        await pilot.press("4")
         await pilot.pause()
         quiet = _screen_text(pilot.app)
     async with _pool4_app(_frozen_payload(pool4_flow=None)).run_test(
         size=(150, 50)
     ) as pilot:
         await pilot.app.screen._do_refresh()
-        await pilot.press("p")
+        await pilot.press("4")
         await pilot.pause()
         dead = _screen_text(pilot.app)
 
@@ -7057,20 +7090,19 @@ async def test_a_quiet_pool4_sweep_is_not_a_dead_one() -> None:
 # CLAUDE.md width record is not appended to are in
 # ``SURF_POOL4_FULL_LAYOUT_COLUMNS``' own docstring in ``screens/surf.py``.
 #
-# The sweep runs **96..152**: ten columns below the measured 106 and
-# forty-six above it, never starting at it, and crossing BOTH neighbouring
-# pins (138 and 143) so agreeing with either would have to show up as a sweep
-# result. The brief asked for 118..152; that is a subset of this range and
-# every width in it is above the pin, so on its own the below-the-pin branch
-# would have run zero times. The range was widened downward rather than the
-# pin pushed up to meet it.
+# The sweep runs **86..152**: thirteen columns below the measured 99 and
+# fifty-three above it, never starting at it, and crossing the old 106 and
+# BOTH neighbouring pins (138 and 143) so agreeing with any of them would have
+# to show up as a sweep result. It ran 96..152 against the old pin of 106 and
+# was re-centred downward on 2026-09-14, when POOL4 FLOW left the body and the
+# pin fell to 99: 96 would have left only three widths under the new pin.
 
 
 @pytest.mark.parametrize(
     "payload", [None, "ordinary"],
     ids=["committed-capture", "ordinary-magnitudes"],
 )
-@pytest.mark.parametrize("width", range(96, 153))
+@pytest.mark.parametrize("width", range(86, 153))
 async def test_the_pool4_body_is_whole_from_its_pinned_width(
     width, payload
 ) -> None:
@@ -7146,20 +7178,25 @@ async def test_nothing_below_the_pool4_pin_clips_without_saying_so(
             )
 
 
-async def test_the_pool4_binding_panel_is_the_flow_log() -> None:
+async def test_the_pool4_binding_panel_is_hatches() -> None:
     """Pinned by a test, not by a sentence.
 
-    ``SurfPool4Flow`` is this body's binder, and it is the binder **by
-    construction of the seam** rather than by luck: the left column needs 53
-    screen columns and the rail 43, and 1:1 hands the rail 53 at the pin, so
-    one column below the pin the flow log is the only panel with anything to
-    say and stays the only one under every payload this pipeline produces.
+    **Rewritten on 2026-09-14, when the owner removed POOL4 FLOW from this
+    body** ("it already is covered in the market view now (4)"). Until then
+    this was ``test_the_pool4_binding_panel_is_the_flow_log``: the left column
+    needed FLOW's 53, and under 1:1 the flow log was the only marked panel one
+    column under 106. With FLOW gone the left column needs THE RATCHET's 45
+    and the rail HATCHES' 50, so under the same, un-re-cut 1:1 seam the RAIL
+    binds. One column under the new pin, HATCHES is the only panel with
+    anything to say, on every payload magnitude the re-sweep ran (86..125:
+    the committed capture, the ordinary magnitudes, mainnet with twelve
+    levers).
 
-    That is the property the seam was chosen for. ``3:2`` collects the very
-    same 106 with the *rail* binding, and ``5:4`` collects the arithmetic
-    floor of 96 with FLOW binding but zero margin on both halves -- so
-    neither the pin alone nor the binder alone identifies the layout, and
-    this test is what pins the half the constant cannot.
+    It is asserted separately from the pin because two seams can collect
+    one pin with different panels binding it, and because "a panel that can
+    bind must be able to mark" is a claim about *this* panel. HATCHES'
+    marker is appended to a title, which is the first place a narrow panel
+    gives one up -- the reason the old seam kept it out of the binder role.
     """
     async with _pool4_app().run_test(
         size=(SURF_POOL4_FULL_LAYOUT_COLUMNS - 1, 50)
@@ -7169,7 +7206,7 @@ async def test_the_pool4_binding_panel_is_the_flow_log() -> None:
         await pilot.press("p")
         await pilot.pause()
         marked = _pool4_marked(pilot.app, pilot.app.screen)
-    assert marked == {"SurfPool4Flow"}, marked
+    assert marked == {"SurfPool4Hatches"}, marked
 
 
 async def test_the_pool4_pin_is_the_sum_of_the_needs_it_claims() -> None:
@@ -7177,10 +7214,17 @@ async def test_the_pool4_pin_is_the_sum_of_the_needs_it_claims() -> None:
 
     The sweep above can only see the resulting number, so it stays green if
     the two column needs the docstring names swapped, drifted, or were never
-    true. Measured at the width where each column is exactly on its stated
-    need -- the pin itself, where 1:1 gives the left column 53 -- and the
-    rail's three columns of margin are asserted as margin rather than
-    assumed.
+    true. Measured at the pin itself, where 1:1 gives the rail -- the binder
+    -- exactly its 50 (an odd width's odd column goes to the rail) and the
+    left column 49.
+
+    **The margin changed sides on 2026-09-14, and this is where that is
+    asserted.** The seam was chosen to buy the RAIL three columns of margin
+    while FLOW bound the left column with none. The owner removed FLOW from
+    this body, so the rail now binds with zero margin and four spare columns
+    sit in the left column over THE RATCHET's 45. Both are asserted as
+    numbers, so a seam change or a panel growing a column shows up here
+    rather than as a silent shift in which half is thin.
 
     ``POOL4_LEFT_NEED``/``POOL4_RAIL_NEED`` are hand-typed literals here
     rather than imported from the screen: deriving them from the constant
@@ -7197,17 +7241,15 @@ async def test_the_pool4_pin_is_the_sum_of_the_needs_it_claims() -> None:
         left = screen.query_one(f"#{POOL4_LEFT_ID}").region.width
         rail = screen.query_one(f"#{POOL4_RAIL_ID}").region.width
 
-    assert left == POOL4_LEFT_NEED, (
-        f"the left column gets {left} columns at the pin, not the "
-        f"{POOL4_LEFT_NEED} the constant is built from -- re-derive it"
+    assert rail == POOL4_RAIL_NEED, (
+        f"the rail gets {rail} columns at the pin, not the "
+        f"{POOL4_RAIL_NEED} its binder needs -- re-derive it"
     )
-    assert rail >= POOL4_RAIL_NEED
-    assert rail - POOL4_RAIL_NEED == 3, (
-        f"the rail's margin is {rail - POOL4_RAIL_NEED}, not the three "
-        "columns the seam was chosen to buy. It was ten before the mainnet "
-        "rebalance put HATCHES (50) in the rail in place of VAULT (44), and "
-        "the two-column-cheaper 20:19 seam was declined precisely because it "
-        "leaves one"
+    assert left >= POOL4_LEFT_NEED
+    assert left - POOL4_LEFT_NEED == 4, (
+        f"the left column's margin is {left - POOL4_LEFT_NEED}, not the four "
+        "it was measured at when POOL4 FLOW left the body (2026-09-14). It "
+        "was zero while FLOW bound this column at 53"
     )
     # ...and the pin really is what those two needs add up to under this
     # seam, which is the arithmetic the docstring's per-seam table rests on.
@@ -7308,24 +7350,39 @@ async def test_the_pool4_body_is_whole_from_its_pinned_height(
 async def test_the_pool4_height_pin_is_measured_against_the_column_it_describes() -> None:
     """The pin's *derivation*, not just its threshold.
 
-    **Measured below the pin, not at it.** Both columns' ``1fr`` children
-    grow on a terminal with rows to spare, so at the pin itself each column
-    reports the body's own height and the content the docstring derives is
-    nowhere on screen. At 34 rows both sit on their floors and each column's
+    **Measured below the pin, not at it.** The rail's ``1fr`` child grows on
+    a terminal with rows to spare, so at the pin itself that column reports
+    the body's own height and the content the docstring derives is nowhere on
+    screen. At 34 rows the rail sits on its floor and each column's
     ``virtual_size`` is its real content.
 
-    The binder now SWITCHES with the payload, which is the property this
-    body lost when mainnet made two panels payload-sized: the left column
-    (THE SPLIT + THE RATCHET + the flow log's floor) binds on mainnet and on
-    a short lever list, and the rail (HATCHES + sIMD VAULT) binds once the
-    hatch list is long. So the assertion is on the *worst case over
-    payloads*, which is what the pin actually is, rather than on one column
-    being permanently taller.
+    The binder switched with the payload while the left column held
+    THE SPLIT, THE RATCHET and the flow log's floor: that column bound on
+    mainnet and on a short lever list, and the rail bound once the hatch
+    list was long. **Since 2026-09-14 the rail binds on both payloads
+    measured here.** The owner removed POOL4 FLOW from this body as a
+    duplicate of the ``4`` body's RECENT FLOW, and the left column's content
+    fell to 28 rows on mainnet and 25 on the capture. The assertion stays on
+    the *worst case over payloads* -- 34, which is what the pin actually is.
+
+    **``mainnet-capped`` joined the payload list on the same day, and the
+    removal is why.** The two payloads above used to reach 34 through
+    mainnet's LEFT column, which tied the rail. Without FLOW, this test's
+    first run after the removal measured the worst of those two at **33**
+    (Sepolia's twelve-lever rail; plain mainnet's ten-lever rail is 32). The
+    pin had not moved -- ``test_the_pool4_height_pin_covers_every_payload_the_widgets_render``
+    still finds 44 lit and 45 whole on ``mainnet-capped``. What had gone is
+    this test's route to the pin's own binder: mainnet's rail at the
+    twelve-lever cap. So that payload is measured here directly, rather than
+    the expected 34 being lowered to whatever these two payloads now give.
     """
     worst = 0
     for label, payload in (
         ("sepolia-12-levers", _pool4_hatch_payload(12)),
         ("mainnet", _mainnet_pool4_payload()),
+        ("mainnet-capped", _mainnet_pool4_payload(
+            pool4_hatches=_pool4_hatch_payload(12)["pool4_hatches"]
+        )),
     ):
         async with _pool4_app(payload).run_test(size=(150, 34)) as pilot:
             await pilot.app.screen._do_refresh()
@@ -7438,11 +7495,15 @@ async def test_the_pool4_floors_never_thin_a_panel_below_its_content() -> None:
 
     A ``1fr`` child cannot overflow a scroll container, it SHRINKS, so one
     given fewer rows than its content loses them with no scrollbar, no
-    ``‹ widen`` and no other trace **unless it scrolls inside itself**. Only
-    ``SurfPool4Flow`` does. So:
+    ``‹ widen`` and no other trace **unless it scrolls inside itself**. None
+    of this body's four panels does. So:
 
-    * FLOW may be squeezed to its floor of 6 -- its rows go behind its own
-      ``RichLog`` scrollbar, which is a place the reader can still reach;
+    * THE SPLIT and THE RATCHET are ``auto`` and the left column has **no**
+      ``1fr`` child, so both are exactly their content at every height. That
+      bullet read "FLOW may be squeezed to its floor of 6" until 2026-09-14,
+      when the owner removed POOL4 FLOW from this body as a duplicate of the
+      ``4`` body's RECENT FLOW. Its floor went with it, and what replaced it
+      is the stronger claim that nothing in the left column is ever shrunk;
     * ``sIMD VAULT`` carries the rail's ``1fr`` **because its line count is a
       constant**, so ``min-height: 10`` is both floor and ceiling and it can
       never be cut. Asserted against its content, not against the constant:
@@ -7465,17 +7526,26 @@ async def test_the_pool4_floors_never_thin_a_panel_below_its_content() -> None:
         await pilot.press("p")
         await pilot.pause()
         screen = pilot.app.screen
-        # Scoped to the `p` body's own column. `SurfPool4Flow` is mounted
-        # TWICE since 2026-09-11 (the `4` body's RECENT FLOW is a second
-        # instance of the same class, not a copy of the module), and
-        # Textual's `query_one` returns the FIRST match rather than raising
-        # on several -- so an unscoped query here would silently start
-        # measuring whichever instance `compose` happens to build first.
-        flow = screen.query_one(f"#{POOL4_LEFT_ID}").query_one(SurfPool4Flow)
+        left = screen.query_one(f"#{POOL4_LEFT_ID}")
         vault = screen.query_one(SurfPool4Vault)
         hatches = screen.query_one(SurfPool4Hatches)
 
-        assert flow.region.height >= 6, flow.region.height
+        # The left column holds no flow log any more (2026-09-14) -- so no
+        # `1fr` and no floor -- and both panels in it are never shrunk. At
+        # 24 rows the column scrolls, and a panel the column has scrolled
+        # past is still laid out at its full height, so region == content is
+        # the claim at every height rather than only at roomy ones.
+        assert not list(left.query(SurfPool4Flow)), (
+            "a flow log is back in the `p` body's left column"
+        )
+        for panel in (left.query_one(SurfPool4Split),
+                      left.query_one(SurfPool4Ratchet)):
+            assert panel.region.height == panel.virtual_size.height, (
+                f"{type(panel).__name__} is {panel.region.height} rows "
+                f"against {panel.virtual_size.height} of content: it is being "
+                "shrunk, so something in the left column took a `1fr` and "
+                "this `Static` is losing rows with nothing on screen saying so"
+            )
         assert vault.region.height >= vault.virtual_size.height, (
             f"sIMD VAULT is {vault.region.height} rows against "
             f"{vault.virtual_size.height} of content -- the panel chosen for "
@@ -7500,17 +7570,18 @@ async def test_the_pool4_floors_never_thin_a_panel_below_its_content() -> None:
 # -- the blank row under every `p`-body title -----------------------------
 
 
-#: The five panels of the ``p`` POOL4 body, with the container each one is
-#: mounted in. The container is not decoration: ``SurfPool4Flow`` is mounted
-#: **twice** on this screen (the ``4`` body's RECENT FLOW is a second instance
-#: of the same class), and Textual's ``query_one`` returns the first match
-#: rather than raising on several -- so an unscoped query would silently
-#: assert about whichever instance ``compose`` happened to build first, which
-#: is the instance in the body that is not on screen.
+#: The panels of the ``p`` POOL4 body, with the container each one is
+#: mounted in -- **four** since 2026-09-14. ``SurfPool4Flow`` was the fifth
+#: case until the owner removed it from this body as a duplicate of the ``4``
+#: body's RECENT FLOW; its blank-row case lives on in
+#: ``test_every_market_panel_paints_a_blank_row_under_its_title``, where the
+#: panel still renders. The container stays in each entry: it is what made
+#: the flow case measure the right instance while the class was mounted twice,
+#: and Textual's ``query_one`` still returns the first match rather than
+#: raising on several.
 _POOL4_PANELS = (
     (SurfPool4Split, POOL4_LEFT_ID),
     (SurfPool4Ratchet, POOL4_LEFT_ID),
-    (SurfPool4Flow, POOL4_LEFT_ID),
     (SurfPool4Hatches, POOL4_RAIL_ID),
     (SurfPool4Vault, POOL4_RAIL_ID),
 )
@@ -7668,12 +7739,21 @@ def test_every_mode_names_its_scrolling_columns() -> None:
 #: failing rather than the comparison silently passing, which is the whole
 #: reason the premise is asserted.
 #:
-#: Note this is the CAPTURE's crossover, not the pin's. The pin (44) is the
+#: Note this is the CAPTURE's crossover, not the pin's. The pin (45) is the
 #: worst case over every payload; the committed capture is a Sepolia body
-#: that legitimately fits in 41. Two different questions, two different
+#: that legitimately fits in 42. Two different questions, two different
 #: numbers.
+#:
+#: **40 -> 34 on 2026-09-14, because the LEFT column's crossover moved.**
+#: POOL4 FLOW left this body, and the left column's content fell from 31 rows
+#: to 25 on the capture. Measured the same day at 150 columns: the rail
+#: still overflows from 41 rows down, but the left column now overflows only
+#: from 35 down. At 40 the rail had a scrollbar and the left column did not,
+#: so the left gutter was never exercised and the ``split`` comparison below
+#: would have passed whether or not that gutter was reserved. 34 is the first
+#: height where both columns overflow, and the premise now asserts both.
 _POOL4_ROOMY_ROWS = 50
-_POOL4_OVERFLOWING_ROWS = 40
+_POOL4_OVERFLOWING_ROWS = 34
 
 
 async def _pool4_column_widths(height: int, width: int = 150) -> dict:
@@ -7683,21 +7763,19 @@ async def _pool4_column_widths(height: int, width: int = 150) -> dict:
         await pilot.press("p")
         await pilot.pause()
         screen = pilot.app.screen
+        left = screen.query_one(f"#{POOL4_LEFT_ID}")
+        rail = screen.query_one(f"#{POOL4_RAIL_ID}")
+        # Resolved through each column rather than from the screen. The
+        # `"flow"` key this dict carried until 2026-09-14 had to be scoped
+        # because the class was mounted twice; it went when POOL4 FLOW left
+        # the body, and THE RATCHET takes its place as the left column's
+        # second witness.
         return {
-            "split": screen.query_one(SurfPool4Split).region.width,
-            "vault": screen.query_one(SurfPool4Vault).region.width,
-            # Scoped, for the reason given at the other call site: two
-            # instances of this class exist since 2026-09-11 and `query_one`
-            # silently answers with the first.
-            "flow": screen.query_one(
-                f"#{POOL4_LEFT_ID}"
-            ).query_one(SurfPool4Flow).region.width,
-            "left_overflowing": screen.query_one(
-                f"#{POOL4_LEFT_ID}"
-            ).show_vertical_scrollbar,
-            "rail_overflowing": screen.query_one(
-                f"#{POOL4_RAIL_ID}"
-            ).show_vertical_scrollbar,
+            "split": left.query_one(SurfPool4Split).region.width,
+            "ratchet": left.query_one(SurfPool4Ratchet).region.width,
+            "vault": rail.query_one(SurfPool4Vault).region.width,
+            "left_overflowing": left.show_vertical_scrollbar,
+            "rail_overflowing": rail.show_vertical_scrollbar,
         }
 
 
@@ -7720,16 +7798,23 @@ async def test_the_pool4_columns_reserve_their_scrollbar_gutters() -> None:
     roomy = await _pool4_column_widths(_POOL4_ROOMY_ROWS)
     cramped = await _pool4_column_widths(_POOL4_OVERFLOWING_ROWS)
 
-    assert not roomy["rail_overflowing"], (
-        f"the rail already overflows at {_POOL4_ROOMY_ROWS} rows -- both "
-        "sample heights are on the same side of the crossover"
-    )
-    assert cramped["rail_overflowing"], (
-        f"the rail does not overflow at {_POOL4_OVERFLOWING_ROWS} rows -- "
-        "the condition this test exists to measure never occurs"
-    )
+    # BOTH columns, since 2026-09-14. The premise used to check the rail
+    # alone, which was enough while FLOW made the left column overflow first.
+    # Now the left column is the one that overflows LATER, so a rail-only
+    # premise would leave the left gutter unexercised and `split`/`ratchet`
+    # below comparing two identical non-scrolling layouts.
+    for column in ("left", "rail"):
+        assert not roomy[f"{column}_overflowing"], (
+            f"the {column} column already overflows at {_POOL4_ROOMY_ROWS} "
+            "rows -- both sample heights are on the same side of the crossover"
+        )
+        assert cramped[f"{column}_overflowing"], (
+            f"the {column} column does not overflow at "
+            f"{_POOL4_OVERFLOWING_ROWS} rows -- the condition this test exists "
+            "to measure never occurs for it"
+        )
 
-    for panel in ("split", "vault", "flow"):
+    for panel in ("split", "ratchet", "vault"):
         assert roomy[panel] == cramped[panel], (
             f"{panel} is {roomy[panel]} columns at {_POOL4_ROOMY_ROWS} rows "
             f"and {cramped[panel]} at {_POOL4_OVERFLOWING_ROWS}: a scrollbar "
@@ -7774,8 +7859,12 @@ async def test_the_hero_survives_the_pool4_body_swap() -> None:
 
 _POOL4_CSS_SELECTORS = (
     f"#{POOL4_BODY_ID}", f"#{POOL4_LEFT_ID}", f"#{POOL4_RAIL_ID}",
-    "SurfPool4Hatches", "SurfPool4Flow",
+    "SurfPool4Hatches",
     "SurfPool4Split", "SurfPool4Ratchet", "SurfPool4Vault",
+    # "SurfPool4Flow" moved to `_POOL4_USER_CSS_SELECTORS` on 2026-09-14, when
+    # the owner removed POOL4 FLOW from this body: its one unscoped rule now
+    # styles the `4` body's instance only, so that body's agreement and
+    # floor sweeps are the ones that have to cover it.
 )
 
 
@@ -7834,15 +7923,16 @@ _POOL4_USER_CSS_SELECTORS = (
     f"#{POOL4_USER_RAIL_ID}", f"#{POOL4_USER_BOTTOM_ID}",
     "SurfPool4UStakers", "SurfPool4UBurn", "SurfPool4USignals",
     "SurfPool4UDepth",
-    # `SurfPool4Flow` is deliberately NOT here. The market body's RECENT FLOW
-    # is a second instance of the class the `p` body already styles, and the
-    # seam was chosen `1fr:1fr` precisely so that the rule it already carries
-    # is the rule it wants here (see `#surf-pool4-user-bottom`'s block). A
-    # scoped override would be a SECOND place stating that panel's geometry,
-    # which is the divergence reuse exists to avoid -- so its absence from
-    # this list is the assertion, and
-    # `test_the_market_body_needs_no_scoped_rule_for_the_reused_flow_panel`
-    # is what makes it one.
+    # `SurfPool4Flow` JOINED this list on 2026-09-14. It was deliberately
+    # absent while RECENT FLOW was a second instance of a class the `p` body
+    # already styled, and `_POOL4_CSS_SELECTORS` covered the rule for both.
+    # The owner removed the `p` body's copy as a duplicate of this one, so the
+    # unscoped `SurfPool4Flow` rule styles this body's instance alone and
+    # this body's agreement and floor sweeps are the ones that must see it.
+    # It is still the UNSCOPED selector, never `#surf-pool4-user-middle
+    # SurfPool4Flow`: `test_the_market_body_needs_no_scoped_rule_for_the_flow_panel`
+    # is what keeps it that way.
+    "SurfPool4Flow",
 )
 
 
@@ -7970,55 +8060,82 @@ def test_the_rail_gives_its_fr_to_the_panel_that_can_never_be_cut() -> None:
     )
 
 
-def test_the_market_body_needs_no_scoped_rule_for_the_reused_flow_panel() -> None:
-    """PRD §6.4's reuse, asserted as the absence it actually is.
+def test_the_market_body_needs_no_scoped_rule_for_the_flow_panel() -> None:
+    """One unscoped rule for RECENT FLOW's geometry, asserted as an absence.
 
-    RECENT FLOW is the ``p`` body's ``SurfPool4Flow`` mounted a second time,
-    and the market body's seam is ``1fr:1fr`` precisely so that the rule that
-    panel already carries is the rule it wants in the bottom row. If a future
-    seam change adds ``#surf-pool4-user-bottom SurfPool4Flow { ... }``, that
-    panel's geometry is stated in two places and the next fix reaches one of
-    them -- which is the divergence reusing the module was meant to avoid, so
-    it should be a decision somebody makes here rather than a line somebody
-    adds.
+    **Renamed on 2026-09-14** from ``..._for_the_reused_flow_panel``. The
+    ``p`` body's ``SurfPool4Flow`` was mounted here a second time (PRD §6.4)
+    until the owner removed the ``p`` copy as a duplicate of this one, so
+    "reused" stopped describing it. The assertion did not change, because its
+    reason survived: the market body's top-row seam is ``1fr:1fr`` precisely
+    so that the one unscoped ``SurfPool4Flow`` rule is the rule the panel
+    wants. A ``#surf-pool4-user-middle SurfPool4Flow { ... }`` would state
+    that panel's geometry in two places, and the next fix would reach one of
+    them. That should be a decision somebody makes here, not a line somebody
+    adds -- and it matters more now that the unscoped rule has only one
+    instance left to keep it honest.
     """
     for css in (SurfScreen.DEFAULT_CSS, _surf_stylesheet_block()):
         for selector in _css_rules(css):
             if "SurfPool4Flow" not in selector:
                 continue
             assert selector == "SurfPool4Flow", (
-                f"{selector!r} scopes the reused flow panel to one body -- "
+                f"{selector!r} scopes the flow panel to one body -- "
                 "its geometry is now stated in two places"
             )
 
 
-def test_exactly_one_pool4_child_per_column_carries_the_fr() -> None:
+def test_the_pool4_rail_has_one_floored_fr_and_the_left_column_none() -> None:
     """The rule the body is built on, read off the CSS rather than the code.
 
-    Two ``1fr`` children in one column split its slack and neither reaches
-    the floor the layout was measured with; none at all strands the column's
-    spare rows above the fold. Both are silent, and both are the kind of
-    thing an edit to the stylesheet makes without touching a line of Python
-    -- which is why this is asserted against ``minimal.tcss``, the copy that
-    actually renders, and not against ``compose``.
+    **Rewritten on 2026-09-14**, from
+    ``test_exactly_one_pool4_child_per_column_carries_the_fr``, when the owner
+    removed POOL4 FLOW -- the left column's ``1fr`` -- from this body as a
+    duplicate of the ``4`` body's RECENT FLOW. The decision that replaced it
+    is that the left column carries **no** ``1fr`` child at all:
+
+    * The RAIL keeps exactly one, floored. Two ``1fr`` children in one column
+      split its slack and neither reaches the floor the layout was measured
+      with, and a ``1fr`` without ``min-height`` cannot overflow a scroll
+      container -- it shrinks, shedding a line per row with no trace.
+    * The LEFT column has none, because neither THE SPLIT nor THE RATCHET
+      scrolls inside itself. A ``1fr`` on either is a ``Static`` that can be
+      cut in silence, and THE SPLIT is payload-sized, so no floor stays equal
+      to its content. Both ``auto``: the spare rows are blank at the column's
+      foot, and too few rows make the column scroll, which ``‹ taller`` sees.
+      The old test's "none at all strands the column's spare rows" worry is
+      what this accepts on purpose; ``POOL4_LEFT_ID``'s block argues it.
+
+    Both are the kind of thing an edit to the stylesheet makes without
+    touching a line of Python -- which is why this is asserted against
+    ``minimal.tcss``, the copy that actually renders, and not against
+    ``compose``.
     """
     block = _css_rules(_surf_stylesheet_block())
-    columns = {
-        POOL4_LEFT_ID: ("SurfPool4Split", "SurfPool4Ratchet", "SurfPool4Flow"),
-        POOL4_RAIL_ID: ("SurfPool4Hatches", "SurfPool4Vault"),
-    }
-    for column, panels in columns.items():
-        growing = [p for p in panels if block[p].get("height") == "1fr"]
-        assert len(growing) == 1, (
-            f"#{column} has {len(growing)} children at `height: 1fr` "
-            f"({growing}); exactly one may grow"
-        )
-        assert block[growing[0]].get("min-height"), (
-            f"{growing[0]} carries a `1fr` with no `min-height`: a `1fr` "
-            "child cannot overflow a scroll container, it shrinks, so "
-            "without a floor it sheds a line per terminal row down to a bare "
-            "title with no scrollbar and no trace"
-        )
+
+    left = ("SurfPool4Split", "SurfPool4Ratchet")
+    growing = [p for p in left if block[p].get("height") == "1fr"]
+    assert growing == [], (
+        f"#{POOL4_LEFT_ID} has a `height: 1fr` child ({growing}). Neither panel "
+        "in it scrolls inside itself, so a `1fr` there is a `Static` that "
+        "loses rows with no scrollbar and no trace"
+    )
+    for panel in left:
+        assert block[panel].get("height") == "auto", panel
+
+    rail = ("SurfPool4Hatches", "SurfPool4Vault")
+    growing = [p for p in rail if block[p].get("height") == "1fr"]
+    assert growing == ["SurfPool4Vault"], (
+        f"#{POOL4_RAIL_ID} grows {growing}; exactly sIMD VAULT may"
+    )
+    assert block["SurfPool4Vault"].get("min-height"), (
+        "SurfPool4Vault carries a `1fr` with no `min-height`: a `1fr` "
+        "child cannot overflow a scroll container, it shrinks, so "
+        "without a floor it sheds a line per terminal row down to a bare "
+        "title with no scrollbar and no trace"
+    )
+
+    for column in (POOL4_LEFT_ID, POOL4_RAIL_ID):
         assert block[f"#{column}"].get("overflow-y") == "auto", column
         assert block[f"#{column}"].get("scrollbar-gutter") == "stable", column
 

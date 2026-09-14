@@ -93,10 +93,10 @@ scrolls and says `‹ taller`.
 Press **`p`** for pool4 — the same trick a third time, a third body under the same hero. pool4
 makes IMD's pool a one-way ratchet: buys drain a reserve that a floor stops them draining past,
 sells burn most of what they sell, and a slice of every swap is retained to pay for the protocol's
-own inference. THE SPLIT, THE RATCHET and POOL4 FLOW take the left column — the reward split
-**measured from the live counters** rather than quoted from anyone's documentation, the reserve
-against its floor and how far it is from it, and under both a swap-by-swap log of what each trade
-burned, paid out, and left behind. HATCHES and sIMD VAULT share the rail: which powers over the
+own inference. THE SPLIT and THE RATCHET take the left column — the reward split
+**measured from the live counters** rather than quoted from anyone's documentation, and the reserve
+against its floor and how far it is from it. The swap-by-swap log of what each trade burned, paid
+out, and left behind is the `4` view's RECENT FLOW. HATCHES and sIMD VAULT share the rail: which powers over the
 contracts are still live and who holds them, and what a staker is actually being paid — which a
 drip rate sets, not pool volume, so the panel shows the backlog as days of runway rather than an
 APR derived from fee flow that would be wrong by orders of magnitude.
@@ -134,8 +134,8 @@ but it lives *inside* the Reward Distributor: no separate bond contract is named
 this dashboard reads, so the HATCHES row for it says `unknown`, which is "we did not look here"
 rather than "it is not there". Read-only and keyless as everywhere else: `drip()` and `rebalance()`
 are permissionless and pay a keeper reward, and maxpane reports that they are callable and by whom
-and never offers to call one. `esc` backs out, one-way. The view is whole from **106 columns and
-44 rows**.
+and never offers to call one. `esc` backs out, one-way. The view is whole from **99 columns and
+45 rows**.
 
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
@@ -369,7 +369,7 @@ LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard b
 the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand rail — with the
 hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way.
-**It binds `p`** the same way for pool4 — THE SPLIT, THE RATCHET and POOL4 FLOW on the left,
+**It binds `p`** the same way for pool4 — THE SPLIT and THE RATCHET on the left,
 HATCHES and sIMD VAULT in the rail, the same hero left where it was. **And it binds `4`** for the
 POOL4 MARKET view — the same protocol read as a market rather than as a machine: RECENT FLOW
 beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses, no shortening —
@@ -442,24 +442,25 @@ the coin table — which does say `‹ widen` when it runs short — is what dec
 width. It also has a **height** requirement of its own — 31 rows — as THE LIST's two swapped
 bodies do.
 
-Surfboard's `p` pool4 view is a **third** layout with a third number: **106 columns**, on an
-even 1:1 split, and the narrowest full layout in the app. It is narrow because none of its five
-panels is a table — one fitted log and four label/value summaries — and it was swept on its own
-rather than inherited from the launchpad's 138, which it is deliberately not equal to. The even
-seam is neither laziness nor the cheapest option — a slightly uneven one collects the layout two
-columns sooner and was declined on purpose. Those two columns are margin for the rail, and the
-rail is where margin is worth buying: its binding panel advertises what it dropped by *appending*
-to its own title, and that marker is the first thing a title gives up when it runs out of room. A
-left column with no margin is harmless by comparison, because it marks inside its own body on the
-way down.
+Surfboard's `p` pool4 view is a **third** layout with a third number: **99 columns**, on an
+even 1:1 split, and the narrowest full layout in the app. It is narrow because none of its four
+panels is a table — four label/value summaries — and it was swept on its own rather than
+inherited from the launchpad's 138, which it is deliberately not equal to. It was 106 until
+2026-09-14. That day POOL4 FLOW, the fitted log that decided the width, left the view, because
+the `4` view's RECENT FLOW shows the same rows. The panel that decides the width now is HATCHES in
+the rail, which advertises what it dropped by *appending* to its own title. The even seam used to
+buy that rail a few columns of margin for exactly that reason. It has none now, and that was
+measured to be safe rather than assumed: HATCHES still marks at every width below 99.
 
-Where this view asks for more than anything else is **height**: **44 rows**, against the launchpad
+Where this view asks for more than anything else is **height**: **45 rows**, against the launchpad
 view's 31, and below that the body scrolls and the title bar says `‹ taller`. Unlike the other two
-layouts that 44 is a **worst case over payloads, not a constant**. It was one, briefly, when the
+layouts that 45 is a **worst case over payloads, not a constant**. It was one, briefly, when the
 column that decides the height held only fixed-height panels — but mainnet gave THE SPLIT a third
-leg and a distributor to report, so two of the five panels now grow with the data and no way of
-cutting them into two columns keeps both out of the binder. The practical consequence is that this
-number has to be re-swept when a panel's line count changes, rather than assumed to have held.
+leg and a distributor to report, so two of its panels now grow with the data. The practical
+consequence is that this number has to be re-swept when a panel's line count changes, rather than
+assumed to have held. It was re-swept when POOL4 FLOW left on 2026-09-14, and it **did not move**:
+the rail (HATCHES over sIMD VAULT) was already the tallest column, so a 44-row terminal still
+shows `‹ taller`.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

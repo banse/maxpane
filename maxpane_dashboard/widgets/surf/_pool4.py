@@ -1,4 +1,4 @@
-"""Shared primitives for the POOL4 body's five panels.
+"""Shared primitives for the POOL4 body's panels (four since POOL4 FLOW left it on 2026-09-14).
 
 **Why this module exists.** WP4 and WP5 independently wrote the same title
 helper with *different semantics on unknown input* -- one allowlisted against

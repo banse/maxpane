@@ -8,11 +8,18 @@ exactly those two events.
 
 These tests drive the manager's own row builders over the committed
 quiet-burn capture (``mainnet_flow_logs_quiet_burn`` + its PoolManager
-``Swap`` sibling) and read what reaches the **compositor** in both bodies:
-``SurfPool4Flow`` is mounted in ``p`` and in ``4``, and a fix that reached one
-instance would be half a fix.  The last test is the control: the retired
-decoder's answer on this window, ``[]``, painted, which proves the assertions
-above it can fail.
+``Swap`` sibling) and read what reaches the **compositor** in the ``4`` body.
+
+**One body, not two, since the same day.**  This file was written while
+``SurfPool4Flow`` was mounted in ``p`` and in ``4``, and it read both, on the
+argument that a fix reaching one instance would be half a fix.  The owner then
+removed POOL4 FLOW from the ``p`` body as a duplicate of the ``4`` body's
+RECENT FLOW, so there is one instance left and nothing to be half of.  The
+``p`` body's absence of the panel is pinned where the mount is,
+``tests/screens/test_surf_pool4_market_screen.py``'s
+``test_the_p_body_mounts_no_flow_panel``.  The last test here is still the
+control: the retired decoder's answer on this window, ``[]``, painted, which
+proves the assertions above it can fail.
 
 No network: the manager is ``test_surf_screen``'s ``_FakeManager`` over a
 payload, and the rows come from static methods over committed fixtures.
@@ -24,7 +31,7 @@ import json
 from pathlib import Path
 
 from maxpane_dashboard.data.surf_manager import SurfManager
-from maxpane_dashboard.screens.surf import POOL4_BODY_ID, POOL4_USER_BODY_ID
+from maxpane_dashboard.screens.surf import POOL4_USER_BODY_ID
 from maxpane_dashboard.widgets.surf import SurfPool4Flow, SurfPool4UBurn
 from maxpane_dashboard.widgets.surf import pool4_flow as flow_mod
 from maxpane_dashboard.widgets.surf import pool4u_burn as burn_mod
@@ -57,20 +64,13 @@ def _quiet_burn_flow() -> list[dict]:
     )
 
 
-async def _painted(flow) -> tuple[str, str, str]:
-    """Composited text of POOL4 FLOW in ``p``, then in ``4``, then BURN & SUPPLY."""
+async def _painted(flow) -> tuple[str, str]:
+    """Composited text of POOL4 FLOW, then BURN & SUPPLY, in the ``4`` body."""
     payload = _mainnet_pool4_payload(pool4_flow=flow)
     async with _surf_app(payload).run_test(size=_SIZE) as pilot:
         screen = pilot.app.screen
         await screen._do_refresh()
         await pilot.pause()
-
-        await pilot.press("p")
-        await pilot.pause()
-        await pilot.pause()
-        auditor = screen.query_one(f"#{POOL4_BODY_ID}")
-        assert auditor.display is True
-        p_flow = _region_text(pilot.app, auditor.query_one(SurfPool4Flow))
 
         await pilot.press("4")
         await pilot.pause()
@@ -79,7 +79,7 @@ async def _painted(flow) -> tuple[str, str, str]:
         assert market.display is True
         m_flow = _region_text(pilot.app, market.query_one(SurfPool4Flow))
         burn = _region_text(pilot.app, market.query_one(SurfPool4UBurn))
-    return p_flow, m_flow, burn
+    return m_flow, burn
 
 
 def _row_lines(text: str) -> list[str]:
@@ -93,18 +93,18 @@ def test_the_payload_under_test_is_the_quiet_burn_window() -> None:
     assert {r["side"] for r in flow} == {"buy", "sell"}
 
 
-async def test_pool4_flow_paints_rows_in_both_bodies_on_a_quiet_burn_market() -> None:
-    p_flow, m_flow, _burn = await _painted(_quiet_burn_flow())
-    for body, text in (("p", p_flow), ("4", m_flow)):
-        assert flow_mod.EMPTY_LINE not in text, f"{body}: {text}"
-        assert flow_mod.UNAVAILABLE_LINE not in text, f"{body}: {text}"
-        rows = _row_lines(text)
-        assert rows, f"{body} body painted no BUY/SELL row:\n{text}"
-    assert "BUY" in p_flow + m_flow and "SELL" in p_flow + m_flow
+async def test_pool4_flow_paints_rows_in_the_market_body_on_a_quiet_burn_market() -> None:
+    """Was ``..._in_both_bodies_...`` until the ``p`` body's copy was removed
+    (2026-09-14); the claim about the one instance that is left is unchanged."""
+    m_flow, _burn = await _painted(_quiet_burn_flow())
+    assert flow_mod.EMPTY_LINE not in m_flow, m_flow
+    assert flow_mod.UNAVAILABLE_LINE not in m_flow, m_flow
+    assert _row_lines(m_flow), f"the 4 body painted no BUY/SELL row:\n{m_flow}"
+    assert "BUY" in m_flow and "SELL" in m_flow
 
 
 async def test_burn_and_supply_reads_the_flow_on_a_quiet_burn_market() -> None:
-    _p, _m, burn = await _painted(_quiet_burn_flow())
+    _m, burn = await _painted(_quiet_burn_flow())
     assert "BURN & SUPPLY" in burn, burn
     assert burn_mod.EMPTY_LINE not in burn, burn
     assert burn_mod.UNAVAILABLE_LINE not in burn, burn
@@ -113,9 +113,8 @@ async def test_burn_and_supply_reads_the_flow_on_a_quiet_burn_market() -> None:
 async def test_the_retired_answer_on_this_window_is_what_the_screenshot_showed() -> None:
     """The control.  ``[]`` is what the companion-event decoder made of these
     36 swaps; painted, it is the owner's screenshot -- which is what makes the
-    three absence assertions above capable of failing."""
-    p_flow, m_flow, burn = await _painted([])
-    assert flow_mod.EMPTY_LINE in p_flow
+    absence assertions above capable of failing."""
+    m_flow, burn = await _painted([])
     assert flow_mod.EMPTY_LINE in m_flow
     assert burn_mod.EMPTY_LINE in burn
-    assert not _row_lines(p_flow) and not _row_lines(m_flow)
+    assert not _row_lines(m_flow)

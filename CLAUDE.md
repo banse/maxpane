@@ -264,8 +264,9 @@ The three record-list hero cards have a five-line contract. Keep the order stabl
 ### surf's POOL4 view — the `p` body (2026-09-01, live on mainnet 2026-09-02)
 
 Surf grew a **third body**, not a ninth dashboard, on curator's `y`/`f` and its own `l`
-precedent: `p` swaps `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4 — THE SPLIT, THE
-RATCHET and POOL4 FLOW on the left, HATCHES over sIMD VAULT in the rail — with the hero left in
+precedent: `p` swaps `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4 — THE SPLIT over THE
+RATCHET on the left, HATCHES over sIMD VAULT in the rail (POOL4 FLOW sat under THE RATCHET until
+2026-09-14, removed as a duplicate of the `4` body's RECENT FLOW) — with the hero left in
 place so LAUNCHPAD/FLOW/BURN/SUPPLY never goes dark, and `escape` backs out one-way. **There is
 no six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and
 the table above still has eight rows. What makes something a mode here is the rule, not the
@@ -353,8 +354,9 @@ whole tokens between events. An equality assertion would have been green on one 
 that is not the claim and flaky on the other.
 
 **Its own tier, its own clock, detached like the launchpad's.** `TIER_POOL4` with `SLOT_POOL4`'s
-last-good, spawned and never awaited so first paint cannot sit behind it, and all five panels
-share one `pool4_as_of_hhmm` that runs on a slower clock than the title bar's. `SOURCE_POOL4`
+last-good, spawned and never awaited so first paint cannot sit behind it, and all its panels (five
+until POOL4 FLOW left on 2026-09-14, four since) share one `pool4_as_of_hhmm` that runs on a slower
+clock than the title bar's. `SOURCE_POOL4`
 (`p4`) is the **eighth** degraded group, and that eighth name is what took the worst-case title
 row to exactly the width the layout is pinned at — see the terminal-layout skill, which now
 carries that as a live hazard rather than a margin.
@@ -401,11 +403,17 @@ and `SUPPLY`; a pool4 card called BURN shows hook trim burns rather than launchp
 reader tabbing between bodies would watch one word change value and read it as one metric moving.
 Burn lives in the chart panel instead.
 
-**`SurfPool4Flow` is the same class mounted twice**, once in each body, rather than a copied
-module — which is why `_do_refresh` dispatches RECENT FLOW with `self.query(SurfPool4Flow)` and
-never `query_one`: one statement, one payload, both panels. `query_one` does **not** raise on
-multiple matches in this Textual version, it returns the first, so two instances reddened nothing
-until a test resolved the panel through its own body container instead.
+**`SurfPool4Flow` lives in this body only, since 2026-09-14.** From 2026-09-11 it was the same
+class mounted twice, once in each body, rather than a copied module. That is why `_do_refresh`
+dispatches RECENT FLOW with `self.query(SurfPool4Flow)` rather than `query_one`, and the loop
+stays. `query_one` does **not** raise on multiple matches in this Textual version, it returns the
+first, so two instances reddened nothing until a test resolved the panel through its own body
+container instead. The owner then removed POOL4 FLOW from the `p` body off a live screenshot,
+because this body's RECENT FLOW already shows the same rows, so there is one mount now. The
+per-instance keywords that told the two apart (`quiet_mainnet`, `quiet_as_of`,
+`classes="market"`) are still passed and are now vestigial. Collapsing them changes the widget's
+standalone rendering, so it is filed as F15 in `docs/surf_pool4_followups.md`, not folded into the
+removal.
 
 **Its own tier, and one clock on the whole body.** Two-thirds of this body is the
 62 keys `TIER_POOL4` already produces; the delta is four fast-tier reads, one pure depth-ladder
@@ -439,10 +447,11 @@ therefore keeps a **conditional word** instead — its concentration footer gain
 the two markers are further apart than healthy operation can put them (`STALE_AFTER_S = 2400 s`,
 derived as the two tiers' TTLs summed, not chosen), and says nothing otherwise. That is
 `QUIET_NETWORK`'s shape applied to time, and it costs no row, which is why the body's height pin
-*fell* on this change rather than holding. The `p` body is untouched: all five of its panels keep
-their markers, and `SurfPool4Flow` — mounted in both — is quiet here only because the screen
-passes `quiet_as_of=True` at this one mount site, with a per-panel sweep on each side to catch a
-"fix" applied to the class instead.
+*fell* on this change rather than holding. The `p` body is untouched: all of its panels keep their
+markers (four since POOL4 FLOW left it on 2026-09-14). `SurfPool4Flow`, mounted in both bodies
+until then, is quiet here only because the screen passes `quiet_as_of=True` at this one mount site.
+A per-panel sweep on each side still catches a "fix" applied to the shared helpers. A fix applied to
+the class's own defaults has no auditor instance left to show up on (F15).
 
 **Two honesty contracts worth carrying in your head.** The ladder quotes the position *as it
 stands now* and never promises protection — a `rebalance()` closes the backstop band and redeploys
@@ -499,8 +508,8 @@ launchpad's own five panels in two columns (LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail —
 curator's `y`/`f` precedent), with the hero (LAUNCHPAD/FLOW/BURN/SUPPLY)
 left in place so nothing it tracks ever goes dark (`esc` backs out, one-way);
-**`p` on surf** swaps the same three rows for the POOL4 body (THE SPLIT /
-THE RATCHET / POOL4 FLOW on the left; HATCHES over sIMD VAULT in the rail),
+**`p` on surf** swaps the same three rows for the POOL4 body (THE SPLIT over
+THE RATCHET on the left; HATCHES over sIMD VAULT in the rail),
 also keeping the hero, also one-way; **`4` on surf** swaps them for the
 POOL4 MARKET body (RECENT FLOW beside BURN & SUPPLY over SIGNALS;
 STAKERS beside IF IMD FALLS) and is the one surf body that swaps the

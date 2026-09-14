@@ -494,7 +494,8 @@ class SurfPool4Flow(Vertical):
 
     DEFAULT_CSS = """
     /* `margin: 0 0 1 0` IS THE BLANK ROW UNDER THE TITLE, and it is now
-       UNSCOPED -- both bodies that mount this class paint it.
+       UNSCOPED -- both bodies that mounted this class painted it, and since
+       the `p` body's copy was removed (2026-09-14) the `4` body alone does.
 
        It is on the TITLE, not on the note line below it. Under the note read
        better -- title plus `as of HH:MM` as one header block, then the gap --
@@ -541,10 +542,14 @@ class SurfPool4Flow(Vertical):
     ) -> None:
         """``quiet_mainnet`` leaves ``MAINNET`` unsaid in this instance's title.
 
-        **Per instance, and defaulting to False, because this widget is mounted
-        twice.** The ``p`` body's five titles must keep printing the network
-        word -- that body is an auditor's view and the word is load-bearing
-        there -- while the ``4`` body's owner asked for it gone. A module-level
+        **Per instance, and defaulting to False, because this widget was
+        mounted twice** (2026-09-11..14). The ``p`` body's copy had to keep
+        printing the network word -- that body is an auditor's view and the
+        word is load-bearing there -- while the ``4`` body's owner asked for it
+        gone. The ``p`` body's copy was removed on 2026-09-14, so the ``4``
+        body's mount is the only one left and the ``False`` default is now
+        rendered by nothing on screen. Collapsing the flags is filed as F15 in
+        ``docs/surf_pool4_followups.md`` rather than done in that removal. A module-level
         switch cannot express that; a different ``pool4_network`` value for this
         instance could, and would be lying about the provenance the word exists
         to state. So the *screen* opts in, once, at the mount site.

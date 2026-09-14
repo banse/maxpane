@@ -736,8 +736,14 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_all_five_pool4_panels_survive_the_real_stylesheet() -> None:
+def test_all_four_pool4_panels_survive_the_real_stylesheet() -> None:
     """Every ``p`` panel reaches the compositor through the REAL app.
+
+    **Four since 2026-09-14** -- this was ``..._all_five_...`` until the owner
+    removed POOL4 FLOW from the ``p`` body as a duplicate of the ``4`` body's
+    RECENT FLOW. The title is now asserted absent after ``p`` as well, so a
+    flow panel that came back into this body through the real stylesheet
+    reddens here too.
 
     ``test_all_six_detectors_survive_the_real_stylesheet`` above is the
     precedent and the reason: a panel can be composed, dispatched and
@@ -774,12 +780,15 @@ def test_all_five_pool4_panels_survive_the_real_stylesheet() -> None:
             await pilot.pause()
             text = _screen_text(app)
 
-        titles = ("HATCHES", "POOL4 FLOW", "THE SPLIT", "THE RATCHET",
-                  "sIMD VAULT")
+        titles = ("HATCHES", "THE SPLIT", "THE RATCHET", "sIMD VAULT")
         for title in titles:
             assert title in text, (
                 f"{title} reaches no pixel through the real stylesheet"
             )
+        assert "POOL4 FLOW" not in text, (
+            "POOL4 FLOW composited on the `p` body through the real app -- it "
+            "was removed from that body on 2026-09-14"
+        )
         # The premise, and it has to be this one rather than `before !=
         # text`. Mutating `_show_mode` so it never sets the pool4 body's
         # `display` leaves the body visible from the moment it is composed
@@ -2205,14 +2214,17 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "below would be measuring the launchpad twice"
             )
             # The pool4 body must also be explicit rather than blank: an
-            # outage that renders five empty panels is exactly as wrong as
+            # outage that renders four empty panels is exactly as wrong as
             # one that renders zeros, and neither the needle sweep below nor
-            # the title-bar check above would notice.
-            for title in ("HATCHES", "POOL4 FLOW", "THE SPLIT",
-                          "THE RATCHET", "sIMD VAULT"):
+            # the title-bar check above would notice. Four since 2026-09-14,
+            # when POOL4 FLOW left this body; its outage state is checked in
+            # the `4` body below, where the panel now lives.
+            for title in ("HATCHES", "THE SPLIT", "THE RATCHET",
+                          "sIMD VAULT"):
                 assert title in pool4_text, (
                     f"{title} vanished under outage"
                 )
+            assert "POOL4 FLOW" not in pool4_text
             # The network word falls back to the em dash rather than naming
             # a chain nothing has confirmed (plan section 5 R4: a testnet
             # number on an unmarked panel is fiction presented as live, and

@@ -574,7 +574,7 @@ class SurfPool4UStakers(Vertical):
             return
         # ``market_title_text``, not ``title_text``: this is the ``4`` body,
         # and it is the one that leaves ``MAINNET`` unsaid. The ``p`` body's
-        # five panels go on printing it -- see ``_pool4.QUIET_NETWORK`` for
+        # four panels go on printing it -- see ``_pool4.QUIET_NETWORK`` for
         # why silence is available for exactly one network and nothing else.
         title.update(
             Text(

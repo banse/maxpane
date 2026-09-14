@@ -175,9 +175,9 @@ MARKET_DEPTH_COLUMNS = 45
 #: longer does: the top row is ``1fr:1fr`` so it asks for 1 + 2 x 52 = 105,
 #: fourteen columns under what the bottom row now asks for. Kept because "the
 #: binder changed" is only a claim if the old binder's need is still measured.
-#: It is **not** the 53 the ``p`` body's ``POOL4_LEFT_NEED`` records: there the
-#: panel's column reserves a scrollbar gutter of its own and here the top row
-#: does not.
+#: It is **not** the 53 the ``p`` body's ``POOL4_LEFT_NEED`` recorded until
+#: 2026-09-14, when FLOW left that body: there the panel's column reserved a
+#: scrollbar gutter of its own and here the top row does not.
 MARKET_FLOW_NEED = 52
 
 #: The panels whose painted line count is a **constant**, and what that
@@ -322,11 +322,13 @@ _DEPTH_KWARGS = {
 def _market_widgets(screen) -> dict:
     """The `4` body's own panels, resolved through the body container.
 
-    **Never ``screen.query_one(cls)``.** ``SurfPool4Flow`` is mounted twice on
-    this screen -- once in the ``p`` body and once here (PRD 6.4) -- and
-    ``query_one`` does **not** raise on multiple matches in this version of
-    Textual, it returns the first. A pin measured on the wrong instance would
-    be measuring a body that is not on screen.
+    **Never ``screen.query_one(cls)``.** ``SurfPool4Flow`` was mounted twice
+    on this screen -- once in the ``p`` body and once here (PRD 6.4) -- until
+    2026-09-14, and ``query_one`` does **not** raise on multiple matches in
+    this version of Textual, it returns the first. It is mounted here only
+    now, but resolving through the body is still the rule: a pin measured on
+    the wrong instance would be measuring a body that is not on screen, and
+    nothing stops a second mount coming back.
     """
     body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
     out = {"SurfPool4UserHero": screen.query_one(SurfPool4UserHero)}

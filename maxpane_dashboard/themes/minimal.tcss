@@ -2278,15 +2278,14 @@ SurfBurnkeepers {
  *
  * THE `1fr:1fr` SEAM IS MEASURED FOR THIS BODY, NOT INHERITED. It is
  * deliberately not the `l` body's 2:1 and not the 7:6 the other two surf rows
- * use. This body balances a fitted `RichLog` (POOL4 FLOW, 52 screen columns)
- * against a rail whose widest need is sIMD VAULT's 42, where the `l` body's
- * two halves are 92 and 43. The LEFT column has to be the binder: POOL4 FLOW
- * writes `‹ widen` into its own log, where the rail's three append theirs to
- * a title and drop it again once the title alone no longer fits. The
- * arithmetic floor is 53 + 43 = 96 and seams near 53:43 collect it; 1:1 pins
- * at 106 and hands the rail 53, ten columns more than its widest possible
- * line, which is the margin those eight columns actually buy. The full
- * per-seam table is in `screens/surf.SURF_POOL4_FULL_LAYOUT_COLUMNS`.
+ * use. Since 2026-09-14, when POOL4 FLOW left this body (the `4` body's
+ * RECENT FLOW already renders its rows), it balances THE RATCHET's 45 on the
+ * left against HATCHES' 50 in the rail. 1:1 pins at 99 with the RAIL binding
+ * and zero margin -- the arrangement this comment used to decline, back when
+ * FLOW bound the left column and wrote its marker into its own log. It is
+ * acceptable now because HATCHES was measured still marking at every width
+ * under the pin; the seam itself was not re-swept. The re-sweep and the
+ * pre-removal per-seam table are in `screens/surf.SURF_POOL4_FULL_LAYOUT_COLUMNS`.
  *
  * This copy is the one that RENDERS -- an app stylesheet outranks a screen's
  * DEFAULT_CSS -- and both `tests/test_surf_registration.py` and
@@ -2306,8 +2305,11 @@ SurfScreen #surf-pool4-body {
  * and without `scrollbar-gutter: stable` the scrollbar takes its column out of
  * the panel beside it only when the column overflows, which would make this
  * layout's WIDTH pin a function of its HEIGHT. That reserved cell is counted
- * in the 53 and the 50 `SURF_POOL4_FULL_LAYOUT_COLUMNS` measures (it was 53
- * and 43 until the mainnet rebalance put HATCHES in the rail).
+ * in the 45 and the 50 `SURF_POOL4_FULL_LAYOUT_COLUMNS` measures (53 and 50
+ * until POOL4 FLOW left the left column on 2026-09-14; 53 and 43 before the
+ * mainnet rebalance put HATCHES in the rail). The left column no longer holds
+ * a panel that grows without bound, but THE SPLIT is still payload-sized, so
+ * it keeps both properties.
  * `scrollbar-size: 1 1` matches every other scrollable container in this file;
  * the Textual default is two cells. */
 SurfScreen #surf-pool4-left {
@@ -2334,20 +2336,21 @@ SurfPool4Hatches {
     margin: 0 0 1 0;
 }
 
-/* The left column's `1fr`, under THE SPLIT and THE RATCHET -- exactly one
- * child per column may carry it, and it must be the one with content to spend
- * rows on. Floored, because a `1fr`
- * child cannot overflow a scroll container, it SHRINKS: without `min-height`
- * this log sheds a line per terminal row down to a bare title with no
- * scrollbar and no trace, which is what the floor under `SurfDevActivity`
- * exists to stop in the dashboard body. 6 was title, the legend note and four
- * rows until 2026-09-12; since the title took the repo-wide blank row under
- * it (`margin: 0 0 1 0`, in this widget's own DEFAULT_CSS) the same 6 is
- * title, BLANK, note and three rows. Raising it to 7 to buy the fourth row
- * back was measured and rejected: it takes
- * `screens/surf.SURF_POOL4_FULL_LAYOUT_ROWS` from 45 to 46, and a `RichLog`
- * scrolls inside itself, so shrinking it hides rows behind its own scrollbar
- * rather than cutting them off the layout. */
+/* RECENT FLOW, in the `4` body's top row -- and since 2026-09-14 ONLY there.
+ * Until then this was also the `p` body's left-column `1fr`, under THE SPLIT
+ * and THE RATCHET. The owner removed that copy as a duplicate of RECENT FLOW,
+ * and the `p` left column now carries no `1fr` child at all (see
+ * `screens/surf.POOL4_LEFT_ID`). The rule stays unscoped and its values did
+ * not move, so the `4` body renders exactly as before: its top row is
+ * `1fr:1fr` precisely so this one rule is the geometry it wants.
+ *
+ * Floored, because a `1fr` child cannot overflow a scroll container, it
+ * SHRINKS: without `min-height` this log sheds a line per terminal row down
+ * to a bare title with no scrollbar and no trace. In the `4` body the note
+ * line is not composed (`quiet_as_of`), so at the floor the 6 is title,
+ * BLANK and four log rows. Unscoped since 2026-09-12; scoping it to one body
+ * would be a second place stating this panel's geometry
+ * (`test_the_market_body_needs_no_scoped_rule_for_the_flow_panel`). */
 SurfPool4Flow {
     width: 1fr;
     height: 1fr;
@@ -2387,7 +2390,8 @@ SurfPool4Ratchet {
  * -- the opposite of the left column's rule, for a reason the other bodies
  * have not had to face. A `1fr` child that is shrunk below its content loses
  * those lines with no scrollbar and no trace unless it scrolls inside itself,
- * and of this body's five panels only POOL4 FLOW does. HATCHES is the panel
+ * and of this body's four panels none does (POOL4 FLOW did, until it left the
+ * body on 2026-09-14). HATCHES is the panel
  * whose line count moves with the data (ten levers today, twelve at the
  * widget's own cap), so it is `auto` above and takes exactly the rows it
  * needs; sIMD VAULT's line count is a constant, so `min-height: 10` is both
@@ -2418,12 +2422,14 @@ SurfPool4Vault {
  * also moves the hero's breathing room.
  *
  * THE TOP ROW'S SEAM IS `1fr:1fr` AND THE REUSED PANEL IS THE REASON.
- * `SurfPool4Flow` is mounted in it a SECOND time (PRD section 6.4: reuse the
+ * `SurfPool4Flow` was mounted in it a SECOND time (PRD section 6.4: reuse the
  * module, do not copy it), and the rule it already carries above --
  * `width: 1fr; height: 1fr; min-height: 6` -- is exactly the rule it wants
  * there. A 7:6 seam would have needed a scoped width override, i.e. a second
  * place stating that panel's geometry, which is the divergence reuse exists
- * to avoid.
+ * to avoid. Since 2026-09-14 this row is the panel's ONLY mount (the `p`
+ * body's copy was removed as a duplicate), and the one unscoped rule still
+ * applies unchanged.
  *
  * THE BOTTOM ROW'S SEAM IS NOT A RATIO AT ALL, SINCE 2026-09-12. Both rows
  * were `1fr:1fr` and read as one grid until the owner asked, off the live

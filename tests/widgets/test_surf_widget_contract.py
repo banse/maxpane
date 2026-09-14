@@ -179,7 +179,9 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # list's own docstring asks of a new widget. `SurfBurnkeepers` was
         # renamed `burnkeepers=` -> `launchpad_burnkeepers=` to earn it.
         SurfLaunchpadActivity, SurfBurnkeepers,
-        # The `p` POOL4 body's five panels (2026-09-01). All five are in the
+        # The `p` POOL4 body's five panels (2026-09-01; `SurfPool4Flow` has
+        # rendered only in the `4` body since 2026-09-14, and is still
+        # exported and still checked). All five are in the
         # strict check and NONE of them is excused anything -- see
         # `test_no_pool4_widget_needs_a_kwarg_alias` below for why that had
         # to be a decision rather than an accident.

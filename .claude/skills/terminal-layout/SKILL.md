@@ -17,7 +17,7 @@ it. This file is the method; the constants are the record.
 | app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `p` pool4 | 106 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `p` pool4 | 99 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
@@ -68,6 +68,25 @@ pin, and a row that lands inside an existing floor does not reach it at all.
 Raising FLOW's floor to buy its fourth log row back was measured too and
 costs a second row (45 -> 46); it was not spent.
 
+On 2026-09-14 the owner removed POOL4 FLOW from the `p` body, because the `4`
+body's RECENT FLOW already renders its rows. **The width pin went 106 -> 99 and
+the row pin did not move.** That is the binding-column rule seen from both
+axes at once, and it is the example to quote when someone expects a removed
+panel to clear `‹ taller`:
+
+* FLOW **bound** the width (a 52-need panel buying 53 with its column's
+  gutter), so removing it moved that pin. It moved seven columns, not three,
+  because under 1:1 the rail now has to get its 50 and an odd terminal width
+  hands the rail the odd column. The binder is HATCHES now, with zero margin;
+  it still marks at every width under the pin.
+* FLOW sat in the column that only **tied** the height, at 34 rows each. The
+  left column fell to 28 and the rail stayed at 34, so the pin stayed at 45
+  and `‹ taller` is still lit at 44.
+
+The left column kept no `1fr` child. Neither survivor scrolls inside itself,
+so the freed rows are blank space at the column's foot rather than a floor on
+a `Static` that could cut in silence.
+
 Later still on the same day the owner asked for three layout changes on the
 `4` body at once and **both** its pins moved: 105 -> 119 and 32 -> 35. That
 entry is the worked example of three separate lessons in this file, so it is
@@ -99,8 +118,9 @@ though the `4` body has since moved thirteen columns past the `p` body and
 handed its seam to a different panel -- which is itself the lesson, one layer
 out: a relation between two independently swept pins is a coincidence with a
 date on it, and nothing should be derived from it even while it holds.
-`SurfPool4Flow` bound surf's `p` body and its `4` body. In `p` it sits in a
-scrolling `Vertical` that reserves its own scrollbar gutter, so that column has
+`SurfPool4Flow` bound surf's `p` body and its `4` body (until 2026-09-14, when
+it left `p`). In `p` it sat in a
+scrolling `Vertical` that reserves its own scrollbar gutter, so that column had
 to buy a column more than the panel needs; in `4` the row it sits in does not
 scroll, so the seam buys the panel's need exactly and the body's single gutter
 is paid once instead of twice. Same panel, same need, two different pins.

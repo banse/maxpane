@@ -130,7 +130,7 @@ cost, because two of the three moved a pin.
 **1. STAKERS below RECENT FLOW.** The original specification put the leaderboard in the top row on
 bakery's shape. It is in the bottom row now and RECENT FLOW is beside the rail. The rail did not
 move, so `_SCROLL_COLUMNS` is unchanged and the `p` body's copy of `SurfPool4Flow` is untouched —
-that panel is still one module mounted twice (§6.4), and its three per-instance keywords
+that panel was then one module mounted twice (§6.4; the `p` copy was removed on 2026-09-14), and its three per-instance keywords
 (`quiet_mainnet`, `quiet_as_of`, `classes="market"`) travelled with the instance.
 
 **2. STAKERS shows the whole 42-character address.** `_fmt.long_addr`'s anti-poisoning window
@@ -281,6 +281,13 @@ The drip backlog is the only dripper internal that earns screen space, and only 
 the representable-zero contract worked out (a BUY has no burn leg, so `0.00` is a real value and
 `None` is reserved for the whole-panel unavailable state). Reuse before you build: a copy means the
 next fix reaches one of them.
+
+**AMENDED 2026-09-14 — mounted in this body only.** The "reuse, mounted in both bodies"
+arrangement ended when the owner removed POOL4 FLOW from the `p` body as a duplicate of this panel.
+The module is still reused unchanged rather than copied; there is simply one mount site now, and
+it is here. This body's rendering did not change. The per-instance keywords the mount passes
+(`quiet_mainnet`, `quiet_as_of`, `classes="market"`) existed only to tell the two copies apart and
+are now vestigial; that is filed as F15 in `docs/surf_pool4_followups.md`.
 
 ### 6.5 IF IMD FALLS (EV table slot)
 The depth ladder — price move, ETH the hook pays, share of the band consumed. Computed in

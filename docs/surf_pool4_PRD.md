@@ -137,6 +137,29 @@ give every `1fr` child a `min-height`, fit every hand-built row on `cell_len` no
 > §4 below describes each panel's *content*, which the swap does not change; only the
 > "(left)" / "(rail)" labels in its subheadings are superseded by the diagram here.
 
+> ### AMENDED 2026-09-14 — POOL4 FLOW is no longer on this body
+>
+> The owner, from a live screenshot: *"remove the POOL4 FLOW from the pool4 (p) view as it
+> already is covered in the market view now (4)"*. `SurfPool4Flow` renders the same rows as the
+> `4` body's RECENT FLOW, so `p` printed them twice. The body is now:
+>
+> ```
+> ┌ #surf-pool4-left ──────────────────────┐┌ #surf-pool4-rail ──────────────────┐
+> │ THE SPLIT · MAINNET     (auto)         ││ HATCHES · MAINNET       (auto)     │
+> ├────────────────────────────────────────┤├────────────────────────────────────┤
+> │ THE RATCHET · MAINNET   (auto)         ││ sIMD VAULT · MAINNET    (1fr, 10)  │
+> │ (spare rows: blank, no 1fr child)      ││                                    │
+> └────────────────────────────────────────┘└────────────────────────────────────┘
+> ```
+>
+> Both pins were measured again rather than predicted. The width pin fell **106 → 99**: FLOW was
+> its binder, and HATCHES binds now, in the rail, with zero margin. The height pin **held at 45**:
+> the rail's 34 rows of content were already the worst case, and only the left column shrank
+> (34 → 28). So `‹ taller` at 44 rows is unchanged by this. §4.1 below still describes the panel,
+> which lives on in the `4` body (`docs/surf_pool4_market_PRD.md` §6.4). The "as built" block
+> above, including the wireframe, is the pre-removal record. The measurements live in
+> `screens/surf.SURF_POOL4_FULL_LAYOUT_COLUMNS` and `…_ROWS`.
+
 ## 4. The panels
 
 ### 4.1 POOL4 FLOW (left, unbounded rows)

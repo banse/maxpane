@@ -456,7 +456,7 @@ class SurfPool4USignals(Vertical):
         """``market_title_text``, not ``title_text``: this is the ``4`` body.
 
         The one difference is that ``MAINNET`` is left unsaid here while the
-        ``p`` body's five panels go on printing it -- see
+        ``p`` body's four panels go on printing it -- see
         ``_pool4.QUIET_NETWORK`` for why silence is available for exactly one
         network and for nothing else.
         """

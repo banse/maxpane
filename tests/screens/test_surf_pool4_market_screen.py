@@ -10,13 +10,19 @@ rather than about a panel (the five panels have their own widget tests):
    invariant "a hero is on screen, and only one" is new here and is the one
    an ordinary edit breaks.
 3. Every key the body declares reaches a **pixel**, not merely a widget.
-4. RECENT FLOW is the ``p`` body's own ``SurfPool4Flow`` mounted twice, never
-   a second module -- and both instances are handed the same rows.
+4. RECENT FLOW is ``SurfPool4Flow``, mounted **once**, in this body and
+   nowhere else. It was the ``p`` body's panel mounted a second time until
+   2026-09-14, when the owner removed the ``p`` body's copy as a duplicate of
+   this one -- so the ``p`` body is also checked for mounting none.
 5. **The two per-instance opt-ins set at that one mount site stay there.**
    This body leaves ``MAINNET`` unsaid and prints no per-panel ``as of``; the
-   ``p`` body does neither. Both claims are swept per panel *and* from the
-   other side, because a "fix" applied to the shared helper or to the class
+   ``p`` body's panels do neither. Both claims are swept per panel *and* from
+   the other side, because a "fix" applied to the shared ``_pool4`` helpers
    would satisfy every ``4``-body case and strip the auditor body in silence.
+   With FLOW gone from ``p`` no auditor panel shares a *class* with this body
+   any more, so a fix applied to ``SurfPool4Flow``'s defaults is no longer
+   visible from the other side -- filed as F15 in
+   ``docs/surf_pool4_followups.md``.
 
 Everything is asserted against **composited output** (``render_strips()``),
 joined per row and then by newline: a string that never reaches a pixel
@@ -80,12 +86,14 @@ _SIZE = (150, 50)
 #: The five panel classes that live in the `4` body, in compose order.
 #: `SurfPool4Flow` JOINED this tuple on 2026-09-12 -- it was deliberately
 #: absent while it was the one panel still printing `· MAINNET` here. It is
-#: the `p` body's own panel mounted a second time, and it is quiet in this
-#: body *only* because the screen passes `quiet_mainnet=True` at this mount
-#: site. `test_the_p_body_still_names_mainnet_on_the_same_class` is the other
-#: half of that claim and has to be read beside this one: a fix that quieted
-#: the shared helper or the class would satisfy every sweep below and strip
-#: five `p`-body titles in silence.
+#: quiet in this body *only* because the screen passes `quiet_mainnet=True`
+#: at this mount site. Until 2026-09-14 it was also mounted in the `p` body,
+#: and `test_the_p_body_still_names_mainnet_on_the_same_class` watched that
+#: copy from the other side; the owner removed it as a duplicate of this
+#: panel, so that test became `test_the_p_body_mounts_no_flow_panel`. A fix
+#: that quieted the shared `_pool4` helpers would still satisfy every sweep
+#: below and strip the four `p`-body titles, which is what `_AUDITOR_PANELS`
+#: goes on catching.
 _MARKET_PANELS = (
     SurfPool4UStakers,
     SurfPool4UBurn,
@@ -94,17 +102,18 @@ _MARKET_PANELS = (
     SurfPool4Flow,
 )
 
-#: The `p` AUDITOR body's five panels, in compose order -- the complement of
-#: the tuple above and the other half of every claim made about it. Two of the
-#: three per-instance decisions this screen makes (`quiet_mainnet`,
-#: `quiet_as_of`) are set at ONE mount site on a class that is mounted twice,
-#: and the failure mode both times is a "fix" applied to the shared helper or
-#: to the class instead -- which satisfies every `4`-body sweep and strips the
-#: `p` body in silence. A sweep with no complement cannot see that.
+#: The `p` AUDITOR body's panels, in compose order -- **four** since
+#: 2026-09-14, when `SurfPool4Flow` left that body -- the complement of the
+#: tuple above and the other half of every claim made about it. The two
+#: quiet opt-ins (`quiet_mainnet`, `quiet_as_of`) are set at ONE mount site,
+#: and the failure mode both times is a "fix" applied to a shared helper
+#: instead -- which satisfies every `4`-body sweep and strips the `p` body in
+#: silence. A sweep with no complement cannot see that. What it can no longer
+#: see is a fix applied to `SurfPool4Flow`'s own defaults, because no auditor
+#: panel is that class any more (F15).
 _AUDITOR_PANELS = (
     SurfPool4Split,
     SurfPool4Ratchet,
-    SurfPool4Flow,
     SurfPool4Hatches,
     SurfPool4Vault,
 )
@@ -470,35 +479,36 @@ async def test_every_market_panel_reaches_the_compositor() -> None:
             assert title in text, f"{title} did not reach a pixel"
 
 
-async def test_recent_flow_is_the_same_class_mounted_twice() -> None:
-    """PRD §6.4's reuse, asserted as the two-instance fact it actually is.
+async def test_recent_flow_is_mounted_once_in_the_4_body_only() -> None:
+    """RECENT FLOW has exactly one mount site, and it is this body's top row.
 
-    RECENT FLOW is ``widgets/surf/pool4_flow.py`` unchanged -- the module the
-    ``p`` body already uses -- mounted a second time. Two things follow and
-    both are pinned here:
+    **Rewritten on 2026-09-14, and the decision that retired its premise is
+    the owner's:** *"remove the POOL4 FLOW from the pool4 (p) view as it
+    already is covered in the market view now (4)"*. Until then this was
+    ``test_recent_flow_is_the_same_class_mounted_twice`` and pinned two
+    instances, one per body, fed the same rows by one dispatch statement (PRD
+    §6.4's reuse). The ``p`` body's copy is gone, so the claim that survives
+    is the count, made from the other side:
 
-    * There are exactly **two** instances, one per body. Textual's
+    * There is exactly **one** instance on the whole screen. Textual's
       ``query_one`` returns the FIRST match rather than raising on several,
-      so nothing anywhere else would notice a third appearing, or a second
-      module being written instead.
-    * Both are handed the **same rows**, because the screen dispatches with
-      ``self.query(SurfPool4Flow)`` in one statement. Two panels showing the
-      same key with different contents is the divergence that copying the
-      module would have made possible, and it is what this reuse buys.
+      so nothing else would notice a second mount coming back, or a copied
+      module being written instead of reusing this one.
+    * It lives in ``#surf-pool4-user-middle``, not in the ``p`` body's left
+      column, and it was dispatched real rows -- so the single-instance
+      assertion is about a panel that is actually fed, not a dead one.
+
+    ``test_the_p_body_mounts_no_flow_panel`` below is the ``p``-body half.
     """
     async with _surf_app().run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
         flows = list(screen.query(SurfPool4Flow))
-        assert len(flows) == 2, [f.parent.id for f in flows]
-        assert {f.parent.id for f in flows} == {
-            POOL4_LEFT_ID, POOL4_USER_MIDDLE_ID,
-        }
-        # One payload, both panels: compare what each actually holds rather
-        # than trusting that one statement fed both.
-        assert flows[0]._payload == flows[1]._payload
+        assert len(flows) == 1, [f.parent.id for f in flows]
+        assert flows[0].parent.id == POOL4_USER_MIDDLE_ID
+        assert flows[0].parent.id != POOL4_LEFT_ID
         assert flows[0]._payload.get("rows"), (
-            "neither instance was dispatched anything -- the comparison "
-            "above would hold vacuously"
+            "the one instance was dispatched nothing -- the count above "
+            "would be about a panel nobody feeds"
         )
 
 
@@ -734,16 +744,20 @@ async def test_the_market_title_row_still_carries_the_bodys_one_clock() -> None:
 async def test_every_auditor_panel_still_renders_its_own_as_of_marker(cls) -> None:
     """The `p` body is untouched, and this is the only test that can say so.
 
-    ``SurfPool4Flow`` is mounted in both bodies and the ``4`` instance is quiet
-    because **the screen passes ``quiet_as_of=True`` at that one mount site**.
-    Quieting the class, its default, or the note helper instead would satisfy
-    every case in the sweep above and strip the auditor body's markers in
-    silence -- exactly the failure ``test_the_p_body_still_names_mainnet_on_
-    the_same_class`` exists for one field over.
+    The ``4`` body prints no per-panel ``as of``. Quieting a shared ``_pool4``
+    note helper instead of the one mount site would satisfy every case in the
+    sweep above and strip the auditor body's markers in silence.
 
-    Proven by mutation: flipping ``SurfPool4Flow.__init__``'s ``quiet_as_of``
-    default to ``True`` leaves every ``4``-body case green and reddens this
-    one, on ``SurfPool4Flow``.
+    **One case fewer since 2026-09-14.** This was parametrised over five
+    panels, ``SurfPool4Flow`` among them, while that class was mounted in
+    both bodies. Its mutation record read: flipping ``SurfPool4Flow.__init__``'s
+    ``quiet_as_of`` default to ``True`` leaves every ``4``-body case green and
+    reddens this one, on ``SurfPool4Flow``. The owner then removed POOL4 FLOW
+    from the ``p`` body as a duplicate of RECENT FLOW, so that case is gone,
+    and **that mutation is no longer caught by any screen test** -- the one
+    remaining instance passes the keyword explicitly. That gap is the
+    vestigial-flags follow-up, F15 in ``docs/surf_pool4_followups.md``, not
+    something to paper over by re-adding a panel here.
     """
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
@@ -801,30 +815,56 @@ async def test_the_market_panels_leave_mainnet_unsaid_and_say_everything_else()\
             assert "SEPOLIA" in rows[0], (cls.__name__, rows[0])
 
 
-async def test_the_p_body_still_names_mainnet_on_the_same_class() -> None:
-    """The other half of the quiet-title claim, and why the opt-in is per instance.
+async def test_the_p_body_mounts_no_flow_panel() -> None:
+    """The ``p`` body has no POOL4 FLOW -- on the widget tree and on the pixels.
 
-    ``SurfPool4Flow`` is mounted twice. The ``4`` body's instance leaves
-    ``MAINNET`` unsaid; the ``p`` body's must go on printing it, because that
-    body is an auditor's view where the network word is load-bearing. A fix
-    that quieted the shared helper, or the class itself, would pass the sweep
-    above and silently strip five ``p``-body titles -- so this test exists to
-    fail in that case, and it is the only test that can.
+    **This replaces ``test_the_p_body_still_names_mainnet_on_the_same_class``,
+    whose premise the owner retired on 2026-09-14**: *"remove the POOL4 FLOW
+    from the pool4 (p) view as it already is covered in the market view now
+    (4)"*. That test checked that the ``p`` body's copy of ``SurfPool4Flow``
+    kept ``MAINNET`` while this body's copy dropped it. There is no ``p`` copy
+    left to check, so the absence itself is what gets asserted. The mainnet
+    payload is used because it is the one where the panel would have printed
+    ``POOL4 FLOW · MAINNET``:
 
-    It replaces ``test_recent_flow_still_names_mainnet_in_this_body``, which
-    pinned the finding open and instructed its own deletion on the day the
-    finding was fixed.
+    * the ``p`` body container holds **zero** ``SurfPool4Flow`` instances;
+    * its composited region carries no ``POOL4 FLOW`` title and no
+      ``BUY``/``SELL`` row, so a flow log that came back as a copied module
+      rather than this class still reddens it;
+    * its four remaining panels still name ``MAINNET``. That is what the
+      retired test's "the auditor body keeps its network word" half was
+      really protecting, and a fix that quieted the shared ``_pool4`` helper
+      would still strip them.
     """
     async with _surf_app(_mainnet_pool4_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
         await pilot.press("escape")
         await pilot.press("p")
         await pilot.pause()
+        await pilot.pause()
         body = screen.query_one(f"#{POOL4_BODY_ID}")
-        flow = list(body.query(SurfPool4Flow))[0]
-        rows = _region_text(pilot.app, flow).split("\n")
+        assert body.display is True
+        # Parent ids are read INSIDE the app context. Outside it the panels
+        # are unmounted and `parent` is None, so a message built there raises
+        # AttributeError and the test goes red on a crash rather than on this
+        # assertion -- which is what the first mutation run of this test did.
+        flow_parents = [f.parent.id for f in body.query(SurfPool4Flow)]
+        text = _region_text(pilot.app, body)
+        titles = {
+            cls.__name__: _region_text(
+                pilot.app, list(body.query(cls))[0]
+            ).split("\n")[0]
+            for cls in _AUDITOR_PANELS
+        }
 
-    assert "MAINNET" in rows[0], (
-        "the `p` body's RECENT FLOW stopped naming MAINNET -- the quiet-title "
-        "opt-in leaked out of the `4` body's mount site: " + rows[0]
+    assert flow_parents == [], (
+        f"the `p` body mounts SurfPool4Flow again, under {flow_parents}"
     )
+    assert "POOL4 FLOW" not in text, text
+    assert "SELL" not in text and "BUY" not in text, text
+    assert len(titles) == 4, titles
+    for name, title in titles.items():
+        assert "MAINNET" in title, (
+            f"the `p` body's {name} stopped naming MAINNET -- the quiet-title "
+            f"opt-in leaked out of the `4` body's mount site: {title}"
+        )
