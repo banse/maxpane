@@ -34,10 +34,18 @@ def _format_time(timestamp: float | int | str | None) -> str:
 
 def _short_tx(tx_hash: str | None) -> str:
     """Shorten a tx hash for display. No icon: transaction hashes are
-    outside the copy-icon rule (PRD §1)."""
+    outside the copy-icon rule (PRD §1).
+
+    ``short_hex`` returns a value that fails its own hex check **unchanged**
+    -- unbounded length, unescaped -- because its job is windowing a real hex
+    string, not sanitising an arbitrary one. This line is embedded directly
+    into a ``markup=True`` RichLog line (CLAUDE.md: "Escape every third-party
+    string before it reaches markup"), the same way ``token`` already is a
+    few lines below, so the result is escaped here too.
+    """
     if not tx_hash:
         return "--"
-    return short_hex(tx_hash, _TX_COLS)
+    return safe_markup(short_hex(tx_hash, _TX_COLS))
 
 
 class FeeClaims(Vertical):

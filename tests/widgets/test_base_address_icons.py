@@ -47,6 +47,9 @@ from textual.app import App
 from tests.widgets.address_probe import CopyRecorder, icon_targets
 
 ADDR = "0x" + "abcdef0123" * 4
+#: A second, distinct address -- used wherever a test must prove a click
+#: copies *that row's own* address rather than a neighbour's.
+ADDR2 = "0x" + "fedcba9876" * 4
 #: 40 hex chars -- deliberately address-shaped, to prove fee_claims's guard:
 #: even a hex value this length gets no icon, because ``short_hex`` never
 #: attaches one regardless of the value's shape (it returns ``str``, never a
@@ -225,6 +228,38 @@ async def test_fee_claims_realistic_hash_length_also_gets_no_icon():
         assert icon_targets(app) == []
 
 
+async def test_fee_claims_malformed_tx_hash_renders_without_being_parsed_as_markup():
+    """A tx hash that fails ``short_hex``'s own hex check comes back through
+    it **unchanged** -- unbounded, unescaped -- because that helper's job is
+    windowing real hex, not sanitising arbitrary third-party text. This line
+    is written to a ``markup=True`` RichLog, so an unescaped ``"[/x]"`` would
+    either raise ``MarkupError`` inside the message pump (the crash class
+    ``test_markup_safety.py``'s ``HOSTILE_NAMES`` documents) or, if it
+    happened not to, would vanish rather than render -- neither of which is
+    "displays the malformed value literally". ``RichLog(markup=True)``
+    defers parsing to idle the same way ``DataTable`` does, so two
+    ``pilot.pause()`` calls are needed for the deferred formatter to run
+    (same shape as ``test_markup_safety.py``'s control test).
+    """
+    from maxpane_dashboard.widgets.base.fee_claims import FeeClaims
+
+    app = _WidgetApp(
+        FeeClaims(),
+        {"claims": [
+            {"timestamp": 1_700_000_000, "token": "PIE", "amount_eth": 0.5,
+             "tx_hash": "[/x]"},
+        ]},
+    )
+    async with app.run_test(size=(160, 40)) as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        rendered = "\n".join(
+            "".join(seg.text for seg in strip)
+            for strip in app.screen._compositor.render_strips()
+        )
+        assert "[/x]" in rendered
+
+
 # ---------------------------------------------------------------------------
 # overview.py (shadowed top-level module) and overview/_legacy_overview.py
 # (its reachable duplicate): both converted, each reached directly.
@@ -283,6 +318,34 @@ async def test_bt_overview_leaderboard_the_live_widget_puts_an_icon_on_the_token
     async with app.run_test(size=(160, 40)) as pilot:
         await pilot.pause()
         assert ADDR in {t[2] for t in icon_targets(app)}
+
+
+async def test_bt_overview_leaderboard_clicking_the_icon_copies_that_rows_address():
+    """The one live widget in this package: prove the click actually fires.
+
+    ``icon_targets`` only proves an icon carries the right ``@click`` meta at
+    a composited coordinate; it never dispatches a real click. Two rows with
+    two different addresses so a click that copied the wrong (neighbour's)
+    row's address would fail this -- not just "no icon", a *specific* wrong
+    icon.
+    """
+    from maxpane_dashboard.widgets.base.overview.bt_overview_leaderboard import (
+        BTOverviewLeaderboard,
+    )
+
+    app = _WidgetApp(
+        BTOverviewLeaderboard(),
+        {"trending_tokens": [
+            _base_token(ADDR, symbol="LIVE1"),
+            _base_token(ADDR2, symbol="LIVE2"),
+        ]},
+    )
+    async with app.run_test(size=(160, 40)) as pilot:
+        await pilot.pause()
+        target = next(t for t in icon_targets(app) if t[2] == ADDR2)
+        await pilot.click(offset=(target[0], target[1]))
+        await pilot.pause()
+        assert app.copied == [ADDR2]
 
 
 async def test_bt_leaderboard_dead_duplicate_puts_an_icon_on_the_token():
