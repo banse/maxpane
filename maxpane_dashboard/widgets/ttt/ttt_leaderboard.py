@@ -14,7 +14,11 @@ non-optional field): the symbol is shown, and its copy icon copies the
 address, per PRD §1 ("a name shown in place of the address gets the
 icon"). The cell is built with ``address_text``, never markup, so the
 symbol (attacker-chosen ERC20 metadata) never has to be escaped for a
-markup parse it no longer goes through.
+markup parse it no longer goes through. A missing symbol renders the
+placeholder ``"--"`` rather than the bare address (see ``_safe_symbol`` and
+``ttt_fees_table.py``'s matching note) -- the icon copies the real address
+regardless of the label shown, so this costs nothing the rule requires and
+keeps this column off ``address_text``'s ``MIN_SHORT_COLS`` floor.
 """
 
 from __future__ import annotations
@@ -22,23 +26,26 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 
 _DASH = "--"
 _SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
 
-#: Display budget for the SYM cell's symbol/address text, excluding
-#: ICON_COLS. An up-to-8-char symbol alone would fit width=8, but this cell
-#: now sometimes renders the bare address instead (no known symbol --
-#: ``_safe_symbol`` returns ``None``), and ``address_text``'s own window
-#: has a floor, ``MIN_SHORT_COLS``, below which it will not go: a rendered
-#: check with width=8 on a no-symbol row still produced an 11-cell address,
-#: overflowing an 8+ICON_COLS=10 column (caught on the composited strip,
-#: not by inspection -- see ``ttt_fees_table.py``, which shares this exact
-#: SYM-as-name-for-address shape and found it first). Pinning this to
-#: ``MIN_SHORT_COLS`` covers both branches -- the symbol case has room to
-#: spare, the bare-address case fits exactly.
-_SYM_WIDTH = MIN_SHORT_COLS
+#: Display budget for the SYM cell's label text, excluding ICON_COLS --
+#: measured against the real screen, matching ``ttt_fees_table.py``'s
+#: identical column. ``TTTLeaderboard`` is ``width: 3fr`` against
+#: ``#right-col``'s ``2fr`` in ``#middle-row`` (themes/minimal.tcss), so it
+#: is NOT the binding table -- at the app-wide pin,
+#: ``__main__.FULL_LAYOUT_COLUMNS = 143``, this table's region is 83
+#: columns and, at this same width=5 label, its DataTable needs 68
+#: (``show_horizontal_scrollbar`` False, 15 columns of margin; even the
+#: pre-icon width=8 label only needed 71, 12 columns of margin -- this
+#: table was never in danger). Kept equal to ``ttt_fees_table.py``'s
+#: binding-table value anyway: the two DataTables sit one above the other
+#: on the same screen and a reader comparing symbols across them should
+#: not see the same-length name truncate differently in one and not the
+#: other. See ``tests/screens/test_ttt_address_icon_layout.py``.
+_SYM_WIDTH = 5
 
 
 # -- format helpers ----------------------------------------------------
@@ -127,23 +134,25 @@ def _fmt_age(age_str) -> str:
     return str(age_str)
 
 
-def _safe_symbol(sym) -> str | None:
+def _safe_symbol(sym) -> str:
     """Strip non-printable chars from symbol; truncate to 8 chars.
 
-    ``None`` for missing/empty (rather than ``_DASH``) so ``address_text``
-    shows the real address instead of a placeholder dash when the token has
-    a valid address but no known symbol. No ``safe_markup``: the cleaned
-    string is handed to ``address_text`` as a ``label``, appended as plain
-    ``Text`` rather than parsed as markup.
+    **``_DASH``, not ``None``** -- see ``ttt_fees_table.py``'s matching
+    docstring: the icon copies the real address regardless of the label
+    shown, so a placeholder costs nothing the rule requires, and it keeps
+    this column off ``address_text``'s own ``MIN_SHORT_COLS`` floor, which
+    the sibling table's real screen region cannot afford at the app's pin.
+    No ``safe_markup``: the cleaned string is handed to ``address_text`` as
+    a ``label``, appended as plain ``Text`` rather than parsed as markup.
     """
     if sym is None:
-        return None
+        return _DASH
     try:
         cleaned = "".join(ch for ch in str(sym) if ch.isprintable())
     except Exception:
-        return None
+        return _DASH
     cleaned = cleaned.strip()
-    return cleaned[:8] if cleaned else None
+    return cleaned[:8] if cleaned else _DASH
 
 
 # -- widget ------------------------------------------------------------
