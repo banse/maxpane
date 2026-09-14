@@ -648,7 +648,14 @@ would move, and the window rule (8/6 at 17 cells) is surf's anti-poisoning form.
 optional**: `tests/test_address_rule.py` fails on a private address formatter,
 `tests/screens/test_address_icons_everywhere.py` fails on an address that reaches the screen
 without its icon, and `tests/test_address_sweep_registry.py` fails on a dashboard the sweep does not
-render. No test may reach the real clipboard: `tests/conftest.py` replaces the runner suite-wide.
+render. A new dashboard joins the sweep, not just the icon: add a `SweepCase` to the `CASES` tuple
+in `tests/address_sweep/builders.py` (`registry.py` only re-exports it) — its screen class, a
+harness `build`, a `payload`, the `views` that reach every body (key tuples or callables), and a
+hand-listed `seeded` tuple carrying at least one address in every shape it renders (full,
+shortened, name-backed, prose). `address_free=True` is only for a dashboard that renders none, and
+the agreement test refuses it the moment the dashboard's widgets import the helper.
+`docs/address_copy_PRD.md` §7 spells out E1–E6 in full. No test may reach the real clipboard:
+`tests/conftest.py` replaces the runner suite-wide.
 
 **A widget that renders third-party text through `Static` hands it a pre-built
 `rich.text.Text`, never a markup string.** Same defect as the rule above, one layer out:
