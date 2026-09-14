@@ -1490,7 +1490,7 @@ async def test_activity_legitimate_small_transfer_still_renders():
         widget.update_data(dev_activity=[real_row])
         await pilot.pause()
         screen = _screen_text(app)
-        assert "0x91604F59…d1C499" in screen  # long_addr(sender), dimmed
+        assert "0x91604F59…d1C499" in screen  # the 17-cell window (address.short_address), dimmed
         assert "no recent activity" not in screen
 
 
@@ -1523,7 +1523,6 @@ def test_activity_tier_table_is_measured_not_rounded():
     tier is rendered at exactly its threshold and measured: if a format string
     grows a separator, the layout stops fitting its own number and this fails.
     """
-    from maxpane_dashboard.widgets.markup_safety import visible_len
     from maxpane_dashboard.widgets.surf.activity import (
         COMPACT_WIDTH,
         FULL_WIDTH,
@@ -1564,7 +1563,6 @@ def test_activity_the_wallet_column_yields_before_the_address_window():
     prevent.  The wallet label is a *label*: it shrinks, then goes whole.  The
     window is a fingerprint and does neither.
     """
-    from maxpane_dashboard.widgets.markup_safety import visible_len
     from maxpane_dashboard.widgets.surf.activity import ADDR_CELL_COLS, MINIMAL_WIDTH
 
     row = _DEV_ACTIVITY[2]  # unknown counterparty, 8 ETH transfer
@@ -1583,9 +1581,11 @@ def test_activity_the_wallet_column_yields_before_the_address_window():
 def test_activity_never_writes_a_row_wider_than_the_log_it_goes_in():
     """``RichLog(wrap=False)`` shrinks silently, so the row must fit already.
 
-    The sweep above stopped at ``5 + 2 + ADDR_COLS`` -- 24, the last width
-    that works -- and the defect lived one column below it.  With the wallet
-    cell gone the row is *still* ``MM-DD`` + gap + window == 24 columns, and
+    The sweep above stops at ``5 + 2 + ADDR_CELL_COLS`` -- 26 since the copy
+    icon, 24 (``5 + 2 + ADDR_COLS``) when this defect was found -- the last
+    width that works, and the defect lived one column below it.  Before the
+    icon, with the wallet cell gone the row was *still* ``MM-DD`` + gap +
+    window == 24 columns, and
     the right rail hands this panel ``ceil(6W/13) - 5`` == 23 at a 59-60
     column terminal.  ``write()`` then narrowed the line with no ``…``, no
     marker and nothing in the title: ``0x61CC704c…73f14`` at 60 columns --
@@ -1604,7 +1604,6 @@ def test_activity_never_writes_a_row_wider_than_the_log_it_goes_in():
     is withheld (``None``) rather than cut, and the panel says so instead of
     showing it (``test_activity_withholds_the_rows_it_cannot_render_whole``).
     """
-    from maxpane_dashboard.widgets.markup_safety import visible_len
     from maxpane_dashboard.widgets.surf.activity import FLOOR_WIDTH, MINIMAL_WIDTH
 
     window = "0x61CC704c…73f14E"

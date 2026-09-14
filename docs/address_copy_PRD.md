@@ -301,8 +301,10 @@ From a pattern scan on 2026-09-14. Each package confirms its own list.
   `overview.py`, `top_movers.py`, `trending_table.py`, `overview/_legacy_overview.py`,
   `overview/bt_leaderboard.py`, `overview/bt_overview_leaderboard.py`
 - **cattown (3):** `widgets/cattown/ct_activity_feed.py`, `ct_hero_metrics.py`, `ct_leaderboard.py`
-- **curator (6):** `widgets/curator/_fmt.py`, `activity.py`, `closest_calls.py`, `leaderboard.py`,
-  `list_hero.py`, `signals.py`
+- **curator (11 shipped):** `widgets/curator/_fmt.py`, `activity.py`, `cleaned_list.py`,
+  `closest_calls.py`, `leaderboard.py`, `list_filter.py`, `list_hero.py`, `lists.py`, `signals.py`,
+  `wallet.py`; `screens/curator.py` (the pins the icon moved). The pre-implementation scan listed six
+  and missed `cleaned_list`, `lists`, `wallet`, `list_filter` and `list_hero`.
 - **frenpet (3 widgets + 3 screens):** `widgets/frenpet/overview/fp_overview_leaderboard.py`,
   `sniper_queue.py`, `top_leaderboard.py`; `screens/frenpet_full.py`, `frenpet_perf.py`,
   `frenpet_wallet.py`

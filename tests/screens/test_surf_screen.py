@@ -724,7 +724,8 @@ _AS_OF = 1_786_161_600.0      # the fetch instant: 2026-08-08T04:00:00Z
 _AS_OF_HHMM = time.strftime("%H:%M", time.localtime(_AS_OF))
 _ANNOUNCE = "0x200E710aCAA6A93bbc77146026328C40F1d60fB1"
 _REPLIER = "0x1c3A0Ad54418Fe843953C71dF23637DE732Ce159"
-# Full 42-char addresses, never pre-shortened: WP3's ``long_addr`` returns any
+# Full 42-char addresses, never pre-shortened: ``widgets/address.short_address``
+# (WP3's ``long_addr`` until the copy icon replaced it) returns any
 # string of 17 characters or fewer unchanged, so a short-form fixture would
 # make the poisoning defence a no-op in this file. Both are live in
 # frenpet.eth's history today (ops_eth_txs.json) and are the two WP3 and WP4
@@ -961,7 +962,7 @@ def _sample_data() -> dict:
                 # ``counterparty`` string when there is no label;
                 # ``test_an_unknown_counterparty_is_never_marked_known`` pins
                 # exactly this one). A pre-shortened fixture would sail
-                # through WP3's ``long_addr`` untouched -- it returns any
+                # through ``widgets/address.short_address`` untouched -- it returns any
                 # string of <=17 chars unchanged -- and the screen test would
                 # bless the first-6/last-4 short form the anti-poisoning rule
                 # exists to prevent. Renders dimmed as ``0x61CC704c…73f14E``.
@@ -5310,7 +5311,7 @@ from maxpane_dashboard.widgets.surf.activity import (  # noqa: E402
     WIDEN_HINTS as ACTIVITY_WIDEN_HINTS,
 )
 
-#: The unknown-counterparty window as ``_fmt.long_addr`` renders the real
+#: The unknown-counterparty window as ``widgets/address.short_address`` renders the real
 #: unlabelled LP-fee destination. Spelled once here: every assertion below is
 #: about *this exact string* surviving whole, because the classic
 #: first-6/last-4 short form collides with a live spoof (see the module

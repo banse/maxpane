@@ -380,7 +380,10 @@ Surf grew a **fourth body**, on the same rule as the three before it: `4` swaps
 `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4_USER — RECENT FLOW beside BURN & SUPPLY
 over SIGNALS, then STAKERS beside IF IMD FALLS — and `escape` backs out one-way. (The two
 left-hand panels traded rows on 2026-09-12, with STAKERS' addresses printed whole and the ladder
-cut to a **fixed** 45 columns; both pins moved with it, and PRD §4.1 carries the whole trade.) **There is no
+cut to a **fixed** 45 columns; both pins moved with it, and PRD §4.1 carries the whole trade. The copy
+icon did not move the width pin again: at `SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` STAKERS shows an
+`_ADDR_SHORT_COLS`-cell anti-poisoning window, and the whole address only where the panel has room
+for it and the icon — `widgets/surf/pool4u_stakers.py`.) **There is no
 six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and the
 table above still has eight rows. `p` is the protocol and `4` is the market: the two read off the
 same `TIER_POOL4` sweep and answer different questions, which is why the split is two bodies and
@@ -470,7 +473,9 @@ the constants. One result from those sweeps is worth knowing before touching thi
 half of the PRD's own prediction that a bakery-shaped body would be wide-and-short. Then the owner
 asked for STAKERS' addresses whole — all 42 characters — and the width pin moved by more than the
 height pin came down, so the PRD's prediction is now half-right for a reason nobody foresaw: this
-body is the wide one. The binding panel changed with it, from RECENT FLOW to STAKERS. **A change
+body is the wide one. The binding panel changed with it, from RECENT FLOW to STAKERS. The copy icon
+paid for its two cells there by windowing, not by moving the pin: STAKERS prints an
+`_ADDR_SHORT_COLS`-cell window at the pin and the whole address only above it. **A change
 to a cell's contents here is a change to a pin**, and neither number may be adjusted to match a
 guess — re-sweep.
 
@@ -647,7 +652,9 @@ trailing newline and the address is interpolated into an action string. The icon
 would move, and the window rule (8/6 at 17 cells) is surf's anti-poisoning form. **None of this is
 optional**: `tests/test_address_rule.py` fails on a private address formatter,
 `tests/screens/test_address_icons_everywhere.py` fails on an address that reaches the screen
-without its icon, and `tests/test_address_sweep_registry.py` fails on a dashboard the sweep does not
+without its icon — rendering every case at 170 columns and again at each view's own layout pin (plus
+any `extra_sizes` the case names, such as FWA's 120), because a defect that lives where a panel is
+tight is invisible at 170 — and `tests/test_address_sweep_registry.py` fails on a dashboard the sweep does not
 render. A new dashboard joins the sweep, not just the icon: add a `SweepCase` to the `CASES` tuple
 in `tests/address_sweep/builders.py` (`registry.py` only re-exports it) — its screen class, a
 harness `build`, a `payload`, the `views` that reach every body (key tuples or callables), and a
