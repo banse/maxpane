@@ -15,6 +15,9 @@ SLICE_DIRS = {"widgets", "screens", "data", "analytics"}
 #: The largest head or tail a shortening slice keeps; a longer one is not an
 #: address window (a 40-hex tail slice is a different operation).
 SMALL_BOUND = 12
+#: The largest constant start a head slice may have and still be a head: 0,
+#: or past a ``0x`` prefix (``a[2:6]``), give or take one.
+HEAD_LOWER_MAX = 2
 CLIPBOARD_TOOLS = ("pbcopy", "wl-copy", "xclip", "xsel")
 #: ``clip`` is also an ordinary English word ("pad/clip to width"), a CSS value
 #: (``text-overflow: clip``) and the name of surf's ``_rowfit.clip`` helper, so
@@ -42,14 +45,15 @@ def _int_const(node) -> int | None:
 
 
 def _is_head_slice(s) -> bool:
-    """``x[:n]`` or ``x[0:n]`` with a small constant ``n``."""
+    """``x[:n]``, or ``x[k:n]`` for a constant ``k`` in ``0..HEAD_LOWER_MAX``
+    (``a[2:6]`` keeps the head past ``0x``), with a small constant ``n``."""
     if not isinstance(s, ast.Slice) or s.step is not None:
         return False
-    lower = None if s.lower is None else _int_const(s.lower)
-    if s.lower is not None and lower != 0:
+    lower = 0 if s.lower is None else _int_const(s.lower)
+    if lower is None or not 0 <= lower <= HEAD_LOWER_MAX:
         return False
     upper = _int_const(s.upper) if s.upper is not None else None
-    return upper is not None and 0 < upper <= SMALL_BOUND
+    return upper is not None and lower < upper <= SMALL_BOUND
 
 
 def _is_tail_slice(s) -> bool:
@@ -93,6 +97,8 @@ BANNED_SHAPES = (
     'f"{a[:6]}[dim]…[/]{a[-4:]}"',
     'f"{a[:6]}…{a[-4:]}"',
     '"%s…%s" % (a[:10], a[-6:])',
+    'f"0x{a[2:6]}…{a[-4:]}"',
+    'f"{a[1:7]}…{a[-4:]}"',
 )
 
 
@@ -110,6 +116,8 @@ def test_the_slice_checker_ignores_quotes_and_unrelated_slices():
     assert slice_shortening_lines(apart) == []
     wide = 'x = f"{a[:40]}…{a[-40:]}"\n'
     assert slice_shortening_lines(wide) == []
+    middle = 'x = f"{a[3:9]}…{a[-4:]}"\n'
+    assert slice_shortening_lines(middle) == [], "a slice past the prefix is not a head"
 
 
 # -- E5 clipboard words -------------------------------------------------------------
