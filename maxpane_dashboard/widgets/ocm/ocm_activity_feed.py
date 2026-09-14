@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+
+from maxpane_dashboard.widgets.address import address_text
+
+#: Display budget for the actor address in this RichLog line, excluding the
+#: icon (``ICON_COLS``). No layout pin covers this hidden dashboard, so this
+#: is a grow-in-slack choice matching the recipe's own RichLog example.
+_ADDR_COLS = 17
 
 
 def _format_event_time(timestamp: float | int | str) -> str:
@@ -19,31 +27,44 @@ def _format_event_time(timestamp: float | int | str) -> str:
         return "??:??"
 
 
-def _short_addr(address: str) -> str:
-    """Shorten a wallet address to 0xABCD..1234 format."""
-    if len(address) > 10:
-        return f"{address[:6]}..{address[-4:]}"
-    return address
+def _event_to_text(event: dict) -> Text:
+    """Convert an event dict into a composited Rich ``Text`` line.
 
-
-def _event_to_markup(event: dict) -> str:
-    """Convert an event dict into a Rich-markup formatted line."""
+    Built directly with :class:`~rich.text.Text`, never a markup string:
+    the actor address carries the copy icon (``widgets/address.py``), whose
+    click action lives in a ``Style`` that only survives outside markup
+    parsing.
+    """
     ts = _format_event_time(event.get("timestamp", 0))
-    addr = _short_addr(event.get("actor_address", ""))
+    address = event.get("actor_address", "")
     event_type = event.get("event_type", "")
     token_id = event.get("token_id")
     count = event.get("count", 0)
 
+    line = Text(f"  {ts}  ")
+    addr = address_text(address, width=_ADDR_COLS)
+
     if event_type == "mint":
-        return f"  {ts}  [green]MINT[/]     {addr}  Minted Monster #{token_id}"
+        line.append("MINT     ", style="green")
+        line.append_text(addr)
+        line.append(f"  Minted Monster #{token_id}")
     elif event_type == "burn":
-        return f"  {ts}  [red]BURN[/]     {addr}  Sacrificed Monster #{token_id}"
+        line.append("BURN     ", style="red")
+        line.append_text(addr)
+        line.append(f"  Sacrificed Monster #{token_id}")
     elif event_type == "stake":
-        return f"  {ts}  [cyan]STAKE[/]    {addr}  Staked {count} monster(s)"
+        line.append("STAKE    ", style="cyan")
+        line.append_text(addr)
+        line.append(f"  Staked {count} monster(s)")
     elif event_type == "unstake":
-        return f"  {ts}  [yellow]UNSTAKE[/]  {addr}  Unstaked {count} monster(s)"
+        line.append("UNSTAKE  ", style="yellow")
+        line.append_text(addr)
+        line.append(f"  Unstaked {count} monster(s)")
     else:
-        return f"  {ts}  [dim]{event_type.upper()}[/]  {addr}  {event_type}"
+        line.append(f"{str(event_type).upper()}  ", style="dim")
+        line.append_text(addr)
+        line.append(f"  {event_type}")
+    return line
 
 
 class OCMActivityFeed(Vertical):
@@ -104,7 +125,7 @@ class OCMActivityFeed(Vertical):
         log.clear()
         log.auto_scroll = False
         for event in recent_events:
-            log.write(_event_to_markup(event))
+            log.write(_event_to_text(event))
 
         # Scroll to top after render
         self.call_after_refresh(log.scroll_home, animate=False)

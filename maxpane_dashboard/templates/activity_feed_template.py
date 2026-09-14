@@ -21,22 +21,33 @@ those two points leaves the panel blank on every refresh for as long as
 the bad event stays in the feed window.  Every field is API-sourced, so
 every field is escaped and every formatting step degrades instead of
 raising.
+
+Every displayed 0x address -- and every name that stands in for one -- goes
+through ``widgets/address.py`` and carries the copy icon. That is a repo rule,
+not a style: tests/test_address_rule.py fails on a private address formatter
+and tests/screens/test_address_icons_everywhere.py fails on an address that
+reaches the screen without its icon. Copy this, keep the import.
 """
 
 from __future__ import annotations
 
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
 
 
 #: Rendered in place of a line whose event could not be formatted at all.
 _MALFORMED_LINE = "  [dim]??:??[/]  [yellow]unreadable event[/]"
 #: Rendered when the feed has nothing to show.
 _EMPTY_LINE = "[dim]  No activity yet[/]"
+#: Display budget for the address, excluding the icon (``ICON_COLS``).
+#: Matches the two real activity-feed conversions this template was copied
+#: alongside (``widgets/ocm/ocm_activity_feed.py``, ``widgets/activity_feed.py``).
+WHO_COLS = 17
 
 
 def _format_event_time(timestamp: float | int | str) -> str:
@@ -52,50 +63,57 @@ def _format_event_time(timestamp: float | int | str) -> str:
         return "??:??"
 
 
-def _short_addr(address: str | None) -> str:
-    """Shorten a wallet address to 0xABCD..1234 format.
-
-    A missing or non-string address renders empty instead of raising
-    ``TypeError`` on ``len()``.
-    """
-    if not address:
-        return ""
-    if not isinstance(address, str):
-        address = str(address)
-    if len(address) > 10:
-        return f"{address[:6]}..{address[-4:]}"
-    return address
-
-
-def _event_to_markup(event: dict) -> str:
-    """Convert an event dict into a Rich-markup formatted line.
+def _event_to_text(event: dict) -> Text:
+    """Convert an event dict into a composited Rich ``Text`` line.
 
     Adapt the dict keys and formatting to your game's event schema, but
     keep the wrapper: an event that cannot be formatted degrades to one
     explicit line so the rest of the feed still renders.
+
+    Built directly with :class:`~rich.text.Text`, never a markup string:
+    the address carries the copy icon (``widgets/address.py``), whose click
+    action lives in a ``Style`` that only survives outside markup parsing.
+    Every other field is inserted as literal text through ``Text.append`` --
+    which never parses ``"["`` as a tag -- so ``safe_markup`` is neither
+    needed nor safe to use here: escaping it would print the escape
+    backslashes literally instead of hiding them.
     """
     try:
         return _format_event(event)
     except Exception:
-        return _MALFORMED_LINE
+        return Text.from_markup(_MALFORMED_LINE)
 
 
-def _format_event(event: dict) -> str:
-    """Format one event; :func:`_event_to_markup` is the safe wrapper."""
+def _format_event(event: dict) -> Text:
+    """Format one event; :func:`_event_to_text` is the safe wrapper."""
     if not isinstance(event, dict):
-        return _MALFORMED_LINE
+        return Text.from_markup(_MALFORMED_LINE)
     # An entry with no action and no detail carries nothing a reader could
     # act on; a timestamped blank line would pass for a real event.
     if not any(event.get(field) for field in ("action", "detail", "display_name")):
-        return _MALFORMED_LINE
+        return Text.from_markup(_MALFORMED_LINE)
     ts = _format_event_time(event.get("timestamp", 0))
-    who = safe_markup(event.get("display_name", "") or _short_addr(event.get("address", "")))
-    action = safe_markup(event.get("action", ""))
-    detail = safe_markup(event.get("detail", ""))
+    # A display name stands in for the address when one is set; the icon
+    # still copies the address either way. A missing/non-string address
+    # renders the "--" placeholder instead of raising.
+    who = address_text(
+        event.get("address"),
+        label=event.get("display_name") or None,
+        width=WHO_COLS,
+        style="dim",
+    )
+    action = str(event.get("action", ""))
+    detail = str(event.get("detail", ""))
     success = event.get("success", True)
 
-    result_icon = "[green]\u2713[/]" if success else "[red]\u2717[/]"
-    return f"  [dim]{ts}[/]  [dim]{who}[/]  [cyan]{action}[/] {detail}  {result_icon}"
+    line = Text()
+    line.append(f"  {ts}  ", style="dim")
+    line.append_text(who)
+    line.append("  ")
+    line.append(action, style="cyan")
+    line.append(f" {detail}  ")
+    line.append("\u2713" if success else "\u2717", style="green" if success else "red")
+    return line
 
 
 class GameActivityFeed(Vertical):
@@ -168,7 +186,7 @@ class GameActivityFeed(Vertical):
         written = 0
         for event in events:
             try:
-                log.write(_event_to_markup(event))
+                log.write(_event_to_text(event))
                 written += 1
             except Exception:
                 # A single unwritable line must not truncate the feed.

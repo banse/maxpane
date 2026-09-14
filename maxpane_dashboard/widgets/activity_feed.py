@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.data.models import ActivityEvent
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
 
 
 #: Rendered in place of a line whose event could not be formatted at all.
 _MALFORMED_LINE = "  [dim]??:??[/]  [yellow]unreadable event[/]"
 #: Rendered when the feed has nothing to show.
 _EMPTY_LINE = "[dim]  No activity yet[/]"
+#: Display budget for the launcher address in this RichLog line, excluding
+#: the icon (``ICON_COLS``). No layout pin covers this hidden dashboard, so
+#: this is a grow-in-slack choice matching the recipe's own RichLog example.
+_WHO_COLS = 17
 
 
 def _format_event_time(timestamp_str: str) -> str:
@@ -34,39 +39,46 @@ def _format_event_time(timestamp_str: str) -> str:
         return "??:??"
 
 
-def _short_addr(address: str | None) -> str:
-    """Shorten a wallet address to 0xabcd...ef12 format.
+def _who_text(launcher: object, *, width: int) -> Text:
+    """The launcher's address, iconed, or "the bakery" for a random event.
 
     ``None`` -- a game-generated random event with no launcher -- renders
-    as "the bakery" rather than raising, so one such event cannot blank
-    the whole feed.  A non-string launcher is coerced rather than handed
-    to ``len()``.
+    as "the bakery" rather than an address, so one such event cannot blank
+    the whole feed. A non-string launcher is coerced rather than handed to
+    :func:`~maxpane_dashboard.widgets.address.is_address`, which would
+    simply reject it and render it as inert text anyway.
     """
-    if not address:
-        return "the bakery"
-    if not isinstance(address, str):
-        address = str(address)
-    if len(address) > 10:
-        return f"{address[:6]}..{address[-4:]}"
-    return address
+    if launcher is None:
+        return Text("the bakery", style="dim")
+    if not isinstance(launcher, str):
+        launcher = str(launcher)
+    return address_text(launcher, width=width, style="dim")
 
 
-def _event_to_markup(event: ActivityEvent) -> str:
-    """Convert an ActivityEvent into a Rich-markup formatted line.
+def _event_to_text(event: ActivityEvent) -> Text:
+    """Convert an ActivityEvent into a composited Rich ``Text`` line.
 
     Never raises.  Fields are read defensively -- a payload change or a
     partially-validated model can leave any of them missing or ``None`` --
     and an event that still cannot be formatted degrades to a single
     explicit "unreadable event" line so the rest of the feed survives.
+
+    Built directly with :class:`~rich.text.Text` rather than a markup
+    string: the launcher carries the copy icon (``widgets/address.py``),
+    whose click action lives in a ``Style`` that only survives outside
+    markup parsing. Every other field is inserted as literal text through
+    ``Text.append`` -- which never parses ``"["`` as a tag -- so it needs
+    no ``safe_markup`` escaping; escaping it here would print the escape
+    backslashes literally instead of hiding them.
     """
     try:
         return _format_event(event)
     except Exception:
-        return _MALFORMED_LINE
+        return Text.from_markup(_MALFORMED_LINE)
 
 
-def _format_event(event: ActivityEvent) -> str:
-    """Format one event; :func:`_event_to_markup` is the safe wrapper."""
+def _format_event(event: ActivityEvent) -> Text:
+    """Format one event; :func:`_event_to_text` is the safe wrapper."""
     # An entry with no type, no title and no description carries nothing a
     # reader could act on. Rendering it as a timestamped blank line would
     # pass for a real event; say it is unreadable instead.
@@ -74,39 +86,43 @@ def _format_event(event: ActivityEvent) -> str:
         getattr(event, field, None)
         for field in ("type", "title", "description")
     ):
-        return _MALFORMED_LINE
+        return Text.from_markup(_MALFORMED_LINE)
 
     ts = _format_event_time(getattr(event, "timestamp", None))
-    who = safe_markup(_short_addr(getattr(event, "launcher", None)))
+    who = _who_text(getattr(event, "launcher", None), width=_WHO_COLS)
 
-    # title / description / linked_bakery_name are all API-sourced and can
-    # contain player-chosen bakery names. RichLog(markup=True) defers
-    # Text.from_markup to on_resize, so unescaped markup here crashes the app
-    # from inside the message pump, not at the write() call site.
-    title = safe_markup(getattr(event, "title", None))
-    description = safe_markup(getattr(event, "description", None))
+    title = str(getattr(event, "title", None) or "")
+    description = str(getattr(event, "description", None) or "")
     event_type = getattr(event, "type", None)
+
+    line = Text()
+    line.append(f"  {ts}  ", style="dim")
 
     if event_type == "simple":
         # Join/leave — title has the action, description is empty
-        return f"  [dim]{ts}[/]  [cyan]{who} {title}[/]"
+        line.append_text(who)
+        line.append(f" {title}", style="cyan")
     elif event_type == "rug":
         # Attack/boost — combine title (boost name) + description + linked bakery
-        target = safe_markup(getattr(event, "linked_bakery_name", None) or "")
+        target = str(getattr(event, "linked_bakery_name", None) or "")
         if getattr(event, "success", None):
             if getattr(event, "is_outgoing", None):
                 desc = f"{title}: {description} {target}"
             else:
                 desc = f"{title}: {description} {target}"
-            return f"  [dim]{ts}[/]  {desc}  [green]\u2713[/]"
+            line.append(f"{desc}  ")
+            line.append("✓", style="green")
         else:
             if getattr(event, "is_outgoing", None):
                 desc = f"{title}: Failed on {target}"
             else:
                 desc = f"{title}: {description} {target}"
-            return f"  [dim]{ts}[/]  {desc}  [red]\u2717[/]"
+            line.append(f"{desc}  ")
+            line.append("✗", style="red")
     else:
-        return f"  [dim]{ts}[/]  {who} {title or description}"
+        line.append_text(who)
+        line.append(f" {title or description}")
+    return line
 
 
 class ActivityFeed(Vertical):
@@ -181,7 +197,7 @@ class ActivityFeed(Vertical):
         written = 0
         for event in events:
             try:
-                log.write(_event_to_markup(event))
+                log.write(_event_to_text(event))
                 written += 1
             except Exception:
                 # A single unwritable line must not truncate the feed.

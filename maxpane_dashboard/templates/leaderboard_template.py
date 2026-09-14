@@ -15,6 +15,12 @@ dashboard not yet written.
 Reference implementations:
   - maxpane_dashboard/widgets/frenpet/overview/fp_overview_leaderboard.py
   - maxpane_dashboard/widgets/cattown/ct_leaderboard.py
+
+Every displayed 0x address -- and every name that stands in for one -- goes
+through ``widgets/address.py`` and carries the copy icon. That is a repo rule,
+not a style: tests/test_address_rule.py fails on a private address formatter
+and tests/screens/test_address_icons_everywhere.py fails on an address that
+reaches the screen without its icon. Copy this, keep the import.
 """
 
 from __future__ import annotations
@@ -23,14 +29,14 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
-
-def _short_addr(address: str) -> str:
-    """Shorten a wallet address to 0xABCD..1234 format."""
-    if len(address) > 10:
-        return f"{address[:6]}..{address[-4:]}"
-    return address
+#: Display budget for the name/address cell, excluding the icon. The
+#: DataTable column below is ``NAME_COLS + ICON_COLS`` wide so the icon
+#: never shortens the previous 16-cell display (recipe: grow where there
+#: is slack -- this template has no layout pin to protect).
+NAME_COLS = 16
 
 
 class GameLeaderboard(Vertical):
@@ -68,7 +74,7 @@ class GameLeaderboard(Vertical):
         table.zebra_stripes = True
         # Adapt columns to your game
         table.add_column("#", width=4)
-        table.add_column("Name", width=16)
+        table.add_column("Name", width=NAME_COLS + ICON_COLS)
         table.add_column("Score", width=12)
         table.add_column("Detail", width=12)
         table.add_column("Status", width=10)
@@ -86,7 +92,6 @@ class GameLeaderboard(Vertical):
             return
 
         for idx, entry in enumerate(entries[:10], start=1):
-            name = entry.get("name", "") or _short_addr(entry.get("address", "?"))
             score = entry.get("score", 0)
             detail = entry.get("detail", "")
             status = entry.get("status", "")
@@ -102,17 +107,28 @@ class GameLeaderboard(Vertical):
             else:
                 score_str = f"{score_f:,.0f}"
 
-            # Every value below came from an API / another player, so it must
-            # be escaped before it reaches Rich markup rendering. DataTable
+            # detail / status came from an API / another player, so they must
+            # be escaped before they reach Rich markup rendering. DataTable
             # defers Text.from_markup to its idle handler, so an unescaped
-            # "[/x]" in a name crashes the app from inside the message pump.
-            name = safe_markup(name)
+            # "[/x]" crashes the app from inside the message pump.
             detail = safe_markup(detail)
             status = safe_markup(status)
 
+            # The name/address cell is a pre-built Text (address_text), not a
+            # markup string: it needs no safe_markup escaping, and it is how
+            # the copy icon's click action survives -- a markup string could
+            # never carry a Style with @click meta on just the glyph. A
+            # player name stands in for the address when one is set; the
+            # icon still copies the address either way.
+            name_display = address_text(
+                entry.get("address"),
+                label=entry.get("name") or None,
+                width=NAME_COLS,
+                style="bold" if idx == 1 else "",
+            )
+
             # Highlight the leader row
             if idx == 1:
-                name = f"[bold]{name}[/]"
                 score_str = f"[bold]{score_str}[/]"
 
-            table.add_row(str(idx), name, score_str, detail, status)
+            table.add_row(str(idx), name_display, score_str, detail, status)
