@@ -937,3 +937,54 @@ fail and its clip-specific message could never print. The comment now standing t
 compared line length against the *panel's* edge, so any line inside a doubly-padded leaf was
 invisible. With the detector widened, the marker-attribution gap became measurable for the first
 time.
+
+---
+
+## F12 — THE RATCHET charts the cap and labels it the reserve (verified, unfixed)
+
+Found 2026-09-14 while fixing POOL4 FLOW (`baeaca3`), which had the same root cause.
+
+`surf_pool4.reserve_series` (`maxpane_dashboard/data/surf_pool4.py:1796`) reads the event behind
+`TOPIC_POOL_RESERVE` and plots its **second word** as the pool's IMD reserve. The independent reader
+(`pool4hook-research`, `pool4hook.ts`) decodes that same topic as
+**`CapRatcheted(capFrom, capTo)`**, so word 1 is **`capTo`**. The line THE RATCHET
+(`widgets/surf/pool4_ratchet.py:321`, `pool4_reserve_series`) draws in the `p` body is the **decaying
+inventory cap**, not the reserve. It looks like a reserve and it is a different number.
+
+A second consequence follows from the same event: `CapRatcheted` fires only when the cap moves, and
+in a non-burning market it barely fires. Over the 24 h to block 25,975,076 it fired **zero** times in
+219 swaps. So the history also goes stale exactly when the market goes quiet, the same condition that
+emptied POOL4 FLOW.
+
+**Why unfixed:** there are two honest repairs and they make different claims. Either rename the series
+to the cap it actually is, or chart the reserve from a source that exists in every market state (for
+example `tokensInPool()` sampled per tick). That is an owner decision, not a mechanical fix.
+
+**Root cause shared with the flow defect:** the pool4 decoders named hook events from Sepolia-era
+meanings (`TOPIC_ACCRUAL`, `TOPIC_POOL_RESERVE`) instead of the contract's own event names. On mainnet
+`CapRatcheted` also fires on **sells**: the retired flow decoder labelled `0x587b65ec7d…` a *buy* of
+0.83 IMD, while its receipt shows a **sale of 50 IMD** into the PoolManager
+(`tests/fixtures/surf/pool4/mainnet_flow_swaps.json`, `sign_proof`). Any other consumer of those two
+topic constants is suspect until checked against the event's real fields.
+
+## F13 — Sepolia publicnode may return `[]` silently for old log ranges (reported, NOT verified here)
+
+Reported by the `baeaca3` agent, not re-measured by the orchestrator:
+`ethereum-sepolia-rpc.publicnode.com` returned `[]` with no error for the 60-block window behind
+`flow_logs_mixed.json` (hook logs 0 against tenderly's 15; PoolManager `Swap` logs 0 against 36),
+while agreeing with tenderly on recent windows. If true, the comment at
+`maxpane_dashboard/data/surf_pool4_client.py:158` saying it serves archive logs is stale, and it
+belongs with `rpc.flashbots.net` in CLAUDE.md's "worse than dead" class: **a wrong answer that looks
+right**. The flow decoder's new guard (a `FeeCollected` with no preceding `Swap` returns `None`)
+catches it for flow only. The hook-log read on its own can still come back empty without complaint.
+**Measure it before acting on it.**
+
+## F14 — the capture script still lists `eth.drpc.org` (verified, unfixed)
+
+`scripts/capture_pool4.py:318-319` still defines
+`MAINNET_LOG_RPCS = ("https://gateway.tenderly.co/public/mainnet", "https://eth.drpc.org")`, and
+`:1214` iterates it for the older capture modes. drpc left the client's pool on 2026-09-12
+(`a7dc92d`) because it serves about 64 blocks of archive depth and blames the refusal on a range it
+isn't reading. The new `flow-swaps` / `quiet-burn` modes use a corrected tuple at `:322-327`; the
+older modes do not. Script only, never imported, so no user impact. A re-capture through the old
+modes will simply waste attempts.
