@@ -21,6 +21,8 @@ Adapted from the dispatch template's sample code:
 
 from __future__ import annotations
 
+import pytest
+
 from tests.screens import test_fwa_screen as T
 from tests.widgets.address_probe import CopyRecorder, icon_targets
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
@@ -204,3 +206,150 @@ async def test_a_bytes32_typed_drift_signal_is_shortened_with_no_icon():
         assert f"0x{value_hex}" not in plain
         assert "0xcccccccc…cccccc" in plain
         assert "VRF_KEY_HASH" in plain
+
+
+# -- an unnamed address is never budgeted below the window floor (final review F1) --
+#
+# The helper never windows an address below ``MIN_SHORT_COLS``: a caller that
+# asked for less got a wider cell than it budgeted, and whatever bounded the
+# cell cut its end -- the icon, or on a RichLog line whatever came after it.
+# The manager leaves ``collection_name`` / ``purchaser_name`` / ``holder_name``
+# None when no name is known, so each of these is a live path.
+
+from rich.cells import cell_len  # noqa: E402
+from textual.widgets import RichLog  # noqa: E402
+
+from maxpane_dashboard.widgets.fwa import fwa_activity_feed as _feed  # noqa: E402
+from maxpane_dashboard.widgets.fwa.fwa_chase_board import FWAChaseBoard  # noqa: E402
+from maxpane_dashboard.widgets.fwa.fwa_settlement_table import FWASettlementTable  # noqa: E402
+from tests.widgets import test_fwa_widgets_b as B  # noqa: E402
+
+_UNNAMED = "0x" + "9a" * 20
+
+
+def _region_targets(app, widget) -> list:
+    region = widget.region
+    return [t for t in icon_targets(app) if region.contains(t[0], t[1])]
+
+
+async def test_an_unnamed_chase_row_keeps_its_icon_on_the_real_screen_at_120():
+    payload = T._sample_data()
+    payload["chase_positions"] = [
+        {**payload["chase_positions"][0], "collection": _UNNAMED, "collection_name": None},
+    ]
+    app = T._ThemedHarness(T.FWAScreen(T._FakeManager(payload), poll_interval=30))
+    async with app.run_test(size=(120, 50)) as pilot:
+        await pilot.pause()
+        board = app.screen.query_one(FWAChaseBoard)
+        assert [t[2] for t in _region_targets(app, board)] == [_UNNAMED], (
+            "the unnamed collection's icon was cut off the CHASE BOARD cell at 120 columns"
+        )
+
+
+@pytest.mark.parametrize("token_id", [4471, 78000123])
+@pytest.mark.parametrize(("size", "tier"), [(B.WIDE_FEED, "full"), (B.NARROW_FEED, "compact")])
+async def test_an_unnamed_feed_row_at_label_budget_keeps_icons_amount_and_eth(size, tier, token_id):
+    """A row whose outcome label is exactly the label budget fits its line.
+
+    ``78000123`` (an Art Blocks id) cannot sit beside an 11-cell address in
+    either tier's collection budget, so it is shed whole rather than pushing
+    the end of the line off the log.
+    """
+    event = {
+        **B._DRAW_EVENTS[0],
+        "token_id": token_id,
+        "purchaser": _UNNAMED,
+        "purchaser_name": None,
+        "collection": "0x" + "8b" * 20,
+        "collection_name": None,
+        "outcome": "custom",
+        "amount_eth": 0.05,
+    }
+    widget = _feed.FWAActivityFeed()
+    app = B._Harness(widget)
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        log = widget.query_one("#fwa-activity-log", RichLog)
+        # The widget's own budget, so the label sits exactly at it: if the
+        # budget over-counts the line's real room, the end of the line goes.
+        width = widget._log_width(log)
+        assert _feed._tier_for(width) == tier
+        fixed = _feed._FIXED_FULL if tier == "full" else _feed._FIXED_COMPACT
+        label = "x" * (width - fixed)
+        widget.update_data(draw_events=[{**event, "outcome_label": label}], feed_available=True)
+        await pilot.pause()
+        rows = [
+            "".join(seg.text for seg in strip)
+            for strip in app.screen._compositor.render_strips()
+        ]
+        line = next((row for row in rows if f"→ {label}" in row), None)
+        assert line is not None, f"the label was cropped off the line: {rows!r}"
+        if tier == "full":
+            assert "0.050 ETH" in line, f"the amount was cropped off the line: {line!r}"
+        assert cell_len(log.lines[0].text) <= log.scrollable_content_region.width
+        copied = {t[2] for t in _region_targets(app, widget)}
+        assert copied == {_UNNAMED, "0x" + "8b" * 20}, copied
+
+
+@pytest.mark.parametrize("columns", range(25, 41))
+async def test_an_unnamed_crown_holder_keeps_its_icon_at_the_narrow_tiers(columns):
+    """25-40 covers ``tiny`` from its narrowest through ``minimal``: before the
+    fix, ``tiny``'s 14-cell label cut the icon at 25 and 26 columns."""
+    widget = FWASettlementTable()
+    app = B._Harness(widget)
+    history = [{**B._CROWN_HISTORY[0], "holder": _UNNAMED}]
+    async with app.run_test(size=(columns, 24)) as pilot:
+        widget.update_data(
+            settlement_mix=B._SETTLEMENT_MIX,
+            crown_history=history,
+            settle_available=True,
+        )
+        await pilot.pause()
+        headers = [str(c.label) for c in widget.query_one("#fwa-settle-dt").columns.values()]
+        assert "COUNT" not in headers, ("not a narrow tier", headers)
+        assert [t[2] for t in _region_targets(app, widget)] == [_UNNAMED], (
+            f"the unnamed holder's icon was cut off the label column at {columns} columns"
+        )
+
+
+async def test_a_narrow_crown_box_sheds_the_dollar_figure_never_the_icon():
+    from maxpane_dashboard.widgets.fwa.fwa_hero_metrics import FWAHeroMetrics
+    from tests.widgets import test_fwa_widgets_a as A
+
+    widget = FWAHeroMetrics()
+    app = A._Harness(widget)
+    async with app.run_test(size=(80, 24)) as pilot:
+        widget.update_data(**{**A._FULL_HERO, "crown_holder": _UNNAMED, "crown_holder_name": None})
+        await pilot.pause()
+        box = widget.query_one("#fwa-hero-crown")
+        assert [t[2] for t in _region_targets(app, box)] == [_UNNAMED], (
+            "the crown holder's icon was cut off a narrow hero box"
+        )
+    wide = FWAHeroMetrics()
+    app = A._Harness(wide)
+    async with app.run_test(size=(FULL_LAYOUT_COLUMNS, 24)) as pilot:
+        wide.update_data(**{**A._FULL_HERO, "crown_holder": _UNNAMED, "crown_holder_name": None})
+        await pilot.pause()
+        box = wide.query_one("#fwa-hero-crown")
+        rows = ["".join(s.text for s in strip) for strip in app.screen._compositor.render_strips()]
+        assert any("$41,230" in row for row in rows), "the dollar figure is shed only when narrow"
+        assert [t[2] for t in _region_targets(app, box)] == [_UNNAMED]
+
+
+async def test_a_drift_row_too_narrow_for_its_label_sheds_the_label_never_the_icon():
+    """At 120 columns the SIGNALS rail cannot hold the drift row's prose, an
+    11-cell window and the icon; the CSS ellipsis used to cut the icon."""
+    address = "0x" + "61" * 20
+    events = [{"key": 61, "value": int(address, 16), "block_number": 25_600_000}]
+    payload = T._sample_data()
+    payload["param_drift_signal"] = sig.param_drift_signal(events).model_dump()
+    app = T._ThemedHarness(T.FWAScreen(T._FakeManager(payload), poll_interval=30))
+    async with app.run_test(size=(120, 50)) as pilot:
+        await pilot.pause()
+        panel = app.screen.query_one(FWASignals)
+        assert [t[2] for t in _region_targets(app, panel)] == [address], (
+            "the drift address's icon was cropped off the SIGNALS row at 120 columns"
+        )
+        rows = ["".join(s.text for s in strip) for strip in app.screen._compositor.render_strips()]
+        row = next(r for r in rows if "0x6161" in r)
+        assert "change" in row, f"the label was shed whole where its head still fits: {row!r}"

@@ -38,7 +38,7 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
 logger = logging.getLogger(__name__)
@@ -279,7 +279,7 @@ class FWAOddsBoard(Vertical):
         for idx, row in enumerate(rows, start=1):
             rank = row.get("rank")
             rank_str = _fmt_int(rank) if rank is not None else str(idx)
-            name = _collection_cell(row, max(name_width - ICON_COLS, 1))
+            name = _collection_cell(row, max(MIN_SHORT_COLS, name_width - ICON_COLS))
             positions = _fmt_int(row.get("positions"))
             share = _fmt_pct(row.get("weight_share_pct"))
             backed = _fmt_eth(row.get("eth_backed"))

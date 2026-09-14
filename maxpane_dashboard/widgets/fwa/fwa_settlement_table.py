@@ -36,11 +36,12 @@ from __future__ import annotations
 import re
 import time
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
 _DASH = "--"
@@ -89,7 +90,7 @@ def _fit_label(label: str, outcome: str, width: int) -> str:
 #: full        55   OUTCOME/HOLDER COUNT SHARE ETH
 #: compact     43   OUTCOME/HOLDER SHARE ETH
 #: minimal     37   OUTCOME SHARE ETH   (narrower cells)
-#: tiny        25   OUTCOME SHARE
+#: tiny        27   OUTCOME SHARE
 #: =========  ====  ==================================
 #:
 #: The slot is 56 columns at a 200-column terminal and 38 at 140. ``SHARE`` is
@@ -102,14 +103,15 @@ def _fit_label(label: str, outcome: str, width: int) -> str:
 #: the column for them would be paying for an icon on a row it never renders.
 #: The icon and the ``"N. "`` prefix are paid for out of the holder row's own
 #: display budget instead (:data:`ICON_COLS` plus the prefix length,
-#: subtracted where :func:`_holder_cell` is called). At the two widest tiers
-#: that still clears ``address.MIN_SHORT_COLS`` (11) for an unnamed holder;
-#: at ``minimal``/``tiny`` a long rank prefix can push the remainder below
-#: it, in which case ``address_text`` clamps to its own 11-cell floor and
-#: ``DataTable`` -- which truncates a cell to its column width with no
-#: ellipsis rather than reflowing it -- is what actually bounds the row on
-#: screen. The crown history list is capped at five ranks
-#: (:data:`_MAX_CROWN_ROWS`), so the widest prefix ever printed is ``"5. "``.
+#: subtracted where :func:`_holder_cell` is called). **Every tier leaves an
+#: unnamed holder at least** ``MIN_SHORT_COLS`` (11): ``tiny``'s label was
+#: 14, which left 9 beside ``"1. "`` and the icon; the helper clamps an
+#: address to 11 regardless, so the cell came out 16 wide in a 14 column and
+#: ``DataTable`` truncated the end of it -- the icon. ``tiny`` is 16 now
+#: (cost 27), and a prefix that would still push the address below the floor
+#: is shed rather than the icon (:meth:`FWASettlementTable._render_crown`).
+#: The crown history list is capped at five ranks (:data:`_MAX_CROWN_ROWS`),
+#: so the widest prefix ever printed is ``"5. "``.
 _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...], str], ...] = (
     (
         "full",
@@ -144,9 +146,9 @@ _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...], str], ...] = (
     ),
     (
         "tiny",
-        25,
+        27,
         (
-            ("label", "OUTCOME", 14),
+            ("label", "OUTCOME", 16),
             ("share", "SHARE", 7),
         ),
         "‹ widen: COUNT + ETH",
@@ -672,7 +674,11 @@ class FWASettlementTable(Vertical):
             # width does not grow for the icon (see the note above
             # ``_TIERS``).
             prefix = f"{rank}. "
-            holder_width = max(label_width - ICON_COLS - len(prefix), 1)
+            if label_width - ICON_COLS - cell_len(prefix) < MIN_SHORT_COLS:
+                # Shed the rank prefix, never the icon: row order still
+                # carries the rank, a truncated icon carries nothing.
+                prefix = ""
+            holder_width = max(MIN_SHORT_COLS, label_width - ICON_COLS - cell_len(prefix))
             label_cell = Text(prefix)
             label_cell.append_text(_holder_cell(row, holder_width))
             table.add_row(

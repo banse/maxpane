@@ -195,6 +195,114 @@ def test_no_module_but_the_helper_shortens_hex_by_slicing():
     assert not offenders, offenders
 
 
+# -- the address floor ----------------------------------------------------------------
+#
+# ``widgets/address._window`` clamps every width to ``MIN_SHORT_COLS``, so a
+# caller that budgets an address below it gets a cell two or more cells wider
+# than it asked for, and whatever bounds that cell (a DataTable column, a
+# RichLog line, a CSS ellipsis) cuts the end of it: the icon. FWA shipped four
+# of those. A literal below the floor is caught here; a module constant below
+# it is held to :data:`KNOWN_CONSTANTS_BELOW_FLOOR`, which may only shrink; and
+# a computed budget must clamp itself with ``max(MIN_SHORT_COLS, …)``.
+
+_WIDTH_CALLS = {"address_text": "width", "short_address": 1}
+
+
+def _module_int_constants(tree) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            value = _int_const(node.value) if node.value is not None else None
+            for target in targets:
+                if isinstance(target, ast.Name) and value is not None:
+                    out[target.id] = value
+    return out
+
+
+#: Address widths that are a module constant below the floor, found when this
+#: check was written (2026-09-14) in packages outside that fix wave. Each is a
+#: symbol-backed token cell whose unnamed fallback is an address; whether the
+#: column around it absorbs the clamp is unmeasured. Reported, not fixed: the
+#: list may only shrink. ``(path, constant)``.
+KNOWN_CONSTANTS_BELOW_FLOOR = frozenset({
+    ("maxpane_dashboard/widgets/base/graduated.py", "_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/base/launch_feed.py", "_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/base/overview.py", "_MOVERS_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/base/overview.py", "_VOL_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/base/overview/_legacy_overview.py", "_MOVERS_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/base/overview/_legacy_overview.py", "_VOL_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/base/overview/bt_overview_leaderboard.py", "_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/base/top_movers.py", "_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/base/trending_table.py", "_TOKEN_COLS"),
+    ("maxpane_dashboard/widgets/ttt/ttt_fees_table.py", "_SYM_WIDTH"),
+    ("maxpane_dashboard/widgets/ttt/ttt_leaderboard.py", "_SYM_WIDTH"),
+})
+
+
+def address_widths_below_floor(source: str, floor: int) -> list[tuple[int, str | None, str]]:
+    """``(line, constant, call)`` for every address width that is a known int below ``floor``.
+
+    A width is known when it is an int literal (``constant`` is ``None``) or a
+    module-level name bound to one; ``None`` and computed widths are not judged.
+    """
+    tree = ast.parse(source)
+    constants = _module_int_constants(tree)
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+        where = _WIDTH_CALLS.get(name)
+        if where is None:
+            continue
+        arg = None
+        for keyword in node.keywords:
+            if keyword.arg == "width":
+                arg = keyword.value
+        if arg is None and isinstance(where, int) and len(node.args) > where:
+            arg = node.args[where]
+        if arg is None:
+            continue
+        value, constant = _int_const(arg), None
+        if value is None and isinstance(arg, ast.Name):
+            value, constant = constants.get(arg.id), arg.id
+        if value is not None and value < floor:
+            found.append((node.lineno, constant, ast.unparse(node)))
+    return found
+
+
+def test_the_floor_checker_flags_literals_and_constants_below_the_floor():
+    assert address_widths_below_floor("address_text(a, width=10)\n", 11) == [(1, None, "address_text(a, width=10)")]
+    assert address_widths_below_floor("A.short_address(a, 4)\n", 11) == [(1, None, "A.short_address(a, 4)")]
+    assert address_widths_below_floor("W = 9\naddress_text(a, label=n, width=W)\n", 11)[0][1] == "W"
+    assert address_widths_below_floor("address_text(a, width=-1)\n", 11)
+    assert address_widths_below_floor("address_text(a, width=11)\nshort_address(a, 17)\n", 11) == []
+    assert address_widths_below_floor("address_text(a, width=None)\naddress_text(a)\n", 11) == []
+    assert address_widths_below_floor("address_text(a, width=max(11, w - 2))\n", 11) == []
+    assert address_widths_below_floor("short_hex(tx, 4)\n", 11) == [], "a hash is not an address"
+
+
+def test_no_address_is_budgeted_below_the_window_floor():
+    from maxpane_dashboard.widgets.address import MIN_SHORT_COLS
+
+    offenders, known = [], set()
+    for path, src in _sources():
+        if path == HELPER:
+            continue
+        for line, constant, call in address_widths_below_floor(src, MIN_SHORT_COLS):
+            if constant is not None and (str(path), constant) in KNOWN_CONSTANTS_BELOW_FLOOR:
+                known.add((str(path), constant))
+                continue
+            offenders.append(f"{path}:{line}: {call}")
+    assert not offenders, offenders
+    assert known == KNOWN_CONSTANTS_BELOW_FLOOR, (
+        "a known constant was fixed or renamed; drop it from the list",
+        sorted(KNOWN_CONSTANTS_BELOW_FLOOR - known),
+    )
+
+
 def test_only_the_clipboard_module_names_a_clipboard_tool():
     offenders = []
     for path, src in _sources():

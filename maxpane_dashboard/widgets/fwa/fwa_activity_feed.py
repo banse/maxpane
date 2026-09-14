@@ -41,7 +41,7 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
-from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _DASH = "--"
@@ -81,29 +81,28 @@ _OUTCOME_SHORT = {
 }
 
 #: Rendered columns each line layout needs (see :func:`_tier_for`), measured
-#: from the format strings in :func:`_event_to_text` rather than rounded.
+#: from the format strings in :func:`_event_to_text` rather than rounded:
+#: each is its ``_FIXED_*`` cost plus the smallest label budget it is allowed
+#: to run with.
 #:
-#: Unchanged by the copy icon: growing these (and the ``_FIXED_*`` costs
-#: below) by :data:`~maxpane_dashboard.widgets.address.ICON_COLS` shifted
-#: which tier a given width selects -- at ``NARROW_FEED`` (56 rendered
-#: columns, ``tests/widgets/test_fwa_widgets_b.py``) growth moved the tier
-#: from ``compact`` to ``minimal``, which *drops* the collection field
-#: entirely and so hands the outcome label a much bigger budget, undoing the
-#: abbreviation ``test_activity_feed_narrow_abbreviates_outcome_never_
-#: truncates_it`` (outside this package's file list) checks for. The icon is
-#: paid for out of the wallet's and the collection's own display budgets
-#: instead (see :data:`_WALLET_WIDTH` and :data:`_WHAT_BUDGET_FULL`
-#: /:data:`_WHAT_BUDGET_COMPACT`), so tier selection is exactly what it was
-#: before the icon.
-FULL_WIDTH = 77
-COMPACT_WIDTH = 55
-MINIMAL_WIDTH = 34
+#: The purchaser's display budget is :data:`MIN_SHORT_COLS`, because an
+#: unnamed purchaser renders as its address and the helper never windows an
+#: address below that floor. It used to be 10, which made an unnamed row one
+#: cell wider than every cost here claimed; ``RichLog(wrap=False)`` then
+#: cropped the *end* of the line with no marker -- ``0.050 ET`` at 100
+#: columns, or the amount gone. Paying for that cell moved all three
+#: thresholds by one. "Rendered columns" is what a line is painted into, the
+#: log's scrollbar gutter already removed (:meth:`FWAActivityFeed._log_width`):
+#: 80 at ``FULL_LAYOUT_COLUMNS``, which still runs ``full``.
+FULL_WIDTH = 78
+COMPACT_WIDTH = 56
+MINIMAL_WIDTH = 35
 
 #: Columns each layout spends on everything *except* the outcome label; the
 #: label gets the remainder of the real width (see :func:`_event_to_text`).
-_FIXED_FULL = 60      # time + wallet + "drew " + what(20) + arrow + " x ETH"
-_FIXED_COMPACT = 41   # time + wallet + what(16) + arrow
-_FIXED_MINIMAL = 23   # time + wallet + arrow
+_FIXED_FULL = 61      # time + wallet(13) + "drew " + what(20) + arrow + " x ETH"
+_FIXED_COMPACT = 42   # time + wallet(13) + what(16) + arrow
+_FIXED_MINIMAL = 24   # time + wallet(13) + arrow
 
 #: Fallbacks when the width is not known yet, and the floor below which the
 #: label is abbreviated rather than squeezed further.
@@ -111,15 +110,20 @@ _LABEL_BUDGET_FULL = 17
 _LABEL_BUDGET_MIN = 10
 
 #: Display budget for the purchaser's name/address, excluding
-#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS` -- the icon is paid
-#: for out of this budget rather than by growing the column (see the note
-#: above :data:`FULL_WIDTH`).
-_WALLET_WIDTH = 10
+#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS`: the address floor,
+#: never less (see the note above :data:`FULL_WIDTH`).
+_WALLET_WIDTH = MIN_SHORT_COLS
 
 #: Room the ``Collection #token`` field gets in each layout, excluding
-#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS` for the same reason.
+#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS`. An unnamed
+#: collection needs :data:`MIN_SHORT_COLS` of it; the token id is shed whole
+#: when it does not also fit (see :func:`_what_cell`).
 _WHAT_BUDGET_FULL = 18
 _WHAT_BUDGET_COMPACT = 14
+
+#: The fewest cells a collection *name* is squeezed to before the token id
+#: is shed instead.
+_NAME_FLOOR = 4
 
 #: Marker appended to the title when the layout had to shed a field.
 WIDEN_HINTS = {
@@ -222,12 +226,22 @@ def _what_cell(event: dict, budget: int) -> Text:
     both fields recognisable, whereas a naive cut produced ``Art Blocks #7``
     -- a token id that is not the token id. The icon rides between the name
     and the token, so the token itself is never touched by it.
+
+    An unnamed collection renders as its address, which never shrinks below
+    :data:`MIN_SHORT_COLS`. When that floor (or a name's own
+    :data:`_NAME_FLOOR`) and the token id cannot both fit, the token id is
+    shed whole -- never cut to a different number -- so the cell always fits
+    its budget and nothing after it on the line is cropped.
     """
     token = _token_label(event.get("token_id"))
-    name_budget = max(budget - len(token), 4)
     raw_name = event.get("collection_name")
     name = str(raw_name).strip() if raw_name and str(raw_name).strip() else None
-    cell = address_text(event.get("collection"), label=name, width=name_budget)
+    address = event.get("collection")
+    floor = MIN_SHORT_COLS if name is None and is_address(address) else _NAME_FLOOR
+    if token and floor + cell_len(token) > budget:
+        token = ""
+    name_budget = max(floor, budget - cell_len(token))
+    cell = address_text(address, label=name, width=name_budget)
     if token:
         cell.append(token)
     return _pad_cell(cell, budget + ICON_COLS)
@@ -382,10 +396,19 @@ class FWAActivityFeed(Vertical):
         title.update(text)
 
     def _log_width(self, log: RichLog) -> int:
-        """Rendered columns available to one line (``padding: 0 1`` removed)."""
-        width = log.content_size.width
+        """Rendered columns a line really gets.
+
+        ``RichLog`` is ``overflow-y: scroll``, so its vertical scrollbar gutter
+        is always there and ``content_size`` counts it: at 83 columns that
+        reported 81 while the line was cut at 80, so a row exactly at its
+        label budget lost its last cell (``0.050 ET``) with no marker. The
+        scrollable region is what a line is actually painted into.
+        """
+        width = log.scrollable_content_region.width
         if width <= 0:
-            width = max(self.content_size.width - 2, 0)
+            width = max(
+                self.content_size.width - 2 - log.styles.scrollbar_size_vertical, 0
+            )
         return width
 
     def update_data(

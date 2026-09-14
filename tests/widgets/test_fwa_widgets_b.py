@@ -76,13 +76,21 @@ class _Harness(App):
 # The feed numbers are the *container*; its RichLog has ``padding: 0 1`` and so
 # renders two columns narrower (81 / 56).
 WIDE_FEED = (83, 24)
-NARROW_FEED = (58, 24)
+#: The feed's ``compact`` tier. A line is painted into the log's width less
+#: its ``padding: 0 1`` and its always-present vertical scrollbar gutter, so
+#: 59 gives the 56 that tier needs (58, the value before the scrollbar was
+#: counted, was one cell short and cropped the end of every compact line).
+NARROW_FEED = (59, 24)
+_FEED_LINE_COLS = NARROW_FEED[0] - 3
 #: Wide enough for the chase board's `full` tier. Raised from 55 when the ODDS
 #: column went from 6 to 9 columns: the board ranks the *least* likely
 #: positions, whose odds are ~1e-5%, and three decimals rendered every row as
-#: `0.000%`.
-WIDE_TABLE = (58, 24)
-NARROW_TABLE = (38, 24)
+#: `0.000%`. Raised from 58 to 60 when COLLECTION became 13 in every tier, so
+#: an unnamed collection's address window and its copy icon both fit the
+#: column (an address is never windowed below ``MIN_SHORT_COLS``).
+WIDE_TABLE = (60, 24)
+#: The chase board's `minimal` tier (41 since COLLECTION became 13, was 38).
+NARROW_TABLE = (41, 24)
 
 
 def _static_text(widget: Static) -> str:
@@ -332,7 +340,7 @@ def test_signals_emissions_never_negative_countdown():
 async def test_activity_feed_line_count():
     widget = FWAActivityFeed()
     app = _Harness(widget)
-    async with app.run_test():
+    async with app.run_test(size=WIDE_FEED):
         widget.update_data()
         widget.update_data(**_none_payload("FWAActivityFeed"))
         widget.update_data(
@@ -379,7 +387,7 @@ async def test_activity_feed_unavailable_renders_explicit_line():
 async def test_activity_feed_unavailable_keeps_last_good_with_as_of_header():
     widget = FWAActivityFeed()
     app = _Harness(widget)
-    async with app.run_test():
+    async with app.run_test(size=WIDE_FEED):
         widget.update_data(draw_events=_DRAW_EVENTS, feed_available=True)
         widget.update_data(
             draw_events=None,
@@ -705,7 +713,7 @@ async def test_activity_feed_narrow_abbreviates_outcome_never_truncates_it():
         assert "sold ($FWA)" in text
         assert "accepted bid · pai" not in text
         for line in text.splitlines():
-            assert len(line) <= NARROW_FEED[0] - 2
+            assert len(line) <= _FEED_LINE_COLS
         title = _static_text(widget.query_one("#fwa-feed-title", Static))
         assert "widen" in title
 

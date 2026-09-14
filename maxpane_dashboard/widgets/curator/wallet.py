@@ -600,7 +600,9 @@ class CuratorWalletAddress(_FactsPanel):
                 # pool4u_hero` "$ trap").
                 line_text.append_text(
                     address_text(
-                        value, width=budget, style=Style(color=success, bold=True)
+                        value,
+                        width=None if budget is None else max(MIN_SHORT_COLS, budget),
+                        style=Style(color=success, bold=True),
                     )
                 )
             elif label:

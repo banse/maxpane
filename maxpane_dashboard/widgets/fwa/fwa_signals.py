@@ -149,15 +149,42 @@ def _address_window(available: int, non_address_cols: int, count: int) -> int:
     surrounding prose, and every address's own :data:`ICON_COLS`).
     :data:`_DEFAULT_ADDRESS_COLS` (17) is the ceiling and
     :data:`MIN_SHORT_COLS` (11) is the floor -- narrower only when the rail
-    genuinely has less room, never below the floor: a row that still does
-    not fit at the floor is left to the panel's own CSS
-    ``text-overflow: ellipsis`` to crop, exactly like every other row here
-    when its own content overruns.
+    genuinely has less room, never below the floor. A row that still does
+    not fit at the floor sheds its prose instead (:func:`_shed_prose`):
+    the panel's CSS ellipsis crops the *end* of a row, which is where the
+    icon sits, so it may never be what makes this row fit.
     """
     if available <= 0 or count <= 0:
         return _DEFAULT_ADDRESS_COLS
     per_address = (available - non_address_cols - ICON_COLS * count) // count
     return max(min(per_address, _DEFAULT_ADDRESS_COLS), MIN_SHORT_COLS)
+
+
+def _fit_prose(text: str, room: int) -> str:
+    """``text`` cut to ``room`` cells as ``head… ``, or ``""`` when no head fits."""
+    if cell_len(text) <= room:
+        return text
+    keep = room - 2  # "… "
+    if keep < 1:
+        return ""
+    out = ""
+    for ch in text:
+        if cell_len(out) + cell_len(ch) > keep:
+            break
+        out += ch
+    return f"{out.rstrip()}… " if out.strip() else ""
+
+
+def _shed_prose(lead: str, trail: str, room: int) -> tuple[str, str]:
+    """The label around the address(es), fitted into ``room`` cells.
+
+    The trailing text (`` (constructor-only)``) goes first, then the leading
+    text (``1 change · PAYOUT_ADDRESS → ``) keeps its head behind an ellipsis,
+    then it goes too. The addresses and their icons are never touched.
+    """
+    if cell_len(lead) + cell_len(trail) <= room:
+        return lead, trail
+    return _fit_prose(lead, room), ""
 
 
 def _fmt_drift(
@@ -229,16 +256,30 @@ def _fmt_drift(
     address_budget = max(available - row_overhead, 0) if available else 0
     width = _address_window(address_budget, non_address_cols, len(matches))
 
+    lead = shortened[:matches[0].start()]
+    trail = shortened[matches[-1].end():]
+    if address_budget:
+        # When the rail is too narrow for label + window + icon, the label is
+        # shed, never the icon (the window is already at its floor here:
+        # ``_address_window`` only reaches it when the row cannot fit wider).
+        core = (
+            non_address_cols - cell_len(lead) - cell_len(trail)
+            + len(matches) * (width + ICON_COLS)
+        )
+        lead, trail = _shed_prose(lead, trail, address_budget - core)
+
     line = prefix
-    pos = 0
-    for match in matches:
-        if match.start() > pos:
-            line.append(shortened[pos:match.start()], style=fg)
-        cell = address_text(match.group(0), width=width, style=fg)
-        line.append_text(cell)
-        pos = match.end()
-    if pos < len(shortened):
-        line.append(shortened[pos:], style=fg)
+    for index, match in enumerate(matches):
+        if index == 0:
+            if lead:
+                line.append(lead, style=fg)
+        else:
+            between = shortened[matches[index - 1].end():match.start()]
+            if between:
+                line.append(between, style=fg)
+        line.append_text(address_text(match.group(0), width=width, style=fg))
+    if trail:
+        line.append(trail, style=fg)
     return line
 
 

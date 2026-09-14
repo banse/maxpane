@@ -47,7 +47,7 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 
 from .fwa_hero_metrics import CROWN_GOLD
 
@@ -69,8 +69,8 @@ _GOLD = CROWN_GOLD
 def _collection_cell(row: dict, width: int = 12) -> Text:
     """Collection name (or address) plus its copy icon, in ``width`` cells.
 
-    ``width`` excludes :data:`ICON_COLS` -- the icon rides in the two cells
-    the column grows by (see the width note above the ``_TIERS`` table).
+    ``width`` excludes :data:`ICON_COLS` and is never below
+    :data:`MIN_SHORT_COLS` -- see the width note above the ``_TIERS`` table.
     """
     name = row.get("collection_name")
     label = str(name).strip() if name and str(name).strip() else None
@@ -153,33 +153,33 @@ def _fmt_jackpot(value) -> str:
 #: =========  ====  ==========================================
 #: Tier       Cost  Columns
 #: =========  ====  ==========================================
-#: full        58   # COLLECTION TOKEN BACKING ODDS JACKPOT
-#: compact     48   # COLLECTION BACKING ODDS JACKPOT
-#: minimal     38   # COLLECTION ODDS JACKPOT
-#: tiny        27   # COLLECTION ODDS
+#: full        60   # COLLECTION TOKEN BACKING ODDS JACKPOT
+#: compact     50   # COLLECTION BACKING ODDS JACKPOT
+#: minimal     41   # COLLECTION ODDS JACKPOT
+#: tiny        32   # COLLECTION ODDS
 #: =========  ====  ==========================================
 #:
-#: The real slot is 55 columns at a 200-column terminal and 38 at 140, so the
-#: board runs ``full`` when wide and ``minimal`` when narrow. ``ODDS`` and
+#: Measured on the real ``FWAScreen``: the slot is 69 columns at
+#: ``FULL_LAYOUT_COLUMNS`` (143), 58 at 120 and 48 at 100. ``ODDS`` and
 #: ``JACKPOT`` are the last to go because they are the board's entire point;
 #: ``TOKEN`` goes first.
 #:
-#: COLLECTION's own declared width is unchanged by the copy icon: growing
-#: every tier's cost by :data:`ICON_COLS` moved the ``full`` tier's threshold
-#: from 58 to 60, and ``tests/widgets/test_fwa_widgets_b.py``'s ``WIDE_TABLE``
-#: harness (58 columns, chosen to be "wide enough for the chase board's full
-#: tier") sits exactly on the old boundary -- that test is outside this
-#: package's file list, so the column keeps its declared width and the icon is
-#: paid for out of the *display* budget instead (see :func:`_collection_cell`
-#: and the ``ICON_COLS`` subtraction in ``_render_view``), never out of the
-#: column itself. That is the shorten side of PRD §5, not the grow side.
+#: **COLLECTION is never narrower than** ``MIN_SHORT_COLS + ICON_COLS`` **(13)
+#: in any tier.** An unnamed collection renders as its address, and the
+#: helper never windows an address below ``MIN_SHORT_COLS`` (11): a column of
+#: 11, 10 or 8 -- what these tiers declared before -- produced a 13-cell cell
+#: that ``DataTable`` truncated from the end, which is exactly where the copy
+#: icon sits. At 120 and 100 columns the real screen painted
+#: ``♛1   0x3333…3333`` with no icon. The icon is now paid for by the column
+#: (the grow side of PRD §5), which moved every tier's cost by up to five and
+#: the ``full`` threshold from 58 to 60; the pin at 143 has 9 columns to spare.
 _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...]], ...] = (
     (
         "full",
-        58,
+        60,
         (
             ("rank", "#", 3),
-            ("collection", "COLLECTION", 11),
+            ("collection", "COLLECTION", 13),
             ("token", "TOKEN", 8),
             ("backing", "BACKING", 7),
             ("odds", "ODDS", 10),
@@ -188,10 +188,10 @@ _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...]], ...] = (
     ),
     (
         "compact",
-        48,
+        50,
         (
             ("rank", "#", 3),
-            ("collection", "COLLECTION", 11),
+            ("collection", "COLLECTION", 13),
             ("backing", "BACKING", 7),
             ("odds", "ODDS", 10),
             ("jackpot", "JACKPOT", 7),
@@ -199,20 +199,20 @@ _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...]], ...] = (
     ),
     (
         "minimal",
-        38,
+        41,
         (
             ("rank", "#", 3),
-            ("collection", "COLLECTION", 10),
+            ("collection", "COLLECTION", 13),
             ("odds", "ODDS", 10),
             ("jackpot", "JACKPOT", 7),
         ),
     ),
     (
         "tiny",
-        27,
+        32,
         (
             ("rank", "#", 3),
-            ("collection", "COLLECTION", 8),
+            ("collection", "COLLECTION", 13),
             ("odds", "ODDS", 10),
         ),
     ),
@@ -404,12 +404,12 @@ class FWAChaseBoard(Vertical):
 
         columns = self._apply_columns(table)
         column_width = next(
-            (w for key, _h, w in columns if key == "collection"), 11
+            (w for key, _h, w in columns if key == "collection"),
+            MIN_SHORT_COLS + ICON_COLS,
         )
-        #: The column's declared width did not grow for the icon (see the
-        #: ``_TIERS`` note above), so the icon is paid for out of the display
-        #: text's own budget instead.
-        name_width = max(column_width - ICON_COLS, 1)
+        # The icon rides inside the column; the address it may fall back to
+        # is never windowed below the helper's floor (see ``_TIERS``).
+        name_width = max(MIN_SHORT_COLS, column_width - ICON_COLS)
 
         rows = self._payload["rows"]
         crown_listing_id = self._payload["crown_listing_id"]

@@ -29,6 +29,7 @@ import inspect
 
 import pytest
 
+from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.markup_safety import visible_len
 
 from textual.app import App, ComposeResult
@@ -367,7 +368,11 @@ async def test_hero_ev_sign_has_glyph_not_only_color():
 
 async def test_hero_crown_vacant_renders_vacant_not_zero():
     widget = FWAHeroMetrics()
-    async with _Harness(widget).run_test():
+    # Wide enough that the crown box holds ``$41,230 · `` beside the holder's
+    # windowed address and icon; at the default 80 columns the dollar figure
+    # is shed so the icon survives
+    # (``test_fwa_address_icons::test_a_narrow_crown_box_sheds_the_dollar_figure_never_the_icon``).
+    async with _Harness(widget).run_test(size=(FULL_LAYOUT_COLUMNS, 24)):
         widget.update_data(
             **{
                 **_FULL_HERO,
