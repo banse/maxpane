@@ -13,7 +13,15 @@ from maxpane_dashboard.analytics.base_tokens import (
     format_volume,
 )
 from maxpane_dashboard.data.base_models import BaseToken
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
+
+#: Display budget for the token symbol label, excluding the icon -- the same
+#: 10-cell window the deleted ``symbol[:10]`` slice produced. No layout pin
+#: covers this standalone widget (task-5 brief: "No layout pin exists for
+#: base"), so the "Token" column is grown by ICON_COLS (PRD §5 recipe step
+#: 6.2): 12 -> 14, keeping the 2-cell gutter the column already carried
+#: beyond the 10-cell label.
+_TOKEN_COLS = 10
 
 
 class TrendingTable(Vertical):
@@ -41,7 +49,7 @@ class TrendingTable(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("#", width=4)
-        table.add_column("Token", width=12)
+        table.add_column("Token", width=14)
         table.add_column("Price", width=14)
         table.add_column("5m", width=10)
         table.add_column("1h", width=10)
@@ -70,16 +78,18 @@ class TrendingTable(Vertical):
             mcap_str = format_market_cap(token.market_cap)
             liq_str = format_market_cap(token.liquidity)
 
-            symbol = safe_markup(token.symbol[:10])
-
             # Highlight top 3
-            if idx <= 3:
-                symbol = f"[bold]{symbol}[/]"
+            is_top = idx <= 3
+            symbol_cell = address_text(
+                token.address, label=token.symbol, width=_TOKEN_COLS,
+                style="bold" if is_top else "",
+            )
+            if is_top:
                 price_str = f"[bold]{price_str}[/]"
 
             table.add_row(
                 str(idx),
-                symbol,
+                symbol_cell,
                 price_str,
                 change_5m,
                 change_1h,

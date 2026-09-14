@@ -7,7 +7,15 @@ import re
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
+
+#: Display budget for the token name/symbol label, excluding the icon. This
+#: column had no pre-existing slice (it relied on DataTable's own silent,
+#: non-cell_len truncation), so the label width is picked to leave the same
+#: 2-cell gutter as the package's other token columns once grown; no layout
+#: pin governs this dead-code duplicate (task-5 brief: "No layout pin exists
+#: for base"): col 14 -> 16 (PRD §5 recipe step 6.2).
+_TOKEN_COLS = 12
 
 
 def _strip_non_ascii(text: str) -> str:
@@ -62,7 +70,7 @@ class BTOverviewLeaderboard(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("#", width=4)
-        table.add_column("Token", width=14)
+        table.add_column("Token", width=16)
         table.add_column("Price", width=12)
         table.add_column("24h %", width=10)
         table.add_column("Volume", width=14)
@@ -87,18 +95,20 @@ class BTOverviewLeaderboard(Vertical):
         for idx, token in enumerate(sorted_tokens, start=1):
             if isinstance(token, dict):
                 name = token.get("symbol", token.get("name", "?"))
+                address = token.get("address")
                 price = float(token.get("price_usd", 0))
                 change = float(token.get("price_change_24h", 0))
                 volume = float(token.get("volume_24h", 0))
                 liquidity = float(token.get("liquidity_usd", 0))
             else:
                 name = getattr(token, "symbol", getattr(token, "name", "?"))
+                address = getattr(token, "address", None)
                 price = float(getattr(token, "price_usd", 0))
                 change = float(getattr(token, "price_change_24h", 0))
                 volume = float(getattr(token, "volume_24h", 0))
                 liquidity = float(getattr(token, "liquidity_usd", 0))
 
-            name = safe_markup(_strip_non_ascii(name))
+            name = _strip_non_ascii(name)
             price_str = _format_price(price)
             vol_str = _format_usd(volume)
             liq_str = _format_usd(liquidity)
@@ -109,15 +119,16 @@ class BTOverviewLeaderboard(Vertical):
             change_str = f"[{change_color}]{change_sign}{change:.1f}%[/]"
 
             # Bold the #1 row
-            if idx == 1:
-                name_str = f"[bold]{name}[/]"
+            is_top = idx == 1
+            name_cell = address_text(
+                address, label=name or None, width=_TOKEN_COLS, style="bold" if is_top else "",
+            )
+            if is_top:
                 price_str = f"[bold]{price_str}[/]"
-            else:
-                name_str = name
 
             table.add_row(
                 str(idx),
-                name_str,
+                name_cell,
                 price_str,
                 change_str,
                 vol_str,

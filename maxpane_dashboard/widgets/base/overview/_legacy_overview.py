@@ -20,7 +20,22 @@ from maxpane_dashboard.analytics.base_tokens import (
     format_volume,
 )
 from maxpane_dashboard.data.base_models import BaseToken, TokenLaunch, TrendingPool
+from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+
+# Display budgets for a token/pool symbol label, excluding the icon -- each
+# the same window its deleted ``[:N]`` slice produced. No layout pin covers
+# this standalone widget (task-5 brief: "No layout pin exists for base"), so
+# each DataTable column is grown by ICON_COLS, keeping whatever gutter it
+# already carried beyond its label (PRD §5 recipe step 6.2):
+#   VOLUME RANKING "Token"    W=8  (was [:8]),  col 10 -> 12
+#   RECENT LAUNCHES "Name"    W=20 (was [:20]), col 22 -> 24
+#   MOVERS "Token"            W=10 (was [:10]), col 12 -> 14
+#   TRENDING POOLS "Pool"     W=14 (was pair[:14]), col 16 -> 18
+_VOL_TOKEN_COLS = 8
+_LAUNCH_NAME_COLS = 20
+_MOVERS_TOKEN_COLS = 10
+_POOLS_TOKEN_COLS = 14
 
 # ---------------------------------------------------------------------------
 # Sparkline rendering
@@ -174,7 +189,7 @@ class OverviewPanel(Vertical):
         vol_table = self.query_one("#ov-vol-table", DataTable)
         vol_table.cursor_type = "none"
         vol_table.zebra_stripes = True
-        vol_table.add_column("Token", width=10)
+        vol_table.add_column("Token", width=12)
         vol_table.add_column("Bar", width=30)
         vol_table.add_column("Volume", width=10)
 
@@ -182,7 +197,7 @@ class OverviewPanel(Vertical):
         launch_table = self.query_one("#ov-launch-table", DataTable)
         launch_table.cursor_type = "none"
         launch_table.zebra_stripes = True
-        launch_table.add_column("Name", width=22)
+        launch_table.add_column("Name", width=24)
         launch_table.add_column("Deployer", width=10)
         launch_table.add_column("Age", width=12)
 
@@ -191,7 +206,7 @@ class OverviewPanel(Vertical):
         movers_table.cursor_type = "none"
         movers_table.zebra_stripes = True
         movers_table.add_column("Dir", width=3)
-        movers_table.add_column("Token", width=12)
+        movers_table.add_column("Token", width=14)
         movers_table.add_column("Change", width=10)
         movers_table.add_column("Status", width=14)
 
@@ -199,7 +214,7 @@ class OverviewPanel(Vertical):
         pools_table = self.query_one("#ov-pools-table", DataTable)
         pools_table.cursor_type = "none"
         pools_table.zebra_stripes = True
-        pools_table.add_column("Pool", width=16)
+        pools_table.add_column("Pool", width=18)
         pools_table.add_column("Volume", width=10)
         pools_table.add_column("Change", width=10)
 
@@ -333,11 +348,10 @@ class OverviewPanel(Vertical):
             for token in vol_display:
                 vol = token.volume_24h
                 vol_str = format_volume(vol)
-                symbol = safe_markup(token.symbol[:8])
                 bar_len = max(1, int(vol / max_vol * _MAX_BAR_WIDTH)) if max_vol > 0 else 1
                 bar = f"[cyan]{_BAR_CHAR * bar_len}[/]"
                 vol_table.add_row(
-                    f"[dim]{symbol}[/]",
+                    address_text(token.address, label=token.symbol, width=_VOL_TOKEN_COLS, style="dim"),
                     bar,
                     f"[bold]{vol_str}[/]",
                 )
@@ -354,7 +368,7 @@ class OverviewPanel(Vertical):
             for launch in launch_display:
                 age = _format_age(launch.created_at)
                 launch_table.add_row(
-                    safe_markup(launch.name[:20]),
+                    address_text(launch.address, label=launch.name, width=_LAUNCH_NAME_COLS),
                     safe_markup(launch.deployer),
                     age,
                 )
@@ -373,12 +387,11 @@ class OverviewPanel(Vertical):
         for token in top_gainers[:_MAX_MOVERS]:
             change = token.price_change_24h
             pct = f"+{change:.1f}%" if change is not None else "+?%"
-            symbol = safe_markup(token.symbol[:10])
             status = classify_token_status(token)
             dot = _status_dot(status)
             movers_table.add_row(
                 "[green]\u25b2[/]",
-                f"[bold]{symbol}[/]",
+                address_text(token.address, label=token.symbol, width=_MOVERS_TOKEN_COLS, style="bold"),
                 pct,
                 dot,
             )
@@ -387,12 +400,11 @@ class OverviewPanel(Vertical):
         for token in top_losers[:_MAX_MOVERS]:
             change = token.price_change_24h
             pct = f"{change:.1f}%" if change is not None else "-?%"
-            symbol = safe_markup(token.symbol[:10])
             status = classify_token_status(token)
             dot = _status_dot(status)
             movers_table.add_row(
                 "[red]\u25bc[/]",
-                f"[bold]{symbol}[/]",
+                address_text(token.address, label=token.symbol, width=_MOVERS_TOKEN_COLS, style="bold"),
                 pct,
                 dot,
             )
@@ -412,11 +424,10 @@ class OverviewPanel(Vertical):
         else:
             for pool in pool_display:
                 pair = f"{pool.token_symbol}/WETH"
-                pair_str = safe_markup(pair[:14])
                 vol_str = format_volume(pool.volume_24h)
                 change_str = format_change(pool.price_change_24h)
                 pools_table.add_row(
-                    f"[bold]{pair_str}[/]",
+                    address_text(pool.token_address, label=pair, width=_POOLS_TOKEN_COLS, style="bold"),
                     vol_str,
                     change_str,
                 )

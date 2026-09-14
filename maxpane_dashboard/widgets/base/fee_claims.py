@@ -7,7 +7,17 @@ import time
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.address import MIN_SHORT_COLS, short_hex
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+
+#: This panel shows a transaction hash, never a wallet or contract address --
+#: outside the copy-icon rule (PRD §1: "Transaction hashes: Excluded"). It
+#: still cannot keep a private slice-shaped shortener (E1 bans those
+#: everywhere; PRD §3.2), so it shortens through ``short_hex`` like every
+#: other 0x hex value in the repo -- deliberately with **no** icon.
+#: ``MIN_SHORT_COLS`` is the narrowest window the helper allows; no wider
+#: budget was worth spending on a value nobody clicks.
+_TX_COLS = MIN_SHORT_COLS
 
 
 def _format_time(timestamp: float | int | str | None) -> str:
@@ -23,12 +33,11 @@ def _format_time(timestamp: float | int | str | None) -> str:
 
 
 def _short_tx(tx_hash: str | None) -> str:
-    """Shorten a tx hash to 0xa3f2.. format."""
+    """Shorten a tx hash for display. No icon: transaction hashes are
+    outside the copy-icon rule (PRD §1)."""
     if not tx_hash:
         return "--"
-    if len(tx_hash) > 8:
-        return f"{tx_hash[:6]}.."
-    return tx_hash
+    return short_hex(tx_hash, _TX_COLS)
 
 
 class FeeClaims(Vertical):
