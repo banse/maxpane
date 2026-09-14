@@ -7,6 +7,14 @@ widget has no dependency on game-specific analytics modules.
 All format helpers tolerate ``None`` -- rendering ``"--"`` rather than
 crashing -- because newly-launched tokens may not yet be indexed by
 DexScreener and the manager forwards those gaps verbatim.
+
+``SYM`` is a name standing in for the row's ERC20 contract address (``token
+["address"]``, always present -- ``TTTLaunchedToken.address`` is a
+non-optional field): the symbol is shown, and its copy icon copies the
+address, per PRD §1 ("a name shown in place of the address gets the
+icon"). The cell is built with ``address_text``, never markup, so the
+symbol (attacker-chosen ERC20 metadata) never has to be escaped for a
+markup parse it no longer goes through.
 """
 
 from __future__ import annotations
@@ -14,10 +22,23 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 
 _DASH = "--"
 _SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
+
+#: Display budget for the SYM cell's symbol/address text, excluding
+#: ICON_COLS. An up-to-8-char symbol alone would fit width=8, but this cell
+#: now sometimes renders the bare address instead (no known symbol --
+#: ``_safe_symbol`` returns ``None``), and ``address_text``'s own window
+#: has a floor, ``MIN_SHORT_COLS``, below which it will not go: a rendered
+#: check with width=8 on a no-symbol row still produced an 11-cell address,
+#: overflowing an 8+ICON_COLS=10 column (caught on the composited strip,
+#: not by inspection -- see ``ttt_fees_table.py``, which shares this exact
+#: SYM-as-name-for-address shape and found it first). Pinning this to
+#: ``MIN_SHORT_COLS`` covers both branches -- the symbol case has room to
+#: spare, the bare-address case fits exactly.
+_SYM_WIDTH = MIN_SHORT_COLS
 
 
 # -- format helpers ----------------------------------------------------
@@ -106,18 +127,23 @@ def _fmt_age(age_str) -> str:
     return str(age_str)
 
 
-def _safe_symbol(sym) -> str:
-    """Strip non-printable chars from symbol; truncate to 8 chars."""
+def _safe_symbol(sym) -> str | None:
+    """Strip non-printable chars from symbol; truncate to 8 chars.
+
+    ``None`` for missing/empty (rather than ``_DASH``) so ``address_text``
+    shows the real address instead of a placeholder dash when the token has
+    a valid address but no known symbol. No ``safe_markup``: the cleaned
+    string is handed to ``address_text`` as a ``label``, appended as plain
+    ``Text`` rather than parsed as markup.
+    """
     if sym is None:
-        return _DASH
+        return None
     try:
         cleaned = "".join(ch for ch in str(sym) if ch.isprintable())
     except Exception:
-        return _DASH
+        return None
     cleaned = cleaned.strip()
-    if not cleaned:
-        return _DASH
-    return safe_markup(cleaned[:8])
+    return cleaned[:8] if cleaned else None
 
 
 # -- widget ------------------------------------------------------------
@@ -149,7 +175,7 @@ class TTTLeaderboard(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("#", width=3)
-        table.add_column("SYM", width=8)
+        table.add_column("SYM", width=_SYM_WIDTH + ICON_COLS)
         table.add_column("PRICE", width=10)
         table.add_column("24h%", width=8)
         table.add_column("VOL", width=10)
@@ -176,6 +202,12 @@ class TTTLeaderboard(Vertical):
                 continue
             rank = token.get("rank", idx)
             symbol = _safe_symbol(token.get("symbol"))
+            sym_cell = address_text(
+                token.get("address"),
+                label=symbol,
+                width=_SYM_WIDTH,
+                style="bold" if idx == 1 else "",
+            )
             price = _fmt_price(token.get("price_usd"))
             change = _fmt_change(token.get("change_h24"))
             volume = _fmt_humanized_usd(token.get("vol_usd_h24"))
@@ -185,9 +217,8 @@ class TTTLeaderboard(Vertical):
             # Bold row 1
             if idx == 1:
                 rank_str = f"[bold]{rank}[/]"
-                symbol = f"[bold]{symbol}[/]"
                 price = f"[bold]{price}[/]"
             else:
                 rank_str = str(rank)
 
-            table.add_row(rank_str, symbol, price, change, volume, age, mcap)
+            table.add_row(rank_str, sym_cell, price, change, volume, age, mcap)

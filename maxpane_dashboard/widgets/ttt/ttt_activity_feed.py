@@ -3,8 +3,8 @@
 Renders the last 25 events from ``cache.activity_log``, descending by
 block.  Five event types are formatted with a per-type color tag:
 
-* ``"burn"``    -> yellow BURN, with token symbol, actor (first 6 hex
-  chars) and ``tokenId``.
+* ``"burn"``    -> yellow BURN, with token symbol, the burn actor's
+  address (full ``address_text``, copy icon included) and ``tokenId``.
 * ``"swap"``    -> green BUY (positive ETH) or red SELL (negative ETH),
   with current buy-tax %.
 * ``"fee"``     -> green FEE, with the 30% holder-pool share.
@@ -16,19 +16,38 @@ block.  Five event types are formatted with a per-type color tag:
 Every formatter is exception-safe: missing or malformed fields collapse
 to dashes rather than crashing the RichLog write.  See WP3 schema in
 ``ttt_models.py::TTTActivityEvent`` for the dict shape.
+
+A burn row is the one site in this module that displays a wallet address
+(``actor_address``, the NFT burner); it is built as a ``rich.text.Text``
+via ``address_text`` rather than a markup string, so the copy icon's click
+meta survives ``RichLog``'s deferred markup parsing (``RichLog._make_renderable``
+only parses ``str`` content -- a ``Text`` object passes straight through).
+The other four event types render no address today, so they stay plain
+markup strings.
 """
 
 from __future__ import annotations
 
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _WEI = 10**18
 _DASH = "--"
+
+#: Display budget for the burn actor's address, excluding ICON_COLS (PRD
+#: §5): no layout pin governs this RichLog (recipe step 6 does not apply --
+#: there is nothing to grow into or shrink against), so this is a fresh,
+#: deliberate choice rather than a preserved one. The former display showed
+#: only the first 6 hex chars with no tail at all, which is a worse
+#: anti-poisoning window than even the banned 6/4 shape (PRD §3.2 AMENDED).
+#: 17 reproduces surf's `long_addr` anti-poisoning window (8 head / 6 tail).
+_BURN_ACTOR_WIDTH = 17
 
 
 # -- helpers -----------------------------------------------------------
@@ -44,16 +63,6 @@ def _format_ts(timestamp) -> str:
         return f"{t.tm_hour:02d}:{t.tm_min:02d}"
     except (TypeError, ValueError, OSError):
         return "??:??"
-
-
-def _short_actor(actor) -> str:
-    """First 6 hex chars after ``0x``; falls back to dash."""
-    if not actor:
-        return _DASH
-    s = str(actor)
-    if s.startswith("0x") or s.startswith("0X"):
-        s = s[2:]
-    return s[:6] if s else _DASH
 
 
 def _sym(symbol) -> str:
@@ -79,14 +88,14 @@ def _safe_get(event: dict, key: str, default=None):
 # -- per-type formatters ----------------------------------------------
 
 
-def _fmt_burn(event: dict, ts: str, sym: str) -> str:
-    actor = _short_actor(_safe_get(event, "actor_address"))
+def _fmt_burn(event: dict, ts: str, sym: str) -> Text:
+    actor = _safe_get(event, "actor_address")
     token_id = _safe_get(event, "token_id")
     token_id_str = str(token_id) if token_id is not None else _DASH
-    return (
-        f"{ts}  [yellow]BURN [/]  {sym:>6}  by {actor:.6}…   "
-        f"tokenId {token_id_str}"
-    )
+    line = Text.from_markup(f"{ts}  [yellow]BURN [/]  {sym:>6}  by ")
+    line.append_text(address_text(actor, width=_BURN_ACTOR_WIDTH))
+    line.append(f"   tokenId {token_id_str}")
+    return line
 
 
 def _fmt_swap(event: dict, ts: str, sym: str) -> str:
@@ -165,8 +174,13 @@ def _fmt_sale(event: dict, ts: str) -> str:
     )
 
 
-def _event_to_markup(event: dict) -> str | None:
-    """Format one activity event; ``None`` to skip unknown types."""
+def _event_to_line(event: dict) -> str | Text | None:
+    """Format one activity event; ``None`` to skip unknown types.
+
+    A burn event returns a ``Text`` (its actor address carries the copy
+    icon); every other event type returns a markup ``str``, parsed by the
+    ``RichLog`` itself. ``RichLog.write`` accepts either.
+    """
     if not isinstance(event, dict):
         return None
     ts = _format_ts(event.get("timestamp"))
@@ -249,7 +263,7 @@ class TTTActivityFeed(Vertical):
 
         log.auto_scroll = False
         for event in iterator:
-            line = _event_to_markup(event)
+            line = _event_to_line(event)
             if line is not None:
                 log.write(line)
 

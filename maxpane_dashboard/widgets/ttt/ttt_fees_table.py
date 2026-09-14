@@ -13,6 +13,14 @@ Each row carries:
 All cells handle ``None`` and malformed inputs by collapsing to ``"--"``.
 This widget is a sibling of ``TTTClaimsTable`` -- the screen toggles
 ``display`` between them via the ``c`` keybinding (WP5).
+
+``SYM`` is a name standing in for the row's ERC20 contract address (``row
+["address"]``, always present -- ``TTTLaunchedToken.address`` is a
+non-optional field): the symbol is shown, and its copy icon copies the
+address, per PRD §1 ("a name shown in place of the address gets the
+icon"). The cell is built with ``address_text``, never markup, so the
+symbol (attacker-chosen ERC20 metadata) never has to be escaped for a
+markup parse it no longer goes through.
 """
 
 from __future__ import annotations
@@ -20,9 +28,21 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 
 _DASH = "--"
+
+#: Display budget for the SYM cell's symbol/address text, excluding
+#: ICON_COLS. An up-to-8-char symbol alone would fit width=8, but this cell
+#: now sometimes renders the bare address instead (no known symbol --
+#: ``_safe_symbol`` returns ``None``), and ``address_text``'s own window
+#: has a floor, ``MIN_SHORT_COLS``, below which it will not go: a rendered
+#: check with width=8 on a no-symbol row still produced an 11-cell address,
+#: overflowing an 8+ICON_COLS=10 column (caught on the composited strip,
+#: not by inspection). Pinning this to ``MIN_SHORT_COLS`` covers both
+#: branches -- the symbol case has room to spare, the bare-address case
+#: fits exactly.
+_SYM_WIDTH = MIN_SHORT_COLS
 
 
 def _fmt_eth(value, digits: int = 4) -> str:
@@ -47,15 +67,25 @@ def _fmt_ratio_pct(value) -> str:
     return f"{v:.1f}%"
 
 
-def _safe_symbol(sym) -> str:
+def _safe_symbol(sym) -> str | None:
+    """Cleaned, truncated symbol, or ``None`` when there is nothing to show.
+
+    ``None`` (rather than ``_DASH``) so ``address_text``'s own ``label or
+    None`` fallback shows the real address instead of a placeholder dash
+    when the token has a valid address but no known symbol -- the address
+    is strictly more informative. No ``safe_markup`` here: the cleaned
+    string is handed to ``address_text`` as a ``label``, which appends it
+    as plain ``Text``, never through a markup parse (unlike the old
+    ``f"[bold]{symbol}[/]"`` string this replaces).
+    """
     if sym is None:
-        return _DASH
+        return None
     try:
         cleaned = "".join(ch for ch in str(sym) if ch.isprintable())
     except Exception:
-        return _DASH
+        return None
     cleaned = cleaned.strip()
-    return safe_markup(cleaned[:8]) if cleaned else _DASH
+    return cleaned[:8] if cleaned else None
 
 
 class TTTFeesTable(Vertical):
@@ -84,7 +114,7 @@ class TTTFeesTable(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("#", width=3)
-        table.add_column("SYM", width=8)
+        table.add_column("SYM", width=_SYM_WIDTH + ICON_COLS)
         table.add_column("24h FEES", width=12)
         table.add_column("LIFETIME", width=12)
         table.add_column("24h FEE/VOL", width=12)
@@ -109,15 +139,20 @@ class TTTFeesTable(Vertical):
                 continue
             rank = row.get("rank", idx)
             symbol = _safe_symbol(row.get("symbol"))
+            sym_cell = address_text(
+                row.get("address"),
+                label=symbol,
+                width=_SYM_WIDTH,
+                style="bold" if idx == 1 else "",
+            )
             fees_24h = _fmt_eth(row.get("fees_24h_eth"))
             fees_life = _fmt_eth(row.get("fees_lifetime_eth"))
             fees_per_vol = _fmt_ratio_pct(row.get("fees_per_vol_pct"))
 
             if idx == 1:
                 rank_str = f"[bold]{rank}[/]"
-                symbol = f"[bold]{symbol}[/]"
                 fees_24h = f"[bold]{fees_24h}[/]"
             else:
                 rank_str = str(rank)
 
-            table.add_row(rank_str, symbol, fees_24h, fees_life, fees_per_vol)
+            table.add_row(rank_str, sym_cell, fees_24h, fees_life, fees_per_vol)
