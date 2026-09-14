@@ -102,6 +102,17 @@ def _fit(text: str, width: int | None) -> str:
     return out + _ELLIPSIS
 
 
+def _clean_label(value: object) -> str:
+    """Third-party display text made safe to sit on one row beside an icon.
+
+    Every whitespace run (a newline, a tab, a run of spaces) becomes one
+    space, so a name cannot break or stretch the row it is in; and every
+    :data:`COPY_GLYPH` is removed, so a name like ``"x ⧉"`` cannot paint a
+    dead second icon beside the real one.
+    """
+    return " ".join(value.replace(COPY_GLYPH, "").split())
+
+
 def _icon(address: str) -> tuple[str, Style]:
     return COPY_GLYPH, Style(meta={"@click": copy_action(address)})
 
@@ -120,14 +131,21 @@ def address_text(
     **excludes** :data:`ICON_COLS`; ``None`` shows the whole address. A value
     that is not a valid address renders plain, with no icon and no action.
     ``style`` must be a Rich style, never a ``$theme`` token.
+
+    ``label`` is third-party text and is hardened here, once, for every
+    caller: a non-string label is ignored (the address is shown, nothing
+    raises), whitespace runs collapse to single spaces and any copy glyph in
+    it is removed. A label left empty by that falls back to the address. An
+    invalid value shown in place of an address gets the same treatment.
     """
     valid = is_address(address)
+    label = _clean_label(label) if isinstance(label, str) else None
     if label:
         shown = _fit(label, width)
     elif valid:
         shown = address if width is None else short_address(address, width)
     else:
-        shown = _fit(str(address) if address else "--", width)
+        shown = _fit(_clean_label(str(address)) if address else "--", width)
     out = Text(shown, style=style)
     if valid:
         out.append(" ")

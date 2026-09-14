@@ -110,3 +110,39 @@ def test_the_helper_stays_pure():
     roots = {m.split(".")[0] for m in modules}
     assert not roots & {"textual", "httpx", "aiohttp", "asyncio", "subprocess"}, roots
     assert not [m for m in modules if m.startswith("maxpane_dashboard.data")]
+
+
+# -- label hardening (final review F2) ------------------------------------------
+
+
+def test_a_non_string_label_is_ignored_and_never_raises():
+    for bad in (123, 4.5, b"bytes", ["list"], object()):
+        t = A.address_text(ADDR, label=bad, width=17)
+        assert t.plain == A.short_address(ADDR, 17) + " " + A.COPY_GLYPH, bad
+        assert _actions(t) == [(A.COPY_GLYPH, A.copy_action(ADDR))]
+
+
+def test_a_label_cannot_break_or_stretch_its_row():
+    t = A.address_text(ADDR, label="whale\n.eth\tis\r\n  here")
+    assert t.plain == "whale .eth is here " + A.COPY_GLYPH
+    assert "\n" not in t.plain and "\t" not in t.plain and "\r" not in t.plain
+    assert A.address_text(ADDR, label="a b\xa0c").plain == "a b c " + A.COPY_GLYPH
+
+
+def test_a_label_cannot_paint_a_second_icon():
+    for spoof in ("x ⧉", "⧉x", "x⧉⧉y"):
+        t = A.address_text(ADDR, label=spoof)
+        assert t.plain.count(A.COPY_GLYPH) == 1, (spoof, t.plain)
+        assert t.plain.endswith(" " + A.COPY_GLYPH)
+        assert _actions(t) == [(A.COPY_GLYPH, A.copy_action(ADDR))]
+
+
+def test_a_label_emptied_by_hardening_falls_back_to_the_address():
+    for empty in (" \n\t ", "⧉", " ⧉ "):
+        assert A.address_text(ADDR, label=empty, width=17).plain == A.short_address(ADDR, 17) + " " + A.COPY_GLYPH
+
+
+def test_an_invalid_value_cannot_break_its_row_or_fake_an_icon():
+    t = A.address_text("not\nan ⧉ address")
+    assert t.plain == "not an address"
+    assert _actions(t) == []
