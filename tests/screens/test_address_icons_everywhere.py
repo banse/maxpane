@@ -15,6 +15,13 @@ Per case, across all of its views, four questions (PRD §7 E2):
    some view**, unless ``EXEMPT`` names that class with its reason. A panel that
    silently stops rendering its icons, including one that prints its addresses
    in a shape the scans above cannot read, fails here.
+5. **An ``EXEMPT`` widget prints no whole or shortened address** in its own
+   region, so an exemption cannot hide a widget that renders addresses.
+
+Each case is swept at :data:`SIZE` (170 columns) and again at each view's own
+layout pin, plus any ``extra_sizes`` it names (:func:`sizes_for`). Questions 1,
+2 and 5 are asked at every size; 3 and 4 only at 170, where every body has room
+for every unit it can shed at a pin.
 
 An address-free case gets the opposite: no icon, no whole or shortened address,
 and no helper-using widget mounted at all.
@@ -29,14 +36,46 @@ import types
 import pytest
 from rich.cells import cell_len
 
+from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.address import ADDRESS_RE, PROSE_ADDRESS_RE
-from tests.address_sweep.case import view_name
+from tests.address_sweep.case import SweepCase, view_name
 from tests.address_sweep.imports import imports_helper
 from tests.address_sweep.registry import CASES
 from tests.widgets.address_probe import icon_targets
 
-#: The sweep's terminal: wide and tall enough for every body to render.
+#: The sweep's wide terminal: wide and tall enough for every body to render.
 SIZE = (170, 60)
+
+
+def sizes_for(case: SweepCase, kind: str) -> list[tuple[int, int]]:
+    """The terminal each of ``case``'s views is swept at, in ``views`` order.
+
+    ``wide`` is :data:`SIZE` for every view. ``pin`` is each view's own layout
+    pin (``case.pins``; ``__main__.FULL_LAYOUT_COLUMNS`` when it names none),
+    because 170 columns hides every defect that only exists where a panel is
+    tight: an address budgeted below the window floor loses its icon at the
+    pin and not at 170. ``extra-N`` is ``case.extra_sizes[N]``.
+    """
+    count = len(case.views)
+    if kind == "wide":
+        return [SIZE] * count
+    if kind == "pin":
+        pins = case.pins or ((FULL_LAYOUT_COLUMNS, None),)
+        if len(pins) == 1:
+            pins = pins * count
+        assert len(pins) == count, (case.name, "one pin per view, or a single pin for all")
+        return [(cols, rows or SIZE[1]) for cols, rows in pins]
+    index = int(kind.removeprefix("extra-"))
+    cols, rows = case.extra_sizes[index]
+    return [(cols, rows or SIZE[1])] * count
+
+
+def _size_params() -> list:
+    params = []
+    for case in CASES:
+        kinds = ["wide", "pin", *(f"extra-{i}" for i in range(len(case.extra_sizes)))]
+        params.extend(pytest.param(case, kind, id=f"{case.name}-{kind}") for kind in kinds)
+    return params
 
 #: A shortened address window, ``0x<head>…<tail>``.
 SHORT_TOKEN_RE = re.compile(r"(?<![0-9A-Za-z])0x([0-9a-fA-F]+)…([0-9a-fA-F]+)(?![0-9a-fA-F])")
@@ -279,8 +318,51 @@ async def _enter(view, app, pilot) -> None:
             await pilot.press(key)
 
 
-@pytest.mark.parametrize("case", CASES, ids=[c.name for c in CASES])
-async def test_every_rendered_address_carries_an_icon_that_copies_it(case):
+def test_every_case_is_swept_at_its_pins():
+    from maxpane_dashboard.screens import curator, surf
+
+    by_name = {case.name: case for case in CASES}
+    assert sizes_for(by_name["surf"], "pin") == [
+        (surf.SURF_FULL_LAYOUT_COLUMNS, SIZE[1]),
+        (surf.SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, surf.SURF_LAUNCHPAD_FULL_LAYOUT_ROWS),
+        (surf.SURF_POOL4_FULL_LAYOUT_COLUMNS, surf.SURF_POOL4_FULL_LAYOUT_ROWS),
+        (surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, surf.SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+    ]
+    assert set(sizes_for(by_name["curator"], "pin")) == {(curator.CURATOR_FULL_LAYOUT_COLUMNS, SIZE[1])}
+    for case in CASES:
+        if case.name not in ("surf", "curator"):
+            assert set(sizes_for(case, "pin")) == {(FULL_LAYOUT_COLUMNS, SIZE[1])}, case.name
+    ids = {p.id for p in _size_params()}
+    assert {f"{c.name}-{k}" for c in CASES for k in ("wide", "pin")} <= ids
+
+
+def _address_tokens_in_region(rows: list[str], region) -> list[str]:
+    """Whole or shortened address tokens printed inside ``region``'s cells."""
+    found: list[str] = []
+    for y in range(region.y, min(region.y + region.height, len(rows))):
+        row = rows[y]
+        start, end = _char_at_cell(row, region.x), _char_at_cell(row, region.x + region.width - 1)
+        if start is None:
+            continue
+        cut = row[start:(len(row) if end is None else end + 1)]
+        found.extend(m.group(0) for m in PROSE_ADDRESS_RE.finditer(cut))
+        found.extend(m.group(0) for m in SHORT_TOKEN_RE.finditer(cut))
+    return found
+
+
+def test_the_region_scan_finds_addresses_only_inside_the_region():
+    from textual.geometry import Region
+
+    row = "0x" + "a" * 40 + " ⧉ | 0xabcd…ef01 ⧉"
+    rows = [row, "nothing here"]
+    split = row.index("|")
+    assert _address_tokens_in_region(rows, Region(0, 0, split, 2)) == ["0x" + "a" * 40]
+    assert _address_tokens_in_region(rows, Region(split, 0, len(row) - split, 2)) == ["0xabcd…ef01"]
+    assert _address_tokens_in_region(rows, Region(0, 1, len(row), 1)) == []
+
+
+@pytest.mark.parametrize(("case", "kind"), _size_params())
+async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind):
     served = case.payload()
     in_payload = _addresses_in(served)
     hashes = _hashes_in(served)
@@ -294,10 +376,10 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case):
     mounted: dict[str, str] = {}
     covered: set[str] = set()
 
-    for view in case.views:
-        label = view_name(view)
+    for view, size in zip(case.views, sizes_for(case, kind)):
+        label = f"{view_name(view)}@{size[0]}x{size[1]}"
         app = case.build()
-        async with app.run_test(size=SIZE) as pilot:
+        async with app.run_test(size=size) as pilot:
             await pilot.pause()
             await _enter(view, app, pilot)
             await pilot.pause()
@@ -308,6 +390,10 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case):
                 key = _class_key(type(widget))
                 if imports_helper(type(widget).__module__):
                     mounted.setdefault(key, label)
+                if key in EXEMPT:
+                    # An exemption says the widget renders no address; hold it to that.
+                    for token in _address_tokens_in_region(rows, widget.region):
+                        problems.append((label, key, token, "address rendered inside an EXEMPT widget"))
 
             if case.address_free:
                 if targets:
@@ -363,14 +449,20 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case):
                         continue  # the same window is also a transaction hash's; hashes carry no icon
                     problems.append((label, y, m.group(0), "shortened address without its icon"))
 
-    if not case.address_free:
+    if case.address_free:
+        if mounted:
+            problems.append(("helper-using widgets mounted on an address-free dashboard", sorted(mounted)))
+    elif kind == "wide":
+        # Presence is a property of the wide sweep. At a pin a panel may shed a
+        # whole window-and-icon unit behind an ellipsis (surf's SIGNALS row
+        # reads ``new contract…`` at 143), which is honest; what every size
+        # must guarantee is the per-row checks above: nothing printed without
+        # its icon, and no icon copying the wrong address.
         missing = seeded - copied_somewhere
         if missing:
             problems.append(("seeded addresses never got an icon in any view", sorted(missing)))
         silent = sorted(k for k in mounted if k not in covered and k not in EXEMPT)
         if silent:
             problems.append(("helper-using widgets mounted but never produced an icon", silent))
-    elif mounted:
-        problems.append(("helper-using widgets mounted on an address-free dashboard", sorted(mounted)))
 
     assert not problems, (case.name, problems)

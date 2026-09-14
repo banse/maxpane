@@ -25,7 +25,7 @@ from maxpane_dashboard.data.models import ActivityEvent, BakerySummary
 from maxpane_dashboard.screens.bakery import BakeryScreen
 from maxpane_dashboard.screens.base_terminal import BaseTerminalScreen
 from maxpane_dashboard.screens.cattown import CatTownScreen
-from maxpane_dashboard.screens.curator import CuratorScreen
+from maxpane_dashboard.screens.curator import CURATOR_FULL_LAYOUT_COLUMNS, CuratorScreen
 from maxpane_dashboard.screens.dota import DOTAScreen
 from maxpane_dashboard.screens.frenpet import FrenPetScreen
 from maxpane_dashboard.screens.frenpet_full import FrenPetFullScreen
@@ -33,7 +33,16 @@ from maxpane_dashboard.screens.frenpet_perf import FrenPetPerfScreen
 from maxpane_dashboard.screens.frenpet_wallet import FrenPetWalletScreen
 from maxpane_dashboard.screens.fwa import FWAScreen
 from maxpane_dashboard.screens.ocm import OCMScreen
-from maxpane_dashboard.screens.surf import SurfScreen
+from maxpane_dashboard.screens.surf import (
+    SURF_FULL_LAYOUT_COLUMNS,
+    SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
+    SURF_LAUNCHPAD_FULL_LAYOUT_ROWS,
+    SURF_POOL4_FULL_LAYOUT_COLUMNS,
+    SURF_POOL4_FULL_LAYOUT_ROWS,
+    SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
+    SURF_POOL4_USER_FULL_LAYOUT_ROWS,
+    SurfScreen,
+)
 from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
 from tests.address_sweep.case import SweepCase
@@ -225,11 +234,37 @@ CURATOR_SEEDED: tuple[str, ...] = (
 _FWA_DRIFT = "0x8c8d7c46219d9205f056f28fee5950ad564d7465"
 
 
+#: Unnamed rows: the manager leaves ``collection_name`` / ``purchaser_name``
+#: None when no name or ENS is known, so each of these renders as a windowed
+#: address rather than a label -- the shape an address budget below
+#: ``MIN_SHORT_COLS`` crops the icon off.
+_FWA_UNNAMED_COLLECTION = "0x" + "c0" * 20   # CHASE BOARD row 2, no collection name
+_FWA_UNNAMED_PURCHASER = "0x" + "d1" * 20    # ACTIVITY row 1 purchaser, no ENS
+_FWA_UNNAMED_DRAWN = "0x" + "e2" * 20        # ACTIVITY row 1 collection, no name
+_FWA_UNNAMED_HOLDER = "0x" + "f3" * 20       # SETTLEMENT crown rank 1, no ENS
+
+
+#: A width below FWA's pin where the final review measured an unnamed CHASE
+#: BOARD row losing its icon (an address budgeted below ``MIN_SHORT_COLS``):
+#: 143 and 170 both hide that defect, so the pin sweep alone cannot see it.
+#: A measurement, not a pin.
+_FWA_SUB_PIN_COLUMNS = 120
+
+
 def _fwa_payload() -> dict:
     events = [{"key": 61, "value": int(_FWA_DRIFT, 16), "block_number": 25_600_000}]
-    return _fwa._frozen_payload(
+    payload = _fwa._frozen_payload(
         param_drift_signal=_fwa._signals.param_drift_signal(events).model_dump(),
     )
+    chase = copy.deepcopy(payload["chase_positions"])
+    chase[1] = {**chase[1], "collection": _FWA_UNNAMED_COLLECTION, "collection_name": None}
+    draws = copy.deepcopy(payload["draw_events"])
+    draws[0] = {**draws[0], "purchaser": _FWA_UNNAMED_PURCHASER, "purchaser_name": None,
+                "collection": _FWA_UNNAMED_DRAWN, "collection_name": None}
+    crowns = copy.deepcopy(payload["crown_history"])
+    crowns[0] = {**crowns[0], "holder": _FWA_UNNAMED_HOLDER, "holder_name": None}
+    payload.update(chase_positions=chase, draw_events=draws, crown_history=crowns)
+    return payload
 
 
 def _fwa_app() -> App:
@@ -242,6 +277,10 @@ FWA_SEEDED: tuple[str, ...] = (
     "0x0000000000000000000000000000000000000002",  # default: SETTLEMENT holder, shortened
     _FWA_DRIFT,                                     # default: SIGNALS param drift, prose
     "0x0000000000000000000000000000000000000003",  # c: ACTIVITY purchaser, shortened
+    _FWA_UNNAMED_COLLECTION,                        # default: CHASE BOARD, unnamed, shortened
+    _FWA_UNNAMED_PURCHASER,                         # c: ACTIVITY purchaser, unnamed, shortened
+    _FWA_UNNAMED_DRAWN,                             # c: ACTIVITY collection, unnamed, shortened
+    _FWA_UNNAMED_HOLDER,                            # default: SETTLEMENT crown rank 1, unnamed, shortened
 )
 
 
@@ -548,6 +587,12 @@ CASES: tuple[SweepCase, ...] = (
         payload=_surf_payload,
         views=((), ("l",), ("p",), ("4",)),
         seeded=SURF_SEEDED,
+        pins=(
+            (SURF_FULL_LAYOUT_COLUMNS, None),
+            (SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, SURF_LAUNCHPAD_FULL_LAYOUT_ROWS),
+            (SURF_POOL4_FULL_LAYOUT_COLUMNS, SURF_POOL4_FULL_LAYOUT_ROWS),
+            (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+        ),
     ),
     SweepCase(
         name="curator",
@@ -562,6 +607,7 @@ CASES: tuple[SweepCase, ...] = (
         views=((), ("c",), ("1",), ("h",), ("h", "c"), ("y",),
                curator_analysis, curator_filter_editor),
         seeded=CURATOR_SEEDED,
+        pins=((CURATOR_FULL_LAYOUT_COLUMNS, None),),
     ),
     SweepCase(
         name="fwa",
@@ -570,6 +616,7 @@ CASES: tuple[SweepCase, ...] = (
         payload=_fwa_payload,
         views=((), ("c",)),
         seeded=FWA_SEEDED,
+        extra_sizes=((_FWA_SUB_PIN_COLUMNS, None),),
     ),
     SweepCase(
         name="base",

@@ -40,3 +40,13 @@ class SweepCase:
     #: carries addresses no panel shows (a pool manager, an internal sink), and a
     #: derived list would fail E2 on addresses that were never meant to render.
     seeded: tuple[str, ...] = ()
+    #: Each view's own layout pin, ``(columns, rows)``, in ``views`` order. A
+    #: ``None`` row count means the sweep's default height. A single entry
+    #: pins every view; empty pins every view at
+    #: ``__main__.FULL_LAYOUT_COLUMNS``. Always import the
+    #: pin constants; never retype a number here.
+    pins: tuple[tuple[int, int | None], ...] = ()
+    #: Further ``(columns, rows)`` sizes to sweep every view at, below the
+    #: pins, where a measured defect lived. Each one names its reason in the
+    #: builder.
+    extra_sizes: tuple[tuple[int, int | None], ...] = ()
