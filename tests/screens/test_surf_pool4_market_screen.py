@@ -140,6 +140,49 @@ def _market_text(app) -> str:
     ))
 
 
+async def test_a_live_shaped_band_paints_not_reached_on_the_rungs_short_of_it() -> None:
+    """IF IMD FALLS through the real screen, on the mainnet reading of
+    2026-09-14: spot 65858, band opening at 69300, 29.33% under spot.
+
+    The independent reader (``pool4hook.ts depth``) gave ``0 / 0 / 0 / 0 /
+    16%`` for this band, and the owner read the panel's ``0.0%`` on the first
+    four as a malfunction. They are rungs that never reach the band, and the
+    panel now says so in words -- while -50%, which does reach it, keeps a
+    real percentage. Read off composited pixels at the pinned width as well as
+    at a comfortable one, so the eleven-cell word is proven whole where the
+    body is tightest.
+    """
+    from maxpane_dashboard.screens.surf import SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
+    from maxpane_dashboard.widgets.surf.pool4u_depth import NOT_REACHED_BAND
+
+    from tests.widgets.test_surf_pool4u_depth import FORBIDDEN
+
+    payload = _mainnet_pool4_payload(
+        pool4_current_tick=65_858,
+        pool4_backstop_lower_tick=69_300,
+        pool4_backstop_state="deployed",
+    )
+    for size in (_SIZE, (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, 50)):
+        async with _surf_app(payload).run_test(size=size) as pilot:
+            screen = await _open_market(pilot)
+            text = _region_text(pilot.app, screen.query_one(SurfPool4UDepth))
+
+        rungs = {
+            ln.strip().split()[0]: ln.strip()
+            for ln in text.split("\n")
+            if ln.strip().startswith("-") and ln.strip().split()[0].endswith("%")
+        }
+        assert set(rungs) == {"-1%", "-5%", "-10%", "-20%", "-50%"}, (size, text)
+        for rung in ("-1%", "-5%", "-10%", "-20%"):
+            assert rungs[rung].endswith(NOT_REACHED_BAND), (size, rungs[rung])
+        deep = rungs["-50%"]
+        assert NOT_REACHED_BAND not in deep, (size, deep)
+        share = deep.split()[-1]
+        assert share.endswith("%") and float(share.rstrip("%")) > 0.0, (size, deep)
+        for word in FORBIDDEN:
+            assert word not in text.lower(), (size, word)
+
+
 # ---------------------------------------------------------------------------
 # the key
 # ---------------------------------------------------------------------------

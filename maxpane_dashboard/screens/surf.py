@@ -1201,12 +1201,13 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: ``test_the_ladder_column_is_exactly_the_width_of_its_own_caption``.
 #:
 #: **AND THE CAPTION IS WHY IT COULD NOT GO NARROWER, WHICH IS THE ANSWER TO
-#: "half of its space is empty".** The ladder *table* is 27 cells wide -- the
-#: request's own estimate of 26 was one out -- but the sentence under it,
+#: "half of its space is empty".** The ladder *table* was 27 cells wide -- the
+#: request's own estimate of 26 was one out -- and is 29 since ``not reached``
+#: widened ``band used`` on 2026-09-14; but the sentence under it,
 #: ``quoted from the position as it stands now``, is 41, and below 45 columns
 #: that sentence is cut by CSS with an ellipsis and **no ``‹`` marker**: this
-#: panel's widen tier is decided by its table, so between 31 and 44 columns it
-#: clips in silence. That disqualifies every seam narrower than 45 under the
+#: panel's widen tier is decided by its table, so between 33 and 44 columns it
+#: clips in silence (31 and 44 before that change; both swept). That disqualifies every seam narrower than 45 under the
 #: standing rule, and it is the reason the freed columns stop at seven rather
 #: than the twenty-five the table alone would allow. Shortening the caption to
 #: 29 cells or fewer was measured as the alternative -- it would hold this pin
@@ -1215,7 +1216,8 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: trade this repo makes in the other direction.
 #:
 #: **The pin does not move with the data**, and that was measured rather than
-#: hoped: the sweep ran over the same nine payload states the row pin uses --
+#: hoped: the sweep ran over the same payload states the row pin uses (ten
+#: since 2026-09-14, when a live-shaped band-not-reached state joined them) --
 #: the committed capture, ``_ordinary_pool4_payload``'s widest flow formats,
 #: the mainnet capture, a twenty-row staker list at
 #: ``pool4u_stakers.MAX_ROWS`` with ``999.9B``-magnitude holdings, both at

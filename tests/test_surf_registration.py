@@ -1698,13 +1698,22 @@ _POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
     #
     # The needle is the WHOLE ROW and not a bare `0.0%`, which would have
     # been true and weak -- it is a share, and the one thing a share must
-    # not be confused with is another panel's share. `0.12` is the -1% rung's
+    # not be confused with is another panel's share. `0.58` is the -5% rung's
     # ETH leg off the enabling position, so the needle can only come from
-    # this ladder. Read off composited output through the real `SurfScreen`
-    # at (143, 60) with `4` pressed, both directions, on 2026-09-11:
+    # this ladder.
     #
-    #     key 0.0  ->  `-1%   0.12      0.0%`
-    #     key None ->  `-1%   0.12      unknown`
+    # RE-DERIVED 2026-09-14, and the rung moved for a reason. It was the -1%
+    # row until `not reached` landed: that rung's target (68282) is short of
+    # the band at 68340, so it now paints `not reached` with the key at `0`
+    # AND at the real liquidity -- a needle that could no longer tell a zero
+    # band from a full one. -5% (target 68694) is past the lower tick, so it
+    # is the first rung whose band cell is a share of what this key holds.
+    # Read off composited output through the real `SurfScreen` at (143, 60)
+    # with `4` pressed, all three values:
+    #
+    #     key 0     ->  `-5%   0.58      0.0%`
+    #     key None  ->  `-5%   0.58      unknown`
+    #     key 7.47e20 -> `-5%   1.01      1.8%`
     #
     # The enablers are the ladder's other four inputs. The STATE is among
     # them and is the reason the pair separates at all: `deployed` says a
@@ -1712,7 +1721,7 @@ _POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
     # together can distinguish "the band holds nothing" from "nobody read
     # the band".
     "pool4_backstop_liquidity": (
-        "-1%   0.12      0.0%",
+        "-5%   0.58      0.0%",
         {"pool4_backstop_state": "deployed",
          "pool4_current_tick": 68_181,
          "pool4_position_liquidity": 690471276437502400000,

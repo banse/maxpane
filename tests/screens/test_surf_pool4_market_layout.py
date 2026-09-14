@@ -45,7 +45,7 @@ than an edited assertion, because a pin whose binder silently changes identity
 is exactly what that test exists to catch.
 
 The third ask is the one that did not come free, and this file pins the reason.
-IF IMD FALLS's *table* is 27 cells, but its caption is 41, and below 45 columns
+IF IMD FALLS's *table* is 29 cells, but its caption is 41, and below 45 columns
 that caption is cut by CSS with **no ``‹`` marker** -- the panel's widen tier is
 decided by its table. So 45 is a floor rather than a preference, it is spent
 rather than chosen, and ``test_the_ladder_column_is_exactly_the_width_of_its_
@@ -166,7 +166,8 @@ MARKET_STAKERS_NEED = 73
 
 #: What the fixed ladder column is, restated from CSS. It is
 #: ``pool4u_depth.PANEL_COLUMNS``, which is ``CAPTION``'s 41 cells plus the
-#: same four columns of padding -- **not** the ladder table's 27.
+#: same four columns of padding -- **not** the ladder table's 29 (27 until
+#: ``not reached`` widened ``band used`` on 2026-09-14; this did not move).
 MARKET_DEPTH_COLUMNS = 45
 
 #: What ``SurfPool4Flow`` needs for itself in this body, measured at the width
@@ -280,6 +281,16 @@ MARKET_PAYLOADS = {
         pool4_backstop_lower_tick=None,
         pool4_backstop_liquidity=None,
         pool4_backstop_eth=None,
+    ),
+    # The live mainnet shape of 2026-09-14: the band opens at 69300, 29% under
+    # a spot of 65858, so four rungs paint `not reached` -- the widest value
+    # the ladder's `band used` column holds. None of the payloads above
+    # produces that cell, so without this one the pin boundary could not see
+    # the column it was re-swept for.
+    "band-not-reached": lambda: _frozen_payload(
+        pool4_current_tick=65_858,
+        pool4_backstop_lower_tick=69_300,
+        pool4_backstop_state="deployed",
     ),
 }
 
@@ -565,7 +576,7 @@ async def _render(payload, size):
 #: only band where a payload that moved the threshold could show it -- a
 #: hundred more renders of a payload agreeing with the first one outside that
 #: band buys nothing and costs a minute of every full-suite run. The
-#: boundary itself is checked against **all nine** payload states by
+#: boundary itself is checked against **all ten** payload states by
 #: ``test_the_market_column_pin_does_not_move_with_the_payload`` below, which
 #: is the stronger of the two claims anyway.
 _WIDTH_SWEEP = [("capture", w) for w in range(38, 157)] + [
@@ -639,7 +650,7 @@ async def test_the_market_column_pin_does_not_move_with_the_payload(
     """Every payload state, asked at the boundary rather than over the range.
 
     The parametrised sweep above runs two magnitudes over a hundred widths;
-    this asks the remaining seven the one question a sweep would have to
+    this asks the remaining eight the one question a sweep would have to
     answer differently if a pin moved with the data -- is the body clean at
     the pin and marked one column under it. Both halves, so a payload that
     needed *more* columns and one that needed *fewer* would each redden.
@@ -756,11 +767,11 @@ async def test_the_ladder_column_is_exactly_the_width_of_its_own_caption() -> No
        panel is measured at the pin, at ``SURF_FULL_LAYOUT_COLUMNS`` and at
        200, and STAKERS is measured taking every one of those extra columns;
     3. one column narrower the caption is **cut in silence**. The widen tier
-       on this panel is decided from its table's width, so between 31 and 44
+       on this panel is decided from its table's width, so between 33 and 44
        columns it clips with no ``‹`` anywhere in its own region. That is the
        standing "a panel that can bind must be able to mark" rule failing,
        and it is the entire reason the ladder's column stops at 45 rather
-       than at the table's 29. Asserted, not narrated, so a future widen tier
+       than at the table's 31. Asserted, not narrated, so a future widen tier
        that learned about the caption reddens this and gets the sentence in
        ``pool4u_depth.PANEL_COLUMNS`` rewritten rather than left stale.
     """

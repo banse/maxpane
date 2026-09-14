@@ -320,6 +320,131 @@ def test_the_state_vocabulary_agrees_with_the_contract_in_both_directions():
     assert (d.BAND_DEPLOYED, d.BAND_NONE) == POOL4_BACKSTOP_STATES
 
 
+# ===========================================================================
+# band_reached -- from the ticks, never from the share (2026-09-14)
+# ===========================================================================
+
+#: The live mainnet reading that prompted the key: the band opens at 69300,
+#: 29.33% under a spot of 65858, after a rally with no rebalance. The
+#: independent reader (``pool4hook.ts depth``) agrees rung for rung:
+#: 0 / 0 / 0 / 0 / 16%.
+LIVE_TICK = 65858
+LIVE_BAND_LOWER = 69300
+BAND_L = 7.468554033980641e20
+
+
+def test_the_existing_row_keys_are_unchanged_and_band_reached_joins_them():
+    rows = d.depth_rows(
+        tick=LIVE_TICK,
+        position_liquidity=6.9047e20,
+        band_lower_tick=LIVE_BAND_LOWER,
+        band_liquidity=BAND_L,
+        band_state=d.BAND_DEPLOYED,
+    )
+    for row in rows:
+        assert set(row) == {"move_pct", "eth_paid", "band_used_pct", "band_reached"}
+
+
+def test_rungs_short_of_a_live_shaped_band_are_not_reached_and_the_deep_one_is():
+    """The measured state, asserted on both halves of the row.
+
+    The share on the short rungs stays a true ``0.0`` -- the math did not
+    change, only what the widget may say about it -- and -50% (target 72789)
+    is the one rung past 69300.
+    """
+    rows = d.depth_rows(
+        tick=LIVE_TICK,
+        position_liquidity=6.9047e20,
+        band_lower_tick=LIVE_BAND_LOWER,
+        band_liquidity=BAND_L,
+        band_state=d.BAND_DEPLOYED,
+    )
+    assert [r["band_reached"] for r in rows] == [False, False, False, False, True]
+    assert [r["band_used_pct"] for r in rows[:4]] == [0.0] * 4
+    assert rows[4]["band_used_pct"] > 0.0
+
+
+def test_a_sliver_past_the_band_is_reached_even_though_its_share_rounds_to_zero():
+    """**The trap.** A share that paints ``0.0%`` is not evidence of no reach.
+
+    The -1% rung's target is put exactly one tick past the band's lower tick,
+    so the band leg is real and tiny. ``band_reached`` must say ``True`` there;
+    an implementation that derived it from ``band_used_pct`` rounding to zero
+    would say ``False`` and paint ``not reached`` over a band the move entered.
+    """
+    target = d.tick_for_price_drop(68181, 1.0)
+    rows = d.depth_rows(
+        tick=68181,
+        position_liquidity=6.9047e20,
+        band_lower_tick=target - 1,
+        band_liquidity=BAND_L,
+        band_state=d.BAND_DEPLOYED,
+    )
+    first = rows[0]
+    assert first["move_pct"] == 1
+    assert first["band_reached"] is True
+    assert 0.0 < first["band_used_pct"]
+    assert f"{first['band_used_pct']:.1f}" == "0.0"
+
+
+def test_a_band_holding_nothing_is_still_reached_where_the_ticks_say_so():
+    """The exact-zero twin of the sliver: a deployed band the chain reports as
+    empty gives ``band_used_pct == 0.0`` on *every* rung, so equality with zero
+    cannot decide reach either. Only the -1% rung (target 68282) is short of
+    68340.
+    """
+    rows = d.depth_rows(
+        tick=68181,
+        position_liquidity=6.9047e20,
+        band_lower_tick=68340,
+        band_liquidity=0,
+        band_state=d.BAND_DEPLOYED,
+    )
+    assert [r["band_used_pct"] for r in rows] == [0.0] * len(rows)
+    assert [r["band_reached"] for r in rows] == [False, True, True, True, True]
+
+
+def test_a_target_landing_exactly_on_the_lower_tick_has_not_entered_the_band():
+    """The boundary uses the band leg's own predicate, ``target > lower``:
+    at equality ``eth_between`` pays nothing, so "reached" there would name a
+    band the move did not take a wei from."""
+    target = d.tick_for_price_drop(68181, 1.0)
+    rows = d.depth_rows(
+        tick=68181,
+        position_liquidity=6.9047e20,
+        band_lower_tick=target,
+        band_liquidity=BAND_L,
+        band_state=d.BAND_DEPLOYED,
+    )
+    assert rows[0]["band_reached"] is False
+    assert rows[0]["band_used_pct"] == 0.0
+
+
+@pytest.mark.parametrize(
+    "state,lower,liquidity",
+    [
+        (None, LIVE_BAND_LOWER, BAND_L),          # unread state word
+        (d.BAND_DEPLOYED, LIVE_BAND_LOWER, None),  # deployed, amount unread
+        (d.BAND_NONE, None, None),                 # no band at all
+        ("retired", LIVE_BAND_LOWER, BAND_L),      # unrecognised state word
+    ],
+    ids=["unread-state", "deployed-amount-unread", "no-band", "unknown-word"],
+)
+def test_band_reached_has_no_answer_without_a_read_deployed_band(state, lower, liquidity):
+    """``None``, never ``False``, in every case where the ticks alone would
+    have given an answer the rest of the row cannot back. The unread cases
+    carry a real lower tick on purpose: from the ticks, four rungs are short
+    of it, and ``False`` there would let ``not reached`` out-rank ``unknown``."""
+    rows = d.depth_rows(
+        tick=LIVE_TICK,
+        position_liquidity=6.9047e20,
+        band_lower_tick=lower,
+        band_liquidity=liquidity,
+        band_state=state,
+    )
+    assert [r["band_reached"] for r in rows] == [None] * len(rows)
+
+
 def test_depth_rows_refuses_positional_arguments():
     """Two ticks and two liquidities side by side is the signature where a
     positional swap is silent. Keyword-only makes it a TypeError."""

@@ -144,6 +144,28 @@ def depth_rows(
     quantities that were read, and it adds the band's leg whenever the band's
     numbers are there; ``band_used_pct`` is a claim about a *share of the band*
     and a share needs to know the band is there at all.
+
+    ``band_reached`` -- decided from TICKS, never from the share (2026-09-14)
+    ------------------------------------------------------------------------
+    The owner read ``0.0%`` on the four shallow rungs as a malfunction when the
+    live band sat 29% under spot and none of them got there. The value was
+    right and the wording was not, so the widget says ``not reached`` for such
+    a rung -- and this key is what lets it say that **truthfully**.
+
+    * ``True`` -- the band is deployed and readable, and the rung's target tick
+      is past ``band_lower_tick``: the same ``target > band_lower_tick`` test
+      that decides whether a band leg is computed at all.
+    * ``False`` -- deployed and readable, and the target has not got there.
+    * ``None`` -- unread band, no band, or a state word outside
+      :data:`BAND_STATES`. "Not reached" presupposes a band to fall short of,
+      so an absent one has no answer here, and an unread one has none either.
+
+    **Why never ``band_used_pct == 0``.** A rung whose target passes the lower
+    tick by a sliver consumes a real share that rounds to ``0.0%``, and a band
+    the chain reports as holding nothing yields an exact ``0.0`` on every rung
+    that reaches it. Both *reached* the band. Inferring "not reached" from the
+    share would paint a false sentence exactly where a true one was, so the
+    share and the reach are two facts, each read off its own source.
     """
     if tick is None or position_liquidity is None:
         return None
@@ -177,11 +199,17 @@ def depth_rows(
             used = min(band / band_total * 100.0, 100.0)
         else:
             used = 0.0
+        # From the ticks, and only under the one branch that knows a band is
+        # there and has read it -- never from ``used`` (see the docstring).
+        reached: bool | None = (
+            target > band_lower_tick if share_known else None
+        )
         rows.append(
             {
                 "move_pct": move,
                 "eth_paid": full + band,
                 "band_used_pct": used,
+                "band_reached": reached,
             }
         )
     return rows
