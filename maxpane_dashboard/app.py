@@ -8,6 +8,7 @@ from pathlib import Path
 from textual.app import App
 from textual.binding import Binding
 
+from maxpane_dashboard.copy_action import CopyAddressMixin
 from maxpane_dashboard.data.base_manager import BaseManager
 from maxpane_dashboard.data.cattown_manager import CatTownManager
 from maxpane_dashboard.data.curator_manager import CuratorManager
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 CSS_PATH = Path(__file__).parent / "themes" / "minimal.tcss"
 
 
-class MaxPaneApp(App):
+class MaxPaneApp(CopyAddressMixin, App):
     """Fullscreen TUI dashboard supporting multiple blockchain games."""
 
     CSS_PATH = CSS_PATH
