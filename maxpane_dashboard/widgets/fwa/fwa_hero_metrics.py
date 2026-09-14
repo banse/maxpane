@@ -40,11 +40,12 @@ this module imports nothing from the data layer.
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
 
 _DASH = "--"
 _EMDASH = "—"
@@ -68,6 +69,14 @@ _GOLD = CROWN_GOLD
 _GAP_BAR_WIDTH = 8
 _GAP_FILLED = "█"
 _GAP_EMPTY = "░"
+
+#: Display budget for the crown holder's name/address, excluding
+#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS`. Unchanged from the
+#: old hard cut (``name[:20]``): the hero box already ellipsises overflow via
+#: its own CSS (``text-overflow: ellipsis``, ``fwa_hero_metrics.DEFAULT_CSS``),
+#: so growing this line by the icon's two cells is absorbed by that same
+#: margin rather than needing a wider box -- no pin here names either number.
+_WHO_WIDTH = 20
 
 
 # -- format helpers ----------------------------------------------------
@@ -119,17 +128,6 @@ def _fmt_int(value) -> str:
         return f"{int(value):,}"
     except (TypeError, ValueError):
         return _DASH
-
-
-def _short_addr(addr) -> str:
-    if not addr:
-        return _DASH
-    s = str(addr).strip()
-    if not s:
-        return _DASH
-    if len(s) <= 11:
-        return s
-    return f"{s[:6]}..{s[-4:]}"
 
 
 def _ev_sign(value) -> tuple[str, str]:
@@ -448,12 +446,21 @@ class FWAHeroMetrics(Horizontal):
             big = f"[{_GOLD}]{_fmt_eth(pot, 3)}[/] [dim]ETH[/]"
 
         usd = _fmt_usd(pot_usd) if _as_float(pot_usd) is not None else "usd n/a"
-        # A verified ENS name where we have one. Escaped: unlike the address
-        # it replaces, this is third-party text going into markup.
-        name = str(holder_name or "").strip()
-        who = safe_markup(name[:20]) if name else _short_addr(holder)
-        second = f"{usd} · {who}"
+        # A verified ENS name where we have one; the icon always copies the
+        # wallet address, whichever is shown. Composed as `Text` rather than
+        # spliced into a markup string: the copy icon needs its own `Style`
+        # meta, which `Static.update()` cannot recover from a plain string,
+        # and `address_text` hands back third-party text (the name) as
+        # literal `Text` content -- never parsed as markup -- so no separate
+        # escaping is needed for it here the way `safe_markup` used to do.
+        name = str(holder_name or "").strip() or None
+        who = address_text(holder, label=name, width=_WHO_WIDTH)
 
-        box.update(
-            f"[dim]CROWN[/]\n\n{big}\n[dim]{second}[/]\n[dim]{seize_line}[/]"
-        )
+        content = Text.from_markup("[dim]CROWN[/]\n\n")
+        content.append_text(Text.from_markup(big))
+        content.append("\n")
+        content.append(f"{usd} · ", style="dim")
+        content.append_text(who)
+        content.append("\n")
+        content.append_text(Text.from_markup(f"[dim]{seize_line}[/]"))
+        box.update(content)

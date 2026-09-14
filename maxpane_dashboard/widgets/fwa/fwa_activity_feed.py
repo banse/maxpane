@@ -36,9 +36,12 @@ from __future__ import annotations
 
 import time
 
+from rich.cells import cell_len
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _DASH = "--"
@@ -78,13 +81,26 @@ _OUTCOME_SHORT = {
 }
 
 #: Rendered columns each line layout needs (see :func:`_tier_for`), measured
-#: from the format strings in :func:`_event_to_markup` rather than rounded.
+#: from the format strings in :func:`_event_to_text` rather than rounded.
+#:
+#: Unchanged by the copy icon: growing these (and the ``_FIXED_*`` costs
+#: below) by :data:`~maxpane_dashboard.widgets.address.ICON_COLS` shifted
+#: which tier a given width selects -- at ``NARROW_FEED`` (56 rendered
+#: columns, ``tests/widgets/test_fwa_widgets_b.py``) growth moved the tier
+#: from ``compact`` to ``minimal``, which *drops* the collection field
+#: entirely and so hands the outcome label a much bigger budget, undoing the
+#: abbreviation ``test_activity_feed_narrow_abbreviates_outcome_never_
+#: truncates_it`` (outside this package's file list) checks for. The icon is
+#: paid for out of the wallet's and the collection's own display budgets
+#: instead (see :data:`_WALLET_WIDTH` and :data:`_WHAT_BUDGET_FULL`
+#: /:data:`_WHAT_BUDGET_COMPACT`), so tier selection is exactly what it was
+#: before the icon.
 FULL_WIDTH = 77
 COMPACT_WIDTH = 55
 MINIMAL_WIDTH = 34
 
 #: Columns each layout spends on everything *except* the outcome label; the
-#: label gets the remainder of the real width (see :func:`_event_to_markup`).
+#: label gets the remainder of the real width (see :func:`_event_to_text`).
 _FIXED_FULL = 60      # time + wallet + "drew " + what(20) + arrow + " x ETH"
 _FIXED_COMPACT = 41   # time + wallet + what(16) + arrow
 _FIXED_MINIMAL = 23   # time + wallet + arrow
@@ -94,9 +110,16 @@ _FIXED_MINIMAL = 23   # time + wallet + arrow
 _LABEL_BUDGET_FULL = 17
 _LABEL_BUDGET_MIN = 10
 
-#: Room the ``Collection #token`` field gets in each layout.
-_WHAT_BUDGET_FULL = 20
-_WHAT_BUDGET_COMPACT = 16
+#: Display budget for the purchaser's name/address, excluding
+#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS` -- the icon is paid
+#: for out of this budget rather than by growing the column (see the note
+#: above :data:`FULL_WIDTH`).
+_WALLET_WIDTH = 10
+
+#: Room the ``Collection #token`` field gets in each layout, excluding
+#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS` for the same reason.
+_WHAT_BUDGET_FULL = 18
+_WHAT_BUDGET_COMPACT = 14
 
 #: Marker appended to the title when the layout had to shed a field.
 WIDEN_HINTS = {
@@ -121,39 +144,28 @@ def _hhmm(timestamp) -> str:
         return "??:??"
 
 
-def _short_addr(value) -> str:
-    """``0xABCD..1234`` from a full address; ``--`` when unusable."""
-    if value is None:
-        return _DASH
-    s = str(value).strip()
-    if not s:
-        return _DASH
-    if len(s) <= 12:
-        return s
-    return f"{s[:6]}..{s[-4:]}"
+def _pad_cell(cell: Text, width: int) -> Text:
+    """Pad ``cell`` with trailing spaces to exactly ``width`` cells.
 
-
-def _wallet_label(event: dict, width: int = 12) -> str:
-    """Verified ENS name when the manager resolved one, else the short address.
-
-    Truncated to the same width the address occupied, so swapping a name in
-    cannot reflow the column -- the feed's layout budget is measured against
-    fixed-width cells.
+    Keeps the line's later fields aligned down the panel regardless of a
+    name's length, an icon's presence, or a fallback dash.
     """
-    name = str(event.get("purchaser_name") or "").strip()
-    if name:
-        return name if len(name) <= width else name[: width - 1] + "…"
-    return _short_addr(event.get("purchaser"))
+    pad = width - cell_len(cell.plain)
+    if pad > 0:
+        cell.append(" " * pad)
+    return cell
 
 
-def _collection_label(event: dict) -> str:
-    """Display name when we have one, else a shortened address."""
-    name = event.get("collection_name")
-    if name:
-        s = str(name).strip()
-        if s:
-            return s[:16]
-    return _short_addr(event.get("collection"))
+def _wallet_cell(event: dict, width: int = _WALLET_WIDTH) -> Text:
+    """The purchaser: verified ENS name (or the address) plus its copy icon.
+
+    ``width`` is the display budget the address or name is fitted into,
+    excluding :data:`ICON_COLS`; the returned cell is padded to
+    ``width + ICON_COLS`` so it never reflows what follows it.
+    """
+    name = str(event.get("purchaser_name") or "").strip() or None
+    cell = address_text(event.get("purchaser"), label=name, width=width)
+    return _pad_cell(cell, width + ICON_COLS)
 
 
 def _token_label(value) -> str:
@@ -202,21 +214,23 @@ def _tier_for(width: int) -> str:
     return "minimal"
 
 
-def _what_for(event: dict, budget: int) -> str:
-    """``Collection #token`` inside ``budget`` columns.
+def _what_cell(event: dict, budget: int) -> Text:
+    """``Collection #token``, with the collection's copy icon, inside
+    ``budget + ICON_COLS`` columns.
 
     The *name* is squeezed before the token id is: ``Art B… #78000123`` keeps
-    both fields recognisable, whereas the naive ``[:budget]`` cut produced
-    ``Art Blocks #7`` -- a token id that is not the token id.
+    both fields recognisable, whereas a naive cut produced ``Art Blocks #7``
+    -- a token id that is not the token id. The icon rides between the name
+    and the token, so the token itself is never touched by it.
     """
-    name = _collection_label(event)
     token = _token_label(event.get("token_id"))
-    if len(name) + len(token) <= budget:
-        return f"{name}{token}"
-    room = budget - len(token)
-    if room >= 4:
-        return f"{name[:room - 1]}…{token}"
-    return f"{name}{token}"[: budget - 1] + "…"
+    name_budget = max(budget - len(token), 4)
+    raw_name = event.get("collection_name")
+    name = str(raw_name).strip() if raw_name and str(raw_name).strip() else None
+    cell = address_text(event.get("collection"), label=name, width=name_budget)
+    if token:
+        cell.append(token)
+    return _pad_cell(cell, budget + ICON_COLS)
 
 
 def _label_for(event: dict, outcome: str, budget: int) -> str:
@@ -240,50 +254,65 @@ def _label_for(event: dict, outcome: str, budget: int) -> str:
     return out[:budget] if len(out) > budget else out
 
 
-def _event_to_markup(event, tier: str = "full", width: int = 0) -> str | None:
-    """Format one draw event at ``tier``; ``None`` to skip malformed input.
+def _event_to_text(event, tier: str = "full", width: int = 0) -> Text | None:
+    """Format one draw event at ``tier`` as a composed ``Text``; ``None`` to
+    skip malformed input.
 
     ``width`` is the real number of columns available. The outcome label gets
     whatever the fixed fields leave over, so a wide terminal shows the
     payload's own wording and a narrow one falls back to the short form -- the
     budget is measured, never a fixed guess.
+
+    Built as ``Text`` rather than a markup string because the wallet and (on
+    ``full``/``compact``) the collection each carry a copy icon: the click
+    meta lives on a ``Style`` the icon span alone carries, which a plain
+    ``str`` handed to ``RichLog.write`` cannot express. Third-party text
+    (an ENS or collection name) reaches ``address_text`` un-escaped and
+    un-parsed -- it is appended as literal ``Text``, never markup -- so the
+    ``safe_markup`` escaping this function used to need for those two fields
+    is no longer part of the job; it stays only for the outcome label, which
+    is still spliced into a small markup string below.
     """
     if not isinstance(event, dict):
         return None
     try:
         ts = _hhmm(event.get("ts"))
-        # Escaped because it is no longer necessarily a hex address: an ENS
-        # name is third-party text, and Textual defers `Text.from_markup` into
-        # the message pump, so a name containing `[/x]` would raise *outside*
-        # this try/except and take the app down.
-        wallet = safe_markup(_wallet_label(event))
         outcome = str(event.get("outcome") or "").strip().lower()
         color = _OUTCOME_COLORS.get(outcome, "dim")
+
+        line = Text(f"{ts}  ")
+        line.append_text(_wallet_cell(event))
 
         if tier == "minimal":
             budget = max(width - _FIXED_MINIMAL, _LABEL_BUDGET_MIN) if width else 14
             label = safe_markup(_label_for(event, outcome, budget))
-            return f"{ts}  {wallet:<12}  [{color}]→ {label}[/]"
+            line.append("  ")
+            line.append_text(Text.from_markup(f"[{color}]→ {label}[/]"))
+            return line
 
         if tier == "compact":
-            what = safe_markup(_what_for(event, _WHAT_BUDGET_COMPACT))
+            what = _what_cell(event, _WHAT_BUDGET_COMPACT)
             budget = max(width - _FIXED_COMPACT, _LABEL_BUDGET_MIN) if width else 14
             label = safe_markup(_label_for(event, outcome, budget))
-            return (
-                f"{ts}  {wallet:<12}  {what:<{_WHAT_BUDGET_COMPACT}}"
-                f"  [{color}]→ {label}[/]"
-            )
+            line.append("  ")
+            line.append_text(what)
+            line.append("  ")
+            line.append_text(Text.from_markup(f"[{color}]→ {label}[/]"))
+            return line
 
-        what = safe_markup(_what_for(event, _WHAT_BUDGET_FULL))
+        what = _what_cell(event, _WHAT_BUDGET_FULL)
         budget = (
             max(width - _FIXED_FULL, _LABEL_BUDGET_MIN) if width else _LABEL_BUDGET_FULL
         )
         label = safe_markup(_label_for(event, outcome, budget))
         amount = _amount_label(event.get("amount_eth"))
-        return (
-            f"{ts}  {wallet:<12}  drew {what:<20}"
-            f"  [{color}]→ {label}[/]{amount}"
-        )
+        line.append("  drew ")
+        line.append_text(what)
+        line.append("  ")
+        line.append_text(Text.from_markup(f"[{color}]→ {label}[/]"))
+        if amount:
+            line.append(amount)
+        return line
     except Exception:
         # A single malformed event must never take down the panel.
         return None
@@ -417,7 +446,7 @@ class FWAActivityFeed(Vertical):
         lines = [
             line
             for line in (
-                _event_to_markup(event, tier, width) for event in self._last_events
+                _event_to_text(event, tier, width) for event in self._last_events
             )
             if line is not None
         ]

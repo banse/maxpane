@@ -36,9 +36,11 @@ from __future__ import annotations
 import re
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
 _DASH = "--"
@@ -93,6 +95,21 @@ def _fit_label(label: str, outcome: str, width: int) -> str:
 #: The slot is 56 columns at a 200-column terminal and 38 at 140. ``SHARE`` is
 #: never dropped: the outcome mix *is* the share column. ``COUNT`` goes first
 #: because the share already carries the shape of the distribution.
+#:
+#: ``OUTCOME/HOLDER`` (``label``) is the only column that carries a copy icon
+#: -- a crown holder's row prefixes it with ``"N. "`` -- and its declared
+#: width is unchanged by that: mix rows never carry an address, so growing
+#: the column for them would be paying for an icon on a row it never renders.
+#: The icon and the ``"N. "`` prefix are paid for out of the holder row's own
+#: display budget instead (:data:`ICON_COLS` plus the prefix length,
+#: subtracted where :func:`_holder_cell` is called). At the two widest tiers
+#: that still clears ``address.MIN_SHORT_COLS`` (11) for an unnamed holder;
+#: at ``minimal``/``tiny`` a long rank prefix can push the remainder below
+#: it, in which case ``address_text`` clamps to its own 11-cell floor and
+#: ``DataTable`` -- which truncates a cell to its column width with no
+#: ellipsis rather than reflowing it -- is what actually bounds the row on
+#: screen. The crown history list is capped at five ranks
+#: (:data:`_MAX_CROWN_ROWS`), so the widest prefix ever printed is ``"5. "``.
 _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...], str], ...] = (
     (
         "full",
@@ -215,29 +232,18 @@ def _as_float(value) -> float | None:
         return None
 
 
-def _short_addr(value) -> str:
-    if value is None:
-        return _DASH
-    s = str(value).strip()
-    if not s:
-        return _DASH
-    if len(s) <= 14:
-        return s
-    return f"{s[:6]}..{s[-4:]}"
+def _holder_cell(row: dict, width: int = 14) -> Text:
+    """Verified ENS name for a crown holder, or the address, plus its copy
+    icon -- in ``width`` cells.
 
-
-def _holder_label(row: dict, width: int = 14) -> str:
-    """Verified ENS name for a crown holder, else the shortened address.
-
-    Escaped: this lands in a ``DataTable`` cell, and an ENS name is
-    third-party text where a raw address never was.
+    ``width`` excludes :data:`ICON_COLS`, paid for out of this display
+    budget (see the note above ``_TIERS``). Reaching a ``DataTable`` cell as
+    a pre-built ``Text`` is exactly the case ``address_text`` exists for: the
+    name is third-party where a raw address never was, and it is appended as
+    literal ``Text`` rather than parsed as markup.
     """
-    name = str(row.get("holder_name") or "").strip()
-    if name:
-        text = name if len(name) <= width else name[: width - 1] + "…"
-    else:
-        text = _short_addr(row.get("holder"))
-    return safe_markup(text)
+    name = str(row.get("holder_name") or "").strip() or None
+    return address_text(row.get("holder"), label=name, width=width)
 
 
 def _hhmm(timestamp) -> str:
@@ -661,10 +667,18 @@ class FWASettlementTable(Vertical):
             table.add_row(*_cells({"label": "[dim]no reigns recorded[/]"}, columns))
         for idx, row in enumerate(crown_rows[:shown], start=1):
             rank = row.get("rank", idx)
+            # "N. " plus the holder's copy icon both come out of this same
+            # column's existing display budget -- the column's declared
+            # width does not grow for the icon (see the note above
+            # ``_TIERS``).
+            prefix = f"{rank}. "
+            holder_width = max(label_width - ICON_COLS - len(prefix), 1)
+            label_cell = Text(prefix)
+            label_cell.append_text(_holder_cell(row, holder_width))
             table.add_row(
                 *_cells(
                     {
-                        "label": f"{rank}. {_holder_label(row)}",
+                        "label": label_cell,
                         reign_key: _fmt_int(row.get("reigns")),
                         "eth": _fmt_eth(row.get("payout_eth")),
                     },
