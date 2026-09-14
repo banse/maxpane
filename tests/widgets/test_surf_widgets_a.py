@@ -88,36 +88,43 @@ def test_fmt_liquidity_handles_raw_v3_uint():
     assert _fmt.fmt_liquidity(None) == "--"
 
 
-def test_long_addr_distinguishes_the_live_spoof_pair():
+def test_the_anti_poisoning_window_distinguishes_the_live_spoof_pair():
     """0x+8+…+6 must tell the real fee recipient from its live poisoner.
 
     Both addresses are in frenpet.eth's history right now
     (ops_eth_txs.json): the spoof matches the real address's first 6 and
     last 4 -- the classic short-form collision -- but differs inside the
     first-8 and last-6 windows this format shows.
+
+    ``_fmt.long_addr`` rendered this window until 2026-09-14; it now comes
+    from ``widgets/address.short_address`` at ``_fmt.ANTI_POISONING_COLS``,
+    and this is the test that says the window survived the move.
     """
-    real = _fmt.long_addr("0xF3084Bc7380D2dEfaA5bB42DCA6F517424D60eE6")
-    spoof = _fmt.long_addr("0xF3083828702C1989710CECA517412071c2f60Ee6")
+    from maxpane_dashboard.widgets.address import address_text, short_address
+
+    cols = _fmt.ANTI_POISONING_COLS
+    real = short_address("0xF3084Bc7380D2dEfaA5bB42DCA6F517424D60eE6", cols)
+    spoof = short_address("0xF3083828702C1989710CECA517412071c2f60Ee6", cols)
     assert real == "0xF3084Bc7…D60eE6"
     assert spoof == "0xF3083828…f60Ee6"
     assert real != spoof
-    assert _fmt.long_addr(None) == "--"
-    assert _fmt.long_addr("") == "--"
+    assert address_text(None, width=cols).plain == "--"
+    assert address_text("", width=cols).plain == "--"
 
 
-def test_long_addr_does_not_escape_markup_the_caller_owns_that():
-    """Contract: ``long_addr`` returns raw text; escaping is the widget's job.
+def test_a_hostile_value_in_an_address_cell_is_text_never_markup():
+    """A hostile on-chain string where an address belongs renders as itself.
 
-    A hostile on-chain string routed through ``long_addr`` (e.g. a short
-    display name standing in for an address) must come back byte-identical,
-    ``[/x]`` and all -- proving this formatter never calls ``safe_markup``.
-    If it started escaping here, a widget that *also* escapes (as the house
-    rule requires at the render boundary) would double-escape and show the
-    user literal backslash-bracket text instead of the intended glyph. This
-    test is the tripwire: change it and the double-escaping question has to
-    be answered deliberately, not discovered on screen.
+    ``_fmt.long_addr`` returned raw text and left escaping to the widget;
+    its replacement returns a ``Text`` that is never parsed, so ``[/x]``
+    reaches the screen byte-identical -- no escaping, no double-escaping --
+    and, not being an address, carries no copy icon.
     """
-    assert _fmt.long_addr("[/x]") == "[/x]"
+    from maxpane_dashboard.widgets.address import COPY_GLYPH, address_text
+
+    cell = address_text("[/x]", width=_fmt.ANTI_POISONING_COLS)
+    assert cell.plain == "[/x]"
+    assert COPY_GLYPH not in cell.plain
 
 
 def test_hhmm_mmdd_fallbacks():

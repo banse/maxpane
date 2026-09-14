@@ -529,19 +529,6 @@ def _truncate(text: str, limit: int = DETAIL_LIMIT) -> str:
     return flat[: limit - 1].rstrip() + "…"
 
 
-def _short_addr(value: Any) -> str:
-    """``0x`` + first 8 + ``…`` + last 6 — the PRD §4 untrusted-address form.
-
-    Long enough to compare against a known address by eye, short enough for a
-    signal row, and never a label: live look-alike spoofs of both fee
-    recipients are in frenpet.eth's history today (research §Hazards 2).
-    """
-    text = value.strip() if isinstance(value, str) else ""
-    if len(text) < 20:
-        return text
-    return f"{text[:10]}…{text[-6:]}"
-
-
 #: Characters a launched coin's ticker may keep in a HOT COIN detail.
 #: Everything else -- brackets, quotes, slashes, unicode look-alikes, control
 #: characters -- is dropped outright rather than kept-but-escaped.  This is
@@ -1001,7 +988,16 @@ def _detect_deploy(base: dict, read: dict, now: float) -> _Det:
         if str(fresh.get("kind") or "") == "action":
             head = f"action {label}" if label else "onchain action"
         else:
-            head = f"new contract {_short_addr(label)}" if label else "new contract"
+            # The WHOLE address, never pre-shortened (docs/address_copy_PRD.md
+            # §6). The signals widget windows it to the 17-cell anti-poisoning
+            # form and puts the copy icon beside it, which it can only do if
+            # the full value reaches it -- a window here would have left the
+            # icon nothing to copy. It stays inside the detail sentence rather
+            # than moving to a key of its own because this detail is also
+            # persisted in the fired store and re-quoted as `last: …`, and a
+            # separate key would part the address from the sentence naming it.
+            contract = label.strip()
+            head = f"new contract {contract}" if contract else "new contract"
         who = str(fresh.get("wallet_label") or "")
         detail = f"{head} · {who}" if who else head
         return _fired(detail, _as_float(fresh.get("ts")))

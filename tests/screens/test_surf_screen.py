@@ -5459,7 +5459,13 @@ async def _activity_usable_columns(width: int) -> int:
 #: which the ETH amount column survives. Derived below from the rail formula
 #: and the widget's own ``FULL_WIDTH``, then pinned against a real render, so
 #: it is not a third literal to keep in step by hand.
-ACTIVITY_FIRST_FULL_TERMINAL = 135
+#:
+#: **139, was 135 (2026-09-14).** The unknown counterparty's cell gained its
+#: copy icon (``activity.ADDR_CELL_COLS``, ``docs/address_copy_PRD.md`` §5)
+#: and grew by two columns rather than shortening its 8/6 window, so the full
+#: row went 58 -> 60 and the crossing moved four terminal columns -- still
+#: under ``SURF_FULL_LAYOUT_COLUMNS``, which is what the icon may not move.
+ACTIVITY_FIRST_FULL_TERMINAL = 139
 
 
 def test_every_list_row_in_the_fixture_matches_the_frozen_row_shape():
@@ -5616,7 +5622,10 @@ async def test_the_activity_rail_reaches_full_width_well_below_the_pinned_width(
     # Where it crosses, both directions, against the widget's own constant.
     assert await _activity_usable_columns(ACTIVITY_FIRST_FULL_TERMINAL) == (
         ACTIVITY_FULL_WIDTH
-    ), "the rail no longer hands the panel exactly its full row at 135"
+    ), (
+        "the rail no longer hands the panel exactly its full row at "
+        f"{ACTIVITY_FIRST_FULL_TERMINAL}"
+    )
     assert await _activity_usable_columns(ACTIVITY_FIRST_FULL_TERMINAL - 1) == (
         ACTIVITY_FULL_WIDTH - 1
     ), "the width below no longer falls one column short -- re-measure"
@@ -5706,17 +5715,23 @@ async def test_the_activity_panel_names_the_columns_the_rail_costs_it():
     a real widening of the row's reach. At the 3:2 seam a 143-column terminal
     put the panel in its *minimal* tier; 7:6 took that to compact. Sizing the
     wallet and kind cells to the producer's vocabularies took the compact row
-    46 -> and the minimal band down again, so the tier only appears at 108.
+    46 -> and the minimal band down again, so the tier appeared at 108.
     Both ends are pinned so the band cannot silently widen back.
+
+    **112 / 113 since 2026-09-14**, and that move is the counterparty's copy
+    icon (``activity.ADDR_CELL_COLS``, ``docs/address_copy_PRD.md`` §5): the
+    compact row went 46 -> 48, and ``ceil(6W/13) - 5 >= 48`` first holds at
+    113. The icon grew the cell rather than shortening the 8/6 window, so the
+    cost is these four terminal columns of band, not the anti-poisoning form.
     """
-    panel = await _activity_panel(108)
+    panel = await _activity_panel(112)
     assert _ACTIVITY_HINTS["minimal"] in panel
     assert "0.310 ETH" not in panel and "transfer" not in panel
     assert _ADDR_WINDOW in panel
 
-    # The tier the narrower cells bought back: 109 is no longer minimal, and
+    # The tier the narrower cells bought back: 113 is no longer minimal, and
     # neither is 120, which the old row spent entirely on padding.
-    for wider_width in (109, 120):
+    for wider_width in (113, 120):
         wider = await _activity_panel(wider_width)
         assert _ACTIVITY_HINTS["minimal"] not in wider, (
             f"{wider_width} columns is back in the minimal tier"

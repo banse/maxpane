@@ -88,18 +88,20 @@ rather than cut to fit.
 from __future__ import annotations
 
 from rich.cells import cell_len
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import (
+    ANTI_POISONING_COLS,
     DASH,
     as_float,
     fmt_imd,
     hhmm,
-    long_addr,
     mmdd,
 )
 
@@ -160,9 +162,22 @@ _KIND_COLS = 9
 #: Widest amount cell these ETH values produce: ``"  33.250 ETH"``.
 _AMOUNT_COLS = 12
 
-#: The anti-poisoning window: ``0x`` + 8 hex + ``…`` + 6 (``_fmt.long_addr``).
+#: The anti-poisoning window: ``0x`` + 8 hex + ``…`` + 6, through
+#: ``widgets/address.short_address`` (``_fmt.ANTI_POISONING_COLS``).
 #: **Never shrinks.**  See the module docstring.
-ADDR_COLS = 17
+ADDR_COLS = ANTI_POISONING_COLS
+
+#: The unknown-counterparty cell as painted: the window **plus** its copy
+#: icon (``widgets/address.ICON_COLS``, a space and ``⧉``). 19.
+#:
+#: **Grown, not shortened** (2026-09-14, ``docs/address_copy_PRD.md`` §5).
+#: The icon cost this row two columns and the window gave up none of them:
+#: measured on the real screen, the rail's log is 61 columns at
+#: ``SURF_FULL_LAYOUT_COLUMNS`` (143) against a full row of 60, so the pin
+#: holds with a column to spare and the 8/6 window survives beside the icon.
+#: The cost lands on *where* ``full`` first fits -- 135 terminal columns
+#: before, 139 now -- which is below the pin, not on it.
+ADDR_CELL_COLS = ADDR_COLS + ICON_COLS
 
 #: Floor for a *known* counterparty label before it is cut with a visible
 #: ``…``.  A label is descriptive text, unlike the window above.
@@ -171,10 +186,12 @@ _MIN_LABEL_COLS = 6
 #: Columns each row layout needs.
 FULL_WIDTH = (
     _STAMP_COLS + _GAP + _WALLET_COLS + _GAP + _KIND_COLS + _GAP
-    + ADDR_COLS + _AMOUNT_COLS
-)                                                                    # 58
-COMPACT_WIDTH = FULL_WIDTH - _AMOUNT_COLS                            # 46
-MINIMAL_WIDTH = _STAMP_SHORT_COLS + _GAP + _WALLET_COLS + _GAP + ADDR_COLS  # 29
+    + ADDR_CELL_COLS + _AMOUNT_COLS
+)                                                                    # 60
+COMPACT_WIDTH = FULL_WIDTH - _AMOUNT_COLS                            # 48
+MINIMAL_WIDTH = (
+    _STAMP_SHORT_COLS + _GAP + _WALLET_COLS + _GAP + ADDR_CELL_COLS
+)                                                                    # 31
 
 #: Narrowest log a row can be *honestly* rendered in: the anti-poisoning
 #: window alone, every other field already shed.  Below it the only way to
@@ -191,7 +208,11 @@ MINIMAL_WIDTH = _STAMP_SHORT_COLS + _GAP + _WALLET_COLS + _GAP + ADDR_COLS  # 29
 #: address stopped looking truncated.  At a log width of 13 the live spoof
 #: pair both render ``0xF308``, which is the one collision this panel exists
 #: to prevent.
-FLOOR_WIDTH = ADDR_COLS                                              # 17
+#:
+#: The floor is the window **and its icon** since 2026-09-14: the icon rides
+#: the window, so a row that could keep one and not the other is not a row
+#: this panel paints.
+FLOOR_WIDTH = ADDR_CELL_COLS                                         # 19
 
 #: Marker appended to the title when the layout had to shed a field.  Each
 #: one names what went, so the user knows what they are not looking at.
@@ -219,17 +240,22 @@ def _tier_for(width: int) -> str:
     ==========  =====  ==================================================
     Tier        Needs  Row
     ==========  =====  ==================================================
-    ``full``    58     ``MM-DD HH:MM  wallet  kind  who  0.310 ETH``
-    ``compact`` 46     ``MM-DD HH:MM  wallet  kind  who``
-    ``minimal`` 29     ``MM-DD  wallet  who``
+    ``full``    60     ``MM-DD HH:MM  wallet  kind  who ⧉  0.310 ETH``
+    ``compact`` 48     ``MM-DD HH:MM  wallet  kind  who ⧉``
+    ``minimal`` 31     ``MM-DD  wallet  who ⧉``
     ==========  =====  ==================================================
+
+    (``who ⧉`` is an unknown counterparty's window and its copy icon, since
+    2026-09-14 -- two columns on every tier, which is why each number above
+    is two more than it was.)
 
     The real slot is the screen's right rail, 6fr of a 7:6 split minus this
     widget's padding, the log's padding and the log's permanent scrollbar
     gutter.  The feed takes ``floor(7W/13)`` and leaves the rail
     ``ceil(6W/13)``, so this widget has **``ceil(6W/13) - 5``** usable
-    columns: 58 at 135, 61 at 142, 61 at 143 and 73 at 169.  ``ceil(6W/13) -
-    5 >= FULL_WIDTH`` therefore first holds at ``W = 135``.  Measured on the
+    columns: 60 at 139, 61 at 142, 61 at 143 and 73 at 169.  ``ceil(6W/13) -
+    5 >= FULL_WIDTH`` therefore first holds at ``W = 139`` (135 before the
+    icon).  Measured on the
     real screen and pinned by
     ``test_the_activity_rail_reaches_full_width_well_below_the_pinned_width``;
     this note carried a ``0.46``-slope approximation of it until final review
@@ -346,7 +372,9 @@ def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
 _DUST_ETH = 10**9 / 10**18  # == 1e-9 ETH == 1 gwei == surf_client._DUST_WEI
 
 
-def _row_fields(row, tier: str) -> tuple[str, str, str, str, bool, str] | None:
+def _row_fields(
+    row, tier: str
+) -> tuple[str, str, str, str, bool, str, str | None] | None:
     """Decompose one row into its cells; ``None`` drops it.
 
     ``None`` means the row is malformed or poisonous and must never reach a
@@ -354,8 +382,14 @@ def _row_fields(row, tier: str) -> tuple[str, str, str, str, bool, str] | None:
     width, so the panel can tell "nothing to show" from "no room to show it"
     (:meth:`SurfDevActivity._render_view`).
 
-    Returns ``(stamp, wallet_label, kind, who, known, amount)``, all raw and
-    unescaped; the amount carries its own two leading spaces.
+    Returns ``(stamp, wallet_label, kind, who, known, amount, address)``, all
+    raw and unescaped; the amount carries its own two leading spaces.
+
+    ``who`` is what the row paints in the counterparty cell, **icon
+    included** for an address, so every width calculation downstream pays
+    for the icon without knowing it is there. ``address`` is the validated
+    counterparty behind it, or ``None`` for a known label or a value that is
+    not an address -- neither of which gets an icon.
     """
     if not isinstance(row, dict):
         return None
@@ -376,11 +410,14 @@ def _row_fields(row, tier: str) -> tuple[str, str, str, str, bool, str] | None:
 
         ts = row.get("ts")
         stamp = mmdd(ts) if tier == "minimal" else f"{mmdd(ts)} {hhmm(ts)}"
-        who = (
-            str(row.get("counterparty") or DASH)
-            if known
-            else long_addr(row.get("counterparty"))
-        )
+        counterparty = row.get("counterparty")
+        address = None
+        if known:
+            who = str(counterparty or DASH)
+        else:
+            cp = counterparty.strip() if isinstance(counterparty, str) else counterparty
+            address = cp if is_address(cp) else None
+            who = address_text(cp, width=ADDR_COLS).plain
         # A burn row reads in IMD, not in the fee it paid to send it: the ETH
         # on `bridgeToBaseBurnReceiver` is the LayerZero message cost, three
         # zeros beside a five-figure burn. Where the IMD is known it replaces
@@ -398,6 +435,7 @@ def _row_fields(row, tier: str) -> tuple[str, str, str, str, bool, str] | None:
             who,
             known,
             amount,
+            address,
         )
     except Exception:
         # A single malformed row must never take down the panel.
@@ -422,11 +460,60 @@ def _row_markup(row, tier: str = "full", width: int = 0,
     without a visible ``…``.  ``wallet_cols`` / ``keep_stamp`` pass in a
     layout shared by the whole batch (see :func:`_budget`).
     """
+    parts = _row_parts(row, tier, width, wallet_cols, keep_stamp)
+    if parts is None:
+        return None
+    lead, who, known, amount, _address = parts
+    colour = "cyan" if known else "dim"
+    return f"{lead}[{colour}]{safe_markup(who)}[/]{amount}"
+
+
+def _row_text(row, tier: str = "full", width: int = 0,
+              wallet_cols: int = _WALLET_COLS,
+              keep_stamp: bool = True) -> Text | None:
+    """The row :meth:`SurfDevActivity._render_view` writes: :func:`_row_markup`
+    with the counterparty's copy icon live.
+
+    Same cells, same fit, same ``None`` -- both are views of
+    :func:`_row_parts`, so the width contract the markup string is tested
+    against is the one this ``Text`` paints. A markup string cannot carry a
+    click action, which is the whole reason this second view exists; the
+    fixed cells are still parsed from markup, and only the counterparty is
+    composed as ``Text`` -- through ``widgets/address.address_text`` when it
+    is an address, so the icon copies the whole value the window stands for.
+    """
+    parts = _row_parts(row, tier, width, wallet_cols, keep_stamp)
+    if parts is None:
+        return None
+    lead, who, known, amount, address = parts
+    colour = "cyan" if known else "dim"
+    try:
+        line = Text.from_markup(lead)
+        if address is not None:
+            line.append_text(address_text(address, width=ADDR_COLS, style=colour))
+        else:
+            line.append(who, style=colour)
+        line.append(amount)
+        return line
+    except Exception:
+        # A single malformed row must never take down the panel.
+        return None
+
+
+def _row_parts(row, tier: str, width: int, wallet_cols: int,
+               keep_stamp: bool) -> tuple[str, str, bool, str, str | None] | None:
+    """Fit one row; ``(lead markup, who, known, amount, address)`` or ``None``.
+
+    ``lead`` is every cell before the counterparty, as markup, ending in its
+    gap; ``who`` is the counterparty cell's plain text, icon included; the
+    two views above render it. See :func:`_row_markup` for what ``None``
+    means.
+    """
     fields = _row_fields(row, tier)
     if fields is None:
         return None
     try:
-        stamp, label, kind, who, known, amount = fields
+        stamp, label, kind, who, known, amount, address = fields
         keep_stamp, wallet_cols, who = _budget(
             tier, width, cell_len(stamp), who, known, cell_len(amount),
             wallet_cols, keep_stamp,
@@ -461,9 +548,8 @@ def _row_markup(row, tier: str = "full", width: int = 0,
                 )
                 + "[/]"
             )
-        colour = "cyan" if known else "dim"
-        cells.append(f"[{colour}]{safe_markup(who)}[/]")
-        return (" " * _GAP).join(cells) + amount
+        lead = "".join(f"{cell}{' ' * _GAP}" for cell in cells)
+        return lead, who, known, amount, address
     except Exception:
         # A single malformed row must never take down the panel.
         return None
@@ -624,7 +710,7 @@ class SurfDevActivity(Vertical):
         plans = [
             _budget(tier, width, cell_len(stamp), who, known,
                     cell_len(amount))
-            for stamp, _label, _kind, who, known, amount in showable
+            for stamp, _label, _kind, who, known, amount, _address in showable
         ]
         keep_stamp = all(plan[0] for plan in plans)
         wallet_cols = min(plan[1] for plan in plans)
@@ -632,7 +718,7 @@ class SurfDevActivity(Vertical):
         lines = [
             m
             for m in (
-                _row_markup(row, tier, width, wallet_cols, keep_stamp)
+                _row_text(row, tier, width, wallet_cols, keep_stamp)
                 for row in rows
             )
             if m is not None

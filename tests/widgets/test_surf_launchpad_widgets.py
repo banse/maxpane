@@ -16,7 +16,10 @@ HOSTILE = {
 # row for the tests below that aren't specifically about hostile input.
 _ROW = {
     "ticker": "ICE", "name": "Ice Coin",
-    "creator": "0x8ca0000000000000000000000000000000e5e8",
+    # 40 hex: a real address shape. It was 38 until 2026-09-14, which the
+    # old slice windowed like any string and ``widgets/address.py`` rightly
+    # does not (a non-address renders as itself).
+    "creator": "0x8ca0" + "0" * 32 + "e5e8",
     "creator_known": False, "age_s": 7_200.0, "price_eth": 0.0071,
     "change_24h_pct": 34.0, "swaps_24h": 41, "swaps_all": 97,
     "imd_burned": 250.0,

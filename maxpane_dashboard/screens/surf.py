@@ -961,6 +961,19 @@ SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
 #: the rail's margin -- ten spare columns instead of three -- and that is a
 #: consequence worth having but was not the reason; the reason is rows, and it
 #: is argued in :data:`SURF_POOL4_FULL_LAYOUT_ROWS`.
+#:
+#: **2026-09-14 -- the copy icon, paid for inside HATCHES' own cell.** Every
+#: displayed address gained a ``⧉`` that copies it (``docs/address_copy_PRD.md``
+#: §5), and no pin may move for it. HATCHES binds this pin with zero margin,
+#: so its lever grid's last cell could not grow: it stays 17 cells and the
+#: address inside it went **17 -> 15**, with the icon in the two cells freed.
+#: The anti-poisoning window there is **8 hex / 6 hex -> 6 / 6**
+#: (``widgets/address.short_address``); both halves still differ on the live
+#: spoof pair the 8/6 form was chosen for, and the whole address is one click
+#: away. The address block above the grid kept the full 17-cell 8/6 window
+#: beside its icon: its widest line (the distributor row) is 41 cells, under
+#: the grid's 45. Re-swept in situ over 94-102 with the mainnet payload:
+#: HATCHES is unmarked from 99 and marked at 98, as before.
 SURF_POOL4_FULL_LAYOUT_COLUMNS = 99
 
 #: The ``p`` POOL4 body's own measured **height**, re-swept 2026-09-02 for
@@ -1328,6 +1341,21 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: the number that decides whether a reader can actually open this body, so it
 #: does not append to the app-wide width record the terminal-layout skill
 #: keeps.
+#:
+#: **2026-09-14 -- the copy icon, and STAKERS gave it two cells at the pin.**
+#: Every displayed address gained a ``⧉`` that copies it
+#: (``docs/address_copy_PRD.md`` §5), and no pin may move for it. STAKERS
+#: binds this pin, so the whole address plus icon (44 cells) would have moved
+#: it. The panel now picks the longest form that fits beside the icon: at a
+#: text budget of 71 or more (terminal 121+ on this body) the **whole
+#: 42-character address**; below that, the address windowed to **40** --
+#: ``0x`` + 31 hex + ``…`` + 6 hex (``widgets/address.short_address``), which
+#: still carries every character an address-poisoning spoof would have to
+#: match on either end and more -- so ``pool4u_stakers.FULL_WIDTH`` stays 69
+#: and the icon costs the body nothing. The whole value is one click away at
+#: every width. No marker announces the 40: it is a short form, not a shed
+#: column. Re-swept in situ over 114-122 with the mainnet payload: compact
+#: and marked at 118, windowed and unmarked at 119-120, whole from 121.
 SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 
 #: The ``4`` POOL4 MARKET body's own full-layout height, swept in situ on

@@ -6,15 +6,17 @@ second copy is how the sparkline helpers drifted apart before MEDI-36.
 Pure functions, no I/O, no Textual imports, nothing raises.
 
 **Escaping contract: callers escape, not this module.** Every function here
-returns plain text, never markup-safe text. ``long_addr`` is the one
-formatter that can carry attacker-controlled bytes through unchanged (an
-on-chain address string, in the pathological case a display name or symbol
-misrouted through it) — it does **not** call ``safe_markup`` on its output.
-The calling widget owns escaping: pass every value this module returns
-through ``widgets.markup_safety.safe_markup`` before it reaches
-``Text.from_markup`` or a ``DataTable`` cell. Escaping here as well as at the
-widget would double-escape and print literal ``\\[`` to the user, so this
-module deliberately does not import ``safe_markup`` at all.
+returns plain text, never markup-safe text. The calling widget owns
+escaping: pass every value this module returns through
+``widgets.markup_safety.safe_markup`` before it reaches ``Text.from_markup``
+or a ``DataTable`` cell. Escaping here as well as at the widget would
+double-escape and print literal ``\\[`` to the user, so this module
+deliberately does not import ``safe_markup`` at all.
+
+**No address formatter lives here.** Every address a surf widget renders goes
+through ``widgets/address.py``, which puts the copy icon beside it
+(``docs/address_copy_PRD.md``); :data:`ANTI_POISONING_COLS` is the one surf
+number that module is handed.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import time
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
 __all__ = [
+    "ANTI_POISONING_COLS",
     "DASH",
     "EMDASH",
     "as_float",
@@ -32,8 +35,6 @@ __all__ = [
     "fmt_compact",
     "fmt_imd",
     "fmt_liquidity",
-    "full_addr",
-    "long_addr",
     "hhmm",
     "mmdd",
 ]
@@ -136,56 +137,18 @@ def fmt_liquidity(value) -> str:
     return fmt_compact(v)
 
 
-def long_addr(value) -> str:
-    """``0x`` + first 8 hex + ``…`` + last 6 -- the anti-poisoning form.
-
-    Live spoofs of both fee recipients exist in frenpet.eth's history today;
-    they collide with the real addresses on first-6/last-4 (what ``0xAB..CD``
-    shorteners show) but not on this window (PRD §4).
-
-    Returns raw, unescaped text -- including for short (<=17 char) inputs
-    that pass through verbatim. The calling widget must pass the result
-    through ``safe_markup`` before handing it to markup or a table; this
-    formatter never escapes, so it never double-escapes either.
-    """
-    if not value:
-        return DASH
-    s = str(value).strip()
-    if not s:
-        return DASH
-    if len(s) <= 17:
-        return s
-    return f"{s[:10]}…{s[-6:]}"
-
-
-def full_addr(value) -> str:
-    """The address **whole** -- all 42 characters, no window, no ellipsis.
-
-    ``long_addr``'s opposite number, and it exists because one panel's whole
-    subject is *which* wallets hold the sIMD vault. The anti-poisoning window
-    is a compromise made for panels that mention an address in passing; a
-    leaderboard the reader is expected to copy an address out of should not
-    make them widen the terminal to find out what they are looking at. The
-    owner asked for it on 2026-09-12 off the live screen, and what it costs is
-    recorded rather than hidden: twenty-five columns of
-    ``SurfPool4UStakers.FULL_WIDTH`` (44 -> 69), which took
-    ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` from 105 to 119.
-
-    **``long_addr`` is deliberately left exactly as it was.** Three panels
-    read it -- HATCHES on the ``p`` body, the dashboard body's activity feed
-    and, until now, this one -- and the live spoof pairs its window defeats
-    are still live. This is a second formatter, not a widened contract: a
-    caller that wants the short form gets the short form, unchanged, and a
-    caller that wants the whole thing has to say so.
-
-    Returns raw, unescaped text -- ``long_addr``'s contract verbatim, and for
-    the same reason. The caller passes the result through ``safe_markup``.
-    ``--`` for an empty or missing value, never an empty cell.
-    """
-    if not value:
-        return DASH
-    s = str(value).strip()
-    return s or DASH
+#: The anti-poisoning window, in cells, for a surf panel that mentions an
+#: address in passing: ``0x`` + 8 hex + ``…`` + 6 hex through
+#: ``widgets/address.short_address``. Live spoofs of both fee recipients exist
+#: in frenpet.eth's history; they collide with the real addresses on the
+#: classic first-6/last-4 form but not on this window (PRD §4).
+#:
+#: ``long_addr`` and ``full_addr`` lived here until 2026-09-14, when every
+#: address on screen moved to ``widgets/address.py`` so a copy icon could sit
+#: beside it (``docs/address_copy_PRD.md``). The window is the one thing of
+#: ``long_addr``'s that is a surf decision rather than a formatter, so the
+#: number stays here and the shortening does not.
+ANTI_POISONING_COLS = 17
 
 
 def hhmm(timestamp) -> str:

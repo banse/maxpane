@@ -51,8 +51,17 @@ guard verbatim (PRD §7.4).
 
 Addresses
 ---------
-Chain-sourced, therefore escaped, and **not shortened at all** since
-2026-09-12: ``_fmt.full_addr`` renders all 42 characters into a 42-cell column.
+Chain-sourced, and **not shortened at all** since 2026-09-12 wherever the
+panel has the room: all 42 characters, followed since 2026-09-14 by the copy
+icon (``widgets/address.address_text``). At
+``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` the address gives the icon its two
+cells and shows 40 -- ``0x`` + 31 + ``…`` + 6 -- so the icon moved no pin; the
+whole value is one click away either way. The trade is recorded beside that
+constant. The cell is a ``Text`` and is never parsed, so there is nothing to
+escape.
+
+(The history below names ``_fmt.full_addr`` and ``_fmt.long_addr``; both were
+removed on 2026-09-14 when every surf address moved to ``widgets/address.py``.)
 
 It went through two shorteners before that. The leaderboard template's
 ``_short_addr`` (``0xABCD..1234``) was rejected first, because live spoofs of
@@ -90,12 +99,12 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
     as_float,
     fmt_compact,
-    full_addr,
 )
 from maxpane_dashboard.widgets.surf._pool4 import (
     TITLE_CLASS,
@@ -238,17 +247,23 @@ _TITLE_ID = "surf-pool4u-stakers-title"
 #:
 #: * rank -- ``MAX_ROWS`` is two digits, so three cells covers ``20`` and the
 #:   ``#`` header both;
-#: * address -- the **whole** address: ``0x`` + 40 hex is 42 cells, and
-#:   ``_fmt.full_addr`` never returns more than the chain can hold. It was 17
-#:   (``long_addr``'s window) until 2026-09-12; the twenty-five columns that
-#:   move is the single largest thing in this panel's width and the reason
-#:   ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` moved with it;
+#: * address -- the **whole** address: ``0x`` + 40 hex is 42 cells. It was 17
+#:   (the anti-poisoning window) until 2026-09-12; the twenty-five columns
+#:   that move is the single largest thing in this panel's width and the
+#:   reason ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` moved with it.
+#:   **Plus the copy icon since 2026-09-14** (``docs/address_copy_PRD.md``
+#:   §5), and the icon is the one thing on this panel with two widths: the
+#:   whole address *and* its icon when the panel has the room
+#:   (:data:`WHOLE_WIDTH`), and at the pin the address windowed to
+#:   :data:`_ADDR_SHORT_COLS` so the icon costs the body nothing -- 40 cells,
+#:   ``0x`` + 31 + ``…`` + 6, recorded beside the pin it protects;
 #: * IMD -- ``fmt_compact`` tops out at ``999.9B`` (six) and a grouped integer
 #:   below 1000 at ``999`` (three), so ten cells leaves room for the header and
 #:   for a magnitude this vault has not reached;
 #: * share -- ``100.0%`` is six.
 _RANK_COLS = 3
 _ADDR_COLS = 42
+_ADDR_SHORT_COLS = _ADDR_COLS - ICON_COLS                           # 40
 _IMD_COLS = 10
 _PCT_COLS = 6
 
@@ -266,11 +281,23 @@ _PCT_COLS = 6
 #: would put a marker a column or two off the width it is marking.
 _CELL_PADDING = 2
 
-#: Widest full-tier row.
+#: The row with the **whole** address and its copy icon, share included --
+#: the ``whole`` tier. Below it the address is windowed to
+#: :data:`_ADDR_SHORT_COLS` and nothing is announced: the whole value is one
+#: click away, and a window is an honest short form rather than a shed
+#: column (``docs/address_copy_PRD.md`` §5).
+WHOLE_WIDTH = sum(
+    cols + _CELL_PADDING
+    for cols in (_RANK_COLS, _ADDR_COLS + ICON_COLS, _IMD_COLS, _PCT_COLS)
+)                                                                    # 71
+
+#: Widest full-tier row: the share column present, the address windowed to
+#: :data:`_ADDR_SHORT_COLS` beside its icon. Unchanged at 69 by the icon --
+#: the window gave the icon its two cells.
 FULL_WIDTH = sum(
     cols + _CELL_PADDING
-    for cols in (_RANK_COLS, _ADDR_COLS, _IMD_COLS, _PCT_COLS)
-)
+    for cols in (_RANK_COLS, _ADDR_SHORT_COLS + ICON_COLS, _IMD_COLS, _PCT_COLS)
+)                                                                    # 69
 
 #: One tier down: the share **column** goes -- removed, not blanked. Writing
 #: empty cells into a fixed-width column frees nothing, so a "compact" tier
@@ -283,8 +310,14 @@ FULL_WIDTH = sum(
 #: per-row share is the restatement; the address and the amount are not
 #: restated anywhere.
 COMPACT_WIDTH = sum(
-    cols + _CELL_PADDING for cols in (_RANK_COLS, _ADDR_COLS, _IMD_COLS)
-)
+    cols + _CELL_PADDING
+    for cols in (_RANK_COLS, _ADDR_SHORT_COLS + ICON_COLS, _IMD_COLS)
+)                                                                    # 61
+
+
+def _shown_addr_cols(tier: str) -> int:
+    """Cells of address shown at *tier*, excluding the icon: whole or 40."""
+    return _ADDR_COLS if tier == "whole" else _ADDR_SHORT_COLS
 
 
 def _fmt_imd_cell(value) -> str:
@@ -328,9 +361,13 @@ def staker_cells(row: object) -> tuple[str, str, str, str] | None:
         rank = row.get("rank")
         rank_text = f"{int(rank)}" if rank is not None else DASH
         addr = row.get("address")
+        address = str(addr).strip() if addr else ""
         pct = as_float(row.get("pct"))
         pct_text = f"{pct:.1f}%" if pct is not None else DASH
-        return rank_text, full_addr(addr), _fmt_imd_cell(row.get("imd")), pct_text
+        # The address whole and raw -- ``--`` for a missing one, never a blank
+        # cell. How much of it is shown, and its copy icon, is decided at
+        # render time against the width (see ``_render_rows``).
+        return rank_text, address or DASH, _fmt_imd_cell(row.get("imd")), pct_text
     except Exception:
         return None
 
@@ -507,9 +544,11 @@ class SurfPool4UStakers(Vertical):
         try:
             table.clear(columns=True)
             table.add_column("#", width=_RANK_COLS, key="rank")
-            table.add_column("address", width=_ADDR_COLS, key="address")
+            table.add_column(
+                "address", width=_shown_addr_cols(tier) + ICON_COLS, key="address"
+            )
             table.add_column("IMD", width=_IMD_COLS, key="imd")
-            if tier == "full":
+            if tier in ("whole", "full"):
                 table.add_column("share", width=_PCT_COLS, key="pct")
         except Exception:  # pragma: no cover - defensive
             return
@@ -562,7 +601,14 @@ class SurfPool4UStakers(Vertical):
     def _render_view(self) -> None:
         budget = self._text_budget()
         self._widen = bool(budget) and budget < FULL_WIDTH
-        self._tier = "compact" if self._widen else "full"
+        if self._widen:
+            self._tier = "compact"
+        elif budget and budget < WHOLE_WIDTH:
+            # The pin: the address windowed so its icon costs no column.
+            # Not a shed field, so no marker -- the icon copies it whole.
+            self._tier = "full"
+        else:
+            self._tier = "whole"
         self._render_title()
         self._render_rows()
         self._render_footer()
@@ -615,10 +661,14 @@ class SurfPool4UStakers(Vertical):
             # from inside the message pump.
             values = [
                 safe_markup(pad(clip(rank, _RANK_COLS), _RANK_COLS)),
-                safe_markup(clip(addr, _ADDR_COLS)),
+                # A ``Text`` cell, never markup: it carries the copy icon's
+                # action (``widgets/address.address_text``), and ``DataTable``
+                # renders a ``Text`` as it is, so a chain-sourced ``[/x]``
+                # never reaches a parser from this column.
+                address_text(addr, width=_shown_addr_cols(self._tier)),
                 safe_markup(pad(clip(imd, _IMD_COLS), _IMD_COLS)),
             ]
-            if self._tier == "full":
+            if self._tier in ("whole", "full"):
                 values.append(safe_markup(clip(pct, _PCT_COLS)))
             try:
                 table.add_row(*values)

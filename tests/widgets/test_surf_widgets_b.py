@@ -1856,7 +1856,10 @@ async def test_activity_columns_never_disagree_between_two_rows():
     # disagreement lived at the bottom of this range, where the 17-column
     # window can no longer afford a cell that ``NFPM`` beside it still can:
     # the wallet cell below a 29-column log, the date below a 24-column one.
-    for width in sorted(set(range(20, 120, 2)) | {21, 27, 28, 30, 32, 49, 61,
+    # Two columns later since 2026-09-14: the window carries its copy icon
+    # (``activity.ADDR_CELL_COLS``), so the narrowest log that fits every row
+    # is 19 and the sweep starts two terminal columns further out.
+    for width in sorted(set(range(22, 120, 2)) | {23, 29, 30, 32, 34, 49, 61,
                                                   70, 143}):
         lines = await _activity_lines(width, rows)
         starts = {
@@ -2029,7 +2032,10 @@ async def test_activity_an_unknown_launchpad_lookalike_still_renders_dimmed_and_
     fallback, fuzzy, or prefix match anywhere in the render path either.
     """
     from maxpane_dashboard.data.surf_addresses import LAUNCHPAD_HOOK
-    from maxpane_dashboard.widgets.surf._fmt import long_addr
+    from maxpane_dashboard.widgets.address import short_address
+
+    def long_addr(value):  # the 17-cell anti-poisoning window, as painted
+        return short_address(value, 17)
 
     lookalike = "0x" + ("0" if LAUNCHPAD_HOOK[2] != "0" else "1") + LAUNCHPAD_HOOK[3:]
     assert lookalike.lower() != LAUNCHPAD_HOOK.lower()

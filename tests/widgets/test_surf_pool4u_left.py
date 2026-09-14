@@ -47,7 +47,8 @@ from maxpane_dashboard.widgets import sparkline_common
 from maxpane_dashboard.widgets.surf import _pool4
 from maxpane_dashboard.widgets.surf import pool4u_burn as burn_mod
 from maxpane_dashboard.widgets.surf import pool4u_hero as hero_mod
-from maxpane_dashboard.widgets.surf._fmt import full_addr, long_addr
+from maxpane_dashboard.widgets.address import COPY_GLYPH, short_address
+from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS
 from maxpane_dashboard.widgets.surf._rowfit import pad
 from maxpane_dashboard.widgets.surf.pool4u_burn import (
     COMPACT_WIDTH as BURN_COMPACT_WIDTH,
@@ -345,29 +346,32 @@ async def test_the_whole_address_reaches_the_screen() -> None:
     assert sum(1 for line in lines if addr in line) == 1, (
         "the address is on the screen but not on one row -- it wrapped"
     )
-    assert full_addr(addr) == addr
+    # The whole address carries its copy icon, on the same row
+    # (docs/address_copy_PRD.md; this width is at least ``WHOLE_WIDTH``).
+    assert f"{addr} {COPY_GLYPH}" in out
 
     # Neither shortener may come back, and the template's is the dangerous one.
-    assert long_addr(addr) not in out
+    assert short_address(addr, ANTI_POISONING_COLS) not in out
     assert f"{addr[:6]}..{addr[-4:]}" not in out
 
 
 @pytest.mark.asyncio
 async def test_the_other_callers_of_the_short_form_are_untouched() -> None:
-    """``_fmt.long_addr`` itself was **not** widened, and this is what says so.
+    """The anti-poisoning window this panel left behind was **not** narrowed.
 
-    Three panels read it -- HATCHES on the ``p`` body, the dashboard body's
-    activity feed, and this one until 2026-09-12. The change the owner asked
-    for was this panel's, so a second formatter was added beside the first
-    rather than the first being changed under two other callers. If somebody
-    "simplifies" the two into one, the anti-poisoning window disappears from
-    two panels that still need it and nothing else in the suite would say so.
+    HATCHES' address block on the ``p`` body and the dashboard body's
+    activity feed still show it, and this panel did until 2026-09-12. The
+    change the owner asked for was this panel's, so the whole address was
+    added beside the window rather than the window being changed under two
+    other callers. ``_fmt.long_addr`` rendered it until 2026-09-14; it is now
+    ``widgets/address.short_address`` at ``_fmt.ANTI_POISONING_COLS``, and if
+    somebody "simplifies" that constant down, the window disappears from two
+    panels that still need it and this is what says so.
     """
     addr = STAKER_ROWS[0]["address"]
-    shown = long_addr(addr)
+    shown = short_address(addr, ANTI_POISONING_COLS)
     assert "…" in shown and len(shown) == 17
     assert shown == f"{addr[:10]}…{addr[-6:]}"
-    assert long_addr(None) == full_addr(None) == "--"
 
 
 @pytest.mark.asyncio
@@ -589,7 +593,14 @@ async def test_the_stakers_width_pins_are_what_the_table_actually_reserves() -> 
     *between* cells and is a ``RichLog`` row's formula. Borrowing the wrong one
     would put the marker a column or two off the width it is marking.
     """
-    for size, pin in (((80, 20), STAKERS_FULL_WIDTH), ((38, 20), STAKERS_COMPACT_WIDTH)):
+    # Three tiers since 2026-09-14 (``docs/address_copy_PRD.md`` §5): the
+    # whole address and its icon at 80, the address windowed to 40 beside its
+    # icon at 72 (a text budget of 70, one under ``WHOLE_WIDTH``), and the
+    # share column shed at 38.
+    from maxpane_dashboard.widgets.surf.pool4u_stakers import WHOLE_WIDTH
+
+    for size, pin in (((80, 20), WHOLE_WIDTH), ((72, 20), STAKERS_FULL_WIDTH),
+                      ((38, 20), STAKERS_COMPACT_WIDTH)):
 
         class _A(App):
             def compose(self):
@@ -646,11 +657,9 @@ def test_the_row_address_is_read_under_the_declared_name_only() -> None:
     name = SURF_ROW_KEYS["pool4_stakers"][1]
     assert name == "address"
     addr = "0x" + "ab" * 20
-    assert staker_cells({"rank": 1, name: addr, "imd": 1.0, "pct": 1.0})[1] == (
-        full_addr(addr)
-    )
+    assert staker_cells({"rank": 1, name: addr, "imd": 1.0, "pct": 1.0})[1] == addr
     stale = staker_cells({"rank": 1, "addr": addr, "imd": 1.0, "pct": 1.0})
-    assert stale[1] == full_addr(None), stale
+    assert stale[1] == "--", stale
 
 
 def test_the_row_cap_is_below_the_producers_own_limit() -> None:

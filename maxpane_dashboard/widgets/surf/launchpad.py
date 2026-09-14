@@ -89,11 +89,13 @@ import re
 from decimal import ROUND_HALF_UP, Decimal
 
 from rich.cells import cell_len
+from rich.text import Text
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import address_text, is_address, short_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
@@ -235,6 +237,13 @@ COINS_WIDEN_HINT = "‹ widen"
 #: header actually reaches the compositor whole, which is what ties the
 #: number to the real rendered table instead of to itself.
 #: Re-sweep -- never re-derive -- if a column is ever added or removed again.
+#:
+#: **2026-09-14: this pin is why CREATOR has no copy icon yet.** Every other
+#: surf address gained one (``docs/address_copy_PRD.md``); the icon may not
+#: move a pin, CREATOR's 11-cell window cannot shorten, and moving two of
+#: ``BURNED``'s cells to it -- same column sum, same virtual width -- still cut
+#: the header to ``BURN`` at 89 (swept 87-91). Measured alternative, for the
+#: owner: NAME 18 -> 16 holds 89. See :data:`_ADDR_COLS`.
 _TABLE_FULL_WIDTH = 89
 
 #: Defensive re-cap.  The manager already caps ``launchpad_coins`` at
@@ -261,12 +270,26 @@ MAX_COIN_ROWS = 10
 #: honest way to shrink SWAPS ALL itself (it is already a bare integer).
 _TICKER_COLS = 8
 _NAME_COLS = 18
-#: 11, was 17 (``activity.py``'s own ``ADDR_COLS`` still uses the wider
-#: form unchanged -- that panel never needed to pay for a tenth column).
-#: :func:`_short_addr`, not ``_fmt.long_addr``, renders to this width: six
-#: leading characters (``0x`` + 4 hex) + an ellipsis + four trailing, an
-#: honest short form of the same anti-poisoning idea at half the window.
-_ADDR_COLS = 11
+#: The CREATOR window: 11, was 17 (``activity.py``'s own ``ADDR_COLS`` still
+#: uses the wider form unchanged -- that panel never needed to pay for a
+#: tenth column). ``widgets/address.short_address`` renders it as six leading
+#: characters (``0x`` + 4 hex) + an ellipsis + four trailing, an honest short
+#: form of the same anti-poisoning idea at half the window. It is the
+#: helper's ``MIN_SHORT_COLS``: there is no narrower honest window.
+_ADDR_WINDOW_COLS = 11
+#: The CREATOR **column**, and it is the window alone.
+#:
+#: **No copy icon in this column yet, and that is an open decision rather
+#: than an oversight** (2026-09-14, ``docs/address_copy_PRD.md`` §5). The icon
+#: needs two cells. The window cannot give them up -- it is already the
+#: narrowest honest form -- and the table has none to spare at
+#: :data:`_TABLE_FULL_WIDTH`: see :data:`_BURNED_COLS` for the column that
+#: looked spare and was not. The rule's answer for such a cell is to stop and
+#: report rather than raise the pin, so it was reported. Measured in situ for
+#: whoever decides: NAME 18 -> 16 with CREATOR 13 keeps ``BURNED`` whole from
+#: 89 (virtual width 93, unchanged), i.e. holds this pin by giving coin names
+#: two fewer cells; the only other way is raising the pin.
+_ADDR_COLS = _ADDR_WINDOW_COLS
 _AGE_COLS = 4
 #: ``MCAP`` on screen: ``$23.4K``. Six columns is the widest this formatter
 #: produces below a quadrillion dollars, and it is FOUR narrower than the
@@ -281,6 +304,12 @@ _SWAPS_COLS = 6
 #: What pays
 #: for this column is CREATOR's 17 -> 11 shrink above, not a widened total.
 _SWAPS_ALL_COLS = 6
+#: ``BURNED`` on screen. Nine, and **not** slack, though it looks like it:
+#: ``fmt_compact`` never paints more than seven here, but the table's virtual
+#: width (93) already exceeds its panel at :data:`_TABLE_FULL_WIDTH`, and the
+#: cut lands in these right-hand cells. Measured 2026-09-14: BURNED 9 -> 7
+#: with CREATOR 11 -> 13 kept the virtual width at 93 and still cut the
+#: header to ``BURN`` at 89. See :data:`_ADDR_COLS` for what that blocked.
 _BURNED_COLS = 9
 # 8+18+11+4+6+7+6+6+9 = 75
 
@@ -295,44 +324,29 @@ def _name_cell(name: object) -> str:
     return f"[dim]{cleaned}[/]" if cleaned else f"[dim]{DASH}[/]"
 
 
-def _short_addr(value: object) -> str:
-    """``0x`` + first 4 hex + ``…`` + last 4 -- this table's own 11-column
-    anti-poisoning window (:data:`_ADDR_COLS`), narrower than
-    ``_fmt.long_addr``'s shared 17-column form.  Kept as a local helper
-    rather than widening ``long_addr``'s own contract with a width
-    parameter: ``activity.py``'s ``ADDR_COLS`` still needs the wider
-    8-hex/6-hex split unchanged, and that call site has no reason to grow a
-    parameter it would never vary.
+def _creator_cell(creator: object, known: bool) -> Text:
+    """The anti-poisoning window (:data:`_ADDR_WINDOW_COLS`), never a friendly
+    label: ``creator_known`` is a bool the manager derives against its own
+    allowlist (Task 1's frozen ``SURF_ROW_KEYS["launchpad_coins"]`` carries no
+    label field alongside it), so this widget has nothing to substitute even
+    when it is ``True`` -- it can only style the raw address, cyan when known,
+    dim otherwise (``activity.py``'s exact convention for ``counterparty``).
 
-    Six leading characters (``0x`` + 4 hex), an ellipsis, four trailing --
-    half of ``long_addr``'s collision-resistance window, but this column
-    lost half its own width to pay for SWAPS ALL (Task 11) and a truncated
-    address is still an honest short form of the same idea, per this
-    repo's "shorten the value, not the constant" rule.
+    ``0x`` + 4 hex + ``…`` + 4 through ``widgets/address.short_address`` --
+    half of the 17-cell collision-resistance window, because this column lost
+    half its own width to pay for SWAPS ALL (Task 11). **No copy icon yet:**
+    see :data:`_ADDR_COLS` for the open decision. A value that is not an
+    address is fitted to the cell by the same helper, with a visible ``…``.
+
+    A ``Text`` cell rather than a markup string: ``DataTable`` renders a
+    ``Text`` as it is, so nothing third-party is ever parsed.
     """
-    if not value:
-        return DASH
-    s = str(value).strip()
-    if not s:
-        return DASH
-    if len(s) <= _ADDR_COLS:
-        return s
-    return f"{s[:6]}…{s[-4:]}"
-
-
-def _creator_cell(creator: object, known: bool) -> str:
-    """The anti-poisoning window (:func:`_short_addr`, :data:`_ADDR_COLS`),
-    never a friendly label: ``creator_known`` is a bool the manager derives
-    against its own allowlist (Task 1's frozen ``SURF_ROW_KEYS
-    ["launchpad_coins"]`` carries no label field alongside it), so this
-    widget has nothing to substitute even when it is ``True`` -- it can only
-    style the raw address, cyan when known, dim otherwise (``activity.py``'s
-    exact convention for ``counterparty``).
-    """
-    window = _short_addr(creator)
-    escaped = safe_markup(window)
     colour = "cyan" if known else "dim"
-    return f"[{colour}]{escaped}[/]"
+    value = _flatten(creator)
+    if is_address(value):
+        return Text(short_address(value, _ADDR_WINDOW_COLS), style=colour)
+    # Not an address: ``address_text`` fits it on cells and adds no icon.
+    return address_text(value or DASH, width=_ADDR_COLS, style=colour)
 
 
 def _round_half_up(value: float, digits: int) -> float:

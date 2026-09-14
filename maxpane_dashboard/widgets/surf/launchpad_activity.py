@@ -40,12 +40,13 @@ it, the same note ``activity.py`` carries for its own cells.
 
 ``wallet`` is never a friendly label -- there is no label field in this row
 shape, unlike ``dev_activity``'s ``wallet_label`` -- so it is always the
-anti-poisoning short-address window (``0x`` + 4 hex + ``…`` + 4 hex, this
-module's own ``_ADDR_COLS``, half of ``activity.py``'s wider 17-column
-form and identical to ``launchpad.py``'s own ``_short_addr``), styled cyan
-when ``wallet_known`` and dim otherwise. It is put through the same
-strip-then-escape treatment as ``ticker`` before windowing, in case a
-malformed payload ever puts non-address text there.
+anti-poisoning short-address window (``0x`` + 4 hex + ``…`` + 4 hex,
+``_ADDR_WINDOW_COLS``, half of ``activity.py``'s wider 17-column form and
+the same window as the coin table's CREATOR) followed by its copy icon,
+both through ``widgets/address.address_text``, styled cyan when
+``wallet_known`` and dim otherwise. It is stripped of tag-shaped runs
+before windowing, in case a malformed payload ever puts non-address text
+there; such a value gets no icon.
 
 ``eth is None`` (a launch has no swap size) renders **no amount cell at
 all**, never ``0.0000 ETH`` -- CLAUDE.md's "a failed read is None, never 0"
@@ -94,10 +95,12 @@ from __future__ import annotations
 import re
 
 from rich.cells import cell_len
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
@@ -145,7 +148,15 @@ KIND_WORDS = {"buy": "BUY", "sell": "SELL", "launch": "NEW"}
 _AGE_COLS = 4        # `fmt_age`: "2m", "14m", "3h", "2d"
 _KIND_COLS = 4        # max(len(w) for w in KIND_WORDS.values()) == len("SELL")
 _TICKER_COLS = 8      # the coin table's own `_TICKER_COLS`
-_ADDR_COLS = 11       # the coin table's own `_short_addr` window
+#: The wallet window, ``0x`` + 4 + ``…`` + 4 -- the coin table's own CREATOR
+#: window, through ``widgets/address.short_address``. It is already the
+#: helper's ``MIN_SHORT_COLS``, so it has no two cells to give up.
+_ADDR_WINDOW_COLS = 11
+#: The wallet cell as painted: the window plus its copy icon. **Grown, not
+#: shortened** (2026-09-14, ``docs/address_copy_PRD.md`` §5): this log is 86
+#: columns at ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` (138) against a full row
+#: of 47, so the icon's two columns came out of slack and moved no pin.
+_ADDR_COLS = _ADDR_WINDOW_COLS + ICON_COLS                      # 13
 
 #: The amount cell's **nominal** reserve: exactly ``cell_len("  0.0120 ETH")``
 #: for this panel's own ``f"  {eth:.4f} ETH"``, two leading spaces like
@@ -294,38 +305,33 @@ def _ticker_cell(value: object) -> str:
     return f"[bold]{safe_markup(_pad(cleaned, _TICKER_COLS))}[/]"
 
 
-def _short_addr(value: object) -> str:
-    """``0x`` + first 4 hex + ``…`` + last 4 -- this panel's own 11-column
-    anti-poisoning window, identical to ``launchpad.py``'s ``_short_addr``
-    (duplicated rather than imported -- see the note on :data:`_TAG_LIKE`).
-
-    Stripped of bracket-tag-shaped content first: a real on-chain address
-    never contains one, so this only ever fires on a malformed payload, but
-    a stripped-to-empty value still degrades to :data:`DASH` rather than an
-    empty cell.
-
-    The window is measured in cells and re-fitted through :func:`_clip`. For
-    a real address that is a no-op -- hex is one cell per character, so the
-    window is exactly eleven -- but this field is only *conventionally* an
-    address: it comes off the same payload the ticker does, and a value with
-    wide glyphs in it would otherwise hand back an eleven-character,
-    twenty-two-column "window" that no caller measures again.
-    """
-    s = _strip_tags(value)
-    if not s:
-        return DASH
-    window = s if cell_len(s) <= _ADDR_COLS else f"{s[:6]}…{s[-4:]}"
-    return _clip(window, _ADDR_COLS)
-
-
-def _wallet_cell(value: object, known: bool) -> str:
-    """The wallet window, padded to :data:`_ADDR_COLS` cells, styled cyan when
+def _wallet_cell(value: object, known: bool) -> Text:
+    """The wallet cell, padded to :data:`_ADDR_COLS` cells, styled cyan when
     ``known`` and dim otherwise -- never a friendly label (this row shape
     carries no label field, unlike ``dev_activity``'s ``wallet_label``).
+
+    A valid address is the 11-cell window plus its copy icon
+    (``widgets/address.address_text``); the icon copies the whole address.
+
+    Stripped of bracket-tag-shaped content first: a real on-chain address
+    never contains one, so that only ever fires on a malformed payload. A
+    value that is **not** an address gets no icon and is fitted on cells
+    through :func:`_clip` to the whole cell -- this field is only
+    *conventionally* an address, it comes off the same payload the ticker
+    does, and a value with wide glyphs in it must not paint past its budget.
+    A stripped-to-empty value still degrades to :data:`DASH`.
+
+    Built as ``Text``, never markup: the cell carries the icon's click
+    action, which a markup string cannot, and it is never parsed.
     """
-    window = _short_addr(value)
     colour = "cyan" if known else "dim"
-    return f"[{colour}]{safe_markup(_pad(window, _ADDR_COLS))}[/]"
+    s = _strip_tags(value)
+    if is_address(s):
+        cell = address_text(s, width=_ADDR_WINDOW_COLS, style=colour)
+    else:
+        cell = Text(_clip(s or DASH, _ADDR_COLS), style=colour)
+    cell.append(" " * max(_ADDR_COLS - cell.cell_len, 0))
+    return cell
 
 
 def _row_fields(
@@ -371,8 +377,13 @@ def _row_fields(
         return None
 
 
-def _row_markup(row: object, tier: str = "full", width: int = 0) -> str | None:
+def _row_text(row: object, tier: str = "full", width: int = 0) -> Text | None:
     """Format one activity row at ``tier``; ``None`` drops it.
+
+    A ``Text``, not a markup string, since 2026-09-14: the wallet cell carries
+    a copy icon whose click action a markup string cannot hold
+    (``docs/address_copy_PRD.md``). The fixed cells are still written as
+    markup and parsed here, inside this function's own ``try``.
 
     ``width`` **is** consulted, and the docstring that said it was not was
     the defect: it claimed "every cell in this row is already fixed-width",
@@ -404,9 +415,12 @@ def _row_markup(row: object, tier: str = "full", width: int = 0) -> str | None:
             f"[dim]{_pad(kind_word, _KIND_COLS)}[/]",
             _ticker_cell(ticker_raw),
         ]
+        line = Text.from_markup((" " * _GAP).join(cells))
         if tier != "minimal":
-            cells.append(_wallet_cell(wallet_raw, known))
-        return (" " * _GAP).join(cells) + amount
+            line.append(" " * _GAP)
+            line.append_text(_wallet_cell(wallet_raw, known))
+        line.append(amount)
+        return line
     except Exception:
         # A single malformed row must never take down the panel.
         return None
@@ -551,7 +565,7 @@ class SurfLaunchpadActivity(Vertical):
 
         lines = [
             line
-            for line in (_row_markup(row, tier, width) for row in rows)
+            for line in (_row_text(row, tier, width) for row in rows)
             if line is not None
         ]
         if len(lines) < len(showable):
