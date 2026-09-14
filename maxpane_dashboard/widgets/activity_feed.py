@@ -42,13 +42,13 @@ def _format_event_time(timestamp_str: str) -> str:
 def _who_text(launcher: object, *, width: int) -> Text:
     """The launcher's address, iconed, or "the bakery" for a random event.
 
-    ``None`` -- a game-generated random event with no launcher -- renders
-    as "the bakery" rather than an address, so one such event cannot blank
-    the whole feed. A non-string launcher is coerced rather than handed to
+    No launcher -- ``None`` for a game-generated random event, or an empty
+    string -- renders as "the bakery" rather than an address, so one such
+    event cannot blank the whole feed. A non-string launcher is coerced rather than handed to
     :func:`~maxpane_dashboard.widgets.address.is_address`, which would
     simply reject it and render it as inert text anyway.
     """
-    if launcher is None:
+    if not launcher:
         return Text("the bakery", style="dim")
     if not isinstance(launcher, str):
         launcher = str(launcher)

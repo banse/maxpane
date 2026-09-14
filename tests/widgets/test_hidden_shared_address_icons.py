@@ -169,3 +169,12 @@ def test_each_template_uses_the_helper_and_defines_no_formatter(template):
     names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     assert not {n for n in names if "addr" in n.lower()}, (template, names)
     assert "carries the copy icon" in (ast.get_docstring(tree) or ""), template
+
+
+@pytest.mark.parametrize("launcher", [None, ""])
+def test_no_launcher_renders_the_bakery_not_a_dash(launcher):
+    """An empty-string launcher is no launcher, exactly like ``None``."""
+    mod = importlib.import_module("maxpane_dashboard.widgets.activity_feed")
+    text = mod._who_text(launcher, width=17)
+    assert text.plain == "the bakery"
+    assert not [s for s in text.spans if getattr(s.style, "meta", None)]

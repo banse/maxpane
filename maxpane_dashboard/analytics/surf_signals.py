@@ -50,6 +50,7 @@ Pattern: ``maxpane_dashboard/analytics/fwa_signals.py``.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any, NamedTuple
 
 from maxpane_dashboard.analytics.surf_launchpad import HOT_MAX_AGE_S, hot_coin_threshold
@@ -1369,8 +1370,48 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = tuple(
 # ---------------------------------------------------------------------------
 
 
+#: The most free text a fired detail keeps once persisted, addresses not
+#: counted. A detail can carry third-party text -- NEW DEPLOY's ``action``
+#: label is Blockscout's decoded method name, which the contract's author
+#: chooses -- and the fired store is written to the cache and re-quoted as
+#: ``last: …`` for a day, so an unbounded name would grow the cache and every
+#: row that quotes it. Far wider than any SIGNALS row, so a real detail is
+#: never cut.
+FIRED_DETAIL_TEXT_MAX = 160
+
+#: An address inside a detail, kept whole by :func:`_cap_detail`: the widget
+#: windows it beside its copy icon and needs the full value to copy.
+_DETAIL_ADDRESS_RE = re.compile(r"(?<![0-9a-fA-F])0x[0-9a-fA-F]{40}(?![0-9a-fA-F])")
+
+
+def _cap_detail(detail: str) -> str:
+    """``detail`` with its free text cut to :data:`FIRED_DETAIL_TEXT_MAX`.
+
+    Every whole address in it survives intact; only the text around them is
+    cut, and a cut is marked with ``…``.
+    """
+    budget = FIRED_DETAIL_TEXT_MAX
+    out: list[str] = []
+    pos = 0
+    cut = False
+    for match in [*_DETAIL_ADDRESS_RE.finditer(detail), None]:
+        text = detail[pos:match.start()] if match else detail[pos:]
+        if len(text) > budget:
+            text = text[:budget] + ("" if cut else "…")
+            cut = True
+        budget -= min(len(text), budget)
+        out.append(text)
+        if match:
+            out.append(match.group(0))
+            pos = match.end()
+    return "".join(out)
+
+
 def _fired_store(baselines: dict) -> dict[str, dict]:
-    """The persisted ``{signal: {ts, detail, tx_hash?}}`` map, parsed."""
+    """The persisted ``{signal: {ts, detail, tx_hash?}}`` map, parsed.
+
+    A detail is capped on the way in too (:func:`_cap_detail`): the cache file
+    is third-party input once it is on disk."""
     raw = baselines.get("fired")
     store: dict[str, dict] = {}
     if not isinstance(raw, dict):
@@ -1381,7 +1422,7 @@ def _fired_store(baselines: dict) -> dict[str, dict]:
         ts = _as_float(entry.get("ts"))
         if ts is None:
             continue
-        parsed = {"ts": ts, "detail": str(entry.get("detail") or "")}
+        parsed = {"ts": ts, "detail": _cap_detail(str(entry.get("detail") or ""))}
         tx_hash = _tx_hash(entry.get("tx_hash"))
         if tx_hash is not None:
             parsed["tx_hash"] = tx_hash
@@ -1501,7 +1542,7 @@ def build_signals(
         det = detect(base, read, now)
         if det.fired_ts is not None or det.state == STATE_FIRED:
             event_ts = det.fired_ts if det.fired_ts is not None else now
-            entry = {"ts": min(float(event_ts), now), "detail": det.detail}
+            entry = {"ts": min(float(event_ts), now), "detail": _cap_detail(det.detail)}
             if det.tx_hash is not None:
                 entry["tx_hash"] = det.tx_hash
             fired[name] = entry

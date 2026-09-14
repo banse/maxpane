@@ -615,8 +615,12 @@ class SurfFeedToggle(Static):
             feed.toggle_thread(self.tx_hash)
 
     def on_click(self, event) -> None:
-        # A click on a copy icon is the icon's (docs/address_copy_PRD.md §3.4):
-        # let its action fire and do not also open or close the thread.
+        # Defensive: this toggle renders only ``▸ N replies`` today, so no
+        # click on it lands on a copy icon. It is a ``Static`` a later change
+        # could hand an address, and a click on that icon must copy without
+        # also opening or closing the thread (docs/address_copy_PRD.md §3.4).
+        # tests/widgets/test_surf_address_icons.py drives it through a subclass
+        # that does render one.
         if is_copy_click(event):
             return
         event.stop()

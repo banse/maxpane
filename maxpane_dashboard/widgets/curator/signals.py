@@ -74,6 +74,8 @@ Primitives only — this module imports nothing from ``data/`` or ``analytics/``
 
 from __future__ import annotations
 
+import re
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -250,17 +252,28 @@ def _head(label: str, state) -> str:
 _TOKEN_FALLBACK = {"error": "red", "warning": "yellow", "success": "green"}
 
 
+#: A whole ``$token``: hyphens belong to the name, so ``$success-darken-2`` is
+#: one token and never ``$success`` followed by ``-darken-2``.
+_TOKEN_RE = re.compile(r"\$([A-Za-z_][\w-]*)")
+
+
 def _resolved_markup(markup: str, colors: dict[str, str] | None) -> str:
-    """*markup* with every ``$token`` in :data:`_TOKEN_FALLBACK` swapped for
-    a concrete colour -- the app's own current theme where available, the
-    fallback name otherwise (before the first mount, or a bare harness with
-    no theme wired)."""
-    table = {**_TOKEN_FALLBACK, **{
-        name: colors[name] for name in _TOKEN_FALLBACK if colors and name in colors
-    }}
-    for name, value in table.items():
-        markup = markup.replace(f"${name}", value)
-    return markup
+    """*markup* with ``$token`` references swapped for concrete colours.
+
+    Matched as whole tokens: a plain ``str.replace("$success", …)`` turned
+    ``$success-darken-2`` into ``green-darken-2``, which is no colour at all.
+    A token the app's current theme defines takes that colour; one of
+    :data:`_TOKEN_FALLBACK`'s three takes its fallback name (before the first
+    mount, or a bare harness with no theme wired); any other is left as it
+    was."""
+
+    def swap(match: re.Match) -> str:
+        name = match.group(1)
+        if colors and name in colors:
+            return colors[name]
+        return _TOKEN_FALLBACK.get(name, match.group(0))
+
+    return _TOKEN_RE.sub(swap, markup)
 
 
 def _row(label: str, state, parts: list[str], width: int) -> tuple[str, bool]:

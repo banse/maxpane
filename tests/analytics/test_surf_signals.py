@@ -2464,3 +2464,42 @@ def test_burn_ready_still_speaks_when_the_amount_is_unread():
     state, detail, _ = _sig("burnready", _baseline(burn_ready=False), read)
     assert state == "fired"
     assert "ready to burn" in detail
+
+
+# -- a persisted fired detail is bounded (final review F6) ---------------------------
+
+
+def test_a_fired_detail_is_capped_at_persist_time_and_keeps_addresses_whole():
+    name = "x" * 5000
+    out, advanced = sig.build_signals(
+        _baseline(), _readings(deploy_events=[{**FRESH_ACTION, "label": f"{name}()"}]), NOW
+    )
+    persisted = advanced["fired"]["deploy"]["detail"]
+    assert len(persisted) == sig.FIRED_DETAIL_TEXT_MAX + 1 and persisted.endswith("…"), persisted[-20:]
+    assert persisted.startswith("action xxx")
+    assert out["sig_deploy_detail"] == persisted
+
+    contract = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+    event = {"ts": NOW - 120.0, "tx_hash": "0x" + "c0" * 32, "kind": "deploy",
+             "label": contract, "wallet_label": "w" * 5000}
+    _, advanced = sig.build_signals(_baseline(), _readings(deploy_events=[event]), NOW)
+    persisted = advanced["fired"]["deploy"]["detail"]
+    assert f"new contract {contract} · www" in persisted, "the address must survive whole"
+    assert len(persisted) <= sig.FIRED_DETAIL_TEXT_MAX + len(contract) + 1
+
+
+def test_a_hand_edited_fired_detail_is_capped_on_load_with_its_address_intact():
+    contract = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+    detail = "y" * 5000 + " " + contract + " " + "z" * 50
+    base = _baseline(fired={"deploy": {"ts": NOW - 60.0, "detail": detail}})
+    out, advanced = sig.build_signals(base, _readings(), NOW)
+    shown = out["sig_deploy_detail"]
+    assert contract in shown
+    assert "z" not in shown, "text after the cap is dropped, not the address"
+    assert shown == "y" * sig.FIRED_DETAIL_TEXT_MAX + "…" + contract
+    assert advanced["fired"]["deploy"]["detail"] == shown
+
+
+def test_a_short_detail_is_never_touched():
+    detail = "new contract 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432 · surfsurf.eth"
+    assert sig._cap_detail(detail) == detail

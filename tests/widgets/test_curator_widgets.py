@@ -6421,3 +6421,17 @@ async def test_each_list_panel_uses_pattern_language_only(kind):
 
     for word in ("sybil", "cheat", "fraud", "attack", "abuse", "wash"):
         assert word not in text.lower(), (kind, word)
+
+
+def test_resolved_markup_matches_whole_tokens_only():
+    """``$success`` must not eat the front of ``$success-darken-2`` (final review F6)."""
+    from maxpane_dashboard.widgets.curator.signals import _resolved_markup
+
+    markup = "[$success-darken-2]a[/] [$success]b[/] [$warning]c[/] [$accent]d[/]"
+    assert _resolved_markup(markup, None) == (
+        "[$success-darken-2]a[/] [green]b[/] [yellow]c[/] [$accent]d[/]"
+    )
+    theme = {"success": "#00aa00", "success-darken-2": "#005500", "warning": "#ffaa00"}
+    assert _resolved_markup(markup, theme) == (
+        "[#005500]a[/] [#00aa00]b[/] [#ffaa00]c[/] [$accent]d[/]"
+    )
