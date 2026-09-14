@@ -1,68 +1,212 @@
 """E2: every address that reaches the screen carries an icon that copies it.
 
-Two different sets, each asking a different question (PRD §7 E2). **Every
-icon** must copy an address the payload actually holds, or it is a
-wrong-address icon. **Every seeded address** must get an icon in some view, or
-a panel dropped one. A single set cannot answer both.
+Per case, across all of its views, four questions (PRD §7 E2):
+
+1. **Every icon copies an address the screen was given**, and **the address it
+   copies is the one printed right before it**: a whole address must equal it,
+   a shortened ``0x<head>…<tail>`` window must share its head and tail. An icon
+   behind a label (a name, a symbol) is checked against the payload instead: a
+   label the payload carries must sit in a record that also holds the address
+   the icon copies, so a row whose icon copies its neighbour's address fails.
+2. **Every address printed on screen has its icon**: a whole address, and a
+   shortened window whose head and tail match an address the screen was given.
+3. **Every seeded address gets an icon in some view**, or a panel dropped one.
+4. **Every mounted widget whose module imports the helper produces an icon in
+   some view**, unless ``EXEMPT`` names that class with its reason. A panel that
+   silently stops rendering its icons, including one that prints its addresses
+   in a shape the scans above cannot read, fails here.
+
+An address-free case gets the opposite: no icon, no whole or shortened address,
+and no helper-using widget mounted at all.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import re
+import types
 
 import pytest
 from rich.cells import cell_len
 
-from maxpane_dashboard.widgets.address import PROSE_ADDRESS_RE, is_address
+from maxpane_dashboard.widgets.address import ADDRESS_RE, PROSE_ADDRESS_RE
+from tests.address_sweep.case import view_name
+from tests.address_sweep.imports import imports_helper
 from tests.address_sweep.registry import CASES
 from tests.widgets.address_probe import icon_targets
 
 #: The sweep's terminal: wide and tall enough for every body to render.
 SIZE = (170, 60)
 
+#: A shortened address window, ``0x<head>…<tail>``.
+SHORT_TOKEN_RE = re.compile(r"(?<![0-9A-Za-z])0x([0-9a-fA-F]+)…([0-9a-fA-F]+)(?![0-9a-fA-F])")
+_WINDOW_RE = re.compile(r"0x([0-9a-fA-F]+)…([0-9a-fA-F]+)")
+#: A transaction hash: shortened through ``short_hex`` with no icon, by design.
+HASH_RE = re.compile(r"(?<![0-9a-fA-F])0x[0-9a-fA-F]{64}(?![0-9a-fA-F])")
+_TOKEN_CHARS = frozenset("0123456789abcdefABCDEFx…")
+
+#: Widget classes that import the helper yet never produce an icon, each with
+#: the reason. A class, never a module or package.
+EXEMPT: dict[str, str] = {
+    "maxpane_dashboard.widgets.surf.feed.SurfFeedToggle":
+        "a thread's expand/collapse toggle; feed.py imports only is_copy_click for it",
+    "maxpane_dashboard.widgets.surf.launchpad.SurfCurveFlow":
+        "swap, trader and ETH-owed totals only; no address in its contract",
+    "maxpane_dashboard.widgets.surf.launchpad.SurfBurnPipeline":
+        "burn pipeline status and amounts only; no address in its contract",
+    # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
+    # real address" (CuratorWalletAddress); the rest describe that wallet.
+    "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":
+        "the y view's three boxes about the reader: numbers, never the address",
+    "maxpane_dashboard.widgets.curator.wallet.CuratorWalletLadder":
+        "the reader's sends (hour, ETH, weight); you_address only keys the rows",
+    "maxpane_dashboard.widgets.curator.wallet.CuratorWalletStanding":
+        "rank, score, credit, share and join time of the reader's wallet; no address",
+    "maxpane_dashboard.widgets.curator.wallet.CuratorWalletNext":
+        "what the next legal send must be and buys; amounts only",
+    "maxpane_dashboard.widgets.curator.wallet.CuratorWalletTarget":
+        "what the place above would cost; amounts only, never that wallet's address",
+}
+
 
 def _rows(app) -> list[str]:
     return ["".join(seg.text for seg in strip) for strip in app.screen._compositor.render_strips()]
 
 
-def _addresses_in(value) -> set[str]:
-    """Every address ``value`` holds, however it is stored, lower-cased.
+def _strings_in(value) -> list[str]:
+    """Every string ``value`` holds, however it is stored.
 
-    Payloads carry dicts and lists, but also dataclass and pydantic model
-    instances (FWA signals, bakery/frenpet models), and addresses embedded in
-    longer strings (surf's deploy detail, FWA's drift ``value_str``, a post's
-    prose). Missing any of those would make a correct icon read as "copies an
-    address the payload does not hold". Searching strings with the prose
-    pattern keeps a 64-hex transaction hash out: it is not an address.
+    Dicts (keys and values), sequences and sets, dataclasses and objects with a
+    ``__dict__`` (pydantic models). Stops at classes, modules and callables, and
+    walks with an explicit stack so a deep graph cannot hit the recursion limit.
     """
-    found: set[str] = set()
+    out: list[str] = []
     seen: set[int] = set()
-
-    def walk(v) -> None:
+    stack = [value]
+    while stack:
+        v = stack.pop()
         if isinstance(v, str):
-            found.update(m.group(0).lower() for m in PROSE_ADDRESS_RE.finditer(v))
-            return
-        if v is None or isinstance(v, (bool, int, float, bytes)):
-            return
+            out.append(v)
+            continue
+        if v is None or isinstance(v, (bool, int, float, complex, bytes, bytearray)):
+            continue
+        if isinstance(v, (type, types.ModuleType)) or callable(v):
+            continue
         if id(v) in seen:
-            return
+            continue
         seen.add(id(v))
         if isinstance(v, dict):
             for key, item in v.items():
-                walk(key)
-                walk(item)
+                stack.append(key)
+                stack.append(item)
         elif isinstance(v, (list, tuple, set, frozenset)):
-            for item in v:
-                walk(item)
-        elif dataclasses.is_dataclass(v) and not isinstance(v, type):
-            for field in dataclasses.fields(v):
-                walk(getattr(v, field.name, None))
+            stack.extend(v)
+        elif dataclasses.is_dataclass(v):
+            stack.extend(getattr(v, f.name, None) for f in dataclasses.fields(v))
         elif hasattr(v, "__dict__"):
-            for item in vars(v).values():
-                walk(item)
+            stack.extend(vars(v).values())
+    return out
 
-    walk(value)
-    return found
+
+def _addresses_in(value) -> set[str]:
+    """Every address ``value`` holds, lower-cased, whole or inside prose."""
+    return {m.group(0).lower() for s in _strings_in(value) for m in PROSE_ADDRESS_RE.finditer(s)}
+
+
+def _hashes_in(value) -> set[str]:
+    return {m.group(0).lower() for s in _strings_in(value) for m in HASH_RE.finditer(s)}
+
+
+def _records_in(value) -> list[list[str]]:
+    """The direct string fields (and keys) of every dict, dataclass and object."""
+    records: list[list[str]] = []
+    seen: set[int] = set()
+    stack = [value]
+    while stack:
+        v = stack.pop()
+        if v is None or isinstance(v, (str, bytes, bytearray, bool, int, float, complex)):
+            continue
+        if isinstance(v, (type, types.ModuleType)) or callable(v) or id(v) in seen:
+            continue
+        seen.add(id(v))
+        if isinstance(v, dict):
+            items = [*v.keys(), *v.values()]
+        elif isinstance(v, (list, tuple, set, frozenset)):
+            stack.extend(v)
+            continue
+        elif dataclasses.is_dataclass(v):
+            items = [getattr(v, f.name, None) for f in dataclasses.fields(v)]
+        elif hasattr(v, "__dict__"):
+            items = list(vars(v).values())
+        else:
+            continue
+        records.append([x for x in items if isinstance(x, str)])
+        stack.extend(x for x in items if not isinstance(x, str))
+    return records
+
+
+class _LabelIndex:
+    """Which record text goes with which address, for label-backed icons."""
+
+    def __init__(self, served) -> None:
+        by_address: dict[str, list[str]] = {}
+        everything: list[str] = []
+        for record in _records_in(served):
+            text = "\n".join(record).lower()
+            everything.append(text)
+            for address in {m.group(0).lower() for s in record for m in PROSE_ADDRESS_RE.finditer(s)}:
+                by_address.setdefault(address, []).append(text)
+        self._by_address = {a: "\n".join(t) for a, t in by_address.items()}
+        self._everything = "\n".join(everything)
+
+    def contradicts(self, label: str, address: str) -> bool:
+        """True when the payload carries ``label``, but never beside ``address``."""
+        core = label.lower()
+        if len(core) < 3 or not any(ch.isalpha() for ch in core):
+            return False
+        return core in self._everything and core not in self._by_address.get(address.lower(), "")
+
+
+_LABEL_SPLIT = re.compile(r"\s{2,}|[│┃|·]")
+
+
+def _label_before(row: str, icon_x: int) -> str:
+    """The label an icon at ``icon_x`` sits behind: its cell, back to a column gap."""
+    end = _char_at_cell(row, icon_x - 2)
+    if end is None:
+        return ""
+    return _LABEL_SPLIT.split(row[:end + 1])[-1].strip().rstrip("…").strip()
+
+
+def _window_matches(head: str, tail: str, value: str) -> bool:
+    value = value.lower()
+    return value[2:].startswith(head.lower()) and value.endswith(tail.lower())
+
+
+def _char_at_cell(row: str, cell: int) -> int | None:
+    x = 0
+    for i, ch in enumerate(row):
+        width = cell_len(ch)
+        if x <= cell < x + width:
+            return i
+        x += width
+    return None
+
+
+def _token_ending_at(row: str, cell: int) -> str:
+    """The hex/``0x``/``…`` run whose last character covers ``cell``."""
+    end = _char_at_cell(row, cell)
+    if end is None:
+        return ""
+    start = end
+    while start >= 0 and row[start] in _TOKEN_CHARS:
+        start -= 1
+    token = row[start + 1:end + 1]
+    return token[token.rfind("0x"):] if "0x" in token else token
+
+
+def _class_key(cls: type) -> str:
+    return f"{cls.__module__}.{cls.__qualname__}"
 
 
 def test_the_payload_walker_finds_addresses_in_every_shape():
@@ -73,56 +217,160 @@ def test_the_payload_walker_finds_addresses_in_every_shape():
     class Model:
         def __init__(self) -> None:
             self.owner = "0x" + "b" * 40
+            self.hook = lambda: "0x" + "9" * 40
 
-    tx = "0x" + "c" * 64
+    deep: list = ["0x" + "7" * 40]
+    for _ in range(5000):
+        deep = [deep]
+
     value = {
         "whole": "0x" + "a" * 40,
         "row": Row("0x" + "d" * 40),
         "model": Model(),
         ("0x" + "e" * 40): 1,
         "prose": ["new contract 0x" + "f" * 40 + " · deployer"],
-        "tx": tx,
+        "tx": "0x" + "c" * 64,
+        "cls": Model,
+        "module": types,
+        "deep": deep,
     }
-    assert _addresses_in(value) == {"0x" + c * 40 for c in "abdef"}
+    assert _addresses_in(value) == {"0x" + c * 40 for c in "abdef7"}
+    assert _hashes_in(value) == {"0x" + "c" * 64}
+
+
+def test_the_token_reader_finds_what_precedes_an_icon():
+    row = "  1  0xabcd…ef01 ⧉  DEGEN ⧉  " + "0x" + "a" * 40 + " ⧉"
+    assert _token_ending_at(row, row.index("⧉") - 2) == "0xabcd…ef01"
+    # a label-backed icon: the cell before the space is a letter, so no token
+    assert _token_ending_at(row, row.index("DEGEN") + 4) == ""
+    assert _token_ending_at(row, len(row) - 3) == "0x" + "a" * 40
+    wide = "名前 0xabcd…ef01 ⧉"
+    assert _token_ending_at(wide, cell_len(wide) - 3) == "0xabcd…ef01"
+
+
+def test_a_label_is_checked_against_the_record_that_holds_the_address():
+    a, b = "0x" + "1" * 40, "0x" + "2" * 40
+    index = _LabelIndex({"rows": [{"address": a, "name": "whiskers"}, {"address": b, "name": ""}]})
+    assert not index.contradicts("whiskers", a)
+    assert index.contradicts("whiskers", b)
+    assert not index.contradicts("unheard-of", b), "a label the payload never carries is not evidence"
+    assert not index.contradicts("--", b)
+    row = "  2     Art Blocks ⧉   ♛1   whiske… ⧉"
+    assert _label_before(row, row.index("⧉")) == "Art Blocks"
+    assert _label_before(row, row.rindex("⧉")) == "whiske"
+
+
+def test_the_exemptions_name_real_helper_using_classes():
+    import importlib
+
+    for key, reason in EXEMPT.items():
+        module_name, _, qualname = key.rpartition(".")
+        cls = getattr(importlib.import_module(module_name), qualname)
+        assert isinstance(cls, type), key
+        assert imports_helper(module_name), (key, "does not import the helper; drop the exemption")
+        assert reason.strip(), key
+
+
+async def _enter(view, app, pilot) -> None:
+    if callable(view):
+        await view(app, pilot)
+    else:
+        for key in view:
+            await pilot.press(key)
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c.name for c in CASES])
 async def test_every_rendered_address_carries_an_icon_that_copies_it(case):
-    in_payload = _addresses_in(case.payload())
+    served = case.payload()
+    in_payload = _addresses_in(served)
+    hashes = _hashes_in(served)
+    labels = _LabelIndex(served)
     seeded = {a.lower() for a in case.seeded}
-    assert seeded <= in_payload, (case.name, "a seeded address is not in the payload", seeded - in_payload)
-    copied_somewhere: set[str] = set()
+    problems: list[tuple] = []
+    if not seeded <= in_payload:
+        problems.append(("a seeded address is not in the payload", sorted(seeded - in_payload)))
 
-    for keys in case.views:
+    copied_somewhere: set[str] = set()
+    mounted: dict[str, str] = {}
+    covered: set[str] = set()
+
+    for view in case.views:
+        label = view_name(view)
         app = case.build()
         async with app.run_test(size=SIZE) as pilot:
             await pilot.pause()
-            for key in keys:
-                await pilot.press(key)
+            await _enter(view, app, pilot)
             await pilot.pause()
             await pilot.pause()
             targets = icon_targets(app)
             rows = _rows(app)
+            for widget in app.screen.walk_children(with_self=True):
+                key = _class_key(type(widget))
+                if imports_helper(type(widget).__module__):
+                    mounted.setdefault(key, label)
 
             if case.address_free:
-                assert not targets, (case.name, keys, "icon on an address-free dashboard")
-                assert not any(PROSE_ADDRESS_RE.search(r) for r in rows), (case.name, keys)
+                if targets:
+                    problems.append((label, "icon on an address-free dashboard", targets[:3]))
+                for y, row in enumerate(rows):
+                    for m in list(PROSE_ADDRESS_RE.finditer(row)) + list(SHORT_TOKEN_RE.finditer(row)):
+                        problems.append((label, y, m.group(0), "address on an address-free dashboard"))
                 continue
 
+            by_cell = {(x, y): a for x, y, a in targets}
             for x, y, address in targets:
-                assert address is not None and is_address(address), (case.name, keys, x, y)
-                assert address.lower() in in_payload, (
-                    case.name, keys, address, "icon copies an address the payload does not hold")
+                if address is None or not ADDRESS_RE.fullmatch(address):
+                    problems.append((label, x, y, "icon whose action is not a well-formed copy"))
+                    continue
+                if address.lower() not in in_payload:
+                    problems.append((label, x, y, address, "icon copies an address the payload does not hold"))
+                token = _token_ending_at(rows[y], x - 2)
+                if ADDRESS_RE.fullmatch(token):
+                    if token.lower() != address.lower():
+                        problems.append((label, x, y, token, address, "icon copies a different address than the one before it"))
+                elif (window := _WINDOW_RE.fullmatch(token)) is not None:
+                    if not _window_matches(window.group(1), window.group(2), address):
+                        problems.append((label, x, y, token, address, "icon copies a different address than the window before it"))
+                else:
+                    shown = _label_before(rows[y], x)
+                    if labels.contradicts(shown, address):
+                        problems.append((label, x, y, shown, address, "label-backed icon copies an address whose record does not carry that label"))
+                try:
+                    widget, _ = app.screen.get_widget_at(x, y)
+                except Exception:
+                    problems.append((label, x, y, "no widget under an icon"))
+                    continue
+                for node in widget.ancestors_with_self:
+                    covered.add(_class_key(type(node)))
             copied_somewhere.update(a.lower() for _, _, a in targets if a)
 
-            # every full address printed on screen has its own icon right after it
-            by_cell = {(x, y): a for x, y, a in targets}
             for y, row in enumerate(rows):
+                # every whole address printed on screen has its own icon right after it
                 for m in PROSE_ADDRESS_RE.finditer(row):
                     icon_x = cell_len(row[:m.end()]) + 1
-                    assert (by_cell.get((icon_x, y)) or "").lower() == m.group(0).lower(), (
-                        case.name, keys, y, m.group(0), "full address without its icon")
+                    if (by_cell.get((icon_x, y)) or "").lower() != m.group(0).lower():
+                        problems.append((label, y, m.group(0), "full address without its icon"))
+                # every shortened window of an address the screen was given has one too
+                for m in SHORT_TOKEN_RE.finditer(row):
+                    head, tail = m.group(1), m.group(2)
+                    candidates = {a for a in in_payload if _window_matches(head, tail, a)}
+                    if not candidates:
+                        continue
+                    copied = (by_cell.get((cell_len(row[:m.end()]) + 1, y)) or "").lower()
+                    if copied in candidates:
+                        continue
+                    if not copied and any(_window_matches(head, tail, h) for h in hashes):
+                        continue  # the same window is also a transaction hash's; hashes carry no icon
+                    problems.append((label, y, m.group(0), "shortened address without its icon"))
 
     if not case.address_free:
         missing = seeded - copied_somewhere
-        assert not missing, (case.name, "seeded addresses never got an icon in any view", missing)
+        if missing:
+            problems.append(("seeded addresses never got an icon in any view", sorted(missing)))
+        silent = sorted(k for k in mounted if k not in covered and k not in EXEMPT)
+        if silent:
+            problems.append(("helper-using widgets mounted but never produced an icon", silent))
+    elif mounted:
+        problems.append(("helper-using widgets mounted on an address-free dashboard", sorted(mounted)))
+
+    assert not problems, (case.name, problems)

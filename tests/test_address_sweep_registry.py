@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
-import ast
 import importlib
 import inspect
 import pathlib
-import pkgutil
+
+from textual.screen import Screen
 
 from maxpane_dashboard.screens.game_select import GAMES
+from tests.address_sweep.imports import imported_names, imports_helper, widget_modules_of
 from tests.address_sweep.registry import CASES
 
 SCREENS = pathlib.Path("maxpane_dashboard/screens")
-HELPER_MODULE = "maxpane_dashboard.widgets.address"
+
+#: Screen modules that are not dashboards, by explicit name, so a new module is
+#: a dashboard (and needs a SweepCase) unless someone adds it here on purpose.
+NON_DASHBOARD_SCREEN_MODULES = (
+    "splash",        # the boot animation: no data, no manager
+    "game_select",   # the menu
+    "wallet_input",  # the address prompt; what it echoes back is the user's own input
+)
 
 #: The hidden screens the app still installs (``app.py``); GAMES lists only the
 #: visible ones, so these are named here and checked against the app's source.
@@ -24,36 +32,32 @@ def _game_id(entry) -> str:
     return entry[1]
 
 
-def _composes_status_bar(cls: ast.ClassDef) -> bool:
-    for node in ast.walk(cls):
-        if isinstance(node, ast.Yield) and isinstance(node.value, ast.Call):
-            func = node.value.func
-            if isinstance(func, ast.Name) and func.id == "StatusBar":
-                return True
-    return False
-
-
-def _status_bar_screen_classes() -> set[str]:
-    """Screen classes that compose a StatusBar themselves: every dashboard, hidden or not."""
-    names = set()
-    for path in SCREENS.glob("*.py"):
-        src = path.read_text()
-        if "yield StatusBar" not in src:
+def _dashboard_screen_classes() -> set[type]:
+    classes: set[type] = set()
+    for path in sorted(SCREENS.glob("*.py")):
+        if path.stem == "__init__" or path.stem in NON_DASHBOARD_SCREEN_MODULES:
             continue
-        for node in ast.walk(ast.parse(src)):
-            if isinstance(node, ast.ClassDef) and node.name.endswith("Screen") and _composes_status_bar(node):
-                names.add(node.name)
-    return names
+        module = importlib.import_module(f"maxpane_dashboard.screens.{path.stem}")
+        for _, cls in inspect.getmembers(module, inspect.isclass):
+            if cls.__module__ == module.__name__ and issubclass(cls, Screen):
+                classes.add(cls)
+    return classes
 
 
 def test_the_screen_scan_finds_the_dashboards():
-    assert len(_status_bar_screen_classes()) >= 14
+    assert len(_dashboard_screen_classes()) >= 14
+    for stem in NON_DASHBOARD_SCREEN_MODULES:
+        assert (SCREENS / f"{stem}.py").exists(), (stem, "is gone; drop it from the tuple")
 
 
 def test_every_dashboard_screen_has_a_sweep_case():
-    registered = {c.screen_class.__name__ for c in CASES}
-    assert registered == _status_bar_screen_classes(), (
-        "a screen composes a StatusBar with no SweepCase, or a case names a screen that is gone")
+    registered = {c.screen_class for c in CASES}
+    discovered = _dashboard_screen_classes()
+    assert registered == discovered, (
+        "a dashboard screen has no SweepCase, or a case names a screen that is gone",
+        sorted(c.__name__ for c in discovered - registered),
+        sorted(c.__name__ for c in registered - discovered),
+    )
 
 
 def test_every_games_entry_is_covered():
@@ -80,13 +84,29 @@ def test_an_address_rendering_case_seeds_at_least_one_address():
     assert not empty, empty
 
 
-def _module_names(package: str) -> list[str]:
-    """``package`` and every module under it; a plain module is just itself."""
-    pkg = importlib.import_module(package)
-    names = [package]
-    if hasattr(pkg, "__path__"):
-        names += [m.name for m in pkgutil.walk_packages(pkg.__path__, prefix=package + ".")]
-    return names
+# -- the address-free agreement, on derived widget modules ----------------------------
+
+
+def test_the_import_resolver_sees_every_import_form():
+    helper = "maxpane_dashboard.widgets.address"
+    forms = [
+        ("from maxpane_dashboard.widgets.address import address_text\n", "maxpane_dashboard.widgets.x", False),
+        ("import maxpane_dashboard.widgets.address\n", "maxpane_dashboard.screens.x", False),
+        ("from maxpane_dashboard.widgets import address\n", "maxpane_dashboard.screens.x", False),
+        ("from ..address import address_text\n", "maxpane_dashboard.widgets.surf.x", False),
+        ("from .. import address\n", "maxpane_dashboard.widgets.surf.x", False),
+        ("from . import address\n", "maxpane_dashboard.widgets.x", False),
+        ("from .address import short_hex\n", "maxpane_dashboard.widgets", True),
+    ]
+    for source, module, is_package in forms:
+        assert helper in imported_names(source, module, is_package), source
+    assert helper not in imported_names(
+        "from maxpane_dashboard.widgets.address_book import x\n", "maxpane_dashboard.widgets.x")
+
+
+def test_every_case_derives_its_widget_modules():
+    for case in CASES:
+        assert widget_modules_of(case.screen_class.__module__), case.name
 
 
 def test_a_dashboard_whose_widgets_use_the_helper_cannot_be_address_free():
@@ -94,18 +114,8 @@ def test_a_dashboard_whose_widgets_use_the_helper_cannot_be_address_free():
     for case in CASES:
         if not case.address_free:
             continue
-        modules = [case.screen_class.__module__]
-        for package in case.widget_packages:
-            modules += _module_names(package)
-        for name in modules:
-            src = pathlib.Path(inspect.getfile(importlib.import_module(name))).read_text()
-            if HELPER_MODULE in src:
+        screen_module = case.screen_class.__module__
+        for name in sorted({screen_module} | widget_modules_of(screen_module)):
+            if imports_helper(name):
                 wrong.append((case.name, name))
     assert not wrong, wrong
-
-
-def test_every_case_names_widget_packages_that_exist():
-    for case in CASES:
-        assert case.widget_packages, case.name
-        for package in case.widget_packages:
-            importlib.import_module(package)

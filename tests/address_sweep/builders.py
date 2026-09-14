@@ -138,8 +138,58 @@ SURF_SEEDED: tuple[str, ...] = (
 # -- curator -------------------------------------------------------------------
 
 
+#: The custom NFT collection the filter-editor view types in: an address the
+#: screen is given by the reader, not by the manager.
+_CURATOR_NFT = "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e"
+
+
+#: The savior of a judged hour (CLOSEST CALLS, under ``h``): GRACE has judged
+#: no hour yet, so its board is empty and a row is seeded.
+_CURATOR_SAVIOR = "0x1d0f6bb2d4b4ce7f0d0a4e5c2a4b6f3e8e5c9a71"
+#: The first CLEANED row of the committed worst-case analysis slice.
+_CURATOR_CLEAN = "0x2fe4093c894749e596f458764c377bf4f1337b58"
+
+
 def _curator_payload() -> dict:
-    return _curator._frozen_payload()
+    """GRACE plus the wallet fields and the analysis slot (clean rows included).
+
+    GRACE's leaderboard rows carry no join order, so every join-order filter
+    (preset ``1``, first 1000 wallets) would match nothing; each row gets its
+    rank as ``first_index`` and hour 0 as ``first_hour``.
+    """
+    payload = _curator._analysis_payload()
+    payload["leaderboard_rows"] = [
+        {**row, "first_index": row.get("rank", i), "first_hour": 0}
+        for i, row in enumerate(payload["leaderboard_rows"], start=1)
+    ]
+    payload["closest_call_rows"] = [
+        {"hour": 2, "volume_eth": 12.5, "margin_eth": 0.25,
+         "savior": _CURATOR_SAVIOR, "savior_name": None},
+    ]
+    payload["closest_call_margin_eth"] = 0.25
+    payload["closest_call_hour"] = 2
+    return payload
+
+
+def _curator_served() -> dict:
+    return {**_curator_payload(), "_typed_nft_collection_address": _CURATOR_NFT}
+
+
+async def curator_analysis(app, pilot) -> None:
+    """The analysis body: no key is bound to it, so call the action."""
+    app.screen.action_toggle_analysis()
+
+
+async def curator_filter_editor(app, pilot) -> None:
+    """``f`` with one custom NFT collection added through the editor's own controls."""
+    await pilot.press("f")
+    await pilot.pause()
+    editor = app.screen.query_one(_curator.CuratorListFilterEditor)
+    editor.query_one("#filter-nft-chain", _curator.Select).value = "ethereum"
+    editor.query_one("#filter-nft-address", _curator.Input).value = _CURATOR_NFT
+    await pilot.pause()
+    await pilot.click("#filter-nft-add")
+    await pilot.pause()
 
 
 def _curator_app() -> App:
@@ -159,6 +209,9 @@ CURATOR_SEEDED: tuple[str, ...] = (
     "0x5d13fd37e8758030a6a10857c0cb699b2bff7a83",  # list: RAW record table rank 2, full
     "0xf80f4a11eeab430aa02f87d49a6db32c90d00194",  # h: ACTIVITY depositor, shortened
     "0xad468e8336182e2cec7022f3434f91227c33a723",  # h: SIGNALS whale wallet, shortened
+    _CURATOR_SAVIOR,                                # h: CLOSEST CALLS savior, shortened
+    _CURATOR_CLEAN,                                 # c: CLEANED list / analysis CLEANED LIST, full or shortened
+    _CURATOR_NFT,                                   # f: filter editor's selected custom collection
 )
 
 
@@ -495,19 +548,20 @@ CASES: tuple[SweepCase, ...] = (
         payload=_surf_payload,
         views=((), ("l",), ("p",), ("4",)),
         seeded=SURF_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.surf",),
     ),
     SweepCase(
         name="curator",
         screen_class=CuratorScreen,
         build=_curator_app,
-        payload=_curator_payload,
-        # The body opens on the record list; ``c`` rotates it, ``h`` is the
-        # history dashboard (``c`` swaps its panel there), ``y`` the wallet.
-        # No key reaches the analysis body: nothing binds toggle_analysis.
-        views=((), ("c",), ("h",), ("h", "c"), ("y",)),
+        payload=_curator_served,
+        # The body opens on the RAW record list; ``c`` rotates it to CLEANED,
+        # preset ``1`` applies a filter (FILTERED), ``h`` is the history
+        # dashboard (``c`` swaps its panel there), ``y`` the wallet. No key
+        # reaches the analysis body (nothing binds toggle_analysis), so a view
+        # coroutine calls the action; another types a collection into ``f``.
+        views=((), ("c",), ("1",), ("h",), ("h", "c"), ("y",),
+               curator_analysis, curator_filter_editor),
         seeded=CURATOR_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.curator",),
     ),
     SweepCase(
         name="fwa",
@@ -516,7 +570,6 @@ CASES: tuple[SweepCase, ...] = (
         payload=_fwa_payload,
         views=((), ("c",)),
         seeded=FWA_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.fwa",),
     ),
     SweepCase(
         name="base",
@@ -524,7 +577,6 @@ CASES: tuple[SweepCase, ...] = (
         build=_base_app,
         payload=_base_payload,
         seeded=BASE_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.base",),
     ),
     SweepCase(
         name="frenpet",
@@ -532,7 +584,6 @@ CASES: tuple[SweepCase, ...] = (
         build=_frenpet_app,
         payload=_frenpet_served,
         address_free=True,
-        widget_packages=("maxpane_dashboard.widgets.frenpet",),
     ),
     SweepCase(
         name="frenpet_full",
@@ -541,7 +592,6 @@ CASES: tuple[SweepCase, ...] = (
         payload=_frenpet_served,
         views=((), ("2",), ("3",), ("4",)),
         seeded=FRENPET_FULL_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.frenpet",),
     ),
     SweepCase(
         name="frenpet_wallet",
@@ -549,7 +599,6 @@ CASES: tuple[SweepCase, ...] = (
         build=_frenpet_wallet_app,
         payload=_frenpet_served,
         seeded=FRENPET_WALLET_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.frenpet",),
     ),
     SweepCase(
         name="frenpet_perf",
@@ -557,7 +606,6 @@ CASES: tuple[SweepCase, ...] = (
         build=_frenpet_perf_app,
         payload=_frenpet_served,
         seeded=FRENPET_PERF_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.frenpet",),
     ),
     SweepCase(
         name="cattown",
@@ -565,7 +613,6 @@ CASES: tuple[SweepCase, ...] = (
         build=_cattown_app,
         payload=_cattown_payload,
         seeded=CATTOWN_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.cattown",),
     ),
     SweepCase(
         name="ttt",
@@ -574,7 +621,6 @@ CASES: tuple[SweepCase, ...] = (
         payload=_ttt_payload,
         views=((), ("c",)),
         seeded=TTT_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.ttt",),
     ),
     SweepCase(
         name="talismans",
@@ -583,7 +629,6 @@ CASES: tuple[SweepCase, ...] = (
         payload=_talismans_payload,
         views=((), ("c",)),
         seeded=TALISMANS_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.talismans",),
     ),
     SweepCase(
         name="ocm",
@@ -591,7 +636,6 @@ CASES: tuple[SweepCase, ...] = (
         build=_ocm_app,
         payload=_ocm_payload,
         seeded=OCM_SEEDED,
-        widget_packages=("maxpane_dashboard.widgets.ocm",),
     ),
     SweepCase(
         name="dota",
@@ -599,7 +643,6 @@ CASES: tuple[SweepCase, ...] = (
         build=_dota_app,
         payload=_dota_payload,
         address_free=True,
-        widget_packages=("maxpane_dashboard.widgets.dota",),
     ),
     SweepCase(
         name="bakery",
@@ -607,13 +650,5 @@ CASES: tuple[SweepCase, ...] = (
         build=_bakery_app,
         payload=_bakery_payload,
         seeded=BAKERY_SEEDED,
-        widget_packages=(
-            "maxpane_dashboard.widgets.activity_feed",
-            "maxpane_dashboard.widgets.leaderboard",
-            "maxpane_dashboard.widgets.hero_metrics",
-            "maxpane_dashboard.widgets.cookie_chart",
-            "maxpane_dashboard.widgets.signals_panel",
-            "maxpane_dashboard.widgets.ev_table",
-        ),
     ),
 )
