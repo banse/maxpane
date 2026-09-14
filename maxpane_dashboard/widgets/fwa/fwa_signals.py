@@ -52,7 +52,13 @@ from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from maxpane_dashboard.widgets.address import address_prose, short_hex
+from maxpane_dashboard.widgets.address import (
+    ICON_COLS,
+    MIN_SHORT_COLS,
+    PROSE_ADDRESS_RE,
+    address_text,
+    short_hex,
+)
 from maxpane_dashboard.widgets.markup_safety import visible_len as _visible_len
 from textual.widgets import Static
 
@@ -83,17 +89,29 @@ _NEGATIVE_COUNTDOWN = re.compile(r"[-−]\s*\d")
 #: A bytes32-shaped hex run inside a PARAM DRIFT value -- hex boundaries on
 #: both sides, the same rule ``widgets/address.py``'s own
 #: ``PROSE_ADDRESS_RE`` uses, so a shortened run can never eat into an
-#: adjacent, unrelated hex digit. Matched *before* ``address_prose`` runs:
-#: once shortened it no longer contains an unbroken 40-hex substring, so
-#: ``address_prose`` cannot mistake it for an address afterward.
+#: adjacent, unrelated hex digit. Matched, and shortened, *before* any
+#: address windowing runs: once shortened it no longer contains an unbroken
+#: 40-hex substring, so it can never be mistaken for an address afterward.
 _BYTES32_RE = re.compile(r"(?<![0-9a-fA-F])0x[0-9a-fA-F]{64}(?![0-9a-fA-F])")
 
-#: Cells a shortened bytes32 value gets -- the anti-poisoning window's own
-#: 17-cell form (8 head / 6 tail; PRD §3.2's own worked example). Not a
-#: layout pin: this row is CSS ``nowrap`` + ``text-overflow: ellipsis`` like
-#: every other row in this panel (module docstring, "Width behaviour"), so
-#: the shortening exists to keep one 66-character token from dominating the
-#: row ahead of that ellipsis, not to satisfy a fixed column.
+#: Cells a shortened bytes32 value gets, and the *default* an address gets
+#: too before this row's real width narrows it further -- the anti-poisoning
+#: window's own 17-cell form (8 head / 6 tail; PRD §3.2's own worked
+#: example).
+_DEFAULT_ADDRESS_COLS = 17
+
+#: Cells a shortened bytes32 value gets. Not a layout pin: this row is CSS
+#: ``nowrap`` + ``text-overflow: ellipsis`` like every other row in this
+#: panel (module docstring, "Width behaviour"), so the shortening exists to
+#: keep one 66-character token from dominating the row ahead of that
+#: ellipsis, not to satisfy a fixed column. An address gets no such free
+#: pass -- see :func:`_fmt_drift`: on the real screen, inside the real rail,
+#: a row this long is cropped by the CSS ellipsis *before* the icon at the
+#: end of it, at 143, 170 and 200 columns, and the icon only survives at
+#: 240 (measured, not estimated --
+#: ``tests/screens/test_address_icons_everywhere.py``'s FWA sweep is what
+#: caught it). So the address itself is windowed to whatever the row can
+#: actually afford, never left to the ellipsis to solve.
 _BYTES32_COLS = 17
 
 #: Fallback when the app's own theme is unavailable (not yet mounted, or a
@@ -122,7 +140,29 @@ def _resolve_color(color: str, colors: dict[str, str] | None) -> str:
     return _TOKEN_FALLBACK.get(name, "white")
 
 
-def _fmt_drift(sig: dict | None, colors: dict[str, str] | None) -> Text | str:
+def _address_window(available: int, non_address_cols: int, count: int) -> int:
+    """How many cells each address in this row gets to show.
+
+    ``available`` is the row's real cell budget (0 means "not laid out
+    yet"), ``non_address_cols`` is everything in the value that is *not*
+    one of the ``count`` addresses being windowed (the indicator, the
+    surrounding prose, and every address's own :data:`ICON_COLS`).
+    :data:`_DEFAULT_ADDRESS_COLS` (17) is the ceiling and
+    :data:`MIN_SHORT_COLS` (11) is the floor -- narrower only when the rail
+    genuinely has less room, never below the floor: a row that still does
+    not fit at the floor is left to the panel's own CSS
+    ``text-overflow: ellipsis`` to crop, exactly like every other row here
+    when its own content overruns.
+    """
+    if available <= 0 or count <= 0:
+        return _DEFAULT_ADDRESS_COLS
+    per_address = (available - non_address_cols - ICON_COLS * count) // count
+    return max(min(per_address, _DEFAULT_ADDRESS_COLS), MIN_SHORT_COLS)
+
+
+def _fmt_drift(
+    sig: dict | None, colors: dict[str, str] | None, available: int = 0
+) -> Text | str:
     """The PARAM DRIFT row, built as ``Text``.
 
     Unlike the other five rows this one can carry a config value that is a
@@ -130,11 +170,18 @@ def _fmt_drift(sig: dict | None, colors: dict[str, str] | None) -> Text | str:
     ``_fmt_config_value`` publishes both unshortened (PRD §6), and this is
     the widget that composes them:
 
-    * An **address** (a 40-hex run with hex boundaries on both sides) gets
-      the copy icon via :func:`~maxpane_dashboard.widgets.address.
-      address_prose` -- the same helper surf's announce feed uses for
-      exactly this "address inside prose" shape. Its boundary rule is also
-      what keeps it from ever mistaking a bytes32 run for one.
+    * An **address** (a 40-hex run with hex boundaries on both sides) is
+      windowed to :func:`_address_window`'s cells and given the copy icon,
+      via :func:`~maxpane_dashboard.widgets.address.address_text` called on
+      just the matched substring -- never
+      :func:`~maxpane_dashboard.widgets.address.address_prose`, which has no
+      ``width`` parameter and always shows the whole address: on the real
+      screen that address+icon unit is exactly what a narrow row's CSS
+      ellipsis crops first (the icon sits at the very end of it), which is
+      the defect this function exists to close. ``address_text``'s own
+      ``is_address`` check runs on the *unshortened* match, so the icon
+      still copies the real, full address regardless of how narrow the
+      displayed window is.
     * A **bytes32** value (64 hex) is shortened first with
       :func:`~maxpane_dashboard.widgets.address.short_hex` and gets **no**
       icon -- it is not a wallet or contract address, the same treatment a
@@ -156,6 +203,8 @@ def _fmt_drift(sig: dict | None, colors: dict[str, str] | None) -> Text | str:
     fg = _resolve_color(sig.get("color") or "dim", colors)
     indicator = sig.get("indicator") or "●"
 
+    # Bytes32 first: once shortened it no longer contains an unbroken
+    # 40-hex run, so the address pass below can never mistake it for one.
     shortened = _BYTES32_RE.sub(
         lambda m: short_hex(m.group(0), _BYTES32_COLS), value
     )
@@ -163,10 +212,33 @@ def _fmt_drift(sig: dict | None, colors: dict[str, str] | None) -> Text | str:
     # Same spacing and colour split as `_fmt_signal`'s
     # ``"  [{color}]{indicator}[/] [{color}]{value}[/]"``: the two leading
     # spaces are uncoloured, the indicator and the value each carry `fg`.
-    line = Text("  ")
-    line.append(indicator, style=fg)
-    line.append(" ")
-    line.append_text(address_prose(shortened, style=fg))
+    prefix = Text("  ")
+    prefix.append(indicator, style=fg)
+    prefix.append(" ")
+
+    matches = list(PROSE_ADDRESS_RE.finditer(shortened))
+    if not matches:
+        line = prefix
+        line.append(shortened, style=fg)
+        return line
+
+    row_overhead = cell_len(prefix.plain)
+    non_address_cols = cell_len(shortened) - sum(
+        cell_len(m.group(0)) for m in matches
+    )
+    address_budget = max(available - row_overhead, 0) if available else 0
+    width = _address_window(address_budget, non_address_cols, len(matches))
+
+    line = prefix
+    pos = 0
+    for match in matches:
+        if match.start() > pos:
+            line.append(shortened[pos:match.start()], style=fg)
+        cell = address_text(match.group(0), width=width, style=fg)
+        line.append_text(cell)
+        pos = match.end()
+    if pos < len(shortened):
+        line.append(shortened[pos:], style=fg)
     return line
 
 
@@ -319,18 +391,27 @@ class FWASignals(Vertical):
         # parsed by Textual's own ``$``-aware ``Content.from_markup``.
         colors = self._theme_colors()
 
+        # ``padding: 0 1`` on the body rows costs two columns. Computed
+        # *before* the rows tuple: PARAM DRIFT windows its own address(es)
+        # against this budget rather than relying on the panel's CSS
+        # ellipsis to crop the row afterward -- an ellipsis crop lands at
+        # the *end* of the row, which is exactly where the copy icon sits,
+        # so a row left unwindowed loses its icon on the real screen well
+        # before this panel's own "does it fit" marker would ever say so.
+        available = max(self.content_size.width - 2, 0)
+        clipped = False
+
         rows = (
             ("#fwa-sig-pool-temp", _fmt_pool_temp(payload.get("pool_temp_signal"))),
             ("#fwa-sig-sellback", _fmt_signal(payload.get("sellback_signal"))),
             ("#fwa-sig-buy-gate", _fmt_buy_gate(payload.get("buy_gate_signal"))),
             ("#fwa-sig-emissions", _fmt_emissions(payload.get("emissions_signal"))),
             ("#fwa-sig-vrf", _fmt_signal(payload.get("vrf_queue_signal"))),
-            ("#fwa-sig-drift", _fmt_drift(payload.get("param_drift_signal"), colors)),
+            (
+                "#fwa-sig-drift",
+                _fmt_drift(payload.get("param_drift_signal"), colors, available),
+            ),
         )
-
-        # ``padding: 0 1`` on the body rows costs two columns.
-        available = max(self.content_size.width - 2, 0)
-        clipped = False
 
         for selector, content in rows:
             text = content if content else blank
