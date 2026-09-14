@@ -29,6 +29,7 @@ from textual.widgets import DataTable, RichLog, Static
 
 from maxpane_dashboard.analytics import fwa_signals as _signals
 from maxpane_dashboard.data.fwa_models import FWA_WIDGET_SIGNATURES
+from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.fwa.fwa_activity_feed import (
     UNAVAILABLE_LINE,
     FWAActivityFeed,
@@ -346,7 +347,10 @@ async def test_activity_feed_line_count():
         # Outcome is spelled out, not only colour-coded.
         assert "sold back ($FWA)" in text
         assert "kept the NFT" in text
-        assert "Nakamigos #4471" in text
+        # The collection's copy icon now sits between the name and the token
+        # id (address_copy_PRD.md §1); proven against the exact string so
+        # this still fails if the name or the token id went missing.
+        assert "Nakamigos " + COPY_GLYPH + " #4471" in text
         assert "0.118 ETH" in text
 
 
@@ -386,8 +390,9 @@ async def test_activity_feed_unavailable_keeps_last_good_with_as_of_header():
         log = widget.query_one("#fwa-activity-log", RichLog)
         text = _log_text(log)
         assert UNAVAILABLE_LINE in text
-        # Last-good content is kept...
-        assert "Nakamigos #4471" in text
+        # Last-good content is kept, copy icon and all (see the line count
+        # test's comment for why the exact string still proves this)...
+        assert "Nakamigos " + COPY_GLYPH + " #4471" in text
         # ...and labelled as of a time, never presented as live.
         title = _static_text(widget.query_one("#fwa-feed-title", Static))
         assert "as of" in title
@@ -504,8 +509,12 @@ async def test_settlement_shares_sum_displayed_as_100():
         joined = "\n".join(cells)
         assert "100.00%" in joined
         assert "73.92%" in joined and "0.00%" in joined
-        # crown section: per-holder aggregation, 4 reigns for one wallet
-        assert "0xAAAA..1111" in joined
+        # crown section: per-holder aggregation, 4 reigns for one wallet.
+        # The old "0xAAAA..1111" was the private 6/4 cut this task retires;
+        # the new form is the anti-poisoning window (widgets/address.py)
+        # plus the copy icon -- still the same holder, still proven exactly,
+        # not loosened to a prefix that would pass on a truncated address.
+        assert "0xAAAA000000000000…001111 " + COPY_GLYPH in joined
         assert "33 sets" in joined and "12 paid" in joined and "91.096" in joined
         # The sell-back headline no longer lives here: it moved to the
         # SIGNALS panel, where the reader is already looking for statements
@@ -709,7 +718,7 @@ async def test_activity_feed_wide_keeps_collection_and_amount():
         widget.update_data(draw_events=_DRAW_EVENTS, feed_available=True)
         log = widget.query_one("#fwa-activity-log", RichLog)
         text = _log_text(log)
-        assert "drew Nakamigos #4471" in text
+        assert "drew Nakamigos " + COPY_GLYPH + " #4471" in text
         assert "0.118 ETH" in text
         title = _static_text(widget.query_one("#fwa-feed-title", Static))
         assert "widen" not in title

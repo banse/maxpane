@@ -35,6 +35,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.data.fwa_models import FWA_WIDGET_SIGNATURES
+from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.fwa.fwa_hero_metrics import FWAHeroMetrics
 from maxpane_dashboard.widgets.fwa.fwa_odds_board import (
     _NAME_WIDTH,
@@ -694,10 +695,15 @@ async def test_collection_column_grows_to_fit_the_names():
         table = widget.query_one(DataTable)
         rendered = [str(table.get_row_at(i)[1]) for i in range(table.row_count)]
 
-    assert "DRIP DROP // BY DAVE KRUGMAN" in rendered, (
+    # Every row now carries the copy icon after its name (address_copy_PRD.md
+    # §1: a name standing in for an address still gets the icon, which copies
+    # the address behind it) -- proven against the exact ``name + " " + icon``
+    # string rather than loosened to a substring, so this still fails if the
+    # name itself were truncated.
+    assert "DRIP DROP // BY DAVE KRUGMAN " + COPY_GLYPH in rendered, (
         f"a 28-character name was still elided: {rendered}"
     )
-    assert "Art Blocks Explorations" in rendered
+    assert "Art Blocks Explorations " + COPY_GLYPH in rendered
 
 
 @pytest.mark.asyncio
