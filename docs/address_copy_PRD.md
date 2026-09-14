@@ -1,6 +1,6 @@
 # PRD — a copy icon beside every 0x address
 
-**Status:** design approved 2026-09-14, not yet planned or built.
+**Status:** built; enforced by tests/test_address_rule.py, tests/screens/test_address_icons_everywhere.py and tests/test_address_sweep_registry.py.
 **Applies to:** every dashboard and view in `maxpane_dashboard/`, hidden ones included, and every
 dashboard written after this.
 

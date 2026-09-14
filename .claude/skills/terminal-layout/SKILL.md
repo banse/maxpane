@@ -231,6 +231,10 @@ deliberately and write down what it cost, which
 * **`DataTable.show_horizontal_scrollbar` is not a clipping signal** — it reads
   `True` several columns before any character is lost, so a marker keyed off it
   fires early and disagrees with the screen.
+* **An address costs `widgets/address.ICON_COLS` more than its text.** Every displayed 0x address
+  carries a copy icon. Where adding it would move a pin, the displayed address gives up the two
+  cells instead (`short_address`, window rule 8/6 at 17 cells), and the trade is recorded in the
+  pin's `#:` block together with its anti-poisoning cost.
 
 ## CSS lives in two places
 

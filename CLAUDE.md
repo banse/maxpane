@@ -634,6 +634,22 @@ finishes, so an older operation cannot erase the status of a newer one.
 a malformed name raises *outside* the screen's `try/except` and kills the app. Token symbols are
 attacker-controlled: anyone can deploy an ERC-20 named `[/x]`.
 
+**Every displayed 0x address carries a copy icon, and so does every name that stands in for one.**
+Render addresses only through `widgets/address.py`: `address_text` for an address or a name backed
+by one, `address_prose` for third-party text that may contain addresses, `short_hex` for any other
+hex such as a transaction hash (no icon). The icon is `⧉` with a Textual `@click` action on the glyph
+only, calling `app.copy_address`, which `copy_action.CopyAddressMixin` runs through
+`maxpane_dashboard/clipboard.py`: native tool first (`pbcopy`; Apple Terminal ignores the OSC 52 that
+`App.copy_to_clipboard` writes), OSC 52 second, and the status bar says `copied`, `unconfirmed` or
+`unavailable`, whichever is true. Validation is `fullmatch`, never `^…$`, because `$` accepts a
+trailing newline and the address is interpolated into an action string. The icon costs
+`ICON_COLS = 2`; a panel grows where it has slack and shortens its displayed address where a pin
+would move, and the window rule (8/6 at 17 cells) is surf's anti-poisoning form. **None of this is
+optional**: `tests/test_address_rule.py` fails on a private address formatter,
+`tests/screens/test_address_icons_everywhere.py` fails on an address that reaches the screen
+without its icon, and `tests/test_address_sweep_registry.py` fails on a dashboard the sweep does not
+render. No test may reach the real clipboard: `tests/conftest.py` replaces the runner suite-wide.
+
 **A widget that renders third-party text through `Static` hands it a pre-built
 `rich.text.Text`, never a markup string.** Same defect as the rule above, one layer out:
 `Static.update("…[/x]…")` does not parse anything at call time — Textual defers

@@ -281,8 +281,9 @@ last marker goes out at:
 | **≥ 143** | **nothing — full layout**, with one exception below |
 
 The table starts at 109 rather than running down to zero because narrower terminals light
-*more* markers, not the same ones: below 109 surf's `DEV ACTIVITY` marker changes wording
-to `‹ widen: time, kind, ETH` as the time and kind columns go too, and below 89 surf's
+*more* markers, not the same ones: below 113 surf's `DEV ACTIVITY` marker changes wording
+to `‹ widen: time, kind, ETH` as the time and kind columns go too (113, not 109 — the copy
+icon added two columns to the row's window cell, and the crossover moved with it), and below 89 surf's
 `IDENTITY.MD` runs out of room to name its shed field beside the title and falls back to a
 bare `‹ widen`. It stays bare down to 76; at 75–74 the stats row sheds `transfers/24h` as
 well, and the shorter wording that names both — `‹ widen: 24h /2000`, 18 columns against
@@ -365,6 +366,8 @@ the other, so a single manager owns the command.
 | `t` | Cycle theme |
 | `q` | Quit |
 
+Click ⧉ beside any address to copy it.
+
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
 LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard binds `l`** to swap
 the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
@@ -419,9 +422,11 @@ narrower, not the seam moving again. The announce feed lowered its own wrapping 
 to 71 columns, so it wraps posts from **142** instead of 151. The dev-activity panel was reserving
 12 columns for a wallet cell whose whole vocabulary is `dev` and `ops` and one column too few for
 its widest transaction kind, so it was both padded and cutting `fwa claim` mid-word; sizing both
-cells to what the data actually contains took the panel from 66 columns to 58 and it now clears
-from a 135-column terminal. That is why the table above no longer has a band where the dev-activity
-panel is the only thing still asking for width.
+cells to what the data actually contains took the panel from 66 columns to 58. The copy icon beside
+its unknown-counterparty address (`docs/address_copy_PRD.md`, 2026-09-14) then added its own two
+columns back, to 60, and moved where it clears from a 135-column terminal to a 139-column one. That
+is why the table above no longer has a band where the dev-activity panel is the only thing still
+asking for width — that band now ends two rows later than it used to.
 
 One honest caveat on the seam. 7:6 was measured when the feed needed 81 columns and the rail 71;
 they need 76 and 63 now, which a seam nearer 76:63 would collect at 139 rather than 142. The three
