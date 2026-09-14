@@ -17,23 +17,18 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.address import address_text
 
 _DASH = "--"
 
+#: display budget for the wallet address, excluding the icon -- the same
+#: 12-cell window the deleted ``_short_addr`` produced. The table's "WALLET"
+#: column is already 14 wide (recipe step 6, PRD §5): W(12) + ICON_COLS(2)
+#: fits inside it without moving the column width.
+_WALLET_COLS = 12
+
 
 # -- format helpers ----------------------------------------------------
-
-
-def _short_addr(addr) -> str:
-    """Render ``0xABCD..1234`` from a full address; dash if missing."""
-    if not addr:
-        return _DASH
-    s = str(addr).strip()
-    if not s:
-        return _DASH
-    if len(s) <= 11:
-        return s
-    return f"{s[:6]}..{s[-4:]}"
 
 
 def _fmt_int(value) -> str:
@@ -100,15 +95,19 @@ class TalismansLeaderboard(Vertical):
             if not isinstance(row, dict):
                 continue
             rank = row.get("rank", idx)
-            wallet = _short_addr(row.get("address"))
+            is_top = idx == 1
+            wallet = address_text(
+                row.get("address"),
+                width=_WALLET_COLS,
+                style="bold" if is_top else "",
+            )
             tokens = _fmt_int(row.get("tokens"))
             cores = _fmt_int(row.get("cores"))
             mythics = _fmt_int(row.get("mythics"))
 
             # Bold row 1
-            if idx == 1:
+            if is_top:
                 rank_str = f"[bold]{rank}[/]"
-                wallet = f"[bold]{wallet}[/]"
                 tokens = f"[bold]{tokens}[/]"
                 cores = f"[bold]{cores}[/]"
                 mythics = f"[bold]{mythics}[/]"

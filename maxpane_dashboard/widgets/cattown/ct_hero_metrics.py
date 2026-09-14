@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
 
-
-def _short_addr(address: str) -> str:
-    """Shorten a wallet address to 0xABCD..1234 format."""
-    if len(address) > 10:
-        return f"{address[:6]}..{address[-4:]}"
-    return address
+#: display budget for the leader name/address, excluding the icon -- the same
+#: 12-cell window the deleted ``_short_addr`` produced (recipe step 6, PRD §5).
+#: No pin binds this hero box.
+_LEADER_COLS = 12
 
 
 def _fmt_kibble(amount: float) -> str:
@@ -145,14 +144,19 @@ class CTHeroMetrics(Horizontal):
         fisher_box = self.query_one("#ct-hero-fisher", CTHeroBox)
         if top_fisher:
             display_name = top_fisher.get("display_name", "")
-            addr = _short_addr(top_fisher.get("address", ""))
-            name_str = safe_markup(display_name if display_name else addr)
             weight = top_fisher.get("weight_kg", 0.0)
-            fisher_box.update(
-                f"[dim]LEADER[/]\n\n"
-                f"[bold green]{name_str}[/]\n"
-                f"[dim]{weight:.1f}kg[/]"
-            )
+            body = Text()
+            body.append("LEADER", style="dim")
+            body.append("\n\n")
+            body.append_text(address_text(
+                top_fisher.get("address", ""),
+                label=display_name or None,
+                width=_LEADER_COLS,
+                style="bold green",
+            ))
+            body.append("\n")
+            body.append(f"{weight:.1f}kg", style="dim")
+            fisher_box.update(body)
         else:
             fisher_box.update(
                 "[dim]LEADER[/]\n\n"

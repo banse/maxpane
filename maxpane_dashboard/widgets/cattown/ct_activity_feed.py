@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
 
 
 _RARITY_COLORS = {
@@ -17,6 +18,11 @@ _RARITY_COLORS = {
     "Epic": "magenta",
     "Legendary": "yellow",
 }
+
+#: display budget for the fisher name/address, excluding the icon -- the same
+#: 12-cell window the deleted ``_short_addr`` produced. No pin binds this
+#: RichLog line; grown by ICON_COLS as in the recipe (PRD §5).
+_FISHER_COLS = 12
 
 
 def _format_event_time(timestamp: float | int | str) -> str:
@@ -29,35 +35,30 @@ def _format_event_time(timestamp: float | int | str) -> str:
         return "??:??"
 
 
-def _short_addr(address: str) -> str:
-    """Shorten a wallet address to 0xABCD..1234 format."""
-    if len(address) > 10:
-        return f"{address[:6]}..{address[-4:]}"
-    return address
-
-
-def _catch_to_markup(catch: dict) -> str:
-    """Convert a catch dict into a Rich-markup formatted line."""
+def _catch_to_text(catch: dict) -> Text:
+    """Convert a catch dict into a composited ``Text`` line."""
     ts = _format_event_time(catch.get("timestamp", 0))
     display_name = catch.get("display_name", "")
-    fisher = safe_markup(display_name if display_name else _short_addr(catch.get("fisher_address", "")))
-    species = safe_markup(catch.get("species", "Unknown"))
+    fisher = address_text(
+        catch.get("fisher_address", ""),
+        label=display_name or None,
+        width=_FISHER_COLS,
+        style="dim",
+    )
+    species = str(catch.get("species", "Unknown") or "Unknown")
     weight = catch.get("weight_kg", 0.0)
     event_type = catch.get("rarity", "fish")
 
+    line = Text()
+    line.append(f"  {ts}  ", style="dim")
+    line.append_text(fisher)
+    line.append("  ")
     if event_type == "treasure":
-        return (
-            f"  [dim]{ts}[/]  "
-            f"[dim]{fisher}[/]  "
-            f"[yellow]Found {species}[/]"
-        )
+        line.append(f"Found {species}", style="yellow")
     else:
         # Fish: show weight in kg
-        return (
-            f"  [dim]{ts}[/]  "
-            f"[dim]{fisher}[/]  "
-            f"[cyan]Caught {species} ({weight:.1f}kg)[/]"
-        )
+        line.append(f"Caught {species} ({weight:.1f}kg)", style="cyan")
+    return line
 
 
 class CTActivityFeed(Vertical):
@@ -117,7 +118,7 @@ class CTActivityFeed(Vertical):
         log.clear()
         log.auto_scroll = False
         for catch in recent_catches:
-            log.write(_catch_to_markup(catch))
+            log.write(_catch_to_text(catch))
 
         # Scroll to top after render
         self.call_after_refresh(log.scroll_home, animate=False)
