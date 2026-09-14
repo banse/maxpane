@@ -78,6 +78,36 @@ async def test_the_suite_cannot_reach_the_real_clipboard():
         await C._run(("pbcopy",), b"x")
 
 
+async def test_a_timeout_kills_and_reaps_the_child(monkeypatch):
+    """The real ``_run``: ``kill()`` alone can leave a zombie behind.
+
+    ``monkeypatch.undo()`` lifts the autouse guard on ``C._run`` for this
+    test only -- the guard fixture (``tests/conftest.py``) and this test
+    share one function-scoped ``monkeypatch`` instance, so undo() removes
+    exactly that one patch and nothing else's; the guard is back for every
+    other test via a fresh instance next call. Never invokes a real
+    clipboard tool: the command under test is ``sleep``, used only because
+    it reliably outlives a shrunk timeout.
+    """
+    monkeypatch.undo()  # lift the autouse patch on C._run, for this test only
+    monkeypatch.setattr(C, "NATIVE_TIMEOUT_S", 0.05)
+
+    procs = []
+    real_create = asyncio.create_subprocess_exec
+
+    async def capturing_create(*args, **kwargs):
+        proc = await real_create(*args, **kwargs)
+        procs.append(proc)
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", capturing_create)
+
+    with pytest.raises(asyncio.TimeoutError):
+        await C._run(("sleep", "5"), b"")
+
+    assert procs and procs[0].returncode is not None, "child was killed but never reaped"
+
+
 def test_the_messages_are_honest_and_contain_no_markup():
     messages = {
         C.COPIED: C.copy_message(C.COPIED, ADDR),

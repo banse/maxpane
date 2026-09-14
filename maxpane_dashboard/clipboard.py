@@ -49,6 +49,11 @@ async def _run(cmd: tuple[str, ...], data: bytes) -> int:
         await asyncio.wait_for(proc.communicate(data), NATIVE_TIMEOUT_S)
     except asyncio.TimeoutError:
         proc.kill()
+        # Reap the child: kill() only sends the signal, it does not wait for
+        # the process to actually exit, and an un-reaped child left behind on
+        # a long-lived process is a zombie / "subprocess is still running"
+        # warning waiting to happen the next time a native tool hangs.
+        await proc.wait()
         raise
     return proc.returncode if proc.returncode is not None else 1
 
