@@ -1657,6 +1657,66 @@ class Pool4Client(OwnedHttpClient):
         servable window is not something a shrink-only client can ever reach.
         See :data:`_LOG_MAX_PAGES` for the measurement.
         """
+        return await self._fetch_logs(
+            hook_addr, from_block, to_block, network=network,
+            label="fetch_flow_logs",
+        )
+
+    async def fetch_swap_logs(
+        self,
+        pool_manager: str,
+        pool_id: str,
+        from_block: int,
+        to_block: int,
+        *,
+        network: str,
+    ) -> list[dict] | None:
+        """The PoolManager's ``Swap`` logs for ONE pool, raw, or ``None``.
+
+        The row source for POOL4 FLOW (2026-09-14).  The hook's own logs
+        cannot supply it: ``Swap`` is emitted by the PoolManager, and what the
+        hook emits beside a swap depends on the burn state -- with headroom
+        under the cap a swap leaves nothing but a bare ``FeeCollected``, which
+        names neither a side nor a size.  Filtered ``[TOPIC_SWAP, pool_id]``,
+        so it is this one pool's swaps and nothing else the singleton handles.
+
+        **Same pool, same paging, same classification** as
+        :meth:`fetch_flow_logs`: both go through :meth:`_fetch_logs`, so the
+        window budget, the halving ladder, the not-about-this-request rotation
+        and the partial-sweep-is-``None`` rule are one implementation, and the
+        next fix to any of them reaches this read too.  A second copy of that
+        loop is what this method exists not to be.
+
+        A malformed ``pool_id`` is ``None`` with no I/O: a topic filter built
+        from it would match nothing, and ``[]`` would be the affirmative claim
+        "this pool did not trade".
+        """
+        raw = str(pool_id or "")
+        body = raw[2:] if raw[:2].lower() == "0x" else ""
+        if len(body) != 64 or any(c not in "0123456789abcdefABCDEF" for c in body):
+            logger.warning("fetch_swap_logs: malformed pool id %r", pool_id)
+            return None
+        return await self._fetch_logs(
+            pool_manager, from_block, to_block, network=network,
+            topics=[P.TOPIC_SWAP, "0x" + body.lower()],
+            label="fetch_swap_logs",
+        )
+
+    async def _fetch_logs(
+        self,
+        address: str,
+        from_block: int,
+        to_block: int,
+        *,
+        network: str,
+        topics: list[str] | None = None,
+        label: str,
+    ) -> list[dict] | None:
+        """The one log-sweep loop: budgeted window, bounded halving, ``None``.
+
+        Shared by :meth:`fetch_flow_logs` and :meth:`fetch_swap_logs`; the
+        docstring of the former carries the reasoning for every rule here.
+        """
         if to_block < from_block:
             return []
         span = to_block - from_block + 1
@@ -1668,56 +1728,63 @@ class Pool4Client(OwnedHttpClient):
         for _shrink in range(_LOG_MAX_SHRINKS + 1):
             try:
                 return await self._sweep(
-                    network, hook_addr, from_block, to_block, window
+                    network, address, from_block, to_block, window, topics
                 )
             except Pool4LogRangeError as exc:
                 narrower = max(_LOG_MIN_WINDOW, window // 2)
                 if narrower >= window:
                     logger.warning(
-                        "fetch_flow_logs: window %s is already minimal: %s",
-                        window, exc,
+                        "%s: window %s is already minimal: %s",
+                        label, window, exc,
                     )
                     return None
                 logger.info(
-                    "fetch_flow_logs: halving window %s -> %s (%s)",
-                    window, narrower, exc,
+                    "%s: halving window %s -> %s (%s)",
+                    label, window, narrower, exc,
                 )
                 window = narrower
             except RuntimeError as exc:
-                logger.warning("fetch_flow_logs: %s", exc)
+                logger.warning("%s: %s", label, exc)
                 return None
             except ValueError as exc:  # unknown network
-                logger.warning("fetch_flow_logs: %s", exc)
+                logger.warning("%s: %s", label, exc)
                 return None
-        logger.warning("fetch_flow_logs: gave up after %s shrinks", _LOG_MAX_SHRINKS)
+        logger.warning("%s: gave up after %s shrinks", label, _LOG_MAX_SHRINKS)
         return None
 
     async def _sweep(
         self,
         network: str,
-        hook_addr: str,
+        address: str,
         from_block: int,
         to_block: int,
         window: int,
+        topics: list[str] | None = None,
     ) -> list[dict]:
         """Page ``[from_block, to_block]`` in *window*-sized chunks.
 
         Raises :class:`Pool4LogRangeError` straight up so the caller can halve
         and start over; a half-collected page set is thrown away rather than
         returned, for the reason :meth:`fetch_flow_logs` gives.
+
+        ``topics`` is added to the filter only when given, so a hook sweep
+        sends byte-for-byte the filter it always has.
         """
         out: list[dict] = []
         start = from_block
         while start <= to_block:
             end = min(start + window - 1, to_block)
+            flt: dict[str, Any] = {
+                "address": address,
+                "fromBlock": hex(start),
+                "toBlock": hex(end),
+            }
+            if topics is not None:
+                flt["topics"] = list(topics)
             result = await self._rpc_logs(
                 network,
                 "eth_getLogs",
-                [{
-                    "address": hook_addr,
-                    "fromBlock": hex(start),
-                    "toBlock": hex(end),
-                }],
+                [flt],
                 # The span of THIS page, not of the whole sweep: it is what a
                 # provider's range complaint has to be measured against.
                 requested_span=end - start + 1,
@@ -1737,19 +1804,28 @@ class Pool4Client(OwnedHttpClient):
         to_block: int,
         *,
         network: str,
+        pool_manager: str,
+        pool_id: str,
     ) -> list[Pool4FlowEvent] | None:
-        """:meth:`fetch_flow_logs` through WP3's decoder.
+        """Both reads -- the pool's ``Swap`` logs and the hook's -- decoded.
 
-        ``None`` propagates as ``None`` — decoding a failed read into ``[]``
-        would turn "the log endpoints are down" into "nothing traded", which is
-        the FARM/HOUR-SAVED defect this repo has already shipped once.
+        One row per swap, joined to the hook's fee and burn legs, by
+        :func:`~surf_pool4.decode_flow_events`.  Every row this returns, uncapped.
+
+        ``None`` propagates as ``None`` from **either** read — decoding a failed
+        read into ``[]`` would turn "the log endpoints are down" into "nothing
+        traded", which is the FARM/HOUR-SAVED defect this repo has already
+        shipped once.
         """
         logs = await self.fetch_flow_logs(
             hook_addr, from_block, to_block, network=network
         )
         if logs is None:
             return None
-        return P.decode_flow_events(logs)
+        swaps = await self.fetch_swap_logs(
+            pool_manager, pool_id, from_block, to_block, network=network
+        )
+        return P.decode_flow_events(swaps=swaps, hook_logs=logs, limit=None)
 
 
 # ---------------------------------------------------------------------------

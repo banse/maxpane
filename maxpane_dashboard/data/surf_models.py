@@ -1084,8 +1084,13 @@ class Pool4DistributorState:
 class Pool4FlowEvent:
     """One swap's worth of hook activity, wire-level.
 
-    Sourced from the hook's own logs -- ``FeeCollected``, ``ClaimsSettled`` and
-    the accrual topic whose pre-image was not found -- joined per transaction.
+    One per Uniswap v4 PoolManager ``Swap`` for the hook's pool -- which is
+    where ``side`` and ``size_wei`` come from -- joined to the hook's own logs
+    (``FeeCollected``, ``ClaimsSettled`` and the accrual topic whose pre-image
+    was not found) for the fee and burn legs.  Until 2026-09-14 rows were built
+    from the hook's logs alone, and a market with headroom under its cap emits
+    nothing there that names a swap; ``surf_pool4.decode_flow_events`` carries
+    that history.
 
     ``burned_wei`` and ``stakers_wei`` are ``int``, **not** ``int | None``, and
     that is the load-bearing decision in this class.  A buy has no burn leg and

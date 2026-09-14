@@ -25,6 +25,7 @@ Three things this file exists to stop, in order of how badly they would end:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import tempfile
 from pathlib import Path
@@ -132,6 +133,33 @@ FLOW_LOGS = _logs("flow_logs_mixed")
 #: ``OwnershipTransferred(0, owner)``, which is how WP3 knows a log set covers
 #: the hook's whole life rather than a trailing slice of it.
 FLOW_LOGS_FULL = _logs("flow_logs_full")
+#: The PoolManager ``Swap`` siblings of the two windows above -- POOL4 FLOW's
+#: row source since 2026-09-14.  Captured over each partner's exact range.
+FLOW_SWAPS = _logs("flow_swaps_mixed")
+FLOW_SWAPS_FULL = _logs("flow_swaps_full")
+
+
+#: The default ``fetch_swap_logs`` answer: "the Swap logs of whichever hook
+#: window this double was told to serve".  A sentinel rather than a fixed list,
+#: because two dozen tests configure ``fetch_flow_logs`` alone and predate the
+#: swap read; handing every one of them the mixed window's swaps would make a
+#: ``FLOW_LOGS_FULL`` sweep look like a short swap read and cost its panel.
+SWAPS_FOR_THE_HOOK_ANSWER = object()
+
+
+def _swaps_for(hook_logs) -> list[dict]:
+    """The captured ``Swap`` logs whose transactions *hook_logs* carries."""
+    if not isinstance(hook_logs, list):
+        return []
+    txs = {log.get("transactionHash") for log in hook_logs if isinstance(log, dict)}
+    seen: set[tuple[str, str]] = set()
+    out: list[dict] = []
+    for swap in FLOW_SWAPS_FULL + FLOW_SWAPS:
+        key = (swap["transactionHash"], swap["logIndex"])
+        if swap["transactionHash"] in txs and key not in seen:
+            seen.add(key)
+            out.append(swap)
+    return out
 
 RECONCILED, MISMATCH, WINDOW_LIMITED, UNCHECKED = POOL4_COUNTER_STATES
 
@@ -269,6 +297,8 @@ class FakePool4Client:
         #: second reader of the same list would have to guess; this one does
         #: not have to.
         self.log_reads: list[tuple[str, int, int]] = []
+        #: Every PoolManager ``Swap`` read: ``(pool_manager, pool_id, from, to)``.
+        self.swap_reads: list[tuple[str, str, int, int]] = []
         self.verified: list[str] = []
         self.fetched: list[str] = []
         self.walked: list[str] = []
@@ -294,6 +324,7 @@ class FakePool4Client:
             "fetch_dripper_state": DRIPPER_STATE,
             "fetch_vault_state": VAULT_STATE,
             "fetch_flow_logs": FLOW_LOGS,
+            "fetch_swap_logs": SWAPS_FOR_THE_HOOK_ANSWER,
             # ``None`` is the client's own contract for every unreadable
             # outcome, and it must never read as a provenance verdict.
             "fetch_transaction": None,
@@ -355,6 +386,13 @@ class FakePool4Client:
         self.log_windows.append((from_block, to_block))
         self.log_reads.append((addr, from_block, to_block))
         return self._answer("fetch_flow_logs", network)
+
+    async def fetch_swap_logs(self, pool_manager, pool_id, from_block, to_block, *, network):
+        self.swap_reads.append((pool_manager, pool_id, from_block, to_block))
+        value = self._answer("fetch_swap_logs", network)
+        if value is SWAPS_FOR_THE_HOOK_ANSWER:
+            return _swaps_for(self._returns["fetch_flow_logs"])
+        return value
 
     async def fetch_reference_slot0(
         self, pool_id, reference_pool_id=None, *, network, pool_manager,
@@ -1754,6 +1792,68 @@ async def test_a_dead_log_pool_is_none_and_a_quiet_window_is_empty(
     assert quiet["pool4_flow"] == []
     assert quiet["pool4_unsettled_burn"] == 0.0
     assert quiet["pool4_unsettled_stakers"] == 0.0
+
+
+# --- the PoolManager Swap read: POOL4 FLOW's row source (2026-09-14) --------
+
+#: A burning-OFF mainnet window: 36 swaps, 36 bare ``FeeCollected``, and none
+#: of the companion events the retired rule named a swap from.
+QUIET_BURN_LOGS = _logs("mainnet_flow_logs_quiet_burn")
+QUIET_BURN_SWAPS = _logs("mainnet_flow_swaps_quiet_burn")
+
+
+async def test_a_quiet_burn_market_publishes_rows_not_an_empty_table(tmp_path) -> None:
+    """The live defect, end to end through the manager: 218 swaps once read
+    ``no pool4 swaps yet``.  Rows, capped, and a non-trimming sell's burn leg
+    is ``0.0`` -- a float the panel draws -- never ``None``."""
+    client = FakePool4Client(
+        fetch_flow_logs=QUIET_BURN_LOGS, fetch_swap_logs=QUIET_BURN_SWAPS
+    )
+    payload = await _sweep(_manager(tmp_path, pool4_client=client))
+    rows = payload["pool4_flow"]
+    assert rows is not None and len(rows) == POOL4_FLOW_LIMIT
+    assert {r["side"] for r in rows} == {"buy", "sell"}
+    sells = [r for r in rows if r["side"] == "sell"]
+    assert sells
+    for row in sells:
+        assert row["burned_imd"] == 0.0 and isinstance(row["burned_imd"], float)
+        assert row["stakers_imd"] == 0.0 and isinstance(row["stakers_imd"], float)
+        assert row["size_imd"] and row["fee_imd"] is not None
+
+
+async def test_the_swap_read_covers_the_hook_windows_exact_span(tmp_path) -> None:
+    """Same window, the hook round's own pool id and PoolManager, one read."""
+    client = FakePool4Client()
+    await _sweep(_manager(tmp_path, pool4_client=client))
+    hook_reads = [r for r in client.log_reads if r[0] == POOL4_SEPOLIA_HOOK]
+    assert len(hook_reads) == 1
+    _addr, start, end = hook_reads[0]
+    assert client.swap_reads == [
+        (HOOK_STATE.pool_manager, HOOK_STATE.pool_id, start, end)
+    ]
+
+
+async def test_a_dead_swap_read_is_unread_even_when_the_hook_logs_answered(
+    tmp_path,
+) -> None:
+    """``None`` from the swap half is ``None`` for the panel -- not ``[]`` --
+    and costs nothing the hook's own logs still answer."""
+    payload = await _sweep(
+        _manager(tmp_path, pool4_client=FakePool4Client(fetch_swap_logs=None))
+    )
+    assert payload["pool4_flow"] is None
+    assert payload["pool4_unsettled_burn"] is not None
+
+
+async def test_no_pool_id_means_no_swap_read_and_no_rows(tmp_path) -> None:
+    """Without ``poolId()`` there is nothing to filter on: no read, and the
+    panel is unread rather than quiet."""
+    client = FakePool4Client(
+        fetch_hook_state=dataclasses.replace(HOOK_STATE, pool_id=None)
+    )
+    payload = await _sweep(_manager(tmp_path, pool4_client=client))
+    assert client.swap_reads == []
+    assert payload["pool4_flow"] is None
 
 
 async def test_the_log_window_is_the_trailing_span_from_the_head_block(

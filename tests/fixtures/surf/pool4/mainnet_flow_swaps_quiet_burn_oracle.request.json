@@ -1,0 +1,17 @@
+{
+ "command": [
+  "node",
+  "pool4hook.ts",
+  "swaps",
+  "--from",
+  "25972544",
+  "--to",
+  "25974943",
+  "--json",
+  "--list"
+ ],
+ "cwd": "/Users/banse/.claude/skills/pool4hook-research",
+ "method": "subprocess",
+ "fixture": "mainnet_flow_swaps_quiet_burn_oracle",
+ "captured_at": "2026-09-14T09:58:29.867535Z"
+}
