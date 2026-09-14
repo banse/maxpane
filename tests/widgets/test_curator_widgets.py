@@ -1975,33 +1975,35 @@ async def test_the_ok_state_glyph_on_hour_saved_and_whale_is_the_resolved_succes
             assert style.color.get_truecolor() == expected, label
 
 
-async def test_a_fired_hour_saved_rows_identity_is_also_the_resolved_success_colour_composited():
-    """Fix round 2, item 5. The test above proves the ``●`` state glyph in
-    the never-fired/no-whale ("ok") state; it says nothing about the
-    identity/address part these two rows carry once a wallet is behind
-    them (a **fired** HOUR SAVED, or a WHALE with an amount) -- the part
-    :func:`_identity_row` builds as a real, clickable ``address_text``.
-    Every other converted identity cell on this dashboard
-    (leaderboard/activity/closest_calls/list_hero/wallet/cleaned_list/
-    lists) is success green regardless of the row's own state colour (the
-    glyph already carries fired/watch/ok); this rail's identity was the
-    one site that stayed uncoloured through the original conversion --
-    closed here.
+async def test_a_fired_hour_saved_rows_identity_keeps_the_default_foreground_composited():
+    """Fix round 3, item 1: round 2's own "gap-close" (item 5) painted this
+    identity success green and reverted here -- unapproved, the same shape
+    as the reverted three-sided list-hero card. Before this task,
+    ``f"by {safe_markup(short_label(...))}"`` and
+    ``safe_markup(short_label(...))`` (the pre-Task-3 shape this identity
+    replaces) were never colour-wrapped, so a fired HOUR SAVED row's
+    identity/address part -- the part :func:`_identity_row` builds as a
+    real, clickable ``address_text`` -- must keep the terminal's default
+    foreground, with its copy icon still present and clickable. (Other
+    converted identity cells on this dashboard do not share one
+    convention worth generalising from here: ``activity.py`` colours its
+    identity from the row's own ``kind`` -- ``_KIND_COLOUR`` -- rather
+    than a fixed colour; ``closest_calls.py``/``cleaned_list.py``/
+    ``lists.py``/``leaderboard.py`` pass no ``style=`` to ``address_text``
+    at all; only ``list_hero.py``/``wallet.py`` use a resolved success
+    colour, and both are panels, not this rail.)
 
-    Composited and independent of ``_theme_colors()``, same shape as the
-    test above. Uses the bare widget harness, not the screen's
+    Composited: reads the colour the compositor actually painted, not a
+    bare-Text span check. Uses the bare widget harness, not the screen's
     ``_ThemedHarness``: ``CuratorSignals`` composes identically whether
-    mounted alone or inside ``CuratorScreen`` (its own ``_theme_colors``
-    asks ``self.app`` directly, the same call either harness answers), and
-    every other composited colour test in this module already uses the
-    bare harness for the same reason.
+    mounted alone or inside ``CuratorScreen``, and every other composited
+    test in this module already uses the bare harness for the same
+    reason.
 
-    Bites: with ``_theme_colors`` forced to return ``_TOKEN_FALLBACK``, the
-    identity renders Rich's plain ANSI ``green`` instead of the resolved
-    hex; reverting the identity's own ``style=`` to nothing (the pre-fix
-    shape) drops the colour entirely. Both verified by hand
-    (task-3-report.md carries the mutations)."""
-    from rich.color import Color
+    Bites: re-adding the success ``style=`` (round 2's reverted shape)
+    paints the identity green instead of the default foreground, and this
+    test reddens -- verified by hand (task-3-report.md carries the
+    mutation)."""
     from tests.widgets.address_probe import icon_targets
 
     wallet = "0x200E710aCAA6A93bbc77146026328C40F1d60fB1"
@@ -2012,11 +2014,21 @@ async def test_a_fired_hour_saved_rows_identity_is_also_the_resolved_success_col
             last_saved_hour=26, last_saved_wallet=wallet, last_saved_age_s=720,
         )
         await pilot.pause()
-        expected = Color.parse(app.get_css_variables()["success"]).get_truecolor()
         target = next(t for t in icon_targets(app) if t[2] == wallet.lower())
-        style = app.screen.get_style_at(target[0] - 1, target[1])
-        assert style.color is not None
-        assert style.color.get_truecolor() == expected
+        identity_style = app.screen.get_style_at(target[0] - 1, target[1])
+
+        # Compared against a known-uncoloured sibling on the *same* row
+        # (the "hour 26" lead part -- plain, never colour-wrapped) rather
+        # than a guessed global "default" coordinate: the two must match,
+        # proving the identity carries no colour of its own.
+        line = _screen_text(app).split("\n")[target[1]]
+        lead_column = line.index("hour 26")
+        lead_style = app.screen.get_style_at(lead_column, target[1])
+
+        assert identity_style.color is not None and lead_style.color is not None
+        assert identity_style.color.get_truecolor() == lead_style.color.get_truecolor()
+        # ...and the icon itself is untouched -- still there, still real.
+        assert target[2] == wallet.lower()
 
 
 async def test_a_raising_builder_still_shows_the_explicit_unknown_value(monkeypatch):
@@ -5945,6 +5957,27 @@ def test_address_key_reads_a_windowed_cells_real_address_off_its_icon():
     assert CuratorRawList._address_key(address) == address.lower()
     assert CuratorRawList._address_key(None) is None
     assert CuratorRawList._address_key("not an address") is None
+
+
+def test_address_key_survives_a_str_styled_span_on_the_cell():
+    """Fix round 3, item 3. Rich allows a plain ``str`` as a span's style
+    (a markup shorthand), not only a ``Style`` object -- a future
+    ``.stylize("bold")`` on the YOU row's cell, say. ``_address_key``'s own
+    icon-action read used to assume ``style.meta`` unconditionally, which
+    would raise ``AttributeError`` on a ``str`` span, outside every
+    ``try`` its three callers wrap themselves in. Guarded the same way
+    ``widgets.address.is_copy_click`` guards the identical read
+    (``getattr(style, "meta", None) or {}``)."""
+    from rich.text import Text
+    from maxpane_dashboard.widgets.curator.lists import CuratorRawList, _address
+
+    address = "0x1234567890abcdef1234567890abcdef12345678"
+    cell = _address(address)
+    # A `str`-styled span (Rich's markup shorthand), spliced in ahead of
+    # the icon's own real `Style(meta=...)` span so the loop must walk
+    # past it without raising.
+    cell = Text.assemble(("bold", "bold"), cell)
+    assert CuratorRawList._address_key(cell) == address.lower()
 
 
 async def test_every_raw_list_header_sorts_and_missing_names_stay_last():

@@ -557,7 +557,15 @@ class _ListTable(Vertical):
         """
         if isinstance(value, Text):
             for _start, _end, style in value.spans:
-                match = _COPY_ACTION_RE.search(str(style.meta.get("@click", "")))
+                # A span's style is not always a `Style` object -- Rich
+                # allows a plain `str` (a markup-shorthand span, e.g. from
+                # a future `.stylize("bold")` on the YOU row), which has no
+                # `.meta` and would raise `AttributeError` here, outside
+                # this method's own `try` blocks upstream. Guarded the same
+                # way `widgets.address.is_copy_click` guards the identical
+                # read.
+                meta = getattr(style, "meta", None) or {}
+                match = _COPY_ACTION_RE.search(str(meta.get("@click", "")))
                 if match:
                     return match.group(1).casefold()
             value = value.plain

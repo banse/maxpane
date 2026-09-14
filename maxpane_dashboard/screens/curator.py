@@ -338,15 +338,42 @@ CLUSTERS_ID = "curator-clusters"
 #: own DataTable full tier needed **140** content columns before this task
 #: ever touched ``lists.py`` (measured directly off
 #: ``widgets/curator/lists._RAW_TIERS``, git history at ``56a5df6``), which
-#: was already ~142 terminal columns, nowhere near 93 -- a stale number
-#: nobody had re-swept since the table grew past it.
+#: was already ~143 terminal columns (see the measured table below),
+#: nowhere near 93 -- a stale number nobody had re-swept since the table
+#: grew past it.
 #:
 #: **Paying for the ADDRESS column's copy icon took two attempts, and the
-#: first one shipped a real crop.** Growing the column outright
-#: (``_ADDRESS_COLS_TOTAL``, +2) pushed the real first-clean-width from 142
-#: to 144, one column past the app-wide 143 this body is documented to stay
-#: inside. Round 1's fix reclaimed the two columns from elsewhere in the
-#: same row -- one from ``_INDEX_COLS`` (typed at six, shrunk to five on
+#: first one shipped a real crop.** Measured, not derived, by running the
+#: `l` view's own ``tests/screens/test_curator_screen.py::_first_list_width``
+#: sweep against each state in turn (every row-kind -- raw/cleaned/filtered
+#: -- gives the same number in every state below; this pin is the
+#: ``filtered`` row's own sweep):
+#:
+#: * **Pre-icon (before this task): 143.** Cited, not re-measured --
+#:   ``git show f33eb59`` was read for reference only, per this round's own
+#:   instruction not to check it out. ``f33eb59``'s own
+#:   ``test_every_list_clears_inside_the_143_column_app_pin`` already
+#:   asserted ``width == 143`` (that file's lines 4889-4893).
+#: * **Icon grown, no trade: 145.** ``_ADDRESS_COLS`` set to the full,
+#:   unwindowed 42 (so ``_ADDRESS_COLS_TOTAL`` is 44) with ``_INDEX_COLS``/
+#:   ``_ENS_COLS`` left at their pre-task values (6/19) -- everything else
+#:   in this constant's own working tree, unmodified. ``_first_list_width``'s
+#:   own sweep (``range(80, 144)``) found no clean width in this state at
+#:   all; extending it to 155 found 145.
+#: * **Now (this pin's own value): 143.** The working tree, unmodified --
+#:   ``test_every_list_clears_inside_the_143_column_app_pin`` is the tripwire.
+#:
+#: 143 → 145 is the icon's real, undisguised cost (``+2``, ``ICON_COLS``) --
+#: **not** 142 → 144, an earlier version of this note that undercounted the
+#: pre-icon baseline by one column in both places it appeared (the RAW
+#: table's own 140-content-column full tier translates to ~143 terminal
+#: columns, not ~142, above). 145, not 144, is also the only number
+#: consistent with the very next paragraph's own "the INDEX cut alone was
+#: not enough": cutting one column from a 144 baseline already lands on
+#: 143, needing no second cut at all -- cutting one from the real 145
+#: lands on 144, still one over, which is exactly why a *second* cut
+#: (``_ENS_COLS``) was needed. Round 1's fix reclaimed two columns from
+#: elsewhere in the same row -- one from ``_INDEX_COLS`` (typed at six, shrunk to five on
 #: the claim that ``"1,000"`` was the widest value it ever carries) and one
 #: from ``_ENS_COLS`` (a soft cap, reclaimed to clear this table's own
 #: vertical-scrollbar boundary once the INDEX cut alone was not enough).
