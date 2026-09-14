@@ -3365,8 +3365,12 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         # tail-ellipsis CSS could clip it to a head-only string, the anti-
         # poisoning window exists to prevent exactly that). The address is
         # now published as its own field, and `is_fallback` tells the
-        # widget layer this label needs no further escaping -- it composes
-        # `address_text` for it instead of trusting the string verbatim.
+        # widget layer this label is the auto-generated placeholder (no
+        # real or reader-chosen name behind it) rather than one it should
+        # trust and print verbatim -- so it composes a real, clickable
+        # `address_text` over the address field instead of showing this
+        # static prose string. Both forms were already `Label(...,
+        # markup=False)`, so escaping was never what the flag decided.
         assert editor.values()["nft_collections"] == ({
             "label": custom_nft_label("base", address),
             "chain": "base",

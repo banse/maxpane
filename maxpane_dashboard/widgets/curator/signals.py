@@ -359,7 +359,20 @@ def _identity_row(
         # spelling this cell was given -- lower-case is an equally valid
         # paste of the same address.
         lowered = wallet.lower() if isinstance(wallet, str) else wallet
-        identity = address_text(lowered, label=(name or None), width=NAME_COLS)
+        # Success green, like every other converted identity cell on this
+        # dashboard (leaderboard/activity/closest_calls/list_hero/wallet/
+        # cleaned_list/lists) -- an address is success green regardless of
+        # the row's own state colour (the head's glyph already carries
+        # fired/watch/ok; this is a fix round 2 gap-close, item 5: the
+        # pre-Task-3 ``short_label`` string this replaced was never
+        # coloured either, but every sibling site this task converted was
+        # given the colour and this one was missed). A resolved concrete
+        # colour, never a ``$`` token (Rich's own ``Style`` cannot resolve
+        # one -- the ``surf/pool4u_hero`` "$ trap").
+        success = (colors or {}).get("success", _TOKEN_FALLBACK["success"])
+        identity = address_text(
+            lowered, label=(name or None), width=NAME_COLS, style=success
+        )
         items.append((identity, identity.cell_len))
     items.extend((p, visible_len(p)) for p in trail if p)
 

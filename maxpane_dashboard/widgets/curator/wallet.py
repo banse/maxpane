@@ -590,8 +590,18 @@ class CuratorWalletAddress(_FactsPanel):
                 budget = width - len(head) - ICON_COLS if width else None
                 if budget is not None and budget < MIN_SHORT_COLS:
                     shed = True
+                # `Style(color=..., bold=True)`, never `"[bold $success]"`:
+                # the shared renderer this overrides painted every
+                # headline value bold, and the address line lost that
+                # when this override first shipped with only a colour
+                # string. A resolved concrete colour, same as the
+                # `elif label:` branch below -- never a `$` token, which
+                # Rich's own `Style` cannot resolve (the `surf/
+                # pool4u_hero` "$ trap").
                 line_text.append_text(
-                    address_text(value, width=budget, style=success)
+                    address_text(
+                        value, width=budget, style=Style(color=success, bold=True)
+                    )
                 )
             elif label:
                 if width and len(head) + len(value) > width:

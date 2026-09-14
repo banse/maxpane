@@ -205,6 +205,19 @@ def _row_cells(text: str, anchor: str) -> list[str]:
     return [cell for cell in re.split(r"\s{2,}", rows[0].strip()) if cell]
 
 
+def _list_window(address: str) -> str:
+    """The `l` view's ADDRESS column no longer shows the bare 42-character
+    address (fix round 2: the copy icon is paid for by windowing the
+    display, ``lists._ADDRESS_COLS`` = 40, rather than by stealing a
+    column from INDEX or ENS). This is that same window, computed the same
+    way ``lists._address`` computes it, so a test asserts against what the
+    screen actually renders rather than a hand-typed guess."""
+    from maxpane_dashboard.widgets.address import short_address
+    from maxpane_dashboard.widgets.curator.lists import _ADDRESS_COLS
+
+    return short_address(address.lower(), _ADDRESS_COLS)
+
+
 # ===========================================================================
 # CuratorListFilterEditor
 # ===========================================================================
@@ -1157,6 +1170,37 @@ async def test_the_hero_wallet_cards_address_cell_is_the_resolved_success_colour
         assert style.color.get_truecolor() == Color.parse(expected).get_truecolor()
 
 
+async def test_the_y_view_wallet_panels_address_cell_is_bold_and_the_resolved_success_colour_composited():
+    """Fix round 2, item 2: the shared ``_FactsPanel._render_view`` this
+    panel overrides paints every headline value ``[bold $success]``
+    (``wallet.py``'s own shared CSS-adjacent markup); the override that
+    replaced it with a real ``Text`` for the address line passed only the
+    resolved colour and dropped the bold. Composited and independent of
+    ``_success_color()`` itself, matching the hero-card test above.
+
+    Bites (colour): with ``_theme_colors``-equivalent (``_success_color``)
+    forced to return the plain fallback, the composited pixel is Rich's
+    ANSI ``green`` rather than the resolved hex. Bites (bold): with the
+    ``Style`` passed to ``address_text`` reverted to a bare colour string
+    (no ``bold=True``), ``style.bold`` reads falsy. Both verified by hand
+    (task-3-report.md carries the mutations)."""
+    from tests.widgets.address_probe import icon_targets
+
+    address = "0x" + "4" * 40
+    widget = CuratorWalletAddress()
+    app = _Harness(widget)
+    async with app.run_test(size=(100, 12)) as pilot:
+        widget.update_data(you_address=address, you_ens=None)
+        await pilot.pause()
+        expected = app.get_css_variables()["success"]
+        target = next(t for t in icon_targets(app) if t[2] == address)
+        style = app.screen.get_style_at(target[0] - 1, target[1])
+        assert style.color is not None
+        from rich.color import Color
+        assert style.color.get_truecolor() == Color.parse(expected).get_truecolor()
+        assert style.bold
+
+
 async def test_list_hero_note_changes_only_for_open_filter_editor():
     hero = CuratorListHero()
     app = _Harness(hero)
@@ -1929,6 +1973,50 @@ async def test_the_ok_state_glyph_on_hour_saved_and_whale_is_the_resolved_succes
             style = app.screen.get_style_at(column, line_index)
             assert style.color is not None, (label, line)
             assert style.color.get_truecolor() == expected, label
+
+
+async def test_a_fired_hour_saved_rows_identity_is_also_the_resolved_success_colour_composited():
+    """Fix round 2, item 5. The test above proves the ``●`` state glyph in
+    the never-fired/no-whale ("ok") state; it says nothing about the
+    identity/address part these two rows carry once a wallet is behind
+    them (a **fired** HOUR SAVED, or a WHALE with an amount) -- the part
+    :func:`_identity_row` builds as a real, clickable ``address_text``.
+    Every other converted identity cell on this dashboard
+    (leaderboard/activity/closest_calls/list_hero/wallet/cleaned_list/
+    lists) is success green regardless of the row's own state colour (the
+    glyph already carries fired/watch/ok); this rail's identity was the
+    one site that stayed uncoloured through the original conversion --
+    closed here.
+
+    Composited and independent of ``_theme_colors()``, same shape as the
+    test above. Uses the bare widget harness, not the screen's
+    ``_ThemedHarness``: ``CuratorSignals`` composes identically whether
+    mounted alone or inside ``CuratorScreen`` (its own ``_theme_colors``
+    asks ``self.app`` directly, the same call either harness answers), and
+    every other composited colour test in this module already uses the
+    bare harness for the same reason.
+
+    Bites: with ``_theme_colors`` forced to return ``_TOKEN_FALLBACK``, the
+    identity renders Rich's plain ANSI ``green`` instead of the resolved
+    hex; reverting the identity's own ``style=`` to nothing (the pre-fix
+    shape) drops the colour entirely. Both verified by hand
+    (task-3-report.md carries the mutations)."""
+    from rich.color import Color
+    from tests.widgets.address_probe import icon_targets
+
+    wallet = "0x200E710aCAA6A93bbc77146026328C40F1d60fB1"
+    widget = CuratorSignals()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 24)) as pilot:
+        widget.update_data(
+            last_saved_hour=26, last_saved_wallet=wallet, last_saved_age_s=720,
+        )
+        await pilot.pause()
+        expected = Color.parse(app.get_css_variables()["success"]).get_truecolor()
+        target = next(t for t in icon_targets(app) if t[2] == wallet.lower())
+        style = app.screen.get_style_at(target[0] - 1, target[1])
+        assert style.color is not None
+        assert style.color.get_truecolor() == expected
 
 
 async def test_a_raising_builder_still_shows_the_explicit_unknown_value(monkeypatch):
@@ -3443,6 +3531,36 @@ async def test_a_hostile_ens_name_cannot_reach_markup():
                            you_ens="[/x][bold red]owned[/]", size=(60, 10))
     assert "[/x]" in text or "owned" in text     # rendered as text, not markup
     assert text.strip(), "a markup-hostile name blanked the panel"
+
+
+async def test_the_shared_facts_body_never_wraps_a_shed_line_into_a_second_row():
+    """Fix round 2, item 3: ``_FactsPanel > .curator-facts-body``'s
+    ``text-wrap: nowrap`` has no test of its own. Without it, a line that
+    has to shed (the address windowed all the way to ``MIN_SHORT_COLS``,
+    still wider than the panel's own budget) wraps into a second physical
+    row instead of staying on the one row ``height: auto`` budgeted for
+    it -- silently growing the panel's height and, in production, the `y`
+    rail's own measured minimum-height pin (``WALLET_MIN_HEIGHT``) along
+    with it. 22 columns is measured, not guessed: it is where the title
+    still places its own ``‹ widen`` hint (so the extra row this guards
+    against cannot be confused with the *other*, deliberate extra row
+    ``_render_view`` inserts when the hint does not fit) while the wallet
+    line's own budget is still narrow enough to force the clamp.
+
+    Bites: with ``text-wrap: nowrap`` removed from the shared rule, the
+    body grows from 2 rows to 4 (both of its two logical lines wrap) at
+    this exact width -- verified by hand (task-3-report.md carries the
+    mutation)."""
+    widget = CuratorWalletAddress()
+    app = _Harness(widget)
+    async with app.run_test(size=(22, 10)) as pilot:
+        widget.update_data(you_address="0x" + "ab" * 20, you_ens=None)
+        await pilot.pause()
+        title = widget.query_one(".curator-facts-title")
+        body = widget.query_one(".curator-facts-body")
+        assert "‹ widen" in title.render().plain  # sanity: this line sheds
+        assert body.render().plain.count("\n") == 1  # two logical lines
+        assert body.size.height == 2
 
 
 def test_a_name_never_widens_a_table_cell():
@@ -5198,11 +5316,12 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
         "4",
         "12",
         "grace",
-        address,
+        _list_window(address),
         "record.eth",
     ):
         assert value in raw, value
     assert "0x1234…abcd" not in raw
+    assert address not in raw  # windowed now, not the bare 42-char address
     assert "LINK" not in raw
 
     clean = await _rendered(
@@ -5246,13 +5365,14 @@ async def test_the_list_view_tables_render_every_frozen_row_column():
         "6",
         "29",
         "judged",
-        address,
+        _list_window(address),
         "clean.eth",
         "as of 22:41",
     ):
         assert value in clean, value
     assert "LINK" not in clean
     assert "0x1234…abcd" not in clean
+    assert address not in clean  # windowed now, not the bare 42-char address
 
 
 @pytest.mark.parametrize("kind", ("raw", "clean", "filtered"))
@@ -5281,15 +5401,16 @@ async def test_the_list_identity_and_credit_columns_have_the_requested_widths(ki
         table = widget.query_one(".curator-list-table", DataTable)
         widths = [column.width for column in table.columns.values()]
 
-    # 44, not 42: the copy-icon conversion (Task 3, 2026-09-14) adds
-    # ICON_COLS on top of the address's own 42-character display width.
-    assert widths[3] == 44  # ADDRESS
-    # 18, not 19: the fix round reclaimed one more column from ENS's own
-    # soft cap (it ellipsis-truncates on overflow, so nothing measured
-    # depends on the exact number) once the ADDRESS growth above left the
-    # full tier one column over what fits beside this table's own vertical
-    # scrollbar at 100+ rows -- see ``_ENS_COLS``'s own comment.
-    assert widths[4] == 18  # ENS
+    # 42, unchanged from before the copy-icon conversion: fix round 2 pays
+    # for the icon by windowing the address's own display to
+    # ``42 - ICON_COLS`` (40) rather than growing the column -- round 1
+    # grew it to 44 first, which moved this table's own pin (see
+    # ``_ADDRESS_COLS``'s own comment).
+    assert widths[3] == 42  # ADDRESS
+    # 19, restored: round 1 reclaimed one column from ENS's own soft cap to
+    # pay for the ADDRESS growth above; round 2 pays for the icon out of
+    # ADDRESS's own display width instead, so ENS needs no reclaim at all.
+    assert widths[4] == 19  # ENS
     assert widths[5] == 7   # POINTS
     assert widths[6] == 8   # WEIGHT leaves room for the active scrollbar
     assert widths[7] == 6   # CREDIT gives back the two needed columns
@@ -5562,7 +5683,7 @@ async def test_the_list_footer_is_an_aligned_you_row_followed_by_one_blank_line(
         ]
 
         rendered = _screen_text(app)
-        assert address in rendered
+        assert _list_window(address) in rendered
         assert "you.eth" in rendered
         assert "12,345" in rendered
         assert ("4,321" in rendered) if kind == "raw" else ("--" in rendered)
@@ -5780,11 +5901,50 @@ async def test_list_header_click_sorts_typed_values_toggles_and_survives_refresh
 def _cell_address(cell) -> str:
     """The address a list-table ADDRESS cell names, whether the cell is
     still a plain string or the copy-icon ``Text`` :func:`lists._address`
-    now builds (``"0x… ⧉"``)."""
+    now builds.
+
+    Reads the icon's own ``Style(meta={"@click": ...})`` span first, not
+    the visible characters: fix round 2 windows the display
+    (``lists._ADDRESS_COLS`` = 40), and a windowed address has an ellipsis
+    inside the 40-hex-character run, so ``cell.plain.split()[0]`` (round
+    1's version of this helper) would return the windowed, ellipsised
+    string rather than the real address -- exactly the bug that made
+    ``lists.py``'s own reverse lookup (``_ListTable._address_key``) return
+    ``None`` for every row until it was fixed the same way."""
     from rich.text import Text
 
-    plain = cell.plain if isinstance(cell, Text) else cell
-    return plain.split()[0] if isinstance(plain, str) else plain
+    if isinstance(cell, Text):
+        for _start, _end, style in cell.spans:
+            match = re.search(
+                r"app\.copy_address\('(0x[0-9a-fA-F]{40})'\)",
+                str(style.meta.get("@click", "")),
+            )
+            if match:
+                return match.group(1)
+        return cell.plain.split()[0] if cell.plain else cell.plain
+    return cell
+
+
+def test_address_key_reads_a_windowed_cells_real_address_off_its_icon():
+    """``_ListTable._address_key`` is what ``_source_row``, ``_apply_sort``
+    and ``_renumber_and_publish`` all call to map a rendered ADDRESS cell
+    back to its source row. Fix round 2 windows the display
+    (``lists._ADDRESS_COLS`` = 40, the anti-poisoning window), and a
+    windowed address has an ellipsis *inside* what used to be one
+    contiguous 40-hex-character run -- exactly the pattern
+    ``ADDRESS_RE`` matches, and exactly what an ellipsis breaks. Direct,
+    not only through the sort-behaviour tests this bug was actually caught
+    by: this pins the mechanism itself."""
+    from maxpane_dashboard.widgets.curator.lists import CuratorRawList, _address
+
+    address = "0x1234567890abcdef1234567890abcdef12345678"
+    cell = _address(address)  # the real ADDRESS-column builder, windowed
+    assert "…" in cell.plain  # sanity: this address is long enough to window
+    assert CuratorRawList._address_key(cell) == address.lower()
+    # The plain, un-rendered row field (never windowed) still works too.
+    assert CuratorRawList._address_key(address) == address.lower()
+    assert CuratorRawList._address_key(None) is None
+    assert CuratorRawList._address_key("not an address") is None
 
 
 async def test_every_raw_list_header_sorts_and_missing_names_stay_last():
@@ -5903,6 +6063,69 @@ async def test_header_sort_includes_every_row_from_a_complete_export():
 
         assert table.row_count == 1_001
         assert table.get_row_at(0)[rank_index] == "1,001"
+
+
+async def test_a_complete_list_past_nine_thousand_nine_hundred_ninety_nine_rows_shows_its_real_index():
+    """Fix round 2, item 1. ``_renumber_and_publish`` numbers every row a
+    **complete** (uncapped) list holds, not ``1..MAX_ROWS`` -- committed
+    fixtures put real complete-list populations at 15,576 and 9,273
+    contributors, past what ``_INDEX_COLS``'s own five-column round-1 crop
+    could render. 10,000 rows is the smallest whole number this rounds to a
+    5-vs-6-column difference on; no committed fixture reaches it, so the
+    rows are synthesised (recipe-sanctioned: "synthesising rows is fine").
+
+    Composited, not ``table.get_row_at()``: the ``DataTable`` cell itself
+    always holds the full, correct ``"10,000"`` string regardless of the
+    declared column width -- only the *painted* pixels crop at the
+    column's own width, to ``"10,00"``, wrong-looking and with no marker.
+    A cell-value assertion is exactly the kind of test that cannot fail
+    the crop this item is about; only the rendered screen can. Both the
+    table's own INDEX column (the last, 10,000th, row) and the pinned YOU
+    row (the same wallet, out of the same complete count) must render the
+    whole number.
+    """
+    from textual.widgets import DataTable
+    from maxpane_dashboard.widgets.curator import CuratorRawList
+
+    rows = [
+        {
+            "rank": rank,
+            "first_index": rank,
+            "address": f"0x{rank:040x}",
+            "name": None,
+            "points": rank,
+            "weight_eth": float(rank),
+            "credit_eth": float(rank),
+            "tx_count": 1,
+            "first_hour": 1,
+            "link_conf": "clean",
+        }
+        for rank in range(1, 10_001)
+    ]
+    widget = CuratorRawList()
+    app = _Harness(widget)
+    async with app.run_test(size=(143, 18)) as pilot:
+        widget.update_data(
+            leaderboard_rows=rows[:1_000],
+            contributors_total=10_000,
+            you_list_row=rows[-1],
+        )
+        widget.set_list_source(rows, complete=True)
+        await pilot.pause()
+        table = widget.query_one(".curator-list-table", DataTable)
+        table.scroll_end(animate=False)
+        await pilot.pause()
+        text = _screen_text(app)
+        # The INDEX cell is each row's first column, so a whole "10,000"
+        # there is a line that *starts* with it (a cropped "10,00" would
+        # be followed by another column's padding, never landing here).
+        row_lines = [
+            line for line in text.split("\n")
+            if line.strip().startswith("10,000")
+        ]
+        # The main table's last row and the pinned YOU footer row both
+        # start with the INDEX cell -- both must read the whole number.
+        assert len(row_lines) == 2, row_lines
 
 
 @pytest.mark.parametrize("kind", ("raw", "clean"))
@@ -6130,7 +6353,7 @@ async def test_list_window_is_derived_from_the_nft_hour_rule(first_hour, window)
         ],
     )
     address = "0x" + "ab" * 20
-    assert window in _row_cells(text, address)
+    assert window in _row_cells(text, _list_window(address))
     assert "LINK" not in text
 
 

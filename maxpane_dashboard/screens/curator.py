@@ -339,14 +339,33 @@ CLUSTERS_ID = "curator-clusters"
 #: ever touched ``lists.py`` (measured directly off
 #: ``widgets/curator/lists._RAW_TIERS``, git history at ``56a5df6``), which
 #: was already ~142 terminal columns, nowhere near 93 -- a stale number
-#: nobody had re-swept since the table grew past it. Growing the ADDRESS
-#: column for its copy icon (``_ADDRESS_COLS_TOTAL``, +2) pushed the real
-#: first-clean-width from 142 to 144, one column past the app-wide 143 this
-#: paragraph already claimed the body stayed inside. Reclaiming one column
-#: from ``_INDEX_COLS`` (it was typed at six for a value and header that
-#: both top out at five, "1,000") brought it back to exactly 143 --
-#: measured, not assumed, by the same column-by-column sweep this note
-#: replaces.
+#: nobody had re-swept since the table grew past it.
+#:
+#: **Paying for the ADDRESS column's copy icon took two attempts, and the
+#: first one shipped a real crop.** Growing the column outright
+#: (``_ADDRESS_COLS_TOTAL``, +2) pushed the real first-clean-width from 142
+#: to 144, one column past the app-wide 143 this body is documented to stay
+#: inside. Round 1's fix reclaimed the two columns from elsewhere in the
+#: same row -- one from ``_INDEX_COLS`` (typed at six, shrunk to five on
+#: the claim that ``"1,000"`` was the widest value it ever carries) and one
+#: from ``_ENS_COLS`` (a soft cap, reclaimed to clear this table's own
+#: vertical-scrollbar boundary once the INDEX cut alone was not enough).
+#: The INDEX cut was wrong, not just tight: a **complete** list (an
+#: uncapped export, ``_render_view``'s own ``shown = usable if
+#: self._payload.get("complete") else usable[:MAX_ROWS]``) can hold far
+#: more than 999 rows -- committed fixtures put ``contributors_total`` at
+#: 15,576 and ``clean_contributors`` at 9,273 -- and five columns rendered
+#: ``"10,000"`` as ``"10,00"``, a wrong-looking number with no marker, on
+#: both the table and the pinned YOU row. Round 2 reverted both reclaims
+#: (``_INDEX_COLS`` back to six, ``_ENS_COLS`` back to nineteen) and pays
+#: for the icon a different way: the ADDRESS column's own **display**
+#: shrinks by ``ICON_COLS`` (``_ADDRESS_COLS`` 42 → 40, the anti-poisoning
+#: window, not a crop of a different cell) so the column's *total* width
+#: (42) is exactly what it was before the copy-icon conversion, and the
+#: full tier is back to precisely its pre-Task-3 cost, 140 -- measured, not
+#: assumed, by the same column-by-column sweep this note replaces. See
+#: ``widgets/curator/lists.py``'s own ``_INDEX_COLS``/``_ADDRESS_COLS``/
+#: ``_ENS_COLS`` comments for the full before/after on each column.
 #:
 #: **The 2026-09-14 address-copy-icon conversion (Task 3) came within one
 #: column of moving it, and the near-miss is the reason to re-sweep here
