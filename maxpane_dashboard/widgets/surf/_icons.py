@@ -41,6 +41,7 @@ from maxpane_dashboard.widgets.address import (
 
 __all__ = [
     "NBSP",
+    "keep_units",
     "link_in_order",
     "link_prose",
     "mark_addresses",
@@ -72,9 +73,12 @@ def mark_addresses(
 
     A ``⧉`` already in ``raw`` is removed first. The text is third-party, and
     a glyph its author typed would be an icon that copies nothing -- or, next
-    to an address, one this module would link on their behalf.
+    to an address, one this module would link on their behalf. Whitespace is
+    then flattened to single spaces, so a removed glyph leaves no double
+    space behind and a fitter that flattens whitespace itself (HATCHES'
+    ``fit_cell``) cannot shift the spans this returns.
     """
-    text = str(raw or "").replace(COPY_GLYPH, "")
+    text = " ".join(str(raw or "").replace(COPY_GLYPH, "").split())
     parts: list[str] = []
     addresses: list[str] = []
     spans: list[tuple[int, int]] = []
@@ -93,6 +97,28 @@ def mark_addresses(
         pos = match.end()
     parts.append(text[pos:])
     return "".join(parts), addresses, spans
+
+
+def keep_units(marked: str, spans: list[tuple[int, int]], cut: str) -> str:
+    """``cut`` -- a fitter's prefix of ``marked`` plus ``…`` -- with no unit bisected.
+
+    A window-and-icon unit (:func:`mark_addresses`' ``spans``) is kept whole
+    or dropped whole. A fitter that knows nothing of addresses would happily
+    cut one mid-window -- ``adopted 0xa1B997A9…`` is a window's own ellipsis
+    followed by the cut's, an address that looks shortened rather than cut,
+    and its icon gone with it. When the cut lands inside a unit, the text is
+    re-cut in front of that unit instead; ``""`` when nothing would be left.
+
+    ``cut == marked`` (nothing was cut) and ``cut == ""`` pass through.
+    """
+    if cut == marked or not cut:
+        return cut
+    kept = len(cut) - 1                                  # without the "…"
+    for start, end in spans:
+        if start < kept < end:
+            head = marked[:start].rstrip()
+            return f"{head}…" if head else ""
+    return cut
 
 
 def unmark(text: str) -> str:

@@ -240,8 +240,10 @@ async def test_the_creator_cell_truncates_to_the_narrower_eleven_column_window()
     leading characters, an ellipsis, four trailing -- the brief's own
     example (``0x8ca0…e5e8``).  A test that only checks the width-constant
     arithmetic would not catch a bug where the constant shrinks correctly
-    but the cell still renders the *old* 17-column ``long_addr()`` form,
-    which truncates a different (and longer) trailing window -- exactly the
+    but the cell still renders the *old* 17-column anti-poisoning form
+    (``_fmt.long_addr`` until 2026-09-14, ``widgets/address.short_address``
+    at 17 since), which truncates a different (and longer) trailing window
+    -- exactly the
     two-halves-mask-each-other shape this task's brief warns about, and
     worse than cosmetic: it would silently widen the actual rendered
     column past its declared budget.

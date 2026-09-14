@@ -172,7 +172,7 @@ _ADDR_COLS = _ADDR_WINDOW_COLS + ICON_COLS                      # 13
 #: constant arrived from ``activity.py:157``, where the format is
 #: ``{value:,.3f}``. One more decimal, the same budget -- so ``  0.0120 ETH``
 #: was exactly 12 and anything at or above ten ETH was 13, overflowing a row
-#: that :func:`_row_markup` then declared already fitted. ``RichLog(wrap=
+#: that :func:`_row_text` (then ``_row_markup``) declared already fitted. ``RichLog(wrap=
 #: False)`` narrows such a line at write time with no ``…`` and no marker, so
 #: ``1234.5678 ETH`` reached the reader as ``1234.5678`` -- and one cell to
 #: the left, as ``0.`` where the value was ``0.0120 ETH``. A cut *number* is
@@ -350,7 +350,7 @@ def _row_fields(
 
     It no longer takes a ``tier``: the amount is what *decides* the tier now
     (:func:`_tier_for`), so it has to be measurable before one has been
-    picked. :func:`_row_markup` drops it for the layouts that do not carry
+    picked. :func:`_row_text` drops it for the layouts that do not carry
     one.
     """
     if not isinstance(row, dict):

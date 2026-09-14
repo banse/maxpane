@@ -114,7 +114,7 @@ async def test_a_hostile_ticker_never_reaches_markup() -> None:
 
     Rendered alongside a well-formed row rather than alone -- but "the
     neighbour still renders" is not, on its own, enough either:
-    `_row_markup`'s own `except Exception: return None` drops exactly the
+    `_row_text`'s own `except Exception: return None` drops exactly the
     hostile row and leaves the well-formed neighbour untouched, which
     renders identical text to correct sanitisation. A regression that
     quietly *ate* the hostile row would still pass a check that only looks
@@ -201,7 +201,7 @@ def test_the_amount_cell_is_sized_from_this_panels_own_format() -> None:
     It arrived here as a copy of `activity.py:157`, whose format is
     `{value:,.3f}`. This panel prints `{eth:.4f}` -- one more decimal into
     the same twelve columns -- so `  0.0120 ETH` was exactly 12 and every
-    swap at or above ten ETH was 13 or more, in a row `_row_markup` then
+    swap at or above ten ETH was 13 or more, in a row `_row_markup` (now `_row_text`) then
     declared already fitted.
 
     Both halves are asserted, and the second is the one that matters: the

@@ -95,7 +95,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.widgets.address import address_text, is_address, short_address
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
@@ -238,12 +238,15 @@ COINS_WIDEN_HINT = "‹ widen"
 #: number to the real rendered table instead of to itself.
 #: Re-sweep -- never re-derive -- if a column is ever added or removed again.
 #:
-#: **2026-09-14: this pin is why CREATOR has no copy icon yet.** Every other
-#: surf address gained one (``docs/address_copy_PRD.md``); the icon may not
-#: move a pin, CREATOR's 11-cell window cannot shorten, and moving two of
-#: ``BURNED``'s cells to it -- same column sum, same virtual width -- still cut
-#: the header to ``BURN`` at 89 (swept 87-91). Measured alternative, for the
-#: owner: NAME 18 -> 16 holds 89. See :data:`_ADDR_COLS`.
+#: **2026-09-14: NAME 18 -> 16 pays for CREATOR's copy icon, and 89 holds.**
+#: Every surf address gained a ``⧉`` (``docs/address_copy_PRD.md``) and the
+#: icon may not move a pin. CREATOR's 11-cell window cannot shorten, and
+#: moving two of ``BURNED``'s cells to it -- same column sum, same virtual
+#: width -- still cut the header to ``BURN`` at 89 (swept 87-91), so NAME gave
+#: the two cells instead (:data:`_NAME_COLS`, :data:`_ADDR_COLS`). Re-swept in
+#: situ with the trade in place, starting below the pin: widget alone at
+#: 84-96, ``BURNED`` cut through 88 and whole from 89; the real ``l`` body at
+#: 134-140, whole from ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` (138).
 _TABLE_FULL_WIDTH = 89
 
 #: Defensive re-cap.  The manager already caps ``launchpad_coins`` at
@@ -269,7 +272,11 @@ MAX_COIN_ROWS = 10
 #: because a truncated address is an honest short form and there was no
 #: honest way to shrink SWAPS ALL itself (it is already a bare integer).
 _TICKER_COLS = 8
-_NAME_COLS = 18
+#: 16, was 18 (2026-09-14): the two cells pay for CREATOR's copy icon -- see
+#: :data:`_ADDR_COLS`. A coin name is attacker-chosen display text that is
+#: already fitted with a visible ``…``; it is the value on this row with
+#: slack, where the address is at its narrowest honest form.
+_NAME_COLS = 16
 #: The CREATOR window: 11, was 17 (``activity.py``'s own ``ADDR_COLS`` still
 #: uses the wider form unchanged -- that panel never needed to pay for a
 #: tenth column). ``widgets/address.short_address`` renders it as six leading
@@ -277,19 +284,19 @@ _NAME_COLS = 18
 #: form of the same anti-poisoning idea at half the window. It is the
 #: helper's ``MIN_SHORT_COLS``: there is no narrower honest window.
 _ADDR_WINDOW_COLS = 11
-#: The CREATOR **column**, and it is the window alone.
+#: The CREATOR **column**: the window plus its copy icon
+#: (``widgets/address.ICON_COLS``) -- 13, was 11 (2026-09-14,
+#: ``docs/address_copy_PRD.md`` §5).
 #:
-#: **No copy icon in this column yet, and that is an open decision rather
-#: than an oversight** (2026-09-14, ``docs/address_copy_PRD.md`` §5). The icon
-#: needs two cells. The window cannot give them up -- it is already the
-#: narrowest honest form -- and the table has none to spare at
-#: :data:`_TABLE_FULL_WIDTH`: see :data:`_BURNED_COLS` for the column that
-#: looked spare and was not. The rule's answer for such a cell is to stop and
-#: report rather than raise the pin, so it was reported. Measured in situ for
-#: whoever decides: NAME 18 -> 16 with CREATOR 13 keeps ``BURNED`` whole from
-#: 89 (virtual width 93, unchanged), i.e. holds this pin by giving coin names
-#: two fewer cells; the only other way is raising the pin.
-_ADDR_COLS = _ADDR_WINDOW_COLS
+#: **Paid for by NAME 18 -> 16**, not by the window and not by the pin. The
+#: window cannot give the icon two cells -- it is already the narrowest honest
+#: form -- and the table had none spare at :data:`_TABLE_FULL_WIDTH`; see
+#: :data:`_BURNED_COLS` for the column that looked spare and was not. The coin
+#: name is the value on the row with slack (attacker-chosen display text,
+#: already fitted with a visible ``…``), so it gave two cells, which is the
+#: terminal-layout rule "shorten a value rather than raise a pin". The column
+#: sum stays 75 and the pin holds -- re-swept, see :data:`_TABLE_FULL_WIDTH`.
+_ADDR_COLS = _ADDR_WINDOW_COLS + ICON_COLS
 _AGE_COLS = 4
 #: ``MCAP`` on screen: ``$23.4K``. Six columns is the widest this formatter
 #: produces below a quadrillion dollars, and it is FOUR narrower than the
@@ -309,9 +316,9 @@ _SWAPS_ALL_COLS = 6
 #: width (93) already exceeds its panel at :data:`_TABLE_FULL_WIDTH`, and the
 #: cut lands in these right-hand cells. Measured 2026-09-14: BURNED 9 -> 7
 #: with CREATOR 11 -> 13 kept the virtual width at 93 and still cut the
-#: header to ``BURN`` at 89. See :data:`_ADDR_COLS` for what that blocked.
+#: header to ``BURN`` at 89. NAME paid instead; see :data:`_ADDR_COLS`.
 _BURNED_COLS = 9
-# 8+18+11+4+6+7+6+6+9 = 75
+# 8+16+13+4+6+7+6+6+9 = 75
 
 
 def _ticker_cell(ticker: object) -> str:
@@ -332,19 +339,22 @@ def _creator_cell(creator: object, known: bool) -> Text:
     when it is ``True`` -- it can only style the raw address, cyan when known,
     dim otherwise (``activity.py``'s exact convention for ``counterparty``).
 
-    ``0x`` + 4 hex + ``…`` + 4 through ``widgets/address.short_address`` --
-    half of the 17-cell collision-resistance window, because this column lost
-    half its own width to pay for SWAPS ALL (Task 11). **No copy icon yet:**
-    see :data:`_ADDR_COLS` for the open decision. A value that is not an
-    address is fitted to the cell by the same helper, with a visible ``…``.
+    ``0x`` + 4 hex + ``…`` + 4 plus the copy icon, through
+    ``widgets/address.address_text`` -- half of the 17-cell
+    collision-resistance window, because this column lost half its own width
+    to pay for SWAPS ALL (Task 11). The icon copies the whole address; NAME
+    paid its two cells (:data:`_ADDR_COLS`). A value that is not an address
+    gets no icon and is fitted to the cell by the same helper, with a
+    visible ``…``.
 
     A ``Text`` cell rather than a markup string: ``DataTable`` renders a
-    ``Text`` as it is, so nothing third-party is ever parsed.
+    ``Text`` as it is, so the icon's click action survives and nothing
+    third-party is ever parsed.
     """
     colour = "cyan" if known else "dim"
     value = _flatten(creator)
     if is_address(value):
-        return Text(short_address(value, _ADDR_WINDOW_COLS), style=colour)
+        return address_text(value, width=_ADDR_WINDOW_COLS, style=colour)
     # Not an address: ``address_text`` fits it on cells and adds no icon.
     return address_text(value or DASH, width=_ADDR_COLS, style=colour)
 

@@ -1682,7 +1682,7 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "label",       # str  -- POOL4_HATCH_LABELS
         "state",       # str  -- POOL4_HATCH_STATES
         "detail",      # str | None -- third-party derived; escaped at render
-        "addr",        # str | None -- rendered through _fmt.long_addr
+        "addr",        # str | None -- rendered through widgets/address.address_text, with its copy icon
         "addr_known",  # bool -- KNOWN_LABELS allowlist only
     ),
     # ``address``, not ``addr``. This row shape was specified two ways -- the

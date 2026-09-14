@@ -62,9 +62,19 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
+from maxpane_dashboard.widgets.address import (
+    COPY_GLYPH,
+    ICON_COLS,
+    address_text,
+    is_address,
+)
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH
-from maxpane_dashboard.widgets.surf._icons import link_prose, mark_addresses, unmark
+from maxpane_dashboard.widgets.surf._icons import (
+    keep_units,
+    link_in_order,
+    mark_addresses,
+    unmark,
+)
 from maxpane_dashboard.widgets.surf._pool4 import (
     GLYPH_HINT,
     NETWORK_UNKNOWN,
@@ -547,16 +557,22 @@ def _discovery_markup(
 
     text = strip_tags(detail)
     if text:
-        # The sentence names the adopted hook in prose. Each whole address is
-        # marked with its copy icon *before* the fit, so ``room`` pays for the
-        # icon, and the action is attached to whichever icons the fit kept --
-        # an address cut by the ``…`` loses its icon with its tail.
-        marked, _addresses, _spans = mark_addresses(text)
-        line = parse_line(
-            f"[dim]{indent}{safe_markup(unmark(fit_cell(marked, room)))}[/]"
-        )
-        if line is not None:
-            lines.append(link_prose(line))
+        # The sentence names the adopted hook in prose. Each address is
+        # windowed to the 17-cell anti-poisoning form -- the address block's
+        # own window a few lines below, not the lever grid's 15, which is a
+        # grid-column trade and does not apply to a line fitted to ``room`` --
+        # with its copy icon, *before* the fit, so ``room`` pays for the icon.
+        # The fit never bisects a window-and-icon unit (``keep_units``): at the
+        # pinned 99 a whole 42-character address used to be cut to 26 hex with
+        # its icon gone, while the same line carried it at 220. Signals' detail
+        # is the same shape and is fitted the same way.
+        marked, addresses, spans = mark_addresses(text, _ADDR_COLS)
+        kept = keep_units(marked, spans, fit_cell(marked, room))
+        if kept:
+            line = parse_line(f"[dim]{indent}{safe_markup(unmark(kept))}[/]")
+            if line is not None:
+                link_in_order([line], addresses[: kept.count(COPY_GLYPH)])
+                lines.append(line)
 
     citation = strip_tags(source_tx)
     if citation:

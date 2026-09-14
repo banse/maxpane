@@ -166,9 +166,10 @@ HATCHES_HEALTHY = dict(
         # the third belongs in a `state` word. `closed` is the vocabulary
         # member that says a market is not open without claiming the thing
         # behind it is absent.
-        # 17 cells exactly. The hatch grid's last cell is sized to
-        # ``_fmt.long_addr``'s form, and a row with no address gets the same
-        # 17 columns for its detail -- so the honest wording has to fit there
+        # 17 cells exactly. The hatch grid's last cell is 17 cells (a lever's
+        # address is a 15-cell window plus its copy icon there since
+        # 2026-09-14), and a row with no address gets the same 17 columns for
+        # its detail -- so the honest wording has to fit there
         # or it is truncated to "reserve accruing…" and the market's closure
         # never reaches the screen. Reported to WP7 as a constraint on the
         # producer's string rather than worked around by widening the cell,

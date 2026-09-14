@@ -117,7 +117,7 @@ TITLE = "DEV ACTIVITY"
 
 # -- the column budget, in rendered columns ----------------------------
 #
-# Measured from the format strings in :func:`_row_markup`, not rounded.
+# Measured from the format strings in :func:`_row_parts`, not rounded.
 #
 # Two of the cells hold a value from a *closed vocabulary the producer owns*
 # (``data/surf_client.py``), and are sized to its widest member exactly.  A
@@ -442,9 +442,9 @@ def _row_fields(
         return None
 
 
-def _row_markup(row, tier: str = "full", width: int = 0,
-                wallet_cols: int = _WALLET_COLS,
-                keep_stamp: bool = True) -> str | None:
+def _row_text(row, tier: str = "full", width: int = 0,
+              wallet_cols: int = _WALLET_COLS,
+              keep_stamp: bool = True) -> Text | None:
     """Format one activity row at ``tier``; ``None`` drops it.
 
     ``None`` means one of two things, and the caller must distinguish them:
@@ -454,33 +454,17 @@ def _row_markup(row, tier: str = "full", width: int = 0,
     read as quiet wallets, so :meth:`SurfDevActivity._render_view` writes
     :data:`SHORT_HINT` instead.
 
-    ``width`` is the real number of columns the log can show, and a markup
-    string that is returned is **guaranteed to fit it**, so
-    ``RichLog.write()`` never has to shrink -- and therefore never clips
-    without a visible ``…``.  ``wallet_cols`` / ``keep_stamp`` pass in a
-    layout shared by the whole batch (see :func:`_budget`).
-    """
-    parts = _row_parts(row, tier, width, wallet_cols, keep_stamp)
-    if parts is None:
-        return None
-    lead, who, known, amount, _address = parts
-    colour = "cyan" if known else "dim"
-    return f"{lead}[{colour}]{safe_markup(who)}[/]{amount}"
+    ``width`` is the real number of columns the log can show, and a row that
+    is returned is **guaranteed to fit it**, so ``RichLog.write()`` never has
+    to shrink -- and therefore never clips without a visible ``…``.
+    ``wallet_cols`` / ``keep_stamp`` pass in a layout shared by the whole
+    batch (see :func:`_budget`).
 
-
-def _row_text(row, tier: str = "full", width: int = 0,
-              wallet_cols: int = _WALLET_COLS,
-              keep_stamp: bool = True) -> Text | None:
-    """The row :meth:`SurfDevActivity._render_view` writes: :func:`_row_markup`
-    with the counterparty's copy icon live.
-
-    Same cells, same fit, same ``None`` -- both are views of
-    :func:`_row_parts`, so the width contract the markup string is tested
-    against is the one this ``Text`` paints. A markup string cannot carry a
-    click action, which is the whole reason this second view exists; the
-    fixed cells are still parsed from markup, and only the counterparty is
-    composed as ``Text`` -- through ``widgets/address.address_text`` when it
-    is an address, so the icon copies the whole value the window stands for.
+    A ``Text`` since 2026-09-14, and the one this panel writes: a markup
+    string cannot carry the counterparty's copy-icon action. The fixed cells
+    are still parsed from markup; the counterparty is composed as ``Text``,
+    through ``widgets/address.address_text`` when it is an address, so the
+    icon copies the whole value the window stands for.
     """
     parts = _row_parts(row, tier, width, wallet_cols, keep_stamp)
     if parts is None:
@@ -505,9 +489,9 @@ def _row_parts(row, tier: str, width: int, wallet_cols: int,
     """Fit one row; ``(lead markup, who, known, amount, address)`` or ``None``.
 
     ``lead`` is every cell before the counterparty, as markup, ending in its
-    gap; ``who`` is the counterparty cell's plain text, icon included; the
-    two views above render it. See :func:`_row_markup` for what ``None``
-    means.
+    gap; ``who`` is the counterparty cell's plain text, icon included, which
+    is what every width calculation measures. See :func:`_row_text` for what
+    ``None`` means.
     """
     fields = _row_fields(row, tier)
     if fields is None:

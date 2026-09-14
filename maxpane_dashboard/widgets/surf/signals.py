@@ -99,7 +99,12 @@ from textual.content import Content
 from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH, fmt_age
-from maxpane_dashboard.widgets.surf._icons import link_in_order, mark_addresses, unmark
+from maxpane_dashboard.widgets.surf._icons import (
+    keep_units,
+    link_in_order,
+    mark_addresses,
+    unmark,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -339,15 +344,7 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
         budget = int(available) - visible_len(head) - SEPARATOR_COLS
         if budget < MIN_DETAIL_COLS:
             return "", []
-        cut = _cut_detail(marked, budget)
-        if cut != marked:
-            kept = len(cut) - 1 if cut else 0          # without the "…"
-            for start, end in spans:
-                if start < kept < end:
-                    head_of = marked[:start].rstrip()
-                    cut = f"{head_of}…" if head_of else ""
-                    break
-        marked = cut
+        marked = keep_units(marked, spans, _cut_detail(marked, budget))
         if not marked:
             # Only a bisected number or address would have fitted: the head
             # renders alone, which is what this widget already does for a

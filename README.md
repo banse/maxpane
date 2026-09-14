@@ -269,13 +269,14 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| 109–112 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, surf `IDENTITY.MD ‹ widen for /2000 written`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen…`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen…`, curator `FAN-OUT PATTERNS ‹ widen` |
+| 109–112 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen: time, kind, ETH`, surf `IMD MARKET ‹ widen…`, surf `IDENTITY.MD ‹ widen for /2000 written`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen…`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen…`, curator `FAN-OUT PATTERNS ‹ widen` |
 | 113–122 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen…`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen…`, curator `FAN-OUT PATTERNS ‹ widen: block window` |
 | 123–126 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen: TX`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen: credit wording` |
 | 127–133 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen: TX`, curator `SIGNALS ‹ widen` |
 | 134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `SIGNALS ‹ widen` |
-| 135–137 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `SIGNALS ‹ widen` |
-| 138–141 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
+| 135–137 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `SIGNALS ‹ widen` |
+| 138 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
+| 139–141 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
 | 142 | surf `IMD MARKET ‹ widen for 24h volume and bridge flow`, FWA `SIGNALS ‹ widen` |
 | **≥ 143** | **nothing — full layout**, with one exception below |
 

@@ -25,6 +25,7 @@ from maxpane_dashboard.screens.surf import (
 )
 from maxpane_dashboard.widgets.address import (
     COPY_GLYPH,
+    PROSE_ADDRESS_RE,
     address_text,
     is_address,
     short_address,
@@ -59,9 +60,10 @@ def _addresses_in(payload) -> set[str]:
             if is_address(v):
                 found.add(v)
             else:
-                # prose: a post body or a signal detail carrying an address
-                import re
-                found.update(re.findall(r"0x[0-9a-fA-F]{40}", v))
+                # prose: a post body or a signal detail carrying an address.
+                # Hex-bounded (PROSE_ADDRESS_RE), so a 66-char tx hash's
+                # 40-hex prefix is not counted as a known address.
+                found.update(m.group(0) for m in PROSE_ADDRESS_RE.finditer(v))
         elif isinstance(v, dict):
             for x in v.values():
                 walk(x)
@@ -130,10 +132,12 @@ async def test_each_address_panel_carries_an_icon_for_its_own_addresses():
     cases = (
         # DEV ACTIVITY's unknown counterparty (the dust spoof is dropped)
         (frozen, (), set(unknown)),
-        # LAUNCHPAD ACTIVITY wallet, BURNKEEPERS wallet. The coin table's
-        # CREATOR is not here: it has no icon yet, pending an owner decision
-        # (see ``test_the_coin_table_creator_carries_its_copy_icon``).
-        (frozen, ("l",), {r["wallet"] for r in frozen["launchpad_activity"]}
+        # coin CREATOR, LAUNCHPAD ACTIVITY wallet, BURNKEEPERS wallet. The
+        # creators are also activity wallets in this fixture, so the coin
+        # table's own icons are asserted by region in
+        # ``test_the_coin_table_creator_carries_its_copy_icon``.
+        (frozen, ("l",), {c["creator"] for c in frozen["launchpad_coins"]}
+         | {r["wallet"] for r in frozen["launchpad_activity"]}
          | {r["wallet"] for r in frozen["launchpad_burnkeepers"]}),
         # HATCHES: the address block and the lever grid
         (mainnet, ("p",), {mainnet["pool4_hook_addr"], mainnet["pool4_vault_addr"],
@@ -268,29 +272,36 @@ async def test_launchpad_windows_stay_eleven_cells_beside_their_icons_at_the_pin
         assert short_address(creator, 11) in text
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "OPEN, for the owner: the coin table's CREATOR window is already the "
-    "narrowest honest form (11) and the table has no free columns at "
-    "_TABLE_FULL_WIDTH, so the icon cannot be placed without either NAME "
-    "18 -> 16 (measured: holds the pin) or raising the pin (forbidden). "
-    "Strict, so the day the icon lands this reddens and the marker comes off."))
 async def test_the_coin_table_creator_carries_its_copy_icon():
-    """The coin table alone, so no neighbour's icon can satisfy it."""
+    """Both fixture creators, by the coin table's own region, at the pin.
+
+    The ``l`` body at ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``, so the icon is
+    asserted where NAME 18 -> 16 paid for it -- and only icons inside the coin
+    table count: in this fixture both creators are also LAUNCHPAD ACTIVITY
+    wallets, whose icons must not satisfy it. Then one is clicked.
+    """
     from maxpane_dashboard.widgets.surf.launchpad import SurfLaunchpadCoins
 
     payload = _frozen_payload()
-
-    class _App(App):
-        def compose(self) -> ComposeResult:
-            yield SurfLaunchpadCoins()
-
-    app = _App()
-    async with app.run_test(size=(120, 20)) as pilot:
-        app.query_one(SurfLaunchpadCoins).update_data(
-            coins=payload["launchpad_coins"], as_of_hhmm="01:14")
+    creators = {c["creator"] for c in payload["launchpad_coins"]}
+    assert len(creators) == 2
+    app = _app(payload)
+    async with app.run_test(size=(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, 60)) as pilot:
+        await pilot.press("l")
         await pilot.pause()
-        copied = {a for _x, _y, a in icon_targets(app)}
-        assert {c["creator"] for c in payload["launchpad_coins"]} <= copied
+        region = app.screen.query_one(SurfLaunchpadCoins).region
+        in_table = [t for t in icon_targets(app) if region.contains(t[0], t[1])]
+        assert {a for _x, _y, a in in_table} == creators, in_table
+        rows = _rows(app)
+        for creator in creators:
+            assert any(f"{short_address(creator, 11)} {COPY_GLYPH}" in rows[y]
+                       for _x, y, a in in_table if a == creator), creator
+        header = next(r for r in rows if "TICKER" in r)
+        assert "BURNED" in header, "the coin table's last header was cut at the pin"
+        x, y, address = in_table[0]
+        await pilot.click(offset=(x, y))
+        await pilot.pause()
+        assert app.copied == [address]
 
 
 # -- the p body: HATCHES ---------------------------------------------------
@@ -312,15 +323,38 @@ async def test_hatches_block_keeps_seventeen_and_the_grid_gives_up_two_at_the_pi
 
 
 async def test_hatches_discovery_prose_gets_an_icon_and_the_citation_does_not():
+    """On the discovery detail's own row, at the ``p`` pin and wide.
+
+    Located by row, not by "some icon copies an address": the address block a
+    few lines below carries its own icons, so a whole-panel check passes with
+    the detail's icon cut off. At the pin the detail is fitted to a 35-cell
+    room; the address must arrive as its 17-cell window with the icon, never
+    cut mid-window with the icon gone. The citation row is a transaction hash
+    and carries no icon at either width.
+    """
     payload = _mainnet_pool4_payload()
-    targets, app = await _targets(payload, ("p",), size=(220, 60))
-    hook = payload["pool4_hook_addr"]
-    tx = payload["pool4_discovery_source_tx"]
-    assert is_address(tx) is False
-    copied = [address for _x, _y, address in targets]
-    # the discovery detail names the hook in prose (from the fixture)
-    assert "0xa1B997A9861B2b8aC17B4c615089cCC2a5416840" in copied or hook in copied
-    assert all(address is not None for address in copied)
+    named = PROSE_ADDRESS_RE.search(payload["pool4_discovery_detail"]).group(0)
+    assert not is_address(payload["pool4_discovery_source_tx"])
+    for width in (SURF_POOL4_FULL_LAYOUT_COLUMNS, 220):
+        app = _app(payload)
+        async with app.run_test(size=(width, 60)) as pilot:
+            await pilot.press("p")
+            await pilot.pause()
+            rows = _rows(app)
+            # HATCHES sits in the rail, so its lines share a row with the
+            # left column: located by content, never by a row's start.
+            label_y = next(i for i, r in enumerate(rows) if "discovery adopted" in r)
+            detail_y = label_y + 1
+            assert "adopted 0x" in rows[detail_y], (width, rows[detail_y])
+            cite_y = next(i for i in range(detail_y + 1, len(rows))
+                          if " tx 0x" in rows[i])
+            targets = icon_targets(app)
+            on_detail = [a for _x, y, a in targets if y == detail_y]
+            assert on_detail == [named], (width, rows[detail_y], on_detail)
+            assert f"{short_address(named, 17)} {COPY_GLYPH}" in rows[detail_y], (
+                width, rows[detail_y])
+            assert not [t for t in targets if t[1] == cite_y], (width, rows[cite_y])
+            assert COPY_GLYPH not in rows[cite_y]
 
 
 # -- the 4 body: STAKERS ---------------------------------------------------
@@ -393,6 +427,46 @@ async def test_a_cut_detail_never_bisects_an_address_window():
             has_start = "0x8004" in row
             assert (f"{window} {COPY_GLYPH}" in row) == has_start, (width, row)
             assert cell_len(row.rstrip()) <= width, (width, row)
+
+
+async def test_a_relaxed_row_quoting_an_address_in_its_last_clause_keeps_the_icon():
+    """The relaxed form ``analytics/surf_signals.build_signals`` composes when a
+    fired event has aged out: ``f"{detail} · last: {entry['detail']}"``, here
+    under a WATCH head (an ``ok`` row folds away and would paint nothing).
+
+    Wide: the ``last:`` clause's address is its window plus an icon that
+    copies it. Swept narrow: whenever any of the window is painted, all of it
+    and its icon are, and the row fits.
+    """
+    from maxpane_dashboard.widgets.surf.signals import SurfSignals
+
+    detail = f"surfsurf.eth nonce 4→5 · last: new contract {DEPLOY_ADDR} · surfsurf.eth"
+    window = short_address(DEPLOY_ADDR, 17)
+
+    class _App(CopyRecorder, App):
+        def compose(self) -> ComposeResult:
+            yield SurfSignals()
+
+    for width in [120, *range(40, 110, 3)]:
+        app = _App()
+        async with app.run_test(size=(width, 16)) as pilot:
+            app.query_one(SurfSignals).update_data(
+                sig_deploy_state="watch", sig_deploy_detail=detail)
+            await pilot.pause()
+            y, row = next((i, r) for i, r in enumerate(_rows(app)) if "NEW DEPLOY" in r)
+            targets = [t for t in icon_targets(app) if t[1] == y]
+            painted = "0x8004" in row
+            assert (f"last: new contract {window} {COPY_GLYPH}" in row) == painted, (
+                width, row)
+            assert [a for _x, _y, a in targets] == ([DEPLOY_ADDR] if painted else []), (
+                width, row)
+            assert cell_len(row.rstrip()) <= width, (width, row)
+            if width == 120:
+                assert painted, row
+                x, ty, _a = targets[0]
+                await pilot.click(offset=(x, ty))
+                await pilot.pause()
+                assert app.copied == [DEPLOY_ADDR]
 
 
 def test_the_deploy_detector_publishes_the_whole_address():

@@ -976,7 +976,7 @@ def _sample_data() -> dict:
             },
             {
                 # The live poisoning shape, end to end: a zero-value transfer
-                # from an unknown lookalike. WP3's ``_row_markup`` drops the
+                # from an unknown lookalike. WP3's ``_row_fields`` drops the
                 # (transfer, value 0, unknown) triple outright, so this row
                 # must never reach a pixel -- asserted in WP5.4's
                 # ``test_the_activity_view_defends_against_address_poisoning``.
@@ -5585,7 +5585,7 @@ def test_the_activity_fixture_speaks_the_producers_vocabularies():
 
 
 async def test_the_activity_rail_reaches_full_width_well_below_the_pinned_width():
-    """Where the rail hits ``FULL_WIDTH`` -- 135 now, and 152 once.
+    """Where the rail hits ``FULL_WIDTH`` -- 139 now, 135 before the copy icon, and 152 once.
 
     The rail is ``6fr`` of the 7:6 seam, so it gets the columns the feed's
     ``floor(7W/13)`` leaves -- ``ceil(6W/13)`` -- and the log spends five of
@@ -5629,7 +5629,8 @@ async def test_the_activity_rail_reaches_full_width_well_below_the_pinned_width(
     assert await _activity_usable_columns(ACTIVITY_FIRST_FULL_TERMINAL - 1) == (
         ACTIVITY_FULL_WIDTH - 1
     ), "the width below no longer falls one column short -- re-measure"
-    # ...and 135 really is the *first* such width, not merely one of them.
+    # ...and ACTIVITY_FIRST_FULL_TERMINAL (139 since the copy icon, 135
+    # before) really is the *first* such width, not merely one of them.
     assert ACTIVITY_FIRST_FULL_TERMINAL == min(
         w for w in range(60, 260) if ceil(6 * w / 13) - 5 >= ACTIVITY_FULL_WIDTH
     )

@@ -81,8 +81,12 @@ needs on screen went 48 -> 73, and
 and the top row was already carrying the rest). Nothing
 else on the body was shortened to absorb it -- see that constant's block for
 what the bottom row's seam spends and what it got back from IF IMD FALLS.
-``long_addr`` itself is untouched and its other two callers (HATCHES on the
-``p`` body, the dashboard body's activity feed) render exactly as before.
+The 17-cell anti-poisoning window this panel left behind was not narrowed for
+its other two users: HATCHES' address block on the ``p`` body and the dashboard
+body's activity feed still show it, now through ``widgets/address.short_address``
+at ``_fmt.ANTI_POISONING_COLS`` with a copy icon beside it. (HATCHES' lever grid
+gave up two cells of that window to its icon; see
+``screens/surf.SURF_POOL4_FULL_LAYOUT_COLUMNS``.)
 
 Purity
 ------
