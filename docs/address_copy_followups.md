@@ -8,14 +8,21 @@ reach at a pinned width, except where an item says so.
 
 ## Owner decisions
 
-- **STAKERS at its pin.** The `4` body's STAKERS panel shows the whole address from 121 columns, but a 40-cell
-  anti-poisoning window at 119–120 (`widgets/surf/pool4u_stakers.py`, `_ADDR_SHORT_COLS`). The window pays for
-  the icon without raising `SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`. That reverses the 2026-09-12 request for whole
-  addresses. The alternative is to raise that pin to 121.
-- **Curator `f` does not open the analysis body.** `screens/curator.py` binds `f` to the filter editor.
-  `action_toggle_analysis` has no key, while CLAUDE.md still says `f` swaps in OPERATORS / SEGMENTS / CLEANED
-  LIST. This predates the branch (the key moved after `e67938b`). The address sweep reaches the body by calling
-  the action directly. Either rebind or change the docs.
+- **STAKERS at its pin — decided 2026-09-15, kept as is.** The `4` body's STAKERS panel shows the whole address
+  from 121 columns, with a 40-cell anti-poisoning window at 119–120 (`widgets/surf/pool4u_stakers.py`,
+  `_ADDR_SHORT_COLS`). The owner reviewed this against the 2026-09-12 request for whole addresses and confirmed
+  the windowed pin is the intended behavior: the owner sees whole addresses at normal width, and no code changes.
+  The "raise the pin to 121" alternative below is declined, not merely unchosen.
+- **Curator `f` does not open the analysis body — decided 2026-09-15, `f` opening the filter is correct.**
+  `screens/curator.py:820` binds `f` to `action_toggle_filter`, which only acts in MODE_LIST (opens or applies
+  the `l` record view's custom filter editor); it is a no-op elsewhere. That has been true since `9c5eb2d`
+  (2026-08-20, "wire filtered list controls"), which superseded `e67938b`'s original `f` → `action_toggle_analysis`
+  binding (2026-08-18). The owner confirmed the current binding as intended — CLAUDE.md and README.md were wrong,
+  not the code, and both were corrected to describe `f` as the filter key. `action_toggle_analysis` (~:1414,
+  MODE_ANALYSIS: OPERATORS / SEGMENTS / CLEANED LIST) still exists and still works when reached, but no key is
+  bound to it — the analysis body is currently unreachable from the keyboard. That is left as an **open product
+  gap**: no key is invented here to fill it; the address sweep reaches the body by calling the action directly,
+  which is a test-only path and not a substitute for a real binding.
 - **Visible trades made to fit the icon without raising a pin.**
   - curator `l` table: ADDRESS shows a 40-cell window instead of the whole address.
   - curator `y` WALLET line: windowed at 138.
