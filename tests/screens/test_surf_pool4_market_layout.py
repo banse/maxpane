@@ -149,7 +149,16 @@ MEASURED_MARKET_ROWS = 35
 #: It is the number the bottom row's raised floor was bought to protect: in a
 #: nine-row slot -- the ladder's own content height, which is what that row was
 #: floored at -- the same panel prints **five**.
-PRE_SWAP_STAKER_ROWS_AT_PIN = 9
+#:
+#: **8, not the 9 recorded until 2026-09-15.** That 9 was counted by
+#: :func:`_staker_rows` while it still took any line starting with a digit,
+#: and this payload's footer, ``999,999 addresses · …``, starts with one: it
+#: was eight addresses plus the footer. Measured in situ at the current pin
+#: with the corrected counter: eight addresses under both the old footer and
+#: the ``showing 20 of 999,999`` one. The pre-swap tree cannot be re-rendered
+#: here, but it was counted with the same counter on the same footer, so the
+#: same one row is taken off. The layout did not change.
+PRE_SWAP_STAKER_ROWS_AT_PIN = 8
 
 #: What ``SurfPool4UStakers`` needs for itself in this body, measured at the
 #: width where its own marker goes dark. Hand-typed rather than imported for
@@ -574,12 +583,20 @@ def _staker_rows(app, widget) -> int:
     Counted off composited output rather than taken from the panel's height:
     a twelve-row panel painting five entries is exactly the regression the
     bottom row's floor was raised to prevent, and a height check cannot see
-    it. A row is one whose first painted character is its rank digit, which
-    excludes the title, the blank under it, the header and the footer.
+    it. A row is one whose first painted character is its rank digit **and
+    which carries an address**, which excludes the title, the blank under it,
+    the header and the footer.
+
+    The address half was added on 2026-09-15 (fix round 1). Until then a row
+    was any line starting with a digit, and the footer ``999,999 addresses ·
+    …`` starts with one, so every count this counter made on a footer that
+    began with its population was one too high. The fix-round footer
+    ``showing 20 of 999,999 addresses`` starts with a letter, which is how it
+    showed up.
     """
     return len([
         line for line in _region_text(app, widget).split("\n")
-        if line.strip() and line.strip()[0].isdigit()
+        if line.strip() and line.strip()[0].isdigit() and "0x" in line
     ])
 
 
