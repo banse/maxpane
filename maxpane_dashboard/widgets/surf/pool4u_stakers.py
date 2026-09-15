@@ -359,6 +359,12 @@ def _two_significant(v: float) -> str:
     ``0.37``, ``0.042``, ``0.0042``, ``0.00042``: as many decimals as it takes
     to show two significant digits, and never fewer than two. Below
     :data:`_SMALL_STEP` it is the floor marker, never a rounded-down zero.
+    Exactly the step prints ``0.00010``; the boundary is pinned both sides.
+
+    Caveat: the decimals come from ``floor(log10(v))`` before rounding, so a
+    value that carries up gains a digit -- ``0.00995`` prints ``0.0100``, three
+    significant digits (the ``999.6`` -> ``1,000`` carry in
+    :func:`_fmt_imd_cell` is the same effect one branch up).
     """
     if v < _SMALL_STEP:
         return _BELOW_STEP

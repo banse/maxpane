@@ -765,6 +765,13 @@ async def test_an_unchanged_poll_keeps_the_readers_place_in_the_table() -> None:
         (0.243158, 0.012, "0.24", "0.012%"),
         (0.0300679, 0.55, "0.030", "0.55%"),
         (0.0042, 0.0003, "0.0042", "0.00030%"),
+        # The ``_SMALL_STEP`` boundary, for both formatters: exactly the step,
+        # just below it and just above it. The step is the one comparison here
+        # that sits next to ``floor(log10(v))``, so ``<`` vs ``<=`` would change
+        # the first case and nothing else.
+        (0.0001, 0.0001, "0.00010", "0.00010%"),
+        (0.00009999, 0.00009999, "<0.0001", "<0.0001%"),
+        (0.00010001, 0.00010001, "0.00010", "0.00010%"),
         (1.2348797628963259e-20, 8.273969285998535e-25, "<0.0001", "<0.0001%"),  # live dust
         (0.0, 0.0, "0", "0%"),
     ],

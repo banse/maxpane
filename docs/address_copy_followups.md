@@ -104,6 +104,11 @@ reach at a pinned width, except where an item says so.
   fixes the counter.
 - **Layout contract.** RECENT FLOW's BURNED/STAKERS legs render `0` on a sell into headroom (verified on chain,
   fixture `tests/fixtures/surf/pool4/`), `--` when unread, and four decimals for a sub-cent payout.
+- **Unreachable 9-cell share.** `pool4u_stakers._fmt_share_cell` renders a negative sub-step share as
+  `"-<0.0001%"`, 9 cells against `_PCT_COLS = 8`. It cannot occur today: `staker_rows` only folds positive
+  balances. It would be cut with an ellipsis if a producer ever sent one.
+- **IMD headroom is 1 cell.** Over the synthetic worst case (`1200.0B`, 7 cells) the IMD column (`_IMD_COLS = 8`)
+  has one spare cell since the small-stake digits change gave two of its cells to share.
 
 ## Design notes kept as is
 

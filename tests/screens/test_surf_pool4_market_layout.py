@@ -1147,6 +1147,58 @@ async def test_the_bottom_rows_floor_is_bought_for_the_leaderboard() -> None:
                ["min-height"]) == row_floor
 
 
+#: The ``_SMALL_STEP`` boundary as ``(imd, share, IMD cell, share cell)``:
+#: exactly the step, just below and just above. Checked per RANK, because the
+#: strings repeat -- ``<0.0001`` is also the dust row's, and the exact and the
+#: just-above cases both print ``0.00010`` -- so a pair found anywhere on the
+#: panel could not tell a ``<`` from a ``<=`` on the step comparison.
+SMALL_STEP_BOUNDARY_CELLS = (
+    (0.0001, 0.0001, "0.00010", "0.00010%"),
+    (0.00009999, 0.00009999, "<0.0001", "<0.0001%"),
+    (0.00010001, 0.00010001, "0.00010", "0.00010%"),
+)
+
+
+def _rank_row_is(text: str, rank: int, imd: str, share: str) -> bool:
+    """Does the composited row for ``rank`` end in exactly these two cells?"""
+    pattern = (
+        r"^\s*" + str(rank) + r"\s+0x.*\s" + re.escape(imd) + r"\s+"
+        + re.escape(share) + r"(?:\s|$)"
+    )
+    return any(re.search(pattern, line) for line in text.split("\n"))
+
+
+@pytest.mark.parametrize(
+    "size",
+    [
+        (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+        (169, 50),
+    ],
+)
+async def test_the_small_step_boundary_renders_exactly(size) -> None:
+    """``0.0001`` prints ``0.00010``, ``0.00009999`` prints ``<0.0001``.
+
+    The review's gap (2026-09-15): the step is the one place where the
+    rendering turns on a comparison next to floating-point ``log10``, and no
+    case pinned a value at or beside it. Composited cells in the real ``4``
+    body, at the width pin and wide, for both columns, keyed by rank.
+    """
+    rows = [
+        {"rank": i + 1, "address": "0x" + f"{i + 1:040x}", "imd": imd, "pct": pct}
+        for i, (imd, pct, _t, _s) in enumerate(SMALL_STEP_BOUNDARY_CELLS)
+    ]
+    payload = _frozen_payload(
+        pool4_stakers=rows, pool4_staker_count=len(rows), pool4_staker_top3_pct=0.0003
+    )
+    r = await _render(payload, size)
+    wrong = [
+        (i + 1, imd, share)
+        for i, (_i, _p, imd, share) in enumerate(SMALL_STEP_BOUNDARY_CELLS)
+        if not _rank_row_is(r["stakers_text"], i + 1, imd, share)
+    ]
+    assert not wrong, f"{size}: {wrong}\n{r['stakers_text']}"
+
+
 @pytest.mark.parametrize(
     "size",
     [
