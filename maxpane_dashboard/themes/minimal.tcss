@@ -2350,12 +2350,19 @@ SurfPool4Hatches {
  * line is not composed (`quiet_as_of`), so at the floor the 6 is title,
  * BLANK and four log rows. Unscoped since 2026-09-12; scoping it to one body
  * would be a second place stating this panel's geometry
- * (`test_the_market_body_needs_no_scoped_rule_for_the_flow_panel`). */
+ * (`test_the_market_body_needs_no_scoped_rule_for_the_flow_panel`).
+ *
+ * `margin: 0 0 1 0` (2026-09-15) is the blank row between this panel's log
+ * and the STAKERS title under it; a full 25-row log ran straight into that
+ * title on the owner's screen. It comes out of this `1fr` panel's own height,
+ * not the body's: the `4` body's pins held at 119 x 35, re-swept
+ * (`SURF_POOL4_USER_FULL_LAYOUT_ROWS`). */
 SurfPool4Flow {
     width: 1fr;
     height: 1fr;
     min-height: 6;
     padding: 0 1;
+    margin: 0 0 1 0;
 }
 
 SurfScreen #surf-pool4-rail {

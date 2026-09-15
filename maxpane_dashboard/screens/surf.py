@@ -1448,6 +1448,23 @@ SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 #: collapsed to a single unavailable line -- a payload that needs *less* than
 #: the pin never lowers it.
 #:
+#: **2026-09-15: RECENT FLOW gave a row to a blank line, and 35 held.** The
+#: owner's screenshot showed FLOW's full 25-row log running straight into the
+#: ``STAKERS`` title below it. ``SurfPool4Flow`` gained ``margin: 0 0 1 0``,
+#: which takes the blank row out of the panel's own ``1fr`` height (its
+#: ``RichLog`` scrolls inside itself) rather than adding a row to the body.
+#: The top row's floor of 12 is unchanged, and FLOW's floor of 6 plus the
+#: margin is 7, still under it. Re-swept in situ, starting below the pin,
+#: rows 24-46 at 150 columns over the capture, the mainnet capture and the
+#: widest payload. The taller/whole result is identical to the pre-change
+#: sweep at every height: whole from 35, ``‹ taller`` lit at 34. FLOW is 11
+#: rows at the pin (12 before) and STAKERS still paints nine addresses there.
+#: The column pin was re-swept too (110-127, same three payloads): marked at
+#: 118, clean from 119. Neither pin moved.
+#: ``test_a_blank_row_separates_recent_flow_from_the_stakers_title`` pins the
+#: gap against a full log. The committed capture's short log leaves the
+#: bottom of the panel blank with or without the margin.
+#:
 #: **W7, ANSWERED FOR THIS BODY.** Open finding W7 asks whether a real laptop
 #: clears the ``p`` body's 45 rows, the tallest requirement in the repo. This
 #: body needs **35**: ten rows under ``p`` and four over
@@ -2254,6 +2271,11 @@ class SurfScreen(RefreshGuard, Screen):
      * `SURF_POOL4_FULL_LAYOUT_COLUMNS` carries the re-sweep and the old
      * per-seam table.
      *
+     * The `SurfPool4Flow` rule below gained `margin: 0 0 1 0` on 2026-09-15:
+     * the blank row between RECENT FLOW's log and the STAKERS title in the
+     * `4` body, taken out of the panel's own `1fr` height. Both of that
+     * body's pins held (`SURF_POOL4_USER_FULL_LAYOUT_ROWS`).
+     *
      * BOTH columns scroll and BOTH carry `scrollbar-gutter: stable`, for
      * `#surf-launchpad-left`/`#curator-right-rail`'s reason: a `Vertical`
      * defaults to `overflow: hidden hidden`, and without the reserved gutter
@@ -2303,6 +2325,7 @@ class SurfScreen(RefreshGuard, Screen):
         height: 1fr;
         min-height: 6;
         padding: 0 1;
+        margin: 0 0 1 0;
     }
     SurfScreen #surf-pool4-rail {
         width: 1fr;

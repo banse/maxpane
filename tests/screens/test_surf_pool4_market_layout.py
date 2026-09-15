@@ -1018,6 +1018,56 @@ async def test_the_bottom_rows_floor_is_bought_for_the_leaderboard() -> None:
                ["min-height"]) == row_floor
 
 
+@pytest.mark.parametrize(
+    "size",
+    [
+        (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+        (150, 46),
+        (169, 50),
+    ],
+)
+async def test_a_blank_row_separates_recent_flow_from_the_stakers_title(size) -> None:
+    """The owner's 2026-09-15 screenshot: FLOW's table ran into ``STAKERS``.
+
+    The fix is FLOW's own ``margin: 0 0 1 0``, which takes one row out of the
+    log rather than adding one to the body. Asserted on composited output
+    across FLOW's own columns: the row directly above the STAKERS title is
+    blank, and the row above that is FLOW's last log line.
+
+    **Run against a full 25-row log**, the state the live screen was in. The
+    committed capture's log is a few rows long, so the bottom of the panel is
+    blank whether or not the margin exists, and a test run against it cannot
+    fail. The second assertion is the premise that rules that out.
+    """
+    async with _surf_app(_widest_payload()).run_test(size=size) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("4")
+        await pilot.pause()
+        await pilot.pause()
+        screen = pilot.app.screen
+        flow = screen.query_one(SurfPool4Flow)
+        stakers = screen.query_one(SurfPool4UStakers)
+        rows = _screen_text(pilot.app).split("\n")
+        # Read every region INSIDE the harness: once the app exits, a
+        # widget's region is zeroed and a slice taken from it is empty.
+        x0, x1 = flow.region.x, flow.region.right
+        sx0, sx1 = stakers.region.x, stakers.region.right
+        title_y = stakers.region.y
+        taller = TALLER_HINT in rows[0]
+
+    assert not taller, f"{size}: the body is not whole, so this measures nothing"
+    assert "STAKERS" in rows[title_y][sx0:sx1]
+    assert rows[title_y - 2][x0:x1].strip(), (
+        f"{size}: FLOW's log does not reach the row above the gap, so the "
+        "blank row could be an empty log rather than the margin"
+    )
+    assert not rows[title_y - 1][x0:x1].strip(), (
+        f"{size}: RECENT FLOW's table runs straight into the STAKERS title: "
+        f"{rows[title_y - 1][x0:x1]!r}"
+    )
+
+
 @pytest.mark.parametrize("rows", list(range(24, 47)))
 async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
     """Finding **F6, closed for this body on 2026-09-12** -- and this is what
