@@ -98,6 +98,8 @@ module's ``try``.
 
 from __future__ import annotations
 
+import math
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -270,15 +272,27 @@ _TITLE_ID = "surf-pool4u-stakers-title"
 #:   (:data:`WHOLE_WIDTH`), and at the pin the address windowed to
 #:   :data:`_ADDR_SHORT_COLS` so the icon costs the body nothing -- 40 cells,
 #:   ``0x`` + 31 + ``…`` + 6, recorded beside the pin it protects;
-#: * IMD -- ``fmt_compact`` tops out at ``999.9B`` (six) and a grouped integer
-#:   below 1000 at ``999`` (three), so ten cells leaves room for the header and
-#:   for a magnitude this vault has not reached;
-#: * share -- ``100.0%`` is six.
+#: * IMD -- **eight** since 2026-09-15, was ten. ``fmt_compact`` tops out at
+#:   ``999.9B`` (six), ``1200.0B`` past a trillion (seven), and the small-stake
+#:   forms at ``0.00042`` / ``<0.0001`` (seven): see :func:`_fmt_imd_cell`;
+#: * share -- **eight** since 2026-09-15, was six: ``100.0%`` is six, and the
+#:   small-share forms ``0.00012%`` / ``<0.0001%`` are eight (:func:`_fmt_share_cell`).
+#:
+#: **The two columns traded cells, and the row did not grow.** The owner read
+#: ``8``/``0``/``0.0%`` down the bottom of the 353-row table (172 of the live
+#: vault's 350 holders printed ``0.0%``) and asked for the real values. Two
+#: significant digits on a small share need eight cells where the column had
+#: six, and at ``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` this table has zero cells
+#: to spare beside its scrollbar. The IMD column had three: ten cells for a
+#: widest value of seven. So IMD gave two to share. ``FULL_WIDTH`` and
+#: ``WHOLE_WIDTH`` are unchanged (69, 71), ``COMPACT_WIDTH`` is 59 (was 61),
+#: and no pin moved. Measured in situ on the live 350-row payload and a
+#: synthetic worst case (the report of 2026-09-15).
 _RANK_COLS = 3
 _ADDR_COLS = 42
 _ADDR_SHORT_COLS = _ADDR_COLS - ICON_COLS                           # 40
-_IMD_COLS = 10
-_PCT_COLS = 6
+_IMD_COLS = 8
+_PCT_COLS = 8
 
 #: What ``DataTable`` spends on each column *beyond* the width asked for: one
 #: cell of padding either side. Measured rather than assumed -- the two pins
@@ -325,7 +339,7 @@ FULL_WIDTH = sum(
 COMPACT_WIDTH = sum(
     cols + _CELL_PADDING
     for cols in (_RANK_COLS, _ADDR_SHORT_COLS + ICON_COLS, _IMD_COLS)
-)                                                                    # 61
+)                                                                    # 59
 
 
 def _shown_addr_cols(tier: str) -> int:
@@ -333,19 +347,69 @@ def _shown_addr_cols(tier: str) -> int:
     return _ADDR_COLS if tier == "whole" else _ADDR_SHORT_COLS
 
 
-def _fmt_imd_cell(value) -> str:
-    """A staker's IMD holding, fitted to :data:`_IMD_COLS`.
+#: The smallest step a small stake or share is printed to. Below it the cell
+#: says so (:data:`_BELOW_STEP`) instead of rounding a real holding to zero.
+_SMALL_STEP = 0.0001
+_BELOW_STEP = "<0.0001"
 
-    ``fmt_compact`` above 1000 (``184.2K``), grouped integers below it, and
-    ``--`` on an unread amount -- never ``0``, which would rank a wallet as
-    holding nothing when we simply could not convert its shares.
+
+def _two_significant(v: float) -> str:
+    """``0 < v < 1`` at two significant digits, or :data:`_BELOW_STEP`.
+
+    ``0.37``, ``0.042``, ``0.0042``, ``0.00042``: as many decimals as it takes
+    to show two significant digits, and never fewer than two. Below
+    :data:`_SMALL_STEP` it is the floor marker, never a rounded-down zero.
+    """
+    if v < _SMALL_STEP:
+        return _BELOW_STEP
+    return f"{v:.{max(2, 1 - math.floor(math.log10(v)))}f}"
+
+
+def _fmt_imd_cell(value) -> str:
+    """A staker's IMD holding, fitted to :data:`_IMD_COLS`, with its real digits.
+
+    ``115.4K`` above 1000 (``fmt_compact``), a grouped integer from 10
+    (``780``), two decimals from 1 (``8.42``), two significant digits below 1
+    (``0.37``, ``0.0042``), ``<0.0001`` below the step, ``0`` for a true zero,
+    and ``--`` for an unread amount.
+
+    Until 2026-09-15 everything below 1000 was a whole number, so the owner's
+    screen read ``8``, ``1`` and then ``0`` for four live holders who hold
+    something: 0.24, 0.030 and two dust balances. The producer already
+    publishes the unrounded float, so the fix is here. Widest form: seven
+    cells, measured.
     """
     v = as_float(value)
     if v is None:
         return DASH
-    if abs(v) >= 1000:
+    if v == 0:
+        return "0"
+    sign, m = ("-", -v) if v < 0 else ("", v)
+    if m >= 1000:
         return fmt_compact(v)
-    return f"{v:,.0f}"
+    if m >= 10:
+        return f"{v:,.0f}"
+    if m >= 1:
+        return f"{v:.2f}"
+    return sign + _two_significant(m)
+
+
+def _fmt_share_cell(value) -> str:
+    """A staker's share of the whole vault, fitted to :data:`_PCT_COLS`.
+
+    ``7.7%`` from 1%, two significant digits below it (``0.55%``, ``0.012%``,
+    ``0.00053%``), ``<0.0001%`` below the step, ``0%`` for a true zero, and
+    ``--`` unread. It was ``.1f`` everywhere, which painted 172 of the live
+    vault's 350 holders as ``0.0%``. Widest form: eight cells, measured.
+    """
+    pct = as_float(value)
+    if pct is None:
+        return DASH
+    if pct == 0:
+        return "0%"
+    if abs(pct) >= 1:
+        return f"{pct:.1f}%"
+    return ("-" if pct < 0 else "") + _two_significant(abs(pct)) + "%"
 
 
 def staker_cells(row: object) -> tuple[str, str, str, str] | None:
@@ -375,8 +439,7 @@ def staker_cells(row: object) -> tuple[str, str, str, str] | None:
         rank_text = f"{int(rank)}" if rank is not None else DASH
         addr = row.get("address")
         address = str(addr).strip() if addr else ""
-        pct = as_float(row.get("pct"))
-        pct_text = f"{pct:.1f}%" if pct is not None else DASH
+        pct_text = _fmt_share_cell(row.get("pct"))
         # The address whole and raw -- ``--`` for a missing one, never a blank
         # cell. How much of it is shown, and its copy icon, is decided at
         # render time against the width (see ``_render_rows``).

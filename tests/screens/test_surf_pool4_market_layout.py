@@ -87,6 +87,8 @@ both halves rather than simplifying to the marker now that the two agree.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from maxpane_dashboard.app import CSS_PATH
@@ -267,19 +269,49 @@ def _wide_staker_payload(**extra) -> dict:
     )
 
 
+#: ``(imd, share, IMD cell, share cell)`` for the widest and the trickiest
+#: small-stake forms (2026-09-15). The largest pair follows, and every row
+#: after these is it. They lead the every-staker payload so they are on screen
+#: at every height the sweeps use, where a cut cell would show.
+SMALL_STAKE_CELLS = (
+    (0.00042, 0.00012, "0.00042", "0.00012%"),
+    (1.2348797628963259e-20, 8.273969285998535e-25, "<0.0001", "<0.0001%"),
+    (8.42, 0.55, "8.42", "0.55%"),
+    (0.0042, 0.012, "0.0042", "0.012%"),
+    (0.0, 0.0, "0", "0%"),
+    (999_900_000_000.0, 100.0, "999.9B", "100.0%"),
+)
+
+
+def _pair_is_whole(text: str, imd: str, share: str) -> bool:
+    """Is ``imd`` followed by ``share`` on one composited row, each a whole cell?
+
+    Whole means bounded by whitespace or the line's ends, so a value cut to
+    ``0.0001…`` or a share whose last cells went behind the scrollbar cannot
+    match.
+    """
+    pattern = (
+        r"(?:^|\s)" + re.escape(imd) + r"\s+" + re.escape(share) + r"(?:\s|$)"
+    )
+    return any(re.search(pattern, line) for line in text.split("\n"))
+
+
 def _every_staker_payload() -> dict:
     """Every staker the live vault had when the owner asked to see them all.
 
-    353 rows, so the rank column reaches three digits, at the widest holding
-    budget. Checked at the pin boundary in both dimensions, which is where a
-    pin that moved with the row count would show it.
+    353 rows, so the rank column reaches three digits. The first rows carry
+    :data:`SMALL_STAKE_CELLS`, the widest small-stake strings, and the rest the
+    widest large holding. Checked at the pin boundary in both dimensions and
+    over 109..130 in the width sweep, where a cut cell reddens.
     """
     rows = [
         {
             "rank": i + 1,
             "address": "0x" + f"{i:x}".rjust(40, "e"),
-            "imd": 999_900_000_000.0,
-            "pct": 100.0,
+            "imd": (SMALL_STAKE_CELLS[i][0] if i < len(SMALL_STAKE_CELLS)
+                    else 999_900_000_000.0),
+            "pct": (SMALL_STAKE_CELLS[i][1] if i < len(SMALL_STAKE_CELLS)
+                    else 100.0),
         }
         for i in range(LIVE_STAKER_COUNT)
     ]
@@ -618,6 +650,7 @@ async def _render(payload, size):
             # horizontally and hides the rightmost cells. ``max_scroll_x`` is
             # how many columns are hidden that way (fix round 1, item 2).
             "stakers_hidden_cols": stakers_table.max_scroll_x,
+            "stakers_text": _region_text(pilot.app, widgets["SurfPool4UStakers"]),
             "stakers_header": next(
                 (line for line in _region_text(
                     pilot.app, widgets["SurfPool4UStakers"]).split("\n")
@@ -708,6 +741,15 @@ async def test_the_market_body_is_whole_from_its_pinned_width(
             "with no marker -- its vertical scrollbar took the cells"
         )
         assert "share" in r["stakers_header"], (payload_name, width, r["stakers_header"])
+        if payload_name == "every-staker":
+            cut = [
+                (imd, share) for _i, _p, imd, share in SMALL_STAKE_CELLS
+                if not _pair_is_whole(r["stakers_text"], imd, share)
+            ]
+            assert not cut, (
+                f"at {width} STAKERS does not paint these stake/share cells "
+                f"whole: {cut}\n{r['stakers_text']}"
+            )
     else:
         assert r["marked"], width
         # There is deliberately no second assertion here, and the reason is
@@ -1103,6 +1145,41 @@ async def test_the_bottom_rows_floor_is_bought_for_the_leaderboard() -> None:
     )
     assert int(_css_rules(_S.DEFAULT_CSS)[f"#{POOL4_USER_BOTTOM_ID}"]
                ["min-height"]) == row_floor
+
+
+@pytest.mark.parametrize(
+    "size",
+    [
+        (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+        (169, 50),
+    ],
+)
+async def test_small_stakes_render_whole_with_their_real_digits(size) -> None:
+    """The owner's 2026-09-15 request, on composited cells in the real body.
+
+    The tail of the 353-row table read ``8``, ``1``, ``0`` and ``0.0%``. Every
+    stake and share now prints two significant digits, ``<0.0001`` below the
+    step and ``0`` only for a true zero. At the width pin the table has zero
+    cells to spare beside its scrollbar, so the claim is checked there and at
+    a wide terminal, where the address is whole and the tier is different.
+    ``DataTable`` cuts a too-long cell in silence, so the check is on the
+    composited row, not on the formatter.
+    """
+    rows = [
+        {"rank": i + 1, "address": "0x" + f"{i + 1:040x}", "imd": imd, "pct": pct}
+        for i, (imd, pct, _t, _s) in enumerate(SMALL_STAKE_CELLS)
+    ]
+    payload = _frozen_payload(
+        pool4_stakers=rows, pool4_staker_count=len(rows), pool4_staker_top3_pct=7.7
+    )
+    r = await _render(payload, size)
+    cut = [
+        (imd, share) for _i, _p, imd, share in SMALL_STAKE_CELLS
+        if not _pair_is_whole(r["stakers_text"], imd, share)
+    ]
+    assert not cut, f"{size}: {cut}\n{r['stakers_text']}"
+    assert r["stakers_hidden_cols"] == 0, size
+    assert "SurfPool4UStakers" not in r["marked"], size
 
 
 @pytest.mark.parametrize(

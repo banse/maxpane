@@ -756,6 +756,39 @@ async def test_an_unchanged_poll_keeps_the_readers_place_in_the_table() -> None:
         assert str(table.get_row_at(0)[2]).strip() == "901"
 
 
+@pytest.mark.parametrize(
+    "imd,share,imd_text,share_text",
+    [
+        (115_356.21324175893, 7.729123061121392, "115.4K", "7.7%"),   # live rank 1
+        (780.0, 2.85, "780", "2.9%"),
+        (8.332, 0.000558263, "8.33", "0.00056%"),                      # live rank 337
+        (0.243158, 0.012, "0.24", "0.012%"),
+        (0.0300679, 0.55, "0.030", "0.55%"),
+        (0.0042, 0.0003, "0.0042", "0.00030%"),
+        (1.2348797628963259e-20, 8.273969285998535e-25, "<0.0001", "<0.0001%"),  # live dust
+        (0.0, 0.0, "0", "0%"),
+    ],
+)
+def test_small_stakes_keep_their_real_digits(imd, share, imd_text, share_text) -> None:
+    """Two significant digits on every stake and share, and nothing rounded to 0.
+
+    The owner's screenshot of the table's tail read ``8``, ``1``, ``0`` and
+    ``0.0%`` for holders who hold something. Every form must also fit its
+    column on ``cell_len``, because ``clip`` would otherwise cut it with an
+    ellipsis. The composited half, at the ``4`` body's width pin and wide, is
+    ``test_small_stakes_render_whole_with_their_real_digits``.
+    """
+    from maxpane_dashboard.widgets.surf import pool4u_stakers as mod
+
+    cells = staker_cells({"rank": 1, "address": "0x" + "ab" * 20,
+                          "imd": imd, "pct": share})
+    assert cells is not None
+    assert cells[2] == imd_text, cells
+    assert cells[3] == share_text, cells
+    assert cell_len(imd_text) <= mod._IMD_COLS
+    assert cell_len(share_text) <= mod._PCT_COLS
+
+
 def test_the_footer_says_when_the_table_is_capped() -> None:
     """``showing N of M`` on the footer's own line, and only when cut short.
 
