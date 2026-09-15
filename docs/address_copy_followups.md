@@ -14,15 +14,23 @@ reach at a pinned width, except where an item says so.
   the windowed pin is the intended behavior: the owner sees whole addresses at normal width, and no code changes.
   The "raise the pin to 121" alternative below is declined, not merely unchosen.
 - **Curator `f` does not open the analysis body — decided 2026-09-15, `f` opening the filter is correct.**
-  `screens/curator.py:820` binds `f` to `action_toggle_filter`, which only acts in MODE_LIST (opens or applies
+  `screens/curator.py:829` binds `f` to `action_toggle_filter`, which only acts in MODE_LIST (opens or applies
   the `l` record view's custom filter editor); it is a no-op elsewhere. That has been true since `9c5eb2d`
   (2026-08-20, "wire filtered list controls"), which superseded `e67938b`'s original `f` → `action_toggle_analysis`
   binding (2026-08-18). The owner confirmed the current binding as intended — CLAUDE.md and README.md were wrong,
-  not the code, and both were corrected to describe `f` as the filter key. `action_toggle_analysis` (~:1414,
-  MODE_ANALYSIS: OPERATORS / SEGMENTS / CLEANED LIST) still exists and still works when reached, but no key is
-  bound to it — the analysis body is currently unreachable from the keyboard. That is left as an **open product
-  gap**: no key is invented here to fill it; the address sweep reaches the body by calling the action directly,
-  which is a test-only path and not a substitute for a real binding.
+  not the code, and both were corrected to describe `f` as the filter key.
+  **Closed the same day.** The owner asked for the orphaned `action_toggle_analysis` (~:1423, MODE_ANALYSIS:
+  OPERATORS / SEGMENTS / CLEANED LIST) to be bound to **`a`** ("yes bind it to a") rather than re-nominating `f`
+  or any other key already spoken for. `screens/curator.py:828` now binds it, without `priority` (unlike `f` and
+  `e`, which are accept/apply keys inside the filter editor's own workflow and must win even against a focused
+  field there — `a` plays no part in that workflow). Verified, not assumed: a focused Textual `Input` in the
+  filter editor consumes any printable character itself before either kind of binding is even checked, so
+  `priority=True` on `a` would not have changed this specific interaction either — see the comment beside the
+  binding and `tests/screens/test_curator_screen.py::test_a_inside_the_filter_editor_types_the_letter_instead_of_switching`.
+  `a` behaves exactly like `y` from every mode (mirrors `action_toggle_mode`, minus the wallet gate) and is
+  deliberately **not** added to `KEY_HINTS` — the owner asked for the binding, not the hint, and that string is
+  pinned against the worst case at 138 columns. The address sweep now reaches the body with the key tuple
+  `("a",)` instead of calling the action directly.
 - **Visible trades made to fit the icon without raising a pin.**
   - curator `l` table: ADDRESS shows a 40-cell window instead of the whole address.
   - curator `y` WALLET line: windowed at 138.

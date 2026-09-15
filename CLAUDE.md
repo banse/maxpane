@@ -169,15 +169,16 @@ the new dashboard is not going at the end.
 
 ### THE LIST's linked-wallet analysis — the `sybilkit` seam (2026-08-18)
 
-Curator grew a **third view**, not a ninth dashboard: MODE_ANALYSIS (OPERATORS / SEGMENTS /
-CLEANED LIST) swaps the dashboard body, with the hero left in place so the doomsday clock never
-leaves the screen, `e` exports the cleaned list, and the `y` view and the leaderboard each grew a
-field off the same result. **`f` bound this view at first** (`e67938b`, 2026-08-18), **then moved
-to the list filter editor** (`9c5eb2d`, 2026-08-20, "wire filtered list controls") — the owner
-confirmed that rebind as intended on 2026-09-15. `action_toggle_analysis` still exists and still
-performs the swap described above, but no key calls it today, so this view cannot be opened from
-the keyboard; that is a known product gap, filed in `docs/address_copy_followups.md`, not
-something to route around by re-nominating `f` or any other key on a guess. **There is no
+Curator grew a **third view**, not a ninth dashboard: `a` swaps the dashboard body for
+MODE_ANALYSIS (OPERATORS / SEGMENTS / CLEANED LIST), with the hero left in place so the doomsday
+clock never leaves the screen, `e` exports the cleaned list, and the `y` view and the leaderboard
+each grew a field off the same result. **`f` bound this view at first** (`e67938b`, 2026-08-18),
+**then moved to the list filter editor** (`9c5eb2d`, 2026-08-20, "wire filtered list controls") —
+the owner confirmed that rebind as intended on 2026-09-15. That left `action_toggle_analysis`
+correct but unreachable from the keyboard, a gap filed in `docs/address_copy_followups.md`; the
+owner closed it the same day by binding it to **`a`** instead of re-nominating `f` or any other
+key already spoken for. `a` is not in `KEY_HINTS` — the owner asked for the binding, not the
+label, and that hint string is pinned against the worst-case width (see below). **There is no
 six-surface renumber for an expansion** — `app.py`, `__main__.py` and `GAMES` are untouched.
 
 **`data/curator_clusters.py` is the only maxpane module that imports `sybilkit`**, and
@@ -536,16 +537,19 @@ record view, described below) are unrelated bindings on two different
 screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
 standing — ladder, share, and what passing the rank above would cost — with the
 hero left in place so the doomsday clock never leaves the screen (`esc` backs
-out, one-way); **`f` on curator** opens the custom filter editor inside `l`'s record view
-(`action_toggle_filter`; a no-op everywhere else) — the linked-wallet analysis body (OPERATORS /
-SEGMENTS / CLEANED LIST, `action_toggle_analysis`) still exists but has no key bound to it, so it
-cannot be opened from the keyboard today; **`l`** opens one full-width
+out, one-way); **`a` on curator** (bound 2026-09-15) swaps in the linked-wallet analysis body
+(OPERATORS / SEGMENTS / CLEANED LIST, `action_toggle_analysis`) the same way — hero left in place,
+a second `a` or `esc` backs out one-way — and is deliberately not in the status hint below (the
+owner asked for the binding, not the label, and that string is pinned at 138 columns); **`f` on
+curator** opens the custom filter editor inside `l`'s record view (`action_toggle_filter`; a no-op
+everywhere else) and is unrelated to `a` — the two keys were the same binding once
+(`action_toggle_analysis` under `f`, until `9c5eb2d` moved `f` to the filter editor) but are not
+now; **`l`** opens one full-width
 record table under its own raw/wallet/cleaned summary hero, with `c` switching
 RAW/CLEANED and remembering the choice; each list keeps its own typed header-click
 sort, with a second click reversing it and the fixed YOU row excluded;
-**`e`** exports the active list (the analysis body's own JSON + CSV export still fires whenever
-that body is open, though nothing opens it today; `l` writes the full uncapped raw or cleaned
-JSON), and is a no-op on dashboard
+**`e`** exports the active list (the analysis body's own JSON + CSV export fires whenever that
+body is open; `l` writes the full uncapped raw or cleaned JSON), and is a no-op on dashboard
 and wallet modes; and **`w` on curator** prompts for the wallet its YOU row is about —
 `WalletInputScreen` validates and persists to `~/.maxpane/config.toml`, so it
 is app-wide from the next launch. A runtime wallet switch is more than an

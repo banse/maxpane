@@ -141,7 +141,7 @@ The NFT floor is shown as `n/a — no keyless source`, not estimated. There is n
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
 an honest gap.
 
-### THE LIST — the linked-wallet analysis view
+### THE LIST — the linked-wallet analysis view (`a`)
 
 THE LIST is a zero-custody allowlist game: send ETH, take points on a square-root curve, and the
 lowest-ranked wallets fall off the list at the top of every hour. The curve pays a *sublinear*
@@ -149,10 +149,11 @@ return on size, so one person splitting a stake across ten wallets outscores the
 once. That makes the interesting question not who is on the list, but **how much of the list is
 the same hand**.
 
-This body (MODE_ANALYSIS) has no key bound to it today. `action_toggle_analysis` still exists and
-still performs the swap — the doomsday clock stays on screen the whole time and `esc` goes back —
-but nothing calls it, so it cannot currently be reached from the keyboard. `f` now opens the
-custom filter editor inside the `l` record view instead (see below).
+Press **`a`** for as much of an answer as a public chain can support (bound 2026-09-15). The
+doomsday clock stays on screen the whole time; a second `a` or `esc` goes back. `a` is not shown
+in the status bar's hints — the owner asked for the binding, not the label — but `action_toggle_analysis`
+behaves exactly like the `y` view's toggle. `f` opens the custom filter editor inside the `l`
+record view instead (see below); the two keys are unrelated.
 
 - **OPERATORS** — one row per linked group, widest first: how many wallets, the evidence that
   links them (`identical 0.45Ξ send ×10 in one wave · shared first funder 0x1a2b3c4d… ×7`), the
@@ -304,11 +305,11 @@ its rows above. `FAN-OUT PATTERNS` and `CLOSEST CALLS` share one slot — `c` sw
 so the table names whichever the current phase opens on, and the other behaves the same
 way. And 138 is a *height-independent* number on purpose: the right rail reserves the
 column its scrollbar would need, so a short window scrolls the rail instead of quietly
-narrowing the panel that sets the width. The linked-wallet analysis body is whole at **137**, one
-column inside the dashboard body it swaps out and six inside the number at the bottom of the
-table, so opening it never asks for a wider terminal than the screen it opened on;
+narrowing the panel that sets the width. The `a` (linked-wallet analysis) body is whole at
+**137**, one column inside the dashboard body it swaps out and six inside the number at the
+bottom of the table, so opening it never asks for a wider terminal than the screen it opened on;
 its own binding panel is `OPERATORS`, whose evidence cell is the widest thing on it.
-The two swapped views need rows rather than columns: the analysis body fits whole from 48
+The two swapped views need rows rather than columns: the `a` body fits whole from 48
 rows and the `y` body from 40, and below that each scrolls and says so with `‹ taller`.
 
 `IMD MARKET` is the one row that moves with the data rather than with your terminal. Its
@@ -388,13 +389,15 @@ what it does there.) **THE LIST binds `y`** for your own standing — every send
 made with the multiplier it got, what each one actually credited, your share of all weight, the
 single send that would pass the rank above you, and (from the linked-wallet analysis) whether you
 are in a group and what your rank is without one (`esc` goes back; the clock stays on screen either
-way). **`f` on THE LIST** opens the custom filter editor inside `l`'s record view — the
-linked-wallet analysis view described above has no key bound to it today, so it cannot be opened
-from the keyboard, even though its code still works when reached. **`l`** opens the record view.
-Inside it, **`e`** exports the list on screen (and would still export the analysis body's cleaned
-list if that body were reachable). THE LIST's status bar names all four: `c view · h history ·
-y you · l lists`; `e` is not in the hints because it only acts inside the record view, where the
-active list panel prints what it wrote. **It also binds `w`**, which asks for the wallet its
+way). **THE LIST also binds `a`** (bound 2026-09-15) for the linked-wallet analysis view described
+above, the same shape as `y` — hero left in place, a second `a` or `esc` backs out one-way — and
+**`f`** for the custom filter editor inside `l`'s record view; the two are unrelated bindings on
+the same screen, not one key doing two jobs. **`l`** opens the record view.
+Inside it, **`e`** exports the list on screen (and the analysis body's own cleaned-list export
+still fires whenever that body is open). THE LIST's status bar names all four: `c view · h history ·
+y you · l lists`; `a` and `e` are not in the hints — `a` because the owner asked for the binding and
+not the label, `e` because it only acts inside the record view or the analysis body, where the
+active panel prints what it wrote. **It also binds `w`**, which asks for the wallet its
 YOU row is about — rank, points, credit, and the exact amount that wallet must send next to beat
 its own high-water mark. The address is validated, saved to `~/.maxpane/config.toml`, and picked
 up by every wallet-scoped dashboard on the next launch, so it is the easiest way to set one:
