@@ -125,6 +125,17 @@ reach at a pinned width, except where an item says so.
 - **IMD headroom is 1 cell.** Over the synthetic worst case (`1200.0B`, 7 cells) the IMD column (`_IMD_COLS = 8`)
   has one spare cell since the small-stake digits change gave two of its cells to share.
 
+## Flaky test (pre-existing, load-sensitive)
+
+- `tests/screens/test_curator_screen.py::test_delayed_custom_name_does_not_block_reset_or_clear_new_input` waits
+  on wall-clock timeouts (`asyncio.wait_for(..., timeout=0.25)` for the reset, `timeout=1` for the name lookup).
+  - Failures: once in the final fix wave's batch run (at `e70b239`, before the `a` binding existed), and once with
+    `TimeoutError` on the 0.25 s reset wait during the full per-directory suite at `33d771a` (screens chunk, 17 min).
+  - It passed alone 3/3 on the same head.
+  - The test sets `nft_input.value` directly and presses only `f`, so the curator `a` binding cannot reach it.
+  - Fix idea: replace the wall-clock waits with event-driven awaits (an `asyncio.Event` set by the fake manager) or
+    generous timeouts, keeping the assertion that reset does not block on the delayed name.
+
 ## Design notes kept as is
 
 - `widgets/surf/_icons.py` marks addresses in prose *before* fitting. It is a distinct responsibility, and
