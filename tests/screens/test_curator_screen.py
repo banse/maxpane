@@ -679,17 +679,18 @@ async def _first_clean_width(payload=None, view: str | None = None,
 # =======================================================================
 
 
-def test_the_twelve_bindings_are_the_ones_this_screen_documents():
+def test_the_thirteen_bindings_are_the_ones_this_screen_documents():
     """Hand-typed rather than derived: a set compared against itself could not
     catch a binding that was added, renamed or lost.
 
     `r` refresh, `c` swap the bottom-right slot, `w` set the wallet,
-    `y` the wallet view, `f` the list filter, `h` History, `l` Lists,
+    `y` the wallet view, `a` the linked-wallet analysis view (bound
+    2026-09-15), `f` the list filter, `h` History, `l` Lists,
     `e` export the active list view (analysis or record lists), `escape` back
     out of any secondary view, and `1`/`2`/`3` apply list-filter presets.
     """
     assert {binding.key for binding in CuratorScreen.BINDINGS} == {
-        "r", "c", "w", "y", "f", "h", "l", "e", "escape", "1", "2", "3",
+        "r", "c", "w", "y", "a", "f", "h", "l", "e", "escape", "1", "2", "3",
     }
 
 
@@ -2713,6 +2714,95 @@ async def test_f_toggles_back_and_escape_backs_out_one_way():
         # Escape on Lists stays a no-op, never a toggle back in.
         await pilot.press("escape")
         await pilot.pause()
+        assert screen._mode == MODE_LIST
+
+
+async def test_a_opens_the_analysis_body_from_the_dashboard():
+    """``a`` (bound 2026-09-15) reaches the body the same way the tests above
+    reach it by calling the action directly -- this one presses the key."""
+    from maxpane_dashboard.screens.curator import MODE_ANALYSIS
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        dashboard = _screen_text(app)
+        assert OPERATORS_TITLE not in dashboard
+
+        await pilot.press("a")
+        await pilot.pause()
+        text = _screen_text(app)
+
+        assert screen._mode == MODE_ANALYSIS
+        assert OPERATORS_TITLE in text
+        assert SEGMENTS_TITLE in text
+        assert CLEAN_LIST_TITLE in text
+        # The game's own panels are gone...
+        assert LEADERBOARD_TITLE not in text
+        assert ACTIVITY_TITLE not in text
+        # ...and so is the wallet body.
+        assert LADDER_TITLE not in text
+        # The doomsday clock stays on screen -- the hero row never swaps for
+        # this view, the same contract as `y`'s.
+        assert screen.query_one(CuratorHero).display is True
+        assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
+        assert "GRACE" in text
+
+
+async def test_a_toggles_back_and_escape_backs_out_one_way():
+    """Mirrors ``test_y_toggles_back_and_escape_only_goes_one_way``: a second
+    ``a`` and ``escape`` both back out, and escape from Lists stays a no-op."""
+    from maxpane_dashboard.screens.curator import MODE_ANALYSIS
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        await pilot.press("a")
+        await pilot.pause()
+        assert screen._mode == MODE_ANALYSIS
+        await pilot.press("a")
+        await pilot.pause()
+        assert screen._mode == MODE_LIST
+
+        await pilot.press("a")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_LIST
+        # Escape on Lists stays a no-op, never a toggle back in.
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_LIST
+
+
+async def test_a_inside_the_filter_editor_types_the_letter_instead_of_switching():
+    """The ``a`` binding carries no ``priority``, unlike ``f`` and ``e``: with
+    the filter editor open and a text `Input` focused, typing ``a`` must
+    insert the character rather than swap the body out from under the
+    editor -- the opposite of ``f``, which is priority and does intercept
+    (see ``test_filter_shortcuts_are_list_only_and_editor_blocks_cycle_and_presets``)."""
+    from maxpane_dashboard.screens.curator import MODE_LIST
+
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        assert editor.display is True
+        text_field = editor.query_one("#filter-nft-address", Input)
+        text_field.focus()
+        await pilot.press("a")
+        await pilot.pause()
+
+        assert text_field.value == "a"
+        assert editor.display is True
         assert screen._mode == MODE_LIST
 
 

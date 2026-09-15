@@ -184,11 +184,6 @@ def _curator_served() -> dict:
     return {**_curator_payload(), "_typed_nft_collection_address": _CURATOR_NFT}
 
 
-async def curator_analysis(app, pilot) -> None:
-    """The analysis body: no key is bound to it, so call the action."""
-    app.screen.action_toggle_analysis()
-
-
 async def curator_filter_editor(app, pilot) -> None:
     """``f`` with one custom NFT collection added through the editor's own controls."""
     await pilot.press("f")
@@ -601,11 +596,12 @@ CASES: tuple[SweepCase, ...] = (
         payload=_curator_served,
         # The body opens on the RAW record list; ``c`` rotates it to CLEANED,
         # preset ``1`` applies a filter (FILTERED), ``h`` is the history
-        # dashboard (``c`` swaps its panel there), ``y`` the wallet. No key
-        # reaches the analysis body (nothing binds toggle_analysis), so a view
-        # coroutine calls the action; another types a collection into ``f``.
-        views=((), ("c",), ("1",), ("h",), ("h", "c"), ("y",),
-               curator_analysis, curator_filter_editor),
+        # dashboard (``c`` swaps its panel there), ``y`` the wallet, ``a``
+        # the linked-wallet analysis body (bound 2026-09-15). A view
+        # coroutine still types a collection into ``f``'s editor -- the
+        # callable-view mechanism stays for that one.
+        views=((), ("c",), ("1",), ("h",), ("h", "c"), ("y",), ("a",),
+               curator_filter_editor),
         seeded=CURATOR_SEEDED,
         pins=((CURATOR_FULL_LAYOUT_COLUMNS, None),),
     ),

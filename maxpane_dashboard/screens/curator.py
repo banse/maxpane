@@ -809,7 +809,7 @@ class CuratorScreen(RefreshGuard, Screen):
     The screen opens on Raw Lists. ``h`` selects History, whose fixed initial
     panel is FAN-OUT PATTERNS; ``l`` selects Lists, and ``esc`` returns from a
     secondary view to Lists. ``c`` swaps panels in History and rotates record
-    lists in Lists. Linked analysis remains callable internally.
+    lists in Lists. ``a`` opens the linked-wallet analysis body.
     """
 
     BINDINGS = [
@@ -817,6 +817,15 @@ class CuratorScreen(RefreshGuard, Screen):
         Binding("c", "toggle_view", "Calls/Patterns", show=True),
         Binding("w", "set_wallet", "Wallet", show=True),
         Binding("y", "toggle_mode", "You", show=True),
+        # No `priority`, unlike `f` and `e` below: those two are accept/apply
+        # keys inside the filter editor's own workflow and must win even
+        # against a focused field; `a` plays no part in that workflow, so it
+        # takes the plain binding `y` uses. (A focused Textual `Input`
+        # consumes any printable character itself before either kind of
+        # binding is checked, so priority would not have changed this one's
+        # behaviour here either -- verified, not assumed; see
+        # ``test_a_inside_the_filter_editor_types_the_letter_instead_of_switching``.)
+        Binding("a", "toggle_analysis", "Analysis", show=False),
         Binding("f", "toggle_filter", "Filter", show=False, priority=True),
         Binding("h", "show_history", "History", show=True),
         Binding("l", "show_lists", "Lists", show=True),
