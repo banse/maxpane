@@ -521,6 +521,18 @@ class SurfPool4UStakers(Vertical):
     #: ``self.size.width`` minus two, never ``self.size.width``.
     #: ``SurfPool4Hatches._TITLE_PADDING_COLS`` records the same mistake being
     #: made and fixed one panel over.
+    #:
+    #: **The same two columns are what the table's vertical scrollbar
+    #: costs, and the tiers fit beside it with none to spare** (measured
+    #: 2026-09-15, fix round 1). The ``DataTable`` has no padding, so it gets
+    #: the whole content width, and with every staker loaded it always
+    #: scrolls and paints a two-cell scrollbar. That leaves exactly
+    #: ``FULL_WIDTH`` / ``WHOLE_WIDTH`` at each tier's first width (119 and
+    #: 121 on the ``4`` body), so ``share`` is never hidden, at 35, 50 and 60
+    #: rows. A wider scrollbar, or a tier budget that stopped subtracting
+    #: these two, would hide the share column behind a horizontal scroll with
+    #: no marker. ``test_the_market_body_is_whole_from_its_pinned_width``
+    #: reads ``max_scroll_x`` on the ``every-staker`` payload to catch it.
     _TITLE_PADDING_COLS = 2
 
     def __init__(self, *args, **kwargs) -> None:

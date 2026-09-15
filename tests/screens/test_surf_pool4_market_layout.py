@@ -588,7 +588,19 @@ async def _render(payload, size):
         await pilot.pause()
         screen = pilot.app.screen
         widgets = _market_widgets(screen)
+        stakers_table = widgets["SurfPool4UStakers"].query_one("DataTable")
         return {
+            # A DataTable that is too narrow for its columns does not
+            # ellipsise, so ``clipped`` cannot see it: it scrolls
+            # horizontally and hides the rightmost cells. ``max_scroll_x`` is
+            # how many columns are hidden that way (fix round 1, item 2).
+            "stakers_hidden_cols": stakers_table.max_scroll_x,
+            "stakers_header": next(
+                (line for line in _region_text(
+                    pilot.app, widgets["SurfPool4UStakers"]).split("\n")
+                 if "address" in line),
+                "",
+            ),
             "marked": _market_marked(pilot.app, screen),
             "clipped": _market_clipped(pilot.app, screen),
             "text": _screen_text(pilot.app),
@@ -617,9 +629,19 @@ async def _render(payload, size):
 #: boundary itself is checked against **all ten** payload states by
 #: ``test_the_market_column_pin_does_not_move_with_the_payload`` below, which
 #: is the stronger of the two claims anyway.
+#:
+#: **``every-staker`` joined on 2026-09-15 (fix round 1)**, over 109..130.
+#: 353 rows always overflow the panel, so the table always paints its
+#: two-cell vertical scrollbar, where twenty rows on a tall terminal may not.
+#: That scrollbar takes its cells from the columns, and at the full and whole
+#: tiers the table fits beside it with zero cells to spare (measured in situ at
+#: 35, 50 and 60 rows). The band covers both tier thresholds, 119 and 121.
+#: The sweep reads the table's own horizontal overflow at and above the pin,
+#: because a DataTable that runs out of width hides cells rather than
+#: ellipsising them, and ``clipped`` only sees ellipses.
 _WIDTH_SWEEP = [("capture", w) for w in range(38, 157)] + [
     ("ordinary", w) for w in range(109, 130)
-]
+] + [("every-staker", w) for w in range(109, 131)]
 
 
 @pytest.mark.parametrize("payload_name,width", _WIDTH_SWEEP)
@@ -657,6 +679,12 @@ async def test_the_market_body_is_whole_from_its_pinned_width(
             f"at {width} the 4 body is clipping a line and nothing on screen "
             f"says so: {r['clipped']}"
         )
+        assert r["stakers_hidden_cols"] == 0, (
+            f"{payload_name} at {width}: STAKERS' table hides "
+            f"{r['stakers_hidden_cols']} column(s) behind a horizontal scroll "
+            "with no marker -- its vertical scrollbar took the cells"
+        )
+        assert "share" in r["stakers_header"], (payload_name, width, r["stakers_header"])
     else:
         assert r["marked"], width
         # There is deliberately no second assertion here, and the reason is
