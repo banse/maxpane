@@ -1153,15 +1153,20 @@ def test_the_market_body_is_shorter_than_p_and_taller_than_the_launchpad() -> No
 
 #: The whole phrase, as one contiguous string. ``l launchpad`` is the half
 #: that must never shorten -- an app-level acceptance test greps for it -- so
-#: if this ever stops fitting, ``4 market`` is what gives way.
-KEY_HINT_PHRASE = "l launchpad · p pool4 · 4 market"
+#: if this ever stops fitting, ``4 pool4`` is what gives way.
+#:
+#: **Two parts since 2026-09-15.** It was ``l launchpad · p pool4 · 4
+#: market``. The owner took ``p pool4`` off the bar (the protocol body is now
+#: the unadvertised, experimental ``e``) and renamed ``4 market`` to ``4
+#: pool4``.
+KEY_HINT_PHRASE = "l launchpad · 4 pool4"
 
 
-async def test_the_three_part_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
+async def test_the_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
     """Measured against the bar's own budget, never counted.
 
-    ``4 market`` took this label from 21 columns to 32, and ``StatusBar``'s
-    left label is the segment the bar cuts first, so the question is settled
+    ``StatusBar``'s left label is the segment the bar cuts first, so the
+    question is settled
     by reading the phrase back off **composited output** at
     :data:`SURF_FULL_LAYOUT_COLUMNS` and then one column at a time down the
     band below it -- the test says *where* it stops fitting rather than only
@@ -1169,9 +1174,12 @@ async def test_the_three_part_key_hint_fits_the_status_bar_at_the_full_layout() 
 
     Two assertions, and the second is the one a row-join is blind to.
     ``_screen_text`` joins a strip's segments with ``""``, so a per-letter
-    ``[dim]`` tag that split the hint into ``4`` / `` market`` would leave the
+    ``[dim]`` tag that split the hint into ``4`` / `` pool4`` would leave the
     row-joined text byte-identical while every app-level grep for the
     contiguous phrase failed and the bar itself looked perfectly correct.
+
+    The third assertion is the owner's removal: the experimental key and
+    the old words are nowhere on the composited bar.
     """
     async with _surf_app().run_test(
         size=(SURF_FULL_LAYOUT_COLUMNS, 46)
@@ -1182,17 +1190,22 @@ async def test_the_three_part_key_hint_fits_the_status_bar_at_the_full_layout() 
         segments = [seg.text for strip in strips for seg in strip]
 
     assert KEY_HINT_PHRASE in text, (
-        "the three-part hint did not reach a pixel at the documented layout "
-        "width -- shorten '4 market', never 'l launchpad'"
+        "the hint did not reach a pixel at the documented layout "
+        "width -- shorten '4 pool4', never 'l launchpad'"
     )
     assert any(KEY_HINT_PHRASE in segment for segment in segments), (
         "the hint reaches the screen but is split across Segments: KEY_HINTS "
         "must be ONE markup run, not per-letter tags"
     )
+    status_row = text.split("\n")[-1]
+    for gone in ("p pool4", "4 market", "e pool4", "experimental"):
+        assert gone not in status_row, (
+            f"{gone!r} is on the status bar; the owner took it off: {status_row!r}"
+        )
     assert SurfScreen.KEY_HINTS == f"[dim]{KEY_HINT_PHRASE}[/]"
 
 
-async def test_the_three_part_key_hint_has_room_to_spare_below_the_full_layout() -> None:
+async def test_the_key_hint_has_room_to_spare_below_the_full_layout() -> None:
     """Where it stops fitting, not merely that it fits.
 
     Swept downward from the documented width. The phrase must survive past
@@ -1209,5 +1222,5 @@ async def test_the_three_part_key_hint_has_room_to_spare_below_the_full_layout()
                 break
     assert lost_at is None or lost_at < SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, (
         f"the key hint is already cut at {lost_at} columns, which is at or "
-        f"above this body's own pinned width -- shorten '4 market'"
+        f"above this body's own pinned width -- shorten '4 pool4'"
     )

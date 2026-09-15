@@ -6524,7 +6524,7 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "p", "4", "escape"}
+    assert keys == {"r", "l", "e", "4", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
         "the old c-swap action outlived its binding -- an action with no key "
         "is a surface nobody can reach and nobody maintains"
@@ -6534,9 +6534,9 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
         assert hasattr(SurfScreen, action), action
 
 
-async def test_p_swaps_the_body_and_keeps_the_hero() -> None:
+async def test_e_swaps_the_body_and_keeps_the_hero() -> None:
     async with _pool4_app().run_test() as pilot:
-        await pilot.press("p")
+        await pilot.press("e")
         screen = pilot.app.screen
         assert screen.query_one(f"#{POOL4_BODY_ID}").display is True
         assert screen.query_one(SurfHero).display is True
@@ -6547,18 +6547,42 @@ async def test_p_swaps_the_body_and_keeps_the_hero() -> None:
 
 async def test_escape_backs_out_of_the_pool4_body_too() -> None:
     async with _pool4_app().run_test() as pilot:
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.press("escape")
         assert pilot.app.screen.query_one("#middle-row").display is True
         assert pilot.app.screen.query_one(f"#{POOL4_BODY_ID}").display is False
 
 
-async def test_p_is_idempotent_and_toggles_back() -> None:
+async def test_e_is_idempotent_and_toggles_back() -> None:
     async with _pool4_app().run_test() as pilot:
-        await pilot.press("p")
-        await pilot.press("p")
+        await pilot.press("e")
+        await pilot.press("e")
         assert pilot.app.screen.query_one("#middle-row").display is True
         assert pilot.app.screen.query_one(f"#{POOL4_BODY_ID}").display is False
+
+
+async def test_p_no_longer_opens_the_pool4_body() -> None:
+    """The owner moved the POOL4 protocol body from ``p`` to ``e`` (2026-09-15).
+
+    Asserted from the keyboard, not off ``BINDINGS``: ``p`` pressed on the
+    dashboard and on the ``4`` body changes nothing, and ``e`` from the same
+    starting points does open the body. A leftover ``p`` binding would still
+    work even though the hint no longer names it.
+    """
+    async with _pool4_app().run_test() as pilot:
+        screen = pilot.app.screen
+        await pilot.press("p")
+        await pilot.pause()
+        assert screen.query_one("#middle-row").display is True
+        assert screen.query_one(f"#{POOL4_BODY_ID}").display is False
+        await pilot.press("4")
+        await pilot.press("p")
+        await pilot.pause()
+        assert screen.query_one(f"#{POOL4_USER_BODY_ID}").display is True
+        assert screen.query_one(f"#{POOL4_BODY_ID}").display is False
+        await pilot.press("e")
+        await pilot.pause()
+        assert screen.query_one(f"#{POOL4_BODY_ID}").display is True
 
 
 async def test_the_three_bodies_are_never_showing_at_once() -> None:
@@ -6579,10 +6603,10 @@ async def test_the_three_bodies_are_never_showing_at_once() -> None:
         for keys, expected in (
             ((), "#middle-row"),
             (("l",), f"#{LAUNCHPAD_BODY_ID}"),
-            (("p",), f"#{POOL4_BODY_ID}"),
+            (("e",), f"#{POOL4_BODY_ID}"),
             (("l",), f"#{LAUNCHPAD_BODY_ID}"),
             (("escape",), "#middle-row"),
-            (("p",), f"#{POOL4_BODY_ID}"),
+            (("e",), f"#{POOL4_BODY_ID}"),
             (("escape",), "#middle-row"),
         ):
             for key in keys:
@@ -6617,7 +6641,7 @@ async def test_the_status_hint_names_both_views() -> None:
     phrase is one styled run", and a split is what makes those greps fail
     while the status bar looks perfectly correct on screen.
     """
-    phrase = "l launchpad · p pool4"
+    phrase = "l launchpad · 4 pool4"
     async with _pool4_app().run_test() as pilot:
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
@@ -6656,7 +6680,7 @@ async def test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout() -> No
     ) as pilot:
         await pilot.pause()
         text = _screen_text(pilot.app)
-    assert "l launchpad · p pool4" in text
+    assert "l launchpad · 4 pool4" in text
 
     # The band below it: find where the whole phrase stops reaching a pixel,
     # and assert that width is under the documented layout rather than over.
@@ -6664,7 +6688,7 @@ async def test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout() -> No
     for width in range(SURF_FULL_LAYOUT_COLUMNS, 79, -1):
         async with _pool4_app().run_test(size=(width, 46)) as pilot:
             await pilot.pause()
-            if "l launchpad · p pool4" not in _screen_text(pilot.app):
+            if "l launchpad · 4 pool4" not in _screen_text(pilot.app):
                 lost_at = width
                 break
     assert lost_at is None or lost_at < SURF_FULL_LAYOUT_COLUMNS, (
@@ -6702,7 +6726,7 @@ async def test_the_pool4_body_holds_four_panels_in_two_columns() -> None:
     """
     async with _pool4_app().run_test(size=(150, 50)) as pilot:
         await pilot.app.screen._do_refresh()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         screen = pilot.app.screen
         left = screen.query_one(f"#{POOL4_LEFT_ID}")
@@ -6819,7 +6843,7 @@ async def test_the_pool4_column_blocks_name_the_panels_compose_builds(
 
     async with _pool4_app().run_test(size=(150, 50)) as pilot:
         await pilot.app.screen._do_refresh()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         built = [
             type(w) for w in pilot.app.screen.query_one(f"#{container_id}").children
@@ -6971,7 +6995,7 @@ async def test_every_pool4_panel_is_dispatched_before_p_is_pressed() -> None:
                 f"{name} was not dispatched while the body was hidden -- the "
                 "first `p` will paint it blank"
             )
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         text = _screen_text(pilot.app)
 
@@ -7003,7 +7027,7 @@ async def test_every_pool4_panel_titles_the_network_it_is_showing() -> None:
     """
     async with _pool4_app().run_test(size=(150, 50)) as pilot:
         await pilot.app.screen._do_refresh()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         screen = pilot.app.screen
         for name, cls in _POOL4_WIDGET_CLASSES.items():
@@ -7045,7 +7069,7 @@ async def test_a_dead_pool4_sweep_leaves_every_panel_explicit() -> None:
     payload = _frozen_payload(**{key: None for key in POOL4_KEYS})
     async with _pool4_app(payload).run_test(size=(150, 50)) as pilot:
         await pilot.app.screen._do_refresh()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         text = _screen_text(pilot.app)
     for line in (HATCHES_UNAVAILABLE, RATCHET_UNAVAILABLE, VAULT_UNAVAILABLE):
@@ -7147,7 +7171,7 @@ async def test_the_pool4_body_is_whole_from_its_pinned_width(
     async with _pool4_app(pl).run_test(size=(width, 50)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         screen = pilot.app.screen
         marked = _pool4_marked(pilot.app, screen)
@@ -7184,7 +7208,7 @@ async def test_nothing_below_the_pool4_pin_clips_without_saying_so(
     async with _pool4_app().run_test(size=(width, 50)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         screen = pilot.app.screen
         clipped = _clipped_pool4_lines(pilot.app, screen)
@@ -7220,7 +7244,7 @@ async def test_the_pool4_binding_panel_is_hatches() -> None:
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         marked = _pool4_marked(pilot.app, pilot.app.screen)
     assert marked == {"SurfPool4Hatches"}, marked
@@ -7252,7 +7276,7 @@ async def test_the_pool4_pin_is_the_sum_of_the_needs_it_claims() -> None:
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         screen = pilot.app.screen
         left = screen.query_one(f"#{POOL4_LEFT_ID}").region.width
@@ -7353,7 +7377,7 @@ async def test_the_pool4_body_is_whole_from_its_pinned_height(
     async with _pool4_app(payload).run_test(size=(150, rows)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         await pilot.pause()
         text = _screen_text(pilot.app)
@@ -7404,7 +7428,7 @@ async def test_the_pool4_height_pin_is_measured_against_the_column_it_describes(
         async with _pool4_app(payload).run_test(size=(150, 34)) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.pause()
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             await pilot.pause()
             screen = pilot.app.screen
@@ -7466,7 +7490,7 @@ async def test_the_pool4_height_pin_covers_every_payload_the_widgets_render() ->
         ) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.pause()
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             await pilot.pause()
             text = _screen_text(pilot.app)
@@ -7498,7 +7522,7 @@ async def test_the_pool4_height_pin_covers_every_payload_the_widgets_render() ->
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         await pilot.pause()
         assert TALLER_HINT in _screen_text(pilot.app), (
@@ -7540,7 +7564,7 @@ async def test_the_pool4_floors_never_thin_a_panel_below_its_content() -> None:
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         screen = pilot.app.screen
         left = screen.query_one(f"#{POOL4_LEFT_ID}")
@@ -7644,7 +7668,7 @@ async def test_every_pool4_panel_paints_a_blank_row_under_its_title(
     async with _pool4_app(payload).run_test(size=(150, 60)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         await pilot.pause()
         container = pilot.app.screen.query_one(f"#{container_id}")
@@ -7701,7 +7725,7 @@ async def test_the_taller_marker_lights_on_the_pool4_body() -> None:
                 f"{rows} rows: the DASHBOARD body's marker is not in the "
                 "state this test's premise needs"
             )
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             assert (TALLER_HINT in _screen_text(pilot.app)) is after, (
                 f"{rows} rows: the pool4 body's marker should be "
@@ -7777,7 +7801,7 @@ async def _pool4_column_widths(height: int, width: int = 150) -> dict:
     async with _pool4_app().run_test(size=(width, height)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         screen = pilot.app.screen
         left = screen.query_one(f"#{POOL4_LEFT_ID}")
@@ -7842,7 +7866,7 @@ async def test_the_pool4_columns_reserve_their_scrollbar_gutters() -> None:
     async with _pool4_app().run_test(size=(150, _POOL4_ROOMY_ROWS)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         for column in (POOL4_LEFT_ID, POOL4_RAIL_ID):
             gutter = pilot.app.screen.query_one(f"#{column}").styles.scrollbar_gutter
@@ -7861,7 +7885,7 @@ async def test_the_hero_survives_the_pool4_body_swap() -> None:
     async with _pool4_app().run_test(size=(150, 50)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         screen = pilot.app.screen
         assert screen.query_one(f"#{POOL4_BODY_ID}").display is True
@@ -8225,7 +8249,7 @@ async def test_the_adopted_discovery_detail_does_not_move_the_pool4_pin() -> Non
         async with _pool4_app(payload).run_test(size=(width, 60)) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.pause()
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             screen = pilot.app.screen
             hatches = screen.query_one(SurfPool4Hatches)
@@ -8259,7 +8283,7 @@ async def test_the_adopted_discovery_detail_does_not_move_the_pool4_pin() -> Non
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         hatch_text = _region_text(
             pilot.app, pilot.app.screen.query_one(SurfPool4Hatches)
@@ -8449,7 +8473,7 @@ async def test_the_row_marker_agrees_with_the_scrollbar_at_every_height(
     async with _pool4_app(payload).run_test(size=(150, rows)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         await pilot.pause()
         screen = pilot.app.screen

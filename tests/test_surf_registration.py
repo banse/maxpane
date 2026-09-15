@@ -776,7 +776,7 @@ def test_all_four_pool4_panels_survive_the_real_stylesheet() -> None:
             await pilot.press(key)
             await pilot.pause()
             before = _screen_text(app)
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             text = _screen_text(app)
 
@@ -2202,7 +2202,7 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             # The guard against repeating it a third time is the
             # `_body_reached` check below, which fails loudly rather than
             # letting the sweep measure the same render twice.
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             pool4_text = _screen_text(app)
             from maxpane_dashboard.widgets.surf.pool4_hatches import (
@@ -2380,7 +2380,7 @@ def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero(
         async with _surf_app(payload).run_test(size=(143, 60)) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.pause()
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             await pilot.pause()
             return _surf_screen_text(pilot.app)

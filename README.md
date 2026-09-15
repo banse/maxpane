@@ -90,7 +90,7 @@ the whole time; `esc` backs out, one-way. The launchpad view is whole from **138
 inside the 143 the widest dashboard already asks for, and from **31 rows** — below that it
 scrolls and says `‹ taller`.
 
-Press **`p`** for pool4 — the same trick a third time, a third body under the same hero. pool4
+Press **`e`** for the experimental pool4 protocol view (it is not named on the status bar) — the same trick a third time, a third body under the same hero. pool4
 makes IMD's pool a one-way ratchet: buys drain a reserve that a floor stops them draining past,
 sells burn most of what they sell, and a slice of every swap is retained to pay for the protocol's
 own inference. THE SPLIT and THE RATCHET take the left column — the reward split
@@ -373,13 +373,13 @@ LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard b
 the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand rail — with the
 hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way.
-**It binds `p`** the same way for pool4 — THE SPLIT and THE RATCHET on the left,
+**It binds `e`**, experimental and unadvertised, the same way for the pool4 protocol — THE SPLIT and THE RATCHET on the left,
 HATCHES and sIMD VAULT in the rail, the same hero left where it was. **And it binds `4`** for the
 POOL4 MARKET view — the same protocol read as a market rather than as a machine: RECENT FLOW
 beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses, no shortening —
 beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` is the one Surfboard view that swaps the **hero** too, for IMD PRICE, DOWNSIDE
-BID and STAKING; `esc` backs out of any of the three. The status hint names all three:
-`l launchpad · p pool4 · 4 market`. In Surfboard's announce feed, `enter` or `space` on a
+BID and STAKING; `esc` backs out of any of the three. The status hint names the two that are
+not experimental: `l launchpad · 4 pool4`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you

@@ -105,7 +105,7 @@ async def _targets(payload, keys=(), size=(160, 60)):
 
 async def test_every_surf_body_renders_icons_and_every_icon_copies_a_payload_address():
     for payload, keys in ((_feed_payload(), ()), (_frozen_payload(), ("l",)),
-                          (_mainnet_pool4_payload(), ("p",)),
+                          (_mainnet_pool4_payload(), ("e",)),
                           (_mainnet_pool4_payload(), ("4",))):
         targets, _ = await _targets(payload, keys)
         assert targets, f"no copy icon on the surf body after {keys}"
@@ -140,7 +140,7 @@ async def test_each_address_panel_carries_an_icon_for_its_own_addresses():
          | {r["wallet"] for r in frozen["launchpad_activity"]}
          | {r["wallet"] for r in frozen["launchpad_burnkeepers"]}),
         # HATCHES: the address block and the lever grid
-        (mainnet, ("p",), {mainnet["pool4_hook_addr"], mainnet["pool4_vault_addr"],
+        (mainnet, ("e",), {mainnet["pool4_hook_addr"], mainnet["pool4_vault_addr"],
                            mainnet["pool4_dripper_addr"],
                            mainnet["pool4_distributor_addr"]}
          | {r["addr"] for r in mainnet["pool4_hatches"] if r.get("addr")}),
@@ -311,7 +311,7 @@ async def test_hatches_block_keeps_seventeen_and_the_grid_gives_up_two_at_the_pi
     payload = _mainnet_pool4_payload()
     app = _app(payload)
     async with app.run_test(size=(SURF_POOL4_FULL_LAYOUT_COLUMNS, 60)) as pilot:
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         text = "\n".join(_rows(app))
         hook = payload["pool4_hook_addr"]
@@ -338,7 +338,7 @@ async def test_hatches_discovery_prose_gets_an_icon_and_the_citation_does_not():
     for width in (SURF_POOL4_FULL_LAYOUT_COLUMNS, 220):
         app = _app(payload)
         async with app.run_test(size=(width, 60)) as pilot:
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             rows = _rows(app)
             # HATCHES sits in the rail, so its lines share a row with the

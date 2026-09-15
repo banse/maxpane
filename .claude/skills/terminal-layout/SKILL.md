@@ -17,8 +17,8 @@ it. This file is the method; the constants are the record.
 | app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `p` pool4 | 99 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `4` pool4 market | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `p` pool4 (key `e`, experimental, since 2026-09-15) | 99 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `4` pool4 market (hint `4 pool4`) | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
@@ -300,7 +300,7 @@ adjusting the constant to match.
 
 `c` swaps a shared slot on FWA, TTT, Talismans and curator so three panels that
 cannot share a row do not have to. Surf does not: its 2026-08-10 restructure put
-all six panels on screen at once, which is why its `l`, `p` and `4` and
+all six panels on screen at once, which is why its `l`, `p` (key `e` since 2026-09-15) and `4` and
 curator's `y`/`f` swap whole *bodies* instead. Each swapped body gets its
 **own** pin, swept in situ against its own panels — surf's `p` is not derived
 from and does not equal its `l`, and its sweep deliberately straddles both

@@ -254,7 +254,7 @@ async def test_four_switches_directly_from_either_other_body() -> None:
             ((), "#middle-row"),
             (("l",), f"#{LAUNCHPAD_BODY_ID}"),
             (("4",), f"#{POOL4_USER_BODY_ID}"),
-            (("p",), f"#{POOL4_BODY_ID}"),
+            (("e",), f"#{POOL4_BODY_ID}"),
             (("4",), f"#{POOL4_USER_BODY_ID}"),
             (("l",), f"#{LAUNCHPAD_BODY_ID}"),
             (("escape",), "#middle-row"),
@@ -281,7 +281,7 @@ async def test_four_switches_directly_from_either_other_body() -> None:
 _HERO_PER_MODE = (
     (MODE_DASHBOARD, (), SurfHero),
     (MODE_LAUNCHPAD, ("l",), SurfHero),
-    (MODE_POOL4, ("p",), SurfHero),
+    (MODE_POOL4, ("e",), SurfHero),
     (MODE_POOL4_USER, ("4",), SurfPool4UserHero),
 )
 
@@ -364,7 +364,7 @@ async def test_exactly_one_hero_survives_every_transition_between_bodies() -> No
         screen = pilot.app.screen
         for key, mode in (
             ("4", MODE_POOL4_USER),
-            ("p", MODE_POOL4),
+            ("e", MODE_POOL4),
             ("4", MODE_POOL4_USER),
             ("l", MODE_LAUNCHPAD),
             ("4", MODE_POOL4_USER),
@@ -762,7 +762,7 @@ async def test_every_auditor_panel_still_renders_its_own_as_of_marker(cls) -> No
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
         await pilot.press("escape")
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         await pilot.pause()
         body = screen.query_one(f"#{POOL4_BODY_ID}")
@@ -839,7 +839,7 @@ async def test_the_p_body_mounts_no_flow_panel() -> None:
     async with _surf_app(_mainnet_pool4_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
         await pilot.press("escape")
-        await pilot.press("p")
+        await pilot.press("e")
         await pilot.pause()
         await pilot.pause()
         body = screen.query_one(f"#{POOL4_BODY_ID}")

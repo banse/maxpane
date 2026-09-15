@@ -585,7 +585,7 @@ CASES: tuple[SweepCase, ...] = (
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,
-        views=((), ("l",), ("p",), ("4",)),
+        views=((), ("l",), ("e",), ("4",)),
         seeded=SURF_SEEDED,
         pins=(
             (SURF_FULL_LAYOUT_COLUMNS, None),

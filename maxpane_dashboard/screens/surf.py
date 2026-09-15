@@ -20,8 +20,11 @@ laid out on ``#middle-row``'s own shape::
                              SurfLaunchpadActivity (1fr)    |   SurfBurnPipeline   (auto, +1 margin)
                                                             |   SurfBurnkeepers    (1fr)
 
-``p`` swaps the same three rows for a **third** body, the POOL4 view
-(2026-09-01), on the identical shape::
+``e`` swaps the same three rows for a **third** body, the POOL4 view
+(2026-09-01), on the identical shape. The key was ``p`` until 2026-09-15,
+when the owner took it off the status hint and moved it to ``e`` for
+experimental; "the ``p`` body" below and throughout this module names this
+body, whichever key opens it::
 
     #surf-pool4-body   #surf-pool4-left (1fr)          | #surf-pool4-rail (1fr)
                          SurfPool4Split   (auto, +1 m) |   SurfPool4Hatches (auto, +1 margin)
@@ -1947,8 +1950,13 @@ class SurfScreen(RefreshGuard, Screen):
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
         Binding("l", "toggle_launchpad", "Launchpad", show=False),
-        Binding("p", "toggle_pool4", "Pool4", show=False),
-        Binding("4", "toggle_pool4_user", "Pool4 market", show=False),
+        # `e` for EXPERIMENTAL (2026-09-15): the owner took the POOL4 protocol
+        # body out of the status hint and asked to keep it reachable under
+        # `e`. It was `p` from 2026-09-01; `p` is unbound now. Comments across
+        # this module still say "the `p` body" -- that is MODE_POOL4, the body
+        # this key opens, and the internal names did not change with the key.
+        Binding("e", "toggle_pool4", "Pool4 (experimental)", show=False),
+        Binding("4", "toggle_pool4_user", "Pool4", show=False),
         Binding("escape", "show_dashboard", show=False),
     ]
 
@@ -1995,7 +2003,18 @@ class SurfScreen(RefreshGuard, Screen):
     #: still reaches a pixel, and ``4 market`` is the half that shortens if a
     #: fourth ever has to fit -- ``l launchpad`` does not, because the
     #: app-level acceptance test greps for that contiguous string.
-    KEY_HINTS = "[dim]l launchpad · p pool4 · 4 market[/]"
+    #:
+    #: **2026-09-15: two segments again, ``l launchpad · 4 pool4``.** The
+    #: owner asked for ``p pool4`` gone from the bottom line and for ``4
+    #: market`` to read ``4 pool4``. The protocol body is still reachable, under
+    #: ``e`` for experimental, and is deliberately not advertised here. The
+    #: ``4`` body keeps its internal names (``MODE_POOL4_USER``,
+    #: ``SurfPool4UserHero``) and its docs name, POOL4 MARKET. The hint names
+    #: the key, and ``pool4`` is what that key now opens on the bar. The run is
+    #: still one markup run and still read back off composited output. It is
+    #: eleven columns shorter than the three-part hint, so it fits wherever
+    #: that one did.
+    KEY_HINTS = "[dim]l launchpad · 4 pool4[/]"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "surf-refresh"
@@ -2755,11 +2774,15 @@ class SurfScreen(RefreshGuard, Screen):
         self._show_mode()
 
     def action_toggle_pool4(self) -> None:
-        """``p`` -- swap the dashboard body for the POOL4 panels.
+        """``e`` -- swap the dashboard body for the POOL4 panels (experimental).
 
-        Idempotent on ``action_toggle_launchpad``'s contract: a second ``p``
+        Bound to ``p`` from 2026-09-01 until 2026-09-15, when the owner took
+        it off the status hint and moved it to ``e``. It is not advertised on
+        the bar.
+
+        Idempotent on ``action_toggle_launchpad``'s contract: a second ``e``
         returns to the dashboard rather than doing nothing, so the key is
-        also its own way back. Pressing ``p`` from MODE_LAUNCHPAD switches
+        also its own way back. Pressing ``e`` from MODE_LAUNCHPAD switches
         bodies directly -- there is no need to ``escape`` out of one view
         before entering the other, and requiring it would be the only place
         on this screen where a view key did nothing.
@@ -2781,7 +2804,8 @@ class SurfScreen(RefreshGuard, Screen):
         key did nothing.
 
         A digit key, and verified free rather than assumed: this screen binds
-        ``r``/``l``/``p``/``escape`` and the app binds ``q``/``t``/``tab``/``m``.
+        ``r``/``l``/``e``/``escape`` (``p`` until 2026-09-15) and the app binds
+        ``q``/``t``/``tab``/``m``.
         Digits are an established per-screen pattern here (curator's filter
         presets, ``frenpet_full``'s sub-views) and neither of those is
         app-level, so neither collides. ``4`` reads off the protocol's own

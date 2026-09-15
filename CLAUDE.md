@@ -111,7 +111,7 @@ imports it — `data/curator_clusters.py` — and that import is guarded (see th
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`) and pool4 (`p`) views |
+| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`), pool4 (`4`) and experimental pool4-protocol (`e`) views |
 | 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
 | 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 | 4 | `base` | Base | trending tokens, volume, signals |
@@ -272,13 +272,17 @@ no six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` 
 the table above still has eight rows. What makes something a mode here is the rule, not the
 count: a mode is a whole second body with its own panels, never two panels sharing one slot —
 that was `c`, and surf has no `c`. MODE_POOL4 is a third body on that rule, not a fourth key
-hiding half the screen. Surf's status hint is now `l launchpad · p pool4 · 4 market`, in one
-markup run rather than per-letter tags (adjacent differently-styled runs never share a
-composited line, and the acceptance test greps for the whole phrase), and it was read back off
-composited output against `StatusBar`'s left-label budget rather than counted: that label is the
-segment the bar cuts first and each addition has lengthened it. `4 market` is the half that
-shortens if a fourth ever has to fit; `l launchpad` does not, because the app-level acceptance
-test greps for that contiguous string.
+hiding half the screen.
+
+**The key is `e` now, for experimental, and the bar does not name it (2026-09-15).** The owner
+took `p pool4` off the status bar and asked to keep the body reachable under `e`; `p` is unbound.
+"The `p` body" in this file and in code comments names this body (MODE_POOL4), whichever key
+opens it. Surf's status hint is now `l launchpad · 4 pool4`, in one markup run rather than
+per-letter tags (adjacent differently-styled runs never share a composited line, and the
+acceptance test greps for the whole phrase). It is read back off composited output against
+`StatusBar`'s left-label budget rather than counted, because that label is the segment the bar
+cuts first. `l launchpad` must never shorten, because the app-level acceptance test greps for that
+contiguous string.
 
 **Every panel title carries the network word** — `THE RATCHET · MAINNET`, `· SEPOLIA`, or `· —`.
 The view was built against a live *Sepolia* deployment and still renders it whenever no mainnet
@@ -513,14 +517,16 @@ launchpad's own five panels in two columns (LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail —
 curator's `y`/`f` precedent), with the hero (LAUNCHPAD/FLOW/BURN/SUPPLY)
 left in place so nothing it tracks ever goes dark (`esc` backs out, one-way);
-**`p` on surf** swaps the same three rows for the POOL4 body (THE SPLIT over
+**`e` on surf** (experimental, not named on the status bar; `p` until
+2026-09-15) swaps the same three rows for the POOL4 body (THE SPLIT over
 THE RATCHET on the left; HATCHES over sIMD VAULT in the rail),
 also keeping the hero, also one-way; **`4` on surf** swaps them for the
 POOL4 MARKET body (RECENT FLOW beside BURN & SUPPLY over SIGNALS;
 STAKERS beside IF IMD FALLS) and is the one surf body that swaps the
 **hero** too, for its own IMD PRICE / DOWNSIDE BID / STAKING cards —
 curator's per-mode hero, not a new pattern; surf's status hint reads
-`l launchpad · p pool4 · 4 market`. Surf's own `l` and curator's own `l` (the
+`l launchpad · 4 pool4`. Surf's `e` and curator's `e` (export) are two screens'
+own bindings, not one shared key. Surf's own `l` and curator's own `l` (the
 record view, described below) are unrelated bindings on two different
 screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
 standing — ladder, share, and what passing the rank above would cost — with the
