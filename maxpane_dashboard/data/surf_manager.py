@@ -346,7 +346,23 @@ POOL4_STAKERS_WINDOW_BLOCKS = 403_200
 #: denominator**: ``pool4_staker_top3_pct`` is a share of the whole vault, so a
 #: capped page does not add to 100% and must not be made to — the gap between
 #: the page and the vault is the dispersion the panel exists to show.
-POOL4_STAKERS_LIMIT = 20
+#:
+#: **20 -> 999 on 2026-09-15: every staker.** The owner asked to see all 353
+#: addresses in the table. The fold already holds every holder in memory, so
+#: this changes only how much of it is published. The panel keeps its height
+#: and scrolls. 999 is not a taste: it is the largest rank the table's
+#: three-cell rank column holds (``pool4u_stakers._RANK_COLS``), and the widget
+#: restates it as ``MAX_ROWS`` with an agreement test. The live vault is a
+#: third of the way there. A vault that outgrows it still gets a correct
+#: footer, because ``staker_count`` and ``top3_pct`` never read the cap.
+#: Measured on the committed 348-holder capture, same code, 20 rows against
+#: every row. The persisted slot (``json.dump``, no indent) goes from
+#: 2,578 to 44,046 bytes, on a live ``surf_cache.json`` of 205,528 bytes.
+#: The ``4`` body's first paint goes from 241 to 255 ms (median of five), and
+#: a full ``_do_refresh`` from 68 to 114 ms, once per 30 s poll.
+#: ``SurfPool4UStakers`` skips repainting identical rows, which is what keeps a
+#: scrolled reader's place. That skip costs 3.5 ms to check.
+POOL4_STAKERS_LIMIT = 999
 
 #: Unpacked from the contract, never retyped (A5). Two words and a ``None``,
 #: and the ``None`` is the third state rather than the absence of a state:

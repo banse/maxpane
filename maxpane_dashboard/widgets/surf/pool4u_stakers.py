@@ -172,10 +172,19 @@ PENDING_LINE = "stakers not swept yet"
 #: outage.
 EMPTY_LINE = "no depositors"
 
-#: How many rows the table draws. The producer caps its own list at 20
-#: (``staker_rows(limit=20)``); this is the renderer's own guard so a longer
-#: list cannot push the footer off a short panel.
-MAX_ROWS = 20
+#: How many rows the table draws: **every staker, up to 999** (2026-09-15).
+#:
+#: It was 20, matching the producer's ``POOL4_STAKERS_LIMIT``, until the
+#: owner asked for all 353 addresses. The table sits on a ``1fr`` height
+#: inside the panel and scrolls inside itself, so more rows never push the
+#: footer off. That was this guard's original reason, and it no longer needs
+#: a small number to hold. 999 is the largest rank :data:`_RANK_COLS` can
+#: paint whole; a four-digit rank would be cut, and a cut rank is a wrong
+#: rank. Restated from ``data/surf_manager.POOL4_STAKERS_LIMIT`` because a
+#: widget may not import ``data/``;
+#: ``test_the_row_cap_is_the_producers_own_and_fits_the_rank_column`` pins the
+#: two together.
+MAX_ROWS = 999
 
 #: The concentration question the footer answers. Three, because three wallets
 #: acting together is the smallest group a reader treats as one actor.
@@ -249,8 +258,8 @@ _TITLE_ID = "surf-pool4u-stakers-title"
 #: Column budgets, in **terminal cells**, measured against the widest value
 #: each column can hold rather than against today's data:
 #:
-#: * rank -- ``MAX_ROWS`` is two digits, so three cells covers ``20`` and the
-#:   ``#`` header both;
+#: * rank -- three cells covers the ``#`` header and every rank up to
+#:   ``999``, which is why :data:`MAX_ROWS` is 999 and not higher;
 #: * address -- the **whole** address: ``0x`` + 40 hex is 42 cells. It was 17
 #:   (the anti-poisoning window) until 2026-09-12; the twenty-five columns
 #:   that move is the single largest thing in this panel's width and the
@@ -525,6 +534,13 @@ class SurfPool4UStakers(Vertical):
         #: on every poll would flush the header row and the reader's scroll
         #: position with it.
         self._columns_tier: str | None = None
+        #: What the table currently holds, as ``(tier, rows as plain text)``.
+        #: A repaint with the same key is skipped, because
+        #: ``DataTable.clear()`` resets ``scroll_y`` to 0. With every staker
+        #: in the table (2026-09-15) a reader scrolls to see most of them,
+        #: and a 30 s poll that re-sent identical rows would snap them back to
+        #: the top each time.
+        self._rows_key: tuple | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(Text(TITLE, style="dim"), id=_TITLE_ID,
@@ -547,6 +563,7 @@ class SurfPool4UStakers(Vertical):
             return
         try:
             table.clear(columns=True)
+            self._rows_key = None
             table.add_column("#", width=_RANK_COLS, key="rank")
             table.add_column(
                 "address", width=_shown_addr_cols(tier) + ICON_COLS, key="address"
@@ -644,40 +661,51 @@ class SurfPool4UStakers(Vertical):
         except Exception:  # not composed yet
             return
         self._install_columns(table, self._tier)
+
+        rows = self._payload.get("rows")
+        batch: list[list] = []
+        if isinstance(rows, list):
+            for row in rows[:MAX_ROWS]:
+                cells = staker_cells(row)
+                if cells is None:
+                    continue
+                rank, addr, imd, pct = cells
+                # Escape AFTER fitting: ``clip`` measures cells and an escaped
+                # ``\\[`` is two characters and one cell, so escaping first
+                # misaligns every column and can cut an escape pair in half.
+                # DataTable defers ``Text.from_markup`` into its idle handler,
+                # so an unescaped ``[/x]`` in a chain-sourced address crashes
+                # the app from inside the message pump.
+                values = [
+                    safe_markup(pad(clip(rank, _RANK_COLS), _RANK_COLS)),
+                    # A ``Text`` cell, never markup: it carries the copy
+                    # icon's action (``widgets/address.address_text``), and
+                    # ``DataTable`` renders a ``Text`` as it is, so a
+                    # chain-sourced ``[/x]`` never reaches a parser from this
+                    # column.
+                    address_text(addr, width=_shown_addr_cols(self._tier)),
+                    safe_markup(pad(clip(imd, _IMD_COLS), _IMD_COLS)),
+                ]
+                if self._tier in ("whole", "full"):
+                    values.append(safe_markup(clip(pct, _PCT_COLS)))
+                batch.append(values)
+
+        # Unchanged rows at an unchanged tier: leave the table, and the
+        # reader's scroll position in it, alone (see ``_rows_key``).
+        key = (self._tier, tuple(tuple(str(v) for v in values) for values in batch))
+        if key == self._rows_key:
+            return
         try:
             table.clear()
         except Exception:  # pragma: no cover - columns not added yet
             return
-
-        rows = self._payload.get("rows")
-        if not isinstance(rows, list):
-            return
-        for row in rows[:MAX_ROWS]:
-            cells = staker_cells(row)
-            if cells is None:
-                continue
-            rank, addr, imd, pct = cells
-            # Escape AFTER fitting: ``clip`` measures cells and an escaped
-            # ``\\[`` is two characters and one cell, so escaping first
-            # misaligns every column and can cut an escape pair in half.
-            # DataTable defers ``Text.from_markup`` into its idle handler, so
-            # an unescaped ``[/x]`` in a chain-sourced address crashes the app
-            # from inside the message pump.
-            values = [
-                safe_markup(pad(clip(rank, _RANK_COLS), _RANK_COLS)),
-                # A ``Text`` cell, never markup: it carries the copy icon's
-                # action (``widgets/address.address_text``), and ``DataTable``
-                # renders a ``Text`` as it is, so a chain-sourced ``[/x]``
-                # never reaches a parser from this column.
-                address_text(addr, width=_shown_addr_cols(self._tier)),
-                safe_markup(pad(clip(imd, _IMD_COLS), _IMD_COLS)),
-            ]
-            if self._tier in ("whole", "full"):
-                values.append(safe_markup(clip(pct, _PCT_COLS)))
+        self._rows_key = None
+        for values in batch:
             try:
                 table.add_row(*values)
             except Exception:
                 continue
+        self._rows_key = key
 
     def _render_footer(self) -> None:
         try:

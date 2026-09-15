@@ -1694,7 +1694,12 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
     #
     # ``pct`` is a share of the WHOLE vault, so a capped page of rows does not
     # add to 100% and must not be made to: the gap between the page and the
-    # vault is the dispersion the panel exists to show. ``imd`` is IMD, not
+    # vault is the dispersion the panel exists to show.
+    #
+    # The page is every holder since 2026-09-15 (``POOL4_STAKERS_LIMIT`` 20 ->
+    # 999, the rank column's three-cell ceiling), so on today's vault of a few
+    # hundred it does add to 100%. That is a consequence of showing everyone,
+    # not a denominator built from the page. ``imd`` is IMD, not
     # shares -- the conversion is a live ``decimals()`` read, and both wrong
     # divisors render as plausible numbers rather than as errors.
     "pool4_stakers": (

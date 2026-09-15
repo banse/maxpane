@@ -662,11 +662,98 @@ def test_the_row_address_is_read_under_the_declared_name_only() -> None:
     assert stale[1] == "--", stale
 
 
-def test_the_row_cap_is_below_the_producers_own_limit() -> None:
-    """The renderer's guard exists so a longer list cannot push the footer --
-    the panel's actual subject -- off a short panel."""
-    assert MAX_ROWS >= 3
-    assert MAX_ROWS <= 20
+def test_the_row_cap_is_the_producers_own_and_fits_the_rank_column() -> None:
+    """Every staker since 2026-09-15, and exactly as many as a rank can say.
+
+    The owner asked for all 353 addresses. The widget restates the producer's
+    cap because it may not import ``data/``, so the two are pinned together
+    here. The cap is the largest rank the three-cell rank column paints whole:
+    one more and the rank would be cut, and a cut rank is a wrong rank.
+    """
+    from maxpane_dashboard.data.surf_manager import POOL4_STAKERS_LIMIT
+    from maxpane_dashboard.widgets.surf.pool4u_stakers import _RANK_COLS
+
+    assert MAX_ROWS == POOL4_STAKERS_LIMIT
+    assert cell_len(str(MAX_ROWS)) <= _RANK_COLS < cell_len(str(MAX_ROWS + 1))
+    assert MAX_ROWS >= 353, "the live vault's 353 holders no longer fit"
+
+
+def _every_staker(n: int = 353, bump: float = 0.0) -> list[dict]:
+    return [
+        {"rank": i + 1, "address": "0x" + f"{i + 1:040x}",
+         "imd": 900.0 - i + bump, "pct": 0.28}
+        for i in range(n)
+    ]
+
+
+def _stakers_app():
+    class _A(App):
+        def compose(self):
+            yield SurfPool4UStakers()
+
+    return _A()
+
+
+@pytest.mark.asyncio
+async def test_every_staker_lands_in_the_table_with_its_copy_icon() -> None:
+    """All 353, in rank order, each address carrying its copy icon.
+
+    Read off the table's own rows rather than off the screen: the panel keeps
+    its height and scrolls, so most of these rows are below the fold by
+    design, and the fold is the layout test's subject, not this one's.
+    """
+    from textual.widgets import DataTable
+
+    async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(pool4_stakers=_every_staker(), pool4_staker_count=353,
+                           pool4_staker_top3_pct=19.3, pool4_network="MAINNET")
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
+        assert table.row_count == 353
+        first, last = table.get_row_at(0), table.get_row_at(352)
+        footer = "\n".join(
+            "".join(seg.text for seg in strip)
+            for strip in pilot.app.screen._compositor.render_strips()
+        )
+    assert str(first[0]).strip() == "1" and str(last[0]).strip() == "353"
+    for row in (first, last):
+        assert str(row[1]).rstrip().endswith(COPY_GLYPH), row[1]
+    assert f"353 addresses · top {TOP_N} = 19% of vault" in footer
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_poll_keeps_the_readers_place_in_the_table() -> None:
+    """A reader scrolled into 353 rows stays there when identical rows arrive.
+
+    ``DataTable.clear()`` resets ``scroll_y`` to 0, and the screen re-sends
+    this panel's rows every poll. Before the table held every staker that
+    cost nothing, because twenty rows barely scrolled. Now a repaint of
+    identical rows would snap the reader back to rank 1 every thirty
+    seconds. Rows that did change still repaint; that half is what stops
+    this test passing on a panel that simply stopped updating.
+    """
+    from textual.widgets import DataTable
+
+    kw = dict(pool4_staker_count=353, pool4_staker_top3_pct=19.3,
+              pool4_network="MAINNET")
+    async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(pool4_stakers=_every_staker(), **kw)
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
+        table.scroll_to(y=200, animate=False)
+        await pilot.pause()
+        before = table.scroll_y
+        assert before > 0, "the table did not scroll, so this measures nothing"
+
+        widget.update_data(pool4_stakers=_every_staker(), **kw)
+        await pilot.pause()
+        assert table.scroll_y == before
+
+        widget.update_data(pool4_stakers=_every_staker(bump=1.0), **kw)
+        await pilot.pause()
+        assert str(table.get_row_at(0)[2]).strip() == "901"
 
 
 # ===========================================================================

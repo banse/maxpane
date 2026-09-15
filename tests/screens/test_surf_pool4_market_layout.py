@@ -116,7 +116,6 @@ from maxpane_dashboard.widgets.surf.pool4u_depth import CAPTION as DEPTH_CAPTION
 from maxpane_dashboard.widgets.surf.pool4u_depth import (
     PANEL_COLUMNS as DEPTH_PANEL_COLUMNS,
 )
-from maxpane_dashboard.widgets.surf.pool4u_stakers import MAX_ROWS as STAKER_MAX_ROWS
 
 # The screen-test module owns the payload fixtures and the themed harness.
 # Imported rather than restated: a second copy of the capture would drift,
@@ -220,10 +219,23 @@ _MARKET_CLASSES = {
 # ---------------------------------------------------------------------------
 
 
-def _wide_staker_payload(**extra) -> dict:
-    """A staker page at the renderer's own cap, with the widest cell values.
+#: Rows in :func:`_wide_staker_payload`. Hand-typed at the old renderer cap of
+#: twenty rather than read off ``pool4u_stakers.MAX_ROWS``, which became 999
+#: on 2026-09-15: every width in the 38..156 sweep would otherwise render a
+#: 999-row table, and a column's width does not depend on how many rows share
+#: it. The row *count* at the owner's live population is exercised by
+#: :func:`_every_staker_payload` at the pin boundary instead.
+WIDE_STAKER_ROWS = 20
 
-    ``MAX_ROWS`` rows rather than the capture's five, and holdings in the
+#: The live vault's holder count on 2026-09-15, when the owner asked to see
+#: every one of them.
+LIVE_STAKER_COUNT = 353
+
+
+def _wide_staker_payload(**extra) -> dict:
+    """A staker page of twenty rows, with the widest cell values.
+
+    Twenty rows rather than the capture's five, and holdings in the
     ``999.9B`` band ``_fmt_imd_cell``'s budget was sized for. The committed
     capture is this panel's *narrow* case, so a sweep that only saw it could
     not tell "the width does not move with the data" apart from "we only ever
@@ -236,13 +248,36 @@ def _wide_staker_payload(**extra) -> dict:
             "imd": 999_900_000_000.0,
             "pct": 100.0,
         }
-        for i in range(STAKER_MAX_ROWS)
+        for i in range(WIDE_STAKER_ROWS)
     ]
     return _frozen_payload(
         pool4_stakers=rows,
         pool4_staker_count=999_999,
         pool4_staker_top3_pct=99.9,
         **extra,
+    )
+
+
+def _every_staker_payload() -> dict:
+    """Every staker the live vault had when the owner asked to see them all.
+
+    353 rows, so the rank column reaches three digits, at the widest holding
+    budget. Checked at the pin boundary in both dimensions, which is where a
+    pin that moved with the row count would show it.
+    """
+    rows = [
+        {
+            "rank": i + 1,
+            "address": "0x" + f"{i:x}".rjust(40, "e"),
+            "imd": 999_900_000_000.0,
+            "pct": 100.0,
+        }
+        for i in range(LIVE_STAKER_COUNT)
+    ]
+    return _frozen_payload(
+        pool4_stakers=rows,
+        pool4_staker_count=LIVE_STAKER_COUNT,
+        pool4_staker_top3_pct=19.3,
     )
 
 
@@ -263,6 +298,7 @@ MARKET_PAYLOADS = {
     "ordinary": _ordinary_pool4_payload,
     "mainnet": _mainnet_pool4_payload,
     "wide-stakers": _wide_staker_payload,
+    "every-staker": _every_staker_payload,
     "widest": _widest_payload,
     "unread-stakers": lambda: _frozen_payload(
         pool4_stakers=None, pool4_staker_count=None, pool4_staker_top3_pct=None

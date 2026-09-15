@@ -1328,8 +1328,8 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: hoped: the sweep ran over the same payload states the row pin uses (ten
 #: since 2026-09-14, when a live-shaped band-not-reached state joined them) --
 #: the committed capture, ``_ordinary_pool4_payload``'s widest flow formats,
-#: the mainnet capture, a twenty-row staker list at
-#: ``pool4u_stakers.MAX_ROWS`` with ``999.9B``-magnitude holdings, both at
+#: the mainnet capture, a twenty-row staker list (the renderer's cap until
+#: 2026-09-15, when it became every staker) with ``999.9B``-magnitude holdings, both at
 #: once, an unread staker list, an empty one, and a deployed/absent/unread
 #: band -- and collected 119 for every one of them. Every column on both
 #: tables is floored at its own header label, and an address is 42 characters
@@ -1437,7 +1437,8 @@ SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 #:
 #: WHICH PANELS ARE ALLOWED TO SCROLL INSIDE THEMSELVES, and therefore do
 #: **not** set this number: ``SurfPool4UStakers`` (its table caps at
-#: ``MAX_ROWS = 20`` against a floor of 12 -- a leaderboard is unbounded by
+#: ``MAX_ROWS`` -- 20 until 2026-09-15, every staker up to 999 since, with
+#: the panel's height unchanged -- against a floor of 12 -- a leaderboard is unbounded by
 #: design, the way FLOW's ``RichLog`` is) and ``SurfPool4Flow`` itself. The
 #: pin covers the panels whose line count is a **constant**: the hero (6
 #: lines), BURN & SUPPLY (4 lines over 5 rows), SIGNALS (5 over 6) and the

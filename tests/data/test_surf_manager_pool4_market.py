@@ -792,8 +792,23 @@ async def test_the_leaderboard_lands_with_its_count_and_concentration(
     payload = await _sweep_stakers(manager)
 
     assert payload["pool4_stakers"] is not None
-    assert len(payload["pool4_stakers"]) == POOL4_STAKERS_LIMIT
-    assert payload["pool4_staker_count"] > POOL4_STAKERS_LIMIT
+    # Every holder since 2026-09-15: the owner asked for all of them. The
+    # committed capture folds to a few hundred, under the cap, so the page is
+    # the whole fold rather than a slice of it.
+    assert payload["pool4_staker_count"] <= POOL4_STAKERS_LIMIT
+    assert payload["pool4_staker_count"] > 20, (
+        "the capture no longer exceeds the old twenty-row cap, so this test "
+        "cannot tell every holder apart from the old page"
+    )
+    assert len(payload["pool4_stakers"]) == payload["pool4_staker_count"]
+    ranks = [row["rank"] for row in payload["pool4_stakers"]]
+    assert ranks == list(range(1, len(ranks) + 1))
+    # The concentration figure must not move with the page size: the top three
+    # of every holder are the top three of any page of at least three.
+    page = sorted(payload["pool4_stakers"], key=lambda r: r["rank"])[:20]
+    assert payload["pool4_staker_top3_pct"] == pytest.approx(
+        mk.top_n_pct(page, 3, complete=True)
+    )
     assert payload["pool4_staker_top3_pct"] is not None
     assert 0.0 < payload["pool4_staker_top3_pct"] < 100.0
     assert payload["pool4_stakers_as_of_hhmm"] is not None
