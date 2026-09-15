@@ -672,6 +672,12 @@ class SurfPool4UStakers(Vertical):
             table = self.query_one(f"#{TABLE_ID}", DataTable)
         except Exception:  # not composed yet
             return
+        # The reader's place, saved before anything below can clear the table:
+        # a tier change rebuilds the columns and a changed payload clears the
+        # rows, and ``DataTable.clear()`` resets both to the top. Restored,
+        # clamped to the new row count, by :meth:`_restore_place`.
+        saved_y = table.scroll_y
+        saved_row = table.cursor_row
         self._install_columns(table, self._tier)
 
         rows = self._payload.get("rows")
@@ -718,6 +724,39 @@ class SurfPool4UStakers(Vertical):
             except Exception:
                 continue
         self._rows_key = key
+        self._restore_place(table, saved_y, saved_row)
+
+    @staticmethod
+    def _restore_place(table: DataTable, scroll_y: float, cursor_row: int) -> None:
+        """Put the reader back where they were before a repaint (fix round 1).
+
+        The identical-rows skip in :meth:`_render_rows` keeps the place only
+        while nothing changes. A new fold reprices every row every 1800 s, and
+        a resize across the whole/full threshold rebuilds the columns; both
+        clear the table. The cursor row is restored without scrolling to it.
+        The scroll offset is restored after the next refresh, once the table
+        knows its new height, and clamped to it so a shorter list lands on its
+        last page rather than past its end.
+        """
+        if table.row_count:
+            try:
+                table.move_cursor(
+                    row=min(max(cursor_row, 0), table.row_count - 1), scroll=False
+                )
+            except Exception:  # pragma: no cover - defensive
+                pass
+        if scroll_y <= 0:
+            return
+
+        def restore() -> None:
+            try:
+                table.scroll_to(
+                    y=min(scroll_y, table.max_scroll_y), animate=False
+                )
+            except Exception:  # pragma: no cover - defensive
+                pass
+
+        table.call_after_refresh(restore)
 
     def _render_footer(self) -> None:
         try:

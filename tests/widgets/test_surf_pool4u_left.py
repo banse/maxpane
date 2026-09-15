@@ -756,6 +756,52 @@ async def test_an_unchanged_poll_keeps_the_readers_place_in_the_table() -> None:
         assert str(table.get_row_at(0)[2]).strip() == "901"
 
 
+@pytest.mark.asyncio
+async def test_a_real_change_keeps_the_readers_place_in_the_table() -> None:
+    """Repriced rows and a tier rebuild repaint, and neither snaps to rank 1.
+
+    The identical-rows skip only helps while nothing changes. A new staker
+    fold (every 1800 s) reprices every row, and a resize across the
+    whole/full threshold rebuilds the columns. Both go through
+    ``DataTable.clear()``, which resets ``scroll_y`` to 0. The panel saves the
+    reader's offset before clearing and restores it afterwards, clamped to the
+    new row count, which the last step checks with a shorter list (fix round
+    1, item 3).
+    """
+    from textual.widgets import DataTable
+
+    kw = dict(pool4_staker_count=353, pool4_staker_top3_pct=19.3,
+              pool4_network="MAINNET")
+    async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(pool4_stakers=_every_staker(), **kw)
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
+        table.scroll_to(y=200, animate=False)
+        await pilot.pause()
+        before = table.scroll_y
+        assert before > 0, "the table did not scroll, so this measures nothing"
+
+        repriced = [dict(r, pct=1.5) for r in _every_staker()]
+        widget.update_data(pool4_stakers=repriced, **kw)
+        await pilot.pause()
+        await pilot.pause()
+        assert str(table.get_row_at(0)[3]).strip() == "1.5%", "rows did not repaint"
+        assert table.scroll_y == before, (table.scroll_y, before)
+
+        await pilot.resize_terminal(72, 20)
+        await pilot.pause()
+        await pilot.pause()
+        assert widget._tier == "full", widget._tier
+        assert table.scroll_y == before, (table.scroll_y, before)
+
+        widget.update_data(pool4_stakers=_every_staker(n=30), **kw)
+        await pilot.pause()
+        await pilot.pause()
+        assert 0 < table.max_scroll_y < before
+        assert table.scroll_y == table.max_scroll_y
+
+
 # ===========================================================================
 # BURN & SUPPLY
 # ===========================================================================
