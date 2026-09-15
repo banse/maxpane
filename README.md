@@ -448,7 +448,7 @@ the coin table — which does say `‹ widen` when it runs short — is what dec
 width. It also has a **height** requirement of its own — 31 rows — as THE LIST's two swapped
 bodies do.
 
-Surfboard's `p` pool4 view is a **third** layout with a third number: **99 columns**, on an
+Surfboard's experimental pool4 protocol view (`e`) is a **third** layout with a third number: **99 columns**, on an
 even 1:1 split, and the narrowest full layout in the app. It is narrow because none of its four
 panels is a table — four label/value summaries — and it was swept on its own rather than
 inherited from the launchpad's 138, which it is deliberately not equal to. It was 106 until
