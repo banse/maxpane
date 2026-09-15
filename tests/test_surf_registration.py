@@ -510,8 +510,12 @@ _SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
 #: agreement, so adding it here costs the other selectors nothing. It was the
 #: last scroll property in either stylesheet that no test in the repo
 #: compared.
+#: ``max-height`` joined 2026-09-15 with LAUNCHPAD COINS' 23-row ceiling: it
+#: is what hands every row past twenty coins to the activity feed, so one copy
+#: without it would give the coins a different share of the column.
 _STRUCTURAL = (
-    "width", "height", "min-height", "padding", "margin", "scrollbar-size",
+    "width", "height", "min-height", "max-height", "padding", "margin",
+    "scrollbar-size",
 )
 
 #: The two copies deliberately do **not** cover the same selector set, and

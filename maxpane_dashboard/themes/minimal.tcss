@@ -2192,10 +2192,22 @@ SurfScreen #surf-launchpad-left {
     scrollbar-gutter: stable;
 }
 
+/* The column's `2fr` share since 2026-09-15, when the owner asked for the
+ * coins to take LAUNCHPAD ACTIVITY's empty rows. Floored at 13, the ten rows
+ * it always had at the pin; capped at 23, which is title, blank, header and
+ * the twenty coins the client now fetches. Past 23, every row goes to the
+ * feed. `margin: 0 0 1 0` is the blank row above ACTIVITY's title. The
+ * table inside stays `auto`, and the widget draws only the coins that fit,
+ * so the table never scrolls: its scrollbar would take columns and was
+ * measured cutting the header at the width pin. Both pins held, re-swept
+ * (`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`). */
 SurfLaunchpadCoins {
     width: 1fr;
-    height: auto;
+    height: 2fr;
+    min-height: 13;
+    max-height: 23;
     padding: 0 1;
+    margin: 0 0 1 0;
 }
 
 /* The `1fr` this panel used to carry really lives on its `DataTable`
@@ -2211,7 +2223,9 @@ SurfLaunchpadCoins > DataTable {
 /* The left column's `1fr`, floored: a `1fr` child cannot overflow a scroll
  * container, it shrinks, so without `min-height` this feed sheds a line per
  * terminal row down to a bare title with no scrollbar and no trace. 6 ==
- * title, blank, four rows. */
+ * title, blank, four rows. Since 2026-09-15 it shares the column with the
+ * coins' `2fr` and gets one row in three until the coins reach their
+ * 23-row ceiling, then every row after that. */
 SurfLaunchpadActivity {
     width: 1fr;
     height: 1fr;

@@ -1831,43 +1831,48 @@ async def test_a_dead_launchpad_sweep_leaves_both_new_panels_explicit() -> None:
     assert ACT in text and BK in text
 
 
-async def test_the_rows_the_capped_coin_table_gave_up_go_to_the_feed() -> None:
-    """The whole reason the left half became a column.
+async def test_the_coins_take_the_rows_the_feed_used_to_hold() -> None:
+    """The owner's 2026-09-15 trade, measured at four terminal heights.
 
-    ``SurfLaunchpadCoins`` is ``height: auto`` and so is the ``DataTable``
-    inside it -- and the second half is the one that actually does the work.
-    The ``1fr`` this body used to hand the panel lives on that table
-    (``widgets/surf/launchpad.py``'s own ``DEFAULT_CSS``); take it off the
-    panel alone and the table goes on claiming the column's spare rows from
-    inside an auto-sized parent, the cap buys the feed nothing, and every
-    structural test above still passes.
+    It replaces ``test_the_rows_the_capped_coin_table_gave_up_go_to_the_feed``,
+    which pinned the opposite regime: a ten-row table that never grew and a
+    feed that took every spare row. The owner's screenshot showed exactly
+    that, ten coins over a mostly empty feed, and asked for the reverse.
 
-    Measured at two terminal heights, because "the table is short" is not
-    the claim -- "the table does not grow, and the feed does" is, and one
-    height cannot tell them apart.
+    The claims are properties of the heights rather than literals:
+
+    * from the pin up, COINS is taller than ACTIVITY and draws every coin it
+      has room for, never fewer than the ten it drew before;
+    * COINS stops at its 23-row ceiling, and after that every extra
+      terminal row goes to the feed.
     """
-    heights: dict[int, tuple[int, int]] = {}
-    for rows in (30, 50):
-        async with _surf_app().run_test(size=(150, rows)) as pilot:
+    measured: dict[int, tuple[int, int, int]] = {}
+    for rows in (SURF_LAUNCHPAD_FULL_LAYOUT_ROWS, 40, 50, 60):
+        async with _surf_app(_twenty_coin_payload()).run_test(
+            size=(150, rows)
+        ) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.press("l")
             await pilot.pause()
+            await pilot.pause()
             screen = pilot.app.screen
-            heights[rows] = (
-                screen.query_one(SurfLaunchpadCoins).region.height,
+            coins = screen.query_one(SurfLaunchpadCoins)
+            measured[rows] = (
+                coins.region.height,
                 screen.query_one(SurfLaunchpadActivity).region.height,
+                coins.query_one("DataTable").row_count,
             )
 
-    (coins_30, feed_30), (coins_50, feed_50) = heights[30], heights[50]
-    assert coins_30 == coins_50, (
-        f"the coin table grew {coins_30} -> {coins_50} rows with the "
-        "terminal: it is still claiming the column's spare rows"
-    )
-    assert feed_50 > feed_30, (
-        f"the feed did not take the 20 rows the terminal grew by "
-        f"({feed_30} -> {feed_50})"
-    )
-    assert feed_50 - feed_30 == 20, (heights, "the spare rows went elsewhere")
+    for rows, (coins_h, feed_h, drawn) in measured.items():
+        if coins_h < 23:
+            # Under the coins' ceiling they hold the larger share. At and past
+            # it the feed may overtake them, which is the second claim.
+            assert coins_h > feed_h, (rows, measured)
+        assert drawn == min(20, coins_h - 3), (rows, measured)
+        assert drawn >= 10, (rows, measured)
+    (c50, f50, _), (c60, f60, _) = measured[50], measured[60]
+    assert c50 == c60 == 23, measured
+    assert f60 - f50 == 10, (measured, "the rows past the coins' ceiling went elsewhere")
 
 
 async def test_the_floored_panels_never_thin_out_below_their_floor() -> None:
@@ -2061,8 +2066,8 @@ async def test_the_hero_survives_the_launchpad_body_swap() -> None:
 #: the rail's children a column *less* than the other copy does -- the same
 #: height-dependent width drift, arrived at from the other direction.
 _LAUNCHPAD_CSS_STRUCTURAL = (
-    "width", "min-width", "max-width", "height", "min-height", "padding",
-    "margin", "overflow-y", "scrollbar-gutter", "scrollbar-size",
+    "width", "min-width", "max-width", "height", "min-height", "max-height",
+    "padding", "margin", "overflow-y", "scrollbar-gutter", "scrollbar-size",
 )
 #: Shorthand properties whose absence means "the CSS default" -- so one copy
 #: spelling ``padding: 0 0`` and the other omitting it is agreement, not
@@ -2436,17 +2441,25 @@ async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
 #: screen; every other field is the fixture's own, so no row shape is
 #: invented here (``test_every_list_row_in_the_fixture_matches_the_frozen_
 #: row_shape`` still owns that claim for the fixture itself).
-def _ten_coin_payload() -> dict:
+def _twenty_coin_payload() -> dict:
+    """The coin table at its cap, twenty since 2026-09-15.
+
+    The docstring above was written for ten; the reasoning carries over, one
+    size larger. Forty activity rows as well, so the feed is full at every
+    height and a blank row under the coins cannot be an empty log.
+    """
     payload = _frozen_payload()
     rows = payload["launchpad_coins"]
     payload["launchpad_coins"] = [
-        {**rows[i % len(rows)], "ticker": f"C{i:02d}"} for i in range(10)
+        {**rows[i % len(rows)], "ticker": f"C{i:02d}"} for i in range(20)
     ]
+    act = payload["launchpad_activity"]
+    payload["launchpad_activity"] = [dict(act[i % len(act)]) for i in range(40)]
     return payload
 
 
 @pytest.mark.parametrize(
-    "payload", [None, "ten-coins"], ids=["committed-capture", "ten-coin-table"]
+    "payload", [None, "twenty-coins"], ids=["committed-capture", "twenty-coin-table"]
 )
 @pytest.mark.parametrize("rows", range(24, 46))
 async def test_the_launchpad_body_is_whole_from_its_pinned_height(
@@ -2466,7 +2479,7 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_height(
     is about was unexercised -- the rail could have been the binder by
     accident rather than by measurement.
     """
-    pl = _ten_coin_payload() if payload == "ten-coins" else None
+    pl = _twenty_coin_payload() if payload == "twenty-coins" else None
     async with _surf_app(pl).run_test(size=(150, rows)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -2494,38 +2507,40 @@ async def test_the_height_pin_is_measured_against_the_column_it_describes() -> N
     changing: raise it past ten and the left column becomes the binder, at
     which point the pin moves and this test names the reason.
 
-    **Measured below the pin, not at it**, and that is the whole trick.
-    ``SurfLaunchpadActivity`` and ``SurfBurnkeepers`` are ``1fr``: on a
-    terminal with rows to spare they grow, so at the pin itself both columns
-    report the body's own height (20) and the 19 the docstring derives is
-    nowhere on screen. At 28 rows the body is 17, both ``1fr`` children are
-    on their ``min-height`` floors, and each column's ``virtual_size`` is its
-    real content: 19 and 20. The floors are therefore part of what is being
-    asserted here, not a separate subject.
+    **Measured AT the pin since 2026-09-15, and one row under it.** It used to
+    be read at 28 rows, where both ``1fr`` children sat on their floors. The
+    coin panel is a ``2fr`` share with a ceiling now, and below the pin the
+    column's ``fr`` children inflate while it scrolls (COINS reads its 23-row
+    ceiling at 30 rows), so 28 rows no longer shows the floors. At the pin
+    both columns fit exactly. The left column is COINS on its 13-row floor,
+    the one-row gap and ACTIVITY on its 6-row floor, 20 in all, level with
+    the rail's 20. The gap spent the one row of margin the left column used
+    to have. One row under, the body scrolls and the title bar says so.
     """
-    async with _surf_app(_ten_coin_payload()).run_test(size=(150, 28)) as pilot:
+    pin = SURF_LAUNCHPAD_FULL_LAYOUT_ROWS
+    async with _surf_app(_twenty_coin_payload()).run_test(size=(150, pin)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
         await pilot.press("l")
         await pilot.pause()
+        await pilot.pause()
         screen = pilot.app.screen
         column = screen.query_one(f"#{LAUNCHPAD_LEFT_ID}")
         rail = screen.query_one(f"#{LAUNCHPAD_RAIL_ID}")
-        assert column.size.height < 19, (
-            "28 rows no longer squeezes the body below its content, so both "
-            "columns are reporting the terminal's height and this test is "
-            "measuring nothing"
+        coins = screen.query_one(SurfLaunchpadCoins)
+        activity = screen.query_one(SurfLaunchpadActivity)
+        assert coins.size.height == 13, (
+            "the coin panel is not on the 13-row floor the pin is derived "
+            f"from: {coins.size.height}"
         )
-        assert screen.query_one(SurfLaunchpadCoins).size.height == 13, (
-            "the coin table is not the 13 rows the pin is derived from -- "
-            "title, blank, header and the ten rows it is capped at"
-        )
-        assert column.virtual_size.height == 19, column.virtual_size.height
+        assert coins.query_one("DataTable").row_count == 10
+        assert activity.size.height == 6, activity.size.height
+        assert column.virtual_size.height == 13 + 1 + 6, column.virtual_size.height
         assert rail.virtual_size.height == 20, rail.virtual_size.height
-        assert rail.virtual_size.height > column.virtual_size.height, (
-            "the rail is no longer the taller column, so it is no longer the "
-            "panel this pin is measured against -- re-derive it"
+        assert column.virtual_size.height == column.size.height, (
+            "the left column holds more than the pin shows"
         )
+        assert rail.virtual_size.height == rail.size.height
         # ...and the pin is that content plus the body's own chrome: the
         # title bar, the hero row and its top margin, this body's top margin
         # and the StatusBar. Derived from the laid-out screen rather than
@@ -2533,6 +2548,98 @@ async def test_the_height_pin_is_measured_against_the_column_it_describes() -> N
         # disagreeing with the constant.
         chrome = pilot.app.size.height - column.size.height
         assert rail.virtual_size.height + chrome == SURF_LAUNCHPAD_FULL_LAYOUT_ROWS
+        assert TALLER_HINT not in _screen_text(pilot.app).split("\n")[0]
+
+    async with _surf_app(_twenty_coin_payload()).run_test(
+        size=(150, pin - 1)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.pause()
+        assert TALLER_HINT in _screen_text(pilot.app).split("\n")[0]
+
+
+@pytest.mark.parametrize("rows", [SURF_LAUNCHPAD_FULL_LAYOUT_ROWS, 40, 50])
+async def test_a_blank_row_separates_the_coin_table_from_the_activity_title(
+    rows,
+) -> None:
+    """The owner's 2026-09-15 screenshot: the coin table ran into the title.
+
+    Composited, across the left column: the row directly above
+    ``LAUNCHPAD ACTIVITY`` is blank, and the row above that is a coin. The
+    coin half is the premise. A table that drew fewer rows than its panel
+    holds would leave a blank there with or without the margin, which is why
+    this runs against twenty coins.
+    """
+    async with _surf_app(_twenty_coin_payload()).run_test(
+        size=(150, rows)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("l")
+        await pilot.pause()
+        await pilot.pause()
+        screen = pilot.app.screen
+        activity = screen.query_one(SurfLaunchpadActivity)
+        coins = screen.query_one(SurfLaunchpadCoins)
+        lines = _screen_text(pilot.app).split("\n")
+        y = activity.region.y
+        x0, x1 = coins.region.x, coins.region.right
+        taller = TALLER_HINT in lines[0]
+
+    assert not taller, rows
+    assert "LAUNCHPAD ACTIVITY" in lines[y][x0:x1], lines[y]
+    assert not lines[y - 1][x0:x1].strip(), (
+        f"at {rows} rows the coin table runs into the ACTIVITY title: "
+        f"{lines[y - 1][x0:x1]!r}"
+    )
+    assert lines[y - 2][x0:x1].strip().startswith("C"), (
+        f"at {rows} rows the row above the gap is not a coin, so the blank "
+        f"could be an unfilled table: {lines[y - 2][x0:x1]!r}"
+    )
+
+
+@pytest.mark.parametrize("rows", [SURF_LAUNCHPAD_FULL_LAYOUT_ROWS, 60])
+async def test_the_width_pin_holds_at_every_height_the_coin_table_is_fitted_to(
+    rows,
+) -> None:
+    """The column pin, at the pin height and at a tall one, with twenty coins.
+
+    The width sweep above runs at 46 rows against a two-coin capture, where
+    the coin table never had to choose how many rows to draw. At 31 rows it
+    draws ten of twenty, and an earlier cut of this change handed it all
+    twenty. The table then scrolled inside itself, and its scrollbar cut
+    ``BURNED`` at 138-140 with the marker dark. Both directions are asserted
+    against the constant: the marker lit one column under it, and nothing
+    marked or clipped at it, with the header whole.
+    """
+    pin = SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
+    seen = {}
+    for width in (pin - 1, pin):
+        async with _surf_app(_twenty_coin_payload()).run_test(
+            size=(width, rows)
+        ) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            await pilot.press("l")
+            await pilot.pause()
+            await pilot.pause()
+            screen = pilot.app.screen
+            table = screen.query_one(SurfLaunchpadCoins).query_one("DataTable")
+            lines = _screen_text(pilot.app).split("\n")
+            seen[width] = {
+                "marked": "‹ widen" in "\n".join(lines),
+                "clipped": _clipped_launchpad_lines(pilot.app, screen),
+                "header": lines[table.region.y][table.region.x:table.region.right],
+                "scrolls": table.max_scroll_y > 0,
+            }
+    assert seen[pin - 1]["marked"], (rows, seen[pin - 1])
+    assert not seen[pin]["marked"], (rows, seen[pin])
+    assert not seen[pin]["clipped"], (rows, seen[pin])
+    assert "BURNED" in seen[pin]["header"], (rows, seen[pin])
+    assert not seen[pin]["scrolls"], (rows, "the coin table scrolls inside itself")
 
 
 async def test_the_row_marker_answers_for_the_body_that_is_showing() -> None:

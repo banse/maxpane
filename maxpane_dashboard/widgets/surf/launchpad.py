@@ -257,7 +257,20 @@ _TABLE_FULL_WIDTH = 89
 #: 20 -> 10 (2026-08-25): the panel gave half its column to LAUNCHPAD
 #: ACTIVITY, and ten rows is what is left. The client's limit moved with it
 #: -- see ``test_the_render_limit_matches_the_widget_cap``.
-MAX_COIN_ROWS = 10
+#:
+#: **10 -> 20 (2026-09-15), and the trade runs the other way.** The owner's
+#: screenshot showed ten coins over an ACTIVITY feed with a lot of empty
+#: space, and asked for the rows to go to COINS. The panel is now the
+#: column's ``2fr`` share, capped at its full twenty-coin content, and it draws
+#: **as many of these twenty as its laid-out height holds**
+#: (:meth:`SurfLaunchpadCoins._rows_that_fit`). At the ``l`` body's 31-row pin
+#: that is the same ten as before.
+MAX_COIN_ROWS = 20
+
+#: Rows of the panel that are not coin rows: the title, the blank under it and
+#: the table's header. :meth:`SurfLaunchpadCoins._rows_that_fit` subtracts
+#: them from the panel's height.
+_COIN_CHROME_ROWS = 3
 
 #: Column budget, in rendered columns.  Ticker/name width is no longer a
 #: security control (:func:`_sanitize` strips hostile bracket content before
@@ -530,6 +543,9 @@ class SurfLaunchpadCoins(Vertical):
         # Raw payload, not formatted rows -- kept so a later refresh always
         # starts from the same source the first render did.
         self._payload: dict = {}
+        #: How many coin rows the last render drew room for, so a resize
+        #: re-renders only when that number actually moves.
+        self._rendered_fit: int | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(COINS_TITLE, classes="surf-lpc-title", id="surf-lpc-title")
@@ -582,8 +598,38 @@ class SurfLaunchpadCoins(Vertical):
         size (``self.size.width`` is ``0``), and :meth:`_set_title` treats
         that as "not measured yet" rather than "too narrow", the same
         optimistic reading ``SurfMarket._tier_for`` gives ``width <= 0``.
+
+        It also re-fits the rows (2026-09-15): the number of coins drawn is a
+        function of this panel's height (:meth:`_rows_that_fit`), so a
+        taller or shorter terminal re-renders the table when, and only when,
+        that number moves.
         """
         self._set_title()
+        if self._payload and self._rows_that_fit() != self._rendered_fit:
+            self._render_view()
+
+    def _rows_that_fit(self) -> int:
+        """Coin rows this panel's laid-out height holds, capped at the payload's.
+
+        **Why the table never gets more rows than it can show.** The panel is
+        the left column's ``2fr`` share, so on a short terminal it is shorter
+        than twenty coins. Handed all twenty, its ``DataTable`` would scroll
+        inside itself, and that scrollbar takes columns: measured in situ on
+        2026-09-15, the ``BURNED`` header was cut from 138 to 140 columns at 31
+        rows while this panel's ``‹ widen`` marker was dark. The width pin
+        would have become a function of the height, and the header would have
+        been cut in silence. Drawing only the ranked rows that fit means the
+        table never scrolls and the width need is the same at every height.
+
+        This is the same kind of cut the table has always made: it shows the
+        top of a ranked list whose population the title states (``177
+        coins``). ``height <= 0`` means "not laid out yet" and draws the cap;
+        :meth:`on_resize` re-fits once there is a size.
+        """
+        height = self.size.height
+        if height <= 0:
+            return MAX_COIN_ROWS
+        return max(1, min(MAX_COIN_ROWS, height - _COIN_CHROME_ROWS))
 
     def update_data(
         self, coins=None, coin_count=None, launch_count=None, as_of_hhmm=None,
@@ -803,8 +849,10 @@ class SurfLaunchpadCoins(Vertical):
             table.add_row(f"[yellow]{COINS_UNAVAILABLE}[/]", *([DASH] * 8))
             return
 
+        fit = self._rows_that_fit()
+        self._rendered_fit = fit
         try:
-            usable = list(coins)[:MAX_COIN_ROWS]
+            usable = list(coins)[:fit]
         except TypeError:
             usable = []
 

@@ -599,12 +599,58 @@ async def test_the_table_draws_at_most_ten_coins() -> None:
         def compose(self):
             yield SurfLaunchpadCoins()
 
+    from maxpane_dashboard.widgets.surf.launchpad import MAX_COIN_ROWS
+
+    # Twenty since 2026-09-15 (the owner gave the coins ACTIVITY's rows). A
+    # panel tall enough for all of them draws the cap and no more.
     rows = [dict(_ROW, ticker=f"C{i}", swaps_24h=100 - i) for i in range(25)]
-    async with _A().run_test(size=_RENDER_SIZE) as pilot:
+    async with _A().run_test(size=(_RENDER_SIZE[0], 40)) as pilot:
         widget = pilot.app.query_one(SurfLaunchpadCoins)
         widget.update_data(coins=rows, coin_count=146)
         await pilot.pause()
-        assert widget.query_one("#surf-lpc-table", DataTable).row_count == 10
+        assert MAX_COIN_ROWS == 20
+        assert widget.query_one("#surf-lpc-table", DataTable).row_count == 20
+
+
+@pytest.mark.asyncio
+async def test_the_table_draws_only_the_coins_its_height_holds() -> None:
+    """Never more rows than fit, so the table never scrolls inside itself.
+
+    A ``DataTable`` that scrolls paints a vertical scrollbar, and that
+    scrollbar takes columns. Measured on 2026-09-15 in the ``l`` body at 31
+    rows, it cut the ``BURNED`` header at 138-140 while the panel's ``‹ widen``
+    was dark. Asserted here on a bare mount at two heights, plus a resize
+    between them, because the fitted count has to follow the panel's height
+    in both directions.
+    """
+    from textual.widgets import DataTable
+
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadCoins()
+
+    rows = [dict(_ROW, ticker=f"C{i}", swaps_24h=100 - i) for i in range(20)]
+    async with _A().run_test(size=(_RENDER_SIZE[0], 16)) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadCoins)
+        widget.update_data(coins=rows, coin_count=146)
+        await pilot.pause()
+        table = widget.query_one("#surf-lpc-table", DataTable)
+        short = table.row_count
+        assert short == widget.size.height - 3, (short, widget.size.height)
+        assert short < 20
+        assert table.max_scroll_y == 0, "the table scrolls inside itself"
+
+        await pilot.resize_terminal(_RENDER_SIZE[0], 30)
+        await pilot.pause()
+        await pilot.pause()
+        assert table.row_count == 20
+        assert table.max_scroll_y == 0
+
+        await pilot.resize_terminal(_RENDER_SIZE[0], 16)
+        await pilot.pause()
+        await pilot.pause()
+        assert table.row_count == short
+        assert table.max_scroll_y == 0
 
 
 # ---------------------------------------------------------------------------

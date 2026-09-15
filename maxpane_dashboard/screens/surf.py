@@ -16,7 +16,7 @@ holding the v4 launchpad's own panels -- five of them since 2026-08-25 --
 laid out on ``#middle-row``'s own shape::
 
     #surf-launchpad-body   #surf-launchpad-left (2fr)       | #surf-launchpad-rail (1fr)
-                             SurfLaunchpadCoins    (auto)   |   SurfCurveFlow      (auto, +1 margin)
+                             SurfLaunchpadCoins    (2fr, 13..23, +1 margin) |   SurfCurveFlow      (auto, +1 margin)
                              SurfLaunchpadActivity (1fr)    |   SurfBurnPipeline   (auto, +1 margin)
                                                             |   SurfBurnkeepers    (1fr)
 
@@ -627,6 +627,18 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: own screen pin and its ``f`` view). The hero row, which stays mounted in
 #: both modes, clears on its own at **87** and never competes for the binder
 #: role.
+#:
+#: **2026-09-15: re-swept for the twenty-coin table, and 138 held.** The coin
+#: panel became the left column's ``2fr`` share. The first cut of that change
+#: handed the table all twenty coins at every height. At 31 rows the table
+#: then scrolled inside itself, and its scrollbar cut the ``BURNED`` header at
+#: 138-140 while this panel's ``‹ widen`` was dark: the width need had become
+#: a function of the height. The shipped version draws only the coins its
+#: laid-out height holds (``SurfLaunchpadCoins._rows_that_fit``), so the table
+#: never scrolls. Re-swept in situ over 128-146 at 31, 36 and 60 rows (10, 13
+#: and 20 coins drawn), with a twenty-coin payload under both the capture's
+#: burn line and the ordinary one: ``‹ widen`` lit through 137, ``BURNED``
+#: whole and nothing clipped from 138, no table scrollbar at any width.
 SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 
 #: The ``l`` LAUNCHPAD body's own measured **height** (2026-08-25) -- new
@@ -676,6 +688,32 @@ SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 #: layout's WIDTH pin would become a function of its HEIGHT.
 #: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` above is measured with that
 #: gutter reserved, which is the 92nd of its 92 columns.
+#:
+#: **2026-09-15: COINS took ACTIVITY's rows, and 31 held with the margin
+#: spent.** The owner's screenshot showed ten coins over a mostly empty
+#: ACTIVITY feed, and the coin table running straight into the ACTIVITY
+#: title. Three changes answer it:
+#:
+#: * ``SurfLaunchpadCoins`` gained ``margin: 0 0 1 0``, the blank row above
+#:   ACTIVITY's title.
+#: * COINS is now ``2fr`` against ACTIVITY's ``1fr``, floored at 13 (the ten
+#:   rows it had) and capped at 23 (title, blank, header and the twenty
+#:   coins ``LAUNCHPAD_RENDER_LIMIT`` now fetches).
+#: * The table draws only the coins its height holds, so it never scrolls
+#:   inside itself.
+#:
+#: **The left column is now 20 at its floors (13 + 1 + 6), level with the
+#: rail's 20.** The paragraph above says it was 19; the gap row spent that one
+#: row of margin, so both columns bind at once. Re-swept in situ, starting
+#: below the pin, over rows 24-46 plus 50, 55 and 60 at 150 columns, with the
+#: capture and a twenty-coin payload. ``‹ taller`` is lit through 30 and dark
+#: from 31 in both. Coins drawn by height: 10 at 31, 15 at 40, 19 at 45, 20
+#: from 50. ACTIVITY is 6 rows at 31, 10 at 40, 15 at 50, then 25 at 60, as
+#: every row past COINS' 23-row ceiling goes to the feed. The blank row sits
+#: above ACTIVITY's title at every height from 31. **Below the pin the
+#: column's ``fr`` children inflate while it scrolls** (COINS reads its
+#: 23-row ceiling at 30 rows). That is why the derivation is now asserted at
+#: the pin rather than at 28 rows, where it used to be read off the floors.
 SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
 
 #: The ``p`` POOL4 body's own measured width (2026-09-01) -- a **separate,
@@ -2218,6 +2256,18 @@ class SurfScreen(RefreshGuard, Screen):
      * stop. 6 is LAUNCHPAD ACTIVITY's title + blank + four rows; 5 is
      * BURNKEEPERS' title + blank + the three burnkeeper rows the sweep has
      * ever returned.
+     *
+     * 2026-09-15: THE LEFT COLUMN HAS TWO GROWING CHILDREN NOW, AND THE ROWS
+     * MOVED TO THE COINS. The owner asked for LAUNCHPAD COINS taller and
+     * LAUNCHPAD ACTIVITY shorter, with a blank row between them. COINS is
+     * `2fr` against ACTIVITY's `1fr`. COINS is floored at 13 (the ten rows it
+     * always had at the pin) and capped at 23 (twenty coins plus title,
+     * blank and header), so past that ceiling every row goes to ACTIVITY.
+     * Its `margin: 0 0 1 0` is the blank row. The table stays `auto` and
+     * `SurfLaunchpadCoins` draws only the coins that fit its laid-out height,
+     * because a table that scrolls inside itself paints a scrollbar that
+     * takes columns, and that was measured cutting the header at the width
+     * pin. Both pins held; `SURF_LAUNCHPAD_FULL_LAYOUT_ROWS` has the sweep.
      */
     SurfScreen #surf-launchpad-body {
         height: 1fr;
@@ -2233,8 +2283,11 @@ class SurfScreen(RefreshGuard, Screen):
     }
     SurfScreen SurfLaunchpadCoins {
         width: 1fr;
-        height: auto;
+        height: 2fr;
+        min-height: 13;
+        max-height: 23;
         padding: 0 1;
+        margin: 0 0 1 0;
     }
     SurfScreen SurfLaunchpadCoins > DataTable {
         height: auto;
@@ -2573,7 +2626,9 @@ class SurfScreen(RefreshGuard, Screen):
             # table is capped at ten rows, so it no longer has spare rows to
             # hold -- LAUNCHPAD ACTIVITY takes them, which is the currency a
             # feed actually spends. Same trade as the rail's, made the other
-            # way round.
+            # way round. (Reversed in part on 2026-09-15: COINS is the `2fr`
+            # share up to twenty coins and ACTIVITY the `1fr`, at the owner's
+            # request -- see `SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`.)
             with Vertical(id=LAUNCHPAD_LEFT_ID):
                 yield SurfLaunchpadCoins()
                 yield SurfLaunchpadActivity()
