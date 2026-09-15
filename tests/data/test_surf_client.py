@@ -3395,11 +3395,14 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
     assert state.cursor["launches"][hostile_pool]["ticker"] == "[/x]"
     assert state.cursor["launches"][hostile_pool]["name"] == "[bold red]hostile[/]"
 
-    # And it is absent from the rendered slice because it RANKED out, never
-    # because something here sanitised or dropped it -- opposite conclusions
-    # for Task 11, which has to assume every ticker reaching it is hostile.
-    assert "[/x]" not in tickers
-    assert len(state.coins) == surf_client.LAUNCHPAD_RENDER_LIMIT < 13
+    # 2026-09-15: the limit went back up 10 -> 20, so all 13 launches in this
+    # capture are in the rendered slice again, and the hostile ticker with
+    # them. That makes the claim stronger rather than weaker: it reaches the
+    # slice the panel draws completely raw, because nothing at this layer
+    # sanitises or drops it. The renderer has to assume every ticker reaching
+    # it is hostile, and this is the proof that one does.
+    assert "[/x]" in tickers
+    assert len(state.coins) == 13 < surf_client.LAUNCHPAD_RENDER_LIMIT
     assert all(c.swaps_24h >= 0 for c in state.coins)
 
 
@@ -5579,4 +5582,5 @@ def test_the_render_limit_matches_the_widget_cap() -> None:
     """
     from maxpane_dashboard.data.surf_client import LAUNCHPAD_RENDER_LIMIT
     from maxpane_dashboard.widgets.surf.launchpad import MAX_COIN_ROWS
-    assert LAUNCHPAD_RENDER_LIMIT == MAX_COIN_ROWS == 10
+    # 10 -> 20 on 2026-09-15: the owner gave the coin table ACTIVITY's rows.
+    assert LAUNCHPAD_RENDER_LIMIT == MAX_COIN_ROWS == 20

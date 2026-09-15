@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.base_tokens import format_change, format_price, format_volume
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
+
+#: Display budget for the token symbol label, excluding the icon -- the same
+#: 10-cell window the deleted ``symbol[:10]`` slice produced. No layout pin
+#: covers this standalone widget (task-5 brief: "No layout pin exists for
+#: base"), so the "Token" column is grown by ICON_COLS (PRD §5 recipe step
+#: 6.2): 12 -> 14, keeping the 2-cell gutter the column already carried
+#: beyond the 10-cell label.
+_TOKEN_COLS = 10
 
 
 def _format_age(timestamp: float | int | None) -> str:
@@ -60,7 +69,7 @@ class LaunchFeed(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("Age", width=8)
-        table.add_column("Token", width=12)
+        table.add_column("Token", width=14)
         table.add_column("Deployer", width=10)
         table.add_column("Price", width=12)
         table.add_column("5m", width=10)
@@ -88,7 +97,6 @@ class LaunchFeed(Vertical):
             symbol = launch.get("symbol", "???")
             if not symbol.startswith("$"):
                 symbol = f"${symbol}"
-            symbol = safe_markup(symbol[:10])
 
             deployer = launch.get("deployer", "--")[:10]
             price = launch.get("price_usd", 0)
@@ -100,9 +108,16 @@ class LaunchFeed(Vertical):
             vol_str = format_volume(volume) if volume else "--"
 
             # HOT marker if 5m > +100%
+            is_up = change_5m is not None and change_5m > 0
+            token_cell = address_text(
+                launch.get("address"), label=symbol, width=_TOKEN_COLS,
+                style="bold" if is_up else "",
+            )
             if change_5m is not None and change_5m > 100:
-                symbol = f"[bold]{symbol}[/] [red reverse] HOT [/]"
-            elif change_5m is not None and change_5m > 0:
-                symbol = f"[bold]{symbol}[/]"
+                hot = Text()
+                hot.append_text(token_cell)
+                hot.append(" ")
+                hot.append(" HOT ", style="red reverse")
+                token_cell = hot
 
-            table.add_row(age_str, symbol, deployer, price_str, change_str, vol_str)
+            table.add_row(age_str, token_cell, deployer, price_str, change_str, vol_str)

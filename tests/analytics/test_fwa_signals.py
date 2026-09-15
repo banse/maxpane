@@ -502,6 +502,42 @@ def test_param_drift_detects_tithe_change(config_events):
     assert "21" not in row.value_str  # the launch write never leaks into the count
 
 
+def test_param_drift_address_value_is_the_full_address():
+    """An address-typed config change publishes the whole address (PRD §6).
+
+    ``_fmt_config_value`` used to truncate it here with a private 6/4 cut --
+    exactly the shape ``widgets/address.py``'s anti-poisoning window exists
+    to retire. That shortening (and the copy icon, for a genuine address)
+    now happens downstream, in ``widgets/fwa/fwa_signals.py``'s
+    ``_fmt_drift``; this module's job is only to stop truncating.
+    """
+    address = "0x" + "11" * 20
+    events = [{"key": 61, "value": int(address, 16), "block_number": 25_600_000}]
+    row = sig.param_drift_signal(events)
+    assert address in row.value_str
+    assert row.color == sig.SIGNAL_WARN
+    # No leftover private-formatter shape (the old truncated form) survives.
+    assert ".." not in row.value_str
+
+
+def test_param_drift_bytes32_value_is_also_the_full_value():
+    """The same for a bytes32 config value -- still unshortened here.
+
+    Unlike an address it is never followed by a copy icon anywhere
+    downstream (it is not a wallet or contract address), but this module
+    still must not be the one doing any shortening.
+    """
+    value_hex = "cc" * 32
+    events = [{"key": 24, "value": int(value_hex, 16), "block_number": 25_600_000}]
+    # Key 24 (VRF_KEY_HASH) is constructor-only (``settable: false``), so its
+    # own block is auto-detected as the launch write and excluded by
+    # default; pin ``launch_block`` elsewhere so this event reads as a
+    # genuine post-launch change instead.
+    row = sig.param_drift_signal(events, launch_block=1)
+    assert f"0x{value_hex}" in row.value_str
+    assert ".." not in row.value_str
+
+
 def test_param_drift_nominal(launch_only):
     """Launch write only: nothing has been changed since deployment."""
     assert len(launch_only) == 21

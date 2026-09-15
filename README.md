@@ -90,13 +90,13 @@ the whole time; `esc` backs out, one-way. The launchpad view is whole from **138
 inside the 143 the widest dashboard already asks for, and from **31 rows** — below that it
 scrolls and says `‹ taller`.
 
-Press **`p`** for pool4 — the same trick a third time, a third body under the same hero. pool4
+Press **`e`** for the experimental pool4 protocol view (it is not named on the status bar) — the same trick a third time, a third body under the same hero. pool4
 makes IMD's pool a one-way ratchet: buys drain a reserve that a floor stops them draining past,
 sells burn most of what they sell, and a slice of every swap is retained to pay for the protocol's
-own inference. THE SPLIT, THE RATCHET and POOL4 FLOW take the left column — the reward split
-**measured from the live counters** rather than quoted from anyone's documentation, the reserve
-against its floor and how far it is from it, and under both a swap-by-swap log of what each trade
-burned, paid out, and left behind. HATCHES and sIMD VAULT share the rail: which powers over the
+own inference. THE SPLIT and THE RATCHET take the left column — the reward split
+**measured from the live counters** rather than quoted from anyone's documentation, and the reserve
+against its floor and how far it is from it. The swap-by-swap log of what each trade burned, paid
+out, and left behind is the `4` view's RECENT FLOW. HATCHES and sIMD VAULT share the rail: which powers over the
 contracts are still live and who holds them, and what a staker is actually being paid — which a
 drip rate sets, not pool volume, so the panel shows the backlog as days of runway rather than an
 APR derived from fee flow that would be wrong by orders of magnitude.
@@ -134,14 +134,14 @@ but it lives *inside* the Reward Distributor: no separate bond contract is named
 this dashboard reads, so the HATCHES row for it says `unknown`, which is "we did not look here"
 rather than "it is not there". Read-only and keyless as everywhere else: `drip()` and `rebalance()`
 are permissionless and pay a keeper reward, and maxpane reports that they are callable and by whom
-and never offers to call one. `esc` backs out, one-way. The view is whole from **106 columns and
-44 rows**.
+and never offers to call one. `esc` backs out, one-way. The view is whole from **99 columns and
+45 rows**.
 
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
 an honest gap.
 
-### THE LIST — the linked-wallet view (`f`)
+### THE LIST — the linked-wallet analysis view (`a`)
 
 THE LIST is a zero-custody allowlist game: send ETH, take points on a square-root curve, and the
 lowest-ranked wallets fall off the list at the top of every hour. The curve pays a *sublinear*
@@ -149,8 +149,11 @@ return on size, so one person splitting a stake across ten wallets outscores the
 once. That makes the interesting question not who is on the list, but **how much of the list is
 the same hand**.
 
-Press **`f`** for as much of an answer as a public chain can support. The doomsday clock stays on
-screen the whole time; `esc` goes back.
+Press **`a`** for as much of an answer as a public chain can support (bound 2026-09-15). The
+doomsday clock stays on screen the whole time; a second `a` or `esc` goes back. `a` is not shown
+in the status bar's hints — the owner asked for the binding, not the label — but `action_toggle_analysis`
+behaves exactly like the `y` view's toggle. `f` opens the custom filter editor inside the `l`
+record view instead (see below); the two keys are unrelated.
 
 - **OPERATORS** — one row per linked group, widest first: how many wallets, the evidence that
   links them (`identical 0.45Ξ send ×10 in one wave · shared first funder 0x1a2b3c4d… ×7`), the
@@ -269,19 +272,21 @@ last marker goes out at:
 
 | columns | what still shows |
 |--------:|------------------|
-| 109–112 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, surf `IDENTITY.MD ‹ widen for /2000 written`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen…`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen…`, curator `FAN-OUT PATTERNS ‹ widen` |
+| 109–112 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen: time, kind, ETH`, surf `IMD MARKET ‹ widen…`, surf `IDENTITY.MD ‹ widen for /2000 written`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen…`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen…`, curator `FAN-OUT PATTERNS ‹ widen` |
 | 113–122 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen…`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen…`, curator `FAN-OUT PATTERNS ‹ widen: block window` |
 | 123–126 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen: TX`, curator `SIGNALS ‹ widen`, curator `ACTIVITY ‹ widen: credit wording` |
 | 127–133 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `TOP OF THE LIST ‹ widen: TX`, curator `SIGNALS ‹ widen` |
 | 134 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `SIGNALS ‹ widen` |
-| 135–137 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `SIGNALS ‹ widen` |
-| 138–141 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
+| 135–137 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen`, curator `SIGNALS ‹ widen` |
+| 138 | surf `ANNOUNCE FEED ‹ widen`, surf `DEV ACTIVITY ‹ widen for amounts`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
+| 139–141 | surf `ANNOUNCE FEED ‹ widen`, surf `IMD MARKET ‹ widen…`, FWA `SIGNALS ‹ widen` |
 | 142 | surf `IMD MARKET ‹ widen for 24h volume and bridge flow`, FWA `SIGNALS ‹ widen` |
 | **≥ 143** | **nothing — full layout**, with one exception below |
 
 The table starts at 109 rather than running down to zero because narrower terminals light
-*more* markers, not the same ones: below 109 surf's `DEV ACTIVITY` marker changes wording
-to `‹ widen: time, kind, ETH` as the time and kind columns go too, and below 89 surf's
+*more* markers, not the same ones: below 113 surf's `DEV ACTIVITY` marker changes wording
+to `‹ widen: time, kind, ETH` as the time and kind columns go too (113, not 109 — the copy
+icon added two columns to the row's window cell, and the crossover moved with it), and below 89 surf's
 `IDENTITY.MD` runs out of room to name its shed field beside the title and falls back to a
 bare `‹ widen`. It stays bare down to 76; at 75–74 the stats row sheds `transfers/24h` as
 well, and the shorter wording that names both — `‹ widen: 24h /2000`, 18 columns against
@@ -300,11 +305,11 @@ its rows above. `FAN-OUT PATTERNS` and `CLOSEST CALLS` share one slot — `c` sw
 so the table names whichever the current phase opens on, and the other behaves the same
 way. And 138 is a *height-independent* number on purpose: the right rail reserves the
 column its scrollbar would need, so a short window scrolls the rail instead of quietly
-narrowing the panel that sets the width. The `f` view is whole at **137**, one column
-inside the dashboard body it swaps out and six inside the number at the bottom of the
-table, so pressing it never asks for a wider terminal than the screen you pressed it on;
+narrowing the panel that sets the width. The `a` (linked-wallet analysis) body is whole at
+**137**, one column inside the dashboard body it swaps out and six inside the number at the
+bottom of the table, so opening it never asks for a wider terminal than the screen it opened on;
 its own binding panel is `OPERATORS`, whose evidence cell is the widest thing on it.
-The two swapped views need rows rather than columns: the `f` body fits whole from 48
+The two swapped views need rows rather than columns: the `a` body fits whole from 48
 rows and the `y` body from 40, and below that each scrolls and says so with `‹ taller`.
 
 `IMD MARKET` is the one row that moves with the data rather than with your terminal. Its
@@ -364,28 +369,35 @@ the other, so a single manager owns the command.
 | `t` | Cycle theme |
 | `q` | Quit |
 
+Click ⧉ beside any address to copy it.
+
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
 LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard binds `l`** to swap
 the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand rail — with the
 hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way.
-**It binds `p`** the same way for pool4 — THE SPLIT, THE RATCHET and POOL4 FLOW on the left,
+**It binds `e`**, experimental and unadvertised, the same way for the pool4 protocol — THE SPLIT and THE RATCHET on the left,
 HATCHES and sIMD VAULT in the rail, the same hero left where it was. **And it binds `4`** for the
 POOL4 MARKET view — the same protocol read as a market rather than as a machine: RECENT FLOW
 beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses, no shortening —
 beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` is the one Surfboard view that swaps the **hero** too, for IMD PRICE, DOWNSIDE
-BID and STAKING; `esc` backs out of any of the three. The status hint names all three:
-`l launchpad · p pool4 · 4 market`. In Surfboard's announce feed, `enter` or `space` on a
+BID and STAKING; `esc` backs out of any of the three. The status hint names the two that are
+not experimental: `l launchpad · 4 pool4`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you
 made with the multiplier it got, what each one actually credited, your share of all weight, the
 single send that would pass the rank above you, and (from the linked-wallet analysis) whether you
 are in a group and what your rank is without one (`esc` goes back; the clock stays on screen either
-way). **It binds `f`** for the linked-wallet view described above, and **`l`** for the record view.
-Inside either secondary view, **`e`** exports the list on screen. THE LIST's status bar names all
-four: `c panels · y you · f linked · l lists`; `e` is not in the hints because it only acts in
-those views, where the active list panel prints what it wrote. **It also binds `w`**, which asks for the wallet its
+way). **THE LIST also binds `a`** (bound 2026-09-15) for the linked-wallet analysis view described
+above, the same shape as `y` — hero left in place, a second `a` or `esc` backs out one-way — and
+**`f`** for the custom filter editor inside `l`'s record view; the two are unrelated bindings on
+the same screen, not one key doing two jobs. **`l`** opens the record view.
+Inside it, **`e`** exports the list on screen (and the analysis body's own cleaned-list export
+still fires whenever that body is open). THE LIST's status bar names all four: `c view · h history ·
+y you · l lists`; `a` and `e` are not in the hints — `a` because the owner asked for the binding and
+not the label, `e` because it only acts inside the record view or the analysis body, where the
+active panel prints what it wrote. **It also binds `w`**, which asks for the wallet its
 YOU row is about — rank, points, credit, and the exact amount that wallet must send next to beat
 its own high-water mark. The address is validated, saved to `~/.maxpane/config.toml`, and picked
 up by every wallet-scoped dashboard on the next launch, so it is the easiest way to set one:
@@ -418,9 +430,11 @@ narrower, not the seam moving again. The announce feed lowered its own wrapping 
 to 71 columns, so it wraps posts from **142** instead of 151. The dev-activity panel was reserving
 12 columns for a wallet cell whose whole vocabulary is `dev` and `ops` and one column too few for
 its widest transaction kind, so it was both padded and cutting `fwa claim` mid-word; sizing both
-cells to what the data actually contains took the panel from 66 columns to 58 and it now clears
-from a 135-column terminal. That is why the table above no longer has a band where the dev-activity
-panel is the only thing still asking for width.
+cells to what the data actually contains took the panel from 66 columns to 58. The copy icon beside
+its unknown-counterparty address (`docs/address_copy_PRD.md`, 2026-09-14) then added its own two
+columns back, to 60, and moved where it clears from a 135-column terminal to a 139-column one. That
+is why the table above no longer has a band where the dev-activity panel is the only thing still
+asking for width — that band now ends two rows later than it used to.
 
 One honest caveat on the seam. 7:6 was measured when the feed needed 81 columns and the rail 71;
 they need 76 and 63 now, which a seam nearer 76:63 would collect at 139 rather than 142. The three
@@ -442,24 +456,25 @@ the coin table — which does say `‹ widen` when it runs short — is what dec
 width. It also has a **height** requirement of its own — 31 rows — as THE LIST's two swapped
 bodies do.
 
-Surfboard's `p` pool4 view is a **third** layout with a third number: **106 columns**, on an
-even 1:1 split, and the narrowest full layout in the app. It is narrow because none of its five
-panels is a table — one fitted log and four label/value summaries — and it was swept on its own
-rather than inherited from the launchpad's 138, which it is deliberately not equal to. The even
-seam is neither laziness nor the cheapest option — a slightly uneven one collects the layout two
-columns sooner and was declined on purpose. Those two columns are margin for the rail, and the
-rail is where margin is worth buying: its binding panel advertises what it dropped by *appending*
-to its own title, and that marker is the first thing a title gives up when it runs out of room. A
-left column with no margin is harmless by comparison, because it marks inside its own body on the
-way down.
+Surfboard's experimental pool4 protocol view (`e`) is a **third** layout with a third number: **99 columns**, on an
+even 1:1 split, and the narrowest full layout in the app. It is narrow because none of its four
+panels is a table — four label/value summaries — and it was swept on its own rather than
+inherited from the launchpad's 138, which it is deliberately not equal to. It was 106 until
+2026-09-14. That day POOL4 FLOW, the fitted log that decided the width, left the view, because
+the `4` view's RECENT FLOW shows the same rows. The panel that decides the width now is HATCHES in
+the rail, which advertises what it dropped by *appending* to its own title. The even seam used to
+buy that rail a few columns of margin for exactly that reason. It has none now, and that was
+measured to be safe rather than assumed: HATCHES still marks at every width below 99.
 
-Where this view asks for more than anything else is **height**: **44 rows**, against the launchpad
+Where this view asks for more than anything else is **height**: **45 rows**, against the launchpad
 view's 31, and below that the body scrolls and the title bar says `‹ taller`. Unlike the other two
-layouts that 44 is a **worst case over payloads, not a constant**. It was one, briefly, when the
+layouts that 45 is a **worst case over payloads, not a constant**. It was one, briefly, when the
 column that decides the height held only fixed-height panels — but mainnet gave THE SPLIT a third
-leg and a distributor to report, so two of the five panels now grow with the data and no way of
-cutting them into two columns keeps both out of the binder. The practical consequence is that this
-number has to be re-swept when a panel's line count changes, rather than assumed to have held.
+leg and a distributor to report, so two of its panels now grow with the data. The practical
+consequence is that this number has to be re-swept when a panel's line count changes, rather than
+assumed to have held. It was re-swept when POOL4 FLOW left on 2026-09-14, and it **did not move**:
+the rail (HATCHES over sIMD VAULT) was already the tallest column, so a 44-row terminal still
+shows `‹ taller`.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why
@@ -495,7 +510,7 @@ Ten themes. `talismans` and `fwa` are game-specific palettes that pair with thei
 
 ## sybilkit — the analysis library, on its own
 
-THE LIST's `f` view reads a published, immutable linked-wallet analysis — keyless, from
+THE LIST's linked-wallet analysis view reads a published, immutable analysis — keyless, from
 `clustermap.vibingco.de` — rather than clustering wallets itself; it folds maxpane's own on-chain
 history over the membership that analysis names, so every point and rank still comes from
 maxpane's own data. The math behind that fold lives in
@@ -525,5 +540,5 @@ API, the endpoint table and the benchmark gate.
 `0.1.0` to PyPI on 2026-08-19 (`0.1.1` is the latest release as of this writing), and since
 **v0.8.0** `pip install maxpane` pulls it in too (`pyproject.toml` pins `sybilkit>=0.1.0`). The
 import stays guarded regardless: with the library absent — an older install, a partial
-environment, or a future name change — the dashboard runs exactly as before and the `f` view
+environment, or a future name change — the dashboard runs exactly as before and the analysis view
 reports `analysis unavailable` instead of failing.

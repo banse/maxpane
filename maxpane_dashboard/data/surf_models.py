@@ -1084,8 +1084,13 @@ class Pool4DistributorState:
 class Pool4FlowEvent:
     """One swap's worth of hook activity, wire-level.
 
-    Sourced from the hook's own logs -- ``FeeCollected``, ``ClaimsSettled`` and
-    the accrual topic whose pre-image was not found -- joined per transaction.
+    One per Uniswap v4 PoolManager ``Swap`` for the hook's pool -- which is
+    where ``side`` and ``size_wei`` come from -- joined to the hook's own logs
+    (``FeeCollected``, ``ClaimsSettled`` and the accrual topic whose pre-image
+    was not found) for the fee and burn legs.  Until 2026-09-14 rows were built
+    from the hook's logs alone, and a market with headroom under its cap emits
+    nothing there that names a swap; ``surf_pool4.decode_flow_events`` carries
+    that history.
 
     ``burned_wei`` and ``stakers_wei`` are ``int``, **not** ``int | None``, and
     that is the load-bearing decision in this class.  A buy has no burn leg and
@@ -1677,7 +1682,7 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "label",       # str  -- POOL4_HATCH_LABELS
         "state",       # str  -- POOL4_HATCH_STATES
         "detail",      # str | None -- third-party derived; escaped at render
-        "addr",        # str | None -- rendered through _fmt.long_addr
+        "addr",        # str | None -- rendered through widgets/address.address_text, with its copy icon
         "addr_known",  # bool -- KNOWN_LABELS allowlist only
     ),
     # ``address``, not ``addr``. This row shape was specified two ways -- the
@@ -1689,7 +1694,12 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
     #
     # ``pct`` is a share of the WHOLE vault, so a capped page of rows does not
     # add to 100% and must not be made to: the gap between the page and the
-    # vault is the dispersion the panel exists to show. ``imd`` is IMD, not
+    # vault is the dispersion the panel exists to show.
+    #
+    # The page is every holder since 2026-09-15 (``POOL4_STAKERS_LIMIT`` 20 ->
+    # 999, the rank column's three-cell ceiling), so on today's vault of a few
+    # hundred it does add to 100%. That is a consequence of showing everyone,
+    # not a denominator built from the page. ``imd`` is IMD, not
     # shares -- the conversion is a live ``decimals()`` read, and both wrong
     # divisors render as plausible numbers rather than as errors.
     "pool4_stakers": (

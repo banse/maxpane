@@ -1,6 +1,6 @@
 {
  "generated_by": "scripts/capture_pool4.py --manifest",
- "generated_at": "2026-09-11T23:29:34.159081Z",
+ "generated_at": "2026-09-14T10:19:54.290363Z",
  "work_package": "WP1 of docs/surf_pool4_implementation_plan.md",
  "acceptance": "python3 scripts/capture_pool4.py --dry-run",
  "raw_captures_kept_verbatim": [
@@ -277,6 +277,76 @@
    "captured_at": "2026-09-11T16:50:58.714597Z",
    "endpoint": "https://gateway.tenderly.co/public/mainnet",
    "note": "DELIBERATELY TRUNCATED, AND THAT IS THE WHOLE POINT OF THE FILE.  A real capture of the last two days only, so it misses the history before from_block and its fold is NOT the vault.  It exists solely to drive the None concentration guard: ranking a subset understates how much the top three hold, which is the direction that makes a risk look smaller than it is.  Never 'refresh' this to the full range -- a fixture that stops being incomplete stops testing anything."
+  },
+  {
+   "fixture": "flow_swaps_mixed.json",
+   "synthetic": false,
+   "request_sibling": "flow_swaps_mixed.request.json",
+   "chain": "sepolia",
+   "block_number": null,
+   "captured_at": "2026-09-14T10:00:50.601353Z",
+   "endpoint": "https://gateway.tenderly.co/public/sepolia",
+   "note": "PoolManager Swap logs for the launch-3 pool over flow_logs_mixed's exact block range, filtered by topic1 = the pool id.  The hook's own logs never carry this event -- it is the PoolManager's -- which is why a hook-address sweep cannot see a swap the hook emitted nothing distinctive for.  Captured through tenderly because publicnode Sepolia now answers this range with [] and no error (measured 2026-09-14; see SEPOLIA_SWAP_LOG_RPCS)."
+  },
+  {
+   "fixture": "flow_swaps_full.json",
+   "synthetic": false,
+   "request_sibling": "flow_swaps_full.request.json",
+   "chain": "sepolia",
+   "block_number": null,
+   "captured_at": "2026-09-14T10:00:50.601353Z",
+   "endpoint": "https://gateway.tenderly.co/public/sepolia",
+   "note": "PoolManager Swap logs for the launch-3 pool over flow_logs_full's exact block range, filtered by topic1 = the pool id.  The hook's own logs never carry this event -- it is the PoolManager's -- which is why a hook-address sweep cannot see a swap the hook emitted nothing distinctive for.  Captured through tenderly because publicnode Sepolia now answers this range with [] and no error (measured 2026-09-14; see SEPOLIA_SWAP_LOG_RPCS)."
+  },
+  {
+   "fixture": "flow_swaps_empty.json",
+   "synthetic": false,
+   "request_sibling": "flow_swaps_empty.request.json",
+   "chain": "sepolia",
+   "block_number": null,
+   "captured_at": "2026-09-14T10:00:50.601353Z",
+   "endpoint": "https://gateway.tenderly.co/public/sepolia",
+   "note": "PoolManager Swap logs for the launch-3 pool over flow_logs_empty's exact block range, filtered by topic1 = the pool id.  The hook's own logs never carry this event -- it is the PoolManager's -- which is why a hook-address sweep cannot see a swap the hook emitted nothing distinctive for.  Captured through tenderly because publicnode Sepolia now answers this range with [] and no error (measured 2026-09-14; see SEPOLIA_SWAP_LOG_RPCS)."
+  },
+  {
+   "fixture": "mainnet_flow_swaps.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_flow_swaps.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-14T10:00:50.601353Z",
+   "endpoint": "https://gateway.tenderly.co/public/mainnet",
+   "note": "PoolManager Swap logs for the mainnet hook pool over mainnet_flow_logs' exact range (burning ON: the research window).  sign_proof settles the amount0/amount1 convention against each receipt's own IMD Transfer logs: in 0x587b65ec7d 50 IMD moves INTO the PoolManager and the Swap reads amount1 = -50e18 with amount0 > 0; in 0xc35f2567e8 IMD moves OUT and amount1 > 0 with amount0 < 0.  Negative is what the SWAPPER PAYS, so a buy (ETH in) is amount0 < 0.  THIS WINDOW ALSO DISPROVES THE COMPANION-EVENT RULE ON MAINNET: 0x587b65ec7d is a sell that emits FeeCollected(imd, 0) beside the pool-reserve event and no accrual, which the hook-log decoder named a BUY, and the pool-reserve delta is not the IMD a buyer received on a chain whose cap decays."
+  },
+  {
+   "fixture": "mainnet_flow_logs_quiet_burn.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_flow_logs_quiet_burn.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-14T09:58:29.867535Z",
+   "endpoint": "https://gateway.tenderly.co/public/mainnet",
+   "note": "THE QUIET-BURN CASE.  Captured while SIGNALS read 'burning OFF' (the pool's IMD reserve under its inventory cap, with headroom): in this window NO sell trims and the cap NEVER ratchets, so every FeeCollected arrives with no companion event.  A decoder that names a swap from the companion event decodes this window to ZERO rows while the chain records every swap below -- the 2026-09-14 live defect, where POOL4 FLOW read 'no pool4 swaps yet' over 218 swaps in 24 hours.  Every earlier flow fixture captures a burning market, which is why the suite stayed green through it.  This file: the HOOK's own logs."
+  },
+  {
+   "fixture": "mainnet_flow_swaps_quiet_burn.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_flow_swaps_quiet_burn.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-14T09:58:29.867535Z",
+   "endpoint": "https://gateway.tenderly.co/public/mainnet",
+   "note": "THE QUIET-BURN CASE.  Captured while SIGNALS read 'burning OFF' (the pool's IMD reserve under its inventory cap, with headroom): in this window NO sell trims and the cap NEVER ratchets, so every FeeCollected arrives with no companion event.  A decoder that names a swap from the companion event decodes this window to ZERO rows while the chain records every swap below -- the 2026-09-14 live defect, where POOL4 FLOW read 'no pool4 swaps yet' over 218 swaps in 24 hours.  Every earlier flow fixture captures a burning market, which is why the suite stayed green through it.  This file: the PoolManager's Swap logs for the hook pool over the same range -- one per swap, whatever the burn state, and the row source."
+  },
+  {
+   "fixture": "mainnet_flow_swaps_quiet_burn_oracle.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_flow_swaps_quiet_burn_oracle.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-14T09:58:29.867535Z",
+   "endpoint": null,
+   "note": "THE QUIET-BURN CASE.  Captured while SIGNALS read 'burning OFF' (the pool's IMD reserve under its inventory cap, with headroom): in this window NO sell trims and the cap NEVER ratchets, so every FeeCollected arrives with no companion event.  A decoder that names a swap from the companion event decodes this window to ZERO rows while the chain records every swap below -- the 2026-09-14 live defect, where POOL4 FLOW read 'no pool4 swaps yet' over 218 swaps in 24 hours.  Every earlier flow fixture captures a burning market, which is why the suite stayed green through it.  This file: the INDEPENDENT reader's view of the same range, run as a subprocess and committed verbatim as an oracle.  It decodes the Swap logs itself (buy = amount0 < 0) over its own rotating public RPCs, so its count and buy/sell split agreeing with ours is agreement between two implementations and two endpoint sets, not a fixture reading itself back."
   },
   {
    "fixture": "hook_flags_reference.json",

@@ -159,7 +159,12 @@ _LOG_MAX_SHRINKS = 3
 #: Curve state (spot price) is read only for the rows actually rendered --
 #: never per the full coin population (WP5 design idea 1). This bounds the
 #: follow-up multicall's size regardless of ``coinCount``.
-LAUNCHPAD_RENDER_LIMIT = 10
+#:
+#: 10 -> 20 on 2026-09-15, with ``widgets/surf/launchpad.MAX_COIN_ROWS``: the
+#: owner asked for LAUNCHPAD COINS to take rows from LAUNCHPAD ACTIVITY. Twenty
+#: priced rows is twenty ``spotPriceEthPerCoin`` legs in the one bounded
+#: ``aggregate3``, the size this limit had until 2026-08-25.
+LAUNCHPAD_RENDER_LIMIT = 20
 #: Real-chain seconds per block, used only to turn a raw log row's
 #: ``blockNumber`` into an approximate epoch timestamp for ``age_s`` --
 #: ``eth_getLogs`` rows carry no timestamp of their own on every endpoint.

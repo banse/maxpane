@@ -8,7 +8,15 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.base_tokens import format_market_cap
 from maxpane_dashboard.data.base_models import BaseToken
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
+
+#: Display budget for the token symbol label, excluding the icon -- the same
+#: 10-cell window the deleted ``symbol[:10]`` slice produced. No layout pin
+#: covers this standalone widget (task-5 brief: "No layout pin exists for
+#: base"). Unlike graduated/launch_feed/trending_table, this column had no
+#: pre-existing gutter (``width=10`` matched the 10-cell slice exactly), so
+#: the grow is the bare ICON_COLS: 10 -> 12 (PRD §5 recipe step 6.2).
+_TOKEN_COLS = 10
 
 
 class TopMovers(Vertical):
@@ -38,7 +46,7 @@ class TopMovers(Vertical):
         table.cursor_type = "none"
         table.zebra_stripes = True
         table.add_column("Dir", width=3)
-        table.add_column("Token", width=10)
+        table.add_column("Token", width=12)
         table.add_column("Change", width=8)
         table.add_column("Status", width=10)
 
@@ -62,10 +70,9 @@ class TopMovers(Vertical):
             change = token.price_change_24h
             pct = f"+{change:.0f}%" if change is not None else "+?%"
             mcap = format_market_cap(token.market_cap)
-            symbol = safe_markup(token.symbol[:10])
             table.add_row(
                 "[green]\u25b2[/]",
-                f"[bold]{symbol}[/]",
+                address_text(token.address, label=token.symbol, width=_TOKEN_COLS, style="bold"),
                 f"[green]{pct}[/]",
                 f"[dim]{mcap}[/]",
             )
@@ -74,10 +81,9 @@ class TopMovers(Vertical):
             change = token.price_change_24h
             pct = f"{change:.0f}%" if change is not None else "-?%"
             mcap = format_market_cap(token.market_cap)
-            symbol = safe_markup(token.symbol[:10])
             table.add_row(
                 "[red]\u25bc[/]",
-                f"[bold]{symbol}[/]",
+                address_text(token.address, label=token.symbol, width=_TOKEN_COLS, style="bold"),
                 f"[red]{pct}[/]",
                 f"[dim]{mcap}[/]",
             )

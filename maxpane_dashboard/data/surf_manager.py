@@ -346,7 +346,23 @@ POOL4_STAKERS_WINDOW_BLOCKS = 403_200
 #: denominator**: ``pool4_staker_top3_pct`` is a share of the whole vault, so a
 #: capped page does not add to 100% and must not be made to — the gap between
 #: the page and the vault is the dispersion the panel exists to show.
-POOL4_STAKERS_LIMIT = 20
+#:
+#: **20 -> 999 on 2026-09-15: every staker.** The owner asked to see all 353
+#: addresses in the table. The fold already holds every holder in memory, so
+#: this changes only how much of it is published. The panel keeps its height
+#: and scrolls. 999 is not a taste: it is the largest rank the table's
+#: three-cell rank column holds (``pool4u_stakers._RANK_COLS``), and the widget
+#: restates it as ``MAX_ROWS`` with an agreement test. The live vault is a
+#: third of the way there. A vault that outgrows it still gets a correct
+#: footer, because ``staker_count`` and ``top3_pct`` never read the cap.
+#: Measured on the committed 348-holder capture, same code, 20 rows against
+#: every row. The persisted slot (``json.dump``, no indent) goes from
+#: 2,578 to 44,046 bytes, on a live ``surf_cache.json`` of 205,528 bytes.
+#: The ``4`` body's first paint goes from 241 to 255 ms (median of five), and
+#: a full ``_do_refresh`` from 68 to 114 ms, once per 30 s poll.
+#: ``SurfPool4UStakers`` skips repainting identical rows, which is what keeps a
+#: scrolled reader's place. That skip costs 3.5 ms to check.
+POOL4_STAKERS_LIMIT = 999
 
 #: Unpacked from the contract, never retyped (A5). Two words and a ``None``,
 #: and the ``None`` is the third state rather than the absence of a state:
@@ -2821,10 +2837,10 @@ class SurfManager:
                 lambda: client.resolve_vault_path(recipient, network=network),
                 "pool4 resolve_vault_path",
             ) if recipient else _none(),
-            self._pool4_logs(hook_addr, head_block, network),
+            self._pool4_logs(hook_addr, head_block, network, hook),
             self._pool4_reference(hook, network),
         )
-        logs, from_block, to_block = log_read
+        logs, from_block, to_block, swaps = log_read
 
         dripper_addr = (path or {}).get("dripper")
         vault_addr = (path or {}).get("vault")
@@ -2878,6 +2894,7 @@ class SurfManager:
             accumulator=accumulator,
             reference=reference,
             drip=drip,
+            swaps=swaps,
         )
 
         # Nothing is stored on a blank read, so the slot keeps its previous
@@ -2922,19 +2939,32 @@ class SurfManager:
         return {"ok": True, "network": network, "payload": payload, "changed": changed}
 
     async def _pool4_logs(
-        self, hook_addr: str, head_block: Any, network: str
-    ) -> tuple[Any, int | None, int | None]:
-        """The hook's logs over the trailing :data:`POOL4_LOG_WINDOW_BLOCKS`.
+        self, hook_addr: str, head_block: Any, network: str, hook: Any = None
+    ) -> tuple[Any, int | None, int | None, Any]:
+        """The hook's logs, and its pool's ``Swap`` logs, over one window.
+
+        The window is the trailing :data:`POOL4_LOG_WINDOW_BLOCKS`, and both
+        reads cover **exactly** it: the flow decoder joins them per swap, and a
+        ``FeeCollected`` whose ``Swap`` fell outside a narrower swap window
+        would read as a short swap sweep and cost the whole panel.
 
         ``None`` — never ``[]`` — when the head block is unknown: a window
         nobody could locate is a failed read, and ``[]`` is the affirmative
         claim "swept, and genuinely quiet" that makes FLOW render an empty
         table instead of an unavailable one.
 
-        Returns ``(logs, from_block, to_block)``. The bounds are not
+        Returns ``(logs, from_block, to_block, swaps)``. The bounds are not
         decoration: the counter accumulator's **continuity** invariant is
         checked against them, and a window whose bounds are unknown cannot be
         folded into a running total at all.
+
+        ``swaps`` is the PoolManager ``Swap`` read (2026-09-14), POOL4 FLOW's
+        row source. It needs the hook round's own ``poolId()`` and
+        ``poolManager()``, so it is ``None`` -- not ``[]`` -- when that round
+        did not name them. **It is one more log sweep per pool4 tick**: the
+        7,200-block window pages at 2,400 blocks, so three more
+        ``eth_getLogs`` on the mainnet log pool every :data:`TIER_POOL4`
+        sweep, run concurrently with the hook's own three.
 
         ``to_block`` is the block the hook's own state round was pinned to,
         which is what makes the accumulator's **alignment** invariant hold by
@@ -2954,20 +2984,36 @@ class SurfManager:
                 )
             )
         if head is None:
-            return None, None, None
+            return None, None, None, None
         start = max(0, head - POOL4_LOG_WINDOW_BLOCKS + 1)
-        logs = await self._guard(
-            lambda: self.pool4_client.fetch_flow_logs(
-                hook_addr, start, head, network=network
+        pool_id = _field(hook, "pool_id")
+        pool_manager = _field(hook, "pool_manager")
+
+        async def _swaps() -> Any:
+            if not pool_id or not pool_manager:
+                return None
+            return await self._guard(
+                lambda: self.pool4_client.fetch_swap_logs(
+                    pool_manager, pool_id, start, head, network=network
+                ),
+                "pool4 fetch_swap_logs",
+            )
+
+        logs, swaps = await asyncio.gather(
+            self._guard(
+                lambda: self.pool4_client.fetch_flow_logs(
+                    hook_addr, start, head, network=network
+                ),
+                "pool4 fetch_flow_logs",
             ),
-            "pool4 fetch_flow_logs",
+            _swaps(),
         )
         # Only a window that ends where the state round was pinned may be
         # accumulated; an unpinned one is returned with no bounds so
         # ``accumulate_counters`` refuses it rather than silently mis-aligning.
         if pinned is None:
-            return logs, None, None
-        return logs, start, head
+            return logs, None, None, swaps
+        return logs, start, head, swaps
 
     # -- the `4` market body: the two reads the auditor body never needed -----
 
@@ -3976,11 +4022,17 @@ class SurfManager:
         return burn, stakers
 
     @staticmethod
-    def _pool4_flow_rows(logs: Any) -> list[dict[str, Any]] | None:
+    def _pool4_flow_rows(swaps: Any, logs: Any) -> list[dict[str, Any]] | None:
         """``SURF_ROW_KEYS["pool4_flow"]`` rows, newest first, capped.
 
-        ``None`` in, ``None`` out: "the log pool is down" and "nothing traded"
-        are opposite claims and the FLOW panel renders them differently.
+        One row per PoolManager ``Swap`` (*swaps*), joined to the hook's own
+        *logs* for the fee and burn legs -- see
+        :func:`~surf_pool4.decode_flow_events` for why the hook's logs alone
+        lost every swap in a market that is not burning.
+
+        ``None`` in **either**, ``None`` out: "the log pool is down" and
+        "nothing traded" are opposite claims and the FLOW panel renders them
+        differently.
 
         ``burned_imd`` / ``stakers_imd`` are plain floats and are ``0.0`` on a
         buy — a representable zero, never ``None``. ``age_s`` is filled in by
@@ -3991,11 +4043,13 @@ class SurfManager:
         rather than declared beside ``FEED_ITEM_LIMIT`` (amendment A4) —
         ``SurfPool4Flow`` codes against the same constant, so one number.
         """
-        if logs is None:
+        events = P.decode_flow_events(
+            swaps=swaps, hook_logs=logs, limit=POOL4_FLOW_LIMIT
+        )
+        if events is None:
             return None
-        events = P.decode_flow_events(logs)
         rows: list[dict[str, Any]] = []
-        for event in events[:POOL4_FLOW_LIMIT]:
+        for event in events:
             rows.append(
                 {
                     "ts": _opt_float(_field(event, "ts")),
@@ -4203,6 +4257,7 @@ class SurfManager:
         path: Any = None,
         reference: Any = None,
         drip: Any = None,
+        swaps: Any = None,
     ) -> dict[str, Any]:
         """The whole combined slot — discovery, three contracts, the flow window.
 
@@ -4368,7 +4423,7 @@ class SurfManager:
             "counter_state": counter_state,
             "counter_detail": counter_detail,
             # ---- the flow window ------------------------------------------
-            "flow": self._pool4_flow_rows(logs),
+            "flow": self._pool4_flow_rows(swaps, logs),
             "unsettled_burn": unsettled_burn,
             "unsettled_stakers": unsettled_stakers,
             # ---- the levers -----------------------------------------------

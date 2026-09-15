@@ -318,6 +318,40 @@ MAINNET_POOL_MANAGER = "0x000000000004444c5dc75cb358380d2e3de08a90"
 MAINNET_LOG_RPCS = ("https://gateway.tenderly.co/public/mainnet",
                     "https://eth.drpc.org")
 
+#: The log pool the PoolManager ``Swap`` captures page through.  Transcribed
+#: from ``surf_pool4_client.MAINNET_LOG_RPCS`` as it stands on 2026-09-14, not
+#: from the tuple above: ``eth.drpc.org`` answers anything older than ~64
+#: blocks with a range complaint it does not mean (CLAUDE.md), and a Swap
+#: window reaches back thousands of blocks.
+MAINNET_SWAP_LOG_RPCS = ("https://gateway.tenderly.co/public/mainnet",
+                         "https://rpc.mevblocker.io")
+#: Sepolia's.  ``ethereum-sepolia-rpc.publicnode.com`` served the hook's
+#: archive logs on 2026-09-01 and **no longer does**: measured 2026-09-14 it
+#: answers the 60-block ``flow_logs_mixed`` window with ``[]`` and no error --
+#: for the hook (tenderly: 15) and for the PoolManager (tenderly: 36) -- while
+#: agreeing with tenderly on a recent window.  A silently empty answer for an
+#: old range, so it is not used for these captures.
+SEPOLIA_SWAP_LOG_RPCS = ("https://gateway.tenderly.co/public/sepolia",)
+
+#: ``Swap(bytes32 indexed id, address indexed sender, int128 amount0,
+#: int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick,
+#: uint24 fee)`` -- the v4 PoolManager's own event, emitted for EVERY swap
+#: whatever the hook does.  ``data/surf_pool4.TOPIC_SWAP`` computes the same
+#: word from the signature; a test pins the two together.
+SWAP_TOPIC0 = "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f"
+MAINNET_POOL_ID = "0x415829f72e9f54531c26eae76f107618540e898a45d6ae35959e143f5faca704"
+
+#: The independent reader the quiet-burn window is checked against.  Never
+#: imported; run as a subprocess and its JSON committed as an oracle.
+POOL4HOOK_DIR = pathlib.Path(
+    os.environ.get("POOL4HOOK_DIR")
+    or pathlib.Path.home() / ".claude" / "skills" / "pool4hook-research"
+)
+#: ~8 hours.  Wide enough that, at the 2026-09-14 rate of ~218 swaps a day,
+#: the window carries dozens of swaps and some transaction with TWO hook-pool
+#: swaps in it; narrow enough to keep the fixture reviewable.
+QUIET_BURN_WINDOW_BLOCKS = 2400
+
 #: The operator's docs site, accepted as a CANDIDATE address source because the
 #: announce channel has still not named this hook.  One operator's mutable
 #: HTML: not consensus data, and the manifest says so.
@@ -1222,6 +1256,335 @@ def capture_mainnet_pool(opener=_open) -> None:
         response=lresp,
     )
     print(f"  {len(logs)} logs from {url}")
+
+
+# --------------------------------------------------------------------------
+# PoolManager Swap logs -- the per-swap row source (2026-09-14)
+# --------------------------------------------------------------------------
+
+
+def _signed_word(word: int) -> int:
+    return word - (1 << 256) if word >= 1 << 255 else word
+
+
+def _getlogs_paged(urls, params: dict, lo: int, hi: int, *, step: int = 5000,
+                   opener=_open):
+    """One whole sweep from ONE endpoint, or the next endpoint from scratch.
+
+    Returns ``(url, page_bodies, merged_response)``.  A page set is never
+    stitched across endpoints: two providers can disagree about a window, and
+    a fixture that silently mixed them would record neither's answer.
+    """
+    last_err = None
+    for url in urls:
+        bodies, merged = [], []
+        try:
+            start = lo
+            while start <= hi:
+                end = min(start + step - 1, hi)
+                page = dict(params, fromBlock=hex(start), toBlock=hex(end))
+                body, resp = _getlogs(url, page, opener=opener)
+                if "error" in resp or not isinstance(resp.get("result"), list):
+                    raise RuntimeError(f"{url}: {resp.get('error') or resp}")
+                bodies.append(body)
+                merged.extend(resp["result"])
+                start = end + 1
+        except Exception as exc:  # noqa: BLE001
+            last_err = exc
+            print(f"  {url} failed, rotating: {exc!r}")
+            continue
+        return url, bodies, {"jsonrpc": "2.0", "id": 1, "result": merged}
+    raise RuntimeError(f"every log endpoint failed: {last_err!r}")
+
+
+def _swap_summary(swaps: list) -> dict:
+    """Counts off the Swap logs' own signed amounts.  ETH is currency0."""
+    buys = sum(1 for s in swaps if _signed_word(_data_words(s["data"])[0]) < 0)
+    per_tx: dict[str, int] = {}
+    for s in swaps:
+        per_tx[s["transactionHash"]] = per_tx.get(s["transactionHash"], 0) + 1
+    return {
+        "swap_count": len(swaps),
+        "buys": buys,
+        "sells": len(swaps) - buys,
+        "multi_swap_txs": sorted(h for h, n in per_tx.items() if n > 1),
+    }
+
+
+def _sign_proof(url: str, tx_hash: str, *, opener=_open) -> dict:
+    """Settle ``amount0``'s sign against the receipt's own token transfers.
+
+    The hook pool is ETH/IMD with native ETH as currency0, so the IMD leg of a
+    swap is visible as an IMD ``Transfer`` touching the PoolManager.  If IMD
+    flows INTO the PoolManager the swapper paid IMD (a sell); if it flows OUT
+    the swapper received it (a buy).  Comparing that to ``amount1``'s sign is
+    what decides whether negative means "paid by the swapper" -- measured,
+    not taken from either reader.
+    """
+    receipt = post_json(url, {"jsonrpc": "2.0", "id": 1,
+                              "method": "eth_getTransactionReceipt",
+                              "params": [tx_hash]}, opener=opener)["result"]
+    pm = MAINNET_POOL_MANAGER.lower()
+    swap = next(l for l in receipt["logs"]
+                if l["topics"][0] == SWAP_TOPIC0
+                and l["topics"][1].lower() == MAINNET_POOL_ID)
+    w = _data_words(swap["data"])
+    a0, a1 = _signed_word(w[0]), _signed_word(w[1])
+    # Per transfer, not summed: a routed transaction can swap IMD through a
+    # second pool in the same receipt (0xc35f2567e8 does), and a total would
+    # mix that leg into this one.
+    into_pm: list[int] = []
+    out_of_pm: list[int] = []
+    for l in receipt["logs"]:
+        if (l["address"].lower() != MAINNET_IMD.lower()
+                or l["topics"][0].lower() != TRANSFER_TOPIC0):
+            continue
+        amt = int(l["data"], 16)
+        if ("0x" + l["topics"][2][-40:]).lower() == pm:
+            into_pm.append(amt)
+        if ("0x" + l["topics"][1][-40:]).lower() == pm:
+            out_of_pm.append(amt)
+    return {
+        "tx": tx_hash,
+        "amount0_wei": a0,
+        "amount1_wei": a1,
+        "imd_transfers_into_pool_manager_wei": into_pm,
+        "imd_transfers_out_of_pool_manager_wei": out_of_pm,
+        "swapper_paid_imd": a1 < 0 and -a1 in into_pm,
+        "swapper_received_imd": a1 > 0 and a1 in out_of_pm,
+    }
+
+
+def capture_flow_swaps(opener=_open) -> None:
+    """The PoolManager ``Swap`` siblings of the burning-ON flow windows.
+
+    ADDITIVE.  Every hook-log fixture these pair with is left byte-for-byte
+    alone; each sibling covers exactly its partner's block range so the new
+    decoder can join the two the way production does.
+    """
+    print("capture: flow-swaps")
+    common = {"captured_at": _now_iso(), "topic0": SWAP_TOPIC0}
+
+    # --- Sepolia: the three launch-3 windows -----------------------------
+    for partner, name, lo, hi in (
+        ("flow_logs_mixed", "flow_swaps_mixed", FLOW_MIXED_FROM, FLOW_MIXED_TO),
+        ("flow_logs_full", "flow_swaps_full", FLOW_FROM_BLOCK, FLOW_TO_BLOCK),
+        ("flow_logs_empty", "flow_swaps_empty", FLOW_EMPTY_FROM, FLOW_EMPTY_TO),
+    ):
+        params = {"address": POOL_MANAGER, "topics": [SWAP_TOPIC0, POOL_ID]}
+        url, bodies, resp = _getlogs_paged(SEPOLIA_SWAP_LOG_RPCS, params,
+                                           lo, hi, opener=opener)
+        swaps = resp["result"]
+        write_pair(
+            name,
+            meta=dict(
+                common, chain="sepolia", chain_id=SEPOLIA_CHAIN_ID,
+                endpoint=url, pool_manager=POOL_MANAGER, pool_id=POOL_ID,
+                partner_fixture=partner, from_block=lo, to_block=hi,
+                log_count=len(swaps), **_swap_summary(swaps),
+                note=(
+                    f"PoolManager Swap logs for the launch-3 pool over "
+                    f"{partner}'s exact block range, filtered by topic1 = the "
+                    "pool id.  The hook's own logs never carry this event -- "
+                    "it is the PoolManager's -- which is why a hook-address "
+                    "sweep cannot see a swap the hook emitted nothing "
+                    "distinctive for.  Captured through tenderly because "
+                    "publicnode Sepolia now answers this range with [] and no "
+                    "error (measured 2026-09-14; see SEPOLIA_SWAP_LOG_RPCS)."
+                ),
+            ),
+            request={"url": url, "method": "POST",
+                     "headers": {"Content-Type": "application/json",
+                                 "User-Agent": USER_AGENT},
+                     "body": bodies[0], "pages": bodies},
+            response=resp,
+        )
+
+    # --- mainnet: the research-era window, burning ON --------------------
+    partner = json.loads((OUT / "mainnet_flow_logs.json").read_text())
+    lo, hi = partner["from_block"], partner["to_block"]
+    params = {"address": MAINNET_POOL_MANAGER,
+              "topics": [SWAP_TOPIC0, MAINNET_POOL_ID]}
+    url, bodies, resp = _getlogs_paged(MAINNET_SWAP_LOG_RPCS, params, lo, hi,
+                                       opener=opener)
+    swaps = resp["result"]
+    # Two transactions whose sides are unambiguous from round exact-input
+    # amounts, settled against the IMD token's own Transfer logs.
+    proof_txs = [s["transactionHash"] for s in swaps
+                 if s["transactionHash"].startswith(("0x587b65ec7d",
+                                                     "0xc35f2567e8"))]
+    proof = [_sign_proof(url, h, opener=opener) for h in proof_txs]
+    write_pair(
+        "mainnet_flow_swaps",
+        meta=dict(
+            common, chain="mainnet", chain_id=MAINNET_CHAIN_ID, endpoint=url,
+            pool_manager=MAINNET_POOL_MANAGER, pool_id=MAINNET_POOL_ID,
+            partner_fixture="mainnet_flow_logs", from_block=lo, to_block=hi,
+            log_count=len(swaps), **_swap_summary(swaps),
+            sign_proof=proof,
+            note=(
+                "PoolManager Swap logs for the mainnet hook pool over "
+                "mainnet_flow_logs' exact range (burning ON: the research "
+                "window).  sign_proof settles the amount0/amount1 convention "
+                "against each receipt's own IMD Transfer logs: in 0x587b65ec7d "
+                "50 IMD moves INTO the PoolManager and the Swap reads "
+                "amount1 = -50e18 with amount0 > 0; in 0xc35f2567e8 IMD moves "
+                "OUT and amount1 > 0 with amount0 < 0.  Negative is what the "
+                "SWAPPER PAYS, so a buy (ETH in) is amount0 < 0.  THIS WINDOW "
+                "ALSO DISPROVES THE COMPANION-EVENT RULE ON MAINNET: "
+                "0x587b65ec7d is a sell that emits FeeCollected(imd, 0) beside "
+                "the pool-reserve event and no accrual, which the hook-log "
+                "decoder named a BUY, and the pool-reserve delta is not the IMD "
+                "a buyer received on a chain whose cap decays."
+            ),
+        ),
+        request={"url": url, "method": "POST",
+                 "headers": {"Content-Type": "application/json",
+                             "User-Agent": USER_AGENT},
+                 "body": bodies[0], "pages": bodies},
+        response=resp,
+    )
+    print(f"  mainnet_flow_swaps {len(swaps)} swaps; sign proof: "
+          + ", ".join(f"{p['tx'][:12]} paid={p['swapper_paid_imd']} "
+                      f"received={p['swapper_received_imd']}" for p in proof))
+
+
+def capture_quiet_burn(opener=_open) -> None:
+    """A burning-OFF window: hook logs, Swap logs, and the reader's oracle.
+
+    THE MISSING CLASS.  Every other flow fixture captures a market whose sells
+    trim and whose cap ratchets, so every ``FeeCollected`` rides beside a
+    companion event.  With headroom under the cap neither fires, every fee
+    arrives alone, and a decoder that names a swap from its companion throws
+    every row away.  This mode refuses to write unless the window really is
+    that state -- no accrual and no pool-reserve event in it -- and unless
+    three independent reads agree on the swap count.
+    """
+    import subprocess
+
+    print("capture: quiet-burn")
+    head, head_hash = _head(MAINNET_STATE_URL, opener=opener)
+    # A few blocks behind the state endpoint's head: log endpoints lag, and a
+    # window ending past what they have indexed is silently short.
+    hi = head - 5
+    lo = hi - QUIET_BURN_WINDOW_BLOCKS + 1
+
+    hook_url, hook_bodies, hook_resp = _getlogs_paged(
+        MAINNET_SWAP_LOG_RPCS, {"address": MAINNET_HOOK}, lo, hi, opener=opener)
+    swap_url, swap_bodies, swap_resp = _getlogs_paged(
+        MAINNET_SWAP_LOG_RPCS,
+        {"address": MAINNET_POOL_MANAGER,
+         "topics": [SWAP_TOPIC0, MAINNET_POOL_ID]},
+        lo, hi, opener=opener)
+    hook_logs, swaps = hook_resp["result"], swap_resp["result"]
+
+    histogram: dict[str, int] = {}
+    for l in hook_logs:
+        label = TOPIC0_MAP.get(l["topics"][0], l["topics"][0])
+        histogram[label] = histogram.get(label, 0) + 1
+    t = {v: k for k, v in TOPIC0_MAP.items()}
+    accrual = t["UNRESOLVED accrual (uint128 liquidityRemoved, uint256 toBurn, "
+                "uint256 toRewards, uint256 eth)"]
+    reserve = t["UNRESOLVED pool reserve (uint256 before, uint256 after)"]
+    fee = t["FeeCollected(uint256,uint256)"]
+    n_accrual = sum(1 for l in hook_logs if l["topics"][0] == accrual)
+    n_reserve = sum(1 for l in hook_logs if l["topics"][0] == reserve)
+    fee_txs = [l["transactionHash"] for l in hook_logs if l["topics"][0] == fee]
+    swap_txs = {s["transactionHash"] for s in swaps}
+    summary = _swap_summary(swaps)
+
+    cmd = ["node", "pool4hook.ts", "swaps", "--from", str(lo), "--to", str(hi),
+           "--json", "--list"]
+    proc = subprocess.run(cmd, cwd=POOL4HOOK_DIR, capture_output=True,
+                          text=True, timeout=600, check=False)
+    oracle = json.loads(proc.stdout) if proc.returncode == 0 else None
+
+    problems = []
+    if n_accrual or n_reserve:
+        problems.append(f"not a quiet-burn window: {n_accrual} accruals, "
+                        f"{n_reserve} pool-reserve events")
+    if len(fee_txs) != len(swaps):
+        problems.append(f"{len(fee_txs)} FeeCollected vs {len(swaps)} Swap")
+    if set(fee_txs) - swap_txs:
+        problems.append("a FeeCollected has no Swap in its transaction")
+    if oracle is None:
+        problems.append(f"the reader failed: {proc.stderr[-400:]}")
+    elif (oracle["summary"]["swaps"], oracle["summary"]["buys"]) != (
+            summary["swap_count"], summary["buys"]):
+        problems.append(f"the reader disagrees: {oracle['summary']} vs {summary}")
+    if summary["buys"] == summary["sells"]:
+        problems.append("buys == sells, so a flipped sign could not be seen")
+    if problems:
+        print("  REFUSING TO WRITE:\n    " + "\n    ".join(problems))
+        return
+
+    from_ts = _block_ts(MAINNET_STATE_URL, lo, opener=opener)
+    to_ts = _block_ts(MAINNET_STATE_URL, hi, opener=opener)
+    common = {
+        "captured_at": _now_iso(), "chain": "mainnet",
+        "chain_id": MAINNET_CHAIN_ID, "head_block": head,
+        "head_block_hash": head_hash, "from_block": lo, "to_block": hi,
+        "from_block_timestamp": from_ts, "to_block_timestamp": to_ts,
+        "hook": MAINNET_HOOK, "pool_manager": MAINNET_POOL_MANAGER,
+        "pool_id": MAINNET_POOL_ID,
+    }
+    quiet = (
+        "THE QUIET-BURN CASE.  Captured while SIGNALS read 'burning OFF' "
+        "(the pool's IMD reserve under its inventory cap, with headroom): in "
+        "this window NO sell trims and the cap NEVER ratchets, so every "
+        "FeeCollected arrives with no companion event.  A decoder that names a "
+        "swap from the companion event decodes this window to ZERO rows while "
+        "the chain records every swap below -- the 2026-09-14 live defect, "
+        "where POOL4 FLOW read 'no pool4 swaps yet' over 218 swaps in 24 "
+        "hours.  Every earlier flow fixture captures a burning market, which "
+        "is why the suite stayed green through it."
+    )
+    write_pair(
+        "mainnet_flow_logs_quiet_burn",
+        meta=dict(common, endpoint=hook_url, log_count=len(hook_logs),
+                  topic0_histogram=histogram, topic0_map=TOPIC0_MAP,
+                  accrual_count=n_accrual, pool_reserve_count=n_reserve,
+                  fee_collected_count=len(fee_txs),
+                  partner_fixture="mainnet_flow_swaps_quiet_burn",
+                  note=quiet + "  This file: the HOOK's own logs."),
+        request={"url": hook_url, "method": "POST",
+                 "headers": {"Content-Type": "application/json",
+                             "User-Agent": USER_AGENT},
+                 "body": hook_bodies[0], "pages": hook_bodies},
+        response=hook_resp,
+    )
+    write_pair(
+        "mainnet_flow_swaps_quiet_burn",
+        meta=dict(common, endpoint=swap_url, topic0=SWAP_TOPIC0,
+                  log_count=len(swaps), **summary,
+                  partner_fixture="mainnet_flow_logs_quiet_burn",
+                  note=quiet + "  This file: the PoolManager's Swap logs for "
+                  "the hook pool over the same range -- one per swap, whatever "
+                  "the burn state, and the row source."),
+        request={"url": swap_url, "method": "POST",
+                 "headers": {"Content-Type": "application/json",
+                             "User-Agent": USER_AGENT},
+                 "body": swap_bodies[0], "pages": swap_bodies},
+        response=swap_resp,
+    )
+    write_pair(
+        "mainnet_flow_swaps_quiet_burn_oracle",
+        meta=dict(common, tool="pool4hook.ts (pool4hook-research skill)",
+                  note=quiet + "  This file: the INDEPENDENT reader's view of "
+                  "the same range, run as a subprocess and committed verbatim "
+                  "as an oracle.  It decodes the Swap logs itself (buy = "
+                  "amount0 < 0) over its own rotating public RPCs, so its "
+                  "count and buy/sell split agreeing with ours is agreement "
+                  "between two implementations and two endpoint sets, not a "
+                  "fixture reading itself back."),
+        request={"command": cmd, "cwd": str(POOL4HOOK_DIR),
+                 "method": "subprocess"},
+        response=oracle,
+    )
+    print(f"  quiet-burn {lo}..{hi}: {len(hook_logs)} hook logs, "
+          f"{summary['swap_count']} swaps ({summary['buys']} buys / "
+          f"{summary['sells']} sells), {len(summary['multi_swap_txs'])} "
+          f"multi-swap txs; histogram {histogram}")
 
 
 V4_FLAG_BITS = [
@@ -3009,6 +3372,12 @@ _REQUIRED_REAL = [
     "sepolia_cap_getters", "docs_site_page", "announce_still_unnamed",
     # the `4` market view's corpora
     "dripped_logs_7d", "simd_transfers_full", "simd_transfers_partial",
+    # the PoolManager Swap row source (2026-09-14): siblings of the burning-ON
+    # windows, and the quiet-burn class with its independent-reader oracle
+    "flow_swaps_mixed", "flow_swaps_full", "flow_swaps_empty",
+    "mainnet_flow_swaps",
+    "mainnet_flow_logs_quiet_burn", "mainnet_flow_swaps_quiet_burn",
+    "mainnet_flow_swaps_quiet_burn_oracle",
 ]
 _REQUIRED_DERIVED = ["hook_flags_reference", "counter_reconciliation",
                      "mainnet_flags_reference",
@@ -3528,6 +3897,49 @@ def dry_run() -> int:
                   f"{(a_b - c_b) / 10 ** 18:.6f} / "
                   f"{(a_s - c_s) / 10 ** 18:.6f} left outstanding")
 
+    # 2026-09-14: the quiet-burn class must keep BEING that class.  Structural,
+    # like the A16 check above: a re-capture during a burning market would
+    # quietly turn this back into a fixture the companion-event rule decodes.
+    qb_hook = OUT / "mainnet_flow_logs_quiet_burn.json"
+    qb_swaps = OUT / "mainnet_flow_swaps_quiet_burn.json"
+    qb_oracle = OUT / "mainnet_flow_swaps_quiet_burn_oracle.json"
+    if qb_hook.exists() and qb_swaps.exists() and qb_oracle.exists():
+        hk = json.loads(qb_hook.read_text())
+        sw = json.loads(qb_swaps.read_text())
+        orc = json.loads(qb_oracle.read_text())
+        t = {v: k for k, v in hk["topic0_map"].items()}
+        companions = {
+            t["UNRESOLVED accrual (uint128 liquidityRemoved, uint256 toBurn, "
+              "uint256 toRewards, uint256 eth)"],
+            t["UNRESOLVED pool reserve (uint256 before, uint256 after)"],
+        }
+        fee = t["FeeCollected(uint256,uint256)"]
+        logs = hk["response"]["result"]
+        swaps = sw["response"]["result"]
+        n_comp = sum(1 for l in logs if l["topics"][0] in companions)
+        n_fee = sum(1 for l in logs if l["topics"][0] == fee)
+        summary = _swap_summary(swaps)
+        windows = {(hk["from_block"], hk["to_block"]),
+                   (sw["from_block"], sw["to_block"]),
+                   (orc["response"]["from"], orc["response"]["to"])}
+        if n_comp:
+            _fail(problems, f"mainnet_flow_logs_quiet_burn: {n_comp} companion "
+                            "events -- this is no longer the quiet-burn case")
+        if not swaps or n_fee != len(swaps):
+            _fail(problems, f"quiet burn: {n_fee} FeeCollected vs {len(swaps)} Swap")
+        if len(windows) != 1:
+            _fail(problems, f"quiet burn: the three files cover {windows}")
+        if (orc["response"]["summary"]["swaps"],
+                orc["response"]["summary"]["buys"]) != (
+                summary["swap_count"], summary["buys"]):
+            _fail(problems, "quiet burn: the reader's count or split disagrees")
+        if not summary["multi_swap_txs"]:
+            _fail(problems, "quiet burn: no two-swap transaction, so the "
+                            "per-swap join is not exercised")
+        print(f"  mainnet_flow_*_quiet_burn          {len(swaps)} swaps "
+              f"({summary['buys']}/{summary['sells']}), {n_comp} companion "
+              "events, reader agrees")
+
     # the two fixtures that carry their own claims
     ann = OUT / "announce_undiscovered.json"
     if ann.exists():
@@ -3733,6 +4145,11 @@ _CAPTURES = {
     # spelled the way every other mode in this file is spelled.
     "dripped": capture_dripped_logs,
     "transfers": capture_simd_transfers,
+    # 2026-09-14: the PoolManager Swap row source.  `flow-swaps` adds the Swap
+    # siblings of the burning-ON windows; `quiet-burn` captures the burning-OFF
+    # class no earlier fixture had, and refuses to write outside that state.
+    "flow-swaps": capture_flow_swaps,
+    "quiet-burn": capture_quiet_burn,
 }
 
 

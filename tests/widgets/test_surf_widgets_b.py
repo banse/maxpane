@@ -1281,7 +1281,7 @@ async def test_feed_a_repaint_keeps_the_reader_on_the_toggle_they_focused():
 
 from maxpane_dashboard.widgets.surf.activity import (  # noqa: E402
     SurfDevActivity,
-    _row_markup,
+    _row_text,
 )
 
 #: The real 2026-08-07 04:2x staging choreography (ops_eth_token_transfers)
@@ -1417,8 +1417,11 @@ async def test_activity_dust_rows_are_never_rendered():
         assert "dust" not in screen               # not even the kind
 
 
-def test_activity_row_markup_drop_rules_are_exact():
+def test_activity_row_drop_rules_are_exact():
     """Pure-function check: exactly the poisoning triple is dropped.
+
+    Against ``_row_text``, the row the panel actually writes (``_row_markup``,
+    a markup twin no widget painted, was removed on 2026-09-14).
 
     ``base`` is the REAL 1-gwei captured poisoning row (``_REAL_DUST_WEI``
     == ``1_000_000_000`` wei == ``1e-9`` ETH), Python-truthy -- proving the
@@ -1427,16 +1430,16 @@ def test_activity_row_markup_drop_rules_are_exact():
     """
     base = dict(_DEV_ACTIVITY[3])  # real 1-gwei unknown transfer -> dropped
     assert base["value_eth"] == 1e-9  # truthy; this is the point of the test
-    assert _row_markup(base) is None
-    assert _row_markup({**base, "kind": "dust", "value_eth": 5.0}) is None
+    assert _row_text(base) is None
+    assert _row_text({**base, "kind": "dust", "value_eth": 5.0}) is None
     # Any leg of the triple broken -> the row renders.
-    assert _row_markup({**base, "value_eth": 0.001}) is not None
-    assert _row_markup({**base, "counterparty_known": True}) is not None
-    assert _row_markup({**base, "kind": "burn"}) is not None
+    assert _row_text({**base, "value_eth": 0.001}) is not None
+    assert _row_text({**base, "counterparty_known": True}) is not None
+    assert _row_text({**base, "kind": "burn"}) is not None
     # Malformed input degrades to a dropped row, never a raise.
-    assert _row_markup(None) is None
-    assert _row_markup("junk") is None
-    assert _row_markup({}) is not None  # renders a dash row, doesn't raise
+    assert _row_text(None) is None
+    assert _row_text("junk") is None
+    assert _row_text({}) is not None  # renders a dash row, doesn't raise
 
 
 async def test_activity_real_captured_dust_row_is_dropped():
@@ -1453,7 +1456,7 @@ async def test_activity_real_captured_dust_row_is_dropped():
         "value_eth": _REAL_DUST_WEI / 1e18,
         "tx_hash": _REAL_DUST_TX,
     }
-    assert _row_markup(real_row) is None
+    assert _row_text(real_row) is None
 
     widget = SurfDevActivity()
     app = _Harness(widget)
@@ -1479,7 +1482,7 @@ async def test_activity_legitimate_small_transfer_still_renders():
         "value_eth": _REAL_SMALL_WEI / 1e18,
         "tx_hash": _REAL_SMALL_TX,
     }
-    assert _row_markup(real_row) is not None
+    assert _row_text(real_row) is not None
 
     widget = SurfDevActivity()
     app = _Harness(widget)
@@ -1487,7 +1490,7 @@ async def test_activity_legitimate_small_transfer_still_renders():
         widget.update_data(dev_activity=[real_row])
         await pilot.pause()
         screen = _screen_text(app)
-        assert "0x91604F59…d1C499" in screen  # long_addr(sender), dimmed
+        assert "0x91604F59…d1C499" in screen  # the 17-cell window (address.short_address), dimmed
         assert "no recent activity" not in screen
 
 
@@ -1520,7 +1523,6 @@ def test_activity_tier_table_is_measured_not_rounded():
     tier is rendered at exactly its threshold and measured: if a format string
     grows a separator, the layout stops fitting its own number and this fails.
     """
-    from maxpane_dashboard.widgets.markup_safety import visible_len
     from maxpane_dashboard.widgets.surf.activity import (
         COMPACT_WIDTH,
         FULL_WIDTH,
@@ -1545,12 +1547,12 @@ def test_activity_tier_table_is_measured_not_rounded():
         ("compact", COMPACT_WIDTH),
         ("minimal", MINIMAL_WIDTH),
     ):
-        markup = _row_markup(row, tier, need)
+        markup = _row_text(row, tier, need)
         assert markup is not None
-        assert visible_len(markup) <= need, (
+        assert markup.cell_len <= need, (
             f"{tier} needs more than the {need} columns it advertises"
         )
-        assert "0x61CC704c…73f14E" in markup
+        assert "0x61CC704c…73f14E ⧉" in markup.plain
 
 
 def test_activity_the_wallet_column_yields_before_the_address_window():
@@ -1561,28 +1563,29 @@ def test_activity_the_wallet_column_yields_before_the_address_window():
     prevent.  The wallet label is a *label*: it shrinks, then goes whole.  The
     window is a fingerprint and does neither.
     """
-    from maxpane_dashboard.widgets.markup_safety import visible_len
-    from maxpane_dashboard.widgets.surf.activity import ADDR_COLS, MINIMAL_WIDTH
+    from maxpane_dashboard.widgets.surf.activity import ADDR_CELL_COLS, MINIMAL_WIDTH
 
     row = _DEV_ACTIVITY[2]  # unknown counterparty, 8 ETH transfer
     # "MM-DD" + gap + the window: the last width that still carries a date.
     # It is *not* the absolute floor -- the date goes too, one column below,
     # and ``test_activity_never_writes_a_row_wider_than_the_log_it_goes_in``
     # sweeps from here to zero.
-    floor = 5 + 2 + ADDR_COLS
+    floor = 5 + 2 + ADDR_CELL_COLS
     for width in range(MINIMAL_WIDTH, floor - 1, -1):
-        markup = _row_markup(row, "minimal", width)
+        markup = _row_text(row, "minimal", width)
         assert markup is not None
-        assert "0x61CC704c…73f14E" in markup, f"window cut at width {width}"
-        assert visible_len(markup) <= width, f"row overflows at width {width}"
+        assert "0x61CC704c…73f14E ⧉" in markup.plain, f"window cut at width {width}"
+        assert markup.cell_len <= width, f"row overflows at width {width}"
 
 
 def test_activity_never_writes_a_row_wider_than_the_log_it_goes_in():
     """``RichLog(wrap=False)`` shrinks silently, so the row must fit already.
 
-    The sweep above stopped at ``5 + 2 + ADDR_COLS`` -- 24, the last width
-    that works -- and the defect lived one column below it.  With the wallet
-    cell gone the row is *still* ``MM-DD`` + gap + window == 24 columns, and
+    The sweep above stops at ``5 + 2 + ADDR_CELL_COLS`` -- 26 since the copy
+    icon, 24 (``5 + 2 + ADDR_COLS``) when this defect was found -- the last
+    width that works, and the defect lived one column below it.  Before the
+    icon, with the wallet cell gone the row was *still* ``MM-DD`` + gap +
+    window == 24 columns, and
     the right rail hands this panel ``ceil(6W/13) - 5`` == 23 at a 59-60
     column terminal.  ``write()`` then narrowed the line with no ``…``, no
     marker and nothing in the title: ``0x61CC704c…73f14`` at 60 columns --
@@ -1601,7 +1604,6 @@ def test_activity_never_writes_a_row_wider_than_the_log_it_goes_in():
     is withheld (``None``) rather than cut, and the panel says so instead of
     showing it (``test_activity_withholds_the_rows_it_cannot_render_whole``).
     """
-    from maxpane_dashboard.widgets.markup_safety import visible_len
     from maxpane_dashboard.widgets.surf.activity import FLOOR_WIDTH, MINIMAL_WIDTH
 
     window = "0x61CC704c…73f14E"
@@ -1610,28 +1612,28 @@ def test_activity_never_writes_a_row_wider_than_the_log_it_goes_in():
     for tier in ("full", "compact", "minimal"):
         for width in range(1, MINIMAL_WIDTH + 1):
             for row in (unknown, known):
-                markup = _row_markup(row, tier, width)
+                markup = _row_text(row, tier, width)
                 if markup is None:
                     continue
-                assert visible_len(markup) <= width, (
+                assert markup.cell_len <= width, (
                     f"{tier} row overflows a {width}-column log by "
-                    f"{visible_len(markup) - width}: RichLog will shrink it "
-                    f"with no ellipsis -- {markup!r}"
+                    f"{markup.cell_len - width}: RichLog will shrink it "
+                    f"with no ellipsis -- {markup.plain!r}"
                 )
-            cut = _row_markup(unknown, tier, width)
+            cut = _row_text(unknown, tier, width)
             if cut is not None:
-                assert window in cut, (
+                assert window in cut.plain, (
                     f"the anti-poisoning window was cut at width {width} "
-                    f"({tier}): {cut!r}"
+                    f"({tier}): {cut.plain!r}"
                 )
 
     # ...and the floor is the window itself: at ``FLOOR_WIDTH`` every row
     # still renders, one column below it the widest one cannot.  Without
     # this the invariants above are satisfied by a widget that renders
     # nothing at any width.
-    assert _row_markup(unknown, "minimal", FLOOR_WIDTH) is not None
-    assert window in _row_markup(unknown, "minimal", FLOOR_WIDTH)
-    assert _row_markup(unknown, "minimal", FLOOR_WIDTH - 1) is None
+    assert _row_text(unknown, "minimal", FLOOR_WIDTH) is not None
+    assert window in _row_text(unknown, "minimal", FLOOR_WIDTH).plain
+    assert _row_text(unknown, "minimal", FLOOR_WIDTH - 1) is None
 
 
 def test_activity_the_wallet_cell_is_whole_or_gone_never_shrunk():
@@ -1715,7 +1717,7 @@ def test_activity_cells_are_sized_from_the_producers_own_vocabularies():
     # ...and every member really does survive whole through the renderer, not
     # merely fit an arithmetic check on the constants.
     for kind in sorted(DEV_TX_KINDS):
-        markup = _row_markup(
+        markup = _row_text(
             {
                 "ts": 1786076603,
                 "wallet_label": "ops",
@@ -1727,7 +1729,7 @@ def test_activity_cells_are_sized_from_the_producers_own_vocabularies():
             "full",
             FULL_WIDTH,
         )
-        assert markup is not None and kind in markup, f"{kind!r} was cut"
+        assert markup is not None and kind in markup.plain, f"{kind!r} was cut"
 
 
 async def test_activity_spends_no_columns_between_the_wallet_and_the_kind():
@@ -1856,7 +1858,10 @@ async def test_activity_columns_never_disagree_between_two_rows():
     # disagreement lived at the bottom of this range, where the 17-column
     # window can no longer afford a cell that ``NFPM`` beside it still can:
     # the wallet cell below a 29-column log, the date below a 24-column one.
-    for width in sorted(set(range(20, 120, 2)) | {21, 27, 28, 30, 32, 49, 61,
+    # Two columns later since 2026-09-14: the window carries its copy icon
+    # (``activity.ADDR_CELL_COLS``), so the narrowest log that fits every row
+    # is 19 and the sweep starts two terminal columns further out.
+    for width in sorted(set(range(22, 120, 2)) | {23, 29, 30, 32, 34, 49, 61,
                                                   70, 143}):
         lines = await _activity_lines(width, rows)
         starts = {
@@ -2029,7 +2034,10 @@ async def test_activity_an_unknown_launchpad_lookalike_still_renders_dimmed_and_
     fallback, fuzzy, or prefix match anywhere in the render path either.
     """
     from maxpane_dashboard.data.surf_addresses import LAUNCHPAD_HOOK
-    from maxpane_dashboard.widgets.surf._fmt import long_addr
+    from maxpane_dashboard.widgets.address import short_address
+
+    def long_addr(value):  # the 17-cell anti-poisoning window, as painted
+        return short_address(value, 17)
 
     lookalike = "0x" + ("0" if LAUNCHPAD_HOOK[2] != "0" else "1") + LAUNCHPAD_HOOK[3:]
     assert lookalike.lower() != LAUNCHPAD_HOOK.lower()

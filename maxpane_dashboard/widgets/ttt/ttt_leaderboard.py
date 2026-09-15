@@ -7,6 +7,18 @@ widget has no dependency on game-specific analytics modules.
 All format helpers tolerate ``None`` -- rendering ``"--"`` rather than
 crashing -- because newly-launched tokens may not yet be indexed by
 DexScreener and the manager forwards those gaps verbatim.
+
+``SYM`` is a name standing in for the row's ERC20 contract address (``token
+["address"]``, always present -- ``TTTLaunchedToken.address`` is a
+non-optional field): the symbol is shown, and its copy icon copies the
+address, per PRD §1 ("a name shown in place of the address gets the
+icon"). The cell is built with ``address_text``, never markup, so the
+symbol (attacker-chosen ERC20 metadata) never has to be escaped for a
+markup parse it no longer goes through. A missing symbol renders the
+placeholder ``"--"`` rather than the bare address (see ``_safe_symbol`` and
+``ttt_fees_table.py``'s matching note) -- the icon copies the real address
+regardless of the label shown, so this costs nothing the rule requires and
+keeps this column off ``address_text``'s ``MIN_SHORT_COLS`` floor.
 """
 
 from __future__ import annotations
@@ -14,10 +26,26 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 
 _DASH = "--"
 _SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
+
+#: Display budget for the SYM cell's label text, excluding ICON_COLS --
+#: measured against the real screen, matching ``ttt_fees_table.py``'s
+#: identical column. ``TTTLeaderboard`` is ``width: 3fr`` against
+#: ``#right-col``'s ``2fr`` in ``#middle-row`` (themes/minimal.tcss), so it
+#: is NOT the binding table -- at the app-wide pin,
+#: ``__main__.FULL_LAYOUT_COLUMNS = 143``, this table's region is 83
+#: columns and, at this same width=5 label, its DataTable needs 68
+#: (``show_horizontal_scrollbar`` False, 15 columns of margin; even the
+#: pre-icon width=8 label only needed 71, 12 columns of margin -- this
+#: table was never in danger). Kept equal to ``ttt_fees_table.py``'s
+#: binding-table value anyway: the two DataTables sit one above the other
+#: on the same screen and a reader comparing symbols across them should
+#: not see the same-length name truncate differently in one and not the
+#: other. See ``tests/screens/test_ttt_address_icon_layout.py``.
+_SYM_WIDTH = 5
 
 
 # -- format helpers ----------------------------------------------------
@@ -107,7 +135,16 @@ def _fmt_age(age_str) -> str:
 
 
 def _safe_symbol(sym) -> str:
-    """Strip non-printable chars from symbol; truncate to 8 chars."""
+    """Strip non-printable chars from symbol; truncate to 8 chars.
+
+    **``_DASH``, not ``None``** -- see ``ttt_fees_table.py``'s matching
+    docstring: the icon copies the real address regardless of the label
+    shown, so a placeholder costs nothing the rule requires, and it keeps
+    this column off ``address_text``'s own ``MIN_SHORT_COLS`` floor, which
+    the sibling table's real screen region cannot afford at the app's pin.
+    No ``safe_markup``: the cleaned string is handed to ``address_text`` as
+    a ``label``, appended as plain ``Text`` rather than parsed as markup.
+    """
     if sym is None:
         return _DASH
     try:
@@ -115,9 +152,7 @@ def _safe_symbol(sym) -> str:
     except Exception:
         return _DASH
     cleaned = cleaned.strip()
-    if not cleaned:
-        return _DASH
-    return safe_markup(cleaned[:8])
+    return cleaned[:8] if cleaned else _DASH
 
 
 # -- widget ------------------------------------------------------------
@@ -149,7 +184,7 @@ class TTTLeaderboard(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("#", width=3)
-        table.add_column("SYM", width=8)
+        table.add_column("SYM", width=_SYM_WIDTH + ICON_COLS)
         table.add_column("PRICE", width=10)
         table.add_column("24h%", width=8)
         table.add_column("VOL", width=10)
@@ -176,6 +211,12 @@ class TTTLeaderboard(Vertical):
                 continue
             rank = token.get("rank", idx)
             symbol = _safe_symbol(token.get("symbol"))
+            sym_cell = address_text(
+                token.get("address"),
+                label=symbol,
+                width=_SYM_WIDTH,
+                style="bold" if idx == 1 else "",
+            )
             price = _fmt_price(token.get("price_usd"))
             change = _fmt_change(token.get("change_h24"))
             volume = _fmt_humanized_usd(token.get("vol_usd_h24"))
@@ -185,9 +226,8 @@ class TTTLeaderboard(Vertical):
             # Bold row 1
             if idx == 1:
                 rank_str = f"[bold]{rank}[/]"
-                symbol = f"[bold]{symbol}[/]"
                 price = f"[bold]{price}[/]"
             else:
                 rank_str = str(rank)
 
-            table.add_row(rank_str, symbol, price, change, volume, age, mcap)
+            table.add_row(rank_str, sym_cell, price, change, volume, age, mcap)

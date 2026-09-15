@@ -107,7 +107,7 @@ async def test_a_narrow_panel_marks_before_it_clips() -> None:
 @pytest.mark.asyncio
 async def test_a_hostile_wallet_string_never_reaches_markup() -> None:
     """`"[/x]" not in text` alone cannot fail for the right reason, and
-    neither can "the neighbour still renders" alone: `_row_markup`'s own
+    neither can "the neighbour still renders" alone: `_row_text`'s own
     `except Exception: return None` drops exactly the hostile row and
     leaves the well-formed neighbour untouched, which renders identical
     text to correct sanitisation -- a regression that quietly *ate* the

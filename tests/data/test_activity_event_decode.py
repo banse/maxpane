@@ -26,9 +26,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from rich.text import Text
 
 from maxpane_dashboard.data.models import ActivityEvent
-from maxpane_dashboard.widgets.activity_feed import _event_to_markup
+from maxpane_dashboard.widgets.activity_feed import _event_to_text
 
 # --- Verbatim getActivityFeed elements -------------------------------------
 
@@ -128,7 +129,15 @@ def test_null_title_and_description_are_tolerated(field: str) -> None:
     "payload", [PLAYER_JOIN, RANDOM_EVENT_RUSH_ORDER, PLAYER_ATTACK]
 )
 def test_every_decoded_event_renders(payload: dict[str, Any]) -> None:
-    """Accepting null must not just move the crash into the widget."""
-    line = _event_to_markup(ActivityEvent.from_api(payload))
-    assert isinstance(line, str) and line.strip()
-    assert "unreadable event" not in line
+    """Accepting null must not just move the crash into the widget.
+
+    ``_event_to_text`` (renamed from ``_event_to_markup`` when the launcher
+    address grew its copy icon -- the icon's click action lives in a
+    ``Style`` that only survives outside markup parsing, so the line is now
+    built as a ``rich.text.Text`` rather than a markup string) is asserted
+    on its plain rendered text, which carries the same claim the original
+    string assertion made.
+    """
+    line = _event_to_text(ActivityEvent.from_api(payload))
+    assert isinstance(line, Text) and line.plain.strip()
+    assert "unreadable event" not in line.plain

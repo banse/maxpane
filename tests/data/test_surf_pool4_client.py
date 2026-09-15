@@ -810,7 +810,10 @@ async def _every_fetch(client: Pool4Client) -> dict[str, Any]:
         "logs": await client.fetch_flow_logs(
             HOOK, 11_609_600, 11_610_000, network=SEPOLIA),
         "events": await client.fetch_flow_events(
-            HOOK, 11_609_600, 11_610_000, network=SEPOLIA),
+            HOOK, 11_609_600, 11_610_000, network=SEPOLIA,
+            pool_manager=POOL_MANAGER, pool_id=POOL_ID),
+        "swaps": await client.fetch_swap_logs(
+            POOL_MANAGER, POOL_ID, 11_609_600, 11_610_000, network=SEPOLIA),
         "block": await client.fetch_block_number(network=SEPOLIA),
         "verify": await client.verify_hook(
             HOOK, network=SEPOLIA, expected_token=TOKEN),
@@ -1226,12 +1229,38 @@ async def test_the_full_window_replays_every_captured_log():
     )
 
 
+def flow_and_swap_handler(
+    hook_fixture: str, swap_fixture: str
+) -> Callable[[httpx.Request], httpx.Response]:
+    """Serve the hook's window to a hook filter and the Swap capture to a
+    PoolManager filter -- by the filter's own address, so a client that asked
+    the wrong contract gets the wrong logs and fails."""
+    hook_logs = load(hook_fixture)["response"]["result"]
+    swaps = load(swap_fixture)["response"]["result"]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        flt = payload["params"][0]
+        result = swaps if str(flt["address"]).lower() == POOL_MANAGER.lower() else hook_logs
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": payload.get("id"), "result": result}
+        )
+
+    return handler
+
+
 async def test_flow_events_go_through_wp3s_decoder_unchanged():
-    transport = RecordingTransport(log_handler("flow_logs_mixed"))
+    transport = RecordingTransport(
+        flow_and_swap_handler("flow_logs_mixed", "flow_swaps_mixed"))
     client = _client_on(transport)
     rows = await client.fetch_flow_events(
-        HOOK, 11_609_700, 11_609_760, network=SEPOLIA)
-    expected = P.decode_flow_events(load("flow_logs_mixed")["response"]["result"])
+        HOOK, 11_609_700, 11_609_760, network=SEPOLIA,
+        pool_manager=POOL_MANAGER, pool_id=POOL_ID)
+    expected = P.decode_flow_events(
+        swaps=load("flow_swaps_mixed")["response"]["result"],
+        hook_logs=load("flow_logs_mixed")["response"]["result"],
+        limit=None,
+    )
     assert rows == expected
     assert rows, "the mixed window carries a buy and several sells"
     # The representable zero: a buy burns nothing and that is a fact, not a
@@ -1246,14 +1275,96 @@ async def test_a_quiet_window_is_empty_and_a_dead_pool_is_none():
     client = _client_on(transport)
     assert await client.fetch_flow_logs(
         HOOK, 11_605_000, 11_605_100, network=SEPOLIA) == []
+    assert await client.fetch_swap_logs(
+        POOL_MANAGER, POOL_ID, 11_605_000, 11_605_100, network=SEPOLIA) == []
     assert await client.fetch_flow_events(
-        HOOK, 11_605_000, 11_605_100, network=SEPOLIA) == []
+        HOOK, 11_605_000, 11_605_100, network=SEPOLIA,
+        pool_manager=POOL_MANAGER, pool_id=POOL_ID) == []
 
     dead = _offline_client()
     assert await dead.fetch_flow_logs(
         HOOK, 11_605_000, 11_605_100, network=SEPOLIA) is None
+    assert await dead.fetch_swap_logs(
+        POOL_MANAGER, POOL_ID, 11_605_000, 11_605_100, network=SEPOLIA) is None
     assert await dead.fetch_flow_events(
-        HOOK, 11_605_000, 11_605_100, network=SEPOLIA) is None
+        HOOK, 11_605_000, 11_605_100, network=SEPOLIA,
+        pool_manager=POOL_MANAGER, pool_id=POOL_ID) is None
+
+
+# --- the PoolManager Swap read (2026-09-14) --------------------------------
+
+
+async def test_the_swap_read_asks_the_pool_manager_for_one_pools_swaps():
+    """``[TOPIC_SWAP, pool_id]`` on the PoolManager, through the LOG pool.
+
+    And the hook read's filter is unchanged -- no ``topics`` key -- because the
+    two share one sweep loop and a topic leaking into the hook's filter would
+    silently narrow it to nothing.
+    """
+    transport = RecordingTransport(
+        flow_and_swap_handler("flow_logs_full", "flow_swaps_full"))
+    client = _client_on(transport)
+    swaps = await client.fetch_swap_logs(
+        POOL_MANAGER, POOL_ID, 11_609_600, 11_610_000, network=SEPOLIA)
+    hook_logs = await client.fetch_flow_logs(
+        HOOK, 11_609_600, 11_610_000, network=SEPOLIA)
+    assert len(swaps) == load("flow_swaps_full")["log_count"] == 32
+    assert len(hook_logs) == 90
+
+    filters = [(u, p["params"][0]) for (u, _m, p) in transport.requests]
+    assert all(u in client.log_endpoints(SEPOLIA) for u, _f in filters)
+    swap_filters = [f for _u, f in filters if f["address"] == POOL_MANAGER]
+    hook_filters = [f for _u, f in filters if f["address"] == HOOK]
+    assert swap_filters and hook_filters
+    assert all(f["topics"] == [P.TOPIC_SWAP, POOL_ID.lower()] for f in swap_filters)
+    assert all("topics" not in f for f in hook_filters)
+
+
+async def test_the_swap_read_pages_on_the_hook_reads_halving_ladder():
+    """One sweep loop, not two: the range-error ladder reaches this read too."""
+    cap = 700
+    spans: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        flt = payload["params"][0]
+        assert flt["topics"] == [P.TOPIC_SWAP, POOL_ID.lower()]
+        span = int(flt["toBlock"], 16) - int(flt["fromBlock"], 16) + 1
+        spans.append(span)
+        if span > cap:
+            return httpx.Response(200, json={
+                "jsonrpc": "2.0", "id": payload.get("id"),
+                "error": {"code": -32602,
+                          "message": f"eth_getLogs is limited to 0 - {cap} blocks"},
+            })
+        return httpx.Response(200, json={
+            "jsonrpc": "2.0", "id": payload.get("id"), "result": []})
+
+    client = _client_on(httpx.MockTransport(handler))
+    assert await client.fetch_swap_logs(
+        POOL_MANAGER, POOL_ID, 11_000_000, 11_002_399, network=SEPOLIA) == []
+    assert spans[:3] == [C.LOG_WINDOW_BLOCKS, C.LOG_WINDOW_BLOCKS // 2,
+                         C.LOG_WINDOW_BLOCKS // 4]
+
+
+def test_the_swap_read_has_no_retry_loop_of_its_own():
+    """The halving/rotation code lives once.  ``30ceaf9`` and ``a7dc92d`` fixed
+    two defects in it; a copy here would be where the next fix does not land."""
+    source = inspect.getsource(Pool4Client.fetch_swap_logs)
+    for forked in ("Pool4LogRangeError", "_sweep(", "_rpc_logs(", "for _shrink"):
+        assert forked not in source, forked
+    assert "self._fetch_logs(" in source
+    assert "self._fetch_logs(" in inspect.getsource(Pool4Client.fetch_flow_logs)
+
+
+@pytest.mark.parametrize("pool_id", [None, "", "0xdead", "0x" + "zz" * 32,
+                                     POOL_ID[2:]])
+async def test_a_malformed_pool_id_asks_nothing_and_is_unread(pool_id):
+    """A topic built from a bad id matches nothing, and ``[]`` would claim the
+    pool did not trade.  ``None``, and no socket touched."""
+    client = _raising_client()
+    assert await client.fetch_swap_logs(
+        POOL_MANAGER, pool_id, 1, 2, network=SEPOLIA) is None
 
 
 async def test_a_partial_sweep_is_none_rather_than_a_short_list():

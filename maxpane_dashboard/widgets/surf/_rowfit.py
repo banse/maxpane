@@ -178,7 +178,8 @@ def budget(
 
     Every measurement is :func:`rich.cells.cell_len`. ``who`` is a
     third-party string -- a ``KNOWN_LABELS`` label, or whatever
-    ``_fmt.long_addr`` made of an arbitrary ``counterparty`` -- and measured
+    ``widgets/address.address_text`` made of an arbitrary ``counterparty``,
+    copy icon included -- and measured
     with ``len()`` a nine-character, eighteen-column label was declared to
     fit in nine. The cut was worse than the overflow: ``who[: room - 1] +
     "…"`` took ``room - 1`` *characters* for a budget of ``room``

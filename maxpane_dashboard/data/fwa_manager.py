@@ -416,10 +416,20 @@ def _first(*values: Any) -> Any:
     return None
 
 
-def _short_address(address: str) -> str:
-    """``0xb276…ac1c`` — the honest fallback when no collection name is known."""
-    addr = str(address or "")
-    return f"{addr[:6]}…{addr[-4:]}" if len(addr) >= 12 else addr or "unknown"
+def _name_or_address(address: str) -> str:
+    """The address itself — the honest fallback when no collection name is
+    known.
+
+    Used to have been ``0xb276…ac1c``: a private 6/4-cut formatter, exactly
+    the shape ``widgets/address.py`` replaces (its anti-poisoning window
+    exists because live spoofs collide with real addresses on that common
+    form). The row already carries the full address in its own ``address``
+    field (``FWA_ROW_KEYS["collection_odds"]``), so this fallback now
+    publishes that same full address rather than a second, shortened copy of
+    it — the widget windows it through ``address_text`` and adds the copy
+    icon (PRD §6).
+    """
+    return str(address or "") or "unknown"
 
 
 def _dump(model: Any) -> dict | None:
@@ -2019,7 +2029,7 @@ class FWAManager:
             odds = _safe_call(
                 CollectionOdds,
                 address=address,
-                name=names.get(address) or _short_address(address),
+                name=names.get(address) or _name_or_address(address),
                 positions=bucket["positions"],
                 weight=bucket["weight"],
                 weight_share_pct=share,

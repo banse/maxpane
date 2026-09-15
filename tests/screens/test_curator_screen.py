@@ -101,6 +101,7 @@ from maxpane_dashboard.analytics.curator_signals import MANAGER_OWNED_KEYS
 from maxpane_dashboard.data.curator_list_filters import (
     PREDEFINED_NFT_COLLECTIONS,
     FilterContext,
+    custom_nft_label,
     empty_filter_values,
     filter_rows,
 )
@@ -678,17 +679,18 @@ async def _first_clean_width(payload=None, view: str | None = None,
 # =======================================================================
 
 
-def test_the_twelve_bindings_are_the_ones_this_screen_documents():
+def test_the_thirteen_bindings_are_the_ones_this_screen_documents():
     """Hand-typed rather than derived: a set compared against itself could not
     catch a binding that was added, renamed or lost.
 
     `r` refresh, `c` swap the bottom-right slot, `w` set the wallet,
-    `y` the wallet view, `f` the list filter, `h` History, `l` Lists,
+    `y` the wallet view, `a` the linked-wallet analysis view (bound
+    2026-09-15), `f` the list filter, `h` History, `l` Lists,
     `e` export the active list view (analysis or record lists), `escape` back
     out of any secondary view, and `1`/`2`/`3` apply list-filter presets.
     """
     assert {binding.key for binding in CuratorScreen.BINDINGS} == {
-        "r", "c", "w", "y", "f", "h", "l", "e", "escape", "1", "2", "3",
+        "r", "c", "w", "y", "a", "f", "h", "l", "e", "escape", "1", "2", "3",
     }
 
 
@@ -2509,7 +2511,15 @@ async def test_the_address_appears_the_instant_it_is_typed(saved_wallets):
         await pilot.pause()
 
         text = _screen_text(app)
-        assert _WALLET.lower() in text, "the address waited for a refresh"
+        # Not a literal substring check any more: the identity line shows
+        # the full address when the rail has room and a windowed form
+        # (icon still attached) when it does not -- the surf STAKERS
+        # precedent, same fix round -- so "the address is known
+        # immediately" is proven by the copy icon actually naming it
+        # rather than by the 42-character string appearing verbatim.
+        from tests.widgets.address_probe import icon_targets
+        addresses = {t[2] for t in icon_targets(app)}
+        assert _WALLET.lower() in addresses, "the address waited for a refresh"
         assert NO_WALLET_SET not in text
         manager.release.set()
 
@@ -2707,9 +2717,98 @@ async def test_f_toggles_back_and_escape_backs_out_one_way():
         assert screen._mode == MODE_LIST
 
 
+async def test_a_opens_the_analysis_body_from_the_dashboard():
+    """``a`` (bound 2026-09-15) reaches the body the same way the tests above
+    reach it by calling the action directly -- this one presses the key."""
+    from maxpane_dashboard.screens.curator import MODE_ANALYSIS
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+        dashboard = _screen_text(app)
+        assert OPERATORS_TITLE not in dashboard
+
+        await pilot.press("a")
+        await pilot.pause()
+        text = _screen_text(app)
+
+        assert screen._mode == MODE_ANALYSIS
+        assert OPERATORS_TITLE in text
+        assert SEGMENTS_TITLE in text
+        assert CLEAN_LIST_TITLE in text
+        # The game's own panels are gone...
+        assert LEADERBOARD_TITLE not in text
+        assert ACTIVITY_TITLE not in text
+        # ...and so is the wallet body.
+        assert LADDER_TITLE not in text
+        # The doomsday clock stays on screen -- the hero row never swaps for
+        # this view, the same contract as `y`'s.
+        assert screen.query_one(CuratorHero).display is True
+        assert screen.query_one(f"#{WALLET_HERO_ID}").display is False
+        assert "GRACE" in text
+
+
+async def test_a_toggles_back_and_escape_backs_out_one_way():
+    """Mirrors ``test_y_toggles_back_and_escape_only_goes_one_way``: a second
+    ``a`` and ``escape`` both back out, and escape from Lists stays a no-op."""
+    from maxpane_dashboard.screens.curator import MODE_ANALYSIS
+
+    screen = _screen(_analysis_payload())
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        await pilot.press("a")
+        await pilot.pause()
+        assert screen._mode == MODE_ANALYSIS
+        await pilot.press("a")
+        await pilot.pause()
+        assert screen._mode == MODE_LIST
+
+        await pilot.press("a")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_LIST
+        # Escape on Lists stays a no-op, never a toggle back in.
+        await pilot.press("escape")
+        await pilot.pause()
+        assert screen._mode == MODE_LIST
+
+
+async def test_a_inside_the_filter_editor_types_the_letter_instead_of_switching():
+    """The ``a`` binding carries no ``priority``, unlike ``f`` and ``e``: with
+    the filter editor open and a text `Input` focused, typing ``a`` must
+    insert the character rather than swap the body out from under the
+    editor -- the opposite of ``f``, which is priority and does intercept
+    (see ``test_filter_shortcuts_are_list_only_and_editor_blocks_cycle_and_presets``)."""
+    from maxpane_dashboard.screens.curator import MODE_LIST
+
+    screen = _screen(_list_payload(3))
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(143, _TALL)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("l", "f")
+        editor = screen.query_one(CuratorListFilterEditor)
+        assert editor.display is True
+        text_field = editor.query_one("#filter-nft-address", Input)
+        text_field.focus()
+        await pilot.press("a")
+        await pilot.pause()
+
+        assert text_field.value == "a"
+        assert editor.display is True
+        assert screen._mode == MODE_LIST
+
+
 async def test_y_and_f_cross_transitions_land_in_the_right_mode():
-    """`f` from the wallet view and `y` from the analysis view both go where
-    the key says, and each mode shows exactly its own hero and body."""
+    """The analysis action from the wallet view and `y` from the analysis view
+    both go where they should, and each mode shows exactly its own hero and body."""
     from maxpane_dashboard.screens.curator import (
         ANALYSIS_BODY_ID,
         DASHBOARD_BODY_ID,
@@ -2745,7 +2844,7 @@ async def test_y_and_f_cross_transitions_land_in_the_right_mode():
 
 async def test_the_analysis_panels_are_dispatched_while_hidden():
     """Both hidden bodies receive every refresh (the swap-table precedent),
-    so the first `f` shows a filled view — no blank first frame."""
+    so the first `a` shows a filled view — no blank first frame."""
     screen = _screen(_analysis_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
@@ -3351,10 +3450,22 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         await pilot.pause()
         await pilot.click("#filter-nft-add")
         await pilot.pause()
+        # The fallback label stays the short windowed form (reverted during
+        # the fix round: a full bare address here meant the editor's own
+        # tail-ellipsis CSS could clip it to a head-only string, the anti-
+        # poisoning window exists to prevent exactly that). The address is
+        # now published as its own field, and `is_fallback` tells the
+        # widget layer this label is the auto-generated placeholder (no
+        # real or reader-chosen name behind it) rather than one it should
+        # trust and print verbatim -- so it composes a real, clickable
+        # `address_text` over the address field instead of showing this
+        # static prose string. Both forms were already `Label(...,
+        # markup=False)`, so escaping was never what the flag decided.
         assert editor.values()["nft_collections"] == ({
-            "label": "BASE 0xaaaa…aaaa",
+            "label": custom_nft_label("base", address),
             "chain": "base",
             "address": address,
+            "is_fallback": True,
         },)
         assert screen._data_manager.collection_name_calls == [
             f"base:{address}"
@@ -3420,6 +3531,7 @@ async def test_custom_nft_add_renders_chain_markup_as_literal_text():
             "label": "[red]Reader Pass[/]",
             "chain": "base",
             "address": address,
+            "is_fallback": False,
         },)
         await pilot.click("#filter-apply")
         await pilot.pause()
@@ -3683,6 +3795,7 @@ async def test_pending_custom_name_preserves_newer_chain_and_address():
             "label": "Ethereum Reader Pass",
             "chain": "ethereum",
             "address": requested_address,
+            "is_fallback": False,
         },)
         assert chain.value == "base"
         assert nft_input.value == newer_address
@@ -3725,6 +3838,7 @@ async def test_pending_custom_name_clears_canonically_unchanged_address():
             "label": "Canonical Reader Pass",
             "chain": "ethereum",
             "address": canonical_address,
+            "is_fallback": False,
         },)
         assert nft_input.value == ""
         assert editor.query_one("#filter-nft-add", Button).disabled is False
@@ -3788,6 +3902,7 @@ async def test_overlapping_custom_names_only_commit_the_newest_generation():
                 "label": "Newest Reader Pass",
                 "chain": "base",
                 "address": second_address,
+                "is_fallback": False,
             },)
             assert "stale Ethereum NFT holder RPC unavailable" not in _region_text(
                 app, editor, screen
@@ -3819,6 +3934,7 @@ async def test_custom_nft_add_uses_resolved_name_and_retains_it_everywhere():
         assert screen._data_manager.collection_name_calls == [key]
         assert editor.values()["nft_collections"] == ({
             "label": "Reader Pass Deluxe", "chain": "base", "address": address,
+            "is_fallback": False,
         },)
         await pilot.click("#filter-apply")
         await pilot.pause()

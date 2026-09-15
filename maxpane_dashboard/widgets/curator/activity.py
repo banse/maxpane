@@ -2,9 +2,9 @@
 
 One line per log row, at the widest tier::
 
-    22:58  deposit  0x381f…cdef    3.60Ξ  (+2.80 credit → 7.03 wt)  tx#4
-    22:57  joined   0x200e…0fb1    0.05Ξ  (+0.05 credit → 0.10 wt)  tx#1
-    22:41  saved    0xcb0b…da91   60.00Ξ  (+60.00 credit → 60.00 wt)  tx#1
+    22:58  deposit  0x381fe…cdef ⧉    3.60Ξ  (+2.80 credit → 7.03 wt)  tx#4
+    22:57  joined   0x200e7…0fb1 ⧉    0.05Ξ  (+0.05 credit → 0.10 wt)  tx#1
+    22:41  saved    0xcb0b0…da91 ⧉   60.00Ξ  (+60.00 credit → 60.00 wt)  tx#1
 
 ``kind`` is the producer's three-value vocabulary — ``deposit`` /
 ``joined`` (a ``FirstDeposit``) / ``saved`` (a ``HourSaved``) — and the cell
@@ -54,12 +54,20 @@ Width behaviour
 =========  ====  ================================================
 Tier       Cost  Row
 =========  ====  ================================================
-full        74   stamp kind addr amount (+credit → wt) tx
-compact     64   ...with the delta's words dropped: ``(+2.80 → 7.03)``
-narrow      44   ...delta gone
-minimal     36   ...tx gone
-floor       27   ...kind gone
+full        77   stamp kind addr ⧉ amount (+credit → wt) tx
+compact     67   ...with the delta's words dropped: ``(+2.80 → 7.03)``
+narrow      47   ...delta gone
+minimal     39   ...tx gone
+floor       30   ...kind gone
 =========  ====  ================================================
+
+**77, not the 75 (itself never 74) arithmetic gives**: the identity cell
+keeps its :data:`NAME_COLS` display budget and adds :data:`ICON_COLS` for
+the copy icon on top, local to this panel (``_IDENTITY_COLS``) rather than
+by growing the shared ``_fmt.NAME_COLS`` every other curator panel also
+reads. The pre-icon costs (75/65/45/37/28) were themselves one column over
+this docstring's stale ``74``, caught while re-sweeping for the icon rather
+than independently.
 
 ``RichLog`` is composed ``wrap=False`` and ``RichLog.write()`` narrows any
 over-wide line **at write time** with no ``…`` and nothing in the title — so
@@ -82,20 +90,19 @@ activity-feed crash).  Colours here are spelled as plain names.
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.curator._fmt import (
-    ADDR_COLS,
     NAME_COLS,
     COMPACT_ETH_COLS,
     DASH,
     as_float,
     fmt_eth_compact,
     hhmm,
-    short_addr,
-    short_label,
 )
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
@@ -151,14 +158,24 @@ _GAP = 2
 _DELTA_COLS = len(f"(+{'9' * COMPACT_ETH_COLS} credit → {'9' * COMPACT_ETH_COLS} wt)")
 _DELTA_SHORT_COLS = len(f"(+{'9' * COMPACT_ETH_COLS} → {'9' * COMPACT_ETH_COLS})")
 
+#: The identity cell's budget for this row, local to this panel: the shown
+#: name/address stays capped at :data:`NAME_COLS` (``address_text``'s own
+#: ``width=`` argument below, unchanged from before the copy icon), and this
+#: adds :data:`ICON_COLS` on top of it for the icon rather than shrinking the
+#: display -- the "grow first" half of the conversion recipe.  Local because
+#: ``_fmt.NAME_COLS`` is shared with panels this task does not touch
+#: (``wallet.py``, ``cleaned_list.py``); growing the shared constant itself
+#: would resize their columns too, sight unseen.
+_IDENTITY_COLS = NAME_COLS + ICON_COLS
+
 FULL_WIDTH = (
-    STAMP_COLS + _GAP + KIND_COLS + _GAP + NAME_COLS + _GAP + AMOUNT_COLS
+    STAMP_COLS + _GAP + KIND_COLS + _GAP + _IDENTITY_COLS + _GAP + AMOUNT_COLS
     + _GAP + _DELTA_COLS + _GAP + TX_COLS
-)                                                                        # 74
-COMPACT_WIDTH = FULL_WIDTH - (_DELTA_COLS - _DELTA_SHORT_COLS)           # 64
-NARROW_WIDTH = COMPACT_WIDTH - _GAP - _DELTA_SHORT_COLS                  # 44
-MINIMAL_WIDTH = NARROW_WIDTH - _GAP - TX_COLS                            # 36
-FLOOR_WIDTH = MINIMAL_WIDTH - _GAP - KIND_COLS                           # 27
+)                                                                        # 77
+COMPACT_WIDTH = FULL_WIDTH - (_DELTA_COLS - _DELTA_SHORT_COLS)           # 67
+NARROW_WIDTH = COMPACT_WIDTH - _GAP - _DELTA_SHORT_COLS                  # 47
+MINIMAL_WIDTH = NARROW_WIDTH - _GAP - TX_COLS                            # 39
+FLOOR_WIDTH = MINIMAL_WIDTH - _GAP - KIND_COLS                           # 30
 
 #: What each tier shed, named in the title.  Never nothing.
 WIDEN_HINTS = {
@@ -227,12 +244,20 @@ def _delta_cell(row: dict, tier: str) -> str:
     return f"({credit_str} credit → {weight_str} wt)"
 
 
-def _row_markup(row: dict, tier: str) -> str | None:
-    """One feed line, or ``None`` when the row is unusable.
+def _row_text(row: dict, tier: str) -> Text | None:
+    """One feed line as a composited ``Text``, or ``None`` when unusable.
 
     Every cell is built in its own ``try``: MEDI-37's rule is that one
     unparseable field costs its own cell.  The address and the stamp are
     what make a row identifiable, so the row survives anything else.
+
+    A pre-built ``Text``, never a markup string: the address cell's copy
+    icon lives in a ``Style`` with ``meta={"@click": ...}``, which only
+    survives outside markup parsing (``RichLog.write`` accepts a bare
+    ``Text`` the same way ``Static.update`` does -- the recipe's own
+    example).  The non-address cells still go through Rich markup (plain
+    colour names, no ``$`` tokens here), parsed synchronously via
+    ``Text.from_markup`` inside this same ``try`` rather than deferred.
     """
     if not isinstance(row, dict):
         return None
@@ -240,28 +265,44 @@ def _row_markup(row: dict, tier: str) -> str | None:
         kind = str(row.get("kind") or "").strip().lower()
         colour = _KIND_COLOUR.get(kind, "dim")
         stamp = hhmm(row.get("ts"))
-        # A verified ENS name in the address cell's own width (PRD §13 A9).
-        address = safe_markup(short_label(row.get("name"), row.get("address")))
         amount = _amount_cell(row)
 
-        cells = [f"[dim]{stamp:<{STAMP_COLS}}[/]"]
+        line = Text()
+        line.append_text(Text.from_markup(f"[dim]{stamp:<{STAMP_COLS}}[/]"))
         if tier != "floor":
             shown = kind if kind else DASH
-            cells.append(
+            line.append(" " * _GAP)
+            line.append_text(Text.from_markup(
                 f"[{colour}]{safe_markup(f'{shown[:KIND_COLS]:<{KIND_COLS}}')}[/]"
-            )
-        cells.append(f"[{colour}]{address}[/]")
-        cells.append(f"[bold]{amount:>{AMOUNT_COLS}}[/]")
+            ))
+        line.append(" " * _GAP)
+        # A verified ENS name stands in for the address (PRD §13 A9); the
+        # icon still copies the address either way.  Lower-cased on purpose
+        # (``leaderboard.py``'s own reason: two sources spell one wallet two
+        # ways, and the icon copies whichever spelling this cell was given).
+        address = row.get("address")
+        if isinstance(address, str):
+            address = address.lower()
+        line.append_text(address_text(
+            address, label=(row.get("name") or None),
+            width=NAME_COLS, style=colour,
+        ))
+        line.append(" " * _GAP)
+        line.append_text(Text.from_markup(f"[bold]{amount:>{AMOUNT_COLS}}[/]"))
         if tier in ("full", "compact"):
-            cells.append(f"[dim]{safe_markup(_delta_cell(row, tier))}[/]")
+            line.append(" " * _GAP)
+            line.append_text(Text.from_markup(
+                f"[dim]{safe_markup(_delta_cell(row, tier))}[/]"
+            ))
         if tier in ("full", "compact", "narrow"):
             tx_count = row.get("tx_count")
             try:
                 tx_str = f"tx#{int(tx_count)}"
             except (TypeError, ValueError):
                 tx_str = f"tx#{DASH}"
-            cells.append(f"[dim]{safe_markup(tx_str)}[/]")
-        return (" " * _GAP).join(cells)
+            line.append(" " * _GAP)
+            line.append_text(Text.from_markup(f"[dim]{safe_markup(tx_str)}[/]"))
+        return line
     except Exception:
         # A single malformed row never takes down the panel.
         return None
@@ -387,7 +428,7 @@ class CuratorActivity(Vertical):
         self._set_title(WIDEN_HINTS.get(tier, ""))
 
         for row in unique:
-            markup = _row_markup(row, tier)
-            if markup is not None:
-                log.write(markup)
+            text = _row_text(row, tier)
+            if text is not None:
+                log.write(text)
         self.call_after_refresh(log.scroll_home, animate=False)

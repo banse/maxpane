@@ -29,6 +29,7 @@ from textual.widgets import DataTable, RichLog, Static
 
 from maxpane_dashboard.analytics import fwa_signals as _signals
 from maxpane_dashboard.data.fwa_models import FWA_WIDGET_SIGNATURES
+from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.fwa.fwa_activity_feed import (
     UNAVAILABLE_LINE,
     FWAActivityFeed,
@@ -75,13 +76,21 @@ class _Harness(App):
 # The feed numbers are the *container*; its RichLog has ``padding: 0 1`` and so
 # renders two columns narrower (81 / 56).
 WIDE_FEED = (83, 24)
-NARROW_FEED = (58, 24)
+#: The feed's ``compact`` tier. A line is painted into the log's width less
+#: its ``padding: 0 1`` and its always-present vertical scrollbar gutter, so
+#: 59 gives the 56 that tier needs (58, the value before the scrollbar was
+#: counted, was one cell short and cropped the end of every compact line).
+NARROW_FEED = (59, 24)
+_FEED_LINE_COLS = NARROW_FEED[0] - 3
 #: Wide enough for the chase board's `full` tier. Raised from 55 when the ODDS
 #: column went from 6 to 9 columns: the board ranks the *least* likely
 #: positions, whose odds are ~1e-5%, and three decimals rendered every row as
-#: `0.000%`.
-WIDE_TABLE = (58, 24)
-NARROW_TABLE = (38, 24)
+#: `0.000%`. Raised from 58 to 60 when COLLECTION became 13 in every tier, so
+#: an unnamed collection's address window and its copy icon both fit the
+#: column (an address is never windowed below ``MIN_SHORT_COLS``).
+WIDE_TABLE = (60, 24)
+#: The chase board's `minimal` tier (41 since COLLECTION became 13, was 38).
+NARROW_TABLE = (41, 24)
 
 
 def _static_text(widget: Static) -> str:
@@ -331,7 +340,7 @@ def test_signals_emissions_never_negative_countdown():
 async def test_activity_feed_line_count():
     widget = FWAActivityFeed()
     app = _Harness(widget)
-    async with app.run_test():
+    async with app.run_test(size=WIDE_FEED):
         widget.update_data()
         widget.update_data(**_none_payload("FWAActivityFeed"))
         widget.update_data(
@@ -346,7 +355,10 @@ async def test_activity_feed_line_count():
         # Outcome is spelled out, not only colour-coded.
         assert "sold back ($FWA)" in text
         assert "kept the NFT" in text
-        assert "Nakamigos #4471" in text
+        # The collection's copy icon now sits between the name and the token
+        # id (address_copy_PRD.md §1); proven against the exact string so
+        # this still fails if the name or the token id went missing.
+        assert "Nakamigos " + COPY_GLYPH + " #4471" in text
         assert "0.118 ETH" in text
 
 
@@ -375,7 +387,7 @@ async def test_activity_feed_unavailable_renders_explicit_line():
 async def test_activity_feed_unavailable_keeps_last_good_with_as_of_header():
     widget = FWAActivityFeed()
     app = _Harness(widget)
-    async with app.run_test():
+    async with app.run_test(size=WIDE_FEED):
         widget.update_data(draw_events=_DRAW_EVENTS, feed_available=True)
         widget.update_data(
             draw_events=None,
@@ -386,8 +398,9 @@ async def test_activity_feed_unavailable_keeps_last_good_with_as_of_header():
         log = widget.query_one("#fwa-activity-log", RichLog)
         text = _log_text(log)
         assert UNAVAILABLE_LINE in text
-        # Last-good content is kept...
-        assert "Nakamigos #4471" in text
+        # Last-good content is kept, copy icon and all (see the line count
+        # test's comment for why the exact string still proves this)...
+        assert "Nakamigos " + COPY_GLYPH + " #4471" in text
         # ...and labelled as of a time, never presented as live.
         title = _static_text(widget.query_one("#fwa-feed-title", Static))
         assert "as of" in title
@@ -504,8 +517,12 @@ async def test_settlement_shares_sum_displayed_as_100():
         joined = "\n".join(cells)
         assert "100.00%" in joined
         assert "73.92%" in joined and "0.00%" in joined
-        # crown section: per-holder aggregation, 4 reigns for one wallet
-        assert "0xAAAA..1111" in joined
+        # crown section: per-holder aggregation, 4 reigns for one wallet.
+        # The old "0xAAAA..1111" was the private 6/4 cut this task retires;
+        # the new form is the anti-poisoning window (widgets/address.py)
+        # plus the copy icon -- still the same holder, still proven exactly,
+        # not loosened to a prefix that would pass on a truncated address.
+        assert "0xAAAA000000000000…001111 " + COPY_GLYPH in joined
         assert "33 sets" in joined and "12 paid" in joined and "91.096" in joined
         # The sell-back headline no longer lives here: it moved to the
         # SIGNALS panel, where the reader is already looking for statements
@@ -696,7 +713,7 @@ async def test_activity_feed_narrow_abbreviates_outcome_never_truncates_it():
         assert "sold ($FWA)" in text
         assert "accepted bid · pai" not in text
         for line in text.splitlines():
-            assert len(line) <= NARROW_FEED[0] - 2
+            assert len(line) <= _FEED_LINE_COLS
         title = _static_text(widget.query_one("#fwa-feed-title", Static))
         assert "widen" in title
 
@@ -709,7 +726,7 @@ async def test_activity_feed_wide_keeps_collection_and_amount():
         widget.update_data(draw_events=_DRAW_EVENTS, feed_available=True)
         log = widget.query_one("#fwa-activity-log", RichLog)
         text = _log_text(log)
-        assert "drew Nakamigos #4471" in text
+        assert "drew Nakamigos " + COPY_GLYPH + " #4471" in text
         assert "0.118 ETH" in text
         title = _static_text(widget.query_one("#fwa-feed-title", Static))
         assert "widen" not in title

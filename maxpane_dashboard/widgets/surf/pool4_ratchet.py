@@ -127,10 +127,12 @@ _GAP = 1
 #: reference tick and the backstop word: ``8 + 1 + len("-34,567 · ref
 #: -34,000 · centred")``. Merging the backstop onto that row bought the pool4
 #: body a terminal row and cost this panel four columns, and the trade is only
-#: sound because this panel is not the one that binds the body's *width* --
-#: ``SurfPool4Flow`` needs 52 against this panel's 44 including its column's
-#: own gutter, so 36 -> 40 does not reach ``SURF_POOL4_FULL_LAYOUT_COLUMNS``.
-#: If FLOW ever narrows below 44, this becomes a width decision again.
+#: sound because this panel is not the one that binds the body's *width*.
+#: That was argued against ``SurfPool4Flow``'s 52 until 2026-09-14, when FLOW
+#: left the ``p`` body; the argument now rests on HATCHES in the rail. THE
+#: RATCHET is the left column's widest need at 45 with the gutter, and under
+#: 1:1 the column gets 49 at the pin, so this panel is four columns from
+#: becoming a width decision again.
 FULL_WIDTH = _LABEL_COLS + _GAP + 31                                     # 40
 
 #: One tier below full: the sparkline goes, and so do the three secondary

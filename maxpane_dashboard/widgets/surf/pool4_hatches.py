@@ -62,7 +62,19 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.surf._fmt import DASH, long_addr
+from maxpane_dashboard.widgets.address import (
+    COPY_GLYPH,
+    ICON_COLS,
+    address_text,
+    is_address,
+)
+from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH
+from maxpane_dashboard.widgets.surf._icons import (
+    keep_units,
+    link_in_order,
+    mark_addresses,
+    unmark,
+)
 from maxpane_dashboard.widgets.surf._pool4 import (
     GLYPH_HINT,
     NETWORK_UNKNOWN,
@@ -265,7 +277,19 @@ _SCOPE_SHORT = {"distributor": "dist"}
 _SCOPE_COLS = 7      # widest rendered scope: "dripper", "dist" (see _SCOPE_SHORT)
 _LABEL_COLS = 9      # widest POOL4_HATCH_LABELS members: "rebalance", "burn sink"
 _STATE_COLS = 9      # widest POOL4_HATCH_STATES member: "renounced"
-_ADDR_COLS = 17      # `_fmt.long_addr`: 0x + 8 hex + … + 6 hex
+#: The address block's window: ``0x`` + 8 hex + ``…`` + 6, through
+#: ``widgets/address.short_address``. The block's widest line is 41 cells with
+#: the icon against the 45 the lever grid already needs, so the block keeps
+#: the whole anti-poisoning window beside its icon (``_ADDR_CELL_COLS``).
+_ADDR_COLS = ANTI_POISONING_COLS
+_ADDR_CELL_COLS = _ADDR_COLS + ICON_COLS                             # 19
+#: The lever grid's last cell, as painted -- 17, unchanged -- and the window
+#: inside it, which **gave up two cells to its icon** (2026-09-14): 8/6 ->
+#: 6/6. This panel binds ``SURF_POOL4_FULL_LAYOUT_COLUMNS`` with zero margin,
+#: so a grown cell would have moved the pin; see that constant's block for
+#: the trade. A row with no address keeps all 17 cells for its detail.
+_GRID_CELL_COLS = _ADDR_COLS
+_GRID_ADDR_COLS = _GRID_CELL_COLS - ICON_COLS                        # 15
 _DISCOVERY_LABEL_COLS = 9
 _ADDR_LABEL_COLS = 5
 _GAP = 1
@@ -292,7 +316,8 @@ ADDRESS_LABELS = (
 #: compares with ``==`` and therefore reddens whether the pin is set too low
 #: or too high.
 FULL_WIDTH = (
-    _SCOPE_COLS + _GAP + _LABEL_COLS + _GAP + _STATE_COLS + _GAP + _ADDR_COLS
+    _SCOPE_COLS + _GAP + _LABEL_COLS + _GAP + _STATE_COLS + _GAP
+    + _GRID_CELL_COLS
 )                                                                        # 45
 
 #: Widest word in :data:`REWARD_PATH_WORDS` (``via-distributor``);
@@ -300,10 +325,10 @@ FULL_WIDTH = (
 _PATH_COLS = 15
 
 #: The distributor's address row carrying its reward-path annotation.
-#: ``5 + 1 + 17 + 1 + 15``.
+#: ``5 + 1 + 19 + 1 + 15`` -- the 19 is the window and its copy icon.
 _DIST_ROW_WIDTH = (
-    _ADDR_LABEL_COLS + _GAP + _ADDR_COLS + _GAP + _PATH_COLS
-)                                                                        # 39
+    _ADDR_LABEL_COLS + _GAP + _ADDR_CELL_COLS + _GAP + _PATH_COLS
+)                                                                        # 41
 
 #: One tier below full: the per-row address/detail column goes. It is the
 #: cheapest cell to lose *on this panel specifically* -- the five principal
@@ -319,7 +344,7 @@ _DIST_ROW_WIDTH = (
 #: keep a rounder number would trade the panel's whole reason for a column.
 COMPACT_WIDTH = max(
     _SCOPE_COLS + _GAP + _LABEL_COLS + _GAP + _STATE_COLS,               # 27
-    _DIST_ROW_WIDTH,                                                     # 39
+    _DIST_ROW_WIDTH,                                                     # 41
 )
 
 
@@ -348,8 +373,16 @@ def _grid(cells: list[tuple[str, int, str]]) -> str:
     return (" " * _GAP).join(out).rstrip()
 
 
-def _hatch_cells(row: object) -> tuple[str, str, str, str, bool] | None:
-    """Decompose one hatch row; ``None`` drops it."""
+def _hatch_cells(
+    row: object,
+) -> tuple[str, str, str, str, bool, str | None] | None:
+    """Decompose one hatch row; ``None`` drops it.
+
+    ``(scope, label, state, tail, known, address)``: ``tail`` is the last
+    cell's plain text as painted -- for an address, the 15-cell grid window
+    **and its copy icon** -- and ``address`` the validated address behind it,
+    or ``None`` for a detail or a value that is not an address.
+    """
     if not isinstance(row, dict):
         return None
     try:
@@ -359,17 +392,28 @@ def _hatch_cells(row: object) -> tuple[str, str, str, str, bool] | None:
         state = strip_tags(row.get("state")) or "unknown"
         addr = row.get("addr")
         known = bool(row.get("addr_known"))
+        address = None
         if addr:
-            tail = long_addr(addr)
+            value = strip_tags(addr)
+            if is_address(value):
+                address = value
+                tail = address_text(value, width=_GRID_ADDR_COLS).plain
+            else:
+                tail = value
         else:
             tail = strip_tags(row.get("detail"))
-        return scope, label, state, tail, known
+        return scope, label, state, tail, known, address
     except Exception:
         return None
 
 
-def _hatch_row_markup(row: object, tier: str) -> str | None:
+def _hatch_row_markup(row: object, tier: str) -> Text | None:
     """Format one hatch row at *tier*; ``None`` drops it.
+
+    A ``Text`` since 2026-09-14 (the name is kept for its callers' history):
+    a lever's address carries a copy icon, whose click action a markup
+    string cannot hold. The scope/label/state grid is still markup, parsed
+    here by ``parse_line`` inside its ``try``.
 
     A single malformed row must never take down the panel, so every failure
     here is a dropped row rather than an exception.
@@ -378,7 +422,7 @@ def _hatch_row_markup(row: object, tier: str) -> str | None:
     if cells is None:
         return None
     try:
-        scope, label, state, tail, known = cells
+        scope, label, state, tail, known, address = cells
         # `unknown` is dimmed and nothing else is coloured: the meaning of
         # `live` swings between reassuring and alarming depending on which
         # lever it is attached to (a live burn sink is fine, a live owner key
@@ -390,9 +434,19 @@ def _hatch_row_markup(row: object, tier: str) -> str | None:
             (label, _LABEL_COLS, ""),
             (state, _STATE_COLS, state_style),
         ]
-        if tier == "full":
-            grid.append((tail, _ADDR_COLS, "cyan" if known and tail else "dim"))
-        return _grid(grid)
+        if tier != "full":
+            return parse_line(_grid(grid))
+        style = "cyan" if known and tail else "dim"
+        if address is None:
+            grid.append((tail, _GRID_CELL_COLS, style))
+            return parse_line(_grid(grid))
+        line = parse_line(_grid(grid))
+        if line is None:
+            return None
+        lead = _SCOPE_COLS + _GAP + _LABEL_COLS + _GAP + _STATE_COLS + _GAP
+        line.append(" " * max(lead - line.cell_len, 0))
+        line.append_text(address_text(address, width=_GRID_ADDR_COLS, style=style))
+        return line
     except Exception:
         return None
 
@@ -406,7 +460,7 @@ def _reward_path_markup(path: object) -> str:
     return f"[dim]{safe_markup(text)}[/]"
 
 
-def _address_markup(label: str, value: object, note: str = "") -> str:
+def _address_markup(label: str, value: object, note: str = "") -> Text | None:
     """One line of the address block. ``--`` when the address is unread --
     never a blank, which reads as "there is no such contract".
 
@@ -414,15 +468,31 @@ def _address_markup(label: str, value: object, note: str = "") -> str:
     distributor's row uses it for the reward path, which is the word that
     tells a bare ``--`` there ("no Distributor" from Sepolia) apart from the
     same ``--`` produced by an unread getter.
+
+    A ``Text`` since 2026-09-14: an address is the 17-cell anti-poisoning
+    window **plus its copy icon** (``widgets/address.address_text``), and a
+    markup string cannot carry the icon's action. A value that is not an
+    address is fitted to the window's width with no icon. With a note, the
+    cell is padded to window-plus-icon so the note column lines up whether
+    or not the row has an address.
     """
-    shown = long_addr(value) if value else DASH
-    line = (
-        f"[dim]{safe_markup(_pad(label, _ADDR_LABEL_COLS))}[/] "
-        f"{safe_markup(_pad(shown, _ADDR_COLS))}" if note else
-        f"[dim]{safe_markup(_pad(label, _ADDR_LABEL_COLS))}[/] "
-        f"{safe_markup(fit_cell(shown, _ADDR_COLS))}"
-    )
-    return f"{line} {note}" if note else line
+    head = parse_line(f"[dim]{safe_markup(_pad(label, _ADDR_LABEL_COLS))}[/] ")
+    if head is None:
+        return None
+    shown = strip_tags(value) if value else ""
+    if is_address(shown):
+        cell = address_text(shown, width=_ADDR_COLS)
+    else:
+        cell = Text(fit_cell(shown, _ADDR_COLS) or DASH)
+    head.append_text(cell)
+    if not note:
+        return head
+    note_text = parse_line(note)
+    if note_text is None:
+        return None
+    head.append(" " * max(_ADDR_CELL_COLS - cell.cell_len, 0) + " ")
+    head.append_text(note_text)
+    return head
 
 
 def _source_markup(state: str, source: object) -> str:
@@ -487,7 +557,22 @@ def _discovery_markup(
 
     text = strip_tags(detail)
     if text:
-        lines.append(f"[dim]{indent}{safe_markup(fit_cell(text, room))}[/]")
+        # The sentence names the adopted hook in prose. Each address is
+        # windowed to the 17-cell anti-poisoning form -- the address block's
+        # own window a few lines below, not the lever grid's 15, which is a
+        # grid-column trade and does not apply to a line fitted to ``room`` --
+        # with its copy icon, *before* the fit, so ``room`` pays for the icon.
+        # The fit never bisects a window-and-icon unit (``keep_units``): at the
+        # pinned 99 a whole 42-character address used to be cut to 26 hex with
+        # its icon gone, while the same line carried it at 220. Signals' detail
+        # is the same shape and is fitted the same way.
+        marked, addresses, spans = mark_addresses(text, _ADDR_COLS)
+        kept = keep_units(marked, spans, fit_cell(marked, room))
+        if kept:
+            line = parse_line(f"[dim]{indent}{safe_markup(unmark(kept))}[/]")
+            if line is not None:
+                link_in_order([line], addresses[: kept.count(COPY_GLYPH)])
+                lines.append(line)
 
     citation = strip_tags(source_tx)
     if citation:
@@ -686,7 +771,16 @@ class SurfPool4Hatches(Vertical):
         if as_of:
             markup.append(f"[dim]as of {safe_markup(strip_tags(as_of))}[/]")
 
-        return [t for t in (parse_line(m) for m in markup) if t is not None]
+        # Lines that carry a copy icon arrive already built as ``Text`` (the
+        # address block, a lever's address, the discovery detail); only the
+        # plain markup lines are parsed here.
+        return [
+            t
+            for t in (
+                m if isinstance(m, Text) else parse_line(m) for m in markup
+            )
+            if t is not None
+        ]
 
     def _render_view(self) -> None:
         try:

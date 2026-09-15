@@ -16,26 +16,34 @@ holding the v4 launchpad's own panels -- five of them since 2026-08-25 --
 laid out on ``#middle-row``'s own shape::
 
     #surf-launchpad-body   #surf-launchpad-left (2fr)       | #surf-launchpad-rail (1fr)
-                             SurfLaunchpadCoins    (auto)   |   SurfCurveFlow      (auto, +1 margin)
+                             SurfLaunchpadCoins    (2fr, 13..23, +1 margin) |   SurfCurveFlow      (auto, +1 margin)
                              SurfLaunchpadActivity (1fr)    |   SurfBurnPipeline   (auto, +1 margin)
                                                             |   SurfBurnkeepers    (1fr)
 
-``p`` swaps the same three rows for a **third** body, the POOL4 view
-(2026-09-01), on the identical shape::
+``e`` swaps the same three rows for a **third** body, the POOL4 view
+(2026-09-01), on the identical shape. The key was ``p`` until 2026-09-15,
+when the owner took it off the status hint and moved it to ``e`` for
+experimental; "the ``p`` body" below and throughout this module names this
+body, whichever key opens it::
 
     #surf-pool4-body   #surf-pool4-left (1fr)          | #surf-pool4-rail (1fr)
                          SurfPool4Split   (auto, +1 m) |   SurfPool4Hatches (auto, +1 margin)
                          SurfPool4Ratchet (auto, +1 m) |   SurfPool4Vault   (1fr)
-                         SurfPool4Flow    (1fr)        |
 
-The columns are cut to **balance their heights** -- 33 rows each at the
-worst payload -- which is what ``SURF_POOL4_FULL_LAYOUT_ROWS`` is measured
-from. It is the reverse of what this paragraph said before mainnet landed:
-the rail no longer holds only constant-height panels, because THE SPLIT
-became payload-sized too and no two-column cut of these five can keep both
-variable panels out of the binder. The rail's ``1fr`` is still on the
-*fixed* panel (sIMD VAULT), which is the reverse of the other two bodies'
-rule -- see that constant for why.
+**POOL4 FLOW left this body on 2026-09-14.** The owner asked for it off a
+live screenshot: the ``4`` market body's RECENT FLOW already renders the
+same rows, so ``p`` printed them twice. The left column is now two ``auto``
+panels and **no** ``1fr`` child -- :data:`POOL4_LEFT_ID` argues why its
+spare rows stay blank space at the column's foot instead of going to a
+panel.
+
+The columns were cut to **balance their heights** when mainnet landed -- 34
+rows each at the worst payload -- and that balance ended with FLOW: the left
+column carries 28 and the rail 34, so the rail alone sets
+``SURF_POOL4_FULL_LAYOUT_ROWS`` now, which is why that pin did not move
+while ``SURF_POOL4_FULL_LAYOUT_COLUMNS`` did (106 -> 99, HATCHES binding).
+The rail's ``1fr`` is still on the *fixed* panel (sIMD VAULT), which is the
+reverse of the other two bodies' rule -- see that constant for why.
 
 ``4`` swaps the same three rows for a **fourth** body, the POOL4 MARKET
 view (2026-09-11), on bakery's shape rather than on the other two bodies'::
@@ -60,11 +68,15 @@ what was asked; a fixed column gives the extra to the leaderboard at every
 width. See :data:`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` for what the whole
 address cost and what the ladder gave back.
 
-``SurfPool4Flow`` is the **same class** the ``p`` body uses, mounted a second
-time rather than copied (PRD §6.4): one panel, one set of rows, one place to
-fix a formatting bug. The screen dispatches to *every* mounted instance in one
-statement, so the two can never be handed different payloads -- which is the
-thing a second copy of the module could not have promised.
+``SurfPool4Flow`` is **mounted here and nowhere else since 2026-09-14.** From
+2026-09-11 it was the ``p`` body's panel mounted a second time rather than
+copied (PRD §6.4), and the screen dispatched to every instance in one
+statement so the two could never be handed different rows. The owner then
+removed the ``p`` body's copy because it duplicated this one. The module is
+still reused unchanged, the dispatch still loops ``self.query`` (so a future
+second mount would be fed without an edit), and the per-instance keywords the
+mount passes are now vestigial -- filed as F15 in
+``docs/surf_pool4_followups.md``.
 
 **``#hero-row`` is NOT untouched any more, and this is the sentence that had
 to change.** It read "``#hero-row`` is never touched by either swap and stays
@@ -615,6 +627,18 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: own screen pin and its ``f`` view). The hero row, which stays mounted in
 #: both modes, clears on its own at **87** and never competes for the binder
 #: role.
+#:
+#: **2026-09-15: re-swept for the twenty-coin table, and 138 held.** The coin
+#: panel became the left column's ``2fr`` share. The first cut of that change
+#: handed the table all twenty coins at every height. At 31 rows the table
+#: then scrolled inside itself, and its scrollbar cut the ``BURNED`` header at
+#: 138-140 while this panel's ``‹ widen`` was dark: the width need had become
+#: a function of the height. The shipped version draws only the coins its
+#: laid-out height holds (``SurfLaunchpadCoins._rows_that_fit``), so the table
+#: never scrolls. Re-swept in situ over 128-146 at 31, 36 and 60 rows (10, 13
+#: and 20 coins drawn), with a twenty-coin payload under both the capture's
+#: burn line and the ordinary one: ``‹ widen`` lit through 137, ``BURNED``
+#: whole and nothing clipped from 138, no table scrollbar at any width.
 SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 
 #: The ``l`` LAUNCHPAD body's own measured **height** (2026-08-25) -- new
@@ -664,6 +688,32 @@ SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 #: layout's WIDTH pin would become a function of its HEIGHT.
 #: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` above is measured with that
 #: gutter reserved, which is the 92nd of its 92 columns.
+#:
+#: **2026-09-15: COINS took ACTIVITY's rows, and 31 held with the margin
+#: spent.** The owner's screenshot showed ten coins over a mostly empty
+#: ACTIVITY feed, and the coin table running straight into the ACTIVITY
+#: title. Three changes answer it:
+#:
+#: * ``SurfLaunchpadCoins`` gained ``margin: 0 0 1 0``, the blank row above
+#:   ACTIVITY's title.
+#: * COINS is now ``2fr`` against ACTIVITY's ``1fr``, floored at 13 (the ten
+#:   rows it had) and capped at 23 (title, blank, header and the twenty
+#:   coins ``LAUNCHPAD_RENDER_LIMIT`` now fetches).
+#: * The table draws only the coins its height holds, so it never scrolls
+#:   inside itself.
+#:
+#: **The left column is now 20 at its floors (13 + 1 + 6), level with the
+#: rail's 20.** The paragraph above says it was 19; the gap row spent that one
+#: row of margin, so both columns bind at once. Re-swept in situ, starting
+#: below the pin, over rows 24-46 plus 50, 55 and 60 at 150 columns, with the
+#: capture and a twenty-coin payload. ``‹ taller`` is lit through 30 and dark
+#: from 31 in both. Coins drawn by height: 10 at 31, 15 at 40, 19 at 45, 20
+#: from 50. ACTIVITY is 6 rows at 31, 10 at 40, 15 at 50, then 25 at 60, as
+#: every row past COINS' 23-row ceiling goes to the feed. The blank row sits
+#: above ACTIVITY's title at every height from 31. **Below the pin the
+#: column's ``fr`` children inflate while it scrolls** (COINS reads its
+#: 23-row ceiling at 30 rows). That is why the derivation is now asserted at
+#: the pin rather than at 28 rows, where it used to be read off the floors.
 SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
 
 #: The ``p`` POOL4 body's own measured width (2026-09-01) -- a **separate,
@@ -687,12 +737,58 @@ SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
 #: below-the-pin branch zero times and pinned nothing from underneath. The
 #: range was extended downward rather than the pin pushed up to meet it.
 #:
-#: **The binding panel is ``SurfPool4Flow``**, pinned by
-#: ``test_the_pool4_binding_panel_is_the_flow_log`` rather than by this
-#: sentence (``test_the_launchpad_binding_panel_is_the_coins_table``'s and
-#: curator's ``test_the_analysis_binding_panel_is_the_operators_table``
-#: precedent). At 105 -- one column under the pin -- it is the only one of the
-#: five panels with a marker lit.
+#: **RE-SWEPT 2026-09-14, WHEN POOL4 FLOW LEFT THIS BODY: 106 -> 99.** The
+#: owner asked for the flow log gone from ``p`` because the ``4`` market
+#: body's RECENT FLOW already renders the same rows. FLOW was this pin's
+#: binder (a 52-need panel buying 53 with its column's gutter), so removing it
+#: had to lower the pin. It fell seven columns, not the three a "53 -> 50"
+#: guess predicts: 1:1 now has to hand the *rail* its 50, and at an odd width
+#: the rail takes the odd column.
+#:
+#: Swept column by column over the real screen at 50 rows, **86..125**, on the
+#: committed capture, the ordinary-magnitude payload and the twelve-lever
+#: mainnet payload. The range starts thirteen under the number it collected
+#: and never on the old pin or the new one. All three agree to the column:
+#:
+#: * **whole from 99** -- no ``‹`` on any panel and no CSS-clipped line;
+#: * at **98** exactly one panel is marked, ``SurfPool4Hatches``, in the rail
+#:   (left 49 | rail 49). **The binder is HATCHES now**, pinned by
+#:   ``test_the_pool4_binding_panel_is_hatches`` on the precedent of
+#:   ``test_the_launchpad_binding_panel_is_the_coins_table`` and curator's
+#:   ``test_the_analysis_binding_panel_is_the_operators_table``;
+#: * THE RATCHET marks from 89 down, and its **45** is now the left column's
+#:   widest need (SPLIT rides along at 36). Every CSS-clipped line in 86..91
+#:   has HATCHES' marker lit beside it, and
+#:   ``test_nothing_below_the_pool4_pin_clips_without_saying_so`` covers
+#:   80..98.
+#:
+#: So **left needs 45 and the rail 50**, the arithmetic floor is 95, and 1:1
+#: does not collect it. At 99 it gives the left column 49 (four spare) and the
+#: rail exactly 50.
+#:
+#: **The seam was not re-chosen, and the argument that chose it is now
+#: inverted rather than retired.** 1:1 was picked so the LEFT column bound,
+#: because FLOW wrote its marker into its own log and never went quiet. HATCHES
+#: appends its marker to a title and gives it up first under pressure, so the
+#: rail was bought three columns of margin. With FLOW gone, the rail binds with
+#: **zero** margin, which is exactly the arrangement the paragraphs below
+#: declined. It is acceptable here because it was measured, not argued:
+#: HATCHES carries a ``‹`` at every width in the 86..98 sweep on all three
+#: payloads, and the full ``‹ widen`` at 80..85 and at 98 on the capture (its
+#: panel is 39..48 columns across that range). A seam favouring the rail might
+#: buy that margin back, but it was **not** swept: re-cutting the seam is a
+#: layout decision this removal did not ask for.
+#:
+#: **EVERYTHING BELOW THIS POINT IS THE PRE-2026-09-14 RECORD** of the
+#: five-panel body. It is kept because it is what the seam was chosen on.
+#: Where it says FLOW binds, the left column needs 53, the rail has three
+#: columns of margin or the pin is 106, read it as history. The bullets above
+#: are the live measurement.
+#:
+#: **The binding panel WAS ``SurfPool4Flow``**, pinned until 2026-09-14 by
+#: ``test_the_pool4_binding_panel_is_the_flow_log``. At 105 -- one column
+#: under the old pin -- it was the only one of the five panels with a marker
+#: lit.
 #:
 #: **That was chosen, not observed.** Measured *in situ*, each panel inside
 #: its own real container and swept across all three payload magnitudes (the
@@ -906,12 +1002,63 @@ SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
 #: the rail's margin -- ten spare columns instead of three -- and that is a
 #: consequence worth having but was not the reason; the reason is rows, and it
 #: is argued in :data:`SURF_POOL4_FULL_LAYOUT_ROWS`.
-SURF_POOL4_FULL_LAYOUT_COLUMNS = 106
+#:
+#: **2026-09-14 -- the copy icon, paid for inside HATCHES' own cell.** Every
+#: displayed address gained a ``⧉`` that copies it (``docs/address_copy_PRD.md``
+#: §5), and no pin may move for it. HATCHES binds this pin with zero margin,
+#: so its lever grid's last cell could not grow: it stays 17 cells and the
+#: address inside it went **17 -> 15**, with the icon in the two cells freed.
+#: The anti-poisoning window there is **8 hex / 6 hex -> 6 / 6**
+#: (``widgets/address.short_address``); both halves still differ on the live
+#: spoof pair the 8/6 form was chosen for, and the whole address is one click
+#: away. The address block above the grid kept the full 17-cell 8/6 window
+#: beside its icon: its widest line (the distributor row) is 41 cells, under
+#: the grid's 45. Re-swept in situ over 94-102 with the mainnet payload:
+#: HATCHES is unmarked from 99 and marked at 98, as before.
+SURF_POOL4_FULL_LAYOUT_COLUMNS = 99
 
 #: The ``p`` POOL4 body's own measured **height**, re-swept 2026-09-02 for
 #: the mainnet deployment, again after the panels were shortened, and again
 #: on **2026-09-12** when this body took the repo-wide blank row under every
-#: panel title. **43 -> 44 -> 46 -> 44 -> 45.**
+#: panel title. **43 -> 44 -> 46 -> 44 -> 45 -> 45.**
+#:
+#: **RE-SWEPT 2026-09-14, WHEN POOL4 FLOW LEFT THIS BODY: 45, UNMOVED.** The
+#: owner removed the flow log from ``p`` off a live screenshot showing
+#: ``‹ taller`` lit, and removing a panel reads as though it should clear
+#: that. It does not, for the reason this block has argued since mainnet: only
+#: the binding column reaches a pin, and FLOW sat in the column that *tied*
+#: rather than the one that binds alone. Measured on ``mainnet-capped`` at 150
+#: columns, every height from 36 to 50:
+#:
+#: * left column content **34 -> 28** (SPLIT 15 + margin + RATCHET 11 +
+#:   margin, with FLOW's 6-row floor gone), whole from 39 rows;
+#: * rail content **34, unchanged** (HATCHES 23 + margin + VAULT 10), whole
+#:   from 45 -- so ``‹ taller`` is still lit at 44, and what it reports is the
+#:   rail's last row (sIMD VAULT's ``as of`` line) behind the rail's own
+#:   scrollbar;
+#: * no panel shorter than its own ``virtual_size`` at any height, in either
+#:   column.
+#:
+#: **What the owner sees at 44 rows, before and after, rendered rather than
+#: inferred:** ``‹ taller`` lit both times. THE SPLIT's title is on screen
+#: both times (``scroll_y`` 0 on a fresh render; the scrolled-away title in
+#: the screenshot is not reproduced by this harness). The one visible change
+#: is that the left column stops scrolling: THE SPLIT and THE RATCHET are both
+#: whole, with blank rows beneath them where FLOW was. Clearing the marker at
+#: 44 needs a row out of the RAIL, and that was not this change's to spend.
+#:
+#: The committed capture still goes whole at 42, because the rail binds it
+#: too. **Every row the left column set or tied now needs less, and only the
+#: twelve-lever mainnet rows keep 45.** That is not a guess:
+#: ``test_the_pool4_height_pin_is_measured_against_the_column_it_describes``
+#: measured its two older payloads at **33** rows of worst-case content after
+#: the removal (Sepolia twelve levers 33, mainnet ten levers 32), where it had
+#: read 34 through mainnet's left column. That test now measures
+#: ``mainnet-capped`` directly. The other lighter rows were not re-swept
+#: individually, because a payload that needs less than the pin never lowers
+#: it. **The table and the "33 rows ... reached by BOTH columns" paragraph
+#: below are the pre-removal record**: their ``FLOW``, ``left`` and ``need``
+#: columns are history everywhere except the two twelve-lever mainnet rows.
 #:
 #: **THE 2026-09-12 RE-SWEEP, AND THE 2026-09-02 NOTE IT REVERSES.** Until
 #: today this block recorded that ``sIMD VAULT``'s post-title blank row was
@@ -1136,7 +1283,7 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: **Neither a restatement nor a derivation of
 #: :data:`SURF_FULL_LAYOUT_COLUMNS` (143), of
 #: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` (138), of
-#: :data:`SURF_POOL4_FULL_LAYOUT_COLUMNS` (106) or of
+#: :data:`SURF_POOL4_FULL_LAYOUT_COLUMNS` (99; 106 until 2026-09-14) or of
 #: ``__main__.FULL_LAYOUT_COLUMNS``** -- a fourth body gets a fourth
 #: measurement, on the rule in the terminal-layout skill.
 #:
@@ -1153,7 +1300,7 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: HOW IT WAS MEASURED. The composed body was rendered through ``run_test``
 #: at **every width from 38 to 156** -- eighty-one columns below the number it
 #: collected and thirty-seven above, never starting at it, and crossing every
-#: other pin on this screen (106, 138, 143) so agreeing with any of them would
+#: other pin on this screen (106 at the time, 138, 143) so agreeing with any of them would
 #: have had to show up as a sweep result rather than as an assumption. At each
 #: width the five panels were read off composited output for a ``‹`` marker
 #: and for a CSS-truncated line. Arithmetic over the column constants was not
@@ -1201,12 +1348,13 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: ``test_the_ladder_column_is_exactly_the_width_of_its_own_caption``.
 #:
 #: **AND THE CAPTION IS WHY IT COULD NOT GO NARROWER, WHICH IS THE ANSWER TO
-#: "half of its space is empty".** The ladder *table* is 27 cells wide -- the
-#: request's own estimate of 26 was one out -- but the sentence under it,
+#: "half of its space is empty".** The ladder *table* was 27 cells wide -- the
+#: request's own estimate of 26 was one out -- and is 29 since ``not reached``
+#: widened ``band used`` on 2026-09-14; but the sentence under it,
 #: ``quoted from the position as it stands now``, is 41, and below 45 columns
 #: that sentence is cut by CSS with an ellipsis and **no ``‹`` marker**: this
-#: panel's widen tier is decided by its table, so between 31 and 44 columns it
-#: clips in silence. That disqualifies every seam narrower than 45 under the
+#: panel's widen tier is decided by its table, so between 33 and 44 columns it
+#: clips in silence (31 and 44 before that change; both swept). That disqualifies every seam narrower than 45 under the
 #: standing rule, and it is the reason the freed columns stop at seven rather
 #: than the twenty-five the table alone would allow. Shortening the caption to
 #: 29 cells or fewer was measured as the alternative -- it would hold this pin
@@ -1215,10 +1363,11 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: trade this repo makes in the other direction.
 #:
 #: **The pin does not move with the data**, and that was measured rather than
-#: hoped: the sweep ran over the same nine payload states the row pin uses --
+#: hoped: the sweep ran over the same payload states the row pin uses (ten
+#: since 2026-09-14, when a live-shaped band-not-reached state joined them) --
 #: the committed capture, ``_ordinary_pool4_payload``'s widest flow formats,
-#: the mainnet capture, a twenty-row staker list at
-#: ``pool4u_stakers.MAX_ROWS`` with ``999.9B``-magnitude holdings, both at
+#: the mainnet capture, a twenty-row staker list (the renderer's cap until
+#: 2026-09-15, when it became every staker) with ``999.9B``-magnitude holdings, both at
 #: once, an unread staker list, an empty one, and a deployed/absent/unread
 #: band -- and collected 119 for every one of them. Every column on both
 #: tables is floored at its own header label, and an address is 42 characters
@@ -1233,6 +1382,21 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: the number that decides whether a reader can actually open this body, so it
 #: does not append to the app-wide width record the terminal-layout skill
 #: keeps.
+#:
+#: **2026-09-14 -- the copy icon, and STAKERS gave it two cells at the pin.**
+#: Every displayed address gained a ``⧉`` that copies it
+#: (``docs/address_copy_PRD.md`` §5), and no pin may move for it. STAKERS
+#: binds this pin, so the whole address plus icon (44 cells) would have moved
+#: it. The panel now picks the longest form that fits beside the icon: at a
+#: text budget of 71 or more (terminal 121+ on this body) the **whole
+#: 42-character address**; below that, the address windowed to **40** --
+#: ``0x`` + 31 hex + ``…`` + 6 hex (``widgets/address.short_address``), which
+#: still carries every character an address-poisoning spoof would have to
+#: match on either end and more -- so ``pool4u_stakers.FULL_WIDTH`` stays 69
+#: and the icon costs the body nothing. The whole value is one click away at
+#: every width. No marker announces the 40: it is a short form, not a shed
+#: column. Re-swept in situ over 114-122 with the mainnet payload: compact
+#: and marked at 118, windowed and unmarked at 119-120, whole from 121.
 SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 
 #: The ``4`` POOL4 MARKET body's own full-layout height, swept in situ on
@@ -1311,25 +1475,45 @@ SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 #:
 #: WHICH PANELS ARE ALLOWED TO SCROLL INSIDE THEMSELVES, and therefore do
 #: **not** set this number: ``SurfPool4UStakers`` (its table caps at
-#: ``MAX_ROWS = 20`` against a floor of 12 -- a leaderboard is unbounded by
+#: ``MAX_ROWS`` -- 20 until 2026-09-15, every staker up to 999 since, with
+#: the panel's height unchanged -- against a floor of 12 -- a leaderboard is unbounded by
 #: design, the way FLOW's ``RichLog`` is) and ``SurfPool4Flow`` itself. The
 #: pin covers the panels whose line count is a **constant**: the hero (6
 #: lines), BURN & SUPPLY (4 lines over 5 rows), SIGNALS (5 over 6) and the
 #: ladder (8 over 9). That is the same allowance
-#: :data:`SURF_POOL4_FULL_LAYOUT_ROWS` gives FLOW one body over, applied to
-#: the two panels here that have it.
+#: :data:`SURF_POOL4_FULL_LAYOUT_ROWS` gave FLOW one body over, until FLOW
+#: left the ``p`` body on 2026-09-14, applied to the two panels here that
+#: have it.
 #:
 #: **The pin does not move with the payload.** All ten states collect 35.
 #: Only a fully-unreadable ladder fits in less, and it fits because it has
 #: collapsed to a single unavailable line -- a payload that needs *less* than
 #: the pin never lowers it.
 #:
+#: **2026-09-15: RECENT FLOW gave a row to a blank line, and 35 held.** The
+#: owner's screenshot showed FLOW's full 25-row log running straight into the
+#: ``STAKERS`` title below it. ``SurfPool4Flow`` gained ``margin: 0 0 1 0``,
+#: which takes the blank row out of the panel's own ``1fr`` height (its
+#: ``RichLog`` scrolls inside itself) rather than adding a row to the body.
+#: The top row's floor of 12 is unchanged, and FLOW's floor of 6 plus the
+#: margin is 7, still under it. Re-swept in situ, starting below the pin,
+#: rows 24-46 at 150 columns over the capture, the mainnet capture and the
+#: widest payload. The taller/whole result is identical to the pre-change
+#: sweep at every height: whole from 35, ``‹ taller`` lit at 34. FLOW is 11
+#: rows at the pin (12 before) and STAKERS still paints nine addresses there.
+#: The column pin was re-swept too (110-127, same three payloads): marked at
+#: 118, clean from 119. Neither pin moved.
+#: ``test_a_blank_row_separates_recent_flow_from_the_stakers_title`` pins the
+#: gap against a full log. The committed capture's short log leaves the
+#: bottom of the panel blank with or without the margin.
+#:
 #: **W7, ANSWERED FOR THIS BODY.** Open finding W7 asks whether a real laptop
 #: clears the ``p`` body's 45 rows, the tallest requirement in the repo. This
 #: body needs **35**: ten rows under ``p`` and four over
 #: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS` (31). It is no longer the smaller
-#: of the two in *both* dimensions -- at 119 x 35 it is thirteen columns wider
-#: than ``p``'s 106 x 45 and ten rows shorter -- so the two bodies now ask for
+#: of the two in *both* dimensions -- at 119 x 35 it is twenty columns wider
+#: than ``p``'s 99 x 45 (106 x 45 until POOL4 FLOW left ``p`` on 2026-09-14)
+#: and ten rows shorter -- so the two bodies now ask for
 #: different terminals rather than one asking for a subset of the other. In
 #: every case the shortfall is announced by ``‹ taller`` rather than taken
 #: silently.
@@ -1401,34 +1585,54 @@ LAUNCHPAD_RAIL_ID = "surf-launchpad-rail"
 #: two files is how one of them goes stale.
 POOL4_BODY_ID = "surf-pool4-body"
 
-#: The POOL4 body's LEFT column: **THE SPLIT over THE RATCHET over POOL4
-#: FLOW**.
+#: The POOL4 body's LEFT column: **THE SPLIT over THE RATCHET**.
 #:
-#: The columns are split by **how tall each panel is**, and after the mainnet
-#: rebalance the split is a balance rather than a segregation: this column
-#: carries 33 rows at the worst payload and the rail carries 33 too, which is
-#: what took :data:`SURF_POOL4_FULL_LAYOUT_ROWS` from 49 to 44 without one
-#: CSS rule moving. THE SPLIT is itself payload-sized now (12 rows on
-#: Sepolia, 15 on mainnet's three-way Distributor split), so the older
-#: arrangement's promise -- keep every payload-sized panel out of the binding
-#: column -- is no longer available to any two-column cut of these five
-#: panels. See that constant for the measurement and the alternative.
+#: **It held POOL4 FLOW beneath those two until 2026-09-14**, when the owner
+#: asked for the flow log gone from ``p`` because the ``4`` market body's
+#: RECENT FLOW already renders the same rows. The column is now two
+#: ``height: auto`` panels and **no ``1fr`` child at all**. That is a
+#: decision, not an omission:
 #:
-#: Exactly one child per column carries ``1fr``, and here it is POOL4 FLOW:
-#: it is a ``RichLog``, so shrinking it moves rows behind its own scrollbar
-#: rather than off the layout. THE SPLIT and THE RATCHET are ``height: auto``
-#: beside it precisely because they are *not* safe to shrink -- a plain
-#: ``Vertical`` holding a ``Static`` loses clipped rows with no scrollbar and
-#: no trace.
+#: * FLOW carried this column's ``1fr`` because it was the one panel here that
+#:   scrolls inside itself -- a ``RichLog``, so shrinking it moved rows behind
+#:   its own scrollbar rather than off the layout. Neither survivor can do
+#:   that. A ``1fr`` on THE SPLIT or THE RATCHET would be a ``Static`` that
+#:   loses rows with no scrollbar and no trace once the column is squeezed,
+#:   which is the failure the ``1fr`` rules on this screen exist to prevent. A
+#:   floor equal to today's content would hold today and silently cut the
+#:   first line either panel grows -- and THE SPLIT is payload-sized (12 rows
+#:   on Sepolia, 15 on mainnet).
+#: * With both ``auto``, the column's spare rows are blank space at its foot:
+#:   six at the 45-row pin on the worst payload, more on a taller terminal. A
+#:   column shorter than its content scrolls instead, which ``_rail_is_cut``
+#:   sees and ``‹ taller`` reports. Nothing here can be cut in silence at any
+#:   height.
+#: * Measured, not assumed: 36..50 rows on the worst payload, left content
+#:   28, whole from 39, and no panel ever shorter than its own
+#:   ``virtual_size``. ``test_the_pool4_floors_never_thin_a_panel_below_its_content``
+#:   pins both panels at exactly their content.
 #:
-#: **This block has now been wrong twice and both are recorded rather than
-#: quietly overwritten**, because a ``#:`` block is the authority here *only*
-#: because it sits beside the code, and one that drifts is worse than none.
-#: It read "THE SPLIT over POOL4 FLOW" until the W3 follow-up, which was the
-#: pre-swap arrangement; it was then corrected to "HATCHES over POOL4 FLOW",
-#: which the mainnet rebalance invalidated the same day
-#: :data:`SURF_POOL4_FULL_LAYOUT_ROWS` recorded that rebalance three hundred
-#: lines above.
+#: The column keeps ``overflow-y: auto`` and ``scrollbar-gutter: stable``:
+#: THE SPLIT still grows with the payload, and without the gutter this body's
+#: width pin would become a function of its height.
+#:
+#: The columns were split by **how tall each panel is** when mainnet landed,
+#: and that balance -- 34 rows a side at the worst payload -- ended with FLOW.
+#: This column now carries 28 against the rail's 34, so the rail alone sets
+#: :data:`SURF_POOL4_FULL_LAYOUT_ROWS`, which is why that pin held at 45 while
+#: :data:`SURF_POOL4_FULL_LAYOUT_COLUMNS` fell to 99. Moving a rail panel
+#: across to spend the six spare rows was not attempted: rebalancing the body
+#: is a layout decision this removal did not ask for.
+#:
+#: **This block has now been wrong twice and been rewritten a third time, and
+#: all three are recorded rather than quietly overwritten**, because a ``#:``
+#: block is the authority here *only* because it sits beside the code, and one
+#: that drifts is worse than none. It read "THE SPLIT over POOL4 FLOW" until
+#: the W3 follow-up, which was the pre-swap arrangement. It was then corrected
+#: to "HATCHES over POOL4 FLOW", which the mainnet rebalance invalidated the
+#: same day :data:`SURF_POOL4_FULL_LAYOUT_ROWS` recorded that rebalance three
+#: hundred lines above. It read "THE SPLIT over THE RATCHET over POOL4 FLOW"
+#: until the removal above -- the one change of the three made on purpose.
 #:
 #: **Twice is a pattern, not an accident, and it is now a test rather than a
 #: habit.** This pair goes stale every time the body is recut, and each of
@@ -1442,8 +1646,10 @@ POOL4_BODY_ID = "surf-pool4-body"
 #: panels top to bottom, joined by "over".** Keep that shape, and a future
 #: rebalance that moves a panel without moving the sentence fails on its own
 #: commit instead of being rediscovered. What the test does not cover is the
-#: ``1fr`` claim below, which is guarded against ``minimal.tcss`` by
-#: ``test_exactly_one_pool4_child_per_column_carries_the_fr``.
+#: ``1fr`` claim above, which is guarded against ``minimal.tcss`` by
+#: ``test_the_pool4_rail_has_one_floored_fr_and_the_left_column_none``
+#: (``test_exactly_one_pool4_child_per_column_carries_the_fr`` until
+#: 2026-09-14).
 POOL4_LEFT_ID = "surf-pool4-left"
 
 #: The POOL4 body's right rail: **HATCHES over sIMD VAULT**.
@@ -1461,7 +1667,9 @@ POOL4_LEFT_ID = "surf-pool4-left"
 #: fixed line count on purpose** -- the opposite of the rule the left column
 #: and both other bodies follow. A ``1fr`` child shrunk below its content
 #: loses those rows silently unless it scrolls inside itself, and of this
-#: body's five panels only POOL4 FLOW does. VAULT's nine lines and blank are
+#: body's four panels none does (POOL4 FLOW did, until it left the body on
+#: 2026-09-14 -- which is why the left column now has no ``1fr`` at all, see
+#: :data:`POOL4_LEFT_ID`). VAULT's nine lines and blank are
 #: a constant, so ``min-height: 10`` is both its floor and its ceiling and it
 #: cannot be cut at any height. HATCHES is ``auto`` above it for the same
 #: reason inverted: it is the panel that would actually be cut, and a cut
@@ -1552,11 +1760,13 @@ POOL4_USER_RAIL_ID = "surf-pool4-user-rail"
 #: leaderboard that moved in here prints as many rows as it did in the top
 #: row. :data:`SURF_POOL4_USER_FULL_LAYOUT_ROWS` records what that cost.
 #:
-#: ``SurfPool4Flow``, which this row used to hold, is still the one widget
-#: class mounted twice on this screen -- it renders in the row above and in
-#: the ``p`` body, reused rather than copied (PRD §6.4) -- and the top row's
-#: seam is ``1fr:1fr`` so that panel still needs no scoped width override:
-#: the rule it already has in both CSS copies is the rule it wants there.
+#: ``SurfPool4Flow``, which this row used to hold, renders in the row above
+#: and nowhere else. It was the one widget class mounted twice on this screen
+#: -- here and in the ``p`` body, reused rather than copied (PRD §6.4) --
+#: until 2026-09-14, when the owner removed the ``p`` body's copy as a
+#: duplicate. The top row's seam is ``1fr:1fr``, so that panel still needs no
+#: scoped width override: the one unscoped rule in both CSS copies is the
+#: rule it wants there.
 POOL4_USER_BOTTOM_ID = "surf-pool4-user-bottom"
 
 
@@ -1779,8 +1989,13 @@ class SurfScreen(RefreshGuard, Screen):
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
         Binding("l", "toggle_launchpad", "Launchpad", show=False),
-        Binding("p", "toggle_pool4", "Pool4", show=False),
-        Binding("4", "toggle_pool4_user", "Pool4 market", show=False),
+        # `e` for EXPERIMENTAL (2026-09-15): the owner took the POOL4 protocol
+        # body out of the status hint and asked to keep it reachable under
+        # `e`. It was `p` from 2026-09-01; `p` is unbound now. Comments across
+        # this module still say "the `p` body" -- that is MODE_POOL4, the body
+        # this key opens, and the internal names did not change with the key.
+        Binding("e", "toggle_pool4", "Pool4 (experimental)", show=False),
+        Binding("4", "toggle_pool4_user", "Pool4", show=False),
         Binding("escape", "show_dashboard", show=False),
     ]
 
@@ -1827,7 +2042,18 @@ class SurfScreen(RefreshGuard, Screen):
     #: still reaches a pixel, and ``4 market`` is the half that shortens if a
     #: fourth ever has to fit -- ``l launchpad`` does not, because the
     #: app-level acceptance test greps for that contiguous string.
-    KEY_HINTS = "[dim]l launchpad · p pool4 · 4 market[/]"
+    #:
+    #: **2026-09-15: two segments again, ``l launchpad · 4 pool4``.** The
+    #: owner asked for ``p pool4`` gone from the bottom line and for ``4
+    #: market`` to read ``4 pool4``. The protocol body is still reachable, under
+    #: ``e`` for experimental, and is deliberately not advertised here. The
+    #: ``4`` body keeps its internal names (``MODE_POOL4_USER``,
+    #: ``SurfPool4UserHero``) and its docs name, POOL4 MARKET. The hint names
+    #: the key, and ``pool4`` is what that key now opens on the bar. The run is
+    #: still one markup run and still read back off composited output. It is
+    #: eleven columns shorter than the three-part hint, so it fits wherever
+    #: that one did.
+    KEY_HINTS = "[dim]l launchpad · 4 pool4[/]"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "surf-refresh"
@@ -2030,6 +2256,18 @@ class SurfScreen(RefreshGuard, Screen):
      * stop. 6 is LAUNCHPAD ACTIVITY's title + blank + four rows; 5 is
      * BURNKEEPERS' title + blank + the three burnkeeper rows the sweep has
      * ever returned.
+     *
+     * 2026-09-15: THE LEFT COLUMN HAS TWO GROWING CHILDREN NOW, AND THE ROWS
+     * MOVED TO THE COINS. The owner asked for LAUNCHPAD COINS taller and
+     * LAUNCHPAD ACTIVITY shorter, with a blank row between them. COINS is
+     * `2fr` against ACTIVITY's `1fr`. COINS is floored at 13 (the ten rows it
+     * always had at the pin) and capped at 23 (twenty coins plus title,
+     * blank and header), so past that ceiling every row goes to ACTIVITY.
+     * Its `margin: 0 0 1 0` is the blank row. The table stays `auto` and
+     * `SurfLaunchpadCoins` draws only the coins that fit its laid-out height,
+     * because a table that scrolls inside itself paints a scrollbar that
+     * takes columns, and that was measured cutting the header at the width
+     * pin. Both pins held; `SURF_LAUNCHPAD_FULL_LAYOUT_ROWS` has the sweep.
      */
     SurfScreen #surf-launchpad-body {
         height: 1fr;
@@ -2045,8 +2283,11 @@ class SurfScreen(RefreshGuard, Screen):
     }
     SurfScreen SurfLaunchpadCoins {
         width: 1fr;
-        height: auto;
+        height: 2fr;
+        min-height: 13;
+        max-height: 23;
         padding: 0 1;
+        margin: 0 0 1 0;
     }
     SurfScreen SurfLaunchpadCoins > DataTable {
         height: auto;
@@ -2093,42 +2334,46 @@ class SurfScreen(RefreshGuard, Screen):
      *
      * THE SEAM IS `1fr:1fr`, MEASURED FOR THIS BODY AND NOT INHERITED. It is
      * deliberately not the `l` body's 2:1 and not the other two rows' 7:6.
-     * This body balances a fitted `RichLog` (POOL4 FLOW, needing 53 screen
-     * columns) on the left against a rail whose widest need is HATCHES' 50
-     * -- and 1:1 hands the rail 53, three columns of margin on a panel whose
-     * `‹ widen` is appended to a title and is therefore the first marker a
-     * narrow panel gives up. The left column has to be the binder, because
-     * POOL4 FLOW writes `‹ widen` into its own log body and never goes
-     * quiet. `SURF_POOL4_FULL_LAYOUT_COLUMNS` carries the full per-seam
-     * table, re-run after the mainnet rebalance moved every panel.
+     * It was chosen when a fitted `RichLog` (POOL4 FLOW, 53 screen columns)
+     * bound the left column, which bought the rail three columns of margin
+     * on a panel whose `‹ widen` is appended to a title. POOL4 FLOW left
+     * this body on 2026-09-14 (the `4` body's RECENT FLOW shows the same
+     * rows). The left column now needs THE RATCHET's 45 and the rail binds
+     * at HATCHES' 50 with zero margin: 99 columns, re-swept, with HATCHES
+     * still marking at every width below. The seam was not re-cut.
+     * `SURF_POOL4_FULL_LAYOUT_COLUMNS` carries the re-sweep and the old
+     * per-seam table.
+     *
+     * The `SurfPool4Flow` rule below gained `margin: 0 0 1 0` on 2026-09-15:
+     * the blank row between RECENT FLOW's log and the STAKERS title in the
+     * `4` body, taken out of the panel's own `1fr` height. Both of that
+     * body's pins held (`SURF_POOL4_USER_FULL_LAYOUT_ROWS`).
      *
      * BOTH columns scroll and BOTH carry `scrollbar-gutter: stable`, for
      * `#surf-launchpad-left`/`#curator-right-rail`'s reason: a `Vertical`
      * defaults to `overflow: hidden hidden`, and without the reserved gutter
      * this layout's WIDTH requirement would become a function of its HEIGHT.
      *
-     * EXACTLY ONE `1fr` CHILD PER COLUMN, EACH FLOORED -- AND THE TWO COLUMNS
-     * PICK THEIRS BY DIFFERENT RULES ON PURPOSE. A `1fr` child cannot
-     * overflow a scroll container, it SHRINKS, so one given fewer rows than
-     * its content loses them with no scrollbar and no trace UNLESS it scrolls
-     * inside itself. Only POOL4 FLOW does (it is a `RichLog`), so it takes
-     * the left column's `1fr` at a floor of 6 -- exactly like LAUNCHPAD
-     * ACTIVITY next door. That 6 was "title, legend note, four rows" until
-     * 2026-09-12; the blank row the title now carries (`margin: 0 0 1 0`,
-     * unscoped in the widget's own DEFAULT_CSS since that date) comes out of
-     * the log, so at the floor it is title, BLANK, note, three rows. The
-     * floor was deliberately NOT raised to 7 to buy the fourth row back:
-     * that was measured and it takes `SURF_POOL4_FULL_LAYOUT_ROWS` from 45
-     * to 46, and a `RichLog` row is behind the panel's own scrollbar rather
-     * than lost. The rail's `1fr` goes to sIMD VAULT instead, which is the
-     * panel there with a FIXED line count: `min-height: 10` is both its
-     * floor and its ceiling, so it can never be cut -- and since it took the
-     * same blank row it now fills those ten EXACTLY, with nothing spare. HATCHES is `auto` beside it, because its height answers
-     * to the producer (ten rows with no levers, twenty at the ten emitted
-     * today, twenty-two at the widget's own cap) and a floored `1fr` version
-     * of it would silently cut rows in the narrow window where the column
-     * does not yet scroll. THE SPLIT and THE RATCHET are `auto` on the left
-     * for the same reason. See `SURF_POOL4_FULL_LAYOUT_ROWS`.
+     * ONE FLOORED `1fr` CHILD IN THE RAIL AND NONE ON THE LEFT, SINCE
+     * 2026-09-14. A `1fr` child cannot overflow a scroll container, it
+     * SHRINKS, so one given fewer rows than its content loses them with no
+     * scrollbar and no trace UNLESS it scrolls inside itself. POOL4 FLOW did
+     * (it is a `RichLog`), and it carried the left column's `1fr` at a floor
+     * of 6 until the owner removed it from this body as a duplicate of the
+     * `4` body's RECENT FLOW. Neither panel left in that column scrolls
+     * inside itself, so THE SPLIT and THE RATCHET are both `auto` and the
+     * column takes no `1fr` at all: its spare rows are blank at its foot,
+     * and too few rows make the column scroll, which `‹ taller` reports.
+     * The rail's `1fr` goes to sIMD VAULT, the panel there with a FIXED line
+     * count: `min-height: 10` is both its floor and its ceiling, so it can
+     * never be cut -- and since it took the repo-wide blank row under its
+     * title it fills those ten EXACTLY, with nothing spare. HATCHES is `auto`
+     * beside it, because its height answers to the producer (ten rows with no
+     * levers, twenty at the ten emitted today, twenty-two at the widget's own
+     * cap) and a floored `1fr` version of it would silently cut rows in the
+     * narrow window where the column does not yet scroll. The `SurfPool4Flow`
+     * rule below now styles only the `4` body's instance and its values did
+     * not move. See `POOL4_LEFT_ID` and `SURF_POOL4_FULL_LAYOUT_ROWS`.
      */
     SurfScreen #surf-pool4-body {
         height: 1fr;
@@ -2153,6 +2398,7 @@ class SurfScreen(RefreshGuard, Screen):
         height: 1fr;
         min-height: 6;
         padding: 0 1;
+        margin: 0 0 1 0;
     }
     SurfScreen #surf-pool4-rail {
         width: 1fr;
@@ -2380,7 +2626,9 @@ class SurfScreen(RefreshGuard, Screen):
             # table is capped at ten rows, so it no longer has spare rows to
             # hold -- LAUNCHPAD ACTIVITY takes them, which is the currency a
             # feed actually spends. Same trade as the rail's, made the other
-            # way round.
+            # way round. (Reversed in part on 2026-09-15: COINS is the `2fr`
+            # share up to twenty coins and ACTIVITY the `1fr`, at the owner's
+            # request -- see `SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`.)
             with Vertical(id=LAUNCHPAD_LEFT_ID):
                 yield SurfLaunchpadCoins()
                 yield SurfLaunchpadActivity()
@@ -2395,35 +2643,37 @@ class SurfScreen(RefreshGuard, Screen):
         # beat later. The hero is outside this container too and survives both
         # swaps.
         #
-        # THE COLUMNS ARE SPLIT TO BALANCE THEIR HEIGHTS, NOT BY WHAT THE
-        # PANELS ARE ABOUT. At the worst payload each column carries 33 rows
-        # -- left: SPLIT 15 + RATCHET 10 + FLOW's floor 6 + two margins;
-        # rail: HATCHES 22 + VAULT's floor 10 + one margin -- and that
-        # balance IS the height pin. The pre-mainnet arrangement (HATCHES
-        # here, SPLIT/RATCHET/VAULT in the rail) put 38 rows in the rail
-        # against 20 here and needed 49.
+        # THE COLUMNS WERE SPLIT TO BALANCE THEIR HEIGHTS, NOT BY WHAT THE
+        # PANELS ARE ABOUT, and since 2026-09-14 they no longer balance. At
+        # the worst payload the rail carries 34 rows (HATCHES 23 + VAULT's
+        # floor 10 + one margin) and IS the height pin. The left column
+        # carried 34 too until POOL4 FLOW left this body (the owner: the `4`
+        # body's RECENT FLOW already shows the same rows). It now carries 28,
+        # SPLIT 15 + RATCHET 11 + two margins, so the pin held at 45. The
+        # pre-mainnet arrangement (HATCHES here, SPLIT/RATCHET/VAULT in the
+        # rail) put 38 rows in the rail against 20 here and needed 49.
         #
-        # Each column's `1fr` goes to the child it is safe to shrink, and the
-        # two columns reach opposite answers. Left: FLOW, because a `RichLog`
-        # scrolls inside itself, so rows go behind its own scrollbar rather
-        # than off the layout. Rail: VAULT, whose ten lines are a constant so
-        # `min-height: 10` is floor and ceiling both -- the one thing that
-        # must NOT take it is HATCHES, the panel whose height answers to the
-        # lever list, because a shrunken `Static` loses rows with no
-        # scrollbar and no trace.
+        # The rail's `1fr` goes to VAULT, whose ten lines are a constant, so
+        # `min-height: 10` is floor and ceiling both; the one thing that must
+        # NOT take it is HATCHES, whose height answers to the lever list,
+        # because a shrunken `Static` loses rows with no scrollbar and no
+        # trace. The left column has NO `1fr` now: FLOW carried it because a
+        # `RichLog` scrolls inside itself, and neither panel left here does.
+        # Its spare rows are blank at the column's foot -- see
+        # `POOL4_LEFT_ID`.
         #
         # Measured against the alternative rather than asserted: see
         # `SURF_POOL4_FULL_LAYOUT_ROWS`, which records the arrangement this
         # replaced and what it cost.
         #
         # This comment described the pre-swap arrangement until the W3
-        # follow-up and the pre-mainnet one until the rebalance; the three
-        # lines directly beneath it are the authority.
+        # follow-up, the pre-mainnet one until the rebalance, and a three-panel
+        # left column until 2026-09-14; the lines directly beneath it are the
+        # authority.
         with Horizontal(id=POOL4_BODY_ID):
             with Vertical(id=POOL4_LEFT_ID):
                 yield SurfPool4Split()
                 yield SurfPool4Ratchet()
-                yield SurfPool4Flow()
             with Vertical(id=POOL4_RAIL_ID):
                 yield SurfPool4Hatches()
                 yield SurfPool4Vault()
@@ -2434,13 +2684,12 @@ class SurfScreen(RefreshGuard, Screen):
         # them it is a `Vertical` of two rows, because it follows the BAKERY
         # template (PRD section 4) rather than the `l` body's shape.
         #
-        # `SurfPool4Flow` below is the SAME CLASS the `p` body mounts, a
-        # second instance rather than a second module (PRD section 6.4). That
-        # is the reason `_do_refresh` dispatches RECENT FLOW with
-        # `self.query(SurfPool4Flow)` rather than `query_one`: one statement,
-        # one payload, both panels -- two instances that could be handed
-        # different rows is precisely the divergence a copied module would
-        # have made possible.
+        # `SurfPool4Flow` below is this screen's ONLY instance of the class
+        # since 2026-09-14. It was the `p` body's panel mounted a second time
+        # (PRD section 6.4: a second instance, never a second module) until
+        # the owner removed the `p` body's copy as a duplicate of this one.
+        # `_do_refresh` still dispatches it with `self.query(SurfPool4Flow)`,
+        # so a second mount would be handed the same rows without an edit.
         with Vertical(id=POOL4_USER_BODY_ID):
             with Horizontal(id=POOL4_USER_MIDDLE_ID):
                 # The `p` body mounts this same class untouched, two blocks
@@ -2581,11 +2830,15 @@ class SurfScreen(RefreshGuard, Screen):
         self._show_mode()
 
     def action_toggle_pool4(self) -> None:
-        """``p`` -- swap the dashboard body for the POOL4 panels.
+        """``e`` -- swap the dashboard body for the POOL4 panels (experimental).
 
-        Idempotent on ``action_toggle_launchpad``'s contract: a second ``p``
+        Bound to ``p`` from 2026-09-01 until 2026-09-15, when the owner took
+        it off the status hint and moved it to ``e``. It is not advertised on
+        the bar.
+
+        Idempotent on ``action_toggle_launchpad``'s contract: a second ``e``
         returns to the dashboard rather than doing nothing, so the key is
-        also its own way back. Pressing ``p`` from MODE_LAUNCHPAD switches
+        also its own way back. Pressing ``e`` from MODE_LAUNCHPAD switches
         bodies directly -- there is no need to ``escape`` out of one view
         before entering the other, and requiring it would be the only place
         on this screen where a view key did nothing.
@@ -2607,11 +2860,13 @@ class SurfScreen(RefreshGuard, Screen):
         key did nothing.
 
         A digit key, and verified free rather than assumed: this screen binds
-        ``r``/``l``/``p``/``escape`` and the app binds ``q``/``t``/``tab``/``m``.
+        ``r``/``l``/``e``/``escape`` (``p`` until 2026-09-15) and the app binds
+        ``q``/``t``/``tab``/``m``.
         Digits are an established per-screen pattern here (curator's filter
         presets, ``frenpet_full``'s sub-views) and neither of those is
         app-level, so neither collides. ``4`` reads off the protocol's own
-        name where ``u`` or ``i`` would have collided with ``p``'s meaning.
+        name where ``u`` or ``i`` would have read as the protocol body's key
+        (``p`` when this was written, ``e`` since 2026-09-15).
         """
         if self._mode == MODE_POOL4_USER:
             self.action_show_dashboard()
@@ -3048,7 +3303,7 @@ class SurfScreen(RefreshGuard, Screen):
         # `test_no_pool4_widget_needs_a_kwarg_alias`.
         #
         # `pool4_as_of_hhmm` is the POOL4 tier's own slower clock
-        # (`surf_manager._pool4_payload`), shared by all five panels and
+        # (`surf_manager._pool4_payload`), shared by every pool4 panel and
         # deliberately not the title bar's faster one: these numbers can be
         # half an hour older than it.
         try:
@@ -3128,12 +3383,15 @@ class SurfScreen(RefreshGuard, Screen):
         except Exception as exc:
             logger.debug("Failed to update SurfPool4Split: %s", exc)
 
-        # RECENT FLOW is mounted TWICE -- once in the `p` body's left column
-        # and once in the `4` body's bottom row (PRD section 6.4: reuse the
-        # module, never copy it). `query`, not `query_one`: one statement
-        # feeds both, so the two panels cannot be handed different rows, and
-        # a third mount tomorrow is fed without this block being touched.
-        # `query_one` would raise `TooManyMatches` here and blank both.
+        # RECENT FLOW is mounted ONCE, in the `4` body's top row. It was
+        # mounted twice (PRD section 6.4: reuse the module, never copy it)
+        # until 2026-09-14, when the owner removed the `p` body's copy as a
+        # duplicate of this one. The loop stays `query`, not `query_one`:
+        # with one instance it costs nothing, and a second mount tomorrow is
+        # fed the same rows without this block being touched. (This comment
+        # used to say `query_one` would raise `TooManyMatches` -- it does
+        # not in this Textual version, it returns the first match silently;
+        # see CLAUDE.md and followups F8.)
         try:
             for _flow in self.query(SurfPool4Flow):
                 _flow.update_data(

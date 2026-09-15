@@ -411,11 +411,15 @@ def test_truncate_flattens_newlines_and_marks_the_cut(calldata: dict):
     assert sig._truncate("a\nb\n  c") == "a b c"
 
 
-def test_short_addr_matches_the_prd_poisoning_format():
-    """0x + first 8 + … + last 6 (PRD §4) — enough to be checked, never trusted."""
-    assert sig._short_addr("0xd6C6d48e8ff38DD7F242E34442FBdaA10eCF7A44") == "0xd6C6d48e…CF7A44"
-    assert sig._short_addr("0x8004A169FB4a3325136EB29fA0ceB6D2e539a432") == "0x8004A169…39a432"
-    assert sig._short_addr("0x00") == "0x00"
+def test_no_address_is_shortened_before_the_widget():
+    """PRD §6 (``docs/address_copy_PRD.md``): the whole address reaches the widget.
+
+    This module used to window a deployed contract to ``0x`` + 8 + ``…`` + 6
+    here, so the signals panel received a string it could neither copy nor
+    re-window. The window (still PRD §4's poisoning form) is now the widget's,
+    through ``widgets/address.py``, beside a copy icon that needs the full value.
+    """
+    assert not hasattr(sig, "_short_addr")
 
 
 # ---------------------------------------------------------------------------
@@ -864,7 +868,6 @@ def test_fired_events_survive_a_restart_through_the_returned_baselines():
     )
     assert replayed["sig_post_state"] == "fired"
     assert replayed_advanced["fired"]["post"]["tx_hash"] == LP_POST_TX
-    assert sig._short_addr(None) == ""
 
 
 # --- 2. LP MOVE --------------------------------------------------------------
@@ -1050,7 +1053,9 @@ def test_a_contract_creation_fires():
     }
     state, detail, age = _sig("deploy", _baseline(), _readings(deploy_events=[event]))
     assert state == "fired"
-    assert detail == "new contract 0x8004A169…39a432 · surfsurf.eth"
+    # The whole address: the widget windows it beside its copy icon
+    # (docs/address_copy_PRD.md §6), so nothing shortens it here.
+    assert detail == "new contract 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432 · surfsurf.eth"
     assert age == pytest.approx(120.0)
 
 
@@ -2459,3 +2464,42 @@ def test_burn_ready_still_speaks_when_the_amount_is_unread():
     state, detail, _ = _sig("burnready", _baseline(burn_ready=False), read)
     assert state == "fired"
     assert "ready to burn" in detail
+
+
+# -- a persisted fired detail is bounded (final review F6) ---------------------------
+
+
+def test_a_fired_detail_is_capped_at_persist_time_and_keeps_addresses_whole():
+    name = "x" * 5000
+    out, advanced = sig.build_signals(
+        _baseline(), _readings(deploy_events=[{**FRESH_ACTION, "label": f"{name}()"}]), NOW
+    )
+    persisted = advanced["fired"]["deploy"]["detail"]
+    assert len(persisted) == sig.FIRED_DETAIL_TEXT_MAX + 1 and persisted.endswith("…"), persisted[-20:]
+    assert persisted.startswith("action xxx")
+    assert out["sig_deploy_detail"] == persisted
+
+    contract = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+    event = {"ts": NOW - 120.0, "tx_hash": "0x" + "c0" * 32, "kind": "deploy",
+             "label": contract, "wallet_label": "w" * 5000}
+    _, advanced = sig.build_signals(_baseline(), _readings(deploy_events=[event]), NOW)
+    persisted = advanced["fired"]["deploy"]["detail"]
+    assert f"new contract {contract} · www" in persisted, "the address must survive whole"
+    assert len(persisted) <= sig.FIRED_DETAIL_TEXT_MAX + len(contract) + 1
+
+
+def test_a_hand_edited_fired_detail_is_capped_on_load_with_its_address_intact():
+    contract = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+    detail = "y" * 5000 + " " + contract + " " + "z" * 50
+    base = _baseline(fired={"deploy": {"ts": NOW - 60.0, "detail": detail}})
+    out, advanced = sig.build_signals(base, _readings(), NOW)
+    shown = out["sig_deploy_detail"]
+    assert contract in shown
+    assert "z" not in shown, "text after the cap is dropped, not the address"
+    assert shown == "y" * sig.FIRED_DETAIL_TEXT_MAX + "…" + contract
+    assert advanced["fired"]["deploy"]["detail"] == shown
+
+
+def test_a_short_detail_is_never_touched():
+    detail = "new contract 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432 · surfsurf.eth"
+    assert sig._cap_detail(detail) == detail

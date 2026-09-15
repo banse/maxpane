@@ -63,7 +63,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_imd
 
 __all__ = [
@@ -86,7 +86,14 @@ WIDEN_HINT = "‹ widen"
 #: before it would have to scroll.
 MAX_ROWS = 8
 
-_WALLET_COLS = 11    # `0x047F…54B7` -- the coin table's own window
+#: `0x047F…54B7` -- the coin table's own window, through
+#: ``widgets/address.short_address``. Already ``MIN_SHORT_COLS``.
+_WALLET_WINDOW_COLS = 11
+#: The wallet cell as painted: the window plus its copy icon. **Grown, not
+#: shortened** (2026-09-14, ``docs/address_copy_PRD.md`` §5): this panel's
+#: text budget is 41 at ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` (138) against
+#: a full row of 34, so the icon came out of slack and moved no pin.
+_WALLET_COLS = _WALLET_WINDOW_COLS + ICON_COLS                      # 13
 _IMD_COLS = 8        # `fmt_imd`: "15.7K", "29.98", "0.00"
 _ETH_COLS = 8        # "0.000028"
 _BURNS_COLS = 2
@@ -94,12 +101,12 @@ _GAP = 1
 
 FULL_WIDTH = (
     _WALLET_COLS + _GAP + _IMD_COLS + _GAP + _ETH_COLS + _GAP + _BURNS_COLS
-)                                                                    # 32
+)                                                                    # 34
 #: One tier below full: the burn COUNT goes, because it is the only cell
 #: whose absence costs a reader the least -- the ranking key and the cost
 #: both stay. Shedding a column is this repo's answer to a value that does
 #: not fit; widening the rail's seam is not.
-COMPACT_WIDTH = FULL_WIDTH - _GAP - _BURNS_COLS                      # 29
+COMPACT_WIDTH = FULL_WIDTH - _GAP - _BURNS_COLS                      # 31
 
 #: A complete ``[...]`` bracket run with no nested bracket -- ``launchpad.
 #: py``'s own ``_TAG_LIKE``, duplicated here rather than imported: that
@@ -120,29 +127,25 @@ def _strip_tags(value: object) -> str:
     return " ".join(stripped.split())
 
 
-def _short_addr(value: object) -> str:
-    """``0x`` + first 4 hex + ``…`` + last 4 -- this panel's own 11-column
-    anti-poisoning window, identical to ``launchpad.py``'s ``_short_addr``
-    (duplicated rather than imported -- see the note on :data:`_TAG_LIKE`).
-    """
-    s = _strip_tags(value)
-    if not s:
-        return DASH
-    if len(s) <= _WALLET_COLS:
-        return s
-    return f"{s[:6]}…{s[-4:]}"
+def _wallet_cell(value: object, known: bool) -> Text:
+    """The wallet cell, padded to :data:`_WALLET_COLS` for column alignment,
+    styled cyan when ``known`` and dim otherwise -- never a friendly label
+    (this row shape carries no label field).
 
-
-def _wallet_cell(value: object, known: bool) -> str:
-    """The wallet window, padded to :data:`_WALLET_COLS` for column
-    alignment, styled cyan when ``known`` and dim otherwise -- never a
-    friendly label (this row shape carries no label field). Pad raw,
-    escape after -- padding an escaped string misaligns it.
+    A valid address is the 11-cell window plus its copy icon
+    (``widgets/address.address_text``), and the icon copies the whole
+    address. Anything else gets no icon and is fitted to the cell on cells
+    (the helper's own fit, with a visible ``…``). Built as ``Text``, never
+    markup: nothing here is parsed, so there is nothing to escape.
     """
-    window = _short_addr(value)
-    padded = f"{window:<{_WALLET_COLS}}"
     colour = "cyan" if known else "dim"
-    return f"[{colour}]{safe_markup(padded)}[/]"
+    s = _strip_tags(value)
+    if is_address(s):
+        cell = address_text(s, width=_WALLET_WINDOW_COLS, style=colour)
+    else:
+        cell = address_text(s or DASH, width=_WALLET_COLS, style=colour)
+    cell.append(" " * max(_WALLET_COLS - cell.cell_len, 0))
+    return cell
 
 
 def _eth_cell(value: object) -> str:
@@ -183,13 +186,19 @@ def _row_fields(
         return None
 
 
-def _row_markup(row: object, tier: str) -> str | None:
+def _row_text(row: object, tier: str) -> Text | None:
     """Format one burnkeeper row at ``tier``; ``None`` drops it.
 
-    Every cell here is fixed-width (a windowed address, a compact numeric
-    cell, a bare digit count), so -- exactly as
-    ``launchpad_activity._row_markup`` notes for its own row -- there is no
+    Every cell here is fixed-width (a windowed address plus its icon, a
+    compact numeric cell, a bare digit count), so -- exactly as
+    ``launchpad_activity._row_text`` notes for its own row -- there is no
     per-row negotiation once the tier has picked which whole fields appear.
+
+    Built as ``Text`` from the first cell on, never as a markup string: the
+    wallet cell carries the copy icon's click action, and the numeric cells
+    are this module's own formatting, so nothing on the row is ever parsed
+    and no ``Static.update()`` can raise on it inside the message pump
+    (``SurfFeed._row_text``'s concern, answered without a parse at all).
     """
     fields = _row_fields(row)
     if fields is None:
@@ -197,7 +206,6 @@ def _row_markup(row: object, tier: str) -> str | None:
     try:
         wallet_raw, known, imd, eth, burns = fields
         cells = [
-            _wallet_cell(wallet_raw, known),
             f"{fmt_imd(imd):>{_IMD_COLS}}",
             f"{_eth_cell(eth):>{_ETH_COLS}}",
         ]
@@ -207,23 +215,11 @@ def _row_markup(row: object, tier: str) -> str | None:
             except (TypeError, ValueError):
                 burns_str = DASH
             cells.append(f"{burns_str:>{_BURNS_COLS}}")
-        return (" " * _GAP).join(cells)
+        line = _wallet_cell(wallet_raw, known)
+        line.append(" " * _GAP + (" " * _GAP).join(cells))
+        return line
     except Exception:
         # A single malformed row must never take down the panel.
-        return None
-
-
-def _row_text(row: object, tier: str) -> Text | None:
-    """``(row markup) -> Text``, parsed here inside its own ``try`` so a
-    parse failure degrades to a skipped row rather than reaching
-    ``Static.update()`` as a string (``SurfFeed._row_text``'s pattern).
-    """
-    line = _row_markup(row, tier)
-    if line is None:
-        return None
-    try:
-        return Text.from_markup(line)
-    except Exception:
         return None
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -18,6 +19,7 @@ from maxpane_dashboard.analytics.frenpet_signals import (
 )
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.frenpet import (
     ActionQueue,
     AggregateStats,
@@ -478,25 +480,28 @@ class FrenPetFullScreen(RefreshGuard, Screen):
         recent_attacks = data.get("recent_attacks", [])
 
         # -- Header --------------------------------------------------------
+        # Built as a Text, never a markup string: Static.update() defers
+        # Text.from_markup into the message pump, and the icon's click
+        # action lives in a Style that only survives outside markup parsing.
         header = self.query_one("#wallet-header", Static)
         if not managed_pets:
             wallet = getattr(self._manager, "_wallet_address", "")
             if wallet:
-                short = f"{wallet[:6]}...{wallet[-4:]}" if len(wallet) > 10 else wallet
-                header.update(f"[dim]{short} — no pets found[/]")
+                line = address_text(wallet, width=17, style="dim")
+                line.append(" — no pets found", style="dim")
             else:
-                header.update("[dim]No wallet configured[/]")
+                line = Text("No wallet configured", style="dim")
+            header.update(line)
             return
 
         owner = managed_pets[0].owner
-        short_addr = (
-            f"{owner[:6]}...{owner[-4:]}" if len(owner) > 10 else owner
-        )
         pet_count = len(managed_pets)
-        header.update(
-            f"WALLET: {short_addr}"
-            f"    [dim]{pet_count} pet{'s' if pet_count != 1 else ''}[/]"
+        line = Text("WALLET: ")
+        line.append_text(address_text(owner, width=17))
+        line.append(
+            f"    {pet_count} pet{'s' if pet_count != 1 else ''}", style="dim"
         )
+        header.update(line)
 
         # -- Pet cards -----------------------------------------------------
         pet_row = self.query_one("#wallet-pet-row", Horizontal)

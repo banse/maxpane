@@ -89,11 +89,13 @@ import re
 from decimal import ROUND_HALF_UP, Decimal
 
 from rich.cells import cell_len
+from rich.text import Text
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
@@ -235,6 +237,16 @@ COINS_WIDEN_HINT = "‹ widen"
 #: header actually reaches the compositor whole, which is what ties the
 #: number to the real rendered table instead of to itself.
 #: Re-sweep -- never re-derive -- if a column is ever added or removed again.
+#:
+#: **2026-09-14: NAME 18 -> 16 pays for CREATOR's copy icon, and 89 holds.**
+#: Every surf address gained a ``⧉`` (``docs/address_copy_PRD.md``) and the
+#: icon may not move a pin. CREATOR's 11-cell window cannot shorten, and
+#: moving two of ``BURNED``'s cells to it -- same column sum, same virtual
+#: width -- still cut the header to ``BURN`` at 89 (swept 87-91), so NAME gave
+#: the two cells instead (:data:`_NAME_COLS`, :data:`_ADDR_COLS`). Re-swept in
+#: situ with the trade in place, starting below the pin: widget alone at
+#: 84-96, ``BURNED`` cut through 88 and whole from 89; the real ``l`` body at
+#: 134-140, whole from ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` (138).
 _TABLE_FULL_WIDTH = 89
 
 #: Defensive re-cap.  The manager already caps ``launchpad_coins`` at
@@ -245,7 +257,20 @@ _TABLE_FULL_WIDTH = 89
 #: 20 -> 10 (2026-08-25): the panel gave half its column to LAUNCHPAD
 #: ACTIVITY, and ten rows is what is left. The client's limit moved with it
 #: -- see ``test_the_render_limit_matches_the_widget_cap``.
-MAX_COIN_ROWS = 10
+#:
+#: **10 -> 20 (2026-09-15), and the trade runs the other way.** The owner's
+#: screenshot showed ten coins over an ACTIVITY feed with a lot of empty
+#: space, and asked for the rows to go to COINS. The panel is now the
+#: column's ``2fr`` share, capped at its full twenty-coin content, and it draws
+#: **as many of these twenty as its laid-out height holds**
+#: (:meth:`SurfLaunchpadCoins._rows_that_fit`). At the ``l`` body's 31-row pin
+#: that is the same ten as before.
+MAX_COIN_ROWS = 20
+
+#: Rows of the panel that are not coin rows: the title, the blank under it and
+#: the table's header. :meth:`SurfLaunchpadCoins._rows_that_fit` subtracts
+#: them from the panel's height.
+_COIN_CHROME_ROWS = 3
 
 #: Column budget, in rendered columns.  Ticker/name width is no longer a
 #: security control (:func:`_sanitize` strips hostile bracket content before
@@ -260,13 +285,31 @@ MAX_COIN_ROWS = 10
 #: because a truncated address is an honest short form and there was no
 #: honest way to shrink SWAPS ALL itself (it is already a bare integer).
 _TICKER_COLS = 8
-_NAME_COLS = 18
-#: 11, was 17 (``activity.py``'s own ``ADDR_COLS`` still uses the wider
-#: form unchanged -- that panel never needed to pay for a tenth column).
-#: :func:`_short_addr`, not ``_fmt.long_addr``, renders to this width: six
-#: leading characters (``0x`` + 4 hex) + an ellipsis + four trailing, an
-#: honest short form of the same anti-poisoning idea at half the window.
-_ADDR_COLS = 11
+#: 16, was 18 (2026-09-14): the two cells pay for CREATOR's copy icon -- see
+#: :data:`_ADDR_COLS`. A coin name is attacker-chosen display text that is
+#: already fitted with a visible ``…``; it is the value on this row with
+#: slack, where the address is at its narrowest honest form.
+_NAME_COLS = 16
+#: The CREATOR window: 11, was 17 (``activity.py``'s own ``ADDR_COLS`` still
+#: uses the wider form unchanged -- that panel never needed to pay for a
+#: tenth column). ``widgets/address.short_address`` renders it as six leading
+#: characters (``0x`` + 4 hex) + an ellipsis + four trailing, an honest short
+#: form of the same anti-poisoning idea at half the window. It is the
+#: helper's ``MIN_SHORT_COLS``: there is no narrower honest window.
+_ADDR_WINDOW_COLS = 11
+#: The CREATOR **column**: the window plus its copy icon
+#: (``widgets/address.ICON_COLS``) -- 13, was 11 (2026-09-14,
+#: ``docs/address_copy_PRD.md`` §5).
+#:
+#: **Paid for by NAME 18 -> 16**, not by the window and not by the pin. The
+#: window cannot give the icon two cells -- it is already the narrowest honest
+#: form -- and the table had none spare at :data:`_TABLE_FULL_WIDTH`; see
+#: :data:`_BURNED_COLS` for the column that looked spare and was not. The coin
+#: name is the value on the row with slack (attacker-chosen display text,
+#: already fitted with a visible ``…``), so it gave two cells, which is the
+#: terminal-layout rule "shorten a value rather than raise a pin". The column
+#: sum stays 75 and the pin holds -- re-swept, see :data:`_TABLE_FULL_WIDTH`.
+_ADDR_COLS = _ADDR_WINDOW_COLS + ICON_COLS
 _AGE_COLS = 4
 #: ``MCAP`` on screen: ``$23.4K``. Six columns is the widest this formatter
 #: produces below a quadrillion dollars, and it is FOUR narrower than the
@@ -281,8 +324,14 @@ _SWAPS_COLS = 6
 #: What pays
 #: for this column is CREATOR's 17 -> 11 shrink above, not a widened total.
 _SWAPS_ALL_COLS = 6
+#: ``BURNED`` on screen. Nine, and **not** slack, though it looks like it:
+#: ``fmt_compact`` never paints more than seven here, but the table's virtual
+#: width (93) already exceeds its panel at :data:`_TABLE_FULL_WIDTH`, and the
+#: cut lands in these right-hand cells. Measured 2026-09-14: BURNED 9 -> 7
+#: with CREATOR 11 -> 13 kept the virtual width at 93 and still cut the
+#: header to ``BURN`` at 89. NAME paid instead; see :data:`_ADDR_COLS`.
 _BURNED_COLS = 9
-# 8+18+11+4+6+7+6+6+9 = 75
+# 8+16+13+4+6+7+6+6+9 = 75
 
 
 def _ticker_cell(ticker: object) -> str:
@@ -295,44 +344,32 @@ def _name_cell(name: object) -> str:
     return f"[dim]{cleaned}[/]" if cleaned else f"[dim]{DASH}[/]"
 
 
-def _short_addr(value: object) -> str:
-    """``0x`` + first 4 hex + ``…`` + last 4 -- this table's own 11-column
-    anti-poisoning window (:data:`_ADDR_COLS`), narrower than
-    ``_fmt.long_addr``'s shared 17-column form.  Kept as a local helper
-    rather than widening ``long_addr``'s own contract with a width
-    parameter: ``activity.py``'s ``ADDR_COLS`` still needs the wider
-    8-hex/6-hex split unchanged, and that call site has no reason to grow a
-    parameter it would never vary.
+def _creator_cell(creator: object, known: bool) -> Text:
+    """The anti-poisoning window (:data:`_ADDR_WINDOW_COLS`), never a friendly
+    label: ``creator_known`` is a bool the manager derives against its own
+    allowlist (Task 1's frozen ``SURF_ROW_KEYS["launchpad_coins"]`` carries no
+    label field alongside it), so this widget has nothing to substitute even
+    when it is ``True`` -- it can only style the raw address, cyan when known,
+    dim otherwise (``activity.py``'s exact convention for ``counterparty``).
 
-    Six leading characters (``0x`` + 4 hex), an ellipsis, four trailing --
-    half of ``long_addr``'s collision-resistance window, but this column
-    lost half its own width to pay for SWAPS ALL (Task 11) and a truncated
-    address is still an honest short form of the same idea, per this
-    repo's "shorten the value, not the constant" rule.
+    ``0x`` + 4 hex + ``…`` + 4 plus the copy icon, through
+    ``widgets/address.address_text`` -- half of the 17-cell
+    collision-resistance window, because this column lost half its own width
+    to pay for SWAPS ALL (Task 11). The icon copies the whole address; NAME
+    paid its two cells (:data:`_ADDR_COLS`). A value that is not an address
+    gets no icon and is fitted to the cell by the same helper, with a
+    visible ``…``.
+
+    A ``Text`` cell rather than a markup string: ``DataTable`` renders a
+    ``Text`` as it is, so the icon's click action survives and nothing
+    third-party is ever parsed.
     """
-    if not value:
-        return DASH
-    s = str(value).strip()
-    if not s:
-        return DASH
-    if len(s) <= _ADDR_COLS:
-        return s
-    return f"{s[:6]}…{s[-4:]}"
-
-
-def _creator_cell(creator: object, known: bool) -> str:
-    """The anti-poisoning window (:func:`_short_addr`, :data:`_ADDR_COLS`),
-    never a friendly label: ``creator_known`` is a bool the manager derives
-    against its own allowlist (Task 1's frozen ``SURF_ROW_KEYS
-    ["launchpad_coins"]`` carries no label field alongside it), so this
-    widget has nothing to substitute even when it is ``True`` -- it can only
-    style the raw address, cyan when known, dim otherwise (``activity.py``'s
-    exact convention for ``counterparty``).
-    """
-    window = _short_addr(creator)
-    escaped = safe_markup(window)
     colour = "cyan" if known else "dim"
-    return f"[{colour}]{escaped}[/]"
+    value = _flatten(creator)
+    if is_address(value):
+        return address_text(value, width=_ADDR_WINDOW_COLS, style=colour)
+    # Not an address: ``address_text`` fits it on cells and adds no icon.
+    return address_text(value or DASH, width=_ADDR_COLS, style=colour)
 
 
 def _round_half_up(value: float, digits: int) -> float:
@@ -506,6 +543,9 @@ class SurfLaunchpadCoins(Vertical):
         # Raw payload, not formatted rows -- kept so a later refresh always
         # starts from the same source the first render did.
         self._payload: dict = {}
+        #: How many coin rows the last render drew room for, so a resize
+        #: re-renders only when that number actually moves.
+        self._rendered_fit: int | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(COINS_TITLE, classes="surf-lpc-title", id="surf-lpc-title")
@@ -558,8 +598,38 @@ class SurfLaunchpadCoins(Vertical):
         size (``self.size.width`` is ``0``), and :meth:`_set_title` treats
         that as "not measured yet" rather than "too narrow", the same
         optimistic reading ``SurfMarket._tier_for`` gives ``width <= 0``.
+
+        It also re-fits the rows (2026-09-15): the number of coins drawn is a
+        function of this panel's height (:meth:`_rows_that_fit`), so a
+        taller or shorter terminal re-renders the table when, and only when,
+        that number moves.
         """
         self._set_title()
+        if self._payload and self._rows_that_fit() != self._rendered_fit:
+            self._render_view()
+
+    def _rows_that_fit(self) -> int:
+        """Coin rows this panel's laid-out height holds, capped at the payload's.
+
+        **Why the table never gets more rows than it can show.** The panel is
+        the left column's ``2fr`` share, so on a short terminal it is shorter
+        than twenty coins. Handed all twenty, its ``DataTable`` would scroll
+        inside itself, and that scrollbar takes columns: measured in situ on
+        2026-09-15, the ``BURNED`` header was cut from 138 to 140 columns at 31
+        rows while this panel's ``‹ widen`` marker was dark. The width pin
+        would have become a function of the height, and the header would have
+        been cut in silence. Drawing only the ranked rows that fit means the
+        table never scrolls and the width need is the same at every height.
+
+        This is the same kind of cut the table has always made: it shows the
+        top of a ranked list whose population the title states (``177
+        coins``). ``height <= 0`` means "not laid out yet" and draws the cap;
+        :meth:`on_resize` re-fits once there is a size.
+        """
+        height = self.size.height
+        if height <= 0:
+            return MAX_COIN_ROWS
+        return max(1, min(MAX_COIN_ROWS, height - _COIN_CHROME_ROWS))
 
     def update_data(
         self, coins=None, coin_count=None, launch_count=None, as_of_hhmm=None,
@@ -779,8 +849,10 @@ class SurfLaunchpadCoins(Vertical):
             table.add_row(f"[yellow]{COINS_UNAVAILABLE}[/]", *([DASH] * 8))
             return
 
+        fit = self._rows_that_fit()
+        self._rendered_fit = fit
         try:
-            usable = list(coins)[:MAX_COIN_ROWS]
+            usable = list(coins)[:fit]
         except TypeError:
             usable = []
 

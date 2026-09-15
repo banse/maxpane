@@ -170,6 +170,7 @@ from maxpane_dashboard.data.curator_list_filters import (
     FilterValidationError,
     empty_filter_values,
     filter_summary,
+    is_custom_nft_fallback_label,
     parse_filter_values,
     parse_nft_collection,
     preset_filter,
@@ -325,9 +326,136 @@ CLUSTERS_ID = "curator-clusters"
 #: lights ``‹ widen`` here at any width (the surf announce-feed precedent),
 #: which is correct and must never be silenced by raising this constant.
 #:
-#: The `l` body's separate composited sweep clears every NFT-aligned column at
-#: **93** for both raw and cleaned tables. It therefore does not alter this
-#: dashboard-layout pin and remains comfortably inside the app-wide 143.
+#: The `l` body's separate composited sweep clears every column at **143**
+#: (the app-wide binder, ``__main__.FULL_LAYOUT_COLUMNS``) for both raw and
+#: cleaned tables, at both a tall and a short terminal (WP6's `_HEIGHTS`).
+#: It therefore does not alter this dashboard-layout pin.
+#:
+#: **Corrected from "93" during the 2026-09-14 fix round on Task 3's
+#: address-copy-icon review.** "93" predated this re-sweep's own method (a
+#: composited, column-by-column measurement rather than an estimate) and
+#: was already wrong for the table's shape it describes: the RAW table's
+#: own DataTable full tier needed **140** content columns before this task
+#: ever touched ``lists.py`` (measured directly off
+#: ``widgets/curator/lists._RAW_TIERS``, git history at ``56a5df6``), which
+#: was already ~143 terminal columns (see the measured table below),
+#: nowhere near 93 -- a stale number nobody had re-swept since the table
+#: grew past it.
+#:
+#: **Paying for the ADDRESS column's copy icon took two attempts, and the
+#: first one shipped a real crop.** Measured, not derived, by running the
+#: `l` view's own ``tests/screens/test_curator_screen.py::_first_list_width``
+#: sweep against each state in turn (every row-kind -- raw/cleaned/filtered
+#: -- gives the same number in every state below; this pin is the
+#: ``filtered`` row's own sweep):
+#:
+#: * **Pre-icon (before this task): 143.** Cited, not re-measured --
+#:   ``git show f33eb59`` was read for reference only, per this round's own
+#:   instruction not to check it out. ``f33eb59``'s own
+#:   ``test_every_list_clears_inside_the_143_column_app_pin`` already
+#:   asserted ``width == 143`` (that file's lines 4889-4893).
+#: * **Icon grown, no trade: 145.** ``_ADDRESS_COLS`` set to the full,
+#:   unwindowed 42 (so ``_ADDRESS_COLS_TOTAL`` is 44) with ``_INDEX_COLS``/
+#:   ``_ENS_COLS`` left at their pre-task values (6/19) -- everything else
+#:   in this constant's own working tree, unmodified. ``_first_list_width``'s
+#:   own sweep (``range(80, 144)``) found no clean width in this state at
+#:   all; extending it to 155 found 145.
+#: * **Now (this pin's own value): 143.** The working tree, unmodified --
+#:   ``test_every_list_clears_inside_the_143_column_app_pin`` is the tripwire.
+#:
+#: 143 → 145 is the icon's real, undisguised cost (``+2``, ``ICON_COLS``) --
+#: **not** 142 → 144, an earlier version of this note that undercounted the
+#: pre-icon baseline by one column in both places it appeared (the RAW
+#: table's own 140-content-column full tier translates to ~143 terminal
+#: columns, not ~142, above). 145, not 144, is also the only number
+#: consistent with the very next paragraph's own "the INDEX cut alone was
+#: not enough": cutting one column from a 144 baseline already lands on
+#: 143, needing no second cut at all -- cutting one from the real 145
+#: lands on 144, still one over, which is exactly why a *second* cut
+#: (``_ENS_COLS``) was needed. Round 1's fix reclaimed two columns from
+#: elsewhere in the same row -- one from ``_INDEX_COLS`` (typed at six, shrunk to five on
+#: the claim that ``"1,000"`` was the widest value it ever carries) and one
+#: from ``_ENS_COLS`` (a soft cap, reclaimed to clear this table's own
+#: vertical-scrollbar boundary once the INDEX cut alone was not enough).
+#: The INDEX cut was wrong, not just tight: a **complete** list (an
+#: uncapped export, ``_render_view``'s own ``shown = usable if
+#: self._payload.get("complete") else usable[:MAX_ROWS]``) can hold far
+#: more than 999 rows -- committed fixtures put ``contributors_total`` at
+#: 15,576 and ``clean_contributors`` at 9,273 -- and five columns rendered
+#: ``"10,000"`` as ``"10,00"``, a wrong-looking number with no marker, on
+#: both the table and the pinned YOU row. Round 2 reverted both reclaims
+#: (``_INDEX_COLS`` back to six, ``_ENS_COLS`` back to nineteen) and pays
+#: for the icon a different way: the ADDRESS column's own **display**
+#: shrinks by ``ICON_COLS`` (``_ADDRESS_COLS`` 42 → 40, the anti-poisoning
+#: window, not a crop of a different cell) so the column's *total* width
+#: (42) is exactly what it was before the copy-icon conversion, and the
+#: full tier is back to precisely its pre-Task-3 cost, 140 -- measured, not
+#: assumed, by the same column-by-column sweep this note replaces. See
+#: ``widgets/curator/lists.py``'s own ``_INDEX_COLS``/``_ADDRESS_COLS``/
+#: ``_ENS_COLS`` comments for the full before/after on each column.
+#:
+#: **The 2026-09-14 address-copy-icon conversion (Task 3) came within one
+#: column of moving it, and the near-miss is the reason to re-sweep here
+#: rather than assume.** ``CuratorActivity`` and ``CuratorClosestCalls``
+#: absorbed their identity cell's two-column icon inside slack they already
+#: had (bottom row, comfortably under this pin) and never touched it.
+#: ``CuratorLeaderboard`` did not: it sits in the middle row's own ``3fr``
+#: share, swept to the column against ``CuratorSignals``' 84-column need
+#: with nothing spare, and growing its WALLET column outright (the same
+#: move that worked for the other two) put a marker on it at 137 --
+#: ``test_the_binding_panel_is_the_signal_rail`` caught it directly, with
+#: ``CuratorLeaderboard`` newly in the failing set. The fix stayed inside
+#: ``leaderboard.py`` (its CREDIT column was typed two columns past its own
+#: documented measured worst case; reclaiming both pays the icon at zero
+#: net cost to the row) rather than here, so this pin's own value and this
+#: paragraph's sweep are the only trace of it.
+#:
+#: **The ``l`` view's own three-card hero (``CuratorListHero``) needed the
+#: same one column and was first paid for asymmetrically -- reverted during
+#: review.** The wallet card's address line measured content_size 43 against
+#: a 44-need (the 42-char address + ``ICON_COLS``) at this pin. The first
+#: fix dropped only that one card's left border (``border-left: none``),
+#: which worked but left a three-sided card between two four-sided ones --
+#: a visible asymmetry nobody had signed off on. The actual cause, per
+#: review: all three cards carry ``margin: 0 1`` (2 columns each), and with
+#: three ``1fr`` siblings in one ``Horizontal``, Textual sums every child's
+#: margin and subtracts it from the row *before* the fr split -- six margin
+#: columns came off this 138 before three boxes split what was left, on top
+#: of the two spent on each card's own left+right border. Zeroing the
+#: margin -- one rule, all three cards, every card keeping its full four
+#: borders -- gives each box exactly 46 columns (138 / 3, evenly, no
+#: remainder) for 44 of content: summary and filter grew from 42/43 to 44
+#: too, so their own five-line contracts (CLAUDE.md "THE LIST record-list
+#: hero cards") have strictly more room than before, not less, and no card
+#: composites a ``‹ widen`` marker at this pin. See
+#: ``widgets/curator/list_hero.py``'s own ``DEFAULT_CSS`` comment for the
+#: box-by-box numbers; the STAKERS-precedent windowed-fallback design was
+#: not needed.
+#:
+#: **The ``y`` view's identity panel (``CuratorWalletAddress``) hit the same
+#: shortfall and this time the STAKERS-precedent fallback is the fix.** Its
+#: "wallet" line measured a body content width of 51 at this pin (138), and
+#: the icon needs 53 (head 9 + address 42 + ``ICON_COLS`` 2) -- an exact-fit
+#: line before Task 3, so there was no slack for the icon to grow into.
+#: Unlike the list hero, this panel shares its width with three siblings
+#: (``CuratorWalletStanding``/``Next``/``Target``) inside one ``2fr`` rail
+#: column beside a ``3fr`` ladder table, and both the shared label column
+#: (``LABEL_COLS``, exactly ``len("to beat")``) and the gutter (exactly wide
+#: enough for the ``≥ `` glyph, see ``GE``/``GUTTER``) are already measured,
+#: load-bearing constants with nothing spare to reclaim -- widening the
+#: rail's own ``fr`` share would cost the ladder table's own measured tiers
+#: instead, a wider blast radius than one panel's copy icon should spend.
+#: So ``CuratorWalletAddress._render_view`` shows the full address when the
+#: panel has room (unchanged) and windows it -- never below
+#: ``MIN_SHORT_COLS``, icon always attached -- when it does not, exactly the
+#: surf STAKERS shape. Two pre-existing tests pinned the old exact-fit
+#: shape and were updated rather than the layout:
+#: ``test_the_wallet_view_clears_at_the_pinned_full_layout_width`` (the
+#: windowed line no longer lights ``‹ widen`` -- windowing to a size the
+#: icon still fits inside is the designed fallback, not a shed line) and
+#: ``test_the_address_appears_the_instant_it_is_typed`` (checks
+#: ``icon_targets`` now rather than a literal full-address substring, since
+#: the composited text may legitimately show the windowed form).
 CURATOR_FULL_LAYOUT_COLUMNS = 138
 
 #: The three flat-dict keys the screen renders itself -- the title bar's
@@ -681,7 +809,7 @@ class CuratorScreen(RefreshGuard, Screen):
     The screen opens on Raw Lists. ``h`` selects History, whose fixed initial
     panel is FAN-OUT PATTERNS; ``l`` selects Lists, and ``esc`` returns from a
     secondary view to Lists. ``c`` swaps panels in History and rotates record
-    lists in Lists. Linked analysis remains callable internally.
+    lists in Lists. ``a`` opens the linked-wallet analysis body.
     """
 
     BINDINGS = [
@@ -689,6 +817,15 @@ class CuratorScreen(RefreshGuard, Screen):
         Binding("c", "toggle_view", "Calls/Patterns", show=True),
         Binding("w", "set_wallet", "Wallet", show=True),
         Binding("y", "toggle_mode", "You", show=True),
+        # No `priority`, unlike `f` and `e` below: those two are accept/apply
+        # keys inside the filter editor's own workflow and must win even
+        # against a focused field; `a` plays no part in that workflow, so it
+        # takes the plain binding `y` uses. (A focused Textual `Input`
+        # consumes any printable character itself before either kind of
+        # binding is checked, so priority would not have changed this one's
+        # behaviour here either -- verified, not assumed; see
+        # ``test_a_inside_the_filter_editor_types_the_letter_instead_of_switching``.)
+        Binding("a", "toggle_analysis", "Analysis", show=False),
         Binding("f", "toggle_filter", "Filter", show=False, priority=True),
         Binding("h", "show_history", "History", show=True),
         Binding("l", "show_lists", "Lists", show=True),
@@ -1176,7 +1313,7 @@ class CuratorScreen(RefreshGuard, Screen):
     #: survives beside them at the measured width; `updated Ns ago` does not,
     #: and the title bar's `as of HH:MM` is the freshness marker that matters
     #: (it freezes under an outage, where the cycle age keeps counting).
-    #: `e` is deliberately not here: it only acts inside `f` and `l`, and the
+    #: `e` is deliberately not here: it only acts inside `a` and `l`, and the
     #: relevant cleaned panel is where its result appears.
     #:
     #: The full words are pinned against the worst-case (`4 errors` present)
@@ -1316,6 +1453,16 @@ class CuratorScreen(RefreshGuard, Screen):
             "label": item.label,
             "chain": item.chain,
             "address": item.address,
+            # Computed here, not in the widget: widgets may not import
+            # `data/` (test_no_curator_widget_imports_data_or_analytics),
+            # so `list_filter.py` cannot call
+            # `is_custom_nft_fallback_label` itself to tell a resolved/
+            # reader-chosen name apart from `custom_nft_label`'s own
+            # windowed fallback -- the screen computes the flag and hands
+            # it across as plain data.
+            "is_fallback": is_custom_nft_fallback_label(
+                item.chain, item.address, item.label
+            ),
         }
 
     def _custom_nft_values(self, editor) -> list[dict[str, str]]:

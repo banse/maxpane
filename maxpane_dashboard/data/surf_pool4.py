@@ -66,6 +66,7 @@ from maxpane_dashboard.data.surf_models import (
     POOL4_COUNTER_STATES,
     POOL4_DISCOVERY_SOURCES,
     POOL4_DISCOVERY_STATES,
+    POOL4_FLOW_LIMIT,
     POOL4_FLOW_SIDES,
     POOL4_NETWORKS,
     Pool4Discovery,
@@ -101,6 +102,8 @@ __all__ = [
     "TOPIC_ACCRUAL",
     "TOPIC_POOL_RESERVE",
     "TOPIC_BACKSTOP",
+    "SWAP_EVENT_SIGNATURE",
+    "TOPIC_SWAP",
     # flags
     "HOOK_FLAG_MASK",
     "HOOK_FLAG_BEFORE_INITIALIZE",
@@ -387,6 +390,19 @@ TOPIC_BACKSTOP = "0xe3966151f83ca37a8d733ac53f8f5122134c74fc747f8ea857c2ba5e49f6
 TOPIC_FEE_COLLECTED = topic0(EVENT_SIGNATURES["FeeCollected"])
 TOPIC_CLAIMS_SETTLED = topic0(EVENT_SIGNATURES["ClaimsSettled"])
 TOPIC_FEES_WITHDRAWN = topic0(EVENT_SIGNATURES["FeesWithdrawn"])
+
+#: The Uniswap v4 **PoolManager's** own swap event -- not the hook's, which is
+#: why it is kept out of :data:`EVENT_SIGNATURES` and :data:`TOPIC0` (those
+#: name what the hook address emits).  ``PoolId`` is a ``bytes32`` in the ABI
+#: and is topic1, so a log filter of ``[TOPIC_SWAP, pool_id]`` on the
+#: PoolManager selects exactly one pool's swaps.  It fires for **every** swap
+#: whatever the hook does, which is what makes it the row source for
+#: :func:`decode_flow_events`; computed from the signature and pinned in a test
+#: against the independent reader's literal.
+SWAP_EVENT_SIGNATURE = (
+    "Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)"
+)
+TOPIC_SWAP = topic0(SWAP_EVENT_SIGNATURE)
 
 #: topic0 -> a human name.  Resolved entries carry their signature; the three
 #: unresolved ones carry their operand shape prefixed ``UNRESOLVED``, so a
@@ -1593,124 +1609,188 @@ def _log_words(log: Mapping[str, Any]) -> list[int]:
     ]
 
 
-def decode_flow_events(logs: Sequence[Mapping[str, Any]] | None) -> list[Pool4FlowEvent]:
-    """One swap's worth of hook activity per row, newest first.
+def _signed_word(word: int) -> int:
+    """A 32-byte ABI word read as two's-complement.  ``int128`` is sign-extended."""
+    return word - (1 << 256) if word >= 1 << 255 else word
 
-    A **buy** is ``FeeCollected(0, eth)`` beside the pool-reserve event: the
-    fee is taken in ETH, nothing burns, and ``size`` is what the reserve fell
-    by.  ``burned_wei`` and ``stakers_wei`` are ``0`` and that is a
-    *representable zero* -- buys are not deflationary, sells are, and
-    collapsing that into ``None`` is the FARM/HOUR-SAVED defect this repo has
-    already shipped once.
 
-    A **sell** is ``FeeCollected(imd, 0)`` beside the accrual event, and
-    ``size`` is ``toBurn + toRewards + fee`` read from the logs -- never
-    ``fee * 100``, which would be assuming the documented 1% instead of
-    measuring it.
+def _topic0_of(log: Mapping[str, Any]) -> Any:
+    return (log.get("topics") or [None])[0]
 
-    ``settled`` is decided by **log order across the whole set**, not by what
-    is in the same transaction, and the corpus proves the difference is real:
-    in ``flow_logs_mixed.json`` the ``ClaimsSettled(891.0, 99.0)`` that opens
-    tx ``0x48090d111b`` matches the accrual in the *previous* tx
-    ``0xd161357a2b`` to the wei, and precedes that transaction's own accrual by
-    log index.  Settlement rides the **next** swap, so a same-transaction rule
-    marks the settled row unsettled and the unsettled row settled -- exactly
-    backwards.  Under the ordering rule the leftover is the last accrual, and
-    ``Sigma accrual - Sigma ClaimsSettled`` agrees with it to the wei.
 
-    A settlement with no swap in its transaction is not a flow row: it has no
-    ``side``, and the ``side`` vocabulary is closed.  It still counts towards
+def _log_ts(log: Mapping[str, Any] | None) -> float | None:
+    if log is None:
+        return None
+    try:
+        return float(int(log.get("blockTimestamp"), 16))
+    except (TypeError, ValueError):
+        return None
+
+
+def decode_flow_events(
+    *,
+    swaps: Sequence[Mapping[str, Any]] | None,
+    hook_logs: Sequence[Mapping[str, Any]] | None,
+    limit: int | None = POOL4_FLOW_LIMIT,
+) -> list[Pool4FlowEvent] | None:
+    """One row per PoolManager ``Swap``, newest first, capped at *limit*.
+
+    **The row source is the PoolManager's ``Swap`` event, not the hook's
+    logs.**  Until 2026-09-14 this function named a swap from the hook event
+    that rode beside ``FeeCollected`` -- the accrual meant SELL, the pool-
+    reserve event meant BUY, neither meant ``continue`` -- and that was
+    correct only for a *burning* market.  With headroom under the inventory
+    cap, sells do not trim and the cap does not ratchet, so every fee arrives
+    alone: the live hook had 218 ``FeeCollected`` and zero of either
+    companion over 24 hours, POOL4 FLOW read ``no pool4 swaps yet`` over 218
+    swaps, and every committed fixture captured a burning market, so the
+    suite stayed green.  ``mainnet_flow_logs_quiet_burn`` is that class.  The
+    same rule was also wrong *inside* a burning mainnet window: the pool-
+    reserve event fires on sells too (``0x587b65ec7d`` is a 50-IMD sell the old
+    rule named a buy), and its ``before - after`` is not what a buyer received
+    on a chain whose cap decays.  ``Swap`` fires for every swap whatever the
+    hook does, and carries the amounts itself.
+
+    **Side and size come from the Swap's signed amounts.**  Native ETH is
+    currency0 and IMD currency1, and a negative amount is what the **swapper
+    pays**: in ``0x587b65ec7d`` 50 IMD moves into the PoolManager and the Swap
+    reads ``amount1 = -50e18, amount0 > 0``; in ``0xc35f2567e8`` IMD moves out
+    and ``amount1 > 0, amount0 = -0.029e18``.  Both are settled against the
+    receipts' own IMD ``Transfer`` logs in ``mainnet_flow_swaps.json``'s
+    ``sign_proof``.  So a **buy** is ``amount0 < 0`` and its ``size`` is
+    ``amount1`` (IMD out); a **sell** is ``amount0 > 0`` and its ``size`` is
+    ``-amount1`` (IMD in).  Never ``fee * 100``: that assumes the documented 1%
+    instead of reading the swap.
+
+    **The hook's logs are joined per swap, by transaction and log order.**
+    The hook has no ``beforeSwap`` permission, so everything it emits during a
+    swap comes from ``afterSwap`` -- *after* the PoolManager's ``Swap`` and
+    before the next swap in the same transaction.  A transaction-hash join
+    alone would hand both swaps of a two-swap transaction the same fee (the
+    quiet-burn window carries one such transaction), so each hook log belongs
+    to the latest Swap that precedes it in its own transaction.
+
+    * ``burned_wei`` / ``stakers_wei`` come from the accrual event (the reader
+      calls it ``Trimmed``) when the swap has one, and are a **representable
+      zero** when it does not.  A buy burns nothing, and a sell into headroom
+      genuinely burns nothing too; that ``0`` is true, not missing.  Collapsing
+      it into ``None`` is the FARM/HOUR-SAVED defect this repo already shipped.
+    * ``fee_token_wei`` / ``fee_eth_wei`` are ``FeeCollected``'s two legs, IMD
+      on a sell and ETH on a buy; the other is ``None`` ("not taken in this
+      currency").  Both are ``None`` on a swap the hook recorded no fee for.
+    * ``settled`` is decided by **log order across the whole hook set**, not
+      by what is in the same transaction.  In ``flow_logs_mixed.json`` the
+      ``ClaimsSettled(891.0, 99.0)`` that opens tx ``0x48090d111b`` pays the
+      accrual in the *previous* tx ``0xd161357a2b`` to the wei, and precedes
+      that transaction's own accrual by log index: settlement rides the
+      **next** swap, so a same-transaction rule is exactly backwards.  A swap
+      with no accrual has nothing outstanding and is settled.
+
+    ``None`` in either read is ``None`` out: "a log read failed" is not "the
+    window was quiet", and the FLOW panel renders the two differently.  So is
+    a Swap read that **contradicts the hook's own account**: a
+    ``FeeCollected`` with no preceding ``Swap`` in its transaction means the
+    swap sweep came back short -- a provider can answer an old range with
+    ``[]`` and no error, which publicnode Sepolia was measured doing on
+    2026-09-14 -- and publishing the rows it did return would paint "fewer
+    swaps" as a fact.  A settlement or any other hook log with no swap in its
+    transaction is simply not a row; it still counts in
     :func:`unsettled_legs`.
+
+    *limit* is :data:`POOL4_FLOW_LIMIT` by default; ``None`` returns every row,
+    for callers that audit a window rather than paint one.
     """
-    if not logs:
-        return []
-    ordered = sorted(logs, key=_log_key)
+    if swaps is None or hook_logs is None:
+        return None
+    swap_logs = sorted(
+        (l for l in swaps
+         if isinstance(l, Mapping) and _topic0_of(l) == TOPIC_SWAP),
+        key=_log_key,
+    )
+    ordered = sorted(
+        (l for l in hook_logs if isinstance(l, Mapping)), key=_log_key
+    )
     settle_keys = [
-        _log_key(l) for l in ordered
-        if (l.get("topics") or [None])[0] == TOPIC_CLAIMS_SETTLED
+        _log_key(l) for l in ordered if _topic0_of(l) == TOPIC_CLAIMS_SETTLED
     ]
     last_settle = max(settle_keys) if settle_keys else None
 
-    by_tx: dict[str, list[Mapping[str, Any]]] = {}
+    swaps_by_tx: dict[str, list[Mapping[str, Any]]] = {}
+    for swap in swap_logs:
+        swaps_by_tx.setdefault(str(swap.get("transactionHash") or ""), []).append(swap)
+
+    legs: dict[tuple[int, int], list[Mapping[str, Any]]] = {}
     for log in ordered:
-        by_tx.setdefault(str(log.get("transactionHash") or ""), []).append(log)
+        key = _log_key(log)
+        owner = None
+        for swap in swaps_by_tx.get(str(log.get("transactionHash") or ""), ()):
+            if _log_key(swap) < key:
+                owner = swap
+            else:
+                break
+        if owner is None:
+            if _topic0_of(log) == TOPIC_FEE_COLLECTED:
+                # The hook took a fee on a swap this Swap read does not have.
+                return None
+            continue
+        legs.setdefault(_log_key(owner), []).append(log)
 
     rows: list[Pool4FlowEvent] = []
-    for tx_hash, tx_logs in by_tx.items():
-        fee = next(
-            (l for l in tx_logs
-             if (l.get("topics") or [None])[0] == TOPIC_FEE_COLLECTED),
-            None,
-        )
-        accrual = next(
-            (l for l in tx_logs
-             if (l.get("topics") or [None])[0] == TOPIC_ACCRUAL),
-            None,
-        )
-        reserve = next(
-            (l for l in tx_logs
-             if (l.get("topics") or [None])[0] == TOPIC_POOL_RESERVE),
-            None,
-        )
-        if fee is None and accrual is None and reserve is None:
+    for swap in swap_logs:
+        words = _log_words(swap)
+        if len(words) < 2:
             continue
+        amount0, amount1 = _signed_word(words[0]), _signed_word(words[1])
+        if amount0 < 0 or (amount0 == 0 and amount1 > 0):
+            side = _SIDE_BUY
+            size = amount1 if amount1 > 0 else None
+        elif amount0 > 0 or amount1 < 0:
+            side = _SIDE_SELL
+            size = -amount1 if amount1 < 0 else None
+        else:
+            # A swap that moved nothing either way names no side, and ``side``
+            # is a closed vocabulary.
+            continue
+
+        mine = legs.get(_log_key(swap), [])
+        fee = next((l for l in mine if _topic0_of(l) == TOPIC_FEE_COLLECTED), None)
+        accrual = next((l for l in mine if _topic0_of(l) == TOPIC_ACCRUAL), None)
 
         fee_words = _log_words(fee) if fee is not None else []
         fee_imd = fee_words[0] if len(fee_words) > 0 else None
         fee_eth = fee_words[1] if len(fee_words) > 1 else None
 
-        block = _log_key(tx_logs[0])[0]
-        try:
-            ts: float | None = float(int(tx_logs[0].get("blockTimestamp"), 16))
-        except (TypeError, ValueError):
-            ts = None
-
         if accrual is not None:
-            words = _log_words(accrual)
-            burned = words[1] if len(words) > 1 else 0
-            stakers = words[2] if len(words) > 2 else 0
-            side = _SIDE_SELL
-            size = burned + stakers + (fee_imd or 0)
-            key = _log_key(accrual)
-            settled = last_settle is not None and last_settle > key
-            fee_token_wei = fee_imd
-            fee_eth_wei = None
-        elif reserve is not None:
-            words = _log_words(reserve)
-            side = _SIDE_BUY
-            size = (
-                words[0] - words[1]
-                if len(words) > 1 and words[0] >= words[1]
-                else None
-            )
+            accrual_words = _log_words(accrual)
+            burned = accrual_words[1] if len(accrual_words) > 1 else 0
+            stakers = accrual_words[2] if len(accrual_words) > 2 else 0
+            settled = last_settle is not None and last_settle > _log_key(accrual)
+        else:
             burned = 0
             stakers = 0
-            # A buy accrues nothing, so there is nothing outstanding on it.
             settled = True
-            fee_token_wei = None
-            fee_eth_wei = fee_eth
-        else:
-            # A fee with neither a reserve move nor an accrual: not a swap this
-            # module can name a side for, and ``side`` is a closed vocabulary.
-            continue
+
+        ts = _log_ts(swap)
+        if ts is None and mine:
+            ts = _log_ts(mine[0])
 
         rows.append(
             Pool4FlowEvent(
-                tx_hash=tx_hash or None,
+                tx_hash=str(swap.get("transactionHash") or "") or None,
                 ts=ts,
-                block_number=block,
+                block_number=_log_key(swap)[0],
                 side=side,
                 size_wei=size,
                 burned_wei=burned,
                 stakers_wei=stakers,
-                fee_token_wei=fee_token_wei,
-                fee_eth_wei=fee_eth_wei,
+                fee_token_wei=fee_imd if side == _SIDE_SELL else None,
+                fee_eth_wei=fee_eth if side == _SIDE_BUY else None,
                 settled=settled,
             )
         )
 
-    rows.sort(key=lambda r: (r.block_number or 0), reverse=True)
-    return rows
+    rows.reverse()  # swap_logs was oldest first by (block, logIndex)
+    return rows if limit is None else rows[:limit]
 
 
 def reserve_series(logs: Sequence[Mapping[str, Any]] | None) -> list[list[float]] | None:

@@ -2,17 +2,17 @@
 
 One line per swap, newest first -- composited at the full tier::
 
-    AGE   SIDE   SIZE     BURNED   STAKERS    INFERENCE
-    2m    SELL   1.2K     111.42     12.38    0.0057 ETH
-    7m    BUY    980.00     0.00      0.00    12.38 IMD
-    14m   SELL~  4.5K       0.00      0.00    0.0031 ETH
+    AGE  SIDE   SIZE    BURNED  STAKERS  INFERENCE
+    2m   SELL   1.2K    111.42  12.38    0.0057 ETH
+    7m   BUY    980.00  0       0        12.38 IMD
+    14m  SELL~  4.5K    0       0        0.0031 ETH
 
     ~ accrued, not settled yet
 
 **The load-bearing rule of this panel.** A BUY has no burn leg and no staker
 leg: the hook only splits a fee out of a *sell*, so ``burned_imd`` and
 ``stakers_imd`` arrive as ``0.0`` on a buy and that is a **representable
-zero**.  It renders ``0.00``.  ``None`` is reserved for one thing only --
+zero**.  It renders ``0`` (:func:`_leg_cell`).  ``None`` is reserved for one thing only --
 ``pool4_flow is None``, the whole-panel unavailable state, which gets its own
 explicit line (:data:`UNAVAILABLE_LINE`) and never a row.  ``[]`` is a third
 state again: swept, and genuinely quiet (:data:`EMPTY_LINE`).
@@ -25,9 +25,31 @@ three different strings on screen, and
 ``test_a_buy_row_and_a_dead_panel_do_not_say_the_same_thing`` (plus its
 ``[]``-vs-``None`` sibling) is what keeps them different.
 
+**A SELL into headroom is a true zero too, and that is the normal mainnet
+state, measured rather than assumed (2026-09-15).** The owner read a live
+screen where every row, sells included, said ``0.00`` in both columns and
+asked whether more digits would show something. They would not. The hook
+splits a sell only when it *trims*: ``tokensInPool`` above ``inventoryCap``.
+Sell ``0x7d8d53685e`` (block 25,979,012, 337.8348 IMD in) was read off
+mainnet with keyless endpoints and committed as
+``tests/fixtures/surf/pool4/mainnet_sell_into_headroom_receipt.json``. The
+pool held 16,962.98 IMD against a cap of 20,000. The hook emitted
+``FeeCollected(3.378348 IMD, 0 ETH)``, the 1% LP fee that goes to the
+owner's fee ledger, and nothing else. There was no accrual event, no
+``ClaimsSettled``, and no IMD ``Transfer`` to the burn sink, distributor,
+dripper or vault. ``totalBurned`` and ``totalRewarded`` were identical at the
+block before and the head after. Over the 9,001 blocks behind that head the
+hook logged 256 ``FeeCollected`` and zero accruals. So the zeros are exact,
+and a zero renders as a bare ``0`` rather than ``0.00``: two decimal places
+of nothing looked like a rounded-down small number, which is what prompted
+the question. A *non*-zero leg too small for two decimals gets four
+(``0.0012``), or ``<0.0001`` below that, so a real payout never paints as a
+zero. Why nothing is split is already said on this body: SIGNALS reads
+``burning OFF``. This panel does not spend a row repeating it.
+
 ``settled`` is the fourth state and it is why the SIDE cell is five columns
 rather than four.  A sell whose ``ClaimsSettled`` has not fired yet *also*
-carries ``0.00`` legs -- a true zero, for a completely different reason -- so
+carries ``0`` legs -- a true zero, for a completely different reason -- so
 the row is flagged ``~`` and the panel spells the flag out in a legend it
 writes only when such a row is present.  Without that, "the hook took nothing"
 and "the hook has not paid out yet" are the same three characters.
@@ -301,6 +323,40 @@ def _fee_cell(fee_imd, fee_eth) -> str:
     return f"  {DASH}"
 
 
+#: Below this a two-decimal ``fmt_imd`` rounds a real leg to ``0.00``, so
+#: :func:`_leg_cell` switches to four decimals.
+_SMALL_LEG = 0.005
+
+#: Below this even four decimals print ``0.0000``: the leg is a floor, not a
+#: figure.
+_TINY_LEG = 0.0001
+
+
+def _leg_cell(value) -> str:
+    """A burn or staker leg: ``0`` for a true zero, never a zero for a payout.
+
+    The four cases are four different strings on screen:
+
+    * ``None`` (unreadable) renders :data:`DASH`, and only that renders it;
+    * exactly ``0`` (a buy, or a sell into headroom) renders ``0``;
+    * a payout under :data:`_SMALL_LEG` renders ``0.0012``, or ``<0.0001``;
+    * anything larger renders through ``fmt_imd``, as it always did.
+
+    Every cell width is measured per batch (:func:`_batch_cols`), so the
+    four-decimal form costs columns only when such a row is on screen.
+    """
+    v = as_float(value)
+    if v is None:
+        return DASH
+    if v == 0:
+        return "0"
+    if abs(v) < _TINY_LEG:
+        return f"<{_TINY_LEG:.4f}"
+    if abs(v) < _SMALL_LEG:
+        return f"{v:.4f}"
+    return fmt_imd(v)
+
+
 def _row_fields(row: object) -> tuple[str, str, str, str, str, str] | None:
     """Decompose one row into its cells; ``None`` drops it.
 
@@ -312,10 +368,11 @@ def _row_fields(row: object) -> tuple[str, str, str, str, str, str] | None:
     Returns ``(age, side, size, burned, stakers, fee)``, every one already a
     finished string; ``fee`` carries its own two leading spaces.
 
-    ``burned`` and ``stakers`` go through ``fmt_imd`` **unconditionally**,
-    which renders ``0`` as ``0.00`` and only a genuinely unreadable value as
-    ``--``.  That is the whole contract of this panel: a buy's absent legs are
-    zeros, not gaps.
+    ``burned`` and ``stakers`` go through :func:`_leg_cell`
+    **unconditionally**. It renders ``0`` as ``0``, a sub-cent payout with
+    four decimals, and only a genuinely unreadable value as ``--``. That is
+    the whole contract of this panel: a buy's absent legs are zeros, not
+    gaps.
     """
     if not isinstance(row, dict):
         return None
@@ -332,8 +389,8 @@ def _row_fields(row: object) -> tuple[str, str, str, str, str, str] | None:
             fmt_age(row.get("age_s")),
             f"{side}{flag}",
             fmt_imd(row.get("size_imd")),
-            fmt_imd(row.get("burned_imd")),
-            fmt_imd(row.get("stakers_imd")),
+            _leg_cell(row.get("burned_imd")),
+            _leg_cell(row.get("stakers_imd")),
             _fee_cell(row.get("fee_imd"), row.get("fee_eth")),
         )
     except Exception:
@@ -494,7 +551,8 @@ class SurfPool4Flow(Vertical):
 
     DEFAULT_CSS = """
     /* `margin: 0 0 1 0` IS THE BLANK ROW UNDER THE TITLE, and it is now
-       UNSCOPED -- both bodies that mount this class paint it.
+       UNSCOPED -- both bodies that mounted this class painted it, and since
+       the `p` body's copy was removed (2026-09-14) the `4` body alone does.
 
        It is on the TITLE, not on the note line below it. Under the note read
        better -- title plus `as of HH:MM` as one header block, then the gap --
@@ -541,10 +599,14 @@ class SurfPool4Flow(Vertical):
     ) -> None:
         """``quiet_mainnet`` leaves ``MAINNET`` unsaid in this instance's title.
 
-        **Per instance, and defaulting to False, because this widget is mounted
-        twice.** The ``p`` body's five titles must keep printing the network
-        word -- that body is an auditor's view and the word is load-bearing
-        there -- while the ``4`` body's owner asked for it gone. A module-level
+        **Per instance, and defaulting to False, because this widget was
+        mounted twice** (2026-09-11..14). The ``p`` body's copy had to keep
+        printing the network word -- that body is an auditor's view and the
+        word is load-bearing there -- while the ``4`` body's owner asked for it
+        gone. The ``p`` body's copy was removed on 2026-09-14, so the ``4``
+        body's mount is the only one left and the ``False`` default is now
+        rendered by nothing on screen. Collapsing the flags is filed as F15 in
+        ``docs/surf_pool4_followups.md`` rather than done in that removal. A module-level
         switch cannot express that; a different ``pool4_network`` value for this
         instance could, and would be lying about the provenance the word exists
         to state. So the *screen* opts in, once, at the mount site.

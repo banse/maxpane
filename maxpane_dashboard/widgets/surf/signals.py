@@ -93,8 +93,18 @@ from textual.containers import Vertical
 from textual.css.query import QueryError
 from textual.widgets import Static
 
+from rich.text import Text
+from textual.content import Content
+
+from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
-from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age
+from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH, fmt_age
+from maxpane_dashboard.widgets.surf._icons import (
+    keep_units,
+    link_in_order,
+    mark_addresses,
+    unmark,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -300,27 +310,69 @@ def _fmt_signal_row(label: str, state, detail, age_s, available=None) -> str:
     cut so a slice can never bisect an escape sequence.
     """
     head = _head(label, state, age_s)
+    shown, _addresses = _signal_detail(head, state, detail, available)
+    if not shown:
+        return head
+    return f"{head} [dim]· {safe_markup(shown)}[/]"
+
+
+def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]:
+    """The detail as painted, and the addresses its copy icons copy.
+
+    ``("", [])`` when the row renders its head alone. The text is plain and
+    **icons included**: every address in the detail is windowed to the
+    17-cell anti-poisoning form (``_fmt.ANTI_POISONING_COLS``) with ``" ⧉"``
+    after it *before* the cut, so the budget pays for each icon.
+
+    The cut never lands inside a window-and-icon unit. ``_cut_detail`` keeps
+    numbers whole; a window is hex, which it would happily cut as prose --
+    ``new contract 0x8004…`` is a window's own ellipsis followed by the cut's,
+    an address that looks shortened rather than cut. So a unit the cut
+    would bisect goes whole, exactly as a number does.
+    """
     if str(state or "").strip().lower() not in _KNOWN_STATES:
         # An unknown detector has no detail worth quoting.
-        return head
+        return "", []
 
     # Newlines flattened first: an announce body is multi-line, a row is not.
     flat = " ".join(str(detail or "").split())
     if not flat:
-        return head
+        return "", []
 
+    marked, addresses, spans = mark_addresses(flat, ANTI_POISONING_COLS)
     if available:
         budget = int(available) - visible_len(head) - SEPARATOR_COLS
         if budget < MIN_DETAIL_COLS:
-            return head
-        flat = _cut_detail(flat, budget)
-        if not flat:
-            # Only a bisected number would have fitted: the head renders
-            # alone, which is what this widget already does for a budget
-            # below MIN_DETAIL_COLS -- never a bare "…".
-            return head
+            return "", []
+        marked = keep_units(marked, spans, _cut_detail(marked, budget))
+        if not marked:
+            # Only a bisected number or address would have fitted: the head
+            # renders alone, which is what this widget already does for a
+            # budget below MIN_DETAIL_COLS -- never a bare "…".
+            return "", []
 
-    return f"{head} [dim]· {safe_markup(flat)}[/]"
+    return unmark(marked), addresses[: marked.count(COPY_GLYPH)]
+
+
+def _signal_row_content(label: str, state, detail, age_s, available=None) -> Content | None:
+    """The row as ``Content`` with its copy icons live; ``None`` when it has none.
+
+    A row without an icon keeps going to ``Static.update()`` as the markup
+    string :func:`_fmt_signal_row` returns, unchanged. A row *with* one cannot:
+    a markup string carries no click action. The head is still parsed from
+    markup by Textual -- it is this module's own trusted text, and its
+    ``$error``/``$warning`` colours are Textual theme tokens that a Rich
+    ``Text`` cannot resolve -- and the detail joins it as a ``Text`` built
+    here, never parsed, carrying the icon's action from
+    ``widgets/address.py``.
+    """
+    head = _head(label, state, age_s)
+    shown, addresses = _signal_detail(head, state, detail, available)
+    if not addresses:
+        return None
+    text = Text(f" · {shown}", style="dim")
+    link_in_order([text], addresses)
+    return Content.from_markup(head) + Content.from_rich_text(text)
 
 
 class SurfSignals(Vertical):
@@ -483,7 +535,16 @@ class SurfSignals(Vertical):
                 clipped = True
 
             try:
-                row.update(markup)
+                # A detail naming an address paints its copy icon, which a
+                # markup string cannot carry; every other row is unchanged.
+                content = _signal_row_content(
+                    label,
+                    state,
+                    payload.get(f"sig_{prefix}_detail"),
+                    age_s,
+                    available,
+                )
+                row.update(content if content is not None else markup)
             except Exception as exc:
                 # A detail string can clear ``safe_markup`` (which only
                 # neutralises Rich's parser) and still break Textual's own,

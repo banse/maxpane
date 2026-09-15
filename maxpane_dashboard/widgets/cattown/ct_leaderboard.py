@@ -5,6 +5,7 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
@@ -16,12 +17,11 @@ _RARITY_COLORS = {
     "Legendary": "yellow",
 }
 
-
-def _short_addr(address: str) -> str:
-    """Shorten a wallet address to 0xABCD..1234 format."""
-    if len(address) > 10:
-        return f"{address[:6]}..{address[-4:]}"
-    return address
+#: display budget for the fisher name/address, excluding the icon -- the same
+#: 12-cell window the deleted ``_short_addr`` produced. The table's "Fisher"
+#: column is already 14 wide (recipe step 6, PRD §5): W(12) + ICON_COLS(2)
+#: fits inside it without moving the column width.
+_FISHER_COLS = 12
 
 
 class CTLeaderboard(Vertical):
@@ -69,7 +69,13 @@ class CTLeaderboard(Vertical):
         for entry in competition_entries[:10]:
             rank = str(entry.get("rank", "?"))
             display_name = entry.get("display_name", "")
-            fisher = safe_markup(display_name if display_name else _short_addr(entry.get("fisher_address", "")))
+            is_top = rank == "1"
+            fisher = address_text(
+                entry.get("fisher_address", ""),
+                label=display_name or None,
+                width=_FISHER_COLS,
+                style="bold green" if is_top else "",
+            )
             species = safe_markup(entry.get("fish_species", ""))
             weight = entry.get("fish_weight_kg", 0.0)
             rarity = entry.get("rarity", "Common")
@@ -79,8 +85,7 @@ class CTLeaderboard(Vertical):
             rarity_str = f"[{color}]{rarity}[/]"
 
             # Highlight rank 1
-            if rank == "1":
-                fisher = f"[bold green]{fisher}[/]"
+            if is_top:
                 species = f"[bold]{species}[/]"
                 weight_str = f"[bold]{weight_str}[/]"
 

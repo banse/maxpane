@@ -16,7 +16,10 @@ HOSTILE = {
 # row for the tests below that aren't specifically about hostile input.
 _ROW = {
     "ticker": "ICE", "name": "Ice Coin",
-    "creator": "0x8ca0000000000000000000000000000000e5e8",
+    # 40 hex: a real address shape. It was 38 until 2026-09-14, which the
+    # old slice windowed like any string and ``widgets/address.py`` rightly
+    # does not (a non-address renders as itself).
+    "creator": "0x8ca0" + "0" * 32 + "e5e8",
     "creator_known": False, "age_s": 7_200.0, "price_eth": 0.0071,
     "change_24h_pct": 34.0, "swaps_24h": 41, "swaps_all": 97,
     "imd_burned": 250.0,
@@ -237,8 +240,10 @@ async def test_the_creator_cell_truncates_to_the_narrower_eleven_column_window()
     leading characters, an ellipsis, four trailing -- the brief's own
     example (``0x8ca0…e5e8``).  A test that only checks the width-constant
     arithmetic would not catch a bug where the constant shrinks correctly
-    but the cell still renders the *old* 17-column ``long_addr()`` form,
-    which truncates a different (and longer) trailing window -- exactly the
+    but the cell still renders the *old* 17-column anti-poisoning form
+    (``_fmt.long_addr`` until 2026-09-14, ``widgets/address.short_address``
+    at 17 since), which truncates a different (and longer) trailing window
+    -- exactly the
     two-halves-mask-each-other shape this task's brief warns about, and
     worse than cosmetic: it would silently widen the actual rendered
     column past its declared budget.
@@ -594,12 +599,58 @@ async def test_the_table_draws_at_most_ten_coins() -> None:
         def compose(self):
             yield SurfLaunchpadCoins()
 
+    from maxpane_dashboard.widgets.surf.launchpad import MAX_COIN_ROWS
+
+    # Twenty since 2026-09-15 (the owner gave the coins ACTIVITY's rows). A
+    # panel tall enough for all of them draws the cap and no more.
     rows = [dict(_ROW, ticker=f"C{i}", swaps_24h=100 - i) for i in range(25)]
-    async with _A().run_test(size=_RENDER_SIZE) as pilot:
+    async with _A().run_test(size=(_RENDER_SIZE[0], 40)) as pilot:
         widget = pilot.app.query_one(SurfLaunchpadCoins)
         widget.update_data(coins=rows, coin_count=146)
         await pilot.pause()
-        assert widget.query_one("#surf-lpc-table", DataTable).row_count == 10
+        assert MAX_COIN_ROWS == 20
+        assert widget.query_one("#surf-lpc-table", DataTable).row_count == 20
+
+
+@pytest.mark.asyncio
+async def test_the_table_draws_only_the_coins_its_height_holds() -> None:
+    """Never more rows than fit, so the table never scrolls inside itself.
+
+    A ``DataTable`` that scrolls paints a vertical scrollbar, and that
+    scrollbar takes columns. Measured on 2026-09-15 in the ``l`` body at 31
+    rows, it cut the ``BURNED`` header at 138-140 while the panel's ``‹ widen``
+    was dark. Asserted here on a bare mount at two heights, plus a resize
+    between them, because the fitted count has to follow the panel's height
+    in both directions.
+    """
+    from textual.widgets import DataTable
+
+    class _A(App):
+        def compose(self):
+            yield SurfLaunchpadCoins()
+
+    rows = [dict(_ROW, ticker=f"C{i}", swaps_24h=100 - i) for i in range(20)]
+    async with _A().run_test(size=(_RENDER_SIZE[0], 16)) as pilot:
+        widget = pilot.app.query_one(SurfLaunchpadCoins)
+        widget.update_data(coins=rows, coin_count=146)
+        await pilot.pause()
+        table = widget.query_one("#surf-lpc-table", DataTable)
+        short = table.row_count
+        assert short == widget.size.height - 3, (short, widget.size.height)
+        assert short < 20
+        assert table.max_scroll_y == 0, "the table scrolls inside itself"
+
+        await pilot.resize_terminal(_RENDER_SIZE[0], 30)
+        await pilot.pause()
+        await pilot.pause()
+        assert table.row_count == 20
+        assert table.max_scroll_y == 0
+
+        await pilot.resize_terminal(_RENDER_SIZE[0], 16)
+        await pilot.pause()
+        await pilot.pause()
+        assert table.row_count == short
+        assert table.max_scroll_y == 0
 
 
 # ---------------------------------------------------------------------------

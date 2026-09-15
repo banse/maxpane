@@ -10,6 +10,15 @@ from textual.css.query import NoMatches
 from textual.message import Message
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
+from maxpane_dashboard.widgets.address import address_text
+
+#: The address's own display budget in the selected-collections grid, when
+#: there is no real name to show instead: :data:`MIN_SHORT_COLS`'s own
+#: value (curator's historic 4/4 form), so the label never grows past what
+#: ``custom_nft_label``'s own windowed fallback already promises. The icon
+#: adds ``ICON_COLS`` on top.
+_NFT_LABEL_ADDRESS_COLS = 11
+
 
 FILTER_GROUPS = (
     ("JOIN", (("join_min", "from"), ("join_max", "to"))),
@@ -399,8 +408,25 @@ class CuratorListFilterEditor(Vertical):
         container.remove_children()
         for index, value in enumerate(self._custom_nfts):
             key = self._nft_key(value["chain"], value["address"])
+            # A fallback label (no real resolved/reader-chosen name) is the
+            # address itself, windowed -- shown here as a real, clickable
+            # ``address_text`` over the collection's own ``.address`` field
+            # rather than as the plain, CSS-ellipsised string
+            # ``custom_nft_label`` produces for the *prose* filter summary.
+            # A real name renders as before, unchanged. ``is_fallback`` is
+            # computed by the screen (``_nft_primitive``), not here: widgets
+            # may not import ``data/``
+            # (test_no_curator_widget_imports_data_or_analytics), so this
+            # widget cannot call ``is_custom_nft_fallback_label`` itself.
+            if value.get("is_fallback", False):
+                content = address_text(
+                    str(value["address"]).strip().lower(),
+                    width=_NFT_LABEL_ADDRESS_COLS,
+                )
+            else:
+                content = value["label"]
             container.mount(Horizontal(
-                Label(value["label"], markup=False),
+                Label(content, markup=False),
                 Button(
                     "×", id=f"filter-nft-remove-{index}",
                     name=key, compact=True,

@@ -363,18 +363,26 @@ def _key_value_type(key: int) -> str:
 def _fmt_config_value(key: int, value: int) -> str:
     """Render a config value the way its type reads.
 
-    Bools become ``on``/``off``, addresses and bytes32 are truncated — a
-    150-digit ``VRF_SUB_ID`` in a signal row helps nobody.
+    Bools become ``on``/``off``. Addresses and bytes32 used to be truncated
+    here with a private ``0x{4}..{4}`` cut — the common 6/4-ish form
+    ``widgets/address.py``'s anti-poisoning window exists to retire, because
+    live spoofs collide with real addresses on it (surf's ``long_addr``
+    docstring records the incident). This module stays analytics-pure (no
+    Textual, no widget import — the project's dependency direction runs
+    ``widgets`` -> ``analytics``, never back), so it no longer shortens
+    either value at all: it publishes the full ``0x``-prefixed hex and
+    leaves the windowing — and, for a genuine wallet/contract address, the
+    copy icon — to whichever widget composes this row (PRD §6). A
+    150-digit ``VRF_SUB_ID`` is a plain ``uint256`` and still falls through
+    to the ``str(value)`` branch below, unaffected by either type.
     """
     value_type = _key_value_type(key)
     if value_type == "bool":
         return "on" if value else "off"
     if value_type == "address":
-        text = f"{value:040x}"
-        return f"0x{text[:4]}..{text[-4:]}"
+        return f"0x{value:040x}"
     if value_type == "bytes32":
-        text = f"{value:064x}"
-        return f"0x{text[:4]}..{text[-4:]}"
+        return f"0x{value:064x}"
     return str(value)
 
 

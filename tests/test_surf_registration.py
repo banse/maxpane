@@ -510,8 +510,12 @@ _SHORTHAND_DEFAULTS = {"padding": "0", "margin": "0"}
 #: agreement, so adding it here costs the other selectors nothing. It was the
 #: last scroll property in either stylesheet that no test in the repo
 #: compared.
+#: ``max-height`` joined 2026-09-15 with LAUNCHPAD COINS' 23-row ceiling: it
+#: is what hands every row past twenty coins to the activity feed, so one copy
+#: without it would give the coins a different share of the column.
 _STRUCTURAL = (
-    "width", "height", "min-height", "padding", "margin", "scrollbar-size",
+    "width", "height", "min-height", "max-height", "padding", "margin",
+    "scrollbar-size",
 )
 
 #: The two copies deliberately do **not** cover the same selector set, and
@@ -736,8 +740,14 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_all_five_pool4_panels_survive_the_real_stylesheet() -> None:
+def test_all_four_pool4_panels_survive_the_real_stylesheet() -> None:
     """Every ``p`` panel reaches the compositor through the REAL app.
+
+    **Four since 2026-09-14** -- this was ``..._all_five_...`` until the owner
+    removed POOL4 FLOW from the ``p`` body as a duplicate of the ``4`` body's
+    RECENT FLOW. The title is now asserted absent after ``p`` as well, so a
+    flow panel that came back into this body through the real stylesheet
+    reddens here too.
 
     ``test_all_six_detectors_survive_the_real_stylesheet`` above is the
     precedent and the reason: a panel can be composed, dispatched and
@@ -770,16 +780,19 @@ def test_all_five_pool4_panels_survive_the_real_stylesheet() -> None:
             await pilot.press(key)
             await pilot.pause()
             before = _screen_text(app)
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             text = _screen_text(app)
 
-        titles = ("HATCHES", "POOL4 FLOW", "THE SPLIT", "THE RATCHET",
-                  "sIMD VAULT")
+        titles = ("HATCHES", "THE SPLIT", "THE RATCHET", "sIMD VAULT")
         for title in titles:
             assert title in text, (
                 f"{title} reaches no pixel through the real stylesheet"
             )
+        assert "POOL4 FLOW" not in text, (
+            "POOL4 FLOW composited on the `p` body through the real app -- it "
+            "was removed from that body on 2026-09-14"
+        )
         # The premise, and it has to be this one rather than `before !=
         # text`. Mutating `_show_mode` so it never sets the pool4 body's
         # `display` leaves the body visible from the moment it is composed
@@ -1698,13 +1711,22 @@ _POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
     #
     # The needle is the WHOLE ROW and not a bare `0.0%`, which would have
     # been true and weak -- it is a share, and the one thing a share must
-    # not be confused with is another panel's share. `0.12` is the -1% rung's
+    # not be confused with is another panel's share. `0.58` is the -5% rung's
     # ETH leg off the enabling position, so the needle can only come from
-    # this ladder. Read off composited output through the real `SurfScreen`
-    # at (143, 60) with `4` pressed, both directions, on 2026-09-11:
+    # this ladder.
     #
-    #     key 0.0  ->  `-1%   0.12      0.0%`
-    #     key None ->  `-1%   0.12      unknown`
+    # RE-DERIVED 2026-09-14, and the rung moved for a reason. It was the -1%
+    # row until `not reached` landed: that rung's target (68282) is short of
+    # the band at 68340, so it now paints `not reached` with the key at `0`
+    # AND at the real liquidity -- a needle that could no longer tell a zero
+    # band from a full one. -5% (target 68694) is past the lower tick, so it
+    # is the first rung whose band cell is a share of what this key holds.
+    # Read off composited output through the real `SurfScreen` at (143, 60)
+    # with `4` pressed, all three values:
+    #
+    #     key 0     ->  `-5%   0.58      0.0%`
+    #     key None  ->  `-5%   0.58      unknown`
+    #     key 7.47e20 -> `-5%   1.01      1.8%`
     #
     # The enablers are the ladder's other four inputs. The STATE is among
     # them and is the reason the pair separates at all: `deployed` says a
@@ -1712,7 +1734,7 @@ _POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
     # together can distinguish "the band holds nothing" from "nobody read
     # the band".
     "pool4_backstop_liquidity": (
-        "-1%   0.12      0.0%",
+        "-5%   0.58      0.0%",
         {"pool4_backstop_state": "deployed",
          "pool4_current_tick": 68_181,
          "pool4_position_liquidity": 690471276437502400000,
@@ -2184,7 +2206,7 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             # The guard against repeating it a third time is the
             # `_body_reached` check below, which fails loudly rather than
             # letting the sweep measure the same render twice.
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             pool4_text = _screen_text(app)
             from maxpane_dashboard.widgets.surf.pool4_hatches import (
@@ -2196,14 +2218,17 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "below would be measuring the launchpad twice"
             )
             # The pool4 body must also be explicit rather than blank: an
-            # outage that renders five empty panels is exactly as wrong as
+            # outage that renders four empty panels is exactly as wrong as
             # one that renders zeros, and neither the needle sweep below nor
-            # the title-bar check above would notice.
-            for title in ("HATCHES", "POOL4 FLOW", "THE SPLIT",
-                          "THE RATCHET", "sIMD VAULT"):
+            # the title-bar check above would notice. Four since 2026-09-14,
+            # when POOL4 FLOW left this body; its outage state is checked in
+            # the `4` body below, where the panel now lives.
+            for title in ("HATCHES", "THE SPLIT", "THE RATCHET",
+                          "sIMD VAULT"):
                 assert title in pool4_text, (
                     f"{title} vanished under outage"
                 )
+            assert "POOL4 FLOW" not in pool4_text
             # The network word falls back to the em dash rather than naming
             # a chain nothing has confirmed (plan section 5 R4: a testnet
             # number on an unmarked panel is fiction presented as live, and
@@ -2359,7 +2384,7 @@ def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero(
         async with _surf_app(payload).run_test(size=(143, 60)) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.pause()
-            await pilot.press("p")
+            await pilot.press("e")
             await pilot.pause()
             await pilot.pause()
             return _surf_screen_text(pilot.app)

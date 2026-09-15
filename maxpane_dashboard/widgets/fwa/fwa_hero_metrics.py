@@ -40,11 +40,13 @@ this module imports nothing from the data layer.
 
 from __future__ import annotations
 
+from rich.cells import cell_len
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 
 _DASH = "--"
 _EMDASH = "—"
@@ -68,6 +70,17 @@ _GOLD = CROWN_GOLD
 _GAP_BAR_WIDTH = 8
 _GAP_FILLED = "█"
 _GAP_EMPTY = "░"
+
+#: The *widest* display budget for the crown holder's name/address, excluding
+#: :data:`~maxpane_dashboard.widgets.address.ICON_COLS` (the old hard cut was
+#: ``name[:20]``). The box ellipsises overflow with its own CSS, and that
+#: ellipsis lands at the end of the line -- on the icon. At 120 columns the
+#: box is 32 cells and ``$812,300 · `` + 20 + icon is 33, so the real screen
+#: painted ``0xabababababa…ababab…`` with no icon. The line is therefore
+#: budgeted from the box's real width (:meth:`FWAHeroMetrics._who_line`):
+#: this many cells when there is room, fewer down to ``MIN_SHORT_COLS``, and
+#: below that the dollar figure is shed, never the icon.
+_WHO_WIDTH = 20
 
 
 # -- format helpers ----------------------------------------------------
@@ -119,17 +132,6 @@ def _fmt_int(value) -> str:
         return f"{int(value):,}"
     except (TypeError, ValueError):
         return _DASH
-
-
-def _short_addr(addr) -> str:
-    if not addr:
-        return _DASH
-    s = str(addr).strip()
-    if not s:
-        return _DASH
-    if len(s) <= 11:
-        return s
-    return f"{s[:6]}..{s[-4:]}"
 
 
 def _ev_sign(value) -> tuple[str, str]:
@@ -307,6 +309,31 @@ class FWAHeroMetrics(Horizontal):
             crown_available,
         )
 
+    def on_resize(self, _event=None) -> None:
+        """Re-budget the crown holder's line: it depends on the box width."""
+        args = getattr(self, "_crown_args", None)
+        if args is not None:
+            self._update_crown(*args)
+
+    @staticmethod
+    def _who_line(box, usd_part: str, holder, name) -> tuple[str, Text]:
+        """``(usd prefix, holder cell)`` fitted to ``box``'s real width.
+
+        Before layout (width 0) the holder gets :data:`_WHO_WIDTH`. After it,
+        the address window shrinks to what the box leaves beside the prefix,
+        never below ``MIN_SHORT_COLS``; when even that does not fit, the
+        dollar prefix is shed so the icon is never what the CSS ellipsis cuts.
+        """
+        room = box.content_size.width
+        width = _WHO_WIDTH
+        if room > 0:
+            budget = room - cell_len(usd_part) - ICON_COLS
+            if budget < MIN_SHORT_COLS:
+                usd_part = ""
+                budget = room - ICON_COLS
+            width = min(_WHO_WIDTH, max(MIN_SHORT_COLS, budget))
+        return usd_part, address_text(holder, label=name, width=width)
+
     # -- PULL EV --------------------------------------------------------
 
     def _update_ev(
@@ -413,6 +440,10 @@ class FWAHeroMetrics(Horizontal):
         vacant,
         available,
     ) -> None:
+        # Kept so a resize can re-budget the holder line against the new box.
+        self._crown_args = (
+            pot_eth, pot_usd, seize_eth, holder, holder_name, vacant, available,
+        )
         box = self.query_one("#fwa-hero-crown", FWAHeroBox)
 
         if available is False:
@@ -448,12 +479,22 @@ class FWAHeroMetrics(Horizontal):
             big = f"[{_GOLD}]{_fmt_eth(pot, 3)}[/] [dim]ETH[/]"
 
         usd = _fmt_usd(pot_usd) if _as_float(pot_usd) is not None else "usd n/a"
-        # A verified ENS name where we have one. Escaped: unlike the address
-        # it replaces, this is third-party text going into markup.
-        name = str(holder_name or "").strip()
-        who = safe_markup(name[:20]) if name else _short_addr(holder)
-        second = f"{usd} · {who}"
+        # A verified ENS name where we have one; the icon always copies the
+        # wallet address, whichever is shown. Composed as `Text` rather than
+        # spliced into a markup string: the copy icon needs its own `Style`
+        # meta, which `Static.update()` cannot recover from a plain string,
+        # and `address_text` hands back third-party text (the name) as
+        # literal `Text` content -- never parsed as markup -- so no separate
+        # escaping is needed for it here the way `safe_markup` used to do.
+        name = str(holder_name or "").strip() or None
+        usd_part, who = self._who_line(box, f"{usd} · ", holder, name)
 
-        box.update(
-            f"[dim]CROWN[/]\n\n{big}\n[dim]{second}[/]\n[dim]{seize_line}[/]"
-        )
+        content = Text.from_markup("[dim]CROWN[/]\n\n")
+        content.append_text(Text.from_markup(big))
+        content.append("\n")
+        if usd_part:
+            content.append(usd_part, style="dim")
+        content.append_text(who)
+        content.append("\n")
+        content.append_text(Text.from_markup(f"[dim]{seize_line}[/]"))
+        box.update(content)

@@ -112,6 +112,11 @@ class StatusBar(Horizontal):
         """Name this screen's own keys in the left label (see ``_key_hints``)."""
         self._key_hints = hints or ""
 
+    @property
+    def message(self) -> str:
+        """The centred operation message currently on display (``""`` when none)."""
+        return getattr(self, "_message", "")
+
     def set_message(self, message: str) -> None:
         """Show an operation between the normal left and right footer text."""
         self._message = message or ""

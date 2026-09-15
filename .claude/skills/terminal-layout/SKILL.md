@@ -17,8 +17,8 @@ it. This file is the method; the constants are the record.
 | app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `p` pool4 | 106 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `4` pool4 market | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `p` pool4 (key `e`, experimental, since 2026-09-15) | 99 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `4` pool4 market (hint `4 pool4`) | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
@@ -68,6 +68,25 @@ pin, and a row that lands inside an existing floor does not reach it at all.
 Raising FLOW's floor to buy its fourth log row back was measured too and
 costs a second row (45 -> 46); it was not spent.
 
+On 2026-09-14 the owner removed POOL4 FLOW from the `p` body, because the `4`
+body's RECENT FLOW already renders its rows. **The width pin went 106 -> 99 and
+the row pin did not move.** That is the binding-column rule seen from both
+axes at once, and it is the example to quote when someone expects a removed
+panel to clear `‹ taller`:
+
+* FLOW **bound** the width (a 52-need panel buying 53 with its column's
+  gutter), so removing it moved that pin. It moved seven columns, not three,
+  because under 1:1 the rail now has to get its 50 and an odd terminal width
+  hands the rail the odd column. The binder is HATCHES now, with zero margin;
+  it still marks at every width under the pin.
+* FLOW sat in the column that only **tied** the height, at 34 rows each. The
+  left column fell to 28 and the rail stayed at 34, so the pin stayed at 45
+  and `‹ taller` is still lit at 44.
+
+The left column kept no `1fr` child. Neither survivor scrolls inside itself,
+so the freed rows are blank space at the column's foot rather than a floor on
+a `Static` that could cut in silence.
+
 Later still on the same day the owner asked for three layout changes on the
 `4` body at once and **both** its pins moved: 105 -> 119 and 32 -> 35. That
 entry is the worked example of three separate lessons in this file, so it is
@@ -99,8 +118,9 @@ though the `4` body has since moved thirteen columns past the `p` body and
 handed its seam to a different panel -- which is itself the lesson, one layer
 out: a relation between two independently swept pins is a coincidence with a
 date on it, and nothing should be derived from it even while it holds.
-`SurfPool4Flow` bound surf's `p` body and its `4` body. In `p` it sits in a
-scrolling `Vertical` that reserves its own scrollbar gutter, so that column has
+`SurfPool4Flow` bound surf's `p` body and its `4` body (until 2026-09-14, when
+it left `p`). In `p` it sat in a
+scrolling `Vertical` that reserves its own scrollbar gutter, so that column had
 to buy a column more than the panel needs; in `4` the row it sits in does not
 scroll, so the seam buys the panel's need exactly and the body's single gutter
 is paid once instead of twice. Same panel, same need, two different pins.
@@ -211,6 +231,10 @@ deliberately and write down what it cost, which
 * **`DataTable.show_horizontal_scrollbar` is not a clipping signal** — it reads
   `True` several columns before any character is lost, so a marker keyed off it
   fires early and disagrees with the screen.
+* **An address costs `widgets/address.ICON_COLS` more than its text.** Every displayed 0x address
+  carries a copy icon. Where adding it would move a pin, the displayed address gives up the two
+  cells instead (`short_address`, window rule 8/6 at 17 cells), and the trade is recorded in the
+  pin's `#:` block together with its anti-poisoning cost.
 
 ## CSS lives in two places
 
@@ -276,7 +300,7 @@ adjusting the constant to match.
 
 `c` swaps a shared slot on FWA, TTT, Talismans and curator so three panels that
 cannot share a row do not have to. Surf does not: its 2026-08-10 restructure put
-all six panels on screen at once, which is why its `l`, `p` and `4` and
+all six panels on screen at once, which is why its `l`, `p` (key `e` since 2026-09-15) and `4` and
 curator's `y`/`f` swap whole *bodies* instead. Each swapped body gets its
 **own** pin, swept in situ against its own panels — surf's `p` is not derived
 from and does not equal its `l`, and its sweep deliberately straddles both

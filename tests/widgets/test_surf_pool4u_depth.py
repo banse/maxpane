@@ -58,6 +58,7 @@ from maxpane_dashboard.widgets.surf.pool4u_depth import (
     COMPACT_WIDTH,
     FULL_WIDTH,
     HEADERS,
+    NOT_REACHED_BAND,
     TABLE_ID,
     TITLE,
     UNAVAILABLE_LINE,
@@ -132,6 +133,24 @@ UNREAD = {
     "pool4_backstop_liquidity": None,
 }
 
+#: The live mainnet reading of 2026-09-14: the band opens at tick 69300, 29.33%
+#: under a spot of 65858. -1/-5/-10/-20% stop short of it; -50% does not.
+LIVE = {
+    **ORACLE,
+    "pool4_current_tick": 65858,
+    "pool4_backstop_lower_tick": 69300,
+}
+
+#: **The sliver.** The band opens one tick *before* the -1% rung's target, so
+#: that rung enters the band and uses a real share that rounds to ``0.0%``.
+#: ``not reached`` there would be a false sentence; the trap this key exists for.
+SLIVER = {
+    **ORACLE,
+    "pool4_backstop_lower_tick": surf_pool4_depth.tick_for_price_drop(
+        ORACLE["pool4_current_tick"], 1.0
+    ) - 1,
+}
+
 
 # ===========================================================================
 # The contract WP9 was written for
@@ -158,11 +177,14 @@ async def test_the_ladder_never_promises_protection() -> None:
         ORACLE,
         NO_BAND,
         UNREAD,
+        LIVE,
+        SLIVER,
         {**ORACLE, "pool4_network": "SEPOLIA"},
         {"pool4_current_tick": None},
         {},
     ],
-    ids=["oracle", "no-band", "unread-band", "sepolia", "unreadable", "empty"],
+    ids=["oracle", "no-band", "unread-band", "not-reached", "sliver", "sepolia",
+         "unreadable", "empty"],
 )
 async def test_no_reachable_state_of_this_panel_promises_protection(payload) -> None:
     """The forbidden words are forbidden in **every** state, not one.
@@ -202,6 +224,8 @@ async def test_no_band_deployed_is_not_an_unreadable_position() -> None:
     assert CAPTION in out
     assert "0.0%" in out
     assert UNREAD_BAND not in out
+    # "not reached" would claim a band exists for the fall to stop short of.
+    assert NOT_REACHED_BAND not in out
 
 
 # ===========================================================================
@@ -258,18 +282,28 @@ async def test_the_rows_paint_the_numbers_the_independent_oracle_produced() -> N
 
     lines = await _lines(ORACLE, size=(160, 16))
     checked = 0
+    not_reached = []
     for move in DEPTH_MOVES:
         assert move in reference, move
         painted = [line.strip() for line in lines if line.strip().startswith(f"-{move}%")]
         assert len(painted) == 1, (move, lines)
-        cells = painted[0].split()
+        # maxsplit: ``not reached`` is two words in one cell.
+        cells = painted[0].split(None, 2)
         assert len(cells) == 3, (move, cells)
         eth = float(cells[1].replace(",", ""))
-        used = float(cells[2].rstrip("%"))
         assert eth == pytest.approx(reference[move]["hook_total_eth"], abs=0.02), move
-        assert used == pytest.approx(reference[move]["band_used_pct"], abs=0.6), move
+        if cells[2] == NOT_REACHED_BAND:
+            # The oracle has no word for it; what it must say is a zero share.
+            assert reference[move]["band_used_pct"] == 0.0, move
+            not_reached.append(move)
+        else:
+            used = float(cells[2].rstrip("%"))
+            assert used == pytest.approx(reference[move]["band_used_pct"], abs=0.6), move
         checked += 1
     assert checked == len(DEPTH_MOVES), checked
+    # -1% (target 68282) is the one rung short of the band at 68340, so both
+    # branches above ran -- a ladder painting every rung one way cannot pass.
+    assert not_reached == [1], not_reached
 
 
 def test_the_rungs_are_this_panels_only_source_of_rows() -> None:
@@ -385,10 +419,94 @@ async def test_a_deployed_band_with_an_unreadable_amount_says_unknown_too() -> N
         await _lines({**ORACLE, "pool4_backstop_liquidity": None}, size=(160, 16))
     )
     assert zero and missing and zero != missing
-    for line in zero:
+    # A band holding nothing is still a band the ticks can reach: -1% (target
+    # 68282) stops short of 68340 and says so, and every deeper rung enters it
+    # and reports its true zero share. Re-derived 2026-09-14, when the short
+    # rung stopped painting ``0.0%``.
+    assert zero[0].startswith("-1%") and zero[0].endswith(NOT_REACHED_BAND), zero
+    for line in zero[1:]:
         assert line.endswith("0.0%"), line
     for line in missing:
         assert UNREAD_BAND in line, line
+        assert NOT_REACHED_BAND not in line, line
+
+
+# ===========================================================================
+# `not reached` -- decided from ticks, never from a zero share (2026-09-14)
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_rungs_short_of_the_band_say_not_reached_and_the_deep_one_a_share() -> None:
+    """The live reading, on the painted column: 0 / 0 / 0 / 0 / 16% from the
+    independent reader, painted as four sentences and one percentage."""
+    lines = _rung_lines(await _lines(LIVE, size=(160, 16)))
+    assert len(lines) == len(DEPTH_MOVES), lines
+    for line in lines[:4]:
+        assert line.endswith(NOT_REACHED_BAND), line
+    assert lines[4].startswith("-50%")
+    assert NOT_REACHED_BAND not in lines[4]
+    assert float(lines[4].split()[-1].rstrip("%")) > 0.0, lines[4]
+
+
+@pytest.mark.asyncio
+async def test_a_sliver_into_the_band_paints_its_rounded_share_and_not_not_reached() -> None:
+    """**The trap, read off the pixels.** The -1% rung enters the band by one
+    tick, uses a real share that rounds to ``0.0%``, and must paint exactly
+    that. A widget that decided ``not reached`` from the rounded share would
+    paint a false sentence over a band the move entered."""
+    lines = _rung_lines(await _lines(SLIVER, size=(160, 16)))
+    first = lines[0]
+    assert first.startswith("-1%"), lines
+    assert first.endswith("0.0%"), first
+    assert NOT_REACHED_BAND not in first, first
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {**LIVE, "pool4_backstop_state": None},
+        {**LIVE, "pool4_backstop_liquidity": None},
+        {**LIVE, "pool4_backstop_state": "retired"},
+    ],
+    ids=["state-unread", "amount-unread", "unknown-state-word"],
+)
+async def test_an_unread_band_says_unknown_even_where_the_ticks_fall_short(payload) -> None:
+    """``unknown`` out-ranks ``not reached``. Each payload keeps the live lower
+    tick, so from the ticks alone four rungs are short of the band -- and
+    still nobody read the band, so none of them may say it was not reached."""
+    lines = _rung_lines(await _lines(payload, size=(160, 16)))
+    assert len(lines) == len(DEPTH_MOVES), lines
+    for line in lines:
+        assert line.endswith(UNREAD_BAND), line
+        assert NOT_REACHED_BAND not in line, line
+
+
+def test_the_band_cell_precedence_is_unknown_then_not_reached_then_the_share() -> None:
+    """The order, on the cell function directly -- including the combination
+    ``depth_rows`` never emits (share unread, reach ``False``), because the
+    order is the widget's contract and must not lean on its producer."""
+    base = {"move_pct": 1, "eth_paid": 0.1}
+    assert ladder_cells({**base, "band_used_pct": None, "band_reached": False})[2] == UNREAD_BAND
+    assert ladder_cells({**base, "band_used_pct": None, "band_reached": True})[2] == UNREAD_BAND
+    assert ladder_cells({**base, "band_used_pct": 0.0, "band_reached": False})[2] == NOT_REACHED_BAND
+    # a reached rung whose share is zero or rounds to zero keeps the number
+    assert ladder_cells({**base, "band_used_pct": 0.0, "band_reached": True})[2] == "0.0%"
+    assert ladder_cells({**base, "band_used_pct": 0.004, "band_reached": True})[2] == "0.0%"
+    # no band: reach is None, and ``None`` is not ``False``
+    assert ladder_cells({**base, "band_used_pct": 0.0, "band_reached": None})[2] == "0.0%"
+    assert ladder_cells({**base, "band_used_pct": 0.0})[2] == "0.0%"
+
+
+def test_every_band_cell_word_fits_its_column() -> None:
+    """Fitted on ``cell_len``, and ``==`` against the widest, so the budget
+    reddens whether it is too narrow for ``not reached`` or left loose."""
+    words = (HEADERS[2], UNREAD_BAND, NOT_REACHED_BAND, "100.0%")
+    assert depth_mod._USED_COLS == max(cell_len(w) for w in words)
+    assert cell_len(NOT_REACHED_BAND) == depth_mod._USED_COLS
+    assert not any(ch.isdigit() for ch in NOT_REACHED_BAND)
+    assert "%" not in NOT_REACHED_BAND
 
 
 def test_the_panel_declares_the_state_key_it_branches_on() -> None:

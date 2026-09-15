@@ -911,6 +911,10 @@ class DeadPool4Client:
         self.calls.append("fetch_flow_logs")
         return None
 
+    async def fetch_swap_logs(self, pool_manager, pool_id, from_block, to_block, *, network):
+        self.calls.append("fetch_swap_logs")
+        return None
+
     async def close(self):
         self.closed = True
 

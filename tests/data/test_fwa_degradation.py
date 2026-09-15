@@ -58,6 +58,7 @@ from maxpane_dashboard.analytics.fwa_signals import (
 )
 from maxpane_dashboard.data import fwa_logs as fl
 from maxpane_dashboard.data.fwa_cache import FWACache
+from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.data.fwa_client import FWA_HOT_KEYS
 from maxpane_dashboard.data.fwa_manager import LOG_RAW_MIN_ROWS, FWAManager
 from maxpane_dashboard.data.fwa_market import FloorQuote, floors_for_ev
@@ -1024,7 +1025,14 @@ async def test_logs_down_warm_serves_last_good_behind_an_explicit_as_of(tmp_path
         assert f"as of {stamp}" in text          # settlement table's stamp
         assert f"last good content, as of {stamp}" in feed_text
         assert "73.92%" in text                      # the persisted mix
-        assert "0xcccc..cccc" in text                # the persisted crown row
+        # The persisted crown row's holder, windowed by
+        # widgets/address.py's anti-poisoning window (PRD §6) rather than
+        # the private "0xcccc..cccc" 6/4 cut this replaced -- the shape that
+        # exists because live spoofs collide with real addresses on the old
+        # form (surf's long_addr docstring). CROWN_HOLDER is forty 'c's, so
+        # any legal window still reads as a run of 'c's on each side of the
+        # ellipsis; the copy icon follows immediately after a space.
+        assert re.search(r"0xc+…c+ " + re.escape(COPY_GLYPH), text), text
         assert "degraded: logs" in text
 
         # Everything else kept working through the failure.

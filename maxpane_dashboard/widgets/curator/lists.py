@@ -5,12 +5,14 @@ from __future__ import annotations
 import math
 
 from rich.cells import cell_len, set_cell_size
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.coordinate import Coordinate
 from textual.message import Message
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ADDRESS_RE, ICON_COLS, address_text, parse_copy_action
 from maxpane_dashboard.widgets.curator._fmt import (
     DASH,
     fmt_eth_compact,
@@ -41,10 +43,53 @@ FILTERED_LIST_EMPTY = "no wallets match"
 
 MAX_ROWS = 1_000
 
+#: **Six, not a proven worst case -- restored 2026-09-14 fix round 2, after
+#: round 1 shrank it to five on a false premise.** The comment that shipped
+#: with five claimed ``"1,000"`` (five characters) was the widest value
+#: this column ever carries because ``_renumber_and_publish`` numbers
+#: ``1..MAX_ROWS``. That is false: ``_render_view``'s own ``shown = usable
+#: if self._payload.get("complete") else usable[:MAX_ROWS]`` shows every
+#: row a **complete** list holds, uncapped by ``MAX_ROWS`` -- and complete
+#: lists longer than 999 rows are real (committed fixtures put
+#: ``contributors_total`` at 15,576 and ``clean_contributors`` at 9,273). At
+#: five columns ``"10,000"`` rendered ``"10,00"``, a wrong-looking number
+#: with no marker, and the pinned YOU row shared the same crop. There is no
+#: exact ceiling to size against -- nothing here bounds how large a
+#: complete export can be -- so six is not a proof either, only headroom:
+#: it holds every committed fixture and any population up to 999,999.
+#: ``test_a_complete_list_past_nine_thousand_nine_hundred_ninety_nine_rows_shows_its_real_index``
+#: is the tripwire for the five-column crop this reverts.
 _INDEX_COLS = 6
 _RANK_COLS = 6
 _JOIN_COLS = 6
-_ADDRESS_COLS = 42
+#: The address cell's own **display** width -- round 2's fix, replacing
+#: round 1's column-stealing one. The copy icon's two columns have to come
+#: from somewhere, and round 1 took them from ``_INDEX_COLS`` (wrongly, see
+#: its own comment above) and ``_ENS_COLS``. Per recipe step 6.3 ("when
+#: growing would move a pin, shorten the displayed address"): the address
+#: itself pays for its own icon instead. ``42 - ICON_COLS`` = 40, the
+#: anti-poisoning window (``MIN_SHORT_COLS`` is 11; 40 is nowhere near
+#: it -- ``address_text``'s own ``short_address`` only trims the address's
+#: *middle*, three hex digits here, at this width) rather than the full,
+#: bare 42-character address every row showed in every tier before this
+#: task. The window before/after: was unwindowed (``0x…`` the full 42
+#: characters); now ``0x`` + 31 hex + ``…`` + 6 hex (40 characters) -- the
+#: icon's own click target still copies the real, complete address either
+#: way, only the displayed text is shorter.
+_ADDRESS_COLS = 40
+#: The ADDRESS column's total width: the display above plus the copy
+#: icon's two cells, local to this panel exactly like ``leaderboard.py``'s
+#: own ``_WALLET_COLS``. Present in every tier (narrow/minimum both keep
+#: ADDRESS), so every declared cost below grows by ``ICON_COLS`` -- but
+#: ``_ADDRESS_COLS`` shrank by the same ``ICON_COLS``, so this column's
+#: *total* width (42) is unchanged from before the copy-icon conversion.
+_ADDRESS_COLS_TOTAL = _ADDRESS_COLS + ICON_COLS
+#: A soft cap, not a measured worst case: ENS names are unbounded strings
+#: and this column ellipsis-truncates its own value past this width (see
+#: ``_ens_cell`` below). Round 1 reclaimed one column here to pay for the
+#: ADDRESS icon; round 2 reverted that (the icon is now paid entirely out
+#: of ``_ADDRESS_COLS``'s own display width, above) and restored the
+#: pre-Task-3 value.
 _ENS_COLS = 19
 _POINTS_COLS = 7
 _WEIGHT_COLS = 8
@@ -57,7 +102,7 @@ _RAW_FULL = (
     ("index", "INDEX", _INDEX_COLS),
     ("rank", "RANK", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
-    ("address", "ADDRESS", _ADDRESS_COLS),
+    ("address", "ADDRESS", _ADDRESS_COLS_TOTAL),
     ("ens", "ENS", _ENS_COLS),
     ("points", "POINTS", _POINTS_COLS),
     ("weight", "WEIGHT Ξ", _WEIGHT_COLS),
@@ -98,7 +143,7 @@ _CLEANED_FULL = (
     ("index", "INDEX", _INDEX_COLS),
     ("rank", "RANK", _RANK_COLS),
     ("join", "JOIN #", _JOIN_COLS),
-    ("address", "ADDRESS", _ADDRESS_COLS),
+    ("address", "ADDRESS", _ADDRESS_COLS_TOTAL),
     ("ens", "ENS", _ENS_COLS),
     ("points", "POINTS", _POINTS_COLS),
     ("weight", "WEIGHT Ξ", _WEIGHT_COLS),
@@ -198,10 +243,19 @@ def _rank(value) -> str:
         return DASH
 
 
-def _address(value) -> str:
+def _address(value):
     if not isinstance(value, str) or not value.strip():
         return DASH
-    return safe_markup(value.strip())
+    # Lower-cased on purpose, ``leaderboard.py``'s own reason: two sources
+    # spell one wallet two ways, and the icon copies whichever spelling
+    # this cell was given.  No label: ENS is this table's own separate
+    # column, so the cell is the address alone -- windowed to
+    # `_ADDRESS_COLS` (recipe step 6.3: the icon is paid for by shortening
+    # the display, not by taking a column from INDEX or ENS; see
+    # `_ADDRESS_COLS`'s own note for the window's exact shape). The icon
+    # still copies the real, complete address regardless of how much of it
+    # is shown.
+    return address_text(value.strip().lower(), width=_ADDRESS_COLS)
 
 
 def _ens(name) -> str:
@@ -470,9 +524,47 @@ class _ListTable(Vertical):
 
     @staticmethod
     def _address_key(value) -> str | None:
-        if not isinstance(value, str) or not value.strip():
+        """Normalise an address for the reverse row lookup.
+
+        ``value`` is either the row's own raw ``address`` field (a plain
+        ``str``) or the ADDRESS column's *rendered cell* read back off the
+        ``DataTable`` (``table.get_row_at(...)``), which is now a
+        pre-built ``Text`` (:func:`_address`'s copy icon needs a real
+        ``Style``, not a markup string).
+
+        A ``Text`` cell is read off its copy icon's own click action
+        first, never off the visible characters: fix round 2 windows the
+        display (``_ADDRESS_COLS`` = 40, the anti-poisoning window) to pay
+        for the icon without touching INDEX or ENS, and a windowed address
+        has an ellipsis *inside* the 40-character hex run, which
+        ``ADDRESS_RE`` (a contiguous 40-hex-character pattern) can no
+        longer match -- silently turning every row's key into ``None`` and
+        collapsing every sort into a no-op stable pass, which is exactly
+        what round 2 first shipped and a click-to-sort test caught.
+        ``address_text``'s icon always carries the real, complete address
+        in its own ``Style(meta={"@click": "app.copy_address(...)"})``
+        span regardless of how much of it is shown, so that is read first;
+        a plain ``str`` (the row's own raw field, never windowed) falls
+        through to the old whole-string pattern match.
+        """
+        if isinstance(value, Text):
+            for _start, _end, style in value.spans:
+                # A span's style is not always a `Style` object -- Rich
+                # allows a plain `str` (a markup-shorthand span, e.g. from
+                # a future `.stylize("bold")` on the YOU row), which has no
+                # `.meta` and would raise `AttributeError` here, outside
+                # this method's own `try` blocks upstream. Guarded the same
+                # way `widgets.address.is_copy_click` guards the identical
+                # read.
+                meta = getattr(style, "meta", None) or {}
+                address = parse_copy_action(meta.get("@click"))
+                if address:
+                    return address.casefold()
+            value = value.plain
+        if not isinstance(value, str):
             return None
-        return value.strip().casefold()
+        match = ADDRESS_RE.search(value)
+        return match.group(0).casefold() if match else None
 
     def _source_row(self, values) -> dict | None:
         try:

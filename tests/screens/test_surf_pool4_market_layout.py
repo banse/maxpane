@@ -45,7 +45,7 @@ than an edited assertion, because a pin whose binder silently changes identity
 is exactly what that test exists to catch.
 
 The third ask is the one that did not come free, and this file pins the reason.
-IF IMD FALLS's *table* is 27 cells, but its caption is 41, and below 45 columns
+IF IMD FALLS's *table* is 29 cells, but its caption is 41, and below 45 columns
 that caption is cut by CSS with **no ``‹`` marker** -- the panel's widen tier is
 decided by its table. So 45 is a floor rather than a preference, it is spent
 rather than chosen, and ``test_the_ladder_column_is_exactly_the_width_of_its_
@@ -87,6 +87,8 @@ both halves rather than simplifying to the marker now that the two agree.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from maxpane_dashboard.app import CSS_PATH
@@ -116,7 +118,6 @@ from maxpane_dashboard.widgets.surf.pool4u_depth import CAPTION as DEPTH_CAPTION
 from maxpane_dashboard.widgets.surf.pool4u_depth import (
     PANEL_COLUMNS as DEPTH_PANEL_COLUMNS,
 )
-from maxpane_dashboard.widgets.surf.pool4u_stakers import MAX_ROWS as STAKER_MAX_ROWS
 
 # The screen-test module owns the payload fixtures and the themed harness.
 # Imported rather than restated: a second copy of the capture would drift,
@@ -150,7 +151,16 @@ MEASURED_MARKET_ROWS = 35
 #: It is the number the bottom row's raised floor was bought to protect: in a
 #: nine-row slot -- the ladder's own content height, which is what that row was
 #: floored at -- the same panel prints **five**.
-PRE_SWAP_STAKER_ROWS_AT_PIN = 9
+#:
+#: **8, not the 9 recorded until 2026-09-15.** That 9 was counted by
+#: :func:`_staker_rows` while it still took any line starting with a digit,
+#: and this payload's footer, ``999,999 addresses · …``, starts with one: it
+#: was eight addresses plus the footer. Measured in situ at the current pin
+#: with the corrected counter: eight addresses under both the old footer and
+#: the ``showing 20 of 999,999`` one. The pre-swap tree cannot be re-rendered
+#: here, but it was counted with the same counter on the same footer, so the
+#: same one row is taken off. The layout did not change.
+PRE_SWAP_STAKER_ROWS_AT_PIN = 8
 
 #: What ``SurfPool4UStakers`` needs for itself in this body, measured at the
 #: width where its own marker goes dark. Hand-typed rather than imported for
@@ -166,7 +176,8 @@ MARKET_STAKERS_NEED = 73
 
 #: What the fixed ladder column is, restated from CSS. It is
 #: ``pool4u_depth.PANEL_COLUMNS``, which is ``CAPTION``'s 41 cells plus the
-#: same four columns of padding -- **not** the ladder table's 27.
+#: same four columns of padding -- **not** the ladder table's 29 (27 until
+#: ``not reached`` widened ``band used`` on 2026-09-14; this did not move).
 MARKET_DEPTH_COLUMNS = 45
 
 #: What ``SurfPool4Flow`` needs for itself in this body, measured at the width
@@ -174,9 +185,9 @@ MARKET_DEPTH_COLUMNS = 45
 #: longer does: the top row is ``1fr:1fr`` so it asks for 1 + 2 x 52 = 105,
 #: fourteen columns under what the bottom row now asks for. Kept because "the
 #: binder changed" is only a claim if the old binder's need is still measured.
-#: It is **not** the 53 the ``p`` body's ``POOL4_LEFT_NEED`` records: there the
-#: panel's column reserves a scrollbar gutter of its own and here the top row
-#: does not.
+#: It is **not** the 53 the ``p`` body's ``POOL4_LEFT_NEED`` recorded until
+#: 2026-09-14, when FLOW left that body: there the panel's column reserved a
+#: scrollbar gutter of its own and here the top row does not.
 MARKET_FLOW_NEED = 52
 
 #: The panels whose painted line count is a **constant**, and what that
@@ -219,10 +230,23 @@ _MARKET_CLASSES = {
 # ---------------------------------------------------------------------------
 
 
-def _wide_staker_payload(**extra) -> dict:
-    """A staker page at the renderer's own cap, with the widest cell values.
+#: Rows in :func:`_wide_staker_payload`. Hand-typed at the old renderer cap of
+#: twenty rather than read off ``pool4u_stakers.MAX_ROWS``, which became 999
+#: on 2026-09-15: every width in the 38..156 sweep would otherwise render a
+#: 999-row table, and a column's width does not depend on how many rows share
+#: it. The row *count* at the owner's live population is exercised by
+#: :func:`_every_staker_payload` at the pin boundary instead.
+WIDE_STAKER_ROWS = 20
 
-    ``MAX_ROWS`` rows rather than the capture's five, and holdings in the
+#: The live vault's holder count on 2026-09-15, when the owner asked to see
+#: every one of them.
+LIVE_STAKER_COUNT = 353
+
+
+def _wide_staker_payload(**extra) -> dict:
+    """A staker page of twenty rows, with the widest cell values.
+
+    Twenty rows rather than the capture's five, and holdings in the
     ``999.9B`` band ``_fmt_imd_cell``'s budget was sized for. The committed
     capture is this panel's *narrow* case, so a sweep that only saw it could
     not tell "the width does not move with the data" apart from "we only ever
@@ -235,13 +259,66 @@ def _wide_staker_payload(**extra) -> dict:
             "imd": 999_900_000_000.0,
             "pct": 100.0,
         }
-        for i in range(STAKER_MAX_ROWS)
+        for i in range(WIDE_STAKER_ROWS)
     ]
     return _frozen_payload(
         pool4_stakers=rows,
         pool4_staker_count=999_999,
         pool4_staker_top3_pct=99.9,
         **extra,
+    )
+
+
+#: ``(imd, share, IMD cell, share cell)`` for the widest and the trickiest
+#: small-stake forms (2026-09-15). The largest pair follows, and every row
+#: after these is it. They lead the every-staker payload so they are on screen
+#: at every height the sweeps use, where a cut cell would show.
+SMALL_STAKE_CELLS = (
+    (0.00042, 0.00012, "0.00042", "0.00012%"),
+    (1.2348797628963259e-20, 8.273969285998535e-25, "<0.0001", "<0.0001%"),
+    (8.42, 0.55, "8.42", "0.55%"),
+    (0.0042, 0.012, "0.0042", "0.012%"),
+    (0.0, 0.0, "0", "0%"),
+    (999_900_000_000.0, 100.0, "999.9B", "100.0%"),
+)
+
+
+def _pair_is_whole(text: str, imd: str, share: str) -> bool:
+    """Is ``imd`` followed by ``share`` on one composited row, each a whole cell?
+
+    Whole means bounded by whitespace or the line's ends, so a value cut to
+    ``0.0001…`` or a share whose last cells went behind the scrollbar cannot
+    match.
+    """
+    pattern = (
+        r"(?:^|\s)" + re.escape(imd) + r"\s+" + re.escape(share) + r"(?:\s|$)"
+    )
+    return any(re.search(pattern, line) for line in text.split("\n"))
+
+
+def _every_staker_payload() -> dict:
+    """Every staker the live vault had when the owner asked to see them all.
+
+    353 rows, so the rank column reaches three digits. The first rows carry
+    :data:`SMALL_STAKE_CELLS`, the widest small-stake strings, and the rest the
+    widest large holding. Checked at the pin boundary in both dimensions and
+    over 109..130 in the width sweep, where a cut cell reddens.
+    """
+    rows = [
+        {
+            "rank": i + 1,
+            "address": "0x" + f"{i:x}".rjust(40, "e"),
+            "imd": (SMALL_STAKE_CELLS[i][0] if i < len(SMALL_STAKE_CELLS)
+                    else 999_900_000_000.0),
+            "pct": (SMALL_STAKE_CELLS[i][1] if i < len(SMALL_STAKE_CELLS)
+                    else 100.0),
+        }
+        for i in range(LIVE_STAKER_COUNT)
+    ]
+    return _frozen_payload(
+        pool4_stakers=rows,
+        pool4_staker_count=LIVE_STAKER_COUNT,
+        pool4_staker_top3_pct=19.3,
     )
 
 
@@ -262,6 +339,7 @@ MARKET_PAYLOADS = {
     "ordinary": _ordinary_pool4_payload,
     "mainnet": _mainnet_pool4_payload,
     "wide-stakers": _wide_staker_payload,
+    "every-staker": _every_staker_payload,
     "widest": _widest_payload,
     "unread-stakers": lambda: _frozen_payload(
         pool4_stakers=None, pool4_staker_count=None, pool4_staker_top3_pct=None
@@ -280,6 +358,16 @@ MARKET_PAYLOADS = {
         pool4_backstop_lower_tick=None,
         pool4_backstop_liquidity=None,
         pool4_backstop_eth=None,
+    ),
+    # The live mainnet shape of 2026-09-14: the band opens at 69300, 29% under
+    # a spot of 65858, so four rungs paint `not reached` -- the widest value
+    # the ladder's `band used` column holds. None of the payloads above
+    # produces that cell, so without this one the pin boundary could not see
+    # the column it was re-swept for.
+    "band-not-reached": lambda: _frozen_payload(
+        pool4_current_tick=65_858,
+        pool4_backstop_lower_tick=69_300,
+        pool4_backstop_state="deployed",
     ),
 }
 
@@ -311,11 +399,13 @@ _DEPTH_KWARGS = {
 def _market_widgets(screen) -> dict:
     """The `4` body's own panels, resolved through the body container.
 
-    **Never ``screen.query_one(cls)``.** ``SurfPool4Flow`` is mounted twice on
-    this screen -- once in the ``p`` body and once here (PRD 6.4) -- and
-    ``query_one`` does **not** raise on multiple matches in this version of
-    Textual, it returns the first. A pin measured on the wrong instance would
-    be measuring a body that is not on screen.
+    **Never ``screen.query_one(cls)``.** ``SurfPool4Flow`` was mounted twice
+    on this screen -- once in the ``p`` body and once here (PRD 6.4) -- until
+    2026-09-14, and ``query_one`` does **not** raise on multiple matches in
+    this version of Textual, it returns the first. It is mounted here only
+    now, but resolving through the body is still the rule: a pin measured on
+    the wrong instance would be measuring a body that is not on screen, and
+    nothing stops a second mount coming back.
     """
     body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
     out = {"SurfPool4UserHero": screen.query_one(SurfPool4UserHero)}
@@ -374,10 +464,16 @@ def _market_clipped(app, screen) -> list[tuple[str, str]]:
 #: and a pair computed from the panel's own constants would agree with the
 #: panel by construction and pin nothing.
 #:
-#: 52 is also the width this panel actually had until 2026-09-12, which is
-#: why the clip it produces is the shipped defect rather than an invented one.
-_STAKERS_FOOTER_CLIPS_AT = 52
-_STAKERS_FOOTER_FITS_AT = 53
+#: 52/53 until 2026-09-15. 52 was the width this panel actually had until
+#: 2026-09-12, so the clip it produced was the shipped defect rather than an
+#: invented one. Fix round 1 (item 4) made the fixture's footer longer: its
+#: 20 rows against a population of 999,999 now read ``showing 20 of 999,999
+#: addresses · top 3 = 100% of vault · stale``, 63 cells. Re-measured with
+#: this probe over 50..70: clipped through 66, whole from 67, and the old
+#: panel-edge rule still blind at 66, so the test's premise holds one
+#: sentence longer.
+_STAKERS_FOOTER_CLIPS_AT = 66
+_STAKERS_FOOTER_FITS_AT = 67
 
 
 async def _stakers_clip_probe(width: int) -> dict:
@@ -519,12 +615,20 @@ def _staker_rows(app, widget) -> int:
     Counted off composited output rather than taken from the panel's height:
     a twelve-row panel painting five entries is exactly the regression the
     bottom row's floor was raised to prevent, and a height check cannot see
-    it. A row is one whose first painted character is its rank digit, which
-    excludes the title, the blank under it, the header and the footer.
+    it. A row is one whose first painted character is its rank digit **and
+    which carries an address**, which excludes the title, the blank under it,
+    the header and the footer.
+
+    The address half was added on 2026-09-15 (fix round 1). Until then a row
+    was any line starting with a digit, and the footer ``999,999 addresses ·
+    …`` starts with one, so every count this counter made on a footer that
+    began with its population was one too high. The fix-round footer
+    ``showing 20 of 999,999 addresses`` starts with a letter, which is how it
+    showed up.
     """
     return len([
         line for line in _region_text(app, widget).split("\n")
-        if line.strip() and line.strip()[0].isdigit()
+        if line.strip() and line.strip()[0].isdigit() and "0x" in line
     ])
 
 
@@ -539,7 +643,20 @@ async def _render(payload, size):
         await pilot.pause()
         screen = pilot.app.screen
         widgets = _market_widgets(screen)
+        stakers_table = widgets["SurfPool4UStakers"].query_one("DataTable")
         return {
+            # A DataTable that is too narrow for its columns does not
+            # ellipsise, so ``clipped`` cannot see it: it scrolls
+            # horizontally and hides the rightmost cells. ``max_scroll_x`` is
+            # how many columns are hidden that way (fix round 1, item 2).
+            "stakers_hidden_cols": stakers_table.max_scroll_x,
+            "stakers_text": _region_text(pilot.app, widgets["SurfPool4UStakers"]),
+            "stakers_header": next(
+                (line for line in _region_text(
+                    pilot.app, widgets["SurfPool4UStakers"]).split("\n")
+                 if "address" in line),
+                "",
+            ),
             "marked": _market_marked(pilot.app, screen),
             "clipped": _market_clipped(pilot.app, screen),
             "text": _screen_text(pilot.app),
@@ -565,12 +682,22 @@ async def _render(payload, size):
 #: only band where a payload that moved the threshold could show it -- a
 #: hundred more renders of a payload agreeing with the first one outside that
 #: band buys nothing and costs a minute of every full-suite run. The
-#: boundary itself is checked against **all nine** payload states by
+#: boundary itself is checked against **all ten** payload states by
 #: ``test_the_market_column_pin_does_not_move_with_the_payload`` below, which
 #: is the stronger of the two claims anyway.
+#:
+#: **``every-staker`` joined on 2026-09-15 (fix round 1)**, over 109..130.
+#: 353 rows always overflow the panel, so the table always paints its
+#: two-cell vertical scrollbar, where twenty rows on a tall terminal may not.
+#: That scrollbar takes its cells from the columns, and at the full and whole
+#: tiers the table fits beside it with zero cells to spare (measured in situ at
+#: 35, 50 and 60 rows). The band covers both tier thresholds, 119 and 121.
+#: The sweep reads the table's own horizontal overflow at and above the pin,
+#: because a DataTable that runs out of width hides cells rather than
+#: ellipsising them, and ``clipped`` only sees ellipses.
 _WIDTH_SWEEP = [("capture", w) for w in range(38, 157)] + [
     ("ordinary", w) for w in range(109, 130)
-]
+] + [("every-staker", w) for w in range(109, 131)]
 
 
 @pytest.mark.parametrize("payload_name,width", _WIDTH_SWEEP)
@@ -608,6 +735,21 @@ async def test_the_market_body_is_whole_from_its_pinned_width(
             f"at {width} the 4 body is clipping a line and nothing on screen "
             f"says so: {r['clipped']}"
         )
+        assert r["stakers_hidden_cols"] == 0, (
+            f"{payload_name} at {width}: STAKERS' table hides "
+            f"{r['stakers_hidden_cols']} column(s) behind a horizontal scroll "
+            "with no marker -- its vertical scrollbar took the cells"
+        )
+        assert "share" in r["stakers_header"], (payload_name, width, r["stakers_header"])
+        if payload_name == "every-staker":
+            cut = [
+                (imd, share) for _i, _p, imd, share in SMALL_STAKE_CELLS
+                if not _pair_is_whole(r["stakers_text"], imd, share)
+            ]
+            assert not cut, (
+                f"at {width} STAKERS does not paint these stake/share cells "
+                f"whole: {cut}\n{r['stakers_text']}"
+            )
     else:
         assert r["marked"], width
         # There is deliberately no second assertion here, and the reason is
@@ -639,7 +781,7 @@ async def test_the_market_column_pin_does_not_move_with_the_payload(
     """Every payload state, asked at the boundary rather than over the range.
 
     The parametrised sweep above runs two magnitudes over a hundred widths;
-    this asks the remaining seven the one question a sweep would have to
+    this asks the remaining eight the one question a sweep would have to
     answer differently if a pin moved with the data -- is the body clean at
     the pin and marked one column under it. Both halves, so a payload that
     needed *more* columns and one that needed *fewer* would each redden.
@@ -756,11 +898,11 @@ async def test_the_ladder_column_is_exactly_the_width_of_its_own_caption() -> No
        panel is measured at the pin, at ``SURF_FULL_LAYOUT_COLUMNS`` and at
        200, and STAKERS is measured taking every one of those extra columns;
     3. one column narrower the caption is **cut in silence**. The widen tier
-       on this panel is decided from its table's width, so between 31 and 44
+       on this panel is decided from its table's width, so between 33 and 44
        columns it clips with no ``‹`` anywhere in its own region. That is the
        standing "a panel that can bind must be able to mark" rule failing,
        and it is the entire reason the ladder's column stops at 45 rather
-       than at the table's 29. Asserted, not narrated, so a future widen tier
+       than at the table's 31. Asserted, not narrated, so a future widen tier
        that learned about the caption reddens this and gets the sentence in
        ``pool4u_depth.PANEL_COLUMNS`` rewritten rather than left stale.
     """
@@ -1005,6 +1147,143 @@ async def test_the_bottom_rows_floor_is_bought_for_the_leaderboard() -> None:
                ["min-height"]) == row_floor
 
 
+#: The ``_SMALL_STEP`` boundary as ``(imd, share, IMD cell, share cell)``:
+#: exactly the step, just below and just above. Checked per RANK, because the
+#: strings repeat -- ``<0.0001`` is also the dust row's, and the exact and the
+#: just-above cases both print ``0.00010`` -- so a pair found anywhere on the
+#: panel could not tell a ``<`` from a ``<=`` on the step comparison.
+SMALL_STEP_BOUNDARY_CELLS = (
+    (0.0001, 0.0001, "0.00010", "0.00010%"),
+    (0.00009999, 0.00009999, "<0.0001", "<0.0001%"),
+    (0.00010001, 0.00010001, "0.00010", "0.00010%"),
+)
+
+
+def _rank_row_is(text: str, rank: int, imd: str, share: str) -> bool:
+    """Does the composited row for ``rank`` end in exactly these two cells?"""
+    pattern = (
+        r"^\s*" + str(rank) + r"\s+0x.*\s" + re.escape(imd) + r"\s+"
+        + re.escape(share) + r"(?:\s|$)"
+    )
+    return any(re.search(pattern, line) for line in text.split("\n"))
+
+
+@pytest.mark.parametrize(
+    "size",
+    [
+        (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+        (169, 50),
+    ],
+)
+async def test_the_small_step_boundary_renders_exactly(size) -> None:
+    """``0.0001`` prints ``0.00010``, ``0.00009999`` prints ``<0.0001``.
+
+    The review's gap (2026-09-15): the step is the one place where the
+    rendering turns on a comparison next to floating-point ``log10``, and no
+    case pinned a value at or beside it. Composited cells in the real ``4``
+    body, at the width pin and wide, for both columns, keyed by rank.
+    """
+    rows = [
+        {"rank": i + 1, "address": "0x" + f"{i + 1:040x}", "imd": imd, "pct": pct}
+        for i, (imd, pct, _t, _s) in enumerate(SMALL_STEP_BOUNDARY_CELLS)
+    ]
+    payload = _frozen_payload(
+        pool4_stakers=rows, pool4_staker_count=len(rows), pool4_staker_top3_pct=0.0003
+    )
+    r = await _render(payload, size)
+    wrong = [
+        (i + 1, imd, share)
+        for i, (_i, _p, imd, share) in enumerate(SMALL_STEP_BOUNDARY_CELLS)
+        if not _rank_row_is(r["stakers_text"], i + 1, imd, share)
+    ]
+    assert not wrong, f"{size}: {wrong}\n{r['stakers_text']}"
+
+
+@pytest.mark.parametrize(
+    "size",
+    [
+        (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+        (169, 50),
+    ],
+)
+async def test_small_stakes_render_whole_with_their_real_digits(size) -> None:
+    """The owner's 2026-09-15 request, on composited cells in the real body.
+
+    The tail of the 353-row table read ``8``, ``1``, ``0`` and ``0.0%``. Every
+    stake and share now prints two significant digits, ``<0.0001`` below the
+    step and ``0`` only for a true zero. At the width pin the table has zero
+    cells to spare beside its scrollbar, so the claim is checked there and at
+    a wide terminal, where the address is whole and the tier is different.
+    ``DataTable`` cuts a too-long cell in silence, so the check is on the
+    composited row, not on the formatter.
+    """
+    rows = [
+        {"rank": i + 1, "address": "0x" + f"{i + 1:040x}", "imd": imd, "pct": pct}
+        for i, (imd, pct, _t, _s) in enumerate(SMALL_STAKE_CELLS)
+    ]
+    payload = _frozen_payload(
+        pool4_stakers=rows, pool4_staker_count=len(rows), pool4_staker_top3_pct=7.7
+    )
+    r = await _render(payload, size)
+    cut = [
+        (imd, share) for _i, _p, imd, share in SMALL_STAKE_CELLS
+        if not _pair_is_whole(r["stakers_text"], imd, share)
+    ]
+    assert not cut, f"{size}: {cut}\n{r['stakers_text']}"
+    assert r["stakers_hidden_cols"] == 0, size
+    assert "SurfPool4UStakers" not in r["marked"], size
+
+
+@pytest.mark.parametrize(
+    "size",
+    [
+        (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+        (150, 46),
+        (169, 50),
+    ],
+)
+async def test_a_blank_row_separates_recent_flow_from_the_stakers_title(size) -> None:
+    """The owner's 2026-09-15 screenshot: FLOW's table ran into ``STAKERS``.
+
+    The fix is FLOW's own ``margin: 0 0 1 0``, which takes one row out of the
+    log rather than adding one to the body. Asserted on composited output
+    across FLOW's own columns: the row directly above the STAKERS title is
+    blank, and the row above that is FLOW's last log line.
+
+    **Run against a full 25-row log**, the state the live screen was in. The
+    committed capture's log is a few rows long, so the bottom of the panel is
+    blank whether or not the margin exists, and a test run against it cannot
+    fail. The second assertion is the premise that rules that out.
+    """
+    async with _surf_app(_widest_payload()).run_test(size=size) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        await pilot.press("4")
+        await pilot.pause()
+        await pilot.pause()
+        screen = pilot.app.screen
+        flow = screen.query_one(SurfPool4Flow)
+        stakers = screen.query_one(SurfPool4UStakers)
+        rows = _screen_text(pilot.app).split("\n")
+        # Read every region INSIDE the harness: once the app exits, a
+        # widget's region is zeroed and a slice taken from it is empty.
+        x0, x1 = flow.region.x, flow.region.right
+        sx0, sx1 = stakers.region.x, stakers.region.right
+        title_y = stakers.region.y
+        taller = TALLER_HINT in rows[0]
+
+    assert not taller, f"{size}: the body is not whole, so this measures nothing"
+    assert "STAKERS" in rows[title_y][sx0:sx1]
+    assert rows[title_y - 2][x0:x1].strip(), (
+        f"{size}: FLOW's log does not reach the row above the gap, so the "
+        "blank row could be an empty log rather than the margin"
+    )
+    assert not rows[title_y - 1][x0:x1].strip(), (
+        f"{size}: RECENT FLOW's table runs straight into the STAKERS title: "
+        f"{rows[title_y - 1][x0:x1]!r}"
+    )
+
+
 @pytest.mark.parametrize("rows", list(range(24, 47)))
 async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
     """Finding **F6, closed for this body on 2026-09-12** -- and this is what
@@ -1090,15 +1369,20 @@ def test_the_market_body_is_shorter_than_p_and_taller_than_the_launchpad() -> No
 
 #: The whole phrase, as one contiguous string. ``l launchpad`` is the half
 #: that must never shorten -- an app-level acceptance test greps for it -- so
-#: if this ever stops fitting, ``4 market`` is what gives way.
-KEY_HINT_PHRASE = "l launchpad · p pool4 · 4 market"
+#: if this ever stops fitting, ``4 pool4`` is what gives way.
+#:
+#: **Two parts since 2026-09-15.** It was ``l launchpad · p pool4 · 4
+#: market``. The owner took ``p pool4`` off the bar (the protocol body is now
+#: the unadvertised, experimental ``e``) and renamed ``4 market`` to ``4
+#: pool4``.
+KEY_HINT_PHRASE = "l launchpad · 4 pool4"
 
 
-async def test_the_three_part_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
+async def test_the_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
     """Measured against the bar's own budget, never counted.
 
-    ``4 market`` took this label from 21 columns to 32, and ``StatusBar``'s
-    left label is the segment the bar cuts first, so the question is settled
+    ``StatusBar``'s left label is the segment the bar cuts first, so the
+    question is settled
     by reading the phrase back off **composited output** at
     :data:`SURF_FULL_LAYOUT_COLUMNS` and then one column at a time down the
     band below it -- the test says *where* it stops fitting rather than only
@@ -1106,9 +1390,12 @@ async def test_the_three_part_key_hint_fits_the_status_bar_at_the_full_layout() 
 
     Two assertions, and the second is the one a row-join is blind to.
     ``_screen_text`` joins a strip's segments with ``""``, so a per-letter
-    ``[dim]`` tag that split the hint into ``4`` / `` market`` would leave the
+    ``[dim]`` tag that split the hint into ``4`` / `` pool4`` would leave the
     row-joined text byte-identical while every app-level grep for the
     contiguous phrase failed and the bar itself looked perfectly correct.
+
+    The third assertion is the owner's removal: the experimental key and
+    the old words are nowhere on the composited bar.
     """
     async with _surf_app().run_test(
         size=(SURF_FULL_LAYOUT_COLUMNS, 46)
@@ -1119,17 +1406,22 @@ async def test_the_three_part_key_hint_fits_the_status_bar_at_the_full_layout() 
         segments = [seg.text for strip in strips for seg in strip]
 
     assert KEY_HINT_PHRASE in text, (
-        "the three-part hint did not reach a pixel at the documented layout "
-        "width -- shorten '4 market', never 'l launchpad'"
+        "the hint did not reach a pixel at the documented layout "
+        "width -- shorten '4 pool4', never 'l launchpad'"
     )
     assert any(KEY_HINT_PHRASE in segment for segment in segments), (
         "the hint reaches the screen but is split across Segments: KEY_HINTS "
         "must be ONE markup run, not per-letter tags"
     )
+    status_row = text.split("\n")[-1]
+    for gone in ("p pool4", "4 market", "e pool4", "experimental"):
+        assert gone not in status_row, (
+            f"{gone!r} is on the status bar; the owner took it off: {status_row!r}"
+        )
     assert SurfScreen.KEY_HINTS == f"[dim]{KEY_HINT_PHRASE}[/]"
 
 
-async def test_the_three_part_key_hint_has_room_to_spare_below_the_full_layout() -> None:
+async def test_the_key_hint_has_room_to_spare_below_the_full_layout() -> None:
     """Where it stops fitting, not merely that it fits.
 
     Swept downward from the documented width. The phrase must survive past
@@ -1146,5 +1438,5 @@ async def test_the_three_part_key_hint_has_room_to_spare_below_the_full_layout()
                 break
     assert lost_at is None or lost_at < SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, (
         f"the key hint is already cut at {lost_at} columns, which is at or "
-        f"above this body's own pinned width -- shorten '4 market'"
+        f"above this body's own pinned width -- shorten '4 pool4'"
     )

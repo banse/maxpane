@@ -51,8 +51,17 @@ guard verbatim (PRD §7.4).
 
 Addresses
 ---------
-Chain-sourced, therefore escaped, and **not shortened at all** since
-2026-09-12: ``_fmt.full_addr`` renders all 42 characters into a 42-cell column.
+Chain-sourced, and **not shortened at all** since 2026-09-12 wherever the
+panel has the room: all 42 characters, followed since 2026-09-14 by the copy
+icon (``widgets/address.address_text``). At
+``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` the address gives the icon its two
+cells and shows 40 -- ``0x`` + 31 + ``…`` + 6 -- so the icon moved no pin; the
+whole value is one click away either way. The trade is recorded beside that
+constant. The cell is a ``Text`` and is never parsed, so there is nothing to
+escape.
+
+(The history below names ``_fmt.full_addr`` and ``_fmt.long_addr``; both were
+removed on 2026-09-14 when every surf address moved to ``widgets/address.py``.)
 
 It went through two shorteners before that. The leaderboard template's
 ``_short_addr`` (``0xABCD..1234``) was rejected first, because live spoofs of
@@ -72,8 +81,12 @@ needs on screen went 48 -> 73, and
 and the top row was already carrying the rest). Nothing
 else on the body was shortened to absorb it -- see that constant's block for
 what the bottom row's seam spends and what it got back from IF IMD FALLS.
-``long_addr`` itself is untouched and its other two callers (HATCHES on the
-``p`` body, the dashboard body's activity feed) render exactly as before.
+The 17-cell anti-poisoning window this panel left behind was not narrowed for
+its other two users: HATCHES' address block on the ``p`` body and the dashboard
+body's activity feed still show it, now through ``widgets/address.short_address``
+at ``_fmt.ANTI_POISONING_COLS`` with a copy icon beside it. (HATCHES' lever grid
+gave up two cells of that window to its icon; see
+``screens/surf.SURF_POOL4_FULL_LAYOUT_COLUMNS``.)
 
 Purity
 ------
@@ -85,17 +98,19 @@ module's ``try``.
 
 from __future__ import annotations
 
+import math
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
     as_float,
     fmt_compact,
-    full_addr,
 )
 from maxpane_dashboard.widgets.surf._pool4 import (
     TITLE_CLASS,
@@ -159,10 +174,19 @@ PENDING_LINE = "stakers not swept yet"
 #: outage.
 EMPTY_LINE = "no depositors"
 
-#: How many rows the table draws. The producer caps its own list at 20
-#: (``staker_rows(limit=20)``); this is the renderer's own guard so a longer
-#: list cannot push the footer off a short panel.
-MAX_ROWS = 20
+#: How many rows the table draws: **every staker, up to 999** (2026-09-15).
+#:
+#: It was 20, matching the producer's ``POOL4_STAKERS_LIMIT``, until the
+#: owner asked for all 353 addresses. The table sits on a ``1fr`` height
+#: inside the panel and scrolls inside itself, so more rows never push the
+#: footer off. That was this guard's original reason, and it no longer needs
+#: a small number to hold. 999 is the largest rank :data:`_RANK_COLS` can
+#: paint whole; a four-digit rank would be cut, and a cut rank is a wrong
+#: rank. Restated from ``data/surf_manager.POOL4_STAKERS_LIMIT`` because a
+#: widget may not import ``data/``;
+#: ``test_the_row_cap_is_the_producers_own_and_fits_the_rank_column`` pins the
+#: two together.
+MAX_ROWS = 999
 
 #: The concentration question the footer answers. Three, because three wallets
 #: acting together is the smallest group a reader treats as one actor.
@@ -236,21 +260,39 @@ _TITLE_ID = "surf-pool4u-stakers-title"
 #: Column budgets, in **terminal cells**, measured against the widest value
 #: each column can hold rather than against today's data:
 #:
-#: * rank -- ``MAX_ROWS`` is two digits, so three cells covers ``20`` and the
-#:   ``#`` header both;
-#: * address -- the **whole** address: ``0x`` + 40 hex is 42 cells, and
-#:   ``_fmt.full_addr`` never returns more than the chain can hold. It was 17
-#:   (``long_addr``'s window) until 2026-09-12; the twenty-five columns that
-#:   move is the single largest thing in this panel's width and the reason
-#:   ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` moved with it;
-#: * IMD -- ``fmt_compact`` tops out at ``999.9B`` (six) and a grouped integer
-#:   below 1000 at ``999`` (three), so ten cells leaves room for the header and
-#:   for a magnitude this vault has not reached;
-#: * share -- ``100.0%`` is six.
+#: * rank -- three cells covers the ``#`` header and every rank up to
+#:   ``999``, which is why :data:`MAX_ROWS` is 999 and not higher;
+#: * address -- the **whole** address: ``0x`` + 40 hex is 42 cells. It was 17
+#:   (the anti-poisoning window) until 2026-09-12; the twenty-five columns
+#:   that move is the single largest thing in this panel's width and the
+#:   reason ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` moved with it.
+#:   **Plus the copy icon since 2026-09-14** (``docs/address_copy_PRD.md``
+#:   §5), and the icon is the one thing on this panel with two widths: the
+#:   whole address *and* its icon when the panel has the room
+#:   (:data:`WHOLE_WIDTH`), and at the pin the address windowed to
+#:   :data:`_ADDR_SHORT_COLS` so the icon costs the body nothing -- 40 cells,
+#:   ``0x`` + 31 + ``…`` + 6, recorded beside the pin it protects;
+#: * IMD -- **eight** since 2026-09-15, was ten. ``fmt_compact`` tops out at
+#:   ``999.9B`` (six), ``1200.0B`` past a trillion (seven), and the small-stake
+#:   forms at ``0.00042`` / ``<0.0001`` (seven): see :func:`_fmt_imd_cell`;
+#: * share -- **eight** since 2026-09-15, was six: ``100.0%`` is six, and the
+#:   small-share forms ``0.00012%`` / ``<0.0001%`` are eight (:func:`_fmt_share_cell`).
+#:
+#: **The two columns traded cells, and the row did not grow.** The owner read
+#: ``8``/``0``/``0.0%`` down the bottom of the 353-row table (172 of the live
+#: vault's 350 holders printed ``0.0%``) and asked for the real values. Two
+#: significant digits on a small share need eight cells where the column had
+#: six, and at ``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` this table has zero cells
+#: to spare beside its scrollbar. The IMD column had three: ten cells for a
+#: widest value of seven. So IMD gave two to share. ``FULL_WIDTH`` and
+#: ``WHOLE_WIDTH`` are unchanged (69, 71), ``COMPACT_WIDTH`` is 59 (was 61),
+#: and no pin moved. Measured in situ on the live 350-row payload and a
+#: synthetic worst case (the report of 2026-09-15).
 _RANK_COLS = 3
 _ADDR_COLS = 42
-_IMD_COLS = 10
-_PCT_COLS = 6
+_ADDR_SHORT_COLS = _ADDR_COLS - ICON_COLS                           # 40
+_IMD_COLS = 8
+_PCT_COLS = 8
 
 #: What ``DataTable`` spends on each column *beyond* the width asked for: one
 #: cell of padding either side. Measured rather than assumed -- the two pins
@@ -266,11 +308,23 @@ _PCT_COLS = 6
 #: would put a marker a column or two off the width it is marking.
 _CELL_PADDING = 2
 
-#: Widest full-tier row.
+#: The row with the **whole** address and its copy icon, share included --
+#: the ``whole`` tier. Below it the address is windowed to
+#: :data:`_ADDR_SHORT_COLS` and nothing is announced: the whole value is one
+#: click away, and a window is an honest short form rather than a shed
+#: column (``docs/address_copy_PRD.md`` §5).
+WHOLE_WIDTH = sum(
+    cols + _CELL_PADDING
+    for cols in (_RANK_COLS, _ADDR_COLS + ICON_COLS, _IMD_COLS, _PCT_COLS)
+)                                                                    # 71
+
+#: Widest full-tier row: the share column present, the address windowed to
+#: :data:`_ADDR_SHORT_COLS` beside its icon. Unchanged at 69 by the icon --
+#: the window gave the icon its two cells.
 FULL_WIDTH = sum(
     cols + _CELL_PADDING
-    for cols in (_RANK_COLS, _ADDR_COLS, _IMD_COLS, _PCT_COLS)
-)
+    for cols in (_RANK_COLS, _ADDR_SHORT_COLS + ICON_COLS, _IMD_COLS, _PCT_COLS)
+)                                                                    # 69
 
 #: One tier down: the share **column** goes -- removed, not blanked. Writing
 #: empty cells into a fixed-width column frees nothing, so a "compact" tier
@@ -283,23 +337,85 @@ FULL_WIDTH = sum(
 #: per-row share is the restatement; the address and the amount are not
 #: restated anywhere.
 COMPACT_WIDTH = sum(
-    cols + _CELL_PADDING for cols in (_RANK_COLS, _ADDR_COLS, _IMD_COLS)
-)
+    cols + _CELL_PADDING
+    for cols in (_RANK_COLS, _ADDR_SHORT_COLS + ICON_COLS, _IMD_COLS)
+)                                                                    # 59
+
+
+def _shown_addr_cols(tier: str) -> int:
+    """Cells of address shown at *tier*, excluding the icon: whole or 40."""
+    return _ADDR_COLS if tier == "whole" else _ADDR_SHORT_COLS
+
+
+#: The smallest step a small stake or share is printed to. Below it the cell
+#: says so (:data:`_BELOW_STEP`) instead of rounding a real holding to zero.
+_SMALL_STEP = 0.0001
+_BELOW_STEP = "<0.0001"
+
+
+def _two_significant(v: float) -> str:
+    """``0 < v < 1`` at two significant digits, or :data:`_BELOW_STEP`.
+
+    ``0.37``, ``0.042``, ``0.0042``, ``0.00042``: as many decimals as it takes
+    to show two significant digits, and never fewer than two. Below
+    :data:`_SMALL_STEP` it is the floor marker, never a rounded-down zero.
+    Exactly the step prints ``0.00010``; the boundary is pinned both sides.
+
+    Caveat: the decimals come from ``floor(log10(v))`` before rounding, so a
+    value that carries up gains a digit -- ``0.00995`` prints ``0.0100``, three
+    significant digits (the ``999.6`` -> ``1,000`` carry in
+    :func:`_fmt_imd_cell` is the same effect one branch up).
+    """
+    if v < _SMALL_STEP:
+        return _BELOW_STEP
+    return f"{v:.{max(2, 1 - math.floor(math.log10(v)))}f}"
 
 
 def _fmt_imd_cell(value) -> str:
-    """A staker's IMD holding, fitted to :data:`_IMD_COLS`.
+    """A staker's IMD holding, fitted to :data:`_IMD_COLS`, with its real digits.
 
-    ``fmt_compact`` above 1000 (``184.2K``), grouped integers below it, and
-    ``--`` on an unread amount -- never ``0``, which would rank a wallet as
-    holding nothing when we simply could not convert its shares.
+    ``115.4K`` above 1000 (``fmt_compact``), a grouped integer from 10
+    (``780``), two decimals from 1 (``8.42``), two significant digits below 1
+    (``0.37``, ``0.0042``), ``<0.0001`` below the step, ``0`` for a true zero,
+    and ``--`` for an unread amount.
+
+    Until 2026-09-15 everything below 1000 was a whole number, so the owner's
+    screen read ``8``, ``1`` and then ``0`` for four live holders who hold
+    something: 0.24, 0.030 and two dust balances. The producer already
+    publishes the unrounded float, so the fix is here. Widest form: seven
+    cells, measured.
     """
     v = as_float(value)
     if v is None:
         return DASH
-    if abs(v) >= 1000:
+    if v == 0:
+        return "0"
+    sign, m = ("-", -v) if v < 0 else ("", v)
+    if m >= 1000:
         return fmt_compact(v)
-    return f"{v:,.0f}"
+    if m >= 10:
+        return f"{v:,.0f}"
+    if m >= 1:
+        return f"{v:.2f}"
+    return sign + _two_significant(m)
+
+
+def _fmt_share_cell(value) -> str:
+    """A staker's share of the whole vault, fitted to :data:`_PCT_COLS`.
+
+    ``7.7%`` from 1%, two significant digits below it (``0.55%``, ``0.012%``,
+    ``0.00053%``), ``<0.0001%`` below the step, ``0%`` for a true zero, and
+    ``--`` unread. It was ``.1f`` everywhere, which painted 172 of the live
+    vault's 350 holders as ``0.0%``. Widest form: eight cells, measured.
+    """
+    pct = as_float(value)
+    if pct is None:
+        return DASH
+    if pct == 0:
+        return "0%"
+    if abs(pct) >= 1:
+        return f"{pct:.1f}%"
+    return ("-" if pct < 0 else "") + _two_significant(abs(pct)) + "%"
 
 
 def staker_cells(row: object) -> tuple[str, str, str, str] | None:
@@ -328,9 +444,12 @@ def staker_cells(row: object) -> tuple[str, str, str, str] | None:
         rank = row.get("rank")
         rank_text = f"{int(rank)}" if rank is not None else DASH
         addr = row.get("address")
-        pct = as_float(row.get("pct"))
-        pct_text = f"{pct:.1f}%" if pct is not None else DASH
-        return rank_text, full_addr(addr), _fmt_imd_cell(row.get("imd")), pct_text
+        address = str(addr).strip() if addr else ""
+        pct_text = _fmt_share_cell(row.get("pct"))
+        # The address whole and raw -- ``--`` for a missing one, never a blank
+        # cell. How much of it is shown, and its copy icon, is decided at
+        # render time against the width (see ``_render_rows``).
+        return rank_text, address or DASH, _fmt_imd_cell(row.get("imd")), pct_text
     except Exception:
         return None
 
@@ -403,7 +522,7 @@ def fold_is_stale(stakers_hhmm, body_hhmm) -> bool:
     return behind * 60 > STALE_AFTER_S
 
 
-def footer_line(count, top_pct, stale: bool = False) -> str:
+def footer_line(count, top_pct, stale: bool = False, shown=None) -> str:
     """``66 addresses · top 3 = 32% of vault`` -- plain text, already fitted.
 
     ``top_pct is None`` renders ``top 3 = --`` and never a number computed
@@ -434,11 +553,23 @@ def footer_line(count, top_pct, stale: bool = False) -> str:
     layout rather than with a shortened value. ``· stale 1h37m`` is still not
     on the table: the reason it is a word and not an age is that an age is a
     per-panel clock, which this body does not have (see :data:`STALE_WORD`).
+
+    ``shown`` is the number of rows the table actually draws, passed only when
+    the population exceeds :data:`MAX_ROWS` (fix round 1, item 4). The
+    addresses clause then reads ``showing 999 of 1,200 addresses``, so a
+    capped table says so on the line it already has rather than on a new one.
+    The widest footer this makes, ``showing 999 of 999,999 addresses · top 3 =
+    100% of vault · stale``, is 64 cells against the footer's 69 at the ``4``
+    body's width pin.
     """
     parts: list[str] = []
     n = as_float(count)
     if n is not None:
-        parts.append(f"{int(n):,} addresses")
+        m = as_float(shown)
+        if m is not None and int(m) < int(n):
+            parts.append(f"showing {int(m):,} of {int(n):,} addresses")
+        else:
+            parts.append(f"{int(n):,} addresses")
     pct = as_float(top_pct)
     shown = f"{pct:.0f}%" if pct is not None else DASH
     parts.append(f"top {TOP_N} = {shown} of vault")
@@ -471,6 +602,18 @@ class SurfPool4UStakers(Vertical):
     #: ``self.size.width`` minus two, never ``self.size.width``.
     #: ``SurfPool4Hatches._TITLE_PADDING_COLS`` records the same mistake being
     #: made and fixed one panel over.
+    #:
+    #: **The same two columns are what the table's vertical scrollbar
+    #: costs, and the tiers fit beside it with none to spare** (measured
+    #: 2026-09-15, fix round 1). The ``DataTable`` has no padding, so it gets
+    #: the whole content width, and with every staker loaded it always
+    #: scrolls and paints a two-cell scrollbar. That leaves exactly
+    #: ``FULL_WIDTH`` / ``WHOLE_WIDTH`` at each tier's first width (119 and
+    #: 121 on the ``4`` body), so ``share`` is never hidden, at 35, 50 and 60
+    #: rows. A wider scrollbar, or a tier budget that stopped subtracting
+    #: these two, would hide the share column behind a horizontal scroll with
+    #: no marker. ``test_the_market_body_is_whole_from_its_pinned_width``
+    #: reads ``max_scroll_x`` on the ``every-staker`` payload to catch it.
     _TITLE_PADDING_COLS = 2
 
     def __init__(self, *args, **kwargs) -> None:
@@ -484,6 +627,13 @@ class SurfPool4UStakers(Vertical):
         #: on every poll would flush the header row and the reader's scroll
         #: position with it.
         self._columns_tier: str | None = None
+        #: What the table currently holds, as ``(tier, rows as plain text)``.
+        #: A repaint with the same key is skipped, because
+        #: ``DataTable.clear()`` resets ``scroll_y`` to 0. With every staker
+        #: in the table (2026-09-15) a reader scrolls to see most of them,
+        #: and a 30 s poll that re-sent identical rows would snap them back to
+        #: the top each time.
+        self._rows_key: tuple | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(Text(TITLE, style="dim"), id=_TITLE_ID,
@@ -506,10 +656,13 @@ class SurfPool4UStakers(Vertical):
             return
         try:
             table.clear(columns=True)
+            self._rows_key = None
             table.add_column("#", width=_RANK_COLS, key="rank")
-            table.add_column("address", width=_ADDR_COLS, key="address")
+            table.add_column(
+                "address", width=_shown_addr_cols(tier) + ICON_COLS, key="address"
+            )
             table.add_column("IMD", width=_IMD_COLS, key="imd")
-            if tier == "full":
+            if tier in ("whole", "full"):
                 table.add_column("share", width=_PCT_COLS, key="pct")
         except Exception:  # pragma: no cover - defensive
             return
@@ -562,7 +715,14 @@ class SurfPool4UStakers(Vertical):
     def _render_view(self) -> None:
         budget = self._text_budget()
         self._widen = bool(budget) and budget < FULL_WIDTH
-        self._tier = "compact" if self._widen else "full"
+        if self._widen:
+            self._tier = "compact"
+        elif budget and budget < WHOLE_WIDTH:
+            # The pin: the address windowed so its icon costs no column.
+            # Not a shed field, so no marker -- the icon copies it whole.
+            self._tier = "full"
+        else:
+            self._tier = "whole"
         self._render_title()
         self._render_rows()
         self._render_footer()
@@ -574,7 +734,7 @@ class SurfPool4UStakers(Vertical):
             return
         # ``market_title_text``, not ``title_text``: this is the ``4`` body,
         # and it is the one that leaves ``MAINNET`` unsaid. The ``p`` body's
-        # five panels go on printing it -- see ``_pool4.QUIET_NETWORK`` for
+        # four panels go on printing it -- see ``_pool4.QUIET_NETWORK`` for
         # why silence is available for exactly one network and nothing else.
         title.update(
             Text(
@@ -593,37 +753,91 @@ class SurfPool4UStakers(Vertical):
             table = self.query_one(f"#{TABLE_ID}", DataTable)
         except Exception:  # not composed yet
             return
+        # The reader's place, saved before anything below can clear the table:
+        # a tier change rebuilds the columns and a changed payload clears the
+        # rows, and ``DataTable.clear()`` resets both to the top. Restored,
+        # clamped to the new row count, by :meth:`_restore_place`.
+        saved_y = table.scroll_y
+        saved_row = table.cursor_row
         self._install_columns(table, self._tier)
+
+        rows = self._payload.get("rows")
+        batch: list[list] = []
+        if isinstance(rows, list):
+            for row in rows[:MAX_ROWS]:
+                cells = staker_cells(row)
+                if cells is None:
+                    continue
+                rank, addr, imd, pct = cells
+                # Escape AFTER fitting: ``clip`` measures cells and an escaped
+                # ``\\[`` is two characters and one cell, so escaping first
+                # misaligns every column and can cut an escape pair in half.
+                # DataTable defers ``Text.from_markup`` into its idle handler,
+                # so an unescaped ``[/x]`` in a chain-sourced address crashes
+                # the app from inside the message pump.
+                values = [
+                    safe_markup(pad(clip(rank, _RANK_COLS), _RANK_COLS)),
+                    # A ``Text`` cell, never markup: it carries the copy
+                    # icon's action (``widgets/address.address_text``), and
+                    # ``DataTable`` renders a ``Text`` as it is, so a
+                    # chain-sourced ``[/x]`` never reaches a parser from this
+                    # column.
+                    address_text(addr, width=_shown_addr_cols(self._tier)),
+                    safe_markup(pad(clip(imd, _IMD_COLS), _IMD_COLS)),
+                ]
+                if self._tier in ("whole", "full"):
+                    values.append(safe_markup(clip(pct, _PCT_COLS)))
+                batch.append(values)
+
+        # Unchanged rows at an unchanged tier: leave the table, and the
+        # reader's scroll position in it, alone (see ``_rows_key``).
+        key = (self._tier, tuple(tuple(str(v) for v in values) for values in batch))
+        if key == self._rows_key:
+            return
         try:
             table.clear()
         except Exception:  # pragma: no cover - columns not added yet
             return
-
-        rows = self._payload.get("rows")
-        if not isinstance(rows, list):
-            return
-        for row in rows[:MAX_ROWS]:
-            cells = staker_cells(row)
-            if cells is None:
-                continue
-            rank, addr, imd, pct = cells
-            # Escape AFTER fitting: ``clip`` measures cells and an escaped
-            # ``\\[`` is two characters and one cell, so escaping first
-            # misaligns every column and can cut an escape pair in half.
-            # DataTable defers ``Text.from_markup`` into its idle handler, so
-            # an unescaped ``[/x]`` in a chain-sourced address crashes the app
-            # from inside the message pump.
-            values = [
-                safe_markup(pad(clip(rank, _RANK_COLS), _RANK_COLS)),
-                safe_markup(clip(addr, _ADDR_COLS)),
-                safe_markup(pad(clip(imd, _IMD_COLS), _IMD_COLS)),
-            ]
-            if self._tier == "full":
-                values.append(safe_markup(clip(pct, _PCT_COLS)))
+        self._rows_key = None
+        for values in batch:
             try:
                 table.add_row(*values)
             except Exception:
                 continue
+        self._rows_key = key
+        self._restore_place(table, saved_y, saved_row)
+
+    @staticmethod
+    def _restore_place(table: DataTable, scroll_y: float, cursor_row: int) -> None:
+        """Put the reader back where they were before a repaint (fix round 1).
+
+        The identical-rows skip in :meth:`_render_rows` keeps the place only
+        while nothing changes. A new fold reprices every row every 1800 s, and
+        a resize across the whole/full threshold rebuilds the columns; both
+        clear the table. The cursor row is restored without scrolling to it.
+        The scroll offset is restored after the next refresh, once the table
+        knows its new height, and clamped to it so a shorter list lands on its
+        last page rather than past its end.
+        """
+        if table.row_count:
+            try:
+                table.move_cursor(
+                    row=min(max(cursor_row, 0), table.row_count - 1), scroll=False
+                )
+            except Exception:  # pragma: no cover - defensive
+                pass
+        if scroll_y <= 0:
+            return
+
+        def restore() -> None:
+            try:
+                table.scroll_to(
+                    y=min(scroll_y, table.max_scroll_y), animate=False
+                )
+            except Exception:  # pragma: no cover - defensive
+                pass
+
+        table.call_after_refresh(restore)
 
     def _render_footer(self) -> None:
         try:
@@ -648,11 +862,18 @@ class SurfPool4UStakers(Vertical):
             # a fold that has missed a cycle costs the layout nothing. It is
             # attached only to the real footer: the three empty branches above
             # are already saying something louder about the fold than "old".
+            # Only a population past the table's own cap is ever cut short:
+            # the producer publishes every holder up to the same number.
+            population = as_float(payload.get("count"))
+            shown = None
+            if population is not None and population > MAX_ROWS:
+                shown = min(len(rows) if isinstance(rows, list) else 0, MAX_ROWS)
             text = footer_line(
                 payload.get("count"),
                 payload.get("top3_pct"),
                 stale=fold_is_stale(payload.get("as_of"),
                                     payload.get("body_as_of")),
+                shown=shown,
             )
             markup.append(f"[dim]{safe_markup(text)}[/]")
 

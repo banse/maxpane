@@ -1380,15 +1380,20 @@ def test_discovery_state_vocabulary_is_the_one_the_payload_key_uses() -> None:
 # §0.4 — every key has exactly one renderer
 # ---------------------------------------------------------------------------
 
-#: The five ``update_data`` signatures from §0.4, transcribed. This is the
-#: **contract-side** copy; WP8 owns the screen-side ``SURF_WIDGET_SIGNATURES``
-#: and the two are meant to be redundant. Deriving either from the other would
-#: make the agreement test compare a constant against itself, which is the one
-#: shape of test that can never fail.
+#: The ``p`` body's ``update_data`` signatures from §0.4, transcribed -- five
+#: until 2026-09-14, four since. This is the **contract-side** copy; WP8 owns
+#: the screen-side ``SURF_WIDGET_SIGNATURES`` and the two are meant to be
+#: redundant. Deriving either from the other would make the agreement test
+#: compare a constant against itself, which is the one shape of test that can
+#: never fail.
 POOL4_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
-    "SurfPool4Flow": (
-        "pool4_flow", "pool4_network", "pool4_as_of_hhmm",
-    ),
+    # ``SurfPool4Flow`` LEFT THIS DICT ON 2026-09-14, with its mount. The owner
+    # removed POOL4 FLOW from the ``p`` body because the ``4`` body's RECENT
+    # FLOW already renders the same rows. Its signature moved, unchanged, to
+    # :data:`POOL4_USER_WIDGET_SIGNATURES` -- the body it now renders in -- so
+    # ``pool4_flow`` still has a renderer and
+    # ``test_every_pool4_key_has_at_least_one_renderer`` still has something
+    # to say about it. Dropping it without the move would orphan the key.
     "SurfPool4Split": (
         "pool4_network",
         "pool4_measured_inference_pct", "pool4_measured_burn_pct",
@@ -1527,6 +1532,13 @@ POOL4_USER_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "pool4_backstop_state",
         "pool4_network", "pool4_as_of_hhmm",
     ),
+    # RECENT FLOW. Moved here, signature unchanged, from
+    # :data:`POOL4_WIDGET_SIGNATURES` on 2026-09-14, when the ``p`` body's copy
+    # of this panel was removed and this body became its only mount. It keeps
+    # ``pool4_flow`` rendered; BURN & SUPPLY above reads the same key.
+    "SurfPool4Flow": (
+        "pool4_flow", "pool4_network", "pool4_as_of_hhmm",
+    ),
 }
 
 
@@ -1614,10 +1626,17 @@ def test_no_pool4_widget_kwarg_is_missing_from_the_payload() -> None:
 
 
 def test_each_scalar_key_has_exactly_one_renderer_apart_from_the_two_shared_ones() -> None:
-    """``pool4_network`` and ``pool4_as_of_hhmm`` are on all five panels by
-    design — every title carries the network word and every panel carries the
-    tier's own slower clock. Everything else is rendered exactly once, so
+    """``pool4_network`` and ``pool4_as_of_hhmm`` are on every ``p``-body panel
+    by design — every title carries the network word and every panel carries
+    the tier's own slower clock. Everything else is rendered exactly once, so
     there is one place to fix a wrong number.
+
+    **Four panels, not five, since 2026-09-14.** POOL4 FLOW left the ``p``
+    body (the owner: it duplicated the ``4`` body's RECENT FLOW) and its
+    signature moved to :data:`POOL4_USER_WIDGET_SIGNATURES`. The shared pair
+    is still on every panel the body has; the count follows the body rather
+    than a remembered five. ``pool4_flow`` was FLOW's alone and simply leaves
+    this count with it.
     """
     counts: dict[str, int] = {}
     for kwargs in POOL4_WIDGET_SIGNATURES.values():
@@ -1631,7 +1650,8 @@ def test_each_scalar_key_has_exactly_one_renderer_apart_from_the_two_shared_ones
     # so they are pinned at exactly two, not merely allowed to be > 1.
     on_two = {"pool4_distributor_addr", "pool4_reward_path"}
     assert {k for k, v in counts.items() if v > 1} == on_all_five | on_two
-    assert counts["pool4_network"] == counts["pool4_as_of_hhmm"] == 5
+    assert len(POOL4_WIDGET_SIGNATURES) == 4
+    assert counts["pool4_network"] == counts["pool4_as_of_hhmm"] == 4
     for key in on_two:
         assert counts[key] == 2, f"{key} reaches {counts[key]} panels, not 2"
 

@@ -40,6 +40,7 @@ from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_v4
 from maxpane_dashboard.data.surf_models import (
     POOL4_DISCOVERY_STATES,
+    POOL4_FLOW_LIMIT,
     POOL4_FLOW_SIDES,
     Pool4DripperState,
     Pool4FlowEvent,
@@ -591,6 +592,43 @@ def test_calldata_builders_produce_well_formed_words():
 # ---------------------------------------------------------------------------
 
 
+#: Each hook-log window and the PoolManager ``Swap`` capture over its exact
+#: range.  The decoder joins the two, so every flow test names both halves.
+FLOW_PAIRS = {
+    "flow_logs_mixed": "flow_swaps_mixed",
+    "flow_logs_full": "flow_swaps_full",
+    "flow_logs_empty": "flow_swaps_empty",
+    "mainnet_flow_logs": "mainnet_flow_swaps",
+    "mainnet_flow_logs_quiet_burn": "mainnet_flow_swaps_quiet_burn",
+}
+
+#: The independent reader's ``Swap`` topic, transcribed from
+#: ``pool4hook.ts``'s ``TOPICS.Swap`` -- a literal on purpose, so it can
+#: disagree with this module's keccak of the signature.
+READER_SWAP_TOPIC = (
+    "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f"
+)
+
+
+def decode_pair(hook_fixture: str, *, limit: int | None = None):
+    """The flow decoder over one committed window, uncapped by default."""
+    return P.decode_flow_events(
+        swaps=logs_of(load(FLOW_PAIRS[hook_fixture])),
+        hook_logs=logs_of(load(hook_fixture)),
+        limit=limit,
+    )
+
+
+def _signed(word: int) -> int:
+    return word - (1 << 256) if word >= 1 << 255 else word
+
+
+def swap_amounts(swap: dict) -> tuple[int, int]:
+    """``(amount0, amount1)`` off a raw ``Swap`` log, decoded here, not by P."""
+    w = words(swap["data"])
+    return _signed(w[0]), _signed(w[1])
+
+
 def test_the_mixed_window_decodes_a_buy_a_sell_and_a_bare_settlement():
     """The three shapes, from one 60-block capture.
 
@@ -601,8 +639,10 @@ def test_the_mixed_window_decodes_a_buy_a_sell_and_a_bare_settlement():
     layout change dressed up as a data change.
     """
     fx = load("flow_logs_mixed")
-    rows = P.decode_flow_events(logs_of(fx))
+    rows = decode_pair("flow_logs_mixed")
+    swaps = {s["transactionHash"]: s for s in logs_of(load("flow_swaps_mixed"))}
     assert {r.side for r in rows} <= set(POOL4_FLOW_SIDES)
+    assert len(rows) == len(swaps) == 6
 
     by_tx = {r.tx_hash: r for r in rows}
     assert "0x832f0efbe3" not in "".join(by_tx), "the bare settlement is not a row"
@@ -615,9 +655,12 @@ def test_the_mixed_window_decodes_a_buy_a_sell_and_a_bare_settlement():
     )
     assert buy.fee_eth_wei == 99_999_999_999_999
     assert buy.fee_token_wei is None
-    assert buy.size_wei == 8_822_655_708_485_988_852_780_915, (
-        "the reserve fell by exactly what the buyer received"
-    )
+    amount0, amount1 = swap_amounts(swaps[buy.tx_hash])
+    assert amount0 < 0 < amount1, "ETH paid in, IMD paid out"
+    assert buy.size_wei == amount1, "size is the IMD the Swap paid the buyer"
+    # The retired decoder read this off the pool-reserve delta, which agrees
+    # on Sepolia (a no-decay cap) to within the pool's rounding and no more.
+    assert buy.size_wei == pytest.approx(8_822_655_708_485_988_852_780_915, rel=1e-15)
     assert buy.ts == 1_788_228_900.0
 
     sell = next(r for r in rows if r.tx_hash.startswith("0x028d1448a9"))
@@ -625,14 +668,18 @@ def test_the_mixed_window_decodes_a_buy_a_sell_and_a_bare_settlement():
     assert sell.fee_token_wei == 84_999_999_999_999_999_999_999
     assert sell.fee_token_wei / WEI == pytest.approx(85_000.0, rel=1e-12)
     assert sell.fee_eth_wei is None
-    assert sell.burned_wei + sell.stakers_wei + sell.fee_token_wei == sell.size_wei
-    assert sell.size_wei == 8_499_999_999_999_999_999_988_708, (
-        "size is read from the accrual plus the fee, never fee * 100 -- the 1% "
-        "is what is being measured, not what is being assumed.  The wei-level "
-        "shortfall against a round 8,500,000 is the pool's own rounding and is "
-        "exactly why it must be read rather than multiplied."
+    amount0, amount1 = swap_amounts(swaps[sell.tx_hash])
+    assert amount1 < 0 < amount0, "IMD paid in, ETH paid out"
+    assert sell.size_wei == -amount1, (
+        "size is the IMD the Swap took from the seller, never fee * 100 -- "
+        "the 1% is what is being measured, not what is being assumed"
     )
     assert sell.size_wei / WEI == pytest.approx(8_500_000.0, rel=1e-12)
+    # The retired decoder summed toBurn + toRewards + fee and landed 11,292 wei
+    # short of what was sold: close, and not the swap.
+    assert sell.burned_wei + sell.stakers_wei + sell.fee_token_wei == (
+        8_499_999_999_999_999_999_988_708
+    )
 
 
 def test_settlement_is_decided_by_log_order_not_by_transaction():
@@ -652,7 +699,7 @@ def test_settlement_is_decided_by_log_order_not_by_transaction():
     wei, which is the independent arithmetic the same-transaction rule fails.
     """
     logs = logs_of(load("flow_logs_mixed"))
-    rows = P.decode_flow_events(logs)
+    rows = decode_pair("flow_logs_mixed")
 
     settled_amounts = [
         (words(l["data"])[0], words(l["data"])[1])
@@ -717,11 +764,16 @@ def test_an_empty_window_is_an_empty_list_and_never_none():
     """
     fx = load("flow_logs_empty")
     assert fx["log_count"] == 0
-    assert P.decode_flow_events(logs_of(fx)) == []
+    assert load("flow_swaps_empty")["log_count"] == 0
+    assert decode_pair("flow_logs_empty") == []
     assert P.reserve_series(logs_of(fx)) == []
     assert P.unsettled_legs(logs_of(fx)) == (0.0, 0.0)
 
-    assert P.decode_flow_events(None) == []
+    # A failed read is not a quiet window -- from EITHER half of the join.
+    # (This decoder answered ``[]`` to ``None`` until 2026-09-14.)
+    assert P.decode_flow_events(swaps=None, hook_logs=None) is None
+    assert P.decode_flow_events(swaps=None, hook_logs=[]) is None
+    assert P.decode_flow_events(swaps=[], hook_logs=None) is None
     assert P.reserve_series(None) is None
     assert P.unsettled_legs(None) == (None, None)
 
@@ -748,10 +800,266 @@ def test_the_reserve_series_is_monotonically_non_increasing_and_carries_no_senti
 
 
 def test_flow_rows_are_newest_first():
-    rows = P.decode_flow_events(logs_of(load("flow_logs_full")))
+    rows = decode_pair("flow_logs_full")
     assert rows
     blocks = [r.block_number for r in rows]
     assert blocks == sorted(blocks, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# 4b. The quiet-burn class, and the PoolManager Swap row source (2026-09-14)
+# ---------------------------------------------------------------------------
+#
+# The live defect: POOL4 FLOW read "no pool4 swaps yet" over 218 swaps in 24
+# hours.  The decoder named each swap from the hook event beside FeeCollected
+# (accrual = sell, pool-reserve = buy, neither = drop), and with headroom under
+# the cap neither fires.  Every fixture above captures a burning market, which
+# is why nothing here went red.  ``mainnet_flow_logs_quiet_burn`` is the class
+# they were missing.
+
+
+def test_the_swap_topic_is_the_pool_managers_own_and_the_readers():
+    """Computed from the signature, and equal to a literal nobody computed."""
+    assert P.TOPIC_SWAP == READER_SWAP_TOPIC
+    assert P.TOPIC_SWAP not in P.TOPIC0, (
+        "TOPIC0 names what the HOOK emits; Swap is the PoolManager's"
+    )
+    for swaps in set(FLOW_PAIRS.values()):
+        fx = load(swaps)
+        assert fx["topic0"] == P.TOPIC_SWAP, swaps
+        assert all(l["topics"][0] == P.TOPIC_SWAP for l in logs_of(fx)), swaps
+        assert all(
+            l["topics"][1].lower() == fx["pool_id"].lower() for l in logs_of(fx)
+        ), f"{swaps} carries another pool's swap"
+
+
+def test_the_quiet_burn_fixture_is_the_class_the_suite_was_missing():
+    """The fixture has to BE a burning-OFF window, or every test below is idle.
+
+    No accrual and no pool-reserve event anywhere in it -- the state in which
+    the retired rule drops every swap -- and a Swap for every fee.
+    """
+    hook_logs = logs_of(load("mainnet_flow_logs_quiet_burn"))
+    swaps = logs_of(load("mainnet_flow_swaps_quiet_burn"))
+    topics = [l["topics"][0] for l in hook_logs]
+    assert P.TOPIC_ACCRUAL not in topics
+    assert P.TOPIC_POOL_RESERVE not in topics
+    assert topics.count(P.TOPIC_FEE_COLLECTED) == len(swaps) == 36
+
+
+def test_a_quiet_burn_window_decodes_one_row_per_swap():
+    """36 swaps in, 36 rows out -- not zero, which is what shipped.
+
+    Proven by mutation: restoring the companion-event side rule decodes this
+    window to ``[]`` and this test is the one that goes red.
+    """
+    swaps = logs_of(load("mainnet_flow_swaps_quiet_burn"))
+    rows = decode_pair("mainnet_flow_logs_quiet_burn")
+    assert rows is not None
+    assert len(rows) == len(swaps) == 36
+    assert sorted(r.tx_hash for r in rows) == sorted(s["transactionHash"] for s in swaps)
+    by_swap = {(s["transactionHash"], swap_amounts(s)) for s in swaps}
+    for row in rows:
+        assert row.size_wei is not None and row.size_wei > 0
+        # The size is the swap's own IMD leg, on the side it names.
+        assert any(
+            tx == row.tx_hash
+            and (a1 == row.size_wei if row.side == "buy" else -a1 == row.size_wei)
+            for tx, (_a0, a1) in by_swap
+        ), row
+
+
+def test_the_row_count_follows_the_swaps_and_not_the_fees():
+    """Fees and swaps are both 36 here, so a count test alone cannot tell them
+    apart.  Take every ``FeeCollected`` away and the rows must stay: they are
+    one per ``Swap``, and a swap the hook recorded no fee for is still a swap.
+    """
+    hook_logs = [
+        l for l in logs_of(load("mainnet_flow_logs_quiet_burn"))
+        if l["topics"][0] != P.TOPIC_FEE_COLLECTED
+    ]
+    rows = P.decode_flow_events(
+        swaps=logs_of(load("mainnet_flow_swaps_quiet_burn")),
+        hook_logs=hook_logs, limit=None,
+    )
+    assert len(rows) == 36
+    assert all(r.fee_eth_wei is None and r.fee_token_wei is None for r in rows)
+
+
+def test_the_quiet_burn_split_agrees_with_the_independent_reader():
+    """Row count and buy/sell split against ``pool4hook.ts``, per transaction.
+
+    The oracle decoded the same range itself, over its own endpoints, with
+    ``buy = amount0 < 0``.  Proven by mutation: flipping this module's sign
+    convention swaps 19/17 for 17/19 and this is the test that goes red.
+    """
+    oracle = load("mainnet_flow_swaps_quiet_burn_oracle")["response"]
+    rows = decode_pair("mainnet_flow_logs_quiet_burn")
+    buys = sum(1 for r in rows if r.side == "buy")
+    sells = sum(1 for r in rows if r.side == "sell")
+    assert (len(rows), buys, sells) == (
+        oracle["summary"]["swaps"], oracle["summary"]["buys"],
+        oracle["summary"]["sells"],
+    ) == (36, 19, 17)
+    assert sorted((r.tx_hash, r.side) for r in rows) == sorted(
+        (s["tx"], s["side"]) for s in oracle["swaps"]
+    )
+
+
+def test_the_sign_convention_is_settled_by_the_receipts_own_transfers():
+    """Negative is what the swapper pays -- read off IMD Transfer logs.
+
+    ``0x587b65ec7d`` pays 50 IMD into the PoolManager and ``0xc35f2567e8``
+    receives IMD out of it; the Swap's amounts carry the matching signs, and
+    the decoder names them sell and buy.
+    """
+    proofs = {p["tx"][:12]: p for p in load("mainnet_flow_swaps")["sign_proof"]}
+    rows = {r.tx_hash[:12]: r for r in decode_pair("mainnet_flow_logs")}
+    sell, buy = proofs["0x587b65ec7d"], proofs["0xc35f2567e8"]
+    assert sell["swapper_paid_imd"] and sell["amount1_wei"] == -50 * WEI
+    assert sell["amount0_wei"] > 0
+    assert buy["swapper_received_imd"] and buy["amount0_wei"] < 0
+    assert rows["0x587b65ec7d"].side == "sell"
+    assert rows["0x587b65ec7d"].size_wei == 50 * WEI
+    assert rows["0xc35f2567e8"].side == "buy"
+    assert rows["0xc35f2567e8"].size_wei == buy["amount1_wei"]
+
+
+def test_a_two_swap_transaction_gets_one_fee_per_swap():
+    """The join is per swap, not per transaction.
+
+    The quiet-burn window carries a transaction that swaps this pool more than
+    once.  Each ``afterSwap`` fee follows its own ``Swap`` by log index; a
+    transaction-hash join would hand every one of them the first fee.
+    """
+    tx = load("mainnet_flow_swaps_quiet_burn")["multi_swap_txs"][0]
+    swaps = sorted(
+        (s for s in logs_of(load("mainnet_flow_swaps_quiet_burn"))
+         if s["transactionHash"] == tx),
+        key=lambda s: int(s["logIndex"], 16),
+    )
+    fees = sorted(
+        (l for l in logs_of(load("mainnet_flow_logs_quiet_burn"))
+         if l["transactionHash"] == tx and l["topics"][0] == P.TOPIC_FEE_COLLECTED),
+        key=lambda l: int(l["logIndex"], 16),
+    )
+    assert len(swaps) == len(fees) >= 2
+    rows = [r for r in decode_pair("mainnet_flow_logs_quiet_burn") if r.tx_hash == tx]
+    assert len(rows) == len(swaps)
+    in_log_order = list(reversed(rows))      # rows are newest first
+    got = [r.fee_token_wei if r.side == "sell" else r.fee_eth_wei for r in in_log_order]
+    want = [
+        words(fee["data"])[0 if row.side == "sell" else 1]
+        for row, fee in zip(in_log_order, fees)
+    ]
+    assert got == want
+    assert len(set(got)) == len(got), "one fee handed to several swaps"
+
+
+def test_a_sell_into_headroom_burns_a_real_zero_and_is_settled():
+    rows = decode_pair("mainnet_flow_logs_quiet_burn")
+    sells = [r for r in rows if r.side == "sell"]
+    assert sells
+    for row in sells:
+        assert row.burned_wei == 0 and isinstance(row.burned_wei, int)
+        assert row.stakers_wei == 0 and isinstance(row.stakers_wei, int)
+        assert row.settled is True, "nothing accrued, nothing outstanding"
+        assert row.fee_token_wei and row.fee_eth_wei is None
+
+
+def test_a_trimming_sell_still_reports_its_burned_leg():
+    """A burning sell keeps its burn and staker legs from the accrual event.
+
+    Proven by mutation: dropping the accrual join zeroes these and this is the
+    test that goes red.
+    """
+    row = next(
+        r for r in decode_pair("mainnet_flow_logs")
+        if r.tx_hash.startswith("0xbf5f1111aa")
+    )
+    assert row.side == "sell"
+    assert row.burned_wei == 21_484_235_184_655_626_409
+    assert row.stakers_wei == 3_791_335_620_821_581_131
+    assert row.fee_token_wei == 255_308_796_014_921_288
+    assert row.size_wei == 25_530_879_601_492_128_840
+
+
+def test_a_short_swap_read_is_unread_rather_than_fewer_swaps():
+    """A ``FeeCollected`` with no ``Swap`` before it means the swap sweep is
+    short -- publicnode Sepolia answers an old range with ``[]`` and no error --
+    and publishing what came back would paint "fewer swaps" as a fact.
+    """
+    swaps = logs_of(load("mainnet_flow_swaps_quiet_burn"))
+    hook_logs = logs_of(load("mainnet_flow_logs_quiet_burn"))
+    assert P.decode_flow_events(swaps=swaps[1:], hook_logs=hook_logs) is None
+    assert P.decode_flow_events(swaps=[], hook_logs=hook_logs) is None
+
+
+def test_the_default_cap_is_the_contracts_and_keeps_the_newest():
+    capped = P.decode_flow_events(
+        swaps=logs_of(load("mainnet_flow_swaps_quiet_burn")),
+        hook_logs=logs_of(load("mainnet_flow_logs_quiet_burn")),
+    )
+    assert len(capped) == POOL4_FLOW_LIMIT < 36
+    assert capped == decode_pair("mainnet_flow_logs_quiet_burn")[:POOL4_FLOW_LIMIT]
+
+
+#: Rows the Swap names a different side from the retired decoder: sells that
+#: emit the pool-reserve event and no accrual, which that rule called buys.
+#: ``0x587b65ec7d``'s receipt settles it (``mainnet_flow_swaps.sign_proof``).
+RESIDED_BY_THE_SWAP = {"0xc3cfb90fcf", "0x587b65ec7d"}
+
+#: Mainnet rows whose size moved by more than rounding, and why.  Buys: the
+#: pool-reserve delta is a move of a cap that DECAYS on mainnet, not the IMD a
+#: buyer received.  Trimming sells: toBurn + toRewards + fee is not the whole
+#: amount sold there.  Each size is the Swap's own IMD leg instead.
+MAINNET_SIZES_THE_SWAP_CORRECTS = {
+    "0x335a2dd30b", "0xc3cfb90fcf", "0xc35f2567e8", "0x587b65ec7d",
+    "0x72ed3709f4", "0xe799b47faa", "0x4c440f68a3", "0x62b00338fe",
+    "0x3fd0deefb5", "0xbb39f5da25", "0xe9be52d75e", "0x7db9d48884",
+}
+
+
+@pytest.mark.parametrize("hook_fixture", [
+    "flow_logs_mixed", "flow_logs_full", "mainnet_flow_logs",
+])
+def test_burning_windows_keep_the_retired_decoders_legs(hook_fixture):
+    """The burning-ON corpus against the retired decoder's frozen output.
+
+    Burn, staker and settlement legs are unchanged on every row.  Sides and
+    fee legs are unchanged except where the chain's receipt says the old rule
+    named a sell a buy.  Sizes are unchanged to rounding on Sepolia, and on
+    mainnet every row that moved is named here with its reason -- the old
+    numbers are not what the swaps moved, and the new ones are.
+    """
+    old = load("flow_rows_hook_only_decoder")["rows"][hook_fixture]
+    new = {r.tx_hash: r for r in decode_pair(hook_fixture)}
+    swaps = {s["transactionHash"]: s for s in logs_of(load(FLOW_PAIRS[hook_fixture]))}
+    assert set(new) == {r["tx_hash"] for r in old}
+
+    moved = set()
+    for was in old:
+        row = new[was["tx_hash"]]
+        tag = was["tx_hash"][:12]
+        assert row.burned_wei == was["burned_wei"], tag
+        assert row.stakers_wei == was["stakers_wei"], tag
+        assert row.settled == was["settled"], tag
+        assert row.ts == was["ts"] and row.block_number == was["block_number"], tag
+        if tag in RESIDED_BY_THE_SWAP and hook_fixture == "mainnet_flow_logs":
+            assert (was["side"], row.side) == ("buy", "sell"), tag
+        else:
+            assert row.side == was["side"], tag
+            assert row.fee_token_wei == was["fee_token_wei"], tag
+            assert row.fee_eth_wei == was["fee_eth_wei"], tag
+        _a0, a1 = swap_amounts(swaps[was["tx_hash"]])
+        assert row.size_wei == (a1 if row.side == "buy" else -a1), tag
+        if abs(row.size_wei - was["size_wei"]) > row.size_wei // 10**15:
+            moved.add(tag)
+
+    if hook_fixture == "mainnet_flow_logs":
+        assert moved == MAINNET_SIZES_THE_SWAP_CORRECTS
+    else:
+        assert moved == set(), "Sepolia sizes agree to the pool's rounding"
 
 
 # ---------------------------------------------------------------------------
@@ -1296,9 +1604,11 @@ def test_every_public_name_is_exported():
     }
     # ``WEI`` is a scale constant; the vocabularies are re-exports of
     # ``surf_models``'s own names and belong to that module's surface.
+    # ``POOL4_FLOW_LIMIT`` joined on 2026-09-14: the flow decoder caps its rows
+    # at the contract's own number rather than restating it.
     reexported = {"POOL4_DISCOVERY_STATES", "POOL4_FLOW_SIDES", "POOL4_NETWORKS",
                   "POOL4_DISCOVERY_SOURCES",
-                  "POOL4_COUNTER_STATES"}
+                  "POOL4_COUNTER_STATES", "POOL4_FLOW_LIMIT"}
     missing = public - set(P.__all__) - {"WEI"} - reexported
     assert not missing, f"public but unexported: {sorted(missing)}"
 
@@ -1320,7 +1630,7 @@ def test_the_decoders_fill_the_frozen_shapes_and_nothing_else():
         ),
         Pool4VaultState: P.decode_vault_state(answers_of(load("vault_state"))),
         Pool4DripperState: P.decode_dripper_state(answers_of(load("dripper_state"))),
-        Pool4FlowEvent: P.decode_flow_events(logs_of(load("flow_logs_mixed")))[0],
+        Pool4FlowEvent: decode_pair("flow_logs_mixed")[0],
     }
     for model, instance in produced.items():
         names = tuple(f.name for f in dataclasses.fields(instance))

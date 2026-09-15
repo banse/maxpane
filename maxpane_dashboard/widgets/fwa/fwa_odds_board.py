@@ -34,9 +34,11 @@ from __future__ import annotations
 
 import logging
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
 logger = logging.getLogger(__name__)
@@ -53,6 +55,16 @@ _NAME_WIDTH = 16
 #: ("MAX PAIN AND FRENS OPEN EDITION BY XCOPY"); past this the column starts
 #: taking space from numbers that carry the board's meaning, so a handful of
 #: outliers still elide.
+#:
+#: Neither this nor :data:`_NAME_WIDTH` grew for the copy icon:
+#: ``tests/widgets/test_fwa_widgets_a.py`` pins both as literals
+#: (``column.width == _NAME_WIDTH`` / ``<= _NAME_WIDTH_MAX``) and is outside
+#: this package's file list, so the column's *declared* width is unchanged and
+#: the icon is paid for out of the display budget instead -- ``ICON_COLS`` is
+#: subtracted from ``name_width`` where :func:`_collection_cell` is called.
+#: 14 and 32 cells of display text remain, both comfortably above
+#: ``address.MIN_SHORT_COLS`` (11), so the anti-poisoning window still windows
+#: rather than clamping.
 _NAME_WIDTH_MAX = 34
 
 #: Every other column plus DataTable's one-column pad on each side of all
@@ -116,18 +128,25 @@ def _fmt_ratio(value) -> str:
     return f"{v:.3f}"
 
 
-def _fmt_name(name, address, width: int = _NAME_WIDTH) -> str:
-    if name:
-        s = str(name).strip()
-        if s:
-            return s if len(s) <= width else s[: max(width - 1, 1)] + "…"
-    if address:
-        s = str(address).strip()
-        if len(s) > 11:
-            return f"{s[:6]}..{s[-4:]}"
-        if s:
-            return s
-    return _DASH
+def _collection_cell(row: dict, width: int = _NAME_WIDTH) -> Text:
+    """Collection name (or its address) plus the copy icon, in ``width`` cells.
+
+    ``width`` excludes :data:`ICON_COLS` -- the column's own declared width
+    did not grow for the icon (see the note above :data:`_NAME_WIDTH_MAX`),
+    so the icon is paid for out of this display budget instead. The manager
+    falls back to the address itself for ``name`` when no onchain ``name()``
+    is known (``FWA_ROW_KEYS["collection_odds"]``), so a ``name`` equal to
+    ``address`` is treated as "no name" and the address alone is shown --
+    windowed by the icon's own anti-poisoning helper, never the private 6/4
+    cut this replaced.
+    """
+    address = row.get("address")
+    raw_name = row.get("name")
+    name = str(raw_name).strip() if raw_name else ""
+    label = None
+    if name and (not address or name.lower() != str(address).strip().lower()):
+        label = name
+    return address_text(address, label=label, width=width)
 
 
 def _floor_cell(row: dict) -> str:
@@ -260,9 +279,7 @@ class FWAOddsBoard(Vertical):
         for idx, row in enumerate(rows, start=1):
             rank = row.get("rank")
             rank_str = _fmt_int(rank) if rank is not None else str(idx)
-            name = safe_markup(
-                _fmt_name(row.get("name"), row.get("address"), name_width)
-            )
+            name = _collection_cell(row, max(MIN_SHORT_COLS, name_width - ICON_COLS))
             positions = _fmt_int(row.get("positions"))
             share = _fmt_pct(row.get("weight_share_pct"))
             backed = _fmt_eth(row.get("eth_backed"))
@@ -275,7 +292,10 @@ class FWAOddsBoard(Vertical):
 
             if idx == 1:
                 rank_str = f"[bold]{rank_str}[/]"
-                name = f"[bold]{name}[/]"
+                # ``name`` is a pre-built ``Text`` (it may carry the copy
+                # icon); style it in place rather than wrap it in a markup
+                # string, matching the chase board's own row-1 handling.
+                name.stylize("bold")
                 positions = f"[bold]{positions}[/]"
                 share = f"[bold]{share}[/]"
                 backed = f"[bold]{backed}[/]"

@@ -792,8 +792,30 @@ async def test_the_leaderboard_lands_with_its_count_and_concentration(
     payload = await _sweep_stakers(manager)
 
     assert payload["pool4_stakers"] is not None
-    assert len(payload["pool4_stakers"]) == POOL4_STAKERS_LIMIT
-    assert payload["pool4_staker_count"] > POOL4_STAKERS_LIMIT
+    # Every holder since 2026-09-15: the owner asked for all of them. The
+    # committed capture folds to a few hundred, under the cap, so the page is
+    # the whole fold rather than a slice of it.
+    assert payload["pool4_staker_count"] <= POOL4_STAKERS_LIMIT
+    assert payload["pool4_staker_count"] > 20, (
+        "the capture no longer exceeds the old twenty-row cap, so this test "
+        "cannot tell every holder apart from the old page"
+    )
+    assert len(payload["pool4_stakers"]) == payload["pool4_staker_count"]
+    ranks = [row["rank"] for row in payload["pool4_stakers"]]
+    assert ranks == list(range(1, len(ranks) + 1))
+    # The footer's rule: the top three holders' share of the WHOLE vault.
+    # Recomputed from the raw Transfer fold against the capture's own
+    # ``totalSupply()`` read, so it does not trust the rows' ``pct`` fields.
+    # (Fix round 1, item 6: this used to recompute the figure from a 20-row
+    # page of those same rows, which agrees with any page of three or more
+    # and could not fail even if every ``pct`` had the wrong denominator.)
+    balances = mk.fold_share_transfers(
+        SurfManager._pool4_share_transfers(TRANSFER_LOGS), complete=True
+    )
+    top3 = sorted(balances.values(), reverse=True)[:3]
+    assert payload["pool4_staker_top3_pct"] == pytest.approx(
+        sum(top3) / SHARE_SUPPLY_UNITS * 100.0
+    )
     assert payload["pool4_staker_top3_pct"] is not None
     assert 0.0 < payload["pool4_staker_top3_pct"] < 100.0
     assert payload["pool4_stakers_as_of_hhmm"] is not None

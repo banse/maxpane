@@ -7,7 +7,15 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.base_tokens import format_change, format_price
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
+
+#: Display budget for the token symbol label, excluding the icon -- the same
+#: 10-cell window the deleted ``symbol[:10]`` slice produced. No layout pin
+#: covers this standalone widget (task-5 brief: "No layout pin exists for
+#: base"), so the "Token" column is grown by ICON_COLS (PRD §5 recipe step
+#: 6.2): 12 -> 14, keeping the 2-cell gutter the column already carried
+#: beyond the 10-cell label.
+_TOKEN_COLS = 10
 
 
 class GraduatedTokens(Vertical):
@@ -34,7 +42,7 @@ class GraduatedTokens(Vertical):
         table = self.query_one("#graduated-table", DataTable)
         table.cursor_type = "none"
         table.zebra_stripes = True
-        table.add_column("Token", width=12)
+        table.add_column("Token", width=14)
         table.add_column("Price", width=14)
         table.add_column("Change", width=10)
 
@@ -55,7 +63,6 @@ class GraduatedTokens(Vertical):
             symbol = token.get("symbol", "???")
             if not symbol.startswith("$"):
                 symbol = f"${symbol}"
-            symbol = safe_markup(symbol[:10])
 
             price = token.get("price_usd", 0)
             price_str = format_price(price) if price else "--"
@@ -64,7 +71,7 @@ class GraduatedTokens(Vertical):
             change_str = format_change(change)
 
             table.add_row(
-                f"[bold]{symbol}[/]",
+                address_text(token.get("address"), label=symbol, width=_TOKEN_COLS, style="bold"),
                 price_str,
                 change_str,
             )

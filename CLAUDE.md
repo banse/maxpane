@@ -111,7 +111,7 @@ imports it — `data/curator_clusters.py` — and that import is guarded (see th
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`) and pool4 (`p`) views |
+| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`), pool4 (`4`) and experimental pool4-protocol (`e`) views |
 | 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
 | 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 | 4 | `base` | Base | trending tokens, volume, signals |
@@ -169,11 +169,17 @@ the new dashboard is not going at the end.
 
 ### THE LIST's linked-wallet analysis — the `sybilkit` seam (2026-08-18)
 
-Curator grew a **third view**, not a ninth dashboard: `f` swaps the dashboard body for
-MODE_ANALYSIS (OPERATORS / SEGMENTS / CLEANED LIST) with the hero left in place so the doomsday
+Curator grew a **third view**, not a ninth dashboard: `a` swaps the dashboard body for
+MODE_ANALYSIS (OPERATORS / SEGMENTS / CLEANED LIST), with the hero left in place so the doomsday
 clock never leaves the screen, `e` exports the cleaned list, and the `y` view and the leaderboard
-each grew a field off the same result. **There is no six-surface renumber for an expansion** —
-`app.py`, `__main__.py` and `GAMES` are untouched.
+each grew a field off the same result. **`f` bound this view at first** (`e67938b`, 2026-08-18),
+**then moved to the list filter editor** (`9c5eb2d`, 2026-08-20, "wire filtered list controls") —
+the owner confirmed that rebind as intended on 2026-09-15. That left `action_toggle_analysis`
+correct but unreachable from the keyboard, a gap filed in `docs/address_copy_followups.md`; the
+owner closed it the same day by binding it to **`a`** instead of re-nominating `f` or any other
+key already spoken for. `a` is not in `KEY_HINTS` — the owner asked for the binding, not the
+label, and that hint string is pinned against the worst-case width (see below). **There is no
+six-surface renumber for an expansion** — `app.py`, `__main__.py` and `GAMES` are untouched.
 
 **`data/curator_clusters.py` is the only maxpane module that imports `sybilkit`**, and
 `test_only_curator_clusters_imports_sybilkit` asserts exactly that by walking every `.py` under
@@ -263,21 +269,26 @@ The three record-list hero cards have a five-line contract. Keep the order stabl
 
 ### surf's POOL4 view — the `p` body (2026-09-01, live on mainnet 2026-09-02)
 
-Surf grew a **third body**, not a ninth dashboard, on curator's `y`/`f` and its own `l`
-precedent: `p` swaps `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4 — THE SPLIT, THE
-RATCHET and POOL4 FLOW on the left, HATCHES over sIMD VAULT in the rail — with the hero left in
+Surf grew a **third body**, not a ninth dashboard, on curator's `y` and analysis-body precedent,
+and its own `l` precedent: `e` (bound to `p` until 2026-09-15) swaps `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4 — THE SPLIT over THE
+RATCHET on the left, HATCHES over sIMD VAULT in the rail (POOL4 FLOW sat under THE RATCHET until
+2026-09-14, removed as a duplicate of the `4` body's RECENT FLOW) — with the hero left in
 place so LAUNCHPAD/FLOW/BURN/SUPPLY never goes dark, and `escape` backs out one-way. **There is
 no six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and
 the table above still has eight rows. What makes something a mode here is the rule, not the
 count: a mode is a whole second body with its own panels, never two panels sharing one slot —
 that was `c`, and surf has no `c`. MODE_POOL4 is a third body on that rule, not a fourth key
-hiding half the screen. Surf's status hint is now `l launchpad · p pool4 · 4 market`, in one
-markup run rather than per-letter tags (adjacent differently-styled runs never share a
-composited line, and the acceptance test greps for the whole phrase), and it was read back off
-composited output against `StatusBar`'s left-label budget rather than counted: that label is the
-segment the bar cuts first and each addition has lengthened it. `4 market` is the half that
-shortens if a fourth ever has to fit; `l launchpad` does not, because the app-level acceptance
-test greps for that contiguous string.
+hiding half the screen.
+
+**The key is `e` now, for experimental, and the bar does not name it (2026-09-15).** The owner
+took `p pool4` off the status bar and asked to keep the body reachable under `e`; `p` is unbound.
+"The `p` body" in this file and in code comments names this body (MODE_POOL4), whichever key
+opens it. Surf's status hint is now `l launchpad · 4 pool4`, in one markup run rather than
+per-letter tags (adjacent differently-styled runs never share a composited line, and the
+acceptance test greps for the whole phrase). It is read back off composited output against
+`StatusBar`'s left-label budget rather than counted, because that label is the segment the bar
+cuts first. `l launchpad` must never shorten, because the app-level acceptance test greps for that
+contiguous string.
 
 **Every panel title carries the network word** — `THE RATCHET · MAINNET`, `· SEPOLIA`, or `· —`.
 The view was built against a live *Sepolia* deployment and still renders it whenever no mainnet
@@ -353,8 +364,9 @@ whole tokens between events. An equality assertion would have been green on one 
 that is not the claim and flaky on the other.
 
 **Its own tier, its own clock, detached like the launchpad's.** `TIER_POOL4` with `SLOT_POOL4`'s
-last-good, spawned and never awaited so first paint cannot sit behind it, and all five panels
-share one `pool4_as_of_hhmm` that runs on a slower clock than the title bar's. `SOURCE_POOL4`
+last-good, spawned and never awaited so first paint cannot sit behind it, and all its panels (five
+until POOL4 FLOW left on 2026-09-14, four since) share one `pool4_as_of_hhmm` that runs on a slower
+clock than the title bar's. `SOURCE_POOL4`
 (`p4`) is the **eighth** degraded group, and that eighth name is what took the worst-case title
 row to exactly the width the layout is pinned at — see the terminal-layout skill, which now
 carries that as a live hazard rather than a margin.
@@ -378,7 +390,10 @@ Surf grew a **fourth body**, on the same rule as the three before it: `4` swaps
 `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4_USER — RECENT FLOW beside BURN & SUPPLY
 over SIGNALS, then STAKERS beside IF IMD FALLS — and `escape` backs out one-way. (The two
 left-hand panels traded rows on 2026-09-12, with STAKERS' addresses printed whole and the ladder
-cut to a **fixed** 45 columns; both pins moved with it, and PRD §4.1 carries the whole trade.) **There is no
+cut to a **fixed** 45 columns; both pins moved with it, and PRD §4.1 carries the whole trade. The copy
+icon did not move the width pin again: at `SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` STAKERS shows an
+`_ADDR_SHORT_COLS`-cell anti-poisoning window, and the whole address only where the panel has room
+for it and the icon — `widgets/surf/pool4u_stakers.py`.) **There is no
 six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and the
 table above still has eight rows. `p` is the protocol and `4` is the market: the two read off the
 same `TIER_POOL4` sweep and answer different questions, which is why the split is two bodies and
@@ -401,11 +416,17 @@ and `SUPPLY`; a pool4 card called BURN shows hook trim burns rather than launchp
 reader tabbing between bodies would watch one word change value and read it as one metric moving.
 Burn lives in the chart panel instead.
 
-**`SurfPool4Flow` is the same class mounted twice**, once in each body, rather than a copied
-module — which is why `_do_refresh` dispatches RECENT FLOW with `self.query(SurfPool4Flow)` and
-never `query_one`: one statement, one payload, both panels. `query_one` does **not** raise on
-multiple matches in this Textual version, it returns the first, so two instances reddened nothing
-until a test resolved the panel through its own body container instead.
+**`SurfPool4Flow` lives in this body only, since 2026-09-14.** From 2026-09-11 it was the same
+class mounted twice, once in each body, rather than a copied module. That is why `_do_refresh`
+dispatches RECENT FLOW with `self.query(SurfPool4Flow)` rather than `query_one`, and the loop
+stays. `query_one` does **not** raise on multiple matches in this Textual version, it returns the
+first, so two instances reddened nothing until a test resolved the panel through its own body
+container instead. The owner then removed POOL4 FLOW from the `p` body off a live screenshot,
+because this body's RECENT FLOW already shows the same rows, so there is one mount now. The
+per-instance keywords that told the two apart (`quiet_mainnet`, `quiet_as_of`,
+`classes="market"`) are still passed and are now vestigial. Collapsing them changes the widget's
+standalone rendering, so it is filed as F15 in `docs/surf_pool4_followups.md`, not folded into the
+removal.
 
 **Its own tier, and one clock on the whole body.** Two-thirds of this body is the
 62 keys `TIER_POOL4` already produces; the delta is four fast-tier reads, one pure depth-ladder
@@ -439,10 +460,11 @@ therefore keeps a **conditional word** instead — its concentration footer gain
 the two markers are further apart than healthy operation can put them (`STALE_AFTER_S = 2400 s`,
 derived as the two tiers' TTLs summed, not chosen), and says nothing otherwise. That is
 `QUIET_NETWORK`'s shape applied to time, and it costs no row, which is why the body's height pin
-*fell* on this change rather than holding. The `p` body is untouched: all five of its panels keep
-their markers, and `SurfPool4Flow` — mounted in both — is quiet here only because the screen
-passes `quiet_as_of=True` at this one mount site, with a per-panel sweep on each side to catch a
-"fix" applied to the class instead.
+*fell* on this change rather than holding. The `p` body is untouched: all of its panels keep their
+markers (four since POOL4 FLOW left it on 2026-09-14). `SurfPool4Flow`, mounted in both bodies
+until then, is quiet here only because the screen passes `quiet_as_of=True` at this one mount site.
+A per-panel sweep on each side still catches a "fix" applied to the shared helpers. A fix applied to
+the class's own defaults has no auditor instance left to show up on (F15).
 
 **Two honesty contracts worth carrying in your head.** The ladder quotes the position *as it
 stands now* and never promises protection — a `rebalance()` closes the backstop band and redeploys
@@ -461,7 +483,9 @@ the constants. One result from those sweeps is worth knowing before touching thi
 half of the PRD's own prediction that a bakery-shaped body would be wide-and-short. Then the owner
 asked for STAKERS' addresses whole — all 42 characters — and the width pin moved by more than the
 height pin came down, so the PRD's prediction is now half-right for a reason nobody foresaw: this
-body is the wide one. The binding panel changed with it, from RECENT FLOW to STAKERS. **A change
+body is the wide one. The binding panel changed with it, from RECENT FLOW to STAKERS. The copy icon
+paid for its two cells there by windowing, not by moving the pin: STAKERS prints an
+`_ADDR_SHORT_COLS`-cell window at the pin and the whole address only above it. **A change
 to a cell's contents here is a change to a pin**, and neither number may be adjusted to match a
 guess — re-sweep.
 
@@ -497,27 +521,35 @@ Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
 curator); **`l` on surf** swaps the whole dashboard body for the v4
 launchpad's own five panels in two columns (LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail —
-curator's `y`/`f` precedent), with the hero (LAUNCHPAD/FLOW/BURN/SUPPLY)
+curator's `y` and analysis-body precedent), with the hero (LAUNCHPAD/FLOW/BURN/SUPPLY)
 left in place so nothing it tracks ever goes dark (`esc` backs out, one-way);
-**`p` on surf** swaps the same three rows for the POOL4 body (THE SPLIT /
-THE RATCHET / POOL4 FLOW on the left; HATCHES over sIMD VAULT in the rail),
+**`e` on surf** (experimental, not named on the status bar; `p` until
+2026-09-15) swaps the same three rows for the POOL4 body (THE SPLIT over
+THE RATCHET on the left; HATCHES over sIMD VAULT in the rail),
 also keeping the hero, also one-way; **`4` on surf** swaps them for the
 POOL4 MARKET body (RECENT FLOW beside BURN & SUPPLY over SIGNALS;
 STAKERS beside IF IMD FALLS) and is the one surf body that swaps the
 **hero** too, for its own IMD PRICE / DOWNSIDE BID / STAKING cards —
 curator's per-mode hero, not a new pattern; surf's status hint reads
-`l launchpad · p pool4 · 4 market`. Surf's own `l` and curator's own `l` (the
+`l launchpad · 4 pool4`. Surf's `e` and curator's `e` (export) are two screens'
+own bindings, not one shared key. Surf's own `l` and curator's own `l` (the
 record view, described below) are unrelated bindings on two different
 screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
 standing — ladder, share, and what passing the rank above would cost — with the
 hero left in place so the doomsday clock never leaves the screen (`esc` backs
-out, one-way); **`f` on curator** swaps in the linked-wallet analysis (OPERATORS
-/ SEGMENTS / CLEANED LIST), also keeping the clock; **`l`** opens one full-width
+out, one-way); **`a` on curator** (bound 2026-09-15) swaps in the linked-wallet analysis body
+(OPERATORS / SEGMENTS / CLEANED LIST, `action_toggle_analysis`) the same way — hero left in place,
+a second `a` or `esc` backs out one-way — and is deliberately not in the status hint below (the
+owner asked for the binding, not the label, and that string is pinned at 138 columns); **`f` on
+curator** opens the custom filter editor inside `l`'s record view (`action_toggle_filter`; a no-op
+everywhere else) and is unrelated to `a` — the two keys were the same binding once
+(`action_toggle_analysis` under `f`, until `9c5eb2d` moved `f` to the filter editor) but are not
+now; **`l`** opens one full-width
 record table under its own raw/wallet/cleaned summary hero, with `c` switching
 RAW/CLEANED and remembering the choice; each list keeps its own typed header-click
 sort, with a second click reversing it and the fixed YOU row excluded;
-**`e`** exports the active list (`f` keeps its existing JSON + CSV export, while
-`l` writes the full uncapped raw or cleaned JSON), and is a no-op on dashboard
+**`e`** exports the active list (the analysis body's own JSON + CSV export fires whenever that
+body is open; `l` writes the full uncapped raw or cleaned JSON), and is a no-op on dashboard
 and wallet modes; and **`w` on curator** prompts for the wallet its YOU row is about —
 `WalletInputScreen` validates and persists to `~/.maxpane/config.toml`, so it
 is app-wide from the next launch. A runtime wallet switch is more than an
@@ -525,7 +557,7 @@ assignment: `CuratorManager.set_wallet` also drops the wallet last-good (its
 payload names the *old* address) and expires the fast tier, because a tier
 with 12 of its 15 seconds left is "fresh" and the row would stay dark after a
 keypress that looked like it worked. Curator's status hints read
-`c panels · y you · f linked · l lists`. The redundant `view: closest` /
+`c view · h history · y you · l lists`. The redundant `view: closest` /
 `view: clusters` tail was removed so all four labels and the worst-case
 `4 errors` fit at 138 columns; each visible panel title already names that
 state, and the list title is the sole RAW/CLEANED indicator. Any doc that quotes
@@ -624,6 +656,31 @@ finishes, so an older operation cannot erase the status of a newer one.
 `widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message pump, so
 a malformed name raises *outside* the screen's `try/except` and kills the app. Token symbols are
 attacker-controlled: anyone can deploy an ERC-20 named `[/x]`.
+
+**Every displayed 0x address carries a copy icon, and so does every name that stands in for one.**
+Render addresses only through `widgets/address.py`: `address_text` for an address or a name backed
+by one, `address_prose` for third-party text that may contain addresses, `short_hex` for any other
+hex such as a transaction hash (no icon). The icon is `⧉` with a Textual `@click` action on the glyph
+only, calling `app.copy_address`, which `copy_action.CopyAddressMixin` runs through
+`maxpane_dashboard/clipboard.py`: native tool first (`pbcopy`; Apple Terminal ignores the OSC 52 that
+`App.copy_to_clipboard` writes), OSC 52 second, and the status bar says `copied`, `unconfirmed` or
+`unavailable`, whichever is true. Validation is `fullmatch`, never `^…$`, because `$` accepts a
+trailing newline and the address is interpolated into an action string. The icon costs
+`ICON_COLS = 2`; a panel grows where it has slack and shortens its displayed address where a pin
+would move, and the window rule (8/6 at 17 cells) is surf's anti-poisoning form. **None of this is
+optional**: `tests/test_address_rule.py` fails on a private address formatter,
+`tests/screens/test_address_icons_everywhere.py` fails on an address that reaches the screen
+without its icon — rendering every case at 170 columns and again at each view's own layout pin (plus
+any `extra_sizes` the case names, such as FWA's 120), because a defect that lives where a panel is
+tight is invisible at 170 — and `tests/test_address_sweep_registry.py` fails on a dashboard the sweep does not
+render. A new dashboard joins the sweep, not just the icon: add a `SweepCase` to the `CASES` tuple
+in `tests/address_sweep/builders.py` (`registry.py` only re-exports it) — its screen class, a
+harness `build`, a `payload`, the `views` that reach every body (key tuples or callables), and a
+hand-listed `seeded` tuple carrying at least one address in every shape it renders (full,
+shortened, name-backed, prose). `address_free=True` is only for a dashboard that renders none, and
+the agreement test refuses it the moment the dashboard's widgets import the helper.
+`docs/address_copy_PRD.md` §7 spells out E1–E6 in full. No test may reach the real clipboard:
+`tests/conftest.py` replaces the runner suite-wide.
 
 **A widget that renders third-party text through `Static` hands it a pre-built
 `rich.text.Text`, never a markup string.** Same defect as the rule above, one layer out:

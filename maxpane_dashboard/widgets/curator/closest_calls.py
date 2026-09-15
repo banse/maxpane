@@ -30,14 +30,23 @@ Width behaviour
 =========  ====  =============================
 Tier       Cost  Columns
 =========  ====  =============================
-full        42   HOUR VOLUME MARGIN SAVIOR
-compact     31   HOUR MARGIN SAVIOR
+full        45   HOUR VOLUME MARGIN SAVIOR ⧉
+compact     34   HOUR MARGIN SAVIOR ⧉
 minimal     18   HOUR MARGIN
 =========  ====  =============================
 
 ``VOLUME`` sheds first: it is the only column on the row a reader can
 reconstruct, since the margin is the volume measured against the same
 threshold the hero and the sparkline both label.  Each drop is announced.
+
+SAVIOR's column is :data:`_SAVIOR_COLS`: the shown name/address keeps its
+old :data:`NAME_COLS` cap and the copy icon's two cells are added on top,
+local to this panel rather than by growing the shared ``_fmt.NAME_COLS``
+every other curator panel also reads.  The two declared tier costs above
+(43/32 pre-icon) were themselves one column over what this table used to
+say (42/31), caught while re-sweeping for the icon rather than
+independently -- the ``dev``/``ops`` lesson CLAUDE.md records, here on the
+docstring rather than the rendered row.
 
 The note line **wraps**; it does not ellipsise
 ----------------------------------------------
@@ -79,15 +88,13 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.curator._fmt import (
-    ADDR_COLS,
     DASH,
     EMDASH,
     as_float,
     fmt_eth_compact,
-    short_addr,
     NAME_COLS,
-    short_label,
 )
 from maxpane_dashboard.widgets.curator._table import (
     WIDEN_HINT,
@@ -113,25 +120,32 @@ _HOUR_COLS = 5
 _VOLUME_COLS = 9
 _MARGIN_COLS = 9
 
+#: SAVIOR's total column width: the identity budget (:data:`NAME_COLS`,
+#: unchanged -- the shown name/address keeps its old cap) plus the copy
+#: icon's two cells, local to this panel exactly like ``activity.py``'s
+#: ``_IDENTITY_COLS``. Growing ``_fmt.NAME_COLS`` itself would resize the
+#: identity column in every other curator panel that imports it too.
+_SAVIOR_COLS = NAME_COLS + ICON_COLS
+
 _TIERS = (
     (
         "full",
-        43,
+        45,
         (
             ("hour", "HOUR", _HOUR_COLS),
             ("volume", "VOLUME", _VOLUME_COLS),
             ("margin", "MARGIN", _MARGIN_COLS),
-            ("savior", "SAVIOR", NAME_COLS),
+            ("savior", "SAVIOR", _SAVIOR_COLS),
         ),
         "",
     ),
     (
         "compact",
-        32,
+        34,
         (
             ("hour", "HOUR", _HOUR_COLS),
             ("margin", "MARGIN", _MARGIN_COLS),
-            ("savior", "SAVIOR", NAME_COLS),
+            ("savior", "SAVIOR", _SAVIOR_COLS),
         ),
         "‹ widen: VOLUME",
     ),
@@ -171,8 +185,14 @@ def _row_values(row: dict) -> dict:
     # tightest call on the board, and the most interesting row on it.
     margin_str = f"{fmt_eth_compact(margin)}" if margin is not None else DASH
     savior = row.get("savior")
-    savior_str = (
-        safe_markup(short_label(row.get("savior_name"), savior))
+    if isinstance(savior, str):
+        # Lower-cased on purpose, ``leaderboard.py``'s own reason: two
+        # sources spell one wallet two ways, and the icon copies whichever
+        # spelling this cell was given -- lower-case is an equally valid
+        # paste of the same address.
+        savior = savior.lower()
+    savior_cell = (
+        address_text(savior, label=(row.get("savior_name") or None), width=NAME_COLS)
         if savior
         else f"[dim]{EMDASH}[/]"
     )
@@ -181,7 +201,7 @@ def _row_values(row: dict) -> dict:
         "hour": hour_str,
         "volume": fmt_eth_compact(row.get("volume_eth")),
         "margin": f"[bold yellow]{margin_str}[/]" if tight else margin_str,
-        "savior": savior_str,
+        "savior": savior_cell,
     }
 
 

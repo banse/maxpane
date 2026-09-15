@@ -47,7 +47,8 @@ from maxpane_dashboard.widgets import sparkline_common
 from maxpane_dashboard.widgets.surf import _pool4
 from maxpane_dashboard.widgets.surf import pool4u_burn as burn_mod
 from maxpane_dashboard.widgets.surf import pool4u_hero as hero_mod
-from maxpane_dashboard.widgets.surf._fmt import full_addr, long_addr
+from maxpane_dashboard.widgets.address import COPY_GLYPH, short_address
+from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS
 from maxpane_dashboard.widgets.surf._rowfit import pad
 from maxpane_dashboard.widgets.surf.pool4u_burn import (
     COMPACT_WIDTH as BURN_COMPACT_WIDTH,
@@ -345,29 +346,32 @@ async def test_the_whole_address_reaches_the_screen() -> None:
     assert sum(1 for line in lines if addr in line) == 1, (
         "the address is on the screen but not on one row -- it wrapped"
     )
-    assert full_addr(addr) == addr
+    # The whole address carries its copy icon, on the same row
+    # (docs/address_copy_PRD.md; this width is at least ``WHOLE_WIDTH``).
+    assert f"{addr} {COPY_GLYPH}" in out
 
     # Neither shortener may come back, and the template's is the dangerous one.
-    assert long_addr(addr) not in out
+    assert short_address(addr, ANTI_POISONING_COLS) not in out
     assert f"{addr[:6]}..{addr[-4:]}" not in out
 
 
 @pytest.mark.asyncio
 async def test_the_other_callers_of_the_short_form_are_untouched() -> None:
-    """``_fmt.long_addr`` itself was **not** widened, and this is what says so.
+    """The anti-poisoning window this panel left behind was **not** narrowed.
 
-    Three panels read it -- HATCHES on the ``p`` body, the dashboard body's
-    activity feed, and this one until 2026-09-12. The change the owner asked
-    for was this panel's, so a second formatter was added beside the first
-    rather than the first being changed under two other callers. If somebody
-    "simplifies" the two into one, the anti-poisoning window disappears from
-    two panels that still need it and nothing else in the suite would say so.
+    HATCHES' address block on the ``p`` body and the dashboard body's
+    activity feed still show it, and this panel did until 2026-09-12. The
+    change the owner asked for was this panel's, so the whole address was
+    added beside the window rather than the window being changed under two
+    other callers. ``_fmt.long_addr`` rendered it until 2026-09-14; it is now
+    ``widgets/address.short_address`` at ``_fmt.ANTI_POISONING_COLS``, and if
+    somebody "simplifies" that constant down, the window disappears from two
+    panels that still need it and this is what says so.
     """
     addr = STAKER_ROWS[0]["address"]
-    shown = long_addr(addr)
+    shown = short_address(addr, ANTI_POISONING_COLS)
     assert "…" in shown and len(shown) == 17
     assert shown == f"{addr[:10]}…{addr[-6:]}"
-    assert long_addr(None) == full_addr(None) == "--"
 
 
 @pytest.mark.asyncio
@@ -589,7 +593,14 @@ async def test_the_stakers_width_pins_are_what_the_table_actually_reserves() -> 
     *between* cells and is a ``RichLog`` row's formula. Borrowing the wrong one
     would put the marker a column or two off the width it is marking.
     """
-    for size, pin in (((80, 20), STAKERS_FULL_WIDTH), ((38, 20), STAKERS_COMPACT_WIDTH)):
+    # Three tiers since 2026-09-14 (``docs/address_copy_PRD.md`` §5): the
+    # whole address and its icon at 80, the address windowed to 40 beside its
+    # icon at 72 (a text budget of 70, one under ``WHOLE_WIDTH``), and the
+    # share column shed at 38.
+    from maxpane_dashboard.widgets.surf.pool4u_stakers import WHOLE_WIDTH
+
+    for size, pin in (((80, 20), WHOLE_WIDTH), ((72, 20), STAKERS_FULL_WIDTH),
+                      ((38, 20), STAKERS_COMPACT_WIDTH)):
 
         class _A(App):
             def compose(self):
@@ -646,18 +657,242 @@ def test_the_row_address_is_read_under_the_declared_name_only() -> None:
     name = SURF_ROW_KEYS["pool4_stakers"][1]
     assert name == "address"
     addr = "0x" + "ab" * 20
-    assert staker_cells({"rank": 1, name: addr, "imd": 1.0, "pct": 1.0})[1] == (
-        full_addr(addr)
-    )
+    assert staker_cells({"rank": 1, name: addr, "imd": 1.0, "pct": 1.0})[1] == addr
     stale = staker_cells({"rank": 1, "addr": addr, "imd": 1.0, "pct": 1.0})
-    assert stale[1] == full_addr(None), stale
+    assert stale[1] == "--", stale
 
 
-def test_the_row_cap_is_below_the_producers_own_limit() -> None:
-    """The renderer's guard exists so a longer list cannot push the footer --
-    the panel's actual subject -- off a short panel."""
-    assert MAX_ROWS >= 3
-    assert MAX_ROWS <= 20
+def test_the_row_cap_is_the_producers_own_and_fits_the_rank_column() -> None:
+    """Every staker since 2026-09-15, and exactly as many as a rank can say.
+
+    The owner asked for all 353 addresses. The widget restates the producer's
+    cap because it may not import ``data/``, so the two are pinned together
+    here. The cap is the largest rank the three-cell rank column paints whole:
+    one more and the rank would be cut, and a cut rank is a wrong rank.
+    """
+    from maxpane_dashboard.data.surf_manager import POOL4_STAKERS_LIMIT
+    from maxpane_dashboard.widgets.surf.pool4u_stakers import _RANK_COLS
+
+    assert MAX_ROWS == POOL4_STAKERS_LIMIT
+    assert cell_len(str(MAX_ROWS)) <= _RANK_COLS < cell_len(str(MAX_ROWS + 1))
+    assert MAX_ROWS >= 353, "the live vault's 353 holders no longer fit"
+
+
+def _every_staker(n: int = 353, bump: float = 0.0) -> list[dict]:
+    return [
+        {"rank": i + 1, "address": "0x" + f"{i + 1:040x}",
+         "imd": 900.0 - i + bump, "pct": 0.28}
+        for i in range(n)
+    ]
+
+
+def _stakers_app():
+    class _A(App):
+        def compose(self):
+            yield SurfPool4UStakers()
+
+    return _A()
+
+
+@pytest.mark.asyncio
+async def test_every_staker_lands_in_the_table_with_its_copy_icon() -> None:
+    """All 353, in rank order, each address carrying its copy icon.
+
+    Read off the table's own rows rather than off the screen: the panel keeps
+    its height and scrolls, so most of these rows are below the fold by
+    design, and the fold is the layout test's subject, not this one's.
+    """
+    from textual.widgets import DataTable
+
+    async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(pool4_stakers=_every_staker(), pool4_staker_count=353,
+                           pool4_staker_top3_pct=19.3, pool4_network="MAINNET")
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
+        assert table.row_count == 353
+        first, last = table.get_row_at(0), table.get_row_at(352)
+        footer = "\n".join(
+            "".join(seg.text for seg in strip)
+            for strip in pilot.app.screen._compositor.render_strips()
+        )
+    assert str(first[0]).strip() == "1" and str(last[0]).strip() == "353"
+    for row in (first, last):
+        assert str(row[1]).rstrip().endswith(COPY_GLYPH), row[1]
+    assert f"353 addresses · top {TOP_N} = 19% of vault" in footer
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_poll_keeps_the_readers_place_in_the_table() -> None:
+    """A reader scrolled into 353 rows stays there when identical rows arrive.
+
+    ``DataTable.clear()`` resets ``scroll_y`` to 0, and the screen re-sends
+    this panel's rows every poll. Before the table held every staker that
+    cost nothing, because twenty rows barely scrolled. Now a repaint of
+    identical rows would snap the reader back to rank 1 every thirty
+    seconds. Rows that did change still repaint; that half is what stops
+    this test passing on a panel that simply stopped updating.
+    """
+    from textual.widgets import DataTable
+
+    kw = dict(pool4_staker_count=353, pool4_staker_top3_pct=19.3,
+              pool4_network="MAINNET")
+    async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(pool4_stakers=_every_staker(), **kw)
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
+        table.scroll_to(y=200, animate=False)
+        await pilot.pause()
+        before = table.scroll_y
+        assert before > 0, "the table did not scroll, so this measures nothing"
+
+        widget.update_data(pool4_stakers=_every_staker(), **kw)
+        await pilot.pause()
+        assert table.scroll_y == before
+
+        widget.update_data(pool4_stakers=_every_staker(bump=1.0), **kw)
+        await pilot.pause()
+        assert str(table.get_row_at(0)[2]).strip() == "901"
+
+
+@pytest.mark.parametrize(
+    "imd,share,imd_text,share_text",
+    [
+        (115_356.21324175893, 7.729123061121392, "115.4K", "7.7%"),   # live rank 1
+        (780.0, 2.85, "780", "2.9%"),
+        (8.332, 0.000558263, "8.33", "0.00056%"),                      # live rank 337
+        (0.243158, 0.012, "0.24", "0.012%"),
+        (0.0300679, 0.55, "0.030", "0.55%"),
+        (0.0042, 0.0003, "0.0042", "0.00030%"),
+        # The ``_SMALL_STEP`` boundary, for both formatters: exactly the step,
+        # just below it and just above it. The step is the one comparison here
+        # that sits next to ``floor(log10(v))``, so ``<`` vs ``<=`` would change
+        # the first case and nothing else.
+        (0.0001, 0.0001, "0.00010", "0.00010%"),
+        (0.00009999, 0.00009999, "<0.0001", "<0.0001%"),
+        (0.00010001, 0.00010001, "0.00010", "0.00010%"),
+        (1.2348797628963259e-20, 8.273969285998535e-25, "<0.0001", "<0.0001%"),  # live dust
+        (0.0, 0.0, "0", "0%"),
+    ],
+)
+def test_small_stakes_keep_their_real_digits(imd, share, imd_text, share_text) -> None:
+    """Two significant digits on every stake and share, and nothing rounded to 0.
+
+    The owner's screenshot of the table's tail read ``8``, ``1``, ``0`` and
+    ``0.0%`` for holders who hold something. Every form must also fit its
+    column on ``cell_len``, because ``clip`` would otherwise cut it with an
+    ellipsis. The composited half, at the ``4`` body's width pin and wide, is
+    ``test_small_stakes_render_whole_with_their_real_digits``.
+    """
+    from maxpane_dashboard.widgets.surf import pool4u_stakers as mod
+
+    cells = staker_cells({"rank": 1, "address": "0x" + "ab" * 20,
+                          "imd": imd, "pct": share})
+    assert cells is not None
+    assert cells[2] == imd_text, cells
+    assert cells[3] == share_text, cells
+    assert cell_len(imd_text) <= mod._IMD_COLS
+    assert cell_len(share_text) <= mod._PCT_COLS
+
+
+def test_the_footer_says_when_the_table_is_capped() -> None:
+    """``showing N of M`` on the footer's own line, and only when cut short.
+
+    Fix round 1, item 4: past :data:`MAX_ROWS` the table would stop at 999
+    rows with nothing on screen saying so. The widest footer this can make
+    must fit the 69 cells the footer has at the ``4`` body's width pin (a
+    73-column panel less two columns of its own padding and two of the
+    footer ``Static``'s), measured on ``cell_len``.
+    """
+    assert footer_line(1200, 19.3, shown=999) == (
+        f"showing 999 of 1,200 addresses · top {TOP_N} = 19% of vault"
+    )
+    assert footer_line(353, 19.3, shown=353) == (
+        f"353 addresses · top {TOP_N} = 19% of vault"
+    )
+    assert footer_line(353, 19.3) == f"353 addresses · top {TOP_N} = 19% of vault"
+    widest = footer_line(999_999, 100.0, stale=True, shown=MAX_ROWS)
+    assert widest.startswith("showing 999 of 999,999 addresses")
+    assert cell_len(widest) <= 69, (cell_len(widest), widest)
+
+
+@pytest.mark.asyncio
+async def test_a_population_past_the_cap_is_named_on_the_footer() -> None:
+    """1,200 synthetic stakers: 999 rows, and the footer says 999 of 1,200.
+
+    At the panel width the ``4`` body gives STAKERS at its width pin (73), so
+    the whole sentence must reach a pixel with no ellipsis, and the footer
+    stays one line: the claim costs no row.
+    """
+    from textual.widgets import DataTable, Static
+
+    async with _stakers_app().run_test(size=(73, 24)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(pool4_stakers=_every_staker(n=1200),
+                           pool4_staker_count=1200, pool4_staker_top3_pct=19.3,
+                           pool4_network="MAINNET")
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
+        rows = table.row_count
+        footer = widget.query(Static).last()
+        footer_h = footer.size.height
+        panel_w = widget.size.width  # read inside: sizes are zeroed on exit
+        lines = [
+            "".join(seg.text for seg in strip).rstrip()
+            for strip in pilot.app.screen._compositor.render_strips()
+        ]
+    assert panel_w == 73
+    assert rows == MAX_ROWS == 999
+    assert footer_h == 1
+    line = next(l for l in lines if "addresses" in l)
+    assert line.strip() == f"showing 999 of 1,200 addresses · top {TOP_N} = 19% of vault", line
+
+
+@pytest.mark.asyncio
+async def test_a_real_change_keeps_the_readers_place_in_the_table() -> None:
+    """Repriced rows and a tier rebuild repaint, and neither snaps to rank 1.
+
+    The identical-rows skip only helps while nothing changes. A new staker
+    fold (every 1800 s) reprices every row, and a resize across the
+    whole/full threshold rebuilds the columns. Both go through
+    ``DataTable.clear()``, which resets ``scroll_y`` to 0. The panel saves the
+    reader's offset before clearing and restores it afterwards, clamped to the
+    new row count, which the last step checks with a shorter list (fix round
+    1, item 3).
+    """
+    from textual.widgets import DataTable
+
+    kw = dict(pool4_staker_count=353, pool4_staker_top3_pct=19.3,
+              pool4_network="MAINNET")
+    async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(pool4_stakers=_every_staker(), **kw)
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
+        table.scroll_to(y=200, animate=False)
+        await pilot.pause()
+        before = table.scroll_y
+        assert before > 0, "the table did not scroll, so this measures nothing"
+
+        repriced = [dict(r, pct=1.5) for r in _every_staker()]
+        widget.update_data(pool4_stakers=repriced, **kw)
+        await pilot.pause()
+        await pilot.pause()
+        assert str(table.get_row_at(0)[3]).strip() == "1.5%", "rows did not repaint"
+        assert table.scroll_y == before, (table.scroll_y, before)
+
+        await pilot.resize_terminal(72, 20)
+        await pilot.pause()
+        await pilot.pause()
+        assert widget._tier == "full", widget._tier
+        assert table.scroll_y == before, (table.scroll_y, before)
+
+        widget.update_data(pool4_stakers=_every_staker(n=30), **kw)
+        await pilot.pause()
+        await pilot.pause()
+        assert 0 < table.max_scroll_y < before
+        assert table.scroll_y == table.max_scroll_y
 
 
 # ===========================================================================

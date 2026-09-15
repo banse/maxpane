@@ -937,3 +937,114 @@ fail and its clip-specific message could never print. The comment now standing t
 compared line length against the *panel's* edge, so any line inside a doubly-padded leaf was
 invisible. With the detector widened, the marker-attribution gap became measurable for the first
 time.
+
+---
+
+## F12 — THE RATCHET charts the cap and labels it the reserve (verified, unfixed)
+
+Found 2026-09-14 while fixing POOL4 FLOW (`baeaca3`), which had the same root cause.
+
+`surf_pool4.reserve_series` (`maxpane_dashboard/data/surf_pool4.py:1796`) reads the event behind
+`TOPIC_POOL_RESERVE` and plots its **second word** as the pool's IMD reserve. The independent reader
+(`pool4hook-research`, `pool4hook.ts`) decodes that same topic as
+**`CapRatcheted(capFrom, capTo)`**, so word 1 is **`capTo`**. The line THE RATCHET
+(`widgets/surf/pool4_ratchet.py:321`, `pool4_reserve_series`) draws in the `p` body is the **decaying
+inventory cap**, not the reserve. It looks like a reserve and it is a different number.
+
+A second consequence follows from the same event: `CapRatcheted` fires only when the cap moves, and
+in a non-burning market it barely fires. Over the 24 h to block 25,975,076 it fired **zero** times in
+219 swaps. So the history also goes stale exactly when the market goes quiet, the same condition that
+emptied POOL4 FLOW.
+
+**Why unfixed:** there are two honest repairs and they make different claims. Either rename the series
+to the cap it actually is, or chart the reserve from a source that exists in every market state (for
+example `tokensInPool()` sampled per tick). That is an owner decision, not a mechanical fix.
+
+**Root cause shared with the flow defect:** the pool4 decoders named hook events from Sepolia-era
+meanings (`TOPIC_ACCRUAL`, `TOPIC_POOL_RESERVE`) instead of the contract's own event names. On mainnet
+`CapRatcheted` also fires on **sells**: the retired flow decoder labelled `0x587b65ec7d…` a *buy* of
+0.83 IMD, while its receipt shows a **sale of 50 IMD** into the PoolManager
+(`tests/fixtures/surf/pool4/mainnet_flow_swaps.json`, `sign_proof`). Any other consumer of those two
+topic constants is suspect until checked against the event's real fields.
+
+## F13 — Sepolia publicnode may return `[]` silently for old log ranges (reported, NOT verified here)
+
+Reported by the `baeaca3` agent, not re-measured by the orchestrator:
+`ethereum-sepolia-rpc.publicnode.com` returned `[]` with no error for the 60-block window behind
+`flow_logs_mixed.json` (hook logs 0 against tenderly's 15; PoolManager `Swap` logs 0 against 36),
+while agreeing with tenderly on recent windows. If true, the comment at
+`maxpane_dashboard/data/surf_pool4_client.py:158` saying it serves archive logs is stale, and it
+belongs with `rpc.flashbots.net` in CLAUDE.md's "worse than dead" class: **a wrong answer that looks
+right**. The flow decoder's new guard (a `FeeCollected` with no preceding `Swap` returns `None`)
+catches it for flow only. The hook-log read on its own can still come back empty without complaint.
+**Measure it before acting on it.**
+
+## F14 — the capture script still lists `eth.drpc.org` (verified, unfixed)
+
+`scripts/capture_pool4.py:318-319` still defines
+`MAINNET_LOG_RPCS = ("https://gateway.tenderly.co/public/mainnet", "https://eth.drpc.org")`, and
+`:1214` iterates it for the older capture modes. drpc left the client's pool on 2026-09-12
+(`a7dc92d`) because it serves about 64 blocks of archive depth and blames the refusal on a range it
+isn't reading. The new `flow-swaps` / `quiet-burn` modes use a corrected tuple at `:322-327`; the
+older modes do not. Script only, never imported, so no user impact. A re-capture through the old
+modes will simply waste attempts.
+
+## F15 — `SurfPool4Flow`'s per-instance flags are vestigial now that the `p` body has no copy (filed, deliberately unfixed)
+
+**Filed by:** the 2026-09-14 POOL4 FLOW removal. **Severity:** cleanup; no user impact today, one
+untested code path.
+
+`SurfPool4Flow.__init__` takes `quiet_mainnet` and `quiet_as_of`, both defaulting to `False`. The
+`4` body mounts it as `SurfPool4Flow(quiet_mainnet=True, quiet_as_of=True, classes="market")`
+(`screens/surf.py`, the `POOL4_USER_MIDDLE_ID` row). The flags exist because the class was mounted
+twice: the `p` body's copy had to keep `· MAINNET` and its `as of` note, while the `4` body's copy
+dropped both, and a module-level switch could not say that. The owner removed the `p` copy as a
+duplicate of RECENT FLOW, so the second mount is gone and three things are now vestigial:
+
+- **The `False` default path is rendered by nothing on screen.** Measured by mutation on
+  2026-09-14, restored and hash-checked afterwards. With `quiet_as_of` defaulting to `True`,
+  `test_surf_pool4_market_screen.py`, `test_surf_pool4_quiet_burn.py` and `test_surf_screen.py -k
+  "pool4 or flow or market"` report **328 passed, 0 failed**, and the same holds for `quiet_mainnet`.
+  Before the removal, the first of those mutations reddened
+  `test_every_auditor_panel_still_renders_its_own_as_of_marker[SurfPool4Flow]`; that case left with
+  the panel. Only the widget file that mounts the class bare still sees either default:
+  `tests/widgets/test_surf_pool4_left.py::test_a_hostile_as_of_marker_is_stripped_and_not_merely_escaped`
+  for `quiet_as_of` and `::test_the_panel_title_never_goes_networkless` for `quiet_mainnet`.
+- **`classes="market"` scopes nothing.** No rule in `SurfScreen.DEFAULT_CSS`, `themes/minimal.tcss`
+  or the widget's own `DEFAULT_CSS` selects `.market`. The one-day `.market` scope on the title margin
+  was removed on 2026-09-12.
+- **The unscoped `SurfPool4Flow { width: 1fr; height: 1fr; min-height: 6 }` rule** in both CSS copies
+  now styles one instance. That is harmless and it stays; it is noted so nobody reads it as a
+  `p`-body rule.
+
+**Why not collapsed in the removal commit.** Folding the flags away means making the market
+rendering (no network word on mainnet, no note `Static`) the widget's only rendering. That changes
+the class's standalone rendering, its `compose`, and the two widget tests above, which is a
+behaviour change to a panel the owner did not ask to change. It does not belong inside a diff whose
+claim is "one mount removed, the `4` body identical to the pixel". It is its own refactor with its
+own review.
+
+**When it is done:**
+
+- delete both keywords and the `classes="market"` argument;
+- re-point the two widget tests at the one rendering;
+- keep the Sepolia half of `test_the_market_panels_leave_mainnet_unsaid_and_say_everything_else`,
+  because `· SEPOLIA` must still print;
+- decide whether `_do_refresh`'s `self.query(SurfPool4Flow)` loop stays for a future second mount,
+  or becomes `query_one` resolved through `#surf-pool4-user-middle`. Either is defensible; it is
+  a choice to make, not a default to inherit.
+
+## F16 — `HATCHES_PINNED_PANEL_COLUMNS = 50` matches the screen at neither pin (measured, unfixed)
+
+**Found by:** the 2026-09-14 POOL4 FLOW removal, while re-sweeping the `p` body's width.
+
+`tests/widgets/test_surf_pool4_rail.py:199-210` says the literal is HATCHES' panel width "measured
+inside `#surf-pool4-left`" at `SURF_POOL4_FULL_LAYOUT_COLUMNS = 106`. Measured on the real screen
+(committed capture, 50 rows), HATCHES is **52** columns at 106 and **49** at 99, the new pin. So the
+literal was already two columns stale before this change. The comment also names the wrong container:
+HATCHES has been in `#surf-pool4-rail` since the mainnet rebalance. The widget tests stay green because
+they mount the panel alone at 50, one column wider than the screen now gives it. What actually proves
+HATCHES whole at 99 is the screen-level sweep (`test_the_pool4_body_is_whole_from_its_pinned_width`).
+The literal should be **re-measured** (49), not re-derived, and its comment's container corrected. It
+was not changed in the removal commit because doing so moves a widget test's premise in a file that
+diff has no other reason to touch.

@@ -4629,9 +4629,13 @@ async def test_collection_name_is_normalized_before_caching(tmp_path, clock):
 
 @pytest.mark.asyncio
 async def test_no_name_uses_and_caches_the_short_address_label(tmp_path, clock):
-    collection = NftCollectionRef(
-        "base", "0x" + "b" * 40, "BASE 0xbbbb…bbbb"
-    )
+    """``custom_nft_label`` publishes the windowed (4/4) address again --
+    Task 3's own fix round (2026-09-14) reverted its brief detour through a
+    full, bare address: that form collapsed a nameless custom collection's
+    filter-summary clause and let a too-narrow grid cell's CSS ellipsis cut
+    the *tail*, leaving a head-only address."""
+    address = "0x" + "b" * 40
+    collection = NftCollectionRef("base", address, "BASE 0xbbbb…bbbb")
     nft = FakeNftClient(names=(None,))
     manager = _manager(tmp_path, clock, nft_client_factory=lambda: nft)
     expected = "BASE 0xbbbb…bbbb"

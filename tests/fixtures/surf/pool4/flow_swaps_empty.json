@@ -1,0 +1,25 @@
+{
+ "captured_at": "2026-09-14T10:00:50.601353Z",
+ "topic0": "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
+ "chain": "sepolia",
+ "chain_id": 11155111,
+ "endpoint": "https://gateway.tenderly.co/public/sepolia",
+ "pool_manager": "0xE03A1074c86CFeDd5C142C4F04F1a1536e203543",
+ "pool_id": "0x6ec9cb73ed7cd8bb0ee08bcc69c86411d3f594dc716f302d8219b789dff37d37",
+ "partner_fixture": "flow_logs_empty",
+ "from_block": 11605000,
+ "to_block": 11605100,
+ "log_count": 0,
+ "swap_count": 0,
+ "buys": 0,
+ "sells": 0,
+ "multi_swap_txs": [],
+ "note": "PoolManager Swap logs for the launch-3 pool over flow_logs_empty's exact block range, filtered by topic1 = the pool id.  The hook's own logs never carry this event -- it is the PoolManager's -- which is why a hook-address sweep cannot see a swap the hook emitted nothing distinctive for.  Captured through tenderly because publicnode Sepolia now answers this range with [] and no error (measured 2026-09-14; see SEPOLIA_SWAP_LOG_RPCS).",
+ "fixture": "flow_swaps_empty",
+ "synthetic": false,
+ "response": {
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": []
+ }
+}

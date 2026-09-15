@@ -5,7 +5,15 @@ from __future__ import annotations
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import address_text
+
+#: Display budget for the token symbol label, excluding the icon -- the same
+#: 10-cell window the deleted ``symbol[:10]`` slice produced. This is the
+#: "Token" column on the *live* base dashboard's leaderboard (the only base
+#: widget in this package actually wired to a screen); no layout pin governs
+#: it, so it is grown by ICON_COLS, keeping the 2-cell gutter the column
+#: already carried beyond the 10-cell label (PRD §5 recipe step 6.2): 12 -> 14.
+_TOKEN_COLS = 10
 
 
 class BTOverviewLeaderboard(Vertical):
@@ -33,7 +41,7 @@ class BTOverviewLeaderboard(Vertical):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_column("#", width=4)
-        table.add_column("Token", width=12)
+        table.add_column("Token", width=14)
         table.add_column("Price", width=14)
         table.add_column("24h %", width=10)
         table.add_column("Volume", width=12)
@@ -51,13 +59,15 @@ class BTOverviewLeaderboard(Vertical):
         for idx, token in enumerate(trending_tokens[:15], start=1):
             # Support both dict and object access
             if isinstance(token, dict):
-                symbol = safe_markup(token.get("symbol", "???")[:10])
+                symbol = token.get("symbol", "???")
+                address = token.get("address")
                 price = token.get("price_usd", 0)
                 change = token.get("price_change_24h")
                 volume = token.get("volume_24h", 0)
                 mcap = token.get("market_cap", 0)
             else:
-                symbol = safe_markup(getattr(token, "symbol", "???")[:10])
+                symbol = getattr(token, "symbol", "???")
+                address = getattr(token, "address", None)
                 price = getattr(token, "price_usd", 0)
                 change = getattr(token, "price_change_24h", None)
                 volume = getattr(token, "volume_24h", 0)
@@ -115,12 +125,14 @@ class BTOverviewLeaderboard(Vertical):
                 mcap_str = "..."
 
             # Highlight top 3
-            if idx <= 3:
-                symbol = f"[bold]{symbol}[/]"
+            is_top = idx <= 3
+            symbol_cell = address_text(
+                address, label=symbol, width=_TOKEN_COLS, style="bold" if is_top else "",
+            )
 
             table.add_row(
                 str(idx),
-                symbol,
+                symbol_cell,
                 price_str,
                 change_str,
                 vol_str,

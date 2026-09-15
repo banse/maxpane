@@ -43,10 +43,11 @@ Primitives only -- this module imports nothing from ``fwa_models``.
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 
 from .fwa_hero_metrics import CROWN_GOLD
 
@@ -65,33 +66,15 @@ CROWN_GLYPH = "♛"
 _GOLD = CROWN_GOLD
 
 
-def _fmt_text(value, width: int | None = None) -> str:
-    if value is None:
-        return _DASH
-    s = str(value).strip()
-    if not s:
-        return _DASH
-    if width is not None and len(s) > width:
-        return s[: width - 1] + "…"
-    return s
+def _collection_cell(row: dict, width: int = 12) -> Text:
+    """Collection name (or address) plus its copy icon, in ``width`` cells.
 
-
-def _short_addr(value) -> str:
-    if value is None:
-        return _DASH
-    s = str(value).strip()
-    if not s:
-        return _DASH
-    if len(s) <= 12:
-        return s
-    return f"{s[:6]}..{s[-4:]}"
-
-
-def _collection_label(row: dict, width: int = 12) -> str:
+    ``width`` excludes :data:`ICON_COLS` and is never below
+    :data:`MIN_SHORT_COLS` -- see the width note above the ``_TIERS`` table.
+    """
     name = row.get("collection_name")
-    if name and str(name).strip():
-        return safe_markup(_fmt_text(name, width))
-    return _short_addr(row.get("collection"))
+    label = str(name).strip() if name and str(name).strip() else None
+    return address_text(row.get("collection"), label=label, width=width)
 
 
 def _fmt_token(value) -> str:
@@ -170,23 +153,33 @@ def _fmt_jackpot(value) -> str:
 #: =========  ====  ==========================================
 #: Tier       Cost  Columns
 #: =========  ====  ==========================================
-#: full        54   # COLLECTION TOKEN BACKING ODDS JACKPOT
-#: compact     44   # COLLECTION BACKING ODDS JACKPOT
-#: minimal     34   # COLLECTION ODDS JACKPOT
-#: tiny        23   # COLLECTION ODDS
+#: full        60   # COLLECTION TOKEN BACKING ODDS JACKPOT
+#: compact     50   # COLLECTION BACKING ODDS JACKPOT
+#: minimal     41   # COLLECTION ODDS JACKPOT
+#: tiny        32   # COLLECTION ODDS
 #: =========  ====  ==========================================
 #:
-#: The real slot is 55 columns at a 200-column terminal and 38 at 140, so the
-#: board runs ``full`` when wide and ``minimal`` when narrow. ``ODDS`` and
+#: Measured on the real ``FWAScreen``: the slot is 69 columns at
+#: ``FULL_LAYOUT_COLUMNS`` (143), 58 at 120 and 48 at 100. ``ODDS`` and
 #: ``JACKPOT`` are the last to go because they are the board's entire point;
 #: ``TOKEN`` goes first.
+#:
+#: **COLLECTION is never narrower than** ``MIN_SHORT_COLS + ICON_COLS`` **(13)
+#: in any tier.** An unnamed collection renders as its address, and the
+#: helper never windows an address below ``MIN_SHORT_COLS`` (11): a column of
+#: 11, 10 or 8 -- what these tiers declared before -- produced a 13-cell cell
+#: that ``DataTable`` truncated from the end, which is exactly where the copy
+#: icon sits. At 120 and 100 columns the real screen painted
+#: ``♛1   0x3333…3333`` with no icon. The icon is now paid for by the column
+#: (the grow side of PRD §5), which moved every tier's cost by up to five and
+#: the ``full`` threshold from 58 to 60; the pin at 143 has 9 columns to spare.
 _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...]], ...] = (
     (
         "full",
-        58,
+        60,
         (
             ("rank", "#", 3),
-            ("collection", "COLLECTION", 11),
+            ("collection", "COLLECTION", 13),
             ("token", "TOKEN", 8),
             ("backing", "BACKING", 7),
             ("odds", "ODDS", 10),
@@ -195,10 +188,10 @@ _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...]], ...] = (
     ),
     (
         "compact",
-        48,
+        50,
         (
             ("rank", "#", 3),
-            ("collection", "COLLECTION", 11),
+            ("collection", "COLLECTION", 13),
             ("backing", "BACKING", 7),
             ("odds", "ODDS", 10),
             ("jackpot", "JACKPOT", 7),
@@ -206,20 +199,20 @@ _TIERS: tuple[tuple[str, int, tuple[tuple[str, str, int], ...]], ...] = (
     ),
     (
         "minimal",
-        38,
+        41,
         (
             ("rank", "#", 3),
-            ("collection", "COLLECTION", 10),
+            ("collection", "COLLECTION", 13),
             ("odds", "ODDS", 10),
             ("jackpot", "JACKPOT", 7),
         ),
     ),
     (
         "tiny",
-        27,
+        32,
         (
             ("rank", "#", 3),
-            ("collection", "COLLECTION", 8),
+            ("collection", "COLLECTION", 13),
             ("odds", "ODDS", 10),
         ),
     ),
@@ -410,9 +403,13 @@ class FWAChaseBoard(Vertical):
             return
 
         columns = self._apply_columns(table)
-        name_width = next(
-            (w for key, _h, w in columns if key == "collection"), 11
+        column_width = next(
+            (w for key, _h, w in columns if key == "collection"),
+            MIN_SHORT_COLS + ICON_COLS,
         )
+        # The icon rides inside the column; the address it may fall back to
+        # is never windowed below the helper's floor (see ``_TIERS``).
+        name_width = max(MIN_SHORT_COLS, column_width - ICON_COLS)
 
         rows = self._payload["rows"]
         crown_listing_id = self._payload["crown_listing_id"]
@@ -434,7 +431,7 @@ class FWAChaseBoard(Vertical):
 
         for idx, row in enumerate(rows[:_MAX_ROWS], start=1):
             rank = row.get("rank", idx)
-            collection = _collection_label(row, name_width)
+            collection = _collection_cell(row, name_width)
 
             is_crown = _same_listing(row.get("listing_id"), crown_listing_id)
             if is_crown:
@@ -444,7 +441,11 @@ class FWAChaseBoard(Vertical):
             rank_str = f"{CROWN_GLYPH}{rank}" if is_crown else str(rank)
             if idx == 1:
                 rank_str = f"[bold]{rank_str}[/]"
-                collection = f"[bold]{collection}[/]"
+                # ``collection`` is a pre-built ``Text`` (it may carry a copy
+                # icon), so it is styled in place rather than wrapped in a
+                # markup string -- the same reason ``address_text`` returns
+                # ``Text`` and not ``str`` in the first place.
+                collection.stylize("bold")
 
             table.add_row(
                 *self._cells(

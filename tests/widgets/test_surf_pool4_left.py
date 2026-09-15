@@ -191,6 +191,11 @@ async def _split(size=(70, 24), **overrides) -> tuple[list[str], str]:
     return lines, "\n".join(lines)
 
 
+def _cells(line: str) -> list[str]:
+    """One composited row split into its whitespace-separated cells."""
+    return line.split()
+
+
 def _index_of(lines: list[str], needle: str) -> int:
     for i, line in enumerate(lines):
         if needle in line:
@@ -217,7 +222,7 @@ async def test_a_buy_row_and_a_dead_panel_do_not_say_the_same_thing() -> None:
     """**The** test of this panel.
 
     A buy has no burn leg and no staker leg; those are *representable zeros*
-    and render ``0.00``. ``None`` is reserved for the whole-panel unavailable
+    and render ``0``. ``None`` is reserved for the whole-panel unavailable
     state, which gets its own explicit line and no row at all. Curator's rail
     shipped the opposite -- FARM said ``-- unknown`` off a dead read while its
     two siblings, folded from the same dead group, said ``none yet``, so the
@@ -228,11 +233,12 @@ async def test_a_buy_row_and_a_dead_panel_do_not_say_the_same_thing() -> None:
 
     assert buy != dead
 
-    assert "0.00" in buy
+    buy_lines = buy.split("\n")
+    assert _cells(buy_lines[_index_of(buy_lines, SIDE_WORDS["buy"])]).count("0") == 2
     assert UNAVAILABLE_LINE not in buy
 
     assert UNAVAILABLE_LINE in dead
-    assert "0.00" not in dead
+    assert all("0" not in _cells(line) for line in dead.split("\n"))
     assert SIDE_WORDS["buy"] not in dead
 
 
@@ -257,7 +263,8 @@ async def test_a_buys_zero_legs_render_as_zero_and_never_as_a_dash() -> None:
     """
     lines, _text = await _flow([BUY])
     row = lines[_index_of(lines, SIDE_WORDS["buy"])]
-    assert row.count("0.00") == 2       # the burn leg and the staker leg
+    assert _cells(row).count("0") == 2  # the burn leg and the staker leg
+    assert "0.00" not in row            # a true zero is not a rounded one
     assert "--" not in row
 
 
@@ -272,7 +279,43 @@ async def test_an_unread_leg_is_a_dash_and_not_a_zero() -> None:
     lines, _text = await _flow([broken])
     row = lines[_index_of(lines, SIDE_WORDS["buy"])]
     assert "--" in row
-    assert row.count("0.00") == 1       # the staker leg is still a real zero
+    assert _cells(row).count("0") == 1  # the staker leg is still a real zero
+
+
+@pytest.mark.asyncio
+async def test_a_sell_into_headroom_renders_bare_zero_legs() -> None:
+    """The owner's live screen, off the committed mainnet receipt.
+
+    Every row read ``0.00`` in BURNED and STAKERS, sells included, and the
+    question was whether more digits would show something. The receipt says
+    no: the hook took its 1% fee and split nothing. So the legs render ``0``,
+    not ``0.00``, which read like a small number rounded down. The rows come
+    through the real decoder and the manager's row builder rather than being
+    typed here.
+    """
+    from tests.data.test_surf_pool4_headroom_sell import _load, _split
+    from maxpane_dashboard.data.surf_manager import SurfManager
+
+    swaps, hook = _split(_load())
+    rows = SurfManager._pool4_flow_rows(swaps, hook)
+    lines, _text = await _flow(rows)
+    row = lines[_index_of(lines, SIDE_WORDS["sell"])]
+    cells = _cells(row)
+    assert cells.count("0") == 2, row
+    assert "0.00" not in row.replace("3.38 IMD", ""), row
+    assert "3.38 IMD" in row, row
+
+
+@pytest.mark.asyncio
+async def test_a_payout_too_small_for_two_decimals_is_never_a_zero() -> None:
+    """The other half of the zero rule: a real leg under a cent keeps digits."""
+    small = dict(SELL, burned_imd=0.0042, stakers_imd=0.00003)
+    lines, _text = await _flow([small])
+    row = lines[_index_of(lines, SIDE_WORDS["sell"])]
+    cells = _cells(row)
+    assert "0.0042" in cells, row
+    assert "<0.0001" in cells, row
+    assert "0" not in cells and "0.00" not in cells, row
 
 
 @pytest.mark.asyncio

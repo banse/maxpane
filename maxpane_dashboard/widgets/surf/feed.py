@@ -123,8 +123,10 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from maxpane_dashboard.analytics.surf_feed import build_threads, select_feed_window
+from maxpane_dashboard.widgets.address import is_copy_click
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age, hhmm, mmdd
+from maxpane_dashboard.widgets.surf._icons import link_prose, mark_addresses, unmark
 
 #: Panel title, PRD §4 spelling.  **Interface**: the screen tests assert this
 #: exact string reaches the compositor, and assert its *absence* when the
@@ -429,8 +431,12 @@ def _item_lines(item, width: int, depth: int = 0) -> tuple[list[str], bool] | No
         prefix = f"{pad}{stamp}  [{color}]{badge:<6}[/] "
         indent = " " * (_PREFIX_WIDTH + depth)
 
-        # Flatten on-chain newlines/tabs to single spaces first.
-        raw = _message_of(item)
+        # Flatten on-chain newlines/tabs to single spaces first, then put a
+        # copy icon after every whole address *before* anything is wrapped or
+        # cut, so each line's budget pays for its icons
+        # (``_icons.mark_addresses``; ``unmark`` restores the space below,
+        # ``_row_line_texts`` attaches the action).
+        raw, _addresses, _spans = mark_addresses(_message_of(item))
         budget = max(width - _PREFIX_WIDTH - depth, _MIN_TEXT_BUDGET)
 
         if width >= FULL_TEXT_WIDTH:
@@ -457,12 +463,12 @@ def _item_lines(item, width: int, depth: int = 0) -> tuple[list[str], bool] | No
                 chunk, was_cut = _cell_fit(chunk, budget)
                 clipped = clipped or was_cut
                 fitted.append(chunk)
-            lines = [prefix + safe_markup(fitted[0])]
-            lines += [indent + safe_markup(chunk) for chunk in fitted[1:]]
+            lines = [prefix + safe_markup(unmark(fitted[0]))]
+            lines += [indent + safe_markup(unmark(chunk)) for chunk in fitted[1:]]
             return lines, clipped
 
         fitted, clipped = _cell_fit(raw, budget)
-        return [prefix + safe_markup(fitted)], clipped
+        return [prefix + safe_markup(unmark(fitted))], clipped
     except Exception:
         # A single malformed item must never take down the panel.
         return None
@@ -488,7 +494,11 @@ def _row_line_texts(item, width: int, depth: int = 0) -> tuple[list[Text], bool]
         if rendered is None:
             return None
         lines, clipped = rendered
-        return [Text.from_markup(line) for line in lines], clipped
+        # Each whole address a line still carries is followed by the icon
+        # ``_item_lines`` marked it with; ``link_prose`` reads the address back
+        # off that line, so a wrap that cut one unbreakable address and kept
+        # the next can never hand a glyph its neighbour's address.
+        return [link_prose(Text.from_markup(line)) for line in lines], clipped
     except Exception:
         return None
 
@@ -605,6 +615,14 @@ class SurfFeedToggle(Static):
             feed.toggle_thread(self.tx_hash)
 
     def on_click(self, event) -> None:
+        # Defensive: this toggle renders only ``▸ N replies`` today, so no
+        # click on it lands on a copy icon. It is a ``Static`` a later change
+        # could hand an address, and a click on that icon must copy without
+        # also opening or closing the thread (docs/address_copy_PRD.md §3.4).
+        # tests/widgets/test_surf_address_icons.py drives it through a subclass
+        # that does render one.
+        if is_copy_click(event):
+            return
         event.stop()
         self.action_toggle()
 

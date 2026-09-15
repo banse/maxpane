@@ -37,9 +37,9 @@ Width behaviour
 =========  ====  =========================================
 Tier       Cost  Columns
 =========  ====  =========================================
-full        49   # WALLET POINTS CREDIT TX ⚑
-compact     43   # WALLET POINTS CREDIT ⚑
-minimal     33   # WALLET POINTS ⚑
+full        49   # WALLET ⧉ POINTS CREDIT TX ⚑
+compact     43   # WALLET ⧉ POINTS CREDIT ⚑
+minimal     35   # WALLET ⧉ POINTS ⚑
 =========  ====  =========================================
 
 The costs are :func:`_table.tier_cost` of each column set, and a test asserts
@@ -51,6 +51,20 @@ by, and the flag is the one column a reader cannot reconstruct from anything
 else on screen.  Each drop is announced in the title (``‹ widen: TX``);
 nothing is ever clipped in silence.
 
+**FULL and COMPACT hold their pre-icon cost (49/43) exactly; MINIMAL does
+not (33 -> 35).**  WALLET's display stays at the unshortened
+:data:`NAME_COLS` and the icon's two columns are paid by shrinking
+:data:`_CREDIT_COLS` back to its own documented measured worst case (8 -> 6,
+see that constant's note) — a column set that includes CREDIT (full,
+compact) nets to zero; MINIMAL drops CREDIT entirely, so its own cost
+carries the icon's full two-column growth with nothing to offset it.  That
+asymmetry is fine: MINIMAL's cost is not part of
+``CURATOR_FULL_LAYOUT_COLUMNS`` (the screen pin is about FULL fitting at
+138), and growing an already-degraded tier's own threshold does not move
+anything else.  Two other designs were tried and both *did* move the 138
+pin — see :data:`_WALLET_DISPLAY_COLS`'s own note for the measurements
+that ruled them out.
+
 Primitives only — this module imports nothing from ``data/`` or ``analytics/``.
 """
 
@@ -60,14 +74,12 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.curator._fmt import (
-    ADDR_COLS,
     DASH,
     fmt_eth_compact,
     fmt_points,
-    short_addr,
     NAME_COLS,
-    short_label,
 )
 from maxpane_dashboard.widgets.curator._table import (
     WIDEN_HINT,
@@ -76,7 +88,6 @@ from maxpane_dashboard.widgets.curator._table import (
     pick_tier,
     title_with_hint,
 )
-from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 #: Panel title.  A hint is appended to it, never substituted for it, so the
 #: screen tests' ``"TOP OF THE LIST" in text`` holds at every width.
@@ -99,11 +110,43 @@ _RANK_COLS = 4
 #: columns of digits and one of slack.
 _POINTS_COLS = 7
 
-#: ``461.10`` / ``8.4K`` — ``fmt_eth_compact``'s measured worst case is six.
-_CREDIT_COLS = 8
+#: ``461.10`` / ``8.4K`` — ``fmt_eth_compact``'s measured worst case is
+#: six, and that is now the cell's exact width: the two columns of slack
+#: this cell carried beyond it (was 8) are where the icon's two columns are
+#: paid from, so the identity cell keeps showing a name like
+#: ``surfsurf.eth`` whole instead of shortening below :data:`NAME_COLS` --
+#: see :data:`_WALLET_DISPLAY_COLS`'s own note for the two things that were
+#: tried first and why this is a zero-net-cost move rather than a shorten.
+_CREDIT_COLS = 6
 
 _TX_COLS = 4
 _FLAG_COLS = 2
+
+#: The identity's DISPLAY budget stays :data:`NAME_COLS`, unshortened.
+#: **Two things were tried first and both moved the pin.** Growing the
+#: column outright (keeping the display at NAME_COLS and adding ICON_COLS
+#: on top, 14 total -- the same move ``activity.py``/``closest_calls.py``
+#: made successfully) broke ``CURATOR_FULL_LAYOUT_COLUMNS``:
+#: ``tests/screens/test_curator_screen.py::test_the_binding_panel_is_the_signal_rail``
+#: went red at 137, ``CuratorLeaderboard`` newly among the panels asking for
+#: a column, because this board — unlike those two — sits inside the ``3fr``
+#: share of a two-panel seam swept to the column, with no slack of its own
+#: to spend (see the module docstring's width-behaviour section for the
+#: measurement).  Shortening the display instead, per the conversion
+#: recipe's own fallback (``max(NAME_COLS - ICON_COLS, MIN_SHORT_COLS)`` =
+#: 11, one column narrower, WALLET total 13) bought back only one of the
+#: two columns and *still* moved the pin by one: the real deficit was two
+#: columns, not one, because :data:`_CREDIT_COLS` had been typed two
+#: columns past its own documented measured worst case the whole time.
+#: Reclaiming both from there instead pays the icon in full at zero net
+#: cost to the row, which is why the display did not have to shorten after
+#: all.
+_WALLET_DISPLAY_COLS = NAME_COLS
+
+#: WALLET's total column width: the display above plus the copy icon's two
+#: cells, local to this panel exactly like ``activity.py``'s
+#: ``_IDENTITY_COLS`` / ``closest_calls.py``'s ``_SAVIOR_COLS``.
+_WALLET_COLS = _WALLET_DISPLAY_COLS + ICON_COLS
 
 _TIERS = (
     (
@@ -111,7 +154,7 @@ _TIERS = (
         49,
         (
             ("rank", "#", _RANK_COLS),
-            ("wallet", "WALLET", NAME_COLS),
+            ("wallet", "WALLET", _WALLET_COLS),
             ("points", "POINTS", _POINTS_COLS),
             ("credit", "CREDIT", _CREDIT_COLS),
             ("tx", "TX", _TX_COLS),
@@ -124,7 +167,7 @@ _TIERS = (
         43,
         (
             ("rank", "#", _RANK_COLS),
-            ("wallet", "WALLET", NAME_COLS),
+            ("wallet", "WALLET", _WALLET_COLS),
             ("points", "POINTS", _POINTS_COLS),
             ("credit", "CREDIT", _CREDIT_COLS),
             ("flag", "⚑", _FLAG_COLS),
@@ -133,10 +176,10 @@ _TIERS = (
     ),
     (
         "minimal",
-        33,
+        35,
         (
             ("rank", "#", _RANK_COLS),
-            ("wallet", "WALLET", NAME_COLS),
+            ("wallet", "WALLET", _WALLET_COLS),
             ("points", "POINTS", _POINTS_COLS),
             ("flag", "⚑", _FLAG_COLS),
         ),
@@ -265,7 +308,19 @@ def _row_values(row: dict, index: int, you: bool) -> dict:
         # A glyph AND weight, never colour alone.
         rank_str = f"▸{rank_str}"
 
-    wallet = safe_markup(short_label(row.get("name"), row.get("address")))
+    address = row.get("address")
+    if isinstance(address, str):
+        # Lower-cased on purpose (``_fmt.short_addr``'s own reason, which
+        # this call site inherits): ``eth_call`` returns are checksummed and
+        # log topics decode lowercase, so the same wallet renders two ways
+        # in two panels unless every identity cell agrees on a spelling --
+        # and "this row is you" (below) compares case-insensitively for the
+        # same reason.  The icon then copies the lower-cased form, which is
+        # an equally valid way to paste the same address.
+        address = address.lower()
+    wallet = address_text(
+        address, label=(row.get("name") or None), width=_WALLET_DISPLAY_COLS
+    )
     points = fmt_points(row.get("points"))
     credit = fmt_eth_compact(row.get("credit_eth"))
     tx_count = row.get("tx_count")
@@ -283,8 +338,13 @@ def _row_values(row: dict, index: int, you: bool) -> dict:
         "flag": _link_glyph(row.get("link_conf"), row.get("flagged")),
     }
     if you:
-        for key in ("rank", "wallet", "points", "credit", "tx"):
+        for key in ("rank", "points", "credit", "tx"):
             values[key] = f"[bold]{values[key]}[/]"
+        # `wallet` is a `Text`, not a markup string, so the emphasis is a
+        # style applied to the object rather than a `[bold]...[/]` wrap --
+        # wrapping it in an f-string would stringify away the icon's
+        # click-carrying `Style(meta=...)` span entirely.
+        wallet.stylize("bold")
     return values
 
 

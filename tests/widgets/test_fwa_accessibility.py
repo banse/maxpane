@@ -43,7 +43,6 @@ from maxpane_dashboard.widgets.fwa.fwa_hero_metrics import (
 from maxpane_dashboard.widgets.fwa.fwa_signals import FWASignals
 from maxpane_dashboard.widgets.fwa.fwa_sparkline import _fmt_change
 
-pytestmark = pytest.mark.asyncio
 
 #: Textual's CSS name table values for the names this dashboard must not use in
 #: ``Static``/Content markup. Asserted as *rendered* colours, so a future

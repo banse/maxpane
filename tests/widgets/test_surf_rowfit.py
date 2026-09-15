@@ -48,8 +48,9 @@ from maxpane_dashboard.widgets.surf.launchpad_activity import (
 #: allowlist of ASCII labels today, so this is the *shape* of the hazard
 #: rather than a live value -- but the widget renders whatever
 #: ``counterparty`` it is handed, and the unknown branch runs an arbitrary
-#: third-party string through ``_fmt.long_addr``, which measures in
-#: characters too (see the note on that function in this file's own report).
+#: third-party string through ``widgets/address.address_text`` (``_fmt.long_addr``
+#: until 2026-09-14, which measured in characters too), which fits a value that
+#: is not an address on cells and gives it no copy icon.
 _WIDE_LABEL = "海豚海豚海豚海豚🐬"
 
 _WIDE_ROW = {
@@ -122,27 +123,30 @@ async def _composite(widget, payload_kwargs, size):
 
 
 def test_a_wide_glyph_row_is_never_built_wider_than_the_width_it_was_fitted_to():
-    """``_row_markup``'s contract, on cells rather than on characters.
+    """``_row_text``'s contract, on cells rather than on characters.
 
-    The module's own docstring states it: "a markup string that is returned
-    is **guaranteed to fit** ``width``, so ``RichLog.write()`` never has to
+    The module's own docstring states it: "a row that is returned is
+    **guaranteed to fit** ``width``, so ``RichLog.write()`` never has to
     shrink -- and therefore never clips without a visible ``…``". Measured
     with ``len()`` that guarantee was false for any row carrying a glyph
     wider than one cell, at 62 (tier, width) pairs for this one row alone.
+
+    Measured on the ``Text`` the panel writes (``_row_markup``, a markup twin
+    that nothing painted, was removed on 2026-09-14).
 
     Swept across the whole band rather than at one comfortable width: the
     tier ladder sheds cells as the width drops, so the overflow moves, and a
     single-width test sits in whichever tier happens to be clean.
     """
-    from maxpane_dashboard.widgets.surf.activity import FULL_WIDTH, _row_markup
+    from maxpane_dashboard.widgets.surf.activity import FULL_WIDTH, _row_text
 
     offenders = []
     for tier in ("full", "compact", "minimal"):
         for width in range(10, FULL_WIDTH + 20):
-            markup = _row_markup(_WIDE_ROW, tier, width)
-            if markup is None:
+            row = _row_text(_WIDE_ROW, tier, width)
+            if row is None:
                 continue  # withheld, which is an honest answer
-            painted = _visible_cells(markup)
+            painted = cell_len(row.plain)
             if painted > width:
                 offenders.append((tier, width, painted))
 

@@ -122,6 +122,7 @@ __all__ = [
     "COMPACT_WIDTH",
     "FULL_WIDTH",
     "HEADERS",
+    "NOT_REACHED_BAND",
     "PANEL_COLUMNS",
     "TABLE_ID",
     "TITLE",
@@ -158,20 +159,23 @@ CAPTION = "quoted from the position as it stands now"
 #: so a seam edit in either CSS copy reddens rather than silently re-widening
 #: the panel the owner asked to shrink.
 #:
-#: WHAT IT IS MADE OF, and it is not the table. :data:`FULL_WIDTH` is 27 cells;
-#: :data:`CAPTION` is **41**, and the caption is the widest thing this panel
-#: paints. Add the two columns of the panel's own ``padding: 0 1`` and the two
-#: the caption's ``Static`` takes for its own and the answer is 45, measured in
+#: WHAT IT IS MADE OF, and it is not the table. :data:`FULL_WIDTH` is 29 cells
+#: (27 until ``not reached`` widened ``band used`` on 2026-09-14, which did not
+#: move this number -- re-measured, not assumed); :data:`CAPTION` is **41**,
+#: and the caption is the widest thing this panel paints. Add the two columns
+#: of the panel's own ``padding: 0 1`` and the two the caption's ``Static``
+#: takes for its own and the answer is 45, measured in
 #: situ rather than added up.
 #:
 #: **AND IT IS A FLOOR, NOT A PREFERENCE.** Below 45 this panel's caption is cut
 #: by CSS with an ellipsis and **no ``‹`` marker**: the widen tier is decided
-#: from :data:`FULL_WIDTH`, the table's width, so between 31 and 44 columns the
+#: from :data:`FULL_WIDTH`, the table's width, so between 33 and 44 columns the
 #: sentence that says these numbers are a quote rather than a promise goes
-#: quietly missing while the title claims everything fits. That is the standing
+#: quietly missing while the title claims everything fits (31 and 44 before
+#: 2026-09-14; swept both times). That is the standing
 #: "a panel that can bind must be able to mark" rule failing, and it is why the
 #: request to make this panel "quite less" wide stops at 45 rather than at the
-#: table's 29. Shortening :data:`CAPTION` would move this number; PRD §8.2 owns
+#: table's 31. Shortening :data:`CAPTION` would move this number; PRD §8.2 owns
 #: that sentence, so it was measured (29 cells or fewer would hold
 #: ``screens/surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS`` at 105) and not spent.
 PANEL_COLUMNS = 45
@@ -194,6 +198,22 @@ UNAVAILABLE_LINE = "ladder unavailable"
 #: shipped with. Seven cells, inside :data:`_USED_COLS`.
 UNREAD_BAND = "unknown"
 
+#: ``band used`` on a rung whose price fall never gets to the backstop band
+#: (2026-09-14, the owner's wording). The share there is a true zero, and the
+#: owner read ``0.0%`` off the live screen as a malfunction -- the band was 29%
+#: under spot and the four shallow rungs simply stop short of it.
+#:
+#: **Painted only when ``depth_rows`` says ``band_reached is False``**, which
+#: is decided from ticks. Never from the share being zero: a rung that passes
+#: the band's lower tick by a sliver uses a real share that rounds to ``0.0%``,
+#: and ``not reached`` there would be a false sentence. For the same reason it
+#: ranks *under* :data:`UNREAD_BAND` -- a band nobody read cannot be said to be
+#: out of reach -- and it is not used when no band is deployed at all, which
+#: keeps ``0.0%``: "not reached" would claim a band exists to fall short of.
+#:
+#: Eleven cells, and it is the widest value :data:`_USED_COLS` holds.
+NOT_REACHED_BAND = "not reached"
+
 TABLE_ID = "surf-pool4u-depth-table"
 _TITLE_ID = "surf-pool4u-depth-title"
 _CAPTION_ID = "surf-pool4u-depth-caption"
@@ -209,10 +229,14 @@ HEADERS: tuple[str, ...] = ("fall", "ETH paid", "band used")
 #: * fall -- ``-50%`` is four, and the header ``fall`` is four;
 #: * ETH paid -- ``9,999.99`` is eight, which covers a pool far deeper than
 #:   this one and the header besides;
-#: * band used -- ``100.0%`` is six, and ``band used`` is nine.
+#: * band used -- :data:`NOT_REACHED_BAND` is eleven, and it is the widest
+#:   thing the column holds: ``band used`` is nine, ``unknown`` seven and
+#:   ``100.0%`` six. It was nine until 2026-09-14, when ``not reached`` took a
+#:   shallow rung's ``0.0%``; fitted on ``rich.cells.cell_len``, and
+#:   ``test_every_band_cell_word_fits_its_column`` pins that.
 _MOVE_COLS = 4
 _ETH_COLS = 8
-_USED_COLS = 9
+_USED_COLS = 11
 
 #: What ``DataTable`` spends on each column *beyond* the width asked for: one
 #: cell of padding either side. ``_rowfit.row_cols`` is deliberately not used
@@ -259,6 +283,16 @@ def ladder_cells(row: object) -> tuple[str, str, str] | None:
     dash: an unread band is a *different* statement from an unreadable number,
     and this is the only cell on the panel that can make it.
 
+    The band cell is decided in this order, and the order is the contract:
+
+    1. ``band_used_pct is None`` -> :data:`UNREAD_BAND`. First, because a band
+       nobody read cannot be said to be out of reach either;
+    2. ``band_reached is False`` -> :data:`NOT_REACHED_BAND`. ``is False``,
+       never falsiness: ``None`` means "no answer" (no band, or unread) and
+       must fall through to the percentage;
+    3. otherwise the share, **including** a reached rung that rounds to
+       ``0.0%`` -- the sliver case this key exists to keep honest.
+
     A single malformed rung must never take the panel down, so every failure
     here is a dropped row rather than an exception. The rows come from this
     repo's own pure function rather than from a chain read, so a malformed one
@@ -271,7 +305,12 @@ def ladder_cells(row: object) -> tuple[str, str, str] | None:
         move = as_float(row.get("move_pct"))
         move_text = f"-{int(move)}%" if move is not None else DASH
         used = as_float(row.get("band_used_pct"))
-        used_text = f"{used:.1f}%" if used is not None else UNREAD_BAND
+        if used is None:
+            used_text = UNREAD_BAND
+        elif row.get("band_reached") is False:
+            used_text = NOT_REACHED_BAND
+        else:
+            used_text = f"{used:.1f}%"
         return move_text, _fmt_eth(row.get("eth_paid")), used_text
     except Exception:
         return None
@@ -429,7 +468,7 @@ class SurfPool4UDepth(Vertical):
             return
         # ``market_title_text``, not ``title_text``: this is the ``4`` body,
         # and it is the one that leaves ``MAINNET`` unsaid. The ``p`` body's
-        # five panels go on printing it -- see ``_pool4.QUIET_NETWORK`` for
+        # four panels go on printing it -- see ``_pool4.QUIET_NETWORK`` for
         # why silence is available for exactly one network and nothing else.
         title.update(
             Text(

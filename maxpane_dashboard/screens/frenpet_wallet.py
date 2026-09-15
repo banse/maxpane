@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -23,6 +24,7 @@ from maxpane_dashboard.analytics.frenpet_wallet_signals import (
 )
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.frenpet.wallet import (
     FPWalletActivity,
     FPWalletBestPlays,
@@ -35,12 +37,9 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 
 logger = logging.getLogger(__name__)
 
-
-def _short_addr(address: str) -> str:
-    """Shorten a hex address to 0x030A...4A51 format."""
-    if len(address) > 10:
-        return f"{address[:6]}...{address[-4:]}"
-    return address
+#: Display budget for the wallet address in the title bar, excluding the
+#: icon (``ICON_COLS``). No layout pin covers this hidden screen.
+_WALLET_COLS = 11
 
 
 class FrenPetWalletScreen(RefreshGuard, Screen):
@@ -119,14 +118,20 @@ class FrenPetWalletScreen(RefreshGuard, Screen):
         recent_attacks = data.get("recent_attacks", [])
 
         # -- Title bar ---------------------------------------------------------
+        # A Text, never a markup string: Static.update() defers markup
+        # parsing into the message pump, and the icon's click action lives
+        # in a Style that only survives outside markup parsing.
         try:
             title = self.query_one("#fpw-title", Static)
             wallet_addr = getattr(self._data_manager, "_wallet_address", "")
-            short = _short_addr(wallet_addr) if wallet_addr else "?"
             pet_count = len(managed_pets)
-            title.update(
-                f"FrenPet \u00b7 Wallet \u00b7 {short} \u00b7 {pet_count} pets"
-            )
+            line = Text("FrenPet \u00b7 Wallet \u00b7 ")
+            if wallet_addr:
+                line.append_text(address_text(wallet_addr, width=_WALLET_COLS))
+            else:
+                line.append("?")
+            line.append(f" \u00b7 {pet_count} pets")
+            title.update(line)
         except Exception:
             pass
 
