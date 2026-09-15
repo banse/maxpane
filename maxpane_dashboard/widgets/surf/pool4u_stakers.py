@@ -453,7 +453,7 @@ def fold_is_stale(stakers_hhmm, body_hhmm) -> bool:
     return behind * 60 > STALE_AFTER_S
 
 
-def footer_line(count, top_pct, stale: bool = False) -> str:
+def footer_line(count, top_pct, stale: bool = False, shown=None) -> str:
     """``66 addresses · top 3 = 32% of vault`` -- plain text, already fitted.
 
     ``top_pct is None`` renders ``top 3 = --`` and never a number computed
@@ -484,11 +484,23 @@ def footer_line(count, top_pct, stale: bool = False) -> str:
     layout rather than with a shortened value. ``· stale 1h37m`` is still not
     on the table: the reason it is a word and not an age is that an age is a
     per-panel clock, which this body does not have (see :data:`STALE_WORD`).
+
+    ``shown`` is the number of rows the table actually draws, passed only when
+    the population exceeds :data:`MAX_ROWS` (fix round 1, item 4). The
+    addresses clause then reads ``showing 999 of 1,200 addresses``, so a
+    capped table says so on the line it already has rather than on a new one.
+    The widest footer this makes, ``showing 999 of 999,999 addresses · top 3 =
+    100% of vault · stale``, is 64 cells against the footer's 69 at the ``4``
+    body's width pin.
     """
     parts: list[str] = []
     n = as_float(count)
     if n is not None:
-        parts.append(f"{int(n):,} addresses")
+        m = as_float(shown)
+        if m is not None and int(m) < int(n):
+            parts.append(f"showing {int(m):,} of {int(n):,} addresses")
+        else:
+            parts.append(f"{int(n):,} addresses")
     pct = as_float(top_pct)
     shown = f"{pct:.0f}%" if pct is not None else DASH
     parts.append(f"top {TOP_N} = {shown} of vault")
@@ -781,11 +793,18 @@ class SurfPool4UStakers(Vertical):
             # a fold that has missed a cycle costs the layout nothing. It is
             # attached only to the real footer: the three empty branches above
             # are already saying something louder about the fold than "old".
+            # Only a population past the table's own cap is ever cut short:
+            # the producer publishes every holder up to the same number.
+            population = as_float(payload.get("count"))
+            shown = None
+            if population is not None and population > MAX_ROWS:
+                shown = min(len(rows) if isinstance(rows, list) else 0, MAX_ROWS)
             text = footer_line(
                 payload.get("count"),
                 payload.get("top3_pct"),
                 stale=fold_is_stale(payload.get("as_of"),
                                     payload.get("body_as_of")),
+                shown=shown,
             )
             markup.append(f"[dim]{safe_markup(text)}[/]")
 

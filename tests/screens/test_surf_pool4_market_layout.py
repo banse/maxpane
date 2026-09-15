@@ -423,10 +423,16 @@ def _market_clipped(app, screen) -> list[tuple[str, str]]:
 #: and a pair computed from the panel's own constants would agree with the
 #: panel by construction and pin nothing.
 #:
-#: 52 is also the width this panel actually had until 2026-09-12, which is
-#: why the clip it produces is the shipped defect rather than an invented one.
-_STAKERS_FOOTER_CLIPS_AT = 52
-_STAKERS_FOOTER_FITS_AT = 53
+#: 52/53 until 2026-09-15. 52 was the width this panel actually had until
+#: 2026-09-12, so the clip it produced was the shipped defect rather than an
+#: invented one. Fix round 1 (item 4) made the fixture's footer longer: its
+#: 20 rows against a population of 999,999 now read ``showing 20 of 999,999
+#: addresses · top 3 = 100% of vault · stale``, 63 cells. Re-measured with
+#: this probe over 50..70: clipped through 66, whole from 67, and the old
+#: panel-edge rule still blind at 66, so the test's premise holds one
+#: sentence longer.
+_STAKERS_FOOTER_CLIPS_AT = 66
+_STAKERS_FOOTER_FITS_AT = 67
 
 
 async def _stakers_clip_probe(width: int) -> dict:

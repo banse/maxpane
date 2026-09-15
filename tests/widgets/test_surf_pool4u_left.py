@@ -756,6 +756,59 @@ async def test_an_unchanged_poll_keeps_the_readers_place_in_the_table() -> None:
         assert str(table.get_row_at(0)[2]).strip() == "901"
 
 
+def test_the_footer_says_when_the_table_is_capped() -> None:
+    """``showing N of M`` on the footer's own line, and only when cut short.
+
+    Fix round 1, item 4: past :data:`MAX_ROWS` the table would stop at 999
+    rows with nothing on screen saying so. The widest footer this can make
+    must fit the 69 cells the footer has at the ``4`` body's width pin (a
+    73-column panel less two columns of its own padding and two of the
+    footer ``Static``'s), measured on ``cell_len``.
+    """
+    assert footer_line(1200, 19.3, shown=999) == (
+        f"showing 999 of 1,200 addresses · top {TOP_N} = 19% of vault"
+    )
+    assert footer_line(353, 19.3, shown=353) == (
+        f"353 addresses · top {TOP_N} = 19% of vault"
+    )
+    assert footer_line(353, 19.3) == f"353 addresses · top {TOP_N} = 19% of vault"
+    widest = footer_line(999_999, 100.0, stale=True, shown=MAX_ROWS)
+    assert widest.startswith("showing 999 of 999,999 addresses")
+    assert cell_len(widest) <= 69, (cell_len(widest), widest)
+
+
+@pytest.mark.asyncio
+async def test_a_population_past_the_cap_is_named_on_the_footer() -> None:
+    """1,200 synthetic stakers: 999 rows, and the footer says 999 of 1,200.
+
+    At the panel width the ``4`` body gives STAKERS at its width pin (73), so
+    the whole sentence must reach a pixel with no ellipsis, and the footer
+    stays one line: the claim costs no row.
+    """
+    from textual.widgets import DataTable, Static
+
+    async with _stakers_app().run_test(size=(73, 24)) as pilot:
+        widget = pilot.app.query_one(SurfPool4UStakers)
+        widget.update_data(pool4_stakers=_every_staker(n=1200),
+                           pool4_staker_count=1200, pool4_staker_top3_pct=19.3,
+                           pool4_network="MAINNET")
+        await pilot.pause()
+        table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
+        rows = table.row_count
+        footer = widget.query(Static).last()
+        footer_h = footer.size.height
+        panel_w = widget.size.width  # read inside: sizes are zeroed on exit
+        lines = [
+            "".join(seg.text for seg in strip).rstrip()
+            for strip in pilot.app.screen._compositor.render_strips()
+        ]
+    assert panel_w == 73
+    assert rows == MAX_ROWS == 999
+    assert footer_h == 1
+    line = next(l for l in lines if "addresses" in l)
+    assert line.strip() == f"showing 999 of 1,200 addresses · top {TOP_N} = 19% of vault", line
+
+
 @pytest.mark.asyncio
 async def test_a_real_change_keeps_the_readers_place_in_the_table() -> None:
     """Repriced rows and a tier rebuild repaint, and neither snaps to rank 1.
