@@ -1313,7 +1313,7 @@ class CuratorScreen(RefreshGuard, Screen):
     #: survives beside them at the measured width; `updated Ns ago` does not,
     #: and the title bar's `as of HH:MM` is the freshness marker that matters
     #: (it freezes under an outage, where the cycle age keeps counting).
-    #: `e` is deliberately not here: it only acts inside `f` and `l`, and the
+    #: `e` is deliberately not here: it only acts inside `a` and `l`, and the
     #: relevant cleaned panel is where its result appears.
     #:
     #: The full words are pinned against the worst-case (`4 errors` present)

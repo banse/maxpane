@@ -2807,8 +2807,8 @@ async def test_a_inside_the_filter_editor_types_the_letter_instead_of_switching(
 
 
 async def test_y_and_f_cross_transitions_land_in_the_right_mode():
-    """`f` from the wallet view and `y` from the analysis view both go where
-    the key says, and each mode shows exactly its own hero and body."""
+    """The analysis action from the wallet view and `y` from the analysis view
+    both go where they should, and each mode shows exactly its own hero and body."""
     from maxpane_dashboard.screens.curator import (
         ANALYSIS_BODY_ID,
         DASHBOARD_BODY_ID,
@@ -2844,7 +2844,7 @@ async def test_y_and_f_cross_transitions_land_in_the_right_mode():
 
 async def test_the_analysis_panels_are_dispatched_while_hidden():
     """Both hidden bodies receive every refresh (the swap-table precedent),
-    so the first `f` shows a filled view — no blank first frame."""
+    so the first `a` shows a filled view — no blank first frame."""
     screen = _screen(_analysis_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
