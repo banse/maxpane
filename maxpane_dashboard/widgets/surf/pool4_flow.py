@@ -2,10 +2,10 @@
 
 One line per swap, newest first -- composited at the full tier::
 
-    AGE   SIDE   SIZE     BURNED   STAKERS    INFERENCE
-    2m    SELL   1.2K     111.42     12.38    0.0057 ETH
-    7m    BUY    980.00   0        0          12.38 IMD
-    14m   SELL~  4.5K     0        0          0.0031 ETH
+    AGE  SIDE   SIZE    BURNED  STAKERS  INFERENCE
+    2m   SELL   1.2K    111.42  12.38    0.0057 ETH
+    7m   BUY    980.00  0       0        12.38 IMD
+    14m  SELL~  4.5K    0       0        0.0031 ETH
 
     ~ accrued, not settled yet
 

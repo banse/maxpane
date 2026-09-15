@@ -264,7 +264,7 @@ The three record-list hero cards have a five-line contract. Keep the order stabl
 ### surf's POOL4 view — the `p` body (2026-09-01, live on mainnet 2026-09-02)
 
 Surf grew a **third body**, not a ninth dashboard, on curator's `y`/`f` and its own `l`
-precedent: `p` swaps `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4 — THE SPLIT over THE
+precedent: `e` (bound to `p` until 2026-09-15) swaps `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4 — THE SPLIT over THE
 RATCHET on the left, HATCHES over sIMD VAULT in the rail (POOL4 FLOW sat under THE RATCHET until
 2026-09-14, removed as a duplicate of the `4` body's RECENT FLOW) — with the hero left in
 place so LAUNCHPAD/FLOW/BURN/SUPPLY never goes dark, and `escape` backs out one-way. **There is

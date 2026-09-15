@@ -2418,21 +2418,20 @@ async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
 # above, never starting at it.
 
 
-#: The coin table at the ten rows it is capped at.
+#: The coin table at the twenty rows it is capped at (ten until 2026-09-15).
 #:
 #: ``_sample_data``'s ``launchpad_coins`` has **two** rows, so in every other
-#: test in this file ``SurfLaunchpadCoins`` is five rows tall (title, blank,
-#: header, two coins) and the left column contributes 11 rows to the body.
-#: The pin's own derivation is written against the ten-row cap -- 13 rows of
-#: table plus ``SurfLaunchpadActivity``'s floor of 6 = **19** -- and none of
-#: that was exercised anywhere: ``coins.size.height`` was 5 at every terminal
-#: height in the committed suite, so the left column never scrolled and the
-#: stated arithmetic could have been wrong by eight rows without a red test.
+#: test in this file ``SurfLaunchpadCoins`` draws two coins. The pin's own
+#: derivation is written against a full table -- the coin panel on its
+#: 13-row floor (title, blank, header, ten coins), the one-row gap under it,
+#: and ``SurfLaunchpadActivity``'s floor of 6 = **20** -- and the committed
+#: capture cannot exercise that: its table never has more coins than rows.
 #:
-#: Measured with this payload the left column really is 19 and the rail 20,
-#: so the pin holds at 31 with **one row of margin** -- and, unlike the
-#: capture, this payload actually exercises the left column's own overflow
-#: branch (it scrolls from 29 down). It is the height sweep's counterpart to
+#: Measured with this payload the left column is 20 and the rail 20 at the
+#: pin, so the pin holds at 31 with **no row of margin** (the gap spent the
+#: one it had). Unlike the capture, this payload fills the table at every
+#: height, so a blank row under it is the margin and not an unfilled table.
+#: It is the height sweep's counterpart to
 #: :func:`_ordinary_burn_payload` on the width side, and it exists for the
 #: same reason: the committed capture is the small case, and a pin measured
 #: only against the small case is a pin nobody has tested.
@@ -2471,13 +2470,12 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_height(
     columns is comfortably past ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``, so
     nothing here is measuring a width.
 
-    **Swept against a ten-coin table as well as the capture**, for the reason
-    :func:`_ten_coin_payload` records: the pin's derivation is written about
-    a 13-row table and a 19-row left column, and the committed capture makes
-    that table 5 rows and that column 11. Under the capture alone the left
-    column never scrolls at any height in this range, so half of what the pin
-    is about was unexercised -- the rail could have been the binder by
-    accident rather than by measurement.
+    **Swept against a twenty-coin table as well as the capture**, for the
+    reason :func:`_twenty_coin_payload` records: the pin's derivation is
+    written about a full table -- a 13-row coin panel, the gap and a 6-row
+    feed, a 20-row left column level with the rail -- and the committed
+    capture's two coins cannot fill it, so half of what the pin is about
+    would be unexercised.
     """
     pl = _twenty_coin_payload() if payload == "twenty-coins" else None
     async with _surf_app(pl).run_test(size=(150, rows)) as pilot:
@@ -2495,17 +2493,16 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_height(
 async def test_the_height_pin_is_measured_against_the_column_it_describes() -> None:
     """The pin's *derivation*, asserted -- not just its threshold.
 
-    ``SURF_LAUNCHPAD_FULL_LAYOUT_ROWS``' docstring says the rail binds at 20
-    rows and the left column asks for 19 with a full ten-coin table. The
-    sweep above can only ever see the resulting threshold, so it stays green
-    if those two numbers swap, drift, or were never true -- which is exactly
-    the state the committed capture left them in, its two-row table making
-    the left column 11.
+    ``SURF_LAUNCHPAD_FULL_LAYOUT_ROWS``' docstring says both columns bind at
+    20 rows: the rail's content, and the left column's floors (coin panel
+    13, gap 1, feed 6). The sweep above can only ever see the resulting
+    threshold, so it stays green if those numbers drift or were never true.
 
     This is the row-wise counterpart of the width side's in-situ half-
-    measurements. It is also the guard that would catch the coin table's cap
-    changing: raise it past ten and the left column becomes the binder, at
-    which point the pin moves and this test names the reason.
+    measurements. It is also the guard that would catch a floor changing:
+    raise the coin panel's or the feed's ``min-height`` and the left column
+    becomes the binder, at which point the pin moves and this test names the
+    reason.
 
     **Measured AT the pin since 2026-09-15, and one row under it.** It used to
     be read at 28 rows, where both ``1fr`` children sat on their floors. The

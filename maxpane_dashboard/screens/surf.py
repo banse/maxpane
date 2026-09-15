@@ -2865,7 +2865,8 @@ class SurfScreen(RefreshGuard, Screen):
         Digits are an established per-screen pattern here (curator's filter
         presets, ``frenpet_full``'s sub-views) and neither of those is
         app-level, so neither collides. ``4`` reads off the protocol's own
-        name where ``u`` or ``i`` would have collided with ``p``'s meaning.
+        name where ``u`` or ``i`` would have read as the protocol body's key
+        (``p`` when this was written, ``e`` since 2026-09-15).
         """
         if self._mode == MODE_POOL4_USER:
             self.action_show_dashboard()
