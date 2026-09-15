@@ -87,6 +87,24 @@ reach at a pinned width, except where an item says so.
   - `await proc.wait()` after SIGKILL has no timeout of its own.
   - FWA drift with two addresses (before → after) is untested.
 
+## Surf adjustments of 2026-09-15 (`e` key, all stakers, launchpad heights)
+
+- **`launchpad._COIN_CHROME_ROWS = 3` is hand-typed.** It assumes the coin table never shows a horizontal
+  scrollbar. `max_scroll_y == 0` is asserted only at the width pin and above.
+- **Short launchpads waste rows.** With fewer than 20 coins, COINS keeps its `2fr` share and leaves blank rows
+  that ACTIVITY used to get.
+- **No spare cells beside the STAKERS scrollbar.** The 353-row table always scrolls, and its 2-cell scrollbar
+  exactly uses the tier budget's 2 spare cells at 119 and 121. `_TITLE_PADDING_COLS = 2` matches the scrollbar
+  only by coincidence. The every-staker width sweep reddens if the scrollbar grows.
+- **Shadowed variable.** `pool4u_stakers.footer_line` reuses the name `shown` for the formatted top-3 value after
+  consuming the `shown=` parameter. There is no bug today, but it is a trap for the next edit.
+- **Stale test comment.** `tests/screens/test_surf_screen.py` ~:2439 still says "the ten are distinguishable"
+  for a 20-coin payload.
+- **Bisect note.** Commit `59799ab` is red in isolation (a layout test's row counter counted the footer); `fe938a2`
+  fixes the counter.
+- **Layout contract.** RECENT FLOW's BURNED/STAKERS legs render `0` on a sell into headroom (verified on chain,
+  fixture `tests/fixtures/surf/pool4/`), `--` when unread, and four decimals for a sub-cent payout.
+
 ## Design notes kept as is
 
 - `widgets/surf/_icons.py` marks addresses in prose *before* fitting. It is a distinct responsibility, and
