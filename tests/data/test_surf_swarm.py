@@ -110,14 +110,44 @@ def test_throughput_is_derived_and_says_its_window():
 
 
 def test_revision_rate_filters_by_window():
-    """Revisions within the window are counted; those outside are excluded."""
-    # DONE has one node with updatedAt within the window and 0 revisions
-    out = S.throughput(JOBS, [DONE], now=NOW, window_days=7)
-    assert out["revision_rate"] == 0.0
+    """Revisions within the window are counted; those outside are excluded.
 
-    # With a wide window, we get the same result
-    out_wide = S.throughput(JOBS, [DONE], now=NOW, window_days=30)
-    assert out_wide["revision_rate"] == 0.0
+    Nodes without timestamps or with updatedAt outside the window are excluded
+    from the sample entirely. Empty sample returns None, never 0.0.
+    """
+    # Synthetic job with two nodes: one inside window (1 revision), one outside (2 revisions)
+    # NOW = 2026-09-16T18:00:00Z, floor (7 days back) = 2026-09-09T18:00:00Z
+    inside_iso = "2026-09-15T18:00:00Z"  # 1 day ago, inside 7-day window
+    outside_iso = "2026-09-08T18:00:00Z"  # 8 days ago, outside 7-day window
+
+    job_with_mixed_nodes = {
+        "id": "test-job",
+        "state": "completed",
+        "nodes": [
+            {"key": "inside", "revisions": 1, "updatedAt": inside_iso},
+            {"key": "outside", "revisions": 2, "updatedAt": outside_iso},
+        ],
+    }
+
+    # With 7-day window: only inside node counts (1 node with 1 revision)
+    out = S.throughput(JOBS, [job_with_mixed_nodes], now=NOW, window_days=7)
+    assert out["revision_rate"] == 1.0  # 1 out of 1 node has revisions
+
+    # With 30-day window: both nodes count (2 nodes, both have revisions)
+    out_wide = S.throughput(JOBS, [job_with_mixed_nodes], now=NOW, window_days=30)
+    assert out_wide["revision_rate"] == 1.0  # 2 out of 2 nodes have revisions
+
+    # All nodes outside window: empty sample returns None
+    job_all_outside = {
+        "id": "test-job-2",
+        "state": "completed",
+        "nodes": [
+            {"key": "old1", "revisions": 1, "updatedAt": outside_iso},
+            {"key": "old2", "revisions": 2, "updatedAt": outside_iso},
+        ],
+    }
+    out_empty = S.throughput(JOBS, [job_all_outside], now=NOW, window_days=7)
+    assert out_empty["revision_rate"] is None
 
 
 def test_network_of_is_an_allowlist():
