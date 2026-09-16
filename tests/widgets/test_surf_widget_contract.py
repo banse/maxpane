@@ -64,6 +64,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
+    SurfSwarmHero,
 )
 
 
@@ -194,6 +195,13 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # rather than a panel changes nothing about what this list is for.
         SurfPool4UserHero, SurfPool4UStakers, SurfPool4UBurn,
         SurfPool4USignals, SurfPool4UDepth,
+        # The `s` swarm body's own hero (2026-09-16). Its own task, not the
+        # plan's File Structure, owns this hand-typed set -- see the ruling
+        # in .superpowers/sdd/2026-09-16-surf-swarm-body/task-6-report.md.
+        # Every swarm widget lands here on its own task; the other four
+        # (`SurfSwarmField`, `SurfSwarmQueue`, `SurfSwarmThroughput`,
+        # `SurfSwarmShipped`) are not written yet and are not named here.
+        SurfSwarmHero,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 
