@@ -30,6 +30,13 @@ async def test_every_read_is_a_keyless_get_against_the_one_host():
     lowered = {k.lower() for k in request.headers}
     assert not lowered & {"authorization", "x-api-key", "cookie", "token"}
 
+    # Construction-level assertion: the client built by the module must not carry auth headers
+    client = SwarmClient()
+    assert "Authorization" not in client._client.headers
+    assert "X-Api-Key" not in client._client.headers
+    assert client._client.headers.get("Accept") == "application/json"
+    await client.close()
+
 
 async def test_jobs_and_launches_and_sites_unwrap_their_envelopes():
     def handler(request):
@@ -63,7 +70,7 @@ async def test_a_404_on_one_job_is_none_not_a_raise():
 
 
 async def test_a_500_is_none_and_never_a_zero():
-    async with _client(lambda request: httpx.Response(500, text="boom")) as client:
+    async with _client(lambda request: httpx.Response(500, json={"error": "internal_error", "detail": "Failed query"})) as client:
         assert await client.fetch_jobs() is None
         assert await client.fetch_health() is None
 
