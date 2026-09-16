@@ -72,51 +72,47 @@ because the whole point of the column is "which chain, if any, does this
 row's own identifying detail live on" and silence there would read as an
 omission rather than an honest "not applicable".
 
-Unread is not empty, but the given contract is rows-shaped, not marker-shaped
--------------------------------------------------------------------------------
-``data/surf_swarm.shipped_rows`` always returns a ``list`` -- ``[]`` at the
-least, for a cold slot as much as for a genuinely empty read -- exactly the
-ambiguity ``swarm_field.py``'s own module docstring names for its row list.
-The natural fix, and the one THE FIELD uses, is to gate on the slot's own
-``as of`` marker (here, ``swarm_scores_as_of_hhmm``) rather than trust the
-list alone.
+Unread is not empty -- and the marker is the only signal that says so
+------------------------------------------------------------------------
+``data/surf_swarm.shipped_rows`` is annotated ``-> list[dict[str, Any]]``
+and every one of its four input loops is ``for x in <arg> or ()``; with a
+cold slot all four arguments are ``None`` and it still returns ``[]`` (the
+function ends ``return rows[:limit]``, never ``return None``).
+``data/surf_manager.py`` (``_swarm_scores_keys``) publishes that value
+directly. **``swarm_shipped_rows`` therefore never reaches this widget as
+``None`` from the real producer** -- it is ``[]`` both when the sweep has
+shipped nothing and when the sweep has never run, exactly the ambiguity
+``swarm_field.py``'s own module docstring names for its row list, and a
+gate keyed on ``rows is None`` cannot see that ambiguity at all: it would
+make the unavailable state unreachable in production, through a cold start
+and through any scores-tier outage alike, which is the curator rail bug
+this repo's CLAUDE.md names by name -- a dead read and a real negative
+rendering identically.
 
-This panel's own frozen acceptance test
-(``test_an_empty_list_and_an_unread_list_differ``) does not drive that
-marker at all -- neither call sets ``swarm_scores_as_of_hhmm`` -- and
-distinguishes the two states through ``swarm_shipped_rows`` itself:
-``rows=[]`` must render :data:`EMPTY_LINE`, and ``rows=None`` must render
-:data:`UNAVAILABLE_LINE`. Since the marker is absent (and therefore
-constant) across every case the test exercises, no boolean combination of
-"marker present" with "rows" can make the marker matter to that outcome
-without also breaking one of the three states the test pins -- the marker
-literally cannot be observed by these assertions. :func:`_is_unavailable`
-therefore keys off **``rows is None``** alone, not off the marker, and
-:data:`_fmt.DASH`-style honesty is kept a different way: ``swarm_shipped_
-rows`` **is** ``None`` in the one state that means "nothing in this payload
-has ever been computed" -- ``data/surf_manager``'s blank-payload scaffold
-(``dict.fromkeys(SURF_KEYS)``), served before the first successful
-``fetch_and_compute()`` or after a catastrophic failure -- so the sentinel
-this panel keys off is a real one, not an invented convenience.
+The discriminator that *does* exist is ``swarm_scores_as_of_hhmm``:
+``_swarm_scores_keys`` sets it to ``entry.as_of_hhmm() if entry is not None
+else None`` -- ``None`` exactly while ``SLOT_SWARM_SCORES`` has never been
+read, a real time string once it has, independent of what the row list
+happens to contain. So :func:`_no_rows_line` gates the same way
+``swarm_field.py`` does: **no real marker (or a ``rows`` sentinel that is
+somehow ``None`` anyway, tolerated defensively though the producer cannot
+emit it) means unavailable, full stop, whatever the rows say; a marker
+present with an empty list means a genuine empty read.** ``rows is None``
+is no longer the discriminator anywhere in this module -- it is checked
+only as an extra defensive branch, the way ``swarm_field.py`` keeps its own
+``rows_input is None`` clause "so the widget stays honest if it is ever
+handed that sentinel directly."
 
-**The honest gap this leaves, named rather than hidden.** Production has a
-second, narrower unread window this rule does not close: on the very first
-cycle after a cold start, the live tier (``TIER_SWARM``) can already have
-landed while the detached, much slower scores sweep
-(``TIER_SWARM_SCORES``, 1800 s) has not -- ``test_the_first_payload_is_not_
-behind_the_swarm_read`` in ``tests/data/test_surf_manager_swarm.py`` proves
-the first payload returns before either swarm tier is awaited. In that
-window ``swarm_shipped_rows`` is already ``[]`` (``shipped_rows()`` never
-returns ``None`` once ``_swarm_scores_keys`` actually runs) while
-``swarm_scores_as_of_hhmm`` is still ``None`` -- and this panel renders
-:data:`EMPTY_LINE`, not :data:`UNAVAILABLE_LINE`, for that window, because
-its gate cannot see the marker. THROUGHPUT's own score-rows section (the
-sibling reading the same slot) does not have this gap, because its given
-tests always leave room for a marker-based escape hatch; this panel's own
-given test forecloses that option. This is filed rather than quietly
-patched over -- CLAUDE.md's "a review never fixes what it finds" applies to
-an implementer's own reasoned deviation too, and the fix (if the owner wants
-one) is a follow-up, not a silent rewrite of the frozen acceptance test.
+(Fix round 1, 2026-09-16: an earlier version of this module gated on
+``rows is None`` alone, because the brief's own first-draft test never set
+the marker in any of its three states, which made the marker
+unobservable by that test. The test itself was the thing wrong -- it
+handed the widget a ``None`` the real producer cannot emit, so it proved a
+branch that production never reaches, one of this repo's own "tests that
+cannot fail" shapes. The coordinator corrected the test rather than
+accepting the gate it justified; see ``test_an_empty_list_and_an_unread_
+list_differ`` for the amended version, which drives both states through the
+marker with ``swarm_shipped_rows=[]`` in both calls.)
 
 Third-party text, and the no-bracket contract
 -----------------------------------------------
@@ -335,14 +331,19 @@ def _addr_or_site_cell(fields: dict) -> Text:
     return Text(DASH)
 
 
-def _no_rows_line(rows: object) -> tuple[str, str] | None:
+def _no_rows_line(as_of: object, rows: object) -> tuple[str, str] | None:
     """``(text, rich style)`` for an empty/unavailable panel, or ``None``
     when there are real rows to render.
 
-    See the module docstring's *"Unread is not empty..."* section for why
-    this keys off ``rows is None`` rather than a marker.
+    ``swarm_field.py``'s own rule, restated: no real marker means
+    unavailable, full stop, whatever ``rows`` says (the producer cannot
+    actually make ``rows`` disagree with the marker, but a hand-edited cache
+    file is third-party input too); a marker present with an empty list is
+    a genuine empty read. See the module docstring's *"Unread is not
+    empty..."* section for why the marker, not ``rows is None``, is the
+    discriminator here.
     """
-    if rows is None:
+    if not _has_marker(as_of) or rows is None:
         return f"⚠ {UNAVAILABLE_LINE}", "yellow"
     if not rows:
         return EMPTY_LINE, "dim"
@@ -471,9 +472,15 @@ class SurfSwarmShipped(Vertical):
             return
         self._install_columns(table, self._tier)
 
+        as_of = self._payload.get("as_of")
         rows = self._payload.get("rows")
         batch: list[list] = []
-        if isinstance(rows, list):
+        # No real marker means unavailable, full stop -- the table shows no
+        # rows even if ``rows`` somehow carried content (see the module
+        # docstring and ``_no_rows_line``, whose gate this mirrors so the
+        # table and the footer message can never disagree about whether
+        # there is anything to show).
+        if _has_marker(as_of) and isinstance(rows, list):
             for row in rows[:MAX_ROWS]:
                 fields = _row_fields(row)
                 if fields is None:
@@ -509,7 +516,7 @@ class SurfSwarmShipped(Vertical):
             footer = self.query_one(f"#{_FOOTER_ID}", Static)
         except Exception:  # not composed yet
             return
-        line = _no_rows_line(self._payload.get("rows"))
+        line = _no_rows_line(self._payload.get("as_of"), self._payload.get("rows"))
         if line is None:
             footer.update(Text(""))
             return

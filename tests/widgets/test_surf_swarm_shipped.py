@@ -25,6 +25,13 @@ ROWS = [
 
 async def _shipped(size=(110, 12), **kwargs):
     kwargs.setdefault("swarm_shipped_rows", ROWS)
+    # Fix round 1: a marker is now load-bearing for any content to render
+    # (see swarm_shipped.py's own docstring -- it mirrors swarm_field.py's
+    # own rule), so every test in this file except the empty/unavailable
+    # one needs one present by default, the way swarm_field.py's own
+    # ``_field()`` helper already does. The empty/unavailable test passes
+    # its own value (or ``None``) explicitly and is unaffected.
+    kwargs.setdefault("swarm_scores_as_of_hhmm", "04:06")
     lines = await composite_lines(SurfSwarmShipped, size, **kwargs)
     return "\n".join(lines)
 
@@ -49,8 +56,19 @@ async def test_the_chain_is_named_for_a_launch_row():
 
 
 async def test_an_empty_list_and_an_unread_list_differ():
-    assert EMPTY_LINE in await _shipped(swarm_shipped_rows=[])
-    assert "unavailable" in await _shipped(swarm_shipped_rows=None)
+    """Fix round 1 (2026-09-16): amended from the brief's first-draft
+    version, which handed the widget ``swarm_shipped_rows=None`` for the
+    unavailable case -- a value ``data/surf_swarm.shipped_rows`` can never
+    actually produce (it always returns a ``list``, ``[]`` at the least, so
+    that draft proved a branch production never reaches). Both calls now
+    use the one state the real producer *does* emit for "nothing shipped"
+    (``swarm_shipped_rows=[]``) and differ only in the marker
+    (``swarm_scores_as_of_hhmm``), which is the actual discriminator
+    between "read and empty" and "never read" -- see swarm_shipped.py's own
+    docstring.
+    """
+    assert EMPTY_LINE in await _shipped(swarm_shipped_rows=[], swarm_scores_as_of_hhmm="04:06")
+    assert "unavailable" in await _shipped(swarm_shipped_rows=[], swarm_scores_as_of_hhmm=None)
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +121,8 @@ _HOSTILE_LABEL = "[/][red]PWNED[/] boom"
 async def test_a_hostile_label_renders_with_no_literal_brackets():
     hostile = [dict(_DELIVERY_ROW, label=_HOSTILE_LABEL)]
     lines = await composite_lines(
-        SurfSwarmShipped, (110, 12), swarm_shipped_rows=hostile, region_only=True,
+        SurfSwarmShipped, (110, 12), swarm_shipped_rows=hostile,
+        swarm_scores_as_of_hhmm="04:06", region_only=True,
     )
     region = "\n".join(lines)
     assert "[" not in region and "]" not in region
@@ -113,7 +132,8 @@ async def test_a_hostile_label_renders_with_no_literal_brackets():
 async def test_a_hostile_ens_name_renders_with_no_literal_brackets():
     hostile_site = dict(ROWS[1], ens_name="[/][red]PWNED[/]")
     lines = await composite_lines(
-        SurfSwarmShipped, (110, 12), swarm_shipped_rows=[hostile_site], region_only=True,
+        SurfSwarmShipped, (110, 12), swarm_shipped_rows=[hostile_site],
+        swarm_scores_as_of_hhmm="04:06", region_only=True,
     )
     region = "\n".join(lines)
     assert "[" not in region and "]" not in region
