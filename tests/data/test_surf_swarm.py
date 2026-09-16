@@ -115,7 +115,7 @@ def test_revision_rate_filters_by_window():
     Nodes without timestamps or with updatedAt outside the window are excluded
     from the sample entirely. Empty sample returns None, never 0.0.
     """
-    # Synthetic job with two nodes: one inside window (1 revision), one outside (2 revisions)
+    # Synthetic job with two nodes: one inside window (1 revision), one outside (0 revisions)
     # NOW = 2026-09-16T18:00:00Z, floor (7 days back) = 2026-09-09T18:00:00Z
     inside_iso = "2026-09-15T18:00:00Z"  # 1 day ago, inside 7-day window
     outside_iso = "2026-09-08T18:00:00Z"  # 8 days ago, outside 7-day window
@@ -125,17 +125,17 @@ def test_revision_rate_filters_by_window():
         "state": "completed",
         "nodes": [
             {"key": "inside", "revisions": 1, "updatedAt": inside_iso},
-            {"key": "outside", "revisions": 2, "updatedAt": outside_iso},
+            {"key": "outside", "revisions": 0, "updatedAt": outside_iso},
         ],
     }
 
-    # With 7-day window: only inside node counts (1 node with 1 revision)
+    # With 7-day window: only inside node counts → sample [1] → 1/1 = 1.0
     out = S.throughput(JOBS, [job_with_mixed_nodes], now=NOW, window_days=7)
-    assert out["revision_rate"] == 1.0  # 1 out of 1 node has revisions
+    assert out["revision_rate"] == 1.0
 
-    # With 30-day window: both nodes count (2 nodes, both have revisions)
+    # With 30-day window: both nodes count → sample [1, 0] → 1/2 = 0.5
     out_wide = S.throughput(JOBS, [job_with_mixed_nodes], now=NOW, window_days=30)
-    assert out_wide["revision_rate"] == 1.0  # 2 out of 2 nodes have revisions
+    assert out_wide["revision_rate"] == 0.5
 
     # All nodes outside window: empty sample returns None
     job_all_outside = {
