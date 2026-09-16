@@ -64,6 +64,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
+    SurfSwarmField,
     SurfSwarmHero,
 )
 
@@ -198,10 +199,16 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # The `s` swarm body's own hero (2026-09-16). Its own task, not the
         # plan's File Structure, owns this hand-typed set -- see the ruling
         # in .superpowers/sdd/2026-09-16-surf-swarm-body/task-6-report.md.
-        # Every swarm widget lands here on its own task; the other four
-        # (`SurfSwarmField`, `SurfSwarmQueue`, `SurfSwarmThroughput`,
-        # `SurfSwarmShipped`) are not written yet and are not named here.
+        # Every swarm widget lands here on its own task; the other three
+        # (`SurfSwarmQueue`, `SurfSwarmThroughput`, `SurfSwarmShipped`) are
+        # not written yet and are not named here.
         SurfSwarmHero,
+        # THE FIELD (task 7, 2026-09-16). Every kwarg is spelled after its
+        # full `swarm_` contract key, `swarm_network` included even though
+        # this panel never paints it (see swarm_field.py's own docstring for
+        # why) -- so it belongs in the strict check, not
+        # `_SHORT_KWARG_WIDGETS`.
+        SurfSwarmField,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 
