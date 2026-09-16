@@ -30,12 +30,32 @@ look for them:
    a hero card, and it is what the Step-3 mutation in the task brief proves:
    folding ``None`` into ``0`` turns ``test_an_unread_count_says_so_and_
    never_prints_zero`` red.
-2. **``swarm_services_up`` carries three states, not two.** ``True`` is up,
-   ``False`` is down, and a missing key (or the whole dict read as anything
-   but a ``dict``) is *unreported* -- a service nobody asked about, which is
-   not the same claim as "asked and it said no". All three render with a
-   different word and colour (``up`` green, ``down`` red, ``?`` dim) rather
-   than collapsing the unreported case into either neighbour.
+2. **``swarm_services_up`` carries three states, not two, and it lives on
+   AGENTS.** Spec §5: *"AGENTS — online of enrolled, plus whether verifier,
+   publisher and deployer are up."* ``True`` is up, ``False`` is down, and a
+   missing key (or the whole dict read as anything but a ``dict``) is
+   *unreported* -- a service nobody asked about, which is not the same claim
+   as "asked and it said no". All three render with a different word and
+   colour (``up`` green, ``down`` red, ``?`` dim) rather than collapsing the
+   unreported case into either neighbour, but AGENTS's subtitle line does
+   not *list* all three every time: naming all three unconditionally (every
+   render, even the all-up case) ran the line to ~40 cells for no reason
+   most of the time, so it **summarises** -- ``all services up`` when
+   nothing is wrong, and otherwise only the exceptions (``verifier down``,
+   or ``publisher ?``), joined by `` · `` -- which keeps the three-state
+   distinction while fitting a card at any width this dashboard renders one
+   at (worst case, all three exceptions named, is 48 cells measured with
+   ``rich.cells.cell_len`` rather than ``len()``, comfortably inside a third
+   of even a narrow terminal; ``SurfSwarmHeroBox``'s own CSS
+   (``text-wrap: nowrap; text-overflow: ellipsis``) is the same fallback
+   every other line in this file already relies on for anything narrower
+   still).
+
+``swarm_working_now`` is not part of AGENTS at all (spec §5 does not mention
+it there): it is a "right now" fact and rides on IN FLIGHT's subtitle
+instead, beside the blocked count (``"6 blocked · working 0"``). ACCEPTED
+TODAY's subtitle carries no service text and, since spec §5 names nothing
+else for it beyond the value itself ("accepted in the last day"), is blank.
 
 Every line reaches ``Static`` as a pre-built ``rich.text.Text``, parsed here
 inside ``_pool4.parse_line``'s own ``try`` -- ``Static.update("…[/x]…")``
@@ -107,31 +127,84 @@ def _dim(text: str) -> str:
 
 
 def _service_word(name: str, state: object) -> str:
-    """One service's rendered word -- three states, three spellings.
+    """One service's rendered word -- three states, three spellings, **plain**.
 
-    ``True`` -> up (green). ``False`` -> down (red), the state
-    ``test_a_service_that_is_down_is_named`` pins. Anything else, ``None``
-    included, is *unreported* -- rendered dim with ``?`` rather than folded
-    into ``down``, which would claim a service failed when nobody actually
-    asked it.
+    ``True`` -> ``"{name} up"``. ``False`` -> ``"{name} down"``, the state
+    ``test_a_down_service_is_named_and_the_others_are_not`` pins. Anything
+    else, ``None`` included, is *unreported* -- ``"{name} ?"`` rather than
+    folded into ``down``, which would claim a service failed when nobody
+    actually asked it (``test_an_unreported_service_is_marked_distinctly``
+    pins this one; a mutation that folds ``None`` into the down branch is
+    what proves it).
+
+    Deliberately **not** individually coloured. A per-word ``[red]``/
+    ``[green]``/``[dim]`` tag here would be markup, and :func:`_services_line`
+    hands its whole return value to ``_render_card``'s ``_dim()``, which
+    ``safe_markup``-escapes the string before wrapping it -- correct for the
+    plain text every other subtitle in this file is, and exactly why one
+    subtitle secretly carrying its own tags is a bug rather than a style
+    choice: escaping turns ``[red]verifier down[/]`` into the literal text
+    ``\\[red]verifier down\\[/]`` on screen. Found rendering this card by eye
+    during this fix. The three words already read as three different
+    *states* without colour riding along; :func:`_dim` still dims the whole
+    line, same as IN FLIGHT's and ACCEPTED TODAY's subtitles.
     """
     if state is True:
-        return f"[green]{safe_markup(f'{name} up')}[/]"
+        return f"{name} up"
     if state is False:
-        return f"[red]{safe_markup(f'{name} down')}[/]"
-    return f"[dim]{safe_markup(f'{name} ?')}[/]"
+        return f"{name} down"
+    return f"{name} ?"
 
 
 def _services_line(services_up: object) -> str:
-    """All three services, in fixed order, each in its own distinguishable state.
+    """AGENTS's own subtitle -- a summary, never all three named unconditionally.
 
     A non-``dict`` payload (``None`` included -- the whole read failed)
-    renders every service ``?`` rather than raising or going blank: a
-    missing dict and a dict with no keys mean the same thing to a caller
-    who only ever does ``.get(name)``.
+    treats every service as unreported rather than raising or going blank: a
+    missing dict and a dict with no keys mean the same thing to a caller who
+    only ever does ``.get(name)``, and with nothing marked ``True`` every one
+    of the three becomes an "exception" below, which is the honest outcome
+    for "we could not read any of this".
+
+    Every service that reports ``True`` is silently fine and earns no
+    mention; everything else -- ``down`` and unreported alike -- is named.
+    All three up is the common case and costs nine cells
+    (``all services up``); a mutation that hardcodes the down branch (making
+    every service render ``"{name} down"`` regardless of its real state) is
+    what ``test_all_services_up_summarises_instead_of_listing`` catches --
+    it would stop saying ``all services up`` the moment any input is asked
+    for, including the all-``True`` one. Worst case, all three exceptions
+    named (``"verifier down · publisher down · deployer down"``, measured at
+    46 cells with ``rich.cells.cell_len`` rather than ``len()``), still fits
+    a hero card at any width this dashboard renders one at; ``SurfSwarmHeroBox``'s
+    own CSS (``text-wrap: nowrap; text-overflow: ellipsis``) is the same
+    fallback every other line in this file already relies on for anything
+    narrower still, so no further compression is added here.
+
+    Returns **plain text** -- see :func:`_service_word` for why this line
+    carries no markup of its own and lets ``_render_card``'s ``_dim()`` do
+    the one escape-and-style pass every other subtitle in this file gets.
+
+    ``_service_word`` is called for **every** service, up ones included, and
+    the "is this an exception" question is asked of its own *output*
+    (``not word.endswith(" up")``) rather than re-deriving the up/down/
+    unreported split here a second time. That is what makes the hardcoded-
+    down mutation a real mutation of the summary itself: a version of
+    :func:`_service_word` that always answers ``"{name} down"`` would make
+    every rendered word fail the ``endswith(" up")`` check, including the
+    all-``True`` case, so the all-up case would stop saying
+    ``all services up`` -- which is exactly what
+    ``test_all_services_up_summarises_instead_of_listing`` catches. Filtering
+    on the *state* before calling :func:`_service_word` (an earlier draft of
+    this function) would have called it only for exceptions and left that
+    same mutation invisible to the all-up case entirely.
     """
     data = services_up if isinstance(services_up, dict) else {}
-    return " · ".join(_service_word(name, data.get(name)) for name in _SERVICE_NAMES)
+    words = [_service_word(name, data.get(name)) for name in _SERVICE_NAMES]
+    exceptions = [word for word in words if not word.endswith(" up")]
+    if not exceptions:
+        return "all services up"
+    return " · ".join(exceptions)
 
 
 # ---------------------------------------------------------------------------
@@ -139,12 +212,13 @@ def _services_line(services_up: object) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _agents_card(online, enrolled, working) -> tuple[str, str]:
-    """AGENTS -- ``N of M`` connected of enrolled, and how many work now.
+def _agents_card(online, enrolled, services_up) -> tuple[str, str]:
+    """AGENTS -- ``N of M`` connected of enrolled, and the three services.
 
-    Both halves of the fraction have to be real reads: an enrolled count
-    with no online count (or the reverse) is not a fraction anyone can act
-    on, so either missing half takes the whole value to
+    Spec §5: *"online of enrolled, plus whether verifier, publisher and
+    deployer are up."* Both halves of the fraction have to be real reads: an
+    enrolled count with no online count (or the reverse) is not a fraction
+    anyone can act on, so either missing half takes the whole value to
     :data:`UNAVAILABLE` rather than printing a fraction with a guessed side.
     """
     o = as_float(online)
@@ -154,13 +228,17 @@ def _agents_card(online, enrolled, working) -> tuple[str, str]:
     else:
         value = f"[bold white]{safe_markup(f'{int(o)} of {int(e)}')}[/]"
 
-    w = as_float(working)
-    subtitle = f"working {int(w)}" if w is not None else f"working {DASH}"
+    subtitle = _services_line(services_up)
     return value, subtitle
 
 
-def _in_flight_card(in_flight, blocked) -> tuple[str, str]:
-    """IN FLIGHT -- jobs executing now, and how many sit blocked beside them."""
+def _in_flight_card(in_flight, blocked, working) -> tuple[str, str]:
+    """IN FLIGHT -- jobs executing now, how many sit blocked, and who works now.
+
+    ``swarm_working_now`` rides here rather than on AGENTS: it is a "right
+    now" fact about the swarm the same way ``jobs_in_flight`` is, and spec
+    §5 does not mention it on AGENTS at all.
+    """
     f = as_float(in_flight)
     value = (
         f"[bold white]{safe_markup(f'{int(f)} in flight')}[/]"
@@ -169,20 +247,27 @@ def _in_flight_card(in_flight, blocked) -> tuple[str, str]:
     )
 
     b = as_float(blocked)
-    subtitle = f"{int(b)} blocked" if b is not None else f"{DASH} blocked"
+    blocked_part = f"{int(b)} blocked" if b is not None else f"{DASH} blocked"
+    w = as_float(working)
+    working_part = f"working {int(w)}" if w is not None else f"working {DASH}"
+    subtitle = f"{blocked_part} · {working_part}"
     return value, subtitle
 
 
-def _accepted_card(accepted_today, services_up) -> tuple[str, str]:
-    """ACCEPTED TODAY -- jobs accepted in the last day, and the three services."""
+def _accepted_card(accepted_today) -> tuple[str, str]:
+    """ACCEPTED TODAY -- jobs accepted in the last day.
+
+    Spec §5 names nothing else for this card beyond the count itself, so the
+    subtitle carries no second fact -- blank rather than restating the value
+    or borrowing a fact that belongs to another card.
+    """
     a = as_float(accepted_today)
     value = (
         f"[bold white]{safe_markup(f'accepted {int(a)}')}[/]"
         if a is not None
         else ""
     )
-    subtitle = _services_line(services_up)
-    return value, subtitle
+    return value, ""
 
 
 # ---------------------------------------------------------------------------
@@ -279,15 +364,15 @@ class SurfSwarmHero(Horizontal):
             (CARD_IDS[0], TITLE_AGENTS, _agents_card(
                 data.get("agents_online"),
                 data.get("agents_enrolled"),
-                data.get("working_now"),
+                data.get("services_up"),
             )),
             (CARD_IDS[1], TITLE_IN_FLIGHT, _in_flight_card(
                 data.get("jobs_in_flight"),
                 data.get("jobs_blocked"),
+                data.get("working_now"),
             )),
             (CARD_IDS[2], TITLE_ACCEPTED, _accepted_card(
                 data.get("accepted_today"),
-                data.get("services_up"),
             )),
         )
         for card_id, label, (value, subtitle) in cards:

@@ -79,6 +79,28 @@ async def test_a_real_zero_is_a_zero():
     assert UNAVAILABLE not in text
 
 
-async def test_a_service_that_is_down_is_named():
-    text = await _hero(swarm_services_up={"verifier": False, "publisher": True, "deployer": True})
+async def test_all_services_up_summarises_instead_of_listing():
+    # KW's default swarm_services_up is all-True.
+    text = await _card_text(CARD_IDS[0])
+    assert "all services up" in text
+    assert "down" not in text
+    assert "?" not in text
+
+
+async def test_a_down_service_is_named_and_the_others_are_not():
+    text = await _card_text(
+        CARD_IDS[0],
+        swarm_services_up={"verifier": False, "publisher": True, "deployer": True},
+    )
     assert "verifier down" in text
+    assert "publisher" not in text
+    assert "deployer" not in text
+
+
+async def test_an_unreported_service_is_marked_distinctly():
+    text = await _card_text(
+        CARD_IDS[0],
+        swarm_services_up={"verifier": True, "publisher": None, "deployer": True},
+    )
+    assert "publisher ?" in text
+    assert "down" not in text
