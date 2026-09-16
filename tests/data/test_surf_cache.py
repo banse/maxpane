@@ -80,7 +80,7 @@ def test_tier_ttls_match_the_prd(tmp_path):
 
     assert TIERS == (
         TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
-        TIER_POOL4_STAKERS,
+        TIER_POOL4_STAKERS, "swarm", "swarm_scores",
     )
     assert TIER_TTL_SECONDS[TIER_FAST] == 0.0
     assert 60.0 <= TIER_TTL_SECONDS[TIER_MEDIUM] <= 120.0
@@ -221,7 +221,7 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # ninth degraded *group*: `SOURCE_POOL4` ("p4") is the eighth and last
     # name the title row has columns for, so the fold serves last-good behind
     # its own stale marker and folds into `p4` only when it has nothing.
-    assert len(SLOTS) == 9
+    assert len(SLOTS) == 11
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

@@ -105,9 +105,17 @@ TIER_POOL4 = "pool4"
 #: advances only when a new fold actually lands.
 TIER_POOL4_STAKERS = "pool4_stakers"
 
+#: The swarm's live read: ``/health`` every run, the job list only when a
+#: counter moved, details for the jobs still moving.  60 s because the swarm
+#: moves a few times an hour and the host is someone else's.
+TIER_SWARM = "swarm"
+#: The full 62-detail sweep behind the scores and the throughput numbers.
+#: 188 KB, 25 s measured — half-hourly, never on the live path.
+TIER_SWARM_SCORES = "swarm_scores"
+
 TIERS: tuple[str, ...] = (
     TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
-    TIER_POOL4_STAKERS,
+    TIER_POOL4_STAKERS, TIER_SWARM, TIER_SWARM_SCORES,
 )
 
 TIER_TTL_SECONDS: dict[str, float] = {
@@ -117,6 +125,8 @@ TIER_TTL_SECONDS: dict[str, float] = {
     TIER_LAUNCHPAD: 600.0,
     TIER_POOL4: 600.0,
     TIER_POOL4_STAKERS: 1800.0,
+    TIER_SWARM: 60.0,
+    TIER_SWARM_SCORES: 1800.0,
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
@@ -126,6 +136,8 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
     TIER_LAUNCHPAD: 180.0,
     TIER_POOL4: 180.0,
     TIER_POOL4_STAKERS: 300.0,
+    TIER_SWARM: 120.0,
+    TIER_SWARM_SCORES: 300.0,
 }
 
 
@@ -142,6 +154,8 @@ SLOT_ACTIVITY = "activity"    # Blockscout dev tx pages
 SLOT_LAUNCHPAD = "launchpad"  # factory/hook/executor getters + log aggregates
 SLOT_POOL4 = "pool4"          # discovery + hook/vault/dripper getters + flow logs
 SLOT_POOL4_STAKERS = "pool4_stakers"  # the sIMD Transfer fold's last-good
+SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
+SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
 
 SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
@@ -157,6 +171,11 @@ SLOTS: tuple[str, ...] = (
     # staker fold can serve last-good behind its own stale marker; it folds
     # into `p4` only when it has nothing at all to serve.
     SLOT_POOL4_STAKERS,
+    # Neither is a ninth degraded *group*: `SOURCES` is full at eight names
+    # (surf_manager.py:222) and the title row is pinned on it.  A failed swarm
+    # read serves last-good behind its own marker, the staker sweep's rule.
+    SLOT_SWARM,
+    SLOT_SWARM_SCORES,
 )
 
 
@@ -1089,6 +1108,8 @@ __all__ = [
     "SLOT_NFT",
     "SLOT_POOL4",
     "SLOT_POOL4_STAKERS",
+    "SLOT_SWARM",
+    "SLOT_SWARM_SCORES",
     "SurfCache",
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",
@@ -1098,6 +1119,8 @@ __all__ = [
     "TIER_POOL4",
     "TIER_POOL4_STAKERS",
     "TIER_SLOW",
+    "TIER_SWARM",
+    "TIER_SWARM_SCORES",
     "TIER_TTL_SECONDS",
     "pool4_reserve_series_name",
 ]
