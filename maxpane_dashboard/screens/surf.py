@@ -2947,10 +2947,11 @@ class SurfScreen(RefreshGuard, Screen):
         size larger each time, and the heroes offer a new one: a
         ``self._pool4_user_hero_shown`` flag, or a ``hero.display = not
         body.display``, would each be a second source of truth for the same
-        fact. Every visibility here -- eight of them now, ``SurfSwarmHero``
-        joining ``SurfPool4UserHero`` as the second hero swapped with its own
-        body -- is ``self._mode == <one mode word>`` and nothing else, which
-        makes the modes exclusive by construction rather than by care.
+        fact. Every visibility here -- ten of them now (seven bodies plus
+        three heroes), ``SurfSwarmHero`` joining ``SurfPool4UserHero`` as the
+        second hero swapped with its own body -- is ``self._mode == <one mode
+        word>`` and nothing else, which makes the modes exclusive by
+        construction rather than by care.
         """
         try:
             self.query_one("#middle-row").display = self._mode == MODE_DASHBOARD
