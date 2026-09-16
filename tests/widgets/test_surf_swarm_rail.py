@@ -1,14 +1,15 @@
-"""QUEUE and THROUGHPUT -- the swarm body's rail panels (Task 8)."""
+"""QUEUE and THROUGHPUT -- the swarm body's rail panels (Task 8).
 
-from maxpane_dashboard.data.surf_swarm import _NETWORKS as _SWARM_CHAIN_NETWORKS
+The chain-id-word agreement test that used to live here moved to
+``tests/widgets/test_surf_swarm_chain.py`` in Task 9, alongside the map and
+helper it protects (``_swarm_chain.CHAIN_ID_WORDS``/``chain_word``, hoisted
+out of ``swarm_throughput.py`` so JUST SHIPPED does not need a third copy).
+"""
+
 from maxpane_dashboard.widgets.surf import swarm_throughput as _throughput_mod
 from maxpane_dashboard.widgets.surf.swarm_queue import FULL_WIDTH as QUEUE_FULL_WIDTH
 from maxpane_dashboard.widgets.surf.swarm_queue import NO_BLOCKED_LINE, SurfSwarmQueue
-from maxpane_dashboard.widgets.surf.swarm_throughput import (
-    _CHAIN_ID_WORDS,
-    STALE_WORD,
-    SurfSwarmThroughput,
-)
+from maxpane_dashboard.widgets.surf.swarm_throughput import STALE_WORD, SurfSwarmThroughput
 from tests.widgets.surf_compositing import composite_lines
 
 QUEUE_ROWS = [{"state": "completed", "count": 43}, {"state": "cancelled", "count": 11},
@@ -135,27 +136,11 @@ async def test_a_hostile_agent_token_renders_with_no_literal_brackets():
 
 
 # ---------------------------------------------------------------------------
-# Fix round 2, finding 1: the restated chain-id map needs the redundancy-
-# plus-agreement-test treatment ``_pool4.network_word``/``POOL4_NETWORKS``
-# already gets (``tests/widgets/test_surf_pool4_shared.py::
-# test_the_network_allowlist_agrees_with_the_frozen_vocabulary``), adapted
-# for a dict of ``{chain_id: word}`` rather than a tuple of words.
+# Fix round 2, finding 1's own agreement test (the restated chain-id map vs.
+# ``data/surf_swarm._NETWORKS``) moved to ``tests/widgets/test_surf_swarm_
+# chain.py`` in Task 9, with the map and helper it protects
+# (``_swarm_chain.CHAIN_ID_WORDS``/``chain_word``).
 # ---------------------------------------------------------------------------
-
-
-def test_the_chain_id_allowlist_agrees_with_data_surf_swarm():
-    """``swarm_throughput._CHAIN_ID_WORDS`` restates
-    ``data/surf_swarm._NETWORKS`` because a widget may not import ``data/``
-    (contract §0.5) -- the same reason ``_pool4.NETWORK_WORDS`` restates
-    ``surf_models.POOL4_NETWORKS``. Dict equality is symmetric by
-    construction, so this one assertion catches both directions the ruling
-    named: a chain id added to the fold's map and not the widget's breaks
-    it (that chain would silently render the em dash on screen while the
-    data layer already has a name for it), and a chain id invented in the
-    widget with no contract entry behind it breaks it too.
-    """
-    assert _CHAIN_ID_WORDS == _SWARM_CHAIN_NETWORKS
-
 
 # ---------------------------------------------------------------------------
 # Fix round 2, finding 2: the narrow-tier code paths, exercised as

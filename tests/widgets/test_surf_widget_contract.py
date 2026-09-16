@@ -67,6 +67,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmField,
     SurfSwarmHero,
     SurfSwarmQueue,
+    SurfSwarmShipped,
     SurfSwarmThroughput,
 )
 
@@ -201,9 +202,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # The `s` swarm body's own hero (2026-09-16). Its own task, not the
         # plan's File Structure, owns this hand-typed set -- see the ruling
         # in .superpowers/sdd/2026-09-16-surf-swarm-body/task-6-report.md.
-        # Every swarm widget lands here on its own task; the other three
-        # (`SurfSwarmQueue`, `SurfSwarmThroughput`, `SurfSwarmShipped`) are
-        # not written yet and are not named here.
+        # Every swarm widget lands here on its own task.
         SurfSwarmHero,
         # THE FIELD (task 7, 2026-09-16). Every kwarg is spelled after its
         # full `swarm_` contract key, `swarm_network` included even though
@@ -217,6 +216,12 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # docstring for the reasoning on THROUGHPUT, the one of the two the
         # design note names for the chain word).
         SurfSwarmQueue, SurfSwarmThroughput,
+        # JUST SHIPPED (task 9, 2026-09-16). Every kwarg is spelled after its
+        # full `swarm_` contract key; `swarm_network` is accepted and never
+        # painted, same reason as THE FIELD -- this panel's chain word is per
+        # row, off each row's own `chain_id`, not off the live tier's single
+        # network string (see swarm_shipped.py's own docstring).
+        SurfSwarmShipped,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 

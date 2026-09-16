@@ -61,20 +61,26 @@ new payload key at all, because ``swarm_score_rows`` already carries
 ``swarm_network``/``pool4_network``: a known id's word, or the em dash for
 anything else, ``None`` included -- never a guess and never a silent
 omission, because a reader about to open a hash in an explorer needs to know
-which chain it is on. ``_pool4.network_word`` itself is reused for that
-allowlist-and-dash step (it already owns :data:`_pool4.NETWORK_WORDS` and
-:data:`_pool4.NETWORK_UNKNOWN`), but it validates an already-resolved word
-(``"SEPOLIA"``), not a raw numeric chain id -- no existing widget-safe helper
-maps ``11155111 -> "SEPOLIA"``, because every other panel that has ever
-needed a network word received the manager's own pre-resolved string
-(``pool4_network``/``swarm_network``), never a raw chain id. ``last_chain_id``
-is the first score-row-shaped field to carry the id itself, so
-:data:`_CHAIN_ID_WORDS` restates that one small step -- id to word --
-mirroring ``data/surf_swarm._NETWORKS`` (``{1: "MAINNET", 11155111:
-"SEPOLIA"}``), which lives in ``data/`` and cannot be imported here. The
-result is handed straight to ``_pool4.network_word`` rather than trusted on
-its own, so the two modules cannot disagree about what counts as a valid
-word or what the dash looks like.
+which chain it is on. ``last_chain_id`` is the first score-row-shaped field
+to carry the id itself rather than the manager's own pre-resolved string
+(``pool4_network``/``swarm_network``), so this module needed the one small
+step -- id to word -- that no existing widget-safe helper made before it.
+
+**Hoisted to** :mod:`maxpane_dashboard.widgets.surf._swarm_chain` **as of
+Task 9 (2026-09-16).** JUST SHIPPED needed the identical id-to-word step for
+each shipped row's own ``chain_id`` once the design doc's title-level chain
+word for that panel was overruled in favour of one word per row (its rows
+mix chains, so a single title word would misattribute some of them) -- the
+same need this module already had, not merely a similar one. Writing that
+translation a third time was the exact divergence CLAUDE.md's *Reuse before
+you build* warns about, so :data:`_CHAIN_ID_WORDS`, :func:`_chain_word` and
+:data:`_CHAIN_COLS` below are now **bound names imported from** that shared
+module rather than a second definition, and the redundancy-plus-agreement
+test that used to live in ``tests/widgets/test_surf_swarm_rail.py`` moved
+with the map to ``tests/widgets/test_surf_swarm_chain.py``. Nothing about
+this module's own behaviour changed -- ``T._CHAIN_ID_WORDS``,
+``T._chain_word`` and ``T._CHAIN_COLS`` (``T`` = this module) still resolve
+exactly as before for any caller that reached them by name.
 
 A hash is never shown bare: when a row has a real ``last_tx_hash``, the
 chain word (or the dash) always prints beside it, and when a row has no
@@ -103,9 +109,13 @@ from maxpane_dashboard.widgets.surf._pool4 import (
     GLYPH_HINT,
     WIDEN_HINT,
     join_lines,
-    network_word,
     strip_tags,
 )
+from maxpane_dashboard.widgets.surf._swarm_chain import CHAIN_COLS as _CHAIN_COLS
+from maxpane_dashboard.widgets.surf._swarm_chain import (
+    CHAIN_ID_WORDS as _CHAIN_ID_WORDS,
+)
+from maxpane_dashboard.widgets.surf._swarm_chain import chain_word as _chain_word
 
 __all__ = [
     "AGENTS_UNAVAILABLE_LINE",
@@ -157,35 +167,11 @@ _JOBS_COLS = 4
 #: of rendered illegibly small.
 _MIN_TX_COLS = MIN_SHORT_COLS
 
-#: Widest chain word this allowlist can print (``SEPOLIA``/``MAINNET``, 7
-#: cells); ``_pool4.NETWORK_UNKNOWN`` (the em dash) is one cell and pads out
-#: to the same column.
-_CHAIN_COLS = 7
-
-#: Chain id -> the pre-resolved word ``_pool4.network_word`` validates.
-#: Mirrors ``data/surf_swarm._NETWORKS`` (``{1: "MAINNET", 11155111:
-#: "SEPOLIA"}``) -- restated because that map lives in ``data/`` and a widget
-#: may not import it (contract §0.5); nothing else in this package has ever
-#: needed to resolve a *raw numeric chain id* rather than an
-#: already-resolved network string, so there is no existing widget-safe
-#: helper to reuse for this one step. The result is still validated through
-#: ``_pool4.network_word`` rather than trusted on its own -- see the module
-#: docstring's *"The chain word is per row"* section.
-_CHAIN_ID_WORDS = {1: "MAINNET", 11155111: "SEPOLIA"}
-
-
-def _chain_word(chain_id: object) -> str:
-    """``last_chain_id`` -> a network word, or ``_pool4.NETWORK_UNKNOWN``.
-
-    An allowlist, not a pass-through: an id outside :data:`_CHAIN_ID_WORDS`
-    -- ``None`` included -- renders the em dash rather than a guess, exactly
-    ``_pool4.network_word``'s own rule for a network *string*. ``bool`` is
-    excluded before the ``int`` check because ``True``/``False`` are ``int``
-    subclasses in Python and neither is a chain id.
-    """
-    if isinstance(chain_id, int) and not isinstance(chain_id, bool):
-        return network_word(_CHAIN_ID_WORDS.get(chain_id))
-    return network_word(None)
+#: ``_CHAIN_COLS`` / ``_CHAIN_ID_WORDS`` / ``_chain_word`` are bound names
+#: imported from ``_swarm_chain`` (Task 9's hoist) rather than defined here
+#: -- see the module docstring's *"Hoisted to _swarm_chain"* section. Kept
+#: at module scope under their original names so any existing caller that
+#: reaches them as ``swarm_throughput._CHAIN_COLS`` etc. still resolves.
 
 
 def _has_marker(as_of: object) -> bool:

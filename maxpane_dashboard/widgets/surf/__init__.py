@@ -127,6 +127,7 @@ from .signals import DETECTOR_LABELS, SurfSignals
 from .swarm_field import SurfSwarmField
 from .swarm_hero import SurfSwarmHero
 from .swarm_queue import SurfSwarmQueue
+from .swarm_shipped import SurfSwarmShipped
 from .swarm_throughput import SurfSwarmThroughput
 
 __all__ = [
@@ -159,6 +160,7 @@ __all__ = [
     "SurfSwarmField",
     "SurfSwarmHero",
     "SurfSwarmQueue",
+    "SurfSwarmShipped",
     "SurfSwarmThroughput",
     "TITLE",
     "UNAVAILABLE_LINE",
