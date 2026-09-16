@@ -233,7 +233,7 @@ _ADDR_RENDER_COLS = ADDR_COLS + ICON_COLS
 FULL_WIDTH = sum(
     cols + _CELL_PADDING
     for cols in (_KIND_COLS, _LABEL_COLS, CHAIN_COLS, _ADDR_RENDER_COLS, _WHEN_COLS)
-)                                                                    # 96
+)                                                                    # 77
 #: One tier down: WHEN is dropped, whole -- never blanked, which would light
 #: the widen marker while claiming back no width. CHAIN and ADDRESS / SITE
 #: are never dropped independently of each other: dropping CHAIN alone would
@@ -244,7 +244,7 @@ FULL_WIDTH = sum(
 COMPACT_WIDTH = sum(
     cols + _CELL_PADDING
     for cols in (_KIND_COLS, _LABEL_COLS, CHAIN_COLS, _ADDR_RENDER_COLS)
-)                                                                    # 89
+)                                                                    # 70
 
 
 def _has_marker(as_of: object) -> bool:
