@@ -52,6 +52,41 @@ async def test_the_stale_word_appears_only_when_told():
 
 
 # ---------------------------------------------------------------------------
+# Fix round 1: THROUGHPUT names the chain per score row, from that row's own
+# ``last_chain_id`` -- an allowlist beside the hash, never in the title, and
+# never printed for a row with no hash at all.
+# ---------------------------------------------------------------------------
+
+_SEPOLIA_ROW = {"agent_id": "10303", "agent_token": "2", "jobs_scored": 9,
+                "mean_score": 97.8, "last_tx_hash": "0x8370" + "7e" * 30,
+                "last_chain_id": 11155111}
+_UNKNOWN_CHAIN_ROW = dict(_SEPOLIA_ROW, last_chain_id=999999999)
+_NO_HASH_ROW = dict(_SEPOLIA_ROW, last_tx_hash=None)
+
+
+async def test_a_known_chain_id_names_itself_beside_the_hash():
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (60, 14), swarm_throughput=THROUGHPUT,
+        swarm_score_rows=[_SEPOLIA_ROW]))
+    assert "SEPOLIA" in text
+
+
+async def test_an_unknown_chain_id_renders_the_dash():
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (60, 14), swarm_throughput=THROUGHPUT,
+        swarm_score_rows=[_UNKNOWN_CHAIN_ROW]))
+    assert "—" in text
+    assert "SEPOLIA" not in text and "MAINNET" not in text
+
+
+async def test_a_row_with_no_hash_names_no_chain_either():
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (60, 14), swarm_throughput=THROUGHPUT,
+        swarm_score_rows=[_NO_HASH_ROW]))
+    assert "SEPOLIA" not in text and "MAINNET" not in text and "—" not in text
+
+
+# ---------------------------------------------------------------------------
 # The standing no-bracket requirement (task brief): each panel's composited
 # region carries no literal ``[`` or ``]`` when it renders a hostile
 # third-party string, proven by routing that same string through markup

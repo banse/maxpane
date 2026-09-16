@@ -43,28 +43,43 @@ degrade differently on purpose:
    ``swarm_queue.py._is_unavailable`` documents) and an empty list means a
    real read found no agents; rows present means rows render.
 
-The chain word is deliberately absent from this title
--------------------------------------------------------
+The chain word is per row, never in the title (fix round 1)
+--------------------------------------------------------------
 The design note (``docs/superpowers/specs/2026-09-16-surf-swarm-view-design.md``
 §5/§6) names "any score quoting a transaction" among the panels that should
-carry the chain word in their title. This panel is exactly that panel, and
-the tension is recorded rather than resolved by omission: Task 8's own frozen
-interface names four consumed keys for this widget --
-``swarm_throughput``, ``swarm_score_rows``, ``swarm_scores_as_of_hhmm``,
-``swarm_stale`` -- and ``swarm_network`` is not one of them, where the
-sibling ``JUST SHIPPED`` panel's own Task 9 brief *does* name it. Read
-together, that looks like a deliberate, later narrowing of the design note's
-general rule rather than an oversight, so this widget follows the more
-specific and more recent instruction and takes no ``swarm_network`` kwarg.
-Flagged for the review pass rather than guessed either way.
+carry the chain word wherever chain data shows. THROUGHPUT quotes a
+transaction hash per agent row, so it shows chain data -- but the fact that
+answers "which chain" lives **per row**, in that row's own ``last_chain_id``,
+not at the panel level: two agents' last reviews can land on two different
+chains, and a single title-level word would misattribute one of them. This
+task's own frozen Interfaces line still names exactly four consumed keys and
+no ``swarm_network`` kwarg, and that stands: the chain word does not need a
+new payload key at all, because ``swarm_score_rows`` already carries
+``last_chain_id`` beside ``last_tx_hash`` in its frozen row shape.
 
-``last_chain_id`` is accepted as part of the frozen ``swarm_score_rows`` row
-shape but is not rendered as a separate word for the same reason: the only
-widget-safe (``data/``-free) allowlist mapping a chain id to a name is
-``data/surf_swarm.network_of``, which lives in ``data/`` and cannot be
-imported here, and the brief's own description of what to render for this
-row names only ``last_tx_hash`` (shortened, no copy icon) and, optionally,
-``agent_token``.
+:func:`_chain_word` renders it the way ``_pool4.network_word`` renders
+``swarm_network``/``pool4_network``: a known id's word, or the em dash for
+anything else, ``None`` included -- never a guess and never a silent
+omission, because a reader about to open a hash in an explorer needs to know
+which chain it is on. ``_pool4.network_word`` itself is reused for that
+allowlist-and-dash step (it already owns :data:`_pool4.NETWORK_WORDS` and
+:data:`_pool4.NETWORK_UNKNOWN`), but it validates an already-resolved word
+(``"SEPOLIA"``), not a raw numeric chain id -- no existing widget-safe helper
+maps ``11155111 -> "SEPOLIA"``, because every other panel that has ever
+needed a network word received the manager's own pre-resolved string
+(``pool4_network``/``swarm_network``), never a raw chain id. ``last_chain_id``
+is the first score-row-shaped field to carry the id itself, so
+:data:`_CHAIN_ID_WORDS` restates that one small step -- id to word --
+mirroring ``data/surf_swarm._NETWORKS`` (``{1: "MAINNET", 11155111:
+"SEPOLIA"}``), which lives in ``data/`` and cannot be imported here. The
+result is handed straight to ``_pool4.network_word`` rather than trusted on
+its own, so the two modules cannot disagree about what counts as a valid
+word or what the dash looks like.
+
+A hash is never shown bare: when a row has a real ``last_tx_hash``, the
+chain word (or the dash) always prints beside it, and when a row has no
+hash at all, no chain segment prints either -- there is nothing to name the
+chain of.
 
 Purity
 ------
@@ -84,7 +99,13 @@ from textual.widgets import Static
 from maxpane_dashboard.widgets.address import MIN_SHORT_COLS, short_hex
 from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
-from maxpane_dashboard.widgets.surf._pool4 import GLYPH_HINT, WIDEN_HINT, join_lines, strip_tags
+from maxpane_dashboard.widgets.surf._pool4 import (
+    GLYPH_HINT,
+    WIDEN_HINT,
+    join_lines,
+    network_word,
+    strip_tags,
+)
 
 __all__ = [
     "AGENTS_UNAVAILABLE_LINE",
@@ -135,6 +156,36 @@ _JOBS_COLS = 4
 #: shortening window stops being legible, so the column is dropped instead
 #: of rendered illegibly small.
 _MIN_TX_COLS = MIN_SHORT_COLS
+
+#: Widest chain word this allowlist can print (``SEPOLIA``/``MAINNET``, 7
+#: cells); ``_pool4.NETWORK_UNKNOWN`` (the em dash) is one cell and pads out
+#: to the same column.
+_CHAIN_COLS = 7
+
+#: Chain id -> the pre-resolved word ``_pool4.network_word`` validates.
+#: Mirrors ``data/surf_swarm._NETWORKS`` (``{1: "MAINNET", 11155111:
+#: "SEPOLIA"}``) -- restated because that map lives in ``data/`` and a widget
+#: may not import it (contract §0.5); nothing else in this package has ever
+#: needed to resolve a *raw numeric chain id* rather than an
+#: already-resolved network string, so there is no existing widget-safe
+#: helper to reuse for this one step. The result is still validated through
+#: ``_pool4.network_word`` rather than trusted on its own -- see the module
+#: docstring's *"The chain word is per row"* section.
+_CHAIN_ID_WORDS = {1: "MAINNET", 11155111: "SEPOLIA"}
+
+
+def _chain_word(chain_id: object) -> str:
+    """``last_chain_id`` -> a network word, or ``_pool4.NETWORK_UNKNOWN``.
+
+    An allowlist, not a pass-through: an id outside :data:`_CHAIN_ID_WORDS`
+    -- ``None`` included -- renders the em dash rather than a guess, exactly
+    ``_pool4.network_word``'s own rule for a network *string*. ``bool`` is
+    excluded before the ``int`` check because ``True``/``False`` are ``int``
+    subclasses in Python and neither is a chain id.
+    """
+    if isinstance(chain_id, int) and not isinstance(chain_id, bool):
+        return network_word(_CHAIN_ID_WORDS.get(chain_id))
+    return network_word(None)
 
 
 def _has_marker(as_of: object) -> bool:
@@ -210,6 +261,11 @@ def _agent_cell(token: object) -> str:
 
 
 def _agent_line(row: dict, tx_width: int) -> Text:
+    """``tx_width`` is the hash's own budget; the chain column rides beside
+    it and is only ever offered together with the hash (:func:`_agent_lines`
+    reserves both or neither) -- see the module docstring's *"A hash is
+    never shown bare"* closing paragraph.
+    """
     agent = _agent_cell(row.get("agent_token"))
     mean = row.get("mean_score")
     mean_text = (
@@ -222,7 +278,8 @@ def _agent_line(row: dict, tx_width: int) -> Text:
         f"{jobs}j" if isinstance(jobs, int) and not isinstance(jobs, bool) else DASH
     )
     tx = row.get("last_tx_hash")
-    tx_text = short_hex(tx, tx_width) if isinstance(tx, str) and tx else DASH
+    has_tx = isinstance(tx, str) and bool(tx)
+    tx_text = short_hex(tx, tx_width) if has_tx else DASH
 
     line = Text()
     line.append(_rowfit.pad(_rowfit.clip(agent, _AGENT_COLS), _AGENT_COLS), style="bold")
@@ -235,6 +292,15 @@ def _agent_line(row: dict, tx_width: int) -> Text:
     if tx_width > 0:
         line.append(" " * _GAP)
         line.append(_rowfit.clip(tx_text, tx_width), style="dim")
+        # No chain word for a dashed (unread/malformed) hash -- there is
+        # nothing to name the chain of. A real hash always gets one, dash
+        # included, so a shown hash is never bare.
+        if has_tx:
+            line.append(" ")
+            line.append(
+                _rowfit.pad(_chain_word(row.get("last_chain_id")), _CHAIN_COLS),
+                style="dim",
+            )
     return line
 
 
@@ -253,9 +319,16 @@ def _agent_lines(score_rows: object, scores_as_of: object, width: int) -> tuple[
         return [Text(NO_AGENTS_LINE, style="dim")], False
 
     fixed = _rowfit.row_cols((_AGENT_COLS, _SCORE_COLS, _JOBS_COLS))
-    tx_width = max(width - fixed - _GAP, 0)
-    show_tx = tx_width >= _MIN_TX_COLS
-    lines = [_agent_line(row, tx_width if show_tx else 0) for row in rows]
+    available = max(width - fixed - _GAP, 0)
+    # The hash and its chain word are offered together or not at all (the
+    # module docstring's *"A hash is never shown bare"* rule): the width
+    # gate below therefore reserves the chain column's own gap-plus-columns
+    # ahead of the hash, rather than shedding the chain word alone once the
+    # hash already fits.
+    chain_reserve = _GAP + _CHAIN_COLS
+    show_tx = available >= _MIN_TX_COLS + chain_reserve
+    tx_width = max(available - chain_reserve, 0) if show_tx else 0
+    lines = [_agent_line(row, tx_width) for row in rows]
     return lines, not show_tx
 
 
