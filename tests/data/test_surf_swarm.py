@@ -26,6 +26,13 @@ def test_health_facts_reads_the_counters_and_never_invents_a_zero():
     assert blank["services_up"] is None
 
 
+def test_health_facts_with_partial_payload_returns_none_for_missing_services():
+    """Unread service keys are None, never False. Only explicit false is False."""
+    partial = {"connectedDaemons": 2, "verifierUp": True}
+    facts = S.health_facts(partial)
+    assert facts["services_up"] == {"verifier": True, "publisher": None, "deployer": None}
+
+
 def test_queue_rows_count_every_state_and_sort_by_size():
     rows = S.queue_rows(JOBS)
     assert sum(r["count"] for r in rows) == len(JOBS)
@@ -69,11 +76,13 @@ def test_score_rows_fold_one_row_per_agent():
     assert len(rows) == 1
     row = rows[0]
     entry = DONE["reviews"][0]["entries"][0]
+    node = DONE["nodes"][0]
     assert row["agent_id"] == entry["agentId"]
     assert row["jobs_scored"] == 1
     assert row["mean_score"] == float(entry["value"])
     assert row["last_tx_hash"] == DONE["reviews"][0]["txHash"]
     assert row["last_chain_id"] == DONE["reviews"][0]["chainId"]
+    assert row["agent_token"] == node["seat"]["tokenId"]
 
 
 def test_shipped_rows_mix_deliveries_launches_and_sites_newest_first():
@@ -93,11 +102,22 @@ def test_shipped_rows_mix_deliveries_launches_and_sites_newest_first():
 def test_throughput_is_derived_and_says_its_window():
     out = S.throughput(JOBS, [DONE], now=NOW, window_days=7)
     assert out["window_days"] == 7
-    assert out["accepted_per_day"] >= 0
-    assert out["median_delivery_s"] is None or out["median_delivery_s"] > 0
-    assert 0.0 <= out["revision_rate"] <= 1.0
+    assert out["accepted_per_day"] == 1.43
+    assert out["median_delivery_s"] == 2945
+    assert out["revision_rate"] == 0.0
     empty = S.throughput(None, None, now=NOW)
     assert empty["accepted_per_day"] is None and empty["revision_rate"] is None
+
+
+def test_revision_rate_filters_by_window():
+    """Revisions within the window are counted; those outside are excluded."""
+    # DONE has one node with updatedAt within the window and 0 revisions
+    out = S.throughput(JOBS, [DONE], now=NOW, window_days=7)
+    assert out["revision_rate"] == 0.0
+
+    # With a wide window, we get the same result
+    out_wide = S.throughput(JOBS, [DONE], now=NOW, window_days=30)
+    assert out_wide["revision_rate"] == 0.0
 
 
 def test_network_of_is_an_allowlist():

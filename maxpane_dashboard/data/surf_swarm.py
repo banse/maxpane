@@ -67,15 +67,20 @@ def health_facts(health: Mapping[str, Any] | None) -> dict[str, Any]:
     }
     identity = health.get("identity")
     chain = identity.get("chainId") if isinstance(identity, Mapping) else None
+    services_up = {}
+    for name, key in _SERVICES.items():
+        value = health.get(key)
+        if key not in health:
+            services_up[name] = None
+        else:
+            services_up[name] = bool(value)
     return {
         "agents_online": _int(health.get("connectedDaemons")),
         "agents_enrolled": _int(health.get("activeEnrollments")),
         "working_now": _int(health.get("workingNow")),
         "accepted_today": _int(health.get("acceptedLastDay")),
         "queue_depths": depths or None,
-        "services_up": {
-            name: bool(health.get(key)) for name, key in _SERVICES.items()
-        },
+        "services_up": services_up,
         "network": network_of(chain),
     }
 
@@ -152,11 +157,22 @@ def field_rows(details: Sequence[Mapping[str, Any]] | None, *,
 
 
 def score_rows(details: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
-    """One row per agent: how many scores, their mean, and the last tx."""
+    """One row per agent: how many scores, their mean, and the last tx.
+
+    agent_token is populated from the node's seat by matching nodeKey.
+    """
     if not details:
         return []
     per: dict[str, dict[str, Any]] = {}
     for job in details:
+        # Build a map of nodeKey -> tokenId for this job
+        node_seats: dict[str, object] = {}
+        for node in job.get("nodes") or ():
+            node_key = node.get("key")
+            if isinstance(node_key, str):
+                seat = node.get("seat") if isinstance(node.get("seat"), Mapping) else {}
+                node_seats[node_key] = seat.get("tokenId")
+
         for review in job.get("reviews") or ():
             chain = review.get("chainId")
             tx = review.get("txHash")
@@ -164,10 +180,12 @@ def score_rows(details: Sequence[Mapping[str, Any]] | None) -> list[dict[str, An
             for entry in review.get("entries") or ():
                 agent = entry.get("agentId")
                 value = entry.get("value")
+                node_key = entry.get("nodeKey")
                 if not isinstance(agent, str) or not isinstance(value, (int, float)):
                     continue
+                token_id = node_seats.get(node_key) if isinstance(node_key, str) else None
                 row = per.setdefault(agent, {
-                    "agent_id": agent, "agent_token": None, "values": [],
+                    "agent_id": agent, "agent_token": token_id, "values": [],
                     "last_tx_hash": None, "last_chain_id": None, "_last": None,
                 })
                 row["values"].append(float(value))
@@ -175,6 +193,7 @@ def score_rows(details: Sequence[Mapping[str, Any]] | None) -> list[dict[str, An
                     row["_last"] = sent or 0.0
                     row["last_tx_hash"] = tx
                     row["last_chain_id"] = chain
+                    row["agent_token"] = token_id
     out = []
     for row in per.values():
         values = row.pop("values")
@@ -231,7 +250,12 @@ def shipped_rows(jobs: Sequence[Mapping[str, Any]] | None,
 def throughput(jobs: Sequence[Mapping[str, Any]] | None,
                details: Sequence[Mapping[str, Any]] | None, *,
                now: float, window_days: int = 7) -> dict[str, Any]:
-    """Accepted per day, median delivery time, revision rate over a window."""
+    """Accepted per day, median delivery time, revision rate over a window.
+
+    Revision rate filters to nodes with a non-None updatedAt within the window.
+    Nodes without timestamps are excluded from the sample, not counted as zero.
+    Empty revision sample returns None, not 0.0.
+    """
     if not jobs:
         return {"accepted_per_day": None, "median_delivery_s": None,
                 "revision_rate": None, "window_days": window_days}
@@ -251,6 +275,7 @@ def throughput(jobs: Sequence[Mapping[str, Any]] | None,
         _int(node.get("revisions")) or 0
         for job in details or ()
         for node in job.get("nodes") or ()
+        if _ts(node.get("updatedAt")) is not None and _ts(node.get("updatedAt")) >= floor
     ]
     return {
         "accepted_per_day": round(accepted / window_days, 2),
