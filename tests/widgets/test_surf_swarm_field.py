@@ -22,6 +22,13 @@ ROWS = [
 async def _field(size=(120, 14), **kwargs):
     kwargs.setdefault("swarm_field_rows", ROWS)
     kwargs.setdefault("swarm_network", "SEPOLIA")
+    # Fix round 1: a marker is now load-bearing for *any* content to render
+    # (see swarm_field.py's own docstring) -- every test in this file except
+    # the empty/unavailable one is about row rendering, not about the
+    # marker itself, so it needs one present by default the way
+    # ``swarm_network`` already gets one. The empty/unavailable test passes
+    # its own value (or ``None``) explicitly and is unaffected.
+    kwargs.setdefault("swarm_as_of_hhmm", "12:00")
     lines = await composite_lines(SurfSwarmField, size, **kwargs)
     return lines, "\n".join(lines)
 
@@ -51,9 +58,14 @@ async def test_the_note_is_dropped_with_a_marker_when_narrow():
 
 
 async def test_an_empty_field_is_not_an_unread_field():
-    _lines, empty = await _field(swarm_field_rows=[])
+    """``[]`` is the frozen shape for both states (fold's own contract, see
+    the module docstring) -- so the marker, not the list, is the signal.
+    A real read that found nothing in flight carries an ``as of`` marker; a
+    slot that has never been written carries none.
+    """
+    _lines, empty = await _field(swarm_field_rows=[], swarm_as_of_hhmm="13:18")
     assert EMPTY_LINE in empty
-    _lines, unread = await _field(swarm_field_rows=None)
+    _lines, unread = await _field(swarm_field_rows=[], swarm_as_of_hhmm=None)
     assert UNAVAILABLE_LINE in unread
 
 

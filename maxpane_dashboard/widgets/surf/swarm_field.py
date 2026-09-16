@@ -90,15 +90,25 @@ address is never short-changed two columns it does not need.
 ``swarm_field_rows`` and the read/empty split
 ------------------------------------------------
 ``[]`` is the frozen shape for *both* "nothing in flight" and "not read
-yet" (spec §4's row-shape note); this widget's own contract, pinned by
-``test_an_empty_field_is_not_an_unread_field``, is narrower and simpler:
-``None`` is :data:`UNAVAILABLE_LINE`, ``[]`` is :data:`EMPTY_LINE`.  The
-translation from the manager's always-a-list contract onto this widget's
-``None``/``[]`` distinction -- using ``swarm_as_of_hhmm is None`` as the
-"this tier has never once succeeded" signal -- is the screen's job (a later
-task, composing this widget's kwargs), not this widget's: a render primitive
-takes what it is handed and renders it, and the two-state contract it
-exposes here is the simpler, more testable half of that split.
+yet" (``data/surf_swarm.field_rows`` returns ``[]`` whenever its input is
+missing, exactly as much as when a real read found nothing to report), so
+the list alone can never carry the distinction -- and that is the whole
+reason the marker is the signal rather than a convenience: **``swarm_as_of_
+hhmm is None`` means this slot has never been written, and renders
+:data:`UNAVAILABLE_LINE` whatever ``swarm_field_rows`` says**, even a
+populated list.  Only once a marker is present does an empty list mean
+:data:`EMPTY_LINE` -- a real read that found nothing in flight.
+``swarm_field_rows is None`` also renders :data:`UNAVAILABLE_LINE`,
+independent of the marker, so the widget stays honest if it is ever handed
+that sentinel directly. Fix round 1 (2026-09-16) corrected an earlier
+version of this widget that keyed off ``swarm_field_rows`` alone
+(``None`` -> unavailable, ``[]`` -> empty) -- a resolution that matched a
+literal reading of the brief's own first-draft test but made the
+unavailable state **unreachable in production**, since the manager never
+actually publishes ``None`` for this key: a cold cache or an all-failed
+read still rendered the confident, positive claim ``nothing in flight``.
+That is exactly the "an unread band is not an absent one" defect
+CLAUDE.md's Conventions section names.
 
 Purity
 ------
@@ -488,7 +498,14 @@ class SurfSwarmField(Vertical):
         log.auto_scroll = False
 
         rows_input = self._payload.get("rows")
-        if rows_input is None:
+        as_of = self._payload.get("as_of")
+        if as_of is None or rows_input is None:
+            # ``swarm_as_of_hhmm is None`` means this slot has never been
+            # written -- unavailable, whatever ``rows`` says, because the
+            # fold's own ``[]``-for-both shape (see the module docstring)
+            # makes an empty list ambiguous on its own.  ``rows_input is
+            # None`` stays checked too, so the widget is still honest if it
+            # is ever handed that sentinel directly.
             self._set_title(False)
             log.write(Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"))
             return
