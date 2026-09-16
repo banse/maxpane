@@ -131,6 +131,7 @@ from maxpane_dashboard.analytics.surf_signals import (
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_pool4_market as mk
+from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data.surf_addresses import (
     ANNOUNCE,
     BURN_EXECUTOR_V1,
@@ -160,6 +161,8 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_NFT,
     SLOT_POOL4,
     SLOT_POOL4_STAKERS,
+    SLOT_SWARM,
+    SLOT_SWARM_SCORES,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
     SERIES_IMD_SUPPLY,
@@ -169,6 +172,8 @@ from maxpane_dashboard.data.surf_cache import (
     TIER_POOL4,
     TIER_POOL4_STAKERS,
     TIER_SLOW,
+    TIER_SWARM,
+    TIER_SWARM_SCORES,
     SurfCache,
 )
 from maxpane_dashboard.data.surf_client import SurfClient
@@ -186,6 +191,7 @@ from maxpane_dashboard.data.surf_models import (
     Pool4Discovery,
 )
 from maxpane_dashboard.data.surf_pool4_client import Pool4Client
+from maxpane_dashboard.data.surf_swarm_client import SwarmClient
 from maxpane_dashboard.data.surf_v4 import price_eth_per_imd
 
 logger = logging.getLogger(__name__)
@@ -820,6 +826,25 @@ def _launchpad_state_is_blank(state: Any) -> bool:
     return all(_field(state, name) is None for name in _LAUNCHPAD_READ_FIELDS)
 
 
+# ---------------------------------------------------------------------------
+# The swarm control plane -- two tiers off one keyless host (Task 5)
+# ---------------------------------------------------------------------------
+
+#: The two swarm markers may legitimately differ by the live TTL plus the
+#: sweep's; further apart than that is stale (the staker rule, spec §6).
+SWARM_STALE_AFTER_S = 1860.0
+#: The live tier re-reads the job list at least this often even when no
+#: `/health` counter moved, so a silent list change cannot age forever.
+SWARM_LIST_CEILING_S = 300.0
+
+#: The `/health` fields whose movement means the job list changed.
+_SWARM_COUNTER_KEYS = (
+    "connectedDaemons", "activeEnrollments", "workingNow", "acceptedLastDay",
+    "pendingVerification", "pendingAttestation", "pendingDeployment",
+    "pendingDelivery", "pendingFeedback", "pendingFuzz", "pendingSites",
+)
+
+
 class SurfManager:
     """Fetches SURF data across seven source groups and returns a flat dict."""
 
@@ -832,6 +857,7 @@ class SurfManager:
         client: Any = None,
         cache: Any = None,
         pool4_client: Any = None,
+        swarm_client: Any = None,
     ) -> None:
         self.poll_interval = poll_interval
         self._clock = clock
@@ -845,6 +871,13 @@ class SurfManager:
         #: one and a live socket on the first sweep.
         self.pool4_client = (
             pool4_client if pool4_client is not None else Pool4Client()
+        )
+        #: The swarm control plane's own client, on the same injection
+        #: contract as ``client``/``pool4_client``: a test double stands in
+        #: here or the real, keyless ``SwarmClient`` opens a live socket on
+        #: the first sweep.
+        self.swarm_client = (
+            swarm_client if swarm_client is not None else SwarmClient()
         )
         self.cache = cache if cache is not None else SurfCache(
             path=self._cache_path, clock=clock
@@ -895,6 +928,14 @@ class SurfManager:
         #: different contracts holding different tokens.
         self._pool4_baseline: tuple[str | None, float] | None = None
         self._pool4_price_reads = 0
+        #: The in-flight detached swarm reads, or ``None``. Same contract as
+        #: ``_pool4_task``/``_pool4_stakers_task``, one per tier.
+        self._swarm_task: Any = None
+        self._swarm_scores_task: Any = None
+        #: The `/health` counters the last live read saw, so the 27.5 KB job
+        #: list is only paid for when one of them moved (spec §3).
+        self._swarm_counters: dict[str, Any] | None = None
+        self._swarm_jobs_read_ts: float = 0.0
 
         try:
             self.cache.load()
@@ -925,6 +966,8 @@ class SurfManager:
         await self._cancel_launchpad()
         await self._cancel_pool4()
         await self._cancel_pool4_stakers()
+        await self._cancel_swarm()
+        await self._cancel_swarm_scores()
         self.save_cache()
         try:
             await self.client.close()
@@ -936,6 +979,12 @@ class SurfManager:
                 await closer()
         except Exception as exc:            # noqa: BLE001
             logger.debug("closing the pool4 client failed: %s", exc)
+        try:
+            closer = getattr(self.swarm_client, "close", None)
+            if closer is not None:
+                await closer()
+        except Exception as exc:            # noqa: BLE001
+            logger.debug("closing the swarm client failed: %s", exc)
 
     # -- the chain group (fast tier) -----------------------------------------
 
@@ -5138,6 +5187,268 @@ class SurfManager:
             return POOL4_STAKERS_SWEEPING
         return POOL4_STAKERS_PENDING
 
+    # -- the swarm control plane: two tiers, two slots, two clocks -----------
+
+    def _spawn_swarm(self, tiers: set[str], now: float) -> Any:
+        """Start the live swarm read **detached**; never wait for it.
+
+        :meth:`_spawn_pool4_stakers`'s shape exactly: one read in flight at a
+        time, so a due tier that finds the previous read still running is
+        offered again next cycle rather than stacking a second one behind it.
+        """
+        if TIER_SWARM not in tiers:
+            return None
+        running = self._swarm_task
+        if running is not None and not running.done():
+            logger.debug("SURF swarm read still in flight; not starting another")
+            return running
+        self._swarm_task = asyncio.ensure_future(self._swarm_detached(tiers, now))
+        return self._swarm_task
+
+    async def _swarm_detached(self, tiers: set[str], now: float) -> None:
+        """:meth:`_pool_swarm` with nobody to raise at.
+
+        A detached task's exception surfaces as an "exception was never
+        retrieved" line at garbage-collection time and never as a
+        degradation, so it is caught here. ``CancelledError`` is re-raised:
+        that one is :meth:`close` doing its job.
+        """
+        try:
+            await self._pool_swarm(tiers, now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:            # noqa: BLE001 — nobody awaits this task
+            logger.debug("SURF swarm read failed: %s", exc)
+
+    async def _cancel_swarm(self) -> None:
+        """Stop an in-flight swarm read and wait for it to actually be gone."""
+        task = self._swarm_task
+        self._swarm_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+
+    async def _pool_swarm(self, tiers: set[str], now: float) -> dict[str, Any]:
+        """`/health`, the list when a counter moved, details for the unfinished.
+
+        **The job list is the expensive read** (~27.5 KB, one shot, no
+        pagination) and this is the gate that keeps it from being paid for on
+        every 60 s tick regardless: it is re-fetched only when the prior
+        sweep has none to reuse, when one of :data:`_SWARM_COUNTER_KEYS` moved
+        since the counters this manager last saw, or when
+        :data:`SWARM_LIST_CEILING_S` has elapsed since the list was last read
+        — the ceiling is what stops a counter this manager does not track
+        from silently freezing the list forever.
+        """
+        if TIER_SWARM not in tiers:
+            return {"ok": False, "payload": None}
+        client = self.swarm_client
+        health = await self._guard(lambda: client.fetch_health(), "swarm fetch_health")
+        if health is None:
+            self.cache.mark_failed(TIER_SWARM, now)
+            return {"ok": False, "payload": None}
+
+        counters = {k: health.get(k) for k in _SWARM_COUNTER_KEYS}
+        prior = getattr(self.cache.get_last_good(SLOT_SWARM), "payload", None)
+        jobs = prior.get("jobs") if isinstance(prior, dict) else None
+        stale_list = (now - self._swarm_jobs_read_ts) >= SWARM_LIST_CEILING_S
+        if jobs is None or counters != self._swarm_counters or stale_list:
+            fetched = await self._guard(lambda: client.fetch_jobs(), "swarm fetch_jobs")
+            if fetched is not None:
+                jobs = fetched
+                self._swarm_jobs_read_ts = now
+        if jobs is None:
+            self.cache.mark_failed(TIER_SWARM, now)
+            return {"ok": False, "payload": None}
+        self._swarm_counters = counters
+
+        details = []
+        for job_id in sw.unfinished_ids(jobs):
+            detail = await self._guard(
+                lambda jid=job_id: client.fetch_job(jid), "swarm fetch_job"
+            )
+            if detail is not None:      # a 404 drops one row, never the read
+                details.append(detail)
+
+        payload = {"health": health, "jobs": jobs, "details": details}
+        self.cache.store_last_good(SLOT_SWARM, payload, ts=now)
+        self.cache.mark_fetched(TIER_SWARM, now)
+        return {"ok": True, "payload": payload}
+
+    def _spawn_swarm_scores(self, tiers: set[str], now: float) -> Any:
+        """:meth:`_spawn_swarm`'s shape, one tier further out -- and deferred
+        behind it.
+
+        **Also refuses to start while the live read is still in flight**, on
+        top of the usual "one of my own kind at a time" guard every other
+        spawn in this module has. The host itself says why (``surf_swarm_client``'s
+        own docstring): "the host serves no filters, no caching validators
+        and no pagination", so its job list is genuinely all-or-nothing and
+        each full read of it is real load. Without this, a cold cache offers
+        both tiers in the same cycle and this sweep pays for a second,
+        redundant ``/jobs`` round trip and a full every-job detail pass
+        against a host that has not even answered the live tier's first
+        request yet. Deferring costs nothing here: this tier's TTL is 1800 s
+        against the live tier's 60, so waiting one 30 s poll for the live
+        read to clear is negligible, and every cycle after the first offers
+        it again exactly as :data:`TIER_SWARM_SCORES` due-ness already does.
+        A live read with no task at all, or one that has already finished,
+        both count as "clear".
+        """
+        if TIER_SWARM_SCORES not in tiers:
+            return None
+        live = self._swarm_task
+        if live is not None and not live.done():
+            logger.debug("SURF swarm scores sweep waiting on the live read")
+            return None
+        running = self._swarm_scores_task
+        if running is not None and not running.done():
+            logger.debug("SURF swarm scores sweep still in flight; not starting another")
+            return running
+        self._swarm_scores_task = asyncio.ensure_future(
+            self._swarm_scores_detached(tiers, now)
+        )
+        return self._swarm_scores_task
+
+    async def _swarm_scores_detached(self, tiers: set[str], now: float) -> None:
+        """:meth:`_pool_swarm_scores` with nobody to raise at. See :meth:`_swarm_detached`."""
+        try:
+            await self._pool_swarm_scores(tiers, now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:            # noqa: BLE001 — nobody awaits this task
+            logger.debug("SURF swarm scores sweep failed: %s", exc)
+
+    async def _cancel_swarm_scores(self) -> None:
+        """Stop an in-flight scores sweep and wait for it to actually be gone."""
+        task = self._swarm_scores_task
+        self._swarm_scores_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+
+    async def _pool_swarm_scores(self, tiers: set[str], now: float) -> dict[str, Any]:
+        """The full sweep: every job's own detail, ``/launches``, ``/sites``.
+
+        **Never touches** :data:`SLOT_SWARM` or the live tier's counters —
+        it reads its own copy of the job list on its own, much slower tier,
+        so a live-tier outage can never starve this sweep of job ids and a
+        sweep failure can never touch the live slot's marker.
+
+        Unlike :meth:`_pool_swarm` this asks for **every** job's detail, not
+        just the unfinished ones: :func:`sw.score_rows` folds ``reviews`` off
+        completed jobs too, and a job that shipped days ago still has a score
+        worth showing on the leaderboard.
+
+        Stores ``{"details", "launches", "sites"}`` -- deliberately not its
+        own copy of the job list, which the live tier already refreshes far
+        more often. :meth:`_swarm_scores_keys` reuses the live slot's jobs at
+        publish time instead of this sweep persisting a second, staler copy
+        of the same ~27.5 KB list.
+        """
+        if TIER_SWARM_SCORES not in tiers:
+            return {"ok": False, "payload": None}
+        client = self.swarm_client
+        jobs = await self._guard(
+            lambda: client.fetch_jobs(), "swarm scores fetch_jobs"
+        )
+        if jobs is None:
+            self.cache.mark_failed(TIER_SWARM_SCORES, now)
+            return {"ok": False, "payload": None}
+
+        details = []
+        for job in jobs:
+            job_id = job.get("id") if isinstance(job, dict) else None
+            if not isinstance(job_id, str):
+                continue
+            detail = await self._guard(
+                lambda jid=job_id: client.fetch_job(jid), "swarm scores fetch_job"
+            )
+            if detail is not None:      # a 404 drops one row, never the read
+                details.append(detail)
+
+        launches = await self._guard(
+            lambda: client.fetch_launches(), "swarm fetch_launches"
+        )
+        sites = await self._guard(lambda: client.fetch_sites(), "swarm fetch_sites")
+        if launches is None or sites is None:
+            self.cache.mark_failed(TIER_SWARM_SCORES, now)
+            return {"ok": False, "payload": None}
+
+        payload = {"details": details, "launches": launches, "sites": sites}
+        self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=now)
+        self.cache.mark_fetched(TIER_SWARM_SCORES, now)
+        return {"ok": True, "payload": payload}
+
+    def _swarm_keys(self, slot: dict[str, Any], entry: Any, now: float) -> dict[str, Any]:
+        """SLOT_SWARM -> the live `swarm_*` keys.  Unread stays None."""
+        health = slot.get("health") if slot else None
+        jobs = slot.get("jobs") if slot else None
+        details = slot.get("details") if slot else None
+        facts = sw.health_facts(health)
+        queue = sw.queue_rows(jobs)
+        by_state = {row["state"]: row["count"] for row in queue}
+        return {
+            "swarm_agents_online": facts["agents_online"],
+            "swarm_agents_enrolled": facts["agents_enrolled"],
+            "swarm_working_now": facts["working_now"],
+            "swarm_accepted_today": facts["accepted_today"],
+            "swarm_jobs_in_flight": by_state.get("executing") if jobs else None,
+            "swarm_jobs_blocked": by_state.get("blocked") if jobs else None,
+            "swarm_queue_depths": facts["queue_depths"],
+            "swarm_services_up": facts["services_up"],
+            "swarm_field_rows": sw.field_rows(details, now=now),
+            "swarm_queue_rows": queue,
+            "swarm_blocked_rows": sw.blocked_rows(jobs),
+            "swarm_network": facts["network"],
+            "swarm_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
+        }
+
+    def _swarm_scores_keys(
+        self, slot: dict[str, Any], entry: Any, live_entry: Any, now: float
+    ) -> dict[str, Any]:
+        """SLOT_SWARM_SCORES -> the sweep's own `swarm_*` keys.
+
+        ``jobs`` for ``shipped_rows``/``throughput`` comes off the *live*
+        slot's payload (``live_entry``), not this one: :meth:`_pool_swarm_scores`
+        never persists its own copy of the job list (its own docstring), and
+        the live tier's copy is both fresher and already paid for -- reusing
+        it here costs nothing and is exactly the "reuse before you build"
+        rule CLAUDE.md states for this module.
+
+        ``swarm_stale`` is the staker rule (spec §6) applied to these two
+        markers: ``None`` while either is missing, ``True`` only when both
+        exist and are more than :data:`SWARM_STALE_AFTER_S` apart, ``False``
+        otherwise -- never a stale number presented as live, and never a
+        healthy pair flagged just because one runs on a slower clock than the
+        other.
+        """
+        details = slot.get("details") if slot else None
+        launches = slot.get("launches") if slot else None
+        sites = slot.get("sites") if slot else None
+        live_payload = live_entry.payload if live_entry is not None else None
+        jobs = live_payload.get("jobs") if isinstance(live_payload, dict) else None
+
+        stale = None
+        if entry is not None and live_entry is not None:
+            stale = abs(float(entry.ts) - float(live_entry.ts)) > SWARM_STALE_AFTER_S
+
+        return {
+            "swarm_shipped_rows": sw.shipped_rows(jobs, details, launches, sites),
+            "swarm_score_rows": sw.score_rows(details),
+            "swarm_throughput": sw.throughput(jobs, details, now=now),
+            "swarm_scores_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
+            "swarm_stale": stale,
+        }
+
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
         """Run the detectors and publish their rows plus exact feed targets."""
         baselines = self.cache.get_baselines()
@@ -5240,6 +5551,20 @@ class SurfManager:
         real_pool_id = launchpad_slot.get("pool_id")
         self._spawn_launchpad(tiers, now)
 
+        # The swarm live slot is captured here, ahead of its own spawn, for
+        # ``launchpad_entry``'s reason: only ``self.cache.last_good`` can move
+        # once ``_spawn_swarm`` is offered below, never this snapshot. It
+        # reads nothing from the announce channel or from pool4, so it is
+        # offered as early as the launchpad sweep rather than waiting for
+        # anything else this cycle computes.
+        swarm_entry = self.cache.get_last_good(SLOT_SWARM)
+        swarm_slot: dict[str, Any] = (
+            dict(swarm_entry.payload)
+            if swarm_entry is not None and isinstance(swarm_entry.payload, dict)
+            else {}
+        )
+        self._spawn_swarm(tiers, now)
+
         # The pool4 slot is captured here for ``launchpad_entry``'s reason and
         # it is the same race: whatever ``_spawn_pool4`` schedules below can
         # only update ``self.cache.last_good``, never this already-extracted
@@ -5269,6 +5594,18 @@ class SurfManager:
         # has no reason to wait for the channel rows and every reason to start
         # earlier — it is the longest walk this manager makes.
         self._spawn_pool4_stakers(tiers, now)
+
+        # The swarm sweep's own slot and spawn, offered beside the staker
+        # sweep's for the same reason: it reads nothing from the announce
+        # channel or from pool4 either, so it has no reason to wait for
+        # either and every reason to start as early as the staker sweep.
+        scores_entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
+        scores_slot: dict[str, Any] = (
+            dict(scores_entry.payload)
+            if scores_entry is not None and isinstance(scores_entry.payload, dict)
+            else {}
+        )
+        self._spawn_swarm_scores(tiers, now)
 
         market, logs, channel, nft, activity = await asyncio.gather(
             self._pool_market(tiers, now, real_pool_id),
@@ -5538,6 +5875,18 @@ class SurfManager:
         # own, slower marker. PRD 7.2.
         data.update(self._pool4_stakers_keys(stakers_slot, stakers_entry))
 
+        # ---- swarm (two tiers, two slots, two clocks) ----------------------
+        # The live tier's own keys, off its own slot and its own, much
+        # faster marker.
+        data.update(self._swarm_keys(swarm_slot, swarm_entry, now))
+        # The sweep's own keys, off its own slot. ``swarm_entry`` is threaded
+        # through only so ``swarm_stale`` and the shipped/throughput rows can
+        # compare against and reuse the live tier's fresher jobs list (spec
+        # §6/§3) rather than this sweep persisting a second, staler copy.
+        data.update(
+            self._swarm_scores_keys(scores_slot, scores_entry, swarm_entry, now)
+        )
+
         signal_data = self._signal_keys(
             self._readings(
                 data,
@@ -5755,5 +6104,7 @@ __all__ = [
     "POOL4_TOPIC_DRIPPED",
     "POOL4_SEPOLIA_HOOK",
     "POOL4_SEPOLIA_TOKEN",
+    "SWARM_LIST_CEILING_S",
+    "SWARM_STALE_AFTER_S",
     "SurfManager",
 ]
