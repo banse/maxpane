@@ -2562,6 +2562,109 @@ SurfPool4UDepth {
     padding: 0 1;
 }
 
+/* The `s` SWARM body (2026-09-16): the FIFTH body, on
+ * `#surf-pool4-user-body`'s own shape rather than the `l`/`p` bodies'
+ * single `Horizontal` -- a `Vertical` of two rows, since THE FIELD/rail top
+ * row and the full-width JUST SHIPPED row below it are two rows, not two
+ * columns. `margin: 1 0 0 0` matches every other body's, so swapping
+ * between any two of the five never moves the hero row's breathing room.
+ *
+ * `#surf-swarm-left` is a `Horizontal` DESPITE THE "LEFT" NAME (kept for
+ * symmetry with the other bodies' left/rail pair): it holds BOTH THE FIELD
+ * and the rail, with JUST SHIPPED as this body's own second row, exactly
+ * the shape `#surf-pool4-user-middle`/`#surf-pool4-user-bottom` already use
+ * one level up.
+ *
+ * MIN-HEIGHT NUMBERS BELOW ARE PLACEHOLDERS, NOT A SWEPT PIN. This task
+ * (Task 10) wires the body; it does not own a
+ * `SURF_SWARM_FULL_LAYOUT_COLUMNS`/`_ROWS` measurement the way every other
+ * body's pin was swept in situ against a real terminal and the worst-case
+ * payload. The floors here are chosen the same way `SurfDevActivity`'s/
+ * `SurfLaunchpadActivity`'s were before their own sweep -- big enough for a
+ * title, its blank row and a few content rows -- and are expected to move
+ * once a later task measures this body the way the others were.
+ *
+ * EVERY 1FR CHILD IS FLOORED AND EVERY SCROLLING CONTAINER RESERVES ITS
+ * GUTTER, for the reason repeated at every other body in this block: a
+ * `1fr` child cannot overflow a scroll container, it SHRINKS, so without
+ * `min-height` it sheds a line per terminal row down to a bare title with
+ * no scrollbar and no trace; without `scrollbar-gutter: stable` the
+ * scrollbar takes its column out of the panel beside it only on terminals
+ * short enough to overflow, so the layout's WIDTH requirement would become
+ * a function of its HEIGHT.
+ *
+ * `#surf-swarm-left` carries its own `overflow-y: auto` (on
+ * `MODE_LAUNCHPAD`'s two-scrolling-column shape, named in
+ * `SurfScreen._SCROLL_COLUMNS[MODE_SWARM]` alongside `#surf-swarm-rail`)
+ * rather than the whole-body container the market body names instead --
+ * `#surf-swarm-body` also carries `overflow-y: auto` as a defensive floor
+ * so the two rows can never be silently clipped, but it is not one of the
+ * two selectors the `‹ taller` marker checks for this mode.
+ *
+ * QUEUE and THROUGHPUT are both `height: auto` in their own widget
+ * `DEFAULT_CSS` (neither carries a `1fr` of its own, same as THE SPLIT/THE
+ * RATCHET in the `p` body's left column), so the rail itself -- not either
+ * child -- is the `1fr` container that needs the floor and the gutter.
+ *
+ * This copy is the one that RENDERS -- an app stylesheet outranks a
+ * screen's DEFAULT_CSS -- and `tests/screens/test_surf_screen.py` pins the
+ * two copies together property by property. Edit both or neither. */
+SurfScreen #surf-swarm-body {
+    height: 1fr;
+    width: 100%;
+    padding: 0 0;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
+}
+
+SurfScreen #surf-swarm-left {
+    height: 1fr;
+    min-height: 8;
+    padding: 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
+}
+
+SurfSwarmField {
+    width: 1fr;
+    height: 1fr;
+    min-height: 6;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+SurfScreen #surf-swarm-rail {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
+}
+
+SurfSwarmQueue {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+SurfSwarmThroughput {
+    width: 1fr;
+    height: auto;
+    padding: 0 1;
+}
+
+SurfSwarmShipped {
+    width: 100%;
+    height: 1fr;
+    min-height: 8;
+    padding: 0 1;
+}
+
 /* ── Curator screen (THE LIST) ────────────────────────────────────────── */
 
 /* Structure only, restating CuratorScreen.DEFAULT_CSS. An app stylesheet

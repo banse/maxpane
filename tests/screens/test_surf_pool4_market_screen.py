@@ -41,6 +41,7 @@ from maxpane_dashboard.screens.surf import (
     MODE_LAUNCHPAD,
     MODE_POOL4,
     MODE_POOL4_USER,
+    MODE_SWARM,
     LAUNCHPAD_BODY_ID,
     POOL4_BODY_ID,
     POOL4_LEFT_ID,
@@ -48,6 +49,7 @@ from maxpane_dashboard.screens.surf import (
     POOL4_USER_BOTTOM_ID,
     POOL4_USER_MIDDLE_ID,
     POOL4_USER_RAIL_ID,
+    SWARM_BODY_ID,
     SurfScreen,
 )
 from maxpane_dashboard.widgets.surf import (
@@ -62,6 +64,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UStakers,
     SurfPool4UserHero,
     SurfPool4Vault,
+    SurfSwarmHero,
 )
 
 # The screen-test module owns the payload fixture and the harness. Imported
@@ -245,6 +248,7 @@ async def test_four_switches_directly_from_either_other_body() -> None:
         f"#{LAUNCHPAD_BODY_ID}",
         f"#{POOL4_BODY_ID}",
         f"#{POOL4_USER_BODY_ID}",
+        f"#{SWARM_BODY_ID}",
     )
     async with _surf_app().run_test(size=_SIZE) as pilot:
         await pilot.app.screen._do_refresh()
@@ -283,6 +287,7 @@ _HERO_PER_MODE = (
     (MODE_LAUNCHPAD, ("l",), SurfHero),
     (MODE_POOL4, ("e",), SurfHero),
     (MODE_POOL4_USER, ("4",), SurfPool4UserHero),
+    (MODE_SWARM, ("s",), SurfSwarmHero),
 )
 
 

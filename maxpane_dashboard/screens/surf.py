@@ -251,6 +251,11 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
+    SurfSwarmField,
+    SurfSwarmHero,
+    SurfSwarmQueue,
+    SurfSwarmShipped,
+    SurfSwarmThroughput,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, no runtime import
@@ -1545,6 +1550,13 @@ MODE_POOL4 = "pool4"
 #: which is why the split is two bodies and not one crowded one.
 MODE_POOL4_USER = "pool4_user"
 
+#: The ``s`` SWARM body (2026-09-16) -- the **fifth** mode, and the second
+#: (after :data:`MODE_POOL4_USER`) to swap the hero rather than leave
+#: :class:`SurfHero` mounted. A whole second body with its own four panels
+#: (THE FIELD, JUST SHIPPED, QUEUE, THROUGHPUT), on the same rule the
+#: docstring above states rather than on a count.
+MODE_SWARM = "swarm"
+
 #: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
 #:
 #: ``_show_mode`` could write ``SurfHero.display = self._mode !=
@@ -1555,6 +1567,12 @@ MODE_POOL4_USER = "pool4_user"
 #: **no** hero, which is loud on screen and red in
 #: ``test_exactly_one_hero_shows_in_every_mode`` either way -- but only one of
 #: the two failures is visible to a reader who is not running the tests.
+#:
+#: **:data:`MODE_SWARM` is deliberately absent.** It is the second body (after
+#: :data:`MODE_POOL4_USER`) with a hero of its own (:class:`SurfSwarmHero`,
+#: toggled in ``_show_mode`` the same way), and adding it here would paint
+#: two heroes into one row -- the exact defect enumerating instead of
+#: negating exists to make loud rather than silent.
 _SURF_HERO_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4)
 
 #: The launchpad body's container id -- exported so the test module and any
@@ -1768,6 +1786,28 @@ POOL4_USER_RAIL_ID = "surf-pool4-user-rail"
 #: scoped width override: the one unscoped rule in both CSS copies is the
 #: rule it wants there.
 POOL4_USER_BOTTOM_ID = "surf-pool4-user-bottom"
+
+#: The ``s`` SWARM body's container id (2026-09-16) -- the fifth body, on
+#: :data:`LAUNCHPAD_BODY_ID`'s contract: composed once, hidden by ``display``,
+#: swapped in by ``_show_mode``. Exported for that constant's reason: the id
+#: is queried from the test module, and retyping a literal in two files is
+#: how one of them goes stale.
+#:
+#: A ``Vertical`` of two rows, on :data:`POOL4_USER_BODY_ID`'s own shape
+#: rather than the ``l``/``p`` bodies' single ``Horizontal``: THE FIELD beside
+#: the rail on top, JUST SHIPPED full-width beneath it.
+SWARM_BODY_ID = "surf-swarm-body"
+
+#: The swarm body's top row: **THE FIELD beside the rail**.
+#:
+#: Despite the name (kept for symmetry with the other bodies' left/rail pair)
+#: this is the row that holds both THE FIELD and :data:`SWARM_RAIL_ID`, not a
+#: column -- JUST SHIPPED sits below it, full-width, as the body's second row.
+SWARM_LEFT_ID = "surf-swarm-left"
+
+#: The swarm body's right rail: **QUEUE over THROUGHPUT**.
+#: ``#surf-right-rail``'s opposite number in this body, and named for it.
+SWARM_RAIL_ID = "surf-swarm-rail"
 
 
 # -- format helpers ----------------------------------------------------
@@ -1996,6 +2036,9 @@ class SurfScreen(RefreshGuard, Screen):
         # this key opens, and the internal names did not change with the key.
         Binding("e", "toggle_pool4", "Pool4 (experimental)", show=False),
         Binding("4", "toggle_pool4_user", "Pool4", show=False),
+        # `s` for SWARM (2026-09-16): free on this screen and in the app,
+        # verified rather than assumed -- see `action_toggle_swarm`.
+        Binding("s", "toggle_swarm", "Swarm", show=False),
         Binding("escape", "show_dashboard", show=False),
     ]
 
@@ -2053,7 +2096,14 @@ class SurfScreen(RefreshGuard, Screen):
     #: still one markup run and still read back off composited output. It is
     #: eleven columns shorter than the three-part hint, so it fits wherever
     #: that one did.
-    KEY_HINTS = "[dim]l launchpad · 4 pool4[/]"
+    #:
+    #: **``· s swarm`` joined it on 2026-09-16**, inside the same single run
+    #: and for both of those reasons again -- curator's ``"c panels · y you ·
+    #: f linked · l lists"`` shape, one more segment. ``s swarm`` is the half
+    #: that shortens if a fourth ever has to fit, for ``4 market``'s own
+    #: reason: ``l launchpad`` is the one the app-level acceptance test greps
+    #: for as a contiguous string.
+    KEY_HINTS = "[dim]l launchpad · 4 pool4 · s swarm[/]"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "surf-refresh"
@@ -2548,6 +2598,96 @@ class SurfScreen(RefreshGuard, Screen):
         min-height: 9;
         padding: 0 1;
     }
+
+    /* The ``s`` SWARM body (2026-09-16): the FIFTH body, on
+     * ``#surf-pool4-user-body``'s own shape rather than the ``l``/``p``
+     * bodies' single ``Horizontal`` -- a ``Vertical`` of two rows, since THE
+     * FIELD/rail top row and the full-width JUST SHIPPED row below it are
+     * two rows, not two columns. ``margin: 1 0 0 0`` matches every other
+     * body's, so swapping between any two of the five never moves the
+     * hero row's breathing room.
+     *
+     * ``#surf-swarm-left`` is a ``Horizontal`` DESPITE THE "LEFT" NAME (kept
+     * for symmetry with the other bodies' left/rail pair): it holds BOTH THE
+     * FIELD and the rail, with JUST SHIPPED as this body's own second row,
+     * exactly the shape ``#surf-pool4-user-middle``/``#surf-pool4-user-bottom``
+     * already use one level up.
+     *
+     * MIN-HEIGHT NUMBERS BELOW ARE PLACEHOLDERS, NOT A SWEPT PIN. This task
+     * (Task 10) wires the body; it does not own a
+     * ``SURF_SWARM_FULL_LAYOUT_COLUMNS``/``_ROWS`` measurement the way every
+     * other body's pin was swept in situ against a real terminal and the
+     * worst-case payload. The floors here are chosen the same way
+     * ``SurfDevActivity``'s/``SurfLaunchpadActivity``'s were before their own
+     * sweep -- big enough for a title, its blank row and a few content rows
+     * -- and are expected to move once a later task measures this body the
+     * way the others were.
+     *
+     * EVERY 1FR CHILD IS FLOORED AND EVERY SCROLLING CONTAINER RESERVES ITS
+     * GUTTER, for the reason repeated at every other body in this block: a
+     * ``1fr`` child cannot overflow a scroll container, it SHRINKS, so
+     * without ``min-height`` it sheds a line per terminal row down to a bare
+     * title with no scrollbar and no trace; without ``scrollbar-gutter:
+     * stable`` the scrollbar takes its column out of the panel beside it only
+     * on terminals short enough to overflow, so the layout's WIDTH
+     * requirement would become a function of its HEIGHT.
+     *
+     * QUEUE and THROUGHPUT are both ``height: auto`` in their own widget
+     * ``DEFAULT_CSS`` (neither carries a ``1fr`` of its own, same as THE
+     * SPLIT/THE RATCHET in the ``p`` body's left column), so the rail itself
+     * -- not either child -- is the ``1fr`` container that needs the floor
+     * and the gutter.
+     *
+     * This copy is the fallback; ``themes/minimal.tcss`` carries the copy
+     * that actually renders (an app stylesheet outranks a screen's
+     * ``DEFAULT_CSS``), and ``tests/screens/test_surf_screen.py`` pins the
+     * two together property by property. Edit both or neither. */
+    SurfScreen #surf-swarm-body {
+        height: 1fr;
+        width: 100%;
+        margin: 1 0 0 0;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
+    SurfScreen #surf-swarm-left {
+        height: 1fr;
+        min-height: 8;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
+    SurfScreen SurfSwarmField {
+        width: 1fr;
+        height: 1fr;
+        min-height: 6;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
+    SurfScreen #surf-swarm-rail {
+        width: 1fr;
+        height: 1fr;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
+    SurfScreen SurfSwarmQueue {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
+    SurfScreen SurfSwarmThroughput {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
+    }
+    SurfScreen SurfSwarmShipped {
+        width: 100%;
+        height: 1fr;
+        min-height: 8;
+        padding: 0 1;
+    }
     """
 
     def __init__(
@@ -2591,6 +2731,7 @@ class SurfScreen(RefreshGuard, Screen):
         with Horizontal(id="hero-row"):
             yield SurfHero(classes="surf-hero")
             yield SurfPool4UserHero(classes="surf-hero")
+            yield SurfSwarmHero(classes="surf-hero")
 
         with Horizontal(id="middle-row"):
             yield SurfFeed()
@@ -2710,6 +2851,27 @@ class SurfScreen(RefreshGuard, Screen):
                 yield SurfPool4UStakers()
                 yield SurfPool4UDepth()
 
+        # The `s` SWARM view (2026-09-16): the fifth body, composed once and
+        # hidden by `display` exactly like the four above it, so the first
+        # `s` paints a complete frame rather than a blank one. Like the `4`
+        # body it is a `Vertical` of two rows rather than the `l`/`p` bodies'
+        # single `Horizontal`: THE FIELD and the rail share a top row and
+        # JUST SHIPPED takes the whole width beneath them.
+        #
+        # `#surf-swarm-left` holds BOTH THE FIELD and the rail -- the name is
+        # kept for symmetry with the other bodies' left/rail id pair, not
+        # because it is a column. JUST SHIPPED is a direct child of
+        # `SWARM_BODY_ID`, needing no id of its own: it is the body's only
+        # other row, addressed by its widget class the way every other
+        # unshared panel here is.
+        with Vertical(id=SWARM_BODY_ID):
+            with Horizontal(id=SWARM_LEFT_ID):
+                yield SurfSwarmField()
+                with Vertical(id=SWARM_RAIL_ID):
+                    yield SurfSwarmQueue()
+                    yield SurfSwarmThroughput()
+            yield SurfSwarmShipped()
+
         yield StatusBar()
 
     # ------------------------------------------------------------------
@@ -2755,7 +2917,7 @@ class SurfScreen(RefreshGuard, Screen):
     # ------------------------------------------------------------------
 
     def _show_mode(self) -> None:
-        """Apply ``self._mode`` to the four bodies' -- and both heroes' -- visibility.
+        """Apply ``self._mode`` to the five bodies' -- and all three heroes' -- visibility.
 
         **Curator's ``y``/``f`` shape, hero swap included since 2026-09-11.**
         This docstring said the opposite until then: *"curator mounts a second
@@ -2775,18 +2937,20 @@ class SurfScreen(RefreshGuard, Screen):
         surf's LAUNCHPAD/FLOW/BURN/SUPPLY figures would be the clearest thing
         on screen that a reader does not act on.
 
-        **A four-way now, and still written as ONE derivation so it cannot
-        become a three-way plus an exception.** The obvious edit when the third
+        **A five-way now, and still written as ONE derivation so it cannot
+        become a four-way plus an exception.** The obvious edit when the third
         body arrived was to keep ``launchpad = self._mode == MODE_LAUNCHPAD``
         and add a second boolean beside it; the dashboard rows would then
         have read ``not launchpad``, which is *true* in MODE_POOL4, and the
         pool4 body would have painted on top of a dashboard body that was
-        still showing. The fourth body offers the same edit one size larger,
-        and the heroes offer a new one: a ``self._pool4_user_hero_shown``
-        flag, or a ``hero.display = not body.display``, would each be a second
-        source of truth for the same fact. Every visibility here -- six of
-        them now -- is ``self._mode == <one mode word>`` and nothing else,
-        which makes the modes exclusive by construction rather than by care.
+        still showing. The fourth and fifth bodies offer the same edit one
+        size larger each time, and the heroes offer a new one: a
+        ``self._pool4_user_hero_shown`` flag, or a ``hero.display = not
+        body.display``, would each be a second source of truth for the same
+        fact. Every visibility here -- eight of them now, ``SurfSwarmHero``
+        joining ``SurfPool4UserHero`` as the second hero swapped with its own
+        body -- is ``self._mode == <one mode word>`` and nothing else, which
+        makes the modes exclusive by construction rather than by care.
         """
         try:
             self.query_one("#middle-row").display = self._mode == MODE_DASHBOARD
@@ -2799,14 +2963,16 @@ class SurfScreen(RefreshGuard, Screen):
             self.query_one(f"#{POOL4_USER_BODY_ID}").display = (
                 self._mode == MODE_POOL4_USER
             )
+            self.query_one(f"#{SWARM_BODY_ID}").display = self._mode == MODE_SWARM
             # The heroes, each answering to ``self._mode`` and never to the
             # other. ``SurfHero.display = not market_hero`` is available and
             # is the ``not launchpad`` defect one layer out: it would show
-            # the wrong hero on a fifth body rather than no hero, and a wrong
+            # the wrong hero on a sixth body rather than no hero, and a wrong
             # hero is the one of those two a reader cannot see is wrong.
             self.query_one(SurfPool4UserHero).display = (
                 self._mode == MODE_POOL4_USER
             )
+            self.query_one(SurfSwarmHero).display = self._mode == MODE_SWARM
             self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("surf mode toggle failed: %s", exc)
@@ -2874,6 +3040,19 @@ class SurfScreen(RefreshGuard, Screen):
         self._mode = MODE_POOL4_USER
         self._show_mode()
 
+    def action_toggle_swarm(self) -> None:
+        """``s`` -- swap the dashboard body for the swarm panels.
+
+        Idempotent like ``4``: a second ``s`` returns to the dashboard.  ``s``
+        was free on this screen (``r``/``l``/``e``/``4``/``escape``) and in the
+        app (``q``/``t``/``tab``/``m``) -- verified, not assumed.
+        """
+        if self._mode == MODE_SWARM:
+            self.action_show_dashboard()
+            return
+        self._mode = MODE_SWARM
+        self._show_mode()
+
     def action_show_dashboard(self) -> None:
         """``escape`` -- one-way back out of **any** alternate body."""
         self._mode = MODE_DASHBOARD
@@ -2915,6 +3094,11 @@ class SurfScreen(RefreshGuard, Screen):
         MODE_POOL4_USER: (
             f"#{POOL4_USER_BODY_ID}", f"#{POOL4_USER_RAIL_ID}",
         ),
+        # The swarm body's top row and its rail, on `MODE_LAUNCHPAD`'s shape:
+        # both `#surf-swarm-left` and `#surf-swarm-rail` carry their own
+        # `overflow-y: auto`, so both can genuinely light this marker rather
+        # than only the whole-body container the market body names instead.
+        MODE_SWARM: (f"#{SWARM_LEFT_ID}", f"#{SWARM_RAIL_ID}"),
     }
 
     def _rail_is_cut(self) -> bool:
@@ -3616,6 +3800,65 @@ class SurfScreen(RefreshGuard, Screen):
             )
         except Exception as exc:
             logger.debug("Failed to update SurfPool4UDepth: %s", exc)
+
+        # The `s` SWARM body's five panels (2026-09-16): dispatched every
+        # refresh, whether or not `s` is showing them, so the first keypress
+        # paints a complete frame. Each panel in its own `try` so one bad
+        # panel cannot blank the others. Every kwarg is the contract key
+        # verbatim (`data/surf_models.SWARM_KEYS`).
+        try:
+            self.query_one(SurfSwarmHero).update_data(
+                swarm_agents_online=data.get("swarm_agents_online"),
+                swarm_agents_enrolled=data.get("swarm_agents_enrolled"),
+                swarm_working_now=data.get("swarm_working_now"),
+                swarm_accepted_today=data.get("swarm_accepted_today"),
+                swarm_jobs_in_flight=data.get("swarm_jobs_in_flight"),
+                swarm_jobs_blocked=data.get("swarm_jobs_blocked"),
+                swarm_services_up=data.get("swarm_services_up"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfSwarmHero: %s", exc)
+
+        try:
+            self.query_one(SurfSwarmField).update_data(
+                swarm_field_rows=data.get("swarm_field_rows"),
+                swarm_as_of_hhmm=data.get("swarm_as_of_hhmm"),
+                swarm_network=data.get("swarm_network"),
+                swarm_stale=data.get("swarm_stale"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfSwarmField: %s", exc)
+
+        try:
+            self.query_one(SurfSwarmShipped).update_data(
+                swarm_shipped_rows=data.get("swarm_shipped_rows"),
+                # The scores tier's own marker, not `swarm_as_of_hhmm`: this
+                # panel's rows ride the detached scores sweep, which can be
+                # older than the fast tier beside it.
+                swarm_scores_as_of_hhmm=data.get("swarm_scores_as_of_hhmm"),
+                swarm_network=data.get("swarm_network"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfSwarmShipped: %s", exc)
+
+        try:
+            self.query_one(SurfSwarmQueue).update_data(
+                swarm_queue_rows=data.get("swarm_queue_rows"),
+                swarm_blocked_rows=data.get("swarm_blocked_rows"),
+                swarm_as_of_hhmm=data.get("swarm_as_of_hhmm"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfSwarmQueue: %s", exc)
+
+        try:
+            self.query_one(SurfSwarmThroughput).update_data(
+                swarm_throughput=data.get("swarm_throughput"),
+                swarm_score_rows=data.get("swarm_score_rows"),
+                swarm_scores_as_of_hhmm=data.get("swarm_scores_as_of_hhmm"),
+                swarm_stale=data.get("swarm_stale"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfSwarmThroughput: %s", exc)
 
         # Status bar. A refresh that reaches this line just fetched, so the
         # staleness is honestly 0 without consulting any clock; ``as_of`` is

@@ -44,6 +44,7 @@ from maxpane_dashboard.screens.surf import (
     MODE_LAUNCHPAD,
     MODE_POOL4,
     MODE_POOL4_USER,
+    MODE_SWARM,
     POOL4_BODY_ID,
     POOL4_LEFT_ID,
     POOL4_RAIL_ID,
@@ -55,6 +56,9 @@ from maxpane_dashboard.screens.surf import (
     SURF_LAUNCHPAD_FULL_LAYOUT_ROWS,
     SURF_POOL4_FULL_LAYOUT_COLUMNS,
     SURF_POOL4_FULL_LAYOUT_ROWS,
+    SWARM_BODY_ID,
+    SWARM_LEFT_ID,
+    SWARM_RAIL_ID,
     TALLER_HINT,
     SurfScreen,
 )
@@ -86,6 +90,11 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
+    SurfSwarmField,
+    SurfSwarmHero,
+    SurfSwarmQueue,
+    SurfSwarmShipped,
+    SurfSwarmThroughput,
 )
 
 _THEMES = Path(__file__).resolve().parents[2] / "maxpane_dashboard" / "themes"
@@ -161,6 +170,19 @@ _POOL4_USER_WIDGET_CLASSES = {
     "SurfPool4Flow": SurfPool4Flow,
 }
 
+#: The ``s`` SWARM body's five widgets (2026-09-16). A **fifth** role dict,
+#: for the third's own reason (composed hidden alongside the other four
+#: bodies, only one of which can be showing) plus the fourth's: it includes a
+#: **hero**, ``SurfSwarmHero``, mounted in ``#hero-row`` beside the other two
+#: and hidden in every mode but this one.
+_SWARM_WIDGET_CLASSES = {
+    "SurfSwarmHero": SurfSwarmHero,
+    "SurfSwarmField": SurfSwarmField,
+    "SurfSwarmShipped": SurfSwarmShipped,
+    "SurfSwarmQueue": SurfSwarmQueue,
+    "SurfSwarmThroughput": SurfSwarmThroughput,
+}
+
 #: Both halves together -- **derived from the package**, not from the two
 #: dicts above.  The two dicts have to stay hand-typed: they encode a *role*
 #: ("always mounted and visible" vs "composed hidden until ``l``") that no
@@ -198,12 +220,15 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
 
     **Four since 2026-09-11**, and the loop absorbed it without a line
     changing, which is the whole of what that paragraph predicted.
+
+    **Five since 2026-09-16**, same absorption.
     """
     roles = (
         _WIDGET_CLASSES,
         _LAUNCHPAD_WIDGET_CLASSES,
         _POOL4_WIDGET_CLASSES,
         _POOL4_USER_WIDGET_CLASSES,
+        _SWARM_WIDGET_CLASSES,
     )
     union: set[str] = set()
     for dict_ in roles:
@@ -609,6 +634,47 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "pool4_implied_apr_pct": "pool4_implied_apr_pct",
         "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },
+    # -- the s SWARM body's five panels (2026-09-16) -----------------------
+    #
+    # Every kwarg is the contract key verbatim (`data/surf_models.SWARM_KEYS`).
+    # `swarm_network`, `swarm_as_of_hhmm` and `swarm_stale`/`swarm_scores_
+    # as_of_hhmm` each reach more than one panel -- the same "more than one
+    # renderer" shape `pool4_current_tick`/`pool4_network` already have across
+    # the `p`/`4` bodies -- and `swarm_queue_depths` reaches none, which is
+    # why it is parked in `_KEYS_WITHOUT_A_RENDERER` rather than here.
+    "SurfSwarmHero": {
+        "swarm_agents_online": "swarm_agents_online",
+        "swarm_agents_enrolled": "swarm_agents_enrolled",
+        "swarm_working_now": "swarm_working_now",
+        "swarm_accepted_today": "swarm_accepted_today",
+        "swarm_jobs_in_flight": "swarm_jobs_in_flight",
+        "swarm_jobs_blocked": "swarm_jobs_blocked",
+        "swarm_services_up": "swarm_services_up",
+    },
+    "SurfSwarmField": {
+        "swarm_field_rows": "swarm_field_rows",
+        "swarm_as_of_hhmm": "swarm_as_of_hhmm",
+        "swarm_network": "swarm_network",
+        "swarm_stale": "swarm_stale",
+    },
+    "SurfSwarmShipped": {
+        "swarm_shipped_rows": "swarm_shipped_rows",
+        # The scores tier's own marker, not `swarm_as_of_hhmm`: this panel's
+        # rows ride the detached scores sweep.
+        "swarm_scores_as_of_hhmm": "swarm_scores_as_of_hhmm",
+        "swarm_network": "swarm_network",
+    },
+    "SurfSwarmQueue": {
+        "swarm_queue_rows": "swarm_queue_rows",
+        "swarm_blocked_rows": "swarm_blocked_rows",
+        "swarm_as_of_hhmm": "swarm_as_of_hhmm",
+    },
+    "SurfSwarmThroughput": {
+        "swarm_throughput": "swarm_throughput",
+        "swarm_score_rows": "swarm_score_rows",
+        "swarm_scores_as_of_hhmm": "swarm_scores_as_of_hhmm",
+        "swarm_stale": "swarm_stale",
+    },
 }
 
 #: Keys the screen itself consumes without a 1:1 widget kwarg.
@@ -690,9 +756,18 @@ META_KEYS = frozenset({
 #: ``test_the_unrendered_keys_are_named_by_no_widget_signature`` is what stops
 #: an entry rotting here after somebody re-wires it: re-add ``lp_imd=`` to a
 #: widget's ``update_data`` and this list is what goes red.
+#: ``swarm_queue_depths`` joined this set on 2026-09-16 -- a different shape
+#: from the five above it. Those were orphaned by the hero rebuild (they used
+#: to render and stopped); this one never had a renderer at all. It is a
+#: ``dict | None`` of ``pending*`` counters by name that none of the swarm
+#: body's five panels need (``widgets/surf/swarm_hero.py``'s own docstring
+#: names it, verbatim, as an example of a key the hero does not read), and it
+#: is still a real contract key (``data/surf_models.SWARM_KEYS``) rather than
+#: one awaiting removal, so it belongs here rather than in ``META_KEYS``.
 _KEYS_WITHOUT_A_RENDERER = frozenset({
     "pool_venue", "pool_fee_bps",
     "lp_state", "lp_imd", "lp_weth",
+    "swarm_queue_depths",
 })
 
 #: **Empty, for the second time.** Task 12 of the v3->v4/launchpad plan
@@ -6628,13 +6703,14 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "e", "4", "escape"}
+    assert keys == {"r", "l", "e", "4", "s", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
         "the old c-swap action outlived its binding -- an action with no key "
         "is a surface nobody can reach and nobody maintains"
     )
     for action in ("action_toggle_launchpad", "action_toggle_pool4",
-                   "action_toggle_pool4_user", "action_show_dashboard"):
+                   "action_toggle_pool4_user", "action_toggle_swarm",
+                   "action_show_dashboard"):
         assert hasattr(SurfScreen, action), action
 
 
@@ -7859,7 +7935,7 @@ def test_every_mode_names_its_scrolling_columns() -> None:
         if name.startswith("MODE_") and isinstance(getattr(surf, name), str)
     }
     assert modes == {
-        MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER,
+        MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER, MODE_SWARM,
     }, (
         f"a mode was added or removed: {modes}"
     )
@@ -8101,6 +8177,66 @@ def test_the_market_body_css_agrees_between_default_css_and_the_stylesheet() -> 
     block = _css_rules(_surf_stylesheet_block())
 
     for selector in _POOL4_USER_CSS_SELECTORS:
+        assert selector in fallback, (
+            f"{selector} is not styled in SurfScreen.DEFAULT_CSS"
+        )
+        assert selector in block, (
+            f"{selector} is not styled in the surf block of minimal.tcss"
+        )
+        for prop in _LAUNCHPAD_CSS_STRUCTURAL:
+            default = _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS.get(prop)
+            left = fallback[selector].get(prop, default)
+            right = block[selector].get(prop, default)
+            if left is None and right is None:
+                continue
+            assert left is not None and right is not None, (
+                f"{selector}: {prop} is declared in only one copy "
+                f"(DEFAULT_CSS={left!r}, minimal.tcss={right!r})"
+            )
+            if prop in _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS:
+                assert _expand_css_box(left) == _expand_css_box(right), (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+            else:
+                assert left == right, (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+
+
+# -- the s body's CSS, in agreement ---------------------------------------
+
+#: No hero, on ``_POOL4_USER_CSS_SELECTORS``'s own precedent: ``SurfSwarmHero``
+#: carries no screen-level CSS at all (like ``SurfPool4UserHero`` before it --
+#: only one hero is ever ``display``-ed at a time, so the visible one simply
+#: fills ``#hero-row`` and needs no ``width`` rule of its own).
+_SWARM_CSS_SELECTORS = (
+    f"#{SWARM_BODY_ID}", f"#{SWARM_LEFT_ID}", f"#{SWARM_RAIL_ID}",
+    "SurfSwarmField", "SurfSwarmShipped", "SurfSwarmQueue", "SurfSwarmThroughput",
+)
+
+
+def test_the_swarm_body_css_agrees_between_default_css_and_the_stylesheet() -> None:
+    """``SurfScreen.DEFAULT_CSS`` and the surf block in ``minimal.tcss`` must
+    describe the swarm body's geometry identically -- edit both or neither.
+
+    The app stylesheet is what actually renders (it outranks ``DEFAULT_CSS``);
+    ``DEFAULT_CSS`` is what keeps the screen correctly proportioned when it is
+    reviewed or mounted without it. A property declared in one copy and not
+    the other is *invisible* rather than conflicting: Textual falls back to
+    ``DEFAULT_CSS`` for anything the app stylesheet never mentions, so the
+    layout is right under both copies today and wrong under one of them the
+    moment either value changes.
+
+    Reuses the ``l``/``4`` bodies' own comparator and property list, which
+    already covers ``overflow-y``, ``scrollbar-gutter`` and ``scrollbar-size``
+    -- all three load-bearing here for the same reasons they are next door.
+    """
+    fallback = _css_rules(SurfScreen.DEFAULT_CSS)
+    block = _css_rules(_surf_stylesheet_block())
+
+    for selector in _SWARM_CSS_SELECTORS:
         assert selector in fallback, (
             f"{selector} is not styled in SurfScreen.DEFAULT_CSS"
         )
