@@ -25,11 +25,31 @@ it is one fact per *job*, not per subtask, and several subtasks of the same
 job repeat it verbatim in the frozen row shape.  Painting it into the note
 cell would either waste it on every subtask of a job or crowd out the note
 that actually explains a stall, so it gets its own line instead -- a dim
-context line, printed once per job (grouped by ``job_id``, first-seen order,
-which is also newest-move-first because the producer already sorts the flat
-row list that way) and shared by every subtask row under it.  This is a
-deliberate reshaping of the flat row list into job groups for display only;
-the six *columns* are untouched by it.
+context line, printed once per job (grouped by ``job_id``) and shared by
+every subtask row under it.  This is a deliberate reshaping of the flat row
+list into job groups for display only; the six *columns* are untouched by
+it.
+
+**The reshaping's own ordering, stated precisely (fix round 2).** The
+producer hands this widget its rows newest-move-first; grouping them keeps
+that promise at two levels rather than one, not at the whole render's:
+**groups render in order of their own most-recently-moved subtask, and
+subtasks within a group render newest-first too.**  It is *not* a claim
+that the flattened sequence is a strict global sort -- keeping one job's
+subtasks together outranks strict recency the moment a group has more than
+one member, so an older subtask of an already-started group can render
+ahead of a different job's newer one.  Three rows at ages 10s, 100s and
+200s for jobs A, B, A respectively render ``A(10s), A(200s), B(100s)``:
+``A``'s 200s-old subtask is globally older than ``B``'s 100s-old one, but
+still renders first, because it belongs to the group that has already
+started. This was undisclosed before fix round 2, which corrected a
+docstring sentence here that read the render order as a plain restatement
+of the producer's own global sort; the render order is not that, and this
+paragraph -- plus
+``test_groups_order_by_their_own_newest_subtask_and_subtasks_newest_first_within_a_group``
+-- is what actually holds now.  :func:`_group_by_job`'s own docstring
+carries the same correction and the reason first-seen order is sufficient
+to produce it.
 
 Columns, widest first, ``_rowfit``'s own machinery (``clip``/``pad``/
 ``row_cols``/``tier_for``, shared with ``activity.py`` and
@@ -108,7 +128,11 @@ unavailable state **unreachable in production**, since the manager never
 actually publishes ``None`` for this key: a cold cache or an all-failed
 read still rendered the confident, positive claim ``nothing in flight``.
 That is exactly the "an unread band is not an absent one" defect
-CLAUDE.md's Conventions section names.
+CLAUDE.md's Conventions section names.  "A real marker" means
+:func:`_has_marker`'s own check (a non-empty ``str``), not merely
+``is not None``: an empty string is not a clock either, and treating it as
+one let ``_render_view`` and :meth:`SurfSwarmField._set_title` disagree
+about whether the slot had ever been read (fix round 2).
 
 Purity
 ------
@@ -243,6 +267,22 @@ def _title_with_hint(base: str, widen: bool, budget: int) -> str:
     return base
 
 
+def _has_marker(as_of: object) -> bool:
+    """True when *as_of* is a real ``as of`` clock, not merely non-``None``.
+
+    Fix round 2: ``_render_view``'s unavailable gate used to check
+    ``as_of is None`` alone, which an empty string satisfies as ``False`` --
+    so ``swarm_as_of_hhmm=""`` would have been treated as "this slot has
+    been read" and let rows or :data:`EMPTY_LINE` render, while
+    :meth:`SurfSwarmField._set_title` (which has always checked truthiness,
+    not identity, to decide whether to print a clock at all) would still
+    show no ``as of`` marker -- a body claiming to have read the swarm under
+    a title that shows no time it read it at. Both call sites go through
+    this one predicate now, so they cannot disagree again.
+    """
+    return isinstance(as_of, str) and bool(as_of)
+
+
 #: State word -> a light colour hint.  Cosmetic only -- every test here
 #: measures composited *text*, which carries no colour -- but it costs
 #: nothing and helps a reader's eye find a ``failed``/``waiting`` row.
@@ -318,9 +358,18 @@ def _group_by_job(fields_list: list[dict]) -> list[tuple[str | None, list[dict]]
 
     The producer already sorts the flat row list newest-move-first
     (``data/surf_swarm.field_rows``), so the first row of a job encountered
-    while walking it is that job's own most-recently-moved subtask -- first-
-    seen order is therefore also "most recently active job first", with no
-    second sort needed.  A row with no usable ``job_id`` gets its own
+    while walking it is that job's own most-recently-moved subtask, and every
+    later row of the same job is necessarily older than it -- first-seen
+    order therefore gives **both** halves of the ordering the module
+    docstring promises (fix round 2) with no second sort needed: groups come
+    out ordered by their own newest member (the position of that first
+    encounter), and a group's own members stay in the newest-first relative
+    order they already had in the flat list, because grouping only removes
+    rows from the sequence, it never reorders the ones that remain. What it
+    does **not** give is a claim about the *flattened* sequence versus the
+    original one -- an older member of an already-started group can render
+    ahead of a different job's newer row, which is the module docstring's
+    own worked example. A row with no usable ``job_id`` gets its own
     singleton group rather than being folded together with every other
     orphan, so its ``objective`` (if any) still prints once, correctly,
     beside it.
@@ -370,12 +419,26 @@ def _row_text(fields: dict, tier: str, note_width: int) -> Text:
     """One subtask's metadata line at *tier*: agent, subtask, role, state,
     age, revisions, then the note in whatever width is left.
 
+    **Every cell is ``clip``-ed before it is ``pad``-ed, no exception.**
+    ``pad`` only ever *adds* trailing spaces (``_rowfit.pad``'s own
+    contract), so a cell handed to it without first being clipped and found
+    over-length is not narrowed at all -- it sails through at its natural
+    width and every column after it starts one or more cells right of the
+    row above it. Fix round 2 found exactly this on ``agent``/``age``/
+    ``revisions`` (an over-long agent token, ``#123456`` at 7 cells against
+    :data:`_AGENT_COLS`'s 6, pushed the whole row over):
+    ``test_an_over_long_agent_token_does_not_break_column_alignment`` pins
+    it and reddens if the clip is dropped from any one of the three.
+
     Never raises on well-formed *fields* (the dict :func:`_row_fields`
     produces); a row that fails to decompose never reaches this function at
     all.
     """
     line = Text()
-    line.append(_rowfit.pad(fields["agent"], _AGENT_COLS), style="bold")
+    line.append(
+        _rowfit.pad(_rowfit.clip(fields["agent"], _AGENT_COLS), _AGENT_COLS),
+        style="bold",
+    )
     line.append(" " * _GAP)
     line.append(_rowfit.pad(_rowfit.clip(fields["subtask"], _SUBTASK_COLS), _SUBTASK_COLS))
     if tier != "minimal":
@@ -391,10 +454,15 @@ def _row_text(fields: dict, tier: str, note_width: int) -> Text:
         style=state_style,
     )
     line.append(" " * _GAP)
-    line.append(_rowfit.pad(fields["age"], _AGE_COLS), style="dim")
+    line.append(
+        _rowfit.pad(_rowfit.clip(fields["age"], _AGE_COLS), _AGE_COLS), style="dim",
+    )
     if tier != "minimal":
         line.append(" " * _GAP)
-        line.append(_rowfit.pad(fields["revisions"], _REVISIONS_COLS), style="dim")
+        line.append(
+            _rowfit.pad(_rowfit.clip(fields["revisions"], _REVISIONS_COLS), _REVISIONS_COLS),
+            style="dim",
+        )
     if tier == "full" and note_width > 0 and fields["note"]:
         line.append(" " * _GAP)
         line.append_text(_fit_prose(fields["note"], note_width))
@@ -481,7 +549,7 @@ class SurfSwarmField(Vertical):
             return
         base = TITLE
         as_of = self._payload.get("as_of")
-        if isinstance(as_of, str) and as_of:
+        if _has_marker(as_of):
             base += f" · as of {as_of}"
             if self._payload.get("stale"):
                 base += " · stale"
@@ -499,13 +567,15 @@ class SurfSwarmField(Vertical):
 
         rows_input = self._payload.get("rows")
         as_of = self._payload.get("as_of")
-        if as_of is None or rows_input is None:
-            # ``swarm_as_of_hhmm is None`` means this slot has never been
-            # written -- unavailable, whatever ``rows`` says, because the
-            # fold's own ``[]``-for-both shape (see the module docstring)
-            # makes an empty list ambiguous on its own.  ``rows_input is
-            # None`` stays checked too, so the widget is still honest if it
-            # is ever handed that sentinel directly.
+        if not _has_marker(as_of) or rows_input is None:
+            # No real ``as of`` marker (``None``, or the same empty string
+            # :func:`_has_marker` treats as absent -- fix round 2's ``and
+            # as_of``) means this slot has never been written -- unavailable,
+            # whatever ``rows`` says, because the fold's own ``[]``-for-both
+            # shape (see the module docstring) makes an empty list ambiguous
+            # on its own.  ``rows_input is None`` stays checked too, so the
+            # widget is still honest if it is ever handed that sentinel
+            # directly.
             self._set_title(False)
             log.write(Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"))
             return

@@ -1,7 +1,9 @@
 """THE FIELD -- who is working on what, and what is stuck (Task 7)."""
 
+from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.widgets.surf.swarm_field import (
-    COMPACT_WIDTH, EMPTY_LINE, FULL_WIDTH, SurfSwarmField, UNAVAILABLE_LINE,
+    COMPACT_WIDTH, EMPTY_LINE, FULL_WIDTH, MINIMAL_WIDTH, SurfSwarmField,
+    UNAVAILABLE_LINE,
 )
 from tests.widgets.surf_compositing import composite_lines
 
@@ -103,3 +105,106 @@ async def test_a_hostile_row_paints_no_literal_brackets():
     _lines, text = await _field(swarm_field_rows=rows, size=(FULL_WIDTH + 20, 20))
     assert "[" not in text
     assert "]" not in text
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 (review findings 1-6, 2026-09-16)
+# ---------------------------------------------------------------------------
+
+
+async def test_an_over_long_agent_token_does_not_break_column_alignment():
+    """``#123456`` (7 cells) against ``_AGENT_COLS``'s 6 must be clipped, not
+    left to overflow -- an unclipped cell pushes every column after it out of
+    alignment with the row above it. Reproduced live before fix round 2,
+    where ``agent``/``age``/``revisions`` were padded but never clipped.
+    """
+    rows = [
+        dict(ROWS[1], job_id="job-long", node_key="alpha_task", agent_token="123456"),
+        dict(ROWS[1], job_id="job-short", node_key="beta_task", agent_token="2"),
+    ]
+    _lines, text = await _field(swarm_field_rows=rows)
+    long_line = next(ln for ln in text.split("\n") if "alpha_task" in ln)
+    short_line = next(ln for ln in text.split("\n") if "beta_task" in ln)
+    assert long_line.index("alpha_task") == short_line.index("beta_task")
+
+
+async def test_the_stale_marker_prints_only_when_stale():
+    _lines, stale_text = await _field(swarm_as_of_hhmm="13:18", swarm_stale=True)
+    assert "stale" in stale_text
+    _lines, fresh_text = await _field(swarm_as_of_hhmm="13:18", swarm_stale=False)
+    assert "stale" not in fresh_text
+
+
+async def test_the_chain_word_never_appears():
+    """Design §5: the chain word belongs only to panels that show chain data
+    (JUST SHIPPED, any score quoting a transaction) -- THE FIELD shows
+    neither, so ``swarm_network`` must never reach the screen.
+    """
+    _lines, sepolia_text = await _field(swarm_network="SEPOLIA")
+    assert "SEPOLIA" not in sepolia_text
+    _lines, mainnet_text = await _field(swarm_network="MAINNET")
+    assert "MAINNET" not in mainnet_text
+
+
+async def test_groups_order_by_their_own_newest_subtask_and_subtasks_newest_first_within_a_group():
+    """Two jobs, two subtasks each, fed in the producer's own newest-first
+    order (ages 10s, 50s, 200s, 250s for a1, b1, a2, b2).
+
+    Pins both halves of the ordering: within a group, newest first
+    (``a1`` before ``a2``, ``b1`` before ``b2``); groups ordered by their own
+    newest subtask (job-a's newest, 10s, outranks job-b's newest, 50s, so all
+    of job-a renders before job-b starts) -- which means job-a's *oldest*
+    subtask (``a2``, 200s) still renders ahead of job-b's newest (``b1``,
+    50s), even though ``b1`` is globally more recent. That interleaving is
+    the module docstring's own worked example.
+    """
+    rows = [
+        dict(ROWS[1], job_id="job-a", node_key="a1", age_s=10.0, dispatch_note=None),
+        dict(ROWS[1], job_id="job-b", node_key="b1", age_s=50.0, dispatch_note=None),
+        dict(ROWS[1], job_id="job-a", node_key="a2", age_s=200.0, dispatch_note=None),
+        dict(ROWS[1], job_id="job-b", node_key="b2", age_s=250.0, dispatch_note=None),
+    ]
+    _lines, text = await _field(swarm_field_rows=rows)
+    pos = {key: text.index(key) for key in ("a1", "a2", "b1", "b2")}
+    assert pos["a1"] < pos["a2"], "job-a's own subtasks are not newest-first"
+    assert pos["b1"] < pos["b2"], "job-b's own subtasks are not newest-first"
+    assert pos["a2"] < pos["b1"], (
+        "job-a's group (newest subtask 10s) should render whole before "
+        "job-b's group (newest subtask 50s) starts"
+    )
+
+
+async def test_the_minimal_tier_drops_role_and_revisions_but_keeps_the_rest():
+    _lines, text = await _field(size=(MINIMAL_WIDTH + 5, 14))
+    assert "#2" in text
+    assert "build_website" in text
+    assert "accepted" in text
+    assert "implement" not in text
+    assert "rev1" not in text
+    assert "‹" in text
+
+
+async def test_an_empty_string_marker_is_treated_as_no_marker():
+    """``swarm_as_of_hhmm=""`` is not a clock -- treating it as one would let
+    the body claim a read happened while the title shows no time it
+    happened at (:meth:`SurfSwarmField._set_title` has always required a
+    non-empty string).
+    """
+    _lines, text = await _field(swarm_field_rows=[], swarm_as_of_hhmm="")
+    assert UNAVAILABLE_LINE in text
+
+
+async def test_a_blank_row_separates_the_title_from_the_log():
+    """The repo-wide sweep (``tests/widgets/test_title_blank_row.py``)
+    excludes surf; this is this panel's own copy of that mandatory contract,
+    composited under the app stylesheet the way that sweep's own panels are.
+    """
+    rows = await composite_lines(
+        SurfSwarmField, (120, 14), css_path=CSS_PATH, region_only=True,
+        swarm_field_rows=ROWS, swarm_as_of_hhmm="12:00", swarm_network="SEPOLIA",
+    )
+    assert rows[0].strip(), "no title row at all"
+    assert not rows[1].strip(), (
+        f"content directly under the title, no blank row: {rows[:4]}"
+    )
+    assert rows[2].strip(), f"nothing under the blank row: {rows[:4]}"
