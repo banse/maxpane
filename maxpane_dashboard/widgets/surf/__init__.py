@@ -124,6 +124,7 @@ from .pool4u_hero import SurfPool4UserHero
 from .pool4u_signals import SurfPool4USignals
 from .pool4u_stakers import SurfPool4UStakers
 from .signals import DETECTOR_LABELS, SurfSignals
+from .swarm_hero import SurfSwarmHero
 
 __all__ = [
     "DETECTOR_LABELS",
@@ -152,6 +153,7 @@ __all__ = [
     "SurfPool4UserHero",
     "SurfPool4Vault",
     "SurfSignals",
+    "SurfSwarmHero",
     "TITLE",
     "UNAVAILABLE_LINE",
 ]
