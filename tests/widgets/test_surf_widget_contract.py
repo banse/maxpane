@@ -66,6 +66,8 @@ from maxpane_dashboard.widgets.surf import (
     SurfSignals,
     SurfSwarmField,
     SurfSwarmHero,
+    SurfSwarmQueue,
+    SurfSwarmThroughput,
 )
 
 
@@ -209,6 +211,12 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # why) -- so it belongs in the strict check, not
         # `_SHORT_KWARG_WIDGETS`.
         SurfSwarmField,
+        # QUEUE and THROUGHPUT (task 8, 2026-09-16). Every kwarg is spelled
+        # after its full `swarm_` contract key too -- neither panel takes a
+        # `swarm_network` kwarg at all (see swarm_throughput.py's own
+        # docstring for the reasoning on THROUGHPUT, the one of the two the
+        # design note names for the chain word).
+        SurfSwarmQueue, SurfSwarmThroughput,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 

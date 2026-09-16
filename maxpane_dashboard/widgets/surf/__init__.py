@@ -126,6 +126,8 @@ from .pool4u_stakers import SurfPool4UStakers
 from .signals import DETECTOR_LABELS, SurfSignals
 from .swarm_field import SurfSwarmField
 from .swarm_hero import SurfSwarmHero
+from .swarm_queue import SurfSwarmQueue
+from .swarm_throughput import SurfSwarmThroughput
 
 __all__ = [
     "DETECTOR_LABELS",
@@ -156,6 +158,8 @@ __all__ = [
     "SurfSignals",
     "SurfSwarmField",
     "SurfSwarmHero",
+    "SurfSwarmQueue",
+    "SurfSwarmThroughput",
     "TITLE",
     "UNAVAILABLE_LINE",
 ]
