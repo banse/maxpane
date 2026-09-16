@@ -512,17 +512,37 @@ EXPECTED_KEYS = {
     # fold has not landed yet" -- the ordinary state of tick 1 -- from "the
     # sweep failed", and warned on both. This key is the difference.
     "pool4_stakers_state",
+    # ---- swarm (Task 4, 2026-09-16) ----------------------------------------
+    "swarm_agents_online",
+    "swarm_agents_enrolled",
+    "swarm_working_now",
+    "swarm_accepted_today",
+    "swarm_jobs_in_flight",
+    "swarm_jobs_blocked",
+    "swarm_queue_depths",
+    "swarm_services_up",
+    "swarm_field_rows",
+    "swarm_queue_rows",
+    "swarm_blocked_rows",
+    "swarm_shipped_rows",
+    "swarm_score_rows",
+    "swarm_throughput",
+    "swarm_network",
+    "swarm_as_of_hhmm",
+    "swarm_scores_as_of_hhmm",
+    "swarm_stale",
 }
 
 
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    **159 = 83 + 71 + 5**: the 83 that shipped through v0.8.3, the ``p``
+    **177 = 83 + 71 + 5 + 18**: the 83 that shipped through v0.8.3, the ``p``
     body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
-    cross-venue price, the backstop band and the realised return), and the
+    cross-venue price, the backstop band and the realised return), the
     staker sweep's own five in ``POOL4_STAKERS_KEYS`` (four until
-    ``pool4_stakers_state`` joined them on 2026-09-12). The count is asserted
+    ``pool4_stakers_state`` joined them on 2026-09-12), and the ``s``
+    body's eighteen in ``SWARM_KEYS`` (added 2026-09-16). The count is asserted
     beside the set membership on purpose: the set catches a rename, the
     count catches a key added to both sides at once by someone editing
     ``EXPECTED_KEYS`` to make a red test green instead of asking why it was
@@ -534,22 +554,23 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     lines down said **145** -- so the prose said 82 non-pool4 keys where the
     contract had 83, and the only reason nobody noticed is that prose does
     not run. That is exactly the failure the *assertion* exists to catch and
-    exactly the failure a sentence beside it cannot, which is why the three
+    exactly the failure a sentence beside it cannot, which is why the four
     addends below are each a real tuple somebody can count rather than one
     remembered total.
     """
     from maxpane_dashboard.data.surf_models import SURF_KEYS
     from maxpane_dashboard.data.surf_models import (
-        POOL4_KEYS, POOL4_STAKERS_KEYS,
+        POOL4_KEYS, POOL4_STAKERS_KEYS, SWARM_KEYS,
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 159
-    # ...and the three addends really are the three tuples, so the total
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 177
+    # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
-    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) == 83
+    assert len(SWARM_KEYS) == 18
+    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 83
 
 
 def test_every_signal_has_all_three_facets() -> None:

@@ -1445,6 +1445,29 @@ POOL4_STAKERS_KEYS: tuple[str, ...] = (
     "pool4_stakers_state",      # str | None — POOL4_STAKERS_STATES; None = nothing to explain
 )
 
+#: The `s` body's flat keys (spec §4).  One block, spliced whole into
+#: SURF_KEYS after the pool4 blocks, so its position is checkable.
+SWARM_KEYS: tuple[str, ...] = (
+    "swarm_agents_online",      # int | None   -- connected daemons
+    "swarm_agents_enrolled",    # int | None   -- active enrollments
+    "swarm_working_now",        # int | None   -- daemons working this moment
+    "swarm_accepted_today",     # int | None   -- accepted in the last day
+    "swarm_jobs_in_flight",     # int | None   -- jobs in state executing
+    "swarm_jobs_blocked",       # int | None   -- jobs in state blocked
+    "swarm_queue_depths",       # dict | None  -- pending* counters by name
+    "swarm_services_up",        # dict | None  -- verifier/publisher/deployer
+    "swarm_field_rows",         # list[dict]   -- one per unfinished subtask
+    "swarm_queue_rows",         # list[dict]   -- state -> count
+    "swarm_blocked_rows",       # list[dict]   -- blocked jobs and their reason
+    "swarm_shipped_rows",       # list[dict]   -- deliveries, launches, sites
+    "swarm_score_rows",         # list[dict]   -- per agent, from the sweep
+    "swarm_throughput",         # dict | None  -- accepted/day, median, revisions
+    "swarm_network",            # str | None   -- MAINNET / SEPOLIA / None
+    "swarm_as_of_hhmm",         # str | None   -- SLOT_SWARM's marker
+    "swarm_scores_as_of_hhmm",  # str | None   -- SLOT_SWARM_SCORES' marker
+    "swarm_stale",              # bool | None  -- the two markers drifted
+)
+
 
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
 #: interface, frozen by docs/surf_PRD.md §5.  Every numeric is ``float|int|None``
@@ -1578,6 +1601,10 @@ SURF_KEYS: tuple[str, ...] = (
     "sig_hot_state",
     "sig_hot_detail",
     "sig_hot_age_s",
+    # ---- swarm (detached sweep, its own slower "as of") ---------------------
+    # One contiguous block, spliced whole into SURF_KEYS after the pool4 blocks,
+    # so its position is checkable.
+    *SWARM_KEYS,
 )
 
 #: Row shapes for the list-of-dict payloads.  Widgets index these keys
@@ -1707,5 +1734,20 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "address",     # str   -- holder; third-party, escaped at render
         "imd",         # float -- shares converted at the vault's share price
         "pct",         # float -- share of the whole vault, never of the page
+    ),
+    "swarm_field_rows": (
+        "job_id", "template", "objective", "node_key", "role", "node_state",
+        "agent_token", "agent_id", "revisions", "dispatch_note", "moved_ts",
+        "age_s",
+    ),
+    "swarm_queue_rows": ("state", "count"),
+    "swarm_blocked_rows": ("job_id", "template", "reason", "moved_ts"),
+    "swarm_shipped_rows": (
+        "kind", "job_id", "label", "commit", "chain_id", "address", "tx_hash",
+        "ens_name", "cid", "at_ts",
+    ),
+    "swarm_score_rows": (
+        "agent_id", "agent_token", "jobs_scored", "mean_score",
+        "last_tx_hash", "last_chain_id",
     ),
 }
