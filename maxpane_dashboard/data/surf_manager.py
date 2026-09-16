@@ -5261,10 +5261,19 @@ class SurfManager:
             if fetched is not None:
                 jobs = fetched
                 self._swarm_jobs_read_ts = now
+                # Recorded only on an actual, successful read -- fix round 1
+                # finding 2. Setting this unconditionally (as an earlier
+                # version did, outside this block) armed the gate against
+                # counters the list was never actually read against: a
+                # failed ``fetch_jobs`` would still advance
+                # ``_swarm_counters``, so the *next* cycle's unchanged
+                # counters would compare equal and skip the retry entirely,
+                # leaving ``jobs`` permanently ``None`` behind a gate that
+                # believed it was already current.
+                self._swarm_counters = counters
         if jobs is None:
             self.cache.mark_failed(TIER_SWARM, now)
             return {"ok": False, "payload": None}
-        self._swarm_counters = counters
 
         details = []
         for job_id in sw.unfinished_ids(jobs):
@@ -5280,30 +5289,25 @@ class SurfManager:
         return {"ok": True, "payload": payload}
 
     def _spawn_swarm_scores(self, tiers: set[str], now: float) -> Any:
-        """:meth:`_spawn_swarm`'s shape, one tier further out -- and deferred
-        behind it.
+        """:meth:`_spawn_swarm`'s shape, one tier further out.
 
-        **Also refuses to start while the live read is still in flight**, on
-        top of the usual "one of my own kind at a time" guard every other
-        spawn in this module has. The host itself says why (``surf_swarm_client``'s
-        own docstring): "the host serves no filters, no caching validators
-        and no pagination", so its job list is genuinely all-or-nothing and
-        each full read of it is real load. Without this, a cold cache offers
-        both tiers in the same cycle and this sweep pays for a second,
-        redundant ``/jobs`` round trip and a full every-job detail pass
-        against a host that has not even answered the live tier's first
-        request yet. Deferring costs nothing here: this tier's TTL is 1800 s
-        against the live tier's 60, so waiting one 30 s poll for the live
-        read to clear is negligible, and every cycle after the first offers
-        it again exactly as :data:`TIER_SWARM_SCORES` due-ness already does.
-        A live read with no task at all, or one that has already finished,
-        both count as "clear".
+        **Runs on its own clock, independently of the live tier** (design
+        §3, controller-mandated fix round 1 finding 1). An earlier version of
+        this method also refused to start while the live read was in flight,
+        reasoned from the host's own "no pagination" docstring -- but that
+        reasoning did not hold: ``_spawn_swarm``/``_spawn_swarm_scores`` are
+        called back to back with no ``await`` between them, so
+        ``self._swarm_task`` is never yet a single step old and
+        ``.done()`` is deterministically ``False`` whenever both tiers are
+        due in the same cycle -- not a race that sometimes resolves the
+        other way. At a poll interval of 60 s or more (``__main__.py``
+        enforces only a minimum of 5, no maximum) the live tier is due on
+        *every* cycle, so that gate silenced this sweep permanently. And the
+        live tier itself has no reciprocal gate -- once this sweep is in
+        flight, the next due live read starts concurrently anyway -- so the
+        one-sided gate bought no real serialisation, only starvation.
         """
         if TIER_SWARM_SCORES not in tiers:
-            return None
-        live = self._swarm_task
-        if live is not None and not live.done():
-            logger.debug("SURF swarm scores sweep waiting on the live read")
             return None
         running = self._swarm_scores_task
         if running is not None and not running.done():
@@ -5348,11 +5352,18 @@ class SurfManager:
         completed jobs too, and a job that shipped days ago still has a score
         worth showing on the leaderboard.
 
-        Stores ``{"details", "launches", "sites"}`` -- deliberately not its
-        own copy of the job list, which the live tier already refreshes far
-        more often. :meth:`_swarm_scores_keys` reuses the live slot's jobs at
-        publish time instead of this sweep persisting a second, staler copy
-        of the same ~27.5 KB list.
+        Stores ``{"jobs", "details", "launches", "sites"}`` -- **including**
+        its own copy of the job list, fix round 1 finding 4 (reversing the
+        first version, which reused the live slot's jobs instead). That
+        reuse was wrong two ways at once: :func:`sw.shipped_rows` would have
+        merged deliveries read off the *live* slot with launches/sites read
+        off *this* slot and sorted the union to a top 12, so the panel could
+        show a top-12 that never existed at any single moment on the host --
+        wrong rows, not merely fewer -- and a live-tier ``/health`` outage
+        would have silently blanked :func:`sw.throughput` (which needs
+        ``jobs``) even on a cycle where this sweep read a perfectly good
+        list. Paying to store this list a second time, on a 1800 s tier,
+        buys a scores panel whose rows and marker describe one moment.
         """
         if TIER_SWARM_SCORES not in tiers:
             return {"ok": False, "payload": None}
@@ -5383,13 +5394,26 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM_SCORES, now)
             return {"ok": False, "payload": None}
 
-        payload = {"details": details, "launches": launches, "sites": sites}
+        payload = {"jobs": jobs, "details": details, "launches": launches, "sites": sites}
         self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=now)
         self.cache.mark_fetched(TIER_SWARM_SCORES, now)
         return {"ok": True, "payload": payload}
 
     def _swarm_keys(self, slot: dict[str, Any], entry: Any, now: float) -> dict[str, Any]:
-        """SLOT_SWARM -> the live `swarm_*` keys.  Unread stays None."""
+        """SLOT_SWARM -> the live `swarm_*` keys.  Unread stays None.
+
+        ``swarm_as_of_hhmm`` is the slot's own **write** time -- when
+        ``/health`` (and, on a re-fetch, ``/jobs``) last landed -- not a
+        promise that the job list itself is that fresh. The counter gate in
+        :meth:`_pool_swarm` can reuse a list from an earlier successful
+        write for up to :data:`SWARM_LIST_CEILING_S`, so the queue-derived
+        fields here (``swarm_jobs_in_flight``/``_blocked``, the queue and
+        blocked rows) can describe a list up to that much older than the
+        marker claims. Bounded and documented beats an unbounded surprise --
+        the alternative, stamping the marker with the list's own read time
+        instead of the slot's write time, would make ``/health`` (genuinely
+        fresh every write) read as stale instead.
+        """
         health = slot.get("health") if slot else None
         jobs = slot.get("jobs") if slot else None
         details = slot.get("details") if slot else None
@@ -5401,8 +5425,12 @@ class SurfManager:
             "swarm_agents_enrolled": facts["agents_enrolled"],
             "swarm_working_now": facts["working_now"],
             "swarm_accepted_today": facts["accepted_today"],
-            "swarm_jobs_in_flight": by_state.get("executing") if jobs else None,
-            "swarm_jobs_blocked": by_state.get("blocked") if jobs else None,
+            # ``0``, not ``None``, when the list was read and genuinely has
+            # no job in that state -- fix round 1 finding 3. Only a missing
+            # list (``jobs`` falsy: unread, or read-and-empty with nothing
+            # to count either way) publishes ``None``.
+            "swarm_jobs_in_flight": by_state.get("executing", 0) if jobs else None,
+            "swarm_jobs_blocked": by_state.get("blocked", 0) if jobs else None,
             "swarm_queue_depths": facts["queue_depths"],
             "swarm_services_up": facts["services_up"],
             "swarm_field_rows": sw.field_rows(details, now=now),
@@ -5417,12 +5445,16 @@ class SurfManager:
     ) -> dict[str, Any]:
         """SLOT_SWARM_SCORES -> the sweep's own `swarm_*` keys.
 
-        ``jobs`` for ``shipped_rows``/``throughput`` comes off the *live*
-        slot's payload (``live_entry``), not this one: :meth:`_pool_swarm_scores`
-        never persists its own copy of the job list (its own docstring), and
-        the live tier's copy is both fresher and already paid for -- reusing
-        it here costs nothing and is exactly the "reuse before you build"
-        rule CLAUDE.md states for this module.
+        ``jobs`` for ``shipped_rows``/``throughput`` comes off **this**
+        slot -- fix round 1 finding 4 -- not the live tier's. An earlier
+        version sourced it from ``live_entry`` to avoid storing the list
+        twice, but that merged two payloads read on two different clocks
+        into one row set: ``shipped_rows`` would fold deliveries off the
+        live slot's jobs with launches/sites off this slot and sort the
+        union to a top 12 that never existed at any single moment, and a
+        live-tier outage would blank ``throughput`` even when this sweep's
+        own read was fine. ``live_entry`` is kept only for ``swarm_stale``
+        below, and would go if that check ever moved to :meth:`_cycle`.
 
         ``swarm_stale`` is the staker rule (spec §6) applied to these two
         markers: ``None`` while either is missing, ``True`` only when both
@@ -5431,11 +5463,10 @@ class SurfManager:
         healthy pair flagged just because one runs on a slower clock than the
         other.
         """
+        jobs = slot.get("jobs") if slot else None
         details = slot.get("details") if slot else None
         launches = slot.get("launches") if slot else None
         sites = slot.get("sites") if slot else None
-        live_payload = live_entry.payload if live_entry is not None else None
-        jobs = live_payload.get("jobs") if isinstance(live_payload, dict) else None
 
         stale = None
         if entry is not None and live_entry is not None:
