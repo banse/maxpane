@@ -84,12 +84,16 @@ half on one line and half on the next. The wrap is bounded at
 :data:`MAX_OBJECTIVE_LINES`, not unbounded: see that constant's own ``#:``
 block for why a *shared* ``RichLog`` cannot afford to let one job's
 objective grow without limit. Whatever the cap sheds -- the tail of an
-objective longer than the cap allows, or a single word wider than the panel
-itself -- still ends in the same visible ``…`` :func:`_rowfit.clip` always
-uses, and now *also* lights the panel's ``‹ widen`` marker, which the tier
-ladder alone used to decide: :meth:`SurfSwarmField._render_view` ORs the two
-reasons together, so the marker is lit whenever the tier sheds a column
-**or** an objective's own wrap sheds text, and dark only when neither does.
+objective longer than the cap allows, or a single word (or, address-icon
+cost included, a whole line) wider than the panel itself -- still ends in
+a visible ``…`` (:func:`_fit_address_aware`/:func:`_pack_final_line`, both
+address-icon-aware; see :func:`_rendered_cost`'s own docstring for the
+per-address reservation bug fix round 1 found and closed here on
+2026-09-18), and now *also* lights the panel's ``‹ widen`` marker, which
+the tier ladder alone used to decide: :meth:`SurfSwarmField._render_view`
+ORs the two reasons together, so the marker is lit whenever the tier sheds
+a column **or** an objective's own wrap sheds text, and dark only when
+neither does.
 
 **Not ``_pool4.title_text`` itself.**  That function's fitting logic is
 exactly what this panel wants and is reused verbatim below
@@ -133,14 +137,20 @@ hold it to: the composited region of a hostile row carries **no literal
 ``[`` or ``]`` at all**, not merely "no crash" and not merely "the payload
 string is still findable as a substring".  Any embedded ``0x…`` address
 survives stripping (hex has no brackets) and gets its copy icon through
-``widgets/address.address_prose``; a clip reserves :data:`ICON_COLS` ahead
-of one only when the cleaned text actually contains one, so a note with no
+``widgets/address.address_prose``; a fit reserves :data:`ICON_COLS` ahead of
+one only when the cleaned text actually contains one, so a note with no
 address is never short-changed two columns it does not need.  The objective
 context line now spans up to :data:`MAX_OBJECTIVE_LINES` lines rather than
-one, and the same reservation applies once, to every wrapped line, rather
-than per line an address happens to land on -- simpler than tracking which
-specific line an address wrapped onto, and safe because a real objective
-carries at most one.
+one, and the reservation is **per address, per line it actually lands on**
+(:func:`_rendered_cost`), not a flat one-per-line guess: an earlier version
+of this fix reserved once regardless of count, on the argument that "a real
+objective carries at most one" -- an unenforced assumption about text this
+very section calls "whatever someone typed", refuted by reproducing it
+against the live widget with two and three addresses in one objective (fix
+round 1, 2026-09-18). A line with two addresses now costs two icons; a
+third address that still does not fit is shed with a visible ``…`` and the
+marker lit, never rendered as most of its own 42 characters with no
+ellipsis at all.
 
 ``swarm_field_rows`` and the read/empty split
 ------------------------------------------------
@@ -456,75 +466,176 @@ def _group_by_job(fields_list: list[dict]) -> list[tuple[str | None, list[dict]]
     return [(objectives[key], groups[key]) for key in order]
 
 
-def _fit_prose(text: str, width: int) -> Text:
-    """*text* clipped to *width* cells, with any embedded address's icon.
+def _rendered_cost(text: str) -> int:
+    """Cells *text* will cost once :func:`address_prose` has run on it.
 
-    The icon's own two columns (:data:`ICON_COLS`) are reserved ahead of a
-    clip only when the cleaned text actually contains a full address --
-    never unconditionally, which would short a plain sentence two columns
-    it does not need.
+    Its own :func:`rich.cells.cell_len` plus :data:`ICON_COLS` **for every
+    address inside it**, counted directly (``PROSE_ADDRESS_RE.findall``)
+    rather than assumed to be zero or one. *text* may be a single word or a
+    whole sentence; the count is the same either way, because a space
+    between two words can never join or split a match (the regex's own
+    boundary lookarounds succeed on a space exactly as they do on a string
+    edge, so isolating a word never changes whether it matches).
+
+    **Fix round 1 (2026-09-18).** Both this file's callers used to reserve
+    :data:`ICON_COLS` once per line/text, regardless of how many addresses
+    actually landed on it, and fit-checked the pre-icon string -- so a line
+    or note carrying two addresses rendered one icon's width too wide, and
+    a third pushed a real address most of the way onto the screen with no
+    ``…`` at all: a partial hex run that reads as a whole address. Charging
+    each address its own reservation, and checking the cost this function
+    returns rather than the bare :func:`rich.cells.cell_len`, is the fix,
+    and it lives here once so :func:`_fit_prose` and :func:`_wrap_objective`
+    cannot re-diverge the way the two used to agree on the same wrong
+    number.
+    """
+    return cell_len(text) + ICON_COLS * len(PROSE_ADDRESS_RE.findall(text))
+
+
+def _fit_address_aware(text: str, width: int) -> str:
+    """*text* fitted to *width* rendered cells, address-icon-aware.
+
+    :func:`_rowfit.clip`'s own contract (unchanged if *text* has no
+    address: already-fitting text passes through; otherwise as much of it
+    as fits is kept and a visible ``…`` is appended) but measured on
+    :func:`_rendered_cost` rather than bare :func:`rich.cells.cell_len`, so
+    a kept address's own icon is counted against the budget instead of a
+    flat one-reservation guess. The scan runs forward, one character at a
+    time, because :func:`_rendered_cost` of a *growing* prefix can only
+    ever increase (an address inside it is either not yet complete, and
+    costs nothing extra, or complete, and always will be from then on) --
+    so the first prefix that no longer leaves room for the ellipsis is the
+    boundary, with no risk of a shorter prefix costing more than a longer
+    one.
+    """
+    if width <= 0 or not text:
+        return ""
+    if _rendered_cost(text) <= width:
+        return text
+    out = ""
+    for char in text:
+        candidate = out + char
+        if _rendered_cost(candidate) + 1 > width:
+            break
+        out = candidate
+    return out + "…"
+
+
+def _fit_prose(text: str, width: int) -> Text:
+    """*text* clipped to *width* cells, with every embedded address's icon.
+
+    Delegates to :func:`_fit_address_aware`, the primitive shared with
+    :func:`_wrap_objective` -- see :func:`_rendered_cost`'s own docstring
+    for the bug this fixed in both places at once.
     """
     if not text or width <= 0:
         return Text("")
-    has_address = bool(PROSE_ADDRESS_RE.search(text))
-    budget = max(width - ICON_COLS, 0) if has_address else width
-    return address_prose(_rowfit.clip(text, budget))
+    return address_prose(_fit_address_aware(text, width))
 
 
 def _wrap_words(words: list[str], width: int) -> list[list[str]]:
-    """Greedy-pack *words* onto lines of at most *width* cells each.
+    """Greedy-pack *words* onto lines of at most *width* **rendered** cells
+    each, on :func:`_rendered_cost` rather than bare
+    :func:`rich.cells.cell_len` -- so a line that ends up carrying two
+    addresses is charged for two icons, never one flat guess.
 
     Never splits a word -- the caller's own reason to call this rather than
     :func:`_rowfit.clip`: an embedded address is one word (hex has no
     whitespace), so a wrap that only ever breaks between words cannot land
-    half of it on one line and half on the next. A word wider than *width*
-    on its own therefore becomes a *line* wider than *width* on its own
-    rather than being cut here -- :func:`_wrap_objective` clips that one
-    line afterward, deliberately not this function, which was told to keep
-    every word whole and does.
+    half of it on one line and half on the next. A word whose own rendered
+    cost alone exceeds *width* therefore becomes a *line* wider than
+    *width* on its own rather than being cut here -- :func:`_wrap_objective`
+    clips that one line afterward, deliberately not this function, which
+    was told to keep every word whole and does.
     """
     lines: list[list[str]] = []
     current: list[str] = []
-    current_len = 0
+    current_cost = 0
     for word in words:
-        size = cell_len(word)
-        joined = size if not current else current_len + 1 + size
+        size = _rendered_cost(word)
+        joined = size if not current else current_cost + 1 + size
         if current and joined > width:
             lines.append(current)
             current = [word]
-            current_len = size
+            current_cost = size
         else:
             current.append(word)
-            current_len = joined
+            current_cost = joined
     if current:
         lines.append(current)
     return lines
 
 
+def _line_cost(words: list[str]) -> int:
+    """Rendered cost of *words* joined by single spaces.
+
+    The same quantity :func:`_wrap_words` bounds by its own *width* while
+    packing, restated here so a caller can re-check one sliced-out line
+    after the fact rather than trusting it was measured correctly the
+    first time.
+    """
+    if not words:
+        return 0
+    return sum(_rendered_cost(w) for w in words) + (len(words) - 1)
+
+
+def _pack_final_line(words: list[str], width: int) -> str:
+    """As many whole *words* as fit *width* rendered cells, then a visible
+    ``…`` marking that more text existed beyond what fit.
+
+    Used only for the line :func:`_wrap_objective` is truncating at its own
+    cap: every word the earlier wrap already assigned to later lines is
+    flattened back into one pool here, because stopping early may leave
+    this last line room for more of them than the original per-line wrap
+    gave it. :func:`_rendered_cost` charges each kept address its own icon,
+    so two or three addresses landing in this final line cost exactly what
+    they will render at, not a single flat reservation.
+
+    Falls back to a character clip of the first word alone
+    (:func:`_fit_address_aware`) when even one word plus the ellipsis does
+    not fit whole -- the same single-over-width-word case
+    :func:`_wrap_words` hands off rather than resolving itself.
+    """
+    kept: list[str] = []
+    cost = 0
+    for word in words:
+        size = _rendered_cost(word)
+        candidate = size if not kept else cost + 1 + size
+        if candidate + 1 > width:  # +1 reserves the trailing ellipsis
+            break
+        kept.append(word)
+        cost = candidate
+    if kept:
+        return " ".join(kept) + "…"
+    return _fit_address_aware(words[0], width) if words else ""
+
+
 def _wrap_objective(text: str, width: int, max_lines: int) -> tuple[list[Text], bool]:
-    """*text* word-wrapped to *width* cells, at most *max_lines* lines.
+    """*text* word-wrapped to *width* rendered cells, at most *max_lines*
+    lines.
 
-    Returns the wrapped lines -- each a pre-built ``rich.text.Text`` with any
-    embedded address's icon already inserted, never a markup string -- and
-    whether anything was actually shed: either the text needed more than
-    *max_lines* lines, or one word alone was wider than *width* and had to be
-    clipped on its own line. Both cases end the same way, on
-    :func:`_rowfit.clip`'s own contract: the last kept line carries a visible
-    ``…``, never a silent cut.
+    Returns the wrapped lines -- each a pre-built ``rich.text.Text`` with
+    every embedded address's icon already inserted, never a markup string
+    -- and whether anything was actually shed: either the text needed more
+    than *max_lines* lines, or some line's own rendered cost (content plus
+    every address's own icon on it -- :func:`_line_cost`, never a flat
+    per-line guess, see :func:`_rendered_cost`'s own docstring for the bug
+    that shipped from guessing) exceeded *width* and had to be clipped.
+    Every shed line ends in a visible ``…``, never a silent cut, and a
+    clipped-away address cannot come back looking whole with no icon: a cut
+    hex run no longer matches :data:`PROSE_ADDRESS_RE` and so is never
+    mistaken for a complete one.
 
-    :data:`ICON_COLS` is reserved from *width* for every line, once, only
-    when *text* contains an address anywhere -- :func:`_fit_prose`'s own
-    rule, extended from one line to all of them (see the module docstring's
-    "no-bracket contract" section for why one reservation is enough). A
-    clipped over-width word cannot come back looking like a whole address
-    with no icon: a cut hex run no longer matches :data:`PROSE_ADDRESS_RE`
-    and so is never mistaken for a complete one.
+    :func:`_wrap_words` packs against the real, per-address rendered cost,
+    so its own invariant -- every multi-word line it hands back already
+    fits *width* -- holds against the actual painted width, not a pre-icon
+    guess. The only line that can still be over *width* here is therefore a
+    single word whose own rendered cost alone exceeds it, handled the same
+    way whichever position it is in.
     """
     if not text or width <= 0 or max_lines <= 0:
         return [], False
-    has_address = bool(PROSE_ADDRESS_RE.search(text))
-    budget = max(width - ICON_COLS, 0) if has_address else width
-    word_lines = _wrap_words(text.split(" "), budget)
+    word_lines = _wrap_words(text.split(" "), width)
     cap_truncated = len(word_lines) > max_lines
     shed = cap_truncated
     kept_count = min(len(word_lines), max_lines)
@@ -532,12 +643,14 @@ def _wrap_objective(text: str, width: int, max_lines: int) -> tuple[list[Text], 
     for i in range(kept_count):
         if cap_truncated and i == kept_count - 1:
             remaining = [w for wl in word_lines[i:] for w in wl]
-            line_text = _rowfit.clip(" ".join(remaining), budget)
+            line_text = _pack_final_line(remaining, width)
         else:
-            line_text = " ".join(word_lines[i])
-            if cell_len(line_text) > budget:
-                line_text = _rowfit.clip(line_text, budget)
+            line_words = word_lines[i]
+            if _line_cost(line_words) > width:
+                line_text = _fit_address_aware(" ".join(line_words), width)
                 shed = True
+            else:
+                line_text = " ".join(line_words)
         texts.append(address_prose(line_text))
     return texts, shed
 

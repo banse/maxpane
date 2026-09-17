@@ -418,3 +418,161 @@ async def test_an_address_too_wide_for_any_line_degrades_without_a_fake_whole():
             assert line[match.end():match.end() + 1] == "…", (
                 f"a partial address with no ellipsis reached the screen: {line!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 (2026-09-18): the copy-icon reservation was per line/text, once,
+# regardless of how many addresses actually landed there -- the same defect
+# in both this module's own :func:`_wrap_objective` and, unchanged since
+# before this file existed, :func:`_fit_prose`'s note-column clip. A line
+# carrying two addresses rendered one icon's width too wide with no marker;
+# three could push a real address most of the way onto the screen with no
+# ellipsis at all -- a partial hex run that reads as a whole address. The
+# reviewer's own reproduction widths are pinned directly below.
+# ---------------------------------------------------------------------------
+
+_HEX_RUN = re.compile(r"0x[0-9a-fA-F]{6,}")
+
+
+def _assert_no_bad_partial_hex(lines, addrs):
+    """Every hex run on screen is address-safe, in both directions the
+    reviewer's reproductions found broken:
+
+    * a **partial** address (not one of *addrs* verbatim) must be
+      immediately followed by ``…`` -- never left to look like a shorter,
+      genuine one with no mark at all;
+    * a **whole** address (one of *addrs* verbatim) must be immediately
+      followed by `` ⧉`` -- :func:`address_prose`'s own contract -- never
+      rendered complete with its icon silently missing (the reviewer's
+      "two addresses, only one icon" and "whole but iconless" reports are
+      exactly this half, which a partial-only check cannot see).
+    """
+    for line in lines:
+        for match in _HEX_RUN.finditer(line):
+            found = match.group(0)
+            tail = line[match.end():match.end() + 2]
+            if found in addrs:
+                assert tail == " ⧉", (
+                    f"a whole address rendered with no copy icon: {line!r}"
+                )
+            else:
+                assert tail[:1] == "…", (
+                    f"a partial address with no ellipsis reached the screen: {line!r}"
+                )
+
+
+async def test_two_addresses_survive_whole_with_two_icons_at_the_reviewers_widths():
+    """The reviewer's own first reproduction, reconstructed against this
+    module's own tight-word objective rather than the reviewer's exact
+    wording (unavailable here): two addresses close enough together that
+    the old, single-reservation code merged them onto one wrapped line at
+    outer width 100-101 while budgeting room for only **one** icon --
+    swept and pinned at those exact widths (``find_real_window.py``'s own
+    search, not guessed): both addresses rendered whole while only one
+    icon appeared. Fixed, both addresses are whole *and* both carry their
+    own icon at both widths.
+    """
+    addr1 = "0x" + "ab" * 20
+    addr2 = "0x" + "cd" * 20
+    objective = f"chk {addr1} and {addr2} now"
+    rows = [dict(ROWS[1], objective=objective, dispatch_note=None)]
+    for width in (100, 101):
+        lines, text = await _field(swarm_field_rows=rows, size=(width, 20))
+        assert any(addr1 in ln for ln in lines), f"width={width}: addr1 not whole"
+        assert any(addr2 in ln for ln in lines), f"width={width}: addr2 not whole"
+        assert text.count("⧉") == 2, (
+            f"width={width}: expected 2 copy icons, found {text.count('⧉')}"
+        )
+        _assert_no_bad_partial_hex(lines, {addr1, addr2})
+
+
+async def test_three_addresses_survive_whole_with_three_icons_at_the_reviewers_widths():
+    """The reviewer's own second reproduction, reconstructed the same way:
+    three addresses in one objective, swept to outer width 141-144, where
+    the old code's single reservation under-charged a three-address line by
+    two whole icons' worth (6 needed, 2 reserved) and reproduced the
+    reviewer's exact symptom progression verbatim -- 40 of the third
+    address's 42 characters with no trailing ``…`` at 141, 41 of 42 at 142,
+    whole but iconless at 143-144. Every one of those widths reports the
+    row tier as ``full`` (the note is visible) and the marker dark, exactly
+    the false "nothing was shed" claim the docstring makes and this input
+    broke. Fixed, all three addresses are whole, all three carry an icon,
+    and the marker is honestly dark because nothing is actually lost any
+    more.
+    """
+    addr1 = "0x" + "ab" * 20
+    addr2 = "0x" + "cd" * 20
+    addr3 = "0x" + "ef" * 20
+    objective = f"a {addr1} b {addr2} c {addr3} d"
+    rows = [dict(
+        ROWS[0], objective=objective,
+        dispatch_note="a review needs a contributor who did not author this work",
+    )]
+    for width in (141, 142, 143, 144):
+        lines, text = await _field(swarm_field_rows=rows, size=(width, 20))
+        for addr in (addr1, addr2, addr3):
+            assert any(addr in ln for ln in lines), f"width={width}: {addr} not whole"
+        assert text.count("⧉") == 3, (
+            f"width={width}: expected 3 copy icons, found {text.count('⧉')}"
+        )
+        _assert_no_bad_partial_hex(lines, {addr1, addr2, addr3})
+        assert "did not author" in text, f"width={width}: tier itself shed the note"
+        assert "‹" not in text, (
+            f"width={width}: nothing is actually lost here, the marker must stay dark"
+        )
+
+
+async def test_the_note_columns_multiple_addresses_are_fixed_through_the_same_primitive():
+    """Reviewer item 4: :func:`_fit_prose` (the note column's own single-line
+    clip) had the identical one-reservation-per-call defect, predating this
+    branch, and is now fixed by delegating to the same
+    :func:`_fit_address_aware` :func:`_wrap_objective` uses -- one place,
+    not two. Two addresses in ``dispatch_note``, swept at width 250 (both
+    comfortably fit: two icons) and 166 -- swept, not guessed: at 166 the
+    unfixed single reservation rendered the second address whole with **no**
+    icon (the reviewer's own "whole but iconless" shape, one call site
+    over); the fixed code correctly withholds it (not rendered at all)
+    rather than render it unsafely.
+    """
+    addr1 = "0x" + "ab" * 20
+    addr2 = "0x" + "cd" * 20
+    note = f"chk {addr1} and {addr2} now"
+    rows = [dict(ROWS[0], objective="short objective", dispatch_note=note)]
+
+    lines, text = await _field(swarm_field_rows=rows, size=(250, 14))
+    assert any(addr1 in ln for ln in lines) and any(addr2 in ln for ln in lines)
+    assert text.count("⧉") == 2, f"expected 2 icons at width 250, got {text.count('⧉')}"
+    _assert_no_bad_partial_hex(lines, {addr1, addr2})
+
+    lines, text = await _field(swarm_field_rows=rows, size=(166, 14))
+    assert any(addr1 in ln for ln in lines), "the first address should still fit"
+    assert not any(addr2 in ln for ln in lines), (
+        "the second address should not render whole with no icon"
+    )
+    _assert_no_bad_partial_hex(lines, {addr1, addr2})
+
+
+async def test_a_multi_address_line_that_genuinely_cannot_fit_sheds_visibly_and_lights_the_marker():
+    """Four addresses, deliberately narrow: enough content that the
+    objective is both wrapped across :data:`MAX_OBJECTIVE_LINES` lines
+    *and* forced to shed one address's own text on the final line. Every
+    address that does appear is either whole with its icon, or a partial
+    hex run immediately followed by ``…`` -- never the reverse -- and the
+    marker lights because something genuinely was lost.
+    """
+    addrs = ["0x" + f"{n}" * 40 for n in ("1", "2", "3", "4")]
+    objective = (
+        f"filler filler filler filler {addrs[0]} filler filler filler {addrs[1]} "
+        f"filler filler filler {addrs[2]} filler filler filler {addrs[3]} filler "
+        "filler filler filler filler filler filler filler filler filler"
+    )
+    rows = [dict(ROWS[1], objective=objective, dispatch_note=None)]
+    lines, text = await _field(swarm_field_rows=rows, size=(53, 20))
+    _assert_no_bad_partial_hex(lines, set(addrs))
+    assert "‹" in text, "four addresses could not all fit -- the marker must light"
+    # At least one address must have been shed entirely or partially --
+    # otherwise this input is not exercising the claim at all.
+    assert not all(addr in text for addr in addrs), (
+        "this fixture no longer forces a real shed; widen the objective or "
+        "narrow the panel so it does"
+    )
