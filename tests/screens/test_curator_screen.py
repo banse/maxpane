@@ -571,6 +571,50 @@ def _region_text(app, widget, clip) -> str:
     )
 
 
+async def _settle_layout(pilot, widget, attempts: int = 20) -> None:
+    """Wait until *widget*'s on-screen region stops moving.
+
+    ``pilot.click`` reads a widget's region exactly once, synchronously,
+    before it dispatches any mouse event -- so if a still-settling scroll
+    or focus change (for example the auto-scroll ``Input.focus()``
+    triggers when a validation error names a field) hasn't finished, the
+    region it reads is stale, and the click can land beside the target
+    instead of on it: no exception, `Button.Pressed` simply never fires.
+    Two consecutive reads agreeing is the observable that matters, not a
+    fixed number of pauses.
+    """
+    previous = None
+    for _ in range(attempts):
+        await pilot.pause()
+        current = widget.region
+        if current == previous:
+            return
+        previous = current
+
+
+async def _settle(pilot, condition, attempts: int = 20) -> None:
+    """Pump the message queue until *condition* holds, then stop.
+
+    A single ``pilot.pause()`` assumes one round drains the whole bubble
+    (``Button.Pressed`` -> the posted message -> the screen's handler) and
+    lets the render catch up. Under concurrent directory-level load that
+    assumption occasionally fails: the message is still bubbling through
+    an ancestor's own queue when ``pause()`` decides everything is idle,
+    so the very next assertion reads a transient state instead of the
+    settled one (F5, ``docs/surf_swarm_followups.md``; reproduced
+    deterministically for ``test_screen_adds_removes_and_deduplicates_
+    custom_collection`` by deferring the posted message through a chain of
+    ``call_later`` hops, which trips the exact same assertion the load
+    report named). Polling the widget's own observable outcome -- bounded,
+    not open-ended, so a genuine regression still fails rather than
+    hanging -- is the fix, not a longer single wait.
+    """
+    for _ in range(attempts):
+        await pilot.pause()
+        if condition():
+            return
+
+
 def _row_cells(text: str, anchor: str) -> list[str]:
     """The cells of the one composited table row in *text* holding *anchor*.
 
@@ -3445,11 +3489,14 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         await pilot.press("f")
         await pilot.pause()
         editor = screen.query_one(CuratorListFilterEditor)
+        add_button = editor.query_one("#filter-nft-add", Button)
         editor.query_one("#filter-nft-chain", Select).value = "base"
         editor.query_one("#filter-nft-address", Input).value = address
-        await pilot.pause()
+        await _settle_layout(pilot, add_button)
         await pilot.click("#filter-nft-add")
-        await pilot.pause()
+        await _settle(
+            pilot, lambda: len(editor.values()["nft_collections"]) == 1
+        )
         # The fallback label stays the short windowed form (reverted during
         # the fix round: a full bare address here meant the editor's own
         # tail-ellipsis CSS could clip it to a head-only string, the anti-
@@ -3476,32 +3523,37 @@ async def test_screen_adds_removes_and_deduplicates_custom_collection():
         editor.query_one("#filter-nft-address", Input).value = (
             "0x" + address[2:].upper()
         )
-        await pilot.pause()
+        await _settle_layout(pilot, add_button)
         await pilot.click("#filter-nft-add")
-        await pilot.pause()
+        await _settle(pilot, lambda: "already selected" in _screen_text(app))
         assert "already selected" in _screen_text(app)
         assert len(editor.values()["nft_collections"]) == 1
         assert screen._data_manager.collection_name_calls == []
 
+        remove_button = editor.query_one("#filter-nft-remove-0", Button)
+        await _settle_layout(pilot, remove_button)
         await pilot.click("#filter-nft-remove-0")
-        await pilot.pause()
+        await _settle(pilot, lambda: editor.values()["nft_collections"] == ())
         assert editor.values()["nft_collections"] == ()
 
         nft_input = editor.query_one("#filter-nft-address", Input)
         nft_input.value = "0x1234"
-        await pilot.pause()
+        await _settle_layout(pilot, add_button)
         await pilot.click("#filter-nft-add")
-        await pilot.pause()
+        await _settle(pilot, lambda: nft_input.has_class("filter-invalid"))
         assert nft_input.has_class("filter-invalid")
         assert screen._data_manager.collection_name_calls == []
 
         nft_input.value = PREDEFINED_NFT_COLLECTIONS[1].address
-        await pilot.pause()
+        await _settle_layout(pilot, add_button)
         await pilot.click("#filter-nft-add")
-        await pilot.pause()
         error = editor.query_one("#curator-filter-error")
-        error.scroll_visible(animate=False, top=True, immediate=True)
-        await pilot.pause()
+
+        def _shows_already_available() -> bool:
+            error.scroll_visible(animate=False, top=True, immediate=True)
+            return "already available above" in _region_text(app, error, screen)
+
+        await _settle(pilot, _shows_already_available)
         assert "already available above" in _region_text(app, error, screen)
         assert editor.values()["nft_collections"] == ()
         assert screen._data_manager.collection_name_calls == []
@@ -3569,7 +3621,23 @@ async def test_delayed_custom_name_does_not_block_reset_or_clear_new_input():
 
         reset = asyncio.create_task(pilot.click("#filter-reset-all"))
         try:
-            await asyncio.wait_for(asyncio.shield(reset), timeout=0.25)
+            # The proof that reset does not block on the delayed name
+            # lookup is structural, not timed: `name_releases[key]` is not
+            # set until the `finally` below runs, well after this awaits,
+            # so *any* timeout that lets `reset` finish here proves reset
+            # never needed it. The bound below exists only to fail loudly
+            # if a regression makes reset genuinely wait on the worker,
+            # rather than hang forever -- it is not gating correctness, so
+            # it is sized as a generous hang-guard instead of a tight
+            # wall-clock guess. 0.25s was that tight guess, and it is
+            # exactly what tripped under concurrent directory-level load
+            # with nothing actually blocked (docs/address_copy_followups.md,
+            # "Flaky test (pre-existing, load-sensitive)"); reproduced
+            # deterministically here by slowing every `pilot.pause()` call
+            # (which `pilot.click()` uses five times internally) by 50ms,
+            # which alone exceeds the old 0.25s bound without touching
+            # anything the reset path actually depends on.
+            await asyncio.wait_for(asyncio.shield(reset), timeout=10)
             nft_input.value = newer_address
         finally:
             manager.name_releases[key].set()

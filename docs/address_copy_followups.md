@@ -125,16 +125,26 @@ reach at a pinned width, except where an item says so.
 - **IMD headroom is 1 cell.** Over the synthetic worst case (`1200.0B`, 7 cells) the IMD column (`_IMD_COLS = 8`)
   has one spare cell since the small-stake digits change gave two of its cells to share.
 
-## Flaky test (pre-existing, load-sensitive)
+## Flaky test (pre-existing, load-sensitive) -- FIXED 2026-09-17
 
-- `tests/screens/test_curator_screen.py::test_delayed_custom_name_does_not_block_reset_or_clear_new_input` waits
+- `tests/screens/test_curator_screen.py::test_delayed_custom_name_does_not_block_reset_or_clear_new_input` waited
   on wall-clock timeouts (`asyncio.wait_for(..., timeout=0.25)` for the reset, `timeout=1` for the name lookup).
   - Failures: once in the final fix wave's batch run (at `e70b239`, before the `a` binding existed), and once with
     `TimeoutError` on the 0.25 s reset wait during the full per-directory suite at `33d771a` (screens chunk, 17 min).
   - It passed alone 3/3 on the same head.
   - The test sets `nft_input.value` directly and presses only `f`, so the curator `a` binding cannot reach it.
-  - Fix idea: replace the wall-clock waits with event-driven awaits (an `asyncio.Event` set by the fake manager) or
-    generous timeouts, keeping the assertion that reset does not block on the delayed name.
+  - **Fix applied**: the 0.25 s bound on `asyncio.wait_for(asyncio.shield(reset), ...)` was raised to 10 s. No
+    event to await instead of task completion exists here -- `name_releases[key]` is only ever set in the
+    `finally` below the wait, well after it, so *any* timeout that lets `reset` finish proves reset never needed
+    the delayed worker; the 0.25 s figure was a tight wall-clock guess about how fast an ordinary click settles,
+    not a bound tied to anything the reset path depends on, which is exactly why concurrent directory-level load
+    (an ordinarily-fast `pilot.click()` taking a bit longer under scheduling pressure) could trip it with nothing
+    actually blocked. Proved deterministically without recreating real load: wrapping every `pilot.pause()` call
+    with an extra 50-100ms sleep (`pilot.click()` alone uses `pause()` five times internally) reproduces the exact
+    `TimeoutError` on the old 0.25 s bound 10/10 runs, and the same wrapped run passes 10/10 on the raised bound;
+    a further mutation (3 s per `pause()`, ~15 s of added latency) still fails even the raised bound, confirming
+    it is a generous hang-guard rather than a disabled check. No production code changed -- the widget already
+    resets synchronously with no worker/timer in that path, so there was no better "settled" signal to await.
 
 ## Design notes kept as is
 
