@@ -72,7 +72,7 @@ from maxpane_dashboard.data.surf_models import (
 # (amendment A18): a field rename is then a collection error here instead of a
 # panel full of ``None``.
 from tests.data.test_surf_pool4_models import CONSTRUCTOR_KWARGS
-from tests.data.test_surf_manager import FakeClock, FakeSurfClient
+from tests.data.test_surf_manager import DeadSwarmClient, FakeClock, FakeSurfClient
 
 SEPOLIA, MAINNET = POOL4_NETWORKS
 NOT_DISCOVERED, ADOPTED, REJECTED = POOL4_DISCOVERY_STATES
@@ -438,7 +438,9 @@ class FakePool4Client:
         self.closed = True
 
 
-def _manager(tmp_path, *, pool4_client=None, clock=None, client=None) -> SurfManager:
+def _manager(
+    tmp_path, *, pool4_client=None, clock=None, client=None, swarm_client=None,
+) -> SurfManager:
     clock = clock or FakeClock(POOL4_NOW)
     manager = SurfManager(
         poll_interval=30,
@@ -446,6 +448,13 @@ def _manager(tmp_path, *, pool4_client=None, clock=None, client=None) -> SurfMan
         cache_path=str(tmp_path / "surf_cache.json"),
         client=client if client is not None else FakeSurfClient(),
         pool4_client=pool4_client if pool4_client is not None else FakePool4Client(),
+        # F-D: without this, ``swarm_client`` falls back to
+        # ``SurfManager.__init__``'s real-network default and every test
+        # built through this helper spawns the two detached swarm sweeps
+        # against a live host, held off the network only by
+        # ``SWARM_INTER_CALL_DELAY``'s 0.12 s politeness pause rather than by
+        # structure -- see ``DeadSwarmClient``'s own docstring.
+        swarm_client=swarm_client if swarm_client is not None else DeadSwarmClient(),
         cache=SurfCache(path=str(tmp_path / "surf_cache.json"), clock=clock),
     )
     manager._clock_double = clock
@@ -3752,6 +3761,11 @@ async def test_these_tests_never_reach_the_network(tmp_path) -> None:
     with pytest.raises(AssertionError):
         await manager.client.http.post("https://example.invalid")
     assert not hasattr(manager.pool4_client, "_client")
+    # F-D: ``_manager`` now defaults ``swarm_client`` to ``DeadSwarmClient``
+    # too -- the real ``SwarmClient`` carries an ``httpx.AsyncClient`` on
+    # ``self._client``, so the double having none of that is the same
+    # "no transport at all" proof the line above makes for pool4.
+    assert not hasattr(manager.swarm_client, "_client")
 
 
 def test_the_source_group_and_slot_are_wired_to_each_other() -> None:

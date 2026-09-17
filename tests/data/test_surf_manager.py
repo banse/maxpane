@@ -919,8 +919,59 @@ class DeadPool4Client:
         self.closed = True
 
 
+class DeadSwarmClient:
+    """A ``SwarmClient``-shaped double that answers ``None`` to everything.
+
+    F-D: the branch that gave :class:`SurfManager` this *third* client
+    (``swarm_client``, on the exact same injection contract as ``client``/
+    ``pool4_client`` -- see the constructor's own comment) never gave this
+    file's ``_manager`` helper a matching double, so every test built through
+    it left ``swarm_client`` at ``SurfManager.__init__``'s real-network
+    default (``SwarmClient()``). Nothing here failed loudly: the two
+    detached swarm sweeps are spawned every cycle and a swept 0.12 s
+    ``SWARM_INTER_CALL_DELAY`` (this client's own politeness pause) is all
+    that stood between a slower run and two live GETs to
+    ``identitymdcontrol-plane-production.up.railway.app`` — the exact CLAUDE.md
+    hard constraint ("no test may touch the network... inject a transport
+    that raises on use") asserted by *timing*, not by structure. This is
+    ``DeadPool4Client``'s own shape, restated for the swarm host: these
+    files are not about the swarm body, so it has nothing to serve, and
+    answering ``None`` from every method is the honest "never asked" shape
+    -- the swarm slots simply stay cold, exactly as ``pool4`` stays ``p4``
+    on a cycle built with no pool4 fixture either.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.closed = False
+
+    async def fetch_health(self):
+        self.calls.append("fetch_health")
+        return None
+
+    async def fetch_jobs(self):
+        self.calls.append("fetch_jobs")
+        return None
+
+    async def fetch_job(self, job_id):
+        self.calls.append("fetch_job")
+        return None
+
+    async def fetch_launches(self):
+        self.calls.append("fetch_launches")
+        return None
+
+    async def fetch_sites(self):
+        self.calls.append("fetch_sites")
+        return None
+
+    async def close(self):
+        self.closed = True
+
+
 def _manager(
-    tmp_path, *, client=None, clock=None, pool4_client=None, **kwargs
+    tmp_path, *, client=None, clock=None, pool4_client=None, swarm_client=None,
+    **kwargs,
 ) -> SurfManager:
     clock = clock or FakeClock()
     manager = SurfManager(
@@ -930,6 +981,9 @@ def _manager(
         client=client if client is not None else FakeSurfClient(),
         pool4_client=(
             pool4_client if pool4_client is not None else DeadPool4Client()
+        ),
+        swarm_client=(
+            swarm_client if swarm_client is not None else DeadSwarmClient()
         ),
         cache=SurfCache(path=str(tmp_path / "surf_cache.json"), clock=clock),
         **kwargs,
@@ -3120,6 +3174,13 @@ async def test_the_manager_never_reaches_the_network_in_these_tests(manager):
     await manager.fetch_and_compute()
     with pytest.raises(AssertionError):
         await manager.client.http.post("https://ethereum-rpc.publicnode.com")
+    # F-D: the real ``SwarmClient`` carries an ``httpx.AsyncClient`` on
+    # ``self._client``; ``DeadSwarmClient`` (this fixture's default via
+    # ``_manager``) has none, which is the same structural "no transport at
+    # all" proof ``DeadPool4Client`` already gives ``pool4_client`` above.
+    # Before the fix this assertion would have found a real ``SwarmClient``
+    # here, because ``_manager`` never passed ``swarm_client=`` at all.
+    assert not hasattr(manager.swarm_client, "_client")
 
 
 # ---------------------------------------------------------------------------
@@ -4024,9 +4085,15 @@ async def test_the_none_coin_list_round_trips_through_the_cache_file(tmp_path) -
         clock=FakeClock(),
         cache_path=str(tmp_path / "surf_cache.json"),
         client=FakeSurfClient(),
+        # F-D: this manager is built by hand rather than through the
+        # ``_manager`` helper (which now defaults this itself), so it needs
+        # the same double explicitly or ``swarm_client`` falls back to a
+        # real, live-socket ``SwarmClient()``.
+        swarm_client=DeadSwarmClient(),
         cache=reloaded,
     )
     assert (await m2.fetch_and_compute())["launchpad_coins"] is None
+    assert not hasattr(m2.swarm_client, "_client"), "structurally, no real SwarmClient here"
 
 
 async def test_the_flat_payload_publishes_the_population_counts(tmp_path) -> None:
