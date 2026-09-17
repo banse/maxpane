@@ -640,12 +640,16 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
     # `swarm_network`, `swarm_as_of_hhmm` and `swarm_scores_as_of_hhmm` each
     # reach more than one panel -- the same "more than one renderer" shape
     # `pool4_current_tick`/`pool4_network` already have across the `p`/`4`
-    # bodies -- and `swarm_queue_depths` reaches none, which is why it is
-    # parked in `_KEYS_WITHOUT_A_RENDERER` rather than here. `swarm_stale`
-    # reaches exactly one panel (THROUGHPUT) as of fix round 3, F-A: THE
-    # FIELD used to accept it too, wrongly (it reads only the live tier, and
-    # `swarm_stale` is the scores tier's own drift measure), and no longer
-    # does -- see `widgets/surf/swarm_field.py`'s module docstring.
+    # bodies. `swarm_stale` reaches exactly one panel (THROUGHPUT) as of fix
+    # round 3, F-A: THE FIELD used to accept it too, wrongly (it reads only
+    # the live tier, and `swarm_stale` is the scores tier's own drift
+    # measure), and no longer does -- see `widgets/surf/swarm_field.py`'s
+    # module docstring.
+    #
+    # `swarm_queue_depths` reached no widget until F6 (2026-09-17,
+    # `docs/surf_swarm_followups.md`) gave QUEUE a compact pending-pipeline
+    # block off it -- see `_KEYS_WITHOUT_A_RENDERER`'s own note on the entry
+    # this moved out of.
     "SurfSwarmHero": {
         "swarm_agents_online": "swarm_agents_online",
         "swarm_agents_enrolled": "swarm_agents_enrolled",
@@ -675,6 +679,9 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "swarm_queue_rows": "swarm_queue_rows",
         "swarm_blocked_rows": "swarm_blocked_rows",
         "swarm_as_of_hhmm": "swarm_as_of_hhmm",
+        # F6 (2026-09-17, docs/surf_swarm_followups.md): the pending-pipeline
+        # block, gated on this same `swarm_as_of_hhmm` marker.
+        "swarm_queue_depths": "swarm_queue_depths",
     },
     "SurfSwarmThroughput": {
         "swarm_throughput": "swarm_throughput",
@@ -763,18 +770,18 @@ META_KEYS = frozenset({
 #: ``test_the_unrendered_keys_are_named_by_no_widget_signature`` is what stops
 #: an entry rotting here after somebody re-wires it: re-add ``lp_imd=`` to a
 #: widget's ``update_data`` and this list is what goes red.
-#: ``swarm_queue_depths`` joined this set on 2026-09-16 -- a different shape
-#: from the five above it. Those were orphaned by the hero rebuild (they used
-#: to render and stopped); this one never had a renderer at all. It is a
-#: ``dict | None`` of ``pending*`` counters by name that none of the swarm
-#: body's five panels need (``widgets/surf/swarm_hero.py``'s own docstring
-#: names it, verbatim, as an example of a key the hero does not read), and it
-#: is still a real contract key (``data/surf_models.SWARM_KEYS``) rather than
-#: one awaiting removal, so it belongs here rather than in ``META_KEYS``.
+#: ``swarm_queue_depths`` sat here from 2026-09-16 (F6 filed it,
+#: ``docs/surf_swarm_followups.md``) until 2026-09-17, when the owner decided
+#: F6 by building QUEUE a consumer for it -- see
+#: :data:`SURF_WIDGET_SIGNATURES`'s ``SurfSwarmQueue`` entry, and
+#: ``widgets/surf/swarm_queue.py``'s own module docstring for the
+#: read-vs-zero gate the block renders behind. ``widgets/surf/swarm_hero.py``'s
+#: docstring still names it, verbatim, as a key that card deliberately does
+#: not read -- that sentence was never about the whole contract, only about
+#: the hero, so it did not need to change with this entry's departure.
 _KEYS_WITHOUT_A_RENDERER = frozenset({
     "pool_venue", "pool_fee_bps",
     "lp_state", "lp_imd", "lp_weth",
-    "swarm_queue_depths",
 })
 
 #: **Empty, for the second time.** Task 12 of the v3->v4/launchpad plan

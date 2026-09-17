@@ -9,7 +9,11 @@ out of ``swarm_throughput.py`` so JUST SHIPPED does not need a third copy).
 from maxpane_dashboard.widgets.surf import swarm_throughput as _throughput_mod
 from maxpane_dashboard.widgets.surf.swarm_queue import EMPTY_LINE as QUEUE_EMPTY_LINE
 from maxpane_dashboard.widgets.surf.swarm_queue import FULL_WIDTH as QUEUE_FULL_WIDTH
-from maxpane_dashboard.widgets.surf.swarm_queue import NO_BLOCKED_LINE, SurfSwarmQueue
+from maxpane_dashboard.widgets.surf.swarm_queue import (
+    NO_BLOCKED_LINE,
+    PENDING_LABEL,
+    SurfSwarmQueue,
+)
 from maxpane_dashboard.widgets.surf.swarm_queue import (
     UNAVAILABLE_LINE as QUEUE_UNAVAILABLE_LINE,
 )
@@ -27,6 +31,17 @@ BLOCKED = [{"job_id": "9c6543f5-aaaa", "template": "shape:chain",
             "reason": "node build_dapp: runtime_error", "moved_ts": 1_789_000_000.0}]
 THROUGHPUT = {"accepted_per_day": 1.86, "median_delivery_s": 943,
               "revision_rate": 0.125, "window_days": 7}
+#: F6 (``docs/surf_swarm_followups.md``): a genuine read of a fully-drained
+#: pipeline -- every one of the seven ``pending*`` counters real and zero.
+QUEUE_DEPTHS_ZERO = {
+    "verification": 0, "attestation": 0, "deployment": 0, "delivery": 0,
+    "feedback": 0, "fuzz": 0, "sites": 0,
+}
+#: A genuine read with a mixed backlog -- some counters idle, some not.
+QUEUE_DEPTHS_MIXED = {
+    "verification": 2, "attestation": 0, "deployment": 1, "delivery": 0,
+    "feedback": 3, "fuzz": 0, "sites": 1,
+}
 SCORES = [{"agent_id": "10303", "agent_token": "2", "jobs_scored": 9,
            "mean_score": 97.8, "last_tx_hash": "0x8370" + "7e" * 30, "last_chain_id": 11155111}]
 
@@ -106,6 +121,105 @@ async def test_queue_shows_no_marker_when_it_has_never_been_read():
         SurfSwarmQueue, (60, 14), swarm_queue_rows=[], swarm_blocked_rows=[],
         swarm_as_of_hhmm=None))
     assert "as of" not in text
+
+
+# ---------------------------------------------------------------------------
+# F6 (docs/surf_swarm_followups.md): swarm_queue_depths -- the pipeline's own
+# backlog counters, gated on the same live-tier marker as the rest of the
+# panel rather than on the depths dict's own truthiness.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_real_zero_backlog_renders_its_total_not_unavailable():
+    """A genuine read of a fully-drained pipeline (every counter real and
+    zero) must print the real total, never fall back to the panel's
+    unavailable line -- the curator rail bug, one instrument over: a dict of
+    zeros is truthy and real, and gating on a *derived* total's truthiness
+    (rather than on whether the dict was read at all) would render this
+    identically to a never-read backlog.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (60, 14), swarm_queue_rows=QUEUE_ROWS, swarm_blocked_rows=BLOCKED,
+        swarm_as_of_hhmm="14:00", swarm_queue_depths=QUEUE_DEPTHS_ZERO))
+    assert f"{PENDING_LABEL} 0" in text
+    assert QUEUE_UNAVAILABLE_LINE not in text
+
+
+async def test_a_populated_backlog_names_only_its_nonzero_counters():
+    """A mixed real read prints the total and every counter that is
+    actually nonzero, by name -- and leaves the idle ones unnamed, the
+    compact form the module docstring argues for over seven fixed rows.
+
+    Rendered at a width comfortably past what the full line needs (measured
+    at 64 cells): this test is about which names appear, not about the
+    clip boundary -- :func:`test_the_pending_line_clips_like_every_other_line`
+    below covers the narrow case on its own terms.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (90, 14), swarm_queue_rows=QUEUE_ROWS, swarm_blocked_rows=BLOCKED,
+        swarm_as_of_hhmm="14:00", swarm_queue_depths=QUEUE_DEPTHS_MIXED))
+    assert f"{PENDING_LABEL} 7" in text
+    assert "verification 2" in text
+    assert "deployment 1" in text
+    assert "feedback 3" in text
+    assert "sites 1" in text
+    # The idle counters are real too, but this compact form does not name
+    # them individually -- only the running total accounts for them.
+    assert "attestation 0" not in text
+    assert "fuzz 0" not in text
+    assert "delivery 0" not in text
+
+
+async def test_the_pending_line_clips_like_every_other_line():
+    """At a width too narrow for the full pending line, it clips honestly
+    with ``…`` rather than overflowing -- the same fitted-not-sized
+    behaviour every other line in this panel already gets from
+    ``_rowfit.clip``.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (60, 14), swarm_queue_rows=QUEUE_ROWS, swarm_blocked_rows=BLOCKED,
+        swarm_as_of_hhmm="14:00", swarm_queue_depths=QUEUE_DEPTHS_MIXED))
+    assert f"{PENDING_LABEL} 7" in text
+    assert "sites 1" not in text
+    assert "…" in text
+
+
+async def test_an_unread_backlog_never_renders_pending_even_with_no_rows_either():
+    """The ordinary never-read case: no marker, no rows at all -- the whole
+    panel is the existing unavailable state, and the pending block (fed a
+    real, truthy dict here to prove it is not what is keeping it hidden) is
+    invisible inside it.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (60, 14), swarm_queue_rows=[], swarm_blocked_rows=[],
+        swarm_as_of_hhmm=None, swarm_queue_depths=QUEUE_DEPTHS_MIXED))
+    assert QUEUE_UNAVAILABLE_LINE in text
+    assert PENDING_LABEL not in text
+    assert "verification" not in text
+
+
+async def test_an_unread_backlog_stays_hidden_even_when_rows_prove_a_real_read():
+    """The trap this block exists to close, proven at the instrument that
+    actually gates it rather than at the outer whole-panel gate above.
+
+    ``swarm_queue_depths`` can be a genuinely truthy dict -- even one with
+    real, nonzero counters -- and still must not reach the screen when
+    ``swarm_as_of_hhmm`` says this tier was never read this cycle. Feeding
+    real ``swarm_queue_rows`` alongside no marker (QUEUE's own escape hatch,
+    module docstring's *"The unread/empty split"* section) keeps the panel
+    out of its whole-unavailable state -- state counts render fine -- so
+    this isolates the pending block's *own* gate: a version keyed off the
+    depths dict's own truthiness (rather than off the marker) would pass
+    populated data through right here, with the rest of the panel looking
+    perfectly healthy beside it.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (60, 14), swarm_queue_rows=QUEUE_ROWS, swarm_blocked_rows=[],
+        swarm_as_of_hhmm=None, swarm_queue_depths=QUEUE_DEPTHS_MIXED))
+    assert "completed" in text, "the escape hatch should keep the panel out of its unavailable state"
+    assert QUEUE_UNAVAILABLE_LINE not in text
+    assert PENDING_LABEL not in text
+    assert "verification" not in text
 
 
 async def test_throughput_names_its_window_and_the_agents():

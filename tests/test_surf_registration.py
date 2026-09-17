@@ -1385,13 +1385,13 @@ _NON_NUMERIC_KEYS = frozenset(
         # thirteenth, `swarm_agents_enrolled`, IS numeric -- see its own
         # comment below the tri-state bool for why it still belongs here.
         #
-        # `swarm_queue_depths` has no widget consumer at all --
-        # `widgets/surf/swarm_hero.py`'s own docstring names it as a key
-        # "this hero simply does not need", and no other swarm widget reads
-        # it either -- but that fact is `_NUMERIC_KEYS_EXCLUDED`'s kind of
-        # reasoning, not this bucket's: it lands here purely because `dict`
-        # is not `int`/`float`, same as its two dict-typed siblings which
-        # *are* consumed.
+        # `swarm_queue_depths` went unconsumed by any widget from launch
+        # (2026-09-16) until F6 (2026-09-17, `docs/surf_swarm_followups.md`)
+        # gave QUEUE a compact pending-pipeline block off it. That consumer
+        # question is `_NUMERIC_KEYS_EXCLUDED`'s kind of reasoning, not this
+        # bucket's, and never bore on why the key is listed here: it lands
+        # in this bucket purely because `dict` is not `int`/`float`, same as
+        # its two dict-typed siblings.
         "swarm_queue_depths", "swarm_services_up", "swarm_throughput",
         # Five list[dict] row payloads, same shape as `pool4_flow` /
         # `pool4_hatches` / `launchpad_coins` above.

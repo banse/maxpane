@@ -50,6 +50,38 @@ empty *blocked* section prints :data:`NO_BLOCKED_LINE` -- CLAUDE.md's rule
 that a real "we looked and found nothing" must never render identically to
 "we never looked".
 
+``swarm_queue_depths`` (F6, ``docs/surf_swarm_followups.md``): the pipeline's own
+backlog counters
+-------------------------------------------------------------------------------
+``data/surf_swarm.health_facts`` folds every ``pending*`` key off the live
+tier's own ``/health`` read into ``{name: int}`` (``verification``,
+``attestation``, ``deployment``, ``delivery``, ``feedback``, ``fuzz``,
+``sites``) and publishes ``depths or None`` -- so ``swarm_queue_depths is
+None`` means *either* "health was never read" *or* "the payload had no
+``pending*`` key at all", while a dict of genuine zeros is truthy and real.
+Gating on that truthiness alone (or on a derived total's truthiness -- the
+shape ``swarm_jobs_in_flight``/``_blocked`` and ``throughput`` were both
+already bitten by, F-C and F10) would render a fully-drained pipeline
+identically to a dead read, so this block reuses the **same** instrument
+:func:`_is_unavailable` already gates the whole panel with --
+:func:`_has_marker` on ``swarm_as_of_hhmm`` -- rather than inventing a second
+mechanism keyed off the dict itself. ``health`` and ``jobs`` always land or
+fail together within one ``SLOT_SWARM`` write (``SurfManager._pool_swarm``),
+so a real marker always means ``queue_depths`` was read; the pending block is
+skipped (not a message, just absent) on the one payload shape that cannot
+occur in production -- a marker with a non-dict ``queue_depths`` -- rather
+than fabricate a line for it.
+
+Rendered as one compact line, :data:`PENDING_LABEL` plus the summed total
+(a genuine all-zero backlog prints ``PENDING 0``, never blank and never the
+unavailable line) followed by only the *non-zero* named counters, in the
+API's own canonical order (:data:`_DEPTH_ORDER`) -- the terminal-layout
+skill's "shorten the value, do not raise the pin" rule applied to a block
+that could otherwise cost a header plus seven rows: seven full ``name:
+count`` lines were measured against this body's own row pin
+(``SURF_SWARM_FULL_LAYOUT_ROWS``) and were not the honest trade once the
+common case (most counters idle) is this cheap to say in one line instead.
+
 Third-party text, and the no-bracket contract
 -----------------------------------------------
 ``reason`` (``job.blockedReason``) is free text a host process wrote, exactly
@@ -95,6 +127,7 @@ __all__ = [
     "EMPTY_LINE",
     "FULL_WIDTH",
     "NO_BLOCKED_LINE",
+    "PENDING_LABEL",
     "SurfSwarmQueue",
     "TITLE",
     "UNAVAILABLE_LINE",
@@ -115,6 +148,23 @@ EMPTY_LINE = "no jobs"
 #: A real read of the blocked list that found nothing blocked. Tested
 #: verbatim (frozen name).
 NO_BLOCKED_LINE = "nothing blocked"
+
+#: F6's own block: the swarm's pipeline backlog (``swarm_queue_depths``).
+#: Tested verbatim.
+PENDING_LABEL = "PENDING"
+
+#: The seven names ``data/surf_swarm.health_facts`` is documented to fold
+#: out of the live ``/health`` read's own ``pending*`` keys, in the order
+#: that doc names them -- rendering order, not a producer contract: the
+#: dict itself carries whatever order the host's JSON happened to decode
+#: in, so without this the line would reorder every poll for no reason. An
+#: eighth name the API adds later is not dropped -- :func:`_depth_items`
+#: appends anything outside this tuple, sorted, exactly the way
+#: ``queue_rows``'s own ``state`` column treats its open vocabulary.
+_DEPTH_ORDER = (
+    "verification", "attestation", "deployment", "delivery", "feedback",
+    "fuzz", "sites",
+)
 
 _GAP = _rowfit.GAP
 _TITLE_ID = "surf-swarm-queue-title"
@@ -226,7 +276,56 @@ def _blocked_line(row: dict, tier: str, reason_width: int) -> Text:
     return line
 
 
-def _content_lines(queue_rows: object, blocked_rows: object, budget: int) -> tuple[list[Text], str]:
+def _depth_items(depths: dict) -> list[tuple[str, int]]:
+    """``depths`` as an ordered ``(name, count)`` list; a non-``int`` value
+    (including ``bool``, which is an ``int`` subclass) is dropped rather than
+    guessed at -- the same defensiveness ``_state_line``'s own count cell
+    applies to a row it cannot trust.
+    """
+    names = list(_DEPTH_ORDER) + sorted(n for n in depths if n not in _DEPTH_ORDER)
+    out = []
+    for name in names:
+        if name not in depths:
+            continue
+        count = depths.get(name)
+        if isinstance(count, int) and not isinstance(count, bool):
+            out.append((name, count))
+    return out
+
+
+def _pending_line(depths: dict, budget: int) -> Text:
+    """F6's own compact block: the total backlog, then only what is nonzero.
+
+    A genuinely drained pipeline (every counter real, every one ``0``) still
+    prints its total -- ``"PENDING 0"``, never blank -- so a zero backlog and
+    an unread one cannot look alike; see the module docstring's own F6
+    section for why the *caller* gates this on ``swarm_as_of_hhmm`` before
+    ever reaching here, rather than this function inventing a second
+    unread/read distinction of its own.
+
+    Naming only the nonzero counters (:data:`_DEPTH_ORDER`'s own order) is
+    the terminal-layout skill's ``do not raise the pin, shorten the value``
+    rule applied here: seven ``name: count`` rows were measured against this
+    body's own row pin and cost more than the common case (most counters
+    idle) is worth saying every poll. The whole line still clips honestly at
+    ``budget`` if a genuinely busy pipeline runs long, the same as every
+    other line in this panel.
+    """
+    items = _depth_items(depths)
+    total = sum(count for _, count in items)
+    parts = [f"{strip_tags(name) or DASH} {count}" for name, count in items if count > 0]
+    text = f"{PENDING_LABEL} {total}"
+    if parts:
+        text += " · " + " · ".join(parts)
+    line = Text()
+    line.append(_rowfit.clip(text, max(budget, 0)), style="dim")
+    return line
+
+
+def _content_lines(
+    queue_rows: object, blocked_rows: object, queue_depths: object,
+    as_of: object, budget: int,
+) -> tuple[list[Text], str]:
     tier = _tier_for(budget)
 
     state_lines = [
@@ -244,7 +343,21 @@ def _content_lines(queue_rows: object, blocked_rows: object, budget: int) -> tup
     if not blocked_lines:
         blocked_lines = [Text(NO_BLOCKED_LINE, style="dim")]
 
-    return state_lines + [Text("")] + blocked_lines, tier
+    lines = state_lines + [Text("")] + blocked_lines
+
+    # F6: the pending-pipeline block. Gated on the same marker
+    # ``_is_unavailable`` already used to decide the whole panel is showing
+    # real content at all -- ``health``/``jobs`` always land or fail
+    # together in one ``SLOT_SWARM`` write, so a real marker always means
+    # ``queue_depths`` was actually read. A non-``dict`` value here despite
+    # a real marker is the one shape production cannot produce (an empty
+    # ``pending*`` key set folds to ``None`` before this ever runs -- see
+    # ``data/surf_swarm.health_facts``), so it is skipped rather than given
+    # an invented line.
+    if _has_marker(as_of) and isinstance(queue_depths, dict):
+        lines += [Text(""), _pending_line(queue_depths, budget)]
+
+    return lines, tier
 
 
 class SurfSwarmQueue(Vertical):
@@ -288,18 +401,22 @@ class SurfSwarmQueue(Vertical):
         swarm_queue_rows=None,
         swarm_blocked_rows=None,
         swarm_as_of_hhmm=None,
+        swarm_queue_depths=None,
         **_kwargs,
     ) -> None:
         """Refresh the panel from the manager's flat dict.
 
         Every kwarg is spelled after its full ``swarm_`` contract key
         (``data/surf_models.SWARM_KEYS``). ``**_kwargs`` is mandatory: the
-        screen splats the whole payload.
+        screen splats the whole payload. ``swarm_queue_depths`` is F6
+        (``docs/surf_swarm_followups.md``) -- see the module docstring's own
+        section on it for the read-vs-zero gate.
         """
         self._payload = {
             "queue": swarm_queue_rows,
             "blocked": swarm_blocked_rows,
             "as_of": swarm_as_of_hhmm,
+            "depths": swarm_queue_depths,
             "seen": True,
         }
         self._render_view()
@@ -357,6 +474,7 @@ class SurfSwarmQueue(Vertical):
             return
 
         budget = self._text_budget()
-        content, tier = _content_lines(queue_rows, blocked_rows, budget)
+        queue_depths = payload.get("depths")
+        content, tier = _content_lines(queue_rows, blocked_rows, queue_depths, as_of, budget)
         self._widen = tier != "full"
         paint(*content)

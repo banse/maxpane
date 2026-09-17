@@ -194,6 +194,45 @@ sweeps is checked for it, not only the pin. Reverting JUST SHIPPED's
 reddens on exactly this new assertion -- the mutation this fix round's
 own report names.
 
+**The row pin moved again, 26 -> 28, on F6 (2026-09-17,
+``docs/surf_swarm_followups.md`` -- unrelated to the ``p`` body's own
+"F6" named three sections up in this same file's history; the two share a
+label, not a finding).** QUEUE grew a compact pending-pipeline block off
+``swarm_queue_depths`` (``widgets/surf/swarm_queue.py``'s own F6 section):
+one summary line plus a blank separator, painted whenever
+``swarm_as_of_hhmm`` carries a marker and ``swarm_queue_depths`` reads as a
+real dict -- true of every payload this file's own sweep drives, since none
+of their builders override that key away from the shared sample fixture's
+own real reading. Re-swept over the unchanged 20-61 range at the unchanged
+column pin (116): the row pin held everywhere except two heights,
+**26 and 27**, where the reference capture's own ``‹ taller`` stayed lit --
+28 is the new smallest height that clears it, confirmed identically at 150
+columns and at the column pin itself. The column pin itself did not move:
+the new block is one line fitted inside QUEUE's own unchanged 46-column
+``max-width``, so it costs rows, never columns, and the whole width sweep
+below (:func:`test_the_swarm_body_is_whole_from_its_pinned_width` and its
+neighbours) re-ran unchanged and stayed green.
+
+**What moved with the number is which container binds at the new
+boundary.** One row under the new pin (27), it is now :data:`SWARM_TOP_ID`
+(THE FIELD/QUEUE) that shows its own vertical scrollbar, not the body --
+QUEUE's two extra lines are enough on their own to push that row's content
+past its ``1fr`` share before the two rows' summed floors ever get to
+outgrow the body's own share the way they did at launch.
+:func:`test_the_swarm_binding_panel_is_the_one_the_block_names`'s row-pin
+half moved with it, from asserting ``body_scroll`` to asserting
+``top_scroll``. The adversarial body-only-scrollbar case
+(:func:`_shipped_heavy_light_rail_payload`) is a **different** payload from
+the reference capture and was re-checked on its own terms rather than
+assumed to move in step: it still reproduces, unchanged, at the same
+literal height (25) this file has always named for it --
+``swarm_queue_depths`` rides the shared sample fixture rather than that
+payload's own light-content builder, so QUEUE costs it the identical two
+lines, and height 25 sits far enough under both the old and the new pin
+that neither re-sweep touched it. Full derivation:
+``screens/surf.py``'s own ``#:`` block for
+:data:`SURF_SWARM_FULL_LAYOUT_ROWS`.
+
 Six things this file exists to pin above the rest
 ----------------------------------------------------
 1. **The column pin fails in both directions**, once THE FIELD's and JUST
@@ -351,7 +390,13 @@ MEASURED_SWARM_COLUMNS = 116
 #: and ``screens/surf.py``'s ``SURF_SWARM_FULL_LAYOUT_COLUMNS`` ``#:``
 #: block for the full defect and fix. 116 is re-measured across all four
 #: payloads, never assumed from 95's own (wrong) arithmetic.
-MEASURED_SWARM_ROWS = 26
+#:
+#: **26 -> 28, F6 (2026-09-17, docs/surf_swarm_followups.md):** QUEUE's new
+#: pending-pipeline block costs the reference capture two more lines; see
+#: the module docstring's own F6 paragraph and
+#: ``screens/surf.py``'s ``SURF_SWARM_FULL_LAYOUT_ROWS`` ``#:`` block for
+#: the re-sweep and the binding container that moved with it.
+MEASURED_SWARM_ROWS = 28
 
 #: THE FIELD's own permanent exception (see ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
 #: own ``#:`` block): its ``‹`` never clears below this width, which is past
@@ -926,12 +971,17 @@ async def test_the_swarm_binding_panel_is_the_one_the_block_names() -> None:
     docstring has the argument), so this is no longer a claim about
     ``‹`` -- it is about :data:`SWARM_PAYLOADS`'s own worst case, exactly
     the shape :func:`test_the_swarm_column_pin_is_not_loose` proves and
-    this test names by pointing at the same field. One row under the row
-    pin, the **body itself** is the container that is scrolling, not
-    either row -- both rows' own content fits inside their own floors,
-    but the two floors summed ask for more than the body's own ``1fr``
-    share (:data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block has the
-    argument).
+    this test names by pointing at the same field.
+
+    **One row under the row pin, F6 (2026-09-17,
+    docs/surf_swarm_followups.md) moved the binder from the body to**
+    :data:`SWARM_TOP_ID`. Before F6, both rows' own content fit inside
+    their own floors, but the two floors summed asked for more than the
+    body's own ``1fr`` share, so the body was the container that scrolled;
+    QUEUE's new pending-pipeline block is enough on its own to push THE
+    FIELD/QUEUE's row past its own share first, before the summed-floors
+    case is ever reached (:data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:``
+    block has the full argument).
     """
     at_col = await _render(
         _many_shipped_payload(50), (SURF_SWARM_FULL_LAYOUT_COLUMNS - 1, _COLUMN_SWEEP_HEIGHT)
@@ -943,9 +993,11 @@ async def test_the_swarm_binding_panel_is_the_one_the_block_names() -> None:
     at_row = await _render(
         None, (SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS - 1)
     )
-    assert at_row["body_scroll"], "the body should be the one scrolling"
-    assert not at_row["top_scroll"], (
-        "THE FIELD/QUEUE row should not need to scroll at this payload"
+    assert at_row["top_scroll"], (
+        "THE FIELD/QUEUE row should be the one scrolling at this payload"
+    )
+    assert not at_row["body_scroll"], (
+        "the body should not need its own scrollbar at this payload"
     )
     assert not at_row["bottom_scroll"], (
         "the JUST SHIPPED/THROUGHPUT row should not need to scroll at this payload"

@@ -1958,6 +1958,18 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: re-measured at the new column pin (116) rather than assumed, over the
 #: same 20-61 sweep, still 26 -- including the body-only-scrollbar
 #: adversarial case at height 25, unchanged.
+#:
+#: **F6 (2026-09-17, ``docs/surf_swarm_followups.md``) re-swept this pin and
+#: it holds at 116.** QUEUE's new pending-pipeline block is one packed line
+#: (plus a blank separator), fitted with the same ``_rowfit.clip`` every
+#: other line in that panel already uses, inside QUEUE's own unchanged
+#: ``max-width: 46`` -- it costs this row rows, not columns, which is why
+#: :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block is where this
+#: change actually lands. Confirmed by re-running the whole width sweep
+#: (:func:`test_the_swarm_body_is_whole_from_its_pinned_width` and its
+#: neighbours in ``tests/screens/test_surf_swarm_layout.py``) rather than
+#: assumed from the panel's own headroom: every one of those tests still
+#: passed unchanged.
 SURF_SWARM_FULL_LAYOUT_COLUMNS = 116
 
 #: The ``s`` SWARM body's own height. Set at 42 on 2026-09-16 when the body
@@ -2061,7 +2073,44 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 116
 #: either (only ``min-width``/``max-width`` moved); re-swept at the new
 #: column pin (116) rather than assumed, still 26, adversarial case at
 #: height 25 unchanged.
-SURF_SWARM_FULL_LAYOUT_ROWS = 26
+#:
+#: **Re-measured a sixth time, 2026-09-17, F6** (``docs/surf_swarm_
+#: followups.md``): QUEUE grew a compact pending-pipeline block
+#: (``widgets/surf/swarm_queue.py``'s own F6 section), two more lines on the
+#: reference capture (a blank separator plus one summary line) whenever
+#: ``swarm_as_of_hhmm`` carries a marker and ``swarm_queue_depths`` is a real
+#: dict -- true of every payload this file's own sweep uses, none of which
+#: overrides that key away from the sample capture's own real reading. Swept
+#: over the same 20-61 range at the unmoved column pin (116): 26 -> **28**,
+#: re-confirmed at 150 columns and at the column pin itself, both agreeing.
+#:
+#: **The binding container changed with it, not only the number.** One
+#: row under this new pin (27), on the reference capture, it is now
+#: :data:`SWARM_TOP_ID` -- not the body -- whose own scrollbar is lit
+#: (``top_scroll`` true, ``body_scroll``/``bottom_scroll`` both false);
+#: :data:`SWARM_BOTTOM_ID` never needed to grow, so once QUEUE's own two
+#: extra lines pushed its row's content past that row's ``1fr`` share on its
+#: own, the row itself is what overflows before the two rows' summed floors
+#: ever get to outgrow the body's share the way they did at launch (this
+#: pin's own earlier rounds, above). Both rows and the body remain
+#: registered in ``_SCROLL_COLUMNS[MODE_SWARM]`` (the fix round 1 gap this
+#: pin's own history already closed), so the screen-wide marker still
+#: agrees regardless of which of the three ends up binding at a given
+#: height and payload -- this round only moved *which one* answers for the
+#: pin, not whether the marker can see it.
+#:
+#: The adversarial body-only-scrollbar case is unmoved by this round for a
+#: reason worth naming rather than assuming: :func:`_shipped_heavy_light_
+#: rail_payload` starves QUEUE (one queued state, no blocked jobs) the same
+#: way it starves THE FIELD, but it does **not** starve ``swarm_queue_depths``
+#: -- that key rides the shared sample fixture, not this payload's own
+#: builder, so QUEUE's new block still costs it the same two lines. Its own
+#: height-25 reproduction (body_scroll true, ``‹ taller`` lit) held
+#: unchanged when re-swept; what moved for *this* payload is where it
+#: clears -- 26 now (was past this pin's old 26 entirely) -- which is why
+#: this pin's own test still names height 25 literally rather than
+#: ``SURF_SWARM_FULL_LAYOUT_ROWS - 1`` for that specific reproduction.
+SURF_SWARM_FULL_LAYOUT_ROWS = 28
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
 #: curator's MODE_DASHBOARD/MODE_ANALYSIS precedent.
@@ -4514,6 +4563,9 @@ class SurfScreen(RefreshGuard, Screen):
                 swarm_queue_rows=data.get("swarm_queue_rows"),
                 swarm_blocked_rows=data.get("swarm_blocked_rows"),
                 swarm_as_of_hhmm=data.get("swarm_as_of_hhmm"),
+                # F6 (docs/surf_swarm_followups.md): the pipeline backlog
+                # counters, off the same live-tier marker above.
+                swarm_queue_depths=data.get("swarm_queue_depths"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfSwarmQueue: %s", exc)
