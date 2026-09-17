@@ -6,6 +6,7 @@ from maxpane_dashboard.widgets.surf.swarm_shipped import (
     EMPTY_LINE,
     FULL_WIDTH,
     SurfSwarmShipped,
+    UNAVAILABLE_LINE,
 )
 from tests.widgets.surf_compositing import composite_lines
 
@@ -94,6 +95,27 @@ async def test_a_marker_absent_with_rows_still_present_shows_no_rows():
     assert "BazaarToken" not in text
     assert "site-7018907b" not in text
     assert "unavailable" in text
+
+
+async def test_an_empty_string_marker_is_treated_as_no_marker():
+    """Task 11 fix round 2: ``swarm_scores_as_of_hhmm=""`` is not a clock --
+    treating it as one would let this panel claim a read happened while the
+    title shows no time it happened at. Modelled directly on
+    ``swarm_field.py``'s own test of the same name (the fix-round-2 bug that
+    module already shipped and fixed once): the two panels share one
+    ``_has_marker`` predicate shape and must fail for the same reason when
+    it is weakened the same way.
+
+    Before this test existed, all twelve other tests in this file stayed
+    green against ``_has_marker`` weakened to ``isinstance(as_of, str)``
+    (dropping the ``bool(as_of)`` half) -- none of them drove an empty
+    string through the marker at all, so the discriminator this panel
+    depends on was, in practice, unguarded here even though
+    ``swarm_field.py``'s identical predicate already had this exact
+    coverage.
+    """
+    text = await _shipped(swarm_shipped_rows=[], swarm_scores_as_of_hhmm="")
+    assert UNAVAILABLE_LINE in text
 
 
 # ---------------------------------------------------------------------------
