@@ -11,7 +11,7 @@ kind, no wallet, no signing, no transactions.
 
 | Game | Chain | What you see |
 |------|-------|-------------|
-| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), ten detectors, IMD market, v4 launchpad, pool4 ratchet, IDMD NFT |
+| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), ten detectors, IMD market, v4 launchpad, pool4 ratchet, IMD swarm, IDMD NFT |
 | **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns, linked-wallet analysis |
 | **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
@@ -140,6 +140,38 @@ and never offers to call one. `esc` backs out, one-way. The view is whole from *
 The NFT floor is shown as `n/a — no keyless source`, not estimated. There is no keyless floor
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
 an honest gap.
+
+Press **`s`** for the IMD swarm's own control plane (2026-09-16) — the fifth body, and the agent
+workforce this repo's own branches are built by, watched live rather than read from a changelog.
+THE FIELD lists every job still in flight, one row per subtask: which agent seat holds it, its
+state, how long it has sat there, how many revisions it has taken, and the dispatcher's own note,
+which is what actually explains a stall. JUST SHIPPED runs beneath it, spanning the body's full
+width: recent deliveries with their commit, launch artifacts with their contract addresses, and
+ENS-named sites — every real address carries the copy icon, a transaction hash is shortened and
+carries none, and an ENS-named site carries **neither**, because a site's name resolves a content
+hash rather than a wallet and there is nothing there for an icon to copy. QUEUE and THROUGHPUT
+share the rail: job counts by state with every blocked job's own reason, and how fast the swarm is
+actually shipping — accepted per day, the median time from creation to delivery, and a revision
+rate, over a named trailing window; a review score carries a transaction hash beside its own chain
+word, shown rather than claimed as verification, because nothing this host serves is signed. The
+hero swaps too, the second Surfboard view (after `4`) to do so, for its own AGENTS / IN FLIGHT /
+ACCEPTED TODAY cards; `esc` backs out, one-way.
+
+It reads one keyless host and nothing else — the swarm's own control plane — and never the total
+it says it has inferred for anyone: the explorer publishes a running inference figure on its own
+page, and no public route on the control plane serves that number, so this view shows none of it
+rather than a guess. The job list behind THE FIELD and QUEUE is the one expensive read here, so it
+is not fetched on every tick: it is re-read only when one of the host's own health counters has
+actually moved, or when a ceiling has elapsed regardless, so a counter this dashboard does not
+track can never freeze the list forever. A failed read serves each panel's own last-good behind an
+`as of HH:MM` marker rather than a blank screen, and no new degraded group was added for it — the
+title row was already full. The view is whole from **93 columns and 42 rows** — the narrowest of
+Surfboard's four swapped bodies, and its row count sits between the pool4 market view's 35 and the
+pool4 protocol view's 45. One caveat worth knowing before trusting the width: THE FIELD, the panel
+most readers look at first, cannot clear its own full column set — keeping the dispatcher's note
+beside every row — below 246 columns, wider than every other pin in the app; that is a measured,
+accepted condition at every width this view can reach, the same shape as surf's announce feed and
+a linked-transaction post, not something a wider pin could buy back.
 
 ### THE LIST — the linked-wallet analysis view (`a`)
 
@@ -380,9 +412,14 @@ hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` 
 HATCHES and sIMD VAULT in the rail, the same hero left where it was. **And it binds `4`** for the
 POOL4 MARKET view — the same protocol read as a market rather than as a machine: RECENT FLOW
 beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses, no shortening —
-beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` is the one Surfboard view that swaps the **hero** too, for IMD PRICE, DOWNSIDE
-BID and STAKING; `esc` backs out of any of the three. The status hint names the two that are
-not experimental: `l launchpad · 4 pool4`. In Surfboard's announce feed, `enter` or `space` on a
+beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` swaps the **hero** too, for
+IMD PRICE, DOWNSIDE BID and STAKING. **And it binds `s`** (2026-09-16) for the IMD swarm's own
+control plane — the agent workforce this repo's own branches are built by, watched live: THE
+FIELD (who is working on what, and why it is stuck) beside a rail of QUEUE and THROUGHPUT, with
+JUST SHIPPED spanning the body's full width beneath them. `s` is the second Surfboard view, after
+`4`, to swap the **hero**, for its own AGENTS / IN FLIGHT / ACCEPTED TODAY cards; `esc` backs out
+of any of the four. The status hint names the ones that are not experimental:
+`l launchpad · 4 pool4 · s swarm`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you
@@ -475,6 +512,19 @@ consequence is that this number has to be re-swept when a panel's line count cha
 assumed to have held. It was re-swept when POOL4 FLOW left on 2026-09-14, and it **did not move**:
 the rail (HATCHES over sIMD VAULT) was already the tallest column, so a 44-row terminal still
 shows `‹ taller`.
+
+Surfboard's SWARM view (`s`) is a layout of its own too, and the narrowest of Surfboard's four:
+**93 columns and 42 rows**. THROUGHPUT decides the width — the point past which it can no longer
+keep a review's transaction hash and its own chain word together, and sheds the pair rather than
+either alone, because a hash with no chain word beside it is worse than neither. The right rail
+(QUEUE stacked over THROUGHPUT) decides the height, since neither panel has a payload-independent
+line count the way pool4's fixed-rung ladder does: the pin is the shortest terminal that keeps a
+modest day's queue and score list off the rail's own scrollbar, not a promise that a genuinely busy
+swarm never scrolls — on a busier one the rail scrolls and `‹ taller` correctly lights. THE FIELD,
+the panel most readers look at first, never clears its own full column set below 246 columns, past
+every other pin in the app including the 143 the dashboard body wants, and the swarm pin does not
+chase it: like the announce feed's linked-transaction post, that is a measured and accepted
+condition at this pin and below, not something a wider pin could buy back.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

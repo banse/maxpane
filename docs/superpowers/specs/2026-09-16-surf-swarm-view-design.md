@@ -1,6 +1,6 @@
 # Surf's swarm body (`s`) — design
 
-**Status:** approved in conversation 2026-09-16; not yet planned or built.
+**Status:** built 2026-09-17 (`c3c1c50`..`cc4a8a3`).
 
 **Research:** `docs/imd_swarm_api.md` — every endpoint, shape, size and timing quoted here was measured there on
 2026-09-16.
@@ -78,7 +78,7 @@ Row shapes are declared in `data/surf_models.py` like every other surf row, so w
 contract:
 
 - `field_rows`: `job_id`, `template`, `objective`, `node_key`, `role`, `node_state`, `agent_token`, `agent_id`,
-  `revisions`, `dispatch_note`, `moved_ts`.
+  `revisions`, `dispatch_note`, `moved_ts`, `age_s`.
 - `queue_rows`: `state`, `count`. `blocked_rows`: `job_id`, `template`, `reason`, `moved_ts`.
 - `shipped_rows`: `kind` (delivery / launch / site), `job_id`, `label`, `commit`, `chain_id`, `address`,
   `tx_hash`, `ens_name`, `cid`, `at_ts`.
@@ -98,13 +98,25 @@ last day. `_SURF_HERO_MODES` gains this mode; exactly one hero is ever on screen
 - **THE FIELD** — one row per unfinished job: agent seat, subtask and role, state, age, revisions, and the
   dispatcher's own note, which is what explains a stall.
 - **JUST SHIPPED** — recent deliveries with their commit, launch artifacts with contract addresses, and
-  ENS-named sites. Every address carries the copy icon; a transaction hash is shortened and carries none.
+  ENS-named sites. Every real address carries the copy icon; a transaction hash is shortened and carries none. An
+  ENS-named site carries neither: `data/surf_swarm.py` hardcodes `address: None` for a site row and the upstream
+  payload has no address field for a site at all — a site's ENS name resolves a content hash, not a wallet — so
+  there is nothing for an icon to copy.
 - **QUEUE** — counts by state across all jobs, then every blocked job with its reason.
 - **THROUGHPUT** — accepted per day, median created-to-delivered, revision rate, over a named window.
 
-**The chain word** (`· SEPOLIA`, `· MAINNET`, `· —`) goes in the titles of panels that show chain data — JUST
-SHIPPED, and any score quoting a transaction — and nowhere else. It is an allowlist over known chain ids, so an
-unknown one renders the dash rather than a guess, which is `network_word`'s existing rule.
+**The chain word** (`· SEPOLIA`, `· MAINNET`, `· —`) is **per row, never in a title** (overruled during
+implementation, 2026-09-16, correcting this section as first written below). JUST SHIPPED's own rows mix
+chains — launches are mostly Sepolia while the abandoned ones are mainnet — so a single title word would be
+confidently wrong for some of the rows beneath it. Each row therefore names its own chain, from that row's own
+`chain_id`, in a CHAIN column beside whatever carries an address or a hash; THROUGHPUT's score rows carry the
+same per-row word beside their transaction hash, for the identical reason. It is an allowlist over known chain
+ids, so an unknown one renders the dash rather than a guess, which is `network_word`'s existing rule — restated
+as `widgets/surf/_swarm_chain.chain_word`, shared by both panels.
+
+*As first written, this section said the chain word "goes in the titles of panels that show chain data — JUST
+SHIPPED, and any score quoting a transaction — and nowhere else." That was wrong for the reason above and was
+never built.*
 
 **Widths.** Its own pins, `SURF_SWARM_FULL_LAYOUT_COLUMNS` and `SURF_SWARM_FULL_LAYOUT_ROWS`, measured in situ
 and never derived. Panels shed columns behind `‹ widen`. Every title keeps a blank line under it, and columns

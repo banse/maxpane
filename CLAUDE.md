@@ -111,7 +111,7 @@ imports it — `data/curator_clusters.py` — and that import is guarded (see th
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
-| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`), pool4 (`4`) and experimental pool4-protocol (`e`) views |
+| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`), pool4 (`4`), experimental pool4-protocol (`e`) and IMD swarm control-plane (`s`) views |
 | 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
 | 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
 | 4 | `base` | Base | trending tokens, volume, signals |
@@ -489,6 +489,57 @@ paid for its two cells there by windowing, not by moving the pin: STAKERS prints
 to a cell's contents here is a change to a pin**, and neither number may be adjusted to match a
 guess — re-sweep.
 
+### surf's SWARM view — the `s` body (2026-09-16)
+
+Surf grew a **fifth body**, on the same rule as the four before it: `s` swaps `#middle-row`/`#separator`/
+`#bottom-row` for MODE_SWARM — THE FIELD beside a rail of QUEUE over THROUGHPUT in the top row, with JUST
+SHIPPED spanning the body's full width beneath them — and `escape` backs out one-way. **There is no
+six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and the table above
+still has eight rows. It answers what the IMD swarm — the agent workforce this repo's own branches are built
+by — is doing right now: who is online, what each seat is working on and why it is stuck, what shipped, and how
+fast work is moving. It reads **one** keyless third-party host, the swarm's own control plane
+(`docs/imd_swarm_api.md`): `data/surf_swarm_client.py` is the HTTP layer against it and nothing else,
+`data/surf_swarm.py` is the pure fold — no network, no clock, no Textual.
+
+It is the second body, after MODE_POOL4_USER, to swap the **hero** rather than leave `SurfHero` mounted:
+`SurfSwarmHero`'s three cards are AGENTS (online of enrolled, plus whether verifier, publisher and deployer are
+up), IN FLIGHT (executing now, and how many are blocked) and ACCEPTED TODAY. `_SURF_HERO_MODES` stays an
+**enumeration** for the identical reason the `4` body's section above gives: a sixth body with a hero of its
+own would otherwise inherit `True` from a `!=` check against one other mode and paint two heroes into one row.
+
+**Two tiers, and the job list is gated on `/health`'s own counters rather than read every tick.** The live tier
+reads `GET /health` on every run — small and cheap, so it always happens. The job list (`GET /jobs`, ~27.5 KB,
+one shot, no pagination) is the read worth avoiding, and it carries no validators of its own — no ETag, no
+version, nothing a client could diff against — so the host's own counters
+(`connectedDaemons`/`activeEnrollments`/`workingNow`/`acceptedLastDay`, every `pending*`) are the cheapest
+available proxy for "did the list actually change": it is re-fetched only when one of them has moved since the
+manager last saw them, or when a ceiling has elapsed regardless, so a counter this manager does not track can
+never silently freeze the list forever. That is curator's `(version_id, content_hash)` version-check precedent
+from the linked-wallet analysis, one size down — a pair of published identifiers there, a handful of ordinary
+health counters here, because that is what this host exposes. `GET /jobs/{id}` then follows for every job whose
+state is not terminal, the only source of agent attribution, subtasks and dispatch notes; a 404 on one drops
+that row rather than the whole read, since a job can vanish between the list and the detail. Both tiers are
+spawned and never awaited, so first paint never waits on the swarm, the same shape `TIER_LAUNCHPAD` and
+`TIER_POOL4` already use. A slower tier sweeps every detail plus `/launches` and `/sites` on its own clock,
+feeding score and throughput numbers only.
+
+**No ninth degraded group was added, and that is deliberate, not an oversight.** `SOURCES` in
+`data/surf_manager.py` stays at eight members — `SOURCE_POOL4` (`p4`) is still the last name the worst-case
+title row has room for (see the terminal-layout skill and the pool4 section above). The swarm tiers fold on the
+pool4-market staker sweep's own precedent instead: a failed read serves each slot's last-good behind its own
+`as of HH:MM` marker, and a conditional `stale` word — derived from the two tiers' own TTLs, never chosen — is
+the only signal a reader gets when the two clocks drift further apart than healthy operation explains. Neither
+tier ever names a group.
+
+**The explorer's own inference headline is deliberately absent.** The swarm's explorer publishes a running
+inference total on its own page, but no public route on the control plane serves that number, so this view
+shows none of it — absent, never estimated, the rule FWA's uncovered collections and pool4's NFT floor already
+follow.
+
+Its width and height are their own pins, `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}`, each with its own
+`#:` block naming the binding panel and the sweep — the terminal-layout skill's table names the constants. The
+status hint grew its third segment: `l launchpad · 4 pool4 · s swarm`.
+
 ## Build & run
 
 ```bash
@@ -528,10 +579,13 @@ left in place so nothing it tracks ever goes dark (`esc` backs out, one-way);
 THE RATCHET on the left; HATCHES over sIMD VAULT in the rail),
 also keeping the hero, also one-way; **`4` on surf** swaps them for the
 POOL4 MARKET body (RECENT FLOW beside BURN & SUPPLY over SIGNALS;
-STAKERS beside IF IMD FALLS) and is the one surf body that swaps the
+STAKERS beside IF IMD FALLS) and swaps the
 **hero** too, for its own IMD PRICE / DOWNSIDE BID / STAKING cards —
-curator's per-mode hero, not a new pattern; surf's status hint reads
-`l launchpad · 4 pool4`. Surf's `e` and curator's `e` (export) are two screens'
+curator's per-mode hero, not a new pattern; **`s` on surf** (bound 2026-09-16) swaps them for the SWARM body
+(THE FIELD beside a QUEUE / THROUGHPUT rail, with JUST SHIPPED spanning the full width beneath) and is the
+second surf body, after `4`, to swap the hero — its own AGENTS / IN FLIGHT / ACCEPTED TODAY cards, also
+one-way; surf's status hint reads
+`l launchpad · 4 pool4 · s swarm`. Surf's `e` and curator's `e` (export) are two screens'
 own bindings, not one shared key. Surf's own `l` and curator's own `l` (the
 record view, described below) are unrelated bindings on two different
 screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
