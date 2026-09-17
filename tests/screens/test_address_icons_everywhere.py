@@ -39,7 +39,7 @@ from rich.cells import cell_len
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.address import ADDRESS_RE, PROSE_ADDRESS_RE
 from tests.address_sweep.case import SweepCase, view_name
-from tests.address_sweep.imports import imports_helper
+from tests.address_sweep.imports import HELPER, imports_helper, module_imports
 from tests.address_sweep.registry import CASES
 from tests.widgets.address_probe import icon_targets
 
@@ -351,30 +351,108 @@ def test_every_case_is_swept_at_its_pins():
 
 
 def _continues_as_hash_window(head: str, following: str, hashes) -> bool:
-    """True when *head* is really the head of a longer windowed hash rather
-    than a bare address.
+    """True when *head*'s digits and *following*'s continuation match some
+    hash's own window -- shape and value only, **not sufficient on its own**
+    to excuse anything (see :func:`_hash_only_module`, which supplies the
+    other half).
 
     ``short_hex``'s own window (``widgets/address._window``) caps its *tail*
     at 6 cells but not its *head*: at a wide enough column a 64-hex
     transaction hash can window to a head of exactly 40 cells, which is
     indistinguishable in shape from a real, un-iconized 40-hex address --
     ``THROUGHPUT``'s tx column hits this at the sweep's 170-column width
-    (measured: ``last_tx_hash`` windows to a 40-cell head there). A real
-    full address is never immediately continued by an ellipsis and more hex;
-    when *following* is exactly that, and the whole ``head…tail`` matches a
-    hash the screen was actually given, this is that hash's own window, not
-    a naked address -- hashes carry no icon by design, the same exclusion
-    the shortened-window check below already makes.
+    (measured: ``last_tx_hash`` windows to a 40-cell head there).
+
+    Fix round 1 (task-13-review.md, Finding 1, High): this predicate alone
+    matches **any** hash anywhere in the whole served payload, with no check
+    on which widget painted the candidate text. The review's own adversarial
+    construction proves that is not enough: a real hash and a hypothetical
+    bare, un-iconized address can share every digit (``"0x" + "2"*64`` and
+    ``"0x" + "2"*40``), so the printed text is byte-identical either way --
+    no amount of value-matching, however width-aware, can tell them apart
+    from the string alone. Both call sites below therefore require this
+    predicate to be true **and** :func:`_hash_only_module` to be true of the
+    widget that actually painted the position -- provenance, not value,
+    closes the hole; this function keeps doing only the shape/value half of
+    the job its name always claimed.
     """
     m = re.match(r"…([0-9a-fA-F]+)(?![0-9a-fA-F])", following)
     return bool(m) and any(_window_matches(head, m.group(1), h) for h in hashes)
 
 
-def _address_tokens_in_region(rows: list[str], region, hashes=frozenset()) -> list[str]:
+#: The two entry points in ``widgets/address`` that ever attach a copy icon
+#: (``address_text``/``address_prose`` -- see that module's own docstring).
+#: A module reaching either one is capable of printing a real, icon-bearing
+#: address; a module reaching neither structurally is not.
+_ICON_PRODUCING_HELPERS = frozenset({f"{HELPER}.address_text", f"{HELPER}.address_prose"})
+
+
+def _hash_only_module(module_name: str | None) -> bool:
+    """True when *module_name* can only ever print a hash's own window --
+    never a real, icon-bearing address -- and so is safe provenance for
+    :func:`_continues_as_hash_window`'s excuse.
+
+    It must import the address helper at all (``imports_helper``, the same
+    AST-resolved check ``EXEMPT``'s own agreement test uses) **and** import
+    neither ``address_text`` nor ``address_prose``. Python has no way to
+    reach either function without naming it in an import somewhere in the
+    file (this codebase never imports the whole ``address`` module and
+    reaches a function through attribute access instead -- verified by
+    grepping every consumer of ``widgets/address.py`` when this rule was
+    written; a future module doing that would need this check revisited,
+    the same caveat ``tests/address_sweep/imports.py`` names for the exact
+    same reason), so a module in this shape cannot construct a copy icon at
+    all: every ``0x``-shaped run it paints is provably the output of
+    ``short_hex``/``short_address`` windowing some value it was handed, not
+    a bare address. A module that never touches the helper at all is not
+    "hash only" either -- there is nothing here to excuse in the first
+    place, only widgets already in the icon business get the benefit of the
+    doubt.
+    """
+    if not module_name or not imports_helper(module_name):
+        return False
+    return not (module_imports(module_name) & _ICON_PRODUCING_HELPERS)
+
+
+def _widget_module_at(app, x: int, y: int) -> str | None:
+    """The module of the widget actually responsible for cell (*x*, *y*)
+    under the address-icon rules, or ``None`` when there is none or it
+    cannot be resolved.
+
+    ``get_widget_at`` (the same lookup the icon-coverage check above already
+    uses) returns the innermost leaf -- a plain Textual ``Static`` or
+    ``DataTable`` cell whose own module is Textual's, never this
+    application's, so checking it directly would make :func:`_hash_only_module`
+    return ``False`` (not hash-only) for *every* position on screen, since
+    Textual's own widgets never import the address helper at all. Walking
+    ``ancestors_with_self`` to the first ancestor that imports the helper at
+    all names the widget that is actually part of the address-icon system
+    (``SurfSwarmThroughput``, ``SurfSwarmShipped``, ...); further ancestors
+    are container chrome (``Vertical``, ``Horizontal``, the screen itself)
+    that would falsely read as address-incapable for the same reason.
+    """
+    try:
+        widget, _ = app.screen.get_widget_at(x, y)
+    except Exception:
+        return None
+    for node in widget.ancestors_with_self:
+        module = type(node).__module__
+        if imports_helper(module):
+            return module
+    return None
+
+
+def _address_tokens_in_region(
+    rows: list[str], region, hashes=frozenset(), *, hash_only: bool = False,
+) -> list[str]:
     """Whole or shortened address tokens printed inside ``region``'s cells.
 
-    ``hashes`` excuses a token that is really the (possibly partial) window
-    of a real transaction hash -- see :func:`_continues_as_hash_window`.
+    ``hash_only`` (the *region*'s own widget, per :func:`_hash_only_module`)
+    gates whether ``hashes`` may excuse a token at all: a region belonging
+    to any widget capable of printing a real address gets no excuse, no
+    matter what its digits happen to match elsewhere in the payload (Finding
+    1, task-13-review.md -- narrowed from a bare ``hashes`` check in fix
+    round 1).
     """
     found: list[str] = []
     for y in range(region.y, min(region.y + region.height, len(rows))):
@@ -384,14 +462,110 @@ def _address_tokens_in_region(rows: list[str], region, hashes=frozenset()) -> li
             continue
         cut = row[start:(len(row) if end is None else end + 1)]
         for m in PROSE_ADDRESS_RE.finditer(cut):
-            if _continues_as_hash_window(m.group(0)[2:], cut[m.end():], hashes):
+            if hash_only and _continues_as_hash_window(m.group(0)[2:], cut[m.end():], hashes):
                 continue
             found.append(m.group(0))
         for m in SHORT_TOKEN_RE.finditer(cut):
-            if any(_window_matches(m.group(1), m.group(2), h) for h in hashes):
+            if hash_only and any(_window_matches(m.group(1), m.group(2), h) for h in hashes):
                 continue
             found.append(m.group(0))
     return found
+
+
+def test_a_hash_only_module_is_recognized_by_which_icon_helpers_it_imports():
+    """Fix round 1 (task-13-review.md, Finding 1, High): the provenance half
+    of the fix. A widget class's own module either can or cannot construct a
+    copy icon, decided from its imports alone -- see :func:`_hash_only_module`
+    (added in this fix round; this assertion fails against 855d5d6, which has
+    no such function).
+    """
+    # Only imports short_hex/MIN_SHORT_COLS: structurally cannot ever print
+    # a real, icon-bearing address -- the legitimate case the exclusion
+    # exists for.
+    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_throughput")
+    # Imports address_text (and short_hex): capable of the real bug this
+    # finding is about, so never excused regardless of what its own printed
+    # digits happen to match elsewhere in the payload.
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_shipped")
+    # Imports address_prose, the other icon-producing entry point: also not
+    # hash-only, proving the check is not just checking for address_text.
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_field")
+    # Never touches the address helper at all: nothing to excuse here either.
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_queue")
+    assert not _hash_only_module(None)
+
+
+def test_the_region_scan_only_excuses_a_hash_window_for_a_hash_only_widget():
+    """Finding 1 (task-13-review.md, High), reproduced with the review's own
+    adversarial construction and closed: a real hash and a hypothetical bare
+    address can share every digit (``"0x" + "2"*64`` / ``"0x" + "2"*40``), so
+    the printed text ``0x<head>…<tail>`` is byte-identical whichever one
+    produced it -- no value-only check can tell them apart. Only knowing
+    which widget painted it can: with ``hash_only=True`` (a widget that can
+    only ever window a hash) the run is excused; with ``hash_only=False``
+    (the correct answer for any widget capable of a real address) it is
+    reported, exactly as an un-iconized address must be.
+
+    Fails against 855d5d6: ``_address_tokens_in_region`` there takes no
+    ``hash_only`` keyword at all -- ``hashes`` alone decided it, so this
+    exact adversarial row was excused unconditionally (Finding 1's whole
+    point). This call raises ``TypeError`` until fix round 1 adds the
+    parameter.
+    """
+    from textual.geometry import Region
+
+    head = "2" * 40
+    row = f"0x{head}…222222 padding"
+    rows = [row]
+    hashes = {"0x" + "2" * 64}
+    region = Region(0, 0, len(row), 1)
+
+    assert _address_tokens_in_region(rows, region, hashes, hash_only=True) == []
+    assert _address_tokens_in_region(rows, region, hashes, hash_only=False) == [
+        f"0x{head}", f"0x{head}…222222",
+    ]
+
+
+async def test_the_full_address_scan_resolves_the_real_collision_to_its_widget():
+    """The full-address loop's own provenance lookup (:func:`_widget_module_at`
+    then :func:`_hash_only_module`), proven against the one real collision
+    this repo has rather than only the synthetic one above: THROUGHPUT's tx
+    hash windows to a 40-cell head at the sweep's 170-column width (see
+    :func:`_continues_as_hash_window`'s own docstring), shape-identical to a
+    bare address.
+
+    ``get_widget_at`` returns the innermost ``Static`` leaf, whose own
+    module is Textual's and never imports the address helper -- checking it
+    directly would make every position on screen read as "not hash only".
+    This confirms :func:`_widget_module_at` walks past that leaf to
+    ``SurfSwarmThroughput`` itself, the widget actually responsible for the
+    text under the address-icon rules, and that it is correctly classified
+    hash-only.
+    """
+    from tests.address_sweep.builders import _surf_app
+
+    app = _surf_app()
+    async with app.run_test(size=(170, 60)) as pilot:
+        await pilot.pause()
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.pause()
+        rows = _rows(app)
+        collision = re.compile(r"0x2{40}…2{6}")
+        hits = [(y, m) for y, row in enumerate(rows) for m in collision.finditer(row)]
+        assert hits, "the known 170-column THROUGHPUT hash-window collision did not render"
+        for y, m in hits:
+            token_x = cell_len(rows[y][:m.start()])
+            leaf, _ = app.screen.get_widget_at(token_x, y)
+            assert not imports_helper(type(leaf).__module__), (
+                "the leaf widget now imports the helper -- this test's own "
+                "premise (get_widget_at returns a Textual internal here) no "
+                "longer holds and _widget_module_at's ancestor walk should "
+                "be re-examined"
+            )
+            painter = _widget_module_at(app, token_x, y)
+            assert painter == "maxpane_dashboard.widgets.surf.swarm_throughput"
+            assert _hash_only_module(painter)
 
 
 def test_the_region_scan_finds_addresses_only_inside_the_region():
@@ -436,7 +610,10 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
                     mounted.setdefault(key, label)
                 if key in EXEMPT:
                     # An exemption says the widget renders no address; hold it to that.
-                    for token in _address_tokens_in_region(rows, widget.region, hashes):
+                    for token in _address_tokens_in_region(
+                        rows, widget.region, hashes,
+                        hash_only=_hash_only_module(type(widget).__module__),
+                    ):
                         problems.append((label, key, token, "address rendered inside an EXEMPT widget"))
 
             if case.address_free:
@@ -480,8 +657,13 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
                     icon_x = cell_len(row[:m.end()]) + 1
                     if (by_cell.get((icon_x, y)) or "").lower() == m.group(0).lower():
                         continue
-                    if _continues_as_hash_window(m.group(0)[2:], row[m.end():], hashes):
-                        continue  # a windowed hash's own head, not a bare address
+                    token_x = cell_len(row[:m.start()])
+                    painter = _widget_module_at(app, token_x, y)
+                    if _hash_only_module(painter) and _continues_as_hash_window(
+                        m.group(0)[2:], row[m.end():], hashes
+                    ):
+                        continue  # a windowed hash's own head, painted by a widget
+                        # that can never construct an icon -- not a bare address
                     problems.append((label, y, m.group(0), "full address without its icon"))
                 # every shortened window of an address the screen was given has one too
                 for m in SHORT_TOKEN_RE.finditer(row):
