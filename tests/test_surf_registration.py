@@ -1376,12 +1376,14 @@ _NON_NUMERIC_KEYS = frozenset(
         "pool4_stakers_state",
         # -- the `s` SWARM body (2026-09-16) ------------------------------
         #
-        # None of the twelve keys below is ever a bare `int`/`float`, so
-        # none has a numeric zero to confuse with a failed read -- the same
-        # reasoning every list[dict] entry above already carries, extended
-        # here to `dict` for the first time (`swarm_queue_depths`,
+        # Twelve of the thirteen keys below are never a bare `int`/`float`,
+        # so they have no numeric zero to confuse with a failed read -- the
+        # same reasoning every list[dict] entry above already carries,
+        # extended here to `dict` for the first time (`swarm_queue_depths`,
         # `swarm_services_up`, `swarm_throughput`): a dict's unread state is
-        # `None` vs `{}`, the same shape as a list's `None` vs `[]`.
+        # `None` vs `{}`, the same shape as a list's `None` vs `[]`. The
+        # thirteenth, `swarm_agents_enrolled`, IS numeric -- see its own
+        # comment below the tri-state bool for why it still belongs here.
         #
         # `swarm_queue_depths` has no widget consumer at all --
         # `widgets/surf/swarm_hero.py`'s own docstring names it as a key
@@ -1405,6 +1407,26 @@ _NON_NUMERIC_KEYS = frozenset(
         # representable `False`, and `None` means the comparison has never
         # been made.
         "swarm_stale",
+        # `swarm_agents_enrolled` IS `int | None` -- the one genuinely
+        # numeric key in this bucket, not a mis-file. It lands here rather
+        # than in `_SWARM_ZERO_PROBES` because this test's own outage shape
+        # (every `SURF_KEYS` entry `None`, never a real per-key `0`) cannot
+        # observe it independently of `swarm_agents_online`: `_agents_card`
+        # (`widgets/surf/swarm_hero.py`) prints the AGENTS fraction only when
+        # BOTH halves are non-`None`, and `DeadSourcesManager` always nulls
+        # both together, so a needle here (`"of 0"`, say) would be checked
+        # against a render `swarm_agents_online`'s own probe (`"0 of"` in
+        # `_SWARM_ZERO_PROBES`) already makes impossible -- there is no
+        # payload this test can build where `enrolled` is the only zeroed
+        # half. Verified directly (not assumed): rendering the real
+        # `SurfScreen` with `swarm_agents_online=5, swarm_agents_enrolled=0`
+        # (a genuine, reachable production state) DOES print `"of 0"` --
+        # so the key is not unobservable in general, only unobservable under
+        # THIS test's all-or-nothing outage, which is the one shape this
+        # bucket's reasoning actually requires. A needle here would be the
+        # exact vacuous-probe anti-pattern `_POOL4_ZERO_PROBES`'s own comment
+        # names -- passing by absence, on a render that never happens.
+        "swarm_agents_enrolled",
     }
 )
 
@@ -1656,72 +1678,15 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # and the entry went away exactly as it said it would.
     # -- the `s` SWARM body (2026-09-16) -----------------------------------
     #
-    # All six numeric keys are dispatched to `SurfSwarmHero`, and every one
-    # of them genuinely renders a real, observable zero there:
-    # `swarm_jobs_in_flight`/`swarm_jobs_blocked` print "0 in flight"/"0
-    # blocked" (`tests/widgets/test_surf_swarm_hero.py::
-    # test_a_real_zero_is_a_zero`), `swarm_working_now` prints "working 0",
-    # `swarm_accepted_today` prints "accepted 0", and a zeroed
-    # `swarm_agents_online` or `swarm_agents_enrolled` alone -- the other
-    # half of the fraction still `None`, exactly this test's outage shape --
-    # is proven to fall through to `UNAVAILABLE` rather than a fabricated
-    # "0 of 0" (`test_an_unread_count_says_so_and_never_prints_zero`).
-    #
-    # None of that is observable from THIS acceptance test, though: the
-    # swarm hero only swaps onto the screen when `s` is pressed, and
-    # `test_a_full_outage_renders_explicit_states_not_zeros` presses `l`,
-    # `e` (pool4) and `4` (pool4 market) -- never `s` -- to reach every body
-    # its probes need. A needle in `_NUMERIC_ZERO_PROBES` for any of these
-    # six would therefore be checked against a render that never happens
-    # here, passing by absence rather than by proof -- the identical
-    # vacuous-probe shape the `l` and `p` bodies' own I3 fix (see above)
-    # already closed twice in this file. Rather than repeat it a third
-    # time, or reach outside this task's scope to add an `s` keypress to
-    # that acceptance test, the six are parked here with the real needle
-    # named and where it actually lives.
-    "swarm_agents_online": (
-        "dispatched to SurfSwarmHero; a lone zero (the other half of the "
-        "AGENTS fraction left None, this test's outage shape) is verified "
-        "to render UNAVAILABLE rather than a fabricated '0 of 0' in "
-        "tests/widgets/test_surf_swarm_hero.py::"
-        "test_an_unread_count_says_so_and_never_prints_zero -- but the `s` "
-        "body never composites in this acceptance test's outage sweep "
-        "(only l/e/4 are pressed), so a needle here would check a render "
-        "that never happens"
-    ),
-    "swarm_agents_enrolled": (
-        "same shape and same widget as swarm_agents_online -- verified "
-        "against SurfSwarmHero directly; the `s` body never composites in "
-        "this acceptance test's outage sweep"
-    ),
-    "swarm_working_now": (
-        "dispatched to SurfSwarmHero's IN FLIGHT subtitle, where a genuine "
-        "zero prints 'working 0'; the `s` body never composites in this "
-        "acceptance test's outage sweep, so the needle is verified against "
-        "the widget directly in tests/widgets/test_surf_swarm_hero.py "
-        "instead"
-    ),
-    "swarm_accepted_today": (
-        "dispatched to SurfSwarmHero's ACCEPTED TODAY card, where a genuine "
-        "zero prints 'accepted 0'; the `s` body never composites in this "
-        "acceptance test's outage sweep, so the needle is verified against "
-        "the widget directly in tests/widgets/test_surf_swarm_hero.py "
-        "instead"
-    ),
-    "swarm_jobs_in_flight": (
-        "dispatched to SurfSwarmHero; a genuine zero renders '0 in flight' "
-        "(tests/widgets/test_surf_swarm_hero.py::test_a_real_zero_is_a_zero"
-        "), but the `s` body never composites in this acceptance test's "
-        "outage sweep (only l/e/4 are pressed), so a needle here would "
-        "check a render that never happens"
-    ),
-    "swarm_jobs_blocked": (
-        "dispatched to SurfSwarmHero; a genuine zero renders '0 blocked' "
-        "(tests/widgets/test_surf_swarm_hero.py::test_a_real_zero_is_a_zero"
-        "), but the `s` body never composites in this acceptance test's "
-        "outage sweep (only l/e/4 are pressed), so a needle here would "
-        "check a render that never happens"
-    ),
+    # NO exclusion any more (Task 11): all five of `SurfSwarmHero`'s
+    # independently-observable numeric keys now carry a needle in
+    # `_SWARM_ZERO_PROBES` below, verified by rendering the real
+    # `SurfScreen` with `s` pressed and one key genuinely `0`. They sat here
+    # from Task 10b to this task because `test_a_full_outage_renders_
+    # explicit_states_not_zeros` did not press `s` yet -- see
+    # `_SWARM_ZERO_PROBES`'s own comment for the needles and
+    # `swarm_agents_enrolled`'s entry in `_NON_NUMERIC_KEYS` for the one
+    # numeric key that stays excluded even now the body composites.
 }
 
 #: The ``4`` POOL4 MARKET body's zero probes: ``key -> (needle, enablers)``.
@@ -2091,6 +2056,39 @@ _POOL4_ZERO_PROBES: dict[str, str] = {
     "pool4_cap_decay_per_day": "no decay",
 }
 
+#: The ``s`` SWARM body's zero probes (Task 11, 2026-09-16): ``key -> needle``,
+#: same plain shape as :data:`_NUMERIC_ZERO_PROBES`/:data:`_POOL4_ZERO_PROBES`
+#: rather than :data:`_POOL4_USER_ZERO_PROBES`'s three-tuple form -- every one
+#: of these five renders unconditionally on ``SurfSwarmHero`` the moment ``s``
+#: reaches it, with no second key needed to "enable" it the way five of the
+#: pool4-market probes do.
+#:
+#: Every needle was READ OFF composited output through the real ``SurfScreen``
+#: (``s`` pressed, one key ``0``, every other ``SURF_KEYS`` entry ``None``),
+#: never guessed -- the exact discipline ``_POOL4_ZERO_PROBES``'s own comment
+#: describes, applied here because these five sat unobserved in
+#: ``_NUMERIC_KEYS_EXCLUDED`` from Task 10b onward for precisely this reason:
+#: the swarm body never composited in ``test_a_full_outage_renders_explicit_
+#: states_not_zeros`` until this task pressed ``s`` there too.
+#:
+#: ``swarm_agents_online``'s needle is ``"0 of"``, not ``"0 of 0"``: the other
+#: half of the AGENTS fraction (``swarm_agents_enrolled``) is *also* ``None``
+#: under this test's all-or-nothing outage, so ``_agents_card`` never reaches
+#: the branch that prints a fraction at all -- the needle only has to prove
+#: that a lone zeroed ``online`` cannot leak the digit, which
+#: ``swarm_agents_online=0, swarm_agents_enrolled=5`` -> ``"2 of 3"``-shaped
+#: rendering (verified) confirms independently of ``enrolled``.
+#: ``swarm_agents_enrolled`` itself has no needle here -- see its own comment
+#: in ``_NON_NUMERIC_KEYS`` for why a second one would be vacuous under this
+#: specific test's outage shape.
+_SWARM_ZERO_PROBES: dict[str, str] = {
+    "swarm_agents_online": "0 of",              # swarm_hero.py _agents_card
+    "swarm_working_now": "working 0",           # swarm_hero.py _in_flight_card
+    "swarm_accepted_today": "accepted 0",       # swarm_hero.py _accepted_card
+    "swarm_jobs_in_flight": "0 in flight",      # swarm_hero.py _in_flight_card
+    "swarm_jobs_blocked": "0 blocked",          # swarm_hero.py _in_flight_card
+}
+
 #: **Emptied by Task 12** (2026-08-24), which wired the last three consumers.
 #: It held keys whose rendering consumer landed in a later task of this plan:
 #: numeric keys that WILL need real zero-catch probes, kept out of
@@ -2133,6 +2131,7 @@ def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
         set(_NUMERIC_ZERO_PROBES)
         | set(_POOL4_ZERO_PROBES)
         | set(_POOL4_USER_ZERO_PROBES)
+        | set(_SWARM_ZERO_PROBES)
     )
     excluded = set(_NUMERIC_KEYS_EXCLUDED)
     non_numeric = set(_NON_NUMERIC_KEYS)
@@ -2188,6 +2187,7 @@ def test_no_surf_key_is_still_waiting_for_a_consumer():
         set(_NUMERIC_ZERO_PROBES)
         | set(_POOL4_ZERO_PROBES)
         | set(_POOL4_USER_ZERO_PROBES)
+        | set(_SWARM_ZERO_PROBES)
         | set(_NUMERIC_KEYS_EXCLUDED)
         | set(_NON_NUMERIC_KEYS)
     )
@@ -2391,8 +2391,67 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             assert "SEPOLIA" not in market_text
             assert "MAINNET" not in market_text
 
+            # ...and the FIFTH body (2026-09-16, Task 11). `s` swaps in the
+            # swarm panels AND its own second hero, and every
+            # `_SWARM_ZERO_PROBES` needle only ever renders in here -- the
+            # exact hole this test carried from Task 10b onward (see that
+            # dict's own comment). Pressing `s` from MODE_POOL4_USER switches
+            # directly, the same idempotent-elsewhere contract every other
+            # body key on this screen follows (`action_toggle_swarm`).
+            await pilot.press("s")
+            await pilot.pause()
+            swarm_text = _screen_text(app)
+            from maxpane_dashboard.widgets.surf.swarm_shipped import (
+                UNAVAILABLE_LINE as SHIPPED_UNAVAILABLE,
+            )
+            from maxpane_dashboard.widgets.surf.swarm_throughput import (
+                AGENTS_UNAVAILABLE_LINE as THROUGHPUT_AGENTS_UNAVAILABLE,
+            )
+
+            assert "THE FIELD" in swarm_text, (
+                "pressing `s` did not reach the swarm body -- the sweep "
+                "below would be measuring the market body twice"
+            )
+            # Explicit rather than blank, for the same reason every other
+            # body's panels are checked this way: an outage that renders four
+            # empty panels is exactly as wrong as one that renders zeros.
+            for title in ("THE FIELD", "JUST SHIPPED", "QUEUE", "THROUGHPUT"):
+                assert title in swarm_text, f"{title} vanished under outage"
+            # Both markers this body reads (`swarm_as_of_hhmm`,
+            # `swarm_scores_as_of_hhmm`) are `None` under a full outage, so
+            # every list-shaped panel must say so explicitly rather than
+            # rendering an empty read -- JUST SHIPPED and THROUGHPUT's own
+            # agent section each have a distinct spelling for the two states
+            # (see `swarm_shipped.py`/`swarm_throughput.py`'s own module
+            # docstrings), which is what makes these two, and not "unavailable"
+            # itself, the needles worth naming here.
+            assert SHIPPED_UNAVAILABLE in swarm_text, (
+                "JUST SHIPPED did not say shipments were unavailable under "
+                "a cold scores slot"
+            )
+            assert THROUGHPUT_AGENTS_UNAVAILABLE in swarm_text, (
+                "THROUGHPUT's agent section did not say agents were "
+                "unavailable under a cold scores slot"
+            )
+            # The hero swapped WITH the body, the swarm body's own break of
+            # surf precedent on the `4` body's own precedent -- and a swap
+            # that did not happen would leave the swarm needles being swept
+            # against LAUNCHPAD/FLOW/BURN or DOWNSIDE BID/STAKING.
+            assert "AGENTS" in swarm_text, (
+                "the swarm hero did not swap in with the `s` body"
+            )
+            assert "LAUNCHPAD" not in swarm_text, (
+                "the shared SurfHero is showing under the `s` body"
+            )
+            assert "DOWNSIDE BID" not in swarm_text, (
+                "the pool4-market hero is showing under the `s` body"
+            )
+            assert "SEPOLIA" not in swarm_text
+            assert "MAINNET" not in swarm_text
+
             swept = "\n".join(
-                (dashboard_text, launchpad_text, pool4_text, market_text)
+                (dashboard_text, launchpad_text, pool4_text, market_text,
+                 swarm_text)
             )
 
             probes = {
@@ -2400,11 +2459,13 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 **_POOL4_ZERO_PROBES,
                 **{k: needle for k, (needle, _en) in
                    _POOL4_USER_ZERO_PROBES.items()},
+                **_SWARM_ZERO_PROBES,
             }
             assert len(probes) == (
                 len(_NUMERIC_ZERO_PROBES)
                 + len(_POOL4_ZERO_PROBES)
                 + len(_POOL4_USER_ZERO_PROBES)
+                + len(_SWARM_ZERO_PROBES)
             ), "a needle key is in more than one probe dict -- one is dead"
             for probe_key, needle in probes.items():
                 assert needle not in swept, (
