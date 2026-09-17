@@ -1051,6 +1051,32 @@ class SurfCache:
             except OSError:
                 pass
 
+    def _outer_mapping(self, payload: dict[str, Any], key: str) -> dict[Any, Any]:
+        """``payload[key]``, defaulting to ``{}``; dirties on a present-but-wrong-type value.
+
+        Fix round 2 closed the gap this exists to name: ``payload.get(key) or
+        {}`` cannot tell "the field is absent" from "the field is present and
+        *falsy* but the wrong type" (``""``, ``0``, ``[]``), because both sides
+        of that ``or`` evaluate to the same ``{}``. Absence -- the key missing
+        entirely, or explicitly ``None`` -- is the ordinary shape of a fresh or
+        minimal cache file and must never dirty. A value that is present but
+        not a mapping, falsy or not, is genuine corruption of this field: it
+        still gets replaced with ``{}`` so the loop below has something safe
+        to iterate, but the divergence from what the file held is real and
+        this cache must know it. A *truthy* wrong-type value (a non-empty
+        string, say) reaches the same branch here rather than raising later,
+        which is a strictly earlier catch of the same case ``_sanitise_
+        baselines`` already handles for the baselines block.
+        """
+        raw = payload.get(key)
+        if raw is None:
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        logger.debug("SURF %s block is not a mapping: %r", key, type(raw).__name__)
+        self._dirty = True
+        return {}
+
     def load(self, path: str | None = None, *, now: float | None = None) -> None:
         """Restore saved state. Silent no-op on a missing or corrupt file.
 
@@ -1095,7 +1121,7 @@ class SurfCache:
         reference = self._now(now)
 
         try:
-            for slot, data in (payload.get("last_good") or {}).items():
+            for slot, data in self._outer_mapping(payload, "last_good").items():
                 if slot not in SLOTS:
                     continue
                 if not isinstance(data, dict):
@@ -1115,10 +1141,30 @@ class SurfCache:
 
         try:
             skipped = 0
-            for name, points in (payload.get("series") or {}).items():
+            for name, points in self._outer_mapping(payload, "series").items():
                 deq = self.series.get(str(name))
                 if deq is None:
                     continue
+                # ``coerce_points`` is documented to answer ``([], 0)`` for
+                # "not a sequence at all" -- correct for its other callers
+                # (cattown, frenpet, curator, base, fwa, dota, ttt caches),
+                # none of which check shape before calling it, so changing
+                # that contract here would need to touch all of them. A
+                # per-series value that is present but the wrong shape (a
+                # string, a number) is a contract mismatch this cache alone
+                # can name without moving that line: ``dropped`` would stay 0
+                # and the series would be silently replaced with an empty
+                # one, indistinguishable from "this series was never
+                # populated". ``None`` -- the key present with an explicit
+                # null, or genuinely absent -- is left alone; ``save()``
+                # never writes ``null`` for a known series, so that shape
+                # only ever comes from a hand-edited file and is treated the
+                # same as "nothing recorded yet" rather than corruption.
+                if points is not None and not isinstance(points, (list, tuple)):
+                    logger.debug(
+                        "SURF series %s is not a list: %r", name, type(points).__name__
+                    )
+                    self._dirty = True
                 good, dropped = coerce_points(
                     points,
                     now=reference,
@@ -1153,15 +1199,31 @@ class SurfCache:
 
         try:
             raw_burned = payload.get("burned_cum")
-            burned = float(raw_burned or 0.0)
-            if math.isfinite(burned) and burned >= 0:
-                self.burned_cum = burned
-            else:
-                # A present-but-unusable value (negative, NaN, infinite) is
-                # coerced to the safe default -- a real divergence from what
-                # the file held, not the ordinary "never recorded" case.
+            # ``float(raw_burned or 0.0)`` used to sit here and could not
+            # tell "the field is absent" from "the field is present and
+            # falsy but the wrong type" (``""``, ``[]``): both take the
+            # ``or``'s right side and ``float(0.0)`` succeeds without ever
+            # reaching the ``except`` below, so the corrupt bytes survived
+            # every reload silently -- the sharpest case, since ``""`` is
+            # the same class of corruption ("a string where a number
+            # belongs") as the truthy ``"not-a-number"`` case one line down,
+            # which *does* raise and correctly dirty. Absence -- a genuinely
+            # missing key, or an explicit ``None`` -- is checked first and
+            # left alone; anything else goes through ``float()`` and any
+            # failure there is real, present-but-unusable corruption.
+            if raw_burned is None:
                 self.burned_cum = 0.0
-                self._dirty = True
+            else:
+                burned = float(raw_burned)
+                if math.isfinite(burned) and burned >= 0:
+                    self.burned_cum = burned
+                else:
+                    # A present-but-unusable value (negative, NaN, infinite)
+                    # is coerced to the safe default -- a real divergence
+                    # from what the file held, not the ordinary "never
+                    # recorded" case.
+                    self.burned_cum = 0.0
+                    self._dirty = True
         except (TypeError, ValueError):
             self.burned_cum = 0.0
             self._dirty = True
@@ -1202,7 +1264,7 @@ class SurfCache:
 
         try:
             self._pool4_accumulators = {}
-            for name, raw in (payload.get("pool4_accumulators") or {}).items():
+            for name, raw in self._outer_mapping(payload, "pool4_accumulators").items():
                 if str(name) not in SERIES_NAMES:
                     continue
                 clean = self._coerce_accumulator(raw)

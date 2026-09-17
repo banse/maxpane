@@ -1383,6 +1383,167 @@ def test_a_clean_load_does_not_dirty_the_cache(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Fix round 2, gap 1 -- the ``x or default`` idiom that used to guard four
+# outer fields (``last_good``, ``series``, ``burned_cum``,
+# ``pool4_accumulators``) could not tell "the field is absent" from "the
+# field is present, falsy, and the wrong type": both sides of the ``or``
+# land on the same default and no exception is ever raised, so the corrupt
+# bytes silently survived every reload. A *truthy* wrong type (a non-empty
+# string) already dirtied correctly, because it reached the ``.items()`` /
+# ``float()`` call that raises. Only the falsy shapes were the gap.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", ["", 0, []])
+def test_a_falsy_wrong_type_last_good_dirties_the_cache(tmp_path, bad):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(json.dumps({"version": 1, "last_good": bad}))
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.get_last_good(SLOT_MARKET) is None
+    assert c._dirty is True, f"last_good={bad!r} must dirty the cache"
+
+
+@pytest.mark.parametrize("bad", ["", 0, []])
+def test_a_falsy_wrong_type_series_block_dirties_the_cache(tmp_path, bad):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(json.dumps({"version": 1, "series": bad}))
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.get_series(SERIES_IMD_SUPPLY) == []
+    assert c._dirty is True, f"series={bad!r} must dirty the cache"
+
+
+@pytest.mark.parametrize("bad", ["", []])
+def test_a_falsy_wrong_type_burned_cum_dirties_the_cache(tmp_path, bad):
+    # 0 is deliberately excluded here: it is a genuinely valid burned_cum
+    # value, not corruption, and must never dirty (covered below).
+    path = tmp_path / "surf_cache.json"
+    path.write_text(json.dumps({"version": 1, "burned_cum": bad}))
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.burned_cum == 0.0
+    assert c._dirty is True, (
+        f"burned_cum={bad!r} is the sharpest case: a string/list where a "
+        "number belongs, the same class of corruption as the truthy "
+        "'not-a-number' case, and it must dirty exactly like that one."
+    )
+
+
+def test_burned_cum_zero_is_valid_and_never_dirties(tmp_path):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(json.dumps({"version": 1, "burned_cum": 0}))
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.burned_cum == 0.0
+    assert c._dirty is False, "0 is a real, valid burned_cum -- not corruption"
+
+
+@pytest.mark.parametrize("bad", ["", 0, []])
+def test_a_falsy_wrong_type_pool4_accumulators_dirties_the_cache(tmp_path, bad):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(json.dumps({"version": 1, "pool4_accumulators": bad}))
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.get_pool4_accumulator("SEPOLIA") is None
+    assert c._dirty is True, f"pool4_accumulators={bad!r} must dirty the cache"
+
+
+@pytest.mark.parametrize(
+    "field", ["last_good", "series", "burned_cum", "pool4_accumulators"]
+)
+def test_a_missing_optional_field_stays_clean(tmp_path, field):
+    """Absence must still never dirty: dropping any one of the four fields
+    entirely (the ordinary shape of an older or minimal cache file) must
+    load exactly as clean as a fully populated file.
+    """
+    payload = {
+        "version": 1,
+        "last_good": {},
+        "series": {},
+        "burned_cum": 0.0,
+        "pool4_accumulators": {},
+    }
+    del payload[field]
+    path = tmp_path / "surf_cache.json"
+    path.write_text(json.dumps(payload))
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c._dirty is False, f"a missing {field!r} is absence, not corruption"
+
+
+@pytest.mark.parametrize(
+    "field", ["last_good", "series", "burned_cum", "pool4_accumulators"]
+)
+def test_an_explicit_null_field_stays_clean(tmp_path, field):
+    """The same absence guarantee when the key is present with an explicit
+    JSON ``null`` rather than omitted outright.
+    """
+    payload = {
+        "version": 1,
+        "last_good": {},
+        "series": {},
+        "burned_cum": 0.0,
+        "pool4_accumulators": {},
+    }
+    payload[field] = None
+    path = tmp_path / "surf_cache.json"
+    path.write_text(json.dumps(payload))
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c._dirty is False, f"an explicit null {field!r} is absence, not corruption"
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2, gap 2 -- a per-series value that is present but not a
+# sequence at all is a contract mismatch with ``coerce_points``, which is
+# documented to answer ``([], 0)`` for "not a sequence" -- so ``dropped``
+# stays 0 and the series is silently replaced with an empty one, identical
+# to "this series was never populated". Both truthinesses of the bad shape
+# must dirty; only ``None`` (absent-equivalent) must not.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", ["not-a-list", 5, "", 0])
+def test_a_wrong_shape_series_value_dirties_the_cache(tmp_path, bad):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(
+        json.dumps({"version": 1, "series": {SERIES_IMD_SUPPLY: bad}})
+    )
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.get_series(SERIES_IMD_SUPPLY) == []
+    assert c._dirty is True, f"series[{SERIES_IMD_SUPPLY!r}]={bad!r} must dirty"
+
+
+def test_a_null_series_value_stays_clean(tmp_path):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(
+        json.dumps({"version": 1, "series": {SERIES_IMD_SUPPLY: None}})
+    )
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.get_series(SERIES_IMD_SUPPLY) == []
+    assert c._dirty is False, "an explicit null series value is absence, not corruption"
+
+
+def test_a_well_formed_series_value_stays_clean(tmp_path):
+    path = tmp_path / "surf_cache.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "series": {SERIES_IMD_SUPPLY: [[FakeClock().t - 10, 100.0]]},
+            }
+        )
+    )
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+    assert c.get_series(SERIES_IMD_SUPPLY) == [[FakeClock().t - 10, 100.0]]
+    assert c._dirty is False, "a well-formed series value must not dirty"
+
+
+# ---------------------------------------------------------------------------
 # Fix round 2 -- the ``store_last_good`` / ``get_last_good`` no-copy
 # invariant: nothing under ``maxpane_dashboard/`` may mutate a stored
 # payload in place, because ``store_last_good`` keeps the caller's object
@@ -1401,14 +1562,42 @@ def test_a_clean_load_does_not_dirty_the_cache(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _payload_mutation_offenders(root) -> list[str]:
+def _payload_mutation_offenders(root, *, exclude: frozenset[str] = frozenset()) -> list[str]:
     """Every line under ``root`` that mutates a ``.payload`` in place.
 
     Textual, not AST-based, on this repo's own precedent (``test_the_cache_
     imports_no_client_no_analytics_no_network`` above greps for banned import
     strings the same way) -- deliberately coarse, so a match inside a comment
     still counts as an offender worth a human look rather than being silently
-    exempted.
+    exempted. That over-matching direction is harmless and was already
+    documented before fix round 2.
+
+    The *under*-matching direction was not documented, and it is the
+    dangerous one: it invites false confidence that "offenders == []" means
+    "no in-place mutation exists" when several real shapes slip past both
+    patterns clean, confirmed by construction (see
+    ``test_the_sweep_has_known_blind_spots`` below):
+
+    * **aliasing** -- ``p = entry.payload; p["k"] = 1`` never spells the
+      literal substring ``.payload[``.
+    * **getattr** -- ``getattr(entry, "payload")["k"] = 1`` likewise never
+      spells ``.payload[``.
+    * **nested-container indexing** -- ``entry.payload["a"]["b"] = 1``: the
+      assignment follows the *second* ``]``, but ``assign`` only requires
+      ``=`` right after the *first* one (its ``[^\\]]*`` stops there), so the
+      whole line misses.
+    * **a space before the bracket** -- ``entry.payload [0] = 1``: ``assign``
+      hard-codes ``.payload\\[`` with nothing between the two.
+    * **a ``.get(...).append(...)`` chain** -- ``entry.payload.get("k",
+      []).append(x)`` mutates the list ``.payload["k"]`` refers to, but the
+      text right after ``.payload.`` is ``get(``, not one of ``call``'s four
+      names, so it passes both patterns clean.
+
+    Catching any of these needs an AST walk, not a regex, and that rewrite is
+    out of scope here. What belongs here is not pretending the gap is closed.
+
+    ``exclude`` is a set of paths relative to ``root`` (as ``rglob`` would
+    join them) to skip entirely -- see the caller below for why.
     """
     import re
 
@@ -1416,6 +1605,8 @@ def _payload_mutation_offenders(root) -> list[str]:
     call = re.compile(r"\.payload\.(update|append|pop|setdefault)\s*\(")
     offenders: list[str] = []
     for path in sorted(root.rglob("*.py")):
+        if str(path.relative_to(root)) in exclude:
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -1426,17 +1617,96 @@ def _payload_mutation_offenders(root) -> list[str]:
     return offenders
 
 
+# ``curator_cache.py``/``curator_manager.py`` and ``fwa_cache.py``/
+# ``fwa_manager.py`` each define their own ``LastGood``-shaped type with its
+# own ``.payload`` attribute, structurally similar to SURF's but unrelated to
+# it -- store_last_good/get_last_good's no-copy invariant is a SURF contract,
+# not a repo-wide one. Scoping this sweep to exclude the four means this
+# surf-named test asserts only what it can actually justify. Left unscoped,
+# it would still find zero offenders today, but a *legitimate* future
+# mutation inside curator's or FWA's own payload handling would trip this
+# test anyway, with a failure message that names ``store_last_good`` and
+# ``SurfCache`` -- the wrong file and the wrong invariant, pointing whoever
+# hits it at code that never touched surf. Every other module, including any
+# future surf file, stays covered: only these four are known today to carry
+# an unrelated `.payload`-bearing type this test was never designed to
+# police, and excluding by name is precise where excluding by directory
+# would risk hiding a real surf regression alongside it.
+_NON_SURF_PAYLOAD_OWNERS = frozenset(
+    {
+        "data/curator_cache.py",
+        "data/curator_manager.py",
+        "data/fwa_cache.py",
+        "data/fwa_manager.py",
+    }
+)
+
+
 def test_no_maxpane_code_mutates_a_stored_last_good_payload_in_place():
     import pathlib
 
     repo = pathlib.Path(__file__).resolve().parents[2]
-    offenders = _payload_mutation_offenders(repo / "maxpane_dashboard")
+    offenders = _payload_mutation_offenders(
+        repo / "maxpane_dashboard", exclude=_NON_SURF_PAYLOAD_OWNERS
+    )
     assert offenders == [], (
         "store_last_good keeps the caller's object without copying and "
         "get_last_good().payload hands it back live -- an in-place mutation "
         "here would change persisted cache state with _dirty left False:\n"
         + "\n".join(offenders)
     )
+
+
+def test_the_sweep_excludes_only_the_named_non_surf_owners(tmp_path):
+    """The exclude mechanism actually removes what it names, nothing more.
+
+    A violation planted in an excluded path must not surface; the identical
+    violation planted in a sibling, non-excluded path must.
+    """
+    excluded = tmp_path / "data" / "curator_cache.py"
+    excluded.parent.mkdir(parents=True)
+    excluded.write_text('entry.payload["k"] = 1\n')
+
+    kept = tmp_path / "data" / "surf_manager.py"
+    kept.write_text('entry.payload["k"] = 1\n')
+
+    all_offenders = _payload_mutation_offenders(tmp_path)
+    assert any("curator_cache.py" in o for o in all_offenders)
+    assert any("surf_manager.py" in o for o in all_offenders)
+
+    scoped_offenders = _payload_mutation_offenders(
+        tmp_path, exclude=frozenset({"data/curator_cache.py"})
+    )
+    assert not any("curator_cache.py" in o for o in scoped_offenders)
+    assert any("surf_manager.py" in o for o in scoped_offenders)
+
+
+def test_the_sweep_has_known_blind_spots(tmp_path):
+    """The five under-matching shapes named in ``_payload_mutation_offenders``'
+    docstring, constructed and confirmed to slip through both patterns.
+
+    This is a documentation test, not a demand the sweep catch these --
+    closing this needs an AST walk, out of scope for this fix. The point is
+    that "offenders == []" must never be read as "no in-place `.payload`
+    mutation exists anywhere in this shape space": these five are real and
+    invisible to it.
+    """
+    probe = tmp_path / "probe_blind_spots.py"
+    probe.write_text(
+        "\n".join(
+            [
+                "def f(entry):",
+                "    p = entry.payload",
+                '    p["k"] = 1',  # aliasing
+                '    getattr(entry, "payload")["k"] = 1',  # getattr
+                '    entry.payload["a"]["b"] = 1',  # nested-container indexing
+                "    entry.payload [0] = 1",  # space before the bracket
+                '    entry.payload.get("k", []).append(1)',  # .get().append() chain
+                "",
+            ]
+        )
+    )
+    assert _payload_mutation_offenders(tmp_path) == []
 
 
 def test_the_payload_mutation_sweep_actually_catches_a_violation(tmp_path):
