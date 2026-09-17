@@ -30,6 +30,7 @@ and no helper-using widget mounted at all.
 from __future__ import annotations
 
 import dataclasses
+import importlib.util
 import re
 import types
 
@@ -39,7 +40,7 @@ from rich.cells import cell_len
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.address import ADDRESS_RE, PROSE_ADDRESS_RE
 from tests.address_sweep.case import SweepCase, view_name
-from tests.address_sweep.imports import HELPER, imports_helper, module_imports
+from tests.address_sweep.imports import HELPER, _is_module, imports_helper, module_imports
 from tests.address_sweep.registry import CASES
 from tests.widgets.address_probe import icon_targets
 
@@ -382,9 +383,78 @@ def _continues_as_hash_window(head: str, following: str, hashes) -> bool:
 
 #: The two entry points in ``widgets/address`` that ever attach a copy icon
 #: (``address_text``/``address_prose`` -- see that module's own docstring).
-#: A module reaching either one is capable of printing a real, icon-bearing
-#: address; a module reaching neither structurally is not.
+#: A module reaching either one, directly or transitively, is capable of
+#: printing a real, icon-bearing address; a module reaching neither is not.
 _ICON_PRODUCING_HELPERS = frozenset({f"{HELPER}.address_text", f"{HELPER}.address_prose"})
+
+
+def _reaches_icon_machinery(module_name: str) -> bool:
+    """True when *module_name* can reach ``address_text``/``address_prose``
+    through **any chain** of imports, followed to a fixed point.
+
+    Fix round 2 (task-13-review.md carry-over): a depth-1 check (only
+    *module_name*'s own imports) is exactly the mistake
+    ``tests/widgets/test_surf_widget_contract.py::test_the_allowed_
+    analytics_modules_are_themselves_pure`` already exists to catch one
+    layer over, for the identical reason -- that test's own docstring: "a
+    depth-1 version of this test was green while ``analytics/surf_feed``
+    imported ``analytics/surf_signals``, which reaches ``data`` in one
+    further hop." Here the one-hop-removed case is real, not hypothetical:
+    ``widgets/surf/feed.py`` and ``widgets/surf/signals.py`` never import
+    ``address_text``/``address_prose`` directly -- they import
+    ``widgets/surf/_icons.py`` (``mark_addresses``/``link_prose``/
+    ``link_in_order``), and *that* module imports ``address_text`` on its
+    own line. Both widgets genuinely paint iconized addresses; a depth-1
+    version of :func:`_hash_only_module` classified both as hash-only.
+
+    The walk follows this repo's own precedent's exact shape (a
+    ``queue``/``seen`` fixed-point BFS over ``module_imports``, the same
+    AST-resolved import reader ``imports_helper`` itself uses), restricted
+    to ``maxpane_dashboard.*`` names -- the icon machinery cannot hide in
+    ``rich``/``textual``/stdlib, and a name is only followed once
+    :func:`tests.address_sweep.imports._is_module` (the same guard
+    ``widget_modules_of`` already uses for the identical "not every ``X.Y``
+    is a module" reason) confirms it resolves to one.
+
+    **A package root is never followed** (checked here, not inside
+    ``_is_module``, because ``widget_modules_of`` deliberately *does* walk
+    into a package for its own, different question). ``from
+    maxpane_dashboard.widgets.surf import _rowfit`` -- an ordinary sibling
+    import, present in half this package's modules -- resolves to *two*
+    names: the specific submodule ``...surf._rowfit`` (the real edge) and
+    the bare package ``...surf`` itself (an artifact of the AST shape, not
+    a real one). ``widgets/surf/__init__.py`` re-exports this package's
+    entire public widget surface by design (its own docstring: "the
+    package root is the import surface the screen and its tests use"), so
+    following that second name made *every* surf widget that imports any
+    sibling by this common pattern reach *every* icon-producing widget
+    anywhere in the package -- caught here because it flipped
+    ``swarm_throughput`` (imports only ``short_hex``, and only reaches
+    ``_rowfit``/``_fmt``/``_pool4``/``_swarm_chain``, none of which import
+    the icon machinery either) to "not hash-only" the moment the walk went
+    through the package init instead of stopping at the plain modules the
+    import actually names.
+    """
+    seen: set[str] = set()
+    queue = [module_name]
+    while queue:
+        name = queue.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        names = module_imports(name)
+        if names & _ICON_PRODUCING_HELPERS:
+            return True
+        for candidate in names:
+            if candidate in seen or not candidate.startswith("maxpane_dashboard."):
+                continue
+            if not _is_module(candidate):
+                continue
+            spec = importlib.util.find_spec(candidate)
+            if spec is not None and spec.submodule_search_locations is not None:
+                continue  # a package root, not a real call-graph edge -- see above
+            queue.append(candidate)
+    return False
 
 
 def _hash_only_module(module_name: str | None) -> bool:
@@ -393,16 +463,13 @@ def _hash_only_module(module_name: str | None) -> bool:
     :func:`_continues_as_hash_window`'s excuse.
 
     It must import the address helper at all (``imports_helper``, the same
-    AST-resolved check ``EXEMPT``'s own agreement test uses) **and** import
-    neither ``address_text`` nor ``address_prose``. Python has no way to
-    reach either function without naming it in an import somewhere in the
-    file (this codebase never imports the whole ``address`` module and
-    reaches a function through attribute access instead -- verified by
-    grepping every consumer of ``widgets/address.py`` when this rule was
-    written; a future module doing that would need this check revisited,
-    the same caveat ``tests/address_sweep/imports.py`` names for the exact
-    same reason), so a module in this shape cannot construct a copy icon at
-    all: every ``0x``-shaped run it paints is provably the output of
+    AST-resolved check ``EXEMPT``'s own agreement test uses) **and** never
+    reach ``address_text``/``address_prose`` through any chain of imports
+    (:func:`_reaches_icon_machinery`, transitive -- fix round 2; a direct-
+    import-only version of this check missed ``feed.py``/``signals.py``,
+    which reach the icon machinery through ``widgets/surf/_icons.py``). A
+    module in this shape cannot construct a copy icon at all: every
+    ``0x``-shaped run it paints is provably the output of
     ``short_hex``/``short_address`` windowing some value it was handed, not
     a bare address. A module that never touches the helper at all is not
     "hash only" either -- there is nothing here to excuse in the first
@@ -411,7 +478,7 @@ def _hash_only_module(module_name: str | None) -> bool:
     """
     if not module_name or not imports_helper(module_name):
         return False
-    return not (module_imports(module_name) & _ICON_PRODUCING_HELPERS)
+    return not _reaches_icon_machinery(module_name)
 
 
 def _widget_module_at(app, x: int, y: int) -> str | None:
@@ -493,6 +560,34 @@ def test_a_hash_only_module_is_recognized_by_which_icon_helpers_it_imports():
     # Never touches the address helper at all: nothing to excuse here either.
     assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_queue")
     assert not _hash_only_module(None)
+
+
+def test_a_module_reaching_icons_through_an_indirection_is_not_hash_only():
+    """Fix round 2 (coordinator carry-over on task-13-review.md Finding 1):
+    real modules, not the synthetic swarm names above.
+
+    ``widgets/surf/feed.py`` and ``widgets/surf/signals.py`` never import
+    ``address_text``/``address_prose`` directly -- both reach them through
+    ``widgets/surf/_icons.py`` (``mark_addresses``/``link_prose``/
+    ``link_in_order``), which imports ``address_text`` on its own line --
+    and both genuinely paint iconized addresses (``SurfFeed``'s announce
+    posts, ``SurfSignals``' deploy detail). A depth-1 check of direct
+    imports alone classified both as hash-only, which would excuse a real,
+    un-iconized address/hash collision attributed to either widget's own
+    text. This assertion fails against fix round 1 (`1c279ea`), where
+    ``_hash_only_module`` checked only direct imports.
+    """
+    # Reach the icon machinery one hop further out, through _icons.py:
+    # never hash-only, no matter how few names they import directly.
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf.feed")
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf.signals")
+    # The indirection itself: _icons.py imports address_text directly, so
+    # it is not hash-only even at depth 0.
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf._icons")
+    # The genuinely hash-only case must still hold once the walk is
+    # transitive -- the fix must not trade a false negative for a false
+    # positive.
+    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_throughput")
 
 
 def test_the_region_scan_only_excuses_a_hash_window_for_a_hash_only_widget():
