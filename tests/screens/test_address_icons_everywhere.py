@@ -112,12 +112,15 @@ EXEMPT: dict[str, str] = {
         " sweep: at SIZE=(170, 60) FIELD genuinely reaches ``full`` and would"
         " paint an icon if the seeded payload put an address in a dispatch"
         " note. It does not (the swarm fixture's own two notes are"
-        " ``\"waiting on review\"`` and ``None``), so the exemption still"
-        " holds on the facts, not on unreachability -- and this comment says"
-        " so rather than repeating the now-false claim that no swept render"
-        " could ever show one. This body's own layout pin (95, re-swept"
-        " 2026-09-17 alongside the column-balance change) is still well"
-        " under 170, so FIELD stays out of ``full`` tier there regardless.",
+        " ``\"waiting on review\"`` and ``None``, guarded by its own test:"
+        " test_the_swarm_field_exemption_s_own_assumption_is_still_true_of_"
+        " the_fixture), so the exemption still holds on the facts, not on"
+        " unreachability -- and this comment says so rather than repeating"
+        " the now-false claim that no swept render could ever show one."
+        " This body's own layout pin (116, re-swept 2026-09-17 fix round 1"
+        " on a silent overflow the column-balance change's own 95 had been"
+        " certifying) is still well under 170, so FIELD stays out of"
+        " ``full`` tier there regardless.",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
     "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":
@@ -333,6 +336,50 @@ def test_the_exemptions_name_real_helper_using_classes():
         assert isinstance(cls, type), key
         assert imports_helper(module_name), (key, "does not import the helper; drop the exemption")
         assert reason.strip(), key
+
+
+def test_the_swarm_field_exemption_s_own_assumption_is_still_true_of_the_fixture():
+    """``SurfSwarmField``'s own ``EXEMPT`` entry no longer rests on the note
+    column being unreachable (fix round 1, 2026-09-17, on the column-balance
+    change's own re-sweep: THE FIELD's own ``full``-tier threshold, 170, sits
+    *inside* this file's own 170-column ``SIZE`` sweep now, not past it) --
+    it rests on a narrower, checkable fact instead: the seeded swarm fixture
+    puts no address in any ``dispatch_note``. That fact was true when the
+    comment was written and had **no test of its own** -- a future fixture
+    edit (a new seeded row, a note rewritten to include an example address)
+    could make the comment's own claim false while this file keeps reporting
+    green, exactly the "an EXEMPT widget prints no address" guarantee E5
+    exists to protect elsewhere in this file, here left to a sentence in a
+    docstring instead of an assertion.
+
+    This is that assertion: every ``dispatch_note`` in the fixture the sweep
+    actually mounts (``tests.address_sweep.builders._surf_payload``) is
+    checked against both address patterns this file already uses
+    (:data:`ADDRESS_RE`, whole; :data:`PROSE_ADDRESS_RE`, embedded). If this
+    ever reddens, the fix is not to weaken this test -- it is to move
+    ``SurfSwarmField`` off ``EXEMPT`` and let E4 require it to actually
+    produce an icon, because the premise that panel's exemption depends on
+    stopped holding.
+    """
+    from tests.address_sweep.builders import _surf_payload
+
+    payload = _surf_payload()
+    rows = payload.get("swarm_field_rows") or []
+    assert rows, "the swarm fixture seeded no field rows -- this test has nothing to check"
+    for row in rows:
+        note = row.get("dispatch_note")
+        if not isinstance(note, str):
+            continue
+        assert not ADDRESS_RE.search(note), (
+            row.get("job_id"), note,
+            "a whole address is now seeded into a dispatch note -- "
+            "SurfSwarmField's own EXEMPT reason no longer holds",
+        )
+        assert not PROSE_ADDRESS_RE.search(note), (
+            row.get("job_id"), note,
+            "an embedded address is now seeded into a dispatch note -- "
+            "SurfSwarmField's own EXEMPT reason no longer holds",
+        )
 
 
 async def _enter(view, app, pilot) -> None:

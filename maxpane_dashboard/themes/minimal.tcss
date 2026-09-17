@@ -2698,7 +2698,7 @@ SurfScreen #surf-swarm-bottom {
 
 SurfSwarmShipped {
     width: 1fr;
-    min-width: 68;
+    min-width: 0;
     max-width: 81;
     height: 1fr;
     min-height: 8;

@@ -1822,7 +1822,139 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: Every displayed address still carries its copy icon inside this number,
 #: unaffected by any of the above: JUST SHIPPED's own address/site column
 #: is untouched by this round.
-SURF_SWARM_FULL_LAYOUT_COLUMNS = 95
+#:
+#: ═══════════════════════════════════════════════════════════════════════
+#: FIX ROUND 1 ON THE COLUMN-BALANCE CHANGE (2026-09-17, same day): 95 was
+#: WRONG, and not by a rounding error -- it certified a screen that was
+#: silently cropping THROUGHPUT's content at and above the pin it claimed
+#: was whole. 95 -> **116**. This is not a fifth round's worth of new
+#: reasoning laid over the fourth; it is a correction to the fourth round's
+#: own arithmetic, found by a reviewer comparing two widgets' *regions*
+#: (their painted rectangles) against their shared container's region --
+#: a check this file's own detectors (``_swarm_marked``,
+#: ``_css_clipped_lines``) cannot perform, and did not perform, which is
+#: why 95 passed every test in this file and was still wrong.
+#:
+#: WHAT WAS ACTUALLY HAPPENING AT 95. ``#surf-swarm-bottom`` holds two
+#: bounded ``1fr`` children: ``SurfSwarmShipped`` (``min-width: 68;
+#: max-width: 81;`` at the time) and ``SurfSwarmThroughput`` (``max-width:
+#: 46;``, no min). At outer width 95 the row itself is ~94 columns. 68 + 46
+#: = 114; 81 + 46 = 127 -- both past 94, and Textual's ``arrange()`` does
+#: **not** shrink either child to make them fit: measured, JUST SHIPPED sat
+#: at its own **max** (81, not 68 -- see the next paragraph for why),
+#: THROUGHPUT at its own max (46), and THROUGHPUT's box was placed at
+#: ``x=81, width=46``, right edge 127, against the row's own right edge 94
+#: -- a 33-column overflow. The compositor crops the painted strip at the
+#: row's edge with no ``…``, no ``‹``, no scrollbar: at the certified pin
+#: the agent row composited as ``#2      0.`` and, for outer widths
+#: 95-108, THROUGHPUT's own title lost its ``· as of HH:MM`` suffix too --
+#: both entirely outside what ``_region_text`` (which slices the
+#: *composited screen*, itself only as wide as the outer terminal) could
+#: ever see, because the missing content's own screen position never
+#: existed in the first place.
+#:
+#: WHY JUST SHIPPED SAT AT ITS MAX RATHER THAN ITS MIN -- A REAL TEXTUAL
+#: BEHAVIOUR, MEASURED RATHER THAN ASSUMED, AND THE REASON THE FIX IS NOT
+#: "PICK A LOWER MIN-WIDTH." An explicit ``min-width`` on a bounded ``1fr``
+#: sibling, when the row cannot satisfy it, does **not** clamp that child
+#: to its min -- it snaps the child to its **max** instead, confirmed by
+#: sweeping ``min-width`` from 20 to 68 at outer width 95: 20-40 all
+#: produced a well-behaved ~47-column share (95's own natural 1fr split,
+#: unbothered by a min that low); 50 and above all produced 81 (the max),
+#: not 50 or 68. **Omitting ``min-width`` entirely reproduces the same
+#: snap-to-max** (JUST SHIPPED still rendered at 81 with no ``min-width``
+#: line at all) -- Textual falls back to an implicit, content-derived
+#: floor for a ``DataTable``-backed widget whose columns are installed at
+#: mount time (``full`` tier, the widest), and that implicit floor is
+#: *not* defeated by a lower explicit value once it is high enough to also
+#: trip the same snap; only an **explicit** low value avoids it. This is
+#: why the fix is not "measure a smaller floor and write it in" the way
+#: the review round that found this bug first suggested trying -- no
+#: min-width value between the implicit floor and 94 behaves any better
+#: than 68 did, and the review's own arithmetic (a floor plus a ceiling
+#: must not exceed the pin) is the right constraint but needed the right
+#: floor, which turned out to be the absence of one.
+#:
+#: THE FIX: ``min-width: 0;`` -- EXPLICIT, NOT OMITTED. The two spellings
+#: are not equivalent here, which is the load-bearing, counter-intuitive
+#: half of this fix: omitting the property leaves Textual's implicit
+#: content-based floor in charge (the snap-to-max bug); writing
+#: ``min-width: 0;`` overrides it and restores genuine proportional
+#: shrinking. Swept over the *entire* practical range (50-160) with this
+#: one change: **zero overflow at every width**, JUST SHIPPED's own region
+#: growing smoothly from 24 columns at outer 50 up to its own max (81) at
+#: outer 129 and holding there, THROUGHPUT growing in lockstep to its own
+#: cap (46) by outer 94 and holding. ``max-width: 81`` is unchanged; only
+#: the floor moved, from a number "inherited from the previous geometry"
+#: (round 2's own phrase) to no floor at all -- letting the panel shrink
+#: "smoothly, all the way to 0 if it must," which is the exact claim round
+#: 2's own comment made and which was false under ``min-width: 68`` the
+#: whole time. It is true now, proven by the sweep above rather than
+#: asserted again.
+#:
+#: THE NEW PIN, MEASURED ACROSS ALL FOUR PAYLOADS, NEVER STARTED AT THE
+#: PIN. "Whole" here still excludes THE FIELD's and (see below) JUST
+#: SHIPPED's own named exceptions, and now also requires **no widget
+#: region to extend past its container's** -- the new detector this fix
+#: adds (``tests/screens/test_surf_swarm_layout.py``, wired into the
+#: whole-ness sweep at every width, not merely the pin). The binding
+#: constraint at the new pin is **JUST SHIPPED's own tight-tier legibility
+#: floor**: ``swarm_shipped.TIGHT_WIDTH`` (64) is the DataTable's own
+#: column-sum need at its narrowest tier, and below ``self.size.width`` 66
+#: (64 + the 2-column title-padding overhead every panel on this body
+#: already subtracts) the table hides columns behind its own horizontal
+#: scrollbar rather than narrowing further -- an honest degradation
+#: (``shipped_hidden_cols`` already tracked it), but not a "whole" one.
+#: **The worst-case payload is 50-shipped, not the reference capture**:
+#: fifty rows force JUST SHIPPED's own vertical scrollbar, which costs the
+#: table two columns of horizontal budget it does not have to pay on a
+#: two-row capture, so 50-shipped needs outer width 116 where every other
+#: payload already clears at 114. Measured, not assumed: 115 not-whole
+#: (50-shipped alone: ``shipped_hidden_cols`` 1), 116 whole on all four
+#: payloads.
+#:
+#: JUST SHIPPED'S OWN EXCEPTION IS BACK, WITH A NEW NUMBER AND REAL
+#: EVIDENCE THIS TIME. The 2026-09-17 column-balance round's own claim --
+#: "JUST SHIPPED's exception collapsed into the ordinary pin" -- was true
+#: only because the overflow bug pinned JUST SHIPPED at its max (79
+#: ``self.size.width``, i.e. **already at full tier**) regardless of the
+#: outer width, so it *looked* clear from the pin outward when it was
+#: actually rendering off-screen. With the overflow fixed, JUST SHIPPED's
+#: real behaviour re-emerges: it needs ``self.size.width`` 79
+#: (``swarm_shipped.FULL_WIDTH`` + 2) to reach ``full`` tier and stop
+#: marking ``‹``, which the new, properly-shrinking geometry does not
+#: reach until outer width **129** (128 marked, 129 clear -- confirmed
+#: identically on the reference capture, the heavy payload and the
+#: 50-shipped payload, so this threshold is payload-independent the way
+#: THE FIELD's own always has been). This is a real, measured, reachable
+#: width past the new pin, THE FIELD's own exception shape exactly --
+#: named as :data:`SHIPPED_NEVER_CLEARS_BELOW` again in the test file,
+#: which also means :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own binding
+#: pair at the pin is **THE FIELD's exclusion aside** -- one column under
+#: 116, JUST SHIPPED (hidden columns) is what actually binds; THROUGHPUT
+#: and QUEUE are both already at their own caps well before 116.
+#:
+#: THROUGHPUT_NEVER_MARKS_BELOW COLLAPSED, FOR A GOOD REASON: THE SQUEEZE
+#: IS NOW SHARED FAIRLY. Under the overflow bug, THROUGHPUT absorbed
+#: nearly all of the row's shortfall alone (JUST SHIPPED refused to give
+#: up its max), so THROUGHPUT was driven to near-zero width at outer
+#: widths that were not otherwise extreme, and its own "too narrow to
+#: paint anything" threshold sat at 75. With both panels now sharing the
+#: squeeze proportionally, THROUGHPUT does not reach that same near-zero
+#: state until the **row itself** is near-zero: re-swept, its own silent
+#: (unmarked, unclipped) zone now ends at outer width 10, one column later
+#: (11) something is already caught as a CSS clip. This is not a defect --
+#: it is the same "under 3 cells" physical limit the old 75 measured,
+#: recurring at a width so far below every other pin in this file
+#: (including this body's own launch-day 93) that it is barely reachable
+#: in practice; it is named anyway, on the same terms as every exception
+#: in this file, rather than left to be rediscovered as a surprise.
+#:
+#: THE ROW PIN IS UNMOVED AGAIN. Nothing about this fix touches height;
+#: re-measured at the new column pin (116) rather than assumed, over the
+#: same 20-61 sweep, still 26 -- including the body-only-scrollbar
+#: adversarial case at height 25, unchanged.
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 116
 
 #: The ``s`` SWARM body's own height. Set at 42 on 2026-09-16 when the body
 #: was first wired; **re-swept to 26 the same day**, alongside the column
@@ -1916,6 +2048,15 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 95
 #: assumed -- including the adversarial body-only-scrollbar case at
 #: height 25, which still reproduces identically (``top_scroll``/
 #: ``bottom_scroll`` false, ``body_scroll`` true, ``‹ taller`` lit).
+#:
+#: **Re-measured a fifth time, same day, fix round 1 on the column-balance
+#: change** (the 95 pin above was itself wrong -- a silent horizontal
+#: overflow the whole-ness sweep could not see; see
+#: :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own ``#:`` block for the
+#: defect and the fix, 95 -> 116). Nothing about that fix touches height
+#: either (only ``min-width``/``max-width`` moved); re-swept at the new
+#: column pin (116) rather than assumed, still 26, adversarial case at
+#: height 25 unchanged.
 SURF_SWARM_FULL_LAYOUT_ROWS = 26
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
@@ -3028,41 +3169,51 @@ class SurfScreen(RefreshGuard, Screen):
      * whole of its row's right column, each one level shallower than
      * before.
      *
-     * WHY JUST SHIPPED IS ``1fr`` BOUNDED BY ``min-width``/``max-width``,
-     * NOT A BARE FIXED NUMBER -- THE 2026-09-17 REVIEW-ROUND-2 CORRECTION.
+     * WHY BOTH JUST SHIPPED AND THROUGHPUT ARE BOUNDED ``1fr`` RATHER THAN
+     * BARE FIXED NUMBERS, AND WHY JUST SHIPPED'S OWN FLOOR IS AN EXPLICIT
+     * ``0`` -- CURRENT AS OF THE 2026-09-17 COLUMN-BALANCE FIX ROUND
+     * (:data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own ``#:`` block carries
+     * the full derivation and the Textual behaviour that made a plain
+     * ``min-width: 68;`` silently overflow the row; this comment is the
+     * short version, kept beside the CSS it describes).
      * JUST SHIPPED's own content plateaus: its ``DataTable`` has fixed
      * per-column widths (``swarm_shipped.FULL_WIDTH``/``COMPACT_WIDTH``/
      * ``TIGHT_WIDTH``) that do not grow with extra space past ``full``, so
      * an *unbounded* share would waste every column past that need on
-     * blank table margin -- still the terminal-layout skill's own rule,
-     * "a fixed column for the panel whose content is a constant", except
-     * here the constant has two ends (a floor below which the address
-     * window cannot usefully narrow further, a ceiling above which it
-     * cannot usefully widen further), so the instrument is a *bounded*
-     * ``1fr`` rather than one bare number. Round 1 (one day earlier) fixed
-     * it at the floor alone (68, the ``tight`` tier's own need) and left
-     * it there permanently: that bought THROUGHPUT its columns at the pin
-     * correctly, but it also meant JUST SHIPPED's own ``‹ widen`` marker
-     * stayed lit at *every* terminal size, including ones where widening
-     * would show more of THE FIELD, of QUEUE, or of THROUGHPUT but never
-     * of JUST SHIPPED itself -- a marker promising "widen and you will see
-     * more" that was false at every size it was checked. ``min-width: 68;
-     * max-width: 81;`` on an unweighted ``1fr`` reproduces round 1's exact
-     * arithmetic at and below the pin (measured, not assumed -- JUST
-     * SHIPPED's own ``self.size.width`` holds flat at its floor through
-     * outer width 138) while letting it grow to ``full`` (``self.size.width``
-     * 79) once the terminal actually has the room, at outer width 164,
-     * after which THROUGHPUT alone keeps growing. The marker is therefore
-     * honest again: lit while JUST SHIPPED is short of ``full`` (true
-     * below 164), dark once it is not (true at and above it) --
-     * :data:`SHIPPED_NEVER_CLEARS_BELOW` in the test file names the
-     * threshold and
+     * blank table margin -- the instrument is a ``1fr`` bounded by
+     * ``max-width: 81`` (``FULL_WIDTH`` + 2) for that ceiling.
+     * THROUGHPUT's own content plateaus the same way, one row over --
+     * ``swarm_throughput._MAX_TX_COLS`` (12) caps its tx-hash column, so
+     * its own ``max-width: 46`` is that same kind of ceiling, not a
+     * borrowed or arbitrary number. **THROUGHPUT carries no min-width of
+     * its own** and does not need one: it is not backed by a ``DataTable``
+     * with mount-time fixed columns, so it has no implicit content floor
+     * for an explicit low value to defeat, and every sweep in the pin's
+     * own ``#:`` block confirms it shrinks smoothly on its own.
+     *
+     * JUST SHIPPED's ``min-width: 0`` is **explicit, not omitted**, and the
+     * two are not the same thing here: omitting the property left an
+     * *implicit*, content-derived floor in charge (Textual falls back to
+     * the ``DataTable``'s own mount-time, ``full``-tier column sum as an
+     * un-overridable minimum for a bounded ``1fr`` child once no explicit
+     * value replaces it), and that implicit floor is what silently
+     * overflowed this row at every outer width below ~127 -- JUST SHIPPED
+     * simply refused to shrink, THROUGHPUT was placed beside it at its own
+     * ``max-width`` regardless of what remained, and the compositor cropped
+     * the part that did not fit with no ``…``, no ``‹``, no scrollbar.
+     * ``min-width: 0`` overrides that implicit floor and restores genuine
+     * proportional shrinking -- confirmed by a full 50-160 width sweep with
+     * zero overflow at any point, not merely at the pin.
+     *
+     * With the overflow fixed, JUST SHIPPED's own ``‹ widen`` marker is
+     * honest again on its own terms, not because of an accidental pin at
+     * its max: lit while it is short of ``full`` tier (``self.size.width``
+     * < 79), dark once it is not, true now at every width the sweep
+     * covers. :data:`SHIPPED_NEVER_CLEARS_BELOW` in the test file names
+     * where that happens (129, re-measured, not the round-2 number) and
      * :func:`test_the_shipped_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
-     * proves both edges, THE FIELD's own test shape reused rather than
-     * invented fresh. THROUGHPUT keeps ``1fr`` with no bound of its own,
-     * so it takes whatever JUST SHIPPED's floor and ceiling leave it --
-     * exactly the trade the owner asked for, now honestly signalled on
-     * both panels rather than only on one.
+     * proves both edges -- the round-2 test's own name and shape, restored
+     * once the claim it makes was true again.
      *
      * ``#surf-swarm-top`` and ``#surf-swarm-bottom`` both carry their own
      * ``overflow-y: auto``, named in ``SurfScreen._SCROLL_COLUMNS[MODE_SWARM]``,
@@ -3143,7 +3294,7 @@ class SurfScreen(RefreshGuard, Screen):
     }
     SurfScreen SurfSwarmShipped {
         width: 1fr;
-        min-width: 68;
+        min-width: 0;
         max-width: 81;
         height: 1fr;
         min-height: 8;
