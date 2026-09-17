@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 
 import pytest
 
@@ -1017,7 +1018,14 @@ def test_save_creates_its_directory_is_atomic_and_never_raises(tmp_path):
     assert not (tmp_path / "deep" / "surf_cache.json.tmp").exists()
     json.loads(nested.read_text())
 
-    SurfCache(path="/proc/definitely/not/writable.json", clock=FakeClock()).save()
+    # F7: a fresh cache starts clean (nothing to persist yet), and ``save()``
+    # now skips the write entirely while clean -- so without a mutation here
+    # this call would return before ever touching the unwritable path,
+    # proving nothing. Dirty it first so the write, and the exception it
+    # raises, are actually exercised.
+    unwritable = SurfCache(path="/proc/definitely/not/writable.json", clock=FakeClock())
+    unwritable.set_baselines({"announce_nonce": 14})
+    unwritable.save()
 
 
 def test_a_non_finite_value_is_nulled_on_the_way_to_disk_never_fabricated(tmp_path):
@@ -1114,6 +1122,177 @@ def test_a_last_good_slot_stamped_a_year_ahead_does_not_read_as_live(tmp_path):
     c.load()
     assert c.get_last_good(SLOT_MARKET) is None
     assert c.age_of(SLOT_MARKET) is None
+
+
+# ---------------------------------------------------------------------------
+# F7 -- save() skips the write when nothing has changed
+#
+# The mechanism is a dirty flag set at the exact point of every mutation
+# ``save()`` persists (never inferred from container identity -- ``series``'
+# deques and ``_pool4_accumulators`` are mutated *in place*, so an identity
+# check on the outer container would miss exactly the mutation it exists to
+# catch), cleared only after a successful write. Every test below observes
+# the skip structurally: a spy on ``os.replace`` (the call ``save()`` uses to
+# commit the atomic temp-then-rename) counts real writes, and the file's
+# inode -- which that rename always replaces on a real write -- corroborates
+# it independently.
+# ---------------------------------------------------------------------------
+
+
+def _os_replace_spy(monkeypatch) -> list[tuple[str, str]]:
+    """Count real ``os.replace`` calls without changing what they do."""
+    calls: list[tuple[str, str]] = []
+    real_replace = os.replace
+
+    def spy(src, dst):
+        calls.append((str(src), str(dst)))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", spy)
+    return calls
+
+
+def test_a_cycle_with_nothing_changed_performs_no_write(tmp_path, monkeypatch):
+    calls = _os_replace_spy(monkeypatch)
+    c = _cache(tmp_path)
+    c.store_last_good(SLOT_CHAIN, {"block": 1, "announce_nonce": 14})
+    c.save()
+    assert len(calls) == 1
+    path = tmp_path / "surf_cache.json"
+    ino = path.stat().st_ino
+    written = path.read_bytes()
+
+    # Nothing mutates the cache between these -- this is "a cycle in which
+    # nothing changed". Called twice to prove the skip is not a one-shot.
+    c.save()
+    c.save()
+
+    assert len(calls) == 1, "an unchanged cache must not call os.replace again"
+    assert path.stat().st_ino == ino, "no write means no new inode"
+    assert path.read_bytes() == written
+
+
+def test_a_changed_slot_still_writes_and_the_written_shape_is_unaffected(
+    tmp_path, monkeypatch
+):
+    calls = _os_replace_spy(monkeypatch)
+    c = _cache(tmp_path)
+    c.store_last_good(SLOT_CHAIN, {"block": 1, "announce_nonce": 14})
+    c.save()
+    assert len(calls) == 1
+    path = tmp_path / "surf_cache.json"
+    ino = path.stat().st_ino
+
+    c.store_last_good(SLOT_CHAIN, {"block": 2, "announce_nonce": 14})
+    c.save()
+
+    assert len(calls) == 2, "a real change must still write"
+    assert path.stat().st_ino != ino, (
+        "a real write always replaces the file (atomic temp-then-rename)"
+    )
+    payload = json.loads(path.read_text())
+    # The skip mechanism changed nothing about *what* gets written: same
+    # top-level shape every other persistence test in this file relies on.
+    assert set(payload) == {
+        "version", "saved_at", "last_good", "series", "baselines",
+        "burned_cum", "last_supply", "last_supply_block", "pool4_accumulators",
+    }
+    assert payload["last_good"][SLOT_CHAIN]["payload"] == {
+        "block": 2, "announce_nonce": 14,
+    }
+
+
+def test_an_in_place_series_update_within_the_same_hour_still_dirties_the_cache(
+    tmp_path, monkeypatch
+):
+    """The identity trap, worked: ``_bucket_into`` mutates the deque in place
+    (``deq[-1] = ...``) rather than replacing ``self.series[name]``, so an
+    identity check on the series dict -- or on the deque object -- would
+    never see this change. The flag must still catch it.
+    """
+    calls = _os_replace_spy(monkeypatch)
+    c = _cache(tmp_path)
+    base = 1_786_190_400.0  # on an hour boundary
+    c.sample_series(base, imd_supply=100.0)
+    c.save()
+    assert len(calls) == 1
+    path = tmp_path / "surf_cache.json"
+    ino = path.stat().st_ino
+    deq_before = c.series[SERIES_IMD_SUPPLY]
+
+    # Same hour, a different value: the `deq[-1] = (bucket, val)` branch,
+    # mutating the SAME deque object rather than replacing it.
+    c.sample_series(base + 60.0, imd_supply=105.0)
+    assert c.series[SERIES_IMD_SUPPLY] is deq_before, (
+        "this must exercise the in-place mutation path, or the test below "
+        "proves nothing"
+    )
+    c.save()
+
+    assert len(calls) == 2, "an in-place series mutation must still trigger a write"
+    assert path.stat().st_ino != ino
+    payload = json.loads(path.read_text())
+    assert payload["series"][SERIES_IMD_SUPPLY] == [[base, 105.0]]
+
+
+def test_replacing_one_pool4_accumulator_entry_still_dirties_the_cache(
+    tmp_path, monkeypatch
+):
+    """Same trap, one layer out: ``set_pool4_accumulator`` replaces one key
+    of ``self._pool4_accumulators`` (``dict.__setitem__``) -- the outer dict
+    object is never swapped, only mutated in place.
+    """
+    calls = _os_replace_spy(monkeypatch)
+    c = _cache(tmp_path)
+    c.set_pool4_accumulator(
+        "SEPOLIA", {"genesis_block": 100, "cursor_block": 100, "sums": {}}
+    )
+    c.save()
+    assert len(calls) == 1
+    path = tmp_path / "surf_cache.json"
+    ino = path.stat().st_ino
+    outer_before = c._pool4_accumulators
+
+    c.set_pool4_accumulator(
+        "SEPOLIA", {"genesis_block": 100, "cursor_block": 150, "sums": {"a": 3}}
+    )
+    assert c._pool4_accumulators is outer_before, (
+        "this must exercise the in-place mutation path"
+    )
+    c.save()
+
+    assert len(calls) == 2
+    assert path.stat().st_ino != ino
+
+
+def test_a_skipped_write_still_recovers_exactly_the_same_state_after_a_restart(
+    tmp_path, monkeypatch
+):
+    calls = _os_replace_spy(monkeypatch)
+    clock = FakeClock()
+    path = str(tmp_path / "surf_cache.json")
+    c = SurfCache(path=path, clock=clock)
+    c.store_last_good(SLOT_CHAIN, {"block": 1, "announce_nonce": 14})
+    c.set_baselines({"announce_nonce": 14})
+    c.sample_series(clock.t, imd_supply=100.0)
+    assert c.record_supply(1000.0, block_number=10) is None
+    c.save()
+    assert len(calls) == 1
+
+    # A quiet cycle: nothing mutates the cache before this save, so it must
+    # be skipped -- and a restart afterwards must still recover everything
+    # the first, real write put on disk.
+    c.save()
+    assert len(calls) == 1
+
+    restored = SurfCache(path=path, clock=FakeClock())
+    restored.load()
+    assert restored.get_last_good(SLOT_CHAIN).payload == c.get_last_good(SLOT_CHAIN).payload
+    assert restored.get_last_good(SLOT_CHAIN).ts == c.get_last_good(SLOT_CHAIN).ts
+    assert restored.get_baselines() == c.get_baselines()
+    assert restored.get_series(SERIES_IMD_SUPPLY) == c.get_series(SERIES_IMD_SUPPLY)
+    assert restored.last_supply == c.last_supply
+    assert restored.burned_cum == c.burned_cum
 
 
 # ---------------------------------------------------------------------------

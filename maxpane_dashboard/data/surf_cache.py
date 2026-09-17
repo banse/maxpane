@@ -398,6 +398,30 @@ class SurfCache:
         #: pool4's running counter totals, keyed by the same series name the
         #: reserve history uses -- one per network, for the same reason.
         self._pool4_accumulators: dict[str, dict[str, Any]] = {}
+        # F7: whether any persisted field has changed since the last
+        # successful ``save()``. ``save()`` skips the disk write entirely
+        # while this is ``False`` -- the two swarm slots alone add ~276 KB to
+        # this file, and it used to be rewritten whole on every poll (30 s
+        # default) even when nothing in it had changed.
+        #
+        # Set explicitly, at the exact point of mutation, by every method
+        # below that changes state ``save()`` persists -- never inferred from
+        # container identity. ``series`` and ``_pool4_accumulators`` are
+        # mutated *in place* (``deque.append``, ``deque[-1] = ...``,
+        # ``dict.__setitem__``), so an identity check on the outer container
+        # would miss exactly the mutation it exists to catch: the container
+        # object never changes, only its contents do. A flag is only as
+        # trustworthy as its coverage, so every mutation path is enumerated
+        # here and each one sets it: ``store_last_good``, ``_bucket_into``
+        # (bucketed by ``sample_series``, ``sample_pool4_reserve`` and
+        # ``fold_pool4_reserve_history``), ``set_pool4_accumulator``,
+        # ``record_supply`` (both branches that actually assign), and
+        # ``set_baselines``. ``mark_fetched``/``mark_failed`` are excluded on
+        # purpose: the tier clocks they update are deliberately not persisted
+        # (see ``save()``'s own docstring), so they cannot dirty this flag.
+        # ``load()`` restores state that -- by construction -- already
+        # matches what is on disk, so it leaves this alone too.
+        self._dirty: bool = False
 
     # -- clock ---------------------------------------------------------------
 
@@ -492,6 +516,7 @@ class SurfCache:
             )
         entry = LastGood(payload=payload, ts=self._now(ts))
         self.last_good[slot] = entry
+        self._dirty = True
         return entry
 
     def get_last_good(self, slot: str) -> LastGood | None:
@@ -527,9 +552,11 @@ class SurfCache:
         bucket = _hour_bucket(float(now_ts))
         if not deq or bucket > deq[-1][0]:
             deq.append((bucket, val))
+            self._dirty = True
             return
         if deq[-1][0] == bucket:
             deq[-1] = (bucket, val)
+            self._dirty = True
             return
         # Out-of-order sample (a backward clock step, or -- once WP4.6 lands --
         # a fresh reading interleaving with points reloaded from disk): merge
@@ -545,6 +572,7 @@ class SurfCache:
         else:
             points.insert(idx, (bucket, val))
         self.series[name] = deque(points, maxlen=deq.maxlen)
+        self._dirty = True
 
     def sample_series(
         self,
@@ -655,6 +683,7 @@ class SurfCache:
         if name is None or not isinstance(accumulator, Mapping):
             return
         self._pool4_accumulators[name] = dict(accumulator)
+        self._dirty = True
 
     @staticmethod
     def _coerce_accumulator(raw: Any) -> dict[str, Any] | None:
@@ -772,16 +801,19 @@ class SurfCache:
                 self._last_supply_block = block
                 self._supply_block_unverified = False
                 self.last_supply = value
+                self._dirty = True
                 return None
             if self._last_supply_block is not None and block <= self._last_supply_block:
                 # Stale replica: this block was already superseded by one
                 # folded in earlier. Ignore it outright -- do not let it
-                # re-baseline the accumulator or displace the watermark.
+                # re-baseline the accumulator or displace the watermark. No
+                # state changes on this path, so it must not dirty the cache.
                 return None
             self._last_supply_block = block
 
         previous = self.last_supply
         self.last_supply = value
+        self._dirty = True
         if previous is None:
             return None
         if value < previous:
@@ -897,6 +929,7 @@ class SurfCache:
         set, so merging would let a key it deliberately dropped come back.
         """
         self._baselines = self._sanitise_baselines(baselines, self._now(now))
+        self._dirty = True
 
     # -- persistence ---------------------------------------------------------
 
@@ -906,7 +939,21 @@ class SurfCache:
         The tier marks are deliberately **not** persisted: after a restart every
         tier is due, because the chain moved while the process was down and the
         announce nonce is the one number the dashboard exists to be early on.
+
+        F7: a no-op, before any of the work below, while :attr:`_dirty` is
+        ``False`` -- nothing that would change what a restart recovers has
+        happened since the last successful write, so there is nothing to
+        persist. This is checked regardless of ``path``: ``_dirty`` tracks
+        whether *this cache's in-memory state* has moved since it was last
+        committed anywhere, not the freshness of one particular file on disk.
+        Only a successful write clears it, so a save that fails (caught
+        below) leaves the flag set and the next cycle's save retries.
         """
+        if not self._dirty:
+            logger.debug(
+                "SURF cache unchanged since the last save; skipping the write"
+            )
+            return
         target = str(path or self.path)
         payload: dict[str, Any] = {
             "version": _SCHEMA_VERSION,
@@ -937,6 +984,7 @@ class SurfCache:
             with open(tmp, "w") as handle:
                 json.dump(payload, handle)
             os.replace(tmp, target)
+            self._dirty = False
             logger.info(
                 "SURF cache saved to %s (%d last-good slots, burned %.0f observed)",
                 target,
