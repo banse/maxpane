@@ -308,7 +308,27 @@ class SurfSwarmQueue(Vertical):
         return max(self.size.width - self._TITLE_PADDING_COLS, 0)
 
     def _title_text(self) -> str:
-        return _title_with_hint(TITLE, self._widen, self._text_budget())
+        """``TITLE``, plus ``· as of HH:MM`` once a real marker is held.
+
+        F-B: this panel used to serve last-good rows through an outage with
+        no clock on screen at all -- ``swarm_as_of_hhmm`` reached
+        ``update_data`` and was stored, but only ``_is_unavailable`` ever
+        read it. Design §6.2 and CLAUDE.md both require last-good to sit
+        behind its own ``as of`` marker, the way THE FIELD's own title does.
+
+        **The live tier's marker, not the scores one.** QUEUE's rows
+        (``swarm_queue_rows``/``swarm_blocked_rows``) are folded from
+        ``SLOT_SWARM`` in ``_swarm_keys`` -- the same slot this payload's
+        ``swarm_as_of_hhmm`` already names -- never from the slower scores
+        sweep. ``update_data`` has no ``swarm_scores_as_of_hhmm`` parameter
+        at all, so there is no clock here to wire to the wrong tier by
+        accident.
+        """
+        base = TITLE
+        as_of = self._payload.get("as_of") if self._payload else None
+        if _has_marker(as_of):
+            base += f" · as of {as_of}"
+        return _title_with_hint(base, self._widen, self._text_budget())
 
     def _render_view(self) -> None:
         try:

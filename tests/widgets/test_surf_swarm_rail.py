@@ -85,6 +85,29 @@ async def test_a_genuine_empty_queue_read_differs_from_unavailable():
     assert QUEUE_UNAVAILABLE_LINE not in text
 
 
+async def test_queue_carries_the_live_marker_not_the_scores_one():
+    """F-B: QUEUE used to serve last-good rows with no ``as of`` marker at
+    all. Its rows come off ``SLOT_SWARM`` (the live tier), never the slower
+    scores sweep, so the title must carry ``swarm_as_of_hhmm`` -- and only
+    that marker. Feeding a distinct ``swarm_scores_as_of_hhmm`` alongside it
+    (a value QUEUE's own ``update_data`` has no parameter for) proves it
+    could not have been wired to the wrong clock, not merely that the right
+    one happens to be the only one available.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (60, 14), swarm_queue_rows=QUEUE_ROWS, swarm_blocked_rows=BLOCKED,
+        swarm_as_of_hhmm="14:00", swarm_scores_as_of_hhmm="13:20"))
+    assert "as of 14:00" in text
+    assert "13:20" not in text
+
+
+async def test_queue_shows_no_marker_when_it_has_never_been_read():
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (60, 14), swarm_queue_rows=[], swarm_blocked_rows=[],
+        swarm_as_of_hhmm=None))
+    assert "as of" not in text
+
+
 async def test_throughput_names_its_window_and_the_agents():
     text = "\n".join(await composite_lines(
         SurfSwarmThroughput, (60, 14), swarm_throughput=THROUGHPUT, swarm_score_rows=SCORES))
