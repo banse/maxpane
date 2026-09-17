@@ -71,6 +71,32 @@ async def test_an_empty_field_is_not_an_unread_field():
     assert UNAVAILABLE_LINE in unread
 
 
+async def test_a_marker_absent_with_rows_still_present_shows_no_rows():
+    """Task 11: the real producer can never hand this widget a marker-absent,
+    rows-non-empty payload (``data/surf_swarm.field_rows`` always returns
+    ``[]`` while ``SLOT_SWARM`` is cold, per this module's own *"swarm_field_
+    rows and the read/empty split"* docstring section) -- but a hand-edited
+    or partially written cache file is third-party input too, and
+    ``_render_view``'s own ``rows_input is None`` half of the gate is the
+    part that exists purely for that scenario (the docstring says so in as
+    many words: "the widget stays honest if it is ever handed that sentinel
+    directly").
+
+    Every other test in this file either sets a marker with real rows, or
+    sets no marker with an empty list (the state the real producer *does*
+    emit for "never read"). None of them drives a marker-absent payload
+    whose rows are a real, non-empty list -- the shape a corrupted cache
+    file could produce, and the one this test closes. Mutate the gate to
+    drop the marker check (leaving only ``rows_input is None``) and this
+    test reddens: the row content would leak as a confident "nothing is
+    wrong" render instead of the unavailable state.
+    """
+    _lines, text = await _field(swarm_field_rows=ROWS, swarm_as_of_hhmm=None)
+    assert "build_website" not in text
+    assert "adversarial_review" not in text
+    assert UNAVAILABLE_LINE in text
+
+
 async def test_the_title_carries_the_as_of_marker():
     _lines, text = await _field(swarm_as_of_hhmm="13:18")
     assert "13:18" in text

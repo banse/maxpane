@@ -7,9 +7,18 @@ out of ``swarm_throughput.py`` so JUST SHIPPED does not need a third copy).
 """
 
 from maxpane_dashboard.widgets.surf import swarm_throughput as _throughput_mod
+from maxpane_dashboard.widgets.surf.swarm_queue import EMPTY_LINE as QUEUE_EMPTY_LINE
 from maxpane_dashboard.widgets.surf.swarm_queue import FULL_WIDTH as QUEUE_FULL_WIDTH
 from maxpane_dashboard.widgets.surf.swarm_queue import NO_BLOCKED_LINE, SurfSwarmQueue
-from maxpane_dashboard.widgets.surf.swarm_throughput import STALE_WORD, SurfSwarmThroughput
+from maxpane_dashboard.widgets.surf.swarm_queue import (
+    UNAVAILABLE_LINE as QUEUE_UNAVAILABLE_LINE,
+)
+from maxpane_dashboard.widgets.surf.swarm_throughput import (
+    AGENTS_UNAVAILABLE_LINE,
+    NO_AGENTS_LINE,
+    STALE_WORD,
+    SurfSwarmThroughput,
+)
 from tests.widgets.surf_compositing import composite_lines
 
 QUEUE_ROWS = [{"state": "completed", "count": 43}, {"state": "cancelled", "count": 11},
@@ -35,6 +44,37 @@ async def test_nothing_blocked_is_said_out_loud():
     assert NO_BLOCKED_LINE in text
 
 
+async def test_the_queue_panel_is_unavailable_with_no_marker_and_nothing_to_show():
+    """Task 11: no committed test drove ``UNAVAILABLE_LINE`` before this one
+    -- ``_is_unavailable`` (a cold ``SLOT_SWARM``, or an all-failed read: no
+    ``swarm_as_of_hhmm`` marker and both lists empty) is reachable in
+    production (``data/surf_manager._swarm_keys`` publishes ``None`` for
+    both list keys whenever ``jobs`` is falsy, exactly the frozen ``[]``
+    the module docstring names), but nothing asserted the string it renders
+    for it. Everything is left at its default (no kwargs at all), which
+    resolves through ``update_data``'s own ``None`` defaults to the cold-slot
+    shape.
+    """
+    text = "\n".join(await composite_lines(SurfSwarmQueue, (60, 14)))
+    assert QUEUE_UNAVAILABLE_LINE in text
+    assert QUEUE_EMPTY_LINE not in text
+    assert NO_BLOCKED_LINE not in text
+
+
+async def test_a_genuine_empty_queue_read_differs_from_unavailable():
+    """The other half of the same gap: a real marker with both lists
+    genuinely empty must print the two *empty* lines, never the unavailable
+    one -- the curator rail bug the whole body exists to avoid, now pinned
+    for QUEUE specifically rather than only argued for in its docstring.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (60, 14), swarm_queue_rows=[], swarm_blocked_rows=[],
+        swarm_as_of_hhmm="12:00"))
+    assert QUEUE_EMPTY_LINE in text
+    assert NO_BLOCKED_LINE in text
+    assert QUEUE_UNAVAILABLE_LINE not in text
+
+
 async def test_throughput_names_its_window_and_the_agents():
     text = "\n".join(await composite_lines(
         SurfSwarmThroughput, (60, 14), swarm_throughput=THROUGHPUT, swarm_score_rows=SCORES))
@@ -48,6 +88,35 @@ async def test_an_unread_throughput_is_dashes_not_zeroes():
         SurfSwarmThroughput, (60, 14), swarm_throughput=None, swarm_score_rows=None))
     assert "--" in text
     assert "0.0" not in text
+
+
+async def test_the_agent_section_is_unavailable_with_no_marker_and_no_rows():
+    """Task 11: like QUEUE's own gap, no committed test drove
+    ``AGENTS_UNAVAILABLE_LINE`` before this one -- ``_agents_unavailable``
+    (no ``swarm_scores_as_of_hhmm`` marker and an empty ``swarm_score_rows``)
+    is reachable in production (``data/surf_manager._swarm_scores_keys``
+    publishes ``[]`` for ``swarm_score_rows`` whenever the sweep has never
+    run, exactly the frozen empty shape ``data/surf_swarm.score_rows``
+    always returns), but nothing asserted the string it renders for it.
+    The four rate rows print dashes unconditionally (see
+    ``test_an_unread_throughput_is_dashes_not_zeroes`` above), so this test
+    is scoped to the agent section's own degraded state alone.
+    """
+    text = "\n".join(await composite_lines(SurfSwarmThroughput, (60, 14)))
+    assert AGENTS_UNAVAILABLE_LINE in text
+    assert NO_AGENTS_LINE not in text
+
+
+async def test_a_genuine_empty_score_read_differs_from_unavailable():
+    """A real scores marker with no agents scored yet must print
+    ``NO_AGENTS_LINE``, never ``AGENTS_UNAVAILABLE_LINE`` -- the same
+    unread-vs-empty distinction QUEUE's own pair of tests pins.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (60, 14), swarm_score_rows=[],
+        swarm_scores_as_of_hhmm="04:06"))
+    assert NO_AGENTS_LINE in text
+    assert AGENTS_UNAVAILABLE_LINE not in text
 
 
 async def test_the_stale_word_appears_only_when_told():

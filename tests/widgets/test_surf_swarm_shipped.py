@@ -71,6 +71,31 @@ async def test_an_empty_list_and_an_unread_list_differ():
     assert "unavailable" in await _shipped(swarm_shipped_rows=[], swarm_scores_as_of_hhmm=None)
 
 
+async def test_a_marker_absent_with_rows_still_present_shows_no_rows():
+    """Task 11: the real producer can never hand this widget a marker-absent,
+    rows-non-empty payload (``data/surf_swarm.shipped_rows`` always returns
+    ``[]`` while ``SLOT_SWARM_SCORES`` is cold, per the module docstring's
+    own *"Unread is not empty"* section) -- but a hand-edited or partially
+    written cache file is third-party input too, and ``_render_rows``'s own
+    marker check (mirroring the footer's ``_no_rows_line``) is what stops
+    that malformed state from leaking real-looking rows onto the table while
+    the footer says ``unavailable`` right next to them.
+
+    This is the positive test that check never had: every other test in this
+    file either sets a marker with real rows, or sets no marker with an
+    empty list (the one state the real producer *does* emit for "never
+    read"). Neither exercises ``_render_rows``'s own gate against a payload
+    where the two disagree, which is exactly the shape a corrupted cache
+    file could produce. Mutate the gate to drop the marker check (leaving
+    only ``isinstance(rows, list)``) and this test reddens: the table would
+    show a real row while the footer still says ``unavailable``.
+    """
+    text = await _shipped(swarm_shipped_rows=ROWS, swarm_scores_as_of_hhmm=None)
+    assert "BazaarToken" not in text
+    assert "site-7018907b" not in text
+    assert "unavailable" in text
+
+
 # ---------------------------------------------------------------------------
 # Beyond the brief: the priority order inside the ADDRESS / SITE column, the
 # hoisted chain-word helper's own dash case, the no-bracket contract every
