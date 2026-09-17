@@ -2582,19 +2582,33 @@ SurfPool4UDepth {
  * WHY JUST SHIPPED IS FIXED-WIDTH AND THROUGHPUT IS `1fr` -- THE SAME
  * INSTRUMENT `#surf-pool4-user-bottom` PICKS FOR IF IMD FALLS/STAKERS, not
  * the reverse. JUST SHIPPED's own content is a constant: its `DataTable`
- * has fixed per-column widths (`swarm_shipped.FULL_WIDTH`/`COMPACT_WIDTH`)
- * that do not grow with extra space, so a share would waste every column
- * past its own need on blank table margin. THROUGHPUT's agent rows, by
- * contrast, can use extra width -- a wider cell shows more of the
- * transaction hash before `short_hex` truncates it -- so it is the panel
- * the terminal-layout skill's own rule names: "a fixed column for the panel
- * whose content is a constant, and `1fr` for the one that can use every
- * spare column." Giving JUST SHIPPED a fixed width equal to its own
- * full-tier need also means it never has to shed its WHEN column on this
- * body: every column this body's own pin buys back goes to THROUGHPUT's
- * hash-and-chain-word pair instead, which is exactly the trade the owner
- * asked for ("the column for the tx hash can be shortened to fit into the
- * space right to the JUST SHIPPED widget").
+ * has fixed per-column widths (`swarm_shipped.FULL_WIDTH`/`COMPACT_WIDTH`/
+ * `TIGHT_WIDTH`) that do not grow with extra space, so a share would waste
+ * every column past its own need on blank table margin. THROUGHPUT's
+ * agent rows, by contrast, can use extra width -- a wider cell shows more
+ * of the transaction hash before `short_hex` truncates it -- so it is the
+ * panel the terminal-layout skill's own rule names: "a fixed column for
+ * the panel whose content is a constant, and `1fr` for the one that can
+ * use every spare column."
+ *
+ * JUST SHIPPED IS FIXED AT ITS OWN `tight` TIER'S NEED (68), NOT `full`'s
+ * (81) -- THE 2026-09-17 CORRECTION. It was fixed at `full` for one day:
+ * that choice meant it never shed a column, but it also meant every
+ * column THROUGHPUT needed had to come from a wider pin instead, which is
+ * the wrong side of "the column for the tx hash can be shortened to fit
+ * into the space right to the JUST SHIPPED widget" -- the owner authorised
+ * shortening, not enlarging. `swarm_shipped.py` gained a third, narrower
+ * `tight` width tier for exactly this body: WHEN stays dropped and the
+ * ADDRESS / SITE column also narrows to `swarm_shipped.TIGHT_ADDR_COLS`
+ * (11, `widgets.address.MIN_SHORT_COLS` -- the same absolute legibility
+ * floor THROUGHPUT's own hash is already pinned to, windowing an address
+ * down to its narrowest legible form under a tight pin being this repo's
+ * own established anti-poisoning form rather than a new one). JUST
+ * SHIPPED therefore marks `‹ widen` permanently on this body -- confirmed
+ * at every width from the pin up to five times wider -- which is the
+ * named price of the trade, not a defect: every column this frees goes to
+ * THROUGHPUT's hash-and-chain-word pair instead, which is exactly the
+ * trade the owner asked for.
  *
  * `#surf-swarm-top` and `#surf-swarm-bottom` both carry their own
  * `overflow-y: auto`, named in `SurfScreen._SCROLL_COLUMNS[MODE_SWARM]`, on
@@ -2679,7 +2693,7 @@ SurfScreen #surf-swarm-bottom {
 }
 
 SurfSwarmShipped {
-    width: 81;
+    width: 68;
     height: 1fr;
     min-height: 8;
     padding: 0 1;

@@ -49,6 +49,23 @@ No row shape actually offers two of these at once except ``launch`` (address
 tx hash rather than going blank, which is exactly what
 ``test_a_transaction_hash_gets_no_icon`` drives.
 
+Three width tiers, not two (fix round 1, 2026-09-17)
+------------------------------------------------------
+``full`` (all five columns) and ``compact`` (WHEN dropped) are this panel's
+own, from Task 9. A third, narrower ``tight`` tier was added when this body
+moved to a 2x2 grid and JUST SHIPPED was given a **fixed** width rather than
+the whole row: at that fixed width the panel would otherwise be stuck
+between showing WHEN (impossible, the row lacks the columns for it, ever)
+and not marking widen honestly for the width it is missing. ``tight`` keeps
+WHEN dropped and additionally narrows the ADDRESS / SITE column to
+:data:`TIGHT_ADDR_COLS` -- the address module's own absolute legibility
+floor, below which ``short_hex``/``address_text`` clamp back up to it
+regardless, so nothing narrower would render any differently. See
+``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s own ``#:`` block in ``screens/surf.py``
+for why this panel is the one asked to shed, and why the shed is
+permanent on this body rather than a response to an unusually narrow
+terminal.
+
 The chain word is per row, never in the title (ruling, 2026-09-16)
 --------------------------------------------------------------------
 The design doc (``docs/superpowers/specs/2026-09-16-surf-swarm-view-design.md``
@@ -153,7 +170,13 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address, short_hex
+from maxpane_dashboard.widgets.address import (
+    ICON_COLS,
+    MIN_SHORT_COLS,
+    address_text,
+    is_address,
+    short_hex,
+)
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, hhmm
@@ -167,6 +190,8 @@ __all__ = [
     "FULL_WIDTH",
     "MAX_ROWS",
     "TABLE_ID",
+    "TIGHT_ADDR_COLS",
+    "TIGHT_WIDTH",
     "TITLE",
     "UNAVAILABLE_LINE",
     "SurfSwarmShipped",
@@ -183,7 +208,8 @@ UNAVAILABLE_LINE = "shipments unavailable"
 
 #: The address/site column's budget for a real address, **excluding** the
 #: copy icon -- ``widgets/address.address_text``'s own ``width`` contract.
-#: Frozen by the brief.
+#: Frozen by the brief for the ``full``/``compact`` tiers; :data:`TIGHT_ADDR_COLS`
+#: is the narrower window the ``tight`` tier uses instead (fix round 1).
 ADDR_COLS = 17
 
 #: Defensive backstop past the producer's own ``limit=12``
@@ -228,6 +254,19 @@ _CELL_PADDING = 2
 #: it); a transaction hash gets :data:`ADDR_COLS` alone, per the brief.
 _ADDR_RENDER_COLS = ADDR_COLS + ICON_COLS
 
+#: The address/site column's **tight** window (fix round 1, 2026-09-17):
+#: ``widgets/address.MIN_SHORT_COLS``, the address module's own absolute
+#: legibility floor -- ``_window`` clamps back up to it regardless of what
+#: is asked for below it, so a window narrower than this buys nothing.
+#: Spent only on this body, where JUST SHIPPED is given a fixed width rather
+#: than the whole row (see ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s own ``#:``
+#: block in ``screens/surf.py``): windowing an address down to its
+#: narrowest legible form under a tight pin is this repo's own established
+#: anti-poisoning form (curator's ``short_addr``, surf's own 8/6-at-17
+#: window one tier up), not a new one invented for this panel.
+TIGHT_ADDR_COLS = MIN_SHORT_COLS
+_TIGHT_ADDR_RENDER_COLS = TIGHT_ADDR_COLS + ICON_COLS
+
 #: Full tier: all five columns. Reused as the tier-decision threshold, like
 #: every sibling panel in this body -- see :func:`_render_view`.
 FULL_WIDTH = sum(
@@ -245,6 +284,17 @@ COMPACT_WIDTH = sum(
     cols + _CELL_PADDING
     for cols in (_KIND_COLS, _LABEL_COLS, CHAIN_COLS, _ADDR_RENDER_COLS)
 )                                                                    # 70
+#: A second tier down (fix round 1): WHEN stays dropped, and the
+#: ADDRESS / SITE column also narrows to :data:`TIGHT_ADDR_COLS`. Never the
+#: reverse (WHEN kept, address narrowed) -- WHEN is the whole panel's
+#: cheapest column to drop (5 cells) and buys nothing back if the address
+#: is still full width, so a tier that narrows the address before dropping
+#: WHEN would spend the reader's legibility for less width than dropping
+#: WHEN first already buys.
+TIGHT_WIDTH = sum(
+    cols + _CELL_PADDING
+    for cols in (_KIND_COLS, _LABEL_COLS, CHAIN_COLS, _TIGHT_ADDR_RENDER_COLS)
+)                                                                    # 64
 
 
 def _has_marker(as_of: object) -> bool:
@@ -310,24 +360,30 @@ def _row_fields(row: object) -> dict | None:
         return None
 
 
-def _addr_or_site_cell(fields: dict) -> Text:
+def _addr_or_site_cell(fields: dict, addr_cols: int, addr_render_cols: int) -> Text:
     """The ADDRESS / SITE cell: one priority order, never a bare hash.
 
     See the module docstring's *"Five columns, one identifying cell per
-    row"* section for the order and why each step exists.
+    row"* section for the order and why each step exists. ``addr_cols``/
+    ``addr_render_cols`` are the *active tier's* own window (fix round 1):
+    :data:`ADDR_COLS`/:data:`_ADDR_RENDER_COLS` at ``full``/``compact``,
+    :data:`TIGHT_ADDR_COLS`/:data:`_TIGHT_ADDR_RENDER_COLS` at ``tight`` --
+    passed in rather than read from the module globals so this function
+    cannot drift from whichever window :func:`_install_columns` actually
+    built the table with.
     """
     address = fields["address"]
     if is_address(address):
-        return address_text(address, width=ADDR_COLS)
+        return address_text(address, width=addr_cols)
     ens_name = fields["ens_name"]
     if ens_name:
-        return address_text(None, label=ens_name, width=_ADDR_RENDER_COLS)
+        return address_text(None, label=ens_name, width=addr_render_cols)
     tx_hash = fields["tx_hash"]
     if tx_hash:
-        return Text(short_hex(tx_hash, ADDR_COLS))
+        return Text(short_hex(tx_hash, addr_cols))
     commit = fields["commit"]
     if commit:
-        return Text(_rowfit.clip(commit, _ADDR_RENDER_COLS))
+        return Text(_rowfit.clip(commit, addr_render_cols))
     return Text(DASH)
 
 
@@ -403,12 +459,13 @@ class SurfSwarmShipped(Vertical):
         """(Re)build the header for *tier*; a no-op when it is already there."""
         if self._columns_tier == tier:
             return
+        addr_render_cols = _TIGHT_ADDR_RENDER_COLS if tier == "tight" else _ADDR_RENDER_COLS
         try:
             table.clear(columns=True)
             table.add_column("what", width=_KIND_COLS, key="kind")
             table.add_column("label", width=_LABEL_COLS, key="label")
             table.add_column("chain", width=CHAIN_COLS, key="chain")
-            table.add_column("address / site", width=_ADDR_RENDER_COLS, key="addr")
+            table.add_column("address / site", width=addr_render_cols, key="addr")
             if tier == "full":
                 table.add_column("when", width=_WHEN_COLS, key="when")
         except Exception:  # pragma: no cover - defensive
@@ -449,7 +506,9 @@ class SurfSwarmShipped(Vertical):
     def _render_view(self) -> None:
         budget = self._title_budget()
         self._widen = bool(budget) and budget < FULL_WIDTH
-        self._tier = "compact" if self._widen else "full"
+        self._tier = _rowfit.tier_for(
+            budget, (("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH))
+        )
         self._render_title()
         self._render_rows()
         self._render_footer()
@@ -475,6 +534,8 @@ class SurfSwarmShipped(Vertical):
         as_of = self._payload.get("as_of")
         rows = self._payload.get("rows")
         batch: list[list] = []
+        addr_cols = TIGHT_ADDR_COLS if self._tier == "tight" else ADDR_COLS
+        addr_render_cols = _TIGHT_ADDR_RENDER_COLS if self._tier == "tight" else _ADDR_RENDER_COLS
         # No real marker means unavailable, full stop -- the table shows no
         # rows even if ``rows`` somehow carried content (see the module
         # docstring and ``_no_rows_line``, whose gate this mirrors so the
@@ -493,7 +554,7 @@ class SurfSwarmShipped(Vertical):
                     safe_markup(_rowfit.pad(chain_word(fields["chain_id"]), CHAIN_COLS)),
                     # A ``Text`` cell, never markup -- see the module
                     # docstring's *"Third-party text"* section.
-                    _addr_or_site_cell(fields),
+                    _addr_or_site_cell(fields, addr_cols, addr_render_cols),
                 ]
                 if self._tier == "full":
                     values.append(

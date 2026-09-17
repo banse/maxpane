@@ -1525,122 +1525,147 @@ SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 
 #: The ``s`` SWARM body's own width. Set at 93 on 2026-09-16 when the body
-#: was first wired; **re-swept to 128 the same day**, off the owner's own
-#: live screenshot, when the body moved from THE FIELD beside a QUEUE-over-
-#: THROUGHPUT rail (JUST SHIPPED full-width beneath) to a 2x2 grid -- THE
-#: FIELD beside QUEUE on top, JUST SHIPPED beside THROUGHPUT beneath. A
-#: change to the grid is a change to this pin (terminal-layout skill), and
-#: the binding panel changed with it: THROUGHPUT no longer halves its width
-#: against THE FIELD's own seam, it now shares a row with JUST SHIPPED
-#: directly. Measured in situ over 70-160 columns with the committed swarm
-#: capture, re-centred on the new value rather than the old one (the sweep
-#: does not start at the pin) and re-confirmed against the heavy, 30-shipped
-#: and 50-shipped payloads over 113-143 -- straddling the new number by 15
-#: either side, all four payloads agreeing to the column. Never derived: it
-#: is not a rewrite of :data:`SURF_FULL_LAYOUT_COLUMNS` (143), of
-#: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` (138), of
-#: :data:`SURF_POOL4_FULL_LAYOUT_COLUMNS` (99) or of
-#: :data:`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` (119) -- a fifth body still
-#: gets a fifth constant, and this one happens to land *above*
-#: :data:`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` where the 2026-09-16 version
-#: of this block asserted it stayed under it. That relation was a
-#: coincidence with a date on it (terminal-layout skill's own words for
-#: exactly this), not a promise, and :func:`test_the_swarm_body_fits_inside_
-#: the_documented_app_width` no longer asserts it. Every displayed address
-#: still carries its copy icon inside this number (``docs/address_copy_PRD.md``
-#: §5); no pin moved for the icon -- JUST SHIPPED's own address/ENS/hash
-#: column never reaches this body's binding width (below).
+#: was first wired; re-swept to 128 the same day for the 2x2-grid
+#: restructure (THE FIELD beside QUEUE on top, JUST SHIPPED beside
+#: THROUGHPUT beneath); **re-swept again to 115 on 2026-09-17, in the
+#: layout-change review round that follows this restructure.** (That
+#: review round is unrelated to -- and one day later than -- Task 12's own
+#: "fix round 1" below, the ``_SCROLL_COLUMNS`` registration gap; the two
+#: share a phrase, not a date or a finding, and this block does not use
+#: "fix round 1" for the review round to keep the two apart.) 128 was the
+#: wrong kind of answer to "the column for the tx hash can be shortened to
+#: fit into the space right to the JUST SHIPPED widget" -- it grew the pin
+#: instead of shortening the value, which is exactly what "when a new
+#: value would widen a sized cell, shorten the value; raising a pin is
+#: reserved for when no honest short form exists" (terminal-layout skill)
+#: exists to prevent. The 35-column growth from 93 to 128 came entirely
+#: from fixing JUST SHIPPED at its **full** tier's own need (79
+#: ``self.size.width``); it never had to.
 #:
-#: WHY JUST SHIPPED IS FIXED-WIDTH NOW, NOT ``100%`` OF THE BODY. It shares
-#: a row with THROUGHPUT rather than spanning the body alone, and its own
-#: content is a constant -- ``DataTable`` columns of fixed cell widths that
-#: do not grow with extra space -- so it is given a **fixed** CSS width
-#: (81) rather than a share: the same instrument
-#: :data:`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` picks for IF IMD FALLS, for
-#: the same reason. 81 is not ``swarm_shipped.FULL_WIDTH`` (77) restated --
-#: it is FULL_WIDTH plus the **two** independent ``padding: 0 1`` declarations
-#: between the CSS box and the table (the container's own, set here, and the
-#: title/footer ``Static``'s own, in the widget's ``DEFAULT_CSS``), measured
-#: in situ rather than summed: ``self.size.width`` (what the widget's own
-#: ``_title_budget`` reads) needs to be 79 to clear, and Textual's box model
-#: takes 2 off the raw CSS width to get there, not 0. JUST SHIPPED never
-#: sheds its WHEN column on this body as a result (confirmed: its own
-#: ``self.size.width`` reads a constant 79 across the whole 70-160 sweep,
-#: and it never once appears in ``marked``) -- every column this pin buys
-#: back goes to THROUGHPUT's hash-and-chain-word pair instead, which is the
-#: trade the owner asked for ("the column for the tx hash can be shortened
-#: to fit into the space right to the JUST SHIPPED widget").
+#: WHAT ACTUALLY SHRANK, AND WHAT DID NOT. Two levers were on the table and
+#: only one had real slack:
+#:
+#: 1. **THROUGHPUT's own hash window was checked, not touched.**
+#:    ``short_hex``/``widgets.address._window`` clamps its own ``width``
+#:    argument up to ``MIN_SHORT_COLS`` (11) unconditionally --
+#:    ``width = max(width, MIN_SHORT_COLS)`` -- so a transaction hash never
+#:    renders narrower than 11 cells no matter what budget is offered it,
+#:    and :data:`swarm_throughput._MIN_TX_COLS` was already set to exactly
+#:    that floor before round 1 ever started (Task 8's own original value,
+#:    never edited by this task). Asking for fewer than 11 cells would not
+#:    shorten the render; it would only under-reserve for what still paints
+#:    at 11, which is a layout bug, not a shorter hash. There is no honest
+#:    shorter form here without editing ``MIN_SHORT_COLS`` itself, a
+#:    cross-dashboard constant curator's own address shortening also
+#:    depends on -- out of scope for this body. THROUGHPUT's own threshold
+#:    (41 budget / 43 ``self.size.width``, the width at which
+#:    ``swarm_throughput._agent_lines`` keeps the hash and its chain word
+#:    rather than dropping the pair together) is therefore **unmoved** by
+#:    round 1, confirmed by re-measurement.
+#: 2. **JUST SHIPPED's own fixed width had genuine slack, and round 1
+#:    spent it.** ``swarm_shipped.py`` gained a third, narrower ``tight``
+#:    width tier: WHEN stays dropped (as ``compact`` already
+#:    does) and the ADDRESS / SITE column also narrows from
+#:    :data:`swarm_shipped.ADDR_COLS` (17) to
+#:    :data:`swarm_shipped.TIGHT_ADDR_COLS` (11 -- ``address``'s own
+#:    absolute legibility floor, the same one THROUGHPUT's hash is already
+#:    pinned to, so neither column can be windowed narrower than the
+#:    other). JUST SHIPPED is fixed at this tier's own need rather than
+#:    ``full``'s: CSS width 68 (``self.size.width`` 66 =
+#:    ``swarm_shipped.TIGHT_WIDTH`` 64 + the widget's own 2-column title
+#:    padding), down from 81 (79 = ``FULL_WIDTH`` 77 + 2). Confirmed in
+#:    situ: at CSS width 68 the table's own "address / site" column reads
+#:    13 cells (11 + the copy icon's 2), and ``self.size.width`` holds at a
+#:    constant 66 across the whole width sweep.
+#:
+#: JUST SHIPPED THEREFORE MARKS ``‹ widen`` PERMANENTLY ON THIS BODY, AND
+#: THAT IS THE PRICE OF THE TRADE, NAMED RATHER THAN HIDDEN. Being fixed at
+#: ``tight`` rather than ``full`` means it is always short of ``FULL_WIDTH``
+#: (77) by definition, at every terminal size from 70 to 500 and past --
+#: confirmed, not assumed. This is THE FIELD's own shape of exception
+#: (below) but a different cause: THE FIELD cannot clear below a
+#: structural width it does not have; JUST SHIPPED will never clear at
+#: **any** width, because its own CSS width never grows past 68 regardless
+#: of how wide the terminal gets. ``SHIPPED_ALWAYS_MARKS`` (in
+#: ``tests/screens/test_surf_swarm_layout.py``) names it, and
+#: :func:`test_just_shipped_permanently_marks_on_this_body` proves it holds
+#: from the pin up through a terminal five times wider. Excluded from the
+#: "nothing marks besides THE FIELD" half of the whole-body property by
+#: name, the same way THE FIELD already is.
+#:
+#: Every displayed address still carries its copy icon inside this number
+#: (``docs/address_copy_PRD.md`` §5) -- the ``tight`` tier's own 11-cell
+#: window is windowed, not icon-less; only THROUGHPUT's transaction hash,
+#: per the standing rule, carries none.
+#:
+#: THE RESTORED RELATION. 115 is **under**
+#: :data:`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` (119) again, so
+#: :func:`test_the_swarm_body_fits_inside_the_documented_app_width`'s
+#: ``<=`` assertion against it is restored -- it was removed in round 1
+#: when the pin grew past 119 and is reinstated now that shortening the
+#: values brought the pin back under it. This is still not a relation to
+#: derive anything from (terminal-layout skill's own "coincidence with a
+#: date" note); it is asserted because it happens to hold today, and it
+#: will be removed again the day it stops, not chased.
+#:
+#: RE-SWEPT, NOT NUDGED. Measured in situ over 70-160 columns with the
+#: committed swarm capture, re-centred on 115 (not on 93 or 128) and
+#: re-confirmed against the heavy, 30-shipped and 50-shipped payloads over
+#: 100-121 -- all four payloads agreeing to the column: not-whole
+#: (THROUGHPUT the only marker besides THE FIELD and JUST SHIPPED) at 114,
+#: whole at 115, holding through 121.
 #:
 #: BINDING PANEL: still **THROUGHPUT** (``SurfSwarmThroughput``), still at
-#: its own need 43 columns (``self.size.width``) -- the width at which
-#: ``swarm_throughput._agent_lines`` keeps the transaction hash and its chain
-#: word rather than dropping the pair together. That threshold is unmoved
-#: from launch (it is a pure function of the widget's own width, never of
-#: the seam feeding it) and it re-measured unmoved against the heavy,
-#: 30-shipped and 50-shipped payloads again. THROUGHPUT's width is now
-#: ``1fr`` against JUST SHIPPED's fixed 81, so the relationship between the
-#: body's own outer width and THROUGHPUT's own is a subtraction, not a
-#: halving: outer 128 gives THROUGHPUT ``self.size.width`` 43 exactly (128
-#: minus 81 minus 4 columns of body/row-level scrollbar-gutter and
+#: its own unmoved need of 43 columns (``self.size.width``). THROUGHPUT's
+#: width is ``1fr`` against JUST SHIPPED's fixed 68, so the relationship
+#: between the body's own outer width and THROUGHPUT's own is a
+#: subtraction: outer 115 gives THROUGHPUT ``self.size.width`` 43 exactly
+#: (115 minus 68 minus 4 columns of body/row-level scrollbar-gutter and
 #: title-padding overhead, read off the sweep, never summed). QUEUE's own
-#: threshold (``swarm_queue.FULL_WIDTH`` = 27) still never binds anything at
-#: this seam -- confirmed quiet at every width in range on the *top* row,
-#: which QUEUE now has to itself rather than sharing with THROUGHPUT.
+#: threshold (``swarm_queue.FULL_WIDTH`` = 27) still never binds anything
+#: at this seam.
 #:
-#: A SECOND MEASURED, PERMANENT EXCEPTION, NAMED RATHER THAN SILENTLY
-#: ABSORBED (2026-09-16, the same restructure). **Below outer width 88**
-#: (``THROUGHPUT_NEVER_MARKS_BELOW`` in
-#: ``tests/screens/test_surf_swarm_layout.py``), THROUGHPUT's own
-#: ``self.size.width`` drops under 3 -- too narrow for its ``Static``s (each
-#: carrying their own ``padding: 0 1``) to paint even a single character, let
+#: A THIRD MEASURED, PERMANENT EXCEPTION, NAMED RATHER THAN SILENTLY
+#: ABSORBED. **Below outer width 75** (``THROUGHPUT_NEVER_MARKS_BELOW`` in
+#: the test file -- moved from round 1's 88, thirteen columns down, exactly
+#: JUST SHIPPED's own new saving, confirmed rather than assumed to move by
+#: that exact amount), THROUGHPUT's own ``self.size.width`` drops under 3 --
+#: too narrow for its ``Static``s to paint even a single character, let
 #: alone a CSS ellipsis or the bare ``‹`` glyph -- so a hash-and-chain-word
 #: pair it has already dropped internally can go both unmarked and
-#: un-clipped. This is THE FIELD's own kind of exception (below), not a
-#: regression this task introduced and left unnoticed: it was found by
-#: sweeping the *whole* 70-160 range rather than only the neighbourhood of
-#: the new pin, is bounded and payload-independent (confirmed identical on
-#: the committed capture and the heavy payload), and is comfortably below
-#: this pin -- it cannot affect the "nothing marks above the pin" half of
-#: the property, only the "something marks below it" half, which
-#: :func:`test_the_swarm_body_is_whole_from_its_pinned_width` now excludes it
-#: from by name rather than by a silently loosened assertion.
+#: un-clipped. Bounded and payload-independent (confirmed identical on the
+#: committed capture and the heavy payload) and comfortably below this pin,
+#: so it cannot affect the "nothing marks above the pin" half of the
+#: property, only the "something marks below it" half, which
+#: :func:`test_the_swarm_body_is_whole_from_its_pinned_width` excludes it
+#: from by name.
 #:
-#: A narrower, closable gap sat directly above that floor and **was closed**
-#: rather than named: from outer width 88 up to 113, THROUGHPUT's own base
-#: title ("THROUGHPUT · as of HH:MM", 24 cells) fit its budget while the
-#: bare ``‹`` glyph did not (base + 2 + glyph needs 3 more), so a dropped
-#: hash-and-chain-word pair could still go unmarked there even though the
-#: panel could plainly paint *something*. ``_pool4.title_text``'s own
-#: docstring assumes that shape cannot happen ("at that width the title is
-#: already clipped") -- true for a panel whose widen threshold tracks its
-#: own title length, false for THROUGHPUT, whose widen threshold (41 columns,
-#: the agent rows' own need) sits far below its title's. Fixed in
-#: ``swarm_throughput.SurfSwarmThroughput._title_text``: when the marker
-#: does not fit alongside the freshness suffix, the suffix is dropped and
-#: the glyph tried again against the bare title, before falling back to no
-#: marker at all. This is a widget-level change, not a CSS one -- the
-#: layout could not buy this back, because the gap is a property of the
-#: title text's own length against the hint's own format, not of the
-#: seam feeding the panel.
+#: THE CLOSABLE GAP FROM ROUND 1 IS STILL CLOSED, AT ITS OWN NEW WIDTHS.
+#: ``swarm_throughput.SurfSwarmThroughput._title_text`` drops the freshness
+#: suffix before giving up on the ``‹`` glyph -- unconditional on width, so
+#: the fix travels with THROUGHPUT wherever its own column lands. Re-swept
+#: rather than re-typed: the gap now runs from outer width 75 up to 86
+#: (previously 88-113), and the glyph survives from 87 (previously 114),
+#: both shifted down by the same thirteen columns.
+#:
+#: THE ROW PIN (below) IS UNMOVED. Nothing about this round touched height:
+#: :data:`SURF_SWARM_FULL_LAYOUT_ROWS` was re-measured anyway (measure,
+#: never assume) and confirmed still 26.
 #:
 #: THE FIELD NEVER CLEARS BELOW 246 COLUMNS, AND THE PIN DOES NOT CHASE IT.
-#: Unmoved by this restructure: THE FIELD still shares a halved 1fr:1fr seam,
-#: now with QUEUE alone rather than with a QUEUE-over-THROUGHPUT rail, and
-#: that seam's own ratio never changed, so neither did THE FIELD's own
-#: threshold. THE FIELD asks for 117 columns of its own
-#: (``swarm_field.FULL_WIDTH``) to keep its note column, which, halved,
-#: needs an outer width of 246 before ``‹`` goes dark -- wider than every
-#: other pin in this file and past :data:`SURF_FULL_LAYOUT_COLUMNS` itself.
-#: That is not a width this body's pin can buy without breaking "when a new
-#: value would widen a sized cell, shorten the value" for every other panel
-#: in the app, so THE FIELD's own ``‹`` is treated the way surf's announce
-#: feed treats a linked-transaction post at :data:`SURF_FULL_LAYOUT_COLUMNS`
-#: (terminal-layout skill, *"A caveat the pin does not cover"*): a permanent,
-#: measured, accepted condition at this pin and at every width below 246, not
-#: something a passing test folds in silently. Below the pin THE FIELD is
-#: never what a reader newly loses -- it is marked there too -- so the loss
-#: this pin actually buys back is THROUGHPUT's hash-and-chain-word pair.
-SURF_SWARM_FULL_LAYOUT_COLUMNS = 128
+#: Unmoved by round 1: THE FIELD still shares a halved 1fr:1fr seam with
+#: QUEUE alone, and that seam's own ratio was not touched this round either.
+#: THE FIELD asks for 117 columns of its own (``swarm_field.FULL_WIDTH``) to
+#: keep its note column, which, halved, needs an outer width of 246 before
+#: ``‹`` goes dark -- wider than every other pin in this file and past
+#: :data:`SURF_FULL_LAYOUT_COLUMNS` itself. That is not a width this body's
+#: pin can buy without breaking "when a new value would widen a sized cell,
+#: shorten the value" for every other panel in the app, so THE FIELD's own
+#: ``‹`` is treated the way surf's announce feed treats a linked-transaction
+#: post at :data:`SURF_FULL_LAYOUT_COLUMNS` (terminal-layout skill, *"A
+#: caveat the pin does not cover"*): a permanent, measured, accepted
+#: condition at this pin and at every width below 246.
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 115
 
 #: The ``s`` SWARM body's own height. Set at 42 on 2026-09-16 when the body
 #: was first wired; **re-swept to 26 the same day**, alongside the column
@@ -1655,8 +1680,12 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 128
 #: swarm widget test already uses (two subtasks in flight, two job states,
 #: one blocked job, one scored agent, two shipped rows) -- and re-confirmed
 #: at width 150 (comfortably past the column pin) to rule out the row
-#: threshold being an artefact of measuring at the column pin itself. Never
-#: derived, and not a rewrite of :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`
+#: threshold being an artefact of measuring at the column pin itself.
+#: **Re-measured again in the layout-change review round** (2026-09-17),
+#: after the column pin moved 128 -> 115: nothing about that round touched height (JUST
+#: SHIPPED's tighter address window changes its table's *columns*, never
+#: its rows), and the row pin held at 26 unmoved, checked rather than
+#: assumed. Never derived, and not a rewrite of :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`
 #: (31), :data:`SURF_POOL4_FULL_LAYOUT_ROWS` (45) or
 #: :data:`SURF_POOL4_USER_FULL_LAYOUT_ROWS` (35).
 #:
@@ -2835,19 +2864,34 @@ class SurfScreen(RefreshGuard, Screen):
      * INSTRUMENT ``#surf-pool4-user-bottom`` PICKS FOR IF IMD FALLS/STAKERS,
      * not the reverse. JUST SHIPPED's own content is a constant: its
      * ``DataTable`` has fixed per-column widths (``swarm_shipped.FULL_WIDTH``
-     * / ``COMPACT_WIDTH``) that do not grow with extra space, so a share
-     * would waste every column past its own need on blank table margin.
-     * THROUGHPUT's agent rows, by contrast, can use extra width -- a wider
-     * cell shows more of the transaction hash before ``short_hex`` truncates
-     * it -- so it is the panel the terminal-layout skill's own rule names:
-     * "a fixed column for the panel whose content is a constant, and ``1fr``
-     * for the one that can use every spare column." Giving JUST SHIPPED a
-     * fixed width equal to its own full-tier need also means it never has to
-     * shed its WHEN column on this body: every column this body's own pin
-     * buys back goes to THROUGHPUT's hash-and-chain-word pair instead, which
-     * is exactly the trade the owner asked for ("the column for the tx hash
-     * can be shortened to fit into the space right to the JUST SHIPPED
-     * widget").
+     * / ``COMPACT_WIDTH`` / ``TIGHT_WIDTH``) that do not grow with extra
+     * space, so a share would waste every column past its own need on
+     * blank table margin. THROUGHPUT's agent rows, by contrast, can use
+     * extra width -- a wider cell shows more of the transaction hash
+     * before ``short_hex`` truncates it -- so it is the panel the
+     * terminal-layout skill's own rule names: "a fixed column for the
+     * panel whose content is a constant, and ``1fr`` for the one that can
+     * use every spare column."
+     *
+     * JUST SHIPPED IS FIXED AT ITS OWN ``tight`` TIER'S NEED (68), NOT
+     * ``full``'s (81) -- THE 2026-09-17 CORRECTION. It was fixed at
+     * ``full`` for one day: that choice meant it never shed a column, but
+     * it also meant every column THROUGHPUT needed had to come from a
+     * wider pin instead, which is the wrong side of "the column for the tx
+     * hash can be shortened to fit into the space right to the JUST
+     * SHIPPED widget" -- the owner authorised shortening, not enlarging.
+     * ``swarm_shipped.py`` gained a third, narrower ``tight`` width tier
+     * for exactly this body: WHEN stays dropped and the ADDRESS / SITE
+     * column also narrows to ``swarm_shipped.TIGHT_ADDR_COLS`` (11,
+     * ``widgets.address.MIN_SHORT_COLS`` -- the same absolute legibility
+     * floor THROUGHPUT's own hash is already pinned to, windowing an
+     * address down to its narrowest legible form under a tight pin being
+     * this repo's own established anti-poisoning form rather than a new
+     * one). JUST SHIPPED therefore marks ``‹ widen`` permanently on this
+     * body -- confirmed at every width from the pin up to five times wider
+     * -- which is the named price of the trade, not a defect: every column
+     * this frees goes to THROUGHPUT's hash-and-chain-word pair instead,
+     * which is exactly the trade the owner asked for.
      *
      * ``#surf-swarm-top`` and ``#surf-swarm-bottom`` both carry their own
      * ``overflow-y: auto``, named in ``SurfScreen._SCROLL_COLUMNS[MODE_SWARM]``,
@@ -2926,7 +2970,7 @@ class SurfScreen(RefreshGuard, Screen):
         scrollbar-gutter: stable;
     }
     SurfScreen SurfSwarmShipped {
-        width: 81;
+        width: 68;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
