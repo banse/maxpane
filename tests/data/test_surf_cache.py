@@ -837,6 +837,22 @@ async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_fi
     async with _client_on(transport, now_fn=lambda: 2_000_000_000.0) as client:
         state = await client.fetch_launchpad()
 
+    # F8: both sweeps in this test already run on an injected
+    # ``httpx.MockTransport`` double (never a real socket) -- but nothing
+    # here proved that double was actually *exercised*, only that it was
+    # *present*. A future refactor that quietly stopped routing
+    # ``fetch_launchpad`` through ``client._client`` (a cache short-circuit,
+    # say) would still leave ``cursor`` looking plausible on a laptop that
+    # happens to be online, and this test would pass for the wrong reason.
+    # `test_curator_published.py::test_every_request_goes_through_the_
+    # injected_transport` closed exactly that gap for its own module: "a
+    # module that ignored transport entirely ... would ALSO return None --
+    # passing this test for the wrong reason on exactly the machines it runs
+    # on. Asserting the injected transport was actually invoked is the only
+    # way to make this environment-independent." Same proof, same reasoning,
+    # applied here rather than invented fresh.
+    assert transport.requests, "the mocked launchpad transport was never invoked"
+
     cursor = state.cursor
     assert cursor is not None
     # Ruling R13: all seven keys, never the three-key shape an earlier draft
@@ -875,6 +891,16 @@ async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_fi
         rec["sender"] is None and rec["fee_wei"] is None
         for rec in real_burns.values()
     )
+    # F8, same reasoning as the assertion on `transport` above: this client
+    # is built by `_client_serving_the_real_burns` on its own
+    # `RecordingTransport`, never exposed as a local here, so reach it off
+    # `burn_client`'s own `_client` (the injected `httpx.AsyncClient`, kept
+    # alive after the `async with` block because `OwnedHttpClient.close()` is
+    # a no-op for a client it does not own) and prove that double, too, was
+    # actually exercised rather than merely present.
+    burn_transport = burn_client._client._transport
+    assert isinstance(burn_transport, RecordingTransport)
+    assert burn_transport.requests, "the mocked burnkeeper transport was never invoked"
     cursor["burns"] = real_burns
 
     clock = FakeClock()
