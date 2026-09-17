@@ -1563,35 +1563,63 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #:    rather than dropping the pair together) is therefore **unmoved** by
 #:    round 1, confirmed by re-measurement.
 #: 2. **JUST SHIPPED's own fixed width had genuine slack, and round 1
-#:    spent it.** ``swarm_shipped.py`` gained a third, narrower ``tight``
-#:    width tier: WHEN stays dropped (as ``compact`` already
-#:    does) and the ADDRESS / SITE column also narrows from
+#:    spent it -- then round 1's own fix was itself wrong in a narrower
+#:    way, corrected in round 2.** ``swarm_shipped.py`` gained a third,
+#:    narrower ``tight`` width tier: WHEN stays dropped (as ``compact``
+#:    already does) and the ADDRESS / SITE column also narrows from
 #:    :data:`swarm_shipped.ADDR_COLS` (17) to
 #:    :data:`swarm_shipped.TIGHT_ADDR_COLS` (11 -- ``address``'s own
 #:    absolute legibility floor, the same one THROUGHPUT's hash is already
 #:    pinned to, so neither column can be windowed narrower than the
-#:    other). JUST SHIPPED is fixed at this tier's own need rather than
-#:    ``full``'s: CSS width 68 (``self.size.width`` 66 =
-#:    ``swarm_shipped.TIGHT_WIDTH`` 64 + the widget's own 2-column title
-#:    padding), down from 81 (79 = ``FULL_WIDTH`` 77 + 2). Confirmed in
-#:    situ: at CSS width 68 the table's own "address / site" column reads
-#:    13 cells (11 + the copy icon's 2), and ``self.size.width`` holds at a
-#:    constant 66 across the whole width sweep.
+#:    other). Round 1 fixed JUST SHIPPED's CSS width at this tier's own
+#:    need (68) rather than ``full``'s (81) -- and a **fixed** width that
+#:    is below ``FULL_WIDTH`` marks ``‹ widen`` at *every* terminal size,
+#:    because it can never grow past 68 no matter how wide the terminal
+#:    gets. That is a lit marker carrying no information -- "widen your
+#:    terminal and you will see more" being false at every size is worse
+#:    than the marker not existing -- and it is a different defect from
+#:    either of this repo's two accepted permanently-adjacent markers
+#:    (surf's announce feed lights per post, tracking a real length each
+#:    time; THE FIELD's own exception, below, clears above a real,
+#:    reachable 246 columns). Round 2 replaces the fixed width with a
+#:    bounded flexible one: ``width: 1fr; min-width: 68; max-width: 81;``.
+#:    THROUGHPUT keeps ``1fr`` with no bound of its own, so it takes
+#:    whatever JUST SHIPPED's own floor and ceiling leave it.
 #:
-#: JUST SHIPPED THEREFORE MARKS ``‹ widen`` PERMANENTLY ON THIS BODY, AND
-#: THAT IS THE PRICE OF THE TRADE, NAMED RATHER THAN HIDDEN. Being fixed at
-#: ``tight`` rather than ``full`` means it is always short of ``FULL_WIDTH``
-#: (77) by definition, at every terminal size from 70 to 500 and past --
-#: confirmed, not assumed. This is THE FIELD's own shape of exception
-#: (below) but a different cause: THE FIELD cannot clear below a
-#: structural width it does not have; JUST SHIPPED will never clear at
-#: **any** width, because its own CSS width never grows past 68 regardless
-#: of how wide the terminal gets. ``SHIPPED_ALWAYS_MARKS`` (in
-#: ``tests/screens/test_surf_swarm_layout.py``) names it, and
-#: :func:`test_just_shipped_permanently_marks_on_this_body` proves it holds
-#: from the pin up through a terminal five times wider. Excluded from the
-#: "nothing marks besides THE FIELD" half of the whole-body property by
-#: name, the same way THE FIELD already is.
+#: MEASURED, NOT ASSUMED, THAT THE FLEXIBLE BOUNDS REPRODUCE ROUND 1'S OWN
+#: ARITHMETIC EXACTLY THROUGH THE PIN. Textual's ``1fr`` split is even
+#: between two unweighted ``1fr`` children below the width where their
+#: natural (unclamped) share would exceed either bound, so JUST SHIPPED's
+#: own ``self.size.width`` holds flat at 66 -- ``min-width``'s own floor,
+#: identical to round 1's fixed value -- across the *entire* 70-138 range,
+#: re-swept rather than assumed: THROUGHPUT's own ``self.size.width``
+#: tracks column-for-column identically to round 1's sweep at every width
+#: in that band, including through the column pin itself. Past 138 the two
+#: children's natural share exceeds 66 and both grow together, equally,
+#: until JUST SHIPPED reaches its own ``max-width`` (self.size.width 79 =
+#: ``FULL_WIDTH`` + 2) at outer width 164, after which it is capped and
+#: every further column goes to THROUGHPUT alone -- confirmed by re-sweep
+#: (164 dark, 163 lit), not derived from the bound arithmetic.
+#:
+#: JUST SHIPPED'S MARKER IS HONEST AGAIN: LIT WHERE COLUMNS ARE REALLY
+#: DROPPED, DARK WHERE THEY ARE NOT. **Below outer width 164**
+#: (``SHIPPED_NEVER_CLEARS_BELOW`` in the test file, THE FIELD's own
+#: ``_NEVER_CLEARS_BELOW`` shape, not the fixed-width "always marks"
+#: framing round 1 shipped), JUST SHIPPED is short of ``FULL_WIDTH`` and
+#: marks ``‹ widen`` -- correctly, since its own column really is
+#: narrower than it would be at a wider terminal. At and above 164 it is
+#: at ``full`` tier, ``self.size.width`` == ``FULL_WIDTH`` + 2, and the
+#: marker goes dark -- also correctly, since nothing more would show at
+#: any larger width either.
+#: :func:`test_the_shipped_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
+#: proves both edges the same way
+#: :func:`test_the_field_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
+#: proves THE FIELD's: marked at the pin, marked one column under 164,
+#: clear at 164. Because 164 is past this file's own 70-159 width-sweep
+#: range, JUST SHIPPED is still excluded from the "nothing marks besides
+#: THE FIELD" half of the whole-body sweep property, on THE FIELD's own
+#: precedent (a threshold past the swept range, not a threshold that does
+#: not exist) -- named rather than silently absorbed either way.
 #:
 #: Every displayed address still carries its copy icon inside this number
 #: (``docs/address_copy_PRD.md`` §5) -- the ``tight`` tier's own 11-cell
@@ -1616,14 +1644,17 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: whole at 115, holding through 121.
 #:
 #: BINDING PANEL: still **THROUGHPUT** (``SurfSwarmThroughput``), still at
-#: its own unmoved need of 43 columns (``self.size.width``). THROUGHPUT's
-#: width is ``1fr`` against JUST SHIPPED's fixed 68, so the relationship
-#: between the body's own outer width and THROUGHPUT's own is a
-#: subtraction: outer 115 gives THROUGHPUT ``self.size.width`` 43 exactly
-#: (115 minus 68 minus 4 columns of body/row-level scrollbar-gutter and
-#: title-padding overhead, read off the sweep, never summed). QUEUE's own
-#: threshold (``swarm_queue.FULL_WIDTH`` = 27) still never binds anything
-#: at this seam.
+#: its own unmoved need of 43 columns (``self.size.width``), and still
+#: unmoved in outer-width terms either: at the pin JUST SHIPPED sits at its
+#: own ``min-width`` floor (66 ``self.size.width``, identical to round 1's
+#: fixed value there), so the relationship between the body's own outer
+#: width and THROUGHPUT's own is the same subtraction round 1 measured --
+#: outer 115 gives THROUGHPUT ``self.size.width`` 43 exactly (115 minus 68
+#: minus 4 columns of body/row-level scrollbar-gutter and title-padding
+#: overhead, read off the sweep, never summed) -- because the ``1fr``
+#: bound on JUST SHIPPED does not bind at this width; only its floor does.
+#: QUEUE's own threshold (``swarm_queue.FULL_WIDTH`` = 27) still never
+#: binds anything at this seam.
 #:
 #: A THIRD MEASURED, PERMANENT EXCEPTION, NAMED RATHER THAN SILENTLY
 #: ABSORBED. **Below outer width 75** (``THROUGHPUT_NEVER_MARKS_BELOW`` in
@@ -2860,38 +2891,41 @@ class SurfScreen(RefreshGuard, Screen):
      * whole of its row's right column, each one level shallower than
      * before.
      *
-     * WHY JUST SHIPPED IS FIXED-WIDTH AND THROUGHPUT IS ``1fr`` -- THE SAME
-     * INSTRUMENT ``#surf-pool4-user-bottom`` PICKS FOR IF IMD FALLS/STAKERS,
-     * not the reverse. JUST SHIPPED's own content is a constant: its
-     * ``DataTable`` has fixed per-column widths (``swarm_shipped.FULL_WIDTH``
-     * / ``COMPACT_WIDTH`` / ``TIGHT_WIDTH``) that do not grow with extra
-     * space, so a share would waste every column past its own need on
-     * blank table margin. THROUGHPUT's agent rows, by contrast, can use
-     * extra width -- a wider cell shows more of the transaction hash
-     * before ``short_hex`` truncates it -- so it is the panel the
-     * terminal-layout skill's own rule names: "a fixed column for the
-     * panel whose content is a constant, and ``1fr`` for the one that can
-     * use every spare column."
-     *
-     * JUST SHIPPED IS FIXED AT ITS OWN ``tight`` TIER'S NEED (68), NOT
-     * ``full``'s (81) -- THE 2026-09-17 CORRECTION. It was fixed at
-     * ``full`` for one day: that choice meant it never shed a column, but
-     * it also meant every column THROUGHPUT needed had to come from a
-     * wider pin instead, which is the wrong side of "the column for the tx
-     * hash can be shortened to fit into the space right to the JUST
-     * SHIPPED widget" -- the owner authorised shortening, not enlarging.
-     * ``swarm_shipped.py`` gained a third, narrower ``tight`` width tier
-     * for exactly this body: WHEN stays dropped and the ADDRESS / SITE
-     * column also narrows to ``swarm_shipped.TIGHT_ADDR_COLS`` (11,
-     * ``widgets.address.MIN_SHORT_COLS`` -- the same absolute legibility
-     * floor THROUGHPUT's own hash is already pinned to, windowing an
-     * address down to its narrowest legible form under a tight pin being
-     * this repo's own established anti-poisoning form rather than a new
-     * one). JUST SHIPPED therefore marks ``‹ widen`` permanently on this
-     * body -- confirmed at every width from the pin up to five times wider
-     * -- which is the named price of the trade, not a defect: every column
-     * this frees goes to THROUGHPUT's hash-and-chain-word pair instead,
-     * which is exactly the trade the owner asked for.
+     * WHY JUST SHIPPED IS ``1fr`` BOUNDED BY ``min-width``/``max-width``,
+     * NOT A BARE FIXED NUMBER -- THE 2026-09-17 REVIEW-ROUND-2 CORRECTION.
+     * JUST SHIPPED's own content plateaus: its ``DataTable`` has fixed
+     * per-column widths (``swarm_shipped.FULL_WIDTH``/``COMPACT_WIDTH``/
+     * ``TIGHT_WIDTH``) that do not grow with extra space past ``full``, so
+     * an *unbounded* share would waste every column past that need on
+     * blank table margin -- still the terminal-layout skill's own rule,
+     * "a fixed column for the panel whose content is a constant", except
+     * here the constant has two ends (a floor below which the address
+     * window cannot usefully narrow further, a ceiling above which it
+     * cannot usefully widen further), so the instrument is a *bounded*
+     * ``1fr`` rather than one bare number. Round 1 (one day earlier) fixed
+     * it at the floor alone (68, the ``tight`` tier's own need) and left
+     * it there permanently: that bought THROUGHPUT its columns at the pin
+     * correctly, but it also meant JUST SHIPPED's own ``‹ widen`` marker
+     * stayed lit at *every* terminal size, including ones where widening
+     * would show more of THE FIELD, of QUEUE, or of THROUGHPUT but never
+     * of JUST SHIPPED itself -- a marker promising "widen and you will see
+     * more" that was false at every size it was checked. ``min-width: 68;
+     * max-width: 81;`` on an unweighted ``1fr`` reproduces round 1's exact
+     * arithmetic at and below the pin (measured, not assumed -- JUST
+     * SHIPPED's own ``self.size.width`` holds flat at its floor through
+     * outer width 138) while letting it grow to ``full`` (``self.size.width``
+     * 79) once the terminal actually has the room, at outer width 164,
+     * after which THROUGHPUT alone keeps growing. The marker is therefore
+     * honest again: lit while JUST SHIPPED is short of ``full`` (true
+     * below 164), dark once it is not (true at and above it) --
+     * :data:`SHIPPED_NEVER_CLEARS_BELOW` in the test file names the
+     * threshold and
+     * :func:`test_the_shipped_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
+     * proves both edges, THE FIELD's own test shape reused rather than
+     * invented fresh. THROUGHPUT keeps ``1fr`` with no bound of its own,
+     * so it takes whatever JUST SHIPPED's floor and ceiling leave it --
+     * exactly the trade the owner asked for, now honestly signalled on
+     * both panels rather than only on one.
      *
      * ``#surf-swarm-top`` and ``#surf-swarm-bottom`` both carry their own
      * ``overflow-y: auto``, named in ``SurfScreen._SCROLL_COLUMNS[MODE_SWARM]``,
@@ -2970,7 +3004,9 @@ class SurfScreen(RefreshGuard, Screen):
         scrollbar-gutter: stable;
     }
     SurfScreen SurfSwarmShipped {
-        width: 68;
+        width: 1fr;
+        min-width: 68;
+        max-width: 81;
         height: 1fr;
         min-height: 8;
         padding: 0 1;

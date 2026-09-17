@@ -627,28 +627,43 @@ async def test_the_full_address_scan_resolves_the_real_collision_to_its_widget()
     """The full-address loop's own provenance lookup (:func:`_widget_module_at`
     then :func:`_hash_only_module`), proven against the one real collision
     this repo has rather than only the synthetic one above: THROUGHPUT's tx
-    hash windows to a 40-cell head at column width 153 (see
+    hash windows to a 40-cell head at column width 166 (see
     :func:`_continues_as_hash_window`'s own docstring), shape-identical to a
     bare address.
 
-    **Re-measured twice.** First to 166 on 2026-09-16, when the swarm
-    body's layout change (THROUGHPUT moved from halving a rail's width
-    with QUEUE to sharing a row with JUST SHIPPED, 1fr against a fixed 81)
-    moved where this collision falls. **Then to 153 on 2026-09-17**, in the
-    layout-change review round that shortened JUST SHIPPED's own fixed
-    width from 81 to 68 (a tighter address/site window, freeing columns for
-    THROUGHPUT instead of raising the body's own pin) -- thirteen columns
-    down, exactly JUST SHIPPED's own saving, confirmed by a fresh sweep
-    rather than shifted by arithmetic. At the sweep's own 170-column width
-    THROUGHPUT's tx hash now windows to a 46-cell head, not 40, because it
-    is wider there than either previous measurement assumed. Swept fresh
-    (135-159) rather than nudged: 153 is the one width in that band where
-    the head is exactly 40, which is the only length that matters here --
-    a real address is exactly 40 hex characters, so only a head of exactly
-    that length makes the rendered text's own prefix byte-identical to
-    one. This test's own ``size`` is local to it; it does not share
-    :data:`SIZE`, so re-measuring it here does not touch the standard
-    sweep used everywhere else in this file.
+    **Re-measured three times, and the last move landed back on the first
+    number for a different reason.** 170 -> 166 on 2026-09-16, when the
+    swarm body's layout change (THROUGHPUT moved from halving a rail's
+    width with QUEUE to sharing a row with JUST SHIPPED, 1fr against a
+    fixed 81) moved where this collision falls. 166 -> 153 on 2026-09-17
+    (layout-change review round 1), when JUST SHIPPED's own fixed width
+    shortened from 81 to 68, freeing THROUGHPUT thirteen more columns at
+    any given outer width. 153 -> **166 again** on 2026-09-17 (review
+    round 2, same day), when JUST SHIPPED's CSS moved from a bare fixed
+    number to ``1fr`` bounded by ``min-width: 68; max-width: 81;`` -- not
+    a coincidence: this test's own ``size`` (166) sits **above**
+    ``SHIPPED_NEVER_CLEARS_BELOW`` (164,
+    ``tests/screens/test_surf_swarm_layout.py``), so at this specific
+    width JUST SHIPPED is capped at its own ``max-width`` -- ``full`` tier,
+    ``self.size.width`` 79 -- identical to round 1's fixed value there, so
+    THROUGHPUT's own share at 166 is once again identical to what it was
+    at 166 under round 1's original fixed-81 CSS, closing the loop rather
+    than landing on 166 by chance.
+
+    **The variable width does not make this test's premise unsound.** A
+    ``1fr`` sibling still resolves to one deterministic width at any one
+    fixed overall terminal size, which is all a single non-swept render
+    needs; what moved between rounds was which overall width produces the
+    40-cell head, not whether one exists. Re-swept fresh each time (most
+    recently 150-185) rather than nudged: 166 is the one width in that
+    band where the head is exactly 40, which is the only length that
+    matters here -- a real address is exactly 40 hex characters, so only a
+    head of exactly that length makes the rendered text's own prefix
+    byte-identical to one. This test's own ``size`` is local to it; it
+    does not share :data:`SIZE`, so re-measuring it here does not touch
+    the standard sweep used everywhere else in this file. It will need
+    re-sweeping again if either panel's own width arithmetic changes, on
+    the same terms -- re-sweep, never patch the number by hand.
 
     ``get_widget_at`` returns the innermost ``Static`` leaf, whose own
     module is Textual's and never imports the address helper -- checking it
@@ -661,7 +676,7 @@ async def test_the_full_address_scan_resolves_the_real_collision_to_its_widget()
     from tests.address_sweep.builders import _surf_app
 
     app = _surf_app()
-    async with app.run_test(size=(153, 60)) as pilot:
+    async with app.run_test(size=(166, 60)) as pilot:
         await pilot.pause()
         await pilot.press("s")
         await pilot.pause()
