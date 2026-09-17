@@ -93,6 +93,19 @@ EXEMPT: dict[str, str] = {
         "swap, trader and ETH-owed totals only; no address in its contract",
     "maxpane_dashboard.widgets.surf.launchpad.SurfBurnPipeline":
         "burn pipeline status and amounts only; no address in its contract",
+    "maxpane_dashboard.widgets.surf.swarm_throughput.SurfSwarmThroughput":
+        "quotes each agent's last score transaction hash through short_hex; a"
+        " hash, never an address, so it carries no icon by design",
+    "maxpane_dashboard.widgets.surf.swarm_field.SurfSwarmField":
+        "a dispatch note's embedded address (address_prose) is the only icon"
+        " this panel can ever show, and it lives in the ``note`` column that"
+        " only paints at the ``full`` tier (budget >= FULL_WIDTH = 117 cells)."
+        " SurfSwarmField is one of two 1fr columns sharing this body's own"
+        " width, so reaching that budget needs roughly double the sweep's own"
+        " 170-column SIZE (measured: the note column stays hidden through"
+        " 240 columns and first paints at 250) -- wider than both the wide"
+        " sweep and this body's own layout pin (93), so no render this sweep"
+        " produces can ever show one",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
     "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":
@@ -327,6 +340,7 @@ def test_every_case_is_swept_at_its_pins():
         (surf.SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, surf.SURF_LAUNCHPAD_FULL_LAYOUT_ROWS),
         (surf.SURF_POOL4_FULL_LAYOUT_COLUMNS, surf.SURF_POOL4_FULL_LAYOUT_ROWS),
         (surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, surf.SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+        (surf.SURF_SWARM_FULL_LAYOUT_COLUMNS, surf.SURF_SWARM_FULL_LAYOUT_ROWS),
     ]
     assert set(sizes_for(by_name["curator"], "pin")) == {(curator.CURATOR_FULL_LAYOUT_COLUMNS, SIZE[1])}
     for case in CASES:
@@ -336,8 +350,32 @@ def test_every_case_is_swept_at_its_pins():
     assert {f"{c.name}-{k}" for c in CASES for k in ("wide", "pin")} <= ids
 
 
-def _address_tokens_in_region(rows: list[str], region) -> list[str]:
-    """Whole or shortened address tokens printed inside ``region``'s cells."""
+def _continues_as_hash_window(head: str, following: str, hashes) -> bool:
+    """True when *head* is really the head of a longer windowed hash rather
+    than a bare address.
+
+    ``short_hex``'s own window (``widgets/address._window``) caps its *tail*
+    at 6 cells but not its *head*: at a wide enough column a 64-hex
+    transaction hash can window to a head of exactly 40 cells, which is
+    indistinguishable in shape from a real, un-iconized 40-hex address --
+    ``THROUGHPUT``'s tx column hits this at the sweep's 170-column width
+    (measured: ``last_tx_hash`` windows to a 40-cell head there). A real
+    full address is never immediately continued by an ellipsis and more hex;
+    when *following* is exactly that, and the whole ``head…tail`` matches a
+    hash the screen was actually given, this is that hash's own window, not
+    a naked address -- hashes carry no icon by design, the same exclusion
+    the shortened-window check below already makes.
+    """
+    m = re.match(r"…([0-9a-fA-F]+)(?![0-9a-fA-F])", following)
+    return bool(m) and any(_window_matches(head, m.group(1), h) for h in hashes)
+
+
+def _address_tokens_in_region(rows: list[str], region, hashes=frozenset()) -> list[str]:
+    """Whole or shortened address tokens printed inside ``region``'s cells.
+
+    ``hashes`` excuses a token that is really the (possibly partial) window
+    of a real transaction hash -- see :func:`_continues_as_hash_window`.
+    """
     found: list[str] = []
     for y in range(region.y, min(region.y + region.height, len(rows))):
         row = rows[y]
@@ -345,8 +383,14 @@ def _address_tokens_in_region(rows: list[str], region) -> list[str]:
         if start is None:
             continue
         cut = row[start:(len(row) if end is None else end + 1)]
-        found.extend(m.group(0) for m in PROSE_ADDRESS_RE.finditer(cut))
-        found.extend(m.group(0) for m in SHORT_TOKEN_RE.finditer(cut))
+        for m in PROSE_ADDRESS_RE.finditer(cut):
+            if _continues_as_hash_window(m.group(0)[2:], cut[m.end():], hashes):
+                continue
+            found.append(m.group(0))
+        for m in SHORT_TOKEN_RE.finditer(cut):
+            if any(_window_matches(m.group(1), m.group(2), h) for h in hashes):
+                continue
+            found.append(m.group(0))
     return found
 
 
@@ -392,7 +436,7 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
                     mounted.setdefault(key, label)
                 if key in EXEMPT:
                     # An exemption says the widget renders no address; hold it to that.
-                    for token in _address_tokens_in_region(rows, widget.region):
+                    for token in _address_tokens_in_region(rows, widget.region, hashes):
                         problems.append((label, key, token, "address rendered inside an EXEMPT widget"))
 
             if case.address_free:
@@ -434,8 +478,11 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
                 # every whole address printed on screen has its own icon right after it
                 for m in PROSE_ADDRESS_RE.finditer(row):
                     icon_x = cell_len(row[:m.end()]) + 1
-                    if (by_cell.get((icon_x, y)) or "").lower() != m.group(0).lower():
-                        problems.append((label, y, m.group(0), "full address without its icon"))
+                    if (by_cell.get((icon_x, y)) or "").lower() == m.group(0).lower():
+                        continue
+                    if _continues_as_hash_window(m.group(0)[2:], row[m.end():], hashes):
+                        continue  # a windowed hash's own head, not a bare address
+                    problems.append((label, y, m.group(0), "full address without its icon"))
                 # every shortened window of an address the screen was given has one too
                 for m in SHORT_TOKEN_RE.finditer(row):
                     head, tail = m.group(1), m.group(2)

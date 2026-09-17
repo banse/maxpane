@@ -41,6 +41,8 @@ from maxpane_dashboard.screens.surf import (
     SURF_POOL4_FULL_LAYOUT_ROWS,
     SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
     SURF_POOL4_USER_FULL_LAYOUT_ROWS,
+    SURF_SWARM_FULL_LAYOUT_COLUMNS,
+    SURF_SWARM_FULL_LAYOUT_ROWS,
     SurfScreen,
 )
 from maxpane_dashboard.screens.talismans import TalismansScreen
@@ -111,6 +113,11 @@ _SURF_DEPLOY = "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD"
 #: A launchpad coin creator that appears nowhere else on screen, so the COINS
 #: table's CREATOR cell is the only place that can give it an icon.
 _SURF_CREATOR = "0xC0ffee254729296a45a3885639AC7E10F9d54979"
+#: A swarm launch artifact's contract address (JUST SHIPPED, ``s``). The
+#: ADDRESS / SITE column is a fixed-width table column (width=``ADDR_COLS``
+#: = 17, always below a 42-cell address), so this cell renders the anti-
+#: poisoning window shape, never the whole address, at every terminal size.
+_SWARM_CONTRACT = "0x5b7A2f80cCe8b8f930c60D33c8fb0FA1234abCDe"
 
 
 def _surf_payload() -> dict:
@@ -123,6 +130,8 @@ def _surf_payload() -> dict:
     payload["sig_deploy_detail"] = f"new contract {_SURF_DEPLOY}"
     coins = payload["launchpad_coins"]
     coins[1] = {**coins[1], "creator": _SURF_CREATOR}
+    shipped = payload["swarm_shipped_rows"]
+    shipped[0] = {**shipped[0], "address": _SWARM_CONTRACT}
     return payload
 
 
@@ -141,6 +150,7 @@ SURF_SEEDED: tuple[str, ...] = (
     "0xc6c965bd164c483e87d0b550671798e9a3602840",  # p: THE SPLIT hook, shortened
     "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",  # p: HATCHES owner row, shortened
     "0xf53c0a4E4b0F77D1a3Bc4d8e3F2a1B0c9D8e3364",  # 4: STAKERS rank 1, whole/near-whole
+    _SWARM_CONTRACT,                                # s: JUST SHIPPED launch artifact, shortened
 )
 
 
@@ -580,13 +590,14 @@ CASES: tuple[SweepCase, ...] = (
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,
-        views=((), ("l",), ("e",), ("4",)),
+        views=((), ("l",), ("e",), ("4",), ("s",)),
         seeded=SURF_SEEDED,
         pins=(
             (SURF_FULL_LAYOUT_COLUMNS, None),
             (SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, SURF_LAUNCHPAD_FULL_LAYOUT_ROWS),
             (SURF_POOL4_FULL_LAYOUT_COLUMNS, SURF_POOL4_FULL_LAYOUT_ROWS),
             (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
+            (SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS),
         ),
     ),
     SweepCase(
