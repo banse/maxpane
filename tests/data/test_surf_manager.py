@@ -4090,10 +4090,17 @@ async def test_the_none_coin_list_round_trips_through_the_cache_file(tmp_path) -
         # the same double explicitly or ``swarm_client`` falls back to a
         # real, live-socket ``SwarmClient()``.
         swarm_client=DeadSwarmClient(),
+        # F9: same shape, same fix, for the client `_manager` had already
+        # closed on 2026-09-17 (a965b01) -- this hand-built manager was the
+        # one call site that fix left alone. Without this kwarg,
+        # ``pool4_client`` falls back to a real, live-socket ``Pool4Client()``
+        # exactly as ``swarm_client`` did before a965b01.
+        pool4_client=DeadPool4Client(),
         cache=reloaded,
     )
     assert (await m2.fetch_and_compute())["launchpad_coins"] is None
     assert not hasattr(m2.swarm_client, "_client"), "structurally, no real SwarmClient here"
+    assert not hasattr(m2.pool4_client, "_client"), "structurally, no real Pool4Client here"
 
 
 async def test_the_flat_payload_publishes_the_population_counts(tmp_path) -> None:
