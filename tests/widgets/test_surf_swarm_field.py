@@ -154,9 +154,20 @@ async def test_an_over_long_agent_token_does_not_break_column_alignment():
     assert long_line.index("alpha_task") == short_line.index("beta_task")
 
 
-async def test_the_stale_marker_prints_only_when_stale():
+async def test_the_stale_word_never_prints_here_even_when_told_to():
+    """F-A: this panel reads only the live tier, and ``swarm_stale`` measures
+    the *scores* tier drifting from it -- a claim about a clock THE FIELD
+    does not show. An earlier version of this test pinned the opposite
+    (accepting ``swarm_stale=True`` and asserting the word appeared), which
+    is exactly the false-degradation bug the review construction caught: a
+    fresh live marker labelled stale on the evidence of an unrelated, slower
+    sweep falling behind. ``swarm_stale`` is fed here anyway (a screen that
+    still passed it would be exactly the fix-round-1-reversed mistake) to
+    prove the widget itself refuses to render it, not merely that nobody
+    currently sends it.
+    """
     _lines, stale_text = await _field(swarm_as_of_hhmm="13:18", swarm_stale=True)
-    assert "stale" in stale_text
+    assert "stale" not in stale_text
     _lines, fresh_text = await _field(swarm_as_of_hhmm="13:18", swarm_stale=False)
     assert "stale" not in fresh_text
 

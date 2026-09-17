@@ -4001,7 +4001,11 @@ class SurfScreen(RefreshGuard, Screen):
                 swarm_field_rows=data.get("swarm_field_rows"),
                 swarm_as_of_hhmm=data.get("swarm_as_of_hhmm"),
                 swarm_network=data.get("swarm_network"),
-                swarm_stale=data.get("swarm_stale"),
+                # No ``swarm_stale`` here (F-A): that flag describes the
+                # scores sweep drifting from the live tier, and THE FIELD
+                # reads only the live tier, so it has no cross-tier claim to
+                # make. See ``widgets/surf/swarm_field.py``'s module
+                # docstring.
             )
         except Exception as exc:
             logger.debug("Failed to update SurfSwarmField: %s", exc)

@@ -84,10 +84,21 @@ address nor a transaction, so ``swarm_network`` is accepted (the screen
 splats the whole payload; every widget must survive it) and never painted --
 the same "accepted and not rendered" idiom ``pool4u_burn.py``/
 ``pool4u_signals.py``/``pool4u_depth.py`` already use for
-``pool4_as_of_hhmm`` on the ``4`` body.  ``swarm_stale`` rides the same
-marker: it prints `` · stale`` immediately after the ``as of`` clock, and
-only when both are present -- there is nothing to call stale about a clock
-this panel is not showing.
+``pool4_as_of_hhmm`` on the ``4`` body.
+
+**This panel never prints ``stale`` (fix round 3, F-A).** ``swarm_stale`` is
+the *scores* sweep's own drift measure -- ``abs(scores.ts - live.ts) >
+SWARM_STALE_AFTER_S``, computed in ``_swarm_scores_keys`` -- and THE FIELD
+reads only the live tier, never the scores one. An earlier version accepted
+``swarm_stale`` here and appended `` · stale`` beside this panel's own
+*fresh* ``as of`` marker whenever the scores sweep, which this panel does not
+read, fell behind: a false degradation of a healthy panel on the evidence of
+a slow tier it has no relationship to (CLAUDE.md's "a false degradation is
+the same defect as a missed one pointing the other way, and the worse of the
+two here"). Only a panel that is actually *fed by* the scores tier may print
+this word -- THROUGHPUT (``swarm_throughput.py``) is the one that does, and
+correctly, because its own ``as of`` marker is the scores marker the drift is
+about.
 
 Third-party text, and the no-bracket contract
 -----------------------------------------------
@@ -507,18 +518,20 @@ class SurfSwarmField(Vertical):
         swarm_field_rows=None,
         swarm_as_of_hhmm=None,
         swarm_network=None,
-        swarm_stale=None,
         **_kwargs,
     ) -> None:
         """Rewrite the log.  Every kwarg spelled after its ``SURF_KEYS`` name.
 
         ``swarm_network`` is accepted and never painted -- see the module
         docstring for why this panel is not one of the chain-word ones.
+        ``swarm_stale`` is not a named parameter here at all (fix round 3,
+        F-A) -- it describes the scores tier's own drift, which this panel
+        does not read, so it lands in ``**_kwargs`` and is silently dropped
+        rather than rendered.
         """
         self._payload = {
             "rows": swarm_field_rows,
             "as_of": swarm_as_of_hhmm,
-            "stale": swarm_stale,
             "seen": True,
         }
         self._render_view()
@@ -551,8 +564,10 @@ class SurfSwarmField(Vertical):
         as_of = self._payload.get("as_of")
         if _has_marker(as_of):
             base += f" · as of {as_of}"
-            if self._payload.get("stale"):
-                base += " · stale"
+        # No ``stale`` word here, ever -- see the module docstring's F-A
+        # section. This panel's marker is the live tier's own, and the only
+        # drift ``swarm_stale`` measures is the scores tier falling behind
+        # it, which says nothing about whether these rows are current.
         budget = max(self.content_size.width - 2, 0)
         title.update(_title_with_hint(base, widen, budget))
 

@@ -637,11 +637,15 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
     # -- the s SWARM body's five panels (2026-09-16) -----------------------
     #
     # Every kwarg is the contract key verbatim (`data/surf_models.SWARM_KEYS`).
-    # `swarm_network`, `swarm_as_of_hhmm` and `swarm_stale`/`swarm_scores_
-    # as_of_hhmm` each reach more than one panel -- the same "more than one
-    # renderer" shape `pool4_current_tick`/`pool4_network` already have across
-    # the `p`/`4` bodies -- and `swarm_queue_depths` reaches none, which is
-    # why it is parked in `_KEYS_WITHOUT_A_RENDERER` rather than here.
+    # `swarm_network`, `swarm_as_of_hhmm` and `swarm_scores_as_of_hhmm` each
+    # reach more than one panel -- the same "more than one renderer" shape
+    # `pool4_current_tick`/`pool4_network` already have across the `p`/`4`
+    # bodies -- and `swarm_queue_depths` reaches none, which is why it is
+    # parked in `_KEYS_WITHOUT_A_RENDERER` rather than here. `swarm_stale`
+    # reaches exactly one panel (THROUGHPUT) as of fix round 3, F-A: THE
+    # FIELD used to accept it too, wrongly (it reads only the live tier, and
+    # `swarm_stale` is the scores tier's own drift measure), and no longer
+    # does -- see `widgets/surf/swarm_field.py`'s module docstring.
     "SurfSwarmHero": {
         "swarm_agents_online": "swarm_agents_online",
         "swarm_agents_enrolled": "swarm_agents_enrolled",
@@ -655,7 +659,10 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "swarm_field_rows": "swarm_field_rows",
         "swarm_as_of_hhmm": "swarm_as_of_hhmm",
         "swarm_network": "swarm_network",
-        "swarm_stale": "swarm_stale",
+        # No `swarm_stale` here (F-A, fix round 3): that flag names the
+        # scores tier's own drift from the live tier, and this panel reads
+        # only the live tier, so the screen no longer passes it and the
+        # widget no longer accepts it as a named kwarg.
     },
     "SurfSwarmShipped": {
         "swarm_shipped_rows": "swarm_shipped_rows",
