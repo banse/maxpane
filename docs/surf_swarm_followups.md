@@ -8,6 +8,40 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
+## Status — all ten resolved, 2026-09-17
+
+Worked on branch `feature/swarm-followups`. Each entry's original reasoning is kept below, unedited,
+so the argument that produced it survives alongside what actually happened.
+
+| | resolution | commit |
+|---|---|---|
+| F1 | **fixed** — derived thresholds replaced by a real sweep (15–89); boundary found empirically at 43 | `a82748b` |
+| F2 | **fixed** — a second, independently-shaped adversarial payload added; both now swept | `a89ed97` |
+| F3 | **fixed** — the shortened-window branch now requires a hash-only *painter*, not just a value match | `6f4c358` |
+| F4 | **nothing to do** — see the correction under that entry | — |
+| F5 | **fixed** — both curator waits are event-driven or honestly bounded | *uncommitted* |
+| F6 | **fixed** — QUEUE gained a `PENDING` block; row pin 26 → 28, binding container body → `SWARM_TOP_ID` | `6d3d5a1` |
+| F7 | **fixed, with its benefit corrected** — see the correction under that entry | `3603279` |
+| F8 | **evidence refuted** — see the correction under that entry | `0503651` |
+| F9 | **fixed** — and it was real: a live request to `pool4.imd.fun/docs` appeared under mutation | `698fdc5` |
+| F10 | **fixed** — `jobs is None` split from `jobs == []`, per field | `f06a8f3` |
+
+Two entries below state things that later measurement contradicted, and one asked for work that
+turned out not to exist. They are corrected in place rather than deleted, because the reasoning that
+led to each is worth more than a tidy file:
+
+- **F4 needed no fix at all.** Its own text already says so ("There is nothing to fix"), and that
+  held up: the package-root rule is correct for every case in the repo, and walking into every
+  `__init__.py` body is a more invasive check neither incident called for. It stays filed as a
+  *named dormant blind spot* for whoever first puts real logic in a package root.
+- **F7's benefit was overstated when the fix was chosen.** The dirty-flag skip is correct and proven,
+  but `SLOT_CHAIN` stores an advancing `block` on virtually every cycle and `set_baselines` is
+  unconditional, so with one JSON document and one flag *any* changing field still forces the whole
+  write. The savings are structural — idle periods, degraded periods, shutdown — **not** a reduction
+  of the steady-state 30 s rewrite while online. The owner was told this and chose to keep it as
+  landed rather than trim the scores slot or split the cache per slot.
+- **F8's central claim did not reproduce** — see the correction under that entry.
+
 ## F1 — the throughput width test re-derives the widget's own arithmetic instead of sweeping
 
 `tests/widgets/test_surf_swarm_rail.py::test_throughput_sheds_the_hash_and_its_chain_word_together`
@@ -116,6 +150,14 @@ and the region scanner already have, resolving the *painting* widget the same wa
 
 ## F4 — `_hash_only_module`'s package-root exclusion is correct today and has a named dormant blind spot
 
+> **Resolved 2026-09-17: nothing to do, and no commit.** This entry asked for no repair and, on
+> re-examination, still asks for none. Re-confirmed against the current tree: no `__init__.py` under
+> `maxpane_dashboard/` defines an icon-building helper or calls one, so every package root the walk
+> skips is a pure re-export surface and the exclusion is correct for every case that exists. It stays
+> filed as a **named dormant blind spot** — the value here is the warning, not a change. The next
+> person to put real logic in a package root, rather than only re-exports, needs to know this walk
+> will not see it.
+
 `_reaches_icon_machinery`'s walk (`tests/screens/test_address_icons_everywhere.py:391`) never
 follows a package root (`__init__.py`) as an import edge, which is the right general rule — see F3
 above for why following one produced a false positive during this branch's own fix. The blind spot
@@ -206,6 +248,28 @@ reads.
 
 ## F7 — cache write amplification, roughly 2×, every poll
 
+> **Fixed 2026-09-17 (`3603279`) — and the benefit below was overstated when the fix was chosen.**
+> The mechanism is a comprehensive **dirty flag**, set at the exact point of every mutation and
+> cleared only on a successful write. Two cheaper mechanisms were measured and rejected: *identity
+> checks* cannot work because the `series` deques are mutated **in place** (`append`,
+> `deq[-1] = ...`) and `_pool4_accumulators` via `__setitem__` on the same outer dict — the container
+> object never changes, only its contents; and *per-slot content diffing* buys nothing, because
+> `SLOT_CHAIN` stores an advancing `block` on virtually every cycle and `set_baselines` runs
+> unconditionally.
+>
+> **The correction:** with one JSON document and one flag — the shape this entry asks for — *any*
+> single changing field still forces the whole file to be written. So the saving is **structural**
+> (idle periods, degraded periods, shutdown), **not** a reduction of the steady-state 30 s rewrite
+> while the dashboard is online and the chain is advancing. That is inherent to a whole-file design,
+> not a flaw in the implementation. The owner was told this explicitly and chose to keep it as
+> landed rather than trim the scores slot or split the cache per slot.
+>
+> The fix also caught a **pre-existing** test that this very change would have turned green for the
+> wrong reason: `test_save_creates_its_directory_is_atomic_and_never_raises` called `save()` on a
+> never-mutated cache pointed at an unwritable path to prove "never raises" — under the fix a clean
+> cache skips before it ever reaches that path. It now dirties the cache first, restoring genuine
+> coverage of the failure it names.
+
 `save_cache()` runs at the end of every `_cycle` and `SurfCache.save` serialises every last-good
 slot whole, with no per-slot size cap. Measured against the committed capture during the final
 review (2026-09-17):
@@ -230,6 +294,29 @@ detail) is a separate, deliberate piece of work, and nobody had costed it before
 it. Filed rather than repaired, per the same rule as every other entry in this file.
 
 ## F8 — a pre-existing network-dependent test in `test_surf_cache.py` (pre-existing, not caused by this branch)
+
+> **Correction, 2026-09-17 (`0503651`): the central claim below did not reproduce.** Before fixing
+> anything, the evidence was re-measured with interception at four layers —
+> `httpx.AsyncHTTPTransport.handle_async_request`, `httpx.HTTPTransport.handle_request`,
+> `socket.socket.connect` and `socket.getaddrinfo` — and the recorder was **validated first against a
+> deliberate real call** to confirm it catches what it claims to. Result: **0 outbound requests**, for
+> the named test alone, for the whole file, and for the exact two-file combination this entry names
+> (101 passed, where this entry claims 100 passed / 1 failed). `git diff` from the branch's fork point
+> shows no functional change to either file, so nothing explains the discrepancy: the test was
+> **already structurally network-dead**, building every client on injected `httpx.MockTransport`
+> doubles whose handlers assert on unexpected calls.
+>
+> **What was genuinely missing** was narrower, and is what got fixed: nothing proved those mocks were
+> ever *exercised*, only that they were *present* — a test that silently stopped issuing requests
+> would still have passed. Two `assert transport.requests`-shaped assertions now close that, on
+> `test_curator_published.py::test_every_request_goes_through_the_injected_transport`'s precedent,
+> each proven to bite by clearing the recorded requests immediately before it.
+>
+> The original claim was filed in good faith but never re-derived against the shipped tree. Left
+> standing below, uncorrected in its own words, because a wrong measurement that was caught is worth
+> keeping visible — the failure mode it illustrates (trusting a filed number instead of re-measuring)
+> is the same one this branch hit twice more, in F7's benefit and in a "retired" layout exception
+> that turned out to be an artifact of a defect.
 
 `tests/data/test_surf_cache.py::test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_file`
 genuinely depends on the network: blocking outbound `httpx` makes it **fail**, with 10 real requests
