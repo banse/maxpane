@@ -138,3 +138,49 @@ function (rather than an import) is a different, more invasive check that the tw
 false-negative incidents this branch actually hit did not call for. Filed so the next person adding
 a package `__init__.py` with real logic in it — rather than only re-exports — knows this walk will
 not see it, and knows to either keep the convention (re-exports only) or extend the walk.
+
+## F5 — a curator test flaked during this branch's suite run, found here but not caused by this branch
+
+`tests/screens/test_curator_screen.py::test_screen_adds_removes_and_deduplicates_custom_collection`
+failed once, during Task 14's full-suite run, inside a directory-level chunked run of
+`tests/screens/` — nothing on this branch touches curator code, and the failure is **load-dependent**,
+not deterministic and not caused by anything here.
+
+**The four measurements, quoted rather than re-run:**
+
+- The failing test **alone**: 1 passed in 2.64s.
+- The **whole file** (`tests/screens/test_curator_screen.py`) alone: **219 passed in 263.27s**,
+  exit 0 — so it is not intra-file ordering pollution either; every other test in the file, run
+  together with this one, passes.
+- It failed only inside a chunked, directory-level run alongside other test files under load.
+- `git diff --name-only main...HEAD | grep -i curator` returns **nothing**: this branch touched no
+  curator code, test, or fixture at all.
+
+**The error shape:**
+
+```
+AssertionError: assert 'already available above' in 'NFT contract must be a 20-byte 0x address ...'
+tests/screens/test_curator_screen.py:3505: AssertionError
+```
+
+Expecting `"already available above"` (the duplicate-collection message) and getting `"NFT contract
+must be a 20-byte 0x address"` (the malformed-input message) is a debounce/timing race in the
+custom-collection filter's input handling — the assertion lands before or between two `Input.value`
+writes and their debounced validation settling, so it reads a transient invalid-input state instead
+of the final one, only when the process is under the extra scheduling pressure a concurrent
+directory-level pytest run adds.
+
+**A sibling flake in the same feature area is already documented.**
+`docs/address_copy_followups.md`'s "Flaky test (pre-existing, load-sensitive)" section already
+names `test_delayed_custom_name_does_not_block_reset_or_clear_new_input` — the same curator
+custom-collection filter editor, the same shape (a wall-clock wait, `asyncio.wait_for(...,
+timeout=0.25)`, that has failed under full-suite load and passed alone 3/3), with the same fix idea
+already on record: replace the wall-clock waits with event-driven awaits or generous timeouts. This
+is a second instance of that same class in the same area, not a new class of defect.
+
+**Conclusion.** The fix belongs to a curator-scoped pass that makes the custom-collection filter's
+timing deterministic — event-driven awaits in the test, or a debounce the widget itself exposes to
+wait on — rather than load-sensitive wall-clock/scheduling assumptions. Not fixed here: no curator
+code, test, or fixture was touched by this branch, and this finding is filed exactly where it was
+found rather than repaired, per the same "report, do not fix" rule every other item in this file
+follows.
