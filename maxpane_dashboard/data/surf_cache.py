@@ -419,8 +419,22 @@ class SurfCache:
         # ``set_baselines``. ``mark_fetched``/``mark_failed`` are excluded on
         # purpose: the tier clocks they update are deliberately not persisted
         # (see ``save()``'s own docstring), so they cannot dirty this flag.
-        # ``load()`` restores state that -- by construction -- already
-        # matches what is on disk, so it leaves this alone too.
+        #
+        # ``load()`` is NOT exempt, and used to be documented as one here on
+        # the claim that it "restores state that -- by construction -- already
+        # matches what is on disk." That is false whenever ``load()``
+        # sanitises: a cache file carrying, say, ``"burned_cum": "not-a-number"``
+        # or a structurally bogus pool4 accumulator loads to a coerced,
+        # in-memory-only value. Before this flag existed, the next poll's
+        # unconditional rewrite repaired the file regardless; now a session
+        # that loads a damaged file and never completes one successful tier
+        # read -- a fully-offline start, exactly when a damaged cache matters
+        # most -- would leave the corrupt bytes on disk forever. So every
+        # branch below that actually drops, coerces or repairs something the
+        # file held sets this flag too; a branch that finds nothing to fix
+        # (the ordinary case: an absent field, a well-formed value) leaves it
+        # alone, so a clean load still leaves the cache clean and ``save()``
+        # still skips the write.
         self._dirty: bool = False
 
     # -- clock ---------------------------------------------------------------
@@ -848,7 +862,9 @@ class SurfCache:
         return _DROP
 
     @staticmethod
-    def _sanitise_fired(raw: Any, horizon: float) -> dict[str, dict[str, Any]]:
+    def _sanitise_fired(
+        raw: Any, horizon: float, *, dropped: list[int] | None = None
+    ) -> dict[str, dict[str, Any]]:
         """The ``{signal: {"ts", "detail", "tx_hash"?}}`` store, rebuilt.
 
         Shape kept deliberately narrow — this is the one nested value the cache
@@ -859,33 +875,61 @@ class SurfCache:
         in the pre-repair flat shape (``{signal: float}``) land here too and are
         dropped by the same rule, which is the honest outcome — a stamp with no
         detail would restore as a FIRED row quoting nothing.
+
+        ``dropped``, when given, is incremented once for every entry this
+        sanitiser had to drop, truncate or otherwise repair — the caller
+        (``load()``) uses that count to decide whether the reload actually
+        diverged from what the file held, i.e. whether the cache is dirty.
         """
         fired: dict[str, dict[str, Any]] = {}
         if not isinstance(raw, Mapping):
+            if dropped is not None:
+                dropped[0] += 1
             return fired
         for sig, entry in raw.items():
             if not isinstance(entry, Mapping):
                 logger.debug("Dropping malformed SURF fired entry %r", sig)
+                if dropped is not None:
+                    dropped[0] += 1
                 continue
             try:
                 stamp = float(entry.get("ts"))      # type: ignore[arg-type]
             except (TypeError, ValueError):
+                if dropped is not None:
+                    dropped[0] += 1
                 continue
             # A future-dated stamp is clock-skew corruption; keeping it would
             # pin the detector at FIRED forever.
             if not math.isfinite(stamp) or not 0.0 < stamp <= horizon:
+                if dropped is not None:
+                    dropped[0] += 1
                 continue
             detail = entry.get("detail")
             text = "" if detail is None else str(detail)
+            if dropped is not None and len(text) > BASELINE_DETAIL_CAP:
+                dropped[0] += 1
             clean = {"ts": stamp, "detail": text[:BASELINE_DETAIL_CAP]}
-            tx_hash = _tx_hash(entry.get("tx_hash"))
+            raw_tx_hash = entry.get("tx_hash")
+            tx_hash = _tx_hash(raw_tx_hash)
             if tx_hash is not None:
                 clean["tx_hash"] = tx_hash
+            elif dropped is not None and raw_tx_hash is not None:
+                dropped[0] += 1
             fired[str(sig)] = clean
         return fired
 
-    def _sanitise_baselines(self, raw: Any, now: float) -> dict[str, Any]:
+    def _sanitise_baselines(
+        self, raw: Any, now: float, *, dropped: list[int] | None = None
+    ) -> dict[str, Any]:
+        """The baselines mapping, rebuilt. See ``_sanitise_fired`` for ``dropped``.
+
+        ``raw is None`` (the field was simply never persisted) does not count
+        as a drop — that is the ordinary shape of a fresh or minimal cache
+        file, not corruption to repair.
+        """
         if not isinstance(raw, Mapping):
+            if dropped is not None and raw is not None:
+                dropped[0] += 1
             logger.debug("Ignoring non-mapping SURF baselines: %r", type(raw).__name__)
             return {}
         out: dict[str, Any] = {}
@@ -893,15 +937,24 @@ class SurfCache:
         for key, value in raw.items():
             name = str(key)
             if name == BASELINE_FIRED_KEY:
-                out[name] = self._sanitise_fired(value, horizon)
+                out[name] = self._sanitise_fired(value, horizon, dropped=dropped)
                 continue
             if isinstance(value, (list, tuple)):
-                items = [self._scalar(v) for v in list(value)[:BASELINE_LIST_CAP]]
-                out[name] = [v for v in items if v is not _DROP]
+                raw_list = list(value)
+                capped = raw_list[:BASELINE_LIST_CAP]
+                items = [self._scalar(v) for v in capped]
+                cleaned = [v for v in items if v is not _DROP]
+                if dropped is not None and (
+                    len(raw_list) > BASELINE_LIST_CAP or len(cleaned) != len(capped)
+                ):
+                    dropped[0] += 1
+                out[name] = cleaned
                 continue
             scalar = self._scalar(value)
             if scalar is _DROP:
                 logger.debug("Dropping unusable SURF baseline %s=%r", name, value)
+                if dropped is not None:
+                    dropped[0] += 1
                 continue
             out[name] = scalar
         return out
@@ -1005,6 +1058,13 @@ class SurfCache:
         nothing here raises into the manager's constructor. Series points are
         validated one at a time, so a single ``null`` costs that sample rather
         than every dashboard's startup.
+
+        Any section that has to drop, coerce or otherwise repair something the
+        file held marks the cache dirty (see the ``_dirty`` comment in
+        ``__init__``): in-memory state then genuinely diverges from what is on
+        disk, and the next ``save()`` must not skip the write. A section that
+        finds nothing to fix -- an absent field, a well-formed value -- leaves
+        the flag alone, so a clean load still leaves the cache clean.
         """
         target = str(path or self.path)
         try:
@@ -1036,14 +1096,22 @@ class SurfCache:
 
         try:
             for slot, data in (payload.get("last_good") or {}).items():
-                if slot not in SLOTS or not isinstance(data, dict):
+                if slot not in SLOTS:
+                    continue
+                if not isinstance(data, dict):
+                    logger.debug(
+                        "Skipping malformed SURF last-good slot %s: not a mapping", slot
+                    )
+                    self._dirty = True
                     continue
                 try:
                     self.last_good[str(slot)] = LastGood.from_dict(data, now=reference)
                 except Exception as exc:            # noqa: BLE001
                     logger.debug("Skipping bad SURF last-good slot %s: %s", slot, exc)
+                    self._dirty = True
         except Exception as exc:                    # noqa: BLE001
             logger.warning("SURF last_good block bad: %s", exc)
+            self._dirty = True
 
         try:
             skipped = 0
@@ -1065,32 +1133,51 @@ class SurfCache:
                     skipped,
                     target,
                 )
+                self._dirty = True
         except Exception as exc:                    # noqa: BLE001
             logger.warning("SURF series block bad: %s", exc)
+            self._dirty = True
 
         try:
+            raw_baselines = payload.get("baselines")
+            baseline_drops = [0]
             self._baselines = self._sanitise_baselines(
-                payload.get("baselines"), reference
+                raw_baselines, reference, dropped=baseline_drops
             )
+            if baseline_drops[0]:
+                self._dirty = True
         except Exception as exc:                    # noqa: BLE001
             logger.warning("SURF baselines block bad: %s", exc)
             self._baselines = {}
+            self._dirty = True
 
         try:
-            burned = float(payload.get("burned_cum") or 0.0)
-            self.burned_cum = burned if math.isfinite(burned) and burned >= 0 else 0.0
+            raw_burned = payload.get("burned_cum")
+            burned = float(raw_burned or 0.0)
+            if math.isfinite(burned) and burned >= 0:
+                self.burned_cum = burned
+            else:
+                # A present-but-unusable value (negative, NaN, infinite) is
+                # coerced to the safe default -- a real divergence from what
+                # the file held, not the ordinary "never recorded" case.
+                self.burned_cum = 0.0
+                self._dirty = True
         except (TypeError, ValueError):
             self.burned_cum = 0.0
+            self._dirty = True
 
         try:
             supply = payload.get("last_supply")
             value = None if supply is None else float(supply)
-            self.last_supply = (
-                value if value is not None and math.isfinite(value) and value >= 0
-                else None
-            )
+            if value is not None and math.isfinite(value) and value >= 0:
+                self.last_supply = value
+            else:
+                self.last_supply = None
+                if supply is not None:
+                    self._dirty = True
         except (TypeError, ValueError):
             self.last_supply = None
+            self._dirty = True
 
         # The block watermark that guards ``record_supply`` against a stale
         # RPC replica (see its docstring) must round-trip alongside
@@ -1108,6 +1195,7 @@ class SurfCache:
             self._last_supply_block = None if raw_block is None else int(raw_block)
         except (TypeError, ValueError):
             self._last_supply_block = None
+            self._dirty = True
         self._supply_block_unverified = (
             self._last_supply_block is None and self.last_supply is not None
         )
@@ -1120,9 +1208,13 @@ class SurfCache:
                 clean = self._coerce_accumulator(raw)
                 if clean is not None:
                     self._pool4_accumulators[str(name)] = clean
+                else:
+                    logger.debug("Dropping malformed SURF pool4 accumulator %s", name)
+                    self._dirty = True
         except Exception as exc:                    # noqa: BLE001
             logger.warning("SURF pool4 accumulator block bad: %s", exc)
             self._pool4_accumulators = {}
+            self._dirty = True
 
         logger.info(
             "Loaded the SURF cache from %s: %d last-good slots, %d baselines",

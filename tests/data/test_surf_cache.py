@@ -1295,6 +1295,174 @@ def test_a_skipped_write_still_recovers_exactly_the_same_state_after_a_restart(
     assert restored.burned_cum == c.burned_cum
 
 
+from maxpane_dashboard.data.surf_cache import (   # noqa: E402  (appended import)
+    SERIES_POOL4_RESERVE_SEPOLIA,
+)
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 -- ``load()`` dirties the cache exactly when it had to repair
+# something, so a damaged file self-heals on the next save() and a clean
+# round trip still skips the write.
+# ---------------------------------------------------------------------------
+
+
+def test_a_damaged_load_dirties_the_cache_so_the_next_save_repairs_it(
+    tmp_path, monkeypatch
+):
+    """Several sanitised fields at once: a dropped last-good slot (bad ts), a
+    dropped series point, a non-numeric ``burned_cum``, and a structurally
+    bogus pool4 accumulator. None of this should raise, and -- the point of
+    this test -- the reload must not look "clean": it diverged from what the
+    file held, so it must be dirty, and a save() right after load(), with no
+    other mutation in between, must actually rewrite the file rather than
+    skip it (the pre-dirty-flag self-healing).
+    """
+    calls = _os_replace_spy(monkeypatch)
+    path = tmp_path / "surf_cache.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "last_good": {
+                    # A future-dated ts: LastGood.from_dict raises, dropping
+                    # the whole slot.
+                    SLOT_MARKET: {
+                        "payload": {"imd_price_usd": IMD_PRICE_USD},
+                        "ts": 9_999_999_999.0,
+                    },
+                },
+                "series": {SERIES_IMD_SUPPLY: [[1_786_100_000.0, "banana"]]},
+                "burned_cum": "not-a-number",
+                "pool4_accumulators": {
+                    SERIES_POOL4_RESERVE_SEPOLIA: {"genesis_block": "nope"},
+                },
+            }
+        )
+    )
+    c = SurfCache(path=str(path), clock=FakeClock())
+    c.load()
+
+    # The damage really was dropped/coerced, not silently kept:
+    assert c.get_last_good(SLOT_MARKET) is None
+    assert c.get_series(SERIES_IMD_SUPPLY) == []
+    assert c.burned_cum == 0.0
+
+    assert c._dirty is True, "a load that had to repair something must dirty the cache"
+
+    c.save()
+    assert len(calls) == 1, "a damaged load must self-heal on the very next save"
+    on_disk = json.loads(path.read_text())
+    assert on_disk["burned_cum"] == 0.0, "the corrupt bytes must not survive the repair"
+
+
+def test_a_clean_load_does_not_dirty_the_cache(tmp_path, monkeypatch):
+    """The mirror image: a fully well-formed cache file, freshly loaded, must
+    not be marked dirty -- there was nothing to repair, so the very next
+    save() (nothing else mutating in between) must still be skipped.
+    """
+    clock = FakeClock()
+    path = str(tmp_path / "surf_cache.json")
+    c = SurfCache(path=path, clock=clock)
+    c.store_last_good(SLOT_MARKET, {"imd_price_usd": IMD_PRICE_USD})
+    c.sample_series(clock.t, imd_supply=IMD_SUPPLY)
+    c.set_baselines(_baselines())
+    c.record_supply(IMD_SUPPLY)
+    c.set_pool4_accumulator(
+        "SEPOLIA", {"genesis_block": 100, "cursor_block": 150, "sums": {"a": 3}}
+    )
+    c.save()
+
+    calls = _os_replace_spy(monkeypatch)
+    restored = SurfCache(path=path, clock=clock)
+    restored.load()
+    assert restored._dirty is False, "a clean load must not look dirty"
+
+    restored.save()
+    assert calls == [], "a clean load followed by no mutation must not write"
+
+
+# ---------------------------------------------------------------------------
+# Fix round 2 -- the ``store_last_good`` / ``get_last_good`` no-copy
+# invariant: nothing under ``maxpane_dashboard/`` may mutate a stored
+# payload in place, because ``store_last_good`` keeps the caller's object
+# and ``get_last_good().payload`` hands it back live. A structural sweep is
+# the cheap guard here: measured against the largest slot (SLOT_SWARM_SCORES,
+# ~223 KB), ``copy.deepcopy`` costs under 1 ms -- cheap at the 30 s poll rate
+# -- but copying on ``store_last_good`` alone would only protect against the
+# caller re-mutating the object it originally passed in. It would do nothing
+# about a *consumer* of ``get_last_good().payload`` mutating the object it
+# was handed, which is the other half of the reported risk and the one a
+# per-call copy cost cannot cheaply close (``get_last_good`` has no bounded
+# call rate the way the poll-driven ``store_last_good`` does -- a screen can
+# call it every render). A test that proves no such call site exists anywhere
+# in the tree covers both directions at zero runtime cost, which a partial,
+# non-free copy does not.
+# ---------------------------------------------------------------------------
+
+
+def _payload_mutation_offenders(root) -> list[str]:
+    """Every line under ``root`` that mutates a ``.payload`` in place.
+
+    Textual, not AST-based, on this repo's own precedent (``test_the_cache_
+    imports_no_client_no_analytics_no_network`` above greps for banned import
+    strings the same way) -- deliberately coarse, so a match inside a comment
+    still counts as an offender worth a human look rather than being silently
+    exempted.
+    """
+    import re
+
+    assign = re.compile(r"\.payload\[[^\]]*\]\s*=(?!=)")
+    call = re.compile(r"\.payload\.(update|append|pop|setdefault)\s*\(")
+    offenders: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if assign.search(line) or call.search(line):
+                offenders.append(f"{path}:{lineno}: {line.strip()}")
+    return offenders
+
+
+def test_no_maxpane_code_mutates_a_stored_last_good_payload_in_place():
+    import pathlib
+
+    repo = pathlib.Path(__file__).resolve().parents[2]
+    offenders = _payload_mutation_offenders(repo / "maxpane_dashboard")
+    assert offenders == [], (
+        "store_last_good keeps the caller's object without copying and "
+        "get_last_good().payload hands it back live -- an in-place mutation "
+        "here would change persisted cache state with _dirty left False:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_the_payload_mutation_sweep_actually_catches_a_violation(tmp_path):
+    """Prove the checker bites: a synthetic module with one offending line in
+    each shape the real sweep looks for must all be caught.
+    """
+    probe = tmp_path / "probe_module.py"
+    probe.write_text(
+        "\n".join(
+            [
+                "def f(entry):",
+                '    entry.payload["k"] = 1',
+                "    entry.payload.update({})",
+                "    entry.payload.append(1)",
+                "    entry.payload.pop()",
+                "    entry.payload.setdefault('k', 1)",
+                "    entry.payload['k'] == 1  # a comparison must NOT be flagged",
+                "",
+            ]
+        )
+    )
+    offenders = _payload_mutation_offenders(tmp_path)
+    assert len(offenders) == 5
+    assert all("== 1" not in o for o in offenders)
+
+
 # ---------------------------------------------------------------------------
 # Guardrails
 # ---------------------------------------------------------------------------

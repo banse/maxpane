@@ -19,7 +19,7 @@ so the argument that produced it survives alongside what actually happened.
 | F2 | **fixed** — a second, independently-shaped adversarial payload added; both now swept | `a89ed97` |
 | F3 | **fixed** — the shortened-window branch now requires a hash-only *painter*, not just a value match | `6f4c358` |
 | F4 | **nothing to do** — see the correction under that entry | — |
-| F5 | **fixed** — both curator waits are event-driven or honestly bounded | *uncommitted* |
+| F5 | **fixed** — both curator waits are event-driven or honestly bounded | `67f0e52` |
 | F6 | **fixed** — QUEUE gained a `PENDING` block; row pin 26 → 28, binding container body → `SWARM_TOP_ID` | `6d3d5a1` |
 | F7 | **fixed, with its benefit corrected** — see the correction under that entry | `3603279` |
 | F8 | **evidence refuted** — see the correction under that entry | `0503651` |
@@ -410,3 +410,108 @@ through one at line 276 (`for job in details or ()`), which is a second place th
 could reappear if the fix is copied there carelessly rather than reasoned through. Both states —
 never-read and read-but-empty — need their own covering test, on the model of the hero's tests for
 the same split.
+
+## F11 — F15 — filed by a whole-branch review of the `feature/swarm-followups` fix round (2026-09-17)
+
+Five more observations, from the review that also produced the fix round covering F5's status-table
+entry and the `SurfCache.load()`/`store_last_good` work elsewhere in this branch. Filed exactly
+where found, per this file's own rule: none of these is repaired here.
+
+### F11 — `save(path=…)` clears `_dirty` for a file that is not `self.path`
+
+`SurfCache.save()` (`maxpane_dashboard/data/surf_cache.py`) checks `_dirty` once, up front, before
+it even computes `target = str(path or self.path)`. On a successful write it clears the flag
+unconditionally (`self._dirty = False`), regardless of which `target` the write actually went to.
+So `save("/some/other/file.json")` followed immediately by a bare `save()` leaves the *real* cache
+file — `self.path` — never written: the first call satisfies `_dirty` and writes only the alternate
+path, and the second call finds the flag already clear and skips.
+
+The method's own docstring already documents the mechanism accurately — "`_dirty` tracks whether
+*this cache's in-memory state* has moved since it was last committed anywhere, not the freshness of
+one particular file on disk" — but "committed anywhere" is the part that hides the consequence: it
+reads as reassurance (the state was persisted *somewhere*, so the flag's job is done) without
+naming that "anywhere" can be a path nobody will ever read back from.
+
+**Production-unreachable today.** The one production call site,
+`SurfManager.save_cache` (`maxpane_dashboard/data/surf_manager.py:949`), always calls
+`self.cache.save()` with no `path` argument, so `target` is always `self.path` there and this gap
+never opens. `path=` exists for callers such as an export or an archive write that legitimately
+want a *different* file without disturbing the live one — and any future caller doing that, then
+also calling the ordinary `save()` in the same cycle, would hit this silently.
+
+### F12 — F3's protection has no dashboard behind it
+
+F3 above (`6f4c358`) closed the shortened-window hash-exclusion's provenance gap in
+`tests/screens/test_address_icons_everywhere.py`. Its own commit message says plainly: "Mutating
+the real call site alone (dropping the provenance check, with the fixed predicate left otherwise
+intact) does not redden the existing parametrized sweep across any current dashboard — no live
+widget today exercises this path." Reconfirmed here: the dashboard-wide parametrized sweep
+(`test_every_rendered_address_carries_an_icon_that_copies_it`, 29 cases over the current `CASES`
+registry) stays green with `_shortened_window_hash_excuse`'s provenance check reverted to its
+pre-fix, value-only body — because no seeded fixture in any current `CASES` entry manufactures the
+specific collision the fix guards against (a real, un-iconized address whose shortened window
+shares digits with an unrelated hash elsewhere in the same payload, painted by a widget capable of
+building a real address).
+
+The fix is real and covered — just not by the big sweep. Two *dedicated* tests carry the entire
+weight: `test_the_shortened_window_hash_excuse_requires_a_hash_only_painter` (the width-swept unit
+test on the extracted predicate) and
+`test_the_main_sweep_catches_a_shortened_address_the_old_value_only_excuse_missed` (the end-to-end
+reproduction against a real running app). If either is weakened or deleted, the branch silently
+reverts to value-only excusal with nothing else in the suite able to notice — the 29-case sweep
+would keep passing throughout. Worth a comment on `_shortened_window_hash_excuse` (or on the two
+tests themselves) pinning them to each other, so a future editor sees why the big sweep's silence
+here is expected and not evidence the predicate is unreachable.
+
+### F13 — `swarm_queue_depths`'s upstream conflation is unchanged
+
+F6 (`6d3d5a1`) gave `swarm_queue_depths` a consumer (QUEUE's PENDING block,
+`maxpane_dashboard/widgets/surf/swarm_queue.py`), but the upstream shape it consumes is unchanged:
+`data/surf_swarm.health_facts` folds every `pending*` key off the live `/health` read into
+`depths or None` (`maxpane_dashboard/data/surf_swarm.py:82`) — so `swarm_queue_depths is None` means
+*either* "health was never read" *or* "the payload had no `pending*` key at all". `swarm_queue.py`
+gates the whole PENDING block on `_has_marker(as_of) and isinstance(queue_depths, dict)`
+(`swarm_queue.py:357`): when `queue_depths` is `None`, the block — the blank separator line and the
+`PENDING …` line both — is simply never appended, with no message in its place. A genuine
+`/health` read that happens to carry no `pending*` key at all therefore renders identically to a
+panel whose swarm tier was never read: the PENDING block is *silently absent* either way, exactly
+the "real negative with no representable value" shape CLAUDE.md's convention section names.
+
+This predates this branch — `health_facts`' `depths or None` line is untouched by F6 — and F6 only
+made it *visible*: before F6 nothing rendered `swarm_queue_depths` at all, so the conflation had no
+panel to show through. Filed rather than fixed, on this file's own "report, do not fix" rule.
+
+### F14 — a counter whose entire name is markup renders as `-- 3`
+
+`swarm_queue.py`'s `_pending_line` (`swarm_queue.py:295`) builds each nonzero counter's label as
+`f"{strip_tags(name) or DASH} {count}"`, where `name` is one of the open-vocabulary `pending*` keys
+the swarm API may add beyond `_DEPTH_ORDER`'s own seven, and `DASH` (`_fmt.DASH = "--"`) is this
+package's own glyph for "unavailable" everywhere else it appears. `strip_tags` removes bracketed
+markup from a host-controlled string, on the same defensiveness `queue_rows`' `state` column and
+`blocked_rows`' `reason` column already apply to their own open vocabularies. If a counter's *name*
+is composed entirely of markup — `"[bold]"`, say — `strip_tags` empties it, and `"" or DASH`
+substitutes the unavailable glyph in a spot that is not reporting unavailability at all: a real,
+positive count next to a name the code could not print. The line would read `"-- 3"`, indistinguishable
+from how this same package renders a genuinely dead reading. A degenerate name is host data, not
+attacker-modeled specifically for this — but the fallback reuses a glyph whose entire meaning
+elsewhere in this repo is "we could not read this," which is the wrong thing to reach for here.
+
+### F15 — `_settle`/`_settle_layout` return silently on exhaustion rather than failing
+
+Both helpers landed by F5 (`67f0e52`, `tests/screens/test_curator_screen.py:574` and `:595`) loop a
+bounded number of `attempts`, polling an observable (a widget's `region`, or a caller-supplied
+`condition`) and returning as soon as it stabilizes or holds. Neither raises, logs, or otherwise
+signals when the loop instead runs out of attempts without ever seeing the condition hold — they
+just fall through and return normally, relying entirely on whatever assertion the caller writes
+next to notice the wait never actually succeeded.
+
+This is correct at every call site that exists today: each one is followed by an assertion on the
+same state `_settle`/`_settle_layout` was waiting for, so a timeout that found nothing still turns
+the test red, just via that assertion rather than the helper itself. But nothing in either helper's
+signature or contract requires a caller to do this — a future call site that polls for a side effect
+and then moves on without asserting the outcome (a cleanup step, a "make sure it's had a chance to
+settle" call before some other action) would wait the full `attempts` budget and then silently
+proceed as if it had succeeded, exactly when the underlying condition never became true. Worth
+either an assertion inside the helpers themselves (trading the current "the caller's own check is
+the failure signal" design for a `TimeoutError` with a good message) or a comment on each making the
+"every call site must assert next" requirement explicit rather than implicit.
