@@ -249,3 +249,77 @@ this file, and the fix (giving this test the same structurally-network-dead doub
 manager/cache test file in this package already uses) belongs to a `surf_cache`-scoped pass, not to
 the swarm body fix wave. Filed exactly where it was found, per the same "report, do not fix" rule
 every other item in this file follows.
+
+## F9 — a second test that can reach the network (pre-existing, not introduced by this branch)
+
+`tests/data/test_surf_manager.py:4083` builds its `m2` manager by hand — the same construction F-D
+already touched on this branch — and passes `swarm_client=DeadSwarmClient()` but no `pool4_client=`.
+`SurfManager.__init__` (`data/surf_manager.py:872`) falls back to a real `Pool4Client()` whenever
+`pool4_client` is `None`, so this call site is, structurally, exactly the shape the swarm-client
+fix (commit `a965b01`, "inject the swarm client structurally in the sibling manager test helpers")
+closed for three sibling call sites: the suite is kept off the network by circumstance — nobody has
+exercised the pool4 path from this particular manager instance — rather than by structure, which is
+the repo's own hard constraint ("No test may touch the network. Assert it structurally — inject a
+transport that raises on use.").
+
+**Why it is not fixed here.** The whole-branch review that produced `a965b01` named this exact
+call site for the swarm client and left the pool4 client's identical gap alone: the branch's single
+fix wave was already spent on the swarm-client instances it was scoped to, and repairing a second,
+adjacent gap at that point would have shipped a fix with no review behind it — the same "a fix that
+looks trivial still skips review" reasoning every other deferred item in this file rests on. Filed
+here rather than patched.
+
+**What a fix would involve.** The same shape as `a965b01`: pass a structurally clientless
+`pool4_client=` double (raises on any use, the way `DeadSwarmClient` does for the swarm side) into
+this `SurfManager(...)` construction at `tests/data/test_surf_manager.py:4083`, and add the same
+`assert not hasattr(m2.pool4_client, "_client")`-shaped assertion the swarm-client fix added, so a
+future regression fails loudly instead of passing by accident of network availability.
+
+## F10 — the read-but-empty versus never-read conflation survives in one more place
+
+The final review's finding F-C was that a *successful* read of an idle swarm published `None`
+instead of `0`, so a real zero rendered as `unavailable`. The fix (commit `1ccc8f3`) corrected the
+hero's `swarm_jobs_in_flight` and `swarm_jobs_blocked`, which now distinguish `jobs=[]` (a read that
+found nothing → `0`) from `jobs=None` (no read → `--`), with tests
+(`widgets/surf/swarm_hero.py:332`).
+
+The scoped re-review found the same conflation still present in `data/surf_swarm.throughput`
+(`maxpane_dashboard/data/surf_swarm.py:259`), unfixed and untested:
+
+```python
+if not jobs:
+    return {"accepted_per_day": None, "median_delivery_s": None,
+            "revision_rate": None, "window_days": window_days}
+```
+
+`not jobs` is true for both `jobs=None` (the swarm tier was never read) and `jobs=[]` (a genuine
+read that found no jobs), so both collapse to the identical all-`None` dict. `THROUGHPUT`'s rate
+rows — `accepted_per_day`, `median_delivery_s`, `revision_rate` — therefore render a dead read and a
+real "the swarm has shipped nothing in the window" identically. `SurfManager._swarm_score_keys`
+(`data/surf_manager.py:5476-5488`) passes `jobs`/`details` straight through from the slot with no
+flattening idiom in between (`jobs = slot.get("jobs") if slot else None`, then directly into
+`sw.throughput(jobs, details, now=now)`), so the two cases are still distinguishable at the point
+they reach the function — the conflation is inside `throughput` itself, on the `not jobs` line, not
+upstream of it.
+
+**Why it is not fixed here.** Exactly F6/F7/F8's reasoning: the branch's one fix wave (which closed
+F-C for the hero) and the one scoped re-review that followed it are both complete, and this repo's
+process adjudicates residuals by filing them rather than by opening a second round on a pass that
+already finished. This is a residual of a finding already fixed once, not a new defect class.
+
+**The rule it violates, in the repo's own words.** "A failed read is `None`, never `0`" — and the
+converse the hero fix established: an unread value renders `--` and a real zero renders `0`. "A row
+whose real negative has no representable value ... renders `None` identically for 'we looked and
+there was nothing' and 'we could not look', so it reads confident and green through an outage."
+`throughput`'s three fields are exactly that row today.
+
+**What a fix would involve.** Branch on `jobs is None` before the `not jobs` check (or replace it
+with an explicit `if jobs is None: return {...}` for the never-read case and a separate `if not
+jobs: return {...accepted_per_day: 0.0...}`-shaped branch for the read-but-empty case), the same
+split the hero fix made for `swarm_jobs_in_flight`/`swarm_jobs_blocked`. The distinction has to be
+made **before** any `for x in <arg> or ()` idiom flattens `None` and `[]` together — that idiom is
+exactly where the original F-C defect hid, and `throughput`'s own `details` parameter already goes
+through one at line 276 (`for job in details or ()`), which is a second place the same flattening
+could reappear if the fix is copied there carelessly rather than reasoned through. Both states —
+never-read and read-but-empty — need their own covering test, on the model of the hero's tests for
+the same split.
