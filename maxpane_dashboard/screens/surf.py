@@ -1853,44 +1853,48 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: ever see, because the missing content's own screen position never
 #: existed in the first place.
 #:
-#: WHY JUST SHIPPED SAT AT ITS MAX RATHER THAN ITS MIN -- A REAL TEXTUAL
+#: WHY JUST SHIPPED SAT AT ITS MAX RATHER THAN SHRINKING -- A REAL TEXTUAL
 #: BEHAVIOUR, MEASURED RATHER THAN ASSUMED, AND THE REASON THE FIX IS NOT
 #: "PICK A LOWER MIN-WIDTH." An explicit ``min-width`` on a bounded ``1fr``
-#: sibling, when the row cannot satisfy it, does **not** clamp that child
-#: to its min -- it snaps the child to its **max** instead, confirmed by
-#: sweeping ``min-width`` from 20 to 68 at outer width 95: 20-40 all
-#: produced a well-behaved ~47-column share (95's own natural 1fr split,
-#: unbothered by a min that low); 50 and above all produced 81 (the max),
-#: not 50 or 68. **Omitting ``min-width`` entirely reproduces the same
-#: snap-to-max** (JUST SHIPPED still rendered at 81 with no ``min-width``
-#: line at all) -- Textual falls back to an implicit, content-derived
-#: floor for a ``DataTable``-backed widget whose columns are installed at
-#: mount time (``full`` tier, the widest), and that implicit floor is
-#: *not* defeated by a lower explicit value once it is high enough to also
-#: trip the same snap; only an **explicit** low value avoids it. This is
-#: why the fix is not "measure a smaller floor and write it in" the way
-#: the review round that found this bug first suggested trying -- no
-#: min-width value between the implicit floor and 94 behaves any better
-#: than 68 did, and the review's own arithmetic (a floor plus a ceiling
-#: must not exceed the pin) is the right constraint but needed the right
-#: floor, which turned out to be the absence of one.
+#: sibling, once it exceeds the row's own natural share for that child,
+#: does **not** clamp the child to that min -- it snaps the child to its
+#: **max** instead, confirmed by sweeping ``min-width`` from 40 to 50 at
+#: outer width 95 against the committed CSS: 46 and below all produced the
+#: row's own natural 47-column share (unbothered by a min at or below what
+#: the row would give it anyway); 47 and above all produced 81 (the max),
+#: not 47 or 68. This boundary tracks the row's own natural 1fr share, not
+#: a fixed constant -- it moves with outer width -- but every value this
+#: body's own ``min-width: 68`` sat at was comfortably past it, which is
+#: why 68 produced the silent overflow this file exists to explain. Fix
+#: round 2 re-measured a claim from fix round 1 that did **not** survive
+#: this re-check: **omitting ``min-width`` entirely does not reproduce the
+#: snap.** Verified directly against the committed CSS
+#: (``styles.has_rule("min_width")`` is genuinely ``False`` with the
+#: property removed from both copies): JUST SHIPPED's region is
+#: column-for-column identical to the explicit-``0`` case at every width
+#: checked (47 at outer 95, 72 at 120, 81 at 150) -- Textual's own fraction
+#: resolution simply never consults an absent minimum, so there is no
+#: implicit content floor to override, and the "why the fix is not a
+#: smaller floor" argument rests on the measured snap threshold above, not
+#: on an omitted-vs-explicit distinction that fix round 1 asserted without
+#: re-checking it against the CSS it actually shipped.
 #:
-#: THE FIX: ``min-width: 0;`` -- EXPLICIT, NOT OMITTED. The two spellings
-#: are not equivalent here, which is the load-bearing, counter-intuitive
-#: half of this fix: omitting the property leaves Textual's implicit
-#: content-based floor in charge (the snap-to-max bug); writing
-#: ``min-width: 0;`` overrides it and restores genuine proportional
-#: shrinking. Swept over the *entire* practical range (50-160) with this
-#: one change: **zero overflow at every width**, JUST SHIPPED's own region
-#: growing smoothly from 24 columns at outer 50 up to its own max (81) at
-#: outer 129 and holding there, THROUGHPUT growing in lockstep to its own
-#: cap (46) by outer 94 and holding. ``max-width: 81`` is unchanged; only
-#: the floor moved, from a number "inherited from the previous geometry"
-#: (round 2's own phrase) to no floor at all -- letting the panel shrink
-#: "smoothly, all the way to 0 if it must," which is the exact claim round
-#: 2's own comment made and which was false under ``min-width: 68`` the
-#: whole time. It is true now, proven by the sweep above rather than
-#: asserted again.
+#: THE FIX: ``min-width: 0;`` -- KEPT EXPLICIT FOR INTENT AND
+#: GREPPABILITY, NOT BECAUSE OMISSION BEHAVES DIFFERENTLY HERE. The two
+#: spellings resolve identically against this body's own CSS (measured
+#: above); stating the floor explicitly is still the right code, because a
+#: reader or a future diff should not have to know Textual's own default
+#: to know this panel has no floor by design. Swept over the *entire*
+#: practical range (50-160) with this floor: **zero overflow at every
+#: width**, JUST SHIPPED's own region growing smoothly from 24 columns at
+#: outer 50 up to its own max (81) at outer 129 and holding there,
+#: THROUGHPUT growing in lockstep to its own cap (46) by outer 94 and
+#: holding. ``max-width: 81`` is unchanged; only the floor moved, from a
+#: number "inherited from the previous geometry" (round 2's own phrase) to
+#: no floor at all -- letting the panel shrink "smoothly, all the way to 0
+#: if it must," which is the exact claim round 2's own comment made and
+#: which was false under ``min-width: 68`` the whole time. It is true now,
+#: proven by the sweep above rather than asserted again.
 #:
 #: THE NEW PIN, MEASURED ACROSS ALL FOUR PAYLOADS, NEVER STARTED AT THE
 #: PIN. "Whole" here still excludes THE FIELD's and (see below) JUST
@@ -3171,7 +3175,7 @@ class SurfScreen(RefreshGuard, Screen):
      *
      * WHY BOTH JUST SHIPPED AND THROUGHPUT ARE BOUNDED ``1fr`` RATHER THAN
      * BARE FIXED NUMBERS, AND WHY JUST SHIPPED'S OWN FLOOR IS AN EXPLICIT
-     * ``0`` -- CURRENT AS OF THE 2026-09-17 COLUMN-BALANCE FIX ROUND
+     * ``0`` -- CURRENT AS OF THE 2026-09-17 FIX ROUND 2
      * (:data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own ``#:`` block carries
      * the full derivation and the Textual behaviour that made a plain
      * ``min-width: 68;`` silently overflow the row; this comment is the
@@ -3186,24 +3190,33 @@ class SurfScreen(RefreshGuard, Screen):
      * ``swarm_throughput._MAX_TX_COLS`` (12) caps its tx-hash column, so
      * its own ``max-width: 46`` is that same kind of ceiling, not a
      * borrowed or arbitrary number. **THROUGHPUT carries no min-width of
-     * its own** and does not need one: it is not backed by a ``DataTable``
-     * with mount-time fixed columns, so it has no implicit content floor
-     * for an explicit low value to defeat, and every sweep in the pin's
-     * own ``#:`` block confirms it shrinks smoothly on its own.
+     * its own** and does not need one: unlike JUST SHIPPED it never sat at
+     * its own max regardless of available room, on either spelling -- every
+     * sweep in the pin's own ``#:`` block confirms it shrinks smoothly with
+     * no floor at all, explicit or otherwise.
      *
-     * JUST SHIPPED's ``min-width: 0`` is **explicit, not omitted**, and the
-     * two are not the same thing here: omitting the property left an
-     * *implicit*, content-derived floor in charge (Textual falls back to
-     * the ``DataTable``'s own mount-time, ``full``-tier column sum as an
-     * un-overridable minimum for a bounded ``1fr`` child once no explicit
-     * value replaces it), and that implicit floor is what silently
-     * overflowed this row at every outer width below ~127 -- JUST SHIPPED
-     * simply refused to shrink, THROUGHPUT was placed beside it at its own
-     * ``max-width`` regardless of what remained, and the compositor cropped
-     * the part that did not fit with no ``…``, no ``‹``, no scrollbar.
-     * ``min-width: 0`` overrides that implicit floor and restores genuine
-     * proportional shrinking -- confirmed by a full 50-160 width sweep with
-     * zero overflow at any point, not merely at the pin.
+     * JUST SHIPPED's ``min-width: 0`` is **kept explicit for intent and
+     * greppability, not because Textual treats the two spellings
+     * differently here** -- fix round 1 claimed it did (an implicit,
+     * content-derived floor left in charge by omitting the property); fix
+     * round 2 re-measured that claim against the committed CSS
+     * (``styles.has_rule("min_width")`` genuinely ``False`` with the
+     * property removed from both copies) and it did not hold: JUST
+     * SHIPPED's region was column-for-column identical to the explicit-``0``
+     * case at every width checked. Textual's own fraction resolution
+     * simply never consults an absent minimum; there is no implicit floor
+     * to override. **What is real, and is why ``min-width: 68`` silently
+     * overflowed this row:** a bounded ``1fr`` sibling, once its own
+     * ``min-width`` exceeds the row's *natural* share for that child, is
+     * not clamped to that min -- it snaps to its **max** instead. At outer
+     * width 95 the boundary sits between 46 and 47 (the row's own natural
+     * share there); 68 was comfortably past it. This is a property of the
+     * *value* relative to the row's own share, not of the spelling.
+     * ``min-width: 0`` (or its omission, measured identically) sits under
+     * that boundary at every width this body's own range covers, which is
+     * what restores genuine proportional shrinking -- confirmed by a full
+     * 50-160 width sweep with zero overflow at any point, not merely at
+     * the pin.
      *
      * With the overflow fixed, JUST SHIPPED's own ``‹ widen`` marker is
      * honest again on its own terms, not because of an accidental pin at

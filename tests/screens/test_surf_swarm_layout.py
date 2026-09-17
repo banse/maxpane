@@ -121,11 +121,13 @@ never silently rewrite" convention.
 At outer width 95 the row itself is ~94 columns -- 68 + 46 = 114, past 94
 already, and Textual's ``arrange()`` does not shrink either child to
 compensate: measured, JUST SHIPPED sat at its own **max** (81, not its
-min 68 -- an explicit ``min-width`` that a squeezed row cannot satisfy
-does not clamp a bounded ``1fr`` child to that min, it snaps the child to
-its **max** instead, confirmed by sweeping ``min-width`` from 20 to 68:
-values up to ~40 produced a well-behaved, roughly-even share; 50 and
-above, including omitting ``min-width`` entirely, all produced 81).
+min 68 -- an explicit ``min-width`` that exceeds the row's own *natural*
+share for that child is not clamped to that min, it snaps the child to
+its **max** instead, confirmed by sweeping ``min-width`` from 40 to 50 at
+outer width 95 against the committed CSS: 46 and below all produced the
+row's own natural 47-column share; 47 and above all produced 81, not 47
+or 68 -- the boundary tracks the row's own share, not a fixed number, but
+68 sat comfortably past it at every width this body covers).
 THROUGHPUT was placed beside it at ``x=81, width=46``, right edge 127,
 against the row's own right edge 94 -- a 33-column overflow the
 compositor cropped with no ``…``, no ``‹``, no scrollbar: at the pin the
@@ -139,14 +141,18 @@ could see this, which is why 95 passed the sweep below and was still
 wrong -- the "two panels bind now" paragraph above was narrating an
 overflow bug as if it were a clean measurement.
 
-**The fix is ``min-width: 0;`` on JUST SHIPPED -- explicit, not omitted,**
-which is the counter-intuitive half of it: omitting the property leaves
-an *implicit*, content-derived floor in charge (Textual falls back to the
-``DataTable``'s own mount-time, ``full``-tier column sum as an
-un-overridable minimum once no explicit value replaces it, which is why
-"no min-width at all" reproduced the identical snap-to-81 the explicit 68
-did), while writing ``min-width: 0;`` overrides that implicit floor and
-restores genuine proportional shrinking -- swept over the entire
+**The fix is ``min-width: 0;`` on JUST SHIPPED, kept explicit for intent
+and greppability -- fix round 1's own claim that omitting the property
+behaves differently (an "implicit content floor") did not survive fix
+round 2's re-check against the committed CSS.** Verified directly
+(``styles.has_rule("min_width")`` genuinely ``False`` with the property
+removed from both CSS copies): JUST SHIPPED's region was
+column-for-column identical to the explicit-``0`` case at every width
+checked. Textual's own fraction resolution never consults an absent
+minimum; there is no implicit floor to override, on either spelling.
+What is real is the snap threshold two paragraphs up -- ``min-width: 0``
+(or its omission) simply sits under it at every width this body covers,
+which restores genuine proportional shrinking -- swept over the entire
 practical range (50-160) with zero overflow anywhere, confirmed against a
 new detector (below) built specifically because the old ones could not
 see this class of defect. ``max-width: 81`` did not move; only the floor
