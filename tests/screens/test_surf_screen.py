@@ -1467,6 +1467,86 @@ def _sample_data() -> dict:
         # sharing one string would make a panel reading the wrong clock
         # invisible -- the same argument as `pool4_price_usd`'s.
         "pool4_stakers_as_of_hhmm": "13:05",
+        # -- the `s` SWARM body (2026-09-16) -------------------------------
+        #
+        # A healthy, mid-flight moment: some agents on shift, one job
+        # blocked, one service degraded -- deliberately not an all-quiet
+        # snapshot, so the panels this fixture drives are exercising a
+        # branch other than their own "nothing to report" one.
+        "swarm_agents_online": 7,
+        "swarm_agents_enrolled": 9,
+        "swarm_working_now": 3,
+        "swarm_accepted_today": 21,
+        "swarm_jobs_in_flight": 4,
+        "swarm_jobs_blocked": 1,
+        # `data/surf_swarm.health_facts` strips the `pending` prefix and
+        # lowercases what remains (`pendingReview` -> `review`).
+        "swarm_queue_depths": {"review": 2, "deploy": 1},
+        # One exception named, same shape
+        # `test_a_down_service_is_named_and_the_others_are_not` pins.
+        "swarm_services_up": {"verifier": True, "publisher": True, "deployer": False},
+        "swarm_field_rows": [
+            {
+                "job_id": "job-4471", "template": "surf-swarm-view",
+                "objective": "wire the field panel",
+                "node_key": "codex-14", "role": "implement",
+                "node_state": "accepted", "agent_token": 2,
+                "agent_id": "agent-77", "revisions": 1,
+                "dispatch_note": "waiting on review",
+                "moved_ts": _TS_POST_13 - 600.0, "age_s": 600.0,
+            },
+            {
+                "job_id": "job-4472", "template": "surf-swarm-view",
+                "objective": "throughput panel review",
+                "node_key": "claude-3", "role": "review",
+                "node_state": "waiting", "agent_token": None,
+                "agent_id": None, "revisions": 0,
+                "dispatch_note": None,
+                "moved_ts": _TS_POST_13 - 120.0, "age_s": 120.0,
+            },
+        ],
+        "swarm_queue_rows": [
+            {"state": "executing", "count": 4},
+            {"state": "blocked", "count": 1},
+        ],
+        "swarm_blocked_rows": [
+            {"job_id": "job-4402", "template": "identity-md-fix",
+             "reason": "waiting on review",
+             "moved_ts": _TS_POST_13 - 1_200.0},
+        ],
+        # `chain_id` mixes chains deliberately (launches mostly Sepolia,
+        # a delivery with no on-chain leg at all): `widgets/surf/
+        # _swarm_chain.py`'s whole reason to exist is that a single
+        # title-level word would misattribute one of these rows.
+        "swarm_shipped_rows": [
+            {"kind": "launch", "job_id": "job-4390", "label": "Curve Flow v2",
+             "commit": "a1b2c3d", "chain_id": 11_155_111,
+             "address": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+             "tx_hash": "0x" + "11" * 32, "ens_name": None, "cid": None,
+             "at_ts": _TS_POST_13 - 3_600.0},
+            {"kind": "delivery", "job_id": "job-4381",
+             "label": "swarm queue panel", "commit": "d4e5f6a",
+             "chain_id": None, "address": None, "tx_hash": None,
+             "ens_name": None,
+             "cid": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+             "at_ts": _TS_POST_13 - 7_200.0},
+        ],
+        "swarm_score_rows": [
+            {"agent_id": "agent-77", "agent_token": 2, "jobs_scored": 12,
+             "mean_score": 0.91, "last_tx_hash": "0x" + "22" * 32,
+             "last_chain_id": 11_155_111},
+        ],
+        "swarm_throughput": {
+            "accepted_per_day": 3.0, "median_delivery_s": 5_400.0,
+            "revision_rate": 0.35, "window_days": 7,
+        },
+        "swarm_network": "SEPOLIA",
+        "swarm_as_of_hhmm": "14:35",
+        # The scores tier's own, slower clock -- deliberately not
+        # `swarm_as_of_hhmm`, the same argument `pool4_stakers_as_of_hhmm`
+        # makes above.
+        "swarm_scores_as_of_hhmm": "13:50",
+        "swarm_stale": False,
     }
 
 
