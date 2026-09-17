@@ -72,6 +72,25 @@ way ``activity.py`` names its shed fields -- the brief's own wording is
 "advertising each with ``‹ widen``", one generic marker, not a ladder of
 them.
 
+**The objective context line wraps; it does not clip (2026-09-17 field-wrap
+fix).** An earlier version ran the objective through the same single-line
+``clip`` the six columns use, so any objective past the available width lost
+its remainder to a silent ``…`` no marker ever announced -- the owner's own
+live screenshot named this defect directly. :func:`_header_lines` now
+word-wraps it instead, at the same width every tier's header line has always
+used (the panel's own full log width, not a tier's fixed column budget), and
+never splits a word -- an embedded address is one word, so it cannot land
+half on one line and half on the next. The wrap is bounded at
+:data:`MAX_OBJECTIVE_LINES`, not unbounded: see that constant's own ``#:``
+block for why a *shared* ``RichLog`` cannot afford to let one job's
+objective grow without limit. Whatever the cap sheds -- the tail of an
+objective longer than the cap allows, or a single word wider than the panel
+itself -- still ends in the same visible ``…`` :func:`_rowfit.clip` always
+uses, and now *also* lights the panel's ``‹ widen`` marker, which the tier
+ladder alone used to decide: :meth:`SurfSwarmField._render_view` ORs the two
+reasons together, so the marker is lit whenever the tier sheds a column
+**or** an objective's own wrap sheds text, and dark only when neither does.
+
 **Not ``_pool4.title_text`` itself.**  That function's fitting logic is
 exactly what this panel wants and is reused verbatim below
 (:func:`_title_with_hint` restates it rather than importing the private
@@ -116,7 +135,12 @@ string is still findable as a substring".  Any embedded ``0x…`` address
 survives stripping (hex has no brackets) and gets its copy icon through
 ``widgets/address.address_prose``; a clip reserves :data:`ICON_COLS` ahead
 of one only when the cleaned text actually contains one, so a note with no
-address is never short-changed two columns it does not need.
+address is never short-changed two columns it does not need.  The objective
+context line now spans up to :data:`MAX_OBJECTIVE_LINES` lines rather than
+one, and the same reservation applies once, to every wrapped line, rather
+than per line an address happens to land on -- simpler than tracking which
+specific line an address wrapped onto, and safe because a real objective
+carries at most one.
 
 ``swarm_field_rows`` and the read/empty split
 ------------------------------------------------
@@ -169,6 +193,7 @@ __all__ = [
     "COMPACT_WIDTH",
     "EMPTY_LINE",
     "FULL_WIDTH",
+    "MAX_OBJECTIVE_LINES",
     "MINIMAL_WIDTH",
     "SurfSwarmField",
     "TITLE",
@@ -221,6 +246,39 @@ _REVISIONS_COLS = 5
 #: (``"a review needs a contributor who did not author this work…"``, 57
 #: cells): the clause that actually explains the stall starts at cell 33.
 _MIN_NOTE_COLS = 50
+
+#: Cells the header line's own ``"  "`` dim indent costs, named so
+#: :func:`_header_lines` and a reader checking its arithmetic share one
+#: number rather than a repeated literal ``2``.
+_HEADER_INDENT_COLS = 2
+
+#: The most lines one job's objective may ever print, cap included.
+#:
+#: **Bounded, not unbounded, because THE FIELD is a shared ``RichLog``.**
+#: Every header line one job's objective spends is a line this panel did
+#: not have left for another job's subtask rows, and the log's own
+#: ``max_lines=400`` evicts from the *front* once it fills -- which is
+#: exactly the newest content this panel writes first (see the module
+#: docstring's own ordering section). An unbounded wrap therefore lets one
+#: hostile or merely very long objective push every *other* job's rows out
+#: of the log entirely, not merely off-screen: the read/empty split's own
+#: "an unread band is not an absent one" failure shape, one layer down, and
+#: worse than the clip it replaces because a clip could never cost another
+#: row anything.
+#:
+#: Sized against the measured data, not guessed. This panel's own live
+#: capture's objectives are median 156 / max 159 characters, "containing
+#: newlines and punctuation" (``docs/imd_swarm_api.md``, ``/jobs``). Measured
+#: in situ at THE FIELD's own width inside the real `s` body at its column
+#: pin (``screens/surf.SURF_SWARM_FULL_LAYOUT_COLUMNS``, 116 outer columns):
+#: THE FIELD's own log is 63 cells there, a 61-cell header budget once
+#: :data:`_HEADER_INDENT_COLS` is subtracted, and the widest of those
+#: captured objectives (159 characters) word-wraps to exactly 3 lines at
+#: that budget. 4 leaves one full line of headroom over today's measured
+#: max before the marker has to speak for a *genuine* one -- past it, the
+#: marker is telling the truth about an objective wider than any this
+#: capture has shown, not merely about a hostile one.
+MAX_OBJECTIVE_LINES = 4
 
 
 def _fixed_cols(tier: str) -> int:
@@ -413,17 +471,104 @@ def _fit_prose(text: str, width: int) -> Text:
     return address_prose(_rowfit.clip(text, budget))
 
 
-def _header_text(objective: str, width: int) -> Text | None:
-    """One job's context line -- its objective, dim, indented two columns.
+def _wrap_words(words: list[str], width: int) -> list[list[str]]:
+    """Greedy-pack *words* onto lines of at most *width* cells each.
 
-    ``None`` when there is nothing to say (an empty or unreadable
-    objective), so the caller never writes a blank line for it.
+    Never splits a word -- the caller's own reason to call this rather than
+    :func:`_rowfit.clip`: an embedded address is one word (hex has no
+    whitespace), so a wrap that only ever breaks between words cannot land
+    half of it on one line and half on the next. A word wider than *width*
+    on its own therefore becomes a *line* wider than *width* on its own
+    rather than being cut here -- :func:`_wrap_objective` clips that one
+    line afterward, deliberately not this function, which was told to keep
+    every word whole and does.
+    """
+    lines: list[list[str]] = []
+    current: list[str] = []
+    current_len = 0
+    for word in words:
+        size = cell_len(word)
+        joined = size if not current else current_len + 1 + size
+        if current and joined > width:
+            lines.append(current)
+            current = [word]
+            current_len = size
+        else:
+            current.append(word)
+            current_len = joined
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _wrap_objective(text: str, width: int, max_lines: int) -> tuple[list[Text], bool]:
+    """*text* word-wrapped to *width* cells, at most *max_lines* lines.
+
+    Returns the wrapped lines -- each a pre-built ``rich.text.Text`` with any
+    embedded address's icon already inserted, never a markup string -- and
+    whether anything was actually shed: either the text needed more than
+    *max_lines* lines, or one word alone was wider than *width* and had to be
+    clipped on its own line. Both cases end the same way, on
+    :func:`_rowfit.clip`'s own contract: the last kept line carries a visible
+    ``…``, never a silent cut.
+
+    :data:`ICON_COLS` is reserved from *width* for every line, once, only
+    when *text* contains an address anywhere -- :func:`_fit_prose`'s own
+    rule, extended from one line to all of them (see the module docstring's
+    "no-bracket contract" section for why one reservation is enough). A
+    clipped over-width word cannot come back looking like a whole address
+    with no icon: a cut hex run no longer matches :data:`PROSE_ADDRESS_RE`
+    and so is never mistaken for a complete one.
+    """
+    if not text or width <= 0 or max_lines <= 0:
+        return [], False
+    has_address = bool(PROSE_ADDRESS_RE.search(text))
+    budget = max(width - ICON_COLS, 0) if has_address else width
+    word_lines = _wrap_words(text.split(" "), budget)
+    cap_truncated = len(word_lines) > max_lines
+    shed = cap_truncated
+    kept_count = min(len(word_lines), max_lines)
+    texts: list[Text] = []
+    for i in range(kept_count):
+        if cap_truncated and i == kept_count - 1:
+            remaining = [w for wl in word_lines[i:] for w in wl]
+            line_text = _rowfit.clip(" ".join(remaining), budget)
+        else:
+            line_text = " ".join(word_lines[i])
+            if cell_len(line_text) > budget:
+                line_text = _rowfit.clip(line_text, budget)
+                shed = True
+        texts.append(address_prose(line_text))
+    return texts, shed
+
+
+def _header_lines(objective: str, width: int) -> tuple[list[Text], bool]:
+    """One job's context lines -- its objective, dim, wrapped and indented.
+
+    ``[]`` when there is nothing to say (an empty or unreadable objective),
+    so the caller never writes a blank line for it. Every continuation line
+    carries the same two-column dim indent as the first
+    (:data:`_HEADER_INDENT_COLS`), so the block reads as one continued
+    sentence rather than a disconnected second row -- and the wrap is
+    bounded at :data:`MAX_OBJECTIVE_LINES`, never full, for the reason that
+    constant's own ``#:`` block gives.
+
+    The second element is whether :func:`_wrap_objective` had to shed
+    anything -- exactly the signal :meth:`SurfSwarmField._render_view` ORs
+    into the tier ladder's own widen decision, so the panel's ``‹ widen``
+    marker tells the truth about the objective too, not only about which
+    columns a narrow tier dropped.
     """
     if not objective:
-        return None
-    line = Text("  ", style="dim")
-    line.append_text(_fit_prose(objective, max(width - 2, 0)))
-    return line
+        return [], False
+    inner_width = max(width - _HEADER_INDENT_COLS, 0)
+    wrapped, shed = _wrap_objective(objective, inner_width, MAX_OBJECTIVE_LINES)
+    lines: list[Text] = []
+    for piece in wrapped:
+        line = Text("  ", style="dim")
+        line.append_text(piece)
+        lines.append(line)
+    return lines, shed
 
 
 def _row_text(fields: dict, tier: str, note_width: int) -> Text:
@@ -611,13 +756,22 @@ class SurfSwarmField(Vertical):
         note_width = (
             max(width - _fixed_cols("full") - _GAP, 0) if tier == "full" else 0
         )
-        self._set_title(tier != "full")
 
+        # Built before the title is set, not written directly, because the
+        # widen marker now depends on whether any *objective's* own wrap
+        # shed text -- not only on the tier ladder -- and that is only known
+        # once every group's header has been wrapped.
+        to_write: list[Text] = []
+        objective_shed = False
         for objective, group in _group_by_job(parsed):
-            header = _header_text(objective, width)
-            if header is not None:
-                log.write(header)
+            header_lines, shed = _header_lines(objective, width)
+            objective_shed = objective_shed or shed
+            to_write.extend(header_lines)
             for fields in group:
-                log.write(_row_text(fields, tier, note_width))
+                to_write.append(_row_text(fields, tier, note_width))
+
+        self._set_title(tier != "full" or objective_shed)
+        for line in to_write:
+            log.write(line)
 
         self.call_after_refresh(log.scroll_home, animate=False)
