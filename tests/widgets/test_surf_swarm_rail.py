@@ -488,49 +488,80 @@ async def test_throughput_caps_the_hash_window_well_short_of_a_bare_address():
 
 
 async def test_throughput_sheds_the_hash_and_its_chain_word_together():
-    """Below the reserved-together threshold, both the hash and the chain
-    word vanish -- never a bare hash, per the fix-round-1 contract -- and
-    the title's widen marker agrees; the agent identity and score cells,
-    which are never shed, survive at both widths.
+    """Never a bare hash, per the fix-round-1 contract: at every width in a
+    swept range, the hash and its chain word are shown together or not at
+    all, the never-shed agent identity/score cells survive regardless, and
+    at the boundary the sweep finds, the title's widen marker agrees with
+    whether anything was genuinely shed there.
 
-    The threshold is derived from the module's own private constants
+    F1 (``docs/surf_swarm_followups.md``): this used to derive its two
+    check widths from the module's own private constants
     (``_AGENT_COLS``/``_SCORE_COLS``/``_JOBS_COLS``/``_MIN_TX_COLS``/
-    ``_CHAIN_COLS``/``_GAP``) rather than a hand-typed number, so a later
-    re-sweep of any one of them cannot make this test lie about which tier
-    it is driving.
+    ``_CHAIN_COLS``/``_GAP``) by re-implementing ``_agent_lines``'s own
+    arithmetic inline. That values-agree-with-themselves shape bites a
+    mutation to the formula's *behaviour* (drop the hash without the chain
+    word, or the reverse, at the two sampled widths) but not one that
+    changes the formula's *shape* -- a different reservation order, an
+    added term -- and moves both the re-derived numbers and the widget's
+    real crossover together, in lockstep, while a genuine pairing violation
+    opens up at some *other* width neither sample point ever visits. The
+    terminal-layout skill's "sweep the boundary, not a comfortable width"
+    rule, taken literally: render across a real range and let the
+    composited text say where the pair is actually shed, at every width in
+    the bracket, rather than trusting two numbers computed from the same
+    arithmetic under test.
     """
-    T = _throughput_mod
-    fixed = T._rowfit.row_cols((T._AGENT_COLS, T._SCORE_COLS, T._JOBS_COLS))
-    chain_reserve = T._GAP + T._CHAIN_COLS
-    threshold_available = T._MIN_TX_COLS + chain_reserve
-    threshold_budget = threshold_available + fixed + T._GAP
-    threshold_width = threshold_budget + SurfSwarmThroughput._TITLE_PADDING_COLS
-
-    wide_width = threshold_width + 15
-    narrow_width = threshold_width - 5
-    assert narrow_width > 0, "the derived threshold leaves no room to test below it"
-
     row = [_SEPOLIA_ROW]
-    wide_text = "\n".join(await composite_lines(
-        SurfSwarmThroughput, (wide_width, 14), swarm_throughput=THROUGHPUT,
+
+    # A generous, hand-picked bracket -- comfortably below any width this
+    # panel could plausibly need the pair at, comfortably above it. Not
+    # derived from the module's own constants; that re-derivation is
+    # exactly the bug this test used to have.
+    lo, hi = 15, 90
+
+    boundary = None
+    shed_seen = False
+    for width in range(lo, hi):
+        text = "\n".join(await composite_lines(
+            SurfSwarmThroughput, (width, 14), swarm_throughput=THROUGHPUT,
+            swarm_score_rows=row))
+        has_hash = "0x8370" in text
+        has_chain = "SEPOLIA" in text
+        # Reserved together, shed together -- at every width, not merely
+        # two sampled ones.
+        assert has_hash == has_chain, (
+            width, has_hash, has_chain,
+            "the hash and its chain word disagree at this width -- one "
+            "shed without the other",
+        )
+        if has_hash:
+            if boundary is None:
+                boundary = width
+        else:
+            shed_seen = True
+        # The agent identity and score cells are never shed, at any width
+        # in the bracket.
+        assert "97.8" in text, width
+        assert "#2" in text, width
+
+    assert boundary is not None, "the bracket never showed the pair -- widen it upward"
+    assert shed_seen, "the bracket never shed the pair -- widen it downward"
+
+    at_text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (boundary, 14), swarm_throughput=THROUGHPUT,
         swarm_score_rows=row))
-    narrow_text = "\n".join(await composite_lines(
-        SurfSwarmThroughput, (narrow_width, 14), swarm_throughput=THROUGHPUT,
+    below_text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (boundary - 1, 14), swarm_throughput=THROUGHPUT,
         swarm_score_rows=row))
 
-    # Wide: hash and chain word both present, no widen hint.
-    assert "SEPOLIA" in wide_text
-    assert "0x8370" in wide_text
-    assert "‹" not in wide_text
+    # At the true boundary the sweep found: nothing shed, no widen hint.
+    assert "0x8370" in at_text and "SEPOLIA" in at_text
+    assert "‹" not in at_text
 
-    # Narrow: neither the hash nor the chain word survives -- reserved
-    # together, shed together -- while the never-shed cells still do, and
-    # the title agrees that a column was dropped.
-    assert "SEPOLIA" not in narrow_text
-    assert "0x8370" not in narrow_text
-    assert "97.8" in narrow_text
-    assert "#2" in narrow_text
-    assert "‹" in narrow_text
+    # One column narrower: the pair is genuinely shed, and the marker
+    # agrees that something was.
+    assert "0x8370" not in below_text and "SEPOLIA" not in below_text
+    assert "‹" in below_text
 
 
 async def test_the_marker_survives_dropping_the_as_of_suffix_when_neither_fits_together():
