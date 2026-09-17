@@ -1,6 +1,6 @@
 # swarm body branch — follow-ups
 
-Findings raised during `feature/surf-swarm-body` (docs `docs/surf_swarm_api.md`,
+Findings raised during `feature/surf-swarm-body` (docs `docs/imd_swarm_api.md`,
 `docs/superpowers/specs/2026-09-16-surf-swarm-view-design.md`) and deliberately **not** fixed on
 the branch, per CLAUDE.md's "report defects, do not fix them" rule and the review discipline that
 a scoped re-review files what it finds outside its own target rather than repairing it. The
@@ -184,3 +184,68 @@ wait on — rather than load-sensitive wall-clock/scheduling assumptions. Not fi
 code, test, or fixture was touched by this branch, and this finding is filed exactly where it was
 found rather than repaired, per the same "report, do not fix" rule every other item in this file
 follows.
+
+## F6 — `swarm_queue_depths` is published and consumed by nothing
+
+It is in the frozen contract (`data/surf_models.py:1457`), folded by the manager's `_swarm_keys`
+(`data/surf_manager.py`, `"swarm_queue_depths": facts["queue_depths"]`), and read by no widget
+anywhere: `rg swarm_queue_depths maxpane_dashboard/widgets/` finds only `swarm_hero.py`'s own
+docstring, which names it as a key that hero card explicitly does *not* need (a worked example of
+what it deliberately omits, not a consumer). Design §4 lists it as a payload key, and the gap is
+already documented twice over rather than hidden: `tests/screens/test_surf_screen.py:759` and
+`tests/test_surf_registration.py:1388` both carry a comment recording that this key reaches no
+widget, alongside the fixed set every other `swarm_*` key belongs to.
+
+**Why it is not fixed here.** The 2026-09-17 fix wave (`final-review.md`'s six named findings,
+F-A through F-F in that report's own lettering -- distinct from this file's F-numbering) was
+scoped to those six; deciding whether to build a consumer for this key or drop it from the
+contract is a product call (does a fifth panel, or a cell inside one of the existing four, want
+`pending*` counters by name?), not a defect with one obvious repair. Filed so whoever next touches
+the swarm body's contract makes that call deliberately rather than leaving a payload key nothing
+reads.
+
+## F7 — cache write amplification, roughly 2×, every poll
+
+`save_cache()` runs at the end of every `_cycle` and `SurfCache.save` serialises every last-good
+slot whole, with no per-slot size cap. Measured against the committed capture during the final
+review (2026-09-17):
+
+| | bytes |
+|---|---|
+| `SLOT_SWARM` payload | 52,814 |
+| `SLOT_SWARM_SCORES` payload | 223,122 |
+| combined new | 275,936 |
+| existing `~/.maxpane/surf_cache.json` | 250,713 |
+
+So the two swarm slots roughly double the surf cache file, and the whole file is rewritten every
+poll (30 s default) even when neither swarm tier changed anything that cycle. The scores slot in
+particular stores all 62 captured jobs' own details, which feed only two panels (JUST SHIPPED and
+THROUGHPUT's score rows).
+
+**Why it is not fixed here.** Not a correctness defect — nothing here is wrong, stale, or dishonest
+— and not a rule this repo has written down anywhere: no existing convention caps a slot's
+persisted size or exempts an unchanged slot from a poll's write. Costing and deciding whether it
+is worth a fix (a per-slot size cap, a dirty-slot skip on save, trimming the scores slot's stored
+detail) is a separate, deliberate piece of work, and nobody had costed it before this review found
+it. Filed rather than repaired, per the same rule as every other entry in this file.
+
+## F8 — a pre-existing network-dependent test in `test_surf_cache.py` (pre-existing, not caused by this branch)
+
+`tests/data/test_surf_cache.py::test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_file`
+genuinely depends on the network: blocking outbound `httpx` makes it **fail**, with 10 real requests
+recorded against `gateway.tenderly.co`, `rpc.mevblocker.io` and `ethereum-rpc.publicnode.com`. It
+passes today only because the machine running it is online.
+
+**Evidence it is pre-existing and not this branch's doing.** `git show 9606626:tests/data/test_surf_cache.py`
+(the branch's fork point) already contains this test, unchanged in shape; this branch's only
+change to the file is the `TIERS`/`SLOTS` count growing to account for the two new swarm tiers. The
+same construction the final review used to catch F-D (an outbound-request-recording pytest plugin)
+was run against `tests/data/test_surf_manager_pool4_market.py` + `test_surf_cache.py` together:
+100 passed, 1 failed — this test, and only this one.
+
+**Why it is not fixed here.** Exactly F5's shape, labelled the same way: no code, test, or fixture
+this branch touched is the cause, `git diff` against the fork point shows no functional change to
+this file, and the fix (giving this test the same structurally-network-dead double every other
+manager/cache test file in this package already uses) belongs to a `surf_cache`-scoped pass, not to
+the swarm body fix wave. Filed exactly where it was found, per the same "report, do not fix" rule
+every other item in this file follows.
