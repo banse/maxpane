@@ -2593,13 +2593,26 @@ SurfPool4UDepth {
  * short enough to overflow, so the layout's WIDTH requirement would become
  * a function of its HEIGHT.
  *
- * `#surf-swarm-left` carries its own `overflow-y: auto` (on
- * `MODE_LAUNCHPAD`'s two-scrolling-column shape, named in
- * `SurfScreen._SCROLL_COLUMNS[MODE_SWARM]` alongside `#surf-swarm-rail`)
- * rather than the whole-body container the market body names instead --
- * `#surf-swarm-body` also carries `overflow-y: auto` as a defensive floor
- * so the two rows can never be silently clipped, but it is not one of the
- * two selectors the `‹ taller` marker checks for this mode.
+ * `#surf-swarm-left` and `#surf-swarm-rail` both carry their own
+ * `overflow-y: auto`, named in `SurfScreen._SCROLL_COLUMNS[MODE_SWARM]`.
+ * `#surf-swarm-body` carries the same rule, and -- since fix round 1 of
+ * Task 12 -- it is named there too, on `MODE_POOL4_USER`'s own shape
+ * (`_SCROLL_COLUMNS[MODE_POOL4_USER]` already asks its own body id
+ * alongside its rail) rather than `MODE_LAUNCHPAD`'s two-container one.
+ * It was not, for one round: a synthetic worst case (light `#surf-swarm-
+ * rail` content, a large JUST SHIPPED table) opened a one-row-wide
+ * `‹ taller`-dark window at height 25, eleven rows under
+ * `SURF_SWARM_FULL_LAYOUT_ROWS`, where `#surf-swarm-body` was genuinely
+ * scrolling and JUST SHIPPED's table was genuinely losing rows -- the `p`
+ * body's own F6 shape, one container over. Registering `#surf-swarm-body`
+ * closed it; raising a floor was considered and rejected, because none of
+ * this body's four panels has a payload-independent content height for a
+ * floor to sit above, so a floor only moves the window to a different
+ * content mix rather than closing it. See
+ * `tests/screens/test_surf_swarm_layout.py`'s
+ * `test_the_body_only_scrollbar_case_now_lights_the_marker` (the
+ * reproduction, its own failing-first record) and
+ * `test_no_height_loses_a_row_of_this_body_in_silence` (the property).
  *
  * QUEUE and THROUGHPUT are both `height: auto` in their own widget
  * `DEFAULT_CSS` (neither carries a `1fr` of its own, same as THE SPLIT/THE

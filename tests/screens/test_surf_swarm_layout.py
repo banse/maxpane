@@ -36,24 +36,33 @@ Four things this file exists to pin above the rest
    marker keeps lighting rather than the body ever coming out silently
    short.
 
-A named gap, and why it is not asserted away here
+A named gap, found and closed in fix round 1
 ----------------------------------------------------
-``SurfScreen._SCROLL_COLUMNS[MODE_SWARM]`` checks ``#surf-swarm-left`` and
-``#surf-swarm-rail``, not ``#surf-swarm-body`` -- a placeholder Task 10 left
-in both CSS copies' own comments, not something this task's brief asks it to
-fix. Swept at and above the row pin, across every payload this file uses,
-the gap never shows: whenever the body needed to scroll, the rail did too,
-so ``‹ taller`` never disagreed with reality in the range this file actually
-pins. It is not vacuous in general -- a synthetic worst case (light rail
-content, thirty JUST SHIPPED rows, no field/queue/score stress at all) opens
-a genuine one-row-wide window at height 25, eleven rows under this pin,
-where the body's own container scrolls, JUST SHIPPED's table loses rows, and
-the screen-wide marker stays dark. That is the ``p`` body's F6 shape one
-container over. ``test_the_body_scrollbar_and_the_marker_agree_at_and_above_the_pin``
-pins the claim this file actually makes -- agreement from the row pin
-upward, on the payloads this file sweeps -- and does not claim the gap is
-closed everywhere; the window below the pin is reported, not fixed, in the
-task's own report.
+``SurfScreen._SCROLL_COLUMNS[MODE_SWARM]`` used to check only
+``#surf-swarm-left`` and ``#surf-swarm-rail``, not ``#surf-swarm-body`` --
+a placeholder Task 10 left in both CSS copies' own comments. A synthetic
+worst case (light rail content, thirty JUST SHIPPED rows, no field/queue/
+score stress at all) opened a genuine one-row-wide window at height 25,
+eleven rows under the row pin: the body's own container was scrolling and
+cutting JUST SHIPPED's table while the screen-wide ``‹ taller`` stayed
+dark, at heights 24 and 26 either side both correctly lighting it. That is
+the ``p`` body's own F6 shape, one container over, and rows disappearing
+with nothing saying so is exactly what the marker exists to prevent.
+
+**Closed by registering ``#surf-swarm-body`` in ``_SCROLL_COLUMNS[MODE_SWARM]``**,
+the same shape ``_SCROLL_COLUMNS[MODE_POOL4_USER]`` already uses for
+``#surf-pool4-user-body``, rather than by raising a floor (a floor only
+moves the window; a different content mix reopens it, because none of this
+body's panels has a payload-independent content height for a floor to sit
+above -- see :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block).
+``test_the_body_only_scrollbar_case_now_lights_the_marker`` reproduces the
+height-25 case and is the one test in this file with its own failing-first
+history: red against the pre-fix code, green after the registration, red
+again with the registration removed. ``test_no_height_loses_a_row_of_this_
+body_in_silence`` is the property version, swept over a band that includes
+height 25 on the adversarial payload as well as the reference and heavy
+ones -- it now holds everywhere this file checks, not merely at and above
+the row pin.
 """
 
 from __future__ import annotations
@@ -610,32 +619,88 @@ async def test_a_busier_swarm_still_lights_the_marker_at_the_pin(
     )
 
 
-async def test_the_body_scrollbar_and_the_marker_agree_at_and_above_the_pin() -> None:
-    """The named gap's own scope: closed from the row pin upward, on the
-    payloads this file sweeps -- not claimed closed everywhere.
+async def test_the_body_only_scrollbar_case_now_lights_the_marker() -> None:
+    """Fix round 1's own reproduction, at the exact case that found the gap.
 
-    ``_SCROLL_COLUMNS[MODE_SWARM]`` does not check ``#surf-swarm-body``
-    itself (see :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block), so
-    in principle the body could be scrolling -- cutting JUST SHIPPED's table
-    -- while ``‹ taller`` stays dark. Swept from six rows under the pin to
-    six over it, on the reference capture and the heavier payloads, that
-    never happens: whenever the body's own container needs to scroll, the
-    rail needs to as well. This is the property this file can actually prove
-    honest; a synthetic payload built to defeat it (light rail content, a
-    large JUST SHIPPED table) does open a one-row window, eleven rows under
-    this pin -- reported in the task's own report rather than asserted here,
-    because asserting it away would require fixing ``_SCROLL_COLUMNS``,
-    which belongs to Task 10's own file, not this task's two constants.
+    Before this fix, ``_SCROLL_COLUMNS[MODE_SWARM]`` checked only
+    ``#surf-swarm-left`` and ``#surf-swarm-rail``, never ``#surf-swarm-body``
+    itself. :func:`_shipped_heavy_light_rail_payload` starves the rail (one
+    field row, one queue state, no blocked jobs, no scored agents) so
+    ``#surf-swarm-left``/``#surf-swarm-rail`` never need to scroll, while a
+    thirty-row JUST SHIPPED table gives the body itself something genuine to
+    lose. At the column pin and height 25 the body was, and still is,
+    genuinely scrolling (``show_vertical_scrollbar`` true) -- what changed is
+    whether the screen-wide marker agrees.
+
+    This test is its own failing-first record: it reddened against the
+    pre-fix code (``taller`` false while ``body_scroll`` was true), passed
+    once ``SWARM_BODY_ID`` was added to ``_SCROLL_COLUMNS[MODE_SWARM]``, and
+    reddened again with that registration removed -- see the task's own
+    report for the three runs.
     """
-    for payload_name in ("capture", "heavy"):
-        for rows in range(SURF_SWARM_FULL_LAYOUT_ROWS - 6,
+    r = await _render(_shipped_heavy_light_rail_payload(30),
+                      (SURF_SWARM_FULL_LAYOUT_COLUMNS, 25))
+    assert r["body_scroll"], (
+        "the body should still be genuinely scrolling at this case -- if it "
+        "is not, this test is no longer measuring the gap it was built for"
+    )
+    assert r["taller"], (
+        "the body is scrolling and JUST SHIPPED is losing rows, but the "
+        "screen-wide marker is dark -- the SWARM_BODY_ID registration is "
+        "missing or was reverted"
+    )
+
+
+async def test_no_height_loses_a_row_of_this_body_in_silence() -> None:
+    """The property fix round 1 closes: whenever the body's own container
+    needs to scroll, the screen-wide marker says so -- everywhere this file
+    checks, not merely at and above the row pin.
+
+    Swept from eighteen rows under the row pin (24, the bottom of this
+    file's own height sweep, and below the height-25 case that found the
+    gap) to six over it, on the reference capture and the heavier payload,
+    plus the adversarial light-rail/heavy-JUST-SHIPPED payload that found
+    the gap in the first place. All three now agree at every height in
+    range -- confirmed against the pre-fix code, this range reddened at
+    height 25 on the adversarial payload alone; it is green here only
+    because it is run against the fix.
+    """
+    cases = [
+        ("capture", SWARM_PAYLOADS["capture"]()),
+        ("heavy", SWARM_PAYLOADS["heavy"]()),
+        ("shipped-heavy-light-rail", _shipped_heavy_light_rail_payload(30)),
+    ]
+    for payload_name, payload in cases:
+        for rows in range(SURF_SWARM_FULL_LAYOUT_ROWS - 18,
                           SURF_SWARM_FULL_LAYOUT_ROWS + 7):
-            r = await _render(SWARM_PAYLOADS[payload_name](), (150, rows))
+            r = await _render(payload, (SURF_SWARM_FULL_LAYOUT_COLUMNS, rows))
             if r["body_scroll"]:
                 assert r["taller"], (
                     payload_name, rows,
                     "the body is scrolling with the screen-wide marker dark"
                 )
+
+
+async def test_the_registration_does_not_light_the_marker_when_nothing_is_cut() -> None:
+    """The other half of a marker fix: it must not cry wolf either.
+
+    Registering ``#surf-swarm-body`` could in principle make ``‹ taller``
+    fire on its own scrollbar appearing for a reason that costs no content --
+    the repo's own cautionary case is ``DataTable.show_horizontal_scrollbar``,
+    which goes true several columns before anything is actually lost. Swept
+    well above the row pin, on the same adversarial payload that found the
+    gap, the body's own scrollbar and the marker both go quiet together and
+    stay quiet -- confirmed at every height in range, not merely the first
+    one past the threshold.
+    """
+    payload = _shipped_heavy_light_rail_payload(30)
+    for rows in range(SURF_SWARM_FULL_LAYOUT_ROWS, SURF_SWARM_FULL_LAYOUT_ROWS + 20):
+        r = await _render(payload, (SURF_SWARM_FULL_LAYOUT_COLUMNS, rows))
+        if not r["body_scroll"]:
+            assert not r["taller"], (
+                rows, "the marker is lit with nothing scrolling -- a false "
+                "positive, report rather than silence it"
+            )
 
 
 # ---------------------------------------------------------------------------

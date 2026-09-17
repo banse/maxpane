@@ -1619,22 +1619,38 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 93
 #: that promise instead, and it was swept against every payload above rather
 #: than merely asserted.
 #:
-#: A NAMED GAP, BELOW THIS PIN, NOT FIXED HERE. ``_SCROLL_COLUMNS[MODE_SWARM]``
-#: checks :data:`SWARM_LEFT_ID` and :data:`SWARM_RAIL_ID`, deliberately not
-#: :data:`SWARM_BODY_ID` -- see the CSS comment above ``SurfScreen
-#: #surf-swarm-body`` below, and ``minimal.tcss``'s matching note:
-#: ``#surf-swarm-body`` carries its own ``overflow-y: auto`` as "a defensive
-#: floor", explicitly not one of the two selectors the marker checks. Swept
-#: at this pin and above, that gap never shows: whenever ``#surf-swarm-body``
-#: needed to scroll, ``#surf-swarm-rail`` needed to as well, at the reference
-#: payload and at every payload this file sweeps. It is not vacuous in
-#: general, though -- a synthetic worst case (light rail content, thirty JUST
-#: SHIPPED rows) opened a genuine one-row-wide window at height 25, eleven
-#: rows under this pin, where ``#surf-swarm-body`` was scrolling and cutting
-#: JUST SHIPPED's table while ``‹ taller`` stayed dark. That is the ``p``
-#: body's F6 shape, one container over. It is filed rather than fixed here:
-#: :data:`SWARM_BODY_ID` and ``_SCROLL_COLUMNS`` are Task 10's own wiring, and
-#: the window sits below this pin rather than at it.
+#: A NAMED GAP, FOUND BELOW THIS PIN, AND CLOSED IN FIX ROUND 1.
+#: ``_SCROLL_COLUMNS[MODE_SWARM]`` used to check only :data:`SWARM_LEFT_ID`
+#: and :data:`SWARM_RAIL_ID`, deliberately not :data:`SWARM_BODY_ID`. A
+#: synthetic worst case (light rail content, thirty JUST SHIPPED rows)
+#: opened a genuine one-row-wide window at height 25, eleven rows under this
+#: pin, where ``#surf-swarm-body`` was scrolling and cutting JUST SHIPPED's
+#: table while ``‹ taller`` stayed dark -- the ``p`` body's own F6 shape, one
+#: container over, and rows disappearing with nothing saying so is exactly
+#: what the marker exists to prevent. It was real at every height this pin
+#: does not cover, not merely a hypothetical: swept at and above this pin the
+#: gap never showed, but a reader on a short-enough terminal below it would
+#: have silently lost rows.
+#:
+#: **Closed by registering** :data:`SWARM_BODY_ID` **in**
+#: ``_SCROLL_COLUMNS[MODE_SWARM]``, on ``_SCROLL_COLUMNS[MODE_POOL4_USER]``'s
+#: own shape (it already asks its own body id alongside its rail) rather than
+#: by raising a floor. A floor was considered and rejected: none of THE
+#: FIELD, QUEUE, THROUGHPUT or JUST SHIPPED has a payload-independent content
+#: height for a floor to sit above (the paragraph two above this one), so a
+#: floor would only move the window to a different content mix, never close
+#: it -- registering the container that can actually scroll is what makes
+#: the marker aware of every mix. Re-swept after the fix: the same synthetic
+#: worst case now lights ``‹ taller`` at height 25 (and the marker was
+#: checked clear of false positives for twenty rows above this pin on the
+#: same payload -- registering a container that scrolls for a real, costless
+#: reason would be its own defect, the ``DataTable.show_horizontal_
+#: scrollbar`` shape, and it does not happen here).
+#: ``test_the_body_only_scrollbar_case_now_lights_the_marker`` is the
+#: reproduction (its own failing-first record: red before this fix, green
+#: after, red again with the registration reverted) and
+#: ``test_no_height_loses_a_row_of_this_body_in_silence`` is the property,
+#: both in ``tests/screens/test_surf_swarm_layout.py``.
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
@@ -2736,6 +2752,29 @@ class SurfScreen(RefreshGuard, Screen):
      * -- and are expected to move once a later task measures this body the
      * way the others were.
      *
+     * ``#surf-swarm-left`` and ``#surf-swarm-rail`` both carry their own
+     * ``overflow-y: auto``, named in ``SurfScreen._SCROLL_COLUMNS[MODE_SWARM]``.
+     * ``#surf-swarm-body`` carries the same rule, and -- since fix round 1
+     * of Task 12 -- it is named there too, on ``MODE_POOL4_USER``'s own
+     * shape (``_SCROLL_COLUMNS[MODE_POOL4_USER]`` already asks its own body
+     * id alongside its rail) rather than ``MODE_LAUNCHPAD``'s
+     * two-container one. It was not, for one round: a synthetic worst case
+     * (light ``#surf-swarm-rail`` content, a large JUST SHIPPED table)
+     * opened a one-row-wide ``‹ taller``-dark window at height 25, eleven
+     * rows under :data:`SURF_SWARM_FULL_LAYOUT_ROWS`, where
+     * ``#surf-swarm-body`` was genuinely scrolling and JUST SHIPPED's table
+     * was genuinely losing rows -- the ``p`` body's own F6 shape, one
+     * container over. Registering ``#surf-swarm-body`` closed it; raising a
+     * floor was considered and rejected, because none of this body's four
+     * panels has a payload-independent content height for a floor to sit
+     * above, so a floor only moves the window to a different content mix
+     * rather than closing it. See
+     * ``tests/screens/test_surf_swarm_layout.py``'s
+     * ``test_the_body_only_scrollbar_case_now_lights_the_marker`` (the
+     * reproduction, its own failing-first record) and
+     * ``test_no_height_loses_a_row_of_this_body_in_silence`` (the
+     * property).
+     *
      * EVERY 1FR CHILD IS FLOORED AND EVERY SCROLLING CONTAINER RESERVES ITS
      * GUTTER, for the reason repeated at every other body in this block: a
      * ``1fr`` child cannot overflow a scroll container, it SHRINKS, so
@@ -3208,11 +3247,35 @@ class SurfScreen(RefreshGuard, Screen):
         MODE_POOL4_USER: (
             f"#{POOL4_USER_BODY_ID}", f"#{POOL4_USER_RAIL_ID}",
         ),
-        # The swarm body's top row and its rail, on `MODE_LAUNCHPAD`'s shape:
-        # both `#surf-swarm-left` and `#surf-swarm-rail` carry their own
-        # `overflow-y: auto`, so both can genuinely light this marker rather
-        # than only the whole-body container the market body names instead.
-        MODE_SWARM: (f"#{SWARM_LEFT_ID}", f"#{SWARM_RAIL_ID}"),
+        # The swarm body, on `MODE_POOL4_USER`'s own shape now, not on
+        # `MODE_LAUNCHPAD`'s two-scrolling-column one: all THREE of
+        # `#surf-swarm-body`, `#surf-swarm-left` and `#surf-swarm-rail` are
+        # asked, the same way `MODE_POOL4_USER` asks its own body id
+        # alongside its rail.
+        #
+        # **`#surf-swarm-body` was missing here through Task 12's first
+        # pass, and that was a real gap, not a style choice** (fix round 1).
+        # `#surf-swarm-body` is a `Vertical` of two rows -- the top row
+        # (`#surf-swarm-left`) and JUST SHIPPED -- and JUST SHIPPED's own
+        # `DataTable` can be squeezed by the body's own flex allocation
+        # without either child container ever needing to scroll: a light
+        # rail (little QUEUE/THROUGHPUT content) and a large JUST SHIPPED
+        # table reproduced a genuine one-row-wide window at height 25 --
+        # `#surf-swarm-body.show_vertical_scrollbar` true, rows actually
+        # lost off JUST SHIPPED's table, `‹ taller` dark -- with 24 and 26
+        # either side both correctly lighting it. That is the `p` body's own
+        # F6 shape (a table scrolling where no named container sees it), one
+        # container over, and it is closed the way `MODE_POOL4_USER` already
+        # was built to close it: by asking the body itself, not by raising a
+        # floor. A floor would only have moved the window to a different
+        # content mix; asking the body makes the marker aware of every mix.
+        # `test_the_body_only_scrollbar_case_now_lights_the_marker` and
+        # `test_no_height_loses_a_row_of_this_body_in_silence`
+        # (`tests/screens/test_surf_swarm_layout.py`) are the reproduction
+        # and the property, both red before this line and green after.
+        MODE_SWARM: (
+            f"#{SWARM_BODY_ID}", f"#{SWARM_LEFT_ID}", f"#{SWARM_RAIL_ID}",
+        ),
     }
 
     def _rail_is_cut(self) -> bool:
