@@ -500,13 +500,54 @@ def _fit_address_aware(text: str, width: int) -> str:
     as fits is kept and a visible ``…`` is appended) but measured on
     :func:`_rendered_cost` rather than bare :func:`rich.cells.cell_len`, so
     a kept address's own icon is counted against the budget instead of a
-    flat one-reservation guess. The scan runs forward, one character at a
-    time, because :func:`_rendered_cost` of a *growing* prefix can only
-    ever increase (an address inside it is either not yet complete, and
-    costs nothing extra, or complete, and always will be from then on) --
-    so the first prefix that no longer leaves room for the ellipsis is the
-    boundary, with no risk of a shorter prefix costing more than a longer
-    one.
+    flat one-reservation guess.
+
+    **Cost of a growing prefix is not monotonic (fix round 2, corrected
+    after a scoped re-review).** An earlier version of this docstring
+    claimed it could "only ever increase" -- false, with a reproducible
+    counter-example: two addresses glued with no separator (or, the same
+    shape, partway through a 64-hex transaction hash) has a prefix that
+    ends exactly on a coincidental 40-hex boundary. At that length the
+    prefix *is* one complete, validly-bounded address (the string's own
+    end satisfies :data:`PROSE_ADDRESS_RE`'s trailing lookaround), so
+    :func:`_rendered_cost` charges it a full :data:`ICON_COLS` on top of
+    its raw length. One character further, the next hex digit is now
+    immediately adjacent to that match, the trailing lookaround fails, and
+    the match disappears entirely -- :func:`rich.cells.cell_len` rose by
+    one cell while the icon charge fell by :data:`ICON_COLS`, so the net
+    cost **drops**. Measured directly against two 42-character addresses
+    glued together (``"0x" + "a"*40 + "0x" + "b"*40``): the 42-cell prefix
+    costs 44 (40 hex cells + ``"0x"`` + one phantom icon), the 43-cell
+    prefix costs 43 (the match is gone, nothing added back) -- length up,
+    cost down. A 64-hex transaction hash reproduces the identical 44 → 43
+    step at the same two lengths.
+
+    **What actually makes the forward scan safe is not monotonicity --
+    it is that this loop never infers a length it has not itself tested.**
+    Every candidate is checked once, in increasing order, against its own
+    freshly computed cost, and a prefix is kept only when *that exact*
+    check passes; nothing here ever concludes "length *L* passed, so
+    length *L* ± *k* must too." A spike's own failure can only make the
+    returned prefix shorter (still safe, just possibly short of the true
+    maximum) -- it can never accept anything whose own cost was not
+    itself checked. And the specific spike this counter-example produces
+    can never truncate the scan early in the first place: accepting the
+    spike (cost *L*+2 needing *width* ≥ *L*+3) mechanically forces
+    accepting the very next, cheaper candidate too (cost *L*+1 needing
+    only *width* ≥ *L*+2, a strictly weaker requirement) -- so whenever
+    the phantom match is affordable at all, the scan is already past it
+    before the next character is even considered.
+
+    **A future change that trusts literal monotonicity here -- a binary
+    search over prefix lengths, or a cached high-water mark reused across
+    calls -- would be unsound and would reopen exactly the class of bug
+    this fix round closed.** Both techniques work by inferring an
+    untested length's cost from a tested one; extrapolating "shorter is
+    safe because this longer length was" is precisely the assumption a
+    phantom-match dip violates, and could accept a shorter prefix whose
+    own real cost is higher than the one actually measured -- rendering
+    past *width* with no marker, the original defect, reintroduced by an
+    optimization rather than a reservation bug.
     """
     if width <= 0 or not text:
         return ""
