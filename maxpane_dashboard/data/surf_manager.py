@@ -5426,11 +5426,21 @@ class SurfManager:
             "swarm_working_now": facts["working_now"],
             "swarm_accepted_today": facts["accepted_today"],
             # ``0``, not ``None``, when the list was read and genuinely has
-            # no job in that state -- fix round 1 finding 3. Only a missing
-            # list (``jobs`` falsy: unread, or read-and-empty with nothing
-            # to count either way) publishes ``None``.
-            "swarm_jobs_in_flight": by_state.get("executing", 0) if jobs else None,
-            "swarm_jobs_blocked": by_state.get("blocked", 0) if jobs else None,
+            # no job in that state -- fix round 1 finding 3. Only a list
+            # that was never read (``jobs is None``) publishes ``None``.
+            # F-C (fix round 3): this used to read ``if jobs`` -- falsy
+            # for ``[]`` as well as ``None`` -- so a *successful* read of an
+            # idle swarm (``client.fetch_jobs()`` answering ``[]``, which
+            # ``SwarmClient._list``/``_pool_swarm`` both pass through
+            # deliberately as a real empty, not an unread one) published
+            # ``None`` and the hero rendered ``unavailable`` beside a live
+            # AGENTS card. ``jobs is not None`` is checked here, directly
+            # against the argument, before ``by_state`` (itself built off
+            # ``sw.queue_rows(jobs)``, which already folds ``None`` and
+            # ``[]`` to the same ``{}`` internally and so cannot be asked
+            # this question after the fact).
+            "swarm_jobs_in_flight": by_state.get("executing", 0) if jobs is not None else None,
+            "swarm_jobs_blocked": by_state.get("blocked", 0) if jobs is not None else None,
             "swarm_queue_depths": facts["queue_depths"],
             "swarm_services_up": facts["services_up"],
             "swarm_field_rows": sw.field_rows(details, now=now),
@@ -5910,10 +5920,13 @@ class SurfManager:
         # The live tier's own keys, off its own slot and its own, much
         # faster marker.
         data.update(self._swarm_keys(swarm_slot, swarm_entry, now))
-        # The sweep's own keys, off its own slot. ``swarm_entry`` is threaded
-        # through only so ``swarm_stale`` and the shipped/throughput rows can
-        # compare against and reuse the live tier's fresher jobs list (spec
-        # §6/§3) rather than this sweep persisting a second, staler copy.
+        # The sweep's own keys, off its own slot -- ``shipped_rows``/
+        # ``throughput`` come from THIS slot's own ``jobs``, and this sweep
+        # persists its own copy rather than reusing the live tier's (fix
+        # round 1 finding 4; see ``_swarm_scores_keys``'s own docstring for
+        # the two-clocks argument this comment used to get backwards).
+        # ``swarm_entry`` is threaded through only so ``swarm_stale`` can
+        # compare this sweep's marker against the live tier's.
         data.update(
             self._swarm_scores_keys(scores_slot, scores_entry, swarm_entry, now)
         )

@@ -309,6 +309,30 @@ async def test_an_unread_list_still_publishes_none(tmp_path):
     await manager.close()
 
 
+async def test_a_genuinely_empty_read_publishes_zero_not_none(tmp_path):
+    """F-C: a *successful* read of an idle swarm (``{"jobs": []}``) must
+    publish ``0`` for both counts, not ``None`` -- the same honesty contract
+    as :func:`test_a_real_zero_publishes_as_zero_not_none` above, but for
+    ``jobs == []`` rather than ``jobs`` full of terminal-state rows.
+
+    Before the fix, ``"swarm_jobs_in_flight": ... if jobs else None`` treated
+    an empty-but-read list identically to a never-read one, because ``[]`` is
+    falsy exactly like ``None`` is. The marker proves the read genuinely
+    happened (``_pool_swarm`` only calls ``store_last_good``/``mark_fetched``
+    on success), so a ``None`` count beside a real marker is the "an unread
+    band is not an absent one" defect CLAUDE.md names, pointed the other way.
+    """
+    swarm = _FakeSwarm(jobs=[])
+    manager = _manager(tmp_path, swarm)
+    await manager.fetch_and_compute()
+    await manager._swarm_task
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_as_of_hhmm"] is not None, "the read must have succeeded"
+    assert payload["swarm_jobs_in_flight"] == 0
+    assert payload["swarm_jobs_blocked"] == 0
+    await manager.close()
+
+
 async def test_the_sweep_publishes_whole_rows_even_with_no_live_slot(tmp_path):
     """Fix round 1 finding 4.
 
@@ -365,3 +389,24 @@ async def test_the_swarm_keys_are_filled_from_the_slot(tmp_path):
     assert payload["swarm_queue_rows"], "no queue rows published"
     assert payload["swarm_as_of_hhmm"], "no marker published"
     await manager.close()
+
+
+async def test_a_manager_built_without_a_swarm_client_owns_a_real_one(tmp_path) -> None:
+    """F-D. The default mirrors ``client``'s and ``pool4_client``'s own
+    (``test_a_manager_built_without_a_pool4_client_owns_a_real_one``,
+    ``tests/data/test_surf_manager_pool4.py``): a manager built with nothing
+    for this argument gets the real, keyless ``SwarmClient`` -- which is
+    exactly why every helper in this suite (this file's own ``_manager``,
+    and now ``test_surf_manager.py``'s and ``test_surf_manager_pool4.py``'s)
+    injects a double, and why that is asserted here rather than assumed.
+    """
+    from maxpane_dashboard.data.surf_swarm_client import SwarmClient
+
+    manager = SurfManager(
+        cache_path=str(tmp_path / "surf_cache.json"),
+        client=FakeSurfClient(),
+        pool4_client=FakePool4Client(),
+        clock=FakeClock(NOW),
+    )
+    assert isinstance(manager.swarm_client, SwarmClient)
+    await manager.swarm_client.close()
