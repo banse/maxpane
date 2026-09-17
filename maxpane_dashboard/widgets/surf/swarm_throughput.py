@@ -381,10 +381,8 @@ class SurfSwarmThroughput(Vertical):
 
     def _title_text(self) -> str:
         payload = self._payload
-        base = TITLE
         as_of = payload.get("scores_as_of")
-        if _has_marker(as_of):
-            base += f" · as of {as_of}"
+        suffix = f" · as of {as_of}" if _has_marker(as_of) else ""
         # Unlike ``swarm_field.py``, ``stale`` is not conditioned on the
         # marker's own presence: the given contract test drives it with no
         # marker set at all (``test_the_stale_word_appears_only_when_told``),
@@ -393,8 +391,29 @@ class SurfSwarmThroughput(Vertical):
         # so there is nothing dishonest about surfacing it unconditionally
         # here.
         if payload.get("stale"):
-            base += f" · {STALE_WORD}"
-        return _title_with_hint(base, self._widen, self._text_budget())
+            suffix += f" · {STALE_WORD}"
+        budget = self._text_budget()
+        full = TITLE + suffix
+        text = _title_with_hint(full, self._widen, budget)
+        if self._widen and suffix and text == full:
+            # 2026-09-16 layout change (THROUGHPUT moved beside JUST SHIPPED,
+            # narrower than it used to be sharing a rail with QUEUE): with a
+            # suffix, neither hint fit, so ``_title_with_hint`` gave up
+            # silently. ``_pool4.title_text``'s own docstring assumes that is
+            # safe because "at that width the title is already clipped" --
+            # true for a panel whose widen threshold tracks its own title
+            # length, false here. THROUGHPUT's widen comes from the agent
+            # rows' hash-and-chain threshold (~41 columns), far below what
+            # "THROUGHPUT · as of HH:MM" itself needs (~24), so there is a
+            # real band where the bare title fits comfortably while the
+            # glyph does not -- and something was genuinely shed there. Drop
+            # the suffix and try again rather than let that go unmarked: a
+            # bare ``‹`` with no timestamp still tells a reader content was
+            # cut, where neither tells them anything.
+            bare = _title_with_hint(TITLE, self._widen, budget)
+            if bare != TITLE:
+                return bare
+        return text
 
     def _render_view(self) -> None:
         try:

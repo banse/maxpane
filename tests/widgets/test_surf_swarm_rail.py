@@ -340,3 +340,42 @@ async def test_throughput_sheds_the_hash_and_its_chain_word_together():
     assert "97.8" in narrow_text
     assert "#2" in narrow_text
     assert "‹" in narrow_text
+
+
+async def test_the_marker_survives_dropping_the_as_of_suffix_when_neither_fits_together():
+    """2026-09-16 layout change: THROUGHPUT moved beside JUST SHIPPED,
+    narrower than sharing a rail with QUEUE, and reachable widths now exist
+    where the bare title fits alongside the ``‹`` glyph but the title with
+    its own freshness suffix (``· as of HH:MM``) does not. ``_title_text``
+    drops the suffix and tries the glyph again against the bare title,
+    rather than giving up and showing neither -- see
+    ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s own ``#:`` block in
+    ``screens/surf.py`` for why this could not be bought back with CSS.
+
+    The width is derived, not hand-typed: it is exactly wide enough for
+    ``"THROUGHPUT"`` plus the bare glyph and no wider, so the full title
+    (with its ``as of`` suffix) plus the glyph provably does not fit at it
+    either -- the test would be vacuous at any width where both fit.
+    """
+    from rich.cells import cell_len
+
+    T = _throughput_mod
+    as_of = "13:50"
+    padding = SurfSwarmThroughput._TITLE_PADDING_COLS
+    bare_needs = cell_len(T.TITLE) + 2 + 1  # base + "  " + the bare "‹" glyph
+    full_needs = cell_len(f"{T.TITLE} · as of {as_of}") + 2 + 1
+    assert bare_needs < full_needs, "the suffix must cost real budget for this test to mean anything"
+    width = bare_needs + padding
+
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (width, 14), swarm_throughput=THROUGHPUT,
+        swarm_score_rows=[_SEPOLIA_ROW], swarm_scores_as_of_hhmm=as_of,
+    ))
+    assert "‹" in text, (
+        "the bare title plus the glyph fits this width -- the marker should "
+        "survive by dropping the as-of suffix rather than disappear with it"
+    )
+    assert as_of not in text, (
+        "the as-of suffix should have been dropped to make room for the "
+        "marker at this width, not kept alongside a marker that does not fit"
+    )

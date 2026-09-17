@@ -6,7 +6,16 @@ panel/container and their per-panel derivation are in their own ``#:``
 blocks in ``screens/surf.py``; this file is what makes those blocks fail
 when they stop being true.
 
-Four things this file exists to pin above the rest
+**Re-swept 2026-09-16, the same day, for the 2x2-grid layout change.** The
+body went from THE FIELD beside a QUEUE-over-THROUGHPUT rail (JUST SHIPPED
+full-width beneath) to THE FIELD beside QUEUE on top and JUST SHIPPED
+beside THROUGHPUT beneath -- a change to the grid, so both pins moved
+(93 -> 128, 42 -> 26) and this file's own container ids, sweep ranges and
+binding-panel assertions moved with them. Nothing here still compares
+against the launch-day numbers; ``screens/surf.py``'s own ``#:`` blocks
+carry that history.
+
+Five things this file exists to pin above the rest
 ----------------------------------------------------
 1. **The column pin fails in both directions**, once THE FIELD's own
    permanent exception is set aside. THE FIELD's ``‹`` never clears below
@@ -19,13 +28,15 @@ Four things this file exists to pin above the rest
 2. **The claims are properties, never literals**, with THE FIELD's own
    exception named rather than silently absorbed: "whenever a row would
    clip, some panel *other than THE FIELD* on this body advertises the
-   loss" cannot go stale the way "the marker lights below 93" can.
+   loss" cannot go stale the way "the marker lights below 128" can.
 3. **The sweeps do not start at the pin.** The width sweep runs 70..159 --
-   twenty-three columns below the pin and sixty-six above it, crossing
-   ``p``'s 99 and reaching well past the market body's own 119, so agreeing
-   with either would show up as a measurement rather than an assumption.
-   The height sweep runs 24..60 at the column pin, eighteen rows under the
-   row pin and eighteen over.
+   fifty-eight columns below the pin and thirty-one above it, crossing
+   ``p``'s 99 and the market body's own 119, so agreeing with either would
+   show up as a measurement rather than an assumption. The height sweep
+   runs 20..61 at the column pin, six rows under the row pin and thirty-five
+   over (re-swept up to 61 rather than 60 so the heavy payload's own
+   clearing height, 48, sits inside the swept band rather than one past its
+   edge).
 4. **The row pin's own honesty is scoped, not implied.** None of THE FIELD,
    QUEUE, THROUGHPUT or JUST SHIPPED has a payload-independent content
    height (``SURF_SWARM_FULL_LAYOUT_ROWS``'s own ``#:`` block has the
@@ -35,34 +46,53 @@ Four things this file exists to pin above the rest
    heavier payload is swept too, and its own claim is the opposite one: the
    marker keeps lighting rather than the body ever coming out silently
    short.
+5. **A second measured exception, below the first.** Below outer width 88
+   (:data:`THROUGHPUT_NEVER_MARKS_BELOW`), THROUGHPUT's own column is under
+   three cells -- too narrow to paint a CSS ellipsis or the bare ``‹``
+   glyph -- so a hash-and-chain-word pair it has already dropped internally
+   can go both unmarked and un-clipped. Named and excluded from the "below
+   the pin, something marks" property the same way THE FIELD's own
+   exception is excluded from the "at the pin, nothing marks" one, and
+   proven bounded in both directions by
+   :func:`test_throughput_can_lose_its_presentation_silently_below_a_measured_width`.
+   A narrower gap directly above that floor (title fits, glyph does not, up
+   to width 113) was closed instead of named -- see
+   ``swarm_throughput.SurfSwarmThroughput._title_text`` and
+   :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own ``#:`` block for why that
+   one could be fixed and this one cannot.
 
-A named gap, found and closed in fix round 1
-----------------------------------------------------
+A named gap, found and closed in fix round 1, re-confirmed after the 2x2 grid
+------------------------------------------------------------------------------
 ``SurfScreen._SCROLL_COLUMNS[MODE_SWARM]`` used to check only
 ``#surf-swarm-left`` and ``#surf-swarm-rail``, not ``#surf-swarm-body`` --
 a placeholder Task 10 left in both CSS copies' own comments. A synthetic
 worst case (light rail content, thirty JUST SHIPPED rows, no field/queue/
 score stress at all) opened a genuine one-row-wide window at height 25,
-eleven rows under the row pin: the body's own container was scrolling and
-cutting JUST SHIPPED's table while the screen-wide ``‹ taller`` stayed
-dark, at heights 24 and 26 either side both correctly lighting it. That is
-the ``p`` body's own F6 shape, one container over, and rows disappearing
-with nothing saying so is exactly what the marker exists to prevent.
+eleven rows under the then-row-pin (42): the body's own container was
+scrolling and cutting JUST SHIPPED's table while the screen-wide
+``‹ taller`` stayed dark. That is the ``p`` body's own F6 shape, one
+container over, and rows disappearing with nothing saying so is exactly
+what the marker exists to prevent.
 
 **Closed by registering ``#surf-swarm-body`` in ``_SCROLL_COLUMNS[MODE_SWARM]``**,
 the same shape ``_SCROLL_COLUMNS[MODE_POOL4_USER]`` already uses for
 ``#surf-pool4-user-body``, rather than by raising a floor (a floor only
 moves the window; a different content mix reopens it, because none of this
 body's panels has a payload-independent content height for a floor to sit
-above -- see :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block).
-``test_the_body_only_scrollbar_case_now_lights_the_marker`` reproduces the
-height-25 case and is the one test in this file with its own failing-first
-history: red against the pre-fix code, green after the registration, red
-again with the registration removed. ``test_no_height_loses_a_row_of_this_
-body_in_silence`` is the property version, swept over a band that includes
-height 25 on the adversarial payload as well as the reference and heavy
-ones -- it now holds everywhere this file checks, not merely at and above
-the row pin.
+above -- see :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block). The
+2x2-grid restructure renamed the two rows (:data:`SWARM_TOP_ID`/
+:data:`SWARM_BOTTOM_ID` for launch day's ``#surf-swarm-left``/
+``#surf-swarm-rail``) but kept the same three-container registration, and
+the same adversarial payload still reproduces a body-only-scrollbar window
+at the new row pin's own boundary (height 25) -- re-confirmed rather than
+assumed to still hold once QUEUE and THROUGHPUT stopped sharing a column.
+``test_the_body_only_scrollbar_case_now_lights_the_marker`` reproduces it
+and is the one test in this file with its own failing-first history: red
+against the pre-fix code, green after the registration, red again with the
+registration removed. ``test_no_height_loses_a_row_of_this_body_in_silence``
+is the property version, swept over a band that includes height 25 on the
+adversarial payload as well as the reference and heavy ones -- it now holds
+everywhere this file checks, not merely at and above the row pin.
 """
 
 from __future__ import annotations
@@ -72,12 +102,11 @@ import pytest
 from maxpane_dashboard.screens.surf import (
     SURF_FULL_LAYOUT_COLUMNS,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
-    SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
     SURF_SWARM_FULL_LAYOUT_COLUMNS,
     SURF_SWARM_FULL_LAYOUT_ROWS,
     SWARM_BODY_ID,
-    SWARM_LEFT_ID,
-    SWARM_RAIL_ID,
+    SWARM_BOTTOM_ID,
+    SWARM_TOP_ID,
     SurfScreen,
     TALLER_HINT,
 )
@@ -103,23 +132,38 @@ from tests.screens.test_surf_screen import (
 #: Independent literals for the same reason ``MEASURED_MARKET_COLUMNS`` is
 #: one next door: a test that aliased the screen's constant would compare a
 #: number against itself and pin nothing.
-MEASURED_SWARM_COLUMNS = 93
-MEASURED_SWARM_ROWS = 42
+MEASURED_SWARM_COLUMNS = 128
+MEASURED_SWARM_ROWS = 26
 
 #: THE FIELD's own permanent exception (see ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
 #: own ``#:`` block): its ``‹`` never clears below this width, which is past
 #: every other pin in this repo. Named here so the "whole" check can exclude
-#: it explicitly rather than by silent construction.
+#: it explicitly rather than by silent construction. Unmoved by the
+#: 2026-09-16 2x2-grid restructure: THE FIELD still shares a halved 1fr:1fr
+#: seam, now with QUEUE alone rather than a QUEUE-over-THROUGHPUT rail, and
+#: the ratio never changed.
 FIELD_NEVER_CLEARS_BELOW = 246
 
-#: The height every column-pin render below uses -- tall enough that a
-#: heavy payload's own rail content (QUEUE + THROUGHPUT stacked, up to
-#: sixteen-plus lines on :func:`_heavy_swarm_payload`) never scrolls
-#: `#surf-swarm-rail` at 50 rows and pushes THROUGHPUT's title out of the
-#: composited region, which would read as "unmarked" for a panel that is in
-#: fact overflowing (caught correctly by the screen-wide marker instead, not
-#: by this file's own panel-title check). Confirmed in situ: 80 rows clears
-#: that confound for every payload this file sweeps by width.
+#: THROUGHPUT's own second, narrower exception (see
+#: ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s own ``#:`` block): below this outer
+#: width THROUGHPUT's own column is under three cells, too narrow to paint a
+#: CSS ellipsis or the bare ``‹`` glyph, so a hash-and-chain-word pair it has
+#: already dropped internally can go both unmarked and un-clipped. Measured,
+#: not assumed: 87 is silent on both the committed capture and the heavy
+#: payload; 88 is caught (as a CSS clip, not yet a marker -- the marker
+#: itself does not appear until width 100, inside the excluded band, and
+#: that is fine: everything from 88 up is already covered by ``clipped``).
+#: Comfortably below :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`, so it can only
+#: ever affect the "something marks below the pin" half of the property,
+#: never the "nothing marks at or above it" half.
+THROUGHPUT_NEVER_MARKS_BELOW = 88
+
+#: The height every column-pin render below uses -- tall enough that no
+#: payload this file sweeps by width ever needs its own row's scrollbar at
+#: this height, so a width-sweep render never confounds a row-level marker
+#: with a height-level one. Confirmed in situ: 80 rows clears every payload
+#: this file sweeps by width, on the 2x2 grid exactly as it did on the
+#: launch-day rail.
 _COLUMN_SWEEP_HEIGHT = 80
 
 _SWARM_CLASSES = {
@@ -300,9 +344,13 @@ def _shipped_heavy_light_rail_payload(n: int = 30) -> dict:
     """Minimal FIELD/QUEUE/THROUGHPUT content, a large JUST SHIPPED table.
 
     The one payload in this file built to *find* the named gap rather than
-    to sweep past it: light rail content never lights ``#surf-swarm-rail``'s
-    own scrollbar, so if ``#surf-swarm-body`` alone needs to scroll, nothing
-    in :data:`SurfScreen._SCROLL_COLUMNS` sees it.
+    to sweep past it: light content in the other three panels never lights
+    either row's own scrollbar (:data:`SWARM_TOP_ID`/:data:`SWARM_BOTTOM_ID`,
+    launch day's ``#surf-swarm-left``/``#surf-swarm-rail``), so if
+    ``#surf-swarm-body`` alone needs to scroll, nothing in
+    :data:`SurfScreen._SCROLL_COLUMNS` sees it. Kept its launch-day name
+    (there is no rail on this body any more) because every call site already
+    spells it and a rename buys nothing but a diff.
     """
     rows = [
         {"kind": "delivery", "job_id": f"job-{i}", "label": "swarm queue panel",
@@ -390,8 +438,8 @@ async def _render(payload, size):
         widgets = _swarm_widgets(screen)
         shipped_table = widgets["SurfSwarmShipped"].query_one("DataTable")
         body = screen.query_one(f"#{SWARM_BODY_ID}")
-        left = screen.query_one(f"#{SWARM_LEFT_ID}")
-        rail = screen.query_one(f"#{SWARM_RAIL_ID}")
+        top = screen.query_one(f"#{SWARM_TOP_ID}")
+        bottom = screen.query_one(f"#{SWARM_BOTTOM_ID}")
         marked = _swarm_marked(pilot.app, screen)
         return {
             "marked": marked,
@@ -400,8 +448,8 @@ async def _render(payload, size):
             "shipped_hidden_cols": shipped_table.max_scroll_x,
             "taller": TALLER_HINT in _screen_text(pilot.app).split("\n")[0],
             "body_scroll": body.show_vertical_scrollbar,
-            "left_scroll": left.show_vertical_scrollbar,
-            "rail_scroll": rail.show_vertical_scrollbar,
+            "top_scroll": top.show_vertical_scrollbar,
+            "bottom_scroll": bottom.show_vertical_scrollbar,
         }
 
 
@@ -414,11 +462,12 @@ async def _render(payload, size):
 #: crossed ``parametrize`` decorators, on the pool4-market file's own
 #: precedent. The committed capture runs the whole 70..159 range; the
 #: cell-content-heavy payload and the two large JUST SHIPPED tables run the
-#: fifteen columns either side of the pin, the only band where a payload
+#: fifteen columns either side of the pin (re-centred from 78..108 to
+#: 113..143 when the pin moved 93 -> 128), the only band where a payload
 #: that moved the threshold could show it.
 _WIDTH_SWEEP = [("capture", w) for w in range(70, 160)] + [
     (name, w) for name in ("heavy", "30-shipped", "50-shipped")
-    for w in range(78, 108)
+    for w in range(113, 143)
 ]
 
 
@@ -439,7 +488,9 @@ async def test_the_swarm_body_is_whole_from_its_pinned_width(
 
     Below the pin the claim is the marker's: something *other than THE
     FIELD* must be asking for the columns, or a line must be genuinely
-    clipped.
+    clipped -- **except below** :data:`THROUGHPUT_NEVER_MARKS_BELOW`,
+    THROUGHPUT's own second, narrower named exception, where its column is
+    too few cells wide to paint either signal at all.
     """
     r = await _render(SWARM_PAYLOADS[payload_name](), (width, _COLUMN_SWEEP_HEIGHT))
     if width >= SURF_SWARM_FULL_LAYOUT_COLUMNS:
@@ -455,6 +506,8 @@ async def test_the_swarm_body_is_whole_from_its_pinned_width(
             f"{r['shipped_hidden_cols']} column(s) behind a horizontal "
             "scroll with no marker"
         )
+    elif width < THROUGHPUT_NEVER_MARKS_BELOW:
+        pass
     else:
         assert r["marked_besides_field"] or r["clipped"], (
             f"{payload_name} at {width}: nothing besides THE FIELD's own "
@@ -485,8 +538,11 @@ async def test_the_swarm_binding_panel_is_the_one_the_block_names() -> None:
     THE FIELD's own permanent exception that lights ``‹`` -- it drops the
     transaction hash and its chain word together, exactly the arithmetic
     :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own ``#:`` block names. One row
-    under the row pin, the rail is the only container of the three
-    ``_rail_is_cut`` inspects that is actually scrolling.
+    under the row pin, the **body itself** is the container that is
+    scrolling, not either row -- both rows' own content fits inside their
+    own floors, but the two floors summed ask for more than the body's own
+    ``1fr`` share (:data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block has
+    the argument).
     """
     at_col = await _render(
         _heavy_swarm_payload(), (SURF_SWARM_FULL_LAYOUT_COLUMNS - 1, _COLUMN_SWEEP_HEIGHT)
@@ -498,9 +554,42 @@ async def test_the_swarm_binding_panel_is_the_one_the_block_names() -> None:
     at_row = await _render(
         None, (SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS - 1)
     )
-    assert at_row["rail_scroll"], "the rail should be the one scrolling"
-    assert not at_row["left_scroll"], (
-        "THE FIELD's own row should not need to scroll at this payload"
+    assert at_row["body_scroll"], "the body should be the one scrolling"
+    assert not at_row["top_scroll"], (
+        "THE FIELD/QUEUE row should not need to scroll at this payload"
+    )
+    assert not at_row["bottom_scroll"], (
+        "the JUST SHIPPED/THROUGHPUT row should not need to scroll at this payload"
+    )
+
+
+async def test_throughput_can_lose_its_presentation_silently_below_a_measured_width() -> None:
+    """THROUGHPUT's own second, narrower permanent exception, proven rather
+    than narrated -- :data:`FIELD_NEVER_CLEARS_BELOW`'s own shape, one panel
+    over.
+
+    Below :data:`THROUGHPUT_NEVER_MARKS_BELOW` THROUGHPUT's own column is
+    under three cells, too narrow to paint a CSS ellipsis or the bare ``‹``
+    glyph, so a hash-and-chain-word pair it has already dropped internally
+    goes both unmarked and un-clipped. One column above that boundary
+    something is already caught (a CSS clip -- the marker itself needs more
+    room still, and does not appear until width 100, which is why this test
+    checks ``clipped`` at the boundary rather than ``marked``): the
+    exception has a measured edge rather than being an unfalsifiable
+    "always silent" claim.
+    """
+    silent = await _render(
+        _heavy_swarm_payload(), (THROUGHPUT_NEVER_MARKS_BELOW - 1, _COLUMN_SWEEP_HEIGHT)
+    )
+    assert not silent["marked_besides_field"], sorted(silent["marked_besides_field"])
+    assert not silent["clipped"], silent["clipped"]
+
+    caught = await _render(
+        _heavy_swarm_payload(), (THROUGHPUT_NEVER_MARKS_BELOW, _COLUMN_SWEEP_HEIGHT)
+    )
+    assert caught["clipped"], (
+        THROUGHPUT_NEVER_MARKS_BELOW,
+        "nothing caught the loss at the boundary this constant names",
     )
 
 
@@ -519,12 +608,13 @@ def test_the_swarm_body_fits_inside_the_documented_app_width() -> None:
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
-    assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
-    # No relation is asserted against SURF_POOL4_FULL_LAYOUT_COLUMNS (99): the
-    # `p` body's own sweep is independent of this one, this body's 93 happens
-    # to fall under it, and the terminal-layout skill's own note about two
-    # independently swept pins applies -- a coincidence with a date on it is
-    # not something to pin.
+    # No relation is asserted against SURF_POOL4_FULL_LAYOUT_COLUMNS (99) or,
+    # since the 2026-09-16 2x2-grid re-sweep, against
+    # SURF_POOL4_USER_FULL_LAYOUT_COLUMNS (119) either: this body's own sweep
+    # is independent of both, this body's number happened to fall under 119
+    # at launch and now sits above it, and the terminal-layout skill's own
+    # note about two independently swept pins applies -- a coincidence with a
+    # date on it is not something to pin, in either direction.
     assert MEASURED_SWARM_COLUMNS == SURF_SWARM_FULL_LAYOUT_COLUMNS
 
 
@@ -561,14 +651,17 @@ async def test_the_field_panel_cannot_clear_its_own_full_tier_at_the_pinned_widt
 # ---------------------------------------------------------------------------
 
 
-#: The height sweep: the committed capture over the whole 24..46 range
-#: (comfortably straddling the pin in both directions, eighteen rows either
-#: side), plus the moderate and heavy payloads over the range where their
-#: own state would show a moved pin -- they never clear inside this range
-#: (see :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block for why that
-#: is correct rather than a defect), so their own claim is that the marker
-#: never goes quiet, not that they reach "whole".
-_HEIGHT_SWEEP = [("capture", r) for r in range(24, 61)]
+#: The height sweep: the committed capture over 20..61 (re-centred from
+#: 24..60 when the pin moved 42 -> 26 -- six rows under the new pin and
+#: thirty-five over, comfortably straddling it in both directions and
+#: verified in situ against the render harness before being pinned), plus
+#: the moderate and heavy payloads checked separately at the pin itself
+#: (below) -- neither clears there (see :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s
+#: own ``#:`` block for why that is correct rather than a defect: the heavy
+#: payload does not clear until height 48, well past this sweep's own
+#: range), so their own claim is that the marker never goes quiet at the
+#: pin, not that they reach "whole" inside this range.
+_HEIGHT_SWEEP = [("capture", r) for r in range(20, 62)]
 
 
 @pytest.mark.parametrize("payload_name,rows", _HEIGHT_SWEEP)
@@ -614,23 +707,24 @@ async def test_a_busier_swarm_still_lights_the_marker_at_the_pin(
         "that is real news for SURF_SWARM_FULL_LAYOUT_ROWS's own docstring, "
         "not a silent pass"
     )
-    assert r["rail_scroll"], (
-        f"{payload_name}: the rail itself should be the one still scrolling"
+    assert r["top_scroll"] or r["bottom_scroll"], (
+        f"{payload_name}: some row should still be genuinely scrolling"
     )
 
 
 async def test_the_body_only_scrollbar_case_now_lights_the_marker() -> None:
     """Fix round 1's own reproduction, at the exact case that found the gap.
 
-    Before this fix, ``_SCROLL_COLUMNS[MODE_SWARM]`` checked only
-    ``#surf-swarm-left`` and ``#surf-swarm-rail``, never ``#surf-swarm-body``
-    itself. :func:`_shipped_heavy_light_rail_payload` starves the rail (one
+    Before this fix, ``_SCROLL_COLUMNS[MODE_SWARM]`` checked only the two
+    rows (launch day's ``#surf-swarm-left``/``#surf-swarm-rail``, today's
+    :data:`SWARM_TOP_ID`/:data:`SWARM_BOTTOM_ID`), never ``#surf-swarm-body``
+    itself. :func:`_shipped_heavy_light_rail_payload` starves both rows (one
     field row, one queue state, no blocked jobs, no scored agents) so
-    ``#surf-swarm-left``/``#surf-swarm-rail`` never need to scroll, while a
-    thirty-row JUST SHIPPED table gives the body itself something genuine to
-    lose. At the column pin and height 25 the body was, and still is,
-    genuinely scrolling (``show_vertical_scrollbar`` true) -- what changed is
-    whether the screen-wide marker agrees.
+    neither row needs to scroll on its own, while a thirty-row JUST SHIPPED
+    table gives the body itself something genuine to lose. At the column
+    pin and height 25 the body was, and still is, genuinely scrolling
+    (``show_vertical_scrollbar`` true) -- what changed is whether the
+    screen-wide marker agrees.
 
     This test is its own failing-first record: it reddened against the
     pre-fix code (``taller`` false while ``body_scroll`` was true), passed
@@ -656,14 +750,14 @@ async def test_no_height_loses_a_row_of_this_body_in_silence() -> None:
     needs to scroll, the screen-wide marker says so -- everywhere this file
     checks, not merely at and above the row pin.
 
-    Swept from eighteen rows under the row pin (24, the bottom of this
-    file's own height sweep, and below the height-25 case that found the
-    gap) to six over it, on the reference capture and the heavier payload,
-    plus the adversarial light-rail/heavy-JUST-SHIPPED payload that found
-    the gap in the first place. All three now agree at every height in
-    range -- confirmed against the pre-fix code, this range reddened at
-    height 25 on the adversarial payload alone; it is green here only
-    because it is run against the fix.
+    Swept from six rows under the row pin (20, the bottom of this file's
+    own height sweep, and below the height-25 case that found the gap) to
+    seven over it, on the reference capture and the heavier payload, plus
+    the adversarial light-rows/heavy-JUST-SHIPPED payload that found the gap
+    in the first place. All three now agree at every height in range --
+    confirmed against the pre-fix code, this range reddened at height 25 on
+    the adversarial payload alone; it is green here only because it is run
+    against the fix.
     """
     cases = [
         ("capture", SWARM_PAYLOADS["capture"]()),
@@ -671,7 +765,7 @@ async def test_no_height_loses_a_row_of_this_body_in_silence() -> None:
         ("shipped-heavy-light-rail", _shipped_heavy_light_rail_payload(30)),
     ]
     for payload_name, payload in cases:
-        for rows in range(SURF_SWARM_FULL_LAYOUT_ROWS - 18,
+        for rows in range(SURF_SWARM_FULL_LAYOUT_ROWS - 6,
                           SURF_SWARM_FULL_LAYOUT_ROWS + 7):
             r = await _render(payload, (SURF_SWARM_FULL_LAYOUT_COLUMNS, rows))
             if r["body_scroll"]:

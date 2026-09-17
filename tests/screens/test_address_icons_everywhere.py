@@ -105,8 +105,9 @@ EXEMPT: dict[str, str] = {
         " width, so reaching that budget needs roughly double the sweep's own"
         " 170-column SIZE (measured: the note column stays hidden through"
         " 240 columns and first paints at 250) -- wider than both the wide"
-        " sweep and this body's own layout pin (93), so no render this sweep"
-        " produces can ever show one",
+        " sweep and this body's own layout pin (128, re-swept 2026-09-16 for"
+        " the 2x2 grid; FIELD's own seam with QUEUE is unmoved), so no render"
+        " this sweep produces can ever show one",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
     "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":
@@ -625,9 +626,22 @@ async def test_the_full_address_scan_resolves_the_real_collision_to_its_widget()
     """The full-address loop's own provenance lookup (:func:`_widget_module_at`
     then :func:`_hash_only_module`), proven against the one real collision
     this repo has rather than only the synthetic one above: THROUGHPUT's tx
-    hash windows to a 40-cell head at the sweep's 170-column width (see
+    hash windows to a 40-cell head at column width 166 (see
     :func:`_continues_as_hash_window`'s own docstring), shape-identical to a
     bare address.
+
+    **Re-measured to 166 on 2026-09-16**, when the swarm body's layout
+    change (THROUGHPUT moved from halving a rail's width with QUEUE to
+    sharing a row with JUST SHIPPED, 1fr against a fixed 81) moved where
+    this collision falls: at the sweep's own 170-column width THROUGHPUT's
+    tx hash now windows to a 44-cell head, not 40, because it is wider
+    there than it used to be. Swept fresh (150-171) rather than nudged: 166
+    is the one width in that band where the head is exactly 40, which is
+    the only length that matters here -- a real address is exactly 40 hex
+    characters, so only a head of exactly that length makes the rendered
+    text's own prefix byte-identical to one. This test's own ``size`` is
+    local to it; it does not share :data:`SIZE`, so re-measuring it here
+    does not touch the standard sweep used everywhere else in this file.
 
     ``get_widget_at`` returns the innermost ``Static`` leaf, whose own
     module is Textual's and never imports the address helper -- checking it
@@ -640,7 +654,7 @@ async def test_the_full_address_scan_resolves_the_real_collision_to_its_widget()
     from tests.address_sweep.builders import _surf_app
 
     app = _surf_app()
-    async with app.run_test(size=(170, 60)) as pilot:
+    async with app.run_test(size=(166, 60)) as pilot:
         await pilot.pause()
         await pilot.press("s")
         await pilot.pause()

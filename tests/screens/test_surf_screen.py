@@ -57,8 +57,8 @@ from maxpane_dashboard.screens.surf import (
     SURF_POOL4_FULL_LAYOUT_COLUMNS,
     SURF_POOL4_FULL_LAYOUT_ROWS,
     SWARM_BODY_ID,
-    SWARM_LEFT_ID,
-    SWARM_RAIL_ID,
+    SWARM_BOTTOM_ID,
+    SWARM_TOP_ID,
     TALLER_HINT,
     SurfScreen,
 )
@@ -8299,7 +8299,7 @@ def test_the_market_body_css_agrees_between_default_css_and_the_stylesheet() -> 
 #: only one hero is ever ``display``-ed at a time, so the visible one simply
 #: fills ``#hero-row`` and needs no ``width`` rule of its own).
 _SWARM_CSS_SELECTORS = (
-    f"#{SWARM_BODY_ID}", f"#{SWARM_LEFT_ID}", f"#{SWARM_RAIL_ID}",
+    f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}", f"#{SWARM_BOTTOM_ID}",
     "SurfSwarmField", "SurfSwarmShipped", "SurfSwarmQueue", "SurfSwarmThroughput",
 )
 
