@@ -123,6 +123,41 @@ async def test_an_unread_throughput_is_dashes_not_zeroes():
     assert "0.0" not in text
 
 
+async def test_an_unread_throughput_carries_no_as_of_marker_either():
+    """F10's never-read half, pinned at the panel: no ``swarm_throughput``
+    and no ``swarm_scores_as_of_hhmm`` means nothing was ever read, so the
+    title carries no marker at all -- the signal a genuine empty read (below)
+    does carry, and the one thing that tells the two all-dash states apart.
+    """
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (60, 14), swarm_throughput=None, swarm_score_rows=None,
+        swarm_scores_as_of_hhmm=None))
+    assert "as of" not in text
+
+
+async def test_a_genuine_empty_throughput_read_shows_a_real_zero_not_a_dash():
+    """F10: the other half of the never-read/genuinely-empty split, at the
+    panel rather than the dict. Feeding the dict ``data/surf_swarm.throughput``
+    now returns for a real read that found no jobs (``accepted_per_day: 0.0``,
+    ``median_delivery_s``/``revision_rate`` still ``None`` -- neither has a
+    representable zero) alongside a real ``swarm_scores_as_of_hhmm`` marker:
+    ``accepted`` prints the genuine zero rather than a dash, the title
+    carries the marker, and the two fields with no honest zero still dash --
+    the marker beside them is what tells a reader that dash means "read,
+    nothing to measure" rather than "never read" (the state the test above
+    pins). Never a stale number presented as live, and never a real zero
+    rendered as if nothing had been read.
+    """
+    genuinely_empty = {"accepted_per_day": 0.0, "median_delivery_s": None,
+                        "revision_rate": None, "window_days": 7}
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (60, 14), swarm_throughput=genuinely_empty,
+        swarm_score_rows=[], swarm_scores_as_of_hhmm="04:06"))
+    assert "as of 04:06" in text
+    assert "0.00/day" in text
+    assert "--" in text
+
+
 async def test_the_agent_section_is_unavailable_with_no_marker_and_no_rows():
     """Task 11 fix round 1: like QUEUE's own gap above, the first draft fed
     the widget its bare ``update_data`` defaults (no kwargs -> ``score_rows=

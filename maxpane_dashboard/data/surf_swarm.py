@@ -252,11 +252,45 @@ def throughput(jobs: Sequence[Mapping[str, Any]] | None,
                now: float, window_days: int = 7) -> dict[str, Any]:
     """Accepted per day, median delivery time, revision rate over a window.
 
+    ``jobs is None`` means the tier was never read: every rate field is
+    ``None``. ``jobs == []`` (or any other empty-but-not-``None`` sequence)
+    is a genuine read that found no jobs, and that is not the same state --
+    F10, the curator-rail conflation one layer down from the one the hero's
+    ``swarm_jobs_in_flight``/``swarm_jobs_blocked`` split already fixed
+    (``widgets/surf/swarm_hero.py``). The two inputs get told apart *before*
+    either is folded through a ``for x in <arg> or ()`` idiom, which is
+    exactly the idiom that hid the original defect: fold first and ``None``
+    and ``[]`` are indistinguishable by the time you'd branch on them.
+
+    The three fields do not all get the same treatment on a genuine empty
+    read, because only one of them has a value that can honestly mean
+    "measured, and it is zero":
+
+    * ``accepted_per_day`` gets its real, representable zero
+      (``round(0 / window_days, 2)``) -- zero jobs accepted in the window is
+      exactly what a genuine empty read *is*.
+    * ``median_delivery_s`` has no representable zero: ``0`` would claim
+      "delivered instantly", which nothing did. It stays ``None`` on a
+      genuine empty read exactly as it does on no read at all.
+    * ``revision_rate`` has the same problem and gets the same answer.
+
+    So ``median_delivery_s``/``revision_rate`` are ``None`` for both
+    "never read" and "read, nothing to measure" -- this function cannot tell
+    those two apart for a field with no honest zero to give one of them. The
+    panel does not need a new gate to make that visible, though: it already
+    prints this tier's own ``as of`` marker (``swarm_scores_as_of_hhmm``) in
+    its title whenever a read has actually happened, which is the same
+    marker the agent-score section below it already uses to tell
+    "unavailable" apart from "read, no agents yet". A ``None`` row beside a
+    real marker reads as "read, nothing here"; the same row with no marker
+    at all reads as "never read" -- the distinguishing instrument this body
+    already has, not a new one.
+
     Revision rate filters to nodes with a non-None updatedAt within the window.
     Nodes without timestamps are excluded from the sample, not counted as zero.
     Empty revision sample returns None, not 0.0.
     """
-    if not jobs:
+    if jobs is None:
         return {"accepted_per_day": None, "median_delivery_s": None,
                 "revision_rate": None, "window_days": window_days}
     floor = now - window_days * 86400

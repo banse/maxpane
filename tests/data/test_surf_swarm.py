@@ -109,6 +109,34 @@ def test_throughput_is_derived_and_says_its_window():
     assert empty["accepted_per_day"] is None and empty["revision_rate"] is None
 
 
+def test_throughput_distinguishes_never_read_from_a_genuinely_empty_read():
+    """F10: ``jobs=None`` (the tier was never read) and ``jobs=[]`` (a read
+    that found no jobs) used to collapse to the identical all-``None`` dict
+    (``if not jobs: return {...}`` was true for both). ``accepted_per_day``
+    has a real, representable zero on a genuine empty read that a never-read
+    window does not get; ``median_delivery_s``/``revision_rate`` have no
+    honest zero to give either state ("delivered instantly" / "nothing was
+    ever revised" are not true just because nothing was read), so both stay
+    ``None`` on either input -- the panel, not this dict, tells those two
+    apart, using its own ``as of`` marker.
+    """
+    never_read = S.throughput(None, None, now=NOW, window_days=7)
+    assert never_read == {
+        "accepted_per_day": None, "median_delivery_s": None,
+        "revision_rate": None, "window_days": 7,
+    }
+
+    genuinely_empty = S.throughput([], [], now=NOW, window_days=7)
+    assert genuinely_empty["accepted_per_day"] == 0.0
+    assert genuinely_empty["median_delivery_s"] is None
+    assert genuinely_empty["revision_rate"] is None
+    assert genuinely_empty["window_days"] == 7
+
+    # The one field a genuine empty read can honestly tell apart from a
+    # never-read window -- the other two are identical on purpose.
+    assert genuinely_empty["accepted_per_day"] != never_read["accepted_per_day"]
+
+
 def test_revision_rate_filters_by_window():
     """Revisions within the window are counted; those outside are excluded.
 

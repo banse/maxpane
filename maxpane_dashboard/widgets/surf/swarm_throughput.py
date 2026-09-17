@@ -15,23 +15,35 @@ This panel answers two different questions off two different reads, and they
 degrade differently on purpose:
 
 1. **The three rate numbers** (``accepted_per_day``, ``median_delivery_s``,
-   ``revision_rate``) come from ``data/surf_swarm.throughput``, which is
-   *already* honest per field: an unread window (``jobs`` falsy) returns a
-   dict whose three rate fields are every one of them ``None``, and a read
-   window with genuinely nothing accepted returns a real ``0.0`` for
-   ``accepted_per_day`` (``round(0 / window_days, 2)``, never skipped). There
-   is therefore **no marker-gating needed for these three fields at all**: a
-   per-field ``None`` already means "not read" and a per-field number,
-   ``0`` included, already means "read". This is the CLAUDE.md rule --
-   "a failed read is ``None``, never ``0``" -- already held one layer down,
-   so this widget's job is only to keep it visible rather than to enforce it
-   again: each of the four labelled rows (the three rates plus the window
-   they share) renders :data:`_fmt.DASH` for ``None`` and the real value,
-   zero included, otherwise. This is also why these four rows render
-   **unconditionally**, with no ``swarm_scores_as_of_hhmm`` gate of their
-   own -- gating them on a marker neither test in
-   ``tests/widgets/test_surf_swarm_rail.py`` sets would hide the very
-   dashes those tests assert are present.
+   ``revision_rate``) come from ``data/surf_swarm.throughput``, which
+   (F10, fixed) tells ``jobs is None`` -- the tier was never read -- apart
+   from ``jobs == []`` -- a genuine read that found no jobs. Only
+   ``accepted_per_day`` has a value that can honestly mean "measured, and
+   it is zero": a genuine empty read gives it a real ``0.0``
+   (``round(0 / window_days, 2)``, never skipped), where a never-read window
+   gives it ``None``, so **that one field already means what its own value
+   says**: ``None`` is "not read", a number (``0`` included) is "read".
+   ``median_delivery_s`` and ``revision_rate`` have no honest zero to give a
+   genuine empty read -- ``0`` would claim "delivered instantly" / "nothing
+   was ever revised", which nothing did -- so both stay ``None`` on *either*
+   input and cannot be told apart at this dict's own field level. That is
+   not a gap this widget papers over with a marker gate on the rate rows
+   themselves: it prints this tier's own ``swarm_scores_as_of_hhmm`` marker
+   in its title whenever a read has genuinely happened (below), and a
+   ``None`` row beside that marker reads as "read, nothing to measure" the
+   same way the agent section's own marker-gated empty state does. This is
+   the CLAUDE.md rule -- "a failed read is ``None``, never ``0``" -- held at
+   the one field that can hold it, plus the title's existing marker doing
+   the same job for the two that cannot; this widget's job is only to keep
+   both visible rather than to invent a second mechanism: each of the four
+   labelled rows (the three rates plus the window they share) renders
+   :data:`_fmt.DASH` for ``None`` and the real value, zero included,
+   otherwise. This is also why these four rows render **unconditionally**,
+   with no ``swarm_scores_as_of_hhmm`` gate of their own -- gating them on a
+   marker neither test in ``tests/widgets/test_surf_swarm_rail.py`` sets
+   would hide the very dashes those tests assert are present, and would
+   throw away the one field that already tells the two states apart on its
+   own.
 
 2. **The agent score rows** (``swarm_score_rows``) do *not* carry that same
    guarantee: ``data/surf_swarm.score_rows`` returns ``[]`` for both an
