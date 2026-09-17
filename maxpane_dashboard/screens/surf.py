@@ -1524,6 +1524,119 @@ SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 #: silently.
 SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 
+#: The ``s`` SWARM body's own width (2026-09-16). Measured in situ over
+#: 70-160 columns with the committed swarm capture, never derived: it is not
+#: a rewrite of :data:`SURF_FULL_LAYOUT_COLUMNS` (143), of
+#: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` (138), of
+#: :data:`SURF_POOL4_FULL_LAYOUT_COLUMNS` (99) or of
+#: :data:`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` (119) -- a fifth body gets a
+#: fifth constant. Every displayed address carries its copy icon inside this
+#: number (``docs/address_copy_PRD.md`` §5); no pin moved for the icon --
+#: JUST SHIPPED's own address/ENS/hash column never reaches this body's
+#: binding width (below).
+#:
+#: BINDING PANEL: **THROUGHPUT** (``SurfSwarmThroughput``), at its own need
+#: 43 columns (``self.size.width``) -- the width at which
+#: ``swarm_throughput._agent_lines`` keeps the transaction hash and its chain
+#: word rather than dropping the pair together (see
+#: ``test_throughput_sheds_the_hash_and_its_chain_word_together``, filed as
+#: this task's own inbox item on that arithmetic). That threshold is a pure
+#: function of width -- ``_MIN_TX_COLS + _GAP + _CHAIN_COLS`` reserved beyond
+#: the row's fixed agent/score/jobs cells -- never of how many agents are
+#: scored, so it was measured once against the committed capture (one scored
+#: agent) and re-measured unmoved against a five-job, four-scored-agent,
+#: eight-blocked-reason payload and against JUST SHIPPED tables of 30 and 50
+#: rows: every one of them clears or marks at exactly the same outer width.
+#:
+#: THROUGHPUT binds rather than JUST SHIPPED because the seam behind it is
+#: halved. ``SurfSwarmShipped`` spans the body's full width and needs 79
+#: columns of its own (``swarm_shipped.FULL_WIDTH`` (77) plus its title's
+#: 2-column padding), clearing at outer width 82 -- confirmed in situ, closing
+#: this task's inbox item on that constant. THROUGHPUT shares
+#: ``#surf-swarm-rail`` 1fr:1fr with THE FIELD inside ``#surf-swarm-left``, so
+#: its 43-column need costs roughly double at the body's own width, and that
+#: arithmetic is exactly what "measure, never derive" refuses to trust: the
+#: real crossover, read off the sweep, is 93 -- eleven columns past
+#: SHIPPED's own, not the "roughly 2x53" a doubling would predict. QUEUE's own
+#: threshold (``swarm_queue.FULL_WIDTH`` = 27) never binds anything at this
+#: seam; it was swept and confirmed quiet at every width in range, closing
+#: this task's other inbox item.
+#:
+#: THE FIELD NEVER CLEARS BELOW 246 COLUMNS, AND THE PIN DOES NOT CHASE IT.
+#: THE FIELD shares the same halved seam and asks for 117 columns of its own
+#: (``swarm_field.FULL_WIDTH``) to keep its note column, which, halved,
+#: needs an outer width of 246 before ``‹`` goes dark -- wider than every
+#: other pin in this file and past :data:`SURF_FULL_LAYOUT_COLUMNS` itself.
+#: That is not a width this body's pin can buy without breaking "when a new
+#: value would widen a sized cell, shorten the value" for every other panel
+#: in the app, so THE FIELD's own ``‹`` is treated the way surf's announce
+#: feed treats a linked-transaction post at :data:`SURF_FULL_LAYOUT_COLUMNS`
+#: (terminal-layout skill, *"A caveat the pin does not cover"*): a permanent,
+#: measured, accepted condition at this pin and at every width below 246, not
+#: something a passing test folds in silently. Below the pin THE FIELD is
+#: never what a reader newly loses -- it is marked there too -- so the loss
+#: this pin actually buys back is THROUGHPUT's hash-and-chain-word pair.
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 93
+
+#: The ``s`` SWARM body's own height (2026-09-16). Measured in situ over
+#: 24-60 rows at :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`, on the committed
+#: swarm capture -- the same "healthy mid-flight" fixture every swarm widget
+#: test already uses (two subtasks in flight, two job states, one blocked
+#: job, one scored agent, two shipped rows). Never derived, and not a rewrite
+#: of :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS` (31),
+#: :data:`SURF_POOL4_FULL_LAYOUT_ROWS` (45) or
+#: :data:`SURF_POOL4_USER_FULL_LAYOUT_ROWS` (35).
+#:
+#: BINDING CONTAINER: **the rail** (``#surf-swarm-rail``, QUEUE stacked over
+#: THROUGHPUT), never a single panel -- both are ``height: auto`` in their own
+#: ``DEFAULT_CSS`` (neither carries a ``1fr`` of its own), so the rail itself
+#: is the ``1fr`` container that scrolls once their combined content outgrows
+#: it, exactly the shape the CSS block beside :data:`SWARM_RAIL_ID` already
+#: names. At the reference payload the rail's own content is **15** rows
+#: (``rail.virtual_size.height``); it clears -- ``show_vertical_scrollbar``
+#: false, screen-wide ``‹ taller`` dark -- once the rail is laid out at 15
+#: rows or more, which happens at an outer terminal height of 42. THE FIELD's
+#: own row (``#surf-swarm-left``) never binds at this payload: its floor (6,
+#: inside a row floored at 8) and the rail sit in the same row, and the rail
+#: is always the taller ask.
+#:
+#: WHY THIS PIN DOES NOT PROMISE EVERY SWARM STAYS WHOLE AT 42, AND WHY THAT
+#: IS THE RIGHT PROMISE. Unlike the fixed line counts :data:`SURF_POOL4_USER_FULL_LAYOUT_ROWS`
+#: covers, none of THE FIELD, QUEUE, THROUGHPUT or JUST SHIPPED has a
+#: payload-independent content height: ``score_rows`` has no cap at all
+#: (``data/surf_swarm.score_rows``), the state vocabulary QUEUE counts is
+#: open, and ``blocked_rows``/``shipped_rows`` cap at 8/12 but not at 0. A
+#: swarm with four job states, three blocked jobs and two scored agents --
+#: still a modest day, not a stress test -- needs more than 47 rows at this
+#: width, swept and confirmed rather than assumed, and one with seven states,
+#: eight blocked jobs and four scored agents needs more than 60. In every one
+#: of those cases the rail's own scrollbar fires and ``‹ taller`` correctly
+#: lights: THE FIELD, THROUGHPUT and JUST SHIPPED all scroll inside
+#: themselves or behind the rail's scrollbar by design, the same allowance
+#: :data:`SURF_POOL4_USER_FULL_LAYOUT_ROWS` gives STAKERS and FLOW. So the pin
+#: is the smallest height that clears the reference snapshot whole, not a
+#: promise that every busier one fits without scrolling -- the marker carries
+#: that promise instead, and it was swept against every payload above rather
+#: than merely asserted.
+#:
+#: A NAMED GAP, BELOW THIS PIN, NOT FIXED HERE. ``_SCROLL_COLUMNS[MODE_SWARM]``
+#: checks :data:`SWARM_LEFT_ID` and :data:`SWARM_RAIL_ID`, deliberately not
+#: :data:`SWARM_BODY_ID` -- see the CSS comment above ``SurfScreen
+#: #surf-swarm-body`` below, and ``minimal.tcss``'s matching note:
+#: ``#surf-swarm-body`` carries its own ``overflow-y: auto`` as "a defensive
+#: floor", explicitly not one of the two selectors the marker checks. Swept
+#: at this pin and above, that gap never shows: whenever ``#surf-swarm-body``
+#: needed to scroll, ``#surf-swarm-rail`` needed to as well, at the reference
+#: payload and at every payload this file sweeps. It is not vacuous in
+#: general, though -- a synthetic worst case (light rail content, thirty JUST
+#: SHIPPED rows) opened a genuine one-row-wide window at height 25, eleven
+#: rows under this pin, where ``#surf-swarm-body`` was scrolling and cutting
+#: JUST SHIPPED's table while ``‹ taller`` stayed dark. That is the ``p``
+#: body's F6 shape, one container over. It is filed rather than fixed here:
+#: :data:`SWARM_BODY_ID` and ``_SCROLL_COLUMNS`` are Task 10's own wiring, and
+#: the window sits below this pin rather than at it.
+SURF_SWARM_FULL_LAYOUT_ROWS = 42
+
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
 #: curator's MODE_DASHBOARD/MODE_ANALYSIS precedent.
 #:
