@@ -547,6 +547,28 @@ def _hash_only_module(module_name: str | None) -> bool:
     return not _reaches_icon_machinery(module_name)
 
 
+def _shortened_window_hash_excuse(head: str, tail: str, hashes, painter: str | None) -> bool:
+    """True when a shortened window with no matching copy icon is excused as
+    a transaction hash's own window -- **provenance and value**, the
+    shortened-window counterpart of the whole-address branch's
+    :func:`_continues_as_hash_window` + :func:`_hash_only_module` pairing.
+
+    F3: before this function existed, the main sweep's shortened-window
+    branch excused on value alone -- ``any(_window_matches(head, tail, h) for
+    h in hashes)``, with no check on which widget painted the token at all.
+    A real, un-iconized address whose digits happened to match some
+    unrelated hash's own window *anywhere in the served payload* -- not
+    necessarily the same widget, not necessarily related -- was silently
+    excused, exactly the defect class the whole-address branch and the
+    region scanner (``_address_tokens_in_region``) both had before their own
+    fix. Requiring :func:`_hash_only_module` of the *painting* widget closes
+    it the same way: a widget that can never construct a real, icon-bearing
+    address gets the benefit of the doubt; one that can, never does, no
+    matter what its digits happen to match elsewhere in the payload.
+    """
+    return _hash_only_module(painter) and any(_window_matches(head, tail, h) for h in hashes)
+
+
 def _widget_module_at(app, x: int, y: int) -> str | None:
     """The module of the widget actually responsible for cell (*x*, *y*)
     under the address-icon rules, or ``None`` when there is none or it
@@ -768,6 +790,124 @@ async def test_the_former_throughput_hash_collision_is_now_structurally_impossib
             )
 
 
+def test_the_shortened_window_hash_excuse_requires_a_hash_only_painter():
+    """F3 (docs/surf_swarm_followups.md): the main sweep's shortened-window
+    branch excused a missing icon on value alone -- ``any(_window_matches(
+    head, tail, h) for h in hashes)``, with no check on which widget painted
+    the token. :func:`_shortened_window_hash_excuse` is the fix, and this
+    sweeps every head/tail split :func:`_window` can produce for a 40-hex
+    address (widths 11..41; below 11 nothing truncates, at 42 the address no
+    longer truncates at all) rather than checking one lucky split, per the
+    review note that a values-agree-with-themselves test at a single width
+    can hide a shape that only breaks at another.
+
+    Fails against the pre-fix shape: temporarily replacing this function's
+    body with ``return any(_window_matches(head, tail, h) for h in hashes)``
+    (ignoring ``painter`` entirely, the exact code this replaced) turns every
+    assertion in the adversarial group red, at every width in the sweep --
+    the value-only check excuses the real-address painter exactly as
+    readily as the hash-only one. Restoring the body turns it green again.
+    """
+    from maxpane_dashboard.widgets.address import MIN_SHORT_COLS, _window
+
+    address = "0x" + "5" * 40
+    hashes = {"0x" + "5" * 64}  # shares every digit with `address`'s own window, at any split
+    non_hash_only = "maxpane_dashboard.widgets.surf.swarm_shipped"
+    hash_only = "maxpane_dashboard.widgets.surf.swarm_throughput"
+    # the anchors this test leans on -- pinned again so a change to either
+    # widget's own imports reddens here, not silently inside the sweep below
+    assert not _hash_only_module(non_hash_only)
+    assert _hash_only_module(hash_only)
+
+    for width in range(MIN_SHORT_COLS, 42):
+        window = _window(address, width)
+        m = _WINDOW_RE.fullmatch(window)
+        assert m, (width, window, "expected a truncated window at this width")
+        head, tail = m.group(1), m.group(2)
+        # legitimate: a hash-only widget's own hash window, sharing every
+        # digit with an address elsewhere -- still excused, or the sweep
+        # starts crying wolf on every real hash render.
+        assert _shortened_window_hash_excuse(head, tail, hashes, hash_only), width
+        # adversarial: a widget capable of a real, icon-bearing address --
+        # never excused, no matter how many digits its shortened window
+        # happens to share with a hash elsewhere in the payload.
+        assert not _shortened_window_hash_excuse(head, tail, hashes, non_hash_only), width
+        # no painter resolved at all (e.g. no widget found at that
+        # coordinate): nothing here to give the benefit of the doubt to.
+        assert not _shortened_window_hash_excuse(head, tail, hashes, None), width
+
+
+async def test_the_main_sweep_catches_a_shortened_address_the_old_value_only_excuse_missed():
+    """F3, end to end and adversarial, reproducing the exact hole named in
+    docs/surf_swarm_followups.md: a real, un-iconized address, painted by a
+    widget whose own module *can* build a real, icon-bearing address
+    (``tests/screens/_f3_address_probe.BareShortenedAddress`` imports
+    ``address_text`` directly, the same provenance a real production widget
+    such as ``SurfSwarmShipped`` has), shortened to a window that shares
+    every digit with an unrelated hash sitting elsewhere in the served
+    payload -- never rendered anywhere on screen at all, exactly "elsewhere
+    in the payload" rather than "elsewhere on screen".
+
+    This reproduces the main sweep loop's own shortened-window scan
+    (``SHORT_TOKEN_RE`` over each rendered row, the same candidate/copied
+    check, the same ``_widget_module_at`` + :func:`_shortened_window_hash_excuse`
+    pairing at the same call shape) against a real, running app -- so it
+    also proves the *wiring* (``_widget_module_at`` resolving the real
+    painter at the real token position), not merely the predicate in
+    isolation the test above already covers.
+
+    Fails against the pre-fix shape (see the mutation note on
+    :func:`_shortened_window_hash_excuse` above): with ``painter`` ignored,
+    the loop below finds the window excused by value alone and reports no
+    problem, so the final ``assert problems`` here goes red. Passes once the
+    provenance check is restored.
+    """
+    from textual.app import App
+
+    from maxpane_dashboard.widgets.address import MIN_SHORT_COLS, _window
+    from tests.screens._f3_address_probe import BareShortenedAddress
+
+    address = "0x" + "5" * 40
+    collide_hash = "0x" + "5" * 64  # shares every digit with `address`'s own window
+    shown = _window(address, MIN_SHORT_COLS)
+    served = {"address": address, "unrelated_hash": collide_hash}
+
+    class _Harness(App):
+        def compose(self):
+            yield BareShortenedAddress(shown)
+
+    app = _Harness()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        rows = _rows(app)
+        in_payload = _addresses_in(served)
+        hashes = _hashes_in(served)
+        by_cell = {(x, y): a for x, y, a in icon_targets(app)}
+
+        problems: list[tuple] = []
+        for y, row in enumerate(rows):
+            for m in SHORT_TOKEN_RE.finditer(row):
+                head, tail = m.group(1), m.group(2)
+                candidates = {a for a in in_payload if _window_matches(head, tail, a)}
+                if not candidates:
+                    continue
+                copied = (by_cell.get((cell_len(row[:m.end()]) + 1, y)) or "").lower()
+                if copied in candidates:
+                    continue
+                token_x = cell_len(row[:m.start()])
+                painter = _widget_module_at(app, token_x, y)
+                if not copied and _shortened_window_hash_excuse(head, tail, hashes, painter):
+                    continue
+                problems.append((y, m.group(0)))
+
+        assert problems, (
+            "the shortened-window branch excused a real, un-iconized address "
+            "painted by a widget capable of building one, because its digits "
+            "matched an unrelated hash elsewhere in the payload -- this is "
+            "exactly the value-only hole F3 describes"
+        )
+
+
 def test_the_region_scan_finds_addresses_only_inside_the_region():
     from textual.geometry import Region
 
@@ -874,8 +1014,11 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
                     copied = (by_cell.get((cell_len(row[:m.end()]) + 1, y)) or "").lower()
                     if copied in candidates:
                         continue
-                    if not copied and any(_window_matches(head, tail, h) for h in hashes):
-                        continue  # the same window is also a transaction hash's; hashes carry no icon
+                    token_x = cell_len(row[:m.start()])
+                    painter = _widget_module_at(app, token_x, y)
+                    if not copied and _shortened_window_hash_excuse(head, tail, hashes, painter):
+                        continue  # the same window is also a transaction hash's, painted by
+                        # a widget that can never construct an icon -- not a bare address
                     problems.append((label, y, m.group(0), "shortened address without its icon"))
 
     if case.address_free:
