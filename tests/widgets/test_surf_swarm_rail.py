@@ -45,17 +45,27 @@ async def test_nothing_blocked_is_said_out_loud():
 
 
 async def test_the_queue_panel_is_unavailable_with_no_marker_and_nothing_to_show():
-    """Task 11: no committed test drove ``UNAVAILABLE_LINE`` before this one
-    -- ``_is_unavailable`` (a cold ``SLOT_SWARM``, or an all-failed read: no
-    ``swarm_as_of_hhmm`` marker and both lists empty) is reachable in
-    production (``data/surf_manager._swarm_keys`` publishes ``None`` for
-    both list keys whenever ``jobs`` is falsy, exactly the frozen ``[]``
-    the module docstring names), but nothing asserted the string it renders
-    for it. Everything is left at its default (no kwargs at all), which
-    resolves through ``update_data``'s own ``None`` defaults to the cold-slot
-    shape.
+    """Task 11 fix round 1: the first draft of this test fed the widget its
+    bare ``update_data`` defaults (no kwargs at all -> ``queue_rows=None,
+    blocked_rows=None``), a shape the real producer can never emit --
+    ``data/surf_manager._swarm_keys`` calls ``sw.queue_rows(jobs)``/
+    ``sw.blocked_rows(jobs)`` unconditionally, and both always return a
+    ``list`` (``[]`` at the cold-slot least: ``data/surf_swarm.queue_rows``
+    and ``.blocked_rows`` both open ``if not jobs: return []``), never
+    ``None``. A gate narrowed from ``not queue_rows`` to
+    ``queue_rows is None`` left the whole file green against that bare-default
+    payload, because ``None is None`` is exactly as true as ``not None`` --
+    the test could not tell the two gates apart.
+
+    Driven now through the shape the manager actually publishes for a cold
+    ``SLOT_SWARM`` (``swarm_entry is None`` -> ``swarm_slot = {}`` ->
+    ``jobs = None`` -> both row keys ``[]``, marker ``None``), taken from
+    ``data/surf_manager.py``'s own cold-start path rather than from a widget
+    default.
     """
-    text = "\n".join(await composite_lines(SurfSwarmQueue, (60, 14)))
+    text = "\n".join(await composite_lines(
+        SurfSwarmQueue, (60, 14), swarm_queue_rows=[], swarm_blocked_rows=[],
+        swarm_as_of_hhmm=None))
     assert QUEUE_UNAVAILABLE_LINE in text
     assert QUEUE_EMPTY_LINE not in text
     assert NO_BLOCKED_LINE not in text
@@ -91,18 +101,26 @@ async def test_an_unread_throughput_is_dashes_not_zeroes():
 
 
 async def test_the_agent_section_is_unavailable_with_no_marker_and_no_rows():
-    """Task 11: like QUEUE's own gap, no committed test drove
-    ``AGENTS_UNAVAILABLE_LINE`` before this one -- ``_agents_unavailable``
-    (no ``swarm_scores_as_of_hhmm`` marker and an empty ``swarm_score_rows``)
-    is reachable in production (``data/surf_manager._swarm_scores_keys``
-    publishes ``[]`` for ``swarm_score_rows`` whenever the sweep has never
-    run, exactly the frozen empty shape ``data/surf_swarm.score_rows``
-    always returns), but nothing asserted the string it renders for it.
-    The four rate rows print dashes unconditionally (see
+    """Task 11 fix round 1: like QUEUE's own gap above, the first draft fed
+    the widget its bare ``update_data`` defaults (no kwargs -> ``score_rows=
+    None``), a shape ``data/surf_manager._swarm_scores_keys`` can never
+    emit -- it calls ``sw.score_rows(details)`` unconditionally, and
+    ``data/surf_swarm.score_rows`` opens ``if not details: return []``,
+    never ``None``. A gate narrowed from ``not score_rows`` to
+    ``score_rows is None`` left this test green against that bare-default
+    payload for the identical reason QUEUE's did.
+
+    Driven now through the manager's own cold-``SLOT_SWARM_SCORES`` shape
+    (``scores_entry is None`` -> ``scores_slot = {}`` -> ``details = None``
+    -> ``swarm_score_rows = []``, marker ``None``), taken from
+    ``data/surf_manager.py`` rather than from a widget default. The four
+    rate rows print dashes unconditionally (see
     ``test_an_unread_throughput_is_dashes_not_zeroes`` above), so this test
-    is scoped to the agent section's own degraded state alone.
+    stays scoped to the agent section's own degraded state alone.
     """
-    text = "\n".join(await composite_lines(SurfSwarmThroughput, (60, 14)))
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (60, 14), swarm_score_rows=[],
+        swarm_scores_as_of_hhmm=None))
     assert AGENTS_UNAVAILABLE_LINE in text
     assert NO_AGENTS_LINE not in text
 
