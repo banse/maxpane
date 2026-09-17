@@ -296,6 +296,48 @@ async def test_the_queue_blocked_line_sheds_its_time_column_below_full_width():
     assert "‹" in compact_text
 
 
+async def test_throughput_caps_the_hash_window_well_short_of_a_bare_address():
+    """2026-09-17 (swarm column-balance change): ``_MIN_TX_COLS`` above is a
+    *floor* -- below it the hash and its chain word are dropped together, on
+    the test above. Until this task there was no matching *ceiling*: handed
+    enough budget, ``_agent_lines`` spent every free column on the hash
+    window, which is exactly the owner's own complaint off a live
+    screenshot (the module docstring's captured example,
+    ``0xe5b157220cea6871f035466bd4247d0…a69617``). ``_MAX_TX_COLS`` (12)
+    caps it instead, and the cap is real: :func:`widgets.address.short_hex`
+    renders a genuinely different (longer) window at 12 cells than at the
+    11-cell floor (one more head character -- ``0x22222…2222`` vs
+    ``0x2222…2222``), so this is not a value indistinguishable from the
+    floor it sits one cell above.
+
+    Driven at an absurdly wide budget (500 columns) so the assertion is
+    about the *cap*, not about some particular screen width happening to
+    land under it -- the same "wide enough that CSS cannot be the reason"
+    shape :func:`test_throughput_sheds_the_hash_and_its_chain_word_together`
+    already uses at its own floor.
+    """
+    from maxpane_dashboard.widgets.address import short_hex
+
+    T = _throughput_mod
+    expected = short_hex(_SEPOLIA_ROW["last_tx_hash"], T._MAX_TX_COLS)
+    uncapped = short_hex(_SEPOLIA_ROW["last_tx_hash"], 61)
+    assert len(expected) < len(uncapped), (
+        "the two windows are the same length -- this test cannot tell a "
+        "capped render from an uncapped one at this budget"
+    )
+
+    text = "\n".join(await composite_lines(
+        SurfSwarmThroughput, (500, 14), swarm_throughput=THROUGHPUT,
+        swarm_score_rows=[_SEPOLIA_ROW],
+    ))
+    assert expected in text, (500, expected)
+    assert uncapped not in text, (
+        "the hash window grew past MAX_TX_COLS at a 500-column budget -- "
+        "the cap is not being applied"
+    )
+    assert "‹" not in text, "500 columns is not a width this panel should ever mark at"
+
+
 async def test_throughput_sheds_the_hash_and_its_chain_word_together():
     """Below the reserved-together threshold, both the hash and the chain
     word vanish -- never a bare hash, per the fix-round-1 contract -- and

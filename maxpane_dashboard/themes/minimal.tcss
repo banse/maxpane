@@ -2681,6 +2681,7 @@ SurfSwarmField {
 
 SurfSwarmQueue {
     width: 1fr;
+    max-width: 46;
     height: auto;
     padding: 0 1;
     margin: 0 0 1 0;
@@ -2706,6 +2707,7 @@ SurfSwarmShipped {
 
 SurfSwarmThroughput {
     width: 1fr;
+    max-width: 46;
     height: auto;
     padding: 0 1;
 }

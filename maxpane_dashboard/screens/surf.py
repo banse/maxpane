@@ -1695,8 +1695,134 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: ``‹`` is treated the way surf's announce feed treats a linked-transaction
 #: post at :data:`SURF_FULL_LAYOUT_COLUMNS` (terminal-layout skill, *"A
 #: caveat the pin does not cover"*): a permanent, measured, accepted
-#: condition at this pin and at every width below 246.
-SURF_SWARM_FULL_LAYOUT_COLUMNS = 115
+#: condition at this pin and at every width below 246 -- **through the
+#: 2026-09-17 review round above. Superseded by the round below**, which
+#: is the current, live number: see "246 -> 170" there.
+#:
+#: ═══════════════════════════════════════════════════════════════════════
+#: 2026-09-17, A FOURTH ROUND: THE COLUMN-BALANCE CHANGE. 115 -> 95, off
+#: the owner's own live screenshot. THE FIELD and JUST SHIPPED were
+#: genuinely clipping; QUEUE and THROUGHPUT carried a wide band of empty
+#: space neither needed. This round does not repeat any of the round-2
+#: prose above -- it changes what was true, so read it as replacing rather
+#: than amending anything above it. Full derivation and every re-swept
+#: number: ``tests/screens/test_surf_swarm_layout.py``'s own module
+#: docstring, "a fourth round" section. Summary of what changed and why:
+#:
+#: 1. **A ceiling, not just a floor, on THROUGHPUT's tx-hash column.**
+#:    :data:`swarm_throughput._MIN_TX_COLS` (11) was always a floor; there
+#:    was no matching ceiling, so the panel spent every free column on the
+#:    hash whenever it had one -- the module docstring's own captured
+#:    example, a hash windowed most of the way across the screen.
+#:    :data:`swarm_throughput._MAX_TX_COLS` (12) is the ceiling: one cell
+#:    above the floor, and a real one -- ``short_hex`` at 12 renders one
+#:    more head character than at 11 (``0x22222…2222`` vs ``0x2222…2222``,
+#:    confirmed by direct call, not assumed identical). Never a change to
+#:    ``MIN_SHORT_COLS`` itself, the cross-dashboard constant curator's own
+#:    address shortening also depends on.
+#: 2. **QUEUE and THROUGHPUT both moved from an unbounded (or
+#:    JUST-SHIPPED-sharing) ``1fr`` to the same ``width: 1fr; max-width:
+#:    46;``.** 46 is the wider of the two panels' own real content need
+#:    plus overhead, measured, not guessed: QUEUE's own design floor for
+#:    keeping its blocked-reason column (``swarm_queue.FULL_WIDTH`` = 27)
+#:    against THROUGHPUT's own need once the hash reaches its new 12-cell
+#:    cap (41) -- both plus 2 columns of title padding, plus 2 more this
+#:    row pair's own scrollbar-gutter/seam overhead costs a bounded ``1fr``
+#:    sibling that a bare fixed number does not (read off the sweep, not
+#:    summed). **The same** number on both, deliberately: they sit in two
+#:    separate row containers (``#surf-swarm-top``/``#surf-swarm-bottom``),
+#:    and the owner's own screenshot shows their seam with JUST
+#:    SHIPPED/THE FIELD aligned between rows -- a ragged seam (two
+#:    different widths) would read as a bug even though each row's own
+#:    content need differs.
+#: 3. **``max-width`` on an unfloored ``1fr``, not a bare fixed number --
+#:    THE FIELD/JUST SHIPPED precedent, one row over, learned the hard
+#:    way.** A first attempt used a bare fixed ``width: 46;`` on both, and
+#:    it reproduced a defect this file's own history already names once
+#:    (JUST SHIPPED's round 1): below the outer width where the row's
+#:    other fixed-or-floored sibling (JUST SHIPPED's own ``min-width: 68``)
+#:    could also fit, Textual does not shrink a fixed-width child to make
+#:    room -- both lay out at their stated size regardless, and the
+#:    overflow is **not** a CSS ellipsis and **not** a ``DataTable``
+#:    scrollbar (both of which this body's own detectors already catch):
+#:    it is the sibling's own rendered region extending past its
+#:    container's, silently cropped by the compositor at the container
+#:    edge with no ``…``, no glyph, no scrollbar, nothing -- confirmed on
+#:    the live render (a hex digit cut off mid-character on the composited
+#:    screen) at outer widths this body's own existing tests, run against
+#:    that first attempt, reported as "whole." ``width: 1fr; max-width:
+#:    46;`` (no floor) restores THROUGHPUT's own pre-round shape below the
+#:    cap: a bounded ``1fr`` shrinks smoothly, all the way to 0 if it must,
+#:    the way an unfloored ``1fr`` always could and a fixed number cannot.
+#:
+#: THE NEW PIN: 95, RE-SWEPT ACROSS ALL FOUR PAYLOADS, NEVER STARTED AT THE
+#: PIN. Measured over 60-159 (capture) and 80-109 (heavy/30-shipped/
+#: 50-shipped, re-centred on the new pin), all four agreeing to the column:
+#: not-whole (both THROUGHPUT and JUST SHIPPED marked, besides THE FIELD's
+#: own exception) at 94, whole at 95.
+#:
+#: **THE BINDING SET WIDENED FROM ONE PANEL TO TWO.** One column under the
+#: pin, THROUGHPUT and JUST SHIPPED mark *together* now -- they share the
+#: bottom row's own 1fr/1fr seam (JUST SHIPPED's own ``min-width``/
+#: ``max-width`` bounds, THROUGHPUT's new ``max-width``), so whichever one
+#: is short of its own ``full`` tier at this width is short together with
+#: the other. THROUGHPUT drops its hash and chain word together, at the
+#: same 41-budget/43-``self.size.width`` threshold this file has named
+#: since round 1 (unmoved -- see point 1 below); JUST SHIPPED falls one
+#: column short of its own ``full`` tier (``self.size.width`` reaching
+#: ``swarm_shipped.FULL_WIDTH`` + 2).
+#:
+#: **JUST SHIPPED'S OWN EXCEPTION IS GONE, NOT MERELY MOVED.** Through
+#: three rounds (round 1's unbounded always-lit marker, round 2's bounded
+#: shape reaching 164) JUST SHIPPED needed a wider threshold than the rest
+#: of the body.
+#: It does not any more: with QUEUE capped rather than sharing unbounded
+#: growth, JUST SHIPPED no longer has to split what is left of the row
+#: with an uncapped THROUGHPUT above QUEUE's old share -- it reaches
+#: ``full`` tier at the ordinary column pin, the same width every other
+#: ordinary panel on this body does. There is no
+#: ``SHIPPED_NEVER_CLEARS_BELOW`` any more; a reader looking for one should
+#: read this paragraph rather than assume the name moved.
+#: :func:`tests.screens.test_surf_swarm_layout.test_the_shipped_panel_now_clears_with_the_rest_of_the_body`
+#: proves it the same two-sided way its predecessor proved the opposite.
+#:
+#: **THE FIELD'S OWN EXCEPTION DID NOT DISAPPEAR, BUT IT SHRANK SHARPLY,
+#: FOR THE SAME STRUCTURAL REASON.** 246 -> **170**. THE FIELD is now the
+#: *only* unbounded panel left in its own row -- QUEUE capped at 46 no
+#: longer takes half of every column above its own cap -- so outer-width
+#: growth reaches THE FIELD's own 117-column content need
+#: (``swarm_field.FULL_WIDTH``) roughly twice as fast as when QUEUE was
+#: still absorbing half of it. Re-swept, not halved by arithmetic: 169
+#: marked, 170 clear, on both the committed capture and the heavy payload
+#: identically (THE FIELD's own threshold does not depend on QUEUE's,
+#: THROUGHPUT's or JUST SHIPPED's data). This threshold is now **inside**
+#: ``tests/screens/test_address_icons_everywhere.py``'s own 170-column
+#: ``SIZE`` sweep rather than past it -- that file's own ``EXEMPT`` entry
+#: for ``SurfSwarmField`` was re-measured and corrected alongside this
+#: change (its note column can now paint within the wide sweep; the
+#: exemption still holds because the seeded swarm payload puts no address
+#: in a dispatch note, not because the note column is unreachable there
+#: any more).
+#:
+#: 1. **THROUGHPUT's own floor threshold is unmoved (41 budget / 43
+#:    ``self.size.width``), confirmed by re-sweep rather than assumed.**
+#:    Below the point where either QUEUE or THROUGHPUT would reach its own
+#:    46-column cap, a bounded ``1fr`` and the previous unbounded ``1fr``
+#:    occupy the identical column at every width -- a cap only ever
+#:    narrows growth above itself, it never raises a floor below it. This
+#:    is also why :data:`THROUGHPUT_NEVER_MARKS_BELOW` (75, in the test
+#:    file) is the one named exception this round did not move.
+#:
+#: THE ROW PIN IS UNMOVED. Nothing about this round touched height (QUEUE
+#: and THROUGHPUT keep ``height: auto``); re-measured anyway, over the
+#: same 20-61 sweep at the new column pin, and confirmed still 26 --
+#: including the adversarial body-only-scrollbar case at height 25, still
+#: reproducing identically.
+#:
+#: Every displayed address still carries its copy icon inside this number,
+#: unaffected by any of the above: JUST SHIPPED's own address/site column
+#: is untouched by this round.
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 95
 
 #: The ``s`` SWARM body's own height. Set at 42 on 2026-09-16 when the body
 #: was first wired; **re-swept to 26 the same day**, alongside the column
@@ -1779,6 +1905,17 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 115
 #: after, red again with the registration reverted) and
 #: ``test_no_height_loses_a_row_of_this_body_in_silence`` is the property,
 #: both in ``tests/screens/test_surf_swarm_layout.py``.
+#:
+#: **Re-measured a fourth time, 2026-09-17, alongside the column-balance
+#: change that moved the column pin 115 -> 95** (QUEUE's and THROUGHPUT's
+#: CSS moved from an unbounded/JUST-SHIPPED-sharing ``1fr`` to a shared
+#: ``1fr`` bounded by ``max-width: 46``, and THROUGHPUT's tx-hash column
+#: gained a 12-cell ceiling): nothing about that round touches height
+#: (both keep ``height: auto``), and the row pin held at 26 unmoved,
+#: re-swept over the same 20-61 range at the new column pin rather than
+#: assumed -- including the adversarial body-only-scrollbar case at
+#: height 25, which still reproduces identically (``top_scroll``/
+#: ``bottom_scroll`` false, ``body_scroll`` true, ``‹ taller`` lit).
 SURF_SWARM_FULL_LAYOUT_ROWS = 26
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
@@ -2992,6 +3129,7 @@ class SurfScreen(RefreshGuard, Screen):
     }
     SurfScreen SurfSwarmQueue {
         width: 1fr;
+        max-width: 46;
         height: auto;
         padding: 0 1;
         margin: 0 0 1 0;
@@ -3013,6 +3151,7 @@ class SurfScreen(RefreshGuard, Screen):
     }
     SurfScreen SurfSwarmThroughput {
         width: 1fr;
+        max-width: 46;
         height: auto;
         padding: 0 1;
     }

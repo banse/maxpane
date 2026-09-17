@@ -32,28 +32,107 @@ days; this file re-measured it each time anyway rather than assuming.
 Nothing here still compares against the launch-day or round-1 numbers;
 ``screens/surf.py``'s own ``#:`` blocks carry that history.
 
+**2026-09-17, a fourth round, the owner's own live screenshot: 115 -> 95,
+and the column pin's own binding set widened from one panel to two.** The
+complaint was the opposite shape from every round above: THE FIELD and
+JUST SHIPPED were genuinely clipping while QUEUE and THROUGHPUT carried a
+wide band of empty space neither needed. Two changes, together:
+:data:`swarm_throughput._MAX_TX_COLS` (12) caps the tx-hash column's own
+ceiling for the first time (:data:`swarm_throughput._MIN_TX_COLS` was
+always a floor, never a ceiling, and the panel spent every free column on
+the hash whenever it had one to spend -- the module docstring's own
+captured example, a hash windowed most of the way across the screen); and
+QUEUE/THROUGHPUT's CSS moved from an unbounded ``1fr`` (QUEUE) or a
+``1fr`` sharing growth with JUST SHIPPED (THROUGHPUT) to **the same**
+``width: 1fr; max-width: 46;`` on both -- a size sized to the wider of the
+two panels' own real content need (:data:`swarm_queue.FULL_WIDTH`, 27, for
+QUEUE; THROUGHPUT's own agent-row need once the hash reaches its 12-cell
+cap, 41, both plus the shared 2-column title padding, plus 2 more columns
+this row pair's own scrollbar-gutter/seam overhead costs a `max-width`
+sibling that a bare fixed number does not -- read off the sweep, not
+summed) rather than two different numbers, because they sit in two
+separate row containers and a reader compares their seam, not their own
+independent needs.
+
+**Why bounded ``1fr`` and not a bare fixed number, on THE FIELD/JUST
+SHIPPED precedent.** The first attempt used a bare fixed ``width: 46;`` on
+both, and it reproduced the exact defect JUST SHIPPED's own round 1 shipped
+one row up: at any outer width below where the row's OTHER fixed-or-floored
+sibling (JUST SHIPPED's own ``min-width: 68``) could also fit, Textual does
+not shrink a fixed-width or min-width-bounded child to make room -- it
+lays both out at their stated size regardless, and the overflow is not a
+CSS ellipsis or a ``DataTable`` scrollbar (both of which this file's own
+``_swarm_clipped``/``marked`` checks already catch): it is the sibling's
+own rendered *region* extending past its container's, silently cropped by
+the compositor at the container edge with **no** ``…``, no glyph, no
+scrollbar, nothing -- a genuinely different, worse failure shape than
+every other one this file names, and one the existing detectors cannot
+see at all (confirmed: a synthetic sweep with the bare-fixed CSS showed
+"whole" -- no marks, no clips -- at outer widths where THROUGHPUT's own
+agent row was visibly cut off mid-hex-digit on the composited screen).
+``width: 1fr; max-width: 46;`` (no floor) restores THE FIELD/JUST
+SHIPPED's own precedent one row over: below the point where a panel's
+sibling has genuine room, the bounded ``1fr`` shrinks smoothly, all the
+way to 0 if it must, rather than holding its ground and forcing an
+overflow -- exactly what let THROUGHPUT (previously bare ``1fr``, no
+bound at all) absorb JUST SHIPPED's own ``min-width`` pressure safely
+before this round, and what a hard fixed number cannot do. Below the new
+column pin this reproduces THROUGHPUT's own pre-existing, already-accepted
+silent-below-75 exception (below) rather than a new, unbounded one -- **the
+same** threshold, unmoved, because below the point where either panel
+would hit its own 46-column cap, a bounded ``1fr`` and a bare unbounded
+``1fr`` behave identically; the cap only ever narrows growth, never
+raises a floor.
+
+**Two panels bind now, not one, and the widest of this file's own
+exceptions folded into the pin rather than staying separate from it.**
+JUST SHIPPED's own "never clears below" exception -- present in every
+round back to launch, most recently 164 -- is **gone**: at the new pin
+(95) JUST SHIPPED is already whole, because it no longer has to share
+growth with an unbounded THROUGHPUT past QUEUE's own 46-column cap. One
+column under the pin, JUST SHIPPED marks alongside THROUGHPUT, both for
+the first time at the same boundary, so
+:func:`test_the_swarm_binding_panel_is_the_one_the_block_names`'s own
+assertion widens from one name to two. THE FIELD's own exception is not
+gone, but it shrank sharply for the identical structural reason QUEUE's
+own cap gave THROUGHPUT and JUST SHIPPED more of the row: 246 -> **170**,
+because THE FIELD is now the *only* unbounded panel in its own row (QUEUE
+capped at 46 no longer takes half of every column above its own cap), so
+outer-width growth reaches THE FIELD's own content need roughly twice as
+fast as it did when QUEUE was still absorbing half of it.
+:data:`THROUGHPUT_NEVER_MARKS_BELOW` (75) is the one named exception this
+round did **not** move, for the reason two paragraphs up: below that
+width THROUGHPUT behaves identically to its pre-round shape, bounded or
+not. Every number in this section was re-swept in situ, over a range that
+straddles the new pin rather than starting at it, on all four payloads
+this file already carries -- none of them moved the boundary by a single
+column from any other.
+
 Six things this file exists to pin above the rest
 ----------------------------------------------------
-1. **The column pin fails in both directions**, once THE FIELD's and JUST
-   SHIPPED's own exceptions are set aside. THE FIELD's ``‹`` never clears
-   below 246 columns and JUST SHIPPED's own never clears below 164 (both
-   measured, not assumed -- see each constant's own ``#:`` block); both
-   thresholds sit past this file's own 70-159 width-sweep range, so within
-   that range both panels are *expected* to keep marking, and a sweep that
-   demanded "no marker anywhere" would never find a pin at all. "Whole"
-   here therefore means "no marker outside those two named exceptions, and
-   no CSS-clipped line, and no hidden DataTable column" -- and that claim
-   is checked in both directions, exactly the way every other body's own
-   pin is.
-2. **The claims are properties, never literals**, with both exceptions
-   named rather than silently absorbed: "whenever a row would clip, some
-   panel *other than* THE FIELD or JUST SHIPPED on this body advertises
-   the loss" cannot go stale the way "the marker lights below 115" can.
-3. **The sweeps do not start at the pin.** The width sweep runs 70..159 --
-   forty-five columns below the pin and forty-four above it, crossing
-   ``p``'s 99, so agreeing with it would show up as a measurement rather
-   than an assumption. The height sweep runs 20..61 at the column pin, six
-   rows under the row pin and thirty-five over.
+1. **The column pin fails in both directions**, once THE FIELD's own
+   exception is set aside. THE FIELD's ``‹`` never clears below 170 columns
+   (measured, not assumed -- see the constant's own ``#:`` block, and
+   :data:`FIELD_NEVER_CLEARS_BELOW` below); that threshold sits past this
+   file's own width-sweep range, so within it THE FIELD is *expected* to
+   keep marking, and a sweep that demanded "no marker anywhere" would never
+   find a pin at all. JUST SHIPPED carried a matching exception through
+   three earlier rounds (most recently 164) and does **not** any more --
+   the 2026-09-17 column-balance change (above) made it whole exactly where
+   the rest of the body is, so it is an ordinary panel in this property now,
+   not a second named carve-out. "Whole" here therefore means "no marker
+   outside THE FIELD's own named exception, and no CSS-clipped line, and no
+   hidden DataTable column" -- and that claim is checked in both
+   directions, exactly the way every other body's own pin is.
+2. **The claims are properties, never literals**, with the remaining
+   exception named rather than silently absorbed: "whenever a row would
+   clip, some panel *other than* THE FIELD on this body advertises the
+   loss" cannot go stale the way "the marker lights below 95" can.
+3. **The sweeps do not start at the pin.** The width sweep runs 60..159 --
+   thirty-five columns below the pin and sixty-four above it, still
+   crossing ``p``'s 99, so agreeing with either would show up as a
+   measurement rather than an assumption. The height sweep runs 20..61 at
+   the column pin, six rows under the row pin and thirty-five over.
 4. **The row pin's own honesty is scoped, not implied.** None of THE FIELD,
    QUEUE, THROUGHPUT or JUST SHIPPED has a payload-independent content
    height (``SURF_SWARM_FULL_LAYOUT_ROWS``'s own ``#:`` block has the
@@ -78,17 +157,20 @@ Six things this file exists to pin above the rest
    ``swarm_throughput.SurfSwarmThroughput._title_text`` and
    :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own ``#:`` block for why that
    one could be fixed and the other two cannot.
-6. **JUST SHIPPED's own exception is bounded, not permanent, and proven
-   both ways.** Round 1 shipped it as an unbounded, always-lit marker;
-   review round 2 gave it the same shape THE FIELD's exception already
-   has -- a real, measured, *reachable* width (164) above which the
-   marker genuinely goes dark. :data:`SHIPPED_NEVER_CLEARS_BELOW` names
-   it and
-   :func:`test_the_shipped_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
-   proves both edges: marked at the pin, marked one column under 164,
-   clear at 164 -- THE FIELD's own test shape, reused rather than
-   invented fresh, replacing the earlier (round 1) test that proved the
-   wrong claim (permanence).
+6. **JUST SHIPPED's own exception did not just move again -- it is gone,
+   and that is proven rather than assumed too.** Round 1 shipped it as an
+   unbounded, always-lit marker; round 2 gave it THE FIELD's own bounded
+   shape, clearing at a real, measured, reachable width (164). The
+   2026-09-17 column-balance change removed the exception outright: JUST
+   SHIPPED now clears at the ordinary column pin (95) the same way QUEUE
+   and THROUGHPUT do, because it no longer shares unbounded growth with an
+   uncapped THROUGHPUT past QUEUE's own new ceiling.
+   :func:`test_the_shipped_panel_now_clears_with_the_rest_of_the_body`
+   proves it the same two-sided way its predecessor proved permanence and
+   then boundedness: marked one column under the pin (alongside
+   THROUGHPUT, the pin's own binding pair now), clear at the pin. There is
+   no ``SHIPPED_NEVER_CLEARS_BELOW`` constant any more; a reader looking
+   for one should read this paragraph instead of assuming the name moved.
 
 A named gap, found and closed in fix round 1, re-confirmed after both re-sweeps
 --------------------------------------------------------------------------------
@@ -165,52 +247,47 @@ from tests.screens.test_surf_screen import (
 #: Independent literals for the same reason ``MEASURED_MARKET_COLUMNS`` is
 #: one next door: a test that aliased the screen's constant would compare a
 #: number against itself and pin nothing.
-MEASURED_SWARM_COLUMNS = 115
+MEASURED_SWARM_COLUMNS = 95
 MEASURED_SWARM_ROWS = 26
 
 #: THE FIELD's own permanent exception (see ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
 #: own ``#:`` block): its ``‹`` never clears below this width, which is past
 #: every other pin in this repo. Named here so the "whole" check can exclude
-#: it explicitly rather than by silent construction. Unmoved by either
-#: re-sweep: THE FIELD still shares a halved 1fr:1fr seam with QUEUE alone,
-#: and that ratio was never touched.
-FIELD_NEVER_CLEARS_BELOW = 246
+#: it explicitly rather than by silent construction. **246 -> 170 on
+#: 2026-09-17** (the column-balance change): QUEUE's own new ``max-width``
+#: cap means THE FIELD is the only unbounded panel left in its row, so it no
+#: longer halves its growth with QUEUE above QUEUE's own ceiling -- the ratio
+#: this comment used to describe as unmoved is exactly what moved.
+FIELD_NEVER_CLEARS_BELOW = 170
 
-#: JUST SHIPPED's own exception, added in the 2026-09-17 layout-change
-#: review round 1 and given THE FIELD's own bounded shape in review round 2
-#: (see ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s own ``#:`` block): its ``‹``
-#: never clears below this width, past this file's own 70-159 width-sweep
-#: range, exactly the reason THE FIELD's own exception is named rather than
-#: chased. Round 1 shipped this as an *unbounded* always-lit marker (a bare
-#: fixed CSS width, never regrowing); round 2 replaced the fixed width with
-#: ``1fr`` bounded by ``min-width``/``max-width``, so this now has a real,
-#: reachable upper edge the way :data:`FIELD_NEVER_CLEARS_BELOW` always
-#: did -- :func:`test_the_shipped_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
-#: proves it rather than merely asserting it here.
-SHIPPED_NEVER_CLEARS_BELOW = 164
+#: JUST SHIPPED carried an exception of this same shape through three
+#: rounds (most recently 164) and does not any more: the 2026-09-17
+#: column-balance change (see ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s own
+#: ``#:`` block) made it whole exactly where the rest of the body is, so it
+#: needs no constant here at all -- see
+#: :func:`test_the_shipped_panel_now_clears_with_the_rest_of_the_body`.
 
-#: Both panels whose own ``‹`` never clears within this file's own 70-159
-#: width-sweep range, named so the "whole" check can exclude them
-#: explicitly rather than by silent construction. THE FIELD's own
-#: threshold (246) and JUST SHIPPED's own (164,
-#: :data:`SHIPPED_NEVER_CLEARS_BELOW`) are both real, measured, reachable
-#: widths -- neither panel is stuck the way JUST SHIPPED was for one round
-#: on 2026-09-17 -- they are simply past what this file's main sweep
-#: covers, on THE FIELD's own long-standing precedent.
-_EXCLUDED_FROM_WHOLE = {"SurfSwarmField", "SurfSwarmShipped"}
+#: THE FIELD's own permanent exception is the only one left within this
+#: file's own width-sweep range, named so the "whole" check can exclude it
+#: explicitly rather than by silent construction.
+_EXCLUDED_FROM_WHOLE = {"SurfSwarmField"}
 
 #: THROUGHPUT's own third, narrower exception (see
 #: ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s own ``#:`` block): below this outer
 #: width THROUGHPUT's own column is under three cells, too narrow to paint a
 #: CSS ellipsis or the bare ``‹`` glyph, so a hash-and-chain-word pair it has
 #: already dropped internally can go both unmarked and un-clipped. Moved
-#: from round one's 88 to 75 in the 2026-09-17 layout-change review round,
-#: thirteen columns down -- exactly JUST SHIPPED's own new saving (81 -> 68),
-#: confirmed by re-sweep rather than shifted by arithmetic. Measured, not
-#: assumed: 74 is silent on both the committed capture and the heavy
-#: payload; 75 is caught (as a CSS clip, not yet a marker -- the marker
-#: itself does not appear until width 87, inside the excluded band, and
-#: that is fine: everything from 75 up is already covered by ``clipped``).
+#: from round one's 88 to 75 in the 2026-09-17 layout-change review round;
+#: **unmoved by the same-dated column-balance round**, re-confirmed by
+#: re-sweep rather than assumed: below this width neither QUEUE's nor
+#: THROUGHPUT's own new ``max-width`` cap has been reached yet, so a bounded
+#: ``1fr`` and the previous unbounded ``1fr`` occupy the identical column at
+#: every width under it -- the cap only ever narrows growth above itself, it
+#: never raises a floor below it. Measured, not assumed: 74 is silent on
+#: both the committed capture and the heavy payload; 75 is caught (as a CSS
+#: clip, not yet a marker -- the marker itself does not appear until width
+#: 87, inside the excluded band, and that is fine: everything from 75 up is
+#: already covered by ``clipped``).
 #: Comfortably below :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`, so it can only
 #: ever affect the "something marks below the pin" half of the property,
 #: never the "nothing marks at or above it" half.
@@ -518,15 +595,16 @@ async def _render(payload, size):
 
 #: The width sweep, as an explicit ``(payload, width)`` list rather than two
 #: crossed ``parametrize`` decorators, on the pool4-market file's own
-#: precedent. The committed capture runs the whole 70..159 range; the
-#: cell-content-heavy payload and the two large JUST SHIPPED tables run the
+#: precedent. The committed capture runs the whole 60..159 range; the
+#: cell-content-heavy payload and the two large JUST SHIPPED tables run
 #: fifteen columns either side of the pin (re-centred from 78..108 to
-#: 113..143 when the pin moved 93 -> 128, then to 100..130 when the pin
-#: moved again to 115), the only band where a payload that moved the
-#: threshold could show it.
-_WIDTH_SWEEP = [("capture", w) for w in range(70, 160)] + [
+#: 113..143 when the pin moved 93 -> 128, to 100..130 when it moved to 115,
+#: and to **80..110** when it moved again to 95 for the column-balance
+#: change), the only band where a payload that moved the threshold could
+#: show it.
+_WIDTH_SWEEP = [("capture", w) for w in range(60, 160)] + [
     (name, w) for name in ("heavy", "30-shipped", "50-shipped")
-    for w in range(100, 130)
+    for w in range(80, 110)
 ]
 
 
@@ -534,23 +612,23 @@ _WIDTH_SWEEP = [("capture", w) for w in range(70, 160)] + [
 async def test_the_swarm_body_is_whole_from_its_pinned_width(
     payload_name, width
 ) -> None:
-    """The sweep. THE FIELD's and JUST SHIPPED's own exceptions are named,
-    not implied.
+    """The sweep. THE FIELD's own exception is named, not implied; JUST
+    SHIPPED carries none any more (see the module docstring's 2026-09-17
+    column-balance section).
 
-    **Whole means every panel but THE FIELD and JUST SHIPPED, plus no
-    CSS-clipped line and no hidden ``DataTable`` column anywhere.** THE
-    FIELD's own ``‹`` never clears below 246 columns and JUST SHIPPED's own
-    never clears below 164 (both measured, not assumed -- see each
-    constant's own ``#:`` block); both thresholds sit past this file's own
-    70-159 width-sweep range, so folding either into "whole" would mean no
-    width in this sweep -- not even 159 -- could ever pass, which would
-    make the property untestable rather than strict. Excluding them by name
-    is what keeps this a property about the panels this pin can actually
-    buy back columns for.
+    **Whole means every panel but THE FIELD, plus no CSS-clipped line and
+    no hidden ``DataTable`` column anywhere.** THE FIELD's own ``‹`` never
+    clears below 170 columns (measured, not assumed -- see the constant's
+    own ``#:`` block, and :data:`FIELD_NEVER_CLEARS_BELOW`); that threshold
+    sits past this file's own 60-159 width-sweep range, so folding it into
+    "whole" would mean no width in this sweep -- not even 159 -- could ever
+    pass, which would make the property untestable rather than strict.
+    Excluding it by name is what keeps this a property about the panels
+    this pin can actually buy back columns for.
 
     Below the pin the claim is the marker's: something *other than* THE
-    FIELD or JUST SHIPPED must be asking for the columns, or a line must be
-    genuinely clipped -- **except below** :data:`THROUGHPUT_NEVER_MARKS_BELOW`,
+    FIELD must be asking for the columns, or a line must be genuinely
+    clipped -- **except below** :data:`THROUGHPUT_NEVER_MARKS_BELOW`,
     THROUGHPUT's own third, narrower named exception, where its column is
     too few cells wide to paint either signal at all.
     """
@@ -572,8 +650,8 @@ async def test_the_swarm_body_is_whole_from_its_pinned_width(
         pass
     else:
         assert r["marked_besides_exceptions"] or r["clipped"], (
-            f"{payload_name} at {width}: nothing besides THE FIELD's and "
-            "JUST SHIPPED's own named exceptions advertises the loss"
+            f"{payload_name} at {width}: nothing besides THE FIELD's own "
+            "named exception advertises the loss"
         )
 
 
@@ -588,30 +666,34 @@ async def test_the_swarm_column_pin_does_not_move_with_the_payload(
     assert not at["marked_besides_exceptions"], (payload_name, sorted(at["marked_besides_exceptions"]))
     assert not at["clipped"], (payload_name, at["clipped"])
     assert under["marked_besides_exceptions"] or under["clipped"], (
-        f"{payload_name}: nothing besides THE FIELD's and JUST SHIPPED's own "
-        f"exceptions asks for a column at {pin - 1}, so the pin is loose for "
-        "this payload"
+        f"{payload_name}: nothing besides THE FIELD's own exception asks "
+        f"for a column at {pin - 1}, so the pin is loose for this payload"
     )
 
 
 async def test_the_swarm_binding_panel_is_the_one_the_block_names() -> None:
     """Pinned by a test, not by a sentence, on both axes.
 
-    One column under the column pin, THROUGHPUT is the only panel besides
-    THE FIELD's and JUST SHIPPED's own permanent exceptions that lights
-    ``‹`` -- it drops the transaction hash and its chain word together,
-    exactly the arithmetic :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own
-    ``#:`` block names. One row under the row pin, the **body itself** is
-    the container that is scrolling, not either row -- both rows' own
-    content fits inside their own floors, but the two floors summed ask
-    for more than the body's own ``1fr`` share
+    **Two panels bind the column pin now, not one** (2026-09-17
+    column-balance change): one column under it, both THROUGHPUT and JUST
+    SHIPPED light ``‹`` at once -- they share the bottom row's own
+    ``1fr``/``1fr`` seam, so whichever one is short of its own ``full``
+    tier at this width is short together with the other, not
+    independently. THROUGHPUT drops its transaction hash and chain word
+    together, exactly the arithmetic :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s
+    own ``#:`` block names; JUST SHIPPED falls one column short of its own
+    ``full`` tier, the same tier its own former exception used to guard
+    from a much narrower width. One row under the row pin, the **body
+    itself** is the container that is scrolling, not either row -- both
+    rows' own content fits inside their own floors, but the two floors
+    summed ask for more than the body's own ``1fr`` share
     (:data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block has the
     argument).
     """
     at_col = await _render(
         _heavy_swarm_payload(), (SURF_SWARM_FULL_LAYOUT_COLUMNS - 1, _COLUMN_SWEEP_HEIGHT)
     )
-    assert at_col["marked_besides_exceptions"] == {"SurfSwarmThroughput"}, (
+    assert at_col["marked_besides_exceptions"] == {"SurfSwarmThroughput", "SurfSwarmShipped"}, (
         sorted(at_col["marked_besides_exceptions"])
     )
 
@@ -627,41 +709,36 @@ async def test_the_swarm_binding_panel_is_the_one_the_block_names() -> None:
     )
 
 
-async def test_the_shipped_panel_cannot_clear_its_own_full_tier_at_the_pinned_width() -> None:
-    """JUST SHIPPED's own exception, proven rather than narrated --
-    :data:`FIELD_NEVER_CLEARS_BELOW`'s own shape, one panel over, and a very
-    different claim from the one review round 1 shipped: round 1 gave
-    JUST SHIPPED a bare fixed CSS width, which meant its own ``‹`` marker
-    was lit at *every* terminal size with no upper edge -- a lit marker
-    carrying no information, since widening never changed anything.
-    Review round 2 replaced the fixed width with ``1fr`` bounded by
-    ``min-width``/``max-width``, so this threshold now has a genuine,
-    reachable upper edge the way THE FIELD's own always has.
+async def test_the_shipped_panel_now_clears_with_the_rest_of_the_body() -> None:
+    """The inverse of the claim this test replaced, proven the same
+    two-sided way.
 
-    At the column pin JUST SHIPPED is still marked -- confirming the
-    exclusion in :func:`test_the_swarm_body_is_whole_from_its_pinned_width`
-    is excusing a real, present condition (the ``tight`` tier, still bound
-    by its own ``min-width``) rather than silently widening the property.
-    One column short of :data:`SHIPPED_NEVER_CLEARS_BELOW` it is marked
-    too; at that width it finally clears (``full`` tier, ``self.size.width``
-    reaches ``swarm_shipped.FULL_WIDTH``), so the exception has a measured
-    edge rather than being an unfalsifiable "always marked" claim.
+    Through three rounds (round 1's unbounded always-lit marker, round 2's
+    bounded-but-still-164-wide exception) JUST SHIPPED needed its own
+    wider threshold, separate from the body's own column pin. The
+    2026-09-17 column-balance change removed that gap: JUST SHIPPED no
+    longer shares growth with an unbounded THROUGHPUT above QUEUE's own new
+    cap, so it now reaches its ``full`` tier at the same width the rest of
+    the body does. One column short of the pin it is marked -- alongside
+    THROUGHPUT, the pin's own binding pair now
+    (:func:`test_the_swarm_binding_panel_is_the_one_the_block_names`) --
+    and at the pin itself it is clear, so this is a property with a
+    measured edge, not an unfalsifiable "always clear" claim either.
     """
-    at_pin = await _render(None, (SURF_SWARM_FULL_LAYOUT_COLUMNS, _COLUMN_SWEEP_HEIGHT))
-    assert "SurfSwarmShipped" in at_pin["marked"], (
-        "JUST SHIPPED cleared at the column pin -- if its own tight-tier "
-        "min-width threshold moved, SURF_SWARM_FULL_LAYOUT_COLUMNS's own "
-        "#: block needs its caveat rewritten, not just this test"
+    just_under = await _render(
+        None, (SURF_SWARM_FULL_LAYOUT_COLUMNS - 1, _COLUMN_SWEEP_HEIGHT)
     )
-
-    just_under = await _render(None, (SHIPPED_NEVER_CLEARS_BELOW - 1, _COLUMN_SWEEP_HEIGHT))
     assert "SurfSwarmShipped" in just_under["marked"], (
-        SHIPPED_NEVER_CLEARS_BELOW - 1, sorted(just_under["marked"]),
+        "JUST SHIPPED is not marked one column under the pin -- either the "
+        "pin moved or JUST SHIPPED no longer binds it the way this file's "
+        "own #: block claims"
     )
 
-    whole = await _render(None, (SHIPPED_NEVER_CLEARS_BELOW, _COLUMN_SWEEP_HEIGHT))
-    assert "SurfSwarmShipped" not in whole["marked"], (
-        SHIPPED_NEVER_CLEARS_BELOW, sorted(whole["marked"]),
+    at_pin = await _render(None, (SURF_SWARM_FULL_LAYOUT_COLUMNS, _COLUMN_SWEEP_HEIGHT))
+    assert "SurfSwarmShipped" not in at_pin["marked"], (
+        "JUST SHIPPED is still marked at the column pin -- its own "
+        "exception is not actually gone and SURF_SWARM_FULL_LAYOUT_COLUMNS's "
+        "own #: block needs its caveat rewritten, not just this test"
     )
 
 
@@ -679,12 +756,23 @@ async def test_throughput_can_lose_its_presentation_silently_below_a_measured_wi
     checks ``clipped`` at the boundary rather than ``marked``): the
     exception has a measured edge rather than being an unfalsifiable
     "always silent" claim.
+
+    **Scoped to THROUGHPUT itself, not the body-wide ``marked_besides_
+    exceptions``** (2026-09-17, column-balance change): at this width THE
+    FIELD *and* JUST SHIPPED are both ordinarily marked too -- correctly,
+    on the general "below the pin, something marks" property -- and JUST
+    SHIPPED no longer carries its own excluded exception (the module
+    docstring's "a fourth round" section), so the body-wide set is no
+    longer a proxy for "THROUGHPUT alone said nothing" the way it was
+    before that panel's own exception collapsed into the ordinary pin.
     """
     silent = await _render(
         _heavy_swarm_payload(), (THROUGHPUT_NEVER_MARKS_BELOW - 1, _COLUMN_SWEEP_HEIGHT)
     )
-    assert not silent["marked_besides_exceptions"], sorted(silent["marked_besides_exceptions"])
-    assert not silent["clipped"], silent["clipped"]
+    assert "SurfSwarmThroughput" not in silent["marked"], sorted(silent["marked"])
+    assert not any(name == "SurfSwarmThroughput" for name, _ in silent["clipped"]), (
+        silent["clipped"]
+    )
 
     caught = await _render(
         _heavy_swarm_payload(), (THROUGHPUT_NEVER_MARKS_BELOW, _COLUMN_SWEEP_HEIGHT)
@@ -702,7 +790,7 @@ def test_the_swarm_body_fits_inside_the_documented_app_width() -> None:
 
     THE FIELD's own permanent exception is exactly why this assertion is
     about the *pin* rather than about "every marker THE FIELD could ever
-    show": chasing THE FIELD's own 246-column threshold would break this
+    show": chasing THE FIELD's own 170-column threshold would break this
     the moment it was tried, for every one of the assertions below.
     """
     from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
@@ -719,11 +807,13 @@ def test_the_swarm_body_fits_inside_the_documented_app_width() -> None:
     # reinstated -- it holds today because both numbers happen to say so,
     # not because one derives the other (terminal-layout skill's own
     # "coincidence with a date" note), and it will be removed again the day
-    # it stops holding, not chased back into truth.
+    # it stops holding, not chased back into truth. The 2026-09-17
+    # column-balance round moved the pin again, to 95 -- still under 119,
+    # so the assertion stands unchanged, on the same coincidental terms.
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
-    # No relation is asserted against SURF_POOL4_FULL_LAYOUT_COLUMNS (99):
-    # this body's own sweep is independent of it and the two have never
-    # been compared.
+    # No relation is asserted against SURF_POOL4_FULL_LAYOUT_COLUMNS (99),
+    # even though 95 <= 99 holds today: this body's own sweep is
+    # independent of it and the two have never been compared.
     assert MEASURED_SWARM_COLUMNS == SURF_SWARM_FULL_LAYOUT_COLUMNS
 
 

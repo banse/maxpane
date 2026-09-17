@@ -167,6 +167,21 @@ _JOBS_COLS = 4
 #: of rendered illegibly small.
 _MIN_TX_COLS = MIN_SHORT_COLS
 
+#: The ceiling on the tx-hash column (2026-09-17, owner's own live
+#: screenshot): a *cap*, not a second floor -- :data:`_MIN_TX_COLS` above is
+#: the floor below which the column is dropped whole, and until this
+#: constant there was no matching ceiling, so a wide terminal let the hash
+#: window grow unbounded (the docstring's own captured example,
+#: ``0xe5b157220cea6871f035466bd4247d0…a69617``). One cell above
+#: :data:`_MIN_TX_COLS`: ``short_hex``/``widgets.address._window`` gives 12
+#: cells one more head character than 11 (``0x22222…2222`` vs
+#: ``0x2222…2222``, confirmed by direct call rather than assumed), so this
+#: is a real cap, not a value indistinguishable from the floor it sits
+#: above. Never edits ``MIN_SHORT_COLS`` itself -- that is a
+#: cross-dashboard constant curator's own address shortening also depends
+#: on, out of scope for this panel.
+_MAX_TX_COLS = 12
+
 #: ``_CHAIN_COLS`` / ``_CHAIN_ID_WORDS`` / ``_chain_word`` are bound names
 #: imported from ``_swarm_chain`` (Task 9's hoist) rather than defined here
 #: -- see the module docstring's *"Hoisted to _swarm_chain"* section. Kept
@@ -313,7 +328,10 @@ def _agent_lines(score_rows: object, scores_as_of: object, width: int) -> tuple[
     # hash already fits.
     chain_reserve = _GAP + _CHAIN_COLS
     show_tx = available >= _MIN_TX_COLS + chain_reserve
-    tx_width = max(available - chain_reserve, 0) if show_tx else 0
+    # The floor gate above decides *whether* the hash shows at all; the cap
+    # below only ever narrows what it shows once it does -- capping cannot
+    # turn a shown hash into a dropped one, so `show_tx` is untouched by it.
+    tx_width = min(max(available - chain_reserve, 0), _MAX_TX_COLS) if show_tx else 0
     lines = [_agent_line(row, tx_width) for row in rows]
     return lines, not show_tx
 

@@ -101,14 +101,23 @@ EXEMPT: dict[str, str] = {
         "a dispatch note's embedded address (address_prose) is the only icon"
         " this panel can ever show, and it lives in the ``note`` column that"
         " only paints at the ``full`` tier (budget >= FULL_WIDTH = 117 cells)."
-        " SurfSwarmField is one of two 1fr columns sharing this body's own"
-        " width, so reaching that budget needs roughly double the sweep's own"
-        " 170-column SIZE (measured: the note column stays hidden through"
-        " 240 columns and first paints at 250) -- wider than both the wide"
-        " sweep and this body's own layout pin (115, re-swept 2026-09-16 for"
-        " the 2x2 grid and again 2026-09-17 to shorten JUST SHIPPED instead"
-        " of widening the pin; FIELD's own seam with QUEUE is unmoved by"
-        " either round), so no render this sweep produces can ever show one",
+        " Re-measured 2026-09-17 (swarm column-balance change, QUEUE/"
+        " THROUGHPUT capped at a fixed max-width rather than sharing an"
+        " unbounded 1fr with FIELD/SHIPPED): FIELD is now the ONLY unbounded"
+        " 1fr in its row, so it gets column-for-column growth above QUEUE's"
+        " own cap instead of half of it, and the full tier's own threshold"
+        " (measured, not derived) fell from 250 to exactly 170 -- the wide"
+        " sweep's own SIZE, not past it. This panel's exemption therefore no"
+        " longer rests on the note column being unreachable inside the"
+        " sweep: at SIZE=(170, 60) FIELD genuinely reaches ``full`` and would"
+        " paint an icon if the seeded payload put an address in a dispatch"
+        " note. It does not (the swarm fixture's own two notes are"
+        " ``\"waiting on review\"`` and ``None``), so the exemption still"
+        " holds on the facts, not on unreachability -- and this comment says"
+        " so rather than repeating the now-false claim that no swept render"
+        " could ever show one. This body's own layout pin (95, re-swept"
+        " 2026-09-17 alongside the column-balance change) is still well"
+        " under 170, so FIELD stays out of ``full`` tier there regardless.",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
     "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":
@@ -362,9 +371,17 @@ def _continues_as_hash_window(head: str, following: str, hashes) -> bool:
     ``short_hex``'s own window (``widgets/address._window``) caps its *tail*
     at 6 cells but not its *head*: at a wide enough column a 64-hex
     transaction hash can window to a head of exactly 40 cells, which is
-    indistinguishable in shape from a real, un-iconized 40-hex address --
-    ``THROUGHPUT``'s tx column hits this at the sweep's 170-column width
-    (measured: ``last_tx_hash`` windows to a 40-cell head there).
+    indistinguishable in shape from a real, un-iconized 40-hex address.
+    ``THROUGHPUT`` used to hit this at wide enough terminals (measured at
+    the sweep's own 170-column width before 2026-09-17) -- it no longer can,
+    now that ``swarm_throughput._MAX_TX_COLS`` caps the width it ever hands
+    ``short_hex`` at 12 cells (a 5-cell head at most, per ``_window``'s own
+    arithmetic), so this specific collision is retired -- see
+    :func:`test_the_former_throughput_hash_collision_is_now_structurally_impossible`.
+    The general point this docstring makes stands regardless: ``_window``
+    itself still carries no head cap, so a *future* widget that hands it an
+    uncapped width can still reproduce the shape this function exists to
+    catch, and the provenance check below is what closes it when one does.
 
     Fix round 1 (task-13-review.md, Finding 1, High): this predicate alone
     matches **any** hash anywhere in the whole served payload, with no check
@@ -623,80 +640,85 @@ def test_the_region_scan_only_excuses_a_hash_window_for_a_hash_only_widget():
     ]
 
 
-async def test_the_full_address_scan_resolves_the_real_collision_to_its_widget():
-    """The full-address loop's own provenance lookup (:func:`_widget_module_at`
-    then :func:`_hash_only_module`), proven against the one real collision
-    this repo has rather than only the synthetic one above: THROUGHPUT's tx
-    hash windows to a 40-cell head at column width 166 (see
-    :func:`_continues_as_hash_window`'s own docstring), shape-identical to a
-    bare address.
+async def test_the_former_throughput_hash_collision_is_now_structurally_impossible():
+    """RETIRED as a live-collision reproduction, 2026-09-17 (swarm
+    column-balance change) -- reported rather than silently dropped, per
+    the task that made the change: the swarm body's owner asked to cap
+    THROUGHPUT's tx-hash column at 12 cells
+    (``swarm_throughput._MAX_TX_COLS``), and that cap is a *ceiling* on the
+    width :func:`swarm_throughput._agent_lines` ever hands ``short_hex``,
+    not merely a floor beside :data:`swarm_throughput._MIN_TX_COLS`. A
+    12-cell window's own arithmetic (``widgets/address._window``: ``budget
+    = width - 3``, ``tail = min(6, budget // 2)``, ``head = budget - tail``)
+    tops out at a 5-cell head (``budget=9, tail=4, head=5``) -- nowhere near
+    the 40-cell head a bare address's own shape needs to collide with. The
+    test this replaced (``test_the_full_address_scan_resolves_the_real_
+    collision_to_its_widget``) re-measured the one outer width that
+    produced a 40-cell head three times across two days (170 -> 166 -> 153
+    -> 166) as the swarm body's own layout changed around it; this fourth
+    change does not move that number, it deletes the head budget the
+    collision needed to exist at any width, which is why this test proves
+    a structural bound rather than re-sweeping for a fourth number.
 
-    **Re-measured three times, and the last move landed back on the first
-    number for a different reason.** 170 -> 166 on 2026-09-16, when the
-    swarm body's layout change (THROUGHPUT moved from halving a rail's
-    width with QUEUE to sharing a row with JUST SHIPPED, 1fr against a
-    fixed 81) moved where this collision falls. 166 -> 153 on 2026-09-17
-    (layout-change review round 1), when JUST SHIPPED's own fixed width
-    shortened from 81 to 68, freeing THROUGHPUT thirteen more columns at
-    any given outer width. 153 -> **166 again** on 2026-09-17 (review
-    round 2, same day), when JUST SHIPPED's CSS moved from a bare fixed
-    number to ``1fr`` bounded by ``min-width: 68; max-width: 81;`` -- not
-    a coincidence: this test's own ``size`` (166) sits **above**
-    ``SHIPPED_NEVER_CLEARS_BELOW`` (164,
-    ``tests/screens/test_surf_swarm_layout.py``), so at this specific
-    width JUST SHIPPED is capped at its own ``max-width`` -- ``full`` tier,
-    ``self.size.width`` 79 -- identical to round 1's fixed value there, so
-    THROUGHPUT's own share at 166 is once again identical to what it was
-    at 166 under round 1's original fixed-81 CSS, closing the loop rather
-    than landing on 166 by chance.
+    Proven two ways, not asserted from the constant alone:
 
-    **The variable width does not make this test's premise unsound.** A
-    ``1fr`` sibling still resolves to one deterministic width at any one
-    fixed overall terminal size, which is all a single non-swept render
-    needs; what moved between rounds was which overall width produces the
-    40-cell head, not whether one exists. Re-swept fresh each time (most
-    recently 150-185) rather than nudged: 166 is the one width in that
-    band where the head is exactly 40, which is the only length that
-    matters here -- a real address is exactly 40 hex characters, so only a
-    head of exactly that length makes the rendered text's own prefix
-    byte-identical to one. This test's own ``size`` is local to it; it
-    does not share :data:`SIZE`, so re-measuring it here does not touch
-    the standard sweep used everywhere else in this file. It will need
-    re-sweeping again if either panel's own width arithmetic changes, on
-    the same terms -- re-sweep, never patch the number by hand.
+    1. **Structurally.** :func:`_window`'s own head formula is monotonic in
+       ``width``, so the widest head any call this panel makes can ever
+       produce is bounded by its widest legal argument
+       (:data:`swarm_throughput._MAX_TX_COLS`). A 5-cell head can never
+       equal a 40-character run, so the collision the retired test
+       reproduced cannot exist at *any* terminal width, not merely the ones
+       swept below.
+    2. **Empirically**, across a band that comfortably straddles both this
+       file's own 170-column ``SIZE`` and every width the retired test ever
+       measured (150-190): the collision regex never matches, at any width
+       in that band, on the same live-rendered swarm body the retired test
+       used.
 
-    ``get_widget_at`` returns the innermost ``Static`` leaf, whose own
-    module is Textual's and never imports the address helper -- checking it
-    directly would make every position on screen read as "not hash only".
-    This confirms :func:`_widget_module_at` walks past that leaf to
-    ``SurfSwarmThroughput`` itself, the widget actually responsible for the
-    text under the address-icon rules, and that it is correctly classified
-    hash-only.
+    The provenance machinery this test used to exercise live
+    (:func:`_widget_module_at`, :func:`_hash_only_module`) is unaffected by
+    the cap and stays covered by the synthetic constructions above
+    (``test_a_hash_only_module_is_recognized_by_which_icon_helpers_it_
+    imports``, ``test_a_module_reaching_icons_through_an_indirection_is_
+    not_hash_only``, ``test_the_region_scan_only_excuses_a_hash_window_
+    for_a_hash_only_widget``) -- none of those construct their collision by
+    rendering THROUGHPUT at a specific width, so none of them lost their
+    subject when this one did.
     """
+    from maxpane_dashboard.widgets.address import _window
+    from maxpane_dashboard.widgets.surf import swarm_throughput as T
     from tests.address_sweep.builders import _surf_app
 
-    app = _surf_app()
-    async with app.run_test(size=(166, 60)) as pilot:
-        await pilot.pause()
-        await pilot.press("s")
-        await pilot.pause()
-        await pilot.pause()
-        rows = _rows(app)
-        collision = re.compile(r"0x2{40}…2{6}")
-        hits = [(y, m) for y, row in enumerate(rows) for m in collision.finditer(row)]
-        assert hits, "the known 170-column THROUGHPUT hash-window collision did not render"
-        for y, m in hits:
-            token_x = cell_len(rows[y][:m.start()])
-            leaf, _ = app.screen.get_widget_at(token_x, y)
-            assert not imports_helper(type(leaf).__module__), (
-                "the leaf widget now imports the helper -- this test's own "
-                "premise (get_widget_at returns a Textual internal here) no "
-                "longer holds and _widget_module_at's ancestor walk should "
-                "be re-examined"
+    # 1. Structural bound: the widest head this panel's own cap can ever
+    # produce, independent of any render.
+    widest_window = _window("0x" + "2" * 64, T._MAX_TX_COLS)
+    head = widest_window[2:widest_window.index("…")]
+    assert len(head) < 40, (
+        "the tx-hash window's own head reached 40 cells at the panel's own "
+        "MAX_TX_COLS ceiling -- the structural argument this test makes no "
+        "longer holds and the collision may be reachable again"
+    )
+
+    # 2. Empirical confirmation on the live body, across the band the
+    # retired test's own three re-sweeps all fell inside. A fresh app per
+    # width, on every other sweep's own precedent in this file
+    # (``tests/screens/test_surf_swarm_layout.py``'s ``_render``) -- an
+    # ``App`` is not re-run once its own ``run_test`` context has exited.
+    collision = re.compile(r"0x2{40}…2{6}")
+    for width in range(150, 191, 5):
+        app = _surf_app()
+        async with app.run_test(size=(width, 60)) as pilot:
+            await pilot.pause()
+            await pilot.press("s")
+            await pilot.pause()
+            await pilot.pause()
+            rows = _rows(app)
+            hits = [m for row in rows for m in collision.finditer(row)]
+            assert not hits, (
+                width, "the retired collision rendered again -- the 12-cell "
+                "cap no longer bounds THROUGHPUT's hash window as this test "
+                "assumes"
             )
-            painter = _widget_module_at(app, token_x, y)
-            assert painter == "maxpane_dashboard.widgets.surf.swarm_throughput"
-            assert _hash_only_module(painter)
 
 
 def test_the_region_scan_finds_addresses_only_inside_the_region():
