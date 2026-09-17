@@ -1369,13 +1369,17 @@ def test_the_market_body_is_shorter_than_p_and_taller_than_the_launchpad() -> No
 
 #: The whole phrase, as one contiguous string. ``l launchpad`` is the half
 #: that must never shorten -- an app-level acceptance test greps for it -- so
-#: if this ever stops fitting, ``4 pool4`` is what gives way.
+#: if this ever stops fitting, ``s swarm`` and then ``4 pool4`` are what give
+#: way, in that order (last joined, first cut).
 #:
-#: **Two parts since 2026-09-15.** It was ``l launchpad · p pool4 · 4
-#: market``. The owner took ``p pool4`` off the bar (the protocol body is now
-#: the unadvertised, experimental ``e``) and renamed ``4 market`` to ``4
-#: pool4``.
-KEY_HINT_PHRASE = "l launchpad · 4 pool4"
+#: **Two parts since 2026-09-15, three since 2026-09-16.** It was
+#: ``l launchpad · p pool4 · 4 market``. The owner took ``p pool4`` off the
+#: bar (the protocol body is now the unadvertised, experimental ``e``) and
+#: renamed ``4 market`` to ``4 pool4``. ``s swarm`` joined the same single
+#: markup run when the `s` body shipped, the same shape as the two segments
+#: before it -- one run, not per-letter tags (see the second assertion
+#: below).
+KEY_HINT_PHRASE = "l launchpad · 4 pool4 · s swarm"
 
 
 async def test_the_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
