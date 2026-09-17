@@ -668,6 +668,49 @@ def _shipped_heavy_light_rail_payload(n: int = 30) -> dict:
     )
 
 
+def _field_heavy_light_bottom_payload(n: int = 30) -> dict:
+    """A second, independently-shaped false-positive hunt (F2,
+    ``docs/surf_swarm_followups.md``): heavy content in THE FIELD
+    (:data:`SWARM_TOP_ID`), minimal content everywhere else, the mirror
+    image of :func:`_shipped_heavy_light_rail_payload` on three axes at
+    once rather than a renamed copy of it -- a different widget (THE
+    FIELD's ``RichLog``, not JUST SHIPPED's ``DataTable``), a different row
+    (:data:`SWARM_TOP_ID`, not :data:`SWARM_BOTTOM_ID`), and a different
+    growth mechanism (``n`` distinct job groups, each contributing its own
+    context line plus one subtask row per ``swarm_field.py``'s own
+    grouped-by-``job_id`` reshaping, rather than one row per JUST SHIPPED
+    entry). The original payload proves the ``SWARM_BODY_ID`` registration
+    does not cry wolf on the one shape that found the gap it closes; this
+    one asks the same question from the other row, through the other
+    scrollable widget, so a false positive neither content mix alone could
+    reach is not simply unswept twice over.
+
+    Confirmed adversarial in the same sense as the original: at heights
+    below :data:`SURF_SWARM_FULL_LAYOUT_ROWS` this payload genuinely lights
+    ``#surf-swarm-body``'s own scrollbar (and the marker correctly agrees),
+    so the false-positive sweep below is exercising a payload that can
+    really make the body scroll, not one that is inert everywhere.
+    """
+    field_rows = []
+    age = 30.0
+    for i in range(n):
+        field_rows.append({
+            "job_id": f"job-{i}", "template": "surf-swarm-view",
+            "objective": f"objective number {i}",
+            "node_key": f"node_{i}", "role": "implement", "node_state": "ready",
+            "agent_token": i, "agent_id": f"agent-{i}", "revisions": 0,
+            "dispatch_note": None, "moved_ts": _TS - age, "age_s": age,
+        })
+        age += 45.0
+    return _frozen_payload(
+        swarm_field_rows=field_rows,
+        swarm_queue_rows=[{"state": "executing", "count": 1}],
+        swarm_blocked_rows=[],
+        swarm_score_rows=[],
+        swarm_shipped_rows=[],
+    )
+
+
 SWARM_PAYLOADS = {
     "capture": lambda: None,
     "heavy": _heavy_swarm_payload,
@@ -1286,19 +1329,38 @@ async def test_the_registration_does_not_light_the_marker_when_nothing_is_cut() 
     fire on its own scrollbar appearing for a reason that costs no content --
     the repo's own cautionary case is ``DataTable.show_horizontal_scrollbar``,
     which goes true several columns before anything is actually lost. Swept
-    well above the row pin, on the same adversarial payload that found the
-    gap, the body's own scrollbar and the marker both go quiet together and
-    stay quiet -- confirmed at every height in range, not merely the first
-    one past the threshold.
+    well above the row pin, the body's own scrollbar and the marker both go
+    quiet together and stay quiet -- confirmed at every height in range, not
+    merely the first one past the threshold.
+
+    F2 (``docs/surf_swarm_followups.md``): this used to sweep only
+    :func:`_shipped_heavy_light_rail_payload`, the one shape built to *find*
+    the gap this registration closes. That payload is the right one to prove
+    this fix does not fire spuriously on the content mix that found it, but
+    it is one shape, not a family -- it says nothing about a false positive
+    reachable only through a different row or a different widget.
+    :func:`_field_heavy_light_bottom_payload` is the second, independently
+    adversarial shape: THE FIELD's own ``RichLog`` heavy, :data:`SWARM_TOP_ID`
+    stressed instead of :data:`SWARM_BOTTOM_ID`, JUST SHIPPED's ``DataTable``
+    left minimal instead of the reverse. Both are confirmed genuinely
+    adversarial (each lights ``#surf-swarm-body``'s own scrollbar, correctly
+    marked, at heights below the pin -- see each payload's own docstring),
+    so a clean sweep above the pin on either is evidence about a real risk,
+    not a payload that was never going to trip anything.
     """
-    payload = _shipped_heavy_light_rail_payload(30)
-    for rows in range(SURF_SWARM_FULL_LAYOUT_ROWS, SURF_SWARM_FULL_LAYOUT_ROWS + 20):
-        r = await _render(payload, (SURF_SWARM_FULL_LAYOUT_COLUMNS, rows))
-        if not r["body_scroll"]:
-            assert not r["taller"], (
-                rows, "the marker is lit with nothing scrolling -- a false "
-                "positive, report rather than silence it"
-            )
+    payloads = [
+        ("shipped-heavy-light-rail", _shipped_heavy_light_rail_payload(30)),
+        ("field-heavy-light-bottom", _field_heavy_light_bottom_payload(30)),
+    ]
+    for payload_name, payload in payloads:
+        for rows in range(SURF_SWARM_FULL_LAYOUT_ROWS, SURF_SWARM_FULL_LAYOUT_ROWS + 20):
+            r = await _render(payload, (SURF_SWARM_FULL_LAYOUT_COLUMNS, rows))
+            if not r["body_scroll"]:
+                assert not r["taller"], (
+                    payload_name, rows,
+                    "the marker is lit with nothing scrolling -- a false "
+                    "positive, report rather than silence it"
+                )
 
 
 # ---------------------------------------------------------------------------
