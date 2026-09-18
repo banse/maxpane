@@ -123,6 +123,7 @@ from maxpane_dashboard.widgets.surf.pool4u_depth import (
 # Imported rather than restated: a second copy of the capture would drift,
 # and a pin measured against a private fixture is a pin measured against
 # nothing the rest of the suite can see.
+from tests.screens._sweeps import boundary_set
 from tests.screens.test_surf_screen import (
     TALLER_HINT,
     _css_clipped_lines,
@@ -695,9 +696,29 @@ async def _render(payload, size):
 #: The sweep reads the table's own horizontal overflow at and above the pin,
 #: because a DataTable that runs out of width hides cells rather than
 #: ellipsising them, and ``clipped`` only sees ellipses.
-_WIDTH_SWEEP = [("capture", w) for w in range(38, 157)] + [
-    ("ordinary", w) for w in range(109, 130)
-] + [("every-staker", w) for w in range(109, 131)]
+#: **Collapsed to a boundary set on 2026-09-19** (HANDOVER.md §2.3): the band's
+#: ends, the pin and every named threshold ±1. The geometry invariants below
+#: are unchanged; only the sizes they run at are -- see tests/screens/_sweeps.py.
+#: STAKERS is windowed-and-unmarked at the pin and *whole* two columns later
+#: (``pool4u_stakers.py``: "119 and 121 on the `4` body"), so the second tier
+#: threshold is the pin + 2.
+_MARKET_WHOLE_FROM = SURF_POOL4_USER_FULL_LAYOUT_COLUMNS + 2
+_WIDTH_SWEEP = [
+    ("capture", w)
+    for w in boundary_set(
+        SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, 38, 156, _MARKET_WHOLE_FROM,
+    )
+] + [
+    ("ordinary", w)
+    for w in boundary_set(
+        SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, 109, 129, _MARKET_WHOLE_FROM,
+    )
+] + [
+    ("every-staker", w)
+    for w in boundary_set(
+        SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, 109, 130, _MARKET_WHOLE_FROM,
+    )
+]
 
 
 @pytest.mark.parametrize("payload_name,width", _WIDTH_SWEEP)
@@ -1011,8 +1032,16 @@ def test_the_market_body_fits_inside_the_documented_app_width() -> None:
 #: straddle band moved 29..36 -> 26..33 -> 29..36, because a band that no
 #: longer contains the threshold checks the payload magnitudes at heights
 #: where nothing is under pressure and calls that agreement.
-_HEIGHT_SWEEP = [("capture", r) for r in range(24, 47)] + [
-    (name, r) for name in ("mainnet", "widest") for r in range(29, 37)
+#: **Collapsed to a boundary set on 2026-09-19** (HANDOVER.md §2.3): the band's
+#: ends, the pin and every named threshold ±1. The geometry invariants below
+#: are unchanged; only the sizes they run at are -- see tests/screens/_sweeps.py.
+_HEIGHT_SWEEP = [
+    ("capture", r)
+    for r in boundary_set(SURF_POOL4_USER_FULL_LAYOUT_ROWS, 24, 46)
+] + [
+    (name, r)
+    for name in ("mainnet", "widest")
+    for r in boundary_set(SURF_POOL4_USER_FULL_LAYOUT_ROWS, 29, 36)
 ]
 
 
@@ -1284,7 +1313,9 @@ async def test_a_blank_row_separates_recent_flow_from_the_stakers_title(size) ->
     )
 
 
-@pytest.mark.parametrize("rows", list(range(24, 47)))
+@pytest.mark.parametrize(
+    "rows", boundary_set(SURF_POOL4_USER_FULL_LAYOUT_ROWS, 24, 46)
+)
 async def test_no_height_loses_a_row_of_this_body_in_silence(rows) -> None:
     """Finding **F6, closed for this body on 2026-09-12** -- and this is what
     replaced the test that pinned it open.

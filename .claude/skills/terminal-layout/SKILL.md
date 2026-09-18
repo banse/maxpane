@@ -260,6 +260,17 @@ where it is declared.
   the defect that shipped here.
 * **Sweep the boundary, not a comfortable width.** A test that renders well
   inside the clean band cannot see a threshold move.
+* **A pin is certified by its boundary set, not by an integer walk.** Since
+  2026-09-19 the sweeps in `tests/screens` run at `boundary_set(pin, lo, hi,
+  *thresholds)` (`tests/screens/_sweeps.py`): the band's two ends, the pin ±1,
+  and every declared tier threshold or per-payload whole-from width ±1 — the
+  numbers the pin's `#:` block names as measured onsets. The geometry
+  invariants asserted at each size (region overflow, hidden `DataTable`
+  columns, clipped lines, wrap-shed flags) are what caught `7df2e8c` and
+  `f51a528`; the enumeration between thresholds never did. When a pin moves,
+  the set re-centres itself through the constant; when a *new* threshold is
+  measured, add it to the call — a threshold the set does not name is a
+  threshold the test cannot see move.
 * Prefer asserting a **property** (whenever a row would clip, the marker is lit)
   over a **literal** (the marker lights below 35). The literal goes stale
   silently; the property cannot.

@@ -73,6 +73,7 @@ from textual.widgets import DataTable
 import maxpane_dashboard
 from maxpane_dashboard.screens.ttt import TTTScreen
 from maxpane_dashboard.widgets.ttt import TTTFeesTable, TTTLeaderboard
+from tests.screens._sweeps import boundary_set
 
 #: Derived directly from the installed package rather than imported from
 #: ``maxpane_dashboard.app``: that module's import graph currently reaches
@@ -268,12 +269,17 @@ async def test_the_fees_table_still_scrolls_one_column_under_the_pin() -> None:
     )
 
 
-@pytest.mark.parametrize("width", list(range(120, 151)))
+#: Boundary set (2026-09-19, HANDOVER.md §2.3): the body asserts only at and
+#: above the pin, so the band starts one column under it -- the 142 that
+#: ``test_the_fees_table_still_scrolls_one_column_under_the_pin`` owns -- and
+#: ends at the old sweep's 150. See tests/screens/_sweeps.py.
+@pytest.mark.parametrize("width", boundary_set(FULL_LAYOUT_COLUMNS, 142, 150))
 async def test_no_ttt_table_scrolls_at_or_above_the_pin(width: int) -> None:
-    """The sweep the coordinator's ruling asked for, run the whole
-    120..150 band rather than only at the boundary: at and above the pin,
-    neither table ever shows a horizontal scrollbar, for every width in the
-    range -- not merely at 143 itself. Below the pin nothing is asserted:
+    """The sweep the coordinator's ruling asked for, run over the band's
+    boundary set (142..150 since 2026-09-19; it walked 120..150 before)
+    rather than only at the pin: at and above the pin, neither table ever
+    shows a horizontal scrollbar at any width in the set -- not merely at
+    143 itself. Below the pin nothing is asserted:
     PRD §5 allows a narrower terminal to lose columns, and this branch does
     not own re-measuring every width below the app's own documented minimum.
     """

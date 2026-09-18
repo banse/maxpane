@@ -63,6 +63,7 @@ from maxpane_dashboard.screens.surf import (
     SurfScreen,
 )
 from maxpane_dashboard.widgets.status_bar import StatusBar
+from tests.screens._sweeps import boundary_set
 from maxpane_dashboard.widgets.surf.market import (
     PANEL_TITLE,
     POOL_UNVERIFIED_HINT,
@@ -2420,7 +2421,13 @@ def _clipped_launchpad_lines(app, screen) -> list[str]:
 @pytest.mark.parametrize(
     "payload", [None, "ordinary"], ids=["committed-capture", "ordinary-burn-line"]
 )
-@pytest.mark.parametrize("width", range(128, 151))
+#: Boundary set (2026-09-19, HANDOVER.md §2.3): 132 closes the 129..132 band the
+#: shipped seam clipped in, 136 the qualifying-seam pins either side of 138, 140
+#: the 2026-09-15 defect band. See tests/screens/_sweeps.py.
+@pytest.mark.parametrize(
+    "width",
+    boundary_set(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, 128, 150, 132, 136, 140),
+)
 async def test_the_launchpad_body_is_whole_from_its_pinned_width(width, payload) -> None:
     """Start the sweep away from the pin: a sweep that began at the constant
     would agree with it by construction.
@@ -2493,7 +2500,15 @@ def _ordinary_burn_payload() -> dict:
 @pytest.mark.parametrize(
     "payload", [None, "ordinary"], ids=["committed-capture", "ordinary-burn-line"]
 )
-@pytest.mark.parametrize("width", range(112, SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS))
+#: Boundary set (2026-09-19): 117 and 126 are the two payload-specific clip
+#: onsets the docstring names; 132 the mutation band. See tests/screens/_sweeps.py.
+@pytest.mark.parametrize(
+    "width",
+    boundary_set(
+        SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS - 1, 112,
+        SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS - 1, 117, 126, 132,
+    ),
+)
 async def test_nothing_below_the_pin_clips_without_saying_so(width, payload) -> None:
     """The seam's *disqualifying* property, asserted rather than asserted-in-
     prose.
@@ -2629,7 +2644,11 @@ def _twenty_coin_payload() -> dict:
 @pytest.mark.parametrize(
     "payload", [None, "twenty-coins"], ids=["committed-capture", "twenty-coin-table"]
 )
-@pytest.mark.parametrize("rows", range(24, 46))
+#: Boundary set (2026-09-19): 28 is where COINS used to read its ceiling, 30
+#: where it reads it now (the pin's ``#:`` block). See tests/screens/_sweeps.py.
+@pytest.mark.parametrize(
+    "rows", boundary_set(SURF_LAUNCHPAD_FULL_LAYOUT_ROWS, 24, 45, 28, 30)
+)
 async def test_the_launchpad_body_is_whole_from_its_pinned_height(
     rows, payload
 ) -> None:
@@ -7417,7 +7436,15 @@ async def test_a_quiet_pool4_sweep_is_not_a_dead_one() -> None:
     "payload", [None, "ordinary"],
     ids=["committed-capture", "ordinary-magnitudes"],
 )
-@pytest.mark.parametrize("width", range(86, 153))
+#: Boundary set (2026-09-19): the band still crosses both neighbouring pins
+#: (138 and 143), as the block above says it must. See tests/screens/_sweeps.py.
+@pytest.mark.parametrize(
+    "width",
+    boundary_set(
+        SURF_POOL4_FULL_LAYOUT_COLUMNS, 86, 152,
+        SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, SURF_FULL_LAYOUT_COLUMNS,
+    ),
+)
 async def test_the_pool4_body_is_whole_from_its_pinned_width(
     width, payload
 ) -> None:
@@ -7460,7 +7487,14 @@ async def test_the_pool4_body_is_whole_from_its_pinned_width(
             assert marked, width
 
 
-@pytest.mark.parametrize("width", range(80, SURF_POOL4_FULL_LAYOUT_COLUMNS))
+#: Boundary set (2026-09-19): 96 is where the docstring says clipping stops
+#: on the pinned seam. See tests/screens/_sweeps.py.
+@pytest.mark.parametrize(
+    "width",
+    boundary_set(
+        SURF_POOL4_FULL_LAYOUT_COLUMNS - 1, 80, SURF_POOL4_FULL_LAYOUT_COLUMNS - 1, 96,
+    ),
+)
 async def test_nothing_below_the_pool4_pin_clips_without_saying_so(
     width,
 ) -> None:
@@ -7618,7 +7652,11 @@ _POOL4_HEIGHT_PAYLOADS = {
 
 
 @pytest.mark.parametrize("payload_name", sorted(_POOL4_HEIGHT_PAYLOADS))
-@pytest.mark.parametrize("rows", range(36, 56))
+#: Boundary set (2026-09-19): 43 is the height every Sepolia body fits in
+#: (the block above). See tests/screens/_sweeps.py.
+@pytest.mark.parametrize(
+    "rows", boundary_set(SURF_POOL4_FULL_LAYOUT_ROWS, 36, 55, 43)
+)
 async def test_the_pool4_body_is_whole_from_its_pinned_height(
     rows, payload_name
 ) -> None:
@@ -8762,7 +8800,9 @@ def test_every_contract_key_is_a_real_parameter_of_its_panel() -> None:
 _ROW_MARKER_SWEEP = [
     (name, rows)
     for name in ("no-levers", "ten-levers", "capped-levers", "mainnet")
-    for rows in range(36, 54)
+    #: Boundary set (2026-09-19): 41 is the one height the block above says
+    #: the fix-disabled disagreement appears at, and it stays on every payload.
+    for rows in boundary_set(SURF_POOL4_FULL_LAYOUT_ROWS, 36, 53, 41)
 ]
 
 

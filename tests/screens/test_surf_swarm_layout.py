@@ -370,6 +370,7 @@ from maxpane_dashboard.widgets.surf import (
 # Imported rather than restated: a second copy of the capture would drift,
 # and a pin measured against a private fixture is a pin measured against
 # nothing the rest of the suite can see.
+from tests.screens._sweeps import boundary_set
 from tests.screens.test_surf_screen import (
     _css_clipped_lines,
     _frozen_payload,
@@ -872,9 +873,22 @@ async def _render(payload, size):
 #: **101..131** in fix round 1, same day, when 95 was found to be a
 #: silently-overflowing certification and corrected to 116), the only band
 #: where a payload that moved the threshold could show it.
-_WIDTH_SWEEP = [("capture", w) for w in range(60, 160)] + [
-    (name, w) for name in ("heavy", "30-shipped", "50-shipped")
-    for w in range(101, 131)
+#: **Collapsed to a boundary set on 2026-09-19** (HANDOVER.md §2.3): the band's
+#: ends, the pin and every named threshold ±1. The geometry invariants below
+#: are unchanged; only the sizes they run at are -- see tests/screens/_sweeps.py.
+_WIDTH_SWEEP = [
+    ("capture", w)
+    for w in boundary_set(
+        SURF_SWARM_FULL_LAYOUT_COLUMNS, 60, 159,
+        SHIPPED_NEVER_CLEARS_BELOW, *_OWN_WHOLE_FROM.values(),
+    )
+] + [
+    (name, w)
+    for name in ("heavy", "30-shipped", "50-shipped")
+    for w in boundary_set(
+        SURF_SWARM_FULL_LAYOUT_COLUMNS, 101, 130,
+        SHIPPED_NEVER_CLEARS_BELOW, *_OWN_WHOLE_FROM.values(),
+    )
 ]
 
 
@@ -1208,7 +1222,15 @@ async def test_the_field_panel_cannot_clear_its_own_full_tier_at_the_pinned_widt
 #: payload does not clear until height 48, well past this sweep's own
 #: range), so their own claim is that the marker never goes quiet at the
 #: pin, not that they reach "whole" inside this range.
-_HEIGHT_SWEEP = [("capture", r) for r in range(20, 62)]
+#: **Collapsed to a boundary set on 2026-09-19** (HANDOVER.md §2.3): the band's
+#: ends, the pin and every named threshold ±1. The geometry invariants below
+#: are unchanged; only the sizes they run at are -- see tests/screens/_sweeps.py.
+#: 25 is the body-only-scrollbar height the marker test below names literally;
+#: 48 is where the heavy payload clears (the pin's own ``#:`` block).
+_HEIGHT_SWEEP = [
+    ("capture", r)
+    for r in boundary_set(SURF_SWARM_FULL_LAYOUT_ROWS, 20, 61, 25, 48)
+]
 
 
 @pytest.mark.parametrize("payload_name,rows", _HEIGHT_SWEEP)
