@@ -1,10 +1,22 @@
-"""Signals panel for Cat Town dashboard."""
+"""Signals panel for Cat Town dashboard.
+
+Every row is written on every ``update_data`` call (MEDI-38): a signal the
+manager could not compute arrives as ``None`` and renders an explicit
+``unavailable`` marker beside its label -- distinct from a signal whose own
+``value_str`` is ``--``, which is the analytics saying "nothing to report".
+Each row is written inside its own guard so one malformed signal dict
+cannot raise into the screen's ``except`` and leave the previous poll's
+rows on screen as if they were live.
+"""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+
+#: Shown in place of a signal the backend could not compute this poll.
+_UNAVAILABLE = "[yellow]unavailable[/]"
 
 
 class CTSignals(Vertical):
@@ -43,37 +55,37 @@ class CTSignals(Vertical):
         condition_signal: dict | None = None,
         legendary_signal: dict | None = None,
         cutoff_signal: dict | None = None,
-        recommendation: str = "",
+        recommendation: str | None = "",
         **_kwargs,
     ) -> None:
-        """Update signal lines and recommendation."""
-        # Conditions
-        w = self.query_one("#ct-sig-conditions", Static)
-        if condition_signal:
-            w.update(_fmt(condition_signal))
-        else:
-            w.update(_fmt({"label": "Conditions", "value_str": "--", "color": "dim"}))
+        """Update signal lines and recommendation; a missing signal says so."""
+        self._render_row("#ct-sig-conditions", "Conditions", condition_signal)
+        self._render_row("#ct-sig-legendary", "Legendary", legendary_signal)
+        self._render_row("#ct-sig-cutoff", "Top 10 Cutoff", cutoff_signal)
 
-        # Legendary
-        w = self.query_one("#ct-sig-legendary", Static)
-        if legendary_signal:
-            w.update(_fmt(legendary_signal))
-        else:
-            w.update(_fmt({"label": "Legendary", "value_str": "--", "color": "dim"}))
+        try:
+            w = self.query_one("#ct-sig-recommendation", Static)
+            w.update(f"  [dim]\u2192 Recommendation:[/] [bold]{recommendation}[/]" if recommendation else "")
+        except Exception:
+            pass
 
-        # Top 10 Cutoff
-        w = self.query_one("#ct-sig-cutoff", Static)
-        if cutoff_signal:
-            w.update(_fmt(cutoff_signal))
-        else:
-            w.update(_fmt({"label": "Top 10 Cutoff", "value_str": "--", "color": "dim"}))
-
-        # Recommendation
-        w = self.query_one("#ct-sig-recommendation", Static)
-        if recommendation:
-            w.update(f"  [dim]\u2192 Recommendation:[/] [bold]{recommendation}[/]")
-        else:
-            w.update("")
+    def _render_row(self, selector: str, label: str, sig: dict | None) -> None:
+        """Write one signal row, degrading to an explicit unavailable state."""
+        try:
+            w = self.query_one(selector, Static)
+        except Exception:
+            return
+        try:
+            if isinstance(sig, dict) and sig:
+                w.update(_fmt(sig))
+            else:
+                w.update(_fmt({"label": label, "value_str": "unavailable",
+                               "color": "yellow"}))
+        except Exception:
+            try:
+                w.update(f"  [yellow]\u25cf[/] {label} {_UNAVAILABLE}")
+            except Exception:
+                pass
 
 
 def _fmt(sig: dict) -> str:

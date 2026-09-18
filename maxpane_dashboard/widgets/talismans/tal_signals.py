@@ -27,13 +27,18 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+#: Shown in place of a signal the backend could not compute this poll
+#: (MEDI-38) -- distinct from a signal whose own ``value_str`` is ``--``.
+_UNAVAILABLE_SIGNAL = {"value_str": "unavailable", "color": "yellow"}
+
 
 def _fmt_signal(sig: dict | None) -> str:
     """Render one signal row using Textual markup.
 
-    Returns an empty string when ``sig`` is ``None`` / not a dict; in practice
-    callers pass ``{"value_str": "--"}`` rather than ``None`` so each of the
-    four rows always renders.
+    Returns an empty string when ``sig`` is ``None`` / not a dict; the panel
+    then renders :data:`_UNAVAILABLE_SIGNAL` in that row (MEDI-38), so a
+    signal the manager could not compute is named as such rather than
+    shown as the ``--`` a computed signal uses for "nothing to report".
 
     The label prefix is intentionally dropped -- the value string already
     restates the concept, so dropping the redundant label gives the value
@@ -84,28 +89,27 @@ class TalismansSignals(Vertical):
         mythic_scarcity_signal=None,
         **_kwargs,
     ) -> None:
-        """Refresh the four signal rows."""
-        conservation_widget = self.query_one(
-            "#tal-sig-conservation", Static
-        )
-        conservation_widget.update(
-            _fmt_signal(conservation_signal)
-            or _fmt_signal({"value_str": "--"})
-        )
+        """Refresh the four signal rows; a missing signal says so."""
+        self._render_row("#tal-sig-conservation", conservation_signal)
+        self._render_row("#tal-sig-cutmerge", cutmerge_signal)
+        self._render_row("#tal-sig-forge", forge_momentum_signal)
+        self._render_row("#tal-sig-scarcity", mythic_scarcity_signal)
 
-        cutmerge_widget = self.query_one("#tal-sig-cutmerge", Static)
-        cutmerge_widget.update(
-            _fmt_signal(cutmerge_signal) or _fmt_signal({"value_str": "--"})
-        )
+    def _render_row(self, selector: str, sig) -> None:
+        """Write one row, degrading to an explicit unavailable state.
 
-        forge_widget = self.query_one("#tal-sig-forge", Static)
-        forge_widget.update(
-            _fmt_signal(forge_momentum_signal)
-            or _fmt_signal({"value_str": "--"})
-        )
-
-        scarcity_widget = self.query_one("#tal-sig-scarcity", Static)
-        scarcity_widget.update(
-            _fmt_signal(mythic_scarcity_signal)
-            or _fmt_signal({"value_str": "--"})
-        )
+        The row is formatted inside the guard so a malformed signal cannot
+        raise into the screen's ``except`` and leave the previous poll's
+        rows on screen as if they were live.
+        """
+        try:
+            widget = self.query_one(selector, Static)
+        except Exception:
+            return
+        try:
+            widget.update(_fmt_signal(sig) or _fmt_signal(_UNAVAILABLE_SIGNAL))
+        except Exception:
+            try:
+                widget.update(_fmt_signal(_UNAVAILABLE_SIGNAL))
+            except Exception:
+                pass

@@ -1,10 +1,22 @@
-"""Signals panel for Onchain Monsters dashboard."""
+"""Signals panel for Onchain Monsters dashboard.
+
+Every row is written on every ``update_data`` call (MEDI-38): a signal the
+manager could not compute arrives as ``None`` and renders an explicit
+``unavailable`` marker beside its label -- distinct from a signal whose own
+``value_str`` is ``--``, which is the analytics saying "nothing to report".
+Each row is written inside its own guard so one malformed signal dict
+cannot raise into the screen's ``except`` and leave the previous poll's
+rows on screen as if they were live.
+"""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
+
+#: Shown in place of a signal the backend could not compute this poll.
+_UNAVAILABLE = "[yellow]unavailable[/]"
 
 
 class OCMSignals(Vertical):
@@ -43,37 +55,37 @@ class OCMSignals(Vertical):
         staking_signal: dict | None = None,
         mint_velocity_signal: dict | None = None,
         burn_rate_signal: dict | None = None,
-        recommendation: str = "",
+        recommendation: str | None = "",
         **_kwargs,
     ) -> None:
-        """Update signal lines and recommendation."""
-        # Staking rate
-        w = self.query_one("#ocm-sig-staking", Static)
-        if staking_signal:
-            w.update(_fmt(staking_signal))
-        else:
-            w.update(_fmt({"label": "Staking Rate", "value_str": "--", "color": "dim"}))
+        """Update signal lines and recommendation; a missing signal says so."""
+        self._render_row("#ocm-sig-staking", "Staking Rate", staking_signal)
+        self._render_row("#ocm-sig-velocity", "Mint Velocity", mint_velocity_signal)
+        self._render_row("#ocm-sig-burns", "Burn Rate", burn_rate_signal)
 
-        # Mint velocity
-        w = self.query_one("#ocm-sig-velocity", Static)
-        if mint_velocity_signal:
-            w.update(_fmt(mint_velocity_signal))
-        else:
-            w.update(_fmt({"label": "Mint Velocity", "value_str": "--", "color": "dim"}))
+        try:
+            w = self.query_one("#ocm-sig-recommendation", Static)
+            w.update(f"  [bold]-> {recommendation}[/]" if recommendation else "")
+        except Exception:
+            pass
 
-        # Burn rate
-        w = self.query_one("#ocm-sig-burns", Static)
-        if burn_rate_signal:
-            w.update(_fmt(burn_rate_signal))
-        else:
-            w.update(_fmt({"label": "Burn Rate", "value_str": "--", "color": "dim"}))
-
-        # Recommendation
-        w = self.query_one("#ocm-sig-recommendation", Static)
-        if recommendation:
-            w.update(f"  [bold]-> {recommendation}[/]")
-        else:
-            w.update("")
+    def _render_row(self, selector: str, label: str, sig: dict | None) -> None:
+        """Write one signal row, degrading to an explicit unavailable state."""
+        try:
+            w = self.query_one(selector, Static)
+        except Exception:
+            return
+        try:
+            if isinstance(sig, dict) and sig:
+                w.update(_fmt(sig))
+            else:
+                w.update(_fmt({"label": label, "value_str": "unavailable",
+                               "color": "yellow"}))
+        except Exception:
+            try:
+                w.update(f"  [yellow]\u25cf[/] {label} {_UNAVAILABLE}")
+            except Exception:
+                pass
 
 
 def _fmt(sig: dict) -> str:
