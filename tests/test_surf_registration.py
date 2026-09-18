@@ -964,9 +964,10 @@ def test_the_readme_width_table_names_the_panels_that_are_really_lit() -> None:
 
 
 #: Every surface that narrates the 3:2 -> 7:6 re-seam.  All three carried the
-#: same sentence, so all three carried the same lie.
+#: same sentence, so all three carried the same lie.  ``CLAUDE.md`` left the
+#: list on 2026-09-18: it now only names the constant and points at the
+#: terminal-layout skill, so it makes no claim about the number.
 _SEAM_NARRATIVE_SURFACES = (
-    "CLAUDE.md",
     "README.md",
     "maxpane_dashboard/__main__.py",
 )
@@ -2664,10 +2665,15 @@ def test_every_visible_dashboard_is_documented() -> None:
 
 
 def test_claude_md_counts_the_visible_dashboards() -> None:
-    """The heading states a number; ``GAMES`` is that number."""
-    claude = (REPO / "CLAUDE.md").read_text(encoding="utf-8")
+    """The heading states a number; ``GAMES`` is that number.
+
+    The dashboard table moved from ``CLAUDE.md`` to the path-scoped rule
+    ``.claude/rules/dashboard-registry.md`` on 2026-09-18; the heading and
+    its count moved with it.
+    """
+    claude = (REPO / ".claude/rules/dashboard-registry.md").read_text(encoding="utf-8")
     word = _NUMBER_WORDS[len(GAMES)]
     assert f"## The {word} visible dashboards" in claude, (
-        f"CLAUDE.md does not say 'The {word} visible dashboards' while GAMES "
+        f"dashboard-registry.md does not say 'The {word} visible dashboards' while GAMES "
         f"lists {len(GAMES)}"
     )

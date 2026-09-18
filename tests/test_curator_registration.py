@@ -1101,14 +1101,18 @@ def test_the_app_wide_width_covers_the_curator_layout() -> None:
 
 
 def test_claude_md_documents_the_curator_dashboard() -> None:
-    """The table row, at the position ``GAMES`` gives it."""
+    """The table row, at the position ``GAMES`` gives it.
+
+    The table lives in ``.claude/rules/dashboard-registry.md`` since
+    2026-09-18 (``CLAUDE.md`` keeps only the id list).
+    """
     key, game_id, _name, _desc = _menu_row(GAME_ID)
-    text = (REPO / "CLAUDE.md").read_text(encoding="utf-8")
+    text = (REPO / ".claude/rules/dashboard-registry.md").read_text(encoding="utf-8")
 
     row = re.search(rf"^\|\s*{re.escape(key)}\s*\|\s*`{re.escape(game_id)}`\s*\|(.*)$",
                     text, re.M)
     assert row, (
-        f"CLAUDE.md's dashboard table has no row `| {key} | `{game_id}` |` -- "
+        f"dashboard-registry.md's table has no row `| {key} | `{game_id}` |` -- "
         "the table and GAMES disagree about position or spelling"
     )
     assert "Ethereum" in row.group(1), "the curator row does not name its chain"
@@ -1128,16 +1132,18 @@ def test_the_readme_documents_the_curator_dashboard() -> None:
 
 
 def test_the_docs_record_the_measured_curator_width() -> None:
-    """CLAUDE.md's width section states curator's own number.
+    """The terminal-layout skill's pin table states curator's own number.
 
     The app-wide constant did not move, so the appended record
     (198 -> 172 -> 143 -> ...) is untouched -- but "which dashboard binds is
-    itself a measurement", and a width section that never mentions dashboard
+    itself a measurement", and a pin table that never mentions dashboard
     eight invites the next reader to assume it from an older paragraph.
+    ``CLAUDE.md`` stopped carrying numbers on 2026-09-18; the skill is the
+    document that does.
     """
-    text = (REPO / "CLAUDE.md").read_text(encoding="utf-8")
+    text = (REPO / ".claude/skills/terminal-layout/SKILL.md").read_text(encoding="utf-8")
     assert str(CURATOR_FULL_LAYOUT_COLUMNS) in text, (
-        f"CLAUDE.md never states curator's measured {CURATOR_FULL_LAYOUT_COLUMNS}"
+        f"the terminal-layout skill never states curator's measured {CURATOR_FULL_LAYOUT_COLUMNS}"
     )
 
 

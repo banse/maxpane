@@ -22,6 +22,7 @@ maxpane/target/
 # a skill is project knowledge like CLAUDE.md, settings.local.json is not.
 .claude/*
 !.claude/skills/
+!.claude/rules/
 .playwright-mcp/
 
 # Media (screenshots, videos)

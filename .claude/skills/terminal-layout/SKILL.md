@@ -302,7 +302,7 @@ adjusting the constant to match.
 `c` swaps a shared slot on FWA, TTT, Talismans and curator so three panels that
 cannot share a row do not have to. Surf does not: its 2026-08-10 restructure put
 all six panels on screen at once, which is why its `l`, `p` (key `e` since 2026-09-15), `4` and `s`
-and curator's `y`/`f` swap whole *bodies* instead. Each swapped body gets its
+and curator's `y`/`a` swap whole *bodies* instead. Each swapped body gets its
 **own** pin, swept in situ against its own panels — surf's `p` is not derived
 from and does not equal its `l`, and its sweep deliberately straddles both
 neighbouring pins so agreeing with one would show up as a measurement rather

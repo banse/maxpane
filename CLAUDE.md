@@ -1,896 +1,198 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+MaxPane: keyless, read-only terminal dashboards for onchain games, NFTs and trading — a Textual
+TUI in `maxpane_dashboard/`, published to PyPI as `maxpane`, Python ≥ 3.11. Research, PRDs, plans
+and follow-up lists live in `docs/`; withdrawn statements in `docs/decisions.md`; the open
+maintenance backlog in `HANDOVER.md`. Per-area detail is in `.claude/rules/*.md` — `data.md`,
+`widgets.md`, `dashboard-registry.md`, `curator.md`, `surf.md` — and loads when you read files
+they match; layout rules are the `terminal-layout` skill.
 
-## Project Overview
+<!-- Rewritten 2026-09-18 from 896 lines (git history). Keep under 200 lines: rules and pointers only; per-area detail goes into .claude/rules/. -->
 
-MaxPane is a CLI app for onchain dashboards. It started with gaming dashboards but then got
-expanded to NFT and trading dashboards. Most dashboards implement a template with the same
-widgets that initially got created for the RugPull Bakery gaming dashboard.
+## Hard constraints — read before writing any code
 
-The details for all added games can be found in the `docs/` subdirectory.
+1. **Strictly read-only.** MaxPane never signs, never sends a transaction, never constructs
+   state-changing calldata, and never prompts for a private key or keystore password. No signer,
+   transactor, nonce manager or keystore exists in this repo and none may be added. If a task
+   seems to need one, the task is wrong.
+2. **Keyless.** Every data source works with **no API key of any kind** (no Alchemy, Infura,
+   keyed Etherscan, OpenSea key, Moralis, NFTPort). A metric with no keyless source is dropped and
+   the UI says so — never faked, never silently blank.
+3. **No test touches the network.** Inject a transport that raises on use; every external payload
+   is a committed fixture under `tests/fixtures/`. No test reaches the real clipboard.
+4. **Read values live; never hardcode a documented one.** Docs drift, chains do not.
 
-For every new dashboard the workflow is like this: make a deep research and analysis about the
-project that should get a new dashboard. Analyze the tokenomics / game mechanics and save the
-results in a dedicated .md file in the docs directory (same pattern like the already existing
-files). Then use superpowers to brainstorm ideas for the new dashboard to show the most
-interesting data. If the user doesn't say otherwise use the existing template with its widgets
-and find the best matching data for each widget for the specific project and create a PRD.md
-specification for the new dashboard. Once the user agrees to the proposal use the
-project-planner agent to create an implementation plan that divides the work in work packages
-that shall be assigned to the best matching agents so they can then work in parallel on the
-different work packages. Always delegate work to best matching agents, if possible in parallel.
+## Task triage — classify before the first tool call
 
----
+Say the tier and the one-line reason, then follow only that tier's pipeline. When in doubt pick
+the LOWER tier; the ratchet is one-way — the moment a change touches a trigger below, stop, say
+so, upgrade. (The superpowers plugin is disabled for this project; if it is ever re-enabled, this
+rule overrides its "take the heavier path" and its Bounded path maps to Tier 1.)
 
-## Hard constraints — read this before writing any code
+- **Tier 0 — hotfix.** ≤ 2 files and ≤ ~30 production lines, or docs-/comment-/test-only.
+  Touches none of: a layout pin or its `#:` block, `data/*_models.py` key lists /
+  `WIDGET_SIGNATURES`, a shared `widgets/*.py` module, `templates/`, an endpoint pool, a new
+  dashboard/body/key. The session implements it itself: no brainstorm doc, dispatch, reviewer,
+  ledger or report. One regression test if behaviour changed; mutation proof only where a rule
+  already demands it. Run the touched file's tests plus the screen test that composites it (for
+  a docs edit: the doc-pinning tests, see Tests); cite the last green suite. Commit. Time box: 30 min.
+- **Tier 1 — bounded change.** One dashboard, ≤ 6 files; may move one pin (re-sweep in situ,
+  update its `#:` block) or change that dashboard's own data module; no shared widget, no
+  `templates/`, no contract key added. Design in chat, owner says yes. One implementer (or the
+  session), TDD + mutation proof on the changed behaviour; tests = touched files + composing
+  screen test (+ layout test if a pin moved, + address sweep if an address cell changed). ONE
+  reviewer pass (mid-tier model, reviewer contract below), at most ONE fix round + scoped
+  re-review; residuals go to the followups doc. No ledger or report files — the commit message is
+  the evidence. No suite.
+- **Tier 2 — architectural.** New dashboard, body, widget or contract key; any change to a shared
+  `widgets/*.py`, `templates/`, `data/*_models.py`, an endpoint pool, or > 6 files / > 1
+  dashboard. Spec + plan in `docs/`; one implementer per work package; one task review per diff;
+  fix rounds capped at 2; final whole-branch review on the most capable model; ONE fix wave; ONE
+  scoped re-review; full suite once, by the controller, before merge; followups doc updated; no
+  plan workspace left behind.
+- **Follow-ups.** A test-quality refinement ("coverage could be broader", derived threshold,
+  single payload) is Minor: file it, do it as Tier 0 when its file is next touched, never its own
+  branch or dispatch. A follow-ups branch is Tier 0 per item unless the item names a pin, a
+  contract key or a shared widget. A perf item enters a branch only with a measured number.
 
-**1. Strictly read-only.** MaxPane never signs, never sends a transaction, never constructs
-calldata for a state change, and never prompts for a private key or keystore password. There is
-no signer, no transactor, no nonce manager and no keystore anywhere in this repo, and none may
-be added. If a task seems to need one, the task is wrong.
-
-**2. Keyless.** Every data source must work with **no API key of any kind**. The app is
-installed with `pipx`/`uv`/`pip` by people who should not have to register for anything. No
-Alchemy, no Infura, no keyed Etherscan, no OpenSea key, no Moralis, no NFTPort. If a metric has
-no keyless source, the metric is dropped and the UI says so — it is never faked and never
-silently blank.
-
-> An earlier version of this file described MaxPane as a transaction-signing bot for RugPull
-> Bakery, complete with a `MAXPANE_KEYSTORE_PASSWORD` env var and an executor/transactor/nonce
-> manager. **None of that ever existed in this repo.** It was documentation inherited from a
-> different project, and it actively pointed agents at reintroducing key handling into a
-> deliberately keyless read-only tool. If you find any instruction like that, it is wrong.
-
-**3. No test may touch the network.** Assert it structurally — inject a transport that raises on
-use. Every external payload is a committed fixture under `tests/fixtures/`.
-
-**4. Read values live; never hardcode a documented one.** Docs drift, chains do not. Real
-example: one protocol documents a 5% fee that is 1% on chain, and a "4.0×" ratio quoted in
-research measured 3.885×, then 3.49×, then 2.956× on three consecutive days.
-
----
+**New dashboard (Tier 2):** research the project into `docs/<game>_game_mechanics.md` (existing
+files are the pattern); brainstorm with the owner in chat; write `docs/<game>_PRD.md` on the
+template widgets unless told otherwise; on approval the project-planner agent writes the
+work-package plan. Packages run one at a time unless they own disjoint files, which the plan lists.
 
 ## Architecture
 
 ```
-maxpane_dashboard/          the app (published to PyPI as `maxpane`)
-├── __main__.py             CLI entry point: --game, --theme, --wallet, --poll-interval
-├── app.py                  MaxPaneApp: manager wiring, screen install, _GAME_CYCLE
-├── config.py
-├── abis/                   vendored ABI JSON per protocol — never fetched at runtime
-├── analytics/              PURE functions: signals, EV math. No I/O, no Textual imports.
-├── data/                   per-dashboard client / cache / manager / models
-├── screens/                one Screen per dashboard + splash, game_select, wallet_input
-├── templates/              copy-sources for new dashboards — see the hazard note below
-├── themes/                 minimal.tcss + the registered Theme objects
-└── widgets/                shared widgets + one package per dashboard
-
-maxpane/                    Rust intro sequence (Matrix-style boot animation), separate crate
-sybilkit/                   SECOND in-repo Python distribution — see below
-tests/                      analytics/ data/ screens/ widgets/ fixtures/
-docs/                       per-project research, PRDs, implementation plans, code reviews
-scripts/                    one-shot tooling (ABI vendoring etc). Imported by nothing.
+maxpane_dashboard/   __main__.py (CLI) · app.py (MaxPaneApp, _GAME_CYCLE) · config.py
+  abis/              vendored ABI JSON — never fetched at runtime
+  analytics/         PURE functions: signals, EV math. No I/O, no clock, no Textual
+  data/              per-dashboard client / cache / manager / models
+  screens/           one Screen per dashboard + splash, game_select, wallet_input, refresh_guard
+  templates/         copy-sources for new dashboards; a copy never propagates a fix
+  widgets/           shared: sparkline_common, markup_safety, address, status_bar · one pkg per dashboard
+maxpane/             Rust intro crate · sybilkit/  SECOND Python distribution, maxpane-independent
+tests/               analytics/ data/ screens/ widgets/ address_sweep/ fixtures/ · scripts/ one-shot tooling
 ```
 
 **Data flow:** `client` (fetch, keyless) → `cache` (tiered TTL, persisted to `~/.maxpane/`) →
-`manager` (`fetch_and_compute()` → a flat dict) → `screen` (dispatch to widgets) → `widgets`
-(render primitives only): they receive `str`/`int`/`float`/`bool`/`dict`/`list[dict]`.
-
-**Widgets may import pure, stdlib-only helpers from `analytics/`; they may not import
-`data/`.** This line used to read "widgets never import from `data/` or `analytics/`", and
-that was fiction on both halves — measured on 2026-08-24, **22 widget modules across four
-dashboards already import `analytics/`** (`base/*` ×12 take their formatters from
-`analytics/base_tokens`, `frenpet/*` ×5 from `analytics/frenpet_battle`, the bakery-era
-`ev_table`/`cookie_chart`/`hero_metrics`/`leaderboard` ×4, and `surf/feed` ×1) and **10 still
-import `data/`** (`base/*` ×8 for `data.base_models`, `leaderboard`/`activity_feed` for
-`data.models`). Those ten are legacy debt, not licence: a widget that imports `data/` is
-importing a layer that imports `httpx`. What the rule is really protecting is *purity* — no
-I/O, no clock, no Textual, nothing that can reach the network — so state it that way and
-prove it rather than banning a name.
-
-`tests/widgets/test_surf_widget_contract.py` is the worked example and is stronger than the
-ban it replaced: an allowlist of analytics modules a surf widget may import, plus
-`test_the_allowed_analytics_modules_are_themselves_pure`, which AST-walks each allowed
-module's **own** imports — and every `maxpane_dashboard.analytics.*` it finds from there, to a
-fixed point — asserting none of them reaches `data`, `textual`, `httpx` or `aiohttp`. The
-recursion is the part that bites: a depth-1 version was green while `analytics/surf_feed`
-imported `analytics/surf_signals`, which reaches `data` in one more hop.
-
-**`sybilkit/` is a second Python distribution in this repo**, a sibling of the `maxpane/` Rust
-crate rather than a package inside `maxpane_dashboard/`: its own `pyproject.toml`, its own
-`tests/`, its own version, its own PyPI name. It is a general keyless EVM sybil/fan-out cluster
-toolkit — THE LIST is one *preset* it ships, not its subject — and it is **maxpane-independent**:
-nothing under `sybilkit/` imports the dashboard, Textual, or httpx-at-import (the core is
-stdlib-only; `httpx` is the optional `[sources]` extra, imported lazily inside the call that
-needs it). Build it with `python -m build sybilkit/`; the root `python -m build` does not, and
-must not, build it. See `sybilkit/README.md` for the release step. Only **one** maxpane module
-imports it — `data/curator_clusters.py` — and that import is guarded (see the curator section).
-
-## The eight visible dashboards
-
-| # | `--game` | Chain | Subject |
-|---|---|---|---|
-| 1 | `surf` | Ethereum | surfsurf.eth Surfboard: announce channel (replies threaded behind an expand/collapse toggle, and NEW REPLY on the rail so a collapsed thread still announces itself), ten detectors, v3→v4 migration + launchpad (`l`), pool4 (`4`), experimental pool4-protocol (`e`) and IMD swarm control-plane (`s`) views |
-| 2 | `curator` | Ethereum | THE LIST: zero-custody allowlist game, hourly doomsday clock, linked-wallet analysis |
-| 3 | `fwa` | Ethereum | Fake World Assets, inverse-weighted NFT gacha pool |
-| 4 | `base` | Base | trending tokens, volume, signals |
-| 5 | `frenpet` | Base | pet battles, leaderboard, activity |
-| 6 | `cattown` | Base | fishing competition, KIBBLE economy |
-| 7 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
-| 8 | `talismans` | Ethereum | core-conservation NFT collection |
-
-`surf` is position 1 and the `--game` default; `fwa` moved to position 2 on 2026-08-10, and
-`curator` took position 2 from it on 2026-08-17. Neither is the dashboard whose data is
-prefetched at launch — that is still `surf`, and it is meant to stay that way.
-
-Hidden from the selection pane, code and tests intact: `bakery` and `ocm` (hidden on request),
-`dota` (its backend is NXDOMAIN, so it could only ever render an unavailable state; 77 client
-tests still pass), and three FrenPet variants (`frenpet_full`, `frenpet_wallet`,
-`frenpet_perf`). Ten themes are registered.
-
-**Hiding a dashboard touches six surfaces and they must agree**: `GAMES` in
-`screens/game_select.py` (keys stay contiguous 1..N — a test asserts it), `_GAME_CYCLE` in
-`app.py`, the `--game` `choices` *and* `default` in `__main__.py`, plus this table and the
-README. Hiding the current default silently breaks launch, so check `default=` every time.
-Tests must derive game ids from `GAMES` rather than naming them: hardcoded ids turn a
-deliberate hide into a red suite.
-
-**The sixth is `MaxPaneApp.__init__`'s own `initial_game=` default** (`app.py`), and it was
-missed by the 2026-08-10 reorder — this list said "five" and the reorder obeyed it. Production
-never saw it, because `__main__.py` always passes `initial_game=args.game`, but a bare
-`MaxPaneApp()` (tests build one) prefetched FWA while the menu opened on Surfboard. It is now
-pinned to `GAMES[0]` by
-`tests/test_app_startup.py::test_a_bare_app_prefetches_the_dashboard_the_menu_opens_on`. Like
-`_GAME_CYCLE` and the `--game` `choices`, it stays a **hand-typed literal rather than an import
-of `GAMES`** — deriving it would make that test compare a constant against itself and it could
-never fail again. Redundancy plus an agreement test is the pattern here; do not "simplify" any
-of the three into a derivation.
-
-**Adding one touches the same six**, in the order app.py → `__main__.py` → `GAMES`: the
-registration tests derive their expectations from `GAMES`, so growing that list first turns
-`tests/test_cli_game_choices.py` and `tests/test_app_startup.py` red until the wiring catches up.
-There are two worked examples and they are different shapes.
-`tests/test_surf_registration.py` is the **append** — surf went in at position 1 and no other
-key moved. `tests/test_curator_registration.py` is the **position-2 insert**: every key below
-it shifted, the CLAUDE.md and README tables renumbered with it, and the hardcoded lists in the
-tests had to grow too: `ALL_GAMES` in `tests/test_app_startup.py`, and **`MANAGER_ATTRS`, which
-exists in four files** — `tests/test_app_startup.py`, `tests/test_surf_registration.py`,
-`tests/test_game_select_quit.py` and `tests/test_curator_registration.py`. Grow every copy
-(`rg -n MANAGER_ATTRS tests/`): an ungrown one leaves a **real** manager inside `run_test()`,
-and the `q` those tests press awaits its real `close()`, so a headless "zero network" suite
-overwrites the developer's own `~/.maxpane/<game>_cache.json` with an empty one. Three of the
-four were grown for the curator and the fourth was not, which is exactly how it happened; the
-copies stay hardcoded (a derived list cannot see a manager that was never built) and
-`tests/test_curator_registration.py::test_every_copy_of_manager_attrs_names_every_manager_the_app_builds`
-is the agreement test that finds the next missed one — it discovers the copies by walking
-`tests/`, so a fifth file is covered the day it is written. Prefer the insert's example when
-the new dashboard is not going at the end.
-
-### THE LIST's linked-wallet analysis — the `sybilkit` seam (2026-08-18)
-
-Curator grew a **third view**, not a ninth dashboard: `a` swaps the dashboard body for
-MODE_ANALYSIS (OPERATORS / SEGMENTS / CLEANED LIST), with the hero left in place so the doomsday
-clock never leaves the screen, `e` exports the cleaned list, and the `y` view and the leaderboard
-each grew a field off the same result. **`f` bound this view at first** (`e67938b`, 2026-08-18),
-**then moved to the list filter editor** (`9c5eb2d`, 2026-08-20, "wire filtered list controls") —
-the owner confirmed that rebind as intended on 2026-09-15. That left `action_toggle_analysis`
-correct but unreachable from the keyboard, a gap filed in `docs/address_copy_followups.md`; the
-owner closed it the same day by binding it to **`a`** instead of re-nominating `f` or any other
-key already spoken for. `a` is not in `KEY_HINTS` — the owner asked for the binding, not the
-label, and that hint string is pinned against the worst-case width (see below). **There is no
-six-surface renumber for an expansion** — `app.py`, `__main__.py` and `GAMES` are untouched.
-
-**`data/curator_clusters.py` is the only maxpane module that imports `sybilkit`**, and
-`test_only_curator_clusters_imports_sybilkit` asserts exactly that by walking every `.py` under
-`maxpane_dashboard/` (`rg -n "import sybilkit|from sybilkit" maxpane_dashboard/` must return that
-one file). It is also the *translation boundary*: the library is a general sybil-analysis toolkit
-and may say so in its own strings, but `pattern_language()` re-checks every reason, label and
-detail — including strings read back from a **persisted** payload, because a hand-edited cache
-file is third-party input too — and swaps a forbidden word for the evidence family's own phrase.
-On screen the dashboard's evidence labels therefore speak only patterns: *linked*, *fan-out*,
-`⚑`/`◌`/`~`/`?` (high/low/review/unknown), and every evidence panel has its own composited
-forbidden-word test.
-`analytics/curator_signals.py` still never mentions or imports the library
-(`test_curator_signals_never_imports_sybilkit`); its only post-release change is the decided
-`LEADERBOARD_LIMIT = 100` payload cap for the `l` record view. The Tier-A `find_clusters` it
-already had is unchanged and it never learns the library exists.
-
-**The import is guarded** (`try/except ImportError` → `SYBILKIT_AVAILABLE`), and that flag is the
-packaging story, not defensive habit. **`sybilkit` published to PyPI as `0.1.0` on 2026-08-19**
-(https://pypi.org/project/sybilkit/0.1.0/), and maxpane's `pyproject.toml` declares
-`sybilkit>=0.1.0` from **v0.8.0** onward — not before, because a `pip install maxpane` that fails
-to resolve is worse than a view that degrades. That was the whole reason the dependency was held
-back, and it is why the guarded import **stays**: an older install, a partial environment or a
-future name change still renders `analysis unavailable` and leaves everything else working
-exactly as before, rather than crashing on import.
-
-**The analysis is read, not swept, on the `_spawn_crosscheck` precedent (2026-08-27).** THE LIST's
-published, immutable linked-wallet analysis — keyless, from `clustermap.vibingco.de`, the one new
-host, with no key/token/secret anywhere near it — replaced the locally computed tx-fingerprint/
-funder sweep: one version check per tick, and the two bulk reads (~8.3 MB) run only when the
-compound `(version_id, content_hash)` has moved. **Both halves, and the hash is the half that
-earns its keep**: the publisher *does* rebuild under one id, so an id-only check would keep
-serving superseded rows until the id itself changed, which may be never — that is the whole
-reason `archive_key` is compound too, and `_is_same_published`'s docstring is the authority. The
-export names the population it wants (`q=&link=all&evidence=all&preset=none`) instead of taking
-four server-side defaults, and the `filters` echo in the answer is read back. The
-read is spawned, never awaited, so it cannot block first paint;
-`test_the_first_payload_is_not_behind_the_analysis_read` is the tripwire and it fails by timing
-out. It lives on its own long tier — `TIER_ANALYSIS` (1800 s, 300 s after a failure) with the
-`SLOT_CLUSTERS` last-good — so the analysis panels carry an `as of HH:MM` on a slower clock than
-the title bar's, deliberately: the marker advances only when a genuinely new version lands, never
-on a tick that found nothing new, because printing a fresh time beside days-old data would be a
-stale number presented as live. `analysis_version` names *which* analysis sits behind that marker.
-`content_hash` is publisher-asserted: nothing recomputes the publisher's digest from the fetched
-bytes, and that much is a trust boundary rather than a defect. It is not unchecked, though — both
-bulk responses self-identify (`overview["version"]`, `export["analysis_version"]`) and a pair
-whose id or hash disagrees with `/versions` is refused. Recomputation is out of reach; agreement
-across three independently-served responses is not. Superseded exports are archived into
-`~/.maxpane/archive/<version-id>-<hash12>/`, never deleted; nothing prunes that directory and
-nobody owns doing so. A failed read folds into the **`logs`** degraded group only when there is
-nothing to serve; otherwise a stale `analysis_as_of_hhmm` is the signal.
-
-**Nothing is persisted as a verdict.** The slot holds revisable rows; groups carry a band *word*
-and their families, never a boolean, and a test scans the cache file for one. A later sweep may
-re-admit a wallet to the clean list, which is the point. The on-screen banding is **structural,
-not numeric**: noisy-OR puts every gated cluster at ≥ 0.77, so `high` means ≥ 3 distinct families
-or funding present and `low` means exactly two — a numeric cut would band nothing. (The library's
-own 0.5 flag threshold is likewise structurally inert: everything that survives the ≥ 2-family,
-≥ 5-member gate is already above it, so `flagged` == clustered.)
-
-### THE LIST record-view filters and hero contract (2026-08-23)
-
-An empty filter is not an empty result: applying a filter with every field unset returns the raw
-list and switches the view back to RAW. In the NFT HOLDERS editor, custom collection controls and
-the selected collections share two outer columns. Selected collections use their own compact
-two-column, row-major grid: first row left, first row right, then the next row, with no blank rows
-between entries.
-
-The three record-list hero cards have a five-line contract. Keep the order stable:
-
-1. The summary card shows `THE LIST`, wallet count, the view's primary total, its context, then
-   `list FROZEN`, `list CLEANED`, or `list FILTERED`. The raw primary total is routed ETH; cleaned
-   and filtered both use points followed by the routed ETH those wallets deposited, without a
-   `deposited` suffix. The cleaned card's third line was the static note `after linked removal`
-   until 2026-08-27 — a restatement of the `list CLEANED` label one line below it, and the reason
-   the cleaned card was the only one whose total a reader could not compare against the other two.
-   Its ETH comes from `CuratorManager.clean_routed_eth()`, which totals the analysis slot's
-   **`clean_ranks`** (every clean wallet) and never `clean_list_rows` (capped for display, so it
-   would report the first thousand as all of them); it is `None` — the dash, never a zero — with no
-   analysis or an incomplete fold, the same guard the filtered total uses. It is a screen-supplied
-   hero kwarg, not a payload key, so `CURATOR_ANALYSIS_KEYS` stays at fourteen.
-2. The wallet card shows the verified ENS name or `YOUR WALLET`; `#rank of total · raw|clean|filtered`;
-   join/hour detail or the active filter summary; `points · credited ETH`; and the full wallet
-   address. The address stays visible even when ENS exists. The title, standing, points/ETH, and
-   address use success green; the detail line uses `$success-darken-2`, matching the view word.
-3. The filter card shows `THE FILTER`, then the four shortcuts: `'1' - first 1000 wallets`,
-   `'2' - joined hour 0`, `'3' - whale splash`, and `'f' - more filters`.
-
-### surf's POOL4 view — the `p` body (2026-09-01, live on mainnet 2026-09-02)
-
-Surf grew a **third body**, not a ninth dashboard, on curator's `y` and analysis-body precedent,
-and its own `l` precedent: `e` (bound to `p` until 2026-09-15) swaps `#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4 — THE SPLIT over THE
-RATCHET on the left, HATCHES over sIMD VAULT in the rail (POOL4 FLOW sat under THE RATCHET until
-2026-09-14, removed as a duplicate of the `4` body's RECENT FLOW) — with the hero left in
-place so LAUNCHPAD/FLOW/BURN/SUPPLY never goes dark, and `escape` backs out one-way. **There is
-no six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and
-the table above still has eight rows. What makes something a mode here is the rule, not the
-count: a mode is a whole second body with its own panels, never two panels sharing one slot —
-that was `c`, and surf has no `c`. MODE_POOL4 is a third body on that rule, not a fourth key
-hiding half the screen.
-
-**The key is `e` now, for experimental, and the bar does not name it (2026-09-15).** The owner
-took `p pool4` off the status bar and asked to keep the body reachable under `e`; `p` is unbound.
-"The `p` body" in this file and in code comments names this body (MODE_POOL4), whichever key
-opens it. Surf's status hint is now `l launchpad · 4 pool4`, in one markup run rather than
-per-letter tags (adjacent differently-styled runs never share a composited line, and the
-acceptance test greps for the whole phrase). It is read back off composited output against
-`StatusBar`'s left-label budget rather than counted, because that label is the segment the bar
-cuts first. `l launchpad` must never shorten, because the app-level acceptance test greps for that
-contiguous string.
-
-**Every panel title carries the network word** — `THE RATCHET · MAINNET`, `· SEPOLIA`, or `· —`.
-The view was built against a live *Sepolia* deployment and still renders it whenever no mainnet
-hook has been adopted, which is why the word is not decoration in either direction. One helper
-produces it (`widgets/surf/_pool4.network_word`) and it is an **allowlist**, not a pass-through:
-anything outside `POOL4_NETWORKS` — including `None`, which means no sweep has ever completed and
-does *not* mean either chain — renders the em dash. Two packages wrote that helper twice with
-different behaviour on unknown input, which is how one body could have painted `THE SPLIT · —`
-beside `THE RATCHET · BASE`: five panels disagreeing about which chain the numbers above them
-came from. The widget restates the tuple rather than importing `data/`, and its test imports both
-and asserts they agree in both directions — `_GAME_CYCLE`'s redundancy-plus-agreement-test shape,
-and the reason a third network reddens the suite instead of silently blanking five titles.
-
-**Discovery is the security boundary of this view, the fingerprint does not hold it up, and the
-honest version of that is the one to keep.** The hook address is discovered from the dev's
-announce channel, which is attacker-writable by design — anyone can send it a UTF-8 calldata tx —
-so **provenance is the only unforgeable gate**: only a *self-post* (`from == to == announce`) is a
-candidate, because that transaction is signed by a key nobody else has. Everything else is a
-filter, not a gate. The chain fingerprint is real work and it transferred intact to mainnet — the
-low 14 bits must **equal** `BEFORE_INITIALIZE | BEFORE_ADD_LIQUIDITY | AFTER_SWAP` (equality, not
-a subset test, and not the address's visible tail: the hook ends `6840`, the `840` is a *mined
-vanity tail*, and `0x6840 & 0x3FFF` is `0x2840`; the plan, the PRD and the research doc all said
-`0x840`, and both failure modes are committed as attack fixtures under `tests/fixtures/surf/pool4/`
-— `== 0x840` rejects the real hook on every chain, `& 0x840` accepts one that does not gate pool
-initialisation) — **but it is forgeable, and two packages measured that rather than arguing it**:
-a `0x2840`-shaped address mines in ~20,000 tries in under a second, four of the five getters are
-pure liveness checks any contract passes, and `token()` is a value the candidate's own contract
-chooses. Two consequences, both load-bearing:
-
-* **The persisted-adoption defence was deleted, not documented** (A27). A cache file hand-edited
-  to `adopted` came back `rejected` only because the committed fixture's flag word was `0x0000`;
-  against anyone actually trying it, it returned *adopted*. A reassuring sentence attached to a
-  defence a live demo defeats in twenty seconds is worse than no sentence, because someone greps
-  for the cache-file protection and finds it. If a self-post ages out of the channel window, the
-  fix is to read more of the channel or to re-establish provenance from the chain — **never to
-  re-nominate from storage**, which trades a paging bug for the provenance bypass this closed.
-* **The announce channel has not named the mainnet hook**, so automatic discovery correctly
-  refuses it and the operator accepted `pool4.imd.fun/docs` as a *candidate* source instead. That
-  widens the trust surface: anyone who can change that page can name a hook, and by the paragraph
-  above the fingerprint will not stop them. Prevention was not available; **disclosure was**, and
-  HATCHES is where it is delivered — `pool4_discovery_source` is its own payload key, a
-  docs-sourced adoption renders `⚠ via docs` where a dev-signed one renders plainly, and
-  `unattributed` must read at least as weakly as `docs` because `None` is where a producer bug
-  comes to rest. A self-post overrides the page whenever one lands. The source words are restated
-  in the widget with an agreement test against `POOL4_DISCOVERY_SOURCES`, so a fourth source
-  reddens the suite instead of falling through to the unattributed branch and looking like one of
-  these three.
-
-Also true and worth keeping in front of anyone touching a gate here: **an `eth_call` to an
-address with no code returns `"0x"` and no error**, so "the call did not fail" is not "the getter
-answered". `surf_pool4.answered` is the one place that distinction lives.
-
-**Mainnet shipped a different protocol from the testnet one, and almost all of it self-adapted
-because of the read-it-live constraint at the top of this file.** The reward share went up by half
-and the reserve floor fell by five orders of magnitude, and nothing had to change for either,
-because neither was ever a constant. That constraint has now paid for itself on a live
-switchover rather than on a hypothetical. What did *not* self-adapt was the one difference that is **structure rather than
-a value**: mainnet inserted a Reward Distributor with no testnet counterpart, so the vault is
-three hops from the hook rather than two, and a hop count is not something a live read can absorb.
-The split is three-way there — 85 burned, then stakers / bonding / nodes out of the remaining 15 —
-and **bonding has no getter of its own**: it is the remainder, so it is derived and labelled as
-derived rather than hardcoded at the number the docs quote. Mainnet's `burnSink` is a
-**pass-through BurnExecutor** rather than `0x…dEaD`, which changes what its balance *means*: what
-sits in it is queued, not burned, and a panel that read it as burned would be confidently wrong.
-
-Two testing traps came out of the same comparison and both are the local shape of "prove a test
-bites". A test written as *"point it at Sepolia and watch these fields go `None`"* **passes for
-the wrong reason** — the getters exist on both chains and only their values differ, so the absence
-case has to be driven by a getter made to revert, which is what a differently-built future hook
-actually looks like. And `inventoryCap() == tokensInPool()` holds on Sepolia only because the
-decay rate there is the no-decay sentinel; on mainnet the cap decays and the two drift apart by
-whole tokens between events. An equality assertion would have been green on one chain for a reason
-that is not the claim and flaky on the other.
-
-**Its own tier, its own clock, detached like the launchpad's.** `TIER_POOL4` with `SLOT_POOL4`'s
-last-good, spawned and never awaited so first paint cannot sit behind it, and all its panels (five
-until POOL4 FLOW left on 2026-09-14, four since) share one `pool4_as_of_hhmm` that runs on a slower
-clock than the title bar's. `SOURCE_POOL4`
-(`p4`) is the **eighth** degraded group, and that eighth name is what took the worst-case title
-row to exactly the width the layout is pinned at — see the terminal-layout skill, which now
-carries that as a live hazard rather than a margin.
-
-**What is not built, said plainly, and one sentence that stopped being true.** This file said the
-`bond` tab on `imd.fun/pool4/` had *no contract on either chain*. That was correct when written
-and is now wrong: **bonding is live**, taking 40% of the reward share inside the Reward
-Distributor, with readable held and earned balances. What remains true is narrower and is what the
-HATCHES row actually says: no *separate* bond contract is named by anything this dashboard reads,
-so that row is `unknown` — "we did not look here" — and deliberately not `absent`, which would
-claim a negative nobody checked. Still open: three of the hook's event signatures have no
-recovered pre-image, one of them a mainnet event that survived a 538,740-candidate sweep, so they
-keep operand-shaped names and the decoder keys off the topic0 constant (a naming gap, not a
-functional one — never invent a signature string for one, a wrong guess computes a topic0 that
-matches no log and the panel goes quiet rather than red). And some ceiling tests still have no
-mainnet fixture behind them.
-
-### surf's POOL4 MARKET view — the `4` body (2026-09-11)
-
-Surf grew a **fourth body**, on the same rule as the three before it: `4` swaps
-`#middle-row`/`#separator`/`#bottom-row` for MODE_POOL4_USER — RECENT FLOW beside BURN & SUPPLY
-over SIGNALS, then STAKERS beside IF IMD FALLS — and `escape` backs out one-way. (The two
-left-hand panels traded rows on 2026-09-12, with STAKERS' addresses printed whole and the ladder
-cut to a **fixed** 45 columns; both pins moved with it, and PRD §4.1 carries the whole trade. The copy
-icon did not move the width pin again: at `SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` STAKERS shows an
-`_ADDR_SHORT_COLS`-cell anti-poisoning window, and the whole address only where the panel has room
-for it and the icon — `widgets/surf/pool4u_stakers.py`.) **There is no
-six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and the
-table above still has eight rows. `p` is the protocol and `4` is the market: the two read off the
-same `TIER_POOL4` sweep and answer different questions, which is why the split is two bodies and
-not one crowded one. A digit key is an established pattern on a *screen* here (curator's filter
-presets, the hidden `frenpet_full`'s sub-views) and neither is app-level, so neither collides.
-
-**It is the first surf body that swaps the HERO, and that is a deliberate break of precedent
-rather than a new pattern.** `l` and `p` both keep LAUNCHPAD/FLOW/BURN/SUPPLY in place so surf's
-headline metrics never go dark. Here they would be the clearest thing on screen a reader does not
-act on, so a **second hero widget** (`SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING) is
-composed once at startup and toggled with the body — **curator's existing per-mode hero**, not an
-invention, and not one widget with a mode branch inside it, which would couple two subjects into
-one class and make their tests share a fixture. `_SURF_HERO_MODES` **enumerates** the modes that
-get `SurfHero` rather than negating this one: a fifth body with a hero of its own would inherit
-`True` from a `!= MODE_POOL4_USER` and paint two heroes into one row, where enumerating makes it
-paint none — loud on screen, and red either way.
-
-**Three cards, not four, and the reason is a name collision.** Surf's own hero already says `BURN`
-and `SUPPLY`; a pool4 card called BURN shows hook trim burns rather than launchpad burns, and a
-reader tabbing between bodies would watch one word change value and read it as one metric moving.
-Burn lives in the chart panel instead.
-
-**`SurfPool4Flow` lives in this body only, since 2026-09-14.** From 2026-09-11 it was the same
-class mounted twice, once in each body, rather than a copied module. That is why `_do_refresh`
-dispatches RECENT FLOW with `self.query(SurfPool4Flow)` rather than `query_one`, and the loop
-stays. `query_one` does **not** raise on multiple matches in this Textual version, it returns the
-first, so two instances reddened nothing until a test resolved the panel through its own body
-container instead. The owner then removed POOL4 FLOW from the `p` body off a live screenshot,
-because this body's RECENT FLOW already shows the same rows, so there is one mount now. The
-per-instance keywords that told the two apart (`quiet_mainnet`, `quiet_as_of`,
-`classes="market"`) are still passed and are now vestigial. Collapsing them changes the widget's
-standalone rendering, so it is filed as F15 in `docs/surf_pool4_followups.md`, not folded into the
-removal.
-
-**Its own tier, and one clock on the whole body.** Two-thirds of this body is the
-62 keys `TIER_POOL4` already produces; the delta is four fast-tier reads, one pure depth-ladder
-analytics module, and a long-tier sIMD `Transfer` sweep on `TIER_POOL4_STAKERS` /
-`SLOT_POOL4_STAKERS` with its own `pool4_stakers_as_of_hhmm`. That slot is **not a ninth degraded
-group**: `SOURCE_POOL4` (`p4`) is the eighth and last name the worst-case title row has room for,
-so the staker fold serves last-good and **names no degraded group at all** — not even when it has
-nothing to serve.
-
-That last clause is a correction, and the withdrawn version stood in this file until 2026-09-12.
-It read "folds into `p4` only when it has nothing at all to serve", which was the PRD's original
-design; it was implemented, then **removed**, and this file was not updated with it. The reason is
-worth keeping because it generalises: the sweep reads its `vault_addr` out of `SLOT_POOL4`'s own
-last-good, so **it cannot have nothing to serve unless the pool4 slot is already cold — a state
-`p4` already names.** The clause was unreachable in the case it was written for, and what it
-actually did was name the whole pool4 group degraded while seven panels were live and one log
-endpoint was refusing the share token. A *false* degradation is the same defect as a missed one
-pointing the other way, and the worse of the two here: it tells a reader eight panels are
-unreliable on the evidence of one slow tier.
-`tests/data/test_surf_manager_pool4_market.py::test_a_sweep_with_nothing_to_serve_names_no_group_at_all`
-pins it; `docs/surf_pool4_market_PRD.md` §7.3 carries the argument.
-
-**No panel on this body renders an `as of` marker (2026-09-12), and the one that had a reason to
-kept the claim without the row.** All five did until the owner read the live screen and asked for
-them gone. Four printed `pool4_as_of_hhmm` — measured off the live cache at 15:29 against a 15:33
-title bar, i.e. the title row said four more times — and deleting those cost nothing. STAKERS was
-the exception and is the part worth knowing: its 1800 s fold read **13:52** against that same
-title bar, so dropping its marker alone would have put hour-old rows under a clock that says
-*now*, which is exactly what the "never a stale number presented as live" rule forbids. It
-therefore keeps a **conditional word** instead — its concentration footer gains `stale` only when
-the two markers are further apart than healthy operation can put them (`STALE_AFTER_S = 2400 s`,
-derived as the two tiers' TTLs summed, not chosen), and says nothing otherwise. That is
-`QUIET_NETWORK`'s shape applied to time, and it costs no row, which is why the body's height pin
-*fell* on this change rather than holding. The `p` body is untouched: all of its panels keep their
-markers (four since POOL4 FLOW left it on 2026-09-14). `SurfPool4Flow`, mounted in both bodies
-until then, is quiet here only because the screen passes `quiet_as_of=True` at this one mount site.
-A per-panel sweep on each side still catches a "fix" applied to the shared helpers. A fix applied to
-the class's own defaults has no auditor instance left to show up on (F15).
-
-**Two honesty contracts worth carrying in your head.** The ladder quotes the position *as it
-stands now* and never promises protection — a `rebalance()` closes the backstop band and redeploys
-it, so *guaranteed*, *protected*, *safe* and *floor* are forbidden in its composited body, checked
-against the pixels rather than by a source grep. And an **unread** band is not an **absent** one:
-both used to paint `band used 0.0%`, byte-identically, which is the curator rail bug — a real
-negative and a dead read reading the same. STAKING likewise reports a **realised** trailing return
-from `Dripped` events over a measured 7-day window, never the delivery cap, and never the bare
-word *APR*.
-
-**Its layout pins are its own**, measured in situ and never derived:
-`SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}`, each with its own `#:` block naming the binding
-panel and the sweep. The numbers are not repeated here; the terminal-layout skill's table names
-the constants. One result from those sweeps is worth knowing before touching this body, and it
-**reversed on 2026-09-12**: it was the *smallest* of surf's four in both dimensions, which refuted
-half of the PRD's own prediction that a bakery-shaped body would be wide-and-short. Then the owner
-asked for STAKERS' addresses whole — all 42 characters — and the width pin moved by more than the
-height pin came down, so the PRD's prediction is now half-right for a reason nobody foresaw: this
-body is the wide one. The binding panel changed with it, from RECENT FLOW to STAKERS. The copy icon
-paid for its two cells there by windowing, not by moving the pin: STAKERS prints an
-`_ADDR_SHORT_COLS`-cell window at the pin and the whole address only above it. **A change
-to a cell's contents here is a change to a pin**, and neither number may be adjusted to match a
-guess — re-sweep.
-
-### surf's SWARM view — the `s` body (2026-09-16)
-
-Surf grew a **fifth body**, on the same rule as the four before it: `s` swaps `#middle-row`/`#separator`/
-`#bottom-row` for MODE_SWARM — THE FIELD beside a rail of QUEUE over THROUGHPUT in the top row, with JUST
-SHIPPED spanning the body's full width beneath them — and `escape` backs out one-way. **There is no
-six-surface renumber for an expansion**: `app.py`, `__main__.py` and `GAMES` are untouched and the table above
-still has eight rows. It answers what the IMD swarm — the agent workforce this repo's own branches are built
-by — is doing right now: who is online, what each seat is working on and why it is stuck, what shipped, and how
-fast work is moving. It reads **one** keyless third-party host, the swarm's own control plane
-(`docs/imd_swarm_api.md`): `data/surf_swarm_client.py` is the HTTP layer against it and nothing else,
-`data/surf_swarm.py` is the pure fold — no network, no clock, no Textual.
-
-It is the second body, after MODE_POOL4_USER, to swap the **hero** rather than leave `SurfHero` mounted:
-`SurfSwarmHero`'s three cards are AGENTS (online of enrolled, plus whether verifier, publisher and deployer are
-up), IN FLIGHT (executing now, and how many are blocked) and ACCEPTED TODAY. `_SURF_HERO_MODES` stays an
-**enumeration** for the identical reason the `4` body's section above gives: a sixth body with a hero of its
-own would otherwise inherit `True` from a `!=` check against one other mode and paint two heroes into one row.
-
-**Two tiers, and the job list is gated on `/health`'s own counters rather than read every tick.** The live tier
-reads `GET /health` on every run — small and cheap, so it always happens. The job list (`GET /jobs`, ~27.5 KB,
-one shot, no pagination) is the read worth avoiding, and it carries no validators of its own — no ETag, no
-version, nothing a client could diff against — so the host's own counters
-(`connectedDaemons`/`activeEnrollments`/`workingNow`/`acceptedLastDay`, every `pending*`) are the cheapest
-available proxy for "did the list actually change": it is re-fetched only when one of them has moved since the
-manager last saw them, or when a ceiling has elapsed regardless, so a counter this manager does not track can
-never silently freeze the list forever. That is curator's `(version_id, content_hash)` version-check precedent
-from the linked-wallet analysis, one size down — a pair of published identifiers there, a handful of ordinary
-health counters here, because that is what this host exposes. `GET /jobs/{id}` then follows for every job whose
-state is not terminal, the only source of agent attribution, subtasks and dispatch notes; a 404 on one drops
-that row rather than the whole read, since a job can vanish between the list and the detail. Both tiers are
-spawned and never awaited, so first paint never waits on the swarm, the same shape `TIER_LAUNCHPAD` and
-`TIER_POOL4` already use. A slower tier sweeps every detail plus `/launches` and `/sites` on its own clock,
-feeding score and throughput numbers only.
-
-**No ninth degraded group was added, and that is deliberate, not an oversight.** `SOURCES` in
-`data/surf_manager.py` stays at eight members — `SOURCE_POOL4` (`p4`) is still the last name the worst-case
-title row has room for (see the terminal-layout skill and the pool4 section above). The swarm tiers fold on the
-pool4-market staker sweep's own precedent instead: a failed read serves each slot's last-good behind its own
-`as of HH:MM` marker, and a conditional `stale` word — derived from the two tiers' own TTLs, never chosen — is
-the only signal a reader gets when the two clocks drift further apart than healthy operation explains. Neither
-tier ever names a group.
-
-**The explorer's own inference headline is deliberately absent.** The swarm's explorer publishes a running
-inference total on its own page, but no public route on the control plane serves that number, so this view
-shows none of it — absent, never estimated, the rule FWA's uncovered collections and pool4's NFT floor already
-follow.
-
-Its width and height are their own pins, `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}`, each with its own
-`#:` block naming the binding panel and the sweep — the terminal-layout skill's table names the constants. The
-status hint grew its third segment: `l launchpad · 4 pool4 · s swarm`.
+`manager` (`fetch_and_compute()` → flat dict) → `screen` (dispatch) → `widgets` (render only:
+`str`/`int`/`float`/`bool`/`dict`/`list[dict]`; may import pure `analytics/` helpers, never
+`data/`). Dashboards (`--game`): `surf` (default, prefetched), `curator`, `fwa`, `base`,
+`frenpet`, `cattown`, `ttt`, `talismans`; hidden but intact: `bakery`, `ocm`, `dota`,
+`frenpet_full/_wallet/_perf`. Adding, hiding or reordering one touches six surfaces
+(`rules/dashboard-registry.md`).
 
 ## Build & run
 
 ```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e .
-
-python -m maxpane_dashboard                      # splash → game select
-python -m maxpane_dashboard --game fwa           # straight to one dashboard
-python -m maxpane_dashboard --game ttt --theme fwa
-python -m maxpane_dashboard --version            # version + interpreter path
-python -m maxpane_dashboard --font-size 0        # do not resize my terminal
+python3.11 -m venv .venv && source .venv/bin/activate && pip install -e .
+python -m maxpane_dashboard [--game surf --theme fwa]   # splash → game select, or straight in
+python -m maxpane_dashboard --version                     # trust this over memory
 ```
 
-**Layout is a function of terminal columns**, and the rules for it are in a
-skill, not here: **`.claude/skills/terminal-layout/SKILL.md`**. Read it before
-changing anything that affects how a dashboard is sized — a panel width, a
-column budget, a cell formatter, an `fr` seam, a scrollbar gutter, a
-`min-height`, a `‹ widen` / `‹ taller` marker, or any width or height pin. It
-carries the measurement method, the fitting rules (`cell_len`, not `len()`),
-what `DataTable` and `RichLog` do silently, and how to test a layout so the test
-can fail.
-
-The app-wide pin is `__main__.FULL_LAYOUT_COLUMNS = 143` (FWA's). Every other
-pin lives on its own constant with its reasoning in a `#:` block beside it; this
-file deliberately keeps no second copy of the numbers, because a copy drifts
-from the code and a docstring cannot.
-
-Keys: `m` menu · `tab` cycle games · `r` refresh · `t` theme · `q` quit.
-Per-dashboard: `c` swaps the shared bottom-right slot (FWA, TTT, Talismans,
-curator); **`l` on surf** swaps the whole dashboard body for the v4
-launchpad's own five panels in two columns (LAUNCHPAD COINS over LAUNCHPAD
-ACTIVITY on the left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail —
-curator's `y` and analysis-body precedent), with the hero (LAUNCHPAD/FLOW/BURN/SUPPLY)
-left in place so nothing it tracks ever goes dark (`esc` backs out, one-way);
-**`e` on surf** (experimental, not named on the status bar; `p` until
-2026-09-15) swaps the same three rows for the POOL4 body (THE SPLIT over
-THE RATCHET on the left; HATCHES over sIMD VAULT in the rail),
-also keeping the hero, also one-way; **`4` on surf** swaps them for the
-POOL4 MARKET body (RECENT FLOW beside BURN & SUPPLY over SIGNALS;
-STAKERS beside IF IMD FALLS) and swaps the
-**hero** too, for its own IMD PRICE / DOWNSIDE BID / STAKING cards —
-curator's per-mode hero, not a new pattern; **`s` on surf** (bound 2026-09-16) swaps them for the SWARM body
-(THE FIELD beside a QUEUE / THROUGHPUT rail, with JUST SHIPPED spanning the full width beneath) and is the
-second surf body, after `4`, to swap the hero — its own AGENTS / IN FLIGHT / ACCEPTED TODAY cards, also
-one-way; surf's status hint reads
-`l launchpad · 4 pool4 · s swarm`. Surf's `e` and curator's `e` (export) are two screens'
-own bindings, not one shared key. Surf's own `l` and curator's own `l` (the
-record view, described below) are unrelated bindings on two different
-screens, not one shared key. **`y` on curator** swaps the whole body for the reader's own
-standing — ladder, share, and what passing the rank above would cost — with the
-hero left in place so the doomsday clock never leaves the screen (`esc` backs
-out, one-way); **`a` on curator** (bound 2026-09-15) swaps in the linked-wallet analysis body
-(OPERATORS / SEGMENTS / CLEANED LIST, `action_toggle_analysis`) the same way — hero left in place,
-a second `a` or `esc` backs out one-way — and is deliberately not in the status hint below (the
-owner asked for the binding, not the label, and that string is pinned at 138 columns); **`f` on
-curator** opens the custom filter editor inside `l`'s record view (`action_toggle_filter`; a no-op
-everywhere else) and is unrelated to `a` — the two keys were the same binding once
-(`action_toggle_analysis` under `f`, until `9c5eb2d` moved `f` to the filter editor) but are not
-now; **`l`** opens one full-width
-record table under its own raw/wallet/cleaned summary hero, with `c` switching
-RAW/CLEANED and remembering the choice; each list keeps its own typed header-click
-sort, with a second click reversing it and the fixed YOU row excluded;
-**`e`** exports the active list (the analysis body's own JSON + CSV export fires whenever that
-body is open; `l` writes the full uncapped raw or cleaned JSON), and is a no-op on dashboard
-and wallet modes; and **`w` on curator** prompts for the wallet its YOU row is about —
-`WalletInputScreen` validates and persists to `~/.maxpane/config.toml`, so it
-is app-wide from the next launch. A runtime wallet switch is more than an
-assignment: `CuratorManager.set_wallet` also drops the wallet last-good (its
-payload names the *old* address) and expires the fast tier, because a tier
-with 12 of its 15 seconds left is "fresh" and the row would stay dark after a
-keypress that looked like it worked. Curator's status hints read
-`c view · h history · y you · l lists`. The redundant `view: closest` /
-`view: clusters` tail was removed so all four labels and the worst-case
-`4 errors` fit at 138 columns; each visible panel title already names that
-state, and the list title is the sole RAW/CLEANED indicator. Any doc that quotes
-the old hint is wrong.
-Logs go to `~/.maxpane/maxpane.log`; caches to `~/.maxpane/*.json`; curator's
-analysis `e` export to `~/.maxpane/curator_clean_list.json` and `.csv`, and
-list-view exports to `curator_raw_list.json` or `curator_cleaned_list.json`.
-
-**`__version__` comes from installed distribution metadata**, not from a
-constant — `maxpane_dashboard/__init__.py` reads it with
-`importlib.metadata.version`. An editable install writes that metadata **once,
-at install time**, so bumping `pyproject.toml` does not change what the status
-bar renders or what `--version` prints until you re-run `pip install -e .`.
-This is not hypothetical: this venv reported `0.3.2` for three months and four
-releases, so every dev-run status bar showed a version that shipped in April.
-Re-run the editable install after a version bump, and trust `--version` over
-memory when a bug report cites one.
+`__version__` is read from installed metadata, written once by the editable install: re-run
+`pip install -e .` after a version bump. Keys: README "Keyboard shortcuts" is the owner;
+`BINDINGS` in `screens/*.py` are the truth. **Layout is a function of terminal columns and its
+rules live in `.claude/skills/terminal-layout/SKILL.md`** — read it before changing anything that
+affects how a dashboard is sized. Numbers live only in the `#:` block beside each pin constant;
+the app-wide pin is `__main__.FULL_LAYOUT_COLUMNS`. Logs: `~/.maxpane/maxpane.log`; caches:
+`~/.maxpane/*.json`. **Env vars** (all optional, none a key or secret): `MAXPANE_ETH_RPC_URL`,
+`MAXPANE_BASE_RPC_URL`, `MAXPANE_WALLET`, `MAXPANE_INDEXER_DB`, `MAXPANE_BASEBOARD_ENV`,
+`MAXPANE_FONT_SIZE` (0 = leave the terminal alone).
 
 ## Tests
 
 ```bash
-.venv/bin/python -m pytest                    # 7,580 tests, ~30 min — see below
-.venv/bin/python -m pytest tests/analytics/   # pure math
-.venv/bin/python -m pytest -x                 # stop on first failure
-.venv/bin/python -m pytest sybilkit            # the second distribution, 428 tests + 1 xfail
-cargo test                                    # the Rust intro crate, from maxpane/ (443)
+.venv/bin/python -m pytest tests/analytics/        # pure math, seconds
+.venv/bin/python -m pytest                          # ~8,550 tests, ~30 min single-process (2026-09-18)
+.venv/bin/python -m pytest sybilkit                 # separate distribution, 445 tests; cannot be collected together with tests/
+cargo test                                          # the Rust crate, from maxpane/
 ```
 
-**The full suite takes ~30 minutes — measured 29:46 on 2026-09-11, not the ~11 this line
-claimed for four months. Run it when it is actually necessary, not after every task.** Necessary means: before a merge or a push that follows real code changes, at the end of
-a multi-task branch, or when a change could plausibly reach code no targeted run covers. After a
-single task — and always after a docs-only, comment-only or constant-rename edit — ask what
-could have broken and run *that*: the widget's own test file, plus the screen test that
-composites it; a data module's file, plus the manager test that consumes it. A docs edit usually
-needs nothing, or the one test that pins the doc's content. Citing the last real green run is
-better than spending half an hour to re-learn it.
+**Run the tests that could see the change:** the touched module's test file plus the
+screen/manager test that consumes it. The full suite runs once, before merge or push, by the
+controller — never by an implementer or reviewer, never after every task; cite the last green run.
+`tests/screens` is the expensive tier (0.3–1.3 s per composited case). A docs-only edit still
+needs the tests that pin the doc: `rg -n 'CLAUDE\.md|README\.md|SKILL\.md|rules/' tests/` and run
+every file it names. Use `.venv/bin/python -m pytest`: the system `python3` lacks the deps, and an
+interpreter without `httpx` *skips* sybilkit's fetcher tests and reports green.
 
-Parallel agents run **only their own test files, never the suite** — a neighbour mid-edit
-reddens it for a reason that is not yours, and half an hour per agent per task is the largest
-avoidable cost in a multi-agent branch — by a wider margin than this file used to admit.
+## Conventions — each one is a bug that shipped; the reasoning is in `.claude/rules/`
 
-Use `.venv/bin/python -m pytest` — the system `python3` lacks the deps and produces alarming
-collection errors that mean nothing. That applies to `sybilkit/` too, and there it is not
-cosmetic: its fetcher tests need the `[sources]` extra, so an interpreter without `httpx`
-*skips* them rather than erroring, and a suite that reports green having skipped its network
-layer is the worst of both.
-
-## Environment variables
-
-All optional; all override a working default. **There are no key or secret variables.**
-
-```
-MAXPANE_ETH_RPC_URL     override the Ethereum RPC
-MAXPANE_BASE_RPC_URL    override the Base RPC
-MAXPANE_WALLET          default wallet address for wallet-scoped views
-MAXPANE_INDEXER_DB      local indexer database path
-MAXPANE_BASEBOARD_ENV   Base dashboard environment file
-MAXPANE_FONT_SIZE       terminal font size on launch; 0 = leave it alone
-```
-
-## Conventions
-
-These are not style preferences. Each one is a bug that shipped, was found, and was fixed
-repo-wide.
-
-**A failed read is `None`, never `0`.** Clients that turn an outage into `0`/empty make a manager
-unable to distinguish "RPC down" from "the value is zero" — and the zero then gets *persisted*,
-so the corruption outlives the outage. Never write a sentinel into a history series.
-
-**A dead source degrades to an explicit unavailable state.** Never a crash, never a blank panel,
-and never a stale number presented as live. Serve last-good behind an `as of HH:MM` marker.
-And check the widget can *tell*: a row whose real negative has no representable value —
-"no whale in the last hour", "it has never fired" — renders `None` identically for "we looked
-and there was nothing" and "we could not look", so it reads confident and green through an
-outage. Curator's rail shipped that way: FARM said `-- unknown` off `clusters_count is None`
-while HOUR SAVED and WHALE, folded from the same dead group, said `none yet`. Either give the
-value a representable zero or hand the widget the `degraded` list.
-
-**ENS names are third-party strings, and the widest kind.** Reverse resolution
-lives in `data/ens.py` and is keyless; use it through a client's own multicall so
-it inherits that dashboard's pool. Two rules it exists to keep: the **forward
-check** is not optional (a reverse record needs nobody's permission, so an
-unverified lookup lets any address claim `vitalik.eth`), and a **miss is not an
-empty name** — most wallets have no record, and without recording the misses
-every one of them is re-resolved on every tick forever. `ens.NameStore` holds
-both TTLs. Rendering one also costs columns — see the terminal-layout skill.
-
-For record lists, the **complete raw list is the sole ENS network-hydration boundary**. Cleaned
-and filtered lists reuse the raw-list ENS cache; changing filters must never start hydration
-again. When hydration finishes, repaint whichever derived list is visible so newly matched names
-appear immediately. Long-running ENS, JSON export, and list-reload work owns the centered footer
-message while it runs (`fetching ENS …`, for example) and clears only its own message when it
-finishes, so an older operation cannot erase the status of a newer one.
-
-**Escape every third-party string before it reaches markup or a `DataTable`.** Use
-`widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message pump, so
-a malformed name raises *outside* the screen's `try/except` and kills the app. Token symbols are
-attacker-controlled: anyone can deploy an ERC-20 named `[/x]`.
-
-**Every displayed 0x address carries a copy icon, and so does every name that stands in for one.**
-Render addresses only through `widgets/address.py`: `address_text` for an address or a name backed
-by one, `address_prose` for third-party text that may contain addresses, `short_hex` for any other
-hex such as a transaction hash (no icon). The icon is `⧉` with a Textual `@click` action on the glyph
-only, calling `app.copy_address`, which `copy_action.CopyAddressMixin` runs through
-`maxpane_dashboard/clipboard.py`: native tool first (`pbcopy`; Apple Terminal ignores the OSC 52 that
-`App.copy_to_clipboard` writes), OSC 52 second, and the status bar says `copied`, `unconfirmed` or
-`unavailable`, whichever is true. Validation is `fullmatch`, never `^…$`, because `$` accepts a
-trailing newline and the address is interpolated into an action string. The icon costs
-`ICON_COLS = 2`; a panel grows where it has slack and shortens its displayed address where a pin
-would move, and the window rule (8/6 at 17 cells) is surf's anti-poisoning form. **None of this is
-optional**: `tests/test_address_rule.py` fails on a private address formatter,
-`tests/screens/test_address_icons_everywhere.py` fails on an address that reaches the screen
-without its icon — rendering every case at 170 columns and again at each view's own layout pin (plus
-any `extra_sizes` the case names, such as FWA's 120), because a defect that lives where a panel is
-tight is invisible at 170 — and `tests/test_address_sweep_registry.py` fails on a dashboard the sweep does not
-render. A new dashboard joins the sweep, not just the icon: add a `SweepCase` to the `CASES` tuple
-in `tests/address_sweep/builders.py` (`registry.py` only re-exports it) — its screen class, a
-harness `build`, a `payload`, the `views` that reach every body (key tuples or callables), and a
-hand-listed `seeded` tuple carrying at least one address in every shape it renders (full,
-shortened, name-backed, prose). `address_free=True` is only for a dashboard that renders none, and
-the agreement test refuses it the moment the dashboard's widgets import the helper.
-`docs/address_copy_PRD.md` §7 spells out E1–E6 in full. No test may reach the real clipboard:
-`tests/conftest.py` replaces the runner suite-wide.
-
-**A widget that renders third-party text through `Static` hands it a pre-built
-`rich.text.Text`, never a markup string.** Same defect as the rule above, one layer out:
-`Static.update("…[/x]…")` does not parse anything at call time — Textual defers
-`Content.from_markup` into the message pump, so the parse failure raises *outside* the screen's
-`try/except` and takes the app down. Parse it yourself, synchronously, inside your own `try`
-(`Text.from_markup(...)`) and a malformed row degrades to a skipped row instead. `SurfFeed`'s
-`_row_text` is the worked example.
-
-Two things do **not** help and must not be mistaken for the guarantee: `Text.no_wrap` and
-`Text.overflow` are inert through Textual 8, and a *sized* cell is not a *fitted* one. Both are
-in the terminal-layout skill, with what to use instead.
-
-**A token's `decimals()` is a live read, never 18 by assumption.** pool4's sIMD vault is a Solady
-ERC4626, which reports *asset decimals + `_decimalsOffset()`* — 18 + 6 — so `decimals()` answers
-**24** and one whole share is `1e24`. What makes this worth a rule rather than a code comment is
-that **both wrong divisors render as plausible numbers**: `convertToAssets(1e18)/1e18` reads
-`0.0000013 IMD/share`, which looks like a dead vault, and `totalSupply/1e18` reads 21 *billion*
-shares, which looks like an emissions farm, against a true share price of `1.302986` and 21,010.98
-shares. Neither shows up as an error. A committed capture shipped asking `convertToAssets(1e18)`
-for exactly this reason, and the decoder **refuses** it rather than mapping a wrong-argument
-answer onto a right-looking field — the fix belongs in the capture. A test refuses a
-`POOL4_VAULT_DECIMALS`-shaped constant so the hardcode cannot come back wearing a name.
-
-That last guard was argued for on 2026-09-01 as *"the mainnet vault does not exist yet and nothing
-binds its offset to the testnet one's"* — and when mainnet landed the day after, its vault reported
-**24 as well**. The prediction was wrong and the rule is right anyway, which is the part worth
-keeping: a hardcoded 24 would have sailed through this switchover and been indistinguishable from a
-read one, so the next deployment would have inherited it unexamined. A constant that happens to
-agree with the chain today is not evidence for the constant; it is the reason nobody would have
-noticed.
-
-**Validate persisted series per point.** Use `data/series_points.coerce_points`. A single `null`
-in a cache file used to abort startup for *every* dashboard.
-
-**Inject the clock.** No module that a test needs to control may call `time.time()` internally.
-Cache loaders take `now=`; signal builders take `now_ts`.
-
-**Screens inherit `screens/refresh_guard.RefreshGuard`.** It gives skip-not-queue refresh and
-joins the startup prefetch. Do not hand-roll `run_worker(..., exclusive=True)`.
-
-**Reuse before you build.** Almost nothing here is the first of its kind, and a
-new panel written from scratch is a panel that has not learned what the existing
-ones were taught. Check, in this order:
-
-1. **a shared widget module** — `widgets/*.py` (`sparkline_common`,
-   `markup_safety`, `status_bar`, `signals_panel`, `activity_feed`,
-   `hero_metrics`, `leaderboard`, …). Import it; never copy out of it.
-2. **the dashboard's own `_fmt.py`** (`widgets/surf/`, `widgets/curator/`) for
-   formatters, and the sibling panel that already does the same *shape* of job.
-   `widgets/surf/launchpad_activity.py` was built on `widgets/surf/activity.py`
-   — same `RichLog` body, same width-tier ladder, same "the panel names the
-   columns it shed" contract — and inherited all of that for free.
-3. **`templates/`** — eight copy-sources (screen, hero metrics, signals,
-   leaderboard, activity feed, two-column table, sparkline, status bar) for
-   when there is no sibling to follow. Copying is the point here, so read the
-   hazard note in "Known hazards" before you do.
-
-The failure this prevents is not wasted typing, it is **divergence**: three
-copies of one helper means a fix reaches one of them. This branch shipped
-exactly that — the strip-then-escape sanitiser now exists in three surf widget
-modules, and the `len()`-vs-`cell_len()` bug they share has to be fixed three
-times instead of once. If you find yourself writing something a sibling already
-does, stop and hoist it instead.
-
-**Sparklines import `widgets/sparkline_common`.** Do not copy the helpers.
-
-**Assert against composited output** (`_compositor.render_strips()`), not the content string. A
-string that never reaches a pixel passes a naive test while being invisible to the user.
-
-**Prove a test bites.** Mutate the code, watch the test go red, restore. This is expected for
-anything concurrency- or decoder-shaped.
+- **A failed read is `None`, never `0`**; never write a sentinel into a history series.
+- **A dead source degrades to an explicit unavailable state** behind an `as of HH:MM` marker —
+  never a crash, a blank panel, a stale number presented as live, or a *false* degradation.
+  A real negative needs a representable value distinct from "could not look".
+- **Escape every third-party string** before markup or a `DataTable`: `markup_safety.safe_markup`.
+  Token symbols are attacker-controlled. A `Static` gets a pre-built `rich.text.Text`, never a
+  markup string.
+- **Every displayed 0x address carries a copy icon** via `widgets/address.py` only; enforced by
+  `tests/test_address_rule.py` and `tests/screens/test_address_icons_everywhere.py`.
+- **ENS** (`data/ens.py`): forward-check every reverse record; record misses; the raw list is
+  the sole hydration boundary. **`decimals()` is a live read**, never 18 by assumption.
+- **Validate persisted series per point** (`data/series_points.coerce_points`); a hand-edited
+  cache file is third-party input. **Inject the clock** (`now=` / `now_ts`).
+- **Screens inherit `screens/refresh_guard.RefreshGuard`**; never hand-roll exclusive workers;
+  no network await in a message handler.
+- **Reuse before you build**: shared module → dashboard sibling / `_fmt.py` / `_rowfit.py` →
+  template. A helper two modules need is hoisted in the same change, never re-declared. The one
+  legitimate copy is a hand-typed literal bound by an agreement test (`_GAME_CYCLE`, `--game`
+  choices, `initial_game`, `MANAGER_ATTRS`, a widget restating a `data/` tuple). Sparklines
+  import `widgets/sparkline_common`.
+- **Classify RPC errors on message text, not code**; state and logs need different endpoint
+  pools; a provider's error is evidence only about the request it read — rotate, do not shrink.
+- **Tests:** assert against composited output (`render_strips()`), not the content string; prove
+  a test bites where the change is decoder- or concurrency-shaped or moves a pin; no wall-clock
+  waits in pilot tests — await an observable state.
 
 ## Known hazards
 
-**The templates are how bugs propagate.** `templates/` is the copy-source for new dashboards, so
-a defect there is a defect in every dashboard not yet written. This is not theoretical: a
-markup crash, a refresh race and a duplicated sparkline helper all reached the newest dashboard
-because it was seeded from the templates. When you fix a widget, check its template — and check
-whether the template has drifted *ahead* of the widget, which also happens.
-
-**Dead endpoints.** Verified dead, do not reintroduce: `eth.llamarpc.com` (521),
-`rpc.ankr.com/eth` (now keyed), `cloudflare-eth.com` (`-32046` on Ethereum), `api.reservoir.tools`
-(DNS gone, API sunset). Working keyless Ethereum: `ethereum-rpc.publicnode.com` for state (it
-batches, but **refuses archive `eth_getLogs`**), `gateway.tenderly.co/public/mainnet` and
-`rpc.mevblocker.io` for logs. **State and logs need different endpoint pools.**
-
-**`eth.drpc.org` left surf's mainnet log pool on 2026-09-12, and the reason generalises.** It was
-listed here as a working log endpoint with "a hard 10k-block page cap". That was wrong in the way
-that matters: the free plan's limit is **archive depth, about 64 blocks**, not page width — and it
-answers *anything* older with `code 35 "ranges over 10000 blocks are not supported on free plan"`
-**whatever span you asked for**, so a 300-block request gets a sentence about 10,000 blocks. A
-client that classifies on message text — which is the rule two paragraphs down, and still the right
-rule — then halves its window forever chasing a limit it already satisfies. That livelocked the
-pool4 staker sweep into `2400 → 1200 → 600 → 300` and a silent `None`, and the panel read
-`unavailable` for a reachable dataset. **A provider's error message is only evidence about the
-request it was actually reading**: if the limit it names is one you already meet, the message is
-not about you — rotate, do not shrink.
-
-It is still in **FWA's and curator's** pools and that is correct: they read recent logs, where it
-works. Only surf's pool needed the depth.
-
-**Two more measured the same day, and one is worse than dead.** `rpc.flashbots.net` answered a
-75,000-block `eth_getLogs` with **46 logs where the truth was 1,132** — no error, no warning, a
-silently truncated result. Never add it to a log pool; a wrong answer that looks right defeats every
-degradation path in this repo. `ethereum.blockpi.network` returns non-JSON, and `eth.merkle.io`
-answers `-32601 Method not found` for `eth_getLogs`. `rpc.mevblocker.io` is honest where drpc is
-not (`range 75000 exceeds limit of 10000` — a real cap, truthfully named, so a client can chunk
-against it) and measured **1,132 logs in 8 chunked requests, agreeing with tenderly to the log**.
-
-**Sepolia does not inherit mainnet's endpoint story, and one keyless-looking URL is keyed.**
-`ethereum-sepolia-rpc.publicnode.com` batches `eth_call` **and** serves archive `eth_getLogs`,
-unlike its mainnet sibling, so the state/logs split above does not transfer — on Sepolia
-publicnode is the endpoint that works for both, and the pool4 plan's first draft banned it from
-the log pool on exactly that bad transfer. Measured and banned there: `sepolia.drpc.org` answers
-*every* method with `code 35 "chain is not available on free plan, please upgrade to paid plan"` —
-a **keyed endpoint wearing a keyless URL** — so ban it by hostname and never by `drpc.org`, which
-would match every subdomain including any future one that works. `eth.drpc.org` is no longer in
-surf's mainnet log pool (above), so that test no longer argues from pool membership; it asserts the
-narrow ban directly instead; `rpc.sepolia.org` 404s; `omniatech` 521s; `1rpc.io` serves one 30-call batch then
-429s and caps logs at 50 blocks, so it is a state fallback only. Tenderly's Sepolia gateway
-answers a 3-call batch and rate-limits the 30-call round the client actually issues — **probe with
-the batch you ship**, or you will "correct" a pool the wrong way with a toy one.
-
-**Classify RPC errors on message text, not code.** Providers reuse `-32602` and `-32005` for
-unrelated meanings. One provider's "suggested retry range" decrements one block per round trip
-and livelocks anything that follows it verbatim. This has evidence behind it now rather than
-folklore: `tests/fixtures/surf/pool4/rpc_error_states.json` captures `-32602` meaning
-*"eth_getLogs is limited to 0 - 50 blocks"* on one provider and *"Invalid params"* on another, and
-`-32005` arriving cold as a rate limit on the first attempt.
-
-**The DOTA game API is NXDOMAIN** — that dashboard has no live backend. The Bakery season ended
-2026-06-12; its API still serves, but the season is finished.
+- **Dead endpoints, do not reintroduce:** `eth.llamarpc.com`, `rpc.ankr.com/eth` (keyed),
+  `cloudflare-eth.com`, `api.reservoir.tools`, `rpc.sepolia.org`, `sepolia.drpc.org` (keyed,
+  ban by hostname), `omniatech`, `ethereum.blockpi.network`, `eth.merkle.io`. **Never in a log
+  pool:** `rpc.flashbots.net` (silently truncates). `ethereum-rpc.publicnode.com` refuses archive
+  `eth_getLogs` on mainnet only. Working pools: `rules/data.md`.
+- `templates/` is how bugs propagate: a defect there reaches every dashboard not yet written,
+  and a fix there reaches no existing copy. The DOTA API is NXDOMAIN; Bakery's season ended.
 
 ## Working with agents
 
-Parallel agents are the norm here. What makes it work:
+- **Precedence for every seat:** this file's conventions > approved spec > plan/brief >
+  implementer report. A finding that contradicts a lower authority is upheld; one that
+  contradicts a higher authority is filed as a spec/plan defect, never silently overruled.
+- **Freeze the data contract first** (a models module exporting keys and widget signatures).
+  **One owner per shared file** (`app.py`, `screens/game_select.py`, `__main__.py`,
+  `themes/minimal.tcss`), late in the sequence; seams are for files, not functions — an
+  append-only hoist into a shared module needs no owner.
+- **Report defects in other agents' files; do not fix them. A review never fixes what it
+  finds**; findings are filed and sized by the Follow-ups rule. An owner-driven interactive pass
+  that edits code is a fix session, not a review.
+- **Verifying is not fixing.** A reviewer *should* mutate the tree to test a claim and restore it
+  **by inverse edit only** — `git checkout`, `git stash`, `git reset`, `git restore`, `git clean`,
+  `git add` are forbidden in a review — ending with `git status` clean. **The working tree may
+  contain uncommitted user work**: never `git checkout --` a file to undo your own edit.
+  Subagents never spawn subagents; one reviewer per diff, never two.
 
-- **Freeze the data contract first.** A models module exporting the key list and widget
-  signatures lets many agents build against one interface simultaneously.
-- **One owner per shared file.** `app.py`, `screens/game_select.py`, `__main__.py` and
-  `themes/minimal.tcss` belong to exactly one work package, late in the sequence.
-- **Report defects in other agents' files; do not fix them.** This is what makes findings
-  trustworthy, and it is how most of the good bugs in this repo were found.
-- **A review never fixes what it finds.** A reviewer that repairs something is reviewing its
-  own work by the end of the pass, its fix skips review entirely, and the diff under review
-  is no longer the diff that was submitted. New findings go on the follow-up list — named,
-  with their evidence — and are scheduled like any other work. This holds for a finding that
-  looks trivial, and for one in the reviewer's own earlier work; "it was one line" is how a
-  review turns into an unreviewed commit. A **scoped re-review** is stricter still: anything
-  outside the findings it was sent to verdict gets filed, never fixed, or the fix loop never
-  terminates.
-- **Verifying is not fixing.** A reviewer *should* mutate the tree to test a claim — flip a
-  constant, monkeypatch a cell, render at a width — and every serious defect found here was
-  caught that way rather than by reading. Restore it afterwards and confirm the tree is
-  clean. The line is intent: a change made to learn something is verification, a change made
-  to improve something is a fix, and only the first belongs in a review.
-- **The working tree may contain uncommitted user work.** Never `git checkout --` a file to undo
-  your own edit — you will discard someone else's uncommitted changes with it.
+## Reviewer contract
+
+Hand this to every reviewer, every tier, verbatim. Never dispatch a persona agent (Reality
+Checker, Evidence Collector, `feature-dev:code-reviewer` — it has no shell) as a code reviewer.
+
+1. **Scope:** the diff you were handed plus one focused check per named risk outside it; do not
+   crawl the codebase. "Hard constraints" and "Conventions" above are the rules you review against.
+2. **Findings** need file:line, what breaks, and how you know. Critical = wrong number on screen,
+   crash, any network/key/signing path, a weakened security gate. Important = a convention above
+   broken, a missing requirement, a test that cannot fail. Minor = everything else, including
+   test-rigor-only findings. No target count: zero findings is a valid report.
+3. **Verification is expected:** mutate files in place to test a claim and run the *named* test;
+   restore by inverse edit only — `git checkout`, `git stash`, `git reset`, `git restore`,
+   `git clean`, `git add` are forbidden — and finish with `git status` clean. Never commit, fix,
+   or widen the diff; no directory or suite runs. No shell → say so in line 1 and mark every
+   mutation claim unverified.
+4. **Mandated redundancy is not duplication:** a hand-typed copy an agreement test binds is
+   correct; flag a copy only when no agreement test names it. **Precedence:** CLAUDE.md
+   conventions > approved spec > plan/brief > implementer report; a finding that contradicts a
+   higher authority is filed as a spec/plan defect, never silently overruled.
+5. **Verdict:** `Approved`, or `Needs fixes: <n Critical, n Important>`. A re-review verdicts only
+   the findings it was sent (ADDRESSED / NOT ADDRESSED) and files the rest. No subagents, no
+   strengths section, no praise.
