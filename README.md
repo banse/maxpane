@@ -165,9 +165,9 @@ is not fetched on every tick: it is re-read only when one of the host's own heal
 actually moved, or when a ceiling has elapsed regardless, so a counter this dashboard does not
 track can never freeze the list forever. A failed read serves each panel's own last-good behind an
 `as of HH:MM` marker rather than a blank screen, and no new degraded group was added for it — the
-title row was already full. The view is whole from **93 columns and 42 rows** — the narrowest of
-Surfboard's four swapped bodies, and its row count sits between the pool4 market view's 35 and the
-pool4 protocol view's 45. One caveat worth knowing before trusting the width: THE FIELD, the panel
+title row was already full. The view is whole from its own pin, `SURF_SWARM_FULL_LAYOUT_COLUMNS` ×
+`SURF_SWARM_FULL_LAYOUT_ROWS` in `screens/surf.py` (the `#:` block beside each constant carries the
+number and how it was measured). One caveat worth knowing before trusting the width: THE FIELD, the panel
 most readers look at first, cannot clear its own full column set — keeping the dispatcher's note
 beside every row — below 246 columns, wider than every other pin in the app; that is a measured,
 accepted condition at every width this view can reach, the same shape as surf's announce feed and
@@ -221,9 +221,9 @@ panels read `analysis unavailable` for the first minute or so of a cold start. T
 their own slower schedule and stamp their own `as of HH:MM`, which is deliberately not the title
 bar's.
 
-Press **`l`** for the complete record view. Its summary hero compares THE LIST, the configured
-wallet, and THE CLEANED LIST above one full-width table; **`c`** switches between THE RAW LIST and
-THE CLEANED LIST and remembers that choice when you leave. The table mirrors the record NFT
+Press **`l`** for the complete record view. Its summary hero puts THE LIST, YOUR WALLET (your ENS
+name when it has one) and THE FILTER above one full-width table; **`c`** cycles the table through
+raw, cleaned and filtered and remembers that choice when you leave. The table mirrors the record NFT
 traits: rank, join order, wallet, points, weight, credit, deposits, first hour, and grace/judged
 window, plus the linkage mark on the raw list. Click any column header to sort the loaded rows;
 click it again to reverse the order. The interactive table is capped at 1,000 rows to keep
@@ -404,7 +404,7 @@ the other, so a single manager owns the command.
 Click ⧉ beside any address to copy it.
 
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
-LIST's `l` view it switches the full-width raw and cleaned tables. **Surfboard binds `l`** to swap
+LIST's `l` view it cycles the full-width table through raw, cleaned and filtered. **Surfboard binds `l`** to swap
 the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand rail — with the
 hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way.
@@ -513,8 +513,8 @@ assumed to have held. It was re-swept when POOL4 FLOW left on 2026-09-14, and it
 the rail (HATCHES over sIMD VAULT) was already the tallest column, so a 44-row terminal still
 shows `‹ taller`.
 
-Surfboard's SWARM view (`s`) is a layout of its own too, and the narrowest of Surfboard's four:
-**93 columns and 42 rows**. THROUGHPUT decides the width — the point past which it can no longer
+Surfboard's SWARM view (`s`) is a layout of its own too, pinned by `SURF_SWARM_FULL_LAYOUT_COLUMNS`
+and `SURF_SWARM_FULL_LAYOUT_ROWS`. THROUGHPUT decides the width — the point past which it can no longer
 keep a review's transaction hash and its own chain word together, and sheds the pair rather than
 either alone, because a hash with no chain word beside it is worse than neither. The right rail
 (QUEUE stacked over THROUGHPUT) decides the height, since neither panel has a payload-independent

@@ -1,3 +1,5 @@
+> **Historical (2026-09-18).** Build-time record; its suite timings ("~11 min") are withdrawn — see `docs/decisions.md`.
+
 # surf `p` POOL4 view — implementation plan
 
 Master plan for `docs/surf_pool4_PRD.md`. Research of record:

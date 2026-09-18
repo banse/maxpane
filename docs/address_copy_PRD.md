@@ -245,7 +245,9 @@ Transaction hashes shorten through `short_hex`, so the ban has no legitimate exc
 the next copy before it exists.
 
 **E2 — every address on screen has its icon.** A composited sweep renders **every** dashboard and
-view (`l`, `p`, `4` on surf; `y`, `f`, `l` on curator; the hidden screens) with its sample payload.
+view with its sample payload. The `views` tuple of each `SweepCase` in
+`tests/address_sweep/builders.py` is the owner of that list (surf's and curator's swapped bodies, the
+curator filter editor, the hidden screens); this paragraph does not restate it.
 Each payload is seeded with known addresses in all four shapes: full, shortened, name-backed and in
 prose. For each known address, the displayed form must be followed by ` ⧉`, and **that glyph's
 `@click` meta must name exactly that address**. A glyph that copies the wrong address is a worse

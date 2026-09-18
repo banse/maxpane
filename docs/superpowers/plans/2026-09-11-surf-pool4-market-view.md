@@ -1,3 +1,5 @@
+> **Historical (2026-09-18).** Build-time record; its suite timings ("~11 min") are withdrawn — see `docs/decisions.md`.
+
 # surf `4` POOL4 MARKET view — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
