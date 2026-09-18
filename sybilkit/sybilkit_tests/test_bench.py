@@ -24,7 +24,7 @@ import pytest
 from sybilkit import DetectConfig
 from sybilkit.bench import BenchResult, run_benchmark
 from sybilkit.curator import CuratorPreset
-from tests.sybilkit_fixtures import labeled_subset
+from sybilkit_tests.sybilkit_fixtures import labeled_subset
 
 #: The gate.  Both numbers sit clear of the measured values with room for real
 #: movement and no room for a collapse: measured 2026-08-18 on the committed

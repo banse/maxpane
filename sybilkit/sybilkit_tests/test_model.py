@@ -270,7 +270,7 @@ def test_a_whole_population_with_iso_timestamps_still_builds_a_dataset() -> None
     producer spells ``ts`` ISO-8601 used to build an *empty* ``Dataset``, and
     every downstream count read zero — the worst shape of failure this repo
     knows, because nothing raises and nothing is marked degraded."""
-    from tests.sybilkit_fixtures import load
+    from sybilkit_tests.sybilkit_fixtures import load
 
     rows = load("deposits.json.gz")
     for row in rows:
@@ -601,7 +601,7 @@ def test_two_byte_identical_duplicates_still_collapse_to_one_row() -> None:
 def test_the_committed_population_round_trips() -> None:
     """The full fixture builds: 22 319 deposits, 15 576 contributors, and the
     wei words survive exactly (no float anywhere near them)."""
-    from tests.sybilkit_fixtures import load
+    from sybilkit_tests.sybilkit_fixtures import load
 
     ds = Dataset.from_events(load("deposits.json.gz"), load("first_deposits.json.gz"))
     assert len(ds.deposits) == 22_319

@@ -28,6 +28,9 @@ import pytest
 from maxpane_dashboard.app import MaxPaneApp
 from maxpane_dashboard.screens.game_select import GAMES, GameSelectScreen
 
+#: Reads repo source or docs rather than exercising code (CLAUDE.md "Tests").
+pytestmark = pytest.mark.guard
+
 REPO = Path(__file__).resolve().parents[1]
 
 #: The one menu row this WP adds, asserted verbatim so the copy cannot drift.

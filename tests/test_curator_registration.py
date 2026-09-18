@@ -61,6 +61,9 @@ from maxpane_dashboard.widgets.curator import (
     SIGNALS_TITLE,
 )
 
+#: Reads repo source or docs rather than exercising code (CLAUDE.md "Tests").
+pytestmark = pytest.mark.guard
+
 REPO = Path(__file__).resolve().parents[1]
 _TCSS = REPO / "maxpane_dashboard" / "themes" / "minimal.tcss"
 _SCREEN_FIXTURES = REPO / "tests" / "fixtures" / "curator" / "screen"

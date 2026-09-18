@@ -27,7 +27,7 @@ import collections
 import pytest
 
 from sybilkit import Dataset, DetectConfig, detect
-from tests.sybilkit_fixtures import labeled_subset
+from sybilkit_tests.sybilkit_fixtures import labeled_subset
 
 CFG = DetectConfig()
 

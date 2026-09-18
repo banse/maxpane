@@ -16,7 +16,7 @@ from collections import Counter
 
 import pytest
 
-from tests.sybilkit_fixtures import FIXTURES, POPULATION, labeled_subset, load, slices
+from sybilkit_tests.sybilkit_fixtures import FIXTURES, POPULATION, labeled_subset, load, slices
 
 
 def test_the_reader_returns_a_sorted_list_of_the_committed_fixtures() -> None:

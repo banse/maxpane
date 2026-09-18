@@ -18,7 +18,7 @@ What is in here, and what it is for
     members and the 60 controls, each with its deposit rows, its join index,
     its transaction fingerprint and its funder — enough to run a whole
     ``detect()`` offline.  **Byte-identical** to
-    ``sybilkit/tests/fixtures/labeled_subset.json``; both distributions gate on
+    ``sybilkit/sybilkit_tests/fixtures/labeled_subset.json``; both distributions gate on
     the same evidence, and ``test_curator_sybil_data.py`` pins that they agree.
 
 ``operator_row_worst.json`` · ``segment_rows_worst.json`` ·
@@ -50,7 +50,7 @@ could put on screen.
 
 Naming, across the two distributions
 ------------------------------------
-``sybilkit/tests/sybilkit_fixtures.py`` is the mirror of this module and keeps
+``sybilkit/sybilkit_tests/sybilkit_fixtures.py`` is the mirror of this module and keeps
 the same names for the fixtures both distributions hold: ``load``, ``slices``
 and ``labeled_subset`` mean the same thing on both sides, and
 ``test_the_two_readers_keep_the_same_names_for_the_shared_fixtures`` pins that.

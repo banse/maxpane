@@ -18,7 +18,7 @@ from __future__ import annotations
 from sybilkit import DetectConfig
 from sybilkit.signals.amounts import amount_edges
 
-from tests.conftest import component_containing
+from sybilkit_tests.conftest import component_containing
 
 CFG = DetectConfig()
 

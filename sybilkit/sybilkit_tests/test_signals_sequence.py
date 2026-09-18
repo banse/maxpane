@@ -12,7 +12,7 @@ from __future__ import annotations
 from sybilkit import Dataset, DetectConfig
 from sybilkit.signals.sequence import sequence_edges
 
-from tests.conftest import connected_sets
+from sybilkit_tests.conftest import connected_sets
 
 CFG = DetectConfig()
 

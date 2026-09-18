@@ -104,18 +104,29 @@ the app-wide pin is `__main__.FULL_LAYOUT_COLUMNS`. Logs: `~/.maxpane/maxpane.lo
 
 ```bash
 .venv/bin/python -m pytest tests/analytics/        # pure math, seconds
-.venv/bin/python -m pytest                          # ~8,550 tests, ~30 min single-process (2026-09-18)
-.venv/bin/python -m pytest sybilkit                 # separate distribution, 445 tests; cannot be collected together with tests/
+# Three tiers, each ONE command; single-process times measured 2026-09-19 on this machine.
+.venv/bin/python -m pytest tests/data tests/analytics tests/test_*.py sybilkit/sybilkit_tests  # fast: ~5,700 tests, ~3 min
+.venv/bin/python -m pytest -m 'not screen' sybilkit/sybilkit_tests tests   # + widgets, no composites: ~7,500 tests, ~6 min
+.venv/bin/python -m pytest sybilkit/sybilkit_tests tests                   # full: ~8,330 tests (7,885 + 445 sybilkit), ~30 min
+HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests tests   # full, parallel: ~12.5 min
 cargo test                                          # the Rust crate, from maxpane/
 ```
+
+Markers (`pyproject.toml`): `screen` = everything under `tests/screens` (836 whole-dashboard
+composites, 0.3–1.3 s a case, ~85 % of the serial half hour); `sweep` = the layout-pin certifications
+inside it (boundary sets since 2026-09-19, terminal-layout skill); `guard` = a file that reads repo
+source or docs rather than exercising code. `-n` is deliberately **not** in `addopts`: some tests
+write `~/.maxpane/<game>_cache.json` through an un-mocked manager, so a parallel run isolates `HOME`
+as above (serial and `-n 4` passed the identical 8,551-test set on 2026-09-19: 29:46 vs 12:29). Both
+distributions collect in one command since `sybilkit/tests` became `sybilkit/sybilkit_tests` — two
+packages both named `tests` raised `ImportPathMismatchError`.
 
 **Run the tests that could see the change:** the touched module's test file plus the
 screen/manager test that consumes it. The full suite runs once, before merge or push, by the
 controller — never by an implementer or reviewer, never after every task; cite the last green run.
-`tests/screens` is the expensive tier (0.3–1.3 s per composited case). A docs-only edit still
-needs the tests that pin the doc: `rg -n 'CLAUDE\.md|README\.md|SKILL\.md|rules/' tests/` and run
-every file it names. Use `.venv/bin/python -m pytest`: the system `python3` lacks the deps, and an
-interpreter without `httpx` *skips* sybilkit's fetcher tests and reports green.
+A docs-only edit still needs the tests that pin the doc: `rg -n 'CLAUDE\.md|README\.md|SKILL\.md|rules/' tests/`
+and run every file it names. Use `.venv/bin/python -m pytest`: the system `python3` lacks the deps,
+and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports green.
 
 ## Conventions — each one is a bug that shipped; the reasoning is in `.claude/rules/`
 

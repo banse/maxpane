@@ -17,7 +17,7 @@ from __future__ import annotations
 from sybilkit import Dataset, DetectConfig
 from sybilkit.signals.cadence import cadence_edges
 
-from tests.conftest import connected_sets
+from sybilkit_tests.conftest import connected_sets
 
 CFG = DetectConfig()
 

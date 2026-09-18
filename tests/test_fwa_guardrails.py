@@ -90,6 +90,9 @@ from maxpane_dashboard.data.fwa_models import (
     PullEV,
 )
 
+#: Reads repo source or docs rather than exercising code (CLAUDE.md "Tests").
+pytestmark = pytest.mark.guard
+
 _REPO = Path(__file__).resolve().parents[1]
 _PKG = _REPO / "maxpane_dashboard"
 _FIXTURES = Path(__file__).resolve().parent / "fixtures" / "fwa"

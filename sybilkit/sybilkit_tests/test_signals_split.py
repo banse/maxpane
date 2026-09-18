@@ -13,7 +13,7 @@ from __future__ import annotations
 from sybilkit import Dataset, DetectConfig
 from sybilkit.signals.split import split_edges
 
-from tests.conftest import component_containing
+from sybilkit_tests.conftest import component_containing
 
 CFG = DetectConfig()
 

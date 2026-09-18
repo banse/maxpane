@@ -68,7 +68,7 @@ def test_the_curve_agrees_with_the_committed_population_total() -> None:
     """Folding the committed population's final weights through the curve at
     the swept rate reproduces the audited total exactly — the wei-exact fold
     the whole-population smoke test pins again at detect() level."""
-    from tests.sybilkit_fixtures import load
+    from sybilkit_tests.sybilkit_fixtures import load
 
     last: dict[str, tuple[tuple[int, int], int]] = {}
     for row in load("deposits.json.gz"):

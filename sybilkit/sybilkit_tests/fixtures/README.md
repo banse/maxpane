@@ -1,4 +1,4 @@
-# `sybilkit/tests/fixtures/`
+# `sybilkit/sybilkit_tests/fixtures/`
 
 Committed, read-only, keyless. **No test in this distribution opens a socket**;
 every external payload is one of these files. Read them through

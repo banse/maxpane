@@ -12,6 +12,11 @@ from maxpane_dashboard.screens.game_select import GAMES
 from tests.address_sweep.imports import imported_names, imports_helper, widget_modules_of
 from tests.address_sweep.registry import CASES
 
+import pytest
+
+#: Reads repo source or docs rather than exercising code (CLAUDE.md "Tests").
+pytestmark = pytest.mark.guard
+
 SCREENS = pathlib.Path("maxpane_dashboard/screens")
 
 #: Screen modules that are not dashboards, by explicit name, so a new module is

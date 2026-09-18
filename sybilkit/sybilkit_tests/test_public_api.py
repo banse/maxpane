@@ -740,7 +740,7 @@ def test_the_signals_accept_a_precomputed_first_row_map_and_agree_with_deriving_
     — for the four tier-A families, for ``gas``, and for the two shared folds
     the amount family is built on.
     """
-    from tests.conftest import build_labeled_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset
 
     ds = build_labeled_dataset()
     cfg = DetectConfig()
@@ -778,7 +778,7 @@ def test_detect_walks_the_deposits_for_a_first_row_map_exactly_once() -> None:
         calls += 1
         return real(ds)
 
-    from tests.conftest import build_labeled_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset
 
     ds = build_labeled_dataset()
     signals_mod.first_rows = counting
@@ -802,7 +802,7 @@ def test_split_and_amounts_walk_one_windowing_pass() -> None:
     import sybilkit.signals.amounts as amounts_mod
     import sybilkit.signals.split as split_mod
 
-    from tests.conftest import build_labeled_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset
 
     ds = build_labeled_dataset()
     cfg = DetectConfig()
@@ -836,7 +836,7 @@ def test_the_two_amount_signals_are_handed_the_very_same_windows() -> None:
     import sybilkit.signals.amounts as amounts_mod
     import sybilkit.signals.split as split_mod
 
-    from tests.conftest import build_labeled_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset
 
     ds = build_labeled_dataset()
     seen: list[object] = []
@@ -883,7 +883,7 @@ def test_the_preset_and_the_signals_agree_on_first_deposits(monkeypatch) -> None
     """
     import sybilkit.curator as curator_mod
 
-    from tests.conftest import build_labeled_dataset, build_population_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset, build_population_dataset
 
     for ds in (build_labeled_dataset(), build_population_dataset()):
         oracle: dict = {}
@@ -923,7 +923,7 @@ def test_clean_list_and_segments_agree_when_handed_the_same_folds() -> None:
     from sybilkit.curator import CuratorPreset, clean_list, credited_totals
     from sybilkit.curator import final_weights, segments
 
-    from tests.conftest import build_labeled_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset
 
     for fn, frozen in (
         (segments, ("ds", "res", "preset")),
@@ -1027,7 +1027,7 @@ def test_every_edges_strength_equals_its_reasons_strength() -> None:
     """
     from sybilkit.signals.funding import funding_edges
 
-    from tests.conftest import build_labeled_dataset, build_population_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset, build_population_dataset
 
     cfg = DetectConfig()
     seen: set[str] = set()

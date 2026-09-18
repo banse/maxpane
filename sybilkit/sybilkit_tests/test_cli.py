@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from sybilkit import cli
-from tests.sybilkit_fixtures import FIXTURES
+from sybilkit_tests.sybilkit_fixtures import FIXTURES
 
 LABELED = FIXTURES / "labeled_subset.json"
 THIS_FILE = Path(__file__).resolve()

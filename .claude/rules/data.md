@@ -149,7 +149,7 @@ two tiers' TTLs, and never name a group.
 ## `sybilkit/` is a second Python distribution
 
 A sibling of the `maxpane/` Rust crate, not a package inside `maxpane_dashboard/`: own
-`pyproject.toml`, own `tests/`, own version, own PyPI name (`0.1.0` since 2026-08-19). It is
+`pyproject.toml`, own `sybilkit_tests/` (not `tests/`: two packages of that name cannot be collected together), own version, own PyPI name (`0.1.0` since 2026-08-19). It is
 maxpane-independent (stdlib core; `httpx` is the optional `[sources]` extra, imported lazily).
 Build with `python -m build sybilkit/`; the root build must not build it. Only
 `data/curator_clusters.py` imports it (`test_only_curator_clusters_imports_sybilkit`), through a

@@ -13,8 +13,8 @@ from sybilkit import Dataset, DetectConfig, detect
 from sybilkit.curve import curve_points
 from sybilkit.labels import CEX_HOT_WALLETS
 
-from tests.conftest import build_labeled_dataset, build_population_dataset
-from tests.sybilkit_fixtures import labeled_subset
+from sybilkit_tests.conftest import build_labeled_dataset, build_population_dataset
+from sybilkit_tests.sybilkit_fixtures import labeled_subset
 
 # ---------------------------------------------------------------------------
 # helpers the brief's verbatim tests call

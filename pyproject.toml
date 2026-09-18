@@ -49,3 +49,11 @@ packages = ["maxpane_dashboard"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+# Tiers (CLAUDE.md "Tests"). `-n` is deliberately not in addopts: some tests
+# write ~/.maxpane/<game>_cache.json through an un-mocked manager, so a parallel
+# run isolates HOME on the command line instead.
+markers = [
+    "screen: composites a whole dashboard (everything under tests/screens)",
+    "sweep: integer size sweep certifying a layout pin (a boundary set since 2026-09-19)",
+    "guard: reads repo source or docs rather than exercising code",
+]

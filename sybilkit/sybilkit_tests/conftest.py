@@ -1,7 +1,7 @@
 """Shared builders over the committed fixtures.
 
 Everything here is offline: the bytes come from ``tests/fixtures/`` through
-``tests.sybilkit_fixtures``, and a :class:`sybilkit.Dataset` is built through
+``sybilkit_tests.sybilkit_fixtures``, and a :class:`sybilkit.Dataset` is built through
 the public ``Dataset.from_events`` — the same door every real producer uses,
 so the suite exercises the coercion path instead of bypassing it.
 
@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 from sybilkit import Dataset
-from tests.sybilkit_fixtures import labeled_subset, load
+from sybilkit_tests.sybilkit_fixtures import labeled_subset, load
 
 
 def build_labeled_dataset(*, txs: bool = True, funding: bool = True) -> Dataset:

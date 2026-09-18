@@ -97,7 +97,7 @@ ledger was built for.
 
 The 33 `SYNTHETIC — re-point` markers elsewhere under `tests/` are a **different
 generation** — the base curator build's, closed by that build's WP7.13 against
-the live capture bundles — and are none of this build's business. `sybilkit/tests/`
+the live capture bundles — and are none of this build's business. `sybilkit/sybilkit_tests/`
 carries no marker of either generation.
 
 `labeled_subset.json` deliberately carries **no** marker. Every byte of it is
@@ -129,6 +129,6 @@ one-shot script that wrote them, and that script is deliberately not committed.
 ## The mirror
 
 `labeled_subset.json` is **byte-identical** to
-`sybilkit/tests/fixtures/labeled_subset.json`. PRD §8 requires both
+`sybilkit/sybilkit_tests/fixtures/labeled_subset.json`. PRD §8 requires both
 distributions to gate on the same evidence; a test asserts the two copies agree,
 so they cannot drift into two convenient subsets.

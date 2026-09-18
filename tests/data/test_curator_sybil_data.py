@@ -50,7 +50,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA = _REPO_ROOT / "docs" / "curator_sybil_data"
 
 #: The sybilkit distribution's mirror of the same benchmark subset (PRD §8).
-SYBILKIT_FIXTURES = _REPO_ROOT / "sybilkit" / "tests" / "fixtures"
+SYBILKIT_FIXTURES = _REPO_ROOT / "sybilkit" / "sybilkit_tests" / "fixtures"
 
 
 @lru_cache(maxsize=None)
@@ -982,7 +982,7 @@ def test_the_two_readers_keep_the_same_names_for_the_shared_fixtures() -> None:
 
     spec = importlib.util.spec_from_file_location(
         "_sybilkit_fixtures_probe",
-        _REPO_ROOT / "sybilkit" / "tests" / "sybilkit_fixtures.py",
+        _REPO_ROOT / "sybilkit" / "sybilkit_tests" / "sybilkit_fixtures.py",
     )
     theirs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(theirs)

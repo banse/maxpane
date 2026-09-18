@@ -172,7 +172,7 @@ def test_the_four_in_sample_funder_pairs_stay_inside_their_own_labels(
 
 
 def test_empty_funding_means_no_edges_tier_a_only() -> None:
-    from tests.conftest import build_labeled_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset
 
     ds = build_labeled_dataset(funding=False)
     assert ds.funding == {}

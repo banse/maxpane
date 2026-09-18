@@ -6,6 +6,11 @@ import ast
 import pathlib
 import re
 
+import pytest
+
+#: Reads repo source or docs rather than exercising code (CLAUDE.md "Tests").
+pytestmark = pytest.mark.guard
+
 ROOT = pathlib.Path("maxpane_dashboard")
 HELPER = ROOT / "widgets" / "address.py"
 CLIPBOARD = ROOT / "clipboard.py"

@@ -42,7 +42,7 @@ SYBILKIT_SRC = _first_path(
 LABELED_SUBSET = _first_path(
     "SYBIL_LABELED_SUBSET",
     os.path.join(_HERE, "..", "..", "vendor", "sybilkit", "tests", "fixtures", "labeled_subset.json"),
-    "/Library/Vibes/autopull/sybilkit/tests/fixtures/labeled_subset.json",
+    "/Library/Vibes/autopull/sybilkit/sybilkit_tests/fixtures/labeled_subset.json",
 )
 CACHE = _first_path(
     "SYBIL_CACHE",
@@ -229,7 +229,7 @@ def main():
         incident[e.b][k] += 1
 
     # ---- funding facts ---------------------------------------------------------
-    labeled = json.load(open("/Library/Vibes/autopull/sybilkit/tests/fixtures/labeled_subset.json"))
+    labeled = json.load(open("/Library/Vibes/autopull/sybilkit/sybilkit_tests/fixtures/labeled_subset.json"))
     controls = {c["address"].lower() for c in labeled["controls"]}
     members_lab = {m["address"].lower(): m["cluster"] for m in labeled["members"]}
 

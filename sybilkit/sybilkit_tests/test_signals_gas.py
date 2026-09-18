@@ -135,7 +135,7 @@ def test_a_mixed_none_axis_is_unjudgeable() -> None:
 def test_empty_txs_means_no_edges_tier_a_only(labeled_truth) -> None:
     """The normal first-cycle state: tier A only, gas silent — an honest loss
     of recall under the ≥2-family gate, never a fake fingerprint."""
-    from tests.conftest import build_labeled_dataset
+    from sybilkit_tests.conftest import build_labeled_dataset
 
     ds = build_labeled_dataset(txs=False)
     assert ds.txs == {}

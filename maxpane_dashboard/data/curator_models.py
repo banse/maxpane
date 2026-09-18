@@ -236,7 +236,7 @@ from dataclasses import dataclass
 #                               width probe on a synthetic 0xff..ff address.
 #   labeled_subset.json ....... 160 members + 60 controls, self-contained
 #                               enough to run a detect() offline; byte-
-#                               identical to sybilkit/tests/fixtures/.
+#                               identical to sybilkit/sybilkit_tests/fixtures/.
 #
 # SIZE THE COLUMNS FROM THESE, and read them through
 # `tests/curator_sybil_fixtures.worst_case_envelope()` / `row_payloads()` --
@@ -256,7 +256,7 @@ from dataclasses import dataclass
 #   clean-list name ................ 12  (NAME_COLS)   address ......... 42
 #
 # And the sybilkit side of the freeze, all importable and signature-pinned by
-# sybilkit/tests/test_public_api.py, all raising NotImplementedError("WP1"):
+# sybilkit/sybilkit_tests/test_public_api.py, all raising NotImplementedError("WP1"):
 #
 #   sybilkit ................... Dataset, detect, DetectConfig, DetectResult,
 #                                Deposit, Tx, Funding, Cluster, Reason,
@@ -273,7 +273,7 @@ from dataclasses import dataclass
 #                                DetectResult(clusters, total_points,
 #                                flagged_points, clean_points, *,
 #                                confidence_threshold=…)
-#   sybilkit/tests/sybilkit_fixtures.py ... load() / slices() / labeled_subset()
+#   sybilkit/sybilkit_tests/sybilkit_fixtures.py ... load() / slices() / labeled_subset()
 #
 # ---------------------------------------------------------------------------
 # THE EXPECTED RED SET WAVE 1 INHERITS — 5 tests, all deliberate, all UI.
