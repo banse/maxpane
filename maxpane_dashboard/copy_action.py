@@ -13,7 +13,7 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 class CopyAddressMixin:
     """Mixed into ``MaxPaneApp`` ahead of ``App``.
 
-    Two entry points, one clipboard path (``clipboard.copy_text``: native tool
+    Two entry points, one clipboard path (``clipboard.copy_text``: the native tool
     first, OSC 52 second, the status bar says which):
 
     * :meth:`action_copy_address` -- the ``⧉`` glyph's ``@click`` action;
@@ -74,7 +74,7 @@ class CopyAddressMixin:
     def _write_osc52(self, text: str) -> None:
         # The *base* implementation, on purpose: ``self.copy_to_clipboard`` is
         # the override above, and using it as the fallback of the path it
-        # wraps would start a second copy for every one that misses pbcopy.
+        # wraps would start a second copy for every one the native tool misses.
         App.copy_to_clipboard(self, text)
 
     def _post_copy_message(self, outcome: str, address: str | None) -> None:
