@@ -212,6 +212,12 @@ Tests to run: `tests/widgets/test_surf_rowfit.py`, `tests/widgets/test_markup_sa
 `rg -n 'surf\._rowfit|surf import _rowfit|^(WIDEN_HINT|SHORT_HINT|GLYPH_HINT) = |def _has_marker|def _title_with_hint' maxpane_dashboard tests` must be empty
 (the `WIDEN_HINTS` dicts do not match).
 
+**WP-A outcome (2026-09-20, commit `a0ebb17` + fix round):** 8 of the 9 plain sites were converted.
+`surf/activity._tier_for` stays a function: `tests/screens/test_surf_screen.py` reads its `__doc__` for
+the measured-width note, and it already delegated to `rowfit.tier_for`, so there was no copy to
+remove. The review's one Important finding was a spec defect — this list named `rules/widgets.md`
+but not the twin sentence in `CLAUDE.md` "Reuse before you build"; both now name `widgets/rowfit.py`.
+
 ### WP-B — `widgets/fmt.py` (after A is committed)
 
 1. **Create `widgets/fmt.py`**: `DASH = "--"`, `EMDASH = "—"`, `as_float`, `fmt_age`,

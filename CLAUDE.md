@@ -145,8 +145,8 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
   cache file is third-party input. **Inject the clock** (`now=` / `now_ts`).
 - **Screens inherit `screens/refresh_guard.RefreshGuard`**; never hand-roll exclusive workers;
   no network await in a message handler.
-- **Reuse before you build**: shared module → dashboard sibling / `_fmt.py` / `_rowfit.py` →
-  template. A helper two modules need is hoisted in the same change, never re-declared. The one
+- **Reuse before you build**: shared module (`widgets/rowfit.py`, `markup_safety.py`, `address.py`, …) →
+  dashboard sibling / `_fmt.py` → template. A helper two modules need is hoisted in the same change, never re-declared. The one
   legitimate copy is a hand-typed literal bound by an agreement test (`_GAME_CYCLE`, `--game`
   choices, `initial_game`, `MANAGER_ATTRS`, a widget restating a `data/` tuple). Sparklines
   import `widgets/sparkline_common`.

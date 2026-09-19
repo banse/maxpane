@@ -248,24 +248,25 @@ def has_marker(as_of: object) -> bool:
     return isinstance(as_of, str) and bool(as_of)
 
 
-def title_with_hint(base: str, widen: bool, budget: int) -> str:
-    """Append the longest widen marker that fits *base* within *budget*.
+def title_with_hint(base: str, widen: bool, room: int) -> str:
+    """Append the longest widen marker that fits *base* within *room* columns.
 
     :data:`WIDEN_HINT` first, then the bare :data:`GLYPH_HINT`, each two
     columns after the title; neither when *widen* is false, and *base*
-    untouched when not even the glyph fits. ``budget <= 0`` means "not laid
+    untouched when not even the glyph fits. ``room <= 0`` means "not laid
     out yet" and appends the full marker. For a title that also carries a
     network word use ``_pool4.title_text`` / ``market_panel_title``, which
     bind the same two markers to that shape; this is the fitter for a title
     that deliberately carries none (the swarm panels, whose chain word is per
     row). Hoisted from the four identical swarm copies in Branch 3.
     ``curator/_table.title_with_hint`` is a different contract (it returns
-    ``(title, fitted)``) and is not this function.
+    ``(title, fitted)``) and is not this function. The width argument is
+    ``room``, not ``budget``, so it cannot shadow :func:`budget` in this module.
     """
     if not widen:
         return base
     for candidate in (WIDEN_HINT, GLYPH_HINT):
-        if not budget or cell_len(base) + 2 + cell_len(candidate) <= budget:
+        if not room or cell_len(base) + 2 + cell_len(candidate) <= room:
             return f"{base}  {candidate}"
     return base
 

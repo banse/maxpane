@@ -194,24 +194,25 @@ def _amount_label(value) -> str:
     return f" {amount:.3f} ETH"
 
 
-#: Widest line layout that fits ``width`` rendered columns (``_tier_for``).
-#:
-#: Thresholds are the measured widths of the three line layouts below, not
-#: round numbers:
-#:
-#: ===========  =====  =====================================================
-#: Tier         Needs  Line
-#: ===========  =====  =====================================================
-#: ``full``     79     ``HH:MM  wallet  drew Collection #id   → label  ETH``
-#: ``compact``  52     ``HH:MM  wallet  Collection #id  → label``
-#: ``minimal``  34     ``HH:MM  wallet  → label``
-#: ===========  =====  =====================================================
-#:
-#: The real slots are 81 columns at a 200-column terminal and 56 at 140, so
-#: the feed runs ``full`` on a wide terminal and ``compact`` on a narrow one.
-#: ``width <= 0`` means "not laid out yet" and optimistically picks ``full``.
-#: (:class:`~maxpane_dashboard.widgets.rowfit.Ladder`: the last step is the fallback and its
-#: threshold is not consulted, so it is written ``0``.)
+# Widest line layout that fits ``width`` rendered columns (``_tier_for``).
+#
+# Thresholds are the pins above (``FULL_WIDTH`` / ``COMPACT_WIDTH`` /
+# ``MINIMAL_WIDTH``), each measured against the line it names; the numbers
+# live only in their ``#:`` blocks:
+#
+# ===========  =================  =====================================================
+# Tier         Pin                Line
+# ===========  =================  =====================================================
+# ``full``     ``FULL_WIDTH``     ``HH:MM  wallet  drew Collection #id   → label  ETH``
+# ``compact``  ``COMPACT_WIDTH``  ``HH:MM  wallet  Collection #id  → label``
+# ``minimal``  ``MINIMAL_WIDTH``  ``HH:MM  wallet  → label``
+# ===========  =================  =====================================================
+#
+# The feed runs ``full`` on a wide terminal and ``compact`` on a narrow one
+# (the slot widths are recorded beside the pins).
+# ``width <= 0`` means "not laid out yet" and optimistically picks ``full``.
+# (:class:`~maxpane_dashboard.widgets.rowfit.Ladder`: the last step is the fallback and its
+# threshold is not consulted, so it is written ``0``.)
 _LADDER = Ladder(("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0))
 _tier_for = _LADDER.tier_for
 

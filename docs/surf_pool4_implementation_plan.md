@@ -195,7 +195,7 @@ future key must not raise.
 |---|---|---|
 | `data/surf_pool4.py` | stdlib, `data/keccak.py`, `data/surf_v4.py` | `httpx`, `textual`, anything that reads a clock, `data/surf_client.py` |
 | `data/surf_pool4_client.py` | `httpx` (lazily, via `OwnedHttpClient`), `data/surf_pool4.py`, `data/surf_addresses.py` | `textual`, `widgets/` |
-| `widgets/surf/pool4_*.py` | `widgets/surf/_fmt.py`, `widgets/surf/_rowfit.py`, `widgets/markup_safety.py`, `widgets/sparkline_common.py` | `data/`, `analytics/` (no pool4 widget needs an analytics module; the allowlist stays at `analytics.surf_feed`) |
+| `widgets/surf/pool4_*.py` | `widgets/surf/_fmt.py`, `widgets/rowfit.py` (was `widgets/surf/_rowfit.py` until Branch 3), `widgets/markup_safety.py`, `widgets/sparkline_common.py` | `data/`, `analytics/` (no pool4 widget needs an analytics module; the allowlist stays at `analytics.surf_feed`) |
 
 ---
 
