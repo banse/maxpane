@@ -779,3 +779,50 @@ async def test_a_narrow_pane_still_falls_back_to_the_old_width():
         )
 
     assert column.width == _NAME_WIDTH
+
+
+# ===========================================================================
+# WP-B goldens (docs/refactor_programme_2026_09.md Branch 3) -- the private
+# formatters' renderings BEFORE they were re-pointed at widgets/fmt.py, pasted
+# as literals.  A changed literal is a defect, not an update.
+# ===========================================================================
+
+_FMT_PROBES = [None, 0, 0.0, 1, 1.5, 1e-7, 0.123456789, 1234.5678, -2, "abc", "",
+               True, 10**18, 15 * 10**17]
+
+_ODDS_AS_FLOAT_GOLDEN = [
+    None, 0.0, 0.0, 1.0, 1.5, 1e-07, 0.123456789, 1234.5678, -2.0, None, None,
+    None, 1e+18, 1.5e+18,
+]
+_ODDS_FMT_ETH_GOLDEN = [
+    "—", "0.00", "0.00", "1.00", "1.50", "0.00", "0.12", "1,234.57", "-2.00",
+    "—", "—", "—", "1,000,000,000,000,000,000.00", "1,500,000,000,000,000,000.00",
+]
+_HERO_AS_FLOAT_GOLDEN = _ODDS_AS_FLOAT_GOLDEN
+_HERO_FMT_ETH_GOLDEN = [
+    "--", "0.0000", "0.0000", "1.0000", "1.5000", "0.0000", "0.1235", "1,234.5678",
+    "-2.0000", "--", "--", "--", "1,000,000,000,000,000,000.0000",
+    "1,500,000,000,000,000,000.0000",
+]
+
+
+def test_golden_fwa_odds_board_as_float():
+    from maxpane_dashboard.widgets.fwa import fwa_odds_board as mod
+    assert [mod.as_float(p) for p in _FMT_PROBES] == _ODDS_AS_FLOAT_GOLDEN  # re-pointed
+
+
+def test_golden_fwa_odds_board_fmt_eth():
+    """EMDASH marker, two places, grouped; ``True`` is unknown."""
+    from maxpane_dashboard.widgets.fwa import fwa_odds_board as mod
+    assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _ODDS_FMT_ETH_GOLDEN
+
+
+def test_golden_fwa_hero_metrics_as_float():
+    from maxpane_dashboard.widgets.fwa import fwa_hero_metrics as mod
+    assert [mod.as_float(p) for p in _FMT_PROBES] == _HERO_AS_FLOAT_GOLDEN  # re-pointed
+
+
+def test_golden_fwa_hero_metrics_fmt_eth():
+    """DASH marker, FOUR places by default, grouped; ``True`` is unknown."""
+    from maxpane_dashboard.widgets.fwa import fwa_hero_metrics as mod
+    assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _HERO_FMT_ETH_GOLDEN

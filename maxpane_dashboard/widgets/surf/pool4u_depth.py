@@ -108,6 +108,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.surf_pool4_depth import depth_rows
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.fmt import fmt_eth
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float
 from maxpane_dashboard.widgets.surf._pool4 import (
     TITLE_CLASS,
@@ -190,7 +191,7 @@ UNAVAILABLE_LINE = "ladder unavailable"
 #: is ``None``, or it says ``deployed`` and the band's numbers are missing.
 #:
 #: A word rather than a dash, and the difference is the point of WP11. ``--`` is
-#: what ``_fmt_eth`` already paints for an unreadable ETH leg one column over,
+#: what ``fmt_eth`` already paints for an unreadable ETH leg one column over,
 #: so re-using it here would make "the band is unknown" and "this number is
 #: small/unavailable" the same mark in two adjacent columns. ``unknown``
 #: contains no digit and no percent sign, so it cannot be read as ``0.0%`` by a
@@ -263,19 +264,6 @@ FULL_WIDTH = sum(
 COMPACT_WIDTH = sum(cols + _CELL_PADDING for cols in (_MOVE_COLS, _ETH_COLS))
 
 
-def _fmt_eth(value) -> str:
-    """ETH at two decimals, grouped; ``--`` on an unreadable rung.
-
-    Never ``0.00`` for an unread value. A zero here is a real answer -- the
-    price did not reach that rung's range -- and the dash has to stay available
-    to mean something else.
-    """
-    v = as_float(value)
-    if v is None:
-        return DASH
-    return f"{v:,.2f}"
-
-
 def ladder_cells(row: object) -> tuple[str, str, str] | None:
     """Decompose one ladder rung into its three raw cells; ``None`` drops it.
 
@@ -311,7 +299,10 @@ def ladder_cells(row: object) -> tuple[str, str, str] | None:
             used_text = NOT_REACHED_BAND
         else:
             used_text = f"{used:.1f}%"
-        return move_text, _fmt_eth(row.get("eth_paid")), used_text
+        # ETH at two decimals, grouped; ``--`` on an unreadable rung, never
+        # ``0.00``: a zero here is a real answer (the price did not reach that
+        # rung's range) and the dash has to stay available to mean something else.
+        return move_text, fmt_eth(row.get("eth_paid")), used_text
     except Exception:
         return None
 

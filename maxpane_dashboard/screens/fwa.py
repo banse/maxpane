@@ -91,6 +91,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.widgets.fmt import as_float, fmt_eth
 from maxpane_dashboard.widgets.fwa import (
     FWAActivityFeed,
     FWAChaseBoard,
@@ -146,15 +147,9 @@ def _fmt_int(value) -> str:
 
 
 def _fmt_eth(value, places: int = 4) -> str:
-    if value is None or isinstance(value, bool):
-        return _EMDASH
-    try:
-        out = float(value)
-    except (TypeError, ValueError):
-        return _EMDASH
-    if out != out:
-        return _EMDASH
-    return f"{out:,.{places}f}"
+    """``widgets/fmt.fmt_eth`` with this screen's :data:`_EMDASH` for an unknown."""
+    v = as_float(value)
+    return _EMDASH if v is None else fmt_eth(v, places)
 
 
 def _fmt_degraded(sources) -> str:

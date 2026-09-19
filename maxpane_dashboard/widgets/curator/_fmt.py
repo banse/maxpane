@@ -1,10 +1,21 @@
-"""Shared pure formatters for the curator widgets (THE LIST).
+"""Curator-specific pure formatters (THE LIST), on top of ``widgets/fmt.py``.
 
 One private module rather than a copy per widget: ``fmt_eth`` is needed by
 the hero, the leaderboard, the activity feed, the signal rail and both swap
 tables, and a second copy is how the sparkline helpers drifted apart before
 MEDI-36.  Pure functions, no I/O, no Textual imports, **nothing raises** — a
 widget that raises inside Textual's message pump takes the app down.
+
+Since 2026-09-20 (``docs/refactor_programme_2026_09.md`` Branch 3 WP-B) the
+dashboard-agnostic names — ``DASH``, ``EMDASH``, ``as_float``, ``fmt_eth``,
+``fmt_age``, ``fmt_countdown``, ``fmt_points``, ``fmt_pct`` — are defined once
+in ``widgets/fmt.py`` and re-exported here so the curator widgets' imports
+did not move; their rationale (the bool rejection, the negative age, the
+``timeLeftInHour`` edge, the zero score) moved with them.  ``hhmm`` here is
+the shared one with :data:`NO_STAMP` as its unknown marker.  What this module
+still defines is the curator-only set: ``fmt_eth_compact`` with its measured
+:data:`COMPACT_ETH_COLS`, and the identity-cell widths :data:`ADDR_COLS` /
+:data:`NAME_COLS`.
 
 Three rules this dashboard makes load-bearing
 ---------------------------------------------
@@ -32,8 +43,17 @@ payload already computed against the manager's injected clock.
 
 from __future__ import annotations
 
-import time
-
+from maxpane_dashboard.widgets import fmt
+from maxpane_dashboard.widgets.fmt import (
+    DASH,
+    EMDASH,
+    as_float,
+    fmt_age,
+    fmt_countdown,
+    fmt_eth,
+    fmt_pct,
+    fmt_points,
+)
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
 __all__ = [
@@ -53,14 +73,6 @@ __all__ = [
     "fmt_pct",
     "hhmm",
 ]
-
-#: Unknown scalar.  Two columns, so a dashed cell never re-flows a table.
-DASH = "--"
-
-#: "Nothing here, and that is the expected state" — the FORCED ETH row's
-#: healthy rendering (H5).  Deliberately distinct from :data:`DASH`, which
-#: means "we could not read it".
-EMDASH = "—"
 
 #: The anti-poisoning window's own width, i.e. of ``0x1234…abcd`` --
 #: :data:`~maxpane_dashboard.widgets.address.MIN_SHORT_COLS`'s value,
@@ -97,37 +109,6 @@ NAME_COLS = 12
 #: could not be read renders this, **never** ``00:00`` — an epoch-zero stamp
 #: reads as 1970-01-01 data rather than as an absent measurement.
 NO_STAMP = "--:--"
-
-
-def as_float(value):
-    """Coerce to ``float`` or return ``None`` — never raise, never 0-coerce.
-
-    ``bool`` is rejected on purpose: ``True`` is not ``1.0`` ETH, and
-    ``isSettled()`` reaching an amount field is a bug worth rendering as
-    unknown rather than as a quantity.
-    """
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        out = float(value)
-    except (TypeError, ValueError):
-        return None
-    if out != out or out in (float("inf"), float("-inf")):  # NaN / ±inf
-        return None
-    return out
-
-
-def fmt_eth(value, places: int = 2) -> str:
-    """``3.60`` / ``8,401.00`` — a plain ETH quantity, no unit, no suffix.
-
-    ``0`` renders ``0.00``: on this contract a zero is frequently the real
-    answer (an hour that needs nothing is a *safe* hour), and rendering it
-    as unknown would hide the healthiest state the game has.
-    """
-    v = as_float(value)
-    if v is None:
-        return DASH
-    return f"{v:,.{places}f}"
 
 
 def fmt_eth_compact(value) -> str:
@@ -190,97 +171,14 @@ COMPACT_ETH_PROBE = (
 COMPACT_ETH_COLS = max(len(fmt_eth_compact(v)) for v in COMPACT_ETH_PROBE)
 
 
-def fmt_age(seconds) -> str:
-    """``45s`` / ``12m`` / ``2h`` / ``3d``; ``--`` for unknown or negative.
-
-    A negative age is an event from the future, i.e. corrupt input; ``0s``
-    would claim "just now" about it.
-    """
-    s = as_float(seconds)
-    if s is None or s < 0:
-        return DASH
-    if s < 90:
-        return f"{s:.0f}s"
-    if s < 90 * 60:
-        return f"{s / 60:.0f}m"
-    if s < 36 * 3600:
-        return f"{s / 3600:.0f}h"
-    return f"{s / 86400:.0f}d"
-
-
-def fmt_countdown(seconds) -> str:
-    """``H:MM:SS`` at or above an hour, ``MM:SS`` below it.
-
-    Two contract edges shape this (H12): ``timeLeftInHour()`` returns
-    ``hourDuration`` — 3600, not 0 — at an exact hour boundary, and
-    ``grace_seconds_left`` is clamped at 0 by the analytics layer once grace
-    is over.  So ``3600`` renders ``1:00:00`` and ``0`` renders ``00:00``,
-    and both are real states.
-
-    A **negative** input is nonsense rather than an edge (nothing upstream
-    may produce one), so it renders :data:`DASH`.  It is never rendered as a
-    negative clock: ``-00:05`` reads as a deadline five seconds gone, which
-    is a claim this widget has no evidence for.
-    """
-    s = as_float(seconds)
-    if s is None or s < 0:
-        return DASH
-    total = int(s)
-    hours, rest = divmod(total, 3600)
-    minutes, secs = divmod(rest, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes:02d}:{secs:02d}"
-
-
-def fmt_points(value) -> str:
-    """``31,622`` — a curve score.  ``0`` is a real score; ``None`` is not.
-
-    Zero points is reachable on chain: any weight under 1e18 floors to zero
-    through ``(isqrt(weight) * 1000) // 1e9``, so a real contributor can sit
-    at 0.  It renders as the number.
-    """
-    v = as_float(value)
-    if v is None:
-        return DASH
-    return f"{int(v):,}"
-
-
-def fmt_pct(value) -> str:
-    """``12.4%``; ``--`` when the share could not be computed.
-
-    Never ``0.0%`` for an unknown: the flagged-points share is ``None``
-    whenever total points are unknown (a division we refuse to do), and
-    ``0.0%`` would assert that the flagged wallets scored nothing.
-    """
-    v = as_float(value)
-    if v is None:
-        return DASH
-    return f"{v:.1f}%"
-
-
 def hhmm(timestamp) -> str:
     """``HH:MM`` local time from unix seconds; :data:`NO_STAMP` when unusable.
 
-    Local, like every other MaxPane feed stamp.  The one absolute instant on
-    this dashboard — the end of grace — arrives from the manager already
-    formatted as a UTC string, so the two never mix in one cell.
-
-    ``None`` **and** ``0`` both render ``--:--``: the log-timestamp read can
-    fail, and an epoch-zero stamp would print ``00:00`` on 1970-01-01, which
-    looks like data (H14).
+    The shared :func:`widgets.fmt.hhmm` with this dashboard's marker: ``None``
+    **and** ``0`` both render ``--:--`` (H14), and so does ``float("inf")``,
+    which the pre-2026-09-20 copy here let raise ``OverflowError``.
     """
-    try:
-        ts = int(timestamp or 0)
-    except (TypeError, ValueError):
-        return NO_STAMP
-    if ts <= 0:
-        return NO_STAMP
-    try:
-        t = time.localtime(ts)
-    except (TypeError, ValueError, OSError, OverflowError):
-        return NO_STAMP
-    return f"{t.tm_hour:02d}:{t.tm_min:02d}"
+    return fmt.hhmm(timestamp, unknown=NO_STAMP)
 
 
 # `short_label` and `short_addr` were deleted here in Task 3's own

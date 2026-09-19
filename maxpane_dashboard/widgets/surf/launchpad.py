@@ -102,6 +102,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
+from maxpane_dashboard.widgets.fmt import fmt_eth
 from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
@@ -818,10 +819,8 @@ FLOW_TITLE = "CURVE FLOW"
 
 
 def _fmt_eth_owed(value: object) -> str:
-    v = as_float(value)
-    if v is None:
-        return DASH
-    return f"{v:,.4f}"
+    """Creator ETH owed at four places -- ``widgets/fmt.fmt_eth``."""
+    return fmt_eth(value, 4)
 
 
 def _flow_lines(swap_count, trader_count, creator_eth_owed, as_of_hhmm) -> list[str]:

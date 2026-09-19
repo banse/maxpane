@@ -613,6 +613,11 @@ def test_a_missing_or_epoch_timestamp_renders_the_no_stamp_marker():
     1970-01-01 looks like data."""
     for value in (None, 0, "", "nonsense"):
         assert hhmm(value) == NO_STAMP
+    # ``int(float("inf"))`` raises OverflowError; until 2026-09-20 this
+    # module's own ``hhmm`` let it escape into the message pump.  The shared
+    # ``widgets/fmt.hhmm`` it now wraps catches it, and this pins that here.
+    for value in (float("inf"), float("-inf")):
+        assert hhmm(value) == NO_STAMP
     assert hhmm(1786910327) != NO_STAMP
 
 

@@ -1648,3 +1648,22 @@ def test_the_rail_panels_import_the_shared_title_rather_than_building_one():
     # identity, not by two equal strings that could drift apart.
     assert R.WIDEN_HINT is V.WIDEN_HINT is H.WIDEN_HINT is P.WIDEN_HINT
     assert R.GLYPH_HINT is V.GLYPH_HINT is H.GLYPH_HINT is P.GLYPH_HINT
+
+
+# ---------------------------------------------------------------------------
+# WP-B golden (docs/refactor_programme_2026_09.md Branch 3): the ratchet's
+# `_fmt_eth` rendering before it delegated to widgets/fmt.fmt_eth, as literals.
+# Six places below 1 ETH, four grouped places at or above it.
+# ---------------------------------------------------------------------------
+
+_FMT_PROBES = [None, 0, 0.0, 1, 1.5, 1e-7, 0.123456789, 1234.5678, -2, "abc", "",
+               True, 10**18, 15 * 10**17]
+_RATCHET_FMT_ETH_GOLDEN = [
+    "--", "0.000000", "0.000000", "1.0000", "1.5000", "0.000000", "0.123457",
+    "1,234.5678", "-2.0000", "--", "--", "--", "1,000,000,000,000,000,000.0000",
+    "1,500,000,000,000,000,000.0000",
+]
+
+
+def test_golden_pool4_ratchet_fmt_eth():
+    assert [R._fmt_eth(p) for p in _FMT_PROBES] == _RATCHET_FMT_ETH_GOLDEN

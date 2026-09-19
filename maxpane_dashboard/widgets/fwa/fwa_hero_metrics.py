@@ -47,6 +47,7 @@ from textual.containers import Horizontal
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
+from maxpane_dashboard.widgets.fmt import as_float, fmt_eth
 
 _DASH = "--"
 _EMDASH = "—"
@@ -86,36 +87,21 @@ _WHO_WIDTH = 20
 # -- format helpers ----------------------------------------------------
 
 
-def _as_float(value):
-    """Coerce to ``float`` or return ``None`` -- never raise."""
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        out = float(value)
-    except (TypeError, ValueError):
-        return None
-    if out != out or out in (float("inf"), float("-inf")):  # NaN / inf
-        return None
-    return out
-
-
 def _fmt_eth(value, places: int = 4) -> str:
-    v = _as_float(value)
-    if v is None:
-        return _DASH
-    return f"{v:,.{places}f}"
+    """``widgets/fmt.fmt_eth`` at this hero's four places."""
+    return fmt_eth(value, places)
 
 
 def _fmt_signed(value, places: int = 4) -> str:
     """Signed fixed-point -- the sign glyph is always present."""
-    v = _as_float(value)
+    v = as_float(value)
     if v is None:
         return _DASH
     return f"{v:+,.{places}f}"
 
 
 def _fmt_usd(value) -> str:
-    v = _as_float(value)
+    v = as_float(value)
     if v is None:
         return _DASH
     if abs(v) >= 1_000_000:
@@ -148,7 +134,7 @@ def _ev_sign(value) -> tuple[str, str]:
     required ``Theme`` fields, resolve per theme, and measure 10.39:1 and
     6.82:1 under ``fwa``.  Verified by WP-16's contrast audit.
     """
-    v = _as_float(value)
+    v = as_float(value)
     if v is None:
         return "", "dim"
     if v > 0:
@@ -165,7 +151,7 @@ def _gap_bar(gap, width: int = _GAP_BAR_WIDTH) -> str:
     filled head, which is the point.  The numeric multiple is always
     printed next to the bar, so the bar is never the only carrier.
     """
-    g = _as_float(gap)
+    g = as_float(gap)
     if g is None or g <= 0:
         return _GAP_EMPTY * width
     filled = int(round(width / g)) if g >= 1 else width
@@ -189,12 +175,12 @@ def _coverage_badge(priced, total, weight_pct) -> str:
     The badge itself is never dropped: PRD §3 makes it inseparable from the EV
     number, and ``--/-- · --%`` still says the thing that matters.
     """
-    t_val = _as_float(total)
+    t_val = as_float(total)
     if t_val is None or t_val <= 0:
         priced = total = weight_pct = None
     p = _fmt_int(priced)
     t = _fmt_int(total)
-    w = _as_float(weight_pct)
+    w = as_float(weight_pct)
     w_str = f"{w:.1f}" if w is not None else _DASH
     return f"{p}/{t} · {w_str}% of weight priced"
 
@@ -347,7 +333,7 @@ class FWAHeroMetrics(Horizontal):
         rebate_eth,
     ) -> None:
         box = self.query_one("#fwa-hero-ev", FWAHeroBox)
-        best = _as_float(best_eth)
+        best = as_float(best_eth)
         badge = _coverage_badge(priced, total, weight_pct)
 
         if available is False or best is None:
@@ -365,9 +351,9 @@ class FWAHeroMetrics(Horizontal):
         # so colour is redundant rather than load-bearing (PRD §11).
         big = f"[{colour}]{glyph} {_fmt_signed(best)}[/] [dim]ETH[/]"
 
-        lower = _as_float(lower_eth)
+        lower = as_float(lower_eth)
         second = f"lower {_fmt_signed(lower)} ETH" if lower is not None else "lower --"
-        rebate = _as_float(rebate_eth)
+        rebate = as_float(rebate_eth)
         if rebate is not None and rebate != 0:
             second = f"lower {_fmt_signed(lower)} · reb {_fmt_signed(rebate)}"
 
@@ -388,7 +374,7 @@ class FWAHeroMetrics(Horizontal):
         hm_am_gap_x,
     ) -> None:
         box = self.query_one("#fwa-hero-price", FWAHeroBox)
-        fee = _as_float(acquisition_fee_eth)
+        fee = as_float(acquisition_fee_eth)
 
         if available is False or fee is None:
             box.update(
@@ -403,9 +389,9 @@ class FWAHeroMetrics(Horizontal):
 
         # Gap line -- a live ratio, computed here only if the payload did
         # not carry it.  Never a constant (findings §13.7).
-        harmonic = _as_float(harmonic_mean_eth)
-        arithmetic = _as_float(arithmetic_mean_eth)
-        gap = _as_float(hm_am_gap_x)
+        harmonic = as_float(harmonic_mean_eth)
+        arithmetic = as_float(arithmetic_mean_eth)
+        gap = as_float(hm_am_gap_x)
         if gap is None and harmonic is not None and arithmetic is not None and harmonic > 0:
             gap = arithmetic / harmonic
         if harmonic is None or arithmetic is None or gap is None:
@@ -417,8 +403,8 @@ class FWAHeroMetrics(Horizontal):
             )
 
         # VRF leg only when the returned tuple says it is nonzero.
-        vrf = _as_float(vrf_fee_eth)
-        total = _as_float(quote_total_eth)
+        vrf = as_float(vrf_fee_eth)
+        total = as_float(quote_total_eth)
         parts: list[str] = []
         if vrf is not None and vrf != 0:
             parts.append(f"vrf {_fmt_eth(vrf)}")
@@ -455,7 +441,7 @@ class FWAHeroMetrics(Horizontal):
             )
             return
 
-        seize = _as_float(seize_eth)
+        seize = as_float(seize_eth)
         seize_line = (
             f"to seize {_fmt_eth(seize, 3)} ETH"
             if seize is not None and seize > 0
@@ -472,13 +458,13 @@ class FWAHeroMetrics(Horizontal):
             )
             return
 
-        pot = _as_float(pot_eth)
+        pot = as_float(pot_eth)
         if pot is None:
             big = f"[dim]{_EMDASH}[/]"
         else:
             big = f"[{_GOLD}]{_fmt_eth(pot, 3)}[/] [dim]ETH[/]"
 
-        usd = _fmt_usd(pot_usd) if _as_float(pot_usd) is not None else "usd n/a"
+        usd = _fmt_usd(pot_usd) if as_float(pot_usd) is not None else "usd n/a"
         # A verified ENS name where we have one; the icon always copies the
         # wallet address, whichever is shown. Composed as `Text` rather than
         # spliced into a markup string: the copy icon needs its own `Style`

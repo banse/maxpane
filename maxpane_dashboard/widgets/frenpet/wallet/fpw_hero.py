@@ -7,6 +7,8 @@ from textual.containers import Horizontal
 from textual.widgets import Static
 
 
+# Not widgets/fmt.fmt_eth: takes WEI (10**18 -> "1.0000 ETH") and raises TypeError
+# on probe None where fmt_eth renders "--".
 def _fmt_eth(wei: int) -> str:
     """Format wei to 'X.XXXX ETH'."""
     eth = wei / 1e18

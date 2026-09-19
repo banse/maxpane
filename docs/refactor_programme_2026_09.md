@@ -246,6 +246,24 @@ Tests to run: `tests/widgets/test_curator_*.py`, `tests/widgets/test_surf_*.py`,
 `rg -n 'def _as_float|def _fmt_eth\b' maxpane_dashboard/widgets maxpane_dashboard/screens` lists only the
 wrappers the report names.
 
+**WP-B outcome (2026-09-20):** `widgets/fmt.py` exists with the ten names above; both `_fmt.py`
+re-export it (37 importers untouched). Of the 15 private copies, **8 converted** — fwa's
+`fwa_odds_board._as_float` and `fwa_hero_metrics._as_float` re-pointed at `fmt.as_float`;
+`fwa_hero_metrics._fmt_eth`, `surf/launchpad._fmt_eth_owed` are one-line delegations keeping their
+`places`; `surf/pool4u_depth._fmt_eth` was `fmt_eth` exactly and its one call site now calls it;
+`surf/pool4_ratchet._fmt_eth` (places by magnitude), `fwa_odds_board._fmt_eth` and
+`screens/fwa._fmt_eth` (EMDASH marker) are two-line wrappers — and **7 kept**, each with a comment
+naming the probe: frenpet's `fpw_pets`/`fpw_hero` take wei and raise `TypeError` on `None`;
+`fwa_chase_board._fmt_eth`, `fwa_settlement_table._fmt_eth`/`_as_float` and both ttt tables coerce
+`True` to `1` (bare `float()`), and the ttt pair is also ungrouped (`1234.5678 Ξ`). A golden over
+the 14-value probe set pins every one of the 15 in its module's test file; none changed. The one
+recorded behaviour change is not a rendering: the two `hhmm` bodies differed beyond their marker —
+curator's `int()` guard did not catch `OverflowError`, so `hhmm(float("±inf"))` raised inside the
+message pump where surf's returned the marker. The shared body is surf's (CLAUDE.md "never a
+crash"); curator's `hhmm(±inf)` now renders `--:--`, and no input that rendered before renders
+differently. Known, not in the probe set: the three wrappers that go through `fmt.as_float` now
+render `--`/`—` for `float("inf")` where the old `float()`-based bodies printed `inf`.
+
 **Not in scope (both WPs)**: any pin; any rendered string change; `templates/`; the 6 parametric
 tier functions; `curator/_table.title_with_hint`; `analytics/`.
 

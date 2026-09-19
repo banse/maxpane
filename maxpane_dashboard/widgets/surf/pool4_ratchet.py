@@ -47,6 +47,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.fmt import fmt_eth
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.sparkline_common import (
     build_sparkline,
@@ -227,9 +228,7 @@ def _fmt_eth(value: object) -> str:
     0.0057 ETH in it never renders as ``0.00``.
     """
     v = as_float(value)
-    if v is None:
-        return DASH
-    return f"{v:.6f}" if abs(v) < 1 else f"{v:,.4f}"
+    return DASH if v is None else fmt_eth(v, 6 if abs(v) < 1 else 4)
 
 
 def _fmt_tick(value: object) -> str:

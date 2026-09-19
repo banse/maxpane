@@ -34,6 +34,8 @@ def _fmt_score(score: float) -> str:
     return f"{score:,.0f}"
 
 
+# Not widgets/fmt.fmt_eth: takes WEI (10**18 -> "1.000"), picks 3 or 4 places by
+# magnitude, and raises TypeError on probe None where fmt_eth renders "--".
 def _fmt_eth(wei: int) -> str:
     """Format wei to ETH with 3-4 decimal places."""
     eth = wei / 1e18
