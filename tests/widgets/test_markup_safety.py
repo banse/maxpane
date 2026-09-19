@@ -17,14 +17,22 @@ meaningful rather than vacuous.
 from __future__ import annotations
 
 import pytest
+from rich.cells import cell_len
 from rich.errors import MarkupError
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.widgets import DataTable
 
 from maxpane_dashboard.data.models import ActivityEvent, BakerySummary
 from maxpane_dashboard.templates.leaderboard_template import GameLeaderboard
 from maxpane_dashboard.widgets.leaderboard import Leaderboard
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import (
+    TAG_LIKE,
+    flatten,
+    safe_markup,
+    sanitize_cell,
+    strip_tags,
+)
 
 # Names a griefer can set on a public leaderboard. Each is malformed Rich
 # markup in a different way; every one of them raises MarkupError if it
@@ -354,3 +362,148 @@ async def test_hero_metrics_survives_hostile_leader_name() -> None:
         )
         await pilot.pause()
         await pilot.pause()
+
+
+# -- Branch 2 (docs/refactor_programme_2026_09.md): TAG_LIKE / flatten /
+# strip_tags / sanitize_cell, hoisted out of widgets/surf/launchpad.py,
+# launchpad_activity.py, burnkeepers.py and _pool4.py -------------------
+#
+# These four names formerly lived as four separate private copies (one per
+# module above); this section is the contract the hoist has to satisfy
+# rather than a copy of any one module's own tests.
+
+
+class _RaisingStr:
+    """An object whose ``__str__`` raises -- ``flatten``/``strip_tags``/
+    ``sanitize_cell`` must degrade rather than propagate the exception, the
+    same "a single malformed value must never take down the panel" rule
+    every calling widget already holds itself to.
+    """
+
+    def __str__(self) -> str:  # pragma: no cover - exercised via flatten etc.
+        raise RuntimeError("boom")
+
+
+def test_sanitize_cell_clips_before_it_escapes():
+    """The order inside :func:`sanitize_cell` does not commute.
+
+    Escaping first and clipping after can cut the ``\\[`` escape pair that
+    :func:`safe_markup` writes for a surviving bracket in half at the cell
+    boundary -- the user then sees a literal backslash and the ``[`` is
+    gone. Fixture: eight filler characters, then the nested-bracket shape
+    that one ``TAG_LIKE`` pass reduces to ``[/word]``; a 10-cell budget
+    lands the cut right on the escape.
+    """
+    result = sanitize_cell("xxxxxxxx[[inner]/word]", 10)
+    assert result == "xxxxxxxx[…", result          # escape-then-clip gives 'xxxxxxxx\\…'
+    assert Text.from_markup(result).plain == "xxxxxxxx[…"
+
+
+def test_tag_like_matches_a_complete_bracket_run_only():
+    """A well-formed style tag and a bare close both match; an unmatched
+    ``[`` with no closing bracket does not. (It does not need to: the
+    installed Rich renders a lone ``[`` literally. What :func:`safe_markup`
+    still catches in :func:`sanitize_cell` is the nested-bracket shape a
+    single ``TAG_LIKE`` pass reduces to a bare close -- see
+    ``test_sanitize_cell_escapes_what_tag_like_cannot_strip_in_one_pass``.)
+    """
+    assert TAG_LIKE.fullmatch("[bold red]")
+    assert TAG_LIKE.fullmatch("[/x]")
+    assert TAG_LIKE.sub("", "before [/x] after") == "before  after"
+    assert not TAG_LIKE.search("[unclosed")
+
+
+def test_flatten_none_is_empty_string():
+    assert flatten(None) == ""
+
+
+def test_flatten_collapses_embedded_newlines():
+    assert flatten("line one\nline two\r\nline three") == "line one line two line three"
+
+
+def test_flatten_never_raises_on_a_non_string():
+    assert flatten(42) == "42"
+    assert flatten({"a": 1}) == "{'a': 1}"
+    assert flatten(_RaisingStr()) == ""
+
+
+def test_strip_tags_none_is_empty_string():
+    assert strip_tags(None) == ""
+
+
+def test_strip_tags_collapses_embedded_newlines():
+    assert "\n" not in strip_tags("a\nb\r\nc")
+
+
+def test_strip_tags_removes_a_complete_bracket_run():
+    """A well-formed ``[/x]`` run is stripped outright, not merely escaped --
+    an *escaped* ``[/x]`` still renders as the literal text ``[/x]`` once
+    Rich unescapes it for display (the rationale carried in ``launchpad.py``'s
+    module docstring and ``_pool4.strip_tags``).
+    """
+    assert strip_tags("[/x] Bakers") == "Bakers"
+    assert strip_tags("[bold red]pwn[/]") == "pwn"
+
+
+def test_strip_tags_never_raises_on_a_non_string():
+    assert strip_tags(42) == "42"
+    assert strip_tags(_RaisingStr()) == ""
+
+
+def test_sanitize_cell_none_is_empty_string():
+    assert sanitize_cell(None, 10) == ""
+
+
+def test_sanitize_cell_clips_on_cells_not_characters():
+    """Eight CJK characters are sixteen columns -- a ``len()``-sized clip
+    would let all eight through a ten-column budget. Measured on
+    ``rich.cells.cell_len``, the mutation this hoist exists to prevent
+    (see the module docstring on ``widgets/rowfit.clip``).
+    """
+    wide = "海豚" * 4
+    result = sanitize_cell(wide, width=10)
+    assert cell_len(result) <= 10
+    assert result.endswith("…")
+
+
+def test_sanitize_cell_escapes_what_tag_like_cannot_strip_in_one_pass():
+    """``TAG_LIKE.sub`` runs a single left-to-right pass, so a *nested*
+    bracket can make it delete an inner pair and leave the outer fragments
+    sitting next to each other, reconstructing a hostile closing tag it
+    never matched as such: ``"[[inner]/word]"`` strips to ``"[/word]"`` --
+    exactly the "closing tag matching no open tag" shape that raises
+    ``rich.errors.MarkupError`` when parsed unescaped (proven directly below,
+    not assumed -- and it is the reconstructed leftover that bites, not the
+    raw fixture: a truly bare, unmatched ``[`` with nothing else around it
+    never reaches ``Text.from_markup`` as anything but literal text,
+    verified empirically against this repo's live Rich version, so it is
+    not what this step exists to catch).
+
+    :func:`safe_markup` is the net that keeps the reconstructed tag from
+    reaching ``Text.from_markup`` unescaped: the plain text must still
+    contain the literal ``[``, and parsing the escaped result must not
+    raise.
+    """
+    from rich.errors import MarkupError
+    from rich.text import Text
+
+    hostile = "[[inner]/word]"
+    leftover = TAG_LIKE.sub("", hostile)
+    assert leftover == "[/word]"
+    with pytest.raises(MarkupError):
+        Text.from_markup(leftover)  # the control: the leftover alone bites
+
+    result = sanitize_cell(hostile, width=40)
+    assert "[" in result
+    parsed = Text.from_markup(result)  # must not raise
+    assert "[" in parsed.plain
+
+
+def test_sanitize_cell_strips_a_complete_run_before_clipping():
+    assert sanitize_cell("[/x] Bakers", width=40) == "Bakers"
+
+
+def test_sanitize_cell_never_raises_on_a_non_string():
+    assert sanitize_cell(42, width=10) == "42"
+    assert isinstance(sanitize_cell({"a": 1}, width=10), str)
+    assert sanitize_cell(_RaisingStr(), width=10) == ""

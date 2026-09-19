@@ -125,7 +125,9 @@ unchanged):
   `launchpad.py`'s `len()`-clipped `_clip` is retired: the one behaviour change, and the one the
   handover names) → `safe_markup`. Docstring keeps the fixed-order rationale and the
   mutation-proof note from `launchpad._sanitize`: clip before escape so a cut never bisects an
-  escape pair; escape still matters for a lone unmatched `[` that `TAG_LIKE` cannot strip.
+  escape pair; escape still matters for the nested-bracket shape one `TAG_LIKE` pass reduces to a
+  bare close (`[[inner]/word]` → `[/word]`, a `MarkupError`). *Corrected in review 2026-09-19: the
+  "lone unmatched `[`" this line first named renders literally on the installed Rich and needs no net.*
 
 **Then, in the four surf modules:** delete the private copies and call the shared names
 (`launchpad.py`: `_sanitize(x, w)` → `sanitize_cell(x, w)`, `_flatten` → `flatten`;

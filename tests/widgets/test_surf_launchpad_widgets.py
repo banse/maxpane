@@ -224,7 +224,7 @@ async def test_a_hostile_ticker_is_escaped_in_the_table():
     Correction from the brief (Ruling R4): the brief's version of this test
     asserted ``"[/x]" in out``, which is backwards and fails against a
     correct implementation. A ticker that is *only* a bracket-tag shape
-    strips to nothing (:func:`_sanitize` step 2 in
+    strips to nothing (:func:`markup_safety.sanitize_cell` step 2, called from
     ``widgets/surf/launchpad.py`` -- the same behaviour
     ``test_hostile_ticker_and_name_never_reach_markup`` above already proves
     for ticker and name together), so the raw ``[/x]`` text never reaches

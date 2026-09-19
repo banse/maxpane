@@ -67,9 +67,6 @@ _DASH = "--"
 #: Marker appended to the title when a row had to be clipped.
 WIDEN_HINT = "‹ widen"
 
-#: Strips Textual markup so a row can be measured as the user sees it.
-_MARKUP = re.compile(r"\[/?[^\[\]]*\]")
-
 #: Rewritten value for an elapsed emissions window (PRD §8, the primary case).
 EMISSIONS_ENDED = "emissions ended"
 

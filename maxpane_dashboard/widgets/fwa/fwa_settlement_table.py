@@ -33,7 +33,6 @@ Primitives only -- this module imports nothing from ``fwa_models``.
 
 from __future__ import annotations
 
-import re
 import time
 
 from rich.cells import cell_len
@@ -55,9 +54,6 @@ UNAVAILABLE_TEXT = "logs unavailable"
 
 #: Outcomes that mean "sold straight back", for the headline share.
 _SELLBACK_OUTCOMES = ("bid_fwa", "bid_eth")
-
-#: Strips Textual markup so a line can be measured as the user sees it.
-_MARKUP = re.compile(r"\[/?[^\[\]]*\]")
 
 #: Short wordings used when the payload's own label does not fit the column.
 #: ``accept bid · $FWA`` cut to 16 gives ``accept bid · $FW``, which reads as a

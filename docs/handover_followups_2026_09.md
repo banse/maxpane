@@ -79,3 +79,11 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
    pins tcss-to-class correspondence. One Tier 0 sweep of the whole block when the stylesheet is
    next touched; re-point the comment at `widgets/surf/_pool4.py:199-201`, which cites five of
    these selectors as evidence for the blank-row convention.
+
+## §3.2 — sanitiser hoist (branch `refactor/sanitize-cell`)
+
+9. **Two bracket regexes twelve lines apart in `widgets/markup_safety.py`.** `_MARKUP_TAG`
+   (`\[/?[^\[\]]*\]`, behind `visible_len`) and the hoisted `TAG_LIKE` (`\[[^\[\]]*\]`, behind
+   `strip_tags`) — `TAG_LIKE` matches a strict superset. The Branch 2 spec froze `visible_len`, so the
+   pair was left; collapse to one pattern in Branch 3 (`refactor/fmt-rowfit`) with a test that
+   `visible_len` is unchanged on the fwa fixtures that pin it (reviewer M7, 2026-09-19).

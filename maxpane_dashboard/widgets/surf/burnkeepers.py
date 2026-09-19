@@ -33,13 +33,14 @@ This panel lives in the launchpad's right rail beside ``SurfCurveFlow`` and
 ``Static`` block too, not a ``DataTable``: a nine-gutter table does not fit
 ~34 rail columns.
 
-``wallet`` is stripped of complete ``[...]``-shaped bracket runs before it
-is windowed and escaped -- the same "strip the known-hostile shape, then
-escape whatever remains" defense ``widgets/surf/launchpad.py``'s ticker/name
-cells use, and for the same reason: an *escaped* ``[/x]`` still renders as
-the literal text ``[/x]`` once Rich unescapes it for display, which merely
-escaping does not prevent. A real on-chain address never contains a
-bracket, so this only ever fires on a malformed payload.
+``wallet`` is stripped of complete ``[...]``-shaped bracket runs (through
+``widgets/markup_safety.strip_tags``) before it is windowed and escaped --
+the same "strip the known-hostile shape, then escape whatever remains"
+defense ``widgets/surf/launchpad.py``'s ticker/name cells use, and for the
+same reason: an *escaped* ``[/x]`` still renders as the literal text
+``[/x]`` once Rich unescapes it for display, which merely escaping does not
+prevent. A real on-chain address never contains a bracket, so this only
+ever fires on a malformed payload.
 
 The panel builds one ``rich.text.Text`` per line via ``Text.from_markup``
 inside its own ``try`` and joins the parsed ``Text`` objects with
@@ -56,14 +57,13 @@ Primitives only -- this module imports nothing from ``data/`` or
 
 from __future__ import annotations
 
-import re
-
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
+from maxpane_dashboard.widgets.markup_safety import strip_tags
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_imd
 
 __all__ = [
@@ -108,24 +108,6 @@ FULL_WIDTH = (
 #: not fit; widening the rail's seam is not.
 COMPACT_WIDTH = FULL_WIDTH - _GAP - _BURNS_COLS                      # 31
 
-#: A complete ``[...]`` bracket run with no nested bracket -- ``launchpad.
-#: py``'s own ``_TAG_LIKE``, duplicated here rather than imported: that
-#: module is owned by a different work package and its private helpers are
-#: not a contract this one should couple to.
-_TAG_LIKE = re.compile(r"\[[^\[\]]*\]")
-
-
-def _strip_tags(value: object) -> str:
-    """Flatten embedded whitespace, then strip complete ``[...]``-shaped
-    runs outright -- see the module docstring for why stripping, not just
-    escaping, is required.
-    """
-    if value is None:
-        return ""
-    flat = " ".join(str(value).split())
-    stripped = _TAG_LIKE.sub("", flat)
-    return " ".join(stripped.split())
-
 
 def _wallet_cell(value: object, known: bool) -> Text:
     """The wallet cell, padded to :data:`_WALLET_COLS` for column alignment,
@@ -139,7 +121,7 @@ def _wallet_cell(value: object, known: bool) -> Text:
     markup: nothing here is parsed, so there is nothing to escape.
     """
     colour = "cyan" if known else "dim"
-    s = _strip_tags(value)
+    s = strip_tags(value)
     if is_address(s):
         cell = address_text(s, width=_WALLET_WINDOW_COLS, style=colour)
     else:
