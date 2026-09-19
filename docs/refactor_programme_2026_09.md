@@ -39,7 +39,7 @@ files; the commit message is the evidence.
 | 1 | `refactor/dead-base-code` | §3.1 | 2 | ~2,465 | below |
 | 2 | `refactor/sanitize-cell` | §3.2 | 2 | ~150 | below (also moves `_rowfit.py` to `widgets/rowfit.py`, shim left) |
 | 3 | `refactor/fmt-rowfit` | §3.3 (move already done in 2) | 2 | ~900 | below; two WPs, A (rowfit) then B (fmt) |
-| 4 | `feat/explorer-links` | new (UX links) | 2 | 0 | `tests/test_address_rule.py`, `tests/screens/test_address_icons_everywhere.py`, address sweep |
+| 4 | `feat/explorer-links` | new (UX links) | 2 | 0 | below; two WPs, A (helper + action + guards) then B (call sites + E7 sweep) |
 | 5 | `refactor/dashboard-screen` | §3.5 | 2 | ~1,100 | address sweep + every `tests/screens/test_*_screen.py` migrated |
 | 6 | `refactor/panels-ocm` | §3.4a | 2 | small | `tests/widgets/test_panels.py` (new), ocm tests |
 | 7 | `refactor/panels-small-four` | §3.4b | 2 | ~2,000 | cattown / dota / talismans / ttt widget + screen tests |
@@ -271,6 +271,145 @@ are filed in `docs/handover_followups_2026_09.md` #10–#12.
 
 **Not in scope (both WPs)**: any pin; any rendered string change; `templates/`; the 6 parametric
 tier functions; `curator/_table.title_with_hint`; `analytics/`.
+
+## Branch 4 — `feat/explorer-links` (two work packages, A then B — B edits A's call sites)
+
+Surveyed 2026-09-20 on main `38ffe74`. Facts the design rests on:
+
+- Textual 8.1.1 `App.open_url(url)` → `Driver.open_url` → `webbrowser.open(url)` in a terminal
+  (the web driver posts a meta message). Nothing in the repo calls it yet. **In a headless
+  `run_test` the base driver still calls `webbrowser.open`**, so the suite needs a guard like the
+  clipboard one (`tests/conftest.py::_forbid_real_clipboard`) or a test would open the developer's
+  browser.
+- Rich `Style(link=url)` renders as an OSC 8 hyperlink (`rich/style.py:712`) and Textual's console
+  is `force_terminal=True`, so a linked span reaches the terminal as a Cmd+clickable link in
+  Terminal.app / iTerm2 with no Textual support needed. A span with `@click` meta is what Textual
+  calls a *link* for styling: `Content._apply_link_style` adds the widget's `link_style` to it, and
+  the app default is `link-style: underline` / hover `bold not underline` (`textual/design.py:294`).
+  **The `⧉` glyph is already rendered that way today**; giving the address text `@click` meta
+  underlines the address too. That is the intended affordance; `minimal.tcss` can retheme
+  `link-style` app-wide if the owner dislikes it. No width changes: `ICON_COLS` stays 2.
+- Chain per dashboard, read off each client's RPC hosts (`data/*_client.py`): **Ethereum
+  mainnet** — curator, fwa, ocm, surf, talismans, ttt; **Base** — base, cattown, frenpet (and its
+  hidden `_full/_wallet/_perf` bodies), dota, bakery (`data/client.py`, verify: `models.py:604`
+  carries a `chain_id`). Surf has two per-row overrides: pool4 panels carry a network word
+  (`POOL4_NETWORKS = ("SEPOLIA", "MAINNET")`, `pool4_network` payload key, `_pool4.network_word`)
+  and swarm rows carry a `chain_id` (`data/surf_swarm._NETWORKS = {1: MAINNET, 11155111: SEPOLIA}`,
+  `widgets/surf/_swarm_chain.chain_word`). `curator_nft_holders.py` reads Base as well as mainnet;
+  a wallet address is the same on both, so curator links to Etherscan.
+- Address sites: 39 modules call `address_text`; `address_prose` is used by `surf/swarm_field.py`
+  (2) and, indirectly, through `widgets/surf/_icons.link_prose` / `link_in_order` (feed, signals,
+  HATCHES); `short_hex` renders a transaction hash in `surf/swarm_throughput.py:277` and
+  `surf/swarm_shipped.py:362` (both rows carry a `chain_id`) and a bytes32 of unknown kind in
+  `fwa/fwa_signals.py:234` (not necessarily a transaction — **not linked**). The one widget with
+  its own click handler is `surf/feed.py:625` (`is_copy_click`, PRD §3.4).
+- Enforcement today: `tests/widgets/address_probe.icon_targets` reads every `⧉` cell's `@click`
+  meta off the compositor; `tests/screens/test_address_icons_everywhere.py` sweeps every
+  `SweepCase` (`tests/address_sweep/case.py`: `name, screen_class, build, payload, views,
+  address_free, seeded, pins, extra_sizes`) at 170 columns and at each pin.
+
+### Design (the approved bullet above, made concrete)
+
+- **`widgets/explorer.py`** (pure, Rich-free): `Explorer(name, base_url)` frozen dataclass;
+  `ETHEREUM = Explorer("etherscan", "https://etherscan.io")`, `BASE = Explorer("basescan",
+  "https://basescan.org")`, `SEPOLIA = Explorer("sepolia", "https://sepolia.etherscan.io")`;
+  `EXPLORERS: dict[str, Explorer]` by name (the allowlist the action round-trips through);
+  `for_network(word) -> Explorer | None` mapping `"MAINNET"→ETHEREUM`, `"SEPOLIA"→SEPOLIA`,
+  `"BASE"→BASE`, anything else (including `None`) → `None` — an unknown chain gets **no** link,
+  never a guessed one; `is_tx_hash(value)` = `fullmatch(0x + 64 hex)`; `address_url(explorer,
+  address)` and `tx_url(explorer, tx_hash)` (`/address/…`, `/tx/…`), each validating first and
+  raising `ValueError` on an invalid value (a caller validates before it renders, exactly like
+  `copy_action`); `open_action(explorer, kind, value) -> "app.open_explorer('etherscan',
+  'address', '0x…')"` and `parse_open_action(action) -> (explorer, kind, value) | None`, the exact
+  inverse (`is_explorer_click(event)` beside `is_copy_click`). Values are validated on both ends
+  and the URL is always rebuilt from the parsed parts, never taken from the action string.
+- **`widgets/address.py`**: `address_text(..., explorer: Explorer | None = None)` and
+  `address_prose(..., explorer=None)`: when an explorer is given and the address is valid, the
+  *shown* span (address, window or label — never the icon) is stylised with
+  `Style(link=address_url(...), meta={"@click": open_action(...)})` on top of the caller's
+  `style`; with `None` it renders exactly as today. New `hash_text(tx_hash, width, *, explorer=None,
+  style="")` → `Text` for the two transaction-hash sites (`short_hex` stays the plain string
+  helper). `widgets/surf/_icons.link_prose(text, explorer=None)` / `link_in_order(texts,
+  addresses, explorer=None)` link the shown address before each surviving glyph the same way.
+- **`maxpane_dashboard/explorer_action.py`**: `ExplorerLinkMixin.action_open_explorer(name,
+  kind, value)` — re-validates all three against the allowlists (an action is not the only way to
+  invoke it), rebuilds the URL, calls `self.open_url(url)`, and posts `opened etherscan` /
+  `unavailable` through the same status-bar path `CopyAddressMixin._post_copy_message` uses
+  (hoist that method to a small shared `_post_status_message` if the two would otherwise be
+  copies — same file family, one owner). `MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App)`.
+- **Tests never open a browser (E8):** `tests/conftest.py` gains `_forbid_real_browser`
+  monkeypatching `webbrowser.open` to raise, suite-wide, beside the clipboard guard;
+  `tests/widgets/address_probe.py` gains `LinkRecorder` (records `open_url` calls, opens nothing)
+  and `link_targets(app)` — every cell whose style carries a `link` **or** an `@click` that
+  `parse_open_action` accepts, as `(x, y, explorer_name, kind, value, url)`.
+- **E7 — every rendered address is a link to its chain's explorer** (PRD §7 grows E7/E8):
+  `SweepCase` gains `explorer: Explorer | None` (the dashboard's default) and `explorers:
+  tuple[Explorer, ...]` (the set a per-row override may pick from; surf lists all three). The
+  sweep asserts, for every `⧉` target: the shown token before the icon carries an `@click` open
+  action **and** an OSC 8 `link` for the same address, `url == address_url(explorer, address)`,
+  with `explorer` in the case's allowed set; and every link on screen names an address (or tx
+  hash) the payload holds. An address without a link is a failure, exactly as an address without
+  an icon is.
+
+### WP-A — the helper, the action, the guards (no widget call site changes)
+
+1. `widgets/explorer.py` as designed, with `tests/widgets/test_explorer.py`: URLs, validation
+   (`0x` + 40/64 hex only, `fullmatch`), the allowlist, action round-trip (every `EXPLORERS` entry
+   × both kinds), `parse_open_action` rejecting a foreign explorer name, malformed hex, trailing
+   text, a non-string; AST purity test in the shape of `test_fmt.py`'s (allow `__future__`, `re`,
+   `dataclasses`).
+2. `widgets/address.py` changes above; `tests/widgets/test_address.py` (whatever the existing
+   file is) gains: the link is on the shown span only, the glyph keeps the copy action; `explorer=
+   None` renders byte- and style-identically to before (assert `Text.__eq__` and the spans);
+   window and label forms link the full address; an invalid address gets neither link nor icon
+   (unchanged); `hash_text` windows through `short_hex` and links `tx_url`.
+3. `explorer_action.py`, `app.py` wiring, `is_explorer_click`; `tests/test_explorer_action.py`
+   (pilot, `LinkRecorder`): a click on the address text opens the URL and posts the message; a
+   click on the glyph copies and opens nothing; an action with a foreign explorer name or a
+   malformed value opens nothing and posts `unavailable`; the mutation proof that the URL is rebuilt
+   (mutate `action_open_explorer` to use the action's text → the foreign-name test reddens).
+4. `tests/conftest.py::_forbid_real_browser` + a test that it bites (`webbrowser.open` raises
+   `AssertionError` inside the suite); `address_probe.LinkRecorder`, `link_targets`.
+5. Docs: PRD §7 E7/E8 (short, in the E1–E6 style), README mouse paragraph (one sentence: click an
+   address to open it on Etherscan/Basescan, Cmd+click works as a terminal hyperlink), CLAUDE.md
+   convention bullet "Every displayed 0x address carries a copy icon" gains "and, once Branch 4
+   WP-B lands, a link to its chain's explorer" **only in WP-B** (this WP leaves CLAUDE.md alone),
+   `.claude/rules/widgets.md` address section gains the link rule and names `explorer.py`.
+
+Tests to run: `tests/widgets/test_explorer.py`, the address helper's test file,
+`tests/test_explorer_action.py`, `tests/test_select_to_copy.py`, `tests/test_clipboard.py`,
+`-m guard tests`, `tests/screens/test_address_icons_everywhere.py` (must stay green: no site links
+yet, E7 is added by WP-B), `tests/widgets/test_base_address_icons.py`.
+
+### WP-B — every call site, the sweep, the docs (after A is committed)
+
+1. Pass `explorer=` at all 39 `address_text` sites and the `address_prose` / `_icons` sites: the
+   dashboard's explorer per the chain table above (import the constant from `widgets/explorer`;
+   a dashboard package may bind it once in its `_fmt.py` or `__init__` and import it from there —
+   one declaration per dashboard, the sweep's `SweepCase.explorer` is the agreement test that
+   binds it). Surf: pool4 panels use `for_network(pool4_network)`, swarm rows
+   `for_network(chain_word(chain_id))` (or the chain id directly through a `for_chain_id`
+   helper added in this WP with an agreement test against `data/surf_swarm._NETWORKS`), the two
+   hash sites use `hash_text`, everything else on surf is mainnet. `surf/feed.py` on_click
+   returns early on `is_explorer_click` too. `fwa_signals` bytes32 stays unlinked, with a comment.
+2. `SweepCase.explorer` / `explorers` on every case in `tests/address_sweep/builders.py`; E7
+   assertions in `test_every_rendered_address_carries_an_icon_that_copies_it` (rename to
+   `…_and_a_link_that_opens_it`; update the two other sweep files that name it, if any). Prove it
+   bites twice: drop `explorer=` from one Base site (the sweep must name that widget and
+   "address without a link"); pass `ETHEREUM` at one Base site (the sweep must name "link on the
+   wrong explorer"). Restore both by inverse edit.
+3. Docs: CLAUDE.md convention bullet, README, PRD §7 E7 wording final, `rules/widgets.md`,
+   `templates/` address examples pass `explorer=` (a template must not teach the old form).
+
+Tests to run: every `tests/widgets/test_*_address_icons.py` and each dashboard's widget tests
+whose files changed; `tests/screens/test_address_icons_everywhere.py`;
+`tests/test_address_sweep_registry.py`; `tests/test_address_rule.py`; `-m guard tests`; each
+`tests/screens/test_<game>_screen.py` for a dashboard whose widgets changed (all of them — run in
+three foreground batches).
+
+**Not in scope (both WPs)**: any pin (the link adds no cells); `templates/` beyond the address
+example lines; ENS *names* as a separate link kind (a name-backed address links the address);
+a `bytes32` that is not known to be a transaction hash; `DashboardScreen` (Branch 5).
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
