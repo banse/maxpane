@@ -1,6 +1,8 @@
 import ast
 import pathlib
 
+import pytest
+
 from rich.cells import cell_len
 from rich.style import Style
 from rich.text import Text
@@ -329,7 +331,7 @@ def test_hash_text_links_only_a_32_byte_hash_and_tolerates_junk():
     for not_a_tx in (ADDR, "0x" + "ab" * 31, "0x" + "ab" * 33, TX + "\n"):
         t = A.hash_text(not_a_tx, 17, explorer=X.ETHEREUM)
         assert _links(t) == [] and _spans(t) == [], repr(not_a_tx)
-        assert t.plain == A.short_hex(not_a_tx, 17) if isinstance(not_a_tx, str) else True
+        assert t.plain == A.short_hex(not_a_tx, 17)
     for junk in (None, "", 12, b"x"):
         t = A.hash_text(junk, 17, explorer=X.ETHEREUM)
         assert t.plain == "--" and _spans(t) == [], repr(junk)
@@ -355,3 +357,26 @@ def test_the_helper_reaches_only_the_explorer_module_beyond_rich():
         if isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module)
     assert {m for m in modules if m.startswith("maxpane_dashboard")} == {"maxpane_dashboard.widgets.explorer"}
+
+
+def test_a_forged_explorer_gets_no_link_and_never_a_crash():
+    """Review of WP-A, Minor 1: ``url_for`` used to build a usable URL for any
+    ``Explorer`` and only ``open_action`` raised -- inside the widget's render.
+    Now the URL helpers refuse anything outside the allowlist and the address
+    helpers degrade to an unlinked address (the icon still copies)."""
+    forged = X.Explorer("blockscout", "https://evil.example")
+    with pytest.raises(ValueError):
+        X.address_url(forged, ADDR)
+    with pytest.raises(ValueError):
+        X.tx_url(forged, TX)
+    same_name = X.Explorer("etherscan", "https://evil.example")
+    with pytest.raises(ValueError):
+        X.address_url(same_name, ADDR)
+    for explorer in (forged, same_name):
+        t = A.address_text(ADDR, explorer=explorer)
+        assert _links(t) == [], explorer          # no link ...
+        assert t == A.address_text(ADDR, explorer=None)   # ... and the icon still copies
+        p = A.address_prose(f"from {ADDR} to", explorer=explorer)
+        assert p == A.address_prose(f"from {ADDR} to", explorer=None)
+        h = A.hash_text(TX, 17, explorer=explorer)
+        assert _links(h) == [] and h.plain == A.short_hex(TX, 17)

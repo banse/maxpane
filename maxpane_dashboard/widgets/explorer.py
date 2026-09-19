@@ -98,18 +98,31 @@ def _valid(kind: str, value: object) -> bool:
     return False
 
 
+def _allowlisted(explorer: object) -> Explorer:
+    """``explorer`` itself when it is one of :data:`EXPLORERS`; ``ValueError`` otherwise.
+
+    A URL is only ever built for an allowlisted explorer, so no caller of
+    :func:`address_url` / :func:`tx_url` can be handed a usable link to a
+    host this module does not name (review of WP-A, Minor 1).
+    """
+    if not isinstance(explorer, Explorer) or EXPLORERS.get(explorer.name) != explorer:
+        raise ValueError("not an allowlisted explorer")
+    return explorer
+
+
 def address_url(explorer: Explorer, address: str) -> str:
-    """``https://…/address/0x…`` for a **validated** address; ``ValueError`` otherwise."""
+    """``https://…/address/0x…`` for a **validated** address on an allowlisted explorer;
+    ``ValueError`` otherwise."""
     if not is_address(address):
         raise ValueError("not an address")
-    return f"{explorer.base_url}/address/{address}"
+    return f"{_allowlisted(explorer).base_url}/address/{address}"
 
 
 def tx_url(explorer: Explorer, tx_hash: str) -> str:
     """``https://…/tx/0x…`` for a **validated** transaction hash; ``ValueError`` otherwise."""
     if not is_tx_hash(tx_hash):
         raise ValueError("not a transaction hash")
-    return f"{explorer.base_url}/tx/{tx_hash}"
+    return f"{_allowlisted(explorer).base_url}/tx/{tx_hash}"
 
 
 def url_for(explorer: Explorer, kind: str, value: str) -> str:

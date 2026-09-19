@@ -139,11 +139,21 @@ def _icon(address: str) -> tuple[str, Style]:
     return COPY_GLYPH, Style(meta={"@click": copy_action(address)})
 
 
-def _link(explorer: Explorer, kind: str, value: str) -> Style:
+def _link(explorer: Explorer, kind: str, value: str) -> Style | None:
     """The shown span's style for a **validated** value: the OSC 8 hyperlink
     the terminal follows on Cmd+click, and the ``@click`` action the app
-    follows on a plain click. Both name the same page."""
-    return Style(link=url_for(explorer, kind, value), meta={"@click": open_action(explorer, kind, value)})
+    follows on a plain click. Both name the same page.
+
+    ``None`` -- no link at all -- for an explorer outside the allowlist, so a
+    widget handed a forged ``Explorer`` renders an unlinked address rather
+    than raising inside its render (CLAUDE.md: degrade, never crash). The
+    action is built first: it is the stricter of the two checks.
+    """
+    try:
+        action = open_action(explorer, kind, value)
+        return Style(link=url_for(explorer, kind, value), meta={"@click": action})
+    except ValueError:
+        return None
 
 
 def address_text(
@@ -184,7 +194,8 @@ def address_text(
     out = Text(shown, style=style)
     if valid:
         if explorer is not None:
-            out.stylize(_link(explorer, "address", address), 0, len(shown))
+            if (link := _link(explorer, "address", address)) is not None:
+                out.stylize(link, 0, len(shown))
         out.append(" ")
         out.append(*_icon(address))
     return out
@@ -206,7 +217,8 @@ def address_prose(
         start = len(out)
         out.append(address)
         if explorer is not None:
-            out.stylize(_link(explorer, "address", address), start, start + len(address))
+            if (link := _link(explorer, "address", address)) is not None:
+                out.stylize(link, start, start + len(address))
         out.append(" ")
         out.append(*_icon(address))
         pos = match.end()
@@ -233,7 +245,8 @@ def hash_text(
     shown = short_hex(tx_hash, width)
     out = Text(shown, style=style)
     if explorer is not None and is_tx_hash(tx_hash):
-        out.stylize(_link(explorer, "tx", tx_hash), 0, len(shown))
+        if (link := _link(explorer, "tx", tx_hash)) is not None:
+            out.stylize(link, 0, len(shown))
     return out
 
 
