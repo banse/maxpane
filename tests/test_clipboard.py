@@ -108,13 +108,43 @@ async def test_a_timeout_kills_and_reaps_the_child(monkeypatch):
     assert procs and procs[0].returncode is not None, "child was killed but never reaped"
 
 
+async def test_a_cancelled_copy_kills_and_reaps_the_child(monkeypatch):
+    """The selection copy runs in an exclusive worker: a second drag cancels
+    the first, and the app cancels every worker on exit.  The cancellation
+    lands on the same ``await`` as the timeout and must clean up the same
+    way.  Same lifted guard and same ``sleep`` stand-in as the test above.
+    """
+    monkeypatch.undo()
+
+    procs = []
+    real_create = asyncio.create_subprocess_exec
+
+    async def capturing_create(*args, **kwargs):
+        proc = await real_create(*args, **kwargs)
+        procs.append(proc)
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", capturing_create)
+
+    task = asyncio.create_task(C._run(("sleep", "5"), b""))
+    while not procs:  # the child exists once create_subprocess_exec returned
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert procs[0].returncode is not None, "child was cancelled but never reaped"
+
+
 def test_the_messages_are_honest_and_contain_no_markup():
     messages = {
         C.COPIED: C.copy_message(C.COPIED, ADDR),
+        "selection": C.copy_message(C.COPIED, None),
         C.UNCONFIRMED: C.copy_message(C.UNCONFIRMED, ADDR),
         C.UNAVAILABLE: C.copy_message(C.UNAVAILABLE, None),
     }
     assert messages[C.COPIED] == f"copied {short_address(ADDR, 17)}"
+    assert messages["selection"] == "copied selection"   # a drag has no address
     assert messages[C.UNCONFIRMED] == "sent to terminal clipboard (unconfirmed)"
     assert messages[C.UNAVAILABLE] == "copy unavailable"
     for text in messages.values():
