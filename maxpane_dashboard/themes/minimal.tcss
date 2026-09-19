@@ -505,22 +505,6 @@ TokenSignals > .ts-title {
 
 /* ── Base Terminal Overview layout ──────────────────────────────────── */
 
-OverviewPanel {
-    width: 100%;
-    height: 1fr;
-    padding: 0 0;
-}
-
-OverviewPanel {
-    width: 100%;
-    height: 1fr;
-}
-
-OverviewPanel > .ov-section {
-    width: 100%;
-    padding: 0 1;
-}
-
 #ov-hero-row {
     width: 100%;
     height: auto;
@@ -566,19 +550,6 @@ OverviewHero _HeroCard {
     height: 1fr;
     padding: 0 1;
     overflow-y: auto;
-}
-
-OverviewPanel .ov-sub-title {
-    color: $text-muted;
-    padding: 0 1;
-    margin: 0 0 1 0;
-}
-
-OverviewPanel DataTable {
-    height: 1fr;
-    padding: 0 0;
-    background: $background;
-    scrollbar-size: 1 1;
 }
 
 /* ── Base Terminal Fee Monitor layout ───────────────────────────────── */

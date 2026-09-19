@@ -239,15 +239,7 @@ def _module_int_constants(tree) -> dict[str, int]:
 #: column around it absorbs the clamp is unmeasured. Reported, not fixed: the
 #: list may only shrink. ``(path, constant)``.
 KNOWN_CONSTANTS_BELOW_FLOOR = frozenset({
-    ("maxpane_dashboard/widgets/base/graduated.py", "_TOKEN_COLS"),
-    ("maxpane_dashboard/widgets/base/launch_feed.py", "_TOKEN_COLS"),
-    ("maxpane_dashboard/widgets/base/overview.py", "_MOVERS_TOKEN_COLS"),
-    ("maxpane_dashboard/widgets/base/overview.py", "_VOL_TOKEN_COLS"),
-    ("maxpane_dashboard/widgets/base/overview/_legacy_overview.py", "_MOVERS_TOKEN_COLS"),
-    ("maxpane_dashboard/widgets/base/overview/_legacy_overview.py", "_VOL_TOKEN_COLS"),
     ("maxpane_dashboard/widgets/base/overview/bt_overview_leaderboard.py", "_TOKEN_COLS"),
-    ("maxpane_dashboard/widgets/base/top_movers.py", "_TOKEN_COLS"),
-    ("maxpane_dashboard/widgets/base/trending_table.py", "_TOKEN_COLS"),
     ("maxpane_dashboard/widgets/ttt/ttt_fees_table.py", "_SYM_WIDTH"),
     ("maxpane_dashboard/widgets/ttt/ttt_leaderboard.py", "_SYM_WIDTH"),
 })

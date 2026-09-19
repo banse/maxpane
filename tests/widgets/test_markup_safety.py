@@ -279,7 +279,7 @@ async def test_cattown_leaderboard_survives_hostile_basenames(hostile: str) -> N
 
 @pytest.mark.parametrize("hostile", HOSTILE_NAMES)
 async def test_base_leaderboard_survives_hostile_symbols(hostile: str) -> None:
-    from maxpane_dashboard.widgets.base.overview.bt_leaderboard import (
+    from maxpane_dashboard.widgets.base.overview.bt_overview_leaderboard import (
         BTOverviewLeaderboard,
     )
 
