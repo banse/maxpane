@@ -85,6 +85,7 @@ from maxpane_dashboard.widgets.curator._fmt import (
     hhmm,
 )
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
+from maxpane_dashboard.widgets.rowfit import Ladder, WIDEN_HINT
 
 #: The phase vocabulary this widget branches on, spelled exactly as
 #: ``data/curator_models.PHASES`` freezes it.  A widget may not import
@@ -115,8 +116,8 @@ LIST_EXPORT_SUBTITLE_SHORT = (
 )
 LIST_EXPORT_SUBTITLE_TINY = "press 'e' to export full list"
 
-#: Marker raised in a box's bottom border when even ``minimal`` overflows.
-WIDEN_HINT = "‹ widen"
+# ``WIDEN_HINT`` is raised in a box's bottom border when even ``minimal``
+# overflows -- the repo-wide marker, shared in ``widgets/rowfit.py`` since Branch 3.
 
 #: Rendered columns each tier needs.  Measured from the strings the builders
 #: below emit — ``test_every_hero_tier_fits_the_width_it_advertises`` renders
@@ -135,17 +136,14 @@ TIER_WIDTHS = {
 _BOX_IDS = ("curator-hero-clock", "curator-hero-list", "curator-hero-curve")
 
 
-def _tier_for(width: int) -> str:
-    """Widest box layout that fits ``width`` rendered columns.
-
-    ``width <= 0`` means "not laid out yet" and optimistically picks the
-    widest; :meth:`CuratorHero.on_resize` re-renders once the box has a size.
-    """
-    if width <= 0 or width >= FULL_WIDTH:
-        return "full"
-    if width >= COMPACT_WIDTH:
-        return "compact"
-    return "minimal"
+#: Widest box layout that fits ``width`` rendered columns (``_tier_for``).
+#:
+#: ``width <= 0`` means "not laid out yet" and optimistically picks the
+#: widest; :meth:`CuratorHero.on_resize` re-renders once the box has a size.
+#: (:class:`~maxpane_dashboard.widgets.rowfit.Ladder`: the last step is the fallback and its
+#: threshold is not consulted, so it is written ``0``.)
+_LADDER = Ladder(("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0))
+_tier_for = _LADDER.tier_for
 
 
 def _phase_of(value) -> str | None:

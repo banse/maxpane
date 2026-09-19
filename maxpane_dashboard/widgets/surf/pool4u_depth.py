@@ -79,7 +79,7 @@ Shape, shared primitives and the ``$`` trap
 -------------------------------------------
 A ``DataTable`` under its own title and over a caption, on
 ``widgets/surf/pool4u_stakers.py``'s shape: fixed column widths measured in
-terminal cells, ``_rowfit.clip``/``pad`` (both on :func:`rich.cells.cell_len`,
+terminal cells, ``rowfit.clip``/``pad`` (both on :func:`rich.cells.cell_len`,
 never ``len()``) and columns *removed* rather than blanked on the narrow tier,
 because writing empty cells into a fixed-width column frees nothing.
 
@@ -115,7 +115,7 @@ from maxpane_dashboard.widgets.surf._pool4 import (
     parse_line,
     market_title_text,
 )
-from maxpane_dashboard.widgets.surf._rowfit import clip, pad
+from maxpane_dashboard.widgets.rowfit import clip, pad
 
 __all__ = [
     "CAPTION",
@@ -239,7 +239,7 @@ _ETH_COLS = 8
 _USED_COLS = 11
 
 #: What ``DataTable`` spends on each column *beyond* the width asked for: one
-#: cell of padding either side. ``_rowfit.row_cols`` is deliberately not used
+#: cell of padding either side. ``rowfit.row_cols`` is deliberately not used
 #: for the two pins below -- it charges a gap *between* present cells, which is
 #: a ``RichLog`` row's arithmetic, while a ``DataTable`` pads every column
 #: including the last. The two formulas differ by a gap and a trailing pad, and

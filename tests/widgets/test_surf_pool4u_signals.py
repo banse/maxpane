@@ -49,7 +49,7 @@ from maxpane_dashboard.data.surf_models import (
     SURF_KEYS,
 )
 from maxpane_dashboard.widgets.surf import _pool4
-from maxpane_dashboard.widgets.surf._rowfit import pad
+from maxpane_dashboard.widgets.rowfit import pad
 from maxpane_dashboard.widgets.surf import pool4u_hero as hero_mod
 from maxpane_dashboard.widgets.surf import pool4u_signals as sig_mod
 from maxpane_dashboard.widgets.surf.pool4u_signals import (

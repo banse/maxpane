@@ -114,6 +114,7 @@ from rich.cells import cell_len
 from rich.text import Text
 
 from maxpane_dashboard.widgets.markup_safety import strip_tags
+from maxpane_dashboard.widgets.rowfit import GLYPH_HINT, WIDEN_HINT
 
 #: ``join_lines`` / ``parse_line`` / ``widest_line`` are spelled with their
 #: nouns on purpose. Their first names -- ``body``, ``line``, ``widest`` --
@@ -158,22 +159,14 @@ NETWORK_UNKNOWN = "—"
 #: composited output for ``TITLE + TITLE_SEP + word``.
 TITLE_SEP = " · "
 
-#: What a pool4 panel appends to its own title when it had to shed a column.
-#: The repo-wide spelling (``activity.py``, ``launchpad_activity.py``,
-#: ``pool4_flow.py``) -- do not redefine it to mean anything narrower.
-WIDEN_HINT = "‹ widen"
-
-#: One tier below :data:`WIDEN_HINT`: the bare marker glyph, for a panel too
-#: narrow to say it in words. It exists because a pool4 title carries the
-#: network word as well as the panel name, so ``THE RATCHET · SEPOLIA
-#: ‹ widen`` genuinely does not fit a narrow rail where a bare
-#: ``LAUNCHPAD ACTIVITY  ‹ widen`` would.
-#:
-#: **Deliberately not called ``SHORT_HINT``.** That name already means
-#: ``"‹ widen"`` in three other modules; reusing it for a narrower thing on
-#: the same view would make one name stand for two spellings, which is the
-#: same class of defect as the network word this module exists to unify.
-GLYPH_HINT = "‹"
+# ``WIDEN_HINT`` (what a pool4 panel appends to its own title when it had to
+# shed a column) and ``GLYPH_HINT`` (one tier below it: the bare glyph, for a
+# title that also carries a network word) are the repo-wide marker, shared in
+# ``widgets/rowfit.py`` since Branch 3, where their reasoning lives. Re-
+# exported here (``__all__``): every pool4 and swarm module imports the
+# vocabulary from ``_pool4`` and
+# ``test_a_shared_name_a_module_uses_is_a_shared_name_it_imported`` holds them
+# to that.
 
 #: The one network word the ``4`` MARKET body leaves **unsaid** -- and only
 #: that body, through :func:`market_panel_title`. The ``p`` auditor body goes

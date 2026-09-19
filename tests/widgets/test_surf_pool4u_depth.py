@@ -606,7 +606,7 @@ async def test_the_width_pins_are_what_the_table_actually_reserves() -> None:
     no row this panel paints is ever wider than the pin that governs it.
 
     ``DataTable`` pads every column including the last, which is why these two
-    numbers are not ``_rowfit.row_cols``'s arithmetic: that charges a gap
+    numbers are not ``rowfit.row_cols``'s arithmetic: that charges a gap
     *between* cells and is a ``RichLog`` row's formula.
     ``SurfPool4UStakers`` records the same decision.
     """

@@ -27,6 +27,7 @@ from __future__ import annotations
 from rich.cells import cell_len
 
 from maxpane_dashboard.widgets.markup_safety import visible_len
+from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 
 __all__ = [
     "WIDEN_HINT",
@@ -38,9 +39,10 @@ __all__ = [
     "with_optional_suffix",
 ]
 
-#: The bare marker, for a title bar too narrow to carry the descriptive one.
-#: Never nothing: "columns were dropped here" is the contract.
-WIDEN_HINT = "‹ widen"
+# ``WIDEN_HINT`` -- the bare marker, for a title bar too narrow to carry the
+# descriptive one -- is the repo-wide marker, shared in ``widgets/rowfit.py``
+# since Branch 3, and re-exported here (``__all__``) for the curator table
+# panels that import it from this module.
 
 
 def tier_cost(columns) -> int:

@@ -150,6 +150,7 @@ from textual.containers import Horizontal
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
+from maxpane_dashboard.widgets.rowfit import Ladder, WIDEN_HINT
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
     EMDASH,
@@ -158,10 +159,10 @@ from maxpane_dashboard.widgets.surf._fmt import (
     fmt_imd,
 )
 
-#: Marker raised in a box's bottom border when even ``minimal`` does not fit.
-#: The border, not a content line: the boxes carry five content lines inside a
-#: height-7 frame and have no sixth to spare (see the DEFAULT_CSS note below).
-WIDEN_HINT = "‹ widen"
+# ``WIDEN_HINT`` is raised in a box's bottom border when even ``minimal`` does
+# not fit.  The border, not a content line: the boxes carry five content lines
+# inside a height-7 frame and have no sixth to spare (see the DEFAULT_CSS note
+# below).  The repo-wide marker, shared in ``widgets/rowfit.py`` since Branch 3.
 
 #: LAUNCHPAD/FLOW's own narrow-tier stand-in for their clock (2026-08-24 fix
 #: round 1). At ``minimal`` there is no room for even a shortened ``HH:MM``
@@ -192,17 +193,14 @@ TIER_WIDTHS = {
 }
 
 
-def _tier_for(width: int) -> str:
-    """Widest box layout that fits ``width`` rendered columns.
-
-    ``width <= 0`` means "not laid out yet" and optimistically picks the
-    widest; :meth:`SurfHero.on_resize` re-renders once the box has a size.
-    """
-    if width <= 0 or width >= COMPACT_WIDTH:
-        return "compact"
-    if width >= TIGHT_WIDTH:
-        return "tight"
-    return "minimal"
+#: Widest box layout that fits ``width`` rendered columns (``_tier_for``).
+#:
+#: ``width <= 0`` means "not laid out yet" and optimistically picks the
+#: widest; :meth:`SurfHero.on_resize` re-renders once the box has a size.
+#: (:class:`~maxpane_dashboard.widgets.rowfit.Ladder`: the last step is the fallback and its
+#: threshold is not consulted, so it is written ``0``.)
+_LADDER = Ladder(("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH), ("minimal", 0))
+_tier_for = _LADDER.tier_for
 
 
 def _short(tier: str) -> bool:

@@ -49,7 +49,7 @@ from maxpane_dashboard.widgets.surf import pool4u_burn as burn_mod
 from maxpane_dashboard.widgets.surf import pool4u_hero as hero_mod
 from maxpane_dashboard.widgets.address import COPY_GLYPH, short_address
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS
-from maxpane_dashboard.widgets.surf._rowfit import pad
+from maxpane_dashboard.widgets.rowfit import pad
 from maxpane_dashboard.widgets.surf.pool4u_burn import (
     COMPACT_WIDTH as BURN_COMPACT_WIDTH,
     EMPTY_LINE as BURN_EMPTY_LINE,
@@ -589,7 +589,7 @@ async def test_the_stakers_width_pins_are_what_the_table_actually_reserves() -> 
     row is measured now.
 
     ``DataTable`` pads every column including the last, which is why these two
-    numbers are not ``_rowfit.row_cols``'s arithmetic: that charges a gap
+    numbers are not ``rowfit.row_cols``'s arithmetic: that charges a gap
     *between* cells and is a ``RichLog`` row's formula. Borrowing the wrong one
     would put the marker a column or two off the width it is marking.
     """

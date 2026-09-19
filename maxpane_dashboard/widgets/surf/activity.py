@@ -93,9 +93,10 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets import rowfit
+from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import (
     ANTI_POISONING_COLS,
     DASH,
@@ -134,9 +135,9 @@ _STAMP_COLS = 11
 _STAMP_SHORT_COLS = 5
 
 #: The gap between two cells.  Shared machinery: it lives in
-#: ``widgets/surf/_rowfit.py`` and is re-exported here under the name this
+#: ``widgets/rowfit.py`` and is re-exported here under the name this
 #: module's own tests and docstrings have always used.
-_GAP = _rowfit.GAP
+_GAP = rowfit.GAP
 
 #: ``wallet_label`` cell: the widest member of the producer's *whole*
 #: vocabulary, ``surf_client._DEV_WALLET_LABELS`` == ``{"dev", "ops"}``, and
@@ -225,13 +226,11 @@ WIDEN_HINTS = {
     "minimal": "‹ widen: time, kind, ETH",
 }
 
-#: Fallback marker for a panel too narrow to carry the descriptive hint beside
-#: its title.  It names nothing, which is a real loss -- but "columns were
-#: dropped here" is the contract, and going silent is not an option this
-#: codebase allows.  Reachable since the panel moved into the screen's right
-#: rail: at 80 terminal columns it is 30 wide against the 38 the minimal hint
-#: needs, where the old ``3fr`` slot was never below 46.
-SHORT_HINT = "‹ widen"
+# ``SHORT_HINT`` -- the fallback marker for a panel too narrow to carry the
+# descriptive hint beside its title -- is the repo-wide marker, shared in
+# ``widgets/rowfit.py`` since Branch 3. Reachable since the panel moved into
+# the screen's right rail: at 80 terminal columns it is 30 wide against the 38
+# the minimal hint needs, where the old ``3fr`` slot was never below 46.
 
 
 def _tier_for(width: int) -> str:
@@ -287,7 +286,7 @@ def _tier_for(width: int) -> str:
     ``full``; :meth:`SurfDevActivity.on_resize` re-lays it out once it has a
     size.
     """
-    return _rowfit.tier_for(
+    return rowfit.tier_for(
         width,
         (("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0)),
     )
@@ -298,7 +297,7 @@ def _row_cols(tier: str, stamp_cols: int, wallet_cols: int, who_cols: int,
     """Rendered width of a row made of exactly these cells.
 
     This panel's four cells, handed to the shared
-    :func:`~widgets.surf._rowfit.row_cols` -- which is where the rule lives:
+    :func:`~widgets.rowfit.row_cols` -- which is where the rule lives:
     **a cell of zero width is absent, and an absent cell takes its ``_GAP``
     with it.**  That is the arithmetic :func:`_budget` used to get wrong: it
     charged the row for both gaps unconditionally and never re-measured the
@@ -309,7 +308,7 @@ def _row_cols(tier: str, stamp_cols: int, wallet_cols: int, who_cols: int,
     The amount carries its own two leading spaces (see :func:`_row_fields`),
     so it is passed as ``trailing`` and added rather than joined.
     """
-    return _rowfit.row_cols(
+    return rowfit.row_cols(
         (
             stamp_cols,
             wallet_cols,
@@ -326,7 +325,7 @@ def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
     """Fit one row to ``width``; returns ``(keep_stamp, wallet_cols, who)``.
 
     This panel's cells, handed to the shared
-    :func:`~widgets.surf._rowfit.budget`.  Order of sacrifice, after the tier
+    :func:`~widgets.rowfit.budget`.  Order of sacrifice, after the tier
     has already dropped whole columns:
 
     1. a **known** label is cut with a visible ``…`` (down to
@@ -355,7 +354,7 @@ def _budget(tier: str, width: int, stamp_cols: int, who: str, known: bool,
         return _row_cols(tier, stamp_cols if stamp else 0, wallet,
                          who_cols, amount_cols)
 
-    return _rowfit.budget(
+    return rowfit.budget(
         width, who, known, needed, wallet_cols, keep_stamp, _MIN_LABEL_COLS,
     )
 
@@ -520,7 +519,7 @@ def _row_parts(row, tier: str, width: int, wallet_cols: int,
             cells.append(
                 "[bold]"
                 + safe_markup(
-                    _rowfit.pad(_rowfit.clip(label, wallet_cols), wallet_cols)
+                    rowfit.pad(rowfit.clip(label, wallet_cols), wallet_cols)
                 )
                 + "[/]"
             )
@@ -528,7 +527,7 @@ def _row_parts(row, tier: str, width: int, wallet_cols: int,
             cells.append(
                 "[dim]"
                 + safe_markup(
-                    _rowfit.pad(_rowfit.clip(kind, _KIND_COLS), _KIND_COLS)
+                    rowfit.pad(rowfit.clip(kind, _KIND_COLS), _KIND_COLS)
                 )
                 + "[/]"
             )

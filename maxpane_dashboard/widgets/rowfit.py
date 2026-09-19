@@ -1,5 +1,7 @@
-"""Shared row-fit machinery for ``RichLog(wrap=False)`` panels (``widgets/rowfit.py``;
-built for surf, shared since Branch 2 of ``docs/refactor_programme_2026_09.md``).
+"""Shared row-fit machinery for ``RichLog(wrap=False)`` panels, the widen-hint
+vocabulary and the width-tier :class:`Ladder` -- ``widgets/rowfit.py``, one
+module for every dashboard (built for surf; ``docs/refactor_programme_2026_09.md``
+Branches 2 and 3).
 
 ``RichLog`` composed ``wrap=False`` narrows any line wider than its usable
 width **at write time, with no ``…``, no marker and nothing in the title**
@@ -10,9 +12,14 @@ fitting is the same three-part job in every one of them:
 * :data:`GAP` -- how far apart two cells sit, and what an *absent* cell
   takes with it;
 * :func:`row_cols` -- what a row made of exactly these cells costs;
-* :func:`tier_for` -- the widest whole-cell layout that fits;
+* :func:`tier_for` -- the widest whole-cell layout that fits, and
+  :class:`Ladder`, the same selector bound to one panel's own thresholds;
 * :func:`budget` -- the order of sacrifice inside one tier, when the row
-  still does not fit after the tier has shed what it can.
+  still does not fit after the tier has shed what it can;
+* :data:`WIDEN_HINT` / :data:`SHORT_HINT` / :data:`GLYPH_HINT` -- the one
+  spelling of "columns were dropped here", and :func:`title_with_hint` /
+  :func:`has_marker`, the title fitter and the ``as of`` predicate the swarm
+  panels share.
 
 This module exists because that ladder was written twice already
 (``activity.py`` 2026-08-07, ``launchpad_activity.py`` 2026-08-23) and a
@@ -41,17 +48,63 @@ from rich.cells import cell_len
 
 __all__ = [
     "GAP",
+    "GLYPH_HINT",
+    "Ladder",
+    "SHORT_HINT",
+    "WIDEN_HINT",
     "budget",
     "clip",
+    "has_marker",
     "pad",
     "row_cols",
     "tier_for",
+    "title_with_hint",
 ]
 
 #: Columns between two adjacent cells.  Two, in every surf row panel, and
 #: pinned as a design decision rather than a derived quantity by
 #: ``test_activity_spends_no_columns_between_the_wallet_and_the_kind``.
 GAP = 2
+
+#: What a panel appends to its own title when it had to shed a column, cut a
+#: head, truncate a message or clip a row -- the **repo-wide spelling**, one
+#: literal for every dashboard (curator, fwa, surf; sixteen module-level copies
+#: until Branch 3 of ``docs/refactor_programme_2026_09.md``). Never nothing:
+#: "columns were dropped here" is the contract, and going silent is not an
+#: option this codebase allows. Appended, never substituted for the title. Do
+#: not redefine it to mean anything narrower; ``test_the_widen_vocabulary_
+#: means_one_thing_across_the_repo`` binds every spelling to this one.
+#:
+#: Where it lands is each panel's own decision and is documented there: the
+#: heroes raise it in a box's *bottom border* (five content lines inside a
+#: height-7 frame leave no sixth line to spare), the ``RichLog`` panels append
+#: it to the title, the curator table panels and SIGNALS append it when a row
+#: lost every part of its value.
+WIDEN_HINT = "‹ widen"
+
+#: The **fallback** marker for a title bar too narrow to carry a panel's own
+#: descriptive hint (its ``WIDEN_HINTS[tier]``, e.g. ``‹ widen: time, kind,
+#: ETH`` -- those dicts stay per module: they are content, not a constant). It
+#: names nothing, which is a real loss -- but the contract above still holds.
+#: An alias of :data:`WIDEN_HINT`, deliberately not a second literal, so there
+#: is one string to change and no spelling can drift. Reachable in the narrow
+#: rails: at 80 terminal columns surf's activity panel is 30 wide against the
+#: 38 its minimal hint needs; surf's NFT panel also uses it when the row that
+#: overflows is the 31-column floor line, which has no field to shed.
+SHORT_HINT = WIDEN_HINT
+
+#: One tier below :data:`WIDEN_HINT`: the bare marker glyph, for a panel too
+#: narrow to say it in words. It exists because a pool4 title carries the
+#: network word as well as the panel name, so ``THE RATCHET · SEPOLIA
+#: ‹ widen`` genuinely does not fit a narrow rail where a bare
+#: ``LAUNCHPAD ACTIVITY  ‹ widen`` would. :func:`title_with_hint` tries the
+#: two in that order.
+#:
+#: **Deliberately not called ``SHORT_HINT``.** That name means ``"‹ widen"``
+#: everywhere; reusing it for a narrower thing on the same view would make one
+#: name stand for two spellings, which is the same class of defect as the
+#: network word ``_pool4`` exists to unify.
+GLYPH_HINT = "‹"
 
 
 def clip(value: str, width: int) -> str:
@@ -141,6 +194,80 @@ def tier_for(width: int, ladder: Sequence[tuple[str, int]]) -> str:
         if width >= needed:
             return name
     return ladder[-1][0]
+
+
+class Ladder:
+    """A panel's own width tiers, widest first, bound to :func:`tier_for`.
+
+    ``Ladder(("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0))``
+    replaces the ``def _tier_for(width) -> str`` that eight modules each wrote
+    as an ``if``-chain (or a :func:`tier_for` call) over their own ``*_WIDTH``
+    constants (Branch 3 of ``docs/refactor_programme_2026_09.md``); the module
+    keeps its name with ``_tier_for = _LADDER.tier_for``, so its tests and
+    docstrings still read. (``surf/activity._tier_for`` stays a function: a
+    screen test pins the measured-width note in its docstring.)
+    The semantics are exactly :func:`tier_for`'s: ``width <= 0`` picks the
+    first step, otherwise the first step whose threshold the width reaches,
+    otherwise the last step -- whose threshold is therefore never consulted
+    (a panel with a documented ``MINIMAL_WIDTH`` that is also its floor may
+    quote it there or write ``0``; the tier chosen is the same either way).
+
+    Thresholds are the calling module's measurements and stay there: a
+    ladder holds the *names and numbers one panel measured*, never a shared
+    number two panels do not both render.
+    """
+
+    __slots__ = ("steps",)
+
+    def __init__(self, *steps: tuple[str, int]) -> None:
+        if not steps:
+            raise ValueError("a Ladder needs at least one step")
+        self.steps: tuple[tuple[str, int], ...] = tuple(steps)
+
+    def tier_for(self, width: int) -> str:
+        """Widest step that fits ``width`` rendered columns (:func:`tier_for`)."""
+        return tier_for(width, self.steps)
+
+    def __repr__(self) -> str:
+        return f"Ladder{self.steps!r}"
+
+
+def has_marker(as_of: object) -> bool:
+    """True when *as_of* is a real ``as of`` clock, not merely non-``None``.
+
+    An unavailable gate that checks ``as_of is None`` alone treats an empty
+    string as "this slot has been read" and lets rows or an empty-state line
+    render, while the title -- which has always checked truthiness, not
+    identity, to decide whether to print a clock at all -- shows no ``as of``
+    marker: a body claiming to have read the source under a title that shows
+    no time it read it at (surf's swarm FIELD, fix round 2). Every call site
+    that asks the question goes through this one predicate, so the title and
+    the body cannot disagree again. Hoisted from the four identical swarm
+    copies in Branch 3.
+    """
+    return isinstance(as_of, str) and bool(as_of)
+
+
+def title_with_hint(base: str, widen: bool, budget: int) -> str:
+    """Append the longest widen marker that fits *base* within *budget*.
+
+    :data:`WIDEN_HINT` first, then the bare :data:`GLYPH_HINT`, each two
+    columns after the title; neither when *widen* is false, and *base*
+    untouched when not even the glyph fits. ``budget <= 0`` means "not laid
+    out yet" and appends the full marker. For a title that also carries a
+    network word use ``_pool4.title_text`` / ``market_panel_title``, which
+    bind the same two markers to that shape; this is the fitter for a title
+    that deliberately carries none (the swarm panels, whose chain word is per
+    row). Hoisted from the four identical swarm copies in Branch 3.
+    ``curator/_table.title_with_hint`` is a different contract (it returns
+    ``(title, fitted)``) and is not this function.
+    """
+    if not widen:
+        return base
+    for candidate in (WIDEN_HINT, GLYPH_HINT):
+        if not budget or cell_len(base) + 2 + cell_len(candidate) <= budget:
+            return f"{base}  {candidate}"
+    return base
 
 
 def budget(

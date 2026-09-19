@@ -199,3 +199,22 @@ async def test_the_marker_lights_exactly_when_a_row_would_clip() -> None:
             )
 
     assert checked_any, "the sweep range was empty and proved nothing"
+
+
+def test_burnkeepers_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets.surf import burnkeepers as module
+
+    def _old_tier_for(width: int) -> str:
+        if width <= 0 or width >= FULL_WIDTH:
+            return "full"
+        return "compact"
+
+    widths = range(-1, FULL_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {"full", "compact"}

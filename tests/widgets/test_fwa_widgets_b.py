@@ -856,3 +856,25 @@ async def test_settlement_eth_total_is_a_dash_when_nothing_carries_an_amount():
         )
 
         assert "0.000" not in joined
+
+
+def test_fwa_activity_feed_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets.fwa import fwa_activity_feed as module
+    from maxpane_dashboard.widgets.fwa.fwa_activity_feed import COMPACT_WIDTH, FULL_WIDTH
+
+    def _old_tier_for(width: int) -> str:
+        if width <= 0 or width >= FULL_WIDTH:
+            return "full"
+        if width >= COMPACT_WIDTH:
+            return "compact"
+        return "minimal"
+
+    widths = range(-1, FULL_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {"full", "compact", "minimal"}

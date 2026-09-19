@@ -98,6 +98,7 @@ from textual.content import Content
 
 from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
+from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH, fmt_age
 from maxpane_dashboard.widgets.surf._icons import (
     keep_units,
@@ -108,9 +109,9 @@ from maxpane_dashboard.widgets.surf._icons import (
 
 logger = logging.getLogger(__name__)
 
-#: Marker appended to the title when a *head* could not fit (see the module
-#: docstring: a truncated detail is normal operation, not a clipped row).
-WIDEN_HINT = "‹ widen"
+# ``WIDEN_HINT`` is appended to the title when a *head* could not fit (see the
+# module docstring: a truncated detail is normal operation, not a clipped row)
+# -- the repo-wide marker, shared in ``widgets/rowfit.py`` since Branch 3.
 
 #: Detail shown when a row's markup passes ``safe_markup`` but still fails
 #: Textual's own markup parser at render time -- e.g. the unbalanced

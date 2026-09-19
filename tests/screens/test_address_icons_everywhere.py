@@ -485,18 +485,19 @@ def _reaches_icon_machinery(module_name: str) -> bool:
     **A package root is never followed** (checked here, not inside
     ``_is_module``, because ``widget_modules_of`` deliberately *does* walk
     into a package for its own, different question). ``from
-    maxpane_dashboard.widgets.surf import _rowfit`` -- an ordinary sibling
-    import, present in half this package's modules -- resolves to *two*
-    names: the specific submodule ``...surf._rowfit`` (the real edge) and
-    the bare package ``...surf`` itself (an artifact of the AST shape, not
-    a real one). ``widgets/surf/__init__.py`` re-exports this package's
+    maxpane_dashboard.widgets.surf import <sibling>`` -- the ordinary
+    sibling-import shape half this package's modules used until Branch 3
+    moved the row-fit machinery to ``widgets.rowfit`` -- resolves to *two*
+    names: the specific submodule (the real edge) and the bare package
+    ``...surf`` itself (an artifact of the AST shape, not a real one).
+    ``widgets/surf/__init__.py`` re-exports this package's
     entire public widget surface by design (its own docstring: "the
     package root is the import surface the screen and its tests use"), so
     following that second name made *every* surf widget that imports any
     sibling by this common pattern reach *every* icon-producing widget
     anywhere in the package -- caught here because it flipped
     ``swarm_throughput`` (imports only ``short_hex``, and only reaches
-    ``_rowfit``/``_fmt``/``_pool4``/``_swarm_chain``, none of which import
+    ``rowfit``/``_fmt``/``_pool4``/``_swarm_chain``, none of which import
     the icon machinery either) to "not hash-only" the moment the walk went
     through the package init instead of stopping at the plain modules the
     import actually names.

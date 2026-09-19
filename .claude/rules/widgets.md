@@ -82,8 +82,8 @@ Almost nothing here is the first of its kind. Check, in this order:
    Bakery-only despite living at the top level — two import `data.models`, two are shaped for
    Bakery's payload, and all four are imported by `screens/bakery.py` only. Do not treat them as
    shared.)
-2. **the dashboard's own `_fmt.py`** (`widgets/surf/`, `widgets/curator/`; row fitting is shared in
-   `widgets/rowfit.py`, reached by surf through the `widgets/surf/_rowfit.py` shim until Branch 3) and the
+2. **the dashboard's own `_fmt.py`** (`widgets/surf/`, `widgets/curator/`; row fitting, the widen
+   hints and the width-tier `Ladder` are shared in `widgets/rowfit.py`) and the
    sibling panel that already does the same *shape* of job. `widgets/surf/launchpad_activity.py`
    was built on `widgets/surf/activity.py` and inherited its width-tier ladder and its "the panel
    names the columns it shed" contract for free.

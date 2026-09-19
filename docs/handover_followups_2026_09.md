@@ -87,3 +87,5 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
    `strip_tags`) — `TAG_LIKE` matches a strict superset. The Branch 2 spec froze `visible_len`, so the
    pair was left; collapse to one pattern in Branch 3 (`refactor/fmt-rowfit`) with a test that
    `visible_len` is unchanged on the fwa fixtures that pin it (reviewer M7, 2026-09-19).
+   **Done 2026-09-19, Branch 3 WP-A:** `_MARKUP_TAG = TAG_LIKE`, pinned by
+   `test_visible_len_is_unchanged_by_the_tag_pattern_alias` on six literal probes.

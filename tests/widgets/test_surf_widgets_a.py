@@ -2097,3 +2097,25 @@ async def test_hero_burn_shows_a_small_accrual_instead_of_a_false_zero():
         assert "READY" in screen
         assert "0.05" in screen, "the accrual rendered as a false zero"
         assert "1.25" in screen
+
+
+def test_hero_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets.surf import hero as module
+    from maxpane_dashboard.widgets.surf.hero import COMPACT_WIDTH, TIGHT_WIDTH
+
+    def _old_tier_for(width: int) -> str:
+        if width <= 0 or width >= COMPACT_WIDTH:
+            return "compact"
+        if width >= TIGHT_WIDTH:
+            return "tight"
+        return "minimal"
+
+    widths = range(-1, COMPACT_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {"compact", "tight", "minimal"}

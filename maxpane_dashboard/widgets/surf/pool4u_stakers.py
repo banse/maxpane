@@ -119,7 +119,7 @@ from maxpane_dashboard.widgets.surf._pool4 import (
     strip_tags,
     market_title_text,
 )
-from maxpane_dashboard.widgets.surf._rowfit import clip, pad
+from maxpane_dashboard.widgets.rowfit import clip, pad
 
 __all__ = [
     "COMPACT_WIDTH",
@@ -300,7 +300,7 @@ _PCT_COLS = 8
 #: ``test_the_stakers_width_pins_are_what_the_table_actually_paints``, which
 #: uses ``==`` and therefore reddens whether a pin is set too low or too high.
 #:
-#: This is why ``_rowfit.row_cols`` is **not** used for these two numbers even
+#: This is why ``rowfit.row_cols`` is **not** used for these two numbers even
 #: though ``clip``/``pad`` from that module fit every cell: ``row_cols``
 #: charges ``GAP`` *between* present cells, which is a ``RichLog`` row's
 #: arithmetic. A ``DataTable`` pads every column including the last, so the two

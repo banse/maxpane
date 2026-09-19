@@ -25,7 +25,7 @@ SMALL_BOUND = 12
 HEAD_LOWER_MAX = 2
 CLIPBOARD_TOOLS = ("pbcopy", "wl-copy", "xclip", "xsel")
 #: ``clip`` is also an ordinary English word ("pad/clip to width"), a CSS value
-#: (``text-overflow: clip``) and the name of surf's ``_rowfit.clip`` helper, so
+#: (``text-overflow: clip``) and the name of the shared ``rowfit.clip`` helper, so
 #: it is matched only as a **string literal that is the command itself**
 #: (``"clip"``, ``"clip.exe"``, optionally with arguments), the form a
 #: subprocess argument list or a shell string takes.

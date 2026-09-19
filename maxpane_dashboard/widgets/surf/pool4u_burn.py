@@ -77,7 +77,7 @@ from maxpane_dashboard.widgets.surf._pool4 import (
     parse_line,
     widest_line,
 )
-from maxpane_dashboard.widgets.surf._rowfit import pad
+from maxpane_dashboard.widgets.rowfit import pad
 
 __all__ = [
     "COMPACT_WIDTH",

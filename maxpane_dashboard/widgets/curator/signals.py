@@ -97,12 +97,13 @@ from maxpane_dashboard.widgets.curator._fmt import (
 )
 from maxpane_dashboard.widgets.curator.hero import PHASE_UNAVAILABLE, PHASES
 from maxpane_dashboard.widgets.markup_safety import visible_len
+from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 
 #: Panel title.  The hint is appended, never substituted.
 SIGNALS_TITLE = "SIGNALS"
 
-#: Marker appended when a row lost every part of its value.
-WIDEN_HINT = "‹ widen"
+# ``WIDEN_HINT`` is appended when a row lost every part of its value --
+# the repo-wide marker, shared in ``widgets/rowfit.py`` since Branch 3.
 
 #: The seven rows, in render order, keyed exactly as
 #: ``data/curator_models.SIGNAL_ROWS`` spells them.  Widgets may not import

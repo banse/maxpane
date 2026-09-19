@@ -125,6 +125,7 @@ from textual.widgets import Static
 from maxpane_dashboard.analytics.surf_feed import build_threads, select_feed_window
 from maxpane_dashboard.widgets.address import is_copy_click
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age, hhmm, mmdd
 from maxpane_dashboard.widgets.surf._icons import link_prose, mark_addresses, unmark
 
@@ -165,8 +166,8 @@ FEED_TITLE = "ANNOUNCE FEED"
 #: collapsed thread is strictly cheaper than the flat list ever was.
 FULL_TEXT_WIDTH = 71
 
-#: Marker appended to the title when a message had to be truncated.
-WIDEN_HINT = "‹ widen"
+# ``WIDEN_HINT`` is appended to the title when a message had to be truncated
+# -- the repo-wide marker, shared in ``widgets/rowfit.py`` since Branch 3.
 
 #: The explicit degraded line.  Tested verbatim.
 UNAVAILABLE_LINE = "feed unavailable"

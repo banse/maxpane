@@ -51,7 +51,7 @@ paragraph -- plus
 carries the same correction and the reason first-seen order is sufficient
 to produce it.
 
-Columns, widest first, ``_rowfit``'s own machinery (``clip``/``pad``/
+Columns, widest first, ``rowfit``'s own machinery (``clip``/``pad``/
 ``row_cols``/``tier_for``, shared with ``activity.py`` and
 ``launchpad_activity.py`` rather than a fourth copy of the same ladder):
 
@@ -66,7 +66,7 @@ Tier        Needs  Row
 Unlike ``activity.py`` there is no anti-poisoning window here -- none of
 these cells is an address -- so nothing is ever *withheld*: the ladder's
 last rung (``minimal``) has no threshold and always matches, and a title
-marker (:data:`WIDEN_HINT`/:data:`GLYPH_HINT`, ``_pool4``'s own vocabulary)
+marker (``rowfit.WIDEN_HINT``/``rowfit.GLYPH_HINT``, the repo-wide vocabulary)
 says what a narrower tier shed.  There is no per-tier custom hint text the
 way ``activity.py`` names its shed fields -- the brief's own wording is
 "advertising each with ``‹ widen``", one generic marker, not a ladder of
@@ -96,9 +96,9 @@ a column **or** an objective's own wrap sheds text, and dark only when
 neither does.
 
 **Not ``_pool4.title_text`` itself.**  That function's fitting logic is
-exactly what this panel wants and is reused verbatim below
-(:func:`_title_with_hint` restates it rather than importing the private
-``_with_hint``, because ``_with_hint`` is not exported and both public
+exactly what this panel wants and is reused below (:func:`_title_with_hint`
+is ``rowfit.title_with_hint``, the same fitting rule without the network
+word; ``_pool4``'s own ``_with_hint`` is not exported and both public
 callers of it also print a network word), but its *shape* -- title, network
 word, hint -- is not this panel's.  Design §5 is explicit: "The chain word
 … goes in the titles of panels that show chain data — JUST SHIPPED, and any
@@ -182,7 +182,7 @@ about whether the slot had ever been read (fix round 2).
 Purity
 ------
 Stdlib, ``rich``, ``textual``, and this package's own ``_fmt``/``_pool4``/
-``_rowfit`` primitives, plus ``widgets/address`` for the copy icon.  No
+``rowfit`` primitives, plus ``widgets/address`` for the copy icon.  No
 ``data/``, no ``analytics/``, no clock, no I/O.
 """
 
@@ -194,10 +194,10 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import ICON_COLS, PROSE_ADDRESS_RE, address_prose
-from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age
-from maxpane_dashboard.widgets.surf._pool4 import GLYPH_HINT, WIDEN_HINT, strip_tags
+from maxpane_dashboard.widgets.surf._pool4 import strip_tags
 
 __all__ = [
     "COMPACT_WIDTH",
@@ -223,7 +223,7 @@ EMPTY_LINE = "nothing in flight"
 #: verbatim.
 UNAVAILABLE_LINE = "unavailable"
 
-_GAP = _rowfit.GAP
+_GAP = rowfit.GAP
 
 # -- column budget, in rendered columns --------------------------------
 #
@@ -234,7 +234,7 @@ _GAP = _rowfit.GAP
 # ``{implement, review}``, states ``{ready, accepted, waiting, failed}``,
 # node keys up to ``build_contract_project`` (23) -- with headroom, and
 # never a byte the anti-poisoning kind: a value that grows past its cell is
-# cut with a visible ``…`` (:func:`_rowfit.clip`), which is the right
+# cut with a visible ``…`` (:func:`rowfit.clip`), which is the right
 # defence for descriptive text and the wrong one only for the address
 # window this panel does not have.
 
@@ -304,7 +304,7 @@ def _fixed_cols(tier: str) -> int:
             _AGENT_COLS, _SUBTASK_COLS, _ROLE_COLS, _STATE_COLS, _AGE_COLS,
             _REVISIONS_COLS,
         )
-    return _rowfit.row_cols(cells)
+    return rowfit.row_cols(cells)
 
 
 #: Columns each row layout needs.
@@ -313,53 +313,24 @@ FULL_WIDTH = COMPACT_WIDTH + _GAP + _MIN_NOTE_COLS                   # 117
 MINIMAL_WIDTH = _fixed_cols("minimal")                                # 47
 
 
-def _tier_for(width: int) -> str:
-    """Widest row layout that fits ``width`` rendered columns.
-
-    No floor withheld the way ``activity.py`` withholds a row below its
-    address window: ``minimal`` has no threshold of its own and is always
-    reached, because there is nothing left in this row shape that a caller
-    should refuse to cut.
-    """
-    return _rowfit.tier_for(
-        width, (("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0)),
-    )
-
-
-def _title_with_hint(base: str, widen: bool, budget: int) -> str:
-    """Append the longest widen marker that fits *base* within *budget*.
-
-    ``_pool4._with_hint``'s exact fitting rule, restated rather than
-    imported: that helper is private, and both of its public callers
-    (``title_text``/``market_title_text``) bind the marker to a title that
-    also carries a network word, which this panel's title deliberately does
-    not (see the module docstring). The two exported constants it uses
-    (:data:`WIDEN_HINT`/:data:`GLYPH_HINT`) are the same ones every other
-    pool4-era title in this package prints, so the vocabulary stays one
-    thing even though the fitter is now two functions.
-    """
-    if not widen:
-        return base
-    for candidate in (WIDEN_HINT, GLYPH_HINT):
-        if not budget or cell_len(base) + 2 + cell_len(candidate) <= budget:
-            return f"{base}  {candidate}"
-    return base
+#: Widest row layout that fits ``width`` rendered columns (``_tier_for``).
+#:
+#: No floor withheld the way ``activity.py`` withholds a row below its
+#: address window: ``minimal`` has no threshold of its own and is always
+#: reached, because there is nothing left in this row shape that a caller
+#: should refuse to cut.
+_LADDER = rowfit.Ladder(
+    ("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0),
+)
+_tier_for = _LADDER.tier_for
 
 
-def _has_marker(as_of: object) -> bool:
-    """True when *as_of* is a real ``as of`` clock, not merely non-``None``.
-
-    Fix round 2: ``_render_view``'s unavailable gate used to check
-    ``as_of is None`` alone, which an empty string satisfies as ``False`` --
-    so ``swarm_as_of_hhmm=""`` would have been treated as "this slot has
-    been read" and let rows or :data:`EMPTY_LINE` render, while
-    :meth:`SurfSwarmField._set_title` (which has always checked truthiness,
-    not identity, to decide whether to print a clock at all) would still
-    show no ``as of`` marker -- a body claiming to have read the swarm under
-    a title that shows no time it read it at. Both call sites go through
-    this one predicate now, so they cannot disagree again.
-    """
-    return isinstance(as_of, str) and bool(as_of)
+#: The ``as of`` predicate and the network-word-free title fitter, shared by
+#: the four swarm panels in ``widgets/rowfit.py`` since Branch 3 (each used to
+#: restate them; the reasoning is on the shared definitions), under the names
+#: this module's own docstrings and tests use.
+_has_marker = rowfit.has_marker
+_title_with_hint = rowfit.title_with_hint
 
 
 #: State word -> a light colour hint.  Cosmetic only -- every test here
@@ -495,7 +466,7 @@ def _rendered_cost(text: str) -> int:
 def _fit_address_aware(text: str, width: int) -> str:
     """*text* fitted to *width* rendered cells, address-icon-aware.
 
-    :func:`_rowfit.clip`'s own contract (unchanged if *text* has no
+    :func:`rowfit.clip`'s own contract (unchanged if *text* has no
     address: already-fitting text passes through; otherwise as much of it
     as fits is kept and a visible ``…`` is appended) but measured on
     :func:`_rendered_cost` rather than bare :func:`rich.cells.cell_len`, so
@@ -581,7 +552,7 @@ def _wrap_words(words: list[str], width: int) -> list[list[str]]:
     addresses is charged for two icons, never one flat guess.
 
     Never splits a word -- the caller's own reason to call this rather than
-    :func:`_rowfit.clip`: an embedded address is one word (hex has no
+    :func:`rowfit.clip`: an embedded address is one word (hex has no
     whitespace), so a wrap that only ever breaks between words cannot land
     half of it on one line and half on the next. A word whose own rendered
     cost alone exceeds *width* therefore becomes a *line* wider than
@@ -730,7 +701,7 @@ def _row_text(fields: dict, tier: str, note_width: int) -> Text:
     age, revisions, then the note in whatever width is left.
 
     **Every cell is ``clip``-ed before it is ``pad``-ed, no exception.**
-    ``pad`` only ever *adds* trailing spaces (``_rowfit.pad``'s own
+    ``pad`` only ever *adds* trailing spaces (``rowfit.pad``'s own
     contract), so a cell handed to it without first being clipped and found
     over-length is not narrowed at all -- it sails through at its natural
     width and every column after it starts one or more cells right of the
@@ -746,31 +717,31 @@ def _row_text(fields: dict, tier: str, note_width: int) -> Text:
     """
     line = Text()
     line.append(
-        _rowfit.pad(_rowfit.clip(fields["agent"], _AGENT_COLS), _AGENT_COLS),
+        rowfit.pad(rowfit.clip(fields["agent"], _AGENT_COLS), _AGENT_COLS),
         style="bold",
     )
     line.append(" " * _GAP)
-    line.append(_rowfit.pad(_rowfit.clip(fields["subtask"], _SUBTASK_COLS), _SUBTASK_COLS))
+    line.append(rowfit.pad(rowfit.clip(fields["subtask"], _SUBTASK_COLS), _SUBTASK_COLS))
     if tier != "minimal":
         line.append(" " * _GAP)
         line.append(
-            _rowfit.pad(_rowfit.clip(fields["role"], _ROLE_COLS), _ROLE_COLS),
+            rowfit.pad(rowfit.clip(fields["role"], _ROLE_COLS), _ROLE_COLS),
             style="dim",
         )
     line.append(" " * _GAP)
     state_style = _STATE_STYLES.get(fields["state_key"], "")
     line.append(
-        _rowfit.pad(_rowfit.clip(fields["state"], _STATE_COLS), _STATE_COLS),
+        rowfit.pad(rowfit.clip(fields["state"], _STATE_COLS), _STATE_COLS),
         style=state_style,
     )
     line.append(" " * _GAP)
     line.append(
-        _rowfit.pad(_rowfit.clip(fields["age"], _AGE_COLS), _AGE_COLS), style="dim",
+        rowfit.pad(rowfit.clip(fields["age"], _AGE_COLS), _AGE_COLS), style="dim",
     )
     if tier != "minimal":
         line.append(" " * _GAP)
         line.append(
-            _rowfit.pad(_rowfit.clip(fields["revisions"], _REVISIONS_COLS), _REVISIONS_COLS),
+            rowfit.pad(rowfit.clip(fields["revisions"], _REVISIONS_COLS), _REVISIONS_COLS),
             style="dim",
         )
     if tier == "full" and note_width > 0 and fields["note"]:

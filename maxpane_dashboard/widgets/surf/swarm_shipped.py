@@ -157,19 +157,19 @@ that column either.
 Purity
 ------
 Stdlib, ``rich``, ``textual``, and this package's own ``_fmt``/``_pool4``/
-``_rowfit``/``_swarm_chain`` primitives, plus ``widgets/address`` for the
+``rowfit``/``_swarm_chain`` primitives, plus ``widgets/address`` for the
 copy icon and ``widgets/markup_safety`` for the plain-string cells. No
 ``data/``, no ``analytics/``, no clock, no I/O.
 """
 
 from __future__ import annotations
 
-from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import (
     ICON_COLS,
     MIN_SHORT_COLS,
@@ -178,9 +178,8 @@ from maxpane_dashboard.widgets.address import (
     short_hex,
 )
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, hhmm
-from maxpane_dashboard.widgets.surf._pool4 import GLYPH_HINT, WIDEN_HINT, strip_tags
+from maxpane_dashboard.widgets.surf._pool4 import strip_tags
 from maxpane_dashboard.widgets.surf._swarm_chain import CHAIN_COLS, chain_word
 
 __all__ = [
@@ -217,7 +216,7 @@ ADDR_COLS = 17
 #: size on its own word.
 MAX_ROWS = 50
 
-_GAP = _rowfit.GAP
+_GAP = rowfit.GAP
 TABLE_ID = "surf-swarm-shipped-table"
 _TITLE_ID = "surf-swarm-shipped-title"
 _FOOTER_ID = "surf-swarm-shipped-footer"
@@ -297,32 +296,12 @@ TIGHT_WIDTH = sum(
 )                                                                    # 64
 
 
-def _has_marker(as_of: object) -> bool:
-    """True when *as_of* is a real ``as of`` clock, not merely non-``None``.
-
-    ``swarm_field.py``'s predicate, restated -- an empty string is not a
-    clock either. Used here only to decide whether the title prints an
-    ``as of`` clock at all; see the module docstring for why it does **not**
-    gate the empty-vs-unavailable split on this panel.
-    """
-    return isinstance(as_of, str) and bool(as_of)
-
-
-def _title_with_hint(base: str, widen: bool, budget: int) -> str:
-    """Append the longest widen marker that fits *base* within *budget*.
-
-    ``swarm_field._title_with_hint``'s own fitting rule, restated for the
-    same reason it restates ``_pool4._with_hint``: this panel's title
-    carries no network word (ruling: the chain word is per row, never in
-    the title), so ``_pool4.title_text``/``market_title_text`` -- which
-    always append one -- are the wrong shape.
-    """
-    if not widen:
-        return base
-    for candidate in (WIDEN_HINT, GLYPH_HINT):
-        if not budget or cell_len(base) + 2 + cell_len(candidate) <= budget:
-            return f"{base}  {candidate}"
-    return base
+#: The ``as of`` predicate and the network-word-free title fitter, shared by
+#: the four swarm panels in ``widgets/rowfit.py`` since Branch 3 (each used to
+#: restate them; the reasoning is on the shared definitions), under the names
+#: this module's own docstrings and tests use.
+_has_marker = rowfit.has_marker
+_title_with_hint = rowfit.title_with_hint
 
 
 def _row_fields(row: object) -> dict | None:
@@ -383,7 +362,7 @@ def _addr_or_site_cell(fields: dict, addr_cols: int, addr_render_cols: int) -> T
         return Text(short_hex(tx_hash, addr_cols))
     commit = fields["commit"]
     if commit:
-        return Text(_rowfit.clip(commit, addr_render_cols))
+        return Text(rowfit.clip(commit, addr_render_cols))
     return Text(DASH)
 
 
@@ -506,7 +485,7 @@ class SurfSwarmShipped(Vertical):
     def _render_view(self) -> None:
         budget = self._title_budget()
         self._widen = bool(budget) and budget < FULL_WIDTH
-        self._tier = _rowfit.tier_for(
+        self._tier = rowfit.tier_for(
             budget, (("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH))
         )
         self._render_title()
@@ -547,18 +526,18 @@ class SurfSwarmShipped(Vertical):
                 if fields is None:
                     continue
                 values: list = [
-                    safe_markup(_rowfit.pad(_rowfit.clip(fields["kind"], _KIND_COLS), _KIND_COLS)),
+                    safe_markup(rowfit.pad(rowfit.clip(fields["kind"], _KIND_COLS), _KIND_COLS)),
                     safe_markup(
-                        _rowfit.pad(_rowfit.clip(fields["label"], _LABEL_COLS), _LABEL_COLS)
+                        rowfit.pad(rowfit.clip(fields["label"], _LABEL_COLS), _LABEL_COLS)
                     ),
-                    safe_markup(_rowfit.pad(chain_word(fields["chain_id"]), CHAIN_COLS)),
+                    safe_markup(rowfit.pad(chain_word(fields["chain_id"]), CHAIN_COLS)),
                     # A ``Text`` cell, never markup -- see the module
                     # docstring's *"Third-party text"* section.
                     _addr_or_site_cell(fields, addr_cols, addr_render_cols),
                 ]
                 if self._tier == "full":
                     values.append(
-                        safe_markup(_rowfit.pad(hhmm(fields["at_ts"]), _WHEN_COLS))
+                        safe_markup(rowfit.pad(hhmm(fields["at_ts"]), _WHEN_COLS))
                     )
                 batch.append(values)
 

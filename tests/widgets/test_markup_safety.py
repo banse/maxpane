@@ -32,6 +32,7 @@ from maxpane_dashboard.widgets.markup_safety import (
     safe_markup,
     sanitize_cell,
     strip_tags,
+    visible_len,
 )
 
 # Names a griefer can set on a public leaderboard. Each is malformed Rich
@@ -507,3 +508,25 @@ def test_sanitize_cell_never_raises_on_a_non_string():
     assert sanitize_cell(42, width=10) == "42"
     assert isinstance(sanitize_cell({"a": 1}, width=10), str)
     assert sanitize_cell(_RaisingStr(), width=10) == ""
+
+
+@pytest.mark.parametrize(
+    ("markup", "expected"),
+    [
+        ("[bold]x[/]", 1),
+        ("[/x]", 0),
+        ("a[b", 3),
+        ("[x/y]", 0),
+        ("plain", 5),
+        ("[[a]b]", 3),
+    ],
+)
+def test_visible_len_is_unchanged_by_the_tag_pattern_alias(markup, expected):
+    """``docs/handover_followups_2026_09.md`` #9 (Branch 3): ``visible_len``
+    used to measure with its own ``\\[/?[^\\[\\]]*\\]`` and now measures with
+    :data:`TAG_LIKE`. The expected values are literals computed from the
+    *old* pattern before the alias was made, so this reddens if the two
+    languages ever were -- or ever become -- different on a closing tag, an
+    unclosed bracket, a slash inside a tag or a nested bracket run.
+    """
+    assert visible_len(markup) == expected
