@@ -264,8 +264,9 @@ crash"); curator's `hhmm(±inf)` now renders `--:--`, and no input that rendered
 differently. Known, not in the probe set, and the one rendering change this branch ships (review M1/M2
 corrected the record: `fwa_odds_board` and `pool4_ratchet` already rejected ±inf through their
 own `as_float`): `screens/fwa._fmt_eth(float("inf"))` printed `inf`, now `—` — a deviation from
-"no rendered string change" accepted because `inf` is not a quantity; pinned as a 15th probe in
-`tests/screens/test_fwa_screen.py::test_golden_fwa_screen_fmt_eth`. Review residuals M3, M4, M6
+"no rendered string change" accepted because `inf` is not a quantity; pinned by its own test,
+`tests/screens/test_fwa_screen.py::test_fwa_screen_fmt_eth_renders_infinity_as_the_marker`
+(the golden's 14-value probe set is unchanged). Review residuals M3, M4, M6
 are filed in `docs/handover_followups_2026_09.md` #10–#12.
 
 **Not in scope (both WPs)**: any pin; any rendered string change; `templates/`; the 6 parametric
