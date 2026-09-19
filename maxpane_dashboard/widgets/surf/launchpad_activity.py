@@ -29,14 +29,15 @@ is malformed and dropped, the same treatment ``activity.py`` gives a
 
 ``ticker`` is attacker-chosen exactly as it is in ``widgets/surf/
 launchpad.py`` (``LaunchpadFactory.launch(string,string)`` is permissionless
-and costs only gas), so it gets that module's own defense: flatten embedded
-whitespace, strip complete ``[...]``-shaped bracket runs outright (not
+and costs only gas), so it gets the same defense, now shared through
+``widgets/markup_safety.strip_tags``, which itself flattens embedded
+whitespace first, then strips complete ``[...]``-shaped bracket runs outright (not
 merely escape them -- an escaped ``[/x]`` still *renders* as the literal
 text ``[/x]`` once Rich unescapes it for display, which is the second-order
 defect ``launchpad.py``'s own docstring records for the identical shape),
-truncate, then :func:`~widgets.markup_safety.safe_markup`. Padding happens
-*before* escaping in every cell here -- padding an escaped string misaligns
-it, the same note ``activity.py`` carries for its own cells.
+clip on cells, then :func:`~widgets.markup_safety.safe_markup`. Padding
+happens *before* escaping in every cell here -- padding an escaped string
+misaligns it, the same note ``activity.py`` carries for its own cells.
 
 ``wallet`` is never a friendly label -- there is no label field in this row
 shape, unlike ``dev_activity``'s ``wallet_label`` -- so it is always the
@@ -92,8 +93,6 @@ Primitives only -- this module imports nothing from ``data/`` or
 
 from __future__ import annotations
 
-import re
-
 from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
@@ -101,7 +100,7 @@ from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, strip_tags
 from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
 
@@ -203,34 +202,6 @@ WIDEN_HINTS = {
 }
 SHORT_HINT = "‹ widen"
 
-#: A complete ``[...]`` bracket run with no nested bracket -- ``launchpad.
-#: py``'s own ``_TAG_LIKE``, duplicated here rather than imported: that
-#: module is owned by a different work package and its private helpers are
-#: not a contract this one should couple to.
-_TAG_LIKE = re.compile(r"\[[^\[\]]*\]")
-
-
-def _flatten(value: object) -> str:
-    """Collapse embedded newlines/control whitespace to single spaces."""
-    if value is None:
-        return ""
-    return " ".join(str(value).split())
-
-
-def _strip_tags(value: object) -> str:
-    """Flatten, then strip complete ``[...]``-shaped runs outright.
-
-    Neither ``ticker`` nor ``wallet`` has a legitimate use for a literal
-    square bracket. Stripping rather than merely escaping matters because an
-    *escaped* ``[/x]`` still renders as the literal text ``[/x]`` once
-    Rich's parser unescapes it for display -- escaping alone stops a crash,
-    not the tag characters showing up on screen.
-    """
-    flat = _flatten(value)
-    stripped = _TAG_LIKE.sub("", flat)
-    return " ".join(stripped.split())
-
-
 #: Truncate to ``width`` **terminal cells**, marking a cut with ``…``, and
 #: left-align in ``width`` cells. Both moved to ``widgets/surf/_rowfit.py``
 #: on 2026-09-01 -- they were about to be copied a third time -- and are
@@ -299,7 +270,7 @@ def _tier_cols(tier: str, amount_cols: int = _AMOUNT_COLS) -> int:
 
 def _ticker_cell(value: object) -> str:
     """Ticker cell, padded to :data:`_TICKER_COLS` cells then escaped."""
-    cleaned = _clip(_strip_tags(value), _TICKER_COLS)
+    cleaned = _clip(strip_tags(value), _TICKER_COLS)
     if not cleaned:
         return f"[dim]{safe_markup(_pad(DASH, _TICKER_COLS))}[/]"
     return f"[bold]{safe_markup(_pad(cleaned, _TICKER_COLS))}[/]"
@@ -325,7 +296,7 @@ def _wallet_cell(value: object, known: bool) -> Text:
     action, which a markup string cannot, and it is never parsed.
     """
     colour = "cyan" if known else "dim"
-    s = _strip_tags(value)
+    s = strip_tags(value)
     if is_address(s):
         cell = address_text(s, width=_ADDR_WINDOW_COLS, style=colour)
     else:

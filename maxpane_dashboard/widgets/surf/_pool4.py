@@ -86,8 +86,14 @@ caller).
 
 Purity
 ------
-Stdlib, ``rich`` and nothing else. No ``data/``, no ``analytics/``, no
-``textual``, no clock, no I/O.
+Stdlib, ``rich`` and nothing else, with one named exception:
+``widgets/markup_safety.strip_tags`` (Branch 2 of
+``docs/refactor_programme_2026_09.md`` hoisted this module's own
+``strip_tags`` there and re-exports it here under the same name so its 14
+importers are untouched). That module is itself stdlib-plus-``rich`` --
+it only additionally imports ``widgets/rowfit``, also pure -- so the
+property this section states still holds transitively. No ``data/``, no
+``analytics/``, no ``textual``, no clock, no I/O.
 
 The ``$`` trap
 --------------
@@ -104,10 +110,10 @@ enforces it.
 
 from __future__ import annotations
 
-import re
-
 from rich.cells import cell_len
 from rich.text import Text
+
+from maxpane_dashboard.widgets.markup_safety import strip_tags
 
 #: ``join_lines`` / ``parse_line`` / ``widest_line`` are spelled with their
 #: nouns on purpose. Their first names -- ``body``, ``line``, ``widest`` --
@@ -207,32 +213,12 @@ QUIET_NETWORK = "MAINNET"
 #: -- so a panel that carries the class and loses the rule still reddens.
 TITLE_CLASS = "pool4u-title"
 
-#: A complete ``[...]`` bracket run with no nested bracket -- ``launchpad.py``'s
-#: ``_TAG_LIKE``, which ``burnkeepers.py`` already copies for the same reason:
-#: those modules belong to other packages and their private helpers are not a
-#: contract to couple to across an ownership seam. This is the pool4 body's
-#: single definition.
-_TAG_LIKE = re.compile(r"\[[^\[\]]*\]")
-
-
-def strip_tags(value: object) -> str:
-    """Flatten embedded whitespace, then strip complete ``[...]``-shaped runs.
-
-    Stripping, not merely escaping: an *escaped* ``[/x]`` still renders as the
-    literal text ``[/x]`` once Rich unescapes it for display, so a hostile
-    ``detail`` would still paint bracket noise into a panel. No legitimate
-    address, state word or network name contains a bracket run, so this only
-    fires on a malformed payload.
-
-    Never raises; ``None`` becomes ``""``.
-    """
-    if value is None:
-        return ""
-    try:
-        flat = " ".join(str(value).split())
-    except Exception:
-        return ""
-    return " ".join(_TAG_LIKE.sub("", flat).split())
+#: ``strip_tags`` itself is no longer defined here: it is imported from
+#: ``widgets/markup_safety`` above (Branch 2 hoist) and re-exported under the
+#: same name via ``__all__``, so this module's own 14 importers -- ``from
+#: maxpane_dashboard.widgets.surf._pool4 import ... strip_tags`` -- are
+#: untouched. See the module docstring's "Purity" section for why importing
+#: it does not reopen this module's own stdlib-plus-``rich`` boundary.
 
 
 def network_word(network: object) -> str:

@@ -1,4 +1,5 @@
-"""``widgets/surf/_rowfit.py`` -- the shared row-fit ladder, and its fit.
+"""``widgets/rowfit.py`` (imported here through its ``widgets/surf/_rowfit.py`` shim)
+-- the shared row-fit ladder, and its fit.
 
 Two things are pinned here, and only the second of them is new behaviour.
 
@@ -318,8 +319,24 @@ def test_rowfit_is_pure_enough_for_a_widget_to_import():
     The frozen module-boundary table for the pool4 build lists ``_rowfit``
     among the three modules a ``widgets/surf/pool4_*.py`` may import; that is
     only true while this holds.
+
+    Since Branch 2 of ``docs/refactor_programme_2026_09.md`` the code lives in
+    ``widgets/rowfit.py`` and ``widgets/surf/_rowfit.py`` is a re-export shim,
+    so the AST is read from the *real* module -- reading the shim's file would
+    make this test pass whatever ``rowfit.py`` imports (it did, briefly).
+    The shim is checked separately: it may import nothing but ``rowfit``.
     """
-    path = Path(_rowfit.__file__)
+    import maxpane_dashboard.widgets.rowfit as rowfit
+
+    shim = ast.parse(Path(_rowfit.__file__).read_text(encoding="utf-8"))
+    shim_modules = {
+        node.module for node in ast.walk(shim) if isinstance(node, ast.ImportFrom)
+    }
+    assert shim_modules <= {"__future__", "maxpane_dashboard.widgets.rowfit"}, (
+        f"the `_rowfit` shim imports {sorted(shim_modules)}; it must only re-export"
+    )
+
+    path = Path(rowfit.__file__)
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported: set[str] = set()
     for node in ast.walk(tree):

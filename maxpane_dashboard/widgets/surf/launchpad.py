@@ -23,8 +23,9 @@ picked by a hostile party rather than merely quoted from the announce
 channel (``data/surf_client.py``'s own docstring: "escaping is Task 11's job,
 never this layer's" -- ticker/name reach this module completely raw).
 
-Every ``ticker`` and ``name`` goes through :func:`_sanitize`, which does
-three things in a fixed order -- flatten, strip, escape:
+Every ``ticker`` and ``name`` goes through
+``widgets/markup_safety.sanitize_cell``, which does three things in a fixed
+order -- flatten, strip, clip, escape:
 
 1. flatten embedded newlines/control whitespace to single spaces (the same
    first step ``feed.py`` uses for announce-channel text);
@@ -43,13 +44,19 @@ three things in a fixed order -- flatten, strip, escape:
    text*, which is a second, milder but still unwanted, form of the same
    problem (a coin's display name showing raw markup punctuation instead of
    the coin's actual name);
-3. truncate to the cell's column budget, then escape via
-   ``widgets/markup_safety.safe_markup`` -- truncation always runs before
-   escaping so a cut can never bisect an escape sequence (the ``feed.py``
-   ordering), and ``safe_markup`` still runs unconditionally, last, as the
-   actual crash-safety net for anything step 2 does not catch (an unbalanced
-   bracket with no matching close, for one -- see the mutation-proof note on
-   :func:`_sanitize`).
+3. clip to the cell's column budget on **cells**
+   (``widgets/rowfit.clip``, ``rich.cells.cell_len``, never ``len()`` --
+   this is the one behaviour change Branch 2 of
+   ``docs/refactor_programme_2026_09.md`` names: a ticker of wide glyphs now
+   clips one or more characters earlier than the old ``len()``-based
+   truncation did), then escape via ``widgets/markup_safety.safe_markup`` --
+   the clip always runs before escaping so a cut can never bisect an escape
+   sequence (the ``feed.py`` ordering), and ``safe_markup`` still runs
+   unconditionally, last, as the actual crash-safety net for what step 2
+   cannot catch: a nested-bracket shape that one stripping pass reduces to a
+   bare close tag (``[[inner]/word]`` → ``[/word]``, which ``Text.from_markup``
+   rejects; a lone unmatched ``[`` renders literally and needs no net -- see
+   ``markup_safety.sanitize_cell``'s own mutation-proof note).
 
 ``creator`` is never freeform text -- it is always a 20-byte address the
 client formats as ``0x`` + 40 hex chars -- so it only gets ``safe_markup``
@@ -85,7 +92,6 @@ Primitives only -- this module imports nothing from ``data/`` or
 
 from __future__ import annotations
 
-import re
 from decimal import ROUND_HALF_UP, Decimal
 
 from rich.cells import cell_len
@@ -96,7 +102,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
     as_float,
@@ -106,68 +112,6 @@ from maxpane_dashboard.widgets.surf._fmt import (
 )
 
 __all__ = ["SurfBurnPipeline", "SurfCurveFlow", "SurfLaunchpadCoins"]
-
-# ---------------------------------------------------------------------------
-# shared text-cleaning helpers (ticker / name -- attacker-chosen)
-# ---------------------------------------------------------------------------
-
-#: A complete ``[...]`` bracket run with no nested bracket -- catches both a
-#: well-formed style tag (``[bold red]``) and a bare closing tag
-#: (``[/x]``).  Deliberately *not* anchored to Rich's own tag grammar: a
-#: ticker/name has no legitimate use for literal brackets at all, so every
-#: complete pair is dropped rather than only the ones that would parse.
-_TAG_LIKE = re.compile(r"\[[^\[\]]*\]")
-
-
-def _flatten(value: object) -> str:
-    """Collapse embedded newlines/control whitespace to single spaces.
-
-    On-chain strings can contain raw newlines the same way announce-channel
-    posts can (``feed.py``), and this has to run before both stripping and
-    truncation so neither operates on a string that still has embedded line
-    breaks in it.
-    """
-    if value is None:
-        return ""
-    return " ".join(str(value).split())
-
-
-def _clip(value: str, width: int) -> str:
-    """Truncate already-flattened, already-stripped, still-unescaped text to
-    ``width`` columns, marked with ``…`` when it was cut.
-
-    Must run before :func:`safe_markup` -- escaping first and truncating
-    after can cut a ``\\[`` escape pair in half at the boundary.
-    """
-    if width <= 0 or len(value) <= width:
-        return value
-    if width == 1:
-        return "…"
-    return value[: width - 1] + "…"
-
-
-def _sanitize(value: object, width: int) -> str:
-    """Flatten, strip bracket-tag-shaped noise, truncate, escape -- in that
-    order.  See the module docstring for why each step exists and why the
-    order is fixed.
-
-    Mutation-proof note (Task 11, Step 5): removing the final
-    ``safe_markup`` call here does **not** turn
-    ``test_hostile_ticker_and_name_never_reach_markup`` red for the exact
-    fixture in that test, because step 2 already removes every complete
-    ``[...]`` pair before ``safe_markup`` would ever run on it -- there is
-    nothing left for the escape call to neutralise in that specific input.
-    ``safe_markup`` still matters for anything step 2 does not catch (a lone
-    unmatched ``[`` with no closing bracket, which ``_TAG_LIKE`` cannot
-    match and therefore cannot strip); see ``task-11-report.md`` for the
-    empirical follow-up that demonstrates the crash with stripping disabled.
-    """
-    flat = _flatten(value)
-    stripped = _TAG_LIKE.sub("", flat)
-    stripped = " ".join(stripped.split())
-    clipped = _clip(stripped, width)
-    return safe_markup(clipped)
-
 
 # ---------------------------------------------------------------------------
 # SurfLaunchpadCoins -- the ranked coin table
@@ -273,10 +217,10 @@ MAX_COIN_ROWS = 20
 _COIN_CHROME_ROWS = 3
 
 #: Column budget, in rendered columns.  Ticker/name width is no longer a
-#: security control (:func:`_sanitize` strips hostile bracket content before
-#: truncation ever runs), so these are sized for legibility against the real
-#: fixture's tickers (``ICE``, ``DAOs``, ``K-256``) and generous coin names,
-#: not against the length of an attack payload.
+#: security control (``markup_safety.sanitize_cell`` strips hostile bracket
+#: content before clipping ever runs), so these are sized for legibility
+#: against the real fixture's tickers (``ICE``, ``DAOs``, ``K-256``) and
+#: generous coin names, not against the length of an attack payload.
 #:
 #: Fixed total, 79, unchanged by Task 11 (``test_the_table_still_needs_
 #: exactly_seventy_nine_columns``): SWAPS ALL is a new column paid for by
@@ -335,12 +279,12 @@ _BURNED_COLS = 9
 
 
 def _ticker_cell(ticker: object) -> str:
-    cleaned = _sanitize(ticker, _TICKER_COLS)
+    cleaned = sanitize_cell(ticker, _TICKER_COLS)
     return f"[bold]{cleaned}[/]" if cleaned else f"[dim]{DASH}[/]"
 
 
 def _name_cell(name: object) -> str:
-    cleaned = _sanitize(name, _NAME_COLS)
+    cleaned = sanitize_cell(name, _NAME_COLS)
     return f"[dim]{cleaned}[/]" if cleaned else f"[dim]{DASH}[/]"
 
 
@@ -365,7 +309,7 @@ def _creator_cell(creator: object, known: bool) -> Text:
     third-party is ever parsed.
     """
     colour = "cyan" if known else "dim"
-    value = _flatten(creator)
+    value = flatten(creator)
     if is_address(value):
         return address_text(value, width=_ADDR_WINDOW_COLS, style=colour)
     # Not an address: ``address_text`` fits it on cells and adds no icon.

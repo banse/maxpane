@@ -82,7 +82,8 @@ Almost nothing here is the first of its kind. Check, in this order:
    Bakery-only despite living at the top level — two import `data.models`, two are shaped for
    Bakery's payload, and all four are imported by `screens/bakery.py` only. Do not treat them as
    shared.)
-2. **the dashboard's own `_fmt.py` / `_rowfit.py`** (`widgets/surf/`, `widgets/curator/`) and the
+2. **the dashboard's own `_fmt.py`** (`widgets/surf/`, `widgets/curator/`; row fitting is shared in
+   `widgets/rowfit.py`, reached by surf through the `widgets/surf/_rowfit.py` shim until Branch 3) and the
    sibling panel that already does the same *shape* of job. `widgets/surf/launchpad_activity.py`
    was built on `widgets/surf/activity.py` and inherited its width-tier ladder and its "the panel
    names the columns it shed" contract for free.
@@ -99,10 +100,9 @@ redundancy is the narrow exception:** a hand-typed copy that an agreement test b
 tuple such as `POOL4_NETWORKS` / `POOL4_DISCOVERY_SOURCES`) is correct and must not be
 "simplified" into a derivation, because the test would then compare a constant against itself.
 
-Known live instance: the strip-then-escape sanitiser is declared four times — `widgets/surf/launchpad.py`
-(`_clip` still fits on `len()`), `launchpad_activity.py`, `burnkeepers.py`, `_pool4.py` — and fwa
-re-declares `markup_safety._MARKUP_TAG` in `fwa_settlement_table.py` and `fwa_signals.py`. Hoist per
-`HANDOVER.md` §3.2 rather than patching one copy.
+The strip-then-escape sanitiser is `markup_safety.sanitize_cell` (flatten → `strip_tags` →
+`rowfit.clip` on cells → `safe_markup`, in that order) since HANDOVER §3.2 was closed on 2026-09-19;
+`strip_tags` alone is for a value that is never clipped. Do not re-declare either.
 
 ## Blank row under a title
 

@@ -37,8 +37,8 @@ files; the commit message is the evidence.
 |---|---|---|---|---|---|
 | 0 | `fix/select-to-copy` | new (UX copy) | 1 | 0 | `tests/test_clipboard*.py`, `tests/screens/test_refresh_guard.py`, one new pilot test |
 | 1 | `refactor/dead-base-code` | §3.1 | 2 | ~2,465 | below |
-| 2 | `refactor/sanitize-cell` | §3.2 | 2 | ~150 | `tests/widgets/test_markup_safety.py`, `test_surf_*`, `test_fwa_*` |
-| 3 | `refactor/fmt-rowfit` | §3.3 | 2 | ~900 | every widget test file that imports a converted helper |
+| 2 | `refactor/sanitize-cell` | §3.2 | 2 | ~150 | below (also moves `_rowfit.py` to `widgets/rowfit.py`, shim left) |
+| 3 | `refactor/fmt-rowfit` | §3.3 (move already done in 2) | 2 | ~900 | every widget test file that imports a converted helper |
 | 4 | `feat/explorer-links` | new (UX links) | 2 | 0 | `tests/test_address_rule.py`, `tests/screens/test_address_icons_everywhere.py`, address sweep |
 | 5 | `refactor/dashboard-screen` | §3.5 | 2 | ~1,100 | address sweep + every `tests/screens/test_*_screen.py` migrated |
 | 6 | `refactor/panels-ocm` | §3.4a | 2 | small | `tests/widgets/test_panels.py` (new), ocm tests |
@@ -93,6 +93,72 @@ bt_signals,bt_activity_feed,bt_best_plays}.py`.
 and `rg -n 'widgets\.base\.(fee_|gecko|graduated|launch_|pool_info|price_spark|token_|top_movers|trade_feed|trending|volume_|overview\b)|_legacy_overview|bt_leaderboard\b' maxpane_dashboard tests` must be empty.
 
 **Not in scope**: any change to the six kept widgets' rendering; any pin; `templates/`.
+
+## Branch 2 — `refactor/sanitize-cell` (one work package)
+
+Verified 2026-09-19: the strip-then-escape sanitiser is declared four times in `widgets/surf/`
+(`launchpad.py:119-170` — `_TAG_LIKE`, `_flatten`, `_clip` on `len()`, `_sanitize`;
+`launchpad_activity.py:210-232` — `_TAG_LIKE`, `_flatten`, `_strip_tags`; `burnkeepers.py:115-128`
+— `_TAG_LIKE`, `_strip_tags`; `_pool4.py:210-235` — `_TAG_LIKE`, public `strip_tags`, imported
+by 14 surf modules). fwa declares `_MARKUP = re.compile(r"\[/?[^\[\]]*\]")` in
+`fwa_settlement_table.py:60` and `fwa_signals.py:71` and **uses neither** (both already import
+`markup_safety.visible_len`). No talismans/ttt copies; base's `_strip_non_ascii` is a different
+function. Tests name none of the private helpers (only docstrings mention them), so every test
+is behavioural and stays as it is.
+
+**Move first** (pulled forward from Branch 3 so the shared module never imports a dashboard
+package): `widgets/surf/_rowfit.py` → `widgets/rowfit.py` (`git mv`, no content change beyond
+the module docstring's path), and leave `widgets/surf/_rowfit.py` as a re-export shim
+(`from maxpane_dashboard.widgets.rowfit import *` plus the explicit names it exports) so the 12
+importing modules and 9 test files are untouched. Branch 3 then adds `has_marker()`,
+`title_with_hint()`, `Ladder` to the new location and removes the shim.
+
+**Hoist** into `widgets/markup_safety.py` (append-only; `safe_markup` and `visible_len`
+unchanged):
+- `TAG_LIKE = re.compile(r"\[[^\[\]]*\]")` — a complete `[...]` run with no nested bracket.
+- `flatten(value) -> str` — `None` → `""`; `" ".join(str(value).split())`; never raises
+  (`_pool4`'s `try` around `str()` is the form to keep).
+- `strip_tags(value) -> str` — flatten, `TAG_LIKE.sub("", …)`, re-flatten. Docstring carries the
+  rationale from `launchpad.py`'s module docstring and `_pool4.strip_tags`: stripping, not
+  merely escaping, because an *escaped* `[/x]` still renders as literal `[/x]`.
+- `sanitize_cell(value, width) -> str` — `strip_tags` → `rowfit.clip` (cell-measured, so
+  `launchpad.py`'s `len()`-clipped `_clip` is retired: the one behaviour change, and the one the
+  handover names) → `safe_markup`. Docstring keeps the fixed-order rationale and the
+  mutation-proof note from `launchpad._sanitize`: clip before escape so a cut never bisects an
+  escape pair; escape still matters for the nested-bracket shape one `TAG_LIKE` pass reduces to a
+  bare close (`[[inner]/word]` → `[/word]`, a `MarkupError`). *Corrected in review 2026-09-19: the
+  "lone unmatched `[`" this line first named renders literally on the installed Rich and needs no net.*
+
+**Then, in the four surf modules:** delete the private copies and call the shared names
+(`launchpad.py`: `_sanitize(x, w)` → `sanitize_cell(x, w)`, `_flatten` → `flatten`;
+`launchpad_activity.py`: `_strip_tags` → `strip_tags`, `_flatten` → `flatten`, keep its
+`_clip = _rowfit.clip` / `_pad` aliases; `burnkeepers.py`: `_strip_tags` → `strip_tags`;
+`_pool4.py`: drop its definition and **re-export** `strip_tags` from `markup_safety` under the
+same name so its 14 importers are untouched). Delete the two dead `_MARKUP` regexes in fwa and
+`import re` in `fwa_settlement_table.py` if nothing else uses it (`fwa_signals.py` still does).
+Drop the "duplicated here rather than imported … ownership seam" comments: the seam argument
+is why the copies existed; the shared module is the contract now.
+
+**Tests to add** (in `tests/widgets/test_markup_safety.py`): `strip_tags` on `None`, embedded
+newlines, a complete `[/x]` run, a lone `[`; `sanitize_cell` clips on **cells** (eight CJK
+characters into a 10-column budget → `cell_len` ≤ 10 with `…`), escapes what stripping leaves,
+and never raises on a non-string. Mutation proofs: (a) `sanitize_cell` clipping on `len()`
+again reddens the CJK test; (b) removing the final `safe_markup` reddens the lone-`[` test.
+
+**Tests to run** (named files only, no suite): `tests/widgets/test_markup_safety.py`,
+`tests/widgets/test_surf_rowfit.py`, `tests/widgets/test_surf_launchpad_widgets.py`,
+`tests/widgets/test_surf_launchpad_activity.py`, `tests/widgets/test_surf_burnkeepers.py`,
+`tests/widgets/test_surf_pool4_left.py`, `tests/widgets/test_surf_pool4u_left.py`,
+`tests/widgets/test_surf_pool4u_depth.py`, `tests/widgets/test_surf_pool4u_signals.py`,
+`tests/widgets/test_surf_swarm_rail.py`, `tests/widgets/test_surf_widgets_a.py`,
+`tests/widgets/test_surf_widgets_b.py`, every `tests/widgets/test_fwa*.py`,
+`tests/screens/test_surf_screen.py`, `tests/screens/test_fwa*.py`,
+`tests/screens/test_address_icons_everywhere.py -k "surf or fwa"`, and `-m guard tests`. Then
+`rg -n '_TAG_LIKE|def _strip_tags|def _flatten|def _sanitize|^_MARKUP = ' maxpane_dashboard`
+must be empty.
+
+**Not in scope**: any pin; any rendering change other than the cell-measured clip in
+`launchpad.py`; the Branch 3 helpers.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
