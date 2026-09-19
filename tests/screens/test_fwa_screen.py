@@ -859,3 +859,13 @@ _SCREEN_FMT_ETH_GOLDEN = [
 def test_golden_fwa_screen_fmt_eth():
     from maxpane_dashboard.screens import fwa as mod
     assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _SCREEN_FMT_ETH_GOLDEN
+
+
+def test_fwa_screen_fmt_eth_renders_infinity_as_the_marker():
+    """The one rendering change Branch 3 WP-B ships: the old ``float()`` body
+    printed ``inf`` for an infinite value; through ``fmt.as_float`` it is the
+    marker, because ``inf`` is not a quantity. Pinned here since the golden's
+    probe set has no infinity in it (review M2)."""
+    from maxpane_dashboard.screens import fwa as mod
+    assert mod._fmt_eth(float("inf")) == "—"
+    assert mod._fmt_eth(float("-inf")) == "—"

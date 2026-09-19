@@ -261,8 +261,12 @@ recorded behaviour change is not a rendering: the two `hhmm` bodies differed bey
 curator's `int()` guard did not catch `OverflowError`, so `hhmm(float("±inf"))` raised inside the
 message pump where surf's returned the marker. The shared body is surf's (CLAUDE.md "never a
 crash"); curator's `hhmm(±inf)` now renders `--:--`, and no input that rendered before renders
-differently. Known, not in the probe set: the three wrappers that go through `fmt.as_float` now
-render `--`/`—` for `float("inf")` where the old `float()`-based bodies printed `inf`.
+differently. Known, not in the probe set, and the one rendering change this branch ships (review M1/M2
+corrected the record: `fwa_odds_board` and `pool4_ratchet` already rejected ±inf through their
+own `as_float`): `screens/fwa._fmt_eth(float("inf"))` printed `inf`, now `—` — a deviation from
+"no rendered string change" accepted because `inf` is not a quantity; pinned as a 15th probe in
+`tests/screens/test_fwa_screen.py::test_golden_fwa_screen_fmt_eth`. Review residuals M3, M4, M6
+are filed in `docs/handover_followups_2026_09.md` #10–#12.
 
 **Not in scope (both WPs)**: any pin; any rendered string change; `templates/`; the 6 parametric
 tier functions; `curator/_table.title_with_hint`; `analytics/`.

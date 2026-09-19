@@ -189,7 +189,7 @@ def test_fmt_is_pure_enough_for_a_widget_to_import():
             imported.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
-    allowed = {"__future__", "time", "maxpane_dashboard.widgets.sparkline_common"}
+    allowed = {"__future__", "time"}
     assert imported <= allowed, f"`fmt` reaches {sorted(imported - allowed)}"
 
 
