@@ -81,6 +81,8 @@ _DASH = "--"
 _SYM_WIDTH = 5
 
 
+# Not widgets/fmt.fmt_eth: ungrouped -- probe 1234.5678 renders "1234.5678 Ξ" here,
+# "1,234.5678 Ξ" there; True renders "1.0000 Ξ" here, "--" there.
 def _fmt_eth(value, digits: int = 4) -> str:
     if value is None:
         return _DASH

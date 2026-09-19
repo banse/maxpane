@@ -102,24 +102,21 @@ chain of.
 Purity
 ------
 Stdlib, ``rich``, ``textual``, and this package's own ``_fmt``/``_pool4``/
-``_rowfit``/``address`` primitives. No ``data/``, no ``analytics/``, no
+``rowfit``/``address`` primitives. No ``data/``, no ``analytics/``, no
 clock, no I/O.
 """
 
 from __future__ import annotations
 
-from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import MIN_SHORT_COLS, short_hex
-from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
 from maxpane_dashboard.widgets.surf._pool4 import (
-    GLYPH_HINT,
-    WIDEN_HINT,
     join_lines,
     strip_tags,
 )
@@ -156,7 +153,7 @@ NO_AGENTS_LINE = "no agents scored yet"
 #: the panel paints exactly these four and in this order.
 ROW_LABELS: tuple[str, ...] = ("accepted", "window", "delivered", "revised")
 
-_GAP = _rowfit.GAP
+_GAP = rowfit.GAP
 _TITLE_ID = "surf-swarm-throughput-title"
 _BODY_ID = "surf-swarm-throughput-body"
 _TITLE_CLASS = "surf-swarm-throughput-title"
@@ -201,32 +198,17 @@ _MAX_TX_COLS = 12
 #: reaches them as ``swarm_throughput._CHAIN_COLS`` etc. still resolves.
 
 
-def _has_marker(as_of: object) -> bool:
-    """True when *as_of* is a real ``as of`` clock, not merely non-``None``.
-
-    ``swarm_field.py``'s predicate, restated -- see ``swarm_queue.py``'s copy
-    of the same docstring note.
-    """
-    return isinstance(as_of, str) and bool(as_of)
-
-
-def _title_with_hint(base: str, widen: bool, budget: int) -> str:
-    """Append the longest widen marker that fits *base* within *budget*.
-
-    No network word: see the module docstring's *"The chain word is
-    deliberately absent"* section.
-    """
-    if not widen:
-        return base
-    for candidate in (WIDEN_HINT, GLYPH_HINT):
-        if not budget or cell_len(base) + 2 + cell_len(candidate) <= budget:
-            return f"{base}  {candidate}"
-    return base
+#: The ``as of`` predicate and the network-word-free title fitter, shared by
+#: the four swarm panels in ``widgets/rowfit.py`` since Branch 3 (each used to
+#: restate them; the reasoning is on the shared definitions), under the names
+#: this module's own docstrings and tests use.
+_has_marker = rowfit.has_marker
+_title_with_hint = rowfit.title_with_hint
 
 
 def _rate_row(label: str, value: str) -> Text:
     line = Text()
-    line.append(_rowfit.pad(label, LABEL_COLS), style="dim")
+    line.append(rowfit.pad(label, LABEL_COLS), style="dim")
     line.append(value)
     return line
 
@@ -295,23 +277,23 @@ def _agent_line(row: dict, tx_width: int) -> Text:
     tx_text = short_hex(tx, tx_width) if has_tx else DASH
 
     line = Text()
-    line.append(_rowfit.pad(_rowfit.clip(agent, _AGENT_COLS), _AGENT_COLS), style="bold")
+    line.append(rowfit.pad(rowfit.clip(agent, _AGENT_COLS), _AGENT_COLS), style="bold")
     line.append(" " * _GAP)
-    line.append(_rowfit.pad(_rowfit.clip(mean_text, _SCORE_COLS), _SCORE_COLS))
+    line.append(rowfit.pad(rowfit.clip(mean_text, _SCORE_COLS), _SCORE_COLS))
     line.append(" " * _GAP)
     line.append(
-        _rowfit.pad(_rowfit.clip(jobs_text, _JOBS_COLS), _JOBS_COLS), style="dim",
+        rowfit.pad(rowfit.clip(jobs_text, _JOBS_COLS), _JOBS_COLS), style="dim",
     )
     if tx_width > 0:
         line.append(" " * _GAP)
-        line.append(_rowfit.clip(tx_text, tx_width), style="dim")
+        line.append(rowfit.clip(tx_text, tx_width), style="dim")
         # No chain word for a dashed (unread/malformed) hash -- there is
         # nothing to name the chain of. A real hash always gets one, dash
         # included, so a shown hash is never bare.
         if has_tx:
             line.append(" ")
             line.append(
-                _rowfit.pad(_chain_word(row.get("last_chain_id")), _CHAIN_COLS),
+                rowfit.pad(_chain_word(row.get("last_chain_id")), _CHAIN_COLS),
                 style="dim",
             )
     return line
@@ -331,7 +313,7 @@ def _agent_lines(score_rows: object, scores_as_of: object, width: int) -> tuple[
     if not rows:
         return [Text(NO_AGENTS_LINE, style="dim")], False
 
-    fixed = _rowfit.row_cols((_AGENT_COLS, _SCORE_COLS, _JOBS_COLS))
+    fixed = rowfit.row_cols((_AGENT_COLS, _SCORE_COLS, _JOBS_COLS))
     available = max(width - fixed - _GAP, 0)
     # The hash and its chain word are offered together or not at all (the
     # module docstring's *"A hash is never shown bare"* rule): the width

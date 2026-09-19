@@ -187,3 +187,44 @@ async def test_wallet_hero_formats_display_fp_not_wei() -> None:
         assert "37.3K FP pool" in pool_text
         assert "B FP" not in pool_text
         assert "1.2K FP staked" in apr_text
+
+
+# ---------------------------------------------------------------------------
+# WP-B goldens (docs/refactor_programme_2026_09.md Branch 3): the two
+# frenpet-wallet `_fmt_eth` copies take WEI, divide by 1e18 and raise
+# ``TypeError`` on ``None`` / a string, so ``widgets/fmt.fmt_eth`` (ETH in,
+# ``--`` out) cannot stand in for them; both stay.  Renderings as of
+# 2026-09-20, pasted as literals -- ``TypeError`` marks a probe that raises.
+# ---------------------------------------------------------------------------
+
+_FMT_PROBES = [None, 0, 0.0, 1, 1.5, 1e-7, 0.123456789, 1234.5678, -2, "abc", "",
+               True, 10**18, 15 * 10**17]
+_PETS_FMT_ETH_GOLDEN = [
+    TypeError, "0.0000", "0.0000", "0.0000", "0.0000", "0.0000", "0.0000", "0.0000",
+    "-0.0000", TypeError, TypeError, "0.0000", "1.000", "1.500",
+]
+_HERO_FMT_ETH_GOLDEN = [
+    TypeError, "0.0000 ETH", "0.0000 ETH", "0.0000 ETH", "0.0000 ETH", "0.0000 ETH",
+    "0.0000 ETH", "0.0000 ETH", "-0.0000 ETH", TypeError, TypeError, "0.0000 ETH",
+    "1.0000 ETH", "1.5000 ETH",
+]
+
+
+def _golden_run(fn, probes):
+    out = []
+    for p in probes:
+        try:
+            out.append(fn(p))
+        except TypeError:
+            out.append(TypeError)
+    return out
+
+
+def test_golden_fpw_pets_fmt_eth():
+    from maxpane_dashboard.widgets.frenpet.wallet import fpw_pets as mod
+    assert _golden_run(mod._fmt_eth, _FMT_PROBES) == _PETS_FMT_ETH_GOLDEN
+
+
+def test_golden_fpw_hero_fmt_eth():
+    from maxpane_dashboard.widgets.frenpet.wallet import fpw_hero as mod
+    assert _golden_run(mod._fmt_eth, _FMT_PROBES) == _HERO_FMT_ETH_GOLDEN

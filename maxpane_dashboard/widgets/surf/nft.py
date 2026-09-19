@@ -100,6 +100,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, mmdd
 
 #: Panel title.  The collection calls itself identity.md, which is what the
@@ -141,12 +142,11 @@ WIDEN_HINTS = {
     "minimal": "‹ widen: 24h /2000",
 }
 
-#: Fallback marker for a panel too narrow to carry a descriptive hint beside
-#: its title, and for the case where the row that overflows is not the stats
-#: row at all (the floor line is 31 columns and has no field to shed).  It
-#: names nothing, which is a real loss -- but "columns were dropped here" is
-#: the contract, and going silent is not an option this codebase allows.
-SHORT_HINT = "‹ widen"
+# ``SHORT_HINT`` -- the fallback marker for a panel too narrow to carry a
+# descriptive hint beside its title, and for the case where the row that
+# overflows is not the stats row at all (the floor line is 31 columns and has
+# no field to shed) -- is the repo-wide marker, shared in ``widgets/rowfit.py``
+# since Branch 3.
 
 
 def _fmt_count(value) -> str:

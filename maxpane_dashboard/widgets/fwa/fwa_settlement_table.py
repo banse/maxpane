@@ -214,6 +214,7 @@ def _fmt_pct(value) -> str:
         return _DASH
 
 
+# Not widgets/fmt.fmt_eth: probe True renders "1.000" here (bare float()), "--" there.
 def _fmt_eth(value) -> str:
     if value is None:
         return _DASH
@@ -223,6 +224,7 @@ def _fmt_eth(value) -> str:
         return _DASH
 
 
+# Not widgets/fmt.as_float: probe True coerces to 1.0 here, None there.
 def _as_float(value) -> float | None:
     try:
         return float(value)

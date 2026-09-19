@@ -99,9 +99,10 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets import rowfit
+from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup, strip_tags
-from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
 
 __all__ = [
@@ -179,9 +180,9 @@ _ADDR_COLS = _ADDR_WINDOW_COLS + ICON_COLS                      # 13
 _AMOUNT_COLS = 12
 
 #: The gap between two cells.  Shared machinery: it lives in
-#: ``widgets/surf/_rowfit.py`` and is re-exported here under the name this
+#: ``widgets/rowfit.py`` and is re-exported here under the name this
 #: module's own docstrings have always used.
-_GAP = _rowfit.GAP
+_GAP = rowfit.GAP
 
 #: The widest row layout's requirement **for an amount of :data:`_AMOUNT_COLS`**
 #: -- what the panel advertises and what a screen sweep pins, exactly as
@@ -200,10 +201,11 @@ WIDEN_HINTS = {
     "compact": "‹ widen for amounts",
     "minimal": "‹ widen: wallet, ETH",
 }
-SHORT_HINT = "‹ widen"
+# ``SHORT_HINT`` (in ``__all__``) is the repo-wide marker, shared in
+# ``widgets/rowfit.py`` since Branch 3.
 
 #: Truncate to ``width`` **terminal cells**, marking a cut with ``…``, and
-#: left-align in ``width`` cells. Both moved to ``widgets/surf/_rowfit.py``
+#: left-align in ``width`` cells. Both moved to ``widgets/rowfit.py``
 #: on 2026-09-01 -- they were about to be copied a third time -- and are
 #: aliased here under the names this module's own docstrings use.
 #:
@@ -214,14 +216,14 @@ SHORT_HINT = "‹ widen"
 #: columns wider than the budget it was checked against, and pushed the
 #: *amount* off the end of the row -- ``0.`` where the value was
 #: ``0.0120 ETH``.
-_clip = _rowfit.clip
-_pad = _rowfit.pad
+_clip = rowfit.clip
+_pad = rowfit.pad
 
 
 def _row_cols(tier: str, amount_cols: int) -> int:
     """Rendered width of a row at ``tier`` carrying an ``amount_cols``-wide
     amount -- this panel's cells, handed to the shared
-    :func:`~widgets.surf._rowfit.row_cols`.
+    :func:`~widgets.rowfit.row_cols`.
 
     An absent cell takes its :data:`_GAP` with it (the shared function's own
     rule); the amount carries its own two leading spaces
@@ -231,7 +233,7 @@ def _row_cols(tier: str, amount_cols: int) -> int:
     present = [_AGE_COLS, _KIND_COLS, _TICKER_COLS]
     if tier != "minimal":
         present.append(_ADDR_COLS)
-    return _rowfit.row_cols(present, amount_cols)
+    return rowfit.row_cols(present, amount_cols)
 
 
 def _tier_for(width: int, amount_cols: int = _AMOUNT_COLS) -> str:
@@ -251,7 +253,7 @@ def _tier_for(width: int, amount_cols: int = _AMOUNT_COLS) -> str:
     ``full``; :meth:`SurfLaunchpadActivity.on_resize` re-lays it out once it
     has a size.
     """
-    return _rowfit.tier_for(
+    return rowfit.tier_for(
         width,
         (
             ("full", _row_cols("full", amount_cols)),

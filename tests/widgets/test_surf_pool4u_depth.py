@@ -388,7 +388,7 @@ async def test_the_unread_band_cell_cannot_be_read_as_a_quantity() -> None:
     """Not a dash, and not anything with a digit in it.
 
     PRD 6.5 asks for a *visibly different* third state rather than one that
-    could read as zero. ``--`` would not have qualified: it is what ``_fmt_eth``
+    could read as zero. ``--`` would not have qualified: it is what ``fmt_eth``
     paints one column to the left for an unreadable number, so the same mark
     would mean two things on one row -- and a reader skimming a column of
     percentages reads a short mark as a small value.
@@ -606,7 +606,7 @@ async def test_the_width_pins_are_what_the_table_actually_reserves() -> None:
     no row this panel paints is ever wider than the pin that governs it.
 
     ``DataTable`` pads every column including the last, which is why these two
-    numbers are not ``_rowfit.row_cols``'s arithmetic: that charges a gap
+    numbers are not ``rowfit.row_cols``'s arithmetic: that charges a gap
     *between* cells and is a ``RichLog`` row's formula.
     ``SurfPool4UStakers`` records the same decision.
     """
@@ -710,3 +710,23 @@ async def test_no_args_and_all_none_render_without_raising() -> None:
             }
         )
         await pilot.pause()
+
+
+# ---------------------------------------------------------------------------
+# WP-B golden (docs/refactor_programme_2026_09.md Branch 3): the depth
+# ladder's `_fmt_eth` rendering before it became widgets/fmt.fmt_eth, as
+# literals.  Two grouped places; a real zero is ``0.00``, an unread rung ``--``.
+# ---------------------------------------------------------------------------
+
+_FMT_PROBES = [None, 0, 0.0, 1, 1.5, 1e-7, 0.123456789, 1234.5678, -2, "abc", "",
+               True, 10**18, 15 * 10**17]
+_DEPTH_FMT_ETH_GOLDEN = [
+    "--", "0.00", "0.00", "1.00", "1.50", "0.00", "0.12", "1,234.57", "-2.00",
+    "--", "--", "--", "1,000,000,000,000,000,000.00", "1,500,000,000,000,000,000.00",
+]
+
+
+def test_golden_pool4u_depth_fmt_eth():
+    # `_fmt_eth` was re-pointed at the shared name on 2026-09-20; the golden
+    # pins what the module now binds.
+    assert [depth_mod.fmt_eth(p) for p in _FMT_PROBES] == _DEPTH_FMT_ETH_GOLDEN

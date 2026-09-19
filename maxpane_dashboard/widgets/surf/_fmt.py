@@ -1,9 +1,16 @@
-"""Shared pure formatters for the surf widgets.
+"""Surf-specific pure formatters, on top of ``widgets/fmt.py``.
 
 These live in one private module because ``fmt_age`` is needed by both the
 signals panel (``FIRED 2h ago``) and the feed title (``last 2h ago``), and a
 second copy is how the sparkline helpers drifted apart before MEDI-36.
 Pure functions, no I/O, no Textual imports, nothing raises.
+
+Since 2026-09-20 (``docs/refactor_programme_2026_09.md`` Branch 3 WP-B) the
+dashboard-agnostic names -- ``DASH``, ``EMDASH``, ``as_float``, ``fmt_age``,
+``hhmm``, ``mmdd`` -- are defined once in ``widgets/fmt.py`` and re-exported
+here so the surf widgets' imports did not move.  What this module still
+defines is the surf-only set: ``fmt_imd``, ``fmt_price``, ``fmt_liquidity``
+and :data:`ANTI_POISONING_COLS`.
 
 **Escaping contract: callers escape, not this module.** Every function here
 returns plain text, never markup-safe text. The calling widget owns
@@ -21,8 +28,7 @@ number that module is handed.
 
 from __future__ import annotations
 
-import time
-
+from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, hhmm, mmdd
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
 __all__ = [
@@ -38,9 +44,6 @@ __all__ = [
     "hhmm",
     "mmdd",
 ]
-
-DASH = "--"
-EMDASH = "—"
 
 
 def fmt_imd(value) -> str:
@@ -81,37 +84,6 @@ def fmt_imd(value) -> str:
     return fmt_compact(v)
 
 
-def as_float(value):
-    """Coerce to ``float`` or return ``None`` -- never raise, never 0-coerce."""
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        out = float(value)
-    except (TypeError, ValueError):
-        return None
-    if out != out or out in (float("inf"), float("-inf")):  # NaN / inf
-        return None
-    return out
-
-
-def fmt_age(seconds) -> str:
-    """``45s`` / ``12m`` / ``2h`` / ``3d``; ``--`` for unknown or negative.
-
-    A negative age would mean an event from the future -- that is a corrupt
-    input, and rendering it as ``0s`` would claim "right now" about garbage.
-    """
-    s = as_float(seconds)
-    if s is None or s < 0:
-        return DASH
-    if s < 90:
-        return f"{s:.0f}s"
-    if s < 90 * 60:
-        return f"{s / 60:.0f}m"
-    if s < 36 * 3600:
-        return f"{s / 3600:.0f}h"
-    return f"{s / 86400:.0f}d"
-
-
 def fmt_price(value) -> str:
     """USD price at IMD-scale precision (a ~$0.71 token, not a sub-cent one)."""
     v = as_float(value)
@@ -149,27 +121,3 @@ def fmt_liquidity(value) -> str:
 #: ``long_addr``'s that is a surf decision rather than a formatter, so the
 #: number stays here and the shortening does not.
 ANTI_POISONING_COLS = 17
-
-
-def hhmm(timestamp) -> str:
-    """``HH:MM`` local time from unix seconds; ``??:??`` when unusable."""
-    try:
-        ts = int(timestamp or 0)
-        if ts <= 0:
-            return "??:??"
-        t = time.localtime(ts)
-        return f"{t.tm_hour:02d}:{t.tm_min:02d}"
-    except (TypeError, ValueError, OSError, OverflowError):
-        return "??:??"
-
-
-def mmdd(timestamp) -> str:
-    """``MM-DD`` local time from unix seconds; ``??-??`` when unusable."""
-    try:
-        ts = int(timestamp or 0)
-        if ts <= 0:
-            return "??-??"
-        t = time.localtime(ts)
-        return f"{t.tm_mon:02d}-{t.tm_mday:02d}"
-    except (TypeError, ValueError, OSError, OverflowError):
-        return "??-??"

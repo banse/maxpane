@@ -504,10 +504,10 @@ def test_the_row_fit_ladder_is_imported_and_not_copied() -> None:
     fourth copy, so the import is asserted rather than assumed.
     """
     source = pathlib.Path(flow_mod.__file__).read_text()
-    assert "from maxpane_dashboard.widgets.surf import _rowfit" in source
+    assert "from maxpane_dashboard.widgets import rowfit" in source
     for helper in ("row_cols", "tier_for", "clip", "pad"):
         assert f"def {helper}(" not in source, helper
-        assert f"_rowfit.{helper}" in source, helper
+        assert f"rowfit.{helper}" in source, helper
 
 
 def test_the_tier_ladder_steps_in_both_directions() -> None:
@@ -933,7 +933,7 @@ async def test_a_hostile_persisted_marker_never_reaches_markup() -> None:
 @pytest.mark.parametrize("module", [flow_mod, split_mod])
 def test_the_pool4_left_widgets_import_no_data_analytics_or_clock(module) -> None:
     """§0.5 froze the boundary with the keys: these modules may see
-    ``_fmt`` / ``_rowfit`` / ``markup_safety`` / ``sparkline_common`` and
+    ``_fmt`` / ``rowfit`` / ``markup_safety`` / ``sparkline_common`` and
     nothing from ``data/`` or ``analytics/``.
 
     ``time`` and ``datetime`` are on the list for their own reason: ``age_s``

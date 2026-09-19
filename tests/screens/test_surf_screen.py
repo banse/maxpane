@@ -5342,7 +5342,7 @@ def _css_clipped_lines(app, widget) -> list[str]:
         Textual paints an ellipsis at a content edge, so a leaf whose
         computed ``text_overflow`` is anything else cannot have been
         CSS-ellipsised and any ``…`` on it is its own. This is why a
-        ``DataTable`` row ending in a ``_rowfit.clip``-fitted address cell is
+        ``DataTable`` row ending in a ``rowfit.clip``-fitted address cell is
         not a hit even when the row fills the table.
 
         **Measured inert today, and kept anyway.** Deleting this test

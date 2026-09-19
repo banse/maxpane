@@ -43,6 +43,8 @@ def _fmt_share(value) -> str:
         return _DASH
 
 
+# Not widgets/fmt.fmt_eth: ungrouped -- probe 1234.5678 renders "1234.56780 Ξ" here,
+# "1,234.56780 Ξ" there; True renders "1.00000 Ξ" here, "--" there.
 def _fmt_eth(value) -> str:
     if value is None:
         return _DASH

@@ -96,9 +96,9 @@ reason: the columns stay aligned down the panel, and any line wider than the
 log's usable width is narrowed **at write time, with no ``…``, no marker and
 nothing in the title**).  ``wrap=False`` and a width tier are a package deal.
 
-The ladder is :func:`~widgets.surf._rowfit.tier_for`, the row arithmetic is
-:func:`~widgets.surf._rowfit.row_cols` and the cell fitting is
-:func:`~widgets.surf._rowfit.clip` / :func:`~widgets.surf._rowfit.pad` --
+The ladder is :func:`~widgets.rowfit.tier_for`, the row arithmetic is
+:func:`~widgets.rowfit.row_cols` and the cell fitting is
+:func:`~widgets.rowfit.clip` / :func:`~widgets.rowfit.pad` --
 **imported, never copied.**  That module was hoisted out of ``activity.py``
 and ``launchpad_activity.py`` on 2026-09-01 precisely so this panel would be
 the first consumer that does not add a fourth copy of a helper whose
@@ -142,16 +142,16 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.surf import _rowfit
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
     as_float,
     fmt_age,
     fmt_imd,
 )
+from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.surf._pool4 import (
-    WIDEN_HINT,
     market_panel_title,
     panel_title,
     parse_line,
@@ -248,9 +248,9 @@ _STAKERS_COLS = 7
 _FEE_COLS = 12
 
 #: The gap between two cells.  Shared machinery: it lives in
-#: ``widgets/surf/_rowfit.py`` and is aliased here under the name this
+#: ``widgets/rowfit.py`` and is aliased here under the name this
 #: module's own docstrings use.
-_GAP = _rowfit.GAP
+_GAP = rowfit.GAP
 
 #: Column headings.  This panel carries one and its two siblings do not,
 #: because it is the only one of the three with **three same-unit numeric
@@ -289,15 +289,15 @@ WIDEN_HINTS = {
 #: nothing, which is a real loss -- but "columns were dropped here" is the
 #: contract and going silent is not an option this codebase allows.
 #:
-#: The **shared spelling** (``_pool4.WIDEN_HINT``) under the name this family
-#: of ``RichLog`` panels already uses for it in ``activity.py`` and
-#: ``launchpad_activity.py`` -- an alias, deliberately not a second literal, so
-#: there is one string to change and ``test_the_widen_vocabulary_means_one_
-#: thing_across_the_repo`` cannot find a spelling that drifted.  The rail's
-#: narrower ``_pool4.GLYPH_HINT`` is a *different* marker and does not belong
-#: under this name; this panel does not use it, because it has a log to write
-#: the full marker into and that is louder than a bare glyph.
-SHORT_HINT = WIDEN_HINT
+#: The **shared spelling** (``rowfit.SHORT_HINT``, an alias of ``WIDEN_HINT``,
+#: deliberately not a second literal, so there is one string to change and
+#: ``test_the_widen_vocabulary_means_one_thing_across_the_repo`` cannot find a
+#: spelling that drifted) under the name this family of ``RichLog`` panels
+#: already uses for it in ``activity.py`` and ``launchpad_activity.py``;
+#: imported above and re-exported (``__all__``).  The rail's narrower
+#: ``GLYPH_HINT`` is a *different* marker and does not belong under this name;
+#: this panel does not use it, because it has a log to write the full marker
+#: into and that is louder than a bare glyph.
 
 
 def _fee_cell(fee_imd, fee_eth) -> str:
@@ -435,7 +435,7 @@ def _row_cols(tier: str, cols: tuple[int, int, int, int, int]) -> int:
     """Rendered width of a row at ``tier`` given the batch's measured ``cols``.
 
     This panel's cells, handed to the shared
-    :func:`~widgets.surf._rowfit.row_cols` -- which is where the rule lives:
+    :func:`~widgets.rowfit.row_cols` -- which is where the rule lives:
     **a cell of zero width is absent, and an absent cell takes its gap with
     it.**  The inference cell carries its own leading gap inside its own
     string, so it is passed as ``trailing`` and added rather than joined.
@@ -445,7 +445,7 @@ def _row_cols(tier: str, cols: tuple[int, int, int, int, int]) -> int:
     if tier != "minimal":
         present.append(size_cols)
     present += [burn_cols, stakers_cols]
-    return _rowfit.row_cols(present, fee_cols if tier == "full" else 0)
+    return rowfit.row_cols(present, fee_cols if tier == "full" else 0)
 
 
 def _tier_for(width: int, cols: tuple[int, int, int, int, int]) -> str:
@@ -458,7 +458,7 @@ def _tier_for(width: int, cols: tuple[int, int, int, int, int]) -> str:
     ``width <= 0`` means "not laid out yet" and optimistically picks ``full``;
     :meth:`SurfPool4Flow.on_resize` re-lays it out once there is a size.
     """
-    return _rowfit.tier_for(
+    return rowfit.tier_for(
         width,
         (
             ("full", _row_cols("full", cols)),
@@ -473,13 +473,13 @@ def _cells_for(tier: str, fields, cols: tuple[int, int, int, int, int]):
     age_cols, size_cols, burn_cols, stakers_cols, _fee = cols
     age, side, size, burned, stakers, _fee_str = fields
     out = [
-        _rowfit.pad(age, age_cols),
-        _rowfit.pad(side, _SIDE_COLS),
+        rowfit.pad(age, age_cols),
+        rowfit.pad(side, _SIDE_COLS),
     ]
     if tier != "minimal":
-        out.append(_rowfit.pad(size, size_cols))
-    out.append(_rowfit.pad(burned, burn_cols))
-    out.append(_rowfit.pad(stakers, stakers_cols))
+        out.append(rowfit.pad(size, size_cols))
+    out.append(rowfit.pad(burned, burn_cols))
+    out.append(rowfit.pad(stakers, stakers_cols))
     return out
 
 
@@ -790,7 +790,7 @@ class SurfPool4Flow(Vertical):
             silence the whole panel is built to avoid.  Descriptive text is
             the one thing here that may be clipped, so it is, visibly.
             """
-            text = _rowfit.clip(plain, width) if width > 0 else plain
+            text = rowfit.clip(plain, width) if width > 0 else plain
             log.write(f"[{style}]{safe_markup(text)}[/]")
 
         rows_payload = self._payload.get("rows")

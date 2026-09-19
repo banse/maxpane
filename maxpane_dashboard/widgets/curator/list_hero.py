@@ -23,6 +23,7 @@ from maxpane_dashboard.widgets.curator.hero import (
     WIDEN_HINT,
 )
 from maxpane_dashboard.widgets.markup_safety import visible_len
+from maxpane_dashboard.widgets.rowfit import Ladder
 
 #: ``$success``/``$success-darken-2``, with a plain Rich colour as the
 #: last-resort fallback (the ``surf/pool4u_hero`` "$ trap": Rich's own
@@ -49,12 +50,11 @@ _BOX_IDS = (
 )
 
 
-def _tier_for(width: int) -> str:
-    if width <= 0 or width >= FULL_WIDTH:
-        return "full"
-    if width >= COMPACT_WIDTH:
-        return "compact"
-    return "minimal"
+#: Widest box layout that fits a width in rendered columns, widest first.
+#: (:class:`~maxpane_dashboard.widgets.rowfit.Ladder`: the last step is the fallback and its
+#: threshold is not consulted, so it is written ``0``.)
+_LADDER = Ladder(("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0))
+_tier_for = _LADDER.tier_for
 
 
 def _lines(title: str, *body: str, title_style: str = "dim") -> list[str]:

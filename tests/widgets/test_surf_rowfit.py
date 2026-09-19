@@ -1,5 +1,4 @@
-"""``widgets/rowfit.py`` (imported here through its ``widgets/surf/_rowfit.py`` shim)
--- the shared row-fit ladder, and its fit.
+"""``widgets/rowfit.py`` -- the shared row-fit ladder, and its fit.
 
 Two things are pinned here, and only the second of them is new behaviour.
 
@@ -38,7 +37,7 @@ from rich.cells import cell_len
 from textual.app import App, ComposeResult
 from textual.widgets import RichLog
 
-from maxpane_dashboard.widgets.surf import _rowfit
+from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.surf.activity import SurfDevActivity
 from maxpane_dashboard.widgets.surf.launchpad_activity import (
     SurfLaunchpadActivity,
@@ -239,25 +238,25 @@ def test_rowfit_measures_cells_and_not_characters():
 
     # Clipped to a cell budget, never a character budget.
     for width in range(2, 20):
-        assert cell_len(_rowfit.clip(_WIDE_LABEL, width)) <= width
+        assert cell_len(rowfit.clip(_WIDE_LABEL, width)) <= width
 
     # Padded to a cell budget: a wide cell is not under-filled.
-    assert cell_len(_rowfit.pad("海", 6)) == 6
-    assert cell_len(_rowfit.pad("ab", 6)) == 6
+    assert cell_len(rowfit.pad("海", 6)) == 6
+    assert cell_len(rowfit.pad("ab", 6)) == 6
 
     # And the budget itself. `activity.py`'s own cell widths, so the numbers
     # below are that panel's row: stamp 11, wallet 3, kind 9, amount 12.
     def needed(who_cols: int, wallet: int, stamp: bool) -> int:
-        return _rowfit.row_cols((11 if stamp else 0, wallet, 9, who_cols), 12)
+        return rowfit.row_cols((11 if stamp else 0, wallet, 9, who_cols), 12)
 
     # The narrowest width at which a plan for this label *can* fit: every
     # sheddable cell gone and the label cut to its own floor. Derived rather
     # than typed, so it tracks the constants above instead of going stale.
-    floor = needed(cell_len(_rowfit.clip(_WIDE_LABEL, 6)), 0, False)
+    floor = needed(cell_len(rowfit.clip(_WIDE_LABEL, 6)), 0, False)
 
     offenders = []
     for width in range(floor, 60):
-        keep_stamp, wallet_cols, who = _rowfit.budget(
+        keep_stamp, wallet_cols, who = rowfit.budget(
             width, _WIDE_LABEL, True, needed, 3, True, 6
         )
         painted = needed(cell_len(who), wallet_cols, keep_stamp)
@@ -307,8 +306,8 @@ def test_both_callers_delegate_the_ladder_instead_of_re_implementing_it():
                 if isinstance(child, ast.Call)
                 and isinstance(child.func, ast.Attribute)
             }
-            assert any(call.startswith("_rowfit.") for call in calls), (
-                f"{name}.{helper} does not call into `_rowfit` -- the ladder "
+            assert any(call.startswith("rowfit.") for call in calls), (
+                f"{name}.{helper} does not call into `rowfit` -- the ladder "
                 "has been copied back out"
             )
 
@@ -316,26 +315,16 @@ def test_both_callers_delegate_the_ladder_instead_of_re_implementing_it():
 def test_rowfit_is_pure_enough_for_a_widget_to_import():
     """It sits under ``widgets/``, so it may reach neither I/O nor a clock.
 
-    The frozen module-boundary table for the pool4 build lists ``_rowfit``
+    The frozen module-boundary table for the pool4 build lists ``rowfit``
     among the three modules a ``widgets/surf/pool4_*.py`` may import; that is
     only true while this holds.
 
-    Since Branch 2 of ``docs/refactor_programme_2026_09.md`` the code lives in
-    ``widgets/rowfit.py`` and ``widgets/surf/_rowfit.py`` is a re-export shim,
-    so the AST is read from the *real* module -- reading the shim's file would
-    make this test pass whatever ``rowfit.py`` imports (it did, briefly).
-    The shim is checked separately: it may import nothing but ``rowfit``.
+    The AST is read from ``rowfit.__file__``, the real module. Between
+    Branches 2 and 3 of ``docs/refactor_programme_2026_09.md`` a
+    re-export shim under ``widgets/surf/`` stood in front of it, and
+    reading *that* file made this test pass whatever ``rowfit.py`` imported
+    (it did, briefly); the shim is gone, but the lesson is kept here.
     """
-    import maxpane_dashboard.widgets.rowfit as rowfit
-
-    shim = ast.parse(Path(_rowfit.__file__).read_text(encoding="utf-8"))
-    shim_modules = {
-        node.module for node in ast.walk(shim) if isinstance(node, ast.ImportFrom)
-    }
-    assert shim_modules <= {"__future__", "maxpane_dashboard.widgets.rowfit"}, (
-        f"the `_rowfit` shim imports {sorted(shim_modules)}; it must only re-export"
-    )
-
     path = Path(rowfit.__file__)
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported: set[str] = set()
@@ -347,7 +336,7 @@ def test_rowfit_is_pure_enough_for_a_widget_to_import():
 
     forbidden = {"httpx", "aiohttp", "textual", "time", "datetime", "asyncio"}
     assert not (imported & forbidden), (
-        f"`_rowfit` reaches {sorted(imported & forbidden)}"
+        f"`rowfit` reaches {sorted(imported & forbidden)}"
     )
     assert not any(
         name.startswith("maxpane_dashboard.data")

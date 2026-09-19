@@ -174,7 +174,7 @@ async def test_the_pending_line_clips_like_every_other_line():
     """At a width too narrow for the full pending line, it clips honestly
     with ``…`` rather than overflowing -- the same fitted-not-sized
     behaviour every other line in this panel already gets from
-    ``_rowfit.clip``.
+    ``rowfit.clip``.
     """
     text = "\n".join(await composite_lines(
         SurfSwarmQueue, (60, 14), swarm_queue_rows=QUEUE_ROWS, swarm_blocked_rows=BLOCKED,
@@ -601,3 +601,22 @@ async def test_the_marker_survives_dropping_the_as_of_suffix_when_neither_fits_t
         "the as-of suffix should have been dropped to make room for the "
         "marker at this width, not kept alongside a marker that does not fit"
     )
+
+
+def test_swarm_queue_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets import rowfit
+    from maxpane_dashboard.widgets.surf import swarm_queue as module
+    from maxpane_dashboard.widgets.surf.swarm_queue import COMPACT_WIDTH, FULL_WIDTH
+
+    def _old_tier_for(width: int) -> str:
+        return rowfit.tier_for(width, (("full", FULL_WIDTH), ("compact", COMPACT_WIDTH)))
+
+    widths = range(-1, FULL_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {"full", "compact"}

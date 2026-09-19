@@ -64,6 +64,7 @@ from textual.widgets import Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import strip_tags
+from maxpane_dashboard.widgets.rowfit import Ladder, WIDEN_HINT
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_imd
 
 __all__ = [
@@ -80,7 +81,8 @@ __all__ = [
 TITLE = "BURNKEEPERS"
 UNAVAILABLE_LINE = "burnkeepers unavailable"
 EMPTY_LINE = "no burns yet"
-WIDEN_HINT = "‹ widen"
+# ``WIDEN_HINT`` (in ``__all__``) is the repo-wide marker, shared in
+# ``widgets/rowfit.py`` since Branch 3.
 
 #: Rows drawn. Four wallets exist today; the rail has room for a few more
 #: before it would have to scroll.
@@ -142,13 +144,12 @@ def _eth_cell(value: object) -> str:
     return f"{v:,.3f}"
 
 
-def _tier_for(width: int) -> str:
-    """``full`` at or above :data:`FULL_WIDTH`; ``compact`` (burn count
-    shed) below it.
-    """
-    if width <= 0 or width >= FULL_WIDTH:
-        return "full"
-    return "compact"
+#: ``_tier_for``: ``full`` at or above :data:`FULL_WIDTH`; ``compact`` (burn
+#: count shed) below it.
+#: (:class:`~maxpane_dashboard.widgets.rowfit.Ladder`: the last step is the fallback and its
+#: threshold is not consulted, so it is written ``0``.)
+_LADDER = Ladder(("full", FULL_WIDTH), ("compact", 0))
+_tier_for = _LADDER.tier_for
 
 
 def _row_fields(

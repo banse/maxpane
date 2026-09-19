@@ -47,10 +47,6 @@ __all__ = [
     "visible_len",
 ]
 
-#: Matches a Rich/Textual markup tag, so a line can be measured as the user
-#: sees it rather than as it is written.
-_MARKUP_TAG = re.compile(r"\[/?[^\[\]]*\]")
-
 #: A complete ``[...]`` bracket run with no nested bracket -- catches both a
 #: well-formed style tag (``[bold red]``) and a bare closing tag (``[/x]``).
 #: Deliberately *not* anchored to Rich's own tag grammar: none of this
@@ -62,6 +58,14 @@ _MARKUP_TAG = re.compile(r"\[/?[^\[\]]*\]")
 #: ``launchpad.py``, ``launchpad_activity.py``, ``burnkeepers.py`` and
 #: ``_pool4.py``; this is the hoisted single definition.
 TAG_LIKE = re.compile(r"\[[^\[\]]*\]")
+
+#: The tag pattern :func:`visible_len` measures with, so a line can be
+#: measured as the user sees it rather than as it is written. It was its own
+#: ``\[/?[^\[\]]*\]`` twelve lines away from :data:`TAG_LIKE` until Branch 3
+#: of ``docs/refactor_programme_2026_09.md`` (``docs/handover_followups_2026_09.md``
+#: #9): the optional ``/?`` is already admitted by ``[^\[\]]*``, so the two
+#: patterns matched the same language and one of them is an alias.
+_MARKUP_TAG = TAG_LIKE
 
 
 def visible_len(markup: str | None) -> int:

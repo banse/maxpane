@@ -92,6 +92,7 @@ def _fmt_token(value) -> str:
         return s if s else _DASH
 
 
+# Not widgets/fmt.fmt_eth: probe True renders "1.00" here (bare float()), "--" there.
 def _fmt_eth(value) -> str:
     if value is None:
         return _DASH

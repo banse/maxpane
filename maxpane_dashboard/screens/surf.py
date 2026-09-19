@@ -1961,7 +1961,7 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #:
 #: **F6 (2026-09-17, ``docs/surf_swarm_followups.md``) re-swept this pin and
 #: it holds at 116.** QUEUE's new pending-pipeline block is one packed line
-#: (plus a blank separator), fitted with the same ``_rowfit.clip`` every
+#: (plus a blank separator), fitted with the same ``rowfit.clip`` every
 #: other line in that panel already uses, inside QUEUE's own unchanged
 #: ``max-width: 46`` -- it costs this row rows, not columns, which is why
 #: :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block is where this

@@ -225,6 +225,7 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import visible_len
+from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.sparkline_common import (
     SPARK_WIDTH,
     build_sparkline,
@@ -403,11 +404,9 @@ WIDEN_HINTS: dict[str, str] = {
     "bare": "‹ widen: bridge",
 }
 
-#: Fallback marker for a panel too narrow to carry a descriptive hint beside
-#: its title.  It names nothing, which is a real loss -- but "columns were
-#: dropped here" is the contract, and going silent is not an option this
-#: codebase allows.
-SHORT_HINT = "‹ widen"
+# ``SHORT_HINT`` -- the fallback marker for a panel too narrow to carry a
+# descriptive hint beside its title -- is the repo-wide marker, shared in
+# ``widgets/rowfit.py`` since Branch 3.
 
 #: The pool-identity warning, and why it rides *this* panel's title.
 #:

@@ -105,6 +105,7 @@ from maxpane_dashboard.widgets.curator._fmt import (
     hhmm,
 )
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.rowfit import Ladder, SHORT_HINT
 
 #: Panel title.  A hint is appended to it, never substituted for it.
 ACTIVITY_TITLE = "ACTIVITY"
@@ -186,8 +187,9 @@ WIDEN_HINTS = {
     "floor": "‹ widen: kind, credit, weight, tx",
 }
 
-#: Fallback for a title bar too narrow to carry the descriptive hint.
-SHORT_HINT = "‹ widen"
+# ``SHORT_HINT`` -- the fallback for a title bar too narrow to carry the
+# descriptive hint above -- is the repo-wide marker, shared in
+# ``widgets/rowfit.py`` since Branch 3.
 
 #: Row colours, by kind.  Rich colour names — see the module docstring.
 _KIND_COLOUR = {
@@ -197,17 +199,17 @@ _KIND_COLOUR = {
 }
 
 
-def _tier_for(width: int) -> str:
-    """Widest row layout that fits ``width`` rendered columns."""
-    if width <= 0 or width >= FULL_WIDTH:
-        return "full"
-    if width >= COMPACT_WIDTH:
-        return "compact"
-    if width >= NARROW_WIDTH:
-        return "narrow"
-    if width >= MINIMAL_WIDTH:
-        return "minimal"
-    return "floor"
+#: Widest row layout that fits ``width`` rendered columns (``_tier_for``).
+#: (:class:`~maxpane_dashboard.widgets.rowfit.Ladder`: the last step is the fallback and its
+#: threshold is not consulted, so it is written ``0``.)
+_LADDER = Ladder(
+    ("full", FULL_WIDTH),
+    ("compact", COMPACT_WIDTH),
+    ("narrow", NARROW_WIDTH),
+    ("minimal", MINIMAL_WIDTH),
+    ("floor", 0),
+)
+_tier_for = _LADDER.tier_for
 
 
 def _dedupe_key(row: dict):

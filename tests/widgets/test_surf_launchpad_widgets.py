@@ -833,3 +833,22 @@ async def test_the_unavailable_warning_outranks_the_widen_marker_when_both_dont_
         i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
         assert COINS_UNAVAILABLE in rows[i], (width, rows[i])
         assert COINS_WIDEN_HINT not in rows[i], (width, rows[i])
+
+
+# ---------------------------------------------------------------------------
+# WP-B golden (docs/refactor_programme_2026_09.md Branch 3): `_fmt_eth_owed`'s
+# rendering before it was re-pointed at widgets/fmt.fmt_eth, as literals.
+# ---------------------------------------------------------------------------
+
+_FMT_PROBES = [None, 0, 0.0, 1, 1.5, 1e-7, 0.123456789, 1234.5678, -2, "abc", "",
+               True, 10**18, 15 * 10**17]
+_FMT_ETH_OWED_GOLDEN = [
+    "--", "0.0000", "0.0000", "1.0000", "1.5000", "0.0000", "0.1235", "1,234.5678",
+    "-2.0000", "--", "--", "--", "1,000,000,000,000,000,000.0000",
+    "1,500,000,000,000,000,000.0000",
+]
+
+
+def test_golden_launchpad_fmt_eth_owed():
+    from maxpane_dashboard.widgets.surf import launchpad as mod
+    assert [mod._fmt_eth_owed(p) for p in _FMT_PROBES] == _FMT_ETH_OWED_GOLDEN

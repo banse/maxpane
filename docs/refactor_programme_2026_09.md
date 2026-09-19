@@ -38,7 +38,7 @@ files; the commit message is the evidence.
 | 0 | `fix/select-to-copy` | new (UX copy) | 1 | 0 | `tests/test_clipboard*.py`, `tests/screens/test_refresh_guard.py`, one new pilot test |
 | 1 | `refactor/dead-base-code` | §3.1 | 2 | ~2,465 | below |
 | 2 | `refactor/sanitize-cell` | §3.2 | 2 | ~150 | below (also moves `_rowfit.py` to `widgets/rowfit.py`, shim left) |
-| 3 | `refactor/fmt-rowfit` | §3.3 (move already done in 2) | 2 | ~900 | every widget test file that imports a converted helper |
+| 3 | `refactor/fmt-rowfit` | §3.3 (move already done in 2) | 2 | ~900 | below; two WPs, A (rowfit) then B (fmt) |
 | 4 | `feat/explorer-links` | new (UX links) | 2 | 0 | `tests/test_address_rule.py`, `tests/screens/test_address_icons_everywhere.py`, address sweep |
 | 5 | `refactor/dashboard-screen` | §3.5 | 2 | ~1,100 | address sweep + every `tests/screens/test_*_screen.py` migrated |
 | 6 | `refactor/panels-ocm` | §3.4a | 2 | small | `tests/widgets/test_panels.py` (new), ocm tests |
@@ -159,6 +159,118 @@ must be empty.
 
 **Not in scope**: any pin; any rendering change other than the cell-measured clip in
 `launchpad.py`; the Branch 3 helpers.
+
+## Branch 3 — `refactor/fmt-rowfit` (two work packages, A then B — they share files)
+
+Surveyed 2026-09-19 on main `c3389e5`. The `_rowfit` move is already done (Branch 2); the shim
+`widgets/surf/_rowfit.py` is imported by 12 modules and 9 test files. `WIDEN_HINT = "‹ widen"` is
+declared 9 times, `SHORT_HINT = "‹ widen"` 6 times, `GLYPH_HINT = "‹"` once (`_pool4`). Of the 15
+`_tier_for` sites, **9 are the plain shape** `def _tier_for(width) -> str` walking
+`FULL/COMPACT/(NARROW|TIGHT)/MINIMAL_WIDTH` (`curator/{list_hero,hero,activity}.py`,
+`fwa/fwa_activity_feed.py`, `surf/{swarm_queue,activity,burnkeepers,hero,swarm_field}.py`); the
+other 6 take a second argument or return a tuple (`surf/{launchpad_activity,market,nft,pool4_flow}.py`,
+`fwa/{fwa_chase_board,fwa_settlement_table}.py`) and are **not** ladders over module constants —
+they stay (deviation from the handover's "15", recorded here). `_has_marker(as_of)` and
+`_title_with_hint(base, widen, budget)` are four identical copies in `surf/swarm_{queue,field,
+throughput,shipped}.py`; `curator/_table.title_with_hint(title, hint, width) -> tuple[str, bool]`
+is a different contract and stays. `markup_safety._MARKUP_TAG` (`\[/?[^\[\]]*\]`) and `TAG_LIKE`
+(`\[[^\[\]]*\]`) are the same language — `[^\[\]]*` already admits `/` — so followups #9 is a
+one-line alias. `as_float` and `fmt_age` are byte-identical in `surf/_fmt.py` and `curator/_fmt.py`;
+`hhmm` differs only in its unknown marker (`??:??` vs `--:--`); `fmt_eth`, `fmt_countdown`,
+`fmt_points`, `fmt_pct` exist only in curator; `mmdd` only in surf. `_fmt_eth` is defined 13 times in
+widgets/screens (ttt ×2, frenpet ×2 on **wei**, fwa ×4 + `screens/fwa.py`, surf ×3 incl.
+`launchpad._fmt_eth_owed`) with different places, units and zero handling; `_as_float` 3 times in
+fwa. Analytics keeps its own `_as_float`/`_fmt_eth`: `analytics/` never imports `widgets/`.
+
+### WP-A — `widgets/rowfit.py` (owner of every file it lists)
+
+1. **Shim out.** Delete `widgets/surf/_rowfit.py`; the 12 modules and 9 tests import
+   `maxpane_dashboard.widgets.rowfit` (a module-local alias `as _rowfit` is acceptable where it
+   keeps a diff to one line; `tests/widgets/test_surf_rowfit.py` drops its shim-subset assertion
+   and reads `rowfit.__file__` only). `docs/surf_pool4_contract.md:531`,
+   `.claude/rules/widgets.md` "Reuse" item 2 and `tests/test_address_rule.py:28` name the new path.
+2. **Hints.** `rowfit.WIDEN_HINT = "‹ widen"`, `rowfit.SHORT_HINT = WIDEN_HINT`, `rowfit.GLYPH_HINT
+   = "‹"`; the 16 module-level re-declarations become imports (a module that re-exports one for its
+   own importers, as `_pool4` does for `GLYPH_HINT`/`WIDEN_HINT`, imports and keeps the name).
+   `WIDEN_HINTS` dicts stay per module — they are content, not a constant.
+3. **`Ladder`.** `rowfit.Ladder(*steps: tuple[str, int])`, first step widest; `tier_for(width)`
+   returns the first step's name when `width <= 0` or `width >= first threshold`, else the name of
+   the first step whose threshold `<= width`, else the last step's name — exactly the nine bodies.
+   Convert the 9 plain sites to `_LADDER = Ladder(("full", FULL_WIDTH), ...)` with `_tier_for =
+   _LADDER.tier_for` (keep the module-level name: tests and docstrings cite it). Behaviour is
+   pinned by an agreement test per converted module in its existing test file: the new `_tier_for`
+   equals the old body (copied into the test as a literal) at every width `0..FULL_WIDTH + 5`.
+4. **Swarm title helpers.** `rowfit.has_marker(as_of)` and `rowfit.title_with_hint(base, widen,
+   budget)` from the four identical swarm copies; the four modules import them.
+5. **Followups #9.** `_MARKUP_TAG = TAG_LIKE` in `markup_safety.py`, with a test that `visible_len`
+   is unchanged on `["[bold]x[/]", "[/x]", "a[b", "[x/y]", "plain"]` against literal expected values.
+
+Tests to run: `tests/widgets/test_surf_rowfit.py`, `tests/widgets/test_markup_safety.py`, every
+`tests/widgets/test_surf_*.py`, `tests/widgets/test_curator_*.py`, `tests/widgets/test_fwa_*.py`,
+`tests/screens/test_surf_screen.py`, `tests/screens/test_surf_swarm_screen.py`,
+`tests/screens/test_curator_screen.py`, `tests/screens/test_fwa_screen.py`, `-m guard tests`; then
+`rg -n 'surf\._rowfit|surf import _rowfit|^(WIDEN_HINT|SHORT_HINT|GLYPH_HINT) = |def _has_marker|def _title_with_hint' maxpane_dashboard tests` must be empty
+(the `WIDEN_HINTS` dicts do not match).
+
+**WP-A outcome (2026-09-20, commit `a0ebb17` + fix round):** 8 of the 9 plain sites were converted.
+`surf/activity._tier_for` stays a function: `tests/screens/test_surf_screen.py` reads its `__doc__` for
+the measured-width note, and it already delegated to `rowfit.tier_for`, so there was no copy to
+remove. The review's one Important finding was a spec defect — this list named `rules/widgets.md`
+but not the twin sentence in `CLAUDE.md` "Reuse before you build"; both now name `widgets/rowfit.py`.
+
+### WP-B — `widgets/fmt.py` (after A is committed)
+
+1. **Create `widgets/fmt.py`**: `DASH = "--"`, `EMDASH = "—"`, `as_float`, `fmt_age`,
+   `fmt_countdown`, `fmt_points`, `fmt_pct`, `hhmm(timestamp, unknown="??:??")`,
+   `mmdd(timestamp, unknown="??-??")`, `fmt_eth(value, places=2, unit="")` (`None`/non-numeric →
+   `DASH`; a real 0 renders `0.00`; `unit` appended after one space when non-empty). Bodies are the
+   curator/surf ones verbatim; docstrings keep their rationale (the bool rejection, negative age,
+   the `timeLeftInHour` edge, zero points).
+2. **Thin the two `_fmt.py`**: re-export the shared names (`hhmm` in curator = the shared one with
+   `unknown=NO_STAMP`), keep only the dashboard-specific ones (`surf`: `fmt_imd`, `fmt_price`,
+   `fmt_liquidity`, `ANTI_POISONING_COLS`; `curator`: `fmt_eth_compact`, `ADDR_COLS`, `NAME_COLS`,
+   `NO_STAMP`, `COMPACT_ETH_*`). The 37 importers are untouched.
+3. **Convert** fwa's three `_as_float` to `fmt.as_float`, and each widget/screen `_fmt_eth` to
+   `fmt.fmt_eth(value, places, unit)` **only where a golden test proves identity**: before touching
+   a definition, write in its test file a table test over the probe set `[None, 0, 0.0, 1, 1.5,
+   1e-7, 0.123456789, 1234.5678, -2, "abc", "", True, 10**18, 15 * 10**17]` with the OLD function's
+   outputs pasted as literals; then convert; the goldens must stay green. A definition whose
+   semantics `fmt_eth` cannot express (frenpet's wei input, a zero that must render `DASH`, a
+   sign or arrow) keeps a two-line local wrapper that calls `fmt_eth` after its own step, or stays
+   as it is with a comment naming why — list each in the report.
+
+Tests to run: `tests/widgets/test_curator_*.py`, `tests/widgets/test_surf_*.py`,
+`tests/widgets/test_fwa_*.py`, `tests/widgets/test_ttt_*.py`, `tests/widgets/test_frenpet*.py`
+(whatever exists), the screen test of each dashboard whose widget changed
+(`tests/screens/test_{curator,surf,fwa,ttt,frenpet*}_screen.py`), `-m guard tests`; then
+`rg -n 'def _as_float|def _fmt_eth\b' maxpane_dashboard/widgets maxpane_dashboard/screens` lists only the
+wrappers the report names.
+
+**WP-B outcome (2026-09-20):** `widgets/fmt.py` exists with the ten names above; both `_fmt.py`
+re-export it (37 importers untouched). Of the 15 private copies, **8 converted** — fwa's
+`fwa_odds_board._as_float` and `fwa_hero_metrics._as_float` re-pointed at `fmt.as_float`;
+`fwa_hero_metrics._fmt_eth`, `surf/launchpad._fmt_eth_owed` are one-line delegations keeping their
+`places`; `surf/pool4u_depth._fmt_eth` was `fmt_eth` exactly and its one call site now calls it;
+`surf/pool4_ratchet._fmt_eth` (places by magnitude), `fwa_odds_board._fmt_eth` and
+`screens/fwa._fmt_eth` (EMDASH marker) are two-line wrappers — and **7 kept**, each with a comment
+naming the probe: frenpet's `fpw_pets`/`fpw_hero` take wei and raise `TypeError` on `None`;
+`fwa_chase_board._fmt_eth`, `fwa_settlement_table._fmt_eth`/`_as_float` and both ttt tables coerce
+`True` to `1` (bare `float()`), and the ttt pair is also ungrouped (`1234.5678 Ξ`). A golden over
+the 14-value probe set pins every one of the 15 in its module's test file; none changed. The one
+recorded behaviour change is not a rendering: the two `hhmm` bodies differed beyond their marker —
+curator's `int()` guard did not catch `OverflowError`, so `hhmm(float("±inf"))` raised inside the
+message pump where surf's returned the marker. The shared body is surf's (CLAUDE.md "never a
+crash"); curator's `hhmm(±inf)` now renders `--:--`, and no input that rendered before renders
+differently. Known, not in the probe set, and the one rendering change this branch ships (review M1/M2
+corrected the record: `fwa_odds_board` and `pool4_ratchet` already rejected ±inf through their
+own `as_float`): `screens/fwa._fmt_eth(float("inf"))` printed `inf`, now `—` — a deviation from
+"no rendered string change" accepted because `inf` is not a quantity; pinned by its own test,
+`tests/screens/test_fwa_screen.py::test_fwa_screen_fmt_eth_renders_infinity_as_the_marker`
+(the golden's 14-value probe set is unchanged). Review residuals M3, M4, M6
+are filed in `docs/handover_followups_2026_09.md` #10–#12.
+
+**Not in scope (both WPs)**: any pin; any rendered string change; `templates/`; the 6 parametric
+tier functions; `curator/_table.title_with_hint`; `analytics/`.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

@@ -102,3 +102,34 @@ SEEDED: dict[str, dict] = {
         ],
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# WP-B goldens (docs/refactor_programme_2026_09.md Branch 3): the two ttt
+# tables' `_fmt_eth` renderings as of 2026-09-20, pasted as literals.  Both
+# are UNGROUPED (``1234.5678 Ξ``, no thousands separator) and coerce ``True``
+# to ``1``; ``widgets/fmt.fmt_eth`` does neither, so both copies stay.
+# ---------------------------------------------------------------------------
+
+_FMT_PROBES = [None, 0, 0.0, 1, 1.5, 1e-7, 0.123456789, 1234.5678, -2, "abc", "",
+               True, 10**18, 15 * 10**17]
+_CLAIMS_FMT_ETH_GOLDEN = [
+    "--", "0.00000 Ξ", "0.00000 Ξ", "1.00000 Ξ", "1.50000 Ξ", "0.00000 Ξ",
+    "0.12346 Ξ", "1234.56780 Ξ", "-2.00000 Ξ", "--", "--", "1.00000 Ξ",
+    "1000000000000000000.00000 Ξ", "1500000000000000000.00000 Ξ",
+]
+_FEES_FMT_ETH_GOLDEN = [
+    "--", "0.0000 Ξ", "0.0000 Ξ", "1.0000 Ξ", "1.5000 Ξ", "0.0000 Ξ",
+    "0.1235 Ξ", "1234.5678 Ξ", "-2.0000 Ξ", "--", "--", "1.0000 Ξ",
+    "1000000000000000000.0000 Ξ", "1500000000000000000.0000 Ξ",
+]
+
+
+def test_golden_ttt_claims_table_fmt_eth():
+    mod = importlib.import_module("maxpane_dashboard.widgets.ttt.ttt_claims_table")
+    assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _CLAIMS_FMT_ETH_GOLDEN
+
+
+def test_golden_ttt_fees_table_fmt_eth():
+    mod = importlib.import_module("maxpane_dashboard.widgets.ttt.ttt_fees_table")
+    assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _FEES_FMT_ETH_GOLDEN

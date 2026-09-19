@@ -613,6 +613,11 @@ def test_a_missing_or_epoch_timestamp_renders_the_no_stamp_marker():
     1970-01-01 looks like data."""
     for value in (None, 0, "", "nonsense"):
         assert hhmm(value) == NO_STAMP
+    # ``int(float("inf"))`` raises OverflowError; until 2026-09-20 this
+    # module's own ``hhmm`` let it escape into the message pump.  The shared
+    # ``widgets/fmt.hhmm`` it now wraps catches it, and this pins that here.
+    for value in (float("inf"), float("-inf")):
+        assert hhmm(value) == NO_STAMP
     assert hhmm(1786910327) != NO_STAMP
 
 
@@ -6435,3 +6440,80 @@ def test_resolved_markup_matches_whole_tokens_only():
     assert _resolved_markup(markup, theme) == (
         "[#005500]a[/] [#00aa00]b[/] [#ffaa00]c[/] [$accent]d[/]"
     )
+
+
+def test_list_hero_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets.curator import list_hero as module
+    from maxpane_dashboard.widgets.curator.list_hero import COMPACT_WIDTH, FULL_WIDTH
+
+    def _old_tier_for(width: int) -> str:
+        if width <= 0 or width >= FULL_WIDTH:
+            return "full"
+        if width >= COMPACT_WIDTH:
+            return "compact"
+        return "minimal"
+
+    widths = range(-1, FULL_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {"full", "compact", "minimal"}
+
+
+def test_curator_hero_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets.curator import hero as module
+    from maxpane_dashboard.widgets.curator.hero import COMPACT_WIDTH, FULL_WIDTH
+
+    def _old_tier_for(width: int) -> str:
+        if width <= 0 or width >= FULL_WIDTH:
+            return "full"
+        if width >= COMPACT_WIDTH:
+            return "compact"
+        return "minimal"
+
+    widths = range(-1, FULL_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {"full", "compact", "minimal"}
+
+
+def test_curator_activity_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets.curator import activity as module
+    from maxpane_dashboard.widgets.curator.activity import (
+        COMPACT_WIDTH,
+        FULL_WIDTH,
+        MINIMAL_WIDTH,
+        NARROW_WIDTH,
+    )
+
+    def _old_tier_for(width: int) -> str:
+        if width <= 0 or width >= FULL_WIDTH:
+            return "full"
+        if width >= COMPACT_WIDTH:
+            return "compact"
+        if width >= NARROW_WIDTH:
+            return "narrow"
+        if width >= MINIMAL_WIDTH:
+            return "minimal"
+        return "floor"
+
+    widths = range(-1, FULL_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {
+        "full", "compact", "narrow", "minimal", "floor",
+    }

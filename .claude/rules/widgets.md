@@ -76,14 +76,18 @@ await inside a message handler.
 
 Almost nothing here is the first of its kind. Check, in this order:
 
-1. **the genuinely shared modules** — `widgets/sparkline_common.py`, `widgets/markup_safety.py`,
-   `widgets/address.py`, `widgets/status_bar.py`. Import them; never copy out of them.
+1. **the genuinely shared modules** — `widgets/fmt.py` (the unknown markers, `as_float`,
+   `fmt_eth`, ages, countdowns, points, percentages, `hhmm`/`mmdd`), `widgets/sparkline_common.py`,
+   `widgets/markup_safety.py`, `widgets/address.py`, `widgets/status_bar.py`. Import them; never copy
+   out of them.
    (`widgets/hero_metrics.py`, `leaderboard.py`, `activity_feed.py`, `signals_panel.py` are
    Bakery-only despite living at the top level — two import `data.models`, two are shaped for
    Bakery's payload, and all four are imported by `screens/bakery.py` only. Do not treat them as
    shared.)
-2. **the dashboard's own `_fmt.py`** (`widgets/surf/`, `widgets/curator/`; row fitting is shared in
-   `widgets/rowfit.py`, reached by surf through the `widgets/surf/_rowfit.py` shim until Branch 3) and the
+2. **the dashboard's own `_fmt.py`** (`widgets/surf/`, `widgets/curator/` — each re-exports
+   `widgets/fmt.py` and holds only its dashboard-specific formatters on top of it, such as
+   `fmt_imd` or `fmt_eth_compact`; row fitting, the widen hints and the width-tier `Ladder` are
+   shared in `widgets/rowfit.py`) and the
    sibling panel that already does the same *shape* of job. `widgets/surf/launchpad_activity.py`
    was built on `widgets/surf/activity.py` and inherited its width-tier ladder and its "the panel
    names the columns it shed" contract for free.

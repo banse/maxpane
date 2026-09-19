@@ -87,3 +87,33 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
    `strip_tags`) — `TAG_LIKE` matches a strict superset. The Branch 2 spec froze `visible_len`, so the
    pair was left; collapse to one pattern in Branch 3 (`refactor/fmt-rowfit`) with a test that
    `visible_len` is unchanged on the fwa fixtures that pin it (reviewer M7, 2026-09-19).
+   **Done 2026-09-19, Branch 3 WP-A:** `_MARKUP_TAG = TAG_LIKE`, pinned by
+   `test_visible_len_is_unchanged_by_the_tag_pattern_alias` on six literal probes.
+
+## §3.3 — fmt / rowfit (branch `refactor/fmt-rowfit`)
+
+10. **Goldens that pin the shared function through a module alias, not the call site.**
+    `tests/widgets/test_surf_pool4u_depth.py` (`depth_mod.fmt_eth`) and
+    `tests/widgets/test_fwa_widgets_a.py` (`mod.as_float`, two tests) assert the re-exported
+    `widgets.fmt` name; mutating the call site (`pool4u_depth.py` ladder cell to `places=4`) leaves
+    them green and only a pre-existing render test reddens. Coverage exists, but not where the
+    commit record says. Minor: move each assertion onto the call site when its file is next touched
+    (WP-B review M3, 2026-09-20).
+11. **`widgets/fmt.as_float` raises `OverflowError` on an int too large for a float** (`10**400`),
+    and so do `fmt_eth`, `fmt_age`, `fmt_countdown`, `fmt_points`, `fmt_pct`; only
+    `(TypeError, ValueError)` are caught, while `hhmm`/`mmdd` catch `OverflowError` too. Pre-existing
+    in both `_fmt.py` bodies; the module docstring's "nothing here raises" is false at that magnitude
+    and `test_fmt.py`'s hostile set tops out at `10**30`. A hand-edited cache file is third-party
+    input and `json` parses unbounded ints, though no concrete payload key was traced. Tier 0: add
+    `OverflowError` to the tuple and a `±10**400` probe (WP-B review M4, 2026-09-20).
+12. **`screens/surf.py` `_fmt_hhmm` is a fourth `hhmm`-shaped formatter** (EMDASH marker,
+    `isinstance` type gate) outside WP-B's survey, while `rules/widgets.md` now lists `hhmm`/`mmdd`
+    under "import, never copy". Tier 0 when `screens/surf.py` is next touched: express it as
+    `fmt.hhmm(ts, unknown=EMDASH)` behind a golden, or record why the type gate must stay
+    (WP-B review M6, 2026-09-20).
+13. **Seven `_fmt_eth`/`_as_float` copies kept on purpose** because a golden probe differs:
+    frenpet `fpw_pets`/`fpw_hero` (wei input, `None` raises `TypeError`), `fwa_chase_board`,
+    `fwa_settlement_table` (×2; `True` → `1.00`/`1.0` where the shared helper says `--`/`None`),
+    `ttt_claims_table`/`ttt_fees_table` (ungrouped thousands). Each carries a comment naming its
+    differing probe and a golden. Unify only if the owner accepts `True → --`, grouped ttt output and
+    `None → --` on frenpet as deliberate render changes (WP-B implementer, 2026-09-20).

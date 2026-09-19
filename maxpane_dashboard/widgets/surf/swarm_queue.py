@@ -102,22 +102,19 @@ rather than a relative age it has no clock to compute.
 Purity
 ------
 Stdlib, ``rich``, ``textual``, and this package's own ``_fmt``/``_pool4``/
-``_rowfit`` primitives. No ``data/``, no ``analytics/``, no clock, no I/O.
+``rowfit`` primitives. No ``data/``, no ``analytics/``, no clock, no I/O.
 """
 
 from __future__ import annotations
 
-from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
-from maxpane_dashboard.widgets.surf import _rowfit
+from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.surf._fmt import DASH, hhmm
 from maxpane_dashboard.widgets.surf._pool4 import (
-    GLYPH_HINT,
-    WIDEN_HINT,
     join_lines,
     strip_tags,
 )
@@ -166,7 +163,7 @@ _DEPTH_ORDER = (
     "fuzz", "sites",
 )
 
-_GAP = _rowfit.GAP
+_GAP = rowfit.GAP
 _TITLE_ID = "surf-swarm-queue-title"
 _BODY_ID = "surf-swarm-queue-body"
 _TITLE_CLASS = "surf-swarm-queue-title"
@@ -199,27 +196,23 @@ _MIN_REASON_COLS = 20
 #: dropped for the rail's width, in favour of the reason it exists to show)
 #: cost before the reason gets whatever remains -- the threshold
 #: :func:`_tier_for` fits against.
-FULL_WIDTH = _rowfit.row_cols((_TIME_COLS,)) + _GAP + _MIN_REASON_COLS      # 27
+FULL_WIDTH = rowfit.row_cols((_TIME_COLS,)) + _GAP + _MIN_REASON_COLS      # 27
 #: Below :data:`FULL_WIDTH` the time column goes and the reason takes the
 #: whole remaining budget; there is no floor under *that*, so the fallback
-#: tier's own threshold is never consulted (``_rowfit.tier_for``'s contract).
+#: tier's own threshold is never consulted (``rowfit.tier_for``'s contract).
 COMPACT_WIDTH = 0
 
 
-def _tier_for(width: int) -> str:
-    return _rowfit.tier_for(width, (("full", FULL_WIDTH), ("compact", COMPACT_WIDTH)))
+_LADDER = rowfit.Ladder(("full", FULL_WIDTH), ("compact", COMPACT_WIDTH))
+_tier_for = _LADDER.tier_for
 
 
-def _has_marker(as_of: object) -> bool:
-    """True when *as_of* is a real ``as of`` clock, not merely non-``None``.
-
-    ``swarm_field.py``'s own predicate, restated rather than imported -- a
-    widget importing a sibling widget's helper is a coupling across an
-    ownership seam this repo's own convention avoids (see ``_pool4.LABEL_COLS``
-    for the same reasoning applied to a constant). An empty string is not a
-    clock either.
-    """
-    return isinstance(as_of, str) and bool(as_of)
+#: The ``as of`` predicate and the network-word-free title fitter, shared by
+#: the four swarm panels in ``widgets/rowfit.py`` since Branch 3 (each used to
+#: restate them; the reasoning is on the shared definitions), under the names
+#: this module's own docstrings and tests use.
+_has_marker = rowfit.has_marker
+_title_with_hint = rowfit.title_with_hint
 
 
 def _is_unavailable(as_of: object, queue_rows: object, blocked_rows: object) -> bool:
@@ -235,23 +228,6 @@ def _is_unavailable(as_of: object, queue_rows: object, blocked_rows: object) -> 
     return not _has_marker(as_of) and not queue_rows and not blocked_rows
 
 
-def _title_with_hint(base: str, widen: bool, budget: int) -> str:
-    """Append the longest widen marker that fits *base* within *budget*.
-
-    ``swarm_field._title_with_hint``'s own fitting rule, restated for the
-    same reason it restates ``_pool4._with_hint``: this panel's title carries
-    no network word (QUEUE shows neither an address nor a transaction, so it
-    is not one of the panels the design names for the chain word), so
-    ``_pool4.title_text`` -- which always appends one -- is the wrong shape.
-    """
-    if not widen:
-        return base
-    for candidate in (WIDEN_HINT, GLYPH_HINT):
-        if not budget or cell_len(base) + 2 + cell_len(candidate) <= budget:
-            return f"{base}  {candidate}"
-    return base
-
-
 def _state_line(row: dict) -> Text:
     state = strip_tags(row.get("state")) or DASH
     count = row.get("count")
@@ -259,9 +235,9 @@ def _state_line(row: dict) -> Text:
         str(count) if isinstance(count, int) and not isinstance(count, bool) else DASH
     )
     line = Text()
-    line.append(_rowfit.pad(_rowfit.clip(state, _STATE_COLS), _STATE_COLS))
+    line.append(rowfit.pad(rowfit.clip(state, _STATE_COLS), _STATE_COLS))
     line.append(" " * _GAP)
-    line.append(_rowfit.pad(count_text, _COUNT_COLS), style="bold")
+    line.append(rowfit.pad(count_text, _COUNT_COLS), style="bold")
     return line
 
 
@@ -270,9 +246,9 @@ def _blocked_line(row: dict, tier: str, reason_width: int) -> Text:
     line = Text()
     if tier == "full":
         when = hhmm(row.get("moved_ts"))
-        line.append(_rowfit.pad(when, _TIME_COLS), style="dim")
+        line.append(rowfit.pad(when, _TIME_COLS), style="dim")
         line.append(" " * _GAP)
-    line.append(_rowfit.clip(reason, max(reason_width, 0)))
+    line.append(rowfit.clip(reason, max(reason_width, 0)))
     return line
 
 
@@ -318,7 +294,7 @@ def _pending_line(depths: dict, budget: int) -> Text:
     if parts:
         text += " · " + " · ".join(parts)
     line = Text()
-    line.append(_rowfit.clip(text, max(budget, 0)), style="dim")
+    line.append(rowfit.clip(text, max(budget, 0)), style="dim")
     return line
 
 

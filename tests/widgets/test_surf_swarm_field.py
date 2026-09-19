@@ -576,3 +576,23 @@ async def test_a_multi_address_line_that_genuinely_cannot_fit_sheds_visibly_and_
         "this fixture no longer forces a real shed; widen the objective or "
         "narrow the panel so it does"
     )
+
+
+def test_swarm_field_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets import rowfit
+    from maxpane_dashboard.widgets.surf import swarm_field as module
+
+    def _old_tier_for(width: int) -> str:
+        return rowfit.tier_for(
+            width, (("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("minimal", 0)),
+        )
+
+    widths = range(-1, FULL_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {"full", "compact", "minimal"}

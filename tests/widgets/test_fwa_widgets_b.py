@@ -856,3 +856,70 @@ async def test_settlement_eth_total_is_a_dash_when_nothing_carries_an_amount():
         )
 
         assert "0.000" not in joined
+
+
+def test_fwa_activity_feed_tier_ladder_agrees_with_the_body_it_replaced():
+    """Branch 3 WP-A agreement test: the module's ``_tier_for`` is now
+    ``rowfit.Ladder(...).tier_for``; the body it replaced is pasted here
+    verbatim (against the module's own constants) and must agree with it at
+    every width from -1 to just past the widest tier, every rung reached.
+    """
+    from maxpane_dashboard.widgets.fwa import fwa_activity_feed as module
+    from maxpane_dashboard.widgets.fwa.fwa_activity_feed import COMPACT_WIDTH, FULL_WIDTH
+
+    def _old_tier_for(width: int) -> str:
+        if width <= 0 or width >= FULL_WIDTH:
+            return "full"
+        if width >= COMPACT_WIDTH:
+            return "compact"
+        return "minimal"
+
+    widths = range(-1, FULL_WIDTH + 6)
+    for w in widths:
+        assert module._tier_for(w) == _old_tier_for(w), w
+    assert {module._tier_for(w) for w in widths} == {"full", "compact", "minimal"}
+
+
+# ===========================================================================
+# WP-B goldens (docs/refactor_programme_2026_09.md Branch 3) -- the private
+# formatters' renderings as of 2026-09-20, pasted as literals.  A changed
+# literal is a defect, not an update.
+# ===========================================================================
+
+_FMT_PROBES = [None, 0, 0.0, 1, 1.5, 1e-7, 0.123456789, 1234.5678, -2, "abc", "",
+               True, 10**18, 15 * 10**17]
+
+_CHASE_FMT_ETH_GOLDEN = [
+    "--", "0.00", "0.00", "1.00", "1.50", "0.00", "0.12", "1,234.57", "-2.00",
+    "--", "--", "1.00", "1,000,000,000,000,000,000.00", "1,500,000,000,000,000,000.00",
+]
+_SETTLEMENT_FMT_ETH_GOLDEN = [
+    "--", "0.000", "0.000", "1.000", "1.500", "0.000", "0.123", "1,234.568",
+    "-2.000", "--", "--", "1.000", "1,000,000,000,000,000,000.000",
+    "1,500,000,000,000,000,000.000",
+]
+_SETTLEMENT_AS_FLOAT_GOLDEN = [
+    None, 0.0, 0.0, 1.0, 1.5, 1e-07, 0.123456789, 1234.5678, -2.0, None, None,
+    1.0, 1e+18, 1.5e+18,
+]
+
+
+def test_golden_fwa_chase_board_fmt_eth():
+    """Two places, grouped -- and ``True`` renders ``1.00`` (a bare ``float()``
+    coercion, not ``fmt.as_float``), which is why this copy was not re-pointed
+    at ``widgets/fmt.fmt_eth``."""
+    from maxpane_dashboard.widgets.fwa import fwa_chase_board as mod
+    assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _CHASE_FMT_ETH_GOLDEN
+
+
+def test_golden_fwa_settlement_table_fmt_eth():
+    """Three places, grouped; ``True`` renders ``1.000`` (kept for that)."""
+    from maxpane_dashboard.widgets.fwa import fwa_settlement_table as mod
+    assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _SETTLEMENT_FMT_ETH_GOLDEN
+
+
+def test_golden_fwa_settlement_table_as_float():
+    """``True`` coerces to ``1.0`` here where ``fmt.as_float`` returns ``None``;
+    kept for that."""
+    from maxpane_dashboard.widgets.fwa import fwa_settlement_table as mod
+    assert [mod._as_float(p) for p in _FMT_PROBES] == _SETTLEMENT_AS_FLOAT_GOLDEN

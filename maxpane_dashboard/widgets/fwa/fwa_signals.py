@@ -60,12 +60,13 @@ from maxpane_dashboard.widgets.address import (
     short_hex,
 )
 from maxpane_dashboard.widgets.markup_safety import visible_len as _visible_len
+from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 from textual.widgets import Static
 
 _DASH = "--"
 
-#: Marker appended to the title when a row had to be clipped.
-WIDEN_HINT = "‹ widen"
+# ``WIDEN_HINT`` is appended to the title when a row had to be clipped --
+# the repo-wide marker, shared in ``widgets/rowfit.py`` since Branch 3.
 
 #: Rewritten value for an elapsed emissions window (PRD §8, the primary case).
 EMISSIONS_ENDED = "emissions ended"

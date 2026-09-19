@@ -39,6 +39,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
+from maxpane_dashboard.widgets.fmt import as_float, fmt_eth
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
 logger = logging.getLogger(__name__)
@@ -76,19 +77,6 @@ _NOTE_WIDTH = 44
 # -- format helpers ----------------------------------------------------
 
 
-def _as_float(value):
-    """Coerce to ``float`` or return ``None`` -- never raise."""
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        out = float(value)
-    except (TypeError, ValueError):
-        return None
-    if out != out or out in (float("inf"), float("-inf")):
-        return None
-    return out
-
-
 def _fmt_int(value) -> str:
     if value is None or isinstance(value, bool):
         return _DASH
@@ -100,22 +88,21 @@ def _fmt_int(value) -> str:
 
 def _fmt_pct(value) -> str:
     """Three decimals -- ``0.000%`` for the unreachable collections."""
-    v = _as_float(value)
+    v = as_float(value)
     if v is None:
         return _DASH
     return f"{v:.3f}%"
 
 
 def _fmt_eth(value, places: int = 2) -> str:
-    v = _as_float(value)
-    if v is None:
-        return _EMDASH
-    return f"{v:,.{places}f}"
+    """``widgets/fmt.fmt_eth`` with this board's :data:`_EMDASH` for an unknown."""
+    v = as_float(value)
+    return _EMDASH if v is None else fmt_eth(v, places)
 
 
 def _fmt_ratio(value) -> str:
     """ETH per odds point -- spans many orders of magnitude."""
-    v = _as_float(value)
+    v = as_float(value)
     if v is None:
         return _EMDASH
     a = abs(v)
@@ -152,7 +139,7 @@ def _collection_cell(row: dict, width: int = _NAME_WIDTH) -> Text:
 def _floor_cell(row: dict) -> str:
     """Floor price, or an explicit mark of *why* there isn't one."""
     source = str(row.get("floor_source") or "missing").lower()
-    floor = _as_float(row.get("floor_eth"))
+    floor = as_float(row.get("floor_eth"))
     if source == "suppressed":
         return "n/a*"
     if floor is None:
@@ -163,7 +150,7 @@ def _floor_cell(row: dict) -> str:
 
 
 def _sort_key(row: dict):
-    share = _as_float(row.get("weight_share_pct"))
+    share = as_float(row.get("weight_share_pct"))
     return -(share if share is not None else -1.0)
 
 

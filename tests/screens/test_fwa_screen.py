@@ -839,3 +839,33 @@ async def test_both_views_get_the_identical_slot():
             f"{odds_size} -- the panel resizes on every toggle"
         )
         assert feed_size.height > 1, "the feed collapsed instead of filling the row"
+
+
+# ---------------------------------------------------------------------------
+# WP-B golden (docs/refactor_programme_2026_09.md Branch 3): the screen's own
+# `_fmt_eth` (EMDASH marker, four places, grouped, bool and NaN unknown)
+# before it delegated to widgets/fmt.fmt_eth, as literals.
+# ---------------------------------------------------------------------------
+
+_FMT_PROBES = [None, 0, 0.0, 1, 1.5, 1e-7, 0.123456789, 1234.5678, -2, "abc", "",
+               True, 10**18, 15 * 10**17]
+_SCREEN_FMT_ETH_GOLDEN = [
+    "—", "0.0000", "0.0000", "1.0000", "1.5000", "0.0000", "0.1235", "1,234.5678",
+    "-2.0000", "—", "—", "—", "1,000,000,000,000,000,000.0000",
+    "1,500,000,000,000,000,000.0000",
+]
+
+
+def test_golden_fwa_screen_fmt_eth():
+    from maxpane_dashboard.screens import fwa as mod
+    assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _SCREEN_FMT_ETH_GOLDEN
+
+
+def test_fwa_screen_fmt_eth_renders_infinity_as_the_marker():
+    """The one rendering change Branch 3 WP-B ships: the old ``float()`` body
+    printed ``inf`` for an infinite value; through ``fmt.as_float`` it is the
+    marker, because ``inf`` is not a quantity. Pinned here since the golden's
+    probe set has no infinity in it (review M2)."""
+    from maxpane_dashboard.screens import fwa as mod
+    assert mod._fmt_eth(float("inf")) == "—"
+    assert mod._fmt_eth(float("-inf")) == "—"

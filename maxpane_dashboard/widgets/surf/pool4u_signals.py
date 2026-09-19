@@ -83,7 +83,7 @@ The four rows, and why each earns a line (PRD §6.3)
 Shared primitives, purity and the ``$`` trap
 --------------------------------------------
 Title, network word and widen marker come from ``widgets/surf/_pool4.py``;
-``clip``/``pad`` from ``widgets/surf/_rowfit.py``, both on
+``clip``/``pad`` from ``widgets/rowfit.py``, both on
 :func:`rich.cells.cell_len` and never ``len()``. No ``data/``, no clock, no
 I/O; the one ``analytics/`` import is stdlib-only and is named on
 ``test_surf_widget_contract._PURE_ANALYTICS_ALLOWED``, whose purity walk
@@ -115,7 +115,7 @@ from maxpane_dashboard.widgets.surf._pool4 import (
     strip_tags,
     widest_line,
 )
-from maxpane_dashboard.widgets.surf._rowfit import pad
+from maxpane_dashboard.widgets.rowfit import pad
 
 __all__ = [
     "BURNING_OFF",
