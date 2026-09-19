@@ -282,6 +282,23 @@ cache-overwrite hazard in a new place.
 **E6 — the message is honest and owned.** Each of the three outcomes in §4 posts its own message. The
 auto-clear never removes a message it did not post.
 
+**E7 — every rendered address is a link to its chain's explorer** (refactor programme 2026-09,
+Branch 4; the helper, the action and the guards landed in WP-A on 2026-09-20, the call sites and
+the sweep assertion land in WP-B). The *shown* span — the address, its window or the name standing
+in for it, never the icon — carries an OSC 8 `link` (Cmd+click in the terminal) **and** an
+`@click` action `app.open_explorer(name, kind, value)` naming the same page, built only by
+`widgets/explorer.py` from an allowlisted explorer (`etherscan`, `basescan`, `sepolia`) and a
+value validated with `fullmatch`. `ExplorerLinkMixin.action_open_explorer` re-validates all three
+parts and rebuilds the URL from them; an action with anything foreign opens nothing and posts
+`explorer unavailable`. An unknown chain gets no link (`for_network` returns `None`), never a
+guessed one. Once WP-B lands, the E2 sweep also fails on an address without a link or with a link
+on the wrong explorer. A transaction hash links through `hash_text` (`/tx/`), still without an icon.
+
+**E8 — tests never open a browser.** `tests/conftest.py::_forbid_real_browser` replaces
+`webbrowser.open` suite-wide (Textual's `Driver.open_url` reaches it even under `run_test`); a
+pilot test that clicks a link mixes `tests/widgets/address_probe.LinkRecorder` into its harness,
+which records `open_url` and opens nothing. E5's shape, for the browser.
+
 Every test proves it bites: mutate, watch the named test go red, restore. `pytest ::nonexistent_test`
 exits 4, so a non-zero exit is not evidence.
 

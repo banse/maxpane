@@ -411,6 +411,32 @@ three foreground batches).
 example lines; ENS *names* as a separate link kind (a name-backed address links the address);
 a `bytes32` that is not known to be a transaction hash; `DashboardScreen` (Branch 5).
 
+**WP-A outcome (2026-09-20, this commit).** Delivered as designed: `widgets/explorer.py` (pure —
+`re` and `dataclasses` only; `Explorer`, `ETHEREUM`/`BASE`/`SEPOLIA`, `EXPLORERS`, `KINDS`,
+`for_network`, `is_address`/`is_tx_hash`, `address_url`/`tx_url`/`url_for`, `open_action`/
+`parse_open_action`); `widgets/address.py` gains `explorer=` on `address_text` and `address_prose`,
+`hash_text(tx_hash, width, *, explorer=None, style="")` and `is_explorer_click`; surf's
+`_icons.link_prose(text, explorer=None)` / `link_in_order(texts, addresses, explorer=None)` link the
+shown address or window right before each surviving glyph (a window that is not of that address
+links nothing); `explorer_action.ExplorerLinkMixin.action_open_explorer` re-validates name, kind and
+value, rebuilds the URL, calls `App.open_url` and posts `opened <name>` / `explorer unavailable`;
+`MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App)`. The status-bar poster was hoisted out of
+`CopyAddressMixin._post_copy_message` into `maxpane_dashboard/status_message.post_status_message(app,
+message, *, seconds)`, which both mixins call (`clipboard.copy_message` untouched). Guards:
+`tests/conftest.py::_forbid_real_browser`, `address_probe.LinkRecorder` and `link_targets(app)`
+(one entry per linked cell, `(x, y, name, kind, value, url)`). Two deviations from the design
+bullet: (1) `widgets/explorer.py` restates `ADDRESS_RE` rather than importing the address helper
+(which imports *it*); `test_explorer.py::test_the_address_pattern_agrees_with_the_address_helper` is
+the agreement test. (2) The action-string parser is a `fullmatch` on the exact shape plus the
+allowlist checks; a round-trip equality was written first and removed when a mutation proof showed
+no test could tell it from the regex. Mutation-proven: the URL rebuilt from the allowlist (16 of 24
+`test_explorer_action.py` cases redden when the action opens `https://{name}/{kind}/{value}`), the
+link on the shown span (5 tests), and the `explorer=None` identity (exactly one test, against
+literals from `git show 307255a:…/address.py`). No widget call site changed; the E2 sweep and
+`test_surf_screen.py` are green unchanged (42 and 314). WP-B still owes: every call site, `SweepCase.
+explorer`/`explorers` + the E7 sweep assertion, `feed.py` returning early on `is_explorer_click`, the
+CLAUDE.md convention bullet and the `templates/` address lines.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

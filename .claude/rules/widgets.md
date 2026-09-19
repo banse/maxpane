@@ -39,15 +39,32 @@ and a malformed row degrades to a skipped row. `SurfFeed._row_text` is the worke
 ## Every displayed 0x address carries a copy icon, and so does every name that stands in for one
 
 Render addresses only through `widgets/address.py`: `address_text` for an address or a name
-backed by one, `address_prose` for third-party text that may contain addresses, `short_hex` for
-any other hex such as a transaction hash (no icon). The icon is `⧉` with a Textual `@click`
-action on the glyph only, calling `app.copy_address`, which `copy_action.CopyAddressMixin` runs
+backed by one, `address_prose` for third-party text that may contain addresses, `hash_text` for
+a transaction hash (a `Text`, no icon) and `short_hex` for any other hex (the plain string). The
+icon is `⧉` with a Textual `@click` action on the glyph only, calling `app.copy_address`, which
+`copy_action.CopyAddressMixin` runs
 through `maxpane_dashboard/clipboard.py`: native tool first (`pbcopy`; Apple Terminal ignores the
 OSC 52 that `App.copy_to_clipboard` writes), OSC 52 second, and the status bar says `copied`,
 `unconfirmed` or `unavailable`. Validation is `fullmatch`, never `^…$` (`$` accepts a trailing
 newline and the address is interpolated into an action string). The icon costs `ICON_COLS = 2`;
 a panel grows where it has slack and shortens its displayed address where a pin would move; the
 window rule (8/6 at 17 cells) is surf's anti-poisoning form.
+
+**And a link to its chain's explorer** (Branch 4 of the refactor programme; the helper landed in
+WP-A, every call site passes `explorer=` in WP-B). `widgets/explorer.py` is the one module that
+names an explorer (`ETHEREUM`, `BASE`, `SEPOLIA`; `for_network(word)` for surf's per-row network
+words, `None` for anything unknown — never a guess), builds a URL (`address_url`, `tx_url`) and
+writes or reads the action `app.open_explorer(name, kind, value)`. Pass `explorer=` to
+`address_text` / `address_prose` / `hash_text` (and surf's `_icons.link_prose` / `link_in_order`):
+the *shown* span — never the icon — gets `Style(link=…, meta={"@click": …})`, an OSC 8 hyperlink
+the terminal follows on Cmd+click and an action `explorer_action.ExplorerLinkMixin` follows on a
+plain click. Both ends validate: the helper writes an action only for an allowlisted explorer and a
+`fullmatch`-valid value; the action re-validates all three parts and rebuilds the URL from them —
+never from the action text — and posts `opened etherscan` or `explorer unavailable` through
+`status_message.post_status_message`, the poster the copy mixin uses too. A widget with its own
+`on_click` returns early on `is_explorer_click(event)` as it does on `is_copy_click`. A `bytes32`
+not known to be a transaction hash stays unlinked. `explorer=None` renders exactly as before, byte
+and span for byte and span (`tests/widgets/test_address.py` pins it against the pre-link module).
 
 **None of this is optional:** `tests/test_address_rule.py` fails on a private address formatter;
 `tests/screens/test_address_icons_everywhere.py` fails on an address that reaches the screen
@@ -59,8 +76,10 @@ the sweep does not render. A new dashboard joins the sweep: add a `SweepCase` to
 that reach every body, and a hand-listed `seeded` tuple carrying at least one address in every
 shape it renders. `address_free=True` is only for a dashboard that renders none, and the
 agreement test refuses it the moment the dashboard's widgets import the helper.
-`docs/address_copy_PRD.md` §7 spells out E1–E6. No test may reach the real clipboard:
-`tests/conftest.py` replaces the runner suite-wide.
+`docs/address_copy_PRD.md` §7 spells out E1–E8. No test may reach the real clipboard or the real
+browser: `tests/conftest.py` replaces the clipboard runner and `webbrowser.open` suite-wide, and a
+pilot test that clicks a link mixes `tests/widgets/address_probe.LinkRecorder` into its harness
+(`link_targets(app)` reads every linked cell off the compositor, as `icon_targets` reads the icons).
 
 ## Sparklines import `widgets/sparkline_common`
 

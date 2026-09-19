@@ -405,6 +405,9 @@ Click ⧉ beside any address to copy it. Drag across any text panel to select, a
 mouse copies the selection (`ctrl+c` after a drag does the same); the status bar says `copied`,
 `unconfirmed` (sent by OSC 52, no native tool found) or `unavailable`. Tables and feeds
 (leaderboards, activity feeds) do not select — use the ⧉ icon beside their addresses.
+Click an address itself to open it on Etherscan (Basescan for the Base dashboards, Sepolia's
+explorer for a Sepolia row) in your browser; the address is also a terminal hyperlink, so
+Cmd+click works in Terminal.app and iTerm2 without going through the app.
 
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
 LIST's `l` view it cycles the full-width table through raw, cleaned and filtered. **Surfboard binds `l`** to swap
