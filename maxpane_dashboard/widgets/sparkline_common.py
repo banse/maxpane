@@ -18,11 +18,10 @@ copied from the template inherits the import, not a fork.
 
 Converged so far: ``ocm``, ``cattown``, ``dota``, ``ttt``, ``talismans``,
 ``fwa`` and ``templates/sparkline_template.py`` -- the set named in the
-finding, pinned by ``tests/widgets/test_sparkline_common.py``.  Eleven
+finding, pinned by ``tests/widgets/test_sparkline_common.py``.  Eight
 older copies with divergent widths and semantics are **not** yet on this
 module and still need review: ``widgets/cookie_chart.py``,
-``widgets/base/{overview.py, price_sparklines.py, volume_sparklines.py,
-token_chart.py, overview/bt_sparklines.py, overview/_legacy_overview.py}``
+``widgets/base/overview/bt_sparklines.py``
 and ``widgets/frenpet/{score_trend.py, pet_card.py, wallet/fpw_trends.py,
 perf/fpp_trends.py, perf/fpp_velocity.py, overview/fp_score_trends.py}``.
 New dashboards must import from here regardless.

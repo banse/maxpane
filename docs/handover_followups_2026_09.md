@@ -64,3 +64,18 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
    compute" that arrives as `--` is indistinguishable from "nothing to report" (CLAUDE.md: a real
    negative needs a value distinct from "could not look"). Data layer, out of §3.0's scope;
    Tier 1 per dashboard.
+
+## §3.1 — dead base code (branch `refactor/dead-base-code`)
+
+8. **46 orphaned rule blocks remain in the base section of `themes/minimal.tcss`.** The Branch 1
+   plan scoped the theme edit to the five `OverviewPanel` blocks "and nothing else", so the
+   implementer stopped there (reviewer: plan defect, Minor). After the deletions no surviving
+   Python defines `TrendingTable`, `PriceSparklines`, `VolumeSparklines`, `TopMovers`,
+   `VolumeBars`, `GeckoPools`, `LaunchFeed`, `LaunchStats`, `GraduatedTokens`, `TokenPrice`,
+   `TokenChart`, `PoolInfo`, `TradeFeed`, `TokenSignals`, `FeeClaims`, `FeeLeaderboard`,
+   `FeeStats`, `OverviewHero`, `_HeroCard` or the ids `#ov-hero-row`, `#ov-sparklines`,
+   `#ov-sep`, `#ov-bottom`, `#ov-left`, `#ov-right` (a type selector matches a class and its
+   bases, so `BTOverviewHero` does not keep `OverviewHero` alive). No runtime effect; no test
+   pins tcss-to-class correspondence. One Tier 0 sweep of the whole block when the stylesheet is
+   next touched; re-point the comment at `widgets/surf/_pool4.py:199-201`, which cites five of
+   these selectors as evidence for the blank-row convention.
