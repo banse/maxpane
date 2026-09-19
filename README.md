@@ -401,7 +401,10 @@ the other, so a single manager owns the command.
 | `t` | Cycle theme |
 | `q` | Quit |
 
-Click ⧉ beside any address to copy it.
+Click ⧉ beside any address to copy it. Drag across any text panel to select, and releasing the
+mouse copies the selection (`ctrl+c` after a drag does the same); the status bar says `copied`,
+`unconfirmed` (sent by OSC 52, no native tool found) or `unavailable`. Tables and feeds
+(leaderboards, activity feeds) do not select — use the ⧉ icon beside their addresses.
 
 Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap panels; in THE
 LIST's `l` view it cycles the full-width table through raw, cleaned and filtered. **Surfboard binds `l`** to swap

@@ -47,7 +47,11 @@ async def _run(cmd: tuple[str, ...], data: bytes) -> int:
     )
     try:
         await asyncio.wait_for(proc.communicate(data), NATIVE_TIMEOUT_S)
-    except asyncio.TimeoutError:
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        # Cancellation arrives at the same await: the selection copy runs in
+        # an exclusive worker, so a second drag while a native tool is still
+        # running cancels the first copy, and the app cancels every worker
+        # on exit.  Either way the child must not be left behind.
         proc.kill()
         # Reap the child: kill() only sends the signal, it does not wait for
         # the process to actually exit, and an un-reaped child left behind on
@@ -96,8 +100,9 @@ def copy_message(outcome: str, address: str | None) -> str:
     third-party may ever reach it; an address here has already passed
     ``is_address``.
     """
-    if outcome == COPIED and address:
-        return f"copied {short_address(address, 17)}"
+    if outcome == COPIED:
+        # No address = Textual's own text selection (copy_action.CopyAddressMixin).
+        return f"copied {short_address(address, 17)}" if address else "copied selection"
     if outcome == UNCONFIRMED:
         return "sent to terminal clipboard (unconfirmed)"
     return "copy unavailable"
