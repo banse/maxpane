@@ -352,14 +352,61 @@ compare `__all__` against itself. The banned-name set the same walk enforces now
 whose one definitions are `widgets/fmt.py`'s `fmt_int` / `fmt_float` / `safe_get` / `DASH` /
 `hhmm` and the base's own degraded row.
 
-## Reuse before you build
+## Reuse before you build — the new-dashboard checklist
 
-Almost nothing here is the first of its kind. Check, in this order:
+Almost nothing here is the first of its kind. A new dashboard is configuration plus hooks on the
+shared bases; the order below is the dependency order, and each step names the base it subclasses
+and the test that proves the step. Research and the PRD come first (CLAUDE.md "New dashboard":
+`docs/<game>_game_mechanics.md`, `docs/<game>_PRD.md`, owner approval, project-planner plan).
+
+1. **Freeze the data contract:** `data/<game>_models.py` exporting the flat-dict key tuple
+   (`*_KEYS`) and `WIDGET_SIGNATURES` — the widgets restate what they read and an agreement test
+   binds the two (`curator_models`, `fwa_models`, `surf_models` are the pattern; #68 lists the four
+   older dashboards still without a tuple).
+2. **Client:** one `data/<game>_client.py` mixing in `rpc_common.OwnedHttpClient`, building its
+   envelope with `jsonrpc_payload` and pacing with `pace`; **keyless**, with the chain's working pools
+   from `rules/data.md` (state and logs are different pools; the dead list and `rpc.flashbots.net`
+   never in a log pool). Error TABLES are bound from `data/rpc_classify.py` (`ETH_…` or
+   `BASE_ENDPOINT_LIMITATION_FRAGMENTS`, `RANGE_CAP_FRAGMENTS`, `MALFORMED_REQUEST_CODES`) — never
+   re-typed (`tests/data/test_rpc_shared.py` fails on a literal); the rotate/shrink/paginate POLICY
+   is the client's own and lives next to its tests with a committed error corpus under
+   `tests/fixtures/<game>/`. `decimals()` is a live read; every env var is read at construction
+   with an explicit argument winning, never at import.
+3. **Cache:** `data/<game>_cache.py` subclassing `data/series_cache.SeriesCache` with a `SERIES`
+   tuple of `SeriesSpec`s (`rules/data.md` "Series caches"); an event cache (talismans, ttt) does
+   not subclass it. Fixture-driven load/save test; `record()` drops `None`.
+4. **Manager:** `data/<game>_manager.py` with keyword-only `client=`, `cache=`, `cache_path=`
+   seams (`tests/data/test_manager_seams.py` is the shape: both halves of `cache_path` and client
+   identity pinned), `fetch_and_compute()` returning the flat dict of step 1, a failed read as
+   `None`, a dead source as an explicit unavailable state behind `as_of_hhmm`.
+5. **Screen:** `screens/<game>.py` subclassing `screens/dashboard_screen.DashboardScreen` —
+   `GAME_NAME`, `REFRESH_WORKER_NAME`, `PANELS` (widget class → adapter from the flat dict),
+   `compose()`, and no `__init__`, no worker, no timer of its own (section above). Layout is a
+   function of terminal columns: pins and their `#:` blocks per the terminal-layout skill.
+6. **Widgets:** a package `widgets/<game>/` whose panels subclass `widgets/panels.py`
+   (`PanelBase`, `HeroRow`/`HeroBoxBase`, `SignalsPanelBase`, `SparklinePanel`, `RichLogFeed`,
+   `TableLeaderboard`); `_chain.py` declaring `EXPLORER` once (an unknown chain gets no link);
+   `_fmt.py` only when the dashboard needs a formatter `widgets/fmt.py` lacks, re-exporting the
+   shared one on top. Every third-party string through `markup_safety`; every 0x address through
+   `widgets/address.py`.
+7. **Address sweep:** one `SweepCase` per screen class in `tests/address_sweep/builders.py`
+   (`CASES`; E3 asserts every dashboard screen has one) with a payload builder that carries
+   every address the screen can show.
+8. **Register on the six surfaces** in `rules/dashboard-registry.md`'s order (`app.py` →
+   `__main__.py` → `GAMES`), grow every `MANAGER_ATTRS` copy, add the theme, README shortcuts.
+
+Measured on main at Branch 10's close (2026-09-20): the smallest migrated dashboard, dota, is
+~1,550 lines across `data/`, `screens/` and `widgets/dota/`; ocm ~1,830. What remains per
+dashboard is the client and its fixtures, the models, and the hooks — the lifecycle, refresh loop,
+cache mechanics, panel chrome and address handling come from the bases.
+
+**Before writing any helper, check in this order:**
 
 1. **the genuinely shared modules** — `widgets/fmt.py` (the unknown markers, `as_float`,
    `fmt_eth`, ages, countdowns, points, percentages, `hhmm`/`mmdd`), `widgets/sparkline_common.py`,
-   `widgets/markup_safety.py`, `widgets/address.py`, `widgets/status_bar.py`. Import them; never copy
-   out of them.
+   `widgets/markup_safety.py`, `widgets/address.py`, `widgets/status_bar.py`, `widgets/rowfit.py`;
+   in `data/`, `rpc_common.py`, `rpc_classify.py`, `series_cache.py`, `evm_abi.py`. Import them;
+   never copy out of them.
    (`widgets/hero_metrics.py`, `leaderboard.py`, `cookie_chart.py`, `activity_feed.py`,
    `signals_panel.py`, `ev_table.py` are Bakery-only despite living at the top level — all six are
    imported by `screens/bakery.py` only and are subclasses of `widgets/panels.py` since Branch 8
@@ -384,8 +431,9 @@ them. A private helper needed by two modules is hoisted to the package's shared 
 same change — never re-declared. Ownership seams are for files, not functions. **Mandated
 redundancy is the narrow exception:** a hand-typed copy that an agreement test binds
 (`_GAME_CYCLE`, `--game` choices, `initial_game`, `MANAGER_ATTRS`, a widget restating a `data/`
-tuple such as `POOL4_NETWORKS` / `POOL4_DISCOVERY_SOURCES`) is correct and must not be
-"simplified" into a derivation, because the test would then compare a constant against itself.
+tuple such as `POOL4_NETWORKS` / `POOL4_DISCOVERY_SOURCES`, talismans' `_BANNED_RPC_HOSTS`) is
+correct and must not be "simplified" into a derivation, because the test would then compare a
+constant against itself.
 
 The strip-then-escape sanitiser is `markup_safety.sanitize_cell` (flatten → `strip_tags` →
 `rowfit.clip` on cells → `safe_markup`, in that order) since HANDOVER §3.2 was closed on 2026-09-19;

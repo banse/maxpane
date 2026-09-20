@@ -215,12 +215,13 @@ per package, reviewer contract, full suite once before merge.
    `fwa_logs._classify_rpc_error` keep their local marker tables (follow-up #65). Endpoint behaviour rules
    in `rules/data.md` are the spec; `tests/fixtures/surf/pool4/rpc_error_states.json`,
    `log_range_messages.json` and `tests/fixtures/fwa/rpc_errors.json` are the classifier's evidence.
-7. Afterwards, rewrite "Reuse before you build" in `rules/widgets.md` as the new-dashboard
-   checklist: models keys → `OwnedHttpClient` + bound `rpc_classify` tables + endpoint pools →
-   `SeriesCache` subclass →
-   manager → `DashboardScreen` subclass with `PANELS` → panel subclasses → `SweepCase` in
-   `tests/address_sweep/builders.py` → six-surface registration. A new dashboard should be
-   ~600 lines of configuration plus hooks instead of ~4,200.
+7. **Done, Branch 11 (2026-09-20):** "Reuse before you build" in `rules/widgets.md` is the
+   new-dashboard checklist — models keys → `OwnedHttpClient` + bound `rpc_classify` tables +
+   endpoint pools → `SeriesCache` subclass → manager with seams → `DashboardScreen` subclass with
+   `PANELS` → panel subclasses + `_chain.py` `EXPLORER` → `SweepCase` in
+   `tests/address_sweep/builders.py` → six-surface registration. The "~600 lines" was an estimate;
+   the checklist states the measured floor instead (dota ~1,550 lines after the programme, ocm
+   ~1,830, of which the client, its fixtures and the models are the per-dashboard part).
 
 ## 4. Outside this repo (for the maintenance workspace, `/Library/Vibes/intern`)
 

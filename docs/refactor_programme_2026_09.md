@@ -46,7 +46,7 @@ files; the commit message is the evidence.
 | 8 | `refactor/panels-bt-bakery` | §3.4c | 2 | ~800 | base + bakery tests; templates deleted; `rules/widgets.md` step 3 |
 | 9 | `refactor/series-cache` | §3.6a | 2 | +179 net measured (six caches −276, base +434) | `tests/data/test_*_cache.py` unchanged, `test_series_cache.py` (new, fixture round-trips) |
 | 10 | `refactor/rpc-pool` | §3.6b | 2 | option B (owner, 2026-09-20); measured at closure `269beda..de27166 -- maxpane_dashboard/`: +869/−321 = **+548 net** — `rpc_classify.py` +361 (tables, predicates and the documented flips), five binding clients −30 (cattown_client's seam +25 counted here), eleven seam files +220 (eight managers, ocm/frenpet/talismans clients: keyword-only constructor seams and docstrings), `rpc_common.py` +12, `fwa_logs.py` −15 — sums to +548; head `a788ba4` is +878/−326 after the WP-C-review folds; the estimate of −100/+150 undercounted the documentation the hoist carries; the ~700 removal assumed the declined full `RpcPool` | `test_rpc_classify.py` (new, fixture-driven), `test_manager_seams.py` (new); seven client test files and all eight manager test files byte-unchanged |
-| 11 | docs | §3.7 | 0 | 0 | doc-pinning tests |
+| 11 | `docs/new-dashboard-checklist` | §3.7 | 0 | 0 (docs: `rules/widgets.md` +80/−0 net, HANDOVER item 7, this row) | `tests/widgets/test_panels.py` (pins widgets.md), `-m guard` |
 
 Branch 0 first: it touches `app.py`, `copy_action.py`, `clipboard.py` and one test, nothing
 the refactors touch. Branch 4 sits after the hoists and before `DashboardScreen` so the later
@@ -3579,6 +3579,22 @@ assert, 13 green. New Minor: restoring the `if cache_file` truthiness left all 2
 unpinned — **folded by the controller**: the same test now also builds with `cache_file=""` under a `chdir` into
 `tmp_path` and asserts the result is not the module default; controller mutation: truthiness restored → exactly that
 test red on the new assert. Guard 198.
+
+
+## Branch 11 — `docs/new-dashboard-checklist` (Tier 0, session implements)
+
+Spec: HANDOVER.md §3 item 7. Cut from main `aee445e` after Branch 10 merged. "Reuse before you build" in
+`rules/widgets.md` now opens with the eight-step new-dashboard checklist in dependency order — models contract
+(#68 for the four without a tuple), client on `OwnedHttpClient` binding `rpc_classify` tables with the policy and
+its error corpus local, `SeriesCache` subclass, manager with the WP-B seams, `DashboardScreen` subclass with
+`PANELS`, `widgets/<game>/` on `panels.py` with `_chain.py` `EXPLORER`, one `SweepCase` per screen, the six
+surfaces — each step naming its base and the test that proves it; the reuse order (shared modules → the
+dashboard's `_fmt.py` and sibling → a migrated sibling on `panels.py`) and the divergence / mandated-redundancy
+paragraphs are kept below it, with `data/`'s shared modules and talismans' agreement-bound ban set added to the
+lists. The "~600 lines" figure from HANDOVER is replaced by a measurement: dota ~1,550 lines across `data/`,
+`screens/`, `widgets/dota/` and ocm ~1,830 on main at Branch 10's close. HANDOVER item 7 marked done. Tests: the
+one file that pins `rules/widgets.md` (`tests/widgets/test_panels.py`, on a phrase this edit does not touch) and
+`-m guard`; no production code.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
