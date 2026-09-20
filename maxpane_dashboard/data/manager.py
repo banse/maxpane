@@ -108,7 +108,16 @@ class DataManager:
 
         # ── Derived values ────────────────────────────────────────────
         season = snapshot.season
-        bakeries = snapshot.bakeries
+        # ``None`` (the fetch failed) reaches the widget dict as itself, so the
+        # leaderboard says ``unavailable`` rather than ``No data`` (follow-up
+        # #35). The DERIVED keys below still compute off an empty board, as
+        # they did when the client served ``[]``: ``leader_name`` "---",
+        # ``leader_cookies`` / ``leader_rate`` 0.0, ``member_count`` 1 and
+        # ``top3_probability`` 1.0, which feed ``late_join_ev`` -- so during
+        # a bakeries outage HeroMetrics and SignalsPanel still present those
+        # as live beside an unavailable leaderboard. Giving them the same
+        # ``None`` treatment is follow-up #75.
+        bakeries = [] if snapshot.bakeries is None else snapshot.bakeries
         eth_price = snapshot.eth_price_usd
         agent_config = snapshot.agent_config
 
@@ -225,7 +234,7 @@ class DataManager:
             "leader_cookies": leader_cookies,
             "leader_rate": leader_rate,
             # leaderboard
-            "bakeries": bakeries,
+            "bakeries": snapshot.bakeries,
             "production_rates": production_rates,
             # cookie_chart
             "chart_histories": chart_histories,

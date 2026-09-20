@@ -8,6 +8,8 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
+from maxpane_dashboard.widgets.panels import UNAVAILABLE
+
 
 def _format_battle_time(timestamp: int | float) -> str:
     """Convert unix timestamp to HH:MM:SS display format."""
@@ -43,7 +45,7 @@ class BattleFeed(Vertical):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._seen_keys: set[str] = set()
-        self._battle_rate: float = 0.0
+        self._battle_rate: float | None = None
         self._avg_reward: float = 0.0
 
     def compose(self) -> ComposeResult:
@@ -54,26 +56,32 @@ class BattleFeed(Vertical):
     def update_data(
         self,
         attacks: list[dict],
-        battle_rate: float = 0.0,
+        battle_rate: float | None = None,
     ) -> None:
         """Append only new battle events, de-duplicated.
 
         Each attack dict is expected to have:
             timestamp, attacker_id, defender_id, won (bool), reward (int).
+
+        *battle_rate* is ``None`` when the manager could not measure one --
+        the attacks feed failed or the window cannot carry a rate -- and the
+        footer then says ``unavailable`` rather than a rate nobody measured
+        (follow-up #43). The footer is repainted on every call, including
+        the empty-batch one, so an outage is visible as soon as it starts.
         """
         log = self.query_one("#battle-log", RichLog)
+        self._battle_rate = battle_rate
 
         if not attacks:
             if not self._seen_keys:
                 log.write("[dim]  No battles yet[/]")
+            self._paint_footer()
             return
 
         # Calculate avg reward from this batch
         rewards = [a.get("reward", 0) for a in attacks if a.get("reward", 0) > 0]
         if rewards:
             self._avg_reward = sum(rewards) / len(rewards)
-
-        self._battle_rate = battle_rate
 
         # Attacks arrive newest-first; append oldest-first for natural scroll
         for attack in reversed(attacks):
@@ -97,8 +105,14 @@ class BattleFeed(Vertical):
                 f"  [dim]{time_str}[/]  #{atk_id} bonked #{def_id}  {result}"
             )
 
-        # Update footer stats
-        rate_str = f"~{int(self._battle_rate)}" if self._battle_rate > 0 else "--"
+        self._paint_footer()
+
+    def _paint_footer(self) -> None:
+        rate = self._battle_rate
+        if rate is None:
+            rate_str = UNAVAILABLE
+        else:
+            rate_str = f"~{int(rate)}" if rate > 0 else "--"
         reward_str = f"{int(self._avg_reward):,}" if self._avg_reward > 0 else "--"
         self.query_one("#battle-footer", Static).update(
             f"  [dim]Battles/hr:[/] {rate_str}  [dim]Avg reward:[/] {reward_str}"

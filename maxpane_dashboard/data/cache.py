@@ -95,7 +95,9 @@ class DataCache(SeriesCache):
         """
         self._mark(snapshot)
 
-        for bakery in snapshot.bakeries:
+        # A failed bakeries fetch is ``None`` and records nothing -- never a
+        # point, never a reset (follow-up #35).
+        for bakery in snapshot.bakeries or ():
             key = bakery.name
             display_cookies = int(bakery.tx_count) / cookie_scale
             dq = self._history.get(key)

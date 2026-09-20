@@ -131,6 +131,11 @@ from maxpane_dashboard.data.fwa_models import (
     DrawEvent,
     SettlementMix,
 )
+from maxpane_dashboard.data.rpc_classify import (
+    met_block_limit,
+    requested_block_span,
+    stale_range_cap_detail,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -1382,7 +1387,9 @@ def _parse_suggested_to(text: str) -> int | None:
         return None
 
 
-def _classify_rpc_error(error: Any) -> LogEndpointError:
+def _classify_rpc_error(
+    error: Any, *, requested_span: int | None = None
+) -> LogEndpointError:
     """Map a JSON-RPC ``error`` member onto a :class:`LogEndpointError`.
 
     Several of these arrive inside an **HTTP 200** — the tenderly result cap, the
@@ -1390,6 +1397,16 @@ def _classify_rpc_error(error: Any) -> LogEndpointError:
     Multicall3 unmarshal error. A client that branches on HTTP status alone
     mishandles all of them, so every response body is checked for an ``error``
     member regardless of status.
+
+    *requested_span* is the block count the request asked for, when it had one
+    (:func:`requested_block_span`). It gates both ``range_cap`` branches through
+    :func:`rpc_classify.met_block_limit`: ``eth.drpc.org`` answers a 300-block
+    archive ``eth_getLogs`` with ``code 35 "ranges over 10000 blocks"`` (its
+    limit is depth, not width), and shrinking on it halves the window down to
+    :data:`_MIN_WINDOW_BLOCKS` and ratchets ``_window_ceiling`` there for the
+    session. A cap the request already meets is ``rpc``, so ``_scan_endpoint``
+    fails the endpoint and the scan rotates (follow-up #65). No span, no named
+    limit, or a genuinely exceeded limit stays ``range_cap``.
     """
     if not isinstance(error, Mapping):
         return LogEndpointError("rpc", str(error))
@@ -1416,6 +1433,11 @@ def _classify_rpc_error(error: Any) -> LogEndpointError:
     if "archive" in blob:
         return LogEndpointError("archive", message or data)
     if "ranges over" in blob or ("block range" in blob and "not supported" in blob):
+        met = met_block_limit(blob, requested_span)
+        if met is not None:
+            return LogEndpointError(
+                "rpc", stale_range_cap_detail(met, requested_span, message or data)
+            )
         return LogEndpointError("range_cap", message or data)
     if any(marker in blob for marker in _RESULT_CAP_MARKERS):
         return LogEndpointError(
@@ -1433,6 +1455,11 @@ def _classify_rpc_error(error: Any) -> LogEndpointError:
         return LogEndpointError("dead", message or data)
     # drpc reports its range cap with a bespoke code 35 and no standard marker.
     if code == 35:
+        met = met_block_limit(blob, requested_span)
+        if met is not None:
+            return LogEndpointError(
+                "rpc", stale_range_cap_detail(met, requested_span, message or data)
+            )
         return LogEndpointError("range_cap", message or data)
     return LogEndpointError("rpc", message or data or str(error))
 
@@ -1573,6 +1600,9 @@ class FWALogClient(OwnedHttpClient):
     async def _post(self, url: str, payload: dict) -> Any:
         """One JSON-RPC round trip. Raises :class:`LogEndpointError` on failure."""
         self._last_rpc_at = await pace(self._last_rpc_at, self._min_call_interval)
+        requested_span = requested_block_span(
+            payload.get("method", ""), payload.get("params")
+        )
 
         last: LogEndpointError | None = None
         for attempt in range(_MAX_RETRIES):
@@ -1596,7 +1626,7 @@ class FWALogClient(OwnedHttpClient):
             # now-keyed auth failure and the unmarshal error all arrive inside
             # an HTTP 200.
             if isinstance(body, Mapping) and body.get("error") is not None:
-                err = _classify_rpc_error(body["error"])
+                err = _classify_rpc_error(body["error"], requested_span=requested_span)
                 if err.kind == "rate_limit" and attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(_BACKOFF_SECONDS[attempt])
                     last = err
@@ -1606,7 +1636,9 @@ class FWALogClient(OwnedHttpClient):
                 # Batch-shaped error body (some endpoints answer 429 this way).
                 for item in body:
                     if isinstance(item, Mapping) and item.get("error") is not None:
-                        raise _classify_rpc_error(item["error"])
+                        raise _classify_rpc_error(
+                            item["error"], requested_span=requested_span
+                        )
 
             if status in _ENDPOINT_DEAD_CODES:
                 raise LogEndpointError("dead", f"HTTP {status} from {url}")

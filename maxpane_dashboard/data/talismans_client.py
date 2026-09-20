@@ -55,6 +55,11 @@ from maxpane_dashboard.data.evm_abi import (
     pad_left as _pad_left,
     strip0x as _strip0x,
 )
+from maxpane_dashboard.data.rpc_classify import (
+    met_block_limit,
+    requested_block_span,
+    stale_range_cap_detail,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -451,8 +456,19 @@ def _parse_suggested_to(text: str) -> int | None:
         return None
 
 
-def _classify_rpc_error(error: Any) -> TalismansRpcError:
+def _classify_rpc_error(
+    error: Any, *, requested_span: int | None = None
+) -> TalismansRpcError:
     """Map a JSON-RPC ``error`` member onto a :class:`TalismansRpcError`.
+
+    *requested_span* is the block count the request asked for, when it had
+    one (:func:`requested_block_span`). It gates both ``range_cap`` branches
+    through :func:`rpc_classify.met_block_limit`: ``eth.drpc.org`` answers a
+    300-block archive ``eth_getLogs`` with ``code 35 "ranges over 10000
+    blocks"`` (its limit is depth, not width), and a cap the request already
+    meets is ``rpc`` -- the pager rotates instead of shrinking (follow-up
+    #65). No span, no named limit, or a genuinely exceeded limit stays
+    ``range_cap``.
 
     Classification is driven by the message **text**, not the code, because the
     codes are worthless here — every one of these was read off the wire on
@@ -488,6 +504,11 @@ def _classify_rpc_error(error: Any) -> TalismansRpcError:
             suggested_to=_parse_suggested_to(f"{data} {message}"),
         )
     if any(marker in blob for marker in _RANGE_CAP_MARKERS):
+        met = met_block_limit(blob, requested_span)
+        if met is not None:
+            return TalismansRpcError(
+                "rpc", stale_range_cap_detail(met, requested_span, detail)
+            )
         return TalismansRpcError(
             "range_cap",
             detail,
@@ -503,6 +524,11 @@ def _classify_rpc_error(error: Any) -> TalismansRpcError:
         return TalismansRpcError("dead", detail)
     # drpc reports its range cap with a bespoke code 35 and no standard marker.
     if code == 35:
+        met = met_block_limit(blob, requested_span)
+        if met is not None:
+            return TalismansRpcError(
+                "rpc", stale_range_cap_detail(met, requested_span, detail)
+            )
         return TalismansRpcError("range_cap", detail)
     return TalismansRpcError("rpc", detail)
 
@@ -605,6 +631,7 @@ class TalismansClient(OwnedHttpClient):
 
         self._request_id += 1
         payload = jsonrpc_payload(self._request_id, method, params)
+        requested_span = requested_block_span(method, params)
         urls = list(endpoints) if endpoints else [
             self._primary_rpc,
             *self._fallback_rpcs,
@@ -640,7 +667,9 @@ class TalismansClient(OwnedHttpClient):
                         and isinstance(body, dict)
                         and body.get("error") is not None
                     ):
-                        classified = _classify_rpc_error(body["error"])
+                        classified = _classify_rpc_error(
+                            body["error"], requested_span=requested_span
+                        )
                         logger.debug(
                             "%s on %s -> %s: %s",
                             method,

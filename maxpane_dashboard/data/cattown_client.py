@@ -244,12 +244,21 @@ class CatTownClient(OwnedHttpClient):
     # Public API: Raffle data
     # ------------------------------------------------------------------
 
-    async def get_raffle_total_tickets(self) -> int:
-        """Get total raffle tickets sold this round from cat.town API."""
+    async def get_raffle_total_tickets(self) -> int | None:
+        """Get total raffle tickets sold this round from cat.town API.
+
+        ``None`` when the payload carries no numeric ``totalTickets`` -- an
+        empty body, a renamed key, a string. A failed read is ``None``, never
+        ``0``: the manager persists this series, and a ``0`` here used to be
+        recorded as "nobody bought a ticket" (follow-up #45).
+        """
         resp = await self._client.get(self.RAFFLE_API, timeout=5.0)
         resp.raise_for_status()
         data = resp.json()
-        return data.get("totalTickets", 0)
+        value = data.get("totalTickets") if isinstance(data, dict) else None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return int(value)
 
     # ------------------------------------------------------------------
     # Public API: Basename resolution

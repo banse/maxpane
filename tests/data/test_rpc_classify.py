@@ -424,6 +424,48 @@ def test_each_client_binds_the_shared_table_itself() -> None:
     assert surf_pool4_client._named_block_limit is rpc_classify.named_block_limit
 
 
+def test_the_kind_classifiers_bind_the_met_limit_rule_not_a_copy() -> None:
+    """One statement of "a met cap is not about this request" (review I1).
+
+    ``is_range_limitation`` and the two kind-classifiers consult the same
+    function, so a fix to the comparison reaches every client at once.
+    """
+    from maxpane_dashboard.data import fwa_logs, talismans_client
+
+    for module in (talismans_client, fwa_logs):
+        assert module.met_block_limit is rpc_classify.met_block_limit, module.__name__
+        assert (
+            module.stale_range_cap_detail is rpc_classify.stale_range_cap_detail
+        ), module.__name__
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        assert "named_block_limit(" not in source, (
+            f"{module.__name__} re-derives the rule instead of binding it"
+        )
+
+
+@pytest.mark.parametrize(
+    ("message", "span", "expected"),
+    [
+        ("ranges over 10000 blocks are not supported on free plan", 300, 10_000),
+        ("ranges over 10000 blocks are not supported on free plan", 10_000, 10_000),
+        ("ranges over 10000 blocks are not supported on free plan", 10_001, None),
+        ("eth_getlogs is limited to 0 - 50 blocks range", 300, None),
+        ("block range extends beyond current head block", 1, None),
+        ("ranges over 10000 blocks are not supported on free plan", None, None),
+    ],
+    ids=["met", "met-at-boundary", "exceeded", "exceeded-1rpc", "unnumbered", "no-span"],
+)
+def test_met_block_limit(message, span, expected) -> None:
+    assert rpc_classify.met_block_limit(message, span) == expected
+    # ... and the boolean predicate agrees with it on the span family.
+    err = {"message": message}
+    assert rpc_classify.is_range_limitation(
+        err, fragments=rpc_classify.RANGE_CAP_FRAGMENTS, requested_span=span
+    ) == (expected is None) or not rpc_classify.is_range_limitation(
+        err, fragments=rpc_classify.RANGE_CAP_FRAGMENTS
+    )
+
+
 def test_cattown_does_not_bind_the_ethereum_table() -> None:
     """The one merge that would have been silent and wrong."""
     assert (
@@ -552,3 +594,59 @@ def test_a_payload_with_no_error_member_never_reaches_a_predicate() -> None:
     assert fwa["llamarpc_dead"]["http_status"] in rpc_common.ENDPOINT_DEAD_CODES
     assert fwa["publicnode_rate_limit_429"]["http_status"] == 429
     assert 429 not in rpc_common.ENDPOINT_DEAD_CODES
+
+
+# ---------------------------------------------------------------------------
+# ``requested_block_span``: the span a provider's complaint could be about
+# (follow-up #65 -- talismans and fwa_logs read it off the request they sent)
+# ---------------------------------------------------------------------------
+
+
+def test_requested_block_span_reads_every_recorded_drpc_probe():
+    """Each live probe records the span it asked for; the reader agrees."""
+    probes = _load(POOL4_FIXTURES / "log_range_messages.json")["probes"]
+    assert len(probes) == 10
+    for probe in probes:
+        request = probe["request"]
+        assert (
+            rpc_classify.requested_block_span(request["method"], request["params"])
+            == probe["requested_span_blocks"]
+        ), probe["label"]
+
+
+@pytest.mark.parametrize(
+    ("method", "params"),
+    [
+        ("eth_call", [{"fromBlock": "0x1", "toBlock": "0x10"}]),
+        ("eth_getLogs", []),
+        ("eth_getLogs", [{"toBlock": "0x10"}]),
+        ("eth_getLogs", [{"fromBlock": "0x1"}]),
+        ("eth_getLogs", [{"fromBlock": "0x1", "toBlock": "latest"}]),
+        ("eth_getLogs", [{"fromBlock": "earliest", "toBlock": "0x10"}]),
+        ("eth_getLogs", [{"fromBlock": "0x10", "toBlock": "0x1"}]),
+        ("eth_getLogs", ["0x1"]),
+        ("eth_getLogs", {"fromBlock": "0x1", "toBlock": "0x10"}),
+        ("eth_getLogs", [{"fromBlock": "1000", "toBlock": "1299"}]),
+        ("eth_getLogs", [{"fromBlock": True, "toBlock": "0x10"}]),
+    ],
+    ids=[
+        "not-getLogs", "no-filter", "no-from", "no-to", "to-tag", "from-tag",
+        "inverted", "filter-not-a-dict", "params-not-a-list",
+        "decimal-strings-are-not-hex", "bool-bound",
+    ],
+)
+def test_requested_block_span_is_none_when_the_request_has_no_span(method, params):
+    assert rpc_classify.requested_block_span(method, params) is None
+
+
+def test_requested_block_span_is_inclusive():
+    assert rpc_classify.requested_block_span(
+        "eth_getLogs", [{"fromBlock": "0x10", "toBlock": "0x10"}]
+    ) == 1
+    assert rpc_classify.requested_block_span(
+        "eth_getLogs", ({"fromBlock": "0x0", "toBlock": hex(299)},)
+    ) == 300
+    # Bare ints are a block number, not hex digits (review M1).
+    assert rpc_classify.requested_block_span(
+        "eth_getLogs", [{"fromBlock": 1000, "toBlock": 1299}]
+    ) == 300

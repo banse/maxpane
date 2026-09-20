@@ -350,16 +350,26 @@ async def test_the_leader_row_is_bold_with_a_green_rate_and_the_second_is_not():
 
 @pytest.mark.asyncio
 async def test_an_empty_board_paints_the_no_data_row_once():
-    """Mutation: ``EMPTY_ROW`` -> this reddens. ``None`` and ``[]`` are the
-    same fact here: the client serves ``[]`` for a failed bakeries fetch
-    (``data/client.py``), so the widget cannot tell them apart.
+    """Mutation: ``EMPTY_ROW`` -> this reddens. ``[]`` is a real answer --
+    the board was read and nobody is on it.
     """
-    for payload in ([], None):
-        rows = await _composited(
-            Leaderboard, bakeries=payload, production_rates={}, prize_pool_usd=0.0
-        )
-        assert rows[3].split() == ["--", "No", "data", "--", "--", "--"], rows[3]
-        assert not rows[4].strip(), rows[4]
+    rows = await _composited(
+        Leaderboard, bakeries=[], production_rates={}, prize_pool_usd=0.0
+    )
+    assert rows[3].split() == ["--", "No", "data", "--", "--", "--"], rows[3]
+    assert not rows[4].strip(), rows[4]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_bakeries_read_paints_unavailable_not_no_data():
+    """``None`` is "could not look" (follow-up #35): one yellow row, no
+    ``No data`` above or below it. Mutation: ``UNAVAILABLE_ROW`` -> reddens."""
+    rows = await _composited(
+        Leaderboard, bakeries=None, production_rates={}, prize_pool_usd=0.0
+    )
+    assert rows[3].split() == ["--", "unavailable", "--", "--", "--"], rows[3]
+    assert not rows[4].strip(), rows[4]
+    assert not any("No data" in row for row in rows), rows
 
 
 @pytest.mark.asyncio

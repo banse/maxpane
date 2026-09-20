@@ -228,3 +228,61 @@ def test_golden_fpw_pets_fmt_eth():
 def test_golden_fpw_hero_fmt_eth():
     from maxpane_dashboard.widgets.frenpet.wallet import fpw_hero as mod
     assert _golden_run(mod._fmt_eth, _FMT_PROBES) == _HERO_FMT_ETH_GOLDEN
+
+
+# ---------------------------------------------------------------------------
+# An unmeasured battle rate says so (#43): never ``~0/hr low``, never ``--``
+# ---------------------------------------------------------------------------
+
+from maxpane_dashboard.widgets.frenpet.battle_feed import BattleFeed  # noqa: E402
+from maxpane_dashboard.widgets.frenpet.overview.fp_game_signals import FPGameSignals  # noqa: E402
+
+def _plain(widget, selector: str) -> str:
+    """The footer/line as a reader sees it: markup resolved, tags gone."""
+    from rich.text import Text
+
+    content = widget.query_one(selector, Static).content
+    return content.plain if hasattr(content, "plain") else Text.from_markup(str(content)).plain
+
+
+_ATTACKS = [
+    {"timestamp": 1_800_000_000, "attacker_id": 1, "defender_id": 2, "won": True, "reward": 10},
+]
+
+
+@pytest.mark.asyncio
+async def test_battle_feed_footer_says_unavailable_for_an_unmeasured_rate() -> None:
+    widget = BattleFeed()
+    app = _Harness(widget)
+    async with app.run_test():
+        # The empty batch a failed attacks read produces: the footer is
+        # repainted even though there is nothing to append.
+        widget.update_data([], None)
+        footer = _plain(widget, "#battle-footer")
+        assert "Battles/hr: unavailable" in footer
+        assert "--  Avg" not in footer
+
+        widget.update_data(_ATTACKS, 12.4)
+        footer = _plain(widget, "#battle-footer")
+        assert "Battles/hr: ~12" in footer
+        assert "unavailable" not in footer
+
+        # A later outage is visible at once, not hidden behind the last rate.
+        widget.update_data(_ATTACKS, None)
+        assert "Battles/hr: unavailable" in _plain(widget, "#battle-footer")
+
+
+@pytest.mark.asyncio
+async def test_game_signals_battle_rate_says_unavailable_without_an_indicator() -> None:
+    widget = FPGameSignals()
+    app = _Harness(widget)
+    async with app.run_test():
+        widget.update_data(battle_rate=None, win_rate=50.0)
+        line = _plain(widget, "#fpo-sig-battle-rate")
+        assert "Battle Rate" in line and "unavailable" in line
+        assert "/hr" not in line and "●" not in line
+
+        widget.update_data(battle_rate=42.0, win_rate=50.0)
+        line = _plain(widget, "#fpo-sig-battle-rate")
+        assert "~42/hr" in line and "normal" in line
+        assert "unavailable" not in line

@@ -1563,3 +1563,89 @@ def test_eth_totals_come_from_the_events_own_amount_field():
         f"two outcomes share an amount field, which cannot be right: {fields}"
     )
     assert _OUTCOME_AMOUNT_FIELD["forced"] == "", "forced has no amount"
+
+
+# ===========================================================================
+# Follow-up #65: a range cap the request already meets is not about the request
+# ===========================================================================
+
+POOL4_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "surf" / "pool4"
+
+
+def _drpc_range_probes() -> list[tuple[str, int, dict]]:
+    """Every refused ``eth.drpc.org`` probe from the 2026-09-12 live capture.
+
+    The same ``code 35 "ranges over 10000 blocks"`` body at spans 403200, 10000,
+    2400 and 300: the provider's limit is archive depth, not width.
+    """
+    with (POOL4_FIXTURES / "log_range_messages.json").open(encoding="utf-8") as fh:
+        probes = json.load(fh)["probes"]
+    return [
+        (p["label"], p["requested_span_blocks"], p)
+        for p in probes
+        if p["url"] == DRPC_GATEWAY and p["response"].get("error")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("label", "span", "probe"),
+    [pytest.param(*p, id=p[0]) for p in _drpc_range_probes()],
+)
+def test_a_range_cap_the_request_already_meets_is_not_shrinkable(label, span, probe):
+    err = _classify_rpc_error(probe["response"]["error"], requested_span=span)
+    if span > DRPC_BLOCK_PAGE:
+        assert err.kind == "range_cap", label  # the one probe the message describes
+    else:
+        assert err.kind == "rpc", label
+        assert err.kind not in _SHRINKABLE
+        assert "10000-block limit" in err.message and f"{span}-block" in err.message
+    # Without a span nothing changes: the conservative, pre-#65 answer.
+    assert _classify_rpc_error(probe["response"]["error"]).kind == "range_cap"
+
+
+def test_the_recorded_65923_block_refusal_still_shrinks_at_its_own_span():
+    """``rpc_errors.json``'s drpc cap was earned: 65,923 blocks against 10,000."""
+    entry = load_fixture("rpc_errors")["errors"]["drpc_block_range_cap"]
+    span = entry["_meta"]["requested_range_blocks"]
+    assert span > entry["_meta"]["cap_blocks"]
+    err = _classify_rpc_error(entry["parsed"]["error"], requested_span=span)
+    assert err.kind == "range_cap"
+    assert err.kind in _SHRINKABLE
+
+
+async def test_a_stale_drpc_cap_rotates_without_learning_a_smaller_window():
+    """The live defect: drpc answers code 35 at every span, tenderly serves.
+
+    Before #65 the scan halved drpc's window 300 -> 150 -> ... -> 1, ratcheted
+    ``_window_ceiling`` down with it and only then failed over. Now drpc is
+    asked exactly once for the page, nothing is learned about it, and the
+    result comes from tenderly.
+    """
+    probe = next(p for _, s, p in _drpc_range_probes() if s == 300)
+    from_block, to_block = 1_000, 1_299
+    logs = raw_logs("logs_config_set")
+
+    def drpc(payload: dict) -> httpx.Response:
+        return httpx.Response(probe["http_status"], json=probe["response"])
+
+    def tenderly(payload: dict) -> httpx.Response:
+        lo, hi = span(payload)
+        return ok([log for log in logs if lo <= int(log["blockNumber"], 16) <= hi])
+
+    client, transport = scripted_client(
+        {DRPC_GATEWAY: drpc, TENDERLY_GATEWAY: tenderly},
+        endpoints=(DRPC_GATEWAY, TENDERLY_GATEWAY),
+    )
+    window_before = dict(client._window)
+
+    result = await client.backfill(from_block, to_block, ["ConfigSet"])
+
+    assert result["available"] is True
+    drpc_calls = [p for p in transport.calls_to(DRPC_GATEWAY) if p["method"] == "eth_getLogs"]
+    assert [span(p) for p in drpc_calls] == [(from_block, to_block)]
+    assert client._window == window_before
+    assert DRPC_GATEWAY not in client._window_ceiling
+    assert [span(p) for p in transport.calls_to(TENDERLY_GATEWAY) if p["method"] == "eth_getLogs"] == [
+        (from_block, to_block)
+    ]
+    await client.close()

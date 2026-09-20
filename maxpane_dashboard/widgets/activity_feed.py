@@ -14,10 +14,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from rich.text import Text
+from textual.widgets import RichLog
 
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import hhmm
-from maxpane_dashboard.widgets.panels import RichLogFeed
+from maxpane_dashboard.widgets.panels import UNAVAILABLE_LINE, RichLogFeed
 
 if TYPE_CHECKING:
     from maxpane_dashboard.data.models import ActivityEvent
@@ -152,9 +153,23 @@ class ActivityFeed(RichLogFeed):
         """Rewrite the log with newest events on top.
 
         The contract is :meth:`RichLogFeed.render_events`' stream mode:
-        ``None``/empty shows "No activity yet" only while nothing has ever
-        been shown, an event that cannot be formatted shows "unreadable
-        event" on its own line and the surrounding events still render, and
+        empty shows "No activity yet" only while nothing has ever been
+        shown, an event that cannot be formatted shows "unreadable event"
+        on its own line and the surrounding events still render, and
         nothing here may raise (MEDI-37).
+
+        ``None`` is a different fact -- the client could not read the feed
+        (follow-up #35) -- and while nothing has been shown it says
+        ``unavailable`` instead. Once rows are up they stay up: a stream
+        keeps last-good behind the screen's ``as of`` marker.
         """
+        if events is None:
+            if not self._drawn:
+                try:
+                    log = self.query_one(f"#{self.LOG_ID}", RichLog)
+                except Exception:
+                    return
+                log.clear()
+                log.write(UNAVAILABLE_LINE)
+            return
         self.render_events(events)

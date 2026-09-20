@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from maxpane_dashboard.analytics.leaderboard import format_cookies, format_gap
 from maxpane_dashboard.analytics.production import format_rate
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.panels import TableLeaderboard
+from maxpane_dashboard.widgets.panels import UNAVAILABLE, TableLeaderboard
 
 if TYPE_CHECKING:
     from maxpane_dashboard.data.models import BakerySummary
@@ -35,6 +35,10 @@ class Leaderboard(TableLeaderboard):
         ("Gap", 8),
     )
     EMPTY_ROW = ("--", "No data", "--", "--", "--")
+    #: The row for "the bakeries fetch failed", distinct from an empty board
+    #: (follow-up #35). Painted through :meth:`render_table`'s *footer* -- the
+    #: one row the base lands with no ``No data`` above it.
+    UNAVAILABLE_ROW = ("--", UNAVAILABLE, "--", "--", "--")
 
     # Geometry only: the title's colour and blank row are ``PanelBase``'s.
     DEFAULT_CSS = """
@@ -50,15 +54,23 @@ class Leaderboard(TableLeaderboard):
 
     def update_data(
         self,
-        bakeries: list[BakerySummary],
+        bakeries: list[BakerySummary] | None,
         production_rates: dict[str, float],
         prize_pool_usd: float,
     ) -> None:
-        """Clear and repopulate the leaderboard table with live data."""
+        """Clear and repopulate the leaderboard table with live data.
+
+        *bakeries* is ``None`` when the client could not read the board;
+        that paints :attr:`UNAVAILABLE_ROW`, not the ``No data`` an empty
+        board earns (follow-up #35).
+        """
         self._production_rates = (
             production_rates if isinstance(production_rates, dict) else {}
         )
         self._leader_cookies = None
+        if bakeries is None:
+            self.render_table([], footer=self.UNAVAILABLE_ROW)
+            return
         if bakeries:
             try:
                 self._leader_cookies = int(bakeries[0].tx_count) / _COOKIE_SCALE

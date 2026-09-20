@@ -401,6 +401,13 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `tests/data/test_client.py` against a transport that raises for the one sub-fetch. Pre-existing,
     not introduced by the migration. **Important, Tier 1** (bakery's own data module) (Branch 8
     WP-B, filed 2026-09-20).
+    **Done 2026-09-20, `followups/important-2026-09`:** `GameSnapshot.bakeries/activity: list | None`, the
+    client carries `None`, the manager derives off `[]` but passes `None` under `bakeries`/`events`, the
+    cache iterates `bakeries or ()`; `Leaderboard` paints `UNAVAILABLE_ROW` through the base's footer slot
+    (the one row it lands without `No data`) and `ActivityFeed` writes `UNAVAILABLE_LINE` while nothing is
+    drawn, keeping rows otherwise. Pinned in `test_client.py` (404 routes, backoff zeroed), the manager
+    contract, both widget files. The shared `TableLeaderboard`/`RichLogFeed` bases are untouched (#34's scope).
+    Review I3: the DERIVED keys still compute off `[]` during an outage — filed as #75.
 
 36. **`CookieChart._label_cell` overrides a private base hook.**
     `maxpane_dashboard/widgets/cookie_chart.py:31-39` wraps `super()._label_cell(label)` in
@@ -481,6 +488,10 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `frenpet_manager.py:156-162` sets `0.0` in its `except`. Branch 9 stops the zero reaching the cache (R1)
     but leaves the widget dict alone; the display path needs the MEDI-38 shape — `None` → `unavailable` behind
     the `as of` marker. **Important, Tier 1** (one dashboard's manager + two screens).
+    **Done 2026-09-20, `followups/important-2026-09` (with #54):** the manager passes its `None` through as
+    `global_battle_rate`, the three `data.get(..., 0.0)` sites default to `None`, `BattleFeed` repaints its
+    footer on every call (`Battles/hr: unavailable`) and `FPGameSignals` drops the indicator; the
+    recommendation treats `None` as not-an-active-meta. Widget + screen tests resolve markup to plain text.
 
 44. **`data/manager_base.py` is in HANDOVER §3 item 6 but in no branch of the programme.** The
     `_error_count` / `last_success` / `as_of_hhmm` / last-good fold shared by the managers was named in the
@@ -500,6 +511,8 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `data.get("totalTickets")` (plus a numeric check, since the value is third-party), and let the
     existing `None` path carry it. One test: a payload of `{}` records no point. **Important,
     Tier 0** — one file, one return statement, one regression test.
+    **Done 2026-09-20, `followups/important-2026-09`:** `int | None`, numeric-and-not-bool guard,
+    `TestRaffleTotalTickets` (five no-count payloads → `None`; `0` / `12.0` → int; 503 still raises).
 
 46. **`save_to_file` stamps `saved_at` from the wall clock.** `series_cache.py:209` reads
     `time.time()` inside `_payload()`; the six managers call `save_to_file(path)` with no clock, so
@@ -604,6 +617,11 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     the copy read 1 and wiped it; hand-edit only, the safer answer, but add `"2"` and `2.0` to
     `test_before_load_sees_the_version`'s parametrisation when `test_series_cache.py` is next touched.
     **Important, Tier 1** (one dashboard's manager + its tests).
+    **Done 2026-09-20, same branch (with #43):** `_compute_battle_rate -> float | None`; the function
+    cannot produce a genuine zero (≥ 2 attacks always divide to a positive rate), so the re-anchor is
+    "computed vs not computable": `test_a_window_that_cannot_carry_a_rate_records_no_point` (empty /
+    one-attack), the three manager-level `yields_zero` tests now `is None`, plus the span-floor boundary.
+    The `OCMCache` version parametrisation half stays open for when `test_series_cache.py` is next touched.
 
 
 ## Branch 9 — whole-branch review (2026-09-20, Approved 0C/0I/9M)
@@ -707,6 +725,17 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     span into `_classify_rpc_error` (or check it in the pager) and demote `range_cap` to a rotate when the named
     limit ≥ the span. Fixture-first from `log_range_messages.json`; both pagers consume `suggested_to`, so each
     is its own change. **Important, Tier 1 per client.**
+    **talismans done 2026-09-20, `followups/important-2026-09`:** `_rpc` reads the span off the request
+    (`rpc_classify.requested_block_span`, new, unit-tested on all ten probes) and
+    `_classify_rpc_error(..., requested_span=)` answers `rpc` when the named limit ≥ span; the four drpc
+    probes drive the classifier, `_rpc` rotation and a pager test that pins `_log_window` untouched.
+    **fwa_logs done 2026-09-20, same branch:** `_post` reads the span off its payload and both `range_cap`
+    branches go through `_range_cap_unless_met`; the four probes drive the classifier, the recorded 65,923-block
+    refusal still shrinks, and a backfill test pins drpc asked once with `_window`/`_window_ceiling` unlearned.
+    Review I1 (fix round): the rule is ONE statement, `rpc_classify.met_block_limit` (+ `stale_range_cap_detail`),
+    consulted by `is_range_limitation` and both kind-classifiers; agreement test
+    `test_the_kind_classifiers_bind_the_met_limit_rule_not_a_copy`. The local marker tables stay (P4, #76).
+    **#65 closed.**
 
 ## Branch 10 WP-A — review Minors (2026-09-20)
 
@@ -795,3 +824,39 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `client.py:72` already has the `price_client or PriceClient()` shape to copy (use `is None`). Add a keyword-only
     `price_client=None` to both, assert identity in the seam tests, drop the two monkeypatches. **Minor, Tier 1 per
     manager** (manager + seam test + the manager's own test file).
+
+## Important follow-ups branch — review residuals (2026-09-20, `followups/important-2026-09`)
+
+75. **Bakery's derived signal keys present an outage as live numbers.** `data/manager.py:109-118`: with
+    `snapshot.bakeries is None` the derivations run off `[]`, so `leader_cookies` / `leader_rate` are `0.0`,
+    `member_count` 1 and `top3_probability` `min(3, 1) / 1 = 1.0`, which feeds `late_join_ev` — during a
+    bakeries outage `SignalsPanel` advertised a $1,661.67 positive EV off a 100 % top-three probability it
+    invented, and `HeroMetrics` showed a `0.0` leader, beside a leaderboard saying `unavailable` (review I3;
+    the numbers pre-date #35, which made the contradiction visible). Fix: `None` for the leader / EV / gap
+    keys when the board is `None`, and the two panels' `None` branches say `unavailable`. **Important, Tier 1**
+    (bakery's manager + `SignalsPanel` / `HeroMetrics` + the manager contract test).
+
+76. **talismans' and fwa_logs' marker tables are still local (P4).** `_RESULT_CAP_MARKERS` /
+    `_RANGE_CAP_MARKERS` in `talismans_client.py` and fwa's inline `"ranges over"` / `"block range" and "not
+    supported"` phrasing are exempted in `tests/data/test_rpc_shared.py::_P4_LOCAL_TABLES`; #65 hoisted the
+    span *rule* (`met_block_limit`) but not the tables. Hoisting them is a Tier 1 per client with a fixture
+    run (`_LIVE_ERRORS`, `rpc_errors.json`); the exemption's comment now points here. **Minor, Tier 1 per client.**
+
+77. **`named_block_limit` returns the largest number a message names, which can be the span echoed back.**
+    `rpc_classify.py:240-257`: `"range 50400 blocks exceeds limit of 10000"` yields 50400, so
+    `met_block_limit` reports the cap as met and refuses the one shrink that fixes it. Pre-existing exposure
+    of `is_range_limitation`, now shared by four clients; a sweep of every fixture error at spans 1 / 300 /
+    2400 / 10000 / 403200 found no live message that triggers it (review M2). Fix: prefer the `limit of`
+    number when both patterns match, or the *smallest* block count; pin with a synthetic message. **Minor,
+    Tier 0** (rpc_classify + its test).
+
+78. **`Leaderboard.UNAVAILABLE_ROW` has no cell-count agreement check.** `widgets/leaderboard.py:38-41`:
+    `panels.py:890-892` validates `len(EMPTY_ROW) == len(COLUMNS)` at compose time; the sibling constant is
+    exempt, so a column added later leaves it one cell short and `render_table`'s per-row guard turns that into
+    a log line and a blank table (review M3). Fix: one assertion in `tests/widgets/test_bakery_widgets.py`, or
+    build the row from `COLUMNS` at class-definition time. **Minor, Tier 0.**
+
+79. **`get_raffle_total_tickets` truncates a fractional count.** `cattown_client.py:260`: `int(12.9)` is 12; the
+    test exercises `12.0` only (review M5). Harmless against the live API; a docstring word and a `12.9`
+    parametrisation when the file is next touched. **Minor, Tier 0.**
+
