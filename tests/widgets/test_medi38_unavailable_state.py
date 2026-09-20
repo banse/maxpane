@@ -1,5 +1,5 @@
-"""MEDI-38: the three old hero rows and four old signals panels degrade to
-an explicit ``unavailable`` state instead of "Loading..." forever.
+"""MEDI-38: the hero rows and signals panels degrade to an explicit
+``unavailable`` state instead of "Loading..." forever.
 
 Composited (``render_strips``), never the content string.  The harness has
 no ``try/except`` around ``update_data`` -- unlike the screens, which
@@ -12,8 +12,21 @@ Three claims per widget:
 1. a failed read (``None`` everywhere) renders ``unavailable``, not
    "Loading..." and not a crash;
 2. a real ``0`` is a number, not "loading" and not ``unavailable``;
-3. a malformed payload after a good one lands on ``unavailable`` -- the
-   good poll's number is gone, not presented as live.
+3. a malformed payload -- or, for the roster, a **failed read** -- after a
+   good one lands on ``unavailable``: the good poll's number is gone, not
+   presented as live.
+
+**The two hero rows Branch 7 WP-B migrated are in a second table, not the
+first**, and claim 1 is the reason. ``TalismansHeroMetrics`` and
+``TTTHeroMetrics`` are handed scalars, not signal dicts, and a ``None``
+scalar from their managers is a *deliberate* "nothing to report" --
+``total_cores`` while the enumeration syncs -- which renders ``--``. It is
+not a failed read, and making it say ``unavailable`` would be a **false
+degradation**, the mirror of the defect this file exists for. So for those
+two, claim 1 becomes: an all-``None`` poll renders ``--``, never
+``Loading``, and never the word reserved for a read that failed. Claims 2
+and 3 are unchanged, and claim 3 is the one that matters here -- it is the
+guard those four bare ``query_one(...).update(...)`` calls never had.
 """
 
 from __future__ import annotations
@@ -27,11 +40,17 @@ from maxpane_dashboard.app import MaxPaneApp
 
 from maxpane_dashboard.widgets.cattown.ct_hero_metrics import CTHeroMetrics
 from maxpane_dashboard.widgets.cattown.ct_signals import CTSignals
+from maxpane_dashboard.widgets.dota.dota_activity_feed import DOTAActivityFeed
 from maxpane_dashboard.widgets.dota.dota_hero_metrics import DOTAHeroMetrics
 from maxpane_dashboard.widgets.dota.dota_signals import DOTASignals
 from maxpane_dashboard.widgets.ocm.ocm_hero_metrics import OCMHeroMetrics
 from maxpane_dashboard.widgets.ocm.ocm_signals import OCMSignals
+from maxpane_dashboard.widgets.talismans.tal_hero_metrics import (
+    TalismansHeroMetrics,
+)
 from maxpane_dashboard.widgets.talismans.tal_signals import TalismansSignals
+from maxpane_dashboard.widgets.ttt.ttt_hero_metrics import TTTHeroMetrics
+from maxpane_dashboard.widgets.ttt.ttt_signals import TTTSignals
 
 
 class _Harness(App):
@@ -51,7 +70,8 @@ class _Harness(App):
     #: file asserts what the *widget* puts on screen, so give the box the
     #: row it needs.
     CSS = """
-    OCMHeroBox, CTHeroBox, DOTAHeroBox { height: 9; }
+    OCMHeroBox, CTHeroBox, DOTAHeroBox,
+    TalismansHeroBox, TTTHeroBox { height: 9; }
     """
 
     def __init__(self, widget) -> None:
@@ -78,6 +98,30 @@ def _none_payload(widget) -> dict:
 
 
 _SIG = {"label": "X", "value_str": "fine", "indicator": "●", "color": "green"}
+
+
+class _Hostile:
+    """A scalar whose every formatting path raises.
+
+    The hero rows' formatters (``fmt.fmt_int`` / ``fmt.fmt_float``) swallow
+    ``TypeError`` and ``ValueError`` on purpose, so a mere wrong *type* --
+    the string ``"four"`` -- renders ``--`` and never reaches the guard.
+    This raises something they do not catch, which is what a malformed
+    payload has to do to test that the guard is there at all.
+    """
+
+    def __int__(self):
+        raise RuntimeError("boom")
+
+    def __float__(self):
+        raise RuntimeError("boom")
+
+    def __str__(self):
+        raise RuntimeError("boom")
+
+    def __format__(self, spec):
+        raise RuntimeError("boom")
+
 
 #: (widget class, a good payload, the value the good payload puts on screen,
 #:  a malformed payload that must raise inside the formatter)
@@ -131,6 +175,23 @@ _WIDGETS = [
         dict(faction_balance_signal={"label": object()}),
         id="DOTASignals",
     ),
+    # Branch 7 WP-A, fix round 1 (review C1). Not a hero row or a signals
+    # panel: the hero ROSTER, which is the third shape where a read that
+    # never happened used to be shown as live. Every row carries an HP and
+    # an ALIVE/DEAD flag that is true only of the poll it came from, so the
+    # "bad" payload here is the **failed read** itself (``heroes=None``) --
+    # the panel is a snapshot and must clear and say ``unavailable``, not
+    # keep the previous roster. The manager was serving ``[]`` for a failed
+    # read, which made that distinction unreachable; both halves are fixed.
+    pytest.param(
+        DOTAActivityFeed,
+        dict(heroes=[{"name": "Axe", "faction": "orc", "hero_class": "tank",
+                      "lane": "top", "hp": 500, "max_hp": 600,
+                      "alive": True, "level": 4}]),
+        "Axe",
+        dict(heroes=None),
+        id="DOTAActivityFeed",
+    ),
     pytest.param(
         TalismansSignals,
         dict(conservation_signal=_SIG, cutmerge_signal=_SIG,
@@ -138,6 +199,48 @@ _WIDGETS = [
         "fine",
         dict(conservation_signal={"value_str": object(), "color": 5}),
         id="TalismansSignals",
+    ),
+    # Branch 7 WP-B. Four bare `query_one(...).update(...)` calls before the
+    # migration, so a malformed signal dict raised into the screen's
+    # `except` and left the previous poll's rows up as if they were live --
+    # and a signal the manager could not compute rendered `--`, the word
+    # the analytics uses for "nothing to report". Both are fixed by being
+    # on `SignalsPanelBase`.
+    pytest.param(
+        TTTSignals,
+        dict(fresh_launch_signal=_SIG, buybacks_ready_signal=_SIG,
+             decay_window_signal=_SIG, concentration_signal=_SIG),
+        "fine",
+        dict(buybacks_ready_signal={"value_str": object(), "color": 5}),
+        id="TTTSignals",
+    ),
+]
+
+#: The hero rows WP-B migrated. Same three claims, except claim 1 -- see the
+#: module docstring: a ``None`` scalar here is the manager's deliberate
+#: "nothing to report" and must stay ``--``.
+#: (widget class, a good payload, what it puts on screen, a payload whose
+#:  formatting raises)
+_HERO_ROWS = [
+    pytest.param(
+        TalismansHeroMetrics,
+        dict(live_tokens=1_490, token_drift=-46, mythic_count=12,
+             mythic_pct=0.8, mythics_ever_forged=14, total_cores=1_536,
+             cores_invariant_intact=True, operations_24h=7,
+             operations_total=903),
+        "1,490",
+        dict(live_tokens=_Hostile()),
+        id="TalismansHeroMetrics",
+    ),
+    pytest.param(
+        TTTHeroMetrics,
+        dict(unburned=4_321, burned_pct=56.79, launches=5_679,
+             launches_24h=3, holder_pool_eth_total=12.345,
+             holder_pool_eth_24h=0.1234, total_mcap_usd=2_500_000.0,
+             total_mcap_eth=900.0, total_mcap_token_count=42),
+        "4,321",
+        dict(unburned=_Hostile()),
+        id="TTTHeroMetrics",
     ),
 ]
 
@@ -203,3 +306,55 @@ async def test_a_real_zero_is_a_number_not_loading(cls, payload, shown):
         text = _screen_text(pilot.app)
     assert shown in text, text
     assert "Loading" not in text, text
+
+
+# -- the hero rows: claims 2 and 3 verbatim, claim 1 inverted --------------
+
+
+@pytest.mark.parametrize("cls,good,shown,bad", _HERO_ROWS)
+async def test_a_deliberate_none_renders_a_dash_not_unavailable(
+    cls, good, shown, bad
+):
+    """A scalar the manager served as ``None`` is "nothing to report".
+
+    Calling that ``unavailable`` would be a false degradation -- the
+    dashboard claiming it could not look when it looked and there was
+    nothing. ``--`` is the word for that, and it is still not ``Loading``:
+    the panel *did* poll.
+    """
+    widget = cls()
+    async with _Harness(widget).run_test(size=(120, 20)) as pilot:
+        widget.update_data(**_none_payload(widget))
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+    assert "--" in text, text
+    assert "Loading" not in text, text
+    assert "unavailable" not in text, text
+
+
+@pytest.mark.parametrize("cls,good,shown,bad", _HERO_ROWS)
+async def test_a_good_hero_poll_shows_its_value(cls, good, shown, bad):
+    widget = cls()
+    async with _Harness(widget).run_test(size=(120, 20)) as pilot:
+        widget.update_data(**good)
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+    assert shown in text, text
+    assert "unavailable" not in text, text
+
+
+@pytest.mark.parametrize("cls,good,shown,bad", _HERO_ROWS)
+async def test_a_malformed_hero_poll_after_a_good_one_is_not_shown_as_live(
+    cls, good, shown, bad
+):
+    """The guard those four bare ``query_one().update()`` calls never had."""
+    widget = cls()
+    async with _Harness(widget).run_test(size=(120, 20)) as pilot:
+        widget.update_data(**good)
+        await pilot.pause()
+        assert shown in _screen_text(pilot.app)
+        widget.update_data(**bad)  # must not raise: the guard is the widget's
+        await pilot.pause()
+        text = _screen_text(pilot.app)
+    assert "unavailable" in text, text
+    assert shown not in text, text

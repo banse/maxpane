@@ -236,7 +236,15 @@ class DOTAManager:
         )[:10]
 
         # -- Heroes as list of dicts for activity feed roster ----------------
-        heroes: list[dict[str, Any]] = [
+        # ``None`` when the game-state read FAILED, ``[]`` when it succeeded
+        # and the game has no heroes. The roster panel is a snapshot: it
+        # re-paints the whole roster every poll, so it needs the two apart --
+        # ``[]`` is "no heroes", ``None`` is "could not look" (review C1,
+        # 2026-09-20). Serving ``[]`` for a failed read left the previous
+        # poll's HP and ALIVE rows on screen as if they were live, which is
+        # the convention this repo breaks hardest on. Everything else below
+        # is still derived from ``heroes_raw`` and is unchanged.
+        heroes: list[dict[str, Any]] | None = None if game_state is None else [
             {
                 "name": h.name,
                 "faction": h.faction,

@@ -49,12 +49,15 @@ __all__ = [
     "EMDASH",
     "as_float",
     "fmt_age",
+    "fmt_float",
+    "fmt_int",
     "fmt_countdown",
     "fmt_eth",
     "fmt_pct",
     "fmt_points",
     "hhmm",
     "mmdd",
+    "safe_get",
 ]
 
 #: Unknown scalar.  Two columns, so a dashed cell never re-flows a table.
@@ -141,6 +144,63 @@ def fmt_countdown(seconds) -> str:
     if hours:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     return f"{minutes:02d}:{secs:02d}"
+
+
+def fmt_int(value) -> str:
+    """``1,490`` -- a grouped integer; :data:`DASH` for anything unreadable.
+
+    Six copies of this body lived in ``widgets/talismans/`` and
+    ``widgets/ttt/`` (Branch 7 WP-B): four module-level functions with the
+    ``None`` early return written out, and two ``@staticmethod`` copies
+    without it -- which made no difference, because ``int(None)`` raises
+    ``TypeError`` and lands on the same marker.  Both spellings are
+    reproduced exactly here, probe by probe.
+
+    **Not** :func:`as_float` underneath: ``as_float`` rejects ``bool``, and
+    every copy this replaces renders ``True`` as ``1``.  Changing that
+    would be a pixel change wearing a refactor's clothes, so the literal
+    ``int()`` is kept.
+
+    ``OverflowError`` **is** caught, which the six copies did not do:
+    ``int(float("inf"))`` raised out of them, and a sparkline value comes
+    from ``coerce_points``, which happily returns ``float("inf")`` out of a
+    hand-edited cache file.  This module's contract is that nothing here
+    raises (see the module docstring), the same arm ``hhmm`` grew when it
+    was hoisted, and no finite input renders differently for it.
+    """
+    if value is None:
+        return DASH
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError, OverflowError):
+        return DASH
+
+
+def fmt_float(value, spec: str) -> str:
+    """``format(float(value), spec)``; :data:`DASH` when it cannot.
+
+    The two talismans/ttt hero-box copies, which pass ``".1f"``, ``".3f"``
+    and ``".4f"``.  Like :func:`fmt_int` it uses ``float()`` and not
+    :func:`as_float`: the copies render ``True`` as ``1.0``, and a hero box
+    that started printing ``--`` for it would be a rendering change.
+    """
+    try:
+        return format(float(value), spec)
+    except (TypeError, ValueError):
+        return DASH
+
+
+def safe_get(mapping, key, default=None):
+    """``mapping.get(key, default)`` when *mapping* is a ``dict``.
+
+    Anything else returns *default*: the two activity feeds this was hoisted
+    out of are handed whatever a cache file or an HTTP payload contained,
+    and a row built from a string or a list must degrade to a dashed cell
+    rather than raise inside Textual's message pump.
+    """
+    if not isinstance(mapping, dict):
+        return default
+    return mapping.get(key, default)
 
 
 def fmt_points(value) -> str:

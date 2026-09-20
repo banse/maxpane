@@ -1,22 +1,20 @@
-"""Competition leaderboard table for Cat Town dashboard."""
+"""Competition leaderboard table for Cat Town dashboard.
+
+The title, its blank row, the table's cursor/zebra/columns and the
+clear-then-repopulate contract are
+:class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`'s -- this panel
+is that base's **first subscriber** (Branch 7, WP-A), which is why the base
+was deferred out of Branch 6. What stays here is what only Cat Town knows:
+the address cell, the rarity colour and the rank-1 bolding.
+"""
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.cattown._chain import EXPLORER
+from maxpane_dashboard.widgets.cattown._fmt import _RARITY_COLORS
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-
-
-_RARITY_COLORS = {
-    "Common": "dim",
-    "Uncommon": "white",
-    "Rare": "cyan",
-    "Epic": "magenta",
-    "Legendary": "yellow",
-}
+from maxpane_dashboard.widgets.panels import TableLeaderboard
 
 #: display budget for the fisher name/address, excluding the icon -- the same
 #: 12-cell window the deleted ``_short_addr`` produced. The table's "Fisher"
@@ -25,70 +23,65 @@ _RARITY_COLORS = {
 _FISHER_COLS = 12
 
 
-class CTLeaderboard(Vertical):
+class CTLeaderboard(TableLeaderboard):
     """Competition leaderboard with DataTable of top fishers."""
 
+    TITLE = "COMPETITION LEADERBOARD"
+
+    TABLE_ID = "ct-leaderboard-table"
+
+    COLUMNS = (
+        ("#", 4),
+        ("Fisher", 14),
+        ("Best Fish", 18),
+        ("Weight (kg)", 12),
+        ("Rarity", 12),
+    )
+
+    EMPTY_ROW = ("--", "No data", "--", "--", "--")
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s, and
+    #: ``minimal.tcss`` states this table's colours and scrollbar.
     DEFAULT_CSS = """
-    CTLeaderboard > Static {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     CTLeaderboard > DataTable {
         height: 1fr;
     }
     """
-
-    def compose(self) -> ComposeResult:
-        yield Static("COMPETITION LEADERBOARD")
-        table = DataTable(id="ct-leaderboard-table")
-        yield table
-
-    def on_mount(self) -> None:
-        table = self.query_one("#ct-leaderboard-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        table.add_column("#", width=4)
-        table.add_column("Fisher", width=14)
-        table.add_column("Best Fish", width=18)
-        table.add_column("Weight (kg)", width=12)
-        table.add_column("Rarity", width=12)
 
     def update_data(
         self,
         competition_entries: list[dict] | None = None,
     ) -> None:
         """Clear and repopulate the leaderboard table with live data."""
-        table = self.query_one("#ct-leaderboard-table", DataTable)
-        table.clear()
+        self.render_table(competition_entries)
 
-        if not competition_entries:
-            table.add_row("--", "No data", "--", "--", "--")
-            return
+    def build_row(self, index: int, entry: dict) -> tuple:
+        """One fisher's row. Rank 1 is bold; the fisher cell carries the icon."""
+        rank = str(entry.get("rank", "?"))
+        display_name = entry.get("display_name", "")
+        is_top = rank == "1"
+        fisher = address_text(
+            entry.get("fisher_address", ""),
+            label=display_name or None,
+            width=_FISHER_COLS,
+            style="bold green" if is_top else "",
+            explorer=EXPLORER,
+        )
+        species = safe_markup(entry.get("fish_species", ""))
+        weight = entry.get("fish_weight_kg", 0.0)
+        rarity = entry.get("rarity", "Common")
 
-        for entry in competition_entries[:10]:
-            rank = str(entry.get("rank", "?"))
-            display_name = entry.get("display_name", "")
-            is_top = rank == "1"
-            fisher = address_text(
-                entry.get("fisher_address", ""),
-                label=display_name or None,
-                width=_FISHER_COLS,
-                style="bold green" if is_top else "",
-                explorer=EXPLORER,
-            )
-            species = safe_markup(entry.get("fish_species", ""))
-            weight = entry.get("fish_weight_kg", 0.0)
-            rarity = entry.get("rarity", "Common")
+        weight_str = f"{weight:.1f}"
+        # The colour is looked up on the RAW value (the map's keys are the
+        # API's words); only the displayed text is escaped. Both halves are
+        # third-party -- the API names the rarity -- so it is escaped exactly
+        # as ``fish_species`` beside it (review M5).
+        color = _RARITY_COLORS.get(rarity, "dim")
+        rarity_str = f"[{color}]{safe_markup(rarity)}[/]"
 
-            weight_str = f"{weight:.1f}"
-            color = _RARITY_COLORS.get(rarity, "dim")
-            rarity_str = f"[{color}]{rarity}[/]"
+        # Highlight rank 1
+        if is_top:
+            species = f"[bold]{species}[/]"
+            weight_str = f"[bold]{weight_str}[/]"
 
-            # Highlight rank 1
-            if is_top:
-                species = f"[bold]{species}[/]"
-                weight_str = f"[bold]{weight_str}[/]"
-
-            table.add_row(rank, fisher, species, weight_str, rarity_str)
+        return (rank, fisher, species, weight_str, rarity_str)

@@ -1199,6 +1199,763 @@ state.py` 26, `test_title_blank_row.py` 37, `test_hidden_shared_address_icons.py
 `tests/test_address_sweep_registry.py` 9, `-m guard tests` **190** (was 189 — the one new guard
 case is the bare-block matcher's example set).
 
+## Branch 7 — `refactor/panels-small-four` (two work packages)
+
+HANDOVER §3.4, second slice (§3.4b): cattown, dota, talismans and ttt onto the `widgets/panels.py`
+bases Branch 6 built, plus the one base Branch 6 deferred, `TableLeaderboard`, with cattown as its
+first user. Cut from main `ad5af4d`. Facts read off the tree on 2026-09-20 (survey in the
+session, every module read whole):
+
+- 26 widget modules, 3,631 lines with the four `__init__` and three `_chain` files: cattown 6
+  (712), dota 6 (609), talismans 7 (897), ttt 7 (1,289). The four hero rows, the four signals
+  panels, the four sparkline panels and the four feeds are the Branch 6 shapes; **eight** widgets
+  are a title over a `DataTable` (`CTLeaderboard`, `DOTALeaderboard`, `TalismansLeaderboard`,
+  `TalismansMaterialsTable`, `TalismansMatrixTable`, `TTTLeaderboard`, `TTTFeesTable`,
+  `TTTClaimsTable`) and all eight agree on `cursor_type="row"`, `zebra_stripes=True`, `clear()` then
+  a "No data" row or a capped slice (10 / 20 / 10 / 12 / none / 10 / 10 / 6), rank-1 bolding, and
+  — six of eight — a `Loading...` seed row added in `on_mount` whose cell position varies. That is
+  the `TableLeaderboard` contract. `CTBestPlays` and `DOTABestPlays` are a two-column text board
+  with no sibling outside this pair; they go on `PanelBase` with their bodies bespoke.
+- **The four packages carry the copies Branch 6 counted, and diverge from the hoisted forms in
+  named ways.** `_UNAVAILABLE` ×4 (byte-identical to `panels.UNAVAILABLE`); `_DASH` ×8 (=
+  `fmt.DASH`); `_render_box` in cattown and dota (dota's is `HeroRow.render_box` exactly; cattown's
+  has a `rich.text.Text` branch because the LEADER box carries an address icon — the base has no
+  `Text` path today); `_render_row` / `_fmt` in cattown and dota (= `render_signal` /
+  `fmt_signal(15, dim)` / `fmt_signal(18, plain)` exactly); `_format_event_time` / `_format_ts` ×3
+  (talismans ≡ ttt ≡ `fmt.hhmm` minus the `OverflowError` arm; cattown's catches only
+  `(ValueError, OSError)` so `int(None)` raises, and **renders a clock time for `ts == 0`**);
+  `_fmt_int` ×6, `_fmt_float` ×2, `_safe_get` ×2 (talismans ≡ ttt, nothing hoisted covers them);
+  `_safe_symbol` ×2 inside ttt; `_RARITY_COLORS` ×3 inside cattown (dead in the feed);
+  `_WAITING` ×2 (talismans/ttt sparklines). Dead: `ttt_claims_table._fmt_multiplier`,
+  `tal_hero_metrics._GENESIS`, `ct_activity_feed._RARITY_COLORS`, dota hero's `token_price_usd`
+  parameter.
+- **Where the base contract and the widget disagree, and what the plan does about each:**
+  - talismans and ttt **signals drop the label** (`  [c]●[/] [c]{value}[/]`), have a mid-panel
+    blank separator row, no recommendation; ttt hides its `fresh` row at runtime
+    (`display = bool(text)`) and `safe_markup`s the value where talismans does not; both degrade
+    to `--` (talismans through a `_UNAVAILABLE_SIGNAL` dict) and neither guards its four writes.
+  - talismans and ttt **sparklines** pad labels to 16 and 12 (dota to 9, cattown/ocm to 8), draw
+    **no trend arrow**, write `waiting for data...` below two points where `render_series` writes
+    `""`, and format values with `{int(v):,}` (both) and a `$…B` at `.2f` (ttt volume) where the
+    base uses `fmt_compact`. cattown's `_fmt_value` differs from `fmt_compact` only on negatives,
+    NaN and ≥ 1e9; dota's is unrelated (`abs ≥ 100 → .0f else .1f`, no K/M/B), and the sweep's
+    frontline values sit under 100.
+  - talismans and ttt **hero rows** have no guard at all (four bare `query_one().update()` each; a
+    missing box raises into the screen) and degrade on exception to `--`, not `unavailable`; both
+    are absent from `test_medi38_unavailable_state.py`. Box bodies are `big\nsub` under the
+    `label\n\n` head, which `render_box`'s `f"[dim]{label}[/]\n\n{build()}"` already carries.
+  - the dota feed is a **hero roster** (sorted, rewritten whole each poll, placeholder
+    `No heroes yet`); talismans and ttt feeds carry **no `tx_hash`**, cap at 25 and `clear()`
+    unconditionally; cattown's is the pre-`_drawn` contract (placeholder stacked once per empty
+    poll, unhashable key raises after `clear()`). ttt's `_event_to_line` returns `str` *or* `Text`.
+- **Stylesheet.** cattown `:1108-1190` and dota `:1192-1299` blocks are all live; the blank row
+  under CT LEADERBOARD is `CTLeaderboard > Static { margin: 0 0 1 0 }` (`:1132`, its title has no
+  class), under DOTA LEADERBOARD `.dota-lb-title` (`:1241`), under both feeds a `.feed-title` /
+  `.dota-feed-title` margin. ttt `:1596-1689` has **three dead title blocks** (`TTTLeaderboard >
+  .leaderboard-title` `:1619`, `TTTActivityFeed > .feed-title` `:1667`, `TTTFeesTable > .fees-title,
+  TTTClaimsTable > .claims-title` `:1683`) — the widgets compose `ttt-*-title` classes and paint
+  their blank row from a `Static(" ")` spacer; `TTTSignals` alone already states `margin: 0 0 1 0`
+  on its own title. talismans `:1691-1749` names no title class at all; every talismans title is
+  styled by its widget's `DEFAULT_CSS` and every blank row is a `Static(" ")`. No bare block names
+  a `panels.py` class; the `Base` suffix and Branch 6's guard keep it so. **The new base is
+  `TableLeaderboard`, not `Leaderboard`**: bakery's `widgets/leaderboard.py` owns that name and a
+  bare block.
+- **Pins.** None of the four screens declares a pin; all sweep at `__main__.FULL_LAYOUT_COLUMNS`
+  (143). The one in-widget pin is `ttt_fees_table._SYM_WIDTH = 5` (measured table at `:43-81`) with
+  `ttt_leaderboard._SYM_WIDTH` deliberately equal — both stay where they are, untouched.
+  `tests/screens/test_ttt_address_icon_layout.py` certifies that neither ttt table scrolls at 143.
+- **Coverage today.** `test_title_blank_row.py` lists CT/DOTA sparklines, signals, best-plays,
+  `TTTSparkline`, `TTTSignals` ×2 — not the leaderboards, feeds, hero rows, ttt tables or any
+  talismans widget. `test_medi38_unavailable_state.py` lists CT/DOTA hero + signals and
+  `TalismansSignals`. `test_sparkline_common.py` binds all four sparklines to the shared
+  primitives. `test_markup_safety.py` holds the three hostile-string leaderboard tests;
+  `test_cattown_talismans_address_icons.py` and `test_ttt_address_icons.py` the icon tests (the
+  latter pins the two `_fmt_eth` goldens, 4 dp fees / 5 dp claims); `test_talismans_widgets.py`
+  (310 lines) is the one per-widget module; `test_talismans_screen.py`, `test_ttt_address_icon_
+  layout.py`, `test_refresh_guard.py` composite the screens. There is no cattown, dota or ttt
+  widget test module.
+
+### Design
+
+**Zero-rendering-change is the acceptance rule, with the changes named here as the only
+exceptions.** `render_case.py` (session scratchpad; the Branch 6 harness generalised to a case
+name and every view) captured all four dashboards at main `ad5af4d` — 170×50 and the 143 pin,
+default view and the `c` view for ttt and talismans, twelve files `b7_before_*` — under a frozen
+clock and the sweep payload. Every post-migration capture must be **cmp-identical** to its
+`before`, because unlike ocm no panel here paints two blank rows: each spacer `Static`, tcss margin
+or `Static(" ")` is traded for the `PanelBase` title margin one-for-one. A differing cell is a
+finding. The named behaviour changes, none of which the sweep payload can reach:
+
+1. `fmt.hhmm` replaces the three `_format_event_time` / `_format_ts` copies: `??:??` for `None`,
+   `0` and `inf` (Branch 6's change, now on three more feeds; cattown printed a clock for epoch 0).
+2. MEDI-38 on the talismans and ttt hero rows and ttt signals: a build that raises lands on
+   `unavailable` inside the guard instead of raising into the screen (`--` stays the value for a
+   `None` the manager served deliberately — `total_cores` while enumeration syncs).
+3. `fmt_signal` escapes `value_str` through `markup_safety.safe_markup` for every subscriber —
+   ttt did, talismans did not, and a signal value may carry a token symbol. No `value_str` in
+   `analytics/` contains a `[`, so the sweep and the goldens see nothing.
+4. The feed contract: the placeholder is written once, an unhashable key is always-new, and a
+   populated feed survives an empty poll (talismans, ttt and dota cleared and re-painted the
+   placeholder). **Corrected in WP-A fix round 1, review C1 — the premise below was false and
+   the design that rested on it would have shipped a stale number.** The original text read "the
+   manager serves `None` for a failed read, so the always-new path with `[]` keeps the last
+   roster under the status bar's as-of marker". It does not: `data/dota_manager.py:64-70` sets
+   `game_state = None` on a failed fetch, `:118` starts `heroes_raw = []` and fills it only when
+   `game_state is not None`, `:239-256` builds `heroes` from it and `:306` serves it — so a
+   **failed read served `[]`**, and `render_events` tests `if not events`, so both `[]` and
+   `None` left the previous poll's HP and ALIVE/DEAD rows on screen. Pre-migration the roster
+   cleared and painted `No heroes yet`, so the migration would have *introduced* "a stale number
+   presented as live" on the one panel where every row is a number that expires.
+
+   What ships instead: `RichLogFeed` grows `SNAPSHOT: bool = False`. **Stream** (the default,
+   every other feed) is the Branch 6 contract byte for byte — an event that happened is still
+   true when the next poll brings nothing, so a transient empty poll leaves the rows alone.
+   **Snapshot** (dota's roster) re-paints the whole panel every poll, keeps no row from a
+   previous one, and therefore tells the two falsy inputs apart: `None` is "could not look" and
+   writes the new derived `UNAVAILABLE_LINE`, `[]` is the real negative and writes `EMPTY_LINE`.
+   The manager is fixed in the same round so the distinction is reachable at all: the served
+   `heroes` key is `None` when `game_state is None`, `[]` when the read succeeded with no heroes
+   (`tests/data/test_dota_manager.py` pins both). Nothing else the manager derives from
+   `heroes_raw` is touched — that is pre-existing and out of scope.
+5. `fmt_compact` replaces cattown's `_fmt_value` (differs on negatives, NaN, ≥ 1e9 — none
+   reachable for a prize pool). dota, talismans and ttt **keep their value formatters** through
+   the new hook below, because theirs differ on values the panel actually shows.
+
+**WP-A — `panels.py` extensions (append-only; owner of `panels.py` and `minimal.tcss` for this
+WP) + cattown + dota.** Every extension is a class attribute with the Branch 6 default, so ocm is
+untouched and its tests must stay green unchanged:
+
+- `class TableLeaderboard(PanelBase)`: `TABLE_ID: str`, `COLUMNS: tuple[tuple[str, int], ...]`
+  (`(label, width)`), `CURSOR_TYPE = "row"`, `ZEBRA = True`, `ROW_CAP: int | None = 10`,
+  `LOADING_ROW: tuple[str, ...] | None = None` (seeded in `on_mount` when set — the cell that
+  says `Loading...` differs per table, so the subclass types the whole tuple), `EMPTY_ROW:
+  tuple[str, ...]` (the "No data" row). `compose_body` yields `DataTable(id=TABLE_ID)`; `on_mount`
+  adds the columns and the seed row. `render_table(rows, *, footer=None)`: `clear()`; `None` or
+  empty → `EMPTY_ROW`; else the capped slice through the hook `build_row(index, item) ->
+  tuple | None` (`None` skips the item — the non-dict guard talismans and ttt carry), then the
+  optional `footer` tuple (the matrix table's bold TOTAL row). Every `add_row` inside its own
+  guard so one bad row does not empty the table. Address cells, rank-1 bolding, `_SYM_WIDTH`,
+  the matrix's dict payload and the claims table's "Today" detection stay in the subclass —
+  the base owns mechanics, never a cell's formatting.
+- `HeroRow.render_box`: when `build()` returns a `rich.text.Text`, the box gets
+  `Text.from_markup(f"[dim]{label}[/]\n\n") + text` — cattown's LEADER box (address icon with its
+  click style) is the reason. The `str` path is unchanged.
+- `SignalsPanelBase`: a `ROWS` item may be `(id, None)` — a **label-less** row, formatted
+  `  [c]{ind}[/] [c]{value}[/]` by `fmt_signal(sig, label_width=…, dim_label=…, labelled=False)`
+  — and may be `None`, a blank `.panel-line` separator. `fmt_signal` escapes `value_str`
+  (change 3). Nothing else; ttt's runtime-hidden row is one `display` assignment in ttt's
+  `update_data` after `render_signal`.
+- `SparklinePanel`: `LABEL_WIDTH = 8`, `SHOW_ARROW = True`, `EMPTY_TEXT = ""`, and a hook
+  `fmt_value(value, unit) -> str` defaulting to `fmt_compact`. `render_series` pads
+  `label[:LABEL_WIDTH].ljust(LABEL_WIDTH)`, appends the arrow only when `SHOW_ARROW`, writes
+  `EMPTY_TEXT` for an unusable series, and seeds `EMPTY_TEXT or LOADING` on the first line — so
+  talismans/ttt (`16`/`12`, `False`, `[dim]waiting for data...[/]`) render as today, and cattown
+  (8) / dota (9) do not clip.
+- `RichLogFeed`: nothing new. dota subclasses it with `dedupe_key → None`, `EMPTY_LINE =
+  "[dim]  No heroes yet[/]"`, the alive-first / level-desc sort in `update_data` before
+  `render_events`, and `format_row` returning `Text.from_markup(...)` of today's string.
+- cattown: `CTHeroMetrics(HeroRow)` with `CTHeroBox(HeroBoxBase)`; `CTSignals(SignalsPanelBase)`
+  15/dim with `RECOMMENDATION_ID` — **its recommendation line is `  [dim]→ Recommendation:[/]
+  [bold]{rec}[/]`**, not the base's `-> {text}`, so `render_recommendation` gains no option:
+  cattown writes that line itself through `write`, keeping the pixel; `CTSparklines(SparklinePanel)`
+  (its labels are hand-padded to 8 already); `CTActivityFeed(RichLogFeed)` with `format_row =
+  _catch_to_text`; `CTLeaderboard(TableLeaderboard)` (first user; `LOADING_ROW = None`, cap 10);
+  `CTBestPlays(PanelBase)` bespoke body. `_RARITY_COLORS` once, in a new `widgets/cattown/_fmt.py`
+  beside `_fmt_kibble` and `_countdown`. dota: the same six shapes; `DOTALeaderboard` cap 20;
+  `DOTABestPlays(PanelBase)`; `_fmt_usd` stays in the hero module (one user).
+- `minimal.tcss` (WP-A owns it for both packages): delete the per-title blocks the base now states
+  (`CTLeaderboard > Static`, `CTSparklines > .chart-title`, `CTSignals > .signals-title`,
+  `CTActivityFeed > .feed-title`, `CTBestPlays > .ev-title`, the five dota `.dota-*-title` blocks);
+  keep every block keyed on a widget class name. `CTBestPlays`/`DOTABestPlays` title rows carry
+  the same values, so PanelBase's rule moves no pixel; the render diff is the proof.
+
+**WP-B — talismans + ttt (owner of `minimal.tcss` for the ttt block, `widgets/fmt.py`
+append-only).** Hoists first, in the same commit: `fmt.fmt_int(value) -> str` (the module-level
+body: `None → DASH`, `int(v)` grouped, `DASH` on failure) replaces all six `_fmt_int`;
+`fmt.fmt_float(value, spec) -> str` the two `_fmt_float`; `fmt.safe_get(mapping, key, default)`
+the two `_safe_get`; `fmt.DASH` the eight `_DASH`; `fmt.hhmm` the two `_format_ts`. `_safe_symbol`
+once in a new `widgets/ttt/_fmt.py`. The two `_fmt_eth` (4 dp / 5 dp, both "not `fmt.fmt_eth`")
+stay behind their goldens — a precision change is a pixel change and not this branch's. Then:
+`TalismansHeroMetrics(HeroRow)` / `TTTHeroMetrics(HeroRow)` with `render_box` (change 2; the extra
+`tal-hero-box` / `ttt-hero-box` classes go — nothing names them); `TalismansSignals` / `TTTSignals`
+on `SignalsPanelBase` with label-less rows and the `None` separator, ttt keeping the `display`
+toggle; `TalismansSparkline` / `TTTSparkline` on `SparklinePanel` with `LABEL_WIDTH` 16 / 12,
+`SHOW_ARROW = False`, `EMPTY_TEXT` the waiting line, `fmt_value` returning today's
+`_fmt_count` / `_fmt_burns` / `_fmt_volume_usd` per line (the hook receives `unit`, so one
+override can switch on it); `TalismansActivityFeed` / `TTTActivityFeed` on `RichLogFeed` with
+`dedupe_key → None`, the `[:25]` cap in `update_data`, and every row a `Text`; the five tables on
+`TableLeaderboard` (`LOADING_ROW` the tuple each seeds today; matrix passes `footer=`). Every
+`Static(" ")` spacer goes. tcss: the three dead ttt title blocks and `TTTSparkline > .ttt-spark-
+title`, `TTTSignals > .ttt-signals-title` go; talismans has none to delete; the widget-class blocks
+stay. `test_talismans_widgets.py` is adapted only where it queried a class the base renamed
+(`.tal-*-title` → `.panel-title`), never loosened.
+
+WP-B starts only after WP-A's review round closes: it subclasses the extensions WP-A adds and
+edits the same stylesheet.
+
+### Tests
+
+`tests/widgets/test_panels.py` gains, each on a minimal subclass composited through
+`surf_compositing.composite_lines` under `minimal.tcss`:
+
+1. `TableLeaderboard`: row 0 title, row 1 blank, row 2 the header; the seed row appears when
+   `LOADING_ROW` is set and not when `None`; `None` and `[]` paint `EMPTY_ROW` exactly once;
+   `ROW_CAP` slices; `build_row` returning `None` skips ~~without a gap in the ranks the subclass
+   assigns~~ **without a gap in the composited rows, while `index` stays the item's position in
+   the capped slice — so the third item still prints rank `3`** (corrected in WP-A fix round 1,
+   review M4: the original wording described the opposite behaviour, and the implemented one is
+   what `tal_leaderboard.py:95-98` does today and what a subclass bolding on `index == 0`
+   needs); one `add_row` that raises leaves the other rows on screen (mutation: delete the
+   per-row guard → this test); `footer` lands last.
+2. `render_box` with a `Text` body keeps the `Text`'s style spans (a `meta` click action on a
+   span survives — the reason the branch exists) and the label row above it.
+3. `fmt_signal(labelled=False)` and the `None` separator row: row indices under composition;
+   a `value_str` of `"[red]x"` renders literally (change 3; mutation: drop the escape).
+4. `SparklinePanel` at `LABEL_WIDTH = 12`, `SHOW_ARROW = False`, `EMPTY_TEXT` set: the label
+   width, no arrow glyph, the empty text on `[]`, `fmt_value` override honoured; the defaults
+   still reproduce Branch 6's rows (the existing cases stay green unchanged).
+5. Agreement, widened from ocm to the five migrated packages: every widget class with an
+   `update_data` in `widgets/{ocm,cattown,dota,talismans,ttt}` subclasses a `panels.py` base;
+   no module there defines `_UNAVAILABLE`, `_UNAVAILABLE_SIGNAL`, `_render_row`, `_render_box`,
+   `_fmt_value`, `_format_event_time`, `_format_ts`, `_fmt`, `_fmt_signal`, `_seen_tx_hashes`,
+   `_fmt_int`, `_fmt_float`, `_safe_get`, `_DASH`, `_WAITING`, and no `compose` yields a `Static`
+   whose content is `""` or `" "` (the spacer shapes). WP-A ships it for ocm + cattown + dota,
+   WP-B extends the package list.
+
+Existing tables extended, not new files: `test_title_blank_row.py` gains a row for **every**
+widget in the four packages that is a `PanelBase` (leaderboards, feeds, tables, all seven
+talismans panels); `test_medi38_unavailable_state.py` gains `TalismansHeroMetrics`,
+`TTTHeroMetrics`, `TTTSignals` with the three claims (change 2). Named tests per WP, all with
+`-m guard tests`: `test_panels.py`, `test_title_blank_row.py`, `test_medi38_unavailable_state.py`,
+`test_sparkline_common.py`, `test_fmt.py`, `test_markup_safety.py`, the two address-icon widget
+files, `test_talismans_widgets.py`, `tests/screens/test_dashboard_screen.py`,
+`test_refresh_guard.py`, `test_talismans_screen.py`, `test_ttt_address_icon_layout.py`,
+`test_address_icons_everywhere.py -k "cattown or dota or talismans or ttt or ocm"`,
+`tests/test_address_rule.py`, `tests/test_address_sweep_registry.py`. Mutation proofs named in
+each commit message with which test reddened. The full suite runs once on the branch head, by
+the controller.
+
+### Docs
+
+`.claude/rules/widgets.md` "Panels subclass" section: `TableLeaderboard` joins the list (its
+hook, the seed-row rule, what stays in the subclass), the three `SparklinePanel` attributes and
+`fmt_value`, label-less and separator signal rows, the `Text` branch of `render_box`; the
+worked-example sentence names cattown beside ocm; the "`TableLeaderboard` arriving with Branch 7"
+sentence goes. `CLAUDE.md` needs no change (`panels` is already on the `widgets/` line). Outcome
+paragraphs here per WP with the per-file line table, the twelve-capture diff result and any
+deviation.
+
+One implementer per WP, one reviewer per diff (contract verbatim), fix rounds capped at 2 per WP,
+full suite once on the branch head by the controller, then the owner's merge word.
+
+**Branch 7 WP-A outcome (2026-09-20, commit `0feb671`).** `TableLeaderboard` exists and cattown is
+its first subscriber; the three widened bases all carry the Branch 6 default as a class attribute,
+so ocm reads exactly as it did and no pre-existing `test_panels.py` case changed meaning. All
+twelve cattown and dota widgets are on the bases with every class name and every `update_data`
+signature unchanged — `screens/cattown.py`, `screens/dota.py` and the panel-row agreement test in
+`tests/screens/test_dashboard_screen.py` were not touched.
+
+*Line counts are raw `wc -l`*, the convention this plan settled on in Branch 5 WP-B.
+
+| file | before | after | file | before | after |
+| --- | --- | --- | --- | --- | --- |
+| `widgets/cattown/ct_hero_metrics.py` | 192 | 141 | `widgets/dota/dota_hero_metrics.py` | 165 | 145 |
+| `widgets/cattown/ct_activity_feed.py` | 126 | 90 | `widgets/dota/dota_activity_feed.py` | 95 | 128 |
+| `widgets/cattown/ct_best_plays.py` | 115 | 104 | `widgets/dota/dota_best_plays.py` | 98 | 93 |
+| `widgets/cattown/ct_signals.py` | 97 | 58 | `widgets/dota/dota_signals.py` | 97 | 50 |
+| `widgets/cattown/ct_leaderboard.py` | 94 | 83 | `widgets/dota/dota_leaderboard.py` | 70 | 69 |
+| `widgets/cattown/ct_sparklines.py` | 88 | 38 | `widgets/dota/dota_sparklines.py` | 84 | 56 |
+| `widgets/cattown/_fmt.py` (new) | 0 | 54 | | | |
+| **`widgets/cattown/` total** | **712** | **568** | **`widgets/dota/` total** | **609** | **541** |
+| `widgets/panels.py` | 509 | 726 | `themes/minimal.tcss` (10 blocks) | 46 | 0 |
+
+**190 lines out of the two packages and 46 out of the stylesheet; 217 lines of shared base in.**
+Net −19 production lines, and the slope is the point rather than the number: Branch 6 paid 252
+lines to stand the bases up with one subscriber, WP-A paid −19 to add two more, and WP-B's two
+packages plus Branch 8's `templates/` deletion are where HANDOVER §3.4's estimate is collected.
+Three files grew and each says why in its docstring: `panels.py` by the whole
+`TableLeaderboard`; `dota_activity_feed.py` by the docstring recording that an empty poll no
+longer wipes a drawn roster (the base's merged feed contract — the manager serves `None` for a
+failed read, so the old "clear and paint `No heroes yet`" was a false degradation); and
+`dota_hero_metrics.py`'s and `dota_sparklines.py`'s comments explaining the two things that look
+like dead code and are not (below).
+
+**Rendering proof.** `render_case.py` on each dashboard's sweep payload under the real stylesheet
+and a frozen clock, at 170×50 and at the 143 pin, against the pre-migration `b7_before_*` captures:
+
+```
+$ cmp b7_before_cattown.default.170x50.txt     b7_final_cattown.default.170x50.txt      -> identical
+$ cmp b7_before_cattown.default.pin-143x50.txt b7_final_cattown.default.pin-143x50.txt  -> identical
+$ cmp b7_before_dota.default.170x50.txt        b7_final_dota.default.170x50.txt         -> identical
+$ cmp b7_before_dota.default.pin-143x50.txt    b7_final_dota.default.pin-143x50.txt     -> identical
+```
+
+**All four byte-identical**, which is the acceptance this branch was written to. Unlike Branch 6
+there is no predicted one-row shift to explain: every spacer `Static` these twelve widgets yielded
+traded one-for-one against `PanelBase`'s title margin, and both signals panels and both BEST PLAYS
+boards keep their *interior* blank line, which was never the title's row. The five named behaviour
+changes are all invisible to this payload and that was checked rather than assumed: the sparkline
+histories are empty (so `fmt_compact` vs the old `_fmt_value` never runs), the feeds carry real
+timestamps (so `hhmm` agrees with the copy it replaces), and every signal arrives `unavailable`
+with no `[` in any `value_str` (so the new `safe_markup` escape is a no-op here). Each is pinned by
+a unit test instead.
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each):
+
+| mutation | reddened |
+| --- | --- |
+| the per-row `try` deleted in `TableLeaderboard.render_table` | `test_panels.py::test_one_unaddable_row_is_skipped_and_the_others_land` — 1 failed, 95 passed. `ValueError: More values provided than there are columns` escapes after `clear()`, leaving the table empty, which on a leaderboard reads as "nobody is playing" |
+| the `except NotImplementedError: raise` deleted from that same guard | `test_panels.py::test_a_subclass_without_build_row_fails_loudly` — 1 failed, 95 passed. A different test from the row above, which is the check that matters: the two halves of the guard are proven separately, so neither is riding on the other |
+| `safe_markup` dropped from `fmt_signal`'s `value_str` | `test_panels.py::test_fmt_signal_escapes_a_hostile_value_str` and `::test_a_hostile_value_str_reaches_the_screen_as_text_not_markup` — 2 failed, 172 passed (run with `test_markup_safety.py`, which stayed green: it covers the helper, not this call site) |
+
+**Tests.** `tests/widgets/test_panels.py` 74 → 96 cases: the `Text` branch of `render_box` (spans
+and click `meta` checked cell by cell off the compositor, plus its degradation path), label-less
+and separator signal rows and the seed-lands-on-the-first-*row* rule, the four `SparklinePanel`
+knobs, and ten `TableLeaderboard` cases. Both agreement tests are now parametrised over one
+`MIGRATED_PACKAGES` table — `{"ocm": 6, "cattown": 6, "dota": 6}`, package → the number of
+`update_data` widget classes the walk must find (corrected in fix round 1, M3: it was a tuple with
+a hard-coded `6`, and talismans and ttt export seven each, so WP-B would have had to edit a test
+body after all). WP-B adds `"talismans": 7` and `"ttt": 7` — two entries, no test body. `tests/widgets/test_title_blank_row.py` 35 → 41 cases, gaining `CTLeaderboard`,
+`CTActivityFeed`, `DOTALeaderboard` and `DOTAActivityFeed` — leaderboards and feeds were absent
+from that table and their blank row came from the stylesheet alone, so nothing covered it.
+Green on the branch head: **416** across the eleven named files, **6** on
+`test_address_icons_everywhere.py -k "cattown or dota or ocm"`, **191** on `-m guard tests`
+(88 s). No directory-wide or suite run; the suite is the controller's, once, on the branch head.
+
+**Four deviations from the plan, each stated rather than taken silently.**
+
+1. **The fifth agreement clause is not written as a source check.** The plan asks for "no `compose`
+   yields a `Static` whose content is `""` or `" "`". As stated it is false of the tree it would
+   guard: `OCMSupplyBreakdown` seeds three body lines empty and fills them on the first poll,
+   `SignalsPanelBase` itself yields one before the recommendation, and both BEST PLAYS boards keep
+   one between their headers and their rows — a blanket ban reddens on six of the sixteen migrated
+   panels, and narrowing it to "the title's spacer" is exactly the distinction no source check can
+   make. What made the old spacers wrong was the *row they painted*, so the claim is enforced where
+   it is true and stronger: `test_title_blank_row.py` asserts title row, exactly one blank, then
+   content, **composited**, for every panel in all three migrated packages. A leftover spacer
+   reddens it with two blanks — and so does a spacer reached through a helper, or a regression in
+   `PanelBase`'s `margin`, neither of which the source check would have seen. A comment at the
+   agreement section records the reasoning so WP-B does not re-litigate it.
+2. **dota's hero `token_price_usd` stays**, unused. The plan flags it for removal "if the screen
+   does not pass it"; `screens/dota.py`'s `PANELS` row passes it, and
+   `test_dashboard_screen.py::test_every_panel_row_names_a_mounted_widget_and_its_update_data_keywords`
+   requires every key a row sends to be a **named** parameter of `update_data`. Removing it while
+   keeping the screen untouched would have reddened that test; removing it from both would have
+   been a `PANELS` edit this WP does not own. A comment on the parameter says so, and the pair is
+   WP-B-or-later work at best — file it, do not fix it here.
+3. **dota's value formatter keeps a module-level function**, `_fmt_frontline`, reached through the
+   new `fmt_value` hook. The plan bans the name `_fmt_value` (the agreement test lists it) and
+   offers `widgets/dota/_fmt.py` if two modules need it; only one does, so hoisting would have
+   created a package module with a single caller. It is *not* `fmt_compact` in disguise and the
+   docstring says why: a lane frontline is a position between two bases, so it has no K/M/B
+   magnitudes, and `fmt_compact` would print `1.0K` where this panel shows `950` — every frontline
+   the game serves is in the range where the two disagree.
+4. **Two `DEFAULT_CSS` blocks survive per package**, on the leaderboards (`> DataTable { height:
+   1fr }`) and the feeds (`> RichLog { height: 1fr; padding: 0 1; scrollbar-size: 1 1 }`). The plan
+   deletes "every per-panel title/line CSS class and the `DEFAULT_CSS` that stated them"; these are
+   geometry on the body widget, neither a title nor a line class, and this is the same call Branch
+   6 made for `OCMActivityFeed` (its deviation 2). Hoisting them into the bases would change ocm
+   and every future subscriber, which is not an append-only extension.
+
+**Seen in passing, not fixed** (out of scope; for the follow-ups doc): `templates/
+leaderboard_template.py` is now behind `TableLeaderboard` and should be deleted with the rest of
+`templates/` in Branch 8, not fixed; and `CTBestPlays` / `DOTABestPlays` are the same two-column
+board twice, differing only in their column widths and cell formatters — a sixth base worth
+considering once WP-B shows whether talismans or ttt has a third.
+
+**Branch 7 WP-A fix round 1 (2026-09-20).** Review verdict `Needs fixes: 1 Critical, 0 Important,
+5 Minor`; all six addressed, plus one regression the fix round found in WP-A's own diff. The four
+`cmp` captures are still byte-identical to `b7_before_*`, so nothing here moved a pixel.
+
+**C1 (Critical) — a false premise in this plan, and the panel that rested on it.** Design change 4
+above said "the manager serves `None` for a failed read". It did not: a failed game-state fetch
+served `heroes=[]`, and `render_events` tests `if not events`, so under the migrated feed a failed
+read kept the previous poll's HP and ALIVE/DEAD rows on screen — "a stale number presented as
+live", on the one panel where every row is a number that expires. Fixed in three places, because
+the defect needed all three:
+
+- `data/dota_manager.py` serves `heroes = None` when `game_state is None` and `[]` when the read
+  succeeded with no heroes. Nothing else derived from `heroes_raw` is touched.
+- `widgets/panels.py` `RichLogFeed` gains `SNAPSHOT: bool = False`. Stream mode is the Branch 6
+  contract byte for byte (ocm and cattown are untouched, and their tests pass unchanged); snapshot
+  mode re-paints every poll, keeps no row, skips the dedupe guard, and tells `None`
+  (`UNAVAILABLE_LINE`, new and derived from `UNAVAILABLE` as `LOADING_ROW` is from `LOADING`) from
+  `[]` (`EMPTY_LINE`).
+- `widgets/dota/dota_activity_feed.py` sets `SNAPSHOT = True` and its docstring now records the
+  behaviour it has.
+
+The plan's Design change 4 is corrected in place above with the file:line evidence. The status-bar
+half of the reviewer's probe — `fetched_at` refreshed on a failed read, so the bar reads "updated
+0s ago" — is pre-existing and **filed, not fixed**: follow-up #23, Tier 1.
+
+**M1** the per-row skip in `render_table` logs at `warning` with the class and the row index, as
+`PanelBase.write` does. **M2** `on_mount` checks `EMPTY_ROW` and `LOADING_ROW` against the column
+count and raises `TypeError` naming the class — `add_row` raises on a surplus cell but pads a short
+one in silence, and `EMPTY_ROW` is added on the degraded path, where nobody is looking. **M3** the
+agreement table is now `MIGRATED_PACKAGES = {"ocm": 6, "cattown": 6, "dota": 6}`, a per-package
+count, so WP-B adds two entries and no test body (talismans and ttt export seven each; the old
+hard-coded `6` contradicted the docs' claim). **M4** the skip test is renamed
+`…skips_and_the_index_is_the_slice_position` and the plan's Tests bullet 1 is corrected — the
+behaviour was right and the plan's wording described its opposite. **M5** two unescaped
+third-party interpolations closed: `ct_leaderboard.py`'s `rarity` (the colour is still looked up
+on the raw value; only the displayed text is escaped) and the recommendation line, escaped once in
+`SignalsPanelBase.render_recommendation` and once in cattown's own labelled line.
+
+**Found in this round, in WP-A's own diff:** `test_panels_defines_the_two_strings_exactly_once` had
+been **deleted** by commit `0feb671` — the source slice that removed a rejected spacer check
+swallowed the function below it, and nothing reddened, because a deleted test is the one defect a
+suite cannot report. Restored as `test_panels_defines_the_shared_strings_exactly_once`, widened to
+`UNAVAILABLE_LINE` and to the current `__all__`. The three test names that left the file are now
+accounted for one by one: two renamed to their migrated-package forms, this one restored.
+
+```
+$ cmp b7_before_dota.default.170x50.txt        b7_fix1_dota.default.170x50.txt         -> identical
+$ cmp b7_before_dota.default.pin-143x50.txt    b7_fix1_dota.default.pin-143x50.txt     -> identical
+$ cmp b7_before_cattown.default.170x50.txt     b7_fix1_cattown.default.170x50.txt      -> identical
+$ cmp b7_before_cattown.default.pin-143x50.txt b7_fix1_cattown.default.pin-143x50.txt  -> identical
+```
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each):
+
+| mutation | reddened |
+| --- | --- |
+| `SNAPSHOT = True` deleted from `DOTAActivityFeed` (back to stream mode) | `test_medi38_unavailable_state.py::test_a_failed_read_renders_unavailable_not_loading[DOTAActivityFeed]` **and** `::test_a_malformed_poll_after_a_good_one_is_not_shown_as_live[DOTAActivityFeed]` — 2 failed, 133 passed |
+| `data/dota_manager.py` serving `[]` for a failed read again | `test_dota_manager.py::test_a_failed_game_state_read_serves_heroes_none` — 1 failed, 2 passed (the other two hold: the panel-side and manager-side halves are proven separately) |
+| the `logger.warning` deleted from `render_table`'s per-row guard | `test_panels.py::test_a_skipped_row_is_logged_at_warning` — 1 failed, 105 passed |
+| the two width checks deleted from `TableLeaderboard.on_mount` | `test_panels.py::test_a_wrong_width_empty_row_fails_at_mount` and `::test_a_wrong_width_loading_row_fails_at_mount` — 2 failed, 104 passed |
+| `safe_markup` dropped from `render_recommendation` | `test_panels.py::test_a_hostile_recommendation_reaches_the_screen_as_text` — 1 failed, 105 passed (the log line shows the real failure mode: `closing tag '[/x]' does not match any open tag`, raised in the message pump) |
+
+**Tests.** `test_panels.py` 96 → 106 cases, `test_medi38_unavailable_state.py` 26 → 29 (the roster
+is the third shape where a read that never happened used to be shown as live), and a new
+`tests/data/test_dota_manager.py` (3 cases; the manager's HTTP client is replaced with a double
+whose every method raises, so nothing can reach the wire). Green: **432** across the twelve named
+files, **6** on `test_address_icons_everywhere.py -k "cattown or dota or ocm"`, **191** on
+`-m guard tests`.
+
+**Branch 7 WP-A fix round 2 (2026-09-20, the last; applied by the controller).** Scoped re-review
+verdict: C1, M1–M5 all ADDRESSED; three new findings.
+
+- **N1 (Important).** In snapshot mode a poll whose rows *arrived* but none of which `format_row`
+  could show painted `EMPTY_LINE` (`No heroes yet`) — a false negative, since the read returned a
+  state. `render_events`'s `written == 0` write now picks `UNAVAILABLE_LINE` under `SNAPSHOT` and
+  keeps `EMPTY_LINE` for a stream (Branch 6's answer, where nothing was ever drawn). One test,
+  `test_a_snapshot_feed_with_no_showable_row_says_unavailable_not_empty`. Mutation: the branch
+  reverted to `EMPTY_LINE` unconditionally → that test alone reddened (see the commit message).
+- **N2 (Critical by consequence, pre-existing, outside the diff) — filed, not fixed.** The dota
+  manager serves the other `game_state`-derived keys as sentinels on a failed read (`H: 0/0`,
+  `TIED`, `Tick 0` on screen). Follow-up **#23** widened to cover it beside the `fetched_at`
+  stamp; one Tier 1 item on dota's own data module.
+- **N3 (Minor).** The `render_recommendation` docstring and two sentences in `rules/widgets.md`
+  said an unescaped `[/x]` "raises out of the message pump where no panel's `try` can reach it".
+  Probed on Textual 8.1.1 (`probe_static_update.py`, session scratchpad): `Static.update`
+  raises `MarkupError` **synchronously** and the app stays alive, so a guarded write drops the
+  line and an unguarded one kills the handler. All three sentences corrected — including the
+  older "A widget that renders third-party text…" paragraph the branch had not written, because
+  the same file was open and the claim is the one the new sentences copied. The convention itself
+  (a `Static` gets a pre-built `Text`) is unchanged and still right.
+
+Renders untouched by this round (no widget path the sweep payload reaches changed): not re-captured.
+
+**Branch 7 WP-A re-review of fix round 2 (2026-09-20): N1 ADDRESSED, N3 ADDRESSED — Approved.** The
+reviewer proved the two feed modes apart with a second mutation (the write forced to
+`UNAVAILABLE_LINE` reddens only the stream test), re-captured all six renders (identical), and
+probed all three markup paths on Textual 8.1.1: `DataTable.add_row` still raises later in `_on_idle`
+and kills the app, `Static.update` raises at the call, `RichLog.write` parses nothing. Three docs
+Minors closed in the same docs-only commit: **N4** the headline "Escape every third-party string"
+paragraph in `rules/widgets.md` now names the path each timing belongs to instead of contradicting
+the paragraph below it; **N5** a guarded `Static.update` that raises leaves the *previous* content on
+screen (a stale line presented as live), not a blank — docstring and rules corrected; **N6** follow-up
+#23's line references re-pointed at `841a0c7`. No code changed in this commit.
+
+**Branch 7 WP-B outcome (2026-09-20).** talismans (7 widgets) and ttt (7 widgets) are on the
+bases, which closes the migration: **five packages** — ocm, cattown, dota, talismans, ttt. Every
+class name and every `update_data` signature is unchanged, so `screens/talismans.py`,
+`screens/ttt.py` and the panel-row agreement test in `tests/screens/test_dashboard_screen.py` were
+not touched. The hoists went in first, in the same commit and append-only:
+`widgets/fmt.py` gained `fmt_int` (replacing six `_fmt_int`), `fmt_float` (two `_fmt_float`) and
+`safe_get` (two `_safe_get`); `fmt.DASH` replaced eight `_DASH`; `fmt.hhmm` replaced the two
+`_format_ts` / `_format_event_time`; `safe_symbol` was hoisted once into a new
+`widgets/ttt/_fmt.py` (`ttt_leaderboard.py` and `ttt_fees_table.py` carried byte-identical
+copies). The two `_fmt_eth` (fees 4 dp, claims 5 dp) stay behind their goldens in
+`tests/widgets/test_ttt_address_icons.py`, and both `_SYM_WIDTH` measured pins are untouched.
+`ttt_claims_table._fmt_multiplier` and `tal_hero_metrics._GENESIS` were dead and are gone
+(`genesis_minted` stays a named `update_data` parameter — `screens/talismans.py`'s `PANELS` row
+sends it, the same constraint as WP-A's deviation 2).
+
+*Line counts are raw `wc -l`.*
+
+| file | before | after | file | before | after |
+| --- | --- | --- | --- | --- | --- |
+| `widgets/talismans/tal_activity_feed.py` | 186 | 184 | `widgets/ttt/ttt_activity_feed.py` | 271 | 277 |
+| `widgets/talismans/tal_hero_metrics.py` | 163 | 119 | `widgets/ttt/ttt_leaderboard.py` | 235 | 209 |
+| `widgets/talismans/tal_leaderboard.py` | 119 | 92 | `widgets/ttt/ttt_fees_table.py` | 206 | 172 |
+| `widgets/talismans/tal_signals.py` | 115 | 73 | `widgets/ttt/ttt_hero_metrics.py` | 179 | 144 |
+| `widgets/talismans/tal_matrix_table.py` | 106 | 94 | `widgets/ttt/ttt_signals.py` | 141 | 122 |
+| `widgets/talismans/tal_sparkline.py` | 106 | 77 | `widgets/ttt/ttt_claims_table.py` | 132 | 106 |
+| `widgets/talismans/tal_materials_table.py` | 102 | 87 | `widgets/ttt/ttt_sparkline.py` | 125 | 100 |
+| | | | `widgets/ttt/_fmt.py` (new) | 0 | 43 |
+| **`widgets/talismans/` total** | **897** | **726** | **`widgets/ttt/` total** | **1289** | **1173** |
+| `widgets/panels.py` | 826 | 888 | `widgets/fmt.py` | 204 | 264 |
+| `themes/minimal.tcss` (5 blocks) | 42 | 0 | | | |
+
+**287 lines out of the two packages and 42 out of the stylesheet; 122 lines of shared code in
+(62 base + 60 `fmt.py`). Net −207 production lines**, against WP-A's −19 and Branch 6's +252 — the
+slope the branch was written to predict. `ttt_activity_feed.py` is the one file that grew, by six
+lines of docstring recording why it is a stream and not a snapshot (below).
+
+**Rendering proof.** `render_case.py` on each dashboard's sweep payload under the real stylesheet
+and a frozen clock, both views (default and `c`), at 170×50 and at the 143 pin:
+
+```
+$ cmp b7_before_talismans.default.170x50.txt      b7_wpb_talismans.default.170x50.txt      -> identical
+$ cmp b7_before_talismans.default.pin-143x50.txt  b7_wpb_talismans.default.pin-143x50.txt  -> identical
+$ cmp b7_before_talismans.view-c.170x50.txt       b7_wpb_talismans.view-c.170x50.txt       -> identical
+$ cmp b7_before_talismans.view-c.pin-143x50.txt   b7_wpb_talismans.view-c.pin-143x50.txt   -> identical
+$ cmp b7_before_ttt.default.170x50.txt            b7_wpb_ttt.default.170x50.txt            -> DIFFERS (3 lines)
+$ cmp b7_before_ttt.default.pin-143x50.txt        b7_wpb_ttt.default.pin-143x50.txt        -> DIFFERS (3 lines)
+$ cmp b7_before_ttt.view-c.170x50.txt             b7_wpb_ttt.view-c.170x50.txt             -> DIFFERS (3 lines)
+$ cmp b7_before_ttt.view-c.pin-143x50.txt         b7_wpb_ttt.view-c.pin-143x50.txt         -> DIFFERS (3 lines)
+$ cmp b7_before_cattown.default.170x50.txt        b7_wpb_cattown.default.170x50.txt        -> identical
+$ cmp b7_before_cattown.default.pin-143x50.txt    b7_wpb_cattown.default.pin-143x50.txt    -> identical
+$ cmp b7_before_dota.default.170x50.txt           b7_wpb_dota.default.170x50.txt           -> identical
+$ cmp b7_before_dota.default.pin-143x50.txt       b7_wpb_dota.default.pin-143x50.txt       -> identical
+$ cmp b6_fix2.170x50.txt                          b7_wpb_ocm.170x50.txt                    -> identical
+$ cmp b6_fix2.pin-143x50.txt                      b7_wpb_ocm.pin-143x50.txt                -> identical
+```
+
+**Twelve of fourteen byte-identical**, and the two that are not are the same three rows four
+times over — **the one deviation, reported rather than absorbed** (deviation 1 below). talismans
+is clean in both views at both widths, and so are the three packages WP-A and Branch 6 migrated,
+which is what the `fmt.py` hoists and the six new base attributes had to be checked against: a
+shared helper that changed a cell would have shown up on ocm, cattown or dota first.
+
+**Deviation 1 — three rows of the ttt signals panel move from `● --` to `● unavailable`, and no
+live screen can reach it.** This is plan-named change 2, which the plan expected to be
+unreachable on this payload; it is reachable, and the difference is the whole of it. The sweep
+payload in `tests/address_sweep/` serves `buyback_signal`, `burn_velocity_signal` and
+`holder_concentration_signal` as `None`. `TTTSignals`' own copy rendered a bare `● --` for a
+`None` signal; `SignalsPanelBase.render_signal` renders `● unavailable`, which is the convention
+("a dead source degrades to an explicit unavailable state", and `--` is reserved for a real
+negative). Production never serves that shape: `data/ttt_manager.py` builds each of the three as
+a dict with a `--` `value_str` on every path, failed reads included, so the base's degraded row is
+unreachable live and the change is a correction to the *test payload's* rendering, not the
+dashboard's. Reported as a deviation rather than papered over by keeping a per-panel `None`
+branch, because the panel that lies about a dead read is the defect the convention exists for.
+Verified as the *only* difference: `diff` on all four captures shows exactly those three rows.
+
+**Deviation 2 — six new class attributes on the bases, each defaulting to Branch 6's behaviour.**
+The plan's WP-B paragraph assumed the bases as WP-A left them would render these two packages
+unchanged. Five places where they would not, closed by widening the base rather than by moving a
+pixel — the same append-only move WP-A made, and ocm/cattown/dota prove it byte for byte above:
+
+1. `SparklinePanel.MIN_POINTS` (default `1`): talismans and ttt refuse to draw a **single** sample,
+   which `build_sparkline_from_points` renders as a flat baseline — a run of zeroes that never
+   happened.
+2. `SparklinePanel.EMPTY_KEEPS_LABEL` (default `False`): both keep the label column on the waiting
+   line, because with two stacked series the reader has to know which one is not ready.
+3. `SparklinePanel.compose_body` seeds **every** line with `EMPTY_TEXT` when one is set (Branch 6
+   seeded `Loading...` on line 0 and `""` below). Both packages composed the waiting line on both
+   rows; the `""` second row would have been a blank where a sentence was.
+4. `RichLogFeed.WRAP` / `HIGHLIGHT` / `MAX_LINES` (defaults `True` / `True` / `None`): both feeds
+   construct `RichLog(wrap=False, highlight=False, max_lines=200)`. Their rows are columnar and
+   Rich's repr highlighter recolours numbers on top of the per-event-type colour.
+5. `TableLeaderboard.render_table` paints `EMPTY_ROW` only when there are no rows **and** no
+   `footer`. `TalismansMatrixTable` serves its bold TOTAL out of a different payload key than its
+   rows, so `No data` above a real total would be a false negative.
+
+**Deviation 3 — `widgets/ttt/_fmt.py` holds one function, and `ttt_activity_feed._sym` is not it.**
+The plan says "`_safe_symbol` once in a new `widgets/ttt/_fmt.py`". Done: `ttt_leaderboard.py` and
+`ttt_fees_table.py` had byte-identical copies and now import `safe_symbol` (public, so the
+agreement test's banned-name walk — which inspects bound names, methods and aliases — does not
+trip on it). `ttt_activity_feed._sym` looks like a third copy and is not: it dashes on empty
+*after* `strip()` and right-pads nothing, and it is used in an f-string with `{sym:>6}`. Left
+alone rather than forced into the hoist.
+
+**Deviation 4 — `TalismansActivityFeed` and `TTTActivityFeed` are streams, `SNAPSHOT = False`.**
+Per `rules/widgets.md`'s definition: a row is one thing that *happened* at a stated time — a bond,
+a cleave, a burn, a fee deposit — and it is still true when the next poll brings nothing. Nothing
+in a row expires, so there is no number to present as live. dota's hero roster is the snapshot
+shape (every row carries an HP true only of its own poll), and marking these feeds snapshots would
+mean re-painting whole every poll and telling `[]` from `None`, a distinction an event log does
+not have. Both `dedupe_key` return `None` — these events carry no key the panel trusts to be
+unique — so every poll is all-new and redraws, which is what the unconditional `clear()` they
+replace did. Recorded in both module docstrings.
+
+Stream mode has **two consequences the first write of this paragraph named neither of**, added in
+fix round 1 (M5). (a) An **empty poll after a drawn feed leaves the rows on screen**; the copies
+cleared and wrote `No activity yet`. (b) A **non-empty poll whose every row fails to format writes
+`No activity yet`** (`written == 0` with nothing ever drawn); the copies left the log blank. Both
+are the base's merged contract and both are right here, because — and this is the check that
+matters, since it is exactly the shape of WP-A's C1 — **neither manager can serve `None` or a
+failure-shaped `[]` for this key**: `data/talismans_manager.py:238-240` and
+`data/ttt_manager.py:355-358` both build `activity_events` from
+`cache.get_activity_for_display(25)`, which sorts the persisted `activity_log` and slices it
+(`talismans_cache.py:178-189`, `ttt_cache.py:493-...`). It never reads the wire, so `[]` means
+"nothing has accumulated", never "this poll failed", and there is no state in which leaving the
+rows shows a number that has expired. dota's roster was the opposite: every row carried an HP true
+only of its own poll, and its manager *did* serve `[]` for a failed read.
+
+**Deviation 5 — the three `DEFAULT_CSS` geometry blocks survive**, on the tables (`> DataTable {
+height: 1fr }`) and the feeds (`> RichLog { height: 1fr; padding: 0 1; scrollbar-size: 1 1 }`),
+same call as WP-A's deviation 4. Deleted from `themes/minimal.tcss`: `TTTLeaderboard >
+.leaderboard-title`, `TTTActivityFeed > .feed-title`, `TTTFeesTable > .fees-title, TTTClaimsTable >
+.claims-title`, `TTTSparkline > .ttt-spark-title` and `TTTSignals > .ttt-signals-title` — 42 lines,
+every one a title class the base now owns. talismans had no title block to delete.
+
+**Deviation 6 — `TalismansSignals` shows `Loading...` before its first poll, where the copy
+showed a blank row.** Added in fix round 1 (M3): a rendering change in a state none of the
+fourteen captures can see, because `render_case.py` polls before it composites.
+`SignalsPanelBase.compose_body` seeds `LOADING_ROW` on the **first row** (never on a separator);
+the old `tal_signals.compose` seeded every row with `""`. This is the base's documented contract
+and the right answer — a panel that has never polled should say so rather than read as four
+signals that are all empty — but it is a change, so it is listed. ttt is unaffected in practice:
+its first row is the optional fresh-launch row, which `TTTSignals.compose_body` hides with
+`display = False`, so the seed lands on a collapsed row and the pre-poll panel is blank exactly as
+before.
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each):
+
+| mutation | reddened |
+| --- | --- |
+| `TalismansSparkline.fmt_value` reverted to `super().fmt_value` (i.e. `fmt_compact`) | `test_talismans_widgets.py::test_the_sparkline_value_cell_is_a_grouped_integer_not_a_compact_one` **and** `::test_a_series_too_short_to_draw_keeps_its_label` — 2 failed, 191 passed |
+| `TalismansSparkline.SHOW_ARROW = True` | `test_talismans_widgets.py::test_the_sparkline_draws_no_trend_arrow` **and** the value-cell test (the arrow displaces the cell) — 2 failed, 191 passed |
+| `TalismansLeaderboard.EMPTY_ROW`'s `"No data"` moved from the wallet cell to the rank cell | `test_talismans_widgets.py::test_the_empty_leaderboard_says_no_data_under_the_wallet_column` — 1 failed, 192 passed |
+| `HeroRow.render_box`'s build-failure fallback changed from `UNAVAILABLE` to `[dim]--[/]` | `test_medi38_unavailable_state.py::test_a_malformed_poll_after_a_good_one_is_not_shown_as_live[CTHeroMetrics]` **and** both new hero-row cases — 3 failed, 35 passed |
+
+**The first mutation is why four tests exist that the plan did not ask for.** Run against the tree
+as first migrated, `fmt_value` → `fmt_compact` reddened **nothing**: the whole named set stayed
+green at 61 passed. `tests/widgets/test_talismans_widgets.py` was a smoke suite — drive
+`update_data` three ways, assert a row count — so it could not see a cell's spelling, an arrow, a
+waiting line or a degraded row's column. Four composited pins were added (`render_strips()`, the
+repo rule), each naming the mutation it exists to redden, and the mutation then reddened two of
+them. A mutation that reddens nothing is a test that cannot fail.
+
+**Tests.** `tests/widgets/test_panels.py` 107 → 128 (`MIGRATED_PACKAGES` gains `"talismans": 7`
+and `"ttt": 7` — two table entries, no test body, exactly as WP-A's M3 arranged);
+`test_title_blank_row.py` 41 → 51, gaining all six talismans panels that are now `PanelBase`
+subclasses and four ttt ones; `test_medi38_unavailable_state.py` 29 → 38, gaining `TTTSignals` in
+the widget table and a new hero-row table (`TalismansHeroMetrics`, `TTTHeroMetrics`) driven by a
+`_Hostile` value whose `__int__` / `__float__` / `__str__` / `__format__` all raise — the shape
+that proves named change 2 (a build that *raises* lands on `unavailable`; a `None` the manager
+served deliberately still renders `--`, and there is a test for each direction);
+`test_fmt.py` 25 → 59 for the three new helpers — and its `__all__` agreement case reddens under
+the hoist if it is not updated with them, which is the cheapest proof that the hoist is visible to
+a test at all; `test_talismans_widgets.py` 7 → 11 as above.
+**543 passed** across the seventeen named files (499 at `e9a6307`), **10 passed, 33 deselected**
+on `test_address_icons_everywhere.py -k "talismans or ttt or cattown or dota or ocm"`, **191** on
+`-m guard tests`. No directory-wide or suite run; the suite is the controller's, once, on the
+branch head.
+
+**Every test file's function-name list was diffed against `e9a6307`** — WP-A's first commit
+silently deleted a test through a careless source slice, and a deleted test is the one defect a
+suite cannot report. Additions only: `test_fmt.py` +6, `test_medi38_unavailable_state.py` +3,
+`test_talismans_widgets.py` +4; `test_panels.py` and `test_title_blank_row.py` unchanged (both
+grew by table rows, not functions). **No test disappeared, and none was renamed.**
+
+**Seen in passing, not fixed** (out of scope; for the follow-ups doc):
+`tests/widgets/test_title_blank_row.py`'s pre-existing `TTTSparkline` row passes
+`{"burn_history": _SERIES}` — the parameter is `burns_history`, so the payload is swallowed by
+`**_kwargs` and that case has only ever exercised the waiting state, never a drawn sparkline. It
+is green either way and the fix is a one-word rename plus whatever the drawn state then asserts:
+Minor, Tier 0 when the file is next touched. Also: `TTTFeesTable` and `TTTClaimsTable` keep one
+`_fmt_eth` each, at 4 and 5 decimal places, pinned by goldens — a single `fmt_eth(value, dp)` in
+`widgets/fmt.py` would retire both, but the goldens are outside this WP's diff.
+
+**Branch 7 WP-B fix round 1 (2026-09-20).** Review verdict `Needs fixes: 0 Critical, 1 Important,
+5 Minor`; all six addressed. **Tests and docs only — no production file changed**, and the eight
+talismans/ttt captures are byte-identical to the WP-B ones:
+
+```
+$ cmp b7_wpb_talismans.default.170x50.txt      b7_wpb_fix1_talismans.default.170x50.txt      -> identical
+$ cmp b7_wpb_talismans.default.pin-143x50.txt  b7_wpb_fix1_talismans.default.pin-143x50.txt  -> identical
+$ cmp b7_wpb_talismans.view-c.170x50.txt       b7_wpb_fix1_talismans.view-c.170x50.txt       -> identical
+$ cmp b7_wpb_talismans.view-c.pin-143x50.txt   b7_wpb_fix1_talismans.view-c.pin-143x50.txt   -> identical
+$ cmp b7_wpb_ttt.default.170x50.txt            b7_wpb_fix1_ttt.default.170x50.txt            -> identical
+$ cmp b7_wpb_ttt.default.pin-143x50.txt        b7_wpb_fix1_ttt.default.pin-143x50.txt        -> identical
+$ cmp b7_wpb_ttt.view-c.170x50.txt             b7_wpb_fix1_ttt.view-c.170x50.txt             -> identical
+$ cmp b7_wpb_ttt.view-c.pin-143x50.txt         b7_wpb_fix1_ttt.view-c.pin-143x50.txt         -> identical
+```
+
+**I1 (Important) — ttt's fresh-launch `display` toggle had no test, and the migration is what
+made it load-bearing.** Before WP-B the fresh row was seeded `""`, so losing the toggle cost a
+blank row. After it, `render_signal` writes `  [yellow]●[/] unavailable` into that row *before*
+the toggle hides it, so a lost toggle gives every live ttt SIGNALS panel with no fresh launch a
+permanent `● unavailable` row and shifts the three real rows down one. The reviewer mutated it to
+`fresh.display = True` and the whole named set (240) plus the ttt sweep cases stayed green.
+New module `tests/widgets/test_ttt_widgets.py`, in the shape of `test_talismans_widgets.py`'s
+composited pins (`render_strips()`, `_PIN_SIZE = (120, 24)`), pins **both directions**: with
+`fresh_launch_signal=None` the panel is buybacks / decay / separator / concentration and the word
+`unavailable` appears nowhere; with a real fresh dict the row is visible at row index 3 (title,
+blank — `PanelBase`'s margin, which no payload can cancel — then fresh). Two tests rather than
+one, because the toggle can fail in both directions and a single test would leave `display = False`
+unproven.
+
+**M1 — five `TTTSparkline` constants were unpinned.** `LABEL_WIDTH = 12` mutated to `8` left
+everything green, as did `SHOW_ARROW`, `MIN_POINTS`, `EMPTY_KEEPS_LABEL` and the `$` `fmt_value`
+override. Four more pins in the same new module. The label-width one asserts the padding
+(`BURNS` padded to twelve cells), not only that the two bars start in the same column: at `8` both
+labels still align — the longer one simply truncates to `24H VOLU` — so the same-column assertion
+alone would not have bitten.
+
+**M2 — `TalismansSignals`' `None` separator was unpinned.** Deleting it left 299 named cases plus
+the sweep plus the guard tests green while the panel lost a row of structure. One composited pin
+in `test_talismans_widgets.py`: FORGE MOMENTUM sits two rows below CUT/MERGE with a blank between,
+and SCARCITY follows FORGE with no gap — one separator, not two.
+
+**M3 — a sixth deviation, recorded above.** `SignalsPanelBase.compose_body` seeds `LOADING_ROW` on
+the first row, so `TalismansSignals` shows `Loading...` before its first poll where the copy showed
+a blank. Correct and the base's contract, but invisible to the fourteen captures (which poll before
+they composite), so it is now deviation 6 with the ttt case (seed lands on the collapsed
+fresh-launch row, so ttt is unchanged) stated beside it.
+
+**M4 — filed, not fixed: follow-up #24.** `fmt_signal` reads `sig.get("value_str", "")` /
+`.get("color", "dim")` / `.get("indicator", "●")`, where the eight copies used `or`-defaults, so a
+dict carrying `value_str=""` renders an empty cell (copies: `--`) and `color=""`/`None` would emit
+`[]`/`[None]`. Unreachable today — `data/talismans_models.py:84-92` and `data/ttt_models.py:127-135`
+declare all four as required `str`, computed per poll and never read back from a cache file — and
+pre-existing base behaviour since Branch 6. Minor, Tier 0 when `panels.py` is next touched.
+
+**M5 — deviation 4 widened**, above: stream mode's two consequences and the check that the dota
+C1 shape cannot recur here.
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each; counts over the two
+widget modules, 18 cases):
+
+| mutation | reddened |
+| --- | --- |
+| `TTTSignals` `fresh.display = True` | `test_ttt_widgets.py::test_no_fresh_launch_hides_the_row_entirely` — 1 failed, 17 passed. This is the reviewer's own mutation, which previously reddened nothing |
+| `TTTSignals` `fresh.display = False` | `::test_a_fresh_launch_shows_the_row_at_the_top_of_the_panel` — 1 failed, 17 passed. The other direction, and a *different* test: neither half rides on the other |
+| `TTTSparkline.LABEL_WIDTH` 12 → 8 | `::test_both_sparkline_labels_are_padded_to_the_same_twelve_cells` plus three more that read the truncated label — 4 failed, 14 passed |
+| `TTTSparkline.SHOW_ARROW = True` | `::test_the_sparkline_draws_no_trend_arrow` and the volume-cell test (the arrow displaces the cell) — 2 failed, 16 passed |
+| `TTTSparkline.fmt_value` → `super()` (`fmt_compact`) | `::test_the_volume_cell_is_dollars_at_two_decimals_not_a_compact_count` and `::test_a_series_too_short_to_draw_keeps_its_label` — 2 failed, 16 passed |
+| `TTTSparkline.MIN_POINTS` 2 → 1 | `::test_a_series_too_short_to_draw_keeps_its_label` — 1 failed, 17 passed |
+| `TTTSparkline.EMPTY_KEEPS_LABEL = False` | `::test_a_series_too_short_to_draw_keeps_its_label` — 1 failed, 17 passed |
+| the bare `None` separator deleted from `TalismansSignals.ROWS` | `test_talismans_widgets.py::test_the_signals_separator_keeps_forge_momentum_off_the_cutmerge_group` — 1 failed, 17 passed |
+
+**Tests.** New `tests/widgets/test_ttt_widgets.py` (6 cases); `test_talismans_widgets.py` 11 → 12.
+Green: **550** across the eighteen named files (543 at `ef3a16e`, +7), **4 passed / 39 deselected**
+on `test_address_icons_everywhere.py -k "talismans or ttt"`, **191** on `-m guard tests`. Every
+edited test file's function-name list diffed against `ef3a16e`: additions only, no deletions.
+
+**Branch 7 WP-B re-review of fix round 1 (2026-09-20): Approved.** All six findings ADDRESSED;
+every row of the mutation table above reproduced by the reviewer against the named file, and the
+controller independently re-ran the I1 always-show mutation (`True or bool(` at
+`ttt_signals.py:107` — the toggle spans three lines, so a one-line substitution silently misses it
+and reports green) with exactly `test_no_fresh_launch_hides_the_row_entirely` failing. M3's
+deviation 6 re-confirmed by composition; M4's and M5's line references checked. 537 passed over
+the sixteen named files, 191 guard. Two new Minors, both filed and closed here as docs rather than
+a second fix round: **N1** — the label-width test only bites on truncation; `LABEL_WIDTH` 12 → 13
+and 12 → 14 leave 18 passed, and at 12 → 8 the test dies on the truncated label lookup before the
+padding assertion it is credited with, so the M1 paragraph above claims more than the test can
+deliver (follow-up #25). **N2** — follow-up #24's colour rationale was wrong in both colour
+claims: probed on a mounted `TalismansSignals`, `color=""` degrades through `write_guarded` to a
+visible `● unavailable` (not a dropped line), and `color=None` renders normally because Textual's
+`Content.from_markup` accepts `[None]` as the null style; only `value_str=""` stands. #24 corrected
+in place (the reviewer's own M4 wording had speculated the same, unprobed). Seen in passing while
+closing N2: two `panels.py` docstrings still claim the deferred message-pump raise that WP-A's
+probe refuted — follow-up #26, docstring-only. **WP-B closed: 2ef29dc is the branch head under
+review; the docs closure commit that follows changes no code and no test.**
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

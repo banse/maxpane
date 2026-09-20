@@ -1,10 +1,16 @@
 """Hero metric boxes for the Cat Town dashboard.
 
 Every box is written on every ``update_data`` call (MEDI-38, the rule the
-hero template states): a payload the manager could not read arrives as
+hero shape states): a payload the manager could not read arrives as
 ``None`` and renders an explicit ``unavailable`` marker instead of the
 "Loading..." the old copy showed forever, and a real ``0`` prize pool
 renders as ``0 KIBBLE`` rather than collapsing into "loading".
+
+The row itself, the boxes' seed text and the build-inside-the-guard write
+are :class:`~maxpane_dashboard.widgets.panels.HeroRow`'s (Branch 6). The
+LEADER box is why ``render_box`` grew a ``rich.text.Text`` branch in Branch
+7: it renders an address through ``widgets/address.py``, whose copy icon is
+a ``Style`` with a click ``meta`` that markup parsing would flatten away.
 """
 
 from __future__ import annotations
@@ -12,72 +18,37 @@ from __future__ import annotations
 import time
 
 from rich.text import Text
-from textual.app import ComposeResult
-from textual.containers import Horizontal
-from textual.widgets import Static
+
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.cattown._chain import EXPLORER
+from maxpane_dashboard.widgets.cattown._fmt import _countdown, _fmt_kibble
+from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
 
 #: display budget for the leader name/address, excluding the icon -- the same
 #: 12-cell window the deleted ``_short_addr`` produced (recipe step 6, PRD §5).
 #: No pin binds this hero box.
 _LEADER_COLS = 12
 
-#: Shown in place of a value the backend could not supply this poll.
-_UNAVAILABLE = "[yellow]unavailable[/]"
 
+class CTHeroBox(HeroBoxBase):
+    """A single hero metric box with label and value.
 
-def _fmt_kibble(amount: float) -> str:
-    """Format KIBBLE amount with K/M suffix."""
-    if amount >= 1_000_000:
-        return f"{amount / 1_000_000:.1f}M"
-    if amount >= 1_000:
-        return f"{amount / 1_000:.1f}K"
-    return f"{amount:,.0f}"
-
-
-def _countdown(seconds: int) -> str:
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    mins = (seconds % 3600) // 60
-    if days > 0:
-        return f"{days}d {hours}h {mins}m"
-    if hours > 0:
-        return f"{hours}h {mins}m"
-    return f"{mins}m"
-
-
-class CTHeroBox(Static):
-    """A single hero metric box with label and value."""
-
-    DEFAULT_CSS = ""
-
-
-class CTHeroMetrics(Horizontal):
-    """Row of three hero metric boxes: Prize Pool, Competition, Top Fisher."""
-
-    DEFAULT_CSS = """
-    CTHeroMetrics > CTHeroBox {
-        margin: 0 1;
-    }
+    Kept as its own class because ``minimal.tcss`` names ``CTHeroBox`` for
+    this dashboard's box geometry, as do the MEDI-38 and address-icon
+    harnesses' CSS.
     """
 
-    def compose(self) -> ComposeResult:
-        yield CTHeroBox(
-            "[dim]PRIZE POOL[/]\n\n"
-            "[dim]Loading...[/]",
-            id="ct-hero-prize",
-        )
-        yield CTHeroBox(
-            "[dim]COMPETITION[/]\n\n"
-            "[dim]Loading...[/]",
-            id="ct-hero-competition",
-        )
-        yield CTHeroBox(
-            "[dim]LEADER[/]\n\n"
-            "[dim]Loading...[/]",
-            id="ct-hero-fisher",
-        )
+
+class CTHeroMetrics(HeroRow):
+    """Row of three hero metric boxes: Prize Pool, Competition, Top Fisher."""
+
+    BOX_CLASS = CTHeroBox
+
+    BOXES = (
+        ("ct-hero-prize", "PRIZE POOL"),
+        ("ct-hero-competition", "COMPETITION"),
+        ("ct-hero-fisher", "LEADER"),
+    )
 
     def update_data(
         self,
@@ -86,12 +57,18 @@ class CTHeroMetrics(Horizontal):
         **_kwargs,
     ) -> None:
         """Refresh all three hero boxes; a missing value says so."""
-        self._render_box("#ct-hero-prize", "PRIZE POOL",
-                         self._prize_body, competition_state)
-        self._render_box("#ct-hero-competition", "COMPETITION",
-                         self._competition_body, competition_state)
-        self._render_box("#ct-hero-fisher", "LEADER",
-                         self._leader_body, top_fisher)
+        self.render_box(
+            "#ct-hero-prize", "PRIZE POOL",
+            lambda: self._prize_body(competition_state),
+        )
+        self.render_box(
+            "#ct-hero-competition", "COMPETITION",
+            lambda: self._competition_body(competition_state),
+        )
+        self.render_box(
+            "#ct-hero-fisher", "LEADER",
+            lambda: self._leader_body(top_fisher),
+        )
 
     # -- box bodies -------------------------------------------------------
 
@@ -99,7 +76,7 @@ class CTHeroMetrics(Horizontal):
     def _prize_body(state: dict | None) -> str:
         prize = state.get("prize_pool_kibble") if state else None
         if prize is None:
-            return _UNAVAILABLE
+            return UNAVAILABLE
         participants = state.get("num_participants") or 0
         return (
             f"[bold white]{_fmt_kibble(prize)} KIBBLE[/]\n"
@@ -110,7 +87,7 @@ class CTHeroMetrics(Horizontal):
     @staticmethod
     def _competition_body(state: dict | None) -> str:
         if not state:
-            return _UNAVAILABLE
+            return UNAVAILABLE
         is_active = state.get("is_active", False)
         seconds_remaining = state.get("seconds_remaining") or 0
         total_vol = state.get("total_volume_kibble") or 0
@@ -148,7 +125,7 @@ class CTHeroMetrics(Horizontal):
     @staticmethod
     def _leader_body(fisher: dict | None) -> str | Text:
         if not fisher:
-            return _UNAVAILABLE
+            return UNAVAILABLE
         display_name = fisher.get("display_name", "")
         weight = fisher.get("weight_kg") or 0.0
         body = Text()
@@ -162,31 +139,3 @@ class CTHeroMetrics(Horizontal):
         body.append("\n")
         body.append(f"{weight:.1f}kg", style="dim")
         return body
-
-    def _render_box(self, selector: str, label: str, build, payload) -> None:
-        """Write one box, degrading to an explicit unavailable state.
-
-        The body is built inside the guard: a malformed payload (a string
-        where a number was expected) must land on ``unavailable`` here, not
-        raise into the screen's ``except`` and leave the previous poll's
-        number on screen as if it were live.
-        """
-        try:
-            box = self.query_one(selector, CTHeroBox)
-        except Exception:
-            return
-        try:
-            body = build(payload)
-            if isinstance(body, Text):
-                text = Text()
-                text.append(label, style="dim")
-                text.append("\n\n")
-                text.append_text(body)
-                box.update(text)
-            else:
-                box.update(f"[dim]{label}[/]\n\n{body}")
-        except Exception:
-            try:
-                box.update(f"[dim]{label}[/]\n\n{_UNAVAILABLE}")
-            except Exception:
-                pass

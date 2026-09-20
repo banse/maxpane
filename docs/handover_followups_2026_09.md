@@ -212,3 +212,82 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     restyle every subclass on hover — a narrower form of the I1 collision. No such rule exists
     today. If it is ever wanted, widen the guard to a name followed by a pseudo-class. Minor,
     hypothetical, Tier 0 with #21 (Branch 6 fix-round-2 re-review N5, filed 2026-09-20).
+
+## Branch 7 — panels, small four
+
+23. **`data/dota_manager.py` refreshes `snapshot.fetched_at` on a failed read, so the status bar
+    says "updated 0s ago" for data nobody fetched.** `data/dota_manager.py:101-108` builds
+    `DOTASnapshot(fetched_at=time.time(), …)` and calls `self.cache.update(snapshot)`
+    unconditionally, including on the path where `game_state is None` because the fetch raised
+    (`:64-70`); `last_updated_seconds_ago` is then computed off that stamp (`:283` on `841a0c7`) and reaches
+    the status bar. The only trace of the failure is `error_count`. This is the `as of HH:MM`
+    convention in CLAUDE.md read backwards: the marker is the one thing that tells a reader a
+    number may be old, and here it asserts freshness hardest exactly when the read failed. The
+    fix is to stamp `fetched_at` from the last *successful* read (keep the previous stamp when
+    `game_state is None`, or carry a separate `last_success_ts`), which is what the other
+    managers' as-of markers mean. Pre-existing — it predates Branch 7 and the WP-A migration
+    neither introduced nor touched it; found while verifying review C1, whose panel-side half
+    (a failed read painting `unavailable` instead of the last roster) is fixed on this branch.
+    **Widened by the fix-round-1 re-review (N2, Critical by consequence, pre-existing):** the
+    same failed read also serves the *other* `game_state`-derived keys as sentinels rather than
+    `None` — captured payload from the real `DOTAManager` with a raising client:
+    `human_base_hp=0`, `orc_base_hp=0`, `base_max_hp=0`, `winning_faction='tied'`, `tick=0`,
+    `faction_balance_signal={'value_str': 'Contested (0 vs 0)', …}` — so the composited screen
+    reads `FACTION LEAD: TIED` and `BASE HP: H: 0/0` beside two hero boxes that correctly say
+    `unavailable`, and the title bar `Tick 0`. That is "a failed read is `None`, never `0`" broken
+    at the manager, the same defect C1 was for `heroes`. One Tier 1 item with the `fetched_at`
+    stamp: every `game_state`-derived key serves `None` when `game_state is None`, and the
+    widgets already render `None` as `unavailable` (MEDI-38). Not touched on Branch 7 — only the
+    `heroes` key the roster reads was in the fix round's scope.
+    **Tier 1**, not Tier 0: it changes dota's own data module and needs its own regression test
+    for the two paths. Reviewer's evidence: `data/dota_manager.py:64-70`, `:101-108`, `:318`
+    (Branch 7 WP-A review C1 follow-up, filed 2026-09-20).
+24. **`fmt_signal` treats an empty string as a value, where the eight copies treated it as
+    absent.** `widgets/panels.py:284-287` reads `sig.get("label", "")`,
+    `sig.get("value_str", "")`, `sig.get("color", "dim")` and `sig.get("indicator", "●")`. A
+    `dict.get` default only fires when the **key is missing**; the talismans and ttt copies used
+    `or`-defaults (`sig.get("value_str") or "--"`), which also fire on `""` and `None`. So a
+    well-formed dict carrying `value_str=""` now renders an empty value cell where the copies
+    rendered `--`. **That is the whole defect.** The colour half as first filed was wrong, and the
+    re-review probed it on a mounted `TalismansSignals` after a good poll: `color=""` emits `[]`,
+    Textual's parser raises, and `write_guarded` writes the fallback — a visible `● unavailable`,
+    not a dropped line and not the previous value; `color=None` emits `[None]`, which Textual's
+    `Content.from_markup` accepts as the null style, so the row renders normally and there is no
+    defect in that direction at all (Rich's own `Text.from_markup` would raise on `[None]`, but it
+    is not the parser on this path). Not reachable today and
+    not introduced by WP-B: `data/talismans_models.py:84-92` and `data/ttt_models.py:127-135`
+    declare all four fields as required `str`, both signal dicts are computed per poll from
+    analytics rather than read back from a cache file, and the behaviour has been the base's
+    since Branch 6 — WP-B only moved two more packages onto it. The fix is `or`-defaults at all
+    four reads, so empty and `None` are treated as absent, which is what every copy the base
+    replaced did. **Minor, Tier 0** when `widgets/panels.py` is next touched — one function, four
+    lines, and a `test_panels.py` case per field. Reviewer's evidence: `widgets/panels.py:284-287`
+    against the pre-migration `tal_signals.py` / `ttt_signals.py` at `e9a6307` (Branch 7 WP-B
+    review M4, filed 2026-09-20).
+
+25. **`test_ttt_widgets.py::test_both_sparkline_labels_are_padded_to_the_same_twelve_cells` only
+    bites when the label *truncates*; widening `LABEL_WIDTH` reddens nothing.**
+    `tests/widgets/test_ttt_widgets.py:140-160`. The WP-B fix-round-1 paragraph credits this test
+    with asserting the padding rather than only the bars' shared start column, and the re-review
+    showed it cannot: `LABEL_WIDTH` 12 → 13 and 12 → 14 both shift the two bars two columns right
+    and leave 18 passed, because slicing exactly twelve characters out of a longer run of the same
+    padding spaces yields `"BURNS       "` at 12, 13 and 14 alike. At 12 → 8 the test dies three
+    lines *earlier*, on `_line_with(lines, "24H VOLUME $")` (the label has truncated to
+    `24H VOLU`), so the padding assertion never executes for the mutation it was written for.
+    The fix is one more assertion — `volume[start:start + 13]` ends in the bar's first cell, or
+    the bar's start column pinned outright — so a widening reddens the same test. **Minor, Tier 0**
+    when the file is next touched (Branch 7 WP-B re-review N1, filed 2026-09-20).
+
+26. **Two `widgets/panels.py` docstrings still say markup parsing is deferred into the message
+    pump.** `panels.py:279-281` (`fmt_signal`: "Textual defers `Text.from_markup` into the message
+    pump, so an unescaped one raises *outside* the panel's guard and kills the app") and
+    `panels.py:520-523` (`RichLogFeed`: "`Static`/`RichLog` defer markup parsing into the message
+    pump where this widget's `try` cannot reach it"). Probed on Textual 8.1.1 during WP-A:
+    `Static.update(str)` parses **synchronously** at the call, so on the `write_guarded` path a
+    malformed value lands on the fallback, not outside the guard; `RichLog.write(str)` parses
+    nothing (markup off by default); only `DataTable.add_row(str)` defers to `_on_idle` and kills
+    the app. `.claude/rules/widgets.md:38` already states this; the two docstrings were not
+    updated with it. The escape in `fmt_signal` is still required — the reason is that an
+    attacker-named token would otherwise turn its row into `● unavailable` or inject a style, not
+    that it would crash the app. Docstring-only. **Minor, Tier 0** with #24 when `panels.py` is
+    next touched (seen in passing during the WP-B re-review closure, 2026-09-20).

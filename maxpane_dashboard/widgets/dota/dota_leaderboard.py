@@ -1,70 +1,69 @@
-"""Player leaderboard table for Defense of the Agents dashboard."""
+"""Player leaderboard table for Defense of the Agents dashboard.
+
+The title, its blank row, the table's cursor/zebra/columns and the
+clear-then-repopulate contract are
+:class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`'s (Branch 7,
+WP-A). This table seeds no ``Loading...`` row and never did.
+"""
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import TableLeaderboard
 
 
-class DOTALeaderboard(Vertical):
+class DOTALeaderboard(TableLeaderboard):
     """Player leaderboard with DataTable of top players."""
 
+    TITLE = "LEADERBOARD"
+
+    TABLE_ID = "dota-leaderboard-table"
+
+    COLUMNS = (
+        ("#", 4),
+        ("Player", 18),
+        ("Wins", 8),
+        ("Games", 8),
+        ("Win Rate", 10),
+        ("Type", 10),
+    )
+
+    #: Twice cattown's: this panel has the same height and half the row
+    #: content, and the table scrolls.
+    ROW_CAP = 20
+
+    EMPTY_ROW = ("--", "No data", "--", "--", "--", "--")
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s, and
+    #: ``minimal.tcss`` states this table's colours and scrollbar.
     DEFAULT_CSS = """
-    DOTALeaderboard > .dota-lb-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     DOTALeaderboard > DataTable {
         height: 1fr;
     }
     """
-
-    def compose(self) -> ComposeResult:
-        yield Static("LEADERBOARD", classes="dota-lb-title")
-        table = DataTable(id="dota-leaderboard-table")
-        yield table
-
-    def on_mount(self) -> None:
-        table = self.query_one("#dota-leaderboard-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        table.add_column("#", width=4)
-        table.add_column("Player", width=18)
-        table.add_column("Wins", width=8)
-        table.add_column("Games", width=8)
-        table.add_column("Win Rate", width=10)
-        table.add_column("Type", width=10)
 
     def update_data(
         self,
         leaderboard: list[dict] | None = None,
     ) -> None:
         """Clear and repopulate the leaderboard table with live data."""
-        table = self.query_one("#dota-leaderboard-table", DataTable)
-        table.clear()
+        self.render_table(leaderboard)
 
-        if not leaderboard:
-            table.add_row("--", "No data", "--", "--", "--", "--")
-            return
+    def build_row(self, index: int, entry: dict) -> tuple:
+        """One player's row. Rank 1 is bold and green."""
+        rank = str(entry.get("rank", "?"))
+        name = safe_markup(entry.get("name", "Unknown"))
+        wins = str(entry.get("wins", 0))
+        games = str(entry.get("games", 0))
+        win_rate = entry.get("win_rate", 0.0)
+        player_type = safe_markup(entry.get("player_type", ""))
 
-        for entry in leaderboard[:20]:
-            rank = str(entry.get("rank", "?"))
-            name = safe_markup(entry.get("name", "Unknown"))
-            wins = str(entry.get("wins", 0))
-            games = str(entry.get("games", 0))
-            win_rate = entry.get("win_rate", 0.0)
-            player_type = safe_markup(entry.get("player_type", ""))
+        wr_str = f"{win_rate:.0f}%"
 
-            wr_str = f"{win_rate:.0f}%"
+        # Highlight rank 1
+        if rank == "1":
+            name = f"[bold green]{name}[/]"
+            wins = f"[bold]{wins}[/]"
+            wr_str = f"[bold]{wr_str}[/]"
 
-            # Highlight rank 1
-            if rank == "1":
-                name = f"[bold green]{name}[/]"
-                wins = f"[bold]{wins}[/]"
-                wr_str = f"[bold]{wr_str}[/]"
-
-            table.add_row(rank, name, wins, games, wr_str, player_type)
+        return (rank, name, wins, games, wr_str, player_type)

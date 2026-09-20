@@ -21,8 +21,8 @@ address, per PRD §1 ("a name shown in place of the address gets the
 icon"). The cell is built with ``address_text``, never markup, so the
 symbol (attacker-chosen ERC20 metadata) never has to be escaped for a
 markup parse it no longer goes through. A missing symbol renders the
-placeholder ``"--"`` (``_safe_symbol`` -> ``_DASH``, unchanged from before
-this file carried an icon) rather than the bare address: the icon still
+placeholder ``"--"`` (``_fmt.safe_symbol`` -> ``DASH``, unchanged from
+before this file carried an icon) rather than the bare address: the icon still
 copies the real address regardless of what label is shown, so nothing
 about "every address gets a working copy icon" depends on which label
 text address_text is given, and this way the column never has to size
@@ -32,13 +32,11 @@ below -- that floor does not fit this table's measured budget).
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.fmt import DASH
+from maxpane_dashboard.widgets.panels import TableLeaderboard
 from maxpane_dashboard.widgets.ttt._chain import EXPLORER
-
-_DASH = "--"
+from maxpane_dashboard.widgets.ttt._fmt import safe_symbol
 
 #: Display budget for the SYM cell's label text, excluding ICON_COLS --
 #: **measured against the real screen, not this widget in isolation.**
@@ -83,89 +81,62 @@ _SYM_WIDTH = 5
 
 
 # Not widgets/fmt.fmt_eth: ungrouped -- probe 1234.5678 renders "1234.5678 Ξ" here,
-# "1,234.5678 Ξ" there; True renders "1.0000 Ξ" here, "--" there.
+# "1,234.5678 Ξ" there; True renders "1.0000 Ξ" here, "--" there. Four decimal
+# places, pinned by tests/widgets/test_ttt_address_icons.py:128.
 def _fmt_eth(value, digits: int = 4) -> str:
     if value is None:
-        return _DASH
+        return DASH
     try:
         return f"{float(value):.{digits}f} Ξ"
     except (TypeError, ValueError):
-        return _DASH
+        return DASH
 
 
 def _fmt_ratio_pct(value) -> str:
     """``value`` is already a percent (e.g. ``12.3`` -> ``12.3%``)."""
     if value is None:
-        return _DASH
+        return DASH
     try:
         v = float(value)
     except (TypeError, ValueError):
-        return _DASH
+        return DASH
     if v <= 0:
-        return _DASH
+        return DASH
     return f"{v:.1f}%"
 
 
-def _safe_symbol(sym) -> str:
-    """Cleaned, truncated symbol, or ``_DASH`` when there is nothing to show.
+class TTTFeesTable(TableLeaderboard):
+    """α view -- top 10 tokens by 24h fee deposits.
 
-    **``_DASH``, not ``None``** -- reverted from a ``None``-means-"fall back
-    to the bare address" design (round 1 of this file's icon conversion)
-    after an in-situ screen sweep found that fallback needs
-    ``address_text``'s ``MIN_SHORT_COLS`` floor (11 cells), which this
-    table's real, CSS-constrained region cannot afford at the app's own
-    143-column pin (see ``_SYM_WIDTH``'s ``#:`` block). The icon copies the
-    real address regardless of which label ``address_text`` is given, so a
-    placeholder label costs nothing the rule (PRD §1: every displayed
-    address carries a working copy icon) actually requires -- it is the
-    same "name stands in for the address" shape as a known symbol, just
-    with ``"unknown"`` as the name instead of the token's. No
-    ``safe_markup`` here: the cleaned string is handed to ``address_text``
-    as a ``label``, which appends it as plain ``Text``, never through a
-    markup parse (unlike the old ``f"[bold]{symbol}[/]"`` string this
-    replaces).
+    The title, its blank row, the columns, the seed row and the
+    clear-then-repopulate contract are
+    :class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`'s
+    (Branch 7, WP-B). :data:`_SYM_WIDTH` and the address cell stay here:
+    the base owns mechanics, never a measured column.
     """
-    if sym is None:
-        return _DASH
-    try:
-        cleaned = "".join(ch for ch in str(sym) if ch.isprintable())
-    except Exception:
-        return _DASH
-    cleaned = cleaned.strip()
-    return cleaned[:8] if cleaned else _DASH
 
+    TITLE = "α TOP FEE ENGINES (24h)"
 
-class TTTFeesTable(Vertical):
-    """α view -- top 10 tokens by 24h fee deposits."""
+    TABLE_ID = "ttt-fees-table"
 
+    COLUMNS = (
+        ("#", 3),
+        ("SYM", _SYM_WIDTH + ICON_COLS),
+        ("24h FEES", 12),
+        ("LIFETIME", 12),
+        ("24h FEE/VOL", 12),
+    )
+
+    LOADING_ROW = (DASH, "Loading...", DASH, DASH, DASH)
+
+    EMPTY_ROW = (DASH, "No data", DASH, DASH, DASH)
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s.
     DEFAULT_CSS = """
-    TTTFeesTable > Static {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     TTTFeesTable > DataTable {
         height: 1fr;
     }
     """
-
-    def compose(self) -> ComposeResult:
-        yield Static("α TOP FEE ENGINES (24h)", classes="ttt-fees-title")
-        yield Static(" ", classes="ttt-fees-spacer")
-        table = DataTable(id="ttt-fees-table", classes="ttt-fees-table")
-        yield table
-
-    def on_mount(self) -> None:
-        table = self.query_one("#ttt-fees-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        table.add_column("#", width=3)
-        table.add_column("SYM", width=_SYM_WIDTH + ICON_COLS)
-        table.add_column("24h FEES", width=12)
-        table.add_column("LIFETIME", width=12)
-        table.add_column("24h FEE/VOL", width=12)
-        table.add_row(_DASH, "Loading...", _DASH, _DASH, _DASH)
 
     def update_data(
         self,
@@ -173,34 +144,29 @@ class TTTFeesTable(Vertical):
         **_kwargs,
     ) -> None:
         """Refresh the table with up to 10 ranked fee-engine rows."""
-        table = self.query_one("#ttt-fees-table", DataTable)
-        table.clear()
+        self.render_table(top_fee_engines)
 
-        engines = top_fee_engines or []
-        if not engines:
-            table.add_row(_DASH, "No data", _DASH, _DASH, _DASH)
-            return
+    def build_row(self, index: int, row) -> tuple | None:
+        """One fee engine's row. Rank 1 is bold; SYM carries the icon."""
+        if not isinstance(row, dict):
+            return None
+        is_top = index == 0
+        rank = row.get("rank", index + 1)
+        sym_cell = address_text(
+            row.get("address"),
+            label=safe_symbol(row.get("symbol")),
+            width=_SYM_WIDTH,
+            style="bold" if is_top else "",
+            explorer=EXPLORER,
+        )
+        fees_24h = _fmt_eth(row.get("fees_24h_eth"))
+        fees_life = _fmt_eth(row.get("fees_lifetime_eth"))
+        fees_per_vol = _fmt_ratio_pct(row.get("fees_per_vol_pct"))
 
-        for idx, row in enumerate(engines[:10], start=1):
-            if not isinstance(row, dict):
-                continue
-            rank = row.get("rank", idx)
-            symbol = _safe_symbol(row.get("symbol"))
-            sym_cell = address_text(
-                row.get("address"),
-                label=symbol,
-                width=_SYM_WIDTH,
-                style="bold" if idx == 1 else "",
-                explorer=EXPLORER,
-            )
-            fees_24h = _fmt_eth(row.get("fees_24h_eth"))
-            fees_life = _fmt_eth(row.get("fees_lifetime_eth"))
-            fees_per_vol = _fmt_ratio_pct(row.get("fees_per_vol_pct"))
+        if is_top:
+            rank_str = f"[bold]{rank}[/]"
+            fees_24h = f"[bold]{fees_24h}[/]"
+        else:
+            rank_str = str(rank)
 
-            if idx == 1:
-                rank_str = f"[bold]{rank}[/]"
-                fees_24h = f"[bold]{fees_24h}[/]"
-            else:
-                rank_str = str(rank)
-
-            table.add_row(rank_str, sym_cell, fees_24h, fees_life, fees_per_vol)
+        return (rank_str, sym_cell, fees_24h, fees_life, fees_per_vol)

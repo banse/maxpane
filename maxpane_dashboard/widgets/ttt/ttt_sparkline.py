@@ -11,38 +11,37 @@ fewer than 2 samples we render ``"waiting for data..."`` instead of an
 empty bar, so the user sees the dashboard is alive but the series isn't
 ready yet.
 
-Inspired by ``maxpane_dashboard/widgets/ocm/ocm_sparklines.py`` but
-adapted for two heterogeneous series (integer burn counts vs USD volume).
-
-The sparkline primitives live in
-``maxpane_dashboard/widgets/sparkline_common.py`` and are imported, not
-copied (MEDI-36) -- this module used to carry its own byte-identical
-``_coerce_points``/``_build_sparkline``.
+The title, its blank row, the label column, the sparkline loop and the
+waiting line are
+:class:`~maxpane_dashboard.widgets.panels.SparklinePanel`'s (Branch 7,
+WP-B); the numbers below are this panel's own -- a 12-cell label column,
+no trend arrow, the waiting line kept beside its label so the reader can
+tell which of the two series is not ready, and ``MIN_POINTS = 2``,
+because a single sample would be drawn as a flat baseline and a flat
+baseline reads as a run of zeroes that never happened.
 """
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import Static
+from maxpane_dashboard.widgets.fmt import fmt_int
+from maxpane_dashboard.widgets.panels import SparklinePanel
 
-from maxpane_dashboard.widgets.sparkline_common import (
-    build_sparkline as _build_sparkline,
-    coerce_points as _coerce_points,
-)
-
-_WAITING = "[dim]waiting for data...[/]"
-
-
-def _fmt_burns(value: float) -> str:
-    try:
-        return f"{int(value):,}"
-    except (TypeError, ValueError):
-        return "--"
+#: The ``unit`` tag :meth:`TTTSparkline.fmt_value` switches on. The two
+#: series are not the same kind of number -- one counts NFTs, the other
+#: is money -- and the hook is handed the unit precisely so one override
+#: can tell them apart without a second widget.
+_BURNS = "burns"
+_USD = "usd"
 
 
 def _fmt_volume_usd(value: float) -> str:
-    """Format USD volume with K/M/B suffix."""
+    """Format USD volume with K/M/B suffix.
+
+    **Not** ``sparkline_common.fmt_compact``, which is the base's default:
+    this renders two decimals and a leading ``$`` (``$1.23M``) where
+    ``fmt_compact`` renders one and none (``1.2M``). Both are on screen
+    beside a price, so the digits are a pixel, and this branch moves none.
+    """
     try:
         v = float(value)
     except (TypeError, ValueError):
@@ -56,37 +55,32 @@ def _fmt_volume_usd(value: float) -> str:
     return f"${v:.0f}"
 
 
-class TTTSparkline(Vertical):
-    """Two stacked sparklines: cumulative burns + NFT floor."""
+class TTTSparkline(SparklinePanel):
+    """Two stacked sparklines: cumulative burns + 24h volume."""
 
-    DEFAULT_CSS = """
-    TTTSparkline > .ttt-spark-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    TTTSparkline > .ttt-spark-line {
-        padding: 0 1;
-        width: 100%;
-    }
-    """
+    TITLE = "TRENDS (7d)"
 
-    def compose(self) -> ComposeResult:
-        yield Static("TRENDS (7d)", classes="ttt-spark-title")
-        # Blank spacer between the title and the first sparkline row,
-        # mirroring the pattern used in OCMSparklines (#ocm-chart-spacer).
-        yield Static("", classes="ttt-spark-line", id="ttt-spark-spacer")
-        yield Static(
-            _WAITING,
-            classes="ttt-spark-line",
-            id="ttt-spark-burns",
-        )
-        yield Static(
-            _WAITING,
-            classes="ttt-spark-line",
-            id="ttt-spark-volume",
-        )
+    LINE_IDS = ("ttt-spark-burns", "ttt-spark-volume")
+
+    #: ``24H VOLUME $`` is 12 cells, so both sparklines start in the same
+    #: column.
+    LABEL_WIDTH = 12
+
+    #: No trend arrow: this panel never drew one, and the arrow brings a
+    #: leading space that would be a ragged cell at the end of the row.
+    SHOW_ARROW = False
+
+    EMPTY_TEXT = "[dim]waiting for data...[/]"
+
+    EMPTY_KEEPS_LABEL = True
+
+    MIN_POINTS = 2
+
+    def fmt_value(self, value, unit: str) -> str:
+        """Burns are a grouped count; volume is money with a ``$`` and 2 dp."""
+        if unit == _USD:
+            return _fmt_volume_usd(value)
+        return fmt_int(value)
 
     def update_data(
         self,
@@ -100,26 +94,7 @@ class TTTSparkline(Vertical):
         ``(ts, value)`` tuples / 2-element lists.  Anything shorter than
         2 points renders the ``waiting for data...`` placeholder.
         """
-        # BURNS (orange)
-        burns_widget = self.query_one("#ttt-spark-burns", Static)
-        burns_pts = _coerce_points(burns_history)
-        if len(burns_pts) < 2:
-            burns_widget.update(f"  [dim]BURNS       [/]  {_WAITING}")
-        else:
-            spark = _build_sparkline([v for _, v in burns_pts])
-            current = _fmt_burns(burns_pts[-1][1])
-            burns_widget.update(
-                f"  [dim]BURNS       [/]  [#ffa500]{spark}[/]  [bold]{current}[/]"
-            )
-
-        # 24H VOLUME $ (cyan)
-        volume_widget = self.query_one("#ttt-spark-volume", Static)
-        volume_pts = _coerce_points(volume_history)
-        if len(volume_pts) < 2:
-            volume_widget.update(f"  [dim]24H VOLUME $[/]  {_WAITING}")
-        else:
-            spark = _build_sparkline([v for _, v in volume_pts])
-            current = _fmt_volume_usd(volume_pts[-1][1])
-            volume_widget.update(
-                f"  [dim]24H VOLUME $[/]  [cyan]{spark}[/]  [bold]{current}[/]"
-            )
+        self.render_series([
+            ("BURNS", burns_history, "#ffa500", _BURNS),
+            ("24H VOLUME $", volume_history, "cyan", _USD),
+        ])

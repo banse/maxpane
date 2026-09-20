@@ -10,62 +10,54 @@ some serializers degrade tuples to lists).  When a series has fewer than
 2 samples we render ``"waiting for data..."`` instead of an empty bar, so
 the user sees the dashboard is alive but the series isn't ready yet.
 
-Copied from ``ttt_sparkline.py`` and adapted to the Talismans data
-contract.  The sparkline primitives are now imported from
-``maxpane_dashboard/widgets/sparkline_common.py`` rather than copied
-along with it (MEDI-36).
+The title, its blank row, the label column, the sparkline loop and the
+waiting line are
+:class:`~maxpane_dashboard.widgets.panels.SparklinePanel`'s (Branch 7,
+WP-B); this module states the four numbers that are its own -- a 16-cell
+label column, no trend arrow, the waiting line kept **beside its label**
+(``EMPTY_KEEPS_LABEL``: with two stacked series the reader has to be able
+to tell *which* one is not ready), and ``MIN_POINTS = 2``, because
+``build_sparkline_from_points`` draws a single sample as a flat baseline
+and a flat baseline is a run of zeroes that never happened.
 """
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import Static
-
-from maxpane_dashboard.widgets.sparkline_common import (
-    build_sparkline as _build_sparkline,
-    coerce_points as _coerce_points,
-)
-
-_WAITING = "[dim]waiting for data...[/]"
+from maxpane_dashboard.widgets.fmt import fmt_int
+from maxpane_dashboard.widgets.panels import SparklinePanel
 
 
-def _fmt_count(value) -> str:
-    try:
-        return f"{int(value):,}"
-    except (TypeError, ValueError):
-        return "--"
-
-
-class TalismansSparkline(Vertical):
+class TalismansSparkline(SparklinePanel):
     """Two stacked sparklines: Mythic count + daily operations."""
 
-    DEFAULT_CSS = """
-    TalismansSparkline > .tal-spark-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    TalismansSparkline > .tal-spark-line {
-        padding: 0 1;
-        width: 100%;
-    }
-    """
+    TITLE = "TRENDS"
 
-    def compose(self) -> ComposeResult:
-        yield Static("TRENDS", classes="tal-spark-title")
-        yield Static("", classes="tal-spark-line", id="tal-spark-spacer")
-        yield Static(
-            _WAITING,
-            classes="tal-spark-line",
-            id="tal-spark-mythic",
-        )
-        yield Static(
-            _WAITING,
-            classes="tal-spark-line",
-            id="tal-spark-ops",
-        )
+    LINE_IDS = ("tal-spark-mythic", "tal-spark-ops")
+
+    #: Both labels are 16 cells wide (``DAILY OPERATIONS``), so the two
+    #: sparklines start in the same column.
+    LABEL_WIDTH = 16
+
+    #: No trend arrow: this panel never drew one, and the arrow brings a
+    #: leading space that would be a ragged cell at the end of the row.
+    SHOW_ARROW = False
+
+    EMPTY_TEXT = "[dim]waiting for data...[/]"
+
+    EMPTY_KEEPS_LABEL = True
+
+    MIN_POINTS = 2
+
+    def fmt_value(self, value, unit: str) -> str:
+        """A grouped integer, not ``fmt_compact``.
+
+        Both series are counts of whole things -- Mythics and operations --
+        and both sit in the low thousands, where ``fmt_compact`` would print
+        ``1.5K`` for a number the panel has room to show exactly. This is
+        the hoisted ``fmt.fmt_int``: the copy it replaces (``_fmt_count``)
+        was one of six identical ones.
+        """
+        return fmt_int(value)
 
     def update_data(
         self,
@@ -79,28 +71,7 @@ class TalismansSparkline(Vertical):
         ``[ts, value]`` lists / tuples.  Anything shorter than 2 points
         renders the ``waiting for data...`` placeholder.
         """
-        # MYTHIC COUNT (violet)
-        mythic_widget = self.query_one("#tal-spark-mythic", Static)
-        mythic_pts = _coerce_points(mythic_history)
-        if len(mythic_pts) < 2:
-            mythic_widget.update(f"  [dim]MYTHIC COUNT    [/]  {_WAITING}")
-        else:
-            spark = _build_sparkline([v for _, v in mythic_pts])
-            current = _fmt_count(mythic_pts[-1][1])
-            mythic_widget.update(
-                f"  [dim]MYTHIC COUNT    [/]  [#8a6fd6]{spark}[/]  "
-                f"[bold]{current}[/]"
-            )
-
-        # DAILY OPERATIONS (cyan)
-        ops_widget = self.query_one("#tal-spark-ops", Static)
-        ops_pts = _coerce_points(operations_history)
-        if len(ops_pts) < 2:
-            ops_widget.update(f"  [dim]DAILY OPERATIONS[/]  {_WAITING}")
-        else:
-            spark = _build_sparkline([v for _, v in ops_pts])
-            current = _fmt_count(ops_pts[-1][1])
-            ops_widget.update(
-                f"  [dim]DAILY OPERATIONS[/]  [cyan]{spark}[/]  "
-                f"[bold]{current}[/]"
-            )
+        self.render_series([
+            ("MYTHIC COUNT", mythic_history, "#8a6fd6", ""),
+            ("DAILY OPERATIONS", operations_history, "cyan", ""),
+        ])

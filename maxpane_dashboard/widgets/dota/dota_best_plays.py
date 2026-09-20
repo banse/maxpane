@@ -1,12 +1,19 @@
-"""Best plays two-column table for Defense of the Agents dashboard."""
+"""Best plays two-column table for Defense of the Agents dashboard.
+
+A two-column text board with no sibling outside its cattown twin, so it
+keeps its body bespoke on
+:class:`~maxpane_dashboard.widgets.panels.PanelBase` (Branch 7, WP-A)
+rather than being forced into one of the four shaped bases. What the base
+takes over is the title, its blank row and the guarded write.
+"""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
 from textual.widgets import Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
 
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import LOADING_ROW, PanelBase
 
 # Layout widths (plain text characters)
 _L_NAME_W = 16   # hero name column (left)
@@ -19,7 +26,7 @@ _R_VAL_W = 6     # abilities value column
 
 def _level_entry(name: str, level: int, is_top: bool) -> str:
     name = safe_markup(name[:_L_NAME_W])
-    star = "\u2605 " if is_top else "  "
+    star = "★ " if is_top else "  "
     val = f"Lv{level}"
     color = "yellow" if level >= 5 else "white" if level >= 3 else "dim"
     return f"[{color}]{star}{name:<{_L_NAME_W}} {val:>{_L_VAL_W}}[/]"
@@ -27,50 +34,39 @@ def _level_entry(name: str, level: int, is_top: bool) -> str:
 
 def _ability_entry(name: str, count: int, is_top: bool) -> str:
     name = safe_markup(name[:_R_NAME_W])
-    star = "\u2605 " if is_top else "  "
+    star = "★ " if is_top else "  "
     val = f"{count} abl"
     color = "cyan" if count >= 4 else "white" if count >= 2 else "dim"
     return f"[{color}]{star}{name:<{_R_NAME_W}} {val:>{_R_VAL_W}}[/]"
 
 
-class DOTABestPlays(Vertical):
+class DOTABestPlays(PanelBase):
     """Side-by-side tables showing top heroes by level and by abilities."""
 
-    DEFAULT_CSS = """
-    DOTABestPlays > .dota-bp-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    DOTABestPlays > .dota-bp-body {
-        padding: 0 1;
-        width: 100%;
-    }
-    """
+    TITLE = "BEST PLAYS"
 
-    def compose(self) -> ComposeResult:
-        yield Static("BEST PLAYS", classes="dota-bp-title")
-        yield Static("", classes="dota-bp-body")
+    def compose_body(self) -> ComposeResult:
         # Column headers
         yield Static(
             f"  {'Top by Level':<{_HALF_W - 2}}{' ' * _GAP}  {'Top by Abilities'}",
-            classes="dota-bp-body",
+            classes="panel-line",
             id="dota-bp-header",
         )
         yield Static(
             f"  [dim]{'hero level':<{_HALF_W - 2}}{' ' * _GAP}  {'ability count'}[/]",
-            classes="dota-bp-body",
+            classes="panel-line",
             id="dota-bp-subheader",
         )
-        # Blank spacer
-        yield Static("", classes="dota-bp-body", id="dota-bp-spacer")
+        # Blank line between the headers and the rows. Not the title's row,
+        # which is PanelBase's margin.
+        yield Static("", classes="panel-line", id="dota-bp-spacer")
         # Data rows
-        yield Static("[dim]  Loading...[/]", classes="dota-bp-body", id="dota-bp-row-0")
-        yield Static("", classes="dota-bp-body", id="dota-bp-row-1")
-        yield Static("", classes="dota-bp-body", id="dota-bp-row-2")
-        yield Static("", classes="dota-bp-body", id="dota-bp-row-3")
-        yield Static("", classes="dota-bp-body", id="dota-bp-row-4")
+        for index in range(5):
+            yield Static(
+                LOADING_ROW if index == 0 else "",
+                classes="panel-line",
+                id=f"dota-bp-row-{index}",
+            )
 
     def update_data(
         self,
@@ -84,7 +80,6 @@ class DOTABestPlays(Vertical):
         empty_left = " " * _HALF_W
 
         for i in range(5):
-            widget = self.query_one(f"#dota-bp-row-{i}", Static)
             left = (
                 _level_entry(by_level[i][0], by_level[i][1], i == 0)
                 if i < len(by_level)
@@ -95,4 +90,4 @@ class DOTABestPlays(Vertical):
                 if i < len(by_abilities)
                 else ""
             )
-            widget.update(f"{left}{' ' * _GAP}{right}")
+            self.write(f"#dota-bp-row-{i}", f"{left}{' ' * _GAP}{right}")

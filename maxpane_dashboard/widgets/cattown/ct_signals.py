@@ -7,48 +7,38 @@ manager could not compute arrives as ``None`` and renders an explicit
 Each row is written inside its own guard so one malformed signal dict
 cannot raise into the screen's ``except`` and leave the previous poll's
 rows on screen as if they were live.
+
+The rows, the label width, the guard and the recommendation *slot* are
+:class:`~maxpane_dashboard.widgets.panels.SignalsPanelBase`'s (Branch 7,
+WP-A). The recommendation **line** is not: Cat Town labels it
+(``→ Recommendation: …``) where every other panel writes the base's
+``-> …``, so this panel writes its own line through ``write`` rather than
+the base growing an option nobody else would set. That is a pixel, and this
+branch moves none.
 """
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import Static
-
-#: Shown in place of a signal the backend could not compute this poll.
-_UNAVAILABLE = "[yellow]unavailable[/]"
+from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import SignalsPanelBase
 
 
-class CTSignals(Vertical):
+class CTSignals(SignalsPanelBase):
     """Panel displaying Cat Town analytical signals and recommendation."""
 
-    DEFAULT_CSS = """
-    CTSignals > .signals-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    CTSignals > .signals-body {
-        padding: 0 1;
-        width: 100%;
-    }
-    CTSignals > .signals-rec {
-        padding: 0 1;
-        width: 100%;
-        text-align: center;
-        content-align: center middle;
-    }
-    """
+    TITLE = "SIGNALS"
 
-    def compose(self) -> ComposeResult:
-        yield Static("SIGNALS", classes="signals-title")
-        yield Static("", id="ct-sig-spacer")
-        yield Static("[dim]  Loading...[/]", classes="signals-body", id="ct-sig-conditions")
-        yield Static("", classes="signals-body", id="ct-sig-legendary")
-        yield Static("", classes="signals-body", id="ct-sig-cutoff")
-        yield Static("", id="ct-sig-spacer-2")
-        yield Static("", classes="signals-rec", id="ct-sig-recommendation")
+    ROWS = (
+        ("ct-sig-conditions", "Conditions"),
+        ("ct-sig-legendary", "Legendary"),
+        ("ct-sig-cutoff", "Top 10 Cutoff"),
+    )
+
+    LABEL_WIDTH = 15
+
+    DIM_LABEL = True
+
+    RECOMMENDATION_ID = "ct-sig-recommendation"
 
     def update_data(
         self,
@@ -59,39 +49,12 @@ class CTSignals(Vertical):
         **_kwargs,
     ) -> None:
         """Update signal lines and recommendation; a missing signal says so."""
-        self._render_row("#ct-sig-conditions", "Conditions", condition_signal)
-        self._render_row("#ct-sig-legendary", "Legendary", legendary_signal)
-        self._render_row("#ct-sig-cutoff", "Top 10 Cutoff", cutoff_signal)
-
-        try:
-            w = self.query_one("#ct-sig-recommendation", Static)
-            w.update(f"  [dim]\u2192 Recommendation:[/] [bold]{recommendation}[/]" if recommendation else "")
-        except Exception:
-            pass
-
-    def _render_row(self, selector: str, label: str, sig: dict | None) -> None:
-        """Write one signal row, degrading to an explicit unavailable state."""
-        try:
-            w = self.query_one(selector, Static)
-        except Exception:
-            return
-        try:
-            if isinstance(sig, dict) and sig:
-                w.update(_fmt(sig))
-            else:
-                w.update(_fmt({"label": label, "value_str": "unavailable",
-                               "color": "yellow"}))
-        except Exception:
-            try:
-                w.update(f"  [yellow]\u25cf[/] {label} {_UNAVAILABLE}")
-            except Exception:
-                pass
-
-
-def _fmt(sig: dict) -> str:
-    """Format a signal row: label, value, colored indicator."""
-    label = sig.get("label", "")
-    value = sig.get("value_str", "")
-    color = sig.get("color", "dim")
-    indicator = sig.get("indicator", "\u25cf")
-    return f"  [{color}]{indicator}[/] [dim]{label:<15}[/] [{color}]{value}[/]"
+        self.render_signal("#ct-sig-conditions", "Conditions", condition_signal)
+        self.render_signal("#ct-sig-legendary", "Legendary", legendary_signal)
+        self.render_signal("#ct-sig-cutoff", "Top 10 Cutoff", cutoff_signal)
+        self.write(
+            f"#{self.RECOMMENDATION_ID}",
+            f"  [dim]→ Recommendation:[/] "
+            f"[bold]{safe_markup(recommendation)}[/]"
+            if recommendation else "",
+        )

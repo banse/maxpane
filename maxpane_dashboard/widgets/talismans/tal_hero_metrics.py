@@ -3,7 +3,7 @@
 Four boxes laid out horizontally:
 
 * LIVE TOKENS    -- currently live token supply, with a drift subtitle
-  showing the signed delta from the 1,536 genesis mint.
+  showing the signed delta from the genesis mint.
 * MYTHICS        -- count of Mythic talismans, with a "% · forged"
   subtitle.
 * TOTAL CORES    -- total cores in the system, with a conservation
@@ -12,77 +12,56 @@ Four boxes laid out horizontally:
 * 24H OPERATIONS -- count of operations in the last 24h, with an
   all-time-total subtitle.
 
-Each value is rendered exception-safe: a missing/None scalar collapses to
-``"--"`` rather than raising.  This matches the project rule that widgets
-must never crash on partial data.
+The row, the boxes and their guard are
+:class:`~maxpane_dashboard.widgets.panels.HeroRow`'s (Branch 7, WP-B).
+**That guard is the change this migration makes here** (named change 2):
+the four boxes were four bare ``query_one(...).update(...)`` calls, so a
+missing box raised into the screen's ``except`` and left the previous
+poll's numbers on screen as if they were live, and a value the formatter
+could not read did the same. Each body is now built *inside*
+:meth:`~maxpane_dashboard.widgets.panels.HeroRow.render_box`'s guard and
+a build that raises lands on an explicit ``unavailable``.
 
-Copied from ``ttt_hero_metrics.py`` and adapted to the Talismans data
-contract.
+``--`` is still what a scalar the manager served as ``None`` renders:
+that is a deliberate "nothing to report" (``total_cores`` while the
+enumeration syncs), not a failed read, and the two must stay tellable
+apart.
 """
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Horizontal
-from textual.widgets import Static
+from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
+from maxpane_dashboard.widgets.panels import HeroBoxBase, HeroRow
 
-_GENESIS = 1536
+#: What a box whose scalar arrived as ``None`` shows: the value and its
+#: subtitle both say "nothing to report", which is not the same claim as
+#: ``unavailable`` (the guard's, for a read that failed).
+_NO_VALUE = "[dim]--[/]\n[dim]--[/]"
 
 
-class TalismansHeroBox(Static):
+class TalismansHeroBox(HeroBoxBase):
     """A single hero metric box: title, big number, subtitle."""
 
     DEFAULT_CSS = ""
 
 
-class TalismansHeroMetrics(Horizontal):
+class TalismansHeroMetrics(HeroRow):
     """Row of four hero metric boxes for the Talismans dashboard."""
+
+    BOX_CLASS = TalismansHeroBox
+
+    BOXES = (
+        ("tal-hero-tokens", "LIVE TOKENS"),
+        ("tal-hero-mythics", "MYTHICS"),
+        ("tal-hero-cores", "TOTAL CORES"),
+        ("tal-hero-ops", "24H OPERATIONS"),
+    )
 
     DEFAULT_CSS = """
     TalismansHeroMetrics > TalismansHeroBox {
         margin: 0 1;
     }
     """
-
-    def compose(self) -> ComposeResult:
-        yield TalismansHeroBox(
-            "[dim]LIVE TOKENS[/]\n\n[dim]Loading...[/]",
-            id="tal-hero-tokens",
-            classes="tal-hero-box",
-        )
-        yield TalismansHeroBox(
-            "[dim]MYTHICS[/]\n\n[dim]Loading...[/]",
-            id="tal-hero-mythics",
-            classes="tal-hero-box",
-        )
-        yield TalismansHeroBox(
-            "[dim]TOTAL CORES[/]\n\n[dim]Loading...[/]",
-            id="tal-hero-cores",
-            classes="tal-hero-box",
-        )
-        yield TalismansHeroBox(
-            "[dim]24H OPERATIONS[/]\n\n[dim]Loading...[/]",
-            id="tal-hero-ops",
-            classes="tal-hero-box",
-        )
-
-    # -- helpers --------------------------------------------------------
-
-    @staticmethod
-    def _fmt_int(value) -> str:
-        try:
-            return f"{int(value):,}"
-        except (TypeError, ValueError):
-            return "--"
-
-    @staticmethod
-    def _fmt_float(value, fmt: str) -> str:
-        try:
-            return format(float(value), fmt)
-        except (TypeError, ValueError):
-            return "--"
-
-    # -- update ---------------------------------------------------------
 
     def update_data(
         self,
@@ -100,64 +79,41 @@ class TalismansHeroMetrics(Horizontal):
     ) -> None:
         """Refresh all four hero boxes from the manager's flat dict."""
 
-        # -- LIVE TOKENS ------------------------------------------------
-        tokens_box = self.query_one("#tal-hero-tokens", TalismansHeroBox)
-        if live_tokens is None:
-            tokens_box.update(
-                "[dim]LIVE TOKENS[/]\n\n[dim]--[/]\n[dim]--[/]"
-            )
-        else:
-            big = self._fmt_int(live_tokens)
+        def tokens() -> str:
+            if live_tokens is None:
+                return _NO_VALUE
             try:
-                drift = int(token_drift)
-                sub = f"{drift:+d} from genesis"
+                sub = f"{int(token_drift):+d} from genesis"
             except (TypeError, ValueError):
                 sub = "--"
-            tokens_box.update(
-                f"[dim]LIVE TOKENS[/]\n\n[bold white]{big}[/]\n[dim]{sub}[/]"
+            return f"[bold white]{fmt_int(live_tokens)}[/]\n[dim]{sub}[/]"
+
+        def mythics() -> str:
+            if mythic_count is None:
+                return _NO_VALUE
+            pct = fmt_float(mythic_pct, ".1f")
+            forged = fmt_int(mythics_ever_forged)
+            return (
+                f"[bold white]{fmt_int(mythic_count)}[/]\n"
+                f"[dim]{pct}% · {forged} forged[/]"
             )
 
-        # -- MYTHICS ----------------------------------------------------
-        mythics_box = self.query_one("#tal-hero-mythics", TalismansHeroBox)
-        if mythic_count is None:
-            mythics_box.update(
-                "[dim]MYTHICS[/]\n\n[dim]--[/]\n[dim]--[/]"
-            )
-        else:
-            big = self._fmt_int(mythic_count)
-            pct = self._fmt_float(mythic_pct, ".1f")
-            forged = self._fmt_int(mythics_ever_forged)
-            sub = f"{pct}% · {forged} forged"
-            mythics_box.update(
-                f"[dim]MYTHICS[/]\n\n[bold white]{big}[/]\n[dim]{sub}[/]"
+        def cores() -> str:
+            if total_cores is None:
+                return _NO_VALUE
+            sub = "[green]conserved[/]" if cores_invariant_intact \
+                else "[yellow]DRIFT[/]"
+            return f"[bold white]{fmt_int(total_cores)}[/]\n{sub}"
+
+        def ops() -> str:
+            if operations_24h is None:
+                return _NO_VALUE
+            return (
+                f"[bold white]{fmt_int(operations_24h)}[/]\n"
+                f"[dim]{fmt_int(operations_total)} all-time[/]"
             )
 
-        # -- TOTAL CORES ------------------------------------------------
-        cores_box = self.query_one("#tal-hero-cores", TalismansHeroBox)
-        if total_cores is None:
-            cores_box.update(
-                "[dim]TOTAL CORES[/]\n\n[dim]--[/]\n[dim]--[/]"
-            )
-        else:
-            big = self._fmt_int(total_cores)
-            if cores_invariant_intact:
-                sub = "[green]conserved[/]"
-            else:
-                sub = "[yellow]DRIFT[/]"
-            cores_box.update(
-                f"[dim]TOTAL CORES[/]\n\n[bold white]{big}[/]\n{sub}"
-            )
-
-        # -- 24H OPERATIONS ---------------------------------------------
-        ops_box = self.query_one("#tal-hero-ops", TalismansHeroBox)
-        if operations_24h is None:
-            ops_box.update(
-                "[dim]24H OPERATIONS[/]\n\n[dim]--[/]\n[dim]--[/]"
-            )
-        else:
-            big = self._fmt_int(operations_24h)
-            total = self._fmt_int(operations_total)
-            sub = f"{total} all-time"
-            ops_box.update(
-                f"[dim]24H OPERATIONS[/]\n\n[bold white]{big}[/]\n[dim]{sub}[/]"
-            )
+        self.render_box("#tal-hero-tokens", "LIVE TOKENS", tokens)
+        self.render_box("#tal-hero-mythics", "MYTHICS", mythics)
+        self.render_box("#tal-hero-cores", "TOTAL CORES", cores)
+        self.render_box("#tal-hero-ops", "24H OPERATIONS", ops)

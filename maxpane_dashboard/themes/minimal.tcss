@@ -1129,12 +1129,6 @@ CTLeaderboard {
     padding: 0 1;
 }
 
-CTLeaderboard > Static {
-    color: $text-muted;
-    padding: 0 1;
-    margin: 0 0 1 0;
-}
-
 CTLeaderboard DataTable {
     height: 1fr;
     padding: 0 0;
@@ -1148,10 +1142,6 @@ CTSparklines {
     content-align: center top;
 }
 
-CTSparklines > .chart-title {
-    color: $text-muted;
-}
-
 CTSignals {
     height: 1fr;
     padding: 0 1;
@@ -1160,18 +1150,9 @@ CTSignals {
     content-align: center top;
 }
 
-CTSignals > .signals-title {
-    color: $text-muted;
-}
-
 CTActivityFeed {
     width: 3fr;
     padding: 0 1;
-}
-
-CTActivityFeed > .feed-title {
-    color: $text-muted;
-    margin: 0 0 1 0;
 }
 
 CTActivityFeed RichLog {
@@ -1183,10 +1164,6 @@ CTBestPlays {
     width: 2fr;
     padding: 0 1;
     content-align: center top;
-}
-
-CTBestPlays > .ev-title {
-    color: $text-muted;
 }
 
 /* ── DOTA screen ───────────────────────────────────────────────────── */
@@ -1238,12 +1215,6 @@ DOTALeaderboard {
     padding: 0 1;
 }
 
-DOTALeaderboard > .dota-lb-title {
-    color: $text-muted;
-    padding: 0 1;
-    margin: 0 0 1 0;
-}
-
 DOTALeaderboard DataTable {
     height: 1fr;
     padding: 0 0;
@@ -1257,10 +1228,6 @@ DOTASparklines {
     content-align: center top;
 }
 
-DOTASparklines > .dota-chart-title {
-    color: $text-muted;
-}
-
 DOTASignals {
     height: 1fr;
     padding: 0 1;
@@ -1269,18 +1236,9 @@ DOTASignals {
     content-align: center top;
 }
 
-DOTASignals > .dota-sig-title {
-    color: $text-muted;
-}
-
 DOTAActivityFeed {
     width: 3fr;
     padding: 0 1;
-}
-
-DOTAActivityFeed > .dota-feed-title {
-    color: $text-muted;
-    margin: 0 0 1 0;
 }
 
 DOTAActivityFeed RichLog {
@@ -1292,10 +1250,6 @@ DOTABestPlays {
     width: 2fr;
     padding: 0 1;
     content-align: center top;
-}
-
-DOTABestPlays > .dota-bp-title {
-    color: $text-muted;
 }
 
 /* ── OCM screen ────────────────────────────────────────────────────── */
@@ -1616,31 +1570,10 @@ TTTLeaderboard {
     padding: 0 1;
 }
 
-TTTLeaderboard > .leaderboard-title {
-    color: $text-muted;
-    padding: 0 1;
-    text-style: bold;
-    margin: 0 0 1 0;
-}
-
 TTTSparkline {
     height: auto;
     padding: 0 1;
     content-align: center top;
-}
-
-/* `.ttt-spark-title`, not `.chart-title`. This block read
-   `TTTSparkline > .chart-title` from the day it was seeded off the OCM
-   sparkline's and matched nothing: the widget composes its title with
-   `classes="ttt-spark-title"`. Dead since it was written, and harmless only
-   because `TTTSparkline.DEFAULT_CSS` already states the same colour -- which
-   is precisely what hid it. Corrected here so the selector describes the
-   widget it names; no rendered pixel moves.
-
-   No `margin: 0 0 1 0`: this panel paints its blank row from Python
-   (`#ttt-spark-spacer`), so the margin would give it two. */
-TTTSparkline > .ttt-spark-title {
-    color: $text-muted;
 }
 
 TTTSignals {
@@ -1651,22 +1584,9 @@ TTTSignals {
     content-align: center top;
 }
 
-/* `.ttt-signals-title`, not `.signals-title` -- same dead-selector defect as
-   TTTSparkline above, and the reason the theme copy of this widget's title
-   rule could not have carried the blank row even if it had stated it. */
-TTTSignals > .ttt-signals-title {
-    color: $text-muted;
-    margin: 0 0 1 0;
-}
-
 TTTActivityFeed {
     width: 3fr;
     padding: 0 1;
-}
-
-TTTActivityFeed > .feed-title {
-    color: $text-muted;
-    margin: 0 0 1 0;
 }
 
 TTTActivityFeed RichLog {
@@ -1678,14 +1598,6 @@ TTTFeesTable, TTTClaimsTable {
     width: 2fr;
     padding: 0 1;
     content-align: center top;
-}
-
-TTTFeesTable > .fees-title,
-TTTClaimsTable > .claims-title {
-    color: $text-muted;
-    padding: 0 1;
-    text-style: bold;
-    margin: 0 0 1 0;
 }
 
 /* ── Talismans screen ─────────────────────────────────────────── */

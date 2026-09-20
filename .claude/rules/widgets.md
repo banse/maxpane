@@ -21,18 +21,25 @@ Layout and sizing rules live in `.claude/skills/terminal-layout/SKILL.md`, not h
 
 ## Escape every third-party string before it reaches markup or a `DataTable`
 
-Use `widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message
-pump, so a malformed name raises *outside* the screen's `try/except` and kills the app. Token
+Use `widgets/markup_safety.safe_markup`. Where the raise lands depends on the widget (probed on
+Textual 8.1.1, 2026-09-20): a `DataTable.add_row` returns and the `MarkupError` fires later in
+`_on_idle` → `default_cell_formatter`, *outside* the screen's `try/except`, and kills the app; a
+`Static.update` raises synchronously at the call; a `RichLog.write` parses nothing (markup is
+off by default). The convention covers all three because the two that do not kill the app leave
+the *previous* content on screen instead — a stale value presented as live. Token
 symbols are attacker-controlled: anyone can deploy an ERC-20 named `[/x]`. Analytics never
 sanitises; escaping (or a `Text` with markup disabled) happens at the widget boundary, and a
 brief's test that cannot pass under escaping is a brief defect.
 
 ## A widget that renders third-party text through `Static` hands it a pre-built `rich.text.Text`
 
-Never a markup string. `Static.update("…[/x]…")` does not parse at call time — Textual defers
-`Content.from_markup` into the message pump — so the parse failure raises outside the screen's
-`try/except`. Parse it yourself, synchronously, inside your own `try` (`Text.from_markup(...)`)
-and a malformed row degrades to a skipped row. `SurfFeed._row_text` is the worked example.
+Never a markup string. On Textual 8.1.1 `Static.update("…[/x]…")` raises `MarkupError` at the
+call (probed 2026-09-20: `update()` raised synchronously, the app stayed alive); earlier notes
+here said the parse was deferred into the message pump, which is no longer what happens. Either
+way the widget's own `try` is the only place the failure lands usefully: an unguarded call kills
+the handler, a guarded one leaves the widget's **previous** content on screen — a stale value
+presented as live, not a blank. Parse it yourself, synchronously, inside your own
+`try` (`Text.from_markup(...)`) and a malformed row degrades to a skipped row. `SurfFeed._row_text` is the worked example.
 `Text.no_wrap` and `Text.overflow` are inert through Textual 8, and a *sized* cell is not a
 *fitted* one (terminal-layout skill).
 
@@ -154,7 +161,8 @@ contract. Copy the template, or any migrated screen.
 
 ## Panels subclass `widgets/panels.py`
 
-Branch 6 of the refactor programme, 2026-09-20. Five panel shapes had been hand-copied into every
+Branch 6 of the refactor programme, 2026-09-20; widened by Branch 7, WP-A and WP-B, the same day.
+Five panel shapes had been hand-copied into every
 dashboard package, and a fix applied to one copy reached none of the others: `_UNAVAILABLE`
 (9 copies), `Loading...` (typed in 68 files), `_render_row` (7) / `_render_box` (4),
 `_fmt(sig)` / `_fmt_signal` (8), `_fmt_value` (3), `_format_event_time` (5) and a
@@ -162,8 +170,10 @@ dashboard package, and a fix applied to one copy reached none of the others: `_U
 each:
 
 - **`UNAVAILABLE`** (`[yellow]unavailable[/]`), **`LOADING`** (`[dim]Loading...[/]`) and
-  `LOADING_ROW` (`LOADING` indented into a signals row's column, *derived* from it) — import
-  them; a migrated package defines none of them.
+  `LOADING_ROW` (`LOADING` indented into a signals row's column, *derived* from it) and
+  `UNAVAILABLE_LINE` (`UNAVAILABLE` in a feed row's column, derived the same way — what a
+  **snapshot** feed writes when the read failed) — import them; a migrated package defines none of
+  them.
 - **`PanelBase(Vertical)`** — `TITLE` plus the `compose_body()` hook. `compose` yields the title
   `Static` (class `panel-title`) and then the body; `write(selector, content)` is `query_one` +
   `update` inside one guard **that logs at `warning`** (the panels that write this way used to
@@ -171,17 +181,74 @@ each:
   render), and `write_guarded(selector, build, fallback)` **builds inside the guard**, which is the MEDI-38 rule: a malformed value lands on an explicit degraded state here,
   not in the screen's `except` with the previous poll's number still on screen as if live.
 - **`HeroBoxBase` / `HeroRow(Horizontal)`** — `BOX_CLASS`, `BOXES` of `(id, label)`, `render_box`.
+  `build()` may return a **`str`** (formatted as `[dim]{label}[/]\n\n{body}`) or a
+  **`rich.text.Text`**, which is written as `Text.from_markup(f"[dim]{label}[/]\n\n") + body` —
+  concatenated, never interpolated, because an address cell's style spans and its click `meta`
+  do not survive a round-trip through markup (cattown's LEADER box and dota's four boxes).
   Not a `PanelBase`: a hero row has no title widget, and its blank row is the `\n\n` inside the
   box string. `HeroBoxBase` states **no** geometry; a package keeps its own subclass and the
   stylesheet names that (`OCMHeroBox { width: 1fr; … }`).
 - **`SignalsPanelBase(PanelBase)`** — `ROWS`, `LABEL_WIDTH` (18 in ocm/dota, 15 in cattown and the
   template), `DIM_LABEL`, `RECOMMENDATION_ID`; the module function `fmt_signal(sig, *,
-  label_width, dim_label)` is the one formatter both spellings now come from.
+  label_width, dim_label, labelled=True)` is the one formatter every spelling now comes from, and
+  it **escapes `value_str` through `markup_safety.safe_markup`** — a signal's value is whatever
+  the analytics read off a chain, and a token symbol spelled `[/x]` made the write raise
+  `MarkupError`, which the row's guard turned into a dropped or degraded row instead of the value. A `ROWS` item is `(id, label)`; `(id, None)`
+  is a **label-less row** (`  [c]{ind}[/] [c]{value}[/]`, and the
+  degraded row drops the label too, so it stays `unavailable` without an empty column in front of
+  it); a bare `None` item is a blank `.panel-line` **separator** between groups of rows. The
+  `Loading...` seed lands on the first *row*, never on a separator. Both have real users since
+  WP-B: `TalismansSignals` and `TTTSignals` are label-less throughout — their value strings already
+  name themselves ("2 mythics 24h", "0 buybacks ready"), so a label column would only repeat
+  them — and each carries one separator, before FORGE MOMENTUM and before CONCENTRATION.
+  `TTTSignals` also keeps one row it hides at runtime (`display = bool(...)` on the fresh-launch
+  row, set in its own `update_data` after `render_signal`): the base has no opinion about a row's
+  visibility, and a panel whose optional row doubled as the title's blank row is how that blank
+  used to vanish exactly when there was a launch to announce.
 - **`SparklinePanel(PanelBase)`** — `LINE_IDS` and `render_series((label, points, color, unit), …)`
   over `sparkline_common`'s `coerce_points` / `build_sparkline_from_points` / `trend_arrow` /
-  `fmt_compact`, label padded `label[:8].ljust(8)`. An unusable series writes `""`, never a flat
-  baseline that would read as a real run of zeroes.
-- **`RichLogFeed(PanelBase)`** — `LOG_ID`, `EMPTY_LINE`, the dedupe set, and two hooks:
+  `fmt_compact`. Six knobs, each defaulting to the Branch 6 behaviour: `LABEL_WIDTH` (8; 9 in
+  dota, 12 in ttt, 16 in talismans), `SHOW_ARROW` (`True`; the trailing space goes with the arrow,
+  so `False` leaves no ragged cell — talismans and ttt draw none), `EMPTY_TEXT` (`""`),
+  `MIN_POINTS` (`1`), `EMPTY_KEEPS_LABEL` (`False`) and the `fmt_value(value, unit)` hook
+  (`fmt_compact`). Override
+  `fmt_value` only where the series genuinely is not a magnitude, or where the panel's own digits
+  are a pixel: dota's lane frontline is a
+  position between two bases, where `fmt_compact` would print `1.0K` for `950`; talismans counts
+  Mythics and operations in the low thousands and shows them grouped (`1,900`, not `1.9K`); ttt's
+  volume line is money and renders `$1.23M` where `fmt_compact` renders `1.2M`. The `unit` tag is
+  passed so one override can switch on which line it is drawing (ttt's does). An unusable series
+  writes `EMPTY_TEXT`, never a flat baseline that would read as a real run of zeroes — and
+  `MIN_POINTS = 2` is what makes a **single** sample unusable, which talismans and ttt both say,
+  because `build_sparkline_from_points` draws one point as a flat baseline and a flat baseline is a
+  run of zeroes that never happened. `EMPTY_KEEPS_LABEL` keeps the label column on that line
+  (`MYTHIC COUNT     waiting for data...`): with two stacked series the reader has to be able to
+  tell *which* one is not ready. It means nothing where `EMPTY_TEXT` is empty, and a line whose
+  entry could not even be unpacked has no label to keep and writes `EMPTY_TEXT` bare.
+- **`TableLeaderboard(PanelBase)`** — `TABLE_ID`, `COLUMNS` of `(label, width)`, `CURSOR_TYPE`
+  (`"row"`), `ZEBRA` (`True`), `ROW_CAP` (10; 20 in dota, 12 in talismans' materials ledger, 6 in
+  ttt's claims table, `None` for talismans' matrix), `LOADING_ROW` and `EMPTY_ROW` tuples,
+  plus `render_table(rows, *, footer=None)` over the `build_row(index, item) -> tuple | None`
+  hook. **`EMPTY_ROW` is painted only when there are no rows *and* no `footer`.** A footer is a row
+  in its own right: `TalismansMatrixTable` — the base's one footer user — serves its bold TOTAL
+  line out of a different payload key than its rows, so a `No data` above a real total would be a
+  false negative. **Not called `Leaderboard`:** `widgets/leaderboard.py` owns that name and `minimal.tcss`
+  has a bare block for it (see the type-selector rule below). `None` from `build_row` skips the
+  item without a gap (the non-dict guard talismans and ttt carry); every row is built *and* added
+  inside its own guard, so one item the formatter cannot read is one missing line rather than an
+  exception escaping after `clear()` and leaving the table empty — which on a leaderboard reads as
+  "nobody is playing". The skip is **logged at `warning`** with the class and the row index, like
+  `PanelBase.write`; `NotImplementedError` is re-raised past the guard, as in `RichLogFeed`.
+  `on_mount` checks `EMPTY_ROW` and `LOADING_ROW` against the column count and raises `TypeError`
+  naming the class: a wrong-width tuple is a programming error, and `add_row` raises on a surplus
+  cell but **pads a short one in silence** — so half of it would otherwise surface only as a
+  degraded state that paints nothing.
+- **`RichLogFeed(PanelBase)`** — `LOG_ID`, `EMPTY_LINE`, `SNAPSHOT`, three `RichLog` knobs
+  (`WRAP` / `HIGHLIGHT` / `MAX_LINES`, `True` / `True` / `None` as Branch 6 had them; talismans and
+  ttt set `False` / `False` / `200`, because their rows are **columnar** — a wrapped burn row puts
+  its tokenId under its timestamp and the column stops being a column — and Rich's repr highlighter
+  recolours the numbers on top of the per-event-type colour the row already carries), the dedupe
+  set, and two hooks:
   `dedupe_key(event)` (default `event.get("tx_hash") or None`) and the abstract `format_row(event)
   -> Text | None`. `format_row` returns a **`Text`**, never a markup string. `render_events` is the
   merged contract: an empty poll writes the placeholder only while nothing has ever been shown and
@@ -200,9 +267,30 @@ each:
   subclass that never wired up `format_row` is a programming error and must fail loudly instead of
   painting `No activity yet` forever.
 
+  **`SNAPSHOT` picks which of two contracts a feed is under, and the difference is what a poll
+  means.** A **stream** (`False`, the default, every feed but one) is a log of events that
+  happened — ocm's mints, cattown's catches — so a poll that brings nothing adds nothing and the
+  rows already up are still true. A **snapshot** (`True`, dota's hero roster) is the current state
+  of something, where every row carries a number true only of the poll it came from: it re-paints
+  the whole panel every poll, keeps **no** row from a previous one, and skips the dedupe guard
+  outright. That makes the two falsy inputs different facts rather than one — `None` is "the read
+  failed, I could not look" and writes the derived `UNAVAILABLE_LINE`, `[]` is the real negative
+  and writes `EMPTY_LINE` — and a poll whose rows *arrived* but none of which `format_row` could
+  show writes `UNAVAILABLE_LINE` too, never `EMPTY_LINE`: the read returned a state, so "there is
+  nothing" would be a false negative (re-review N1). A stream that kept a roster's rows would be
+  "a stale number presented as live"; a snapshot that dropped a stream's rows would be a false
+  degradation. **A manager must
+  serve the two apart** for any of it to work: `data/dota_manager.py` served `[]` for a failed
+  game-state read — a failed read wearing a real negative's clothes — and was fixed with the panel
+  (Branch 7 WP-A, review C1).
+
 **The blank row under a title is `PanelBase`'s `margin: 0 0 1 0`.** A subclass yields no spacer for
 it. ocm's staking overview used to carry *both* mechanisms and painted two rows;
-`tests/widgets/test_title_blank_row.py` now names every ocm panel.
+`tests/widgets/test_title_blank_row.py` now names every panel in every migrated package —
+leaderboards and feeds included, which nothing covered before. Note it is *not* a ban on blank
+`Static`s: three shapes yield one as content (a seeded body line, the row before a
+recommendation, the gap between a BEST PLAYS header and its rows), and no source check can tell
+those from the title's spacer. The row is what is asserted, composited.
 
 **A base class's name is a CSS type selector for every subclass — so the shared names carry
 `Base`.** `HeroBoxBase` and `SignalsPanelBase` are not stylistic: `widgets/hero_metrics.py` and
@@ -223,12 +311,24 @@ every subclass. Being unnecessary is how `TTTSparkline > .chart-title` matched n
 life of `minimal.tcss`. A stylesheet block keyed on the widget's own class name (geometry, colours)
 stays where it is.
 
-`widgets/ocm/` is the worked example — all six panels, no `update_data` signature changed.
-`tests/widgets/test_panels.py` covers the bases and holds the agreement test that reddens when a
-copy is pasted back into the ocm package. **`TableLeaderboard` does not exist yet:** it lands in
-Branch 7 with its first subscriber (cattown), because a base with no subclass is a template by
-another name. Until then `templates/leaderboard_template.py` is still the copy-source for a
-leaderboard, with the copy-source caveat in step 3 below.
+`widgets/ocm/` and `widgets/cattown/` are the worked examples — six panels each, no `update_data`
+signature changed in either, and cattown covers all five shapes plus `TableLeaderboard`, whose
+first subscriber it is. `widgets/cattown/_fmt.py`
+is where the two formatters *two* of its modules needed were hoisted, rather than left as three
+copies of a rarity-colour map; `widgets/ttt/_fmt.py` is the same move for `safe_symbol`, which
+`ttt_leaderboard.py` and `ttt_fees_table.py` each carried a byte-identical copy of.
+**Five packages are on the bases as of Branch 7 WP-B** — ocm, cattown, dota, talismans, ttt — and
+no widget class name and no `update_data` signature changed in any of them, so no screen's `PANELS`
+and no agreement test in `tests/screens/test_dashboard_screen.py` was touched.
+`tests/widgets/test_panels.py` covers the bases and holds the agreement tests that redden when a
+copy is pasted back into a migrated package: both are parametrised over one `MIGRATED_PACKAGES`
+table, `{"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7}` — package → how many
+`update_data` widget classes the walk must find — which is the only line a later migration edits.
+The counts differ per package, so the number is hand-checked, not derived, or it would
+compare `__all__` against itself. The banned-name set the same walk enforces now also covers
+`_fmt_int`, `_fmt_float`, `_safe_get`, `_DASH`, `_WAITING`, `_format_ts` and `_UNAVAILABLE_SIGNAL`,
+whose one definitions are `widgets/fmt.py`'s `fmt_int` / `fmt_float` / `safe_get` / `DASH` /
+`hhmm` and the base's own degraded row.
 
 ## Reuse before you build
 

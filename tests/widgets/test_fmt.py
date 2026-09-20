@@ -24,10 +24,13 @@ from maxpane_dashboard.widgets.fmt import (
     fmt_age,
     fmt_countdown,
     fmt_eth,
+    fmt_float,
+    fmt_int,
     fmt_pct,
     fmt_points,
     hhmm,
     mmdd,
+    safe_get,
 )
 
 _HOSTILE = (None, True, False, "x", "", [], {}, object(), b"\x00",
@@ -37,7 +40,8 @@ _HOSTILE = (None, True, False, "x", "", [], {}, object(), b"\x00",
 def test_the_export_list_is_exactly_the_public_surface():
     assert set(fmt.__all__) == {
         "DASH", "EMDASH", "as_float", "fmt_age", "fmt_countdown", "fmt_eth",
-        "fmt_pct", "fmt_points", "hhmm", "mmdd",
+        "fmt_float", "fmt_int", "fmt_pct", "fmt_points", "hhmm", "mmdd",
+        "safe_get",
     }
     for name in fmt.__all__:
         assert hasattr(fmt, name), name
@@ -166,13 +170,74 @@ def test_mmdd_default_unknown_marker_and_override():
 
 
 @pytest.mark.parametrize("fn", [as_float, fmt_age, fmt_countdown, fmt_eth,
-                                fmt_pct, fmt_points, hhmm, mmdd])
+                                fmt_int, fmt_pct, fmt_points, hhmm, mmdd])
 def test_no_formatter_raises_on_hostile_input(fn):
     """Widgets run inside Textual's message pump; a raise there kills the app."""
     for value in _HOSTILE + ("[/x]", [1, 2], {"a": 1}, 10**30):
         out = fn(value)
         if fn is not as_float:
             assert isinstance(out, str), (fn.__name__, value)
+
+
+#: What the six ``_fmt_int`` copies in ``widgets/talismans/`` and
+#: ``widgets/ttt/`` rendered for each probe, read off them before Branch 7
+#: WP-B deleted them.  ``float("inf")`` is the one entry that is not a
+#: transcription: the copies **raised** ``OverflowError`` on it, and this
+#: module may not (see :func:`fmt_int`).
+_FMT_INT_PROBES = [
+    (None, "--"), (0, "0"), (1490, "1,490"), (-46, "-46"),
+    (10**9, "1,000,000,000"), (12.9, "12"), ("7", "7"), (True, "1"),
+    ("x", "--"), ([], "--"), ({}, "--"), (float("nan"), "--"),
+    (float("inf"), "--"),
+]
+
+
+@pytest.mark.parametrize("value,expected", _FMT_INT_PROBES)
+def test_fmt_int_reproduces_the_six_copies_it_replaced(value, expected):
+    assert fmt_int(value) == expected
+
+
+def test_fmt_int_truncates_toward_zero_rather_than_rounding():
+    """``int()``, not ``round()`` -- what every copy did, and a count of
+    12.9 tokens is 12 of them, never 13."""
+    assert fmt_int(12.9) == "12" and fmt_int(-12.9) == "-12"
+
+
+#: The two ``_fmt_float`` copies' renderings, probe by probe.  ``True`` and
+#: the infinities are the entries that would change if this were built on
+#: ``as_float`` instead of ``float()``.
+_FMT_FLOAT_PROBES = [
+    (None, ".1f", "--"), (0, ".1f", "0.0"), (0.8, ".1f", "0.8"),
+    (12.5, ".3f", "12.500"), (0.5, ".4f", "0.5000"), ("2.5", ".1f", "2.5"),
+    (True, ".1f", "1.0"), ("x", ".1f", "--"), ([], ".1f", "--"),
+    (object(), ".1f", "--"), (float("inf"), ".1f", "inf"),
+]
+
+
+@pytest.mark.parametrize("value,spec,expected", _FMT_FLOAT_PROBES)
+def test_fmt_float_reproduces_the_two_copies_it_replaced(value, spec, expected):
+    assert fmt_float(value, spec) == expected
+
+
+def test_fmt_float_does_not_raise_on_a_hostile_format_spec():
+    """The spec is the widget's own literal today, but a formatter under
+    ``widgets/`` that can raise is one the message pump can kill."""
+    assert fmt_float(1.0, "nonsense") == "--"
+
+
+@pytest.mark.parametrize("bad", [None, "x", [1], (1,), 7, object()])
+def test_safe_get_returns_the_default_for_anything_that_is_not_a_dict(bad):
+    assert safe_get(bad, "k") is None
+    assert safe_get(bad, "k", "fallback") == "fallback"
+
+
+def test_safe_get_reads_a_dict_including_a_stored_none():
+    """A key present with a ``None`` value returns ``None``, not the
+    default: "the field is there and it is unknown" and "the field is
+    missing" are different facts to the feed that calls this."""
+    assert safe_get({"k": 5}, "k") == 5
+    assert safe_get({"k": None}, "k", "fallback") is None
+    assert safe_get({}, "k", "fallback") == "fallback"
 
 
 def test_fmt_is_pure_enough_for_a_widget_to_import():
