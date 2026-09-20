@@ -1147,6 +1147,58 @@ state.py` 26, `test_title_blank_row.py` 37, `test_hidden_shared_address_icons.py
 `tests/test_address_sweep_registry.py` 9, `-m guard tests` **189** (was 182 — the seven new guard
 cases are the class-collision test plus one bare-selector case per class in `panels.py`).
 
+**Branch 6 fix round 2 (2026-09-20).** Re-review: I1 and M1–M6 all ADDRESSED; three new findings,
+one Important. The last fix round the tier allows. Re-render to `b6_fix2.*`: **byte-identical to
+`b6_after.*` at 170×50 and at the 143 pin** (`cmp`, 50 rows each), so this round moved no pixel
+either. The degradation log is unchanged (`OCMStakingOverview` / `OCMSupplyBreakdown` still fail on
+the harness's `None` scalars — pre-existing follow-up 18).
+
+- **N3 (Important).** `RichLogFeed.render_events` keyed "a transient empty poll must not wipe a
+  populated feed" on `self._seen_keys` being non-empty — but `_seen_keys` only fills on the
+  hashable-key path. For the two documented key-less paths, `dedupe_key` returning `None` (the
+  "always new" mode) and the unhashable key M3 routes the same way, the set stayed empty while rows
+  were on screen, so the next empty poll ran `log.clear(); log.write(EMPTY_LINE)` over live rows: a
+  **false degradation**, which CLAUDE.md forbids as explicitly as a stale number. The contract now
+  hangs off `self._drawn`, set when at least one row lands, and both the empty-poll branch and the
+  flicker guard read it. With `dedupe_key` returning `None` every event is new, so the flicker
+  guard never fires and every poll redraws — that is what always-new means, and it is now stated in
+  the docstring. Three cases, one per path: `test_a_key_less_feed_survives_a_later_empty_poll`,
+  `test_an_unhashable_key_feed_survives_a_later_empty_poll`, and the pre-existing keyed
+  `test_a_populated_feed_survives_a_later_empty_poll` (whose docstring now says it passed even
+  under the defect, which is why the other two exist). Mutation: empty-poll branch reverted to
+  `if not self._seen_keys` → both new cases failed, 49 passed; restored by inverse edit.
+- **N1 (Minor).** The bare-selector guard was written as a bare *token* regex and so refused
+  `PanelBase > .panel-title { color: $accent; }` — exactly the cross-dashboard theme override
+  `rules/widgets.md` documents, in the stylesheet that is *meant* to outrank `DEFAULT_CSS`.
+  Narrowed to a **bare block**: the name standing alone as a whole selector, matched as
+  `,\s*<Name>\s*,` against each rule's selector list wrapped in sentinel commas
+  (`_css_selector_lists` now returns one normalised string per rule instead of one blob).
+  `HeroBoxBase {` matches, `A, HeroBoxBase, B {` matches, `OCMHeroBox {` and `HeroBoxBase > X {`
+  and `PanelBase > .panel-title {` do not — the five examples are asserted in
+  `test_the_bare_block_matcher_admits_a_theme_override`. The class-name walk also now covers
+  `maxpane_dashboard.screens`, since a `Screen` subclass is a `Widget` and its name is a type
+  selector too. Three mutations: `HeroBox = HeroBoxBase` appended to `panels.py` →
+  `test_no_panels_base_shares_its_name_with_another_widget_class` **and**
+  `…_is_a_bare_type_selector_in_the_stylesheet[HeroBox]` failed, 51 passed; a bare
+  `HeroBoxBase { min-width: 60; }` appended to `minimal.tcss` →
+  `…_is_a_bare_type_selector_in_the_stylesheet[HeroBoxBase]` failed **and** so did
+  `test_hero_box_malformed_poll_after_a_good_one_is_not_shown_as_live`, 50 passed — the second
+  failure is the collision mechanism itself, one bare block reshaping every subclass's geometry;
+  `PanelBase > .panel-title { color: $accent; }` appended instead → 52 passed, green. All three
+  restored by inverse edit.
+- **N2 (Minor).** Follow-up 20's evidence sentence attributed the hole to renaming ocm's import
+  alias. The reviewer's actual mutation was a private sparkline builder defined **in `panels.py`**,
+  called by `render_series`, renamed `_build_sparkline` → `_spark_from`, after which
+  `test_sparkline_common.py` passed 89/89 — the copy sat on the MRO the walk covers, under a name
+  the list does not. Corrected in `docs/handover_followups_2026_09.md`.
+
+Named tests after the round, all green: `test_panels.py` **52** (was 49), `test_medi38_unavailable_
+state.py` 26, `test_title_blank_row.py` 37, `test_hidden_shared_address_icons.py` 10,
+`test_sparkline_common.py` 89, `tests/screens/test_dashboard_screen.py` 26,
+`tests/screens/test_address_icons_everywhere.py -k ocm` 2, `tests/test_address_rule.py` 10,
+`tests/test_address_sweep_registry.py` 9, `-m guard tests` **190** (was 189 — the one new guard
+case is the bare-block matcher's example set).
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

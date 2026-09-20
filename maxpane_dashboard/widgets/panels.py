@@ -392,6 +392,13 @@ class RichLogFeed(PanelBase):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._seen_keys: set[str] = set()
+        #: Has a row ever reached the log? The "do not wipe a populated feed"
+        #: contract hangs off this and **not** off ``_seen_keys``, which only
+        #: fills on the hashable-key path: a feed whose ``dedupe_key`` returns
+        #: ``None`` (always new) or whose keys arrive unhashable draws rows
+        #: while the key set stays empty, and keying the contract on the set
+        #: wiped exactly those feeds on the next empty poll.
+        self._drawn = False
 
     def compose_body(self) -> ComposeResult:
         yield RichLog(id=self.LOG_ID, wrap=True, highlight=True, markup=True)
@@ -422,9 +429,16 @@ class RichLogFeed(PanelBase):
           been shown** -- a transient empty poll must not wipe a populated
           feed -- and ``clear()``s first, so the placeholder is written once
           rather than once per refresh interval (ocm appended another copy
-          every poll);
+          every poll). "Ever been shown" is ``self._drawn``, set when a row
+          lands, *not* ``self._seen_keys``: a key-less feed (``dedupe_key``
+          returning ``None``, or an unhashable key) draws rows without ever
+          filling the key set, and keying the contract on the set blanked
+          those feeds on the next empty poll;
         * every key is recorded, and when nothing is new and something is
-          already shown the log is left alone (ocm's flicker guard);
+          already drawn the log is left alone (ocm's flicker guard). With
+          ``dedupe_key`` returning ``None`` every event is new, so the guard
+          never applies and every poll redraws -- that is what always-new
+          means;
         * otherwise the log is cleared and every row is written inside its
           own guard: one unwritable row is skipped and the rest still land,
           because nothing may escape after ``clear()``.
@@ -435,7 +449,7 @@ class RichLogFeed(PanelBase):
             return
 
         if not events:
-            if not self._seen_keys:
+            if not self._drawn:
                 log.clear()
                 log.write(self.EMPTY_LINE)
             return
@@ -466,7 +480,7 @@ class RichLogFeed(PanelBase):
             self._seen_keys.add(key)
             has_new = True
 
-        if not has_new and self._seen_keys:
+        if not has_new and self._drawn:
             return
 
         log.clear()
@@ -489,5 +503,7 @@ class RichLogFeed(PanelBase):
 
         if written == 0:
             log.write(self.EMPTY_LINE)
+        else:
+            self._drawn = True
 
         self.call_after_refresh(log.scroll_home, animate=False)

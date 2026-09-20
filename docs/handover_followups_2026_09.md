@@ -189,9 +189,11 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     under an unlisted name passes both agreement tests. The pre-existing shape is the same: the
     original single-module form read `getattr(module, "_coerce_points", None)` and had exactly
     this hole for a differently-aliased copy; Branch 6 carried it across rather than introducing
-    it. Reviewer's evidence: renaming ocm's import alias makes the test green on a module that
-    could then hold anything. The fix is to assert on the *function objects* a module binds — walk
-    `vars(module)` for every value that `is` one of `sparkline_common`'s helpers and for every
-    locally-defined function whose body duplicates one — rather than on a hand-listed set of
-    names. Minor, Tier 0 when `test_sparkline_common.py` is next touched (Branch 6 review M6,
-    filed 2026-09-20).
+    it. Reviewer's evidence: a private sparkline builder defined **in `widgets/panels.py`** and
+    called by `render_series`, renamed `_build_sparkline` → `_spark_from`, after which
+    `tests/widgets/test_sparkline_common.py` passed 89/89 — the copy sat on the MRO the walk
+    covers, under a name the list does not. The fix is to assert on the *function objects* a
+    module binds — walk `vars(module)` for every value that `is` one of `sparkline_common`'s
+    helpers and for every locally-defined function whose body duplicates one — rather than on a
+    hand-listed set of names. Minor, Tier 0 when `test_sparkline_common.py` is next touched
+    (Branch 6 review M6, filed 2026-09-20; evidence corrected in fix round 2, N2).

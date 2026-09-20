@@ -187,8 +187,14 @@ each:
   merged contract: an empty poll writes the placeholder only while nothing has ever been shown and
   `clear()`s first (so it is written once, not once per refresh interval); a poll with nothing new
   leaves the log alone; otherwise every row is written inside its own guard, so one unwritable row
-  is skipped and the rest still land — nothing may escape after `clear()`. Two things deliberately
-  do escape or bypass: an **unhashable** key (a third-party `tx_hash` that arrived as a JSON list)
+  is skipped and the rest still land — nothing may escape after `clear()`. **"Ever been shown" is a
+  `_drawn` flag set when a row lands, never the dedupe set:** `_seen_keys` fills only on the
+  hashable-key path, so a feed whose `dedupe_key` returns `None` and one whose `tx_hash` arrives
+  unhashable both draw rows with an empty key set — and while the contract read the set, the very
+  next empty poll cleared their live rows and painted `No activity yet` over them. The flicker
+  guard hangs off the same flag; in always-new mode every event is new, so it never fires and every
+  poll redraws, which is what always-new means. Two things deliberately do escape or bypass: an
+  **unhashable** key (a third-party `tx_hash` that arrived as a JSON list)
   is never deduped and always drawn, rather than raising `TypeError` out of `update_data` and
   blanking the feed; and `NotImplementedError` is re-raised past the per-row guard, because a
   subclass that never wired up `format_row` is a programming error and must fail loudly instead of

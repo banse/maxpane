@@ -388,8 +388,45 @@ async def test_the_placeholder_is_written_once_across_three_empty_polls() -> Non
 
 
 async def test_a_populated_feed_survives_a_later_empty_poll() -> None:
+    """The keyed path: ``dedupe_key`` returns a hashable ``tx_hash``, so
+    ``_seen_keys`` fills. This case passed even while the contract read the
+    key set -- which is why the two key-less cases below exist."""
     text = await _text(_Feed, polls=[{"events": [_ev(1)]}, {"events": []}])
     assert "event 1" in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_a_key_less_feed_survives_a_later_empty_poll() -> None:
+    """Fix round 2, N3. ``dedupe_key`` returning ``None`` is the documented
+    "always new" mode (``panels.py``), and it never puts anything in
+    ``_seen_keys``. While the empty-poll branch tested that set, a feed in
+    this mode was wiped by the very next empty poll: live rows replaced with
+    ``No activity yet`` -- a false degradation on screen. The contract now
+    hangs off ``_drawn``.
+
+    Mutation that reddens this: ``if not self._drawn`` -> ``if not
+    self._seen_keys`` in the empty-poll branch.
+    """
+
+    class _KeyLessFeed(_Feed):
+        def dedupe_key(self, event: dict):
+            return None
+
+    text = await _text(
+        _KeyLessFeed, polls=[{"events": [_ev(1)]}, {"events": []}]
+    )
+    assert "event 1" in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_an_unhashable_key_feed_survives_a_later_empty_poll() -> None:
+    """Fix round 2, N3, the second key-less path: M3 routes an unhashable
+    ``tx_hash`` to "always new" without recording it, so the key set stays
+    empty and the next empty poll used to clear the drawn rows."""
+    unhashable = {"tx_hash": ["x"], "n": 9, "bad": False}
+    text = await _text(_Feed, polls=[{"events": [unhashable]},
+                                     {"events": []}])
+    assert "event 9" in text, text
     assert "No activity yet" not in text, text
 
 
@@ -586,28 +623,51 @@ _PANEL_CLASS_NAMES = frozenset(
     if inspect.isclass(obj) and obj.__module__ == panels.__name__
 )
 
-#: A **bare type selector**: a selector token that is exactly the class name
-#: and is not preceded by `.` (class), `#` (id) or `$` (variable). Textual
-#: matches a type selector against every base class in `_css_type_names`, so
-#: `HeroBox { … }` written for bakery's widget also matched every subclass of
-#: a base called `HeroBox`. Combinators (` `, `>`, `,`) and a pseudo-class
-#: suffix (`:hover`) end the token.
-_BARE_TYPE = r"(?<![.#$\w-])%s(?![\w-])"
+#: A **bare block**: the class name standing alone as a whole selector --
+#: either a rule's entire selector or one whole item of a comma-separated
+#: selector list. Matched against the selector list wrapped in sentinel
+#: commas, so both ends and every interior item are one expression:
+#:
+#:     r",\s*%s\s*," against "," + selector_list + ","
+#:
+#: What this admits and what it refuses (fix round 2, N1):
+#:
+#: * `HeroBoxBase {`            -- MATCH; bakery's bare block is exactly this
+#:                                 shape and it styles every subclass.
+#: * `A, HeroBoxBase, B {`      -- MATCH; a list item is a bare block too.
+#: * `OCMHeroBox {`             -- no match; a dashboard's own widget class.
+#: * `HeroBoxBase > X {`        -- no match; a rule *about* the base's
+#:                                 children, which is the documented way to
+#:                                 reach them.
+#: * `PanelBase > .panel-title` -- no match; this is the cross-dashboard
+#:                                 theme override `rules/widgets.md`
+#:                                 documents, and the app stylesheet is where
+#:                                 `DEFAULT_CSS` is meant to be overridden.
+#:                                 The earlier bare-*token* regex refused it.
+_BARE_BLOCK = r",\s*%s\s*,"
 
 
-def _css_selector_text(source: str) -> str:
-    """The stylesheet's selectors only -- comments and declarations dropped.
+def _css_selector_lists(source: str) -> list[str]:
+    """Every rule's selector list -- comments and declarations dropped.
 
     A class name inside a `/* … */` note (this branch wrote several) is prose,
     not a selector, and a `margin`/`color` value cannot be one either.
+    Declaration bodies collapse to `{}` so that the text before each `{` is
+    exactly one selector list, however many lines it spans.
     """
     without_comments = re.sub(r"/\*.*?\*/", " ", source, flags=re.S)
     without_bodies = re.sub(r"\{[^{}]*\}", " {} ", without_comments)
-    return " ".join(
-        line.split("{")[0]
-        for line in without_bodies.splitlines()
-        if "{" in line
-    )
+    return [
+        " ".join(m.group(1).split())
+        for m in re.finditer(r"([^{}]*)\{", without_bodies)
+        if m.group(1).strip()
+    ]
+
+
+def _bare_blocks(name: str, selector_lists) -> list[str]:
+    """The selector lists in which `name` stands alone as a whole item."""
+    pattern = re.compile(_BARE_BLOCK % re.escape(name))
+    return [sl for sl in selector_lists if pattern.search(f",{sl},")]
 
 
 @pytest.mark.guard
@@ -626,7 +686,13 @@ def test_no_panels_base_shares_its_name_with_another_widget_class() -> None:
     Mutation that reddens this: rename `HeroBoxBase` back to `HeroBox`.
     """
     clashes: dict[str, list[str]] = {}
-    for package in ("maxpane_dashboard.widgets", "maxpane_dashboard.templates"):
+    for package in (
+        "maxpane_dashboard.widgets",
+        "maxpane_dashboard.templates",
+        # A Screen subclass is a Widget, so its name is a type selector too
+        # (fix round 2, N1).
+        "maxpane_dashboard.screens",
+    ):
         pkg = importlib.import_module(package)
         for info in pkgutil.walk_packages(pkg.__path__, package + "."):
             if info.name == panels.__name__:
@@ -651,13 +717,47 @@ def test_no_panels_base_is_a_bare_type_selector_in_the_stylesheet(name) -> None:
     """The app stylesheet outranks `DEFAULT_CSS`, so a bare block wins.
 
     Parametrised per name: a failure says which base collided, not that one
-    did. `minimal.tcss` may name a *dashboard's own* widget class freely --
-    only the shared base names are forbidden there.
+    did. `minimal.tcss` may name a *dashboard's own* widget class freely, and
+    it may write `PanelBase > .panel-title { … }` -- a theme override of the
+    base's own children is the documented way to restyle every panel. Only a
+    **bare block**, the name standing alone as a whole selector, is forbidden.
+
+    Mutation that reddens this: append `HeroBoxBase { min-width: 60; }` to
+    minimal.tcss.
     """
-    selectors = _css_selector_text(_TCSS.read_text(encoding="utf-8"))
-    hits = re.findall(_BARE_TYPE % re.escape(name), selectors)
+    hits = _bare_blocks(name, _css_selector_lists(_TCSS.read_text(encoding="utf-8")))
     assert not hits, (
-        f"minimal.tcss uses {name!r} as a bare type selector; it is a "
+        f"minimal.tcss uses {name!r} as a bare block ({hits}); it is a "
         "widgets/panels.py base, so that block would style every subclass "
         "on every dashboard"
     )
+
+
+@pytest.mark.guard
+def test_the_bare_block_matcher_admits_a_theme_override() -> None:
+    """The examples in `_BARE_BLOCK`'s comment, asserted (fix round 2, N1).
+
+    Without the last case the guard refused a legitimate rule, which would
+    have pushed a real theme override out of the app stylesheet and into a
+    `DEFAULT_CSS` the stylesheet outranks.
+    """
+    sheet = """
+    HeroBoxBase { width: 1fr; }
+    OCMHeroBox { width: 1fr; }
+    HeroBoxBase > Static { color: red; }
+    PanelBase > .panel-title { color: $accent; }
+    Something, HeroBoxBase, Other { height: 3; }
+    """
+    lists = _css_selector_lists(sheet)
+    assert lists == [
+        "HeroBoxBase",
+        "OCMHeroBox",
+        "HeroBoxBase > Static",
+        "PanelBase > .panel-title",
+        "Something, HeroBoxBase, Other",
+    ], lists
+    assert _bare_blocks("HeroBoxBase", lists) == [
+        "HeroBoxBase",
+        "Something, HeroBoxBase, Other",
+    ]
+    assert _bare_blocks("PanelBase", lists) == []
