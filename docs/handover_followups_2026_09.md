@@ -659,3 +659,48 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     difference outside R5. Log lines identical except bakery's `NOUN` rewording and frenpet's lost
     population count (#51). Not a defect; the reference for anyone asking "did Branch 9 change what a
     user's file loads as". **No action.**
+
+## Branch 10 — RPC classifier hoist + library seams (filed at planning, 2026-09-20)
+
+60. **No process-level RPC rate limiter exists; pacing is per instance.** `rpc_common.pace` is pure and every
+    client keeps its own `_last_rpc_at` (cattown `:202`, curator `:390`, curator_nft_holders `:181`,
+    fwa_client `:755`, fwa_logs `:1497`, surf `:1193`, surf_pool4 `:528`, talismans `:522`, ttt `:536`), so N
+    concurrent clients in a web backend hit a keyless host at N× the pacing measured for one TUI
+    (0.05–0.5 s between calls). Also: every `_rpc` restarts its pool from the top, so a dead primary is
+    re-probed on every call. Belongs to whoever hosts the backend (a pool shared across requests or a
+    process-level limiter); nothing in the TUI needs it. **Minor, no branch** until a second frontend exists.
+
+61. **Flashbots' absence from every log pool is a comment, not a test.** rules/data.md says `rpc.flashbots.net`
+    is never in a log pool; the code records the rejection (`ttt_client.py:143`, `talismans_client.py:94`) and
+    `fwa_logs.LOG_ENDPOINTS:215-220` is a whitelist checked in `__init__`, but no test asserts the absence by
+    hostname across the nine pools. One parametrised test in `test_rpc_shared.py` next to
+    `test_state_and_log_endpoint_pools_stay_separate:427`. **Minor, Tier 0.**
+
+62. **Three `@lru_cache(maxsize=1)` ABI/topic loaders in `fwa_logs.py` (`:272`, `:283`, `:743`) return mutable
+    dicts.** Process-global and shared by reference; a caller that edits the returned dict edits it for every
+    later caller. Harmless today (no caller mutates), a hazard for a long-lived library host. Return a
+    `MappingProxyType` or a frozen copy. **Minor, Tier 0** when `fwa_logs.py` is next touched.
+
+63. **The FrenPet shared-cache hold lives in the app, not the data layer.** `app.py:123-136` reaches into four
+    `FrenPetManager`s and assigns `_frenpet_variant.cache = _shared_frenpet_cache` because all four persist to
+    the same `~/.maxpane/frenpet_cache.json`. A second frontend must reproduce that coupling or corrupt the file.
+    Move the sharing into the data layer (a `cache=` argument the four take — Branch 10 WP-B adds the seam — and
+    one factory that hands them the same instance). **Minor, Tier 1** (frenpet manager + app.py), after WP-B.
+
+64. **`poll_interval` is a TUI concept in every manager signature.** All eleven managers take
+    `poll_interval` as the first positional argument (`manager.py:54`, `dota_manager.py:39`, `base_manager.py:55`,
+    `cattown_manager.py:50`, `frenpet_manager.py:74`, `ttt_manager.py:109`, `talismans_manager.py:84`,
+    `ocm_manager.py:49`, curator `:651`, fwa `:477`, surf `:851`); a library consumer that polls on its own
+    schedule still has to pass one. Make it keyword-only with a default and stop reading it in `data/` where
+    only screens use it. **Minor, Tier 2** — eleven managers + the screens that construct them.
+
+65. **talismans and fwa_logs shrink on drpc `code 35` regardless of the span they asked for.**
+    `talismans_client.py:479-480` and `fwa_logs.py:1432-1433` classify "ranges over 10000 blocks are not
+    supported on free plan" as `range_cap` → shrink, and both pools hold `eth.drpc.org` (`talismans_client.py:104`,
+    `fwa_logs.py:217`). `log_range_messages.json` shows drpc answers that sentence identically at spans 403200,
+    10000, 2400 and 300 (its limit is archive depth, ~64 blocks): a client that shrinks on it halves its window
+    forever — the rules/data.md "rotate, do not shrink" defect, encoded only in `surf_pool4_client.py:424-459`
+    (`requested_span`) and, after Branch 10 WP-A decision P3, in curator. Fix per client: thread the requested
+    span into `_classify_rpc_error` (or check it in the pager) and demote `range_cap` to a rotate when the named
+    limit ≥ the span. Fixture-first from `log_range_messages.json`; both pagers consume `suggested_to`, so each
+    is its own change. **Important, Tier 1 per client.**
