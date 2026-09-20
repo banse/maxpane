@@ -2825,6 +2825,22 @@ and `:113` `leader_weight: float | None = None` (was `0.0`);
 
 **Found, not fixed** — follow-ups #45–#47 in `docs/handover_followups_2026_09.md`.
 
+**Branch 9 WP-A review (2026-09-20): Approved, 0 Critical, 0 Important, 5 Minor.** Compatibility proven both
+ways against a `53a71d5` worktree: both fixtures load point-for-point identically in the old and the new class
+(manager call shape, no `now=`), and the new class's save is byte-identical to the fixture with `saved_at`
+stripped — key order, values, types, no version key; the fixture script re-run inside the worktree reproduced
+both committed files md5-identical. R1 end to end: failed raffle read and empty entry list record nothing, a
+genuine `0` still records `(ts, 0.0)`, the manager diff is the two R1 hunks only, and `SparklinePanel` renders
+the now-empty series as `EMPTY_TEXT` rather than a zero baseline. Contract matches the Design block member for
+member; no undisclosed deviation. Seven mutations re-run by the reviewer; fixture round-trips bite. Renders
+reproduced independently, identical ×4. Minors, carried into WP-B's brief: M1 the R5 `[]` test drives `_Probe`
+only — feed `[]` to each real class as it migrates; M2 a series key holding a non-list is cleared with no log
+line (`series_cache.py:336-342`) — the base gets one warning naming the key; M3
+`test_a_cache_with_no_version_key_reads_version_1` asserts the wrong key name (rigor only, the shape is bound
+elsewhere); M4 the `VERSION_KEY is not None` guard on the read path is an equivalent mutant (note, no change);
+M5 a `-> int` annotation on a `int | None` fake. Branch-level Docs items (rules/data.md paragraph, HANDOVER §3
+item 6, table row 9) remain for the closure commit. 98 + 6 + 192 passed.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
