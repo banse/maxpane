@@ -72,8 +72,12 @@ class CTLeaderboard(TableLeaderboard):
         rarity = entry.get("rarity", "Common")
 
         weight_str = f"{weight:.1f}"
+        # The colour is looked up on the RAW value (the map's keys are the
+        # API's words); only the displayed text is escaped. Both halves are
+        # third-party -- the API names the rarity -- so it is escaped exactly
+        # as ``fish_species`` beside it (review M5).
         color = _RARITY_COLORS.get(rarity, "dim")
-        rarity_str = f"[{color}]{rarity}[/]"
+        rarity_str = f"[{color}]{safe_markup(rarity)}[/]"
 
         # Highlight rank 1
         if is_top:

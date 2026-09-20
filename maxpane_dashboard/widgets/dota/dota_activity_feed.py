@@ -1,19 +1,25 @@
 """Activity feed (hero roster) for Defense of the Agents dashboard.
 
 The "activity feed" slot carries the **hero roster** on this dashboard: the
-same ``RichLog`` shape, but the list is a snapshot of who is alive rather
-than a stream of events, so it is rewritten whole on every poll.
-:class:`~maxpane_dashboard.widgets.panels.RichLogFeed` calls that
-"always new" -- ``dedupe_key`` returns ``None``, nothing is deduped, the
-flicker guard never fires (Branch 7, WP-A).
+same ``RichLog`` shape, but the list is the current state of who is alive
+rather than a stream of events, so it is rewritten whole on every poll.
+That is ``RichLogFeed``'s :attr:`~maxpane_dashboard.widgets.panels.
+RichLogFeed.SNAPSHOT` mode (Branch 7 WP-A, corrected in fix round 1):
+``dedupe_key`` returns ``None``, nothing is deduped, the flicker guard is
+skipped, and **no row survives a poll**.
 
-That inherits one behaviour change the base documents: an **empty poll no
-longer wipes a drawn roster**. The manager serves ``None`` for a failed
-read and a list for a real one, so what an empty list used to do here --
-clear the roster and paint ``No heroes yet`` over it -- was a false
-degradation whenever the read itself failed. The last roster now stays
-under the status bar's ``as of`` marker, which is what every other feed in
-the app does.
+It has to be snapshot mode and not the default stream mode, because every
+row here carries an HP number and an ALIVE/DEAD flag that is only true of
+the poll it came from. The stream contract keeps a drawn feed through an
+empty poll -- correct for a log of events that happened, wrong for a
+roster, where it would leave last poll's hit points on screen as if they
+were live. So the two falsy payloads are told apart: ``None`` (the manager
+could not read the game state) paints ``unavailable``, and ``[]`` (it read
+it and there are no heroes) paints ``No heroes yet``.
+
+``data/dota_manager.py`` had to be fixed to make that distinction real: it
+served ``[]`` for a failed read, which under *any* feed contract is a
+failed read wearing a real negative's clothes (review C1).
 """
 
 from __future__ import annotations
@@ -87,6 +93,10 @@ class DOTAActivityFeed(RichLogFeed):
 
     EMPTY_LINE = "[dim]  No heroes yet[/]"
 
+    #: A roster, not a log: re-paint the whole thing every poll and keep no
+    #: row from a previous one. See the module docstring.
+    SNAPSHOT = True
+
     #: Geometry only: the title and its blank row are ``PanelBase``'s, and
     #: ``minimal.tcss`` states this log's colours.
     DEFAULT_CSS = """
@@ -118,7 +128,9 @@ class DOTAActivityFeed(RichLogFeed):
         """Rewrite the log with the current hero roster.
 
         Sorted alive-first, then by level descending -- the order is the
-        panel's, so it is applied before the base writes the rows.
+        panel's, so it is applied before the base writes the rows. ``None``
+        is passed straight through: the base paints ``unavailable`` for it,
+        and turning it into ``[]`` here would be the manager's bug again.
         """
         if heroes:
             heroes = sorted(

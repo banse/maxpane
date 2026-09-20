@@ -55,6 +55,7 @@ from maxpane_dashboard.widgets.panels import (
     LOADING,
     LOADING_ROW,
     UNAVAILABLE,
+    UNAVAILABLE_LINE,
     HeroBoxBase,
     HeroRow,
     PanelBase,
@@ -367,6 +368,26 @@ async def test_render_recommendation_is_blank_for_an_empty_string() -> None:
     assert "->" not in blank, blank
     filled = await _text(_Signals, alpha=_SIG, beta=_SIG, recommendation="stake now")
     assert "-> stake now" in filled, filled
+
+
+async def test_a_hostile_recommendation_reaches_the_screen_as_text(
+) -> None:
+    """Review M5. ``analytics/dota_signals.py`` puts the game API's
+    ``winner`` into the recommendation, and cattown's names a species, so
+    the string that reaches this line is third-party.
+
+    ``Static.update`` defers the markup parse into Textual's message pump,
+    which is **outside** every ``try`` this widget has: an unescaped
+    ``[/x]`` would take the app down rather than degrade a row. Composited,
+    because the point is what a reader sees.
+
+    Mutation that reddens this: drop the ``safe_markup`` call in
+    ``render_recommendation``.
+    """
+    text = await _text(
+        _Signals, alpha=_SIG, beta=_SIG, recommendation="push [/x] lane"
+    )
+    assert "push [/x] lane" in text, text
 
 
 def test_fmt_signal_label_less() -> None:
@@ -797,6 +818,95 @@ async def test_a_subclass_without_format_row_fails_loudly() -> None:
             feed.render_events([{"tx_hash": "0x1"}])
 
 
+# -- 5b. RichLogFeed snapshot mode (Branch 7 WP-A, fix round 1 -- review C1) --
+
+
+class _Snapshot(_Feed):
+    """A roster rather than a log: the whole state, every poll."""
+
+    SNAPSHOT = True
+
+    def dedupe_key(self, event: dict):
+        return None
+
+
+async def test_a_snapshot_feed_paints_unavailable_for_a_none_poll() -> None:
+    """The finding itself. A drawn roster, then a **failed read**.
+
+    Every row of a roster carries a number that is only true of the poll it
+    came from -- dota's rows carry HP and ALIVE/DEAD. Keeping them through a
+    read that never happened is "a stale number presented as live", which
+    this repo treats as worse than an empty panel. ``None`` is the failed
+    read and it says so.
+    """
+    text = await _text(_Snapshot, polls=[{"events": [_ev(1)]},
+                                         {"events": None}])
+    assert "unavailable" in text, text
+    assert "event 1" not in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_a_snapshot_feed_paints_the_empty_line_for_an_empty_list() -> None:
+    """The other half, and the reason the two inputs may not be merged: a
+    read that succeeded and found nothing is a **real negative**, and it
+    must be representable as something other than "could not look"."""
+    text = await _text(_Snapshot, polls=[{"events": [_ev(1)]},
+                                         {"events": []}])
+    assert "No activity yet" in text, text
+    assert "unavailable" not in text, text
+    assert "event 1" not in text, text
+
+
+async def test_a_snapshot_feed_re_paints_a_roster_that_did_not_change() -> None:
+    """No row survives a poll -- not even an identical one.
+
+    The stream contract's flicker guard would leave the log untouched when
+    nothing is new, which for a roster means the *same* rows staying up for
+    a reason ("nothing new") that is indistinguishable from the panel having
+    stopped updating. Snapshot mode skips the guard, so the log is cleared
+    and re-painted every time.
+    """
+    feed = _Snapshot()
+
+    class _A(App):
+        def compose(self):
+            yield feed
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        feed.update_data(events=[_ev(1)])
+        await pilot.pause()
+        log = feed.query_one(f"#{_Snapshot.LOG_ID}", RichLog)
+
+        cleared: list[int] = []
+        real_clear = log.clear
+        log.clear = lambda *a, **k: (cleared.append(1), real_clear(*a, **k))[1]
+
+        feed.update_data(events=[_ev(1)])
+        await pilot.pause()
+
+        assert cleared == [1], "a snapshot poll did not re-paint"
+
+
+async def test_a_stream_feed_keeps_the_rows_a_snapshot_would_drop() -> None:
+    """The contrast, on one payload, so the split is visible in one place.
+
+    ``_Feed`` is ``SNAPSHOT = False`` -- the Branch 6 contract, byte for
+    byte -- and a stream is *right* to keep its rows: an event that happened
+    is still true when the next poll brings nothing.
+    """
+    assert RichLogFeed.SNAPSHOT is False, "the default must stay stream"
+
+    class _KeyLessStream(_Feed):
+        def dedupe_key(self, event: dict):
+            return None
+
+    text = await _text(
+        _KeyLessStream, polls=[{"events": [_ev(1)]}, {"events": None}]
+    )
+    assert "event 1" in text, text
+    assert "unavailable" not in text, text
+
+
 # -- 6. TableLeaderboard (Branch 7) ------------------------------------------
 
 
@@ -884,9 +994,16 @@ async def test_an_uncapped_table_draws_every_row() -> None:
     assert body == ["a", "b", "c", "d", "e"], rows[:10]
 
 
-async def test_build_row_returning_none_skips_without_a_gap() -> None:
-    """The non-dict guard talismans and ttt carry. The skipped item leaves
-    no blank line between the rows that did render."""
+async def test_build_row_returning_none_skips_and_the_index_is_the_slice_position() -> None:
+    """The non-dict guard talismans and ttt carry.
+
+    Two claims, and the second is the one the plan mis-stated (review M4):
+    the skipped item leaves **no blank line** between the rows that did
+    render, *and* ``index`` counts the position in the capped slice, not the
+    number of rows drawn -- so the third item is still item 3 and prints
+    rank ``3``. That is what ``tal_leaderboard.py`` does today and what the
+    base must keep doing, because a subclass bolds on ``index == 0``.
+    """
     rows = await _lines(
         _Table, rows=[_item("a"), _item("b", skip=True), _item("c")]
     )
@@ -906,6 +1023,92 @@ async def test_one_unaddable_row_is_skipped_and_the_others_land() -> None:
     body = [r.split()[1] for r in rows[3:7] if r.strip()]
     assert body == ["a", "c"], rows[:7]
     assert "No data" not in "\n".join(rows), rows[:7]
+
+
+async def test_a_skipped_row_is_logged_at_warning(caplog) -> None:
+    """Review M1. Skipping is right; skipping *silently* is not.
+
+    ``PanelBase.write`` settled this in Branch 6: a degraded step is worth a
+    line in ``~/.maxpane/maxpane.log``, because that log is the only place a
+    row that never drew would ever be noticed. The line names the class and
+    the row index, so the missing item can be found in the payload.
+    """
+
+    class _A(App):
+        def compose(self):
+            yield _Table()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        table = pilot.app.query_one(_Table)
+        with caplog.at_level(
+            logging.WARNING, logger="maxpane_dashboard.widgets.panels"
+        ):
+            table.render_table([_item("a"), _item("b", wide=True)])
+            await pilot.pause()
+        messages = [r.getMessage() for r in caplog.records
+                    if r.levelno == logging.WARNING]
+        assert any("_Table" in m and "row 1" in m for m in messages), messages
+
+
+async def test_a_wrong_width_empty_row_fails_at_mount() -> None:
+    """Review M2. ``EMPTY_ROW`` is added on the one path ``render_table``
+    reaches when there is nothing else to show, so a wrong tuple breaks the
+    **degraded** state -- the state nobody is watching when it happens. It
+    is a programming error in the subclass, so it fails loudly at mount,
+    naming the class, rather than painting an empty table in production.
+    """
+
+    class _BadEmpty(_Table):
+        TABLE_ID = "t-bad-empty"
+        EMPTY_ROW = ("--",)          # one cell, two columns
+
+    class _A(App):
+        def compose(self):
+            yield _BadEmpty()
+
+    with pytest.raises(TypeError, match="_BadEmpty.EMPTY_ROW"):
+        async with _A().run_test(size=_SIZE):
+            pass
+
+
+async def test_a_wrong_width_loading_row_fails_at_mount() -> None:
+    """The same check on the seed row. ``DataTable.add_row`` raises on a
+    surplus cell but **pads a short one in silence**, so only half of this
+    would ever have been noticed without the check."""
+
+    class _BadLoading(_Table):
+        TABLE_ID = "t-bad-loading"
+        LOADING_ROW = ("--", "Loading...", "surplus")
+
+    class _A(App):
+        def compose(self):
+            yield _BadLoading()
+
+    with pytest.raises(TypeError, match="_BadLoading.LOADING_ROW"):
+        async with _A().run_test(size=_SIZE):
+            pass
+
+
+async def test_correctly_sized_rows_mount_and_paint() -> None:
+    """The other side of M2: the check must not fire on a table that is
+    right, including one whose ``EMPTY_ROW`` is the default empty tuple."""
+
+    class _NoEmpty(_Table):
+        TABLE_ID = "t-no-empty"
+        EMPTY_ROW = ()
+
+    rows = await _lines(_NoEmpty, rows=[_item("a")])
+    assert rows[3].split() == ["1", "a"], rows[:6]
+
+    class _RightWidths(_Table):
+        TABLE_ID = "t-right-widths"
+        LOADING_ROW = ("--", "Loading...")
+
+        def _poll(self, rows=None, footer=None) -> None:
+            return
+
+    seeded = await _lines(_RightWidths, polls=[])
+    assert seeded[3].split() == ["--", "Loading..."], seeded[:6]
 
 
 async def test_the_footer_row_lands_last() -> None:
@@ -954,12 +1157,20 @@ async def test_the_table_keeps_its_columns_cursor_and_zebra() -> None:
 # -- 7. Agreement: the migrated packages carry no copy of what the bases own --
 
 
-#: The dashboard packages that are on ``widgets/panels.py``. **One list, one
-#: place**: Branch 7 WP-A added ``cattown`` and ``dota`` to Branch 6's
-#: ``ocm``, and WP-B appends ``talismans`` and ``ttt`` -- two words, no test
-#: body touched, because every claim below is parametrised over this tuple
-#: and the panel count comes off each package's own ``__all__``.
-MIGRATED_PACKAGES = ("ocm", "cattown", "dota")
+#: The dashboard packages that are on ``widgets/panels.py``, each mapped to
+#: **how many** ``update_data`` widget classes the walk below must find.
+#: **One table, one place**: Branch 7 WP-A added ``cattown`` and ``dota`` to
+#: Branch 6's ``ocm``, and WP-B appends ``"talismans": 7`` and ``"ttt": 7``
+#: -- two entries, no test body touched, because every claim below is
+#: parametrised over this table.
+#:
+#: The count is not decoration and not derived from the package (deriving it
+#: would compare ``__all__`` against itself and pass on a package whose
+#: panels had all been deleted). It is the hand-checked number of panels,
+#: and it reddens when one is dropped, renamed out of ``__all__``, or added
+#: without being put on a base. It is **per package** because the packages
+#: genuinely differ: talismans and ttt export seven each, these three six.
+MIGRATED_PACKAGES = {"ocm": 6, "cattown": 6, "dota": 6}
 
 
 def _package(name: str):
@@ -1025,11 +1236,14 @@ def test_no_migrated_module_redeclares_what_panels_py_owns(path) -> None:
     )
 
 
-@pytest.mark.parametrize("package", MIGRATED_PACKAGES)
-def test_every_migrated_panel_subclasses_a_panels_base(package) -> None:
-    """Read off the package's own ``__all__``, so a widget added to a
-    migrated package and *not* put on a base reddens this without anybody
-    remembering to extend a hand-written list."""
+@pytest.mark.parametrize(
+    "package,expected", sorted(MIGRATED_PACKAGES.items()), ids=lambda v: str(v)
+)
+def test_every_migrated_panel_subclasses_a_panels_base(package, expected) -> None:
+    """Walk the package's own ``__all__``, so a widget added to a migrated
+    package and *not* put on a base reddens this without anybody remembering
+    to extend a hand-written list -- and check the walk found the number of
+    panels that package actually has, so a dropped one reddens too."""
     pkg = _package(package)
 
     found = []
@@ -1041,7 +1255,7 @@ def test_every_migrated_panel_subclasses_a_panels_base(package) -> None:
         assert issubclass(cls, _PANEL_BASES), (
             f"{package}.{name} is not on widgets/panels.py"
         )
-    assert len(found) == 6, (package, found)
+    assert len(found) == expected, (package, found)
 
 
 # The plan's fifth agreement clause ("no ``compose`` yields a ``Static``
@@ -1059,6 +1273,39 @@ def test_every_migrated_panel_subclasses_a_panels_base(package) -> None:
 # content. A leftover spacer reddens it with two blanks -- and so does a
 # spacer reached through a helper, or a regression in ``PanelBase``'s
 # ``margin``, neither of which a source check would see.
+
+
+def test_panels_defines_the_shared_strings_exactly_once() -> None:
+    """Restored in fix round 1. This test was collateral of WP-A's own
+    edit: the source slice that removed a rejected spacer check swallowed
+    the function below it too, and nothing reddened, because a deleted test
+    is the one defect a test suite cannot report. It is back, widened to
+    :data:`UNAVAILABLE_LINE`, and every string it pins is pinned *and*
+    derived, so a re-typed copy and a drifted derivation both redden."""
+    assert UNAVAILABLE == "[yellow]unavailable[/]"
+    assert LOADING == "[dim]Loading...[/]"
+    # Derived from LOADING, not re-typed beside it: the signals seed is the
+    # same words, two columns in (fix round 1, M1).
+    assert LOADING_ROW == "[dim]  Loading...[/]"
+    assert LOADING_ROW == LOADING.replace("[dim]", "[dim]  ", 1)
+    # Same reasoning, Branch 7 fix round 1 (review C1): the snapshot feed's
+    # "could not look" line is UNAVAILABLE in a feed row's column.
+    assert UNAVAILABLE_LINE == "  [yellow]unavailable[/]"
+    assert UNAVAILABLE_LINE == f"  {UNAVAILABLE}"
+    assert panels.__all__ == [
+        "UNAVAILABLE",
+        "LOADING",
+        "LOADING_ROW",
+        "UNAVAILABLE_LINE",
+        "PanelBase",
+        "HeroBoxBase",
+        "HeroRow",
+        "SignalsPanelBase",
+        "SparklinePanel",
+        "RichLogFeed",
+        "TableLeaderboard",
+        "fmt_signal",
+    ]
 
 
 # -- 8. Agreement: a base's name is a CSS type selector (fix round 1, I1) ----

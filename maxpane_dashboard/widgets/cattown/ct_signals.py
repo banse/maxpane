@@ -19,6 +19,7 @@ branch moves none.
 
 from __future__ import annotations
 
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.panels import SignalsPanelBase
 
 
@@ -53,6 +54,7 @@ class CTSignals(SignalsPanelBase):
         self.render_signal("#ct-sig-cutoff", "Top 10 Cutoff", cutoff_signal)
         self.write(
             f"#{self.RECOMMENDATION_ID}",
-            f"  [dim]→ Recommendation:[/] [bold]{recommendation}[/]"
+            f"  [dim]→ Recommendation:[/] "
+            f"[bold]{safe_markup(recommendation)}[/]"
             if recommendation else "",
         )

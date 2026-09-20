@@ -163,8 +163,10 @@ dashboard package, and a fix applied to one copy reached none of the others: `_U
 each:
 
 - **`UNAVAILABLE`** (`[yellow]unavailable[/]`), **`LOADING`** (`[dim]Loading...[/]`) and
-  `LOADING_ROW` (`LOADING` indented into a signals row's column, *derived* from it) — import
-  them; a migrated package defines none of them.
+  `LOADING_ROW` (`LOADING` indented into a signals row's column, *derived* from it) and
+  `UNAVAILABLE_LINE` (`UNAVAILABLE` in a feed row's column, derived the same way — what a
+  **snapshot** feed writes when the read failed) — import them; a migrated package defines none of
+  them.
 - **`PanelBase(Vertical)`** — `TITLE` plus the `compose_body()` hook. `compose` yields the title
   `Static` (class `panel-title`) and then the body; `write(selector, content)` is `query_one` +
   `update` inside one guard **that logs at `warning`** (the panels that write this way used to
@@ -205,8 +207,13 @@ each:
   item without a gap (the non-dict guard talismans and ttt carry); every row is built *and* added
   inside its own guard, so one item the formatter cannot read is one missing line rather than an
   exception escaping after `clear()` and leaving the table empty — which on a leaderboard reads as
-  "nobody is playing". `NotImplementedError` is re-raised past that guard, as in `RichLogFeed`.
-- **`RichLogFeed(PanelBase)`** — `LOG_ID`, `EMPTY_LINE`, the dedupe set, and two hooks:
+  "nobody is playing". The skip is **logged at `warning`** with the class and the row index, like
+  `PanelBase.write`; `NotImplementedError` is re-raised past the guard, as in `RichLogFeed`.
+  `on_mount` checks `EMPTY_ROW` and `LOADING_ROW` against the column count and raises `TypeError`
+  naming the class: a wrong-width tuple is a programming error, and `add_row` raises on a surplus
+  cell but **pads a short one in silence** — so half of it would otherwise surface only as a
+  degraded state that paints nothing.
+- **`RichLogFeed(PanelBase)`** — `LOG_ID`, `EMPTY_LINE`, `SNAPSHOT`, the dedupe set, and two hooks:
   `dedupe_key(event)` (default `event.get("tx_hash") or None`) and the abstract `format_row(event)
   -> Text | None`. `format_row` returns a **`Text`**, never a markup string. `render_events` is the
   merged contract: an empty poll writes the placeholder only while nothing has ever been shown and
@@ -224,6 +231,20 @@ each:
   blanking the feed; and `NotImplementedError` is re-raised past the per-row guard, because a
   subclass that never wired up `format_row` is a programming error and must fail loudly instead of
   painting `No activity yet` forever.
+
+  **`SNAPSHOT` picks which of two contracts a feed is under, and the difference is what a poll
+  means.** A **stream** (`False`, the default, every feed but one) is a log of events that
+  happened — ocm's mints, cattown's catches — so a poll that brings nothing adds nothing and the
+  rows already up are still true. A **snapshot** (`True`, dota's hero roster) is the current state
+  of something, where every row carries a number true only of the poll it came from: it re-paints
+  the whole panel every poll, keeps **no** row from a previous one, and skips the dedupe guard
+  outright. That makes the two falsy inputs different facts rather than one — `None` is "the read
+  failed, I could not look" and writes the derived `UNAVAILABLE_LINE`, `[]` is the real negative
+  and writes `EMPTY_LINE`. A stream that kept a roster's rows would be "a stale number presented
+  as live"; a snapshot that dropped a stream's rows would be a false degradation. **A manager must
+  serve the two apart** for any of it to work: `data/dota_manager.py` served `[]` for a failed
+  game-state read — a failed read wearing a real negative's clothes — and was fixed with the panel
+  (Branch 7 WP-A, review C1).
 
 **The blank row under a title is `PanelBase`'s `margin: 0 0 1 0`.** A subclass yields no spacer for
 it. ocm's staking overview used to carry *both* mechanisms and painted two rows;
@@ -259,7 +280,10 @@ is where the two formatters *two* of its modules needed were hoisted, rather tha
 copies of a rarity-colour map.
 `tests/widgets/test_panels.py` covers the bases and holds the agreement tests that redden when a
 copy is pasted back into a migrated package: both are parametrised over one `MIGRATED_PACKAGES`
-tuple (`ocm`, `cattown`, `dota`), which is the only line a later migration edits.
+table, `{"ocm": 6, "cattown": 6, "dota": 6}` — package → how many `update_data` widget classes the
+walk must find — which is the only line a later migration edits (WP-B adds `"talismans": 7` and
+`"ttt": 7`; the counts differ per package, so the number is hand-checked, not derived, or it would
+compare `__all__` against itself).
 
 ## Reuse before you build
 

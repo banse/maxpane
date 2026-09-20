@@ -212,3 +212,22 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     restyle every subclass on hover — a narrower form of the I1 collision. No such rule exists
     today. If it is ever wanted, widen the guard to a name followed by a pseudo-class. Minor,
     hypothetical, Tier 0 with #21 (Branch 6 fix-round-2 re-review N5, filed 2026-09-20).
+
+## Branch 7 — panels, small four
+
+23. **`data/dota_manager.py` refreshes `snapshot.fetched_at` on a failed read, so the status bar
+    says "updated 0s ago" for data nobody fetched.** `data/dota_manager.py:101-108` builds
+    `DOTASnapshot(fetched_at=time.time(), …)` and calls `self.cache.update(snapshot)`
+    unconditionally, including on the path where `game_state is None` because the fetch raised
+    (`:64-70`); `last_updated_seconds_ago` is then computed off that stamp (`:275`) and reaches
+    the status bar. The only trace of the failure is `error_count`. This is the `as of HH:MM`
+    convention in CLAUDE.md read backwards: the marker is the one thing that tells a reader a
+    number may be old, and here it asserts freshness hardest exactly when the read failed. The
+    fix is to stamp `fetched_at` from the last *successful* read (keep the previous stamp when
+    `game_state is None`, or carry a separate `last_success_ts`), which is what the other
+    managers' as-of markers mean. Pre-existing — it predates Branch 7 and the WP-A migration
+    neither introduced nor touched it; found while verifying review C1, whose panel-side half
+    (a failed read painting `unavailable` instead of the last roster) is fixed on this branch.
+    **Tier 1**, not Tier 0: it changes dota's own data module and needs its own regression test
+    for the two paths. Reviewer's evidence: `data/dota_manager.py:64-70`, `:101-108`, `:306`
+    (Branch 7 WP-A review C1 follow-up, filed 2026-09-20).

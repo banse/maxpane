@@ -12,8 +12,9 @@ Three claims per widget:
 1. a failed read (``None`` everywhere) renders ``unavailable``, not
    "Loading..." and not a crash;
 2. a real ``0`` is a number, not "loading" and not ``unavailable``;
-3. a malformed payload after a good one lands on ``unavailable`` -- the
-   good poll's number is gone, not presented as live.
+3. a malformed payload -- or, for the roster, a **failed read** -- after a
+   good one lands on ``unavailable``: the good poll's number is gone, not
+   presented as live.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from maxpane_dashboard.app import MaxPaneApp
 
 from maxpane_dashboard.widgets.cattown.ct_hero_metrics import CTHeroMetrics
 from maxpane_dashboard.widgets.cattown.ct_signals import CTSignals
+from maxpane_dashboard.widgets.dota.dota_activity_feed import DOTAActivityFeed
 from maxpane_dashboard.widgets.dota.dota_hero_metrics import DOTAHeroMetrics
 from maxpane_dashboard.widgets.dota.dota_signals import DOTASignals
 from maxpane_dashboard.widgets.ocm.ocm_hero_metrics import OCMHeroMetrics
@@ -130,6 +132,23 @@ _WIDGETS = [
         "fine",
         dict(faction_balance_signal={"label": object()}),
         id="DOTASignals",
+    ),
+    # Branch 7 WP-A, fix round 1 (review C1). Not a hero row or a signals
+    # panel: the hero ROSTER, which is the third shape where a read that
+    # never happened used to be shown as live. Every row carries an HP and
+    # an ALIVE/DEAD flag that is true only of the poll it came from, so the
+    # "bad" payload here is the **failed read** itself (``heroes=None``) --
+    # the panel is a snapshot and must clear and say ``unavailable``, not
+    # keep the previous roster. The manager was serving ``[]`` for a failed
+    # read, which made that distinction unreachable; both halves are fixed.
+    pytest.param(
+        DOTAActivityFeed,
+        dict(heroes=[{"name": "Axe", "faction": "orc", "hero_class": "tank",
+                      "lane": "top", "hp": 500, "max_hp": 600,
+                      "alive": True, "level": 4}]),
+        "Axe",
+        dict(heroes=None),
+        id="DOTAActivityFeed",
     ),
     pytest.param(
         TalismansSignals,

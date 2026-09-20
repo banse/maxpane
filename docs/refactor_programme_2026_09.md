@@ -1296,10 +1296,27 @@ finding. The named behaviour changes, none of which the sweep payload can reach:
    `analytics/` contains a `[`, so the sweep and the goldens see nothing.
 4. The feed contract: the placeholder is written once, an unhashable key is always-new, and a
    populated feed survives an empty poll (talismans, ttt and dota cleared and re-painted the
-   placeholder). Named because the dota roster is the one subscriber where an empty list is a
-   real negative; the manager serves `None` for a failed read, so the always-new path
-   with `[]` keeps the last roster under the status bar's as-of marker, which is what every
-   other feed in the app does.
+   placeholder). **Corrected in WP-A fix round 1, review C1 — the premise below was false and
+   the design that rested on it would have shipped a stale number.** The original text read "the
+   manager serves `None` for a failed read, so the always-new path with `[]` keeps the last
+   roster under the status bar's as-of marker". It does not: `data/dota_manager.py:64-70` sets
+   `game_state = None` on a failed fetch, `:118` starts `heroes_raw = []` and fills it only when
+   `game_state is not None`, `:239-256` builds `heroes` from it and `:306` serves it — so a
+   **failed read served `[]`**, and `render_events` tests `if not events`, so both `[]` and
+   `None` left the previous poll's HP and ALIVE/DEAD rows on screen. Pre-migration the roster
+   cleared and painted `No heroes yet`, so the migration would have *introduced* "a stale number
+   presented as live" on the one panel where every row is a number that expires.
+
+   What ships instead: `RichLogFeed` grows `SNAPSHOT: bool = False`. **Stream** (the default,
+   every other feed) is the Branch 6 contract byte for byte — an event that happened is still
+   true when the next poll brings nothing, so a transient empty poll leaves the rows alone.
+   **Snapshot** (dota's roster) re-paints the whole panel every poll, keeps no row from a
+   previous one, and therefore tells the two falsy inputs apart: `None` is "could not look" and
+   writes the new derived `UNAVAILABLE_LINE`, `[]` is the real negative and writes `EMPTY_LINE`.
+   The manager is fixed in the same round so the distinction is reachable at all: the served
+   `heroes` key is `None` when `game_state is None`, `[]` when the read succeeded with no heroes
+   (`tests/data/test_dota_manager.py` pins both). Nothing else the manager derives from
+   `heroes_raw` is touched — that is pre-existing and out of scope.
 5. `fmt_compact` replaces cattown's `_fmt_value` (differs on negatives, NaN, ≥ 1e9 — none
    reachable for a prize pool). dota, talismans and ttt **keep their value formatters** through
    the new hook below, because theirs differ on values the panel actually shows.
@@ -1383,8 +1400,12 @@ edits the same stylesheet.
 
 1. `TableLeaderboard`: row 0 title, row 1 blank, row 2 the header; the seed row appears when
    `LOADING_ROW` is set and not when `None`; `None` and `[]` paint `EMPTY_ROW` exactly once;
-   `ROW_CAP` slices; `build_row` returning `None` skips without a gap in the ranks the subclass
-   assigns; one `add_row` that raises leaves the other rows on screen (mutation: delete the
+   `ROW_CAP` slices; `build_row` returning `None` skips ~~without a gap in the ranks the subclass
+   assigns~~ **without a gap in the composited rows, while `index` stays the item's position in
+   the capped slice — so the third item still prints rank `3`** (corrected in WP-A fix round 1,
+   review M4: the original wording described the opposite behaviour, and the implemented one is
+   what `tal_leaderboard.py:95-98` does today and what a subclass bolding on `index == 0`
+   needs); one `add_row` that raises leaves the other rows on screen (mutation: delete the
    per-row guard → this test); `footer` lands last.
 2. `render_box` with a `Text` body keeps the `Text`'s style spans (a `meta` click action on a
    span survives — the reason the branch exists) and the label row above it.
@@ -1491,8 +1512,10 @@ a unit test instead.
 and click `meta` checked cell by cell off the compositor, plus its degradation path), label-less
 and separator signal rows and the seed-lands-on-the-first-*row* rule, the four `SparklinePanel`
 knobs, and ten `TableLeaderboard` cases. Both agreement tests are now parametrised over one
-`MIGRATED_PACKAGES = ("ocm", "cattown", "dota")` tuple, so WP-B extends them with two words and no
-test body. `tests/widgets/test_title_blank_row.py` 35 → 41 cases, gaining `CTLeaderboard`,
+`MIGRATED_PACKAGES` table — `{"ocm": 6, "cattown": 6, "dota": 6}`, package → the number of
+`update_data` widget classes the walk must find (corrected in fix round 1, M3: it was a tuple with
+a hard-coded `6`, and talismans and ttt export seven each, so WP-B would have had to edit a test
+body after all). WP-B adds `"talismans": 7` and `"ttt": 7` — two entries, no test body. `tests/widgets/test_title_blank_row.py` 35 → 41 cases, gaining `CTLeaderboard`,
 `CTActivityFeed`, `DOTALeaderboard` and `DOTAActivityFeed` — leaderboards and feeds were absent
 from that table and their blank row came from the stylesheet alone, so nothing covered it.
 Green on the branch head: **416** across the eleven named files, **6** on
@@ -1539,6 +1562,75 @@ leaderboard_template.py` is now behind `TableLeaderboard` and should be deleted 
 `templates/` in Branch 8, not fixed; and `CTBestPlays` / `DOTABestPlays` are the same two-column
 board twice, differing only in their column widths and cell formatters — a sixth base worth
 considering once WP-B shows whether talismans or ttt has a third.
+
+**Branch 7 WP-A fix round 1 (2026-09-20).** Review verdict `Needs fixes: 1 Critical, 0 Important,
+5 Minor`; all six addressed, plus one regression the fix round found in WP-A's own diff. The four
+`cmp` captures are still byte-identical to `b7_before_*`, so nothing here moved a pixel.
+
+**C1 (Critical) — a false premise in this plan, and the panel that rested on it.** Design change 4
+above said "the manager serves `None` for a failed read". It did not: a failed game-state fetch
+served `heroes=[]`, and `render_events` tests `if not events`, so under the migrated feed a failed
+read kept the previous poll's HP and ALIVE/DEAD rows on screen — "a stale number presented as
+live", on the one panel where every row is a number that expires. Fixed in three places, because
+the defect needed all three:
+
+- `data/dota_manager.py` serves `heroes = None` when `game_state is None` and `[]` when the read
+  succeeded with no heroes. Nothing else derived from `heroes_raw` is touched.
+- `widgets/panels.py` `RichLogFeed` gains `SNAPSHOT: bool = False`. Stream mode is the Branch 6
+  contract byte for byte (ocm and cattown are untouched, and their tests pass unchanged); snapshot
+  mode re-paints every poll, keeps no row, skips the dedupe guard, and tells `None`
+  (`UNAVAILABLE_LINE`, new and derived from `UNAVAILABLE` as `LOADING_ROW` is from `LOADING`) from
+  `[]` (`EMPTY_LINE`).
+- `widgets/dota/dota_activity_feed.py` sets `SNAPSHOT = True` and its docstring now records the
+  behaviour it has.
+
+The plan's Design change 4 is corrected in place above with the file:line evidence. The status-bar
+half of the reviewer's probe — `fetched_at` refreshed on a failed read, so the bar reads "updated
+0s ago" — is pre-existing and **filed, not fixed**: follow-up #23, Tier 1.
+
+**M1** the per-row skip in `render_table` logs at `warning` with the class and the row index, as
+`PanelBase.write` does. **M2** `on_mount` checks `EMPTY_ROW` and `LOADING_ROW` against the column
+count and raises `TypeError` naming the class — `add_row` raises on a surplus cell but pads a short
+one in silence, and `EMPTY_ROW` is added on the degraded path, where nobody is looking. **M3** the
+agreement table is now `MIGRATED_PACKAGES = {"ocm": 6, "cattown": 6, "dota": 6}`, a per-package
+count, so WP-B adds two entries and no test body (talismans and ttt export seven each; the old
+hard-coded `6` contradicted the docs' claim). **M4** the skip test is renamed
+`…skips_and_the_index_is_the_slice_position` and the plan's Tests bullet 1 is corrected — the
+behaviour was right and the plan's wording described its opposite. **M5** two unescaped
+third-party interpolations closed: `ct_leaderboard.py`'s `rarity` (the colour is still looked up
+on the raw value; only the displayed text is escaped) and the recommendation line, escaped once in
+`SignalsPanelBase.render_recommendation` and once in cattown's own labelled line.
+
+**Found in this round, in WP-A's own diff:** `test_panels_defines_the_two_strings_exactly_once` had
+been **deleted** by commit `0feb671` — the source slice that removed a rejected spacer check
+swallowed the function below it, and nothing reddened, because a deleted test is the one defect a
+suite cannot report. Restored as `test_panels_defines_the_shared_strings_exactly_once`, widened to
+`UNAVAILABLE_LINE` and to the current `__all__`. The three test names that left the file are now
+accounted for one by one: two renamed to their migrated-package forms, this one restored.
+
+```
+$ cmp b7_before_dota.default.170x50.txt        b7_fix1_dota.default.170x50.txt         -> identical
+$ cmp b7_before_dota.default.pin-143x50.txt    b7_fix1_dota.default.pin-143x50.txt     -> identical
+$ cmp b7_before_cattown.default.170x50.txt     b7_fix1_cattown.default.170x50.txt      -> identical
+$ cmp b7_before_cattown.default.pin-143x50.txt b7_fix1_cattown.default.pin-143x50.txt  -> identical
+```
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each):
+
+| mutation | reddened |
+| --- | --- |
+| `SNAPSHOT = True` deleted from `DOTAActivityFeed` (back to stream mode) | `test_medi38_unavailable_state.py::test_a_failed_read_renders_unavailable_not_loading[DOTAActivityFeed]` **and** `::test_a_malformed_poll_after_a_good_one_is_not_shown_as_live[DOTAActivityFeed]` — 2 failed, 133 passed |
+| `data/dota_manager.py` serving `[]` for a failed read again | `test_dota_manager.py::test_a_failed_game_state_read_serves_heroes_none` — 1 failed, 2 passed (the other two hold: the panel-side and manager-side halves are proven separately) |
+| the `logger.warning` deleted from `render_table`'s per-row guard | `test_panels.py::test_a_skipped_row_is_logged_at_warning` — 1 failed, 105 passed |
+| the two width checks deleted from `TableLeaderboard.on_mount` | `test_panels.py::test_a_wrong_width_empty_row_fails_at_mount` and `::test_a_wrong_width_loading_row_fails_at_mount` — 2 failed, 104 passed |
+| `safe_markup` dropped from `render_recommendation` | `test_panels.py::test_a_hostile_recommendation_reaches_the_screen_as_text` — 1 failed, 105 passed (the log line shows the real failure mode: `closing tag '[/x]' does not match any open tag`, raised in the message pump) |
+
+**Tests.** `test_panels.py` 96 → 106 cases, `test_medi38_unavailable_state.py` 26 → 29 (the roster
+is the third shape where a read that never happened used to be shown as live), and a new
+`tests/data/test_dota_manager.py` (3 cases; the manager's HTTP client is replaced with a double
+whose every method raises, so nothing can reach the wire). Green: **432** across the twelve named
+files, **6** on `test_address_icons_everywhere.py -k "cattown or dota or ocm"`, **191** on
+`-m guard tests`.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

@@ -69,6 +69,7 @@ __all__ = [
     "UNAVAILABLE",
     "LOADING",
     "LOADING_ROW",
+    "UNAVAILABLE_LINE",
     "PanelBase",
     "HeroBoxBase",
     "HeroRow",
@@ -94,6 +95,13 @@ LOADING = "[dim]Loading...[/]"
 #: value it is standing in for. Derived, not re-typed: the two strings drift
 #: apart the moment somebody edits one of them.
 LOADING_ROW = LOADING.replace("[dim]", "[dim]  ", 1)
+
+#: :data:`UNAVAILABLE` on a feed line of its own, in the same two-space
+#: column every feed row starts in. What a **snapshot** feed writes when the
+#: manager could not look at all -- distinct from ``EMPTY_LINE``, which is
+#: the real negative ("there is nothing"). Derived from :data:`UNAVAILABLE`
+#: for the same reason :data:`LOADING_ROW` is derived from :data:`LOADING`.
+UNAVAILABLE_LINE = f"  {UNAVAILABLE}"
 
 
 class PanelBase(Vertical):
@@ -375,12 +383,20 @@ class SignalsPanelBase(PanelBase):
         return self.write_guarded(selector, build, fallback)
 
     def render_recommendation(self, text: str | None) -> bool:
-        """Write the recommendation line, or blank it when there is none."""
+        """Write the recommendation line, or blank it when there is none.
+
+        *text* is escaped: a recommendation is assembled in ``analytics/``
+        out of names the chain and the game API supplied -- dota's names the
+        winning faction, cattown's a species -- and an unescaped ``[`` in one
+        of them raises out of the message pump where no panel's ``try`` can
+        reach it (review M5). A plain recommendation is unaffected; the
+        ``[bold]`` around it is this panel's own markup and stays.
+        """
         if self.RECOMMENDATION_ID is None:
             return False
         return self.write(
             f"#{self.RECOMMENDATION_ID}",
-            f"  [bold]-> {text}[/]" if text else "",
+            f"  [bold]-> {safe_markup(text)}[/]" if text else "",
         )
 
 
@@ -472,13 +488,37 @@ class RichLogFeed(PanelBase):
     click action lives in a ``Style`` that only survives outside markup
     parsing, and ``Static``/``RichLog`` defer markup parsing into the
     message pump where this widget's ``try`` cannot reach it.
+
+    **Two modes, and the difference is what a poll means.**
+
+    A **stream** (:attr:`SNAPSHOT` ``False``, the default) is a log of events
+    that happened: ocm's mints, cattown's catches, fwa's pulls. A poll that
+    brings nothing adds nothing, and the rows already on screen are still
+    true -- so a transient empty poll leaves them alone, and the placeholder
+    is written only while nothing has ever been drawn.
+
+    A **snapshot** (:attr:`SNAPSHOT` ``True``) is the current state of
+    something: dota's hero roster, where every row carries an HP and an
+    ALIVE/DEAD flag that is only true of the poll it came from. It re-paints
+    the whole panel every poll and **never** keeps a row from a previous one,
+    because a kept row is a stale number presented as live. That makes the
+    two falsy inputs different facts rather than one: ``None`` is "the read
+    failed, I could not look" and writes :data:`UNAVAILABLE_LINE`; ``[]`` is
+    the real negative, "there is nothing", and writes :attr:`EMPTY_LINE`. A
+    manager that serves ``[]`` for a failed read defeats this and is the bug,
+    not the panel (review C1: ``data/dota_manager.py`` did exactly that).
     """
 
     #: Widget id of the log.
     LOG_ID: str = ""
 
-    #: Shown while the feed has nothing to show.
+    #: Shown while the feed has nothing to show. In snapshot mode this is
+    #: specifically the *real negative* -- see the class docstring.
     EMPTY_LINE = "[dim]  No activity yet[/]"
+
+    #: ``False`` = a stream of events (the Branch 6 contract, unchanged);
+    #: ``True`` = a snapshot of current state. See the class docstring.
+    SNAPSHOT: bool = False
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -516,6 +556,13 @@ class RichLogFeed(PanelBase):
         The merged contract of ``templates/activity_feed_template.py`` and
         ocm's own feed:
 
+        In **snapshot** mode (:attr:`SNAPSHOT`) the first bullet is replaced:
+        a ``None`` poll clears and writes :data:`UNAVAILABLE_LINE`, an empty
+        list clears and writes :attr:`EMPTY_LINE`, and a non-empty list
+        re-paints -- the dedupe guard is skipped entirely, so no row ever
+        survives a poll. The rest of this contract is the **stream** mode
+        that every other feed in the repo uses:
+
         * an empty poll writes the placeholder **only while nothing has ever
           been shown** -- a transient empty poll must not wipe a populated
           feed -- and ``clear()``s first, so the placeholder is written once
@@ -540,39 +587,53 @@ class RichLogFeed(PanelBase):
             return
 
         if not events:
+            if self.SNAPSHOT:
+                # Two different facts, and a reader must be able to tell them
+                # apart: ``None`` could not look, ``[]`` looked and found
+                # nothing. Both clear, because a snapshot never keeps a row.
+                log.clear()
+                log.write(
+                    UNAVAILABLE_LINE if events is None else self.EMPTY_LINE
+                )
+                self._drawn = False
+                return
             if not self._drawn:
                 log.clear()
                 log.write(self.EMPTY_LINE)
             return
 
-        has_new = False
-        for event in events:
-            try:
-                key = self.dedupe_key(event)
-            except Exception:
-                # Not even a key. The event may still render; ``format_row``'s
-                # own guard decides. Not counted as new, so an all-malformed
-                # poll leaves a populated feed alone.
-                continue
-            if key is None:
+        # Snapshot mode skips the dedupe guard outright: every poll is the
+        # whole state, so "nothing is new" is not a reason to leave last
+        # poll's rows up -- it is a reason to paint the same state again.
+        if not self.SNAPSHOT:
+            has_new = False
+            for event in events:
+                try:
+                    key = self.dedupe_key(event)
+                except Exception:
+                    # Not even a key. The event may still render;
+                    # ``format_row``'s own guard decides. Not counted as new,
+                    # so an all-malformed poll leaves a populated feed alone.
+                    continue
+                if key is None:
+                    has_new = True
+                    continue
+                try:
+                    seen = key in self._seen_keys
+                except TypeError:
+                    # A third-party payload can hand us an unhashable
+                    # ``tx_hash`` (a JSON list). It cannot be deduped, so it
+                    # is always new -- and the membership test must not raise
+                    # out of ``update_data`` and blank the whole feed.
+                    has_new = True
+                    continue
+                if seen:
+                    continue
+                self._seen_keys.add(key)
                 has_new = True
-                continue
-            try:
-                seen = key in self._seen_keys
-            except TypeError:
-                # A third-party payload can hand us an unhashable ``tx_hash``
-                # (a JSON list). It cannot be deduped, so it is always new --
-                # and the membership test must not raise out of
-                # ``update_data`` and blank the whole feed.
-                has_new = True
-                continue
-            if seen:
-                continue
-            self._seen_keys.add(key)
-            has_new = True
 
-        if not has_new and self._drawn:
-            return
+            if not has_new and self._drawn:
+                return
 
         log.clear()
         log.auto_scroll = False
@@ -654,12 +715,37 @@ class TableLeaderboard(PanelBase):
         yield DataTable(id=self.TABLE_ID)
 
     def on_mount(self) -> None:
+        """Columns, then the seed row -- after checking both row tuples fit.
+
+        A tuple of the wrong width is a **programming error in the
+        subclass**, so it fails here, loudly, at mount, naming the class:
+        ``DataTable.add_row`` raises on a surplus cell but pads a short one
+        in silence, and :attr:`EMPTY_ROW` is added on the one path
+        :meth:`render_table` reaches when there is nothing else to show --
+        a wrong tuple there means the *degraded* state is the one that
+        paints nothing, which is exactly when nobody is looking closely
+        (review M2). Checking at mount makes it a red test rather than an
+        empty panel in production.
+        """
         table = self.query_one(f"#{self.TABLE_ID}", DataTable)
         table.cursor_type = self.CURSOR_TYPE
         table.zebra_stripes = self.ZEBRA
         for label, width in self.COLUMNS:
             table.add_column(label, width=width)
+
+        name = type(self).__name__
+        width = len(self.COLUMNS)
+        if self.EMPTY_ROW and len(self.EMPTY_ROW) != width:
+            raise TypeError(
+                f"{name}.EMPTY_ROW has {len(self.EMPTY_ROW)} cells for "
+                f"{width} columns"
+            )
         if self.LOADING_ROW is not None:
+            if len(self.LOADING_ROW) != width:
+                raise TypeError(
+                    f"{name}.LOADING_ROW has {len(self.LOADING_ROW)} cells "
+                    f"for {width} columns"
+                )
             table.add_row(*self.LOADING_ROW)
 
     # -- hook -------------------------------------------------------------
@@ -715,7 +801,13 @@ class TableLeaderboard(PanelBase):
                 table.add_row(*cells)
             except NotImplementedError:
                 raise
-            except Exception:
+            except Exception as exc:
+                # Logged, never silent: a panel that cannot render a row is
+                # worth a line in ``~/.maxpane/maxpane.log``, the same
+                # reasoning as ``PanelBase.write`` (review M1).
+                logger.warning(
+                    "%s: row %d skipped: %s", type(self).__name__, index, exc
+                )
                 continue
 
         if footer is not None:
