@@ -1,46 +1,52 @@
-"""Leaderboard table showing top bakeries."""
+"""Leaderboard table showing top bakeries.
+
+On ``widgets/panels.py`` since Branch 8 WP-B: a
+:class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`, which owns the
+title, its blank row, the column set-up and the per-row guard (one bakery
+the formatter cannot read is one missing line, not an empty board).
+"""
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import DataTable, Static
+from typing import TYPE_CHECKING
 
 from maxpane_dashboard.analytics.leaderboard import format_cookies, format_gap
 from maxpane_dashboard.analytics.production import format_rate
-from maxpane_dashboard.data.models import BakerySummary
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import TableLeaderboard
+
+if TYPE_CHECKING:
+    from maxpane_dashboard.data.models import BakerySummary
+
+#: ``tx_count`` is the effective cookie count scaled by this.
+_COOKIE_SCALE = 10_000
 
 
-class Leaderboard(Vertical):
+class Leaderboard(TableLeaderboard):
     """Leaderboard panel with DataTable of top bakeries."""
 
+    TITLE = "LEADERBOARD"
+    TABLE_ID = "leaderboard-table"
+    COLUMNS = (
+        ("#", 4),
+        ("Bakery", 24),
+        ("Cookies", 10),
+        ("Δ/hr", 12),
+        ("Gap", 8),
+    )
+    EMPTY_ROW = ("--", "No data", "--", "--", "--")
+
+    # Geometry only: the title's colour and blank row are ``PanelBase``'s.
     DEFAULT_CSS = """
-    Leaderboard > Static {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     Leaderboard > DataTable {
         height: 1fr;
     }
     """
 
-    def compose(self) -> ComposeResult:
-        yield Static("LEADERBOARD")
-        table = DataTable(id="leaderboard-table")
-        yield table
-
-    def on_mount(self) -> None:
-        table = self.query_one("#leaderboard-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        table.add_column("#", width=4)
-        table.add_column("Bakery", width=24)
-        table.add_column("Cookies", width=10)
-        table.add_column("\u0394/hr", width=12)
-        table.add_column("Gap", width=8)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._production_rates: dict = {}
+        self._leader_cookies: float | None = None
 
     def update_data(
         self,
@@ -49,39 +55,39 @@ class Leaderboard(Vertical):
         prize_pool_usd: float,
     ) -> None:
         """Clear and repopulate the leaderboard table with live data."""
-        table = self.query_one("#leaderboard-table", DataTable)
-        table.clear()
+        self._production_rates = (
+            production_rates if isinstance(production_rates, dict) else {}
+        )
+        self._leader_cookies = None
+        if bakeries:
+            try:
+                self._leader_cookies = int(bakeries[0].tx_count) / _COOKIE_SCALE
+            except Exception:
+                # Every row's gap is measured against this; a leader whose
+                # count cannot be read leaves the column saying so.
+                self._leader_cookies = None
+        self.render_table(bakeries)
 
-        if not bakeries:
-            table.add_row("--", "No data", "--", "--", "--")
-            return
+    def build_row(self, index: int, bakery) -> tuple:
+        cookies = int(bakery.tx_count) / _COOKIE_SCALE
+        rate = self._production_rates.get(bakery.name, 0.0)
 
-        cookie_scale = 10_000
-        leader_cookies = int(bakeries[0].tx_count) / cookie_scale
+        cookies_str = format_cookies(cookies)
+        rate_str = format_rate(rate)
+        gap_str = (
+            format_gap(cookies, self._leader_cookies)
+            if self._leader_cookies is not None else "--"
+        )
 
-        for idx, bakery in enumerate(bakeries[:10], start=1):
-            cookies = int(bakery.tx_count) / cookie_scale
-            rate = production_rates.get(bakery.name, 0.0)
+        # Player-chosen name: escape before it reaches markup rendering.
+        safe_name = safe_markup(bakery.name)
 
-            cookies_str = format_cookies(cookies)
-            rate_str = format_rate(rate)
-            gap_str = format_gap(cookies, leader_cookies)
+        # Highlight the leader row
+        if index == 0:
+            name_str = f"[bold]{safe_name}[/]"
+            cookies_str = f"[bold]{cookies_str}[/]"
+            rate_str = f"[green]{rate_str}[/]"
+        else:
+            name_str = safe_name
 
-            # Player-chosen name: escape before it reaches markup rendering.
-            safe_name = safe_markup(bakery.name)
-
-            # Highlight the leader row
-            if idx == 1:
-                name_str = f"[bold]{safe_name}[/]"
-                cookies_str = f"[bold]{cookies_str}[/]"
-                rate_str = f"[green]{rate_str}[/]"
-            else:
-                name_str = safe_name
-
-            table.add_row(
-                str(idx),
-                name_str,
-                cookies_str,
-                rate_str,
-                gap_str,
-            )
+        return (str(index + 1), name_str, cookies_str, rate_str, gap_str)

@@ -1,4 +1,7 @@
-"""Copy icons in the hidden dashboards, the shared bakery panels, and the templates.
+"""Copy icons in the hidden dashboards and the shared bakery panels.
+
+(Until Branch 8 WP-B this file also read the two ``templates/`` modules that
+carried an address; the templates are deleted.)
 
 ``ocm_activity_feed`` shows the actor's address; the shared
 ``widgets/activity_feed.py`` (bakery, hidden) shows the launcher's address
@@ -32,10 +35,8 @@ alongside this file) already exercises all three screens end to end.
 
 from __future__ import annotations
 
-import ast
 import importlib
 import inspect
-import pathlib
 
 import pytest
 from textual.app import App
@@ -158,33 +159,6 @@ async def test_bakery_feed_shows_the_bakery_placeholder_for_no_launcher():
         await pilot.pause()
         assert app._exception is None
         assert ADDR not in {t[2] for t in icon_targets(app)}
-
-
-@pytest.mark.parametrize("template", ["activity_feed_template", "leaderboard_template"])
-def test_each_template_uses_the_helper_and_defines_no_formatter(template):
-    path = pathlib.Path(f"maxpane_dashboard/templates/{template}.py")
-    tree = ast.parse(path.read_text())
-    imports = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
-    assert "maxpane_dashboard.widgets.address" in imports, template
-    names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
-    assert not {n for n in names if "addr" in n.lower()}, (template, names)
-    assert "carries the copy icon" in (ast.get_docstring(tree) or ""), template
-    # E7 (fix round 1, M2): a copy of the template must link too, so every
-    # ``address_text`` call passes ``explorer=`` and the module declares the
-    # one ``EXPLORER`` the copy is meant to replace.
-    calls = [
-        n for n in ast.walk(tree)
-        if isinstance(n, ast.Call)
-        and isinstance(n.func, ast.Name) and n.func.id == "address_text"
-    ]
-    assert calls, (template, "no address_text call to check")
-    for call in calls:
-        assert "explorer" in {kw.arg for kw in call.keywords}, (template, call.lineno)
-    declared = {
-        t.id for n in tree.body if isinstance(n, ast.Assign)
-        for t in n.targets if isinstance(t, ast.Name)
-    }
-    assert "EXPLORER" in declared, template
 
 
 @pytest.mark.parametrize("launcher", [None, ""])

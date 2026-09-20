@@ -291,3 +291,166 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     attacker-named token would otherwise turn its row into `● unavailable` or inject a style, not
     that it would crash the app. Docstring-only. **Minor, Tier 0** with #24 when `panels.py` is
     next touched (seen in passing during the WP-B re-review closure, 2026-09-20).
+
+## Branch 8 — panels, base terminal and bakery
+
+27. **Six copies of the two-column "best plays" board and no base for it.** `widgets/ev_table.py`,
+    `widgets/base/overview/bt_best_plays.py`, `widgets/cattown/ct_best_plays.py`,
+    `widgets/dota/dota_best_plays.py`, `widgets/frenpet/overview/fp_best_plays.py` and
+    `widgets/frenpet/wallet/fpw_best_plays.py` are one shape — a title, a header line, a blank,
+    then N rows of `left-rank  name  value │ right-rank  name  value` — differing in column widths,
+    cell formatters and row count. Branch 7 WP-A noted the first two copies; the Branch 8 survey
+    counted six. Branch 8 puts `EVTable` and `BTBestPlays` on `PanelBase` with their own
+    `compose_body`, as `OCMSupplyBreakdown` is, and does not add a base: a sixth base is a design
+    decision over six packages, not an append-only extension, and touching cattown, dota and
+    frenpet again is outside §3.4c. **Tier 2 when picked up** (a new shared widget base): a
+    `TwoColumnBoard(PanelBase)` with `COLUMNS`, `ROW_CAP` and a `build_row(index, left, right)` hook,
+    migrated one package at a time behind render-diff captures (filed 2026-09-20 with the Branch 8
+    plan section).
+28. **`data/base_client.py:742-747` returns `[]` for a failed DexScreener trending fetch — a
+    failed read wearing a real negative's clothes (the dota C1 shape).** `_safe_dex_trending`
+    catches every exception and returns `[]`; `data/base_manager.py:112` copies it and `:168`
+    serves `"trending_tokens": []`, `:255` / `:260` build `gainers` / `losers` from the same
+    list (`[]`), `:281` builds `whale_trades` from it (`[]`), and `:234` / `:246` set
+    `total_volume = None` and a `"N/A"` / `"0.0%"` top gainer. So a poll on which DexScreener
+    was unreachable and a poll that truly found no trending tokens produce the **same payload**,
+    and the migrated widgets — correctly reading it as a real negative — paint `No data` in the
+    leaderboard, `N/A 0.0%` in the TOP GAINER box and keep the feed's prior rows, where a failed
+    read should degrade to `unavailable` behind the `as of` marker. Pre-existing: the copies
+    showed the same, and Branch 8 WP-A (a widgets-only package) neither introduced nor touched
+    it. The fix is the C1 fix: `_safe_dex_trending` returns `None` for a failed fetch and the
+    manager serves `None` for every trending-derived key on that path (`trending_tokens`,
+    `gainers`, `losers`, `whale_trades`, the gainer pair), which the bases already render as
+    `unavailable` (`TableLeaderboard`, `HeroRow`) — and `BTActivityFeed` becomes a `SNAPSHOT`
+    candidate once `None` is served, because its poll is a whole ranking whose every row is true
+    only of the poll it came from (`RichLogFeed` docstring; today it must stay a stream or a
+    failed read would blank a live ranking). **Tier 1**: base's own data module plus a regression
+    test for the two paths, and the panel's `SNAPSHOT` flip with a render-diff capture (Branch 8
+    WP-A outcome, filed 2026-09-20).
+29. **The TOP GAINER hero box clips its second body line.** `themes/minimal.tcss:1032-1038`
+    gives `BTHeroBox` `height: 7` with `border` and `padding: 1 2`, three content rows, and
+    `widgets/base/overview/bt_hero_metrics.py::_gainer_body` writes `label`, blank, name, then
+    `+12.0%` on a fourth line — which the pre-migration capture already shows cut off at 170 and
+    at the 143 pin (`b8_before_base.default.*`: `DEGEN` visible, its percentage not). Sibling of
+    #6 (the same theme matter on ocm / cattown / dota / talismans / ttt boxes;
+    `test_medi38_unavailable_state.py`'s harness gives every box `height: 9` for that reason).
+    Pre-existing, not moved by WP-A. **Minor, Tier 1** — the fix is either `height: 8` on the
+    box (a pin move on the base screen: re-sweep) or folding the percentage onto the name's line
+    (a cell-content change, also a re-sweep) (Branch 8 WP-A outcome, filed 2026-09-20).
+30. **The BEST PLAYS header wraps at the 143 pin.** `widgets/base/overview/bt_best_plays.py`
+    `compose_body` writes `  Top Gainers     Change    Top Losers     Change` — 2 + 14 + 1 + 10 +
+    4 + 14 + 1 + 10 = 56 cells — and at 143 columns the panel is narrower than that plus the
+    `.panel-line` padding, so the last `Change` wraps onto its own row and pushes the ten rows one
+    down (`b8_before_base.default.pin-143x50.txt` line 33 shows the orphaned word; the capture
+    after WP-A shows the same). Pre-existing, not moved by WP-A. The terminal-layout skill's rule
+    is that a wrap at the pin is a pin defect: either the header sheds a column word at that
+    width (surf's `‹ widen` marker pattern) or `FULL_LAYOUT_COLUMNS` / the base screen's pin
+    moves. **Minor, Tier 1** (a pin or a pinned cell moves; re-sweep) (Branch 8 WP-A outcome,
+    filed 2026-09-20).
+31. **The base status bar says `updated 0s ago` after a partially failed read.** Because #28's
+    `_safe_dex_trending` swallows the failure, `data/base_manager.py`'s `fetch_and_compute`
+    returns a full payload on that poll and `DashboardScreen` updates the status bar from it as
+    if the read succeeded; the only trace is the `[]`-shaped keys. Sibling of #23 (dota's
+    `fetched_at` refreshed on a failed read) and of #28: the fix belongs in the same Tier 1 item
+    — stamp freshness from the last *successful* trending read, so the `as of` marker means what
+    CLAUDE.md says it means. Pre-existing (Branch 8 WP-A outcome, filed 2026-09-20).
+32. **`SparklinePanel.SPARK_WIDTH`'s default (22) is load-bearing for five dashboards and only
+    `test_panels.py`'s synthetic case bites when it changes.** `widgets/panels.py`
+    `SparklinePanel.SPARK_WIDTH = SPARK_WIDTH` (Branch 8 WP-A) is what ocm, cattown, dota,
+    talismans and ttt draw their bars at; the reviewer set it to 18 and
+    `tests/widgets/test_talismans_widgets.py` + `tests/widgets/test_ttt_widgets.py` stayed at 18
+    passed — their pins measure the bars' start column and the labels, not the bars' cell count
+    — while only `test_panels.py::test_spark_width_is_the_bars_cell_count` (a `_Sparks` subclass
+    defined in the test file) reddened. A shared default nobody's composited test measures is
+    the "test that cannot fail" shape from a different side: the constant is right today, and a
+    drift would show on five dashboards before any test said so. The fix is one composited
+    width pin per migrated package (count the `SPARK_CHARS` run on one line, as
+    `test_base_widgets.py::test_sparkline_is_twenty_blocks_wide_not_the_shared_twenty_two` does
+    for base). **Minor, Tier 0** when a migrated sparkline test is next touched (Branch 8 WP-A
+    review M4, filed 2026-09-20).
+
+33. **MEDI-38 claim 2 ("a real `0` is a number, not `Loading`") is untested for the second-table
+    hero rows.** `tests/widgets/test_medi38_unavailable_state.py:334-352`
+    `test_a_real_zero_is_a_number_not_loading` is parametrised over `_WIDGETS` only; the `_HERO_ROWS`
+    table (`TalismansHeroMetrics`, `TTTHeroMetrics`, and since Branch 8 WP-A `BTOverviewHero`,
+    `BTSignals`) has a good-poll case whose payloads carry no zero (`eth_price=3_000.0`,
+    `buy_sell_signal="Bullish"`). The behaviour is right by construction — `bt_hero_metrics.py`'s
+    `_price_body`/`_change_body`/`_volume_body` branch on `is None`, so `0` renders `$0.00` / `+0.00%`
+    / `$0` — but no test would redden if one of them grew an `if not value:`. Fix: a zero-payload
+    row for each `_HERO_ROWS` entry in the good-poll case. **Minor, Tier 0** when the file is next
+    touched (Branch 8 WP-A re-review N1, filed 2026-09-20).
+
+34. **`SparklinePanel.render_series` writes `EMPTY_TEXT` for a `None` series — the C1 shape in the
+    base.** `maxpane_dashboard/widgets/panels.py:573-575`: `coerce_points(None)` is `[]`, so a series
+    whose points the manager could not read (`None`) and a series that is genuinely empty (`[]`) both
+    land on `empty_line(label)` — a failed read wearing the real negative's clothes, the very shape
+    Branch 7 WP-A fixed in dota's manager (review C1). Every `SparklinePanel` subscriber inherits it;
+    bakery's `CookieChart` now sends `histories[name]` through it unguarded, so a `None` history
+    blanks the line where the copy raised. Fix: a `None` *points* entry writes `UNAVAILABLE_LINE`
+    (or an `EMPTY_KEEPS_LABEL`-aware yellow `unavailable`), `[]` keeps `EMPTY_TEXT`; one
+    parametrised case per subscriber in `tests/widgets/test_panels.py`. **Important, Tier 2** — a
+    shared `widgets/*.py` module (Branch 8 WP-B, filed 2026-09-20).
+
+35. **Bakery's client substitutes `[]` for a failed bakeries or activity sub-fetch.**
+    `maxpane_dashboard/data/client.py:330-334` (`bakeries = []` after `logger.warning("Failed to
+    fetch bakeries")`) and `:343-347` (`activity = []` after a failed `get_activity_feed_global`).
+    Downstream, `Leaderboard` paints `No data` and `ActivityFeed` keeps its previous rows or paints
+    `No activity yet` — both real negatives — for what was a read that failed. Fix: carry `None`
+    through `manager.fetch_and_compute` for those two keys and let the widgets' `None` branches
+    (`TableLeaderboard`/`RichLogFeed` stream mode) say `unavailable`; pin it in
+    `tests/data/test_client.py` against a transport that raises for the one sub-fetch. Pre-existing,
+    not introduced by the migration. **Important, Tier 1** (bakery's own data module) (Branch 8
+    WP-B, filed 2026-09-20).
+
+36. **`CookieChart._label_cell` overrides a private base hook.**
+    `maxpane_dashboard/widgets/cookie_chart.py:31-39` wraps `super()._label_cell(label)` in
+    `safe_markup` so the player-chosen name is escaped *after* the base clips it (escaping first puts
+    a backslash where the clip then cuts the last character). It is right, and pinned by
+    `test_cookie_chart_escapes_the_name_after_clipping_it`, but a subclass depending on a leading-
+    underscore method is one rename away from silently unescaped labels. Fix: promote the hook to a
+    public `label_cell` (or add an `ESCAPE_LABEL = False` knob on `SparklinePanel` whose `True`
+    every subscriber with third-party labels sets) and drop the override. **Minor, Tier 2** — a
+    shared-module knob (Branch 8 WP-B, filed 2026-09-20).
+
+37. **`Leaderboard.update_data`'s `prize_pool_usd` parameter is unused.**
+    `maxpane_dashboard/widgets/leaderboard.py:51-56` accepts it because `screens/bakery.py:80`'s
+    `PANELS` row sends it (`keys("bakeries", "production_rates", "prize_pool_usd")`), and the body
+    never reads it — inherited from the copy, kept so the signature and the panel-row agreement test
+    did not move. Fix: drop it from both the signature and the `keys(...)` row in one change (the
+    agreement test binds them). **Minor, Tier 1** — touches `screens/bakery.py` (Branch 8 WP-B,
+    filed 2026-09-20).
+
+38. **The bare `HeroBox` stylesheet block clips the hero boxes' fourth line in production.**
+    `maxpane_dashboard/themes/minimal.tcss:31-40` gives `HeroBox` `height: 7`, `border: solid $panel`
+    and `padding: 1 2`: two border rows plus two padding rows leave three inner rows, and the box
+    body is `[dim]LABEL[/]\n\n{line 1}\n{line 2}` — the countdown's progress bar and the leader's
+    `/hr` rate are line 2 and never composite. Both `tests/widgets/test_hero_metrics_degradation.py:67-73`
+    and `tests/widgets/test_bakery_widgets.py:149` (`_HeroHarness`) assert under a **border-less**
+    `HeroBox` block for exactly that reason, so nothing pins the production geometry. Fix: `height:
+    8` (or drop the top/bottom padding) in the bare block and one composited screen test at the
+    dashboard's pin that finds the bar; the hidden dashboard has no pin sweep, so Tier 1. Pre-
+    existing. **Minor, Tier 1** (Branch 8 WP-B, filed 2026-09-20).
+
+39. **The DataTable cursor row's `color: $text` hides a cell's own foreground colour on every
+    leaderboard.** `maxpane_dashboard/themes/minimal.tcss:68-71` (`DataTable > .datatable--cursor {
+    background: $panel; color: $text; }`): bakery's leader row is row 0, the cursor rests there, and
+    its `[green]+5/hr[/]` rate composites in `$text` —
+    `test_the_leader_row_is_bold_with_a_green_rate_and_the_second_is_not` had to assert the cell
+    *string* off the table because the compositor shows no green (the bold survives). The same rule reaches ocm, cattown, dota, talismans, ttt and base.
+    Whether the cursor row should keep cell colours is an owner decision (it is a highlight, after
+    all); if yes, drop `color` from the block and re-render the migrated leaderboards. Pre-existing.
+    **Minor, Tier 2** — shared stylesheet, > 1 dashboard (Branch 8 WP-B, filed 2026-09-20).
+    Debt this created: `tests/widgets/test_bakery_widgets.py:347-348` asserts the cell string
+    (`str(table.get_row_at(0)[3]) == "[green]+5/hr[/]"`) instead of composited output; whoever
+    changes the cursor rule upgrades that assertion to `render_strips()` in the same change
+    (WP-B review M3).
+
+40. **The address sweep's bakery payload certifies three panels only in their degraded state.**
+    `tests/address_sweep/builders.py:555-597` `_bakery_payload` carries no `chart_histories`, no
+    `late_join_ev` / `gap_analysis` / `dominance` / `recommendation` and no `boost_rankings` /
+    `attack_rankings`, so COOKIE TRENDS, SIGNALS and BEST PLAYS render `unavailable` on every sweep
+    (the WP-B render diff is exactly those three panels) and the sweep never sees their live shape —
+    a recommendation naming a bakery, a boost name, a chart label — which is where third-party text
+    would reach the screen. Fix: add the seven keys with one hostile-free value each, and a
+    `seeded`-style expectation that the three panels paint a value, not `unavailable`. **Minor,
+    Tier 0** when the file is next touched (Branch 8 WP-B, filed 2026-09-20).

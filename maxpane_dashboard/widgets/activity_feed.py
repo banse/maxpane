@@ -1,42 +1,34 @@
-"""Scrolling activity feed showing recent game events."""
+"""Scrolling activity feed showing recent game events.
+
+On ``widgets/panels.py`` since Branch 8 WP-B: a
+:class:`~maxpane_dashboard.widgets.panels.RichLogFeed` in stream mode,
+keyed on the copy's four fields (timestamp, launcher, type, description).
+The event formatting below is unchanged from the copy: it is built as a
+``rich.text.Text`` because the launcher carries the copy icon
+(``widgets/address.py``), whose click action lives in a ``Style`` that only
+survives outside markup parsing.
+"""
 
 from __future__ import annotations
 
-import time
+from typing import TYPE_CHECKING
 
 from rich.text import Text
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import RichLog, Static
 
-from maxpane_dashboard.data.models import ActivityEvent
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.fmt import hhmm
+from maxpane_dashboard.widgets.panels import RichLogFeed
+
+if TYPE_CHECKING:
+    from maxpane_dashboard.data.models import ActivityEvent
 
 
 #: Rendered in place of a line whose event could not be formatted at all.
 _MALFORMED_LINE = "  [dim]??:??[/]  [yellow]unreadable event[/]"
-#: Rendered when the feed has nothing to show.
-_EMPTY_LINE = "[dim]  No activity yet[/]"
 #: Display budget for the launcher address in this RichLog line, excluding
 #: the icon (``ICON_COLS``). No layout pin covers this hidden dashboard, so
 #: this is a grow-in-slack choice matching the recipe's own RichLog example.
 _WHO_COLS = 17
-
-
-def _format_event_time(timestamp_str: str) -> str:
-    """Convert a unix timestamp string to HH:MM display format.
-
-    ``None``, non-numeric text and out-of-range values render ``"??:??"``
-    rather than raising: this runs on API-sourced data, and a raise here
-    propagates out of ``update_data`` after ``log.clear()`` has already
-    run, leaving the panel blank (MEDI-37).
-    """
-    try:
-        ts = int(timestamp_str)
-        t = time.localtime(ts)
-        return f"{t.tm_hour:02d}:{t.tm_min:02d}"
-    except (ValueError, OSError, TypeError, OverflowError):
-        return "??:??"
 
 
 def _who_text(launcher: object, *, width: int) -> Text:
@@ -92,7 +84,10 @@ def _format_event(event: ActivityEvent) -> Text:
     ):
         return Text.from_markup(_MALFORMED_LINE)
 
-    ts = _format_event_time(getattr(event, "timestamp", None))
+    # ``fmt.hhmm``: ``None``, non-numeric text and out-of-range values render
+    # ``??:??`` rather than raising (MEDI-37), and so does a non-positive
+    # stamp -- the API's epoch seconds are never zero.
+    ts = hhmm(getattr(event, "timestamp", None))
     who = _who_text(getattr(event, "launcher", None), width=_WHO_COLS)
 
     title = str(getattr(event, "title", None) or "")
@@ -110,10 +105,7 @@ def _format_event(event: ActivityEvent) -> Text:
         # Attack/boost — combine title (boost name) + description + linked bakery
         target = str(getattr(event, "linked_bakery_name", None) or "")
         if getattr(event, "success", None):
-            if getattr(event, "is_outgoing", None):
-                desc = f"{title}: {description} {target}"
-            else:
-                desc = f"{title}: {description} {target}"
+            desc = f"{title}: {description} {target}"
             line.append(f"{desc}  ")
             line.append("✓", style="green")
         else:
@@ -129,16 +121,14 @@ def _format_event(event: ActivityEvent) -> Text:
     return line
 
 
-class ActivityFeed(Vertical):
+class ActivityFeed(RichLogFeed):
     """Auto-scrolling activity feed with recent game events."""
 
+    TITLE = "ACTIVITY"
+    LOG_ID = "activity-log"
+
+    # Geometry only: the title's colour and blank row are ``PanelBase``'s.
     DEFAULT_CSS = """
-    ActivityFeed > .feed-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     ActivityFeed > RichLog {
         height: 1fr;
         padding: 0 1;
@@ -146,69 +136,25 @@ class ActivityFeed(Vertical):
     }
     """
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._seen_keys: set[str] = set()
+    def dedupe_key(self, event) -> str:
+        """The copy's key: ``timestamp:launcher:type:description``."""
+        return (
+            f"{getattr(event, 'timestamp', None)}:"
+            f"{getattr(event, 'launcher', None)}:"
+            f"{getattr(event, 'type', None)}:"
+            f"{getattr(event, 'description', None)}"
+        )
 
-    def compose(self) -> ComposeResult:
-        yield Static("ACTIVITY", classes="feed-title")
-        yield RichLog(id="activity-log", wrap=True, highlight=True, markup=True)
+    def format_row(self, event) -> Text:
+        return _event_to_text(event)
 
     def update_data(self, events: list[ActivityEvent] | None) -> None:
         """Rewrite the log with newest events on top.
 
-        Events are de-duplicated by a key composed of
-        ``(timestamp, launcher, type, description)``.
-
-        Missing or malformed input renders an explicit state instead of
-        raising (MEDI-37).  ``None``/empty shows "No activity yet"; an
-        event that cannot be formatted shows "unreadable event" on its own
-        line and the surrounding events still render.  Nothing here may
-        raise: ``log.clear()`` has already run by the time the events are
-        written, so an exception escaping this method leaves the panel
-        blank until the offending event ages out of the feed window.
+        The contract is :meth:`RichLogFeed.render_events`' stream mode:
+        ``None``/empty shows "No activity yet" only while nothing has ever
+        been shown, an event that cannot be formatted shows "unreadable
+        event" on its own line and the surrounding events still render, and
+        nothing here may raise (MEDI-37).
         """
-        log = self.query_one("#activity-log", RichLog)
-
-        if not events:
-            # Only claim "no activity" while nothing has ever been shown --
-            # a transient empty poll must not wipe a populated feed.
-            if not self._seen_keys:
-                # clear() first: without it every empty poll appends another
-                # copy of the placeholder, once per refresh interval.
-                log.clear()
-                log.write(_EMPTY_LINE)
-            return
-
-        # Track all events, newest first (events arrive newest-first)
-        new_keys = set()
-        for event in events:
-            try:
-                key = (
-                    f"{getattr(event, 'timestamp', None)}:"
-                    f"{getattr(event, 'launcher', None)}:"
-                    f"{getattr(event, 'type', None)}:"
-                    f"{getattr(event, 'description', None)}"
-                )
-            except Exception:
-                continue
-            new_keys.add(key)
-            self._seen_keys.add(key)
-
-        # Clear and rewrite: newest on top
-        log.clear()
-        log.auto_scroll = False
-        written = 0
-        for event in events:
-            try:
-                log.write(_event_to_text(event))
-                written += 1
-            except Exception:
-                # A single unwritable line must not truncate the feed.
-                continue
-
-        if written == 0:
-            log.write(_EMPTY_LINE)
-
-        # Scroll to top after render
-        self.call_after_refresh(log.scroll_home, animate=False)
+        self.render_events(events)

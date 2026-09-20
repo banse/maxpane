@@ -5,7 +5,8 @@ dashboard package in this repo, and a fix applied to one copy reached none of
 the others:
 
 * ``_UNAVAILABLE = "[yellow]unavailable[/]"`` -- nine copies across
-  ``widgets/`` and ``templates/``; ``UNAVAILABLE`` below is the one.
+  ``widgets/`` and the since-deleted ``templates/``; ``UNAVAILABLE`` below is
+  the one.
 * ``Loading...`` -- typed in 68 files; ``LOADING`` below is the one.
 * ``_render_row`` (seven copies) and ``_render_box`` (four) -- the same
   query-guard / build-inside-the-guard / fallback shape, hoisted here as
@@ -45,6 +46,14 @@ with cattown's leaderboard as its first user, and widened three of the
 bases so cattown, dota and (in WP-B) talismans and ttt fit them without a
 pixel moving. Every one of those widenings is a **class attribute carrying
 the Branch 6 default**, so ocm reads exactly as it did.
+
+Branch 8 (WP-A, 2026-09-20) brought the base terminal's six ``BT*`` widgets
+on, with three more append-only extensions on the same terms:
+:func:`fmt_signal_trailing` (the *older* signals row shape, value first
+and the dot trailing, which the base terminal and bakery share),
+:attr:`SparklinePanel.SPARK_WIDTH` (the bar's cell count -- 20 there, 30 in
+bakery's cookie chart, 22 everywhere else) and :attr:`RichLogFeed.HEADER_LINE`
+(a column header written above the rows of a feed whose rows are columns).
 """
 
 from __future__ import annotations
@@ -59,6 +68,7 @@ from textual.widgets import DataTable, RichLog, Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.sparkline_common import (
+    SPARK_WIDTH,
     build_sparkline_from_points,
     coerce_points,
     fmt_compact,
@@ -78,6 +88,7 @@ __all__ = [
     "RichLogFeed",
     "TableLeaderboard",
     "fmt_signal",
+    "fmt_signal_trailing",
 ]
 
 logger = logging.getLogger(__name__)
@@ -268,7 +279,7 @@ def fmt_signal(sig: dict, *, label_width: int, dim_label: bool,
 
     The spellings the eight copies differed on: ``label_width=18,
     dim_label=False`` is ocm's and dota's, ``label_width=15,
-    dim_label=True`` is cattown's and ``templates/signals_template.py``'s,
+    dim_label=True`` was cattown's and the deleted ``templates/signals_template.py``'s,
     and ``labelled=False`` is talismans' and ttt's ``  [c]●[/] [c]{value}[/]``
     -- a row whose *value string already says what it is*, so a label column
     would only repeat it (Branch 7).
@@ -291,6 +302,60 @@ def fmt_signal(sig: dict, *, label_width: int, dim_label: bool,
     if dim_label:
         cell = f"[dim]{cell}[/]"
     return f"  [{color}]{indicator}[/] {cell} [{color}]{value}[/]"
+
+
+def fmt_signal_trailing(label: str, value, *, indicator: str | None = None,
+                        color: str = "dim", label_width: int = 20,
+                        value_width: int = 12, indicator_width: int = 10,
+                        value_color: str | None = None) -> str:
+    """Format one signal row of the **older** shape: label, value, then the dot.
+
+    Two row shapes exist in this tree and this module states both, side by
+    side. :func:`fmt_signal` is the newer one (``● label value``, the
+    indicator *leading*), which ocm, cattown, dota, talismans and ttt share.
+    This is the older one, which the base terminal (``BTSignals``) and bakery
+    (``SignalsPanel``) share -- a dim label padded to *label_width*, the
+    value in ``[bold white]`` right-aligned to *value_width*, and then, two
+    cells on, a coloured dot **trailing** the value::
+
+        ␣␣[dim]{label:<20}[/][bold white]{value:>12}[/]␣␣[{color}]● {indicator:<10}[/]
+
+    *indicator* picks among the three endings the two copies had:
+
+    * a word (bakery's ``positive`` / ``negative``) -- the dot, a space and the
+      word padded to *indicator_width*;
+    * ``""`` -- the dot alone (the base terminal's rows, which colour the
+      dot and say nothing after it; padding an empty word out to ten cells
+      would leave trailing cells that wrap at the pin width);
+    * ``None`` (the default) -- the row ends after the value, which is
+      bakery's branch for a signal with nothing to indicate.
+
+    *value* and *indicator* are **escaped** (``markup_safety.safe_markup``),
+    for the reason :func:`fmt_signal` gives: both are analytics output over
+    names the game API supplied. Each is padded *before* it is escaped, so a
+    value carrying a ``[`` still occupies exactly *value_width* cells on
+    screen -- the escape's backslash is consumed by the markup parser, never
+    painted. Escaping a string that never carried a bracket moves no pixel.
+
+    *value_color* (Branch 8 WP-A fix round 1, review M3) replaces the value
+    cell's ``[bold white]`` with one style word, so a panel can build its
+    **degraded** row -- ``unavailable`` in yellow beside a yellow dot, the
+    colour every other degraded signal row in the tree wears -- through the
+    same function. It has to be a keyword: *value* is escaped, so the shared
+    :data:`UNAVAILABLE` markup cannot be passed as the value itself. ``None``
+    (the default) is the ``[bold white]`` every live row had.
+    """
+    value_style = "bold white" if value_color is None else value_color
+    row = (
+        f"  [dim]{str(label):<{label_width}}[/]"
+        f"[{value_style}]{safe_markup(f'{str(value):>{value_width}}')}[/]"
+    )
+    if indicator is None:
+        return row
+    if not indicator:
+        return f"{row}  [{color}]●[/]"
+    word = safe_markup(f"{str(indicator):<{indicator_width}}")
+    return f"{row}  [{color}]● {word}[/]"
 
 
 class SignalsPanelBase(PanelBase):
@@ -407,7 +472,7 @@ class SparklinePanel(PanelBase):
     """One block sparkline per line, with its current value and trend arrow.
 
     The primitives come from ``widgets/sparkline_common`` (MEDI-36): this
-    loop was carried by ocm, cattown, dota and
+    loop was carried by ocm, cattown, dota and the since-deleted
     ``templates/sparkline_template.py``, and the older copies raised
     ``TypeError`` on a ``None`` entry in a cached history.
     """
@@ -443,6 +508,14 @@ class SparklinePanel(PanelBase):
     #: not ready yet. The line the entry could not even be unpacked from
     #: has no label to keep, and writes :attr:`EMPTY_TEXT` bare.
     EMPTY_KEEPS_LABEL: bool = False
+
+    #: How many cells the bar itself occupies. ``sparkline_common.SPARK_WIDTH``
+    #: (22) is what ocm, cattown, dota, talismans and ttt draw; the base
+    #: terminal's copy drew **20** and bakery's cookie chart **30**, and each
+    #: panel is laid out for its own number (Branch 8 WP-A). A series longer
+    #: than this shows its newest samples; a shorter one is left-padded with
+    #: the lowest block, as ``build_sparkline`` has always done.
+    SPARK_WIDTH: int = SPARK_WIDTH
 
     def compose_body(self) -> ComposeResult:
         for index, line_id in enumerate(self.LINE_IDS):
@@ -501,7 +574,7 @@ class SparklinePanel(PanelBase):
             if len(pts) < self.MIN_POINTS or not pts:
                 self.write(selector, self.empty_line(label))
                 continue
-            sparkline = build_sparkline_from_points(pts)
+            sparkline = build_sparkline_from_points(pts, width=self.SPARK_WIDTH)
             current = self.fmt_value(pts[-1][1], unit)
             cell = self._label_cell(label)
             row = (
@@ -570,6 +643,18 @@ class RichLogFeed(PanelBase):
     #: cattown and dota do. talismans and ttt cap it at 200.
     MAX_LINES: int | None = None
 
+    #: A column header written once above the rows, every time the rows
+    #: are (re)painted -- ``None`` writes nothing, which is what every feed
+    #: but the base terminal's does (Branch 8 WP-A). That feed is a
+    #: **ranking** whose rows are columns (token, volume, change, liquidity,
+    #: buys/sells), and a column needs a heading. A ``str`` is handed to the
+    #: log as a string, so it is parsed as markup and highlighted exactly
+    #: as the rows under it were before they became ``Text``. It is *not* a
+    #: row: it never sets ``_drawn``, and a poll none of whose rows could be
+    #: shown clears it again before writing the placeholder, so a heading
+    #: never stands over an empty table.
+    HEADER_LINE: str | Text | None = None
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._seen_keys: set[str] = set()
@@ -609,8 +694,8 @@ class RichLogFeed(PanelBase):
     def render_events(self, events) -> None:
         """Rewrite the log with the given events, newest on top.
 
-        The merged contract of ``templates/activity_feed_template.py`` and
-        ocm's own feed:
+        The merged contract of the since-deleted
+        ``templates/activity_feed_template.py`` and ocm's own feed:
 
         In **snapshot** mode (:attr:`SNAPSHOT`) the first bullet is replaced:
         a ``None`` poll clears and writes :data:`UNAVAILABLE_LINE`, an empty
@@ -693,6 +778,8 @@ class RichLogFeed(PanelBase):
 
         log.clear()
         log.auto_scroll = False
+        if self.HEADER_LINE is not None:
+            log.write(self.HEADER_LINE)
         written = 0
         for event in events:
             try:
@@ -714,7 +801,11 @@ class RichLogFeed(PanelBase):
             # drawn says "no activity yet"; a snapshot may not -- the read
             # succeeded and returned a state, so "there is nothing" is a
             # false negative. It says it could not show the state instead
-            # (re-review N1).
+            # (re-review N1). A header with no rows under it goes too: the
+            # log holds nothing else at this point, so for a feed without
+            # one this ``clear()`` is a no-op.
+            if self.HEADER_LINE is not None:
+                log.clear()
             log.write(UNAVAILABLE_LINE if self.SNAPSHOT else self.EMPTY_LINE)
         else:
             self._drawn = True

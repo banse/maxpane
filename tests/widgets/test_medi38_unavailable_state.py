@@ -27,6 +27,15 @@ two, claim 1 becomes: an all-``None`` poll renders ``--``, never
 ``Loading``, and never the word reserved for a read that failed. Claims 2
 and 3 are unchanged, and claim 3 is the one that matters here -- it is the
 guard those four bare ``query_one(...).update(...)`` calls never had.
+
+**The base terminal's two scalar panels (Branch 8 WP-A, fix round 1, review
+I1) are in that second table too**, with their own word for "absent": the
+manager omits ``eth_price`` / ``total_volume`` on a poll that found no
+tokens and the copy rendered ``...`` for it (``No data`` for the gainer), and
+``BTSignals`` is handed plain strings, not signal dicts -- ``None`` is a
+signal it could not compute this poll, rendered ``...`` since the copy. So
+the table carries the *absent* word per row (``--`` or ``...``), and claim 1
+asserts that word, never ``Loading`` and never ``unavailable``.
 """
 
 from __future__ import annotations
@@ -38,6 +47,8 @@ from textual.app import App, ComposeResult
 
 from maxpane_dashboard.app import MaxPaneApp
 
+from maxpane_dashboard.widgets.base.overview.bt_hero_metrics import BTOverviewHero
+from maxpane_dashboard.widgets.base.overview.bt_signals import BTSignals
 from maxpane_dashboard.widgets.cattown.ct_hero_metrics import CTHeroMetrics
 from maxpane_dashboard.widgets.cattown.ct_signals import CTSignals
 from maxpane_dashboard.widgets.dota.dota_activity_feed import DOTAActivityFeed
@@ -71,7 +82,7 @@ class _Harness(App):
     #: row it needs.
     CSS = """
     OCMHeroBox, CTHeroBox, DOTAHeroBox,
-    TalismansHeroBox, TTTHeroBox { height: 9; }
+    TalismansHeroBox, TTTHeroBox, BTHeroBox { height: 9; }
     """
 
     def __init__(self, widget) -> None:
@@ -216,11 +227,12 @@ _WIDGETS = [
     ),
 ]
 
-#: The hero rows WP-B migrated. Same three claims, except claim 1 -- see the
-#: module docstring: a ``None`` scalar here is the manager's deliberate
-#: "nothing to report" and must stay ``--``.
+#: The hero rows WP-B migrated, and the base terminal's two scalar panels.
+#: Same three claims, except claim 1 -- see the module docstring: a ``None``
+#: scalar here is the manager's deliberate "nothing to report" and must stay
+#: the panel's own absent word.
 #: (widget class, a good payload, what it puts on screen, a payload whose
-#:  formatting raises)
+#:  formatting raises, the absent word an all-``None`` poll renders)
 _HERO_ROWS = [
     pytest.param(
         TalismansHeroMetrics,
@@ -230,6 +242,7 @@ _HERO_ROWS = [
              operations_total=903),
         "1,490",
         dict(live_tokens=_Hostile()),
+        "--",
         id="TalismansHeroMetrics",
     ),
     pytest.param(
@@ -240,7 +253,35 @@ _HERO_ROWS = [
              total_mcap_eth=900.0, total_mcap_token_count=42),
         "4,321",
         dict(unburned=_Hostile()),
+        "--",
         id="TTTHeroMetrics",
+    ),
+    # Branch 8 WP-A (fix round 1, review I1). Four bare ``query_one().update``
+    # calls before the migration; ``_price_body`` catches ``ValueError`` /
+    # ``TypeError`` itself (the sweep payload hands it the title bar's
+    # ``$3,000`` string), so the malformed value has to raise past those to
+    # reach ``render_box``'s guard.
+    pytest.param(
+        BTOverviewHero,
+        dict(eth_price=3_000.0, eth_change_24h=2.5, total_volume=1_200_000.0,
+             top_gainer_name="DEGEN", top_gainer_pct=12.0),
+        "$3,000.00",
+        dict(eth_price=_Hostile()),
+        "...",
+        id="BTOverviewHero",
+    ),
+    # Same round. Not a hero row but the same category: handed strings, and
+    # ``None`` is "could not compute this poll", which the copy rendered
+    # ``...``. ``_signal_indicator`` calls ``str(value).lower()``, so the
+    # hostile scalar raises inside ``build`` and lands on the fallback.
+    pytest.param(
+        BTSignals,
+        dict(buy_sell_signal="Bullish", volume_signal="Rising",
+             whale_signal="Neutral", recommendation="BUY"),
+        "Bullish",
+        dict(buy_sell_signal=_Hostile()),
+        "...",
+        id="BTSignals",
     ),
 ]
 
@@ -311,29 +352,29 @@ async def test_a_real_zero_is_a_number_not_loading(cls, payload, shown):
 # -- the hero rows: claims 2 and 3 verbatim, claim 1 inverted --------------
 
 
-@pytest.mark.parametrize("cls,good,shown,bad", _HERO_ROWS)
+@pytest.mark.parametrize("cls,good,shown,bad,absent", _HERO_ROWS)
 async def test_a_deliberate_none_renders_a_dash_not_unavailable(
-    cls, good, shown, bad
+    cls, good, shown, bad, absent
 ):
     """A scalar the manager served as ``None`` is "nothing to report".
 
     Calling that ``unavailable`` would be a false degradation -- the
     dashboard claiming it could not look when it looked and there was
-    nothing. ``--`` is the word for that, and it is still not ``Loading``:
-    the panel *did* poll.
+    nothing. ``--`` is the word for that (``...`` on the base terminal), and
+    it is still not ``Loading``: the panel *did* poll.
     """
     widget = cls()
     async with _Harness(widget).run_test(size=(120, 20)) as pilot:
         widget.update_data(**_none_payload(widget))
         await pilot.pause()
         text = _screen_text(pilot.app)
-    assert "--" in text, text
+    assert absent in text, text
     assert "Loading" not in text, text
     assert "unavailable" not in text, text
 
 
-@pytest.mark.parametrize("cls,good,shown,bad", _HERO_ROWS)
-async def test_a_good_hero_poll_shows_its_value(cls, good, shown, bad):
+@pytest.mark.parametrize("cls,good,shown,bad,absent", _HERO_ROWS)
+async def test_a_good_hero_poll_shows_its_value(cls, good, shown, bad, absent):
     widget = cls()
     async with _Harness(widget).run_test(size=(120, 20)) as pilot:
         widget.update_data(**good)
@@ -343,9 +384,9 @@ async def test_a_good_hero_poll_shows_its_value(cls, good, shown, bad):
     assert "unavailable" not in text, text
 
 
-@pytest.mark.parametrize("cls,good,shown,bad", _HERO_ROWS)
+@pytest.mark.parametrize("cls,good,shown,bad,absent", _HERO_ROWS)
 async def test_a_malformed_hero_poll_after_a_good_one_is_not_shown_as_live(
-    cls, good, shown, bad
+    cls, good, shown, bad, absent
 ):
     """The guard those four bare ``query_one().update()`` calls never had."""
     widget = cls()

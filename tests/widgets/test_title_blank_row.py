@@ -17,9 +17,10 @@ makes this evidence rather than a smoke test.
 **Composited output, under the app stylesheet.** Two mechanisms paint this row
 in this repo and both are legitimate: most of these panels yield a blank
 ``Static`` of their own from ``compose`` (the older lineage, seeded from the
-bakery templates), while ``FWAOddsBoard``, ``FWASettlementTable``,
-``TTTSignals`` and ``FPPerfVelocity`` state it as ``margin: 0 0 1 0`` on the
-title's own class (the lineage pass 1 wrote into ``templates/``). Asserting
+bakery copies and, until Branch 8 WP-B deleted them, the ``templates/``),
+while ``FWAOddsBoard``, ``FWASettlementTable``, ``TTTSignals`` and
+``FPPerfVelocity`` state it as ``margin: 0 0 1 0`` on the title's own class
+(the lineage pass 1 wrote into the templates). Asserting
 against either *source* would therefore be asserting about a mechanism rather
 than about the convention, and would be green on a panel that states the rule
 in one of the two CSS files and is overridden in the other. The only question
@@ -44,11 +45,18 @@ from __future__ import annotations
 import pytest
 
 from maxpane_dashboard.app import CSS_PATH
+from maxpane_dashboard.data.models import ActivityEvent
 
+from maxpane_dashboard.widgets.activity_feed import ActivityFeed
 from maxpane_dashboard.widgets.cookie_chart import CookieChart
 from maxpane_dashboard.widgets.ev_table import EVTable
+from maxpane_dashboard.widgets.leaderboard import Leaderboard
 from maxpane_dashboard.widgets.signals_panel import SignalsPanel
+from maxpane_dashboard.widgets.base.overview.bt_activity_feed import BTActivityFeed
 from maxpane_dashboard.widgets.base.overview.bt_best_plays import BTBestPlays
+from maxpane_dashboard.widgets.base.overview.bt_overview_leaderboard import (
+    BTOverviewLeaderboard,
+)
 from maxpane_dashboard.widgets.base.overview.bt_signals import BTSignals
 from maxpane_dashboard.widgets.base.overview.bt_sparklines import BTSparklines
 from maxpane_dashboard.widgets.cattown.ct_activity_feed import CTActivityFeed
@@ -128,10 +136,38 @@ _PANELS = [
         "dominance": 1.0, "recommendation": "",
     }),
     ("EVTable", EVTable, {"boost_rankings": [], "attack_rankings": []}),
+    # Added with Branch 8 WP-B, when the six moved onto `widgets/panels.py`:
+    # both blank rows used to come from `minimal.tcss` alone (`Leaderboard >
+    # Static` and `ActivityFeed > .feed-title` margins that branch deletes),
+    # so neither was covered. The empty board still paints its column header
+    # on row 2, and the feed needs one event, because an empty poll paints
+    # its placeholder one row lower than a real row sits.
+    ("Leaderboard", Leaderboard, {
+        "bakeries": [], "production_rates": {}, "prize_pool_usd": 0.0,
+    }),
+    ("ActivityFeed", ActivityFeed, {
+        "events": [ActivityEvent.model_construct(
+            type="simple", title="joined the bakery", description="",
+            launcher="0x" + "1" * 40, timestamp="1700000000",
+        )],
+    }),
     # -- base -------------------------------------------------------------
     ("BTSparklines", BTSparklines, {"volume_history": _SERIES}),
     ("BTSignals", BTSignals, {}),
     ("BTBestPlays", BTBestPlays, {}),
+    # Added with Branch 8 WP-A, when the package moved onto `widgets/panels.py`:
+    # both blank rows used to come from `minimal.tcss` alone (`.bto-lb-title`
+    # and `.bto-feed-title` margins this branch deletes), so neither was
+    # covered. `{}` is enough for the table -- the empty state still paints
+    # the column header on row 2 -- and the feed needs one token, because an
+    # empty poll paints its placeholder one row lower than its header sits.
+    ("BTOverviewLeaderboard", BTOverviewLeaderboard, {}),
+    ("BTActivityFeed", BTActivityFeed, {
+        "whale_trades": [{
+            "symbol": "DEGEN", "volume_24h": 1_200_000.0, "buys_24h": 60,
+            "sells_24h": 40, "price_change_24h": 12.0, "liquidity": 500_000.0,
+        }],
+    }),
     # -- cattown ----------------------------------------------------------
     ("CTSparklines", CTSparklines, {"prize_pool_history": _SERIES}),
     ("CTSignals", CTSignals, {}),

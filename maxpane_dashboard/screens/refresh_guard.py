@@ -12,9 +12,10 @@ Every screen used to hand-copy the same three lines::
         self.run_worker(self._do_refresh(), exclusive=True, name="<game>-refresh")
 
 which carries two distinct async defects (code review 2026-07-04, MEDI-34 and
-MEDI-35).  Both are fixed here, once, so that the twelve screens *and* the
-copy-source in ``templates/screen_template.py`` share one implementation instead
-of twelve chances to reintroduce them.
+MEDI-35).  Both are fixed here, once, so that the twelve screens share one
+implementation instead of twelve chances to reintroduce them (until Branch 8
+WP-B the copy-source ``templates/screen_template.py`` shared it too; the
+templates are deleted and a new screen subclasses ``DashboardScreen``).
 
 MEDI-34 — interval overrun livelock (``exclusive=True`` cancels the wrong side)
 ------------------------------------------------------------------------------

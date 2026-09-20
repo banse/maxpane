@@ -64,8 +64,13 @@ from maxpane_dashboard.widgets.panels import (
     SparklinePanel,
     TableLeaderboard,
     fmt_signal,
+    fmt_signal_trailing,
 )
-from maxpane_dashboard.widgets.sparkline_common import SPARK_CHARS, fmt_compact
+from maxpane_dashboard.widgets.sparkline_common import (
+    SPARK_CHARS,
+    SPARK_WIDTH,
+    fmt_compact,
+)
 
 from tests.widgets.surf_compositing import composite_lines
 
@@ -1171,6 +1176,137 @@ async def test_the_table_keeps_its_columns_cursor_and_zebra() -> None:
         assert [str(c.label) for c in table.columns.values()] == ["#", "Name"]
 
 
+# -- 6b. Branch 8 WP-A: the three append-only extensions ---------------------
+#
+# ``fmt_signal_trailing`` (the older signals row shape the base terminal and
+# bakery share), ``SparklinePanel.SPARK_WIDTH`` and ``RichLogFeed.HEADER_LINE``.
+# Each defaults to what every existing subscriber already had, so the cases
+# above this section stay green unchanged -- and each case here names the
+# mutation it exists to redden.
+
+
+def test_fmt_signal_trailing_with_an_indicator_has_the_three_padded_cells() -> None:
+    """Mutation: any of the three default widths (20 / 12 / 10) -> this
+    reddens. Label padded to 20, value right-aligned in 12, the dot and the
+    indicator padded to 10, exactly ``SignalsPanel._fmt_row``'s branch."""
+    out = fmt_signal_trailing("Late-Join EV", "+$1.20", indicator="positive",
+                              color="green")
+    assert out == (
+        "  [dim]Late-Join EV        [/]"
+        "[bold white]      +$1.20[/]"
+        "  [green]● positive  [/]"
+    ), out
+
+
+def test_fmt_signal_trailing_without_an_indicator_ends_after_the_value() -> None:
+    """Mutation: append the dot when ``indicator is None`` -> this reddens.
+    Bakery's branch for a signal with nothing to indicate."""
+    out = fmt_signal_trailing("Dominance", "42%")
+    assert out == "  [dim]Dominance           [/][bold white]         42%[/]", out
+    assert "●" not in out
+
+
+def test_fmt_signal_trailing_with_an_empty_indicator_is_the_dot_alone() -> None:
+    """Mutation: pad the empty indicator out to ten cells (``● `` plus ten
+    spaces) -> this reddens. The base terminal's rows colour the dot and say
+    nothing after it; ten trailing cells would wrap at the pin width."""
+    out = fmt_signal_trailing("Buy/Sell", "Bullish", indicator="", color="green")
+    assert out.endswith("[/]  [green]●[/]"), out
+    assert out == out.rstrip()
+
+
+def test_fmt_signal_trailing_value_color_replaces_bold_white_and_nothing_else() -> None:
+    """Mutation: ignore ``value_color``, or let it also recolour the label or
+    the dot -> this reddens. Branch 8 WP-A fix round 1 (review M3): the
+    degraded row's word is yellow like every other degraded signal row, and
+    the default is the ``[bold white]`` every live row had."""
+    live = fmt_signal_trailing("Sym", "ok", indicator="", color="green")
+    degraded = fmt_signal_trailing("Sym", "unavailable", indicator="",
+                                   color="yellow", value_color="yellow")
+    assert "[bold white]" in live and "[bold white]" not in degraded, degraded
+    assert degraded == (
+        f"  [dim]{'Sym':<20}[/][yellow]{'unavailable':>12}[/]  [yellow]●[/]"
+    ), degraded
+    # The keyword touches the value cell only: label and dot as before.
+    assert degraded.startswith(f"  [dim]{'Sym':<20}[/]"), degraded
+    assert live.replace("[bold white]", "[yellow]").replace("[green]", "[yellow]") == (
+        fmt_signal_trailing("Sym", "ok", indicator="", color="yellow", value_color="yellow")
+    )
+
+
+def test_fmt_signal_trailing_honours_the_three_width_keywords() -> None:
+    """Mutation: ignore any of ``label_width`` / ``value_width`` /
+    ``indicator_width`` -> this reddens."""
+    out = fmt_signal_trailing("L", "v", indicator="i", label_width=3,
+                              value_width=4, indicator_width=2)
+    assert out == "  [dim]L  [/][bold white]   v[/]  [dim]● i [/]", out
+
+
+def test_fmt_signal_trailing_escapes_a_hostile_value_and_keeps_its_width() -> None:
+    """Mutation: drop either ``safe_markup`` call, or escape *before*
+    padding -> this reddens. A value spelled ``[red]x`` renders literally
+    and still occupies twelve cells: the escape's backslash is consumed by
+    the parser, so the padding has to be applied to the raw string."""
+    out = fmt_signal_trailing("Sym", "[red]x", indicator="[/x]", color="green")
+    assert "\\[red]x" in out, out
+    assert "\\[/x]" in out, out
+    assert out.count("[red]x") == 1 and "[/x]" not in out.replace("\\[/x]", ""), out
+    rendered = Text.from_markup(out).plain
+    assert rendered == f"  {'Sym':<20}{'[red]x':>12}  ● {'[/x]':<10}", rendered
+
+
+class _NarrowSparks(_Sparks):
+    LINE_IDS = ("t-nspark-0",)
+    SPARK_WIDTH = 20
+
+
+async def test_spark_width_is_the_bars_cell_count() -> None:
+    """Mutation: ``build_sparkline_from_points(pts)`` without
+    ``width=self.SPARK_WIDTH`` -> this reddens. The base terminal draws 20,
+    bakery's cookie chart 30, everyone else the shared 22 -- and the
+    default is that 22, so ``_Sparks`` above still draws what it drew."""
+    narrow = await _lines(_NarrowSparks, points=_SERIES)
+    assert sum(ch in SPARK_CHARS for ch in narrow[2]) == 20, repr(narrow[2])
+    default = await _lines(_Sparks, points=_SERIES)
+    assert sum(ch in SPARK_CHARS for ch in default[2]) == SPARK_WIDTH == 22, (
+        repr(default[2])
+    )
+
+
+class _HeadedFeed(_Feed):
+    LOG_ID = "t-hfeed-log"
+    HEADER_LINE = "[dim]  # header row[/]"
+
+
+async def test_a_header_line_is_written_above_the_rows_on_every_paint() -> None:
+    """Mutation: drop the ``HEADER_LINE`` write in ``render_events`` -> this
+    reddens. Title, blank, header, then the rows; a second poll re-paints
+    it once, never twice."""
+    rows = await _lines(_HeadedFeed, polls=[
+        {"events": [{"n": 1, "tx_hash": "a"}]},
+        {"events": [{"n": 2, "tx_hash": "b"}]},
+    ])
+    assert rows[2].strip() == "# header row", rows[:6]
+    assert "event" in rows[3], rows[:6]
+    assert sum("# header row" in r for r in rows) == 1, rows[:8]
+
+
+async def test_a_header_never_stands_over_an_empty_table() -> None:
+    """Mutation: drop the ``clear()`` on the ``written == 0`` path -> this
+    reddens. Rows arrived and none could be shown: the placeholder alone,
+    no heading above nothing."""
+    rows = await _lines(_HeadedFeed, events=[{"bad": True, "n": 0}])
+    assert not any("# header row" in r for r in rows), rows[:6]
+    assert rows[2].strip() == "No activity yet", rows[:6]
+
+
+async def test_a_feed_without_a_header_line_writes_none() -> None:
+    """The default. Mutation: seed ``HEADER_LINE`` with a string -> this
+    reddens, and so does every pre-existing feed test above."""
+    rows = await _lines(_Feed, events=[{"n": 1, "tx_hash": "a"}])
+    assert rows[2].strip() == "event 1", rows[:6]
+
+
 # -- 7. Agreement: the migrated packages carry no copy of what the bases own --
 
 
@@ -1186,16 +1322,46 @@ async def test_the_table_keeps_its_columns_cursor_and_zebra() -> None:
 #: panels had all been deleted). It is the hand-checked number of panels,
 #: and it reddens when one is dropped, renamed out of ``__all__``, or added
 #: without being put on a base. It is **per package** because the packages
-#: genuinely differ: talismans and ttt export seven each, these three six.
-MIGRATED_PACKAGES = {"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7}
+#: genuinely differ: talismans and ttt export seven each, the others six.
+MIGRATED_PACKAGES = {
+    "ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7,
+    # Branch 8 WP-A. A dotted name: ``_package`` imports
+    # ``maxpane_dashboard.widgets.base.overview`` and the walk globs its six
+    # ``bt_*.py`` modules (``BTHeroBox`` has no ``update_data``, so the row
+    # exports seven names and the count is six).
+    "base.overview": 6,
+    # Branch 8 WP-B. Not a package: the six bakery widgets are the top-level
+    # ``widgets/*.py`` modules ``widgets/__init__.py`` re-exports, so both
+    # walks read the six files ``MIGRATED_MODULES`` names -- the scan instead
+    # of globbing the directory (which would sweep in every shared module),
+    # the subclass check instead of ``widgets.__all__`` (whose seventh name,
+    # ``StatusBar``, has an ``update_data`` and is not a panel). Each class
+    # found must still be in that ``__all__``: the re-export is the contract
+    # ``screens/bakery.py`` and the agreement tests import through.
+    "bakery": 6,
+}
+
+#: The migrated "packages" that are a set of top-level modules rather than a
+#: directory, with the module names to read.
+MIGRATED_MODULES = {
+    "bakery": (
+        "hero_metrics", "leaderboard", "cookie_chart", "signals_panel",
+        "activity_feed", "ev_table",
+    ),
+}
 
 
 def _package(name: str):
+    if name in MIGRATED_MODULES:
+        return importlib.import_module("maxpane_dashboard.widgets")
     return importlib.import_module(f"maxpane_dashboard.widgets.{name}")
 
 
 def _package_modules(name: str) -> list[pathlib.Path]:
-    return sorted(pathlib.Path(inspect.getfile(_package(name))).parent.glob("*.py"))
+    root = pathlib.Path(inspect.getfile(_package(name))).parent
+    if name in MIGRATED_MODULES:
+        return [root / f"{module}.py" for module in MIGRATED_MODULES[name]]
+    return sorted(root.glob("*.py"))
 
 
 #: Each name had between two and ten copies across ``widgets/`` before this
@@ -1260,18 +1426,35 @@ def test_every_migrated_panel_subclasses_a_panels_base(package, expected) -> Non
     """Walk the package's own ``__all__``, so a widget added to a migrated
     package and *not* put on a base reddens this without anybody remembering
     to extend a hand-written list -- and check the walk found the number of
-    panels that package actually has, so a dropped one reddens too."""
+    panels that package actually has, so a dropped one reddens too.
+
+    A ``MIGRATED_MODULES`` entry (bakery) walks the classes its six modules
+    define instead, and checks each is re-exported by ``widgets.__all__``."""
     pkg = _package(package)
 
     found = []
-    for name in pkg.__all__:
-        cls = getattr(pkg, name)
-        if not hasattr(cls, "update_data"):
-            continue
-        found.append(name)
-        assert issubclass(cls, _PANEL_BASES), (
-            f"{package}.{name} is not on widgets/panels.py"
-        )
+    if package in MIGRATED_MODULES:
+        for module_name in MIGRATED_MODULES[package]:
+            module = importlib.import_module(f"maxpane_dashboard.widgets.{module_name}")
+            for name, cls in vars(module).items():
+                if not (inspect.isclass(cls) and cls.__module__ == module.__name__):
+                    continue
+                if not hasattr(cls, "update_data"):
+                    continue
+                found.append(name)
+                assert name in pkg.__all__, f"{name} is not re-exported by widgets/__init__.py"
+                assert issubclass(cls, _PANEL_BASES), (
+                    f"{package}.{name} is not on widgets/panels.py"
+                )
+    else:
+        for name in pkg.__all__:
+            cls = getattr(pkg, name)
+            if not hasattr(cls, "update_data"):
+                continue
+            found.append(name)
+            assert issubclass(cls, _PANEL_BASES), (
+                f"{package}.{name} is not on widgets/panels.py"
+            )
     assert len(found) == expected, (package, found)
 
 
@@ -1322,6 +1505,7 @@ def test_panels_defines_the_shared_strings_exactly_once() -> None:
         "RichLogFeed",
         "TableLeaderboard",
         "fmt_signal",
+        "fmt_signal_trailing",
     ]
 
 
@@ -1405,7 +1589,6 @@ def test_no_panels_base_shares_its_name_with_another_widget_class() -> None:
     clashes: dict[str, list[str]] = {}
     for package in (
         "maxpane_dashboard.widgets",
-        "maxpane_dashboard.templates",
         # A Screen subclass is a Widget, so its name is a type selector too
         # (fix round 2, N1).
         "maxpane_dashboard.screens",

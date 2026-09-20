@@ -1,7 +1,8 @@
 """SIGNALS: four states a reader changes behaviour on, in label/value columns.
 
-``templates/signals_template.py``'s shape with its last line **deleted**. The
-template ends on a **recommendation** -- ``→ Recommendation: BUY`` -- which is
+The shape of the since-deleted ``templates/signals_template.py`` with its last
+line **deleted**. That template ended on a **recommendation** -- ``→
+Recommendation: BUY`` -- which is
 fine for a cookie game and is something else entirely on a market panel. This
 repo ships a strictly read-only tool that never signs and never quotes a trade,
 so a bottom-line verdict would be the first thing on screen that reads as

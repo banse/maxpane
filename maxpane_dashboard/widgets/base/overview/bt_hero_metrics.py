@@ -1,49 +1,98 @@
-"""Hero metric boxes for the Base Trading Overview view."""
+"""Hero metric boxes for the Base Trading Overview view.
+
+The row, the boxes' ``Loading...`` seed and the build-inside-the-guard write
+are :class:`~maxpane_dashboard.widgets.panels.HeroRow`'s (Branch 8, WP-A).
+What stays here is what only this dashboard knows: the four bodies, and
+their own words for a value that is *absent* rather than *failed* --
+``...`` for a price, change or volume the manager omitted this poll, and
+``No data`` for a top gainer when no token moved, which is the copy's own
+text for a real negative and not the base's ``unavailable``. The
+``unavailable`` marker is what a body that *raises* lands on (MEDI-38),
+which no body here did before and every body now can.
+"""
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Horizontal
-from textual.widgets import Static
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import HeroBoxBase, HeroRow
 
 
-class BTHeroBox(Static):
-    """A single hero metric box with label and value."""
+class BTHeroBox(HeroBoxBase):
+    """A single hero metric box with label and value.
 
-    DEFAULT_CSS = ""
-
-
-class BTOverviewHero(Horizontal):
-    """Row of hero metric boxes: ETH Price, 24h Change, Volume, Top Gainer."""
-
-    DEFAULT_CSS = """
-    BTOverviewHero > BTHeroBox {
-        margin: 0 1;
-    }
+    Kept as its own class because ``minimal.tcss`` names ``BTHeroBox`` for
+    this dashboard's box geometry.
     """
 
-    def compose(self) -> ComposeResult:
-        yield BTHeroBox(
-            "[dim]ETH PRICE[/]\n\n"
-            "[dim]Loading...[/]",
-            id="bto-hero-eth",
-        )
-        yield BTHeroBox(
-            "[dim]24H CHANGE[/]\n\n"
-            "[dim]Loading...[/]",
-            id="bto-hero-change",
-        )
-        yield BTHeroBox(
-            "[dim]VOLUME[/]\n\n"
-            "[dim]Loading...[/]",
-            id="bto-hero-volume",
-        )
-        yield BTHeroBox(
-            "[dim]TOP GAINER[/]\n\n"
-            "[dim]Loading...[/]",
-            id="bto-hero-gainer",
-        )
+
+def _price_body(eth_price) -> str:
+    if eth_price is None:
+        return "[bold white]...[/]"
+    try:
+        price_str = f"${float(eth_price):,.2f}"
+    except (ValueError, TypeError):
+        # The manager hands the title bar's own string on the sweep payload
+        # (``$3,000``); a string that is not a number is shown as it came.
+        price_str = safe_markup(str(eth_price))
+    return f"[bold white]{price_str}[/]"
+
+
+def _change_body(eth_change_24h) -> str:
+    if eth_change_24h is None:
+        return "[bold][dim]...[/][/]"
+    try:
+        change_val = float(eth_change_24h)
+    except (ValueError, TypeError):
+        return f"[bold]{safe_markup(str(eth_change_24h))}[/]"
+    if change_val >= 0:
+        return f"[bold][green]+{change_val:.2f}%[/][/]"
+    return f"[bold][red]{change_val:.2f}%[/][/]"
+
+
+def _volume_body(total_volume) -> str:
+    if total_volume is None:
+        return "[bold white]...[/]"
+    try:
+        vol = float(total_volume)
+    except (ValueError, TypeError):
+        return f"[bold white]{safe_markup(str(total_volume))}[/]"
+    if vol >= 1_000_000_000:
+        vol_str = f"${vol / 1_000_000_000:.1f}B"
+    elif vol >= 1_000_000:
+        vol_str = f"${vol / 1_000_000:.1f}M"
+    elif vol >= 1_000:
+        vol_str = f"${vol / 1_000:.1f}K"
+    else:
+        vol_str = f"${vol:,.0f}"
+    return f"[bold white]{vol_str}[/]"
+
+
+def _gainer_body(top_gainer_name, top_gainer_pct) -> str:
+    if not top_gainer_name:
+        # A real negative -- no token moved -- in the copy's own words.
+        return "[dim]No data[/]"
+    try:
+        pct_val = float(top_gainer_pct) if top_gainer_pct is not None else 0.0
+        pct_str = f"+{pct_val:.1f}%"
+    except (ValueError, TypeError):
+        pct_str = safe_markup(str(top_gainer_pct)) if top_gainer_pct else "?"
+    return (
+        f"[bold white]{safe_markup(top_gainer_name)}[/]\n"
+        f"[green]{pct_str}[/]"
+    )
+
+
+class BTOverviewHero(HeroRow):
+    """Row of hero metric boxes: ETH Price, 24h Change, Volume, Top Gainer."""
+
+    BOX_CLASS = BTHeroBox
+
+    BOXES = (
+        ("bto-hero-eth", "ETH PRICE"),
+        ("bto-hero-change", "24H CHANGE"),
+        ("bto-hero-volume", "VOLUME"),
+        ("bto-hero-gainer", "TOP GAINER"),
+    )
 
     def update_data(
         self,
@@ -54,75 +103,11 @@ class BTOverviewHero(Horizontal):
         top_gainer_pct: float | str | None = None,
     ) -> None:
         """Refresh all hero boxes with live values."""
-        # -- ETH Price --
-        eth_box = self.query_one("#bto-hero-eth", BTHeroBox)
-        if eth_price is not None:
-            try:
-                price_str = f"${float(eth_price):,.2f}"
-            except (ValueError, TypeError):
-                price_str = str(eth_price)
-        else:
-            price_str = "..."
-        eth_box.update(
-            f"[dim]ETH PRICE[/]\n\n"
-            f"[bold white]{price_str}[/]"
-        )
-
-        # -- 24h Change --
-        change_box = self.query_one("#bto-hero-change", BTHeroBox)
-        if eth_change_24h is not None:
-            try:
-                change_val = float(eth_change_24h)
-                if change_val >= 0:
-                    change_str = f"[green]+{change_val:.2f}%[/]"
-                else:
-                    change_str = f"[red]{change_val:.2f}%[/]"
-            except (ValueError, TypeError):
-                change_str = str(eth_change_24h)
-        else:
-            change_str = "[dim]...[/]"
-        change_box.update(
-            f"[dim]24H CHANGE[/]\n\n"
-            f"[bold]{change_str}[/]"
-        )
-
-        # -- Volume --
-        vol_box = self.query_one("#bto-hero-volume", BTHeroBox)
-        if total_volume is not None:
-            try:
-                vol = float(total_volume)
-                if vol >= 1_000_000_000:
-                    vol_str = f"${vol / 1_000_000_000:.1f}B"
-                elif vol >= 1_000_000:
-                    vol_str = f"${vol / 1_000_000:.1f}M"
-                elif vol >= 1_000:
-                    vol_str = f"${vol / 1_000:.1f}K"
-                else:
-                    vol_str = f"${vol:,.0f}"
-            except (ValueError, TypeError):
-                vol_str = str(total_volume)
-        else:
-            vol_str = "..."
-        vol_box.update(
-            f"[dim]VOLUME[/]\n\n"
-            f"[bold white]{vol_str}[/]"
-        )
-
-        # -- Top Gainer --
-        gainer_box = self.query_one("#bto-hero-gainer", BTHeroBox)
-        if top_gainer_name:
-            try:
-                pct_val = float(top_gainer_pct) if top_gainer_pct is not None else 0.0
-                pct_str = f"+{pct_val:.1f}%"
-            except (ValueError, TypeError):
-                pct_str = str(top_gainer_pct) if top_gainer_pct else "?"
-            gainer_box.update(
-                f"[dim]TOP GAINER[/]\n\n"
-                f"[bold white]{safe_markup(top_gainer_name)}[/]\n"
-                f"[green]{pct_str}[/]"
-            )
-        else:
-            gainer_box.update(
-                f"[dim]TOP GAINER[/]\n\n"
-                f"[dim]No data[/]"
-            )
+        self.render_box("#bto-hero-eth", "ETH PRICE",
+                        lambda: _price_body(eth_price))
+        self.render_box("#bto-hero-change", "24H CHANGE",
+                        lambda: _change_body(eth_change_24h))
+        self.render_box("#bto-hero-volume", "VOLUME",
+                        lambda: _volume_body(total_volume))
+        self.render_box("#bto-hero-gainer", "TOP GAINER",
+                        lambda: _gainer_body(top_gainer_name, top_gainer_pct))

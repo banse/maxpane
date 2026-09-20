@@ -8,21 +8,22 @@ way that happened was copy-and-adapt: ``tal_sparkline.py`` was copied from
 ``ocm``/``cattown``/``dota`` that never received the hardening at all, so a
 ``None`` entry in a cached history still raised ``TypeError`` there.  A fix
 applied to one copy reached none of the others, and
-``templates/sparkline_template.py`` -- the file every ninth dashboard is
-seeded from -- had the unhardened version, which is how the defect propagates
-into dashboards that do not exist yet.
+``templates/sparkline_template.py`` -- the file every ninth dashboard was
+seeded from, until Branch 8 WP-B deleted the templates -- had the unhardened
+version, which is how the defect propagated into dashboards that did not
+exist yet.
 
-This module is the single definition.  ``templates/sparkline_template.py``
-imports from here rather than restating the helpers, so a new dashboard
-copied from the template inherits the import, not a fork.
+This module is the single definition.  ``panels.SparklinePanel`` imports
+from here rather than restating the helpers, so a new dashboard that
+subclasses the base inherits the import, not a fork.
 
 Converged so far: ``ocm``, ``cattown``, ``dota``, ``ttt``, ``talismans``,
-``fwa`` and ``templates/sparkline_template.py`` -- the set named in the
-finding, pinned by ``tests/widgets/test_sparkline_common.py``.  Eight
-older copies with divergent widths and semantics are **not** yet on this
-module and still need review: ``widgets/cookie_chart.py``,
-``widgets/base/overview/bt_sparklines.py``
-and ``widgets/frenpet/{score_trend.py, pet_card.py, wallet/fpw_trends.py,
+``fwa`` -- the set named in the finding -- and, since Branch 8,
+``widgets/base/overview/bt_sparklines.py`` (WP-A) and
+``widgets/cookie_chart.py`` (WP-B) through ``panels.SparklinePanel``; all
+pinned by ``tests/widgets/test_sparkline_common.py``.  Six older copies with
+divergent widths and semantics are **not** yet on this module and still need
+review: ``widgets/frenpet/{score_trend.py, pet_card.py, wallet/fpw_trends.py,
 perf/fpp_trends.py, perf/fpp_velocity.py, overview/fp_score_trends.py}``.
 New dashboards must import from here regardless.
 
