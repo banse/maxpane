@@ -177,6 +177,28 @@ def test_keys_reads_data_get_with_the_given_defaults_and_nothing_else():
     assert adapt({"alpha": None, "beta": None}) == {"alpha": None, "beta": None}
 
 
+def test_keys_hands_each_call_its_own_copy_of_a_mutable_default():
+    """``keys("top_pets", top_pets=[])`` replaced ``data.get("top_pets", [])``,
+    which built a fresh list on every refresh. The adapter is built once at
+    class-definition time, so without a per-call copy every refresh would
+    share the one ``[]`` it was declared with, and a panel that appends to
+    what it receives would accumulate rows across refreshes (WP-B review M4).
+    """
+    adapt = keys("rows", "bag", rows=[], bag={})
+
+    first = adapt({})
+    first["rows"].append("leaked")
+    first["bag"]["k"] = "leaked"
+    second = adapt({})
+
+    assert second == {"rows": [], "bag": {}}, second
+    assert second["rows"] is not first["rows"]
+    # A value present in the payload is passed through as-is, not copied:
+    # the panel must see the manager's object, exactly as ``data.get`` did.
+    payload_rows = ["a"]
+    assert adapt({"rows": payload_rows})["rows"] is payload_rows
+
+
 def test_keys_refuses_a_default_that_names_no_key():
     """``faucet_opn=True`` beside ``"faucet_open"`` would silently send None."""
     with pytest.raises(ValueError, match="faucet_opn"):

@@ -764,7 +764,7 @@ payloads — the sweep payload, an all-string sentinel payload and an all-numeri
 *pre-migration module* loaded out of `git show e7a37dd:`. Every screen's dispatch log is identical
 on all three, with one exception, below.
 
-**Three deliberate deviations, none of them reachable from the real managers.**
+**Four deliberate deviations, none of them reachable from the real managers.**
 
 1. `screens/bakery.py` was the one hand-written dispatch that read its payload by **subscript**
    (`data["bakeries"]`), so a missing key raised `KeyError` and left the panel on its last render.
@@ -780,10 +780,23 @@ on all three, with one exception, below.
    (`error_count=0, last_updated_seconds_ago=0, poll_interval=30`, the approved WP-A contract).
    This is the one non-identical dispatch log in the whole capture, and `{}` is a payload
    `DataManager.fetch_and_compute()` cannot produce.
-3. `screens/dota.py` and `screens/frenpet_full.py` lost their own `__init__`, and with it the
-   constructor defaults `name="dota"` / `name="frenpet_full"` (now `None` from the base). Every
-   call site in `app.py` passes `name=` explicitly, so nothing observable changed — the same drift
-   WP-A recorded for ocm.
+3. Constructor signatures drifted to the base's. `screens/dota.py` lost its own `__init__` and
+   with it the default `name="dota"` (now `None` from the base); `screens/frenpet_full.py`
+   never had a `name` parameter and loses nothing there. `bakery`, `cattown`, `frenpet_perf`
+   and `frenpet_wallet` took `poll_interval` as a **required** positional and now inherit the
+   base's `poll_interval=30` default. Every call site in `app.py` passes both the interval and
+   `name=` explicitly, so nothing observable changed — the same drift WP-A recorded for ocm.
+   (Fix-round 1 corrected this entry: the WP-B report had named `frenpet_full` for a `name`
+   default it never had and missed the four that lost a required argument.)
+4. `screens/frenpet_perf.py` computed its aggregates (`total_wins`, `total_losses`,
+   `avg_win_rate`, the summed score history) **once** in `_do_refresh`, ahead of and outside
+   every panel's `try`, so a payload on which that arithmetic raised (a pet object missing
+   `win_qty`, say) left all six panels on their last render. The module-level adapters
+   recompute each aggregate inside the panel that needs it, and the base contains each
+   adapter, so the same payload now fails per panel and the panels that do not need the
+   broken field still update. An improvement, and one the real manager cannot reach (its
+   `managed_pets` are typed records); recorded because the WP-B report did not name it
+   (found by the WP-B reviewer, filed as M5).
 
 `frenpet_perf`/`frenpet_wallet`'s between-fetch arithmetic moved out whole into module-level
 adapters (`_perf_hero`, `_perf_trends`, … `_wallet_best_plays`): same helpers, same order, same

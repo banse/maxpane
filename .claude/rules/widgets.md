@@ -140,9 +140,13 @@ the class for its lifecycle and keep their own refresh.
 
 **Scope as of WP-B (2026-09-20): every dashboard screen is on `DashboardScreen`.** All ten
 pure-dispatch screens — bakery, base_terminal, cattown, dota, frenpet, frenpet_perf,
-frenpet_wallet, ocm, talismans, ttt — declare `PANELS` and carry no `__init__`, no
-`on_screen_resume`, no `on_screen_suspend` and no `_do_refresh`. The four with a genuinely custom
-refresh — surf, curator, fwa, frenpet_full — inherit the class for its lifecycle, set `GAME_NAME`,
+frenpet_wallet, ocm, talismans, ttt — declare `PANELS` and carry no `on_screen_resume`, no
+`on_screen_suspend` and no `_do_refresh`. Eight of them carry no `__init__` either; the one
+exception is a screen with **extra state of its own** (ttt's and talismans' `_active_view`),
+which keeps an `__init__` that calls `super().__init__(manager, poll_interval, name=name,
+**kwargs)` first and sets only that state — never the manager, the interval or the timer. The
+four with a genuinely custom refresh — surf, curator, fwa, frenpet_full — inherit the class for
+its lifecycle, set `GAME_NAME`,
 prime their one extra status-bar line through `_prime_status_bar` (surf's key hints, fwa's active
 view) and keep their own `_do_refresh`; curator's `on_screen_suspend` calls `super()` first and
 then cancels its export and ENS workers. `templates/screen_template.py` is written to the same

@@ -56,6 +56,7 @@ lifecycle handlers, or a hand-rolled dispatch block.
 
 from __future__ import annotations
 
+import copy
 import logging
 from typing import Callable
 
@@ -86,6 +87,12 @@ def keys(*names: str, **defaults: object) -> Adapter:
     beside ``"faucet_open"`` would otherwise be silently ignored and the panel
     would quietly receive ``None`` — so it raises here, at import time of the
     screen that declared it.
+
+    A mutable default (``top_pets=[]``) is **copied per call**, as the block it
+    replaces built a fresh ``[]`` on every refresh. Handing every refresh the
+    one list object the adapter was declared with would let a panel that
+    appends to what it receives accumulate rows across refreshes (WP-B
+    review M4).
     """
     unknown = sorted(set(defaults) - set(names))
     if unknown:
@@ -93,7 +100,14 @@ def keys(*names: str, **defaults: object) -> Adapter:
             f"keys(): default(s) {unknown} name no key in {list(names)}; "
             "a default only supplies the fallback for a key that is listed"
         )
-    return lambda data: {name: data.get(name, defaults.get(name)) for name in names}
+
+    def adapt(data: dict) -> dict:
+        return {
+            name: data[name] if name in data else copy.copy(defaults.get(name))
+            for name in names
+        }
+
+    return adapt
 
 
 class DashboardScreen(RefreshGuard, Screen):
@@ -101,7 +115,10 @@ class DashboardScreen(RefreshGuard, Screen):
 
     Subclass it, set :attr:`GAME_NAME`, :attr:`REFRESH_WORKER_NAME` and
     :attr:`PANELS`, write ``compose`` — and write no ``__init__``,
-    ``on_screen_resume``, ``on_screen_suspend`` or ``_do_refresh``.
+    ``on_screen_resume``, ``on_screen_suspend`` or ``_do_refresh``. A screen
+    with extra state of its own (a view toggle) may keep an ``__init__`` that
+    calls ``super().__init__(manager, poll_interval, name=name, **kwargs)``
+    first and sets only that state.
     """
 
     #: The words the status bar shows for this dashboard, e.g.

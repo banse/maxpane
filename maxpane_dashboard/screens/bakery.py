@@ -1,9 +1,10 @@
 """BakeryScreen -- RugPull Bakery game dashboard as a Textual Screen.
 
 One transcription note. This is the only screen whose hand-written dispatch read
-its payload by **subscript** (``data["bakeries"]``) rather than ``data.get``, so
-a key the manager had not produced raised ``KeyError`` before the panel was
-touched and the panel kept its last render. ``keys(...)`` reads with ``data.get``
+its payload by **subscript** rather than ``data.get`` -- every panel, all
+twenty-one keys from ``data["prize_pool_eth"]`` through ``data["poll_interval"]``,
+not just ``data["bakeries"]`` -- so a key the manager had not produced raised
+``KeyError`` before that panel was touched and the panel kept its last render. ``keys(...)`` reads with ``data.get``
 instead, so such a panel now receives an explicit ``None``. That is not a
 behaviour change against the real manager:
 :meth:`maxpane_dashboard.data.manager.DataManager.fetch_and_compute` builds its
