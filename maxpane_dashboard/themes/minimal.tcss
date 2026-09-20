@@ -1300,6 +1300,17 @@ DOTABestPlays > .dota-bp-title {
 
 /* ── OCM screen ────────────────────────────────────────────────────── */
 
+/* No `.overview-title` / `.chart-title` / `.signals-title` / `.feed-title` /
+   `.breakdown-title` rules here any more (refactor programme, Branch 6).
+   Every ocm panel is a `widgets/panels.PanelBase`, whose own DEFAULT_CSS
+   states `PanelBase > .panel-title { … color: $text-muted; margin: 0 0 1 0 }`
+   once -- and Textual matches a type selector against every base class, so it
+   reaches all five. The five rules deleted here stated exactly those values,
+   so no pixel moves; what does move is the staking overview, which carried
+   the margin here AND a `Static("")` spacer in Python and so painted two
+   blank rows under its title instead of one. The blocks below are keyed on
+   the widget class names and stay. */
+
 OCMHeroMetrics {
     height: 7;
     padding: 0 1;
@@ -1322,20 +1333,10 @@ OCMStakingOverview {
     padding: 0 1;
 }
 
-OCMStakingOverview > .overview-title {
-    color: $text-muted;
-    padding: 0 1;
-    margin: 0 0 1 0;
-}
-
 OCMSparklines {
     height: auto;
     padding: 0 1;
     content-align: center top;
-}
-
-OCMSparklines > .chart-title {
-    color: $text-muted;
 }
 
 OCMSignals {
@@ -1346,18 +1347,9 @@ OCMSignals {
     content-align: center top;
 }
 
-OCMSignals > .signals-title {
-    color: $text-muted;
-}
-
 OCMActivityFeed {
     width: 3fr;
     padding: 0 1;
-}
-
-OCMActivityFeed > .feed-title {
-    color: $text-muted;
-    margin: 0 0 1 0;
 }
 
 OCMActivityFeed RichLog {
@@ -1369,10 +1361,6 @@ OCMSupplyBreakdown {
     width: 2fr;
     padding: 0 1;
     content-align: center top;
-}
-
-OCMSupplyBreakdown > .breakdown-title {
-    color: $text-muted;
 }
 
 /* ── FrenPet Wallet screen ─────────────────────────────────────────── */

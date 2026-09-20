@@ -1,0 +1,763 @@
+"""The shared panel bases (``widgets/panels.py``) and ocm as their first user.
+
+Branch 6 of the refactor programme. ``widgets/panels.py`` hoists the four
+panel shapes every dashboard had hand-copied -- a titled panel, a hero row,
+a signals panel, a sparkline panel and a ``RichLog`` feed -- plus the two
+strings (``UNAVAILABLE``, ``LOADING``) that had nine and sixty-eight copies.
+
+**Composited, under the real app stylesheet.** ``minimal.tcss`` outranks a
+widget's ``DEFAULT_CSS``, so a convention stated in only one of the two
+renders differently in the app than in a bare mount; ``composite_lines``
+with ``css_path=CSS_PATH`` is the harness ``test_title_blank_row.py``
+already uses for exactly that reason. It is the shared helper: it is not
+copied here.
+
+**Two-poll claims.** "a malformed poll after a good one", "an empty poll
+after a populated one" and "the placeholder is written once, not once per
+poll" are claims about a *sequence*, and the shared helper calls
+``update_data`` once. Each double below therefore mixes in ``_Replay``:
+``update_data(polls=[{...}, {...}])`` applies each poll in order inside the
+one mount, so the sequence is composited through the same helper rather
+than through a second copy of the strip join. The one claim that is not
+about pixels at all -- that a poll with nothing new does not ``clear()``
+the log, ocm's flicker guard -- mounts the widget itself and spies on the
+log.
+"""
+
+from __future__ import annotations
+
+import ast
+import importlib
+import inspect
+import logging
+import pathlib
+import pkgutil
+import re
+
+import pytest
+from rich.text import Text
+from textual.app import App, ComposeResult
+from textual.widgets import RichLog, Static
+
+from maxpane_dashboard.app import CSS_PATH
+from maxpane_dashboard.widgets import panels
+from maxpane_dashboard.widgets.panels import (
+    LOADING,
+    LOADING_ROW,
+    UNAVAILABLE,
+    HeroBoxBase,
+    HeroRow,
+    PanelBase,
+    RichLogFeed,
+    SignalsPanelBase,
+    SparklinePanel,
+    fmt_signal,
+)
+from maxpane_dashboard.widgets.sparkline_common import SPARK_CHARS, fmt_compact
+
+from tests.widgets.surf_compositing import composite_lines
+
+_SIZE = (80, 20)
+
+
+class _Replay:
+    """``update_data(polls=[...])`` applies each poll in order.
+
+    The one shared compositing helper calls ``update_data`` once, and three
+    of the claims below are about what a *second* poll does to what the
+    first one painted. Replaying inside the widget keeps those claims on
+    the shared helper instead of on a hand-rolled second copy of it.
+    """
+
+    def update_data(self, polls=None, **kwargs) -> None:
+        for poll in (polls if polls is not None else [kwargs]):
+            self._poll(**poll)
+
+
+async def _lines(cls, **payload) -> list[str]:
+    return await composite_lines(
+        cls, _SIZE, css_path=CSS_PATH, region_only=True, **payload
+    )
+
+
+async def _text(cls, **payload) -> str:
+    return "\n".join(await _lines(cls, **payload))
+
+
+# -- 1. PanelBase -----------------------------------------------------------
+
+
+class _Panel(_Replay, PanelBase):
+    TITLE = "TEST PANEL"
+
+    def compose_body(self) -> ComposeResult:
+        yield Static("", classes="panel-line", id="t-body")
+
+    def _poll(self, body: str = "body text") -> None:
+        self.write("#t-body", body)
+
+
+async def test_panel_base_paints_title_blank_row_then_body() -> None:
+    """Row 0 title, row 1 blank, row 2 body -- and the blank row is the base's.
+
+    Mutation that reddens this: delete ``margin: 0 0 1 0`` from
+    ``PanelBase.DEFAULT_CSS``. That margin is the *only* source of the row
+    once the five per-panel ``OCM* > .<x>-title`` rules are gone from
+    ``minimal.tcss``, so nothing else can paint it back.
+    """
+    rows = await _lines(_Panel)
+
+    assert rows[0].strip() == "TEST PANEL"
+    assert not rows[1].strip(), f"no blank row under the title: {rows[:4]}"
+    assert rows[2].strip() == "body text", rows[:4]
+
+
+async def test_panel_base_write_logs_a_warning_when_it_cannot_write(caplog) -> None:
+    """A degraded step gets a line in ``~/.maxpane/maxpane.log`` (fix round 1, M2).
+
+    Before Branch 6 ocm's staking overview and supply breakdown wrote with a
+    bare ``query_one(...).update(...)``, so a missing target raised into
+    ``DashboardScreen._do_refresh`` and was logged at ``warning``. ``write``
+    swallows it; swallowing it *silently* would make a panel that cannot
+    render invisible in the one place it would ever be noticed.
+    """
+
+    class _A(App):
+        def compose(self):
+            yield _Panel()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        panel = pilot.app.query_one(_Panel)
+        with caplog.at_level(
+            logging.WARNING, logger="maxpane_dashboard.widgets.panels"
+        ):
+            assert panel.write("#t-nothing-here", "x") is False
+        messages = [r.getMessage() for r in caplog.records
+                    if r.levelno == logging.WARNING]
+        assert any("t-nothing-here" in m and "_Panel" in m for m in messages), messages
+
+
+async def test_panel_base_write_reports_a_missing_widget_instead_of_raising() -> None:
+    """``write`` is the guard: a selector that matches nothing returns ``False``."""
+
+    class _Probe(_Panel):
+        def _poll(self, body: str = "body text") -> None:
+            # Recorded on the widget so the claim is about the real mount.
+            self.hit = self.write("#t-nothing-here", body)
+
+    class _A(App):
+        def compose(self):
+            yield _Probe()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        probe = pilot.app.query_one(_Probe)
+        probe.update_data()
+        await pilot.pause()
+        assert probe.hit is False
+        assert probe.write("#t-body", "ok") is True
+
+
+# -- 2. HeroRow -------------------------------------------------------------
+
+
+class HeroBoxDouble(HeroBoxBase):
+    """A hero box that states its own width, as every real one does.
+
+    ``HeroBoxBase`` deliberately states no geometry -- a base class's name is
+    a CSS type selector for every subclass, so a width there would reach
+    every dashboard -- and ``minimal.tcss`` gives each dashboard's **own**
+    box class ``width: 1fr`` (``OCMHeroBox``). Without a width the first box
+    takes the whole row and the second never reaches the compositor (the
+    ``test_cattown_talismans_address_icons.py`` precedent the MEDI-38
+    harness cites).
+
+    These three claims were silently borrowing that width from bakery's bare
+    ``HeroBox { width: 1fr }`` block in ``minimal.tcss`` until fix round 1
+    renamed the base out of that collision (I1) -- the collision itself,
+    demonstrated. Not named ``_TestHeroBox``: a leading underscore is not a
+    CSS identifier, and ``Test…`` is what pytest collects.
+    """
+
+    DEFAULT_CSS = """
+    HeroBoxDouble {
+        width: 1fr;
+    }
+    """
+
+
+class _Hero(_Replay, HeroRow):
+    BOX_CLASS = HeroBoxDouble
+    BOXES = (("t-hero-a", "ALPHA"), ("t-hero-b", "BETA"))
+
+    def _poll(self, alpha=None, beta=None) -> None:
+        self.render_box("#t-hero-a", "ALPHA", lambda: _alpha_body(alpha))
+        self.render_box("#t-hero-b", "BETA", lambda: f"{beta:,}")
+
+
+def _alpha_body(alpha) -> str:
+    """A real ``0`` is a number; only a failed read says unavailable."""
+    if alpha is None:
+        return UNAVAILABLE
+    return f"{alpha:,}"
+
+
+async def test_hero_box_renders_unavailable_for_a_failed_read() -> None:
+    text = await _text(_Hero, alpha=None, beta=None)
+    assert "unavailable" in text, text
+    assert "Loading" not in text, text
+
+
+async def test_hero_box_renders_a_real_zero_as_a_number() -> None:
+    text = await _text(_Hero, alpha=0, beta=0)
+    assert "unavailable" not in text, text
+    assert "Loading" not in text, text
+    assert "0" in text, text
+
+
+async def test_hero_box_malformed_poll_after_a_good_one_is_not_shown_as_live() -> None:
+    """``beta="lots"`` raises inside ``f"{beta:,}"``, which is the point:
+    the build happens inside the guard, so the box lands on ``unavailable``
+    rather than the previous poll's number staying on screen as if live."""
+    text = await _text(
+        _Hero, polls=[{"alpha": 1234, "beta": 4321}, {"alpha": 1234, "beta": "lots"}]
+    )
+    assert "unavailable" in text, text
+    assert "4,321" not in text, text
+    assert "1,234" in text, text
+
+
+# -- 3. SignalsPanel --------------------------------------------------------
+
+
+_SIG = {"label": "Staking Rate", "value_str": "42%", "color": "green",
+        "indicator": "●"}
+
+
+def test_fmt_signal_at_width_18_plain() -> None:
+    """ocm's and dota's spelling, hand-typed rather than derived."""
+    assert fmt_signal(_SIG, label_width=18, dim_label=False) == (
+        "  [green]●[/] Staking Rate       [green]42%[/]"
+    )
+
+
+def test_fmt_signal_at_width_15_dim() -> None:
+    """cattown's and the template's spelling (Branch 7's subscriber)."""
+    assert fmt_signal(_SIG, label_width=15, dim_label=True) == (
+        "  [green]●[/] [dim]Staking Rate   [/] [green]42%[/]"
+    )
+
+
+class _Signals(_Replay, SignalsPanelBase):
+    TITLE = "SIGNALS"
+    ROWS = (("t-sig-a", "Alpha Rate"), ("t-sig-b", "Beta Rate"))
+    RECOMMENDATION_ID = "t-sig-rec"
+
+    def _poll(self, alpha=None, beta=None, recommendation="") -> None:
+        self.render_signal("#t-sig-a", "Alpha Rate", alpha)
+        self.render_signal("#t-sig-b", "Beta Rate", beta)
+        self.render_recommendation(recommendation)
+
+
+@pytest.mark.parametrize(
+    "alpha", [None, {}, "not a dict"], ids=["none", "empty-dict", "not-a-dict"]
+)
+async def test_render_signal_says_unavailable_for_a_signal_it_could_not_read(
+    alpha,
+) -> None:
+    text = await _text(_Signals, alpha=alpha)
+    assert "Alpha Rate" in text, text
+    assert "unavailable" in text, text
+
+
+async def test_render_signal_lands_on_the_fallback_row_for_a_malformed_dict() -> None:
+    """``{"label": object()}`` raises inside the format; the panel must not."""
+    text = await _text(_Signals, alpha={"label": object()}, beta=_SIG)
+    assert "unavailable" in text, text
+    assert "Alpha Rate" in text, text
+    # The sibling row still rendered: one malformed signal is one row.
+    assert "42%" in text, text
+
+
+async def test_render_recommendation_is_blank_for_an_empty_string() -> None:
+    blank = await _text(_Signals, alpha=_SIG, beta=_SIG, recommendation="")
+    assert "->" not in blank, blank
+    filled = await _text(_Signals, alpha=_SIG, beta=_SIG, recommendation="stake now")
+    assert "-> stake now" in filled, filled
+
+
+# -- 4. SparklinePanel ------------------------------------------------------
+
+
+class _Sparks(_Replay, SparklinePanel):
+    TITLE = "TRENDS"
+    LINE_IDS = ("t-spark-0",)
+
+    def _poll(self, label="Supply", points=None, unit="") -> None:
+        self.render_series([(label, points, "green", unit)])
+
+
+_SERIES = [(1_700_000_000.0, 1_000.0), (1_700_003_600.0, 2_000.0)]
+
+
+@pytest.mark.parametrize(
+    "points",
+    [None, [], [(1.0,)], [(1.0, None), (2.0, None)]],
+    ids=["none", "empty", "ragged", "none-valued"],
+)
+async def test_render_series_writes_nothing_for_an_unusable_series(points) -> None:
+    rows = await _lines(_Sparks, points=points)
+    body = "\n".join(rows[2:])
+    assert not body.strip(), rows[:5]
+
+
+async def test_render_series_draws_the_sparkline_value_and_arrow() -> None:
+    rows = await _lines(_Sparks, points=_SERIES)
+    line = rows[2]
+    assert any(ch in line for ch in SPARK_CHARS), line
+    assert fmt_compact(2_000.0) in line, line
+    assert "▲" in line, line
+
+
+async def test_render_series_pads_the_label_to_eight_cells() -> None:
+    """The leading space is ``.panel-line``'s own ``padding: 0 1``; the two
+    after it are the row format's, and the label occupies exactly eight
+    cells whether it is shorter or longer than that."""
+    short = await _lines(_Sparks, label="Supply", points=_SERIES)
+    assert short[2].startswith("   Supply    "), repr(short[2])
+    long = await _lines(_Sparks, label="VeryLongLabelHere", points=_SERIES)
+    assert long[2].startswith("   VeryLong  "), repr(long[2])
+
+
+@pytest.mark.parametrize("value", [1, 1_000, 1_000_000])
+def test_fmt_compact_matches_the_ocm_formatter_it_replaces(value) -> None:
+    """The hoist's one behaviour change, stated rather than assumed.
+
+    ``sparkline_common.fmt_compact`` replaces ocm's ``_fmt_value``. The two
+    agree on every magnitude an ocm series can carry (a supply capped at
+    10K, an $OCMD supply in the millions), which is why the pre/post render
+    of the dashboard cannot see the swap. They differ at and above 1e9
+    (``fmt_compact`` gains a ``B`` suffix), on the sign of a negative
+    (``fmt_compact`` buckets on ``abs``), and on non-numeric input
+    (``fmt_compact`` returns ``--`` where ``_fmt_value`` raised).
+    """
+    def _ocm_fmt_value(v: float, unit: str = "") -> str:
+        if v >= 1_000_000:
+            return f"{v / 1_000_000:.1f}M{unit}"
+        elif v >= 1_000:
+            return f"{v / 1_000:.1f}K{unit}"
+        elif v >= 1:
+            return f"{v:.1f}{unit}"
+        return f"{v:.0f}{unit}"
+
+    assert fmt_compact(value) == _ocm_fmt_value(value)
+
+
+def test_fmt_compact_diverges_above_a_billion_and_on_junk() -> None:
+    assert fmt_compact(2_000_000_000) == "2.0B"
+    assert fmt_compact("junk") == "--"
+    assert fmt_compact(None) == "--"
+
+
+# -- 5. RichLogFeed ---------------------------------------------------------
+
+
+def _ev(n: int, bad: bool = False) -> dict:
+    return {"tx_hash": f"0x{n:064x}", "n": n, "bad": bad}
+
+
+class _Feed(_Replay, RichLogFeed):
+    TITLE = "ACTIVITY"
+    LOG_ID = "t-feed-log"
+
+    def format_row(self, event: dict) -> Text:
+        if event.get("bad"):
+            raise ValueError("unwritable row")
+        return Text(f"event {event['n']}")
+
+    def _poll(self, events=None) -> None:
+        self.render_events(events)
+
+
+async def test_the_placeholder_is_written_once_across_three_empty_polls() -> None:
+    """Mutation that reddens this: delete the ``clear()`` before the
+    placeholder. Without it every empty poll appends another copy, once per
+    refresh interval -- the defect ocm carried and the template had fixed."""
+    rows = await _lines(_Feed, polls=[{}, {}, {}])
+    shown = [r for r in rows if "No activity yet" in r]
+    assert len(shown) == 1, rows[:8]
+
+
+async def test_a_populated_feed_survives_a_later_empty_poll() -> None:
+    """The keyed path: ``dedupe_key`` returns a hashable ``tx_hash``, so
+    ``_seen_keys`` fills. This case passed even while the contract read the
+    key set -- which is why the two key-less cases below exist."""
+    text = await _text(_Feed, polls=[{"events": [_ev(1)]}, {"events": []}])
+    assert "event 1" in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_a_key_less_feed_survives_a_later_empty_poll() -> None:
+    """Fix round 2, N3. ``dedupe_key`` returning ``None`` is the documented
+    "always new" mode (``panels.py``), and it never puts anything in
+    ``_seen_keys``. While the empty-poll branch tested that set, a feed in
+    this mode was wiped by the very next empty poll: live rows replaced with
+    ``No activity yet`` -- a false degradation on screen. The contract now
+    hangs off ``_drawn``.
+
+    Mutation that reddens this: ``if not self._drawn`` -> ``if not
+    self._seen_keys`` in the empty-poll branch.
+    """
+
+    class _KeyLessFeed(_Feed):
+        def dedupe_key(self, event: dict):
+            return None
+
+    text = await _text(
+        _KeyLessFeed, polls=[{"events": [_ev(1)]}, {"events": []}]
+    )
+    assert "event 1" in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_an_unhashable_key_feed_survives_a_later_empty_poll() -> None:
+    """Fix round 2, N3, the second key-less path: M3 routes an unhashable
+    ``tx_hash`` to "always new" without recording it, so the key set stays
+    empty and the next empty poll used to clear the drawn rows."""
+    unhashable = {"tx_hash": ["x"], "n": 9, "bad": False}
+    text = await _text(_Feed, polls=[{"events": [unhashable]},
+                                     {"events": []}])
+    assert "event 9" in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_a_poll_with_nothing_new_does_not_clear_the_log() -> None:
+    """ocm's flicker guard: repeating the same ``tx_hash`` rewrites nothing,
+    and the key is recorded once."""
+    feed = _Feed()
+
+    class _A(App):
+        def compose(self):
+            yield feed
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        feed.update_data(events=[_ev(1)])
+        await pilot.pause()
+        log = feed.query_one(f"#{_Feed.LOG_ID}", RichLog)
+        assert feed._seen_keys == {_ev(1)["tx_hash"]}
+
+        cleared: list[int] = []
+        real_clear = log.clear
+        log.clear = lambda *a, **k: (cleared.append(1), real_clear(*a, **k))[1]
+
+        feed.update_data(events=[_ev(1)])
+        await pilot.pause()
+
+        assert cleared == [], "a poll with nothing new rewrote the log"
+        assert feed._seen_keys == {_ev(1)["tx_hash"]}, feed._seen_keys
+
+
+async def test_one_unwritable_row_is_skipped_and_the_others_land() -> None:
+    """Mutation that reddens this: drop the per-row ``try`` in
+    ``render_events``. The exception then escapes after ``log.clear()`` and
+    the feed is left empty -- worse than the one row it could not draw."""
+    text = await _text(_Feed, events=[_ev(1), _ev(2, bad=True), _ev(3)])
+    assert "event 1" in text, text
+    assert "event 3" in text, text
+    assert "event 2" not in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_every_row_unwritable_falls_back_to_the_empty_line() -> None:
+    text = await _text(_Feed, events=[_ev(1, bad=True), _ev(2, bad=True)])
+    assert "No activity yet" in text, text
+
+
+async def test_the_feed_keeps_the_order_it_was_given_newest_on_top() -> None:
+    rows = await _lines(_Feed, events=[_ev(3), _ev(2), _ev(1)])
+    body = [r.strip() for r in rows if r.strip().startswith("event ")]
+    assert body == ["event 3", "event 2", "event 1"], rows[:8]
+
+
+async def test_a_format_row_returning_none_is_skipped_not_written() -> None:
+    class _NoneFeed(_Feed):
+        def format_row(self, event: dict):
+            return None if event["n"] == 2 else Text(f"event {event['n']}")
+
+    rows = await _lines(_NoneFeed, events=[_ev(1), _ev(2)])
+    body = [r.strip() for r in rows if r.strip().startswith("event ")]
+    assert body == ["event 1"], rows[:8]
+
+
+async def test_an_unhashable_dedupe_key_renders_instead_of_blanking_the_feed() -> None:
+    """Fix round 1, M3. A third-party payload can hand us ``tx_hash: ["x"]``.
+
+    ``key in self._seen_keys`` raised ``TypeError`` out of ``update_data``
+    after the log was already cleared, so one malformed hash blanked the
+    whole feed. An unhashable key cannot be deduped, so the event is always
+    new and always drawn.
+    """
+    unhashable = {"tx_hash": ["x"], "n": 9, "bad": False}
+    text = await _text(_Feed, polls=[{"events": [unhashable]},
+                                     {"events": [unhashable]}])
+    assert "event 9" in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_a_subclass_without_format_row_fails_loudly() -> None:
+    """Fix round 1, M4. ``NotImplementedError`` is a programming error.
+
+    Caught by the broad per-row guard it became "No activity yet" forever,
+    which reads as a quiet feed rather than as a feed that was never wired
+    up.
+    """
+
+    class _NoHook(RichLogFeed):
+        TITLE = "ACTIVITY"
+        LOG_ID = "t-nohook-log"
+
+    class _A(App):
+        def compose(self):
+            yield _NoHook()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        feed = pilot.app.query_one(_NoHook)
+        with pytest.raises(NotImplementedError):
+            feed.render_events([{"tx_hash": "0x1"}])
+
+
+# -- 6. Agreement: ocm carries no copy of what the bases now own -------------
+
+
+_OCM_DIR = pathlib.Path(
+    inspect.getfile(__import__("maxpane_dashboard.widgets.ocm", fromlist=["x"]))
+).parent
+
+#: Each name had between three and ten copies across ``widgets/`` before this
+#: branch. Paste one back into the ocm package and this test reddens.
+_BANNED = frozenset({
+    "_UNAVAILABLE",
+    "_render_row",
+    "_render_box",
+    "_fmt",
+    "_fmt_value",
+    "_fmt_signal",
+    "_format_event_time",
+    "_seen_tx_hashes",
+})
+
+_PANEL_BASES = (PanelBase, HeroRow)
+
+
+def _bound_names(tree: ast.AST) -> set[str]:
+    """Every name this module *binds* -- a docstring naming one is not a copy."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store):
+            names.add(node.attr)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Attribute):
+            names.add(node.target.attr)
+    return names
+
+
+@pytest.mark.parametrize(
+    "path", sorted(_OCM_DIR.glob("*.py")), ids=lambda p: p.name
+)
+def test_no_ocm_module_redeclares_what_panels_py_owns(path) -> None:
+    bound = _bound_names(ast.parse(path.read_text()))
+    assert not (bound & _BANNED), (
+        f"{path.name} re-declares {sorted(bound & _BANNED)} -- "
+        "widgets/panels.py owns these now"
+    )
+
+
+def test_every_ocm_panel_subclasses_a_panels_base() -> None:
+    import maxpane_dashboard.widgets.ocm as ocm_pkg
+
+    found = []
+    for name in ocm_pkg.__all__:
+        cls = getattr(ocm_pkg, name)
+        if not hasattr(cls, "update_data"):
+            continue
+        found.append(name)
+        assert issubclass(cls, _PANEL_BASES), f"{name} is not on widgets/panels.py"
+    assert len(found) == 6, found
+
+
+def test_panels_defines_the_two_strings_exactly_once() -> None:
+    assert UNAVAILABLE == "[yellow]unavailable[/]"
+    assert LOADING == "[dim]Loading...[/]"
+    # Derived from LOADING, not re-typed beside it: the signals seed is the
+    # same words, two columns in (fix round 1, M1).
+    assert LOADING_ROW == "[dim]  Loading...[/]"
+    assert LOADING_ROW == LOADING.replace("[dim]", "[dim]  ", 1)
+    assert panels.__all__ == [
+        "UNAVAILABLE",
+        "LOADING",
+        "LOADING_ROW",
+        "PanelBase",
+        "HeroBoxBase",
+        "HeroRow",
+        "SignalsPanelBase",
+        "SparklinePanel",
+        "RichLogFeed",
+        "fmt_signal",
+    ]
+
+
+# -- 7. Agreement: a base's name is a CSS type selector (fix round 1, I1) ----
+
+
+_PANELS_FILE = pathlib.Path(panels.__file__)
+_TCSS = pathlib.Path(
+    inspect.getfile(importlib.import_module("maxpane_dashboard.app"))
+).parent / "themes" / "minimal.tcss"
+
+#: Class names `widgets/panels.py` defines. Read off the module, so a base
+#: added later is covered without editing this list.
+_PANEL_CLASS_NAMES = frozenset(
+    name for name, obj in vars(panels).items()
+    if inspect.isclass(obj) and obj.__module__ == panels.__name__
+)
+
+#: A **bare block**: the class name standing alone as a whole selector --
+#: either a rule's entire selector or one whole item of a comma-separated
+#: selector list. Matched against the selector list wrapped in sentinel
+#: commas, so both ends and every interior item are one expression:
+#:
+#:     r",\s*%s\s*," against "," + selector_list + ","
+#:
+#: What this admits and what it refuses (fix round 2, N1):
+#:
+#: * `HeroBoxBase {`            -- MATCH; bakery's bare block is exactly this
+#:                                 shape and it styles every subclass.
+#: * `A, HeroBoxBase, B {`      -- MATCH; a list item is a bare block too.
+#: * `OCMHeroBox {`             -- no match; a dashboard's own widget class.
+#: * `HeroBoxBase > X {`        -- no match; a rule *about* the base's
+#:                                 children, which is the documented way to
+#:                                 reach them.
+#: * `PanelBase > .panel-title` -- no match; this is the cross-dashboard
+#:                                 theme override `rules/widgets.md`
+#:                                 documents, and the app stylesheet is where
+#:                                 `DEFAULT_CSS` is meant to be overridden.
+#:                                 The earlier bare-*token* regex refused it.
+_BARE_BLOCK = r",\s*%s\s*,"
+
+
+def _css_selector_lists(source: str) -> list[str]:
+    """Every rule's selector list -- comments and declarations dropped.
+
+    A class name inside a `/* … */` note (this branch wrote several) is prose,
+    not a selector, and a `margin`/`color` value cannot be one either.
+    Declaration bodies collapse to `{}` so that the text before each `{` is
+    exactly one selector list, however many lines it spans.
+    """
+    without_comments = re.sub(r"/\*.*?\*/", " ", source, flags=re.S)
+    without_bodies = re.sub(r"\{[^{}]*\}", " {} ", without_comments)
+    return [
+        " ".join(m.group(1).split())
+        for m in re.finditer(r"([^{}]*)\{", without_bodies)
+        if m.group(1).strip()
+    ]
+
+
+def _bare_blocks(name: str, selector_lists) -> list[str]:
+    """The selector lists in which `name` stands alone as a whole item."""
+    pattern = re.compile(_BARE_BLOCK % re.escape(name))
+    return [sl for sl in selector_lists if pattern.search(f",{sl},")]
+
+
+@pytest.mark.guard
+def test_no_panels_base_shares_its_name_with_another_widget_class() -> None:
+    """A base's name styles every subclass, so it must be unique in the tree.
+
+    `widgets/hero_metrics.py` and `widgets/signals_panel.py` (both
+    bakery-only) own classes called `HeroBox` and `SignalsPanel`, and
+    `minimal.tcss` has a bare block for each. While the new bases carried
+    those names, every subscriber inherited bakery's geometry -- proven in
+    review by inserting `min-width: 60` into the bakery `HeroBox` block,
+    which widened ocm's SUPPLY box from 54 to 164 columns. Nothing moved on
+    screen only because ocm's own blocks restated the same values and won on
+    source order, which is luck, not a rule.
+
+    Mutation that reddens this: rename `HeroBoxBase` back to `HeroBox`.
+    """
+    clashes: dict[str, list[str]] = {}
+    for package in (
+        "maxpane_dashboard.widgets",
+        "maxpane_dashboard.templates",
+        # A Screen subclass is a Widget, so its name is a type selector too
+        # (fix round 2, N1).
+        "maxpane_dashboard.screens",
+    ):
+        pkg = importlib.import_module(package)
+        for info in pkgutil.walk_packages(pkg.__path__, package + "."):
+            if info.name == panels.__name__:
+                continue
+            module = importlib.import_module(info.name)
+            for name, obj in vars(module).items():
+                if (
+                    inspect.isclass(obj)
+                    and obj.__module__ == module.__name__
+                    and name in _PANEL_CLASS_NAMES
+                ):
+                    clashes.setdefault(name, []).append(module.__name__)
+    assert not clashes, (
+        f"widgets/panels.py shares a class name with {clashes} -- a base's "
+        "name is a CSS type selector for every one of its subclasses"
+    )
+
+
+@pytest.mark.guard
+@pytest.mark.parametrize("name", sorted(_PANEL_CLASS_NAMES))
+def test_no_panels_base_is_a_bare_type_selector_in_the_stylesheet(name) -> None:
+    """The app stylesheet outranks `DEFAULT_CSS`, so a bare block wins.
+
+    Parametrised per name: a failure says which base collided, not that one
+    did. `minimal.tcss` may name a *dashboard's own* widget class freely, and
+    it may write `PanelBase > .panel-title { … }` -- a theme override of the
+    base's own children is the documented way to restyle every panel. Only a
+    **bare block**, the name standing alone as a whole selector, is forbidden.
+
+    Mutation that reddens this: append `HeroBoxBase { min-width: 60; }` to
+    minimal.tcss.
+    """
+    hits = _bare_blocks(name, _css_selector_lists(_TCSS.read_text(encoding="utf-8")))
+    assert not hits, (
+        f"minimal.tcss uses {name!r} as a bare block ({hits}); it is a "
+        "widgets/panels.py base, so that block would style every subclass "
+        "on every dashboard"
+    )
+
+
+@pytest.mark.guard
+def test_the_bare_block_matcher_admits_a_theme_override() -> None:
+    """The examples in `_BARE_BLOCK`'s comment, asserted (fix round 2, N1).
+
+    Without the last case the guard refused a legitimate rule, which would
+    have pushed a real theme override out of the app stylesheet and into a
+    `DEFAULT_CSS` the stylesheet outranks.
+    """
+    sheet = """
+    HeroBoxBase { width: 1fr; }
+    OCMHeroBox { width: 1fr; }
+    HeroBoxBase > Static { color: red; }
+    PanelBase > .panel-title { color: $accent; }
+    Something, HeroBoxBase, Other { height: 3; }
+    """
+    lists = _css_selector_lists(sheet)
+    assert lists == [
+        "HeroBoxBase",
+        "OCMHeroBox",
+        "HeroBoxBase > Static",
+        "PanelBase > .panel-title",
+        "Something, HeroBoxBase, Other",
+    ], lists
+    assert _bare_blocks("HeroBoxBase", lists) == [
+        "HeroBoxBase",
+        "Something, HeroBoxBase, Other",
+    ]
+    assert _bare_blocks("PanelBase", lists) == []

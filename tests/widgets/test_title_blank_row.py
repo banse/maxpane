@@ -72,8 +72,10 @@ from maxpane_dashboard.widgets.fwa.fwa_odds_board import FWAOddsBoard
 from maxpane_dashboard.widgets.fwa.fwa_settlement_table import FWASettlementTable
 from maxpane_dashboard.widgets.fwa.fwa_signals import FWASignals
 from maxpane_dashboard.widgets.fwa.fwa_sparkline import FWASparkline
+from maxpane_dashboard.widgets.ocm.ocm_activity_feed import OCMActivityFeed
 from maxpane_dashboard.widgets.ocm.ocm_signals import OCMSignals
 from maxpane_dashboard.widgets.ocm.ocm_sparklines import OCMSparklines
+from maxpane_dashboard.widgets.ocm.ocm_staking_overview import OCMStakingOverview
 from maxpane_dashboard.widgets.ocm.ocm_supply_breakdown import OCMSupplyBreakdown
 from maxpane_dashboard.widgets.ttt.ttt_signals import TTTSignals
 from maxpane_dashboard.widgets.ttt.ttt_sparkline import TTTSparkline
@@ -124,6 +126,26 @@ _PANELS = [
     ("OCMSparklines", OCMSparklines, {"supply_history": _SERIES}),
     ("OCMSignals", OCMSignals, {}),
     ("OCMSupplyBreakdown", OCMSupplyBreakdown, {}),
+    # Added with Branch 6 (`widgets/panels.py`). Both were absent from this
+    # table and both were wrong in a way it would have caught: the staking
+    # overview stated the title margin in `minimal.tcss` AND yielded a
+    # `Static("")` spacer, so it painted TWO blank rows, and the activity
+    # feed was the one ocm panel whose row came from the stylesheet alone.
+    # `{}` is enough for the overview -- every parameter defaults to a
+    # number, so row 2 is `Total Staked`. The feed needs one event: its
+    # body is a `RichLog`, and an empty poll paints the `No activity yet`
+    # placeholder one row lower than a real row would sit.
+    ("OCMStakingOverview", OCMStakingOverview, {}),
+    ("OCMActivityFeed", OCMActivityFeed, {
+        "recent_events": [{
+            "tx_hash": "0x" + "ef" * 32,
+            "timestamp": 1_700_000_000,
+            "event_type": "mint",
+            "actor_address": "0x" + "ab" * 20,
+            "token_id": 7,
+            "count": 1,
+        }],
+    }),
     # -- frenpet overview --------------------------------------------------
     ("FPScoreTrends", FPScoreTrends, {"top_pets": [], "score_histories": {}}),
     ("FPGameSignals", FPGameSignals, {"battle_rate": 1.0, "win_rate": 0.5}),

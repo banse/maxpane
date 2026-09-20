@@ -1,31 +1,24 @@
-"""Activity feed for Onchain Monsters dashboard."""
+"""Activity feed for Onchain Monsters dashboard.
+
+The log, the dedupe set and the write contract are
+:class:`~maxpane_dashboard.widgets.panels.RichLogFeed`'s (Branch 6);
+``_event_to_text`` below is this dashboard's ``format_row`` hook, and the
+``HH:MM`` cell is ``widgets/fmt.hhmm``.
+"""
 
 from __future__ import annotations
 
-import time
-
 from rich.text import Text
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.ocm._chain import EXPLORER
+from maxpane_dashboard.widgets.panels import RichLogFeed
 
 #: Display budget for the actor address in this RichLog line, excluding the
 #: icon (``ICON_COLS``). No layout pin covers this hidden dashboard, so this
 #: is a grow-in-slack choice matching the recipe's own RichLog example.
 _ADDR_COLS = 17
-
-
-def _format_event_time(timestamp: float | int | str) -> str:
-    """Convert a unix timestamp to HH:MM display format."""
-    try:
-        ts = int(timestamp)
-        t = time.localtime(ts)
-        return f"{t.tm_hour:02d}:{t.tm_min:02d}"
-    except (ValueError, OSError):
-        return "??:??"
 
 
 def _event_to_text(event: dict) -> Text:
@@ -36,7 +29,7 @@ def _event_to_text(event: dict) -> Text:
     click action lives in a ``Style`` that only survives outside markup
     parsing.
     """
-    ts = _format_event_time(event.get("timestamp", 0))
+    ts = hhmm(event.get("timestamp", 0))
     address = event.get("actor_address", "")
     event_type = event.get("event_type", "")
     token_id = event.get("token_id")
@@ -68,16 +61,16 @@ def _event_to_text(event: dict) -> Text:
     return line
 
 
-class OCMActivityFeed(Vertical):
+class OCMActivityFeed(RichLogFeed):
     """Auto-scrolling activity feed for Onchain Monsters."""
 
+    TITLE = "ACTIVITY"
+
+    LOG_ID = "ocm-activity-log"
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s, and
+    #: ``minimal.tcss`` states this log's colours.
     DEFAULT_CSS = """
-    OCMActivityFeed > .feed-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     OCMActivityFeed > RichLog {
         height: 1fr;
         padding: 0 1;
@@ -85,13 +78,9 @@ class OCMActivityFeed(Vertical):
     }
     """
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._seen_tx_hashes: set[str] = set()
-
-    def compose(self) -> ComposeResult:
-        yield Static("ACTIVITY", classes="feed-title")
-        yield RichLog(id="ocm-activity-log", wrap=True, highlight=True, markup=True)
+    #: The ``format_row`` hook. A ``staticmethod``: the row is a function of
+    #: the event alone.
+    format_row = staticmethod(_event_to_text)
 
     def update_data(
         self,
@@ -100,33 +89,6 @@ class OCMActivityFeed(Vertical):
     ) -> None:
         """Rewrite the log with newest events on top.
 
-        Events are de-duplicated by ``tx_hash``.
+        Events are de-duplicated by ``tx_hash`` (``RichLogFeed.dedupe_key``).
         """
-        log = self.query_one("#ocm-activity-log", RichLog)
-
-        if not recent_events:
-            if not self._seen_tx_hashes:
-                log.write("[dim]  No activity yet[/]")
-            return
-
-        # De-duplicate by tx_hash
-        new_events: list[dict] = []
-        for event in recent_events:
-            tx_hash = event.get("tx_hash", "")
-            if tx_hash and tx_hash in self._seen_tx_hashes:
-                continue
-            if tx_hash:
-                self._seen_tx_hashes.add(tx_hash)
-            new_events.append(event)
-
-        if not new_events and self._seen_tx_hashes:
-            return
-
-        # Clear and rewrite: newest on top
-        log.clear()
-        log.auto_scroll = False
-        for event in recent_events:
-            log.write(_event_to_text(event))
-
-        # Scroll to top after render
-        self.call_after_refresh(log.scroll_home, animate=False)
+        self.render_events(recent_events)

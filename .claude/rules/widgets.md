@@ -152,6 +152,84 @@ view) and keep their own `_do_refresh`; curator's `on_screen_suspend` calls `sup
 then cancels its export and ENS workers. `templates/screen_template.py` is written to the same
 contract. Copy the template, or any migrated screen.
 
+## Panels subclass `widgets/panels.py`
+
+Branch 6 of the refactor programme, 2026-09-20. Five panel shapes had been hand-copied into every
+dashboard package, and a fix applied to one copy reached none of the others: `_UNAVAILABLE`
+(9 copies), `Loading...` (typed in 68 files), `_render_row` (7) / `_render_box` (4),
+`_fmt(sig)` / `_fmt_signal` (8), `_fmt_value` (3), `_format_event_time` (5) and a
+`_seen_tx_hashes` / `_seen_keys` dedupe set (10). `widgets/panels.py` is the one definition of
+each:
+
+- **`UNAVAILABLE`** (`[yellow]unavailable[/]`), **`LOADING`** (`[dim]Loading...[/]`) and
+  `LOADING_ROW` (`LOADING` indented into a signals row's column, *derived* from it) — import
+  them; a migrated package defines none of them.
+- **`PanelBase(Vertical)`** — `TITLE` plus the `compose_body()` hook. `compose` yields the title
+  `Static` (class `panel-title`) and then the body; `write(selector, content)` is `query_one` +
+  `update` inside one guard **that logs at `warning`** (the panels that write this way used to
+  raise into `DashboardScreen`, which logged; a silent swallow would hide a panel that cannot
+  render), and `write_guarded(selector, build, fallback)` **builds inside the guard**, which is the MEDI-38 rule: a malformed value lands on an explicit degraded state here,
+  not in the screen's `except` with the previous poll's number still on screen as if live.
+- **`HeroBoxBase` / `HeroRow(Horizontal)`** — `BOX_CLASS`, `BOXES` of `(id, label)`, `render_box`.
+  Not a `PanelBase`: a hero row has no title widget, and its blank row is the `\n\n` inside the
+  box string. `HeroBoxBase` states **no** geometry; a package keeps its own subclass and the
+  stylesheet names that (`OCMHeroBox { width: 1fr; … }`).
+- **`SignalsPanelBase(PanelBase)`** — `ROWS`, `LABEL_WIDTH` (18 in ocm/dota, 15 in cattown and the
+  template), `DIM_LABEL`, `RECOMMENDATION_ID`; the module function `fmt_signal(sig, *,
+  label_width, dim_label)` is the one formatter both spellings now come from.
+- **`SparklinePanel(PanelBase)`** — `LINE_IDS` and `render_series((label, points, color, unit), …)`
+  over `sparkline_common`'s `coerce_points` / `build_sparkline_from_points` / `trend_arrow` /
+  `fmt_compact`, label padded `label[:8].ljust(8)`. An unusable series writes `""`, never a flat
+  baseline that would read as a real run of zeroes.
+- **`RichLogFeed(PanelBase)`** — `LOG_ID`, `EMPTY_LINE`, the dedupe set, and two hooks:
+  `dedupe_key(event)` (default `event.get("tx_hash") or None`) and the abstract `format_row(event)
+  -> Text | None`. `format_row` returns a **`Text`**, never a markup string. `render_events` is the
+  merged contract: an empty poll writes the placeholder only while nothing has ever been shown and
+  `clear()`s first (so it is written once, not once per refresh interval); a poll with nothing new
+  leaves the log alone; otherwise every row is written inside its own guard, so one unwritable row
+  is skipped and the rest still land — nothing may escape after `clear()`. **"Ever been shown" is a
+  `_drawn` flag set when a row lands, never the dedupe set:** `_seen_keys` fills only on the
+  hashable-key path, so a feed whose `dedupe_key` returns `None` and one whose `tx_hash` arrives
+  unhashable both draw rows with an empty key set — and while the contract read the set, the very
+  next empty poll cleared their live rows and painted `No activity yet` over them. The flicker
+  guard hangs off the same flag; in always-new mode every event is new, so it never fires and every
+  poll redraws, which is what always-new means. Two things deliberately do escape or bypass: an
+  **unhashable** key (a third-party `tx_hash` that arrived as a JSON list)
+  is never deduped and always drawn, rather than raising `TypeError` out of `update_data` and
+  blanking the feed; and `NotImplementedError` is re-raised past the per-row guard, because a
+  subclass that never wired up `format_row` is a programming error and must fail loudly instead of
+  painting `No activity yet` forever.
+
+**The blank row under a title is `PanelBase`'s `margin: 0 0 1 0`.** A subclass yields no spacer for
+it. ocm's staking overview used to carry *both* mechanisms and painted two rows;
+`tests/widgets/test_title_blank_row.py` now names every ocm panel.
+
+**A base class's name is a CSS type selector for every subclass — so the shared names carry
+`Base`.** `HeroBoxBase` and `SignalsPanelBase` are not stylistic: `widgets/hero_metrics.py` and
+`widgets/signals_panel.py` (both bakery-only) own classes called `HeroBox` and `SignalsPanel`, and
+`minimal.tcss` has a **bare** `HeroBox { … }` / `SignalsPanel { … }` block for each. While the
+bases carried those names every subscriber inherited bakery's geometry — inserting `min-width: 60`
+into the bakery `HeroBox` block widened ocm's SUPPLY box from 54 to 164 columns — and nothing moved
+on screen only because ocm's own blocks restated the same values and won on source order, which is
+luck rather than a rule. `tests/widgets/test_panels.py` holds two `guard` agreement tests for it:
+no class name in `panels.py` may be defined by any other module under `widgets/` or `templates/`,
+and none may appear as a bare type selector in `minimal.tcss`. A new base picks a name no widget
+and no stylesheet block already uses.
+
+**Per-panel title classes are unnecessary.** Textual matches a type selector against every base
+class — `_css_type_names` of an `OCMSignals(PanelBase)` instance is `{OCMSignals, PanelBase,
+Vertical, Widget, DOMNode}` — so `PanelBase > .panel-title` in the base's `DEFAULT_CSS` reaches
+every subclass. Being unnecessary is how `TTTSparkline > .chart-title` matched nothing for the
+life of `minimal.tcss`. A stylesheet block keyed on the widget's own class name (geometry, colours)
+stays where it is.
+
+`widgets/ocm/` is the worked example — all six panels, no `update_data` signature changed.
+`tests/widgets/test_panels.py` covers the bases and holds the agreement test that reddens when a
+copy is pasted back into the ocm package. **`TableLeaderboard` does not exist yet:** it lands in
+Branch 7 with its first subscriber (cattown), because a base with no subclass is a template by
+another name. Until then `templates/leaderboard_template.py` is still the copy-source for a
+leaderboard, with the copy-source caveat in step 3 below.
+
 ## Reuse before you build
 
 Almost nothing here is the first of its kind. Check, in this order:
@@ -171,7 +249,10 @@ Almost nothing here is the first of its kind. Check, in this order:
    sibling panel that already does the same *shape* of job. `widgets/surf/launchpad_activity.py`
    was built on `widgets/surf/activity.py` and inherited its width-tier ladder and its "the panel
    names the columns it shed" contract for free.
-3. **`templates/`** — copy-sources for when there is no sibling to follow. A template can only
+3. **`templates/`** — but only after `widgets/panels.py`: for the shapes it covers (a titled
+   panel, a hero row, a signals panel, a sparkline panel, a `RichLog` feed) subclass the base
+   instead, because a later fix reaches a subclass and never reaches a copy (section above).
+   Templates are copy-sources for when there is no base and no sibling to follow. A template can only
    be behind or ahead of the widgets copied from it; it never propagates. When you fix a widget,
    check its template, and check whether the template drifted *ahead* of the widget (the MEDI-38
    unavailable state in `hero_metrics_template.py` never reached the ocm/cattown/dota heroes).

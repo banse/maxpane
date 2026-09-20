@@ -1,11 +1,16 @@
-"""Supply breakdown widget for the Onchain Monsters dashboard."""
+"""Supply breakdown widget for the Onchain Monsters dashboard.
+
+The title, its blank row and the guarded write are
+:class:`~maxpane_dashboard.widgets.panels.PanelBase`'s (Branch 6); the
+minting-cost tiers below are this collection's own.
+"""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.panels import LOADING, PanelBase
 
 # Minting cost tiers: (start_id, end_id, cost_ocmd)
 _TIERS = [
@@ -26,29 +31,16 @@ def _tier_info(total_supply: int) -> tuple[str, int]:
     return "#8000-#9999 (4 $OCMD)", 0
 
 
-class OCMSupplyBreakdown(Vertical):
+class OCMSupplyBreakdown(PanelBase):
     """Displays minted / burned / net supply with a progress bar."""
 
-    DEFAULT_CSS = """
-    OCMSupplyBreakdown > .breakdown-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    OCMSupplyBreakdown > .breakdown-body {
-        padding: 0 1;
-        width: 100%;
-    }
-    """
+    TITLE = "SUPPLY BREAKDOWN"
 
-    def compose(self) -> ComposeResult:
-        yield Static("SUPPLY BREAKDOWN", classes="breakdown-title")
-        yield Static("", id="ocm-breakdown-spacer")
-        yield Static("[dim]Loading...[/]", classes="breakdown-body", id="ocm-breakdown-stats")
-        yield Static("", classes="breakdown-body", id="ocm-breakdown-bar")
-        yield Static("", classes="breakdown-body", id="ocm-breakdown-tier")
-        yield Static("", classes="breakdown-body", id="ocm-breakdown-activity")
+    def compose_body(self) -> ComposeResult:
+        yield Static(LOADING, classes="panel-line", id="ocm-breakdown-stats")
+        yield Static("", classes="panel-line", id="ocm-breakdown-bar")
+        yield Static("", classes="panel-line", id="ocm-breakdown-tier")
+        yield Static("", classes="panel-line", id="ocm-breakdown-activity")
 
     def update_data(
         self,
@@ -68,20 +60,20 @@ class OCMSupplyBreakdown(Vertical):
             f"  [white]Net Supply:[/] [bold]{net_supply:>6,}[/]\n"
             f"  [dim]Remaining:[/]  [bold]{remaining:>6,}[/]"
         )
-        self.query_one("#ocm-breakdown-stats", Static).update(stats)
+        self.write("#ocm-breakdown-stats", stats)
 
         bar_width = 30
         filled = int(minted_pct / 100 * bar_width)
         bar = "=" * max(0, filled - 1) + ">" + " " * max(0, bar_width - filled)
         bar_str = f"  [green][{bar}][/] [bold]{minted_pct:.1f}%[/]"
-        self.query_one("#ocm-breakdown-bar", Static).update(bar_str)
+        self.write("#ocm-breakdown-bar", bar_str)
 
         # Current tier info
         tier_label, until_next = _tier_info(total_supply)
         tier_str = f"\n  [dim]Tier:[/]  [white]{tier_label}[/]"
         if until_next > 0:
             tier_str += f"\n  [dim]Next:[/]  [cyan]{until_next:,} mints to tier change[/]"
-        self.query_one("#ocm-breakdown-tier", Static).update(tier_str)
+        self.write("#ocm-breakdown-tier", tier_str)
 
         # Recent activity counts
         activity_parts = []
@@ -93,4 +85,4 @@ class OCMSupplyBreakdown(Vertical):
             activity_str = f"\n  [dim]Recent:[/] {' · '.join(activity_parts)} [dim](~100 min)[/]"
         else:
             activity_str = "\n  [dim]Recent:[/] [dim]no activity (~100 min)[/]"
-        self.query_one("#ocm-breakdown-activity", Static).update(activity_str)
+        self.write("#ocm-breakdown-activity", activity_str)

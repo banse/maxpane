@@ -176,3 +176,39 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     screen's tests can bind) rather than reading the clock. Both screens are hidden
     (`--game frenpet_wallet` / `frenpet_perf`), so the blast radius is one sparkline each.
     Minor, Tier 0 when either file is next touched (filed by WP-B, 2026-09-20).
+
+## Branch 6 — panels
+
+20. **`tests/widgets/test_sparkline_common.py`'s helper lookup is a fixed name list.**
+    `_COERCE_NAMES = ("_coerce_points", "coerce_points")` and `_BUILD_NAMES` (`:100-101`, written
+    in Branch 6 when the ocm render loop moved into `widgets/panels.SparklinePanel` and the old
+    leaf-module lookup stopped resolving) enumerate the names a module may bind the shared
+    helpers to. A module that imports `coerce_points` under **any other** alias — `_spark_from`,
+    `_pts`, `as_points` — binds none of the listed names, `_resolve` returns `(None, None)` for
+    it, and the walk simply moves on to the next module in the MRO, so a private re-implementation
+    under an unlisted name passes both agreement tests. The pre-existing shape is the same: the
+    original single-module form read `getattr(module, "_coerce_points", None)` and had exactly
+    this hole for a differently-aliased copy; Branch 6 carried it across rather than introducing
+    it. Reviewer's evidence: a private sparkline builder defined **in `widgets/panels.py`** and
+    called by `render_series`, renamed `_build_sparkline` → `_spark_from`, after which
+    `tests/widgets/test_sparkline_common.py` passed 89/89 — the copy sat on the MRO the walk
+    covers, under a name the list does not. The fix is to assert on the *function objects* a
+    module binds — walk `vars(module)` for every value that `is` one of `sparkline_common`'s
+    helpers and for every locally-defined function whose body duplicates one — rather than on a
+    hand-listed set of names. Minor, Tier 0 when `test_sparkline_common.py` is next touched
+    (Branch 6 review M6, filed 2026-09-20; evidence corrected in fix round 2, N2).
+21. **The `_drawn` read in `RichLogFeed`'s flicker guard is not bitten by any test.**
+    `widgets/panels.py` `render_events`, `if not has_new and self._drawn:`. Reverting only that
+    site to `self._seen_keys` leaves `tests/widgets/test_panels.py` at 52 passed, yet the
+    difference is observable: a feed that drew rows key-lessly and then receives a poll whose
+    every `dedupe_key` raises keeps the earlier rows under `_drawn` and is redrawn with the
+    malformed poll's rows under `_seen_keys`. The committed behaviour is the documented one ("an
+    all-malformed poll leaves a populated feed alone"); the test is missing. Minor, Tier 0 when
+    `test_panels.py` is next touched (Branch 6 fix-round-2 re-review N4, filed 2026-09-20).
+22. **The bare-block stylesheet guard admits a *qualified* base selector.**
+    `tests/widgets/test_panels.py` `_BARE_BLOCK` matches a `panels.py` class name only when it
+    is a whole item of a selector list, so `HeroBoxBase:hover { … }` or `HeroBoxBase.-thin { … }`
+    appended to `minimal.tcss` pass (52 passed). `.-thin` is opt-in and harmless; `:hover` would
+    restyle every subclass on hover — a narrower form of the I1 collision. No such rule exists
+    today. If it is ever wanted, widen the guard to a name followed by a pseudo-class. Minor,
+    hypothetical, Tier 0 with #21 (Branch 6 fix-round-2 re-review N5, filed 2026-09-20).

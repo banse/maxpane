@@ -70,7 +70,7 @@ maxpane_dashboard/   __main__.py (CLI) · app.py (MaxPaneApp, _GAME_CYCLE) · co
   screens/           one Screen per dashboard + splash, game_select, wallet_input, refresh_guard,
                      dashboard_screen.py (DashboardScreen: lifecycle + PANELS dispatch)
   templates/         copy-sources for new dashboards; a copy never propagates a fix
-  widgets/           shared: sparkline_common, markup_safety, address, status_bar · one pkg per dashboard
+  widgets/           shared: panels, sparkline_common, markup_safety, address, status_bar · one pkg per dashboard
 maxpane/             Rust intro crate · sybilkit/  SECOND Python distribution, maxpane-independent
 tests/               analytics/ data/ screens/ widgets/ address_sweep/ fixtures/ · scripts/ one-shot tooling
 ```

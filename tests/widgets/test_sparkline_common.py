@@ -96,23 +96,65 @@ def _history_kwargs(widget_cls, value) -> dict:
 # ---------------------------------------------------------------------------
 
 
+#: The names a sparkline module may bind the shared helpers to. The
+#: underscore forms are the per-dashboard import aliases; the bare forms are
+#: what ``widgets/panels.py`` imports, because Branch 6 moved ocm's render
+#: loop out of ``ocm_sparklines.py`` and into ``panels.SparklinePanel``.
+_COERCE_NAMES = ("_coerce_points", "coerce_points")
+_BUILD_NAMES = ("_build_sparkline", "build_sparkline", "build_sparkline_from_points")
+
+
+def _render_modules(widget_cls) -> list:
+    """Every MaxPane module the widget's rendering lives in, leaf first.
+
+    Was ``inspect.getmodule(widget_cls)`` alone, which asserted about the
+    leaf module and silently found *nothing* -- ``getattr(module,
+    "_coerce_points", None)`` is ``None``, and ``None is not
+    coerce_points`` -- the moment a widget drew its sparkline through a
+    shared base. The claim is unchanged (no private copy anywhere the
+    widget renders through); the lookup now follows the class chain instead
+    of stopping at the leaf, so it covers the base too.
+    """
+    modules = []
+    for cls in widget_cls.__mro__:
+        module = inspect.getmodule(cls)
+        if (
+            module is not None
+            and module.__name__.startswith("maxpane_dashboard.")
+            and module not in modules
+        ):
+            modules.append(module)
+    return modules
+
+
+def _resolve(modules, names):
+    """The first of *names* bound by any of *modules*, leaf module first."""
+    for module in modules:
+        for name in names:
+            helper = getattr(module, name, None)
+            if helper is not None:
+                return module, helper
+    return None, None
+
+
 @pytest.mark.parametrize("widget_cls", SPARKLINE_WIDGETS, ids=lambda c: c.__name__)
 def test_helpers_are_the_shared_functions(widget_cls) -> None:
     """No dashboard may carry its own copy of the sparkline helpers."""
-    module = inspect.getmodule(widget_cls)
+    modules = _render_modules(widget_cls)
+    names = [m.__name__ for m in modules]
 
-    coerce = getattr(module, "_coerce_points", None)
+    module, coerce = _resolve(modules, _COERCE_NAMES)
     assert coerce is sparkline_common.coerce_points, (
-        f"{module.__name__} does not use the shared coerce_points; a private "
+        f"{names} do not use the shared coerce_points; a private "
         "copy is how the ttt/talismans/fwa fork happened (MEDI-36)"
     )
 
-    build = getattr(module, "_build_sparkline", None)
+    module, build = _resolve(modules, _BUILD_NAMES)
     assert build in (
         sparkline_common.build_sparkline,
         sparkline_common.build_sparkline_from_points,
     ), (
-        f"{module.__name__} does not use a shared build_sparkline; fixes to a "
+        f"{names} do not use a shared build_sparkline; fixes to a "
         "private copy reach no other dashboard (MEDI-36)"
     )
 
@@ -123,19 +165,21 @@ def test_no_module_redefines_a_shared_helper(widget_cls) -> None:
 
     ``is``-identity above is satisfiable by an import; this checks the
     source itself, so a dashboard that copies the function *and* shadows
-    the import is caught too.
+    the import is caught too. Every module the widget renders through is
+    read, not only the leaf.
     """
-    source = Path(inspect.getmodule(widget_cls).__file__).read_text(encoding="utf-8")
-    defined = {
-        node.name
-        for node in ast.parse(source).body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-    forked = defined & {"_coerce_points", "_build_sparkline", "_trend_arrow"}
-    assert not forked, (
-        f"{widget_cls.__name__} redefines {sorted(forked)} instead of importing "
-        "from widgets/sparkline_common.py -- import it, do not copy it (MEDI-36)"
-    )
+    for module in _render_modules(widget_cls):
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        defined = {
+            node.name
+            for node in ast.parse(source).body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        forked = defined & {"_coerce_points", "_build_sparkline", "_trend_arrow"}
+        assert not forked, (
+            f"{module.__name__} redefines {sorted(forked)} instead of importing "
+            "from widgets/sparkline_common.py -- import it, do not copy it (MEDI-36)"
+        )
 
 
 def test_template_seeds_an_import_not_a_copy() -> None:

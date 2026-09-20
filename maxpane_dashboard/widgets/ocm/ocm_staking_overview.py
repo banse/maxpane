@@ -1,42 +1,40 @@
-"""Staking overview panel for Onchain Monsters dashboard."""
+"""Staking overview panel for Onchain Monsters dashboard.
+
+The title, its one blank row and the guarded row write are
+:class:`~maxpane_dashboard.widgets.panels.PanelBase`'s (Branch 6). This
+panel used to paint **two** blank rows: the margin on its own title class in
+``minimal.tcss`` *and* a ``Static("")`` spacer yielded from ``compose``.
+"""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.panels import LOADING, PanelBase
 
-class OCMStakingOverview(Vertical):
+
+class OCMStakingOverview(PanelBase):
     """Key staking metrics displayed as labeled rows."""
 
+    TITLE = "STAKING OVERVIEW"
+
+    #: Geometry only -- ``height: auto`` against ``Vertical``'s ``1fr``.
     DEFAULT_CSS = """
     OCMStakingOverview {
         height: auto;
         padding: 0;
     }
-    OCMStakingOverview > .overview-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    OCMStakingOverview > .overview-row {
-        width: 100%;
-        padding: 0 1;
-    }
     """
 
-    def compose(self) -> ComposeResult:
-        yield Static("STAKING OVERVIEW", classes="overview-title")
-        yield Static("", id="ocm-stake-spacer")
-        yield Static("[dim]Loading...[/]", classes="overview-row", id="ocm-stake-row-0")
-        yield Static("", classes="overview-row", id="ocm-stake-row-1")
-        yield Static("", classes="overview-row", id="ocm-stake-row-2")
-        yield Static("", classes="overview-row", id="ocm-stake-row-3")
-        yield Static("", classes="overview-row", id="ocm-stake-row-4")
-        yield Static("", classes="overview-row", id="ocm-stake-row-5")
-        yield Static("", classes="overview-row", id="ocm-stake-row-6")
+    #: One row per metric, in panel order.
+    ROW_IDS = tuple(f"ocm-stake-row-{i}" for i in range(7))
+
+    def compose_body(self) -> ComposeResult:
+        for index, row_id in enumerate(self.ROW_IDS):
+            yield Static(
+                LOADING if index == 0 else "", classes="panel-line", id=row_id
+            )
 
     def update_data(
         self,
@@ -87,6 +85,5 @@ class OCMStakingOverview(Vertical):
             ),
         ]
 
-        for i, (label, value) in enumerate(rows):
-            widget = self.query_one(f"#ocm-stake-row-{i}", Static)
-            widget.update(f"  {label:<20} {value}")
+        for row_id, (label, value) in zip(self.ROW_IDS, rows):
+            self.write(f"#{row_id}", f"  {label:<20} {value}")
