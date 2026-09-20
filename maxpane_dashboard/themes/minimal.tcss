@@ -52,12 +52,6 @@ Leaderboard {
     padding: 0 1;
 }
 
-Leaderboard > Static {
-    color: $text-muted;
-    padding: 0 1;
-    margin: 0 0 1 0;
-}
-
 Leaderboard DataTable {
     height: 1fr;
     padding: 0 0;
@@ -95,20 +89,12 @@ CookieChart {
     content-align: center top;
 }
 
-CookieChart > .chart-title {
-    color: $text-muted;
-}
-
 SignalsPanel {
     height: 1fr;
     padding: 0 1;
     margin: 1 0 0 0;
     overflow-y: auto;
     content-align: center top;
-}
-
-SignalsPanel > .signals-title {
-    color: $text-muted;
 }
 
 /* ── Dashed separator ─────────────────────────────────────────────────── */
@@ -134,11 +120,6 @@ ActivityFeed {
     padding: 0 1;
 }
 
-ActivityFeed > .feed-title {
-    color: $text-muted;
-    margin: 0 0 1 0;
-}
-
 ActivityFeed RichLog {
     background: $background;
     scrollbar-size: 1 1;
@@ -148,10 +129,6 @@ EVTable {
     width: 2fr;
     padding: 0 1;
     content-align: center top;
-}
-
-EVTable > .ev-title {
-    color: $text-muted;
 }
 
 /* ── Status bar ───────────────────────────────────────────────────────── */

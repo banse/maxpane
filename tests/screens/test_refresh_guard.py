@@ -43,7 +43,6 @@ from maxpane_dashboard.screens.ttt import TTTScreen
 
 REPO = Path(__file__).resolve().parents[2]
 SCREENS_DIR = REPO / "maxpane_dashboard" / "screens"
-TEMPLATE = REPO / "maxpane_dashboard" / "templates" / "screen_template.py"
 
 
 async def _drain(iterations: int = 200) -> None:
@@ -332,33 +331,19 @@ def test_every_polling_screen_uses_the_guard():
 
 
 def test_no_screen_schedules_a_bare_refresh_worker():
-    """The exact pre-fix line must not reappear -- including in the template.
+    """The exact pre-fix line must not reappear in any screen module.
 
-    ``templates/screen_template.py`` is the copy-source for new dashboards, so
-    a copy of the race living there reintroduces it in dashboard number
-    thirteen no matter how many instances were fixed.
+    Until Branch 8 WP-B this walk also read ``templates/screen_template.py``,
+    the copy-source new dashboards were seeded from; the templates are gone
+    (a new screen subclasses ``DashboardScreen``, which carries the guard),
+    so the screens package is the whole surface.
     """
     bare = re.compile(r"run_worker\(\s*self\._do_refresh\(\)")
     offenders = []
-    for path in sorted(SCREENS_DIR.glob("*.py")) + [TEMPLATE]:
+    for path in sorted(SCREENS_DIR.glob("*.py")):
         if path.name == "refresh_guard.py":
             continue  # documents the old line in its docstring, by design
         if bare.search(path.read_text()):
             offenders.append(str(path.relative_to(REPO)))
     assert not offenders, f"bare refresh worker (MEDI-34/35 pattern) in: {offenders}"
 
-
-def test_template_screen_inherits_the_guard():
-    """New dashboards are seeded from the template; it must carry the fix."""
-    template = importlib.import_module("maxpane_dashboard.templates.screen_template")
-    seeds = [
-        obj
-        for obj in vars(template).values()
-        if inspect.isclass(obj)
-        and issubclass(obj, Screen)
-        and obj.__module__ == template.__name__
-    ]
-    assert seeds, "screen_template.py exposes no Screen subclass"
-    for cls in seeds:
-        assert issubclass(cls, RefreshGuard)
-        assert cls.REFRESH_WORKER_NAME != RefreshGuard.REFRESH_WORKER_NAME

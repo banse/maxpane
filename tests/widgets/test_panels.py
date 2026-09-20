@@ -1330,15 +1330,38 @@ MIGRATED_PACKAGES = {
     # ``bt_*.py`` modules (``BTHeroBox`` has no ``update_data``, so the row
     # exports seven names and the count is six).
     "base.overview": 6,
+    # Branch 8 WP-B. Not a package: the six bakery widgets are the top-level
+    # ``widgets/*.py`` modules ``widgets/__init__.py`` re-exports, so both
+    # walks read the six files ``MIGRATED_MODULES`` names -- the scan instead
+    # of globbing the directory (which would sweep in every shared module),
+    # the subclass check instead of ``widgets.__all__`` (whose seventh name,
+    # ``StatusBar``, has an ``update_data`` and is not a panel). Each class
+    # found must still be in that ``__all__``: the re-export is the contract
+    # ``screens/bakery.py`` and the agreement tests import through.
+    "bakery": 6,
+}
+
+#: The migrated "packages" that are a set of top-level modules rather than a
+#: directory, with the module names to read.
+MIGRATED_MODULES = {
+    "bakery": (
+        "hero_metrics", "leaderboard", "cookie_chart", "signals_panel",
+        "activity_feed", "ev_table",
+    ),
 }
 
 
 def _package(name: str):
+    if name in MIGRATED_MODULES:
+        return importlib.import_module("maxpane_dashboard.widgets")
     return importlib.import_module(f"maxpane_dashboard.widgets.{name}")
 
 
 def _package_modules(name: str) -> list[pathlib.Path]:
-    return sorted(pathlib.Path(inspect.getfile(_package(name))).parent.glob("*.py"))
+    root = pathlib.Path(inspect.getfile(_package(name))).parent
+    if name in MIGRATED_MODULES:
+        return [root / f"{module}.py" for module in MIGRATED_MODULES[name]]
+    return sorted(root.glob("*.py"))
 
 
 #: Each name had between two and ten copies across ``widgets/`` before this
@@ -1403,18 +1426,35 @@ def test_every_migrated_panel_subclasses_a_panels_base(package, expected) -> Non
     """Walk the package's own ``__all__``, so a widget added to a migrated
     package and *not* put on a base reddens this without anybody remembering
     to extend a hand-written list -- and check the walk found the number of
-    panels that package actually has, so a dropped one reddens too."""
+    panels that package actually has, so a dropped one reddens too.
+
+    A ``MIGRATED_MODULES`` entry (bakery) walks the classes its six modules
+    define instead, and checks each is re-exported by ``widgets.__all__``."""
     pkg = _package(package)
 
     found = []
-    for name in pkg.__all__:
-        cls = getattr(pkg, name)
-        if not hasattr(cls, "update_data"):
-            continue
-        found.append(name)
-        assert issubclass(cls, _PANEL_BASES), (
-            f"{package}.{name} is not on widgets/panels.py"
-        )
+    if package in MIGRATED_MODULES:
+        for module_name in MIGRATED_MODULES[package]:
+            module = importlib.import_module(f"maxpane_dashboard.widgets.{module_name}")
+            for name, cls in vars(module).items():
+                if not (inspect.isclass(cls) and cls.__module__ == module.__name__):
+                    continue
+                if not hasattr(cls, "update_data"):
+                    continue
+                found.append(name)
+                assert name in pkg.__all__, f"{name} is not re-exported by widgets/__init__.py"
+                assert issubclass(cls, _PANEL_BASES), (
+                    f"{package}.{name} is not on widgets/panels.py"
+                )
+    else:
+        for name in pkg.__all__:
+            cls = getattr(pkg, name)
+            if not hasattr(cls, "update_data"):
+                continue
+            found.append(name)
+            assert issubclass(cls, _PANEL_BASES), (
+                f"{package}.{name} is not on widgets/panels.py"
+            )
     assert len(found) == expected, (package, found)
 
 
@@ -1549,7 +1589,6 @@ def test_no_panels_base_shares_its_name_with_another_widget_class() -> None:
     clashes: dict[str, list[str]] = {}
     for package in (
         "maxpane_dashboard.widgets",
-        "maxpane_dashboard.templates",
         # A Screen subclass is a Widget, so its name is a type selector too
         # (fix round 2, N1).
         "maxpane_dashboard.screens",

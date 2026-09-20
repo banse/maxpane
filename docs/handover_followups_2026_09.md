@@ -379,3 +379,74 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     / `$0` — but no test would redden if one of them grew an `if not value:`. Fix: a zero-payload
     row for each `_HERO_ROWS` entry in the good-poll case. **Minor, Tier 0** when the file is next
     touched (Branch 8 WP-A re-review N1, filed 2026-09-20).
+
+34. **`SparklinePanel.render_series` writes `EMPTY_TEXT` for a `None` series — the C1 shape in the
+    base.** `maxpane_dashboard/widgets/panels.py:573-575`: `coerce_points(None)` is `[]`, so a series
+    whose points the manager could not read (`None`) and a series that is genuinely empty (`[]`) both
+    land on `empty_line(label)` — a failed read wearing the real negative's clothes, the very shape
+    Branch 7 WP-A fixed in dota's manager (review C1). Every `SparklinePanel` subscriber inherits it;
+    bakery's `CookieChart` now sends `histories[name]` through it unguarded, so a `None` history
+    blanks the line where the copy raised. Fix: a `None` *points* entry writes `UNAVAILABLE_LINE`
+    (or an `EMPTY_KEEPS_LABEL`-aware yellow `unavailable`), `[]` keeps `EMPTY_TEXT`; one
+    parametrised case per subscriber in `tests/widgets/test_panels.py`. **Important, Tier 2** — a
+    shared `widgets/*.py` module (Branch 8 WP-B, filed 2026-09-20).
+
+35. **Bakery's client substitutes `[]` for a failed bakeries or activity sub-fetch.**
+    `maxpane_dashboard/data/client.py:330-334` (`bakeries = []` after `logger.warning("Failed to
+    fetch bakeries")`) and `:343-347` (`activity = []` after a failed `get_activity_feed_global`).
+    Downstream, `Leaderboard` paints `No data` and `ActivityFeed` keeps its previous rows or paints
+    `No activity yet` — both real negatives — for what was a read that failed. Fix: carry `None`
+    through `manager.fetch_and_compute` for those two keys and let the widgets' `None` branches
+    (`TableLeaderboard`/`RichLogFeed` stream mode) say `unavailable`; pin it in
+    `tests/data/test_client.py` against a transport that raises for the one sub-fetch. Pre-existing,
+    not introduced by the migration. **Important, Tier 1** (bakery's own data module) (Branch 8
+    WP-B, filed 2026-09-20).
+
+36. **`CookieChart._label_cell` overrides a private base hook.**
+    `maxpane_dashboard/widgets/cookie_chart.py:31-39` wraps `super()._label_cell(label)` in
+    `safe_markup` so the player-chosen name is escaped *after* the base clips it (escaping first puts
+    a backslash where the clip then cuts the last character). It is right, and pinned by
+    `test_cookie_chart_escapes_the_name_after_clipping_it`, but a subclass depending on a leading-
+    underscore method is one rename away from silently unescaped labels. Fix: promote the hook to a
+    public `label_cell` (or add an `ESCAPE_LABEL = False` knob on `SparklinePanel` whose `True`
+    every subscriber with third-party labels sets) and drop the override. **Minor, Tier 2** — a
+    shared-module knob (Branch 8 WP-B, filed 2026-09-20).
+
+37. **`Leaderboard.update_data`'s `prize_pool_usd` parameter is unused.**
+    `maxpane_dashboard/widgets/leaderboard.py:51-56` accepts it because `screens/bakery.py:80`'s
+    `PANELS` row sends it (`keys("bakeries", "production_rates", "prize_pool_usd")`), and the body
+    never reads it — inherited from the copy, kept so the signature and the panel-row agreement test
+    did not move. Fix: drop it from both the signature and the `keys(...)` row in one change (the
+    agreement test binds them). **Minor, Tier 1** — touches `screens/bakery.py` (Branch 8 WP-B,
+    filed 2026-09-20).
+
+38. **The bare `HeroBox` stylesheet block clips the hero boxes' fourth line in production.**
+    `maxpane_dashboard/themes/minimal.tcss:31-40` gives `HeroBox` `height: 7`, `border: solid $panel`
+    and `padding: 1 2`: two border rows plus two padding rows leave three inner rows, and the box
+    body is `[dim]LABEL[/]\n\n{line 1}\n{line 2}` — the countdown's progress bar and the leader's
+    `/hr` rate are line 2 and never composite. Both `tests/widgets/test_hero_metrics_degradation.py:67-73`
+    and `tests/widgets/test_bakery_widgets.py:149` (`_HeroHarness`) assert under a **border-less**
+    `HeroBox` block for exactly that reason, so nothing pins the production geometry. Fix: `height:
+    8` (or drop the top/bottom padding) in the bare block and one composited screen test at the
+    dashboard's pin that finds the bar; the hidden dashboard has no pin sweep, so Tier 1. Pre-
+    existing. **Minor, Tier 1** (Branch 8 WP-B, filed 2026-09-20).
+
+39. **The DataTable cursor row's `color: $text` hides a cell's own foreground colour on every
+    leaderboard.** `maxpane_dashboard/themes/minimal.tcss:68-71` (`DataTable > .datatable--cursor {
+    background: $panel; color: $text; }`): bakery's leader row is row 0, the cursor rests there, and
+    its `[green]+5/hr[/]` rate composites in `$text` —
+    `test_the_leader_row_is_bold_with_a_green_rate_and_the_second_is_not` had to assert the cell
+    *string* off the table because the compositor shows no green (the bold survives). The same rule reaches ocm, cattown, dota, talismans, ttt and base.
+    Whether the cursor row should keep cell colours is an owner decision (it is a highlight, after
+    all); if yes, drop `color` from the block and re-render the migrated leaderboards. Pre-existing.
+    **Minor, Tier 2** — shared stylesheet, > 1 dashboard (Branch 8 WP-B, filed 2026-09-20).
+
+40. **The address sweep's bakery payload certifies three panels only in their degraded state.**
+    `tests/address_sweep/builders.py:555-597` `_bakery_payload` carries no `chart_histories`, no
+    `late_join_ev` / `gap_analysis` / `dominance` / `recommendation` and no `boost_rankings` /
+    `attack_rankings`, so COOKIE TRENDS, SIGNALS and BEST PLAYS render `unavailable` on every sweep
+    (the WP-B render diff is exactly those three panels) and the sweep never sees their live shape —
+    a recommendation naming a bakery, a boost name, a chart label — which is where third-party text
+    would reach the screen. Fix: add the seven keys with one hostile-free value each, and a
+    `seeded`-style expectation that the three panels paint a value, not `unavailable`. **Minor,
+    Tier 0** when the file is next touched (Branch 8 WP-B, filed 2026-09-20).

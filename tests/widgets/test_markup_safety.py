@@ -24,7 +24,8 @@ from textual.app import App, ComposeResult
 from textual.widgets import DataTable
 
 from maxpane_dashboard.data.models import ActivityEvent, BakerySummary
-from maxpane_dashboard.templates.leaderboard_template import GameLeaderboard
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.explorer import ETHEREUM
 from maxpane_dashboard.widgets.leaderboard import Leaderboard
 from maxpane_dashboard.widgets.markup_safety import (
     TAG_LIKE,
@@ -34,6 +35,7 @@ from maxpane_dashboard.widgets.markup_safety import (
     strip_tags,
     visible_len,
 )
+from maxpane_dashboard.widgets.panels import TableLeaderboard
 
 # Names a griefer can set on a public leaderboard. Each is malformed Rich
 # markup in a different way; every one of them raises MarkupError if it
@@ -169,13 +171,45 @@ async def test_leaderboard_keeps_leader_bold_styling() -> None:
         assert str(table.get_row_at(0)[1]) == "[bold]Normal Name[/]"
 
 
-# -- the template new dashboards are copied from ----------------------
+# -- the base new leaderboards are built on ----------------------------
+#
+# Until Branch 8 WP-B these two tests drove ``templates/leaderboard_template
+# .GameLeaderboard``, the copy-source new dashboards were seeded from. The
+# templates are gone; a new leaderboard subclasses ``panels.TableLeaderboard``
+# and writes its cells in ``build_row``, so the subject is now the smallest
+# such subclass, with the template's five columns and its two escape paths:
+# ``safe_markup`` on the API-sourced detail/status cells and ``address_text``
+# (a pre-built ``Text``, never a markup string) on the name-or-address cell.
+
+
+class _HostileBoard(TableLeaderboard):
+    TITLE = "LEADERBOARD"
+    TABLE_ID = "game-leaderboard-table"
+    COLUMNS = (
+        ("#", 4), ("Name", 16 + ICON_COLS), ("Score", 12), ("Detail", 12),
+        ("Status", 10),
+    )
+    EMPTY_ROW = ("--", "No data", "--", "--", "--")
+
+    def update_data(self, entries: list[dict] | None = None) -> None:
+        self.render_table(entries)
+
+    def build_row(self, index: int, entry: dict) -> tuple:
+        name = address_text(
+            entry.get("address"), label=entry.get("name") or None, width=16,
+            style="bold" if index == 0 else "", explorer=ETHEREUM,
+        )
+        score = f"{float(entry.get('score', 0)):,.0f}"
+        return (
+            str(index + 1), name, f"[bold]{score}[/]" if index == 0 else score,
+            safe_markup(entry.get("detail", "")), safe_markup(entry.get("status", "")),
+        )
 
 
 @pytest.mark.parametrize("hostile", HOSTILE_NAMES)
-async def test_template_leaderboard_survives_hostile_entries(hostile: str) -> None:
-    """templates/leaderboard_template.py must not teach the bug to new code."""
-    widget = GameLeaderboard()
+async def test_table_leaderboard_survives_hostile_entries(hostile: str) -> None:
+    """A ``TableLeaderboard`` built the documented way must not carry the bug."""
+    widget = _HostileBoard()
     async with _Harness(widget).run_test() as pilot:
         widget.update_data(
             [
@@ -190,9 +224,9 @@ async def test_template_leaderboard_survives_hostile_entries(hostile: str) -> No
         assert table.row_count == 2
 
 
-async def test_template_leaderboard_survives_hostile_address_fallback() -> None:
+async def test_table_leaderboard_survives_hostile_address_fallback() -> None:
     """The name falls back to the address, which is API-sourced too."""
-    widget = GameLeaderboard()
+    widget = _HostileBoard()
     async with _Harness(widget).run_test() as pilot:
         widget.update_data([{"name": "", "address": "[/x]", "score": 1}])
         await pilot.pause()

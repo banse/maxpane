@@ -5,7 +5,8 @@ dashboard package in this repo, and a fix applied to one copy reached none of
 the others:
 
 * ``_UNAVAILABLE = "[yellow]unavailable[/]"`` -- nine copies across
-  ``widgets/`` and ``templates/``; ``UNAVAILABLE`` below is the one.
+  ``widgets/`` and the since-deleted ``templates/``; ``UNAVAILABLE`` below is
+  the one.
 * ``Loading...`` -- typed in 68 files; ``LOADING`` below is the one.
 * ``_render_row`` (seven copies) and ``_render_box`` (four) -- the same
   query-guard / build-inside-the-guard / fallback shape, hoisted here as
@@ -278,7 +279,7 @@ def fmt_signal(sig: dict, *, label_width: int, dim_label: bool,
 
     The spellings the eight copies differed on: ``label_width=18,
     dim_label=False`` is ocm's and dota's, ``label_width=15,
-    dim_label=True`` is cattown's and ``templates/signals_template.py``'s,
+    dim_label=True`` was cattown's and the deleted ``templates/signals_template.py``'s,
     and ``labelled=False`` is talismans' and ttt's ``  [c]●[/] [c]{value}[/]``
     -- a row whose *value string already says what it is*, so a label column
     would only repeat it (Branch 7).
@@ -471,7 +472,7 @@ class SparklinePanel(PanelBase):
     """One block sparkline per line, with its current value and trend arrow.
 
     The primitives come from ``widgets/sparkline_common`` (MEDI-36): this
-    loop was carried by ocm, cattown, dota and
+    loop was carried by ocm, cattown, dota and the since-deleted
     ``templates/sparkline_template.py``, and the older copies raised
     ``TypeError`` on a ``None`` entry in a cached history.
     """
@@ -693,8 +694,8 @@ class RichLogFeed(PanelBase):
     def render_events(self, events) -> None:
         """Rewrite the log with the given events, newest on top.
 
-        The merged contract of ``templates/activity_feed_template.py`` and
-        ocm's own feed:
+        The merged contract of the since-deleted
+        ``templates/activity_feed_template.py`` and ocm's own feed:
 
         In **snapshot** mode (:attr:`SNAPSHOT`) the first bullet is replaced:
         a ``None`` poll clears and writes :data:`UNAVAILABLE_LINE`, an empty

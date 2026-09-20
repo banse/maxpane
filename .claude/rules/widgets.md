@@ -1,7 +1,6 @@
 ---
 paths:
   - "maxpane_dashboard/widgets/**/*"
-  - "maxpane_dashboard/templates/**/*"
   - "maxpane_dashboard/themes/**/*"
   - "maxpane_dashboard/screens/**/*"
   - "tests/widgets/**/*"
@@ -13,7 +12,7 @@ paths:
   - "tests/conftest.py"
 ---
 
-# Widgets, screens and templates — the full rules
+# Widgets and screens — the full rules
 
 Every rule here is a bug that shipped, was found, and was fixed repo-wide. The headlines are in
 `CLAUDE.md` "Conventions"; this file carries the reasoning and the tests that enforce them.
@@ -140,7 +139,8 @@ is in `compose` and named once, every key it sends is a **named** parameter of `
 every mounted widget with an `update_data` is named by some row (so a dropped row reddens).
 `tests/screens/test_refresh_guard.py` collects a screen by `issubclass(…, DashboardScreen)` as
 well as by its own `_do_refresh`, and requires `GAME_NAME` on anything that inherits the refresh.
-The copy-source is `templates/screen_template.py`.
+A new screen subclasses `DashboardScreen` and follows any migrated screen (`screens/bakery.py`
+is the shortest); the `templates/screen_template.py` copy-source was deleted in Branch 8 WP-B.
 
 The four screens with a genuinely custom `_do_refresh` (surf, curator, fwa, frenpet_full) inherit
 the class for its lifecycle and keep their own refresh.
@@ -156,8 +156,7 @@ four with a genuinely custom refresh — surf, curator, fwa, frenpet_full — in
 its lifecycle, set `GAME_NAME`,
 prime their one extra status-bar line through `_prime_status_bar` (surf's key hints, fwa's active
 view) and keep their own `_do_refresh`; curator's `on_screen_suspend` calls `super()` first and
-then cancels its export and ENS workers. `templates/screen_template.py` is written to the same
-contract. Copy the template, or any migrated screen.
+then cancels its export and ENS workers. Follow any migrated screen.
 
 ## Panels subclass `widgets/panels.py`
 
@@ -202,8 +201,8 @@ each:
   and the word escaped the same way; `value_color=` swaps the value cell's `[bold white]` for one
   style word, which is how a panel builds its **degraded** row through the same function
   (`unavailable` in yellow beside a yellow dot — the value is escaped, so the `UNAVAILABLE` markup
-  cannot be the value); bakery's `SignalsPanel` is the other panel on that shape and
-  WP-B moves it onto the function. A `ROWS` item is `(id, label)`; `(id, None)`
+  cannot be the value); bakery's `SignalsPanel` is the other panel on that shape and has been on
+  the function since WP-B. A `ROWS` item is `(id, label)`; `(id, None)`
   is a **label-less row** (`  [c]{ind}[/] [c]{value}[/]`, and the
   degraded row drops the label too, so it stays `unavailable` without an empty column in front of
   it); a bare `None` item is a blank `.panel-line` **separator** between groups of rows. The
@@ -314,7 +313,7 @@ bases carried those names every subscriber inherited bakery's geometry — inser
 into the bakery `HeroBox` block widened ocm's SUPPLY box from 54 to 164 columns — and nothing moved
 on screen only because ocm's own blocks restated the same values and won on source order, which is
 luck rather than a rule. `tests/widgets/test_panels.py` holds two `guard` agreement tests for it:
-no class name in `panels.py` may be defined by any other module under `widgets/` or `templates/`,
+no class name in `panels.py` may be defined by any other module under `widgets/` or `screens/`,
 and none may appear as a bare type selector in `minimal.tcss`. A new base picks a name no widget
 and no stylesheet block already uses.
 
@@ -331,16 +330,22 @@ first subscriber it is. `widgets/cattown/_fmt.py`
 is where the two formatters *two* of its modules needed were hoisted, rather than left as three
 copies of a rarity-colour map; `widgets/ttt/_fmt.py` is the same move for `safe_symbol`, which
 `ttt_leaderboard.py` and `ttt_fees_table.py` each carried a byte-identical copy of.
-**Six packages are on the bases as of Branch 8 WP-A** — ocm, cattown, dota, talismans, ttt and
+**Seven packages are on the bases as of Branch 8 WP-B** — ocm, cattown, dota, talismans, ttt,
 `base.overview` (the six `BT*` widgets; `BTActivityFeed` stays a **stream**, its poll is a whole
 ranking with `dedupe_key -> None`, and its rows run `ReprHighlighter` themselves because a `Text`
-row bypasses the highlight `RichLog` gives a `str`) — and
+row bypasses the highlight `RichLog` gives a `str`) and bakery (the six top-level
+`widgets/*.py` modules `widgets/__init__.py` re-exports: `HeroMetrics` keeps its own `HeroBox`
+subclass because `minimal.tcss` has a bare `HeroBox` block; `CookieChart` keeps the copy's
+30-cell `SPARK_WIDTH` and escapes its label **after** the base clips it; `ActivityFeed` keys on
+the copy's four fields and passes no `explorer=` because Abstract is not allowlisted) — and
 no widget class name and no `update_data` signature changed in any of them, so no screen's `PANELS`
 and no agreement test in `tests/screens/test_dashboard_screen.py` was touched.
 `tests/widgets/test_panels.py` covers the bases and holds the agreement tests that redden when a
 copy is pasted back into a migrated package: both are parametrised over one `MIGRATED_PACKAGES`
-table, `{"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7, "base.overview": 6}` — package → how many
-`update_data` widget classes the walk must find — which is the only line a later migration edits.
+table, `{"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7, "base.overview": 6, "bakery": 6}`
+— package → how many `update_data` widget classes the walk must find — which is the only line a
+later migration edits (bakery is not a directory, so a `MIGRATED_MODULES` entry beside it names
+its six files and the walk reads those).
 The counts differ per package, so the number is hand-checked, not derived, or it would
 compare `__all__` against itself. The banned-name set the same walk enforces now also covers
 `_fmt_int`, `_fmt_float`, `_safe_get`, `_DASH`, `_WAITING`, `_format_ts` and `_UNAVAILABLE_SIGNAL`,
@@ -355,10 +360,10 @@ Almost nothing here is the first of its kind. Check, in this order:
    `fmt_eth`, ages, countdowns, points, percentages, `hhmm`/`mmdd`), `widgets/sparkline_common.py`,
    `widgets/markup_safety.py`, `widgets/address.py`, `widgets/status_bar.py`. Import them; never copy
    out of them.
-   (`widgets/hero_metrics.py`, `leaderboard.py`, `activity_feed.py`, `signals_panel.py` are
-   Bakery-only despite living at the top level — two import `data.models`, two are shaped for
-   Bakery's payload, and all four are imported by `screens/bakery.py` only. Do not treat them as
-   shared.)
+   (`widgets/hero_metrics.py`, `leaderboard.py`, `cookie_chart.py`, `activity_feed.py`,
+   `signals_panel.py`, `ev_table.py` are Bakery-only despite living at the top level — all six are
+   imported by `screens/bakery.py` only and are subclasses of `widgets/panels.py` since Branch 8
+   WP-B. Do not treat them as shared.)
 2. **the dashboard's own `_fmt.py`** (`widgets/surf/`, `widgets/curator/` — each re-exports
    `widgets/fmt.py` and holds only its dashboard-specific formatters on top of it, such as
    `fmt_imd` or `fmt_eth_compact`; row fitting, the widen hints and the width-tier `Ladder` are
@@ -366,13 +371,13 @@ Almost nothing here is the first of its kind. Check, in this order:
    sibling panel that already does the same *shape* of job. `widgets/surf/launchpad_activity.py`
    was built on `widgets/surf/activity.py` and inherited its width-tier ladder and its "the panel
    names the columns it shed" contract for free.
-3. **`templates/`** — but only after `widgets/panels.py`: for the shapes it covers (a titled
-   panel, a hero row, a signals panel, a sparkline panel, a `RichLog` feed) subclass the base
-   instead, because a later fix reaches a subclass and never reaches a copy (section above).
-   Templates are copy-sources for when there is no base and no sibling to follow. A template can only
-   be behind or ahead of the widgets copied from it; it never propagates. When you fix a widget,
-   check its template, and check whether the template drifted *ahead* of the widget (the MEDI-38
-   unavailable state in `hero_metrics_template.py` never reached the ocm/cattown/dota heroes).
+3. **a migrated sibling on `widgets/panels.py`** — for the shapes the bases cover (a titled
+   panel, a hero row, a signals panel, a sparkline panel, a `RichLog` feed, a `DataTable`
+   leaderboard) subclass the base and read a migrated package for the idiom, because a later fix
+   reaches a subclass and never reaches a copy (section above). The `templates/` copy-sources
+   were deleted in Branch 8 WP-B for exactly that reason: a template could only be behind or
+   ahead of the widgets copied from it and never propagated (the MEDI-38 unavailable state in
+   `hero_metrics_template.py` never reached the ocm/cattown/dota heroes).
 
 The failure this prevents is **divergence**: three copies of one helper means a fix reaches one of
 them. A private helper needed by two modules is hoisted to the package's shared module in the

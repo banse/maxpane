@@ -31,21 +31,21 @@ rule overrides its "take the heavier path" and its Bounded path maps to Tier 1.)
 
 - **Tier 0 — hotfix.** ≤ 2 files and ≤ ~30 production lines, or docs-/comment-/test-only.
   Touches none of: a layout pin or its `#:` block, `data/*_models.py` key lists /
-  `WIDGET_SIGNATURES`, a shared `widgets/*.py` module, `templates/`, an endpoint pool, a new
+  `WIDGET_SIGNATURES`, a shared `widgets/*.py` module, an endpoint pool, a new
   dashboard/body/key. The session implements it itself: no brainstorm doc, dispatch, reviewer,
   ledger or report. One regression test if behaviour changed; mutation proof only where a rule
   already demands it. Run the touched file's tests plus the screen test that composites it (for
   a docs edit: the doc-pinning tests, see Tests); cite the last green suite. Commit. Time box: 30 min.
 - **Tier 1 — bounded change.** One dashboard, ≤ 6 files; may move one pin (re-sweep in situ,
   update its `#:` block) or change that dashboard's own data module; no shared widget, no
-  `templates/`, no contract key added. Design in chat, owner says yes. One implementer (or the
+  contract key added. Design in chat, owner says yes. One implementer (or the
   session), TDD + mutation proof on the changed behaviour; tests = touched files + composing
   screen test (+ layout test if a pin moved, + address sweep if an address cell changed). ONE
   reviewer pass (mid-tier model, reviewer contract below), at most ONE fix round + scoped
   re-review; residuals go to the followups doc. No ledger or report files — the commit message is
   the evidence. No suite.
 - **Tier 2 — architectural.** New dashboard, body, widget or contract key; any change to a shared
-  `widgets/*.py`, `templates/`, `data/*_models.py`, an endpoint pool, or > 6 files / > 1
+  `widgets/*.py`, `data/*_models.py`, an endpoint pool, or > 6 files / > 1
   dashboard. Spec + plan in `docs/`; one implementer per work package; one task review per diff;
   fix rounds capped at 2; final whole-branch review on the most capable model; ONE fix wave; ONE
   scoped re-review; full suite once, by the controller, before merge; followups doc updated; no
@@ -69,7 +69,6 @@ maxpane_dashboard/   __main__.py (CLI) · app.py (MaxPaneApp, _GAME_CYCLE) · co
   data/              per-dashboard client / cache / manager / models
   screens/           one Screen per dashboard + splash, game_select, wallet_input, refresh_guard,
                      dashboard_screen.py (DashboardScreen: lifecycle + PANELS dispatch)
-  templates/         copy-sources for new dashboards; a copy never propagates a fix
   widgets/           shared: panels, sparkline_common, markup_safety, address, status_bar · one pkg per dashboard
 maxpane/             Rust intro crate · sybilkit/  SECOND Python distribution, maxpane-independent
 tests/               analytics/ data/ screens/ widgets/ address_sweep/ fixtures/ · scripts/ one-shot tooling
@@ -168,8 +167,9 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
   ban by hostname), `omniatech`, `ethereum.blockpi.network`, `eth.merkle.io`. **Never in a log
   pool:** `rpc.flashbots.net` (silently truncates). `ethereum-rpc.publicnode.com` refuses archive
   `eth_getLogs` on mainnet only. Working pools: `rules/data.md`.
-- `templates/` is how bugs propagate: a defect there reaches every dashboard not yet written,
-  and a fix there reaches no existing copy. The DOTA API is NXDOMAIN; Bakery's season ended.
+- New panels subclass `widgets/panels.py` (rules/widgets.md); the `templates/` copy-sources
+  were deleted in 2026-09 because a copy never propagates a fix. The DOTA API is NXDOMAIN;
+  Bakery's season ended.
 
 ## Working with agents
 

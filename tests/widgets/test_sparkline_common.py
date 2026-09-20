@@ -1,13 +1,14 @@
 """MEDI-36: the sparkline helpers are shared code, not per-dashboard copies.
 
-``templates/`` is the seed every new dashboard is grown from, so a defect
-there is a defect in every dashboard that has not been written yet.  The
-review found the mechanism in action: ``_coerce_points`` existed as three
-byte-identical copies (ttt, talismans, fwa -- each copied from the
+``templates/`` was the seed every new dashboard was grown from (deleted in
+Branch 8 WP-B; a new sparkline panel subclasses ``panels.SparklinePanel``),
+so a defect there was a defect in every dashboard that had not been written
+yet.  The review found the mechanism in action: ``_coerce_points`` existed
+as three byte-identical copies (ttt, talismans, fwa -- each copied from the
 previous dashboard) alongside three *older* copies (ocm, cattown, dota)
 that had never received the ``None``-tolerance hardening at all, while
-``templates/sparkline_template.py`` -- the file the ninth dashboard will
-be copied from -- carried the unhardened version.
+``templates/sparkline_template.py`` -- the file the ninth dashboard would
+have been copied from -- carried the unhardened version.
 
 Two things are therefore asserted here:
 
@@ -16,8 +17,8 @@ Two things are therefore asserted here:
    sparkline module may define its own.  This is the guard that stops the
    fork from re-opening -- a future dashboard that pastes the helpers
    instead of importing them fails this test.
-2. **The hardening actually reaches every dashboard**, including the
-   template.  Each widget is mounted in a real ``App`` and driven with a
+2. **The hardening actually reaches every dashboard.**  Each widget is
+   mounted in a real ``App`` and driven with a
    history full of ``None`` entries and ragged rows, then pumped through
    an idle cycle, because Textual defers markup parsing: a widget that
    raises inside the message pump takes the whole app down (HIGH-7).
@@ -32,10 +33,10 @@ from pathlib import Path
 import pytest
 from textual.app import App, ComposeResult
 
-from maxpane_dashboard.templates.sparkline_template import GameSparklines
 from maxpane_dashboard.widgets import sparkline_common
 from maxpane_dashboard.widgets.base.overview.bt_sparklines import BTSparklines
 from maxpane_dashboard.widgets.cattown.ct_sparklines import CTSparklines
+from maxpane_dashboard.widgets.cookie_chart import CookieChart
 from maxpane_dashboard.widgets.dota.dota_sparklines import DOTASparklines
 from maxpane_dashboard.widgets.fwa.fwa_sparkline import FWASparkline
 from maxpane_dashboard.widgets.ocm.ocm_sparklines import OCMSparklines
@@ -51,7 +52,7 @@ SPARKLINE_WIDGETS = [
     TalismansSparkline,
     FWASparkline,
     BTSparklines,  # Branch 8 WP-A: on panels.SparklinePanel
-    GameSparklines,  # the template -- the seed for dashboard #9
+    CookieChart,  # Branch 8 WP-B: bakery, on panels.SparklinePanel
 ]
 
 #: Histories no ``float`` arithmetic survives untreated.  Each of these
@@ -90,6 +91,10 @@ def _history_kwargs(widget_cls, value) -> dict:
         # FWA gates rendering on this; without it the widget short-circuits
         # to its unavailable state and never reaches the coercion path.
         kwargs["spark_available"] = True
+    if "histories" in params:
+        # Bakery's cookie chart takes one dict of series keyed by bakery
+        # name; the poisoned series goes in as the one bakery's history.
+        kwargs["histories"] = {"bakery": value}
     return kwargs
 
 
@@ -182,20 +187,6 @@ def test_no_module_redefines_a_shared_helper(widget_cls) -> None:
             f"{module.__name__} redefines {sorted(forked)} instead of importing "
             "from widgets/sparkline_common.py -- import it, do not copy it (MEDI-36)"
         )
-
-
-def test_template_seeds_an_import_not_a_copy() -> None:
-    """The template must hand the next dashboard an import.
-
-    Whatever ``sparkline_template.py`` contains is what dashboard #9 will
-    contain, verbatim.
-    """
-    source = Path(
-        inspect.getmodule(GameSparklines).__file__
-    ).read_text(encoding="utf-8")
-    assert "from maxpane_dashboard.widgets.sparkline_common import" in source
-    assert "def _coerce_points" not in source
-    assert "def _build_sparkline" not in source
 
 
 # ---------------------------------------------------------------------------

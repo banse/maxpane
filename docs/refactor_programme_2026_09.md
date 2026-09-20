@@ -2413,6 +2413,176 @@ their new cases are table rows. No deletion, no rename anywhere.
 
 **Branch 8 WP-A re-review of fix round 1 (2026-09-20): Approved.** All six findings ADDRESSED, each behind a mutation the reviewer re-ran against the named file: both `write_guarded` removals now redden the composited pins (the signals one also reddens `test_a_malformed_hero_poll_after_a_good_one_is_not_shown_as_live[BTSignals]`); the `value_color=None` path was compared against a re-implementation of the pre-fix `fmt_signal_trailing` over 4,200 label/value/indicator/colour/width combinations with 0 differences; the `_HERO_ROWS` absent-word field is load-bearing (`"--"` → `"ZZZ"` reddens the talismans case); `b8_rev2_base.*` re-rendered from `81ef1da` cmp identical to `b8_wpa_base.*`. 385 passed over nine named files, 191 guard. One new Minor, N1: MEDI-38 claim 2 (a real `0` is a number) is untested for every `_HERO_ROWS` entry, BT included — filed as follow-up #33, not fixed. **WP-A closed at `81ef1da`; WP-B starts from this head.**
 
+**Branch 8 WP-B outcome (2026-09-20).** The six top-level bakery widgets are on the bases:
+`HeroMetrics(HeroRow)` with `HeroBox(HeroBoxBase)` (kept under its own name because
+`minimal.tcss` has a bare `HeroBox` block), `Leaderboard(TableLeaderboard)`,
+`CookieChart(SparklinePanel)` with the copy's 30-cell `SPARK_WIDTH`, `SignalsPanel(SignalsPanelBase)`
+on `fmt_signal_trailing`, `ActivityFeed(RichLogFeed)` keyed on the copy's four fields, and
+`EVTable(PanelBase)`. Every class name and every `update_data` parameter list is unchanged and
+`widgets/__init__.py` is untouched, so `screens/bakery.py`'s `PANELS` and the panel-row agreement
+test were not touched. Every spacer `Static`, per-panel title class and `DEFAULT_CSS` title block
+is gone from the six modules; the two **geometry** blocks stay (`Leaderboard > DataTable { height:
+1fr }`, `ActivityFeed > RichLog { height: 1fr; padding: 0 1; scrollbar-size: 1 1 }`).
+`themes/minimal.tcss` lost exactly the five bakery title blocks — `Leaderboard > Static`,
+`CookieChart > .chart-title`, `SignalsPanel > .signals-title`, `ActivityFeed > .feed-title`,
+`EVTable > .ev-title` — and nothing else (the nine bare `HeroMetrics` / `HeroBox` / `Leaderboard` /
+`Leaderboard DataTable` / `CookieChart` / `SignalsPanel` / `ActivityFeed` / `ActivityFeed RichLog` /
+`EVTable` geometry blocks remain; a `guard` test pins the five absences).
+**`maxpane_dashboard/templates/` is deleted whole** — nine files, `git rm` by pathspec — and every
+live reference retired: `tests/screens/test_refresh_guard.py` no longer walks the template screen,
+`tests/widgets/test_markup_safety.py`'s two hostile-entry tests run against a local
+`_HostileBoard(TableLeaderboard)` instead of `GameLeaderboard`, `tests/widgets/test_sparkline_common.py`
+lists `CookieChart` where it listed `GameSparklines`, `tests/widgets/test_panels.py` drops
+`maxpane_dashboard.templates` from the clash scan, `CLAUDE.md` (three tier lines, the tree, the
+hazards bullet) and `rules/widgets.md` (frontmatter path, the copy-source sentences, step 3 of
+"Reuse before you build") describe the deletion. `panels.py` changed by docstring only (four
+"the template" mentions → "the since-deleted template"); no code line in it moved.
+
+*Line counts are raw `wc -l`.*
+
+| file | before | after |
+| --- | --- | --- |
+| `widgets/hero_metrics.py` | 187 | 124 |
+| `widgets/leaderboard.py` | 87 | 93 |
+| `widgets/cookie_chart.py` | 115 | 65 |
+| `widgets/signals_panel.py` | 118 | 116 |
+| `widgets/activity_feed.py` | 214 | 160 |
+| `widgets/ev_table.py` | 111 | 105 |
+| **six bakery modules total** | **832** | **663** |
+| `templates/` (9 files) | 1,080 | 0 |
+| `themes/minimal.tcss` (5 bakery title blocks) | 2965 | 2942 |
+| `widgets/panels.py` | 978 | 979 |
+| `tests/widgets/test_bakery_widgets.py` (new, 32 tests) | — | 744 |
+
+**169 lines out of the six modules, 1,080 out of `templates/`, 23 out of the stylesheet; one
+line into `panels.py` (a docstring wrap).** The leaderboard grew by six: its `__init__` now stashes
+the rates and the leader's count for the base's `build_row(index, item)` hook, and the docstring
+records why an unreadable leader leaves the gap column saying `--`.
+
+**Rendering proof.** `render_case.py bakery b8_wpb_bakery` and `render_case.py base b8_wpb_base`
+on the sweep payloads under the real stylesheet and a frozen clock, at 170×50 and at the 143 pin,
+against the WP-A-head captures:
+
+```
+$ cmp b8_before_bakery.default.170x50.txt     b8_wpb_bakery.default.170x50.txt
+b8_before_bakery.default.170x50.txt b8_wpb_bakery.default.170x50.txt differ: char 2876, line 13
+$ cmp b8_before_bakery.default.pin-143x50.txt b8_wpb_bakery.default.pin-143x50.txt
+b8_before_bakery.default.pin-143x50.txt b8_wpb_bakery.default.pin-143x50.txt differ: char 2427, line 13
+$ cmp b8_fix1_base.default.170x50.txt        b8_wpb_base.default.170x50.txt       -> identical (exit 0)
+$ cmp b8_fix1_base.default.pin-143x50.txt    b8_wpb_base.default.pin-143x50.txt   -> identical (exit 0)
+```
+
+Base is byte-identical at both sizes (the `panels.py` change is docstring-only, as it should be).
+Bakery differs at both sizes in three panels and nowhere else, and every difference is a
+`Loading...` that became `unavailable`: line 13, COOKIE TRENDS (`  Loading...` → `  unavailable`,
+two cells further right because the seed was the bare `LOADING` and the fallback is the
+`UNAVAILABLE_LINE` row shape); lines 19–23, SIGNALS (one `Loading...` → three rows `Late-Join EV`
+/ `Gap Trend` / `Leader Dominance` each ending `unavailable  ●`, then `→ Recommendation:
+unavailable`); lines 34–36, BEST PLAYS (`Loading...` → three `unavailable` rows). Hero boxes, the
+leaderboard row, the feed line, every title and every column are unchanged. The cause is the
+payload, not the widgets: `tests/address_sweep/builders.py:555-597`'s bakery payload carries no
+`chart_histories`, no `late_join_ev` / `gap_analysis` / `dominance` / `recommendation` and no
+`boost_rankings` / `attack_rankings`, so the `keys(...)` adapters pass `None`; the copies raised on
+`None` into the screen's `except` and left the mount's `Loading...` seed on screen as if live — the
+MEDI-38 stale-value case — and the migrated panels say `unavailable` where they could not look.
+
+**Failed-read statement.** From the real manager, `chart_histories`, `late_join_ev`, `gap_analysis`,
+`dominance`, `recommendation`, `boost_rankings` and `attack_rankings` are never `None`
+(`data/manager.py:130-131, 141, 159, 182, 184, 192-194` compute them unconditionally) and a wholly
+failed fetch re-raises out of `fetch_and_compute` (`manager.py:85-87`), so the screen skips every
+panel and the `as of` marker carries the age. `None` reaches these widgets only from a partial
+payload — what `DashboardScreen`'s `keys()` yields for an absent key — and the sweep payload above
+is the one place that happens today. `bakeries` and `events`, by contrast, arrive as `[]` when
+their sub-fetch failed (`data/client.py:330-334` and `343-347` log a warning and substitute the
+empty list): a failed read wearing a real negative's clothes, the C1 shape Branch 7 fixed in dota's
+manager, pre-existing here and filed as #35 rather than fixed in a widget work package.
+
+**Mutations.** Eighteen, each restored by inverse edit (`filecmp` against a snapshot, `restored=True`
+in every row) and each run against the one named file:
+
+| # | mutation | file run | result | test that reddened |
+| --- | --- | --- | --- | --- |
+| 1 | `hero_metrics.py` `_BAR_CELLS` 12 → 10 | `test_bakery_widgets.py` | 1 failed, 31 passed | `test_countdown_bar_is_twelve_cells_and_the_percent_is_elapsed` |
+| 2 | countdown label always `SEASON COUNTDOWN` | same | 1 failed, 31 passed | `test_an_ended_season_relabels_the_box_and_says_so_in_yellow` |
+| 3 | `leaderboard.py` leader highlight `index == 0` → `== 1` | same | 1 failed, 31 passed | `test_the_leader_row_is_bold_with_a_green_rate_and_the_second_is_not` |
+| 4 | `Bakery` column 24 → 22 | same | 1 failed, 31 passed | `test_leaderboard_header_cells_sit_at_the_five_column_widths` |
+| 5 | `cookie_chart.py` `SPARK_WIDTH = 30` dropped (base default 22) | same | 1 failed, 31 passed | `test_cookie_chart_draws_a_thirty_cell_bar_after_an_eight_cell_label` |
+| 6 | `_label_cell` escapes before the clip | same | 1 failed, 31 passed | `test_cookie_chart_escapes_the_name_after_clipping_it` |
+| 7 | `isinstance(histories, dict)` guard removed | same | 1 failed, 31 passed | `test_cookie_chart_says_unavailable_when_the_histories_are_not_a_dict` |
+| 8 | `signals_panel.py` fallback drops `value_color="yellow"` | same | 1 failed, 31 passed | `test_a_signal_the_manager_could_not_compute_says_unavailable` |
+| 9 | recommendation written unescaped | same | 1 failed, 31 passed | `test_the_recommendation_is_centred_and_escaped` |
+| 10 | `None` recommendation → `""` | same | 1 failed, 31 passed | `test_a_missing_recommendation_is_unavailable_not_blank` |
+| 11 | `activity_feed.py` `dedupe_key` gains the title | same | 1 failed, 31 passed | `test_the_dedupe_key_is_time_launcher_type_and_description` |
+| 12 | `hhmm` → `time.localtime` formatting | same | 2 failed, 30 passed | `test_the_feed_paints_time_iconed_launcher_and_the_title`, `test_a_launcher_less_event_is_the_bakerys_own` |
+| 13 | `ev_table.py` `_row` reads `boost_rankings or []` | same | 1 failed, 31 passed | `test_rankings_the_manager_could_not_produce_say_unavailable_thrice` |
+| 14 | header `{'EV':>10}` → `{'EV':>9}` | same | 1 failed, 31 passed | `test_ev_table_header_and_rows_sit_at_the_14_10_14_8_cells` |
+| 15 | `minimal.tcss`: `Leaderboard > Static { … margin: 0 0 1 0 }` pasted back | same | 1 failed, 31 passed | `test_the_stylesheet_carries_no_bakery_title_block` |
+| | same | `test_title_blank_row.py` | 55 passed | none — the blank-row count is unchanged because the base's margin and the pasted one coincide; that is why the guard test exists |
+| 16 | `_UNAVAILABLE = "[yellow]unavailable[/]"` pasted into `hero_metrics.py` | `test_panels.py` | 1 failed, 152 passed | `test_no_migrated_module_redeclares_what_panels_py_owns[widgets/hero_metrics.py]` |
+| 17 | a private `_coerce_points` pasted into `cookie_chart.py` | `test_sparkline_common.py` | 2 failed, 96 passed | `test_helpers_are_the_shared_functions[CookieChart]`, `test_no_module_redefines_a_shared_helper[CookieChart]` |
+| 18 | `CookieChart(SparklinePanel)` → `CookieChart(PanelBase)` | `test_panels.py` | 1 failed, 152 passed | `test_every_migrated_panel_subclasses_a_panels_base[bakery-6]` |
+
+**Tests.** Named set green, one command per group: **A** (widgets/screens) 619 passed —
+`test_activity_feed_degradation.py` 30, `test_hero_metrics_degradation.py` 34,
+`test_ev_table_catalog_source.py` 4 (the 21 functions of the three acceptance files unchanged:
+`git diff --stat b3b3e1a -- <the three>` is empty), `test_bakery_widgets.py` 32 (new),
+`test_panels.py` 153 (was 146: six `bakery` modules in the redeclaration walk, one `[bakery-6]`
+row), `test_title_blank_row.py` 55 (was 53: `Leaderboard`, `ActivityFeed`), `test_markup_safety.py`
+78 (unchanged), `test_sparkline_common.py` 98 (was 99: one function out, `CookieChart` replaces
+`GameSparklines` row for row), `test_hidden_shared_address_icons.py` 8 (was 10), `test_medi38_unavailable_state.py`
+44, `test_base_widgets.py` 20, `test_refresh_guard.py` 6 (was 7), `test_dashboard_screen.py` 26,
+`test_app_startup.py` 21, `test_address_rule.py` 10; **B** `test_address_icons_everywhere.py -k
+"bakery or base"` 4 passed (39 deselected); **C** the doc-pinning files
+(`rg -n 'CLAUDE\.md|README\.md|SKILL\.md|rules/' tests/`) 4,081 passed in 12:32; `-m guard tests`
+last, after the two docs were final: 192 passed (8,171 deselected). **Name-list diff** against `b3b3e1a`, exactly the four template tests
+the brief names and nothing else: `test_refresh_guard.py` −`test_template_screen_inherits_the_guard`;
+`test_sparkline_common.py` −`test_template_seeds_an_import_not_a_copy`;
+`test_hidden_shared_address_icons.py` −`test_each_template_uses_the_helper_and_defines_no_formatter`;
+`test_markup_safety.py` `test_template_leaderboard_survives_hostile_entries` →
+`test_table_leaderboard_survives_hostile_entries` and `…_hostile_address_fallback` →
+`test_table_leaderboard_survives_hostile_address_fallback` (re-targeted, the brief's option, so the
+hostile-`DataTable` coverage survives the template's deletion). `test_panels.py`,
+`test_title_blank_row.py` and the three acceptance files: no function added, removed or renamed.
+
+**Remaining `templates` mentions are all history**, none a live path: `CLAUDE.md` (the hazards
+bullet says they were deleted), `rules/widgets.md` (two past-tense sentences), `panels.py`
+docstrings (four "since-deleted template"), `screens/refresh_guard.py:16`,
+`widgets/sparkline_common.py:11-22`, `widgets/surf/pool4u_signals.py:3`, `HANDOVER.md:139, 181, 186`
+(the backlog items this work package closes) and the dated plan/PRD/review documents under
+`docs/`. `ls maxpane_dashboard | grep -c templates` is 0.
+
+**Deviations from a byte-identical migration**, each intended and each pinned:
+(1) three panels show `unavailable` instead of a stale `Loading...` on a `None` payload (the
+render diff above; MEDI-38); (2) `CookieChart` writes a blank line for an empty `[]` series where
+the copy drew a thirty-cell `▁` baseline ending `0 ●` — a flat baseline is a run of zeroes that
+never happened (the `SparklinePanel` contract); (3) `CookieChart` says `unavailable` on its first
+line for a non-dict `histories`, distinct from `{}` which blanks all three; (4) `CookieChart._label_cell`
+escapes **after** the base clips, so a name with `[` reaches the screen whole; (5) the feed's time
+column goes through `fmt.hhmm` instead of the copy's private `_format_event_time` — `None` and a
+non-numeric stamp render `??:??` as before, and so now does a non-positive stamp (`0`), which the
+copy printed as the local epoch hour; (6) the feed gains the base's flicker guard: a poll with nothing new
+leaves the log alone where the copy cleared and redrew it every non-empty poll (same pixels unless
+a keyed event's *title* changes underneath its key, which the game API does not do); (7) `_who_text`
+passes no `explorer=` — the copy declared none and Abstract (chain 2741) is not in
+`widgets/explorer.py`'s allowlist, so the row renders a copy icon and no link, as the sweep's
+`explorer=None` case asserts; (8) leaderboard rows are built inside the base's per-row guard, so one
+unreadable bakery is one missing line, and a leader whose `tx_count` cannot be read leaves every
+gap `--` rather than raising; (9) a `None` recommendation renders `→ Recommendation: unavailable`
+and any other value is `str()`-ed before escaping; (10) `EVTable` renders three `unavailable` rows
+for `None` rankings; (11) `_format_event`'s two byte-identical success branches (outgoing and
+incoming) are one branch; (12) the two hostile-entry tests were re-targeted rather than deleted.
+
+**Seen, not fixed** (filed as #34–#40 in `docs/handover_followups_2026_09.md`): the
+`SparklinePanel` base writes `EMPTY_TEXT` for a `None` series (C1 shape in the base, Tier 2);
+bakery's client substitutes `[]` for a failed bakeries/activity fetch (C1, Tier 1); `_label_cell` is
+a private base hook a subclass now overrides; `Leaderboard.update_data`'s `prize_pool_usd` is
+unused (pre-existing); the bare `HeroBox { height: 7; border: … }` block leaves three inner rows so
+the countdown bar / rate sub-line composites only without the border (the existing degradation
+test already dodges it with a border-less harness, as does the new file); the DataTable cursor
+row's `color: $text` hides the leader's `[green]` rate on every leaderboard; and the sweep's bakery
+payload lacks the chart/signal/ranking keys, so it certifies the degraded shape of three panels and
+never their live one.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
