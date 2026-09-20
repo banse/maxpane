@@ -242,3 +242,20 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     **Tier 1**, not Tier 0: it changes dota's own data module and needs its own regression test
     for the two paths. Reviewer's evidence: `data/dota_manager.py:64-70`, `:101-108`, `:318`
     (Branch 7 WP-A review C1 follow-up, filed 2026-09-20).
+24. **`fmt_signal` treats an empty string as a value, where the eight copies treated it as
+    absent.** `widgets/panels.py:284-287` reads `sig.get("label", "")`,
+    `sig.get("value_str", "")`, `sig.get("color", "dim")` and `sig.get("indicator", "●")`. A
+    `dict.get` default only fires when the **key is missing**; the talismans and ttt copies used
+    `or`-defaults (`sig.get("value_str") or "--"`), which also fire on `""` and `None`. So a
+    well-formed dict carrying `value_str=""` now renders an empty value cell where the copies
+    rendered `--`, and `color=""` or `color=None` would emit `[]` / `[None]` — not valid Rich
+    markup, and the row's guard would drop the line rather than show it. Not reachable today and
+    not introduced by WP-B: `data/talismans_models.py:84-92` and `data/ttt_models.py:127-135`
+    declare all four fields as required `str`, both signal dicts are computed per poll from
+    analytics rather than read back from a cache file, and the behaviour has been the base's
+    since Branch 6 — WP-B only moved two more packages onto it. The fix is `or`-defaults at all
+    four reads, so empty and `None` are treated as absent, which is what every copy the base
+    replaced did. **Minor, Tier 0** when `widgets/panels.py` is next touched — one function, four
+    lines, and a `test_panels.py` case per field. Reviewer's evidence: `widgets/panels.py:284-287`
+    against the pre-migration `tal_signals.py` / `ttt_signals.py` at `e9a6307` (Branch 7 WP-B
+    review M4, filed 2026-09-20).

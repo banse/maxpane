@@ -1781,12 +1781,37 @@ not have. Both `dedupe_key` return `None` — these events carry no key the pane
 unique — so every poll is all-new and redraws, which is what the unconditional `clear()` they
 replace did. Recorded in both module docstrings.
 
+Stream mode has **two consequences the first write of this paragraph named neither of**, added in
+fix round 1 (M5). (a) An **empty poll after a drawn feed leaves the rows on screen**; the copies
+cleared and wrote `No activity yet`. (b) A **non-empty poll whose every row fails to format writes
+`No activity yet`** (`written == 0` with nothing ever drawn); the copies left the log blank. Both
+are the base's merged contract and both are right here, because — and this is the check that
+matters, since it is exactly the shape of WP-A's C1 — **neither manager can serve `None` or a
+failure-shaped `[]` for this key**: `data/talismans_manager.py:238-240` and
+`data/ttt_manager.py:355-358` both build `activity_events` from
+`cache.get_activity_for_display(25)`, which sorts the persisted `activity_log` and slices it
+(`talismans_cache.py:178-189`, `ttt_cache.py:493-...`). It never reads the wire, so `[]` means
+"nothing has accumulated", never "this poll failed", and there is no state in which leaving the
+rows shows a number that has expired. dota's roster was the opposite: every row carried an HP true
+only of its own poll, and its manager *did* serve `[]` for a failed read.
+
 **Deviation 5 — the three `DEFAULT_CSS` geometry blocks survive**, on the tables (`> DataTable {
 height: 1fr }`) and the feeds (`> RichLog { height: 1fr; padding: 0 1; scrollbar-size: 1 1 }`),
 same call as WP-A's deviation 4. Deleted from `themes/minimal.tcss`: `TTTLeaderboard >
 .leaderboard-title`, `TTTActivityFeed > .feed-title`, `TTTFeesTable > .fees-title, TTTClaimsTable >
 .claims-title`, `TTTSparkline > .ttt-spark-title` and `TTTSignals > .ttt-signals-title` — 42 lines,
 every one a title class the base now owns. talismans had no title block to delete.
+
+**Deviation 6 — `TalismansSignals` shows `Loading...` before its first poll, where the copy
+showed a blank row.** Added in fix round 1 (M3): a rendering change in a state none of the
+fourteen captures can see, because `render_case.py` polls before it composites.
+`SignalsPanelBase.compose_body` seeds `LOADING_ROW` on the **first row** (never on a separator);
+the old `tal_signals.compose` seeded every row with `""`. This is the base's documented contract
+and the right answer — a panel that has never polled should say so rather than read as four
+signals that are all empty — but it is a change, so it is listed. ttt is unaffected in practice:
+its first row is the optional fresh-launch row, which `TTTSignals.compose_body` hides with
+`display = False`, so the seed lands on a collapsed row and the pre-poll panel is blank exactly as
+before.
 
 **Mutation proofs** (restored by inverse edit; `git status` clean after each):
 
@@ -1835,6 +1860,82 @@ is green either way and the fix is a one-word rename plus whatever the drawn sta
 Minor, Tier 0 when the file is next touched. Also: `TTTFeesTable` and `TTTClaimsTable` keep one
 `_fmt_eth` each, at 4 and 5 decimal places, pinned by goldens — a single `fmt_eth(value, dp)` in
 `widgets/fmt.py` would retire both, but the goldens are outside this WP's diff.
+
+**Branch 7 WP-B fix round 1 (2026-09-20).** Review verdict `Needs fixes: 0 Critical, 1 Important,
+5 Minor`; all six addressed. **Tests and docs only — no production file changed**, and the eight
+talismans/ttt captures are byte-identical to the WP-B ones:
+
+```
+$ cmp b7_wpb_talismans.default.170x50.txt      b7_wpb_fix1_talismans.default.170x50.txt      -> identical
+$ cmp b7_wpb_talismans.default.pin-143x50.txt  b7_wpb_fix1_talismans.default.pin-143x50.txt  -> identical
+$ cmp b7_wpb_talismans.view-c.170x50.txt       b7_wpb_fix1_talismans.view-c.170x50.txt       -> identical
+$ cmp b7_wpb_talismans.view-c.pin-143x50.txt   b7_wpb_fix1_talismans.view-c.pin-143x50.txt   -> identical
+$ cmp b7_wpb_ttt.default.170x50.txt            b7_wpb_fix1_ttt.default.170x50.txt            -> identical
+$ cmp b7_wpb_ttt.default.pin-143x50.txt        b7_wpb_fix1_ttt.default.pin-143x50.txt        -> identical
+$ cmp b7_wpb_ttt.view-c.170x50.txt             b7_wpb_fix1_ttt.view-c.170x50.txt             -> identical
+$ cmp b7_wpb_ttt.view-c.pin-143x50.txt         b7_wpb_fix1_ttt.view-c.pin-143x50.txt         -> identical
+```
+
+**I1 (Important) — ttt's fresh-launch `display` toggle had no test, and the migration is what
+made it load-bearing.** Before WP-B the fresh row was seeded `""`, so losing the toggle cost a
+blank row. After it, `render_signal` writes `  [yellow]●[/] unavailable` into that row *before*
+the toggle hides it, so a lost toggle gives every live ttt SIGNALS panel with no fresh launch a
+permanent `● unavailable` row and shifts the three real rows down one. The reviewer mutated it to
+`fresh.display = True` and the whole named set (240) plus the ttt sweep cases stayed green.
+New module `tests/widgets/test_ttt_widgets.py`, in the shape of `test_talismans_widgets.py`'s
+composited pins (`render_strips()`, `_PIN_SIZE = (120, 24)`), pins **both directions**: with
+`fresh_launch_signal=None` the panel is buybacks / decay / separator / concentration and the word
+`unavailable` appears nowhere; with a real fresh dict the row is visible at row index 3 (title,
+blank — `PanelBase`'s margin, which no payload can cancel — then fresh). Two tests rather than
+one, because the toggle can fail in both directions and a single test would leave `display = False`
+unproven.
+
+**M1 — five `TTTSparkline` constants were unpinned.** `LABEL_WIDTH = 12` mutated to `8` left
+everything green, as did `SHOW_ARROW`, `MIN_POINTS`, `EMPTY_KEEPS_LABEL` and the `$` `fmt_value`
+override. Four more pins in the same new module. The label-width one asserts the padding
+(`BURNS` padded to twelve cells), not only that the two bars start in the same column: at `8` both
+labels still align — the longer one simply truncates to `24H VOLU` — so the same-column assertion
+alone would not have bitten.
+
+**M2 — `TalismansSignals`' `None` separator was unpinned.** Deleting it left 299 named cases plus
+the sweep plus the guard tests green while the panel lost a row of structure. One composited pin
+in `test_talismans_widgets.py`: FORGE MOMENTUM sits two rows below CUT/MERGE with a blank between,
+and SCARCITY follows FORGE with no gap — one separator, not two.
+
+**M3 — a sixth deviation, recorded above.** `SignalsPanelBase.compose_body` seeds `LOADING_ROW` on
+the first row, so `TalismansSignals` shows `Loading...` before its first poll where the copy showed
+a blank. Correct and the base's contract, but invisible to the fourteen captures (which poll before
+they composite), so it is now deviation 6 with the ttt case (seed lands on the collapsed
+fresh-launch row, so ttt is unchanged) stated beside it.
+
+**M4 — filed, not fixed: follow-up #24.** `fmt_signal` reads `sig.get("value_str", "")` /
+`.get("color", "dim")` / `.get("indicator", "●")`, where the eight copies used `or`-defaults, so a
+dict carrying `value_str=""` renders an empty cell (copies: `--`) and `color=""`/`None` would emit
+`[]`/`[None]`. Unreachable today — `data/talismans_models.py:84-92` and `data/ttt_models.py:127-135`
+declare all four as required `str`, computed per poll and never read back from a cache file — and
+pre-existing base behaviour since Branch 6. Minor, Tier 0 when `panels.py` is next touched.
+
+**M5 — deviation 4 widened**, above: stream mode's two consequences and the check that the dota
+C1 shape cannot recur here.
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each; counts over the two
+widget modules, 18 cases):
+
+| mutation | reddened |
+| --- | --- |
+| `TTTSignals` `fresh.display = True` | `test_ttt_widgets.py::test_no_fresh_launch_hides_the_row_entirely` — 1 failed, 17 passed. This is the reviewer's own mutation, which previously reddened nothing |
+| `TTTSignals` `fresh.display = False` | `::test_a_fresh_launch_shows_the_row_at_the_top_of_the_panel` — 1 failed, 17 passed. The other direction, and a *different* test: neither half rides on the other |
+| `TTTSparkline.LABEL_WIDTH` 12 → 8 | `::test_both_sparkline_labels_are_padded_to_the_same_twelve_cells` plus three more that read the truncated label — 4 failed, 14 passed |
+| `TTTSparkline.SHOW_ARROW = True` | `::test_the_sparkline_draws_no_trend_arrow` and the volume-cell test (the arrow displaces the cell) — 2 failed, 16 passed |
+| `TTTSparkline.fmt_value` → `super()` (`fmt_compact`) | `::test_the_volume_cell_is_dollars_at_two_decimals_not_a_compact_count` and `::test_a_series_too_short_to_draw_keeps_its_label` — 2 failed, 16 passed |
+| `TTTSparkline.MIN_POINTS` 2 → 1 | `::test_a_series_too_short_to_draw_keeps_its_label` — 1 failed, 17 passed |
+| `TTTSparkline.EMPTY_KEEPS_LABEL = False` | `::test_a_series_too_short_to_draw_keeps_its_label` — 1 failed, 17 passed |
+| the bare `None` separator deleted from `TalismansSignals.ROWS` | `test_talismans_widgets.py::test_the_signals_separator_keeps_forge_momentum_off_the_cutmerge_group` — 1 failed, 17 passed |
+
+**Tests.** New `tests/widgets/test_ttt_widgets.py` (6 cases); `test_talismans_widgets.py` 11 → 12.
+Green: **550** across the eighteen named files (543 at `ef3a16e`, +7), **4 passed / 39 deselected**
+on `test_address_icons_everywhere.py -k "talismans or ttt"`, **191** on `-m guard tests`. Every
+edited test file's function-name list diffed against `ef3a16e`: additions only, no deletions.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

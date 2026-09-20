@@ -417,3 +417,37 @@ async def test_the_empty_leaderboard_says_no_data_under_the_wallet_column():
     assert header.index("WALLET") == row.index("No data"), (header, row)
     # ... and the rank column is a dash, not the word.
     assert row.lstrip().startswith("--"), row
+
+
+@pytest.mark.asyncio
+async def test_the_signals_separator_keeps_forge_momentum_off_the_cutmerge_group():
+    """Mutation: delete the bare ``None`` item from ``ROWS`` -> this reddens.
+
+    The separator is a blank ``.panel-line`` *between* two groups of
+    rows -- conservation / cut-merge above, forge / scarcity below -- and
+    it is not the title's blank row, which is ``PanelBase``'s margin. It
+    was unpinned: removing it left the whole named set, the sweep and the
+    guard tests green while the panel lost a row of structure.
+    """
+    def _sig(value_str: str) -> dict:
+        return {
+            "label": "ignored",      # the rows are label-less
+            "value_str": value_str,
+            "indicator": "●",
+            "color": "green",
+        }
+
+    lines = await _composited(
+        TalismansSignals(),
+        conservation_signal=_sig("cores conserved"),
+        cutmerge_signal=_sig("net +3 cuts"),
+        forge_momentum_signal=_sig("2 mythics 24h"),
+        mythic_scarcity_signal=_sig("0.8% mythic"),
+    )
+    cutmerge_at = lines.index(_line_with(lines, "net +3 cuts"))
+    forge_at = lines.index(_line_with(lines, "2 mythics 24h"))
+    assert forge_at == cutmerge_at + 2, lines
+    assert lines[cutmerge_at + 1].strip() == "", lines
+    # Scarcity follows forge with no gap: one separator, not two.
+    scarcity_at = lines.index(_line_with(lines, "0.8% mythic"))
+    assert scarcity_at == forge_at + 1, lines
