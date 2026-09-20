@@ -98,15 +98,19 @@ class CatTownManager:
             self._error_count += 1
             raise
 
-        # Fetch raffle ticket count (non-critical, best-effort)
-        raffle_total_tickets = 0
+        # Fetch raffle ticket count (non-critical, best-effort).  A failed
+        # read is ``None``, never ``0``: the cache persists this series, so
+        # a sentinel zero would outlive the outage and read for ever after
+        # as "nobody bought a ticket that round".
+        raffle_total_tickets: int | None = None
         try:
             raffle_total_tickets = await self.client.get_raffle_total_tickets()
         except Exception:
             pass
 
-        # Derive leader weight from competition entries
-        leader_weight = 0.0
+        # Derive leader weight from competition entries.  No entries means
+        # there is no leader to weigh -- not a leader weighing nothing.
+        leader_weight: float | None = None
         if snapshot.competition.entries:
             leader_weight = snapshot.competition.entries[0].fish_weight_kg
 

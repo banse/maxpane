@@ -3,29 +3,35 @@
 The ``DOTACache`` stores the most recent ``DOTASnapshot`` and accumulates
 lane frontline histories over time so the dashboard can render sparklines.
 
+Everything but ``update()`` and the named getters is inherited from
+``data/series_cache.SeriesCache``; see that module for the persistence
+contract and for why ``record()`` drops ``None`` instead of zero-filling.
+
 Thread safety: this module is designed for single-threaded asyncio use.
 No locking is performed.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import time
 from collections import deque
-from typing import Any
 
 from maxpane_dashboard.data.dota_models import DOTASnapshot
-from maxpane_dashboard.data.series_points import coerce_points
+from maxpane_dashboard.data.series_cache import (
+    SeriesCache,
+    SeriesSpec,
+    TimeSeriesPoint,
+)
 
 logger = logging.getLogger(__name__)
 
-# Type alias for a single time-series data point: (epoch_seconds, value)
-TimeSeriesPoint = tuple[float, float]
+__all__ = ["DOTACache", "TimeSeriesPoint"]
+
+# Lane key in ``game_state.lanes`` -> the series it feeds.
+_LANE_SERIES = (("top", "top_history"), ("mid", "mid_history"), ("bot", "bot_history"))
 
 
-class DOTACache:
+class DOTACache(SeriesCache):
     """Caches DOTA data and accumulates lane frontline time-series.
 
     Parameters
@@ -35,13 +41,17 @@ class DOTACache:
         poll interval, 120 samples covers 60 minutes.
     """
 
-    def __init__(self, max_history: int = 120) -> None:
-        self._max_history = max_history
-        self.top_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
-        self.mid_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
-        self.bot_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
-        self._latest: DOTASnapshot | None = None
-        self._last_updated: float | None = None
+    SERIES = (
+        SeriesSpec("top_history"),
+        SeriesSpec("mid_history"),
+        SeriesSpec("bot_history"),
+    )
+    NOUN = "DOTA cache"
+
+    top_history: deque[TimeSeriesPoint]
+    mid_history: deque[TimeSeriesPoint]
+    bot_history: deque[TimeSeriesPoint]
+    _latest: DOTASnapshot | None
 
     # ------------------------------------------------------------------
     # Core operations
@@ -53,141 +63,30 @@ class DOTACache:
         Extracts frontline values from ``game_state.lanes`` for the three
         lanes (top, mid, bot) and appends ``(timestamp, frontline_value)``
         to each history deque.
+
+        A lane the game state does not carry -- or a game state that
+        could not be read at all -- records **nothing** for that lane.
+        A zero here is a real frontline position (the lane is level), so
+        zero-filling an absent lane would draw a battle that never
+        happened.
         """
-        self._latest = snapshot
-        self._last_updated = snapshot.fetched_at
+        self._mark(snapshot)
         ts = snapshot.fetched_at
 
         if snapshot.game_state is not None and snapshot.game_state.lanes:
             lanes = snapshot.game_state.lanes
-            if "top" in lanes:
-                self.top_history.append((ts, float(lanes["top"].frontline)))
-            if "mid" in lanes:
-                self.mid_history.append((ts, float(lanes["mid"].frontline)))
-            if "bot" in lanes:
-                self.bot_history.append((ts, float(lanes["bot"].frontline)))
+            for lane_key, series_name in _LANE_SERIES:
+                if lane_key in lanes:
+                    self.record(series_name, ts, lanes[lane_key].frontline)
 
     def get_top_history(self) -> list[TimeSeriesPoint]:
         """Return ``[(timestamp, frontline), ...]`` for the top lane."""
-        return list(self.top_history)
+        return self.get_series("top_history")
 
     def get_mid_history(self) -> list[TimeSeriesPoint]:
         """Return ``[(timestamp, frontline), ...]`` for the mid lane."""
-        return list(self.mid_history)
+        return self.get_series("mid_history")
 
     def get_bot_history(self) -> list[TimeSeriesPoint]:
         """Return ``[(timestamp, frontline), ...]`` for the bot lane."""
-        return list(self.bot_history)
-
-    def get_latest(self) -> DOTASnapshot | None:
-        """Return the most recently stored snapshot, or ``None``."""
-        return self._latest
-
-    @property
-    def last_updated(self) -> float | None:
-        """Epoch timestamp of the last ``update()`` call, or ``None``."""
-        return self._last_updated
-
-    @property
-    def history_size(self) -> int:
-        """Number of data points in the top history (representative)."""
-        return len(self.top_history)
-
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
-    def save_to_file(self, path: str) -> None:
-        """Persist accumulated history to JSON for restart survival.
-
-        File format::
-
-            {
-                "saved_at": <float>,
-                "max_history": <int>,
-                "top_history": [[ts, val], ...],
-                "mid_history": [[ts, val], ...],
-                "bot_history": [[ts, val], ...]
-            }
-        """
-        payload: dict[str, Any] = {
-            "saved_at": time.time(),
-            "max_history": self._max_history,
-            "top_history": [list(pt) for pt in self.top_history],
-            "mid_history": [list(pt) for pt in self.mid_history],
-            "bot_history": [list(pt) for pt in self.bot_history],
-        }
-
-        # Atomic write: write to temp, then rename
-        tmp_path = path + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            with open(tmp_path, "w") as f:
-                json.dump(payload, f)
-            os.replace(tmp_path, path)
-            logger.info(
-                "DOTA cache saved to %s (%d points)",
-                path,
-                len(self.top_history),
-            )
-        except OSError as exc:
-            logger.warning("Failed to save DOTA cache: %s", exc)
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
-
-    def load_from_file(self, path: str) -> None:
-        """Load previously saved history from a JSON file.
-
-        Silently does nothing if the file is missing or corrupted.
-        Existing in-memory data is replaced on successful load.
-
-        Individual points are validated: anything unusable (``null``, a
-        string, ``NaN``, a wrong-length entry, a negative value, a
-        future-dated timestamp) is dropped and counted rather than
-        raising, because every manager loads its cache in ``__init__``
-        and one bad value used to abort MaxPane startup for every
-        dashboard.
-        """
-        try:
-            with open(path) as f:
-                payload = json.load(f)
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.info("No DOTA cache file to load (%s): %s", path, exc)
-            return
-
-        if not isinstance(payload, dict):
-            logger.warning(
-                "DOTA cache file %s has unexpected format, skipping", path
-            )
-            return
-
-        loaded = 0
-        skipped = 0
-        now = time.time()
-        for key, deque_ref in [
-            ("top_history", self.top_history),
-            ("mid_history", self.mid_history),
-            ("bot_history", self.bot_history),
-        ]:
-            points = payload.get(key, [])
-            if not isinstance(points, list):
-                continue
-            good, dropped = coerce_points(points, now=now)
-            skipped += dropped
-            deque_ref.clear()
-            deque_ref.extend(good)
-            loaded += len(deque_ref)
-
-        if skipped:
-            logger.warning(
-                "Skipped %d unusable point(s) while loading DOTA cache %s",
-                skipped,
-                path,
-            )
-        logger.info(
-            "Loaded DOTA cache from %s: %d total points",
-            path,
-            loaded,
-        )
+        return self.get_series("bot_history")
