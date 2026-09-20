@@ -630,3 +630,100 @@ class TestFrenPetManagerSafeCall:
                 raise RuntimeError("nope")
 
         assert _safe_call(Callable(), default="fallback") == "fallback"
+
+
+# ---------------------------------------------------------------------------
+# Tests: R1 -- a failed attacks read is None in the series, 0.0 on screen
+# ---------------------------------------------------------------------------
+
+class TestFrenPetManagerBattleRateSentinel:
+    """Branch 9 R1: the cache and the widget dict want different things.
+
+    ``battle_rate_history`` is persisted to ``~/.maxpane/frenpet_cache.json``,
+    so a ``0.0`` appended while the attacks feed was down outlives the
+    outage and reads for ever after as a genuine lull -- it drags the
+    Battles sparkline's scale and any trend computed off it.  The widget
+    dict's ``global_battle_rate`` is a *display* default and is out of
+    scope here (follow-up #43): what it shows for "we could not look" is
+    the same question ``rules/data.md`` asks of every degraded cell, and
+    it is answered elsewhere, so this test pins today's value rather than
+    improving it.
+    """
+
+    @staticmethod
+    def _manager_and_snapshot() -> tuple[FrenPetManager, FrenPetSnapshot]:
+        return FrenPetManager(wallet_address="0xabc"), _make_snapshot()
+
+    @pytest.mark.asyncio
+    async def test_a_failed_attacks_read_records_no_battle_rate_point(self) -> None:
+        manager, snapshot = self._manager_and_snapshot()
+        assert list(manager.cache.battle_rate_history) == []
+
+        with patch.object(
+            manager.client, "fetch_snapshot", new=AsyncMock(return_value=snapshot)
+        ), patch.object(
+            manager.client,
+            "get_recent_attacks",
+            new=AsyncMock(side_effect=RuntimeError("attack query failed")),
+        ):
+            result = await manager.fetch_and_compute()
+
+        # Nothing in the persisted series ...
+        assert list(manager.cache.battle_rate_history) == []
+        # ... while the two siblings recorded normally, so the cycle is not
+        # simply missing: only the reading that failed is absent.
+        assert len(manager.cache.active_pets_history) == 1
+        assert len(manager.cache.total_score_history) == 1
+        # ... and the widget dict keeps the display default it has always had.
+        assert result["global_battle_rate"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_a_good_attacks_read_records_one_point(self) -> None:
+        base = 1_800_000_000
+        attacks = [
+            {"attacker_id": i, "defender_id": i + 1, "attacker_won": True,
+             "timestamp": base + i * 1800}
+            for i in range(3)
+        ]
+        manager, snapshot = self._manager_and_snapshot()
+
+        with patch.object(
+            manager.client, "fetch_snapshot", new=AsyncMock(return_value=snapshot)
+        ), patch.object(
+            manager.client, "get_recent_attacks",
+            new=AsyncMock(return_value=attacks),
+        ):
+            result = await manager.fetch_and_compute()
+
+        history = list(manager.cache.battle_rate_history)
+        assert len(history) == 1
+        assert history[0][0] == snapshot.fetched_at
+        assert history[0][1] == pytest.approx(result["global_battle_rate"])
+        assert result["global_battle_rate"] > 0.0
+
+    @pytest.mark.asyncio
+    async def test_a_genuine_zero_rate_is_still_recorded(self) -> None:
+        """A real lull is a measurement; only "could not look" is dropped.
+
+        One attack cannot span an interval, so ``_compute_battle_rate``
+        returns a true ``0.0`` -- which must reach the series, or the
+        rule would have traded one blind spot for another.
+        """
+        attacks = [
+            {"attacker_id": 1, "defender_id": 2, "attacker_won": True,
+             "timestamp": 1_800_000_000},
+        ]
+        manager, snapshot = self._manager_and_snapshot()
+
+        with patch.object(
+            manager.client, "fetch_snapshot", new=AsyncMock(return_value=snapshot)
+        ), patch.object(
+            manager.client, "get_recent_attacks",
+            new=AsyncMock(return_value=attacks),
+        ):
+            result = await manager.fetch_and_compute()
+
+        assert list(manager.cache.battle_rate_history) == [
+            (snapshot.fetched_at, 0.0)
+        ]
+        assert result["global_battle_rate"] == 0.0

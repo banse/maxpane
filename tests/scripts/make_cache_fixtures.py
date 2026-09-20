@@ -370,12 +370,183 @@ def make_base() -> Path:
     return path
 
 
+# ---------------------------------------------------------------------------
+# WP-C: ocm + frenpet
+# ---------------------------------------------------------------------------
+
+# OCM polls every ~60s but its burn series is deliberately downsampled, so
+# the fixture is built on a 30-minute cadence: eight updates spanning 3.5h,
+# which is long enough for the hourly burn keepalive to fire and short
+# enough to stay inside the 24h sparkline window.
+OCM_STEP = 1_800.0
+OCM_POINTS = 8
+
+# ``burned_count`` per update.  Chosen so the fixture exercises every branch
+# of ``_append_burn_sample``: a repeat inside the hour is dropped (i=1, 4, 6
+# -- the dedupe-worthy repeats), a repeat an hour later is kept as the
+# keepalive (i=2), and a change is kept immediately (i=3, 5, 7).  Five burn
+# samples survive, against eight points in each of the other three series.
+OCM_BURNED = (12, 12, 12, 13, 13, 14, 14, 15)
+
+
+def make_ocm() -> Path:
+    """Four series, a downsampled burn history and a non-zero holder count."""
+    from maxpane_dashboard.data.ocm_cache import OCMCache
+    from maxpane_dashboard.data.ocm_models import (
+        OCMCollectionStats,
+        OCMSnapshot,
+        OCMStakingStats,
+    )
+
+    cache = OCMCache(max_history=120)
+    for i in range(OCM_POINTS):
+        ts = BASE_TS - (OCM_POINTS - 1 - i) * OCM_STEP
+        total_supply = 4_000 + i
+        burned = OCM_BURNED[i]
+        snapshot = OCMSnapshot(
+            fetched_at=ts,
+            collection=OCMCollectionStats(
+                total_supply=total_supply,
+                max_supply=10_000,
+                current_minting_cost=10 * 10**18,
+                burned_count=burned,
+                net_supply=total_supply - burned,
+                remaining=10_000 - total_supply,
+                minted_pct=total_supply / 100,
+            ),
+            staking=OCMStakingStats(
+                # A different slope per series, so a round-trip that loaded
+                # the wrong key could not pass.
+                total_staked=1_500 + i * 10,
+                ocmd_total_supply=5_000.0 + i * 100.0,
+                daily_emission=1_500.0,
+                staking_ratio=40.0,
+                days_to_earn_mint=10.0,
+            ),
+            holder_count=0,
+        )
+        cache.update(snapshot)
+    cache.update_holder_count(4_242)
+
+    path = OUT_DIR / "ocm_53a71d5.json"
+    cache.save_to_file(str(path))
+    _freeze_saved_at(path)
+    return path
+
+
+def make_ocm_v1() -> Path:
+    """The v2 fixture minus the two keys version 1 never had.
+
+    Derived rather than generated: the pre-burn-series code is older than
+    ``53a71d5`` and no longer exists in any tree this branch can check
+    out, so the v1 file is produced from the v2 one by deleting exactly
+    what version 1 did not write -- the ``version`` key itself (its
+    absence is what ``payload.get(VERSION_KEY) or 1`` reads as 1) and
+    ``burn_history``.  Every other key, and the key order, is untouched,
+    which is precisely the shape ``test_ocm_cache.py``'s hand-written v1
+    payloads describe.
+    """
+    payload = json.loads((OUT_DIR / "ocm_53a71d5.json").read_text())
+    del payload["version"]
+    del payload["burn_history"]
+    path = OUT_DIR / "ocm_v1_53a71d5.json"
+    path.write_text(json.dumps(payload))
+    return path
+
+
+FRENPET_POINTS = 6
+
+
+def make_frenpet() -> Path:
+    """Three pets x six score points, plus the three population series."""
+    from maxpane_dashboard.data.frenpet_cache import FrenPetCache
+    from maxpane_dashboard.data.frenpet_models import (
+        FrenPet,
+        FrenPetPopulation,
+        FrenPetSnapshot,
+    )
+
+    def pet(pet_id: int, score: int) -> FrenPet:
+        return FrenPet(
+            id=pet_id,
+            score=score,
+            attack_points=100,
+            defense_points=80,
+            level=5,
+            status=0,
+            last_attacked=0,
+            last_attack_used=0,
+            shield_expires=0,
+            time_until_starving=int(BASE_TS) + 86_400,
+            staking_perks_until=0,
+            wheel_last_spin=0,
+            pet_wins=10,
+            win_qty=10,
+            loss_qty=5,
+            shrooms=0,
+            name=f"Pet{pet_id}",
+            owner="0x" + "ab" * 20,
+        )
+
+    cache = FrenPetCache(max_history=120)
+    for i in range(FRENPET_POINTS):
+        ts = BASE_TS - (FRENPET_POINTS - 1 - i) * STEP
+        # A different slope per pet, so a round-trip that loaded the wrong
+        # key could not pass.
+        pets = [
+            pet(1, 10_000 + i * 100),
+            pet(2, 20_000 + i * 200),
+            pet(3, 30_000 + i * 300),
+        ]
+        population = FrenPetPopulation.from_pets(list(pets), now=ts)
+        snapshot = FrenPetSnapshot(
+            population=population,
+            # Pets 1 and 2 are managed; pet 3 arrives via top_pets, which is
+            # the other half of ``update``'s per-pet loop.
+            managed_pets=(pets[0], pets[1]),
+            top_pets=tuple(pets),
+            fetched_at=ts,
+        )
+        cache.update(snapshot, battle_rate=float(20 + i))
+
+    path = OUT_DIR / "frenpet_53a71d5.json"
+    cache.save_to_file(str(path))
+    _freeze_saved_at(path)
+    return path
+
+
+def make_frenpet_v1() -> Path:
+    """The schema-2 fixture minus the four keys schema 1 never wrote.
+
+    Same derivation as :func:`make_ocm_v1`: ``schema_version`` is deleted
+    (a missing key reads as 1) along with the three population series,
+    which is exactly what ``frenpet_cache.py``'s module docstring says a
+    v1 file contains -- ``histories`` and nothing else.
+    """
+    payload = json.loads((OUT_DIR / "frenpet_53a71d5.json").read_text())
+    del payload["schema_version"]
+    for name in ("active_pets_history", "total_score_history", "battle_rate_history"):
+        del payload[name]
+    path = OUT_DIR / "frenpet_v1_53a71d5.json"
+    path.write_text(json.dumps(payload))
+    return path
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit(f"usage: {sys.argv[0]} <path-to-53a71d5-worktree>")
     _require_worktree(sys.argv[1])
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    for path in (make_cattown(), make_dota(), make_bakery(), make_base()):
+    for path in (
+        make_cattown(),
+        make_dota(),
+        make_bakery(),
+        make_base(),
+        make_ocm(),
+        make_ocm_v1(),
+        make_frenpet(),
+        make_frenpet_v1(),
+    ):
         print(f"wrote {path}")
 
 

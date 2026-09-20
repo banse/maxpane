@@ -278,6 +278,17 @@ class SeriesCache:
         validation clock, and ``max_age`` because the bakery cache's
         window is supplied by its *caller* (``manager.py`` passes the
         sparkline window) rather than declared per series.
+
+        **The ``_loaded_*`` convention.**  This hook and
+        :meth:`_log_loaded` are two halves of one load, and the second
+        cannot see what the first found, so every subclass that can
+        *abandon* its keyed half (bakery, base, frenpet) stores the
+        count it restored in a ``_loaded_<noun>: int | None`` attribute
+        here and reads it there -- ``None`` meaning "the load bailed
+        out", which is how ``_log_loaded`` knows to stay silent rather
+        than print a "Loaded ... 0 tokens" line the pre-refactor code
+        never printed.  A subclass that cannot bail (ocm) needs none of
+        it.
         """
         return 0
 
@@ -410,7 +421,13 @@ class SeriesCache:
         self._log_loaded(path, loaded)
 
     def _log_loaded(self, path: str, loaded: int) -> None:
-        """Hook: the one info line closing a successful load."""
+        """Hook: the one info line closing a successful load.
+
+        ``loaded`` counts the points restored into the *declared* series
+        only.  An override that also reports a keyed count reads it from
+        the ``_loaded_<noun>`` attribute :meth:`restore_extra` set, and
+        returns without logging when that attribute is ``None``.
+        """
         logger.info("Loaded %s from %s: %d total points", self.NOUN, path, loaded)
 
 

@@ -4,6 +4,14 @@ The ``FrenPetCache`` stores the most recent ``FrenPetSnapshot`` and
 accumulates per-pet score histories over time so the dashboard can
 render sparklines and trend indicators.
 
+Everything but ``update()``, the per-pet dict and the named getters is
+inherited from ``data/series_cache.SeriesCache``; see that module for
+the persistence contract and for why ``record()`` drops ``None``
+instead of zero-filling.  The three population-level series are declared
+as ``SERIES`` and therefore remain **public deque attributes** --
+``frenpet_manager.py`` reads them by name when it assembles the widget
+dict, and so do this file's tests.
+
 Thread safety: this module is designed for single-threaded asyncio use.
 No locking is performed.
 
@@ -29,24 +37,30 @@ loads as "no population history yet":
 
 Nothing is discarded on upgrade.  There is no v2 -> v1 downgrade path;
 an older build reading a v2 file ignores the keys it does not know.
+
+The key is ``schema_version`` and the value is 2, and neither may move:
+renaming it to the base class's default ``"version"`` would make every
+existing ``~/.maxpane/frenpet_cache.json`` read as v1 and start the
+three population series empty -- the exact regression schema 2 exists
+to fix.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import time
 from collections import deque
 from typing import Any
 
 from maxpane_dashboard.data.frenpet_models import FrenPetSnapshot
-from maxpane_dashboard.data.series_points import coerce_points
+from maxpane_dashboard.data.series_cache import (
+    SeriesCache,
+    SeriesSpec,
+    TimeSeriesPoint,
+)
 
 logger = logging.getLogger(__name__)
 
-# Type alias for a single time-series data point: (epoch_seconds, score)
-TimeSeriesPoint = tuple[float, float]
+__all__ = ["FrenPetCache", "TimeSeriesPoint"]
 
 # On-disk schema version.  Bumped to 2 when the population-level series
 # started being persisted; see the module docstring for what a pre-v2
@@ -61,8 +75,22 @@ _POPULATION_SERIES = (
     "battle_rate_history",
 )
 
+# The persisted key order, oldest file first.  ``SeriesCache._payload``
+# writes ``saved_at``/``max_history`` before the version key and the
+# declared series before ``extra_payload``; this file has always led with
+# ``schema_version`` and put ``histories`` ahead of the three population
+# series.  Nothing reads a JSON object's key order, but a save that
+# reshuffles a user's file makes every backup diff unreadable for no gain.
+_PAYLOAD_KEY_ORDER = (
+    "schema_version",
+    "saved_at",
+    "max_history",
+    "histories",
+    *_POPULATION_SERIES,
+)
 
-class FrenPetCache:
+
+class FrenPetCache(SeriesCache):
     """Caches FrenPet data and accumulates per-pet score time-series.
 
     Parameters
@@ -72,45 +100,66 @@ class FrenPetCache:
         poll interval, 120 samples covers 60 minutes.
     """
 
+    SERIES = tuple(SeriesSpec(name) for name in _POPULATION_SERIES)
+    VERSION_KEY = "schema_version"
+    VERSION = _CACHE_SCHEMA_VERSION
+    NOUN = "FrenPet cache"
+    SIZE_NOUN = "pets"
+
+    active_pets_history: deque[TimeSeriesPoint]
+    total_score_history: deque[TimeSeriesPoint]
+    battle_rate_history: deque[TimeSeriesPoint]
+    _latest: FrenPetSnapshot | None
+
     def __init__(self, max_history: int = 120) -> None:
-        self._max_history = max_history
+        super().__init__(max_history)
+        # Keyed by ``int`` pet id; the JSON keys are ``str(pid)``.
         self._pet_histories: dict[int, deque[TimeSeriesPoint]] = {}
-        self._latest: FrenPetSnapshot | None = None
-        self._last_updated: float | None = None
-        # Population-level time series
-        self.active_pets_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
-        self.total_score_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
-        self.battle_rate_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
+        # Number of pet histories the last load restored, or ``None``
+        # when the load bailed out on a malformed ``histories`` value.
+        # Read only by _log_loaded, which must stay silent in that case.
+        self._loaded_pets: int | None = None
+        # Schema version of the file the last load read, so the one
+        # message about a pre-v2 file can be emitted from ``restore_extra``
+        # -- the first hook after ``before_load`` that knows both the
+        # file's name and how many pets came out of it, the two numbers
+        # that message exists to state.
+        self._loaded_version: int = self.VERSION
 
     # ------------------------------------------------------------------
     # Core operations
     # ------------------------------------------------------------------
 
-    def update(self, snapshot: FrenPetSnapshot, battle_rate: float = 0.0) -> None:
+    def update(
+        self, snapshot: FrenPetSnapshot, battle_rate: float | None = None
+    ) -> None:
         """Store latest snapshot, accumulate score and population histories.
 
         Score histories are recorded for every managed pet in the
         snapshot.  Each data point is ``(fetched_at, score)``.
+
+        ``battle_rate is None`` means "the attacks feed could not be
+        read this cycle", and the point is dropped rather than recorded
+        as ``0.0``.  This series is persisted, so a sentinel zero written
+        during an outage is indistinguishable afterwards from a genuine
+        lull and drags the Battles sparkline's scale down for the rest of
+        the history's life (CLAUDE.md: *a failed read is ``None``, never
+        ``0``*).
         """
-        self._latest = snapshot
-        self._last_updated = snapshot.fetched_at
+        self._mark(snapshot)
         ts = snapshot.fetched_at
 
         # Population-level time series
-        self.active_pets_history.append(
-            (ts, float(snapshot.population.active))
-        )
+        self.record("active_pets_history", ts, snapshot.population.active)
         total_score = sum(float(p.score) for p in snapshot.population.pets)
-        self.total_score_history.append((ts, total_score))
-        self.battle_rate_history.append((ts, battle_rate))
+        self.record("total_score_history", ts, total_score)
+        self.record("battle_rate_history", ts, battle_rate)
 
         managed_ids: set[int] = set()
         for pet in snapshot.managed_pets:
             pet_id = pet.id
             managed_ids.add(pet_id)
-            if pet_id not in self._pet_histories:
-                self._pet_histories[pet_id] = deque(maxlen=self._max_history)
-            self._pet_histories[pet_id].append(
+            self._pet_series(pet_id).append(
                 (snapshot.fetched_at, float(pet.score))
             )
 
@@ -120,11 +169,17 @@ class FrenPetCache:
             pet_id = pet.id
             if pet_id in managed_ids:
                 continue
-            if pet_id not in self._pet_histories:
-                self._pet_histories[pet_id] = deque(maxlen=self._max_history)
-            self._pet_histories[pet_id].append(
+            self._pet_series(pet_id).append(
                 (snapshot.fetched_at, float(pet.score))
             )
+
+    def _pet_series(self, pet_id: int) -> deque[TimeSeriesPoint]:
+        """Return the history deque for ``pet_id``, creating it if new."""
+        dq = self._pet_histories.get(pet_id)
+        if dq is None:
+            dq = deque(maxlen=self._max_history)
+            self._pet_histories[pet_id] = dq
+        return dq
 
     def get_pet_score_history(self, pet_id: int) -> list[TimeSeriesPoint]:
         """Return ``[(timestamp, score), ...]`` for a single pet.
@@ -150,15 +205,6 @@ class FrenPetCache:
         """Return score histories for every tracked pet."""
         return {pid: list(dq) for pid, dq in self._pet_histories.items()}
 
-    def get_latest(self) -> FrenPetSnapshot | None:
-        """Return the most recently stored snapshot, or ``None``."""
-        return self._latest
-
-    @property
-    def last_updated(self) -> float | None:
-        """Epoch timestamp of the last ``update()`` call, or ``None``."""
-        return self._last_updated
-
     @property
     def history_size(self) -> int:
         """Number of distinct pets being tracked."""
@@ -168,10 +214,17 @@ class FrenPetCache:
     # Persistence
     # ------------------------------------------------------------------
 
-    def save_to_file(self, path: str) -> None:
-        """Persist accumulated history to JSON for restart survival.
+    def extra_payload(self) -> dict[str, Any]:
+        """The per-pet histories; the three population series are ``SERIES``."""
+        return {
+            "histories": {
+                str(pid): [list(pt) for pt in dq]
+                for pid, dq in self._pet_histories.items()
+            }
+        }
 
-        File format::
+    def _payload(self) -> dict[str, Any]:
+        """The saved payload, in this file's historical key order::
 
             {
                 "schema_version": 2,
@@ -190,145 +243,86 @@ class FrenPetCache:
         sparklines draw.  They were accumulated every poll and dropped on
         exit until schema 2; see the module docstring.
         """
-        payload: dict[str, Any] = {
-            "schema_version": _CACHE_SCHEMA_VERSION,
-            "saved_at": time.time(),
-            "max_history": self._max_history,
-            "histories": {
-                str(pid): [list(pt) for pt in dq]
-                for pid, dq in self._pet_histories.items()
-            },
-        }
-        for name in _POPULATION_SERIES:
-            payload[name] = [
-                [float(ts), float(val)] for (ts, val) in getattr(self, name)
-            ]
+        payload = super()._payload()
+        ordered = {k: payload.pop(k) for k in _PAYLOAD_KEY_ORDER if k in payload}
+        # Anything unexpected still gets written rather than dropped.
+        ordered.update(payload)
+        return ordered
 
-        # Atomic write: write to temp, then rename
-        tmp_path = path + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            with open(tmp_path, "w") as f:
-                json.dump(payload, f)
-            os.replace(tmp_path, path)
-            logger.info(
-                "FrenPet cache saved to %s (%d pets, %d population points)",
-                path,
-                len(self._pet_histories),
-                sum(len(getattr(self, name)) for name in _POPULATION_SERIES),
-            )
-        except OSError as exc:
-            logger.warning("Failed to save FrenPet cache: %s", exc)
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+    def before_load(self, payload: dict[str, Any], version: int) -> None:
+        """Remember the file's schema version for :meth:`restore_extra`.
 
-    def load_from_file(self, path: str, *, now: float | None = None) -> None:
-        """Load previously saved history from a JSON file.
-
-        Silently does nothing if the file is missing or corrupted.
-        Existing in-memory data is replaced on successful load.
-
-        Individual points are validated: anything unusable (``null``, a
-        string, ``NaN``, a wrong-length entry, a negative score, a
-        future-dated timestamp) is dropped and counted rather than
-        raising, because every manager loads its cache in ``__init__``
-        and one bad value used to abort MaxPane startup for every
-        dashboard.
-
-        A pre-v2 file has no population series; that is loaded as "no
-        history yet" and never as an error (see the module docstring).
-
-        Parameters
-        ----------
-        now:
-            Reference clock, in epoch seconds, used to validate the
-            persisted points -- a point dated in the future is
-            corruption, not history.  Passing it explicitly is what
-            keeps this method a pure function of its inputs: reaching
-            for ``time.time()`` internally makes the same file load
-            differently depending on when it is read, and on a machine
-            whose clock ran fast when the file was *written* it silently
-            empties the series it just saved.  ``None`` falls back to the
-            wall clock for callers that genuinely mean "now";
-            ``FrenPetManager`` passes an explicit one.
+        Nothing has to be migrated: a pre-v2 file simply has no
+        population keys, and a missing key coerces to "no points", so the
+        three series start empty on their own.  What is owed is the one
+        info line saying so, and that needs the pet count.
         """
-        reference = time.time() if now is None else now
-        try:
-            with open(path) as f:
-                payload = json.load(f)
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.info("No FrenPet cache file to load (%s): %s", path, exc)
-            return
+        self._loaded_version = version
 
-        if not isinstance(payload, dict):
+    def restore_extra(
+        self,
+        payload: dict[str, Any],
+        *,
+        path: str,
+        now: float,
+        max_age: float | None = None,
+    ) -> int:
+        """Rebuild the per-pet histories from ``payload["histories"]``.
+
+        Merge, not replace: a pet id already tracked in memory but absent
+        from the file keeps its deque.  Every caller loads before its
+        first ``update()`` so nothing live depends on the choice, but it
+        is the shape all three keyed caches share and it is pinned rather
+        than left to drift (follow-up #48).
+
+        ``max_age`` is deliberately not forwarded: these histories have
+        never been windowed on load, and starting now would silently
+        shorten every user's restored sparkline (follow-up #42).
+        """
+        raw = payload.get("histories", {})
+        if not isinstance(raw, dict):
             logger.warning(
-                "FrenPet cache file %s has unexpected format, skipping", path
+                "%s file %s has unexpected format, skipping", self.NOUN, path
             )
-            return
+            self._loaded_pets = None
+            return 0
 
-        try:
-            version = int(payload.get("schema_version") or 1)
-        except (TypeError, ValueError):
-            version = 1
-
-        histories = payload.get("histories", {})
-        if not isinstance(histories, dict):
-            logger.warning(
-                "FrenPet cache file %s has unexpected format, skipping", path
-            )
-            return
-
+        series, skipped = self.coerce_keyed(raw, now=now)
         loaded = 0
-        skipped = 0
-        for pid_str, points in histories.items():
-            if not isinstance(points, list):
-                continue
+        for key, good in series.items():
+            # ``coerce_keyed`` hands back string keys (JSON has no other
+            # kind); the in-memory dict is keyed by the int pet id the
+            # manager and the widgets look up.
             try:
-                pid = int(pid_str)
+                pid = int(key)
             except (ValueError, TypeError):
                 continue
-            good, dropped = coerce_points(points, now=reference)
-            skipped += dropped
-            dq: deque[TimeSeriesPoint] = deque(good, maxlen=self._max_history)
-            self._pet_histories[pid] = dq
+            self._pet_histories[pid] = deque(good, maxlen=self._max_history)
             loaded += 1
 
-        # Population-level series (schema 2+).  ``coerce_points`` maps a
-        # missing key -- every pre-v2 file -- to ``([], 0)``, so an
-        # upgrade starts these empty and keeps the per-pet histories
-        # above untouched.
-        population_loaded = 0
-        for name in _POPULATION_SERIES:
-            series: deque[TimeSeriesPoint] = getattr(self, name)
-            good, dropped = coerce_points(payload.get(name), now=reference)
-            skipped += dropped
-            series.clear()
-            series.extend(good)
-            population_loaded += len(series)
-
-        if version < _CACHE_SCHEMA_VERSION:
+        self._loaded_pets = loaded
+        if self._loaded_version < self.VERSION:
             logger.info(
-                "FrenPet cache %s is schema v%d; per-pet history (%d pets) "
+                "%s %s is schema v%d; per-pet history (%d pets) "
                 "kept in full, population trend series start empty because "
                 "that version never wrote them. Nothing discarded.",
+                self.NOUN,
                 path,
-                version,
+                self._loaded_version,
                 loaded,
             )
+        return skipped
 
-        if skipped:
-            logger.warning(
-                "Skipped %d unusable point(s) while loading FrenPet cache %s",
-                skipped,
-                path,
-            )
+    def _log_loaded(self, path: str, loaded: int) -> None:
+        """The closing info line: pets first, then the population points."""
+        if self._loaded_pets is None:
+            return
         logger.info(
-            "Loaded FrenPet cache from %s: %d pets, %d population points, "
+            "Loaded %s from %s: %d pets, %d population points, "
             "up to %d points each",
+            self.NOUN,
             path,
+            self._loaded_pets,
             loaded,
-            population_loaded,
             self._max_history,
         )

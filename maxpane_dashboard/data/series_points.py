@@ -21,9 +21,14 @@ the first place.  A corrupt point is dropped, never fatal, and the
 caller logs the drop count so a silently truncated history stays
 discoverable.
 
-``ocm_cache`` still carries a private copy (``_coerce_point``) with the
-same semantics, as do ``ttt_cache`` and ``talismans_cache``; they should
-be folded into this module once their in-flight edits land.
+That fold has now happened.  ``ocm_cache`` carried the last private copy
+(``_coerce_point``, same semantics bar a mandatory ``max_age`` and no
+``allow_negative``) until Branch 9 put the six ``max_history`` caches
+onto ``data/series_cache.SeriesCache``, which calls this module once on
+their behalf.  ``ttt_cache`` and ``talismans_cache`` stay outside that
+base class -- their series are hourly buckets on an event machine, not
+poll samples -- but they call ``coerce_points`` directly.  Every
+persisted series in the package is validated here, in one place.
 """
 
 from __future__ import annotations
