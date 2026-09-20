@@ -2841,6 +2841,125 @@ elsewhere); M4 the `VERSION_KEY is not None` guard on the read path is an equiva
 M5 a `-> int` annotation on a `int | None` fake. Branch-level Docs items (rules/data.md paragraph, HANDOVER §3
 item 6, table row 9) remain for the closure commit. 98 + 6 + 192 passed.
 
+**Branch 9 WP-B outcome (2026-09-20).** Commit `2f5f3b7` on `refactor/series-cache`.
+`data/cache.py` (bakery) and `data/base_cache.py` as `SeriesCache` subclasses + three
+additions to the base + two pre-branch fixtures + the generator extended + tests appended.
+
+| file | before (`53a71d5`) | after | note |
+|---|---|---|---|
+| `maxpane_dashboard/data/cache.py` | 237 (114 code, 68 docstring, 18 comment, 37 blank) | **202** (95 code, 55 docstring, 17 comment, 35 blank) | `SERIES = ()`; the whole payload rides on the two hooks |
+| `maxpane_dashboard/data/base_cache.py` | 379 (209 code, 84 docstring, 29 comment, 57 blank) | **379** (186 code, **108** docstring, 27 comment, 58 blank) | -23 code, +24 docstring: the persistence went, the reasoning stayed |
+| `maxpane_dashboard/data/series_cache.py` | 367 (157 code) at WP-A | **417** (180 code) | `SeriesSpec.key`, `SIZE_NOUN`, the `restore_extra` inputs, M2's warning |
+| `tests/data/test_series_cache.py` | 629 (38 tests) at WP-A | **1027** (53 tests) | +15: two fixture round-trips, R5 on four real classes, R7, R1/R3, R4 both ways, M2 |
+| `tests/scripts/make_cache_fixtures.py` | 182 at WP-A | **383** | `make_bakery()`, `make_base()` |
+| `tests/fixtures/cache/{history,base}_53a71d5.json` | — | 2 files | written by `53a71d5`'s own code |
+
+Net for the two caches: 616 → 581 total lines but **323 → 281 code lines**, and the
+duplicated persistence (atomic write, open/decode guard, per-point validation, the
+"Skipped" warning) is gone rather than moved. `tests/data/test_cache.py`,
+`test_base_cache.py` and `test_cache_corruption.py` are byte-unchanged
+(`git diff --stat 53a71d5 --` empty for all three) — they are the acceptance, and
+`test_base_cache.py:176-183` (load *then* update) is untouched by R7 as the brief predicted.
+
+**The `SeriesSpec.key` decision: the field was added** (the brief's preferred option).
+Base's three overview deques are the attributes `volume_history` / `eth_price_history` /
+`trade_count_history` but have always been *persisted* as `overview_volume` /
+`overview_eth_price` / `overview_trade_count`, and renaming either half empties every
+existing `~/.maxpane/base_cache.json`'s sparklines on the next load. The alternative —
+overriding `_payload` and the SERIES restore loop in `base_cache.py` — would have meant
+not declaring the three as `SERIES` at all, which is the mechanism this branch exists to
+share. The field is append-only (`key: str | None = None`, JSON key defaults to `name`),
+its whole implementation is the `json_key` property, and it is pinned by the base fixture
+round-trip: mutation (e) reddens six tests. **Key order** is a second, separate problem —
+the base writes declared series *before* `extra_payload`, and this file has always led
+with `histories`. That is handled locally, by a six-line `_payload` override in
+`base_cache.py`, rather than by another base-class knob, because ocm wants `holder_count`
+*after* its series and frenpet wants `histories` *before* its three: no single base
+ordering serves WP-C, so the base's order stays as WP-A's reviewer approved it.
+
+**Mutation proofs.** Each mutation was an in-place string swap by a helper that refuses a
+non-unique match, the mutated line printed with `grep -n`/`sed -n` *before* the run, and
+restored by the inverse swap and `diff`'d against a pre-mutation snapshot (`RESTORED
+IDENTICAL` for all three files; no `git checkout/stash/reset/restore/clean`).
+
+| # | mutation | file(s) run | failing test(s) by name |
+|---|---|---|---|
+| a | `cache.py` `restore_extra`: `if not good: continue` deleted (an all-expired bakery gets an empty deque) | `test_series_cache.py test_cache.py` | `test_a_bakery_whose_points_all_expired_is_left_untracked`, `TestStaleHistoryIsNotRestored::test_a_fully_expired_bakery_is_not_tracked_at_all` |
+| b | `cache.py` `update`: the season-reset `dq.clear()` replaced by `pass` | `test_cache.py test_series_cache.py` | `TestSeasonResetClearsHistory::test_collapse_to_near_zero_clears_the_bakery` |
+| c | `base_cache.py`: `ts = timestamp or time.time()` (R3 reverted) | `test_series_cache.py test_base_cache.py` | `test_record_token_honours_a_zero_timestamp` |
+| d | `series_cache.py`: `series.clear()` deleted, `extend` kept (R7) | `test_series_cache.py test_base_cache.py test_cache_corruption.py` | `test_base_overview_load_replaces_rather_than_concatenates`, `test_load_clears_before_extending` |
+| e | `SeriesSpec.json_key` returns `self.name` (the `key=` ignored) | `test_series_cache.py test_base_cache.py test_cache_corruption.py test_base_terminal_screen.py` | `test_base_loads_a_pre_branch_cache_file`, `test_wp_b_resaves_the_pre_branch_file_key_for_key[base]`, `test_base_overview_load_replaces_rather_than_concatenates`, `test_base_restores_a_thirty_day_old_point`, `test_a_series_key_that_is_not_a_list_is_named_in_a_warning`, `test_base_cache_survives_corrupt_points` |
+| f | `series_cache.py`: the M2 non-list warning replaced by `pass` | `test_series_cache.py` | `test_a_series_key_that_is_not_a_list_is_named_in_a_warning` |
+| g | `series_cache.py`: `if not isinstance(payload, dict)` → `if False` (R5) | `test_series_cache.py test_cache.py test_base_cache.py test_cache_corruption.py` | `test_an_empty_list_payload_leaves_a_real_cache_untouched[bakery]`, `[base]`, `[cattown]`, `[dota]` (`AttributeError`), plus the four `test_a_non_dict_payload_leaves_the_cache_untouched` cases |
+| h | `base_cache.py` `record_overview_point`: `total_volume or 0.0` etc. (the sentinel) | `test_series_cache.py test_base_cache.py test_base_manager.py test_base_terminal_screen.py` | `test_record_overview_point_skips_none_and_keeps_a_real_zero`, `test_eth_failure_records_no_price_point`, `test_empty_trending_records_no_volume_point`, `test_outage_then_recovery_does_not_report_false_rising`, `test_no_zero_ever_reaches_the_persisted_file` |
+
+**Compatibility, both directions.** The same probe run against a `53a71d5` worktree
+(`PYTHONPATH` prepended) and against the branch head produced identical output: both
+fixtures load point-for-point the same into the old and the new class through the
+managers' call shape (no `now=`), and the re-saved key *list* is identical —
+`['saved_at', 'max_history', 'histories']` for bakery and
+`['saved_at', 'max_history', 'histories', 'overview_volume', 'overview_eth_price',
+'overview_trade_count']` for base, with no version key. Re-running the extended generator
+inside the worktree reproduced the two WP-A fixtures md5-identical, which is the
+determinism claim for the two new ones.
+
+**Render.** `python render_case.py bakery …` / `base …` at `f2767b5` (before any code
+change) and at the WP-B tree, both at 170×50 and at the 143-column pin. `cmp` on all four
+pairs: `IDENTICAL bakery.default.170x50`, `IDENTICAL bakery.default.pin-143x50`,
+`IDENTICAL base.default.170x50`, `IDENTICAL base.default.pin-143x50` — the plan's expected
+diff (none).
+
+**Where a failed read yields `None`** (`grep -n`):
+`maxpane_dashboard/data/series_cache.py:166` `if value is None:` — the one place a sentinel
+could enter a persisted series, and it refuses;
+`maxpane_dashboard/data/base_cache.py:227` `total_volume: float | None,` and the two
+siblings, folded onto `record()` so the skip is the shared rule rather than three local
+`if`s; `maxpane_dashboard/data/base_cache.py:197`
+`ts = time.time() if timestamp is None else timestamp` — the R3 half of the same idea
+applied to a *timestamp*: `0.0` is a value, not an absence.
+
+**Deviations from the plan/brief, and why.**
+1. `restore_extra(self, payload, *, now)` became
+   `restore_extra(self, payload, *, path, now, max_age=None)`. Both bakery and base need
+   `path` for warnings that name the offending file (base's "least-recently-updated" line
+   is bound by `test_base_cache.py:128`), and bakery needs `max_age` because its window is
+   *caller*-supplied (`manager.py:67-69`), not declared per series. The two probe
+   subclasses in `test_series_cache.py` were updated to match; nothing else implemented the
+   hook.
+2. `SIZE_NOUN` was added to the base. The save log is `"%s saved to %s (%d points)"` and
+   prints `history_size`, which for these two caches counts bakeries and tokens. Leaving it
+   would have shipped a wrong noun on a number in a log file; the fix is one class attribute
+   and one word per subclass, and it serves frenpet ("pets") at WP-C.
+3. Key order is a `_payload` override in `base_cache.py`, not a base-class facility. Reason
+   in the decision paragraph above: ocm and frenpet want opposite orders, so a shared knob
+   would be guesswork until WP-C measures them.
+4. Base now degrades *per key* rather than abandoning the file. Previously a non-dict
+   `histories` returned early, so the three `overview_*` series were skipped too; with the
+   base class they are restored first and only the keyed half is abandoned. That is the same
+   strengthening as R5, one level down, and it is why both subclasses carry a
+   `_loaded_*: int | None` sentinel: `_log_loaded` stays silent when the load bailed, so the
+   "Loaded … 0 tokens" line the old code never printed is still not printed. Untested on
+   purpose — follow-up #49.
+5. Log wording moved with `NOUN`. Bakery's is `"cache history"`, which keeps
+   `"Failed to save cache history: %s"` verbatim and the closing
+   `"Loaded cache history from %s: %d bakeries, up to %d points each"` verbatim via a
+   `_log_loaded` override; the three lines that embedded the noun mid-sentence now read
+   `"No cache history file to load"`, `"cache history file %s has unexpected format"` and
+   `"… while loading cache history %s"` (was `"No cache file …"`, `"Cache file %s …"`,
+   `"… while loading cache %s"`). Base's `NOUN` reproduces every one of its lines
+   unchanged. The literals tests bind — `"Skipped"` (six assertions in
+   `test_cache_corruption.py`), `"least-recently-updated"`, `"unexpected format"`,
+   `"truncating"` — all survive.
+6. The base's skipped warning now says `"unusable or expired point(s)"` for base too (it
+   said `"unusable point(s)"`); WP-A already made that the one wording.
+
+**Found, not fixed** — follow-ups #48–#50 in `docs/handover_followups_2026_09.md`: the
+bakery cache's keyed dict is merged rather than replaced on load (the keyed twin of R7,
+unreachable today, decide it once for all three keyed caches at WP-C); a non-dict
+`histories` is untested for bakery and base; `test_base_cache.py:172` asserts a bound
+(`<= 2`) where it means a value. All three Minor, all Tier 0 when their file is next
+touched.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

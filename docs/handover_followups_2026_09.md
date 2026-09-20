@@ -516,3 +516,30 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `time.time()` within the same second. The file is byte-unchanged on this branch on purpose
     (branch acceptance pins it). **Minor, Tier 0** once Branch 9 has landed and the file is next
     touched — a test-rigor refinement, never its own branch.
+
+## Branch 9 WP-B — found while implementing (2026-09-20)
+
+48. **`DataCache.load_from_file` merges into `_history` instead of replacing it.** The bakery
+    cache is the one migrated cache whose keyed dict is *not* cleared before a load:
+    `cache.py:restore_extra` assigns per bakery name, so a load after an `update()` leaves this
+    process's own bakeries tracked alongside the file's — the keyed twin of R7, which Branch 9
+    decided for the fixed series only. Unreachable today (`manager.py:67` loads in `__init__`,
+    before the first update) and behaviour-preserving as shipped, so it was left alone; the same
+    question is open for `BaseTokenCache` and, at WP-C, for frenpet's per-pet dict. Decide it once
+    for all three keyed caches rather than per file. **Minor, Tier 0** when `cache.py` is next
+    touched, or roll it into the WP-C decision.
+
+49. **`histories` holding a non-dict is untested for bakery and base.** Both loaders warn
+    "unexpected format" and restore nothing from that key (`cache.py`, `base_cache.py`,
+    `restore_extra`), and on this branch base additionally keeps whatever the three `overview_*`
+    series held rather than abandoning the whole file. Nothing drives that path:
+    `test_cache_corruption.py` only feeds well-formed dicts and `test_series_cache.py`'s `[]` case
+    stops at the *payload* guard one level up. One parametrised test per class would pin both the
+    warning and the per-key degradation. **Minor, Tier 0** (test rigor) when either file is next
+    touched.
+
+50. **`tests/data/test_base_cache.py:172` asserts `history_size <= 2`.** A bound, not a value: it
+    passes at 0, so the test would stay green if `test_load_survives_unrankable_entries` restored
+    nothing at all. The neighbouring assertion on `0xgood` is what actually bites. Tighten to the
+    exact count once the file is editable (it is byte-frozen on this branch as the WP-B
+    acceptance). **Minor, Tier 0** — test rigor, never its own branch.
