@@ -286,3 +286,31 @@ async def test_no_ttt_table_scrolls_at_or_above_the_pin(width: int) -> None:
     r = await _tables_at(width)
     if width >= FULL_LAYOUT_COLUMNS:
         assert not r["fees_hscroll"] and not r["lb_hscroll"], (width, r)
+
+
+@pytest.mark.asyncio
+async def test_r_still_refreshes_although_this_screen_lists_only_c() -> None:
+    """Textual merges ``BINDINGS`` along the MRO, so a screen that declares
+    only its extra key keeps ``r`` from ``DashboardScreen``.
+
+    WP-B dropped the re-listed ``Binding("r", ...)`` from this screen on that
+    claim; ``tests/screens/test_talismans_screen.py`` proves it for talismans
+    and this is the same proof for ttt, so that neither dashboard can lose
+    its refresh key without a red test (WP-B review M3).
+    """
+    manager = _FakeManager()
+    screen = TTTScreen(manager, poll_interval=30, name="ttt")
+    app = _Harness(screen)
+    async with app.run_test(size=(FULL_LAYOUT_COLUMNS, 45)) as pilot:
+        await pilot.pause()
+        assert "r" not in [b.key for b in TTTScreen.BINDINGS]
+        before = manager.calls
+
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+
+        assert manager.calls > before, (
+            "pressing r did not reach action_refresh -- the inherited binding "
+            "is gone and this dashboard has no refresh key"
+        )

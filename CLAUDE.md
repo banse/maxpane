@@ -67,7 +67,8 @@ maxpane_dashboard/   __main__.py (CLI) · app.py (MaxPaneApp, _GAME_CYCLE) · co
   abis/              vendored ABI JSON — never fetched at runtime
   analytics/         PURE functions: signals, EV math. No I/O, no clock, no Textual
   data/              per-dashboard client / cache / manager / models
-  screens/           one Screen per dashboard + splash, game_select, wallet_input, refresh_guard
+  screens/           one Screen per dashboard + splash, game_select, wallet_input, refresh_guard,
+                     dashboard_screen.py (DashboardScreen: lifecycle + PANELS dispatch)
   templates/         copy-sources for new dashboards; a copy never propagates a fix
   widgets/           shared: sparkline_common, markup_safety, address, status_bar · one pkg per dashboard
 maxpane/             Rust intro crate · sybilkit/  SECOND Python distribution, maxpane-independent
@@ -146,8 +147,9 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
   the sole hydration boundary. **`decimals()` is a live read**, never 18 by assumption.
 - **Validate persisted series per point** (`data/series_points.coerce_points`); a hand-edited
   cache file is third-party input. **Inject the clock** (`now=` / `now_ts`).
-- **Screens inherit `screens/refresh_guard.RefreshGuard`**; never hand-roll exclusive workers;
-  no network await in a message handler.
+- **Screens inherit `screens/dashboard_screen.DashboardScreen`** (lifecycle + `PANELS` dispatch;
+  `RefreshGuard` underneath); never hand-roll exclusive workers; no network await in a message
+  handler.
 - **Reuse before you build**: shared module (`widgets/fmt.py`, `rowfit.py`, `markup_safety.py`, `address.py`, …) →
   dashboard sibling / its `_fmt.py` (dashboard-specific formatters only) → template. A helper two modules need is hoisted in the same change, never re-declared. The one
   legitimate copy is a hand-typed literal bound by an agreement test (`_GAME_CYCLE`, `--game`

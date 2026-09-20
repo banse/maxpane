@@ -530,6 +530,287 @@ two cases stay green; sweep file 43 green on the restored tree. *N2* (per-row si
 `_fmt.EXPLORER`, which `rows_pick_explorer` leaves unbound by the sweep, are filed as
 `docs/handover_followups_2026_09.md` #16–#17.
 
+## Branch 5 — `refactor/dashboard-screen` (two work packages, A then B — B migrates onto A's class)
+
+HANDOVER §3.5. Cut from main `8ab531c` (after Branch 4, so every migrated screen inherits the
+explorer links rather than being retrofitted). Facts read off the tree on 2026-09-20:
+
+- Fourteen dashboard screens inherit `RefreshGuard, Screen`. Ten are **pure dispatch**: bakery,
+  base_terminal, cattown, dota, frenpet, frenpet_perf, frenpet_wallet, ocm, talismans, ttt. Each
+  is the same five things hand-copied: `__init__(manager, poll_interval, name=…)` storing the
+  manager (`_data_manager` in cattown/talismans/ttt/bakery/frenpet_perf/frenpet_wallet/surf/
+  curator/fwa, `_manager` in ocm/dota/base_terminal/frenpet/frenpet_full), `_poll_interval` and
+  `_refresh_timer = None`; `on_screen_resume` (initial refresh, `set_interval`, StatusBar
+  `set_theme_name(self.app.theme)` + `set_game_name("<words>")` inside one `try/except: pass`);
+  `on_screen_suspend` (stop the timer); and `_do_refresh` = fetch → on failure log + StatusBar
+  `last_updated_seconds_ago=999, error_count=getattr(manager, "_error_count", 0)` (bakery and
+  frenpet read the attribute bare and would raise on a manager without it) → title-bar update →
+  one `try: self.query_one(W).update_data(k=data.get("k"), …) except Exception: logger.…` block
+  per panel → StatusBar from `data`. 151 such blocks across the 14 screens; log levels drift
+  (`debug` in most, `warning` in bakery/frenpet, `error` for a failed fetch in base/bakery/
+  frenpet/frenpet_full).
+- Four keep a **custom `_do_refresh`** and stay that way this branch (Decision 4): surf (4,593
+  lines), curator (2,397), fwa (520), frenpet_full (781). Their lifecycle bodies are the shared
+  shape plus one line each: surf `set_key_hints(self.KEY_HINTS)`; fwa, ttt and talismans
+  `set_active_view(self._active_view)`; curator's `on_screen_suspend` and `on_unmount` also cancel
+  its export/ENS workers.
+- Two of the ten pure-dispatch screens compute between fetch and dispatch (frenpet_wallet,
+  frenpet_perf: aggregate wins/losses, `compute_win_rate`, `classify_*`, `find_top_earner`, a
+  `time.time()` sample for one-point histories — **the clock is not injected there**, a
+  pre-existing hazard, filed not fixed). Two panels take a positional argument
+  (`FPOverviewLeaderboard.update_data(top_pets)`, `FPWalletPets.update_data(pets)`); both
+  parameters are named, so a keyword call is equivalent.
+- Constructor call sites: `app.py:236–389` (`Screen(manager, poll_interval, name=…)`, the
+  Curator/FWA/Surf/Talismans ones spread over lines) and every test (`Screen(manager,
+  poll_interval=30, name="…")`); `app.py` is untouched by this branch. Tests that read a screen's
+  manager attribute: `tests/screens/test_{curator,fwa,surf}_screen.py`, `test_refresh_guard.py`,
+  `tests/test_{curator,surf}_registration.py` (`_data_manager`).
+- Enforcement today: `tests/screens/test_refresh_guard.py::_dashboard_screen_classes` collects a
+  screen only when `"_do_refresh" in vars(cls)` — a screen that inherits its refresh would fall
+  out of the guard test silently; `test_template_screen_inherits_the_guard` reads
+  `templates/screen_template.py`, which is a copy of bakery. Screen-level tests exist for base
+  (mount + failed refresh), talismans (mount + toggle), frenpet (titles, pet view, wallet hero
+  scaling) and ttt (icon layout); cattown, dota, ocm, bakery and frenpet_perf are covered only by
+  the address sweep, the copy harness in `tests/test_address_rule.py` and the degradation tests.
+
+### Design
+
+- **`screens/dashboard_screen.py`** — `class DashboardScreen(RefreshGuard, Screen)`:
+  - class attributes a subclass sets: `GAME_NAME: str` (the status-bar words, e.g.
+    `"onchain monsters"`), `REFRESH_WORKER_NAME`, `PANELS: tuple[tuple[type[Widget],
+    Callable[[dict], dict]], ...]` — the widget class `query_one` finds and an **adapter** from the
+    manager's flat dict to that widget's `update_data` **keyword arguments**; `BINDINGS =
+    [Binding("r", "refresh", "Refresh", show=False)]` (a subclass extending it re-lists `r`, as
+    ttt/talismans do today).
+  - `keys(*names, **defaults) -> Callable[[dict], dict]`: the adapter for the dominant shape,
+    `lambda data: {n: data.get(n, defaults.get(n)) for n in names}` — so a panel row reads
+    `(OCMSparklines, keys("supply_history", "staked_history", "ocmd_supply_history"))`; a
+    computing adapter is a module-level function in the screen (`_wallet_hero(data) -> dict`).
+  - `__init__(self, manager, poll_interval: int = 30, name: str | None = None, **kwargs)`: stores
+    `self._data_manager` (the majority name; ocm/dota/base_terminal/frenpet/frenpet_full rename
+    their `self._manager` reads, and the tests that read them), `self._poll_interval`,
+    `self._refresh_timer = None`. Positional order and `name=` keyword unchanged, so `app.py`
+    and every test construct screens exactly as today.
+  - `on_screen_resume`: `_do_initial_refresh()`, `set_interval(poll_interval, _schedule_refresh)`,
+    then inside one `try/except Exception: pass` (a harness may mount no StatusBar): `bar =
+    self.query_one(StatusBar)`, `bar.set_theme_name(self.app.theme)`,
+    `bar.set_game_name(self.GAME_NAME)`, `self._prime_status_bar(bar)`. **`_prime_status_bar(bar)`**
+    is the hook for the one extra line (fwa/ttt/talismans `set_active_view`, surf `set_key_hints`);
+    default no-op.
+  - `on_screen_suspend`: stop and clear the timer (curator overrides and calls `super()` first).
+  - `_do_refresh`: `data = await self._data_manager.fetch_and_compute()`; on exception
+    `logger.warning("%s refresh failed: %s", self.GAME_NAME, exc)`, StatusBar
+    `update_data(last_updated_seconds_ago=999, error_count=getattr(manager, "_error_count", 0),
+    poll_interval=self._poll_interval)` in its own try, return. Then `self._update_title(data)`
+    (hook, default no-op, its body in the subclass wrapped by the base in `try/except` +
+    `logger.warning`), then for each `(cls, adapt)` in `PANELS`: `try:
+    self.query_one(cls).update_data(**adapt(data)) except Exception as exc:
+    logger.warning("Failed to update %s: %s", cls.__name__, exc)` — one panel's failure never
+    stops the next; then StatusBar from `data` (`last_updated_seconds_ago`, `error_count`,
+    `poll_interval` defaulting to the screen's). One log level, `warning`, for every degraded
+    step (a panel that cannot render is worth a line in `~/.maxpane/maxpane.log`); `debug` was
+    the majority but hid exactly the failures the degradation tests exist for.
+  - `compose()` stays per screen (layouts differ); `on_mount` (ttt/talismans hide one table) and
+    `action_toggle_view` stay per screen.
+- **Rendering must not change.** Same widgets, same kwargs, same `data.get` defaults; the
+  adapters are transcribed from the dispatch blocks, default by default (`faucet_open=True`,
+  `time_to_next_tier=""`, `recommendation=""`, `recent_mints=0`, `game_start_timestamp=
+  1709251200`, …). The one intended behaviour change: bakery and frenpet no longer raise inside
+  the failure path when a manager has no `_error_count` (they degrade like the other eight).
+- **Enforcement (replaces 151 hand-typed blocks with two tests that bite):**
+  `tests/screens/test_dashboard_screen.py::test_every_panel_row_names_a_mounted_widget_and_its_update_data_keywords`
+  parametrised over every `DashboardScreen` subclass in `screens/` that does not define its own
+  `_do_refresh`: mount it with a payload manager (reuse the address-sweep case's `build`/`payload`
+  where one exists, else a `_PayloadManager` over `{}`), assert `PANELS` is non-empty, each
+  `cls` resolves by `query_one`, no class appears twice, and `set(adapt(payload)) ⊆
+  signature(cls.update_data).parameters` (with no positional-only parameter left unfilled) — a
+  mistyped key, a dropped panel or a widget not in `compose` reddens the row. Second: the guard
+  test's collector becomes `issubclass(obj, DashboardScreen) or "_do_refresh" in vars(obj)` and
+  asserts every collected class sets `GAME_NAME` when it inherits the refresh.
+- `templates/screen_template.py` is rewritten onto `DashboardScreen` (`GAME_NAME`, `PANELS`,
+  `compose`, `_update_title`) — it is the copy-source, and a copy of the old shape reintroduces
+  the 151-block pattern in dashboard number fifteen.
+
+### WP-A — the base class, one proof migration, the template
+
+Files (owner of each): `maxpane_dashboard/screens/dashboard_screen.py` (new),
+`maxpane_dashboard/screens/ocm.py` (migrated: `GAME_NAME = "onchain monsters"`, `PANELS` of six
+rows, `compose` kept, no `_update_title` — ocm has no title logic), `maxpane_dashboard/templates/
+screen_template.py` (rewritten onto the base), `tests/screens/test_dashboard_screen.py` (new),
+`tests/screens/test_refresh_guard.py` (collector + `GAME_NAME` assertion), CLAUDE.md
+Architecture line for `screens/` (add `dashboard_screen.py (DashboardScreen: lifecycle +
+PANELS dispatch)`) and `.claude/rules/widgets.md` if it names the screen shape (check; the
+new-dashboard checklist rewrite itself is Branch 11).
+
+Tests in `test_dashboard_screen.py` (TDD, each with a mutation that reddens it, recorded in the
+report): resume starts the timer and primes the bar with `GAME_NAME` and the app theme, suspend
+stops it; `_prime_status_bar` is called with the bar; a failed fetch posts `999` and the
+manager's `_error_count` and tolerates a manager without one (port of
+`test_base_terminal_screen.py:77–110` onto a minimal subclass); a panel whose `update_data`
+raises is logged at `warning` with its class name and the following panel still updates; the
+StatusBar row reads `data` with the screen's `poll_interval` as default; `keys()` returns
+`data.get` with the given defaults and nothing else; `_update_title` receives `data` and its
+exception is contained; the panel-row agreement test above (ocm is its first row). Plus the
+pre/post render check: before touching `ocm.py`, render `OCMScreen` at 170×50 and at its pin
+with the sweep payload (`tests/address_sweep/builders.py` ocm case) to a scratch file; after
+migration the composited text is identical — paste the diff (empty) into the report; the
+reviewer repeats it. Named tests: `tests/screens/test_dashboard_screen.py`,
+`tests/screens/test_refresh_guard.py`, `tests/test_address_rule.py`, `-m guard tests`,
+`HOME=$(mktemp -d) … tests/screens/test_address_icons_everywhere.py -k ocm`.
+
+**WP-A outcome (2026-09-20).** Landed as `d25f9de`, fix round 1 on top. 8 files, +912/−273:
+`screens/dashboard_screen.py` new (233 lines), `screens/ocm.py` 177 → 117, `templates/screen_template.py`
+187 → 121 (raw `wc -l`, the convention below; the 132 → 72 and 133 → 67 first written here counted
+non-blank non-comment lines and were not comparable with anything else in this plan — WP-B
+re-review N1), `tests/screens/test_dashboard_screen.py` new, `tests/screens/test_refresh_guard.py`
+(collector + `GAME_NAME`), `tests/test_address_sweep_registry.py`, CLAUDE.md, `.claude/rules/widgets.md`.
+Pre/post composited render of `OCMScreen` on the sweep payload at 170×50 and at the 143 pin (frozen
+clock): **identical, both diffs empty.**
+
+Four deviations from this section, each reported rather than taken silently:
+
+1. **A sixth file was needed.** `tests/test_address_sweep_registry.py::test_every_dashboard_screen_has_a_sweep_case`
+   (E3) discovers every `Screen` subclass under `screens/` and demanded a `SweepCase` for the base
+   class. Excluded by **class**, not by module (`ABSTRACT_SCREEN_CLASSES = (DashboardScreen,)`,
+   tightened in fix round 1 from WP-A's first module-wide cut, which would have hidden a real
+   dashboard later added beside the base). WP-B should expect the same tuple to stay one entry long.
+2. **The panel-row agreement test does not honour `**kwargs`.** Under the literal rule
+   (`set(adapt(payload)) ⊆ signature(...).parameters`) the section's own mutation did **not** bite:
+   `OCMHeroMetrics.update_data` ends in `**_kwargs`, so `minted_pcts` was accepted and silently
+   discarded. Every key must now be a *named* parameter. Verified safe for WP-B by an AST scan: none
+   of the nine remaining pure-dispatch screens sends a keyword its widget does not name.
+3. **`keys()` raises on a default that names no listed key.** Semantics for valid input are exactly
+   the lambda in the Design bullet; the guard catches `faucet_opn=True` beside `"faucet_open"`, which
+   the bare lambda swallows into a silent `None`.
+4. **ocm's constructor defaults moved** by deleting its `__init__` (`poll_interval` 60 → 30, `name`
+   `"ocm"` → `None`). Every call site passes both explicitly, so nothing observable changed; WP-B
+   inherits the same effect on dota/base_terminal/frenpet.
+
+**Review: `Needs fixes: 0 Critical, 1 Important, 4 Minor`; fix round 1 closed all but the one filed
+follow-up.** I1 — no test could fail when a migrated screen lost skip-not-queue on its first refresh
+(a bare `run_worker` in `on_screen_resume` left all four named files green while an overrun tick
+cancelled the in-flight fetch): two pilot tests added on the guard's own doubles, asserting
+`_refresh_in_flight` / `_refresh_skipped` on the minimal subclass and the prefetch join on the
+migrated `OCMScreen`. M1 — the `BINDINGS` comment claimed Textual does not merge a subclass's
+bindings; it does, along the MRO (verified on Textual 8.1.1), so **WP-B need not re-list `r`** and may
+drop it from ttt/talismans. M2 — `rules/widgets.md` now dates its scope (only ocm and the template are
+migrated). M4 — the E3 exclusion made class-level, as above. M3 was pre-existing and is filed as
+follow-up **18**, not fixed: ocm's STAKING OVERVIEW and SUPPLY BREAKDOWN keep their `Loading...`
+placeholder under a partial payload because an explicit `None` overrides the widgets' own `= 0`
+defaults — **WP-B will surface the same shape on any screen whose widgets default numerically**, and
+it is a widget fix (MEDI-38 unavailable state), never a change to the screen or to `keys()`.
+
+### WP-B — the other nine, lifecycle-only for the four custom screens, the docs
+
+- Migrate bakery, base_terminal, cattown, dota, frenpet, frenpet_perf, frenpet_wallet,
+  talismans, ttt onto `DashboardScreen`: `GAME_NAME`, `PANELS`, `compose` kept, `_update_title`
+  where the screen had title logic (all but cattown? — cattown has one; every screen but ocm
+  does), `_prime_status_bar` for ttt/talismans (`set_active_view`), `on_mount` and
+  `action_toggle_view` kept. frenpet_perf/frenpet_wallet: computing adapters as module-level
+  functions taking `data` only; the wallet address the title needs comes from
+  `self._data_manager._wallet_address` inside `_update_title`, which has `self`. `time.time()`
+  stays where it is (followup). Delete every `on_screen_resume`/`on_screen_suspend`/
+  `_do_refresh`/`__init__` the base now provides.
+- surf, curator, fwa, frenpet_full: inherit `DashboardScreen`; `__init__` calls
+  `super().__init__(manager, poll_interval, name=name, **kwargs)` and keeps only its extra state;
+  delete their `on_screen_resume`/`on_screen_suspend` where identical to the base (surf: keep the
+  key hints via `_prime_status_bar`; fwa: `set_active_view` via the hook; curator: override
+  `on_screen_suspend`, call `super()`, then its worker cancellations); keep `_do_refresh`. Set
+  `GAME_NAME` (`"surf"`, `"curator"`, `"fwa"`, `"frenpet · base"`). frenpet_full renames
+  `self._manager` → `self._data_manager` (and dota/base_terminal/frenpet in their migration).
+- Tests: the panel-row agreement test gains nine rows for free; `test_base_terminal_screen.py`,
+  `test_talismans_screen.py`, `test_frenpet_screens.py`, `test_ttt_address_icon_layout.py`,
+  `test_{curator,fwa,surf}_screen.py` (the `_refresh_timer` / resume-suspend assertions at
+  `test_fwa_screen.py:700`, `test_curator_screen.py:1765` now exercise the base) must stay green
+  unchanged except for the attribute rename; pre/post render diff at 170 columns and each pin
+  for all nine migrated screens plus the four custom ones (their compose is untouched, so
+  identical by construction — still diffed). Named tests: those files, `tests/test_address_rule.py`,
+  `tests/screens/test_dashboard_screen.py`, `tests/screens/test_refresh_guard.py`, `-m guard
+  tests`, `HOME=$(mktemp -d) … tests/screens/test_address_icons_everywhere.py`,
+  `tests/test_app_startup.py`, `tests/test_{curator,surf}_registration.py`.
+- Docs: `docs/handover_followups_2026_09.md` gains the `time.time()`-in-screen item
+  (frenpet_wallet/frenpet_perf, "inject the clock") and the outcome paragraph below records the
+  line count removed (HANDOVER estimated ~1,100).
+
+**WP-B outcome (2026-09-20).** Landed as `64ab0f8`. All thirteen remaining screens are on
+`DashboardScreen`; nothing was left unmigrated.
+
+*Line counts are raw `wc -l`* — blank lines, comments and docstrings included — the only figure
+that can be checked with one command, and the convention for every number in this plan (the WP-A
+paragraph above was restated in it).
+
+| file | before | after | file | before | after |
+| --- | --- | --- | --- | --- | --- |
+| `screens/bakery.py` | 189 | 124 | `screens/talismans.py` | 250 | 169 |
+| `screens/base_terminal.py` | 177 | 90 | `screens/ttt.py` | 244 | 163 |
+| `screens/cattown.py` | 173 | 87 | `screens/surf.py` | 4593 | 4587 |
+| `screens/dota.py` | 186 | 114 | `screens/curator.py` | 2397 | 2392 |
+| `screens/frenpet.py` | 189 | 117 | `screens/fwa.py` | 520 | 511 |
+| `screens/frenpet_perf.py` | 296 | 247 | `screens/frenpet_full.py` | 781 | 758 |
+| `screens/frenpet_wallet.py` | 331 | 280 | **total** | **10,326** | **9,639** |
+
+**687 production lines removed in WP-B**, 813 for the branch with WP-A's 126 (ocm 177 → 117,
+template 187 → 121). HANDOVER estimated ~1,100; the gap is honest, not a shortfall: the estimate
+counted the four custom screens' `_do_refresh` bodies, which stay because their refreshes really
+are custom, and it did not net off the 236-line shared base (so the repo is 577 lines smaller, and
+the duplicated lifecycle is now written once).
+
+**Render evidence.** Every one of the 14 `tests/address_sweep/registry.CASES` entries was
+composited before and after, at 170×60 and at each pin the case lists, for every view the case
+lists (76 files): **every render diff empty.** Because the sweep payload leaves some panels on
+`Loading...` (followups #18), each mount also logged every `update_data` call with its kwargs
+normalised through `inspect.signature().bind()`, plus every title-bar `Static.update`, on three
+payloads — the sweep payload, an all-string sentinel payload and an all-numeric one — against the
+*pre-migration module* loaded out of `git show e7a37dd:`. Every screen's dispatch log is identical
+on all three, with one exception, below.
+
+**Four deliberate deviations, none of them reachable from the real managers.**
+
+1. `screens/bakery.py` was the one hand-written dispatch that read its payload by **subscript**
+   (`data["bakeries"]`), so a missing key raised `KeyError` and left the panel on its last render.
+   `keys(...)` reads with `data.get`, so a partial payload now reaches the panel as an explicit
+   `None`. `data/manager.py` builds its payload as one dict literal in which every one of those
+   keys is always present, so against the real manager the two reads are the same read; the
+   composited render on the sweep's own partial bakery payload is identical at 170 and at the pin.
+   A raising adapter cannot be read by the panel-row agreement test, which would have left bakery
+   the one dashboard with no enforcement — the hole this branch exists to close. Recorded in the
+   module docstring.
+2. Following from 1: on a literally empty `{}` payload old bakery dispatched nothing and new
+   bakery dispatches seven rows, including the base's status-bar row
+   (`error_count=0, last_updated_seconds_ago=0, poll_interval=30`, the approved WP-A contract).
+   This is the one non-identical dispatch log in the whole capture, and `{}` is a payload
+   `DataManager.fetch_and_compute()` cannot produce.
+3. Constructor signatures drifted to the base's. `screens/dota.py` lost its own `__init__` and
+   with it the default `name="dota"` (now `None` from the base); `screens/frenpet_full.py`
+   never had a `name` parameter and loses nothing there. `bakery`, `cattown`, `frenpet_perf`
+   and `frenpet_wallet` took `poll_interval` as a **required** positional and now inherit the
+   base's `poll_interval=30` default. Every call site in `app.py` passes both the interval and
+   `name=` explicitly, so nothing observable changed — the same drift WP-A recorded for ocm.
+   (Fix-round 1 corrected this entry: the WP-B report had named `frenpet_full` for a `name`
+   default it never had and missed the four that lost a required argument.)
+4. `screens/frenpet_perf.py` computed four aggregates (`total_wins`, `total_losses`,
+   `total_score`, `avg_win_rate`) **once** in `_do_refresh`, ahead of and outside every
+   panel's `try` (the summed score history was always inside the trends panel's own `try`).
+   A payload on which that arithmetic raised (a pet object missing `win_qty`, say) escaped
+   `_do_refresh` entirely: all six panels kept their last render **and the status-bar row
+   never ran**, so the screen showed a stale `as of` reading with no degradation marker — the
+   exact shape CLAUDE.md's "never a stale number presented as live" forbids. The module-level
+   adapters recompute each aggregate inside the panel that needs it and the base contains each
+   adapter, so the same payload now fails per panel, the panels that do not need the broken
+   field still update, and the status bar is written. An improvement, and one the real
+   manager cannot reach (its `managed_pets` are typed records); recorded because the WP-B
+   report did not name it (WP-B reviewer M5; wording corrected on the re-review's N1).
+
+`frenpet_perf`/`frenpet_wallet`'s between-fetch arithmetic moved out whole into module-level
+adapters (`_perf_hero`, `_perf_trends`, … `_wallet_best_plays`): same helpers, same order, same
+values, and `time.time()` still sampled inside `_perf_trends`/`_wallet_trends` rather than
+injected — carried across, not fixed, and filed as follow-up 19. `ttt` and `talismans` now list
+only `c` in `BINDINGS` (Textual merges along the MRO, WP-A note M1); a pilot keypress test proves
+`r` still refreshes, and reddens when the base's binding key is changed.
+
+Reviewer contract verbatim, one reviewer per WP diff, at most two fix rounds each; the full suite
+once on the branch head before the merge word.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

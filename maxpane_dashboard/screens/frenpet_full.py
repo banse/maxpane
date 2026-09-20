@@ -8,7 +8,6 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
 from textual.widgets import ContentSwitcher, Static
 
 from maxpane_dashboard.analytics.frenpet_signals import (
@@ -17,8 +16,7 @@ from maxpane_dashboard.analytics.frenpet_signals import (
     determine_growth_phase,
     generate_pet_recommendation,
 )
-from maxpane_dashboard.data.frenpet_manager import FrenPetManager
-from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.frenpet._chain import EXPLORER
 from maxpane_dashboard.widgets.frenpet import (
@@ -57,8 +55,14 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 logger = logging.getLogger(__name__)
 
 
-class FrenPetFullScreen(RefreshGuard, Screen):
-    """FrenPet game dashboard with 4 views."""
+class FrenPetFullScreen(DashboardScreen):
+    """FrenPet game dashboard with 4 views.
+
+    Lifecycle (constructor, resume, suspend) comes from
+    :class:`~maxpane_dashboard.screens.dashboard_screen.DashboardScreen`; the
+    four bodies mean the dispatch genuinely differs per view, so this screen
+    keeps its own ``_do_refresh`` and declares no ``PANELS``.
+    """
 
     BINDINGS = [
         Binding("1", "show_general", "General", show=False),
@@ -70,19 +74,11 @@ class FrenPetFullScreen(RefreshGuard, Screen):
         Binding("r", "refresh", "Refresh", show=False),
     ]
 
+    #: The words the status bar shows for this dashboard.
+    GAME_NAME = "frenpet \u00b7 base"
+
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "frenpet-refresh"
-
-    def __init__(
-        self,
-        manager: FrenPetManager,
-        poll_interval: int = 30,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self._manager = manager
-        self._poll_interval = poll_interval
-        self._refresh_timer = None
 
     DEFAULT_CSS = """
     #wallet-header {
@@ -300,36 +296,17 @@ class FrenPetFullScreen(RefreshGuard, Screen):
     _current_pet_index: int = 0
     _last_data: dict | None = None
 
-    def on_screen_resume(self) -> None:
-        """Start polling when this screen is active."""
-        self._do_initial_refresh()
-        self._refresh_timer = self.set_interval(
-            self._poll_interval, self._schedule_refresh
-        )
-        # Update status bar with current theme name
-        try:
-            self.query_one(StatusBar).set_theme_name(self.app.theme)
-            self.query_one(StatusBar).set_game_name("frenpet \u00b7 base")
-        except Exception:
-            pass
-
-    def on_screen_suspend(self) -> None:
-        """Stop polling when switching away."""
-        if self._refresh_timer:
-            self._refresh_timer.stop()
-            self._refresh_timer = None
-
     async def _do_refresh(self) -> None:
         """Fetch data and update all widgets across all 3 views."""
         try:
-            data = await self._manager.fetch_and_compute()
+            data = await self._data_manager.fetch_and_compute()
         except Exception as exc:
             logger.error("FrenPet refresh failed: %s", exc)
             # Update status bar to reflect the error
             try:
                 self.query_one(StatusBar).update_data(
                     last_updated_seconds_ago=999,
-                    error_count=self._manager._error_count,
+                    error_count=self._data_manager._error_count,
                     poll_interval=self._poll_interval,
                 )
             except Exception:
@@ -486,7 +463,7 @@ class FrenPetFullScreen(RefreshGuard, Screen):
         # action lives in a Style that only survives outside markup parsing.
         header = self.query_one("#wallet-header", Static)
         if not managed_pets:
-            wallet = getattr(self._manager, "_wallet_address", "")
+            wallet = getattr(self._data_manager, "_wallet_address", "")
             if wallet:
                 line = address_text(wallet, width=17, style="dim", explorer=EXPLORER)
                 line.append(" — no pets found", style="dim")

@@ -36,6 +36,7 @@ from textual.app import App
 from textual.screen import Screen
 
 import maxpane_dashboard.screens as screens_pkg
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.refresh_guard import PREFETCH_WORKER_NAME, RefreshGuard
 from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
@@ -279,7 +280,17 @@ async def test_prefetch_failure_does_not_block_the_screen():
 
 
 def _dashboard_screen_classes() -> list[type]:
-    """Every Screen subclass in the package that polls a manager."""
+    """Every Screen subclass in the package that polls a manager.
+
+    Two ways to qualify, because a screen can now *inherit* its refresh:
+    subclassing :class:`DashboardScreen` (which supplies ``_do_refresh``), or
+    declaring one of its own. Collecting only on ``"_do_refresh" in vars(obj)``
+    — what this did before ``screens/dashboard_screen.py`` existed — would drop
+    every migrated screen out of the guard test the moment it was migrated,
+    silently, which is the opposite of what the test is for. ``DashboardScreen``
+    itself is excluded: it is the base, not a dashboard, and by design it does
+    not set ``GAME_NAME`` or its own ``REFRESH_WORKER_NAME``.
+    """
     found: list[type] = []
     for mod_info in pkgutil.iter_modules(screens_pkg.__path__):
         module = importlib.import_module(f"{screens_pkg.__name__}.{mod_info.name}")
@@ -288,7 +299,8 @@ def _dashboard_screen_classes() -> list[type]:
                 inspect.isclass(obj)
                 and issubclass(obj, Screen)
                 and obj.__module__ == module.__name__
-                and "_do_refresh" in vars(obj)
+                and obj is not DashboardScreen
+                and (issubclass(obj, DashboardScreen) or "_do_refresh" in vars(obj))
             ):
                 found.append(obj)
     return found
@@ -310,6 +322,13 @@ def test_every_polling_screen_uses_the_guard():
                 f"{cls.__name__} overrides {meth}; scheduling belongs to RefreshGuard"
             )
             assert getattr(cls, meth) is getattr(RefreshGuard, meth)
+        if "_do_refresh" not in vars(cls):
+            # It dispatches through the base: the base reads GAME_NAME for the
+            # status bar and for its refresh-failure log line, so an unset one
+            # ships a nameless footer and an anonymous log.
+            assert getattr(cls, "GAME_NAME", "") and cls.GAME_NAME != DashboardScreen.GAME_NAME, (
+                f"{cls.__name__} inherits _do_refresh but sets no GAME_NAME"
+            )
 
 
 def test_no_screen_schedules_a_bare_refresh_worker():

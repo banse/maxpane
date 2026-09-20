@@ -101,11 +101,56 @@ pilot test that clicks a link mixes `tests/widgets/address_probe.LinkRecorder` i
 
 Do not copy the helpers. Its docstring lists the older copies not yet on the module.
 
-## Screens inherit `screens/refresh_guard.RefreshGuard`
+## Screens inherit `screens/dashboard_screen.DashboardScreen`
 
-It gives skip-not-queue refresh and joins the startup prefetch. Do not hand-roll
-`run_worker(..., exclusive=True)`. Workers are cancelled or invalidated on leave; no network
-await inside a message handler.
+Which is a `RefreshGuard`: skip-not-queue refresh, joined to the startup prefetch. Do not
+hand-roll `run_worker(..., exclusive=True)`. Workers are cancelled or invalidated on leave; no
+network await inside a message handler.
+
+`DashboardScreen` also owns the lifecycle and the dispatch, so a screen writes **no** `__init__`,
+`on_screen_resume`, `on_screen_suspend` or `_do_refresh` (Branch 5 of the refactor programme: 151
+hand-copied `try: query_one(W).update_data(...) except` blocks across 14 screens, with log levels
+drifted from `debug` to `error` and two screens raising out of their own failure path on a manager
+without `_error_count`). It declares instead:
+
+- `GAME_NAME` — the status bar's words; also the subject of the refresh-failure log line.
+- `REFRESH_WORKER_NAME` — as before.
+- `PANELS` — `((WidgetClass, adapter), …)`, one row per panel in update order. The adapter maps
+  the manager's flat payload to that widget's `update_data` **keyword arguments**:
+  `keys("a", "b", b="")` for the dominant `data.get` shape (a default names a listed key, or it
+  raises), a module-level `def _x(data) -> dict` where a panel renames or computes. The status bar
+  is never a row — the base updates it last, from `data`, falling back to the screen's own
+  `poll_interval`.
+- `compose`, `on_mount`, `action_toggle_view`, `_update_title(data)` (hook, contained by the base)
+  and `_prime_status_bar(bar)` (hook, the one extra line fwa/ttt/talismans/surf prime on resume).
+
+Every degraded step logs at `warning`, once, in the base: a panel that cannot render is worth a
+line in `~/.maxpane/maxpane.log`. Enforcement:
+`tests/screens/test_dashboard_screen.py::test_every_panel_row_names_a_mounted_widget_and_its_update_data_keywords`
+mounts every subclass that inherits `_do_refresh` and reads `PANELS` both ways — every row's class
+is in `compose` and named once, every key it sends is a **named** parameter of `update_data` (a
+`**kwargs` catch-all is not a licence for a typo) with no required parameter left unfilled, and
+every mounted widget with an `update_data` is named by some row (so a dropped row reddens).
+`tests/screens/test_refresh_guard.py` collects a screen by `issubclass(…, DashboardScreen)` as
+well as by its own `_do_refresh`, and requires `GAME_NAME` on anything that inherits the refresh.
+The copy-source is `templates/screen_template.py`.
+
+The four screens with a genuinely custom `_do_refresh` (surf, curator, fwa, frenpet_full) inherit
+the class for its lifecycle and keep their own refresh.
+
+**Scope as of WP-B (2026-09-20): every dashboard screen is on `DashboardScreen`.** All ten
+pure-dispatch screens — bakery, base_terminal, cattown, dota, frenpet, frenpet_perf,
+frenpet_wallet, ocm, talismans, ttt — declare `PANELS` and carry no `on_screen_resume`, no
+`on_screen_suspend` and no `_do_refresh`. Eight of them carry no `__init__` either; the one
+exception is a screen with **extra state of its own** (ttt's and talismans' `_active_view`),
+which keeps an `__init__` that calls `super().__init__(manager, poll_interval, name=name,
+**kwargs)` first and sets only that state — never the manager, the interval or the timer. The
+four with a genuinely custom refresh — surf, curator, fwa, frenpet_full — inherit the class for
+its lifecycle, set `GAME_NAME`,
+prime their one extra status-bar line through `_prime_status_bar` (surf's key hints, fwa's active
+view) and keep their own `_do_refresh`; curator's `on_screen_suspend` calls `super()` first and
+then cancels its export and ENS workers. `templates/screen_template.py` is written to the same
+contract. Copy the template, or any migrated screen.
 
 ## Reuse before you build
 

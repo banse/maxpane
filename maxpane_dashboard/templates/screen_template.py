@@ -1,17 +1,26 @@
-"""BakeryScreen -- RugPull Bakery game dashboard as a Textual Screen."""
+"""BakeryScreen -- RugPull Bakery game dashboard as a Textual Screen.
+
+Copy-source for a new dashboard screen. Copy it, rename the class, set
+``GAME_NAME`` / ``REFRESH_WORKER_NAME``, list your panels in ``PANELS`` and
+write ``compose``. Everything else -- the constructor, the resume/suspend
+lifecycle, the guarded refresh and the whole fetch-to-widget dispatch -- lives
+in :class:`~maxpane_dashboard.screens.dashboard_screen.DashboardScreen` and
+must not be copied back in. A screen that hand-writes a
+``try: self.query_one(W).update_data(...) except`` block per panel is the
+pattern Branch 5 removed (151 of them across 14 screens); a copy of that shape
+here would put it straight back into dashboard number fifteen.
+
+Read ``screens/ocm.py`` for a migrated screen and ``screens/dashboard_screen.py``
+for the contract.
+"""
 
 from __future__ import annotations
 
-import logging
-
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
 from textual.widgets import Static
 
-from maxpane_dashboard.data.manager import DataManager
-from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.widgets.hero_metrics import HeroMetrics
 from maxpane_dashboard.widgets.leaderboard import Leaderboard
 from maxpane_dashboard.widgets.cookie_chart import CookieChart
@@ -20,29 +29,60 @@ from maxpane_dashboard.widgets.signals_panel import SignalsPanel
 from maxpane_dashboard.widgets.ev_table import EVTable
 from maxpane_dashboard.widgets.status_bar import StatusBar
 
-logger = logging.getLogger(__name__)
+
+def _cookie_chart(data: dict) -> dict:
+    """An adapter for a panel whose keyword is not the payload's key.
+
+    ``keys(...)`` covers the dominant shape -- keyword and payload key are the
+    same word. Anything else (a rename, or a value computed from several keys)
+    is a plain module-level function taking ``data`` and returning the keyword
+    arguments, exactly like this one.
+    """
+    return {"histories": data.get("chart_histories")}
 
 
-class BakeryScreen(RefreshGuard, Screen):
+class BakeryScreen(DashboardScreen):
     """RugPull Bakery game dashboard."""
 
-    BINDINGS = [
-        Binding("r", "refresh", "Refresh", show=False),
-    ]
+    #: The words the status bar shows for this dashboard.
+    GAME_NAME = "rugpull bakery"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "bakery-refresh"
 
-    def __init__(self, data_manager: DataManager, poll_interval: int, **kwargs):
-        super().__init__(**kwargs)
-        self._data_manager = data_manager
-        self._poll_interval = poll_interval
-        self._refresh_timer = None
+    #: The dispatch, as data: one row per panel, in update order. Each adapter
+    #: maps the manager's flat payload to that widget's ``update_data`` keyword
+    #: arguments; ``keys(...)`` is the plain ``data.get`` shape, and a key that
+    #: needs a fallback names it (``recommendation=""``). The status bar is not
+    #: a row -- the base always updates it last.
+    PANELS = (
+        (
+            HeroMetrics,
+            keys(
+                "prize_pool_eth",
+                "prize_pool_usd",
+                "hours_remaining",
+                "season_id",
+                "season_active",
+                "leader_name",
+                "leader_cookies",
+                "leader_rate",
+            ),
+        ),
+        (Leaderboard, keys("bakeries", "production_rates", "prize_pool_usd")),
+        (CookieChart, _cookie_chart),
+        (ActivityFeed, keys("events")),
+        (
+            SignalsPanel,
+            keys("late_join_ev", "gap_analysis", "dominance", "recommendation"),
+        ),
+        (EVTable, keys("boost_rankings", "attack_rankings")),
+    )
 
     def compose(self) -> ComposeResult:
         # Title bar
         yield Static(
-            "RugPull Bakery \u00b7 Season ?",
+            "RugPull Bakery · Season ?",
             id="title-bar",
         )
 
@@ -58,7 +98,7 @@ class BakeryScreen(RefreshGuard, Screen):
 
         # Dashed separator
         yield Static(
-            "\u2500" * 300,
+            "─" * 300,
             id="separator",
         )
 
@@ -70,118 +110,12 @@ class BakeryScreen(RefreshGuard, Screen):
         # Status bar
         yield StatusBar()
 
-    def on_screen_resume(self) -> None:
-        """Start polling when this screen is active."""
-        self._do_initial_refresh()
-        self._refresh_timer = self.set_interval(
-            self._poll_interval, self._schedule_refresh
+    def _update_title(self, data: dict) -> None:
+        """Hook: the one thing this screen shows outside a panel.
+
+        The base calls it with the fetched payload and contains anything it
+        raises, so there is no ``try`` to copy here.
+        """
+        self.query_one("#title-bar", Static).update(
+            f"RugPull Bakery · Season {data.get('season_id')}"
         )
-        # Update status bar with current theme name
-        try:
-            self.query_one(StatusBar).set_theme_name(self.app.theme)
-            self.query_one(StatusBar).set_game_name("rugpull bakery")
-        except Exception:
-            pass
-
-    def on_screen_suspend(self) -> None:
-        """Stop polling when switching away."""
-        if self._refresh_timer:
-            self._refresh_timer.stop()
-            self._refresh_timer = None
-
-    async def _do_refresh(self) -> None:
-        """Fetch data and update all widgets."""
-        try:
-            data = await self._data_manager.fetch_and_compute()
-        except Exception as exc:
-            logger.error("Refresh failed: %s", exc)
-            # Update status bar to reflect the error
-            try:
-                self.query_one(StatusBar).update_data(
-                    last_updated_seconds_ago=999,
-                    error_count=self._data_manager._error_count,
-                    poll_interval=self._poll_interval,
-                )
-            except Exception:
-                pass
-            return
-
-        # Update title bar with season
-        try:
-            title = self.query_one("#title-bar", Static)
-            title.update(
-                f"RugPull Bakery \u00b7 Season {data['season_id']}"
-            )
-        except Exception:
-            pass
-
-        # Update hero metrics
-        try:
-            self.query_one(HeroMetrics).update_data(
-                prize_pool_eth=data["prize_pool_eth"],
-                prize_pool_usd=data["prize_pool_usd"],
-                hours_remaining=data["hours_remaining"],
-                season_id=data["season_id"],
-                season_active=data["season_active"],
-                leader_name=data["leader_name"],
-                leader_cookies=data["leader_cookies"],
-                leader_rate=data["leader_rate"],
-            )
-        except Exception as exc:
-            logger.warning("Failed to update HeroMetrics: %s", exc)
-
-        # Update leaderboard
-        try:
-            self.query_one(Leaderboard).update_data(
-                bakeries=data["bakeries"],
-                production_rates=data["production_rates"],
-                prize_pool_usd=data["prize_pool_usd"],
-            )
-        except Exception as exc:
-            logger.warning("Failed to update Leaderboard: %s", exc)
-
-        # Update cookie chart
-        try:
-            self.query_one(CookieChart).update_data(
-                histories=data["chart_histories"],
-            )
-        except Exception as exc:
-            logger.warning("Failed to update CookieChart: %s", exc)
-
-        # Update activity feed
-        try:
-            self.query_one(ActivityFeed).update_data(
-                events=data["events"],
-            )
-        except Exception as exc:
-            logger.warning("Failed to update ActivityFeed: %s", exc)
-
-        # Update signals panel
-        try:
-            self.query_one(SignalsPanel).update_data(
-                late_join_ev=data["late_join_ev"],
-                gap_analysis=data["gap_analysis"],
-                dominance=data["dominance"],
-                recommendation=data["recommendation"],
-            )
-        except Exception as exc:
-            logger.warning("Failed to update SignalsPanel: %s", exc)
-
-        # Update EV table
-        try:
-            self.query_one(EVTable).update_data(
-                boost_rankings=data["boost_rankings"],
-                attack_rankings=data["attack_rankings"],
-            )
-        except Exception as exc:
-            logger.warning("Failed to update EVTable: %s", exc)
-
-        # Update status bar
-        try:
-            self.query_one(StatusBar).update_data(
-                last_updated_seconds_ago=data["last_updated_seconds_ago"],
-                error_count=data["error_count"],
-                poll_interval=data["poll_interval"],
-            )
-        except Exception as exc:
-            logger.warning("Failed to update StatusBar: %s", exc)
