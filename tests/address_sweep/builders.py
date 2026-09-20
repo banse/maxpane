@@ -47,6 +47,7 @@ from maxpane_dashboard.screens.surf import (
 )
 from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
+from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA
 from tests.address_sweep.case import SweepCase
 from tests.screens import test_curator_screen as _curator
 from tests.screens import test_frenpet_screens as _frenpet
@@ -587,6 +588,11 @@ BAKERY_SEEDED: tuple[str, ...] = (
 CASES: tuple[SweepCase, ...] = (
     SweepCase(
         name="surf",
+        # Mainnet by default (``widgets/surf/_fmt.EXPLORER``); the pool4 panels link
+        # by ``pool4_network`` and the swarm rows by their own ``chain_id`` (the
+        # fixture's shipped rows are mostly Sepolia), so all three are allowed.
+        explorer=ETHEREUM,
+        explorers=(ETHEREUM, SEPOLIA, BASE),
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,
@@ -602,6 +608,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="curator",
+        explorer=ETHEREUM,  # widgets/curator/_fmt.EXPLORER
         screen_class=CuratorScreen,
         build=_curator_app,
         payload=_curator_served,
@@ -618,6 +625,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="fwa",
+        explorer=ETHEREUM,  # widgets/fwa/_chain.EXPLORER
         screen_class=FWAScreen,
         build=_fwa_app,
         payload=_fwa_payload,
@@ -627,6 +635,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="base",
+        explorer=BASE,  # widgets/base/_chain.EXPLORER
         screen_class=BaseTerminalScreen,
         build=_base_app,
         payload=_base_payload,
@@ -634,6 +643,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="frenpet",
+        explorer=None,  # address-free
         screen_class=FrenPetScreen,
         build=_frenpet_app,
         payload=_frenpet_served,
@@ -641,6 +651,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="frenpet_full",
+        explorer=BASE,  # widgets/frenpet/_chain.EXPLORER (the hidden bodies' sites)
         screen_class=FrenPetFullScreen,
         build=_frenpet_full_app,
         payload=_frenpet_served,
@@ -649,6 +660,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="frenpet_wallet",
+        explorer=BASE,  # widgets/frenpet/_chain.EXPLORER (the hidden bodies' sites)
         screen_class=FrenPetWalletScreen,
         build=_frenpet_wallet_app,
         payload=_frenpet_served,
@@ -656,6 +668,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="frenpet_perf",
+        explorer=BASE,  # widgets/frenpet/_chain.EXPLORER (the hidden bodies' sites)
         screen_class=FrenPetPerfScreen,
         build=_frenpet_perf_app,
         payload=_frenpet_served,
@@ -663,6 +676,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="cattown",
+        explorer=BASE,  # widgets/cattown/_chain.EXPLORER
         screen_class=CatTownScreen,
         build=_cattown_app,
         payload=_cattown_payload,
@@ -670,6 +684,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="ttt",
+        explorer=ETHEREUM,  # widgets/ttt/_chain.EXPLORER
         screen_class=TTTScreen,
         build=_ttt_app,
         payload=_ttt_payload,
@@ -678,6 +693,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="talismans",
+        explorer=ETHEREUM,  # widgets/talismans/_chain.EXPLORER
         screen_class=TalismansScreen,
         build=_talismans_app,
         payload=_talismans_payload,
@@ -686,6 +702,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="ocm",
+        explorer=ETHEREUM,  # widgets/ocm/_chain.EXPLORER
         screen_class=OCMScreen,
         build=_ocm_app,
         payload=_ocm_payload,
@@ -693,6 +710,7 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="dota",
+        explorer=None,  # address-free
         screen_class=DOTAScreen,
         build=_dota_app,
         payload=_dota_payload,
@@ -700,6 +718,10 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="bakery",
+        # Abstract (``tests/data/test_client.py`` pins ``agent.json``'s ``chainId``
+        # 2741, explorer ``abscan.org``), which ``widgets/explorer.py`` does not
+        # allowlist: no explorer, so E7 asserts that no address on it links.
+        explorer=None,
         screen_class=BakeryScreen,
         build=_bakery_app,
         payload=_bakery_payload,

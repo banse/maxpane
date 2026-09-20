@@ -35,6 +35,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.ttt._chain import EXPLORER
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 _WEI = 10**18
@@ -93,7 +94,7 @@ def _fmt_burn(event: dict, ts: str, sym: str) -> Text:
     token_id = _safe_get(event, "token_id")
     token_id_str = str(token_id) if token_id is not None else _DASH
     line = Text.from_markup(f"{ts}  [yellow]BURN [/]  {sym:>6}  by ")
-    line.append_text(address_text(actor, width=_BURN_ACTOR_WIDTH))
+    line.append_text(address_text(actor, width=_BURN_ACTOR_WIDTH, explorer=EXPLORER))
     line.append(f"   tokenId {token_id_str}")
     return line
 

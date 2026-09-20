@@ -97,6 +97,7 @@ from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.curator._fmt import (
+    EXPLORER,
     NAME_COLS,
     COMPACT_ETH_COLS,
     DASH,
@@ -287,7 +288,7 @@ def _row_text(row: dict, tier: str) -> Text | None:
             address = address.lower()
         line.append_text(address_text(
             address, label=(row.get("name") or None),
-            width=NAME_COLS, style=colour,
+            width=NAME_COLS, style=colour, explorer=EXPLORER,
         ))
         line.append(" " * _GAP)
         line.append_text(Text.from_markup(f"[bold]{amount:>{AMOUNT_COLS}}[/]"))

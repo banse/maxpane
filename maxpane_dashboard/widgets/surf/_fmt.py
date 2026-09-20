@@ -28,6 +28,7 @@ number that module is handed.
 
 from __future__ import annotations
 
+from maxpane_dashboard.widgets.explorer import ETHEREUM
 from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, hhmm, mmdd
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
@@ -35,6 +36,7 @@ __all__ = [
     "ANTI_POISONING_COLS",
     "DASH",
     "EMDASH",
+    "EXPLORER",
     "as_float",
     "fmt_age",
     "fmt_price",
@@ -44,6 +46,15 @@ __all__ = [
     "hhmm",
     "mmdd",
 ]
+
+#: Surf's default explorer, Ethereum mainnet (Etherscan): read off
+#: ``data/surf_client.py:84`` -- ``STATE_RPC_PRIMARY``
+#: ``ethereum-rpc.publicnode.com``, fallbacks ``gateway.tenderly.co/public/mainnet``,
+#: ``rpc.mevblocker.io``. The pool4 panels and the swarm rows are the exception:
+#: they resolve ``explorer.for_network(pool4_network)`` / ``for_chain_id(chain_id)``
+#: from the network their own payload names (``data/surf_pool4_client.py`` reads
+#: Sepolia and mainnet, ``data/surf_swarm`` rows carry a ``chain_id``).
+EXPLORER = ETHEREUM
 
 
 def fmt_imd(value) -> str:

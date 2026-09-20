@@ -14,6 +14,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.address import ADDRESS_RE, ICON_COLS, address_text, parse_copy_action
 from maxpane_dashboard.widgets.curator._fmt import (
+    EXPLORER,
     DASH,
     fmt_eth_compact,
     fmt_points,
@@ -255,7 +256,7 @@ def _address(value):
     # `_ADDRESS_COLS`'s own note for the window's exact shape). The icon
     # still copies the real, complete address regardless of how much of it
     # is shown.
-    return address_text(value.strip().lower(), width=_ADDRESS_COLS)
+    return address_text(value.strip().lower(), width=_ADDRESS_COLS, explorer=EXPLORER)
 
 
 def _ens(name) -> str:

@@ -196,7 +196,7 @@ from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import ICON_COLS, PROSE_ADDRESS_RE, address_prose
-from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age
+from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age, EXPLORER
 from maxpane_dashboard.widgets.surf._pool4 import strip_tags
 
 __all__ = [
@@ -542,7 +542,7 @@ def _fit_prose(text: str, width: int) -> Text:
     """
     if not text or width <= 0:
         return Text("")
-    return address_prose(_fit_address_aware(text, width))
+    return address_prose(_fit_address_aware(text, width), explorer=EXPLORER)
 
 
 def _wrap_words(words: list[str], width: int) -> list[list[str]]:
@@ -663,7 +663,7 @@ def _wrap_objective(text: str, width: int, max_lines: int) -> tuple[list[Text], 
                 shed = True
             else:
                 line_text = " ".join(line_words)
-        texts.append(address_prose(line_text))
+        texts.append(address_prose(line_text, explorer=EXPLORER))
     return texts, shed
 
 

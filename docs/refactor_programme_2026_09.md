@@ -437,6 +437,43 @@ literals from `git show 307255a:…/address.py`). No widget call site changed; t
 explorer`/`explorers` + the E7 sweep assertion, `feed.py` returning early on `is_explorer_click`, the
 CLAUDE.md convention bullet and the `templates/` address lines.
 
+**WP-B outcome (2026-09-20).** Every call site passes its explorer. Chain table as verified against
+each client's RPC hosts: Ethereum mainnet (Etherscan) — curator (`curator_client.py:99`
+`ethereum-rpc.publicnode.com`), fwa (`fwa_client.py:120`), ocm (`ocm_client.py:48`), surf
+(`surf_client.py:84`), talismans (`talismans_client.py:70` `ethereum.publicnode.com`), ttt
+(`ttt_client.py:99`); Base (Basescan) — base (`base_client.py` GeckoTerminal `/networks/base/`,
+DexScreener `chainId == "base"`), cattown (`cattown_client.py:167` `mainnet.base.org`), frenpet
+(`frenpet_client.py:78` `mainnet.base.org`, the hidden `_full/_wallet/_perf` bodies). **One
+disagreement with the chain table above: Bakery is on Abstract, not Base** — `data/client.py` reads
+`agent.json` and `tests/data/test_client.py` / `tests/data/test_cache.py` pin `chainId` 2741, explorer
+`abscan.org`; `widgets/explorer.py` allowlists no Abstract explorer, so Bakery's one site
+(`widgets/activity_feed.py`) stays unlinked with a comment, its `SweepCase` has `explorer=None`, and
+E7 asserts that no address on it links (adding `abscan.org` to the allowlist is the owner's call,
+not this WP's). DOTA renders no address. One declaration per package: `EXPLORER` in
+`widgets/surf/_fmt.py` and `widgets/curator/_fmt.py`, new `_chain.py` in `widgets/{fwa,ttt,
+talismans,ocm,base,cattown,frenpet}/`, each `#:`-commented with the client and hosts. Sites converted:
+surf 18 (launchpad 2, launchpad_activity 1, activity 1, burnkeepers 2, signals `link_in_order` 1,
+feed `link_prose` 1, swarm_field `address_prose` 2, pool4_hatches 3 via `for_network(pool4_network)`,
+pool4u_stakers 1 likewise, swarm_throughput `hash_text` 1 and swarm_shipped 3 via the new
+`explorer.for_chain_id(chain_id)`; `tests/widgets/test_explorer.py` binds `for_chain_id` to
+`data/surf_swarm._NETWORKS` through `for_network` in both directions), curator 9, fwa 7, frenpet
+hidden bodies 4 (in `screens/`), cattown 3, ttt 3, base 1, talismans 1, ocm 1. Left unlinked, on
+purpose: `fwa_signals.py` bytes32 (unknown kind, commented), Bakery (above), and the two `.plain`
+measurement calls (`surf/activity.py:420`, `surf/pool4_hatches.py:401`) that render nothing.
+`surf/feed.py` `on_click` returns early on `is_explorer_click`. No rendered text or width changed;
+no pin touched. E7 in the sweep (`SweepCase.explorer` / `explorers`, the renamed
+`test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it`): the token
+cell before every icon (read with `get_style_at`, the icon's own reader) carries an open action and
+an OSC 8 link for the same address on an allowed explorer with `address_url`'s URL; every link on
+screen names a payload address or hash; a no-explorer or address-free case shows no link. Bite
+proofs: (a) `explorer=EXPLORER` dropped at `widgets/cattown/ct_leaderboard.py` → `[cattown-wide]` and
+`[cattown-pin]` fail with `address without a link` (two cells each); (b) `explorer=ETHEREUM` there →
+the same two ids fail with `link on the wrong explorer`. Both restored by inverse edit (md5
+identical). Templates' address lines pass `explorer=EXPLORER` with a module-level declaration to
+replace. Not done: the two historical plan docs under `docs/superpowers/plans/` keep the old test id
+where it appears as a dated code listing (`2026-09-14-address-copy-icons.md:1852`); the two
+mutation-table rows and `docs/surf_swarm_followups.md` were renamed.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

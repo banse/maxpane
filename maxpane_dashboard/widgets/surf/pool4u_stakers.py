@@ -106,6 +106,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.explorer import for_network
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import (
     DASH,
@@ -762,6 +763,9 @@ class SurfPool4UStakers(Vertical):
         self._install_columns(table, self._tier)
 
         rows = self._payload.get("rows")
+        # The chain the stakers are on: the payload's own network word through
+        # the allowlist; unknown or unset links nothing (widgets/explorer.py).
+        explorer = for_network(self._payload.get("network"))
         batch: list[list] = []
         if isinstance(rows, list):
             for row in rows[:MAX_ROWS]:
@@ -782,7 +786,7 @@ class SurfPool4UStakers(Vertical):
                     # ``DataTable`` renders a ``Text`` as it is, so a
                     # chain-sourced ``[/x]`` never reaches a parser from this
                     # column.
-                    address_text(addr, width=_shown_addr_cols(self._tier)),
+                    address_text(addr, width=_shown_addr_cols(self._tier), explorer=explorer),
                     safe_markup(pad(clip(imd, _IMD_COLS), _IMD_COLS)),
                 ]
                 if self._tier in ("whole", "full"):

@@ -39,6 +39,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
+from maxpane_dashboard.widgets.fwa._chain import EXPLORER
 from maxpane_dashboard.widgets.fmt import as_float, fmt_eth
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
@@ -133,7 +134,7 @@ def _collection_cell(row: dict, width: int = _NAME_WIDTH) -> Text:
     label = None
     if name and (not address or name.lower() != str(address).strip().lower()):
         label = name
-    return address_text(address, label=label, width=width)
+    return address_text(address, label=label, width=width, explorer=EXPLORER)
 
 
 def _floor_cell(row: dict) -> str:

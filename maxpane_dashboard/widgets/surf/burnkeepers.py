@@ -65,7 +65,7 @@ from textual.widgets import Static
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import strip_tags
 from maxpane_dashboard.widgets.rowfit import Ladder, WIDEN_HINT
-from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_imd
+from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_imd, EXPLORER
 
 __all__ = [
     "COMPACT_WIDTH",
@@ -125,9 +125,9 @@ def _wallet_cell(value: object, known: bool) -> Text:
     colour = "cyan" if known else "dim"
     s = strip_tags(value)
     if is_address(s):
-        cell = address_text(s, width=_WALLET_WINDOW_COLS, style=colour)
+        cell = address_text(s, width=_WALLET_WINDOW_COLS, style=colour, explorer=EXPLORER)
     else:
-        cell = address_text(s or DASH, width=_WALLET_COLS, style=colour)
+        cell = address_text(s or DASH, width=_WALLET_COLS, style=colour, explorer=EXPLORER)
     cell.append(" " * max(_WALLET_COLS - cell.cell_len, 0))
     return cell
 

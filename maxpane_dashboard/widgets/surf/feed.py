@@ -123,10 +123,10 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from maxpane_dashboard.analytics.surf_feed import build_threads, select_feed_window
-from maxpane_dashboard.widgets.address import is_copy_click
+from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
-from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age, hhmm, mmdd
+from maxpane_dashboard.widgets.surf._fmt import DASH, fmt_age, hhmm, mmdd, EXPLORER
 from maxpane_dashboard.widgets.surf._icons import link_prose, mark_addresses, unmark
 
 #: Panel title, PRD §4 spelling.  **Interface**: the screen tests assert this
@@ -499,7 +499,7 @@ def _row_line_texts(item, width: int, depth: int = 0) -> tuple[list[Text], bool]
         # ``_item_lines`` marked it with; ``link_prose`` reads the address back
         # off that line, so a wrap that cut one unbreakable address and kept
         # the next can never hand a glyph its neighbour's address.
-        return [link_prose(Text.from_markup(line)) for line in lines], clipped
+        return [link_prose(Text.from_markup(line), EXPLORER) for line in lines], clipped
     except Exception:
         return None
 
@@ -622,7 +622,7 @@ class SurfFeedToggle(Static):
         # also opening or closing the thread (docs/address_copy_PRD.md §3.4).
         # tests/widgets/test_surf_address_icons.py drives it through a subclass
         # that does render one.
-        if is_copy_click(event):
+        if is_copy_click(event) or is_explorer_click(event):
             return
         event.stop()
         self.action_toggle()

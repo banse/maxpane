@@ -6,6 +6,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.cattown._chain import EXPLORER
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 
 
@@ -75,6 +76,7 @@ class CTLeaderboard(Vertical):
                 label=display_name or None,
                 width=_FISHER_COLS,
                 style="bold green" if is_top else "",
+                explorer=EXPLORER,
             )
             species = safe_markup(entry.get("fish_species", ""))
             weight = entry.get("fish_weight_kg", 0.0)

@@ -41,6 +41,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
+from maxpane_dashboard.widgets.fwa._chain import EXPLORER
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
 
 _DASH = "--"
@@ -243,7 +244,7 @@ def _holder_cell(row: dict, width: int = 14) -> Text:
     literal ``Text`` rather than parsed as markup.
     """
     name = str(row.get("holder_name") or "").strip() or None
-    return address_text(row.get("holder"), label=name, width=width)
+    return address_text(row.get("holder"), label=name, width=width, explorer=EXPLORER)
 
 
 def _hhmm(timestamp) -> str:

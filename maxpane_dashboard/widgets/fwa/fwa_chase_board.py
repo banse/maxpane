@@ -48,6 +48,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
+from maxpane_dashboard.widgets.fwa._chain import EXPLORER
 
 from .fwa_hero_metrics import CROWN_GOLD
 
@@ -74,7 +75,7 @@ def _collection_cell(row: dict, width: int = 12) -> Text:
     """
     name = row.get("collection_name")
     label = str(name).strip() if name and str(name).strip() else None
-    return address_text(row.get("collection"), label=label, width=width)
+    return address_text(row.get("collection"), label=label, width=width, explorer=EXPLORER)
 
 
 def _fmt_token(value) -> str:

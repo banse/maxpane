@@ -30,7 +30,14 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.explorer import ETHEREUM
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+
+#: The one explorer declaration a copy replaces with its own chain, read off its
+#: client's RPC hosts (``widgets/<game>/_chain.py`` or ``_fmt.py``; ``BASE`` for a
+#: Base game). An address on a chain ``widgets/explorer.py`` does not allowlist
+#: passes ``explorer=None`` and gets no link, never a guessed one.
+EXPLORER = ETHEREUM
 
 #: Display budget for the name/address cell, excluding the icon. The
 #: DataTable column below is ``NAME_COLS + ICON_COLS`` wide so the icon
@@ -125,6 +132,7 @@ class GameLeaderboard(Vertical):
                 label=entry.get("name") or None,
                 width=NAME_COLS,
                 style="bold" if idx == 1 else "",
+                explorer=EXPLORER,
             )
 
             # Highlight the leader row

@@ -38,7 +38,14 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.explorer import ETHEREUM
 
+
+#: The one explorer declaration a copy replaces with its own chain, read off its
+#: client's RPC hosts (``widgets/<game>/_chain.py`` or ``_fmt.py``; ``BASE`` for a
+#: Base game). An address on a chain ``widgets/explorer.py`` does not allowlist
+#: passes ``explorer=None`` and gets no link, never a guessed one.
+EXPLORER = ETHEREUM
 
 #: Rendered in place of a line whose event could not be formatted at all.
 _MALFORMED_LINE = "  [dim]??:??[/]  [yellow]unreadable event[/]"
@@ -101,6 +108,7 @@ def _format_event(event: dict) -> Text:
         label=event.get("display_name") or None,
         width=WHO_COLS,
         style="dim",
+        explorer=EXPLORER,
     )
     action = str(event.get("action", ""))
     detail = str(event.get("detail", ""))

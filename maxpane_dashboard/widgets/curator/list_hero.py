@@ -11,6 +11,7 @@ from textual.widgets import Static
 
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.curator._fmt import (
+    EXPLORER,
     DASH,
     fmt_eth,
     fmt_eth_compact,
@@ -220,7 +221,7 @@ def _wallet_text(
         # sources spell one wallet two ways, and the icon copies whichever
         # spelling this cell was given.
         out.append_text(
-            address_text(address.strip().lower(), width=None, style=success)
+            address_text(address.strip().lower(), width=None, style=success, explorer=EXPLORER)
         )
     else:
         out.append(WALLET_NOT_SET, style=Style(color=success))

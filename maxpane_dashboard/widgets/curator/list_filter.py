@@ -11,6 +11,7 @@ from textual.message import Message
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.curator._fmt import EXPLORER
 
 #: The address's own display budget in the selected-collections grid, when
 #: there is no real name to show instead: :data:`MIN_SHORT_COLS`'s own
@@ -422,6 +423,7 @@ class CuratorListFilterEditor(Vertical):
                 content = address_text(
                     str(value["address"]).strip().lower(),
                     width=_NFT_LABEL_ADDRESS_COLS,
+                    explorer=EXPLORER,
                 )
             else:
                 content = value["label"]

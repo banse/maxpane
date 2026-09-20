@@ -90,7 +90,7 @@ it tests. Filed as a note for whoever next adds a payload shape to
 
 ## F3 — the main sweep loop's shortened-window hash exclusion is still value-only (pre-existing, not introduced by this branch)
 
-`tests/screens/test_address_icons_everywhere.py::test_every_rendered_address_carries_an_icon_that_copies_it`'s
+`tests/screens/test_address_icons_everywhere.py::test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it`'s
 own sweep loop excuses a shortened address window with no icon in two different places, and only
 one of them was tightened on this branch:
 
@@ -446,7 +446,7 @@ F3 above (`6f4c358`) closed the shortened-window hash-exclusion's provenance gap
 the real call site alone (dropping the provenance check, with the fixed predicate left otherwise
 intact) does not redden the existing parametrized sweep across any current dashboard — no live
 widget today exercises this path." Reconfirmed here: the dashboard-wide parametrized sweep
-(`test_every_rendered_address_carries_an_icon_that_copies_it`, 29 cases over the current `CASES`
+(`test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it`, 29 cases over the current `CASES`
 registry) stays green with `_shortened_window_hash_excuse`'s provenance check reverted to its
 pre-fix, value-only body — because no seeded fixture in any current `CASES` entry manufactures the
 specific collision the fix guards against (a real, un-iconized address whose shortened window

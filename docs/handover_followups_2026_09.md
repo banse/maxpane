@@ -117,3 +117,13 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `ttt_claims_table`/`ttt_fees_table` (ungrouped thousands). Each carries a comment naming its
     differing probe and a golden. Unify only if the owner accepts `True → --`, grouped ttt output and
     `None → --` on frenpet as deliberate render changes (WP-B implementer, 2026-09-20).
+
+## Branch 4 — explorer links
+
+14. **`data/talismans_client.py:80` still lists `https://eth.merkle.io` in `_FALLBACK_RPCS`** — a
+    CLAUDE.md "dead endpoints, do not reintroduce" hazard; the file's own logs-pool comment at :91
+    records it answering `-32601 Method not found`. Tier 0 removal when that client is next touched
+    (WP-B implementer, 2026-09-20).
+15. **`tests/test_explorer_action.py::test_the_message_clears_itself_but_never_a_newer_one`**: its
+    second half is a fixed 5×0.01 s window with no observable anchor (a wall-clock wait, CLAUDE.md
+    "await an observable state"). Minor (WP-A review Minor 3, filed 2026-09-20).

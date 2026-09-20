@@ -50,12 +50,23 @@ newline and the address is interpolated into an action string). The icon costs `
 a panel grows where it has slack and shortens its displayed address where a pin would move; the
 window rule (8/6 at 17 cells) is surf's anti-poisoning form.
 
-**And a link to its chain's explorer** (Branch 4 of the refactor programme; the helper landed in
-WP-A, every call site passes `explorer=` in WP-B). `widgets/explorer.py` is the one module that
+**And a link to its chain's explorer** (Branch 4 of the refactor programme, both work packages
+landed 2026-09-20). `widgets/explorer.py` is the one module that
 names an explorer (`ETHEREUM`, `BASE`, `SEPOLIA`; `for_network(word)` for surf's per-row network
-words, `None` for anything unknown — never a guess), builds a URL (`address_url`, `tx_url`) and
+words and `for_chain_id(id)` for a swarm row's `chain_id`, `None` for anything unknown — never a
+guess), builds a URL (`address_url`, `tx_url`) and
 writes or reads the action `app.open_explorer(name, kind, value)`. Pass `explorer=` to
-`address_text` / `address_prose` / `hash_text` (and surf's `_icons.link_prose` / `link_in_order`):
+`address_text` / `address_prose` / `hash_text` (and surf's `_icons.link_prose` / `link_in_order`)
+at **every** site. **One declaration per dashboard package:** `EXPLORER = ETHEREUM` (or `BASE`)
+bound once in `widgets/<game>/_chain.py` — in `_fmt.py` where the package has one (surf, curator)
+— with a `#:` comment naming the client and the RPC hosts it was read off, imported at each site;
+never a literal explorer at a call site. `tests/address_sweep/builders.py` (`SweepCase.explorer`)
+is the agreement test that binds the declaration. A dashboard on a chain the allowlist does not
+name passes nothing and renders no link (Bakery runs on Abstract: `widgets/activity_feed.py` says
+so in a comment, its `SweepCase` has `explorer=None`, and the sweep asserts that no address on it
+links); a per-row chain resolves through `for_network` / `for_chain_id`, so an unknown word or id
+links nothing rather than guessing. A `.plain` measurement call needs no explorer (it renders
+nothing). The link adds no cells: no pin moves for it. What the helper renders with an explorer:
 the *shown* span — never the icon — gets `Style(link=…, meta={"@click": …})`, an OSC 8 hyperlink
 the terminal follows on Cmd+click and an action `explorer_action.ExplorerLinkMixin` follows on a
 plain click. Both ends validate: the helper writes an action only for an allowlisted explorer and a

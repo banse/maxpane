@@ -24,6 +24,7 @@ from maxpane_dashboard.analytics.frenpet_perf_signals import (
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.frenpet._chain import EXPLORER
 from maxpane_dashboard.widgets.frenpet.perf import (
     FPPerfActivity,
     FPPerfHero,
@@ -126,7 +127,7 @@ class FrenPetPerfScreen(RefreshGuard, Screen):
             pet_count = len(managed_pets)
             line = Text("FrenPet \u00b7 Performance \u00b7 ")
             if wallet_addr:
-                line.append_text(address_text(wallet_addr, width=_WALLET_COLS))
+                line.append_text(address_text(wallet_addr, width=_WALLET_COLS, explorer=EXPLORER))
             else:
                 line.append("?")
             line.append(f" \u00b7 {pet_count} pets")

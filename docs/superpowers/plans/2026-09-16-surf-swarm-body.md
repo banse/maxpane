@@ -2206,7 +2206,7 @@ Expected: all pass, including the new view at its pin.
 
 - [ ] **Step 4: Prove it bites**
 
-Render the shipped address without its icon → `test_every_rendered_address_carries_an_icon_that_copies_it[surf]` reddens. Restore.
+Render the shipped address without its icon → `test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it[surf]` reddens. Restore.
 
 - [ ] **Step 5: Commit**
 

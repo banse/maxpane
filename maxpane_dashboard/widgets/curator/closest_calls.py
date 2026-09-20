@@ -90,6 +90,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.curator._fmt import (
+    EXPLORER,
     DASH,
     EMDASH,
     as_float,
@@ -192,7 +193,10 @@ def _row_values(row: dict) -> dict:
         # paste of the same address.
         savior = savior.lower()
     savior_cell = (
-        address_text(savior, label=(row.get("savior_name") or None), width=NAME_COLS)
+        address_text(
+            savior, label=(row.get("savior_name") or None), width=NAME_COLS,
+            explorer=EXPLORER,
+        )
         if savior
         else f"[dim]{EMDASH}[/]"
     )

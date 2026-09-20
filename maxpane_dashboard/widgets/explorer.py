@@ -26,8 +26,8 @@ from dataclasses import dataclass
 
 __all__ = [
     "ADDRESS_RE", "BASE", "ETHEREUM", "EXPLORERS", "Explorer", "KINDS", "SEPOLIA",
-    "TX_HASH_RE", "address_url", "for_network", "is_address", "is_tx_hash",
-    "open_action", "parse_open_action", "tx_url", "url_for",
+    "TX_HASH_RE", "address_url", "for_chain_id", "for_network", "is_address",
+    "is_tx_hash", "open_action", "parse_open_action", "tx_url", "url_for",
 ]
 
 #: Matched with ``fullmatch``, never ``^…$`` (PRD §3.1 AMENDED): the value is
@@ -65,6 +65,16 @@ _NETWORKS: dict[str, Explorer] = {
     "BASE": BASE,
 }
 
+#: Chain ids as a swarm row carries them (``data/surf_swarm._NETWORKS``,
+#: ``_swarm_chain.CHAIN_ID_WORDS``) plus Base. ``tests/widgets/test_explorer.py``
+#: binds this table to the words: every id surf's data layer names maps here
+#: to the explorer :func:`for_network` gives its word, and back.
+_CHAIN_IDS: dict[int, Explorer] = {
+    1: ETHEREUM,
+    11155111: SEPOLIA,
+    8453: BASE,
+}
+
 _ACTION_PREFIX = "app.open_explorer("
 #: The exact shape :func:`open_action` writes -- three ``repr`` strings of
 #: quote-free values, ``", "`` between them -- so a ``fullmatch`` plus the
@@ -88,6 +98,18 @@ def for_network(word: object) -> Explorer | None:
     if not isinstance(word, str):
         return None
     return _NETWORKS.get(word)
+
+
+def for_chain_id(chain_id: object) -> Explorer | None:
+    """The explorer for a numeric chain id, or ``None`` for anything not taught here.
+
+    An allowlist, not a pass-through, like :func:`for_network`: ``bool`` is
+    excluded before the ``int`` check because ``True``/``False`` are ``int``
+    subclasses and neither is a chain id.
+    """
+    if isinstance(chain_id, bool) or not isinstance(chain_id, int):
+        return None
+    return _CHAIN_IDS.get(chain_id)
 
 
 def _valid(kind: str, value: object) -> bool:

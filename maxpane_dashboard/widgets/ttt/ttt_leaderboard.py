@@ -27,6 +27,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.ttt._chain import EXPLORER
 
 _DASH = "--"
 _SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
@@ -216,6 +217,7 @@ class TTTLeaderboard(Vertical):
                 label=symbol,
                 width=_SYM_WIDTH,
                 style="bold" if idx == 1 else "",
+                explorer=EXPLORER,
             )
             price = _fmt_price(token.get("price_usd"))
             change = _fmt_change(token.get("change_h24"))

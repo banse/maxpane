@@ -7,6 +7,8 @@ from typing import Awaitable, Callable, Union
 
 from textual.app import App
 
+from maxpane_dashboard.widgets.explorer import Explorer
+
 #: A view is either the keys that reach it, or a coroutine that drives the
 #: harness there (for a body no key reaches, or one that needs input typed).
 ViewAction = Callable[[App, object], Awaitable[None]]
@@ -50,3 +52,20 @@ class SweepCase:
     #: pins, where a measured defect lived. Each one names its reason in the
     #: builder.
     extra_sizes: tuple[tuple[int, int | None], ...] = ()
+    #: The dashboard's explorer (PRD §7 E7): the one its package declares
+    #: (``widgets/<game>/_chain.py`` or ``_fmt.py``), so this is the agreement
+    #: test that binds that declaration to the chain the sweep expects. ``None``
+    #: for an address-free dashboard, and for one on a chain
+    #: ``widgets/explorer.py`` does not allowlist -- there, E7 asserts the
+    #: opposite: no link at all, never a guessed one.
+    explorer: Explorer | None = None
+    #: The explorers a per-row override may pick from (surf lists all three:
+    #: pool4 panels link by ``pool4_network``, swarm rows by ``chain_id``).
+    #: Defaults to ``(explorer,)``; empty when ``explorer`` is ``None``.
+    explorers: tuple[Explorer, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.explorer is not None and not self.explorers:
+            object.__setattr__(self, "explorers", (self.explorer,))
+        if self.explorer is not None and self.explorer not in self.explorers:
+            raise ValueError(f"{self.name}: explorer {self.explorer.name} is not in its own allowed set")

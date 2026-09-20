@@ -99,7 +99,7 @@ from textual.content import Content
 from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
 from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
-from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH, fmt_age
+from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH, fmt_age, EXPLORER
 from maxpane_dashboard.widgets.surf._icons import (
     keep_units,
     link_in_order,
@@ -372,7 +372,7 @@ def _signal_row_content(label: str, state, detail, age_s, available=None) -> Con
     if not addresses:
         return None
     text = Text(f" · {shown}", style="dim")
-    link_in_order([text], addresses)
+    link_in_order([text], addresses, EXPLORER)
     return Content.from_markup(head) + Content.from_rich_text(text)
 
 

@@ -44,6 +44,7 @@ payload already computed against the manager's injected clock.
 from __future__ import annotations
 
 from maxpane_dashboard.widgets import fmt
+from maxpane_dashboard.widgets.explorer import ETHEREUM
 from maxpane_dashboard.widgets.fmt import (
     DASH,
     EMDASH,
@@ -59,6 +60,7 @@ from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 __all__ = [
     "DASH",
     "EMDASH",
+    "EXPLORER",
     "ADDR_COLS",
     "NAME_COLS",
     "COMPACT_ETH_COLS",
@@ -73,6 +75,13 @@ __all__ = [
     "fmt_pct",
     "hhmm",
 ]
+
+#: Ethereum mainnet (Etherscan): read off ``data/curator_client.py:99`` --
+#: ``STATE_RPC_PRIMARY`` ``ethereum-rpc.publicnode.com``, fallbacks
+#: ``gateway.tenderly.co/public/mainnet``, ``rpc.mevblocker.io``.
+#: ``data/curator_nft_holders.py`` reads Base too, but a wallet address is the
+#: same on both chains, so every curator address links to Etherscan.
+EXPLORER = ETHEREUM
 
 #: The anti-poisoning window's own width, i.e. of ``0x1234…abcd`` --
 #: :data:`~maxpane_dashboard.widgets.address.MIN_SHORT_COLS`'s value,

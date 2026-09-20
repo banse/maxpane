@@ -68,6 +68,7 @@ from maxpane_dashboard.widgets.address import (
     address_text,
     is_address,
 )
+from maxpane_dashboard.widgets.explorer import Explorer, for_network
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH
 from maxpane_dashboard.widgets.surf._icons import (
     keep_units,
@@ -407,7 +408,9 @@ def _hatch_cells(
         return None
 
 
-def _hatch_row_markup(row: object, tier: str) -> Text | None:
+def _hatch_row_markup(
+    row: object, tier: str, explorer: Explorer | None = None
+) -> Text | None:
     """Format one hatch row at *tier*; ``None`` drops it.
 
     A ``Text`` since 2026-09-14 (the name is kept for its callers' history):
@@ -445,7 +448,9 @@ def _hatch_row_markup(row: object, tier: str) -> Text | None:
             return None
         lead = _SCOPE_COLS + _GAP + _LABEL_COLS + _GAP + _STATE_COLS + _GAP
         line.append(" " * max(lead - line.cell_len, 0))
-        line.append_text(address_text(address, width=_GRID_ADDR_COLS, style=style))
+        line.append_text(
+            address_text(address, width=_GRID_ADDR_COLS, style=style, explorer=explorer)
+        )
         return line
     except Exception:
         return None
@@ -460,7 +465,9 @@ def _reward_path_markup(path: object) -> str:
     return f"[dim]{safe_markup(text)}[/]"
 
 
-def _address_markup(label: str, value: object, note: str = "") -> Text | None:
+def _address_markup(
+    label: str, value: object, note: str = "", explorer: Explorer | None = None
+) -> Text | None:
     """One line of the address block. ``--`` when the address is unread --
     never a blank, which reads as "there is no such contract".
 
@@ -481,7 +488,7 @@ def _address_markup(label: str, value: object, note: str = "") -> Text | None:
         return None
     shown = strip_tags(value) if value else ""
     if is_address(shown):
-        cell = address_text(shown, width=_ADDR_COLS)
+        cell = address_text(shown, width=_ADDR_COLS, explorer=explorer)
     else:
         cell = Text(fit_cell(shown, _ADDR_COLS) or DASH)
     head.append_text(cell)
@@ -512,7 +519,8 @@ def _source_markup(state: str, source: object) -> str:
 
 
 def _discovery_markup(
-    state: object, detail: object, source_tx: object, source: object, room: int
+    state: object, detail: object, source_tx: object, source: object, room: int,
+    explorer: Explorer | None = None,
 ) -> list[str]:
     """The discovery block: the verdict, its sentence, and the post it rests on.
 
@@ -571,7 +579,7 @@ def _discovery_markup(
         if kept:
             line = parse_line(f"[dim]{indent}{safe_markup(unmark(kept))}[/]")
             if line is not None:
-                link_in_order([line], addresses[: kept.count(COPY_GLYPH)])
+                link_in_order([line], addresses[: kept.count(COPY_GLYPH)], explorer)
                 lines.append(line)
 
     citation = strip_tags(source_tx)
@@ -706,6 +714,10 @@ class SurfPool4Hatches(Vertical):
 
     def _content_lines(self, tier: str, room: int) -> list[Text]:
         payload = self._payload
+        # The chain every address on this panel is on: the sweep's network word
+        # (``pool4_network``), resolved through the allowlist -- an unknown or
+        # unset word links nothing rather than guessing (widgets/explorer.py).
+        explorer = for_network(payload.get("network"))
         markup: list[str] = []
         markup.extend(
             _discovery_markup(
@@ -714,6 +726,7 @@ class SurfPool4Hatches(Vertical):
                 payload.get("discovery_source_tx"),
                 payload.get("discovery_source"),
                 room,
+                explorer,
             )
         )
         # No blank separator here, and none before the lever list below.
@@ -745,7 +758,7 @@ class SurfPool4Hatches(Vertical):
                 _reward_path_markup(payload.get("reward_path"))
                 if key == "pool4_distributor_addr" else ""
             )
-            markup.append(_address_markup(label, addrs.get(key), note))
+            markup.append(_address_markup(label, addrs.get(key), note, explorer))
 
         rows_payload = payload.get("rows")
         if rows_payload is None:
@@ -757,7 +770,7 @@ class SurfPool4Hatches(Vertical):
                 rows = []
             rendered = [
                 line
-                for line in (_hatch_row_markup(row, tier) for row in rows)
+                for line in (_hatch_row_markup(row, tier, explorer) for row in rows)
                 if line is not None
             ]
             if rendered:

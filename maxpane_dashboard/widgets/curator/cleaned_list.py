@@ -63,6 +63,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
 from maxpane_dashboard.widgets.curator._fmt import (
+    EXPLORER,
     COMPACT_ETH_COLS,
     DASH,
     NAME_COLS,
@@ -198,7 +199,8 @@ def _row_values(row: dict) -> dict:
     return {
         "rank": rank_str,
         "wallet": address_text(
-            address, label=(row.get("name") or None), width=NAME_COLS
+            address, label=(row.get("name") or None), width=NAME_COLS,
+            explorer=EXPLORER,
         ),
         "points": fmt_points(row.get("points")),
         "credit": fmt_eth_compact(row.get("credit_eth")),

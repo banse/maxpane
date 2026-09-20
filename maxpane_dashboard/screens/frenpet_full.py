@@ -20,6 +20,7 @@ from maxpane_dashboard.analytics.frenpet_signals import (
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.frenpet._chain import EXPLORER
 from maxpane_dashboard.widgets.frenpet import (
     ActionQueue,
     AggregateStats,
@@ -487,7 +488,7 @@ class FrenPetFullScreen(RefreshGuard, Screen):
         if not managed_pets:
             wallet = getattr(self._manager, "_wallet_address", "")
             if wallet:
-                line = address_text(wallet, width=17, style="dim")
+                line = address_text(wallet, width=17, style="dim", explorer=EXPLORER)
                 line.append(" — no pets found", style="dim")
             else:
                 line = Text("No wallet configured", style="dim")
@@ -497,7 +498,7 @@ class FrenPetFullScreen(RefreshGuard, Screen):
         owner = managed_pets[0].owner
         pet_count = len(managed_pets)
         line = Text("WALLET: ")
-        line.append_text(address_text(owner, width=17))
+        line.append_text(address_text(owner, width=17, explorer=EXPLORER))
         line.append(
             f"    {pet_count} pet{'s' if pet_count != 1 else ''}", style="dim"
         )

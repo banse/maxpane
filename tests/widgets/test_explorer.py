@@ -80,6 +80,33 @@ def test_for_network_maps_the_three_words_and_nothing_else():
         assert X.for_network(unknown) is None, repr(unknown)
 
 
+def test_for_chain_id_maps_the_three_ids_and_nothing_else():
+    assert X.for_chain_id(1) is X.ETHEREUM
+    assert X.for_chain_id(11155111) is X.SEPOLIA
+    assert X.for_chain_id(8453) is X.BASE
+    for unknown in (None, "1", 1.0, True, False, 0, -1, 137, 10, [1], {}):
+        assert X.for_chain_id(unknown) is None, repr(unknown)
+
+
+def test_for_chain_id_agrees_with_the_swarm_data_layer_in_both_directions():
+    """Every chain id ``data/surf_swarm._NETWORKS`` names maps here to the
+    explorer :func:`for_network` gives its word (a swarm row resolves its
+    ``chain_id`` directly, a pool4 panel its network word: the two paths must
+    land on the same explorer), and every id this module maps to an explorer
+    whose word the swarm data layer knows is an id that layer names -- so an
+    id added on one side and not the other, or one mapped to the wrong
+    explorer, fails here rather than linking a row to the wrong chain.
+    """
+    from maxpane_dashboard.data.surf_swarm import _NETWORKS
+
+    assert _NETWORKS, "the swarm data layer names no chain at all"
+    by_word = {cid: X.for_network(word) for cid, word in _NETWORKS.items()}
+    assert all(e is not None for e in by_word.values()), by_word
+    assert {cid: X.for_chain_id(cid) for cid in _NETWORKS} == by_word
+    known_words = {X.for_network(word) for word in _NETWORKS.values()}
+    assert {cid for cid, e in X._CHAIN_IDS.items() if e in known_words} == set(_NETWORKS)
+
+
 @pytest.mark.parametrize("explorer", list(X.EXPLORERS.values()), ids=lambda e: e.name)
 @pytest.mark.parametrize("kind,value", [("address", ADDR), ("address", MIXED), ("tx", TX)])
 def test_every_explorer_round_trips_both_kinds(explorer, kind, value):
