@@ -422,3 +422,26 @@ async def test_full_screen_battle_feed_footer_says_unavailable(shape) -> None:
         await pilot.pause()
 
         assert "Battles/hr: unavailable" in _plain(screen.query_one(BattleFeed), "#battle-footer")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shape", ["absent", "none"])
+async def test_full_screen_game_signals_say_unavailable_when_the_rate_was_not_measured(shape) -> None:
+    """The full screen's second consumer of the rate, ``FPGameSignals`` inside
+    ``update_overview_view`` -- the one site of the three the round-1 fix left
+    without a test that could redden (re-review M6). The mount's own refresh
+    paints a measured rate first, so a stale ``~0/hr`` would survive here."""
+    from maxpane_dashboard.widgets.frenpet.overview.fp_game_signals import FPGameSignals
+
+    manager = _FakeManager()
+    unmeasured = _without_rate(_sample_data(), shape)
+    screen = FrenPetFullScreen(manager, poll_interval=30, name="frenpet_full")
+    app = _Harness(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.update_overview_view(unmeasured)
+        await pilot.pause()
+
+        line = _plain(screen.query_one(FPGameSignals), "#fpo-sig-battle-rate")
+        assert "unavailable" in line
+        assert "~0/hr" not in line
