@@ -2148,6 +2148,181 @@ paragraphs here per WP with the per-file line table, the render-diff result, the
 and any deviation. Follow-up #27 (a sixth base for the six two-column boards) filed with this
 section.
 
+**Branch 8 WP-A outcome (2026-09-20).** The six `widgets/base/overview/bt_*.py` widgets are on
+the bases: `BTOverviewHero(HeroRow)` with `BTHeroBox(HeroBoxBase)`,
+`BTOverviewLeaderboard(TableLeaderboard)`, `BTSparklines(SparklinePanel)`,
+`BTSignals(SignalsPanelBase)`, `BTActivityFeed(RichLogFeed)` and `BTBestPlays(PanelBase)`.
+Every class name and every `update_data` signature is unchanged, `__init__.py` is untouched, so
+`screens/base_terminal.py`'s `PANELS` and the panel-row agreement test were not touched. Every
+spacer `Static`, every per-panel title class and every `DEFAULT_CSS` title block is gone from the
+package; the two **geometry** blocks stay (`BTOverviewLeaderboard > DataTable { height: 1fr }`,
+`BTActivityFeed > RichLog { height: 1fr; padding: 0 1; scrollbar-size: 1 1 }`), the Branch 6 /
+Branch 7 precedent. `themes/minimal.tcss` lost the five `BT* > .bto-*-title` blocks and nothing
+else (`grep -c 'bto-'` 5 → 0; the nine `BT*` geometry/colour blocks remain). `panels.py` grew
+append-only: `fmt_signal_trailing` (in `__all__`), `SparklinePanel.SPARK_WIDTH` (default
+`sparkline_common.SPARK_WIDTH`, 22) and `RichLogFeed.HEADER_LINE` (default `None`), each
+defaulting to the pre-WP-A behaviour and each proven below.
+
+*Line counts are raw `wc -l`.*
+
+| file | before | after |
+| --- | --- | --- |
+| `widgets/base/overview/bt_hero_metrics.py` | 128 | 113 |
+| `widgets/base/overview/bt_overview_leaderboard.py` | 142 | 148 |
+| `widgets/base/overview/bt_sparklines.py` | 118 | 83 |
+| `widgets/base/overview/bt_signals.py` | 93 | 79 |
+| `widgets/base/overview/bt_activity_feed.py` | 127 | 135 |
+| `widgets/base/overview/bt_best_plays.py` | 112 | 108 |
+| **`widgets/base/overview/` total** | **720** | **666** |
+| `widgets/panels.py` | 888 | 968 |
+| `themes/minimal.tcss` (5 `bto-*-title` blocks) | 2988 | 2965 |
+
+**54 lines out of the package and 23 out of the stylesheet; 80 lines of shared code in** (the
+function, two knobs and their docstrings). Net +3 production lines — the two files that grew did
+so by docstring: the leaderboard's records the per-row guard, the feed's records why it is a
+stream and why its rows highlight themselves (deviations 4 and 7).
+
+**Rendering proof.** `render_case.py base b8_wpa_base` on the sweep payload under the real
+stylesheet and a frozen clock, at 170×50 and at the 143 pin, against the pre-migration capture:
+
+```
+$ cmp b8_before_base.default.170x50.txt     b8_wpa_base.default.170x50.txt
+b8_before_base.default.170x50.txt b8_wpa_base.default.170x50.txt differ: char 6555, line 33
+$ cmp b8_before_base.default.pin-143x50.txt b8_wpa_base.default.pin-143x50.txt
+b8_before_base.default.pin-143x50.txt b8_wpa_base.default.pin-143x50.txt differ: char 5529, line 33
+```
+
+Not byte-identical, by one line at each size, and the line is the one the Design predicted: the
+copy wrote `No activity yet` **once per empty poll** and the harness's mount performs two
+refreshes, so the before-capture shows it twice (170×50 lines 32–33); `RichLogFeed` clears and
+writes it once, so line 33 is now blank (`diff`: `33d32 < No activity yet`, and a blank row
+appended at 49; at 143 the same line keeps the wrapped BEST PLAYS `Change` and loses only the
+placeholder). Nothing else moved at either size: the six leaderboard columns, the three
+sparkline rows and their `$…` / `…/h` values, the three signal rows with their trailing dot, the
+blank recommendation row, the feed header and the BEST PLAYS header + gap all sit where they did.
+The capture is text only (`seg.text`), so a **style** change would not show in `cmp`; the one
+style hazard (a `Text` row is not run through `RichLog`'s `ReprHighlighter`, a `str` is) is pinned
+instead by `test_feed_rows_carry_the_repr_highlight_the_copy_had`. States the capture does not
+reach: **pre-poll**, the sparkline seeds `waiting for data...` on all three lines where the copy
+seeded `Loading...` on the first (deviation 6); the other five panels seed as before
+(`Loading...` on the first row / box, `No activity yet` after the first empty poll). **Failed
+read**, below.
+
+**Failed read — what the base manager serves.** `data/base_client.py:742-747`
+(`_safe_dex_trending`) swallows a failed DexScreener trending fetch and returns `[]`, so
+`BaseSnapshot.trending_tokens` is empty; `data/base_manager.py:112` copies it, `:168` serves
+`"trending_tokens": tokens` (`[]`), `:255` / `:260` build `gainers` / `losers` from the same list
+(`[]`), `:281` builds `whale_trades` from it (`[]`), and `:234` / `:246` set `total_volume = None`
+and a `"N/A"` / `"0.0%"` top gainer. **A failed trending read and a poll that truly found no
+tokens are indistinguishable in this payload — the dota C1 shape.** Pre-existing, in a data
+module this WP does not own; filed as follow-up **#28** below, not fixed. The three histories are
+never `None`: `base_cache.py:223-233` return `list(...)` and `record_overview_point`
+(`:196`, the `None` skips at `:216-221`) records no point for a failed cycle, so they hold the
+prior true points and no sentinel. A wholly failed `fetch_snapshot` re-raises at
+`base_manager.py:109` and `DashboardScreen._do_refresh` skips every panel — that path is correct.
+What the migrated widgets show on the `[]` payload is what the copies showed: leaderboard the
+`EMPTY_ROW` (`-- No data -- -- -- --`), feed its prior rows (stream) or `No activity yet`, BEST
+PLAYS ten blank rows, hero `...` for the `None` volume and `N/A` / `0.0%` for the gainer. None
+of it is a false degradation and none of it is a crash; it is a real-negative reading of a failed
+read, which is #28's subject.
+
+**Mutation table** — each mutation applied in place, the *named file* run, the test that
+reddened recorded, the mutation reversed by inverse edit and the file `cmp`'d byte-for-byte
+against a pre-mutation snapshot (27 of 27 restored identical; the run's `git diff` afterwards
+was the WP-A diff and nothing else).
+
+| # | mutation | file run | result | test that reddened |
+| --- | --- | --- | --- | --- |
+| 1 | `("Token", 14)` → 13 | `test_base_widgets.py` | 1 failed, 17 passed | `test_leaderboard_header_cells_sit_at_the_six_column_widths` |
+| 2 | `ROW_CAP = 15` → 16 | same | 1 failed, 17 passed | `test_leaderboard_draws_fifteen_rows_and_not_the_sixteenth` |
+| 3 | `EMPTY_ROW` cells `--`/`No data` swapped | same | 1 failed, 17 passed | `test_leaderboard_empty_row_puts_no_data_in_the_token_cell` |
+| 4 | `is_top = idx <= 3` → `<= 4` | same | 1 failed, 17 passed | `test_leaderboard_bolds_the_top_three_symbols_only` |
+| 5 | `LABEL_WIDTH = 10` → 8 | same | 2 failed, 16 passed | `test_sparkline_labels_are_padded_to_ten_cells`, `test_an_empty_series_says_waiting_beside_its_label` |
+| 6 | `SPARK_WIDTH = 20` → 22 | same | 1 failed, 17 passed | `test_sparkline_is_twenty_blocks_wide_not_the_shared_twenty_two` |
+| 7 | `SHOW_ARROW = True` → `False` | same | 1 failed, 17 passed | `test_sparkline_draws_the_trend_arrow` |
+| 8 | `EMPTY_KEEPS_LABEL = True` → `False` | same | 1 failed, 17 passed | `test_an_empty_series_says_waiting_beside_its_label` |
+| 9 | `EMPTY_TEXT` → `""` | same | 1 failed, 17 passed | `test_an_empty_series_says_waiting_beside_its_label` |
+| 10 | `fmt_value` drops the `$` prefix | same | 1 failed, 17 passed | `test_sparkline_values_keep_the_dollar_prefix_and_per_hour_suffix` |
+| 11 | `fmt_value` drops the `/h` suffix | same | 1 failed, 17 passed | same |
+| 12 | `BTSignals` rows `indicator=""` → `None` (dot gone) | same | 1 failed, 17 passed | `test_signal_rows_are_label_value_then_trailing_dot` |
+| 13 | recommendation always written (never blank) | same | 1 failed, 17 passed | `test_recommendation_is_blank_when_empty_and_one_row_under_the_rows` |
+| 14 | bare `None` separator added to `ROWS` | same | 1 failed, 17 passed | same (two blanks, recommendation one row lower) |
+| 15 | `HEADER_LINE` → `None` | same | 1 failed, 17 passed | `test_feed_writes_its_column_header_above_the_first_row` |
+| 16 | `SNAPSHOT = True` on `BTActivityFeed` | same | 2 failed, 16 passed | `test_feed_paints_the_placeholder_once_across_empty_polls`, `test_feed_keeps_its_rows_on_an_empty_poll` |
+| 17 | `format_row` returns the un-highlighted `Text` | same | 1 failed, 17 passed | `test_feed_rows_carry_the_repr_highlight_the_copy_had` |
+| 18 | BEST PLAYS gap `Static` removed | same | 1 failed, 17 passed | `test_best_plays_keeps_one_gap_row_between_header_and_rows` |
+| 19 | hero `[dim]No data[/]` → `[yellow]unavailable[/]` | same | 1 failed, 17 passed | `test_hero_says_no_data_for_a_missing_gainer_and_dots_for_none` |
+| 20 | `panels.py` drops `width=self.SPARK_WIDTH` | `test_panels.py` | 1 failed, 144 passed | `test_spark_width_is_the_bars_cell_count` |
+| 21 | same mutation | `test_base_widgets.py` | 1 failed, 17 passed | `test_sparkline_is_twenty_blocks_wide_not_the_shared_twenty_two` |
+| 22 | `fmt_signal_trailing` value not escaped | `test_panels.py` | 1 failed, 144 passed | `test_fmt_signal_trailing_escapes_a_hostile_value_and_keeps_its_width` |
+| 23 | `fmt_signal_trailing` indicator word not escaped | same | 1 failed, 144 passed | same |
+| 24 | `HEADER_LINE` never written | same | 1 failed, 144 passed | `test_a_header_line_is_written_above_the_rows_on_every_paint` |
+| 25 | same mutation | `test_base_widgets.py` | 1 failed, 17 passed | `test_feed_writes_its_column_header_above_the_first_row` |
+| 26 | no `log.clear()` before the placeholder when a header stands | `test_panels.py` | 1 failed, 144 passed | `test_a_header_never_stands_over_an_empty_table` |
+| 27 | `PanelBase > .panel-title` margin `0 0 1 0` → `0` | `test_title_blank_row.py` | 33 failed, 20 passed | `test_every_panel_paints_a_blank_row_under_its_title[BTSparklines / BTSignals / BTBestPlays / BTOverviewLeaderboard / BTActivityFeed]` among the 33 |
+
+**Tests.** Named set, all green on the WP-A tree: `tests/widgets/test_base_widgets.py` 18 (new),
+`tests/widgets/test_panels.py` 145 collected (was 128: +9 functions, +8 parametrised cases the
+`base.overview` table row adds to the banned-name and clash scans), `tests/widgets/test_title_blank_row.py` 53 (was 51),
+`tests/widgets/test_base_address_icons.py` 2, `tests/widgets/test_medi38_unavailable_state.py` 38,
+`tests/widgets/test_markup_safety.py` 78 (run additionally: it calls
+`BTOverviewLeaderboard().update_data([...])` positionally and asserts `#bto-lb-table`'s row
+count), `tests/screens/test_base_terminal_screen.py` 3, `tests/screens/test_refresh_guard.py` 7,
+`tests/screens/test_dashboard_screen.py` 26, `tests/test_address_rule.py` 10,
+`tests/screens/test_address_icons_everywhere.py -k base` 2 (41 deselected); `-m guard tests`
+last — see the commit. **Name-list diff** against `2c6447a`: `test_panels.py` +9 functions
+(`test_fmt_signal_trailing_with_an_indicator_has_the_three_padded_cells`, `…_without_an_indicator_ends_after_the_value`,
+`…_with_an_empty_indicator_is_the_dot_alone`, `…_honours_the_three_width_keywords`,
+`…_escapes_a_hostile_value_and_keeps_its_width`, `test_spark_width_is_the_bars_cell_count`,
+`test_a_header_line_is_written_above_the_rows_on_every_paint`,
+`test_a_header_never_stands_over_an_empty_table`, `test_a_feed_without_a_header_line_writes_none`),
+no deletion, no rename; `test_title_blank_row.py` no function added or removed — the two new cases
+(`BTOverviewLeaderboard`, `BTActivityFeed`) are rows in its `_PANELS` parametrisation;
+`test_base_widgets.py` is new, 18 functions, all additions.
+
+**Deviations from the Design**, numbered:
+
+1. `fmt_signal_trailing`'s `indicator` defaults to **`None`** (row ends after the value, bakery's
+   `None`-signal shape) and **`""` is the dot alone**, which is what every BT row ends in. The
+   Design's `indicator=""` default "ending after the value" would have left `BTSignals` no way to
+   ask for a bare dot, and padding an empty word to `indicator_width` would have put ten trailing
+   cells past the pin. Both endings are pinned (`test_fmt_signal_trailing_without_an_indicator…`,
+   `…_with_an_empty_indicator_is_the_dot_alone`).
+2. `BTSignals.ROWS` carries **no bare `None`** separator: `SignalsPanelBase` yields the blank row
+   before the recommendation itself when `RECOMMENDATION_ID` is set, so the copy's
+   `bto-sig-spacer-2` is that row and a `None` item would paint two (mutation 14; the cattown
+   precedent).
+3. `SparklinePanel.SPARK_WIDTH` was added — the Design allowed a hook "only if it defaults to
+   today's behaviour and is tested": it defaults to `sparkline_common.SPARK_WIDTH` (22, what every
+   migrated panel drew) and BT is laid out for 20 (mutations 6, 20, 21). It also serves WP-B's
+   cookie chart (30).
+4. `RichLogFeed.HEADER_LINE` was added on the same terms (default `None`, mutations 15, 24–26):
+   the copy wrote a column heading above its ranking and the Design's "stream, keep the copy's
+   text" cannot be met without it.
+5. No per-poll-label sparkline hook: `render_series` already takes the labels per call, so a
+   missing third line is `("", [], color, "")`.
+6. Pre-poll the three sparkline lines seed `waiting for data...` (the base's `EMPTY_TEXT` rule)
+   where the copy seeded `Loading...` on the first line only; uncaptured (the render harness
+   polls before it captures), stated here.
+7. `BTActivityFeed.format_row` runs `ReprHighlighter` over its `Text` itself: `RichLog` applies
+   its highlighter to a `str` row and not to a `Text`, and the copy's rows were `str`. Without it
+   the numbers lose their colour with no change to the text capture (mutation 17).
+8. `SHOW_ARROW = True` is restated on `BTSparklines` although it is the default, so the panel's
+   knobs read in one place.
+9. Two `DEFAULT_CSS` geometry blocks kept (leaderboard `DataTable`, feed `RichLog`), as Branch 6
+   dev.2 / Branch 7 dev.5.
+10. `tests/widgets/test_markup_safety.py` was run beyond the named set as a consumer of
+    `BTOverviewLeaderboard.update_data`'s positional signature.
+
+**Seen, not fixed (filed, not owned by this WP):** **#28** the base client's `[]`-for-a-failed-read
+above (the dota C1 shape; the fix is in `data/base_client.py` / `base_manager.py`, out of a
+widgets-only WP, and turns the feed into a `SNAPSHOT` candidate once `None` is served); **#29**
+the TOP GAINER hero box clips its `+12.0%` second body line in the 7-row box at 170 and 143 —
+pre-existing, in the before-capture; **#30** the BEST PLAYS header wraps at the 143 pin (`Change`
+on its own line 33) — pre-existing, in the before-capture; **#31** the status bar reads
+`updated 0s ago` after a partially failed read because the manager returns a payload (#28's
+sibling).
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

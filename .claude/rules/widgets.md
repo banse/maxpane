@@ -161,7 +161,8 @@ contract. Copy the template, or any migrated screen.
 
 ## Panels subclass `widgets/panels.py`
 
-Branch 6 of the refactor programme, 2026-09-20; widened by Branch 7, WP-A and WP-B, the same day.
+Branch 6 of the refactor programme, 2026-09-20; widened by Branch 7, WP-A and WP-B, and Branch 8
+WP-A (base's overview), the same day.
 Five panel shapes had been hand-copied into every
 dashboard package, and a fix applied to one copy reached none of the others: `_UNAVAILABLE`
 (9 copies), `Loading...` (typed in 68 files), `_render_row` (7) / `_render_box` (4),
@@ -193,7 +194,13 @@ each:
   label_width, dim_label, labelled=True)` is the one formatter every spelling now comes from, and
   it **escapes `value_str` through `markup_safety.safe_markup`** — a signal's value is whatever
   the analytics read off a chain, and a token symbol spelled `[/x]` made the write raise
-  `MarkupError`, which the row's guard turned into a dropped or degraded row instead of the value. A `ROWS` item is `(id, label)`; `(id, None)`
+  `MarkupError`, which the row's guard turned into a dropped or degraded row instead of the value.
+  **`fmt_signal_trailing(label, value, *, indicator, color, label_width=20, value_width=12,
+  indicator_width=10)`** beside it is the *older* of the two row shapes — label, the value
+  right-aligned, then the coloured dot **after** it (`indicator=""` is the dot alone, base's
+  `BTSignals`; `None` ends after the value; a word is padded to `indicator_width`) — with the value
+  and the word escaped the same way; bakery's `SignalsPanel` is the other panel on that shape and
+  WP-B moves it onto the function. A `ROWS` item is `(id, label)`; `(id, None)`
   is a **label-less row** (`  [c]{ind}[/] [c]{value}[/]`, and the
   degraded row drops the label too, so it stays `unavailable` without an empty column in front of
   it); a bare `None` item is a blank `.panel-line` **separator** between groups of rows. The
@@ -207,8 +214,10 @@ each:
   used to vanish exactly when there was a launch to announce.
 - **`SparklinePanel(PanelBase)`** — `LINE_IDS` and `render_series((label, points, color, unit), …)`
   over `sparkline_common`'s `coerce_points` / `build_sparkline_from_points` / `trend_arrow` /
-  `fmt_compact`. Six knobs, each defaulting to the Branch 6 behaviour: `LABEL_WIDTH` (8; 9 in
-  dota, 12 in ttt, 16 in talismans), `SHOW_ARROW` (`True`; the trailing space goes with the arrow,
+  `fmt_compact`. Seven knobs, each defaulting to the Branch 6 behaviour: `LABEL_WIDTH` (8; 9 in
+  dota, 12 in ttt, 16 in talismans; 10 in base), `SPARK_WIDTH` (the bar's cell count,
+  `sparkline_common.SPARK_WIDTH` = 22; base's `BTSparklines` is laid out for 20 — Branch 8 WP-A),
+  `SHOW_ARROW` (`True`; the trailing space goes with the arrow,
   so `False` leaves no ragged cell — talismans and ttt draw none), `EMPTY_TEXT` (`""`),
   `MIN_POINTS` (`1`), `EMPTY_KEEPS_LABEL` (`False`) and the `fmt_value(value, unit)` hook
   (`fmt_compact`). Override
@@ -248,7 +257,9 @@ each:
   ttt set `False` / `False` / `200`, because their rows are **columnar** — a wrapped burn row puts
   its tokenId under its timestamp and the column stops being a column — and Rich's repr highlighter
   recolours the numbers on top of the per-event-type colour the row already carries), the dedupe
-  set, and two hooks:
+  set, `HEADER_LINE` (`None`; a `str` or `Text` written above the rows on every paint and
+  never over the placeholder — base's `BTActivityFeed` heads its ranking with a column line,
+  Branch 8 WP-A), and two hooks:
   `dedupe_key(event)` (default `event.get("tx_hash") or None`) and the abstract `format_row(event)
   -> Text | None`. `format_row` returns a **`Text`**, never a markup string. `render_events` is the
   merged contract: an empty poll writes the placeholder only while nothing has ever been shown and
@@ -317,12 +328,15 @@ first subscriber it is. `widgets/cattown/_fmt.py`
 is where the two formatters *two* of its modules needed were hoisted, rather than left as three
 copies of a rarity-colour map; `widgets/ttt/_fmt.py` is the same move for `safe_symbol`, which
 `ttt_leaderboard.py` and `ttt_fees_table.py` each carried a byte-identical copy of.
-**Five packages are on the bases as of Branch 7 WP-B** — ocm, cattown, dota, talismans, ttt — and
+**Six packages are on the bases as of Branch 8 WP-A** — ocm, cattown, dota, talismans, ttt and
+`base.overview` (the six `BT*` widgets; `BTActivityFeed` stays a **stream**, its poll is a whole
+ranking with `dedupe_key -> None`, and its rows run `ReprHighlighter` themselves because a `Text`
+row bypasses the highlight `RichLog` gives a `str`) — and
 no widget class name and no `update_data` signature changed in any of them, so no screen's `PANELS`
 and no agreement test in `tests/screens/test_dashboard_screen.py` was touched.
 `tests/widgets/test_panels.py` covers the bases and holds the agreement tests that redden when a
 copy is pasted back into a migrated package: both are parametrised over one `MIGRATED_PACKAGES`
-table, `{"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7}` — package → how many
+table, `{"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7, "base.overview": 6}` — package → how many
 `update_data` widget classes the walk must find — which is the only line a later migration edits.
 The counts differ per package, so the number is hand-checked, not derived, or it would
 compare `__all__` against itself. The banned-name set the same walk enforces now also covers
