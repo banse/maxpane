@@ -22,8 +22,12 @@ class GameSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     season: Season
-    bakeries: list[BakerySummary]
-    activity: list[ActivityEvent]
+    bakeries: list[BakerySummary] | None
+    """``None`` when the bakeries sub-fetch failed; ``[]`` when it answered
+    and the board is empty. Two facts a reader must be able to tell apart
+    (follow-up #35): the first is ``unavailable``, the second ``No data``."""
+    activity: list[ActivityEvent] | None
+    """Same contract: ``None`` could not look, ``[]`` looked and found nothing."""
     agent_config: AgentConfig
     eth_price_usd: float
     fetched_at: float

@@ -401,6 +401,12 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `tests/data/test_client.py` against a transport that raises for the one sub-fetch. Pre-existing,
     not introduced by the migration. **Important, Tier 1** (bakery's own data module) (Branch 8
     WP-B, filed 2026-09-20).
+    **Done 2026-09-20, `followups/important-2026-09`:** `GameSnapshot.bakeries/activity: list | None`, the
+    client carries `None`, the manager derives off `[]` but passes `None` under `bakeries`/`events`, the
+    cache iterates `bakeries or ()`; `Leaderboard` paints `UNAVAILABLE_ROW` through the base's footer slot
+    (the one row it lands without `No data`) and `ActivityFeed` writes `UNAVAILABLE_LINE` while nothing is
+    drawn, keeping rows otherwise. Pinned in `test_client.py` (404 routes, backoff zeroed), the manager
+    contract, both widget files. The shared `TableLeaderboard`/`RichLogFeed` bases are untouched (#34's scope).
 
 36. **`CookieChart._label_cell` overrides a private base hook.**
     `maxpane_dashboard/widgets/cookie_chart.py:31-39` wraps `super()._label_cell(label)` in

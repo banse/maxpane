@@ -298,8 +298,10 @@ class GameDataClient:
     async def fetch_all(self) -> GameSnapshot:
         """Fetch everything concurrently and return a unified snapshot.
 
-        Individual sub-fetches that fail are logged and replaced with
-        safe defaults so the dashboard always gets *something*.
+        The two sub-fetches the dashboard can live without -- bakeries and
+        the activity feed -- are logged and carried as ``None`` when they
+        fail, never as ``[]``: an empty list is a real answer ("nobody is
+        playing") and the widgets paint it as one (follow-up #35).
         """
         (
             agent_config_result,
@@ -327,7 +329,7 @@ class GameDataClient:
 
         season: Season = season_result
 
-        bakeries: list[BakerySummary] = []
+        bakeries: list[BakerySummary] | None = None
         if isinstance(bakeries_result, BaseException):
             logger.warning("Failed to fetch bakeries: %s", bakeries_result)
         else:
@@ -340,11 +342,12 @@ class GameDataClient:
             eth_price = eth_price_result
 
         # Fetch global activity using the season we just obtained
+        activity: list[ActivityEvent] | None
         try:
             activity = await self.get_activity_feed_global(season.id, top_n=5)
         except Exception as exc:
             logger.warning("Failed to fetch global activity feed: %s", exc)
-            activity = []
+            activity = None
 
         return GameSnapshot(
             season=season,

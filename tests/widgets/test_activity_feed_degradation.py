@@ -175,12 +175,27 @@ async def test_empty_feed_states_that_it_is_empty() -> None:
     assert "No activity yet" in rendered
 
 
-async def test_none_is_treated_as_empty() -> None:
-    """A manager that returned nothing must not raise here."""
-    rendered, app, _ = await _render(None)
+async def test_none_says_unavailable_not_empty() -> None:
+    """``None`` is "the client could not read the feed" (follow-up #35).
+
+    It used to paint ``No activity yet`` -- a real negative -- because the
+    client substituted ``[]`` for a failed fetch and the widget could not
+    tell. Repeated ``None`` polls rewrite the line rather than stacking it.
+    """
+    rendered, app, _ = await _render(None, None, None)
 
     assert app._exception is None
-    assert "No activity yet" in rendered
+    assert rendered.count("unavailable") == 1, rendered
+    assert "No activity yet" not in rendered
+
+
+async def test_a_failed_poll_keeps_a_populated_feed() -> None:
+    """Last-good stays up behind the screen's ``as of`` marker."""
+    rendered, app, _ = await _render([_event(title="joined the bakery")], None)
+
+    assert app._exception is None
+    assert "joined the bakery" in rendered
+    assert "unavailable" not in rendered
 
 
 async def test_repeated_empty_polls_do_not_stack_placeholders() -> None:

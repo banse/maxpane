@@ -239,3 +239,27 @@ async def test_recent_cache_is_still_restored(make_manager) -> None:
 
     data = await manager.fetch_and_compute()
     assert data["leader_rate"] == pytest.approx(1000.0, rel=0.05)
+
+
+# ---------------------------------------------------------------------------
+# Follow-up #35: a failed bakeries / activity fetch reaches the widgets as None
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_failed_bakeries_fetch_reaches_the_widget_dict_as_none(make_manager):
+    """``None`` in, ``None`` out -- with every derived key still present and
+    nothing recorded in the cookie histories."""
+    snap = _snapshot(fetched_at=1_000.0).model_copy(
+        update={"bakeries": None, "activity": None}
+    )
+    manager = make_manager([snap])
+
+    result = await manager.fetch_and_compute()
+
+    assert REQUIRED_KEYS <= set(result)
+    assert result["bakeries"] is None
+    assert result["events"] is None
+    # Derivations treat "could not look" like an empty board: no leader to name.
+    assert result["leader_name"] == "---"
+    assert result["chart_histories"] == {}

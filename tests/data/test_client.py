@@ -400,3 +400,48 @@ class TestPriceClient:
 
         price = await pc.get_eth_usd()
         assert price == 0.0
+
+
+class TestFailedSubFetchesAreNone:
+    """Follow-up #35: a failed bakeries or activity fetch is ``None``, not ``[]``.
+
+    The 404 the mock transport serves for an unrouted URL goes through the
+    client's retry ladder, so the backoff table is zeroed here -- the test is
+    about the value that comes out, not the seconds spent getting it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_failed_bakeries_fetch_is_none_and_takes_activity_with_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import maxpane_dashboard.data.client as client_module
+
+        monkeypatch.setattr(client_module, "_BACKOFF_SECONDS", (0.0, 0.0, 0.0))
+        routes = {
+            "agent.json": AGENT_JSON,
+            "getActiveSeason": SEASON_RESPONSE,
+            # no getTopBakeries, no getActivityFeed: both 404
+        }
+        client = _make_client(routes)
+        snapshot = await client.fetch_all()
+
+        assert snapshot.season.id == 3
+        assert snapshot.bakeries is None
+        # The global feed fans out over the top bakeries, so it fails with them.
+        assert snapshot.activity is None
+        assert snapshot.eth_price_usd == 2500.0
+
+    @pytest.mark.asyncio
+    async def test_a_served_but_empty_board_is_an_empty_list(self) -> None:
+        """``[]`` stays ``[]``: the two facts must not collapse the other way."""
+        routes = {
+            "agent.json": AGENT_JSON,
+            "getActiveSeason": SEASON_RESPONSE,
+            "getTopBakeries": {"result": {"data": {"json": {"items": [], "nextCursor": None}}}},
+            "getActivityFeed": ACTIVITY_RESPONSE,
+        }
+        client = _make_client(routes)
+        snapshot = await client.fetch_all()
+
+        assert snapshot.bakeries == []
+        assert snapshot.activity == []

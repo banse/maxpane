@@ -108,7 +108,11 @@ class DataManager:
 
         # ── Derived values ────────────────────────────────────────────
         season = snapshot.season
-        bakeries = snapshot.bakeries
+        # ``None`` (the fetch failed) derives like an empty board here -- there
+        # is no leader to name either way -- but reaches the widget dict as
+        # itself, so the leaderboard says ``unavailable`` rather than
+        # ``No data`` (follow-up #35).
+        bakeries = [] if snapshot.bakeries is None else snapshot.bakeries
         eth_price = snapshot.eth_price_usd
         agent_config = snapshot.agent_config
 
@@ -225,7 +229,7 @@ class DataManager:
             "leader_cookies": leader_cookies,
             "leader_rate": leader_rate,
             # leaderboard
-            "bakeries": bakeries,
+            "bakeries": snapshot.bakeries,
             "production_rates": production_rates,
             # cookie_chart
             "chart_histories": chart_histories,
