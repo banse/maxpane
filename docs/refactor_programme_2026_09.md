@@ -2562,7 +2562,10 @@ column goes through `fmt.hhmm` instead of the copy's private `_format_event_time
 non-numeric stamp render `??:??` as before, and so now does a non-positive stamp (`0`), which the
 copy printed as the local epoch hour; (6) the feed gains the base's flicker guard: a poll with nothing new
 leaves the log alone where the copy cleared and redrew it every non-empty poll (same pixels unless
-a keyed event's *title* changes underneath its key, which the game API does not do); (7) `_who_text`
+an unkeyed field — `success`, `is_outgoing` or `linked_bakery_name`; the key is
+`timestamp:launcher:type:description` — changes underneath a drawn key, which an immutable
+activity log does not do; the review probed `success` `False→True` on a repeated key and the
+copy redrew `✓` where the migrated feed keeps `✗`); (7) `_who_text`
 passes no `explorer=` — the copy declared none and Abstract (chain 2741) is not in
 `widgets/explorer.py`'s allowlist, so the row renders a copy icon and no link, as the sweep's
 `explorer=None` case asserts; (8) leaderboard rows are built inside the base's per-row guard, so one
@@ -2582,6 +2585,23 @@ test already dodges it with a border-less harness, as does the new file); the Da
 row's `color: $text` hides the leader's `[green]` rate on every leaderboard; and the sweep's bakery
 payload lacks the chart/signal/ranking keys, so it certifies the degraded shape of three panels and
 never their live one.
+
+**Branch 8 WP-B review (2026-09-20): Approved, 0 Critical, 0 Important, 3 Minor.** The reviewer
+rendered `BakeryScreen` on a full payload (every key the sweep lacks: three 8-point series, EV,
+gap, dominance, recommendation, both rankings, four bakeries incl. a 29-char and a markup-bearing
+name, five events across all `_format_event` branches) against a `b3b3e1a` worktree at 170×50 and
+143×50: byte-identical at both sizes, with COOKIE TRENDS, SIGNALS and BEST PLAYS live; hero bodies
+identical over seven input cases, and a 25-case panel matrix identical except the MEDI-38
+corrections already listed as deviations (the copy raised `TypeError` on a `None`/non-list series
+and executed markup in the recommendation). `fmt.hhmm` is `localtime` like the deleted helper — no
+timestamp shifts. The `[]`-series blank is unreachable live (`cache.py:99` appends a point per
+snapshot bakery per poll). #34 confirmed real in the base, seven subscribers, stands as filed.
+Hostile tests bite (3 and 4 fail on the two mutations); three of the eighteen mutations re-run
+and matched; the two new `test_title_blank_row` rows redden on the margin. Minors: M1 the rule
+file named `screens/bakery.py` (125 lines) as the shortest migrated screen — `cattown.py` is 87,
+corrected; M2 deviation (6) understated the flicker guard's unkeyed fields — corrected above;
+M3 `test_bakery_widgets.py:347-348` asserts a cell string, recorded as debt under #39. Named set
+563 passed; `-m guard tests` 192 passed. Tree clean, no worktree left.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

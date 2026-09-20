@@ -139,8 +139,8 @@ is in `compose` and named once, every key it sends is a **named** parameter of `
 every mounted widget with an `update_data` is named by some row (so a dropped row reddens).
 `tests/screens/test_refresh_guard.py` collects a screen by `issubclass(…, DashboardScreen)` as
 well as by its own `_do_refresh`, and requires `GAME_NAME` on anything that inherits the refresh.
-A new screen subclasses `DashboardScreen` and follows any migrated screen (`screens/bakery.py`
-is the shortest); the `templates/screen_template.py` copy-source was deleted in Branch 8 WP-B.
+A new screen subclasses `DashboardScreen` and follows any migrated screen (`screens/cattown.py`
+is the shortest at 87 lines); the `templates/screen_template.py` copy-source was deleted in Branch 8 WP-B.
 
 The four screens with a genuinely custom `_do_refresh` (surf, curator, fwa, frenpet_full) inherit
 the class for its lifecycle and keep their own refresh.

@@ -440,6 +440,10 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     Whether the cursor row should keep cell colours is an owner decision (it is a highlight, after
     all); if yes, drop `color` from the block and re-render the migrated leaderboards. Pre-existing.
     **Minor, Tier 2** — shared stylesheet, > 1 dashboard (Branch 8 WP-B, filed 2026-09-20).
+    Debt this created: `tests/widgets/test_bakery_widgets.py:347-348` asserts the cell string
+    (`str(table.get_row_at(0)[3]) == "[green]+5/hr[/]"`) instead of composited output; whoever
+    changes the cursor rule upgrades that assertion to `render_strips()` in the same change
+    (WP-B review M3).
 
 40. **The address sweep's bakery payload certifies three panels only in their degraded state.**
     `tests/address_sweep/builders.py:555-597` `_bakery_payload` carries no `chart_histories`, no
