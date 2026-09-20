@@ -229,3 +229,48 @@ async def test_a_narrow_panel_sheds_the_when_column_and_says_widen():
     assert "SEPOLIA" in compact_text
     assert "??:??" not in compact_text
     assert "‹" in compact_text
+
+
+# -- E7 per row: each row links to ITS chain (fix round 1, I2) ---------------
+
+
+async def _shipped_links(rows, size=(110, 12)) -> list[str]:
+    """Mount the panel alone and return the distinct link urls on screen."""
+    from textual.app import App
+
+    from tests.widgets.address_probe import link_targets
+
+    class _A(App):
+        def compose(self):
+            yield SurfSwarmShipped()
+
+    async with _A().run_test(size=size) as pilot:
+        widget = pilot.app.query_one(SurfSwarmShipped)
+        widget.update_data(swarm_shipped_rows=rows, swarm_scores_as_of_hhmm="04:06")
+        await pilot.pause()
+        return sorted({url for _x, _y, _n, _k, _v, url in link_targets(pilot.app) if url})
+
+
+async def test_a_sepolia_row_links_its_address_and_its_hash_on_sepolia_etherscan():
+    """``chain_id`` 11155111 resolves through ``explorer.for_chain_id`` to
+    the Sepolia explorer, for the address cell and for a hash-only row's
+    tx cell alike -- never the package's mainnet explorer."""
+    launch = dict(ROWS[0], chain_id=11155111)
+    hash_only = dict(ROWS[0], chain_id=11155111, address=None, ens_name=None)
+    assert await _shipped_links([launch]) == [f"https://sepolia.etherscan.io/address/{ADDR}"]
+    assert await _shipped_links([hash_only]) == [f"https://sepolia.etherscan.io/tx/{TX}"]
+
+
+async def test_a_mainnet_row_links_on_etherscan():
+    launch = dict(ROWS[0], chain_id=1)
+    hash_only = dict(ROWS[0], chain_id=1, address=None, ens_name=None)
+    assert await _shipped_links([launch]) == [f"https://etherscan.io/address/{ADDR}"]
+    assert await _shipped_links([hash_only]) == [f"https://etherscan.io/tx/{TX}"]
+
+
+async def test_a_row_on_an_unknown_chain_id_renders_its_address_unlinked():
+    """An id the allowlist does not name links nothing rather than guessing;
+    the copy icon still renders (the CHAIN column's own dash rule)."""
+    launch = dict(ROWS[0], chain_id=999999999)
+    assert await _shipped_links([launch]) == []
+    assert COPY_GLYPH in await _shipped(swarm_shipped_rows=[launch])

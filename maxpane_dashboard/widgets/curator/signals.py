@@ -84,6 +84,7 @@ from textual.widgets import Static
 
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.curator._fmt import (
+    EXPLORER,
     COMPACT_ETH_PROBE,
     DASH,
     EMDASH,
@@ -387,7 +388,7 @@ def _identity_row(
         # the reverted three-sided list-hero card. The `colors` parameter
         # stays (still used by `_resolved_markup` for the head), unused
         # here now.
-        identity = address_text(lowered, label=(name or None), width=NAME_COLS)
+        identity = address_text(lowered, label=(name or None), width=NAME_COLS, explorer=EXPLORER)
         items.append((identity, identity.cell_len))
     items.extend((p, visible_len(p)) for p in trail if p)
 

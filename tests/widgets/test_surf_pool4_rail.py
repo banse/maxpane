@@ -1667,3 +1667,46 @@ _RATCHET_FMT_ETH_GOLDEN = [
 
 def test_golden_pool4_ratchet_fmt_eth():
     assert [R._fmt_eth(p) for p in _FMT_PROBES] == _RATCHET_FMT_ETH_GOLDEN
+
+
+# -- E7 per payload: HATCHES links every address on the sweep's own network --
+# (fix round 1, I2)
+
+
+async def _hatches_links(payload, size=(100, 40)) -> list[str]:
+    """Mount HATCHES alone and return the distinct link urls on screen."""
+    from tests.widgets.address_probe import link_targets
+
+    class _A(App):
+        def compose(self):
+            yield SurfPool4Hatches()
+
+    async with _A().run_test(size=size) as pilot:
+        pilot.app.query_one(SurfPool4Hatches).update_data(**payload)
+        await pilot.pause()
+        return sorted({url for _x, _y, _n, _k, _v, url in link_targets(pilot.app) if url})
+
+
+async def test_hatches_on_sepolia_links_every_address_on_sepolia_etherscan():
+    """``pool4_network`` resolves through ``explorer.for_network``: the
+    panel's addresses (hook, token, vault, distributor, dripper, hatch
+    rows) all link on the Sepolia explorer while the sweep is on Sepolia."""
+    urls = await _hatches_links(dict(HATCHES_HEALTHY, pool4_network="SEPOLIA"))
+    assert urls, "no link at all"
+    assert all(u.startswith("https://sepolia.etherscan.io/") for u in urls), urls
+    hook = HATCHES_HEALTHY["pool4_hook_addr"].lower()
+    assert any(u.lower().endswith(hook) for u in urls), urls
+
+
+async def test_hatches_on_mainnet_links_every_address_on_etherscan_never_basescan():
+    urls = await _hatches_links(dict(HATCHES_HEALTHY, pool4_network="MAINNET"))
+    assert urls, "no link at all"
+    assert all(u.startswith("https://etherscan.io/") for u in urls), urls
+    assert not any("basescan.org" in u for u in urls), urls
+
+
+async def test_hatches_with_no_network_word_links_nothing():
+    """``None`` means no sweep has completed; a word outside the explorer
+    allowlist is not a network. Neither may guess an explorer."""
+    assert await _hatches_links(dict(HATCHES_HEALTHY, pool4_network=None)) == []
+    assert await _hatches_links(dict(HATCHES_HEALTHY, pool4_network="ARBITRUM")) == []

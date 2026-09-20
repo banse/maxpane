@@ -16,6 +16,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.cattown._chain import EXPLORER
 
 #: display budget for the leader name/address, excluding the icon -- the same
 #: 12-cell window the deleted ``_short_addr`` produced (recipe step 6, PRD §5).
@@ -156,6 +157,7 @@ class CTHeroMetrics(Horizontal):
             label=display_name or None,
             width=_LEADER_COLS,
             style="bold green",
+            explorer=EXPLORER,
         ))
         body.append("\n")
         body.append(f"{weight:.1f}kg", style="dim")

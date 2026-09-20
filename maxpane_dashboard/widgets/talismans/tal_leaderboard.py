@@ -18,6 +18,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.talismans._chain import EXPLORER
 
 _DASH = "--"
 
@@ -100,6 +101,7 @@ class TalismansLeaderboard(Vertical):
                 row.get("address"),
                 width=_WALLET_COLS,
                 style="bold" if is_top else "",
+                explorer=EXPLORER,
             )
             tokens = _fmt_int(row.get("tokens"))
             cores = _fmt_int(row.get("cores"))

@@ -59,6 +59,7 @@ from maxpane_dashboard.widgets.address import (
     address_text,
     short_hex,
 )
+from maxpane_dashboard.widgets.fwa._chain import EXPLORER
 from maxpane_dashboard.widgets.markup_safety import visible_len as _visible_len
 from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 from textual.widgets import Static
@@ -230,6 +231,9 @@ def _fmt_drift(
 
     # Bytes32 first: once shortened it no longer contains an unbroken
     # 40-hex run, so the address pass below can never mistake it for one.
+    # Unlinked on purpose: a bytes32 here is a config value of unknown kind,
+    # not known to be a transaction hash (Branch 4 scope), so ``short_hex``
+    # rather than ``hash_text``.
     shortened = _BYTES32_RE.sub(
         lambda m: short_hex(m.group(0), _BYTES32_COLS), value
     )
@@ -275,7 +279,7 @@ def _fmt_drift(
             between = shortened[matches[index - 1].end():match.start()]
             if between:
                 line.append(between, style=fg)
-        line.append_text(address_text(match.group(0), width=width, style=fg))
+        line.append_text(address_text(match.group(0), width=width, style=fg, explorer=EXPLORER))
     if trail:
         line.append(trail, style=fg)
     return line

@@ -117,3 +117,25 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `ttt_claims_table`/`ttt_fees_table` (ungrouped thousands). Each carries a comment naming its
     differing probe and a golden. Unify only if the owner accepts `True → --`, grouped ttt output and
     `None → --` on frenpet as deliberate render changes (WP-B implementer, 2026-09-20).
+
+## Branch 4 — explorer links
+
+14. **`data/talismans_client.py:80` still lists `https://eth.merkle.io` in `_FALLBACK_RPCS`** — a
+    CLAUDE.md "dead endpoints, do not reintroduce" hazard; the file's own logs-pool comment at :91
+    records it answering `-32601 Method not found`. Tier 0 removal when that client is next touched
+    (WP-B implementer, 2026-09-20).
+15. **`tests/test_explorer_action.py::test_the_message_clears_itself_but_never_a_newer_one`**: its
+    second half is a fixed 5×0.01 s window with no observable anchor (a wall-clock wait, CLAUDE.md
+    "await an observable state"). Minor (WP-A review Minor 3, filed 2026-09-20).
+16. **Two per-row explorer sites have no widget test that bites:** `widgets/surf/swarm_throughput.py`
+    (`for_chain_id(row.get("last_chain_id"))`) and `widgets/surf/pool4u_stakers.py`
+    (`for_network(self._payload.get("network"))`). Hardcoding `for_chain_id(1)` / `for_network("BASE")`
+    leaves `tests/widgets/test_surf_swarm_rail.py` and `tests/widgets/test_surf_pool4u_left.py` green,
+    and surf's sweep case allows all three explorers. Same shape as the tests `swarm_shipped` and
+    `pool4_hatches` got in fix round 1. Minor, Tier 0 when either file is next touched (WP-B
+    re-review N2, 2026-09-20).
+17. **surf's `widgets/surf/_fmt.EXPLORER` is not bound by the sweep:** `SweepCase.rows_pick_explorer`
+    lets any surf address link on any of its three explorers, so `EXPLORER = BASE` there passes E7.
+    A widget test on one `_fmt.EXPLORER` site (the hero card or the feed) pinning `etherscan.io`
+    closes it; or list surf's mainnet-only seeded wallets in `explorer_for`. Minor, Tier 0 (filed by
+    the controller, 2026-09-20, from WP-B re-review N1).

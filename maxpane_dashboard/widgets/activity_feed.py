@@ -52,6 +52,10 @@ def _who_text(launcher: object, *, width: int) -> Text:
         return Text("the bakery", style="dim")
     if not isinstance(launcher, str):
         launcher = str(launcher)
+    # No ``explorer=``: Bakery runs on Abstract (``data/client.py`` reads
+    # ``agent.json``; ``tests/data/test_client.py`` pins ``chainId`` 2741,
+    # explorer ``abscan.org``), which ``widgets/explorer.py`` does not allowlist.
+    # An unknown chain gets no link, never a guessed one (rules/widgets.md).
     return address_text(launcher, width=width, style="dim")
 
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Awaitable, Callable, Union
+from dataclasses import dataclass, field
+from typing import Awaitable, Callable, Mapping, Union
 
 from textual.app import App
+
+from maxpane_dashboard.widgets.explorer import Explorer
 
 #: A view is either the keys that reach it, or a coroutine that drives the
 #: harness there (for a body no key reaches, or one that needs input typed).
@@ -50,3 +52,53 @@ class SweepCase:
     #: pins, where a measured defect lived. Each one names its reason in the
     #: builder.
     extra_sizes: tuple[tuple[int, int | None], ...] = ()
+    #: The dashboard's explorer (PRD §7 E7): the one its package declares
+    #: (``widgets/<game>/_chain.py`` or ``_fmt.py``), so this is the agreement
+    #: test that binds that declaration to the chain the sweep expects. ``None``
+    #: for an address-free dashboard, and for one on a chain
+    #: ``widgets/explorer.py`` does not allowlist -- there, E7 asserts the
+    #: opposite: no link at all, never a guessed one.
+    explorer: Explorer | None = None
+    #: The explorers any link on this dashboard may use. Defaults to
+    #: ``(explorer,)``; empty when ``explorer`` is ``None``. Wider than one
+    #: only for a reason the case states: a listed address in ``explorer_for``
+    #: (curator's Base collection) or ``rows_pick_explorer``.
+    explorers: tuple[Explorer, ...] = ()
+    #: ``True`` when the dashboard's rows choose their own explorer out of
+    #: ``explorers`` (surf: pool4 panels link by ``pool4_network``, swarm rows
+    #: by ``chain_id``), so an address not listed in ``explorer_for`` may link
+    #: on any member. ``False`` (every other dashboard): an unlisted address
+    #: must link on ``explorer`` itself -- that is what keeps ``explorer`` an
+    #: agreement test for the package's declaration once ``explorers`` is
+    #: wider than one (WP-B re-review N1: with curator at ``(ETHEREUM, BASE)``
+    #: a mutated ``widgets/curator/_fmt.EXPLORER = BASE`` passed the sweep).
+    rows_pick_explorer: bool = False
+    #: The one explorer a particular seeded address must link on, lower-cased
+    #: address -> explorer, for an address whose chain is NOT the package's
+    #: (a custom NFT collection on Base in curator's editor: a contract
+    #: address is not chain-agnostic the way a wallet is). E7 reports
+    #: ``link on the wrong explorer`` for a listed address on any other
+    #: explorer, allowed or not; an unlisted address may link on any member
+    #: of ``explorers``. Every value must be in ``explorers``.
+    explorer_for: Mapping[str, Explorer] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.explorer is not None and not self.explorers:
+            object.__setattr__(self, "explorers", (self.explorer,))
+        if self.explorer is not None and self.explorer not in self.explorers:
+            raise ValueError(f"{self.name}: explorer {self.explorer.name} is not in its own allowed set")
+        object.__setattr__(
+            self, "explorer_for", {a.lower(): e for a, e in self.explorer_for.items()}
+        )
+        for address, explorer in self.explorer_for.items():
+            if explorer not in self.explorers:
+                raise ValueError(f"{self.name}: {address} names explorer {explorer.name} outside the allowed set")
+        if self.rows_pick_explorer and self.explorer is None:
+            raise ValueError(f"{self.name}: rows cannot pick an explorer on a dashboard with none")
+        if len(self.explorers) > 1 and not self.rows_pick_explorer and not any(
+            e != self.explorer for e in self.explorer_for.values()
+        ):
+            raise ValueError(
+                f"{self.name}: allows {len(self.explorers)} explorers but nothing on it may use "
+                "a second one -- list the address in explorer_for or set rows_pick_explorer"
+            )

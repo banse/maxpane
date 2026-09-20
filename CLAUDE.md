@@ -137,8 +137,11 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
 - **Escape every third-party string** before markup or a `DataTable`: `markup_safety.safe_markup`.
   Token symbols are attacker-controlled. A `Static` gets a pre-built `rich.text.Text`, never a
   markup string.
-- **Every displayed 0x address carries a copy icon** via `widgets/address.py` only; enforced by
-  `tests/test_address_rule.py` and `tests/screens/test_address_icons_everywhere.py`.
+- **Every displayed 0x address carries a copy icon and links to its chain's explorer** (click
+  the text, or Cmd+click the OSC 8 hyperlink) via `widgets/address.py` and `widgets/explorer.py`
+  only; each dashboard package declares its `EXPLORER` once and an unknown chain gets no link,
+  never a guessed one. Enforced by `tests/test_address_rule.py` and the E2/E7 sweep
+  `tests/screens/test_address_icons_everywhere.py`.
 - **ENS** (`data/ens.py`): forward-check every reverse record; record misses; the raw list is
   the sole hydration boundary. **`decimals()` is a live read**, never 18 by assumption.
 - **Validate persisted series per point** (`data/series_points.coerce_points`); a hand-edited

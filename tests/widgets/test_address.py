@@ -1,11 +1,14 @@
 import ast
 import pathlib
 
+import pytest
+
 from rich.cells import cell_len
 from rich.style import Style
 from rich.text import Text
 
 from maxpane_dashboard.widgets import address as A
+from maxpane_dashboard.widgets import explorer as X
 
 ADDR = "0x" + "abcdef0123" * 4          # 40 hex
 TX = "0x" + "ab" * 32                   # 64 hex
@@ -200,3 +203,180 @@ def test_is_copy_click_uses_the_parser_and_tolerates_odd_meta():
         style = _OddStyle()
 
     assert not A.is_copy_click(_OddEvt())
+
+
+# -- explorer links (refactor programme 2026-09, Branch 4 WP-A) -------------------------
+
+
+_COPY = Style(meta={"@click": f"app.copy_address('{ADDR}')"})
+
+
+def _spans(text: Text) -> list[tuple[int, int, Style | str]]:
+    return [(s.start, s.end, s.style) for s in text.spans]
+
+
+def _links(text: Text) -> list[tuple[str, str, tuple]]:
+    """(covered text, OSC 8 link, parsed open action) for every span carrying either."""
+    out = []
+    for span in text.spans:
+        if not isinstance(span.style, Style):
+            continue
+        parsed = X.parse_open_action(span.style.meta.get("@click"))
+        if span.style.link or parsed:
+            out.append((text.plain[span.start:span.end], span.style.link, parsed))
+    return out
+
+
+def test_explorer_none_renders_byte_and_style_identically_to_before_the_links():
+    """The literals were computed from ``git show 307255a:…/address.py`` (the
+    module before ``explorer=`` existed) and pasted; ``Text.__eq__`` compares
+    plain, base style and spans."""
+    full = Text("0xabcdef0123abcdef0123abcdef0123abcdef0123 ⧉")
+    full.stylize(_COPY, 43, 44)
+    assert A.address_text(ADDR) == full
+    assert _spans(A.address_text(ADDR)) == [(43, 44, _COPY)]
+
+    window = Text("0xabcdef01…ef0123 ⧉", style="bold")
+    window.stylize(_COPY, 18, 19)
+    assert A.address_text(ADDR, width=17, style="bold") == window
+    assert _spans(A.address_text(ADDR, width=17, style="bold")) == [(18, 19, _COPY)]
+
+    label = Text("vitalik… ⧉")
+    label.stylize(_COPY, 9, 10)
+    assert A.address_text(ADDR, label="vitalik.eth", width=8) == label
+    assert _spans(A.address_text(ADDR, label="vitalik.eth", width=8)) == [(9, 10, _COPY)]
+
+    invalid = Text("0xabcdef0123abcd…")
+    assert A.address_text(ADDR + "\n", width=17) == invalid
+    assert _spans(A.address_text(ADDR + "\n", width=17)) == []
+
+    prose = Text(
+        "sent to 0xabcdef0123abcdef0123abcdef0123abcdef0123 ⧉, tx "
+        "0xabababababababababababababababababababababababababababababababab and "
+        "(0xabcdef0123abcdef0123abcdef0123abcdef0123 ⧉)",
+        style="dim",
+    )
+    prose.stylize(_COPY, 51, 52)
+    prose.stylize(_COPY, 172, 173)
+    got = A.address_prose(f"sent to {ADDR}, tx {TX} and ({ADDR})", style="dim")
+    assert got == prose
+    assert _spans(got) == [(51, 52, _COPY), (172, 173, _COPY)]
+    assert got.style == "dim"
+
+
+def test_the_link_is_on_the_shown_span_only_and_the_glyph_keeps_the_copy_action():
+    t = A.address_text(ADDR, width=17, explorer=X.ETHEREUM)
+    assert t.plain == A.short_address(ADDR, 17) + " " + A.COPY_GLYPH
+    url = X.address_url(X.ETHEREUM, ADDR)
+    assert _links(t) == [(A.short_address(ADDR, 17), url, (X.ETHEREUM, "address", ADDR))]
+    assert _actions(t) == [
+        (A.short_address(ADDR, 17), X.open_action(X.ETHEREUM, "address", ADDR)),
+        (A.COPY_GLYPH, A.copy_action(ADDR)),
+    ]
+    assert t.spans[0].end == len(A.short_address(ADDR, 17)), "the separating space is not linked"
+
+
+def test_the_link_sits_on_top_of_the_callers_style():
+    t = A.address_text(ADDR, explorer=X.BASE, style="bold")
+    assert t.style == "bold"
+    assert t.spans[0].style == Style(
+        link=X.address_url(X.BASE, ADDR), meta={"@click": X.open_action(X.BASE, "address", ADDR)}
+    )
+    assert t.spans[0].style.bold is None, "the span adds the link, it does not restate the style"
+
+
+def test_window_and_label_forms_link_the_full_address():
+    url = X.address_url(X.SEPOLIA, ADDR)
+    for kwargs in ({"width": 11}, {"width": 17}, {"label": "vitalik.eth"}, {"label": "名前名前", "width": 5}):
+        t = A.address_text(ADDR, explorer=X.SEPOLIA, **kwargs)
+        [(shown, link, parsed)] = _links(t)
+        assert shown == t.plain[: -A.ICON_COLS], kwargs
+        assert link == url and parsed == (X.SEPOLIA, "address", ADDR), kwargs
+
+
+def test_an_invalid_address_gets_neither_link_nor_icon_with_an_explorer():
+    for bad in (ADDR + "\n", "0xdead')", "", None, "vitalik.eth", TX):
+        t = A.address_text(bad, explorer=X.ETHEREUM)
+        assert A.COPY_GLYPH not in t.plain, repr(bad)
+        assert _links(t) == [] and _actions(t) == [], repr(bad)
+        assert A.address_text(bad, explorer=X.ETHEREUM) == A.address_text(bad), repr(bad)
+
+
+def test_prose_links_each_whole_address_and_never_a_transaction_hash():
+    t = A.address_prose(f"sent to {ADDR}, tx {TX} and ({ADDR})", explorer=X.ETHEREUM)
+    url = X.address_url(X.ETHEREUM, ADDR)
+    assert _links(t) == [(ADDR, url, (X.ETHEREUM, "address", ADDR))] * 2
+    assert [a for a, _ in _actions(t) if a == A.COPY_GLYPH] == [A.COPY_GLYPH] * 2
+    assert t.plain == A.address_prose(f"sent to {ADDR}, tx {TX} and ({ADDR})").plain
+    for span in t.spans:
+        assert TX not in t.plain[span.start:span.end], "a hash span is never linked"
+
+
+def test_hash_text_windows_through_short_hex_and_links_the_tx_page():
+    plain = A.hash_text(TX, 17)
+    assert plain == Text(A.short_hex(TX, 17))
+    assert plain.plain == "0x" + TX[2:10] + "…" + TX[-6:]
+    assert A.COPY_GLYPH not in plain.plain and _spans(plain) == []
+
+    linked = A.hash_text(TX, 17, explorer=X.BASE, style="dim")
+    assert linked.plain == plain.plain and linked.style == "dim"
+    assert _links(linked) == [(plain.plain, X.tx_url(X.BASE, TX), (X.BASE, "tx", TX))]
+    assert A.COPY_GLYPH not in linked.plain, "a hash never gets a copy icon"
+
+    whole = A.hash_text(TX, 80, explorer=X.ETHEREUM)
+    assert whole.plain == TX and _links(whole)[0][1] == X.tx_url(X.ETHEREUM, TX)
+
+
+def test_hash_text_links_only_a_32_byte_hash_and_tolerates_junk():
+    for not_a_tx in (ADDR, "0x" + "ab" * 31, "0x" + "ab" * 33, TX + "\n"):
+        t = A.hash_text(not_a_tx, 17, explorer=X.ETHEREUM)
+        assert _links(t) == [] and _spans(t) == [], repr(not_a_tx)
+        assert t.plain == A.short_hex(not_a_tx, 17)
+    for junk in (None, "", 12, b"x"):
+        t = A.hash_text(junk, 17, explorer=X.ETHEREUM)
+        assert t.plain == "--" and _spans(t) == [], repr(junk)
+    assert A.hash_text("not hex", 17).plain == "not hex"
+
+
+def test_is_explorer_click_only_for_linked_spans():
+    assert A.is_explorer_click(_Evt({"@click": X.open_action(X.ETHEREUM, "address", ADDR)}))
+    assert A.is_explorer_click(_Evt({"@click": X.open_action(X.BASE, "tx", TX)}))
+    assert not A.is_explorer_click(_Evt({"@click": A.copy_action(ADDR)}))
+    assert not A.is_copy_click(_Evt({"@click": X.open_action(X.ETHEREUM, "address", ADDR)}))
+    assert not A.is_explorer_click(_Evt({"@click": X.open_action(X.ETHEREUM, "address", ADDR) + "x"}))
+    assert not A.is_explorer_click(_Evt({"@click": "app.toggle()"}))
+    assert not A.is_explorer_click(_Evt({}))
+    assert not A.is_explorer_click(_Evt({"@click": 12}))
+    assert not A.is_explorer_click(object())
+
+
+def test_the_helper_reaches_only_the_explorer_module_beyond_rich():
+    tree = ast.parse(pathlib.Path(A.__file__).read_text())
+    modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+    assert {m for m in modules if m.startswith("maxpane_dashboard")} == {"maxpane_dashboard.widgets.explorer"}
+
+
+def test_a_forged_explorer_gets_no_link_and_never_a_crash():
+    """Review of WP-A, Minor 1: ``url_for`` used to build a usable URL for any
+    ``Explorer`` and only ``open_action`` raised -- inside the widget's render.
+    Now the URL helpers refuse anything outside the allowlist and the address
+    helpers degrade to an unlinked address (the icon still copies)."""
+    forged = X.Explorer("blockscout", "https://evil.example")
+    with pytest.raises(ValueError):
+        X.address_url(forged, ADDR)
+    with pytest.raises(ValueError):
+        X.tx_url(forged, TX)
+    same_name = X.Explorer("etherscan", "https://evil.example")
+    with pytest.raises(ValueError):
+        X.address_url(same_name, ADDR)
+    for explorer in (forged, same_name):
+        t = A.address_text(ADDR, explorer=explorer)
+        assert _links(t) == [], explorer          # no link ...
+        assert t == A.address_text(ADDR, explorer=None)   # ... and the icon still copies
+        p = A.address_prose(f"from {ADDR} to", explorer=explorer)
+        assert p == A.address_prose(f"from {ADDR} to", explorer=None)
+        h = A.hash_text(TX, 17, explorer=explorer)
+        assert _links(h) == [] and h.plain == A.short_hex(TX, 17)

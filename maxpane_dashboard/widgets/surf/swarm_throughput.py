@@ -114,7 +114,8 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets import rowfit
-from maxpane_dashboard.widgets.address import MIN_SHORT_COLS, short_hex
+from maxpane_dashboard.widgets.address import MIN_SHORT_COLS, hash_text
+from maxpane_dashboard.widgets.explorer import for_chain_id
 from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
 from maxpane_dashboard.widgets.surf._pool4 import (
     join_lines,
@@ -274,7 +275,12 @@ def _agent_line(row: dict, tx_width: int) -> Text:
     )
     tx = row.get("last_tx_hash")
     has_tx = isinstance(tx, str) and bool(tx)
-    tx_text = short_hex(tx, tx_width) if has_tx else DASH
+    # The hash links to its own row's chain (``last_chain_id`` through the
+    # allowlist; an unknown id links nothing); the window is ``short_hex``'s.
+    tx_cell = (
+        hash_text(tx, tx_width, explorer=for_chain_id(row.get("last_chain_id")), style="dim")
+        if has_tx else Text(DASH, style="dim")
+    )
 
     line = Text()
     line.append(rowfit.pad(rowfit.clip(agent, _AGENT_COLS), _AGENT_COLS), style="bold")
@@ -286,7 +292,11 @@ def _agent_line(row: dict, tx_width: int) -> Text:
     )
     if tx_width > 0:
         line.append(" " * _GAP)
-        line.append(rowfit.clip(tx_text, tx_width), style="dim")
+        if tx_cell.cell_len > tx_width:
+            # A non-hex ``last_tx_hash`` passes ``short_hex`` unwindowed: clip
+            # it as before (it carries no link to lose).
+            tx_cell = Text(rowfit.clip(tx_cell.plain, tx_width), style="dim")
+        line.append_text(tx_cell)
         # No chain word for a dashed (unread/malformed) hash -- there is
         # nothing to name the chain of. A real hash always gets one, dash
         # included, so a shown hash is never bare.

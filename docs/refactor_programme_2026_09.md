@@ -39,7 +39,7 @@ files; the commit message is the evidence.
 | 1 | `refactor/dead-base-code` | §3.1 | 2 | ~2,465 | below |
 | 2 | `refactor/sanitize-cell` | §3.2 | 2 | ~150 | below (also moves `_rowfit.py` to `widgets/rowfit.py`, shim left) |
 | 3 | `refactor/fmt-rowfit` | §3.3 (move already done in 2) | 2 | ~900 | below; two WPs, A (rowfit) then B (fmt) |
-| 4 | `feat/explorer-links` | new (UX links) | 2 | 0 | `tests/test_address_rule.py`, `tests/screens/test_address_icons_everywhere.py`, address sweep |
+| 4 | `feat/explorer-links` | new (UX links) | 2 | 0 | below; two WPs, A (helper + action + guards) then B (call sites + E7 sweep) |
 | 5 | `refactor/dashboard-screen` | §3.5 | 2 | ~1,100 | address sweep + every `tests/screens/test_*_screen.py` migrated |
 | 6 | `refactor/panels-ocm` | §3.4a | 2 | small | `tests/widgets/test_panels.py` (new), ocm tests |
 | 7 | `refactor/panels-small-four` | §3.4b | 2 | ~2,000 | cattown / dota / talismans / ttt widget + screen tests |
@@ -271,6 +271,264 @@ are filed in `docs/handover_followups_2026_09.md` #10–#12.
 
 **Not in scope (both WPs)**: any pin; any rendered string change; `templates/`; the 6 parametric
 tier functions; `curator/_table.title_with_hint`; `analytics/`.
+
+## Branch 4 — `feat/explorer-links` (two work packages, A then B — B edits A's call sites)
+
+Surveyed 2026-09-20 on main `38ffe74`. Facts the design rests on:
+
+- Textual 8.1.1 `App.open_url(url)` → `Driver.open_url` → `webbrowser.open(url)` in a terminal
+  (the web driver posts a meta message). Nothing in the repo calls it yet. **In a headless
+  `run_test` the base driver still calls `webbrowser.open`**, so the suite needs a guard like the
+  clipboard one (`tests/conftest.py::_forbid_real_clipboard`) or a test would open the developer's
+  browser.
+- Rich `Style(link=url)` renders as an OSC 8 hyperlink (`rich/style.py:712`) and Textual's console
+  is `force_terminal=True`, so a linked span reaches the terminal as a Cmd+clickable link in
+  Terminal.app / iTerm2 with no Textual support needed. A span with `@click` meta is what Textual
+  calls a *link* for styling: `Content._apply_link_style` adds the widget's `link_style` to it, and
+  the app default is `link-style: underline` / hover `bold not underline` (`textual/design.py:294`).
+  **The `⧉` glyph is already rendered that way today**; giving the address text `@click` meta
+  underlines the address too. That is the intended affordance; `minimal.tcss` can retheme
+  `link-style` app-wide if the owner dislikes it. No width changes: `ICON_COLS` stays 2.
+- Chain per dashboard, read off each client's RPC hosts (`data/*_client.py`): **Ethereum
+  mainnet** — curator, fwa, ocm, surf, talismans, ttt; **Base** — base, cattown, frenpet (and its
+  hidden `_full/_wallet/_perf` bodies), dota, bakery (`data/client.py`, verify: `models.py:604`
+  carries a `chain_id`). Surf has two per-row overrides: pool4 panels carry a network word
+  (`POOL4_NETWORKS = ("SEPOLIA", "MAINNET")`, `pool4_network` payload key, `_pool4.network_word`)
+  and swarm rows carry a `chain_id` (`data/surf_swarm._NETWORKS = {1: MAINNET, 11155111: SEPOLIA}`,
+  `widgets/surf/_swarm_chain.chain_word`). `curator_nft_holders.py` reads Base as well as mainnet;
+  a wallet address is the same on both, so curator links to Etherscan.
+- Address sites: 39 modules call `address_text`; `address_prose` is used by `surf/swarm_field.py`
+  (2) and, indirectly, through `widgets/surf/_icons.link_prose` / `link_in_order` (feed, signals,
+  HATCHES); `short_hex` renders a transaction hash in `surf/swarm_throughput.py:277` and
+  `surf/swarm_shipped.py:362` (both rows carry a `chain_id`) and a bytes32 of unknown kind in
+  `fwa/fwa_signals.py:234` (not necessarily a transaction — **not linked**). The one widget with
+  its own click handler is `surf/feed.py:625` (`is_copy_click`, PRD §3.4).
+- Enforcement today: `tests/widgets/address_probe.icon_targets` reads every `⧉` cell's `@click`
+  meta off the compositor; `tests/screens/test_address_icons_everywhere.py` sweeps every
+  `SweepCase` (`tests/address_sweep/case.py`: `name, screen_class, build, payload, views,
+  address_free, seeded, pins, extra_sizes`) at 170 columns and at each pin.
+
+### Design (the approved bullet above, made concrete)
+
+- **`widgets/explorer.py`** (pure, Rich-free): `Explorer(name, base_url)` frozen dataclass;
+  `ETHEREUM = Explorer("etherscan", "https://etherscan.io")`, `BASE = Explorer("basescan",
+  "https://basescan.org")`, `SEPOLIA = Explorer("sepolia", "https://sepolia.etherscan.io")`;
+  `EXPLORERS: dict[str, Explorer]` by name (the allowlist the action round-trips through);
+  `for_network(word) -> Explorer | None` mapping `"MAINNET"→ETHEREUM`, `"SEPOLIA"→SEPOLIA`,
+  `"BASE"→BASE`, anything else (including `None`) → `None` — an unknown chain gets **no** link,
+  never a guessed one; `is_tx_hash(value)` = `fullmatch(0x + 64 hex)`; `address_url(explorer,
+  address)` and `tx_url(explorer, tx_hash)` (`/address/…`, `/tx/…`), each validating first and
+  raising `ValueError` on an invalid value (a caller validates before it renders, exactly like
+  `copy_action`); `open_action(explorer, kind, value) -> "app.open_explorer('etherscan',
+  'address', '0x…')"` and `parse_open_action(action) -> (explorer, kind, value) | None`, the exact
+  inverse (`is_explorer_click(event)` beside `is_copy_click`). Values are validated on both ends
+  and the URL is always rebuilt from the parsed parts, never taken from the action string.
+- **`widgets/address.py`**: `address_text(..., explorer: Explorer | None = None)` and
+  `address_prose(..., explorer=None)`: when an explorer is given and the address is valid, the
+  *shown* span (address, window or label — never the icon) is stylised with
+  `Style(link=address_url(...), meta={"@click": open_action(...)})` on top of the caller's
+  `style`; with `None` it renders exactly as today. New `hash_text(tx_hash, width, *, explorer=None,
+  style="")` → `Text` for the two transaction-hash sites (`short_hex` stays the plain string
+  helper). `widgets/surf/_icons.link_prose(text, explorer=None)` / `link_in_order(texts,
+  addresses, explorer=None)` link the shown address before each surviving glyph the same way.
+- **`maxpane_dashboard/explorer_action.py`**: `ExplorerLinkMixin.action_open_explorer(name,
+  kind, value)` — re-validates all three against the allowlists (an action is not the only way to
+  invoke it), rebuilds the URL, calls `self.open_url(url)`, and posts `opened etherscan` /
+  `unavailable` through the same status-bar path `CopyAddressMixin._post_copy_message` uses
+  (hoist that method to a small shared `_post_status_message` if the two would otherwise be
+  copies — same file family, one owner). `MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App)`.
+- **Tests never open a browser (E8):** `tests/conftest.py` gains `_forbid_real_browser`
+  monkeypatching `webbrowser.open` to raise, suite-wide, beside the clipboard guard;
+  `tests/widgets/address_probe.py` gains `LinkRecorder` (records `open_url` calls, opens nothing)
+  and `link_targets(app)` — every cell whose style carries a `link` **or** an `@click` that
+  `parse_open_action` accepts, as `(x, y, explorer_name, kind, value, url)`.
+- **E7 — every rendered address is a link to its chain's explorer** (PRD §7 grows E7/E8):
+  `SweepCase` gains `explorer: Explorer | None` (the dashboard's default) and `explorers:
+  tuple[Explorer, ...]` (the set a per-row override may pick from; surf lists all three). The
+  sweep asserts, for every `⧉` target: the shown token before the icon carries an `@click` open
+  action **and** an OSC 8 `link` for the same address, `url == address_url(explorer, address)`,
+  with `explorer` in the case's allowed set; and every link on screen names an address (or tx
+  hash) the payload holds. An address without a link is a failure, exactly as an address without
+  an icon is.
+
+### WP-A — the helper, the action, the guards (no widget call site changes)
+
+1. `widgets/explorer.py` as designed, with `tests/widgets/test_explorer.py`: URLs, validation
+   (`0x` + 40/64 hex only, `fullmatch`), the allowlist, action round-trip (every `EXPLORERS` entry
+   × both kinds), `parse_open_action` rejecting a foreign explorer name, malformed hex, trailing
+   text, a non-string; AST purity test in the shape of `test_fmt.py`'s (allow `__future__`, `re`,
+   `dataclasses`).
+2. `widgets/address.py` changes above; `tests/widgets/test_address.py` (whatever the existing
+   file is) gains: the link is on the shown span only, the glyph keeps the copy action; `explorer=
+   None` renders byte- and style-identically to before (assert `Text.__eq__` and the spans);
+   window and label forms link the full address; an invalid address gets neither link nor icon
+   (unchanged); `hash_text` windows through `short_hex` and links `tx_url`.
+3. `explorer_action.py`, `app.py` wiring, `is_explorer_click`; `tests/test_explorer_action.py`
+   (pilot, `LinkRecorder`): a click on the address text opens the URL and posts the message; a
+   click on the glyph copies and opens nothing; an action with a foreign explorer name or a
+   malformed value opens nothing and posts `unavailable`; the mutation proof that the URL is rebuilt
+   (mutate `action_open_explorer` to use the action's text → the foreign-name test reddens).
+4. `tests/conftest.py::_forbid_real_browser` + a test that it bites (`webbrowser.open` raises
+   `AssertionError` inside the suite); `address_probe.LinkRecorder`, `link_targets`.
+5. Docs: PRD §7 E7/E8 (short, in the E1–E6 style), README mouse paragraph (one sentence: click an
+   address to open it on Etherscan/Basescan, Cmd+click works as a terminal hyperlink), CLAUDE.md
+   convention bullet "Every displayed 0x address carries a copy icon" gains "and, once Branch 4
+   WP-B lands, a link to its chain's explorer" **only in WP-B** (this WP leaves CLAUDE.md alone),
+   `.claude/rules/widgets.md` address section gains the link rule and names `explorer.py`.
+
+Tests to run: `tests/widgets/test_explorer.py`, the address helper's test file,
+`tests/test_explorer_action.py`, `tests/test_select_to_copy.py`, `tests/test_clipboard.py`,
+`-m guard tests`, `tests/screens/test_address_icons_everywhere.py` (must stay green: no site links
+yet, E7 is added by WP-B), `tests/widgets/test_base_address_icons.py`.
+
+### WP-B — every call site, the sweep, the docs (after A is committed)
+
+1. Pass `explorer=` at all 39 `address_text` sites and the `address_prose` / `_icons` sites: the
+   dashboard's explorer per the chain table above (import the constant from `widgets/explorer`;
+   a dashboard package may bind it once in its `_fmt.py` or `__init__` and import it from there —
+   one declaration per dashboard, the sweep's `SweepCase.explorer` is the agreement test that
+   binds it). Surf: pool4 panels use `for_network(pool4_network)`, swarm rows
+   `for_network(chain_word(chain_id))` (or the chain id directly through a `for_chain_id`
+   helper added in this WP with an agreement test against `data/surf_swarm._NETWORKS`), the two
+   hash sites use `hash_text`, everything else on surf is mainnet. `surf/feed.py` on_click
+   returns early on `is_explorer_click` too. `fwa_signals` bytes32 stays unlinked, with a comment.
+2. `SweepCase.explorer` / `explorers` on every case in `tests/address_sweep/builders.py`; E7
+   assertions in `test_every_rendered_address_carries_an_icon_that_copies_it` (rename to
+   `…_and_a_link_that_opens_it`; update the two other sweep files that name it, if any). Prove it
+   bites twice: drop `explorer=` from one Base site (the sweep must name that widget and
+   "address without a link"); pass `ETHEREUM` at one Base site (the sweep must name "link on the
+   wrong explorer"). Restore both by inverse edit.
+3. Docs: CLAUDE.md convention bullet, README, PRD §7 E7 wording final, `rules/widgets.md`,
+   `templates/` address examples pass `explorer=` (a template must not teach the old form).
+
+Tests to run: every `tests/widgets/test_*_address_icons.py` and each dashboard's widget tests
+whose files changed; `tests/screens/test_address_icons_everywhere.py`;
+`tests/test_address_sweep_registry.py`; `tests/test_address_rule.py`; `-m guard tests`; each
+`tests/screens/test_<game>_screen.py` for a dashboard whose widgets changed (all of them — run in
+three foreground batches).
+
+**Not in scope (both WPs)**: any pin (the link adds no cells); `templates/` beyond the address
+example lines; ENS *names* as a separate link kind (a name-backed address links the address);
+a `bytes32` that is not known to be a transaction hash; `DashboardScreen` (Branch 5).
+
+**WP-A outcome (2026-09-20, this commit).** Delivered as designed: `widgets/explorer.py` (pure —
+`re` and `dataclasses` only; `Explorer`, `ETHEREUM`/`BASE`/`SEPOLIA`, `EXPLORERS`, `KINDS`,
+`for_network`, `is_address`/`is_tx_hash`, `address_url`/`tx_url`/`url_for`, `open_action`/
+`parse_open_action`); `widgets/address.py` gains `explorer=` on `address_text` and `address_prose`,
+`hash_text(tx_hash, width, *, explorer=None, style="")` and `is_explorer_click`; surf's
+`_icons.link_prose(text, explorer=None)` / `link_in_order(texts, addresses, explorer=None)` link the
+shown address or window right before each surviving glyph (a window that is not of that address
+links nothing); `explorer_action.ExplorerLinkMixin.action_open_explorer` re-validates name, kind and
+value, rebuilds the URL, calls `App.open_url` and posts `opened <name>` / `explorer unavailable`;
+`MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App)`. The status-bar poster was hoisted out of
+`CopyAddressMixin._post_copy_message` into `maxpane_dashboard/status_message.post_status_message(app,
+message, *, seconds)`, which both mixins call (`clipboard.copy_message` untouched). Guards:
+`tests/conftest.py::_forbid_real_browser`, `address_probe.LinkRecorder` and `link_targets(app)`
+(one entry per linked cell, `(x, y, name, kind, value, url)`). Two deviations from the design
+bullet: (1) `widgets/explorer.py` restates `ADDRESS_RE` rather than importing the address helper
+(which imports *it*); `test_explorer.py::test_the_address_pattern_agrees_with_the_address_helper` is
+the agreement test. (2) The action-string parser is a `fullmatch` on the exact shape plus the
+allowlist checks; a round-trip equality was written first and removed when a mutation proof showed
+no test could tell it from the regex. Mutation-proven: the URL rebuilt from the allowlist (16 of 24
+`test_explorer_action.py` cases redden when the action opens `https://{name}/{kind}/{value}`), the
+link on the shown span (5 tests), and the `explorer=None` identity (exactly one test, against
+literals from `git show 307255a:…/address.py`). No widget call site changed; the E2 sweep and
+`test_surf_screen.py` are green unchanged (42 and 314). WP-B still owes: every call site, `SweepCase.
+explorer`/`explorers` + the E7 sweep assertion, `feed.py` returning early on `is_explorer_click`, the
+CLAUDE.md convention bullet and the `templates/` address lines.
+
+**WP-B outcome (2026-09-20).** Every call site passes its explorer. Chain table as verified against
+each client's RPC hosts: Ethereum mainnet (Etherscan) — curator (`curator_client.py:99`
+`ethereum-rpc.publicnode.com`), fwa (`fwa_client.py:120`), ocm (`ocm_client.py:48`), surf
+(`surf_client.py:84`), talismans (`talismans_client.py:70` `ethereum.publicnode.com`), ttt
+(`ttt_client.py:99`); Base (Basescan) — base (`base_client.py` GeckoTerminal `/networks/base/`,
+DexScreener `chainId == "base"`), cattown (`cattown_client.py:167` `mainnet.base.org`), frenpet
+(`frenpet_client.py:78` `mainnet.base.org`, the hidden `_full/_wallet/_perf` bodies). **One
+disagreement with the chain table above: Bakery is on Abstract, not Base** — `data/client.py` reads
+`agent.json` and `tests/data/test_client.py` / `tests/data/test_cache.py` pin `chainId` 2741, explorer
+`abscan.org`; `widgets/explorer.py` allowlists no Abstract explorer, so Bakery's one site
+(`widgets/activity_feed.py`) stays unlinked with a comment, its `SweepCase` has `explorer=None`, and
+E7 asserts that no address on it links (adding `abscan.org` to the allowlist is the owner's call,
+not this WP's). DOTA renders no address. One declaration per package: `EXPLORER` in
+`widgets/surf/_fmt.py` and `widgets/curator/_fmt.py`, new `_chain.py` in `widgets/{fwa,ttt,
+talismans,ocm,base,cattown,frenpet}/`, each `#:`-commented with the client and hosts. Sites converted:
+surf 18 (launchpad 2, launchpad_activity 1, activity 1, burnkeepers 2, signals `link_in_order` 1,
+feed `link_prose` 1, swarm_field `address_prose` 2, pool4_hatches 3 via `for_network(pool4_network)`,
+pool4u_stakers 1 likewise, swarm_throughput `hash_text` 1 and swarm_shipped 3 via the new
+`explorer.for_chain_id(chain_id)`; `tests/widgets/test_explorer.py` binds `for_chain_id` to
+`data/surf_swarm._NETWORKS` through `for_network` in both directions), curator 9, fwa 7, frenpet
+hidden bodies 4 (in `screens/`), cattown 3, ttt 3, base 1, talismans 1, ocm 1. Left unlinked, on
+purpose: `fwa_signals.py` bytes32 (unknown kind, commented), Bakery (above), and the two `.plain`
+measurement calls (`surf/activity.py:420`, `surf/pool4_hatches.py:401`) that render nothing.
+`surf/feed.py` `on_click` returns early on `is_explorer_click`. No rendered text or width changed;
+no pin touched. E7 in the sweep (`SweepCase.explorer` / `explorers`, the renamed
+`test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it`): the token
+cell before every icon (read with `get_style_at`, the icon's own reader) carries an open action and
+an OSC 8 link for the same address on an allowed explorer with `address_url`'s URL; every link on
+screen names a payload address or hash; a no-explorer or address-free case shows no link. Bite
+proofs: (a) `explorer=EXPLORER` dropped at `widgets/cattown/ct_leaderboard.py` → `[cattown-wide]` and
+`[cattown-pin]` fail with `address without a link` (two cells each); (b) `explorer=ETHEREUM` there →
+the same two ids fail with `link on the wrong explorer`. Both restored by inverse edit (md5
+identical). Templates' address lines pass `explorer=EXPLORER` with a module-level declaration to
+replace. Not done: the two historical plan docs under `docs/superpowers/plans/` keep the old test id
+where it appears as a dated code listing (`2026-09-14-address-copy-icons.md:1852`); the two
+mutation-table rows and `docs/surf_swarm_followups.md` were renamed.
+
+**WP-B fix round 1 (2026-09-20; review of `a44cb95`: 1 Critical, 2 Important, 3 Minor, all six
+fixed in one commit).** *C1 was a plan/chain-table gap, not a call-site slip:* the chain table
+above assigns one explorer per package, which holds for a **wallet** address (the same 20 bytes on
+Ethereum and Base) but not for a **contract** address — curator's filter editor lets the reader add
+a custom NFT collection on `ethereum` or `base`, and that collection's contract linked to Etherscan
+either way. Now `widgets/curator/list_filter.py` resolves per row through a hand-typed
+`NFT_CHAIN_EXPLORERS = {"ethereum": ETHEREUM, "base": BASE}` keyed by the editor's own
+`NFT_CHAIN_OPTIONS` (an unknown chain word links nothing); `for_network`'s upper-case vocabulary is
+untouched. `tests/widgets/test_curator_address_icons.py` binds the map to the Select's options and
+to `data/curator_list_filters.NFT_CHAINS` in both directions, and renders a Base collection
+(`basescan.org/address/…`), an Ethereum one (`etherscan.io`) and an unknown word (icon, no link).
+The sweep gained `SweepCase.explorer_for` (lower-cased address → the one explorer it must link on;
+every value must be in `explorers`); curator's builder now adds a second collection on Base through
+the editor's controls (waiting, bounded, for the exclusive name-lookup worker before the second
+add), seeds it, and lists `explorers=(ETHEREUM, BASE)`, `explorer_for={<base collection>: BASE}`.
+Under the old code `[curator-wide]` and `[curator-pin]` fail with `link on the wrong explorer`
+(two cells each, `curator_filter_editor@170x60` / `@138x60`). *I1:* the sweep's per-icon and
+per-link loops rebound the parametrised `kind`, so the wide-only presence check was dead for every
+case that renders a link; the inner names are `link_kind`/`link_value` and an
+`assert kind in ("wide", "pin") or kind.startswith("extra-")` guards the block — with
+`copied_somewhere.clear()` after each view, `[ocm-wide]`, `[cattown-wide]`, `[ttt-wide]` and
+`[bakery-wide]` now redden with `seeded addresses never got an icon in any view` (`[ocm-pin]`
+stays green, presence being a wide property). *I2:* per-row explorers now have tests that can fail:
+`tests/widgets/test_surf_swarm_shipped.py` (chain_id 11155111 → `sepolia.etherscan.io` for the
+address cell and a hash-only row's tx cell, 1 → `etherscan.io`, an unknown id → icon, no link;
+`for_chain_id(1)` at `swarm_shipped.py` reddens the Sepolia and unknown-id tests) and
+`tests/widgets/test_surf_pool4_rail.py` (HATCHES on `SEPOLIA` links every address on
+`sepolia.etherscan.io`, `MAINNET` on `etherscan.io` and never `basescan.org`, `None` or `ARBITRUM`
+links nothing; `for_network("BASE")` at `pool4_hatches.py` reddens all three — note `BASE` *is* an
+allowlisted word, so the unknown-word case uses one that is not). *M1:*
+`tests/widgets/test_surf_address_icons.py` clicks the linked span of an address a `SurfFeedToggle`
+renders: the explorer action runs, the thread does not toggle, plain text still toggles; dropping
+`or is_explorer_click(event)` from `feed.py` reddens it. *M2:* the template test also walks the AST
+for every `address_text` call's `explorer=` keyword and a module-level `EXPLORER`; deleting the
+keyword from `leaderboard_template.py` reddens `[leaderboard_template]`. *M3:*
+`widgets/base/_chain.py` cites `base_client.py:554` / `:232` (`/networks/base/`), `:299`
+(`chainId == "base"`) and `:702` (`mainnet.base.org`). Every mutation restored by inverse edit,
+md5-identical.
+
+**WP-B fix round 2 (2026-09-20; scoped re-review of `ae0ebe0`: all six ADDRESSED, two notes
+filed — N1 Important-shaped, N2 Minor; the controller applied N1).** *N1:* widening curator's
+`explorers` to `(ETHEREUM, BASE)` for its one Base collection made `SweepCase.explorer` decorative
+— E7 checked membership in the set and consulted `explorer_for` only for listed addresses, so a
+mutated `widgets/curator/_fmt.EXPLORER = BASE` (every wallet on Basescan, a wrong page on a
+mainnet dashboard) left the sweep and the curator widget tests green, where `a44cb95` would have
+caught it. `SweepCase` gained `rows_pick_explorer` (surf: `True` — pool4 panels and swarm rows
+choose out of `explorers`); for every other case an address `explorer_for` does not list must link
+on `explorer` itself, and a hash likewise (`_expected_explorer` in the sweep). `__post_init__`
+rejects a set wider than one that nothing is entitled to use, and `rows_pick_explorer` on a case
+with no explorer. Proof: the same mutation now reddens `[curator-wide]` and `[curator-pin]` with
+`link on the wrong explorer` at the hero, RAW/CLEANED and LEADERBOARD wallets (`basescan`), surf's
+two cases stay green; sweep file 43 green on the restored tree. *N2* (per-row sites
+`swarm_throughput.py` and `pool4u_stakers.py` still without a biting widget test) and surf's own
+`_fmt.EXPLORER`, which `rows_pick_explorer` leaves unbound by the sweep, are filed as
+`docs/handover_followups_2026_09.md` #16–#17.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

@@ -17,6 +17,14 @@ Per case, across all of its views, four questions (PRD §7 E2):
    in a shape the scans above cannot read, fails here.
 5. **An ``EXEMPT`` widget prints no whole or shortened address** in its own
    region, so an exemption cannot hide a widget that renders addresses.
+6. **Every address is a link to its chain's explorer** (PRD §7 E7): the last
+   cell of the token shown before each icon carries an ``@click`` open action
+   **and** an OSC 8 ``link`` for the address the icon copies, on an explorer in
+   the case's allowed set (``SweepCase.explorers``), with the URL
+   ``address_url`` builds for it; and every link on screen names an address or
+   transaction hash the payload holds, on an allowed explorer, with a URL that
+   matches its action. A case with no explorer (a chain ``widgets/explorer.py``
+   does not allowlist) gets the opposite: no link anywhere.
 
 Each case is swept at :data:`SIZE` (170 columns) and again at each view's own
 layout pin, plus any ``extra_sizes`` it names (:func:`sizes_for`). Questions 1,
@@ -39,10 +47,11 @@ from rich.cells import cell_len
 
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.address import ADDRESS_RE, PROSE_ADDRESS_RE
+from maxpane_dashboard.widgets.explorer import parse_open_action, url_for
 from tests.address_sweep.case import SweepCase, view_name
 from tests.address_sweep.imports import HELPER, _is_module, imports_helper, module_imports
 from tests.address_sweep.registry import CASES
-from tests.widgets.address_probe import icon_targets
+from tests.widgets.address_probe import icon_targets, link_targets
 
 #: The sweep's wide terminal: wide and tall enough for every body to render.
 SIZE = (170, 60)
@@ -81,7 +90,7 @@ def _size_params() -> list:
 #: A shortened address window, ``0x<head>…<tail>``.
 SHORT_TOKEN_RE = re.compile(r"(?<![0-9A-Za-z])0x([0-9a-fA-F]+)…([0-9a-fA-F]+)(?![0-9a-fA-F])")
 _WINDOW_RE = re.compile(r"0x([0-9a-fA-F]+)…([0-9a-fA-F]+)")
-#: A transaction hash: shortened through ``short_hex`` with no icon, by design.
+#: A transaction hash: windowed through ``short_hex``/``hash_text`` with no icon, by design.
 HASH_RE = re.compile(r"(?<![0-9a-fA-F])0x[0-9a-fA-F]{64}(?![0-9a-fA-F])")
 _TOKEN_CHARS = frozenset("0123456789abcdefABCDEFx…")
 
@@ -89,14 +98,16 @@ _TOKEN_CHARS = frozenset("0123456789abcdefABCDEFx…")
 #: the reason. A class, never a module or package.
 EXEMPT: dict[str, str] = {
     "maxpane_dashboard.widgets.surf.feed.SurfFeedToggle":
-        "a thread's expand/collapse toggle; feed.py imports only is_copy_click for it",
+        "a thread's expand/collapse toggle; feed.py imports only is_copy_click /"
+        " is_explorer_click for it",
     "maxpane_dashboard.widgets.surf.launchpad.SurfCurveFlow":
         "swap, trader and ETH-owed totals only; no address in its contract",
     "maxpane_dashboard.widgets.surf.launchpad.SurfBurnPipeline":
         "burn pipeline status and amounts only; no address in its contract",
     "maxpane_dashboard.widgets.surf.swarm_throughput.SurfSwarmThroughput":
-        "quotes each agent's last score transaction hash through short_hex; a"
-        " hash, never an address, so it carries no icon by design",
+        "quotes each agent's last score transaction hash through hash_text (a"
+        " short_hex window, linked to its row's chain); a hash, never an"
+        " address, so it carries no icon by design",
     "maxpane_dashboard.widgets.surf.swarm_field.SurfSwarmField":
         "a dispatch note's embedded address (address_prose) is the only icon"
         " this panel can ever show, and it lives in the ``note`` column that"
@@ -270,6 +281,34 @@ def _token_ending_at(row: str, cell: int) -> str:
         start -= 1
     token = row[start + 1:end + 1]
     return token[token.rfind("0x"):] if "0x" in token else token
+
+
+def _expected_explorer(case: SweepCase, value: str):
+    """The one explorer *value* (an address or a hash) must link on, or ``None``
+    for "any member of ``case.explorers``".
+
+    A listed address answers from ``explorer_for``. An unlisted one must link
+    on the package's own ``explorer`` unless the case's rows pick their
+    explorer (surf); a hash is never listed and, on a dashboard whose rows do
+    not pick, is on the package's chain too. This is the half of E7 that keeps
+    ``SweepCase.explorer`` an agreement test for ``widgets/<game>/_chain.py``
+    (or ``_fmt.EXPLORER``) once ``explorers`` is wider than one.
+    """
+    listed = case.explorer_for.get(value.lower())
+    if listed is not None:
+        return listed
+    if case.rows_pick_explorer:
+        return None
+    return case.explorer
+
+
+def _link_at(app, x: int, y: int) -> tuple[tuple | None, str | None]:
+    """``(parsed open action, OSC 8 url)`` at cell ``(x, y)``, read the way
+    :func:`icon_targets` reads an icon: off ``screen.get_style_at``, the style
+    a click would hit -- one reader for the icon and the token before it."""
+    style = app.screen.get_style_at(x, y)
+    meta = style.meta or {}
+    return parse_open_action(meta.get("@click")), style.link or None
 
 
 def _class_key(cls: type) -> str:
@@ -920,8 +959,52 @@ def test_the_region_scan_finds_addresses_only_inside_the_region():
     assert _address_tokens_in_region(rows, Region(0, 1, len(row), 1)) == []
 
 
+def test_an_unlisted_address_must_link_on_the_package_explorer_unless_rows_pick():
+    """E7's expectation for an address ``explorer_for`` does not list.
+
+    Re-review N1 of WP-B: once curator allowed ``(ETHEREUM, BASE)`` for its one
+    Base collection, a mutated ``widgets/curator/_fmt.EXPLORER = BASE`` put every
+    wallet address on Basescan and the sweep stayed green, because membership in
+    ``explorers`` was the only check. Now an unlisted address is held to
+    ``explorer`` itself unless the case says its rows pick (surf), and a case
+    that widens ``explorers`` with nothing entitled to the second one is
+    rejected outright.
+    """
+    from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA
+
+    base_nft = "0x" + "1" * 40
+    wallet = "0x" + "2" * 40
+    common = dict(screen_class=object, build=lambda: None, payload=dict)
+    curator_like = SweepCase(
+        name="c", explorer=ETHEREUM, explorers=(ETHEREUM, BASE),
+        explorer_for={base_nft: BASE}, **common,
+    )
+    assert _expected_explorer(curator_like, base_nft.upper()) is BASE
+    assert _expected_explorer(curator_like, wallet) is ETHEREUM
+    assert _expected_explorer(curator_like, "0x" + "ab" * 32) is ETHEREUM  # a hash
+
+    surf_like = SweepCase(
+        name="s", explorer=ETHEREUM, explorers=(ETHEREUM, SEPOLIA, BASE),
+        rows_pick_explorer=True, **common,
+    )
+    assert _expected_explorer(surf_like, wallet) is None
+    single = SweepCase(name="one", explorer=BASE, **common)
+    assert _expected_explorer(single, wallet) is BASE
+
+    with pytest.raises(ValueError, match="nothing on it may use a second one"):
+        SweepCase(name="wide", explorer=ETHEREUM, explorers=(ETHEREUM, BASE), **common)
+    with pytest.raises(ValueError, match="nothing on it may use a second one"):
+        # listing an address on the package's own explorer entitles nothing
+        SweepCase(
+            name="wide", explorer=ETHEREUM, explorers=(ETHEREUM, BASE),
+            explorer_for={wallet: ETHEREUM}, **common,
+        )
+    with pytest.raises(ValueError, match="dashboard with none"):
+        SweepCase(name="free", explorer=None, rows_pick_explorer=True, **common)
+
+
 @pytest.mark.parametrize(("case", "kind"), _size_params())
-async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind):
+async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it(case, kind):
     served = case.payload()
     in_payload = _addresses_in(served)
     hashes = _hashes_in(served)
@@ -944,7 +1027,9 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
             await pilot.pause()
             await pilot.pause()
             targets = icon_targets(app)
+            links = link_targets(app)
             rows = _rows(app)
+            allowed = {e.name: e for e in case.explorers}
             for widget in app.screen.walk_children(with_self=True):
                 key = _class_key(type(widget))
                 if imports_helper(type(widget).__module__):
@@ -960,6 +1045,8 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
             if case.address_free:
                 if targets:
                     problems.append((label, "icon on an address-free dashboard", targets[:3]))
+                if links:
+                    problems.append((label, "link on an address-free dashboard", links[:3]))
                 for y, row in enumerate(rows):
                     for m in list(PROSE_ADDRESS_RE.finditer(row)) + list(SHORT_TOKEN_RE.finditer(row)):
                         problems.append((label, y, m.group(0), "address on an address-free dashboard"))
@@ -972,6 +1059,25 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
                     continue
                 if address.lower() not in in_payload:
                     problems.append((label, x, y, address, "icon copies an address the payload does not hold"))
+                # E7: the last cell of the shown token (right before the
+                # separating space) links to the same address, on an allowed explorer.
+                parsed, url = _link_at(app, x - 2, y)
+                if not allowed:
+                    if parsed is not None or url is not None:
+                        problems.append((label, x, y, address, "link on a dashboard with no explorer"))
+                elif parsed is None or url is None:
+                    problems.append((label, x, y, address, "address without a link"))
+                else:
+                    # ``link_kind``/``link_value`` -- never ``kind``: that is
+                    # the parametrised sweep size, read again below the loop.
+                    explorer, link_kind, link_value = parsed
+                    expected = _expected_explorer(case, address)
+                    if link_kind != "address" or link_value.lower() != address.lower():
+                        problems.append((label, x, y, link_value, address, "link opens a different value than the icon copies"))
+                    elif explorer.name not in allowed or (expected is not None and explorer != expected):
+                        problems.append((label, x, y, explorer.name, "link on the wrong explorer"))
+                    elif url != url_for(explorer, link_kind, link_value):
+                        problems.append((label, x, y, url, "link url does not name the linked address"))
                 token = _token_ending_at(rows[y], x - 2)
                 if ADDRESS_RE.fullmatch(token):
                     if token.lower() != address.lower():
@@ -991,6 +1097,26 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
                 for node in widget.ancestors_with_self:
                     covered.add(_class_key(type(node)))
             copied_somewhere.update(a.lower() for _, _, a in targets if a)
+
+            # E7: every link on screen names an address or a transaction hash
+            # the payload holds, on an allowed explorer, and its URL is the one
+            # its action rebuilds -- never a link to anything else.
+            seen_links: set[tuple] = set()
+            for x, y, name, link_kind, link_value, url in links:
+                if name is None or link_kind is None or link_value is None:
+                    problems.append((label, x, y, url, "link without a well-formed open action"))
+                    continue
+                if (name, link_kind, link_value, url) in seen_links:
+                    continue  # one report per span, not per cell
+                seen_links.add((name, link_kind, link_value, url))
+                held = hashes if link_kind == "tx" else in_payload
+                if link_value.lower() not in held:
+                    problems.append((label, x, y, link_kind, link_value, "link to a value the payload does not hold"))
+                expected = _expected_explorer(case, link_value)
+                if name not in allowed or (expected is not None and name != expected.name):
+                    problems.append((label, x, y, name, "link on the wrong explorer"))
+                elif url != url_for(allowed[name], link_kind, link_value):
+                    problems.append((label, x, y, url, "link url does not match its action"))
 
             for y, row in enumerate(rows):
                 # every whole address printed on screen has its own icon right after it
@@ -1022,6 +1148,10 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it(case, kind)
                         # a widget that can never construct an icon -- not a bare address
                     problems.append((label, y, m.group(0), "shortened address without its icon"))
 
+    # ``kind`` is still the parametrised sweep size here: nothing in the loop
+    # above may rebind it, or the presence check below goes dead for every
+    # case that renders a link (fix round 1, I1).
+    assert kind in ("wide", "pin") or kind.startswith("extra-"), kind
     if case.address_free:
         if mounted:
             problems.append(("helper-using widgets mounted on an address-free dashboard", sorted(mounted)))

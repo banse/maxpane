@@ -6,6 +6,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.base._chain import EXPLORER
 
 #: Display budget for the token symbol label, excluding the icon -- the same
 #: 10-cell window the deleted ``symbol[:10]`` slice produced. This is the
@@ -128,6 +129,7 @@ class BTOverviewLeaderboard(Vertical):
             is_top = idx <= 3
             symbol_cell = address_text(
                 address, label=symbol, width=_TOKEN_COLS, style="bold" if is_top else "",
+                explorer=EXPLORER,
             )
 
             table.add_row(

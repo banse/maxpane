@@ -175,9 +175,10 @@ from maxpane_dashboard.widgets.address import (
     MIN_SHORT_COLS,
     address_text,
     is_address,
-    short_hex,
+    hash_text,
 )
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.explorer import for_chain_id
 from maxpane_dashboard.widgets.surf._fmt import DASH, hhmm
 from maxpane_dashboard.widgets.surf._pool4 import strip_tags
 from maxpane_dashboard.widgets.surf._swarm_chain import CHAIN_COLS, chain_word
@@ -351,15 +352,18 @@ def _addr_or_site_cell(fields: dict, addr_cols: int, addr_render_cols: int) -> T
     cannot drift from whichever window :func:`_install_columns` actually
     built the table with.
     """
+    # Each row links to its own chain (``chain_id`` through the allowlist; a
+    # delivery row's ``None`` links nothing) -- the CHAIN column's own rule.
+    explorer = for_chain_id(fields["chain_id"])
     address = fields["address"]
     if is_address(address):
-        return address_text(address, width=addr_cols)
+        return address_text(address, width=addr_cols, explorer=explorer)
     ens_name = fields["ens_name"]
     if ens_name:
-        return address_text(None, label=ens_name, width=addr_render_cols)
+        return address_text(None, label=ens_name, width=addr_render_cols, explorer=explorer)
     tx_hash = fields["tx_hash"]
     if tx_hash:
-        return Text(short_hex(tx_hash, addr_cols))
+        return hash_text(tx_hash, addr_cols, explorer=explorer)
     commit = fields["commit"]
     if commit:
         return Text(rowfit.clip(commit, addr_render_cols))

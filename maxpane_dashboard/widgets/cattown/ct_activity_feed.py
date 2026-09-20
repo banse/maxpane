@@ -9,6 +9,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.cattown._chain import EXPLORER
 
 
 _RARITY_COLORS = {
@@ -44,6 +45,7 @@ def _catch_to_text(catch: dict) -> Text:
         label=display_name or None,
         width=_FISHER_COLS,
         style="dim",
+        explorer=EXPLORER,
     )
     species = str(catch.get("species", "Unknown") or "Unknown")
     weight = catch.get("weight_kg", 0.0)

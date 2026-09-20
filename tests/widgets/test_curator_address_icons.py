@@ -49,7 +49,7 @@ import inspect
 import pytest
 from textual.app import App
 
-from tests.widgets.address_probe import CopyRecorder, icon_targets
+from tests.widgets.address_probe import CopyRecorder, icon_targets, link_targets
 
 ADDR = "0x" + "abcdef0123" * 4
 CASES = ["activity", "closest_calls", "leaderboard", "list_hero", "signals"]
@@ -552,3 +552,83 @@ async def test_the_list_hero_wallet_card_fits_its_full_address_and_icon_at_138()
             if wallet_region.contains(t[0], t[1]) and t[2] == T._WALLET.lower()
         ]
         assert addr_targets, icon_targets(app)
+
+
+# -- E7 on the filter editor: a collection links to ITS chain (fix round 1, C1) --
+
+
+async def _custom_collection_links(chain: str) -> tuple[str, list[str]]:
+    """Mount the editor with one nameless custom collection on *chain*;
+    return ``(address, the distinct link urls on screen)``."""
+    from maxpane_dashboard.widgets.curator.list_filter import CuratorListFilterEditor
+
+    app = _EditorApp(CuratorListFilterEditor(nft_choices=()))
+    address = "0x" + "ABCDEF0123" * 4
+    async with app.run_test(size=(143, 42)) as pilot:
+        editor = app.query_one(CuratorListFilterEditor)
+        editor.set_custom_nfts(({
+            "label": f"{chain} 0xabcd…0123",
+            "chain": chain,
+            "address": address,
+            "is_fallback": True,
+        },))
+        await pilot.pause()
+        assert address.lower() in {t[2] for t in icon_targets(app)}, "the icon itself"
+        urls = sorted({url for _x, _y, _n, _k, _v, url in link_targets(app) if url})
+    return address.lower(), urls
+
+
+async def test_a_base_custom_collection_links_to_basescan_not_etherscan():
+    """A collection's *contract* address is not chain-agnostic the way a
+    wallet is: the same 20 bytes on Base are a different contract, so the
+    row links to the chain the reader chose in the editor's Select --
+    never the package's wallet explorer."""
+    address, urls = await _custom_collection_links("base")
+    assert urls == [f"https://basescan.org/address/{address}"], urls
+
+
+async def test_an_ethereum_custom_collection_links_to_etherscan():
+    address, urls = await _custom_collection_links("ethereum")
+    assert urls == [f"https://etherscan.io/address/{address}"], urls
+
+
+async def test_a_custom_collection_on_an_unknown_chain_word_renders_its_address_unlinked():
+    """Anything outside the editor's own vocabulary links nothing rather
+    than guessing -- the icon still copies, the span carries no URL."""
+    _address, urls = await _custom_collection_links("abstract")
+    assert urls == [], urls
+
+
+def test_the_collection_explorer_map_agrees_with_the_select_and_the_data_layer():
+    """``NFT_CHAIN_EXPLORERS`` is a hand-typed copy of the chain vocabulary
+    (a widget may not import ``data/``); this binds it to the Select's own
+    option values and to ``data/curator_list_filters.NFT_CHAINS`` in both
+    directions, so a third chain reddens here instead of linking nothing
+    silently."""
+    from maxpane_dashboard.data.curator_list_filters import NFT_CHAINS
+    from maxpane_dashboard.widgets.curator.list_filter import (
+        NFT_CHAIN_EXPLORERS,
+        NFT_CHAIN_OPTIONS,
+    )
+    from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, EXPLORERS
+
+    option_values = {value for _label, value in NFT_CHAIN_OPTIONS}
+    assert set(NFT_CHAIN_EXPLORERS) == option_values == set(NFT_CHAINS)
+    assert NFT_CHAIN_EXPLORERS == {"ethereum": ETHEREUM, "base": BASE}
+    assert all(e is EXPLORERS[e.name] for e in NFT_CHAIN_EXPLORERS.values())
+
+
+async def test_the_mounted_select_offers_exactly_the_declared_chain_options():
+    """The declaration is only an agreement if the Select really uses it."""
+    from textual.widgets import Select
+
+    from maxpane_dashboard.widgets.curator.list_filter import (
+        NFT_CHAIN_OPTIONS,
+        CuratorListFilterEditor,
+    )
+
+    app = _EditorApp(CuratorListFilterEditor(nft_choices=()))
+    async with app.run_test(size=(143, 42)) as pilot:
+        await pilot.pause()
+        select = app.query_one("#filter-nft-chain", Select)
+        assert tuple(select._options) == NFT_CHAIN_OPTIONS

@@ -282,6 +282,32 @@ cache-overwrite hazard in a new place.
 **E6 — the message is honest and owned.** Each of the three outcomes in §4 posts its own message. The
 auto-clear never removes a message it did not post.
 
+**E7 — every rendered address is a link to its chain's explorer** (refactor programme 2026-09,
+Branch 4: the helper, the action and the guards landed in WP-A, every call site and the sweep
+assertion in WP-B, both 2026-09-20). The *shown* span — the address, its window or the name
+standing in for it, never the icon — carries an OSC 8 `link` (Cmd+click in the terminal) **and**
+an `@click` action `app.open_explorer(name, kind, value)` naming the same page, built only by
+`widgets/explorer.py` from an allowlisted explorer (`etherscan`, `basescan`, `sepolia`) and a
+value validated with `fullmatch`. `ExplorerLinkMixin.action_open_explorer` re-validates all three
+parts and rebuilds the URL from them; an action with anything foreign opens nothing and posts
+`explorer unavailable`. Each dashboard package declares its explorer once (`widgets/<game>/_chain.py`,
+or `_fmt.py` where one exists), read off its client's RPC hosts, and every site imports that name;
+surf's pool4 panels resolve `for_network(pool4_network)` and its swarm rows `for_chain_id(chain_id)`
+per row. An unknown chain gets no link (`for_network` / `for_chain_id` return `None`), never a
+guessed one — Bakery (Abstract) is such a case. A transaction hash links through `hash_text`
+(`/tx/`), still without an icon. **The sweep asserts it** (`SweepCase.explorer` / `explorers`,
+the agreement test binding each package's declaration): for every icon, the last cell of the token
+shown before it carries an open action and a hyperlink for the same address, on an allowed
+explorer, with the URL `address_url` builds — "address without a link", "link on the wrong
+explorer" are failures exactly as a missing icon is; every link on screen names an address or
+transaction hash the payload holds; a case with no explorer, or an address-free one, shows no link
+at all. Proven to bite twice on 2026-09-20 (drop `explorer=` at a Base site; pass `ETHEREUM` there).
+
+**E8 — tests never open a browser.** `tests/conftest.py::_forbid_real_browser` replaces
+`webbrowser.open` suite-wide (Textual's `Driver.open_url` reaches it even under `run_test`); a
+pilot test that clicks a link mixes `tests/widgets/address_probe.LinkRecorder` into its harness,
+which records `open_url` and opens nothing. E5's shape, for the browser.
+
 Every test proves it bites: mutate, watch the named test go red, restore. `pytest ::nonexistent_test`
 exits 4, so a non-zero exit is not evidence.
 

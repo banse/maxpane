@@ -36,6 +36,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.ttt._chain import EXPLORER
 
 _DASH = "--"
 
@@ -190,6 +191,7 @@ class TTTFeesTable(Vertical):
                 label=symbol,
                 width=_SYM_WIDTH,
                 style="bold" if idx == 1 else "",
+                explorer=EXPLORER,
             )
             fees_24h = _fmt_eth(row.get("fees_24h_eth"))
             fees_life = _fmt_eth(row.get("fees_lifetime_eth"))

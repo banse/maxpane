@@ -42,6 +42,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text, is_address
+from maxpane_dashboard.widgets.fwa._chain import EXPLORER
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.rowfit import Ladder
 
@@ -169,7 +170,7 @@ def _wallet_cell(event: dict, width: int = _WALLET_WIDTH) -> Text:
     ``width + ICON_COLS`` so it never reflows what follows it.
     """
     name = str(event.get("purchaser_name") or "").strip() or None
-    cell = address_text(event.get("purchaser"), label=name, width=width)
+    cell = address_text(event.get("purchaser"), label=name, width=width, explorer=EXPLORER)
     return _pad_cell(cell, width + ICON_COLS)
 
 
@@ -240,7 +241,7 @@ def _what_cell(event: dict, budget: int) -> Text:
     if token and floor + cell_len(token) > budget:
         token = ""
     name_budget = max(floor, budget - cell_len(token))
-    cell = address_text(address, label=name, width=name_budget)
+    cell = address_text(address, label=name, width=name_budget, explorer=EXPLORER)
     if token:
         cell.append(token)
     return _pad_cell(cell, budget + ICON_COLS)

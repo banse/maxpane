@@ -48,6 +48,7 @@ from maxpane_dashboard.widgets.address import (
     is_address,
 )
 from maxpane_dashboard.widgets.curator._fmt import (
+    EXPLORER,
     COMPACT_ETH_PROBE,
     DASH,
     EMDASH,
@@ -603,6 +604,7 @@ class CuratorWalletAddress(_FactsPanel):
                         value,
                         width=None if budget is None else max(MIN_SHORT_COLS, budget),
                         style=Style(color=success, bold=True),
+                        explorer=EXPLORER,
                     )
                 )
             elif label:

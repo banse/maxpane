@@ -226,6 +226,47 @@ async def test_a_copy_click_on_a_feed_toggle_copies_and_does_not_toggle():
         assert toggled == ["0xabc"], "a click elsewhere must still toggle"
 
 
+async def test_a_link_click_on_a_feed_toggle_opens_and_does_not_toggle():
+    """The other half of the guard (fix round 1, M1): a click on the *linked
+    span* of an address the toggle renders runs the explorer action and
+    never the toggle's own click behaviour; a click on plain text still
+    toggles. Mirrors the copy-click test above, with ``is_explorer_click``
+    as the guard under test."""
+    from maxpane_dashboard.widgets.explorer import ETHEREUM
+    from maxpane_dashboard.widgets.surf.feed import SurfFeedToggle
+
+    toggled: list[str] = []
+    opened: list[tuple[str, str, str]] = []
+
+    class _Toggle(SurfFeedToggle):
+        def action_toggle(self) -> None:
+            toggled.append(self.tx_hash)
+
+    class _App(CopyRecorder, App):
+        def compose(self) -> ComposeResult:
+            text = address_text(FEED_ADDR, explorer=ETHEREUM)
+            text.append("  plain")
+            yield _Toggle(text, tx_hash="0xabc", id="t")
+
+        def action_open_explorer(self, name: str, kind: str, value: str) -> None:
+            opened.append((name, kind, value))
+
+    app = _App()
+    async with app.run_test(size=(80, 5)) as pilot:
+        await pilot.pause()
+        targets = icon_targets(app)
+        assert len(targets) == 1
+        x, y, _ = targets[0]
+        await pilot.click(offset=(x - 2, y))       # the last cell of the shown address
+        await pilot.pause()
+        assert opened == [("etherscan", "address", FEED_ADDR)]
+        assert toggled == [], "a link click also toggled the thread"
+        assert app.copied == []
+        await pilot.click(offset=(x + 4, y))       # "plain", past the icon
+        await pilot.pause()
+        assert toggled == ["0xabc"], "a click elsewhere must still toggle"
+
+
 async def test_a_transaction_hash_in_a_post_gets_no_icon():
     """The frozen newest post links a 64-hex tx hash; it is not an address."""
     targets, _ = await _targets(_frozen_payload(), size=(SURF_FULL_LAYOUT_COLUMNS, 60))
@@ -474,3 +515,104 @@ def test_the_deploy_detector_publishes_the_whole_address():
     from maxpane_dashboard.analytics import surf_signals as sig
 
     assert not hasattr(sig, "_short_addr")
+
+
+# -- explorer links in fitted prose (refactor programme 2026-09, Branch 4 WP-A) ---------
+#
+# ``_icons.link_prose`` / ``link_in_order`` take an ``explorer=``: the shown
+# address (whole, or its window) right before each surviving glyph gets the
+# helper's own link span; ``None`` links nothing but the glyph, as before.
+
+
+def _link_spans(text):
+    from rich.style import Style
+
+    from maxpane_dashboard.widgets.explorer import parse_open_action
+
+    out = []
+    for span in text.spans:
+        if isinstance(span.style, Style) and span.style.link:
+            out.append((text.plain[span.start:span.end], span.style.link,
+                        parse_open_action(span.style.meta.get("@click"))))
+    return out
+
+
+def test_link_prose_without_an_explorer_is_unchanged():
+    from rich.text import Text
+
+    from maxpane_dashboard.widgets.surf import _icons as I
+
+    marked, _, _ = I.mark_addresses(f"gm {FEED_ADDR} and {DEPLOY_ADDR}")
+    before = I.link_prose(Text(I.unmark(marked)))
+    after = I.link_prose(Text(I.unmark(marked)), None)
+    assert after == before
+    assert _link_spans(after) == []
+    assert [a for _x, _y, a in _prose_targets(after)] == [FEED_ADDR, DEPLOY_ADDR]
+
+
+def test_link_prose_links_the_whole_address_before_each_surviving_glyph():
+    from rich.text import Text
+
+    from maxpane_dashboard.widgets import explorer as X
+    from maxpane_dashboard.widgets.surf import _icons as I
+
+    marked, _, _ = I.mark_addresses(f"gm {FEED_ADDR} and {DEPLOY_ADDR}")
+    text = I.link_prose(Text(I.unmark(marked)), X.ETHEREUM)
+    assert _link_spans(text) == [
+        (FEED_ADDR, X.address_url(X.ETHEREUM, FEED_ADDR), (X.ETHEREUM, "address", FEED_ADDR)),
+        (DEPLOY_ADDR, X.address_url(X.ETHEREUM, DEPLOY_ADDR), (X.ETHEREUM, "address", DEPLOY_ADDR)),
+    ]
+    assert [a for _x, _y, a in _prose_targets(text)] == [FEED_ADDR, DEPLOY_ADDR]
+    # A wrap that kept only the first unit links only the first address.
+    cut = Text(I.unmark(marked)[: marked.index(DEPLOY_ADDR)])
+    I.link_prose(cut, X.ETHEREUM)
+    assert [s[0] for s in _link_spans(cut)] == [FEED_ADDR]
+
+
+def test_link_in_order_links_the_window_before_each_glyph_to_its_own_address():
+    from rich.text import Text
+
+    from maxpane_dashboard.widgets import explorer as X
+    from maxpane_dashboard.widgets.surf import _icons as I
+
+    marked, addresses, _ = I.mark_addresses(f"adopted {FEED_ADDR} by {DEPLOY_ADDR}", 17)
+    plain = Text(I.unmark(marked))
+    I.link_in_order([plain], addresses)
+    assert _link_spans(plain) == []
+
+    text = Text(I.unmark(marked))
+    I.link_in_order([text], addresses, X.SEPOLIA)
+    assert _link_spans(text) == [
+        (short_address(FEED_ADDR, 17), X.address_url(X.SEPOLIA, FEED_ADDR), (X.SEPOLIA, "address", FEED_ADDR)),
+        (short_address(DEPLOY_ADDR, 17), X.address_url(X.SEPOLIA, DEPLOY_ADDR), (X.SEPOLIA, "address", DEPLOY_ADDR)),
+    ]
+    assert [a for _x, _y, a in _prose_targets(text)] == [FEED_ADDR, DEPLOY_ADDR]
+    assert text.plain == plain.plain, "the link adds no cells"
+
+
+def test_link_in_order_links_only_a_window_of_that_address():
+    """A glyph whose window is not of the address it is linked to (a fitter
+    that bisected a unit) keeps its copy action and gets no link: a link to
+    the wrong page is worse than none."""
+    from rich.text import Text
+
+    from maxpane_dashboard.widgets import explorer as X
+    from maxpane_dashboard.widgets.surf import _icons as I
+
+    text = Text(f"x 0xdead…beef {COPY_GLYPH} then {COPY_GLYPH}")
+    I.link_in_order([text], [FEED_ADDR, DEPLOY_ADDR], X.ETHEREUM)
+    assert _link_spans(text) == []
+    assert [a for _x, _y, a in _prose_targets(text)] == [FEED_ADDR, DEPLOY_ADDR]
+
+
+def _prose_targets(text):
+    """``(start, end, address)`` for every copy glyph in ``text``."""
+    from rich.style import Style
+
+    from maxpane_dashboard.widgets.address import parse_copy_action
+
+    return [
+        (s.start, s.end, parse_copy_action(s.style.meta.get("@click")))
+        for s in text.spans
+        if isinstance(s.style, Style) and parse_copy_action(s.style.meta.get("@click"))
+    ]

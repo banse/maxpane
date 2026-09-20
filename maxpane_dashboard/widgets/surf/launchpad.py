@@ -105,6 +105,7 @@ from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_addres
 from maxpane_dashboard.widgets.fmt import fmt_eth
 from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
 from maxpane_dashboard.widgets.surf._fmt import (
+    EXPLORER,
     DASH,
     as_float,
     fmt_age,
@@ -312,9 +313,9 @@ def _creator_cell(creator: object, known: bool) -> Text:
     colour = "cyan" if known else "dim"
     value = flatten(creator)
     if is_address(value):
-        return address_text(value, width=_ADDR_WINDOW_COLS, style=colour)
+        return address_text(value, width=_ADDR_WINDOW_COLS, style=colour, explorer=EXPLORER)
     # Not an address: ``address_text`` fits it on cells and adds no icon.
-    return address_text(value or DASH, width=_ADDR_COLS, style=colour)
+    return address_text(value or DASH, width=_ADDR_COLS, style=colour, explorer=EXPLORER)
 
 
 def _round_half_up(value: float, digits: int) -> float:

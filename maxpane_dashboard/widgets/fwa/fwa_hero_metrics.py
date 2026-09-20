@@ -47,6 +47,7 @@ from textual.containers import Horizontal
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
+from maxpane_dashboard.widgets.fwa._chain import EXPLORER
 from maxpane_dashboard.widgets.fmt import as_float, fmt_eth
 
 _DASH = "--"
@@ -318,7 +319,7 @@ class FWAHeroMetrics(Horizontal):
                 usd_part = ""
                 budget = room - ICON_COLS
             width = min(_WHO_WIDTH, max(MIN_SHORT_COLS, budget))
-        return usd_part, address_text(holder, label=name, width=width)
+        return usd_part, address_text(holder, label=name, width=width, explorer=EXPLORER)
 
     # -- PULL EV --------------------------------------------------------
 

@@ -22,6 +22,12 @@ So the work is split in two, around whatever fitting the panel already does:
 A glyph cut off by the fit simply is not there to link; an address whose
 glyph survived is linked to exactly that address. Pure: Rich only, no
 Textual, no ``data/``.
+
+With an ``explorer=`` (``widgets/explorer.py``), the shown address -- whole
+in :func:`link_prose`, the window in :func:`link_in_order` -- immediately
+before each surviving glyph also gets the helper's explorer link, exactly the
+span ``address_text(..., explorer=)`` would give it; ``None`` links nothing
+but the glyph, as before.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from maxpane_dashboard.widgets.address import (
     address_text,
     short_address,
 )
+from maxpane_dashboard.widgets.explorer import Explorer
 
 __all__ = [
     "NBSP",
@@ -58,6 +65,10 @@ NBSP = " "
 _LINKED_RE = re.compile(
     rf"(?<![0-9a-fA-F])(0x[0-9a-fA-F]{{40}})[ {NBSP}]{re.escape(COPY_GLYPH)}"
 )
+
+#: The shown address (whole, or the helper's ``0x…head…tail`` window) that ends
+#: right before a glyph's separator, searched with ``endpos`` at the glyph.
+_SHOWN_BEFORE_RE = re.compile(rf"(0x[0-9a-fA-F]+(?:…[0-9a-fA-F]+)?)[ {NBSP}]\Z")
 
 
 def mark_addresses(
@@ -126,30 +137,50 @@ def unmark(text: str) -> str:
     return text.replace(f"{NBSP}{COPY_GLYPH}", f" {COPY_GLYPH}")
 
 
-def _icon_style(address: str) -> Style | None:
-    """The helper's own icon style for ``address`` -- never rebuilt here."""
-    icon = address_text(address)
-    for span in reversed(icon.spans):
-        if span.end == len(icon.plain) and isinstance(span.style, Style):
-            return span.style
-    return None
+def _styles(address: str, explorer: Explorer | None) -> tuple[Style | None, Style | None]:
+    """``(shown style, icon style)`` read off the helper's own rendering of
+    ``address`` -- never rebuilt here. The shown style is ``None`` without an
+    explorer; both are ``None`` for a value the helper would not render."""
+    rendered = address_text(address, explorer=explorer)
+    shown = icon = None
+    for span in rendered.spans:
+        if not isinstance(span.style, Style):
+            continue
+        if span.end == len(rendered.plain):
+            icon = span.style
+        elif span.start == 0 and span.style.link:
+            shown = span.style
+    return shown, icon
 
 
-def link_prose(text: Text) -> Text:
+def _shows(window: str, address: str) -> bool:
+    """True when ``window`` is ``address`` or the helper's window of it."""
+    if window == address:
+        return True
+    head, ellipsis, tail = window.partition("…")
+    return bool(ellipsis) and address.startswith(head) and address.endswith(tail)
+
+
+def link_prose(text: Text, explorer: Explorer | None = None) -> Text:
     """Attach the copy action to every ``0x…40 ⧉`` in ``text``, in place.
 
     For prose that keeps each address **whole**. The address is read back off
     the painted text, so a wrap or a cut that dropped some icons and kept
-    others can never link a glyph to a neighbour's address.
+    others can never link a glyph to a neighbour's address. With ``explorer``
+    the address before each glyph also gets its explorer link.
     """
     for match in _LINKED_RE.finditer(text.plain):
-        style = _icon_style(match.group(1))
-        if style is not None:
-            text.stylize(style, match.end() - 1, match.end())
+        shown, icon = _styles(match.group(1), explorer)
+        if icon is not None:
+            text.stylize(icon, match.end() - 1, match.end())
+        if shown is not None:
+            text.stylize(shown, match.start(1), match.end(1))
     return text
 
 
-def link_in_order(texts: Iterable[Text], addresses: list[str]) -> None:
+def link_in_order(
+    texts: Iterable[Text], addresses: list[str], explorer: Explorer | None = None
+) -> None:
     """Link the glyphs in ``texts`` to ``addresses``, first to first.
 
     For prose whose addresses are **windowed**, where the painted text no
@@ -157,7 +188,10 @@ def link_in_order(texts: Iterable[Text], addresses: list[str]) -> None:
     the icons and never one from the middle -- a single line cut from the
     right, which is what a signal detail is. Every glyph is ours
     (:func:`mark_addresses` removed the author's), so the n-th glyph is the
-    n-th address.
+    n-th address. With ``explorer`` the window painted right before each
+    glyph gets that address's explorer link -- only when it is a window of
+    that address, so a glyph that somehow lost its window links nothing but
+    the glyph.
     """
     remaining = iter(addresses)
     for text in texts:
@@ -167,6 +201,11 @@ def link_in_order(texts: Iterable[Text], addresses: list[str]) -> None:
             address = next(remaining, None)
             if address is None:
                 return
-            style = _icon_style(address)
-            if style is not None:
-                text.stylize(style, index, index + 1)
+            shown, icon = _styles(address, explorer)
+            if icon is not None:
+                text.stylize(icon, index, index + 1)
+            if shown is None:
+                continue
+            window = _SHOWN_BEFORE_RE.search(text.plain, 0, index)
+            if window is not None and _shows(window.group(1), address):
+                text.stylize(shown, window.start(1), window.end(1))

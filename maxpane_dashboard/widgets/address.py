@@ -12,6 +12,14 @@ this module only renders the icon and names the action it triggers, and
 Surf's ``widgets/surf/_icons.py`` is not a second copy of this module: it marks
 the icon into *plain* text before surf's own row fitters cut a line, then links
 each glyph through :func:`copy_action`, so the format still lives only here.
+
+**Explorer links** (refactor programme 2026-09, Branch 4): given an
+``explorer=`` (``widgets/explorer.py``), the *shown* span -- the address, its
+window or the label standing in for it, never the icon -- is an OSC 8
+hyperlink to that explorer's page (Cmd+click in the terminal) and carries the
+``@click`` action ``explorer_action.ExplorerLinkMixin`` opens it with;
+:func:`hash_text` does the same for a transaction hash. With ``explorer=None``
+every function renders exactly as it did before the links existed.
 """
 
 from __future__ import annotations
@@ -22,10 +30,19 @@ from rich.cells import cell_len
 from rich.style import Style
 from rich.text import Text
 
+from maxpane_dashboard.widgets.explorer import (
+    Explorer,
+    is_tx_hash,
+    open_action,
+    parse_open_action,
+    url_for,
+)
+
 __all__ = [
     "ADDRESS_RE", "COPY_GLYPH", "ICON_COLS", "MIN_SHORT_COLS", "PROSE_ADDRESS_RE",
-    "address_prose", "address_text", "copy_action", "is_address", "is_copy_click",
-    "parse_copy_action", "short_address", "short_hex",
+    "address_prose", "address_text", "copy_action", "hash_text", "is_address",
+    "is_copy_click", "is_explorer_click", "parse_copy_action", "short_address",
+    "short_hex",
 ]
 
 #: An address, matched with ``fullmatch`` and **never** with ``^…$``: Python's
@@ -122,12 +139,30 @@ def _icon(address: str) -> tuple[str, Style]:
     return COPY_GLYPH, Style(meta={"@click": copy_action(address)})
 
 
+def _link(explorer: Explorer, kind: str, value: str) -> Style | None:
+    """The shown span's style for a **validated** value: the OSC 8 hyperlink
+    the terminal follows on Cmd+click, and the ``@click`` action the app
+    follows on a plain click. Both name the same page.
+
+    ``None`` -- no link at all -- for an explorer outside the allowlist, so a
+    widget handed a forged ``Explorer`` renders an unlinked address rather
+    than raising inside its render (CLAUDE.md: degrade, never crash). The
+    action is built first: it is the stricter of the two checks.
+    """
+    try:
+        action = open_action(explorer, kind, value)
+        return Style(link=url_for(explorer, kind, value), meta={"@click": action})
+    except ValueError:
+        return None
+
+
 def address_text(
     address: str | None,
     *,
     label: str | None = None,
     width: int | None = None,
     style: str | Style = "",
+    explorer: Explorer | None = None,
 ) -> Text:
     """Display text plus ``" ⧉"``, the click action on the glyph only.
 
@@ -136,6 +171,11 @@ def address_text(
     **excludes** :data:`ICON_COLS`; ``None`` shows the whole address. A value
     that is not a valid address renders plain, with no icon and no action.
     ``style`` must be a Rich style, never a ``$theme`` token.
+
+    ``explorer`` links the shown part (the address, its window or the label)
+    to that explorer's page for ``address``, on top of ``style``; the icon
+    keeps its copy action and nothing else changes. ``None`` renders exactly
+    as before the links existed. An invalid address gets neither.
 
     ``label`` is third-party text and is hardened here, once, for every
     caller: a non-string label is ignored (the address is shown, nothing
@@ -153,21 +193,60 @@ def address_text(
         shown = _fit(_clean_label(str(address)) if address else "--", width)
     out = Text(shown, style=style)
     if valid:
+        if explorer is not None:
+            if (link := _link(explorer, "address", address)) is not None:
+                out.stylize(link, 0, len(shown))
         out.append(" ")
         out.append(*_icon(address))
     return out
 
 
-def address_prose(text: str, *, style: str | Style = "") -> Text:
-    """``text`` with ``" ⧉"`` inserted after every valid address in it."""
+def address_prose(
+    text: str, *, style: str | Style = "", explorer: Explorer | None = None
+) -> Text:
+    """``text`` with ``" ⧉"`` inserted after every valid address in it.
+
+    ``explorer`` links each address (the whole 42 characters, never the icon)
+    to its page there; ``None`` renders exactly as before.
+    """
     out = Text(style=style)
     pos = 0
     for match in PROSE_ADDRESS_RE.finditer(text):
-        out.append(text[pos:match.end()])
+        address = match.group(0)
+        out.append(text[pos:match.start()])
+        start = len(out)
+        out.append(address)
+        if explorer is not None:
+            if (link := _link(explorer, "address", address)) is not None:
+                out.stylize(link, start, start + len(address))
         out.append(" ")
-        out.append(*_icon(match.group(0)))
+        out.append(*_icon(address))
         pos = match.end()
     out.append(text[pos:])
+    return out
+
+
+def hash_text(
+    tx_hash: object,
+    width: int,
+    *,
+    explorer: Explorer | None = None,
+    style: str | Style = "",
+) -> Text:
+    """A transaction hash windowed through :func:`short_hex`, as a ``Text``.
+
+    No icon (a hash is outside the copy rule). With ``explorer`` a valid
+    32-byte hash links to its ``/tx/`` page, the whole shown window; anything
+    that is not one -- another hex value, a non-string -- renders plain.
+    ``None`` renders exactly what ``Text(short_hex(...), style=style)`` did.
+    """
+    if not isinstance(tx_hash, str) or not tx_hash:
+        return Text("--", style=style)
+    shown = short_hex(tx_hash, width)
+    out = Text(shown, style=style)
+    if explorer is not None and is_tx_hash(tx_hash):
+        if (link := _link(explorer, "tx", tx_hash)) is not None:
+            out.stylize(link, 0, len(shown))
     return out
 
 
@@ -198,3 +277,16 @@ def is_copy_click(event: object) -> bool:
     if not isinstance(meta, dict):
         return False
     return parse_copy_action(meta.get("@click")) is not None
+
+
+def is_explorer_click(event: object) -> bool:
+    """True when a click landed on a linked address or hash.
+
+    The explorer twin of :func:`is_copy_click`: a widget with its own
+    ``on_click`` returns early on either, so the link opens and the widget's
+    own behaviour does not.
+    """
+    meta = getattr(getattr(event, "style", None), "meta", None)
+    if not isinstance(meta, dict):
+        return False
+    return parse_open_action(meta.get("@click")) is not None

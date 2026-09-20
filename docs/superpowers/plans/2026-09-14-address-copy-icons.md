@@ -2018,8 +2018,8 @@ Expected: all pass. If E2 finds an address without its icon in a dashboard, **re
 | Mutation | Must turn red |
 |---|---|
 | re-add `def _short_addr(a): return a[:6]` to `widgets/ttt/ttt_leaderboard.py` | `test_no_module_but_the_helper_defines_an_address_formatter` |
-| in one surf widget, `address_text(...)` → `Text(address)` | `test_every_rendered_address_carries_an_icon_that_copies_it[surf]` |
-| make one icon copy `ADDR[::-1]`-shaped wrong address | `test_every_rendered_address_carries_an_icon_that_copies_it` for that case |
+| in one surf widget, `address_text(...)` → `Text(address)` | `test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it[surf]` |
+| make one icon copy `ADDR[::-1]`-shaped wrong address | `test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it` for that case |
 | delete the DOTA case from `builders.py` | `test_every_dashboard_screen_has_a_sweep_case` |
 | mark surf `address_free=True` | `test_a_dashboard_whose_widgets_use_the_helper_cannot_be_address_free` |
 | add `"pbcopy"` to a comment in `app.py` | `test_only_the_clipboard_module_names_a_clipboard_tool` |

@@ -98,6 +98,7 @@ from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.surf._fmt import (
+    EXPLORER,
     ANTI_POISONING_COLS,
     DASH,
     as_float,
@@ -473,7 +474,7 @@ def _row_text(row, tier: str = "full", width: int = 0,
     try:
         line = Text.from_markup(lead)
         if address is not None:
-            line.append_text(address_text(address, width=ADDR_COLS, style=colour))
+            line.append_text(address_text(address, width=ADDR_COLS, style=colour, explorer=EXPLORER))
         else:
             line.append(who, style=colour)
         line.append(amount)

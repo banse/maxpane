@@ -15,3 +15,19 @@ def _forbid_real_clipboard(monkeypatch):
         raise AssertionError(f"a test reached the real clipboard: {cmd!r}")
 
     monkeypatch.setattr("maxpane_dashboard.clipboard._run", _refuse)
+
+
+@pytest.fixture(autouse=True)
+def _forbid_real_browser(monkeypatch):
+    """No test may open the developer's browser (PRD §7 E8).
+
+    Textual's ``App.open_url`` reaches ``webbrowser.open`` even under
+    ``run_test`` (``Driver.open_url`` imports ``webbrowser`` lazily, so a
+    patch on the module attribute is what it sees). A pilot test that clicks
+    a linked address uses ``tests/widgets/address_probe.LinkRecorder``.
+    """
+
+    def _refuse(url, *args, **kwargs):
+        raise AssertionError(f"a test reached the real browser: {url!r}")
+
+    monkeypatch.setattr("webbrowser.open", _refuse)

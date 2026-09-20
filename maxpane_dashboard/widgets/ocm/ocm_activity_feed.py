@@ -10,6 +10,7 @@ from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets.address import address_text
+from maxpane_dashboard.widgets.ocm._chain import EXPLORER
 
 #: Display budget for the actor address in this RichLog line, excluding the
 #: icon (``ICON_COLS``). No layout pin covers this hidden dashboard, so this
@@ -42,7 +43,7 @@ def _event_to_text(event: dict) -> Text:
     count = event.get("count", 0)
 
     line = Text(f"  {ts}  ")
-    addr = address_text(address, width=_ADDR_COLS)
+    addr = address_text(address, width=_ADDR_COLS, explorer=EXPLORER)
 
     if event_type == "mint":
         line.append("MINT     ", style="green")
