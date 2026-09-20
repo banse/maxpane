@@ -56,9 +56,12 @@ class BTSignals(SignalsPanelBase):
             display, color = _signal_indicator(label, value)
             return fmt_signal_trailing(label, display, indicator="", color=color)
 
+        # The degraded row: the word in yellow like every other degraded
+        # signal row in the tree, not the live rows' bold white (review M3).
         self.write_guarded(
             selector, build,
-            fmt_signal_trailing(label, "unavailable", indicator="", color="yellow"),
+            fmt_signal_trailing(label, "unavailable", indicator="",
+                                color="yellow", value_color="yellow"),
         )
 
     def update_data(

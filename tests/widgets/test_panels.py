@@ -1215,6 +1215,25 @@ def test_fmt_signal_trailing_with_an_empty_indicator_is_the_dot_alone() -> None:
     assert out == out.rstrip()
 
 
+def test_fmt_signal_trailing_value_color_replaces_bold_white_and_nothing_else() -> None:
+    """Mutation: ignore ``value_color``, or let it also recolour the label or
+    the dot -> this reddens. Branch 8 WP-A fix round 1 (review M3): the
+    degraded row's word is yellow like every other degraded signal row, and
+    the default is the ``[bold white]`` every live row had."""
+    live = fmt_signal_trailing("Sym", "ok", indicator="", color="green")
+    degraded = fmt_signal_trailing("Sym", "unavailable", indicator="",
+                                   color="yellow", value_color="yellow")
+    assert "[bold white]" in live and "[bold white]" not in degraded, degraded
+    assert degraded == (
+        f"  [dim]{'Sym':<20}[/][yellow]{'unavailable':>12}[/]  [yellow]●[/]"
+    ), degraded
+    # The keyword touches the value cell only: label and dot as before.
+    assert degraded.startswith(f"  [dim]{'Sym':<20}[/]"), degraded
+    assert live.replace("[bold white]", "[yellow]").replace("[green]", "[yellow]") == (
+        fmt_signal_trailing("Sym", "ok", indicator="", color="yellow", value_color="yellow")
+    )
+
+
 def test_fmt_signal_trailing_honours_the_three_width_keywords() -> None:
     """Mutation: ignore any of ``label_width`` / ``value_width`` /
     ``indicator_width`` -> this reddens."""

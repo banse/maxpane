@@ -199,7 +199,10 @@ each:
   indicator_width=10)`** beside it is the *older* of the two row shapes — label, the value
   right-aligned, then the coloured dot **after** it (`indicator=""` is the dot alone, base's
   `BTSignals`; `None` ends after the value; a word is padded to `indicator_width`) — with the value
-  and the word escaped the same way; bakery's `SignalsPanel` is the other panel on that shape and
+  and the word escaped the same way; `value_color=` swaps the value cell's `[bold white]` for one
+  style word, which is how a panel builds its **degraded** row through the same function
+  (`unavailable` in yellow beside a yellow dot — the value is escaped, so the `UNAVAILABLE` markup
+  cannot be the value); bakery's `SignalsPanel` is the other panel on that shape and
   WP-B moves it onto the function. A `ROWS` item is `(id, label)`; `(id, None)`
   is a **label-less row** (`  [c]{ind}[/] [c]{value}[/]`, and the
   degraded row drops the label too, so it stays `unavailable` without an empty column in front of

@@ -307,3 +307,64 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `TwoColumnBoard(PanelBase)` with `COLUMNS`, `ROW_CAP` and a `build_row(index, left, right)` hook,
     migrated one package at a time behind render-diff captures (filed 2026-09-20 with the Branch 8
     plan section).
+28. **`data/base_client.py:742-747` returns `[]` for a failed DexScreener trending fetch — a
+    failed read wearing a real negative's clothes (the dota C1 shape).** `_safe_dex_trending`
+    catches every exception and returns `[]`; `data/base_manager.py:112` copies it and `:168`
+    serves `"trending_tokens": []`, `:255` / `:260` build `gainers` / `losers` from the same
+    list (`[]`), `:281` builds `whale_trades` from it (`[]`), and `:234` / `:246` set
+    `total_volume = None` and a `"N/A"` / `"0.0%"` top gainer. So a poll on which DexScreener
+    was unreachable and a poll that truly found no trending tokens produce the **same payload**,
+    and the migrated widgets — correctly reading it as a real negative — paint `No data` in the
+    leaderboard, `N/A 0.0%` in the TOP GAINER box and keep the feed's prior rows, where a failed
+    read should degrade to `unavailable` behind the `as of` marker. Pre-existing: the copies
+    showed the same, and Branch 8 WP-A (a widgets-only package) neither introduced nor touched
+    it. The fix is the C1 fix: `_safe_dex_trending` returns `None` for a failed fetch and the
+    manager serves `None` for every trending-derived key on that path (`trending_tokens`,
+    `gainers`, `losers`, `whale_trades`, the gainer pair), which the bases already render as
+    `unavailable` (`TableLeaderboard`, `HeroRow`) — and `BTActivityFeed` becomes a `SNAPSHOT`
+    candidate once `None` is served, because its poll is a whole ranking whose every row is true
+    only of the poll it came from (`RichLogFeed` docstring; today it must stay a stream or a
+    failed read would blank a live ranking). **Tier 1**: base's own data module plus a regression
+    test for the two paths, and the panel's `SNAPSHOT` flip with a render-diff capture (Branch 8
+    WP-A outcome, filed 2026-09-20).
+29. **The TOP GAINER hero box clips its second body line.** `themes/minimal.tcss:1032-1038`
+    gives `BTHeroBox` `height: 7` with `border` and `padding: 1 2`, three content rows, and
+    `widgets/base/overview/bt_hero_metrics.py::_gainer_body` writes `label`, blank, name, then
+    `+12.0%` on a fourth line — which the pre-migration capture already shows cut off at 170 and
+    at the 143 pin (`b8_before_base.default.*`: `DEGEN` visible, its percentage not). Sibling of
+    #6 (the same theme matter on ocm / cattown / dota / talismans / ttt boxes;
+    `test_medi38_unavailable_state.py`'s harness gives every box `height: 9` for that reason).
+    Pre-existing, not moved by WP-A. **Minor, Tier 1** — the fix is either `height: 8` on the
+    box (a pin move on the base screen: re-sweep) or folding the percentage onto the name's line
+    (a cell-content change, also a re-sweep) (Branch 8 WP-A outcome, filed 2026-09-20).
+30. **The BEST PLAYS header wraps at the 143 pin.** `widgets/base/overview/bt_best_plays.py`
+    `compose_body` writes `  Top Gainers     Change    Top Losers     Change` — 2 + 14 + 1 + 10 +
+    4 + 14 + 1 + 10 = 56 cells — and at 143 columns the panel is narrower than that plus the
+    `.panel-line` padding, so the last `Change` wraps onto its own row and pushes the ten rows one
+    down (`b8_before_base.default.pin-143x50.txt` line 33 shows the orphaned word; the capture
+    after WP-A shows the same). Pre-existing, not moved by WP-A. The terminal-layout skill's rule
+    is that a wrap at the pin is a pin defect: either the header sheds a column word at that
+    width (surf's `‹ widen` marker pattern) or `FULL_LAYOUT_COLUMNS` / the base screen's pin
+    moves. **Minor, Tier 1** (a pin or a pinned cell moves; re-sweep) (Branch 8 WP-A outcome,
+    filed 2026-09-20).
+31. **The base status bar says `updated 0s ago` after a partially failed read.** Because #28's
+    `_safe_dex_trending` swallows the failure, `data/base_manager.py`'s `fetch_and_compute`
+    returns a full payload on that poll and `DashboardScreen` updates the status bar from it as
+    if the read succeeded; the only trace is the `[]`-shaped keys. Sibling of #23 (dota's
+    `fetched_at` refreshed on a failed read) and of #28: the fix belongs in the same Tier 1 item
+    — stamp freshness from the last *successful* trending read, so the `as of` marker means what
+    CLAUDE.md says it means. Pre-existing (Branch 8 WP-A outcome, filed 2026-09-20).
+32. **`SparklinePanel.SPARK_WIDTH`'s default (22) is load-bearing for five dashboards and only
+    `test_panels.py`'s synthetic case bites when it changes.** `widgets/panels.py`
+    `SparklinePanel.SPARK_WIDTH = SPARK_WIDTH` (Branch 8 WP-A) is what ocm, cattown, dota,
+    talismans and ttt draw their bars at; the reviewer set it to 18 and
+    `tests/widgets/test_talismans_widgets.py` + `tests/widgets/test_ttt_widgets.py` stayed at 18
+    passed — their pins measure the bars' start column and the labels, not the bars' cell count
+    — while only `test_panels.py::test_spark_width_is_the_bars_cell_count` (a `_Sparks` subclass
+    defined in the test file) reddened. A shared default nobody's composited test measures is
+    the "test that cannot fail" shape from a different side: the constant is right today, and a
+    drift would show on five dashboards before any test said so. The fix is one composited
+    width pin per migrated package (count the `SPARK_CHARS` run on one line, as
+    `test_base_widgets.py::test_sparkline_is_twenty_blocks_wide_not_the_shared_twenty_two` does
+    for base). **Minor, Tier 0** when a migrated sparkline test is next touched (Branch 8 WP-A
+    review M4, filed 2026-09-20).

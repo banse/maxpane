@@ -34,6 +34,7 @@ from textual.app import App, ComposeResult
 
 from maxpane_dashboard.templates.sparkline_template import GameSparklines
 from maxpane_dashboard.widgets import sparkline_common
+from maxpane_dashboard.widgets.base.overview.bt_sparklines import BTSparklines
 from maxpane_dashboard.widgets.cattown.ct_sparklines import CTSparklines
 from maxpane_dashboard.widgets.dota.dota_sparklines import DOTASparklines
 from maxpane_dashboard.widgets.fwa.fwa_sparkline import FWASparkline
@@ -49,6 +50,7 @@ SPARKLINE_WIDGETS = [
     TTTSparkline,
     TalismansSparkline,
     FWASparkline,
+    BTSparklines,  # Branch 8 WP-A: on panels.SparklinePanel
     GameSparklines,  # the template -- the seed for dashboard #9
 ]
 

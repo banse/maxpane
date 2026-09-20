@@ -305,7 +305,8 @@ def fmt_signal(sig: dict, *, label_width: int, dim_label: bool,
 
 def fmt_signal_trailing(label: str, value, *, indicator: str | None = None,
                         color: str = "dim", label_width: int = 20,
-                        value_width: int = 12, indicator_width: int = 10) -> str:
+                        value_width: int = 12, indicator_width: int = 10,
+                        value_color: str | None = None) -> str:
     """Format one signal row of the **older** shape: label, value, then the dot.
 
     Two row shapes exist in this tree and this module states both, side by
@@ -334,10 +335,19 @@ def fmt_signal_trailing(label: str, value, *, indicator: str | None = None,
     value carrying a ``[`` still occupies exactly *value_width* cells on
     screen -- the escape's backslash is consumed by the markup parser, never
     painted. Escaping a string that never carried a bracket moves no pixel.
+
+    *value_color* (Branch 8 WP-A fix round 1, review M3) replaces the value
+    cell's ``[bold white]`` with one style word, so a panel can build its
+    **degraded** row -- ``unavailable`` in yellow beside a yellow dot, the
+    colour every other degraded signal row in the tree wears -- through the
+    same function. It has to be a keyword: *value* is escaped, so the shared
+    :data:`UNAVAILABLE` markup cannot be passed as the value itself. ``None``
+    (the default) is the ``[bold white]`` every live row had.
     """
+    value_style = "bold white" if value_color is None else value_color
     row = (
         f"  [dim]{str(label):<{label_width}}[/]"
-        f"[bold white]{safe_markup(f'{str(value):>{value_width}}')}[/]"
+        f"[{value_style}]{safe_markup(f'{str(value):>{value_width}}')}[/]"
     )
     if indicator is None:
         return row

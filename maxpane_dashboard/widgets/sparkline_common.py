@@ -17,11 +17,12 @@ imports from here rather than restating the helpers, so a new dashboard
 copied from the template inherits the import, not a fork.
 
 Converged so far: ``ocm``, ``cattown``, ``dota``, ``ttt``, ``talismans``,
-``fwa`` and ``templates/sparkline_template.py`` -- the set named in the
-finding, pinned by ``tests/widgets/test_sparkline_common.py``.  Eight
+``fwa``, ``templates/sparkline_template.py`` -- the set named in the
+finding -- and, since Branch 8 WP-A, ``widgets/base/overview/bt_sparklines.py``
+through ``panels.SparklinePanel``; all pinned by
+``tests/widgets/test_sparkline_common.py``.  Seven
 older copies with divergent widths and semantics are **not** yet on this
-module and still need review: ``widgets/cookie_chart.py``,
-``widgets/base/overview/bt_sparklines.py``
+module and still need review: ``widgets/cookie_chart.py``
 and ``widgets/frenpet/{score_trend.py, pet_card.py, wallet/fpw_trends.py,
 perf/fpp_trends.py, perf/fpp_velocity.py, overview/fp_score_trends.py}``.
 New dashboards must import from here regardless.

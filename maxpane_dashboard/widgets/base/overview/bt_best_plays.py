@@ -15,7 +15,7 @@ from textual.app import ComposeResult
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.panels import LOADING_ROW, UNAVAILABLE, PanelBase
+from maxpane_dashboard.widgets.panels import LOADING_ROW, UNAVAILABLE_LINE, PanelBase
 
 _NUM_ROWS = 10
 _NAME_WIDTH = 14
@@ -104,5 +104,5 @@ class BTBestPlays(PanelBase):
             self.write_guarded(
                 f"#bto-bp-row-{i}",
                 lambda i=i: _row(i, gainers, losers),
-                f"  {UNAVAILABLE}",
+                UNAVAILABLE_LINE,
             )

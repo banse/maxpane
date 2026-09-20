@@ -2215,7 +2215,8 @@ read**, below.
 (`[]`), `:281` builds `whale_trades` from it (`[]`), and `:234` / `:246` set `total_volume = None`
 and a `"N/A"` / `"0.0%"` top gainer. **A failed trending read and a poll that truly found no
 tokens are indistinguishable in this payload — the dota C1 shape.** Pre-existing, in a data
-module this WP does not own; filed as follow-up **#28** below, not fixed. The three histories are
+module this WP does not own; filed as follow-up **#28** in `docs/handover_followups_2026_09.md`, not
+fixed. The three histories are
 never `None`: `base_cache.py:223-233` return `list(...)` and `record_overview_point`
 (`:196`, the `None` skips at `:216-221`) records no point for a failed cycle, so they hold the
 prior true points and no sentinel. A wholly failed `fetch_snapshot` re-raises at
@@ -2314,7 +2315,8 @@ no deletion, no rename; `test_title_blank_row.py` no function added or removed �
 10. `tests/widgets/test_markup_safety.py` was run beyond the named set as a consumer of
     `BTOverviewLeaderboard.update_data`'s positional signature.
 
-**Seen, not fixed (filed, not owned by this WP):** **#28** the base client's `[]`-for-a-failed-read
+**Seen, not fixed (filed as #28–#31 in `docs/handover_followups_2026_09.md`, not owned by this WP):**
+**#28** the base client's `[]`-for-a-failed-read
 above (the dota C1 shape; the fix is in `data/base_client.py` / `base_manager.py`, out of a
 widgets-only WP, and turns the feed into a `SNAPSHOT` candidate once `None` is served); **#29**
 the TOP GAINER hero box clips its `+12.0%` second body line in the 7-row box at 170 and 143 —
@@ -2322,6 +2324,92 @@ pre-existing, in the before-capture; **#30** the BEST PLAYS header wraps at the 
 on its own line 33) — pre-existing, in the before-capture; **#31** the status bar reads
 `updated 0s ago` after a partially failed read because the manager returns a payload (#28's
 sibling).
+
+**Branch 8 WP-A fix round 1 (2026-09-20).** Review verdict `Needs fixes: 0 Critical, 2 Important`
+plus four Minor; all six addressed except M4, which the review asked to be filed, not fixed.
+
+- **I1 — the BT degraded states were pinned by nothing.** `tests/widgets/test_medi38_unavailable_state.py`
+  now names `BTOverviewHero` and `BTSignals`. Both went into the **second** table (`_HERO_ROWS`),
+  not the first, for the reason its docstring gives for talismans and ttt: they are handed scalars,
+  and a `None` scalar is the manager's "absent this poll" (`eth_price` / `total_volume` omitted
+  when no token trended; a signal string the analytics could not compute), which the copy rendered
+  `...` — so claim 1 for them is "`...`, never `Loading`, never `unavailable`". The table gained a
+  fifth field, the row's *absent word* (`--` for talismans/ttt, `...` for base), and the claim-1
+  test asserts that field instead of a literal `--`; claims 2 and 3 are unchanged and `BTHeroBox`
+  joined the harness's `height: 9` list. The hero's malformed value is `_Hostile()` on `eth_price`
+  (`_price_body` catches `ValueError`/`TypeError` itself, so the value has to raise past those);
+  the signals' is `_Hostile()` on `buy_sell_signal` (`_signal_indicator` calls `str(value)`).
+  `tests/widgets/test_base_widgets.py` gained the two composited pins the review asked for:
+  `test_signal_malformed_value_after_a_good_poll_is_a_yellow_unavailable_row` (good poll, hostile
+  second poll; the Buy/Sell row reads `unavailable` right-aligned to 36 with the dot at 38, the
+  other two rows keep `Rising` / `Neutral`, and the word's composited segment is yellow and not
+  bold — M3's pin) and `test_best_plays_malformed_entry_after_a_good_poll_lands_on_unavailable`
+  (good poll, then a gainer whose `price_change_24h` is `"abc"`; row 0 is `unavailable` at column
+  4 in yellow, `ALPHA +12.0%` gone, rows 1–9 blank).
+- **I2 — #28–#31 were not in the backlog.** Filed in `docs/handover_followups_2026_09.md` under
+  "## Branch 8 — panels, base terminal and bakery" in the #23–#27 shape (file:line, what breaks,
+  tier, filed-by): #28 `base_client.py:742-747` `[]` for a failed trending fetch (Tier 1; the
+  feed becomes a `SNAPSHOT` candidate once `None` is served), #29 TOP GAINER second line clipped
+  (sibling of #6), #30 BEST PLAYS header wraps at 143, #31 `updated 0s ago` after a partial
+  failure (sibling of #23/#28). The outcome paragraph's two "below" pointers now name the backlog.
+- **M1 — `sparkline_common.py`'s ledger.** `bt_sparklines.py` moved from the "not yet on this
+  module" list (now seven) to the converged list, "through `panels.SparklinePanel`". `BTSparklines`
+  joined `SPARKLINE_WIDGETS` in `tests/widgets/test_sparkline_common.py` (that list entry and its
+  import, nothing else in the file): 89 → 99 collected, all green.
+- **M2** — `bt_best_plays.py` imports `UNAVAILABLE_LINE` instead of re-typing `f"  {UNAVAILABLE}"`.
+- **M3 — the degraded signal word was bold white.** `fmt_signal_trailing` gained an append-only
+  keyword `value_color: str | None = None` that replaces the value cell's `[bold white]` with one
+  style word; `None` is the previous behaviour byte for byte. `BTSignals` builds its fallback with
+  `color="yellow", value_color="yellow"`. Chosen over assembling the row by hand in `bt_signals.py`
+  so bakery's `SignalsPanel` (WP-B) can degrade through the same call, and because the function
+  escapes `value`, which is why the shared `UNAVAILABLE` markup cannot simply be passed as the
+  value. Pinned in `test_panels.py::test_fmt_signal_trailing_value_color_replaces_bold_white_and_nothing_else`
+  and, composited, in the I1 signals pin (style triplet `(255, 255, 0)` — Textual resolves the
+  markup's `yellow` to `#ffff00`, so the pin compares the triplet, not the name).
+- **M4** — not fixed, per the review: filed as **#32** (Minor, Tier 0 when a migrated sparkline
+  test is next touched: one composited width pin per package).
+
+**Mutation table** (each applied in place, the named file run, reversed by inverse edit, the file
+`cmp`'d byte-for-byte against a pre-mutation snapshot — 8 of 8 restored identical):
+
+| # | mutation | file run | result | test that reddened |
+| --- | --- | --- | --- | --- |
+| 1 | `BTSignals._signal_row`: `write_guarded(...)` → `self.write(selector, build())` | `test_base_widgets.py` | 1 failed, 19 passed | `test_signal_malformed_value_after_a_good_poll_is_a_yellow_unavailable_row` |
+| | same | `test_medi38_unavailable_state.py` | 1 failed, 43 passed | `test_a_malformed_hero_poll_after_a_good_one_is_not_shown_as_live[BTSignals]` |
+| 2 | fallback drops `value_color="yellow"` | `test_base_widgets.py` | 1 failed, 19 passed | the same signals pin (on the style) |
+| 3 | fallback word `unavailable` → `unavail.` | `test_base_widgets.py` | 1 failed, 19 passed | the same signals pin (on the text) |
+| | same | `test_medi38_unavailable_state.py` | 1 failed, 43 passed | `test_a_malformed_hero_poll_after_a_good_one_is_not_shown_as_live[BTSignals]` |
+| 4 | `BTBestPlays.update_data`: `write_guarded(...)` → `self.write(f"#bto-bp-row-{i}", _row(...))` | `test_base_widgets.py` | 1 failed, 19 passed | `test_best_plays_malformed_entry_after_a_good_poll_lands_on_unavailable` |
+| 5 | fallback `UNAVAILABLE_LINE` → `UNAVAILABLE_LINE.strip()` | `test_base_widgets.py` | 1 failed, 19 passed | same (column pin) |
+| 6 | `panels.py`: `value_color` ignored (`value_style = "bold white"`) | `test_panels.py` | 1 failed, 145 passed | `test_fmt_signal_trailing_value_color_replaces_bold_white_and_nothing_else` |
+| | same | `test_base_widgets.py` | 1 failed, 19 passed | the signals pin (on the style) |
+| 7 | a private `_coerce_points` pasted into `bt_sparklines.py` | `test_sparkline_common.py` | 2 failed, 97 passed | `test_helpers_are_the_shared_functions[BTSparklines]`, `test_no_module_redefines_a_shared_helper[BTSparklines]` |
+| 8 | `panels.py` `HeroRow.render_box`: `body = build()` moved outside the guard | `test_medi38_unavailable_state.py` | 6 failed, 38 passed | `…[BTOverviewHero]` among the six hero rows |
+
+The review's own mutation (the two `write_guarded` blocks → plain `write`) is rows 1 and 4: 335/0
+and 257/0 before this round, 1 failed in each named file now.
+
+**Rendering proof.** `render_case.py base b8_fix1_base` against the WP-A capture:
+
+```
+$ cmp b8_wpa_base.default.170x50.txt     b8_fix1_base.default.170x50.txt      -> identical (exit 0)
+$ cmp b8_wpa_base.default.pin-143x50.txt b8_fix1_base.default.pin-143x50.txt  -> identical (exit 0)
+```
+
+Byte-identical at both sizes: the fallbacks are unreachable on the sweep payload and `value_color`
+defaults to the previous markup, so M3 moved nothing.
+
+**Tests.** Named set green: `test_base_widgets.py` 20 (was 18), `test_medi38_unavailable_state.py`
+44 (was 38: two rows × three claims), `test_panels.py` 146 (was 145), `test_sparkline_common.py` 99
+(was 89: one class × ten cases), `test_title_blank_row.py` 53, `test_base_address_icons.py` 2,
+`test_markup_safety.py` 78, `test_base_terminal_screen.py` 3, `test_refresh_guard.py` 7,
+`test_dashboard_screen.py` 26, `test_address_rule.py` 10, `test_address_icons_everywhere.py -k
+base` 2 (41 deselected); `-m guard tests` last — see the commit. **Name-list diff** against
+`24e13d3`: `test_base_widgets.py` +2 (`test_best_plays_malformed_entry_after_a_good_poll_lands_on_unavailable`,
+`test_signal_malformed_value_after_a_good_poll_is_a_yellow_unavailable_row`); `test_panels.py` +1
+(`test_fmt_signal_trailing_value_color_replaces_bold_white_and_nothing_else`);
+`test_medi38_unavailable_state.py` and `test_sparkline_common.py` no function added or removed —
+their new cases are table rows. No deletion, no rename anywhere.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

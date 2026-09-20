@@ -240,6 +240,50 @@ async def test_signal_rows_are_label_value_then_trailing_dot():
 
 
 @pytest.mark.asyncio
+async def test_signal_malformed_value_after_a_good_poll_is_a_yellow_unavailable_row():
+    """Mutation: replace ``_signal_row``'s ``write_guarded`` with a plain
+    ``write`` of the built row -> ``update_data`` raises here and this
+    reddens; drop ``value_color="yellow"`` from the fallback -> the word
+    paints bold white and this reddens on the style; alter the fallback's
+    word or its cell -> this reddens on the text. Branch 8 WP-A fix round 1
+    (reviews I1 and M3). ``_signal_indicator`` calls ``str(value)``, so a
+    scalar whose ``__str__`` raises is the malformed poll; the other two rows
+    keep their good values -- one bad signal degrades one row."""
+    class _Hostile:
+        def __str__(self):
+            raise RuntimeError("boom")
+
+    widget = BTSignals()
+    async with _Harness(widget).run_test(size=_PIN_SIZE) as pilot:
+        widget.update_data(buy_sell_signal="Bullish", volume_signal="Rising",
+                           whale_signal="Neutral", recommendation="BUY")
+        await pilot.pause()
+        assert "Bullish" in "\n".join(_strips(pilot.app))
+        widget.update_data(buy_sell_signal=_Hostile(), volume_signal="Rising",
+                           whale_signal="Neutral", recommendation="BUY")
+        await pilot.pause()
+        rows = _strips(pilot.app)
+        strips = pilot.app.screen._compositor.render_strips()
+    buy = _line_with(rows, "Buy/Sell")
+    assert "Bullish" not in "\n".join(rows), rows
+    # The degraded row keeps the live row's geometry: label at 4, the word
+    # right-aligned to end at 36, the dot at 38 and nothing after it.
+    assert buy.index("Buy/Sell") == 4, repr(buy)
+    assert buy.index("unavailable") + len("unavailable") == 36, repr(buy)
+    assert buy.index("●") == 38 and buy.rstrip().endswith("●"), repr(buy)
+    assert "Rising" in _line_with(rows, "Volume"), rows
+    assert "Neutral" in _line_with(rows, "Whale Activity"), rows
+    strip = strips[rows.index(buy)]
+    word = [seg for seg in strip if "unavailable" in seg.text]
+    assert len(word) == 1, strip
+    _YELLOW = (255, 255, 0)  # Textual resolves the markup's ``yellow`` to #ffff00
+    assert word[0].style.color.get_truecolor() == _YELLOW, word[0].style
+    assert not word[0].style.bold, word[0].style
+    dot = [seg for seg in strip if "●" in seg.text]
+    assert dot and dot[0].style.color.get_truecolor() == _YELLOW, strip
+
+
+@pytest.mark.asyncio
 async def test_recommendation_is_blank_when_empty_and_one_row_under_the_rows():
     """Mutation: write the recommendation line unconditionally, or add a
     bare ``None`` to ``ROWS`` beside the base's own pre-recommendation blank
@@ -343,6 +387,40 @@ async def test_best_plays_keeps_one_gap_row_between_header_and_rows():
     assert not rows[3].strip(), rows
     assert rows[4].lstrip().startswith("* ALPHA"), repr(rows[4])
     assert "+12.0%" in rows[4] and "* BETA" in rows[4] and "-3.0%" in rows[4], rows
+
+
+@pytest.mark.asyncio
+async def test_best_plays_malformed_entry_after_a_good_poll_lands_on_unavailable():
+    """Mutation: replace the row's ``write_guarded`` with a plain ``write``
+    of the built row -> ``update_data`` raises here (the harness has no
+    ``try``) and this reddens; alter the fallback (``UNAVAILABLE_LINE``) ->
+    this reddens on the row's text. Branch 8 WP-A fix round 1 (review I1):
+    the MEDI-38 degraded state the migration gave this board, pinned. A
+    ``price_change_24h`` that is not a number raises ``ValueError`` out of
+    ``_entry``'s ``float(...)``, which the copy would have let escape into
+    the screen's ``except`` with ``ALPHA +12.0%`` still on screen as live."""
+    widget = BTBestPlays()
+    async with _Harness(widget).run_test(size=_PIN_SIZE) as pilot:
+        widget.update_data(gainers=[("ALPHA", "+12.0%")], losers=[("BETA", "-3.0%")])
+        await pilot.pause()
+        good = _strips(pilot.app)
+        assert "ALPHA" in good[4] and "+12.0%" in good[4], good
+        widget.update_data(gainers=[{"symbol": "AAA", "price_change_24h": "abc"}])
+        await pilot.pause()
+        rows = _strips(pilot.app)
+        strips = pilot.app.screen._compositor.render_strips()
+    # Title, blank, header, gap, then the degraded first row -- and only it.
+    assert rows[4].strip() == "unavailable", repr(rows[4])
+    # Column 4: the ``.panel-line`` padding (2) plus ``UNAVAILABLE_LINE``'s
+    # own two -- the same column the good row's ``* ALPHA`` star sits after.
+    assert rows[4].index("unavailable") == 4 == good[4].index("ALPHA"), (rows[4], good[4])
+    assert not any("ALPHA" in r or "+12.0%" in r or "AAA" in r for r in rows), rows
+    assert all(not r.strip() for r in rows[5:14]), rows[5:14]
+    word = [seg for seg in strips[4] if "unavailable" in seg.text]
+    assert len(word) == 1, strips[4]
+    # Textual resolves the markup's ``yellow`` to ``#ffff00``; compare the
+    # triplet, not the name.
+    assert word[0].style.color.get_truecolor() == (255, 255, 0), word[0].style
 
 
 # -- BTOverviewHero ---------------------------------------------------------------
