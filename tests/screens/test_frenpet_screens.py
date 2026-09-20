@@ -360,3 +360,54 @@ def test_perf_hero_adapter_is_empty_safe() -> None:
         "avg_win_rate": compute_avg_win_rate([]),
         "pet_count": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# An unmeasured battle rate reaches the screen as ``unavailable`` (#43)
+# ---------------------------------------------------------------------------
+
+def _plain(widget, selector: str) -> str:
+    """The footer/line as a reader sees it: markup resolved, tags gone."""
+    from rich.text import Text
+
+    content = widget.query_one(selector, Static).content
+    return content.plain if hasattr(content, "plain") else Text.from_markup(str(content)).plain
+
+
+@pytest.mark.asyncio
+async def test_overview_signals_say_unavailable_when_the_rate_was_not_measured() -> None:
+    """The manager's ``None`` must not be turned back into ``0.0`` by the screen."""
+    from maxpane_dashboard.widgets.frenpet.overview.fp_game_signals import FPGameSignals
+
+    manager = _FakeManager()
+    unmeasured = _sample_data()
+    unmeasured["global_battle_rate"] = None
+    manager.fetch_and_compute = lambda: _async(unmeasured)  # type: ignore[assignment]
+
+    screen = FrenPetScreen(manager, poll_interval=30, name="frenpet")
+    app = _Harness(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await screen._do_refresh()
+        await pilot.pause()
+
+        line = _plain(screen.query_one(FPGameSignals), "#fpo-sig-battle-rate")
+        assert "unavailable" in line
+        assert "~0/hr" not in line
+
+
+@pytest.mark.asyncio
+async def test_full_screen_battle_feed_footer_says_unavailable() -> None:
+    from maxpane_dashboard.widgets.frenpet.battle_feed import BattleFeed
+
+    manager = _FakeManager()
+    unmeasured = _sample_data()
+    unmeasured["global_battle_rate"] = None
+    screen = FrenPetFullScreen(manager, poll_interval=30, name="frenpet_full")
+    app = _Harness(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.update_general_view(unmeasured)
+        await pilot.pause()
+
+        assert "Battles/hr: unavailable" in _plain(screen.query_one(BattleFeed), "#battle-footer")

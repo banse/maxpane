@@ -170,28 +170,25 @@ class FrenPetManager:
         )
 
         # -- Recent attacks (best-effort) ---------------------------------
-        # Two names for one reading, deliberately.  ``measured_battle_rate``
-        # is ``None`` when the attacks feed could not be read, and that is
-        # what reaches the persisted ``battle_rate_history``: a sentinel
-        # ``0.0`` appended during an outage outlives it and reads for ever
-        # after as a genuine lull (CLAUDE.md: a failed read is ``None``,
-        # never ``0``).  ``global_battle_rate`` is the widget dict's
-        # display value and keeps its long-standing ``0.0`` default, which
-        # is a separate question about what an unavailable rate should
-        # *look* like (follow-up #43).
+        # ``battle_rate`` is ``None`` when the attacks feed could not be
+        # read *or* the window it returned cannot carry a rate (fewer than
+        # two timestamps, or a span too short to trust).  The same ``None``
+        # reaches both consumers: the persisted ``battle_rate_history``
+        # drops it (a sentinel ``0.0`` appended during an outage outlives it
+        # and reads for ever after as a genuine lull -- CLAUDE.md: a failed
+        # read is ``None``, never ``0``), and the widget dict carries it as
+        # ``global_battle_rate`` so the panels say ``unavailable`` instead of
+        # painting a rate nobody measured (follow-ups #43, #54).
         recent_attacks: list[dict[str, Any]] = []
-        measured_battle_rate: float | None = None
+        battle_rate: float | None = None
         try:
             recent_attacks = await self.client.get_recent_attacks(limit=50)
-            measured_battle_rate = _compute_battle_rate(recent_attacks)
+            battle_rate = _compute_battle_rate(recent_attacks)
         except Exception as exc:
             logger.warning("Failed to fetch recent attacks: %s", exc)
-        global_battle_rate = (
-            0.0 if measured_battle_rate is None else measured_battle_rate
-        )
 
         # -- Update cache with population + battle rate history -----------
-        self.cache.update(snapshot, battle_rate=measured_battle_rate)
+        self.cache.update(snapshot, battle_rate=battle_rate)
 
         # -- Managed pets analytics ---------------------------------------
         managed_pets = list(snapshot.managed_pets)
@@ -370,7 +367,7 @@ class FrenPetManager:
         overview_recommendation = _generate_overview_recommendation(
             shield_rate=shield_rate,
             top_dominance=top_dominance,
-            global_battle_rate=global_battle_rate,
+            global_battle_rate=battle_rate,
         )
 
         # Top fighters: best win rate among pets with 10+ battles
@@ -414,7 +411,7 @@ class FrenPetManager:
             "score_distribution": score_distribution,
             "top_pets": top_pets,
             "recent_attacks": recent_attacks,
-            "global_battle_rate": global_battle_rate,
+            "global_battle_rate": battle_rate,
             # Wallet view
             "managed_pets": managed_pets,
             "total_score": total_score,
@@ -565,15 +562,18 @@ class FrenPetManager:
 _MIN_BATTLE_SPAN_HOURS = 1.0 / 60.0  # one minute
 
 
-def _compute_battle_rate(attacks: list[dict[str, Any]]) -> float:
-    """Battles per hour derived from attack-event timestamps.
+def _compute_battle_rate(attacks: list[dict[str, Any]]) -> float | None:
+    """Battles per hour derived from attack-event timestamps, or ``None``.
 
     The span is taken from the min/max timestamp rather than from the
     first and last list elements, so the result does not depend on the
     ordering of *attacks* (the Ponder path returns newest-first, the RPC
     log fallback used to return ascending block order, which made the
-    span negative).  Non-positive, missing or implausibly short spans
-    yield ``0.0`` instead of a fabricated rate.
+    span negative).  Fewer than two usable timestamps, or a span below
+    ``_MIN_BATTLE_SPAN_HOURS``, cannot carry a rate and answer ``None`` --
+    "could not compute", which the cache drops and the panels show as
+    unavailable -- never a fabricated ``0.0`` that would be persisted as a
+    measured lull (follow-up #54).
     """
     timestamps = [
         float(a.get("timestamp") or 0)
@@ -582,7 +582,7 @@ def _compute_battle_rate(attacks: list[dict[str, Any]]) -> float:
     ]
     timestamps = [ts for ts in timestamps if ts > 0]
     if len(timestamps) < 2:
-        return 0.0
+        return None
 
     span_hours = (max(timestamps) - min(timestamps)) / 3600.0
     if span_hours < _MIN_BATTLE_SPAN_HOURS:
@@ -590,22 +590,26 @@ def _compute_battle_rate(attacks: list[dict[str, Any]]) -> float:
             "Attack timestamps span only %.4fh -- battle rate suppressed",
             span_hours,
         )
-        return 0.0
+        return None
     return len(attacks) / span_hours
 
 
 def _generate_overview_recommendation(
     shield_rate: float,
     top_dominance: float,
-    global_battle_rate: float,
+    global_battle_rate: float | None,
 ) -> str:
-    """Generate a short recommendation string based on current game state."""
+    """Generate a short recommendation string based on current game state.
+
+    A ``None`` battle rate was not measured, so it cannot argue for an
+    "active meta"; the balanced default stands.
+    """
     if shield_rate > 50.0:
         return "Most pets shielded \u2014 fewer exposed targets available"
     if shield_rate < 20.0:
         return "Low shield rate \u2014 many exposed targets for bonking"
     if top_dominance > 3.0:
         return "One pet dominates \u2014 focus on closing the gap"
-    if global_battle_rate > 200.0:
+    if global_battle_rate is not None and global_battle_rate > 200.0:
         return "Active meta \u2014 battles frequent, train to compete"
     return "Meta is balanced \u2014 focus on training ATK/DEF"

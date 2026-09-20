@@ -481,6 +481,10 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `frenpet_manager.py:156-162` sets `0.0` in its `except`. Branch 9 stops the zero reaching the cache (R1)
     but leaves the widget dict alone; the display path needs the MEDI-38 shape — `None` → `unavailable` behind
     the `as of` marker. **Important, Tier 1** (one dashboard's manager + two screens).
+    **Done 2026-09-20, `followups/important-2026-09` (with #54):** the manager passes its `None` through as
+    `global_battle_rate`, the three `data.get(..., 0.0)` sites default to `None`, `BattleFeed` repaints its
+    footer on every call (`Battles/hr: unavailable`) and `FPGameSignals` drops the indicator; the
+    recommendation treats `None` as not-an-active-meta. Widget + screen tests resolve markup to plain text.
 
 44. **`data/manager_base.py` is in HANDOVER §3 item 6 but in no branch of the programme.** The
     `_error_count` / `last_success` / `as_of_hhmm` / last-good fold shared by the managers was named in the
@@ -606,6 +610,11 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     the copy read 1 and wiped it; hand-edit only, the safer answer, but add `"2"` and `2.0` to
     `test_before_load_sees_the_version`'s parametrisation when `test_series_cache.py` is next touched.
     **Important, Tier 1** (one dashboard's manager + its tests).
+    **Done 2026-09-20, same branch (with #43):** `_compute_battle_rate -> float | None`; the function
+    cannot produce a genuine zero (≥ 2 attacks always divide to a positive rate), so the re-anchor is
+    "computed vs not computable": `test_a_window_that_cannot_carry_a_rate_records_no_point` (empty /
+    one-attack), the three manager-level `yields_zero` tests now `is None`, plus the span-floor boundary.
+    The `OCMCache` version parametrisation half stays open for when `test_series_cache.py` is next touched.
 
 
 ## Branch 9 — whole-branch review (2026-09-20, Approved 0C/0I/9M)

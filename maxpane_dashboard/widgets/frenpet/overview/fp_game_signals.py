@@ -6,6 +6,8 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.panels import UNAVAILABLE
+
 
 def _rate_indicator(value: float, threshold_high: float, threshold_low: float) -> tuple[str, str]:
     """Return (label, color) based on value vs thresholds."""
@@ -57,20 +59,30 @@ class FPGameSignals(Vertical):
 
     def update_data(
         self,
-        battle_rate: float,
+        battle_rate: float | None,
         win_rate: float,
         hibernation_rate: float = 0.0,
         dominance: float = 0.0,
         recommendation: str = "",
     ) -> None:
-        """Update all signal lines with computed analytics."""
+        """Update all signal lines with computed analytics.
+
+        ``battle_rate`` is ``None`` when the manager could not measure one;
+        the line then reads ``unavailable`` with no indicator, never
+        ``~0/hr low`` (follow-up #43).
+        """
         # Battle Rate
-        rate_label, rate_color = _rate_indicator(battle_rate, 100.0, 10.0)
-        self.query_one("#fpo-sig-battle-rate", Static).update(
-            f"  [dim]{'Battle Rate':<20}[/]"
-            f"[bold white]{'~{:.0f}/hr'.format(battle_rate):>12}[/]"
-            f"  [{rate_color}]\u25cf {rate_label:<10}[/]"
-        )
+        if battle_rate is None:
+            self.query_one("#fpo-sig-battle-rate", Static).update(
+                f"  [dim]{'Battle Rate':<20}[/] {UNAVAILABLE}"
+            )
+        else:
+            rate_label, rate_color = _rate_indicator(battle_rate, 100.0, 10.0)
+            self.query_one("#fpo-sig-battle-rate", Static).update(
+                f"  [dim]{'Battle Rate':<20}[/]"
+                f"[bold white]{'~{:.0f}/hr'.format(battle_rate):>12}[/]"
+                f"  [{rate_color}]\u25cf {rate_label:<10}[/]"
+            )
 
         # Win Rate
         wr_label = "balanced" if 40 <= win_rate <= 60 else ("high" if win_rate > 60 else "low")

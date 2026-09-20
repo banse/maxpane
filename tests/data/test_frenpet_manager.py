@@ -362,7 +362,8 @@ class TestFrenPetManagerErrorHandling:
         # Should still return a complete result
         assert EXPECTED_KEYS.issubset(result.keys())
         assert result["recent_attacks"] == []
-        assert result["global_battle_rate"] == 0.0
+        # ... and the rate is "could not look", not a measured zero (#43).
+        assert result["global_battle_rate"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +519,7 @@ class TestFrenPetManagerBattleRate:
             for i, ts in enumerate(timestamps)
         ]
 
-    async def _rate(self, attacks: list[dict[str, Any]]) -> float:
+    async def _rate(self, attacks: list[dict[str, Any]]) -> float | None:
         """Run one fetch cycle and return the computed battle rate."""
         manager = FrenPetManager(wallet_address="0xabc")
         snapshot = _make_snapshot()
@@ -545,29 +546,33 @@ class TestFrenPetManagerBattleRate:
         assert rate_asc == pytest.approx(rate_desc)
 
     @pytest.mark.asyncio
-    async def test_degenerate_span_yields_zero_not_a_huge_rate(self) -> None:
-        """50 events inside one second must not become ~50,000/hr."""
+    async def test_degenerate_span_yields_none_not_a_huge_rate(self) -> None:
+        """50 events inside one second must not become ~50,000/hr -- nor 0.0.
+
+        Since #54 "cannot compute" is ``None``: a measured-looking zero was
+        persisted as a lull and painted as ``~0/hr low``.
+        """
         base = 1_800_000_000
         attacks = self._attacks([base] * 50)
 
         rate = await self._rate(attacks)
 
-        assert rate == 0.0
+        assert rate is None
 
     @pytest.mark.asyncio
-    async def test_single_attack_yields_zero(self) -> None:
+    async def test_single_attack_yields_none(self) -> None:
         rate = await self._rate(self._attacks([1_800_000_000]))
-        assert rate == 0.0
+        assert rate is None
 
     @pytest.mark.asyncio
-    async def test_unusable_timestamps_yield_zero(self) -> None:
+    async def test_unusable_timestamps_yield_none(self) -> None:
         attacks = [
             {"attacker_id": 1, "defender_id": 2, "attacker_won": True},
             {"attacker_id": 3, "defender_id": 4, "attacker_won": False,
              "timestamp": None},
         ]
         rate = await self._rate(attacks)
-        assert rate == 0.0
+        assert rate is None
 
 
 # ---------------------------------------------------------------------------
@@ -638,17 +643,16 @@ class TestFrenPetManagerSafeCall:
 # ---------------------------------------------------------------------------
 
 class TestFrenPetManagerBattleRateSentinel:
-    """Branch 9 R1: the cache and the widget dict want different things.
+    """Branch 9 R1 + follow-ups #43/#54: one ``None`` for both consumers.
 
     ``battle_rate_history`` is persisted to ``~/.maxpane/frenpet_cache.json``,
     so a ``0.0`` appended while the attacks feed was down outlives the
     outage and reads for ever after as a genuine lull -- it drags the
-    Battles sparkline's scale and any trend computed off it.  The widget
-    dict's ``global_battle_rate`` is a *display* default and is out of
-    scope here (follow-up #43): what it shows for "we could not look" is
-    the same question ``rules/data.md`` asks of every degraded cell, and
-    it is answered elsewhere, so this test pins today's value rather than
-    improving it.
+    Battles sparkline's scale and any trend computed off it.  Since #43 the
+    widget dict's ``global_battle_rate`` carries the same ``None`` so the
+    panels say ``unavailable``; since #54 ``_compute_battle_rate`` answers
+    ``None`` for a window that cannot carry a rate, so a one-attack or
+    empty window is "could not compute", not a measured zero.
     """
 
     @pytest.fixture(autouse=True)
@@ -685,8 +689,8 @@ class TestFrenPetManagerBattleRateSentinel:
         # simply missing: only the reading that failed is absent.
         assert len(manager.cache.active_pets_history) == 1
         assert len(manager.cache.total_score_history) == 1
-        # ... and the widget dict keeps the display default it has always had.
-        assert result["global_battle_rate"] == 0.0
+        # ... and the widget dict carries the same "could not look" (#43).
+        assert result["global_battle_rate"] is None
 
     @pytest.mark.asyncio
     async def test_a_good_attacks_read_records_one_point(self) -> None:
@@ -713,20 +717,24 @@ class TestFrenPetManagerBattleRateSentinel:
         assert result["global_battle_rate"] > 0.0
 
     @pytest.mark.asyncio
-    async def test_a_genuine_zero_rate_is_still_recorded(self) -> None:
-        """A computed ``0.0`` is recorded; only "could not look" is dropped.
+    @pytest.mark.parametrize(
+        "attacks",
+        [
+            [],
+            [{"attacker_id": 1, "defender_id": 2, "attacker_won": True,
+              "timestamp": 1_800_000_000}],
+        ],
+        ids=["empty-window", "one-attack"],
+    )
+    async def test_a_window_that_cannot_carry_a_rate_records_no_point(
+        self, attacks
+    ) -> None:
+        """One attack cannot span an interval; an empty window has none.
 
-        This pins today's behaviour, not the ideal one: one attack cannot
-        span an interval, and ``_compute_battle_rate`` answers ``0.0`` for
-        "cannot compute" as well as for a genuine lull (its own docstring
-        says "instead of a fabricated rate").  R1 covers the failed *fetch*
-        only; making the computer return ``None`` when it cannot compute,
-        and re-anchoring this test on an empty window, is follow-up #54.
+        Before #54 both were appended to ``battle_rate_history`` as
+        ``(ts, 0.0)`` -- a measured lull that nobody measured.  Now the
+        cache gets ``None`` and drops it, and the widget dict says so.
         """
-        attacks = [
-            {"attacker_id": 1, "defender_id": 2, "attacker_won": True,
-             "timestamp": 1_800_000_000},
-        ]
         manager, snapshot = self._manager_and_snapshot()
 
         with patch.object(
@@ -737,7 +745,44 @@ class TestFrenPetManagerBattleRateSentinel:
         ):
             result = await manager.fetch_and_compute()
 
-        assert list(manager.cache.battle_rate_history) == [
-            (snapshot.fetched_at, 0.0)
-        ]
-        assert result["global_battle_rate"] == 0.0
+        assert list(manager.cache.battle_rate_history) == []
+        assert result["recent_attacks"] == attacks
+        assert result["global_battle_rate"] is None
+
+
+# ---------------------------------------------------------------------------
+# _compute_battle_rate: a rate, or None -- never a fabricated 0.0 (#54)
+# ---------------------------------------------------------------------------
+
+class TestComputeBattleRate:
+    """The two edges ``TestFrenPetManagerBattleRate`` does not drive."""
+
+    @staticmethod
+    def _attacks(*timestamps: Any) -> list[dict[str, Any]]:
+        return [{"attacker_id": i, "defender_id": i + 1, "timestamp": ts}
+                for i, ts in enumerate(timestamps)]
+
+    def test_an_empty_window_is_none(self) -> None:
+        assert fm._compute_battle_rate([]) is None
+
+    def test_a_span_below_the_floor_is_none_not_a_huge_rate(self) -> None:
+        """Two attacks one second apart are not 7,200 battles an hour."""
+        floor_seconds = fm._MIN_BATTLE_SPAN_HOURS * 3600
+        just_under = self._attacks(1_800_000_000, 1_800_000_000 + floor_seconds - 1)
+        at_floor = self._attacks(1_800_000_000, 1_800_000_000 + floor_seconds)
+        assert fm._compute_battle_rate(just_under) is None
+        assert fm._compute_battle_rate(at_floor) == pytest.approx(
+            2 / fm._MIN_BATTLE_SPAN_HOURS
+        )
+
+
+def test_an_unmeasured_battle_rate_does_not_argue_for_an_active_meta() -> None:
+    """``None`` is not ``> 200``; the balanced default stands (#43)."""
+    quiet = fm._generate_overview_recommendation(
+        shield_rate=30.0, top_dominance=1.5, global_battle_rate=None
+    )
+    active = fm._generate_overview_recommendation(
+        shield_rate=30.0, top_dominance=1.5, global_battle_rate=250.0
+    )
+    assert quiet.startswith("Meta is balanced")
+    assert active.startswith("Active meta")

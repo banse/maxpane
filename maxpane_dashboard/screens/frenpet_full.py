@@ -410,7 +410,7 @@ class FrenPetFullScreen(DashboardScreen):
         try:
             self.query_one(BattleFeed).update_data(
                 data.get("recent_attacks", []),
-                data.get("global_battle_rate", 0.0),
+                data.get("global_battle_rate"),
             )
         except Exception as exc:
             logger.warning("Failed to update BattleFeed: %s", exc)
@@ -731,7 +731,7 @@ class FrenPetFullScreen(DashboardScreen):
         # Game signals
         try:
             self.query_one(FPGameSignals).update_data(
-                battle_rate=data.get("global_battle_rate", 0.0),
+                battle_rate=data.get("global_battle_rate"),
                 win_rate=data.get("global_win_rate", 50.0),
                 hibernation_rate=data.get("hibernation_rate", 0.0),
                 dominance=data.get("top_dominance", 1.0),

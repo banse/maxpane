@@ -49,7 +49,7 @@ def _score_trends(data: dict) -> dict:
 def _game_signals(data: dict) -> dict:
     """Four global rates, each under a keyword of its own that is not its key."""
     return {
-        "battle_rate": data.get("global_battle_rate", 0.0),
+        "battle_rate": data.get("global_battle_rate"),
         "win_rate": data.get("global_win_rate", 50.0),
         "hibernation_rate": data.get("hibernation_rate", 0.0),
         "dominance": data.get("top_dominance", 1.0),
