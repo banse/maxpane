@@ -1956,6 +1956,198 @@ closing N2: two `panels.py` docstrings still claim the deferred message-pump rai
 probe refuted — follow-up #26, docstring-only. **WP-B closed: 2ef29dc is the branch head under
 review; the docs closure commit that follows changes no code and no test.**
 
+## Branch 8 — `refactor/panels-bt-bakery` (two work packages)
+
+HANDOVER §3.4, third and last slice (§3.4c): the six `BT*` overview widgets and the six
+Bakery-only top-level widgets onto the `widgets/panels.py` bases, then `templates/` deleted and
+every reference to it retired. Cut from main `d2401ba`. Facts read off the tree on 2026-09-20
+(survey in the session, every `update_data` and every `DEFAULT_CSS` read):
+
+- **Twelve widget modules, 1,552 lines.** `widgets/base/overview/` 6 (720: `bt_hero_metrics`
+  128, `bt_overview_leaderboard` 142, `bt_sparklines` 118, `bt_signals` 93, `bt_activity_feed`
+  127, `bt_best_plays` 112) and the bakery six at the top of `widgets/` (832: `hero_metrics` 187,
+  `leaderboard` 87, `cookie_chart` 115, `signals_panel` 118, `activity_feed` 214, `ev_table`
+  111). HANDOVER names four bakery widgets; `cookie_chart` (a sparkline panel) and `ev_table` (a
+  two-column board) are the other two bakery panels, both of the same lineage and both already
+  rows in `test_title_blank_row.py`, so this branch takes all six and bakery ends fully on the
+  bases like the five small dashboards.
+- **Shapes, two of each.** Hero rows: `BTOverviewHero` (4 boxes) and `HeroMetrics` (3), both a
+  `Horizontal` of `Static` boxes seeded `Loading...`; `HeroMetrics` carries its own MEDI-38
+  `_UNAVAILABLE` and per-box `try`, which is exactly `HeroRow.render_box`. Leaderboards:
+  `BTOverviewLeaderboard` (6 columns, cap 15) and `Leaderboard` (5 columns, cap 10), both
+  `clear()` → `"No data"` in the second cell when empty, rank-1 bold — `TableLeaderboard` with
+  `build_row`. Sparklines: `BTSparklines` (three fixed labelled series, `label:<10`, arrow,
+  `waiting for data...` on an empty series) and `CookieChart` (up to three series **named per
+  poll** by the top bakeries, `name[:8].ljust(8)` escaped, blank line for a missing third).
+  Signals: `BTSignals` and `SignalsPanel` share a row shape **older than `fmt_signal`'s** —
+  `  [dim]{label:<20}[/][bold white]{value:>12}[/]  [{color}]● {indicator:<10}[/]`, the
+  indicator *trailing* the value — plus a `→ Recommendation:` line that BT blanks when empty and
+  bakery always writes. Neither takes signal dicts: BT classifies plain strings
+  (`_signal_indicator`, `None` → dim `...`), bakery derives value/colour/indicator from two dicts
+  and a float. Feeds: `BTActivityFeed` (`_has_data` flag, markup strings, whale trades) and
+  `ActivityFeed` (`_seen_keys` dedupe, `rich.text.Text` rows through `address_text`, a
+  `_MALFORMED_LINE` for an event that fails to format) — the contract `RichLogFeed` already merged
+  (`panels.py:612`), stream mode both. Two-column boards: `BTBestPlays` and `EVTable`, the sixth
+  and fifth copies of one shape repo-wide (`ct_best_plays`, `dota_best_plays`, `fp_best_plays`,
+  `fpw_best_plays` are the others) — no base exists; filed as follow-up #27, here `PanelBase` with
+  their own `compose_body`, as `OCMSupplyBreakdown` was.
+- **The bare stylesheet blocks stay.** `HeroBox`, `SignalsPanel` and `BTHeroBox` have bare
+  geometry blocks in `minimal.tcss`; they are the reason the bases carry `Base` suffixes
+  (`test_panels.py`'s two guard tests). Ten *title* blocks go: `Leaderboard > Static`,
+  `CookieChart > .chart-title`, `SignalsPanel > .signals-title`, `ActivityFeed > .feed-title`,
+  `EVTable > .ev-title`, `BTOverviewLeaderboard > .bto-lb-title`, `BTSparklines > .bto-chart-title`,
+  `BTSignals > .bto-sig-title`, `BTActivityFeed > .bto-feed-title`, `BTBestPlays > .bto-bp-title`.
+  Four of the ten carry `margin: 0 0 1 0` (the base's margin); the other six panels paint the
+  blank row with a spacer `Static`, which the migration deletes.
+- **`leaderboard.py` and `activity_feed.py` import `data.models`** (`BakerySummary`,
+  `ActivityEvent`), against the widgets-never-import-`data/` convention; pre-existing and named in
+  `rules/widgets.md` step 1. Both are annotation-only unless the implementer finds otherwise.
+- **Tests.** Bakery has 21 widget tests that are this branch's acceptance and must not change:
+  `test_activity_feed_degradation.py` (11), `test_hero_metrics_degradation.py` (6),
+  `test_ev_table_catalog_source.py` (4). BT has `test_base_address_icons.py` (2) and
+  `tests/screens/test_base_terminal_screen.py` (3) and **no composited widget test**. Six test
+  files reference `templates/`: `tests/screens/test_refresh_guard.py` (`TEMPLATE` in the
+  bare-worker scan; `test_template_screen_inherits_the_guard`), `tests/widgets/test_markup_safety.py`
+  (`GameLeaderboard`, two tests), `test_sparkline_common.py` (`GameSparklines` in
+  `SPARKLINE_WIDGETS`; `test_template_seeds_an_import_not_a_copy`),
+  `test_hidden_shared_address_icons.py` (`test_each_template_uses_the_helper_and_defines_no_formatter`),
+  `test_panels.py` (`"maxpane_dashboard.templates"` in the clash scan), `test_title_blank_row.py`
+  (docstring only).
+- **`templates/`** is nine files, 1,080 lines. Outside tests it is named in `CLAUDE.md` five
+  times (Architecture tree, Known hazards, and the three tier-trigger lists), in
+  `rules/widgets.md` (frontmatter path, title, :143, :159, :303, step 3) and in docstrings:
+  `screens/refresh_guard.py:16`, `widgets/sparkline_common.py:11-20`, `widgets/panels.py:8, 271,
+  411, 612`, `widgets/surf/pool4u_signals.py:3`. `pyproject.toml` does not list it.
+- **Renders.** The sweep registry has cases `base` and `bakery` (default view only; neither
+  screen has a second view). `render_case.py base b8_before_base` and `… bakery b8_before_bakery`
+  are taken at 170×50 and the 143 pin, from the scratchpad as cwd (the script writes relative to
+  cwd).
+
+### Design
+
+The five bases plus `TableLeaderboard`, as Branches 6 and 7 used them, with **two append-only
+extensions to `panels.py`, both landing in WP-A**:
+
+1. **`fmt_signal_trailing(label, value, *, indicator="", color="dim", label_width=20,
+   value_width=12, indicator_width=10) -> str`** — the older row shape both signals panels share,
+   label first, value right-aligned, dot and indicator trailing; `value` and `indicator` escaped
+   with `safe_markup` (they are analytics output over game-API names; escaping strings that never
+   carried a bracket moves no pixel). Without the indicator the row ends after the value, as
+   `SignalsPanel._fmt_row` does. `fmt_signal` is untouched; the two are documented side by side as
+   the two row shapes in the tree. A helper two packages need is hoisted once, never re-declared.
+2. **Per-poll line labels on `SparklinePanel`**, only if the base cannot already express
+   `CookieChart` — an append-only hook with a default that reproduces today's behaviour for every
+   existing subscriber. If the hook would be a second behaviour decision rather than an extension,
+   `CookieChart` goes on `PanelBase` with `compose_body` and the `sparkline_common` helpers instead,
+   and the outcome paragraph says which and why.
+
+Both signals panels subclass `SignalsPanelBase` for `ROWS` (ids and labels, a bare `None` where
+`sig-spacer-2` / `bto-sig-spacer-2` stood), the first-row `LOADING_ROW` seed, `RECOMMENDATION_ID`
+and `write_guarded`, and override `update_data` to build their three rows with
+`fmt_signal_trailing` from their own classifiers — the classifiers stay where they are. The
+recommendation line goes through `render_recommendation` only if its output is byte-identical to
+the copies' `  [dim]→ Recommendation:[/] [bold]…[/]`; otherwise `write_guarded` with that exact
+string. BT keeps blank-on-empty, bakery keeps always-write.
+
+`HeroMetrics(HeroRow)` keeps its three box renderers behind `render_box`; its own `_UNAVAILABLE`
+and `_num` go (the base's `UNAVAILABLE` and `fmt.py`). `BTOverviewHero(HeroRow)` keeps `No data`
+for a `None` gainer — that is the copy's own text for a real negative, not a build failure.
+`Leaderboard` and `BTOverviewLeaderboard` on `TableLeaderboard` with `COLUMNS`, `ROW_CAP` (10 /
+15) and an `EMPTY_ROW` that puts `No data` in the second cell exactly as today; the `data.models`
+import moves under `TYPE_CHECKING` if annotation-only (the file already has `from __future__
+import annotations`), else stays and is filed. `ActivityFeed(RichLogFeed)` maps `_seen_keys` onto
+`dedupe_key` and its `_MALFORMED_LINE` onto a `format_row` that returns that `Text` for a bad
+event — the eleven degradation tests are the proof. `BTActivityFeed(RichLogFeed)` in stream mode
+(`_has_data` is the base's `_drawn`). `EVTable(PanelBase)` and `BTBestPlays(PanelBase)` keep their
+row `Static`s under `compose_body`; only the title and its margin move to the base.
+
+**Expected render diff: none.** Both captures are expected byte-identical after each WP; every
+difference is either fixed or named in the outcome paragraph with the reason it is right. Two
+states the captures cannot see are stated up front: pre-poll (`Loading...` seeds land on the first
+signal row, sparkline line 0, board row 0 and every hero box — the same places as today, so no
+change is expected, but it is uncaptured) and the failed read (each WP names, with file:line,
+whether its manager can serve `None` or `[]` for a failed read on each feed and table key — the
+dota C1 shape — and what the migrated panel shows for it).
+
+### WP-A — base terminal
+
+`widgets/base/overview/*.py` (6), `widgets/base/overview/__init__.py` unchanged in its exports,
+`widgets/panels.py` (+`fmt_signal_trailing`, +the sparkline hook if chosen, with `test_panels.py`
+cases for each — the trailing shape with and without an indicator, escaping, widths), five
+`BT* > .bto-*-title` blocks out of `minimal.tcss`. Tests: `test_panels.py` (`MIGRATED_PACKAGES`
+gains `"base.overview": 6` — `_package` takes a dotted name), `test_title_blank_row.py` (rows for
+`BTOverviewLeaderboard` and `BTActivityFeed` beside the three BT rows it has), and a **new
+`tests/widgets/test_base_widgets.py`** of composited pins (`render_strips()`) for every constant
+the migration introduces: the six column widths and `ROW_CAP = 15`, `EMPTY_ROW`'s cell position,
+`LABEL_WIDTH = 10`, `SHOW_ARROW`, the `waiting for data...` line, the trailing-indicator row
+order, the recommendation blank on empty, the feed placeholder once and rows kept on an empty
+poll. Each pin names the mutation it exists to redden; the outcome paragraph carries the mutation
+table (mutation → the test that failed, by name). Named set: the three edited/new widget test
+files, `test_base_address_icons.py`, `tests/screens/test_base_terminal_screen.py`,
+`test_address_icons_everywhere.py -k base`, `test_medi38_unavailable_state.py`,
+`tests/screens/test_refresh_guard.py`, `tests/screens/test_dashboard_screen.py`,
+`tests/test_address_rule.py`, `-m guard tests`. Renders: `b8_wpa_base.*` `cmp` `b8_before_base.*`.
+
+### WP-B — bakery, templates, docs
+
+The bakery six (`widgets/__init__.py` re-exports unchanged), five bakery title blocks out of
+`minimal.tcss`, **`templates/` deleted whole** (nine files), and every reference retired:
+
+- Tests: `test_refresh_guard.py` — `TEMPLATE` leaves the bare-worker scan and
+  `test_template_screen_inherits_the_guard` is deleted (its property is structural now: a new
+  screen subclasses `DashboardScreen`, which `test_refresh_guard.py` already collects by
+  `issubclass`); `test_markup_safety.py` — the two `GameLeaderboard` tests are re-targeted to a
+  minimal `TableLeaderboard` subclass defined in the test file, so the hostile-entries property
+  keeps a subject (or deleted if `test_panels.py` already proves it for `TableLeaderboard` — say
+  which, with the test name); `test_sparkline_common.py` — `GameSparklines` leaves
+  `SPARKLINE_WIDGETS`, `test_template_seeds_an_import_not_a_copy` is deleted, module docstring
+  reworded; `test_hidden_shared_address_icons.py` — the template parametrized test deleted,
+  docstring reworded; `test_panels.py` — `"maxpane_dashboard.templates"` leaves the clash scan and
+  the bakery six join the banned-name / migrated scans by an explicit module list (bakery is not a
+  package; the table gains a `"bakery"` entry whose modules are listed, not globbed);
+  `test_title_blank_row.py` — docstring, plus rows for `Leaderboard` and `ActivityFeed`. A **new
+  `tests/widgets/test_bakery_widgets.py`** of composited pins on the same terms as WP-A's. **The 21
+  existing bakery tests do not change**: `git diff --stat` against the branch base shows no edit to
+  `test_activity_feed_degradation.py`, `test_hero_metrics_degradation.py` or
+  `test_ev_table_catalog_source.py`.
+- Docs: `rules/widgets.md` — the `templates/**` frontmatter path goes, the title loses
+  "templates", :143 and :159 say "copy any migrated screen; `screens/ocm.py` is the smallest",
+  :303 drops "or `templates/`", and step 3 is rewritten: reuse ends at the bases and the siblings,
+  `templates/` was deleted in Branch 8 and the sentence about a template drifting ahead of its
+  copies becomes the one-line history of why the bases exist. `CLAUDE.md` — the `templates/` line
+  leaves the Architecture tree, the Known-hazards bullet is deleted, and `templates/` is dropped
+  from the three tier-trigger lists (a trigger on a directory that no longer exists is misleading,
+  not harmless). Docstrings naming a template (`screens/refresh_guard.py:16`,
+  `widgets/sparkline_common.py:11-20`, `widgets/panels.py:8, 271, 411, 612`,
+  `widgets/surf/pool4u_signals.py:3`) are reworded to the past tense — comment-only edits in
+  shared modules, no code line touched.
+
+Named set: the 21 bakery tests, the six edited test files, the new module,
+`test_address_icons_everywhere.py -k bakery`, `tests/test_app_startup.py`,
+`tests/screens/test_refresh_guard.py`, every file `rg -n 'CLAUDE\.md|README\.md|SKILL\.md|rules/'
+tests/` names, `-m guard tests`. Renders: `b8_wpb_bakery.*` `cmp` `b8_before_bakery.*`, and
+`b8_wpb_base.*` `cmp` `b8_wpa_base.*` (the docstring edits in `panels.py` must move nothing).
+
+### Tests
+
+- Every new constant is pinned by a composited test that names its mutation, and the outcome
+  paragraph proves each with "mutation → test that reddened". A mutation that reddens nothing is a
+  test that cannot fail (Branch 7 WP-B found one; the rule stands).
+- Test-name lists of every edited test file are diffed against the branch base before each commit
+  and the diff is stated (deletions in WP-B are the four template tests named above and nothing
+  else).
+- One implementer per WP, sequential, single writer to the tree; one opus reviewer per diff with
+  the CLAUDE.md contract verbatim; fix rounds capped at 2 with a scoped re-review; full suite once
+  on the branch head by the controller; the owner's untracked files never touched.
+
+### Docs
+
+`rules/widgets.md` as above, plus the Panels section's `MIGRATED_PACKAGES` table gaining
+`base.overview` and `bakery` and a line on `fmt_signal_trailing`. `CLAUDE.md` as above. Outcome
+paragraphs here per WP with the per-file line table, the render-diff result, the mutation table
+and any deviation. Follow-up #27 (a sixth base for the six two-column boards) filed with this
+section.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

@@ -291,3 +291,19 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     attacker-named token would otherwise turn its row into `● unavailable` or inject a style, not
     that it would crash the app. Docstring-only. **Minor, Tier 0** with #24 when `panels.py` is
     next touched (seen in passing during the WP-B re-review closure, 2026-09-20).
+
+## Branch 8 — panels, base terminal and bakery
+
+27. **Six copies of the two-column "best plays" board and no base for it.** `widgets/ev_table.py`,
+    `widgets/base/overview/bt_best_plays.py`, `widgets/cattown/ct_best_plays.py`,
+    `widgets/dota/dota_best_plays.py`, `widgets/frenpet/overview/fp_best_plays.py` and
+    `widgets/frenpet/wallet/fpw_best_plays.py` are one shape — a title, a header line, a blank,
+    then N rows of `left-rank  name  value │ right-rank  name  value` — differing in column widths,
+    cell formatters and row count. Branch 7 WP-A noted the first two copies; the Branch 8 survey
+    counted six. Branch 8 puts `EVTable` and `BTBestPlays` on `PanelBase` with their own
+    `compose_body`, as `OCMSupplyBreakdown` is, and does not add a base: a sixth base is a design
+    decision over six packages, not an append-only extension, and touching cattown, dota and
+    frenpet again is outside §3.4c. **Tier 2 when picked up** (a new shared widget base): a
+    `TwoColumnBoard(PanelBase)` with `COLUMNS`, `ROW_CAP` and a `build_row(index, left, right)` hook,
+    migrated one package at a time behind render-diff captures (filed 2026-09-20 with the Branch 8
+    plan section).
