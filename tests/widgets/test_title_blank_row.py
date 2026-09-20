@@ -48,7 +48,11 @@ from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.widgets.cookie_chart import CookieChart
 from maxpane_dashboard.widgets.ev_table import EVTable
 from maxpane_dashboard.widgets.signals_panel import SignalsPanel
+from maxpane_dashboard.widgets.base.overview.bt_activity_feed import BTActivityFeed
 from maxpane_dashboard.widgets.base.overview.bt_best_plays import BTBestPlays
+from maxpane_dashboard.widgets.base.overview.bt_overview_leaderboard import (
+    BTOverviewLeaderboard,
+)
 from maxpane_dashboard.widgets.base.overview.bt_signals import BTSignals
 from maxpane_dashboard.widgets.base.overview.bt_sparklines import BTSparklines
 from maxpane_dashboard.widgets.cattown.ct_activity_feed import CTActivityFeed
@@ -132,6 +136,19 @@ _PANELS = [
     ("BTSparklines", BTSparklines, {"volume_history": _SERIES}),
     ("BTSignals", BTSignals, {}),
     ("BTBestPlays", BTBestPlays, {}),
+    # Added with Branch 8 WP-A, when the package moved onto `widgets/panels.py`:
+    # both blank rows used to come from `minimal.tcss` alone (`.bto-lb-title`
+    # and `.bto-feed-title` margins this branch deletes), so neither was
+    # covered. `{}` is enough for the table -- the empty state still paints
+    # the column header on row 2 -- and the feed needs one token, because an
+    # empty poll paints its placeholder one row lower than its header sits.
+    ("BTOverviewLeaderboard", BTOverviewLeaderboard, {}),
+    ("BTActivityFeed", BTActivityFeed, {
+        "whale_trades": [{
+            "symbol": "DEGEN", "volume_24h": 1_200_000.0, "buys_24h": 60,
+            "sells_24h": 40, "price_change_24h": 12.0, "liquidity": 500_000.0,
+        }],
+    }),
     # -- cattown ----------------------------------------------------------
     ("CTSparklines", CTSparklines, {"prize_pool_history": _SERIES}),
     ("CTSignals", CTSignals, {}),

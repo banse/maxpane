@@ -1,13 +1,34 @@
-"""Volume activity feed for the Base Trading Overview view."""
+"""Volume activity feed for the Base Trading Overview view.
+
+The log, the placeholder contract and the per-row guard are
+:class:`~maxpane_dashboard.widgets.panels.RichLogFeed`'s (Branch 8, WP-A),
+in **stream** mode: this is the copy's own behaviour -- a poll that brings
+no tokens leaves the ranking on screen -- and the placeholder is now written
+once rather than once per empty poll (the pre-migration capture showed
+``No activity yet`` twice after the two refreshes a mount performs). The
+panel is a ranking of tokens by 24h volume, so every poll is the whole
+list: ``dedupe_key`` returns ``None`` and every poll redraws.
+
+Two things the base's ``Text`` contract had to keep from the copy's markup
+strings: the column **header** the copy wrote above the rows, which is
+:attr:`~maxpane_dashboard.widgets.panels.RichLogFeed.HEADER_LINE` here, and
+the ``ReprHighlighter`` that ``RichLog`` applies to a ``str`` it is handed
+and *not* to a ``Text`` -- the row applies it itself, so the numbers keep
+the colour they had.
+"""
 
 from __future__ import annotations
 
-import time
+from rich.highlighter import ReprHighlighter
+from rich.text import Text
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import RichLog, Static
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import RichLogFeed
+
+#: What ``RichLog(highlight=True)`` runs over a *string* row before painting
+#: it (its own default is this same class). A ``Text`` row bypasses that, so
+#: the migrated row runs it here to keep the copy's pixels.
+_HIGHLIGHT = ReprHighlighter()
 
 
 def _format_volume(value: float) -> str:
@@ -77,16 +98,23 @@ def _token_to_markup(token: dict) -> str:
     )
 
 
-class BTActivityFeed(Vertical):
+class BTActivityFeed(RichLogFeed):
     """Activity feed showing trending tokens with volume and buy/sell pressure."""
 
+    TITLE = "ACTIVITY"
+
+    LOG_ID = "bto-activity-log"
+
+    #: The column heading over the ranking; a ``str``, so the log parses and
+    #: highlights it exactly as the copy's ``log.write`` did.
+    HEADER_LINE = (
+        f"  [dim]{'':4}  {'Token':<8}  {'Volume':>8}  {'Change':>7}  "
+        f"{'Liq':>8}  {'Buys/Sells':>11}[/]"
+    )
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s, and
+    #: ``minimal.tcss`` states this log's colours.
     DEFAULT_CSS = """
-    BTActivityFeed > .bto-feed-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     BTActivityFeed > RichLog {
         height: 1fr;
         padding: 0 1;
@@ -94,34 +122,14 @@ class BTActivityFeed(Vertical):
     }
     """
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._has_data = False
+    def dedupe_key(self, event: dict) -> str | None:
+        """Always new: the feed is a ranking, re-drawn whole every poll."""
+        return None
 
-    def compose(self) -> ComposeResult:
-        yield Static("ACTIVITY", classes="bto-feed-title")
-        yield RichLog(id="bto-activity-log", wrap=True, highlight=True, markup=True)
+    def format_row(self, event: dict) -> Text:
+        """The copy's markup line, parsed and highlighted as the log did."""
+        return _HIGHLIGHT(Text.from_markup(_token_to_markup(event)))
 
     def update_data(self, whale_trades: list[dict] | None = None) -> None:
         """Show tokens ranked by volume with buy/sell pressure."""
-        log = self.query_one("#bto-activity-log", RichLog)
-        tokens = whale_trades or []
-
-        if not tokens:
-            if not self._has_data:
-                log.write("[dim]  No activity yet[/]")
-            return
-
-        self._has_data = True
-        log.clear()
-        log.auto_scroll = False
-
-        # Header
-        log.write(
-            f"  [dim]{'':4}  {'Token':<8}  {'Volume':>8}  {'Change':>7}  {'Liq':>8}  {'Buys/Sells':>11}[/]"
-        )
-
-        for token in tokens:
-            log.write(_token_to_markup(token))
-
-        self.call_after_refresh(log.scroll_home, animate=False)
+        self.render_events(whale_trades)

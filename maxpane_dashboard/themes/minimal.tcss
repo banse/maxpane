@@ -1045,12 +1045,6 @@ BTOverviewLeaderboard {
     padding: 0 1;
 }
 
-BTOverviewLeaderboard > .bto-lb-title {
-    color: $text-muted;
-    padding: 0 1;
-    margin: 0 0 1 0;
-}
-
 BTOverviewLeaderboard DataTable {
     height: 1fr;
     padding: 0 0;
@@ -1064,10 +1058,6 @@ BTSparklines {
     content-align: center top;
 }
 
-BTSparklines > .bto-chart-title {
-    color: $text-muted;
-}
-
 BTSignals {
     height: 1fr;
     padding: 0 1;
@@ -1076,18 +1066,9 @@ BTSignals {
     content-align: center top;
 }
 
-BTSignals > .bto-sig-title {
-    color: $text-muted;
-}
-
 BTActivityFeed {
     width: 3fr;
     padding: 0 1;
-}
-
-BTActivityFeed > .bto-feed-title {
-    color: $text-muted;
-    margin: 0 0 1 0;
 }
 
 BTActivityFeed RichLog {
@@ -1099,10 +1080,6 @@ BTBestPlays {
     width: 2fr;
     padding: 0 1;
     content-align: center top;
-}
-
-BTBestPlays > .bto-bp-title {
-    color: $text-muted;
 }
 
 /* ── Cat Town screen ───────────────────────────────────────────────── */

@@ -64,8 +64,13 @@ from maxpane_dashboard.widgets.panels import (
     SparklinePanel,
     TableLeaderboard,
     fmt_signal,
+    fmt_signal_trailing,
 )
-from maxpane_dashboard.widgets.sparkline_common import SPARK_CHARS, fmt_compact
+from maxpane_dashboard.widgets.sparkline_common import (
+    SPARK_CHARS,
+    SPARK_WIDTH,
+    fmt_compact,
+)
 
 from tests.widgets.surf_compositing import composite_lines
 
@@ -1171,6 +1176,118 @@ async def test_the_table_keeps_its_columns_cursor_and_zebra() -> None:
         assert [str(c.label) for c in table.columns.values()] == ["#", "Name"]
 
 
+# -- 6b. Branch 8 WP-A: the three append-only extensions ---------------------
+#
+# ``fmt_signal_trailing`` (the older signals row shape the base terminal and
+# bakery share), ``SparklinePanel.SPARK_WIDTH`` and ``RichLogFeed.HEADER_LINE``.
+# Each defaults to what every existing subscriber already had, so the cases
+# above this section stay green unchanged -- and each case here names the
+# mutation it exists to redden.
+
+
+def test_fmt_signal_trailing_with_an_indicator_has_the_three_padded_cells() -> None:
+    """Mutation: any of the three default widths (20 / 12 / 10) -> this
+    reddens. Label padded to 20, value right-aligned in 12, the dot and the
+    indicator padded to 10, exactly ``SignalsPanel._fmt_row``'s branch."""
+    out = fmt_signal_trailing("Late-Join EV", "+$1.20", indicator="positive",
+                              color="green")
+    assert out == (
+        "  [dim]Late-Join EV        [/]"
+        "[bold white]      +$1.20[/]"
+        "  [green]● positive  [/]"
+    ), out
+
+
+def test_fmt_signal_trailing_without_an_indicator_ends_after_the_value() -> None:
+    """Mutation: append the dot when ``indicator is None`` -> this reddens.
+    Bakery's branch for a signal with nothing to indicate."""
+    out = fmt_signal_trailing("Dominance", "42%")
+    assert out == "  [dim]Dominance           [/][bold white]         42%[/]", out
+    assert "●" not in out
+
+
+def test_fmt_signal_trailing_with_an_empty_indicator_is_the_dot_alone() -> None:
+    """Mutation: pad the empty indicator out to ten cells (``● `` plus ten
+    spaces) -> this reddens. The base terminal's rows colour the dot and say
+    nothing after it; ten trailing cells would wrap at the pin width."""
+    out = fmt_signal_trailing("Buy/Sell", "Bullish", indicator="", color="green")
+    assert out.endswith("[/]  [green]●[/]"), out
+    assert out == out.rstrip()
+
+
+def test_fmt_signal_trailing_honours_the_three_width_keywords() -> None:
+    """Mutation: ignore any of ``label_width`` / ``value_width`` /
+    ``indicator_width`` -> this reddens."""
+    out = fmt_signal_trailing("L", "v", indicator="i", label_width=3,
+                              value_width=4, indicator_width=2)
+    assert out == "  [dim]L  [/][bold white]   v[/]  [dim]● i [/]", out
+
+
+def test_fmt_signal_trailing_escapes_a_hostile_value_and_keeps_its_width() -> None:
+    """Mutation: drop either ``safe_markup`` call, or escape *before*
+    padding -> this reddens. A value spelled ``[red]x`` renders literally
+    and still occupies twelve cells: the escape's backslash is consumed by
+    the parser, so the padding has to be applied to the raw string."""
+    out = fmt_signal_trailing("Sym", "[red]x", indicator="[/x]", color="green")
+    assert "\\[red]x" in out, out
+    assert "\\[/x]" in out, out
+    assert out.count("[red]x") == 1 and "[/x]" not in out.replace("\\[/x]", ""), out
+    rendered = Text.from_markup(out).plain
+    assert rendered == f"  {'Sym':<20}{'[red]x':>12}  ● {'[/x]':<10}", rendered
+
+
+class _NarrowSparks(_Sparks):
+    LINE_IDS = ("t-nspark-0",)
+    SPARK_WIDTH = 20
+
+
+async def test_spark_width_is_the_bars_cell_count() -> None:
+    """Mutation: ``build_sparkline_from_points(pts)`` without
+    ``width=self.SPARK_WIDTH`` -> this reddens. The base terminal draws 20,
+    bakery's cookie chart 30, everyone else the shared 22 -- and the
+    default is that 22, so ``_Sparks`` above still draws what it drew."""
+    narrow = await _lines(_NarrowSparks, points=_SERIES)
+    assert sum(ch in SPARK_CHARS for ch in narrow[2]) == 20, repr(narrow[2])
+    default = await _lines(_Sparks, points=_SERIES)
+    assert sum(ch in SPARK_CHARS for ch in default[2]) == SPARK_WIDTH == 22, (
+        repr(default[2])
+    )
+
+
+class _HeadedFeed(_Feed):
+    LOG_ID = "t-hfeed-log"
+    HEADER_LINE = "[dim]  # header row[/]"
+
+
+async def test_a_header_line_is_written_above_the_rows_on_every_paint() -> None:
+    """Mutation: drop the ``HEADER_LINE`` write in ``render_events`` -> this
+    reddens. Title, blank, header, then the rows; a second poll re-paints
+    it once, never twice."""
+    rows = await _lines(_HeadedFeed, polls=[
+        {"events": [{"n": 1, "tx_hash": "a"}]},
+        {"events": [{"n": 2, "tx_hash": "b"}]},
+    ])
+    assert rows[2].strip() == "# header row", rows[:6]
+    assert "event" in rows[3], rows[:6]
+    assert sum("# header row" in r for r in rows) == 1, rows[:8]
+
+
+async def test_a_header_never_stands_over_an_empty_table() -> None:
+    """Mutation: drop the ``clear()`` on the ``written == 0`` path -> this
+    reddens. Rows arrived and none could be shown: the placeholder alone,
+    no heading above nothing."""
+    rows = await _lines(_HeadedFeed, events=[{"bad": True, "n": 0}])
+    assert not any("# header row" in r for r in rows), rows[:6]
+    assert rows[2].strip() == "No activity yet", rows[:6]
+
+
+async def test_a_feed_without_a_header_line_writes_none() -> None:
+    """The default. Mutation: seed ``HEADER_LINE`` with a string -> this
+    reddens, and so does every pre-existing feed test above."""
+    rows = await _lines(_Feed, events=[{"n": 1, "tx_hash": "a"}])
+    assert rows[2].strip() == "event 1", rows[:6]
+
+
 # -- 7. Agreement: the migrated packages carry no copy of what the bases own --
 
 
@@ -1186,8 +1303,15 @@ async def test_the_table_keeps_its_columns_cursor_and_zebra() -> None:
 #: panels had all been deleted). It is the hand-checked number of panels,
 #: and it reddens when one is dropped, renamed out of ``__all__``, or added
 #: without being put on a base. It is **per package** because the packages
-#: genuinely differ: talismans and ttt export seven each, these three six.
-MIGRATED_PACKAGES = {"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7}
+#: genuinely differ: talismans and ttt export seven each, the others six.
+MIGRATED_PACKAGES = {
+    "ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7,
+    # Branch 8 WP-A. A dotted name: ``_package`` imports
+    # ``maxpane_dashboard.widgets.base.overview`` and the walk globs its six
+    # ``bt_*.py`` modules (``BTHeroBox`` has no ``update_data``, so the row
+    # exports seven names and the count is six).
+    "base.overview": 6,
+}
 
 
 def _package(name: str):
@@ -1322,6 +1446,7 @@ def test_panels_defines_the_shared_strings_exactly_once() -> None:
         "RichLogFeed",
         "TableLeaderboard",
         "fmt_signal",
+        "fmt_signal_trailing",
     ]
 
 
