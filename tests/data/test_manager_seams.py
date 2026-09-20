@@ -562,6 +562,27 @@ async def test_the_ttt_manager_seam_serves_the_same_payload(
     assert set(data) == legacy_keys
 
 
+async def test_a_falsy_injected_ocm_client_is_still_the_injected_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``client or OCMClient()`` built a real network client for any falsy
+    injected object; the seam reads ``is None`` like the other seven managers
+    (whole-branch review Minor 4). Revert the ``or`` and this reddens on the
+    identity assert -- the ordinary seam test cannot see it because its fake
+    is truthy."""
+    _forbid_home(monkeypatch)
+    monkeypatch.setattr(ocm_manager_mod, "OCMClient", _NoNetworkClient)
+
+    class _FalsyClient(_NoNetworkClient):
+        def __bool__(self) -> bool:
+            return False
+
+    fake = _FalsyClient()
+    mgr = OCMManager(poll_interval=60, client=fake, cache_file=tmp_path / "c.json")
+    assert mgr.client is fake, "a falsy injected client was replaced by a real one"
+    assert mgr._cache_file == tmp_path / "c.json"
+
+
 async def test_the_ocm_manager_seam_serves_the_same_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

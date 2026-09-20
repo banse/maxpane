@@ -674,7 +674,10 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     is never in a log pool; the code records the rejection (`ttt_client.py:143`, `talismans_client.py:94`) and
     `fwa_logs.LOG_ENDPOINTS:215-220` is a whitelist checked in `__init__`, but no test asserts the absence by
     hostname across the nine pools. One parametrised test in `test_rpc_shared.py` next to
-    `test_state_and_log_endpoint_pools_stay_separate:427`. **Minor, Tier 0.**
+    `test_state_and_log_endpoint_pools_stay_separate:427`. **Minor, Tier 0.** Branch 10 WP-B made the first
+    injectable talismans log pool (`log_rpcs=`) and its construction gate scans it against `_BANNED_RPC_HOSTS`,
+    which does not carry `rpc.flashbots.net`; add the host by hostname to ttt's set and talismans' mirror in the
+    same change (the agreement test binds them) so a library caller cannot configure it either.
 
 62. **Three `@lru_cache(maxsize=1)` ABI/topic loaders in `fwa_logs.py` (`:272`, `:283`, `:743`) return mutable
     dicts.** Process-global and shared by reference; a caller that edits the returned dict edits it for every
@@ -782,3 +785,13 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     fwa test could tell `rpc_common.pace` from the inline block WP-C replaced; the equivalence rests on the review's
     out-of-tree harness plus `pace`'s own tests. Add one test at a non-zero interval with a faked clock and sleep
     that asserts the second call waits `interval − elapsed`. **Minor, Tier 0** when the file is next touched.
+
+## Branch 10 — whole-branch review Minor (2026-09-20)
+
+74. **`PriceClient()` is built unconditionally in two seam managers.** `ttt_manager.py:134` and
+    `frenpet_manager.py:100` construct a `PriceClient` with no keyword to inject one, so `TTTManager(client=fake)`
+    still owns a live HTTP client, and `tests/data/test_manager_seams.py` must monkeypatch the module-level name to
+    keep the socket closed — the import-time coupling the data-layer-as-library constraint exists to remove.
+    `client.py:72` already has the `price_client or PriceClient()` shape to copy (use `is None`). Add a keyword-only
+    `price_client=None` to both, assert identity in the seam tests, drop the two monkeypatches. **Minor, Tier 1 per
+    manager** (manager + seam test + the manager's own test file).

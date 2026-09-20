@@ -216,7 +216,8 @@ per package, reviewer contract, full suite once before merge.
    in `rules/data.md` are the spec; `tests/fixtures/surf/pool4/rpc_error_states.json`,
    `log_range_messages.json` and `tests/fixtures/fwa/rpc_errors.json` are the classifier's evidence.
 7. Afterwards, rewrite "Reuse before you build" in `rules/widgets.md` as the new-dashboard
-   checklist: models keys → `OwnedHttpClient` + `RpcPool` config → `SeriesCache` subclass →
+   checklist: models keys → `OwnedHttpClient` + bound `rpc_classify` tables + endpoint pools →
+   `SeriesCache` subclass →
    manager → `DashboardScreen` subclass with `PANELS` → panel subclasses → `SweepCase` in
    `tests/address_sweep/builders.py` → six-surface registration. A new dashboard should be
    ~600 lines of configuration plus hooks instead of ~4,200.

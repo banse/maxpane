@@ -56,11 +56,11 @@ class OCMManager:
         cache: OCMCache | None = None,
         cache_file: Path | str | None = None,
     ) -> None:
-        self.client = client or OCMClient()
+        self.client = OCMClient() if client is None else client
         self.cache = OCMCache(max_history=120) if cache is None else cache
         self._poll_interval = poll_interval
         self._error_count = 0
-        self._cache_file = Path(cache_file) if cache_file else _CACHE_FILE
+        self._cache_file = _CACHE_FILE if cache_file is None else Path(cache_file)
 
         # Ensure cache directory exists
         self._cache_file.parent.mkdir(parents=True, exist_ok=True)

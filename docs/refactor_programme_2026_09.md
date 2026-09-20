@@ -45,7 +45,7 @@ files; the commit message is the evidence.
 | 7 | `refactor/panels-small-four` | §3.4b | 2 | ~2,000 | cattown / dota / talismans / ttt widget + screen tests |
 | 8 | `refactor/panels-bt-bakery` | §3.4c | 2 | ~800 | base + bakery tests; templates deleted; `rules/widgets.md` step 3 |
 | 9 | `refactor/series-cache` | §3.6a | 2 | +179 net measured (six caches −276, base +434) | `tests/data/test_*_cache.py` unchanged, `test_series_cache.py` (new, fixture round-trips) |
-| 10 | `refactor/rpc-pool` | §3.6b | 2 | option B (owner, 2026-09-20); measured at closure `269beda..de27166 -- maxpane_dashboard/`: +869/−321 = **+548 net** — `rpc_classify.py` +361 (tables, predicates and the documented flips), five binding clients −30, twelve seam files +245 (keyword-only constructor seams and docstrings), `fwa_logs.py` −15; the estimate of −100/+150 undercounted the documentation the hoist carries; the ~700 removal assumed the declined full `RpcPool` | `test_rpc_classify.py` (new, fixture-driven), `test_manager_seams.py` (new); seven client test files and all eight manager test files byte-unchanged |
+| 10 | `refactor/rpc-pool` | §3.6b | 2 | option B (owner, 2026-09-20); measured at closure `269beda..de27166 -- maxpane_dashboard/`: +869/−321 = **+548 net** — `rpc_classify.py` +361 (tables, predicates and the documented flips), five binding clients −30 (cattown_client's seam +25 counted here), eleven seam files +220 (eight managers, ocm/frenpet/talismans clients: keyword-only constructor seams and docstrings), `rpc_common.py` +12, `fwa_logs.py` −15 — sums to +548; head `a788ba4` is +878/−326 after the WP-C-review folds; the estimate of −100/+150 undercounted the documentation the hoist carries; the ~700 removal assumed the declined full `RpcPool` | `test_rpc_classify.py` (new, fixture-driven), `test_manager_seams.py` (new); seven client test files and all eight manager test files byte-unchanged |
 | 11 | docs | §3.7 | 0 | 0 | doc-pinning tests |
 
 Branch 0 first: it touches `app.py`, `copy_action.py`, `clipboard.py` and one test, nothing
@@ -3418,8 +3418,9 @@ via `__new__` and patches the module `_CACHE_FILE`; (2) no `*_KEYS` tuple exists
 so those seam tests compare against a legacy-built reference key set instead of an imported contract — follow-up #68;
 (3) patching `Path.home` cannot catch a manager ignoring `cache_path` because `_CACHE_DIR` is evaluated at import, so
 the biting guard redirects the module default to `tmp_path/forbidden` and asserts it is never created; (4) talismans
-had no ban check at all (the brief described ttt's); `rpc.flashbots.net` deliberately not added because the check
-covers the state pool and rules/data.md bans it from log pools only.
+had no ban check at all (the brief described ttt's); `rpc.flashbots.net` not added: no shipped pool carries it and
+ttt's set, which talismans mirrors under an agreement test, does not either — the whole-branch review (Minor 3) noted
+that the new gate DOES scan the injectable log pool, so adding the host by hostname to both sets is #61's job.
 
 **WP-B review (2026-09-20, `git diff 9b77ae1..7ee4470`, opus): Needs fixes — 0 Critical, 2 Important, 6 Minor; the
 production diff was found clean.** Signature-diffed all twelve constructors against `9b77ae1`: every new parameter
@@ -3542,6 +3543,32 @@ AST-shaped re-declaration guard, the P4 self-check and the talismans↔ttt agree
 #60–#73. `HANDOVER.md` §3 item 6 rewritten to option B with `RpcPool` declined; `rules/data.md` gained the
 classification paragraph. Whole-branch review and the single full suite follow in the closure sequence below.
 
+
+**Whole-branch review (2026-09-20, `git diff 269beda..a788ba4`, opus): Approved — 0 Critical, 0 Important, 5 Minor.**
+Check 1: all eight managers built out of tree with a raise-on-everything client and `Path.home` raising; 14/14 bound
+tables are the `rpc_classify` objects by identity; sizes ETH 24 / BASE 15 / RANGE 5 / RESULT 7 / CODES 5. Check 2:
+acceptance byte-unchanged (seven client files, eight manager files, `test_app_startup.py`; `tests/` diff is exactly
+the two new files, `test_rpc_shared.py` and P5's one-token change); 31 committed error bodies × 7 spans × 10 predicates
+= 2,170 cells per tree against a read-only `269beda` worktree — 9 differing cells, all curator's range predicate: the
+drpc/1rpc/blastapi "named limit already met" rows flip to rotate (P3) and mevblocker's honest cap flips to shrink (the
+disclosed widening, pinned by `test_rpc_classify.py`'s hand-typed row and its own test); both kind-classifiers
+unchanged cell for cell. Check 3: 46 URL literals in each tree, zero added or removed; three module-level env
+fallbacks + three construction-time reads, no new variable; no key/signer/clipboard/socket line added; flashbots in no
+pool; the two new test files run in 1.62 s under a dead proxy. Check 4: importing all 100 `data/` + `analytics/`
+modules leaves no `textual`/`rich` in `sys.modules`; the only file written is the injected cache path;
+`~/.maxpane` byte-identical. Check 5: every figure re-measured true; guard 198; #60–#73 present. Check 6: six new
+mutations (import-leaf, an `AnnAssign` literal in cattown, a P4 table turned binding, flashbots ADDED to talismans'
+set, the log-pool arm dropped from the gate, talismans save-only revert) each reddened exactly the advertised test.
+Minors: 1 `HANDOVER.md` item 7 still prescribed "`RpcPool` config" — **folded**; 2 row 10's split summed to +561 (the
+seam group double-counted `cattown_client`, `rpc_common` +12 was in no group) — **folded**; 3 the WP-B outcome's
+justification for leaving flashbots out of talismans' ban set no longer matched a gate that scans the log pool —
+**folded** (sentence corrected; the by-hostname ban is #61); 4 `ocm_manager.py` used truthiness (`client or
+OCMClient()`, `if cache_file`) where the other seven read `is None`, so a falsy injected client silently built a real
+one — **folded** with a regression test; 5 `PriceClient()` is built unconditionally in `ttt_manager` and
+`frenpet_manager`, a second un-injectable client the seam tests must monkeypatch — **filed #74** and added to the
+"Later phases" inventory. Named runs: three new files 126; guard 198; seven client acceptance files 773; manager set
+186. Fix wave committed as the next commit; scoped re-review follows.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
@@ -3562,7 +3589,8 @@ classification paragraph. Whole-branch review and the single full suite follow i
   the constructor seams (client, cache, cache path, env reads at construction, talismans log pool). Remaining
   after it: a process-level rate limiter for N concurrent clients against keyless hosts (#60), the FrenPet
   shared-cache hold that lives in `app.py:123-136` rather than the data layer (#63), `poll_interval` in every
-  manager signature (#64), the three `@lru_cache` ABI loaders in `fwa_logs.py` returning mutable dicts (#62).
+  manager signature (#64), the three `@lru_cache` ABI loaders in `fwa_logs.py` returning mutable dicts (#62), and
+  the unconditional `PriceClient()` in `ttt_manager` and `frenpet_manager` — a second, un-injectable client (#74).
 - **`RpcPool` as HANDOVER §3.6b wrote it — declined 2026-09-20 (owner chose option B).** Reasons in the Branch
   10 section: nine individually tested error policies, seven fragments whose meaning flips between clients,
   ~1,053 tests in the blast radius, and the "~700 lines" only reachable by deleting pinned policy. Revisit only
