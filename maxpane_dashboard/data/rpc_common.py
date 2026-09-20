@@ -57,8 +57,9 @@ shared here. The policy stays where the knowledge is.
 
 ``OwnedHttpClient`` reaches slightly wider than JSON-RPC -- all eight
 ``*_client.py`` modules had the same three lifecycle methods, including the
-pure-HTTP ones (``base``, ``dota``, ``frenpet``) -- so it lives here rather
-than in a ninth module of its own.
+pure-HTTP ones (``base``, ``dota``, ``frenpet``), and since Branch 10 WP-C
+``curator_nft_holders`` and ``fwa_logs`` mix it in too -- so it lives here
+rather than in a module of its own.
 
 One line has since been drawn through the middle of "the policy stays where
 the knowledge is", and it is worth naming: the *message fragment tables* those
@@ -102,7 +103,9 @@ def jsonrpc_payload(request_id: int, method: str, params: list) -> dict[str, Any
     """Build one JSON-RPC 2.0 request envelope.
 
     The one part of the transport that is protocol, not policy -- and so the
-    one part that was identical in all five RPC clients.
+    one part that was identical in all five RPC clients, and now built here
+    by every module that speaks JSON-RPC (``JSONRPC_MODULES`` in
+    ``tests/data/test_rpc_shared.py`` lists them).
     """
     return {
         "jsonrpc": "2.0",
@@ -137,8 +140,9 @@ async def pace(last_call_at: float, min_interval: float) -> float:
 class OwnedHttpClient:
     """Lifecycle for a client that may or may not own its ``httpx`` client.
 
-    Mixed into all eight ``*_client.py`` classes, each of which set the same
-    two attributes in ``__init__`` and then repeated the same three methods::
+    Mixed into all eight ``*_client.py`` classes -- plus ``NftHolderClient``
+    and ``FWALogClient`` since Branch 10 -- each of which set the same two
+    attributes in ``__init__`` and then repeated the same three methods::
 
         self._client = http_client or httpx.AsyncClient(...)
         self._owns_client = http_client is None

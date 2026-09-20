@@ -45,7 +45,7 @@ files; the commit message is the evidence.
 | 7 | `refactor/panels-small-four` | §3.4b | 2 | ~2,000 | cattown / dota / talismans / ttt widget + screen tests |
 | 8 | `refactor/panels-bt-bakery` | §3.4c | 2 | ~800 | base + bakery tests; templates deleted; `rules/widgets.md` step 3 |
 | 9 | `refactor/series-cache` | §3.6a | 2 | +179 net measured (six caches −276, base +434) | `tests/data/test_*_cache.py` unchanged, `test_series_cache.py` (new, fixture round-trips) |
-| 10 | `refactor/rpc-pool` | §3.6b | 2 | option B (owner, 2026-09-20): classifier hoist ≈ −100, library seams ≈ +150 — measured at closure; the ~700 estimate assumed the declined full `RpcPool` | `test_rpc_classify.py` (new, fixture-driven), `test_manager_seams.py` (new); seven client test files byte-unchanged |
+| 10 | `refactor/rpc-pool` | §3.6b | 2 | option B (owner, 2026-09-20); measured at closure `269beda..de27166 -- maxpane_dashboard/`: +869/−321 = **+548 net** — `rpc_classify.py` +361 (tables, predicates and the documented flips), five binding clients −30, twelve seam files +245 (keyword-only constructor seams and docstrings), `fwa_logs.py` −15; the estimate of −100/+150 undercounted the documentation the hoist carries; the ~700 removal assumed the declined full `RpcPool` | `test_rpc_classify.py` (new, fixture-driven), `test_manager_seams.py` (new); seven client test files and all eight manager test files byte-unchanged |
 | 11 | docs | §3.7 | 0 | 0 | doc-pinning tests |
 
 Branch 0 first: it touches `app.py`, `copy_action.py`, `clipboard.py` and one test, nothing
@@ -3481,6 +3481,66 @@ test asserts `==` and `fwa − ttt == {"eth.drpc.org"}` and reddens on one delet
 only the log-pool arm and reddens on dropping `*self._log_rpcs`. New Minor filed: #70 (`cache=` identity asserted for
 frenpet and ocm only; six of eight `cache=` seams delete green). Named runs: two changed files 68; 18-file set 573;
 guard 194; five screen files 48. 24 mutations, inverse-edit restored, tree clean after each.
+
+
+**WP-C outcome (2026-09-20, commit de27166, 2 files, +172/−43; `fwa_logs.py` +13/−28).** All four brief items were
+found behaviour-identical after a statement-by-statement diff and replaced: `_ENDPOINT_DEAD_CODES` → import alias of
+`rpc_common.ENDPOINT_DEAD_CODES` (sole use is `in`; frozenset reads as the set did); `_payload` → `jsonrpc_payload`
+(key-for-key and order-for-order identical; no fwa request fixture exists to pin bytes; the per-instance
+`_request_id` increment stays); `_post`'s inline pacing → `pace` (`__init__` stores `max(0.0, float(...))`, so
+truthiness ⟺ `> 0`; same elapsed point, same sleep, same stored timestamp; the no-sleep path makes one
+`monotonic()` call instead of two, and nothing patches it); `FWALogClient(OwnedHttpClient)` with its identical
+`close`/`__aenter__`/`__aexit__` deleted, `_client`/`_owns_client` kept in `__init__`. Deliberately LEFT:
+`fwa_logs._strip0x` also strips uppercase `0X` where `evm_abi.strip0x` does not — binding it would change every FWA
+log decoder on an uppercase prefix — so it stays under a per-NAME `CODEC_EXEMPTIONS` entry pinned by a divergence test
+that reddens the day the two agree (never a module skip); `fwa_logs` stays out of `RPC_CLIENTS` (that list asserts a
+`_rpc` it lacks) and the positive envelope guard moved to a wider `JSONRPC_MODULES` instead of a parametrised skip.
+`ALL_CLIENTS` gained `curator_nft_holders` and `fwa_logs` (both non-`*_client.py` modules the MEDI-17 glob never saw),
+so five codec/lifecycle/dead-code guards now scan them. M5 done: `test_error_pattern_tables_are_not_re_declared`
+walks top-level `Assign`/`AnnAssign` nodes and requires every value node to be `Name`/`Attribute`/`BinOp(Add)` — a
+deviation from the brief's bare-Name wording because `curator_client.py:253` composes two shared families on purpose
+(P2); any `Constant`/`Tuple`/`List`/`Set`/`Dict`/`Call` fails. P4 allow-set `_P4_LOCAL_TABLES` (talismans'
+`_RESULT_CAP_MARKERS`/`_RANGE_CAP_MARKERS`, fwa_logs' `_RESULT_CAP_MARKERS`) cites P4/#65, with two anti-vacuity
+defences: the walk must have SEEN ttt's, curator's, fwa_logs' and every exempted table, and a new guard test asserts
+each exempted table is still a literal that would otherwise fail. Mutations: re-added dead-codes literal in fwa_logs
+→ exactly the dead-codes guard (1F/140P, all 78 acceptance green); ttt `= tuple(["x"])` → exactly the AST guard,
+allow-set entries green, and the OLD substring guard shown blind to it; mixin dropped → the lifecycle guard AND 21 of
+78 `test_fwa_logs.py` on `AttributeError` at `close()`. Acceptance: `test_fwa_logs.py` byte-unchanged, 78/78; only
+`test_rpc_shared.py` under `tests/` in the diff. Named runs: five data files 271→279; +4 neighbours 403; guard
+194→195; `test_fwa_screen.py` 22. Minors raised by the implementer: `evm_abi.strip0x` does not strip `0X` (→ #71);
+`rpc_common`'s "all eight / all five" docstring counts and three unmarked source-reading tests (folded in the
+closure commit).
+
+**WP-C review (2026-09-20, `git diff 61e0c53..de27166`, opus): Approved — 0 Critical, 0 Important, 6 Minor.** The
+three claims the controller singled out all hold: (a) the `+`-admitting AST rule requires every node of the value
+expression to be `Name`/`Attribute`/`BinOp`/`Add`/`Load`, so `SHARED + ("x",)` and `SHARED + tuple([...])` both redden
+the guard while curator's P2 composition stays green; (b) `CODEC_EXEMPTIONS` is per name — making `_strip0x`
+identical to the shared helper reddens exactly the divergence test, and a second forbidden def in fwa_logs still
+reddens two codec guards; (c) pacing: `_min_call_interval` is assigned once as `max(0.0, float(...))`, so truthiness
+is `> 0`; both bodies run side by side out of tree with a faked sleep over seven boundary cases (first call at 0.05
+and at 0, interval 0 with a recent last call, 1 ms, 1 s, negative last call, NaN through `max`) gave identical sleep
+counts and durations; `jsonrpc_payload` bytes identical to the deleted literal. The `fwa_logs.py` diff is six hunks,
+none touching the classifier, markers, learned window, scanner or endpoint list. Nine mutations, each reddening the
+advertised test; the `_payload` revert left all 78 acceptance tests green (behaviour-neutral by construction). Minors:
+1 the AST walk read only the top level, so a nested `if True:` restatement in `surf_client.py` passed (63 green),
+caught in ttt only via the three anchored pairs — **folded**: the walk now descends every module-scope compound
+statement and stops at function/class bodies, and `_BOUND_TABLES_TODAY` anchors all nine (module, table) pairs;
+controller mutations: nested restatement ADDED beside surf's binding → exactly the guard red; surf's binding renamed
+→ exactly the guard red. 2 `fwa_logs._addr_topic` / `_word` / `_uint` restate `evm_abi` codec arithmetic under other
+names (→ #71). 3 the `0X` divergence the exemption protects is exercised by no test — all 78 acceptance tests stay
+green with the copy made identical (→ #71). 4 `rpc_common.py` docstrings "all eight" (×2) / "all five" — **folded**.
+5 `_CLASSIFIER_SOURCES` and `ALL_CLIENTS` disagree about which non-`*_client.py` modules count (→ #72). 6 fwa's
+pacing path is exercised only at `min_call_interval=0.0` while production runs 0.05 (→ #73). The implementer's
+three-marker Minor is **folded** (guard set 195 → 198). Named runs: two changed files 141; eight-file set 443; guard
+195; `test_fwa_screen.py` 22. Tree clean after every restore.
+
+**Branch 10 closure (2026-09-20).** Three work packages, all Approved (WP-A 0C/0I/7M; WP-B 0C/2I/6M → fix round →
+both ADDRESSED; WP-C 0C/0I/6M). Production `269beda..de27166 -- maxpane_dashboard/`: +869/−321, net +548 (row 10 has
+the split). Acceptance held throughout: seven client test files, all eight manager test files, `test_fwa_logs.py` and
+`test_app_startup.py` byte-unchanged. New tests: `test_rpc_classify.py` (50), `test_manager_seams.py` (13), plus the
+AST-shaped re-declaration guard, the P4 self-check and the talismans↔ttt agreement in `test_rpc_shared.py`. Filed
+#60–#73. `HANDOVER.md` §3 item 6 rewritten to option B with `RpcPool` declined; `rules/data.md` gained the
+classification paragraph. Whole-branch review and the single full suite follow in the closure sequence below.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

@@ -237,6 +237,7 @@ def test_the_codec_is_actually_reached_by_the_clients() -> None:
         assert module._pad_address is evm_abi.pad_address
 
 
+@pytest.mark.guard
 def test_the_aggregate3_selector_has_one_value() -> None:
     """FWA's selector table and the shared codec must not drift apart.
 
@@ -329,6 +330,7 @@ def test_decode_address_zero_fills_an_empty_word() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.guard
 def test_dead_endpoint_codes_are_not_re_declared() -> None:
     """The 10-code set was copied four ways; it must live in one place.
 
@@ -375,6 +377,21 @@ _P4_LOCAL_TABLES = {
     ("fwa_logs.py", "_RESULT_CAP_MARKERS"),
 }
 
+#: Every (module, table) pair that binds a shared table today. The walk must
+#: reach each of them; a pair that vanishes from ``seen`` means the binding
+#: was deleted, renamed or moved somewhere the guard cannot read.
+_BOUND_TABLES_TODAY = {
+    ("ttt_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
+    ("curator_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
+    ("curator_client.py", "_RANGE_LIMITATION_PATTERNS"),
+    ("surf_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
+    ("surf_client.py", "_RANGE_LIMITATION_PATTERNS"),
+    ("surf_pool4_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
+    ("surf_pool4_client.py", "_RANGE_LIMITATION_PATTERNS"),
+    ("cattown_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
+    ("fwa_logs.py", "_RESULT_CAP_MARKERS"),
+}
+
 #: The only node types a binding expression may contain: a name, a dotted
 #: name, and ``+`` between them (``curator_client`` composes two shared
 #: families). A ``Constant``, ``Tuple``, ``List``, ``Set`` or ``Call``
@@ -382,10 +399,31 @@ _P4_LOCAL_TABLES = {
 _BINDING_NODES = (ast.Name, ast.Attribute, ast.BinOp, ast.Add, ast.Load)
 
 
+def _module_scope_statements(body: list[ast.stmt]):
+    """Every statement that runs at import time, nested blocks included.
+
+    A table restated inside ``if TYPE_CHECKING:``, ``try:`` or ``with`` still
+    rebinds the module name, so the walk descends into compound statements but
+    never into a function or class body, whose assignments are locals (WP-C
+    review Minor 1: the top-level-only walk missed a nested restatement).
+    """
+    for node in body:
+        yield node
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for field in ("body", "orelse", "finalbody"):
+            inner = getattr(node, field, None)
+            if isinstance(inner, list):
+                yield from _module_scope_statements(inner)
+        for handler in getattr(node, "handlers", []) or []:
+            yield from _module_scope_statements(handler.body)
+
+
 def _table_assignments(path: Path) -> list[tuple[str, ast.expr]]:
-    """Top-level assignments to a :data:`_SHARED_TABLE_NAMES` name."""
+    """Module-scope assignments to a :data:`_SHARED_TABLE_NAMES` name."""
     found: list[tuple[str, ast.expr]] = []
-    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in _module_scope_statements(tree.body):
         if isinstance(node, ast.Assign):
             targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
@@ -444,9 +482,7 @@ def test_error_pattern_tables_are_not_re_declared() -> None:
 
     # Anti-vacuity: the walk must actually have reached the modules it claims
     # to guard, including the one the old glob could not see.
-    assert ("ttt_client.py", "_ENDPOINT_LIMITATION_PATTERNS") in seen
-    assert ("curator_client.py", "_RANGE_LIMITATION_PATTERNS") in seen
-    assert ("fwa_logs.py", "_RESULT_CAP_MARKERS") in seen
+    assert _BOUND_TABLES_TODAY <= seen, sorted(_BOUND_TABLES_TODAY - seen)
     assert _P4_LOCAL_TABLES <= seen
 
 
@@ -468,6 +504,7 @@ def test_every_p4_exemption_is_still_a_literal_that_would_fail() -> None:
         )
 
 
+@pytest.mark.guard
 def test_jsonrpc_envelope_is_built_in_one_place() -> None:
     assert rpc_common.jsonrpc_payload(7, "eth_call", [{"to": "0x0"}, "latest"]) == {
         "jsonrpc": "2.0",

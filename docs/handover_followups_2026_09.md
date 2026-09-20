@@ -756,3 +756,29 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     passed every time — six of eight `cache=` seams can be deleted green. Same shape as WP-B's I2, one rung down.
     Fix: return the cache from each `_build` as frenpet and ocm already do. **Minor, Tier 0** when that file is next
     touched.
+
+## Branch 10 WP-C — implementer and review Minors (2026-09-20)
+
+71. **`fwa_logs` still carries a private codec.** (a) `fwa_logs._strip0x` (`fwa_logs.py:378`) also strips an
+    uppercase `0X` where `evm_abi.strip0x` (`evm_abi.py:49`) does not, so WP-C could not bind it without changing
+    FWA's decoder on an uppercase prefix; it sits under a per-name `CODEC_EXEMPTIONS` entry in
+    `tests/data/test_rpc_shared.py` pinned by `test_the_one_codec_exemption_is_a_real_divergence`. The review found
+    the divergence exercised by NO test: with the copy made identical all 78 `test_fwa_logs.py` tests stay green (no
+    fixture carries `0X`; JSON-RPC hex is lowercase). (b) `_addr_topic` (`:417`) is `evm_abi.addr_from_topic` under
+    another name and `_word` / `_uint` (`:397`, `:402`) restate `decode_uint`'s word arithmetic; `FORBIDDEN_DEFS` is
+    name-based so they pass, while the `ALL_CLIENTS` comment advertises fwa_logs as codec-clean. Fix: widen
+    `evm_abi.strip0x` to both spellings (eleven callers, a no-op for every live payload), delete the exemption, and
+    bind the three renamed copies. **Minor, Tier 0** (one commit, `test_fwa_logs.py` byte-unchanged as acceptance).
+
+72. **`_CLASSIFIER_SOURCES` and `ALL_CLIENTS` disagree about what a non-`*_client.py` chain module is.**
+    `test_rpc_shared.py` hardcodes `fwa_logs.py` as the single exception to the `*_client.py` glob, while
+    `ALL_CLIENTS` (same file, same diff) also lists `curator_nft_holders`. That module has no error table today, so
+    nothing is missed, but the `ALL_CLIENTS` comment tells the next author to register a new chain module in that
+    dict and says nothing about the second list. Derive `_CLASSIFIER_SOURCES` from `ALL_CLIENTS` (module file paths)
+    so one registration feeds every guard. **Minor, Tier 0** when the file is next touched.
+
+73. **fwa's pacing path is exercised only at `min_call_interval=0.0`.** `tests/data/test_fwa_logs.py:122` builds
+    every client with a zero interval while production runs `_INTER_CALL_DELAY = 0.05` (`fwa_logs.py:257`), so no
+    fwa test could tell `rpc_common.pace` from the inline block WP-C replaced; the equivalence rests on the review's
+    out-of-tree harness plus `pace`'s own tests. Add one test at a non-zero interval with a faked clock and sleep
+    that asserts the second call waits `interval − elapsed`. **Minor, Tier 0** when the file is next touched.
