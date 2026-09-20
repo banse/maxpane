@@ -513,6 +513,23 @@ keyword from `leaderboard_template.py` reddens `[leaderboard_template]`. *M3:*
 (`chainId == "base"`) and `:702` (`mainnet.base.org`). Every mutation restored by inverse edit,
 md5-identical.
 
+**WP-B fix round 2 (2026-09-20; scoped re-review of `ae0ebe0`: all six ADDRESSED, two notes
+filed — N1 Important-shaped, N2 Minor; the controller applied N1).** *N1:* widening curator's
+`explorers` to `(ETHEREUM, BASE)` for its one Base collection made `SweepCase.explorer` decorative
+— E7 checked membership in the set and consulted `explorer_for` only for listed addresses, so a
+mutated `widgets/curator/_fmt.EXPLORER = BASE` (every wallet on Basescan, a wrong page on a
+mainnet dashboard) left the sweep and the curator widget tests green, where `a44cb95` would have
+caught it. `SweepCase` gained `rows_pick_explorer` (surf: `True` — pool4 panels and swarm rows
+choose out of `explorers`); for every other case an address `explorer_for` does not list must link
+on `explorer` itself, and a hash likewise (`_expected_explorer` in the sweep). `__post_init__`
+rejects a set wider than one that nothing is entitled to use, and `rows_pick_explorer` on a case
+with no explorer. Proof: the same mutation now reddens `[curator-wide]` and `[curator-pin]` with
+`link on the wrong explorer` at the hero, RAW/CLEANED and LEADERBOARD wallets (`basescan`), surf's
+two cases stay green; sweep file 43 green on the restored tree. *N2* (per-row sites
+`swarm_throughput.py` and `pool4u_stakers.py` still without a biting widget test) and surf's own
+`_fmt.EXPLORER`, which `rows_pick_explorer` leaves unbound by the sweep, are filed as
+`docs/handover_followups_2026_09.md` #16–#17.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

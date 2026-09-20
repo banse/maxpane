@@ -283,6 +283,25 @@ def _token_ending_at(row: str, cell: int) -> str:
     return token[token.rfind("0x"):] if "0x" in token else token
 
 
+def _expected_explorer(case: SweepCase, value: str):
+    """The one explorer *value* (an address or a hash) must link on, or ``None``
+    for "any member of ``case.explorers``".
+
+    A listed address answers from ``explorer_for``. An unlisted one must link
+    on the package's own ``explorer`` unless the case's rows pick their
+    explorer (surf); a hash is never listed and, on a dashboard whose rows do
+    not pick, is on the package's chain too. This is the half of E7 that keeps
+    ``SweepCase.explorer`` an agreement test for ``widgets/<game>/_chain.py``
+    (or ``_fmt.EXPLORER``) once ``explorers`` is wider than one.
+    """
+    listed = case.explorer_for.get(value.lower())
+    if listed is not None:
+        return listed
+    if case.rows_pick_explorer:
+        return None
+    return case.explorer
+
+
 def _link_at(app, x: int, y: int) -> tuple[tuple | None, str | None]:
     """``(parsed open action, OSC 8 url)`` at cell ``(x, y)``, read the way
     :func:`icon_targets` reads an icon: off ``screen.get_style_at``, the style
@@ -940,6 +959,50 @@ def test_the_region_scan_finds_addresses_only_inside_the_region():
     assert _address_tokens_in_region(rows, Region(0, 1, len(row), 1)) == []
 
 
+def test_an_unlisted_address_must_link_on_the_package_explorer_unless_rows_pick():
+    """E7's expectation for an address ``explorer_for`` does not list.
+
+    Re-review N1 of WP-B: once curator allowed ``(ETHEREUM, BASE)`` for its one
+    Base collection, a mutated ``widgets/curator/_fmt.EXPLORER = BASE`` put every
+    wallet address on Basescan and the sweep stayed green, because membership in
+    ``explorers`` was the only check. Now an unlisted address is held to
+    ``explorer`` itself unless the case says its rows pick (surf), and a case
+    that widens ``explorers`` with nothing entitled to the second one is
+    rejected outright.
+    """
+    from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA
+
+    base_nft = "0x" + "1" * 40
+    wallet = "0x" + "2" * 40
+    common = dict(screen_class=object, build=lambda: None, payload=dict)
+    curator_like = SweepCase(
+        name="c", explorer=ETHEREUM, explorers=(ETHEREUM, BASE),
+        explorer_for={base_nft: BASE}, **common,
+    )
+    assert _expected_explorer(curator_like, base_nft.upper()) is BASE
+    assert _expected_explorer(curator_like, wallet) is ETHEREUM
+    assert _expected_explorer(curator_like, "0x" + "ab" * 32) is ETHEREUM  # a hash
+
+    surf_like = SweepCase(
+        name="s", explorer=ETHEREUM, explorers=(ETHEREUM, SEPOLIA, BASE),
+        rows_pick_explorer=True, **common,
+    )
+    assert _expected_explorer(surf_like, wallet) is None
+    single = SweepCase(name="one", explorer=BASE, **common)
+    assert _expected_explorer(single, wallet) is BASE
+
+    with pytest.raises(ValueError, match="nothing on it may use a second one"):
+        SweepCase(name="wide", explorer=ETHEREUM, explorers=(ETHEREUM, BASE), **common)
+    with pytest.raises(ValueError, match="nothing on it may use a second one"):
+        # listing an address on the package's own explorer entitles nothing
+        SweepCase(
+            name="wide", explorer=ETHEREUM, explorers=(ETHEREUM, BASE),
+            explorer_for={wallet: ETHEREUM}, **common,
+        )
+    with pytest.raises(ValueError, match="dashboard with none"):
+        SweepCase(name="free", explorer=None, rows_pick_explorer=True, **common)
+
+
 @pytest.mark.parametrize(("case", "kind"), _size_params())
 async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it(case, kind):
     served = case.payload()
@@ -1008,7 +1071,7 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                     # ``link_kind``/``link_value`` -- never ``kind``: that is
                     # the parametrised sweep size, read again below the loop.
                     explorer, link_kind, link_value = parsed
-                    expected = case.explorer_for.get(address.lower())
+                    expected = _expected_explorer(case, address)
                     if link_kind != "address" or link_value.lower() != address.lower():
                         problems.append((label, x, y, link_value, address, "link opens a different value than the icon copies"))
                     elif explorer.name not in allowed or (expected is not None and explorer != expected):
@@ -1049,7 +1112,7 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                 held = hashes if link_kind == "tx" else in_payload
                 if link_value.lower() not in held:
                     problems.append((label, x, y, link_kind, link_value, "link to a value the payload does not hold"))
-                expected = case.explorer_for.get(link_value.lower())
+                expected = _expected_explorer(case, link_value)
                 if name not in allowed or (expected is not None and name != expected.name):
                     problems.append((label, x, y, name, "link on the wrong explorer"))
                 elif url != url_for(allowed[name], link_kind, link_value):

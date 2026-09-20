@@ -614,6 +614,7 @@ CASES: tuple[SweepCase, ...] = (
         # fixture's shipped rows are mostly Sepolia), so all three are allowed.
         explorer=ETHEREUM,
         explorers=(ETHEREUM, SEPOLIA, BASE),
+        rows_pick_explorer=True,
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,

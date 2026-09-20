@@ -61,7 +61,8 @@ at **every** site. **One declaration per dashboard package:** `EXPLORER = ETHERE
 bound once in `widgets/<game>/_chain.py` — in `_fmt.py` where the package has one (surf, curator)
 — with a `#:` comment naming the client and the RPC hosts it was read off, imported at each site;
 never a literal explorer at a call site. `tests/address_sweep/builders.py` (`SweepCase.explorer`)
-is the agreement test that binds the declaration. A dashboard on a chain the allowlist does not
+is the agreement test that binds the declaration: an address `explorer_for` does not list must
+link on it, unless the case says its rows pick their explorer (`rows_pick_explorer`, surf only). A dashboard on a chain the allowlist does not
 name passes nothing and renders no link (Bakery runs on Abstract: `widgets/activity_feed.py` says
 so in a comment, its `SweepCase` has `explorer=None`, and the sweep asserts that no address on it
 links); a per-row chain resolves through `for_network` / `for_chain_id`, so an unknown word or id

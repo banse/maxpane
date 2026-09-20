@@ -59,10 +59,20 @@ class SweepCase:
     #: ``widgets/explorer.py`` does not allowlist -- there, E7 asserts the
     #: opposite: no link at all, never a guessed one.
     explorer: Explorer | None = None
-    #: The explorers a per-row override may pick from (surf lists all three:
-    #: pool4 panels link by ``pool4_network``, swarm rows by ``chain_id``).
-    #: Defaults to ``(explorer,)``; empty when ``explorer`` is ``None``.
+    #: The explorers any link on this dashboard may use. Defaults to
+    #: ``(explorer,)``; empty when ``explorer`` is ``None``. Wider than one
+    #: only for a reason the case states: a listed address in ``explorer_for``
+    #: (curator's Base collection) or ``rows_pick_explorer``.
     explorers: tuple[Explorer, ...] = ()
+    #: ``True`` when the dashboard's rows choose their own explorer out of
+    #: ``explorers`` (surf: pool4 panels link by ``pool4_network``, swarm rows
+    #: by ``chain_id``), so an address not listed in ``explorer_for`` may link
+    #: on any member. ``False`` (every other dashboard): an unlisted address
+    #: must link on ``explorer`` itself -- that is what keeps ``explorer`` an
+    #: agreement test for the package's declaration once ``explorers`` is
+    #: wider than one (WP-B re-review N1: with curator at ``(ETHEREUM, BASE)``
+    #: a mutated ``widgets/curator/_fmt.EXPLORER = BASE`` passed the sweep).
+    rows_pick_explorer: bool = False
     #: The one explorer a particular seeded address must link on, lower-cased
     #: address -> explorer, for an address whose chain is NOT the package's
     #: (a custom NFT collection on Base in curator's editor: a contract
@@ -83,3 +93,12 @@ class SweepCase:
         for address, explorer in self.explorer_for.items():
             if explorer not in self.explorers:
                 raise ValueError(f"{self.name}: {address} names explorer {explorer.name} outside the allowed set")
+        if self.rows_pick_explorer and self.explorer is None:
+            raise ValueError(f"{self.name}: rows cannot pick an explorer on a dashboard with none")
+        if len(self.explorers) > 1 and not self.rows_pick_explorer and not any(
+            e != self.explorer for e in self.explorer_for.values()
+        ):
+            raise ValueError(
+                f"{self.name}: allows {len(self.explorers)} explorers but nothing on it may use "
+                "a second one -- list the address in explorer_for or set rows_pick_explorer"
+            )
