@@ -526,8 +526,12 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     decided for the fixed series only. Unreachable today (`manager.py:67` loads in `__init__`,
     before the first update) and behaviour-preserving as shipped, so it was left alone; the same
     question is open for `BaseTokenCache` and, at WP-C, for frenpet's per-pet dict. Decide it once
-    for all three keyed caches rather than per file. **Minor, Tier 0** when `cache.py` is next
-    touched, or roll it into the WP-C decision.
+    for all three keyed caches rather than per file. **CLOSED at WP-C (2026-09-20): all three
+    keep merging**, and the choice is now pinned for bakery, base and frenpet together by
+    `test_series_cache.py::test_a_keyed_load_merges_rather_than_replaces` rather than left to
+    drift into three different answers. It is the keyed twin of R7 and the opposite decision,
+    because R7 governs series whose identity is fixed while these dicts' keys arrive and leave;
+    no code changed, because merging is what all three already did.
 
 49. **`histories` holding a non-dict is untested for bakery and base.** Both loaders warn
     "unexpected format" and restore nothing from that key (`cache.py`, `base_cache.py`,
@@ -539,11 +543,49 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     change, not only a test gap — pre-branch the load bailed before the overview block, so the
     session's own points survived; on the branch the three `overview_*` series are restored from the
     file and the `"unexpected format, skipping"` warning (`base_cache.py:326-331`) understates what
-    was loaded. The message should say which half was kept and which skipped. **Minor, Tier 0**
-    (wording + test) when either file is next touched.
+    was loaded. The message should say which half was kept and which skipped. **WP-C makes this
+    three files, not two**: `FrenPetCache.restore_extra` has the same guard, and pre-branch its
+    loader returned *before* the population block, so a malformed `histories` left
+    `active_pets_history` / `total_score_history` / `battle_rate_history` holding whatever the
+    session had; on the branch they are restored from the file first and only the keyed half is
+    abandoned. Same behaviour change, same understating warning, same missing test. **Minor,
+    Tier 0** (wording + one parametrised test across bakery, base and frenpet) when any of the
+    three is next touched.
 
 50. **`tests/data/test_base_cache.py:172` asserts `history_size <= 2`.** A bound, not a value: it
     passes at 0, so the test would stay green if `test_load_survives_unrankable_entries` restored
     nothing at all. The neighbouring assertion on `0xgood` is what actually bites. Tighten to the
     exact count once the file is editable (it is byte-frozen on this branch as the WP-B
     acceptance). **Minor, Tier 0** — test rigor, never its own branch.
+
+## Branch 9 WP-C — found while implementing (2026-09-20)
+
+51. **`FrenPetCache`'s save log dropped its second number.** The base's line is
+    `"%s saved to %s (%d %s)"` (`series_cache.py:242-247`) and prints `history_size` with
+    `SIZE_NOUN`, so the file now logs `"FrenPet cache saved to … (3 pets)"` where it used to log
+    `"… (3 pets, 18 population points)"`. The population count was the number that told a user
+    whether schema 2 was actually persisting the Score Trends series — the whole point of that
+    schema bump — and it is the only one of the six caches with two counts worth printing.
+    Nothing binds the literal (`rg "population points"` finds only that file). Fix, if the base
+    is ever touched for another reason: a `save_summary()` hook returning the parenthesised text,
+    defaulting to `f"{history_size} {SIZE_NOUN}"`. Not done here because a second base-class knob
+    for one log line in one cache is worse than the missing number. **Minor, Tier 0** when
+    `frenpet_cache.py` or `series_cache.py` is next touched.
+
+52. **`OCMCache` restores `holder_count` from a JSON `true`.** `ocm_cache.py:restore_extra`
+    keeps the pre-branch test `isinstance(payload.get("holder_count"), (int, float))`, and a bool
+    is an `int` in Python, so a hand-edited `"holder_count": true` becomes a cached holder count
+    of 1 — which then divides `net_supply` into `avg_per_holder` (`ocm_manager.py:132-134`) and
+    puts a wrong number on screen. `series_points.coerce_point` already refuses bools for exactly
+    this reason (`series_points.py:80-82`). Behaviour is preserved verbatim on this branch on purpose (the
+    persisted shape is the branch's acceptance claim), so the guard was not tightened. Fix: add
+    `and not isinstance(..., bool)`, with one test feeding `true`. **Minor, Tier 0** when
+    `ocm_cache.py` is next touched.
+
+53. **`test_ocm_cache.py::test_holder_count_cache` asserts a bound where it means a value.**
+    `:121` `assert c.holder_count_updated > 0` passes for any clock at all, so it would stay green
+    with `update_holder_count`'s timestamp wired to anything positive; the R3 behaviour it looks
+    like it covers is actually pinned by
+    `test_series_cache.py::test_update_holder_count_honours_an_injected_clock`. Tighten to
+    `== <injected now>` once the file is editable — it is byte-frozen on this branch as the WP-C
+    acceptance. **Minor, Tier 0** — test rigor, never its own branch.

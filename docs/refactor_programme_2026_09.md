@@ -2976,6 +2976,165 @@ after the `NOUN` move; M6 the `_loaded_*` sentinel is a hidden contract between 
 `_log_loaded` — one sentence in the base's hook docstring. M3–M6 carried into WP-C's brief. 188 + 3 + 7 +
 192 passed.
 
+**Branch 9 WP-C outcome (2026-09-20).** Commit `032a9df` on `refactor/series-cache`.
+`data/ocm_cache.py` and `data/frenpet_cache.py` as `SeriesCache` subclasses +
+`frenpet_manager.py` (R1 only) + the `series_points.py` docstring the branch retires +
+two base-class docstring notes + four pre-branch fixtures + the generator extended +
+tests appended.
+
+| file | before (`53a71d5`) | after | note |
+|---|---|---|---|
+| `maxpane_dashboard/data/ocm_cache.py` | 349 (156 code, 108 docstring, 28 comment, 57 blank) | **315** (89 code, 133 docstring, 41 comment, 52 blank) | **-67 code**: persistence, `_coerce_point` and `_CLOCK_SKEW_TOLERANCE_SECONDS` all gone |
+| `maxpane_dashboard/data/frenpet_cache.py` | 334 (140 code, 124 docstring, 21 comment, 49 blank) | **328** (113 code, 133 docstring, 33 comment, 49 blank) | -27 code, +9 docstring: the persistence went, the schema story stayed |
+| `maxpane_dashboard/data/frenpet_manager.py` | 581 (285 code) | **593** (288 code) | R1 only: one name split into two, +3 code, +9 comment |
+| `maxpane_dashboard/data/series_cache.py` | 417 at WP-B | **434** | **0 code lines**: M6's two hook-docstring notes only |
+| `maxpane_dashboard/data/series_points.py` | 133 (58 docstring) | **138** (63 docstring) | docstring only: the debt it named is paid |
+| `tests/data/test_series_cache.py` | 1027 (53 tests) at WP-B | **1475** (67 tests) | +14: four fixture round-trips, the two v1 files, R3, R4-per-series, #48 x3, M4 widened to six classes |
+| `tests/data/test_frenpet_manager.py` | 632 (24 tests) | **729** (27 tests) | +3: the R1 regression, both directions plus a genuine zero |
+| `tests/scripts/make_cache_fixtures.py` | 383 at WP-B | **554** | `make_ocm()`, `make_ocm_v1()`, `make_frenpet()`, `make_frenpet_v1()` |
+| `tests/fixtures/cache/{ocm,ocm_v1,frenpet,frenpet_v1}_53a71d5.json` | — | 4 files | written by `53a71d5`'s own code (the two v1 files derived from them, see below) |
+
+Net for the two caches: 683 → 643 total lines but **296 → 202 code lines**, and the last
+private `coerce_point` copy in the package is gone. `tests/data/test_ocm_cache.py`,
+`test_frenpet_cache.py`, `test_cache_corruption.py` and `tests/test_app_startup.py` are
+byte-unchanged (`git diff --stat 53a71d5 --` empty for all four) — they are the acceptance.
+
+**The pre-v2 mechanism: `before_load` takes the key off the payload.** The old loader
+built its restore list per version and simply left `burn_history` out of it; the base
+class has one list, driven by `SERIES`, so "skip this series this time" had to be said
+some other way. Three candidates: a per-spec skip hook on the base, a version-dependent
+`SERIES` override, or removing the key. The third won because it needs nothing from the
+base and cannot be half-done: clearing the deque in `before_load` is *undone one line
+later* by the restore loop, which reads `payload["burn_history"]` and extends from
+whatever a stale or hand-edited file holds there — and version gating, not key presence,
+is what decides this (`test_ocm_cache.py::test_v1_file_with_an_injected_burn_history_is_ignored`
+has pinned that since the burn series shipped). The base's `before_load` docstring already
+anticipated payload mutation ("a series cleared **or a key migrated**"). A missing key
+coerces to "no points", and the base's clear-before-extend empties the deque, so the two
+halves of the old behaviour both survive. Mutation (c) below is the proof: clearing
+instead of popping reddens two tests.
+
+The one thing that could not follow it is the *message*. `before_load` is not handed
+`path`, and the file's name is the actionable half of "OCM cache %s is version %d
+(pre-burn-series)", so both caches record the version in `before_load` and log from
+`restore_extra`, the first hook that knows both the path and (for frenpet) the pet count
+the sentence quotes. Both hooks still run ahead of the "Skipped ..." warning and the
+closing info line, so the log *order* is unchanged — confirmed line for line by the
+worktree comparison below.
+
+**Mutation proofs.** Each mutation was an in-place string swap by a helper that refuses a
+non-unique match, the mutated line printed with `grep -n`/`sed -n` *before* the run, and
+restored by the inverse swap and `diff`'d against a pre-mutation snapshot (`RESTORED
+IDENTICAL` for all four files; no `git checkout/stash/reset/restore/clean`).
+
+| # | mutation | file(s) run | failing test(s) by name |
+|---|---|---|---|
+| a | `ocm_cache.py`: `VERSION = 3` | `test_ocm_cache.py test_series_cache.py` | `test_save_load_round_trip` (the `payload["version"] == 2` pin), `test_stale_points_are_dropped`, `test_future_dated_points_are_dropped`, `test_ocm_loads_a_pre_branch_cache_file`, `test_wp_c_resaves_the_pre_branch_file_key_for_key[ocm]`, `test_ocm_windows_each_series_by_its_own_max_age` |
+| b | `frenpet_cache.py`: `VERSION_KEY = "version"` | `test_frenpet_cache.py test_series_cache.py` | `TestFrenPetCachePopulationPersistence::test_save_stamps_the_schema_version`, `test_wp_c_resaves_the_pre_branch_file_key_for_key[frenpet]` |
+| c | `ocm_cache.py` `before_load`: `payload.pop(...)` replaced by `self.burn_history.clear()` (the restore loop then puts it back) | `test_ocm_cache.py test_series_cache.py` | `test_v1_file_with_an_injected_burn_history_is_ignored`, `test_a_v1_ocm_file_carrying_a_burn_history_still_starts_empty` |
+| d | `ocm_cache.py` `_append_burn_sample`: the `unchanged and too_soon` dedupe removed | `test_ocm_cache.py test_series_cache.py` | `test_mints_alone_do_not_extend_the_burn_series`, `test_a_changed_burn_count_is_recorded_immediately` |
+| e | `frenpet_manager.py`: `battle_rate=global_battle_rate` (the `0.0` sentinel restored) | `test_frenpet_manager.py` | `TestFrenPetManagerBattleRateSentinel::test_a_failed_attacks_read_records_no_battle_rate_point` |
+| f | `ocm_cache.py`: `update_holder_count` ignores `now=` | `test_ocm_cache.py test_series_cache.py test_ocm_manager.py` | `test_update_holder_count_honours_an_injected_clock` |
+| g | `series_cache.py` `_payload`: `[list(pt) …]` → `[[float(ts), float(val)] …]` (frenpet's old spelling, applied base-wide) | `test_frenpet_cache.py test_series_cache.py test_ocm_cache.py test_cache_corruption.py` | **none — 134 passed.** Expected: every point in these deques is already a `tuple[float, float]` (`record()` and `coerce_points` both cast), so the two spellings emit identical JSON. The round-trip tests compare the re-saved file to the fixture key for key and value for value and see no difference, which is the claim. |
+| h | `ocm_cache.py`: the `burn_history` spec's `max_age=BURN_WINDOW_SECONDS` removed | `test_ocm_cache.py test_series_cache.py` | `test_stale_points_are_dropped`, `test_ocm_windows_each_series_by_its_own_max_age` |
+
+Two expectations from the brief did *not* hold and are recorded rather than engineered
+away. (a) also reddens `test_stale_points_are_dropped` and `test_future_dated_points_are_dropped`,
+because a v3 class reading a v2 file drops the burn series those two assert on — the same
+damage a real bump would do to a user. (c) does **not** redden
+`test_ocm_loads_a_pre_branch_v1_cache_file`: the v1 fixture has no `burn_history` key at
+all (that is what makes it a v1 file), so "restore it anyway" restores nothing. The test
+that tells the two mechanisms apart has to inject the key, which is why
+`test_a_v1_ocm_file_carrying_a_burn_history_still_starts_empty` exists alongside the
+fixture test rather than instead of it.
+
+**Compatibility, both directions.** One probe, run unchanged against a `53a71d5` worktree
+(`PYTHONPATH` prepended) and against the WP-C tree, loading all four fixtures through the
+managers' exact call shapes (`OCMCache.load_from_file(path)`, `FrenPetCache.load_from_file(path,
+now=...)`) with `time.time` pinned to the fixtures' clock: **`diff` empty**. Every series
+point for point, the per-pet dict key for key, `holder_count`, `history_size`, and every
+log line — including `"OCM cache … is version 1 (pre-burn-series)…"`, `"FrenPet cache … is
+schema v1; per-pet history (3 pets) kept in full…"` and both closing `"Loaded …"` lines —
+identical in wording, arguments and order. Re-saving each v2 fixture reproduces it key for
+key **in order** with only `saved_at` differing. Re-running the extended generator inside
+the worktree reproduced the four WP-A/WP-B fixtures md5-identical, which is the determinism
+claim for the four new ones.
+
+The two v1 fixtures are **derived, not generated**, and the script says so in
+`make_ocm_v1`/`make_frenpet_v1`: the pre-burn-series and pre-schema-2 code is older than
+`53a71d5` and exists in no tree this branch can check out, so each is its v2 sibling minus
+exactly the keys that version never wrote (`version` + `burn_history`; `schema_version` +
+the three population series), key order otherwise untouched — the shape the hand-written v1
+payloads in `test_ocm_cache.py` and `test_frenpet_cache.py` have always described.
+
+**Render.** `python render_case.py ocm …` / `frenpet …` / `frenpet_full …` /
+`frenpet_wallet …` / `frenpet_perf …` before any code change and again on the WP-C tree,
+every view of every case at 170x50 and at the 143-column pin. `cmp` on all 16 pairs:
+`IDENTICAL ocm.default.170x50`, `IDENTICAL ocm.default.pin-143x50`,
+`IDENTICAL frenpet.default.170x50`, `IDENTICAL frenpet.default.pin-143x50`,
+`IDENTICAL frenpet_full.default.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_full.view-2.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_full.view-3.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_full.view-4.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_wallet.default.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_perf.default.{170x50,pin-143x50}` — the plan's expected diff (none).
+
+**Where a failed read yields `None`** (`grep -n`):
+`maxpane_dashboard/data/frenpet_cache.py:134` `self, snapshot: FrenPetSnapshot, battle_rate: float | None = None`
+— the default moved from `0.0` to `None`, so a caller that cannot measure the rate says so
+by omission as well as by argument;
+`maxpane_dashboard/data/frenpet_cache.py:156` `self.record("battle_rate_history", ts, battle_rate)`
+— folded onto the base's `record()`, which is the one place the sentinel is refused;
+`maxpane_dashboard/data/frenpet_manager.py:165` `measured_battle_rate: float | None = None`
+and `:176` `self.cache.update(snapshot, battle_rate=measured_battle_rate)` — the persisted
+value; `:171-172` `global_battle_rate = (0.0 if measured_battle_rate is None else …)` — the
+*display* value, deliberately unchanged (follow-up #43).
+`maxpane_dashboard/data/ocm_cache.py:153-155` — the three sparkline appends now go through
+`record()` too; OCM's own `None` discipline stays where it was, in
+`ocm_manager.py:117-128`, which skips `update()` entirely on `read_failures`.
+
+**Follow-up #48 is closed: all three keyed caches keep merging.** Bakery, base and frenpet
+all assign per key on load and none of them clears the dict first, so a key tracked in
+memory but absent from the file keeps its deque. Every caller loads in `__init__` before
+its first `update()`, so nothing live changes either way — which is exactly why it is now
+pinned (`test_a_keyed_load_merges_rather_than_replaces[bakery|base|frenpet]`) instead of
+left to drift into three different answers. It is the keyed twin of R7 and the opposite
+decision, because R7 governs series whose identity is fixed while these dicts' keys arrive
+and leave.
+
+**Deviations from the plan/brief, and why.**
+1. The pre-v2 mechanism and the move of both version messages into `restore_extra`, above.
+2. `FrenPetCache`'s save log lost its second number. The base's line is
+   `"%s saved to %s (%d %s)"` and prints `history_size` with `SIZE_NOUN`, so it now reads
+   `"FrenPet cache saved to … (3 pets)"` where it used to read
+   `"… (3 pets, 18 population points)"`. `SIZE_NOUN = "pets"` is the brief's instruction and
+   the alternative is a second base-class knob for one log line in one cache. Filed as #51.
+   No test binds the literal (`rg "population points"` finds only the two lines in that file).
+3. `FrenPetCache` degrades *per key* on a malformed `histories`, as base and bakery already
+   do since WP-B. Pre-branch the loader returned before the population block, so those three
+   series kept whatever the session had; now they are restored from the file and only the
+   keyed half is abandoned. Same strengthening, one level down, and the `_loaded_pets`
+   sentinel keeps `_log_loaded` silent so the "Loaded … 0 pets" line the old code never
+   printed is still not printed. Folded into #49, which now names all three.
+4. `OCMCache.load_from_file` gained `now=` and `max_age=` from the base (R2). The manager's
+   call is unchanged and every ocm series names its own window, so `max_age=` is inert here;
+   `now=` is what let `test_ocm_windows_each_series_by_its_own_max_age` state exact expected
+   points instead of a tolerance around the wall clock.
+5. `update()` on both caches now floats through `record()` rather than `deque.append`, so a
+   `None` is *droppable* on every series, not only on frenpet's battle rate. No production
+   caller passes `None` for the other five, and the pre-existing `None` discipline
+   (`ocm_manager.py:117-128` skipping the whole update) is untouched.
+6. `_append_burn_sample` stays a hand-written append. Its dedupe and its prune are specific
+   to a cumulative counter sampled far more often than it moves, and `record()` has no
+   vocabulary for either; the brief says so and mutation (d) shows the behaviour is pinned.
+7. M4 (`test_an_empty_list_payload_leaves_a_real_cache_untouched`) was widened past the
+   brief: the seed-then-load shape the reviewer asked for is applied to **six** classes, not
+   four, because ocm and frenpet arrive in the same commit and the parametrisation was being
+   rewritten anyway.
+8. M5 (bakery log wording) was left alone, as the brief allows.
+
+**Found, not fixed** — follow-ups #51-#53 in `docs/handover_followups_2026_09.md`, all Minor.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
