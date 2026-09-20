@@ -1427,6 +1427,119 @@ deviation.
 One implementer per WP, one reviewer per diff (contract verbatim), fix rounds capped at 2 per WP,
 full suite once on the branch head by the controller, then the owner's merge word.
 
+**Branch 7 WP-A outcome (2026-09-20, commit `0feb671`).** `TableLeaderboard` exists and cattown is
+its first subscriber; the three widened bases all carry the Branch 6 default as a class attribute,
+so ocm reads exactly as it did and no pre-existing `test_panels.py` case changed meaning. All
+twelve cattown and dota widgets are on the bases with every class name and every `update_data`
+signature unchanged — `screens/cattown.py`, `screens/dota.py` and the panel-row agreement test in
+`tests/screens/test_dashboard_screen.py` were not touched.
+
+*Line counts are raw `wc -l`*, the convention this plan settled on in Branch 5 WP-B.
+
+| file | before | after | file | before | after |
+| --- | --- | --- | --- | --- | --- |
+| `widgets/cattown/ct_hero_metrics.py` | 192 | 141 | `widgets/dota/dota_hero_metrics.py` | 165 | 145 |
+| `widgets/cattown/ct_activity_feed.py` | 126 | 90 | `widgets/dota/dota_activity_feed.py` | 95 | 128 |
+| `widgets/cattown/ct_best_plays.py` | 115 | 104 | `widgets/dota/dota_best_plays.py` | 98 | 93 |
+| `widgets/cattown/ct_signals.py` | 97 | 58 | `widgets/dota/dota_signals.py` | 97 | 50 |
+| `widgets/cattown/ct_leaderboard.py` | 94 | 83 | `widgets/dota/dota_leaderboard.py` | 70 | 69 |
+| `widgets/cattown/ct_sparklines.py` | 88 | 38 | `widgets/dota/dota_sparklines.py` | 84 | 56 |
+| `widgets/cattown/_fmt.py` (new) | 0 | 54 | | | |
+| **`widgets/cattown/` total** | **712** | **568** | **`widgets/dota/` total** | **609** | **541** |
+| `widgets/panels.py` | 509 | 726 | `themes/minimal.tcss` (10 blocks) | 46 | 0 |
+
+**190 lines out of the two packages and 46 out of the stylesheet; 217 lines of shared base in.**
+Net −19 production lines, and the slope is the point rather than the number: Branch 6 paid 252
+lines to stand the bases up with one subscriber, WP-A paid −19 to add two more, and WP-B's two
+packages plus Branch 8's `templates/` deletion are where HANDOVER §3.4's estimate is collected.
+Three files grew and each says why in its docstring: `panels.py` by the whole
+`TableLeaderboard`; `dota_activity_feed.py` by the docstring recording that an empty poll no
+longer wipes a drawn roster (the base's merged feed contract — the manager serves `None` for a
+failed read, so the old "clear and paint `No heroes yet`" was a false degradation); and
+`dota_hero_metrics.py`'s and `dota_sparklines.py`'s comments explaining the two things that look
+like dead code and are not (below).
+
+**Rendering proof.** `render_case.py` on each dashboard's sweep payload under the real stylesheet
+and a frozen clock, at 170×50 and at the 143 pin, against the pre-migration `b7_before_*` captures:
+
+```
+$ cmp b7_before_cattown.default.170x50.txt     b7_final_cattown.default.170x50.txt      -> identical
+$ cmp b7_before_cattown.default.pin-143x50.txt b7_final_cattown.default.pin-143x50.txt  -> identical
+$ cmp b7_before_dota.default.170x50.txt        b7_final_dota.default.170x50.txt         -> identical
+$ cmp b7_before_dota.default.pin-143x50.txt    b7_final_dota.default.pin-143x50.txt     -> identical
+```
+
+**All four byte-identical**, which is the acceptance this branch was written to. Unlike Branch 6
+there is no predicted one-row shift to explain: every spacer `Static` these twelve widgets yielded
+traded one-for-one against `PanelBase`'s title margin, and both signals panels and both BEST PLAYS
+boards keep their *interior* blank line, which was never the title's row. The five named behaviour
+changes are all invisible to this payload and that was checked rather than assumed: the sparkline
+histories are empty (so `fmt_compact` vs the old `_fmt_value` never runs), the feeds carry real
+timestamps (so `hhmm` agrees with the copy it replaces), and every signal arrives `unavailable`
+with no `[` in any `value_str` (so the new `safe_markup` escape is a no-op here). Each is pinned by
+a unit test instead.
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each):
+
+| mutation | reddened |
+| --- | --- |
+| the per-row `try` deleted in `TableLeaderboard.render_table` | `test_panels.py::test_one_unaddable_row_is_skipped_and_the_others_land` — 1 failed, 95 passed. `ValueError: More values provided than there are columns` escapes after `clear()`, leaving the table empty, which on a leaderboard reads as "nobody is playing" |
+| the `except NotImplementedError: raise` deleted from that same guard | `test_panels.py::test_a_subclass_without_build_row_fails_loudly` — 1 failed, 95 passed. A different test from the row above, which is the check that matters: the two halves of the guard are proven separately, so neither is riding on the other |
+| `safe_markup` dropped from `fmt_signal`'s `value_str` | `test_panels.py::test_fmt_signal_escapes_a_hostile_value_str` and `::test_a_hostile_value_str_reaches_the_screen_as_text_not_markup` — 2 failed, 172 passed (run with `test_markup_safety.py`, which stayed green: it covers the helper, not this call site) |
+
+**Tests.** `tests/widgets/test_panels.py` 74 → 96 cases: the `Text` branch of `render_box` (spans
+and click `meta` checked cell by cell off the compositor, plus its degradation path), label-less
+and separator signal rows and the seed-lands-on-the-first-*row* rule, the four `SparklinePanel`
+knobs, and ten `TableLeaderboard` cases. Both agreement tests are now parametrised over one
+`MIGRATED_PACKAGES = ("ocm", "cattown", "dota")` tuple, so WP-B extends them with two words and no
+test body. `tests/widgets/test_title_blank_row.py` 35 → 41 cases, gaining `CTLeaderboard`,
+`CTActivityFeed`, `DOTALeaderboard` and `DOTAActivityFeed` — leaderboards and feeds were absent
+from that table and their blank row came from the stylesheet alone, so nothing covered it.
+Green on the branch head: **416** across the eleven named files, **6** on
+`test_address_icons_everywhere.py -k "cattown or dota or ocm"`, **191** on `-m guard tests`
+(88 s). No directory-wide or suite run; the suite is the controller's, once, on the branch head.
+
+**Four deviations from the plan, each stated rather than taken silently.**
+
+1. **The fifth agreement clause is not written as a source check.** The plan asks for "no `compose`
+   yields a `Static` whose content is `""` or `" "`". As stated it is false of the tree it would
+   guard: `OCMSupplyBreakdown` seeds three body lines empty and fills them on the first poll,
+   `SignalsPanelBase` itself yields one before the recommendation, and both BEST PLAYS boards keep
+   one between their headers and their rows — a blanket ban reddens on six of the sixteen migrated
+   panels, and narrowing it to "the title's spacer" is exactly the distinction no source check can
+   make. What made the old spacers wrong was the *row they painted*, so the claim is enforced where
+   it is true and stronger: `test_title_blank_row.py` asserts title row, exactly one blank, then
+   content, **composited**, for every panel in all three migrated packages. A leftover spacer
+   reddens it with two blanks — and so does a spacer reached through a helper, or a regression in
+   `PanelBase`'s `margin`, neither of which the source check would have seen. A comment at the
+   agreement section records the reasoning so WP-B does not re-litigate it.
+2. **dota's hero `token_price_usd` stays**, unused. The plan flags it for removal "if the screen
+   does not pass it"; `screens/dota.py`'s `PANELS` row passes it, and
+   `test_dashboard_screen.py::test_every_panel_row_names_a_mounted_widget_and_its_update_data_keywords`
+   requires every key a row sends to be a **named** parameter of `update_data`. Removing it while
+   keeping the screen untouched would have reddened that test; removing it from both would have
+   been a `PANELS` edit this WP does not own. A comment on the parameter says so, and the pair is
+   WP-B-or-later work at best — file it, do not fix it here.
+3. **dota's value formatter keeps a module-level function**, `_fmt_frontline`, reached through the
+   new `fmt_value` hook. The plan bans the name `_fmt_value` (the agreement test lists it) and
+   offers `widgets/dota/_fmt.py` if two modules need it; only one does, so hoisting would have
+   created a package module with a single caller. It is *not* `fmt_compact` in disguise and the
+   docstring says why: a lane frontline is a position between two bases, so it has no K/M/B
+   magnitudes, and `fmt_compact` would print `1.0K` where this panel shows `950` — every frontline
+   the game serves is in the range where the two disagree.
+4. **Two `DEFAULT_CSS` blocks survive per package**, on the leaderboards (`> DataTable { height:
+   1fr }`) and the feeds (`> RichLog { height: 1fr; padding: 0 1; scrollbar-size: 1 1 }`). The plan
+   deletes "every per-panel title/line CSS class and the `DEFAULT_CSS` that stated them"; these are
+   geometry on the body widget, neither a title nor a line class, and this is the same call Branch
+   6 made for `OCMActivityFeed` (its deviation 2). Hoisting them into the bases would change ocm
+   and every future subscriber, which is not an append-only extension.
+
+**Seen in passing, not fixed** (out of scope; for the follow-ups doc): `templates/
+leaderboard_template.py` is now behind `TableLeaderboard` and should be deleted with the rest of
+`templates/` in Branch 8, not fixed; and `CTBestPlays` / `DOTABestPlays` are the same two-column
+board twice, differing only in their column widths and cell formatters — a sixth base worth
+considering once WP-B shows whether talismans or ttt has a third.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
