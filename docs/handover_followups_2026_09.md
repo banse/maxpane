@@ -454,3 +454,34 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     would reach the screen. Fix: add the seven keys with one hostile-free value each, and a
     `seeded`-style expectation that the three panels paint a value, not `unavailable`. **Minor,
     Tier 0** when the file is next touched (Branch 8 WP-B, filed 2026-09-20).
+
+## Branch 9 — series cache (filed at planning, 2026-09-20)
+
+41. **Five caches re-declare the atomic-write block `SeriesCache` will own.** `talismans_cache.py:225-262`,
+    `ttt_cache.py:579-621`, `fwa_cache.py:845-870`, `surf_cache.py:1025-1050`, `curator_cache.py:1200-1225` (the
+    `os.replace` at `:250`, `:608`, `:860`, `:1039`, `:1213`) each carry the
+    `tmp → makedirs → json.dump → os.replace → except OSError → os.remove(tmp)` block that is byte-identical in
+    the six Branch 9 caches. They are event/state caches, not `max_history` series caches, so they do not
+    subclass `SeriesCache`; hoist `data/atomic_json.write_json(path, payload, *, noun)` out of `series_cache.py`
+    and point the five at it. Talismans and ttt each define `_hour_bucket` (`talismans_cache.py:55-57`,
+    `ttt_cache.py:85`) — same hoist. **Minor, Tier 2** — shared `data/` module, 5 dashboards.
+
+42. **Four caches restore points of any age.** `cattown_cache.py:179`, `dota_cache.py:177`,
+    `frenpet_cache.py:292/305`, `base_cache.py:334/363` call `coerce_points` with no `max_age`; only bakery
+    (caller-supplied, `manager.py:67-69`) and ocm (per-series consts) window. `test_cache.py:290-380` (MEDI-22)
+    documents the cost: a stale point drags a regression toward the long-run average. Branch 9 preserves the
+    unwindowed behaviour on purpose (Decision R4) and pins it. Deciding a window per dashboard
+    (`max_history × poll_interval`, as bakery does) is an owner call because it shortens users' restored
+    histories once. **Minor, Tier 1 per dashboard** once decided.
+
+43. **FrenPet screens display a failed battle-rate read as `0.0`.** `screens/frenpet.py:52` and
+    `screens/frenpet_full.py:413, 734` do `data.get("global_battle_rate", 0.0)`, and
+    `frenpet_manager.py:156-162` sets `0.0` in its `except`. Branch 9 stops the zero reaching the cache (R1)
+    but leaves the widget dict alone; the display path needs the MEDI-38 shape — `None` → `unavailable` behind
+    the `as of` marker. **Important, Tier 1** (one dashboard's manager + two screens).
+
+44. **`data/manager_base.py` is in HANDOVER §3 item 6 but in no branch of the programme.** The
+    `_error_count` / `last_success` / `as_of_hhmm` / last-good fold shared by the managers was named in the
+    handover alongside `RpcPool` and `SeriesCache`; the branch-order table assigns §3.6a to Branch 9 and §3.6b
+    to Branch 10, neither of which owns it. Recorded under "Later phases"; needs a survey of the fourteen
+    managers before it is a plan. **Minor, Tier 2.**
