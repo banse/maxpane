@@ -59,6 +59,18 @@ shared here. The policy stays where the knowledge is.
 ``*_client.py`` modules had the same three lifecycle methods, including the
 pure-HTTP ones (``base``, ``dota``, ``frenpet``) -- so it lives here rather
 than in a ninth module of its own.
+
+One line has since been drawn through the middle of "the policy stays where
+the knowledge is", and it is worth naming: the *message fragment tables* those
+policies match against are **data**, not policy, and since 2026-09-20 they
+live in one attributed place, :mod:`maxpane_dashboard.data.rpc_classify` --
+Ethereum's table and Base's, the block-span family and the result-count
+family, the malformed-request codes, and the two pure predicates that walk a
+table. Four hand-typed copies of the Ethereum table had already drifted
+against each other. The policies that *consume* them did not move and do not
+merge: which table a client binds, what a non-dict error means, whether a
+malformed code is consulted, whether the answer rotates or shrinks, and what
+it raises are still per-client, for every reason set out above.
 """
 
 from __future__ import annotations

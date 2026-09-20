@@ -105,6 +105,12 @@ def _module_source(module) -> str:
     return Path(module.__file__).read_text(encoding="utf-8")
 
 
+#: Every ``data/*_client.py`` on disk, not just the eight imported above:
+#: ``curator_client``, ``surf_client`` and ``surf_pool4_client`` carry error
+#: tables too and were never in ``ALL_CLIENTS``.
+_DATA_DIR = Path(rpc_common.__file__).parent
+
+
 def _module_level_defs(module) -> set[str]:
     return {
         node.name
@@ -292,6 +298,30 @@ def test_dead_endpoint_codes_are_not_re_declared() -> None:
         )
     for module in (cattown_client, fwa_client, talismans_client):
         assert module._ENDPOINT_DEAD_CODES is rpc_common.ENDPOINT_DEAD_CODES
+
+
+def test_error_pattern_tables_are_not_re_declared() -> None:
+    """The fragment tables are evidence, and evidence lives in one place.
+
+    Four Ethereum clients each hand-typed the "this endpoint can't" table and
+    they had already drifted: ``curator_client`` dropped ``api key`` while
+    restating the rest, ``personal token`` survived only in ``ttt_client``, and
+    drpc's routing triplet only in ``curator_client``. Every one of those is a
+    refusal the other pools can meet. Since Branch 10 the tables live in
+    ``data/rpc_classify.py`` with their provider attributions, and a client
+    *binds* one rather than restating it.
+
+    The *policy* around them is untouched and must stay per client -- which
+    table is bound, what a non-dict error means, whether a malformed code is
+    consulted -- so this guard only forbids the literal.
+    """
+    for path in sorted(_DATA_DIR.glob("*_client.py")):
+        source = path.read_text(encoding="utf-8")
+        for name in ("_ENDPOINT_LIMITATION_PATTERNS", "_RANGE_LIMITATION_PATTERNS"):
+            assert f"{name} = (" not in source, (
+                f"{path.name} re-declares {name} as a literal tuple; bind a "
+                "table from data/rpc_classify.py instead"
+            )
 
 
 def test_jsonrpc_envelope_is_built_in_one_place() -> None:

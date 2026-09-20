@@ -27,6 +27,10 @@ from maxpane_dashboard.data.evm_abi import (
     decode_uint256 as _decode_uint256,
     pad_address as _pad_address,
 )
+from maxpane_dashboard.data.rpc_classify import (
+    BASE_ENDPOINT_LIMITATION_FRAGMENTS,
+    looks_like_endpoint_limitation,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -63,23 +67,14 @@ _BLOCK_TS_CACHE_MAX = 2048
 #: not "this request is malformed". Matched on the message, never the code:
 #: providers reuse codes freely, so classifying on the code turns a per-host
 #: capability limit into a terminal failure and the fallback chain is skipped.
-_ENDPOINT_LIMITATION_PATTERNS = (
-    "rate limit",
-    "ratelimit",
-    "too many requests",
-    "exceeded",
-    "quota",
-    "capacity",
-    "throttl",
-    "block range",
-    "query returned more than",
-    "method not found",
-    "method not supported",
-    "unsupported method",
-    "not available",
-    "unauthorized",
-    "forbidden",
-)
+#:
+#: The **Base** table, kept apart from the Ethereum one in
+#: :mod:`maxpane_dashboard.data.rpc_classify` because these are Base
+#: providers' phrasings: eleven of them appear in no Ethereum client, and
+#: merging would make ``ttt_client`` rotate on ``method not found`` where it is
+#: terminal today, and this module shrink on ``query returned more than`` where
+#: it has no pager to shrink with.
+_ENDPOINT_LIMITATION_PATTERNS = BASE_ENDPOINT_LIMITATION_FRAGMENTS
 
 #: Public Base endpoints tried in order when the primary refuses. Keyless by
 #: policy -- every MaxPane dashboard must run without API keys. These are not
@@ -102,11 +97,21 @@ class _EndpointDead(httpx.HTTPError):
 
 
 def _looks_like_endpoint_limitation(err: Any) -> bool:
-    """True if a JSON-RPC error body reads as "this endpoint can't"."""
-    if not isinstance(err, dict):
-        return False
-    message = str(err.get("message") or "").lower()
-    return any(frag in message for frag in _ENDPOINT_LIMITATION_PATTERNS)
+    """True if a JSON-RPC error body reads as "this endpoint can't".
+
+    Two flags separate this from the four Ethereum clients, and both are
+    cattown's behaviour, not a default: a body that is **not** a JSON-RPC error
+    object is no evidence about the *host*, so it does not rotate (the caller
+    raises instead), and there is **no** malformed-code fallback — on Base a
+    reverted ``eth_call`` is the contract's answer, and rotating on it would
+    triple the request count for no gain (``test_contract_revert_does_not_rotate``).
+    """
+    return looks_like_endpoint_limitation(
+        err,
+        fragments=_ENDPOINT_LIMITATION_PATTERNS,
+        unstructured_is_limitation=False,
+        check_codes=False,
+    )
 
 # ---------------------------------------------------------------------------
 # Function selectors (first 4 bytes of keccak256 hash)

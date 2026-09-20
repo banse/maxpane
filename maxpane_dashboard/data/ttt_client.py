@@ -62,6 +62,11 @@ from maxpane_dashboard.data.evm_abi import (
     pad_left as _pad_left,
     strip0x as _strip0x,
 )
+from maxpane_dashboard.data.rpc_classify import (
+    ETH_ENDPOINT_LIMITATION_FRAGMENTS,
+    MALFORMED_REQUEST_CODES,
+    looks_like_endpoint_limitation,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -257,42 +262,17 @@ _TOPIC_BOUGHT = (
 # ---------------------------------------------------------------------------
 
 
-#: Message fragments that mean "*this endpoint* will not serve this request" --
-#: capability caps, archive gates, auth walls, plan limits. Providers ship
-#: these under codes that also mean "your request is malformed": 1rpc's
-#: 50-block log cap arrives as **-32602**, the same code as genuine bad input,
-#: and publicnode's archive gate is a plain-language message too. Classifying
-#: on the code alone therefore aborts the whole fallback chain at the first
-#: endpoint that simply cannot do the job. Match on the message instead.
-#: (Fragments below were taken from live responses, see ``_ENDPOINT_PROBE``.)
-_ENDPOINT_LIMITATION_PATTERNS = (
-    "limited to",
-    "block range",
-    "range is too large",
-    "ranges over",
-    "exceeds",
-    "too large",
-    "too many",
-    "archive",
-    "personal token",
-    "api key",
-    "unauthorized",
-    "authenticate",
-    "free plan",
-    "upgrade",
-    "not supported",
-    "unsupported",
-    "capacity",
-    "rate limit",
-    "timeout",
-    "try again",
-    "cannot fulfill",
-)
-
-#: JSON-RPC codes whose *conventional* meaning is "the caller's request is
-#: malformed". Only consulted once the message has been cleared of endpoint
-#: limitation language above.
-_MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
+#: The message fragments that mean "*this endpoint* will not serve this
+#: request", and the codes that mean "your request is malformed". Both are
+#: data, and both now live once, with their provider attributions, in
+#: :mod:`maxpane_dashboard.data.rpc_classify` -- which also explains why
+#: Ethereum and Base keep separate tables. The ``_ENDPOINT_PROBE`` below is
+#: still where ttt's own fragments were measured from.
+#:
+#: The names stay: every caller, and every test that patches one, reads them
+#: here. The *policy* -- rotate on True, raise on False -- stays in ``_rpc``.
+_ENDPOINT_LIMITATION_PATTERNS = ETH_ENDPOINT_LIMITATION_FRAGMENTS
+_MALFORMED_REQUEST_CODES = MALFORMED_REQUEST_CODES
 
 
 def _looks_like_endpoint_limitation(err: Any) -> bool:
@@ -303,12 +283,9 @@ def _looks_like_endpoint_limitation(err: Any) -> bool:
     failure, whereas treating a capability limit as terminal takes the whole
     dashboard offline while healthy endpoints sit unused.
     """
-    if not isinstance(err, dict):
-        return True
-    message = str(err.get("message") or "").lower()
-    if any(frag in message for frag in _ENDPOINT_LIMITATION_PATTERNS):
-        return True
-    return err.get("code") not in _MALFORMED_REQUEST_CODES
+    return looks_like_endpoint_limitation(
+        err, fragments=_ENDPOINT_LIMITATION_PATTERNS
+    )
 
 
 def _to_hex(b: bytes) -> str:

@@ -54,6 +54,13 @@ from maxpane_dashboard.data.evm_abi import (
     pad_left,
     strip0x,
 )
+from maxpane_dashboard.data.rpc_classify import (
+    ETH_ENDPOINT_LIMITATION_FRAGMENTS,
+    MALFORMED_REQUEST_CODES,
+    RANGE_CAP_FRAGMENTS,
+    is_range_limitation,
+    looks_like_endpoint_limitation,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -1098,40 +1105,33 @@ def _label_for(addr: str | None) -> str | None:
 # deliberately NOT shared via rpc_common, see that module's docstring)
 # ---------------------------------------------------------------------------
 
-_ENDPOINT_LIMITATION_PATTERNS = (
-    "limited to", "block range", "range is too large", "ranges over",
-    "exceeds", "too large", "too many", "archive", "api key", "unauthorized",
-    "authenticate", "free plan", "upgrade", "not supported", "unsupported",
-    "capacity", "rate limit", "timeout", "try again", "cannot fulfill",
-)
-
-_RANGE_LIMITATION_PATTERNS = (
-    "limited to", "block range", "range is too large", "ranges over",
-    # mevblocker, measured 2026-09-12: ``range 50400 exceeds limit of 10000``.
-    # Restated here and in ``surf_pool4_client`` with an agreement test between
-    # them -- which is what caught this being edited on one side only.
-    "exceeds limit of",
-)
-
-_MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
+#: Both tables are data and live, with their provider attributions, in
+#: :mod:`maxpane_dashboard.data.rpc_classify`.  ``surf_pool4_client`` binds the
+#: same two objects, so the hand-typed copy the agreement test used to guard is
+#: gone and the agreement is now identity.  Only the **span** family is bound
+#: here: ``_get_logs_shrinking`` treats a short read as a success, so teaching
+#: it to shrink on a result-count cap would be silent data loss where it
+#: rotates today.
+_ENDPOINT_LIMITATION_PATTERNS = ETH_ENDPOINT_LIMITATION_FRAGMENTS
+_RANGE_LIMITATION_PATTERNS = RANGE_CAP_FRAGMENTS
+_MALFORMED_REQUEST_CODES = MALFORMED_REQUEST_CODES
 
 
 def _looks_like_endpoint_limitation(err: Any) -> bool:
     """True if *err* reads as "this endpoint can't", not "this request is bad"."""
-    if not isinstance(err, dict):
-        return True
-    message = str(err.get("message") or "").lower()
-    if any(frag in message for frag in _ENDPOINT_LIMITATION_PATTERNS):
-        return True
-    return err.get("code") not in _MALFORMED_REQUEST_CODES
+    return looks_like_endpoint_limitation(
+        err, fragments=_ENDPOINT_LIMITATION_PATTERNS
+    )
 
 
 def _is_range_limitation(err: Any) -> bool:
-    """True only for "your block range is too wide" — the shrinkable class."""
-    if not isinstance(err, dict):
-        return False
-    message = str(err.get("message") or "").lower()
-    return any(frag in message for frag in _RANGE_LIMITATION_PATTERNS)
+    """True only for "your block range is too wide" — the shrinkable class.
+
+    No *requested_span* is passed: ``eth.drpc.org`` was removed from this
+    module's mainnet log pool on 2026-09-12 rather than guarded against, so no
+    endpoint here is known to name a limit it is not reading.
+    """
+    return is_range_limitation(err, fragments=_RANGE_LIMITATION_PATTERNS)
 
 
 class _LogRangeError(RuntimeError):

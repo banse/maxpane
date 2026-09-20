@@ -309,11 +309,21 @@ def test_the_mainnet_pools_agree_with_surf_client():
 
 
 def test_the_error_pattern_tables_agree_with_surf_client():
-    assert C._ENDPOINT_LIMITATION_PATTERNS == (
+    """Restated 2026-09-20 (Branch 10 WP-A, decision P5): the agreement is now
+    **identity**, not equality.
+
+    These two tables were hand-typed copies of each other and this test was
+    what caught one being edited on one side only.  Both modules now bind the
+    same objects out of ``data/rpc_classify``, so there is no copy left to
+    drift — but the assertion is kept and sharpened rather than deleted: ``is``
+    fails where ``==`` would not if either module ever re-typed a table that
+    merely happens to compare equal today.
+    """
+    assert C._ENDPOINT_LIMITATION_PATTERNS is (
         surf_client._ENDPOINT_LIMITATION_PATTERNS
     )
-    assert C._RANGE_LIMITATION_PATTERNS == surf_client._RANGE_LIMITATION_PATTERNS
-    assert C._MALFORMED_REQUEST_CODES == surf_client._MALFORMED_REQUEST_CODES
+    assert C._RANGE_LIMITATION_PATTERNS is surf_client._RANGE_LIMITATION_PATTERNS
+    assert C._MALFORMED_REQUEST_CODES is surf_client._MALFORMED_REQUEST_CODES
 
 
 def test_the_log_window_constants_agree_with_surf_client():
