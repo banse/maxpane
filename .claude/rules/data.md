@@ -86,6 +86,23 @@ Use `data/series_points.coerce_points`. A single `null` in a cache file used to 
 *every* dashboard. A hand-edited cache file is third-party input too: strings read back from a
 persisted payload get the same checks as strings fetched live.
 
+## Series caches subclass `data/series_cache.SeriesCache`
+
+A per-poll history cache declares its series once — `SERIES = (SeriesSpec("prize_pool_history"), …)` —
+and inherits the atomic write, the open/decode and dict guards, the injected clock
+(`load_from_file(path, *, now=None, max_age=None)`), the per-point `coerce_points` loop with a
+per-series `max_age`, clear-before-extend and the `"Skipped %d …"` warning. `record(name, ts, value)`
+drops `None`: a failed read never becomes a `0` in a series, and the manager passes `None`, not a
+default (`cattown_manager`, `frenpet_manager`). Hooks: `update()` (per cache), `extra_payload` /
+`restore_extra` (keyed dicts, scalars), `before_load` (version branches), `history_size` (key-count
+for the keyed caches, point-count otherwise), `SeriesSpec.key` when the JSON key differs from the
+attribute. **Never add a version key to a cache file that has none and never rename one:** ocm's
+`"version": 2` and frenpet's `"schema_version": 2` are what every live `~/.maxpane/*.json` carries;
+a rename reads as v1 and empties users' burn or population series. Acceptance for any change here
+is the fixture set `tests/fixtures/cache/*_53a71d5.json` — files written by the pre-refactor code —
+loading point-for-point and re-saving byte-identical (`tests/data/test_series_cache.py`).
+`talismans_cache` and `ttt_cache` are event caches, not series caches, and do not subclass it.
+
 ## Inject the clock
 
 No module a test needs to control may call `time.time()` internally. Cache loaders take `now=`;

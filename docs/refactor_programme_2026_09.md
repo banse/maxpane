@@ -3135,6 +3135,21 @@ and leave.
 
 **Found, not fixed** — follow-ups #51-#53 in `docs/handover_followups_2026_09.md`, all Minor.
 
+**Branch 9 WP-C review (2026-09-20): Needs fixes 0 Critical, 1 Important; fix round 1 `47ef487`; re-review
+ADDRESSED.** Compatibility proven byte-level on all four fixtures both ways through the managers' call shapes
+(int pet keys in order, `holder_count`, raw JSON text identical bar `saved_at`); the live pre-v2 shapes load
+identically old vs new; a nine-row version-value table shows only `"2"`/`2.0` moved, toward keeping the burn
+series (M1 → folded into #54). R1 hunk only in the manager; `global_battle_rate` identical pre/post in every
+case; the four-manager shared cache covered by the frozen `test_app_startup.py`. Six reviewer mutations bit.
+I1: the three new manager tests built a bare `FrenPetManager`, whose `__init__` loads the real
+`~/.maxpane/frenpet_cache.json`, and were red on the owner's machine — an autouse fixture now points
+`fm._CACHE_FILE` at `tmp_path` (verified with the real cache copied into a temp HOME: 3 failed → 51 passed;
+fixture disabled → the same 3 red). M2: `_compute_battle_rate` answers `0.0` for "cannot compute" and that
+still reaches the series — pre-existing, outside R1's scope, docstring corrected, filed #54 (Important, Tier 1).
+M3: base-emitted log lines now carry the `series_cache` logger name (precedent from WP-A/B; the NOUN in the
+message is the grep that works). Branch Docs landed in the closure commit: rules/data.md "Series caches"
+paragraph, HANDOVER §3 item 6 half-done, table row 9 (at planning).
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
