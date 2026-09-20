@@ -713,6 +713,10 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     (`rpc_classify.requested_block_span`, new, unit-tested on all ten probes) and
     `_classify_rpc_error(..., requested_span=)` answers `rpc` when the named limit ≥ span; the four drpc
     probes drive the classifier, `_rpc` rotation and a pager test that pins `_log_window` untouched.
+    **fwa_logs done 2026-09-20, same branch:** `_post` reads the span off its payload and both `range_cap`
+    branches go through `_range_cap_unless_met`; the four probes drive the classifier, the recorded 65,923-block
+    refusal still shrinks, and a backfill test pins drpc asked once with `_window`/`_window_ceiling` unlearned.
+    **#65 closed.**
 
 ## Branch 10 WP-A — review Minors (2026-09-20)
 
