@@ -107,7 +107,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlparse
@@ -117,6 +116,14 @@ import httpx
 from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_v4
 from maxpane_dashboard.data.evm_abi import decode_uint, strip0x
+from maxpane_dashboard.data.rpc_classify import (
+    ETH_ENDPOINT_LIMITATION_FRAGMENTS,
+    MALFORMED_REQUEST_CODES,
+    RANGE_CAP_FRAGMENTS,
+    is_range_limitation,
+    looks_like_endpoint_limitation,
+    named_block_limit,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -334,74 +341,25 @@ _LOG_MAX_PAGES = 8
 # Error classification — message text first
 # ---------------------------------------------------------------------------
 #
-# Transcribed from ``surf_client``, which transcribed it from ``ttt_client``.
-# ``rpc_common``'s docstring explains at length why this policy is NOT shared:
-# five clients implement five different error policies, each encoding a fact
-# about a specific provider, and a shared one would be a five-way switch with
-# every client's behaviour reachable from every other client's bug.
+# The tables and the two predicates are DATA and live in
+# ``maxpane_dashboard.data.rpc_classify``; this module binds them under the
+# names its callers and tests already use.  ``rpc_common``'s docstring explains
+# at length why the *policy* around them is still NOT shared: five clients
+# implement five different error policies, each encoding a fact about a
+# specific provider, and a shared one would be a five-way switch with every
+# client's behaviour reachable from every other client's bug.
+#
+# ``surf_client`` binds the same two table objects, so the transcription an
+# agreement test used to guard is gone and the agreement is now identity.
 
-_ENDPOINT_LIMITATION_PATTERNS = (
-    "limited to", "block range", "range is too large", "ranges over",
-    "exceeds", "too large", "too many", "archive", "api key", "unauthorized",
-    "authenticate", "free plan", "upgrade", "not supported", "unsupported",
-    "capacity", "rate limit", "timeout", "try again", "cannot fulfill",
-)
+_ENDPOINT_LIMITATION_PATTERNS = ETH_ENDPOINT_LIMITATION_FRAGMENTS
+_RANGE_LIMITATION_PATTERNS = RANGE_CAP_FRAGMENTS
+_MALFORMED_REQUEST_CODES = MALFORMED_REQUEST_CODES
 
-_RANGE_LIMITATION_PATTERNS = (
-    "limited to", "block range", "range is too large", "ranges over",
-    # mevblocker, measured 2026-09-12: ``range 50400 exceeds limit of 10000``.
-    # It matched NONE of the four above, and its code (-32602) is in
-    # ``_MALFORMED_REQUEST_CODES``, so an honest and perfectly shrinkable cap
-    # was classified as a bad request and the endpoint was abandoned instead of
-    # chunked. That is the mirror image of the drpc defect: there a message
-    # that was NOT about the window drove a shrink, here one that WAS about it
-    # drove none. Both come from a phrase list that only knows the providers it
-    # has already met, which is why each entry names the provider it was
-    # measured against and a new spelling gets measured, never guessed.
-    "exceeds limit of",
-)
-
-_MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
-
-#: The block count a range complaint names: ``"ranges over 10000 blocks"``,
-#: ``"eth_getLogs is limited to 0 - 50 blocks range"``.
-#:
-#: Decimal digits immediately before the word *block(s)*, which is what makes
-#: this safe to read while a *suggested toBlock* stays unread: a suggestion is
-#: a hex block **number** (``"suggested toBlock 0xb12790"``) and matches
-#: nothing here.  The distinction is the whole point — this number is used
-#: **only to decide whether the message is about our request**, never to size a
-#: window, so no provider's arithmetic can steer this client's own.
-_NAMED_BLOCK_LIMIT_RE = re.compile(r"(\d[\d,_]*)\s*blocks?\b")
-
-#: The same number when a provider names it without the word *block*:
-#: mevblocker's ``"range 50400 exceeds limit of 10000"``. Anchored on
-#: ``limit of`` **specifically** so it reads the cap and not the span — that
-#: message carries both numbers, and taking the first would compare the
-#: request against itself and conclude the complaint was never about it.
-#: Hex block *numbers* still match nothing: a suggested ``toBlock 0xb12790``
-#: has no ``limit of`` before it, and the suggestion stays unread.
-_NAMED_LIMIT_OF_RE = re.compile(r"limit of\s+(\d[\d,_]*)")
-
-
-def _named_block_limit(message: str) -> int | None:
-    """The largest block count *message* names, or ``None`` if it names none."""
-    best: int | None = None
-    for match in _NAMED_LIMIT_OF_RE.finditer(message):
-        try:
-            value = int(match.group(1).replace(",", "").replace("_", ""))
-        except ValueError:  # pragma: no cover — the pattern is digits only
-            continue
-        if best is None or value > best:
-            best = value
-    for match in _NAMED_BLOCK_LIMIT_RE.finditer(message):
-        try:
-            value = int(match.group(1).replace(",", "").replace("_", ""))
-        except ValueError:  # pragma: no cover — the pattern is digits only
-            continue
-        if best is None or value > best:
-            best = value
-    return best
+#: The largest block count a range complaint names, or ``None``.  Hoisted with
+#: its two regexes; see ``rpc_classify`` for why a *suggested toBlock* must
+#: stay unread by it.
+_named_block_limit = named_block_limit
 
 
 def _looks_like_endpoint_limitation(err: Any) -> bool:
@@ -413,12 +371,9 @@ def _looks_like_endpoint_limitation(err: Any) -> bool:
     params" on publicnode.  Code-first classification would treat the
     recoverable one as our own bug and stop rotating.
     """
-    if not isinstance(err, dict):
-        return True
-    message = str(err.get("message") or "").lower()
-    if any(frag in message for frag in _ENDPOINT_LIMITATION_PATTERNS):
-        return True
-    return err.get("code") not in _MALFORMED_REQUEST_CODES
+    return looks_like_endpoint_limitation(
+        err, fragments=_ENDPOINT_LIMITATION_PATTERNS
+    )
 
 
 def _is_range_limitation(err: Any, requested_span: int | None = None) -> bool:
@@ -431,32 +386,16 @@ def _is_range_limitation(err: Any, requested_span: int | None = None) -> bool:
 
     ``eth.drpc.org``, measured on 2026-09-12, answers *every* archive
     ``eth_getLogs`` — a 300-block window included — with ``code 35 "ranges over
-    10000 blocks are not supported on free plan"``.  Its free plan now serves
-    roughly sixty-four blocks and blames the refusal on a range it is not
-    reading; the real limit is archive depth, not width.  A client that takes
-    that at face value halves 2400 → 1200 → 600 → 300, reports "window 300 is
-    already minimal: ranges over 10000 blocks", and returns ``None`` — which is
-    exactly how the STAKERS panel went dark while the data sat one endpoint
-    away.
-
-    So: a range complaint that names a limit the request **already satisfies**
-    is not about the window.  Halving it is provably useless, and this returns
-    ``False`` so the caller rotates to the next endpoint instead.  A complaint
-    that names no limit at all, or names one the request genuinely exceeds,
-    stays shrinkable — the conservative direction, and the behaviour that was
-    already here.
+    10000 blocks are not supported on free plan"``; the real limit is archive
+    depth, not width, and halving against it is provably useless.  The
+    reasoning, and the STAKERS outage that produced it, are in
+    :func:`~maxpane_dashboard.data.rpc_classify.is_range_limitation`.
     """
-    if not isinstance(err, dict):
-        return False
-    message = str(err.get("message") or "").lower()
-    if not any(frag in message for frag in _RANGE_LIMITATION_PATTERNS):
-        return False
-    if requested_span is None:
-        return True
-    named = _named_block_limit(message)
-    if named is None:
-        return True
-    return requested_span > named
+    return is_range_limitation(
+        err,
+        fragments=_RANGE_LIMITATION_PATTERNS,
+        requested_span=requested_span,
+    )
 
 
 class Pool4LogRangeError(RuntimeError):

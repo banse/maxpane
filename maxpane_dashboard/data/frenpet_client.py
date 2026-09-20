@@ -69,6 +69,11 @@ class FrenPetClient(OwnedHttpClient):
         Ponder GraphQL endpoint.
     rpc_url:
         Base mainnet JSON-RPC endpoint.
+    indexer_db:
+        Path to the local indexer SQLite file.  ``None`` (the default)
+        resolves at construction: ``$MAXPANE_INDEXER_DB`` if set and
+        non-empty, otherwise the class default :attr:`INDEXER_DB`.  An
+        explicit argument -- including ``""`` -- beats both.
     http_client:
         Optional pre-configured ``httpx.AsyncClient``.  If not provided
         one is created internally and closed on ``close()``.
@@ -78,21 +83,38 @@ class FrenPetClient(OwnedHttpClient):
     RPC_URL = "https://mainnet.base.org"
     DIAMOND = "0x0e22b5f3e11944578b37ed04f5312dfc246f443c"
     AUTOPET_API = "http://127.0.0.1:8420"
-    INDEXER_DB = os.environ.get("MAXPANE_INDEXER_DB", "")
+    #: Environment variable consulted for the local indexer database; see
+    #: :meth:`__init__`, which reads it again at construction time.
+    INDEXER_DB_ENV = "MAXPANE_INDEXER_DB"
+
+    INDEXER_DB = os.environ.get(INDEXER_DB_ENV, "")
 
     def __init__(
         self,
         graphql_url: str = GRAPHQL_URL,
         rpc_url: str = RPC_URL,
         autopet_url: str = AUTOPET_API,
-        indexer_db: str = INDEXER_DB,
+        indexer_db: str | None = None,
         *,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._graphql_url = graphql_url
         self._rpc_url = rpc_url
         self._autopet_url = autopet_url
-        self._indexer_db = indexer_db
+        # Resolved here rather than baked into the signature default: a
+        # signature default is evaluated once, at import, which freezes the
+        # path for the life of the process and gives a library host no way
+        # to serve two configurations.  An explicit ``""`` still disables
+        # the indexer, because only ``None`` means "resolve it for me".
+        # Note what the fallback is: the *import-time* class default
+        # ``INDEXER_DB``, so an env var that was set when this module was
+        # first imported and is later unset -- or set to ``""`` -- still
+        # yields that import-time value for every new instance.
+        self._indexer_db = (
+            indexer_db
+            if indexer_db is not None
+            else (os.environ.get(self.INDEXER_DB_ENV) or self.INDEXER_DB)
+        )
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(_REQUEST_TIMEOUT),
             follow_redirects=True,

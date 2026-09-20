@@ -69,6 +69,19 @@ class FrenPetManager:
     wallet_address:
         If provided, the manager fetches the user's managed pets.
         When ``None`` (spectator mode), ``managed_pets`` is empty.
+    client:
+        Optional pre-built client (dependency injection).  Built as today
+        when ``None``.
+    cache:
+        Optional pre-built cache object.  Built as today when ``None``.
+    cache_path:
+        Optional path for the persisted history.  Resolves to the module
+        default :data:`_CACHE_FILE` at construction when ``None``; the
+        instance path is what ``load_from_file`` / ``save_to_file`` use.
+
+        ``app.py`` builds four ``FrenPetManager``s that share one cache
+        object, which it assigns after construction; ``cache=`` is the seam
+        that hold will move onto (follow-up #63).
     """
 
     def __init__(
@@ -76,9 +89,14 @@ class FrenPetManager:
         poll_interval: int = 30,
         wallet_address: str | None = None,
         fetch_rewards: bool = False,
+        *,
+        client: FrenPetClient | None = None,
+        cache: FrenPetCache | None = None,
+        cache_path: str | Path | None = None,
     ) -> None:
-        self.client = FrenPetClient()
-        self.cache = FrenPetCache(max_history=120)
+        self.client = FrenPetClient() if client is None else client
+        self.cache = FrenPetCache(max_history=120) if cache is None else cache
+        self._cache_path = Path(_CACHE_FILE if cache_path is None else cache_path)
         self._price_client = PriceClient()
         self._poll_interval = poll_interval
         self._wallet_address = wallet_address
@@ -88,7 +106,7 @@ class FrenPetManager:
         # Attempt to load persisted history on construction.  The clock is
         # passed in rather than read inside the loader so the same file
         # always loads the same way (see ``FrenPetCache.load_from_file``).
-        self.cache.load_from_file(str(_CACHE_FILE), now=time.time())
+        self.cache.load_from_file(str(self._cache_path), now=time.time())
 
     # ------------------------------------------------------------------
     # Public API
@@ -527,7 +545,7 @@ class FrenPetManager:
         current data (see
         ``tests/test_app_startup.py::test_frenpet_managers_share_one_cache``).
         """
-        self.cache.save_to_file(str(_CACHE_FILE))
+        self.cache.save_to_file(str(self._cache_path))
 
     async def close(self) -> None:
         """Shut down the HTTP client and persist cache."""

@@ -47,6 +47,15 @@ class BaseManager:
         When ``True``, the manager fetches data from the single
         GeckoTerminal trending call only (no trending-pools fan-out or
         Clanker).  Used by the Base Trading Overview dashboard.
+    client:
+        Optional pre-built client (dependency injection).  Built as today
+        when ``None``.
+    cache:
+        Optional pre-built cache object.  Built as today when ``None``.
+    cache_path:
+        Optional path for the persisted history.  Resolves to the module
+        default :data:`_CACHE_FILE` at construction when ``None``; the
+        instance path is what ``load_from_file`` / ``save_to_file`` use.
 
     Every upstream this manager touches is public and keyless; neither it
     nor :class:`BaseChainClient` reads API keys or ``.env`` files.
@@ -57,16 +66,20 @@ class BaseManager:
         poll_interval: int = 30,
         *,
         remote_only: bool = False,
+        client: BaseChainClient | None = None,
+        cache: BaseTokenCache | None = None,
+        cache_path: str | Path | None = None,
     ) -> None:
-        self.client = BaseChainClient()
-        self.cache = BaseTokenCache(max_history=120)
+        self.client = BaseChainClient() if client is None else client
+        self.cache = BaseTokenCache(max_history=120) if cache is None else cache
+        self._cache_path = Path(_CACHE_FILE if cache_path is None else cache_path)
         self._poll_interval = poll_interval
         self._error_count = 0
         self._selected_token: str | None = None
         self._remote_only = remote_only
 
         # Attempt to load persisted history on construction
-        self.cache.load_from_file(str(_CACHE_FILE))
+        self.cache.load_from_file(str(self._cache_path))
 
     # ------------------------------------------------------------------
     # Public API
@@ -442,7 +455,7 @@ class BaseManager:
 
     def save_cache(self) -> None:
         """Persist cache to disk."""
-        self.cache.save_to_file(str(_CACHE_FILE))
+        self.cache.save_to_file(str(self._cache_path))
 
     async def close(self) -> None:
         """Shut down the HTTP client and persist cache."""

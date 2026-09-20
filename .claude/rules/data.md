@@ -152,6 +152,15 @@ unrelated meanings; one provider's "suggested retry range" decrements one block 
 and livelocks anything that follows it verbatim. Evidence:
 `tests/fixtures/surf/pool4/rpc_error_states.json`.
 
+**RPC error classification lives in `data/rpc_classify.py`:** two endpoint tables (Ethereum / Base — a
+Base phrasing would make an Ethereum client rotate where the same words are terminal), two range
+families (span caps / result-count caps — a result cap must never teach a left-edge shrinker to
+shrink), `MALFORMED_REQUEST_CODES`, and predicates that take the table as a parameter. Pass
+`requested_span` wherever the request had one: the named-limit guard is consulted only after a span
+fragment matched, and a limit you already meet means rotate, not shrink. A client binds the shared
+names; the rotation / pagination POLICY stays in the client next to its tests, and a guard test
+(`tests/data/test_rpc_shared.py`) fails on any client re-typing a table as a literal.
+
 **The DOTA game API is NXDOMAIN.** The Bakery season ended 2026-06-12; its API still serves.
 
 ## Tiers and clocks

@@ -45,7 +45,7 @@ files; the commit message is the evidence.
 | 7 | `refactor/panels-small-four` | §3.4b | 2 | ~2,000 | cattown / dota / talismans / ttt widget + screen tests |
 | 8 | `refactor/panels-bt-bakery` | §3.4c | 2 | ~800 | base + bakery tests; templates deleted; `rules/widgets.md` step 3 |
 | 9 | `refactor/series-cache` | §3.6a | 2 | +179 net measured (six caches −276, base +434) | `tests/data/test_*_cache.py` unchanged, `test_series_cache.py` (new, fixture round-trips) |
-| 10 | `refactor/rpc-pool` | §3.6b | 2 | ~700 | fixture-first: one committed error-string fixture, classifier tests, then per-client tests |
+| 10 | `refactor/rpc-pool` | §3.6b | 2 | option B (owner, 2026-09-20); measured at closure `269beda..de27166 -- maxpane_dashboard/`: +869/−321 = **+548 net** — `rpc_classify.py` +361 (tables, predicates and the documented flips), five binding clients −30 (cattown_client's seam +25 counted here), eleven seam files +220 (eight managers, ocm/frenpet/talismans clients: keyword-only constructor seams and docstrings), `rpc_common.py` +12, `fwa_logs.py` −15 — sums to +548; head `a788ba4` is +878/−326 after the WP-C-review folds; the estimate of −100/+150 undercounted the documentation the hoist carries; the ~700 removal assumed the declined full `RpcPool` | `test_rpc_classify.py` (new, fixture-driven), `test_manager_seams.py` (new); seven client test files and all eight manager test files byte-unchanged |
 | 11 | docs | §3.7 | 0 | 0 | doc-pinning tests |
 
 Branch 0 first: it touches `app.py`, `copy_action.py`, `clipboard.py` and one test, nothing
@@ -3169,6 +3169,417 @@ on the head (M8); #49 reads "Tier 0 per file" (M9). Code Minors filed: #55 `get_
 caches (with M5 `allow_negative` unused), #56, #57, #58 `_loaded_version` naming. Reviewer confirmed
 follow-ups #45 and #54 are pre-existing zeros the branch strictly narrows, not blockers.
 
+## Branch 10 — `refactor/rpc-pool` (option B: classifier hoist + library seams; three work packages)
+
+Spec: HANDOVER.md §3 item 6, second half. Survey 2026-09-20 (scratchpad `branch10_survey.md`, 503 lines;
+anchors below are against main `269beda`). Tier 2: a new shared `data/` module, nine clients, > 6 files.
+**Owner decision 2026-09-20: option B**, after the survey showed the HANDOVER's full `RpcPool` would
+override nine individually tested error policies (not five — `rpc_common.py`'s MEDI-17 table predates
+curator, surf, surf_pool4, curator_nft_holders and fwa_logs) and that its "~700 lines removed" is
+reachable only by deleting policy the outage-born tests protect. **Owner constraint 2026-09-20:** the
+data layer will also serve other frontends (web sites); `data/` + `analytics/` must work as an
+importable library — configuration injected at construction, no import-time environment reads, no
+module-global mutable state. The survey found `data/` + `analytics/` already import nothing from
+Textual/rich/widgets/screens/app (AST-verified); the obstacles are constructor seams (§9c/e below).
+
+**Facts.** Five boolean endpoint-limitation tables: `ttt_client.py:268-290` (21 fragments),
+`curator_client.py:225-232` (22), `surf_client.py:1101-1106` (20), `surf_pool4_client.py:343-348` (20,
+byte-identical to surf, bound by the agreement test `test_surf_pool4_client.py:311`), `cattown_client.py:66-82`
+(15, a **Base** pool with 11 fragments no Ethereum client carries). The four Ethereum tables differ only
+by `personal token` (ttt), `api key` (dropped by curator with no note — drift) and curator's drpc route
+triplet (`can't route` / `cannot route` / `route your request`, `curator_client.py:230`). Three range tables:
+`curator_client.py:248-254` (11: four span fragments + 7 result-count/response-size fragments, justified
+at `:241-247` by THE LIST's ~4.3 logs/block), `surf_client.py:1108-1114` and `surf_pool4_client.py:350-362`
+(5 each, identical; `exceeds limit of` is mevblocker's honest cap). Four copies of
+`_MALFORMED_REQUEST_CODES = {-32600,-32601,-32602,-32604,-32700}` (`ttt:295`, `curator:256`, `surf:1116`,
+`surf_pool4:364`; cattown has none). Predicates: `_looks_like_endpoint_limitation` ×5 (ttt `:298`, curator
+`:259`, surf `:1119`, surf_pool4 `:407`, cattown `:104`), `_is_range_limitation` ×3 (curator `:269`, surf
+`:1129`, surf_pool4 `:424-459` — the only one taking `requested_span`, which encodes rules/data.md's drpc
+archive-depth rule "rotate, do not shrink" via `_named_block_limit` `:387-404`). Kind-based classifiers
+`talismans_client._classify_rpc_error:428-481` and `fwa_logs._classify_rpc_error:1382-1434` with their own
+marker tables (`talismans:373-388`, `fwa_logs:1318-1327`; fwa_logs has **no** `_RANGE_CAP_MARKERS`, it inlines
+the check at `:1415` — HANDOVER is half wrong there) are **out of scope**: they return typed kinds their
+pagers consume as data. Seven semantic flips a naive union would ship (survey §1e): non-dict `err` → `True`
+in four clients, `False` in cattown (`:106`, untested); `query returned more than` = rotate in cattown,
+shrink in curator; `timeout` = rotate in four, shrink in talismans/fwa_logs; drpc `code 35` = shrink in
+talismans/fwa_logs, rotate-when-limit-met in surf_pool4; `rate limit` = rotate ×4, retry-same-endpoint in
+fwa_logs; `exceeds` vs cattown's `exceeded`. Callers and what they do on each answer: survey §2. Tests
+pinning this area: 773 across seven client files (`test_ttt_client.py` 101, `test_curator_client.py` 115,
+`test_surf_client.py` 208, `test_surf_pool4_client.py` 180, `test_cattown_client.py` 39,
+`test_talismans_client.py` 52, `test_fwa_logs.py` 78) + `test_rpc_shared.py` 52 (its `:375` asserts each
+client still defines `_rpc`; `:444` asserts the MEDI-17 rationale is in `rpc_common.__doc__`; `:277-294`
+guards `ENDPOINT_DEAD_CODES` re-declaration but `ALL_CLIENTS:58-67` scans only `*_client.py`). Fixtures:
+`tests/fixtures/surf/pool4/rpc_error_states.json` (4 probes), `log_range_messages.json` (10 probes; drpc
+answers the identical "ranges over 10000 blocks" sentence at spans 403200/10000/2400/300 and succeeds at
+10), `tests/fixtures/fwa/rpc_errors.json` (14), talismans' inline `_LIVE_ERRORS`
+(`test_talismans_client.py:471`), `MANIFEST.json` (any new pool4 fixture must be listed or
+`scripts/capture_pool4.py --dry-run` drifts). Library seams (§9): import-time env reads `ocm_client.py:48`
+(module constant, ctor default `:121`), `cattown_client.py:167` (class attr, ctor default `:187`),
+`frenpet_client.py:81`; `_CACHE_DIR = Path.home() / ".maxpane"` in eight managers (`manager.py:30`,
+`base_manager.py:30`, `dota_manager.py:23`, `cattown_manager.py:37`, `frenpet_manager.py:39`,
+`talismans_manager.py:60`, `ttt_manager.py:62`, `ocm_manager.py:31`) with no ctor override except ocm's
+`cache_file`; seven managers construct their client inside `__init__` with no seam (`BaseManager:55/61`,
+`CatTownManager:50/51`, `DOTAManager:39/40`, `FrenPetManager:74/80,82`, `DataManager:54/55`,
+`TalismansManager:84/85`, `TTTManager:109/110-111`); talismans' log pool is not injectable
+(`talismans_client.py:730` hard-references `_LOG_RPCS`). `fwa_logs.py` re-declares `_ENDPOINT_DEAD_CODES`
+as a bare set (`:260`), re-implements `jsonrpc_payload` (`:1645-1652`) and `pace` (`:1581-1585`) and
+hand-rolls the `OwnedHttpClient` lifecycle (`:1490-1495`) — the MEDI-17 hoist missed it because it is not
+a `*_client.py`. Pacing is per instance everywhere (`_last_rpc_at` ×9, `rpc_common.pace` pure); no
+module-global rotation index; `rpc_common.py` imports only stdlib + httpx (no circular hazard as long as
+the new module never imports a client).
+
+**Design — `data/rpc_classify.py` (~120 lines incl. attribution comments, one owner, lands first).**
+
+```python
+# Every fragment keeps the provider/date comment it carries today; attribution is the point.
+ETH_ENDPOINT_LIMITATION_FRAGMENTS: tuple[str, ...]   # union of ttt/curator/surf/surf_pool4 = 24
+BASE_ENDPOINT_LIMITATION_FRAGMENTS: tuple[str, ...]  # cattown's 15, unchanged (Base providers phrase differently)
+RANGE_CAP_FRAGMENTS: tuple[str, ...]                 # the 5 span fragments (surf / surf_pool4 / curator)
+RESULT_CAP_FRAGMENTS: tuple[str, ...]                # curator's 7 result-count / response-size fragments
+MALFORMED_REQUEST_CODES: frozenset[int]              # {-32600, -32601, -32602, -32604, -32700}, one copy
+
+def looks_like_endpoint_limitation(err: Any, *, fragments: tuple[str, ...],
+                                   unstructured_is_limitation: bool = True) -> bool
+    # message-first over `fragments`; then MALFORMED_REQUEST_CODES only when the message missed
+    # (ttt/curator/surf/p4 shape); cattown passes unstructured_is_limitation=False and gets no code check
+    # (its today's behaviour) — expressed as a second keyword `check_codes: bool = True`.
+def is_range_limitation(err: Any, *, fragments: tuple[str, ...],
+                        requested_span: int | None = None) -> bool
+    # surf_pool4's body (:424-459) hoisted with _named_block_limit and its two regexes, EXCEPT that the
+    # named-limit guard counts blocks and is consulted only after a RANGE_CAP fragment matched (WP-A
+    # deviation: curator's "result limit of 10000 reached" names rows, and a verbatim hoist read it as a
+    # 10000-block limit and refused to shrink a 2000-block page);
+    # requested_span=None reproduces curator's and surf's present predicate exactly.
+```
+
+Each client keeps its `_rpc*` bodies, pools, exception classes and pagers untouched and binds thin
+module-level names so every caller and every `patch()` target survives: e.g. in `surf_client.py`
+`_ENDPOINT_LIMITATION_PATTERNS = ETH_ENDPOINT_LIMITATION_FRAGMENTS`, `_RANGE_LIMITATION_PATTERNS =
+RANGE_CAP_FRAGMENTS`, `def _looks_like_endpoint_limitation(err): return looks_like_endpoint_limitation(err,
+fragments=…)`; curator passes `fragments=RANGE_CAP_FRAGMENTS + RESULT_CAP_FRAGMENTS`; cattown passes
+`fragments=BASE_…, unstructured_is_limitation=False, check_codes=False`. `rpc_classify` imports nothing
+from any client (planner note 3). `rpc_common.py` gains one docstring paragraph ("the fragment tables are
+data and now live in one attributed place; the policies that consume them do not") — `test_rpc_shared.py:444`
+stays true.
+
+**Decisions.**
+- **P1 — two endpoint tables, not one.** Ethereum (24) and Base (15) stay separate: cattown's fragments are
+  Base-provider phrasings and merging would make ttt rotate on `method not found` where it is terminal today.
+  The Ethereum union widens each of the four clients by 1–4 fragments **in the rotate direction only** on a
+  state call (the next endpoint may answer); no shrink path is touched. The implementer verifies the four
+  classification tests stay green byte-unchanged; a fragment that reddens one is reported, not edited.
+- **P2 — range fragments split by family, not unioned.** surf/surf_pool4 keep the 5 span fragments; curator
+  keeps 5 + 7. surf's `_get_logs_shrinking` (`surf_client.py:3033-3082`) treats a short read as success, so
+  teaching it to shrink on a result cap would be silent data loss where today it rotates.
+- **P3 — the one deliberate behaviour change: curator passes `requested_span`.** curator still holds
+  `eth.drpc.org` for logs (`curator_client.py:110`) and lacks the archive-depth guard, so a drpc "ranges over
+  10000 blocks" at a span ≤ 10000 halves its window three times for nothing. After P3 it rotates. Pinned by a
+  new test in `test_rpc_classify.py` driven by `log_range_messages.json`; if an existing curator test asserts
+  the old shrink for that message, it is rewritten consciously and named in the WP-A outcome.
+- **P4 — talismans and fwa_logs keep their kind-based classifiers.** Their drpc `code 35` shrink is the same
+  defect P3 fixes for curator, but their pagers consume kinds and `suggested_to`; hoisting is a Tier 1 per
+  client with its own fixture run — filed (#65), not done here.
+- **P5 — the surf↔surf_pool4 agreement test is restated, not deleted:** `test_surf_pool4_client.py:311`
+  becomes an identity assertion on the imported tuples. It is the only line in the seven acceptance files
+  that changes, and the outcome paragraph must say so.
+- **P6 — library seams are additive.** Every new constructor parameter is keyword-only with a default that
+  reproduces today's behaviour; the module-level `_CACHE_DIR` / `_CACHE_FILE` / `_RPC_URL` / `RPC_URL` /
+  `INDEXER_DB` names are **kept** (tests monkeypatch them, and `Path.home()` touches no disk) but are read at
+  construction, not baked into a signature default: `rpc_url: str | None = None` →
+  `rpc_url if rpc_url is not None else os.environ.get(…, default)` inside `__init__`. `poll_interval` stays
+  (follow-up #64).
+- **P7 — no process-level rate limiter in this branch.** Aggregate rate under N concurrent clients is N× the
+  measured-safe pacing; that belongs to the hosting backend and is filed with the survey's numbers (#60).
+- **P8 — HANDOVER's `RpcPool` is recorded as declined** with the survey's reasons, in the closure commit; the
+  branch keeps its name for the programme table's continuity.
+
+**WP-A — `rpc_classify` + five clients** (one implementer). Files: NEW `data/rpc_classify.py`; `ttt_client.py`,
+`curator_client.py`, `surf_client.py`, `surf_pool4_client.py`, `cattown_client.py` (tables and predicates
+replaced by imports/bindings; `_rpc*` bodies untouched); `rpc_common.py` docstring paragraph; NEW
+`tests/data/test_rpc_classify.py`: (i) every probe of `rpc_error_states.json`, `log_range_messages.json` and
+`tests/fixtures/fwa/rpc_errors.json` walked through both predicates with a hand-typed expected action per
+probe (rotate / shrink / terminal / not-a-limitation) for each of the five client bindings; (ii) the drpc
+sentence at spans 403200/10000/2400/300 → shrink only when the named limit < span, rotate otherwise, for
+curator and surf_pool4; (iii) cattown's non-dict error → `False` (the path no test covers today); (iv) each
+client's bound tuple `is` the shared object; (v) `rpc_classify` imports nothing from `maxpane_dashboard.data`
+beyond stdlib (AST). Acceptance: `test_ttt_client.py`, `test_curator_client.py`, `test_surf_client.py`,
+`test_cattown_client.py`, `test_talismans_client.py`, `test_fwa_logs.py` byte-unchanged (`git diff --stat`
+empty), `test_surf_pool4_client.py` changed only at the agreement test (P5), all green; `test_rpc_shared.py`
+green with one added guard "no `*_client.py` defines `_ENDPOINT_LIMITATION_PATTERNS = (` as a literal".
+Mutation proof: drop `personal token` from the Ethereum union → name the test that reddens; make
+`is_range_limitation` ignore `requested_span` → the drpc-span test reddens for curator AND surf_pool4.
+
+**WP-B — library seams** (one implementer, after WP-A; `cattown_client.py` is shared with WP-A so strictly
+sequential). Files: `ocm_client.py`, `cattown_client.py`, `frenpet_client.py` (env read at construction, P6);
+`talismans_client.py` (`log_rpcs: list[str] | None = None` → `self._log_rpcs`, `_get_logs` uses it; a
+banned-host check like the state pool's); the seven managers (`manager.py`, `base_manager.py`,
+`dota_manager.py`, `cattown_manager.py`, `frenpet_manager.py`, `talismans_manager.py`, `ttt_manager.py`) gain
+keyword-only `client=None`, `cache=None` where a cache exists, `cache_path: str | Path | None = None`
+(default → the module `_CACHE_FILE` at construction); `ocm_manager.py` gains `client=` symmetry if missing.
+NEW `tests/data/test_manager_seams.py`: per manager, an injected fake client + `tmp_path` cache path → no
+read or write under `Path.home()` (monkeypatch `Path.home` to raise), `fetch_and_compute()` still returns a
+dict with the manager's model keys; per client, the env variable set AFTER import is honoured by a new
+instance and an explicit argument beats it. Acceptance: every manager's existing test file green and
+byte-unchanged, `tests/test_app_startup.py` byte-unchanged and green (the app's call shapes are unchanged),
+`tests/screens/test_dashboard_screen.py` + one composing screen test per touched manager. Mutation proof:
+revert one manager's `cache_path` plumbing → its seam test reddens by touching `Path.home`.
+
+**WP-C — fwa_logs joins the shared transport** (Tier 0-sized, one implementer, may be the session; after
+WP-B). `fwa_logs.py`: import `ENDPOINT_DEAD_CODES`, `jsonrpc_payload`, `pace`; `FWALogClient` mixes in
+`OwnedHttpClient`; delete the four local copies only where byte-equivalent (the implementer diffs `_post`'s
+inline pacing against `pace` first — if it differs, report and leave it). `test_rpc_shared.py`: add
+`fwa_logs` (and `curator_nft_holders` if absent) to `ALL_CLIENTS` so the existing guards scan it, and make
+`test_error_pattern_tables_are_not_re_declared` AST-shaped (WP-A review M5: the substring guard misses
+`_ENDPOINT_LIMITATION_PATTERNS = tuple([...])`) and scan `fwa_logs.py`'s `_RESULT_CAP_MARKERS` too.
+Acceptance: `test_fwa_logs.py` byte-unchanged and green; `test_rpc_shared.py` green; `tests/screens/test_fwa_screen.py`.
+
+**Tests.** Named sets per WP as above, always plus `-m guard tests`. No suite by an implementer or reviewer;
+the controller runs it once on the branch head. Fixture-first: no new fixture is captured (no network); the
+three committed corpora are the classifier's evidence.
+
+**Docs (closure commit).** `HANDOVER.md` §3 item 6 second half rewritten to B with the two factual
+corrections (fwa_logs has no `_RANGE_CAP_MARKERS`; nine policies, not five) and `RpcPool` marked declined
+2026-09-20; branch-order row 10 measured after WP-C; `rules/data.md` gains "RPC error classification lives in
+`data/rpc_classify.py`: two endpoint tables (Ethereum / Base), two range families (span / result-count),
+predicates take the table as a parameter; pass `requested_span` wherever the request had one"; `rpc_common.py`
+docstring paragraph (WP-A); the owner's frontend constraint recorded under "## Later phases" with the seam
+inventory that remains (#60, #63, #64).
+
+**WP-A outcome (2026-09-20, commit b635f51).** `data/rpc_classify.py` landed at 361 lines (stdlib + `typing`
+only, AST-asserted leaf): `ETH_ENDPOINT_LIMITATION_FRAGMENTS` 24 (union of ttt 21 / curator 22 / surf 20 /
+surf_pool4 20, every provider comment moved with its fragment), `BASE_ENDPOINT_LIMITATION_FRAGMENTS` 15
+verbatim (P1), `RANGE_CAP_FRAGMENTS` 5 + `RESULT_CAP_FRAGMENTS` 7 (P2), one `MALFORMED_REQUEST_CODES`, the two
+predicates and `named_block_limit`. Five clients bind; every module-level name survives; no `_rpc` body,
+pool, ban set, exception or pager touched; talismans/fwa_logs untouched (P4). P3 done: curator `_rpc_logs`
+takes keyword-only `requested_span` and `_get_logs_shrinking` passes the page's own span; no existing
+curator test asserted the old shrink, so none was rewritten. **Deviation, filed by the implementer:** hoisting
+`is_range_limitation` verbatim would have reddened `test_a_result_cap_halves_the_window_instead_of_killing_the_sweep`
+— `_NAMED_LIMIT_OF_RE` reads 10000 out of curator's captured `"result limit of 10000 reached"` (rows, not
+blocks), so a 2000-block page would refuse to shrink, rotate, exhaust both log endpoints and kill the log
+tier; the named-limit guard counts blocks, so it is consulted only after a `RANGE_CAP` fragment matched. For
+surf and surf_pool4 (fragments == the span family) the predicate is statement-for-statement unchanged. Two
+smaller corrections: curator's range family gained `exceeds limit of` (5 span fragments where it had 4 — the
+plan's own composition, an untested widening); the survey's curator range count is 11 (4 + 7), not 10. P5:
+`test_the_error_pattern_tables_agree_with_surf_client` restated `==` → `is`, the only hunk in the seven
+acceptance files; the other six are byte-unchanged (`git diff --stat` empty). `rpc_common.py` +1 docstring
+paragraph; `test_rpc_shared.py` +`test_error_pattern_tables_are_not_re_declared` globbing `data/*_client.py`.
+NEW `test_rpc_classify.py` 50 tests: all 17 committed error bodies through all five bindings against a
+hand-typed action table, the drpc sentence at 403200/10000/2400/300, cattown's non-dict flip, table identity,
+the leaf check, union membership, three anti-vacuity guards. Mutations: drop `personal token` → 3 union tests
+red (no acceptance test isolates the fragment — hence the minimal pairs); ignore `requested_span` → the
+drpc-span test red for curator AND surf_pool4 plus 5 pre-existing surf_pool4 pins; cattown
+`unstructured_is_limitation=True` → the non-dict test red and no cattown acceptance test (the survey's R1
+gap, confirmed). Named runs: 12 `tests/data` files 1,104 passed; guard 192; five composing screen files 624.
+Line delta across the five clients **−52** (ttt −23, curator +27, surf 0, surf_pool4 −61, cattown +5), not
+the estimated ~−330: the tables shrank as predicted, curator and surf_pool4 gained docstrings recording why
+the span and the two units matter — evidence did not get smaller.
+
+**WP-A review (2026-09-20, `git diff 4899809..b635f51`, opus): Approved — 0 Critical, 0 Important, 7 Minor.**
+Risk 1 verified exact: from a `4899809` worktree, both trees' predicates run side by side over all 14 distinct
+error bodies in the three committed corpora plus 4 non-dict shapes at spans {None, 10, 300, 2400, 10000, 50400,
+403200} — zero differing cells for surf and surf_pool4 and for `_looks_like_endpoint_limitation` on all five
+clients; the only 103 differing cells are curator's range predicate, i.e. P3. Curator: drpc rotates at spans
+≤ 10000 and shrinks above; result caps shrink at every span. ttt's union gain is exactly the drpc routing
+triplet, none a substring of its terminal payloads. No test patches any hoisted name; every client keeps a
+real module-level `def` and every `_rpc*` call is a bare global lookup. Leaf and identity confirmed. Mutations:
+`looks_like_endpoint_limitation` → always True: 33 red across four acceptance files; → always False: 38 red;
+a re-typed literal in ttt → exactly the new guard red; **deleting the result-cap escape (the plan's verbatim
+hoist) → `test_a_result_cap_halves_the_window_instead_of_killing_the_sweep` red** — independent confirmation of
+the implementer's deviation. Line counts: five clients −52 confirmed; `data/` net +321; whole diff +914.
+Minors folded here: M1 the design line no longer says "verbatim" and the Facts count reads 11; M2
+`curator_client.py:118`'s drpc comment ("hard 10k-block page cap") contradicted the module's own new docstring
+and rules/data.md (the limit is archive depth) — reworded; M7 the two source-reading tests carry
+`@pytest.mark.guard`. Filed: #66 (M3 curator's action table is evaluated at `requested_span=None`, a
+configuration curator no longer uses, and the mevblocker-at-curator-spans rotate is covered nowhere; M4 the
+empty-table anti-vacuity guard breaks on the first differing row and walks only ttt and cattown), #67 (M6
+`surf_pool4_client._named_block_limit` is a decorative alias — `is_range_limitation` calls its own module-level
+name, so patching the client attribute changes nothing). M5 (substring-shaped re-declaration guard) assigned
+to WP-C, which touches that test.
+
+
+**WP-B outcome (2026-09-20, commit 7ee4470, 13 files, +894/−57).** Seven managers (`manager.py` bakery,
+`base_manager`, `dota_manager`, `cattown_manager`, `frenpet_manager`, `talismans_manager`, `ttt_manager`) gained
+keyword-only `client=None`, `cache=None`, `cache_path: str | Path | None = None` (→ the module `_CACHE_FILE` at
+construction; the instance path is what `load_from_file` / `save_to_file` use; dota/talismans/ttt now create the
+injected path's parent, not `_CACHE_DIR`). `ocm_manager` gained only the missing `cache=`; `cache_file` kept, widened
+to `Path | str | None`. Clients: `OCMClient(rpc_url=None)` + `_RPC_URL_ENV`, `CatTownClient(rpc_url=None)` +
+`RPC_URL_ENV`, `FrenPetClient(indexer_db=None)` + `INDEXER_DB_ENV` — env consulted at construction, explicit
+argument wins; `TalismansClient(*, log_rpcs=None)` → `self._log_rpcs` iterated by `_get_logs`, plus a new
+`_BANNED_RPC_HOSTS` (ttt's set, entry for entry) enforced over all three pools at construction. Every kept
+module-level name (`_CACHE_DIR`, `_CACHE_FILE`, `_RPC_URL`, `RPC_URL`, `INDEXER_DB`, `_LOG_RPCS`) unchanged in value
+and still a working monkeypatch target; `app.py` untouched. Acceptance: `git diff --stat 9b77ae1..7ee4470 -- tests/`
+shows only the new `test_manager_seams.py` (615 lines, 13 tests). Mutations: cattown's cache calls back to
+`str(_CACHE_FILE)` → its seam test red, `test_cattown_manager.py` green (the old file cannot see it); `OCMClient` env
+back in the signature default → the construction-time env test red; talismans `_get_logs` back to the module
+`_LOG_RPCS` → its seam test red while `test_get_logs_uses_the_log_endpoint_pool` stayed green (compares by value).
+Named runs: 15 data files 387 passed; +10 neighbours 720; guard 194; four screen files 39. **Four deviations, filed by
+the implementer:** (1) `TTTManager` needed a class-level `_cache_path = None` fallback — `test_ttt_manager.py` builds
+via `__new__` and patches the module `_CACHE_FILE`; (2) no `*_KEYS` tuple exists for cattown/dota/ttt/ocm models,
+so those seam tests compare against a legacy-built reference key set instead of an imported contract — follow-up #68;
+(3) patching `Path.home` cannot catch a manager ignoring `cache_path` because `_CACHE_DIR` is evaluated at import, so
+the biting guard redirects the module default to `tmp_path/forbidden` and asserts it is never created; (4) talismans
+had no ban check at all (the brief described ttt's); `rpc.flashbots.net` not added: no shipped pool carries it and
+ttt's set, which talismans mirrors under an agreement test, does not either — the whole-branch review (Minor 3) noted
+that the new gate DOES scan the injectable log pool, so adding the host by hostname to both sets is #61's job.
+
+**WP-B review (2026-09-20, `git diff 9b77ae1..7ee4470`, opus): Needs fixes — 0 Critical, 2 Important, 6 Minor; the
+production diff was found clean.** Signature-diffed all twelve constructors against `9b77ae1`: every new parameter
+keyword-only with a default, no positional moved, `poll_interval` still first; `git diff --stat -- tests/` shows only
+the new seam file; all `app.py` constructions keyword-only. Under a temp HOME all eight managers built with no
+`cache_path` resolve to their module `_CACHE_FILE` (8/8). talismans' ban check rejects no host any existing call site
+passes (29 constructions in its test file, the manager default, the seam file). `tests/test_app_startup.py::
+test_frenpet_managers_share_one_cache` byte-unchanged and green. Seam file run against a copy of the owner's real
+`~/.maxpane/*.json` (19 files) in a temp HOME: 13 passed, nine cache checksums byte-identical before and after.
+Fourteen mutations proved eleven of thirteen seam tests bite. **I1:** `_assert_isolated` redirects the module default to
+an empty `tmp_path/forbidden`, so a manager that still LOADS from `_CACHE_FILE` is a silent no-op — reverting only the
+`load_from_file` call in each of the eight managers survived 8/8, and three docstrings claimed otherwise; the load half
+is the half that puts numbers on screen, and a library host reading another deployment's cache would ship green.
+**I2:** `mgr.client is injected` appears nowhere; making `BaseManager` always build a real `BaseChainClient` survived
+13/13 and ran 6.35 s instead of 1.38 s under a dead proxy — real sockets, hard constraint 3. Minors: M1 the
+`os.environ.get(ENV) or MODULE_DEFAULT` shape serves an import-time value to new instances after the variable is
+unset or emptied (satisfies the plan's wording; not a regression; docstring sentence); M2 the four managers without a
+`*_KEYS` contract compare against a key set derived from the code under test (construction-path equivalence, not a
+payload contract) — #68; M3 talismans' `_BANNED_RPC_HOSTS` is a sixth hand-typed copy bound by no agreement test and
+missing from `test_banned_host_lists_still_raise_at_construction`'s parametrize; M4 its comment says "mirrors ttt and
+fwa" but fwa's set has an eighth, state-pool-only entry; M5 `_CACHE_DIR` is now unreferenced at runtime in all eight
+managers while four frozen test files still monkeypatch it (#69); M6 the "forbidden was created" arm of the isolation
+helper fired in none of the mutations. Fix round 1 (I1, I2, M1, M3, M4 folded) sent to the resumed implementer.
+
+**WP-B fix round 1 (2026-09-20, commit c43ce34, 6 files, +369/−170; production changes comment-only, verified by a
+non-comment diff filter).** I1: `test_manager_seams.py`'s isolation helper redirected each module default to an
+EMPTY `tmp_path/forbidden`, so a manager still loading `_CACHE_FILE` read an absent file and came up empty exactly as
+if it had obeyed `cache_path` — an absent path cannot tell "loaded the right file" from "loaded the wrong, missing
+one". Replaced by a helper that SEEDS the redirected default with a populated cache written by that manager's own
+cache class, then asserts in order: the seed is non-empty; a control manager pointed at it DOES load it (anti-vacuity,
+probe per cache: `history_size` for six, `operations_total` for talismans, `dict(last_seen_block)` for ttt); the seam
+manager comes up empty; after one `fetch_and_compute()` + save the seam file exists and the seeded bytes are
+unchanged. Bakery's and ocm's seeds use `time.time()` because per-series `max_age` would otherwise expire them on
+load and make the control step fail loudly. I2: `assert mgr.client is <injected>` twice per test (seeder and seam
+manager) in all eight, and every client class patched to a raise-on-every-attribute fake as the socket backstop.
+Mutations: reverting only the load call in `base_manager.py:82` + `ttt_manager.py:148` reddened exactly the base and
+ttt seam tests at the load step, the other eleven green (under the old helper all 13 stayed green); `base_manager.py:73`
+always building a real client reddened exactly the base seam test on the identity assert (under `7ee4470` all 13
+passed and real sockets opened). Folded: M3 `test_banned_host_lists_still_raise_at_construction` parametrizes
+fwa/ttt/talismans and a new `test_talismans_and_ttt_ban_exactly_the_same_hosts` binds the sixth hand-typed copy
+(`==` on the sets, `fwa − ttt == {"eth.drpc.org"}`); the seam file's duplicate arm trimmed to the log-pool seam; M4
+talismans' comment now says it mirrors ttt exactly and names the agreement test; M1 one docstring sentence in
+ocm/cattown/frenpet clients states the import-time fallback. Named runs: seam file 13; three data files + eight
+manager files + `test_app_startup.py` 306; guard 194.
+
+**WP-B scoped re-review (2026-09-20, `git diff 7ee4470..c43ce34`, opus): I1 ADDRESSED, I2 ADDRESSED.** The load-only
+revert (`load_from_file(str(_CACHE_FILE))`) applied one manager at a time reddened all eight seam tests on the step-3
+assertion "loaded its module default instead of the injected cache_path" — 1 failed / 12 passed each time, where at
+`7ee4470` the same mutation survived 8/8; bakery and ocm redden because their seeds carry `fetched_at=time.time()`, so
+`max_age` does not expire them on load. The anti-vacuity step was instrumented in place: every probe is non-zero after
+the seeder loads and falsy for a fresh manager (bakery 2, base 3, frenpet 5, talismans 1 via `operations_total`,
+cattown/dota/ocm 1, ttt the two `last_seen_block` entries), so steps 2 and 3 constrain each other. Save-only reverts
+still bite (bakery, ocm) and dota's `mkdir` arm bites. I2: identity asserted at step 1 and step 3 in the shared helper,
+so all eight are covered; the `if client is None` drop in base, frenpet and talismans each reddened exactly its own
+seam test; the fake is a plain class whose `__getattr__` returns an async raiser, no `unittest.mock` in the file, patched
+into all eight modules; the base mutation that passed in 6.35 s at `7ee4470` on real sockets now fails in 0.27 s.
+Scope confirmed: production diff non-comment-empty; only `test_rpc_shared.py` pre-existing test touched; the agreement
+test asserts `==` and `fwa − ttt == {"eth.drpc.org"}` and reddens on one deleted host; the seam file's ban test kept
+only the log-pool arm and reddens on dropping `*self._log_rpcs`. New Minor filed: #70 (`cache=` identity asserted for
+frenpet and ocm only; six of eight `cache=` seams delete green). Named runs: two changed files 68; 18-file set 573;
+guard 194; five screen files 48. 24 mutations, inverse-edit restored, tree clean after each.
+
+
+**WP-C outcome (2026-09-20, commit de27166, 2 files, +172/−43; `fwa_logs.py` +13/−28).** All four brief items were
+found behaviour-identical after a statement-by-statement diff and replaced: `_ENDPOINT_DEAD_CODES` → import alias of
+`rpc_common.ENDPOINT_DEAD_CODES` (sole use is `in`; frozenset reads as the set did); `_payload` → `jsonrpc_payload`
+(key-for-key and order-for-order identical; no fwa request fixture exists to pin bytes; the per-instance
+`_request_id` increment stays); `_post`'s inline pacing → `pace` (`__init__` stores `max(0.0, float(...))`, so
+truthiness ⟺ `> 0`; same elapsed point, same sleep, same stored timestamp; the no-sleep path makes one
+`monotonic()` call instead of two, and nothing patches it); `FWALogClient(OwnedHttpClient)` with its identical
+`close`/`__aenter__`/`__aexit__` deleted, `_client`/`_owns_client` kept in `__init__`. Deliberately LEFT:
+`fwa_logs._strip0x` also strips uppercase `0X` where `evm_abi.strip0x` does not — binding it would change every FWA
+log decoder on an uppercase prefix — so it stays under a per-NAME `CODEC_EXEMPTIONS` entry pinned by a divergence test
+that reddens the day the two agree (never a module skip); `fwa_logs` stays out of `RPC_CLIENTS` (that list asserts a
+`_rpc` it lacks) and the positive envelope guard moved to a wider `JSONRPC_MODULES` instead of a parametrised skip.
+`ALL_CLIENTS` gained `curator_nft_holders` and `fwa_logs` (both non-`*_client.py` modules the MEDI-17 glob never saw),
+so five codec/lifecycle/dead-code guards now scan them. M5 done: `test_error_pattern_tables_are_not_re_declared`
+walks top-level `Assign`/`AnnAssign` nodes and requires every value node to be `Name`/`Attribute`/`BinOp(Add)` — a
+deviation from the brief's bare-Name wording because `curator_client.py:253` composes two shared families on purpose
+(P2); any `Constant`/`Tuple`/`List`/`Set`/`Dict`/`Call` fails. P4 allow-set `_P4_LOCAL_TABLES` (talismans'
+`_RESULT_CAP_MARKERS`/`_RANGE_CAP_MARKERS`, fwa_logs' `_RESULT_CAP_MARKERS`) cites P4/#65, with two anti-vacuity
+defences: the walk must have SEEN ttt's, curator's, fwa_logs' and every exempted table, and a new guard test asserts
+each exempted table is still a literal that would otherwise fail. Mutations: re-added dead-codes literal in fwa_logs
+→ exactly the dead-codes guard (1F/140P, all 78 acceptance green); ttt `= tuple(["x"])` → exactly the AST guard,
+allow-set entries green, and the OLD substring guard shown blind to it; mixin dropped → the lifecycle guard AND 21 of
+78 `test_fwa_logs.py` on `AttributeError` at `close()`. Acceptance: `test_fwa_logs.py` byte-unchanged, 78/78; only
+`test_rpc_shared.py` under `tests/` in the diff. Named runs: five data files 271→279; +4 neighbours 403; guard
+194→195; `test_fwa_screen.py` 22. Minors raised by the implementer: `evm_abi.strip0x` does not strip `0X` (→ #71);
+`rpc_common`'s "all eight / all five" docstring counts and three unmarked source-reading tests (folded in the
+closure commit).
+
+**WP-C review (2026-09-20, `git diff 61e0c53..de27166`, opus): Approved — 0 Critical, 0 Important, 6 Minor.** The
+three claims the controller singled out all hold: (a) the `+`-admitting AST rule requires every node of the value
+expression to be `Name`/`Attribute`/`BinOp`/`Add`/`Load`, so `SHARED + ("x",)` and `SHARED + tuple([...])` both redden
+the guard while curator's P2 composition stays green; (b) `CODEC_EXEMPTIONS` is per name — making `_strip0x`
+identical to the shared helper reddens exactly the divergence test, and a second forbidden def in fwa_logs still
+reddens two codec guards; (c) pacing: `_min_call_interval` is assigned once as `max(0.0, float(...))`, so truthiness
+is `> 0`; both bodies run side by side out of tree with a faked sleep over seven boundary cases (first call at 0.05
+and at 0, interval 0 with a recent last call, 1 ms, 1 s, negative last call, NaN through `max`) gave identical sleep
+counts and durations; `jsonrpc_payload` bytes identical to the deleted literal. The `fwa_logs.py` diff is six hunks,
+none touching the classifier, markers, learned window, scanner or endpoint list. Nine mutations, each reddening the
+advertised test; the `_payload` revert left all 78 acceptance tests green (behaviour-neutral by construction). Minors:
+1 the AST walk read only the top level, so a nested `if True:` restatement in `surf_client.py` passed (63 green),
+caught in ttt only via the three anchored pairs — **folded**: the walk now descends every module-scope compound
+statement and stops at function/class bodies, and `_BOUND_TABLES_TODAY` anchors all nine (module, table) pairs;
+controller mutations: nested restatement ADDED beside surf's binding → exactly the guard red; surf's binding renamed
+→ exactly the guard red. 2 `fwa_logs._addr_topic` / `_word` / `_uint` restate `evm_abi` codec arithmetic under other
+names (→ #71). 3 the `0X` divergence the exemption protects is exercised by no test — all 78 acceptance tests stay
+green with the copy made identical (→ #71). 4 `rpc_common.py` docstrings "all eight" (×2) / "all five" — **folded**.
+5 `_CLASSIFIER_SOURCES` and `ALL_CLIENTS` disagree about which non-`*_client.py` modules count (→ #72). 6 fwa's
+pacing path is exercised only at `min_call_interval=0.0` while production runs 0.05 (→ #73). The implementer's
+three-marker Minor is **folded** (guard set 195 → 198). Named runs: two changed files 141; eight-file set 443; guard
+195; `test_fwa_screen.py` 22. Tree clean after every restore.
+
+**Branch 10 closure (2026-09-20).** Three work packages, all Approved (WP-A 0C/0I/7M; WP-B 0C/2I/6M → fix round →
+both ADDRESSED; WP-C 0C/0I/6M). Production `269beda..de27166 -- maxpane_dashboard/`: +869/−321, net +548 (row 10 has
+the split). Acceptance held throughout: seven client test files, all eight manager test files, `test_fwa_logs.py` and
+`test_app_startup.py` byte-unchanged. New tests: `test_rpc_classify.py` (50), `test_manager_seams.py` (13), plus the
+AST-shaped re-declaration guard, the P4 self-check and the talismans↔ttt agreement in `test_rpc_shared.py`. Filed
+#60–#73. `HANDOVER.md` §3 item 6 rewritten to option B with `RpcPool` declined; `rules/data.md` gained the
+classification paragraph. Whole-branch review and the single full suite follow in the closure sequence below.
+
+
+**Whole-branch review (2026-09-20, `git diff 269beda..a788ba4`, opus): Approved — 0 Critical, 0 Important, 5 Minor.**
+Check 1: all eight managers built out of tree with a raise-on-everything client and `Path.home` raising; 14/14 bound
+tables are the `rpc_classify` objects by identity; sizes ETH 24 / BASE 15 / RANGE 5 / RESULT 7 / CODES 5. Check 2:
+acceptance byte-unchanged (seven client files, eight manager files, `test_app_startup.py`; `tests/` diff is exactly
+the two new files, `test_rpc_shared.py` and P5's one-token change); 31 committed error bodies × 7 spans × 10 predicates
+= 2,170 cells per tree against a read-only `269beda` worktree — 9 differing cells, all curator's range predicate: the
+drpc/1rpc/blastapi "named limit already met" rows flip to rotate (P3) and mevblocker's honest cap flips to shrink (the
+disclosed widening, pinned by `test_rpc_classify.py`'s hand-typed row and its own test); both kind-classifiers
+unchanged cell for cell. Check 3: 46 URL literals in each tree, zero added or removed; three module-level env
+fallbacks + three construction-time reads, no new variable; no key/signer/clipboard/socket line added; flashbots in no
+pool; the two new test files run in 1.62 s under a dead proxy. Check 4: importing all 100 `data/` + `analytics/`
+modules leaves no `textual`/`rich` in `sys.modules`; the only file written is the injected cache path;
+`~/.maxpane` byte-identical. Check 5: every figure re-measured true; guard 198; #60–#73 present. Check 6: six new
+mutations (import-leaf, an `AnnAssign` literal in cattown, a P4 table turned binding, flashbots ADDED to talismans'
+set, the log-pool arm dropped from the gate, talismans save-only revert) each reddened exactly the advertised test.
+Minors: 1 `HANDOVER.md` item 7 still prescribed "`RpcPool` config" — **folded**; 2 row 10's split summed to +561 (the
+seam group double-counted `cattown_client`, `rpc_common` +12 was in no group) — **folded**; 3 the WP-B outcome's
+justification for leaving flashbots out of talismans' ban set no longer matched a gate that scans the log pool —
+**folded** (sentence corrected; the by-hostname ban is #61); 4 `ocm_manager.py` used truthiness (`client or
+OCMClient()`, `if cache_file`) where the other seven read `is None`, so a falsy injected client silently built a real
+one — **folded** with a regression test; 5 `PriceClient()` is built unconditionally in `ttt_manager` and
+`frenpet_manager`, a second un-injectable client the seam tests must monkeypatch — **filed #74** and added to the
+"Later phases" inventory. Named runs: three new files 126; guard 198; seven client acceptance files 773; manager set
+186. Fix wave committed as `4da926e`.
+
+**Fix-wave scoped re-review (2026-09-20, `git diff a788ba4..4da926e`, opus): Minors 1–4 ADDRESSED, 5 FILED-as-agreed.**
+Every `RpcPool` mention left in HANDOVER, the programme doc and `.claude/rules/` is a decline record or Branch 9's
+historical plan text; the row 10 split re-measured figure by figure and partitions the 19 changed files exactly
+(1 + 5 + 11 + 1 + 1); the flashbots sentence matches the gate at `talismans_client.py:552` and #61 carries the
+by-hostname fix; `test_ocm_manager.py` byte-unchanged and behaviour-neutral (no test passes a falsy client or an
+empty path). Mutation: restoring `client or OCMClient()` reddened exactly the new regression test on its identity
+assert, 13 green. New Minor: restoring the `if cache_file` truthiness left all 24 green — the path half was
+unpinned — **folded by the controller**: the same test now also builds with `cache_file=""` under a `chdir` into
+`tmp_path` and asserts the result is not the module default; controller mutation: truthiness restored → exactly that
+test red on the new assert. Guard 198.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
@@ -3183,6 +3594,18 @@ follow-ups #45 and #54 are pre-existing zeros the branch strictly narrows, not b
   nothing. Mutation proof: remove the mouse-up hook → the drag test reddens.
 
 ## Later phases (recorded, not scheduled)
+
+- **Data layer as a library for other frontends (owner, 2026-09-20).** `data/` + `analytics/` import nothing
+  from Textual/rich/widgets/screens/app already (AST-verified in the Branch 10 survey). Branch 10 WP-B adds
+  the constructor seams (client, cache, cache path, env reads at construction, talismans log pool). Remaining
+  after it: a process-level rate limiter for N concurrent clients against keyless hosts (#60), the FrenPet
+  shared-cache hold that lives in `app.py:123-136` rather than the data layer (#63), `poll_interval` in every
+  manager signature (#64), the three `@lru_cache` ABI loaders in `fwa_logs.py` returning mutable dicts (#62), and
+  the unconditional `PriceClient()` in `ttt_manager` and `frenpet_manager` — a second, un-injectable client (#74).
+- **`RpcPool` as HANDOVER §3.6b wrote it — declined 2026-09-20 (owner chose option B).** Reasons in the Branch
+  10 section: nine individually tested error policies, seven fragments whose meaning flips between clients,
+  ~1,053 tests in the blast radius, and the "~700 lines" only reachable by deleting pinned policy. Revisit only
+  if a second frontend needs one rotation loop, and then with the survey's §1e table as the risk register.
 
 - Panels by composition (`format_row` injected) once every dashboard is on `panels.py`.
 - surf / curator / fwa fully onto `PANELS` + panel subclasses.

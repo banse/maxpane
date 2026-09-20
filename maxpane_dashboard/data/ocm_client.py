@@ -45,7 +45,13 @@ _WEI = 10**18
 # RPC endpoint
 # ---------------------------------------------------------------------------
 
-_RPC_URL = os.environ.get("MAXPANE_ETH_RPC_URL", "https://ethereum-rpc.publicnode.com")
+#: Environment variable consulted for the state-read endpoint. Read at
+#: *construction* (see :meth:`OCMClient.__init__`), not only here at import,
+#: so a host that sets it after this module is imported -- a web backend
+#: building a client per request, say -- is honoured by the next instance.
+_RPC_URL_ENV = "MAXPANE_ETH_RPC_URL"
+
+_RPC_URL = os.environ.get(_RPC_URL_ENV, "https://ethereum-rpc.publicnode.com")
 
 # ---------------------------------------------------------------------------
 # Contract addresses
@@ -112,7 +118,10 @@ class OCMClient(OwnedHttpClient):
     Parameters
     ----------
     rpc_url:
-        Ethereum mainnet JSON-RPC endpoint.
+        Ethereum mainnet JSON-RPC endpoint.  ``None`` (the default) resolves
+        at construction: ``$MAXPANE_ETH_RPC_URL`` if set and non-empty,
+        otherwise the module default :data:`_RPC_URL`.  An explicit argument
+        beats both.
     http_client:
         Optional pre-configured ``httpx.AsyncClient``.  If not provided
         one is created internally and closed on ``close()``.
@@ -120,11 +129,23 @@ class OCMClient(OwnedHttpClient):
 
     def __init__(
         self,
-        rpc_url: str = _RPC_URL,
+        rpc_url: str | None = None,
         *,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._rpc_url = rpc_url
+        # Resolved here rather than baked into the signature default: a
+        # signature default is evaluated once, at import, which freezes the
+        # endpoint for the life of the process and gives a library host no
+        # way to serve two configurations.  Note what the fallback is: the
+        # *import-time* module default, so an env var that was set when this
+        # module was first imported and is later unset -- or set to ``""`` --
+        # still yields that import-time value for every new instance; pass
+        # ``rpc_url=`` explicitly to override it.
+        self._rpc_url = (
+            rpc_url
+            if rpc_url is not None
+            else (os.environ.get(_RPC_URL_ENV) or _RPC_URL)
+        )
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(_REQUEST_TIMEOUT),
             follow_redirects=True,

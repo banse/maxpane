@@ -659,3 +659,139 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     difference outside R5. Log lines identical except bakery's `NOUN` rewording and frenpet's lost
     population count (#51). Not a defect; the reference for anyone asking "did Branch 9 change what a
     user's file loads as". **No action.**
+
+## Branch 10 — RPC classifier hoist + library seams (filed at planning, 2026-09-20)
+
+60. **No process-level RPC rate limiter exists; pacing is per instance.** `rpc_common.pace` is pure and every
+    client keeps its own `_last_rpc_at` (cattown `:202`, curator `:390`, curator_nft_holders `:181`,
+    fwa_client `:755`, fwa_logs `:1497`, surf `:1193`, surf_pool4 `:528`, talismans `:522`, ttt `:536`), so N
+    concurrent clients in a web backend hit a keyless host at N× the pacing measured for one TUI
+    (0.05–0.5 s between calls). Also: every `_rpc` restarts its pool from the top, so a dead primary is
+    re-probed on every call. Belongs to whoever hosts the backend (a pool shared across requests or a
+    process-level limiter); nothing in the TUI needs it. **Minor, no branch** until a second frontend exists.
+
+61. **Flashbots' absence from every log pool is a comment, not a test.** rules/data.md says `rpc.flashbots.net`
+    is never in a log pool; the code records the rejection (`ttt_client.py:143`, `talismans_client.py:94`) and
+    `fwa_logs.LOG_ENDPOINTS:215-220` is a whitelist checked in `__init__`, but no test asserts the absence by
+    hostname across the nine pools. One parametrised test in `test_rpc_shared.py` next to
+    `test_state_and_log_endpoint_pools_stay_separate:427`. **Minor, Tier 0.** Branch 10 WP-B made the first
+    injectable talismans log pool (`log_rpcs=`) and its construction gate scans it against `_BANNED_RPC_HOSTS`,
+    which does not carry `rpc.flashbots.net`; add the host by hostname to ttt's set and talismans' mirror in the
+    same change (the agreement test binds them) so a library caller cannot configure it either.
+
+62. **Three `@lru_cache(maxsize=1)` ABI/topic loaders in `fwa_logs.py` (`:272`, `:283`, `:743`) return mutable
+    dicts.** Process-global and shared by reference; a caller that edits the returned dict edits it for every
+    later caller. Harmless today (no caller mutates), a hazard for a long-lived library host. Return a
+    `MappingProxyType` or a frozen copy. **Minor, Tier 0** when `fwa_logs.py` is next touched.
+
+63. **The FrenPet shared-cache hold lives in the app, not the data layer.** `app.py:123-136` reaches into four
+    `FrenPetManager`s and assigns `_frenpet_variant.cache = _shared_frenpet_cache` because all four persist to
+    the same `~/.maxpane/frenpet_cache.json`. A second frontend must reproduce that coupling or corrupt the file.
+    Move the sharing into the data layer (a `cache=` argument the four take — Branch 10 WP-B adds the seam — and
+    one factory that hands them the same instance). **Minor, Tier 1** (frenpet manager + app.py), after WP-B.
+
+64. **`poll_interval` is a TUI concept in every manager signature.** All eleven managers take
+    `poll_interval` as the first positional argument (`manager.py:54`, `dota_manager.py:39`, `base_manager.py:55`,
+    `cattown_manager.py:50`, `frenpet_manager.py:74`, `ttt_manager.py:109`, `talismans_manager.py:84`,
+    `ocm_manager.py:49`, curator `:651`, fwa `:477`, surf `:851`); a library consumer that polls on its own
+    schedule still has to pass one. Make it keyword-only with a default and stop reading it in `data/` where
+    only screens use it. **Minor, Tier 2** — eleven managers + the screens that construct them.
+
+65. **talismans and fwa_logs shrink on drpc `code 35` regardless of the span they asked for.**
+    `talismans_client.py:479-480` and `fwa_logs.py:1432-1433` classify "ranges over 10000 blocks are not
+    supported on free plan" as `range_cap` → shrink, and both pools hold `eth.drpc.org` (`talismans_client.py:104`,
+    `fwa_logs.py:217`). `log_range_messages.json` shows drpc answers that sentence identically at spans 403200,
+    10000, 2400 and 300 (its limit is archive depth, ~64 blocks): a client that shrinks on it halves its window
+    forever — the rules/data.md "rotate, do not shrink" defect, encoded only in `surf_pool4_client.py:424-459`
+    (`requested_span`) and, after Branch 10 WP-A decision P3, in curator. Fix per client: thread the requested
+    span into `_classify_rpc_error` (or check it in the pager) and demote `range_cap` to a rotate when the named
+    limit ≥ the span. Fixture-first from `log_range_messages.json`; both pagers consume `suggested_to`, so each
+    is its own change. **Important, Tier 1 per client.**
+
+## Branch 10 WP-A — review Minors (2026-09-20)
+
+66. **`test_rpc_classify.py`'s curator rows are evaluated in a configuration curator no longer uses.**
+    `tests/data/test_rpc_classify.py:231` calls the action helper with `requested_span=None`, but after WP-A
+    `curator_client._get_logs_shrinking` (`:655-660`) always passes a span, so two `EXPECTED` rows
+    (`:116-169`) state the reverse of curator's production behaviour: the drpc sentence reads SHRINK (curator
+    now rotates at every span it uses; covered by `test_a_named_limit_the_request_already_meets_rotates`) and
+    `mevblocker_range_cap` reads SHRINK where curator rotates at 2000/1000/500/300 (named cap 10000 > every
+    page) — **covered nowhere**, and it is the one untested widening WP-A added (curator gained
+    `exceeds limit of`). Also (M4) `test_the_expectations_would_not_survive_an_empty_fragment_table`
+    (`:246-275`) `break`s on the first differing row, so it passes when ONE of 17 rows is fragment-dependent,
+    and re-walks only ttt and cattown, so no range fragment is exercised by it. Fix: evaluate curator's rows
+    at the spans its pager uses, add the mevblocker-at-curator-spans rotate, make the empty-table guard
+    count differing rows and include curator. **Minor, Tier 0** when `test_rpc_classify.py` is next touched.
+
+67. **`surf_pool4_client._named_block_limit` is a decorative alias.** `surf_pool4_client.py:361` binds
+    `_named_block_limit = named_block_limit`, but `rpc_classify.is_range_limitation` calls its own
+    module-level `named_block_limit` (`rpc_classify.py:358`), so patching the client attribute changes no
+    classification; `test_rpc_classify.py:424` asserts the alias identity as if the seam were live. No test
+    patches it today (`test_surf_pool4_client.py:445, 2590, 2603` only call it). Either drop the alias and
+    point the three calls at `rpc_classify.named_block_limit`, or make the predicate take the limit reader as
+    a parameter. **Minor, Tier 0** when `surf_pool4_client.py` is next touched.
+
+## Branch 10 WP-B — found while implementing (2026-09-20)
+
+68. **Four dashboards have no `*_KEYS` contract tuple in their models module.** `curator_models`, `fwa_models` and
+    `surf_models` export the flat-dict key tuple the widgets restate and an agreement test binds; `cattown_models`,
+    `dota_models`, `ttt_models` and `ocm_models` do not (bakery/base/frenpet/talismans carry theirs in the manager
+    test file). `tests/data/test_manager_seams.py` therefore asserts those four seam payloads against a reference
+    key set rather than an imported contract. Add the tuple to each models module (the manager's
+    `fetch_and_compute()` keys, typed once) and point both the seam test and the existing manager test at it —
+    per CLAUDE.md "Freeze the data contract first". **Minor, Tier 1 per dashboard** (models module + two test
+    files), or fold into the dashboard's next Tier 1.
+
+69. **`_CACHE_DIR` is unreferenced at runtime in all eight migrated managers, but four frozen test files still
+    monkeypatch it.** After Branch 10 WP-B only `_CACHE_FILE` is read (dota/talismans/ttt moved their `mkdir` to
+    `self._cache_path.parent`); `test_talismans_manager.py:69,214,284,300,324,345,362`, `test_dota_manager.py:95`,
+    `test_base_manager.py:122`, `test_cattown_manager.py:130` patch `_CACHE_DIR` where it no longer bites. Harmless
+    — each also patches `_CACHE_FILE`, which carries the isolation — but a reader will trust the wrong patch. Drop
+    the dead patches when each file is next touched. **Minor, Tier 0 per file.**
+
+## Branch 10 WP-B — re-review Minor (2026-09-20)
+
+70. **`cache=` identity is pinned for only two of the eight managers that accept it.**
+    `tests/data/test_manager_seams.py`'s shared helper asserts `mgr.cache is injected_cache` only when the test's
+    `_build` returns a cache, and only frenpet and ocm do; the other six pass `None`. Mutation-proven by the
+    re-review: dropping `if cache is None else cache` from bakery `manager.py:72`, `base_manager.py:74`,
+    `dota_manager.py:57`, `cattown_manager.py:68`, `talismans_manager.py:108` and `ttt_manager.py:135` leaves 13
+    passed every time — six of eight `cache=` seams can be deleted green. Same shape as WP-B's I2, one rung down.
+    Fix: return the cache from each `_build` as frenpet and ocm already do. **Minor, Tier 0** when that file is next
+    touched.
+
+## Branch 10 WP-C — implementer and review Minors (2026-09-20)
+
+71. **`fwa_logs` still carries a private codec.** (a) `fwa_logs._strip0x` (`fwa_logs.py:378`) also strips an
+    uppercase `0X` where `evm_abi.strip0x` (`evm_abi.py:49`) does not, so WP-C could not bind it without changing
+    FWA's decoder on an uppercase prefix; it sits under a per-name `CODEC_EXEMPTIONS` entry in
+    `tests/data/test_rpc_shared.py` pinned by `test_the_one_codec_exemption_is_a_real_divergence`. The review found
+    the divergence exercised by NO test: with the copy made identical all 78 `test_fwa_logs.py` tests stay green (no
+    fixture carries `0X`; JSON-RPC hex is lowercase). (b) `_addr_topic` (`:417`) is `evm_abi.addr_from_topic` under
+    another name and `_word` / `_uint` (`:397`, `:402`) restate `decode_uint`'s word arithmetic; `FORBIDDEN_DEFS` is
+    name-based so they pass, while the `ALL_CLIENTS` comment advertises fwa_logs as codec-clean. Fix: widen
+    `evm_abi.strip0x` to both spellings (eleven callers, a no-op for every live payload), delete the exemption, and
+    bind the three renamed copies. **Minor, Tier 0** (one commit, `test_fwa_logs.py` byte-unchanged as acceptance).
+
+72. **`_CLASSIFIER_SOURCES` and `ALL_CLIENTS` disagree about what a non-`*_client.py` chain module is.**
+    `test_rpc_shared.py` hardcodes `fwa_logs.py` as the single exception to the `*_client.py` glob, while
+    `ALL_CLIENTS` (same file, same diff) also lists `curator_nft_holders`. That module has no error table today, so
+    nothing is missed, but the `ALL_CLIENTS` comment tells the next author to register a new chain module in that
+    dict and says nothing about the second list. Derive `_CLASSIFIER_SOURCES` from `ALL_CLIENTS` (module file paths)
+    so one registration feeds every guard. **Minor, Tier 0** when the file is next touched.
+
+73. **fwa's pacing path is exercised only at `min_call_interval=0.0`.** `tests/data/test_fwa_logs.py:122` builds
+    every client with a zero interval while production runs `_INTER_CALL_DELAY = 0.05` (`fwa_logs.py:257`), so no
+    fwa test could tell `rpc_common.pace` from the inline block WP-C replaced; the equivalence rests on the review's
+    out-of-tree harness plus `pace`'s own tests. Add one test at a non-zero interval with a faked clock and sleep
+    that asserts the second call waits `interval − elapsed`. **Minor, Tier 0** when the file is next touched.
+
+## Branch 10 — whole-branch review Minor (2026-09-20)
+
+74. **`PriceClient()` is built unconditionally in two seam managers.** `ttt_manager.py:134` and
+    `frenpet_manager.py:100` construct a `PriceClient` with no keyword to inject one, so `TTTManager(client=fake)`
+    still owns a live HTTP client, and `tests/data/test_manager_seams.py` must monkeypatch the module-level name to
+    keep the socket closed — the import-time coupling the data-layer-as-library constraint exists to remove.
+    `client.py:72` already has the `price_client or PriceClient()` shape to copy (use `is None`). Add a keyword-only
+    `price_client=None` to both, assert identity in the seam tests, drop the two monkeypatches. **Minor, Tier 1 per
+    manager** (manager + seam test + the manager's own test file).

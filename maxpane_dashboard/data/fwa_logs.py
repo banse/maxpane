@@ -131,6 +131,12 @@ from maxpane_dashboard.data.fwa_models import (
     DrawEvent,
     SettlementMix,
 )
+from maxpane_dashboard.data.rpc_common import (
+    ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
+    OwnedHttpClient,
+    jsonrpc_payload,
+    pace,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -255,9 +261,6 @@ _WINDOW_GROWTH_AFTER = 4
 """Consecutive clean windows before the learned window size doubles again."""
 _MAX_LEARNED_WINDOW = 50_000
 """Ceiling for the learned window on an endpoint with no documented block cap."""
-
-# HTTP statuses that mean "this endpoint is not going to work at all".
-_ENDPOINT_DEAD_CODES = {401, 402, 403, 451, 521, 522, 523, 524, 525, 526}
 
 _ZERO_ADDRESS = "0x" + "0" * 40
 
@@ -1439,7 +1442,7 @@ def _classify_rpc_error(error: Any) -> LogEndpointError:
 # ---------------------------------------------------------------------------
 
 
-class FWALogClient:
+class FWALogClient(OwnedHttpClient):
     """Pool B log client: backfill, tail, decode, aggregate, degrade.
 
     Every public method is exception-safe. Failure changes the values and flips
@@ -1517,19 +1520,10 @@ class FWALogClient:
         self._as_of_ts: float | None = None
         self._launch_block: int | None = None
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    async def close(self) -> None:
-        if self._owns_client:
-            await self._client.aclose()
-
-    async def __aenter__(self) -> FWALogClient:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        await self.close()
+    # Lifecycle: ``close`` / ``__aenter__`` / ``__aexit__`` come from
+    # ``rpc_common.OwnedHttpClient``, statement-for-statement what this class
+    # used to spell out. It creates no attributes; the ``_client`` and
+    # ``_owns_client`` it reads are assigned in ``__init__`` above.
 
     # ------------------------------------------------------------------
     # Availability
@@ -1578,11 +1572,7 @@ class FWALogClient:
 
     async def _post(self, url: str, payload: dict) -> Any:
         """One JSON-RPC round trip. Raises :class:`LogEndpointError` on failure."""
-        interval = self._min_call_interval
-        elapsed = time.monotonic() - self._last_rpc_at
-        if interval and self._last_rpc_at > 0 and elapsed < interval:
-            await asyncio.sleep(interval - elapsed)
-        self._last_rpc_at = time.monotonic()
+        self._last_rpc_at = await pace(self._last_rpc_at, self._min_call_interval)
 
         last: LogEndpointError | None = None
         for attempt in range(_MAX_RETRIES):
@@ -1644,12 +1634,7 @@ class FWALogClient:
 
     def _payload(self, method: str, params: list) -> dict:
         self._request_id += 1
-        return {
-            "jsonrpc": "2.0",
-            "id": self._request_id,
-            "method": method,
-            "params": params,
-        }
+        return jsonrpc_payload(self._request_id, method, params)
 
     # ------------------------------------------------------------------
     # eth_getLogs with per-endpoint pagination + adaptive shrinking

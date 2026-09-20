@@ -41,9 +41,11 @@ class OCMManager:
         Seconds between automatic refreshes (used for status display).
     client:
         Optional pre-built ``OCMClient`` (dependency injection for tests).
+    cache:
+        Optional pre-built ``OCMCache``.  Built as today when ``None``.
     cache_file:
-        Optional path for the persisted history.  Defaults to
-        ``~/.maxpane/ocm_cache.json``.
+        Optional path for the persisted history.  Resolves to the module
+        default :data:`_CACHE_FILE` at construction when ``None``.
     """
 
     def __init__(
@@ -51,13 +53,14 @@ class OCMManager:
         poll_interval: int = 60,
         *,
         client: OCMClient | None = None,
-        cache_file: Path | None = None,
+        cache: OCMCache | None = None,
+        cache_file: Path | str | None = None,
     ) -> None:
-        self.client = client or OCMClient()
-        self.cache = OCMCache(max_history=120)
+        self.client = OCMClient() if client is None else client
+        self.cache = OCMCache(max_history=120) if cache is None else cache
         self._poll_interval = poll_interval
         self._error_count = 0
-        self._cache_file = Path(cache_file) if cache_file else _CACHE_FILE
+        self._cache_file = _CACHE_FILE if cache_file is None else Path(cache_file)
 
         # Ensure cache directory exists
         self._cache_file.parent.mkdir(parents=True, exist_ok=True)

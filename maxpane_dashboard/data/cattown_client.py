@@ -27,6 +27,10 @@ from maxpane_dashboard.data.evm_abi import (
     decode_uint256 as _decode_uint256,
     pad_address as _pad_address,
 )
+from maxpane_dashboard.data.rpc_classify import (
+    BASE_ENDPOINT_LIMITATION_FRAGMENTS,
+    looks_like_endpoint_limitation,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -63,23 +67,14 @@ _BLOCK_TS_CACHE_MAX = 2048
 #: not "this request is malformed". Matched on the message, never the code:
 #: providers reuse codes freely, so classifying on the code turns a per-host
 #: capability limit into a terminal failure and the fallback chain is skipped.
-_ENDPOINT_LIMITATION_PATTERNS = (
-    "rate limit",
-    "ratelimit",
-    "too many requests",
-    "exceeded",
-    "quota",
-    "capacity",
-    "throttl",
-    "block range",
-    "query returned more than",
-    "method not found",
-    "method not supported",
-    "unsupported method",
-    "not available",
-    "unauthorized",
-    "forbidden",
-)
+#:
+#: The **Base** table, kept apart from the Ethereum one in
+#: :mod:`maxpane_dashboard.data.rpc_classify` because these are Base
+#: providers' phrasings: eleven of them appear in no Ethereum client, and
+#: merging would make ``ttt_client`` rotate on ``method not found`` where it is
+#: terminal today, and this module shrink on ``query returned more than`` where
+#: it has no pager to shrink with.
+_ENDPOINT_LIMITATION_PATTERNS = BASE_ENDPOINT_LIMITATION_FRAGMENTS
 
 #: Public Base endpoints tried in order when the primary refuses. Keyless by
 #: policy -- every MaxPane dashboard must run without API keys. These are not
@@ -102,11 +97,21 @@ class _EndpointDead(httpx.HTTPError):
 
 
 def _looks_like_endpoint_limitation(err: Any) -> bool:
-    """True if a JSON-RPC error body reads as "this endpoint can't"."""
-    if not isinstance(err, dict):
-        return False
-    message = str(err.get("message") or "").lower()
-    return any(frag in message for frag in _ENDPOINT_LIMITATION_PATTERNS)
+    """True if a JSON-RPC error body reads as "this endpoint can't".
+
+    Two flags separate this from the four Ethereum clients, and both are
+    cattown's behaviour, not a default: a body that is **not** a JSON-RPC error
+    object is no evidence about the *host*, so it does not rotate (the caller
+    raises instead), and there is **no** malformed-code fallback — on Base a
+    reverted ``eth_call`` is the contract's answer, and rotating on it would
+    triple the request count for no gain (``test_contract_revert_does_not_rotate``).
+    """
+    return looks_like_endpoint_limitation(
+        err,
+        fragments=_ENDPOINT_LIMITATION_PATTERNS,
+        unstructured_is_limitation=False,
+        check_codes=False,
+    )
 
 # ---------------------------------------------------------------------------
 # Function selectors (first 4 bytes of keccak256 hash)
@@ -149,8 +154,12 @@ class CatTownClient(OwnedHttpClient):
     Parameters
     ----------
     rpc_url:
-        Primary Base mainnet JSON-RPC endpoint. Overridable per deployment
-        via the ``MAXPANE_BASE_RPC_URL`` environment variable.
+        Primary Base mainnet JSON-RPC endpoint. ``None`` (the default)
+        resolves at construction: ``$MAXPANE_BASE_RPC_URL`` if set and
+        non-empty, otherwise the class default :attr:`RPC_URL`. An explicit
+        argument beats both. Overridable per deployment via the environment
+        variable, which is read on every construction -- not once at import --
+        so a host that sets it later is honoured by the next instance.
     fallback_rpcs:
         Endpoints tried, in order, when the primary is down or blocking us.
         Without these a single outage at ``mainnet.base.org`` bricked the
@@ -164,7 +173,11 @@ class CatTownClient(OwnedHttpClient):
         one is created internally and closed on ``close()``.
     """
 
-    RPC_URL = os.environ.get("MAXPANE_BASE_RPC_URL", "https://mainnet.base.org")
+    #: Environment variable consulted for the primary endpoint; see
+    #: :meth:`__init__`, which reads it again at construction time.
+    RPC_URL_ENV = "MAXPANE_BASE_RPC_URL"
+
+    RPC_URL = os.environ.get(RPC_URL_ENV, "https://mainnet.base.org")
 
     # Contract addresses
     KIBBLE_TOKEN = "0x64cc19A52f4D631eF5BE07947CABA14aE00c52Eb"
@@ -186,18 +199,30 @@ class CatTownClient(OwnedHttpClient):
 
     def __init__(
         self,
-        rpc_url: str = RPC_URL,
+        rpc_url: str | None = None,
         *,
         fallback_rpcs: list[str] | None = None,
         inter_call_delay: float = _INTER_CALL_DELAY,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._rpc_url = rpc_url
+        # Resolved here rather than baked into the signature default: a
+        # signature default is evaluated once, at import, which freezes the
+        # endpoint for the life of the process and gives a library host no
+        # way to serve two configurations.  Note what the fallback is: the
+        # *import-time* class default ``RPC_URL``, so an env var that was set
+        # when this module was first imported and is later unset -- or set to
+        # ``""`` -- still yields that import-time value for every new
+        # instance; pass ``rpc_url=`` explicitly to override it.
+        self._rpc_url = (
+            rpc_url
+            if rpc_url is not None
+            else (os.environ.get(self.RPC_URL_ENV) or self.RPC_URL)
+        )
         self._fallback_rpcs = list(
             _FALLBACK_RPCS if fallback_rpcs is None else fallback_rpcs
         )
         # Never try the primary twice in one rotation.
-        self._fallback_rpcs = [u for u in self._fallback_rpcs if u != rpc_url]
+        self._fallback_rpcs = [u for u in self._fallback_rpcs if u != self._rpc_url]
         self._inter_call_delay = inter_call_delay
         self._last_rpc_at: float = 0.0
         self._client = http_client or httpx.AsyncClient(

@@ -83,6 +83,14 @@ from maxpane_dashboard.data.curator_models import (
     LogSweep,
     WalletState,
 )
+from maxpane_dashboard.data.rpc_classify import (
+    ETH_ENDPOINT_LIMITATION_FRAGMENTS,
+    MALFORMED_REQUEST_CODES,
+    RANGE_CAP_FRAGMENTS,
+    RESULT_CAP_FRAGMENTS,
+    is_range_limitation,
+    looks_like_endpoint_limitation,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -107,7 +115,9 @@ STATE_RPC_FALLBACKS = [
 #: every sweep before rotating to an endpoint that can answer.
 LOG_RPCS = [
     "https://gateway.tenderly.co/public/mainnet",
-    "https://eth.drpc.org",  # hard 10k-block page cap; our page sits under it
+    "https://eth.drpc.org",  # free-plan limit is archive DEPTH (~64 blocks), not page width;
+                             # its "ranges over 10000 blocks" arrives at any span — see
+                             # _is_range_limitation(requested_span) below and rules/data.md
 ]
 
 BLOCKSCOUT_BASE = "https://eth.blockscout.com/api/v2"
@@ -218,60 +228,63 @@ _GROUP_TO_TOPIC: dict[str, str] = {g: t for t, g in _TOPIC_TO_GROUP.items()}
 # Error classification — message text first
 # ---------------------------------------------------------------------------
 
-#: "This endpoint can't", as opposed to "this request is bad".  Mirrored from
-#: ``surf_client`` / ``ttt_client`` and extended with drpc's routing failure:
-#: that message arrives with ``-32602``, which other providers spend on a
-#: genuinely malformed request, so a code-first classifier bins a healthy query.
-_ENDPOINT_LIMITATION_PATTERNS = (
-    "limited to", "block range", "range is too large", "ranges over",
-    "exceeds", "too large", "too many", "archive", "unauthorized",
-    "authenticate", "free plan", "upgrade", "not supported", "unsupported",
-    "capacity", "rate limit", "timeout", "try again", "cannot fulfill",
-    # drpc, observed live: "Can't route your request. Try again later."
-    "can't route", "cannot route", "route your request",
-)
+#: "This endpoint can't", as opposed to "this request is bad".  The Ethereum
+#: table, with its provider attributions, lives in
+#: :mod:`maxpane_dashboard.data.rpc_classify`; it is the union of what this
+#: module, ``surf_client``, ``surf_pool4_client`` and ``ttt_client`` each
+#: carried before they were hoisted, so curator regains ``api key`` (dropped
+#: here with no note) and ``personal token``, and keeps the drpc routing
+#: triplet it contributed.
+_ENDPOINT_LIMITATION_PATTERNS = ETH_ENDPOINT_LIMITATION_FRAGMENTS
 
 #: The shrinkable class only — "you asked for too much in one call".
 #:
 #: Providers say that in two units and both are recovered the same way, by
 #: halving the window: a **block-range** cap ("limited to a 10000 block range")
 #: and a **result-count / response-size** cap ("query returned more than 10000
-#: results", "response size exceeded").  ``surf_client`` lists only the first
-#: set, which is correct for its subject — a low-volume announce channel that
-#: cannot fill a result cap.  This contract emits ~4.3 logs per block
-#: (5222 rows over blocks 25769870..25771089, ``captures/live/
-#: 20260817T000322Z_grace-late.json``), so a full-history page is squarely in
-#: result-cap territory and a result cap classified as merely "this endpoint
-#: can't" rotates, exhausts both log endpoints, and takes the entire log tier —
-#: leaderboard, activity, hourly series, streak, closest calls — to unavailable
-#: instead of paging down.
-_RANGE_LIMITATION_PATTERNS = (
-    # Block-range phrasing.
-    "limited to", "block range", "range is too large", "ranges over",
-    # Result-count / response-size phrasing: the same hazard, a different unit.
-    "more than", "too many results", "max results", "maximum results",
-    "result limit", "query returned", "response size",
-)
+#: results", "response size exceeded").  ``surf_client`` binds only the first
+#: family, which is correct for its subject — a low-volume announce channel
+#: that cannot fill a result cap.  This contract emits ~4.3 logs per block, so
+#: a full-history page is squarely in result-cap territory and a result cap
+#: classified as merely "this endpoint can't" rotates, exhausts both log
+#: endpoints, and takes the entire log tier — leaderboard, activity, hourly
+#: series, streak, closest calls — to unavailable instead of paging down.
+#: Both families, and the measurement behind that ~4.3, are in ``rpc_classify``.
+_RANGE_LIMITATION_PATTERNS = RANGE_CAP_FRAGMENTS + RESULT_CAP_FRAGMENTS
 
-_MALFORMED_REQUEST_CODES = {-32600, -32601, -32602, -32604, -32700}
+_MALFORMED_REQUEST_CODES = MALFORMED_REQUEST_CODES
 
 
 def _looks_like_endpoint_limitation(err: Any) -> bool:
     """True if *err* reads as "this endpoint can't", not "this request is bad"."""
-    if not isinstance(err, dict):
-        return True
-    message = str(err.get("message") or "").lower()
-    if any(frag in message for frag in _ENDPOINT_LIMITATION_PATTERNS):
-        return True
-    return err.get("code") not in _MALFORMED_REQUEST_CODES
+    return looks_like_endpoint_limitation(
+        err, fragments=_ENDPOINT_LIMITATION_PATTERNS
+    )
 
 
-def _is_range_limitation(err: Any) -> bool:
-    """True only for the shrinkable "block range is too wide" class."""
-    if not isinstance(err, dict):
-        return False
-    message = str(err.get("message") or "").lower()
-    return any(frag in message for frag in _RANGE_LIMITATION_PATTERNS)
+def _is_range_limitation(err: Any, requested_span: int | None = None) -> bool:
+    """True only for the shrinkable "you asked for too much" class.
+
+    *requested_span* is how many blocks the call that produced *err* asked
+    for.  This pool still holds ``eth.drpc.org`` for logs, and drpc answers
+    *every* archive ``eth_getLogs`` — a 300-block window included — with
+    ``code 35 "ranges over 10000 blocks are not supported on free plan"``: its
+    free plan's limit is archive **depth**, a few dozen blocks, not page width.
+    Without the span, a backfill halves its page to the floor against a message
+    that was never about its window, gives up, and takes the log tier down
+    while the data sits one endpoint away.  With it, a complaint naming a limit
+    the request already meets rotates instead (``rules/data.md``: *a provider's
+    error message is only evidence about the request it read*).
+
+    A **result-count** cap stays shrinkable whatever the span — its numbers are
+    rows, not blocks.  :func:`~maxpane_dashboard.data.rpc_classify.is_range_limitation`
+    keeps the two units apart.
+    """
+    return is_range_limitation(
+        err,
+        fragments=_RANGE_LIMITATION_PATTERNS,
+        requested_span=requested_span,
+    )
 
 
 class _LogRangeError(RuntimeError):
@@ -551,13 +564,23 @@ class CuratorClient(OwnedHttpClient):
         logger.warning("state batch failed on every endpoint: %s", last_err)
         return None
 
-    async def _rpc_logs(self, method: str, params: list) -> Any:
+    async def _rpc_logs(
+        self, method: str, params: list, *, requested_span: int | None = None
+    ) -> Any:
         """One JSON-RPC call on the LOGS pool.
 
         Raises :class:`_LogRangeError` when the *message* says the window is too
         wide — the caller halves its own window; a provider's suggested range is
         never adopted.  Other endpoint limitations rotate; a malformed request
         raises without rotating.
+
+        *requested_span* is how many blocks this call asked for.  A range
+        complaint that names a block limit the request **already satisfies** is
+        not about the window (see :func:`_is_range_limitation`), so it falls
+        through to the ordinary endpoint-limitation branch and **rotates**
+        rather than sending the caller down a halving ladder that cannot
+        terminate anywhere useful.  ``eth.drpc.org`` is still in this pool and
+        sends exactly that message at every span.
 
         The JSON ``error`` body is classified **before** ``raise_for_status``:
         drpc wraps its shrinkable range cap in an HTTP 400, and status-first
@@ -581,7 +604,7 @@ class CuratorClient(OwnedHttpClient):
                         pass
                     if isinstance(body, dict) and body.get("error"):
                         err = body["error"]
-                        if _is_range_limitation(err):
+                        if _is_range_limitation(err, requested_span):
                             raise _LogRangeError(str(err))
                         if _looks_like_endpoint_limitation(err):
                             last_err = RuntimeError(f"{url}: {err}")
@@ -631,7 +654,13 @@ class CuratorClient(OwnedHttpClient):
             flt["fromBlock"] = hex(cursor)
             flt["toBlock"] = hex(end)
             try:
-                result = await self._rpc_logs("eth_getLogs", [flt])
+                result = await self._rpc_logs(
+                    "eth_getLogs",
+                    [flt],
+                    # The span of THIS page, not of the whole sweep: it is what
+                    # a provider's range complaint has to be measured against.
+                    requested_span=end - cursor + 1,
+                )
             except _LogRangeError as exc:
                 if shrinks >= _LOG_MAX_SHRINKS or span <= _LOG_MIN_WINDOW:
                     logger.warning(
