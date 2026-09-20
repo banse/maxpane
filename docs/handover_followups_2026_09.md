@@ -535,8 +535,12 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     series held rather than abandoning the whole file. Nothing drives that path:
     `test_cache_corruption.py` only feeds well-formed dicts and `test_series_cache.py`'s `[]` case
     stops at the *payload* guard one level up. One parametrised test per class would pin both the
-    warning and the per-key degradation. **Minor, Tier 0** (test rigor) when either file is next
-    touched.
+    warning and the per-key degradation. The WP-B review widened this: for base it is a behaviour
+    change, not only a test gap — pre-branch the load bailed before the overview block, so the
+    session's own points survived; on the branch the three `overview_*` series are restored from the
+    file and the `"unexpected format, skipping"` warning (`base_cache.py:326-331`) understates what
+    was loaded. The message should say which half was kept and which skipped. **Minor, Tier 0**
+    (wording + test) when either file is next touched.
 
 50. **`tests/data/test_base_cache.py:172` asserts `history_size <= 2`.** A bound, not a value: it
     passes at 0, so the test would stay green if `test_load_survives_unrankable_entries` restored

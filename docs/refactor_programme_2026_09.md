@@ -2960,6 +2960,22 @@ unreachable today, decide it once for all three keyed caches at WP-C); a non-dic
 (`<= 2`) where it means a value. All three Minor, all Tier 0 when their file is next
 touched.
 
+**Branch 9 WP-B review (2026-09-20): Approved, 0 Critical, 0 Important, 6 Minor.** Byte-level compatibility
+proven both ways against a `53a71d5` worktree through the managers' exact call shapes: keyed dicts key-for-key
+and in order, every point identical, re-saved JSON text equal to the fixture with `saved_at` normalised; all
+four fixtures regenerate md5-identical from the pre-branch code. The base-terminal migration is real (no
+`json`/`os`/`coerce_points` import, no persistence method left; 23 code lines out, 24 docstring lines in).
+Six keyed-series probes (untracked-when-expired, season reset, LRU order, load cap, case-duplicate pass,
+per-update truncation) agree pre/post. `SeriesSpec.key` is default-preserving for cattown/dota. Five
+reviewer mutations bit the named tests, incl. key order bound by exactly one assertion. Minors: M1 base's
+non-dict-`histories` warning understates that the overview series were restored (folded into #49); M2 #49
+is a behaviour change for base, not only a test gap (folded in); M3 `record_token` has no production caller,
+the R3 test docstring implies one; M4 `test_an_empty_list_payload_leaves_a_real_cache_untouched` asserts a
+state that already held before the load — record a point first; M5 bakery log wording lowercase-initial
+after the `NOUN` move; M6 the `_loaded_*` sentinel is a hidden contract between `restore_extra` and
+`_log_loaded` — one sentence in the base's hook docstring. M3–M6 carried into WP-C's brief. 188 + 3 + 7 +
+192 passed.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
