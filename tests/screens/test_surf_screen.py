@@ -800,7 +800,31 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
 #: can name its own pre-frozen keys here, and so an entry regressing into it
 #: is visible as a diff rather than as a new mechanism. A key sitting here
 #: past its plan's wiring task is a bug, not a waiver.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
+#:
+#: **Filled for the third time** (WP0 of ``docs/surf_swarm_v2_implementation_plan.md``,
+#: 2026-09-21, Amendment A2): the fourteen swarm v2 keys -- §1.1's four,
+#: §1.2's four, A1's six -- are frozen in ``SWARM_KEYS`` before any of their
+#: eleven target widgets exists, so WP1-WP6a build against one contract.
+#: **WP7 of that plan** (screen, layout sweep, retirement) is the task that
+#: empties this set again: it wires the new widgets, binds this file's
+#: ``SURF_WIDGET_SIGNATURES`` to the exported ``SWARM_WIDGET_SIGNATURES`` by
+#: identity, and deletes the eight pre-v2 keys the plan retires.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({
+    "swarm_queue_total",
+    "swarm_breaker",
+    "swarm_skill_summary",
+    "swarm_launch_summary",
+    "swarm_inflight_rows",
+    "swarm_skill_rows",
+    "swarm_launch_rows",
+    "swarm_site_rows",
+    "swarm_seat_rows",
+    "swarm_seat_selected",
+    "swarm_seat_summary",
+    "swarm_seat_node_rows",
+    "swarm_seat_feedback_rows",
+    "swarm_seat_as_of_hhmm",
+})
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -1562,6 +1586,132 @@ def _sample_data() -> dict:
         # makes above.
         "swarm_scores_as_of_hhmm": "13:50",
         "swarm_stale": False,
+        # -- swarm v2 (WP0, 2026-09-21): frozen ahead of their consumers ---
+        #
+        # Plan A2. No widget reads these until WP5/WP6/WP6a; they are here
+        # so ``test_every_list_row_in_the_fixture_matches_the_frozen_row_shape``
+        # measures every new row shape from the day it was frozen, and so
+        # the dict keys carry the field names §1.1 and A1 name rather than
+        # a bare ``{}``. Every row carries exactly its ``SURF_ROW_KEYS``
+        # fields -- the walk asserts set equality per row, both directions.
+        "swarm_queue_total": 3,
+        "swarm_breaker": {"tripped": False, "detail": None},
+        "swarm_skill_summary": {
+            "total": 2,
+            "by_role": [{"role": "implement", "count": 1},
+                        {"role": "review", "count": 1}],
+            "by_judge": [{"judge": "verifier", "count": 2}],
+            "requires_count": 1,
+        },
+        "swarm_launch_summary": {
+            "by_status": [{"status": "live", "count": 1},
+                          {"status": "parked", "count": 1}],
+            "by_kind": [{"kind": "token", "count": 1},
+                        {"kind": "site", "count": 1}],
+            "by_chain": [{"chain_id": 11_155_111, "count": 1},
+                         {"chain_id": None, "count": 1}],
+        },
+        "swarm_inflight_rows": [
+            {"job_id": "job-4471", "template": "surf-swarm-view",
+             "objective": "wire the field panel",
+             "created_ts": _TS_POST_13 - 900.0, "age_s": 900.0,
+             "node_key": "codex-14", "node_role": "implement",
+             "node_state": "working", "agent_token": 1548,
+             "agent_id": "50971", "revisions": 1},
+            {"job_id": "job-4472", "template": "surf-swarm-view",
+             "objective": "throughput panel review",
+             "created_ts": _TS_POST_13 - 120.0, "age_s": 120.0,
+             "node_key": "claude-3", "node_role": "review",
+             "node_state": "waiting", "agent_token": None,
+             "agent_id": None, "revisions": 0},
+        ],
+        "swarm_skill_rows": [
+            {"skill_id": "implement-textual-panel", "version": "1.2.0",
+             "role": "implement", "kind": "code", "tier": "core",
+             "judge": "verifier", "checks": "pytest -q",
+             "requires": ["python>=3.11"]},
+            {"skill_id": "review-diff", "version": "0.9.1",
+             "role": "review", "kind": "judgement", "tier": None,
+             "judge": "verifier", "checks": None, "requires": []},
+        ],
+        "swarm_launch_rows": [
+            {"launch_number": 12, "kind": "token", "status": "live",
+             "chain_id": 11_155_111,
+             "repo_url": "https://github.com/example/curve-flow",
+             "commit": "a1b2c3d", "parked_reason": None,
+             "artifact_count": 1,
+             "created_ts": _TS_POST_13 - 3_600.0,
+             "updated_ts": _TS_POST_13 - 3_000.0,
+             "artifacts": [
+                 {"role": "token", "name": "Curve Flow v2",
+                  "address": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
+                  "tx_hash": "0x" + "33" * 32, "block_number": 8_950_001},
+             ]},
+            {"launch_number": 11, "kind": "site", "status": "parked",
+             "chain_id": None, "repo_url": None, "commit": "d4e5f6a",
+             "parked_reason": "waiting on ENS owner",
+             "artifact_count": 0,
+             "created_ts": _TS_POST_13 - 7_200.0,
+             "updated_ts": _TS_POST_13 - 7_200.0,
+             "artifacts": []},
+        ],
+        "swarm_site_rows": [
+            {"label": "swarm status page", "ens_name": "swarm.surfsurf.eth",
+             "cid": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
+             "bytes": 48_120, "status": "published",
+             "tx_hash": "0x" + "44" * 32, "block_number": 8_949_900,
+             "job_id": "job-4381", "superseded_by": None, "failure": None},
+            {"label": "launch index", "ens_name": None, "cid": None,
+             "bytes": None, "status": "failed", "tx_hash": None,
+             "block_number": None, "job_id": "job-4360",
+             "superseded_by": "job-4381", "failure": "pin timed out"},
+        ],
+        "swarm_seat_rows": [
+            {"token_id": 1548, "agent_id": "50971", "nodes": 7, "jobs": 6,
+             "roles": ["implement", "review"], "accepted": 7, "rejected": 0,
+             "revisions": 0, "mean_score": None, "scored": 0,
+             "working_now": True, "last_active_ts": _TS_POST_13 - 60.0},
+            {"token_id": 1601, "agent_id": "51044", "nodes": 3, "jobs": 3,
+             "roles": ["review"], "accepted": 2, "rejected": 1,
+             "revisions": 2, "mean_score": 0.87, "scored": 2,
+             "working_now": False, "last_active_ts": _TS_POST_13 - 5_400.0},
+        ],
+        "swarm_seat_selected": {"token_id": 1548, "agent_id": "50971",
+                                "selected_by": "most_active"},
+        "swarm_seat_summary": {
+            "nodes": 7, "jobs": 6, "accepted": 7, "rejected": 0,
+            "revisions": 0, "mean_score": None, "scored": 0,
+            "working_now": True,
+            "first_seen_ts": _TS_POST_13 - 86_400.0,
+            "last_active_ts": _TS_POST_13 - 60.0,
+            "roles": [{"role": "implement", "count": 5},
+                      {"role": "review", "count": 2}],
+            "rejection_codes": [],
+        },
+        "swarm_seat_node_rows": [
+            {"job_id": "job-4471", "template": "surf-swarm-view",
+             "node_key": "codex-14", "role": "implement", "state": "working",
+             "attempt": 1, "revisions": 1, "verdict_status": None,
+             "rejection_code": None, "failed_checks": [], "detail": None,
+             "at_ts": _TS_POST_13 - 60.0},
+            {"job_id": "job-4402", "template": "identity-md-fix",
+             "node_key": "codex-14", "role": "implement",
+             "state": "accepted", "attempt": 2, "revisions": 1,
+             "verdict_status": "accepted", "rejection_code": None,
+             "failed_checks": ["lint"], "detail": "passed on the second run",
+             "at_ts": _TS_POST_13 - 4_000.0},
+        ],
+        "swarm_seat_feedback_rows": [
+            {"value": 90, "node_key": "codex-14", "job_id": "job-4402",
+             "tx_hash": "0x" + "55" * 32, "chain_id": 11_155_111,
+             "block_number": 8_949_950, "sent_ts": _TS_POST_13 - 3_900.0},
+            {"value": 0, "node_key": "codex-14", "job_id": "job-4390",
+             "tx_hash": None, "chain_id": None, "block_number": None,
+             "sent_ts": None},
+        ],
+        # The slow tier's marker under the AGENT body's own name (A1) --
+        # the same slot as `swarm_scores_as_of_hhmm`, so the same value.
+        "swarm_seat_as_of_hhmm": "13:50",
     }
 
 

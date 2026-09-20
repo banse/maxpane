@@ -531,18 +531,39 @@ EXPECTED_KEYS = {
     "swarm_as_of_hhmm",
     "swarm_scores_as_of_hhmm",
     "swarm_stale",
+    # ---- swarm v2 (WP0, 2026-09-21) -- frozen ahead of their consumers -----
+    # Plan A2: the fourteen land now so WP1-WP6a build against one frozen
+    # contract; the eight pre-v2 keys §1 retires stay until WP7 removes them
+    # with their widgets. Same order as the module's tail.
+    "swarm_queue_total",
+    "swarm_breaker",
+    "swarm_skill_summary",
+    "swarm_launch_summary",
+    "swarm_inflight_rows",
+    "swarm_skill_rows",
+    "swarm_launch_rows",
+    "swarm_site_rows",
+    "swarm_seat_rows",
+    "swarm_seat_selected",
+    "swarm_seat_summary",
+    "swarm_seat_node_rows",
+    "swarm_seat_feedback_rows",
+    "swarm_seat_as_of_hhmm",
 }
 
 
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    **177 = 83 + 71 + 5 + 18**: the 83 that shipped through v0.8.3, the ``p``
+    **191 = 83 + 71 + 5 + 32**: the 83 that shipped through v0.8.3, the ``p``
     body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
     cross-venue price, the backstop band and the realised return), the
     staker sweep's own five in ``POOL4_STAKERS_KEYS`` (four until
-    ``pool4_stakers_state`` joined them on 2026-09-12), and the ``s``
-    body's eighteen in ``SWARM_KEYS`` (added 2026-09-16). The count is asserted
+    ``pool4_stakers_state`` joined them on 2026-09-12), and the ``s``/``a``
+    bodies' thirty-two in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
+    the fourteen swarm v2 keys WP0 froze on 2026-09-21 ahead of their
+    consumers (plan A2); eight of the eighteen retire in WP7, when the
+    block settles at 24 and this total at 183. The count is asserted
     beside the set membership on purpose: the set catches a rename, the
     count catches a key added to both sides at once by someone editing
     ``EXPECTED_KEYS`` to make a red test green instead of asking why it was
@@ -564,12 +585,12 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 177
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 191
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
-    assert len(SWARM_KEYS) == 18
+    assert len(SWARM_KEYS) == 32
     assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 83
 
 

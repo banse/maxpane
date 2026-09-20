@@ -1452,21 +1452,54 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_agents_enrolled",    # int | None   -- active enrollments
     "swarm_working_now",        # int | None   -- daemons working this moment
     "swarm_accepted_today",     # int | None   -- accepted in the last day
-    "swarm_jobs_in_flight",     # int | None   -- jobs in state executing
-    "swarm_jobs_blocked",       # int | None   -- jobs in state blocked
-    "swarm_queue_depths",       # dict | None  -- pending* counters by name
+    "swarm_jobs_in_flight",     # int | None   -- jobs in state executing  # retired in WP7 (swarm v2 plan, A2)
+    "swarm_jobs_blocked",       # int | None   -- jobs in state blocked  # retired in WP7 (swarm v2 plan, A2)
+    "swarm_queue_depths",       # dict | None  -- pending* counters by name  # retired in WP7 (swarm v2 plan, A2)
     "swarm_services_up",        # dict | None  -- verifier/publisher/deployer
-    "swarm_field_rows",         # list[dict]   -- one per unfinished subtask
-    "swarm_queue_rows",         # list[dict]   -- state -> count
-    "swarm_blocked_rows",       # list[dict]   -- blocked jobs and their reason
-    "swarm_shipped_rows",       # list[dict]   -- deliveries, launches, sites
-    "swarm_score_rows",         # list[dict]   -- per agent, from the sweep
+    "swarm_field_rows",         # list[dict]   -- one per unfinished subtask  # retired in WP7 (swarm v2 plan, A2)
+    "swarm_queue_rows",         # list[dict]   -- state -> count  # retired in WP7 (swarm v2 plan, A2)
+    "swarm_blocked_rows",       # list[dict]   -- blocked jobs and their reason  # retired in WP7 (swarm v2 plan, A2)
+    "swarm_shipped_rows",       # list[dict]   -- deliveries, launches, sites  # retired in WP7 (swarm v2 plan, A2)
+    "swarm_score_rows",         # list[dict]   -- per agent, from the sweep  # retired in WP7 (swarm v2 plan, A2)
     "swarm_throughput",         # dict | None  -- accepted/day, median, revisions
     "swarm_network",            # str | None   -- MAINNET / SEPOLIA / None
     "swarm_as_of_hhmm",         # str | None   -- SLOT_SWARM's marker
     "swarm_scores_as_of_hhmm",  # str | None   -- SLOT_SWARM_SCORES' marker
     "swarm_stale",              # bool | None  -- the two markers drifted
+    # ---- swarm v2 (WP0, 2026-09-21): frozen ahead of their consumers, see plan A2 ----
+    "swarm_queue_total",        # int | None   -- sum of every /health.pending* counter present
+    "swarm_breaker",            # dict | None  -- {"tripped": bool, "detail": str | None}; None = could not look
+    "swarm_skill_summary",      # dict | None  -- total, by_role, by_judge, requires_count
+    "swarm_launch_summary",     # dict | None  -- by_status, by_kind, by_chain
+    "swarm_inflight_rows",      # list[dict]   -- executing jobs, newest first
+    "swarm_skill_rows",         # list[dict]   -- /skills
+    "swarm_launch_rows",        # list[dict]   -- /launches
+    "swarm_site_rows",          # list[dict]   -- /sites
+    "swarm_seat_rows",          # list[dict]   -- AGENT body roster, one per seat seen
+    "swarm_seat_selected",      # dict | None  -- {token_id, agent_id, selected_by}
+    "swarm_seat_summary",       # dict | None  -- the selected seat's counters
+    "swarm_seat_node_rows",     # list[dict]   -- the selected seat's nodes, newest first
+    "swarm_seat_feedback_rows", # list[dict]   -- the selected seat's on-chain feedback
+    "swarm_seat_as_of_hhmm",    # str | None   -- the slow tier's marker, read by the AGENT body
 )
+
+#: The target widgets of the ``s`` and ``a`` bodies (swarm v2 plan §1.4 + A1) and the
+#: contract keys each ``update_data`` takes, verbatim, as keyword parameters. Exported
+#: so the screen test binds to this rather than to a local copy (WP7 does the binding;
+#: until then the five pre-v2 widgets keep their local entries).
+SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_queue_total", "swarm_breaker", "swarm_services_up"),
+    "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
+    "SurfSwarmThroughput": ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale"),
+    "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
+    "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
+    "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
+    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmRoster": ("swarm_seat_rows", "swarm_seat_selected", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmSeatRecord": ("swarm_seat_node_rows", "swarm_seat_as_of_hhmm", "swarm_network"),
+    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmSeatFeedback": ("swarm_seat_feedback_rows", "swarm_seat_as_of_hhmm"),
+}
 
 
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
@@ -1749,5 +1782,41 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
     "swarm_score_rows": (
         "agent_id", "agent_token", "jobs_scored", "mean_score",
         "last_tx_hash", "last_chain_id",
+    ),
+    # ---- swarm v2 (WP0, 2026-09-21): frozen ahead of their consumers, plan
+    # §1.2 + A1. The five shapes above stay until WP7 retires their widgets.
+    "swarm_inflight_rows": (
+        "job_id", "template", "objective", "created_ts", "age_s", "node_key",
+        "node_role", "node_state", "agent_token", "agent_id", "revisions",
+    ),
+    "swarm_skill_rows": (
+        "skill_id", "version", "role", "kind", "tier", "judge",
+        "checks",       # str | None
+        "requires",     # list[str]
+    ),
+    "swarm_launch_rows": (
+        "launch_number", "kind", "status", "chain_id", "repo_url", "commit",
+        "parked_reason", "artifact_count", "created_ts", "updated_ts",
+        "artifacts",    # list[dict(role, name, address, tx_hash, block_number)]
+    ),
+    "swarm_site_rows": (
+        "label", "ens_name", "cid", "bytes", "status", "tx_hash",
+        "block_number", "job_id", "superseded_by", "failure",
+    ),
+    "swarm_seat_rows": (
+        "token_id", "agent_id", "nodes", "jobs",
+        "roles",        # list[str]
+        "accepted", "rejected", "revisions", "mean_score", "scored",
+        "working_now", "last_active_ts",
+    ),
+    "swarm_seat_node_rows": (
+        "job_id", "template", "node_key", "role", "state", "attempt",
+        "revisions", "verdict_status", "rejection_code",
+        "failed_checks",  # list[str]
+        "detail", "at_ts",
+    ),
+    "swarm_seat_feedback_rows": (
+        "value", "node_key", "job_id", "tx_hash", "chain_id", "block_number",
+        "sent_ts",
     ),
 }

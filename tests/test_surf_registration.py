@@ -1431,6 +1431,25 @@ _NON_NUMERIC_KEYS = frozenset(
         # exact vacuous-probe anti-pattern `_POOL4_ZERO_PROBES`'s own comment
         # names -- passing by absence, on a render that never happens.
         "swarm_agents_enrolled",
+        # -- swarm v2 (WP0, 2026-09-21) -- frozen ahead of their consumers -
+        #
+        # Plan A2: these thirteen are in `SWARM_KEYS` before any widget
+        # reads them (WP5/WP6/WP6a build the consumers; WP7 wires them).
+        # They land in THIS bucket purely because dict/list/str is not
+        # int/float -- the same reasoning as every entry above -- not
+        # because anything has looked at how they render. The fourteenth
+        # v2 key, `swarm_queue_total`, IS numeric and sits in
+        # `_KEYS_PENDING_CONSUMERS` until WP7 gives it a probe.
+        # Five dicts: `None` vs `{}`, as `swarm_throughput` above.
+        "swarm_breaker", "swarm_skill_summary", "swarm_launch_summary",
+        "swarm_seat_selected", "swarm_seat_summary",
+        # Seven list[dict] row payloads.
+        "swarm_inflight_rows", "swarm_skill_rows", "swarm_launch_rows",
+        "swarm_site_rows", "swarm_seat_rows", "swarm_seat_node_rows",
+        "swarm_seat_feedback_rows",
+        # The AGENT body's own tier marker, the slow slot's clock under a
+        # second name (A1).
+        "swarm_seat_as_of_hhmm",
     }
 )
 
@@ -2112,7 +2131,15 @@ _SWARM_ZERO_PROBES: dict[str, str] = {
 #: freeze-before-the-consumer-exists key goes into, and
 #: `test_every_surf_key_is_triaged_for_the_zero_catch` still partitions
 #: against it.
-_KEYS_PENDING_CONSUMERS = frozenset()
+#:
+#: **Refilled by WP0 of the swarm v2 plan** (2026-09-21, A2) with exactly one
+#: key: `swarm_queue_total`, the one genuinely numeric key of the fourteen
+#: frozen ahead of their consumers. It has no render path until the rebuilt
+#: `SurfSwarmHero` (WP5) is wired by WP7, so a probe string for it today would
+#: pass by absence -- the vacuous-needle shape this bucket exists to prevent.
+#: The other thirteen are dict/list/str and sit in `_NON_NUMERIC_KEYS`.
+#: WP7 moves this key to a probe (or a reasoned exclusion) and empties the set.
+_KEYS_PENDING_CONSUMERS = frozenset({"swarm_queue_total"})
 
 
 def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
@@ -2162,6 +2189,11 @@ def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
     assert not extra, f"triaged a key SURF_KEYS no longer has: {extra}"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="swarm v2 plan WP7 wires swarm_queue_total's consumer and empties "
+           "_KEYS_PENDING_CONSUMERS; strict so it fails the day it passes",
+)
 def test_no_surf_key_is_still_waiting_for_a_consumer():
     """`_KEYS_PENDING_CONSUMERS` is scaffolding with an expiry date.
 
@@ -2184,6 +2216,14 @@ def test_no_surf_key_is_still_waiting_for_a_consumer():
     rendering claim (a zero-probe needle, a documented reason it cannot be
     observed, or "not a number"). The pending bucket carries no such claim,
     so a key in it is a key nothing has looked at.
+
+    **Expected to fail from WP0 of the swarm v2 plan until its WP7** (2026-09-21,
+    Amendment A2): `swarm_queue_total` is frozen ahead of its consumer and
+    waits in the pending bucket. The marker is ``xfail(strict=True)``, so the
+    moment WP7 empties the set this test XPASSes and *fails* until the marker
+    is removed in the same change -- the self-deleting-marker hazard the
+    paragraph above describes (a marker outliving what it waited for and
+    turning a real regression back into an expected failure) cannot recur.
     """
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 
