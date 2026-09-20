@@ -132,8 +132,9 @@ from maxpane_dashboard.data.fwa_models import (
     SettlementMix,
 )
 from maxpane_dashboard.data.rpc_classify import (
-    named_block_limit,
+    met_block_limit,
     requested_block_span,
+    stale_range_cap_detail,
 )
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
@@ -1386,34 +1387,6 @@ def _parse_suggested_to(text: str) -> int | None:
         return None
 
 
-def _range_cap_unless_met(
-    detail: str, blob: str, requested_span: int | None
-) -> LogEndpointError:
-    """``range_cap`` -- unless the message names a limit the request already meets.
-
-    ``eth.drpc.org`` answers *every* archive ``eth_getLogs``, a 300-block window
-    included, with ``code 35 "ranges over 10000 blocks are not supported on
-    free plan"`` (``tests/fixtures/surf/pool4/log_range_messages.json``): its
-    limit is archive depth, not width. A provider's message is evidence only
-    about the request it read, and a 10,000-block limit says nothing about a
-    300-block request -- shrinking on it halves the window down to
-    :data:`_MIN_WINDOW_BLOCKS` and ratchets ``_window_ceiling`` there for the
-    session (follow-up #65). So a named limit at or above *requested_span* is
-    ``rpc``: ``_scan_endpoint`` fails the endpoint and the scan rotates. No span,
-    no named limit, or a limit the request genuinely exceeds stays
-    ``range_cap`` -- the behaviour that was already here.
-    """
-    if requested_span is not None:
-        named = named_block_limit(blob)
-        if named is not None and requested_span <= named:
-            return LogEndpointError(
-                "rpc",
-                f"names a {named}-block limit the {requested_span}-block request "
-                f"already meets; not about this request: {detail}",
-            )
-    return LogEndpointError("range_cap", detail)
-
-
 def _classify_rpc_error(
     error: Any, *, requested_span: int | None = None
 ) -> LogEndpointError:
@@ -1426,8 +1399,14 @@ def _classify_rpc_error(
     member regardless of status.
 
     *requested_span* is the block count the request asked for, when it had one
-    (:func:`requested_block_span`); it gates the ``range_cap`` kinds, see
-    :func:`_range_cap_unless_met`.
+    (:func:`requested_block_span`). It gates both ``range_cap`` branches through
+    :func:`rpc_classify.met_block_limit`: ``eth.drpc.org`` answers a 300-block
+    archive ``eth_getLogs`` with ``code 35 "ranges over 10000 blocks"`` (its
+    limit is depth, not width), and shrinking on it halves the window down to
+    :data:`_MIN_WINDOW_BLOCKS` and ratchets ``_window_ceiling`` there for the
+    session. A cap the request already meets is ``rpc``, so ``_scan_endpoint``
+    fails the endpoint and the scan rotates (follow-up #65). No span, no named
+    limit, or a genuinely exceeded limit stays ``range_cap``.
     """
     if not isinstance(error, Mapping):
         return LogEndpointError("rpc", str(error))
@@ -1454,7 +1433,12 @@ def _classify_rpc_error(
     if "archive" in blob:
         return LogEndpointError("archive", message or data)
     if "ranges over" in blob or ("block range" in blob and "not supported" in blob):
-        return _range_cap_unless_met(message or data, blob, requested_span)
+        met = met_block_limit(blob, requested_span)
+        if met is not None:
+            return LogEndpointError(
+                "rpc", stale_range_cap_detail(met, requested_span, message or data)
+            )
+        return LogEndpointError("range_cap", message or data)
     if any(marker in blob for marker in _RESULT_CAP_MARKERS):
         return LogEndpointError(
             "result_cap",
@@ -1471,7 +1455,12 @@ def _classify_rpc_error(
         return LogEndpointError("dead", message or data)
     # drpc reports its range cap with a bespoke code 35 and no standard marker.
     if code == 35:
-        return _range_cap_unless_met(message or data, blob, requested_span)
+        met = met_block_limit(blob, requested_span)
+        if met is not None:
+            return LogEndpointError(
+                "rpc", stale_range_cap_detail(met, requested_span, message or data)
+            )
+        return LogEndpointError("range_cap", message or data)
     return LogEndpointError("rpc", message or data or str(error))
 
 

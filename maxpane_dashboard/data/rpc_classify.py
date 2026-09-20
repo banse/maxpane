@@ -74,8 +74,10 @@ __all__ = [
     "RESULT_CAP_FRAGMENTS",
     "is_range_limitation",
     "looks_like_endpoint_limitation",
+    "met_block_limit",
     "named_block_limit",
     "requested_block_span",
+    "stale_range_cap_detail",
 ]
 
 
@@ -257,6 +259,24 @@ def named_block_limit(message: str) -> int | None:
     return best
 
 
+def _block_bound(value: Any) -> int | None:
+    """A JSON-RPC block bound: a ``0x``-prefixed hex string or a bare int.
+
+    Anything else -- a named tag, a decimal string (which ``int(_, 16)`` would
+    silently misread as hex), a bool -- is ``None``.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.lower().startswith("0x"):
+        try:
+            return int(value, 16)
+        except ValueError:
+            return None
+    return None
+
+
 def requested_block_span(method: str, params: Any) -> int | None:
     """How many blocks the ``eth_getLogs`` request *method*/*params* asked for.
 
@@ -272,12 +292,38 @@ def requested_block_span(method: str, params: Any) -> int | None:
     filt = params[0]
     if not isinstance(filt, dict):
         return None
-    try:
-        lo = int(str(filt["fromBlock"]), 16)
-        hi = int(str(filt["toBlock"]), 16)
-    except (KeyError, TypeError, ValueError):
+    lo = _block_bound(filt.get("fromBlock"))
+    hi = _block_bound(filt.get("toBlock"))
+    if lo is None or hi is None or hi < lo:
         return None
-    return hi - lo + 1 if hi >= lo else None
+    return hi - lo + 1
+
+
+def met_block_limit(message: str, requested_span: int | None) -> int | None:
+    """The block limit *message* names, when *requested_span* already meets it.
+
+    The one statement of the "rotate, do not shrink" rule (rules/data.md):
+    a range complaint naming a limit at or above the span it is complaining
+    about is not about that request, and halving the window on it is
+    provably useless. ``None`` when there is no span, no named limit, or the
+    request genuinely exceeds the limit -- every case where shrinking is
+    still the right answer. :func:`is_range_limitation` and the two
+    kind-classifiers (``talismans_client``, ``fwa_logs``) all consult this.
+    """
+    if requested_span is None:
+        return None
+    named = named_block_limit(message)
+    if named is None or requested_span > named:
+        return None
+    return named
+
+
+def stale_range_cap_detail(named: int, requested_span: int, detail: str) -> str:
+    """The operator-facing reason a met range cap was demoted to a rotate."""
+    return (
+        f"names a {named}-block limit the {requested_span}-block request "
+        f"already meets; not about this request: {detail}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +425,4 @@ def is_range_limitation(
         return True
     if not any(frag in message for frag in RANGE_CAP_FRAGMENTS):
         return True  # a result-count cap: its number is rows, not blocks
-    named = named_block_limit(message)
-    if named is None:
-        return True
-    return requested_span > named
+    return met_block_limit(message, requested_span) is None

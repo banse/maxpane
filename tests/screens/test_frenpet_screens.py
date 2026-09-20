@@ -374,14 +374,25 @@ def _plain(widget, selector: str) -> str:
     return content.plain if hasattr(content, "plain") else Text.from_markup(str(content)).plain
 
 
+def _without_rate(data: dict, shape: str) -> dict:
+    """``absent`` is the case that bites: with the key present as ``None``,
+    ``data.get(key, 0.0)`` and ``data.get(key)`` agree, so only a deleted key
+    proves the screen no longer manufactures ``0.0`` (review I2)."""
+    if shape == "absent":
+        del data["global_battle_rate"]
+    else:
+        data["global_battle_rate"] = None
+    return data
+
+
 @pytest.mark.asyncio
-async def test_overview_signals_say_unavailable_when_the_rate_was_not_measured() -> None:
+@pytest.mark.parametrize("shape", ["absent", "none"])
+async def test_overview_signals_say_unavailable_when_the_rate_was_not_measured(shape) -> None:
     """The manager's ``None`` must not be turned back into ``0.0`` by the screen."""
     from maxpane_dashboard.widgets.frenpet.overview.fp_game_signals import FPGameSignals
 
     manager = _FakeManager()
-    unmeasured = _sample_data()
-    unmeasured["global_battle_rate"] = None
+    unmeasured = _without_rate(_sample_data(), shape)
     manager.fetch_and_compute = lambda: _async(unmeasured)  # type: ignore[assignment]
 
     screen = FrenPetScreen(manager, poll_interval=30, name="frenpet")
@@ -397,12 +408,12 @@ async def test_overview_signals_say_unavailable_when_the_rate_was_not_measured()
 
 
 @pytest.mark.asyncio
-async def test_full_screen_battle_feed_footer_says_unavailable() -> None:
+@pytest.mark.parametrize("shape", ["absent", "none"])
+async def test_full_screen_battle_feed_footer_says_unavailable(shape) -> None:
     from maxpane_dashboard.widgets.frenpet.battle_feed import BattleFeed
 
     manager = _FakeManager()
-    unmeasured = _sample_data()
-    unmeasured["global_battle_rate"] = None
+    unmeasured = _without_rate(_sample_data(), shape)
     screen = FrenPetFullScreen(manager, poll_interval=30, name="frenpet_full")
     app = _Harness(screen)
     async with app.run_test() as pilot:

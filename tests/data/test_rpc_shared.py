@@ -368,8 +368,10 @@ _CLASSIFIER_SOURCES = sorted(_DATA_DIR.glob("*_client.py")) + [_DATA_DIR / "fwa_
 #: ``fwa_logs`` do not answer "is this a limitation?" with a boolean; they
 #: answer it with a *kind* (``result_cap`` / ``range_cap`` / ``timeout`` ...)
 #: that their pagers consume as data alongside ``suggested_to``. Hoisting
-#: those is a Tier 1 per client with its own fixture run -- filed as
-#: follow-up #65, deliberately not done in Branch 10. Each entry is proved to
+#: those is a Tier 1 per client with its own fixture run -- deliberately not
+#: done in Branch 10 (follow-up #65 closed the *span* half of that item on
+#: 2026-09-20 by binding ``rpc_classify.met_block_limit``; the marker tables
+#: stay local, follow-up #76). Each entry is proved to
 #: still be a literal below, so a stale exemption cannot sit here unnoticed.
 _P4_LOCAL_TABLES = {
     ("talismans_client.py", "_RESULT_CAP_MARKERS"),
