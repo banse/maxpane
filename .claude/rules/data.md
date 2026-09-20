@@ -99,8 +99,10 @@ for the keyed caches, point-count otherwise), `SeriesSpec.key` when the JSON key
 attribute. **Never add a version key to a cache file that has none and never rename one:** ocm's
 `"version": 2` and frenpet's `"schema_version": 2` are what every live `~/.maxpane/*.json` carries;
 a rename reads as v1 and empties users' burn or population series. Acceptance for any change here
-is the fixture set `tests/fixtures/cache/*_53a71d5.json` — files written by the pre-refactor code —
-loading point-for-point and re-saving byte-identical (`tests/data/test_series_cache.py`).
+is the fixture set `tests/fixtures/cache/*_53a71d5.json` — six files written by the pre-refactor code
+plus two v1 files derived from them (`tests/scripts/make_cache_fixtures.py`) — loading point-for-point
+and re-saving to the same parsed JSON, key order included, with only `saved_at` excused
+(`tests/data/test_series_cache.py`).
 `talismans_cache` and `ttt_cache` are event caches, not series caches, and do not subclass it.
 
 ## Inject the clock

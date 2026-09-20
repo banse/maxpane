@@ -44,7 +44,7 @@ files; the commit message is the evidence.
 | 6 | `refactor/panels-ocm` | §3.4a | 2 | small | `tests/widgets/test_panels.py` (new), ocm tests |
 | 7 | `refactor/panels-small-four` | §3.4b | 2 | ~2,000 | cattown / dota / talismans / ttt widget + screen tests |
 | 8 | `refactor/panels-bt-bakery` | §3.4c | 2 | ~800 | base + bakery tests; templates deleted; `rules/widgets.md` step 3 |
-| 9 | `refactor/series-cache` | §3.6a | 2 | ~490 net | `tests/data/test_*_cache.py` unchanged, `test_series_cache.py` (new, fixture round-trips) |
+| 9 | `refactor/series-cache` | §3.6a | 2 | +179 net measured (six caches −276, base +434) | `tests/data/test_*_cache.py` unchanged, `test_series_cache.py` (new, fixture round-trips) |
 | 10 | `refactor/rpc-pool` | §3.6b | 2 | ~700 | fixture-first: one committed error-string fixture, classifier tests, then per-client tests |
 | 11 | docs | §3.7 | 0 | 0 | doc-pinning tests |
 
@@ -3149,6 +3149,25 @@ still reaches the series — pre-existing, outside R1's scope, docstring correct
 M3: base-emitted log lines now carry the `series_cache` logger name (precedent from WP-A/B; the NOUN in the
 message is the grep that works). Branch Docs landed in the closure commit: rules/data.md "Series caches"
 paragraph, HANDOVER §3 item 6 half-done, table row 9 (at planning).
+
+**Whole-branch review (2026-09-20, `git diff 53a71d5..521bd59`, opus): Approved — 0 Critical, 0 Important,
+9 Minor.** Environment-dependent tests (`test_series_cache.py`, `test_cattown_manager.py`,
+`test_frenpet_manager.py`) 99 passed under an empty temp HOME, a temp HOME holding the owner's 19
+`~/.maxpane/*.json` and the real HOME read-only (every mtime unchanged afterwards). Fuzz: 6 classes × 33
+payloads + 4 file shapes = 198 cases, zero exceptions escaped `load_from_file`, zero sentinel points; a
+392-case old-vs-new equivalence run against a `53a71d5` worktree differs only in the documented R5/R7/#49
+buckets (filed as #59 for reference). All eight fixtures regenerate md5-identical from the worktree; the
+six acceptance test files and `CLAUDE.md` are byte-unchanged; twelve render pairs (six dashboards × 170 and
+143 columns) identical old vs new; every manager call site resolves on the migrated classes; the shared
+FrenPet cache hold in `app.py` covered by the frozen `test_app_startup.py`. Three cross-WP mutations: the
+version key never written → 5 red across `test_series_cache.py` and both frozen ocm/frenpet files; base
+forwarding `max_age` to the keyed half → nothing red (#56); bakery's dead-key rule imposed on all three →
+3 red, none frenpet's (#57). Docs Minors folded into this closure: `rules/data.md` no longer claims a
+byte-identical re-save (parsed JSON with `saved_at` excused) and names the two derived v1 fixtures (M6);
+table row 9 now carries the measured `+179 net` instead of the estimate (M7); #46 and #42 anchors re-taken
+on the head (M8); #49 reads "Tier 0 per file" (M9). Code Minors filed: #55 `get_latest() -> Any` on six
+caches (with M5 `allow_negative` unused), #56, #57, #58 `_loaded_version` naming. Reviewer confirmed
+follow-ups #45 and #54 are pre-existing zeros the branch strictly narrows, not blockers.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

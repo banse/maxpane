@@ -466,8 +466,10 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     and point the five at it. Talismans and ttt each define `_hour_bucket` (`talismans_cache.py:55-57`,
     `ttt_cache.py:85`) — same hoist. **Minor, Tier 2** — shared `data/` module, 5 dashboards.
 
-42. **Four caches restore points of any age.** `cattown_cache.py:179`, `dota_cache.py:177`,
-    `frenpet_cache.py:292/305`, `base_cache.py:334/363` call `coerce_points` with no `max_age`; only bakery
+42. **Four caches restore points of any age.** `cattown_cache.py:43-45` and `dota_cache.py:45-47` declare
+    their `SeriesSpec`s with no `max_age`, and `frenpet_cache.py:290` / `base_cache.py:344` call
+    `coerce_keyed` without one (anchors re-taken on the Branch 9 head; pre-branch they were the direct
+    `coerce_points` calls); only bakery
     (caller-supplied, `manager.py:67-69`) and ocm (per-series consts) window. `test_cache.py:290-380` (MEDI-22)
     documents the cost: a stale point drags a regression toward the long-run average. Branch 9 preserves the
     unwindowed behaviour on purpose (Decision R4) and pins it. Deciding a window per dashboard
@@ -499,7 +501,7 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     existing `None` path carry it. One test: a payload of `{}` records no point. **Important,
     Tier 0** — one file, one return statement, one regression test.
 
-46. **`save_to_file` stamps `saved_at` from the wall clock.** `series_cache.py:189` reads
+46. **`save_to_file` stamps `saved_at` from the wall clock.** `series_cache.py:209` reads
     `time.time()` inside `_payload()`; the six managers call `save_to_file(path)` with no clock, so
     the save path is the one place in these caches a test cannot control the time. No loader reads
     `saved_at` back, so nothing currently depends on it — but `tests/scripts/make_cache_fixtures.py`
@@ -549,8 +551,8 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `active_pets_history` / `total_score_history` / `battle_rate_history` holding whatever the
     session had; on the branch they are restored from the file first and only the keyed half is
     abandoned. Same behaviour change, same understating warning, same missing test. **Minor,
-    Tier 0** (wording + one parametrised test across bakery, base and frenpet) when any of the
-    three is next touched.
+    Tier 0 per file** — wording + the parametrised case for that class, done when that cache is
+    next touched; never all three in one Tier 0.
 
 50. **`tests/data/test_base_cache.py:172` asserts `history_size <= 2`.** A bound, not a value: it
     passes at 0, so the test would stay green if `test_load_survives_unrankable_entries` restored
@@ -603,3 +605,57 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `test_before_load_sees_the_version`'s parametrisation when `test_series_cache.py` is next touched.
     **Important, Tier 1** (one dashboard's manager + its tests).
 
+
+## Branch 9 — whole-branch review (2026-09-20, Approved 0C/0I/9M)
+
+55. **`get_latest()` lost its snapshot type on all six caches at once.** `series_cache.py:176-178`
+    declares `def get_latest(self) -> Any`; pre-branch each subclass declared its own
+    (`-> CatTownSnapshot | None`, `-> BaseSnapshot | None`, `-> OCMSnapshot | None`, …). The whole public
+    API delta of the branch is additive except these six annotations, which widened to `Any`, so
+    `ocm_manager.py:124`'s `last_good = self.cache.get_latest()` and its siblings are no longer
+    type-checked. The subclasses keep `_latest: XSnapshot | None` as a class annotation, so the
+    information exists and is simply not on the getter. Each WP saw one slice, so nobody saw six.
+    Fix: make `SeriesCache` generic in the snapshot type (`SeriesCache[SnapshotT]`), or a one-line typed
+    `get_latest()` per subclass. Also (review M5) `SeriesSpec.allow_negative` (`series_cache.py:89`) has
+    no subclass user yet — exercised only by the probe subclass in `test_series_cache.py`; keep it, it
+    mirrors `coerce_points`. **Minor, Tier 0** when `series_cache.py` is next touched — the one
+    finding filed against the base itself rather than waiting for a subclass.
+
+56. **"`max_age` is deliberately not forwarded" is unfalsifiable for base and frenpet.**
+    `base_cache.py:344` and `frenpet_cache.py:290` call `coerce_keyed(…, now=now)` and their docstrings
+    (`:322-323`, `:279-280`) cite #42 for not windowing the keyed half. Reviewer mutation: forward
+    `max_age` at `base_cache.py:344` → `test_series_cache.py test_base_cache.py test_base_manager.py
+    test_cache_corruption.py tests/screens/test_base_terminal_screen.py` all green (121 passed). Bakery's
+    *forwarding* is pinned (its caller supplies a window, `manager.py:67-69`); base's and frenpet's
+    *non*-forwarding is not. Equivalent mutant today (no caller passes `max_age` to those two), so
+    test-rigor only: one `load_from_file(path, now=…, max_age=600)` with a 30-day keyed point per class,
+    asserting the point survives. **Minor, Tier 0** — file with #42's decision, since a window would
+    flip the assertion.
+
+57. **The three keyed caches disagree about a key whose points all died, and only two answers are
+    pinned.** `cache.py:184-185` drops the bakery (`if not good: continue`); `base_cache.py:345-349` and
+    `frenpet_cache.py:292-301` track the key with an empty deque. Each is byte-faithful to its own
+    pre-branch loader (verified old vs new), so preserved behaviour, not a regression — but #48 pinned
+    merge-vs-replace for all three together and left this sibling question unstated. Reviewer mutation:
+    impose bakery's rule inside `coerce_keyed` (`series_cache.py:316-318`) → 3 failed
+    (`test_coerce_keyed_validates_each_key`, `TestLoadCap::test_bloated_file_is_capped_on_load`,
+    `TestLoadCap::test_load_then_save_writes_a_bounded_file`), **none of them frenpet's**. Decide once
+    for the three (as #48 did) and pin frenpet's answer in either direction. **Minor, Tier 0** when
+    `frenpet_cache.py` or `test_series_cache.py` is next touched.
+
+58. **`_loaded_version` wears the `_loaded_*` sentinel's clothes.** `series_cache.py:293-301` documents
+    the convention "`_loaded_<noun>: int | None` … `None` meaning the load bailed out"; `ocm_cache.py:130`
+    and `frenpet_cache.py:127` declare `_loaded_version: int`, which is a schema version, never a
+    bail-out flag, and frenpet carries both names side by side. A next subscriber reading the base's
+    documented contract will mis-read it. One clarifying sentence in the base docstring, or rename to
+    `_file_version` in both. **Minor, Tier 0** (two files, rename + docstring) when either is next
+    touched.
+
+59. **Whole-branch equivalence, recorded for the next cache change.** 392 old-vs-new load cases (33
+    hostile payloads + 8 fixtures, fresh and after an in-memory point, six classes, `time.time` frozen)
+    differ in 61, every one in a documented bucket: R5 dict guard bakery/base lacked (24, old raised
+    `AttributeError`), R7 clear-before-extend after a seed (34, unreachable — every manager loads in
+    `__init__`), per-key degradation on a malformed `histories` for base/frenpet (3, #49). No fresh-load
+    difference outside R5. Log lines identical except bakery's `NOUN` rewording and frenpet's lost
+    population count (#51). Not a defect; the reference for anyone asking "did Branch 9 change what a
+    user's file loads as". **No action.**
