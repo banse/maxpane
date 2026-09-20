@@ -204,11 +204,10 @@ per package, reviewer contract, full suite once before merge.
    `_RANGE_LIMITATION_PATTERNS` triplets (`curator:248`, `surf_pool4:350`, `surf:1108`) and the
    `_RESULT_CAP_MARKERS` / `_RANGE_CAP_MARKERS` in `talismans_client:373/382` and
    `fwa_logs:1318`; classifiers `_classify_rpc_error` in `talismans_client:428` and
-   `fwa_logs:1382`; per-dashboard pools become configuration. `SeriesCache(max_history, series)`
-   with `update/record/get_series/history_size/last_updated/save_to_file/load_from_file(now=,
-   max_age=)` using `series_points.coerce_points`; subclass in cattown/dota/ocm/talismans/ttt/
-   frenpet/base caches first (highest similarity). `data/manager_base.py` for `_error_count` /
-   `last_success` / `as_of_hhmm` / last-good fold. Endpoint behaviour rules in `rules/data.md`
+   `fwa_logs:1382`; per-dashboard pools become configuration. `SeriesCache` — **done, Branch 9 (2026-09-20):** `data/series_cache.py`, subclassed by bakery, cattown,
+   dota, ocm, frenpet and base (talismans/ttt are event caches, follow-up #41); `RpcPool` = Branch 10;
+   `data/manager_base.py` (`_error_count` / `last_success` / `as_of_hhmm` / last-good fold) is in no
+   branch (follow-up #44). Endpoint behaviour rules in `rules/data.md`
    are the spec; `tests/fixtures/surf/pool4/rpc_error_states.json` is the classifier's fixture.
 7. Afterwards, rewrite "Reuse before you build" in `rules/widgets.md` as the new-dashboard
    checklist: models keys → `OwnedHttpClient` + `RpcPool` config → `SeriesCache` subclass →

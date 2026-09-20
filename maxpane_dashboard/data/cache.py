@@ -4,26 +4,33 @@ The ``DataCache`` stores the most recent ``GameSnapshot`` and
 accumulates per-bakery cookie counts over time so the dashboard can
 render sparklines and trend indicators.
 
+There are no *fixed* series here: the history is a dict keyed by bakery
+name, so ``SERIES`` is empty and the whole payload rides on the
+``extra_payload``/``restore_extra`` hooks.  Everything else -- the
+atomic write, the open/JSON-decode guard, the ``isinstance(payload,
+dict)`` guard this loader used to lack, the injected clock and the
+"Skipped ..." warning -- is inherited from
+``data/series_cache.SeriesCache``.
+
 Thread safety: this module is designed for single-threaded asyncio use.
 No locking is performed.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import time
 from collections import deque
 from typing import Any
 
-from maxpane_dashboard.data.series_points import coerce_points
+from maxpane_dashboard.data.series_cache import (
+    SeriesCache,
+    TimeSeriesPoint,
+)
 from maxpane_dashboard.data.snapshot import GameSnapshot
 
 logger = logging.getLogger(__name__)
 
-# Type alias for a single time-series data point: (epoch_seconds, cookie_count)
-TimeSeriesPoint = tuple[float, float]
+__all__ = ["DataCache", "TimeSeriesPoint", "SEASON_RESET_DROP_RATIO"]
 
 # Fraction of the previous sample below which a new cookie count is read as
 # a season reset rather than a normal fluctuation.  Cookie counts only fall
@@ -42,7 +49,7 @@ def _is_season_reset(previous: float, current: float) -> bool:
     return current < previous * SEASON_RESET_DROP_RATIO
 
 
-class DataCache:
+class DataCache(SeriesCache):
     """Caches API responses and accumulates time-series data.
 
     Parameters
@@ -52,11 +59,20 @@ class DataCache:
         poll interval, 120 samples covers 60 minutes.
     """
 
+    #: No fixed series: every series here is keyed by bakery name.
+    SERIES = ()
+    NOUN = "cache history"
+    SIZE_NOUN = "bakeries"
+
+    _latest: GameSnapshot | None
+
     def __init__(self, max_history: int = 120) -> None:
-        self._max_history = max_history
+        super().__init__(max_history)
         self._history: dict[str, deque[TimeSeriesPoint]] = {}
-        self._latest: GameSnapshot | None = None
-        self._last_updated: float | None = None
+        # Number of bakeries the last load restored, or ``None`` when the
+        # load bailed out on a malformed ``histories`` value.  Read only
+        # by _log_loaded, which must stay silent in that case.
+        self._loaded_bakeries: int | None = None
 
     # ------------------------------------------------------------------
     # Core operations
@@ -77,8 +93,7 @@ class DataCache:
         as a reset and the bakery's history is dropped, so the production
         rate is regressed over the new season only.
         """
-        self._latest = snapshot
-        self._last_updated = snapshot.fetched_at
+        self._mark(snapshot)
 
         for bakery in snapshot.bakeries:
             key = bakery.name
@@ -98,10 +113,6 @@ class DataCache:
                 dq.clear()
             dq.append((snapshot.fetched_at, display_cookies))
 
-    def get_latest(self) -> GameSnapshot | None:
-        """Return the most recently stored snapshot, or ``None``."""
-        return self._latest
-
     def get_cookie_history(self, bakery_name: str) -> list[TimeSeriesPoint]:
         """Return ``[(timestamp, cookies), ...]`` for a single bakery.
 
@@ -117,11 +128,6 @@ class DataCache:
         return {name: list(dq) for name, dq in self._history.items()}
 
     @property
-    def last_updated(self) -> float | None:
-        """Epoch timestamp of the last ``update()`` call, or ``None``."""
-        return self._last_updated
-
-    @property
     def history_size(self) -> int:
         """Number of distinct bakeries being tracked."""
         return len(self._history)
@@ -130,108 +136,67 @@ class DataCache:
     # Persistence
     # ------------------------------------------------------------------
 
-    def save_to_file(self, path: str) -> None:
-        """Persist accumulated history to JSON for restart survival.
+    def extra_payload(self) -> dict[str, Any]:
+        """The one key this cache persists beyond the base's two.
 
-        File format::
-
-            {
-                "saved_at": <float>,
-                "max_history": <int>,
-                "histories": {
-                    "<bakery_name>": [[ts, cookies], ...],
-                    ...
-                }
-            }
+        The written file is ``{"saved_at", "max_history", "histories"}``
+        and carries **no version key**; it never has, and adding one
+        would make an older MaxPane read its own file as a downgrade.
         """
-        payload: dict[str, Any] = {
-            "saved_at": time.time(),
-            "max_history": self._max_history,
+        return {
             "histories": {
                 name: [list(pt) for pt in dq]
                 for name, dq in self._history.items()
-            },
+            }
         }
 
-        # Atomic write: write to temp, then rename
-        tmp_path = path + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            with open(tmp_path, "w") as f:
-                json.dump(payload, f)
-            os.replace(tmp_path, path)
-            logger.info("Cache history saved to %s (%d bakeries)", path, len(self._history))
-        except OSError as exc:
-            logger.warning("Failed to save cache history: %s", exc)
-            # Clean up temp file if rename failed
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+    def restore_extra(
+        self,
+        payload: dict[str, Any],
+        *,
+        path: str,
+        now: float,
+        max_age: float | None = None,
+    ) -> int:
+        """Rebuild ``_history`` from ``payload["histories"]``.
 
-    def load_from_file(self, path: str, *, max_age: float | None = None) -> None:
-        """Load previously saved history from a JSON file.
+        ``max_age`` is the caller's window -- ``manager.py`` passes the
+        sparkline window, because ``calculate_production_rate`` regresses
+        over whatever is in the deque and a day-old cluster plus a fresh
+        one yields the long-run average rate.
 
-        Silently does nothing if the file is missing or corrupted.
-        Existing in-memory data is replaced on successful load.
-
-        Individual points are validated: anything unusable (``null``, a
-        string, ``NaN``, a wrong-length entry, a negative value, a
-        future-dated timestamp) is dropped and counted rather than
-        raising, because every manager loads its cache in ``__init__``
-        and one bad value used to abort MaxPane startup for every
-        dashboard.
-
-        Parameters
-        ----------
-        max_age:
-            Drop points older than this many seconds.  Restoring the full
-            file regardless of age is what made production rates wrong for
-            the first hour after a restart: ``calculate_production_rate``
-            regresses over whatever is in the deque, so a day-old cluster
-            plus a fresh one yields the long-run average rate, and a
-            season's worth of stale points yields a negative slope clamped
-            to 0 (leader_rate=0, every boost EV negative, gap_analysis
-            reporting gap_rate 0).  Callers should pass the sparkline
-            window -- ``max_history * poll_interval``.  ``None`` keeps the
-            old load-everything behaviour.
+        A bakery whose points have all aged out (or were all unusable) is
+        left **untracked** rather than seeded with an empty deque: an
+        empty deque is a bakery we are following with nothing to show,
+        and ``history_size`` counts it.
         """
-        try:
-            with open(path) as f:
-                payload = json.load(f)
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.info("No cache file to load (%s): %s", path, exc)
-            return
+        raw = payload.get("histories", {})
+        if not isinstance(raw, dict):
+            logger.warning(
+                "%s file %s has unexpected format, skipping", self.NOUN, path
+            )
+            self._loaded_bakeries = None
+            return 0
 
-        histories = payload.get("histories", {})
-        if not isinstance(histories, dict):
-            logger.warning("Cache file %s has unexpected format, skipping", path)
-            return
-
+        series, skipped = self.coerce_keyed(raw, now=now, max_age=max_age)
         loaded = 0
-        skipped = 0
-        now = time.time()
-        for name, points in histories.items():
-            if not isinstance(points, list):
-                continue
-            good, dropped = coerce_points(points, now=now, max_age=max_age)
-            skipped += dropped
+        for name, good in series.items():
             if not good:
-                # Every point aged out (or was unusable): leave the bakery
-                # untracked rather than seeding an empty deque.
                 continue
             self._history[name] = deque(good, maxlen=self._max_history)
             loaded += 1
 
-        if skipped:
-            logger.warning(
-                "Skipped %d unusable or expired point(s) while loading cache %s",
-                skipped,
-                path,
-            )
+        self._loaded_bakeries = loaded
+        return skipped
+
+    def _log_loaded(self, path: str, loaded: int) -> None:
+        """The closing info line, in bakeries rather than points."""
+        if self._loaded_bakeries is None:
+            return
         logger.info(
-            "Loaded cache history from %s: %d bakeries, up to %d points each",
+            "Loaded %s from %s: %d bakeries, up to %d points each",
+            self.NOUN,
             path,
-            loaded,
+            self._loaded_bakeries,
             self._max_history,
         )

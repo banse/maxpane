@@ -152,16 +152,28 @@ class FrenPetManager:
         )
 
         # -- Recent attacks (best-effort) ---------------------------------
+        # Two names for one reading, deliberately.  ``measured_battle_rate``
+        # is ``None`` when the attacks feed could not be read, and that is
+        # what reaches the persisted ``battle_rate_history``: a sentinel
+        # ``0.0`` appended during an outage outlives it and reads for ever
+        # after as a genuine lull (CLAUDE.md: a failed read is ``None``,
+        # never ``0``).  ``global_battle_rate`` is the widget dict's
+        # display value and keeps its long-standing ``0.0`` default, which
+        # is a separate question about what an unavailable rate should
+        # *look* like (follow-up #43).
         recent_attacks: list[dict[str, Any]] = []
-        global_battle_rate = 0.0
+        measured_battle_rate: float | None = None
         try:
             recent_attacks = await self.client.get_recent_attacks(limit=50)
-            global_battle_rate = _compute_battle_rate(recent_attacks)
+            measured_battle_rate = _compute_battle_rate(recent_attacks)
         except Exception as exc:
             logger.warning("Failed to fetch recent attacks: %s", exc)
+        global_battle_rate = (
+            0.0 if measured_battle_rate is None else measured_battle_rate
+        )
 
         # -- Update cache with population + battle rate history -----------
-        self.cache.update(snapshot, battle_rate=global_battle_rate)
+        self.cache.update(snapshot, battle_rate=measured_battle_rate)
 
         # -- Managed pets analytics ---------------------------------------
         managed_pets = list(snapshot.managed_pets)

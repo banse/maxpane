@@ -1,8 +1,17 @@
 """In-memory cache with time-series accumulation for Base chain token prices.
 
 The ``BaseTokenCache`` accumulates per-token price histories over time so the
-dashboard can render sparklines and trend indicators.  It follows the same
-patterns as ``DataCache`` and ``FrenPetCache``.
+dashboard can render sparklines and trend indicators, plus three fixed
+overview series for the Base Trading Overview dashboard.
+
+Everything but ``update()``, the LRU bookkeeping and the named getters is
+inherited from ``data/series_cache.SeriesCache``; see that module for the
+persistence contract and for why ``record()`` drops ``None`` instead of
+zero-filling.  The three overview deques are declared as ``SERIES`` and
+carry an explicit ``key=``: they have always been written as
+``overview_volume`` / ``overview_eth_price`` / ``overview_trade_count``,
+and renaming either half would make every existing
+``~/.maxpane/base_cache.json`` load its sparklines empty.
 
 Thread safety: this module is designed for single-threaded asyncio use.
 No locking is performed.
@@ -10,20 +19,21 @@ No locking is performed.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import time
 from collections import OrderedDict, deque
 from typing import Any
 
 from maxpane_dashboard.data.base_models import BaseSnapshot, BaseToken
-from maxpane_dashboard.data.series_points import coerce_points
+from maxpane_dashboard.data.series_cache import (
+    SeriesCache,
+    SeriesSpec,
+    TimeSeriesPoint,
+)
 
 logger = logging.getLogger(__name__)
 
-# Type alias for a single time-series data point: (epoch_seconds, price_usd)
-TimeSeriesPoint = tuple[float, float]
+__all__ = ["BaseTokenCache", "TimeSeriesPoint"]
 
 # Upper bound on distinct token addresses tracked at once.  The trending
 # response normally holds a few dozen tokens, but the upstream list is
@@ -37,6 +47,19 @@ _MAX_TRACKED_TOKENS = 500
 # the per-cycle blowup: one hostile response cannot allocate more than
 # this many deques before eviction kicks in.
 _MAX_TOKENS_PER_UPDATE = 100
+
+# The persisted key order, oldest file first.  ``SeriesCache._payload``
+# writes the declared series before ``extra_payload``; this file has
+# always carried ``histories`` first, and a cache file whose keys
+# reshuffle on every save is a diff nobody can read.
+_PAYLOAD_KEY_ORDER = (
+    "saved_at",
+    "max_history",
+    "histories",
+    "overview_volume",
+    "overview_eth_price",
+    "overview_trade_count",
+)
 
 
 def _last_timestamp(points: Any) -> float:
@@ -57,7 +80,7 @@ def _last_timestamp(points: Any) -> float:
         return float("-inf")
 
 
-class BaseTokenCache:
+class BaseTokenCache(SeriesCache):
     """Caches Base chain token price histories for sparkline rendering.
 
     The set of tracked token addresses is bounded: at most
@@ -77,6 +100,19 @@ class BaseTokenCache:
         Maximum number of tokens accepted from one upstream snapshot.
     """
 
+    SERIES = (
+        SeriesSpec("volume_history", key="overview_volume"),
+        SeriesSpec("eth_price_history", key="overview_eth_price"),
+        SeriesSpec("trade_count_history", key="overview_trade_count"),
+    )
+    NOUN = "Base token cache"
+    SIZE_NOUN = "tokens"
+
+    volume_history: deque[TimeSeriesPoint]
+    eth_price_history: deque[TimeSeriesPoint]
+    trade_count_history: deque[TimeSeriesPoint]
+    _latest: BaseSnapshot | None
+
     def __init__(
         self,
         max_history: int = 120,
@@ -84,18 +120,14 @@ class BaseTokenCache:
         max_tokens: int = _MAX_TRACKED_TOKENS,
         max_tokens_per_update: int = _MAX_TOKENS_PER_UPDATE,
     ) -> None:
-        self._max_history = max_history
+        super().__init__(max_history)
         self._max_tokens = max(1, max_tokens)
         self._max_tokens_per_update = max(1, max_tokens_per_update)
         # OrderedDict, most-recently-updated address last.
         self._price_histories: OrderedDict[str, deque[TimeSeriesPoint]] = OrderedDict()
-        self._latest: BaseSnapshot | None = None
-        self._last_updated: float | None = None
-
-        # Overview time-series (for Base Trading Overview dashboard)
-        self.volume_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
-        self.eth_price_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
-        self.trade_count_history: deque[TimeSeriesPoint] = deque(maxlen=max_history)
+        # Number of token histories the last load restored, or ``None``
+        # when the load bailed out on a malformed ``histories`` value.
+        self._loaded_tokens: int | None = None
 
     # ------------------------------------------------------------------
     # Core operations
@@ -135,8 +167,7 @@ class BaseTokenCache:
         ``max_tokens_per_update`` tokens are taken from the snapshot, and
         the total number of tracked addresses stays within ``max_tokens``.
         """
-        self._latest = snapshot
-        self._last_updated = snapshot.fetched_at
+        self._mark(snapshot)
 
         tokens = snapshot.trending_tokens
         if len(tokens) > self._max_tokens_per_update:
@@ -156,8 +187,14 @@ class BaseTokenCache:
 
         Useful for enrichment-only refreshes where a full snapshot is not
         available.
+
+        ``timestamp is None`` -- not a falsy ``timestamp`` -- is what
+        means "stamp it now": epoch ``0.0`` is a timestamp like any
+        other, and ``timestamp or time.time()`` silently replaced it with
+        the wall clock, which is the one value a caller passing ``0.0``
+        did not want.
         """
-        ts = timestamp or time.time()
+        ts = time.time() if timestamp is None else timestamp
         addr = token.address.lower()
         self._touch(addr).append((ts, token.price_usd))
 
@@ -174,15 +211,6 @@ class BaseTokenCache:
     def get_all_histories(self) -> dict[str, list[TimeSeriesPoint]]:
         """Return price histories for every tracked token."""
         return {addr: list(dq) for addr, dq in self._price_histories.items()}
-
-    def get_latest(self) -> BaseSnapshot | None:
-        """Return the most recently stored snapshot, or ``None``."""
-        return self._latest
-
-    @property
-    def last_updated(self) -> float | None:
-        """Epoch timestamp of the last ``update()`` call, or ``None``."""
-        return self._last_updated
 
     @property
     def history_size(self) -> int:
@@ -211,35 +239,40 @@ class BaseTokenCache:
         sentinel written here outlives the outage that produced it: it
         crushes the ETH sparkline's scale, and ``compute_volume_trend``
         reads a zero previous volume as "Rising" on the next successful
-        cycle regardless of reality.
+        cycle regardless of reality.  ``SeriesCache.record`` is the
+        repo-wide copy of that rule.
         """
-        if total_volume is not None:
-            self.volume_history.append((timestamp, float(total_volume)))
-        if eth_price is not None:
-            self.eth_price_history.append((timestamp, float(eth_price)))
-        if trade_count is not None:
-            self.trade_count_history.append((timestamp, float(trade_count)))
+        self.record("volume_history", timestamp, total_volume)
+        self.record("eth_price_history", timestamp, eth_price)
+        self.record("trade_count_history", timestamp, trade_count)
 
     def get_volume_history(self) -> list[TimeSeriesPoint]:
         """Return accumulated total-volume time-series."""
-        return list(self.volume_history)
+        return self.get_series("volume_history")
 
     def get_eth_price_history(self) -> list[TimeSeriesPoint]:
         """Return accumulated ETH price time-series."""
-        return list(self.eth_price_history)
+        return self.get_series("eth_price_history")
 
     def get_trade_count_history(self) -> list[TimeSeriesPoint]:
         """Return accumulated trade-count time-series."""
-        return list(self.trade_count_history)
+        return self.get_series("trade_count_history")
 
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
-    def save_to_file(self, path: str) -> None:
-        """Persist accumulated history to JSON for restart survival.
+    def extra_payload(self) -> dict[str, Any]:
+        """The per-token histories; the three overview series are ``SERIES``."""
+        return {
+            "histories": {
+                addr: [list(pt) for pt in dq]
+                for addr, dq in self._price_histories.items()
+            }
+        }
 
-        File format::
+    def _payload(self) -> dict[str, Any]:
+        """The saved payload, in this file's historical key order::
 
             {
                 "saved_at": <float>,
@@ -247,96 +280,73 @@ class BaseTokenCache:
                 "histories": {
                     "<token_address>": [[ts, price], ...],
                     ...
-                }
+                },
+                "overview_volume": [[ts, usd], ...],
+                "overview_eth_price": [[ts, usd], ...],
+                "overview_trade_count": [[ts, trades], ...]
             }
+
+        All six keys -- the previous version of this docstring listed
+        only the first three, while the code wrote all six.  No version
+        key: this file has never carried one, and an older MaxPane
+        reading a new key would treat its own cache as a downgrade.
+
+        The base writes the declared series before ``extra_payload``'s
+        keys; this file has always led with ``histories``.  Nothing reads
+        a JSON object's key order, but a save that reshuffles a user's
+        file makes every backup diff unreadable for no gain.
         """
-        payload: dict[str, Any] = {
-            "saved_at": time.time(),
-            "max_history": self._max_history,
-            "histories": {
-                addr: [list(pt) for pt in dq]
-                for addr, dq in self._price_histories.items()
-            },
-            "overview_volume": [list(pt) for pt in self.volume_history],
-            "overview_eth_price": [list(pt) for pt in self.eth_price_history],
-            "overview_trade_count": [list(pt) for pt in self.trade_count_history],
-        }
+        payload = super()._payload()
+        ordered = {k: payload.pop(k) for k in _PAYLOAD_KEY_ORDER if k in payload}
+        # Anything unexpected still gets written rather than dropped.
+        ordered.update(payload)
+        return ordered
 
-        # Atomic write: write to temp, then rename
-        tmp_path = path + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            with open(tmp_path, "w") as f:
-                json.dump(payload, f)
-            os.replace(tmp_path, path)
-            logger.info(
-                "Base token cache saved to %s (%d tokens)",
-                path,
-                len(self._price_histories),
-            )
-        except OSError as exc:
-            logger.warning("Failed to save Base token cache: %s", exc)
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+    def restore_extra(
+        self,
+        payload: dict[str, Any],
+        *,
+        path: str,
+        now: float,
+        max_age: float | None = None,
+    ) -> int:
+        """Rebuild the per-token histories, applying the tracked-address cap.
 
-    def load_from_file(self, path: str) -> None:
-        """Load previously saved history from a JSON file.
+        The cap is applied on load as well as on update, otherwise a
+        cache file that grew before the cap existed (or was tampered
+        with) re-bloats the process on every startup.  The addresses with
+        the newest last sample win, and they are inserted oldest-first so
+        the LRU order survives the round trip.
 
-        Silently does nothing if the file is missing or corrupted.
-        Existing in-memory data is replaced on successful load.
-
-        Individual points are validated: anything unusable (``null``, a
-        string, ``NaN``, a wrong-length entry, a negative price, a
-        future-dated timestamp) is dropped and counted rather than
-        raising, because every manager loads its cache in ``__init__``
-        and one bad value used to abort MaxPane startup for every
-        dashboard.
+        ``max_age`` is deliberately not forwarded: these histories have
+        never been windowed on load, and starting now would silently
+        shorten every user's restored sparkline (follow-up #42).
         """
-        try:
-            with open(path) as f:
-                payload = json.load(f)
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.info("No Base token cache file to load (%s): %s", path, exc)
-            return
-
-        histories = payload.get("histories", {})
-        if not isinstance(histories, dict):
+        raw = payload.get("histories", {})
+        if not isinstance(raw, dict):
             logger.warning(
-                "Base token cache file %s has unexpected format, skipping", path
+                "%s file %s has unexpected format, skipping", self.NOUN, path
             )
-            return
+            self._loaded_tokens = None
+            return 0
 
-        loaded = 0
-        skipped = 0
-        now = time.time()
-
-        # Apply the tracked-address cap on load as well, otherwise a cache
-        # file that grew before the cap existed (or was tampered with)
-        # re-bloats the process on every startup.  Keep the addresses with
-        # the newest last sample and insert oldest-first so LRU order is
-        # preserved.
         candidates = [
             (addr, points)
-            for addr, points in histories.items()
+            for addr, points in raw.items()
             if isinstance(points, list)
         ]
         dropped_addrs = 0
+        candidates.sort(key=lambda item: _last_timestamp(item[1]))
         if len(candidates) > self._max_tokens:
-            candidates.sort(key=lambda item: _last_timestamp(item[1]))
             dropped_addrs = len(candidates) - self._max_tokens
             candidates = candidates[-self._max_tokens :]
-        else:
-            candidates.sort(key=lambda item: _last_timestamp(item[1]))
 
-        for addr, points in candidates:
-            good, dropped = coerce_points(points, now=now)
-            skipped += dropped
+        series, skipped = self.coerce_keyed(dict(candidates), now=now)
+        for addr, good in series.items():
             dq: deque[TimeSeriesPoint] = deque(good, maxlen=self._max_history)
             self._price_histories[addr.lower()] = dq
             self._price_histories.move_to_end(addr.lower())
-            loaded += 1
+        loaded = len(series)
 
         # Guard against duplicate addresses differing only by case.
         while len(self._price_histories) > self._max_tokens:
@@ -345,35 +355,25 @@ class BaseTokenCache:
 
         if dropped_addrs:
             logger.warning(
-                "Base token cache %s held more than %d tokens; dropped the "
+                "%s %s held more than %d tokens; dropped the "
                 "%d least-recently-updated",
+                self.NOUN,
                 path,
                 self._max_tokens,
                 dropped_addrs,
             )
 
-        # Load overview time-series if present
-        for key, target_deque in [
-            ("overview_volume", self.volume_history),
-            ("overview_eth_price", self.eth_price_history),
-            ("overview_trade_count", self.trade_count_history),
-        ]:
-            series = payload.get(key, [])
-            if isinstance(series, list):
-                good, dropped = coerce_points(series, now=now)
-                skipped += dropped
-                target_deque.extend(good)
+        self._loaded_tokens = loaded
+        return skipped
 
-        if skipped:
-            logger.warning(
-                "Skipped %d unusable point(s) while loading Base token "
-                "cache %s",
-                skipped,
-                path,
-            )
+    def _log_loaded(self, path: str, loaded: int) -> None:
+        """The closing info line, in tokens rather than overview points."""
+        if self._loaded_tokens is None:
+            return
         logger.info(
-            "Loaded Base token cache from %s: %d tokens, up to %d points each",
+            "Loaded %s from %s: %d tokens, up to %d points each",
+            self.NOUN,
             path,
-            loaded,
+            self._loaded_tokens,
             self._max_history,
         )

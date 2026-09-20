@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from maxpane_dashboard.data import frenpet_manager as fm
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.data.frenpet_models import FrenPet, FrenPetPopulation, FrenPetSnapshot
 
@@ -630,3 +631,113 @@ class TestFrenPetManagerSafeCall:
                 raise RuntimeError("nope")
 
         assert _safe_call(Callable(), default="fallback") == "fallback"
+
+
+# ---------------------------------------------------------------------------
+# Tests: R1 -- a failed attacks read is None in the series, 0.0 on screen
+# ---------------------------------------------------------------------------
+
+class TestFrenPetManagerBattleRateSentinel:
+    """Branch 9 R1: the cache and the widget dict want different things.
+
+    ``battle_rate_history`` is persisted to ``~/.maxpane/frenpet_cache.json``,
+    so a ``0.0`` appended while the attacks feed was down outlives the
+    outage and reads for ever after as a genuine lull -- it drags the
+    Battles sparkline's scale and any trend computed off it.  The widget
+    dict's ``global_battle_rate`` is a *display* default and is out of
+    scope here (follow-up #43): what it shows for "we could not look" is
+    the same question ``rules/data.md`` asks of every degraded cell, and
+    it is answered elsewhere, so this test pins today's value rather than
+    improving it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolated_cache_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        """``FrenPetManager.__init__`` loads ``_CACHE_FILE`` -- the user's real
+        ``~/.maxpane/frenpet_cache.json`` -- so without this every assertion on
+        an empty ``battle_rate_history`` below is red on a machine that has run
+        the dashboard (WP-C review I1).  Same isolation as
+        ``test_frenpet_cache.py``'s manager test.
+        """
+        monkeypatch.setattr(fm, "_CACHE_FILE", tmp_path / "frenpet_cache.json")
+
+    @staticmethod
+    def _manager_and_snapshot() -> tuple[FrenPetManager, FrenPetSnapshot]:
+        return FrenPetManager(wallet_address="0xabc"), _make_snapshot()
+
+    @pytest.mark.asyncio
+    async def test_a_failed_attacks_read_records_no_battle_rate_point(self) -> None:
+        manager, snapshot = self._manager_and_snapshot()
+        assert list(manager.cache.battle_rate_history) == []
+
+        with patch.object(
+            manager.client, "fetch_snapshot", new=AsyncMock(return_value=snapshot)
+        ), patch.object(
+            manager.client,
+            "get_recent_attacks",
+            new=AsyncMock(side_effect=RuntimeError("attack query failed")),
+        ):
+            result = await manager.fetch_and_compute()
+
+        # Nothing in the persisted series ...
+        assert list(manager.cache.battle_rate_history) == []
+        # ... while the two siblings recorded normally, so the cycle is not
+        # simply missing: only the reading that failed is absent.
+        assert len(manager.cache.active_pets_history) == 1
+        assert len(manager.cache.total_score_history) == 1
+        # ... and the widget dict keeps the display default it has always had.
+        assert result["global_battle_rate"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_a_good_attacks_read_records_one_point(self) -> None:
+        base = 1_800_000_000
+        attacks = [
+            {"attacker_id": i, "defender_id": i + 1, "attacker_won": True,
+             "timestamp": base + i * 1800}
+            for i in range(3)
+        ]
+        manager, snapshot = self._manager_and_snapshot()
+
+        with patch.object(
+            manager.client, "fetch_snapshot", new=AsyncMock(return_value=snapshot)
+        ), patch.object(
+            manager.client, "get_recent_attacks",
+            new=AsyncMock(return_value=attacks),
+        ):
+            result = await manager.fetch_and_compute()
+
+        history = list(manager.cache.battle_rate_history)
+        assert len(history) == 1
+        assert history[0][0] == snapshot.fetched_at
+        assert history[0][1] == pytest.approx(result["global_battle_rate"])
+        assert result["global_battle_rate"] > 0.0
+
+    @pytest.mark.asyncio
+    async def test_a_genuine_zero_rate_is_still_recorded(self) -> None:
+        """A computed ``0.0`` is recorded; only "could not look" is dropped.
+
+        This pins today's behaviour, not the ideal one: one attack cannot
+        span an interval, and ``_compute_battle_rate`` answers ``0.0`` for
+        "cannot compute" as well as for a genuine lull (its own docstring
+        says "instead of a fabricated rate").  R1 covers the failed *fetch*
+        only; making the computer return ``None`` when it cannot compute,
+        and re-anchoring this test on an empty window, is follow-up #54.
+        """
+        attacks = [
+            {"attacker_id": 1, "defender_id": 2, "attacker_won": True,
+             "timestamp": 1_800_000_000},
+        ]
+        manager, snapshot = self._manager_and_snapshot()
+
+        with patch.object(
+            manager.client, "fetch_snapshot", new=AsyncMock(return_value=snapshot)
+        ), patch.object(
+            manager.client, "get_recent_attacks",
+            new=AsyncMock(return_value=attacks),
+        ):
+            result = await manager.fetch_and_compute()
+
+        assert list(manager.cache.battle_rate_history) == [
+            (snapshot.fetched_at, 0.0)
+        ]
+        assert result["global_battle_rate"] == 0.0

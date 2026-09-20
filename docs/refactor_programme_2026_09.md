@@ -44,7 +44,7 @@ files; the commit message is the evidence.
 | 6 | `refactor/panels-ocm` | §3.4a | 2 | small | `tests/widgets/test_panels.py` (new), ocm tests |
 | 7 | `refactor/panels-small-four` | §3.4b | 2 | ~2,000 | cattown / dota / talismans / ttt widget + screen tests |
 | 8 | `refactor/panels-bt-bakery` | §3.4c | 2 | ~800 | base + bakery tests; templates deleted; `rules/widgets.md` step 3 |
-| 9 | `refactor/series-cache` | §3.6a | 2 | ~600 | `tests/data/test_*_cache.py`, `test_series_points.py` |
+| 9 | `refactor/series-cache` | §3.6a | 2 | +179 net measured (six caches −276, base +434) | `tests/data/test_*_cache.py` unchanged, `test_series_cache.py` (new, fixture round-trips) |
 | 10 | `refactor/rpc-pool` | §3.6b | 2 | ~700 | fixture-first: one committed error-string fixture, classifier tests, then per-client tests |
 | 11 | docs | §3.7 | 0 | 0 | doc-pinning tests |
 
@@ -2603,6 +2603,572 @@ corrected; M2 deviation (6) understated the flicker guard's unkeyed fields — c
 M3 `test_bakery_widgets.py:347-348` asserts a cell string, recorded as debt under #39. Named set
 563 passed; `-m guard tests` 192 passed. Tree clean, no worktree left.
 
+## Branch 9 — `refactor/series-cache` (three work packages)
+
+Spec: HANDOVER.md §3 item 6, first half — `SeriesCache` in `data/series_cache.py`, subclassed by
+the per-poll series caches. Survey 2026-09-20 (scratchpad `branch9_survey.md`, anchors below are
+against main `53a71d5`). Tier 2: a new shared `data/` module, 6 dashboards, > 6 files.
+
+**Facts.** Six caches share the `max_history` shape — `data/cache.py` (bakery `DataCache`, 237
+lines), `cattown_cache.py` (195), `dota_cache.py` (193), `ocm_cache.py` (349), `frenpet_cache.py`
+(334), `base_cache.py` (379); 1,687 lines. `talismans_cache.py` (366) and `ttt_cache.py` (838)
+are OUT: neither constructor takes `max_history` (`talismans_cache.py:67`, `ttt_cache.py:126`),
+both are event/state machines whose series are hourly buckets and whose payloads are pydantic
+dumps; the only code they would share is the atomic-write block (follow-up #41). Byte-identical
+across the six bar the log noun: the atomic-write block (`cache.py:156-170` ≡ `cattown:123-140` ≡
+`dota:121-138` ≡ `ocm:216-233` ≡ `frenpet:207-225` ≡ `base:265-282`), `get_latest`,
+`last_updated`, the open/JSON-decode guard, the `"Skipped %d …"` warning. Per-cache specifics the
+base must carry as hooks: bakery season-reset `dq.clear()` (`cache.py:90-98`) and the
+"leave an all-expired bakery untracked" rule (`:219-222`); dota's lane guard (`dota_cache.py:61-68`);
+ocm's `burn_history` at its own `maxlen=400` with per-series `max_age` (`ocm_cache.py:266-279`),
+`_append_burn_sample` (`:111-130`), `holder_count` (`:170-183`), `"version": 2` with a pre-v2 branch
+that clears the burn series (`:262-287`) and a private `_coerce_point` copy (`:321-349`) that
+`series_points.py:24-26` already names as debt; frenpet's `"schema_version": 2` (`:194`, `:271-274`),
+per-pet dict merged by assignment (`:285-296`), the three population deques the manager reads as
+attributes (`frenpet_manager.py:419-421`), and the four managers sharing one instance
+(`app.py:122-136`); base's LRU `_touch` and load-time cap (`base_cache.py:104-128`, `:320-353`),
+`record_overview_point` skipping `None` (`:216-221` — the repo's reference statement of the
+sentinel rule), `record_token`'s `ts = timestamp or time.time()` (`:160`). Persistence is driven
+only from the six managers' `close()`; no screen or `app.py` calls it. `history_size` means
+key-count in bakery/frenpet/base and representative-series point-count in cattown/dota/ocm, both
+asserted (`test_cache.py:337`, `test_base_cache.py:126-183`). Tests: `test_cache.py` 18,
+`test_cache_corruption.py` 12 (the only tests touching cattown/dota, 2 each), `test_base_cache.py`
+11, `test_frenpet_cache.py` 24 (pins `inspect.signature(load_from_file)` and reads the population
+deques as attributes), `test_ocm_cache.py` 17 (pins `payload["version"] == 2`),
+`tests/test_app_startup.py:306-334` (frenpet shared-cache reload); `test_base_client.py:731` and
+`test_token_detail.py:409` `patch()` the name `base_manager.BaseTokenCache`. Log literals bound by
+tests: `"Skipped"` (six assertions), `"least-recently-updated"`. `tests/data/test_series_points.py`
+does not exist; the branch-order table's mention of it is wrong — `coerce_point(s)` is covered in
+`test_cache_corruption.py:68-112`.
+
+**Design — `data/series_cache.py` (~150 lines, one owner, lands first).**
+
+```python
+@dataclass(frozen=True)
+class SeriesSpec:
+    name: str                      # attribute AND JSON key, e.g. "prize_pool_history"
+    maxlen: int | None = None      # None → max_history
+    max_age: float | None = None   # None → the loader's max_age= argument (default None)
+    allow_negative: bool = False
+
+class SeriesCache:
+    SERIES: tuple[SeriesSpec, ...] = ()
+    VERSION_KEY: str | None = None     # ocm "version", frenpet "schema_version"; others None
+    VERSION: int = 1
+    NOUN: str = "cache"                # log noun: "CatTown cache", "Base token cache", …
+    def __init__(self, max_history: int = 120) -> None   # builds one public deque per SERIES
+    def record(self, name: str, ts: float, value: float | None) -> bool   # drops None; never 0
+    def _mark(self, snapshot) -> None                    # sets _latest / _last_updated
+    def get_series(self, name: str) -> list[TimeSeriesPoint]
+    def get_latest(self); last_updated (property)
+    history_size (property) → len(first declared series); dict-keyed subclasses override
+    def save_to_file(self, path: str) -> None            # atomic write of _payload()
+    def _payload(self) -> dict                           # saved_at, max_history, VERSION_KEY, each SERIES; + extra_payload()
+    def extra_payload(self) -> dict                      # hook, default {}
+    def load_from_file(self, path, *, now: float | None = None, max_age: float | None = None) -> None
+    def before_load(self, payload: dict, version: int) -> None    # hook (ocm pre-v2 clear)
+    def restore_extra(self, payload: dict, *, now: float) -> int  # hook, returns dropped count (keyed series, scalars)
+    def coerce_keyed(self, raw, *, now, max_age) -> tuple[dict[str, list[TimeSeriesPoint]], int]  # for the dict-of-series three
+```
+
+`load_from_file`: open/decode guard → `isinstance(payload, dict)` guard → version = `int(payload.get(VERSION_KEY) or 1)`
+when `VERSION_KEY` is set, else 1 → `before_load` → for each spec: `coerce_points(payload.get(name), now=reference,
+max_age=spec.max_age if spec.max_age is not None else max_age, allow_negative=spec.allow_negative)`, `clear()` +
+`extend(good)` → `restore_extra` → one `"Skipped %d unusable or expired point(s) while loading %s %s"` warning when
+dropped > 0 → `_log_loaded(payload)` hook (info). `reference = time.time() if now is None else now`, docstring reusing
+`frenpet_cache.py:243-255`. `update()` stays a per-cache method built from `_mark` + `record`. Each cache keeps its
+named getters as one-line wrappers over `get_series` (the managers and tests call them). The three dict-of-series
+caches keep their dict and eviction; they call `coerce_keyed` from `restore_extra` and write the dict from
+`extra_payload`.
+
+**Decisions (each pinned by a test in the WP that lands it):**
+- **R1 — no sentinel in a series.** `record()` drops `None`. `cattown_manager.py:102-111` passes `None` (not `0` /
+  `0.0`) for a failed raffle read and for an empty entry list; `frenpet_manager.py:156-162` passes `battle_rate=None`
+  to the cache when the attacks fetch fails — the widget dict's `global_battle_rate` stays as it is (its display
+  default is follow-up #43). `CatTownCache.update(leader_weight_kg: float | None = None, raffle_total_tickets:
+  int | None = None)`, `FrenPetCache.update(battle_rate: float | None = None)`. This is a CLAUDE.md convention
+  outranking "preserve behaviour": the persisted zero outlived the outage and read as a real negative.
+- **R2 — loaders take `now=`** (rules/data.md "Inject the clock"); the six managers keep calling with the default.
+- **R3 — `record_token(timestamp=None)` uses `is None`, not `or`;** `update_holder_count(count, *, now=None)`.
+- **R4 — `max_age` preserves today's behaviour exactly:** `None` for cattown/dota/frenpet/base, caller-supplied for
+  bakery (`manager.py:67-69`), per-series consts for ocm. A test per WP asserts a 30-day-old point survives on the
+  unwindowed four; whether to window them is follow-up #42, not this branch.
+- **R5 — the dict guard is inherited by bakery and base** (a top-level JSON list no longer raises out of the loader);
+  a test feeds `[]` to each of the six.
+- **R6 — `history_size` stays two-meaning:** base default is the first declared series' point count (cattown, dota,
+  ocm); bakery, frenpet, base override to their key count. No test changes.
+- **R7 — the base clears before extend.** base_cache's `load_from_file` after an `update()` stops concatenating;
+  its manager loads before the first update (`base_manager.py:69`, `:111`) so nothing live changes; a test pins the
+  new order.
+- **Persisted shape is unchanged for every file.** `VERSION_KEY`/`VERSION` stay `"version"`/2 (ocm) and
+  `"schema_version"`/2 (frenpet); the four unversioned files gain NO version key (a bump or rename would route live
+  ocm files through the pre-v2 clear and start frenpet's population series empty). Acceptance is fixture-first: for
+  each of the six, a file written by `53a71d5`'s code is committed under `tests/fixtures/cache/<name>_53a71d5.json`
+  (the implementer generates them from a `git worktree` of `53a71d5` with `PYTHONPATH` pointing at it, deterministic
+  timestamps) and `tests/data/test_series_cache.py` loads each with `now=` pinned and asserts the series
+  point-for-point equal to what the pre-branch class loads from the same file.
+- `_coerce_point` and `_CLOCK_SKEW_TOLERANCE_SECONDS` in `ocm_cache.py` are deleted; `series_points.py:24-26` is
+  rewritten to say the fold happened.
+- Expected render diff: none — no widget or screen changes; the sweep cases for cattown, base, ocm, frenpet are
+  re-rendered before/after and `cmp`'d anyway (`render_case.py`).
+
+**WP-A — base + the two simplest caches.** Owner of `data/series_cache.py` (new), `tests/data/test_series_cache.py`
+(new: spec table, `record` drops `None`, `now=` honoured, dict guard, clear-before-extend, per-series `max_age`,
+version read, atomic-write failure path with the `.tmp` removed, fixture round-trips for dota + cattown),
+`dota_cache.py`, `cattown_cache.py`, `cattown_manager.py` (R1 only), `tests/data/test_cattown_manager.py` (NEW — no cattown manager test exists;
+one regression test: a failed raffle read and an empty entry list append nothing), `tests/fixtures/cache/dota_53a71d5.json`,
+`cattown_53a71d5.json`. Named tests: the two new/changed test files + `test_cache_corruption.py` +
+`tests/data/test_dota_manager.py` + `tests/screens/test_dashboard_screen.py` +
+`tests/screens/test_address_icons_everywhere.py -k 'cattown or dota'` + `-m guard tests`.
+
+**WP-B — bakery + base terminal.** `cache.py`, `base_cache.py` (also fixes the `save_to_file` docstring that omits
+the three `overview_*` keys, `:242-252`), fixtures `history_53a71d5.json`, `base_53a71d5.json`, round-trip tests
+appended to `test_series_cache.py`. `test_cache.py`, `test_base_cache.py` unchanged. Named tests: those two +
+`test_series_cache.py` + `test_cache_corruption.py` + `tests/data/test_base_manager.py` + `test_base_client.py`
++ `test_token_detail.py` (the two `patch()`es) + `tests/screens/test_base_terminal_screen.py` + `-m guard tests`.
+
+**WP-C — ocm + frenpet.** `ocm_cache.py` (delete `_coerce_point`, keep `version` 2, pre-v2 branch in `before_load`,
+`holder_count` in `extra_payload`/`restore_extra`, `update_holder_count(now=)`), `frenpet_cache.py`
+(`schema_version` 2, population deques stay public attributes via `SERIES`, per-pet dict via `coerce_keyed`,
+`update(battle_rate=None)`), `frenpet_manager.py` (R1 only), `series_points.py` docstring, fixtures
+`ocm_53a71d5.json` (version 2 with burn series) + `ocm_v1_53a71d5.json` (no version key) + `frenpet_53a71d5.json` +
+`frenpet_v1_53a71d5.json`, round-trip tests. `test_ocm_cache.py`, `test_frenpet_cache.py` unchanged except the one
+`battle_rate` regression test added to `tests/data/test_frenpet_manager.py`. Named tests: those + `test_series_cache.py`
++ `test_cache_corruption.py` + `tests/test_app_startup.py` + `tests/data/test_ocm_manager.py` +
+`tests/screens/test_address_icons_everywhere.py -k ocm` + `tests/screens/test_frenpet_screens.py` + `-m guard tests`.
+
+Sequence A → B → C, one implementer at a time (single writer), opus review per WP, ≤ 2 fix rounds, whole-branch
+review at the end, suite once by the controller on the branch head.
+
+**Tests (branch acceptance).** The five existing cache test files and `tests/test_app_startup.py` unchanged (`git diff
+--stat` empty against `53a71d5`) except where a signature the plan changes forces it — none expected. Six fixture
+round-trips. Mutation proofs per WP: `record()` keeping `None` → the R1 tests; dropping the dict guard → the `[]`
+test; `extend` without `clear()` → the R7 test; `reference = time.time()` ignoring `now` → the `now=` test; removing
+the `.tmp` cleanup → the atomic-write test. Every proof prints the mutated line before the run.
+
+**Docs.** rules/data.md gains a "Series caches" paragraph under "Validate persisted series per point" (subclass
+`SeriesCache`; declare `SERIES`; `record()` drops `None`; never add a version key to a file that has none, never
+rename one); HANDOVER.md §3 item 6 marked half-done (SeriesCache landed, RpcPool = Branch 10, `manager_base` =
+follow-up #44); the branch-order table row 9 corrected (`test_series_points.py` → `test_series_cache.py`);
+follow-ups #41–#44 filed at planning time (below).
+
+**Branch 9 WP-A outcome (2026-09-20).** Commit `d5fd9d7` on `refactor/series-cache`.
+`data/series_cache.py` (new) + `dota_cache.py` and `cattown_cache.py` as subclasses +
+`cattown_manager.py` (R1 only) + two fixtures + the generator script + two test files.
+
+| file | before (`53a71d5`) | after | note |
+|---|---|---|---|
+| `maxpane_dashboard/data/series_cache.py` | — | **367** (137 code, 154 docstring, 18 comment, 58 blank) | new; the plan's "~150 lines" read as code lines |
+| `maxpane_dashboard/data/cattown_cache.py` | 195 | **95** (33 code) | `update()` + three one-line getters |
+| `maxpane_dashboard/data/dota_cache.py` | 193 | **92** (31 code) | ditto, plus the lane guard |
+| `maxpane_dashboard/data/cattown_manager.py` | 302 | **306** | R1 only: two seeds `0`/`0.0` → `None`, +4 comment lines |
+| `tests/data/test_series_cache.py` | — | **629** (38 tests) | probe + fixture round-trips + dota lane guard |
+| `tests/data/test_cattown_manager.py` | — | **195** (5 tests) | new file; no cattown manager test existed |
+| `tests/scripts/make_cache_fixtures.py` | — | **182** | provenance; never run by a test |
+| `tests/fixtures/cache/{cattown,dota}_53a71d5.json` | — | 2 files | written by `53a71d5`'s own code |
+
+Net for the two caches: 388 → 187 lines, with the duplicated persistence removed rather than moved
+per-file. `tests/data/test_cache_corruption.py` is byte-unchanged (`git diff --stat` empty) and its
+six `"Skipped"` assertions still pass against the base's reworded warning.
+
+**Mutation proofs.** Every mutation was applied by an in-place string replace, the mutated line
+printed with `grep -n`/`sed -n` *before* the run, and restored by inverse edit and `diff`'d against a
+pre-mutation snapshot (`RESTORED IDENTICAL` for all four files; no `git checkout/stash/reset/restore/clean`).
+
+| # | mutation | file(s) run | failing test(s) by name |
+|---|---|---|---|
+| a | `record()`: `if value is None: value = 0.0` (appends the sentinel) | `test_cattown_manager.py test_series_cache.py` | `test_record_drops_none_and_says_so`, `test_a_failed_raffle_read_records_no_ticket_point`, `test_a_competition_with_no_entries_records_no_leader_weight`, `test_the_failed_and_good_cycles_are_distinguishable_in_the_series` |
+| b | `if not isinstance(payload, dict)` → `if False` | `test_series_cache.py test_cache_corruption.py` | `test_a_non_dict_payload_leaves_the_cache_untouched[list]`, `[str]`, `[null]`, `[int]` (`AttributeError: 'int' object has no attribute 'get'`) |
+| c | `series.clear()` deleted, `extend` kept (R7) | `test_series_cache.py` | `test_load_clears_before_extending` |
+| d | `reference = time.time()` ignoring `now=` | `test_series_cache.py` | `test_load_validates_points_against_now_not_the_wall_clock`, `test_a_spec_max_age_beats_the_calls_max_age`, `test_the_skipped_warning_names_the_count_and_the_cache`, `test_load_clears_before_extending`, `test_save_then_load_round_trips_the_series` |
+| e | `os.remove(tmp_path)` cleanup deleted from the `except OSError` | `test_series_cache.py` | `test_a_failed_write_leaves_no_tmp_file_behind` |
+| f | dota lane guard → `lanes.get(k)` + `0.0` for a missing lane | `test_series_cache.py test_dota_manager.py` | `test_a_missing_lane_records_nothing` |
+| g | `cattown_manager`: `raffle_total_tickets: int \| None = 0` | `test_cattown_manager.py` | `test_a_failed_raffle_read_records_no_ticket_point`, `test_the_failed_and_good_cycles_are_distinguishable_in_the_series` |
+
+**Render.** `python render_case.py cattown …` / `dota …` at `5869760` (before any code change) and at
+the WP-A tree, both views at 170×50 and at the 143-column pin. `cmp` on all four pairs:
+`IDENTICAL cattown.default.170x50`, `IDENTICAL cattown.default.pin-143x50`,
+`IDENTICAL dota.default.170x50`, `IDENTICAL dota.default.pin-143x50` — the plan's expected diff (none).
+
+**Where a failed read now yields `None`** (`grep -n`):
+`maxpane_dashboard/data/series_cache.py:146-147` `if value is None:` / `return False` — the one
+place a sentinel could enter a persisted series, and it refuses;
+`maxpane_dashboard/data/cattown_cache.py:61-62` `leader_weight_kg: float | None = None,` /
+`raffle_total_tickets: int | None = None,`;
+`maxpane_dashboard/data/cattown_manager.py:105` `raffle_total_tickets: int | None = None` (was `0`)
+and `:113` `leader_weight: float | None = None` (was `0.0`);
+`maxpane_dashboard/data/dota_cache.py:79` `if lane_key in lanes:` — the pre-existing lane guard, kept.
+
+**Deviations from the plan, and why.**
+1. `_log_loaded(payload)` in the Design block became `_log_loaded(self, path, loaded)`. The line it
+   replaces is `"Loaded CatTown cache from %s: %d total points"`; the payload alone cannot produce the
+   loaded count, which is the number the log exists to state.
+2. `_payload()` still reads `time.time()` for `saved_at`. The plan fixes `save_to_file(self, path)` and
+   `_payload(self)`, so there is nowhere to inject a save clock without widening the signature the
+   managers call. `saved_at` is write-side metadata no loader reads back; the injected-clock rule
+   (rules/data.md) is about the load path, where the only wall-clock read is now the `now is None`
+   fallback. The fixture script freezes `saved_at` after the fact rather than patching the clock.
+3. The base always `coerce_points` + `clear()` + `extend()`; the old cattown/dota loaders had an
+   `if not isinstance(points, list): continue` that *skipped* the clear, so a non-list value under a
+   series key left the in-memory deque as it was. Reachable only on a load-after-update, which no
+   manager does (both load in `__init__`), and R7 chooses clear-before-extend explicitly.
+4. The base's warning is `"Skipped %d unusable or expired point(s) while loading %s %s"`, per the plan —
+   the old text said `"unusable point(s)"` and named the cache inside the format string. The literal
+   `"Skipped"` that `test_cache_corruption.py` binds is unchanged.
+5. `SeriesSpec.max_age` and `allow_negative` are exercised by the probe subclass only: neither cattown
+   nor dota needs them (R4 keeps both unwindowed). `coerce_keyed`, `before_load`, `extra_payload` and
+   `restore_extra` likewise have no subclass caller until WP-B/WP-C, so each is pinned by a probe test
+   here rather than shipped untested.
+6. The generator script went to `tests/scripts/make_cache_fixtures.py` (brief) rather than the
+   top-level `scripts/` where the capture tools live. It is test provenance, it reads nothing live, and
+   `tests/scripts/` is not collected (pytest takes `test_*.py` only).
+
+**Found, not fixed** — follow-ups #45–#47 in `docs/handover_followups_2026_09.md`.
+
+**Branch 9 WP-A review (2026-09-20): Approved, 0 Critical, 0 Important, 5 Minor.** Compatibility proven both
+ways against a `53a71d5` worktree: both fixtures load point-for-point identically in the old and the new class
+(manager call shape, no `now=`), and the new class's save is byte-identical to the fixture with `saved_at`
+stripped — key order, values, types, no version key; the fixture script re-run inside the worktree reproduced
+both committed files md5-identical. R1 end to end: failed raffle read and empty entry list record nothing, a
+genuine `0` still records `(ts, 0.0)`, the manager diff is the two R1 hunks only, and `SparklinePanel` renders
+the now-empty series as `EMPTY_TEXT` rather than a zero baseline. Contract matches the Design block member for
+member; no undisclosed deviation. Seven mutations re-run by the reviewer; fixture round-trips bite. Renders
+reproduced independently, identical ×4. Minors, carried into WP-B's brief: M1 the R5 `[]` test drives `_Probe`
+only — feed `[]` to each real class as it migrates; M2 a series key holding a non-list is cleared with no log
+line (`series_cache.py:336-342`) — the base gets one warning naming the key; M3
+`test_a_cache_with_no_version_key_reads_version_1` asserts the wrong key name (rigor only, the shape is bound
+elsewhere); M4 the `VERSION_KEY is not None` guard on the read path is an equivalent mutant (note, no change);
+M5 a `-> int` annotation on a `int | None` fake. Branch-level Docs items (rules/data.md paragraph, HANDOVER §3
+item 6, table row 9) remain for the closure commit. 98 + 6 + 192 passed.
+
+**Branch 9 WP-B outcome (2026-09-20).** Commit `2f5f3b7` on `refactor/series-cache`.
+`data/cache.py` (bakery) and `data/base_cache.py` as `SeriesCache` subclasses + three
+additions to the base + two pre-branch fixtures + the generator extended + tests appended.
+
+| file | before (`53a71d5`) | after | note |
+|---|---|---|---|
+| `maxpane_dashboard/data/cache.py` | 237 (114 code, 68 docstring, 18 comment, 37 blank) | **202** (95 code, 55 docstring, 17 comment, 35 blank) | `SERIES = ()`; the whole payload rides on the two hooks |
+| `maxpane_dashboard/data/base_cache.py` | 379 (209 code, 84 docstring, 29 comment, 57 blank) | **379** (186 code, **108** docstring, 27 comment, 58 blank) | -23 code, +24 docstring: the persistence went, the reasoning stayed |
+| `maxpane_dashboard/data/series_cache.py` | 367 (157 code) at WP-A | **417** (180 code) | `SeriesSpec.key`, `SIZE_NOUN`, the `restore_extra` inputs, M2's warning |
+| `tests/data/test_series_cache.py` | 629 (38 tests) at WP-A | **1027** (53 tests) | +15: two fixture round-trips, R5 on four real classes, R7, R1/R3, R4 both ways, M2 |
+| `tests/scripts/make_cache_fixtures.py` | 182 at WP-A | **383** | `make_bakery()`, `make_base()` |
+| `tests/fixtures/cache/{history,base}_53a71d5.json` | — | 2 files | written by `53a71d5`'s own code |
+
+Net for the two caches: 616 → 581 total lines but **323 → 281 code lines**, and the
+duplicated persistence (atomic write, open/decode guard, per-point validation, the
+"Skipped" warning) is gone rather than moved. `tests/data/test_cache.py`,
+`test_base_cache.py` and `test_cache_corruption.py` are byte-unchanged
+(`git diff --stat 53a71d5 --` empty for all three) — they are the acceptance, and
+`test_base_cache.py:176-183` (load *then* update) is untouched by R7 as the brief predicted.
+
+**The `SeriesSpec.key` decision: the field was added** (the brief's preferred option).
+Base's three overview deques are the attributes `volume_history` / `eth_price_history` /
+`trade_count_history` but have always been *persisted* as `overview_volume` /
+`overview_eth_price` / `overview_trade_count`, and renaming either half empties every
+existing `~/.maxpane/base_cache.json`'s sparklines on the next load. The alternative —
+overriding `_payload` and the SERIES restore loop in `base_cache.py` — would have meant
+not declaring the three as `SERIES` at all, which is the mechanism this branch exists to
+share. The field is append-only (`key: str | None = None`, JSON key defaults to `name`),
+its whole implementation is the `json_key` property, and it is pinned by the base fixture
+round-trip: mutation (e) reddens six tests. **Key order** is a second, separate problem —
+the base writes declared series *before* `extra_payload`, and this file has always led
+with `histories`. That is handled locally, by a six-line `_payload` override in
+`base_cache.py`, rather than by another base-class knob, because ocm wants `holder_count`
+*after* its series and frenpet wants `histories` *before* its three: no single base
+ordering serves WP-C, so the base's order stays as WP-A's reviewer approved it.
+
+**Mutation proofs.** Each mutation was an in-place string swap by a helper that refuses a
+non-unique match, the mutated line printed with `grep -n`/`sed -n` *before* the run, and
+restored by the inverse swap and `diff`'d against a pre-mutation snapshot (`RESTORED
+IDENTICAL` for all three files; no `git checkout/stash/reset/restore/clean`).
+
+| # | mutation | file(s) run | failing test(s) by name |
+|---|---|---|---|
+| a | `cache.py` `restore_extra`: `if not good: continue` deleted (an all-expired bakery gets an empty deque) | `test_series_cache.py test_cache.py` | `test_a_bakery_whose_points_all_expired_is_left_untracked`, `TestStaleHistoryIsNotRestored::test_a_fully_expired_bakery_is_not_tracked_at_all` |
+| b | `cache.py` `update`: the season-reset `dq.clear()` replaced by `pass` | `test_cache.py test_series_cache.py` | `TestSeasonResetClearsHistory::test_collapse_to_near_zero_clears_the_bakery` |
+| c | `base_cache.py`: `ts = timestamp or time.time()` (R3 reverted) | `test_series_cache.py test_base_cache.py` | `test_record_token_honours_a_zero_timestamp` |
+| d | `series_cache.py`: `series.clear()` deleted, `extend` kept (R7) | `test_series_cache.py test_base_cache.py test_cache_corruption.py` | `test_base_overview_load_replaces_rather_than_concatenates`, `test_load_clears_before_extending` |
+| e | `SeriesSpec.json_key` returns `self.name` (the `key=` ignored) | `test_series_cache.py test_base_cache.py test_cache_corruption.py test_base_terminal_screen.py` | `test_base_loads_a_pre_branch_cache_file`, `test_wp_b_resaves_the_pre_branch_file_key_for_key[base]`, `test_base_overview_load_replaces_rather_than_concatenates`, `test_base_restores_a_thirty_day_old_point`, `test_a_series_key_that_is_not_a_list_is_named_in_a_warning`, `test_base_cache_survives_corrupt_points` |
+| f | `series_cache.py`: the M2 non-list warning replaced by `pass` | `test_series_cache.py` | `test_a_series_key_that_is_not_a_list_is_named_in_a_warning` |
+| g | `series_cache.py`: `if not isinstance(payload, dict)` → `if False` (R5) | `test_series_cache.py test_cache.py test_base_cache.py test_cache_corruption.py` | `test_an_empty_list_payload_leaves_a_real_cache_untouched[bakery]`, `[base]`, `[cattown]`, `[dota]` (`AttributeError`), plus the four `test_a_non_dict_payload_leaves_the_cache_untouched` cases |
+| h | `base_cache.py` `record_overview_point`: `total_volume or 0.0` etc. (the sentinel) | `test_series_cache.py test_base_cache.py test_base_manager.py test_base_terminal_screen.py` | `test_record_overview_point_skips_none_and_keeps_a_real_zero`, `test_eth_failure_records_no_price_point`, `test_empty_trending_records_no_volume_point`, `test_outage_then_recovery_does_not_report_false_rising`, `test_no_zero_ever_reaches_the_persisted_file` |
+
+**Compatibility, both directions.** The same probe run against a `53a71d5` worktree
+(`PYTHONPATH` prepended) and against the branch head produced identical output: both
+fixtures load point-for-point the same into the old and the new class through the
+managers' call shape (no `now=`), and the re-saved key *list* is identical —
+`['saved_at', 'max_history', 'histories']` for bakery and
+`['saved_at', 'max_history', 'histories', 'overview_volume', 'overview_eth_price',
+'overview_trade_count']` for base, with no version key. Re-running the extended generator
+inside the worktree reproduced the two WP-A fixtures md5-identical, which is the
+determinism claim for the two new ones.
+
+**Render.** `python render_case.py bakery …` / `base …` at `f2767b5` (before any code
+change) and at the WP-B tree, both at 170×50 and at the 143-column pin. `cmp` on all four
+pairs: `IDENTICAL bakery.default.170x50`, `IDENTICAL bakery.default.pin-143x50`,
+`IDENTICAL base.default.170x50`, `IDENTICAL base.default.pin-143x50` — the plan's expected
+diff (none).
+
+**Where a failed read yields `None`** (`grep -n`):
+`maxpane_dashboard/data/series_cache.py:166` `if value is None:` — the one place a sentinel
+could enter a persisted series, and it refuses;
+`maxpane_dashboard/data/base_cache.py:227` `total_volume: float | None,` and the two
+siblings, folded onto `record()` so the skip is the shared rule rather than three local
+`if`s; `maxpane_dashboard/data/base_cache.py:197`
+`ts = time.time() if timestamp is None else timestamp` — the R3 half of the same idea
+applied to a *timestamp*: `0.0` is a value, not an absence.
+
+**Deviations from the plan/brief, and why.**
+1. `restore_extra(self, payload, *, now)` became
+   `restore_extra(self, payload, *, path, now, max_age=None)`. Both bakery and base need
+   `path` for warnings that name the offending file (base's "least-recently-updated" line
+   is bound by `test_base_cache.py:128`), and bakery needs `max_age` because its window is
+   *caller*-supplied (`manager.py:67-69`), not declared per series. The two probe
+   subclasses in `test_series_cache.py` were updated to match; nothing else implemented the
+   hook.
+2. `SIZE_NOUN` was added to the base. The save log is `"%s saved to %s (%d points)"` and
+   prints `history_size`, which for these two caches counts bakeries and tokens. Leaving it
+   would have shipped a wrong noun on a number in a log file; the fix is one class attribute
+   and one word per subclass, and it serves frenpet ("pets") at WP-C.
+3. Key order is a `_payload` override in `base_cache.py`, not a base-class facility. Reason
+   in the decision paragraph above: ocm and frenpet want opposite orders, so a shared knob
+   would be guesswork until WP-C measures them.
+4. Base now degrades *per key* rather than abandoning the file. Previously a non-dict
+   `histories` returned early, so the three `overview_*` series were skipped too; with the
+   base class they are restored first and only the keyed half is abandoned. That is the same
+   strengthening as R5, one level down, and it is why both subclasses carry a
+   `_loaded_*: int | None` sentinel: `_log_loaded` stays silent when the load bailed, so the
+   "Loaded … 0 tokens" line the old code never printed is still not printed. Untested on
+   purpose — follow-up #49.
+5. Log wording moved with `NOUN`. Bakery's is `"cache history"`, which keeps
+   `"Failed to save cache history: %s"` verbatim and the closing
+   `"Loaded cache history from %s: %d bakeries, up to %d points each"` verbatim via a
+   `_log_loaded` override; the three lines that embedded the noun mid-sentence now read
+   `"No cache history file to load"`, `"cache history file %s has unexpected format"` and
+   `"… while loading cache history %s"` (was `"No cache file …"`, `"Cache file %s …"`,
+   `"… while loading cache %s"`). Base's `NOUN` reproduces every one of its lines
+   unchanged. The literals tests bind — `"Skipped"` (six assertions in
+   `test_cache_corruption.py`), `"least-recently-updated"`, `"unexpected format"`,
+   `"truncating"` — all survive.
+6. The base's skipped warning now says `"unusable or expired point(s)"` for base too (it
+   said `"unusable point(s)"`); WP-A already made that the one wording.
+
+**Found, not fixed** — follow-ups #48–#50 in `docs/handover_followups_2026_09.md`: the
+bakery cache's keyed dict is merged rather than replaced on load (the keyed twin of R7,
+unreachable today, decide it once for all three keyed caches at WP-C); a non-dict
+`histories` is untested for bakery and base; `test_base_cache.py:172` asserts a bound
+(`<= 2`) where it means a value. All three Minor, all Tier 0 when their file is next
+touched.
+
+**Branch 9 WP-B review (2026-09-20): Approved, 0 Critical, 0 Important, 6 Minor.** Byte-level compatibility
+proven both ways against a `53a71d5` worktree through the managers' exact call shapes: keyed dicts key-for-key
+and in order, every point identical, re-saved JSON text equal to the fixture with `saved_at` normalised; all
+four fixtures regenerate md5-identical from the pre-branch code. The base-terminal migration is real (no
+`json`/`os`/`coerce_points` import, no persistence method left; 23 code lines out, 24 docstring lines in).
+Six keyed-series probes (untracked-when-expired, season reset, LRU order, load cap, case-duplicate pass,
+per-update truncation) agree pre/post. `SeriesSpec.key` is default-preserving for cattown/dota. Five
+reviewer mutations bit the named tests, incl. key order bound by exactly one assertion. Minors: M1 base's
+non-dict-`histories` warning understates that the overview series were restored (folded into #49); M2 #49
+is a behaviour change for base, not only a test gap (folded in); M3 `record_token` has no production caller,
+the R3 test docstring implies one; M4 `test_an_empty_list_payload_leaves_a_real_cache_untouched` asserts a
+state that already held before the load — record a point first; M5 bakery log wording lowercase-initial
+after the `NOUN` move; M6 the `_loaded_*` sentinel is a hidden contract between `restore_extra` and
+`_log_loaded` — one sentence in the base's hook docstring. M3–M6 carried into WP-C's brief. 188 + 3 + 7 +
+192 passed.
+
+**Branch 9 WP-C outcome (2026-09-20).** Commit `032a9df` on `refactor/series-cache`.
+`data/ocm_cache.py` and `data/frenpet_cache.py` as `SeriesCache` subclasses +
+`frenpet_manager.py` (R1 only) + the `series_points.py` docstring the branch retires +
+two base-class docstring notes + four pre-branch fixtures + the generator extended +
+tests appended.
+
+| file | before (`53a71d5`) | after | note |
+|---|---|---|---|
+| `maxpane_dashboard/data/ocm_cache.py` | 349 (156 code, 108 docstring, 28 comment, 57 blank) | **315** (89 code, 133 docstring, 41 comment, 52 blank) | **-67 code**: persistence, `_coerce_point` and `_CLOCK_SKEW_TOLERANCE_SECONDS` all gone |
+| `maxpane_dashboard/data/frenpet_cache.py` | 334 (140 code, 124 docstring, 21 comment, 49 blank) | **328** (113 code, 133 docstring, 33 comment, 49 blank) | -27 code, +9 docstring: the persistence went, the schema story stayed |
+| `maxpane_dashboard/data/frenpet_manager.py` | 581 (285 code) | **593** (288 code) | R1 only: one name split into two, +3 code, +9 comment |
+| `maxpane_dashboard/data/series_cache.py` | 417 at WP-B | **434** | **0 code lines**: M6's two hook-docstring notes only |
+| `maxpane_dashboard/data/series_points.py` | 133 (58 docstring) | **138** (63 docstring) | docstring only: the debt it named is paid |
+| `tests/data/test_series_cache.py` | 1027 (53 tests) at WP-B | **1475** (67 tests) | +14: four fixture round-trips, the two v1 files, R3, R4-per-series, #48 x3, M4 widened to six classes |
+| `tests/data/test_frenpet_manager.py` | 632 (24 tests) | **729** (27 tests) | +3: the R1 regression, both directions plus a genuine zero |
+| `tests/scripts/make_cache_fixtures.py` | 383 at WP-B | **554** | `make_ocm()`, `make_ocm_v1()`, `make_frenpet()`, `make_frenpet_v1()` |
+| `tests/fixtures/cache/{ocm,ocm_v1,frenpet,frenpet_v1}_53a71d5.json` | — | 4 files | written by `53a71d5`'s own code (the two v1 files derived from them, see below) |
+
+Net for the two caches: 683 → 643 total lines but **296 → 202 code lines**, and the last
+private `coerce_point` copy in the package is gone. `tests/data/test_ocm_cache.py`,
+`test_frenpet_cache.py`, `test_cache_corruption.py` and `tests/test_app_startup.py` are
+byte-unchanged (`git diff --stat 53a71d5 --` empty for all four) — they are the acceptance.
+
+**The pre-v2 mechanism: `before_load` takes the key off the payload.** The old loader
+built its restore list per version and simply left `burn_history` out of it; the base
+class has one list, driven by `SERIES`, so "skip this series this time" had to be said
+some other way. Three candidates: a per-spec skip hook on the base, a version-dependent
+`SERIES` override, or removing the key. The third won because it needs nothing from the
+base and cannot be half-done: clearing the deque in `before_load` is *undone one line
+later* by the restore loop, which reads `payload["burn_history"]` and extends from
+whatever a stale or hand-edited file holds there — and version gating, not key presence,
+is what decides this (`test_ocm_cache.py::test_v1_file_with_an_injected_burn_history_is_ignored`
+has pinned that since the burn series shipped). The base's `before_load` docstring already
+anticipated payload mutation ("a series cleared **or a key migrated**"). A missing key
+coerces to "no points", and the base's clear-before-extend empties the deque, so the two
+halves of the old behaviour both survive. Mutation (c) below is the proof: clearing
+instead of popping reddens two tests.
+
+The one thing that could not follow it is the *message*. `before_load` is not handed
+`path`, and the file's name is the actionable half of "OCM cache %s is version %d
+(pre-burn-series)", so both caches record the version in `before_load` and log from
+`restore_extra`, the first hook that knows both the path and (for frenpet) the pet count
+the sentence quotes. Both hooks still run ahead of the "Skipped ..." warning and the
+closing info line, so the log *order* is unchanged — confirmed line for line by the
+worktree comparison below.
+
+**Mutation proofs.** Each mutation was an in-place string swap by a helper that refuses a
+non-unique match, the mutated line printed with `grep -n`/`sed -n` *before* the run, and
+restored by the inverse swap and `diff`'d against a pre-mutation snapshot (`RESTORED
+IDENTICAL` for all four files; no `git checkout/stash/reset/restore/clean`).
+
+| # | mutation | file(s) run | failing test(s) by name |
+|---|---|---|---|
+| a | `ocm_cache.py`: `VERSION = 3` | `test_ocm_cache.py test_series_cache.py` | `test_save_load_round_trip` (the `payload["version"] == 2` pin), `test_stale_points_are_dropped`, `test_future_dated_points_are_dropped`, `test_ocm_loads_a_pre_branch_cache_file`, `test_wp_c_resaves_the_pre_branch_file_key_for_key[ocm]`, `test_ocm_windows_each_series_by_its_own_max_age` |
+| b | `frenpet_cache.py`: `VERSION_KEY = "version"` | `test_frenpet_cache.py test_series_cache.py` | `TestFrenPetCachePopulationPersistence::test_save_stamps_the_schema_version`, `test_wp_c_resaves_the_pre_branch_file_key_for_key[frenpet]` |
+| c | `ocm_cache.py` `before_load`: `payload.pop(...)` replaced by `self.burn_history.clear()` (the restore loop then puts it back) | `test_ocm_cache.py test_series_cache.py` | `test_v1_file_with_an_injected_burn_history_is_ignored`, `test_a_v1_ocm_file_carrying_a_burn_history_still_starts_empty` |
+| d | `ocm_cache.py` `_append_burn_sample`: the `unchanged and too_soon` dedupe removed | `test_ocm_cache.py test_series_cache.py` | `test_mints_alone_do_not_extend_the_burn_series`, `test_a_changed_burn_count_is_recorded_immediately` |
+| e | `frenpet_manager.py`: `battle_rate=global_battle_rate` (the `0.0` sentinel restored) | `test_frenpet_manager.py` | `TestFrenPetManagerBattleRateSentinel::test_a_failed_attacks_read_records_no_battle_rate_point` |
+| f | `ocm_cache.py`: `update_holder_count` ignores `now=` | `test_ocm_cache.py test_series_cache.py test_ocm_manager.py` | `test_update_holder_count_honours_an_injected_clock` |
+| g | `series_cache.py` `_payload`: `[list(pt) …]` → `[[float(ts), float(val)] …]` (frenpet's old spelling, applied base-wide) | `test_frenpet_cache.py test_series_cache.py test_ocm_cache.py test_cache_corruption.py` | **none — 134 passed.** Expected: every point in these deques is already a `tuple[float, float]` (`record()` and `coerce_points` both cast), so the two spellings emit identical JSON. The round-trip tests compare the re-saved file to the fixture key for key and value for value and see no difference, which is the claim. |
+| h | `ocm_cache.py`: the `burn_history` spec's `max_age=BURN_WINDOW_SECONDS` removed | `test_ocm_cache.py test_series_cache.py` | `test_stale_points_are_dropped`, `test_ocm_windows_each_series_by_its_own_max_age` |
+
+Two expectations from the brief did *not* hold and are recorded rather than engineered
+away. (a) also reddens `test_stale_points_are_dropped` and `test_future_dated_points_are_dropped`,
+because a v3 class reading a v2 file drops the burn series those two assert on — the same
+damage a real bump would do to a user. (c) does **not** redden
+`test_ocm_loads_a_pre_branch_v1_cache_file`: the v1 fixture has no `burn_history` key at
+all (that is what makes it a v1 file), so "restore it anyway" restores nothing. The test
+that tells the two mechanisms apart has to inject the key, which is why
+`test_a_v1_ocm_file_carrying_a_burn_history_still_starts_empty` exists alongside the
+fixture test rather than instead of it.
+
+**Compatibility, both directions.** One probe, run unchanged against a `53a71d5` worktree
+(`PYTHONPATH` prepended) and against the WP-C tree, loading all four fixtures through the
+managers' exact call shapes (`OCMCache.load_from_file(path)`, `FrenPetCache.load_from_file(path,
+now=...)`) with `time.time` pinned to the fixtures' clock: **`diff` empty**. Every series
+point for point, the per-pet dict key for key, `holder_count`, `history_size`, and every
+log line — including `"OCM cache … is version 1 (pre-burn-series)…"`, `"FrenPet cache … is
+schema v1; per-pet history (3 pets) kept in full…"` and both closing `"Loaded …"` lines —
+identical in wording, arguments and order. Re-saving each v2 fixture reproduces it key for
+key **in order** with only `saved_at` differing. Re-running the extended generator inside
+the worktree reproduced the four WP-A/WP-B fixtures md5-identical, which is the determinism
+claim for the four new ones.
+
+The two v1 fixtures are **derived, not generated**, and the script says so in
+`make_ocm_v1`/`make_frenpet_v1`: the pre-burn-series and pre-schema-2 code is older than
+`53a71d5` and exists in no tree this branch can check out, so each is its v2 sibling minus
+exactly the keys that version never wrote (`version` + `burn_history`; `schema_version` +
+the three population series), key order otherwise untouched — the shape the hand-written v1
+payloads in `test_ocm_cache.py` and `test_frenpet_cache.py` have always described.
+
+**Render.** `python render_case.py ocm …` / `frenpet …` / `frenpet_full …` /
+`frenpet_wallet …` / `frenpet_perf …` before any code change and again on the WP-C tree,
+every view of every case at 170x50 and at the 143-column pin. `cmp` on all 16 pairs:
+`IDENTICAL ocm.default.170x50`, `IDENTICAL ocm.default.pin-143x50`,
+`IDENTICAL frenpet.default.170x50`, `IDENTICAL frenpet.default.pin-143x50`,
+`IDENTICAL frenpet_full.default.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_full.view-2.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_full.view-3.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_full.view-4.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_wallet.default.{170x50,pin-143x50}`,
+`IDENTICAL frenpet_perf.default.{170x50,pin-143x50}` — the plan's expected diff (none).
+
+**Where a failed read yields `None`** (`grep -n`):
+`maxpane_dashboard/data/frenpet_cache.py:134` `self, snapshot: FrenPetSnapshot, battle_rate: float | None = None`
+— the default moved from `0.0` to `None`, so a caller that cannot measure the rate says so
+by omission as well as by argument;
+`maxpane_dashboard/data/frenpet_cache.py:156` `self.record("battle_rate_history", ts, battle_rate)`
+— folded onto the base's `record()`, which is the one place the sentinel is refused;
+`maxpane_dashboard/data/frenpet_manager.py:165` `measured_battle_rate: float | None = None`
+and `:176` `self.cache.update(snapshot, battle_rate=measured_battle_rate)` — the persisted
+value; `:171-172` `global_battle_rate = (0.0 if measured_battle_rate is None else …)` — the
+*display* value, deliberately unchanged (follow-up #43).
+`maxpane_dashboard/data/ocm_cache.py:153-155` — the three sparkline appends now go through
+`record()` too; OCM's own `None` discipline stays where it was, in
+`ocm_manager.py:117-128`, which skips `update()` entirely on `read_failures`.
+
+**Follow-up #48 is closed: all three keyed caches keep merging.** Bakery, base and frenpet
+all assign per key on load and none of them clears the dict first, so a key tracked in
+memory but absent from the file keeps its deque. Every caller loads in `__init__` before
+its first `update()`, so nothing live changes either way — which is exactly why it is now
+pinned (`test_a_keyed_load_merges_rather_than_replaces[bakery|base|frenpet]`) instead of
+left to drift into three different answers. It is the keyed twin of R7 and the opposite
+decision, because R7 governs series whose identity is fixed while these dicts' keys arrive
+and leave.
+
+**Deviations from the plan/brief, and why.**
+1. The pre-v2 mechanism and the move of both version messages into `restore_extra`, above.
+2. `FrenPetCache`'s save log lost its second number. The base's line is
+   `"%s saved to %s (%d %s)"` and prints `history_size` with `SIZE_NOUN`, so it now reads
+   `"FrenPet cache saved to … (3 pets)"` where it used to read
+   `"… (3 pets, 18 population points)"`. `SIZE_NOUN = "pets"` is the brief's instruction and
+   the alternative is a second base-class knob for one log line in one cache. Filed as #51.
+   No test binds the literal (`rg "population points"` finds only the two lines in that file).
+3. `FrenPetCache` degrades *per key* on a malformed `histories`, as base and bakery already
+   do since WP-B. Pre-branch the loader returned before the population block, so those three
+   series kept whatever the session had; now they are restored from the file and only the
+   keyed half is abandoned. Same strengthening, one level down, and the `_loaded_pets`
+   sentinel keeps `_log_loaded` silent so the "Loaded … 0 pets" line the old code never
+   printed is still not printed. Folded into #49, which now names all three.
+4. `OCMCache.load_from_file` gained `now=` and `max_age=` from the base (R2). The manager's
+   call is unchanged and every ocm series names its own window, so `max_age=` is inert here;
+   `now=` is what let `test_ocm_windows_each_series_by_its_own_max_age` state exact expected
+   points instead of a tolerance around the wall clock.
+5. `update()` on both caches now floats through `record()` rather than `deque.append`, so a
+   `None` is *droppable* on every series, not only on frenpet's battle rate. No production
+   caller passes `None` for the other five, and the pre-existing `None` discipline
+   (`ocm_manager.py:117-128` skipping the whole update) is untouched.
+6. `_append_burn_sample` stays a hand-written append. Its dedupe and its prune are specific
+   to a cumulative counter sampled far more often than it moves, and `record()` has no
+   vocabulary for either; the brief says so and mutation (d) shows the behaviour is pinned.
+7. M4 (`test_an_empty_list_payload_leaves_a_real_cache_untouched`) was widened past the
+   brief: the seed-then-load shape the reviewer asked for is applied to **six** classes, not
+   four, because ocm and frenpet arrive in the same commit and the parametrisation was being
+   rewritten anyway.
+8. M5 (bakery log wording) was left alone, as the brief allows.
+
+**Found, not fixed** — follow-ups #51-#53 in `docs/handover_followups_2026_09.md`, all Minor.
+
+**Branch 9 WP-C review (2026-09-20): Needs fixes 0 Critical, 1 Important; fix round 1 `47ef487`; re-review
+ADDRESSED.** Compatibility proven byte-level on all four fixtures both ways through the managers' call shapes
+(int pet keys in order, `holder_count`, raw JSON text identical bar `saved_at`); the live pre-v2 shapes load
+identically old vs new; a nine-row version-value table shows only `"2"`/`2.0` moved, toward keeping the burn
+series (M1 → folded into #54). R1 hunk only in the manager; `global_battle_rate` identical pre/post in every
+case; the four-manager shared cache covered by the frozen `test_app_startup.py`. Six reviewer mutations bit.
+I1: the three new manager tests built a bare `FrenPetManager`, whose `__init__` loads the real
+`~/.maxpane/frenpet_cache.json`, and were red on the owner's machine — an autouse fixture now points
+`fm._CACHE_FILE` at `tmp_path` (verified with the real cache copied into a temp HOME: 3 failed → 51 passed;
+fixture disabled → the same 3 red). M2: `_compute_battle_rate` answers `0.0` for "cannot compute" and that
+still reaches the series — pre-existing, outside R1's scope, docstring corrected, filed #54 (Important, Tier 1).
+M3: base-emitted log lines now carry the `series_cache` logger name (precedent from WP-A/B; the NOUN in the
+message is the grep that works). Branch Docs landed in the closure commit: rules/data.md "Series caches"
+paragraph, HANDOVER §3 item 6 half-done, table row 9 (at planning).
+
+**Whole-branch review (2026-09-20, `git diff 53a71d5..521bd59`, opus): Approved — 0 Critical, 0 Important,
+9 Minor.** Environment-dependent tests (`test_series_cache.py`, `test_cattown_manager.py`,
+`test_frenpet_manager.py`) 99 passed under an empty temp HOME, a temp HOME holding the owner's 19
+`~/.maxpane/*.json` and the real HOME read-only (every mtime unchanged afterwards). Fuzz: 6 classes × 33
+payloads + 4 file shapes = 198 cases, zero exceptions escaped `load_from_file`, zero sentinel points; a
+392-case old-vs-new equivalence run against a `53a71d5` worktree differs only in the documented R5/R7/#49
+buckets (filed as #59 for reference). All eight fixtures regenerate md5-identical from the worktree; the
+six acceptance test files and `CLAUDE.md` are byte-unchanged; twelve render pairs (six dashboards × 170 and
+143 columns) identical old vs new; every manager call site resolves on the migrated classes; the shared
+FrenPet cache hold in `app.py` covered by the frozen `test_app_startup.py`. Three cross-WP mutations: the
+version key never written → 5 red across `test_series_cache.py` and both frozen ocm/frenpet files; base
+forwarding `max_age` to the keyed half → nothing red (#56); bakery's dead-key rule imposed on all three →
+3 red, none frenpet's (#57). Docs Minors folded into this closure: `rules/data.md` no longer claims a
+byte-identical re-save (parsed JSON with `saved_at` excused) and names the two derived v1 fixtures (M6);
+table row 9 now carries the measured `+179 net` instead of the estimate (M7); #46 and #42 anchors re-taken
+on the head (M8); #49 reads "Tier 0 per file" (M9). Code Minors filed: #55 `get_latest() -> Any` on six
+caches (with M5 `allow_negative` unused), #56, #57, #58 `_loaded_version` naming. Reviewer confirmed
+follow-ups #45 and #54 are pre-existing zeros the branch strictly narrows, not blockers.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
@@ -2622,3 +3188,5 @@ M3 `test_bakery_widgets.py:347-348` asserts a cell string, recorded as debt unde
 - surf / curator / fwa fully onto `PANELS` + panel subclasses.
 - Per-row copy for `DataTable` / `RichLog` panels (Textual selection does not reach them).
 - The 16 in-body integer sweeps listed in `docs/handover_followups_2026_09.md` #4.
+- `data/manager_base.py` (`_error_count` / `last_success` / `as_of_hhmm` / last-good fold; HANDOVER §3 item 6,
+  second half) — follow-up #44; needs a survey of the fourteen managers first.
