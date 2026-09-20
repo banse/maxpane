@@ -709,6 +709,10 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     span into `_classify_rpc_error` (or check it in the pager) and demote `range_cap` to a rotate when the named
     limit ≥ the span. Fixture-first from `log_range_messages.json`; both pagers consume `suggested_to`, so each
     is its own change. **Important, Tier 1 per client.**
+    **talismans done 2026-09-20, `followups/important-2026-09`:** `_rpc` reads the span off the request
+    (`rpc_classify.requested_block_span`, new, unit-tested on all ten probes) and
+    `_classify_rpc_error(..., requested_span=)` answers `rpc` when the named limit ≥ span; the four drpc
+    probes drive the classifier, `_rpc` rotation and a pager test that pins `_log_window` untouched.
 
 ## Branch 10 WP-A — review Minors (2026-09-20)
 

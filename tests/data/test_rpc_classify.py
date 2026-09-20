@@ -552,3 +552,52 @@ def test_a_payload_with_no_error_member_never_reaches_a_predicate() -> None:
     assert fwa["llamarpc_dead"]["http_status"] in rpc_common.ENDPOINT_DEAD_CODES
     assert fwa["publicnode_rate_limit_429"]["http_status"] == 429
     assert 429 not in rpc_common.ENDPOINT_DEAD_CODES
+
+
+# ---------------------------------------------------------------------------
+# ``requested_block_span``: the span a provider's complaint could be about
+# (follow-up #65 -- talismans and fwa_logs read it off the request they sent)
+# ---------------------------------------------------------------------------
+
+
+def test_requested_block_span_reads_every_recorded_drpc_probe():
+    """Each live probe records the span it asked for; the reader agrees."""
+    probes = _load(POOL4_FIXTURES / "log_range_messages.json")["probes"]
+    assert len(probes) == 10
+    for probe in probes:
+        request = probe["request"]
+        assert (
+            rpc_classify.requested_block_span(request["method"], request["params"])
+            == probe["requested_span_blocks"]
+        ), probe["label"]
+
+
+@pytest.mark.parametrize(
+    ("method", "params"),
+    [
+        ("eth_call", [{"fromBlock": "0x1", "toBlock": "0x10"}]),
+        ("eth_getLogs", []),
+        ("eth_getLogs", [{"toBlock": "0x10"}]),
+        ("eth_getLogs", [{"fromBlock": "0x1"}]),
+        ("eth_getLogs", [{"fromBlock": "0x1", "toBlock": "latest"}]),
+        ("eth_getLogs", [{"fromBlock": "earliest", "toBlock": "0x10"}]),
+        ("eth_getLogs", [{"fromBlock": "0x10", "toBlock": "0x1"}]),
+        ("eth_getLogs", ["0x1"]),
+        ("eth_getLogs", {"fromBlock": "0x1", "toBlock": "0x10"}),
+    ],
+    ids=[
+        "not-getLogs", "no-filter", "no-from", "no-to", "to-tag", "from-tag",
+        "inverted", "filter-not-a-dict", "params-not-a-list",
+    ],
+)
+def test_requested_block_span_is_none_when_the_request_has_no_span(method, params):
+    assert rpc_classify.requested_block_span(method, params) is None
+
+
+def test_requested_block_span_is_inclusive():
+    assert rpc_classify.requested_block_span(
+        "eth_getLogs", [{"fromBlock": "0x10", "toBlock": "0x10"}]
+    ) == 1
+    assert rpc_classify.requested_block_span(
+        "eth_getLogs", ({"fromBlock": "0x0", "toBlock": hex(299)},)
+    ) == 300

@@ -55,6 +55,10 @@ from maxpane_dashboard.data.evm_abi import (
     pad_left as _pad_left,
     strip0x as _strip0x,
 )
+from maxpane_dashboard.data.rpc_classify import (
+    named_block_limit,
+    requested_block_span,
+)
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES as _ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -451,8 +455,45 @@ def _parse_suggested_to(text: str) -> int | None:
         return None
 
 
-def _classify_rpc_error(error: Any) -> TalismansRpcError:
+def _range_cap_unless_met(
+    detail: str,
+    blob: str,
+    requested_span: int | None,
+    *,
+    suggested_to: int | None = None,
+) -> TalismansRpcError:
+    """``range_cap`` -- unless the message names a limit the request already meets.
+
+    ``eth.drpc.org`` answers *every* archive ``eth_getLogs``, a 300-block window
+    included, with ``code 35 "ranges over 10000 blocks are not supported on
+    free plan"`` (``tests/fixtures/surf/pool4/log_range_messages.json``): its
+    limit is archive depth, not width. A provider's message is evidence only
+    about the request it read, and a 10,000-block limit says nothing about a
+    300-block request -- shrinking on it halves the window for ever (follow-up
+    #65). So a named limit at or above *requested_span* is ``rpc``: the pager
+    rotates instead of narrowing. No span, no named limit, or a limit the
+    request genuinely exceeds stays ``range_cap`` -- the behaviour that was
+    already here.
+    """
+    if requested_span is not None:
+        named = named_block_limit(blob)
+        if named is not None and requested_span <= named:
+            return TalismansRpcError(
+                "rpc",
+                f"names a {named}-block limit the {requested_span}-block request "
+                f"already meets; not about this request: {detail}",
+            )
+    return TalismansRpcError("range_cap", detail, suggested_to=suggested_to)
+
+
+def _classify_rpc_error(
+    error: Any, *, requested_span: int | None = None
+) -> TalismansRpcError:
     """Map a JSON-RPC ``error`` member onto a :class:`TalismansRpcError`.
+
+    *requested_span* is the block count the request asked for, when it had
+    one (:func:`requested_block_span`); it gates the ``range_cap`` kinds, see
+    :func:`_range_cap_unless_met`.
 
     Classification is driven by the message **text**, not the code, because the
     codes are worthless here — every one of these was read off the wire on
@@ -488,9 +529,10 @@ def _classify_rpc_error(error: Any) -> TalismansRpcError:
             suggested_to=_parse_suggested_to(f"{data} {message}"),
         )
     if any(marker in blob for marker in _RANGE_CAP_MARKERS):
-        return TalismansRpcError(
-            "range_cap",
+        return _range_cap_unless_met(
             detail,
+            blob,
+            requested_span,
             suggested_to=_parse_suggested_to(f"{data} {message}"),
         )
     if "timeout" in blob or "timed out" in blob or code == 30:
@@ -503,7 +545,7 @@ def _classify_rpc_error(error: Any) -> TalismansRpcError:
         return TalismansRpcError("dead", detail)
     # drpc reports its range cap with a bespoke code 35 and no standard marker.
     if code == 35:
-        return TalismansRpcError("range_cap", detail)
+        return _range_cap_unless_met(detail, blob, requested_span)
     return TalismansRpcError("rpc", detail)
 
 
@@ -605,6 +647,7 @@ class TalismansClient(OwnedHttpClient):
 
         self._request_id += 1
         payload = jsonrpc_payload(self._request_id, method, params)
+        requested_span = requested_block_span(method, params)
         urls = list(endpoints) if endpoints else [
             self._primary_rpc,
             *self._fallback_rpcs,
@@ -640,7 +683,9 @@ class TalismansClient(OwnedHttpClient):
                         and isinstance(body, dict)
                         and body.get("error") is not None
                     ):
-                        classified = _classify_rpc_error(body["error"])
+                        classified = _classify_rpc_error(
+                            body["error"], requested_span=requested_span
+                        )
                         logger.debug(
                             "%s on %s -> %s: %s",
                             method,

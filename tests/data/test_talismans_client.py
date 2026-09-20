@@ -6,6 +6,7 @@ injected fake ``httpx.AsyncClient``) -- no real network.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -1070,4 +1071,141 @@ async def test_non_json_body_does_not_crash_the_client():
     with pytest.raises(TalismansRpcError) as excinfo:
         await client._rpc("eth_call", [{}])
     assert excinfo.value.kind == "dead"
+    await client.close()
+
+
+# ---------------------------------------------------------------------------
+# Follow-up #65: a range cap the request already meets is not about the request
+# ---------------------------------------------------------------------------
+
+from maxpane_dashboard.data.talismans_client import _SHRINKABLE  # noqa: E402
+
+_DRPC_PROBES = Path(__file__).resolve().parents[1] / "fixtures" / "surf" / "pool4"
+
+
+def _drpc_range_probes() -> list[tuple[str, int, dict]]:
+    """Every refused ``eth.drpc.org`` probe from the 2026-09-12 live capture.
+
+    The same ``code 35 "ranges over 10000 blocks"`` body at spans 403200, 10000,
+    2400 and 300: the provider's limit is archive depth, not width.
+    """
+    import json
+
+    with (_DRPC_PROBES / "log_range_messages.json").open(encoding="utf-8") as fh:
+        probes = json.load(fh)["probes"]
+    return [
+        (p["label"], p["requested_span_blocks"], p)
+        for p in probes
+        if p["url"] == "https://eth.drpc.org" and p["response"].get("error")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("label", "span", "probe"),
+    [pytest.param(*p, id=p[0]) for p in _drpc_range_probes()],
+)
+def test_a_range_cap_the_request_already_meets_is_not_shrinkable(label, span, probe):
+    from maxpane_dashboard.data.rpc_classify import requested_block_span
+
+    error = probe["response"]["error"]
+    request = probe["request"]
+    assert requested_block_span(request["method"], request["params"]) == span
+
+    err = _classify_rpc_error(error, requested_span=span)
+    if span > 10_000:
+        assert err.kind == "range_cap", label  # the one probe the message describes
+    else:
+        assert err.kind == "rpc", label
+        assert err.kind not in _SHRINKABLE
+        assert "10000-block limit" in err.message and f"{span}-block" in err.message
+    # Without a span nothing changes: the conservative, pre-#65 answer.
+    assert _classify_rpc_error(error).kind == "range_cap"
+
+
+def test_a_named_limit_the_request_exceeds_still_shrinks():
+    """1rpc's 50-block cap against a 300-block page: a real cap, keep shrinking."""
+    err = _classify_rpc_error(_LIVE_ERRORS["onerpc_range_cap"][0], requested_span=300)
+    assert err.kind == "range_cap"
+    # ... and a cap with no number stays shrinkable at any span.
+    err = _classify_rpc_error(_LIVE_ERRORS["flashbots_head_range"][0], requested_span=1)
+    assert err.kind == "range_cap"
+
+
+def _drpc_span_300_body() -> tuple[dict, int]:
+    probe = next(p for _, s, p in _drpc_range_probes() if s == 300)
+    return probe["response"], probe["http_status"]
+
+
+@pytest.mark.asyncio
+async def test_rpc_reads_the_span_off_the_request_and_rotates():
+    """drpc's code 35 at a 300-block eth_getLogs must reach the pager as ``rpc``.
+
+    Both endpoints are asked (rotation), and the raised kind is the one the
+    pager treats as terminal for the page, not the one it shrinks on.
+    """
+    body, status = _drpc_span_300_body()
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.url.host)
+        if request.url.host == "drpc.example":
+            return httpx.Response(status, json=body)
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "error": _LIVE_ERRORS["cloudflare_internal"][0]}
+        )
+
+    client = TalismansClient(
+        primary_rpc="https://drpc.example",
+        fallback_rpcs=["https://other.example"],
+        http_client=_transport(handler),
+    )
+    params = [{"address": "0xa", "topics": [], "fromBlock": hex(1000), "toBlock": hex(1299)}]
+    with pytest.raises(TalismansRpcError) as excinfo:
+        await client._rpc("eth_getLogs", params)
+    assert excinfo.value.kind not in _SHRINKABLE
+    assert hosts == ["drpc.example", "other.example"]
+
+    # The same body at a span the message *does* describe is still a range cap.
+    wide = [{"address": "0xa", "topics": [], "fromBlock": hex(0), "toBlock": hex(403_199)}]
+    with pytest.raises(TalismansRpcError) as excinfo:
+        await client._rpc("eth_getLogs", wide)
+    assert excinfo.value.kind == "range_cap"
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_logs_does_not_learn_a_smaller_window_from_a_stale_cap():
+    """The live defect: a pool whose drpc answers code 35 at every span.
+
+    Before #65 the pager shrank ``_log_window`` eight times on a message about
+    a limit the 300-block page already met, and kept the tiny window for the
+    rest of the session. Now the page fails once, the window is untouched and
+    drpc is asked exactly once for it.
+    """
+    body, status = _drpc_span_300_body()
+    asked: list[tuple[str, int]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        params = json.loads(request.content)["params"][0]
+        span = int(params["toBlock"], 16) - int(params["fromBlock"], 16) + 1
+        asked.append((request.url.host, span))
+        if request.url.host == "drpc.example":
+            return httpx.Response(status, json=body)
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "error": _LIVE_ERRORS["cloudflare_internal"][0]}
+        )
+
+    client = TalismansClient(
+        log_rpcs=["https://drpc.example", "https://other.example"],
+        http_client=_transport(handler),
+    )
+    window_before = client._log_window
+
+    logs, scanned_to = await client._get_logs("0xa", [], 1000, 1299)
+
+    assert (logs, scanned_to) == ([], 999)
+    assert client._log_window == window_before
+    assert asked == [("drpc.example", 300), ("other.example", 300)]
     await client.close()

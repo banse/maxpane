@@ -75,6 +75,7 @@ __all__ = [
     "is_range_limitation",
     "looks_like_endpoint_limitation",
     "named_block_limit",
+    "requested_block_span",
 ]
 
 
@@ -254,6 +255,29 @@ def named_block_limit(message: str) -> int | None:
         if best is None or value > best:
             best = value
     return best
+
+
+def requested_block_span(method: str, params: Any) -> int | None:
+    """How many blocks the ``eth_getLogs`` request *method*/*params* asked for.
+
+    ``None`` for any other method, for a filter without both bounds, and for a
+    named tag (``"latest"``, ``"earliest"``): those requests have no span for a
+    provider's message to be about. The number is read from the request that
+    produced the error -- the only request a provider's complaint is evidence
+    about -- so a classifier can pass it as *requested_span* without its
+    caller threading it through every transport layer.
+    """
+    if method != "eth_getLogs" or not isinstance(params, (list, tuple)) or not params:
+        return None
+    filt = params[0]
+    if not isinstance(filt, dict):
+        return None
+    try:
+        lo = int(str(filt["fromBlock"]), 16)
+        hi = int(str(filt["toBlock"]), 16)
+    except (KeyError, TypeError, ValueError):
+        return None
+    return hi - lo + 1 if hi >= lo else None
 
 
 # ---------------------------------------------------------------------------
