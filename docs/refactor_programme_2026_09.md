@@ -1199,6 +1199,234 @@ state.py` 26, `test_title_blank_row.py` 37, `test_hidden_shared_address_icons.py
 `tests/test_address_sweep_registry.py` 9, `-m guard tests` **190** (was 189 — the one new guard
 case is the bare-block matcher's example set).
 
+## Branch 7 — `refactor/panels-small-four` (two work packages)
+
+HANDOVER §3.4, second slice (§3.4b): cattown, dota, talismans and ttt onto the `widgets/panels.py`
+bases Branch 6 built, plus the one base Branch 6 deferred, `TableLeaderboard`, with cattown as its
+first user. Cut from main `ad5af4d`. Facts read off the tree on 2026-09-20 (survey in the
+session, every module read whole):
+
+- 26 widget modules, 3,631 lines with the four `__init__` and three `_chain` files: cattown 6
+  (712), dota 6 (609), talismans 7 (897), ttt 7 (1,289). The four hero rows, the four signals
+  panels, the four sparkline panels and the four feeds are the Branch 6 shapes; **eight** widgets
+  are a title over a `DataTable` (`CTLeaderboard`, `DOTALeaderboard`, `TalismansLeaderboard`,
+  `TalismansMaterialsTable`, `TalismansMatrixTable`, `TTTLeaderboard`, `TTTFeesTable`,
+  `TTTClaimsTable`) and all eight agree on `cursor_type="row"`, `zebra_stripes=True`, `clear()` then
+  a "No data" row or a capped slice (10 / 20 / 10 / 12 / none / 10 / 10 / 6), rank-1 bolding, and
+  — six of eight — a `Loading...` seed row added in `on_mount` whose cell position varies. That is
+  the `TableLeaderboard` contract. `CTBestPlays` and `DOTABestPlays` are a two-column text board
+  with no sibling outside this pair; they go on `PanelBase` with their bodies bespoke.
+- **The four packages carry the copies Branch 6 counted, and diverge from the hoisted forms in
+  named ways.** `_UNAVAILABLE` ×4 (byte-identical to `panels.UNAVAILABLE`); `_DASH` ×8 (=
+  `fmt.DASH`); `_render_box` in cattown and dota (dota's is `HeroRow.render_box` exactly; cattown's
+  has a `rich.text.Text` branch because the LEADER box carries an address icon — the base has no
+  `Text` path today); `_render_row` / `_fmt` in cattown and dota (= `render_signal` /
+  `fmt_signal(15, dim)` / `fmt_signal(18, plain)` exactly); `_format_event_time` / `_format_ts` ×3
+  (talismans ≡ ttt ≡ `fmt.hhmm` minus the `OverflowError` arm; cattown's catches only
+  `(ValueError, OSError)` so `int(None)` raises, and **renders a clock time for `ts == 0`**);
+  `_fmt_int` ×6, `_fmt_float` ×2, `_safe_get` ×2 (talismans ≡ ttt, nothing hoisted covers them);
+  `_safe_symbol` ×2 inside ttt; `_RARITY_COLORS` ×3 inside cattown (dead in the feed);
+  `_WAITING` ×2 (talismans/ttt sparklines). Dead: `ttt_claims_table._fmt_multiplier`,
+  `tal_hero_metrics._GENESIS`, `ct_activity_feed._RARITY_COLORS`, dota hero's `token_price_usd`
+  parameter.
+- **Where the base contract and the widget disagree, and what the plan does about each:**
+  - talismans and ttt **signals drop the label** (`  [c]●[/] [c]{value}[/]`), have a mid-panel
+    blank separator row, no recommendation; ttt hides its `fresh` row at runtime
+    (`display = bool(text)`) and `safe_markup`s the value where talismans does not; both degrade
+    to `--` (talismans through a `_UNAVAILABLE_SIGNAL` dict) and neither guards its four writes.
+  - talismans and ttt **sparklines** pad labels to 16 and 12 (dota to 9, cattown/ocm to 8), draw
+    **no trend arrow**, write `waiting for data...` below two points where `render_series` writes
+    `""`, and format values with `{int(v):,}` (both) and a `$…B` at `.2f` (ttt volume) where the
+    base uses `fmt_compact`. cattown's `_fmt_value` differs from `fmt_compact` only on negatives,
+    NaN and ≥ 1e9; dota's is unrelated (`abs ≥ 100 → .0f else .1f`, no K/M/B), and the sweep's
+    frontline values sit under 100.
+  - talismans and ttt **hero rows** have no guard at all (four bare `query_one().update()` each; a
+    missing box raises into the screen) and degrade on exception to `--`, not `unavailable`; both
+    are absent from `test_medi38_unavailable_state.py`. Box bodies are `big\nsub` under the
+    `label\n\n` head, which `render_box`'s `f"[dim]{label}[/]\n\n{build()}"` already carries.
+  - the dota feed is a **hero roster** (sorted, rewritten whole each poll, placeholder
+    `No heroes yet`); talismans and ttt feeds carry **no `tx_hash`**, cap at 25 and `clear()`
+    unconditionally; cattown's is the pre-`_drawn` contract (placeholder stacked once per empty
+    poll, unhashable key raises after `clear()`). ttt's `_event_to_line` returns `str` *or* `Text`.
+- **Stylesheet.** cattown `:1108-1190` and dota `:1192-1299` blocks are all live; the blank row
+  under CT LEADERBOARD is `CTLeaderboard > Static { margin: 0 0 1 0 }` (`:1132`, its title has no
+  class), under DOTA LEADERBOARD `.dota-lb-title` (`:1241`), under both feeds a `.feed-title` /
+  `.dota-feed-title` margin. ttt `:1596-1689` has **three dead title blocks** (`TTTLeaderboard >
+  .leaderboard-title` `:1619`, `TTTActivityFeed > .feed-title` `:1667`, `TTTFeesTable > .fees-title,
+  TTTClaimsTable > .claims-title` `:1683`) — the widgets compose `ttt-*-title` classes and paint
+  their blank row from a `Static(" ")` spacer; `TTTSignals` alone already states `margin: 0 0 1 0`
+  on its own title. talismans `:1691-1749` names no title class at all; every talismans title is
+  styled by its widget's `DEFAULT_CSS` and every blank row is a `Static(" ")`. No bare block names
+  a `panels.py` class; the `Base` suffix and Branch 6's guard keep it so. **The new base is
+  `TableLeaderboard`, not `Leaderboard`**: bakery's `widgets/leaderboard.py` owns that name and a
+  bare block.
+- **Pins.** None of the four screens declares a pin; all sweep at `__main__.FULL_LAYOUT_COLUMNS`
+  (143). The one in-widget pin is `ttt_fees_table._SYM_WIDTH = 5` (measured table at `:43-81`) with
+  `ttt_leaderboard._SYM_WIDTH` deliberately equal — both stay where they are, untouched.
+  `tests/screens/test_ttt_address_icon_layout.py` certifies that neither ttt table scrolls at 143.
+- **Coverage today.** `test_title_blank_row.py` lists CT/DOTA sparklines, signals, best-plays,
+  `TTTSparkline`, `TTTSignals` ×2 — not the leaderboards, feeds, hero rows, ttt tables or any
+  talismans widget. `test_medi38_unavailable_state.py` lists CT/DOTA hero + signals and
+  `TalismansSignals`. `test_sparkline_common.py` binds all four sparklines to the shared
+  primitives. `test_markup_safety.py` holds the three hostile-string leaderboard tests;
+  `test_cattown_talismans_address_icons.py` and `test_ttt_address_icons.py` the icon tests (the
+  latter pins the two `_fmt_eth` goldens, 4 dp fees / 5 dp claims); `test_talismans_widgets.py`
+  (310 lines) is the one per-widget module; `test_talismans_screen.py`, `test_ttt_address_icon_
+  layout.py`, `test_refresh_guard.py` composite the screens. There is no cattown, dota or ttt
+  widget test module.
+
+### Design
+
+**Zero-rendering-change is the acceptance rule, with the changes named here as the only
+exceptions.** `render_case.py` (session scratchpad; the Branch 6 harness generalised to a case
+name and every view) captured all four dashboards at main `ad5af4d` — 170×50 and the 143 pin,
+default view and the `c` view for ttt and talismans, twelve files `b7_before_*` — under a frozen
+clock and the sweep payload. Every post-migration capture must be **cmp-identical** to its
+`before`, because unlike ocm no panel here paints two blank rows: each spacer `Static`, tcss margin
+or `Static(" ")` is traded for the `PanelBase` title margin one-for-one. A differing cell is a
+finding. The named behaviour changes, none of which the sweep payload can reach:
+
+1. `fmt.hhmm` replaces the three `_format_event_time` / `_format_ts` copies: `??:??` for `None`,
+   `0` and `inf` (Branch 6's change, now on three more feeds; cattown printed a clock for epoch 0).
+2. MEDI-38 on the talismans and ttt hero rows and ttt signals: a build that raises lands on
+   `unavailable` inside the guard instead of raising into the screen (`--` stays the value for a
+   `None` the manager served deliberately — `total_cores` while enumeration syncs).
+3. `fmt_signal` escapes `value_str` through `markup_safety.safe_markup` for every subscriber —
+   ttt did, talismans did not, and a signal value may carry a token symbol. No `value_str` in
+   `analytics/` contains a `[`, so the sweep and the goldens see nothing.
+4. The feed contract: the placeholder is written once, an unhashable key is always-new, and a
+   populated feed survives an empty poll (talismans, ttt and dota cleared and re-painted the
+   placeholder). Named because the dota roster is the one subscriber where an empty list is a
+   real negative; the manager serves `None` for a failed read, so the always-new path
+   with `[]` keeps the last roster under the status bar's as-of marker, which is what every
+   other feed in the app does.
+5. `fmt_compact` replaces cattown's `_fmt_value` (differs on negatives, NaN, ≥ 1e9 — none
+   reachable for a prize pool). dota, talismans and ttt **keep their value formatters** through
+   the new hook below, because theirs differ on values the panel actually shows.
+
+**WP-A — `panels.py` extensions (append-only; owner of `panels.py` and `minimal.tcss` for this
+WP) + cattown + dota.** Every extension is a class attribute with the Branch 6 default, so ocm is
+untouched and its tests must stay green unchanged:
+
+- `class TableLeaderboard(PanelBase)`: `TABLE_ID: str`, `COLUMNS: tuple[tuple[str, int], ...]`
+  (`(label, width)`), `CURSOR_TYPE = "row"`, `ZEBRA = True`, `ROW_CAP: int | None = 10`,
+  `LOADING_ROW: tuple[str, ...] | None = None` (seeded in `on_mount` when set — the cell that
+  says `Loading...` differs per table, so the subclass types the whole tuple), `EMPTY_ROW:
+  tuple[str, ...]` (the "No data" row). `compose_body` yields `DataTable(id=TABLE_ID)`; `on_mount`
+  adds the columns and the seed row. `render_table(rows, *, footer=None)`: `clear()`; `None` or
+  empty → `EMPTY_ROW`; else the capped slice through the hook `build_row(index, item) ->
+  tuple | None` (`None` skips the item — the non-dict guard talismans and ttt carry), then the
+  optional `footer` tuple (the matrix table's bold TOTAL row). Every `add_row` inside its own
+  guard so one bad row does not empty the table. Address cells, rank-1 bolding, `_SYM_WIDTH`,
+  the matrix's dict payload and the claims table's "Today" detection stay in the subclass —
+  the base owns mechanics, never a cell's formatting.
+- `HeroRow.render_box`: when `build()` returns a `rich.text.Text`, the box gets
+  `Text.from_markup(f"[dim]{label}[/]\n\n") + text` — cattown's LEADER box (address icon with its
+  click style) is the reason. The `str` path is unchanged.
+- `SignalsPanelBase`: a `ROWS` item may be `(id, None)` — a **label-less** row, formatted
+  `  [c]{ind}[/] [c]{value}[/]` by `fmt_signal(sig, label_width=…, dim_label=…, labelled=False)`
+  — and may be `None`, a blank `.panel-line` separator. `fmt_signal` escapes `value_str`
+  (change 3). Nothing else; ttt's runtime-hidden row is one `display` assignment in ttt's
+  `update_data` after `render_signal`.
+- `SparklinePanel`: `LABEL_WIDTH = 8`, `SHOW_ARROW = True`, `EMPTY_TEXT = ""`, and a hook
+  `fmt_value(value, unit) -> str` defaulting to `fmt_compact`. `render_series` pads
+  `label[:LABEL_WIDTH].ljust(LABEL_WIDTH)`, appends the arrow only when `SHOW_ARROW`, writes
+  `EMPTY_TEXT` for an unusable series, and seeds `EMPTY_TEXT or LOADING` on the first line — so
+  talismans/ttt (`16`/`12`, `False`, `[dim]waiting for data...[/]`) render as today, and cattown
+  (8) / dota (9) do not clip.
+- `RichLogFeed`: nothing new. dota subclasses it with `dedupe_key → None`, `EMPTY_LINE =
+  "[dim]  No heroes yet[/]"`, the alive-first / level-desc sort in `update_data` before
+  `render_events`, and `format_row` returning `Text.from_markup(...)` of today's string.
+- cattown: `CTHeroMetrics(HeroRow)` with `CTHeroBox(HeroBoxBase)`; `CTSignals(SignalsPanelBase)`
+  15/dim with `RECOMMENDATION_ID` — **its recommendation line is `  [dim]→ Recommendation:[/]
+  [bold]{rec}[/]`**, not the base's `-> {text}`, so `render_recommendation` gains no option:
+  cattown writes that line itself through `write`, keeping the pixel; `CTSparklines(SparklinePanel)`
+  (its labels are hand-padded to 8 already); `CTActivityFeed(RichLogFeed)` with `format_row =
+  _catch_to_text`; `CTLeaderboard(TableLeaderboard)` (first user; `LOADING_ROW = None`, cap 10);
+  `CTBestPlays(PanelBase)` bespoke body. `_RARITY_COLORS` once, in a new `widgets/cattown/_fmt.py`
+  beside `_fmt_kibble` and `_countdown`. dota: the same six shapes; `DOTALeaderboard` cap 20;
+  `DOTABestPlays(PanelBase)`; `_fmt_usd` stays in the hero module (one user).
+- `minimal.tcss` (WP-A owns it for both packages): delete the per-title blocks the base now states
+  (`CTLeaderboard > Static`, `CTSparklines > .chart-title`, `CTSignals > .signals-title`,
+  `CTActivityFeed > .feed-title`, `CTBestPlays > .ev-title`, the five dota `.dota-*-title` blocks);
+  keep every block keyed on a widget class name. `CTBestPlays`/`DOTABestPlays` title rows carry
+  the same values, so PanelBase's rule moves no pixel; the render diff is the proof.
+
+**WP-B — talismans + ttt (owner of `minimal.tcss` for the ttt block, `widgets/fmt.py`
+append-only).** Hoists first, in the same commit: `fmt.fmt_int(value) -> str` (the module-level
+body: `None → DASH`, `int(v)` grouped, `DASH` on failure) replaces all six `_fmt_int`;
+`fmt.fmt_float(value, spec) -> str` the two `_fmt_float`; `fmt.safe_get(mapping, key, default)`
+the two `_safe_get`; `fmt.DASH` the eight `_DASH`; `fmt.hhmm` the two `_format_ts`. `_safe_symbol`
+once in a new `widgets/ttt/_fmt.py`. The two `_fmt_eth` (4 dp / 5 dp, both "not `fmt.fmt_eth`")
+stay behind their goldens — a precision change is a pixel change and not this branch's. Then:
+`TalismansHeroMetrics(HeroRow)` / `TTTHeroMetrics(HeroRow)` with `render_box` (change 2; the extra
+`tal-hero-box` / `ttt-hero-box` classes go — nothing names them); `TalismansSignals` / `TTTSignals`
+on `SignalsPanelBase` with label-less rows and the `None` separator, ttt keeping the `display`
+toggle; `TalismansSparkline` / `TTTSparkline` on `SparklinePanel` with `LABEL_WIDTH` 16 / 12,
+`SHOW_ARROW = False`, `EMPTY_TEXT` the waiting line, `fmt_value` returning today's
+`_fmt_count` / `_fmt_burns` / `_fmt_volume_usd` per line (the hook receives `unit`, so one
+override can switch on it); `TalismansActivityFeed` / `TTTActivityFeed` on `RichLogFeed` with
+`dedupe_key → None`, the `[:25]` cap in `update_data`, and every row a `Text`; the five tables on
+`TableLeaderboard` (`LOADING_ROW` the tuple each seeds today; matrix passes `footer=`). Every
+`Static(" ")` spacer goes. tcss: the three dead ttt title blocks and `TTTSparkline > .ttt-spark-
+title`, `TTTSignals > .ttt-signals-title` go; talismans has none to delete; the widget-class blocks
+stay. `test_talismans_widgets.py` is adapted only where it queried a class the base renamed
+(`.tal-*-title` → `.panel-title`), never loosened.
+
+WP-B starts only after WP-A's review round closes: it subclasses the extensions WP-A adds and
+edits the same stylesheet.
+
+### Tests
+
+`tests/widgets/test_panels.py` gains, each on a minimal subclass composited through
+`surf_compositing.composite_lines` under `minimal.tcss`:
+
+1. `TableLeaderboard`: row 0 title, row 1 blank, row 2 the header; the seed row appears when
+   `LOADING_ROW` is set and not when `None`; `None` and `[]` paint `EMPTY_ROW` exactly once;
+   `ROW_CAP` slices; `build_row` returning `None` skips without a gap in the ranks the subclass
+   assigns; one `add_row` that raises leaves the other rows on screen (mutation: delete the
+   per-row guard → this test); `footer` lands last.
+2. `render_box` with a `Text` body keeps the `Text`'s style spans (a `meta` click action on a
+   span survives — the reason the branch exists) and the label row above it.
+3. `fmt_signal(labelled=False)` and the `None` separator row: row indices under composition;
+   a `value_str` of `"[red]x"` renders literally (change 3; mutation: drop the escape).
+4. `SparklinePanel` at `LABEL_WIDTH = 12`, `SHOW_ARROW = False`, `EMPTY_TEXT` set: the label
+   width, no arrow glyph, the empty text on `[]`, `fmt_value` override honoured; the defaults
+   still reproduce Branch 6's rows (the existing cases stay green unchanged).
+5. Agreement, widened from ocm to the five migrated packages: every widget class with an
+   `update_data` in `widgets/{ocm,cattown,dota,talismans,ttt}` subclasses a `panels.py` base;
+   no module there defines `_UNAVAILABLE`, `_UNAVAILABLE_SIGNAL`, `_render_row`, `_render_box`,
+   `_fmt_value`, `_format_event_time`, `_format_ts`, `_fmt`, `_fmt_signal`, `_seen_tx_hashes`,
+   `_fmt_int`, `_fmt_float`, `_safe_get`, `_DASH`, `_WAITING`, and no `compose` yields a `Static`
+   whose content is `""` or `" "` (the spacer shapes). WP-A ships it for ocm + cattown + dota,
+   WP-B extends the package list.
+
+Existing tables extended, not new files: `test_title_blank_row.py` gains a row for **every**
+widget in the four packages that is a `PanelBase` (leaderboards, feeds, tables, all seven
+talismans panels); `test_medi38_unavailable_state.py` gains `TalismansHeroMetrics`,
+`TTTHeroMetrics`, `TTTSignals` with the three claims (change 2). Named tests per WP, all with
+`-m guard tests`: `test_panels.py`, `test_title_blank_row.py`, `test_medi38_unavailable_state.py`,
+`test_sparkline_common.py`, `test_fmt.py`, `test_markup_safety.py`, the two address-icon widget
+files, `test_talismans_widgets.py`, `tests/screens/test_dashboard_screen.py`,
+`test_refresh_guard.py`, `test_talismans_screen.py`, `test_ttt_address_icon_layout.py`,
+`test_address_icons_everywhere.py -k "cattown or dota or talismans or ttt or ocm"`,
+`tests/test_address_rule.py`, `tests/test_address_sweep_registry.py`. Mutation proofs named in
+each commit message with which test reddened. The full suite runs once on the branch head, by
+the controller.
+
+### Docs
+
+`.claude/rules/widgets.md` "Panels subclass" section: `TableLeaderboard` joins the list (its
+hook, the seed-row rule, what stays in the subclass), the three `SparklinePanel` attributes and
+`fmt_value`, label-less and separator signal rows, the `Text` branch of `render_box`; the
+worked-example sentence names cattown beside ocm; the "`TableLeaderboard` arriving with Branch 7"
+sentence goes. `CLAUDE.md` needs no change (`panels` is already on the `widgets/` line). Outcome
+paragraphs here per WP with the per-file line table, the twelve-capture diff result and any
+deviation.
+
+One implementer per WP, one reviewer per diff (contract verbatim), fix rounds capped at 2 per WP,
+full suite once on the branch head by the controller, then the owner's merge word.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
