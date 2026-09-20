@@ -156,7 +156,6 @@ from typing import TYPE_CHECKING, Callable
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
 from textual.widgets import Input, Select, Static
 
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
@@ -185,7 +184,7 @@ from maxpane_dashboard.data.curator_list_source import (
     load_export_list,
 )
 from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS, PHASES
-from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.widgets.curator import (
     CuratorActivity,
     CuratorClosestCalls,
@@ -803,13 +802,20 @@ def _write_filtered_list(directory: Path, rows: list[dict]) -> Path:
     return path
 
 
-class CuratorScreen(RefreshGuard, Screen):
+class CuratorScreen(DashboardScreen):
     """THE LIST -- WhitelistCurator survival watch (Ethereum mainnet).
 
     The screen opens on Raw Lists. ``h`` selects History, whose fixed initial
     panel is FAN-OUT PATTERNS; ``l`` selects Lists, and ``esc`` returns from a
     secondary view to Lists. ``c`` swaps panels in History and rotates record
     lists in Lists. ``a`` opens the linked-wallet analysis body.
+
+    Lifecycle (constructor, resume, suspend) comes from
+    :class:`~maxpane_dashboard.screens.dashboard_screen.DashboardScreen`; the
+    five bodies mean the dispatch genuinely differs per view, so this screen
+    keeps its own ``_do_refresh`` and declares no ``PANELS``. ``on_screen_suspend``
+    is extended, not replaced: the base stops the poll timer, then this screen
+    cancels its export and ENS workers.
     """
 
     BINDINGS = [
@@ -837,6 +843,9 @@ class CuratorScreen(RefreshGuard, Screen):
         Binding("2", "apply_filter_preset('2')", "Hour 0", show=False),
         Binding("3", "apply_filter_preset('3')", "Whale splash", show=False),
     ]
+
+    #: The words the status bar shows for this dashboard.
+    GAME_NAME = "curator"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "curator-refresh"
@@ -1194,10 +1203,7 @@ class CuratorScreen(RefreshGuard, Screen):
         export_dir: str | Path | None = None,
         **kwargs,
     ):
-        super().__init__(name=name, **kwargs)
-        self._data_manager = data_manager
-        self._poll_interval = poll_interval
-        self._refresh_timer = None
+        super().__init__(data_manager, poll_interval, name=name, **kwargs)
         #: Where the `e` export writes.  Injectable for the same reason the
         #: cache path is (tests must never touch the developer's ~/.maxpane);
         #: ``None`` means the house directory, resolved at keypress time.
@@ -1994,21 +2000,10 @@ class CuratorScreen(RefreshGuard, Screen):
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def on_screen_resume(self) -> None:
-        self._do_initial_refresh()
-        self._refresh_timer = self.set_interval(
-            self._poll_interval, self._schedule_refresh
-        )
-        try:
-            self.query_one(StatusBar).set_theme_name(self.app.theme)
-            self.query_one(StatusBar).set_game_name("curator")
-        except Exception:
-            pass
-
     def on_screen_suspend(self) -> None:
-        if self._refresh_timer:
-            self._refresh_timer.stop()
-            self._refresh_timer = None
+        # The base stops and clears the poll timer; everything below is this
+        # screen's own -- the workers it may have left running.
+        super().on_screen_suspend()
         self._invalidate_nft_name_lookup(
             self.query_one(CuratorListFilterEditor)
         )

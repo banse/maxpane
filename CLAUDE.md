@@ -147,8 +147,9 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
   the sole hydration boundary. **`decimals()` is a live read**, never 18 by assumption.
 - **Validate persisted series per point** (`data/series_points.coerce_points`); a hand-edited
   cache file is third-party input. **Inject the clock** (`now=` / `now_ts`).
-- **Screens inherit `screens/refresh_guard.RefreshGuard`**; never hand-roll exclusive workers;
-  no network await in a message handler.
+- **Screens inherit `screens/dashboard_screen.DashboardScreen`** (lifecycle + `PANELS` dispatch;
+  `RefreshGuard` underneath); never hand-roll exclusive workers; no network await in a message
+  handler.
 - **Reuse before you build**: shared module (`widgets/fmt.py`, `rowfit.py`, `markup_safety.py`, `address.py`, …) →
   dashboard sibling / its `_fmt.py` (dashboard-specific formatters only) → template. A helper two modules need is hoisted in the same change, never re-declared. The one
   legitimate copy is a hand-typed literal bound by an agreement test (`_GAME_CYCLE`, `--game`

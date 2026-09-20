@@ -160,3 +160,19 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     thing for the dispatch to send. Visible in the log since WP-A only because the base logs every
     degraded step at `warning`; before the migration ocm logged it at `debug`, below the handler
     level. Tier 0 when either widget is next touched (WP-A review M3, filed 2026-09-20).
+19. **`time.time()` is sampled inside the frenpet_wallet / frenpet_perf `PANELS` adapters**
+    (pre-existing, carried across by WP-B rather than fixed). `screens/frenpet_wallet.py:135`
+    (`eth_history = [(time.time(), eth_total_wei / 1e18)]`) and `:143`
+    (`win_rate_history = [(time.time(), wr)]`), and `screens/frenpet_perf.py:125`
+    (`win_rate_history = [(time.time(), compute_avg_win_rate(managed_pets))]`) each build a
+    one-point history whose x value is the wall clock read at dispatch time. That breaks
+    CLAUDE.md "**Inject the clock** (`now=` / `now_ts`)": the value cannot be pinned by a test
+    without patching `time.time` process-wide (WP-B's own render harness has to do exactly that
+    to get a stable diff), and a single-point series stamped with "now" is also a series point
+    that no `coerce_points` boundary ever validated. Before WP-B the same three samples sat
+    inside the screens' `_do_refresh`; the migration moved them, unchanged, into the module-level
+    adapters `_wallet_trends` and `_perf_trends`, which is where the fix now belongs: give each
+    adapter an injected `now_ts` (a `keys`-style partial, or a `now=` default argument the
+    screen's tests can bind) rather than reading the clock. Both screens are hidden
+    (`--game frenpet_wallet` / `frenpet_perf`), so the blast radius is one sparkline each.
+    Minor, Tier 0 when either file is next touched (filed by WP-B, 2026-09-20).

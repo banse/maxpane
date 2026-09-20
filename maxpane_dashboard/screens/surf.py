@@ -224,10 +224,9 @@ from typing import TYPE_CHECKING
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
 from textual.widgets import Static
 
-from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf import (
     SurfBurnkeepers,
@@ -2616,8 +2615,14 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
     return line
 
 
-class SurfScreen(RefreshGuard, Screen):
-    """surfsurf.eth Surfboard dashboard."""
+class SurfScreen(DashboardScreen):
+    """surfsurf.eth Surfboard dashboard.
+
+    Lifecycle (constructor, resume, suspend) comes from
+    :class:`~maxpane_dashboard.screens.dashboard_screen.DashboardScreen`; the
+    five bodies mean the dispatch genuinely differs per view, so this screen
+    keeps its own ``_do_refresh`` and declares no ``PANELS``.
+    """
 
     #: Still no ``c``: the swap it drove died with the shared slot (see the
     #: module docstring), and nothing here has grown a second shared slot for
@@ -2708,6 +2713,9 @@ class SurfScreen(RefreshGuard, Screen):
     #: reason: ``l launchpad`` is the one the app-level acceptance test greps
     #: for as a contiguous string.
     KEY_HINTS = "[dim]l launchpad · 4 pool4 · s swarm[/]"
+
+    #: The words the status bar shows for this dashboard.
+    GAME_NAME = "surf"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "surf-refresh"
@@ -3377,10 +3385,7 @@ class SurfScreen(RefreshGuard, Screen):
         name: str = "surf",
         **kwargs,
     ):
-        super().__init__(name=name, **kwargs)
-        self._data_manager = data_manager
-        self._poll_interval = poll_interval
-        self._refresh_timer = None
+        super().__init__(data_manager, poll_interval, name=name, **kwargs)
         #: Last payload the title bar was built from, kept so a resize can
         #: rebuild the line with (or without) the row marker at no cost and
         #: without a refetch. ``None`` until the first payload lands, which
@@ -3564,25 +3569,14 @@ class SurfScreen(RefreshGuard, Screen):
     def on_mount(self) -> None:
         self._show_mode()
 
-    def on_screen_resume(self) -> None:
-        self._do_initial_refresh()
-        self._refresh_timer = self.set_interval(
-            self._poll_interval, self._schedule_refresh
-        )
-        try:
-            self.query_one(StatusBar).set_theme_name(self.app.theme)
-            self.query_one(StatusBar).set_game_name("surf")
-            self.query_one(StatusBar).set_key_hints(self.KEY_HINTS)
-            # No set_active_view: no slot on this screen has two views, so a
-            # `view:` word on the shared bar would name something that does
-            # not exist.
-        except Exception:
-            pass
+    def _prime_status_bar(self, bar: StatusBar) -> None:
+        """The one extra line this screen primes: the body keys.
 
-    def on_screen_suspend(self) -> None:
-        if self._refresh_timer:
-            self._refresh_timer.stop()
-            self._refresh_timer = None
+        No ``set_active_view``: no slot on this screen has two views, so a
+        ``view:`` word on the shared bar would name something that does not
+        exist.
+        """
+        bar.set_key_hints(self.KEY_HINTS)
 
     def on_resize(self, _event=None) -> None:
         """Keep the row marker honest when the terminal changes height.

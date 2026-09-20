@@ -659,8 +659,10 @@ reviewer repeats it. Named tests: `tests/screens/test_dashboard_screen.py`,
 `HOME=$(mktemp -d) … tests/screens/test_address_icons_everywhere.py -k ocm`.
 
 **WP-A outcome (2026-09-20).** Landed as `d25f9de`, fix round 1 on top. 8 files, +912/−273:
-`screens/dashboard_screen.py` new (233 lines), `screens/ocm.py` 132 → 72, `templates/screen_template.py`
-133 → 67, `tests/screens/test_dashboard_screen.py` new, `tests/screens/test_refresh_guard.py`
+`screens/dashboard_screen.py` new (233 lines), `screens/ocm.py` 177 → 117, `templates/screen_template.py`
+187 → 121 (raw `wc -l`, the convention below; the 132 → 72 and 133 → 67 first written here counted
+non-blank non-comment lines and were not comparable with anything else in this plan — WP-B
+re-review N1), `tests/screens/test_dashboard_screen.py` new, `tests/screens/test_refresh_guard.py`
 (collector + `GAME_NAME`), `tests/test_address_sweep_registry.py`, CLAUDE.md, `.claude/rules/widgets.md`.
 Pre/post composited render of `OCMScreen` on the sweep payload at 170×50 and at the 143 pin (frozen
 clock): **identical, both diffs empty.**
@@ -729,6 +731,66 @@ it is a widget fix (MEDI-38 unavailable state), never a change to the screen or 
 - Docs: `docs/handover_followups_2026_09.md` gains the `time.time()`-in-screen item
   (frenpet_wallet/frenpet_perf, "inject the clock") and the outcome paragraph below records the
   line count removed (HANDOVER estimated ~1,100).
+
+**WP-B outcome (2026-09-20).** Landed as `64ab0f8`. All thirteen remaining screens are on
+`DashboardScreen`; nothing was left unmigrated.
+
+*Line counts are raw `wc -l`* — blank lines, comments and docstrings included — the only figure
+that can be checked with one command, and the convention for every number in this plan (the WP-A
+paragraph above was restated in it).
+
+| file | before | after | file | before | after |
+| --- | --- | --- | --- | --- | --- |
+| `screens/bakery.py` | 189 | 124 | `screens/talismans.py` | 250 | 169 |
+| `screens/base_terminal.py` | 177 | 90 | `screens/ttt.py` | 244 | 163 |
+| `screens/cattown.py` | 173 | 87 | `screens/surf.py` | 4593 | 4587 |
+| `screens/dota.py` | 186 | 114 | `screens/curator.py` | 2397 | 2392 |
+| `screens/frenpet.py` | 189 | 117 | `screens/fwa.py` | 520 | 511 |
+| `screens/frenpet_perf.py` | 296 | 247 | `screens/frenpet_full.py` | 781 | 758 |
+| `screens/frenpet_wallet.py` | 331 | 280 | **total** | **10,326** | **9,639** |
+
+**687 production lines removed in WP-B**, 813 for the branch with WP-A's 126 (ocm 177 → 117,
+template 187 → 121). HANDOVER estimated ~1,100; the gap is honest, not a shortfall: the estimate
+counted the four custom screens' `_do_refresh` bodies, which stay because their refreshes really
+are custom, and it did not net off the 236-line shared base (so the repo is 577 lines smaller, and
+the duplicated lifecycle is now written once).
+
+**Render evidence.** Every one of the 14 `tests/address_sweep/registry.CASES` entries was
+composited before and after, at 170×60 and at each pin the case lists, for every view the case
+lists (76 files): **every render diff empty.** Because the sweep payload leaves some panels on
+`Loading...` (followups #18), each mount also logged every `update_data` call with its kwargs
+normalised through `inspect.signature().bind()`, plus every title-bar `Static.update`, on three
+payloads — the sweep payload, an all-string sentinel payload and an all-numeric one — against the
+*pre-migration module* loaded out of `git show e7a37dd:`. Every screen's dispatch log is identical
+on all three, with one exception, below.
+
+**Three deliberate deviations, none of them reachable from the real managers.**
+
+1. `screens/bakery.py` was the one hand-written dispatch that read its payload by **subscript**
+   (`data["bakeries"]`), so a missing key raised `KeyError` and left the panel on its last render.
+   `keys(...)` reads with `data.get`, so a partial payload now reaches the panel as an explicit
+   `None`. `data/manager.py` builds its payload as one dict literal in which every one of those
+   keys is always present, so against the real manager the two reads are the same read; the
+   composited render on the sweep's own partial bakery payload is identical at 170 and at the pin.
+   A raising adapter cannot be read by the panel-row agreement test, which would have left bakery
+   the one dashboard with no enforcement — the hole this branch exists to close. Recorded in the
+   module docstring.
+2. Following from 1: on a literally empty `{}` payload old bakery dispatched nothing and new
+   bakery dispatches seven rows, including the base's status-bar row
+   (`error_count=0, last_updated_seconds_ago=0, poll_interval=30`, the approved WP-A contract).
+   This is the one non-identical dispatch log in the whole capture, and `{}` is a payload
+   `DataManager.fetch_and_compute()` cannot produce.
+3. `screens/dota.py` and `screens/frenpet_full.py` lost their own `__init__`, and with it the
+   constructor defaults `name="dota"` / `name="frenpet_full"` (now `None` from the base). Every
+   call site in `app.py` passes `name=` explicitly, so nothing observable changed — the same drift
+   WP-A recorded for ocm.
+
+`frenpet_perf`/`frenpet_wallet`'s between-fetch arithmetic moved out whole into module-level
+adapters (`_perf_hero`, `_perf_trends`, … `_wallet_best_plays`): same helpers, same order, same
+values, and `time.time()` still sampled inside `_perf_trends`/`_wallet_trends` rather than
+injected — carried across, not fixed, and filed as follow-up 19. `ttt` and `talismans` now list
+only `c` in `BINDINGS` (Textual merges along the MRO, WP-A note M1); a pilot keypress test proves
+`r` still refreshes, and reddens when the base's binding key is changed.
 
 Reviewer contract verbatim, one reviewer per WP diff, at most two fix rounds each; the full suite
 once on the branch head before the merge word.

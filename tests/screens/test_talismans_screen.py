@@ -189,3 +189,38 @@ async def test_toggle_view_flips_display():
         assert screen._active_view == "matrix"
         assert matrix.display is True
         assert materials.display is False
+
+
+# ---------------------------------------------------------------------------
+# The inherited ``r`` binding (Branch 5 WP-B)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_r_still_refreshes_although_this_screen_lists_only_c():
+    """Textual merges ``BINDINGS`` along the MRO, so a screen that declares
+    only its extra keys keeps ``r`` from ``DashboardScreen``.
+
+    WP-B dropped the re-listed ``Binding("r", ...)`` from this screen and from
+    ttt on that claim (WP-A review M1, verified on Textual 8.1.1). Nothing else
+    in the suite presses ``r`` on a migrated screen, so the claim would be
+    untested and a reader would lose the refresh key without a single red test.
+    """
+    manager = _FakeManager()
+    screen = TalismansScreen(manager, poll_interval=30, name="talismans")
+    app = _Harness(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # ``r`` is not in this screen's own list ...
+        assert "r" not in [b.key for b in TalismansScreen.BINDINGS]
+        before = manager.calls
+
+        await pilot.press("r")
+        await pilot.pause()
+        await pilot.pause()
+
+        # ... and still refreshes, through the base's binding.
+        assert manager.calls > before, (
+            "pressing r did not reach action_refresh -- the inherited binding "
+            "is gone and this dashboard has no refresh key"
+        )

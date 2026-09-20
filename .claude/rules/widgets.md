@@ -138,12 +138,15 @@ The copy-source is `templates/screen_template.py`.
 The four screens with a genuinely custom `_do_refresh` (surf, curator, fwa, frenpet_full) inherit
 the class for its lifecycle and keep their own refresh.
 
-**Scope as of WP-A (2026-09-20): only `screens/ocm.py` and `templates/screen_template.py` are on
-`DashboardScreen`.** The rest of this section is the contract a screen is written to and the end
-state WP-B delivers; until then bakery, base_terminal, cattown, dota, frenpet, frenpet_perf,
-frenpet_wallet, talismans and ttt still carry their own `__init__`/resume/suspend/`_do_refresh`,
-and surf, curator, fwa and frenpet_full have not yet had their lifecycle bodies removed. Write a
-*new* screen to the contract above; do not copy a screen that has not been migrated yet.
+**Scope as of WP-B (2026-09-20): every dashboard screen is on `DashboardScreen`.** All ten
+pure-dispatch screens — bakery, base_terminal, cattown, dota, frenpet, frenpet_perf,
+frenpet_wallet, ocm, talismans, ttt — declare `PANELS` and carry no `__init__`, no
+`on_screen_resume`, no `on_screen_suspend` and no `_do_refresh`. The four with a genuinely custom
+refresh — surf, curator, fwa, frenpet_full — inherit the class for its lifecycle, set `GAME_NAME`,
+prime their one extra status-bar line through `_prime_status_bar` (surf's key hints, fwa's active
+view) and keep their own `_do_refresh`; curator's `on_screen_suspend` calls `super()` first and
+then cancels its export and ENS workers. `templates/screen_template.py` is written to the same
+contract. Copy the template, or any migrated screen.
 
 ## Reuse before you build
 

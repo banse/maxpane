@@ -87,10 +87,9 @@ from typing import TYPE_CHECKING
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
 from textual.widgets import Static
 
-from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.widgets.fmt import as_float, fmt_eth
 from maxpane_dashboard.widgets.fwa import (
     FWAActivityFeed,
@@ -199,17 +198,25 @@ def _title_line(data: dict) -> str:
     return line
 
 
-class FWAScreen(RefreshGuard, Screen):
+class FWAScreen(DashboardScreen):
     """Fake World Assets gacha-terminal dashboard.
 
     ``BINDINGS`` is ``r`` plus ``c`` -- the latter swaps the odds board and the
     activity feed in the middle-left slot (see the module docstring).
+
+    Lifecycle (constructor, resume, suspend) comes from
+    :class:`~maxpane_dashboard.screens.dashboard_screen.DashboardScreen`; the
+    gacha panels are cross-computed from one another, so this screen keeps its
+    own ``_do_refresh`` and declares no ``PANELS``.
     """
 
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
         Binding("c", "toggle_view", "Odds/Activity", show=True),
     ]
+
+    #: The words the status bar shows for this dashboard.
+    GAME_NAME = "fwa"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "fwa-refresh"
@@ -287,10 +294,7 @@ class FWAScreen(RefreshGuard, Screen):
         name: str = "fwa",
         **kwargs,
     ):
-        super().__init__(name=name, **kwargs)
-        self._data_manager = data_manager
-        self._poll_interval = poll_interval
-        self._refresh_timer = None
+        super().__init__(data_manager, poll_interval, name=name, **kwargs)
         #: Which widget owns the wide middle-left slot: "odds" or "activity".
         self._active_view: str = "odds"
 
@@ -355,22 +359,9 @@ class FWAScreen(RefreshGuard, Screen):
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def on_screen_resume(self) -> None:
-        self._do_initial_refresh()
-        self._refresh_timer = self.set_interval(
-            self._poll_interval, self._schedule_refresh
-        )
-        try:
-            self.query_one(StatusBar).set_theme_name(self.app.theme)
-            self.query_one(StatusBar).set_game_name("fwa")
-            self.query_one(StatusBar).set_active_view(self._active_view)
-        except Exception:
-            pass
-
-    def on_screen_suspend(self) -> None:
-        if self._refresh_timer:
-            self._refresh_timer.stop()
-            self._refresh_timer = None
+    def _prime_status_bar(self, bar: StatusBar) -> None:
+        """The one extra line this screen primes: which widget owns the slot."""
+        bar.set_active_view(self._active_view)
 
     # ------------------------------------------------------------------
     # Refresh flow

@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import logging
-
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
 from textual.widgets import Static
 
-from maxpane_dashboard.data.cattown_manager import CatTownManager
-from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.widgets.cattown import (
     CTActivityFeed,
     CTBestPlays,
@@ -22,28 +17,46 @@ from maxpane_dashboard.widgets.cattown import (
 )
 from maxpane_dashboard.widgets.status_bar import StatusBar
 
-logger = logging.getLogger(__name__)
 
-
-class CatTownScreen(RefreshGuard, Screen):
+class CatTownScreen(DashboardScreen):
     """Cat Town Fishing game dashboard."""
 
-    BINDINGS = [
-        Binding("r", "refresh", "Refresh", show=False),
-    ]
+    #: The words the status bar shows for this dashboard.
+    GAME_NAME = "cat town fishing"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "cattown-refresh"
 
-    def __init__(self, data_manager: CatTownManager, poll_interval: int, **kwargs):
-        super().__init__(**kwargs)
-        self._data_manager = data_manager
-        self._poll_interval = poll_interval
-        self._refresh_timer = None
+    #: Transcribed from the six hand-written dispatch blocks, default for
+    #: default; the status bar is updated by the base.
+    PANELS = (
+        (CTHeroMetrics, keys("competition_state", "top_fisher")),
+        (CTLeaderboard, keys("competition_entries")),
+        (
+            CTSparklines,
+            keys(
+                "prize_pool_history",
+                "leader_weight_history",
+                "raffle_tickets_history",
+            ),
+        ),
+        (
+            CTSignals,
+            keys(
+                "condition_signal",
+                "legendary_signal",
+                "cutoff_signal",
+                "recommendation",
+                recommendation="",
+            ),
+        ),
+        (CTActivityFeed, keys("recent_catches")),
+        (CTBestPlays, keys("available_fish", "available_treasures")),
+    )
 
     def compose(self) -> ComposeResult:
         yield Static(
-            "Cat Town Fishing \u00b7 Competition",
+            "Cat Town Fishing · Competition",
             id="title-bar",
         )
 
@@ -55,7 +68,7 @@ class CatTownScreen(RefreshGuard, Screen):
                 yield CTSparklines()
                 yield CTSignals()
 
-        yield Static("\u2500" * 300, id="separator")
+        yield Static("─" * 300, id="separator")
 
         with Horizontal(id="bottom-row"):
             yield CTActivityFeed()
@@ -63,111 +76,12 @@ class CatTownScreen(RefreshGuard, Screen):
 
         yield StatusBar()
 
-    def on_screen_resume(self) -> None:
-        self._do_initial_refresh()
-        self._refresh_timer = self.set_interval(
-            self._poll_interval, self._schedule_refresh
-        )
-        try:
-            self.query_one(StatusBar).set_theme_name(self.app.theme)
-            self.query_one(StatusBar).set_game_name("cat town fishing")
-        except Exception:
-            pass
-
-    def on_screen_suspend(self) -> None:
-        if self._refresh_timer:
-            self._refresh_timer.stop()
-            self._refresh_timer = None
-
-    async def _do_refresh(self) -> None:
-        try:
-            data = await self._data_manager.fetch_and_compute()
-        except Exception as exc:
-            logger.debug("Refresh failed: %s", exc)
-            try:
-                self.query_one(StatusBar).update_data(
-                    last_updated_seconds_ago=999,
-                    error_count=getattr(self._data_manager, "_error_count", 0),
-                    poll_interval=self._poll_interval,
-                )
-            except Exception:
-                pass
-            return
-
-        # Title bar
-        try:
-            title = self.query_one("#title-bar", Static)
-            comp = data.get("competition_state", {})
-            if comp and comp.get("is_active"):
-                participants = comp.get("num_participants", 0)
-                suffix = f"Competition LIVE \u00b7 {participants} fishers"
-            else:
-                suffix = "Competition"
-            title.update(f"Cat Town Fishing \u00b7 {suffix}")
-        except Exception:
-            pass
-
-        # Hero metrics
-        try:
-            self.query_one(CTHeroMetrics).update_data(
-                competition_state=data.get("competition_state"),
-                top_fisher=data.get("top_fisher"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update CTHeroMetrics: %s", exc)
-
-        # Leaderboard
-        try:
-            self.query_one(CTLeaderboard).update_data(
-                competition_entries=data.get("competition_entries"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update CTLeaderboard: %s", exc)
-
-        # Sparklines
-        try:
-            self.query_one(CTSparklines).update_data(
-                prize_pool_history=data.get("prize_pool_history"),
-                leader_weight_history=data.get("leader_weight_history"),
-                raffle_tickets_history=data.get("raffle_tickets_history"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update CTSparklines: %s", exc)
-
-        # Signals
-        try:
-            self.query_one(CTSignals).update_data(
-                condition_signal=data.get("condition_signal"),
-                legendary_signal=data.get("legendary_signal"),
-                cutoff_signal=data.get("cutoff_signal"),
-                recommendation=data.get("recommendation", ""),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update CTSignals: %s", exc)
-
-        # Activity feed
-        try:
-            self.query_one(CTActivityFeed).update_data(
-                recent_catches=data.get("recent_catches"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update CTActivityFeed: %s", exc)
-
-        # Best plays
-        try:
-            self.query_one(CTBestPlays).update_data(
-                available_fish=data.get("available_fish"),
-                available_treasures=data.get("available_treasures"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update CTBestPlays: %s", exc)
-
-        # Status bar
-        try:
-            self.query_one(StatusBar).update_data(
-                last_updated_seconds_ago=data.get("last_updated_seconds_ago", 0),
-                error_count=data.get("error_count", 0),
-                poll_interval=data.get("poll_interval", self._poll_interval),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update StatusBar: %s", exc)
+    def _update_title(self, data: dict) -> None:
+        title = self.query_one("#title-bar", Static)
+        comp = data.get("competition_state", {})
+        if comp and comp.get("is_active"):
+            participants = comp.get("num_participants", 0)
+            suffix = f"Competition LIVE · {participants} fishers"
+        else:
+            suffix = "Competition"
+        title.update(f"Cat Town Fishing · {suffix}")

@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import logging
-
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
 from textual.widgets import Static
 
 from maxpane_dashboard.data.ttt_manager import TTTManager
-from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.ttt import (
     TTTActivityFeed,
@@ -23,10 +20,8 @@ from maxpane_dashboard.widgets.ttt import (
     TTTSparkline,
 )
 
-logger = logging.getLogger(__name__)
 
-
-class TTTScreen(RefreshGuard, Screen):
+class TTTScreen(DashboardScreen):
     """Ten Thousand Tokens dashboard.
 
     Mirrors the layout pattern used by :class:`OCMScreen` but adds a
@@ -34,13 +29,53 @@ class TTTScreen(RefreshGuard, Screen):
     complementary tables.
     """
 
+    #: Only the key this screen adds: Textual merges ``BINDINGS`` along the
+    #: MRO, so ``r`` still refreshes through
+    #: :class:`~maxpane_dashboard.screens.dashboard_screen.DashboardScreen`.
     BINDINGS = [
-        Binding("r", "refresh", "Refresh", show=False),
         Binding("c", "toggle_view", "Toggle Fees/Claims", show=True),
     ]
 
+    #: The words the status bar shows for this dashboard.
+    GAME_NAME = "ten thousand tokens"
+
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "ttt-refresh"
+
+    #: Transcribed from the seven hand-written dispatch blocks, default for
+    #: default; the status bar is updated by the base.
+    PANELS = (
+        (
+            TTTHeroMetrics,
+            keys(
+                "unburned",
+                "burned_pct",
+                "launches",
+                "launches_24h",
+                "holder_pool_eth_total",
+                "holder_pool_eth_24h",
+                "total_mcap_usd",
+                "total_mcap_eth",
+                "total_mcap_token_count",
+            ),
+        ),
+        (TTTLeaderboard, keys("top_tokens_by_volume")),
+        (TTTSparkline, keys("burns_history", "volume_history", volume_history=[])),
+        (
+            TTTSignals,
+            keys(
+                "fresh_launch_signal",
+                "buybacks_ready_signal",
+                "decay_window_signal",
+                "concentration_signal",
+            ),
+        ),
+        (TTTActivityFeed, keys("activity_events")),
+        # Bottom-right alpha and gamma: both mounted, one displayed at a time,
+        # so both are updated on every refresh and the toggle is free.
+        (TTTFeesTable, keys("top_fee_engines")),
+        (TTTClaimsTable, keys("claim_math_scenarios")),
+    )
 
     def __init__(
         self,
@@ -49,10 +84,7 @@ class TTTScreen(RefreshGuard, Screen):
         name: str = "ttt",
         **kwargs,
     ):
-        super().__init__(name=name, **kwargs)
-        self._data_manager = data_manager
-        self._poll_interval = poll_interval
-        self._refresh_timer = None
+        super().__init__(data_manager, poll_interval, name=name, **kwargs)
         self._active_view: str = "fees"  # or "claims"
 
     # ------------------------------------------------------------------
@@ -118,127 +150,14 @@ class TTTScreen(RefreshGuard, Screen):
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def on_screen_resume(self) -> None:
-        self._do_initial_refresh()
-        self._refresh_timer = self.set_interval(
-            self._poll_interval, self._schedule_refresh
+    def _prime_status_bar(self, bar: StatusBar) -> None:
+        """The one extra line this screen primes: which table owns the slot."""
+        bar.set_active_view(self._active_view)
+
+    def _update_title(self, data: dict) -> None:
+        launches = data.get("launches", 0) or 0
+        max_supply = data.get("max_supply", 10_000) or 10_000
+        self.query_one("#title-bar", Static).update(
+            f"Ten Thousand Tokens · Ethereum Mainnet · "
+            f"{launches}/{max_supply:,}"
         )
-        try:
-            self.query_one(StatusBar).set_theme_name(self.app.theme)
-            self.query_one(StatusBar).set_game_name("ten thousand tokens")
-            self.query_one(StatusBar).set_active_view(self._active_view)
-        except Exception:
-            pass
-
-    def on_screen_suspend(self) -> None:
-        if self._refresh_timer:
-            self._refresh_timer.stop()
-            self._refresh_timer = None
-
-    # ------------------------------------------------------------------
-    # Refresh flow
-    # ------------------------------------------------------------------
-
-    async def _do_refresh(self) -> None:
-        try:
-            data = await self._data_manager.fetch_and_compute()
-        except Exception as exc:
-            logger.debug("TTT refresh failed: %s", exc)
-            try:
-                self.query_one(StatusBar).update_data(
-                    last_updated_seconds_ago=999,
-                    error_count=getattr(self._data_manager, "_error_count", 0),
-                    poll_interval=self._poll_interval,
-                )
-            except Exception:
-                pass
-            return
-
-        # Title bar
-        try:
-            launches = data.get("launches", 0) or 0
-            max_supply = data.get("max_supply", 10_000) or 10_000
-            self.query_one("#title-bar", Static).update(
-                f"Ten Thousand Tokens · Ethereum Mainnet · "
-                f"{launches}/{max_supply:,}"
-            )
-        except Exception as exc:
-            logger.debug("Failed to update title bar: %s", exc)
-
-        # Hero metrics
-        try:
-            self.query_one(TTTHeroMetrics).update_data(
-                unburned=data.get("unburned"),
-                burned_pct=data.get("burned_pct"),
-                launches=data.get("launches"),
-                launches_24h=data.get("launches_24h"),
-                holder_pool_eth_total=data.get("holder_pool_eth_total"),
-                holder_pool_eth_24h=data.get("holder_pool_eth_24h"),
-                total_mcap_usd=data.get("total_mcap_usd"),
-                total_mcap_eth=data.get("total_mcap_eth"),
-                total_mcap_token_count=data.get("total_mcap_token_count"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update TTTHeroMetrics: %s", exc)
-
-        # Leaderboard
-        try:
-            self.query_one(TTTLeaderboard).update_data(
-                top_tokens_by_volume=data.get("top_tokens_by_volume"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update TTTLeaderboard: %s", exc)
-
-        # Sparkline
-        try:
-            self.query_one(TTTSparkline).update_data(
-                burns_history=data.get("burns_history"),
-                volume_history=data.get("volume_history", []),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update TTTSparkline: %s", exc)
-
-        # Signals
-        try:
-            self.query_one(TTTSignals).update_data(
-                fresh_launch_signal=data.get("fresh_launch_signal"),
-                buybacks_ready_signal=data.get("buybacks_ready_signal"),
-                decay_window_signal=data.get("decay_window_signal"),
-                concentration_signal=data.get("concentration_signal"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update TTTSignals: %s", exc)
-
-        # Activity feed
-        try:
-            self.query_one(TTTActivityFeed).update_data(
-                activity_events=data.get("activity_events"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update TTTActivityFeed: %s", exc)
-
-        # Fees table (bottom-right α)
-        try:
-            self.query_one(TTTFeesTable).update_data(
-                top_fee_engines=data.get("top_fee_engines"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update TTTFeesTable: %s", exc)
-
-        # Claims table (bottom-right γ)
-        try:
-            self.query_one(TTTClaimsTable).update_data(
-                claim_math_scenarios=data.get("claim_math_scenarios"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update TTTClaimsTable: %s", exc)
-
-        # Status bar
-        try:
-            self.query_one(StatusBar).update_data(
-                last_updated_seconds_ago=data.get("last_updated_seconds_ago", 0),
-                error_count=data.get("error_count", 0),
-                poll_interval=data.get("poll_interval", self._poll_interval),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update StatusBar: %s", exc)
