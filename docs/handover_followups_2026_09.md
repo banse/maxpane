@@ -197,3 +197,18 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     helpers and for every locally-defined function whose body duplicates one — rather than on a
     hand-listed set of names. Minor, Tier 0 when `test_sparkline_common.py` is next touched
     (Branch 6 review M6, filed 2026-09-20; evidence corrected in fix round 2, N2).
+21. **The `_drawn` read in `RichLogFeed`'s flicker guard is not bitten by any test.**
+    `widgets/panels.py` `render_events`, `if not has_new and self._drawn:`. Reverting only that
+    site to `self._seen_keys` leaves `tests/widgets/test_panels.py` at 52 passed, yet the
+    difference is observable: a feed that drew rows key-lessly and then receives a poll whose
+    every `dedupe_key` raises keeps the earlier rows under `_drawn` and is redrawn with the
+    malformed poll's rows under `_seen_keys`. The committed behaviour is the documented one ("an
+    all-malformed poll leaves a populated feed alone"); the test is missing. Minor, Tier 0 when
+    `test_panels.py` is next touched (Branch 6 fix-round-2 re-review N4, filed 2026-09-20).
+22. **The bare-block stylesheet guard admits a *qualified* base selector.**
+    `tests/widgets/test_panels.py` `_BARE_BLOCK` matches a `panels.py` class name only when it
+    is a whole item of a selector list, so `HeroBoxBase:hover { … }` or `HeroBoxBase.-thin { … }`
+    appended to `minimal.tcss` pass (52 passed). `.-thin` is opt-in and harmless; `:hover` would
+    restyle every subclass on hover — a narrower form of the I1 collision. No such rule exists
+    today. If it is ever wanted, widen the guard to a name followed by a pseudo-class. Minor,
+    hypothetical, Tier 0 with #21 (Branch 6 fix-round-2 re-review N5, filed 2026-09-20).
