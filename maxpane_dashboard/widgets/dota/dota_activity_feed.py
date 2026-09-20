@@ -1,11 +1,27 @@
-"""Activity feed (hero roster) for Defense of the Agents dashboard."""
+"""Activity feed (hero roster) for Defense of the Agents dashboard.
+
+The "activity feed" slot carries the **hero roster** on this dashboard: the
+same ``RichLog`` shape, but the list is a snapshot of who is alive rather
+than a stream of events, so it is rewritten whole on every poll.
+:class:`~maxpane_dashboard.widgets.panels.RichLogFeed` calls that
+"always new" -- ``dedupe_key`` returns ``None``, nothing is deduped, the
+flicker guard never fires (Branch 7, WP-A).
+
+That inherits one behaviour change the base documents: an **empty poll no
+longer wipes a drawn roster**. The manager serves ``None`` for a failed
+read and a list for a real one, so what an empty list used to do here --
+clear the roster and paint ``No heroes yet`` over it -- was a false
+degradation whenever the read itself failed. The last roster now stays
+under the status bar's ``as of`` marker, which is what every other feed in
+the app does.
+"""
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import RichLog, Static
+from rich.text import Text
+
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import RichLogFeed
 
 
 _FACTION_COLORS = {
@@ -51,16 +67,29 @@ def _hero_to_markup(hero: dict) -> str:
     )
 
 
-class DOTAActivityFeed(Vertical):
+def _hero_to_text(hero: dict) -> Text:
+    """The ``format_row`` hook: a parsed ``Text``, never a markup string.
+
+    ``RichLogFeed`` requires it. The parse happens here, inside the feed's
+    own per-row guard, so a hero whose name is malformed markup is one
+    skipped line instead of a ``MarkupError`` raised deep in Textual's
+    message pump where no ``try`` can reach it.
+    """
+    return Text.from_markup(_hero_to_markup(hero))
+
+
+class DOTAActivityFeed(RichLogFeed):
     """Hero roster display for Defense of the Agents."""
 
+    TITLE = "HERO ROSTER"
+
+    LOG_ID = "dota-activity-log"
+
+    EMPTY_LINE = "[dim]  No heroes yet[/]"
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s, and
+    #: ``minimal.tcss`` states this log's colours.
     DEFAULT_CSS = """
-    DOTAActivityFeed > .dota-feed-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     DOTAActivityFeed > RichLog {
         height: 1fr;
         padding: 0 1;
@@ -68,28 +97,32 @@ class DOTAActivityFeed(Vertical):
     }
     """
 
-    def compose(self) -> ComposeResult:
-        yield Static("HERO ROSTER", classes="dota-feed-title")
-        yield RichLog(id="dota-activity-log", wrap=True, highlight=True, markup=True)
+    #: The ``format_row`` hook. A ``staticmethod``: the row is a function of
+    #: the hero alone.
+    format_row = staticmethod(_hero_to_text)
+
+    def dedupe_key(self, event: dict) -> None:
+        """Always new: a roster is a snapshot, not a stream.
+
+        A hero carries no ``tx_hash``, and the same hero reappearing with a
+        different HP is the whole point of the panel -- deduping it would
+        freeze the roster at its first poll.
+        """
+        return None
 
     def update_data(
         self,
         heroes: list[dict] | None = None,
         **_kwargs,
     ) -> None:
-        """Rewrite the log with the current hero roster."""
-        log = self.query_one("#dota-activity-log", RichLog)
-        log.clear()
+        """Rewrite the log with the current hero roster.
 
-        if not heroes:
-            log.write("[dim]  No heroes yet[/]")
-            return
-
-        # Sort: alive first, then by level descending
-        sorted_heroes = sorted(
-            heroes,
-            key=lambda h: (not h.get("alive", False), -h.get("level", 0)),
-        )
-
-        for hero in sorted_heroes:
-            log.write(_hero_to_markup(hero))
+        Sorted alive-first, then by level descending -- the order is the
+        panel's, so it is applied before the base writes the rows.
+        """
+        if heroes:
+            heroes = sorted(
+                heroes,
+                key=lambda h: (not h.get("alive", False), -h.get("level", 0)),
+            )
+        self.render_events(heroes)

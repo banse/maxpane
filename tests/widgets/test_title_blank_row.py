@@ -11,7 +11,7 @@ away from being on screen again.
 **Parametrised per panel, never looped.** A single test walking the table
 would stop at the first failure and report one panel when three were broken --
 and a fix that satisfied the first would turn the suite green with the rest
-still flush. Thirty-two cases, thirty-two independent verdicts. That is what
+still flush. Thirty-eight cases, thirty-eight independent verdicts. That is what
 makes this evidence rather than a smoke test.
 
 **Composited output, under the app stylesheet.** Two mechanisms paint this row
@@ -51,10 +51,14 @@ from maxpane_dashboard.widgets.signals_panel import SignalsPanel
 from maxpane_dashboard.widgets.base.overview.bt_best_plays import BTBestPlays
 from maxpane_dashboard.widgets.base.overview.bt_signals import BTSignals
 from maxpane_dashboard.widgets.base.overview.bt_sparklines import BTSparklines
+from maxpane_dashboard.widgets.cattown.ct_activity_feed import CTActivityFeed
 from maxpane_dashboard.widgets.cattown.ct_best_plays import CTBestPlays
+from maxpane_dashboard.widgets.cattown.ct_leaderboard import CTLeaderboard
 from maxpane_dashboard.widgets.cattown.ct_signals import CTSignals
 from maxpane_dashboard.widgets.cattown.ct_sparklines import CTSparklines
+from maxpane_dashboard.widgets.dota.dota_activity_feed import DOTAActivityFeed
 from maxpane_dashboard.widgets.dota.dota_best_plays import DOTABestPlays
+from maxpane_dashboard.widgets.dota.dota_leaderboard import DOTALeaderboard
 from maxpane_dashboard.widgets.dota.dota_signals import DOTASignals
 from maxpane_dashboard.widgets.dota.dota_sparklines import DOTASparklines
 from maxpane_dashboard.widgets.frenpet.overview.fp_best_plays import FPBestPlays
@@ -118,10 +122,45 @@ _PANELS = [
     ("CTSparklines", CTSparklines, {"prize_pool_history": _SERIES}),
     ("CTSignals", CTSignals, {}),
     ("CTBestPlays", CTBestPlays, {}),
+    # Added with Branch 7 WP-A, when both moved onto `widgets/panels.py`:
+    # their blank row used to come from `minimal.tcss` alone (and the
+    # leaderboard's from a `CTLeaderboard > Static` block this branch
+    # deletes), so neither was covered by anything. `{}` is enough for the
+    # table -- the empty state still paints the column header on row 2 --
+    # and the feed needs one catch, because an empty poll paints its
+    # placeholder one row lower than a real row sits.
+    ("CTLeaderboard", CTLeaderboard, {}),
+    ("CTActivityFeed", CTActivityFeed, {
+        "recent_catches": [{
+            "tx_hash": "0x" + "cd" * 32,
+            "timestamp": 1_700_000_000,
+            "fisher_address": "0x" + "ab" * 20,
+            "display_name": "",
+            "species": "Trout",
+            "weight_kg": 2.5,
+            "rarity": "Common",
+        }],
+    }),
     # -- dota (hidden: NXDOMAIN backend, widgets intact) -------------------
     ("DOTASparklines", DOTASparklines, {"top_frontline_history": _SERIES}),
     ("DOTASignals", DOTASignals, {}),
     ("DOTABestPlays", DOTABestPlays, {}),
+    # Added with Branch 7 WP-A, same reason as the two cattown rows above.
+    # The roster feed is `RichLogFeed` in always-new mode, so one hero is a
+    # real row rather than the `No heroes yet` placeholder.
+    ("DOTALeaderboard", DOTALeaderboard, {}),
+    ("DOTAActivityFeed", DOTAActivityFeed, {
+        "heroes": [{
+            "name": "Axe",
+            "faction": "orc",
+            "hero_class": "tank",
+            "lane": "top",
+            "hp": 500,
+            "max_hp": 600,
+            "alive": True,
+            "level": 4,
+        }],
+    }),
     # -- ocm (hidden) ------------------------------------------------------
     ("OCMSparklines", OCMSparklines, {"supply_history": _SERIES}),
     ("OCMSignals", OCMSignals, {}),

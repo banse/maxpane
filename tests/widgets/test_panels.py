@@ -1,9 +1,18 @@
-"""The shared panel bases (``widgets/panels.py``) and ocm as their first user.
+"""The shared panel bases (``widgets/panels.py``) and their subscribers.
 
 Branch 6 of the refactor programme. ``widgets/panels.py`` hoists the four
 panel shapes every dashboard had hand-copied -- a titled panel, a hero row,
 a signals panel, a sparkline panel and a ``RichLog`` feed -- plus the two
 strings (``UNAVAILABLE``, ``LOADING``) that had nine and sixty-eight copies.
+
+Branch 7 WP-A added the sixth shape, :class:`TableLeaderboard` (eight
+hand-written copies of one title-over-a-``DataTable``), and widened three of
+the bases for cattown and dota: the ``Text`` branch of ``render_box``,
+label-less and separator signal rows, and ``SparklinePanel``'s
+``LABEL_WIDTH`` / ``SHOW_ARROW`` / ``EMPTY_TEXT`` / ``fmt_value``. **Every
+widening is a class attribute carrying the Branch 6 default**, which is why
+the Branch 6 cases below are unchanged rather than re-tuned: if one of them
+had to move, the widening was not additive.
 
 **Composited, under the real app stylesheet.** ``minimal.tcss`` outranks a
 widget's ``DEFAULT_CSS``, so a convention stated in only one of the two
@@ -35,9 +44,10 @@ import pkgutil
 import re
 
 import pytest
+from rich.style import Style
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.widgets import RichLog, Static
+from textual.widgets import DataTable, RichLog, Static
 
 from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.widgets import panels
@@ -51,6 +61,7 @@ from maxpane_dashboard.widgets.panels import (
     RichLogFeed,
     SignalsPanelBase,
     SparklinePanel,
+    TableLeaderboard,
     fmt_signal,
 )
 from maxpane_dashboard.widgets.sparkline_common import SPARK_CHARS, fmt_compact
@@ -226,6 +237,79 @@ async def test_hero_box_malformed_poll_after_a_good_one_is_not_shown_as_live() -
     assert "1,234" in text, text
 
 
+#: A click action of the shape ``widgets/address.py`` writes onto the copy
+#: icon's own span. Nothing here calls the real action; what is being tested
+#: is that the ``meta`` survives from ``build()`` to the pixel.
+_CLICK = "app.copy_address('0xfeed')"
+
+
+class _TextHero(_Replay, HeroRow):
+    """A hero row whose box body is a ``Text``, not a markup string."""
+
+    BOX_CLASS = HeroBoxDouble
+    BOXES = (("t-text-box", "GAMMA"),)
+
+    def _poll(self, word: str = "clickme") -> None:
+        body = Text()
+        body.append(word, style=Style(color="green", bold=True,
+                                      meta={"@click": _CLICK}))
+        self.render_box("#t-text-box", "GAMMA", lambda: body)
+
+
+async def test_render_box_with_a_text_body_keeps_its_spans_to_the_pixel() -> None:
+    """Branch 7: cattown's LEADER box is an address, and an address is a
+    ``Text`` whose copy icon lives in a ``Style`` with a click ``meta``.
+
+    Interpolating that body into ``f"[dim]{label}[/]\\n\\n{body}"`` -- which
+    is what the ``str`` path does and what every hero row did before -- calls
+    ``Text.__str__`` and flattens the style away, leaving an icon that looks
+    right and copies nothing. The branch builds the head with
+    ``Text.from_markup`` and **adds** the body instead.
+
+    The claim is read off the compositor at the cell, the same way
+    ``tests/widgets/address_probe.icon_targets`` reads a real icon: the
+    ``meta`` is on screen, not merely on the object.
+    """
+
+    class _A(App):
+        CSS_PATH = CSS_PATH
+
+        def compose(self):
+            yield _TextHero()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        hero = pilot.app.query_one(_TextHero)
+        hero.update_data(word="clickme")
+        await pilot.pause()
+
+        strips = pilot.app.screen._compositor.render_strips()
+        rows = ["".join(seg.text for seg in strip) for strip in strips]
+
+        # The label row is still above the body, with its blank row between.
+        label_y = next(y for y, row in enumerate(rows) if "GAMMA" in row)
+        body_y = next(y for y, row in enumerate(rows) if "clickme" in row)
+        assert body_y == label_y + 2, rows[label_y:body_y + 1]
+
+        # And the body's click meta reached the cell.
+        x = rows[body_y].index("clickme")
+        meta = pilot.app.screen.get_style_at(x, body_y).meta or {}
+        assert meta.get("@click") == _CLICK, meta
+
+
+async def test_render_box_with_a_text_body_still_degrades_on_a_raise() -> None:
+    """The ``Text`` branch did not open a hole in the MEDI-38 guard."""
+
+    class _Boom(_TextHero):
+        def _poll(self, word: str = "clickme") -> None:
+            def build():
+                raise ValueError("no body")
+            self.render_box("#t-text-box", "GAMMA", build)
+
+    text = await _text(_Boom)
+    assert "unavailable" in text, text
+    assert "GAMMA" in text, text
+
+
 # -- 3. SignalsPanel --------------------------------------------------------
 
 
@@ -283,6 +367,116 @@ async def test_render_recommendation_is_blank_for_an_empty_string() -> None:
     assert "->" not in blank, blank
     filled = await _text(_Signals, alpha=_SIG, beta=_SIG, recommendation="stake now")
     assert "-> stake now" in filled, filled
+
+
+def test_fmt_signal_label_less() -> None:
+    """talismans' and ttt's spelling (Branch 7): the value names itself.
+
+    The label column is not blanked, it is **absent** -- a run of spaces
+    where a label used to be would look like a cell the panel failed to
+    fill.
+    """
+    assert fmt_signal(_SIG, label_width=18, dim_label=False, labelled=False) == (
+        "  [green]●[/] [green]42%[/]"
+    )
+    # The width and dim flag are inert on this path, so a panel that sets
+    # them and then goes label-less cannot drift.
+    assert fmt_signal(_SIG, label_width=4, dim_label=True, labelled=False) == (
+        "  [green]●[/] [green]42%[/]"
+    )
+
+
+def test_fmt_signal_escapes_a_hostile_value_str() -> None:
+    """Branch 7 change 3. ttt escaped here, talismans did not, and a signal
+    value can carry a token symbol -- anyone can deploy an ERC-20 named
+    ``[/x]``.
+
+    Mutation that reddens this: drop the ``safe_markup`` call in
+    ``fmt_signal`` (``value = sig.get("value_str", "")``).
+    """
+    out = fmt_signal(
+        {"label": "Sym", "value_str": "[red]x", "color": "green"},
+        label_width=5, dim_label=False,
+    )
+    assert "\\[red]x" in out, out
+    assert "[red]x" not in out.replace("\\[red]x", ""), out
+
+
+class _HostileSignals(_Signals):
+    """The same claim at the pixel: a hostile value renders literally."""
+
+    def _poll(self, alpha=None, beta=None, recommendation="") -> None:
+        self.render_signal("#t-sig-a", "Alpha Rate", alpha)
+
+
+async def test_a_hostile_value_str_reaches_the_screen_as_text_not_markup() -> None:
+    """Textual defers ``Text.from_markup`` into the message pump, so an
+    unescaped ``[/x]`` raises *outside* the panel's guard and kills the app.
+    Composited, so the claim is what a reader sees.
+    """
+    text = await _text(
+        _HostileSignals,
+        alpha={"label": "Sym", "value_str": "[/x] drained", "color": "green"},
+    )
+    assert "[/x] drained" in text, text
+
+
+class _MixedSignals(_Replay, SignalsPanelBase):
+    """A label-less row and a ``None`` separator, the talismans/ttt shape."""
+
+    TITLE = "SIGNALS"
+    ROWS = (
+        ("t-mix-a", "Alpha Rate"),
+        None,
+        ("t-mix-b", None),
+    )
+
+    def _poll(self, alpha=None, beta=None) -> None:
+        self.render_signal("#t-mix-a", "Alpha Rate", alpha)
+        self.render_signal("#t-mix-b", "Beta Rate", beta, labelled=False)
+
+
+async def test_a_none_rows_item_paints_a_separator_between_the_rows() -> None:
+    """Row 0 title, 1 the base's blank row, 2 the labelled row, 3 the
+    separator, 4 the label-less row -- and the label is gone from row 4, not
+    merely blanked."""
+    rows = await _lines(
+        _MixedSignals,
+        alpha=_SIG,
+        beta={"label": "Beta Rate", "value_str": "7 open", "color": "cyan"},
+    )
+    assert rows[0].strip() == "SIGNALS", rows[:6]
+    assert not rows[1].strip(), rows[:6]
+    assert "Staking Rate" in rows[2] and "42%" in rows[2], rows[:6]
+    assert not rows[3].strip(), rows[:6]
+    assert "7 open" in rows[4], rows[:6]
+    assert "Beta Rate" not in rows[4], rows[:6]
+    # Two spaces of padding, the indicator, one space, then the value: no
+    # label column was reserved and left empty.
+    assert rows[4].strip().startswith("● 7 open"), repr(rows[4])
+
+
+async def test_the_seed_row_lands_on_the_first_row_not_the_first_item() -> None:
+    """``ROWS`` may open with anything; the ``Loading...`` seed belongs to
+    the first row that has an id, or a panel whose ``ROWS`` began with a
+    separator would seed nothing at all."""
+
+    class _LeadingSeparator(_MixedSignals):
+        ROWS = (None, ("t-mix-a", "Alpha Rate"), ("t-mix-b", None))
+
+        def _poll(self, alpha=None, beta=None) -> None:
+            return
+
+    rows = await _lines(_LeadingSeparator, polls=[])
+    assert not rows[2].strip(), rows[:6]
+    assert rows[3].strip() == "Loading...", rows[:6]
+
+
+async def test_a_label_less_row_that_could_not_be_read_still_says_so() -> None:
+    """MEDI-38 does not lapse because the row has no label column."""
+    rows = await _lines(_MixedSignals, alpha=_SIG, beta=None)
+    assert "unavailable" in rows[4], rows[:6]
+    assert "Beta Rate" not in rows[4], rows[:6]
 
 
 # -- 4. SparklinePanel ------------------------------------------------------
@@ -356,6 +550,84 @@ def test_fmt_compact_diverges_above_a_billion_and_on_junk() -> None:
     assert fmt_compact(2_000_000_000) == "2.0B"
     assert fmt_compact("junk") == "--"
     assert fmt_compact(None) == "--"
+
+
+#: The talismans/ttt spelling of a sparkline panel (Branch 7): a wider label
+#: column, no trend arrow, and a *worded* empty state. Every one of the three
+#: is a class attribute whose default is Branch 6's, so ``_Sparks`` above --
+#: which sets none of them -- still renders exactly as it did.
+class _WideSparks(_Sparks):
+    LINE_IDS = ("t-wspark-0",)
+    LABEL_WIDTH = 12
+    SHOW_ARROW = False
+    EMPTY_TEXT = "[dim]waiting for data...[/]"
+
+    def fmt_value(self, value, unit: str) -> str:
+        return f"{int(value):,}{unit}"
+
+    def _poll(self, label="Supply", points=None, unit="") -> None:
+        self.render_series([(label, points, "green", unit)])
+
+
+async def test_the_label_column_widens_to_label_width() -> None:
+    """Twelve cells, not eight: ``VeryLongLabe`` is clipped at 12 and
+    ``Supply`` is padded to 12, both measured from the ``.panel-line``
+    padding the default case measures from."""
+    short = await _lines(_WideSparks, label="Supply", points=_SERIES)
+    assert short[2].startswith("   Supply        "), repr(short[2])
+    long = await _lines(_WideSparks, label="VeryLongLabelHere", points=_SERIES)
+    assert long[2].startswith("   VeryLongLabe  "), repr(long[2])
+
+
+async def test_show_arrow_false_draws_no_arrow_and_no_trailing_space() -> None:
+    """talismans and ttt draw none. The arrow *and* the space before it go:
+    a value cell that ends in a space is a cell the panel padded for
+    something it then did not draw."""
+    rows = await _lines(_WideSparks, points=_SERIES)
+    assert not any(ch in rows[2] for ch in "▲▼▬"), repr(rows[2])
+    assert rows[2] == rows[2].rstrip(), repr(rows[2])
+    # The default still draws it, so the attribute is the only difference.
+    default = await _lines(_Sparks, points=_SERIES)
+    assert "▲" in default[2], repr(default[2])
+
+
+async def test_fmt_value_override_is_what_reaches_the_cell() -> None:
+    """dota's frontline formatter, talismans' grouped integers and ttt's
+    ``$…B`` differ from ``fmt_compact`` on values their own panels show, so
+    the hook -- not a hoist -- is what keeps their digits."""
+    rows = await _lines(_WideSparks, points=_SERIES)
+    assert "2,000" in rows[2], repr(rows[2])
+    assert fmt_compact(2_000.0) not in rows[2], repr(rows[2])
+
+
+@pytest.mark.parametrize(
+    "points", [None, [], [(1.0,)]], ids=["none", "empty", "ragged"]
+)
+async def test_empty_text_is_what_an_unusable_series_writes(points) -> None:
+    """``""`` is a default, not the contract: a panel that words its empty
+    state writes the words, and never a flat baseline either way."""
+    rows = await _lines(_WideSparks, points=points)
+    assert rows[2].strip() == "waiting for data...", rows[:4]
+
+
+async def test_the_first_line_is_seeded_with_empty_text_when_there_is_one() -> None:
+    """A panel with an ``EMPTY_TEXT`` has one sentence for "nothing yet" and
+    "nothing usable"; seeding ``Loading...`` under it would be a second word
+    for one state."""
+
+    class _Unpolled(_WideSparks):
+        def _poll(self, label="Supply", points=None, unit="") -> None:
+            return
+
+    rows = await _lines(_Unpolled, polls=[])
+    assert rows[2].strip() == "waiting for data...", rows[:4]
+    # And the Branch 6 default is still `Loading...`.
+    class _UnpolledDefault(_Sparks):
+        def _poll(self, label="Supply", points=None, unit="") -> None:
+            return
+
+    rows = await _lines(_UnpolledDefault, polls=[])
+    assert rows[2].strip() == "Loading...", rows[:4]
 
 
 # -- 5. RichLogFeed ---------------------------------------------------------
@@ -525,24 +797,201 @@ async def test_a_subclass_without_format_row_fails_loudly() -> None:
             feed.render_events([{"tx_hash": "0x1"}])
 
 
-# -- 6. Agreement: ocm carries no copy of what the bases now own -------------
+# -- 6. TableLeaderboard (Branch 7) ------------------------------------------
 
 
-_OCM_DIR = pathlib.Path(
-    inspect.getfile(__import__("maxpane_dashboard.widgets.ocm", fromlist=["x"]))
-).parent
+class _Table(_Replay, TableLeaderboard):
+    """The eight tables' shared shape, at its smallest."""
 
-#: Each name had between three and ten copies across ``widgets/`` before this
-#: branch. Paste one back into the ocm package and this test reddens.
+    TITLE = "TABLE"
+    TABLE_ID = "t-table"
+    COLUMNS = (("#", 4), ("Name", 12))
+    EMPTY_ROW = ("--", "No data")
+    ROW_CAP = 3
+
+    def build_row(self, index: int, item: dict):
+        if item.get("skip"):
+            return None
+        if item.get("wide"):
+            # One cell too many: ``DataTable.add_row`` raises, which is the
+            # *add* failing rather than the build, so the per-row guard is
+            # the only thing that can save the rows around it.
+            return (str(index + 1), item["name"], "surplus")
+        return (str(index + 1), item["name"])
+
+    def _poll(self, rows=None, footer=None) -> None:
+        self.render_table(rows, footer=footer)
+
+
+def _item(name: str, **flags) -> dict:
+    return {"name": name, **flags}
+
+
+async def test_table_paints_title_blank_row_then_the_header() -> None:
+    """Row 0 title, row 1 the base's blank row, row 2 the column header --
+    the same three rows every other ``PanelBase`` paints, which is the point
+    of putting the table on one."""
+    rows = await _lines(_Table, rows=[_item("alpha")])
+    assert rows[0].strip() == "TABLE", rows[:5]
+    assert not rows[1].strip(), rows[:5]
+    assert rows[2].split() == ["#", "Name"], rows[:5]
+    assert rows[3].split() == ["1", "alpha"], rows[:5]
+
+
+async def test_the_loading_seed_row_appears_only_when_loading_row_is_set() -> None:
+    """Six of the eight tables seed one and two do not, and *which cell*
+    says the word differs -- so the subclass types the whole tuple and the
+    base never guesses a column."""
+
+    class _Unpolled(_Table):
+        def _poll(self, rows=None, footer=None) -> None:
+            return
+
+    bare = await _lines(_Unpolled, polls=[])
+    assert not bare[3].strip(), bare[:5]
+
+    class _Seeded(_Unpolled):
+        LOADING_ROW = ("--", "Loading...")
+
+    seeded = await _lines(_Seeded, polls=[])
+    assert seeded[3].split() == ["--", "Loading..."], seeded[:5]
+
+
+@pytest.mark.parametrize("payload", [None, []], ids=["none", "empty"])
+async def test_an_empty_payload_paints_the_empty_row_exactly_once(payload) -> None:
+    """Not a blank table, which reads as a panel that has not polled yet --
+    and not one "No data" row per poll either."""
+    rows = await _lines(_Table, polls=[{"rows": payload}] * 3)
+    shown = [r for r in rows if "No data" in r]
+    assert len(shown) == 1, rows[:8]
+    assert shown[0].split() == ["--", "No", "data"], shown
+
+
+async def test_row_cap_slices_the_payload() -> None:
+    rows = await _lines(_Table, rows=[_item(n) for n in "abcde"])
+    body = [r.split()[1] for r in rows[3:8] if r.strip()]
+    assert body == ["a", "b", "c"], rows[:9]
+
+
+async def test_an_uncapped_table_draws_every_row() -> None:
+    """``ROW_CAP = None`` is the matrix table's spelling."""
+
+    class _Uncapped(_Table):
+        ROW_CAP = None
+
+    rows = await _lines(_Uncapped, rows=[_item(n) for n in "abcde"])
+    body = [r.split()[1] for r in rows[3:9] if r.strip()]
+    assert body == ["a", "b", "c", "d", "e"], rows[:10]
+
+
+async def test_build_row_returning_none_skips_without_a_gap() -> None:
+    """The non-dict guard talismans and ttt carry. The skipped item leaves
+    no blank line between the rows that did render."""
+    rows = await _lines(
+        _Table, rows=[_item("a"), _item("b", skip=True), _item("c")]
+    )
+    assert rows[3].split() == ["1", "a"], rows[:7]
+    assert rows[4].split() == ["3", "c"], rows[:7]
+    assert not rows[5].strip(), rows[:7]
+
+
+async def test_one_unaddable_row_is_skipped_and_the_others_land() -> None:
+    """Mutation that reddens this: delete the per-row ``try`` in
+    ``render_table``. The exception then escapes after ``clear()`` and the
+    table is left **empty** -- on a leaderboard that reads as "nobody is
+    playing", which is worse than the one row it could not draw."""
+    rows = await _lines(
+        _Table, rows=[_item("a"), _item("b", wide=True), _item("c")]
+    )
+    body = [r.split()[1] for r in rows[3:7] if r.strip()]
+    assert body == ["a", "c"], rows[:7]
+    assert "No data" not in "\n".join(rows), rows[:7]
+
+
+async def test_the_footer_row_lands_last() -> None:
+    """The matrix table's bold TOTAL line, under the capped slice."""
+    rows = await _lines(
+        _Table, rows=[_item("a"), _item("b")], footer=("T", "total")
+    )
+    assert rows[3].split() == ["1", "a"], rows[:7]
+    assert rows[4].split() == ["2", "b"], rows[:7]
+    assert rows[5].split() == ["T", "total"], rows[:7]
+
+
+async def test_a_subclass_without_build_row_fails_loudly() -> None:
+    """As in ``RichLogFeed``: an unwired hook is a programming error and must
+    not be swallowed into a table that silently draws nothing."""
+
+    class _NoHook(TableLeaderboard):
+        TITLE = "TABLE"
+        TABLE_ID = "t-nohook-table"
+        COLUMNS = (("#", 4),)
+
+    class _A(App):
+        def compose(self):
+            yield _NoHook()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        table = pilot.app.query_one(_NoHook)
+        with pytest.raises(NotImplementedError):
+            table.render_table([{"name": "a"}])
+
+
+async def test_the_table_keeps_its_columns_cursor_and_zebra() -> None:
+    """All eight tables agreed on these three; the base states them once."""
+
+    class _A(App):
+        def compose(self):
+            yield _Table()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        table = pilot.app.query_one(f"#{_Table.TABLE_ID}", DataTable)
+        assert table.cursor_type == "row"
+        assert table.zebra_stripes is True
+        assert [str(c.label) for c in table.columns.values()] == ["#", "Name"]
+
+
+# -- 7. Agreement: the migrated packages carry no copy of what the bases own --
+
+
+#: The dashboard packages that are on ``widgets/panels.py``. **One list, one
+#: place**: Branch 7 WP-A added ``cattown`` and ``dota`` to Branch 6's
+#: ``ocm``, and WP-B appends ``talismans`` and ``ttt`` -- two words, no test
+#: body touched, because every claim below is parametrised over this tuple
+#: and the panel count comes off each package's own ``__all__``.
+MIGRATED_PACKAGES = ("ocm", "cattown", "dota")
+
+
+def _package(name: str):
+    return importlib.import_module(f"maxpane_dashboard.widgets.{name}")
+
+
+def _package_modules(name: str) -> list[pathlib.Path]:
+    return sorted(pathlib.Path(inspect.getfile(_package(name))).parent.glob("*.py"))
+
+
+#: Each name had between two and ten copies across ``widgets/`` before this
+#: programme. Paste one back into a migrated package and this test reddens.
+#: ``_UNAVAILABLE_SIGNAL`` (talismans), ``_format_ts``, ``_fmt_int``,
+#: ``_fmt_float``, ``_safe_get``, ``_DASH`` and ``_WAITING`` are listed for
+#: WP-B, which hoists them; none of the three packages here defines one, so
+#: listing them now costs nothing and stops one being re-introduced.
 _BANNED = frozenset({
     "_UNAVAILABLE",
+    "_UNAVAILABLE_SIGNAL",
     "_render_row",
     "_render_box",
     "_fmt",
     "_fmt_value",
     "_fmt_signal",
     "_format_event_time",
+    "_format_ts",
     "_seen_tx_hashes",
+    "_fmt_int",
+    "_fmt_float",
+    "_safe_get",
+    "_DASH",
+    "_WAITING",
 })
 
 _PANEL_BASES = (PanelBase, HeroRow)
@@ -564,51 +1013,55 @@ def _bound_names(tree: ast.AST) -> set[str]:
 
 
 @pytest.mark.parametrize(
-    "path", sorted(_OCM_DIR.glob("*.py")), ids=lambda p: p.name
+    "path",
+    [p for pkg in MIGRATED_PACKAGES for p in _package_modules(pkg)],
+    ids=lambda p: f"{p.parent.name}/{p.name}",
 )
-def test_no_ocm_module_redeclares_what_panels_py_owns(path) -> None:
-    bound = _bound_names(ast.parse(path.read_text()))
+def test_no_migrated_module_redeclares_what_panels_py_owns(path) -> None:
+    bound = _bound_names(ast.parse(path.read_text(encoding="utf-8")))
     assert not (bound & _BANNED), (
-        f"{path.name} re-declares {sorted(bound & _BANNED)} -- "
-        "widgets/panels.py owns these now"
+        f"{path.parent.name}/{path.name} re-declares {sorted(bound & _BANNED)} "
+        "-- widgets/panels.py owns these now"
     )
 
 
-def test_every_ocm_panel_subclasses_a_panels_base() -> None:
-    import maxpane_dashboard.widgets.ocm as ocm_pkg
+@pytest.mark.parametrize("package", MIGRATED_PACKAGES)
+def test_every_migrated_panel_subclasses_a_panels_base(package) -> None:
+    """Read off the package's own ``__all__``, so a widget added to a
+    migrated package and *not* put on a base reddens this without anybody
+    remembering to extend a hand-written list."""
+    pkg = _package(package)
 
     found = []
-    for name in ocm_pkg.__all__:
-        cls = getattr(ocm_pkg, name)
+    for name in pkg.__all__:
+        cls = getattr(pkg, name)
         if not hasattr(cls, "update_data"):
             continue
         found.append(name)
-        assert issubclass(cls, _PANEL_BASES), f"{name} is not on widgets/panels.py"
-    assert len(found) == 6, found
+        assert issubclass(cls, _PANEL_BASES), (
+            f"{package}.{name} is not on widgets/panels.py"
+        )
+    assert len(found) == 6, (package, found)
 
 
-def test_panels_defines_the_two_strings_exactly_once() -> None:
-    assert UNAVAILABLE == "[yellow]unavailable[/]"
-    assert LOADING == "[dim]Loading...[/]"
-    # Derived from LOADING, not re-typed beside it: the signals seed is the
-    # same words, two columns in (fix round 1, M1).
-    assert LOADING_ROW == "[dim]  Loading...[/]"
-    assert LOADING_ROW == LOADING.replace("[dim]", "[dim]  ", 1)
-    assert panels.__all__ == [
-        "UNAVAILABLE",
-        "LOADING",
-        "LOADING_ROW",
-        "PanelBase",
-        "HeroBoxBase",
-        "HeroRow",
-        "SignalsPanelBase",
-        "SparklinePanel",
-        "RichLogFeed",
-        "fmt_signal",
-    ]
+# The plan's fifth agreement clause ("no ``compose`` yields a ``Static``
+# whose content is ``\"\"`` or ``\" \"``") is deliberately NOT written here as a
+# source check: it is false as stated and the composited assertion is
+# stronger. Three of the five migrated shapes yield a blank ``Static`` as
+# *content* -- ``OCMSupplyBreakdown`` seeds three body lines empty and fills
+# them on the first poll, ``SignalsPanelBase`` yields one before the
+# recommendation, and both BEST PLAYS boards keep one between their headers
+# and their rows -- so a ban would have to be narrowed to "the title's
+# spacer", which no source check can tell from a seeded line. What made the
+# old spacers wrong was the *row they painted*, and that is what
+# ``tests/widgets/test_title_blank_row.py`` asserts, composited, for every
+# panel in every migrated package: title row, exactly one blank, then
+# content. A leftover spacer reddens it with two blanks -- and so does a
+# spacer reached through a helper, or a regression in ``PanelBase``'s
+# ``margin``, neither of which a source check would see.
 
 
-# -- 7. Agreement: a base's name is a CSS type selector (fix round 1, I1) ----
+# -- 8. Agreement: a base's name is a CSS type selector (fix round 1, I1) ----
 
 
 _PANELS_FILE = pathlib.Path(panels.__file__)

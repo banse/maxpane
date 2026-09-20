@@ -3,51 +3,43 @@
 The sparkline primitives come from
 ``maxpane_dashboard/widgets/sparkline_common.py``.  This module used to
 carry its own pre-hardening copies, which raised ``TypeError`` on a
-``None`` entry or a ``None`` value in a cached history (MEDI-36).
+``None`` entry or a ``None`` value in a cached history (MEDI-36); the
+render loop itself is
+:class:`~maxpane_dashboard.widgets.panels.SparklinePanel`'s since Branch 7.
+
+**The value formatter stays here.** Unlike ocm's and cattown's it is *not*
+``sparkline_common.fmt_compact`` in disguise: a lane frontline is a
+position between the two bases, so it has no K/M/B magnitudes at all and
+switches on ``abs >= 100`` to drop its decimal place. ``fmt_compact`` would
+print ``1.0K`` where this panel shows ``950``, and every frontline the game
+serves is in the range where the two disagree.
 """
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import Static
-
-from maxpane_dashboard.widgets.sparkline_common import (
-    build_sparkline_from_points as _build_sparkline,
-    coerce_points as _coerce_points,
-    trend_arrow as _trend_arrow,
-)
+from maxpane_dashboard.widgets.panels import SparklinePanel
 
 
-def _fmt_value(value: float) -> str:
+def _fmt_frontline(value: float) -> str:
     """Format a numeric frontline value for display."""
     if abs(value) >= 100:
         return f"{value:.0f}"
     return f"{value:.1f}"
 
 
-class DOTASparklines(Vertical):
+class DOTASparklines(SparklinePanel):
     """ASCII sparkline charts for lane frontline positions."""
 
-    DEFAULT_CSS = """
-    DOTASparklines > .dota-chart-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    DOTASparklines > .dota-chart-line {
-        padding: 0 1;
-        width: 100%;
-    }
-    """
+    TITLE = "LANE FRONTLINES"
 
-    def compose(self) -> ComposeResult:
-        yield Static("LANE FRONTLINES", classes="dota-chart-title")
-        yield Static("", classes="dota-chart-line", id="dota-chart-spacer")
-        yield Static("[dim]Loading...[/]", classes="dota-chart-line", id="dota-chart-line-0")
-        yield Static("", classes="dota-chart-line", id="dota-chart-line-1")
-        yield Static("", classes="dota-chart-line", id="dota-chart-line-2")
+    LINE_IDS = ("dota-chart-line-0", "dota-chart-line-1", "dota-chart-line-2")
+
+    #: The labels below are nine cells wide, one more than the default.
+    LABEL_WIDTH = 9
+
+    def fmt_value(self, value, unit: str) -> str:
+        """A frontline position, not a magnitude (see the module docstring)."""
+        return _fmt_frontline(value)
 
     def update_data(
         self,
@@ -57,28 +49,8 @@ class DOTASparklines(Vertical):
         **_kwargs,
     ) -> None:
         """Render sparklines for Top, Mid, and Bot lane frontlines."""
-        series = [
-            ("Top Lane ", top_frontline_history, "green"),
-            ("Mid Lane ", mid_frontline_history, "cyan"),
-            ("Bot Lane ", bot_frontline_history, "yellow"),
-        ]
-
-        line_ids = ["dota-chart-line-0", "dota-chart-line-1", "dota-chart-line-2"]
-
-        for i, (label, points, color) in enumerate(series):
-            widget = self.query_one(f"#{line_ids[i]}", Static)
-
-            points = _coerce_points(points)
-            if not points:
-                widget.update("")
-                continue
-
-            sparkline = _build_sparkline(points)
-            current = points[-1][1] if points else 0.0
-            current_str = _fmt_value(current)
-            arrow = _trend_arrow(points)
-
-            widget.update(
-                f"  [dim]{label}[/]  [{color}]{sparkline}[/]  "
-                f"[bold]{current_str}[/] {arrow}"
-            )
+        self.render_series([
+            ("Top Lane ", top_frontline_history, "green", ""),
+            ("Mid Lane ", mid_frontline_history, "cyan", ""),
+            ("Bot Lane ", bot_frontline_history, "yellow", ""),
+        ])

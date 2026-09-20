@@ -1,19 +1,20 @@
-"""Best plays two-column table for Cat Town dashboard."""
+"""Best plays two-column table for Cat Town dashboard.
+
+A two-column text board with no sibling outside its dota twin, so it keeps
+its body bespoke on :class:`~maxpane_dashboard.widgets.panels.PanelBase`
+(Branch 7, WP-A) rather than being forced into one of the four shaped
+bases. What the base takes over is the title, its blank row and the guarded
+write; ``_RARITY_COLORS`` moved to the package's ``_fmt.py``, where the
+leaderboard reads the same mapping.
+"""
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
 from textual.widgets import Static
 
-
-_RARITY_COLORS = {
-    "Common": "dim",
-    "Uncommon": "white",
-    "Rare": "cyan",
-    "Epic": "magenta",
-    "Legendary": "yellow",
-}
+from maxpane_dashboard.widgets.cattown._fmt import _RARITY_COLORS
+from maxpane_dashboard.widgets.panels import LOADING_ROW, PanelBase
 
 # Layout widths (plain text characters)
 _F_NAME_W = 15  # fish name column
@@ -30,7 +31,7 @@ def _fish_entry(f: dict, is_top: bool) -> str:
     w_max = f.get("weight_max", 0.0)
     rarity = f.get("rarity", "Common")
     color = _RARITY_COLORS.get(rarity, "dim")
-    star = "\u2605 " if is_top else "  "
+    star = "★ " if is_top else "  "
     val = f"{w_min:.0f}-{w_max:.0f}kg"
     return f"[{color}]{star}{name:<{_F_NAME_W}} {val:>{_F_VAL_W}}[/]"
 
@@ -41,7 +42,7 @@ def _treasure_entry(t: dict, is_top: bool) -> str:
     v_max = t.get("value_max", 0.0)
     rarity = t.get("rarity", "Common")
     color = _RARITY_COLORS.get(rarity, "dim")
-    star = "\u2605 " if is_top else "  "
+    star = "★ " if is_top else "  "
     if v_min == v_max:
         val = f"{v_max:.0f}k"
     else:
@@ -49,44 +50,33 @@ def _treasure_entry(t: dict, is_top: bool) -> str:
     return f"[{color}]{star}{name:<{_T_NAME_W}} {val:>{_T_VAL_W}}[/]"
 
 
-class CTBestPlays(Vertical):
+class CTBestPlays(PanelBase):
     """Side-by-side tables showing top fish and top treasures."""
 
-    DEFAULT_CSS = """
-    CTBestPlays > .ev-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
-    CTBestPlays > .ev-body {
-        padding: 0 1;
-        width: 100%;
-    }
-    """
+    TITLE = "BEST PLAYS"
 
-    def compose(self) -> ComposeResult:
-        yield Static("BEST PLAYS", classes="ev-title")
-        yield Static("", classes="ev-body")
+    def compose_body(self) -> ComposeResult:
         # Column headers
         yield Static(
             f"  {'Top Fish Now':<{_HALF_W - 2}}{' ' * _GAP}  {'Top Treasures Now'}",
-            classes="ev-body",
+            classes="panel-line",
             id="ct-bp-header",
         )
         yield Static(
             f"  [dim]{'weight (kg)':<{_HALF_W - 2}}{' ' * _GAP}  {'value (KIBBLE)'}[/]",
-            classes="ev-body",
+            classes="panel-line",
             id="ct-bp-subheader",
         )
-        # Blank spacer line
-        yield Static("", classes="ev-body", id="ct-bp-spacer")
+        # Blank line between the headers and the rows. Not the title's row,
+        # which is PanelBase's margin.
+        yield Static("", classes="panel-line", id="ct-bp-spacer")
         # Data rows
-        yield Static("[dim]  Loading...[/]", classes="ev-body", id="ct-bp-row-0")
-        yield Static("", classes="ev-body", id="ct-bp-row-1")
-        yield Static("", classes="ev-body", id="ct-bp-row-2")
-        yield Static("", classes="ev-body", id="ct-bp-row-3")
-        yield Static("", classes="ev-body", id="ct-bp-row-4")
+        for index in range(5):
+            yield Static(
+                LOADING_ROW if index == 0 else "",
+                classes="panel-line",
+                id=f"ct-bp-row-{index}",
+            )
 
     def update_data(
         self,
@@ -109,7 +99,6 @@ class CTBestPlays(Vertical):
         empty_left = " " * _HALF_W
 
         for i in range(5):
-            widget = self.query_one(f"#ct-bp-row-{i}", Static)
             left = _fish_entry(fish[i], i == 0) if i < len(fish) else empty_left
             right = _treasure_entry(treasures[i], i == 0) if i < len(treasures) else ""
-            widget.update(f"{left}{' ' * _GAP}{right}")
+            self.write(f"#ct-bp-row-{i}", f"{left}{' ' * _GAP}{right}")

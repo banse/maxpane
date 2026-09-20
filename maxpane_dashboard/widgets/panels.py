@@ -37,10 +37,14 @@ classes each dashboard invented are therefore unnecessary, and being
 unnecessary is how ``TTTSparkline > .chart-title`` matched nothing for the
 life of ``minimal.tcss``.
 
-``widgets/ocm/`` is the worked example. ``TableLeaderboard`` is deliberately
-absent: it arrives in Branch 7 with its first subscriber, because a base
-with no subclass is a template by another name, and ``templates/`` is what
-this module exists to stop.
+``widgets/ocm/`` and ``widgets/cattown/`` are the worked examples.
+
+Branch 7 (WP-A, 2026-09-20) added :class:`TableLeaderboard` -- deferred out
+of Branch 6 because a base with no subclass is a template by another name --
+with cattown's leaderboard as its first user, and widened three of the
+bases so cattown, dota and (in WP-B) talismans and ttt fit them without a
+pixel moving. Every one of those widenings is a **class attribute carrying
+the Branch 6 default**, so ocm reads exactly as it did.
 """
 
 from __future__ import annotations
@@ -51,8 +55,9 @@ from typing import Callable
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import RichLog, Static
+from textual.widgets import DataTable, RichLog, Static
 
+from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.sparkline_common import (
     build_sparkline_from_points,
     coerce_points,
@@ -70,6 +75,7 @@ __all__ = [
     "SignalsPanelBase",
     "SparklinePanel",
     "RichLogFeed",
+    "TableLeaderboard",
     "fmt_signal",
 ]
 
@@ -215,18 +221,31 @@ class HeroRow(Horizontal):
             yield self.BOX_CLASS(f"[dim]{label}[/]\n\n{LOADING}", id=box_id)
 
     def render_box(self, selector: str, label: str,
-                   build: Callable[[], str]) -> bool:
+                   build: Callable[[], "str | Text"]) -> bool:
         """Write one box, degrading to an explicit unavailable state.
 
         The body is built inside the guard (MEDI-38): a string where a
         number was expected must land on ``unavailable`` here.
+
+        ``build`` may return a **``rich.text.Text``** instead of a markup
+        string, and then the head is parsed rather than interpolated:
+        ``Text.from_markup(f"[dim]{label}[/]\\n\\n") + body``. cattown's
+        LEADER box is why (Branch 7) -- it carries an address through
+        ``widgets/address.py``, whose copy icon lives in a ``Style`` with a
+        click ``meta`` that only survives outside markup parsing, so
+        interpolating that body into an f-string would flatten the icon into
+        inert text. The ``str`` path is untouched.
         """
         try:
             box = self.query_one(selector, HeroBoxBase)
         except Exception:
             return False
         try:
-            box.update(f"[dim]{label}[/]\n\n{build()}")
+            body = build()
+            if isinstance(body, Text):
+                box.update(Text.from_markup(f"[dim]{label}[/]\n\n") + body)
+            else:
+                box.update(f"[dim]{label}[/]\n\n{body}")
         except Exception:
             try:
                 box.update(f"[dim]{label}[/]\n\n{UNAVAILABLE}")
@@ -235,17 +254,31 @@ class HeroRow(Horizontal):
         return True
 
 
-def fmt_signal(sig: dict, *, label_width: int, dim_label: bool) -> str:
-    """Format one signal row: indicator, label, coloured value.
+def fmt_signal(sig: dict, *, label_width: int, dim_label: bool,
+               labelled: bool = True) -> str:
+    """Format one signal row: indicator, optional label, coloured value.
 
-    The two spellings the eight copies differed on: ``label_width=18,
+    The spellings the eight copies differed on: ``label_width=18,
     dim_label=False`` is ocm's and dota's, ``label_width=15,
-    dim_label=True`` is cattown's and ``templates/signals_template.py``'s.
+    dim_label=True`` is cattown's and ``templates/signals_template.py``'s,
+    and ``labelled=False`` is talismans' and ttt's ``  [c]●[/] [c]{value}[/]``
+    -- a row whose *value string already says what it is*, so a label column
+    would only repeat it (Branch 7).
+
+    **``value_str`` is escaped** (``markup_safety.safe_markup``). A signal
+    value is analytics output today, but analytics reads token symbols, and
+    a symbol is attacker-controlled: anyone can deploy an ERC-20 called
+    ``[/x]``. Textual defers ``Text.from_markup`` into the message pump, so
+    an unescaped one raises *outside* the panel's guard and kills the app.
+    ttt already escaped here and talismans did not -- one copy fixed, seven
+    not, which is the divergence this module exists to end.
     """
     label = sig.get("label", "")
-    value = sig.get("value_str", "")
+    value = safe_markup(sig.get("value_str", ""))
     color = sig.get("color", "dim")
     indicator = sig.get("indicator", "●")
+    if not labelled:
+        return f"  [{color}]{indicator}[/] [{color}]{value}[/]"
     cell = f"{label:<{label_width}}"
     if dim_label:
         cell = f"[dim]{cell}[/]"
@@ -267,8 +300,14 @@ class SignalsPanelBase(PanelBase):
     would otherwise have reached every signals panel in the app.
     """
 
-    #: ``(widget id, label)`` per row, in panel order.
-    ROWS: tuple[tuple[str, str], ...] = ()
+    #: One item per row, in panel order:
+    #:
+    #: * ``(widget id, label)`` -- a labelled row;
+    #: * ``(widget id, None)`` -- a **label-less** row, whose value string
+    #:   already says what it is (talismans, ttt);
+    #: * ``None`` -- a blank ``.panel-line`` **separator** between two groups
+    #:   of rows. Not the title's blank row, which is ``PanelBase``'s margin.
+    ROWS: tuple = ()
 
     #: Label column width. 18 in ocm/dota, 15 in cattown/the template.
     LABEL_WIDTH: int = 18
@@ -290,10 +329,20 @@ class SignalsPanelBase(PanelBase):
     """
 
     def compose_body(self) -> ComposeResult:
-        for index, (row_id, _label) in enumerate(self.ROWS):
-            # The first row carries the seed; the rest start empty so a panel
-            # that has never polled does not claim three rows of nothing.
-            seed = LOADING_ROW if index == 0 else ""
+        seeded = False
+        for row in self.ROWS:
+            if row is None:
+                # A separator between two groups of rows. It carries no id:
+                # nothing writes to it, and an id would invite something to.
+                yield Static("", classes="panel-line")
+                continue
+            row_id, _label = row
+            # The first *row* carries the seed; the rest start empty so a
+            # panel that has never polled does not claim three rows of
+            # nothing. "First row", not "index 0": a panel whose ``ROWS``
+            # opens with a separator would otherwise seed nothing at all.
+            seed = "" if seeded else LOADING_ROW
+            seeded = True
             yield Static(seed, classes="panel-line", id=row_id)
         if self.RECOMMENDATION_ID is not None:
             # Not the title's blank row: this one separates the rows from the
@@ -301,20 +350,29 @@ class SignalsPanelBase(PanelBase):
             yield Static("", classes="panel-line")
             yield Static("", classes="panel-rec", id=self.RECOMMENDATION_ID)
 
-    def render_signal(self, selector: str, label: str, sig) -> bool:
-        """Write one signal row. ``None``, ``{}`` or a non-dict says so."""
+    def render_signal(self, selector: str, label, sig, *,
+                      labelled: bool = True) -> bool:
+        """Write one signal row. ``None``, ``{}`` or a non-dict says so.
+
+        ``labelled=False`` is the talismans/ttt row whose value already
+        names itself; its *label* is then only the word the degraded row
+        falls back to, and the panel's ``ROWS`` entry carries ``None``.
+        """
 
         def build() -> str:
             source = sig if isinstance(sig, dict) and sig else {
                 "label": label, "value_str": "unavailable", "color": "yellow",
             }
             return fmt_signal(
-                source, label_width=self.LABEL_WIDTH, dim_label=self.DIM_LABEL
+                source, label_width=self.LABEL_WIDTH, dim_label=self.DIM_LABEL,
+                labelled=labelled,
             )
 
-        return self.write_guarded(
-            selector, build, f"  [yellow]●[/] {label} {UNAVAILABLE}"
+        fallback = (
+            f"  [yellow]●[/] {label} {UNAVAILABLE}" if labelled
+            else f"  [yellow]●[/] {UNAVAILABLE}"
         )
+        return self.write_guarded(selector, build, fallback)
 
     def render_recommendation(self, text: str | None) -> bool:
         """Write the recommendation line, or blank it when there is none."""
@@ -338,38 +396,71 @@ class SparklinePanel(PanelBase):
     #: Widget id per line, in panel order.
     LINE_IDS: tuple[str, ...] = ()
 
+    #: Label column width. 8 in ocm and cattown, 9 in dota, 16 in talismans
+    #: and 12 in ttt -- each measured against its own panel, so the base
+    #: states the majority and every other panel says so in one line.
+    LABEL_WIDTH: int = 8
+
+    #: Append the trend arrow after the value. talismans and ttt draw none.
+    SHOW_ARROW: bool = True
+
+    #: What an unusable series writes. ``""`` -- never a flat baseline,
+    #: which would read as a real run of zeroes. talismans and ttt say
+    #: ``waiting for data...`` instead, which is the same claim in words.
+    EMPTY_TEXT: str = ""
+
     def compose_body(self) -> ComposeResult:
         for index, line_id in enumerate(self.LINE_IDS):
+            # A panel with an EMPTY_TEXT seeds *that*: its "nothing yet" and
+            # its "nothing usable" are the same sentence, and seeding
+            # ``Loading...`` under it would be a second word for one state.
             yield Static(
-                LOADING if index == 0 else "", classes="panel-line", id=line_id
+                (self.EMPTY_TEXT or LOADING) if index == 0 else "",
+                classes="panel-line",
+                id=line_id,
             )
+
+    def fmt_value(self, value, unit: str) -> str:
+        """The current value's cell. ``sparkline_common.fmt_compact``.
+
+        The hook exists because three subscribers' formatters differ from
+        ``fmt_compact`` **on values their own panel actually shows** -- dota's
+        frontline positions (``abs >= 100`` -> no decimal, and no K/M/B at
+        all), talismans' grouped integers, ttt's ``$…B`` at two places. A
+        hoist that changed those digits would be a pixel change wearing a
+        refactor's clothes. ``unit`` is passed so one override can switch on
+        which line it is drawing.
+        """
+        return fmt_compact(value, unit)
 
     def render_series(self, series) -> None:
         """Draw ``(label, points, color, unit)`` tuples in line order.
 
-        An empty or unusable series writes ``""`` -- never a flat baseline
-        that would read as a real run of zeroes.
+        An empty or unusable series writes :attr:`EMPTY_TEXT` -- never a
+        flat baseline that would read as a real run of zeroes.
         """
         for line_id, entry in zip(self.LINE_IDS, series):
             selector = f"#{line_id}"
             try:
                 label, points, color, unit = entry
             except Exception:
-                self.write(selector, "")
+                self.write(selector, self.EMPTY_TEXT)
                 continue
             pts = coerce_points(points)
             if not pts:
-                self.write(selector, "")
+                self.write(selector, self.EMPTY_TEXT)
                 continue
             sparkline = build_sparkline_from_points(pts)
-            current = fmt_compact(pts[-1][1], unit)
-            arrow = trend_arrow(pts)
-            cell = f"{str(label)[:8]:<8}"
-            self.write(
-                selector,
+            current = self.fmt_value(pts[-1][1], unit)
+            width = self.LABEL_WIDTH
+            cell = f"{str(label)[:width]:<{width}}"
+            row = (
                 f"  [dim]{cell}[/]  [{color}]{sparkline}[/]  "
-                f"[bold]{current}[/] {arrow}",
+                f"[bold]{current}[/]"
             )
+            if self.SHOW_ARROW:
+                row = f"{row} {trend_arrow(pts)}"
+            self.write(selector, row)
 
 
 class RichLogFeed(PanelBase):
@@ -507,3 +598,129 @@ class RichLogFeed(PanelBase):
             self._drawn = True
 
         self.call_after_refresh(log.scroll_home, animate=False)
+
+
+class TableLeaderboard(PanelBase):
+    """A title over a ``DataTable``: the eighth copy of one shape.
+
+    Branch 7. ``CTLeaderboard``, ``DOTALeaderboard``, ``TalismansLeaderboard``,
+    ``TalismansMaterialsTable``, ``TalismansMatrixTable``, ``TTTLeaderboard``,
+    ``TTTFeesTable`` and ``TTTClaimsTable`` had each hand-written the same
+    five steps -- ``cursor_type="row"``, ``zebra_stripes=True``, the columns,
+    an optional ``Loading...`` seed row, and then ``clear()`` followed by
+    either a "No data" row or a capped slice. They agreed on all five and
+    differed only in the numbers, which is what a base class is for.
+
+    **The base owns mechanics, never a cell's formatting.** Address cells,
+    rank-1 bolding, the symbol column's measured width, a dict payload and a
+    "Today" stamp stay in :meth:`build_row`, where the dashboard that knows
+    what they mean can see them.
+
+    :class:`TableLeaderboard`, not ``Leaderboard``: ``widgets/leaderboard.py``
+    (bakery-only) owns that name and has a **bare** block in
+    ``minimal.tcss``, and a base class's name is a CSS type selector for
+    every subclass (Branch 6, fix round 1 I1 -- the two guard tests in
+    ``tests/widgets/test_panels.py`` enforce it).
+    """
+
+    #: Widget id of the table.
+    TABLE_ID: str = ""
+
+    #: ``(label, width)`` per column, in table order.
+    COLUMNS: tuple[tuple[str, int], ...] = ()
+
+    #: ``DataTable.cursor_type``. All eight tables select a whole row.
+    CURSOR_TYPE: str = "row"
+
+    #: ``DataTable.zebra_stripes``.
+    ZEBRA: bool = True
+
+    #: How many items to draw; ``None`` draws every one. 10 / 20 / 12 / 6
+    #: across the eight, each a measurement of its own panel's height.
+    ROW_CAP: int | None = 10
+
+    #: A seed row shown from ``on_mount`` until the first poll lands, or
+    #: ``None`` for a table that starts empty. The **whole tuple**, because
+    #: which cell says ``Loading...`` differs per table and a base that
+    #: guessed the column would put the word under the wrong heading.
+    LOADING_ROW: tuple[str, ...] | None = None
+
+    #: The row a ``None`` or empty payload paints -- an explicit "nothing to
+    #: show", never a silently empty table, which reads as a panel that has
+    #: not polled yet.
+    EMPTY_ROW: tuple[str, ...] = ()
+
+    def compose_body(self) -> ComposeResult:
+        yield DataTable(id=self.TABLE_ID)
+
+    def on_mount(self) -> None:
+        table = self.query_one(f"#{self.TABLE_ID}", DataTable)
+        table.cursor_type = self.CURSOR_TYPE
+        table.zebra_stripes = self.ZEBRA
+        for label, width in self.COLUMNS:
+            table.add_column(label, width=width)
+        if self.LOADING_ROW is not None:
+            table.add_row(*self.LOADING_ROW)
+
+    # -- hook -------------------------------------------------------------
+
+    def build_row(self, index: int, item) -> tuple | None:
+        """The cells for one item, or ``None`` to skip it.
+
+        ``index`` is the item's position in the **capped** slice, which is
+        what a subclass needs to bold its first row. Returning ``None`` is
+        the non-dict guard talismans and ttt carry: a payload entry that is
+        not the shape this table reads is dropped, not rendered as junk.
+        """
+        raise NotImplementedError
+
+    # -- rendering --------------------------------------------------------
+
+    def render_table(self, rows, *, footer=None) -> None:
+        """Clear and repopulate the table.
+
+        ``None`` or empty paints :attr:`EMPTY_ROW`; otherwise the capped
+        slice goes through :meth:`build_row`, then the optional *footer*
+        tuple (the matrix table's bold TOTAL line) lands last.
+
+        **Every row is built and added inside its own guard.** One item the
+        formatter cannot read is one missing line; without the guard the
+        exception escapes after ``clear()`` and the table is left *empty*,
+        which is worse than the row it could not draw and, on a leaderboard,
+        reads as "nobody is playing". ``NotImplementedError`` is re-raised
+        past it, as in :class:`RichLogFeed`: a subclass that never wired up
+        :meth:`build_row` is a programming error and must fail loudly.
+        """
+        try:
+            table = self.query_one(f"#{self.TABLE_ID}", DataTable)
+        except Exception:
+            logger.warning(
+                "%s: could not find %s", type(self).__name__, self.TABLE_ID
+            )
+            return
+
+        table.clear()
+
+        if not rows:
+            if self.EMPTY_ROW:
+                table.add_row(*self.EMPTY_ROW)
+            return
+
+        capped = rows if self.ROW_CAP is None else rows[: self.ROW_CAP]
+        for index, item in enumerate(capped):
+            try:
+                cells = self.build_row(index, item)
+                if cells is None:
+                    continue
+                table.add_row(*cells)
+            except NotImplementedError:
+                raise
+            except Exception:
+                continue
+
+        if footer is not None:
+            try:
+                table.add_row(*footer)
+            except Exception:
+                logger.warning("%s: could not add the footer row",
+                               type(self).__name__)

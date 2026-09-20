@@ -1,24 +1,23 @@
-"""Fishing activity feed for Cat Town dashboard."""
+"""Fishing activity feed for Cat Town dashboard.
+
+The log, the dedupe set and the write contract are
+:class:`~maxpane_dashboard.widgets.panels.RichLogFeed`'s (Branch 7, WP-A);
+``_catch_to_text`` below is this dashboard's ``format_row`` hook, and the
+``HH:MM`` cell is ``widgets/fmt.hhmm``. The copy it replaces printed a
+**clock time for an epoch-zero stamp** -- ``01:00`` on 1970-01-01, an
+unread timestamp looking exactly like data -- and raised ``TypeError`` on a
+``None`` one; ``hhmm`` renders ``??:??`` for both, which is what every
+other feed in the app already showed.
+"""
 
 from __future__ import annotations
 
-import time
-
 from rich.text import Text
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import RichLog, Static
+
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.cattown._chain import EXPLORER
-
-
-_RARITY_COLORS = {
-    "Common": "dim",
-    "Uncommon": "white",
-    "Rare": "cyan",
-    "Epic": "magenta",
-    "Legendary": "yellow",
-}
+from maxpane_dashboard.widgets.fmt import hhmm
+from maxpane_dashboard.widgets.panels import RichLogFeed
 
 #: display budget for the fisher name/address, excluding the icon -- the same
 #: 12-cell window the deleted ``_short_addr`` produced. No pin binds this
@@ -26,19 +25,15 @@ _RARITY_COLORS = {
 _FISHER_COLS = 12
 
 
-def _format_event_time(timestamp: float | int | str) -> str:
-    """Convert a unix timestamp to HH:MM display format."""
-    try:
-        ts = int(timestamp)
-        t = time.localtime(ts)
-        return f"{t.tm_hour:02d}:{t.tm_min:02d}"
-    except (ValueError, OSError):
-        return "??:??"
-
-
 def _catch_to_text(catch: dict) -> Text:
-    """Convert a catch dict into a composited ``Text`` line."""
-    ts = _format_event_time(catch.get("timestamp", 0))
+    """Convert a catch dict into a composited ``Text`` line.
+
+    Built directly with :class:`~rich.text.Text`, never a markup string:
+    the fisher's cell carries the copy icon (``widgets/address.py``), whose
+    click action lives in a ``Style`` that only survives outside markup
+    parsing.
+    """
+    ts = hhmm(catch.get("timestamp", 0))
     display_name = catch.get("display_name", "")
     fisher = address_text(
         catch.get("fisher_address", ""),
@@ -63,16 +58,16 @@ def _catch_to_text(catch: dict) -> Text:
     return line
 
 
-class CTActivityFeed(Vertical):
+class CTActivityFeed(RichLogFeed):
     """Auto-scrolling fishing activity feed."""
 
+    TITLE = "FISHING ACTIVITY"
+
+    LOG_ID = "ct-activity-log"
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s, and
+    #: ``minimal.tcss`` states this log's colours.
     DEFAULT_CSS = """
-    CTActivityFeed > .feed-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     CTActivityFeed > RichLog {
         height: 1fr;
         padding: 0 1;
@@ -80,13 +75,9 @@ class CTActivityFeed(Vertical):
     }
     """
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._seen_tx_hashes: set[str] = set()
-
-    def compose(self) -> ComposeResult:
-        yield Static("FISHING ACTIVITY", classes="feed-title")
-        yield RichLog(id="ct-activity-log", wrap=True, highlight=True, markup=True)
+    #: The ``format_row`` hook. A ``staticmethod``: the row is a function of
+    #: the catch alone.
+    format_row = staticmethod(_catch_to_text)
 
     def update_data(
         self,
@@ -94,33 +85,6 @@ class CTActivityFeed(Vertical):
     ) -> None:
         """Rewrite the log with newest catches on top.
 
-        Catches are de-duplicated by ``tx_hash``.
+        Catches are de-duplicated by ``tx_hash`` (``RichLogFeed.dedupe_key``).
         """
-        log = self.query_one("#ct-activity-log", RichLog)
-
-        if not recent_catches:
-            if not self._seen_tx_hashes:
-                log.write("[dim]  No activity yet[/]")
-            return
-
-        # De-duplicate by tx_hash
-        new_catches: list[dict] = []
-        for catch in recent_catches:
-            tx_hash = catch.get("tx_hash", "")
-            if tx_hash and tx_hash in self._seen_tx_hashes:
-                continue
-            if tx_hash:
-                self._seen_tx_hashes.add(tx_hash)
-            new_catches.append(catch)
-
-        if not new_catches and self._seen_tx_hashes:
-            return
-
-        # Clear and rewrite: newest on top
-        log.clear()
-        log.auto_scroll = False
-        for catch in recent_catches:
-            log.write(_catch_to_text(catch))
-
-        # Scroll to top after render
-        self.call_after_refresh(log.scroll_home, animate=False)
+        self.render_events(recent_catches)
