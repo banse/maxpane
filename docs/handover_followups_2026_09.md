@@ -368,3 +368,14 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `test_base_widgets.py::test_sparkline_is_twenty_blocks_wide_not_the_shared_twenty_two` does
     for base). **Minor, Tier 0** when a migrated sparkline test is next touched (Branch 8 WP-A
     review M4, filed 2026-09-20).
+
+33. **MEDI-38 claim 2 ("a real `0` is a number, not `Loading`") is untested for the second-table
+    hero rows.** `tests/widgets/test_medi38_unavailable_state.py:334-352`
+    `test_a_real_zero_is_a_number_not_loading` is parametrised over `_WIDGETS` only; the `_HERO_ROWS`
+    table (`TalismansHeroMetrics`, `TTTHeroMetrics`, and since Branch 8 WP-A `BTOverviewHero`,
+    `BTSignals`) has a good-poll case whose payloads carry no zero (`eth_price=3_000.0`,
+    `buy_sell_signal="Bullish"`). The behaviour is right by construction — `bt_hero_metrics.py`'s
+    `_price_body`/`_change_body`/`_volume_body` branch on `is None`, so `0` renders `$0.00` / `+0.00%`
+    / `$0` — but no test would redden if one of them grew an `if not value:`. Fix: a zero-payload
+    row for each `_HERO_ROWS` entry in the good-poll case. **Minor, Tier 0** when the file is next
+    touched (Branch 8 WP-A re-review N1, filed 2026-09-20).

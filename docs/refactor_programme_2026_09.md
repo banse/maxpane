@@ -2411,6 +2411,8 @@ base` 2 (41 deselected); `-m guard tests` last — see the commit. **Name-list d
 `test_medi38_unavailable_state.py` and `test_sparkline_common.py` no function added or removed —
 their new cases are table rows. No deletion, no rename anywhere.
 
+**Branch 8 WP-A re-review of fix round 1 (2026-09-20): Approved.** All six findings ADDRESSED, each behind a mutation the reviewer re-ran against the named file: both `write_guarded` removals now redden the composited pins (the signals one also reddens `test_a_malformed_hero_poll_after_a_good_one_is_not_shown_as_live[BTSignals]`); the `value_color=None` path was compared against a re-implementation of the pre-fix `fmt_signal_trailing` over 4,200 label/value/indicator/colour/width combinations with 0 differences; the `_HERO_ROWS` absent-word field is load-bearing (`"--"` → `"ZZZ"` reddens the talismans case); `b8_rev2_base.*` re-rendered from `81ef1da` cmp identical to `b8_wpa_base.*`. 385 passed over nine named files, 191 guard. One new Minor, N1: MEDI-38 claim 2 (a real `0` is a number) is untested for every `_HERO_ROWS` entry, BT included — filed as follow-up #33, not fixed. **WP-A closed at `81ef1da`; WP-B starts from this head.**
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
