@@ -975,6 +975,112 @@ paragraph here with the per-file line table, the render-diff result and any devi
 One implementer, one reviewer (contract verbatim), fix rounds capped at 2, full suite once on
 the branch head by the controller, then the owner's merge word.
 
+**Branch 6 outcome (2026-09-20).** `widgets/panels.py` exists with the five bases the Design
+names; `TableLeaderboard` was not built (Branch 7, with cattown). All six ocm widgets are on the
+bases, with every class name and every `update_data` signature unchanged — the panel-row agreement
+test in `tests/screens/test_dashboard_screen.py` and `screens/ocm.py`'s `PANELS` were not touched.
+
+*Line counts are raw `wc -l`*, the convention this plan settled on in Branch 5 WP-B.
+
+| file | before | after | file | before | after |
+| --- | --- | --- | --- | --- | --- |
+| `widgets/ocm/ocm_hero_metrics.py` | 123 | 94 | `widgets/ocm/ocm_activity_feed.py` | 132 | 94 |
+| `widgets/ocm/ocm_staking_overview.py` | 92 | 89 | `widgets/ocm/ocm_supply_breakdown.py` | 96 | 88 |
+| `widgets/ocm/ocm_signals.py` | 97 | 45 | **`widgets/ocm/` total** | **628** | **446** |
+| `widgets/ocm/ocm_sparklines.py` | 88 | 36 | `themes/minimal.tcss` ocm block | 78 | 66 |
+| | | | `widgets/panels.py` (new) | 0 | 446 |
+
+**182 lines out of `widgets/ocm/` and 12 out of the stylesheet; 446 lines of shared base in.** The
+repo is 252 production lines *larger* today, and that is the expected shape of the first slice: one
+subscriber cannot amortise a base. Branches 7 and 8 move cattown, dota, ttt, talismans, fwa, base
+and bakery onto the same 446 lines and delete `templates/`, which is where the estimate in
+HANDOVER §3.4 is paid. `panels.py` is also documentation-heavy by design — it is the file the next
+dashboard reads instead of copying a sibling.
+
+**Render diff.** `render_ocm.py` on the sweep payload under the real stylesheet and a frozen clock,
+before and after, at 170×50 and at the 143 pin. Both sizes: 51 rows, **two differing rows, the same
+two, and they are the predicted one-row shift**:
+
+```
+### 170x50: 51 vs 51 rows
+  row 12: before=''
+           after='  Loading...'
+  row 13: before='  Loading...'
+           after=''
+  -> 2 differing row(s)
+### pin-143x50: 51 vs 51 rows
+  row 12: before=''
+           after='  Loading...'
+  row 13: before='  Loading...'
+           after=''
+  -> 2 differing row(s)
+```
+
+That is STAKING OVERVIEW's second blank row disappearing and its rows moving up one inside the
+panel, exactly as the Design predicted; every other cell is byte-identical at both widths. The
+panel is still on `Loading...` under the sweep payload (follow-up **18**, pre-existing, untouched)
+and the degradation log is unchanged: `Failed to update OCMStakingOverview` and `Failed to update
+OCMSupplyBreakdown` are still raised at the same point, because both panels build their row text
+*before* the guarded write, as they did. TRENDS, SIGNALS and SUPPLY BREAKDOWN each traded a spacer
+`Static` for the title margin, which is one row either way, so nothing below them moved.
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each):
+
+| mutation | reddened |
+| --- | --- |
+| `margin: 0 0 1 0` deleted from `PanelBase.DEFAULT_CSS` | `test_panels.py::test_panel_base_paints_title_blank_row_then_body`, its two `render_series` row-index cases, and all five ocm rows of `test_title_blank_row.py` — 8 failed, 68 passed |
+| `clear()` deleted before the placeholder in `render_events` | `test_panels.py::test_the_placeholder_is_written_once_across_three_empty_polls` (3 placeholders on screen, not 1) — 1 failed, 75 passed |
+| the per-row `try` deleted in `render_events` | `test_panels.py::test_one_unwritable_row_is_skipped_and_the_others_land` and `::test_every_row_unwritable_falls_back_to_the_empty_line` — 2 failed, 74 passed |
+| a private `_coerce_points` pasted back into `ocm_sparklines.py` | `test_sparkline_common.py::test_helpers_are_the_shared_functions[OCMSparklines]` and `::test_no_module_redefines_a_shared_helper[OCMSparklines]` — 2 failed, 126 passed (the fourth proof, for the one existing test this branch had to change) |
+
+**One behaviour change inside the migration, beyond the blank row.**
+`fmt.hhmm` replaces ocm's `_format_event_time` in the feed's `HH:MM` cell, as the Design asks, and
+the two are not byte-identical: `hhmm` renders `??:??` for `None`, for `0` and for `float("inf")`
+where the old copy raised `TypeError` on `None`, printed `01:00` for epoch zero (an unread
+timestamp looking like data, H14) and raised `OverflowError` on `inf`. The sweep payload carries a
+real timestamp, so the render diff cannot see it; `tests/widgets/test_hidden_shared_address_icons.py`
+seeds `timestamp: 0` and now reads `??:??` there, which is the intended reading and is what every
+other feed in the repo already shows. `fmt_compact` versus `_fmt_value` is the same shape of change
+and `tests/widgets/test_panels.py` pins both the agreement (1, 1e3, 1e6) and the divergence
+(≥ 1e9, negatives, non-numeric).
+
+**Three deviations from the Design, each stated rather than taken silently.**
+
+1. **`tests/widgets/test_sparkline_common.py` could not stay green unchanged**, though the Tests
+   paragraph lists it among the files that must. Its `test_helpers_are_the_shared_functions`
+   resolved `_coerce_points` / `_build_sparkline` on `inspect.getmodule(widget_cls)` — the *leaf*
+   module — and `OCMSparklines` no longer imports them, because its render loop moved into
+   `panels.SparklinePanel`. Worse than a rename: the lookup returned `None` and the assertion read
+   `None is not coerce_points`, so a widget that rendered through a base would have failed this
+   test *whatever* the base imported. The claim ("no dashboard may carry its own copy") is
+   unchanged; the lookup now walks the widget's MaxPane MRO, leaf first, and
+   `test_no_module_redefines_a_shared_helper` reads every module on that chain rather than only the
+   leaf — so it covers `panels.py` too, which the old form did not. The alternative — leaving two
+   dead import aliases in `ocm_sparklines.py` to satisfy the leaf lookup — would have been a
+   re-declaration written to fool a test. Mutation proof that the new form still bites is the
+   fourth row above.
+2. **`OCMActivityFeed` keeps a `DEFAULT_CSS`.** The Design deletes "every per-panel title/line CSS
+   class and the `DEFAULT_CSS` that stated them"; `OCMActivityFeed > RichLog { height: 1fr; padding:
+   0 1; scrollbar-size: 1 1 }` is neither a title nor a line class, so it stayed on the widget
+   rather than being hoisted into `RichLogFeed`. Hoisting it would have been a second, unasked
+   behaviour decision for every future feed; `OCMStakingOverview` keeps its own
+   `{ height: auto; padding: 0 }` for the same reason (against `Vertical`'s `height: 1fr` it is
+   load-bearing, and it is not a title rule).
+3. **"Reuse before you build" step 3 gained the sentence in place rather than a new step.** The
+   Docs paragraph reads "step 3 gains one sentence pointing at `panels.py` ahead of the templates";
+   inserting `panels.py` as a *new* step 3 would have renumbered `templates/` to 4 and broken the
+   Branch 8 row of the table at the top of this file, which cites "`rules/widgets.md` step 3". The
+   templates entry now opens with "but only after `widgets/panels.py`".
+
+Named tests, all green, no directory-wide or suite runs — **462 passed** across:
+`tests/widgets/test_panels.py` (39), `test_medi38_unavailable_state.py` (26),
+`test_title_blank_row.py` (37, two new rows), `test_hidden_shared_address_icons.py` (10),
+`test_sparkline_common.py` (89), `test_fmt.py` (25),
+`tests/screens/test_address_icons_everywhere.py -k ocm` (2), `tests/screens/test_dashboard_screen.py`
+(26), `tests/screens/test_refresh_guard.py` (7), `tests/test_address_rule.py` (10),
+`tests/test_address_sweep_registry.py` (9), and `-m guard tests` (182). The full suite is the
+controller's, once, on the branch head.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
