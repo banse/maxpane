@@ -3396,6 +3396,92 @@ empty-table anti-vacuity guard breaks on the first differing row and walks only 
 name, so patching the client attribute changes nothing). M5 (substring-shaped re-declaration guard) assigned
 to WP-C, which touches that test.
 
+
+**WP-B outcome (2026-09-20, commit 7ee4470, 13 files, +894/−57).** Seven managers (`manager.py` bakery,
+`base_manager`, `dota_manager`, `cattown_manager`, `frenpet_manager`, `talismans_manager`, `ttt_manager`) gained
+keyword-only `client=None`, `cache=None`, `cache_path: str | Path | None = None` (→ the module `_CACHE_FILE` at
+construction; the instance path is what `load_from_file` / `save_to_file` use; dota/talismans/ttt now create the
+injected path's parent, not `_CACHE_DIR`). `ocm_manager` gained only the missing `cache=`; `cache_file` kept, widened
+to `Path | str | None`. Clients: `OCMClient(rpc_url=None)` + `_RPC_URL_ENV`, `CatTownClient(rpc_url=None)` +
+`RPC_URL_ENV`, `FrenPetClient(indexer_db=None)` + `INDEXER_DB_ENV` — env consulted at construction, explicit
+argument wins; `TalismansClient(*, log_rpcs=None)` → `self._log_rpcs` iterated by `_get_logs`, plus a new
+`_BANNED_RPC_HOSTS` (ttt's set, entry for entry) enforced over all three pools at construction. Every kept
+module-level name (`_CACHE_DIR`, `_CACHE_FILE`, `_RPC_URL`, `RPC_URL`, `INDEXER_DB`, `_LOG_RPCS`) unchanged in value
+and still a working monkeypatch target; `app.py` untouched. Acceptance: `git diff --stat 9b77ae1..7ee4470 -- tests/`
+shows only the new `test_manager_seams.py` (615 lines, 13 tests). Mutations: cattown's cache calls back to
+`str(_CACHE_FILE)` → its seam test red, `test_cattown_manager.py` green (the old file cannot see it); `OCMClient` env
+back in the signature default → the construction-time env test red; talismans `_get_logs` back to the module
+`_LOG_RPCS` → its seam test red while `test_get_logs_uses_the_log_endpoint_pool` stayed green (compares by value).
+Named runs: 15 data files 387 passed; +10 neighbours 720; guard 194; four screen files 39. **Four deviations, filed by
+the implementer:** (1) `TTTManager` needed a class-level `_cache_path = None` fallback — `test_ttt_manager.py` builds
+via `__new__` and patches the module `_CACHE_FILE`; (2) no `*_KEYS` tuple exists for cattown/dota/ttt/ocm models,
+so those seam tests compare against a legacy-built reference key set instead of an imported contract — follow-up #68;
+(3) patching `Path.home` cannot catch a manager ignoring `cache_path` because `_CACHE_DIR` is evaluated at import, so
+the biting guard redirects the module default to `tmp_path/forbidden` and asserts it is never created; (4) talismans
+had no ban check at all (the brief described ttt's); `rpc.flashbots.net` deliberately not added because the check
+covers the state pool and rules/data.md bans it from log pools only.
+
+**WP-B review (2026-09-20, `git diff 9b77ae1..7ee4470`, opus): Needs fixes — 0 Critical, 2 Important, 6 Minor; the
+production diff was found clean.** Signature-diffed all twelve constructors against `9b77ae1`: every new parameter
+keyword-only with a default, no positional moved, `poll_interval` still first; `git diff --stat -- tests/` shows only
+the new seam file; all `app.py` constructions keyword-only. Under a temp HOME all eight managers built with no
+`cache_path` resolve to their module `_CACHE_FILE` (8/8). talismans' ban check rejects no host any existing call site
+passes (29 constructions in its test file, the manager default, the seam file). `tests/test_app_startup.py::
+test_frenpet_managers_share_one_cache` byte-unchanged and green. Seam file run against a copy of the owner's real
+`~/.maxpane/*.json` (19 files) in a temp HOME: 13 passed, nine cache checksums byte-identical before and after.
+Fourteen mutations proved eleven of thirteen seam tests bite. **I1:** `_assert_isolated` redirects the module default to
+an empty `tmp_path/forbidden`, so a manager that still LOADS from `_CACHE_FILE` is a silent no-op — reverting only the
+`load_from_file` call in each of the eight managers survived 8/8, and three docstrings claimed otherwise; the load half
+is the half that puts numbers on screen, and a library host reading another deployment's cache would ship green.
+**I2:** `mgr.client is injected` appears nowhere; making `BaseManager` always build a real `BaseChainClient` survived
+13/13 and ran 6.35 s instead of 1.38 s under a dead proxy — real sockets, hard constraint 3. Minors: M1 the
+`os.environ.get(ENV) or MODULE_DEFAULT` shape serves an import-time value to new instances after the variable is
+unset or emptied (satisfies the plan's wording; not a regression; docstring sentence); M2 the four managers without a
+`*_KEYS` contract compare against a key set derived from the code under test (construction-path equivalence, not a
+payload contract) — #68; M3 talismans' `_BANNED_RPC_HOSTS` is a sixth hand-typed copy bound by no agreement test and
+missing from `test_banned_host_lists_still_raise_at_construction`'s parametrize; M4 its comment says "mirrors ttt and
+fwa" but fwa's set has an eighth, state-pool-only entry; M5 `_CACHE_DIR` is now unreferenced at runtime in all eight
+managers while four frozen test files still monkeypatch it (#69); M6 the "forbidden was created" arm of the isolation
+helper fired in none of the mutations. Fix round 1 (I1, I2, M1, M3, M4 folded) sent to the resumed implementer.
+
+**WP-B fix round 1 (2026-09-20, commit c43ce34, 6 files, +369/−170; production changes comment-only, verified by a
+non-comment diff filter).** I1: `test_manager_seams.py`'s isolation helper redirected each module default to an
+EMPTY `tmp_path/forbidden`, so a manager still loading `_CACHE_FILE` read an absent file and came up empty exactly as
+if it had obeyed `cache_path` — an absent path cannot tell "loaded the right file" from "loaded the wrong, missing
+one". Replaced by a helper that SEEDS the redirected default with a populated cache written by that manager's own
+cache class, then asserts in order: the seed is non-empty; a control manager pointed at it DOES load it (anti-vacuity,
+probe per cache: `history_size` for six, `operations_total` for talismans, `dict(last_seen_block)` for ttt); the seam
+manager comes up empty; after one `fetch_and_compute()` + save the seam file exists and the seeded bytes are
+unchanged. Bakery's and ocm's seeds use `time.time()` because per-series `max_age` would otherwise expire them on
+load and make the control step fail loudly. I2: `assert mgr.client is <injected>` twice per test (seeder and seam
+manager) in all eight, and every client class patched to a raise-on-every-attribute fake as the socket backstop.
+Mutations: reverting only the load call in `base_manager.py:82` + `ttt_manager.py:148` reddened exactly the base and
+ttt seam tests at the load step, the other eleven green (under the old helper all 13 stayed green); `base_manager.py:73`
+always building a real client reddened exactly the base seam test on the identity assert (under `7ee4470` all 13
+passed and real sockets opened). Folded: M3 `test_banned_host_lists_still_raise_at_construction` parametrizes
+fwa/ttt/talismans and a new `test_talismans_and_ttt_ban_exactly_the_same_hosts` binds the sixth hand-typed copy
+(`==` on the sets, `fwa − ttt == {"eth.drpc.org"}`); the seam file's duplicate arm trimmed to the log-pool seam; M4
+talismans' comment now says it mirrors ttt exactly and names the agreement test; M1 one docstring sentence in
+ocm/cattown/frenpet clients states the import-time fallback. Named runs: seam file 13; three data files + eight
+manager files + `test_app_startup.py` 306; guard 194.
+
+**WP-B scoped re-review (2026-09-20, `git diff 7ee4470..c43ce34`, opus): I1 ADDRESSED, I2 ADDRESSED.** The load-only
+revert (`load_from_file(str(_CACHE_FILE))`) applied one manager at a time reddened all eight seam tests on the step-3
+assertion "loaded its module default instead of the injected cache_path" — 1 failed / 12 passed each time, where at
+`7ee4470` the same mutation survived 8/8; bakery and ocm redden because their seeds carry `fetched_at=time.time()`, so
+`max_age` does not expire them on load. The anti-vacuity step was instrumented in place: every probe is non-zero after
+the seeder loads and falsy for a fresh manager (bakery 2, base 3, frenpet 5, talismans 1 via `operations_total`,
+cattown/dota/ocm 1, ttt the two `last_seen_block` entries), so steps 2 and 3 constrain each other. Save-only reverts
+still bite (bakery, ocm) and dota's `mkdir` arm bites. I2: identity asserted at step 1 and step 3 in the shared helper,
+so all eight are covered; the `if client is None` drop in base, frenpet and talismans each reddened exactly its own
+seam test; the fake is a plain class whose `__getattr__` returns an async raiser, no `unittest.mock` in the file, patched
+into all eight modules; the base mutation that passed in 6.35 s at `7ee4470` on real sockets now fails in 0.27 s.
+Scope confirmed: production diff non-comment-empty; only `test_rpc_shared.py` pre-existing test touched; the agreement
+test asserts `==` and `fwa − ttt == {"eth.drpc.org"}` and reddens on one deleted host; the seam file's ban test kept
+only the log-pool arm and reddens on dropping `*self._log_rpcs`. New Minor filed: #70 (`cache=` identity asserted for
+frenpet and ocm only; six of eight `cache=` seams delete green). Named runs: two changed files 68; 18-file set 573;
+guard 194; five screen files 48. 24 mutations, inverse-edit restored, tree clean after each.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

@@ -727,3 +727,32 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     patches it today (`test_surf_pool4_client.py:445, 2590, 2603` only call it). Either drop the alias and
     point the three calls at `rpc_classify.named_block_limit`, or make the predicate take the limit reader as
     a parameter. **Minor, Tier 0** when `surf_pool4_client.py` is next touched.
+
+## Branch 10 WP-B — found while implementing (2026-09-20)
+
+68. **Four dashboards have no `*_KEYS` contract tuple in their models module.** `curator_models`, `fwa_models` and
+    `surf_models` export the flat-dict key tuple the widgets restate and an agreement test binds; `cattown_models`,
+    `dota_models`, `ttt_models` and `ocm_models` do not (bakery/base/frenpet/talismans carry theirs in the manager
+    test file). `tests/data/test_manager_seams.py` therefore asserts those four seam payloads against a reference
+    key set rather than an imported contract. Add the tuple to each models module (the manager's
+    `fetch_and_compute()` keys, typed once) and point both the seam test and the existing manager test at it —
+    per CLAUDE.md "Freeze the data contract first". **Minor, Tier 1 per dashboard** (models module + two test
+    files), or fold into the dashboard's next Tier 1.
+
+69. **`_CACHE_DIR` is unreferenced at runtime in all eight migrated managers, but four frozen test files still
+    monkeypatch it.** After Branch 10 WP-B only `_CACHE_FILE` is read (dota/talismans/ttt moved their `mkdir` to
+    `self._cache_path.parent`); `test_talismans_manager.py:69,214,284,300,324,345,362`, `test_dota_manager.py:95`,
+    `test_base_manager.py:122`, `test_cattown_manager.py:130` patch `_CACHE_DIR` where it no longer bites. Harmless
+    — each also patches `_CACHE_FILE`, which carries the isolation — but a reader will trust the wrong patch. Drop
+    the dead patches when each file is next touched. **Minor, Tier 0 per file.**
+
+## Branch 10 WP-B — re-review Minor (2026-09-20)
+
+70. **`cache=` identity is pinned for only two of the eight managers that accept it.**
+    `tests/data/test_manager_seams.py`'s shared helper asserts `mgr.cache is injected_cache` only when the test's
+    `_build` returns a cache, and only frenpet and ocm do; the other six pass `None`. Mutation-proven by the
+    re-review: dropping `if cache is None else cache` from bakery `manager.py:72`, `base_manager.py:74`,
+    `dota_manager.py:57`, `cattown_manager.py:68`, `talismans_manager.py:108` and `ttt_manager.py:135` leaves 13
+    passed every time — six of eight `cache=` seams can be deleted green. Same shape as WP-B's I2, one rung down.
+    Fix: return the cache from each `_build` as frenpet and ocm already do. **Minor, Tier 0** when that file is next
+    touched.
