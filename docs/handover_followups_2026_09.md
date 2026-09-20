@@ -500,6 +500,8 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `data.get("totalTickets")` (plus a numeric check, since the value is third-party), and let the
     existing `None` path carry it. One test: a payload of `{}` records no point. **Important,
     Tier 0** — one file, one return statement, one regression test.
+    **Done 2026-09-20, `followups/important-2026-09`:** `int | None`, numeric-and-not-bool guard,
+    `TestRaffleTotalTickets` (five no-count payloads → `None`; `0` / `12.0` → int; 503 still raises).
 
 46. **`save_to_file` stamps `saved_at` from the wall clock.** `series_cache.py:209` reads
     `time.time()` inside `_payload()`; the six managers call `save_to_file(path)` with no clock, so

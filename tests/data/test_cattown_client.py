@@ -1145,3 +1145,57 @@ class TestClientLifecycle:
             pass
 
         mock_http.aclose.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests: raffle ticket count (follow-up #45)
+# ---------------------------------------------------------------------------
+
+class TestRaffleTotalTickets:
+    """A raffle payload that does not carry a count is ``None``, never ``0``.
+
+    ``get_raffle_total_tickets`` used to answer ``data.get("totalTickets", 0)``:
+    a 200 with an empty or reshaped body became a zero, and the manager --
+    which already treats ``None`` as "could not look" -- recorded it into the
+    persisted ``raffle_tickets_history`` as "nobody bought a ticket".
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"totalTickets": None},
+            {"totalTickets": "250"},
+            {"totalTickets": True},
+            {"tickets": 250},
+        ],
+        ids=["empty", "null", "string", "bool", "renamed-key"],
+    )
+    async def test_a_payload_without_a_count_is_none(self, mock_client, payload):
+        client, mock_http = mock_client
+        mock_http.get.return_value = _json_response(payload)
+
+        assert await client.get_raffle_total_tickets() is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value, expected", [(250, 250), (0, 0), (12.0, 12)])
+    async def test_a_numeric_count_is_returned_as_an_int(
+        self, mock_client, value, expected
+    ):
+        client, mock_http = mock_client
+        mock_http.get.return_value = _json_response({"totalTickets": value})
+
+        result = await client.get_raffle_total_tickets()
+
+        assert result == expected
+        assert type(result) is int
+
+    @pytest.mark.asyncio
+    async def test_a_non_2xx_still_raises(self, mock_client):
+        """The manager's ``except`` is the degradation path for HTTP errors."""
+        client, mock_http = mock_client
+        mock_http.get.return_value = _json_response({"error": "down"}, status=503)
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.get_raffle_total_tickets()
