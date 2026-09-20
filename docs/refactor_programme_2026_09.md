@@ -1937,6 +1937,25 @@ Green: **550** across the eighteen named files (543 at `ef3a16e`, +7), **4 passe
 on `test_address_icons_everywhere.py -k "talismans or ttt"`, **191** on `-m guard tests`. Every
 edited test file's function-name list diffed against `ef3a16e`: additions only, no deletions.
 
+**Branch 7 WP-B re-review of fix round 1 (2026-09-20): Approved.** All six findings ADDRESSED;
+every row of the mutation table above reproduced by the reviewer against the named file, and the
+controller independently re-ran the I1 always-show mutation (`True or bool(` at
+`ttt_signals.py:107` — the toggle spans three lines, so a one-line substitution silently misses it
+and reports green) with exactly `test_no_fresh_launch_hides_the_row_entirely` failing. M3's
+deviation 6 re-confirmed by composition; M4's and M5's line references checked. 537 passed over
+the sixteen named files, 191 guard. Two new Minors, both filed and closed here as docs rather than
+a second fix round: **N1** — the label-width test only bites on truncation; `LABEL_WIDTH` 12 → 13
+and 12 → 14 leave 18 passed, and at 12 → 8 the test dies on the truncated label lookup before the
+padding assertion it is credited with, so the M1 paragraph above claims more than the test can
+deliver (follow-up #25). **N2** — follow-up #24's colour rationale was wrong in both colour
+claims: probed on a mounted `TalismansSignals`, `color=""` degrades through `write_guarded` to a
+visible `● unavailable` (not a dropped line), and `color=None` renders normally because Textual's
+`Content.from_markup` accepts `[None]` as the null style; only `value_str=""` stands. #24 corrected
+in place (the reviewer's own M4 wording had speculated the same, unprobed). Seen in passing while
+closing N2: two `panels.py` docstrings still claim the deferred message-pump raise that WP-A's
+probe refuted — follow-up #26, docstring-only. **WP-B closed: 2ef29dc is the branch head under
+review; the docs closure commit that follows changes no code and no test.**
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
