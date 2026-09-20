@@ -4,7 +4,7 @@ Renders up to four analytical signal rows:
 
 1. **Fresh launch** -- only present when a token was just minted (the
    manager forwards ``None`` when there is no fresh launch, and the
-   widget omits the row in that case, leaving a 3-row panel).
+   widget collapses the row in that case, leaving a 3-row panel).
 2. **Buybacks ready** -- count / TVL of buyback bounties currently
    redeemable.
 3. **Decay window** -- aggregate decay tax info across active tokens.
@@ -16,91 +16,63 @@ Each signal dict (per WP3 schema) carries:
 {"label": str, "value_str": str, "indicator": str, "color": str}
 ```
 
-Missing keys collapse to safe defaults; the row never crashes.
+The rows, their guard, the blank separator and the formatter are
+:class:`~maxpane_dashboard.widgets.panels.SignalsPanelBase`'s (Branch 7,
+WP-B); the rows are **label-less** (``(id, None)``) because each value
+string already restates its own concept, and the blank row before
+CONCENTRATION is a bare ``None`` item -- a separator, not the title's
+blank row, which is ``PanelBase``'s margin.
+
+**Named change 2 lands here.** The four rows were four bare
+``query_one(...).update(...)`` calls, so a malformed signal dict raised
+into the screen's ``except`` and left the previous poll's rows on screen
+as if they were live. Every row now goes through
+``render_signal``/``write_guarded``, which builds inside the guard, and a
+signal the manager could not compute renders ``unavailable`` instead of
+the ``--`` this copy used -- ``--`` is the analytics saying "nothing to
+report", and a failed read may not wear a real negative's clothes.
+``data/ttt_manager.py`` masks every ``None`` signal with a ``--`` dict of
+its own before it reaches this panel, so the new state is not reachable
+from the live manager; it is reachable from a payload that serves ``None``
+(a cache file, a test), and *that* is the case it exists for.
 """
 
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import Static
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+
+from maxpane_dashboard.widgets.panels import SignalsPanelBase
+
+#: The optional row: shown only when there IS a fresh launch. It used to
+#: double as the title spacer (CR2.2), which meant the blank row came and
+#: went with the payload -- the state that removes the row is the state the
+#: panel exists to announce. The blank row is ``PanelBase``'s title margin
+#: now, and cannot be cancelled by a payload; this row collapses with
+#: ``display = False`` so an absent launch costs no row at all.
+_FRESH_ID = "ttt-sig-fresh"
 
 
-def _fmt_signal(sig: dict | None) -> str:
-    """Render one signal row using Textual markup.
-
-    Returns an empty string when ``sig`` is ``None`` so callers can hide
-    the row entirely (used for the optional ``fresh_launch`` slot).
-
-    The label prefix is intentionally dropped (CR6) -- the value string
-    already restates the concept (e.g. "0 buybacks ready"), so dropping
-    the redundant label gives the value more horizontal room.
-    """
-    if not sig:
-        return ""
-    if not isinstance(sig, dict):
-        return ""
-    value = safe_markup(sig.get("value_str") or "--")
-    color = sig.get("color") or "dim"
-    indicator = sig.get("indicator") or "●"
-    return f"  [{color}]{indicator}[/] [{color}]{value}[/]"
-
-
-class TTTSignals(Vertical):
+class TTTSignals(SignalsPanelBase):
     """Analytical signals panel with up to four rows."""
 
-    DEFAULT_CSS = """
-    /* `margin: 0 0 1 0` is the repo-wide blank row under a widget title and it
-       is not optional. CR2.2 deleted the dedicated spacer here and let the
-       optional fresh-launch row stand in for it, which is right exactly half
-       the time: with no fresh launch the row renders empty and the blank is
-       there, and the moment a launch IS fresh the row fills with content and
-       the title loses its blank without anything saying so. The state that
-       removes the row is the state the panel exists to announce. The margin
-       cannot be cancelled by a payload; the fresh row now hides itself when it
-       has nothing to say, so there is still exactly one blank row either way. */
-    TTTSignals > .ttt-signals-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-        margin: 0 0 1 0;
-    }
-    TTTSignals > .ttt-signals-body {
-        padding: 0 1;
-        width: 100%;
-    }
-    """
+    TITLE = "SIGNALS"
 
-    def compose(self) -> ComposeResult:
-        yield Static("SIGNALS", classes="ttt-signals-title")
-        # Optional row: present only when there IS a fresh launch. It used to
-        # double as the title spacer (CR2.2), which meant the blank row came
-        # and went with the payload -- see the note on the title's margin.
-        # `display = False` collapses it, so an absent launch costs no row at
-        # all and the panel is the same height it was before the margin.
-        fresh = Static("", classes="ttt-signals-body", id="ttt-sig-fresh")
-        fresh.display = False
-        yield fresh
-        yield Static(
-            "",
-            classes="ttt-signals-body",
-            id="ttt-sig-buybacks",
-        )
-        yield Static(
-            "",
-            classes="ttt-signals-body",
-            id="ttt-sig-decay",
-        )
+    ROWS = (
+        (_FRESH_ID, None),
+        ("ttt-sig-buybacks", None),
+        ("ttt-sig-decay", None),
         # Blank-line separator between the two activity dots (buybacks /
         # decay) and the informational concentration row.
-        yield Static("", classes="ttt-signals-body", id="ttt-sig-sep")
-        yield Static(
-            "",
-            classes="ttt-signals-body",
-            id="ttt-sig-concentration",
-        )
+        None,
+        ("ttt-sig-concentration", None),
+    )
+
+    def compose_body(self) -> ComposeResult:
+        """The base's rows, with the optional fresh-launch row collapsed."""
+        for widget in super().compose_body():
+            if widget.id == _FRESH_ID:
+                widget.display = False
+            yield widget
 
     def update_data(
         self,
@@ -114,28 +86,37 @@ class TTTSignals(Vertical):
 
         ``fresh_launch_signal`` may be ``None`` -- in that case the row is
         collapsed with ``display = False`` and the panel shows only the
-        remaining three rows. It is collapsed rather than left empty because
-        the blank row under the title is now the title's own margin: an
-        always-present empty row would sit *below* that margin and read as a
-        second blank.
+        remaining three rows. It is collapsed rather than left empty
+        because the blank row under the title is the title's own margin: an
+        always-present empty row would sit *below* that margin and read as
+        a second blank.
         """
-        # Fresh launch (optional)
-        fresh_widget = self.query_one("#ttt-sig-fresh", Static)
-        fresh_text = _fmt_signal(fresh_launch_signal)
-        fresh_widget.update(fresh_text)
-        fresh_widget.display = bool(fresh_text)
+        self.render_signal(
+            f"#{_FRESH_ID}", "Fresh launch", fresh_launch_signal,
+            labelled=False,
+        )
+        # The toggle reads the *payload*, not the row it just wrote: the
+        # row now says ``unavailable`` for a signal that could not be
+        # computed, and "there is no fresh launch" is the only reason this
+        # panel hides a row.
+        try:
+            fresh = self.query_one(f"#{_FRESH_ID}")
+        except Exception:
+            pass
+        else:
+            fresh.display = bool(
+                isinstance(fresh_launch_signal, dict) and fresh_launch_signal
+            )
 
-        # Buybacks ready
-        bb_widget = self.query_one("#ttt-sig-buybacks", Static)
-        bb_widget.update(_fmt_signal(buybacks_ready_signal) or
-                         _fmt_signal({"value_str": "--"}))
-
-        # Decay window
-        decay_widget = self.query_one("#ttt-sig-decay", Static)
-        decay_widget.update(_fmt_signal(decay_window_signal) or
-                            _fmt_signal({"value_str": "--"}))
-
-        # Concentration
-        conc_widget = self.query_one("#ttt-sig-concentration", Static)
-        conc_widget.update(_fmt_signal(concentration_signal) or
-                           _fmt_signal({"value_str": "--"}))
+        self.render_signal(
+            "#ttt-sig-buybacks", "Buybacks ready", buybacks_ready_signal,
+            labelled=False,
+        )
+        self.render_signal(
+            "#ttt-sig-decay", "Decay window", decay_window_signal,
+            labelled=False,
+        )
+        self.render_signal(
+            "#ttt-sig-concentration", "Concentration", concentration_signal,
+            labelled=False,
+        )

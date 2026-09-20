@@ -1177,7 +1177,7 @@ async def test_the_table_keeps_its_columns_cursor_and_zebra() -> None:
 #: The dashboard packages that are on ``widgets/panels.py``, each mapped to
 #: **how many** ``update_data`` widget classes the walk below must find.
 #: **One table, one place**: Branch 7 WP-A added ``cattown`` and ``dota`` to
-#: Branch 6's ``ocm``, and WP-B appends ``"talismans": 7`` and ``"ttt": 7``
+#: Branch 6's ``ocm``, and WP-B appended ``"talismans": 7`` and ``"ttt": 7``
 #: -- two entries, no test body touched, because every claim below is
 #: parametrised over this table.
 #:
@@ -1187,7 +1187,7 @@ async def test_the_table_keeps_its_columns_cursor_and_zebra() -> None:
 #: and it reddens when one is dropped, renamed out of ``__all__``, or added
 #: without being put on a base. It is **per package** because the packages
 #: genuinely differ: talismans and ttt export seven each, these three six.
-MIGRATED_PACKAGES = {"ocm": 6, "cattown": 6, "dota": 6}
+MIGRATED_PACKAGES = {"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7}
 
 
 def _package(name: str):

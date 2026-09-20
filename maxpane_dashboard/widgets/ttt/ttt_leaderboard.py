@@ -15,7 +15,7 @@ address, per PRD §1 ("a name shown in place of the address gets the
 icon"). The cell is built with ``address_text``, never markup, so the
 symbol (attacker-chosen ERC20 metadata) never has to be escaped for a
 markup parse it no longer goes through. A missing symbol renders the
-placeholder ``"--"`` rather than the bare address (see ``_safe_symbol`` and
+placeholder ``"--"`` rather than the bare address (see ``_fmt.safe_symbol`` and
 ``ttt_fees_table.py``'s matching note) -- the icon copies the real address
 regardless of the label shown, so this costs nothing the rule requires and
 keeps this column off ``address_text``'s ``MIN_SHORT_COLS`` floor.
@@ -23,13 +23,12 @@ keeps this column off ``address_text``'s ``MIN_SHORT_COLS`` floor.
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text
+from maxpane_dashboard.widgets.fmt import DASH
+from maxpane_dashboard.widgets.panels import TableLeaderboard
 from maxpane_dashboard.widgets.ttt._chain import EXPLORER
+from maxpane_dashboard.widgets.ttt._fmt import safe_symbol
 
-_DASH = "--"
 _SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉"
 
 #: Display budget for the SYM cell's label text, excluding ICON_COLS --
@@ -63,13 +62,13 @@ def _format_price(p) -> str:
         2.7e-9     -> "$0.0₉27"    # 9 leading zeros
     """
     if p is None:
-        return _DASH
+        return DASH
     try:
         v = float(p)
     except (TypeError, ValueError):
-        return _DASH
+        return DASH
     if v <= 0:
-        return _DASH
+        return DASH
     if v >= 0.01:
         return f"${v:.4f}"
     # Sub-cent: count leading zeros after the decimal point.
@@ -100,11 +99,11 @@ def _fmt_price(p) -> str:
 
 def _fmt_change(c) -> str:
     if c is None:
-        return _DASH
+        return DASH
     try:
         v = float(c)
     except (TypeError, ValueError):
-        return _DASH
+        return DASH
     if v > 0:
         return f"[green]+{v:.1f}%[/]"
     if v < 0:
@@ -114,13 +113,13 @@ def _fmt_change(c) -> str:
 
 def _fmt_humanized_usd(value) -> str:
     if value is None:
-        return _DASH
+        return DASH
     try:
         v = float(value)
     except (TypeError, ValueError):
-        return _DASH
+        return DASH
     if v < 0:
-        return _DASH
+        return DASH
     if v >= 1_000_000:
         return f"${v / 1e6:.2f}M"
     if v >= 1_000:
@@ -131,67 +130,47 @@ def _fmt_humanized_usd(value) -> str:
 def _fmt_age(age_str) -> str:
     """Age comes pre-rendered from the manager; render as-is or dash."""
     if not age_str:
-        return _DASH
+        return DASH
     return str(age_str)
-
-
-def _safe_symbol(sym) -> str:
-    """Strip non-printable chars from symbol; truncate to 8 chars.
-
-    **``_DASH``, not ``None``** -- see ``ttt_fees_table.py``'s matching
-    docstring: the icon copies the real address regardless of the label
-    shown, so a placeholder costs nothing the rule requires, and it keeps
-    this column off ``address_text``'s own ``MIN_SHORT_COLS`` floor, which
-    the sibling table's real screen region cannot afford at the app's pin.
-    No ``safe_markup``: the cleaned string is handed to ``address_text`` as
-    a ``label``, appended as plain ``Text`` rather than parsed as markup.
-    """
-    if sym is None:
-        return _DASH
-    try:
-        cleaned = "".join(ch for ch in str(sym) if ch.isprintable())
-    except Exception:
-        return _DASH
-    cleaned = cleaned.strip()
-    return cleaned[:8] if cleaned else _DASH
 
 
 # -- widget ------------------------------------------------------------
 
 
-class TTTLeaderboard(Vertical):
-    """DataTable leaderboard showing top-10 TTT tokens by 24h volume."""
+class TTTLeaderboard(TableLeaderboard):
+    """DataTable leaderboard showing top-10 TTT tokens by 24h volume.
 
+    The title, its blank row, the columns, the seed row and the
+    clear-then-repopulate contract are
+    :class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`'s
+    (Branch 7, WP-B). :data:`_SYM_WIDTH`, the address cell, the
+    subscript-zero price and the rank-1 bolding stay here.
+    """
+
+    TITLE = "TOP TOKENS BY VOLUME"
+
+    TABLE_ID = "ttt-leaderboard-table"
+
+    COLUMNS = (
+        ("#", 3),
+        ("SYM", _SYM_WIDTH + ICON_COLS),
+        ("PRICE", 10),
+        ("24h%", 8),
+        ("VOL", 10),
+        ("AGE", 6),
+        ("MCAP", 10),
+    )
+
+    LOADING_ROW = (DASH, "Loading...", DASH, DASH, DASH, DASH, DASH)
+
+    EMPTY_ROW = (DASH, "No data", DASH, DASH, DASH, DASH, DASH)
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s.
     DEFAULT_CSS = """
-    TTTLeaderboard > Static {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     TTTLeaderboard > DataTable {
         height: 1fr;
     }
     """
-
-    def compose(self) -> ComposeResult:
-        yield Static("TOP TOKENS BY VOLUME", classes="ttt-leaderboard-title")
-        yield Static(" ", classes="ttt-leaderboard-spacer")
-        table = DataTable(id="ttt-leaderboard-table", classes="ttt-leaderboard-table")
-        yield table
-
-    def on_mount(self) -> None:
-        table = self.query_one("#ttt-leaderboard-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        table.add_column("#", width=3)
-        table.add_column("SYM", width=_SYM_WIDTH + ICON_COLS)
-        table.add_column("PRICE", width=10)
-        table.add_column("24h%", width=8)
-        table.add_column("VOL", width=10)
-        table.add_column("AGE", width=6)
-        table.add_column("MCAP", width=10)
-        table.add_row(_DASH, "Loading...", _DASH, _DASH, _DASH, _DASH, _DASH)
 
     def update_data(
         self,
@@ -199,37 +178,32 @@ class TTTLeaderboard(Vertical):
         **_kwargs,
     ) -> None:
         """Refresh the leaderboard with up to 10 ranked tokens."""
-        table = self.query_one("#ttt-leaderboard-table", DataTable)
-        table.clear()
+        self.render_table(top_tokens_by_volume)
 
-        tokens = top_tokens_by_volume or []
-        if not tokens:
-            table.add_row(_DASH, "No data", _DASH, _DASH, _DASH, _DASH, _DASH)
-            return
+    def build_row(self, index: int, token) -> tuple | None:
+        """One token's row. Rank 1 is bold; SYM carries the icon."""
+        if not isinstance(token, dict):
+            return None
+        is_top = index == 0
+        rank = token.get("rank", index + 1)
+        sym_cell = address_text(
+            token.get("address"),
+            label=safe_symbol(token.get("symbol")),
+            width=_SYM_WIDTH,
+            style="bold" if is_top else "",
+            explorer=EXPLORER,
+        )
+        price = _fmt_price(token.get("price_usd"))
+        change = _fmt_change(token.get("change_h24"))
+        volume = _fmt_humanized_usd(token.get("vol_usd_h24"))
+        age = _fmt_age(token.get("age_str"))
+        mcap = _fmt_humanized_usd(token.get("mcap_usd"))
 
-        for idx, token in enumerate(tokens[:10], start=1):
-            if not isinstance(token, dict):
-                continue
-            rank = token.get("rank", idx)
-            symbol = _safe_symbol(token.get("symbol"))
-            sym_cell = address_text(
-                token.get("address"),
-                label=symbol,
-                width=_SYM_WIDTH,
-                style="bold" if idx == 1 else "",
-                explorer=EXPLORER,
-            )
-            price = _fmt_price(token.get("price_usd"))
-            change = _fmt_change(token.get("change_h24"))
-            volume = _fmt_humanized_usd(token.get("vol_usd_h24"))
-            age = _fmt_age(token.get("age_str"))
-            mcap = _fmt_humanized_usd(token.get("mcap_usd"))
+        # Bold row 1
+        if is_top:
+            rank_str = f"[bold]{rank}[/]"
+            price = f"[bold]{price}[/]"
+        else:
+            rank_str = str(rank)
 
-            # Bold row 1
-            if idx == 1:
-                rank_str = f"[bold]{rank}[/]"
-                price = f"[bold]{price}[/]"
-            else:
-                rank_str = str(rank)
-
-            table.add_row(rank_str, sym_cell, price, change, volume, age, mcap)
+        return (rank_str, sym_cell, price, change, volume, age, mcap)

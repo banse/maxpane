@@ -308,3 +308,112 @@ async def test_materials_table():
         ]
         widget.update_data(materials_ledger=ledger)
         assert table.row_count == 6
+
+
+# -- composited pins (Branch 7 WP-B) -----------------------------------
+#
+# The tests above are smoke tests: they drive `update_data` three ways and
+# assert a row count. That is enough to catch a crash and nothing else --
+# every one of them stayed green through the whole migration, including
+# under three deliberate mutations. What a panel *puts on screen* is what
+# the migration could have changed, so the pins below assert the
+# composited strips (the repo rule: `render_strips()`, never the content
+# string), and each one names the mutation it exists to redden.
+
+
+_PIN_SIZE = (120, 24)
+
+
+async def _composited(widget, **payload) -> list[str]:
+    """The widget's composited lines after one poll."""
+    app = _Harness(widget)
+    async with app.run_test(size=_PIN_SIZE) as pilot:
+        widget.update_data(**payload)
+        await pilot.pause()
+        return [
+            "".join(seg.text for seg in strip).rstrip()
+            for strip in app.screen._compositor.render_strips()
+        ]
+
+
+def _line_with(lines: list[str], needle: str) -> str:
+    matches = [line for line in lines if needle in line]
+    assert len(matches) == 1, f"{needle!r} in {matches!r} of {lines!r}"
+    return matches[0]
+
+
+#: A rising series whose last value the two candidate formatters spell
+#: differently: ``fmt_int`` -> ``1,900``, ``sparkline_common.fmt_compact``
+#: (``SparklinePanel``'s default) -> ``1.9K``.
+_RISING = [[1_000 + i * 86_400, 1_000 + i * 100] for i in range(10)]
+
+
+@pytest.mark.asyncio
+async def test_the_sparkline_value_cell_is_a_grouped_integer_not_a_compact_one():
+    """Mutation: drop ``TalismansSparkline.fmt_value`` -> this reddens.
+
+    Both series are counts of whole things in the low thousands, and the
+    panel has the room to show them exactly. ``fmt_compact`` would round
+    1,900 Mythics to ``1.9K``.
+    """
+    lines = await _composited(
+        TalismansSparkline(),
+        mythic_history=_RISING,
+        operations_history=_RISING,
+    )
+    row = _line_with(lines, "MYTHIC COUNT")
+    assert row.endswith("1,900"), row
+    assert "1.9K" not in row, row
+
+
+@pytest.mark.asyncio
+async def test_the_sparkline_draws_no_trend_arrow():
+    """Mutation: set ``SHOW_ARROW = True`` -> this reddens.
+
+    The arrow is the base's default and this panel never drew one; it
+    would also arrive with a leading space, i.e. a ragged trailing cell.
+    """
+    lines = await _composited(
+        TalismansSparkline(),
+        mythic_history=_RISING,
+        operations_history=_RISING,
+    )
+    row = _line_with(lines, "MYTHIC COUNT")
+    assert not any(glyph in row for glyph in ("▲", "▼", "●")), row
+
+
+@pytest.mark.asyncio
+async def test_a_series_too_short_to_draw_keeps_its_label():
+    """Mutation: ``MIN_POINTS = 1`` or ``EMPTY_KEEPS_LABEL = False``.
+
+    One sample is drawn by ``build_sparkline_from_points`` as a flat
+    baseline, which reads as a run of zeroes that never happened -- so
+    this panel says so in words instead, **beside the label**, because
+    with two stacked series the reader has to be able to tell which one
+    is not ready.
+    """
+    lines = await _composited(
+        TalismansSparkline(),
+        mythic_history=[[1_000, 5]],
+        operations_history=_RISING,
+    )
+    row = _line_with(lines, "MYTHIC COUNT")
+    assert "waiting for data" in row, row
+    # The other series is drawn, so this is not a panel that simply failed.
+    assert "1,900" in _line_with(lines, "DAILY OPERATIONS")
+
+
+@pytest.mark.asyncio
+async def test_the_empty_leaderboard_says_no_data_under_the_wallet_column():
+    """Mutation: move ``No data`` to another cell of ``EMPTY_ROW``.
+
+    A cell tuple of the wrong shape paints the degraded state under the
+    wrong heading -- and ``DataTable.add_row`` pads a short tuple in
+    silence, so nothing else would say.
+    """
+    lines = await _composited(TalismansLeaderboard(), top_collectors=[])
+    header = _line_with(lines, "WALLET")
+    row = _line_with(lines, "No data")
+    assert header.index("WALLET") == row.index("No data"), (header, row)
+    # ... and the rank column is a dash, not the word.
+    assert row.lstrip().startswith("--"), row

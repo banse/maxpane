@@ -6,61 +6,52 @@ Mythic) across tier columns (Raw / Cut / Fine / Prime / Bonded), plus a
 
 All cells handle ``None`` and malformed inputs by collapsing to ``"--"``.
 
-Copied from ``ttt_fees_table.py`` and adapted to the Talismans data
-contract.
+The title, its blank row, the columns, the seed row and the
+clear-then-repopulate contract are
+:class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`'s (Branch 7,
+WP-B). This panel is the base's **only** ``footer=`` subscriber: its bold
+TOTAL line comes out of a different payload key than its rows, so it is a
+row the table can have when it has no others -- which is why
+``render_table`` paints ``No data`` only when there is no footer either.
+``_fmt_int`` is now ``widgets/fmt.fmt_int``.
 """
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import DataTable, Static
-
-_DASH = "--"
+from maxpane_dashboard.widgets.fmt import DASH, fmt_int
+from maxpane_dashboard.widgets.panels import TableLeaderboard
 
 
-def _fmt_int(value) -> str:
-    if value is None:
-        return _DASH
-    try:
-        return f"{int(value):,}"
-    except (TypeError, ValueError):
-        return _DASH
-
-
-class TalismansMatrixTable(Vertical):
+class TalismansMatrixTable(TableLeaderboard):
     """Essence × tier breakdown of the live token population."""
 
+    TITLE = "ESSENCE × TIER MATRIX"
+
+    TABLE_ID = "tal-matrix-dt"
+
+    COLUMNS = (
+        ("ESSENCE", 9),
+        ("RAW", 7),
+        ("CUT", 7),
+        ("FINE", 7),
+        ("PRIME", 7),
+        ("BONDED", 7),
+        ("TOTAL", 8),
+    )
+
+    #: Three essences and no more; the matrix is not a ranking to cut off.
+    ROW_CAP = None
+
+    LOADING_ROW = (DASH, DASH, DASH, DASH, DASH, DASH, "Loading...")
+
+    EMPTY_ROW = (DASH, DASH, DASH, DASH, DASH, DASH, "No data")
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s.
     DEFAULT_CSS = """
-    TalismansMatrixTable > Static {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     TalismansMatrixTable > DataTable {
         height: 1fr;
     }
     """
-
-    def compose(self) -> ComposeResult:
-        yield Static("ESSENCE × TIER MATRIX", classes="tal-matrix-title")
-        yield Static(" ", classes="tal-matrix-spacer")
-        table = DataTable(id="tal-matrix-dt", classes="tal-matrix-table")
-        yield table
-
-    def on_mount(self) -> None:
-        table = self.query_one("#tal-matrix-dt", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        table.add_column("ESSENCE", width=9)
-        table.add_column("RAW", width=7)
-        table.add_column("CUT", width=7)
-        table.add_column("FINE", width=7)
-        table.add_column("PRIME", width=7)
-        table.add_column("BONDED", width=7)
-        table.add_column("TOTAL", width=8)
-        table.add_row(_DASH, _DASH, _DASH, _DASH, _DASH, _DASH, "Loading...")
 
     def update_data(
         self,
@@ -68,39 +59,36 @@ class TalismansMatrixTable(Vertical):
         **_kwargs,
     ) -> None:
         """Refresh the matrix rows plus the bold totals row."""
-        table = self.query_one("#tal-matrix-dt", DataTable)
-        table.clear()
-
         matrix = essence_tier_matrix or {}
         if not isinstance(matrix, dict):
             matrix = {}
         rows = matrix.get("rows") or []
         totals = matrix.get("totals") or {}
 
-        if not rows and not totals:
-            table.add_row(_DASH, _DASH, _DASH, _DASH, _DASH, _DASH, "No data")
-            return
-
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            table.add_row(
-                str(row.get("essence") or _DASH),
-                _fmt_int(row.get("raw")),
-                _fmt_int(row.get("cut")),
-                _fmt_int(row.get("fine")),
-                _fmt_int(row.get("prime")),
-                _fmt_int(row.get("bonded")),
-                _fmt_int(row.get("total")),
-            )
-
+        footer = None
         if isinstance(totals, dict) and totals:
-            table.add_row(
+            footer = (
                 "[bold]TOTAL[/]",
-                f"[bold]{_fmt_int(totals.get('raw'))}[/]",
-                f"[bold]{_fmt_int(totals.get('cut'))}[/]",
-                f"[bold]{_fmt_int(totals.get('fine'))}[/]",
-                f"[bold]{_fmt_int(totals.get('prime'))}[/]",
-                f"[bold]{_fmt_int(totals.get('bonded'))}[/]",
-                f"[bold]{_fmt_int(totals.get('total'))}[/]",
+                f"[bold]{fmt_int(totals.get('raw'))}[/]",
+                f"[bold]{fmt_int(totals.get('cut'))}[/]",
+                f"[bold]{fmt_int(totals.get('fine'))}[/]",
+                f"[bold]{fmt_int(totals.get('prime'))}[/]",
+                f"[bold]{fmt_int(totals.get('bonded'))}[/]",
+                f"[bold]{fmt_int(totals.get('total'))}[/]",
             )
+
+        self.render_table(rows, footer=footer)
+
+    def build_row(self, index: int, row) -> tuple | None:
+        """One essence's row across the five tiers, plus its total."""
+        if not isinstance(row, dict):
+            return None
+        return (
+            str(row.get("essence") or DASH),
+            fmt_int(row.get("raw")),
+            fmt_int(row.get("cut")),
+            fmt_int(row.get("fine")),
+            fmt_int(row.get("prime")),
+            fmt_int(row.get("bonded")),
+            fmt_int(row.get("total")),
+        )

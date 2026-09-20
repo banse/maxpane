@@ -9,93 +9,74 @@ the per-NFT 24h holder claim would look like at a given burn level:
 The "Today" row -- always row 1 -- is rendered bold so the user has a
 visual anchor.  (Previously a ``× TODAY`` multiplier column lived to the
 right of ``24h PROJECTION`` but was dropped in CR7 because the cell got
-clipped by the scrollbar at common terminal widths.)
+clipped by the scrollbar at common terminal widths; ``_fmt_multiplier``
+outlived it by two years and is deleted with this migration.)
 
 Like ``TTTFeesTable`` this widget is a sibling under the screen; the
 screen toggles ``display`` between the two on the ``c`` keybinding.
+
+The title, its blank row, the columns, the seed row and the
+clear-then-repopulate contract are
+:class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`'s (Branch 7,
+WP-B); ``_fmt_int`` is now ``widgets/fmt.fmt_int``, one definition
+instead of six.
 """
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import DataTable, Static
-
-_DASH = "--"
-
-
-def _fmt_int(value) -> str:
-    if value is None:
-        return _DASH
-    try:
-        return f"{int(value):,}"
-    except (TypeError, ValueError):
-        return _DASH
+from maxpane_dashboard.widgets.fmt import DASH, fmt_int
+from maxpane_dashboard.widgets.panels import TableLeaderboard
 
 
 def _fmt_share(value) -> str:
     """``value`` is a percent (e.g. ``0.30`` => ``0.3000%``)."""
     if value is None:
-        return _DASH
+        return DASH
     try:
         return f"{float(value):.4f}%"
     except (TypeError, ValueError):
-        return _DASH
+        return DASH
 
 
 # Not widgets/fmt.fmt_eth: ungrouped -- probe 1234.5678 renders "1234.56780 Ξ" here,
-# "1,234.56780 Ξ" there; True renders "1.00000 Ξ" here, "--" there.
+# "1,234.56780 Ξ" there; True renders "1.00000 Ξ" here, "--" there. Five decimal
+# places, pinned by tests/widgets/test_ttt_address_icons.py:133.
 def _fmt_eth(value) -> str:
     if value is None:
-        return _DASH
+        return DASH
     try:
         return f"{float(value):.5f} Ξ"
     except (TypeError, ValueError):
-        return _DASH
+        return DASH
 
 
-def _fmt_multiplier(value) -> str:
-    if value is None:
-        return _DASH
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return _DASH
-    if v <= 0:
-        return _DASH
-    return f"{v:.2f}×"
-
-
-class TTTClaimsTable(Vertical):
+class TTTClaimsTable(TableLeaderboard):
     """γ view -- claim-math scenarios across burn levels."""
 
+    TITLE = "γ HOLDER CLAIM MATH"
+
+    TABLE_ID = "ttt-claims-table"
+
+    COLUMNS = (
+        ("SCENARIO", 14),
+        ("UNBURNED", 9),
+        ("SHARE/DEPOSIT", 13),
+        ("24h PROJECTION", 14),
+    )
+
+    #: Six scenarios; the analytics produces exactly that many.
+    ROW_CAP = 6
+
+    LOADING_ROW = (DASH, DASH, "Loading...", DASH)
+
+    EMPTY_ROW = (DASH, DASH, "No data", DASH)
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s.
     DEFAULT_CSS = """
-    TTTClaimsTable > Static {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     TTTClaimsTable > DataTable {
         height: 1fr;
     }
     """
-
-    def compose(self) -> ComposeResult:
-        yield Static("γ HOLDER CLAIM MATH", classes="ttt-claims-title")
-        yield Static(" ", classes="ttt-claims-spacer")
-        table = DataTable(id="ttt-claims-table", classes="ttt-claims-table")
-        yield table
-
-    def on_mount(self) -> None:
-        table = self.query_one("#ttt-claims-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        table.add_column("SCENARIO", width=14)
-        table.add_column("UNBURNED", width=9)
-        table.add_column("SHARE/DEPOSIT", width=13)
-        table.add_column("24h PROJECTION", width=14)
-        table.add_row(_DASH, _DASH, "Loading...", _DASH)
 
     def update_data(
         self,
@@ -103,30 +84,23 @@ class TTTClaimsTable(Vertical):
         **_kwargs,
     ) -> None:
         """Refresh the six scenario rows."""
-        table = self.query_one("#ttt-claims-table", DataTable)
-        table.clear()
+        self.render_table(claim_math_scenarios)
 
-        scenarios = claim_math_scenarios or []
-        if not scenarios:
-            table.add_row(_DASH, _DASH, "No data", _DASH)
-            return
+    def build_row(self, index: int, row) -> tuple | None:
+        """One scenario's row; the "Today" row is bold."""
+        if not isinstance(row, dict):
+            return None
+        scenario = row.get("scenario") or DASH
+        unburned = fmt_int(row.get("unburned"))
+        share = _fmt_share(row.get("share_pct"))
+        projected = _fmt_eth(row.get("projected_24h_eth"))
 
-        for idx, row in enumerate(scenarios[:6]):
-            if not isinstance(row, dict):
-                continue
-            scenario = row.get("scenario") or _DASH
-            unburned = _fmt_int(row.get("unburned"))
-            share = _fmt_share(row.get("share_pct"))
-            projected = _fmt_eth(row.get("projected_24h_eth"))
+        # Highlight the "Today" row (always the first scenario)
+        is_today = str(scenario).strip().lower() == "today" or index == 0
+        if is_today:
+            scenario = f"[bold]{scenario}[/]"
+            unburned = f"[bold]{unburned}[/]"
+            share = f"[bold]{share}[/]"
+            projected = f"[bold]{projected}[/]"
 
-            # Highlight the "Today" row (always the first scenario)
-            is_today = (
-                str(scenario).strip().lower() == "today" or idx == 0
-            )
-            if is_today:
-                scenario = f"[bold]{scenario}[/]"
-                unburned = f"[bold]{unburned}[/]"
-                share = f"[bold]{share}[/]"
-                projected = f"[bold]{projected}[/]"
-
-            table.add_row(scenario, unburned, share, projected)
+        return (scenario, unburned, share, projected)

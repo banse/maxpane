@@ -428,16 +428,36 @@ class SparklinePanel(PanelBase):
     #: ``waiting for data...`` instead, which is the same claim in words.
     EMPTY_TEXT: str = ""
 
+    #: How many coerced points a series needs before it is drawn at all.
+    #: ``1`` is ocm's, cattown's and dota's ``if not points`` (Branch 6);
+    #: talismans and ttt short-circuit at **2**, because
+    #: ``build_sparkline_from_points`` renders a single point as a flat
+    #: baseline and a flat baseline is a run of zeroes that never happened
+    #: (Branch 7 WP-B). Their waiting line says so in words instead.
+    MIN_POINTS: int = 1
+
+    #: Keep the label column on the :attr:`EMPTY_TEXT` line. ``False`` is
+    #: Branch 6's behaviour and the only one an empty ``EMPTY_TEXT`` can
+    #: have; talismans and ttt print ``MYTHIC COUNT     waiting for
+    #: data...``, so the reader can tell *which* of two stacked series is
+    #: not ready yet. The line the entry could not even be unpacked from
+    #: has no label to keep, and writes :attr:`EMPTY_TEXT` bare.
+    EMPTY_KEEPS_LABEL: bool = False
+
     def compose_body(self) -> ComposeResult:
         for index, line_id in enumerate(self.LINE_IDS):
-            # A panel with an EMPTY_TEXT seeds *that*: its "nothing yet" and
-            # its "nothing usable" are the same sentence, and seeding
-            # ``Loading...`` under it would be a second word for one state.
-            yield Static(
-                (self.EMPTY_TEXT or LOADING) if index == 0 else "",
-                classes="panel-line",
-                id=line_id,
-            )
+            # A panel with an EMPTY_TEXT seeds *that*, on **every** line: its
+            # "nothing yet" and its "nothing usable" are the same sentence,
+            # and a second line seeded blank under a first one saying
+            # "waiting for data..." reads as a series that has gone missing
+            # rather than one that has not arrived. A panel without one
+            # seeds ``Loading...`` on the first line only, so a panel that
+            # has never polled does not claim three rows of nothing.
+            if self.EMPTY_TEXT:
+                seed = self.EMPTY_TEXT
+            else:
+                seed = LOADING if index == 0 else ""
+            yield Static(seed, classes="panel-line", id=line_id)
 
     def fmt_value(self, value, unit: str) -> str:
         """The current value's cell. ``sparkline_common.fmt_compact``.
@@ -452,11 +472,23 @@ class SparklinePanel(PanelBase):
         """
         return fmt_compact(value, unit)
 
+    def _label_cell(self, label) -> str:
+        """The label clipped and padded to :attr:`LABEL_WIDTH`."""
+        width = self.LABEL_WIDTH
+        return f"{str(label)[:width]:<{width}}"
+
+    def empty_line(self, label) -> str:
+        """What one unusable series writes, with or without its label."""
+        if not self.EMPTY_KEEPS_LABEL:
+            return self.EMPTY_TEXT
+        return f"  [dim]{self._label_cell(label)}[/]  {self.EMPTY_TEXT}"
+
     def render_series(self, series) -> None:
         """Draw ``(label, points, color, unit)`` tuples in line order.
 
         An empty or unusable series writes :attr:`EMPTY_TEXT` -- never a
-        flat baseline that would read as a real run of zeroes.
+        flat baseline that would read as a real run of zeroes -- keeping
+        its label column when :attr:`EMPTY_KEEPS_LABEL` says so.
         """
         for line_id, entry in zip(self.LINE_IDS, series):
             selector = f"#{line_id}"
@@ -466,13 +498,12 @@ class SparklinePanel(PanelBase):
                 self.write(selector, self.EMPTY_TEXT)
                 continue
             pts = coerce_points(points)
-            if not pts:
-                self.write(selector, self.EMPTY_TEXT)
+            if len(pts) < self.MIN_POINTS or not pts:
+                self.write(selector, self.empty_line(label))
                 continue
             sparkline = build_sparkline_from_points(pts)
             current = self.fmt_value(pts[-1][1], unit)
-            width = self.LABEL_WIDTH
-            cell = f"{str(label)[:width]:<{width}}"
+            cell = self._label_cell(label)
             row = (
                 f"  [dim]{cell}[/]  [{color}]{sparkline}[/]  "
                 f"[bold]{current}[/]"
@@ -523,6 +554,22 @@ class RichLogFeed(PanelBase):
     #: ``True`` = a snapshot of current state. See the class docstring.
     SNAPSHOT: bool = False
 
+    #: ``RichLog.wrap``. ``True`` is ocm's, cattown's and dota's, whose rows
+    #: are short prose; talismans and ttt set ``False`` because their rows
+    #: are **columnar** -- a wrapped burn row puts its tokenId under its
+    #: timestamp and the column stops being a column (Branch 7 WP-B).
+    WRAP: bool = True
+
+    #: ``RichLog.highlight``: Rich's ``ReprHighlighter`` over ``str``
+    #: content, which recolours anything that looks like a number, a hex
+    #: literal or a URL. talismans and ttt set ``False``; their rows colour
+    #: themselves by event type and the highlighter fights that.
+    HIGHLIGHT: bool = True
+
+    #: ``RichLog.max_lines``; ``None`` leaves the log unbounded, as ocm,
+    #: cattown and dota do. talismans and ttt cap it at 200.
+    MAX_LINES: int | None = None
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._seen_keys: set[str] = set()
@@ -535,7 +582,13 @@ class RichLogFeed(PanelBase):
         self._drawn = False
 
     def compose_body(self) -> ComposeResult:
-        yield RichLog(id=self.LOG_ID, wrap=True, highlight=True, markup=True)
+        yield RichLog(
+            id=self.LOG_ID,
+            wrap=self.WRAP,
+            highlight=self.HIGHLIGHT,
+            markup=True,
+            max_lines=self.MAX_LINES,
+        )
 
     # -- hooks ------------------------------------------------------------
 
@@ -773,9 +826,11 @@ class TableLeaderboard(PanelBase):
     def render_table(self, rows, *, footer=None) -> None:
         """Clear and repopulate the table.
 
-        ``None`` or empty paints :attr:`EMPTY_ROW`; otherwise the capped
-        slice goes through :meth:`build_row`, then the optional *footer*
-        tuple (the matrix table's bold TOTAL line) lands last.
+        ``None`` or empty paints :attr:`EMPTY_ROW` -- unless a *footer* was
+        passed, which is a row in its own right and lands with no
+        ``No data`` above it. Otherwise the capped slice goes through
+        :meth:`build_row`, then the *footer* tuple (the matrix table's bold
+        TOTAL line) lands last.
 
         **Every row is built and added inside its own guard.** One item the
         formatter cannot read is one missing line; without the guard the
@@ -795,12 +850,19 @@ class TableLeaderboard(PanelBase):
 
         table.clear()
 
-        if not rows:
+        if not rows and footer is None:
+            # "Nothing to show" is *no rows and no footer*. A footer with no
+            # rows above it is still a fact -- talismans' matrix serves its
+            # bold TOTAL line out of a different key than its rows, and
+            # painting ``No data`` over a real total would be a false
+            # negative (Branch 7 WP-B; this base's only footer user).
             if self.EMPTY_ROW:
                 table.add_row(*self.EMPTY_ROW)
             return
 
-        capped = rows if self.ROW_CAP is None else rows[: self.ROW_CAP]
+        capped = () if not rows else (
+            rows if self.ROW_CAP is None else rows[: self.ROW_CAP]
+        )
         for index, item in enumerate(capped):
             try:
                 cells = self.build_row(index, item)

@@ -22,24 +22,43 @@ A burn row is the one site in this module that displays a wallet address
 via ``address_text`` rather than a markup string, so the copy icon's click
 meta survives ``RichLog``'s deferred markup parsing (``RichLog._make_renderable``
 only parses ``str`` content -- a ``Text`` object passes straight through).
-The other four event types render no address today, so they stay plain
-markup strings.
+The other four event types render no address, so they build a markup
+string and ``_event_to_text`` parses it here, inside this panel's own
+guard.
+
+The log, the write contract and the placeholder are
+:class:`~maxpane_dashboard.widgets.panels.RichLogFeed`'s (Branch 7,
+WP-B); ``_event_to_text`` is this dashboard's ``format_row`` hook and the
+``HH:MM`` cell is ``widgets/fmt.hhmm``.
+
+**A stream, not a snapshot** (``SNAPSHOT`` stays ``False``): every row is
+one thing that happened at a stated time -- a burn, a swap, a fee
+deposit -- and it is still true when the next poll brings nothing.
+Nothing in a row expires. A snapshot is the other kind (dota's hero
+roster, whose every row carries an HP true only of the poll it came
+from), and marking this feed one would mean re-painting it whole every
+poll and telling ``[]`` apart from ``None``, a distinction an event log
+does not have.
+
+``dedupe_key`` returns ``None``: these events carry no key this panel
+trusts to be unique, so every poll is all-new and redraws -- which is
+what the copy this replaces did with its unconditional ``clear()``.
 """
 
 from __future__ import annotations
 
-import time
-
 from rich.text import Text
-from textual.app import ComposeResult
-from textual.containers import Vertical
-from textual.widgets import RichLog, Static
+
 from maxpane_dashboard.widgets.address import address_text
-from maxpane_dashboard.widgets.ttt._chain import EXPLORER
+from maxpane_dashboard.widgets.fmt import DASH, hhmm, safe_get
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import RichLogFeed
+from maxpane_dashboard.widgets.ttt._chain import EXPLORER
 
 _WEI = 10**18
-_DASH = "--"
+
+#: How many events one poll is allowed to paint. The log keeps 200 lines.
+_ROW_CAP = 25
 
 #: Display budget for the burn actor's address, excluding ICON_COLS (PRD
 #: §5): no layout pin governs this RichLog (recipe step 6 does not apply --
@@ -54,23 +73,11 @@ _BURN_ACTOR_WIDTH = 17
 # -- helpers -----------------------------------------------------------
 
 
-def _format_ts(timestamp) -> str:
-    """``HH:MM`` from unix seconds; falls back to ``??:??``."""
-    try:
-        ts = int(timestamp or 0)
-        if ts <= 0:
-            return "??:??"
-        t = time.localtime(ts)
-        return f"{t.tm_hour:02d}:{t.tm_min:02d}"
-    except (TypeError, ValueError, OSError):
-        return "??:??"
-
-
 def _sym(symbol) -> str:
     if symbol is None:
-        return _DASH
+        return DASH
     s = str(symbol).strip()
-    return safe_markup(s) if s else _DASH
+    return safe_markup(s) if s else DASH
 
 
 def _wei_to_eth(wei) -> float | None:
@@ -80,19 +87,13 @@ def _wei_to_eth(wei) -> float | None:
         return None
 
 
-def _safe_get(event: dict, key: str, default=None):
-    if not isinstance(event, dict):
-        return default
-    return event.get(key, default)
-
-
 # -- per-type formatters ----------------------------------------------
 
 
 def _fmt_burn(event: dict, ts: str, sym: str) -> Text:
-    actor = _safe_get(event, "actor_address")
-    token_id = _safe_get(event, "token_id")
-    token_id_str = str(token_id) if token_id is not None else _DASH
+    actor = safe_get(event, "actor_address")
+    token_id = safe_get(event, "token_id")
+    token_id_str = str(token_id) if token_id is not None else DASH
     line = Text.from_markup(f"{ts}  [yellow]BURN [/]  {sym:>6}  by ")
     line.append_text(address_text(actor, width=_BURN_ACTOR_WIDTH, explorer=EXPLORER))
     line.append(f"   tokenId {token_id_str}")
@@ -100,24 +101,24 @@ def _fmt_burn(event: dict, ts: str, sym: str) -> Text:
 
 
 def _fmt_swap(event: dict, ts: str, sym: str) -> str:
-    eth_amount = _wei_to_eth(_safe_get(event, "eth_amount_wei", 0))
-    extra = _safe_get(event, "extra") or {}
+    eth_amount = _wei_to_eth(safe_get(event, "eth_amount_wei", 0))
+    extra = safe_get(event, "extra") or {}
     tax_pct = extra.get("tax_pct") if isinstance(extra, dict) else None
 
     if eth_amount is None:
-        eth_str = _DASH
+        eth_str = DASH
         dir_color = "white"
     else:
         dir_color = "green" if eth_amount >= 0 else "red"
         eth_str = f"{eth_amount:+7.4f}"
 
     if tax_pct is None:
-        tax_str = _DASH
+        tax_str = DASH
     else:
         try:
             tax_str = f"{float(tax_pct):.0f}"
         except (TypeError, ValueError):
-            tax_str = _DASH
+            tax_str = DASH
 
     return (
         f"{ts}  [{dir_color}]SWAP [/]  {sym:>6}  "
@@ -126,24 +127,24 @@ def _fmt_swap(event: dict, ts: str, sym: str) -> str:
 
 
 def _fmt_fee(event: dict, ts: str, sym: str) -> str:
-    eth_amount = _wei_to_eth(_safe_get(event, "eth_amount_wei", 0))
+    eth_amount = _wei_to_eth(safe_get(event, "eth_amount_wei", 0))
     if eth_amount is None:
-        eth_str = _DASH
+        eth_str = DASH
     else:
         eth_str = f"{eth_amount:.4f}"
     return f"{ts}  [green]FEE  [/]  {sym:>6}  {eth_str} Ξ → holders"
 
 
 def _fmt_buyback(event: dict, ts: str, sym: str) -> str:
-    extra = _safe_get(event, "extra") or {}
+    extra = safe_get(event, "extra") or {}
     bounty_wei = extra.get("bounty_wei") if isinstance(extra, dict) else None
     if bounty_wei is None:
         # fall back to eth_amount_wei when bounty_wei isn't populated
-        bounty = _wei_to_eth(_safe_get(event, "eth_amount_wei", 0))
+        bounty = _wei_to_eth(safe_get(event, "eth_amount_wei", 0))
     else:
         bounty = _wei_to_eth(bounty_wei)
     if bounty is None:
-        bounty_str = _DASH
+        bounty_str = DASH
     else:
         bounty_str = f"{bounty:.5f}"
     return (
@@ -153,20 +154,20 @@ def _fmt_buyback(event: dict, ts: str, sym: str) -> str:
 
 
 def _fmt_sale(event: dict, ts: str) -> str:
-    token_id = _safe_get(event, "token_id")
-    token_id_str = str(token_id) if token_id is not None else _DASH
-    extra = _safe_get(event, "extra") or {}
+    token_id = safe_get(event, "token_id")
+    token_id_str = str(token_id) if token_id is not None else DASH
+    extra = safe_get(event, "extra") or {}
     price_eth = extra.get("price_eth") if isinstance(extra, dict) else None
     if price_eth is None:
         # fallback to eth_amount_wei
-        price = _wei_to_eth(_safe_get(event, "eth_amount_wei", 0))
+        price = _wei_to_eth(safe_get(event, "eth_amount_wei", 0))
     else:
         try:
             price = float(price_eth)
         except (TypeError, ValueError):
             price = None
     if price is None:
-        price_str = _DASH
+        price_str = DASH
     else:
         price_str = f"{price:.4f}"
     return (
@@ -176,15 +177,15 @@ def _fmt_sale(event: dict, ts: str) -> str:
 
 
 def _event_to_line(event: dict) -> str | Text | None:
-    """Format one activity event; ``None`` to skip unknown types.
+    """Format one activity event; ``None`` to skip malformed input.
 
     A burn event returns a ``Text`` (its actor address carries the copy
-    icon); every other event type returns a markup ``str``, parsed by the
-    ``RichLog`` itself. ``RichLog.write`` accepts either.
+    icon); every other event type returns a markup ``str``, which
+    :func:`_event_to_text` parses before it reaches the log.
     """
     if not isinstance(event, dict):
         return None
-    ts = _format_ts(event.get("timestamp"))
+    ts = hhmm(event.get("timestamp"))
     sym = _sym(event.get("token_symbol"))
     etype = (event.get("event_type") or "").lower()
 
@@ -209,16 +210,43 @@ def _event_to_line(event: dict) -> str | Text | None:
 # -- widget ------------------------------------------------------------
 
 
-class TTTActivityFeed(Vertical):
+def _event_to_text(event: dict) -> Text | None:
+    """The ``format_row`` hook: one composited line, or ``None`` to skip.
+
+    Always a ``Text``. A burn row already built one (its actor address
+    carries the copy icon, whose click ``meta`` lives in a ``Style`` that
+    markup parsing would flatten); the other four types build a markup
+    string and it is parsed **here**, synchronously, so a malformed one
+    lands in this panel's guard instead of the message pump.
+    """
+    line = _event_to_line(event)
+    if line is None:
+        return None
+    if isinstance(line, Text):
+        return line
+    return Text.from_markup(line)
+
+
+class TTTActivityFeed(RichLogFeed):
     """Auto-scrolling activity feed for TTT (last 25 events)."""
 
+    TITLE = "ACTIVITY"
+
+    LOG_ID = "ttt-activity-log"
+
+    #: Columnar rows: a wrapped one would put a tokenId under a timestamp
+    #: and the columns would stop being columns.
+    WRAP = False
+
+    #: The rows colour themselves by event type; Rich's repr highlighter
+    #: would recolour the numbers on top of that.
+    HIGHLIGHT = False
+
+    MAX_LINES = 200
+
+    #: Geometry only: the title and its blank row are ``PanelBase``'s, and
+    #: ``minimal.tcss`` states this log's colours.
     DEFAULT_CSS = """
-    TTTActivityFeed > .ttt-feed-title {
-        width: 100%;
-        padding: 0 1;
-        text-style: bold;
-        color: $text-muted;
-    }
     TTTActivityFeed > RichLog {
         height: 1fr;
         padding: 0 1;
@@ -226,16 +254,11 @@ class TTTActivityFeed(Vertical):
     }
     """
 
-    def compose(self) -> ComposeResult:
-        yield Static("ACTIVITY", classes="ttt-feed-title")
-        yield Static(" ", classes="ttt-feed-spacer")
-        yield RichLog(
-            id="ttt-activity-log",
-            wrap=False,
-            highlight=False,
-            markup=True,
-            max_lines=200,
-        )
+    format_row = staticmethod(_event_to_text)
+
+    def dedupe_key(self, event: dict) -> None:
+        """No key: every poll is all-new and redraws (see the module docstring)."""
+        return None
 
     def update_data(
         self,
@@ -244,28 +267,11 @@ class TTTActivityFeed(Vertical):
     ) -> None:
         """Rewrite the log with the supplied events (descending order).
 
-        Newest events appear at the top.  The widget rewrites the log on
-        every refresh -- simpler than incremental diffing and fast
-        enough for the 25-row cap.
+        Newest events appear at the top.
         """
-        log = self.query_one("#ttt-activity-log", RichLog)
         events = activity_events or []
-        log.clear()
-
-        if not events:
-            log.write("[dim]  No activity yet[/]")
-            return
-
         try:
-            iterator = list(events)[:25]
+            capped = list(events)[:_ROW_CAP]
         except TypeError:
-            log.write("[dim]  No activity yet[/]")
-            return
-
-        log.auto_scroll = False
-        for event in iterator:
-            line = _event_to_line(event)
-            if line is not None:
-                log.write(line)
-
-        self.call_after_refresh(log.scroll_home, animate=False)
+            capped = []
+        self.render_events(capped)
