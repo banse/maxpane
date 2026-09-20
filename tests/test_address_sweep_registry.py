@@ -25,6 +25,10 @@ NON_DASHBOARD_SCREEN_MODULES = (
     "splash",        # the boot animation: no data, no manager
     "game_select",   # the menu
     "wallet_input",  # the address prompt; what it echoes back is the user's own input
+    # The shared base class, not a dashboard: DashboardScreen has no compose, no
+    # manager and no PANELS of its own, so it renders nothing to sweep. Its
+    # subclasses are the dashboards, and each of those has its own case.
+    "dashboard_screen",
 )
 
 #: The hidden screens the app still installs (``app.py``); GAMES lists only the
