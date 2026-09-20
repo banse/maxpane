@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from maxpane_dashboard.data import frenpet_manager as fm
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.data.frenpet_models import FrenPet, FrenPetPopulation, FrenPetSnapshot
 
@@ -650,6 +651,16 @@ class TestFrenPetManagerBattleRateSentinel:
     improving it.
     """
 
+    @pytest.fixture(autouse=True)
+    def _isolated_cache_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        """``FrenPetManager.__init__`` loads ``_CACHE_FILE`` -- the user's real
+        ``~/.maxpane/frenpet_cache.json`` -- so without this every assertion on
+        an empty ``battle_rate_history`` below is red on a machine that has run
+        the dashboard (WP-C review I1).  Same isolation as
+        ``test_frenpet_cache.py``'s manager test.
+        """
+        monkeypatch.setattr(fm, "_CACHE_FILE", tmp_path / "frenpet_cache.json")
+
     @staticmethod
     def _manager_and_snapshot() -> tuple[FrenPetManager, FrenPetSnapshot]:
         return FrenPetManager(wallet_address="0xabc"), _make_snapshot()
@@ -703,11 +714,14 @@ class TestFrenPetManagerBattleRateSentinel:
 
     @pytest.mark.asyncio
     async def test_a_genuine_zero_rate_is_still_recorded(self) -> None:
-        """A real lull is a measurement; only "could not look" is dropped.
+        """A computed ``0.0`` is recorded; only "could not look" is dropped.
 
-        One attack cannot span an interval, so ``_compute_battle_rate``
-        returns a true ``0.0`` -- which must reach the series, or the
-        rule would have traded one blind spot for another.
+        This pins today's behaviour, not the ideal one: one attack cannot
+        span an interval, and ``_compute_battle_rate`` answers ``0.0`` for
+        "cannot compute" as well as for a genuine lull (its own docstring
+        says "instead of a fabricated rate").  R1 covers the failed *fetch*
+        only; making the computer return ``None`` when it cannot compute,
+        and re-anchoring this test on an empty window, is follow-up #54.
         """
         attacks = [
             {"attacker_id": 1, "defender_id": 2, "attacker_won": True,

@@ -589,3 +589,17 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     `test_series_cache.py::test_update_holder_count_honours_an_injected_clock`. Tighten to
     `== <injected now>` once the file is editable — it is byte-frozen on this branch as the WP-C
     acceptance. **Minor, Tier 0** — test rigor, never its own branch.
+
+54. **`_compute_battle_rate` answers `0.0` for "cannot compute" and that reaches the persisted series.**
+    `maxpane_dashboard/data/frenpet_manager.py:550-576` returns `0.0` for fewer than two usable timestamps
+    or a span below `_MIN_BATTLE_SPAN_HOURS` — its own docstring says "instead of a fabricated rate" — and
+    since Branch 9 R1 only the failed *fetch* passes `None` to the cache, so a one-attack or empty window
+    still appends `(ts, 0.0)` to `battle_rate_history` as if measured (WP-C review M2; byte-identical to
+    pre-branch). Fix: return `None` when it cannot compute, pass it through, re-anchor
+    `test_a_genuine_zero_rate_is_still_recorded` on a window with ≥ 2 attacks and a real zero, and add the
+    empty-window case; the widget dict's display default is #43. Also (WP-C review M1) `OCMCache`'s version
+    read became more permissive than the copy — `"2"` / `2.0` now read as 2 and keep the burn series where
+    the copy read 1 and wiped it; hand-edit only, the safer answer, but add `"2"` and `2.0` to
+    `test_before_load_sees_the_version`'s parametrisation when `test_series_cache.py` is next touched.
+    **Important, Tier 1** (one dashboard's manager + its tests).
+
