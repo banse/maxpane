@@ -94,7 +94,7 @@ class _Client:
     async def fetch_snapshot(self) -> CatTownSnapshot:
         return self._snapshot
 
-    async def get_raffle_total_tickets(self) -> int:
+    async def get_raffle_total_tickets(self) -> int | None:
         if self._raffle_fails:
             raise RuntimeError("raffle endpoint is down")
         return self._raffle

@@ -58,9 +58,17 @@ class SeriesSpec:
     Parameters
     ----------
     name:
-        The public attribute holding the ``deque`` **and** the JSON key
-        it is persisted under.  One name, so a rename cannot desynchronise
-        the two halves.
+        The public attribute holding the ``deque``, and -- unless ``key``
+        says otherwise -- the JSON key it is persisted under.  One name,
+        so a rename cannot desynchronise the two halves.
+    key:
+        JSON key, when the persisted name differs from the attribute.
+        Exists for files already on disk: ``BaseTokenCache`` keeps its
+        three overview deques in ``volume_history`` and friends but has
+        always written them as ``overview_volume``/``overview_eth_price``/
+        ``overview_trade_count``, and renaming either half would make
+        every user's ``~/.maxpane/base_cache.json`` load empty.  Leave it
+        ``None`` for a new series: one name is better than two.
     maxlen:
         Per-series cap.  ``None`` -- the default -- uses the cache-wide
         ``max_history``.
@@ -79,6 +87,12 @@ class SeriesSpec:
     maxlen: int | None = None
     max_age: float | None = None
     allow_negative: bool = False
+    key: str | None = None
+
+    @property
+    def json_key(self) -> str:
+        """The key this series is persisted under."""
+        return self.key if self.key is not None else self.name
 
 
 class SeriesCache:
@@ -109,6 +123,12 @@ class SeriesCache:
     #: class emits, so a user grepping ``~/.maxpane/maxpane.log`` can see
     #: which dashboard's file misbehaved.
     NOUN: str = "cache"
+
+    #: What :attr:`history_size` counts, for the one log line that prints
+    #: it.  ``"points"`` for the series caches; the caches keyed by
+    #: bakery, token or pet override it, because saying "3 points" when
+    #: the 3 means bakeries is a wrong number in a log file.
+    SIZE_NOUN: str = "points"
 
     def __init__(self, max_history: int = 120) -> None:
         self._max_history = max_history
@@ -192,7 +212,7 @@ class SeriesCache:
         if self.VERSION_KEY is not None:
             payload[self.VERSION_KEY] = self.VERSION
         for spec in self.SERIES:
-            payload[spec.name] = [list(pt) for pt in getattr(self, spec.name)]
+            payload[spec.json_key] = [list(pt) for pt in getattr(self, spec.name)]
         payload.update(self.extra_payload())
         return payload
 
@@ -219,10 +239,11 @@ class SeriesCache:
                 json.dump(payload, f)
             os.replace(tmp_path, path)
             logger.info(
-                "%s saved to %s (%d points)",
+                "%s saved to %s (%d %s)",
                 self.NOUN,
                 path,
                 self.history_size,
+                self.SIZE_NOUN,
             )
         except OSError as exc:
             logger.warning("Failed to save %s: %s", self.NOUN, exc)
@@ -238,11 +259,25 @@ class SeriesCache:
         or a key migrated before the generic restore runs.
         """
 
-    def restore_extra(self, payload: dict[str, Any], *, now: float) -> int:
+    def restore_extra(
+        self,
+        payload: dict[str, Any],
+        *,
+        path: str,
+        now: float,
+        max_age: float | None = None,
+    ) -> int:
         """Hook: restore whatever :meth:`extra_payload` wrote.
 
         Returns the number of points dropped, which the caller folds into
         the single "Skipped ..." warning.  Default: nothing to restore.
+
+        It is handed the same three inputs :meth:`load_from_file` has,
+        because the keyed-series caches need all of them: ``path`` for
+        the warnings that name the offending file, ``now`` as the
+        validation clock, and ``max_age`` because the bakery cache's
+        window is supplied by its *caller* (``manager.py`` passes the
+        sparkline window) rather than declared per series.
         """
         return 0
 
@@ -333,8 +368,21 @@ class SeriesCache:
         loaded = 0
         skipped = 0
         for spec in self.SERIES:
+            raw = payload.get(spec.json_key)
+            if raw is not None and not isinstance(raw, list):
+                # coerce_points degrades a non-list to "no points", which
+                # is the right behaviour and a silent one: the series
+                # empties and nothing says why.  Say why, once, naming the
+                # key -- a hand-edited cache file is third-party input and
+                # the user is the only one who can fix it.
+                logger.warning(
+                    "%s %s: series %r is not a list; cleared",
+                    self.NOUN,
+                    path,
+                    spec.json_key,
+                )
             good, dropped = coerce_points(
-                payload.get(spec.name),
+                raw,
                 now=reference,
                 max_age=spec.max_age if spec.max_age is not None else max_age,
                 allow_negative=spec.allow_negative,
@@ -348,7 +396,9 @@ class SeriesCache:
             series.extend(good)
             loaded += len(series)
 
-        skipped += self.restore_extra(payload, now=reference)
+        skipped += self.restore_extra(
+            payload, path=path, now=reference, max_age=max_age
+        )
 
         if skipped:
             logger.warning(
