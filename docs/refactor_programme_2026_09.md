@@ -3567,7 +3567,18 @@ OCMClient()`, `if cache_file`) where the other seven read `is None`, so a falsy 
 one — **folded** with a regression test; 5 `PriceClient()` is built unconditionally in `ttt_manager` and
 `frenpet_manager`, a second un-injectable client the seam tests must monkeypatch — **filed #74** and added to the
 "Later phases" inventory. Named runs: three new files 126; guard 198; seven client acceptance files 773; manager set
-186. Fix wave committed as the next commit; scoped re-review follows.
+186. Fix wave committed as `4da926e`.
+
+**Fix-wave scoped re-review (2026-09-20, `git diff a788ba4..4da926e`, opus): Minors 1–4 ADDRESSED, 5 FILED-as-agreed.**
+Every `RpcPool` mention left in HANDOVER, the programme doc and `.claude/rules/` is a decline record or Branch 9's
+historical plan text; the row 10 split re-measured figure by figure and partitions the 19 changed files exactly
+(1 + 5 + 11 + 1 + 1); the flashbots sentence matches the gate at `talismans_client.py:552` and #61 carries the
+by-hostname fix; `test_ocm_manager.py` byte-unchanged and behaviour-neutral (no test passes a falsy client or an
+empty path). Mutation: restoring `client or OCMClient()` reddened exactly the new regression test on its identity
+assert, 13 green. New Minor: restoring the `if cache_file` truthiness left all 24 green — the path half was
+unpinned — **folded by the controller**: the same test now also builds with `cache_file=""` under a `chdir` into
+`tmp_path` and asserts the result is not the module default; controller mutation: truthiness restored → exactly that
+test red on the new assert. Guard 198.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
