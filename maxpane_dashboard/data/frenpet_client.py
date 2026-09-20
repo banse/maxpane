@@ -106,6 +106,10 @@ class FrenPetClient(OwnedHttpClient):
         # path for the life of the process and gives a library host no way
         # to serve two configurations.  An explicit ``""`` still disables
         # the indexer, because only ``None`` means "resolve it for me".
+        # Note what the fallback is: the *import-time* class default
+        # ``INDEXER_DB``, so an env var that was set when this module was
+        # first imported and is later unset -- or set to ``""`` -- still
+        # yields that import-time value for every new instance.
         self._indexer_db = (
             indexer_db
             if indexer_db is not None

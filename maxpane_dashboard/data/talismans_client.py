@@ -108,11 +108,17 @@ _LOG_RPCS = [
 
 #: Hosts that are dead, now keyed, or useless for this workload. Configuring
 #: one is a programming error, so the constructor raises rather than silently
-#: degrading to a dashboard that shows zeros. Mirrors ``ttt_client`` and
-#: ``fwa_client``; the evidence for each entry is in ``rules/data.md`` and in
-#: the probe comments above. Kept per client rather than shared because the
-#: *policy* (which pool a host is banned from) is per client -- a host that is
-#: useless for archive logs can still be a good state endpoint.
+#: degrading to a dashboard that shows zeros. This is a deliberate hand-typed
+#: copy of ``ttt_client._BANNED_RPC_HOSTS`` -- entry for entry, the same seven
+#: -- bound by
+#: ``tests/data/test_rpc_shared.py::test_talismans_and_ttt_ban_exactly_the_same_hosts``.
+#: ``fwa_client``'s table is *not* the same: it is these seven **plus**
+#: ``eth.drpc.org``, which fwa bans from its state pool only and still uses for
+#: recent logs, where it works. That is why the table is kept per client rather
+#: than shared: the *policy* (which pool a host is banned from) is per client,
+#: and a host that is useless for archive logs can still be a good state
+#: endpoint. The evidence for each entry is in ``rules/data.md`` and in the
+#: probe comments above.
 _BANNED_RPC_HOSTS = frozenset(
     {
         "cloudflare-eth.com",  # -32603 Internal error on every call, probed 2026-07-27

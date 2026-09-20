@@ -462,7 +462,11 @@ def test_state_and_log_endpoint_pools_stay_separate() -> None:
         assert module._LOG_RPCS, f"{module.__name__} lost its log pool"
 
 
-@pytest.mark.parametrize("module", [fwa_client, ttt_client], ids=["fwa", "ttt"])
+@pytest.mark.parametrize(
+    "module",
+    [fwa_client, ttt_client, talismans_client],
+    ids=["fwa", "ttt", "talismans"],
+)
 def test_banned_host_lists_still_raise_at_construction(module) -> None:
     """The keyless constraint is enforced by the constructor, not a comment."""
     assert module._BANNED_RPC_HOSTS
@@ -470,6 +474,25 @@ def test_banned_host_lists_still_raise_at_construction(module) -> None:
     client_class = next(cls for mod, cls in ALL_CLIENTS.items() if mod is module)
     with pytest.raises(ValueError):
         getattr(module, client_class)(primary_rpc=f"https://{banned}/x")
+
+
+def test_talismans_and_ttt_ban_exactly_the_same_hosts() -> None:
+    """The copy is deliberate, and this is the agreement test that binds it.
+
+    ``talismans_client._BANNED_RPC_HOSTS`` is a hand-typed copy of ttt's: the
+    two run the same two-pool Ethereum-mainnet workload (state pool + archive
+    ``eth_getLogs`` pool), so a host that is dead, keyed or silently truncating
+    for one is all three for the other. Hoisting it into a shared module would
+    be wrong for the same reason the five ``_rpc`` bodies stay split -- see
+    ``fwa_client``, whose table is ttt's **plus** ``eth.drpc.org``, because fwa
+    bans that host from its *state* pool only and still uses it for recent
+    logs, where it works (``.claude/rules/data.md``, "RPC endpoints"). Update
+    both tables or neither.
+    """
+    assert talismans_client._BANNED_RPC_HOSTS == ttt_client._BANNED_RPC_HOSTS
+    assert fwa_client._BANNED_RPC_HOSTS - ttt_client._BANNED_RPC_HOSTS == {
+        "eth.drpc.org"
+    }
 
 
 def test_the_rationale_for_not_sharing_rpc_is_written_down() -> None:

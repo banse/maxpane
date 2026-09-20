@@ -10,16 +10,20 @@ configurations, or any configuration the process did not have at import time.
 
 What each test here pins:
 
-* **Managers.** With ``cache_path=`` (ocm: ``cache_file=``) pointing into
-  ``tmp_path`` and an injected fake client, one full ``fetch_and_compute()``
-  cycle plus a save must leave the module's own default path *untouched*.
-  The module defaults are redirected to ``tmp_path/forbidden``, a directory
-  nothing may create, so a manager that ignores the injected path is caught by
-  the file it writes rather than by a claim about the file it writes.
-  ``pathlib.Path.home`` is additionally made to raise for the whole test, which
-  catches any *runtime* home read (there are none left; the surviving reads are
-  the import-time ``_CACHE_DIR`` constants, which the ``forbidden`` redirection
-  is what covers).
+* **Managers.** Each module's import-time default (``_CACHE_DIR`` /
+  ``_CACHE_FILE``) is redirected into ``tmp_path`` and **seeded** with a
+  populated cache file, written by that manager's own cache class. A manager
+  built with ``cache_path=`` (ocm: ``cache_file=``) and an injected fake client
+  must then come up *empty* (it did not load the seeded file), must hold the
+  injected client object itself, and after one ``fetch_and_compute()`` plus a
+  save must have written to ``cache_path`` while leaving the seeded file
+  byte-for-byte unchanged. Seeding is the point: an *absent* module default
+  cannot distinguish "loaded the right file" from "loaded the wrong, missing
+  one", which is how WP-B review finding I1 got through -- reverting only the
+  ``load_from_file`` call in all eight managers left every test green.
+  ``pathlib.Path.home`` is additionally made to raise for the whole test as a
+  backstop for any *runtime* home read (there are none left; the surviving
+  reads are the import-time constants, which the seeding is what covers).
 * **The payload is unchanged.** Four managers already have a committed key
   contract (bakery, base, frenpet, talismans) and this file imports it rather
   than restating it. The other four (cattown, dota, ttt, ocm) have none
@@ -40,6 +44,7 @@ one that records the URL and raises.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -121,7 +126,14 @@ pytestmark = pytest.mark.asyncio
 
 
 def _forbid_home(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Any *runtime* ``Path.home()`` read fails loudly for the rest of the test."""
+    """Any *runtime* ``Path.home()`` read fails loudly for the rest of the test.
+
+    This is a backstop, not the load/save guard.  ``_CACHE_DIR = Path.home() /
+    ".maxpane"`` is evaluated at **import**, so by the time this runs the module
+    constants are plain ``Path`` objects and a manager that ignores
+    ``cache_path`` touches ``home`` not at all.  What catches that is
+    :func:`_assert_cache_path_is_both_halves`.
+    """
 
     def _raise(*_a: Any, **_k: Any):
         raise AssertionError("home touched")
@@ -129,36 +141,32 @@ def _forbid_home(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Path, "home", _raise)
 
 
-def _redirect_module_default(
+def _poison_path(
     monkeypatch: pytest.MonkeyPatch, module: Any, tmp_path: Path, name: str
 ) -> Path:
-    """Point the module's import-time cache default at a forbidden directory.
+    """Redirect the module's import-time cache default into ``tmp_path``.
 
-    Returned so the caller can assert it was never created.  This is the guard
-    that actually bites: ``_CACHE_DIR`` / ``_CACHE_FILE`` are computed from
-    ``Path.home()`` once, at import, so patching ``Path.home`` later cannot see
-    a manager that falls back to them.
+    The returned file is the one a manager that ignored ``cache_path`` would
+    read and write.  It is *seeded* (see below), so both halves of the seam are
+    observable: a wrong **load** picks the seeded state up, a wrong **save**
+    changes the seeded file's bytes.
     """
-    forbidden = tmp_path / "forbidden"
-    monkeypatch.setattr(module, "_CACHE_DIR", forbidden)
-    monkeypatch.setattr(module, "_CACHE_FILE", forbidden / name)
-    return forbidden
-
-
-def _seam_path(tmp_path: Path, name: str) -> Path:
-    """The injected cache path, in a directory that already exists."""
-    seam_dir = tmp_path / "seam"
-    seam_dir.mkdir(exist_ok=True)
-    return seam_dir / name
+    poisoned_dir = tmp_path / "module_default"
+    poisoned_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(module, "_CACHE_DIR", poisoned_dir)
+    monkeypatch.setattr(module, "_CACHE_FILE", poisoned_dir / name)
+    return poisoned_dir / name
 
 
 class _NoNetworkClient:
-    """Stands in for the client ``__init__`` builds when nothing is injected.
+    """What ``__init__`` builds when nothing is injected -- and it cannot dial.
 
-    Every attribute is an awaitable that raises, so a legacy-construction
-    reference run that forgot to install its double fails loudly instead of
-    exercising a degradation path and agreeing with the seam run for the wrong
-    reason.
+    Every attribute is an awaitable that raises.  Patched into all eight
+    manager modules so that a manager which ignores ``client=`` fails loudly
+    instead of constructing a real ``httpx.AsyncClient`` and opening sockets
+    from a test (hard constraint 3).  The identity assertion in
+    :func:`_assert_cache_path_is_both_halves` is what actually pins the seam;
+    this class is the safety net under it.
     """
 
     def __getattr__(self, name: str):
@@ -197,11 +205,88 @@ class _FrenPetFakeClient:
         self.closed = True
 
 
-def _assert_isolated(seam_path: Path, forbidden: Path) -> None:
-    assert seam_path.exists(), f"nothing was written to the injected {seam_path}"
-    assert not forbidden.exists(), (
-        f"the manager fell back to its module default: {forbidden} was created"
+def _history_size(mgr: Any) -> Any:
+    """The six ``SeriesCache`` subclasses all expose this; 0 means "not loaded"."""
+    return mgr.cache.history_size
+
+
+async def _assert_cache_path_is_both_halves(
+    *,
+    build: Any,
+    probe: Any,
+    poison: Path,
+    seam: Path,
+    makes_dir: bool,
+) -> tuple[Any, dict[str, Any]]:
+    """Pin the **load** half, the **save** half and the **client** seam at once.
+
+    ``build(path)`` returns ``(manager, client, cache_or_None)``; ``probe(mgr)``
+    returns something falsy for a cache nothing was loaded into and truthy for
+    one that read a populated file.
+
+    The mechanism, because the obvious one does not work: asserting that the
+    module default "was never created" is a no-op for the load half -- there is
+    nothing at that path to load, so a manager still reading ``_CACHE_FILE``
+    reads an absent file and comes up empty exactly as if it had obeyed
+    ``cache_path``.  (That was WP-B review finding I1: reverting only the
+    ``load_from_file`` call in all eight managers left every test green.)  So
+    the module default is **seeded** with a populated cache file written by the
+    manager's own cache class, and then:
+
+    * a manager pointed at the seeded file must load it (anti-vacuity -- without
+      this, "the cache is empty" would pass against a file nothing can read);
+    * the manager pointed at ``cache_path`` must **not** have loaded it;
+    * after a cycle and a save, the seeded file must be byte-for-byte what it
+      was -- which is what a wrong save changes.
+    """
+    poison.parent.mkdir(parents=True, exist_ok=True)
+    if not makes_dir:
+        seam.parent.mkdir(parents=True, exist_ok=True)
+
+    # 1. Seed the module default with a real, populated cache file.
+    seeder, seeder_client, _ = build(poison)
+    # Checked here as well as in step 3 so that a manager which ignores
+    # ``client=`` fails on the seam it broke rather than on whatever its
+    # self-built client does next (WP-B review finding I2: the self-built
+    # client opened real sockets, which hard constraint 3 forbids).
+    assert seeder.client is seeder_client, (
+        "the manager built its own client instead of using the injected one"
     )
+    await seeder.fetch_and_compute()
+    seeder.save_cache()
+    poison_bytes = poison.read_bytes()
+    assert poison_bytes, "the seed step wrote nothing; the checks below are vacuous"
+
+    # 2. Anti-vacuity: that file *is* loadable by this manager.
+    control, _, _ = build(poison)
+    assert probe(control), (
+        "the seeded module-default file did not load; step 3 would pass for the "
+        "wrong reason"
+    )
+
+    # 3. The load half: pointed at cache_path, the manager must come up empty.
+    mgr, injected_client, injected_cache = build(seam)
+    assert not probe(mgr), (
+        "the manager loaded its module default instead of the injected cache_path"
+    )
+    assert mgr.client is injected_client, (
+        "the manager built its own client instead of using the injected one"
+    )
+    if injected_cache is not None:
+        assert mgr.cache is injected_cache
+    if makes_dir:
+        assert seam.parent.is_dir(), (
+            "the cache directory was created somewhere other than cache_path's parent"
+        )
+
+    # 4. The save half: cache_path is written, the module default is not.
+    data = await mgr.fetch_and_compute()
+    mgr.save_cache()
+    assert seam.exists(), f"nothing was written to the injected {seam}"
+    assert poison.read_bytes() == poison_bytes, (
+        "the manager wrote to its module default instead of the injected path"
+    )
+    return mgr, data
 
 
 # ---------------------------------------------------------------------------
@@ -212,97 +297,135 @@ def _assert_isolated(seam_path: Path, forbidden: Path) -> None:
 async def test_the_bakery_manager_takes_a_client_and_a_cache_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Delete ``self._cache_path = ...`` in ``manager.DataManager.__init__``
-    (or revert either ``load_from_file`` / ``save_to_file`` call to
-    ``_CACHE_FILE``) and ``tmp_path/forbidden`` is created -- red here."""
-    forbidden = _redirect_module_default(
+    """Revert ``manager.py``'s ``load_from_file`` call to ``str(_CACHE_FILE)``
+    and step 3 reddens (the seeded two-bakery history is loaded); revert its
+    ``save_to_file`` call and step 4 reddens (the seeded file's bytes change);
+    drop ``client=`` and the identity assertion reddens."""
+    poison = _poison_path(
         monkeypatch, bakery_manager_mod, tmp_path, "history_cache.json"
     )
+    monkeypatch.setattr(bakery_manager_mod, "GameDataClient", _NoNetworkClient)
     _forbid_home(monkeypatch)
-    seam = _seam_path(tmp_path, "history_cache.json")
 
-    mgr = DataManager(
-        poll_interval=30,
-        client=_BakeryStubClient([_bakery_snapshot(fetched_at=1_700_000_000.0)]),
-        cache_path=seam,
+    def _build(path: Path):
+        client = _BakeryStubClient([_bakery_snapshot(fetched_at=time.time())])
+        return (
+            DataManager(poll_interval=30, client=client, cache_path=path),
+            client,
+            None,
+        )
+
+    _, data = await _assert_cache_path_is_both_halves(
+        build=_build,
+        probe=_history_size,
+        poison=poison,
+        seam=tmp_path / "seam" / "history_cache.json",
+        makes_dir=False,
     )
-    data = await mgr.fetch_and_compute()
-    mgr.save_cache()
-
     assert BAKERY_KEYS <= set(data)
-    _assert_isolated(seam, forbidden)
 
 
 async def test_the_base_manager_takes_a_client_and_a_cache_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Delete ``self._cache_path = ...`` in ``base_manager.BaseManager.__init__``
-    (or revert either cache call to ``_CACHE_FILE``) and this reddens on
-    ``tmp_path/forbidden``."""
-    forbidden = _redirect_module_default(
-        monkeypatch, base_manager_mod, tmp_path, "base_cache.json"
-    )
+    """Revert ``base_manager.py``'s ``load_from_file`` call to ``_CACHE_FILE``
+    and step 3 reddens (the seeded three-token price history is loaded); revert
+    the save and step 4 reddens; drop ``client=`` and the identity assertion
+    reddens -- which is the one that would otherwise let a real
+    ``BaseChainClient`` open sockets."""
+    poison = _poison_path(monkeypatch, base_manager_mod, tmp_path, "base_cache.json")
+    monkeypatch.setattr(base_manager_mod, "BaseChainClient", _NoNetworkClient)
     _forbid_home(monkeypatch)
-    seam = _seam_path(tmp_path, "base_cache.json")
 
-    mgr = BaseManager(
-        poll_interval=30, remote_only=True, client=_BaseFakeClient(), cache_path=seam
+    def _build(path: Path):
+        client = _BaseFakeClient()
+        return (
+            BaseManager(
+                poll_interval=30, remote_only=True, client=client, cache_path=path
+            ),
+            client,
+            None,
+        )
+
+    _, data = await _assert_cache_path_is_both_halves(
+        build=_build,
+        probe=_history_size,
+        poison=poison,
+        seam=tmp_path / "seam" / "base_cache.json",
+        makes_dir=False,
     )
-    data = await mgr.fetch_and_compute()
-    mgr.save_cache()
-
     assert (BASE_CORE_KEYS | BASE_OVERVIEW_KEYS) <= set(data)
-    _assert_isolated(seam, forbidden)
 
 
 async def test_the_frenpet_manager_takes_a_client_a_cache_and_a_cache_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Delete ``self._cache_path = ...`` in ``frenpet_manager`` and this reddens
-    on ``tmp_path/forbidden``; drop the ``cache`` parameter and the injected
-    cache object below is no longer the one the manager fills."""
-    forbidden = _redirect_module_default(
+    """Revert ``frenpet_manager.py``'s ``load_from_file`` call to ``_CACHE_FILE``
+    and step 3 reddens (the seeded five-pet history is loaded); revert the save
+    and step 4 reddens; drop ``client=`` or ``cache=`` and the two identity
+    assertions redden."""
+    poison = _poison_path(
         monkeypatch, frenpet_manager_mod, tmp_path, "frenpet_cache.json"
     )
+    monkeypatch.setattr(frenpet_manager_mod, "FrenPetClient", _NoNetworkClient)
     monkeypatch.setattr(frenpet_manager_mod, "PriceClient", _FakePriceClient)
     _forbid_home(monkeypatch)
-    seam = _seam_path(tmp_path, "frenpet_cache.json")
 
-    injected_cache = frenpet_manager_mod.FrenPetCache(max_history=120)
-    mgr = FrenPetManager(
-        poll_interval=30,
-        client=_FrenPetFakeClient(),
-        cache=injected_cache,
-        cache_path=seam,
+    def _build(path: Path):
+        client = _FrenPetFakeClient()
+        cache = frenpet_manager_mod.FrenPetCache(max_history=120)
+        return (
+            FrenPetManager(
+                poll_interval=30, client=client, cache=cache, cache_path=path
+            ),
+            client,
+            cache,
+        )
+
+    _, data = await _assert_cache_path_is_both_halves(
+        build=_build,
+        probe=_history_size,
+        poison=poison,
+        seam=tmp_path / "seam" / "frenpet_cache.json",
+        makes_dir=False,
     )
-    assert mgr.cache is injected_cache
-    data = await mgr.fetch_and_compute()
-    mgr.save_cache()
-
     assert FRENPET_KEYS <= set(data)
-    _assert_isolated(seam, forbidden)
 
 
 async def test_the_talismans_manager_takes_a_client_and_a_cache_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Revert ``self._cache_path.parent.mkdir(...)`` to ``_CACHE_DIR.mkdir(...)``
-    -- or either cache call to ``_CACHE_FILE`` -- and ``tmp_path/forbidden`` is
-    created, which is red here."""
-    forbidden = _redirect_module_default(
+    """Revert ``talismans_manager.py``'s ``load_from_file`` call to
+    ``_CACHE_FILE`` and step 3 reddens (``operations_total`` comes back as 1
+    from the seeded file instead of 0); revert the save, or revert
+    ``self._cache_path.parent.mkdir`` to ``_CACHE_DIR.mkdir``, and step 4 or the
+    ``makes_dir`` assertion reddens; drop ``client=`` and the identity assertion
+    reddens."""
+    poison = _poison_path(
         monkeypatch, talismans_manager_mod, tmp_path, "talismans_cache.json"
     )
+    monkeypatch.setattr(talismans_manager_mod, "TalismansClient", _NoNetworkClient)
     _forbid_home(monkeypatch)
-    seam = _seam_path(tmp_path, "talismans_cache.json")
 
-    mgr = TalismansManager(
-        poll_interval=30, client=_TalismansFakeClient(), cache_path=seam
+    def _build(path: Path):
+        client = _TalismansFakeClient()
+        return (
+            TalismansManager(poll_interval=30, client=client, cache_path=path),
+            client,
+            None,
+        )
+
+    _, data = await _assert_cache_path_is_both_halves(
+        build=_build,
+        # ``known_ids`` is seeded with the 1,536 genesis ids by ``__init__``
+        # itself, so it is non-empty for a fresh cache too and cannot tell the
+        # two apart.  The cumulative operation counter can.
+        probe=lambda mgr: mgr.cache.operations_total,
+        poison=poison,
+        seam=tmp_path / "seam" / "talismans_cache.json",
+        makes_dir=True,
     )
-    data = await mgr.fetch_and_compute()
-    mgr.save_cache()
-
     assert TALISMANS_KEYS <= set(data)
-    _assert_isolated(seam, forbidden)
 
 
 # ---------------------------------------------------------------------------
@@ -313,19 +436,17 @@ async def test_the_talismans_manager_takes_a_client_and_a_cache_path(
 async def test_the_cattown_manager_seam_serves_the_same_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two managers, one fake snapshot: the seam-built one must answer the same
-    keys as the legacy-built one.  Delete ``self._cache_path = ...`` in
-    ``cattown_manager`` and ``tmp_path/forbidden`` is created -- red here."""
-    forbidden = _redirect_module_default(
-        monkeypatch, cattown_manager_mod, tmp_path, "cattown_cache.json"
-    )
+    """Revert ``cattown_manager.py``'s ``load_from_file`` call to ``_CACHE_FILE``
+    and step 3 reddens; revert the save and step 4 reddens; drop ``client=`` and
+    the identity assertion reddens.  The key set is checked against a
+    legacy-built manager rather than a hand-typed list, because ``cattown_models``
+    carries no ``*_KEYS`` tuple."""
     _forbid_home(monkeypatch)
-    seam = _seam_path(tmp_path, "cattown_cache.json")
 
     def _client() -> Any:
         return _CatTownFakeClient(_cattown_snapshot([_cattown_entry(4.25)]), raffle=250)
 
-    # Legacy: the client class patched out, the cache path the module default.
+    # Reference run: built the way it is built today, its own cache file.
     monkeypatch.setattr(cattown_manager_mod, "CatTownClient", _NoNetworkClient)
     monkeypatch.setattr(
         cattown_manager_mod, "_CACHE_FILE", tmp_path / "legacy_cattown.json"
@@ -333,28 +454,38 @@ async def test_the_cattown_manager_seam_serves_the_same_payload(
     legacy = CatTownManager(poll_interval=30)
     legacy.client = _client()
     legacy_keys = set(await legacy.fetch_and_compute())
-    monkeypatch.setattr(cattown_manager_mod, "_CACHE_FILE", forbidden / "c.json")
-
-    mgr = CatTownManager(poll_interval=30, client=_client(), cache_path=seam)
-    data = await mgr.fetch_and_compute()
-    mgr.save_cache()
-
     assert legacy_keys, "the reference run produced no keys at all"
+
+    poison = _poison_path(
+        monkeypatch, cattown_manager_mod, tmp_path, "cattown_cache.json"
+    )
+
+    def _build(path: Path):
+        client = _client()
+        return (
+            CatTownManager(poll_interval=30, client=client, cache_path=path),
+            client,
+            None,
+        )
+
+    _, data = await _assert_cache_path_is_both_halves(
+        build=_build,
+        probe=_history_size,
+        poison=poison,
+        seam=tmp_path / "seam" / "cattown_cache.json",
+        makes_dir=False,
+    )
     assert set(data) == legacy_keys
-    _assert_isolated(seam, forbidden)
 
 
 async def test_the_dota_manager_seam_serves_the_same_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Same shape as cattown.  Revert ``self._cache_path.parent.mkdir(...)`` to
-    ``_CACHE_DIR.mkdir(...)`` in ``dota_manager`` and ``tmp_path/forbidden`` is
-    created at construction -- red here."""
-    forbidden = _redirect_module_default(
-        monkeypatch, dota_manager_mod, tmp_path, "dota_cache.json"
-    )
+    """Same shape as cattown, plus the directory check: revert
+    ``self._cache_path.parent.mkdir(...)`` to ``_CACHE_DIR.mkdir(...)`` in
+    ``dota_manager`` and the ``makes_dir`` assertion reddens; revert the load
+    and step 3 reddens; revert the save and step 4 reddens."""
     _forbid_home(monkeypatch)
-    seam = _seam_path(tmp_path, "dota_cache.json")
 
     def _client() -> Any:
         return _DotaFakeClient(_dota_state([_dota_hero("Axe")]))
@@ -367,32 +498,39 @@ async def test_the_dota_manager_seam_serves_the_same_payload(
     legacy = DOTAManager(poll_interval=30)
     legacy.client = _client()
     legacy_keys = set(await legacy.fetch_and_compute())
-    monkeypatch.setattr(dota_manager_mod, "_CACHE_DIR", forbidden)
-    monkeypatch.setattr(dota_manager_mod, "_CACHE_FILE", forbidden / "dota.json")
-
-    mgr = DOTAManager(poll_interval=30, client=_client(), cache_path=seam)
-    data = await mgr.fetch_and_compute()
-    mgr.save_cache()
-
     assert legacy_keys, "the reference run produced no keys at all"
+
+    poison = _poison_path(monkeypatch, dota_manager_mod, tmp_path, "dota_cache.json")
+
+    def _build(path: Path):
+        client = _client()
+        return (
+            DOTAManager(poll_interval=30, client=client, cache_path=path),
+            client,
+            None,
+        )
+
+    _, data = await _assert_cache_path_is_both_halves(
+        build=_build,
+        probe=_history_size,
+        poison=poison,
+        seam=tmp_path / "seam" / "dota_cache.json",
+        makes_dir=True,
+    )
     assert set(data) == legacy_keys
-    _assert_isolated(seam, forbidden)
 
 
 async def test_the_ttt_manager_seam_serves_the_same_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Same shape.  Revert ``self._cache_path.parent.mkdir(...)`` to
-    ``_CACHE_DIR.mkdir(...)`` in ``ttt_manager``, or drop the ``cache_path``
-    argument, and ``tmp_path/forbidden`` is created -- red here."""
-    forbidden = _redirect_module_default(
-        monkeypatch, ttt_manager_mod, tmp_path, "ttt_cache.json"
-    )
-    monkeypatch.setattr(ttt_manager_mod, "PriceClient", _TTTFakePrice)
+    """Same shape.  Revert ``ttt_manager.py``'s ``load_from_file`` call to
+    ``_CACHE_FILE`` and step 3 reddens (the seeded ``last_seen_block``
+    watermarks come back); revert the save, or the ``mkdir``, and step 4 or the
+    ``makes_dir`` assertion reddens."""
     _forbid_home(monkeypatch)
-    seam = _seam_path(tmp_path, "ttt_cache.json")
-
+    monkeypatch.setattr(ttt_manager_mod, "PriceClient", _TTTFakePrice)
     monkeypatch.setattr(ttt_manager_mod, "TTTClient", _NoNetworkClient)
+
     legacy_dir = tmp_path / "legacy"
     legacy_dir.mkdir()
     monkeypatch.setattr(ttt_manager_mod, "_CACHE_DIR", legacy_dir)
@@ -400,33 +538,42 @@ async def test_the_ttt_manager_seam_serves_the_same_payload(
     legacy = TTTManager(poll_interval=30)
     legacy.client = _TTTFakeClient()
     legacy_keys = set(await legacy.fetch_and_compute())
-    monkeypatch.setattr(ttt_manager_mod, "_CACHE_DIR", forbidden)
-    monkeypatch.setattr(ttt_manager_mod, "_CACHE_FILE", forbidden / "ttt.json")
-
-    mgr = TTTManager(poll_interval=30, client=_TTTFakeClient(), cache_path=seam)
-    data = await mgr.fetch_and_compute()
-    mgr.save_cache()
-
     assert legacy_keys, "the reference run produced no keys at all"
+
+    poison = _poison_path(monkeypatch, ttt_manager_mod, tmp_path, "ttt_cache.json")
+
+    def _build(path: Path):
+        client = _TTTFakeClient()
+        return (
+            TTTManager(poll_interval=30, client=client, cache_path=path),
+            client,
+            None,
+        )
+
+    _, data = await _assert_cache_path_is_both_halves(
+        build=_build,
+        # ``TTTCache`` is an event cache, not a ``SeriesCache``: the scan
+        # watermark is what a restored file carries.
+        probe=lambda mgr: dict(mgr.cache.last_seen_block),
+        poison=poison,
+        seam=tmp_path / "seam" / "ttt_cache.json",
+        makes_dir=True,
+    )
     assert set(data) == legacy_keys
-    _assert_isolated(seam, forbidden)
 
 
 async def test_the_ocm_manager_seam_serves_the_same_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ocm already had ``client=`` and ``cache_file=``; WP-B adds ``cache=``.
-    Drop the ``cache`` parameter and the ``mgr.cache is injected_cache``
-    assertion below reddens; revert ``self._cache_file`` and ``forbidden`` is
-    created."""
-    forbidden = _redirect_module_default(
-        monkeypatch, ocm_manager_mod, tmp_path, "ocm_cache.json"
-    )
+    Revert ``ocm_manager.py``'s ``load_from_file`` call to ``_CACHE_FILE`` and
+    step 3 reddens; revert the save and step 4 reddens; drop ``cache=`` and the
+    ``mgr.cache is`` assertion reddens."""
     _forbid_home(monkeypatch)
-    seam = _seam_path(tmp_path, "ocm_cache.json")
+    monkeypatch.setattr(ocm_manager_mod, "OCMClient", _NoNetworkClient)
 
     def _snaps() -> list[Any]:
-        return [_ocm_snap(fetched_at=_OCM_T0)]
+        return [_ocm_snap(fetched_at=time.time())]
 
     legacy = OCMManager(
         poll_interval=60,
@@ -434,21 +581,29 @@ async def test_the_ocm_manager_seam_serves_the_same_payload(
         cache_file=tmp_path / "legacy_ocm.json",
     )
     legacy_keys = set(await legacy.fetch_and_compute())
-
-    injected_cache = ocm_manager_mod.OCMCache(max_history=120)
-    mgr = OCMManager(
-        poll_interval=60,
-        client=_OCMStubClient(_snaps()),
-        cache=injected_cache,
-        cache_file=seam,
-    )
-    assert mgr.cache is injected_cache
-    data = await mgr.fetch_and_compute()
-    mgr.save_cache()
-
     assert legacy_keys, "the reference run produced no keys at all"
+
+    poison = _poison_path(monkeypatch, ocm_manager_mod, tmp_path, "ocm_cache.json")
+
+    def _build(path: Path):
+        client = _OCMStubClient(_snaps())
+        cache = ocm_manager_mod.OCMCache(max_history=120)
+        return (
+            OCMManager(
+                poll_interval=60, client=client, cache=cache, cache_file=path
+            ),
+            client,
+            cache,
+        )
+
+    _, data = await _assert_cache_path_is_both_halves(
+        build=_build,
+        probe=_history_size,
+        poison=poison,
+        seam=tmp_path / "seam" / "ocm_cache.json",
+        makes_dir=True,  # OCMManager has always created its cache file's parent
+    )
     assert set(data) == legacy_keys
-    _assert_isolated(seam, forbidden)
 
 
 # ---------------------------------------------------------------------------
@@ -595,16 +750,19 @@ async def test_the_talismans_log_pool_is_what_get_logs_iterates() -> None:
 
 
 async def test_a_banned_talismans_log_host_is_refused_at_construction() -> None:
-    """Delete the ``for url in [...]`` ban loop in ``TalismansClient.__init__``
-    and this reddens.  The keyless/liveness constraint is enforced by the
-    constructor, not by a comment next to the pool."""
-    assert talismans_client_mod._BANNED_RPC_HOSTS
+    """The *log pool* arm of the ban, which is WP-B's new seam.
+
+    Delete ``*self._log_rpcs`` from the ``for url in [...]`` ban loop in
+    ``TalismansClient.__init__`` and this reddens.  The ``primary_rpc`` arm and
+    the "the table is not empty" check live in
+    ``test_rpc_shared.py::test_banned_host_lists_still_raise_at_construction``,
+    which WP-B fix round 1 extended to talismans; they are deliberately not
+    repeated here.
+    """
     banned = next(iter(talismans_client_mod._BANNED_RPC_HOSTS))
 
     with pytest.raises(ValueError, match="banned RPC host"):
         TalismansClient(log_rpcs=[f"https://{banned}/x"])
-    with pytest.raises(ValueError, match="banned RPC host"):
-        TalismansClient(primary_rpc=f"https://{banned}/x")
 
     # The shipped defaults must themselves pass the gate, or every dashboard
     # start-up raises.

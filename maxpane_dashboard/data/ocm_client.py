@@ -136,7 +136,11 @@ class OCMClient(OwnedHttpClient):
         # Resolved here rather than baked into the signature default: a
         # signature default is evaluated once, at import, which freezes the
         # endpoint for the life of the process and gives a library host no
-        # way to serve two configurations.
+        # way to serve two configurations.  Note what the fallback is: the
+        # *import-time* module default, so an env var that was set when this
+        # module was first imported and is later unset -- or set to ``""`` --
+        # still yields that import-time value for every new instance; pass
+        # ``rpc_url=`` explicitly to override it.
         self._rpc_url = (
             rpc_url
             if rpc_url is not None
