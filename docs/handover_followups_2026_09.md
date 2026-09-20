@@ -704,3 +704,26 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     span into `_classify_rpc_error` (or check it in the pager) and demote `range_cap` to a rotate when the named
     limit ≥ the span. Fixture-first from `log_range_messages.json`; both pagers consume `suggested_to`, so each
     is its own change. **Important, Tier 1 per client.**
+
+## Branch 10 WP-A — review Minors (2026-09-20)
+
+66. **`test_rpc_classify.py`'s curator rows are evaluated in a configuration curator no longer uses.**
+    `tests/data/test_rpc_classify.py:231` calls the action helper with `requested_span=None`, but after WP-A
+    `curator_client._get_logs_shrinking` (`:655-660`) always passes a span, so two `EXPECTED` rows
+    (`:116-169`) state the reverse of curator's production behaviour: the drpc sentence reads SHRINK (curator
+    now rotates at every span it uses; covered by `test_a_named_limit_the_request_already_meets_rotates`) and
+    `mevblocker_range_cap` reads SHRINK where curator rotates at 2000/1000/500/300 (named cap 10000 > every
+    page) — **covered nowhere**, and it is the one untested widening WP-A added (curator gained
+    `exceeds limit of`). Also (M4) `test_the_expectations_would_not_survive_an_empty_fragment_table`
+    (`:246-275`) `break`s on the first differing row, so it passes when ONE of 17 rows is fragment-dependent,
+    and re-walks only ttt and cattown, so no range fragment is exercised by it. Fix: evaluate curator's rows
+    at the spans its pager uses, add the mevblocker-at-curator-spans rotate, make the empty-table guard
+    count differing rows and include curator. **Minor, Tier 0** when `test_rpc_classify.py` is next touched.
+
+67. **`surf_pool4_client._named_block_limit` is a decorative alias.** `surf_pool4_client.py:361` binds
+    `_named_block_limit = named_block_limit`, but `rpc_classify.is_range_limitation` calls its own
+    module-level `named_block_limit` (`rpc_classify.py:358`), so patching the client attribute changes no
+    classification; `test_rpc_classify.py:424` asserts the alias identity as if the seam were live. No test
+    patches it today (`test_surf_pool4_client.py:445, 2590, 2603` only call it). Either drop the alias and
+    point the three calls at `rpc_classify.named_block_limit`, or make the predicate take the limit reader as
+    a parameter. **Minor, Tier 0** when `surf_pool4_client.py` is next touched.

@@ -3188,7 +3188,7 @@ byte-identical to surf, bound by the agreement test `test_surf_pool4_client.py:3
 (15, a **Base** pool with 11 fragments no Ethereum client carries). The four Ethereum tables differ only
 by `personal token` (ttt), `api key` (dropped by curator with no note — drift) and curator's drpc route
 triplet (`can't route` / `cannot route` / `route your request`, `curator_client.py:230`). Three range tables:
-`curator_client.py:248-254` (10: the five span fragments + 7 result-count/response-size fragments, justified
+`curator_client.py:248-254` (11: four span fragments + 7 result-count/response-size fragments, justified
 at `:241-247` by THE LIST's ~4.3 logs/block), `surf_client.py:1108-1114` and `surf_pool4_client.py:350-362`
 (5 each, identical; `exceeds limit of` is mevblocker's honest cap). Four copies of
 `_MALFORMED_REQUEST_CODES = {-32600,-32601,-32602,-32604,-32700}` (`ttt:295`, `curator:256`, `surf:1116`,
@@ -3245,7 +3245,10 @@ def looks_like_endpoint_limitation(err: Any, *, fragments: tuple[str, ...],
     # (its today's behaviour) — expressed as a second keyword `check_codes: bool = True`.
 def is_range_limitation(err: Any, *, fragments: tuple[str, ...],
                         requested_span: int | None = None) -> bool
-    # surf_pool4's body (:424-459) hoisted verbatim with _named_block_limit and its two regexes;
+    # surf_pool4's body (:424-459) hoisted with _named_block_limit and its two regexes, EXCEPT that the
+    # named-limit guard counts blocks and is consulted only after a RANGE_CAP fragment matched (WP-A
+    # deviation: curator's "result limit of 10000 reached" names rows, and a verbatim hoist read it as a
+    # 10000-block limit and refused to shrink a 2000-block page);
     # requested_span=None reproduces curator's and surf's present predicate exactly.
 ```
 
@@ -3325,7 +3328,9 @@ revert one manager's `cache_path` plumbing → its seam test reddens by touching
 WP-B). `fwa_logs.py`: import `ENDPOINT_DEAD_CODES`, `jsonrpc_payload`, `pace`; `FWALogClient` mixes in
 `OwnedHttpClient`; delete the four local copies only where byte-equivalent (the implementer diffs `_post`'s
 inline pacing against `pace` first — if it differs, report and leave it). `test_rpc_shared.py`: add
-`fwa_logs` (and `curator_nft_holders` if absent) to `ALL_CLIENTS` so the existing guards scan it.
+`fwa_logs` (and `curator_nft_holders` if absent) to `ALL_CLIENTS` so the existing guards scan it, and make
+`test_error_pattern_tables_are_not_re_declared` AST-shaped (WP-A review M5: the substring guard misses
+`_ENDPOINT_LIMITATION_PATTERNS = tuple([...])`) and scan `fwa_logs.py`'s `_RESULT_CAP_MARKERS` too.
 Acceptance: `test_fwa_logs.py` byte-unchanged and green; `test_rpc_shared.py` green; `tests/screens/test_fwa_screen.py`.
 
 **Tests.** Named sets per WP as above, always plus `-m guard tests`. No suite by an implementer or reviewer;
@@ -3339,6 +3344,57 @@ corrections (fwa_logs has no `_RANGE_CAP_MARKERS`; nine policies, not five) and 
 predicates take the table as a parameter; pass `requested_span` wherever the request had one"; `rpc_common.py`
 docstring paragraph (WP-A); the owner's frontend constraint recorded under "## Later phases" with the seam
 inventory that remains (#60, #63, #64).
+
+**WP-A outcome (2026-09-20, commit b635f51).** `data/rpc_classify.py` landed at 361 lines (stdlib + `typing`
+only, AST-asserted leaf): `ETH_ENDPOINT_LIMITATION_FRAGMENTS` 24 (union of ttt 21 / curator 22 / surf 20 /
+surf_pool4 20, every provider comment moved with its fragment), `BASE_ENDPOINT_LIMITATION_FRAGMENTS` 15
+verbatim (P1), `RANGE_CAP_FRAGMENTS` 5 + `RESULT_CAP_FRAGMENTS` 7 (P2), one `MALFORMED_REQUEST_CODES`, the two
+predicates and `named_block_limit`. Five clients bind; every module-level name survives; no `_rpc` body,
+pool, ban set, exception or pager touched; talismans/fwa_logs untouched (P4). P3 done: curator `_rpc_logs`
+takes keyword-only `requested_span` and `_get_logs_shrinking` passes the page's own span; no existing
+curator test asserted the old shrink, so none was rewritten. **Deviation, filed by the implementer:** hoisting
+`is_range_limitation` verbatim would have reddened `test_a_result_cap_halves_the_window_instead_of_killing_the_sweep`
+— `_NAMED_LIMIT_OF_RE` reads 10000 out of curator's captured `"result limit of 10000 reached"` (rows, not
+blocks), so a 2000-block page would refuse to shrink, rotate, exhaust both log endpoints and kill the log
+tier; the named-limit guard counts blocks, so it is consulted only after a `RANGE_CAP` fragment matched. For
+surf and surf_pool4 (fragments == the span family) the predicate is statement-for-statement unchanged. Two
+smaller corrections: curator's range family gained `exceeds limit of` (5 span fragments where it had 4 — the
+plan's own composition, an untested widening); the survey's curator range count is 11 (4 + 7), not 10. P5:
+`test_the_error_pattern_tables_agree_with_surf_client` restated `==` → `is`, the only hunk in the seven
+acceptance files; the other six are byte-unchanged (`git diff --stat` empty). `rpc_common.py` +1 docstring
+paragraph; `test_rpc_shared.py` +`test_error_pattern_tables_are_not_re_declared` globbing `data/*_client.py`.
+NEW `test_rpc_classify.py` 50 tests: all 17 committed error bodies through all five bindings against a
+hand-typed action table, the drpc sentence at 403200/10000/2400/300, cattown's non-dict flip, table identity,
+the leaf check, union membership, three anti-vacuity guards. Mutations: drop `personal token` → 3 union tests
+red (no acceptance test isolates the fragment — hence the minimal pairs); ignore `requested_span` → the
+drpc-span test red for curator AND surf_pool4 plus 5 pre-existing surf_pool4 pins; cattown
+`unstructured_is_limitation=True` → the non-dict test red and no cattown acceptance test (the survey's R1
+gap, confirmed). Named runs: 12 `tests/data` files 1,104 passed; guard 192; five composing screen files 624.
+Line delta across the five clients **−52** (ttt −23, curator +27, surf 0, surf_pool4 −61, cattown +5), not
+the estimated ~−330: the tables shrank as predicted, curator and surf_pool4 gained docstrings recording why
+the span and the two units matter — evidence did not get smaller.
+
+**WP-A review (2026-09-20, `git diff 4899809..b635f51`, opus): Approved — 0 Critical, 0 Important, 7 Minor.**
+Risk 1 verified exact: from a `4899809` worktree, both trees' predicates run side by side over all 14 distinct
+error bodies in the three committed corpora plus 4 non-dict shapes at spans {None, 10, 300, 2400, 10000, 50400,
+403200} — zero differing cells for surf and surf_pool4 and for `_looks_like_endpoint_limitation` on all five
+clients; the only 103 differing cells are curator's range predicate, i.e. P3. Curator: drpc rotates at spans
+≤ 10000 and shrinks above; result caps shrink at every span. ttt's union gain is exactly the drpc routing
+triplet, none a substring of its terminal payloads. No test patches any hoisted name; every client keeps a
+real module-level `def` and every `_rpc*` call is a bare global lookup. Leaf and identity confirmed. Mutations:
+`looks_like_endpoint_limitation` → always True: 33 red across four acceptance files; → always False: 38 red;
+a re-typed literal in ttt → exactly the new guard red; **deleting the result-cap escape (the plan's verbatim
+hoist) → `test_a_result_cap_halves_the_window_instead_of_killing_the_sweep` red** — independent confirmation of
+the implementer's deviation. Line counts: five clients −52 confirmed; `data/` net +321; whole diff +914.
+Minors folded here: M1 the design line no longer says "verbatim" and the Facts count reads 11; M2
+`curator_client.py:118`'s drpc comment ("hard 10k-block page cap") contradicted the module's own new docstring
+and rules/data.md (the limit is archive depth) — reworded; M7 the two source-reading tests carry
+`@pytest.mark.guard`. Filed: #66 (M3 curator's action table is evaluated at `requested_span=None`, a
+configuration curator no longer uses, and the mevblocker-at-curator-spans rotate is covered nowhere; M4 the
+empty-table anti-vacuity guard breaks on the first differing row and walks only ttt and cattown), #67 (M6
+`surf_pool4_client._named_block_limit` is a decorative alias — `is_range_limitation` calls its own module-level
+name, so patching the client attribute changes nothing). M5 (substring-shaped re-declaration guard) assigned
+to WP-C, which touches that test.
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

@@ -440,6 +440,7 @@ def test_cattown_does_not_bind_the_ethereum_table() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.guard
 def test_rpc_classify_imports_nothing_from_maxpane() -> None:
     """A table module that imports a client inverts the dependency graph.
 

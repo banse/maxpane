@@ -115,7 +115,9 @@ STATE_RPC_FALLBACKS = [
 #: every sweep before rotating to an endpoint that can answer.
 LOG_RPCS = [
     "https://gateway.tenderly.co/public/mainnet",
-    "https://eth.drpc.org",  # hard 10k-block page cap; our page sits under it
+    "https://eth.drpc.org",  # free-plan limit is archive DEPTH (~64 blocks), not page width;
+                             # its "ranges over 10000 blocks" arrives at any span — see
+                             # _is_range_limitation(requested_span) below and rules/data.md
 ]
 
 BLOCKSCOUT_BASE = "https://eth.blockscout.com/api/v2"

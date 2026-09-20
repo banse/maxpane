@@ -300,6 +300,7 @@ def test_dead_endpoint_codes_are_not_re_declared() -> None:
         assert module._ENDPOINT_DEAD_CODES is rpc_common.ENDPOINT_DEAD_CODES
 
 
+@pytest.mark.guard
 def test_error_pattern_tables_are_not_re_declared() -> None:
     """The fragment tables are evidence, and evidence lives in one place.
 
