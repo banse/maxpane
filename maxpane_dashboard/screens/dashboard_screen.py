@@ -124,9 +124,12 @@ class DashboardScreen(RefreshGuard, Screen):
     #: The status bar is NOT a row — :meth:`_do_refresh` always updates it last.
     PANELS: tuple[tuple[type[Widget], Adapter], ...] = ()
 
-    #: ``r`` refreshes on every dashboard. A subclass that adds its own keys
-    #: re-lists this one (ttt and talismans do), because Textual does not merge
-    #: a subclass's ``BINDINGS`` with its parent's.
+    #: ``r`` refreshes on every dashboard, and every subclass inherits it:
+    #: Textual merges ``BINDINGS`` along the MRO (verified on Textual 8.1.1 --
+    #: a subclass declaring only ``c`` answers to ``c`` *and* ``r``), so a
+    #: screen with extra keys lists only those extra keys. ttt and talismans
+    #: re-list ``r`` today; that is harmless, not required, and WP-B owns their
+    #: lists.
     BINDINGS = [
         Binding("r", "refresh", "Refresh", show=False),
     ]

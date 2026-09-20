@@ -658,6 +658,46 @@ reviewer repeats it. Named tests: `tests/screens/test_dashboard_screen.py`,
 `tests/screens/test_refresh_guard.py`, `tests/test_address_rule.py`, `-m guard tests`,
 `HOME=$(mktemp -d) … tests/screens/test_address_icons_everywhere.py -k ocm`.
 
+**WP-A outcome (2026-09-20).** Landed as `d25f9de`, fix round 1 on top. 8 files, +912/−273:
+`screens/dashboard_screen.py` new (233 lines), `screens/ocm.py` 132 → 72, `templates/screen_template.py`
+133 → 67, `tests/screens/test_dashboard_screen.py` new, `tests/screens/test_refresh_guard.py`
+(collector + `GAME_NAME`), `tests/test_address_sweep_registry.py`, CLAUDE.md, `.claude/rules/widgets.md`.
+Pre/post composited render of `OCMScreen` on the sweep payload at 170×50 and at the 143 pin (frozen
+clock): **identical, both diffs empty.**
+
+Four deviations from this section, each reported rather than taken silently:
+
+1. **A sixth file was needed.** `tests/test_address_sweep_registry.py::test_every_dashboard_screen_has_a_sweep_case`
+   (E3) discovers every `Screen` subclass under `screens/` and demanded a `SweepCase` for the base
+   class. Excluded by **class**, not by module (`ABSTRACT_SCREEN_CLASSES = (DashboardScreen,)`,
+   tightened in fix round 1 from WP-A's first module-wide cut, which would have hidden a real
+   dashboard later added beside the base). WP-B should expect the same tuple to stay one entry long.
+2. **The panel-row agreement test does not honour `**kwargs`.** Under the literal rule
+   (`set(adapt(payload)) ⊆ signature(...).parameters`) the section's own mutation did **not** bite:
+   `OCMHeroMetrics.update_data` ends in `**_kwargs`, so `minted_pcts` was accepted and silently
+   discarded. Every key must now be a *named* parameter. Verified safe for WP-B by an AST scan: none
+   of the nine remaining pure-dispatch screens sends a keyword its widget does not name.
+3. **`keys()` raises on a default that names no listed key.** Semantics for valid input are exactly
+   the lambda in the Design bullet; the guard catches `faucet_opn=True` beside `"faucet_open"`, which
+   the bare lambda swallows into a silent `None`.
+4. **ocm's constructor defaults moved** by deleting its `__init__` (`poll_interval` 60 → 30, `name`
+   `"ocm"` → `None`). Every call site passes both explicitly, so nothing observable changed; WP-B
+   inherits the same effect on dota/base_terminal/frenpet.
+
+**Review: `Needs fixes: 0 Critical, 1 Important, 4 Minor`; fix round 1 closed all but the one filed
+follow-up.** I1 — no test could fail when a migrated screen lost skip-not-queue on its first refresh
+(a bare `run_worker` in `on_screen_resume` left all four named files green while an overrun tick
+cancelled the in-flight fetch): two pilot tests added on the guard's own doubles, asserting
+`_refresh_in_flight` / `_refresh_skipped` on the minimal subclass and the prefetch join on the
+migrated `OCMScreen`. M1 — the `BINDINGS` comment claimed Textual does not merge a subclass's
+bindings; it does, along the MRO (verified on Textual 8.1.1), so **WP-B need not re-list `r`** and may
+drop it from ttt/talismans. M2 — `rules/widgets.md` now dates its scope (only ocm and the template are
+migrated). M4 — the E3 exclusion made class-level, as above. M3 was pre-existing and is filed as
+follow-up **18**, not fixed: ocm's STAKING OVERVIEW and SUPPLY BREAKDOWN keep their `Loading...`
+placeholder under a partial payload because an explicit `None` overrides the widgets' own `= 0`
+defaults — **WP-B will surface the same shape on any screen whose widgets default numerically**, and
+it is a widget fix (MEDI-38 unavailable state), never a change to the screen or to `keys()`.
+
 ### WP-B — the other nine, lifecycle-only for the four custom screens, the docs
 
 - Migrate bakery, base_terminal, cattown, dota, frenpet, frenpet_perf, frenpet_wallet,

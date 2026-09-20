@@ -139,3 +139,24 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     A widget test on one `_fmt.EXPLORER` site (the hero card or the feed) pinning `etherscan.io`
     closes it; or list surf's mainnet-only seeded wallets in `explorer_for`. Minor, Tier 0 (filed by
     the controller, 2026-09-20, from WP-B re-review N1).
+
+## Branch 5 — dashboard screen
+
+18. **ocm's STAKING OVERVIEW and SUPPLY BREAKDOWN stay on `Loading...` under a partial payload**
+    (pre-existing, found by the WP-A review as M3; unchanged by the migration — the pre/post
+    render diff at 170×50 and at the 143 pin is empty). Both widgets declare numeric defaults —
+    `widgets/ocm/ocm_staking_overview.py:41` (`total_staked: int = 0, net_supply: int = 0,
+    staking_ratio: float = 0.0, …`) and `widgets/ocm/ocm_supply_breakdown.py:53` (`total_supply:
+    int = 0, burned_count: int = 0, …`) — but the screen's dispatch passes every key explicitly,
+    so a key the manager did not produce arrives as an **explicit `None`** that overrides the
+    parameter default and raises `unsupported format string passed to NoneType.__format__` inside
+    `update_data`. The panel is then never updated at all and keeps its composed `Loading...`
+    placeholder. That breaks CLAUDE.md "a dead source degrades to an explicit unavailable state
+    behind an `as of HH:MM` marker — never a crash, a **blank panel**, a stale number presented as
+    live"; `Loading...` forever is exactly the blank panel, and it reads as "still fetching"
+    rather than "could not look". The fix is the MEDI-38 unavailable state in these two widgets
+    (the pattern `templates/hero_metrics_template.py` already carries, §3.0 above), not a change
+    to the screen or to `keys()` — the payload genuinely has no value, and `None` is the correct
+    thing for the dispatch to send. Visible in the log since WP-A only because the base logs every
+    degraded step at `warning`; before the migration ocm logged it at `debug`, below the handler
+    level. Tier 0 when either widget is next touched (WP-A review M3, filed 2026-09-20).

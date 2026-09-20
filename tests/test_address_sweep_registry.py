@@ -8,6 +8,7 @@ import pathlib
 
 from textual.screen import Screen
 
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.game_select import GAMES
 from tests.address_sweep.imports import imported_names, imports_helper, widget_modules_of
 from tests.address_sweep.registry import CASES
@@ -25,11 +26,16 @@ NON_DASHBOARD_SCREEN_MODULES = (
     "splash",        # the boot animation: no data, no manager
     "game_select",   # the menu
     "wallet_input",  # the address prompt; what it echoes back is the user's own input
-    # The shared base class, not a dashboard: DashboardScreen has no compose, no
-    # manager and no PANELS of its own, so it renders nothing to sweep. Its
-    # subclasses are the dashboards, and each of those has its own case.
-    "dashboard_screen",
 )
+
+#: Screen subclasses that are shared machinery rather than a dashboard, so they
+#: get no SweepCase. A **class**, never a module: excluding
+#: ``screens/dashboard_screen.py`` wholesale (WP-A's first cut) would have made
+#: a real dashboard later added beside the base class invisible to E3.
+#: ``DashboardScreen`` has no ``compose``, no manager and no ``PANELS`` of its
+#: own, so it renders nothing to sweep; its subclasses are the dashboards and
+#: each of those has its own case.
+ABSTRACT_SCREEN_CLASSES = (DashboardScreen,)
 
 #: The hidden screens the app still installs (``app.py``); GAMES lists only the
 #: visible ones, so these are named here and checked against the app's source.
@@ -48,7 +54,11 @@ def _dashboard_screen_classes() -> set[type]:
             continue
         module = importlib.import_module(f"maxpane_dashboard.screens.{path.stem}")
         for _, cls in inspect.getmembers(module, inspect.isclass):
-            if cls.__module__ == module.__name__ and issubclass(cls, Screen):
+            if (
+                cls.__module__ == module.__name__
+                and issubclass(cls, Screen)
+                and cls not in ABSTRACT_SCREEN_CLASSES
+            ):
                 classes.add(cls)
     return classes
 

@@ -34,9 +34,21 @@ from textual.widgets import Static
 
 import maxpane_dashboard.screens as screens_pkg
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
+from maxpane_dashboard.screens.ocm import OCMScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from tests.address_sweep.builders import _PayloadManager
 from tests.address_sweep.registry import CASES
+
+# The guard's own doubles, not copies of them: one manager that parks inside
+# ``fetch_and_compute`` until released and counts concurrency/cancellation, one
+# harness that reproduces ``MaxPaneApp.on_mount``'s app-node prefetch exactly,
+# and the ready-queue drain. Re-declaring them here would be a second thing to
+# keep true (CLAUDE.md "Reuse before you build").
+from tests.screens.test_refresh_guard import (
+    _BlockingManager,
+    _drain,
+    _PrefetchHarness,
+)
 
 # ---------------------------------------------------------------------------
 # A minimal subclass: two panels, a title bar and a status bar
@@ -214,6 +226,81 @@ async def test_suspend_stops_the_timer():
         # Timer.stop() drops its task; clearing the attribute without
         # stopping would leave the interval ticking on a suspended screen.
         assert timer._task is None, "the timer was cleared but never stopped"
+
+
+# ---------------------------------------------------------------------------
+# The lifecycle must reach the refresh THROUGH the guard
+# ---------------------------------------------------------------------------
+#
+# ``on_screen_resume`` calls ``_do_initial_refresh()``, which is
+# ``RefreshGuard.start_refresh``. Nothing above tells the two apart from a bare
+# ``run_worker(self._do_refresh(), exclusive=True, name=...)`` in the same
+# place: the screen still fills, the status bar still updates, the panel rows
+# still dispatch, and ``test_refresh_guard.py``'s structural checks only read
+# the *source* of ``screens/*.py`` -- they never exercise a migrated screen's
+# lifecycle. So a migration that reached ``_do_refresh`` directly would restore
+# MEDI-34 and MEDI-35 for every screen on this base, with every named test
+# green (WP-A review I1). These two ask for the guard's observables instead.
+
+
+@pytest.mark.asyncio
+async def test_the_resume_refresh_goes_through_the_guard_so_an_overrun_tick_is_skipped():
+    """MEDI-34 on the shared lifecycle: the first refresh raises the in-flight
+    flag, and a poll tick landing on top of it is dropped, never queued and
+    never allowed to cancel the fetch already running."""
+    manager = _BlockingManager()
+    screen = _MiniScreen(manager, poll_interval=30, name="mini")
+    app = _Harness(screen)
+
+    async with app.run_test():
+        # Parked inside fetch_and_compute: the resume refresh is provably in
+        # flight, which is only true if it went through start_refresh.
+        await manager.entered.wait()
+        assert screen._refresh_in_flight is True, (
+            "the resume refresh did not raise the guard's in-flight flag -- it "
+            "reached _do_refresh without going through RefreshGuard.start_refresh"
+        )
+        assert manager.calls == 1
+
+        screen._schedule_refresh()
+        await _drain()
+
+        assert screen._refresh_skipped == 1, "the overrun tick was not skipped"
+        assert manager.calls == 1, "the overrun tick started a second fetch"
+        assert manager.cancelled == 0, "the overrun tick cancelled the in-flight refresh"
+
+        manager.release.set()
+        await _drain()
+        assert manager.completed == 1
+        assert screen._refresh_in_flight is False
+
+
+@pytest.mark.asyncio
+async def test_a_migrated_screens_first_refresh_joins_the_startup_prefetch():
+    """MEDI-35 on a real migrated screen (OCMScreen): the app-node prefetch and
+    the screen's own first fetch must never run on one manager at once, or both
+    first-run log scans read the same watermark and double-count."""
+    manager = _BlockingManager()
+    app = _PrefetchHarness(manager)
+    screen = OCMScreen(manager, poll_interval=60, name="ocm")
+
+    async with app.run_test():
+        await manager.entered.wait()
+        assert manager.calls == 1
+
+        app.push_screen(screen)
+        await _drain()
+
+        assert manager.max_concurrent == 1, (
+            "the migrated screen's refresh ran concurrently with the startup prefetch"
+        )
+        assert manager.calls == 1
+
+        manager.release.set()
+        await _drain()
+        assert manager.calls == 2
+        assert manager.max_concurrent == 1
+        assert manager.completed == 2
 
 
 # ---------------------------------------------------------------------------
