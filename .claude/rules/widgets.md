@@ -161,8 +161,8 @@ contract. Copy the template, or any migrated screen.
 
 ## Panels subclass `widgets/panels.py`
 
-Branch 6 of the refactor programme, 2026-09-20; widened by Branch 7 WP-A the same day. Five panel
-shapes had been hand-copied into every
+Branch 6 of the refactor programme, 2026-09-20; widened by Branch 7, WP-A and WP-B, the same day.
+Five panel shapes had been hand-copied into every
 dashboard package, and a fix applied to one copy reached none of the others: `_UNAVAILABLE`
 (9 copies), `Loading...` (typed in 68 files), `_render_row` (7) / `_render_box` (4),
 `_fmt(sig)` / `_fmt_signal` (8), `_fmt_value` (3), `_format_event_time` (5) and a
@@ -194,22 +194,45 @@ each:
   it **escapes `value_str` through `markup_safety.safe_markup`** — a signal's value is whatever
   the analytics read off a chain, and a token symbol spelled `[/x]` made the write raise
   `MarkupError`, which the row's guard turned into a dropped or degraded row instead of the value. A `ROWS` item is `(id, label)`; `(id, None)`
-  is a **label-less row** (`  [c]{ind}[/] [c]{value}[/]` — talismans' and ttt's spelling, and the
+  is a **label-less row** (`  [c]{ind}[/] [c]{value}[/]`, and the
   degraded row drops the label too, so it stays `unavailable` without an empty column in front of
   it); a bare `None` item is a blank `.panel-line` **separator** between groups of rows. The
-  `Loading...` seed lands on the first *row*, never on a separator.
+  `Loading...` seed lands on the first *row*, never on a separator. Both have real users since
+  WP-B: `TalismansSignals` and `TTTSignals` are label-less throughout — their value strings already
+  name themselves ("2 mythics 24h", "0 buybacks ready"), so a label column would only repeat
+  them — and each carries one separator, before FORGE MOMENTUM and before CONCENTRATION.
+  `TTTSignals` also keeps one row it hides at runtime (`display = bool(...)` on the fresh-launch
+  row, set in its own `update_data` after `render_signal`): the base has no opinion about a row's
+  visibility, and a panel whose optional row doubled as the title's blank row is how that blank
+  used to vanish exactly when there was a launch to announce.
 - **`SparklinePanel(PanelBase)`** — `LINE_IDS` and `render_series((label, points, color, unit), …)`
   over `sparkline_common`'s `coerce_points` / `build_sparkline_from_points` / `trend_arrow` /
-  `fmt_compact`. Four knobs, each defaulting to the Branch 6 behaviour: `LABEL_WIDTH` (8; 9 in
-  dota), `SHOW_ARROW` (`True`; the trailing space goes with the arrow, so `False` leaves no ragged
-  cell), `EMPTY_TEXT` (`""`) and the `fmt_value(value, unit)` hook (`fmt_compact`). Override
-  `fmt_value` only where the series genuinely is not a magnitude — dota's lane frontline is a
-  position between two bases, where `fmt_compact` would print `1.0K` for `950`. An unusable series
-  writes `EMPTY_TEXT`, never a flat baseline that would read as a real run of zeroes.
+  `fmt_compact`. Six knobs, each defaulting to the Branch 6 behaviour: `LABEL_WIDTH` (8; 9 in
+  dota, 12 in ttt, 16 in talismans), `SHOW_ARROW` (`True`; the trailing space goes with the arrow,
+  so `False` leaves no ragged cell — talismans and ttt draw none), `EMPTY_TEXT` (`""`),
+  `MIN_POINTS` (`1`), `EMPTY_KEEPS_LABEL` (`False`) and the `fmt_value(value, unit)` hook
+  (`fmt_compact`). Override
+  `fmt_value` only where the series genuinely is not a magnitude, or where the panel's own digits
+  are a pixel: dota's lane frontline is a
+  position between two bases, where `fmt_compact` would print `1.0K` for `950`; talismans counts
+  Mythics and operations in the low thousands and shows them grouped (`1,900`, not `1.9K`); ttt's
+  volume line is money and renders `$1.23M` where `fmt_compact` renders `1.2M`. The `unit` tag is
+  passed so one override can switch on which line it is drawing (ttt's does). An unusable series
+  writes `EMPTY_TEXT`, never a flat baseline that would read as a real run of zeroes — and
+  `MIN_POINTS = 2` is what makes a **single** sample unusable, which talismans and ttt both say,
+  because `build_sparkline_from_points` draws one point as a flat baseline and a flat baseline is a
+  run of zeroes that never happened. `EMPTY_KEEPS_LABEL` keeps the label column on that line
+  (`MYTHIC COUNT     waiting for data...`): with two stacked series the reader has to be able to
+  tell *which* one is not ready. It means nothing where `EMPTY_TEXT` is empty, and a line whose
+  entry could not even be unpacked has no label to keep and writes `EMPTY_TEXT` bare.
 - **`TableLeaderboard(PanelBase)`** — `TABLE_ID`, `COLUMNS` of `(label, width)`, `CURSOR_TYPE`
-  (`"row"`), `ZEBRA` (`True`), `ROW_CAP` (10; 20 in dota), `LOADING_ROW` and `EMPTY_ROW` tuples,
+  (`"row"`), `ZEBRA` (`True`), `ROW_CAP` (10; 20 in dota, 12 in talismans' materials ledger, 6 in
+  ttt's claims table, `None` for talismans' matrix), `LOADING_ROW` and `EMPTY_ROW` tuples,
   plus `render_table(rows, *, footer=None)` over the `build_row(index, item) -> tuple | None`
-  hook. **Not called `Leaderboard`:** `widgets/leaderboard.py` owns that name and `minimal.tcss`
+  hook. **`EMPTY_ROW` is painted only when there are no rows *and* no `footer`.** A footer is a row
+  in its own right: `TalismansMatrixTable` — the base's one footer user — serves its bold TOTAL
+  line out of a different payload key than its rows, so a `No data` above a real total would be a
+  false negative. **Not called `Leaderboard`:** `widgets/leaderboard.py` owns that name and `minimal.tcss`
   has a bare block for it (see the type-selector rule below). `None` from `build_row` skips the
   item without a gap (the non-dict guard talismans and ttt carry); every row is built *and* added
   inside its own guard, so one item the formatter cannot read is one missing line rather than an
@@ -220,7 +243,12 @@ each:
   naming the class: a wrong-width tuple is a programming error, and `add_row` raises on a surplus
   cell but **pads a short one in silence** — so half of it would otherwise surface only as a
   degraded state that paints nothing.
-- **`RichLogFeed(PanelBase)`** — `LOG_ID`, `EMPTY_LINE`, `SNAPSHOT`, the dedupe set, and two hooks:
+- **`RichLogFeed(PanelBase)`** — `LOG_ID`, `EMPTY_LINE`, `SNAPSHOT`, three `RichLog` knobs
+  (`WRAP` / `HIGHLIGHT` / `MAX_LINES`, `True` / `True` / `None` as Branch 6 had them; talismans and
+  ttt set `False` / `False` / `200`, because their rows are **columnar** — a wrapped burn row puts
+  its tokenId under its timestamp and the column stops being a column — and Rich's repr highlighter
+  recolours the numbers on top of the per-event-type colour the row already carries), the dedupe
+  set, and two hooks:
   `dedupe_key(event)` (default `event.get("tx_hash") or None`) and the abstract `format_row(event)
   -> Text | None`. `format_row` returns a **`Text`**, never a markup string. `render_events` is the
   merged contract: an empty poll writes the placeholder only while nothing has ever been shown and
@@ -285,15 +313,22 @@ stays where it is.
 
 `widgets/ocm/` and `widgets/cattown/` are the worked examples — six panels each, no `update_data`
 signature changed in either, and cattown covers all five shapes plus `TableLeaderboard`, whose
-first subscriber it is (`widgets/dota/` is the third migrated package). `widgets/cattown/_fmt.py`
+first subscriber it is. `widgets/cattown/_fmt.py`
 is where the two formatters *two* of its modules needed were hoisted, rather than left as three
-copies of a rarity-colour map.
+copies of a rarity-colour map; `widgets/ttt/_fmt.py` is the same move for `safe_symbol`, which
+`ttt_leaderboard.py` and `ttt_fees_table.py` each carried a byte-identical copy of.
+**Five packages are on the bases as of Branch 7 WP-B** — ocm, cattown, dota, talismans, ttt — and
+no widget class name and no `update_data` signature changed in any of them, so no screen's `PANELS`
+and no agreement test in `tests/screens/test_dashboard_screen.py` was touched.
 `tests/widgets/test_panels.py` covers the bases and holds the agreement tests that redden when a
 copy is pasted back into a migrated package: both are parametrised over one `MIGRATED_PACKAGES`
-table, `{"ocm": 6, "cattown": 6, "dota": 6}` — package → how many `update_data` widget classes the
-walk must find — which is the only line a later migration edits (WP-B adds `"talismans": 7` and
-`"ttt": 7`; the counts differ per package, so the number is hand-checked, not derived, or it would
-compare `__all__` against itself).
+table, `{"ocm": 6, "cattown": 6, "dota": 6, "talismans": 7, "ttt": 7}` — package → how many
+`update_data` widget classes the walk must find — which is the only line a later migration edits.
+The counts differ per package, so the number is hand-checked, not derived, or it would
+compare `__all__` against itself. The banned-name set the same walk enforces now also covers
+`_fmt_int`, `_fmt_float`, `_safe_get`, `_DASH`, `_WAITING`, `_format_ts` and `_UNAVAILABLE_SIGNAL`,
+whose one definitions are `widgets/fmt.py`'s `fmt_int` / `fmt_float` / `safe_get` / `DASH` /
+`hhmm` and the base's own degraded row.
 
 ## Reuse before you build
 

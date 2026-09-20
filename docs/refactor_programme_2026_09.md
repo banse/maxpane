@@ -1667,6 +1667,175 @@ the paragraph below it; **N5** a guarded `Static.update` that raises leaves the 
 screen (a stale line presented as live), not a blank — docstring and rules corrected; **N6** follow-up
 #23's line references re-pointed at `841a0c7`. No code changed in this commit.
 
+**Branch 7 WP-B outcome (2026-09-20).** talismans (7 widgets) and ttt (7 widgets) are on the
+bases, which closes the migration: **five packages** — ocm, cattown, dota, talismans, ttt. Every
+class name and every `update_data` signature is unchanged, so `screens/talismans.py`,
+`screens/ttt.py` and the panel-row agreement test in `tests/screens/test_dashboard_screen.py` were
+not touched. The hoists went in first, in the same commit and append-only:
+`widgets/fmt.py` gained `fmt_int` (replacing six `_fmt_int`), `fmt_float` (two `_fmt_float`) and
+`safe_get` (two `_safe_get`); `fmt.DASH` replaced eight `_DASH`; `fmt.hhmm` replaced the two
+`_format_ts` / `_format_event_time`; `safe_symbol` was hoisted once into a new
+`widgets/ttt/_fmt.py` (`ttt_leaderboard.py` and `ttt_fees_table.py` carried byte-identical
+copies). The two `_fmt_eth` (fees 4 dp, claims 5 dp) stay behind their goldens in
+`tests/widgets/test_ttt_address_icons.py`, and both `_SYM_WIDTH` measured pins are untouched.
+`ttt_claims_table._fmt_multiplier` and `tal_hero_metrics._GENESIS` were dead and are gone
+(`genesis_minted` stays a named `update_data` parameter — `screens/talismans.py`'s `PANELS` row
+sends it, the same constraint as WP-A's deviation 2).
+
+*Line counts are raw `wc -l`.*
+
+| file | before | after | file | before | after |
+| --- | --- | --- | --- | --- | --- |
+| `widgets/talismans/tal_activity_feed.py` | 186 | 184 | `widgets/ttt/ttt_activity_feed.py` | 271 | 277 |
+| `widgets/talismans/tal_hero_metrics.py` | 163 | 119 | `widgets/ttt/ttt_leaderboard.py` | 235 | 209 |
+| `widgets/talismans/tal_leaderboard.py` | 119 | 92 | `widgets/ttt/ttt_fees_table.py` | 206 | 172 |
+| `widgets/talismans/tal_signals.py` | 115 | 73 | `widgets/ttt/ttt_hero_metrics.py` | 179 | 144 |
+| `widgets/talismans/tal_matrix_table.py` | 106 | 94 | `widgets/ttt/ttt_signals.py` | 141 | 122 |
+| `widgets/talismans/tal_sparkline.py` | 106 | 77 | `widgets/ttt/ttt_claims_table.py` | 132 | 106 |
+| `widgets/talismans/tal_materials_table.py` | 102 | 87 | `widgets/ttt/ttt_sparkline.py` | 125 | 100 |
+| | | | `widgets/ttt/_fmt.py` (new) | 0 | 43 |
+| **`widgets/talismans/` total** | **897** | **726** | **`widgets/ttt/` total** | **1289** | **1173** |
+| `widgets/panels.py` | 826 | 888 | `widgets/fmt.py` | 204 | 264 |
+| `themes/minimal.tcss` (5 blocks) | 42 | 0 | | | |
+
+**287 lines out of the two packages and 42 out of the stylesheet; 122 lines of shared code in
+(62 base + 60 `fmt.py`). Net −207 production lines**, against WP-A's −19 and Branch 6's +252 — the
+slope the branch was written to predict. `ttt_activity_feed.py` is the one file that grew, by six
+lines of docstring recording why it is a stream and not a snapshot (below).
+
+**Rendering proof.** `render_case.py` on each dashboard's sweep payload under the real stylesheet
+and a frozen clock, both views (default and `c`), at 170×50 and at the 143 pin:
+
+```
+$ cmp b7_before_talismans.default.170x50.txt      b7_wpb_talismans.default.170x50.txt      -> identical
+$ cmp b7_before_talismans.default.pin-143x50.txt  b7_wpb_talismans.default.pin-143x50.txt  -> identical
+$ cmp b7_before_talismans.view-c.170x50.txt       b7_wpb_talismans.view-c.170x50.txt       -> identical
+$ cmp b7_before_talismans.view-c.pin-143x50.txt   b7_wpb_talismans.view-c.pin-143x50.txt   -> identical
+$ cmp b7_before_ttt.default.170x50.txt            b7_wpb_ttt.default.170x50.txt            -> DIFFERS (3 lines)
+$ cmp b7_before_ttt.default.pin-143x50.txt        b7_wpb_ttt.default.pin-143x50.txt        -> DIFFERS (3 lines)
+$ cmp b7_before_ttt.view-c.170x50.txt             b7_wpb_ttt.view-c.170x50.txt             -> DIFFERS (3 lines)
+$ cmp b7_before_ttt.view-c.pin-143x50.txt         b7_wpb_ttt.view-c.pin-143x50.txt         -> DIFFERS (3 lines)
+$ cmp b7_before_cattown.default.170x50.txt        b7_wpb_cattown.default.170x50.txt        -> identical
+$ cmp b7_before_cattown.default.pin-143x50.txt    b7_wpb_cattown.default.pin-143x50.txt    -> identical
+$ cmp b7_before_dota.default.170x50.txt           b7_wpb_dota.default.170x50.txt           -> identical
+$ cmp b7_before_dota.default.pin-143x50.txt       b7_wpb_dota.default.pin-143x50.txt       -> identical
+$ cmp b6_fix2.170x50.txt                          b7_wpb_ocm.170x50.txt                    -> identical
+$ cmp b6_fix2.pin-143x50.txt                      b7_wpb_ocm.pin-143x50.txt                -> identical
+```
+
+**Twelve of fourteen byte-identical**, and the two that are not are the same three rows four
+times over — **the one deviation, reported rather than absorbed** (deviation 1 below). talismans
+is clean in both views at both widths, and so are the three packages WP-A and Branch 6 migrated,
+which is what the `fmt.py` hoists and the six new base attributes had to be checked against: a
+shared helper that changed a cell would have shown up on ocm, cattown or dota first.
+
+**Deviation 1 — three rows of the ttt signals panel move from `● --` to `● unavailable`, and no
+live screen can reach it.** This is plan-named change 2, which the plan expected to be
+unreachable on this payload; it is reachable, and the difference is the whole of it. The sweep
+payload in `tests/address_sweep/` serves `buyback_signal`, `burn_velocity_signal` and
+`holder_concentration_signal` as `None`. `TTTSignals`' own copy rendered a bare `● --` for a
+`None` signal; `SignalsPanelBase.render_signal` renders `● unavailable`, which is the convention
+("a dead source degrades to an explicit unavailable state", and `--` is reserved for a real
+negative). Production never serves that shape: `data/ttt_manager.py` builds each of the three as
+a dict with a `--` `value_str` on every path, failed reads included, so the base's degraded row is
+unreachable live and the change is a correction to the *test payload's* rendering, not the
+dashboard's. Reported as a deviation rather than papered over by keeping a per-panel `None`
+branch, because the panel that lies about a dead read is the defect the convention exists for.
+Verified as the *only* difference: `diff` on all four captures shows exactly those three rows.
+
+**Deviation 2 — six new class attributes on the bases, each defaulting to Branch 6's behaviour.**
+The plan's WP-B paragraph assumed the bases as WP-A left them would render these two packages
+unchanged. Five places where they would not, closed by widening the base rather than by moving a
+pixel — the same append-only move WP-A made, and ocm/cattown/dota prove it byte for byte above:
+
+1. `SparklinePanel.MIN_POINTS` (default `1`): talismans and ttt refuse to draw a **single** sample,
+   which `build_sparkline_from_points` renders as a flat baseline — a run of zeroes that never
+   happened.
+2. `SparklinePanel.EMPTY_KEEPS_LABEL` (default `False`): both keep the label column on the waiting
+   line, because with two stacked series the reader has to know which one is not ready.
+3. `SparklinePanel.compose_body` seeds **every** line with `EMPTY_TEXT` when one is set (Branch 6
+   seeded `Loading...` on line 0 and `""` below). Both packages composed the waiting line on both
+   rows; the `""` second row would have been a blank where a sentence was.
+4. `RichLogFeed.WRAP` / `HIGHLIGHT` / `MAX_LINES` (defaults `True` / `True` / `None`): both feeds
+   construct `RichLog(wrap=False, highlight=False, max_lines=200)`. Their rows are columnar and
+   Rich's repr highlighter recolours numbers on top of the per-event-type colour.
+5. `TableLeaderboard.render_table` paints `EMPTY_ROW` only when there are no rows **and** no
+   `footer`. `TalismansMatrixTable` serves its bold TOTAL out of a different payload key than its
+   rows, so `No data` above a real total would be a false negative.
+
+**Deviation 3 — `widgets/ttt/_fmt.py` holds one function, and `ttt_activity_feed._sym` is not it.**
+The plan says "`_safe_symbol` once in a new `widgets/ttt/_fmt.py`". Done: `ttt_leaderboard.py` and
+`ttt_fees_table.py` had byte-identical copies and now import `safe_symbol` (public, so the
+agreement test's banned-name walk — which inspects bound names, methods and aliases — does not
+trip on it). `ttt_activity_feed._sym` looks like a third copy and is not: it dashes on empty
+*after* `strip()` and right-pads nothing, and it is used in an f-string with `{sym:>6}`. Left
+alone rather than forced into the hoist.
+
+**Deviation 4 — `TalismansActivityFeed` and `TTTActivityFeed` are streams, `SNAPSHOT = False`.**
+Per `rules/widgets.md`'s definition: a row is one thing that *happened* at a stated time — a bond,
+a cleave, a burn, a fee deposit — and it is still true when the next poll brings nothing. Nothing
+in a row expires, so there is no number to present as live. dota's hero roster is the snapshot
+shape (every row carries an HP true only of its own poll), and marking these feeds snapshots would
+mean re-painting whole every poll and telling `[]` from `None`, a distinction an event log does
+not have. Both `dedupe_key` return `None` — these events carry no key the panel trusts to be
+unique — so every poll is all-new and redraws, which is what the unconditional `clear()` they
+replace did. Recorded in both module docstrings.
+
+**Deviation 5 — the three `DEFAULT_CSS` geometry blocks survive**, on the tables (`> DataTable {
+height: 1fr }`) and the feeds (`> RichLog { height: 1fr; padding: 0 1; scrollbar-size: 1 1 }`),
+same call as WP-A's deviation 4. Deleted from `themes/minimal.tcss`: `TTTLeaderboard >
+.leaderboard-title`, `TTTActivityFeed > .feed-title`, `TTTFeesTable > .fees-title, TTTClaimsTable >
+.claims-title`, `TTTSparkline > .ttt-spark-title` and `TTTSignals > .ttt-signals-title` — 42 lines,
+every one a title class the base now owns. talismans had no title block to delete.
+
+**Mutation proofs** (restored by inverse edit; `git status` clean after each):
+
+| mutation | reddened |
+| --- | --- |
+| `TalismansSparkline.fmt_value` reverted to `super().fmt_value` (i.e. `fmt_compact`) | `test_talismans_widgets.py::test_the_sparkline_value_cell_is_a_grouped_integer_not_a_compact_one` **and** `::test_a_series_too_short_to_draw_keeps_its_label` — 2 failed, 191 passed |
+| `TalismansSparkline.SHOW_ARROW = True` | `test_talismans_widgets.py::test_the_sparkline_draws_no_trend_arrow` **and** the value-cell test (the arrow displaces the cell) — 2 failed, 191 passed |
+| `TalismansLeaderboard.EMPTY_ROW`'s `"No data"` moved from the wallet cell to the rank cell | `test_talismans_widgets.py::test_the_empty_leaderboard_says_no_data_under_the_wallet_column` — 1 failed, 192 passed |
+| `HeroRow.render_box`'s build-failure fallback changed from `UNAVAILABLE` to `[dim]--[/]` | `test_medi38_unavailable_state.py::test_a_malformed_poll_after_a_good_one_is_not_shown_as_live[CTHeroMetrics]` **and** both new hero-row cases — 3 failed, 35 passed |
+
+**The first mutation is why four tests exist that the plan did not ask for.** Run against the tree
+as first migrated, `fmt_value` → `fmt_compact` reddened **nothing**: the whole named set stayed
+green at 61 passed. `tests/widgets/test_talismans_widgets.py` was a smoke suite — drive
+`update_data` three ways, assert a row count — so it could not see a cell's spelling, an arrow, a
+waiting line or a degraded row's column. Four composited pins were added (`render_strips()`, the
+repo rule), each naming the mutation it exists to redden, and the mutation then reddened two of
+them. A mutation that reddens nothing is a test that cannot fail.
+
+**Tests.** `tests/widgets/test_panels.py` 107 → 128 (`MIGRATED_PACKAGES` gains `"talismans": 7`
+and `"ttt": 7` — two table entries, no test body, exactly as WP-A's M3 arranged);
+`test_title_blank_row.py` 41 → 51, gaining all six talismans panels that are now `PanelBase`
+subclasses and four ttt ones; `test_medi38_unavailable_state.py` 29 → 38, gaining `TTTSignals` in
+the widget table and a new hero-row table (`TalismansHeroMetrics`, `TTTHeroMetrics`) driven by a
+`_Hostile` value whose `__int__` / `__float__` / `__str__` / `__format__` all raise — the shape
+that proves named change 2 (a build that *raises* lands on `unavailable`; a `None` the manager
+served deliberately still renders `--`, and there is a test for each direction);
+`test_fmt.py` 25 → 59 for the three new helpers — and its `__all__` agreement case reddens under
+the hoist if it is not updated with them, which is the cheapest proof that the hoist is visible to
+a test at all; `test_talismans_widgets.py` 7 → 11 as above.
+**543 passed** across the seventeen named files (499 at `e9a6307`), **10 passed, 33 deselected**
+on `test_address_icons_everywhere.py -k "talismans or ttt or cattown or dota or ocm"`, **191** on
+`-m guard tests`. No directory-wide or suite run; the suite is the controller's, once, on the
+branch head.
+
+**Every test file's function-name list was diffed against `e9a6307`** — WP-A's first commit
+silently deleted a test through a careless source slice, and a deleted test is the one defect a
+suite cannot report. Additions only: `test_fmt.py` +6, `test_medi38_unavailable_state.py` +3,
+`test_talismans_widgets.py` +4; `test_panels.py` and `test_title_blank_row.py` unchanged (both
+grew by table rows, not functions). **No test disappeared, and none was renamed.**
+
+**Seen in passing, not fixed** (out of scope; for the follow-ups doc):
+`tests/widgets/test_title_blank_row.py`'s pre-existing `TTTSparkline` row passes
+`{"burn_history": _SERIES}` — the parameter is `burns_history`, so the payload is swallowed by
+`**_kwargs` and that case has only ever exercised the waiting state, never a drawn sparkline. It
+is green either way and the fix is a one-word rename plus whatever the drawn state then asserts:
+Minor, Tier 0 when the file is next touched. Also: `TTTFeesTable` and `TTTClaimsTable` keep one
+`_fmt_eth` each, at 4 and 5 decimal places, pinned by goldens — a single `fmt_eth(value, dp)` in
+`widgets/fmt.py` would retire both, but the goldens are outside this WP's diff.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
