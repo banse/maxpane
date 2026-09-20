@@ -390,9 +390,10 @@ class SignalsPanelBase(PanelBase):
         winning faction, cattown's a species -- and an unescaped ``[/x]`` in
         one of them makes ``Static.update`` raise ``MarkupError``
         synchronously (Textual 8.1.1), which :meth:`PanelBase.write` catches
-        and logs: the line silently vanishes rather than rendering (review
-        M5, wording corrected in re-review N3). A plain recommendation is
-        unaffected; the ``[bold]`` around it is this panel's own markup.
+        and logs -- and the *previous* poll's recommendation stays on screen,
+        a stale line presented as live (review M5; wording corrected in
+        re-reviews N3 and N5). A plain recommendation is unaffected; the
+        ``[bold]`` around it is this panel's own markup.
         """
         if self.RECOMMENDATION_ID is None:
             return False

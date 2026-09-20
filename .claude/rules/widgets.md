@@ -21,8 +21,12 @@ Layout and sizing rules live in `.claude/skills/terminal-layout/SKILL.md`, not h
 
 ## Escape every third-party string before it reaches markup or a `DataTable`
 
-Use `widgets/markup_safety.safe_markup`. Textual defers `Text.from_markup` into the message
-pump, so a malformed name raises *outside* the screen's `try/except` and kills the app. Token
+Use `widgets/markup_safety.safe_markup`. Where the raise lands depends on the widget (probed on
+Textual 8.1.1, 2026-09-20): a `DataTable.add_row` returns and the `MarkupError` fires later in
+`_on_idle` → `default_cell_formatter`, *outside* the screen's `try/except`, and kills the app; a
+`Static.update` raises synchronously at the call; a `RichLog.write` parses nothing (markup is
+off by default). The convention covers all three because the two that do not kill the app leave
+the *previous* content on screen instead — a stale value presented as live. Token
 symbols are attacker-controlled: anyone can deploy an ERC-20 named `[/x]`. Analytics never
 sanitises; escaping (or a `Text` with markup disabled) happens at the widget boundary, and a
 brief's test that cannot pass under escaping is a brief defect.
@@ -33,7 +37,8 @@ Never a markup string. On Textual 8.1.1 `Static.update("…[/x]…")` raises `Ma
 call (probed 2026-09-20: `update()` raised synchronously, the app stayed alive); earlier notes
 here said the parse was deferred into the message pump, which is no longer what happens. Either
 way the widget's own `try` is the only place the failure lands usefully: an unguarded call kills
-the handler, a guarded one drops the line. Parse it yourself, synchronously, inside your own
+the handler, a guarded one leaves the widget's **previous** content on screen — a stale value
+presented as live, not a blank. Parse it yourself, synchronously, inside your own
 `try` (`Text.from_markup(...)`) and a malformed row degrades to a skipped row. `SurfFeed._row_text` is the worked example.
 `Text.no_wrap` and `Text.overflow` are inert through Textual 8, and a *sized* cell is not a
 *fitted* one (terminal-layout skill).

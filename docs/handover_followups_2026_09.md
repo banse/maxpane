@@ -219,7 +219,7 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     says "updated 0s ago" for data nobody fetched.** `data/dota_manager.py:101-108` builds
     `DOTASnapshot(fetched_at=time.time(), …)` and calls `self.cache.update(snapshot)`
     unconditionally, including on the path where `game_state is None` because the fetch raised
-    (`:64-70`); `last_updated_seconds_ago` is then computed off that stamp (`:275`) and reaches
+    (`:64-70`); `last_updated_seconds_ago` is then computed off that stamp (`:283` on `841a0c7`) and reaches
     the status bar. The only trace of the failure is `error_count`. This is the `as of HH:MM`
     convention in CLAUDE.md read backwards: the marker is the one thing that tells a reader a
     number may be old, and here it asserts freshness hardest exactly when the read failed. The
@@ -240,5 +240,5 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     widgets already render `None` as `unavailable` (MEDI-38). Not touched on Branch 7 — only the
     `heroes` key the roster reads was in the fix round's scope.
     **Tier 1**, not Tier 0: it changes dota's own data module and needs its own regression test
-    for the two paths. Reviewer's evidence: `data/dota_manager.py:64-70`, `:101-108`, `:306`
+    for the two paths. Reviewer's evidence: `data/dota_manager.py:64-70`, `:101-108`, `:318`
     (Branch 7 WP-A review C1 follow-up, filed 2026-09-20).

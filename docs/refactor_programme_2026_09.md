@@ -1656,6 +1656,17 @@ verdict: C1, M1–M5 all ADDRESSED; three new findings.
 
 Renders untouched by this round (no widget path the sweep payload reaches changed): not re-captured.
 
+**Branch 7 WP-A re-review of fix round 2 (2026-09-20): N1 ADDRESSED, N3 ADDRESSED — Approved.** The
+reviewer proved the two feed modes apart with a second mutation (the write forced to
+`UNAVAILABLE_LINE` reddens only the stream test), re-captured all six renders (identical), and
+probed all three markup paths on Textual 8.1.1: `DataTable.add_row` still raises later in `_on_idle`
+and kills the app, `Static.update` raises at the call, `RichLog.write` parses nothing. Three docs
+Minors closed in the same docs-only commit: **N4** the headline "Escape every third-party string"
+paragraph in `rules/widgets.md` now names the path each timing belongs to instead of contradicting
+the paragraph below it; **N5** a guarded `Static.update` that raises leaves the *previous* content on
+screen (a stale line presented as live), not a blank — docstring and rules corrected; **N6** follow-up
+#23's line references re-pointed at `841a0c7`. No code changed in this commit.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
