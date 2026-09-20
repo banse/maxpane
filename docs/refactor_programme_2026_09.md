@@ -2752,6 +2752,79 @@ rename one); HANDOVER.md §3 item 6 marked half-done (SeriesCache landed, RpcPoo
 follow-up #44); the branch-order table row 9 corrected (`test_series_points.py` → `test_series_cache.py`);
 follow-ups #41–#44 filed at planning time (below).
 
+**Branch 9 WP-A outcome (2026-09-20).** Commit `d5fd9d7` on `refactor/series-cache`.
+`data/series_cache.py` (new) + `dota_cache.py` and `cattown_cache.py` as subclasses +
+`cattown_manager.py` (R1 only) + two fixtures + the generator script + two test files.
+
+| file | before (`53a71d5`) | after | note |
+|---|---|---|---|
+| `maxpane_dashboard/data/series_cache.py` | — | **367** (137 code, 154 docstring, 18 comment, 58 blank) | new; the plan's "~150 lines" read as code lines |
+| `maxpane_dashboard/data/cattown_cache.py` | 195 | **95** (33 code) | `update()` + three one-line getters |
+| `maxpane_dashboard/data/dota_cache.py` | 193 | **92** (31 code) | ditto, plus the lane guard |
+| `maxpane_dashboard/data/cattown_manager.py` | 302 | **306** | R1 only: two seeds `0`/`0.0` → `None`, +4 comment lines |
+| `tests/data/test_series_cache.py` | — | **629** (38 tests) | probe + fixture round-trips + dota lane guard |
+| `tests/data/test_cattown_manager.py` | — | **195** (5 tests) | new file; no cattown manager test existed |
+| `tests/scripts/make_cache_fixtures.py` | — | **182** | provenance; never run by a test |
+| `tests/fixtures/cache/{cattown,dota}_53a71d5.json` | — | 2 files | written by `53a71d5`'s own code |
+
+Net for the two caches: 388 → 187 lines, with the duplicated persistence removed rather than moved
+per-file. `tests/data/test_cache_corruption.py` is byte-unchanged (`git diff --stat` empty) and its
+six `"Skipped"` assertions still pass against the base's reworded warning.
+
+**Mutation proofs.** Every mutation was applied by an in-place string replace, the mutated line
+printed with `grep -n`/`sed -n` *before* the run, and restored by inverse edit and `diff`'d against a
+pre-mutation snapshot (`RESTORED IDENTICAL` for all four files; no `git checkout/stash/reset/restore/clean`).
+
+| # | mutation | file(s) run | failing test(s) by name |
+|---|---|---|---|
+| a | `record()`: `if value is None: value = 0.0` (appends the sentinel) | `test_cattown_manager.py test_series_cache.py` | `test_record_drops_none_and_says_so`, `test_a_failed_raffle_read_records_no_ticket_point`, `test_a_competition_with_no_entries_records_no_leader_weight`, `test_the_failed_and_good_cycles_are_distinguishable_in_the_series` |
+| b | `if not isinstance(payload, dict)` → `if False` | `test_series_cache.py test_cache_corruption.py` | `test_a_non_dict_payload_leaves_the_cache_untouched[list]`, `[str]`, `[null]`, `[int]` (`AttributeError: 'int' object has no attribute 'get'`) |
+| c | `series.clear()` deleted, `extend` kept (R7) | `test_series_cache.py` | `test_load_clears_before_extending` |
+| d | `reference = time.time()` ignoring `now=` | `test_series_cache.py` | `test_load_validates_points_against_now_not_the_wall_clock`, `test_a_spec_max_age_beats_the_calls_max_age`, `test_the_skipped_warning_names_the_count_and_the_cache`, `test_load_clears_before_extending`, `test_save_then_load_round_trips_the_series` |
+| e | `os.remove(tmp_path)` cleanup deleted from the `except OSError` | `test_series_cache.py` | `test_a_failed_write_leaves_no_tmp_file_behind` |
+| f | dota lane guard → `lanes.get(k)` + `0.0` for a missing lane | `test_series_cache.py test_dota_manager.py` | `test_a_missing_lane_records_nothing` |
+| g | `cattown_manager`: `raffle_total_tickets: int \| None = 0` | `test_cattown_manager.py` | `test_a_failed_raffle_read_records_no_ticket_point`, `test_the_failed_and_good_cycles_are_distinguishable_in_the_series` |
+
+**Render.** `python render_case.py cattown …` / `dota …` at `5869760` (before any code change) and at
+the WP-A tree, both views at 170×50 and at the 143-column pin. `cmp` on all four pairs:
+`IDENTICAL cattown.default.170x50`, `IDENTICAL cattown.default.pin-143x50`,
+`IDENTICAL dota.default.170x50`, `IDENTICAL dota.default.pin-143x50` — the plan's expected diff (none).
+
+**Where a failed read now yields `None`** (`grep -n`):
+`maxpane_dashboard/data/series_cache.py:146-147` `if value is None:` / `return False` — the one
+place a sentinel could enter a persisted series, and it refuses;
+`maxpane_dashboard/data/cattown_cache.py:61-62` `leader_weight_kg: float | None = None,` /
+`raffle_total_tickets: int | None = None,`;
+`maxpane_dashboard/data/cattown_manager.py:105` `raffle_total_tickets: int | None = None` (was `0`)
+and `:113` `leader_weight: float | None = None` (was `0.0`);
+`maxpane_dashboard/data/dota_cache.py:79` `if lane_key in lanes:` — the pre-existing lane guard, kept.
+
+**Deviations from the plan, and why.**
+1. `_log_loaded(payload)` in the Design block became `_log_loaded(self, path, loaded)`. The line it
+   replaces is `"Loaded CatTown cache from %s: %d total points"`; the payload alone cannot produce the
+   loaded count, which is the number the log exists to state.
+2. `_payload()` still reads `time.time()` for `saved_at`. The plan fixes `save_to_file(self, path)` and
+   `_payload(self)`, so there is nowhere to inject a save clock without widening the signature the
+   managers call. `saved_at` is write-side metadata no loader reads back; the injected-clock rule
+   (rules/data.md) is about the load path, where the only wall-clock read is now the `now is None`
+   fallback. The fixture script freezes `saved_at` after the fact rather than patching the clock.
+3. The base always `coerce_points` + `clear()` + `extend()`; the old cattown/dota loaders had an
+   `if not isinstance(points, list): continue` that *skipped* the clear, so a non-list value under a
+   series key left the in-memory deque as it was. Reachable only on a load-after-update, which no
+   manager does (both load in `__init__`), and R7 chooses clear-before-extend explicitly.
+4. The base's warning is `"Skipped %d unusable or expired point(s) while loading %s %s"`, per the plan —
+   the old text said `"unusable point(s)"` and named the cache inside the format string. The literal
+   `"Skipped"` that `test_cache_corruption.py` binds is unchanged.
+5. `SeriesSpec.max_age` and `allow_negative` are exercised by the probe subclass only: neither cattown
+   nor dota needs them (R4 keeps both unwindowed). `coerce_keyed`, `before_load`, `extra_payload` and
+   `restore_extra` likewise have no subclass caller until WP-B/WP-C, so each is pinned by a probe test
+   here rather than shipped untested.
+6. The generator script went to `tests/scripts/make_cache_fixtures.py` (brief) rather than the
+   top-level `scripts/` where the capture tools live. It is test provenance, it reads nothing live, and
+   `tests/scripts/` is not collected (pytest takes `test_*.py` only).
+
+**Found, not fixed** — follow-ups #45–#47 in `docs/handover_followups_2026_09.md`.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

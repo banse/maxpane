@@ -485,3 +485,34 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     handover alongside `RpcPool` and `SeriesCache`; the branch-order table assigns §3.6a to Branch 9 and §3.6b
     to Branch 10, neither of which owns it. Recorded under "Later phases"; needs a survey of the fourteen
     managers before it is a plan. **Minor, Tier 2.**
+
+## Branch 9 WP-A — found while implementing (2026-09-20)
+
+45. **`CatTownClient.get_raffle_total_tickets` turns a malformed response into a real zero.**
+    `cattown_client.py:222-227` returns `data.get("totalTickets", 0)`: a 200 whose JSON has no
+    `totalTickets` key (a renamed field, an error object served with status 200) reads as "zero
+    tickets sold" and is recorded and persisted as a measurement. Branch 9 WP-A closed the
+    *exception* path — `cattown_manager.py:105` seeds `None` and the cache drops it — but a
+    successful request with a missing key still yields the sentinel this convention exists to
+    forbid, and the manager cannot tell it from a genuine zero. Fix: return `int | None` with
+    `data.get("totalTickets")` (plus a numeric check, since the value is third-party), and let the
+    existing `None` path carry it. One test: a payload of `{}` records no point. **Important,
+    Tier 0** — one file, one return statement, one regression test.
+
+46. **`save_to_file` stamps `saved_at` from the wall clock.** `series_cache.py:189` reads
+    `time.time()` inside `_payload()`; the six managers call `save_to_file(path)` with no clock, so
+    the save path is the one place in these caches a test cannot control the time. No loader reads
+    `saved_at` back, so nothing currently depends on it — but `tests/scripts/make_cache_fixtures.py`
+    has to rewrite the field after the fact to get a deterministic fixture, which is the usual sign.
+    Fix, if a future caller needs it: `save_to_file(self, path, *, now: float | None = None)`
+    threaded into `_payload(now=)`, additive for every existing caller. **Minor, Tier 0** when
+    `series_cache.py` is next touched.
+
+47. **`tests/data/test_cache_corruption.py` builds its hostile payload from `time.time()` at import.**
+    `:33` `NOW = time.time()`, and every loader it drives is called without `now=`, so the suite's
+    own clock and the loader's are the same wall clock by coincidence rather than by construction.
+    `SeriesCache.load_from_file` now takes `now=`, so the six cases can pass a frozen one and the
+    future-dated entry (`[NOW + 86400, 999.0]`) can stop depending on the test and the code sampling
+    `time.time()` within the same second. The file is byte-unchanged on this branch on purpose
+    (branch acceptance pins it). **Minor, Tier 0** once Branch 9 has landed and the file is next
+    touched — a test-rigor refinement, never its own branch.
