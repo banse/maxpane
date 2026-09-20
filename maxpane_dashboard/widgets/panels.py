@@ -387,10 +387,12 @@ class SignalsPanelBase(PanelBase):
 
         *text* is escaped: a recommendation is assembled in ``analytics/``
         out of names the chain and the game API supplied -- dota's names the
-        winning faction, cattown's a species -- and an unescaped ``[`` in one
-        of them raises out of the message pump where no panel's ``try`` can
-        reach it (review M5). A plain recommendation is unaffected; the
-        ``[bold]`` around it is this panel's own markup and stays.
+        winning faction, cattown's a species -- and an unescaped ``[/x]`` in
+        one of them makes ``Static.update`` raise ``MarkupError``
+        synchronously (Textual 8.1.1), which :meth:`PanelBase.write` catches
+        and logs: the line silently vanishes rather than rendering (review
+        M5, wording corrected in re-review N3). A plain recommendation is
+        unaffected; the ``[bold]`` around it is this panel's own markup.
         """
         if self.RECOMMENDATION_ID is None:
             return False
@@ -654,7 +656,12 @@ class RichLogFeed(PanelBase):
             written += 1
 
         if written == 0:
-            log.write(self.EMPTY_LINE)
+            # Rows arrived and none could be shown. A stream with nothing
+            # drawn says "no activity yet"; a snapshot may not -- the read
+            # succeeded and returned a state, so "there is nothing" is a
+            # false negative. It says it could not show the state instead
+            # (re-review N1).
+            log.write(UNAVAILABLE_LINE if self.SNAPSHOT else self.EMPTY_LINE)
         else:
             self._drawn = True
 

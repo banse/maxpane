@@ -1632,6 +1632,30 @@ whose every method raises, so nothing can reach the wire). Green: **432** across
 files, **6** on `test_address_icons_everywhere.py -k "cattown or dota or ocm"`, **191** on
 `-m guard tests`.
 
+**Branch 7 WP-A fix round 2 (2026-09-20, the last; applied by the controller).** Scoped re-review
+verdict: C1, M1–M5 all ADDRESSED; three new findings.
+
+- **N1 (Important).** In snapshot mode a poll whose rows *arrived* but none of which `format_row`
+  could show painted `EMPTY_LINE` (`No heroes yet`) — a false negative, since the read returned a
+  state. `render_events`'s `written == 0` write now picks `UNAVAILABLE_LINE` under `SNAPSHOT` and
+  keeps `EMPTY_LINE` for a stream (Branch 6's answer, where nothing was ever drawn). One test,
+  `test_a_snapshot_feed_with_no_showable_row_says_unavailable_not_empty`. Mutation: the branch
+  reverted to `EMPTY_LINE` unconditionally → that test alone reddened (see the commit message).
+- **N2 (Critical by consequence, pre-existing, outside the diff) — filed, not fixed.** The dota
+  manager serves the other `game_state`-derived keys as sentinels on a failed read (`H: 0/0`,
+  `TIED`, `Tick 0` on screen). Follow-up **#23** widened to cover it beside the `fetched_at`
+  stamp; one Tier 1 item on dota's own data module.
+- **N3 (Minor).** The `render_recommendation` docstring and two sentences in `rules/widgets.md`
+  said an unescaped `[/x]` "raises out of the message pump where no panel's `try` can reach it".
+  Probed on Textual 8.1.1 (`probe_static_update.py`, session scratchpad): `Static.update`
+  raises `MarkupError` **synchronously** and the app stays alive, so a guarded write drops the
+  line and an unguarded one kills the handler. All three sentences corrected — including the
+  older "A widget that renders third-party text…" paragraph the branch had not written, because
+  the same file was open and the claim is the one the new sentences copied. The convention itself
+  (a `Static` gets a pre-built `Text`) is unchanged and still right.
+
+Renders untouched by this round (no widget path the sweep payload reaches changed): not re-captured.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

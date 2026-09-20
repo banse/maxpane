@@ -228,6 +228,17 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     managers' as-of markers mean. Pre-existing — it predates Branch 7 and the WP-A migration
     neither introduced nor touched it; found while verifying review C1, whose panel-side half
     (a failed read painting `unavailable` instead of the last roster) is fixed on this branch.
+    **Widened by the fix-round-1 re-review (N2, Critical by consequence, pre-existing):** the
+    same failed read also serves the *other* `game_state`-derived keys as sentinels rather than
+    `None` — captured payload from the real `DOTAManager` with a raising client:
+    `human_base_hp=0`, `orc_base_hp=0`, `base_max_hp=0`, `winning_faction='tied'`, `tick=0`,
+    `faction_balance_signal={'value_str': 'Contested (0 vs 0)', …}` — so the composited screen
+    reads `FACTION LEAD: TIED` and `BASE HP: H: 0/0` beside two hero boxes that correctly say
+    `unavailable`, and the title bar `Tick 0`. That is "a failed read is `None`, never `0`" broken
+    at the manager, the same defect C1 was for `heroes`. One Tier 1 item with the `fetched_at`
+    stamp: every `game_state`-derived key serves `None` when `game_state is None`, and the
+    widgets already render `None` as `unavailable` (MEDI-38). Not touched on Branch 7 — only the
+    `heroes` key the roster reads was in the fix round's scope.
     **Tier 1**, not Tier 0: it changes dota's own data module and needs its own regression test
     for the two paths. Reviewer's evidence: `data/dota_manager.py:64-70`, `:101-108`, `:306`
     (Branch 7 WP-A review C1 follow-up, filed 2026-09-20).

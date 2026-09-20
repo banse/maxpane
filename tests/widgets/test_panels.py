@@ -857,6 +857,23 @@ async def test_a_snapshot_feed_paints_the_empty_line_for_an_empty_list() -> None
     assert "event 1" not in text, text
 
 
+async def test_a_snapshot_feed_with_no_showable_row_says_unavailable_not_empty() -> None:
+    """Re-review N1. A drawn roster, then a poll whose rows arrived but none of
+    which ``format_row`` can show. The read succeeded and returned a state,
+    so "No activity yet" is a statement the panel cannot support -- it must
+    say it could not *show* the state. A stream keeps its Branch 6 answer
+    (``test_every_row_unwritable_falls_back_to_the_empty_line``); reverting
+    the ``SNAPSHOT`` branch of the ``written == 0`` write reddens this test
+    and only this test.
+    """
+    text = await _text(_Snapshot, polls=[{"events": [_ev(1)]},
+                                         {"events": [_ev(2, bad=True),
+                                                     _ev(3, bad=True)]}])
+    assert "unavailable" in text, text
+    assert "No activity yet" not in text, text
+    assert "event 1" not in text, text
+
+
 async def test_a_snapshot_feed_re_paints_a_roster_that_did_not_change() -> None:
     """No row survives a poll -- not even an identical one.
 

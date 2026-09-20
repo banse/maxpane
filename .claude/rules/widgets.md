@@ -29,10 +29,12 @@ brief's test that cannot pass under escaping is a brief defect.
 
 ## A widget that renders third-party text through `Static` hands it a pre-built `rich.text.Text`
 
-Never a markup string. `Static.update("…[/x]…")` does not parse at call time — Textual defers
-`Content.from_markup` into the message pump — so the parse failure raises outside the screen's
-`try/except`. Parse it yourself, synchronously, inside your own `try` (`Text.from_markup(...)`)
-and a malformed row degrades to a skipped row. `SurfFeed._row_text` is the worked example.
+Never a markup string. On Textual 8.1.1 `Static.update("…[/x]…")` raises `MarkupError` at the
+call (probed 2026-09-20: `update()` raised synchronously, the app stayed alive); earlier notes
+here said the parse was deferred into the message pump, which is no longer what happens. Either
+way the widget's own `try` is the only place the failure lands usefully: an unguarded call kills
+the handler, a guarded one drops the line. Parse it yourself, synchronously, inside your own
+`try` (`Text.from_markup(...)`) and a malformed row degrades to a skipped row. `SurfFeed._row_text` is the worked example.
 `Text.no_wrap` and `Text.overflow` are inert through Textual 8, and a *sized* cell is not a
 *fitted* one (terminal-layout skill).
 
@@ -185,8 +187,8 @@ each:
   template), `DIM_LABEL`, `RECOMMENDATION_ID`; the module function `fmt_signal(sig, *,
   label_width, dim_label, labelled=True)` is the one formatter every spelling now comes from, and
   it **escapes `value_str` through `markup_safety.safe_markup`** — a signal's value is whatever
-  the analytics read off a chain, and a token symbol spelled `[/x]` used to raise out of the
-  message pump where no panel's `try` could reach it. A `ROWS` item is `(id, label)`; `(id, None)`
+  the analytics read off a chain, and a token symbol spelled `[/x]` made the write raise
+  `MarkupError`, which the row's guard turned into a dropped or degraded row instead of the value. A `ROWS` item is `(id, label)`; `(id, None)`
   is a **label-less row** (`  [c]{ind}[/] [c]{value}[/]` — talismans' and ttt's spelling, and the
   degraded row drops the label too, so it stays `unavailable` without an empty column in front of
   it); a bare `None` item is a blank `.panel-line` **separator** between groups of rows. The
@@ -240,8 +242,11 @@ each:
   the whole panel every poll, keeps **no** row from a previous one, and skips the dedupe guard
   outright. That makes the two falsy inputs different facts rather than one — `None` is "the read
   failed, I could not look" and writes the derived `UNAVAILABLE_LINE`, `[]` is the real negative
-  and writes `EMPTY_LINE`. A stream that kept a roster's rows would be "a stale number presented
-  as live"; a snapshot that dropped a stream's rows would be a false degradation. **A manager must
+  and writes `EMPTY_LINE` — and a poll whose rows *arrived* but none of which `format_row` could
+  show writes `UNAVAILABLE_LINE` too, never `EMPTY_LINE`: the read returned a state, so "there is
+  nothing" would be a false negative (re-review N1). A stream that kept a roster's rows would be
+  "a stale number presented as live"; a snapshot that dropped a stream's rows would be a false
+  degradation. **A manager must
   serve the two apart** for any of it to work: `data/dota_manager.py` served `[]` for a failed
   game-state read — a failed read wearing a real negative's clothes — and was fixed with the panel
   (Branch 7 WP-A, review C1).
