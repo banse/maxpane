@@ -196,19 +196,25 @@ per package, reviewer contract, full suite once before merge.
    frenpet_wallet, ocm, talismans, ttt (each becomes `compose()` + `PANELS` + `GAME_NAME`);
    fwa, frenpet_full, surf, curator keep custom `_do_refresh` but inherit the lifecycle.
    ~1,100 lines removed. Address-sweep and screen tests are the acceptance suite.
-6. **`data/rpc_pool.py` and `data/series_cache.py`.** `RpcPool(state_urls, log_urls, *, http,
-   classify)` with `call`, `batch`, `multicall`, `get_logs(filter, max_span, shrink|paged)`,
-   rotate-on-limitation and ONE `ENDPOINT_LIMITATION_PATTERNS` tuple — the union of
-   `_ENDPOINT_LIMITATION_PATTERNS` (`ttt_client:268`, `curator_client:225`,
-   `surf_pool4_client:343`, `surf_client:1101`, `cattown_client:66`), the
-   `_RANGE_LIMITATION_PATTERNS` triplets (`curator:248`, `surf_pool4:350`, `surf:1108`) and the
-   `_RESULT_CAP_MARKERS` / `_RANGE_CAP_MARKERS` in `talismans_client:373/382` and
-   `fwa_logs:1318`; classifiers `_classify_rpc_error` in `talismans_client:428` and
-   `fwa_logs:1382`; per-dashboard pools become configuration. `SeriesCache` — **done, Branch 9 (2026-09-20):** `data/series_cache.py`, subclassed by bakery, cattown,
-   dota, ocm, frenpet and base (talismans/ttt are event caches, follow-up #41); `RpcPool` = Branch 10;
-   `data/manager_base.py` (`_error_count` / `last_success` / `as_of_hhmm` / last-good fold) is in no
-   branch (follow-up #44). Endpoint behaviour rules in `rules/data.md`
-   are the spec; `tests/fixtures/surf/pool4/rpc_error_states.json` is the classifier's fixture.
+6. **`data/rpc_classify.py` and `data/series_cache.py`.** `SeriesCache` — **done, Branch 9 (2026-09-20):**
+   `data/series_cache.py`, subclassed by bakery, cattown, dota, ocm, frenpet and base (talismans/ttt are
+   event caches, follow-up #41); `data/manager_base.py` (`_error_count` / `last_success` / `as_of_hhmm` /
+   last-good fold) is in no branch (follow-up #44). **RPC — done as option B, Branch 10 (2026-09-20):** the
+   error TABLES are hoisted into `data/rpc_classify.py` (two endpoint tables, Ethereum and Base; two range
+   families, span and result-count; `MALFORMED_REQUEST_CODES`; predicates that take the table as a
+   parameter and `requested_span` wherever the request had one) and bound by ttt, curator, surf, surf_pool4
+   and cattown; the nine per-client error POLICIES (`_rpc*` loops, pagers, shrinkers) stay where their
+   tests are; `fwa_logs` uses `rpc_common`'s transport atoms; seven managers take `client=` / `cache=` /
+   `cache_path=` and three clients read their env var at construction so the data layer works as an
+   importable library. The full `RpcPool(state_urls, log_urls, *, http, classify)` with one union
+   `ENDPOINT_LIMITATION_PATTERNS` tuple that this item first described was **declined 2026-09-20** (owner):
+   the survey found seven fragments whose meaning flips between clients, nine individually tested policies
+   and ~1,050 tests in the blast radius, and the "~700 lines" was reachable only by deleting pinned policy.
+   Two corrections to the original text: `fwa_logs` has no `_RANGE_CAP_MARKERS` (it inlines the check), and
+   there are nine error policies, not five. Kind-classifiers `talismans_client._classify_rpc_error` and
+   `fwa_logs._classify_rpc_error` keep their local marker tables (follow-up #65). Endpoint behaviour rules
+   in `rules/data.md` are the spec; `tests/fixtures/surf/pool4/rpc_error_states.json`,
+   `log_range_messages.json` and `tests/fixtures/fwa/rpc_errors.json` are the classifier's evidence.
 7. Afterwards, rewrite "Reuse before you build" in `rules/widgets.md` as the new-dashboard
    checklist: models keys → `OwnedHttpClient` + `RpcPool` config → `SeriesCache` subclass →
    manager → `DashboardScreen` subclass with `PANELS` → panel subclasses → `SweepCase` in
