@@ -45,6 +45,7 @@ this module exists to stop.
 
 from __future__ import annotations
 
+import logging
 from typing import Callable
 
 from rich.text import Text
@@ -62,14 +63,17 @@ from maxpane_dashboard.widgets.sparkline_common import (
 __all__ = [
     "UNAVAILABLE",
     "LOADING",
+    "LOADING_ROW",
     "PanelBase",
-    "HeroBox",
+    "HeroBoxBase",
     "HeroRow",
-    "SignalsPanel",
+    "SignalsPanelBase",
     "SparklinePanel",
     "RichLogFeed",
     "fmt_signal",
 ]
+
+logger = logging.getLogger(__name__)
 
 #: Shown in place of a value the backend could not supply this poll. Distinct
 #: from a value the analytics *did* compute as empty (``--``): a failed read
@@ -78,6 +82,12 @@ UNAVAILABLE = "[yellow]unavailable[/]"
 
 #: The seed a panel composes with, before its first poll lands.
 LOADING = "[dim]Loading...[/]"
+
+#: :data:`LOADING` indented into a signals row's own column -- every signal
+#: row starts two spaces in, and the seed sits in the same column as the
+#: value it is standing in for. Derived, not re-typed: the two strings drift
+#: apart the moment somebody edits one of them.
+LOADING_ROW = LOADING.replace("[dim]", "[dim]  ", 1)
 
 
 class PanelBase(Vertical):
@@ -122,10 +132,21 @@ class PanelBase(Vertical):
         missing degrades to writing nothing rather than raising into the
         screen's ``except``, which would silently keep the previous poll's
         contents on screen as if they were live.
+
+        **And it logs.** Before Branch 6 the two panels that write this way
+        (ocm's staking overview and supply breakdown) used a bare
+        ``query_one(...).update(...)``, so a missing target raised into
+        ``DashboardScreen._do_refresh`` and got a ``warning`` line. Swallowing
+        it here without a line would have made a panel that cannot render
+        invisible in ``~/.maxpane/maxpane.log``, which is the one place it
+        would ever be noticed.
         """
         try:
             self.query_one(selector, Static).update(content)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "%s: could not write %s: %s", type(self).__name__, selector, exc
+            )
             return False
         return True
 
@@ -151,13 +172,19 @@ class PanelBase(Vertical):
         return True
 
 
-class HeroBox(Static):
+class HeroBoxBase(Static):
     """One hero metric box: a dim label, a blank row, then the value.
 
     ``DEFAULT_CSS = ""`` because every dimension a hero box has is the
     theme's (``minimal.tcss`` gives it ``width: 1fr``, a border and the
     padding that makes the box); a widget default here would be a second
     place to look.
+
+    The ``Base`` suffix is not decoration: a base class's **name is a CSS
+    type selector for every subclass**, and ``widgets/hero_metrics.py`` (the
+    bakery-only one) already owns a class called ``HeroBox`` with a bare
+    ``HeroBox { … }`` block in ``minimal.tcss``. Without the suffix that
+    bakery block would have styled every hero box in the app.
     """
 
     DEFAULT_CSS = ""
@@ -170,15 +197,15 @@ class HeroRow(Horizontal):
     inside the box string, not a margin -- the box is one ``Static``.
     """
 
-    #: The box class to compose. A package subclasses :class:`HeroBox` when
-    #: the stylesheet names its own class (ocm's ``OCMHeroBox``).
-    BOX_CLASS: type[HeroBox] = HeroBox
+    #: The box class to compose. A package subclasses :class:`HeroBoxBase`
+    #: when the stylesheet names its own class (ocm's ``OCMHeroBox``).
+    BOX_CLASS: type[HeroBoxBase] = HeroBoxBase
 
     #: ``(widget id, label)`` per box, in row order.
     BOXES: tuple[tuple[str, str], ...] = ()
 
     DEFAULT_CSS = """
-    HeroRow > HeroBox {
+    HeroRow > HeroBoxBase {
         margin: 0 1;
     }
     """
@@ -195,7 +222,7 @@ class HeroRow(Horizontal):
         number was expected must land on ``unavailable`` here.
         """
         try:
-            box = self.query_one(selector, HeroBox)
+            box = self.query_one(selector, HeroBoxBase)
         except Exception:
             return False
         try:
@@ -225,7 +252,7 @@ def fmt_signal(sig: dict, *, label_width: int, dim_label: bool) -> str:
     return f"  [{color}]{indicator}[/] {cell} [{color}]{value}[/]"
 
 
-class SignalsPanel(PanelBase):
+class SignalsPanelBase(PanelBase):
     """A signals panel: one row per signal, optionally a recommendation.
 
     Every row is written on every poll (MEDI-38): a signal the manager could
@@ -233,6 +260,11 @@ class SignalsPanel(PanelBase):
     marker beside its label -- distinct from a signal whose own
     ``value_str`` is ``--``, which is the analytics saying "nothing to
     report".
+
+    ``Base`` suffix: see :class:`HeroBoxBase`. ``widgets/signals_panel.py``
+    (bakery-only) owns a class called ``SignalsPanel`` with a bare
+    ``SignalsPanel { height: 1fr; … }`` block in ``minimal.tcss``, which
+    would otherwise have reached every signals panel in the app.
     """
 
     #: ``(widget id, label)`` per row, in panel order.
@@ -249,7 +281,7 @@ class SignalsPanel(PanelBase):
     RECOMMENDATION_ID: str | None = None
 
     DEFAULT_CSS = """
-    SignalsPanel > .panel-rec {
+    SignalsPanelBase > .panel-rec {
         padding: 0 1;
         width: 100%;
         text-align: center;
@@ -261,9 +293,7 @@ class SignalsPanel(PanelBase):
         for index, (row_id, _label) in enumerate(self.ROWS):
             # The first row carries the seed; the rest start empty so a panel
             # that has never polled does not claim three rows of nothing.
-            # Two leading spaces inside the markup: every signal row is
-            # indented by two, and this row sits in the same column.
-            seed = "[dim]  Loading...[/]" if index == 0 else ""
+            seed = LOADING_ROW if index == 0 else ""
             yield Static(seed, classes="panel-line", id=row_id)
         if self.RECOMMENDATION_ID is not None:
             # Not the title's blank row: this one separates the rows from the
@@ -415,11 +445,23 @@ class RichLogFeed(PanelBase):
             try:
                 key = self.dedupe_key(event)
             except Exception:
+                # Not even a key. The event may still render; ``format_row``'s
+                # own guard decides. Not counted as new, so an all-malformed
+                # poll leaves a populated feed alone.
                 continue
             if key is None:
                 has_new = True
                 continue
-            if key in self._seen_keys:
+            try:
+                seen = key in self._seen_keys
+            except TypeError:
+                # A third-party payload can hand us an unhashable ``tx_hash``
+                # (a JSON list). It cannot be deduped, so it is always new --
+                # and the membership test must not raise out of
+                # ``update_data`` and blank the whole feed.
+                has_new = True
+                continue
+            if seen:
                 continue
             self._seen_keys.add(key)
             has_new = True
@@ -436,6 +478,11 @@ class RichLogFeed(PanelBase):
                 if row is None:
                     continue
                 log.write(row)
+            except NotImplementedError:
+                # A subclass that never implemented the hook is a programming
+                # error, not a bad row: it must fail loudly rather than paint
+                # "No activity yet" forever.
+                raise
             except Exception:
                 continue
             written += 1

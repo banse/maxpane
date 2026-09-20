@@ -9,15 +9,15 @@ cannot raise into the screen's ``except`` and leave the previous poll's
 rows on screen as if they were live.
 
 The rows, the label width, the guard and the recommendation line are
-:class:`~maxpane_dashboard.widgets.panels.SignalsPanel`'s (Branch 6).
+:class:`~maxpane_dashboard.widgets.panels.SignalsPanelBase`'s (Branch 6).
 """
 
 from __future__ import annotations
 
-from maxpane_dashboard.widgets.panels import SignalsPanel
+from maxpane_dashboard.widgets.panels import SignalsPanelBase
 
 
-class OCMSignals(SignalsPanel):
+class OCMSignals(SignalsPanelBase):
     """Panel displaying Onchain Monsters analytical signals and recommendation."""
 
     TITLE = "SIGNALS"

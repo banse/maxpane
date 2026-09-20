@@ -998,23 +998,28 @@ HANDOVER §3.4 is paid. `panels.py` is also documentation-heavy by design — it
 dashboard reads instead of copying a sibling.
 
 **Render diff.** `render_ocm.py` on the sweep payload under the real stylesheet and a frozen clock,
-before and after, at 170×50 and at the 143 pin. Both sizes: 51 rows, **two differing rows, the same
-two, and they are the predicted one-row shift**:
+before and after, at 170×50 and at the 143 pin. Both sizes: **50 painted rows, two differing rows,
+the same two, and they are the predicted one-row shift**:
 
 ```
-### 170x50: 51 vs 51 rows
+### 170x50: 50 vs 50 rows
   row 12: before=''
            after='  Loading...'
   row 13: before='  Loading...'
            after=''
   -> 2 differing row(s)
-### pin-143x50: 51 vs 51 rows
+### pin-143x50: 50 vs 50 rows
   row 12: before=''
            after='  Loading...'
   row 13: before='  Loading...'
            after=''
   -> 2 differing row(s)
 ```
+
+(The first capture of this block said 51: the comparison script split the file on `"\n"` and
+counted the trailing empty string after the final newline. `wc -l` says 50, which is the row count
+`render_ocm.py` writes and the number the reviewer checked against. Corrected in fix round 1, M5;
+no capture changed, only the count printed beside them.)
 
 That is STAKING OVERVIEW's second blank row disappearing and its rows moving up one inside the
 panel, exactly as the Design predicted; every other cell is byte-identical at both widths. The
@@ -1080,6 +1085,67 @@ Named tests, all green, no directory-wide or suite runs — **462 passed** acros
 (26), `tests/screens/test_refresh_guard.py` (7), `tests/test_address_rule.py` (10),
 `tests/test_address_sweep_registry.py` (9), and `-m guard tests` (182). The full suite is the
 controller's, once, on the branch head.
+
+**Branch 6 fix round 1 (2026-09-20).** Review verdict `Needs fixes: 0 Critical, 1 Important`; all
+six findings closed in one commit. Re-render of `render_ocm.py` to `b6_fix1.*`: **byte-identical to
+`b6_after.*` at 170×50 and at the 143 pin**, so the whole round moved no pixel.
+
+- **I1 (Important).** `panels.HeroBox` and `panels.SignalsPanel` collided **by name** with
+  `widgets/hero_metrics.py:40` and `widgets/signals_panel.py:37` (both bakery-only), each of which
+  has a **bare** block in `minimal.tcss` (`:31`, `:102`). Textual matches a type selector against
+  every base class, so those bakery blocks reached every subscriber of the new bases; nothing moved
+  only because ocm's own blocks restated the same values and won on source order. The reviewer
+  proved it by inserting `min-width: 60` into `minimal.tcss:31`, which widened ocm's SUPPLY box
+  from 54 to 164 columns. Renamed to **`HeroBoxBase`** and **`SignalsPanelBase`** (with
+  `HeroRow.DEFAULT_CSS`, the `BOX_CLASS` annotation, `query_one`, `__all__`, both ocm subclasses
+  and `rules/widgets.md` updated), and two `guard` agreement tests added to `test_panels.py`: no
+  class name defined in `panels.py` may be defined by any other module under
+  `maxpane_dashboard/widgets/` or `templates/` (walked with `pkgutil`, compared on `vars(module)`),
+  and none may appear as a **bare type selector** in `minimal.tcss` — a token matching
+  `(?<![.#$\w-])<Name>(?![\w-])` in the stylesheet's selector text, with `/* … */` comments and
+  every declaration body stripped first so a class name written in prose or in a value is not a
+  hit. The rename immediately turned three of the hero claims red, because the test's own box
+  double had been silently borrowing `width: 1fr` from bakery's `HeroBox` block — the collision,
+  demonstrated inside this branch's own tests. The double is now `HeroBoxDouble` and states its
+  width, as every real box class does.
+- **M1.** `SignalsPanelBase.compose_body` hand-typed `"[dim]  Loading...[/]"` beside `LOADING`.
+  Now `LOADING_ROW = LOADING.replace("[dim]", "[dim]  ", 1)`, exported, and
+  `test_panels_defines_the_two_strings_exactly_once` pins both the value and the derivation.
+- **M2.** `PanelBase.write` swallowed a missing target silently, where the pre-migration
+  staking-overview / supply-breakdown writes raised into `DashboardScreen` and got a `warning`.
+  It now logs `"%s: could not write %s: %s"` on the module logger
+  `maxpane_dashboard.widgets.panels` for a missing target **and** for a failing `update`; one
+  `caplog` test. `write_guarded` and `render_box` keep their pre-migration silence on the
+  fallback path — that was never a regression, and changing it was not the finding.
+- **M3.** `key in self._seen_keys` sat outside the guard around `dedupe_key`, so an unhashable
+  `tx_hash` (a JSON list from a third-party payload) raised `TypeError` out of `update_data`
+  **after** `log.clear()` and blanked the feed. The membership test and the `add` are now inside
+  their own `except TypeError`, which treats such an event as always-new and always-drawn. A
+  `dedupe_key` that *raises* still skips without counting as new, so an all-malformed poll still
+  leaves a populated feed alone.
+- **M4.** `format_row`'s `NotImplementedError` was caught by the per-row guard, so a subclass that
+  forgot the hook painted `No activity yet` forever. It is now re-raised ahead of the broad
+  `except`: a programming error fails loudly, a bad row is still skipped.
+- **M5.** The row count beside the render captures said 51; `wc -l` says 50 (the comparison script
+  counted the trailing empty string after the final newline). Corrected above; no capture changed.
+- **M6 (filed, not fixed).** `test_sparkline_common.py`'s `_COERCE_NAMES` / `_BUILD_NAMES` are
+  fixed name lists, so a private helper bound under an unlisted alias passes. Pre-existing shape,
+  carried across rather than introduced. Filed as follow-up **20** in
+  `docs/handover_followups_2026_09.md` under a new "## Branch 6 — panels" heading; Minor, Tier 0
+  when that file is next touched.
+
+Mutation proof for the new agreement pair: `HeroBoxBase` renamed back to `HeroBox` (with an alias
+keeping the rest of the module working) →
+`test_panels.py::test_no_panels_base_shares_its_name_with_another_widget_class` **and**
+`::test_no_panels_base_is_a_bare_type_selector_in_the_stylesheet[HeroBox]` failed, 48 passed;
+restored by inverse edit.
+
+Named tests after the round, all green: `test_panels.py` **49** (was 39), `test_medi38_unavailable_
+state.py` 26, `test_title_blank_row.py` 37, `test_hidden_shared_address_icons.py` 10,
+`test_sparkline_common.py` 89, `tests/screens/test_dashboard_screen.py` 26,
+`tests/screens/test_address_icons_everywhere.py -k ocm` 2, `tests/test_address_rule.py` 10,
+`tests/test_address_sweep_registry.py` 9, `-m guard tests` **189** (was 182 — the seven new guard
+cases are the class-collision test plus one bare-selector case per class in `panels.py`).
 
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 

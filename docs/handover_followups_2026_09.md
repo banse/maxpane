@@ -176,3 +176,22 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     screen's tests can bind) rather than reading the clock. Both screens are hidden
     (`--game frenpet_wallet` / `frenpet_perf`), so the blast radius is one sparkline each.
     Minor, Tier 0 when either file is next touched (filed by WP-B, 2026-09-20).
+
+## Branch 6 — panels
+
+20. **`tests/widgets/test_sparkline_common.py`'s helper lookup is a fixed name list.**
+    `_COERCE_NAMES = ("_coerce_points", "coerce_points")` and `_BUILD_NAMES` (`:100-101`, written
+    in Branch 6 when the ocm render loop moved into `widgets/panels.SparklinePanel` and the old
+    leaf-module lookup stopped resolving) enumerate the names a module may bind the shared
+    helpers to. A module that imports `coerce_points` under **any other** alias — `_spark_from`,
+    `_pts`, `as_points` — binds none of the listed names, `_resolve` returns `(None, None)` for
+    it, and the walk simply moves on to the next module in the MRO, so a private re-implementation
+    under an unlisted name passes both agreement tests. The pre-existing shape is the same: the
+    original single-module form read `getattr(module, "_coerce_points", None)` and had exactly
+    this hole for a differently-aliased copy; Branch 6 carried it across rather than introducing
+    it. Reviewer's evidence: renaming ocm's import alias makes the test green on a module that
+    could then hold anything. The fix is to assert on the *function objects* a module binds — walk
+    `vars(module)` for every value that `is` one of `sparkline_common`'s helpers and for every
+    locally-defined function whose body duplicates one — rather than on a hand-listed set of
+    names. Minor, Tier 0 when `test_sparkline_common.py` is next touched (Branch 6 review M6,
+    filed 2026-09-20).

@@ -161,18 +161,20 @@ dashboard package, and a fix applied to one copy reached none of the others: `_U
 `_seen_tx_hashes` / `_seen_keys` dedupe set (10). `widgets/panels.py` is the one definition of
 each:
 
-- **`UNAVAILABLE`** (`[yellow]unavailable[/]`) and **`LOADING`** (`[dim]Loading...[/]`) — import
-  them; a migrated package defines neither.
+- **`UNAVAILABLE`** (`[yellow]unavailable[/]`), **`LOADING`** (`[dim]Loading...[/]`) and
+  `LOADING_ROW` (`LOADING` indented into a signals row's column, *derived* from it) — import
+  them; a migrated package defines none of them.
 - **`PanelBase(Vertical)`** — `TITLE` plus the `compose_body()` hook. `compose` yields the title
   `Static` (class `panel-title`) and then the body; `write(selector, content)` is `query_one` +
-  `update` inside one guard and `write_guarded(selector, build, fallback)` **builds inside the
-  guard**, which is the MEDI-38 rule: a malformed value lands on an explicit degraded state here,
+  `update` inside one guard **that logs at `warning`** (the panels that write this way used to
+  raise into `DashboardScreen`, which logged; a silent swallow would hide a panel that cannot
+  render), and `write_guarded(selector, build, fallback)` **builds inside the guard**, which is the MEDI-38 rule: a malformed value lands on an explicit degraded state here,
   not in the screen's `except` with the previous poll's number still on screen as if live.
-- **`HeroBox` / `HeroRow(Horizontal)`** — `BOX_CLASS`, `BOXES` of `(id, label)`, `render_box`.
+- **`HeroBoxBase` / `HeroRow(Horizontal)`** — `BOX_CLASS`, `BOXES` of `(id, label)`, `render_box`.
   Not a `PanelBase`: a hero row has no title widget, and its blank row is the `\n\n` inside the
-  box string. A package keeps its own `HeroBox` subclass where the stylesheet names it
-  (`OCMHeroBox`).
-- **`SignalsPanel(PanelBase)`** — `ROWS`, `LABEL_WIDTH` (18 in ocm/dota, 15 in cattown and the
+  box string. `HeroBoxBase` states **no** geometry; a package keeps its own subclass and the
+  stylesheet names that (`OCMHeroBox { width: 1fr; … }`).
+- **`SignalsPanelBase(PanelBase)`** — `ROWS`, `LABEL_WIDTH` (18 in ocm/dota, 15 in cattown and the
   template), `DIM_LABEL`, `RECOMMENDATION_ID`; the module function `fmt_signal(sig, *,
   label_width, dim_label)` is the one formatter both spellings now come from.
 - **`SparklinePanel(PanelBase)`** — `LINE_IDS` and `render_series((label, points, color, unit), …)`
@@ -185,11 +187,28 @@ each:
   merged contract: an empty poll writes the placeholder only while nothing has ever been shown and
   `clear()`s first (so it is written once, not once per refresh interval); a poll with nothing new
   leaves the log alone; otherwise every row is written inside its own guard, so one unwritable row
-  is skipped and the rest still land — nothing may escape after `clear()`.
+  is skipped and the rest still land — nothing may escape after `clear()`. Two things deliberately
+  do escape or bypass: an **unhashable** key (a third-party `tx_hash` that arrived as a JSON list)
+  is never deduped and always drawn, rather than raising `TypeError` out of `update_data` and
+  blanking the feed; and `NotImplementedError` is re-raised past the per-row guard, because a
+  subclass that never wired up `format_row` is a programming error and must fail loudly instead of
+  painting `No activity yet` forever.
 
 **The blank row under a title is `PanelBase`'s `margin: 0 0 1 0`.** A subclass yields no spacer for
 it. ocm's staking overview used to carry *both* mechanisms and painted two rows;
 `tests/widgets/test_title_blank_row.py` now names every ocm panel.
+
+**A base class's name is a CSS type selector for every subclass — so the shared names carry
+`Base`.** `HeroBoxBase` and `SignalsPanelBase` are not stylistic: `widgets/hero_metrics.py` and
+`widgets/signals_panel.py` (both bakery-only) own classes called `HeroBox` and `SignalsPanel`, and
+`minimal.tcss` has a **bare** `HeroBox { … }` / `SignalsPanel { … }` block for each. While the
+bases carried those names every subscriber inherited bakery's geometry — inserting `min-width: 60`
+into the bakery `HeroBox` block widened ocm's SUPPLY box from 54 to 164 columns — and nothing moved
+on screen only because ocm's own blocks restated the same values and won on source order, which is
+luck rather than a rule. `tests/widgets/test_panels.py` holds two `guard` agreement tests for it:
+no class name in `panels.py` may be defined by any other module under `widgets/` or `templates/`,
+and none may appear as a bare type selector in `minimal.tcss`. A new base picks a name no widget
+and no stylesheet block already uses.
 
 **Per-panel title classes are unnecessary.** Textual matches a type selector against every base
 class — `_css_type_names` of an `OCMSignals(PanelBase)` instance is `{OCMSignals, PanelBase,

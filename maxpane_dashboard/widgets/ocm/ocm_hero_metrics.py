@@ -14,14 +14,14 @@ are :class:`~maxpane_dashboard.widgets.panels.HeroRow`'s (Branch 6).
 
 from __future__ import annotations
 
-from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBox, HeroRow
+from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
 
 
 def _pct(value: float | None) -> str:
     return UNAVAILABLE if value is None else f"{value:.1f}%"
 
 
-class OCMHeroBox(HeroBox):
+class OCMHeroBox(HeroBoxBase):
     """A single hero metric box with label and value.
 
     Kept as its own class because ``minimal.tcss`` names ``OCMHeroBox`` for

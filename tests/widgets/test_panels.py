@@ -27,8 +27,12 @@ log.
 from __future__ import annotations
 
 import ast
+import importlib
 import inspect
+import logging
 import pathlib
+import pkgutil
+import re
 
 import pytest
 from rich.text import Text
@@ -39,12 +43,13 @@ from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.widgets import panels
 from maxpane_dashboard.widgets.panels import (
     LOADING,
+    LOADING_ROW,
     UNAVAILABLE,
-    HeroBox,
+    HeroBoxBase,
     HeroRow,
     PanelBase,
     RichLogFeed,
-    SignalsPanel,
+    SignalsPanelBase,
     SparklinePanel,
     fmt_signal,
 )
@@ -107,6 +112,31 @@ async def test_panel_base_paints_title_blank_row_then_body() -> None:
     assert rows[2].strip() == "body text", rows[:4]
 
 
+async def test_panel_base_write_logs_a_warning_when_it_cannot_write(caplog) -> None:
+    """A degraded step gets a line in ``~/.maxpane/maxpane.log`` (fix round 1, M2).
+
+    Before Branch 6 ocm's staking overview and supply breakdown wrote with a
+    bare ``query_one(...).update(...)``, so a missing target raised into
+    ``DashboardScreen._do_refresh`` and was logged at ``warning``. ``write``
+    swallows it; swallowing it *silently* would make a panel that cannot
+    render invisible in the one place it would ever be noticed.
+    """
+
+    class _A(App):
+        def compose(self):
+            yield _Panel()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        panel = pilot.app.query_one(_Panel)
+        with caplog.at_level(
+            logging.WARNING, logger="maxpane_dashboard.widgets.panels"
+        ):
+            assert panel.write("#t-nothing-here", "x") is False
+        messages = [r.getMessage() for r in caplog.records
+                    if r.levelno == logging.WARNING]
+        assert any("t-nothing-here" in m and "_Panel" in m for m in messages), messages
+
+
 async def test_panel_base_write_reports_a_missing_widget_instead_of_raising() -> None:
     """``write`` is the guard: a selector that matches nothing returns ``False``."""
 
@@ -130,12 +160,33 @@ async def test_panel_base_write_reports_a_missing_widget_instead_of_raising() ->
 # -- 2. HeroRow -------------------------------------------------------------
 
 
-class _TestHeroBox(HeroBox):
-    pass
+class HeroBoxDouble(HeroBoxBase):
+    """A hero box that states its own width, as every real one does.
+
+    ``HeroBoxBase`` deliberately states no geometry -- a base class's name is
+    a CSS type selector for every subclass, so a width there would reach
+    every dashboard -- and ``minimal.tcss`` gives each dashboard's **own**
+    box class ``width: 1fr`` (``OCMHeroBox``). Without a width the first box
+    takes the whole row and the second never reaches the compositor (the
+    ``test_cattown_talismans_address_icons.py`` precedent the MEDI-38
+    harness cites).
+
+    These three claims were silently borrowing that width from bakery's bare
+    ``HeroBox { width: 1fr }`` block in ``minimal.tcss`` until fix round 1
+    renamed the base out of that collision (I1) -- the collision itself,
+    demonstrated. Not named ``_TestHeroBox``: a leading underscore is not a
+    CSS identifier, and ``Test…`` is what pytest collects.
+    """
+
+    DEFAULT_CSS = """
+    HeroBoxDouble {
+        width: 1fr;
+    }
+    """
 
 
 class _Hero(_Replay, HeroRow):
-    BOX_CLASS = _TestHeroBox
+    BOX_CLASS = HeroBoxDouble
     BOXES = (("t-hero-a", "ALPHA"), ("t-hero-b", "BETA"))
 
     def _poll(self, alpha=None, beta=None) -> None:
@@ -196,7 +247,7 @@ def test_fmt_signal_at_width_15_dim() -> None:
     )
 
 
-class _Signals(_Replay, SignalsPanel):
+class _Signals(_Replay, SignalsPanelBase):
     TITLE = "SIGNALS"
     ROWS = (("t-sig-a", "Alpha Rate"), ("t-sig-b", "Beta Rate"))
     RECOMMENDATION_ID = "t-sig-rec"
@@ -400,6 +451,43 @@ async def test_a_format_row_returning_none_is_skipped_not_written() -> None:
     assert body == ["event 1"], rows[:8]
 
 
+async def test_an_unhashable_dedupe_key_renders_instead_of_blanking_the_feed() -> None:
+    """Fix round 1, M3. A third-party payload can hand us ``tx_hash: ["x"]``.
+
+    ``key in self._seen_keys`` raised ``TypeError`` out of ``update_data``
+    after the log was already cleared, so one malformed hash blanked the
+    whole feed. An unhashable key cannot be deduped, so the event is always
+    new and always drawn.
+    """
+    unhashable = {"tx_hash": ["x"], "n": 9, "bad": False}
+    text = await _text(_Feed, polls=[{"events": [unhashable]},
+                                     {"events": [unhashable]}])
+    assert "event 9" in text, text
+    assert "No activity yet" not in text, text
+
+
+async def test_a_subclass_without_format_row_fails_loudly() -> None:
+    """Fix round 1, M4. ``NotImplementedError`` is a programming error.
+
+    Caught by the broad per-row guard it became "No activity yet" forever,
+    which reads as a quiet feed rather than as a feed that was never wired
+    up.
+    """
+
+    class _NoHook(RichLogFeed):
+        TITLE = "ACTIVITY"
+        LOG_ID = "t-nohook-log"
+
+    class _A(App):
+        def compose(self):
+            yield _NoHook()
+
+    async with _A().run_test(size=_SIZE) as pilot:
+        feed = pilot.app.query_one(_NoHook)
+        with pytest.raises(NotImplementedError):
+            feed.render_events([{"tx_hash": "0x1"}])
+
+
 # -- 6. Agreement: ocm carries no copy of what the bases now own -------------
 
 
@@ -465,14 +553,111 @@ def test_every_ocm_panel_subclasses_a_panels_base() -> None:
 def test_panels_defines_the_two_strings_exactly_once() -> None:
     assert UNAVAILABLE == "[yellow]unavailable[/]"
     assert LOADING == "[dim]Loading...[/]"
+    # Derived from LOADING, not re-typed beside it: the signals seed is the
+    # same words, two columns in (fix round 1, M1).
+    assert LOADING_ROW == "[dim]  Loading...[/]"
+    assert LOADING_ROW == LOADING.replace("[dim]", "[dim]  ", 1)
     assert panels.__all__ == [
         "UNAVAILABLE",
         "LOADING",
+        "LOADING_ROW",
         "PanelBase",
-        "HeroBox",
+        "HeroBoxBase",
         "HeroRow",
-        "SignalsPanel",
+        "SignalsPanelBase",
         "SparklinePanel",
         "RichLogFeed",
         "fmt_signal",
     ]
+
+
+# -- 7. Agreement: a base's name is a CSS type selector (fix round 1, I1) ----
+
+
+_PANELS_FILE = pathlib.Path(panels.__file__)
+_TCSS = pathlib.Path(
+    inspect.getfile(importlib.import_module("maxpane_dashboard.app"))
+).parent / "themes" / "minimal.tcss"
+
+#: Class names `widgets/panels.py` defines. Read off the module, so a base
+#: added later is covered without editing this list.
+_PANEL_CLASS_NAMES = frozenset(
+    name for name, obj in vars(panels).items()
+    if inspect.isclass(obj) and obj.__module__ == panels.__name__
+)
+
+#: A **bare type selector**: a selector token that is exactly the class name
+#: and is not preceded by `.` (class), `#` (id) or `$` (variable). Textual
+#: matches a type selector against every base class in `_css_type_names`, so
+#: `HeroBox { … }` written for bakery's widget also matched every subclass of
+#: a base called `HeroBox`. Combinators (` `, `>`, `,`) and a pseudo-class
+#: suffix (`:hover`) end the token.
+_BARE_TYPE = r"(?<![.#$\w-])%s(?![\w-])"
+
+
+def _css_selector_text(source: str) -> str:
+    """The stylesheet's selectors only -- comments and declarations dropped.
+
+    A class name inside a `/* … */` note (this branch wrote several) is prose,
+    not a selector, and a `margin`/`color` value cannot be one either.
+    """
+    without_comments = re.sub(r"/\*.*?\*/", " ", source, flags=re.S)
+    without_bodies = re.sub(r"\{[^{}]*\}", " {} ", without_comments)
+    return " ".join(
+        line.split("{")[0]
+        for line in without_bodies.splitlines()
+        if "{" in line
+    )
+
+
+@pytest.mark.guard
+def test_no_panels_base_shares_its_name_with_another_widget_class() -> None:
+    """A base's name styles every subclass, so it must be unique in the tree.
+
+    `widgets/hero_metrics.py` and `widgets/signals_panel.py` (both
+    bakery-only) own classes called `HeroBox` and `SignalsPanel`, and
+    `minimal.tcss` has a bare block for each. While the new bases carried
+    those names, every subscriber inherited bakery's geometry -- proven in
+    review by inserting `min-width: 60` into the bakery `HeroBox` block,
+    which widened ocm's SUPPLY box from 54 to 164 columns. Nothing moved on
+    screen only because ocm's own blocks restated the same values and won on
+    source order, which is luck, not a rule.
+
+    Mutation that reddens this: rename `HeroBoxBase` back to `HeroBox`.
+    """
+    clashes: dict[str, list[str]] = {}
+    for package in ("maxpane_dashboard.widgets", "maxpane_dashboard.templates"):
+        pkg = importlib.import_module(package)
+        for info in pkgutil.walk_packages(pkg.__path__, package + "."):
+            if info.name == panels.__name__:
+                continue
+            module = importlib.import_module(info.name)
+            for name, obj in vars(module).items():
+                if (
+                    inspect.isclass(obj)
+                    and obj.__module__ == module.__name__
+                    and name in _PANEL_CLASS_NAMES
+                ):
+                    clashes.setdefault(name, []).append(module.__name__)
+    assert not clashes, (
+        f"widgets/panels.py shares a class name with {clashes} -- a base's "
+        "name is a CSS type selector for every one of its subclasses"
+    )
+
+
+@pytest.mark.guard
+@pytest.mark.parametrize("name", sorted(_PANEL_CLASS_NAMES))
+def test_no_panels_base_is_a_bare_type_selector_in_the_stylesheet(name) -> None:
+    """The app stylesheet outranks `DEFAULT_CSS`, so a bare block wins.
+
+    Parametrised per name: a failure says which base collided, not that one
+    did. `minimal.tcss` may name a *dashboard's own* widget class freely --
+    only the shared base names are forbidden there.
+    """
+    selectors = _css_selector_text(_TCSS.read_text(encoding="utf-8"))
+    hits = re.findall(_BARE_TYPE % re.escape(name), selectors)
+    assert not hits, (
+        f"minimal.tcss uses {name!r} as a bare type selector; it is a "
+        "widgets/panels.py base, so that block would style every subclass "
+        "on every dashboard"
+    )
