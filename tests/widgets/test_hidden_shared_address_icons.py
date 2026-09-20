@@ -169,6 +169,22 @@ def test_each_template_uses_the_helper_and_defines_no_formatter(template):
     names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
     assert not {n for n in names if "addr" in n.lower()}, (template, names)
     assert "carries the copy icon" in (ast.get_docstring(tree) or ""), template
+    # E7 (fix round 1, M2): a copy of the template must link too, so every
+    # ``address_text`` call passes ``explorer=`` and the module declares the
+    # one ``EXPLORER`` the copy is meant to replace.
+    calls = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name) and n.func.id == "address_text"
+    ]
+    assert calls, (template, "no address_text call to check")
+    for call in calls:
+        assert "explorer" in {kw.arg for kw in call.keywords}, (template, call.lineno)
+    declared = {
+        t.id for n in tree.body if isinstance(n, ast.Assign)
+        for t in n.targets if isinstance(t, ast.Name)
+    }
+    assert "EXPLORER" in declared, template
 
 
 @pytest.mark.parametrize("launcher", [None, ""])

@@ -65,8 +65,12 @@ is the agreement test that binds the declaration. A dashboard on a chain the all
 name passes nothing and renders no link (Bakery runs on Abstract: `widgets/activity_feed.py` says
 so in a comment, its `SweepCase` has `explorer=None`, and the sweep asserts that no address on it
 links); a per-row chain resolves through `for_network` / `for_chain_id`, so an unknown word or id
-links nothing rather than guessing. A `.plain` measurement call needs no explorer (it renders
-nothing). The link adds no cells: no pin moves for it. What the helper renders with an explorer:
+links nothing rather than guessing. **A contract address is not chain-agnostic** the way a wallet
+is: curator's filter editor links a custom NFT collection through its own hand-typed
+`list_filter.NFT_CHAIN_EXPLORERS` (keyed by the editor's Select values, bound by an agreement
+test to `data/curator_list_filters.NFT_CHAINS`), never through the package's wallet `EXPLORER`;
+`SweepCase.explorer_for` names the one explorer such a seeded address must link on. A `.plain`
+measurement call needs no explorer (it renders nothing). The link adds no cells: no pin moves for it. What the helper renders with an explorer:
 the *shown* span — never the icon — gets `Style(link=…, meta={"@click": …})`, an OSC 8 hyperlink
 the terminal follows on Cmd+click and an action `explorer_action.ExplorerLinkMixin` follows on a
 plain click. Both ends validate: the helper writes an action only for an allowlisted explorer and a

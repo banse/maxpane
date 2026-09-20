@@ -1005,12 +1005,15 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                 elif parsed is None or url is None:
                     problems.append((label, x, y, address, "address without a link"))
                 else:
-                    explorer, kind, value = parsed
-                    if kind != "address" or value.lower() != address.lower():
-                        problems.append((label, x, y, value, address, "link opens a different value than the icon copies"))
-                    elif explorer.name not in allowed:
+                    # ``link_kind``/``link_value`` -- never ``kind``: that is
+                    # the parametrised sweep size, read again below the loop.
+                    explorer, link_kind, link_value = parsed
+                    expected = case.explorer_for.get(address.lower())
+                    if link_kind != "address" or link_value.lower() != address.lower():
+                        problems.append((label, x, y, link_value, address, "link opens a different value than the icon copies"))
+                    elif explorer.name not in allowed or (expected is not None and explorer != expected):
                         problems.append((label, x, y, explorer.name, "link on the wrong explorer"))
-                    elif url != url_for(explorer, kind, value):
+                    elif url != url_for(explorer, link_kind, link_value):
                         problems.append((label, x, y, url, "link url does not name the linked address"))
                 token = _token_ending_at(rows[y], x - 2)
                 if ADDRESS_RE.fullmatch(token):
@@ -1036,19 +1039,20 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
             # the payload holds, on an allowed explorer, and its URL is the one
             # its action rebuilds -- never a link to anything else.
             seen_links: set[tuple] = set()
-            for x, y, name, kind, value, url in links:
-                if name is None or kind is None or value is None:
+            for x, y, name, link_kind, link_value, url in links:
+                if name is None or link_kind is None or link_value is None:
                     problems.append((label, x, y, url, "link without a well-formed open action"))
                     continue
-                if (name, kind, value, url) in seen_links:
+                if (name, link_kind, link_value, url) in seen_links:
                     continue  # one report per span, not per cell
-                seen_links.add((name, kind, value, url))
-                held = hashes if kind == "tx" else in_payload
-                if value.lower() not in held:
-                    problems.append((label, x, y, kind, value, "link to a value the payload does not hold"))
-                if name not in allowed:
+                seen_links.add((name, link_kind, link_value, url))
+                held = hashes if link_kind == "tx" else in_payload
+                if link_value.lower() not in held:
+                    problems.append((label, x, y, link_kind, link_value, "link to a value the payload does not hold"))
+                expected = case.explorer_for.get(link_value.lower())
+                if name not in allowed or (expected is not None and name != expected.name):
                     problems.append((label, x, y, name, "link on the wrong explorer"))
-                elif url != url_for(allowed[name], kind, value):
+                elif url != url_for(allowed[name], link_kind, link_value):
                     problems.append((label, x, y, url, "link url does not match its action"))
 
             for y, row in enumerate(rows):
@@ -1081,6 +1085,10 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                         # a widget that can never construct an icon -- not a bare address
                     problems.append((label, y, m.group(0), "shortened address without its icon"))
 
+    # ``kind`` is still the parametrised sweep size here: nothing in the loop
+    # above may rebind it, or the presence check below goes dead for every
+    # case that renders a link (fix round 1, I1).
+    assert kind in ("wide", "pin") or kind.startswith("extra-"), kind
     if case.address_free:
         if mounted:
             problems.append(("helper-using widgets mounted on an address-free dashboard", sorted(mounted)))

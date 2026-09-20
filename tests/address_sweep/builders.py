@@ -161,6 +161,12 @@ SURF_SEEDED: tuple[str, ...] = (
 #: The custom NFT collection the filter-editor view types in: an address the
 #: screen is given by the reader, not by the manager.
 _CURATOR_NFT = "0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e"
+#: A second custom collection, added on **Base** through the same controls:
+#: a contract address is on one chain, so the editor must link this one to
+#: Basescan while the package's wallet explorer stays Etherscan (fix round
+#: 1, C1). Not a predefined collection (those are refused as "already
+#: available above").
+_CURATOR_NFT_BASE = "0x1195Cf65f83B3A5768F3C496D3A05AD6412c64B7"
 
 
 #: The savior of a judged hour (CLOSEST CALLS, under ``h``): GRACE has judged
@@ -192,19 +198,33 @@ def _curator_payload() -> dict:
 
 
 def _curator_served() -> dict:
-    return {**_curator_payload(), "_typed_nft_collection_address": _CURATOR_NFT}
+    return {
+        **_curator_payload(),
+        "_typed_nft_collection_address": _CURATOR_NFT,
+        "_typed_nft_collection_address_base": _CURATOR_NFT_BASE,
+    }
 
 
 async def curator_filter_editor(app, pilot) -> None:
-    """``f`` with one custom NFT collection added through the editor's own controls."""
+    """``f`` with two custom NFT collections added through the editor's own
+    controls: one on Ethereum, one on Base. The name lookup is an exclusive
+    worker, so the second add waits (bounded) for the first to land rather
+    than cancelling it."""
     await pilot.press("f")
     await pilot.pause()
     editor = app.screen.query_one(_curator.CuratorListFilterEditor)
-    editor.query_one("#filter-nft-chain", _curator.Select).value = "ethereum"
-    editor.query_one("#filter-nft-address", _curator.Input).value = _CURATOR_NFT
-    await pilot.pause()
-    await pilot.click("#filter-nft-add")
-    await pilot.pause()
+    for count, (chain, address) in enumerate(
+        (("ethereum", _CURATOR_NFT), ("base", _CURATOR_NFT_BASE)), start=1
+    ):
+        editor.query_one("#filter-nft-chain", _curator.Select).value = chain
+        editor.query_one("#filter-nft-address", _curator.Input).value = address
+        await pilot.pause()
+        await pilot.click("#filter-nft-add")
+        for _ in range(20):
+            await pilot.pause()
+            if len(editor.values()["nft_collections"]) == count:
+                break
+        assert len(editor.values()["nft_collections"]) == count, "the collection never landed"
 
 
 def _curator_app() -> App:
@@ -226,7 +246,8 @@ CURATOR_SEEDED: tuple[str, ...] = (
     "0xad468e8336182e2cec7022f3434f91227c33a723",  # h: SIGNALS whale wallet, shortened
     _CURATOR_SAVIOR,                                # h: CLOSEST CALLS savior, shortened
     _CURATOR_CLEAN,                                 # c: CLEANED list / analysis CLEANED LIST, full or shortened
-    _CURATOR_NFT,                                   # f: filter editor's selected custom collection
+    _CURATOR_NFT,                                   # f: filter editor's selected custom collection (Ethereum)
+    _CURATOR_NFT_BASE,                              # f: the second one, on Base -> Basescan (explorer_for)
 )
 
 
@@ -608,7 +629,12 @@ CASES: tuple[SweepCase, ...] = (
     ),
     SweepCase(
         name="curator",
-        explorer=ETHEREUM,  # widgets/curator/_fmt.EXPLORER
+        explorer=ETHEREUM,  # widgets/curator/_fmt.EXPLORER -- every wallet address
+        # A custom collection's contract links to its own chain
+        # (widgets/curator/list_filter.NFT_CHAIN_EXPLORERS); the Base one the
+        # editor view adds must link on Basescan and nowhere else.
+        explorers=(ETHEREUM, BASE),
+        explorer_for={_CURATOR_NFT_BASE: BASE},
         screen_class=CuratorScreen,
         build=_curator_app,
         payload=_curator_served,

@@ -226,6 +226,47 @@ async def test_a_copy_click_on_a_feed_toggle_copies_and_does_not_toggle():
         assert toggled == ["0xabc"], "a click elsewhere must still toggle"
 
 
+async def test_a_link_click_on_a_feed_toggle_opens_and_does_not_toggle():
+    """The other half of the guard (fix round 1, M1): a click on the *linked
+    span* of an address the toggle renders runs the explorer action and
+    never the toggle's own click behaviour; a click on plain text still
+    toggles. Mirrors the copy-click test above, with ``is_explorer_click``
+    as the guard under test."""
+    from maxpane_dashboard.widgets.explorer import ETHEREUM
+    from maxpane_dashboard.widgets.surf.feed import SurfFeedToggle
+
+    toggled: list[str] = []
+    opened: list[tuple[str, str, str]] = []
+
+    class _Toggle(SurfFeedToggle):
+        def action_toggle(self) -> None:
+            toggled.append(self.tx_hash)
+
+    class _App(CopyRecorder, App):
+        def compose(self) -> ComposeResult:
+            text = address_text(FEED_ADDR, explorer=ETHEREUM)
+            text.append("  plain")
+            yield _Toggle(text, tx_hash="0xabc", id="t")
+
+        def action_open_explorer(self, name: str, kind: str, value: str) -> None:
+            opened.append((name, kind, value))
+
+    app = _App()
+    async with app.run_test(size=(80, 5)) as pilot:
+        await pilot.pause()
+        targets = icon_targets(app)
+        assert len(targets) == 1
+        x, y, _ = targets[0]
+        await pilot.click(offset=(x - 2, y))       # the last cell of the shown address
+        await pilot.pause()
+        assert opened == [("etherscan", "address", FEED_ADDR)]
+        assert toggled == [], "a link click also toggled the thread"
+        assert app.copied == []
+        await pilot.click(offset=(x + 4, y))       # "plain", past the icon
+        await pilot.pause()
+        assert toggled == ["0xabc"], "a click elsewhere must still toggle"
+
+
 async def test_a_transaction_hash_in_a_post_gets_no_icon():
     """The frozen newest post links a 64-hex tx hash; it is not an address."""
     targets, _ = await _targets(_frozen_payload(), size=(SURF_FULL_LAYOUT_COLUMNS, 60))

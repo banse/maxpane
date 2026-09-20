@@ -474,6 +474,45 @@ replace. Not done: the two historical plan docs under `docs/superpowers/plans/` 
 where it appears as a dated code listing (`2026-09-14-address-copy-icons.md:1852`); the two
 mutation-table rows and `docs/surf_swarm_followups.md` were renamed.
 
+**WP-B fix round 1 (2026-09-20; review of `a44cb95`: 1 Critical, 2 Important, 3 Minor, all six
+fixed in one commit).** *C1 was a plan/chain-table gap, not a call-site slip:* the chain table
+above assigns one explorer per package, which holds for a **wallet** address (the same 20 bytes on
+Ethereum and Base) but not for a **contract** address — curator's filter editor lets the reader add
+a custom NFT collection on `ethereum` or `base`, and that collection's contract linked to Etherscan
+either way. Now `widgets/curator/list_filter.py` resolves per row through a hand-typed
+`NFT_CHAIN_EXPLORERS = {"ethereum": ETHEREUM, "base": BASE}` keyed by the editor's own
+`NFT_CHAIN_OPTIONS` (an unknown chain word links nothing); `for_network`'s upper-case vocabulary is
+untouched. `tests/widgets/test_curator_address_icons.py` binds the map to the Select's options and
+to `data/curator_list_filters.NFT_CHAINS` in both directions, and renders a Base collection
+(`basescan.org/address/…`), an Ethereum one (`etherscan.io`) and an unknown word (icon, no link).
+The sweep gained `SweepCase.explorer_for` (lower-cased address → the one explorer it must link on;
+every value must be in `explorers`); curator's builder now adds a second collection on Base through
+the editor's controls (waiting, bounded, for the exclusive name-lookup worker before the second
+add), seeds it, and lists `explorers=(ETHEREUM, BASE)`, `explorer_for={<base collection>: BASE}`.
+Under the old code `[curator-wide]` and `[curator-pin]` fail with `link on the wrong explorer`
+(two cells each, `curator_filter_editor@170x60` / `@138x60`). *I1:* the sweep's per-icon and
+per-link loops rebound the parametrised `kind`, so the wide-only presence check was dead for every
+case that renders a link; the inner names are `link_kind`/`link_value` and an
+`assert kind in ("wide", "pin") or kind.startswith("extra-")` guards the block — with
+`copied_somewhere.clear()` after each view, `[ocm-wide]`, `[cattown-wide]`, `[ttt-wide]` and
+`[bakery-wide]` now redden with `seeded addresses never got an icon in any view` (`[ocm-pin]`
+stays green, presence being a wide property). *I2:* per-row explorers now have tests that can fail:
+`tests/widgets/test_surf_swarm_shipped.py` (chain_id 11155111 → `sepolia.etherscan.io` for the
+address cell and a hash-only row's tx cell, 1 → `etherscan.io`, an unknown id → icon, no link;
+`for_chain_id(1)` at `swarm_shipped.py` reddens the Sepolia and unknown-id tests) and
+`tests/widgets/test_surf_pool4_rail.py` (HATCHES on `SEPOLIA` links every address on
+`sepolia.etherscan.io`, `MAINNET` on `etherscan.io` and never `basescan.org`, `None` or `ARBITRUM`
+links nothing; `for_network("BASE")` at `pool4_hatches.py` reddens all three — note `BASE` *is* an
+allowlisted word, so the unknown-word case uses one that is not). *M1:*
+`tests/widgets/test_surf_address_icons.py` clicks the linked span of an address a `SurfFeedToggle`
+renders: the explorer action runs, the thread does not toggle, plain text still toggles; dropping
+`or is_explorer_click(event)` from `feed.py` reddens it. *M2:* the template test also walks the AST
+for every `address_text` call's `explorer=` keyword and a module-level `EXPLORER`; deleting the
+keyword from `leaderboard_template.py` reddens `[leaderboard_template]`. *M3:*
+`widgets/base/_chain.py` cites `base_client.py:554` / `:232` (`/networks/base/`), `:299`
+(`chainId == "base"`) and `:702` (`mainnet.base.org`). Every mutation restored by inverse edit,
+md5-identical.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing

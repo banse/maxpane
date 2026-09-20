@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Awaitable, Callable, Union
+from dataclasses import dataclass, field
+from typing import Awaitable, Callable, Mapping, Union
 
 from textual.app import App
 
@@ -63,9 +63,23 @@ class SweepCase:
     #: pool4 panels link by ``pool4_network``, swarm rows by ``chain_id``).
     #: Defaults to ``(explorer,)``; empty when ``explorer`` is ``None``.
     explorers: tuple[Explorer, ...] = ()
+    #: The one explorer a particular seeded address must link on, lower-cased
+    #: address -> explorer, for an address whose chain is NOT the package's
+    #: (a custom NFT collection on Base in curator's editor: a contract
+    #: address is not chain-agnostic the way a wallet is). E7 reports
+    #: ``link on the wrong explorer`` for a listed address on any other
+    #: explorer, allowed or not; an unlisted address may link on any member
+    #: of ``explorers``. Every value must be in ``explorers``.
+    explorer_for: Mapping[str, Explorer] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.explorer is not None and not self.explorers:
             object.__setattr__(self, "explorers", (self.explorer,))
         if self.explorer is not None and self.explorer not in self.explorers:
             raise ValueError(f"{self.name}: explorer {self.explorer.name} is not in its own allowed set")
+        object.__setattr__(
+            self, "explorer_for", {a.lower(): e for a, e in self.explorer_for.items()}
+        )
+        for address, explorer in self.explorer_for.items():
+            if explorer not in self.explorers:
+                raise ValueError(f"{self.name}: {address} names explorer {explorer.name} outside the allowed set")

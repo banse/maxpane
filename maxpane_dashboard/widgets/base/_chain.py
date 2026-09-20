@@ -12,6 +12,8 @@ from maxpane_dashboard.widgets.explorer import BASE
 
 __all__ = ["EXPLORER"]
 
-#: Base (Basescan): read off ``data/base_client.py:58`` -- GeckoTerminal ``/networks/base/`` pools and DexScreener pairs
-#: filtered to ``chainId == "base"`` (:232, :299).
+#: Base (Basescan): read off ``data/base_client.py`` -- GeckoTerminal
+#: ``/networks/base/`` (:554 trending, :232 the same path inline), DexScreener
+#: pairs filtered to ``chainId == "base"`` (:299), and the ``mainnet.base.org``
+#: RPC (:702).
 EXPLORER = BASE

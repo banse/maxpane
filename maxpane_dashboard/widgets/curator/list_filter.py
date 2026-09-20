@@ -11,7 +11,22 @@ from textual.message import Message
 from textual.widgets import Button, Checkbox, Input, Label, Select, Static
 
 from maxpane_dashboard.widgets.address import address_text
-from maxpane_dashboard.widgets.curator._fmt import EXPLORER
+from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, Explorer
+
+#: The chains the NFT HOLDERS editor's ``Select`` offers, as ``(label,
+#: value)``: the one place that vocabulary is typed in this package.
+NFT_CHAIN_OPTIONS: tuple[tuple[str, str], ...] = (("Ethereum", "ethereum"), ("Base", "base"))
+
+#: A custom collection's *contract* address lives on one chain -- unlike a
+#: wallet, which is the same on Ethereum and Base -- so its link resolves per
+#: row through this allowlist, keyed by the Select's own values; a chain word
+#: outside it links nothing rather than guessing (widgets/explorer.py's rule,
+#: fix round 1 C1 of Branch 4). Hand-typed beside ``NFT_CHAIN_OPTIONS``;
+#: ``tests/widgets/test_curator_address_icons.py`` binds the two to each other
+#: and to ``data/curator_list_filters.NFT_CHAINS`` (a widget may not import
+#: ``data/``).
+NFT_CHAIN_EXPLORERS: dict[str, Explorer] = {"ethereum": ETHEREUM, "base": BASE}
+
 
 #: The address's own display budget in the selected-collections grid, when
 #: there is no real name to show instead: :data:`MIN_SHORT_COLS`'s own
@@ -270,7 +285,7 @@ class CuratorListFilterEditor(Vertical):
         with Grid(classes="curator-filter-nft-custom-grid"):
             with Horizontal(classes="curator-filter-nft-add-row"):
                 yield Select(
-                    (("Ethereum", "ethereum"), ("Base", "base")),
+                    NFT_CHAIN_OPTIONS,
                     allow_blank=False, value="ethereum", compact=True,
                     id="filter-nft-chain",
                 )
@@ -420,10 +435,13 @@ class CuratorListFilterEditor(Vertical):
             # (test_no_curator_widget_imports_data_or_analytics), so this
             # widget cannot call ``is_custom_nft_fallback_label`` itself.
             if value.get("is_fallback", False):
+                # The contract's own chain, not the package's wallet
+                # explorer: a Base collection links to Basescan, an unknown
+                # chain word to nothing (NFT_CHAIN_EXPLORERS above).
                 content = address_text(
                     str(value["address"]).strip().lower(),
                     width=_NFT_LABEL_ADDRESS_COLS,
-                    explorer=EXPLORER,
+                    explorer=NFT_CHAIN_EXPLORERS.get(value["chain"]),
                 )
             else:
                 content = value["label"]
