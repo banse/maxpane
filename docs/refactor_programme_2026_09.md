@@ -788,15 +788,18 @@ on all three, with one exception, below.
    `name=` explicitly, so nothing observable changed — the same drift WP-A recorded for ocm.
    (Fix-round 1 corrected this entry: the WP-B report had named `frenpet_full` for a `name`
    default it never had and missed the four that lost a required argument.)
-4. `screens/frenpet_perf.py` computed its aggregates (`total_wins`, `total_losses`,
-   `avg_win_rate`, the summed score history) **once** in `_do_refresh`, ahead of and outside
-   every panel's `try`, so a payload on which that arithmetic raised (a pet object missing
-   `win_qty`, say) left all six panels on their last render. The module-level adapters
-   recompute each aggregate inside the panel that needs it, and the base contains each
-   adapter, so the same payload now fails per panel and the panels that do not need the
-   broken field still update. An improvement, and one the real manager cannot reach (its
-   `managed_pets` are typed records); recorded because the WP-B report did not name it
-   (found by the WP-B reviewer, filed as M5).
+4. `screens/frenpet_perf.py` computed four aggregates (`total_wins`, `total_losses`,
+   `total_score`, `avg_win_rate`) **once** in `_do_refresh`, ahead of and outside every
+   panel's `try` (the summed score history was always inside the trends panel's own `try`).
+   A payload on which that arithmetic raised (a pet object missing `win_qty`, say) escaped
+   `_do_refresh` entirely: all six panels kept their last render **and the status-bar row
+   never ran**, so the screen showed a stale `as of` reading with no degradation marker — the
+   exact shape CLAUDE.md's "never a stale number presented as live" forbids. The module-level
+   adapters recompute each aggregate inside the panel that needs it and the base contains each
+   adapter, so the same payload now fails per panel, the panels that do not need the broken
+   field still update, and the status bar is written. An improvement, and one the real
+   manager cannot reach (its `managed_pets` are typed records); recorded because the WP-B
+   report did not name it (WP-B reviewer M5; wording corrected on the re-review's N1).
 
 `frenpet_perf`/`frenpet_wallet`'s between-fetch arithmetic moved out whole into module-level
 adapters (`_perf_hero`, `_perf_trends`, … `_wallet_best_plays`): same helpers, same order, same
