@@ -811,6 +811,170 @@ only `c` in `BINDINGS` (Textual merges along the MRO, WP-A note M1); a pilot key
 Reviewer contract verbatim, one reviewer per WP diff, at most two fix rounds each; the full suite
 once on the branch head before the merge word.
 
+## Branch 6 — `refactor/panels-ocm` (one work package)
+
+HANDOVER §3.4, first slice (§3.4a): the shared panel bases plus their first subscriber, ocm.
+Cut from main `97a3a90` (after Branch 5, so the migrated widgets sit under `DashboardScreen`'s
+`PANELS` dispatch and the panel-row agreement test already binds their `update_data`
+signatures). Facts read off the tree on 2026-09-20:
+
+- `widgets/ocm/` is six panels, 628 lines: `ocm_hero_metrics` (123), `ocm_staking_overview`
+  (92), `ocm_signals` (97), `ocm_sparklines` (88), `ocm_activity_feed` (132),
+  `ocm_supply_breakdown` (96). Each carries its own copy of what every sibling dashboard also
+  carries: `_UNAVAILABLE = "[yellow]unavailable[/]"` (9 files across `widgets/` + `templates/`),
+  `_render_row` (7), `_render_box` (4), a `_seen_tx_hashes` / `_seen_keys` dedupe set (10),
+  `_fmt_value` (3 — `sparkline_common.fmt_compact` is the hoisted form and differs only at
+  ≥ 1e9, on non-numeric input and on the sign of a negative), `_format_event_time` (5 —
+  `widgets/fmt.hhmm` is the hoisted form), `_fmt(sig)` / `_fmt_signal` (8; label width 18 in
+  ocm and dota, 15 and `[dim]`-wrapped in cattown and the template). `Loading...` is typed in
+  68 files.
+- **The blank row under a title has two sources in ocm, and one panel has both.** Signals,
+  sparklines, staking overview and supply breakdown yield a `Static("")` spacer from `compose`;
+  the activity feed states `margin: 0 0 1 0` on `.feed-title` in `minimal.tcss`; the staking
+  overview does *both* (`minimal.tcss:1325-1329` gives `.overview-title` the margin and the
+  widget yields `#ocm-stake-spacer`), so it paints **two** blank rows at main (composited rows
+  12–13 at 170×50, `render_ocm.py`, captured as `b6_before.*` in the session scratchpad). It is
+  the one ocm panel absent from `tests/widgets/test_title_blank_row.py`'s table. Hero boxes
+  carry the row as the `\n\n` inside each box string (the hero template's own note).
+- `minimal.tcss:1301-1380` selects ocm by widget class name (`OCMHeroMetrics`, `OCMHeroBox`,
+  `OCMSignals`, …) and by five per-panel title classes (`.overview-title`, `.chart-title`,
+  `.signals-title`, `.feed-title`, `.breakdown-title`); `:1644-1650` records a title selector
+  that matched nothing for the life of the file, which is what per-panel class names do.
+  Textual matches a type selector against every base class — `_css_type_names` of an
+  `OCMSignals(PanelBase)` instance is `{OCMSignals, PanelBase, Vertical, Widget, DOMNode}` — so
+  a `PanelBase > .panel-title` rule in the base's `DEFAULT_CSS` reaches every subclass, and the
+  tcss rules keyed on the ocm class names keep matching unchanged.
+- ocm has no leaderboard and no two-column table. `TableLeaderboard` therefore has no
+  subscriber in this branch and is **not** built here: it lands in Branch 7 with its first user
+  (cattown), as an append-only hoist into `panels.py`. A base with no subclass is a template by
+  another name.
+- Coverage of the six widgets today: `tests/widgets/test_medi38_unavailable_state.py` (hero and
+  signals, three claims each), `test_title_blank_row.py` (sparklines, signals, supply
+  breakdown), `test_hidden_shared_address_icons.py` (the feed's icon and copy), the `ocm` case
+  of `tests/screens/test_address_icons_everywhere.py` (whole screen at 170 and the pin under the
+  real stylesheet), `tests/screens/test_dashboard_screen.py` (every `PANELS` key is a named
+  `update_data` parameter). There is no `tests/screens/test_ocm_screen.py` and no
+  `tests/widgets/test_ocm_*.py`. The sweep payload leaves staking overview and supply breakdown
+  on `Loading...` (follow-up #18, pre-existing, untouched here).
+
+### Design
+
+**`widgets/panels.py`** (new, shared; the Tier 2 trigger):
+
+- Module constants `UNAVAILABLE = "[yellow]unavailable[/]"` and `LOADING = "[dim]Loading...[/]"`
+  — the one definition each; a migrated package defines neither.
+- `class PanelBase(Vertical)`: `TITLE: str` (the title row's words). `compose` yields
+  `Static(self.TITLE, classes="panel-title")` then `yield from self.compose_body()`;
+  `compose_body()` is the subclass hook. `DEFAULT_CSS` states the title once
+  (`PanelBase > .panel-title { width: 100%; padding: 0 1; text-style: bold; color: $text-muted;
+  margin: 0 0 1 0; }`) and one body line class (`PanelBase > .panel-line { padding: 0 1; width:
+  100%; }`). **The margin is the blank row**; a subclass yields no spacer. `write(selector,
+  content) -> bool` is `query_one` + `update` inside one guard. `write_guarded(selector, build,
+  fallback)` builds inside the guard and writes `fallback` when `build()` raises — the shape
+  every `_render_box` / `_render_row` in the tree has, hoisted once.
+- `class HeroBox(Static)` (`DEFAULT_CSS = ""`) and `class HeroRow(Horizontal)`: `BOX_CLASS:
+  type[HeroBox] = HeroBox`, `BOXES: tuple[tuple[str, str], ...]` — `(widget id, label)` per box,
+  composed as `BOX_CLASS(f"[dim]{label}[/]\n\n{LOADING}", id=id)`; `DEFAULT_CSS` `HeroRow >
+  HeroBox { margin: 0 1; }`; `render_box(selector, label, build)` is ocm's `_render_box`.
+  Not a `PanelBase`: a hero row has no title widget. ocm keeps `class OCMHeroBox(HeroBox)` so
+  `minimal.tcss`'s `OCMHeroBox` block and the MEDI-38 harness CSS that names it keep matching.
+- `class SignalsPanel(PanelBase)`: `ROWS: tuple[tuple[str, str], ...]` (`(id, label)`),
+  `LABEL_WIDTH: int = 18`, `DIM_LABEL: bool = False` (Branch 7 sets 15 / `True` for cattown),
+  `RECOMMENDATION_ID: str | None = None`. `compose_body` yields one `.panel-line` `Static` per
+  row (the first seeded with `"[dim]  Loading...[/]"`), then — when `RECOMMENDATION_ID` is set —
+  one blank `.panel-line` and a `.panel-rec` `Static` (`text-align: center; content-align: center
+  middle`). Module function `fmt_signal(sig, *, label_width, dim_label) -> str`;
+  `render_signal(selector, label, sig)` is ocm's `_render_row` (a `None` or non-dict signal
+  renders the `unavailable` row; a malformed dict lands on the fallback row);
+  `render_recommendation(text)` writes `"  [bold]-> {text}[/]"` or `""`.
+- `class SparklinePanel(PanelBase)`: `LINE_IDS: tuple[str, ...]`; `compose_body` yields one
+  `.panel-line` per id, the first seeded `LOADING`. `render_series(series)` takes
+  `(label, points, color, unit)` tuples in line order and is the loop ocm/cattown/dota/the
+  template all carry — `coerce_points`, `build_sparkline_from_points`, `trend_arrow` and
+  **`fmt_compact`** from `sparkline_common`, label padded `label[:8].ljust(8)`; an empty or
+  unusable series writes `""`.
+- `class RichLogFeed(PanelBase)`: `LOG_ID: str`, `EMPTY_LINE = "[dim]  No activity yet[/]"`;
+  `__init__` sets `self._seen_keys: set[str]`; `compose_body` yields `RichLog(id=LOG_ID,
+  wrap=True, highlight=True, markup=True)`. Two hooks: `dedupe_key(event) -> str | None`
+  (default `event.get("tx_hash") or None`) and `format_row(event) -> Text | None` (abstract; a
+  `Text`, never a markup string, so the address icon's click style survives). `render_events(
+  events)` is the merged contract of `templates/activity_feed_template.py:158-199` and ocm: an
+  empty poll writes the placeholder only while nothing has ever been shown, and `clear()`s
+  first so it is written once, not once per poll; keys are recorded; when nothing is new and
+  something is shown it returns without rewriting (ocm's flicker guard); otherwise `clear()`,
+  `auto_scroll = False`, every row written inside its own guard (an unwritable or `None` row is
+  skipped, the rest still land), `EMPTY_LINE` when nothing was written, then
+  `call_after_refresh(log.scroll_home, animate=False)`. A subclass's `update_data(recent_events=
+  None, **_kwargs)` calls `self.render_events(recent_events)` — the keyword stays the panel's,
+  so `PANELS` rows and the agreement test are untouched.
+
+**ocm migration**, one widget at a time, class names and `update_data` signatures unchanged:
+`OCMHeroMetrics(HeroRow)` with `BOX_CLASS = OCMHeroBox`; `OCMSignals(SignalsPanel)`;
+`OCMSparklines(SparklinePanel)`; `OCMActivityFeed(RichLogFeed)` with `format_row =
+_event_to_text` and `hhmm` replacing `_format_event_time`; `OCMStakingOverview(PanelBase)` and
+`OCMSupplyBreakdown(PanelBase)` keep their bespoke bodies on `compose_body` + `write`. Deleted
+from the package: every `_UNAVAILABLE`, `_render_box`, `_render_row`, `_fmt`, `_fmt_value`,
+`_format_event_time`, `_seen_tx_hashes`, every spacer `Static`, every per-panel title/line CSS
+class. In `minimal.tcss` the five `OCM* > .<x>-title` rules go (their values — `$text-muted`,
+`padding: 0 1`, the margin — are what `PanelBase` states, and the stylesheet outranking
+`DEFAULT_CSS` with the same values moves no pixel); the blocks keyed on the widget class names
+stay. `templates/` is untouched (Branch 8 deletes it).
+
+**Rendering.** `render_ocm.py` (session scratchpad) before and after, 170×50 and the pin
+143×50, under the real stylesheet and a frozen clock. **The expected diff is exactly one row:
+the staking overview's second blank row disappears** and its rows move up one within that
+panel. Any other differing cell is a finding. `fmt_compact` versus ocm's `_fmt_value` is
+value-identical on every magnitude the ocm series can carry (a supply of 10K, an $OCMD supply in
+the millions) and the sweep payload carries no histories, so the diff cannot see it; the new
+test module pins the equality at 1, 1e3 and 1e6 and states the ≥ 1e9 / non-numeric divergence
+as the hoist's one behaviour change.
+
+### Tests
+
+`tests/widgets/test_panels.py` (new), composited through `tests/widgets/surf_compositing.
+composite_lines` under `minimal.tcss` (the helper the surf widget tests share — reuse, do not
+copy), each on a minimal subclass defined in the test:
+
+1. `PanelBase`: row 0 title, row 1 blank, row 2 body — and the row is the base's: removing
+   `margin: 0 0 1 0` from `PanelBase.DEFAULT_CSS` reddens it (state the mutation in the
+   docstring; it is the proof that the margin has one source after the tcss rules go).
+2. `HeroRow.render_box`: the three MEDI-38 claims (a failed read renders `unavailable`, a real
+   `0` is a number, a malformed poll after a good one is not shown as live).
+3. `fmt_signal` at width 18 plain and 15 dim; `render_signal` on `None`, on `{}` and on a
+   dict whose `label` is an `object()` (fallback row, panel does not raise);
+   `render_recommendation("")` blank.
+4. `render_series`: `None`, `[]`, a ragged list and a `None`-valued point render `""`; a good
+   series renders the sparkline, `fmt_compact` value and arrow; the label is padded to 8.
+5. `render_events`: placeholder written once across three empty polls (not once per poll);
+   a populated feed survives a later empty poll; `dedupe_key` collisions are not re-recorded
+   and a poll with nothing new does not `clear()` (spy on the log); one unwritable row is
+   skipped and the others land; all rows unwritable → `EMPTY_LINE`; newest on top.
+6. Agreement: every class in `maxpane_dashboard.widgets.ocm` with an `update_data` is a
+   subclass of a `panels.py` base, and neither its module nor the class defines `_UNAVAILABLE`,
+   `_render_row`, `_render_box`, `_fmt_value`, `_format_event_time`, `_fmt`, `_fmt_signal` or
+   `_seen_tx_hashes` — so a copy pasted back in reddens.
+
+Mutation proofs, each named in the commit message with which test reddened: the `clear()`
+before the placeholder (test 5 first claim), the per-row guard (test 5 unwritable-row claim),
+the `DEFAULT_CSS` margin (test 1). Existing tests that must stay green unchanged:
+`test_medi38_unavailable_state.py`, `test_title_blank_row.py` (**add** `OCMStakingOverview`
+and `OCMActivityFeed` rows — both now paint exactly one blank row), `test_hidden_shared_address_
+icons.py`, `test_address_icons_everywhere.py -k ocm`, `test_dashboard_screen.py`, `-m guard
+tests`, `tests/widgets/test_sparkline_common.py`.
+
+### Docs
+
+`.claude/rules/widgets.md`: a "## Panels subclass `widgets/panels.py`" section under the
+`DashboardScreen` one — the five bases, the two hooks, the one-source rules (`UNAVAILABLE`,
+`LOADING`, the title margin), `widgets/ocm/` as the worked example, `TableLeaderboard` arriving
+with Branch 7, `templates/` still the copy-source for a leaderboard until Branch 8. "Reuse
+before you build" step 3 gains one sentence pointing at `panels.py` ahead of the templates for
+the four shapes it covers. `CLAUDE.md` Architecture `widgets/` line names `panels`. Outcome
+paragraph here with the per-file line table, the render-diff result and any deviation.
+
+One implementer, one reviewer (contract verbatim), fix rounds capped at 2, full suite once on
+the branch head by the controller, then the owner's merge word.
+
 ## Branch 0 — `fix/select-to-copy` (Tier 1, session implements)
 
 - `MaxPaneApp.copy_to_clipboard(text)` override → `clipboard.copy_text(...)` (the existing
