@@ -79,19 +79,42 @@ def _block_timestamp(block_number: int, current_block: int, now_ts: float) -> in
 
 
 class TalismansManager:
-    """Pulls Talismans data, updates cache, computes analytics, returns flat dict."""
+    """Pulls Talismans data, updates cache, computes analytics, returns flat dict.
 
-    def __init__(self, poll_interval: int = 30) -> None:
-        self.client = TalismansClient()
-        self.cache = TalismansCache()
+    Parameters
+    ----------
+    poll_interval:
+        Seconds between automatic refreshes (used for status display).
+    client:
+        Optional pre-built client (dependency injection).  Built as today
+        when ``None``.
+    cache:
+        Optional pre-built cache object.  Built as today when ``None``.
+    cache_path:
+        Optional path for the persisted history.  Resolves to the module
+        default :data:`_CACHE_FILE` at construction when ``None``; the
+        instance path is what ``load_from_file`` / ``save_to_file`` use.
+    """
+
+    def __init__(
+        self,
+        poll_interval: int = 30,
+        *,
+        client: TalismansClient | None = None,
+        cache: TalismansCache | None = None,
+        cache_path: str | Path | None = None,
+    ) -> None:
+        self.client = TalismansClient() if client is None else client
+        self.cache = TalismansCache() if cache is None else cache
+        self._cache_path = Path(_CACHE_FILE if cache_path is None else cache_path)
         self.poll_interval = poll_interval
         self._cycle_count = 0
         self._error_count = 0
         self._last_fetch_ts: float = 0.0
         self._last_save_ts: float = 0.0
 
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self.cache.load_from_file(str(_CACHE_FILE))
+        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self.cache.load_from_file(str(self._cache_path))
         self.cache.seed_genesis_ids()
 
     # ------------------------------------------------------------------
@@ -261,7 +284,7 @@ class TalismansManager:
     def save_cache(self) -> None:
         """Serialize + write the whole cache. Blocking -- never call directly
         from the event loop; use :meth:`_maybe_save_cache`."""
-        self.cache.save_to_file(str(_CACHE_FILE))
+        self.cache.save_to_file(str(self._cache_path))
 
     async def _maybe_save_cache(self, now_ts: float) -> None:
         """Persist the cache without stalling the Textual event loop (LOW-13).

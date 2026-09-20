@@ -41,6 +41,7 @@ import asyncio
 import logging
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -104,6 +105,25 @@ _LOG_RPCS = [
     "https://eth.drpc.org",
     "https://ethereum.publicnode.com",
 ]
+
+#: Hosts that are dead, now keyed, or useless for this workload. Configuring
+#: one is a programming error, so the constructor raises rather than silently
+#: degrading to a dashboard that shows zeros. Mirrors ``ttt_client`` and
+#: ``fwa_client``; the evidence for each entry is in ``rules/data.md`` and in
+#: the probe comments above. Kept per client rather than shared because the
+#: *policy* (which pool a host is banned from) is per client -- a host that is
+#: useless for archive logs can still be a good state endpoint.
+_BANNED_RPC_HOSTS = frozenset(
+    {
+        "cloudflare-eth.com",  # -32603 Internal error on every call, probed 2026-07-27
+        "rpc.ankr.com",  # -32000 Unauthorized: now requires an API key
+        "eth.llamarpc.com",  # HTTP 521, origin down
+        "eth-mainnet.g.alchemy.com",  # keyed
+        "mainnet.infura.io",  # keyed
+        "api.reservoir.tools",  # sunset
+        "api.opensea.io",  # keyed
+    }
+)
 
 _MAX_RETRIES = 2
 _BACKOFF_SECONDS = (0.5, 1.5)
@@ -496,8 +516,17 @@ class TalismansClient(OwnedHttpClient):
     Parameters
     ----------
     primary_rpc, fallback_rpcs:
-        Ethereum mainnet JSON-RPC endpoints. If ``primary_rpc`` returns a 429
-        or 5xx, the client retries on each of the fallbacks in order.
+        Pool A -- Ethereum mainnet state / view endpoints. If ``primary_rpc``
+        returns a 429 or 5xx, the client retries on each of the fallbacks in
+        order. A banned host (dead, keyed, or useless for this workload -- see
+        :data:`_BANNED_RPC_HOSTS`) raises ``ValueError`` at construction rather
+        than silently degrading to a zeroed dashboard.
+    log_rpcs:
+        Pool B -- endpoints used for ``eth_getLogs`` only, defaulting to
+        :data:`_LOG_RPCS`. Kept separate because the best state batchers refuse
+        archive log ranges. Injectable so a library host can configure the log
+        pool per deployment instead of editing a module constant; the same
+        banned-host check applies.
     http_client:
         Optional pre-configured ``httpx.AsyncClient``. If not provided one is
         created internally and closed on ``close()``.
@@ -508,10 +537,19 @@ class TalismansClient(OwnedHttpClient):
         primary_rpc: str = _PRIMARY_RPC,
         fallback_rpcs: list[str] | None = None,
         *,
+        log_rpcs: list[str] | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._primary_rpc = primary_rpc
         self._fallback_rpcs = list(fallback_rpcs or _FALLBACK_RPCS)
+        self._log_rpcs = list(_LOG_RPCS if log_rpcs is None else log_rpcs)
+        for url in [primary_rpc, *self._fallback_rpcs, *self._log_rpcs]:
+            host = urlparse(url).hostname or ""
+            if host in _BANNED_RPC_HOSTS:
+                raise ValueError(
+                    f"{url} is a banned RPC host (dead, keyed, or useless for "
+                    f"this workload) -- see talismans_client._BANNED_RPC_HOSTS"
+                )
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(_REQUEST_TIMEOUT),
             follow_redirects=True,
@@ -727,7 +765,7 @@ class TalismansClient(OwnedHttpClient):
                     "toBlock": hex(chunk_end),
                 }
                 try:
-                    logs = await self._rpc("eth_getLogs", [params], _LOG_RPCS)
+                    logs = await self._rpc("eth_getLogs", [params], self._log_rpcs)
                     break
                 except TalismansRpcError as exc:
                     if (
@@ -983,6 +1021,7 @@ __all__ = [
     "_DEFAULT_LOG_LOOKBACK_BLOCKS",
     "_LOG_RANGE_PER_CALL",
     "_LOG_RPCS",
+    "_BANNED_RPC_HOSTS",
     "_SEL_NEXT_TRANSFORM_ID",
     "_classify_rpc_error",
     "_parse_suggested_to",

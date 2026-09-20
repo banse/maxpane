@@ -154,8 +154,12 @@ class CatTownClient(OwnedHttpClient):
     Parameters
     ----------
     rpc_url:
-        Primary Base mainnet JSON-RPC endpoint. Overridable per deployment
-        via the ``MAXPANE_BASE_RPC_URL`` environment variable.
+        Primary Base mainnet JSON-RPC endpoint. ``None`` (the default)
+        resolves at construction: ``$MAXPANE_BASE_RPC_URL`` if set and
+        non-empty, otherwise the class default :attr:`RPC_URL`. An explicit
+        argument beats both. Overridable per deployment via the environment
+        variable, which is read on every construction -- not once at import --
+        so a host that sets it later is honoured by the next instance.
     fallback_rpcs:
         Endpoints tried, in order, when the primary is down or blocking us.
         Without these a single outage at ``mainnet.base.org`` bricked the
@@ -169,7 +173,11 @@ class CatTownClient(OwnedHttpClient):
         one is created internally and closed on ``close()``.
     """
 
-    RPC_URL = os.environ.get("MAXPANE_BASE_RPC_URL", "https://mainnet.base.org")
+    #: Environment variable consulted for the primary endpoint; see
+    #: :meth:`__init__`, which reads it again at construction time.
+    RPC_URL_ENV = "MAXPANE_BASE_RPC_URL"
+
+    RPC_URL = os.environ.get(RPC_URL_ENV, "https://mainnet.base.org")
 
     # Contract addresses
     KIBBLE_TOKEN = "0x64cc19A52f4D631eF5BE07947CABA14aE00c52Eb"
@@ -191,18 +199,26 @@ class CatTownClient(OwnedHttpClient):
 
     def __init__(
         self,
-        rpc_url: str = RPC_URL,
+        rpc_url: str | None = None,
         *,
         fallback_rpcs: list[str] | None = None,
         inter_call_delay: float = _INTER_CALL_DELAY,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._rpc_url = rpc_url
+        # Resolved here rather than baked into the signature default: a
+        # signature default is evaluated once, at import, which freezes the
+        # endpoint for the life of the process and gives a library host no
+        # way to serve two configurations.
+        self._rpc_url = (
+            rpc_url
+            if rpc_url is not None
+            else (os.environ.get(self.RPC_URL_ENV) or self.RPC_URL)
+        )
         self._fallback_rpcs = list(
             _FALLBACK_RPCS if fallback_rpcs is None else fallback_rpcs
         )
         # Never try the primary twice in one rotation.
-        self._fallback_rpcs = [u for u in self._fallback_rpcs if u != rpc_url]
+        self._fallback_rpcs = [u for u in self._fallback_rpcs if u != self._rpc_url]
         self._inter_call_delay = inter_call_delay
         self._last_rpc_at: float = 0.0
         self._client = http_client or httpx.AsyncClient(

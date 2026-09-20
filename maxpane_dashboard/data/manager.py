@@ -49,11 +49,28 @@ class DataManager:
     ----------
     poll_interval:
         Seconds between automatic refreshes (used for status display).
+    client:
+        Optional pre-built client (dependency injection).  Built as today
+        when ``None``.
+    cache:
+        Optional pre-built cache object.  Built as today when ``None``.
+    cache_path:
+        Optional path for the persisted history.  Resolves to the module
+        default :data:`_CACHE_FILE` at construction when ``None``; the
+        instance path is what ``load_from_file`` / ``save_to_file`` use.
     """
 
-    def __init__(self, poll_interval: int = 30) -> None:
-        self.client = GameDataClient()
-        self.cache = DataCache(max_history=_MAX_HISTORY)
+    def __init__(
+        self,
+        poll_interval: int = 30,
+        *,
+        client: GameDataClient | None = None,
+        cache: DataCache | None = None,
+        cache_path: str | Path | None = None,
+    ) -> None:
+        self.client = GameDataClient() if client is None else client
+        self.cache = DataCache(max_history=_MAX_HISTORY) if cache is None else cache
+        self._cache_path = Path(_CACHE_FILE if cache_path is None else cache_path)
         self._poll_interval = poll_interval
         self._error_count = 0
         self._last_snapshot: GameSnapshot | None = None
@@ -65,7 +82,7 @@ class DataManager:
         # same bakery name) would drag the rate toward a long-run average
         # or a clamped 0 for the first hour after every restart.
         self.cache.load_from_file(
-            str(_CACHE_FILE), max_age=_MAX_HISTORY * poll_interval
+            str(self._cache_path), max_age=_MAX_HISTORY * poll_interval
         )
 
     # ------------------------------------------------------------------
@@ -232,7 +249,7 @@ class DataManager:
 
     def save_cache(self) -> None:
         """Persist cache to disk."""
-        self.cache.save_to_file(str(_CACHE_FILE))
+        self.cache.save_to_file(str(self._cache_path))
 
     async def close(self) -> None:
         """Shut down the HTTP client and persist cache."""

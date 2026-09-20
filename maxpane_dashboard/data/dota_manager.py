@@ -34,21 +34,38 @@ class DOTAManager:
     ----------
     poll_interval:
         Seconds between automatic refreshes (used for status display).
+    client:
+        Optional pre-built client (dependency injection).  Built as today
+        when ``None``.
+    cache:
+        Optional pre-built cache object.  Built as today when ``None``.
+    cache_path:
+        Optional path for the persisted history.  Resolves to the module
+        default :data:`_CACHE_FILE` at construction when ``None``; the
+        instance path is what ``load_from_file`` / ``save_to_file`` use.
     """
 
-    def __init__(self, poll_interval: int = 30) -> None:
-        self.client = DOTAClient()
-        self.cache = DOTACache(max_history=120)
+    def __init__(
+        self,
+        poll_interval: int = 30,
+        *,
+        client: DOTAClient | None = None,
+        cache: DOTACache | None = None,
+        cache_path: str | Path | None = None,
+    ) -> None:
+        self.client = DOTAClient() if client is None else client
+        self.cache = DOTACache(max_history=120) if cache is None else cache
+        self._cache_path = Path(_CACHE_FILE if cache_path is None else cache_path)
         self._poll_interval = poll_interval
         self._error_count = 0
         self._cycle_count: int = 0
         self._last_leaderboard: list[dict[str, Any]] = []
 
         # Ensure cache directory exists
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Attempt to load persisted history on construction
-        self.cache.load_from_file(str(_CACHE_FILE))
+        self.cache.load_from_file(str(self._cache_path))
 
     # ------------------------------------------------------------------
     # Public API
@@ -322,7 +339,7 @@ class DOTAManager:
 
     def save_cache(self) -> None:
         """Persist cache to disk."""
-        self.cache.save_to_file(str(_CACHE_FILE))
+        self.cache.save_to_file(str(self._cache_path))
 
     async def close(self) -> None:
         """Shut down the HTTP client and persist cache."""

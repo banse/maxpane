@@ -45,16 +45,33 @@ class CatTownManager:
     ----------
     poll_interval:
         Seconds between automatic refreshes (used for status display).
+    client:
+        Optional pre-built client (dependency injection).  Built as today
+        when ``None``.
+    cache:
+        Optional pre-built cache object.  Built as today when ``None``.
+    cache_path:
+        Optional path for the persisted history.  Resolves to the module
+        default :data:`_CACHE_FILE` at construction when ``None``; the
+        instance path is what ``load_from_file`` / ``save_to_file`` use.
     """
 
-    def __init__(self, poll_interval: int = 30) -> None:
-        self.client = CatTownClient()
-        self.cache = CatTownCache(max_history=120)
+    def __init__(
+        self,
+        poll_interval: int = 30,
+        *,
+        client: CatTownClient | None = None,
+        cache: CatTownCache | None = None,
+        cache_path: str | Path | None = None,
+    ) -> None:
+        self.client = CatTownClient() if client is None else client
+        self.cache = CatTownCache(max_history=120) if cache is None else cache
+        self._cache_path = Path(_CACHE_FILE if cache_path is None else cache_path)
         self._poll_interval = poll_interval
         self._error_count = 0
 
         # Attempt to load persisted history on construction
-        self.cache.load_from_file(str(_CACHE_FILE))
+        self.cache.load_from_file(str(self._cache_path))
 
     # ------------------------------------------------------------------
     # Public API
@@ -298,7 +315,7 @@ class CatTownManager:
 
     def save_cache(self) -> None:
         """Persist cache to disk."""
-        self.cache.save_to_file(str(_CACHE_FILE))
+        self.cache.save_to_file(str(self._cache_path))
 
     async def close(self) -> None:
         """Shut down the HTTP client and persist cache."""

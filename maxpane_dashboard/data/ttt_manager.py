@@ -104,12 +104,36 @@ class TTTManager:
     ----------
     poll_interval:
         Seconds between automatic refreshes (used for status display).
+    client:
+        Optional pre-built client (dependency injection).  Built as today
+        when ``None``.
+    cache:
+        Optional pre-built cache object.  Built as today when ``None``.
+    cache_path:
+        Optional path for the persisted history.  Resolves to the module
+        default :data:`_CACHE_FILE` at construction when ``None``; the
+        instance path is what ``load_from_file`` / ``save_to_file`` use.
     """
 
-    def __init__(self, poll_interval: int = 30) -> None:
-        self.client = TTTClient()
+    #: Falls back to the module default when the attribute was never set --
+    #: ``tests/data/test_ttt_manager.py`` builds a manager with ``__new__`` so
+    #: ``__init__`` touches neither ``~/.maxpane`` nor a real client, and that
+    #: instance still has to be able to save.  A constructed manager always
+    #: carries its own resolved path.
+    _cache_path: Path | None = None
+
+    def __init__(
+        self,
+        poll_interval: int = 30,
+        *,
+        client: TTTClient | None = None,
+        cache: TTTCache | None = None,
+        cache_path: str | Path | None = None,
+    ) -> None:
+        self.client = TTTClient() if client is None else client
         self.price_client = PriceClient()
-        self.cache = TTTCache()
+        self.cache = TTTCache() if cache is None else cache
+        self._cache_path = Path(_CACHE_FILE if cache_path is None else cache_path)
         self._poll_interval = poll_interval
         self._cycle_count = 0
         self._error_count = 0
@@ -120,8 +144,8 @@ class TTTManager:
         # can show stale-but-true numbers instead of a confident zero.
         self._last_factory: dict[str, int] | None = None
 
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        self.cache.load_from_file(str(_CACHE_FILE), now=time.time())
+        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self.cache.load_from_file(str(self._cache_path), now=time.time())
 
     # ------------------------------------------------------------------
     # Public API
@@ -439,7 +463,7 @@ class TTTManager:
         }
 
     def save_cache(self) -> None:
-        self.cache.save_to_file(str(_CACHE_FILE))
+        self.cache.save_to_file(str(self._cache_path or _CACHE_FILE))
 
     async def close(self) -> None:
         self.save_cache()
