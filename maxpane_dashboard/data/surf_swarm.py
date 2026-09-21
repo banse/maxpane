@@ -12,6 +12,7 @@ Every value here is ``None`` when it was not read.  A zero is a zero.
 from __future__ import annotations
 
 import datetime
+import math
 import statistics
 from collections.abc import Mapping
 from typing import Any
@@ -21,6 +22,14 @@ from typing import Any
 from maxpane_dashboard.analytics.surf_swarm_signals import (
     completed_within, count_by, duration_stats, seen_since_ts, state_rollup,
 )
+from maxpane_dashboard.data.surf_models import (
+    SURF_ROW_KEYS, SWARM_ROSTER_WINDOW_FIELDS, SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT,
+    SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
+    SWARM_SEAT_SUMMARY_FIELDS,
+)
+# A constant only: the client owns the normalised ``unknown_seat`` result, so
+# the fold recognises it by that one definition rather than a retyped literal.
+from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT
 
 __all__ = [
     "health_facts", "network_of",
@@ -29,6 +38,9 @@ __all__ = [
     "queue_total", "seat_feedback_rows", "seat_node_rows", "seat_rows",
     "seen_entry", "seen_since_ts", "site_rows", "skill_rows",
     "throughput_facts",
+    # AGENT body on /seats/{tokenId} (docs/surf_agent_seats_plan.md WP1b)
+    "choose_seat", "coerce_seat_slot", "roster_window", "seat_review_rows",
+    "seat_state", "seat_summary_from_seat", "seat_work_rows",
 ]
 
 #: A job in one of these states is finished; nothing else is.
@@ -774,3 +786,240 @@ def seat_feedback_rows(details: object, token: object) -> list[dict[str, Any]]:
                     "sent_ts": sent,
                 })
     return _newest_first(rows, "sent_ts")
+
+
+# -- AGENT body on /seats/{tokenId} (docs/surf_agent_seats_plan.md WP1b) -----
+#
+# The seat's lifetime record, read one token at a time by
+# ``SwarmClient.fetch_seat``.  Pure like everything above: no clock, no I/O.
+# Third-party strings (objective, node keys, roles, runtime, owner) are
+# carried raw; escaping and address validation happen at the widget.
+# ``agentId`` is carried as the decimal string ``/seats`` and ``/jobs`` serve
+# (the roster's ``agent_id`` is the same ``str``); it is never parsed to int.
+
+_ASCII_DIGITS = frozenset("0123456789")
+
+
+def _seat_id(value: object) -> int | None:
+    """A seat token: a non-negative, non-bool ``int``.  Nothing else parses."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _served_token(value: object) -> int | None:
+    """``/seats``' ``tokenId``: a decimal string of ASCII digits only, or an int.
+
+    Stricter than :func:`_parse_token`: ``int()`` and ``str.isdigit`` both
+    accept non-ASCII digits (``"١٥٤٨"``), whitespace, a sign and ``_``.
+    """
+    if isinstance(value, str):
+        if not value or not _ASCII_DIGITS.issuperset(value):
+            return None
+        return int(value)
+    return _seat_id(value)
+
+
+def _count(value: object) -> int | None:
+    """A served counter: a non-negative, non-bool ``int``."""
+    return _seat_id(value)
+
+
+def _score(value: object) -> float | int | None:
+    """A review ``value`` that is a finite real number and not a ``bool``."""
+    number = _float(value)
+    if number is None or not math.isfinite(number):
+        return None
+    return number
+
+
+def _list(value: object) -> list | None:
+    return value if isinstance(value, list) else None
+
+
+def seat_state(payload: object, token: object) -> str | None:
+    """``"unknown_seat"`` for the client's normalised 404, ``"ok"`` for a seat
+    whose ``tokenId`` is ``token``, else ``None`` -- a ``tokenId`` mismatch
+    included, so seat A's record never answers for seat B.
+
+    ``"pending"`` is the manager's to say (no read has finished); a payload
+    never is.
+    """
+    wanted = _seat_id(token)
+    if wanted is None or not isinstance(payload, Mapping):
+        return None
+    if dict(payload) == dict(UNKNOWN_SEAT):
+        return "unknown_seat"
+    if "error" in payload or _served_token(payload.get("tokenId")) != wanted:
+        return None
+    return "ok"
+
+
+def _runtime(runtimes: object) -> str | None:
+    """``runtimes[0]`` as the raw ``"<id> <version>"`` (plan §1.1, §9 D)."""
+    listed = _list(runtimes)
+    if not listed or not isinstance(listed[0], Mapping):
+        return None
+    parts = [p for p in (_str(listed[0].get("id")), _str(listed[0].get("version")))
+             if p is not None]
+    return " ".join(parts) if parts else None
+
+
+def seat_summary_from_seat(payload: object) -> dict[str, Any]:
+    """``swarm_seat_summary``: exactly :data:`SWARM_SEAT_SUMMARY_FIELDS`.
+
+    Every field is ``None`` when the source did not carry it or carried the
+    wrong type; a real zero stays ``0``.  ``reviewed`` counts every review,
+    pending ones included (Q-M); ``scored`` / ``mean_score`` count only a
+    finite, non-bool ``value``.
+    """
+    summary: dict[str, Any] = dict.fromkeys(SWARM_SEAT_SUMMARY_FIELDS)
+    if not isinstance(payload, Mapping):
+        return summary
+    reviews_raw = _list(payload.get("reviews"))
+    work_raw = _list(payload.get("work"))
+    reviews = _mappings(reviews_raw) if reviews_raw is not None else None
+    work = _mappings(work_raw) if work_raw is not None else None
+    summary["attempts"] = _count(payload.get("attempts"))
+    summary["accepted"] = _count(payload.get("accepted"))
+    if reviews is not None:
+        summary["reviewed"] = len(reviews)
+        statuses = [_str(r.get("status")) for r in reviews]
+        summary["review_status"] = {s: statuses.count(s) for s in SWARM_SEAT_REVIEW_STATUSES}
+        values = [v for v in (_score(r.get("value")) for r in reviews) if v is not None]
+        summary["scored"] = len(values)
+        summary["mean_score"] = round(statistics.fmean(values), 2) if values else None
+        roles: dict[str, int] = {}
+        for review in reviews:
+            role = _str(review.get("role"))
+            if role is not None:
+                roles[role] = roles.get(role, 0) + 1
+        summary["roles"] = [{"role": role, "count": n} for role, n in
+                            sorted(roles.items(), key=lambda kv: (-kv[1], kv[0]))]
+    online = payload.get("online")
+    summary["online"] = online if isinstance(online, bool) else None
+    summary["owner"] = _str(payload.get("owner"))
+    summary["paired_ts"] = _ts(payload.get("pairedAt"))
+    stamps = [_ts(w.get("acceptedAt")) for w in (work or [])]
+    stamps += [_ts(r.get("sentAt")) for r in (reviews or [])]
+    stamps = [s for s in stamps if s is not None]
+    summary["last_active_ts"] = max(stamps) if stamps else None
+    collaborators = _list(payload.get("collaborators"))
+    summary["collaborators"] = len(collaborators) if collaborators is not None else None
+    summary["runtime"] = _runtime(payload.get("runtimes"))
+    return summary
+
+
+def seat_work_rows(payload: object) -> list[dict[str, Any]]:
+    """``swarm_seat_work_rows``: one row per ``work[]`` entry, in source order
+    (newest first as served).  ``[]`` when there is nothing to fold."""
+    if not isinstance(payload, Mapping):
+        return []
+    keys = SURF_ROW_KEYS["swarm_seat_work_rows"]
+    rows = []
+    for work in _mappings(_list(payload.get("work"))):
+        row = {
+            "job_id": _str(work.get("jobId")),
+            "node_key": _str(work.get("nodeKey")),
+            "role": _str(work.get("role")),
+            "job_state": _str(work.get("jobState")),
+            "objective": _str(work.get("objective")),
+            "accepted_ts": _ts(work.get("acceptedAt")),
+        }
+        rows.append({key: row[key] for key in keys})
+    return rows
+
+
+def seat_review_rows(payload: object) -> list[dict[str, Any]]:
+    """``swarm_seat_feedback_rows`` (the ``_NEXT`` shape): one row per
+    ``reviews[]`` entry, in source order.  A ``queued`` review has no tx yet:
+    its ``tx_hash`` / ``chain_id`` / ``sent_ts`` are ``None`` whatever the
+    payload says, so no widget can link one."""
+    if not isinstance(payload, Mapping):
+        return []
+    rows = []
+    for review in _mappings(_list(payload.get("reviews"))):
+        status = _str(review.get("status"))
+        queued = status == "queued"
+        row = {
+            "value": _score(review.get("value")),
+            "verdict": _str(review.get("verdict")),
+            "status": status,
+            "node_key": _str(review.get("nodeKey")),
+            "role": _str(review.get("role")),
+            "job_id": _str(review.get("jobId")),
+            "tx_hash": None if queued else _str(review.get("txHash")),
+            "chain_id": None if queued else _int(review.get("chainId")),
+            "sent_ts": None if queued else _ts(review.get("sentAt")),
+        }
+        rows.append({key: row[key] for key in SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT})
+    return rows
+
+
+def roster_window(jobs: object) -> dict[str, Any] | None:
+    """``swarm_roster_window``: ``{jobs, oldest_ts}`` over the ``/jobs`` list the
+    roster was folded from -- ``jobs`` its length, ``oldest_ts`` the oldest
+    ``createdAt``.  ``None`` for anything that is not a list."""
+    listed = _list(jobs)
+    if listed is None:
+        return None
+    members = _mappings(listed)
+    stamps = [s for s in (_ts(j.get("createdAt")) for j in members) if s is not None]
+    window = {"jobs": len(members), "oldest_ts": min(stamps) if stamps else None}
+    return {key: window[key] for key in SWARM_ROSTER_WINDOW_FIELDS}
+
+
+def _selected(token: int, agent: object, how: str) -> dict[str, Any]:
+    picked = {"token_id": token, "agent_id": _str(agent), "selected_by": how}
+    return {key: picked[key] for key in SWARM_SEAT_SELECTED_FIELDS}
+
+
+def choose_seat(rows: object, saved_token: object,
+                cursor_token: object) -> dict[str, Any] | None:
+    """``swarm_seat_selected`` under decision D1.
+
+    The cursor when it is on the roster; else the saved seat **whether or not
+    it is on the roster** (``/seats`` answers for any paired token; its
+    ``agent_id`` comes from its roster row, else ``None``); else ``rows[0]`` as
+    ``most_active``; ``None`` with no rows and no saved seat.  A token is a
+    non-negative, non-bool ``int``; anything else is no choice.
+    """
+    seats = [r for r in _mappings(rows) if _seat_id(r.get("token_id")) is not None]
+    by_token = {r["token_id"]: r for r in reversed(seats)}   # first row wins
+    cursor = _seat_id(cursor_token)
+    if cursor is not None and cursor in by_token:
+        return _selected(cursor, by_token[cursor].get("agent_id"), "cursor")
+    saved = _seat_id(saved_token)
+    if saved is not None:
+        row = by_token.get(saved)
+        return _selected(saved, row.get("agent_id") if row else None, "saved")
+    if seats:
+        return _selected(seats[0]["token_id"], seats[0].get("agent_id"), "most_active")
+    return None
+
+
+#: A persisted seat slot is a *finished* read: ``pending`` is never stored.
+_SLOT_STATES = tuple(s for s in SWARM_SEAT_STATES if s != "pending")
+
+
+def coerce_seat_slot(payload: object) -> dict[str, Any] | None:
+    """The persisted ``{token, state, seat}`` slot, validated per field, or
+    ``None`` -- the slot is discarded, never half-trusted.
+
+    ``token`` a non-negative non-bool ``int``; ``state`` ``ok`` or
+    ``unknown_seat``; ``seat`` a dict whose ``tokenId`` is ``token`` for
+    ``ok``, and ``None`` for ``unknown_seat``.
+    """
+    if not isinstance(payload, Mapping):
+        return None
+    token = _seat_id(payload.get("token"))
+    state = payload.get("state")
+    seat = payload.get("seat")
+    if token is None or state not in _SLOT_STATES:
+        return None
+    if state == "unknown_seat":
+        if seat is not None:
+            return None
+    elif not isinstance(seat, dict) or seat_state(seat, token) != "ok":
+        return None
+    return {"token": token, "state": state, "seat": seat}
