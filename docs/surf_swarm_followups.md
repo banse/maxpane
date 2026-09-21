@@ -8,7 +8,7 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 is an owner decision)
 
 Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
 `swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
@@ -522,3 +522,54 @@ proceed as if it had succeeded, exactly when the underlying condition never beca
 either an assertion inside the helpers themselves (trading the current "the caller's own check is
 the failure signal" design for a `TimeoutError` with a good message) or a comment on each making the
 "every call site must assert next" requirement explicit rather than implicit.
+
+## F16 — F25 — filed at the close of the swarm v2 programme (`feature/surf-swarm-v2`, 2026-09-21)
+
+Sources: the WP2–WP8 reviews and the controller's own checks, all recorded in
+`docs/surf_swarm_v2_implementation_plan.md`'s "landed/implemented" blocks. Each is Minor unless it says otherwise;
+the Follow-ups rule applies (Tier 0 when its file is next touched, never its own branch) except where an item is an
+owner decision.
+
+### F16 — the `s` and `a` row pins exceed the owner's terminals (OWNER DECISION)
+`SURF_SWARM_FULL_LAYOUT_ROWS` is 42 and `SURF_AGENT_FULL_LAYOUT_ROWS` 40; the owner's terminals are 119×35 and 138×31.
+Both bodies scroll there with `‹ taller` lit — degraded honestly, but degraded. THROUGHPUT's 16 fixed lines set the
+`s` pin (a `#surf-swarm-top { min-height: 16 }` floor was needed); VERDICTS' 13 set the `a` pin. Options: accept;
+collapse THROUGHPUT's state/cancel blocks behind a key; drop the separators; make the hero one line shorter.
+
+### F17 — LAUNCHES `parked reason` is clipped, not wrapped (decision recorded, revisit on demand)
+A `DataTable` row is height 1; a 197-char corpus reason in its column would be ~15 lines. The column is elastic above
+13 cells and a clipped reason lights `‹ widen` at the full threshold on the corpus payload. `decisions.md` records the
+clip. A detail view (enter on a row) would show the whole reason if the owner wants it.
+
+### F18 — the status bar is never whole under 131 columns; the `4` body's pin is 119 (pre-existing)
+The hint `l launchpad · 4 pool4 · s swarm · a agent` is whole from 131 (`STATUS_BAR_WHOLE_FROM`); the v1 phrase was
+whole from 121; the `4` body's 119 was whole under neither. No surf pin lies in [121, 131) so WP7 regressed nothing,
+but the `#status-left` `width: auto` crops the bar at the terminal edge rather than the phrase. A shorter hint at
+narrow widths, or a right-label that yields first, would close it.
+
+### F19 — `network_of("1")` coerces a numeric string to MAINNET
+`int()` inside the allowlist accepts `"1"`. The API sends ints; the test asserts a non-numeric string is refused.
+Tighten to `isinstance(value, int)` when the file is next touched.
+
+### F20 — `_NON_NUMERIC_KEYS`'s comment still names `swarm_queue_depths`
+`tests/test_surf_registration.py:1393`: historical prose about a retired key in a live triage comment; one line.
+
+### F21 — `MAXPANE_IMD_SEAT` is missing from CLAUDE.md's env-var list (owner-owned file)
+Read once in `SurfManager.__init__` (`seat=` wins), documented in README. CLAUDE.md lists every env var; add it.
+
+### F22 — `data/surf_swarm.__all__` re-exports `seen_since_ts`, defined in `analytics/surf_swarm_signals`
+The fold tests bind the re-export (`fold.seen_since_ts`). Either import it in the tests from analytics and drop the
+re-export, or say in the `__all__` comment why the fold's public surface carries an analytics helper.
+
+### F23 — THROUGHPUT's state/cancel blocks are unbounded in rows
+The panel height is pinned against the corpus vocabulary (six states, a handful of cancel reasons); a new state adds
+a line. Cap the blocks (top-N + `… n more`) or bind the pin to a vocabulary test.
+
+### F24 — seat selection takes effect on the next slow-tier cycle
+`select_seat(token)` is an attribute write; the AGENT body refolds when the slow tier next runs (up to its interval).
+The status bar's marker says so, but an operator expects the pick to land at once. A cheap fix: refold
+`_swarm_seat_keys` from the cached sweep on selection, no network.
+
+### F25 — the hero SERVICES box's worst case (33 cells) versus its share of the pin
+`verifier ● publisher ● deployer ?` is 33 cells; at 141 columns six boxes leave ~19 content cells each. Verify how the
+worst case composites at the pin (clipped with `…` is acceptable; a silent overflow is not) and pin it with a test.
