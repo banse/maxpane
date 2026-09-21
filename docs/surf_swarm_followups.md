@@ -574,3 +574,8 @@ The status bar's marker says so, but an operator expects the pick to land at onc
 ### F25 — the hero SERVICES box's worst case (33 cells) versus its share of the pin
 `verifier ● publisher ● deployer ?` is 33 cells; at 141 columns six boxes leave ~19 content cells each. Verify how the
 worst case composites at the pin (clipped with `…` is acceptable; a silent overflow is not) and pin it with a test.
+
+### F26 — `swarm_seat_selected`'s key-list comment does not name the optional `unseen_token`
+`data/surf_models.py`: the comment says `{token_id, agent_id, selected_by}`; since 4e4bc30 the `most_active` fallback
+also carries `unseen_token` when a saved seat is off the roster. Comment-only, but the file is a Tier 2 trigger — fold
+it into the next change that owns `surf_models.py`.
