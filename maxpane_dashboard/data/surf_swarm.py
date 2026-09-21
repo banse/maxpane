@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import datetime
 import statistics
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 # Pure, stdlib-only rollups (swarm v2 plan §1.6); the widgets import the same
@@ -23,7 +23,7 @@ from maxpane_dashboard.analytics.surf_swarm_signals import (
 )
 
 __all__ = [
-    "TERMINAL_STATES", "health_facts", "network_of", "unfinished_ids",
+    "health_facts", "network_of",
     # swarm v2 (WP3)
     "breaker", "inflight_rows", "launch_rows", "merge_seen", "pick_seat",
     "queue_total", "seat_feedback_rows", "seat_node_rows", "seat_rows",
@@ -32,7 +32,6 @@ __all__ = [
 ]
 
 #: A job in one of these states is finished; nothing else is.
-TERMINAL_STATES = frozenset({"completed", "cancelled"})
 
 #: Chain ids this view knows how to name.  An allowlist, so an unknown chain
 #: renders the em dash rather than a guess (``_pool4.network_word``'s rule).
@@ -71,12 +70,7 @@ def health_facts(health: Mapping[str, Any] | None) -> dict[str, Any]:
     if not isinstance(health, Mapping):
         return {"agents_online": None, "agents_enrolled": None,
                 "working_now": None, "accepted_today": None,
-                "queue_depths": None, "services_up": None, "network": None}
-    depths = {
-        key[len("pending"):].lower(): _int(value)
-        for key, value in health.items()
-        if key.startswith("pending")
-    }
+                "services_up": None, "network": None}
     identity = health.get("identity")
     chain = identity.get("chainId") if isinstance(identity, Mapping) else None
     services_up = {}
@@ -91,21 +85,9 @@ def health_facts(health: Mapping[str, Any] | None) -> dict[str, Any]:
         "agents_enrolled": _int(health.get("activeEnrollments")),
         "working_now": _int(health.get("workingNow")),
         "accepted_today": _int(health.get("acceptedLastDay")),
-        "queue_depths": depths or None,
         "services_up": services_up,
         "network": network_of(chain),
     }
-
-
-def unfinished_ids(jobs: Sequence[Mapping[str, Any]] | None) -> list[str]:
-    """Ids of jobs still moving — the only details worth fetching."""
-    if not jobs:
-        return []
-    return [
-        job["id"] for job in jobs
-        if isinstance(job.get("id"), str)
-        and job.get("state") not in TERMINAL_STATES
-    ]
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +95,8 @@ def unfinished_ids(jobs: Sequence[Mapping[str, Any]] | None) -> list[str]:
 # ``s`` body and the ``a`` AGENT body read; the v1 folds that used to sit
 # above retired in WP7.
 #
-# Rules of this section: stdlib only; ``now_ts`` injected; every enumeration
+# Rules of this section: stdlib plus the pure ``analytics/surf_swarm_signals``
+# rollups imported above; ``now_ts`` injected; every enumeration
 # open (an unknown state is its own bucket); a value not read is ``None`` and
 # a real zero is ``0``; a non-Mapping where a Mapping is expected is skipped,
 # never raised on.  Every row dict carries exactly the fields

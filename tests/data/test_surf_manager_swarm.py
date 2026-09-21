@@ -266,7 +266,7 @@ async def test_only_one_swarm_sweep_is_ever_in_flight(tmp_path):
 
 async def test_details_are_fetched_only_for_executing_jobs(tmp_path):
     """Plan §1.5: the live tier reads the detail route for ``executing`` jobs
-    only -- not ``blocked`` (the old ``unfinished_ids`` rule) and not the 98
+    only -- not ``blocked`` (the v1 "still moving" rule) and not the 98
     completed ones. ``TIER_SWARM_SCORES`` is marked fetched first so the
     shared call log holds the live tier's work alone."""
     swarm = _FakeSwarm()
@@ -285,7 +285,7 @@ async def test_details_are_fetched_only_for_executing_jobs(tmp_path):
 
 async def test_a_blocked_job_is_not_read_by_the_live_tier(tmp_path):
     """The half of the rule above the corpus cannot show: ``blocked`` was in
-    the old ``unfinished_ids`` set and is not ``executing``."""
+    the v1 "still moving" set and is not ``executing``."""
     jobs = [dict(j) for j in swarm_capture_v2("jobs")["jobs"][:6]]
     jobs[0]["state"] = "blocked"
     jobs[1]["state"] = "executing"

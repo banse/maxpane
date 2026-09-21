@@ -157,11 +157,9 @@ def test_each_v2_row_shape_is_exactly_the_frozen_field_tuple(name):
     """Field order is part of the contract: WP3's fold builds the dicts in
     this order and WP5/WP6/WP6a's tables read them by name."""
     assert SURF_ROW_KEYS[name] == SWARM_V2_ROW_SHAPES[name]
-
-
-def test_every_v2_row_shape_has_unique_fields():
-    for name, fields in SWARM_V2_ROW_SHAPES.items():
-        assert len(fields) == len(set(fields)), name
+    # ...and the module's tuple names no field twice (checked on the module,
+    # not on this test's own literal -- WP0 review residual, closed in WP8).
+    assert len(SURF_ROW_KEYS[name]) == len(set(SURF_ROW_KEYS[name])), name
 
 
 def test_every_signature_key_is_a_swarm_key():

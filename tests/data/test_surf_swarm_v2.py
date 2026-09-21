@@ -828,8 +828,8 @@ def test_seat_feedback_rows_for_a_seat_without_feedback_is_an_empty_list_not_non
 
 
 # ---------------------------------------------------------------------------
-# the pre-v2 folds that survived WP7 (health_facts, unfinished_ids,
-# network_of), ported off the retired 2026-09-16 captures onto the corpus
+# the pre-v2 folds that survived WP7 (health_facts, network_of), ported off
+# the retired 2026-09-16 captures onto the corpus
 # ---------------------------------------------------------------------------
 
 
@@ -854,17 +854,6 @@ def test_health_facts_with_partial_payload_returns_none_for_missing_services():
     facts = fold.health_facts(partial)
     assert facts["services_up"] == {"verifier": True, "publisher": None, "deployer": False}
     assert facts["agents_online"] == 2 and facts["working_now"] is None
-
-
-def test_unfinished_ids_are_exactly_the_non_terminal_jobs(jobs):
-    ids = fold.unfinished_ids(jobs)
-    # jobs.json: 98 completed, 2 executing -- the two executing ids by hand.
-    assert sorted(ids) == sorted([EXECUTING_WITH_DETAIL, EXECUTING_NO_DETAIL])
-    assert fold.TERMINAL_STATES == frozenset({"completed", "cancelled"})
-    hand = [{"id": "a", "state": "blocked"}, {"id": "b", "state": "cancelled"},
-            {"id": 7, "state": "executing"}, {"state": "waiting"}]
-    assert fold.unfinished_ids(hand) == ["a"]
-    assert fold.unfinished_ids(None) == [] and fold.unfinished_ids([]) == []
 
 
 def test_network_of_is_an_allowlist():

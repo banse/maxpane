@@ -900,9 +900,10 @@ def _swarm_gate_counters(health: dict[str, Any]) -> dict[str, Any]:
 def _swarm_executing_ids(jobs: Any) -> list[str]:
     """The ids the live tier reads details for: state ``executing`` only.
 
-    Plan §1.5 -- not every non-terminal state (``sw.unfinished_ids``, the
-    rule the FIELD panel needed before WP7 retired it). A job without a
-    string id is skipped; there is nothing to ask the detail route for.
+    Plan §1.5 -- not every non-terminal state (the v1 "still moving" rule
+    the FIELD panel needed; WP7 retired the panel, WP8's fix wave the
+    helper). A job without a string id is skipped; there is nothing to ask
+    the detail route for.
     """
     if not isinstance(jobs, list):
         return []
@@ -5429,10 +5430,11 @@ class SurfManager:
         was. ``sw.merge_seen`` does the work (a new map; newer stamps win;
         pruned past :data:`SWARM_JOBS_SEEN_MAX_AGE_S`; the newest
         :data:`SWARM_JOBS_SEEN_CAP` kept -- both read off the module at call
-        time). The map is **stored only when it changed**: ``store_last_good``
-        sets the cache's ``_dirty`` flag (F7, ``surf_cache.save``), and the
-        live tier ticks every 60 s over a list that mostly has not moved, so
-        storing an equal map would rewrite the whole cache file for nothing.
+        time). The map is **stored only when it changed**: the live slot is
+        stored every tick anyway (``store_last_good`` sets ``_dirty``
+        unconditionally, so this skip saves no disk write -- WP4 review,
+        2026-09-21); what it saves is a bumped ``ts`` on identical content,
+        which would otherwise make an unchanged seen map look freshly read.
         """
         prior_entry = self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN)
         prior = prior_entry.payload if prior_entry is not None else None
