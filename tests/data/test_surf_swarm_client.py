@@ -386,3 +386,234 @@ async def test_a_deprecated_base_url_becomes_a_one_host_pool():
         assert await client.fetch_health() is None
 
     assert _hosts(seen) == ["example.invalid"], "one host, asked once, no rotation into the default pool"
+
+
+# ---------------------------------------------------------------------------
+# WP1a (docs/surf_agent_seats_plan.md): ``fetch_seat`` reads GET /seats/{token}.
+# A 404 whose body is ``unknown_seat`` is an answer (a real negative, never
+# paired); any other 404 is a failed read and rotates like every other error.
+# ---------------------------------------------------------------------------
+
+from types import MappingProxyType  # noqa: E402
+
+from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT  # noqa: E402
+from tests.surf_swarm_fixtures import swarm_seat_capture  # noqa: E402
+
+
+def _recording(seen: list[httpx.Request], respond):
+    def handler(request):
+        seen.append(request)
+        return respond(request)
+    return handler
+
+
+async def test_fetch_seat_200_returns_the_seat_dict_from_the_one_path():
+    body = swarm_seat_capture("seat_420")
+    seen: list[httpx.Request] = []
+
+    async with _client(_recording(seen, lambda r: httpx.Response(200, json=body))) as client:
+        seat = await client.fetch_seat(420)
+
+    # The host serves ``tokenId`` as a decimal string ("420"), not an int.
+    assert seat == body and seat["tokenId"] == "420"
+    assert [r.url.path for r in seen] == ["/seats/420"]
+    assert _hosts(seen) == [FIRST_HOST]
+    assert seen[0].method == "GET" and seen[0].url.query == b""
+
+
+async def test_fetch_seat_unknown_seat_404_is_the_normalised_answer_and_does_not_rotate():
+    body = swarm_seat_capture("unknown_seat_404")
+    assert body["error"] == "unknown_seat", "the committed fixture is the measured 404 body"
+    seen: list[httpx.Request] = []
+
+    async with _client(_recording(seen, lambda r: httpx.Response(404, json=body))) as client:
+        result = await client.fetch_seat(99999)
+
+    assert result == {"error": "unknown_seat"}
+    assert result is not None, "a real negative is distinct from a failed read"
+    assert _hosts(seen) == [FIRST_HOST], "unknown_seat is an answer: no second host is asked"
+
+
+async def test_fetch_seat_unknown_seat_result_is_a_fresh_copy_and_the_constant_is_immutable():
+    body = swarm_seat_capture("unknown_seat_404")
+
+    async with _client(lambda r: httpx.Response(404, json=body)) as client:
+        first = await client.fetch_seat(7)
+        first["error"] = "tampered"
+        first["extra"] = 1
+        second = await client.fetch_seat(7)
+
+    assert second == {"error": "unknown_seat"}, "a caller's edit never leaks into the next result"
+    assert second is not first
+    assert isinstance(UNKNOWN_SEAT, MappingProxyType)
+    assert dict(UNKNOWN_SEAT) == {"error": "unknown_seat"}
+    with pytest.raises(TypeError):
+        UNKNOWN_SEAT["error"] = "x"  # type: ignore[index]
+    assert second == UNKNOWN_SEAT
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param(lambda: httpx.Response(404, text="<html><body>Not Found</body></html>"), id="html-404"),
+        pytest.param(lambda: httpx.Response(404, json={"error": "not_found"}), id="other-error-404"),
+        pytest.param(lambda: httpx.Response(404, json=["unknown_seat"]), id="list-404"),
+        pytest.param(lambda: httpx.Response(404, json={"detail": "no device has paired with that token"}),
+                     id="no-error-key-404"),
+    ],
+)
+async def test_fetch_seat_a_removed_route_404_rotates_and_is_none_never_never_paired(response):
+    seen: list[httpx.Request] = []
+
+    async with _client(_recording(seen, lambda r: response())) as client:
+        assert await client.fetch_seat(420) is None
+
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST], "a non-unknown_seat 404 rotates through the pool"
+
+
+async def test_fetch_seat_a_removed_route_on_host_one_is_answered_by_host_two():
+    body = swarm_seat_capture("seat_516")
+    seen: list[httpx.Request] = []
+
+    def respond(request):
+        if request.url.host == FIRST_HOST:
+            return httpx.Response(404, text="Cannot GET /seats/516")
+        return httpx.Response(200, json=body)
+
+    async with _client(_recording(seen, respond)) as client:
+        assert await client.fetch_seat(516) == body
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_fetch_seat_400_invalid_request_rotates_then_is_none():
+    body = swarm_seat_capture("invalid_request_400")
+    seen: list[httpx.Request] = []
+
+    async with _client(_recording(seen, lambda r: httpx.Response(400, json=body))) as client:
+        assert await client.fetch_seat(1) is None
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_fetch_seat_400_on_host_one_rotates_to_host_two():
+    body = swarm_seat_capture("seat_1649")
+    seen: list[httpx.Request] = []
+
+    def respond(request):
+        if request.url.host == FIRST_HOST:
+            return httpx.Response(400, json=swarm_seat_capture("invalid_request_400"))
+        return httpx.Response(200, json=body)
+
+    async with _client(_recording(seen, respond)) as client:
+        assert await client.fetch_seat(1649) == body
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+@pytest.mark.parametrize(
+    "respond",
+    [
+        pytest.param(lambda r: httpx.Response(500, json={"error": "internal_error"}), id="500"),
+        pytest.param(lambda r: httpx.Response(302, headers={"Location": "https://evil.example/"}), id="302"),
+        pytest.param(lambda r: httpx.Response(200, text="<html>maintenance</html>"), id="non-json-200"),
+    ],
+)
+async def test_fetch_seat_other_non_200_or_non_json_rotates_then_is_none(respond):
+    seen: list[httpx.Request] = []
+
+    async with _client(_recording(seen, respond)) as client:
+        assert await client.fetch_seat(0) is None
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_fetch_seat_a_json_200_that_is_not_an_object_is_none():
+    """Parsed JSON is a read: like ``fetch_version``, a non-object body is ``None``, not rotated."""
+    seen: list[httpx.Request] = []
+    body = [swarm_seat_capture("seat_0")]
+
+    async with _client(_recording(seen, lambda r: httpx.Response(200, json=body))) as client:
+        assert await client.fetch_seat(0) is None
+    assert _hosts(seen) == [FIRST_HOST]
+
+
+async def test_fetch_seat_transport_error_rotates_then_is_none():
+    seen: list[httpx.Request] = []
+
+    def respond(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    async with _client(_recording(seen, respond)) as client:
+        assert await client.fetch_seat(420) is None
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_fetch_seat_unknown_seat_on_host_two_after_host_one_failed_is_the_answer():
+    seen: list[httpx.Request] = []
+
+    def respond(request):
+        if request.url.host == FIRST_HOST:
+            return httpx.Response(503, text="upstream unavailable")
+        return httpx.Response(404, json=swarm_seat_capture("unknown_seat_404"))
+
+    async with _client(_recording(seen, respond)) as client:
+        assert await client.fetch_seat(5) == {"error": "unknown_seat"}
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_fetch_seat_paces_once_per_request_including_the_unknown_seat_answer():
+    delays: list[float] = []
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+
+    def respond(request):
+        if request.url.path == "/seats/420":
+            return httpx.Response(200, json=swarm_seat_capture("seat_420"))
+        return httpx.Response(404, json=swarm_seat_capture("unknown_seat_404"))
+
+    async with _client(respond, sleep=fake_sleep) as client:
+        await client.fetch_seat(420)
+        await client.fetch_seat(99999)
+
+    assert len(delays) == 2 and all(d > 0 for d in delays)
+
+
+async def test_other_getters_still_rotate_on_an_unknown_seat_shaped_404():
+    """The 404-answer path is opt-in: ``fetch_job`` keeps treating any 404 as a failed read."""
+    seen: list[httpx.Request] = []
+    body = swarm_seat_capture("unknown_seat_404")
+
+    async with _client(_recording(seen, lambda r: httpx.Response(404, json=body))) as client:
+        assert await client.fetch_job("abc") is None
+        assert await client.fetch_health() is None
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST, FIRST_HOST, SECOND_HOST]
+
+
+@pytest.mark.parametrize(
+    "token",
+    [True, False, -1, -420, "420", "1?x", "", None, 4.0, 420.5, b"420"],
+    ids=repr,
+)
+async def test_fetch_seat_refuses_a_token_that_is_not_a_non_negative_int_with_zero_requests(token):
+    seen: list[httpx.Request] = []
+
+    def handler(request):  # pragma: no cover - must never run
+        seen.append(request)
+        return httpx.Response(200, json=swarm_seat_capture("seat_1649"))
+
+    async with _client(handler) as client:
+        assert await client.fetch_seat(token) is None  # type: ignore[arg-type]
+    assert seen == [], f"{token!r} issued a request"
+
+
+async def test_fetch_seat_zero_is_a_valid_token():
+    seen: list[httpx.Request] = []
+    body = swarm_seat_capture("seat_0")
+
+    async with _client(_recording(seen, lambda r: httpx.Response(200, json=body))) as client:
+        assert await client.fetch_seat(0) == body
+    assert [r.url.path for r in seen] == ["/seats/0"]
+
+
+async def test_fetch_seat_never_reaches_the_network_under_the_raising_transport():
+    async with _client(_no_network) as client:
+        with pytest.raises(AssertionError):
+            await client.fetch_seat(420)

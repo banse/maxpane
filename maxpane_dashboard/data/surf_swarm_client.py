@@ -11,12 +11,21 @@ on ``/jobs`` are ignored upstream and would imply a page that does not exist
 one, and the one getter that interpolates caller text into a path,
 :meth:`SwarmClient.fetch_job`, refuses an id that is not a plain path segment
 and returns ``None`` -- so the contract above holds at every public getter.
+:meth:`SwarmClient.fetch_seat` formats an ``int`` (``{token:d}``) and refuses
+anything else before any request.
+
+One getter has a third outcome besides a body and ``None``:
+``fetch_seat`` returns a fresh copy of :data:`UNKNOWN_SEAT` for the host's
+``404 {"error": "unknown_seat"}`` -- a seat never paired, a real negative
+(``docs/surf_agent_seats_spec.md`` §2, §5).
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 import httpx
@@ -39,7 +48,7 @@ def _is_path_segment(value: object) -> bool:
 
 __all__ = [
     "SWARM_API", "SWARM_API_HOSTS", "SWARM_INTER_CALL_DELAY", "SWARM_REQUEST_TIMEOUT",
-    "SwarmClient",
+    "SwarmClient", "UNKNOWN_SEAT",
 ]
 
 #: The swarm's control plane, as a pool.  Measured 2026-09-21 (plan §0 R1):
@@ -68,10 +77,29 @@ SWARM_REQUEST_TIMEOUT = 15.0
 #: Paid once per request, not once per host attempt.
 SWARM_INTER_CALL_DELAY = 0.12
 
+#: ``fetch_seat``'s normalised answer for a token no device has paired with:
+#: the host's ``404 {"error": "unknown_seat", "detail": ...}``, reduced to its
+#: error code.  Distinct from ``None`` (a failed read).  Read-only by
+#: construction -- a ``MappingProxyType``, so no caller can alter the module's
+#: copy -- and ``fetch_seat`` returns a fresh ``dict`` each time, so a caller
+#: may alter its own result.  Compare with ``==`` (a proxy equals its dict).
+UNKNOWN_SEAT: MappingProxyType[str, str] = MappingProxyType({"error": "unknown_seat"})
+
+
+@dataclass(frozen=True)
+class _Answered404:
+    """A 404 whose body the caller's predicate accepted as an answer."""
+
+    body: Any
+
+
+def _is_unknown_seat(body: object) -> bool:
+    return isinstance(body, dict) and body.get("error") == UNKNOWN_SEAT["error"]
+
 
 class SwarmClient(OwnedHttpClient):
-    """Reads ``/health``, ``/jobs``, ``/jobs/{id}``, ``/launches``, ``/sites``,
-    ``/skills``, ``/version``."""
+    """Reads ``/health``, ``/jobs``, ``/jobs/{id}``, ``/launches``,
+    ``/seats/{token}``, ``/sites``, ``/skills``, ``/version``."""
 
     def __init__(
         self,
@@ -103,12 +131,23 @@ class SwarmClient(OwnedHttpClient):
         self._sleep = sleep or asyncio.sleep
         self._last_call: float = 0.0
 
-    async def _get(self, path: str, *, raw: bool = False) -> Any:
+    async def _get(
+        self,
+        path: str,
+        *,
+        raw: bool = False,
+        answers_404: Callable[[Any], bool] | None = None,
+    ) -> Any:
         """One GET, tried once per host in pool order.
 
         A transport error, a non-200 or a non-JSON body rotates to the next
         host for **this request**; the pool itself never changes.  Every host
         failing is ``None`` — never a partial value.
+
+        ``answers_404`` (opt-in, JSON reads only): a 404 whose JSON body the
+        predicate accepts is an *answer*, returned as ``_Answered404(body)``
+        with no further host asked.  Any other 404 -- a removed route, an HTML
+        page -- rotates like every other non-200.
         """
         if "?" in path:
             raise ValueError(f"the swarm API takes no query parameters: {path!r}")
@@ -119,6 +158,13 @@ class SwarmClient(OwnedHttpClient):
             except (httpx.HTTPError, OSError) as exc:
                 logger.debug("swarm GET %s%s failed: %s", host, path, exc)
                 continue
+            if response.status_code == 404 and answers_404 is not None and not raw:
+                try:
+                    answer = response.json()
+                except ValueError:
+                    answer = None
+                if answers_404(answer):
+                    return _Answered404(answer)
             if response.status_code != 200:
                 logger.debug("swarm GET %s%s -> %s", host, path, response.status_code)
                 continue
@@ -182,3 +228,22 @@ class SwarmClient(OwnedHttpClient):
             logger.debug("swarm fetch_job refused an id that is no path segment: %r", job_id)
             return None
         return await self._dict(f"/jobs/{job_id}")
+
+    async def fetch_seat(self, token: int) -> dict[str, Any] | None:
+        """``GET /seats/{token}``: the seat's dict, a fresh copy of
+        :data:`UNKNOWN_SEAT`, or ``None``.
+
+        ``UNKNOWN_SEAT`` is the host's ``404 unknown_seat`` -- a token never
+        paired, an answer: no other host is asked.  Any other 404 is a failed
+        read and rotates, so a removed route never reads as "never paired".
+        A token that is not an ``int``, is a ``bool`` or is negative is
+        refused before any request; the path is formatted from the ``int``
+        (``{token:d}``), so caller text never reaches it.
+        """
+        if isinstance(token, bool) or not isinstance(token, int) or token < 0:
+            logger.debug("swarm fetch_seat refused a token that is no non-negative int: %r", token)
+            return None
+        body = await self._get(f"/seats/{token:d}", answers_404=_is_unknown_seat)
+        if isinstance(body, _Answered404):
+            return dict(UNKNOWN_SEAT)
+        return body if isinstance(body, dict) else None
