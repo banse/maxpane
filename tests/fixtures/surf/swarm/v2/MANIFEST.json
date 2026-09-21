@@ -1,0 +1,560 @@
+{
+  "captured_at": "2026-09-21T00:08:51Z",
+  "criteria": {
+    "failure_reason": {
+      "job_ids": [
+        "4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6",
+        "9c6543f5-e642-4df8-9d5b-d7e7ab947f96"
+      ],
+      "met": true
+    },
+    "node_working": {
+      "job_ids": [
+        "f046299c-d94e-4760-9e3c-c1e2d3a1a3b2"
+      ],
+      "met": true
+    },
+    "review_entries": {
+      "job_ids": [
+        "1a5b1255-119c-48ba-89c7-eb6f0dbf787f",
+        "1c47e615-c14e-4eac-bec5-6b0229c18e78",
+        "28276c79-4999-4533-9379-71d53b5ce5b8",
+        "3dd1eb8e-7773-4404-a2fb-b44cecb5827a",
+        "416e1862-53a2-4f3d-bfd8-e0475ab52ac9",
+        "42e41c47-b38d-42f7-8409-27db3c8a299c",
+        "4859f19e-9b25-4979-9fa9-c589a220caa7",
+        "4ac228e8-88b3-4bdc-8782-46cdd00f9fa0",
+        "4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6",
+        "4fd3b96e-4e24-48f8-b28e-46adf6434a95",
+        "5d9a52d3-776f-4d22-ac89-a7313ac9f600",
+        "7018907b-7466-4326-a602-e322913db496",
+        "71cd53fa-a081-4b1d-939d-6be2c6d811ad",
+        "76d4c206-6ea7-4afa-9dc9-b2f96a4f43ab",
+        "79513878-beb1-4c0c-8720-5b68fb670557",
+        "7cdfacfa-cf28-43f4-bf80-ba537ce8b9be",
+        "7f7ba3bb-8ee8-4996-abe6-5cfddf90bb98",
+        "92b87fce-7818-4c1e-96ce-5f131c3f382d",
+        "9dbfeb65-a7b5-4dbd-9b89-5fd9d0b42974",
+        "ad7bebb8-fd1a-4268-b831-1c253a85ae4c",
+        "b3bea514-dfcb-40ef-a1ec-ce8ef5f96323",
+        "b6bc671c-5130-4f81-810f-8e2346a92a21",
+        "da13bfd0-d3b8-41f9-bb1d-a5cf18965199",
+        "e645958e-4ff8-449a-8ceb-afd6dde013ef",
+        "ef0b2b66-839b-488e-8b74-4ef7f9352623",
+        "f278d3f2-7b02-42ed-a459-ab753204b0ad"
+      ],
+      "met": true
+    },
+    "seat_in_several_jobs": {
+      "job_ids": [
+        "1a5b1255-119c-48ba-89c7-eb6f0dbf787f",
+        "1c47e615-c14e-4eac-bec5-6b0229c18e78",
+        "28276c79-4999-4533-9379-71d53b5ce5b8",
+        "416e1862-53a2-4f3d-bfd8-e0475ab52ac9",
+        "42e41c47-b38d-42f7-8409-27db3c8a299c",
+        "4859f19e-9b25-4979-9fa9-c589a220caa7",
+        "4ac228e8-88b3-4bdc-8782-46cdd00f9fa0",
+        "4fd3b96e-4e24-48f8-b28e-46adf6434a95",
+        "5d9a52d3-776f-4d22-ac89-a7313ac9f600",
+        "71cd53fa-a081-4b1d-939d-6be2c6d811ad",
+        "76d4c206-6ea7-4afa-9dc9-b2f96a4f43ab",
+        "79513878-beb1-4c0c-8720-5b68fb670557",
+        "7cdfacfa-cf28-43f4-bf80-ba537ce8b9be",
+        "7f7ba3bb-8ee8-4996-abe6-5cfddf90bb98",
+        "92b87fce-7818-4c1e-96ce-5f131c3f382d",
+        "9dbfeb65-a7b5-4dbd-9b89-5fd9d0b42974",
+        "ad7bebb8-fd1a-4268-b831-1c253a85ae4c",
+        "b6bc671c-5130-4f81-810f-8e2346a92a21",
+        "da13bfd0-d3b8-41f9-bb1d-a5cf18965199",
+        "e645958e-4ff8-449a-8ceb-afd6dde013ef",
+        "ef0b2b66-839b-488e-8b74-4ef7f9352623",
+        "f278d3f2-7b02-42ed-a459-ab753204b0ad"
+      ],
+      "met": true
+    }
+  },
+  "details": {
+    "1a5b1255-119c-48ba-89c7-eb6f0dbf787f": {
+      "bytes": 2204,
+      "captured_at": "2026-09-21T00:08:47Z",
+      "endpoint": "/jobs/1a5b1255-119c-48ba-89c7-eb6f0dbf787f",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1548"
+      ],
+      "state": "completed"
+    },
+    "1c47e615-c14e-4eac-bec5-6b0229c18e78": {
+      "bytes": 3625,
+      "captured_at": "2026-09-21T00:08:39Z",
+      "endpoint": "/jobs/1c47e615-c14e-4eac-bec5-6b0229c18e78",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "0",
+        "1599",
+        "2"
+      ],
+      "state": "completed"
+    },
+    "28276c79-4999-4533-9379-71d53b5ce5b8": {
+      "bytes": 2116,
+      "captured_at": "2026-09-21T00:08:45Z",
+      "endpoint": "/jobs/28276c79-4999-4533-9379-71d53b5ce5b8",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "617"
+      ],
+      "state": "completed"
+    },
+    "3dd1eb8e-7773-4404-a2fb-b44cecb5827a": {
+      "bytes": 2130,
+      "captured_at": "2026-09-21T00:08:44Z",
+      "endpoint": "/jobs/3dd1eb8e-7773-4404-a2fb-b44cecb5827a",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1731"
+      ],
+      "state": "completed"
+    },
+    "416e1862-53a2-4f3d-bfd8-e0475ab52ac9": {
+      "bytes": 3626,
+      "captured_at": "2026-09-21T00:08:39Z",
+      "endpoint": "/jobs/416e1862-53a2-4f3d-bfd8-e0475ab52ac9",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "0",
+        "1242",
+        "354"
+      ],
+      "state": "completed"
+    },
+    "42e41c47-b38d-42f7-8409-27db3c8a299c": {
+      "bytes": 2130,
+      "captured_at": "2026-09-21T00:08:49Z",
+      "endpoint": "/jobs/42e41c47-b38d-42f7-8409-27db3c8a299c",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "12"
+      ],
+      "state": "completed"
+    },
+    "4859f19e-9b25-4979-9fa9-c589a220caa7": {
+      "bytes": 2400,
+      "captured_at": "2026-09-21T00:08:47Z",
+      "endpoint": "/jobs/4859f19e-9b25-4979-9fa9-c589a220caa7",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1120"
+      ],
+      "state": "completed"
+    },
+    "4ac228e8-88b3-4bdc-8782-46cdd00f9fa0": {
+      "bytes": 3669,
+      "captured_at": "2026-09-21T00:08:42Z",
+      "endpoint": "/jobs/4ac228e8-88b3-4bdc-8782-46cdd00f9fa0",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "0",
+        "1599",
+        "579"
+      ],
+      "state": "completed"
+    },
+    "4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6": {
+      "bytes": 3120,
+      "captured_at": "2026-09-21T00:08:51Z",
+      "endpoint": "/jobs/4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6",
+      "failure_reasons": 1,
+      "has_review_entries": true,
+      "node_states": [
+        "failed",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [],
+      "state": "cancelled"
+    },
+    "4fd3b96e-4e24-48f8-b28e-46adf6434a95": {
+      "bytes": 3690,
+      "captured_at": "2026-09-21T00:08:42Z",
+      "endpoint": "/jobs/4fd3b96e-4e24-48f8-b28e-46adf6434a95",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "1242",
+        "1606",
+        "617"
+      ],
+      "state": "completed"
+    },
+    "5d9a52d3-776f-4d22-ac89-a7313ac9f600": {
+      "bytes": 2202,
+      "captured_at": "2026-09-21T00:08:46Z",
+      "endpoint": "/jobs/5d9a52d3-776f-4d22-ac89-a7313ac9f600",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1120"
+      ],
+      "state": "completed"
+    },
+    "7018907b-7466-4326-a602-e322913db496": {
+      "bytes": 2219,
+      "captured_at": "2026-09-21T00:08:51Z",
+      "endpoint": "/jobs/7018907b-7466-4326-a602-e322913db496",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [],
+      "state": "completed"
+    },
+    "71cd53fa-a081-4b1d-939d-6be2c6d811ad": {
+      "bytes": 2190,
+      "captured_at": "2026-09-21T00:08:45Z",
+      "endpoint": "/jobs/71cd53fa-a081-4b1d-939d-6be2c6d811ad",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1548"
+      ],
+      "state": "completed"
+    },
+    "76d4c206-6ea7-4afa-9dc9-b2f96a4f43ab": {
+      "bytes": 2204,
+      "captured_at": "2026-09-21T00:08:49Z",
+      "endpoint": "/jobs/76d4c206-6ea7-4afa-9dc9-b2f96a4f43ab",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1606"
+      ],
+      "state": "completed"
+    },
+    "79513878-beb1-4c0c-8720-5b68fb670557": {
+      "bytes": 3595,
+      "captured_at": "2026-09-21T00:08:41Z",
+      "endpoint": "/jobs/79513878-beb1-4c0c-8720-5b68fb670557",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "0",
+        "1120",
+        "579"
+      ],
+      "state": "completed"
+    },
+    "7cdfacfa-cf28-43f4-bf80-ba537ce8b9be": {
+      "bytes": 2125,
+      "captured_at": "2026-09-21T00:08:46Z",
+      "endpoint": "/jobs/7cdfacfa-cf28-43f4-bf80-ba537ce8b9be",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1"
+      ],
+      "state": "completed"
+    },
+    "7f7ba3bb-8ee8-4996-abe6-5cfddf90bb98": {
+      "bytes": 2116,
+      "captured_at": "2026-09-21T00:08:48Z",
+      "endpoint": "/jobs/7f7ba3bb-8ee8-4996-abe6-5cfddf90bb98",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "12"
+      ],
+      "state": "completed"
+    },
+    "92b87fce-7818-4c1e-96ce-5f131c3f382d": {
+      "bytes": 3618,
+      "captured_at": "2026-09-21T00:08:40Z",
+      "endpoint": "/jobs/92b87fce-7818-4c1e-96ce-5f131c3f382d",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "0",
+        "1",
+        "47"
+      ],
+      "state": "completed"
+    },
+    "9c6543f5-e642-4df8-9d5b-d7e7ab947f96": {
+      "bytes": 2338,
+      "captured_at": "2026-09-21T00:08:50Z",
+      "endpoint": "/jobs/9c6543f5-e642-4df8-9d5b-d7e7ab947f96",
+      "failure_reasons": 1,
+      "has_review_entries": false,
+      "node_states": [
+        "waiting",
+        "failed"
+      ],
+      "seats": [],
+      "state": "blocked"
+    },
+    "9dbfeb65-a7b5-4dbd-9b89-5fd9d0b42974": {
+      "bytes": 3605,
+      "captured_at": "2026-09-21T00:08:40Z",
+      "endpoint": "/jobs/9dbfeb65-a7b5-4dbd-9b89-5fd9d0b42974",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "0",
+        "1548"
+      ],
+      "state": "completed"
+    },
+    "ad7bebb8-fd1a-4268-b831-1c253a85ae4c": {
+      "bytes": 3686,
+      "captured_at": "2026-09-21T00:08:43Z",
+      "endpoint": "/jobs/ad7bebb8-fd1a-4268-b831-1c253a85ae4c",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "1120",
+        "1548",
+        "1599"
+      ],
+      "state": "completed"
+    },
+    "b3bea514-dfcb-40ef-a1ec-ce8ef5f96323": {
+      "bytes": 2114,
+      "captured_at": "2026-09-21T00:08:50Z",
+      "endpoint": "/jobs/b3bea514-dfcb-40ef-a1ec-ce8ef5f96323",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1299"
+      ],
+      "state": "completed"
+    },
+    "b6bc671c-5130-4f81-810f-8e2346a92a21": {
+      "bytes": 2118,
+      "captured_at": "2026-09-21T00:08:45Z",
+      "endpoint": "/jobs/b6bc671c-5130-4f81-810f-8e2346a92a21",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "1548"
+      ],
+      "state": "completed"
+    },
+    "da13bfd0-d3b8-41f9-bb1d-a5cf18965199": {
+      "bytes": 2202,
+      "captured_at": "2026-09-21T00:08:48Z",
+      "endpoint": "/jobs/da13bfd0-d3b8-41f9-bb1d-a5cf18965199",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "579"
+      ],
+      "state": "completed"
+    },
+    "e645958e-4ff8-449a-8ceb-afd6dde013ef": {
+      "bytes": 3619,
+      "captured_at": "2026-09-21T00:08:41Z",
+      "endpoint": "/jobs/e645958e-4ff8-449a-8ceb-afd6dde013ef",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "0",
+        "1606",
+        "579"
+      ],
+      "state": "completed"
+    },
+    "ef0b2b66-839b-488e-8b74-4ef7f9352623": {
+      "bytes": 2206,
+      "captured_at": "2026-09-21T00:08:49Z",
+      "endpoint": "/jobs/ef0b2b66-839b-488e-8b74-4ef7f9352623",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted"
+      ],
+      "seats": [
+        "0"
+      ],
+      "state": "completed"
+    },
+    "f046299c-d94e-4760-9e3c-c1e2d3a1a3b2": {
+      "bytes": 1314,
+      "captured_at": "2026-09-21T00:08:44Z",
+      "endpoint": "/jobs/f046299c-d94e-4760-9e3c-c1e2d3a1a3b2",
+      "failure_reasons": 0,
+      "has_review_entries": false,
+      "node_states": [
+        "working"
+      ],
+      "seats": [
+        "463"
+      ],
+      "state": "executing"
+    },
+    "f278d3f2-7b02-42ed-a459-ab753204b0ad": {
+      "bytes": 3573,
+      "captured_at": "2026-09-21T00:08:42Z",
+      "endpoint": "/jobs/f278d3f2-7b02-42ed-a459-ab753204b0ad",
+      "failure_reasons": 0,
+      "has_review_entries": true,
+      "node_states": [
+        "accepted",
+        "accepted",
+        "accepted"
+      ],
+      "seats": [
+        "1548",
+        "1606",
+        "47"
+      ],
+      "state": "completed"
+    }
+  },
+  "details_search": {
+    "newest_from_jobs": 25,
+    "old_manifest_ids_present": [
+      "4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6",
+      "7018907b-7466-4326-a602-e322913db496",
+      "9c6543f5-e642-4df8-9d5b-d7e7ab947f96"
+    ],
+    "old_manifest_ids_probed": [
+      "9c6543f5-e642-4df8-9d5b-d7e7ab947f96",
+      "7018907b-7466-4326-a602-e322913db496",
+      "4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6"
+    ]
+  },
+  "files": {
+    "health": {
+      "bytes": 583,
+      "captured_at": "2026-09-21T00:08:36Z",
+      "endpoint": "/health"
+    },
+    "jobs": {
+      "bytes": 42984,
+      "captured_at": "2026-09-21T00:08:37Z",
+      "endpoint": "/jobs"
+    },
+    "launches": {
+      "bytes": 23628,
+      "captured_at": "2026-09-21T00:08:38Z",
+      "endpoint": "/launches"
+    },
+    "sites": {
+      "bytes": 3453,
+      "captured_at": "2026-09-21T00:08:39Z",
+      "endpoint": "/sites"
+    },
+    "skills": {
+      "bytes": 13016,
+      "captured_at": "2026-09-21T00:08:38Z",
+      "endpoint": "/skills"
+    },
+    "version": {
+      "bytes": 195,
+      "captured_at": "2026-09-21T00:08:37Z",
+      "endpoint": "/version"
+    }
+  },
+  "hand_made": {
+    "jobs_malformed": "Hand-made from jobs.json[0]: one real job dict, then a list where a dict is expected, then a job whose state is the integer 7 -- the fold must skip both without dropping the real one.",
+    "jobs_unknown_state": "Hand-made from jobs.json[1:3]: two captured jobs with state rewritten to \"quarantined\", a state the vocabulary has never seen -- the fold keeps it as its own bucket.",
+    "skills_null_tier": "Hand-made from skills.json: the 7 live entries whose judge and tier are both null, nothing else; no field was edited."
+  },
+  "host": "https://api.imd.fun",
+  "probed_absent": {},
+  "version": "282e2b1901e00d304aa5beed806ab869d4e81ebb",
+  "version_field": "commit"
+}

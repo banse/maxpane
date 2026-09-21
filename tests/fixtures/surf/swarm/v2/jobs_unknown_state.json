@@ -1,0 +1,36 @@
+{
+  "jobs": [
+    {
+      "id": "416e1862-53a2-4f3d-bfd8-e0475ab52ac9",
+      "state": "quarantined",
+      "template": "shape:chain",
+      "objective": "Build and independently review Two Party Escrow: token Escrow (ESCR) and contract TwoPartyEscrow, where a buyer deposits ESCR naming a seller and a deadline;\u2026",
+      "originalRequest": null,
+      "blockedReason": null,
+      "delivery": {
+        "repoUrl": "https://github.com/Identity-md/launch-61-build-independently-review-two",
+        "pullRequestUrl": null,
+        "commit": "0f55a86b78762f7279d66ecd2ae132cd71408055",
+        "deliveredAt": "2026-09-20T22:45:48.462Z"
+      },
+      "createdAt": "2026-09-20T21:53:16.924Z",
+      "updatedAt": "2026-09-20T22:45:38.762Z"
+    },
+    {
+      "id": "9dbfeb65-a7b5-4dbd-9b89-5fd9d0b42974",
+      "state": "quarantined",
+      "template": "shape:chain",
+      "objective": "Build and independently review Guestbook: token Guest (GUEST) and contract Guestbook, where posting a message of up to 140 bytes costs a fixed one GUEST that\u2026",
+      "originalRequest": null,
+      "blockedReason": null,
+      "delivery": {
+        "repoUrl": "https://github.com/Identity-md/launch-60-build-independently-review-guestbook",
+        "pullRequestUrl": null,
+        "commit": "c7887e35dd9deccd69006b1d37ce0a654f8a994f",
+        "deliveredAt": "2026-09-20T22:45:00.700Z"
+      },
+      "createdAt": "2026-09-20T21:53:16.628Z",
+      "updatedAt": "2026-09-20T22:44:43.656Z"
+    }
+  ]
+}

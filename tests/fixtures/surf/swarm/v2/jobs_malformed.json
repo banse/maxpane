@@ -1,0 +1,29 @@
+{
+  "jobs": [
+    {
+      "id": "1c47e615-c14e-4eac-bec5-6b0229c18e78",
+      "state": "completed",
+      "template": "shape:chain",
+      "objective": "Build and independently review Streaming Payments: token Stream (STRM) and contract StreamingPayments, where a sender opens a stream to a recipient by\u2026",
+      "originalRequest": null,
+      "blockedReason": null,
+      "delivery": {
+        "repoUrl": "https://github.com/Identity-md/launch-62-build-independently-review-streaming",
+        "pullRequestUrl": null,
+        "commit": "192743350ad9bd9b1b0be3f2522147fe142672f0",
+        "deliveredAt": "2026-09-20T22:27:20.345Z"
+      },
+      "createdAt": "2026-09-20T21:53:17.337Z",
+      "updatedAt": "2026-09-20T22:27:13.004Z"
+    },
+    [
+      "not",
+      "a",
+      "dict"
+    ],
+    {
+      "id": "x",
+      "state": 7
+    }
+  ]
+}
