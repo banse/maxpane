@@ -156,6 +156,7 @@ SLOT_POOL4 = "pool4"          # discovery + hook/vault/dripper getters + flow lo
 SLOT_POOL4_STAKERS = "pool4_stakers"  # the sIMD Transfer fold's last-good
 SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
 SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
+SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
 
 SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
@@ -176,6 +177,13 @@ SLOTS: tuple[str, ...] = (
     # read serves last-good behind its own marker, the staker sweep's rule.
     SLOT_SWARM,
     SLOT_SWARM_SCORES,
+    # Not a degraded group either, and not a source's answer: the live tier's
+    # accumulated `job_id -> entry` map (swarm v2 plan §1.5), appended by both
+    # swarm tiers after their own successful list read, so THROUGHPUT's 24 h
+    # figure and a seat's record outlive the minutes-wide `/jobs` window. The
+    # manager caps and prunes it on every fold; a cache file without it loads
+    # unchanged (the fixture round-trip in `tests/data/test_surf_cache.py`).
+    SLOT_SWARM_JOBS_SEEN,
 )
 
 
@@ -1311,6 +1319,7 @@ __all__ = [
     "SLOT_POOL4",
     "SLOT_POOL4_STAKERS",
     "SLOT_SWARM",
+    "SLOT_SWARM_JOBS_SEEN",
     "SLOT_SWARM_SCORES",
     "SurfCache",
     "TIERS",

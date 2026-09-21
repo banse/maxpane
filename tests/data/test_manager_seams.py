@@ -74,6 +74,7 @@ from maxpane_dashboard.data.ocm_client import OCMClient
 from maxpane_dashboard.data.ocm_manager import OCMManager
 from maxpane_dashboard.data.talismans_client import TalismansClient
 from maxpane_dashboard.data.talismans_manager import TalismansManager
+from maxpane_dashboard.data.surf_manager import SurfManager
 from maxpane_dashboard.data.ttt_manager import TTTManager
 
 # The fakes and the key contracts are imported from the manager test files that
@@ -116,6 +117,11 @@ from tests.data.test_ttt_manager import (  # noqa: E402
     FakeClient as _TTTFakeClient,
     FakePrice as _TTTFakePrice,
 )
+from tests.data.test_surf_manager import (  # noqa: E402
+    FakeClock as _SurfFakeClock,
+    FakeSurfClient as _SurfFakeClient,
+)
+from tests.data.test_surf_manager_pool4 import FakePool4Client as _SurfFakePool4Client  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
 
@@ -798,3 +804,47 @@ async def test_a_banned_talismans_log_host_is_refused_at_construction() -> None:
         assert default._log_rpcs == talismans_client_mod._LOG_RPCS
     finally:
         await default.close()
+
+
+async def test_the_surf_seat_env_is_read_at_construction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``surf_manager`` is imported long before this line runs, so a value set
+    here is *after* import by definition (plan A1 "Which seat": read at
+    manager construction, an explicit ``seat=`` winning, never at import and
+    never on a later tick). Move the ``os.environ.get`` into a signature
+    default or into ``_swarm_seat_keys`` and this reddens. The swarm double
+    raises on any call, so the read is provably not a network one."""
+    def _build(**kw: Any) -> SurfManager:
+        return SurfManager(
+            cache_path=tmp_path / "surf_seam.json",
+            client=_SurfFakeClient(),
+            pool4_client=_SurfFakePool4Client(),
+            swarm_client=_NoNetworkClient(),
+            clock=_SurfFakeClock(),
+            **kw,
+        )
+
+    monkeypatch.setenv("MAXPANE_IMD_SEAT", "1548")
+    from_env = _build()
+    try:
+        assert from_env._seat_env == "1548"
+        monkeypatch.delenv("MAXPANE_IMD_SEAT")
+        assert from_env._seat_env == "1548", "the env must be read once, at construction"
+    finally:
+        await from_env.close()
+
+    monkeypatch.setenv("MAXPANE_IMD_SEAT", "1548")
+    explicit = _build(seat="463")
+    try:
+        assert explicit._seat_env == "463", "an explicit argument must beat the environment"
+    finally:
+        await explicit.close()
+
+    monkeypatch.delenv("MAXPANE_IMD_SEAT", raising=False)
+    unset = _build()
+    try:
+        assert unset._seat_env is None
+        assert unset._seat_cursor is None
+    finally:
+        await unset.close()

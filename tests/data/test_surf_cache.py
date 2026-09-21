@@ -222,7 +222,9 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # ninth degraded *group*: `SOURCE_POOL4` ("p4") is the eighth and last
     # name the title row has columns for, so the fold serves last-good behind
     # its own stale marker and folds into `p4` only when it has nothing.
-    assert len(SLOTS) == 11
+    # Plus the swarm's two tier slots and, since WP4 of the swarm v2 plan, the
+    # jobs-seen map both swarm tiers append to (`SLOT_SWARM_JOBS_SEEN`).
+    assert len(SLOTS) == 12
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

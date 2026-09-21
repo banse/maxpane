@@ -114,6 +114,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import os
 import re
 import time
 from typing import Any
@@ -127,6 +128,11 @@ from maxpane_dashboard.analytics.surf_signals import (
     classify_channel_tx,
     decode_utf8_calldata,
     parity_pct,
+)
+from maxpane_dashboard.analytics.surf_swarm_signals import (
+    launch_summary,
+    seat_summary,
+    skill_summary,
 )
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 from maxpane_dashboard.data import surf_pool4 as P
@@ -162,6 +168,7 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_POOL4,
     SLOT_POOL4_STAKERS,
     SLOT_SWARM,
+    SLOT_SWARM_JOBS_SEEN,
     SLOT_SWARM_SCORES,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
@@ -837,12 +844,113 @@ SWARM_STALE_AFTER_S = 1860.0
 #: `/health` counter moved, so a silent list change cannot age forever.
 SWARM_LIST_CEILING_S = 300.0
 
-#: The `/health` fields whose movement means the job list changed.
-_SWARM_COUNTER_KEYS = (
+#: The non-``pending*`` `/health` fields whose movement means the job list
+#: changed. The gate itself is an **open set** (swarm v2 plan §1.1, the
+#: ``swarm_queue_total`` row): :func:`_swarm_gate_counters` compares these
+#: four plus every field whose name starts with ``pending`` -- so a counter
+#: the host adds later moves the gate the day it appears. ``pendingOracle``
+#: arrived between the 2026-09-16 and 2026-09-21 captures and the closed
+#: tuple this replaced never saw it. Never list a ``pending*`` name here.
+_SWARM_GATE_COUNTERS = (
     "connectedDaemons", "activeEnrollments", "workingNow", "acceptedLastDay",
-    "pendingVerification", "pendingAttestation", "pendingDeployment",
-    "pendingDelivery", "pendingFeedback", "pendingFuzz", "pendingSites",
 )
+
+#: Most entries :data:`SLOT_SWARM_JOBS_SEEN` keeps, newest first by
+#: ``updated_ts`` (swarm v2 plan §1.5, A1). Re-costed on the 2026-09-21 v2
+#: corpus **with the node summaries, ``key`` included** (WP3 review): one
+#: ``sw.seen_entry`` measures 122 bytes with no detail read, 322 with one
+#: node, 534 with two and 732 with three (``len(json.dumps(entry))``); a
+#: slot item -- the 38-byte job-id key plus a two-node entry -- is 576 bytes,
+#: and the 25 corpus jobs that have a detail average 1.82 nodes and 535 bytes
+#: an item. At the cap the slot is therefore ~2.7 MB (2.9 MB if every job
+#: had two nodes) inside ``~/.maxpane/surf_cache.json`` and about 9,000 node
+#: summaries -- well above the plan's "~1 MB", which costed the 122-byte job
+#: tuple alone. Rate: the 100-job list spanned 13.5 minutes on 2026-09-20
+#: (a ~440 jobs/h burst) while ``/health.acceptedLastDay`` read 1189 (~50/h
+#: over the day); at the daily rate the 48 h age bound below binds first at
+#: ~2,400 entries, and only a burst sustained for ~11 h fills the cap -- in
+#: which case ``completed_within`` reads ``None`` ("accumulating") rather
+#: than an undercounted number, because the slot's oldest stamp moves with
+#: the cap.
+SWARM_JOBS_SEEN_CAP = 5000
+#: A seen entry older than this -- by ``updated_ts``, else ``created_ts`` --
+#: is pruned on every fold (plan §1.5). THROUGHPUT's figure is a trailing
+#: 24 h; the seat record wants one more day of slack behind it, no more.
+SWARM_JOBS_SEEN_MAX_AGE_S = 48 * 3600.0
+#: Most job details the slow sweep reads per run, newest first by
+#: ``createdAt`` (plan R-F). The list route answers ~100 jobs today; if its
+#: window grows the sweep does not grow with it past this, and the seen
+#: slot carries the record of every job the sweep no longer reaches.
+SWARM_SWEEP_CAP = 200
+
+
+def _swarm_gate_counters(health: dict[str, Any]) -> dict[str, Any]:
+    """The `/health` fields the job-list gate compares: an open set.
+
+    Every ``pending*`` field plus :data:`_SWARM_GATE_COUNTERS`. Anything else
+    on `/health` (``version``, ``status``, the service flags, ``identity``)
+    can move without the list having changed, so it is left out.
+    """
+    return {
+        k: v for k, v in health.items()
+        if k.startswith("pending") or k in _SWARM_GATE_COUNTERS
+    }
+
+
+def _swarm_executing_ids(jobs: Any) -> list[str]:
+    """The ids the live tier reads details for: state ``executing`` only.
+
+    Plan §1.5 -- not ``blocked`` (the old ``sw.unfinished_ids`` rule, which
+    the retired FIELD panel needed). A job without a string id is skipped;
+    there is nothing to ask the detail route for.
+    """
+    if not isinstance(jobs, list):
+        return []
+    return [
+        j["id"] for j in jobs
+        if isinstance(j, dict) and j.get("state") == "executing"
+        and isinstance(j.get("id"), str)
+    ]
+
+
+def _swarm_sweep_ids(jobs: Any) -> list[str]:
+    """The ids the slow sweep reads: the newest :data:`SWARM_SWEEP_CAP`.
+
+    Sorted on the ``createdAt`` **string**, descending. That is chronological
+    only because every stamp the host writes is UTC ISO-8601 with millisecond
+    precision and a ``Z`` suffix (``2026-09-20T21:53:17.337Z``) -- verified
+    across the whole v2 corpus by
+    ``tests/data/test_surf_manager_swarm.py::test_every_corpus_stamp_is_utc_iso_8601_with_milliseconds``.
+    A mixed-offset or variable-precision host would need a real parse here,
+    and that test is what would say so. A job with no string stamp sorts
+    oldest; a job with no string id is skipped. The cap is read off the
+    module at call time, never bound as a default.
+    """
+    if not isinstance(jobs, list):
+        return []
+    rows = [j for j in jobs if isinstance(j, dict) and isinstance(j.get("id"), str)]
+    rows.sort(
+        key=lambda j: j["createdAt"] if isinstance(j.get("createdAt"), str) else "",
+        reverse=True,
+    )
+    return [j["id"] for j in rows[:SWARM_SWEEP_CAP]]
+
+
+def _swarm_details_map(details: Any) -> dict[str, dict[str, Any]]:
+    """``job_id -> detail`` off a slot's persisted ``details`` **list**.
+
+    The two swarm slots keep ``details`` as a list -- the shape every
+    ``~/.maxpane/surf_cache.json`` written since Task 5 carries and the one
+    the pre-WP7 folds (``sw.field_rows``, ``sw.score_rows``) read -- and the
+    v2 folds take the map, so it is built here at fold time rather than
+    changing what is persisted.
+    """
+    if not isinstance(details, list):
+        return {}
+    return {
+        d["id"]: d for d in details
+        if isinstance(d, dict) and isinstance(d.get("id"), str)
+    }
 
 
 class SurfManager:
@@ -858,6 +966,7 @@ class SurfManager:
         cache: Any = None,
         pool4_client: Any = None,
         swarm_client: Any = None,
+        seat: str | int | None = None,
     ) -> None:
         self.poll_interval = poll_interval
         self._clock = clock
@@ -936,6 +1045,20 @@ class SurfManager:
         #: list is only paid for when one of them moved (spec §3).
         self._swarm_counters: dict[str, Any] | None = None
         self._swarm_jobs_read_ts: float = 0.0
+        #: The seat the AGENT body shows before the reader picks one (swarm
+        #: v2 plan A1 "Which seat"): the explicit ``seat=`` argument, else
+        #: ``MAXPANE_IMD_SEAT`` -- read **here, once**, never at import and
+        #: never on a later tick, so a hosting process serving two
+        #: configurations and a test that sets the variable after import
+        #: both see the value they gave *this* instance
+        #: (``tests/data/test_manager_seams.py``). An IDMD token id, not a
+        #: secret. Stored as given: ``sw.pick_seat`` parses it.
+        self._seat_env: str | int | None = (
+            seat if seat is not None else os.environ.get("MAXPANE_IMD_SEAT")
+        )
+        #: The reader's own row selection (:meth:`select_seat`); wins over
+        #: the env while it names a seat on the roster.
+        self._seat_cursor: str | int | None = None
 
         try:
             self.cache.load()
@@ -5233,16 +5356,23 @@ class SurfManager:
             pass
 
     async def _pool_swarm(self, tiers: set[str], now: float) -> dict[str, Any]:
-        """`/health`, the list when a counter moved, details for the unfinished.
+        """`/health`, the list when a counter moved, details for the executing.
 
         **The job list is the expensive read** (~27.5 KB, one shot, no
         pagination) and this is the gate that keeps it from being paid for on
         every 60 s tick regardless: it is re-fetched only when the prior
-        sweep has none to reuse, when one of :data:`_SWARM_COUNTER_KEYS` moved
-        since the counters this manager last saw, or when
-        :data:`SWARM_LIST_CEILING_S` has elapsed since the list was last read
-        — the ceiling is what stops a counter this manager does not track
-        from silently freezing the list forever.
+        sweep has none to reuse, when one of the gate's counters
+        (:func:`_swarm_gate_counters`: every ``pending*`` plus
+        :data:`_SWARM_GATE_COUNTERS`) moved since the counters this manager
+        last saw, or when :data:`SWARM_LIST_CEILING_S` has elapsed since the
+        list was last read — the ceiling is what stops a counter this manager
+        does not track from silently freezing the list forever.
+
+        Details are read for ``executing`` jobs only (plan §1.5) and the
+        slot keeps its Task 5 shape, ``details`` a list. On success this
+        read is also folded into :data:`SLOT_SWARM_JOBS_SEEN`
+        (:meth:`_fold_swarm_seen`); on any failure path that slot is left
+        exactly as it was.
         """
         if TIER_SWARM not in tiers:
             return {"ok": False, "payload": None}
@@ -5252,7 +5382,7 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM, now)
             return {"ok": False, "payload": None}
 
-        counters = {k: health.get(k) for k in _SWARM_COUNTER_KEYS}
+        counters = _swarm_gate_counters(health)
         prior = getattr(self.cache.get_last_good(SLOT_SWARM), "payload", None)
         jobs = prior.get("jobs") if isinstance(prior, dict) else None
         stale_list = (now - self._swarm_jobs_read_ts) >= SWARM_LIST_CEILING_S
@@ -5275,8 +5405,8 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM, now)
             return {"ok": False, "payload": None}
 
-        details = []
-        for job_id in sw.unfinished_ids(jobs):
+        details: list[dict[str, Any]] = []
+        for job_id in _swarm_executing_ids(jobs):
             detail = await self._guard(
                 lambda jid=job_id: client.fetch_job(jid), "swarm fetch_job"
             )
@@ -5286,7 +5416,49 @@ class SurfManager:
         payload = {"health": health, "jobs": jobs, "details": details}
         self.cache.store_last_good(SLOT_SWARM, payload, ts=now)
         self.cache.mark_fetched(TIER_SWARM, now)
+        self._fold_swarm_seen(jobs, details, now)
         return {"ok": True, "payload": payload}
+
+    def _fold_swarm_seen(
+        self, jobs: list[dict[str, Any]], details: list[dict[str, Any]], now: float
+    ) -> dict[str, Any]:
+        """Fold one successful read into :data:`SLOT_SWARM_JOBS_SEEN`.
+
+        Called by **both** tiers after their own successful list read and by
+        neither on a failure path, so a dead ``/jobs`` leaves the slot as it
+        was. ``sw.merge_seen`` does the work (a new map; newer stamps win;
+        pruned past :data:`SWARM_JOBS_SEEN_MAX_AGE_S`; the newest
+        :data:`SWARM_JOBS_SEEN_CAP` kept -- both read off the module at call
+        time). The map is **stored only when it changed**: ``store_last_good``
+        sets the cache's ``_dirty`` flag (F7, ``surf_cache.save``), and the
+        live tier ticks every 60 s over a list that mostly has not moved, so
+        storing an equal map would rewrite the whole cache file for nothing.
+        """
+        prior_entry = self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN)
+        prior = prior_entry.payload if prior_entry is not None else None
+        seen = sw.merge_seen(
+            prior if isinstance(prior, dict) else {},
+            jobs,
+            _swarm_details_map(details),
+            now_ts=now,
+            cap=SWARM_JOBS_SEEN_CAP,
+            max_age_s=SWARM_JOBS_SEEN_MAX_AGE_S,
+        )
+        if seen != prior:
+            self.cache.store_last_good(SLOT_SWARM_JOBS_SEEN, seen, ts=now)
+        return seen
+
+    def select_seat(self, token: str | int | None) -> None:
+        """Move the AGENT body's cursor to ``token`` (plan A1 "Which seat").
+
+        A plain attribute write -- no I/O, no await -- so it is safe to call
+        from a message handler (``DataTable.RowSelected``); the guarded
+        refresh then recomputes the seat keys from the cached sweep
+        (:meth:`_swarm_seat_keys`). Stored as given: ``sw.pick_seat`` parses
+        it and falls back to the env seat, then the most active, when it
+        names nothing on the roster.
+        """
+        self._seat_cursor = token
 
     def _spawn_swarm_scores(self, tiers: set[str], now: float) -> Any:
         """:meth:`_spawn_swarm`'s shape, one tier further out.
@@ -5340,7 +5512,19 @@ class SurfManager:
             pass
 
     async def _pool_swarm_scores(self, tiers: set[str], now: float) -> dict[str, Any]:
-        """The full sweep: every job's own detail, ``/launches``, ``/sites``.
+        """The sweep: the newest details, ``/skills``, ``/launches``, ``/sites``.
+
+        **Swarm v2 (WP4).** The detail sweep is bounded to the newest
+        :data:`SWARM_SWEEP_CAP` jobs by ``createdAt`` (plan R-F) and folded
+        into :data:`SLOT_SWARM_JOBS_SEEN` too, so a seat's record for a job
+        the live tier never saw executing still enters the slot -- and the
+        slot, not this sweep, carries the record of jobs past the cap.
+        **Partial success is a success** (plan R-B): the tier fails only
+        when ``/jobs`` is ``None``; each of ``skills``/``launches``/``sites``
+        is stored as ``None`` when its own read failed, and
+        :meth:`_swarm_scores_keys` publishes ``None`` for that route's keys
+        while the others land behind the marker. The paragraphs below are
+        Task 5's and still hold.
 
         **Never touches** :data:`SLOT_SWARM` or the live tier's counters —
         it reads its own copy of the job list on its own, much slower tier,
@@ -5375,28 +5559,27 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM_SCORES, now)
             return {"ok": False, "payload": None}
 
-        details = []
-        for job in jobs:
-            job_id = job.get("id") if isinstance(job, dict) else None
-            if not isinstance(job_id, str):
-                continue
+        details: list[dict[str, Any]] = []
+        for job_id in _swarm_sweep_ids(jobs):
             detail = await self._guard(
                 lambda jid=job_id: client.fetch_job(jid), "swarm scores fetch_job"
             )
             if detail is not None:      # a 404 drops one row, never the read
                 details.append(detail)
 
+        skills = await self._guard(lambda: client.fetch_skills(), "swarm fetch_skills")
         launches = await self._guard(
             lambda: client.fetch_launches(), "swarm fetch_launches"
         )
         sites = await self._guard(lambda: client.fetch_sites(), "swarm fetch_sites")
-        if launches is None or sites is None:
-            self.cache.mark_failed(TIER_SWARM_SCORES, now)
-            return {"ok": False, "payload": None}
 
-        payload = {"jobs": jobs, "details": details, "launches": launches, "sites": sites}
+        payload = {
+            "jobs": jobs, "details": details,
+            "skills": skills, "launches": launches, "sites": sites,
+        }
         self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=now)
         self.cache.mark_fetched(TIER_SWARM_SCORES, now)
+        self._fold_swarm_seen(jobs, details, now)
         return {"ok": True, "payload": payload}
 
     def _swarm_keys(self, slot: dict[str, Any], entry: Any, now: float) -> dict[str, Any]:
@@ -5425,6 +5608,19 @@ class SurfManager:
             "swarm_agents_enrolled": facts["agents_enrolled"],
             "swarm_working_now": facts["working_now"],
             "swarm_accepted_today": facts["accepted_today"],
+            # Swarm v2 (plan §1.1/§1.2). ``queue_total``/``breaker`` are
+            # ``None`` off a ``None`` health -- the fold's own rule. The rows
+            # are the manager's call: ``sw.inflight_rows`` answers ``[]`` for
+            # a ``None`` list and for a read list with nothing executing
+            # alike, and only here is it known which one happened -- a list
+            # never read is ``None`` (CLAUDE.md "a failed read is None"), a
+            # read list with no executing job is a real ``[]``.
+            "swarm_queue_total": sw.queue_total(health),
+            "swarm_breaker": sw.breaker(health),
+            "swarm_inflight_rows": (
+                sw.inflight_rows(jobs, _swarm_details_map(details), now_ts=now)
+                if jobs is not None else None
+            ),
             # ``0``, not ``None``, when the list was read and genuinely has
             # no job in that state -- fix round 1 finding 3. Only a list
             # that was never read (``jobs is None``) publishes ``None``.
@@ -5475,6 +5671,7 @@ class SurfManager:
         """
         jobs = slot.get("jobs") if slot else None
         details = slot.get("details") if slot else None
+        skills = slot.get("skills") if slot else None
         launches = slot.get("launches") if slot else None
         sites = slot.get("sites") if slot else None
 
@@ -5482,12 +5679,80 @@ class SurfManager:
         if entry is not None and live_entry is not None:
             stale = abs(float(entry.ts) - float(live_entry.ts)) > SWARM_STALE_AFTER_S
 
+        # Swarm v2 (plan §1.1/§1.2, R-B): each route's keys are ``None`` when
+        # that route's own read failed (stored ``None`` by ``_pool_swarm_scores``,
+        # or absent from a slot persisted before WP4) and lists otherwise --
+        # the summaries fold the rows, never the raw payload.
+        skill_rows = sw.skill_rows(skills) if skills is not None else None
+        launch_rows = sw.launch_rows(launches) if launches is not None else None
+
         return {
             "swarm_shipped_rows": sw.shipped_rows(jobs, details, launches, sites),
             "swarm_score_rows": sw.score_rows(details),
+            # WP7: switch to sw.throughput_facts(jobs, seen, now_ts=now) once the v2 widget reads it
             "swarm_throughput": sw.throughput(jobs, details, now=now),
             "swarm_scores_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
             "swarm_stale": stale,
+            "swarm_skill_rows": skill_rows,
+            "swarm_skill_summary": skill_summary(skill_rows) if skill_rows is not None else None,
+            "swarm_launch_rows": launch_rows,
+            "swarm_launch_summary": (
+                launch_summary(launch_rows) if launch_rows is not None else None
+            ),
+            "swarm_site_rows": sw.site_rows(sites) if sites is not None else None,
+        }
+
+    def _swarm_seat_keys(
+        self, slot: dict[str, Any], entry: Any, seen: Any
+    ) -> dict[str, Any]:
+        """SLOT_SWARM_SCORES + the jobs-seen map -> the six `swarm_seat_*` keys.
+
+        The AGENT body (plan A1). The roster is every seat the sweep's
+        details or the seen map name; the selection is ``sw.pick_seat``'s
+        (the reader's cursor, else the env seat, else the most active) and
+        the record, verdict summary and on-chain feedback are the selected
+        seat's own. ``None`` versus ``[]`` (CLAUDE.md): a sweep that never
+        ran (``entry is None``) publishes ``None`` for every key **even
+        though the live tier may already have seeded the seen map** -- the
+        sweep is this body's source (plan A1, R-F) and the seen map only
+        extends it, so a roster served off the map alone would be rows with
+        no marker behind them. A sweep that ran and saw no seat publishes
+        ``swarm_seat_rows == []`` behind its marker -- "we looked, nobody was
+        seated" -- with no selection and the selected seat's own keys
+        ``None``. The marker is the sweep slot's, named separately so the
+        body reads its own.
+        """
+        if entry is None:
+            return dict.fromkeys((
+                "swarm_seat_rows", "swarm_seat_selected", "swarm_seat_summary",
+                "swarm_seat_node_rows", "swarm_seat_feedback_rows",
+                "swarm_seat_as_of_hhmm",
+            ))
+        details_map = _swarm_details_map(slot.get("details") if slot else None)
+        seen_map = seen if isinstance(seen, dict) else {}
+        as_of = entry.as_of_hhmm()
+        rows = sw.seat_rows(details_map, seen_map)
+        selected = sw.pick_seat(rows, self._seat_env, self._seat_cursor)
+        if selected is None:
+            return {
+                "swarm_seat_rows": [],
+                "swarm_seat_selected": None,
+                "swarm_seat_summary": None,
+                "swarm_seat_node_rows": None,
+                "swarm_seat_feedback_rows": None,
+                "swarm_seat_as_of_hhmm": as_of,
+            }
+        token = selected["token_id"]
+        node_rows = sw.seat_node_rows(details_map, seen_map, token)
+        feedback = sw.seat_feedback_rows(details_map, token)
+        working_now = any(r.get("state") == "working" for r in node_rows)
+        return {
+            "swarm_seat_rows": rows,
+            "swarm_seat_selected": selected,
+            "swarm_seat_summary": seat_summary(node_rows, feedback, working_now=working_now),
+            "swarm_seat_node_rows": node_rows,
+            "swarm_seat_feedback_rows": feedback,
+            "swarm_seat_as_of_hhmm": as_of,
         }
 
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
@@ -5930,6 +6195,22 @@ class SurfManager:
         data.update(
             self._swarm_scores_keys(scores_slot, scores_entry, swarm_entry, now)
         )
+        # The AGENT body's six keys (swarm v2 plan A1), off the same sweep
+        # slot plus the jobs-seen map. The map is read here rather than
+        # captured beside ``scores_entry`` above, deliberately: both swarm
+        # tiers append to it, within a cycle it only ever grows, and
+        # ``sw.seat_rows`` consults it only for jobs the captured sweep's
+        # details do not cover -- so a map one tick newer than the sweep can
+        # add a seat's older nodes and never contradict the sweep. The
+        # marker stays the sweep's.
+        seen_entry = self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN)
+        data.update(
+            self._swarm_seat_keys(
+                scores_slot,
+                scores_entry,
+                seen_entry.payload if seen_entry is not None else None,
+            )
+        )
 
         signal_data = self._signal_keys(
             self._readings(
@@ -6148,7 +6429,10 @@ __all__ = [
     "POOL4_TOPIC_DRIPPED",
     "POOL4_SEPOLIA_HOOK",
     "POOL4_SEPOLIA_TOKEN",
+    "SWARM_JOBS_SEEN_CAP",
+    "SWARM_JOBS_SEEN_MAX_AGE_S",
     "SWARM_LIST_CEILING_S",
     "SWARM_STALE_AFTER_S",
+    "SWARM_SWEEP_CAP",
     "SurfManager",
 ]
