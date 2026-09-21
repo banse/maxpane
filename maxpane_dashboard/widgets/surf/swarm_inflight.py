@@ -8,10 +8,11 @@ finished between two polls is gone from the next frame, not left up as if
 still running (``rules/widgets.md``, ``SNAPSHOT``). ``dedupe_key`` is
 irrelevant in this mode and is left at the base's default.
 
-Unwired until WP7, which mounts it in the `s` body in place of THE FIELD
-(``swarm_field.py``, deleted there), exports it from
-``widgets/surf/__init__.py`` and writes its stylesheet block. Final name;
-no rename to come.
+Mounted in the ``s`` body since WP7, in the row THE FIELD (``swarm_field.py``,
+deleted there) used to hold, beside LAUNCHES; ``widgets/surf/__init__.py``
+exports it and ``minimal.tcss`` places it (``4fr`` against LAUNCHES' ``5fr``
+-- the ratio, not a ``min-width``, is what holds this panel at its
+``compact`` tier at the app's 143-column pin).
 
 Row shape (``data/surf_models.SURF_ROW_KEYS["swarm_inflight_rows"]``,
 frozen): ``job_id, template, objective, created_ts, age_s, node_key,
@@ -182,7 +183,7 @@ class SurfSwarmInFlight(RichLogFeed):
     EMPTY_LINE = EMPTY_LINE
 
     #: The body's own geometry only (the base states none); the panel's
-    #: place in the grid is WP7's stylesheet. ``scrollbar-size: 1 1`` is the
+    #: place in the grid is ``minimal.tcss``'s. ``scrollbar-size: 1 1`` is the
     #: one cell the width tests charge as chrome beside the padding.
     DEFAULT_CSS = """
     SurfSwarmInFlight > RichLog {

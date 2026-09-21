@@ -1,463 +1,362 @@
-"""THROUGHPUT: accepted per day, median delivery, revision rate, and the
-agents who scored the work.
+"""THROUGHPUT -- how fast work moves through the swarm (swarm v2, WP5).
 
-``pool4u_burn.py``'s shape (Task 8), the same as ``swarm_queue.py``: a
-``Vertical`` of two ``Static``s -- a title with its own blank row under it,
-and a body of pre-built ``rich.text.Text`` lines joined with
-``_pool4.join_lines`` (no markup strings, no ``_pool4.parse_line`` -- see
-``swarm_queue.py``'s own docstring for why, which applies here too: an agent
-token is host-controlled text and gets the same treatment ``swarm_queue.py``
-gives a blocked reason).
+A ``panels.SignalsPanelBase`` reading the plan §1.3 ``swarm_throughput``
+dict **only**::
 
-Two sections, two different honesty problems
-----------------------------------------------
-This panel answers two different questions off two different reads, and they
-degrade differently on purpose:
+    { window_start_ts, window_end_ts, window_n,          # what /jobs returned
+      states: [{state, count}],                          # open vocabulary
+      dur_median_s, dur_p90_s, dur_max_s,                # None under 2 samples
+      cancel_reasons: [{reason, count}],                 # verbatim, open
+      completed_24h, seen_since_ts }                     # None while accumulating
 
-1. **The three rate numbers** (``accepted_per_day``, ``median_delivery_s``,
-   ``revision_rate``) come from ``data/surf_swarm.throughput``, which
-   (F10, fixed) tells ``jobs is None`` -- the tier was never read -- apart
-   from ``jobs == []`` -- a genuine read that found no jobs. Only
-   ``accepted_per_day`` has a value that can honestly mean "measured, and
-   it is zero": a genuine empty read gives it a real ``0.0``
-   (``round(0 / window_days, 2)``, never skipped), where a never-read window
-   gives it ``None``, so **that one field already means what its own value
-   says**: ``None`` is "not read", a number (``0`` included) is "read".
-   ``median_delivery_s`` and ``revision_rate`` have no honest zero to give a
-   genuine empty read -- ``0`` would claim "delivered instantly" / "nothing
-   was ever revised", which nothing did -- so both stay ``None`` on *either*
-   input and cannot be told apart at this dict's own field level. That is
-   not a gap this widget papers over with a marker gate on the rate rows
-   themselves: it prints this tier's own ``swarm_scores_as_of_hhmm`` marker
-   in its title whenever a read has genuinely happened (below), and a
-   ``None`` row beside that marker reads as "read, nothing to measure" the
-   same way the agent section's own marker-gated empty state does. This is
-   the CLAUDE.md rule -- "a failed read is ``None``, never ``0``" -- held at
-   the one field that can hold it, plus the title's existing marker doing
-   the same job for the two that cannot; this widget's job is only to keep
-   both visible rather than to invent a second mechanism: each of the four
-   labelled rows (the three rates plus the window they share) renders
-   :data:`_fmt.DASH` for ``None`` and the real value, zero included,
-   otherwise. This is also why these four rows render **unconditionally**,
-   with no ``swarm_scores_as_of_hhmm`` gate of their own -- gating them on a
-   marker neither test in ``tests/widgets/test_surf_swarm_rail.py`` sets
-   would hide the very dashes those tests assert are present, and would
-   throw away the one field that already tells the two states apart on its
-   own.
+Mounted on the ``s`` body since WP7, in the rail beside IN FLIGHT.
 
-2. **The agent score rows** (``swarm_score_rows``) do *not* carry that same
-   guarantee: ``data/surf_swarm.score_rows`` returns ``[]`` for both an
-   unread sweep and a read one that scored nothing, the identical ambiguity
-   ``swarm_queue.py``'s two lists have. This section is therefore gated the
-   way ``swarm_field.py`` gates its one list: no real
-   ``swarm_scores_as_of_hhmm`` marker and no rows means unavailable; a marker
-   (or non-empty rows, for the same test-harness reason
-   ``swarm_queue.py._is_unavailable`` documents) and an empty list means a
-   real read found no agents; rows present means rows render.
+Rows, top to bottom
+-------------------
+1. a **label-less** window row: ``over 14 min · 100 jobs`` from
+   ``window_end_ts - window_start_ts`` and ``window_n``; ``over --`` when
+   either stamp is ``None``; a 0-job window says :data:`NO_JOBS_LINE`
+   rather than ``0 jobs`` -- the read happened and found nothing;
+2. a separator, then ``median`` / ``p90`` / ``max`` -- two-unit durations
+   (``54m``, ``1h 12m``, ``3h 5m``); ``None`` says :data:`SAMPLE_FLOOR_WORD`
+   (``-- (n<2)``), the analytics' own floor: one duration is a data point,
+   not a distribution. A real duration carries its sample beside it --
+   ``54m · n=10`` -- off ``dur_n`` (WP7, additive to §1.3: the count of
+   completed jobs that carried a delivery); a dict folded without the
+   field prints the bare duration rather than a count nobody measured;
+3. a separator, then ``completed 24h``: :data:`ACCUMULATING_WORD` ``since
+   HH:MM`` off ``seen_since_ts`` while ``completed_24h is None`` (the seen
+   slot has under 24 h of history), and a real ``0`` once it has (plan R-A:
+   never ``0`` for "not yet measured");
+4. a separator, then the **state rollup** -- ``states`` is an open list, so
+   the fixed ``ROWS`` cannot name them: one body ``Static``
+   (:data:`STATES_ID`) carries ``state  count`` lines sorted by count
+   descending, built as a single ``rich.text.Text`` inside
+   ``write_guarded``; then the **cancel reasons** block (:data:`CANCELS_ID`)
+   the same way -- ``none`` for ``[]``, ``unavailable`` for ``None``.
 
-The chain word is per row, never in the title (fix round 1)
---------------------------------------------------------------
-The design note (``docs/superpowers/specs/2026-09-16-surf-swarm-view-design.md``
-§5/§6) names "any score quoting a transaction" among the panels that should
-carry the chain word wherever chain data shows. THROUGHPUT quotes a
-transaction hash per agent row, so it shows chain data -- but the fact that
-answers "which chain" lives **per row**, in that row's own ``last_chain_id``,
-not at the panel level: two agents' last reviews can land on two different
-chains, and a single title-level word would misattribute one of them. This
-task's own frozen Interfaces line still names exactly four consumed keys and
-no ``swarm_network`` kwarg, and that stands: the chain word does not need a
-new payload key at all, because ``swarm_score_rows`` already carries
-``last_chain_id`` beside ``last_tx_hash`` in its frozen row shape.
+**A ``None`` dict is every row ``unavailable``; a dict missing a field is
+that row ``--``.** Two different facts (the read failed / the read came
+back without this number), kept apart per row: a duration *key absent* is
+``--``, a duration *present as ``None``* is the sample floor. The fixed
+rows go through ``render_signal`` → ``fmt_signal``, which escapes
+``value_str``; every value here is the widget's own formatting of a number,
+so nothing third-party reaches that path.
 
-:func:`_chain_word` renders it the way ``_pool4.network_word`` renders
-``swarm_network``/``pool4_network``: a known id's word, or the em dash for
-anything else, ``None`` included -- never a guess and never a silent
-omission, because a reader about to open a hash in an explorer needs to know
-which chain it is on. ``last_chain_id`` is the first score-row-shaped field
-to carry the id itself rather than the manager's own pre-resolved string
-(``pool4_network``/``swarm_network``), so this module needed the one small
-step -- id to word -- that no existing widget-safe helper made before it.
+Third-party text renders literally
+----------------------------------
+State words and cancel reasons are the host's. Each is appended to a
+``Text`` with ``Text.append`` after ``markup_safety.flatten`` and
+``rowfit.clip`` (``cell_len``); ``Text.append`` parses nothing, so ``[/x]``
+renders as the literal four characters and ``[$error]`` cannot raise.
+``sanitize_cell`` was not used on purpose: its ``strip_tags`` deletes a
+complete ``[...]`` run, and the plan (WP5) requires a hostile tag in a
+cancel reason to **render literally**. A reason is clipped to the panel's
+own measured width; the panel re-renders on resize for that.
 
-**Hoisted to** :mod:`maxpane_dashboard.widgets.surf._swarm_chain` **as of
-Task 9 (2026-09-16).** JUST SHIPPED needed the identical id-to-word step for
-each shipped row's own ``chain_id`` once the design doc's title-level chain
-word for that panel was overruled in favour of one word per row (its rows
-mix chains, so a single title word would misattribute some of them) -- the
-same need this module already had, not merely a similar one. Writing that
-translation a third time was the exact divergence CLAUDE.md's *Reuse before
-you build* warns about, so :data:`_CHAIN_ID_WORDS`, :func:`_chain_word` and
-:data:`_CHAIN_COLS` below are now **bound names imported from** that shared
-module rather than a second definition, and the redundancy-plus-agreement
-test that used to live in ``tests/widgets/test_surf_swarm_rail.py`` moved
-with the map to ``tests/widgets/test_surf_swarm_chain.py``. Nothing about
-this module's own behaviour changed -- ``T._CHAIN_ID_WORDS``,
-``T._chain_word`` and ``T._CHAIN_COLS`` (``T`` = this module) still resolve
-exactly as before for any caller that reached them by name.
+Title: ``THROUGHPUT``, ``· as of HH:MM`` when ``rowfit.has_marker``, and
+``· stale`` (:data:`STALE_WORD`, the old panel's word) **only when
+``swarm_stale is True``** -- never on ``None`` (not measured) or ``False``.
 
-A hash is never shown bare: when a row has a real ``last_tx_hash``, the
-chain word (or the dash) always prints beside it, and when a row has no
-hash at all, no chain segment prints either -- there is nothing to name the
-chain of.
-
-Purity
-------
-Stdlib, ``rich``, ``textual``, and this package's own ``_fmt``/``_pool4``/
-``rowfit``/``address`` primitives. No ``data/``, no ``analytics/``, no
-clock, no I/O.
+Purity: stdlib, ``rich``, ``textual``, ``widgets/panels``, ``widgets/fmt``,
+``widgets/rowfit``, ``widgets/markup_safety``. No ``data/``, no
+``analytics/``, no clock, no I/O.
 """
 
 from __future__ import annotations
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets import rowfit
-from maxpane_dashboard.widgets.address import MIN_SHORT_COLS, hash_text
-from maxpane_dashboard.widgets.explorer import for_chain_id
-from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, fmt_age
-from maxpane_dashboard.widgets.surf._pool4 import (
-    join_lines,
-    strip_tags,
-)
-from maxpane_dashboard.widgets.surf._swarm_chain import CHAIN_COLS as _CHAIN_COLS
-from maxpane_dashboard.widgets.surf._swarm_chain import (
-    CHAIN_ID_WORDS as _CHAIN_ID_WORDS,
-)
-from maxpane_dashboard.widgets.surf._swarm_chain import chain_word as _chain_word
+from maxpane_dashboard.widgets.fmt import DASH, as_float, hhmm
+from maxpane_dashboard.widgets.markup_safety import flatten
+from maxpane_dashboard.widgets.panels import UNAVAILABLE_LINE, SignalsPanelBase
 
 __all__ = [
-    "AGENTS_UNAVAILABLE_LINE",
-    "LABEL_COLS",
-    "NO_AGENTS_LINE",
-    "ROW_LABELS",
+    "ACCUMULATING_WORD",
+    "CANCELS_ID",
+    "NO_JOBS_LINE",
+    "ROW_IDS",
+    "SAMPLE_FLOOR_WORD",
     "STALE_WORD",
-    "SurfSwarmThroughput",
+    "STATES_ID",
     "TITLE",
+    "SurfSwarmThroughput",
 ]
 
 TITLE = "THROUGHPUT"
 
-#: Appended to the title whenever the manager says the sweep and the live
-#: tier's markers have drifted apart (spec §6). Tested verbatim.
+#: Appended to the title when the manager says the two swarm tiers' markers
+#: drifted apart (``swarm_stale is True``). The old panel's word, tested verbatim.
 STALE_WORD = "stale"
 
-#: The agent-score section's own degraded states -- mirrors
-#: ``swarm_queue.py``'s ``UNAVAILABLE_LINE``/``EMPTY_LINE`` split, scoped to
-#: this one section since the rate rows above it never go blank (see the
-#: module docstring).
-AGENTS_UNAVAILABLE_LINE = "agents unavailable"
-NO_AGENTS_LINE = "no agents scored yet"
+#: The 24 h count's state while the seen slot has under a day of history.
+ACCUMULATING_WORD = "accumulating"
 
-#: The four labelled rate rows, in render order. A tuple so a test can pin
-#: the panel paints exactly these four and in this order.
-ROW_LABELS: tuple[str, ...] = ("accepted", "window", "delivered", "revised")
+#: A duration row's state under the analytics' two-sample floor.
+SAMPLE_FLOOR_WORD = "-- (n<2)"
+
+#: A window that returned no jobs -- a read that found nothing, not a ``0``.
+NO_JOBS_LINE = "no jobs in window"
+
+_WINDOW_ID = "surf-swarm-throughput-window"
+_MEDIAN_ID = "surf-swarm-throughput-median"
+_P90_ID = "surf-swarm-throughput-p90"
+_MAX_ID = "surf-swarm-throughput-max"
+_COMPLETED_ID = "surf-swarm-throughput-completed"
+STATES_ID = "surf-swarm-throughput-states"
+CANCELS_ID = "surf-swarm-throughput-cancels"
+
+ROW_IDS = (_WINDOW_ID, _MEDIAN_ID, _P90_ID, _MAX_ID, _COMPLETED_ID)
 
 _GAP = rowfit.GAP
-_TITLE_ID = "surf-swarm-throughput-title"
-_BODY_ID = "surf-swarm-throughput-body"
-_TITLE_CLASS = "surf-swarm-throughput-title"
+#: The rollup lines' own indent, the same two cells ``fmt_signal`` spends.
+_INDENT = "  "
+#: A state word: corpus ``completed`` / ``executing`` (9), ``cancelled`` (9);
+#: the vocabulary is open, so a longer word clips with ``…``.
+_STATE_COLS = 12
+#: A count, right-aligned: ``100`` in the corpus; four covers 9,999.
+_COUNT_COLS = 4
 
-#: Widest label (``delivered``, 9 cells) plus headroom, so the values line up
-#: one column to the right of every label.
-LABEL_COLS = 11
-
-#: ``#`` + up to five digits, or :data:`_fmt.DASH` -- ``swarm_field``'s own
-#: ``_agent_cell`` window, restated for the same reason every other shared
-#: constant in this package is: an import across sibling widgets is a
-#: coupling across an ownership seam.
-_AGENT_COLS = 6
-#: ``mean_score`` at one decimal: ``100.0`` is the widest real value.
-_SCORE_COLS = 5
-#: ``jobs_scored`` as ``NNNj``.
-_JOBS_COLS = 4
-#: ``widgets/address.MIN_SHORT_COLS`` -- below this a transaction hash's own
-#: shortening window stops being legible, so the column is dropped instead
-#: of rendered illegibly small.
-_MIN_TX_COLS = MIN_SHORT_COLS
-
-#: The ceiling on the tx-hash column (2026-09-17, owner's own live
-#: screenshot): a *cap*, not a second floor -- :data:`_MIN_TX_COLS` above is
-#: the floor below which the column is dropped whole, and until this
-#: constant there was no matching ceiling, so a wide terminal let the hash
-#: window grow unbounded (the docstring's own captured example,
-#: ``0xe5b157220cea6871f035466bd4247d0…a69617``). One cell above
-#: :data:`_MIN_TX_COLS`: ``short_hex``/``widgets.address._window`` gives 12
-#: cells one more head character than 11 (``0x22222…2222`` vs
-#: ``0x2222…2222``, confirmed by direct call rather than assumed), so this
-#: is a real cap, not a value indistinguishable from the floor it sits
-#: above. Never edits ``MIN_SHORT_COLS`` itself -- that is a
-#: cross-dashboard constant curator's own address shortening also depends
-#: on, out of scope for this panel.
-_MAX_TX_COLS = 12
-
-#: ``_CHAIN_COLS`` / ``_CHAIN_ID_WORDS`` / ``_chain_word`` are bound names
-#: imported from ``_swarm_chain`` (Task 9's hoist) rather than defined here
-#: -- see the module docstring's *"Hoisted to _swarm_chain"* section. Kept
-#: at module scope under their original names so any existing caller that
-#: reaches them as ``swarm_throughput._CHAIN_COLS`` etc. still resolves.
+#: The sentinel for "the key is not in the dict at all" -- ``--`` -- as
+#: opposed to "present and ``None``", which each row reads its own way.
+_MISSING = object()
 
 
-#: The ``as of`` predicate and the network-word-free title fitter, shared by
-#: the four swarm panels in ``widgets/rowfit.py`` since Branch 3 (each used to
-#: restate them; the reasoning is on the shared definitions), under the names
-#: this module's own docstrings and tests use.
-_has_marker = rowfit.has_marker
-_title_with_hint = rowfit.title_with_hint
+# -- pure formatters -----------------------------------------------------------------
 
 
-def _rate_row(label: str, value: str) -> Text:
-    line = Text()
-    line.append(rowfit.pad(label, LABEL_COLS), style="dim")
-    line.append(value)
-    return line
-
-
-def _stat_lines(throughput: object) -> list[Text]:
-    """The four labelled rows -- unconditional; see the module docstring.
-
-    ``None`` is never rendered as ``0`` here: every value below comes off
-    :func:`_fmt.as_float`/an ``int`` check, and a value that is not present
-    or not the right type renders :data:`_fmt.DASH`, exactly like a real
-    ``0`` renders as ``0``.
-    """
-    tp = throughput if isinstance(throughput, dict) else {}
-
-    accepted = as_float(tp.get("accepted_per_day"))
-    accepted_text = f"{accepted:.2f}/day" if accepted is not None else DASH
-
-    window = tp.get("window_days")
-    window_text = (
-        f"{window}d"
-        if isinstance(window, int) and not isinstance(window, bool)
-        else DASH
-    )
-
-    delivered_raw = fmt_age(tp.get("median_delivery_s"))
-    delivered_text = delivered_raw if delivered_raw == DASH else f"{delivered_raw} median"
-
-    revision = as_float(tp.get("revision_rate"))
-    revision_text = f"{revision * 100:.1f}%" if revision is not None else DASH
-
-    return [
-        _rate_row(ROW_LABELS[0], accepted_text),
-        _rate_row(ROW_LABELS[1], window_text),
-        _rate_row(ROW_LABELS[2], delivered_text),
-        _rate_row(ROW_LABELS[3], revision_text),
-    ]
-
-
-def _agent_cell(token: object) -> str:
-    """``#2`` for a held seat; :data:`_fmt.DASH` for an unheld or malformed one."""
-    if token is None:
+def _fmt_span(seconds) -> str:
+    """The window's span in words: ``14 min`` / ``2 h 5 min`` / ``3 d 2 h``."""
+    s = as_float(seconds)
+    if s is None or s < 0:
         return DASH
-    text = strip_tags(token)
-    return f"#{text}" if text else DASH
+    minutes = int(round(s / 60))
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 48:
+        return f"{hours} h {minutes} min" if minutes else f"{hours} h"
+    days, hours = divmod(hours, 24)
+    return f"{days} d {hours} h" if hours else f"{days} d"
 
 
-def _agent_line(row: dict, tx_width: int) -> Text:
-    """``tx_width`` is the hash's own budget; the chain column rides beside
-    it and is only ever offered together with the hash (:func:`_agent_lines`
-    reserves both or neither) -- see the module docstring's *"A hash is
-    never shown bare"* closing paragraph.
+def _fmt_duration(seconds) -> str:
+    """A job's duration, two units at most: ``45s`` / ``54m`` / ``1h 12m`` / ``3d 4h``."""
+    s = as_float(seconds)
+    if s is None or s < 0:
+        return DASH
+    if s < 60:
+        return f"{s:.0f}s"
+    minutes = int(round(s / 60))
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h" if hours else f"{days}d"
+
+
+def _int(value) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _signal(label: str, value_str: str, color: str) -> dict:
+    return {"label": label, "value_str": value_str, "color": color, "indicator": "●"}
+
+
+def _window_signal(tp: dict) -> dict:
+    n = tp.get("window_n", _MISSING)
+    if n is _MISSING:
+        return _signal("window", DASH, "dim")
+    count = _int(n)
+    if count == 0:
+        return _signal("window", NO_JOBS_LINE, "dim")
+    start = as_float(tp.get("window_start_ts"))
+    end = as_float(tp.get("window_end_ts"))
+    span = _fmt_span(None if start is None or end is None else end - start)
+    jobs = f"{count:,} jobs" if count is not None else f"{DASH} jobs"
+    return _signal("window", f"over {span} · {jobs}", "white")
+
+
+def _duration_signal(label: str, tp: dict, key: str) -> dict:
+    raw = tp.get(key, _MISSING)
+    if raw is _MISSING:
+        return _signal(label, DASH, "dim")
+    if raw is None:
+        return _signal(label, SAMPLE_FLOOR_WORD, "dim")
+    text = _fmt_duration(raw)
+    if text == DASH:
+        return _signal(label, DASH, "dim")
+    # ``dur_n`` (WP7, additive to §1.3): the sample the three durations
+    # stand on. Absent from a dict folded before it existed -> the bare
+    # duration, never an invented count.
+    n = _int(tp.get("dur_n"))
+    if n is not None:
+        text = f"{text} · n={n:,}"
+    return _signal(label, text, "white")
+
+
+def _completed_signal(tp: dict) -> dict:
+    raw = tp.get("completed_24h", _MISSING)
+    if raw is _MISSING:
+        return _signal("completed 24h", DASH, "dim")
+    if raw is None:
+        since = hhmm(tp.get("seen_since_ts"))
+        return _signal("completed 24h", f"{ACCUMULATING_WORD} since {since}", "dim")
+    count = _int(raw)
+    if count is None:
+        return _signal("completed 24h", DASH, "dim")
+    return _signal("completed 24h", f"{count:,}", "green")
+
+
+def _count_cell(value) -> str:
+    count = _int(value)
+    return f"{count:,}" if count is not None else DASH
+
+
+def _rollup_text(heading: str, entries, name_key: str, name_cols: int) -> Text:
+    """``heading`` then one ``name  count`` line per entry, count-descending.
+
+    ``None`` (could not look) writes the base's ``UNAVAILABLE_LINE`` under
+    the heading; ``[]`` writes ``none``. A non-dict entry or one without a
+    name is skipped; a missing or non-numeric count is ``--`` and sorts last.
     """
-    agent = _agent_cell(row.get("agent_token"))
-    mean = row.get("mean_score")
-    mean_text = (
-        f"{mean:.1f}"
-        if isinstance(mean, (int, float)) and not isinstance(mean, bool)
-        else DASH
-    )
-    jobs = row.get("jobs_scored")
-    jobs_text = (
-        f"{jobs}j" if isinstance(jobs, int) and not isinstance(jobs, bool) else DASH
-    )
-    tx = row.get("last_tx_hash")
-    has_tx = isinstance(tx, str) and bool(tx)
-    # The hash links to its own row's chain (``last_chain_id`` through the
-    # allowlist; an unknown id links nothing); the window is ``short_hex``'s.
-    tx_cell = (
-        hash_text(tx, tx_width, explorer=for_chain_id(row.get("last_chain_id")), style="dim")
-        if has_tx else Text(DASH, style="dim")
-    )
-
-    line = Text()
-    line.append(rowfit.pad(rowfit.clip(agent, _AGENT_COLS), _AGENT_COLS), style="bold")
-    line.append(" " * _GAP)
-    line.append(rowfit.pad(rowfit.clip(mean_text, _SCORE_COLS), _SCORE_COLS))
-    line.append(" " * _GAP)
-    line.append(
-        rowfit.pad(rowfit.clip(jobs_text, _JOBS_COLS), _JOBS_COLS), style="dim",
-    )
-    if tx_width > 0:
-        line.append(" " * _GAP)
-        if tx_cell.cell_len > tx_width:
-            # A non-hex ``last_tx_hash`` passes ``short_hex`` unwindowed: clip
-            # it as before (it carries no link to lose).
-            tx_cell = Text(rowfit.clip(tx_cell.plain, tx_width), style="dim")
-        line.append_text(tx_cell)
-        # No chain word for a dashed (unread/malformed) hash -- there is
-        # nothing to name the chain of. A real hash always gets one, dash
-        # included, so a shown hash is never bare.
-        if has_tx:
-            line.append(" ")
-            line.append(
-                rowfit.pad(_chain_word(row.get("last_chain_id")), _CHAIN_COLS),
-                style="dim",
-            )
-    return line
-
-
-def _agents_unavailable(as_of: object, score_rows: object) -> bool:
-    """See ``swarm_queue.py``'s ``_is_unavailable`` for the same shape and
-    the same test-harness escape hatch."""
-    return not _has_marker(as_of) and not score_rows
-
-
-def _agent_lines(score_rows: object, scores_as_of: object, width: int) -> tuple[list[Text], bool]:
-    if _agents_unavailable(scores_as_of, score_rows):
-        return [Text(f"⚠ {AGENTS_UNAVAILABLE_LINE}", style="yellow")], False
-
-    rows = [row for row in (score_rows or ()) if isinstance(row, dict)]
+    text = Text()
+    text.append(_INDENT + heading, style="dim")
+    if entries is None:
+        text.append("\n")
+        text.append_text(Text.from_markup(UNAVAILABLE_LINE))
+        return text
+    rows: list[tuple[str, int | None]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = flatten(entry.get(name_key))
+        if not name:
+            continue
+        rows.append((name, _int(entry.get("count"))))
     if not rows:
-        return [Text(NO_AGENTS_LINE, style="dim")], False
-
-    fixed = rowfit.row_cols((_AGENT_COLS, _SCORE_COLS, _JOBS_COLS))
-    available = max(width - fixed - _GAP, 0)
-    # The hash and its chain word are offered together or not at all (the
-    # module docstring's *"A hash is never shown bare"* rule): the width
-    # gate below therefore reserves the chain column's own gap-plus-columns
-    # ahead of the hash, rather than shedding the chain word alone once the
-    # hash already fits.
-    chain_reserve = _GAP + _CHAIN_COLS
-    show_tx = available >= _MIN_TX_COLS + chain_reserve
-    # The floor gate above decides *whether* the hash shows at all; the cap
-    # below only ever narrows what it shows once it does -- capping cannot
-    # turn a shown hash into a dropped one, so `show_tx` is untouched by it.
-    tx_width = min(max(available - chain_reserve, 0), _MAX_TX_COLS) if show_tx else 0
-    lines = [_agent_line(row, tx_width) for row in rows]
-    return lines, not show_tx
+        text.append("\n" + _INDENT + "none", style="dim")
+        return text
+    rows.sort(key=lambda item: (item[1] is None, -(item[1] or 0)))
+    for name, count in rows:
+        text.append("\n" + _INDENT)
+        text.append(rowfit.pad(rowfit.clip(name, name_cols), name_cols))
+        text.append(" " * _GAP)
+        text.append(f"{_count_cell(count):>{_COUNT_COLS}}", style="bold")
+    return text
 
 
-class SurfSwarmThroughput(Vertical):
-    """THROUGHPUT -- accepted/day, median delivery, revision rate, agents."""
+class SurfSwarmThroughput(SignalsPanelBase):
+    """THROUGHPUT -- window, three durations, the 24 h count, states, cancels."""
 
-    DEFAULT_CSS = """
-    SurfSwarmThroughput {
-        height: auto;
-    }
-    SurfSwarmThroughput > Static {
-        width: 100%;
-        padding: 0 1;
-        text-wrap: nowrap;
-        text-overflow: ellipsis;
-    }
-    SurfSwarmThroughput > .surf-swarm-throughput-title {
-        margin: 0 0 1 0;
-    }
-    """
+    TITLE = TITLE
+    LABEL_WIDTH = 14
+    DIM_LABEL = True
 
-    #: ``> Static``'s own ``padding: 0 1``.
-    _TITLE_PADDING_COLS = 2
+    ROWS = (
+        (_WINDOW_ID, None),
+        None,
+        (_MEDIAN_ID, "median"),
+        (_P90_ID, "p90"),
+        (_MAX_ID, "max"),
+        None,
+        (_COMPLETED_ID, "completed 24h"),
+        None,
+    )
 
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        # The raw payload, not formatted lines, so a resize re-lays it out.
-        self._payload: dict = {}
-        self._widen = False
+    #: ``.panel-line``'s own ``padding: 0 1`` (``PanelBase``).
+    _LINE_PADDING_COLS = 2
 
-    def compose(self) -> ComposeResult:
-        yield Static(Text(TITLE, style="dim"), id=_TITLE_ID, classes=_TITLE_CLASS)
-        yield Static(Text(""), id=_BODY_ID)
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._payload: dict | None = None
 
-    def on_resize(self, _event=None) -> None:
-        if self._payload:
-            self._render_view()
+    def compose_body(self) -> ComposeResult:
+        """The base's fixed rows, then the two open-vocabulary blocks."""
+        yield from super().compose_body()
+        yield Static("", classes="panel-line", id=STATES_ID)
+        yield Static("", classes="panel-line", id=CANCELS_ID)
 
     def update_data(
         self,
         swarm_throughput=None,
-        swarm_score_rows=None,
-        swarm_scores_as_of_hhmm=None,
+        swarm_as_of_hhmm=None,
         swarm_stale=None,
         **_kwargs,
     ) -> None:
-        """Refresh the panel from the manager's flat dict.
-
-        Every kwarg is spelled after its full ``swarm_`` contract key
-        (``data/surf_models.SWARM_KEYS``). ``**_kwargs`` is mandatory: the
-        screen splats the whole payload.
-        """
+        """Refresh every row from the §1.3 dict; ``**_kwargs`` is mandatory."""
         self._payload = {
-            "throughput": swarm_throughput,
-            "score_rows": swarm_score_rows,
-            "scores_as_of": swarm_scores_as_of_hhmm,
+            "tp": swarm_throughput,
+            "as_of": swarm_as_of_hhmm,
             "stale": swarm_stale,
-            "seen": True,
         }
         self._render_view()
 
-    def _text_budget(self) -> int:
-        return max(self.size.width - self._TITLE_PADDING_COLS, 0)
+    def on_resize(self, _event=None) -> None:
+        if self._payload is not None:
+            self._render_view()
 
-    def _title_text(self) -> str:
-        payload = self._payload
-        as_of = payload.get("scores_as_of")
-        suffix = f" · as of {as_of}" if _has_marker(as_of) else ""
-        # Unlike ``swarm_field.py``, ``stale`` is not conditioned on the
-        # marker's own presence: the given contract test drives it with no
-        # marker set at all (``test_the_stale_word_appears_only_when_told``),
-        # and in production ``swarm_stale`` is only ever non-``None`` when
-        # both markers it compares already exist (``_swarm_scores_keys``),
-        # so there is nothing dishonest about surfacing it unconditionally
-        # here.
-        if payload.get("stale"):
-            suffix += f" · {STALE_WORD}"
-        budget = self._text_budget()
-        full = TITLE + suffix
-        text = _title_with_hint(full, self._widen, budget)
-        if self._widen and suffix and text == full:
-            # 2026-09-16 layout change (THROUGHPUT moved beside JUST SHIPPED,
-            # narrower than it used to be sharing a rail with QUEUE): with a
-            # suffix, neither hint fit, so ``_title_with_hint`` gave up
-            # silently. ``_pool4.title_text``'s own docstring assumes that is
-            # safe because "at that width the title is already clipped" --
-            # true for a panel whose widen threshold tracks its own title
-            # length, false here. THROUGHPUT's widen comes from the agent
-            # rows' hash-and-chain threshold (~41 columns), far below what
-            # "THROUGHPUT · as of HH:MM" itself needs (~24), so there is a
-            # real band where the bare title fits comfortably while the
-            # glyph does not -- and something was genuinely shed there. Drop
-            # the suffix and try again rather than let that go unmarked: a
-            # bare ``‹`` with no timestamp still tells a reader content was
-            # cut, where neither tells them anything.
-            bare = _title_with_hint(TITLE, self._widen, budget)
-            if bare != TITLE:
-                return bare
-        return text
+    # -- rendering ---------------------------------------------------------------
 
-    def _render_view(self) -> None:
+    def _line_width(self) -> int:
+        return max(self.content_size.width - self._LINE_PADDING_COLS, 0)
+
+    def _set_title(self) -> None:
         try:
-            title = self.query_one(f"#{_TITLE_ID}", Static)
-            body = self.query_one(f"#{_BODY_ID}", Static)
+            title = self.query_one(".panel-title", Static)
         except Exception:  # not composed yet
             return
+        payload = self._payload or {}
+        text = TITLE
+        if rowfit.has_marker(payload.get("as_of")):
+            text += f" · as of {payload['as_of']}"
+        if payload.get("stale") is True:
+            text += f" · {STALE_WORD}"
+        title.update(Text(text))
 
-        def paint(*content: Text) -> None:
-            title.update(Text(self._title_text(), style="dim"))
-            body.update(join_lines(list(content)))
+    def _render_view(self) -> None:
+        self._set_title()
+        raw = (self._payload or {}).get("tp")
+        tp = raw if isinstance(raw, dict) else None
 
-        if not self._payload:
-            self._widen = False
-            paint()
-            return
+        def sig(build):
+            return None if tp is None else build()
 
-        payload = self._payload
-        budget = self._text_budget()
-        stat_lines = _stat_lines(payload.get("throughput"))
-        agent_lines, widen = _agent_lines(
-            payload.get("score_rows"), payload.get("scores_as_of"), budget,
+        self.render_signal(
+            f"#{_WINDOW_ID}", "window", sig(lambda: _window_signal(tp)), labelled=False,
         )
-        self._widen = widen
-        paint(*stat_lines, Text(""), *agent_lines)
+        self.render_signal(
+            f"#{_MEDIAN_ID}", "median", sig(lambda: _duration_signal("median", tp, "dur_median_s")),
+        )
+        self.render_signal(
+            f"#{_P90_ID}", "p90", sig(lambda: _duration_signal("p90", tp, "dur_p90_s")),
+        )
+        self.render_signal(
+            f"#{_MAX_ID}", "max", sig(lambda: _duration_signal("max", tp, "dur_max_s")),
+        )
+        self.render_signal(
+            f"#{_COMPLETED_ID}", "completed 24h", sig(lambda: _completed_signal(tp)),
+        )
+
+        # The open-vocabulary blocks: a reason gets the panel's remaining width.
+        width = self._line_width()
+        reason_cols = max(width - len(_INDENT) - _GAP - _COUNT_COLS, 1)
+        states = None if tp is None else tp.get("states")
+        cancels = None if tp is None else tp.get("cancel_reasons")
+        self.write_guarded(
+            f"#{STATES_ID}",
+            lambda: _rollup_text("states", states, "state", _STATE_COLS),
+            Text.from_markup(UNAVAILABLE_LINE),
+        )
+        self.write_guarded(
+            f"#{CANCELS_ID}",
+            lambda: _rollup_text("cancel reasons", cancels, "reason", reason_cols),
+            Text.from_markup(UNAVAILABLE_LINE),
+        )

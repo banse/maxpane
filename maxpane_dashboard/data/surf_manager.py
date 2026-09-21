@@ -5582,8 +5582,21 @@ class SurfManager:
         self._fold_swarm_seen(jobs, details, now)
         return {"ok": True, "payload": payload}
 
-    def _swarm_keys(self, slot: dict[str, Any], entry: Any, now: float) -> dict[str, Any]:
+    def _swarm_keys(
+        self, slot: dict[str, Any], entry: Any, now: float, seen: Any = None
+    ) -> dict[str, Any]:
         """SLOT_SWARM -> the live `swarm_*` keys.  Unread stays None.
+
+        ``swarm_throughput`` (plan §1.3) is folded **here, off this slot's
+        own ``jobs``** since WP7, because the widget pairs it with
+        ``swarm_as_of_hhmm`` -- this slot's marker
+        (``SWARM_WIDGET_SIGNATURES["SurfSwarmThroughput"]``). The old fold
+        lived in :meth:`_swarm_scores_keys` off the sweep's copy of the
+        list; serving a sweep-clock window behind the live-tier marker
+        would be a number older than its own ``as of`` says. ``seen`` is the
+        jobs-seen map (``SLOT_SWARM_JOBS_SEEN``), the only source of
+        ``completed_24h``; ``None`` while the slot has never been written,
+        which ``sw.throughput_facts`` renders as *accumulating*, never ``0``.
 
         ``swarm_as_of_hhmm`` is the slot's own **write** time -- when
         ``/health`` (and, on a re-fetch, ``/jobs``) last landed -- not a
@@ -5642,6 +5655,9 @@ class SurfManager:
             "swarm_field_rows": sw.field_rows(details, now=now),
             "swarm_queue_rows": queue,
             "swarm_blocked_rows": sw.blocked_rows(jobs),
+            # ``None`` only when the list was never read (the fold's own
+            # rule); an idle swarm is a dict of honest empties.
+            "swarm_throughput": sw.throughput_facts(jobs, seen, now_ts=now),
             "swarm_network": facts["network"],
             "swarm_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
         }
@@ -5651,16 +5667,18 @@ class SurfManager:
     ) -> dict[str, Any]:
         """SLOT_SWARM_SCORES -> the sweep's own `swarm_*` keys.
 
-        ``jobs`` for ``shipped_rows``/``throughput`` comes off **this**
-        slot -- fix round 1 finding 4 -- not the live tier's. An earlier
-        version sourced it from ``live_entry`` to avoid storing the list
-        twice, but that merged two payloads read on two different clocks
-        into one row set: ``shipped_rows`` would fold deliveries off the
-        live slot's jobs with launches/sites off this slot and sort the
-        union to a top 12 that never existed at any single moment, and a
-        live-tier outage would blank ``throughput`` even when this sweep's
-        own read was fine. ``live_entry`` is kept only for ``swarm_stale``
-        below, and would go if that check ever moved to :meth:`_cycle`.
+        ``jobs`` for ``shipped_rows`` comes off **this** slot -- fix round 1
+        finding 4 -- not the live tier's. An earlier version sourced it
+        from ``live_entry`` to avoid storing the list twice, but that merged
+        two payloads read on two different clocks into one row set:
+        ``shipped_rows`` would fold deliveries off the live slot's jobs with
+        launches/sites off this slot and sort the union to a top 12 that
+        never existed at any single moment. ``swarm_throughput`` left this
+        method in WP7 for the same two-clocks reason in the other
+        direction: its widget shows the live marker, so it is folded in
+        :meth:`_swarm_keys` off the live slot. ``live_entry`` is kept only
+        for ``swarm_stale`` below, and would go if that check ever moved to
+        :meth:`_cycle`.
 
         ``swarm_stale`` is the staker rule (spec §6) applied to these two
         markers: ``None`` while either is missing, ``True`` only when both
@@ -5689,8 +5707,6 @@ class SurfManager:
         return {
             "swarm_shipped_rows": sw.shipped_rows(jobs, details, launches, sites),
             "swarm_score_rows": sw.score_rows(details),
-            # WP7: switch to sw.throughput_facts(jobs, seen, now_ts=now) once the v2 widget reads it
-            "swarm_throughput": sw.throughput(jobs, details, now=now),
             "swarm_scores_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
             "swarm_stale": stale,
             "swarm_skill_rows": skill_rows,
@@ -6182,35 +6198,33 @@ class SurfManager:
         data.update(self._pool4_stakers_keys(stakers_slot, stakers_entry))
 
         # ---- swarm (two tiers, two slots, two clocks) ----------------------
+        # The jobs-seen map, read once for both folds below. It is read
+        # here rather than captured beside ``scores_entry`` above,
+        # deliberately: both swarm tiers append to it, within a cycle it
+        # only ever grows, and ``sw.seat_rows`` consults it only for jobs
+        # the captured sweep's details do not cover -- so a map one tick
+        # newer than the sweep can add a seat's older nodes and never
+        # contradict the sweep. The markers stay the slots' own.
+        seen_entry = self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN)
+        seen = seen_entry.payload if seen_entry is not None else None
         # The live tier's own keys, off its own slot and its own, much
-        # faster marker.
-        data.update(self._swarm_keys(swarm_slot, swarm_entry, now))
-        # The sweep's own keys, off its own slot -- ``shipped_rows``/
-        # ``throughput`` come from THIS slot's own ``jobs``, and this sweep
-        # persists its own copy rather than reusing the live tier's (fix
-        # round 1 finding 4; see ``_swarm_scores_keys``'s own docstring for
-        # the two-clocks argument this comment used to get backwards).
-        # ``swarm_entry`` is threaded through only so ``swarm_stale`` can
-        # compare this sweep's marker against the live tier's.
+        # faster marker -- ``swarm_throughput`` among them since WP7 (the
+        # widget shows this tier's marker; ``completed_24h`` comes off the
+        # seen map).
+        data.update(self._swarm_keys(swarm_slot, swarm_entry, now, seen))
+        # The sweep's own keys, off its own slot -- ``shipped_rows`` comes
+        # from THIS slot's own ``jobs``, and this sweep persists its own copy
+        # rather than reusing the live tier's (fix round 1 finding 4; see
+        # ``_swarm_scores_keys``'s own docstring for the two-clocks
+        # argument). ``swarm_entry`` is threaded through only so
+        # ``swarm_stale`` can compare this sweep's marker against the live
+        # tier's.
         data.update(
             self._swarm_scores_keys(scores_slot, scores_entry, swarm_entry, now)
         )
         # The AGENT body's six keys (swarm v2 plan A1), off the same sweep
-        # slot plus the jobs-seen map. The map is read here rather than
-        # captured beside ``scores_entry`` above, deliberately: both swarm
-        # tiers append to it, within a cycle it only ever grows, and
-        # ``sw.seat_rows`` consults it only for jobs the captured sweep's
-        # details do not cover -- so a map one tick newer than the sweep can
-        # add a seat's older nodes and never contradict the sweep. The
-        # marker stays the sweep's.
-        seen_entry = self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN)
-        data.update(
-            self._swarm_seat_keys(
-                scores_slot,
-                scores_entry,
-                seen_entry.payload if seen_entry is not None else None,
-            )
-        )
+        # slot plus the jobs-seen map.
+        data.update(self._swarm_seat_keys(scores_slot, scores_entry, seen))
 
         signal_data = self._signal_keys(
             self._readings(

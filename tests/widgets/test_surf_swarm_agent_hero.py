@@ -1,18 +1,31 @@
-"""The AGENT body's hero: SEAT · NODES · JOBS · ACCEPTED / REJECTED · REVISIONS · SCORE · STATUS.
+"""The AGENT body's hero: SEAT · NODES · JOBS · ACC / REJ · REVISIONS · SCORE · STATUS.
 
 Composited assertions only; the payload dicts are the manager's
-``swarm_seat_selected`` / ``swarm_seat_summary`` shapes (plan A1). The hero is
-unwired until WP7, so the per-class contract checks are imposed here against
-the frozen ``SWARM_WIDGET_SIGNATURES`` export.
+``swarm_seat_selected`` / ``swarm_seat_summary`` shapes (plan A1). The
+per-class contract checks are imposed here against the frozen
+``SWARM_WIDGET_SIGNATURES`` export.
+
+**Composited under the real stylesheet, at the real pins** (WP7). The hero
+states no geometry of its own (``rules/widgets.md``: ``HeroBoxBase`` leaves
+every dimension to ``minimal.tcss``), so a bare ``App`` would render six
+unbordered, unpadded boxes and prove nothing about what fits. The harness
+loads ``maxpane_dashboard.app.CSS_PATH`` and renders at the AGENT body's own
+column pin and at the app-wide ``FULL_LAYOUT_COLUMNS`` -- the two widths the
+plan's one-line ``IDMD #1548 · agent 50971 · most active`` (25 cells) does
+**not** fit, which is why SEAT is three lines (module docstring).
 """
 
 from __future__ import annotations
 
 import inspect
 
+import pytest
 from textual.app import App
 
+from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
+from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.screens.surf import SURF_AGENT_FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
     BOX_IDS,
@@ -34,28 +47,37 @@ SUMMARY = {
     "rejection_codes": [],
 }
 AS_OF = "04:06"
-#: 180 columns: six bordered boxes with a 1-cell margin leave 26 content
-#: cells each, two above SEAT's 24-cell line.
-SIZE = (180, 8)
+#: The AGENT body's own column pin: six bordered boxes with a 1-cell margin
+#: and ``padding: 0 1`` leave ~16 content cells each there -- SEAT's widest
+#: line (``agent 50971``, 11; ``IDMD #1548``, 10) fits, the plan's 25-cell
+#: one-liner does not. Every ``_box_text`` below renders here by default.
+SIZE = (SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)
+#: The two widths the hero has to be whole at: its body's pin and the app's.
+PINS = (SURF_AGENT_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS)
 
 
-async def _hero(**kwargs):
+class _Themed(App):
+    """The real stylesheet: ``SurfSwarmAgentHeroBox``'s geometry lives there."""
+
+    CSS_PATH = CSS_PATH
+
+    def compose(self):
+        yield SurfSwarmAgentHero()
+
+
+async def _hero(size=SIZE, **kwargs):
     kwargs.setdefault("swarm_seat_selected", SELECTED)
     kwargs.setdefault("swarm_seat_summary", SUMMARY)
     kwargs.setdefault("swarm_seat_as_of_hhmm", AS_OF)
-    return "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, **kwargs))
+    return "\n".join(await composite_lines(SurfSwarmAgentHero, size, css_path=CSS_PATH, **kwargs))
 
 
-async def _box_text(box_id, **kwargs):
+async def _box_text(box_id, size=SIZE, **kwargs):
     """The composited text of one box's own region (the boxes share rows)."""
     merged = {"swarm_seat_selected": SELECTED, "swarm_seat_summary": SUMMARY,
               "swarm_seat_as_of_hhmm": AS_OF, **kwargs}
 
-    class _A(App):
-        def compose(self):
-            yield SurfSwarmAgentHero()
-
-    async with _A().run_test(size=SIZE) as pilot:
+    async with _Themed().run_test(size=size) as pilot:
         hero = pilot.app.query_one(SurfSwarmAgentHero)
         hero.update_data(**merged)
         await pilot.pause()
@@ -98,18 +120,39 @@ def test_the_box_class_is_its_own_type_selector():
 # -- SEAT ------------------------------------------------------------------------
 
 
-async def test_the_seat_box_names_token_and_agent():
-    text = await _box_text(BOX_IDS["seat"])
-    assert "SEAT" in text and "IDMD #1548 · agent 50971" in text
+@pytest.mark.parametrize("width", PINS)
+async def test_the_seat_box_names_token_and_agent_whole_at_both_pins(width):
+    """Three lines, none of them clipped: the plan's one-line form is 25
+    cells and the box has ~16 content cells at the AGENT pin, ~17 at 143."""
+    text = await _box_text(BOX_IDS["seat"], size=(width, 9))
+    assert "SEAT" in text and "IDMD #1548" in text and "agent 50971" in text
+    assert "…" not in text, (width, text)
 
 
-async def test_the_three_selected_by_phrasings():
-    env = await _box_text(BOX_IDS["seat"], swarm_seat_selected=dict(SELECTED, selected_by="env"))
-    assert "from MAXPANE_IMD_SEAT" in env
-    cursor = await _box_text(BOX_IDS["seat"], swarm_seat_selected=dict(SELECTED, selected_by="cursor"))
-    assert "selected" in cursor and "MAXPANE" not in cursor
-    most = await _box_text(BOX_IDS["seat"], swarm_seat_selected=dict(SELECTED, selected_by="most_active"))
-    assert "most active" in most
+@pytest.mark.parametrize("width", PINS)
+async def test_the_three_selected_by_phrasings(width):
+    env = await _box_text(BOX_IDS["seat"], size=(width, 9),
+                          swarm_seat_selected=dict(SELECTED, selected_by="env"))
+    assert "env" in env and "…" not in env
+    cursor = await _box_text(BOX_IDS["seat"], size=(width, 9),
+                             swarm_seat_selected=dict(SELECTED, selected_by="cursor"))
+    assert "selected" in cursor and "MAXPANE" not in cursor and "…" not in cursor
+    most = await _box_text(BOX_IDS["seat"], size=(width, 9),
+                           swarm_seat_selected=dict(SELECTED, selected_by="most_active"))
+    assert "most active" in most and "…" not in most
+
+
+async def test_the_hero_row_is_seven_lines_under_the_stylesheet():
+    """SEAT's three lines under the label and its blank row need a 7-tall
+    box (border included); ``minimal.tcss`` says so and this is where it
+    is read back off the compositor rather than off the file."""
+    async with _Themed().run_test(size=SIZE) as pilot:
+        hero = pilot.app.query_one(SurfSwarmAgentHero)
+        hero.update_data(swarm_seat_selected=SELECTED, swarm_seat_summary=SUMMARY,
+                         swarm_seat_as_of_hhmm=AS_OF)
+        await pilot.pause()
+        assert hero.region.height == 7
+        assert all(box.region.height == 7 for box in pilot.app.query(SurfSwarmAgentHeroBox))
 
 
 async def test_no_selection_is_two_different_facts():
@@ -129,10 +172,9 @@ async def test_a_hostile_agent_id_renders_literally():
 
 async def test_a_theme_token_in_an_agent_id_does_not_raise():
     text = await _box_text(BOX_IDS["seat"], swarm_seat_selected=dict(SELECTED, agent_id="[$success]"))
-    # 29 cells is wider than the box: what matters is the token's opening
-    # bracket is *shown* (a parsed theme token vanishes or raises), then the
-    # ellipsis, not the whole word.
-    assert "agent [$succ" in text and "…" in text
+    # ``agent [$success]`` is 16 cells and fits the box at the pin: the token
+    # is *shown*, brackets and all (a parsed theme token vanishes or raises).
+    assert "agent [$success]" in text
 
 
 # -- the counters -----------------------------------------------------------------
@@ -142,7 +184,9 @@ async def test_the_counter_boxes_carry_their_numbers_and_zeros_are_real():
     nodes = await _box_text(BOX_IDS["nodes"])
     assert "NODES · JOBS" in nodes and "7 · 6" in nodes
     verdicts = await _box_text(BOX_IDS["verdicts"])
-    assert "ACCEPTED / REJECTED" in verdicts and "7 / 0" in verdicts
+    # ``ACC / REJ``, not ``ACCEPTED / REJECTED`` (19 cells): the label has to
+    # fit the ~16-cell box at the AGENT pin without an ellipsis of its own.
+    assert "ACC / REJ" in verdicts and "7 / 0" in verdicts and "…" not in verdicts
     revisions = await _box_text(BOX_IDS["revisions"])
     assert "REVISIONS" in revisions
     body_lines = [line.strip("│ ") for line in revisions.splitlines()]

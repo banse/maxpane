@@ -13,7 +13,7 @@ from rich.color import Color
 
 from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.fmt import hhmm
-from maxpane_dashboard.widgets.surf.swarm_roster import SeatTableBase
+from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
 from maxpane_dashboard.widgets.surf.swarm_seat_record import (
     COMPACT_WIDTH,
     DETAIL_MIN_COLS,
@@ -204,7 +204,7 @@ def test_the_tier_thresholds_descend_and_detail_has_a_floor():
 
 
 async def test_one_below_full_sheds_try_and_rev_and_says_widen():
-    gutter = SeatTableBase.GUTTER_COLS
+    gutter = SwarmTableBase.GUTTER_COLS
     # At the full pin the detail column sits at its 17-cell floor, so the row
     # carries a detail that fits it -- a clipped detail is its own hint.
     row = dict(REJECTED, detail="two failed", failed_checks=[])
@@ -220,7 +220,7 @@ async def test_one_below_full_sheds_try_and_rev_and_says_widen():
 
 
 async def test_one_below_compact_sheds_the_detail():
-    gutter = SeatTableBase.GUTTER_COLS
+    gutter = SwarmTableBase.GUTTER_COLS
     tight = "\n".join(await _record((COMPACT_WIDTH + gutter - 1, 12), swarm_seat_node_rows=[REJECTED]))
     assert "two checks" not in tight and "detail" not in tight
     assert "rejected" in tight and "review_oracle" in tight and "‹" in tight

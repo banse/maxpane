@@ -635,7 +635,11 @@ def throughput_facts(jobs: object, seen: object, *,
     ``createdAt``, ``window_n`` the number of job mappings.  Durations are
     ``deliveredAt - createdAt`` of completed jobs that carry a delivery.
     ``completed_24h``/``seen_since_ts`` come from the seen slot and are
-    ``None`` while it is still accumulating (plan R-A).
+    ``None`` while it is still accumulating (plan R-A).  ``dur_n`` is the
+    size of that duration sample -- how many completed jobs carried a
+    delivery -- so a ``None`` median can say *why* (under two samples) and
+    a real one can say what it stands on; ``0`` on an empty read is a real
+    count of a read list (WP7, additive to §1.3).
     """
     if jobs is None:
         return None
@@ -662,6 +666,7 @@ def throughput_facts(jobs: object, seen: object, *,
         "states": state_rollup(j.get("state") for j in job_list),
     }
     out.update(duration_stats(durations))
+    out["dur_n"] = len(durations)
     out["cancel_reasons"] = count_by(
         (r for r in reasons if isinstance(r, str) and r), "reason"
     )

@@ -14,7 +14,7 @@ from textual.app import App
 from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.address import COPY_GLYPH, MIN_SHORT_COLS
 from maxpane_dashboard.widgets.fmt import hhmm
-from maxpane_dashboard.widgets.surf.swarm_roster import SeatTableBase
+from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
 from maxpane_dashboard.widgets.surf.swarm_seat_feedback import (
     COMPACT_WIDTH,
     EMPTY_LINE,
@@ -163,7 +163,7 @@ def test_the_tier_thresholds_descend():
 
 
 async def test_one_below_full_sheds_job_and_says_widen():
-    gutter = SeatTableBase.GUTTER_COLS
+    gutter = SwarmTableBase.GUTTER_COLS
     full = "\n".join(await _feedback((FULL_WIDTH + gutter, 12), swarm_seat_feedback_rows=[MAINNET]))
     compact = "\n".join(await _feedback((FULL_WIDTH + gutter - 1, 12),
                                         swarm_seat_feedback_rows=[MAINNET]))
@@ -173,7 +173,7 @@ async def test_one_below_full_sheds_job_and_says_widen():
 
 
 async def test_one_below_compact_sheds_node_and_shortens_the_hash():
-    gutter = SeatTableBase.GUTTER_COLS
+    gutter = SwarmTableBase.GUTTER_COLS
     tight = "\n".join(await _feedback((COMPACT_WIDTH + gutter - 1, 12),
                                       swarm_seat_feedback_rows=[MAINNET]))
     assert "build_contract_project" not in tight and "‹" in tight
@@ -187,5 +187,5 @@ async def test_one_below_compact_sheds_node_and_shortens_the_hash():
 
 
 async def test_a_tight_hash_still_links():
-    gutter = SeatTableBase.GUTTER_COLS
+    gutter = SwarmTableBase.GUTTER_COLS
     assert await _links([MAINNET], (COMPACT_WIDTH + gutter - 1, 12)) == [f"https://etherscan.io/tx/{TX}"]

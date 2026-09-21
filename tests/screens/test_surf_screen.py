@@ -44,6 +44,7 @@ from maxpane_dashboard.screens.surf import (
     MODE_LAUNCHPAD,
     MODE_POOL4,
     MODE_POOL4_USER,
+    MODE_AGENT,
     MODE_SWARM,
     POOL4_BODY_ID,
     POOL4_LEFT_ID,
@@ -59,9 +60,12 @@ from maxpane_dashboard.screens.surf import (
     SWARM_BODY_ID,
     SWARM_BOTTOM_ID,
     SWARM_TOP_ID,
+    AGENT_BODY_ID,
+    AGENT_TOP_ID,
     TALLER_HINT,
     SurfScreen,
 )
+from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from tests.screens._sweeps import boundary_set
 from maxpane_dashboard.widgets.surf.market import (
@@ -91,10 +95,16 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
-    SurfSwarmField,
+    SurfSwarmAgentHero,
+    SurfSwarmCapability,
     SurfSwarmHero,
-    SurfSwarmQueue,
-    SurfSwarmShipped,
+    SurfSwarmInFlight,
+    SurfSwarmLaunches,
+    SurfSwarmRoster,
+    SurfSwarmSeatFeedback,
+    SurfSwarmSeatRecord,
+    SurfSwarmSeatVerdicts,
+    SurfSwarmSites,
     SurfSwarmThroughput,
 )
 
@@ -171,17 +181,25 @@ _POOL4_USER_WIDGET_CLASSES = {
     "SurfPool4Flow": SurfPool4Flow,
 }
 
-#: The ``s`` SWARM body's five widgets (2026-09-16). A **fifth** role dict,
-#: for the third's own reason (composed hidden alongside the other four
-#: bodies, only one of which can be showing) plus the fourth's: it includes a
-#: **hero**, ``SurfSwarmHero``, mounted in ``#hero-row`` beside the other two
-#: and hidden in every mode but this one.
+#: The ``s`` SWARM body's six widgets and the ``a`` AGENT body's five (swarm
+#: v2, WP7, 2026-09-21; the 2026-09-16 five -- THE FIELD, QUEUE, JUST SHIPPED,
+#: the score-table THROUGHPUT and the old hero -- are gone). One role dict for
+#: both bodies because the role is the same: composed hidden alongside the
+#: other bodies, shown by ``s`` or ``a``, and each body carries a **hero**
+#: (``SurfSwarmHero``, ``SurfSwarmAgentHero``) mounted in ``#hero-row`` and
+#: hidden in every mode but its own.
 _SWARM_WIDGET_CLASSES = {
     "SurfSwarmHero": SurfSwarmHero,
-    "SurfSwarmField": SurfSwarmField,
-    "SurfSwarmShipped": SurfSwarmShipped,
-    "SurfSwarmQueue": SurfSwarmQueue,
+    "SurfSwarmInFlight": SurfSwarmInFlight,
     "SurfSwarmThroughput": SurfSwarmThroughput,
+    "SurfSwarmCapability": SurfSwarmCapability,
+    "SurfSwarmLaunches": SurfSwarmLaunches,
+    "SurfSwarmSites": SurfSwarmSites,
+    "SurfSwarmAgentHero": SurfSwarmAgentHero,
+    "SurfSwarmRoster": SurfSwarmRoster,
+    "SurfSwarmSeatRecord": SurfSwarmSeatRecord,
+    "SurfSwarmSeatVerdicts": SurfSwarmSeatVerdicts,
+    "SurfSwarmSeatFeedback": SurfSwarmSeatFeedback,
 }
 
 #: Both halves together -- **derived from the package**, not from the two
@@ -635,61 +653,18 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "pool4_implied_apr_pct": "pool4_implied_apr_pct",
         "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },
-    # -- the s SWARM body's five panels (2026-09-16) -----------------------
+    # -- the s SWARM and a AGENT bodies (swarm v2, WP7, 2026-09-21) ---------
     #
-    # Every kwarg is the contract key verbatim (`data/surf_models.SWARM_KEYS`).
-    # `swarm_network`, `swarm_as_of_hhmm` and `swarm_scores_as_of_hhmm` each
-    # reach more than one panel -- the same "more than one renderer" shape
-    # `pool4_current_tick`/`pool4_network` already have across the `p`/`4`
-    # bodies. `swarm_stale` reaches exactly one panel (THROUGHPUT) as of fix
-    # round 3, F-A: THE FIELD used to accept it too, wrongly (it reads only
-    # the live tier, and `swarm_stale` is the scores tier's own drift
-    # measure), and no longer does -- see `widgets/surf/swarm_field.py`'s
-    # module docstring.
-    #
-    # `swarm_queue_depths` reached no widget until F6 (2026-09-17,
-    # `docs/surf_swarm_followups.md`) gave QUEUE a compact pending-pipeline
-    # block off it -- see `_KEYS_WITHOUT_A_RENDERER`'s own note on the entry
-    # this moved out of.
-    "SurfSwarmHero": {
-        "swarm_agents_online": "swarm_agents_online",
-        "swarm_agents_enrolled": "swarm_agents_enrolled",
-        "swarm_working_now": "swarm_working_now",
-        "swarm_accepted_today": "swarm_accepted_today",
-        "swarm_jobs_in_flight": "swarm_jobs_in_flight",
-        "swarm_jobs_blocked": "swarm_jobs_blocked",
-        "swarm_services_up": "swarm_services_up",
-    },
-    "SurfSwarmField": {
-        "swarm_field_rows": "swarm_field_rows",
-        "swarm_as_of_hhmm": "swarm_as_of_hhmm",
-        "swarm_network": "swarm_network",
-        # No `swarm_stale` here (F-A, fix round 3): that flag names the
-        # scores tier's own drift from the live tier, and this panel reads
-        # only the live tier, so the screen no longer passes it and the
-        # widget no longer accepts it as a named kwarg.
-    },
-    "SurfSwarmShipped": {
-        "swarm_shipped_rows": "swarm_shipped_rows",
-        # The scores tier's own marker, not `swarm_as_of_hhmm`: this panel's
-        # rows ride the detached scores sweep.
-        "swarm_scores_as_of_hhmm": "swarm_scores_as_of_hhmm",
-        "swarm_network": "swarm_network",
-    },
-    "SurfSwarmQueue": {
-        "swarm_queue_rows": "swarm_queue_rows",
-        "swarm_blocked_rows": "swarm_blocked_rows",
-        "swarm_as_of_hhmm": "swarm_as_of_hhmm",
-        # F6 (2026-09-17, docs/surf_swarm_followups.md): the pending-pipeline
-        # block, gated on this same `swarm_as_of_hhmm` marker.
-        "swarm_queue_depths": "swarm_queue_depths",
-    },
-    "SurfSwarmThroughput": {
-        "swarm_throughput": "swarm_throughput",
-        "swarm_score_rows": "swarm_score_rows",
-        "swarm_scores_as_of_hhmm": "swarm_scores_as_of_hhmm",
-        "swarm_stale": "swarm_stale",
-    },
+    # Bound to the exported ``data/surf_models.SWARM_WIDGET_SIGNATURES`` by
+    # identity rather than restated: the export is the contract the screen
+    # dispatches from (``SurfScreen._do_refresh`` splats exactly these keys
+    # into each panel), so a second hand-typed copy here would be the one
+    # place the two could drift. Every kwarg is the contract key verbatim.
+    # `swarm_network`, `swarm_as_of_hhmm`, `swarm_scores_as_of_hhmm` and
+    # `swarm_seat_as_of_hhmm` each reach more than one panel -- the same
+    # "more than one renderer" shape `pool4_network` has across the `e`/`4`
+    # bodies.
+    **{name: {key: key for key in keys} for name, keys in SWARM_WIDGET_SIGNATURES.items()},
 }
 
 #: Keys the screen itself consumes without a 1:1 widget kwarg.
@@ -783,6 +758,13 @@ META_KEYS = frozenset({
 _KEYS_WITHOUT_A_RENDERER = frozenset({
     "pool_venue", "pool_fee_bps",
     "lp_state", "lp_imd", "lp_weth",
+    # The eight swarm v1 keys WP7 retires (2026-09-21). Their widgets -- THE
+    # FIELD, QUEUE, JUST SHIPPED, the score-table THROUGHPUT -- left with
+    # WP7's first commit; the keys, their folds and their fixtures leave with
+    # its second, and this block goes with them.
+    "swarm_jobs_in_flight", "swarm_jobs_blocked", "swarm_queue_depths",
+    "swarm_field_rows", "swarm_queue_rows", "swarm_blocked_rows",
+    "swarm_shipped_rows", "swarm_score_rows",
 })
 
 #: **Empty, for the second time.** Task 12 of the v3->v4/launchpad plan
@@ -805,26 +787,13 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
 #: 2026-09-21, Amendment A2): the fourteen swarm v2 keys -- §1.1's four,
 #: §1.2's four, A1's six -- are frozen in ``SWARM_KEYS`` before any of their
 #: eleven target widgets exists, so WP1-WP6a build against one contract.
-#: **WP7 of that plan** (screen, layout sweep, retirement) is the task that
-#: empties this set again: it wires the new widgets, binds this file's
-#: ``SURF_WIDGET_SIGNATURES`` to the exported ``SWARM_WIDGET_SIGNATURES`` by
-#: identity, and deletes the eight pre-v2 keys the plan retires.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({
-    "swarm_queue_total",
-    "swarm_breaker",
-    "swarm_skill_summary",
-    "swarm_launch_summary",
-    "swarm_inflight_rows",
-    "swarm_skill_rows",
-    "swarm_launch_rows",
-    "swarm_site_rows",
-    "swarm_seat_rows",
-    "swarm_seat_selected",
-    "swarm_seat_summary",
-    "swarm_seat_node_rows",
-    "swarm_seat_feedback_rows",
-    "swarm_seat_as_of_hhmm",
-})
+#: **Emptied for the third time by WP7 of that plan** (2026-09-21): the
+#: screen mounts all eleven widgets, this file's ``SURF_WIDGET_SIGNATURES``
+#: is bound to the exported ``SWARM_WIDGET_SIGNATURES`` by identity, and the
+#: eight pre-v2 keys the plan retires sit in
+#: :data:`_KEYS_WITHOUT_A_RENDERER` until WP7's second commit deletes them
+#: from ``SWARM_KEYS``.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -6966,14 +6935,14 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "e", "4", "s", "escape"}
+    assert keys == {"r", "l", "e", "4", "s", "a", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
         "the old c-swap action outlived its binding -- an action with no key "
         "is a surface nobody can reach and nobody maintains"
     )
     for action in ("action_toggle_launchpad", "action_toggle_pool4",
                    "action_toggle_pool4_user", "action_toggle_swarm",
-                   "action_show_dashboard"):
+                   "action_toggle_agent", "action_show_dashboard"):
         assert hasattr(SurfScreen, action), action
 
 
@@ -8218,6 +8187,7 @@ def test_every_mode_names_its_scrolling_columns() -> None:
     }
     assert modes == {
         MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER, MODE_SWARM,
+        MODE_AGENT,  # the sixth body (swarm v2 plan A1, WP7)
     }, (
         f"a mode was added or removed: {modes}"
     )
@@ -8489,13 +8459,20 @@ def test_the_market_body_css_agrees_between_default_css_and_the_stylesheet() -> 
 
 # -- the s body's CSS, in agreement ---------------------------------------
 
-#: No hero, on ``_POOL4_USER_CSS_SELECTORS``'s own precedent: ``SurfSwarmHero``
-#: carries no screen-level CSS at all (like ``SurfPool4UserHero`` before it --
-#: only one hero is ever ``display``-ed at a time, so the visible one simply
-#: fills ``#hero-row`` and needs no ``width`` rule of its own).
+#: Both bodies' containers and every panel, **heroes included** (swarm v2,
+#: WP7): unlike ``SurfPool4UserHero``, whose box geometry is its own
+#: ``DEFAULT_CSS``, the two swarm heroes state none (``rules/widgets.md``:
+#: ``HeroBoxBase`` leaves every dimension to the stylesheet), so their box
+#: rules live in the two copies compared here and must agree like the rest.
 _SWARM_CSS_SELECTORS = (
     f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}", f"#{SWARM_BOTTOM_ID}",
-    "SurfSwarmField", "SurfSwarmShipped", "SurfSwarmQueue", "SurfSwarmThroughput",
+    f"#{AGENT_BODY_ID}", f"#{AGENT_TOP_ID}",
+    "SurfSwarmHero", "SurfSwarmHero > SurfSwarmHeroBox",
+    "SurfSwarmAgentHero", "SurfSwarmAgentHero > SurfSwarmAgentHeroBox",
+    "SurfSwarmCapability", "SurfSwarmThroughput", "SurfSwarmInFlight",
+    "SurfSwarmLaunches", "SurfSwarmSites",
+    "SurfSwarmRoster", "SurfSwarmSeatVerdicts", "SurfSwarmSeatRecord",
+    "SurfSwarmSeatFeedback",
 )
 
 

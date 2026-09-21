@@ -1,12 +1,12 @@
 """LAUNCHES: the swarm's ``/launches``, one row per launch (swarm v2, WP6).
 
-Unwired until WP7 swaps the ``s`` body over, exports the class and writes its
-stylesheet block; new file, importing nothing from the old ``swarm_shipped.py``
-(deleted in WP7) -- its ``TIGHT_ADDR_COLS`` reasoning is restated below, not
+Mounted on the ``s`` body since WP7 (beside IN FLIGHT, ``minimal.tcss``);
+a new file that imported nothing from the old ``swarm_shipped.py`` WP7
+deleted -- its ``TIGHT_ADDR_COLS`` reasoning is restated below, not
 imported.
 
 Columns ``# · kind · status · chain · repo · artifacts · parked reason`` on
-:class:`~maxpane_dashboard.widgets.surf.swarm_capability.SwarmTableBase`
+:class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase`
 (the tier machinery shared by the three WP6 tables; see that module).
 
 The chain word is per row, never in the title
@@ -58,7 +58,7 @@ from maxpane_dashboard.widgets.markup_safety import sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.panels import LOADING
 from maxpane_dashboard.widgets.surf._fmt import DASH
 from maxpane_dashboard.widgets.surf._swarm_chain import CHAIN_COLS, chain_word
-from maxpane_dashboard.widgets.surf.swarm_capability import (
+from maxpane_dashboard.widgets.surf._swarm_table import (
     CELL_PADDING,
     SwarmTableBase,
     table_cols,
@@ -191,12 +191,6 @@ class SurfSwarmLaunches(SwarmTableBase):
 
     LOADING_ROW = (LOADING, "", "", "", "", "", "")
     EMPTY_ROW = ("--", "No data", "", "", "", "", "")
-
-    DEFAULT_CSS = """
-    SurfSwarmLaunches > DataTable {
-        height: 1fr;
-    }
-    """
 
     def update_data(
         self,

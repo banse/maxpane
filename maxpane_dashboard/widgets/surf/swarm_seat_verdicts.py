@@ -1,7 +1,7 @@
 """VERDICTS -- the selected seat's counters as a signals panel (swarm v2 plan A1, WP6a).
 
-Unwired until WP7 exports the class and mounts it on the AGENT body; this
-module only paints the frozen ``swarm_seat_summary`` dict: ``nodes, jobs,
+Mounted on the AGENT body (``a``) beside ROSTER since WP7; this module
+only paints the frozen ``swarm_seat_summary`` dict: ``nodes, jobs,
 accepted, rejected, revisions, mean_score, scored, working_now,
 first_seen_ts, last_active_ts, roles: [{role, count}], rejection_codes:
 [{code, count}]`` -- or ``None``.

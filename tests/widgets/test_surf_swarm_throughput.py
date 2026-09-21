@@ -1,9 +1,4 @@
-"""THROUGHPUT -- the swarm v2 signals panel on ``panels.SignalsPanelBase`` (WP5).
-
-Transitional module name: ``swarm_throughput_v2`` / ``SurfSwarmThroughputV2``
-until WP7 deletes the old ``swarm_throughput.SurfSwarmThroughput`` and renames
-this one into its place; the contract binding is therefore to
-``SWARM_WIDGET_SIGNATURES["SurfSwarmThroughput"]``, the final name.
+"""THROUGHPUT -- the swarm signals panel on ``panels.SignalsPanelBase`` (WP5, on screen since WP7).
 
 The panel reads the plan §1.3 dict **only**; the hand dict below is that shape.
 Every assertion is against composited output.
@@ -17,14 +12,14 @@ from textual.app import App
 
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.fmt import hhmm
-from maxpane_dashboard.widgets.surf.swarm_throughput_v2 import (
+from maxpane_dashboard.widgets.surf.swarm_throughput import (
     ACCUMULATING_WORD,
     CANCELS_ID,
     NO_JOBS_LINE,
     SAMPLE_FLOOR_WORD,
     STALE_WORD,
     STATES_ID,
-    SurfSwarmThroughputV2,
+    SurfSwarmThroughput,
 )
 from tests.widgets.surf_compositing import composite_lines
 
@@ -38,6 +33,7 @@ THROUGHPUT = {
     "dur_median_s": 54 * 60.0,
     "dur_p90_s": 72 * 60.0,
     "dur_max_s": 3 * 3600.0 + 5 * 60.0,
+    "dur_n": 10,
     "cancel_reasons": [],
     "completed_24h": 41,
     "seen_since_ts": 1_757_900_000.0,
@@ -47,7 +43,7 @@ SIZE = (60, 26)
 
 
 async def _lines(size=SIZE, **kwargs) -> list[str]:
-    return await composite_lines(SurfSwarmThroughputV2, size, **kwargs)
+    return await composite_lines(SurfSwarmThroughput, size, **kwargs)
 
 
 async def _text(size=SIZE, **kwargs) -> str:
@@ -67,7 +63,7 @@ def _without(*keys) -> dict:
 
 def test_update_data_takes_exactly_the_frozen_keys_in_order():
     expected = SWARM_WIDGET_SIGNATURES["SurfSwarmThroughput"]
-    params = inspect.signature(SurfSwarmThroughputV2.update_data).parameters
+    params = inspect.signature(SurfSwarmThroughput.update_data).parameters
     named = tuple(
         name for name, p in params.items()
         if name != "self" and p.kind is not p.VAR_KEYWORD
@@ -139,6 +135,19 @@ async def test_the_three_duration_rows_carry_two_unit_durations():
     assert "3h 5m" in mx, mx
 
 
+async def test_each_duration_row_carries_the_sample_count():
+    """``dur_n`` (WP7) beside every real duration; a dict without the field
+    prints the bare duration rather than a count nobody measured."""
+    lines = await _lines(swarm_throughput=THROUGHPUT)
+    for label in ("median", "p90", "max"):
+        row = next(l for l in lines if f" {label}" in l)
+        assert "n=10" in row, row
+    bare = await _lines(swarm_throughput=_without("dur_n"))
+    for label in ("median", "p90", "max"):
+        row = next(l for l in bare if f" {label}" in l)
+        assert "n=" not in row, row
+
+
 async def test_a_duration_under_the_sample_floor_says_so():
     lines = await _lines(swarm_throughput=_tp(dur_median_s=None, dur_p90_s=None, dur_max_s=None))
     for label in ("median", "p90", "max"):
@@ -205,11 +214,11 @@ async def test_a_hostile_state_word_renders_literally():
 async def test_an_empty_state_list_says_none_and_a_none_list_is_unavailable():
     class _A(App):
         def compose(self):
-            yield SurfSwarmThroughputV2()
+            yield SurfSwarmThroughput()
 
     async def _states_text(states):
         async with _A().run_test(size=SIZE) as pilot:
-            panel = pilot.app.query_one(SurfSwarmThroughputV2)
+            panel = pilot.app.query_one(SurfSwarmThroughput)
             panel.update_data(swarm_throughput=_tp(states=states))
             await pilot.pause()
             region = pilot.app.query_one(f"#{STATES_ID}").region
@@ -245,11 +254,11 @@ async def test_the_cancel_block_says_none_when_empty_and_lists_reasons_when_not(
 async def test_a_none_cancel_list_is_unavailable_and_a_long_reason_is_clipped():
     class _A(App):
         def compose(self):
-            yield SurfSwarmThroughputV2()
+            yield SurfSwarmThroughput()
 
     async def _cancels(cancel_reasons):
         async with _A().run_test(size=SIZE) as pilot:
-            panel = pilot.app.query_one(SurfSwarmThroughputV2)
+            panel = pilot.app.query_one(SurfSwarmThroughput)
             panel.update_data(swarm_throughput=_tp(cancel_reasons=cancel_reasons))
             await pilot.pause()
             region = pilot.app.query_one(f"#{CANCELS_ID}").region
@@ -293,7 +302,7 @@ async def test_the_title_carries_the_marker_only_when_it_is_real():
 async def test_the_loading_seed_lands_on_the_first_row_not_a_separator():
     class _A(App):
         def compose(self):
-            yield SurfSwarmThroughputV2()
+            yield SurfSwarmThroughput()
 
     async with _A().run_test(size=SIZE) as pilot:
         await pilot.pause()

@@ -5,7 +5,7 @@ A minimal widget whose module genuinely imports the address helper's own
 icon-producing entry point (``address_text``), so ``_hash_only_module`` on
 this module correctly reports "not hash-only" -- the exact provenance a real
 production widget capable of building icons has, e.g. ``widgets/surf/
-swarm_shipped.py``. Kept in its own file, not the test module itself,
+swarm_launches.py``. Kept in its own file, not the test module itself,
 because the test module already imports ``ADDRESS_RE``/``PROSE_ADDRESS_RE``
 (not the icon-producing names) and must stay a *hash-only-eligible* import
 surface for other tests in that file to reason about accurately.

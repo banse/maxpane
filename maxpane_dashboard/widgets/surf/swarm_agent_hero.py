@@ -1,30 +1,33 @@
-"""The AGENT body's hero: SEAT · NODES · JOBS · ACCEPTED / REJECTED · REVISIONS · SCORE · STATUS.
+"""The AGENT body's hero: SEAT · NODES · JOBS · ACC / REJ · REVISIONS · SCORE · STATUS.
 
-Swarm v2 plan Amendment A1 (WP6a). A third surf hero, swapped in with the
-AGENT body the way ``SurfSwarmHero`` swaps in with the ``s`` body; unwired
-until WP7 exports the class, mounts it and adds ``MODE_AGENT`` to
-``_SURF_HERO_MODES``. This module only paints the frozen
-``swarm_seat_selected`` / ``swarm_seat_summary`` dicts, on
+Swarm v2 plan Amendment A1 (WP6a; on screen since WP7). A third surf hero,
+swapped in with the AGENT body (``a``, ``MODE_AGENT``) the way
+``SurfSwarmHero`` swaps in with the ``s`` body. This module only paints the
+frozen ``swarm_seat_selected`` / ``swarm_seat_summary`` dicts, on
 :class:`~maxpane_dashboard.widgets.panels.HeroRow` (``widgets/cattown/
-ct_hero_metrics.py`` is the idiom): every box rewritten on every
-``update_data`` inside ``render_box``'s guard (MEDI-38), each body a
-pre-built ``rich.text.Text`` so a third-party ``agent_id`` is appended, never
-parsed, and renders literally.
-
-Two facts the SEAT box keeps apart. ``selected`` is ``None`` and there is
-**no marker**: nothing was swept -- ``unavailable``. ``selected`` is
-``None`` **under a marker**: the sweep ran and found no seat --
-:data:`NO_SEAT_LINE`, a real empty. The counter boxes read the same
-distinction off the summary: ``None`` under a marker is the dim em dash
-(nothing to count), ``None`` with no marker is ``unavailable`` (CLAUDE.md:
+hero.py`` is the idiom): a ``None`` under a marker is a real empty (nothing
+selected / nothing to count), a ``None`` with no marker is ``unavailable``,
+and a value of the wrong shape lands on ``unavailable`` too (MEDI-38,
 never a false degradation). SCORE renders ``— (0 scored)`` when
 ``mean_score`` is ``None``: no feedback yet is not a score of zero.
 
 Token ids are integers, not addresses: no copy icon. No clock: STATUS shows
-``last HH:MM`` through ``hhmm``, never an age. The row carries its own
-geometry in ``DEFAULT_CSS`` as ``SurfSwarmHero`` does (the ``s`` body's hero
-is the sibling idiom); a ``minimal.tcss`` block on ``SurfSwarmAgentHeroBox``
-is WP7's to add if the theme wants to restate it.
+``last HH:MM`` through ``hhmm``, never an age.
+
+SEAT is three lines -- ``IDMD #1548`` (bold), ``agent 50971`` (dim) and how
+the seat was picked (``env`` / ``selected`` / ``most active``, dim) -- each
+eleven cells or fewer. The plan's one-line form ``agent 50971 · most
+active`` is 25 cells, and six ``1fr`` boxes at ``__main__
+.FULL_LAYOUT_COLUMNS`` (143) leave each about 20 cells of content; a line
+that cannot fit at the widest pin the app admits has to be re-cut, not
+clipped (terminal-layout skill: *shorten the value before raising the
+pin*). ``ACC / REJ`` is the verdicts label for the same reason.
+
+Geometry
+--------
+None here (``rules/widgets.md``, ``HeroBoxBase``): ``SurfSwarmAgentHeroBox``
+exists so ``minimal.tcss`` can name it, and both swarm heroes follow one
+block there (height 7 -- label, blank, three body lines, a solid border).
 """
 
 from __future__ import annotations
@@ -50,15 +53,17 @@ BOX_IDS = {
     "status": "surf-swarm-agent-status",
 }
 
+#: How the seat was picked (``sw.pick_seat``): the operator's
+#: ``MAXPANE_IMD_SEAT``, the roster cursor, or the busiest seat.
 _SELECTED_BY = {
-    "env": "from MAXPANE_IMD_SEAT",
+    "env": "env",
     "cursor": "selected",
     "most_active": "most active",
 }
 
 
 class SurfSwarmAgentHeroBox(HeroBoxBase):
-    """One box of the AGENT hero; its geometry is the row's ``DEFAULT_CSS`` below."""
+    """One box of the AGENT hero. No geometry here: the stylesheet names this class."""
 
 
 #: What a non-dict, non-``None`` payload value becomes: not a fact, a defect.
@@ -81,38 +86,10 @@ class SurfSwarmAgentHero(HeroRow):
     """Six boxes for one seat -- see the module docstring."""
 
     BOX_CLASS = SurfSwarmAgentHeroBox
-
-    #: ``SurfSwarmHero``'s geometry (the ``s`` body's hero, the sibling
-    #: idiom) minus its horizontal padding: height 6 holds a label, a blank
-    #: and two content lines (SEAT's ``selected_by`` clause, STATUS's ``last
-    #: HH:MM``) inside a solid border; vertical padding would clip the second
-    #: line in silence (``fwa_hero_metrics.py``'s hazard note). No padding
-    #: because six boxes share the row and SEAT's ``IDMD #1548 · agent 50971``
-    #: is 24 cells: with a border and a 1-cell margin each box has
-    #: ``cols / 6 - 4`` cells of content, 24 at 168 columns. Below that the
-    #: line clips with a visible ``…`` -- the row's own pin is WP7's to
-    #: measure, and this is the widest fact it must hold.
-    DEFAULT_CSS = """
-    SurfSwarmAgentHero {
-        height: 6;
-    }
-    SurfSwarmAgentHero > SurfSwarmAgentHeroBox {
-        width: 1fr;
-        height: 6;
-        margin: 0 1;
-        border: solid $panel;
-        background: $surface;
-        content-align: center middle;
-        text-align: center;
-        text-wrap: nowrap;
-        text-overflow: ellipsis;
-    }
-    """
-
     BOXES = (
         (BOX_IDS["seat"], "SEAT"),
         (BOX_IDS["nodes"], "NODES · JOBS"),
-        (BOX_IDS["verdicts"], "ACCEPTED / REJECTED"),
+        (BOX_IDS["verdicts"], "ACC / REJ"),
         (BOX_IDS["revisions"], "REVISIONS"),
         (BOX_IDS["score"], "SCORE"),
         (BOX_IDS["status"], "STATUS"),
@@ -136,7 +113,7 @@ class SurfSwarmAgentHero(HeroRow):
                         lambda: self._seat_body(selected, swept))
         for key, label, build in (
             ("nodes", "NODES · JOBS", self._nodes_body),
-            ("verdicts", "ACCEPTED / REJECTED", self._verdicts_body),
+            ("verdicts", "ACC / REJ", self._verdicts_body),
             ("revisions", "REVISIONS", self._revisions_body),
             ("score", "SCORE", self._score_body),
             ("status", "STATUS", self._status_body),
@@ -154,7 +131,9 @@ class SurfSwarmAgentHero(HeroRow):
             return Text(NO_SEAT_LINE, style="dim")
         body = Text()
         body.append(f"IDMD #{_token_word(selected.get('token_id'))}", style="bold")
-        body.append(" · agent ", style="dim")
+        body.append("\n")
+        # ``Text.append`` parses nothing: a hostile agent id renders literally.
+        body.append("agent ", style="dim")
         body.append(flatten(selected.get("agent_id")) or DASH, style="bold")
         body.append("\n")
         how = selected.get("selected_by")

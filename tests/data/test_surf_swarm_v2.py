@@ -377,6 +377,7 @@ def test_throughput_facts_on_an_empty_read_is_a_dict_of_honest_empties():
         "window_start_ts": None, "window_end_ts": None, "window_n": 0,
         "states": [],
         "dur_median_s": None, "dur_p90_s": None, "dur_max_s": None,
+        "dur_n": 0,
         "cancel_reasons": [],
         "completed_24h": None, "seen_since_ts": None,
     }
@@ -392,7 +393,16 @@ def test_throughput_facts_on_the_capture(jobs):
     assert out["states"] == [{"state": "completed", "count": 98},
                              {"state": "executing", "count": 2}]
     assert out["cancel_reasons"] == []
-    # Ten completed jobs carry delivery.deliveredAt: enough for the three.
+    # Completed jobs carrying ``delivery.deliveredAt`` are the sample; the
+    # count is pinned to the corpus itself (counted off jobs.json, not off
+    # the fold), and it is enough for the three percentiles.
+    delivered = [
+        j for j in jobs
+        if j.get("state") == "completed" and isinstance(j.get("delivery"), dict)
+        and j["delivery"].get("deliveredAt")
+    ]
+    assert len(delivered) == 10, len(delivered)
+    assert out["dur_n"] == 10
     assert out["dur_median_s"] is not None
     assert out["dur_median_s"] <= out["dur_p90_s"] <= out["dur_max_s"]
     assert out["dur_max_s"] > 0

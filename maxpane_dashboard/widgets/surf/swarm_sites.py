@@ -1,11 +1,11 @@
 """SITES: the swarm's ``/sites`` -- ENS-named, IPFS-pinned deliveries (swarm v2, WP6).
 
-Unwired until WP7 swaps the ``s`` body over, exports the class and writes its
-stylesheet block; new file, importing nothing from the old ``swarm_shipped.py``
-(deleted in WP7).
+Mounted full-width at the foot of the ``s`` body since WP7
+(``minimal.tcss``); a new file that imported nothing from the old
+``swarm_shipped.py`` WP7 deleted.
 
 Columns ``label · ens · size · cid · tx`` on
-:class:`~maxpane_dashboard.widgets.surf.swarm_capability.SwarmTableBase`
+:class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase`
 (the tier machinery the three WP6 tables share; see that module).
 
 The tx links on mainnet, and why that is a measurement
@@ -56,7 +56,7 @@ from maxpane_dashboard.widgets.markup_safety import safe_markup, sanitize_cell, 
 from maxpane_dashboard.widgets.panels import LOADING
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 from maxpane_dashboard.widgets.surf._fmt import DASH, EXPLORER
-from maxpane_dashboard.widgets.surf.swarm_capability import SwarmTableBase, table_cols
+from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
 
 __all__ = [
     "CID_COLS",
@@ -175,12 +175,6 @@ class SurfSwarmSites(SwarmTableBase):
 
     LOADING_ROW = (LOADING, "", "", "", "")
     EMPTY_ROW = ("No data", "", "", "", "")
-
-    DEFAULT_CSS = """
-    SurfSwarmSites > DataTable {
-        height: 1fr;
-    }
-    """
 
     def update_data(
         self,

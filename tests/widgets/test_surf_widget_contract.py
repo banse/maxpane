@@ -64,10 +64,16 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
-    SurfSwarmField,
+    SurfSwarmAgentHero,
+    SurfSwarmCapability,
     SurfSwarmHero,
-    SurfSwarmQueue,
-    SurfSwarmShipped,
+    SurfSwarmInFlight,
+    SurfSwarmLaunches,
+    SurfSwarmRoster,
+    SurfSwarmSeatFeedback,
+    SurfSwarmSeatRecord,
+    SurfSwarmSeatVerdicts,
+    SurfSwarmSites,
     SurfSwarmThroughput,
 )
 
@@ -199,29 +205,18 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # rather than a panel changes nothing about what this list is for.
         SurfPool4UserHero, SurfPool4UStakers, SurfPool4UBurn,
         SurfPool4USignals, SurfPool4UDepth,
-        # The `s` swarm body's own hero (2026-09-16). Its own task, not the
-        # plan's File Structure, owns this hand-typed set -- see the ruling
-        # in .superpowers/sdd/2026-09-16-surf-swarm-body/task-6-report.md.
-        # Every swarm widget lands here on its own task.
-        SurfSwarmHero,
-        # THE FIELD (task 7, 2026-09-16). Every kwarg is spelled after its
-        # full `swarm_` contract key, `swarm_network` included even though
-        # this panel never paints it (see swarm_field.py's own docstring for
-        # why) -- so it belongs in the strict check, not
-        # `_SHORT_KWARG_WIDGETS`.
-        SurfSwarmField,
-        # QUEUE and THROUGHPUT (task 8, 2026-09-16). Every kwarg is spelled
-        # after its full `swarm_` contract key too -- neither panel takes a
-        # `swarm_network` kwarg at all (see swarm_throughput.py's own
-        # docstring for the reasoning on THROUGHPUT, the one of the two the
-        # design note names for the chain word).
-        SurfSwarmQueue, SurfSwarmThroughput,
-        # JUST SHIPPED (task 9, 2026-09-16). Every kwarg is spelled after its
-        # full `swarm_` contract key; `swarm_network` is accepted and never
-        # painted, same reason as THE FIELD -- this panel's chain word is per
-        # row, off each row's own `chain_id`, not off the live tier's single
-        # network string (see swarm_shipped.py's own docstring).
-        SurfSwarmShipped,
+        # The `s` SWARM body's six and the `a` AGENT body's five (swarm v2,
+        # WP7, 2026-09-21; the 2026-09-16 five -- THE FIELD, QUEUE, JUST
+        # SHIPPED, the score-table THROUGHPUT and the old hero -- are gone).
+        # Every kwarg is spelled after its full `swarm_` contract key, bound
+        # to `data/surf_models.SWARM_WIDGET_SIGNATURES` by each widget's own
+        # test; `swarm_network` is accepted and never painted by IN FLIGHT,
+        # LAUNCHES and RECORD (their chain word is per row, off the row's own
+        # `chain_id`) -- so all eleven belong in the strict check.
+        SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput,
+        SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
+        SurfSwarmAgentHero, SurfSwarmRoster, SurfSwarmSeatRecord,
+        SurfSwarmSeatVerdicts, SurfSwarmSeatFeedback,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 

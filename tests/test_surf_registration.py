@@ -2445,38 +2445,48 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             await pilot.press("s")
             await pilot.pause()
             swarm_text = _screen_text(app)
-            from maxpane_dashboard.widgets.surf.swarm_shipped import (
-                UNAVAILABLE_LINE as SHIPPED_UNAVAILABLE,
-            )
-            from maxpane_dashboard.widgets.surf.swarm_throughput import (
-                AGENTS_UNAVAILABLE_LINE as THROUGHPUT_AGENTS_UNAVAILABLE,
-            )
+            from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
 
-            assert "THE FIELD" in swarm_text, (
+            assert "CAPABILITY" in swarm_text, (
                 "pressing `s` did not reach the swarm body -- the sweep "
                 "below would be measuring the market body twice"
             )
             # Explicit rather than blank, for the same reason every other
-            # body's panels are checked this way: an outage that renders four
+            # body's panels are checked this way: an outage that renders five
             # empty panels is exactly as wrong as one that renders zeros.
-            for title in ("THE FIELD", "JUST SHIPPED", "QUEUE", "THROUGHPUT"):
+            # Swarm v2 (WP7): the five panels of the rebuilt body.
+            for title in ("CAPABILITY", "THROUGHPUT", "IN FLIGHT", "LAUNCHES", "SITES"):
                 assert title in swarm_text, f"{title} vanished under outage"
             # Both markers this body reads (`swarm_as_of_hhmm`,
             # `swarm_scores_as_of_hhmm`) are `None` under a full outage, so
-            # every list-shaped panel must say so explicitly rather than
-            # rendering an empty read -- JUST SHIPPED and THROUGHPUT's own
-            # agent section each have a distinct spelling for the two states
-            # (see `swarm_shipped.py`/`swarm_throughput.py`'s own module
-            # docstrings), which is what makes these two, and not "unavailable"
-            # itself, the needles worth naming here.
-            assert SHIPPED_UNAVAILABLE in swarm_text, (
-                "JUST SHIPPED did not say shipments were unavailable under "
-                "a cold scores slot"
+            # every table must say so explicitly rather than rendering an
+            # empty read: `SwarmTableBase` writes its `UNAVAILABLE_LINE`
+            # footer for `None` and its per-panel `EMPTY_LINE` for `[]`, and
+            # the two spellings differ (`_swarm_table.py`'s module docstring).
+            assert SwarmTableBase.UNAVAILABLE_LINE in swarm_text, (
+                "no swarm table said its rows were unavailable under a cold slot"
             )
-            assert THROUGHPUT_AGENTS_UNAVAILABLE in swarm_text, (
-                "THROUGHPUT's agent section did not say agents were "
-                "unavailable under a cold scores slot"
+            from maxpane_dashboard.widgets.surf import (
+                SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
             )
+            from maxpane_dashboard.widgets.surf.swarm_inflight import (
+                EMPTY_LINE as INFLIGHT_EMPTY,
+            )
+            from maxpane_dashboard.widgets.fmt import DASH
+            from rich.text import Text
+
+            # The real-empty spellings, derived the way the base derives them
+            # (`SwarmTableBase.build_row` on `_EMPTY_ITEM`: the first real
+            # word of the panel's `EMPTY_ROW`), never typed here.
+            empty_words = [
+                next(cell for cell in cls.EMPTY_ROW if cell and cell != DASH)
+                for cls in (SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites)
+            ] + [Text.from_markup(INFLIGHT_EMPTY).plain.strip()]
+            for empty_word in empty_words:
+                assert empty_word not in swarm_text, (
+                    f"{empty_word!r} rendered under a full outage -- a failed "
+                    "read wearing a real negative's clothes"
+                )
             # The hero swapped WITH the body, the swarm body's own break of
             # surf precedent on the `4` body's own precedent -- and a swap
             # that did not happen would leave the swarm needles being swept

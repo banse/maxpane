@@ -1,10 +1,10 @@
 """FEEDBACK -- the selected seat's on-chain ERC-8004 feedback (swarm v2 plan A1, WP6a).
 
-Unwired until WP7 exports the class and mounts it on the AGENT body; this
-module only paints the frozen ``swarm_seat_feedback_rows`` shape
+Mounted on the AGENT body (``a``) since WP7; this module only paints the
+frozen ``swarm_seat_feedback_rows`` shape
 (``data/surf_models.SURF_ROW_KEYS``): ``value, node_key, job_id, tx_hash,
 chain_id, block_number, sent_ts``. The tiered-table mechanics are
-:class:`~maxpane_dashboard.widgets.surf.swarm_roster.SeatTableBase`'s.
+:class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase`'s.
 
 Each row links its **own** chain. A review carries a ``chainId`` (the
 corpus has 35 on mainnet, one on Sepolia and one ``null``), so the ``tx``
@@ -37,7 +37,7 @@ from maxpane_dashboard.widgets.fmt import as_float, fmt_float, fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell
 from maxpane_dashboard.widgets.surf._fmt import DASH, hhmm
 from maxpane_dashboard.widgets.surf._swarm_chain import CHAIN_COLS, chain_word
-from maxpane_dashboard.widgets.surf.swarm_roster import SeatTableBase, table_cols
+from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
 from maxpane_dashboard.widgets.surf.swarm_seat_record import JOB_COLS, NODE_COLS
 
 __all__ = [
@@ -75,23 +75,22 @@ _SPECS = (
     ("chain", "chain", CHAIN_COLS),
     ("tx", "tx", TX_COLS),
 )
-_SHED = {
-    "compact": frozenset({"job"}),
-    "tight": frozenset({"job", "node"}),
-}
+_ALL = tuple(key for key, _l, _w in _SPECS)
+_COMPACT = tuple(key for key in _ALL if key != "job")
+_TIGHT = tuple(key for key in _COMPACT if key != "node")
 
 
-def _tier_width(shed: frozenset[str], tx_cols: int = TX_COLS) -> int:
-    widths = [tx_cols if k == "tx" else w for k, _l, w in _SPECS if k not in shed]
+def _tier_width(keep, tx_cols: int = TX_COLS) -> int:
+    widths = [tx_cols if k == "tx" else w for k, _l, w in _SPECS if k in keep]
     return table_cols(widths)
 
 
 #: Every column: 65 cells plus six columns' padding = 77.
-FULL_WIDTH = _tier_width(frozenset())
+FULL_WIDTH = _tier_width(_ALL)
 #: Without ``job`` (8 + 2) = 67.
-COMPACT_WIDTH = _tier_width(_SHED["compact"])
+COMPACT_WIDTH = _tier_width(_COMPACT)
 #: Without ``node`` (22 + 2) too, and the hash at 11 (-6) = 37.
-TIGHT_WIDTH = _tier_width(_SHED["tight"], _TIGHT_TX_COLS)
+TIGHT_WIDTH = _tier_width(_TIGHT, _TIGHT_TX_COLS)
 
 
 def _value_cell(value: object) -> str:
@@ -103,7 +102,7 @@ def _value_cell(value: object) -> str:
     return fmt_float(v, ".1f")
 
 
-class SurfSwarmSeatFeedback(SeatTableBase):
+class SurfSwarmSeatFeedback(SwarmTableBase):
     """FEEDBACK -- one row per on-chain review entry for the selected seat."""
 
     TITLE = "FEEDBACK"
@@ -112,7 +111,7 @@ class SurfSwarmSeatFeedback(SeatTableBase):
     ROW_CAP = 12
 
     COLUMN_SPECS = _SPECS
-    SHED = _SHED
+    TIER_COLUMNS = {"full": _ALL, "compact": _COMPACT, "tight": _TIGHT}
     LADDER = rowfit.Ladder(
         ("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH),
     )
@@ -127,8 +126,7 @@ class SurfSwarmSeatFeedback(SeatTableBase):
         **_kwargs,
     ) -> None:
         """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it)."""
-        self._as_of = swarm_seat_as_of_hhmm
-        self.render_table(swarm_seat_feedback_rows)
+        self.store(swarm_seat_feedback_rows, swarm_seat_as_of_hhmm)
 
     # -- geometry -----------------------------------------------------------
 
@@ -139,9 +137,7 @@ class SurfSwarmSeatFeedback(SeatTableBase):
 
     # -- the cells ----------------------------------------------------------
 
-    def build_cells(self, index: int, item) -> dict[str, object] | None:
-        if not isinstance(item, dict):
-            return None
+    def build_cells(self, item: dict) -> dict[str, object] | None:
         chain_id = item.get("chain_id")
         job_id = item.get("job_id")
         job = job_id[:JOB_COLS] if isinstance(job_id, str) and job_id else DASH

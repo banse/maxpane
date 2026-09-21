@@ -104,34 +104,14 @@ EXEMPT: dict[str, str] = {
         "swap, trader and ETH-owed totals only; no address in its contract",
     "maxpane_dashboard.widgets.surf.launchpad.SurfBurnPipeline":
         "burn pipeline status and amounts only; no address in its contract",
-    "maxpane_dashboard.widgets.surf.swarm_throughput.SurfSwarmThroughput":
-        "quotes each agent's last score transaction hash through hash_text (a"
-        " short_hex window, linked to its row's chain); a hash, never an"
-        " address, so it carries no icon by design",
-    "maxpane_dashboard.widgets.surf.swarm_field.SurfSwarmField":
-        "a dispatch note's embedded address (address_prose) is the only icon"
-        " this panel can ever show, and it lives in the ``note`` column that"
-        " only paints at the ``full`` tier (budget >= FULL_WIDTH = 117 cells)."
-        " Re-measured 2026-09-17 (swarm column-balance change, QUEUE/"
-        " THROUGHPUT capped at a fixed max-width rather than sharing an"
-        " unbounded 1fr with FIELD/SHIPPED): FIELD is now the ONLY unbounded"
-        " 1fr in its row, so it gets column-for-column growth above QUEUE's"
-        " own cap instead of half of it, and the full tier's own threshold"
-        " (measured, not derived) fell from 250 to exactly 170 -- the wide"
-        " sweep's own SIZE, not past it. This panel's exemption therefore no"
-        " longer rests on the note column being unreachable inside the"
-        " sweep: at SIZE=(170, 60) FIELD genuinely reaches ``full`` and would"
-        " paint an icon if the seeded payload put an address in a dispatch"
-        " note. It does not (the swarm fixture's own two notes are"
-        " ``\"waiting on review\"`` and ``None``, guarded by its own test:"
-        " test_the_swarm_field_exemption_s_own_assumption_is_still_true_of_"
-        " the_fixture), so the exemption still holds on the facts, not on"
-        " unreachability -- and this comment says so rather than repeating"
-        " the now-false claim that no swept render could ever show one."
-        " This body's own layout pin (116, re-swept 2026-09-17 fix round 1"
-        " on a silent overflow the column-balance change's own 95 had been"
-        " certifying) is still well under 170, so FIELD stays out of"
-        " ``full`` tier there regardless.",
+    "maxpane_dashboard.widgets.surf.swarm_sites.SurfSwarmSites":
+        "quotes each site's deploy transaction hash through hash_text (a"
+        " short_hex window linked to the package EXPLORER); a hash, never an"
+        " address, so it carries no icon by design (swarm v2, WP7)",
+    "maxpane_dashboard.widgets.surf.swarm_seat_feedback.SurfSwarmSeatFeedback":
+        "quotes each ERC-8004 review's transaction hash through hash_text,"
+        " linked to the row's own chain_id via for_chain_id; a hash, never an"
+        " address, so it carries no icon by design (swarm v2, WP7)",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
     "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":
@@ -377,50 +357,6 @@ def test_the_exemptions_name_real_helper_using_classes():
         assert reason.strip(), key
 
 
-def test_the_swarm_field_exemption_s_own_assumption_is_still_true_of_the_fixture():
-    """``SurfSwarmField``'s own ``EXEMPT`` entry no longer rests on the note
-    column being unreachable (fix round 1, 2026-09-17, on the column-balance
-    change's own re-sweep: THE FIELD's own ``full``-tier threshold, 170, sits
-    *inside* this file's own 170-column ``SIZE`` sweep now, not past it) --
-    it rests on a narrower, checkable fact instead: the seeded swarm fixture
-    puts no address in any ``dispatch_note``. That fact was true when the
-    comment was written and had **no test of its own** -- a future fixture
-    edit (a new seeded row, a note rewritten to include an example address)
-    could make the comment's own claim false while this file keeps reporting
-    green, exactly the "an EXEMPT widget prints no address" guarantee E5
-    exists to protect elsewhere in this file, here left to a sentence in a
-    docstring instead of an assertion.
-
-    This is that assertion: every ``dispatch_note`` in the fixture the sweep
-    actually mounts (``tests.address_sweep.builders._surf_payload``) is
-    checked against both address patterns this file already uses
-    (:data:`ADDRESS_RE`, whole; :data:`PROSE_ADDRESS_RE`, embedded). If this
-    ever reddens, the fix is not to weaken this test -- it is to move
-    ``SurfSwarmField`` off ``EXEMPT`` and let E4 require it to actually
-    produce an icon, because the premise that panel's exemption depends on
-    stopped holding.
-    """
-    from tests.address_sweep.builders import _surf_payload
-
-    payload = _surf_payload()
-    rows = payload.get("swarm_field_rows") or []
-    assert rows, "the swarm fixture seeded no field rows -- this test has nothing to check"
-    for row in rows:
-        note = row.get("dispatch_note")
-        if not isinstance(note, str):
-            continue
-        assert not ADDRESS_RE.search(note), (
-            row.get("job_id"), note,
-            "a whole address is now seeded into a dispatch note -- "
-            "SurfSwarmField's own EXEMPT reason no longer holds",
-        )
-        assert not PROSE_ADDRESS_RE.search(note), (
-            row.get("job_id"), note,
-            "an embedded address is now seeded into a dispatch note -- "
-            "SurfSwarmField's own EXEMPT reason no longer holds",
-        )
-
-
 async def _enter(view, app, pilot) -> None:
     if callable(view):
         await view(app, pilot)
@@ -458,11 +394,10 @@ def _continues_as_hash_window(head: str, following: str, hashes) -> bool:
     at 6 cells but not its *head*: at a wide enough column a 64-hex
     transaction hash can window to a head of exactly 40 cells, which is
     indistinguishable in shape from a real, un-iconized 40-hex address.
-    ``THROUGHPUT`` used to hit this at wide enough terminals (measured at
-    the sweep's own 170-column width before 2026-09-17) -- it no longer can,
-    now that ``swarm_throughput._MAX_TX_COLS`` caps the width it ever hands
-    ``short_hex`` at 12 cells (a 5-cell head at most, per ``_window``'s own
-    arithmetic), so this specific collision is retired -- see
+    The score-table ``THROUGHPUT`` used to hit this at wide enough terminals
+    (measured at the sweep's own 170-column width before 2026-09-17); a
+    12-cell cap on its hash column retired the collision that day, and the
+    swarm v2 THROUGHPUT (WP7, 2026-09-21) paints no hash at all -- see
     :func:`test_the_former_throughput_hash_collision_is_now_structurally_impossible`.
     The general point this docstring makes stands regardless: ``_window``
     itself still carries no head cap, so a *future* widget that hands it an
@@ -535,9 +470,11 @@ def _reaches_icon_machinery(module_name: str) -> bool:
     following that second name made *every* surf widget that imports any
     sibling by this common pattern reach *every* icon-producing widget
     anywhere in the package -- caught here because it flipped
-    ``swarm_throughput`` (imports only ``short_hex``, and only reaches
-    ``rowfit``/``_fmt``/``_pool4``/``_swarm_chain``, none of which import
-    the icon machinery either) to "not hash-only" the moment the walk went
+    the then hash-only ``swarm_throughput`` (which imported only
+    ``short_hex``, and reached only ``rowfit``/``_fmt``/``_pool4``/
+    ``_swarm_chain``, none of which import the icon machinery either; the
+    v2 module imports no address helper at all, and ``swarm_seat_feedback``
+    is the hash-only anchor now) to "not hash-only" the moment the walk went
     through the package init instead of stopping at the plain modules the
     import actually names.
     """
@@ -622,7 +559,7 @@ def _widget_module_at(app, x: int, y: int) -> str | None:
     Textual's own widgets never import the address helper at all. Walking
     ``ancestors_with_self`` to the first ancestor that imports the helper at
     all names the widget that is actually part of the address-icon system
-    (``SurfSwarmThroughput``, ``SurfSwarmShipped``, ...); further ancestors
+    (``SurfSwarmSeatFeedback``, ``SurfSwarmLaunches``, ...); further ancestors
     are container chrome (``Vertical``, ``Horizontal``, the screen itself)
     that would falsely read as address-incapable for the same reason.
     """
@@ -674,19 +611,22 @@ def test_a_hash_only_module_is_recognized_by_which_icon_helpers_it_imports():
     (added in this fix round; this assertion fails against 855d5d6, which has
     no such function).
     """
-    # Only imports short_hex/MIN_SHORT_COLS: structurally cannot ever print
-    # a real, icon-bearing address -- the legitimate case the exclusion
-    # exists for.
-    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_throughput")
-    # Imports address_text (and short_hex): capable of the real bug this
-    # finding is about, so never excused regardless of what its own printed
-    # digits happen to match elsewhere in the payload.
-    assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_shipped")
-    # Imports address_prose, the other icon-producing entry point: also not
-    # hash-only, proving the check is not just checking for address_text.
-    assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_field")
-    # Never touches the address helper at all: nothing to excuse here either.
-    assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_queue")
+    # Only imports hash_text/MIN_SHORT_COLS (FEEDBACK, swarm v2): structurally
+    # cannot ever print a real, icon-bearing address -- the legitimate case
+    # the exclusion exists for. SITES is the same shape (hash_text alone).
+    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_seat_feedback")
+    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_sites")
+    # Imports address_text (LAUNCHES' artifact column): capable of the real
+    # bug this finding is about, so never excused regardless of what its own
+    # printed digits happen to match elsewhere in the payload.
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_launches")
+    # Reaches address_text one hop out, through _icons.py (address_prose's
+    # own home): also not hash-only, proving the check is not a direct-import
+    # check on one name.
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf.feed")
+    # Never touches the address helper at all (the v2 THROUGHPUT paints no
+    # hash): nothing to excuse here either.
+    assert not _hash_only_module("maxpane_dashboard.widgets.surf.swarm_throughput")
     assert not _hash_only_module(None)
 
 
@@ -714,8 +654,9 @@ def test_a_module_reaching_icons_through_an_indirection_is_not_hash_only():
     assert not _hash_only_module("maxpane_dashboard.widgets.surf._icons")
     # The genuinely hash-only case must still hold once the walk is
     # transitive -- the fix must not trade a false negative for a false
-    # positive.
-    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_throughput")
+    # positive. FEEDBACK reaches _swarm_table, _swarm_chain, _fmt, rowfit and
+    # panels; none of them imports the icon machinery.
+    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_seat_feedback")
 
 
 def test_the_region_scan_only_excuses_a_hash_window_for_a_hash_only_widget():
@@ -751,33 +692,34 @@ def test_the_region_scan_only_excuses_a_hash_window_for_a_hash_only_widget():
 
 async def test_the_former_throughput_hash_collision_is_now_structurally_impossible():
     """RETIRED as a live-collision reproduction, 2026-09-17 (swarm
-    column-balance change) -- reported rather than silently dropped, per
-    the task that made the change: the swarm body's owner asked to cap
-    THROUGHPUT's tx-hash column at 12 cells
-    (``swarm_throughput._MAX_TX_COLS``), and that cap is a *ceiling* on the
-    width :func:`swarm_throughput._agent_lines` ever hands ``short_hex``,
-    not merely a floor beside :data:`swarm_throughput._MIN_TX_COLS`. A
-    12-cell window's own arithmetic (``widgets/address._window``: ``budget
-    = width - 3``, ``tail = min(6, budget // 2)``, ``head = budget - tail``)
-    tops out at a 5-cell head (``budget=9, tail=4, head=5``) -- nowhere near
-    the 40-cell head a bare address's own shape needs to collide with. The
-    test this replaced (``test_the_full_address_scan_resolves_the_real_
-    collision_to_its_widget``) re-measured the one outer width that
-    produced a 40-cell head three times across two days (170 -> 166 -> 153
-    -> 166) as the swarm body's own layout changed around it; this fourth
-    change does not move that number, it deletes the head budget the
-    collision needed to exist at any width, which is why this test proves
-    a structural bound rather than re-sweeping for a fourth number.
+    column-balance change), and retired one step further by swarm v2
+    (WP7, 2026-09-21) -- reported rather than silently dropped each time.
 
-    Proven two ways, not asserted from the constant alone:
+    The 2026-09-17 shape: the swarm body's owner capped the score-table
+    THROUGHPUT's tx-hash column at 12 cells, a *ceiling* on the width
+    ``_agent_lines`` ever handed ``short_hex``, and a 12-cell window's own
+    arithmetic (``widgets/address._window``: ``budget = width - 3``, ``tail
+    = min(6, budget // 2)``, ``head = budget - tail``) tops out at a 5-cell
+    head -- nowhere near the 40-cell head a bare address's own shape needs
+    to collide with. The test this replaced (``test_the_full_address_scan_
+    resolves_the_real_collision_to_its_widget``) had re-measured the one
+    outer width that produced a 40-cell head three times across two days
+    (170 -> 166 -> 153 -> 166) as the body's layout changed around it.
 
-    1. **Structurally.** :func:`_window`'s own head formula is monotonic in
-       ``width``, so the widest head any call this panel makes can ever
-       produce is bounded by its widest legal argument
-       (:data:`swarm_throughput._MAX_TX_COLS`). A 5-cell head can never
-       equal a 40-character run, so the collision the retired test
-       reproduced cannot exist at *any* terminal width, not merely the ones
-       swept below.
+    **The swarm v2 shape:** the score table is gone with its widget
+    (``swarm_throughput.py`` rebuilt on ``SignalsPanelBase``; the per-agent
+    scores moved to the AGENT body, where ROSTER paints none of a seat's
+    hashes and FEEDBACK paints them through ``hash_text`` at a fixed 17 or
+    11 cells). THROUGHPUT imports no address helper at all now, so there is
+    no window width to cap: the structural bound is that the module cannot
+    reach ``short_hex`` in the first place.
+
+    Proven two ways, not asserted from a sentence alone:
+
+    1. **Structurally.** ``imports_helper`` (the same AST-resolved check
+       ``EXEMPT``'s agreement test uses) is false of the module -- a hash
+       column added back to THROUGHPUT reddens this line before any width
+       is rendered.
     2. **Empirically**, across a band that comfortably straddles both this
        file's own 170-column ``SIZE`` and every width the retired test ever
        measured (150-190): the collision regex never matches, at any width
@@ -785,8 +727,8 @@ async def test_the_former_throughput_hash_collision_is_now_structurally_impossib
        used.
 
     The provenance machinery this test used to exercise live
-    (:func:`_widget_module_at`, :func:`_hash_only_module`) is unaffected by
-    the cap and stays covered by the synthetic constructions above
+    (:func:`_widget_module_at`, :func:`_hash_only_module`) is unaffected and
+    stays covered by the synthetic constructions above
     (``test_a_hash_only_module_is_recognized_by_which_icon_helpers_it_
     imports``, ``test_a_module_reaching_icons_through_an_indirection_is_
     not_hash_only``, ``test_the_region_scan_only_excuses_a_hash_window_
@@ -794,18 +736,13 @@ async def test_the_former_throughput_hash_collision_is_now_structurally_impossib
     rendering THROUGHPUT at a specific width, so none of them lost their
     subject when this one did.
     """
-    from maxpane_dashboard.widgets.address import _window
-    from maxpane_dashboard.widgets.surf import swarm_throughput as T
     from tests.address_sweep.builders import _surf_app
 
-    # 1. Structural bound: the widest head this panel's own cap can ever
-    # produce, independent of any render.
-    widest_window = _window("0x" + "2" * 64, T._MAX_TX_COLS)
-    head = widest_window[2:widest_window.index("…")]
-    assert len(head) < 40, (
-        "the tx-hash window's own head reached 40 cells at the panel's own "
-        "MAX_TX_COLS ceiling -- the structural argument this test makes no "
-        "longer holds and the collision may be reachable again"
+    # 1. Structural bound: the v2 panel cannot window a hash at all.
+    assert not imports_helper("maxpane_dashboard.widgets.surf.swarm_throughput"), (
+        "THROUGHPUT imports the address helper again -- if it paints a hash "
+        "window, this test needs its 2026-09-17 cap argument back, not a "
+        "silent pass"
     )
 
     # 2. Empirical confirmation on the live body, across the band the
@@ -824,9 +761,8 @@ async def test_the_former_throughput_hash_collision_is_now_structurally_impossib
             rows = _rows(app)
             hits = [m for row in rows for m in collision.finditer(row)]
             assert not hits, (
-                width, "the retired collision rendered again -- the 12-cell "
-                "cap no longer bounds THROUGHPUT's hash window as this test "
-                "assumes"
+                width, "the retired collision rendered again -- some panel "
+                "on the s body windows a hash to a 40-cell head"
             )
 
 
@@ -852,8 +788,8 @@ def test_the_shortened_window_hash_excuse_requires_a_hash_only_painter():
 
     address = "0x" + "5" * 40
     hashes = {"0x" + "5" * 64}  # shares every digit with `address`'s own window, at any split
-    non_hash_only = "maxpane_dashboard.widgets.surf.swarm_shipped"
-    hash_only = "maxpane_dashboard.widgets.surf.swarm_throughput"
+    non_hash_only = "maxpane_dashboard.widgets.surf.swarm_launches"
+    hash_only = "maxpane_dashboard.widgets.surf.swarm_seat_feedback"
     # the anchors this test leans on -- pinned again so a change to either
     # widget's own imports reddens here, not silently inside the sweep below
     assert not _hash_only_module(non_hash_only)
@@ -883,7 +819,7 @@ async def test_the_main_sweep_catches_a_shortened_address_the_old_value_only_exc
     widget whose own module *can* build a real, icon-bearing address
     (``tests/screens/_f3_address_probe.BareShortenedAddress`` imports
     ``address_text`` directly, the same provenance a real production widget
-    such as ``SurfSwarmShipped`` has), shortened to a window that shares
+    such as ``SurfSwarmLaunches`` has), shortened to a window that shares
     every digit with an unrelated hash sitting elsewhere in the served
     payload -- never rendered anywhere on screen at all, exactly "elsewhere
     in the payload" rather than "elsewhere on screen".

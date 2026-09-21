@@ -1,12 +1,12 @@
 """RECORD -- the selected seat's nodes, newest first (swarm v2 plan A1, WP6a).
 
-Unwired until WP7 exports the class and mounts it on the AGENT body; this
-module only paints the frozen ``swarm_seat_node_rows`` shape
+Mounted on the AGENT body (``a``) since WP7; this module only paints the
+frozen ``swarm_seat_node_rows`` shape
 (``data/surf_models.SURF_ROW_KEYS``): ``job_id, template, node_key, role,
 state, attempt, revisions, verdict_status, rejection_code, failed_checks,
 detail, at_ts``. The tiered-table mechanics -- header per width tier, the
 ``as of`` marker and widen hint in the title, ``None`` vs ``[]`` -- are
-:class:`~maxpane_dashboard.widgets.surf.swarm_roster.SeatTableBase`'s.
+:class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase`'s.
 
 Two kinds of node reach this table (WP3 landed, fact 5): a **detail** node
 carries the verifier's full verdict; a **seen-slot** node -- a job the sweep
@@ -31,7 +31,7 @@ one. Every third-party string (node key, role, state, verdict word, code,
 detail, each failed check) goes through ``markup_safety.sanitize_cell``.
 ``swarm_network`` is accepted and never painted: a node's chain is not a
 fact this table has (the frozen signature carries the key for the body's
-uniform splat, as ``swarm_field.py`` did).
+uniform splat, as LAUNCHES does).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell
 from maxpane_dashboard.widgets.surf._fmt import DASH, hhmm
-from maxpane_dashboard.widgets.surf.swarm_roster import SeatTableBase, table_cols
+from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
 __all__ = [
     "COMPACT_WIDTH",
@@ -107,23 +107,23 @@ _SPECS = (
     ("verdict", "verdict", _VERDICT_COLS),
     ("detail", "detail", DETAIL_MIN_COLS),
 )
-_SHED = {
-    "compact": frozenset({"try", "rev"}),
-    "tight": frozenset({"try", "rev", "detail"}),
-}
+_ALL = tuple(key for key, _l, _w in _SPECS)
+_COMPACT = tuple(key for key in _ALL if key not in ("try", "rev"))
+_TIGHT = tuple(key for key in _COMPACT if key != "detail")
+_TIERS = {"full": _ALL, "compact": _COMPACT, "tight": _TIGHT}
 
 
-def _tier_width(shed: frozenset[str]) -> int:
-    return table_cols([w for k, _l, w in _SPECS if k not in shed])
+def _tier_width(keep) -> int:
+    return table_cols([w for k, _l, w in _SPECS if k in keep])
 
 
 #: Every column with ``detail`` at its floor: 99 cells plus nine columns'
 #: padding = 117.
-FULL_WIDTH = _tier_width(frozenset())
+FULL_WIDTH = _tier_width(_ALL)
 #: Without ``try`` and ``rev`` (3 + 2 each) = 107.
-COMPACT_WIDTH = _tier_width(_SHED["compact"])
+COMPACT_WIDTH = _tier_width(_COMPACT)
 #: Without ``detail`` too (17 + 2) = 88.
-TIGHT_WIDTH = _tier_width(_SHED["tight"])
+TIGHT_WIDTH = _tier_width(_TIGHT)
 
 
 def _word(value: object) -> str:
@@ -132,7 +132,7 @@ def _word(value: object) -> str:
     return text if text else DASH
 
 
-class SurfSwarmSeatRecord(SeatTableBase):
+class SurfSwarmSeatRecord(SwarmTableBase):
     """RECORD -- the selected seat's nodes, newest first."""
 
     TITLE = "RECORD"
@@ -142,7 +142,7 @@ class SurfSwarmSeatRecord(SeatTableBase):
     ROW_CAP = 40
 
     COLUMN_SPECS = _SPECS
-    SHED = _SHED
+    TIER_COLUMNS = _TIERS
     LADDER = rowfit.Ladder(
         ("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH),
     )
@@ -150,7 +150,6 @@ class SurfSwarmSeatRecord(SeatTableBase):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._clipped = False
         self._detail_cols = DETAIL_MIN_COLS
 
     # -- the contract -------------------------------------------------------
@@ -163,31 +162,22 @@ class SurfSwarmSeatRecord(SeatTableBase):
         **_kwargs,
     ) -> None:
         """Refresh from the manager's flat dict; ``swarm_network`` is not painted."""
-        self._as_of = swarm_seat_as_of_hhmm
-        self.render_table(swarm_seat_node_rows)
+        self.store(swarm_seat_node_rows, swarm_seat_as_of_hhmm)
 
     # -- geometry -----------------------------------------------------------
 
     def column_width(self, key: str, tier: str, budget: int, width: int) -> int:
         if key != "detail":
             return width
-        others = [w for k, _l, w in _SPECS if k != "detail" and k not in self.SHED.get(tier, ())]
-        spare = budget - table_cols(others) - 2 if budget > 0 else 0
+        keep = self.TIER_COLUMNS.get(tier, ())
+        others = [w for k, _l, w in _SPECS if k != "detail" and k in keep]
+        spare = budget - table_cols(others) - CELL_PADDING if budget > 0 else 0
         self._detail_cols = max(DETAIL_MIN_COLS, spare)
         return self._detail_cols
 
-    def extra_widen(self) -> bool:
-        return self._clipped
-
-    def _render_view(self) -> None:
-        self._clipped = False
-        super()._render_view()
-
     # -- the cells ----------------------------------------------------------
 
-    def build_cells(self, index: int, item) -> dict[str, object] | None:
-        if not isinstance(item, dict):
-            return None
+    def build_cells(self, item: dict) -> dict[str, object] | None:
         job_id = item.get("job_id")
         job = job_id[:JOB_COLS] if isinstance(job_id, str) and job_id else DASH
         state = _word(item.get("state"))

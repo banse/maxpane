@@ -21,9 +21,9 @@ from maxpane_dashboard.widgets.surf.swarm_roster import (
     FULL_WIDTH,
     SEAT_COLS,
     TIGHT_WIDTH,
-    SeatTableBase,
     SurfSwarmRoster,
 )
+from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
 from tests.widgets.surf_compositing import composite_lines
 
 LAST_0 = 1_789_000_900.0
@@ -211,7 +211,7 @@ def test_the_tier_thresholds_descend_and_are_row_sums():
 
 
 async def test_one_below_full_sheds_roles_and_says_widen():
-    gutter = SeatTableBase.GUTTER_COLS
+    gutter = SwarmTableBase.GUTTER_COLS
     full = await _roster((FULL_WIDTH + gutter, 14))
     compact = await _roster((FULL_WIDTH + gutter - 1, 14))
     assert "impl/rev" in "\n".join(full) and "‹" not in "\n".join(full)
@@ -220,8 +220,39 @@ async def test_one_below_full_sheds_roles_and_says_widen():
 
 
 async def test_one_below_compact_sheds_rev_and_last_too():
-    gutter = SeatTableBase.GUTTER_COLS
+    gutter = SwarmTableBase.GUTTER_COLS
     tight = "\n".join(await _roster((COMPACT_WIDTH + gutter - 1, 14)))
     assert hhmm(LAST_1548) not in tight
     assert "IDMD #1548" in tight and "50971" in tight
     assert "‹" in tight
+
+
+async def test_the_cursor_sits_on_the_selected_row_and_survives_a_resize():
+    """The picker's cursor follows the manager's selection, and a repaint
+    (every resize re-tiers the table: ``clear()`` + ``add_row``, which resets
+    a ``DataTable`` cursor to row 0) puts it back. WP7's screen test found
+    the gap: placed once by the screen, the cursor was on the selected row
+    after the dispatch and on row 0 the moment the body was shown."""
+    from textual.widgets import DataTable
+
+    class _A(App):
+        def compose(self):
+            yield SurfSwarmRoster()
+
+    async with _A().run_test(size=SIZE) as pilot:
+        roster = pilot.app.query_one(SurfSwarmRoster)
+        roster.update_data(swarm_seat_rows=ROWS, swarm_seat_selected=SELECTED,
+                           swarm_seat_as_of_hhmm=AS_OF)
+        await pilot.pause()
+        table = roster.query_one(DataTable)
+        assert roster.selected_row_index == 1
+        assert table.cursor_row == 1
+        await pilot.resize_terminal(SIZE[0] - 30, SIZE[1])
+        await pilot.pause()
+        await pilot.pause()
+        assert table.cursor_row == 1, "the resize repaint reset the cursor"
+        # A selection nothing painted carries leaves the cursor alone.
+        roster.update_data(swarm_seat_rows=ROWS, swarm_seat_selected=None,
+                           swarm_seat_as_of_hhmm=AS_OF)
+        await pilot.pause()
+        assert roster.selected_row_index is None

@@ -562,14 +562,19 @@ async def test_the_slow_keys_land_from_the_sweep(tmp_path):
     assert sum(r["count"] for r in payload["swarm_launch_summary"]["by_kind"]) == 30
     assert len(payload["swarm_site_rows"]) == 6
     assert payload["swarm_stale"] is False
-    # The old fold still owns ``swarm_throughput`` until WP7 flips the line.
-    assert payload["swarm_throughput"]["accepted_per_day"] is not None
+    # ``swarm_throughput`` is §1.3's dict off the LIVE tier's own list since
+    # WP7 (its widget shows ``swarm_as_of_hhmm``); the corpus window is the
+    # hundred jobs ``/jobs`` returned, ten of them delivered.
+    tp = payload["swarm_throughput"]
+    assert tp["window_n"] == 100 and tp["dur_n"] == 10
+    assert "accepted_per_day" not in tp
 
 
 async def test_the_sweep_publishes_whole_rows_even_with_no_live_slot(tmp_path):
-    """Fix round 1 finding 4: ``shipped_rows``/``throughput`` come off the
-    sweep's own stored ``jobs``, so a populated sweep slot publishes whole
-    rows whether or not the live tier has ever run."""
+    """Fix round 1 finding 4: ``shipped_rows`` comes off the sweep's own
+    stored ``jobs``, so a populated sweep slot publishes whole rows whether
+    or not the live tier has ever run. ``swarm_throughput`` is **not** this
+    fold's since WP7 -- it rides the live slot behind the live marker."""
     jobs = swarm_capture_v2("jobs")["jobs"]
     launches = swarm_capture_v2("launches")["launches"]
     sites = swarm_capture_v2("sites")["sites"]
@@ -584,7 +589,7 @@ async def test_the_sweep_publishes_whole_rows_even_with_no_live_slot(tmp_path):
         scores_entry.payload, scores_entry, None, manager._clock()
     )
     assert keys["swarm_shipped_rows"], "no shipped rows with a whole sweep slot"
-    assert keys["swarm_throughput"]["accepted_per_day"] is not None
+    assert "swarm_throughput" not in keys
     # A slot persisted before WP4 has no ``skills``: its keys are ``None``,
     # never a crash and never an empty list presented as read.
     assert keys["swarm_skill_rows"] is None and keys["swarm_skill_summary"] is None
@@ -712,9 +717,9 @@ async def test_completed_24h_is_none_until_a_day_has_accumulated_then_an_int(tmp
     """R-A through the slot: ``throughput_facts`` off the seen map reads
     ``None`` -- never ``0`` -- while the slot is younger than 24 h, and an
     ``int`` (a real zero counts) once the clock has moved 24 h + 1 s and one
-    more tick has folded. The manager's own ``swarm_throughput`` stays the
-    old fold until WP7 flips that line; this proves the slot it will read.
-    The clock is injected (``FakeClock``), never slept."""
+    more tick has folded. The manager's own ``swarm_throughput`` reads this
+    slot (``_swarm_keys``, WP7); this proves the slot's own history. The
+    clock is injected (``FakeClock``), never slept."""
     clock = FakeClock(V2_NOW)
     swarm = _FakeSwarm()
     manager = _manager(tmp_path, swarm, clock=clock)

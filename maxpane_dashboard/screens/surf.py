@@ -224,8 +224,9 @@ from typing import TYPE_CHECKING
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Static
+from textual.widgets import DataTable, Static
 
+from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf import (
@@ -250,10 +251,16 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UserHero,
     SurfPool4Vault,
     SurfSignals,
-    SurfSwarmField,
+    SurfSwarmAgentHero,
+    SurfSwarmCapability,
     SurfSwarmHero,
-    SurfSwarmQueue,
-    SurfSwarmShipped,
+    SurfSwarmInFlight,
+    SurfSwarmLaunches,
+    SurfSwarmRoster,
+    SurfSwarmSeatFeedback,
+    SurfSwarmSeatRecord,
+    SurfSwarmSeatVerdicts,
+    SurfSwarmSites,
     SurfSwarmThroughput,
 )
 
@@ -1524,592 +1531,155 @@ SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 
 #: The ``s`` SWARM body's own width. Set at 93 on 2026-09-16 when the body
-#: was first wired; re-swept to 128 the same day for the 2x2-grid
-#: restructure (THE FIELD beside QUEUE on top, JUST SHIPPED beside
-#: THROUGHPUT beneath); **re-swept again to 115 on 2026-09-17, in the
-#: layout-change review round that follows this restructure.** (That
-#: review round is unrelated to -- and one day later than -- Task 12's own
-#: "fix round 1" below, the ``_SCROLL_COLUMNS`` registration gap; the two
-#: share a phrase, not a date or a finding, and this block does not use
-#: "fix round 1" for the review round to keep the two apart.) 128 was the
-#: wrong kind of answer to "the column for the tx hash can be shortened to
-#: fit into the space right to the JUST SHIPPED widget" -- it grew the pin
-#: instead of shortening the value, which is exactly what "when a new
-#: value would widen a sized cell, shorten the value; raising a pin is
-#: reserved for when no honest short form exists" (terminal-layout skill)
-#: exists to prevent. The 35-column growth from 93 to 128 came entirely
-#: from fixing JUST SHIPPED at its **full** tier's own need (79
-#: ``self.size.width``); it never had to.
+#: was first wired; 128, 115, 95 and 116 across the 2026-09-17 review rounds
+#: of the v1 grid (THE FIELD beside QUEUE over JUST SHIPPED beside
+#: THROUGHPUT; ``docs/decisions.md`` keeps that history). **Re-swept to 141
+#: on 2026-09-21 for swarm v2 (WP7).** Every v1 panel is gone and the grid
+#: is new -- CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES
+#: full-width beneath -- so nothing about 116 could be carried over; a new
+#: body gets a new measurement (terminal-layout skill). **Neither a
+#: restatement nor a derivation of :data:`SURF_FULL_LAYOUT_COLUMNS` (143),
+#: :data:`SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS` (138),
+#: :data:`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` (119) or
+#: ``__main__.FULL_LAYOUT_COLUMNS`` (143)**; it is the widest of surf's
+#: bodies now, and it stays under the app-wide pin.
 #:
-#: WHAT ACTUALLY SHRANK, AND WHAT DID NOT. Two levers were on the table and
-#: only one had real slack:
+#: HOW IT WAS MEASURED. The composed body was rendered through ``run_test``
+#: and ``Pilot.resize_terminal`` at **every width from 60 to 225** at height
+#: 80, on the committed v2 capture (100 jobs, 30 skills, 30 launches, 6
+#: sites; ``tests/fixtures/surf/swarm_v2/``) and on the plan's worst case
+#: (30 launches carrying 55 artifacts, 30 skills, 10 sites, 25 in-flight
+#: rows with 200-character objectives); the two payloads agreed at every
+#: width. At each width every panel's tier word, its ``‹`` marker, its
+#: ``DataTable``'s hidden columns (``max_scroll_x``), its CSS-clipped lines
+#: and its region against its row container's were read off composited
+#: output. No arithmetic over the exported tier widths was used and none
+#: may be: a ``DataTable`` buys a cell gutter per column and an ``fr`` share
+#: rounds, so a sum is two to five cells out (below).
 #:
-#: 1. **THROUGHPUT's own hash window was checked, not touched.**
-#:    ``short_hex``/``widgets.address._window`` clamps its own ``width``
-#:    argument up to ``MIN_SHORT_COLS`` (11) unconditionally --
-#:    ``width = max(width, MIN_SHORT_COLS)`` -- so a transaction hash never
-#:    renders narrower than 11 cells no matter what budget is offered it,
-#:    and :data:`swarm_throughput._MIN_TX_COLS` was already set to exactly
-#:    that floor before round 1 ever started (Task 8's own original value,
-#:    never edited by this task). Asking for fewer than 11 cells would not
-#:    shorten the render; it would only under-reserve for what still paints
-#:    at 11, which is a layout bug, not a shorter hash. There is no honest
-#:    shorter form here without editing ``MIN_SHORT_COLS`` itself, a
-#:    cross-dashboard constant curator's own address shortening also
-#:    depends on -- out of scope for this body. THROUGHPUT's own threshold
-#:    (41 budget / 43 ``self.size.width``, the width at which
-#:    ``swarm_throughput._agent_lines`` keeps the hash and its chain word
-#:    rather than dropping the pair together) is therefore **unmoved** by
-#:    round 1, confirmed by re-measurement.
-#: 2. **JUST SHIPPED's own fixed width had genuine slack, and round 1
-#:    spent it -- then round 1's own fix was itself wrong in a narrower
-#:    way, corrected in round 2.** ``swarm_shipped.py`` gained a third,
-#:    narrower ``tight`` width tier: WHEN stays dropped (as ``compact``
-#:    already does) and the ADDRESS / SITE column also narrows from
-#:    :data:`swarm_shipped.ADDR_COLS` (17) to
-#:    :data:`swarm_shipped.TIGHT_ADDR_COLS` (11 -- ``address``'s own
-#:    absolute legibility floor, the same one THROUGHPUT's hash is already
-#:    pinned to, so neither column can be windowed narrower than the
-#:    other). Round 1 fixed JUST SHIPPED's CSS width at this tier's own
-#:    need (68) rather than ``full``'s (81) -- and a **fixed** width that
-#:    is below ``FULL_WIDTH`` marks ``‹ widen`` at *every* terminal size,
-#:    because it can never grow past 68 no matter how wide the terminal
-#:    gets. That is a lit marker carrying no information -- "widen your
-#:    terminal and you will see more" being false at every size is worse
-#:    than the marker not existing -- and it is a different defect from
-#:    either of this repo's two accepted permanently-adjacent markers
-#:    (surf's announce feed lights per post, tracking a real length each
-#:    time; THE FIELD's own exception, below, clears above a real,
-#:    reachable 246 columns). Round 2 replaces the fixed width with a
-#:    bounded flexible one: ``width: 1fr; min-width: 68; max-width: 81;``.
-#:    THROUGHPUT keeps ``1fr`` with no bound of its own, so it takes
-#:    whatever JUST SHIPPED's own floor and ceiling leave it.
+#: WHICH PANEL BINDS: ``SurfSwarmCapability``. Its ceiling is
+#: ``max-width: 93`` (``swarm_capability.FULL_WIDTH`` 89 + the table's
+#: gutter 2 + padding 2) and it reaches ``full`` at content width 91 -- the
+#: cell the ``fr`` share hands it at outer 141: ``tight`` through 131,
+#: ``compact`` 132-140 with ``‹`` lit, ``full`` and dark from 141. At 140 it
+#: is the **sole** marked panel besides the two named exceptions, so the pin
+#: is not loose (``tests/screens/test_surf_swarm_layout.py``). It marks when
+#: short (it sheds columns and lights its own title), so the seam is not
+#: carried by a panel that would lose a column in silence. Shortening a
+#: value was not an alternative: the columns CAPABILITY sheds below ``full``
+#: are its tier ladder already, and 141 is what ``full`` costs.
 #:
-#: MEASURED, NOT ASSUMED, THAT THE FLEXIBLE BOUNDS REPRODUCE ROUND 1'S OWN
-#: ARITHMETIC EXACTLY THROUGH THE PIN. Textual's ``1fr`` split is even
-#: between two unweighted ``1fr`` children below the width where their
-#: natural (unclamped) share would exceed either bound, so JUST SHIPPED's
-#: own ``self.size.width`` holds flat at 66 -- ``min-width``'s own floor,
-#: identical to round 1's fixed value -- across the *entire* 70-138 range,
-#: re-swept rather than assumed: THROUGHPUT's own ``self.size.width``
-#: tracks column-for-column identically to round 1's sweep at every width
-#: in that band, including through the column pin itself. Past 138 the two
-#: children's natural share exceeds 66 and both grow together, equally,
-#: until JUST SHIPPED reaches its own ``max-width`` (self.size.width 79 =
-#: ``FULL_WIDTH`` + 2) at outer width 164, after which it is capped and
-#: every further column goes to THROUGHPUT alone -- confirmed by re-sweep
-#: (164 dark, 163 lit), not derived from the bound arithmetic.
+#: WHAT IS ON THE ROW, measured at 141: the screen is 141 wide, the body's
+#: ``scrollbar-gutter: stable`` leaves each row 140, CAPABILITY takes 91 and
+#: THROUGHPUT 44 under its ``max-width: 46`` (fr rounding) -- 135 of 140,
+#: the rest is rounding, not slack to spend. THROUGHPUT paints its widest
+#: fixed line whole from 93 outer columns and never marks or clips above it.
+#: SITES is ``full`` from 116, ``compact`` 108-115, ``tight`` at or under
+#: 107 with hidden columns under 87.
 #:
-#: JUST SHIPPED'S MARKER IS HONEST AGAIN: LIT WHERE COLUMNS ARE REALLY
-#: DROPPED, DARK WHERE THEY ARE NOT. **Below outer width 164**
-#: (``SHIPPED_NEVER_CLEARS_BELOW`` in the test file, THE FIELD's own
-#: ``_NEVER_CLEARS_BELOW`` shape, not the fixed-width "always marks"
-#: framing round 1 shipped), JUST SHIPPED is short of ``FULL_WIDTH`` and
-#: marks ``‹ widen`` -- correctly, since its own column really is
-#: narrower than it would be at a wider terminal. At and above 164 it is
-#: at ``full`` tier, ``self.size.width`` == ``FULL_WIDTH`` + 2, and the
-#: marker goes dark -- also correctly, since nothing more would show at
-#: any larger width either.
-#: :func:`test_the_shipped_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
-#: proves both edges the same way
-#: :func:`test_the_field_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
-#: proves THE FIELD's: marked at the pin, marked one column under 164,
-#: clear at 164. Because 164 is past this file's own 70-159 width-sweep
-#: range, JUST SHIPPED is still excluded from the "nothing marks besides
-#: THE FIELD" half of the whole-body sweep property, on THE FIELD's own
-#: precedent (a threshold past the swept range, not a threshold that does
-#: not exist) -- named rather than silently absorbed either way.
+#: THE TWO NAMED EXCEPTIONS, on THE FIELD's own precedent (its ``‹`` cleared
+#: at 170 while the pin stood at 116): IN FLIGHT (``4fr``) is ``tight``
+#: through 144, ``compact`` 145-189 and clears at **190**
+#: (``INFLIGHT_NEVER_CLEARS_BELOW``); LAUNCHES (``5fr``) hides columns
+#: through 137 and none from 138, stays ``tight`` through 179, ``compact``
+#: 180-204 and clears at **205** (``LAUNCHES_NEVER_CLEARS_BELOW``). Both
+#: markers track a real loss and clear at a reachable width -- neither is a
+#: permanently lit marker. The ``4fr : 5fr`` seam is what keeps LAUNCHES
+#: hiding no column at 143 while IN FLIGHT keeps its log legible; both are
+#: bounded by ratio and not by ``min-width`` because a bounded ``1fr`` child
+#: whose ``min-width`` exceeds its share snaps to its ``max-width`` and
+#: overflows the row in silence (measured 2026-09-17, ``minimal.tcss``).
+#: Region overflow was zero at every width swept.
 #:
-#: Every displayed address still carries its copy icon inside this number
-#: (``docs/address_copy_PRD.md`` §5) -- the ``tight`` tier's own 11-cell
-#: window is windowed, not icon-less; only THROUGHPUT's transaction hash,
-#: per the standing rule, carries none.
-#:
-#: THE RESTORED RELATION. 115 is **under**
-#: :data:`SURF_POOL4_USER_FULL_LAYOUT_COLUMNS` (119) again, so
-#: :func:`test_the_swarm_body_fits_inside_the_documented_app_width`'s
-#: ``<=`` assertion against it is restored -- it was removed in round 1
-#: when the pin grew past 119 and is reinstated now that shortening the
-#: values brought the pin back under it. This is still not a relation to
-#: derive anything from (terminal-layout skill's own "coincidence with a
-#: date" note); it is asserted because it happens to hold today, and it
-#: will be removed again the day it stops, not chased.
-#:
-#: RE-SWEPT, NOT NUDGED. Measured in situ over 70-160 columns with the
-#: committed swarm capture, re-centred on 115 (not on 93 or 128) and
-#: re-confirmed against the heavy, 30-shipped and 50-shipped payloads over
-#: 100-121 -- all four payloads agreeing to the column: not-whole
-#: (THROUGHPUT the only marker besides THE FIELD and JUST SHIPPED) at 114,
-#: whole at 115, holding through 121.
-#:
-#: BINDING PANEL: still **THROUGHPUT** (``SurfSwarmThroughput``), still at
-#: its own unmoved need of 43 columns (``self.size.width``), and still
-#: unmoved in outer-width terms either: at the pin JUST SHIPPED sits at its
-#: own ``min-width`` floor (66 ``self.size.width``, identical to round 1's
-#: fixed value there), so the relationship between the body's own outer
-#: width and THROUGHPUT's own is the same subtraction round 1 measured --
-#: outer 115 gives THROUGHPUT ``self.size.width`` 43 exactly (115 minus 68
-#: minus 4 columns of body/row-level scrollbar-gutter and title-padding
-#: overhead, read off the sweep, never summed) -- because the ``1fr``
-#: bound on JUST SHIPPED does not bind at this width; only its floor does.
-#: QUEUE's own threshold (``swarm_queue.FULL_WIDTH`` = 27) still never
-#: binds anything at this seam.
-#:
-#: A THIRD MEASURED, PERMANENT EXCEPTION, NAMED RATHER THAN SILENTLY
-#: ABSORBED. **Below outer width 75** (``THROUGHPUT_NEVER_MARKS_BELOW`` in
-#: the test file -- moved from round 1's 88, thirteen columns down, exactly
-#: JUST SHIPPED's own new saving, confirmed rather than assumed to move by
-#: that exact amount), THROUGHPUT's own ``self.size.width`` drops under 3 --
-#: too narrow for its ``Static``s to paint even a single character, let
-#: alone a CSS ellipsis or the bare ``‹`` glyph -- so a hash-and-chain-word
-#: pair it has already dropped internally can go both unmarked and
-#: un-clipped. Bounded and payload-independent (confirmed identical on the
-#: committed capture and the heavy payload) and comfortably below this pin,
-#: so it cannot affect the "nothing marks above the pin" half of the
-#: property, only the "something marks below it" half, which
-#: :func:`test_the_swarm_body_is_whole_from_its_pinned_width` excludes it
-#: from by name.
-#:
-#: THE CLOSABLE GAP FROM ROUND 1 IS STILL CLOSED, AT ITS OWN NEW WIDTHS.
-#: ``swarm_throughput.SurfSwarmThroughput._title_text`` drops the freshness
-#: suffix before giving up on the ``‹`` glyph -- unconditional on width, so
-#: the fix travels with THROUGHPUT wherever its own column lands. Re-swept
-#: rather than re-typed: the gap now runs from outer width 75 up to 86
-#: (previously 88-113), and the glyph survives from 87 (previously 114),
-#: both shifted down by the same thirteen columns.
-#:
-#: THE ROW PIN (below) IS UNMOVED. Nothing about this round touched height:
-#: :data:`SURF_SWARM_FULL_LAYOUT_ROWS` was re-measured anyway (measure,
-#: never assume) and confirmed still 26.
-#:
-#: THE FIELD NEVER CLEARS BELOW 246 COLUMNS, AND THE PIN DOES NOT CHASE IT.
-#: Unmoved by round 1: THE FIELD still shares a halved 1fr:1fr seam with
-#: QUEUE alone, and that seam's own ratio was not touched this round either.
-#: THE FIELD asks for 117 columns of its own (``swarm_field.FULL_WIDTH``) to
-#: keep its note column, which, halved, needs an outer width of 246 before
-#: ``‹`` goes dark -- wider than every other pin in this file and past
-#: :data:`SURF_FULL_LAYOUT_COLUMNS` itself. That is not a width this body's
-#: pin can buy without breaking "when a new value would widen a sized cell,
-#: shorten the value" for every other panel in the app, so THE FIELD's own
-#: ``‹`` is treated the way surf's announce feed treats a linked-transaction
-#: post at :data:`SURF_FULL_LAYOUT_COLUMNS` (terminal-layout skill, *"A
-#: caveat the pin does not cover"*): a permanent, measured, accepted
-#: condition at this pin and at every width below 246 -- **through the
-#: 2026-09-17 review round above. Superseded by the round below**, which
-#: is the current, live number: see "246 -> 170" there.
-#:
-#: ═══════════════════════════════════════════════════════════════════════
-#: 2026-09-17, A FOURTH ROUND: THE COLUMN-BALANCE CHANGE. 115 -> 95, off
-#: the owner's own live screenshot. THE FIELD and JUST SHIPPED were
-#: genuinely clipping; QUEUE and THROUGHPUT carried a wide band of empty
-#: space neither needed. This round does not repeat any of the round-2
-#: prose above -- it changes what was true, so read it as replacing rather
-#: than amending anything above it. Full derivation and every re-swept
-#: number: ``tests/screens/test_surf_swarm_layout.py``'s own module
-#: docstring, "a fourth round" section. Summary of what changed and why:
-#:
-#: 1. **A ceiling, not just a floor, on THROUGHPUT's tx-hash column.**
-#:    :data:`swarm_throughput._MIN_TX_COLS` (11) was always a floor; there
-#:    was no matching ceiling, so the panel spent every free column on the
-#:    hash whenever it had one -- the module docstring's own captured
-#:    example, a hash windowed most of the way across the screen.
-#:    :data:`swarm_throughput._MAX_TX_COLS` (12) is the ceiling: one cell
-#:    above the floor, and a real one -- ``short_hex`` at 12 renders one
-#:    more head character than at 11 (``0x22222…2222`` vs ``0x2222…2222``,
-#:    confirmed by direct call, not assumed identical). Never a change to
-#:    ``MIN_SHORT_COLS`` itself, the cross-dashboard constant curator's own
-#:    address shortening also depends on.
-#: 2. **QUEUE and THROUGHPUT both moved from an unbounded (or
-#:    JUST-SHIPPED-sharing) ``1fr`` to the same ``width: 1fr; max-width:
-#:    46;``.** 46 is the wider of the two panels' own real content need
-#:    plus overhead, measured, not guessed: QUEUE's own design floor for
-#:    keeping its blocked-reason column (``swarm_queue.FULL_WIDTH`` = 27)
-#:    against THROUGHPUT's own need once the hash reaches its new 12-cell
-#:    cap (41) -- both plus 2 columns of title padding, plus 2 more this
-#:    row pair's own scrollbar-gutter/seam overhead costs a bounded ``1fr``
-#:    sibling that a bare fixed number does not (read off the sweep, not
-#:    summed). **The same** number on both, deliberately: they sit in two
-#:    separate row containers (``#surf-swarm-top``/``#surf-swarm-bottom``),
-#:    and the owner's own screenshot shows their seam with JUST
-#:    SHIPPED/THE FIELD aligned between rows -- a ragged seam (two
-#:    different widths) would read as a bug even though each row's own
-#:    content need differs.
-#: 3. **``max-width`` on an unfloored ``1fr``, not a bare fixed number --
-#:    THE FIELD/JUST SHIPPED precedent, one row over, learned the hard
-#:    way.** A first attempt used a bare fixed ``width: 46;`` on both, and
-#:    it reproduced a defect this file's own history already names once
-#:    (JUST SHIPPED's round 1): below the outer width where the row's
-#:    other fixed-or-floored sibling (JUST SHIPPED's own ``min-width: 68``)
-#:    could also fit, Textual does not shrink a fixed-width child to make
-#:    room -- both lay out at their stated size regardless, and the
-#:    overflow is **not** a CSS ellipsis and **not** a ``DataTable``
-#:    scrollbar (both of which this body's own detectors already catch):
-#:    it is the sibling's own rendered region extending past its
-#:    container's, silently cropped by the compositor at the container
-#:    edge with no ``…``, no glyph, no scrollbar, nothing -- confirmed on
-#:    the live render (a hex digit cut off mid-character on the composited
-#:    screen) at outer widths this body's own existing tests, run against
-#:    that first attempt, reported as "whole." ``width: 1fr; max-width:
-#:    46;`` (no floor) restores THROUGHPUT's own pre-round shape below the
-#:    cap: a bounded ``1fr`` shrinks smoothly, all the way to 0 if it must,
-#:    the way an unfloored ``1fr`` always could and a fixed number cannot.
-#:
-#: THE NEW PIN: 95, RE-SWEPT ACROSS ALL FOUR PAYLOADS, NEVER STARTED AT THE
-#: PIN. Measured over 60-159 (capture) and 80-109 (heavy/30-shipped/
-#: 50-shipped, re-centred on the new pin), all four agreeing to the column:
-#: not-whole (both THROUGHPUT and JUST SHIPPED marked, besides THE FIELD's
-#: own exception) at 94, whole at 95.
-#:
-#: **THE BINDING SET WIDENED FROM ONE PANEL TO TWO.** One column under the
-#: pin, THROUGHPUT and JUST SHIPPED mark *together* now -- they share the
-#: bottom row's own 1fr/1fr seam (JUST SHIPPED's own ``min-width``/
-#: ``max-width`` bounds, THROUGHPUT's new ``max-width``), so whichever one
-#: is short of its own ``full`` tier at this width is short together with
-#: the other. THROUGHPUT drops its hash and chain word together, at the
-#: same 41-budget/43-``self.size.width`` threshold this file has named
-#: since round 1 (unmoved -- see point 1 below); JUST SHIPPED falls one
-#: column short of its own ``full`` tier (``self.size.width`` reaching
-#: ``swarm_shipped.FULL_WIDTH`` + 2).
-#:
-#: **JUST SHIPPED'S OWN EXCEPTION IS GONE, NOT MERELY MOVED.** Through
-#: three rounds (round 1's unbounded always-lit marker, round 2's bounded
-#: shape reaching 164) JUST SHIPPED needed a wider threshold than the rest
-#: of the body.
-#: It does not any more: with QUEUE capped rather than sharing unbounded
-#: growth, JUST SHIPPED no longer has to split what is left of the row
-#: with an uncapped THROUGHPUT above QUEUE's old share -- it reaches
-#: ``full`` tier at the ordinary column pin, the same width every other
-#: ordinary panel on this body does. There is no
-#: ``SHIPPED_NEVER_CLEARS_BELOW`` any more; a reader looking for one should
-#: read this paragraph rather than assume the name moved.
-#: :func:`tests.screens.test_surf_swarm_layout.test_the_shipped_panel_now_clears_with_the_rest_of_the_body`
-#: proves it the same two-sided way its predecessor proved the opposite.
-#:
-#: **THE FIELD'S OWN EXCEPTION DID NOT DISAPPEAR, BUT IT SHRANK SHARPLY,
-#: FOR THE SAME STRUCTURAL REASON.** 246 -> **170**. THE FIELD is now the
-#: *only* unbounded panel left in its own row -- QUEUE capped at 46 no
-#: longer takes half of every column above its own cap -- so outer-width
-#: growth reaches THE FIELD's own 117-column content need
-#: (``swarm_field.FULL_WIDTH``) roughly twice as fast as when QUEUE was
-#: still absorbing half of it. Re-swept, not halved by arithmetic: 169
-#: marked, 170 clear, on both the committed capture and the heavy payload
-#: identically (THE FIELD's own threshold does not depend on QUEUE's,
-#: THROUGHPUT's or JUST SHIPPED's data). This threshold is now **inside**
-#: ``tests/screens/test_address_icons_everywhere.py``'s own 170-column
-#: ``SIZE`` sweep rather than past it -- that file's own ``EXEMPT`` entry
-#: for ``SurfSwarmField`` was re-measured and corrected alongside this
-#: change (its note column can now paint within the wide sweep; the
-#: exemption still holds because the seeded swarm payload puts no address
-#: in a dispatch note, not because the note column is unreachable there
-#: any more).
-#:
-#: 1. **THROUGHPUT's own floor threshold is unmoved (41 budget / 43
-#:    ``self.size.width``), confirmed by re-sweep rather than assumed.**
-#:    Below the point where either QUEUE or THROUGHPUT would reach its own
-#:    46-column cap, a bounded ``1fr`` and the previous unbounded ``1fr``
-#:    occupy the identical column at every width -- a cap only ever
-#:    narrows growth above itself, it never raises a floor below it. This
-#:    is also why :data:`THROUGHPUT_NEVER_MARKS_BELOW` (75, in the test
-#:    file) is the one named exception this round did not move.
-#:
-#: THE ROW PIN IS UNMOVED. Nothing about this round touched height (QUEUE
-#: and THROUGHPUT keep ``height: auto``); re-measured anyway, over the
-#: same 20-61 sweep at the new column pin, and confirmed still 26 --
-#: including the adversarial body-only-scrollbar case at height 25, still
-#: reproducing identically.
-#:
-#: Every displayed address still carries its copy icon inside this number,
-#: unaffected by any of the above: JUST SHIPPED's own address/site column
-#: is untouched by this round.
-#:
-#: ═══════════════════════════════════════════════════════════════════════
-#: FIX ROUND 1 ON THE COLUMN-BALANCE CHANGE (2026-09-17, same day): 95 was
-#: WRONG, and not by a rounding error -- it certified a screen that was
-#: silently cropping THROUGHPUT's content at and above the pin it claimed
-#: was whole. 95 -> **116**. This is not a fifth round's worth of new
-#: reasoning laid over the fourth; it is a correction to the fourth round's
-#: own arithmetic, found by a reviewer comparing two widgets' *regions*
-#: (their painted rectangles) against their shared container's region --
-#: a check this file's own detectors (``_swarm_marked``,
-#: ``_css_clipped_lines``) cannot perform, and did not perform, which is
-#: why 95 passed every test in this file and was still wrong.
-#:
-#: WHAT WAS ACTUALLY HAPPENING AT 95. ``#surf-swarm-bottom`` holds two
-#: bounded ``1fr`` children: ``SurfSwarmShipped`` (``min-width: 68;
-#: max-width: 81;`` at the time) and ``SurfSwarmThroughput`` (``max-width:
-#: 46;``, no min). At outer width 95 the row itself is ~94 columns. 68 + 46
-#: = 114; 81 + 46 = 127 -- both past 94, and Textual's ``arrange()`` does
-#: **not** shrink either child to make them fit: measured, JUST SHIPPED sat
-#: at its own **max** (81, not 68 -- see the next paragraph for why),
-#: THROUGHPUT at its own max (46), and THROUGHPUT's box was placed at
-#: ``x=81, width=46``, right edge 127, against the row's own right edge 94
-#: -- a 33-column overflow. The compositor crops the painted strip at the
-#: row's edge with no ``…``, no ``‹``, no scrollbar: at the certified pin
-#: the agent row composited as ``#2      0.`` and, for outer widths
-#: 95-108, THROUGHPUT's own title lost its ``· as of HH:MM`` suffix too --
-#: both entirely outside what ``_region_text`` (which slices the
-#: *composited screen*, itself only as wide as the outer terminal) could
-#: ever see, because the missing content's own screen position never
-#: existed in the first place.
-#:
-#: WHY JUST SHIPPED SAT AT ITS MAX RATHER THAN SHRINKING -- A REAL TEXTUAL
-#: BEHAVIOUR, MEASURED RATHER THAN ASSUMED, AND THE REASON THE FIX IS NOT
-#: "PICK A LOWER MIN-WIDTH." An explicit ``min-width`` on a bounded ``1fr``
-#: sibling, once it exceeds the row's own natural share for that child,
-#: does **not** clamp the child to that min -- it snaps the child to its
-#: **max** instead, confirmed by sweeping ``min-width`` from 40 to 50 at
-#: outer width 95 against the committed CSS: 46 and below all produced the
-#: row's own natural 47-column share (unbothered by a min at or below what
-#: the row would give it anyway); 47 and above all produced 81 (the max),
-#: not 47 or 68. This boundary tracks the row's own natural 1fr share, not
-#: a fixed constant -- it moves with outer width -- but every value this
-#: body's own ``min-width: 68`` sat at was comfortably past it, which is
-#: why 68 produced the silent overflow this file exists to explain. Fix
-#: round 2 re-measured a claim from fix round 1 that did **not** survive
-#: this re-check: **omitting ``min-width`` entirely does not reproduce the
-#: snap.** Verified directly against the committed CSS
-#: (``styles.has_rule("min_width")`` is genuinely ``False`` with the
-#: property removed from both copies): JUST SHIPPED's region is
-#: column-for-column identical to the explicit-``0`` case at every width
-#: checked (47 at outer 95, 72 at 120, 81 at 150) -- Textual's own fraction
-#: resolution simply never consults an absent minimum, so there is no
-#: implicit content floor to override, and the "why the fix is not a
-#: smaller floor" argument rests on the measured snap threshold above, not
-#: on an omitted-vs-explicit distinction that fix round 1 asserted without
-#: re-checking it against the CSS it actually shipped.
-#:
-#: THE FIX: ``min-width: 0;`` -- KEPT EXPLICIT FOR INTENT AND
-#: GREPPABILITY, NOT BECAUSE OMISSION BEHAVES DIFFERENTLY HERE. The two
-#: spellings resolve identically against this body's own CSS (measured
-#: above); stating the floor explicitly is still the right code, because a
-#: reader or a future diff should not have to know Textual's own default
-#: to know this panel has no floor by design. Swept over the *entire*
-#: practical range (50-160) with this floor: **zero overflow at every
-#: width**, JUST SHIPPED's own region growing smoothly from 24 columns at
-#: outer 50 up to its own max (81) at outer 129 and holding there,
-#: THROUGHPUT growing in lockstep to its own cap (46) by outer 94 and
-#: holding. ``max-width: 81`` is unchanged; only the floor moved, from a
-#: number "inherited from the previous geometry" (round 2's own phrase) to
-#: no floor at all -- letting the panel shrink "smoothly, all the way to 0
-#: if it must," which is the exact claim round 2's own comment made and
-#: which was false under ``min-width: 68`` the whole time. It is true now,
-#: proven by the sweep above rather than asserted again.
-#:
-#: THE NEW PIN, MEASURED ACROSS ALL FOUR PAYLOADS, NEVER STARTED AT THE
-#: PIN. "Whole" here still excludes THE FIELD's and (see below) JUST
-#: SHIPPED's own named exceptions, and now also requires **no widget
-#: region to extend past its container's** -- the new detector this fix
-#: adds (``tests/screens/test_surf_swarm_layout.py``, wired into the
-#: whole-ness sweep at every width, not merely the pin). The binding
-#: constraint at the new pin is **JUST SHIPPED's own tight-tier legibility
-#: floor**: ``swarm_shipped.TIGHT_WIDTH`` (64) is the DataTable's own
-#: column-sum need at its narrowest tier, and below ``self.size.width`` 66
-#: (64 + the 2-column title-padding overhead every panel on this body
-#: already subtracts) the table hides columns behind its own horizontal
-#: scrollbar rather than narrowing further -- an honest degradation
-#: (``shipped_hidden_cols`` already tracked it), but not a "whole" one.
-#: **The worst-case payload is 50-shipped, not the reference capture**:
-#: fifty rows force JUST SHIPPED's own vertical scrollbar, which costs the
-#: table two columns of horizontal budget it does not have to pay on a
-#: two-row capture, so 50-shipped needs outer width 116 where every other
-#: payload already clears at 114. Measured, not assumed: 115 not-whole
-#: (50-shipped alone: ``shipped_hidden_cols`` 1), 116 whole on all four
-#: payloads.
-#:
-#: JUST SHIPPED'S OWN EXCEPTION IS BACK, WITH A NEW NUMBER AND REAL
-#: EVIDENCE THIS TIME. The 2026-09-17 column-balance round's own claim --
-#: "JUST SHIPPED's exception collapsed into the ordinary pin" -- was true
-#: only because the overflow bug pinned JUST SHIPPED at its max (79
-#: ``self.size.width``, i.e. **already at full tier**) regardless of the
-#: outer width, so it *looked* clear from the pin outward when it was
-#: actually rendering off-screen. With the overflow fixed, JUST SHIPPED's
-#: real behaviour re-emerges: it needs ``self.size.width`` 79
-#: (``swarm_shipped.FULL_WIDTH`` + 2) to reach ``full`` tier and stop
-#: marking ``‹``, which the new, properly-shrinking geometry does not
-#: reach until outer width **129** (128 marked, 129 clear -- confirmed
-#: identically on the reference capture, the heavy payload and the
-#: 50-shipped payload, so this threshold is payload-independent the way
-#: THE FIELD's own always has been). This is a real, measured, reachable
-#: width past the new pin, THE FIELD's own exception shape exactly --
-#: named as :data:`SHIPPED_NEVER_CLEARS_BELOW` again in the test file,
-#: which also means :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own binding
-#: pair at the pin is **THE FIELD's exclusion aside** -- one column under
-#: 116, JUST SHIPPED (hidden columns) is what actually binds; THROUGHPUT
-#: and QUEUE are both already at their own caps well before 116.
-#:
-#: THROUGHPUT_NEVER_MARKS_BELOW COLLAPSED, FOR A GOOD REASON: THE SQUEEZE
-#: IS NOW SHARED FAIRLY. Under the overflow bug, THROUGHPUT absorbed
-#: nearly all of the row's shortfall alone (JUST SHIPPED refused to give
-#: up its max), so THROUGHPUT was driven to near-zero width at outer
-#: widths that were not otherwise extreme, and its own "too narrow to
-#: paint anything" threshold sat at 75. With both panels now sharing the
-#: squeeze proportionally, THROUGHPUT does not reach that same near-zero
-#: state until the **row itself** is near-zero: re-swept, its own silent
-#: (unmarked, unclipped) zone now ends at outer width 10, one column later
-#: (11) something is already caught as a CSS clip. This is not a defect --
-#: it is the same "under 3 cells" physical limit the old 75 measured,
-#: recurring at a width so far below every other pin in this file
-#: (including this body's own launch-day 93) that it is barely reachable
-#: in practice; it is named anyway, on the same terms as every exception
-#: in this file, rather than left to be rediscovered as a surprise.
-#:
-#: THE ROW PIN IS UNMOVED AGAIN. Nothing about this fix touches height;
-#: re-measured at the new column pin (116) rather than assumed, over the
-#: same 20-61 sweep, still 26 -- including the body-only-scrollbar
-#: adversarial case at height 25, unchanged.
-#:
-#: **F6 (2026-09-17, ``docs/surf_swarm_followups.md``) re-swept this pin and
-#: it holds at 116.** QUEUE's new pending-pipeline block is one packed line
-#: (plus a blank separator), fitted with the same ``rowfit.clip`` every
-#: other line in that panel already uses, inside QUEUE's own unchanged
-#: ``max-width: 46`` -- it costs this row rows, not columns, which is why
-#: :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block is where this
-#: change actually lands. Confirmed by re-running the whole width sweep
-#: (:func:`test_the_swarm_body_is_whole_from_its_pinned_width` and its
-#: neighbours in ``tests/screens/test_surf_swarm_layout.py``) rather than
-#: assumed from the panel's own headroom: every one of those tests still
-#: passed unchanged.
-SURF_SWARM_FULL_LAYOUT_COLUMNS = 116
+#: THE OWNER'S TWO TERMINALS sit under the pin and degrade honestly: at 119
+#: CAPABILITY is ``tight`` with ``‹`` lit and LAUNCHES hides eleven columns
+#: behind its own horizontal scrollbar; at 138 CAPABILITY is ``compact``
+#: with ``‹`` lit, LAUNCHES is ``tight`` with ``‹`` lit and hides none.
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 
-#: The ``s`` SWARM body's own height. Set at 42 on 2026-09-16 when the body
-#: was first wired; **re-swept to 26 the same day**, alongside the column
-#: pin, for the 2x2-grid restructure. The drop is not a coincidence to
-#: double check away: the old body stacked QUEUE over THROUGHPUT in one
-#: rail, so the top row's own content height was QUEUE-plus-THROUGHPUT
-#: combined; the new body gives each of them a whole row to itself (QUEUE
-#: beside THE FIELD, THROUGHPUT beside JUST SHIPPED), so neither row has to
-#: hold two stacked auto-height panels' content any more. Measured in situ
-#: over 20-61 rows at :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`, on the
-#: committed swarm capture -- the same "healthy mid-flight" fixture every
-#: swarm widget test already uses (two subtasks in flight, two job states,
-#: one blocked job, one scored agent, two shipped rows) -- and re-confirmed
-#: at width 150 (comfortably past the column pin) to rule out the row
-#: threshold being an artefact of measuring at the column pin itself.
-#: **Re-measured again in the layout-change review round** (2026-09-17),
-#: after the column pin moved 128 -> 115: nothing about that round touched height (JUST
-#: SHIPPED's tighter address window changes its table's *columns*, never
-#: its rows), and the row pin held at 26 unmoved, checked rather than
-#: assumed. Never derived, and not a rewrite of :data:`SURF_LAUNCHPAD_FULL_LAYOUT_ROWS`
-#: (31), :data:`SURF_POOL4_FULL_LAYOUT_ROWS` (45) or
-#: :data:`SURF_POOL4_USER_FULL_LAYOUT_ROWS` (35).
+#: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
+#: the 2x2 grid, 28 on 2026-09-17 (F6, QUEUE's counter block). **Re-swept to
+#: 42 on 2026-09-21 for swarm v2 (WP7)** -- the launch-day number again by
+#: coincidence, measured on a body that shares no panel with that one.
 #:
-#: BINDING CONTAINER: **the body itself** (:data:`SWARM_BODY_ID`), not
-#: either row. One row under this pin (25), on the reference capture,
-#: neither :data:`SWARM_TOP_ID` nor :data:`SWARM_BOTTOM_ID` shows its own
-#: vertical scrollbar -- each row's content fits inside its own floor (8) --
-#: yet the body's own scrollbar is lit. Both rows are ``height: 1fr`` with a
-#: ``min-height: 8`` floor each; at height 25 the body has less than 16 rows
-#: to give them once the hero/title/status-bar rows are paid for, so the two
-#: floors together ask for more than the body's own ``1fr`` share, and the
-#: body -- not either child -- is the container that overflows. This is the
-#: same shape :data:`SURF_POOL4_USER_FULL_LAYOUT_ROWS` names for
-#: ``#surf-pool4-user-body`` one rule up, not a new one, and it is why
-#: :data:`SWARM_BODY_ID` stays registered in ``_SCROLL_COLUMNS[MODE_SWARM]``
-#: rather than either row alone answering for the pin.
+#: HOW IT WAS MEASURED. Every height from 20 to 61 at width 150 (past the
+#: column pin, so nothing here is a width) and again at the column pin
+#: itself, on the v2 capture and the worst case above; ``‹ taller`` lit
+#: through 41 and dark from 42 on both. **The binder is
+#: :data:`SWARM_BODY_ID`**, the ``Vertical`` of the three rows, and it is
+#: the only container that ever scrolls on this body: the top row is
+#: floored at THROUGHPUT's own sixteen fixed lines (``minimal.tcss``
+#: ``#surf-swarm-top { min-height: 16 }`` -- a floor equal to content, so
+#: the row never scrolls inside itself; the layout test binds the floor to
+#: THROUGHPUT's composited height), IN FLIGHT | LAUNCHES and SITES are
+#: ``1fr`` floored at eight lines each (title, blank, header, five rows),
+#: and the body clears when the screen's chrome -- title row, blank,
+#: six-line hero, the body's top margin, status bar -- leaves those 32 lines.
 #:
-#: WHY THIS PIN DOES NOT PROMISE EVERY SWARM STAYS WHOLE AT 26, AND WHY THAT
-#: IS THE RIGHT PROMISE. Unchanged from launch: none of THE FIELD, QUEUE,
-#: THROUGHPUT or JUST SHIPPED has a payload-independent content height --
-#: ``score_rows`` has no cap at all (``data/surf_swarm.score_rows``), the
-#: state vocabulary QUEUE counts is open, and ``blocked_rows``/
-#: ``shipped_rows`` cap at 8/12 but not at 0. Re-swept rather than assumed
-#: unmoved: a five-job, four-scored-agent, eight-blocked-reason payload
-#: needs more than 47 rows at this width to clear (its own ``‹ taller``
-#: stays lit through height 47 and clears at 48), and a busy-but-ordinary
-#: day (three field rows, two scored agents, three blocked jobs) still marks
-#: at the pin itself rather than clearing early. In every one of those cases
-#: some row's own scrollbar fires -- confirmed at height 20 all three of
-#: body/top/bottom light together on the heavy payload, and above that the
-#: binder shifts from the body to whichever row is genuinely the taller ask
-#: -- and ``‹ taller`` correctly lights throughout: THE FIELD, QUEUE,
-#: THROUGHPUT and JUST SHIPPED all scroll inside themselves or behind a
-#: row's scrollbar by design. So the pin is the smallest height that clears
-#: the reference snapshot whole, not a promise that every busier one fits
-#: without scrolling -- the marker carries that promise instead, and it was
-#: swept against every payload above rather than merely asserted.
+#: WHY THE FLOOR. Without it the top row was a ``1fr`` share of the body
+#: split three ways and reached THROUGHPUT's sixteen lines only at **58**
+#: terminal rows (measured before the floor was added, same sweep), with
+#: the row scrolling inside itself from 34 to 57 -- a ``‹ taller`` lit on
+#: every terminal the owner has and cleared only by one nobody uses. The
+#: floor gives THROUGHPUT its lines first and lets the two table rows take
+#: the rest; the AGENT body's top row carries VERDICTS' thirteen the same
+#: way. At the owner's 35 and 31 rows the body scrolls and the marker says
+#: so; no row of any panel is lost in silence
+#: (``test_no_height_loses_a_row_of_either_body_in_silence``).
+SURF_SWARM_FULL_LAYOUT_ROWS = 42
+
+#: The ``a`` AGENT body's own width, **new on 2026-09-21 (swarm v2 plan A1,
+#: WP7)**: the sixth body gets a sixth measurement, neither a restatement
+#: nor a derivation of :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS` (141) or of
+#: any other pin on this screen.
 #:
-#: A NAMED GAP, FOUND BELOW THE 2026-09-16 PIN, CLOSED IN FIX ROUND 1, AND
-#: STILL CLOSED AFTER THE SAME DAY'S RESTRUCTURE. ``_SCROLL_COLUMNS[MODE_SWARM]``
-#: used to check only the launch-day ``#surf-swarm-left``/``#surf-swarm-rail``
-#: pair, deliberately not :data:`SWARM_BODY_ID`. A synthetic worst case
-#: (light rail content, thirty JUST SHIPPED rows) opened a genuine
-#: one-row-wide window eleven rows under the then-pin (42), where
-#: ``#surf-swarm-body`` was scrolling and cutting JUST SHIPPED's table while
-#: ``‹ taller`` stayed dark -- the ``p`` body's own F6 shape, one container
-#: over. Closed by registering :data:`SWARM_BODY_ID` in
-#: ``_SCROLL_COLUMNS[MODE_SWARM]`` rather than by raising a floor, on
-#: ``_SCROLL_COLUMNS[MODE_POOL4_USER]``'s own shape. The 2x2-grid restructure
-#: renamed the two rows (:data:`SWARM_TOP_ID`/:data:`SWARM_BOTTOM_ID` for
-#: launch day's ``#surf-swarm-left``/``#surf-swarm-rail``) but kept the same
-#: three-container registration, and the same adversarial payload
-#: (:func:`_shipped_heavy_light_rail_payload`) still reproduces a
-#: body-only-scrollbar window at this pin's own boundary (height 25):
-#: ``top_scroll``/``bottom_scroll`` both false, ``body_scroll`` true,
-#: ``‹ taller`` lit -- re-confirmed rather than assumed to still hold after
-#: the row-level restructure changed what each row contains.
-#: ``test_the_body_only_scrollbar_case_now_lights_the_marker`` is the
-#: reproduction (its own failing-first record: red before this fix, green
-#: after, red again with the registration reverted) and
-#: ``test_no_height_loses_a_row_of_this_body_in_silence`` is the property,
-#: both in ``tests/screens/test_surf_swarm_layout.py``.
+#: THE GRID is not A1's 2x2 (ROSTER | RECORD over VERDICTS | FEEDBACK):
+#: ROSTER's and RECORD's ``tight`` tiers alone need 59 + 92 = 151 cells of
+#: one row, more than ``__main__.FULL_LAYOUT_COLUMNS`` (143) holds, so that
+#: row would hide columns at every admissible width. ROSTER sits beside
+#: VERDICTS; RECORD and FEEDBACK each take a full-width row.
 #:
-#: **Re-measured a fourth time, 2026-09-17, alongside the column-balance
-#: change that moved the column pin 115 -> 95** (QUEUE's and THROUGHPUT's
-#: CSS moved from an unbounded/JUST-SHIPPED-sharing ``1fr`` to a shared
-#: ``1fr`` bounded by ``max-width: 46``, and THROUGHPUT's tx-hash column
-#: gained a 12-cell ceiling): nothing about that round touches height
-#: (both keep ``height: auto``), and the row pin held at 26 unmoved,
-#: re-swept over the same 20-61 range at the new column pin rather than
-#: assumed -- including the adversarial body-only-scrollbar case at
-#: height 25, which still reproduces identically (``top_scroll``/
-#: ``bottom_scroll`` false, ``body_scroll`` true, ``‹ taller`` lit).
+#: HOW IT WAS MEASURED. Every width from 60 to 225 at height 80, on the v2
+#: capture (16 seats, the most active seat on 8 nodes) and on A1's worst
+#: case (30 seats, the selected seat on 40 nodes with a 400-character
+#: verdict detail, 12 feedback rows); the two agreed at every width. Tier
+#: word, ``‹``, hidden columns, CSS-clipped lines and region overflow were
+#: read off composited output, as for the ``s`` body above.
 #:
-#: **Re-measured a fifth time, same day, fix round 1 on the column-balance
-#: change** (the 95 pin above was itself wrong -- a silent horizontal
-#: overflow the whole-ness sweep could not see; see
-#: :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own ``#:`` block for the
-#: defect and the fix, 95 -> 116). Nothing about that fix touches height
-#: either (only ``min-width``/``max-width`` moved); re-swept at the new
-#: column pin (116) rather than assumed, still 26, adversarial case at
-#: height 25 unchanged.
+#: WHICH PANEL BINDS: ``SurfSwarmRoster``, ``max-width: 86``
+#: (``swarm_roster.FULL_WIDTH`` 82 + gutter 2 + padding 2); it hides
+#: columns through 104, is ``tight`` through 119, ``compact`` 120-133 with
+#: ``‹`` lit and ``full`` from 134, where its share is 84 content cells. At
+#: 133 it is the sole marked panel besides RECORD, so the pin is not loose.
+#: On the row at 134: ROSTER 84 + VERDICTS 44 (under ``max-width: 46``, fr
+#: rounding) of the 133 the body's gutter leaves. VERDICTS clips a line only
+#: under 88 outer columns; FEEDBACK is ``full`` from 84.
 #:
-#: **Re-measured a sixth time, 2026-09-17, F6** (``docs/surf_swarm_
-#: followups.md``): QUEUE grew a compact pending-pipeline block
-#: (``widgets/surf/swarm_queue.py``'s own F6 section), two more lines on the
-#: reference capture (a blank separator plus one summary line) whenever
-#: ``swarm_as_of_hhmm`` carries a marker and ``swarm_queue_depths`` is a real
-#: dict -- true of every payload this file's own sweep uses, none of which
-#: overrides that key away from the sample capture's own real reading. Swept
-#: over the same 20-61 range at the unmoved column pin (116): 26 -> **28**,
-#: re-confirmed at 150 columns and at the column pin itself, both agreeing.
+#: THE ONE NAMED EXCEPTION: RECORD is ``tight`` through 111, ``compact``
+#: 112-121 and ``full`` from 122, but its ``detail`` column is the
+#: verifier's free text and takes every cell the row has left, lighting
+#: ``‹`` while any of it is cut: on the capture (63-character details) it
+#: clears at **168** (``RECORD_NEVER_CLEARS_BELOW``); on the worst case
+#: (400 characters) it never clears at any width swept. That is surf's
+#: announce-feed shape -- a marker tracking a real length each time -- not
+#: a permanently lit one, and the panel is excluded from "whole" by name.
 #:
-#: **The binding container changed with it, not only the number.** One
-#: row under this new pin (27), on the reference capture, it is now
-#: :data:`SWARM_TOP_ID` -- not the body -- whose own scrollbar is lit
-#: (``top_scroll`` true, ``body_scroll``/``bottom_scroll`` both false);
-#: :data:`SWARM_BOTTOM_ID` never needed to grow, so once QUEUE's own two
-#: extra lines pushed its row's content past that row's ``1fr`` share on its
-#: own, the row itself is what overflows before the two rows' summed floors
-#: ever get to outgrow the body's share the way they did at launch (this
-#: pin's own earlier rounds, above). Both rows and the body remain
-#: registered in ``_SCROLL_COLUMNS[MODE_SWARM]`` (the fix round 1 gap this
-#: pin's own history already closed), so the screen-wide marker still
-#: agrees regardless of which of the three ends up binding at a given
-#: height and payload -- this round only moved *which one* answers for the
-#: pin, not whether the marker can see it.
-#:
-#: The adversarial body-only-scrollbar case is unmoved by this round for a
-#: reason worth naming rather than assuming: :func:`_shipped_heavy_light_
-#: rail_payload` starves QUEUE (one queued state, no blocked jobs) the same
-#: way it starves THE FIELD, but it does **not** starve ``swarm_queue_depths``
-#: -- that key rides the shared sample fixture, not this payload's own
-#: builder, so QUEUE's new block still costs it the same two lines. Its own
-#: height-25 reproduction (body_scroll true, ``‹ taller`` lit) held
-#: unchanged when re-swept; what moved for *this* payload is where it
-#: clears -- 26 now (was past this pin's old 26 entirely) -- which is why
-#: this pin's own test still names height 25 literally rather than
-#: ``SURF_SWARM_FULL_LAYOUT_ROWS - 1`` for that specific reproduction.
-SURF_SWARM_FULL_LAYOUT_ROWS = 28
+#: THE OWNER'S TWO TERMINALS: at 119 ROSTER is ``tight`` and RECORD
+#: ``tight``, both marked; at 138 ROSTER is ``full`` and dark, RECORD
+#: ``full`` with ``‹`` lit for its cut detail.
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 134
+
+#: The ``a`` AGENT body's own height, **new on 2026-09-21 (WP7)**. Every
+#: height from 20 to 61 at width 150 and at the column pin, capture and
+#: worst case: ``‹ taller`` lit through 39, dark from 40. The binder is
+#: :data:`AGENT_BODY_ID`: the top row is floored at VERDICTS' thirteen fixed
+#: lines (``#surf-agent-top { min-height: 13 }``, a floor equal to content,
+#: bound by the layout test), RECORD and FEEDBACK are ``1fr`` floored at
+#: eight each, and the seven-line agent hero -- one more than the ``s``
+#: hero's six -- is why 29 body lines clear at 40 where the ``s`` body's 32
+#: clear at 42. The owner's 35 and 31 rows sit under it; the body scrolls
+#: and the marker says so.
+SURF_AGENT_FULL_LAYOUT_ROWS = 40
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
 #: curator's MODE_DASHBOARD/MODE_ANALYSIS precedent.
@@ -2139,10 +1709,18 @@ MODE_POOL4_USER = "pool4_user"
 
 #: The ``s`` SWARM body (2026-09-16) -- the **fifth** mode, and the second
 #: (after :data:`MODE_POOL4_USER`) to swap the hero rather than leave
-#: :class:`SurfHero` mounted. A whole second body with its own four panels
-#: (THE FIELD, JUST SHIPPED, QUEUE, THROUGHPUT), on the same rule the
-#: docstring above states rather than on a count.
+#: :class:`SurfHero` mounted. A whole second body with its own five panels
+#: since swarm v2 (WP7, 2026-09-21: CAPABILITY, THROUGHPUT, IN FLIGHT,
+#: LAUNCHES, SITES), on the same rule the docstring above states rather
+#: than on a count.
 MODE_SWARM = "swarm"
+
+#: The ``a`` AGENT body (swarm v2 plan Amendment A1, WP7) -- the **sixth**
+#: mode, and the third to swap the hero: one seat of the swarm, picked by the
+#: reader's cursor on ROSTER, else ``MAXPANE_IMD_SEAT``, else the most active
+#: (``sw.pick_seat``). Four panels (ROSTER, VERDICTS, RECORD, FEEDBACK) under
+#: :class:`SurfSwarmAgentHero`.
+MODE_AGENT = "agent"
 
 #: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
 #:
@@ -2155,11 +1733,12 @@ MODE_SWARM = "swarm"
 #: ``test_exactly_one_hero_shows_in_every_mode`` either way -- but only one of
 #: the two failures is visible to a reader who is not running the tests.
 #:
-#: **:data:`MODE_SWARM` is deliberately absent.** It is the second body (after
-#: :data:`MODE_POOL4_USER`) with a hero of its own (:class:`SurfSwarmHero`,
-#: toggled in ``_show_mode`` the same way), and adding it here would paint
-#: two heroes into one row -- the exact defect enumerating instead of
-#: negating exists to make loud rather than silent.
+#: **:data:`MODE_SWARM` and :data:`MODE_AGENT` are deliberately absent.**
+#: Each is a body with a hero of its own (:class:`SurfSwarmHero`,
+#: :class:`SurfSwarmAgentHero`, toggled in ``_show_mode`` the same way as
+#: :class:`SurfPool4UserHero`), and adding either here would paint two heroes
+#: into one row -- the exact defect enumerating instead of negating exists to
+#: make loud rather than silent.
 _SURF_HERO_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4)
 
 #: The launchpad body's container id -- exported so the test module and any
@@ -2380,37 +1959,67 @@ POOL4_USER_BOTTOM_ID = "surf-pool4-user-bottom"
 #: is queried from the test module, and retyping a literal in two files is
 #: how one of them goes stale.
 #:
-#: A ``Vertical`` of two rows, on :data:`POOL4_USER_BODY_ID`'s own shape
-#: rather than the ``l``/``p`` bodies' single ``Horizontal``.
-#:
-#: **A 2x2 grid since 2026-09-16's layout change**, on the owner's own live
-#: screenshot: THE FIELD beside QUEUE on top, JUST SHIPPED beside THROUGHPUT
-#: beneath -- not the launch-day shape (THE FIELD beside a QUEUE-over-
-#: THROUGHPUT rail on top, JUST SHIPPED full-width beneath), which is why
-#: :data:`SWARM_RAIL_ID` is gone rather than renamed: QUEUE and THROUGHPUT no
-#: longer share a column, so there is no rail left to name.
+#: A ``Vertical`` of two ``Horizontal`` rows and one full-width panel since
+#: swarm v2 (WP7, 2026-09-21): CAPABILITY beside THROUGHPUT on top, IN FLIGHT
+#: beside LAUNCHES beneath, SITES alone across the bottom. The plan's §2 grid
+#: (IN FLIGHT beside THROUGHPUT, CAPABILITY beside LAUNCHES) was measured and
+#: does not fit under ``__main__.FULL_LAYOUT_COLUMNS``: CAPABILITY's and
+#: LAUNCHES' *tight* tiers alone need 68 + 79 = 147 cells of one row, more
+#: than a 143-column terminal has, so that pairing would hide table columns
+#: at every admissible width. Pairing each table with the panel that plateaus
+#: (THROUGHPUT at 46) or shrinks honestly (IN FLIGHT's objective column) is
+#: what lets CAPABILITY reach ``full`` at the pin -- see
+#: :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`. The 2026-09-16 2x2 grid (THE FIELD
+#: beside QUEUE, JUST SHIPPED beside THROUGHPUT) went with those panels.
 SWARM_BODY_ID = "surf-swarm-body"
 
-#: The swarm body's top row: **THE FIELD beside QUEUE**.
-#:
-#: Renamed from ``SWARM_LEFT_ID`` (launch day) when QUEUE moved out of the
-#: rail and into this row directly: the old name was already kept "for
-#: symmetry with the other bodies' left/rail pair" despite holding a row, not
-#: a column, and that symmetry is gone now that there is no rail on this body
-#: at all. ``TOP``/``BOTTOM`` matches :data:`POOL4_USER_MIDDLE_ID`'s sibling
-#: shape (a ``Vertical`` of two ``Horizontal`` rows) more honestly than
-#: ``LEFT``/``RAIL`` ever did.
+#: The swarm body's top row: **CAPABILITY beside THROUGHPUT** (WP7). The row
+#: scrolls (THROUGHPUT is ``height: auto`` with two open-ended blocks) and is
+#: named in ``_SCROLL_COLUMNS[MODE_SWARM]``. Held THE FIELD beside QUEUE from
+#: 2026-09-16 to WP7.
 SWARM_TOP_ID = "surf-swarm-top"
 
-#: The swarm body's bottom row: **JUST SHIPPED beside THROUGHPUT**.
-#:
-#: New with the 2026-09-16 layout change. JUST SHIPPED used to be this body's
-#: own second row, full-width and alone; THROUGHPUT used to stack under QUEUE
-#: in :data:`SWARM_RAIL_ID`. Moving THROUGHPUT down here beside JUST SHIPPED
-#: is exactly what let QUEUE take the top row's whole right column -- see
-#: :data:`SURF_SWARM_FULL_LAYOUT_ROWS`'s own ``#:`` block for what that fixed
-#: about QUEUE's title going missing behind the old rail's scrollbar.
+#: The swarm body's bottom row: **IN FLIGHT beside LAUNCHES** (WP7). Both
+#: children are ``1fr`` in height and floored at the row's own floor, so the
+#: row itself cannot overflow and carries no scrollbar; SITES follows it in
+#: the body directly, with no row container of its own. Held JUST SHIPPED
+#: beside THROUGHPUT from 2026-09-16 to WP7.
 SWARM_BOTTOM_ID = "surf-swarm-bottom"
+
+#: The ``a`` AGENT body's container id (swarm v2 plan A1, WP7): the sixth
+#: body, on :data:`SWARM_BODY_ID`'s own shape -- a ``Vertical`` of one
+#: ``Horizontal`` row (ROSTER beside VERDICTS) over two full-width panels
+#: (RECORD, then FEEDBACK). The plan's A1 grid (ROSTER beside RECORD,
+#: VERDICTS beside FEEDBACK) was measured and does not fit under 143
+#: columns: ROSTER's and RECORD's tight tiers alone need 59 + 92 = 151 cells
+#: of one row. RECORD full-width is what keeps its ``detail`` column -- the
+#: verifier's verdict, the point of the body -- on screen at the pin
+#: (:data:`SURF_AGENT_FULL_LAYOUT_COLUMNS`).
+AGENT_BODY_ID = "surf-agent-body"
+
+#: The agent body's only row: **ROSTER beside VERDICTS**. It scrolls
+#: (VERDICTS is ``height: auto``) and is named in ``_SCROLL_COLUMNS[MODE_AGENT]``.
+AGENT_TOP_ID = "surf-agent-top"
+
+#: The two swarm bodies' eleven widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
+#: order. ``_do_refresh`` dispatches each one's contract keys by class name
+#: off this tuple, so a widget the export names and this tuple does not
+#: would never be painted -- ``tests/screens/test_surf_screen.py`` binds the
+#: two by identity of their name sets (the one legitimate hand-typed copy:
+#: the export cannot name classes without importing widgets into ``data/``).
+_SWARM_PANELS = (
+    SurfSwarmHero,
+    SurfSwarmInFlight,
+    SurfSwarmThroughput,
+    SurfSwarmCapability,
+    SurfSwarmLaunches,
+    SurfSwarmSites,
+    SurfSwarmAgentHero,
+    SurfSwarmRoster,
+    SurfSwarmSeatRecord,
+    SurfSwarmSeatVerdicts,
+    SurfSwarmSeatFeedback,
+)
 
 
 # -- format helpers ----------------------------------------------------
@@ -2648,6 +2257,9 @@ class SurfScreen(DashboardScreen):
         # `s` for SWARM (2026-09-16): free on this screen and in the app,
         # verified rather than assumed -- see `action_toggle_swarm`.
         Binding("s", "toggle_swarm", "Swarm", show=False),
+        # `a` for AGENT (swarm v2 plan A1, WP7): free on this screen and in
+        # the app, verified rather than assumed -- see `action_toggle_agent`.
+        Binding("a", "toggle_agent", "Agent", show=False),
         Binding("escape", "show_dashboard", show=False),
     ]
 
@@ -2712,7 +2324,7 @@ class SurfScreen(DashboardScreen):
     #: that shortens if a fourth ever has to fit, for ``4 market``'s own
     #: reason: ``l launchpad`` is the one the app-level acceptance test greps
     #: for as a contiguous string.
-    KEY_HINTS = "[dim]l launchpad · 4 pool4 · s swarm[/]"
+    KEY_HINTS = "[dim]l launchpad · 4 pool4 · s swarm · a agent[/]"
 
     #: The words the status bar shows for this dashboard.
     GAME_NAME = "surf"
@@ -3211,124 +2823,48 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
     }
 
-    /* The ``s`` SWARM body (2026-09-16, restructured to a 2x2 grid the same
-     * day): the FIFTH body, on ``#surf-pool4-user-body``'s own shape rather
-     * than the ``l``/``p`` bodies' single ``Horizontal`` -- a ``Vertical``
-     * of two rows. ``margin: 1 0 0 0`` matches every other body's, so
-     * swapping between any two of the five never moves the hero row's
-     * breathing room.
-     *
-     * A 2X2 GRID, ON THE OWNER'S OWN LIVE SCREENSHOT, NOT THE LAUNCH SHAPE.
-     * ``#surf-swarm-top`` holds THE FIELD beside QUEUE; ``#surf-swarm-bottom``
-     * holds JUST SHIPPED beside THROUGHPUT. The launch-day shape stacked
-     * QUEUE over THROUGHPUT in a rail (``#surf-swarm-rail``) beside THE
-     * FIELD in ``#surf-swarm-left``, with JUST SHIPPED alone and full-width
-     * as the body's whole second row -- both names are gone rather than
-     * reused for a different shape, because there is no rail left on this
-     * body at all: QUEUE and THROUGHPUT no longer share a column, so QUEUE
-     * gets the whole of its row's right column and THROUGHPUT gets the
-     * whole of its row's right column, each one level shallower than
-     * before.
-     *
-     * WHY BOTH JUST SHIPPED AND THROUGHPUT ARE BOUNDED ``1fr`` RATHER THAN
-     * BARE FIXED NUMBERS, AND WHY JUST SHIPPED'S OWN FLOOR IS AN EXPLICIT
-     * ``0`` -- CURRENT AS OF THE 2026-09-17 FIX ROUND 2
-     * (:data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`'s own ``#:`` block carries
-     * the full derivation and the Textual behaviour that made a plain
-     * ``min-width: 68;`` silently overflow the row; this comment is the
-     * short version, kept beside the CSS it describes).
-     * JUST SHIPPED's own content plateaus: its ``DataTable`` has fixed
-     * per-column widths (``swarm_shipped.FULL_WIDTH``/``COMPACT_WIDTH``/
-     * ``TIGHT_WIDTH``) that do not grow with extra space past ``full``, so
-     * an *unbounded* share would waste every column past that need on
-     * blank table margin -- the instrument is a ``1fr`` bounded by
-     * ``max-width: 81`` (``FULL_WIDTH`` + 2) for that ceiling.
-     * THROUGHPUT's own content plateaus the same way, one row over --
-     * ``swarm_throughput._MAX_TX_COLS`` (12) caps its tx-hash column, so
-     * its own ``max-width: 46`` is that same kind of ceiling, not a
-     * borrowed or arbitrary number. **THROUGHPUT carries no min-width of
-     * its own** and does not need one: unlike JUST SHIPPED it never sat at
-     * its own max regardless of available room, on either spelling -- every
-     * sweep in the pin's own ``#:`` block confirms it shrinks smoothly with
-     * no floor at all, explicit or otherwise.
-     *
-     * JUST SHIPPED's ``min-width: 0`` is **kept explicit for intent and
-     * greppability, not because Textual treats the two spellings
-     * differently here** -- fix round 1 claimed it did (an implicit,
-     * content-derived floor left in charge by omitting the property); fix
-     * round 2 re-measured that claim against the committed CSS
-     * (``styles.has_rule("min_width")`` genuinely ``False`` with the
-     * property removed from both copies) and it did not hold: JUST
-     * SHIPPED's region was column-for-column identical to the explicit-``0``
-     * case at every width checked. Textual's own fraction resolution
-     * simply never consults an absent minimum; there is no implicit floor
-     * to override. **What is real, and is why ``min-width: 68`` silently
-     * overflowed this row:** a bounded ``1fr`` sibling, once its own
-     * ``min-width`` exceeds the row's *natural* share for that child, is
-     * not clamped to that min -- it snaps to its **max** instead. At outer
-     * width 95 the boundary sits between 46 and 47 (the row's own natural
-     * share there); 68 was comfortably past it. This is a property of the
-     * *value* relative to the row's own share, not of the spelling.
-     * ``min-width: 0`` (or its omission, measured identically) sits under
-     * that boundary at every width this body's own range covers, which is
-     * what restores genuine proportional shrinking -- confirmed by a full
-     * 50-160 width sweep with zero overflow at any point, not merely at
-     * the pin.
-     *
-     * With the overflow fixed, JUST SHIPPED's own ``‹ widen`` marker is
-     * honest again on its own terms, not because of an accidental pin at
-     * its max: lit while it is short of ``full`` tier (``self.size.width``
-     * < 79), dark once it is not, true now at every width the sweep
-     * covers. :data:`SHIPPED_NEVER_CLEARS_BELOW` in the test file names
-     * where that happens (129, re-measured, not the round-2 number) and
-     * :func:`test_the_shipped_panel_cannot_clear_its_own_full_tier_at_the_pinned_width`
-     * proves both edges -- the round-2 test's own name and shape, restored
-     * once the claim it makes was true again.
-     *
-     * ``#surf-swarm-top`` and ``#surf-swarm-bottom`` both carry their own
-     * ``overflow-y: auto``, named in ``SurfScreen._SCROLL_COLUMNS[MODE_SWARM]``,
-     * on ``#surf-swarm-left``/``#surf-swarm-rail``'s own launch-day reason:
-     * QUEUE and THROUGHPUT are both ``height: auto`` with open-ended content
-     * (QUEUE's blocked list, THROUGHPUT's scored-agent list), so the row
-     * holding either of them -- not either widget itself -- is the
-     * container that needs the floor and the gutter. ``#surf-swarm-body``
-     * carries the same rule, and is named there too, on ``MODE_POOL4_USER``'s
-     * own shape (``_SCROLL_COLUMNS[MODE_POOL4_USER]`` already asks its own
-     * body id alongside its rail) rather than ``MODE_LAUNCHPAD``'s
-     * two-container one. It was missing for one round of the launch-day
-     * body (fix round 1): a synthetic worst case (light rail content, a
-     * large JUST SHIPPED table) opened a one-row-wide ``‹ taller``-dark
-     * window at height 25, where ``#surf-swarm-body`` was genuinely
-     * scrolling and JUST SHIPPED's table was genuinely losing rows -- the
-     * ``p`` body's own F6 shape, one container over. Registering
-     * ``#surf-swarm-body`` closed it; raising a floor was rejected, because
-     * none of this body's four panels has a payload-independent content
-     * height for a floor to sit above, so a floor only moves the window to
-     * a different content mix rather than closing it. See
-     * ``tests/screens/test_surf_swarm_layout.py``'s
-     * ``test_the_body_only_scrollbar_case_now_lights_the_marker`` (the
-     * reproduction) and ``test_no_height_loses_a_row_of_this_body_in_silence``
-     * (the property) -- both re-swept against the 2x2 grid rather than
-     * retired, because the same shape (an ``auto``-height panel's content
-     * squeezed by the body's own flex allocation with no named container
-     * seeing it) is exactly as reachable in the new grid as the old one.
-     *
-     * EVERY 1FR CHILD IS FLOORED AND EVERY SCROLLING CONTAINER RESERVES ITS
-     * GUTTER, for the reason repeated at every other body in this block: a
-     * ``1fr`` child cannot overflow a scroll container, it SHRINKS, so
-     * without ``min-height`` it sheds a line per terminal row down to a bare
-     * title with no scrollbar and no trace; without ``scrollbar-gutter:
-     * stable`` the scrollbar takes its column out of the panel beside it only
-     * on terminals short enough to overflow, so the layout's WIDTH
-     * requirement would become a function of its HEIGHT.
-     *
-     * This copy is the fallback; ``themes/minimal.tcss`` carries the copy
-     * that actually renders (an app stylesheet outranks a screen's
-     * ``DEFAULT_CSS``), and ``tests/screens/test_surf_screen.py`` pins the
-     * two together property by property. Edit both or neither. */
+    /* The ``s`` SWARM body and the ``a`` AGENT body (swarm v2, WP7,
+     * 2026-09-21). This copy is the fallback; ``themes/minimal.tcss``
+     * carries the copy that actually renders (an app stylesheet outranks a
+     * screen's ``DEFAULT_CSS``) **and the reasoning** -- the grid, why it is
+     * not the plan's §2 pairing, why no ``1fr`` child carries a
+     * ``min-width``, the ``4fr : 5fr`` seam, and which container scrolls.
+     * ``tests/screens/test_surf_screen.py`` pins the two copies together
+     * property by property. Edit both or neither. */
+    SurfScreen SurfSwarmHero {
+        height: 6;
+    }
+    SurfScreen SurfSwarmHero > SurfSwarmHeroBox {
+        width: 1fr;
+        height: 6;
+        padding: 0 1;
+        margin: 0 1;
+        border: solid $panel;
+        background: $surface;
+        content-align: center middle;
+        text-align: center;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+    SurfScreen SurfSwarmAgentHero {
+        height: 7;
+    }
+    SurfScreen SurfSwarmAgentHero > SurfSwarmAgentHeroBox {
+        width: 1fr;
+        height: 7;
+        padding: 0 1;
+        margin: 0 1;
+        border: solid $panel;
+        background: $surface;
+        content-align: center middle;
+        text-align: center;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
     SurfScreen #surf-swarm-body {
         height: 1fr;
         width: 100%;
+        padding: 0 0;
         margin: 1 0 0 0;
         overflow-y: auto;
         scrollbar-size: 1 1;
@@ -3336,36 +2872,15 @@ class SurfScreen(DashboardScreen):
     }
     SurfScreen #surf-swarm-top {
         height: 1fr;
-        min-height: 8;
+        min-height: 16;
+        padding: 0 0;
         overflow-y: auto;
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
     }
-    SurfScreen SurfSwarmField {
+    SurfScreen SurfSwarmCapability {
         width: 1fr;
-        height: 1fr;
-        min-height: 6;
-        padding: 0 1;
-        margin: 0 0 1 0;
-    }
-    SurfScreen SurfSwarmQueue {
-        width: 1fr;
-        max-width: 46;
-        height: auto;
-        padding: 0 1;
-        margin: 0 0 1 0;
-    }
-    SurfScreen #surf-swarm-bottom {
-        height: 1fr;
-        min-height: 8;
-        overflow-y: auto;
-        scrollbar-size: 1 1;
-        scrollbar-gutter: stable;
-    }
-    SurfScreen SurfSwarmShipped {
-        width: 1fr;
-        min-width: 0;
-        max-width: 81;
+        max-width: 93;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
@@ -3374,6 +2889,71 @@ class SurfScreen(DashboardScreen):
         width: 1fr;
         max-width: 46;
         height: auto;
+        padding: 0 1;
+    }
+    SurfScreen #surf-swarm-bottom {
+        height: 1fr;
+        min-height: 8;
+        padding: 0 0;
+    }
+    SurfScreen SurfSwarmInFlight {
+        width: 4fr;
+        height: 1fr;
+        min-height: 8;
+        padding: 0 1;
+    }
+    SurfScreen SurfSwarmLaunches {
+        width: 5fr;
+        height: 1fr;
+        min-height: 8;
+        padding: 0 1;
+    }
+    SurfScreen SurfSwarmSites {
+        width: 100%;
+        height: 1fr;
+        min-height: 8;
+        padding: 0 1;
+    }
+    SurfScreen #surf-agent-body {
+        height: 1fr;
+        width: 100%;
+        padding: 0 0;
+        margin: 1 0 0 0;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
+    SurfScreen #surf-agent-top {
+        height: 1fr;
+        min-height: 13;
+        padding: 0 0;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
+    SurfScreen SurfSwarmRoster {
+        width: 1fr;
+        max-width: 86;
+        height: 1fr;
+        min-height: 8;
+        padding: 0 1;
+    }
+    SurfScreen SurfSwarmSeatVerdicts {
+        width: 1fr;
+        max-width: 46;
+        height: auto;
+        padding: 0 1;
+    }
+    SurfScreen SurfSwarmSeatRecord {
+        width: 100%;
+        height: 1fr;
+        min-height: 8;
+        padding: 0 1;
+    }
+    SurfScreen SurfSwarmSeatFeedback {
+        width: 100%;
+        height: 1fr;
+        min-height: 8;
         padding: 0 1;
     }
     """
@@ -3417,6 +2997,7 @@ class SurfScreen(DashboardScreen):
             yield SurfHero(classes="surf-hero")
             yield SurfPool4UserHero(classes="surf-hero")
             yield SurfSwarmHero(classes="surf-hero")
+            yield SurfSwarmAgentHero(classes="surf-hero")
 
         with Horizontal(id="middle-row"):
             yield SurfFeed()
@@ -3536,29 +3117,27 @@ class SurfScreen(DashboardScreen):
                 yield SurfPool4UStakers()
                 yield SurfPool4UDepth()
 
-        # The `s` SWARM view (2026-09-16): the fifth body, composed once and
-        # hidden by `display` exactly like the four above it, so the first
-        # `s` paints a complete frame rather than a blank one. Like the `4`
-        # body it is a `Vertical` of two rows rather than the `l`/`p` bodies'
-        # single `Horizontal`.
-        #
-        # A 2x2 GRID SINCE THE OWNER'S OWN LIVE SCREENSHOT (2026-09-16,
-        # SAME DAY): THE FIELD beside QUEUE on top, JUST SHIPPED beside
-        # THROUGHPUT beneath -- not the launch shape, which stacked QUEUE
-        # over THROUGHPUT in a rail beside THE FIELD and ran JUST SHIPPED
-        # full-width along the bottom. THROUGHPUT keeps its own panel
-        # identity and title; it only moved cells. There is no rail
-        # container left on this body at all -- QUEUE and THROUGHPUT no
-        # longer share a column, so each row is a plain two-widget
-        # `Horizontal`, `SWARM_BOTTOM_ID`'s own shape mirroring
-        # `SWARM_TOP_ID`'s.
+        # The `s` SWARM body (swarm v2, WP7): a `Vertical` of two `Horizontal`
+        # rows and one full-width table -- see `SWARM_BODY_ID` for why this is
+        # not the plan's §2 pairing. Composed once and hidden, like every
+        # other alternate body.
         with Vertical(id=SWARM_BODY_ID):
             with Horizontal(id=SWARM_TOP_ID):
-                yield SurfSwarmField()
-                yield SurfSwarmQueue()
-            with Horizontal(id=SWARM_BOTTOM_ID):
-                yield SurfSwarmShipped()
+                yield SurfSwarmCapability()
                 yield SurfSwarmThroughput()
+            with Horizontal(id=SWARM_BOTTOM_ID):
+                yield SurfSwarmInFlight()
+                yield SurfSwarmLaunches()
+            yield SurfSwarmSites()
+
+        # The `a` AGENT body (swarm v2 plan A1, WP7): one row, two full-width
+        # tables -- see `AGENT_BODY_ID`.
+        with Vertical(id=AGENT_BODY_ID):
+            with Horizontal(id=AGENT_TOP_ID):
+                yield SurfSwarmRoster()
+                yield SurfSwarmSeatVerdicts()
+            yield SurfSwarmSeatRecord()
+            yield SurfSwarmSeatFeedback()
 
         yield StatusBar()
 
@@ -3642,6 +3221,7 @@ class SurfScreen(DashboardScreen):
                 self._mode == MODE_POOL4_USER
             )
             self.query_one(f"#{SWARM_BODY_ID}").display = self._mode == MODE_SWARM
+            self.query_one(f"#{AGENT_BODY_ID}").display = self._mode == MODE_AGENT
             # The heroes, each answering to ``self._mode`` and never to the
             # other. ``SurfHero.display = not market_hero`` is available and
             # is the ``not launchpad`` defect one layer out: it would show
@@ -3651,6 +3231,7 @@ class SurfScreen(DashboardScreen):
                 self._mode == MODE_POOL4_USER
             )
             self.query_one(SurfSwarmHero).display = self._mode == MODE_SWARM
+            self.query_one(SurfSwarmAgentHero).display = self._mode == MODE_AGENT
             self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("surf mode toggle failed: %s", exc)
@@ -3731,6 +3312,50 @@ class SurfScreen(DashboardScreen):
         self._mode = MODE_SWARM
         self._show_mode()
 
+    def action_toggle_agent(self) -> None:
+        """``a`` -- swap the dashboard body for one seat's AGENT panels.
+
+        Idempotent like ``s``: a second ``a`` returns to the dashboard. ``a``
+        was free on this screen (``r``/``l``/``e``/``4``/``s``/``escape``)
+        and in the app (``q``/``t``/``tab``/``m``) -- verified, not assumed;
+        ``DataTable``'s own bindings (arrows, page keys, ``enter``) do not
+        include it either, so the roster's cursor and this key never collide.
+        """
+        if self._mode == MODE_AGENT:
+            self.action_show_dashboard()
+            return
+        self._mode = MODE_AGENT
+        self._show_mode()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """``enter`` on a ROSTER row picks that seat (swarm v2 plan A1).
+
+        Scoped to the roster's own table id: every other ``DataTable`` on
+        this screen has ``cursor_type = "none"`` and posts nothing, but the
+        guard is on the id rather than on that fact. The manager's
+        ``select_seat`` is a plain attribute write -- no I/O, no await, the
+        rule for a message handler -- and the guarded refresh that follows
+        recomputes the seat keys off the **cached** sweep, so the hero, the
+        record and the feedback change on this refresh; the roster's ``▸``
+        and its cursor move with them (the roster places its own cursor
+        after every paint -- a resize repaint would reset one the screen
+        placed). No manager seam (a test double without
+        ``select_seat``) means no selection, never a crash.
+        """
+        table = event.data_table
+        if table.id != SurfSwarmRoster.TABLE_ID:
+            return
+        try:
+            token = self.query_one(SurfSwarmRoster).token_at(event.cursor_row)
+        except Exception as exc:  # noqa: BLE001 -- a keypress must never crash
+            logger.debug("surf roster selection failed: %s", exc)
+            return
+        select = getattr(self._data_manager, "select_seat", None)
+        if token is None or select is None:
+            return
+        select(token)
+        self.start_refresh()
+
     def action_show_dashboard(self) -> None:
         """``escape`` -- one-way back out of **any** alternate body."""
         self._mode = MODE_DASHBOARD
@@ -3803,9 +3428,17 @@ class SurfScreen(DashboardScreen):
         # column, so there is no separately-scrolling rail nested a level
         # deeper any more -- each row is now the only container besides the
         # body itself that can overflow, so each row is asked directly.
-        MODE_SWARM: (
-            f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}", f"#{SWARM_BOTTOM_ID}",
-        ),
+        #
+        # **Swarm v2 (WP7):** the body and its top row. The bottom row holds
+        # two ``1fr`` panels floored at the row's own floor, so it cannot
+        # overflow and shows no scrollbar (its region is compared against
+        # its children's in the layout test instead); SITES sits in the body
+        # directly. Asking a container that cannot scroll is harmless, but
+        # naming only the ones that can is what keeps this map a statement.
+        MODE_SWARM: (f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}"),
+        # The AGENT body (WP7), the same shape: the body, and the one row
+        # whose VERDICTS panel is ``height: auto``.
+        MODE_AGENT: (f"#{AGENT_BODY_ID}", f"#{AGENT_TOP_ID}"),
     }
 
     def _rail_is_cut(self) -> bool:
@@ -4508,71 +4141,22 @@ class SurfScreen(DashboardScreen):
         except Exception as exc:
             logger.debug("Failed to update SurfPool4UDepth: %s", exc)
 
-        # The `s` SWARM body's five panels (2026-09-16): dispatched every
-        # refresh, whether or not `s` is showing them, so the first keypress
-        # paints a complete frame. Each panel in its own `try` so one bad
-        # panel cannot blank the others. Every kwarg is the contract key
-        # verbatim (`data/surf_models.SWARM_KEYS`).
-        try:
-            self.query_one(SurfSwarmHero).update_data(
-                swarm_agents_online=data.get("swarm_agents_online"),
-                swarm_agents_enrolled=data.get("swarm_agents_enrolled"),
-                swarm_working_now=data.get("swarm_working_now"),
-                swarm_accepted_today=data.get("swarm_accepted_today"),
-                swarm_jobs_in_flight=data.get("swarm_jobs_in_flight"),
-                swarm_jobs_blocked=data.get("swarm_jobs_blocked"),
-                swarm_services_up=data.get("swarm_services_up"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update SurfSwarmHero: %s", exc)
-
-        try:
-            self.query_one(SurfSwarmField).update_data(
-                swarm_field_rows=data.get("swarm_field_rows"),
-                swarm_as_of_hhmm=data.get("swarm_as_of_hhmm"),
-                swarm_network=data.get("swarm_network"),
-                # No ``swarm_stale`` here (F-A): that flag describes the
-                # scores sweep drifting from the live tier, and THE FIELD
-                # reads only the live tier, so it has no cross-tier claim to
-                # make. See ``widgets/surf/swarm_field.py``'s module
-                # docstring.
-            )
-        except Exception as exc:
-            logger.debug("Failed to update SurfSwarmField: %s", exc)
-
-        try:
-            self.query_one(SurfSwarmShipped).update_data(
-                swarm_shipped_rows=data.get("swarm_shipped_rows"),
-                # The scores tier's own marker, not `swarm_as_of_hhmm`: this
-                # panel's rows ride the detached scores sweep, which can be
-                # older than the fast tier beside it.
-                swarm_scores_as_of_hhmm=data.get("swarm_scores_as_of_hhmm"),
-                swarm_network=data.get("swarm_network"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update SurfSwarmShipped: %s", exc)
-
-        try:
-            self.query_one(SurfSwarmQueue).update_data(
-                swarm_queue_rows=data.get("swarm_queue_rows"),
-                swarm_blocked_rows=data.get("swarm_blocked_rows"),
-                swarm_as_of_hhmm=data.get("swarm_as_of_hhmm"),
-                # F6 (docs/surf_swarm_followups.md): the pipeline backlog
-                # counters, off the same live-tier marker above.
-                swarm_queue_depths=data.get("swarm_queue_depths"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update SurfSwarmQueue: %s", exc)
-
-        try:
-            self.query_one(SurfSwarmThroughput).update_data(
-                swarm_throughput=data.get("swarm_throughput"),
-                swarm_score_rows=data.get("swarm_score_rows"),
-                swarm_scores_as_of_hhmm=data.get("swarm_scores_as_of_hhmm"),
-                swarm_stale=data.get("swarm_stale"),
-            )
-        except Exception as exc:
-            logger.debug("Failed to update SurfSwarmThroughput: %s", exc)
+        # The `s` SWARM body's six widgets and the `a` AGENT body's five
+        # (swarm v2, WP7): dispatched every refresh, whether or not either
+        # body is showing, so the first keypress paints a complete frame.
+        # One loop over the frozen contract -- every kwarg is a key
+        # `SWARM_WIDGET_SIGNATURES` names for that class, verbatim -- and
+        # each panel in its own `try`, so one bad panel cannot blank the
+        # others. The per-panel marker choices (`swarm_as_of_hhmm` for the
+        # live tier's panels, `swarm_scores_as_of_hhmm` for the sweep's,
+        # `swarm_seat_as_of_hhmm` for the seat's) are the export's, made once
+        # in `data/surf_models.py` rather than re-argued here.
+        for cls in _SWARM_PANELS:
+            try:
+                keys = SWARM_WIDGET_SIGNATURES[cls.__name__]
+                self.query_one(cls).update_data(**{k: data.get(k) for k in keys})
+            except Exception as exc:
+                logger.debug("Failed to update %s: %s", cls.__name__, exc)
 
         # Status bar. A refresh that reaches this line just fetched, so the
         # staleness is honestly 0 without consulting any clock; ``as_of`` is
