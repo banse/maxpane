@@ -26,7 +26,7 @@ from maxpane_dashboard.analytics.surf_swarm_signals import (
     completed_within, count_by, duration_stats, seen_since_ts, state_rollup,
 )
 from maxpane_dashboard.data.surf_models import (
-    SURF_ROW_KEYS, SWARM_ROSTER_WINDOW_FIELDS, SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
+    SURF_ROW_KEYS, SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
     SWARM_SEAT_SUMMARY_FIELDS,
 )
 # A constant only: the client owns the normalised ``unknown_seat`` result, so
@@ -41,7 +41,7 @@ __all__ = [
     "seen_entry", "seen_since_ts", "site_rows", "skill_rows",
     "throughput_facts",
     # AGENT body on /seats/{tokenId} (docs/surf_agent_seats_plan.md WP1b)
-    "choose_seat", "coerce_seat_slot", "roster_window", "seat_review_rows",
+    "choose_seat", "coerce_seat_slot", "seat_node_rows", "seat_teammates",
     "seat_state", "seat_summary_from_seat", "seat_work_rows",
 ]
 
@@ -561,7 +561,7 @@ def merge_seen(seen: object, jobs: object, details: object, *,
     return dict(kept)
 
 
-# -- AGENT body roster (plan A1; the window fold ROSTER still reads) --------
+# -- Internal roster: default most-active seat selection ------------------
 
 
 def _seat_nodes(details: object, seen: object):
@@ -612,7 +612,7 @@ def _scores_by_agent(details: object) -> dict[str, list[float]]:
 
 
 def seat_rows(details: object, seen: object) -> list[dict[str, Any]]:
-    """``swarm_seat_rows``: the roster, one row per distinct seat token.
+    """Internal roster, one row per distinct seat token; never a payload key.
 
     Sorted by ``nodes`` desc, then ``last_active_ts`` desc, then token.
     ``mean_score``/``scored`` are over the review entries whose ``agentId``
@@ -757,7 +757,8 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     Every field is ``None`` when the source did not carry it or carried the
     wrong type; a real zero stays ``0``.  ``reviewed`` counts every review,
     pending ones included (Q-M); ``scored`` / ``mean_score`` count only a
-    finite, non-bool ``value``.
+    finite, non-bool ``value``. Win rate is lifetime accepted / attempts,
+    unlike BY NODE's won / reviewed; zero or missing attempts is undefined.
     """
     summary: dict[str, Any] = dict.fromkeys(SWARM_SEAT_SUMMARY_FIELDS)
     if not isinstance(payload, Mapping):
@@ -768,6 +769,14 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     work = _mappings(work_raw) if work_raw is not None else None
     summary["attempts"] = _count(payload.get("attempts"))
     summary["accepted"] = _count(payload.get("accepted"))
+    attempts, accepted = summary["attempts"], summary["accepted"]
+    if attempts is not None and attempts > 0 and accepted is not None and accepted <= attempts:
+        summary["win_rate"] = accepted / attempts
+    summary["agent_id"] = _str(payload.get("agentId"))
+    summary["devices"] = _count(payload.get("devices"))
+    if "daemonVersion" in payload:
+        daemon = payload["daemonVersion"]
+        summary["daemon"] = "" if daemon is None else _str(daemon)
     if reviews is not None:
         summary["reviewed"] = len(reviews)
         statuses = [_str(r.get("status")) for r in reviews]
@@ -786,10 +795,10 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     summary["online"] = online if isinstance(online, bool) else None
     summary["owner"] = _str(payload.get("owner"))
     summary["paired_ts"] = _ts(payload.get("pairedAt"))
-    stamps = [_ts(w.get("acceptedAt")) for w in (work or [])]
-    stamps += [_ts(r.get("sentAt")) for r in (reviews or [])]
-    stamps = [s for s in stamps if s is not None]
-    summary["last_active_ts"] = max(stamps) if stamps else None
+    won_stamps = [_ts(w.get("acceptedAt")) for w in (work or [])]
+    sent_stamps = [_ts(r.get("sentAt")) for r in (reviews or [])]
+    summary["last_won_ts"] = max((s for s in won_stamps if s is not None), default=None)
+    summary["last_sent_ts"] = max((s for s in sent_stamps if s is not None), default=None)
     collaborators = _list(payload.get("collaborators"))
     summary["collaborators"] = len(collaborators) if collaborators is not None else None
     summary["runtime"] = _runtime(payload.get("runtimes"))
@@ -798,12 +807,18 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
 
 def seat_work_rows(payload: object) -> list[dict[str, Any]]:
     """``swarm_seat_work_rows``: one row per ``work[]`` entry, in source order
-    (newest first as served).  ``[]`` when there is nothing to fold."""
+    (newest first as served). ``launch`` is None when absent/null; the off-chain
+    submission hash is accepted only as 64 ASCII hex characters. ``[]`` when
+    there is nothing to fold."""
     if not isinstance(payload, Mapping):
         return []
     keys = SURF_ROW_KEYS["swarm_seat_work_rows"]
     rows = []
     for work in _mappings(_list(payload.get("work"))):
+        submission_hash = _str(work.get("submissionHash"))
+        if (submission_hash is None or len(submission_hash) != 64
+                or any(c not in "0123456789abcdefABCDEF" for c in submission_hash)):
+            submission_hash = None
         row = {
             "job_id": _str(work.get("jobId")),
             "node_key": _str(work.get("nodeKey")),
@@ -811,48 +826,67 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
             "job_state": _str(work.get("jobState")),
             "objective": _str(work.get("objective")),
             "accepted_ts": _ts(work.get("acceptedAt")),
+            "launch": _str(work.get("launch")),
+            "submission_hash": submission_hash,
         }
         rows.append({key: row[key] for key in keys})
     return rows
 
 
-def seat_review_rows(payload: object) -> list[dict[str, Any]]:
-    """``swarm_seat_feedback_rows``: one row per
-    ``reviews[]`` entry, in source order.  A ``queued`` review has no tx yet:
-    its ``tx_hash`` / ``chain_id`` / ``sent_ts`` are ``None`` whatever the
-    payload says, so no widget can link one."""
+def seat_node_rows(payload: object) -> list[dict[str, Any]]:
+    """Nodes from reviews and won work, sorted reviewed desc, won desc, key asc.
+
+    BY NODE win uses won / reviewed, since attempts are not served per node;
+    the hero instead uses lifetime accepted / attempts. Work-only nodes keep
+    reviewed zero. Onchain counts sent/submitted reviews carrying a tx hash.
+    """
     if not isinstance(payload, Mapping):
         return []
-    rows = []
-    for review in _mappings(_list(payload.get("reviews"))):
-        status = _str(review.get("status"))
-        queued = status == "queued"
-        row = {
-            "value": _score(review.get("value")),
-            "verdict": _str(review.get("verdict")),
-            "status": status,
-            "node_key": _str(review.get("nodeKey")),
-            "role": _str(review.get("role")),
-            "job_id": _str(review.get("jobId")),
-            "tx_hash": None if queued else _str(review.get("txHash")),
-            "chain_id": None if queued else _int(review.get("chainId")),
-            "sent_ts": None if queued else _ts(review.get("sentAt")),
-        }
-        rows.append({key: row[key] for key in SURF_ROW_KEYS["swarm_seat_feedback_rows"]})
-    return rows
+    nodes: dict[str, dict[str, Any]] = {}
+    for source in ("reviews", "work"):
+        for item in _mappings(_list(payload.get(source))):
+            key = _str(item.get("nodeKey"))
+            if key is None:
+                continue
+            row = nodes.setdefault(key, {
+                "node_key": key, "roles": [], "reviewed": 0, "won": 0,
+                "onchain": 0, "queued": 0,
+            })
+            role = _str(item.get("role"))
+            if role is not None and role not in row["roles"]:
+                row["roles"].append(role)
+            if source == "work":
+                row["won"] += 1
+            else:
+                row["reviewed"] += 1
+                status = item.get("status")
+                if status in ("sent", "submitted") and _str(item.get("txHash")):
+                    row["onchain"] += 1
+                if status == "queued":
+                    row["queued"] += 1
+    for row in nodes.values():
+        row["roles"].sort()
+    return sorted(nodes.values(), key=lambda row: (-row["reviewed"], -row["won"], row["node_key"]))
 
 
-def roster_window(jobs: object) -> dict[str, Any] | None:
-    """``swarm_roster_window``: ``{jobs, oldest_ts}`` over the ``/jobs`` list the
-    roster was folded from -- ``jobs`` its length, ``oldest_ts`` the oldest
-    ``createdAt``.  ``None`` for anything that is not a list."""
-    listed = _list(jobs)
-    if listed is None:
+def seat_teammates(payload: object) -> list[dict[str, Any]] | None:
+    """Collaborators by shared jobs desc, integer token asc; None if not carried.
+
+    Empty/malformed-only lists are real empty results. Drop members without
+    a strict served token or a nonnegative integer sharedJobs count.
+    """
+    members = _list(payload.get("collaborators")) if isinstance(payload, Mapping) else None
+    if members is None:
         return None
-    members = _mappings(listed)
-    stamps = [s for s in (_ts(j.get("createdAt")) for j in members) if s is not None]
-    window = {"jobs": len(members), "oldest_ts": min(stamps) if stamps else None}
-    return {key: window[key] for key in SWARM_ROSTER_WINDOW_FIELDS}
+    rows = []
+    for member in _mappings(members):
+        token = _served_token(member.get("tokenId"))
+        shared = _count(member.get("sharedJobs"))
+        if token is None or shared is None:
+            continue
+        rows.append({"token_id": token, "agent_id": _str(member.get("agentId")),
+                     "shared_jobs": shared})
+    return sorted(rows, key=lambda row: (-row["shared_jobs"], row["token_id"]))
 
 
 def _selected(token: int, agent: object, how: str) -> dict[str, Any]:
@@ -860,21 +894,14 @@ def _selected(token: int, agent: object, how: str) -> dict[str, Any]:
     return {key: picked[key] for key in SWARM_SEAT_SELECTED_FIELDS}
 
 
-def choose_seat(rows: object, saved_token: object,
-                cursor_token: object) -> dict[str, Any] | None:
-    """``swarm_seat_selected`` under decision D1.
+def choose_seat(rows: object, saved_token: object) -> dict[str, Any] | None:
+    """Saved seat, even off the roster; otherwise the most-active internal row.
 
-    The cursor when it is on the roster; else the saved seat **whether or not
-    it is on the roster** (``/seats`` answers for any paired token; its
-    ``agent_id`` comes from its roster row, else ``None``); else ``rows[0]`` as
-    ``most_active``; ``None`` with no rows and no saved seat.  A token is a
-    non-negative, non-bool ``int``; anything else is no choice.
+    With no rows and no saved seat, return None. A token is a nonnegative,
+    non-bool int. The manager fills an absent agent ID from the seat read.
     """
     seats = [r for r in _mappings(rows) if _seat_id(r.get("token_id")) is not None]
     by_token = {r["token_id"]: r for r in reversed(seats)}   # first row wins
-    cursor = _seat_id(cursor_token)
-    if cursor is not None and cursor in by_token:
-        return _selected(cursor, by_token[cursor].get("agent_id"), "cursor")
     saved = _seat_id(saved_token)
     if saved is not None:
         row = by_token.get(saved)

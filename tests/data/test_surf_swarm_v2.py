@@ -95,9 +95,9 @@ def test_every_v2_row_carries_exactly_its_contract_fields_in_order(
     _rows_match(fold.skill_rows(skills), "swarm_skill_rows")
     _rows_match(fold.launch_rows(launches), "swarm_launch_rows")
     _rows_match(fold.site_rows(sites), "swarm_site_rows")
-    seat_rows = fold.seat_rows(details, seen)
-    _rows_match(seat_rows, "swarm_seat_rows")
-    # The /seats row folds (work, reviews) are shape-checked in test_surf_swarm_seats.py.
+    # The internal roster still feeds the default selected seat. It is no payload key.
+    assert fold.choose_seat(fold.seat_rows(details, seen), None) is not None
+    # The /seats row folds are shape-checked in test_surf_swarm_seats.py.
 
 
 # ---------------------------------------------------------------------------

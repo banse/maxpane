@@ -370,3 +370,24 @@ def test_the_seat_captures_serve_no_secret_shaped_key():
     offenders = [(name, where) for name in _SEAT_CAPTURES
                  for where, key in _walk_keys(swarm_seat_capture(name)) if key in _SECRET_KEYS]
     assert offenders == []
+
+
+def test_seat_detail_folds_match_captured_lifetime_values():
+    from maxpane_dashboard.data import surf_swarm as fold
+
+    seat = swarm_seat_capture("seat_420")
+    assert (seat["attempts"], seat["accepted"]) == (74, 12)
+    assert fold.seat_summary_from_seat(seat)["win_rate"] == seat["accepted"] / seat["attempts"]
+    nodes = {row["node_key"]: row for row in fold.seat_node_rows(seat)}
+    for key in {r["nodeKey"] for r in seat["reviews"] + seat["work"]}:
+        reviews = [r for r in seat["reviews"] if r["nodeKey"] == key]
+        work = [r for r in seat["work"] if r["nodeKey"] == key]
+        assert nodes[key]["reviewed"] == len(reviews)
+        assert nodes[key]["won"] == len(work)
+        assert nodes[key]["onchain"] == sum(r["status"] in ("sent", "submitted") for r in reviews)
+    zero = swarm_seat_capture("seat_0")
+    launches = [row["launch"] for row in zero["work"] if row["launch"] is not None]
+    assert len(launches) == 9
+    assert [row["launch"] for row in fold.seat_work_rows(zero) if row["launch"] is not None] == launches
+    assert zero["daemonVersion"] is None
+    assert fold.seat_summary_from_seat(zero)["daemon"] == ""

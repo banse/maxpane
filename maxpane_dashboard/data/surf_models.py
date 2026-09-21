@@ -1527,11 +1527,6 @@ SWARM_SEAT_REVIEW_STATUSES: tuple[str, ...] = ("sent", "submitted", "queued")
 #: failed with no last-good.
 SWARM_SEAT_STATES: tuple[str, ...] = ("ok", "unknown_seat", "pending")
 
-#: Transitional export for the old pure fold; WP2 removes it with roster_window.
-#: This is no longer an emitted contract key.
-SWARM_ROSTER_WINDOW_FIELDS: tuple[str, ...] = ("jobs", "oldest_ts")
-
-
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
 #: interface, frozen by docs/surf_PRD.md §5.  Every numeric is ``float|int|None``
 #: and ``None`` renders as the widget's unavailable state, never as 0.

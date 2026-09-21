@@ -19,7 +19,6 @@ import pytest
 from maxpane_dashboard.data import surf_swarm as fold
 from maxpane_dashboard.data.surf_models import (
     SURF_ROW_KEYS,
-    SWARM_ROSTER_WINDOW_FIELDS,
     SWARM_SEAT_REVIEW_STATUSES,
     SWARM_SEAT_SELECTED_FIELDS,
     SWARM_SEAT_STATES,
@@ -119,7 +118,12 @@ def test_summary_420_is_the_explorer_record(seat420):
         "online": True,
         "owner": "0xe5b1275fb926613d983da33fbfe1f331b7f64f2a",
         "paired_ts": _iso("2026-09-20T05:34:25.536Z"),        # pairedAt
-        "last_active_ts": _iso("2026-09-21T06:42:05.562Z"),   # newest sentAt (> newest acceptedAt 04:10)
+        "last_won_ts": max(_iso(w["acceptedAt"]) for w in seat420["work"]),
+        "last_sent_ts": max(_iso(r["sentAt"]) for r in seat420["reviews"] if r["sentAt"]),
+        "agent_id": seat420["agentId"],
+        "daemon": seat420["daemonVersion"],
+        "devices": seat420["devices"],
+        "win_rate": seat420["accepted"] / seat420["attempts"],
         "collaborators": 24,
         "runtime": "claude 2.1.278 (Claude Code)",            # runtimes[0] id + version, raw
     }
@@ -166,10 +170,14 @@ def test_summary_of_a_non_mapping_is_every_field_none(payload):
 
 # Each hand-edit breaks one field; exactly the fields it feeds go None.
 _BAD_FIELD_CASES = {
-    "attempts": ("attempts", "74", {"attempts"}),
-    "attempts_bool": ("attempts", True, {"attempts"}),
-    "attempts_negative": ("attempts", -1, {"attempts"}),
-    "accepted": ("accepted", 12.0, {"accepted"}),
+    "attempts": ("attempts", "74", {"attempts", "win_rate"}),
+    "attempts_bool": ("attempts", True, {"attempts", "win_rate"}),
+    "attempts_negative": ("attempts", -1, {"attempts", "win_rate"}),
+    "accepted": ("accepted", 12.0, {"accepted", "win_rate"}),
+    "agent_id": ("agentId", 50939, {"agent_id"}),
+    "daemon": ("daemonVersion", 3, {"daemon"}),
+    "devices": ("devices", True, {"devices"}),
+    "devices_negative": ("devices", -1, {"devices"}),
     "online": ("online", "true", {"online"}),
     "online_int": ("online", 1, {"online"}),
     "owner": ("owner", 42, {"owner"}),
@@ -210,18 +218,20 @@ def test_summary_reviews_not_a_list_drops_only_the_review_fields(seat420):
     summary = fold.seat_summary_from_seat(seat420)
     for key in ("reviewed", "review_status", "mean_score", "scored", "roles"):
         assert summary[key] is None, key
-    # last_active falls back to the newest acceptedAt (work[0], 04:10:09.585Z)
-    assert summary["last_active_ts"] == _iso("2026-09-21T04:10:09.585Z")
+    # Each timestamp keeps its own source.
+    assert summary["last_sent_ts"] is None
+    assert summary["last_won_ts"] == good["last_won_ts"]
     for key in ("attempts", "accepted", "online", "owner", "paired_ts",
                 "collaborators", "runtime"):
         assert summary[key] == good[key], key
 
 
-def test_summary_no_parseable_stamp_anywhere_is_last_active_none(seat420):
+def test_summary_no_parseable_stamp_has_both_timestamps_none(seat420):
     seat420["work"] = "gone"
     for review in seat420["reviews"]:
         review["sentAt"] = None
-    assert fold.seat_summary_from_seat(seat420)["last_active_ts"] is None
+    summary = fold.seat_summary_from_seat(seat420)
+    assert summary["last_won_ts"] is None and summary["last_sent_ts"] is None
 
 
 def test_summary_bool_value_is_not_a_score(seat420):
@@ -253,7 +263,8 @@ def test_summary_empty_lists_are_real_zeros_not_none(seat420):
     assert summary["review_status"] == {"sent": 0, "submitted": 0, "queued": 0}
     assert summary["roles"] == [] and summary["collaborators"] == 0
     assert summary["mean_score"] is None       # no score is not a zero score
-    assert summary["runtime"] == "" and summary["last_active_ts"] is None
+    assert summary["runtime"] == "" and summary["last_won_ts"] is None
+    assert summary["last_sent_ts"] is None and summary["win_rate"] is None
 
 
 def test_summary_roles_skip_non_strings_and_tie_break_on_role(seat420):
@@ -277,7 +288,8 @@ def test_summary_does_not_mutate_the_payload(seat420):
     before = copy.deepcopy(seat420)
     fold.seat_summary_from_seat(seat420)
     fold.seat_work_rows(seat420)
-    fold.seat_review_rows(seat420)
+    fold.seat_node_rows(seat420)
+    fold.seat_teammates(seat420)
     assert seat420 == before
 
 
@@ -298,6 +310,8 @@ def test_work_rows_420_source_order_frozen_shape(seat420):
         "job_state": "completed",
         "objective": seat420["work"][0]["objective"],
         "accepted_ts": _iso("2026-09-21T04:10:09.585Z"),
+        "launch": seat420["work"][0]["launch"],
+        "submission_hash": seat420["work"][0]["submissionHash"],
     }
     assert rows[-1]["accepted_ts"] == _iso("2026-09-20T17:48:55.121Z")
     assert [r["job_id"] for r in rows] == [w["jobId"] for w in seat420["work"]]
@@ -324,93 +338,6 @@ def test_work_rows_nothing_to_fold_is_empty(payload):
 
 
 # ---------------------------------------------------------------------------
-# seat_review_rows
-# ---------------------------------------------------------------------------
-
-
-def _by_job(rows, job_id):
-    (row,) = [r for r in rows if r["job_id"] == job_id]
-    return row
-
-
-def test_review_rows_420_source_order_frozen_shape(seat420):
-    rows = fold.seat_review_rows(seat420)
-    assert len(rows) == 72
-    for row in rows:
-        assert tuple(row) == SURF_ROW_KEYS["swarm_seat_feedback_rows"]
-    assert rows[0] == {
-        "value": 1, "verdict": "accepted", "status": "sent",
-        "node_key": "oracle_assess", "role": "implement",
-        "job_id": "80c853bd-8cd7-43e5-b13b-79ea17ce5027",
-        "tx_hash": "0x77cb6b8fa584b75e926e2b694c6245c6d27c4bd2abad2265f9bbbcf3a5682c49",
-        "chain_id": 1, "sent_ts": _iso("2026-09-21T06:42:05.562Z"),
-    }
-    assert [r["job_id"] for r in rows] == [r["jobId"] for r in seat420["reviews"]]
-
-
-def test_review_rows_queued_and_submitted(seat420):
-    rows = fold.seat_review_rows(seat420)
-    queued = _by_job(rows, "7cdfacfa-cf28-43f4-bf80-ba537ce8b9be")
-    assert queued["status"] == "queued"
-    assert (queued["tx_hash"], queued["chain_id"], queued["sent_ts"]) == (None, None, None)
-    submitted = _by_job(rows, "2fc17259-07a4-4841-b4e1-a3fd827cd2a9")
-    assert submitted["status"] == "submitted" and submitted["sent_ts"] is None
-    assert submitted["tx_hash"] == "0x221de6cb7fe6be24a1f4f34d5e4a1d887da004c384b13aacf36b79b30f0e10d3"
-    assert submitted["chain_id"] == 1
-
-
-def test_review_rows_queued_never_carries_a_tx_even_if_hand_edited(seat420):
-    for review in seat420["reviews"]:
-        if review["status"] == "queued":
-            review.update({"txHash": "0xdead", "chainId": 1, "sentAt": "2026-09-21T06:00:00Z"})
-    queued = _by_job(fold.seat_review_rows(seat420), "7cdfacfa-cf28-43f4-bf80-ba537ce8b9be")
-    assert (queued["tx_hash"], queued["chain_id"], queued["sent_ts"]) == (None, None, None)
-
-
-def test_review_rows_bad_fields_are_none_in_that_cell(seat420):
-    seat420["reviews"][0].update({"value": True, "chainId": "1", "txHash": 5, "sentAt": "x"})
-    row = fold.seat_review_rows(seat420)[0]
-    assert (row["value"], row["chain_id"], row["tx_hash"], row["sent_ts"]) == (None, None, None, None)
-    assert row["job_id"] == "80c853bd-8cd7-43e5-b13b-79ea17ce5027"
-
-
-def test_review_rows_0_has_202():
-    assert len(fold.seat_review_rows(swarm_seat_capture("seat_0"))) == 202
-
-
-@pytest.mark.parametrize("payload", [None, "x", {"reviews": {}}, dict(UNKNOWN_SEAT)])
-def test_review_rows_nothing_to_fold_is_empty(payload):
-    assert fold.seat_review_rows(payload) == []
-
-
-# ---------------------------------------------------------------------------
-# roster_window
-# ---------------------------------------------------------------------------
-
-
-def test_roster_window_over_the_100_job_capture():
-    jobs = swarm_seat_capture("jobs_window_100")["jobs"]
-    window = fold.roster_window(jobs)
-    assert tuple(window) == SWARM_ROSTER_WINDOW_FIELDS
-    assert window == {"jobs": 100, "oldest_ts": _iso("2026-09-21T02:26:32.542Z")}  # oldest createdAt
-
-
-def test_roster_window_empty_list_is_a_real_zero():
-    assert fold.roster_window([]) == {"jobs": 0, "oldest_ts": None}
-
-
-def test_roster_window_skips_junk_and_unparseable_stamps():
-    jobs = [{"createdAt": "2026-09-21T05:00:00Z"}, {"createdAt": "nope"}, "junk",
-            {"createdAt": "2026-09-21T03:00:00Z"}]
-    assert fold.roster_window(jobs) == {"jobs": 3, "oldest_ts": _iso("2026-09-21T03:00:00Z")}
-
-
-@pytest.mark.parametrize("jobs", [None, {"count": 100, "jobs": []}, "jobs", 100])
-def test_roster_window_non_list_is_none(jobs):
-    assert fold.roster_window(jobs) is None
-
-
-# ---------------------------------------------------------------------------
 # choose_seat (decision D1)
 # ---------------------------------------------------------------------------
 
@@ -426,50 +353,41 @@ def _sel(token, agent, how):
 
 
 def test_choose_seat_truth_table():
-    # cursor on the roster wins over everything
-    assert fold.choose_seat(ROSTER, 0, 420) == _sel(420, "50939", "cursor")
-    # cursor off the roster falls through to saved
-    assert fold.choose_seat(ROSTER, 0, 9999) == _sel(0, "50906", "saved")
-    # saved on the roster
-    assert fold.choose_seat(ROSTER, 420, None) == _sel(420, "50939", "saved")
-    # nothing chosen -> the most active (rows[0])
-    assert fold.choose_seat(ROSTER, None, None) == _sel(47, "50950", "most_active")
-    # nothing at all
-    assert fold.choose_seat(None, None, None) is None
-    assert fold.choose_seat([], None, 5) is None
+    assert fold.choose_seat(ROSTER, 0) == _sel(0, "50906", "saved")
+    assert fold.choose_seat(ROSTER, 420) == _sel(420, "50939", "saved")
+    assert fold.choose_seat(ROSTER, None) == _sel(47, "50950", "most_active")
+    assert fold.choose_seat(None, None) is None
+    assert fold.choose_seat([], None) is None
 
 
 def test_choose_seat_saved_off_the_roster_is_shown_d1():
-    assert fold.choose_seat(ROSTER, 1649, None) == _sel(1649, None, "saved")
-    assert fold.choose_seat(ROSTER, 1649, 9999) == _sel(1649, None, "saved")
+    assert fold.choose_seat(ROSTER, 1649) == _sel(1649, None, "saved")
 
 
 def test_choose_seat_saved_with_no_roster_at_all_d1():
-    assert fold.choose_seat(None, 1649, None) == _sel(1649, None, "saved")
-    assert fold.choose_seat([], 1649, 420) == _sel(1649, None, "saved")
+    assert fold.choose_seat(None, 1649) == _sel(1649, None, "saved")
+    assert fold.choose_seat([], 1649) == _sel(1649, None, "saved")
 
 
 def test_choose_seat_frozen_shape_and_nothing_else():
-    for picked in (fold.choose_seat(ROSTER, 1649, None), fold.choose_seat(ROSTER, None, None),
-                   fold.choose_seat(ROSTER, None, 420)):
+    for picked in (fold.choose_seat(ROSTER, 1649), fold.choose_seat(ROSTER, None)):
         assert tuple(picked) == SWARM_SEAT_SELECTED_FIELDS
 
 
 @pytest.mark.parametrize("bad", [True, False, -1, "420", 420.0])
 def test_choose_seat_refuses_a_token_that_is_no_seat_id(bad):
-    assert fold.choose_seat(ROSTER, bad, None) == _sel(47, "50950", "most_active")
-    assert fold.choose_seat(ROSTER, None, bad) == _sel(47, "50950", "most_active")
+    assert fold.choose_seat(ROSTER, bad) == _sel(47, "50950", "most_active")
 
 
 def test_choose_seat_agent_id_is_the_roster_rows_string_else_none():
     rows = [{"token_id": 5, "agent_id": 50939}, {"token_id": 6}]
-    assert fold.choose_seat(rows, None, 5)["agent_id"] is None
-    assert fold.choose_seat(rows, 6, None)["agent_id"] is None
+    assert fold.choose_seat(rows, None)["agent_id"] is None
+    assert fold.choose_seat(rows, 6)["agent_id"] is None
 
 
 def test_choose_seat_skips_junk_rows_for_most_active():
     rows = ["junk", {"token_id": "7"}, {"token_id": 8, "agent_id": "1"}]
-    assert fold.choose_seat(rows, None, None) == _sel(8, "1", "most_active")
+    assert fold.choose_seat(rows, None) == _sel(8, "1", "most_active")
 
 
 # ---------------------------------------------------------------------------
@@ -520,8 +438,8 @@ def test_states_the_fold_can_emit_are_frozen_states(seat420):
 
 
 def test_new_names_are_exported():
-    for name in ("seat_state", "seat_summary_from_seat", "seat_work_rows", "seat_review_rows",
-                 "roster_window", "choose_seat", "coerce_seat_slot"):
+    for name in ("seat_state", "seat_summary_from_seat", "seat_work_rows", "seat_node_rows",
+                 "seat_teammates", "choose_seat", "coerce_seat_slot"):
         assert name in fold.__all__, name
 
 
@@ -550,3 +468,134 @@ def test_the_manager_parses_seats_with_the_folds_parser():
 
     assert not hasattr(surf_manager, "_seat_token")
     assert not hasattr(fold, "_parse_token")
+
+
+@pytest.mark.parametrize("counters", [
+    {"attempts": 0, "accepted": 0}, {"attempts": 4}, {"accepted": 2},
+    {"attempts": None, "accepted": 2}, {"attempts": 4, "accepted": None},
+    {"attempts": -1, "accepted": 0}, {"attempts": 4, "accepted": True},
+    {"attempts": 4, "accepted": 5},
+])
+def test_win_rate_requires_valid_nonzero_attempts_and_both_counters(counters):
+    assert fold.seat_summary_from_seat(counters)["win_rate"] is None
+
+
+@pytest.mark.parametrize("accepted,attempts", [(0, 4), (4, 4), (12, 74)])
+def test_win_rate_is_accepted_over_attempts(accepted, attempts):
+    summary = fold.seat_summary_from_seat({"accepted": accepted, "attempts": attempts})
+    assert summary["win_rate"] == accepted / attempts
+    assert isinstance(summary["win_rate"], float)
+
+
+def test_last_won_and_sent_never_mix_sources():
+    payload = {"work": [{"acceptedAt": "2026-09-20T23:30:00Z"}],
+               "reviews": [{"sentAt": "2026-09-21T02:00:00Z"}]}
+    summary = fold.seat_summary_from_seat(payload)
+    assert summary["last_won_ts"] == _iso(payload["work"][0]["acceptedAt"])
+    assert summary["last_sent_ts"] == _iso(payload["reviews"][0]["sentAt"])
+    payload["work"].append({"acceptedAt": "2026-09-22T01:00:00Z"})
+    newer = fold.seat_summary_from_seat(payload)
+    assert newer["last_won_ts"] == _iso(payload["work"][1]["acceptedAt"])
+    assert newer["last_sent_ts"] == summary["last_sent_ts"]
+    assert fold.seat_summary_from_seat({"work": payload["work"]})["last_sent_ts"] is None
+    assert fold.seat_summary_from_seat({"reviews": payload["reviews"]})["last_won_ts"] is None
+
+
+def test_daemon_null_means_not_reported_and_missing_means_unavailable():
+    assert fold.seat_summary_from_seat({"daemonVersion": None})["daemon"] == ""
+    assert fold.seat_summary_from_seat({})["daemon"] is None
+    assert fold.seat_summary_from_seat({"daemonVersion": "[red]x"})["daemon"] == "[red]x"
+
+
+def test_nodes_include_work_only_nodes_and_sort_with_roles():
+    payload = {"reviews": [
+        {"nodeKey": "z", "role": "review"}, {"nodeKey": "a", "role": "implement"},
+        {"nodeKey": "b", "role": "implement"}, {"nodeKey": "b", "role": "review"},
+        {"nodeKey": "y", "role": "implement"}, "junk", {"nodeKey": None},
+    ], "work": [{"nodeKey": "z", "role": "implement"},
+                 {"nodeKey": "work_only", "role": "review"}]}
+    rows = fold.seat_node_rows(payload)
+    assert [r["node_key"] for r in rows] == ["b", "z", "a", "y", "work_only"]
+    assert rows[1]["roles"] == ["implement", "review"]
+    assert rows[-1] == {"node_key": "work_only", "roles": ["review"],
+                        "reviewed": 0, "won": 1, "onchain": 0, "queued": 0}
+    for row in rows:
+        assert tuple(row) == SURF_ROW_KEYS["swarm_seat_node_rows"]
+
+
+def test_nodes_onchain_counts_sent_and_submitted_but_not_queued():
+    rows = fold.seat_node_rows({"reviews": [
+        {"nodeKey": "[red]node", "status": "sent", "txHash": "0xa"},
+        {"nodeKey": "[red]node", "status": "submitted", "txHash": "0xb"},
+        {"nodeKey": "[red]node", "status": "queued", "txHash": "0xc"},
+    ]})
+    assert rows == [{"node_key": "[red]node", "roles": [], "reviewed": 3,
+                     "won": 0, "onchain": 2, "queued": 1}]
+
+
+@pytest.mark.parametrize("payload", [None, [], {}, {"reviews": "x", "work": None}])
+def test_nodes_unavailable_input_has_no_rows(payload):
+    assert fold.seat_node_rows(payload) == []
+
+
+def test_teammates_strict_tokens_and_sorting():
+    payload = {"collaborators": [
+        {"tokenId": "12", "agentId": "23", "sharedJobs": 5},
+        {"tokenId": 0, "agentId": 7, "sharedJobs": 5},
+        {"tokenId": "002", "agentId": "4", "sharedJobs": 9},
+        *[{"tokenId": token, "sharedJobs": 50} for token in
+          (True, False, -1, "-1", "+1", " 1", "1_0", "١", "1.0", 1.0, None)],
+        {"tokenId": 8, "sharedJobs": True}, {"tokenId": 8, "sharedJobs": -1},
+        {"tokenId": 8, "sharedJobs": "5"}, {"tokenId": 8}, "junk",
+    ]}
+    rows = fold.seat_teammates(payload)
+    assert rows == [
+        {"token_id": 2, "agent_id": "4", "shared_jobs": 9},
+        {"token_id": 0, "agent_id": None, "shared_jobs": 5},
+        {"token_id": 12, "agent_id": "23", "shared_jobs": 5},
+    ]
+    for row in rows:
+        assert tuple(row) == SURF_ROW_KEYS["swarm_seat_teammates"]
+
+
+@pytest.mark.parametrize("payload", [None, [], {}, {"collaborators": None}, {"collaborators": {}}])
+def test_teammates_unavailable_is_none(payload):
+    assert fold.seat_teammates(payload) is None
+
+
+def test_teammates_empty_is_a_real_zero():
+    assert fold.seat_teammates({"collaborators": []}) == []
+    assert fold.seat_teammates({"collaborators": ["junk"]}) == []
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("a" * 64, "a" * 64), ("ABCDEF01" * 8, "ABCDEF01" * 8),
+    ("a" * 63, None), ("a" * 65, None), ("g" * 64, None),
+    ("0x" + "a" * 64, None), (64, None), (None, None),
+])
+def test_work_submission_hash_is_exactly_64_hex_characters(value, expected):
+    row = fold.seat_work_rows({"work": [{"submissionHash": value}]})[0]
+    assert row["submission_hash"] == expected
+
+
+def test_work_launch_preserves_raw_strings_and_missing_fields_are_none():
+    rows = fold.seat_work_rows({"work": [{"launch": "[red]evm_project"}, {}, {"launch": 3}]})
+    assert [r["launch"] for r in rows] == ["[red]evm_project", None, None]
+    assert all(r["submission_hash"] is None for r in rows)
+
+
+def test_retired_folds_and_cursor_parameter_are_removed():
+    import inspect
+    assert not hasattr(fold, "seat_review_rows")
+    assert not hasattr(fold, "roster_window")
+    assert tuple(inspect.signature(fold.choose_seat).parameters) == ("rows", "saved_token")
+
+
+def test_nodes_onchain_requires_a_transaction_hash():
+    rows = fold.seat_node_rows({"reviews": [
+        {"nodeKey": "n", "status": "sent"},
+        {"nodeKey": "n", "status": "submitted", "txHash": ""},
+        {"nodeKey": "n", "status": "sent", "txHash": 42},
+    ]})
+    assert rows[0]["reviewed"] == 3
+    assert rows[0]["onchain"] == 0
