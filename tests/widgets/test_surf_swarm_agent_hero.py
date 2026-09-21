@@ -4,8 +4,8 @@ Composited assertions only. The summaries are **folded** from the committed
 ``/seats`` captures (``tests/fixtures/surf/swarm/seats/``) by
 ``data/surf_swarm.seat_summary_from_seat`` -- the manager's own fold -- and
 every expected number is read back off that fold or the fixture, never
-hand-typed. The per-class contract is imposed against the target export
-``SWARM_AGENT_SIGNATURES_NEXT`` until WP5 flips ``SWARM_WIDGET_SIGNATURES``.
+hand-typed. The per-class contract is imposed against
+``SWARM_WIDGET_SIGNATURES`` (flipped in WP5).
 
 **Composited under the real stylesheet, at the real pins.** The hero states no
 geometry of its own (``rules/widgets.md``: ``HeroBoxBase`` leaves every
@@ -25,7 +25,7 @@ from textual.app import App
 
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.app import CSS_PATH
-from maxpane_dashboard.data.surf_models import SWARM_AGENT_SIGNATURES_NEXT
+from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.data.surf_swarm import seat_summary_from_seat
 from maxpane_dashboard.screens.surf import SURF_AGENT_FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.fmt import hhmm
@@ -39,7 +39,7 @@ from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
 from tests.surf_swarm_fixtures import swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
 
-SIGNATURE = SWARM_AGENT_SIGNATURES_NEXT["SurfSwarmAgentHero"]
+SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmAgentHero"]
 
 SEAT_420 = swarm_seat_capture("seat_420")
 SEAT_0 = swarm_seat_capture("seat_0")

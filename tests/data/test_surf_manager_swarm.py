@@ -64,7 +64,7 @@ _STAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 
 _SEAT_KEYS = (
     "swarm_seat_rows", "swarm_seat_selected", "swarm_seat_summary",
-    "swarm_seat_node_rows", "swarm_seat_feedback_rows", "swarm_seat_as_of_hhmm",
+    "swarm_seat_feedback_rows", "swarm_seat_as_of_hhmm",
 )
 
 
@@ -226,17 +226,6 @@ async def _landed(tmp_path, swarm, **kw):
 def _seen(manager: SurfManager) -> dict | None:
     entry = manager.cache.get_last_good(SLOT_SWARM_JOBS_SEEN)
     return None if entry is None else entry.payload
-
-
-def _seat_of(details: dict, token: int) -> set[str]:
-    """The corpus jobs whose detail carries a node in seat ``token``."""
-    return {
-        job_id for job_id, d in details.items()
-        if any(
-            isinstance(n.get("seat"), dict) and n["seat"].get("tokenId") == str(token)
-            for n in d.get("nodes") or []
-        )
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -836,7 +825,7 @@ async def test_the_default_seat_is_the_most_active_and_its_record_is_the_seats_o
 
 
 async def test_the_saved_seat_wins_off_the_roster(tmp_path):
-    """D1 (rewrites the ``unseen_token`` test): ``/seats`` answers for any
+    """D1 (rewrites change A's "not seen" fallback test): ``/seats`` answers for any
     paired token, so a saved seat the job window never saw is shown, not
     swapped for the most active. Its ``agent_id`` comes off the payload."""
     assert 420 not in {r["token_id"] for r in sw.seat_rows(swarm_details_v2(), {})}
@@ -879,8 +868,7 @@ async def test_select_seat_moves_the_cursor_and_the_record_follows(tmp_path):
         "token_id": 0, "agent_id": "50906", "selected_by": "cursor",
     }
     assert payload["swarm_seat_summary"] == sw.seat_summary_from_seat(_seat_payload_of(0))
-    # The transitional window fold still follows the cursor until WP5.
-    assert {r["job_id"] for r in payload["swarm_seat_node_rows"]} <= _seat_of(swarm_details_v2(), 0)
+    assert payload["swarm_seat_work_rows"] == sw.seat_work_rows(_seat_payload_of(0))
     # A string token parses too -- the DataTable hands the row's text.
     manager.select_seat("1548")
     payload = await manager.fetch_and_compute()
@@ -1173,7 +1161,7 @@ async def test_a_sweep_with_no_seat_publishes_an_empty_roster_and_no_selection(t
     assert payload["swarm_scores_as_of_hhmm"] is not None, "the sweep ran"
     assert payload["swarm_seat_rows"] == []
     assert payload["swarm_seat_selected"] is None
-    for key in _SEAT_READ_KEYS + ("swarm_seat_node_rows", "swarm_seat_state"):
+    for key in _SEAT_READ_KEYS + ("swarm_seat_state",):
         assert payload[key] is None, key
     await manager.close()
 

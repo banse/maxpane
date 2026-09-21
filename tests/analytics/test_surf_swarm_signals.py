@@ -271,74 +271,14 @@ def test_seen_since_ts_is_the_oldest_created_ts():
 
 
 # ---------------------------------------------------------------------------
-# seat_summary (A1)
+# seat_summary retired (AGENT-seats WP5): the seat's counters are the lifetime
+# /seats record, folded by data/surf_swarm.seat_summary_from_seat.
 # ---------------------------------------------------------------------------
 
 
-def _node(job, key, role, state, verdict, code, revisions, at):
-    return {"job_id": job, "template": "t", "node_key": key, "role": role,
-            "state": state, "attempt": 1, "revisions": revisions,
-            "verdict_status": verdict, "rejection_code": code,
-            "failed_checks": [], "detail": None, "at_ts": at}
-
-
-def _fb(value, sent):
-    return {"value": value, "node_key": "k", "job_id": "j", "tx_hash": "0x",
-            "chain_id": 1, "block_number": 1, "sent_ts": sent}
-
-
-def test_seat_summary_counts_a_hand_built_record():
-    nodes = [
-        _node("j1", "a", "implement", "accepted", "accepted", None, 0, 300.0),
-        _node("j1", "b", "review", "accepted", "accepted", None, 2, 200.0),
-        _node("j2", "a", "implement", "failed", "rejected", "tests_failed", 1, 100.0),
-        _node("j3", "a", "implement", "working", None, None, 0, 400.0),
-    ]
-    feedback = [_fb(100, 1.0), _fb(1, 2.0), _fb(1, 3.0)]
-    out = sig.seat_summary(nodes, feedback, working_now=True)
-    assert out == {
-        "nodes": 4,
-        "jobs": 3,
-        "accepted": 2,
-        "rejected": 1,
-        "revisions": 3,
-        "mean_score": 34.0,   # (100 + 1 + 1) / 3 = 34.0
-        "scored": 3,
-        "working_now": True,
-        "first_seen_ts": 100.0,
-        "last_active_ts": 400.0,
-        "roles": [{"role": "implement", "count": 3}, {"role": "review", "count": 1}],
-        "rejection_codes": [{"code": "tests_failed", "count": 1}],
-    }
-
-
-def test_seat_summary_with_no_feedback_has_none_score_and_zero_scored():
-    nodes = [_node("j1", "a", "implement", "accepted", "accepted", None, 0, 1.0)]
-    out = sig.seat_summary(nodes, [], working_now=False)
-    assert out["mean_score"] is None
-    assert out["scored"] == 0
-    assert out["rejection_codes"] == []
-    assert out["working_now"] is False
-
-
-def test_seat_summary_is_none_on_no_nodes():
-    assert sig.seat_summary([], [], working_now=False) is None
-    assert sig.seat_summary([], [_fb(1, 1.0)], working_now=False) is None
-
-
-def test_seat_summary_ignores_non_numeric_feedback_values():
-    nodes = [_node("j1", "a", "implement", "accepted", "accepted", None, 0, 1.0)]
-    out = sig.seat_summary(nodes, [_fb("100", 1.0), _fb(None, 2.0), _fb(50, 3.0)],
-                           working_now=False)
-    assert out["mean_score"] == 50.0
-    assert out["scored"] == 1
-
-
-def test_seat_summary_rounds_the_mean_to_two_places():
-    nodes = [_node("j1", "a", "implement", "accepted", "accepted", None, 0, 1.0)]
-    out = sig.seat_summary(nodes, [_fb(1, 1.0), _fb(1, 2.0), _fb(2, 3.0)],
-                           working_now=False)
-    assert out["mean_score"] == 1.33
+def test_the_window_based_seat_summary_is_gone():
+    assert not hasattr(sig, "seat_summary")
+    assert "seat_summary" not in sig.__all__
 
 
 # ---------------------------------------------------------------------------

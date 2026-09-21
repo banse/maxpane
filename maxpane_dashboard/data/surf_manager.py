@@ -937,26 +937,6 @@ def _swarm_sweep_ids(jobs: Any) -> list[str]:
     return [j["id"] for j in rows[:SWARM_SWEEP_CAP]]
 
 
-def _seat_token(value: Any) -> int | None:
-    """A seat as the reader named it -> the ``int`` ``sw.choose_seat`` takes.
-
-    ``seat=`` and :meth:`SurfManager.select_seat` store what they were given:
-    an ``int`` from ``config.get_seat`` or the seat prompt, or the row's text
-    from the ROSTER ``DataTable``. A non-negative, non-``bool`` ``int``, or a
-    string of ASCII digits (surrounding whitespace allowed); anything else is
-    no choice, never a guess.
-    """
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value if value >= 0 else None
-    if isinstance(value, str):
-        text = value.strip()
-        if text and text.isascii() and text.isdigit():
-            return int(text)
-    return None
-
-
 def _swarm_details_map(details: Any) -> dict[str, dict[str, Any]]:
     """``job_id -> detail`` off a slot's persisted ``details`` **list**.
 
@@ -1072,7 +1052,7 @@ class SurfManager:
         #: The data layer reads no configuration of its own
         #: (``tests/data/test_manager_seams.py``); ``MAXPANE_IMD_SEAT`` was
         #: retired 2026-09-21 for the seat prompt. An IDMD token id, not a
-        #: secret. Stored as given: ``sw.pick_seat`` parses it.
+        #: secret. Stored as given: ``sw.parse_seat_token`` parses it.
         self._seat_saved: str | int | None = seat
         #: The reader's own row selection (:meth:`select_seat`); wins over
         #: the saved seat while it names a seat on the roster.
@@ -5488,7 +5468,7 @@ class SurfManager:
         A plain attribute write -- no I/O, no await -- so it is safe to call
         from a message handler (``DataTable.RowSelected``); the guarded
         refresh then recomputes the seat keys from the cached sweep
-        (:meth:`_swarm_seat_keys`). Stored as given: ``sw.pick_seat`` parses
+        (:meth:`_swarm_seat_keys`). Stored as given: ``sw.parse_seat_token`` parses
         it and falls back to the saved seat, then the most active, when it
         names nothing on the roster.
 
@@ -5681,9 +5661,9 @@ class SurfManager:
 
         Unlike :meth:`_pool_swarm` this asks for **every** job's detail
         (the newest :data:`SWARM_SWEEP_CAP`), not just the executing ones:
-        the AGENT body's RECORD and ROSTER (:func:`sw.seat_rows`,
-        :func:`sw.seat_node_rows`) fold verdicts off completed jobs too, and
-        a job that shipped days ago is still part of a seat's record.
+        the AGENT body's ROSTER (:func:`sw.seat_rows`) folds verdicts off
+        completed jobs too. (RECORD reads the seat's lifetime ``/seats``
+        record since the /seats plan, not this sweep.)
 
         Stores ``{"jobs", "details", "launches", "sites"}`` -- **including**
         its own copy of the job list, fix round 1 finding 4 (reversing the
@@ -5850,8 +5830,8 @@ class SurfManager:
     ) -> dict[str, Any]:
         """The AGENT body's keys: the roster off the sweep, the seat off ``/seats``.
 
-        **The roster** (``swarm_seat_rows``, ``swarm_roster_window`` and the
-        transitional ``swarm_seat_node_rows``) is folded from the sweep slot
+        **The roster** (``swarm_seat_rows`` and ``swarm_roster_window``) is
+        folded from the sweep slot
         plus the jobs-seen map, as before: a sweep that never ran
         (``entry is None``) publishes ``None`` for them, and one that saw no
         seat publishes ``swarm_seat_rows == []``.
@@ -5877,7 +5857,7 @@ class SurfManager:
         seen_map = seen if isinstance(seen, dict) else {}
         rows = sw.seat_rows(details_map, seen_map) if swept else None
         selected = sw.choose_seat(
-            rows, _seat_token(self._seat_saved), _seat_token(self._seat_cursor)
+            rows, sw.parse_seat_token(self._seat_saved), sw.parse_seat_token(self._seat_cursor)
         )
         out: dict[str, Any] = {
             "swarm_seat_rows": rows,
@@ -5887,16 +5867,11 @@ class SurfManager:
             "swarm_seat_work_rows": None,
             "swarm_seat_feedback_rows": None,
             "swarm_seat_as_of_hhmm": None,
-            "swarm_seat_node_rows": None,
             "swarm_roster_window": sw.roster_window(slot.get("jobs")) if swept and slot else None,
         }
         if selected is None:
             return out
         token = selected["token_id"]
-        if swept:
-            # Transitional (retired in WP5): the window fold, for the widgets
-            # that still read it until the contract flips.
-            out["swarm_seat_node_rows"] = sw.seat_node_rows(details_map, seen_map, token)
         read = sw.coerce_seat_slot(getattr(seat_entry, "payload", None))
         if read is None or read["token"] != token:
             out["swarm_seat_state"] = None if self._seat_failed_token == token else "pending"

@@ -3,8 +3,8 @@
 Composited assertions only. Rows are **folded** from the committed ``/seats``
 captures by ``data/surf_swarm.seat_review_rows`` (the manager's own fold) and
 every expected value is read off that fold, never hand-typed. The per-class
-contract is imposed against ``SWARM_AGENT_SIGNATURES_NEXT`` /
-``SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT`` until WP5 flips the exports.
+contract is imposed against ``SWARM_WIDGET_SIGNATURES`` and
+``SURF_ROW_KEYS["swarm_seat_feedback_rows"]`` (both flipped in WP5).
 """
 
 from __future__ import annotations
@@ -15,8 +15,7 @@ from textual.app import App
 
 from maxpane_dashboard.data.surf_models import (
     SURF_ROW_KEYS,
-    SWARM_AGENT_SIGNATURES_NEXT,
-    SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT,
+    SWARM_WIDGET_SIGNATURES,
 )
 from maxpane_dashboard.data.surf_swarm import seat_review_rows
 from maxpane_dashboard.widgets.address import COPY_GLYPH, MIN_SHORT_COLS
@@ -37,7 +36,7 @@ from tests.surf_swarm_fixtures import swarm_seat_capture
 from tests.widgets.address_probe import link_targets
 from tests.widgets.surf_compositing import composite_lines
 
-SIGNATURE = SWARM_AGENT_SIGNATURES_NEXT["SurfSwarmSeatFeedback"]
+SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmSeatFeedback"]
 
 ROWS_420 = seat_review_rows(swarm_seat_capture("seat_420"))
 ROWS_0 = seat_review_rows(swarm_seat_capture("seat_0"))
@@ -55,7 +54,7 @@ def _job(row) -> str:
 def test_the_folded_rows_carry_exactly_the_target_shape():
     assert ROWS_420 and ROWS_0
     for row in ROWS_420 + ROWS_0:
-        assert tuple(row) == SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT
+        assert tuple(row) == SURF_ROW_KEYS["swarm_seat_feedback_rows"]
     assert QUEUED["tx_hash"] is None and QUEUED["chain_id"] is None and QUEUED["sent_ts"] is None
     assert SUBMITTED["sent_ts"] is None and SUBMITTED["tx_hash"]
 
@@ -98,9 +97,12 @@ def test_update_data_names_exactly_the_target_signature_in_order():
     assert any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
 
 
-async def test_an_old_shape_row_dashes_its_missing_cells_and_never_raises():
-    """The screen sends the retiring shape until WP5: no ``status``, a ``block_number``."""
-    old = {key: SENT.get(key) for key in SURF_ROW_KEYS["swarm_seat_feedback_rows"]}
+async def test_a_row_missing_a_key_dashes_that_cell_and_never_raises():
+    """A hand-edited persisted row (third-party input): no ``status``, and a
+    stray ``block_number`` the contract no longer carries."""
+    old = {key: SENT.get(key) for key in SURF_ROW_KEYS["swarm_seat_feedback_rows"]
+           if key != "status"}
+    old["block_number"] = 1
     assert "status" not in old
     row = _row_with(await _feedback(swarm_seat_feedback_rows=[old]), _job(SENT))
     assert hhmm(SENT["sent_ts"]) in row and "--" in row

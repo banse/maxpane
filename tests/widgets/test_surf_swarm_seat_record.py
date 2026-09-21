@@ -3,9 +3,8 @@
 Composited assertions only. Rows are **folded** from the committed ``/seats``
 captures by ``data/surf_swarm.seat_work_rows`` (the manager's own fold), and
 every expected value is read off that fold, never hand-typed. The per-class
-contract is imposed against the target export ``SWARM_AGENT_SIGNATURES_NEXT``
-until WP5 flips ``SWARM_WIDGET_SIGNATURES``; the two retiring parameters are
-named here exactly so WP5's removal is a visible edit.
+contract is imposed against ``SWARM_WIDGET_SIGNATURES`` (flipped in WP5, which
+also removed the two transitional parameters).
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ import inspect
 from rich.color import Color
 from textual.app import App
 
-from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_AGENT_SIGNATURES_NEXT
+from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.data.surf_swarm import seat_work_rows
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
@@ -32,9 +31,7 @@ from maxpane_dashboard.widgets.surf.swarm_seat_record import (
 from tests.surf_swarm_fixtures import swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
 
-SIGNATURE = SWARM_AGENT_SIGNATURES_NEXT["SurfSwarmSeatRecord"]
-#: Sent by the screen until WP5, accepted and never painted.
-TRANSITIONAL = ("swarm_seat_node_rows", "swarm_network")
+SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmSeatRecord"]
 
 ROWS_420 = seat_work_rows(swarm_seat_capture("seat_420"))
 ROWS_0 = seat_work_rows(swarm_seat_capture("seat_0"))
@@ -69,18 +66,18 @@ def _row_with(lines, needle):
 # -- the self-imposed contract -----------------------------------------------------
 
 
-def test_update_data_names_the_target_signature_then_the_transitional_params():
+def test_update_data_names_exactly_the_signature():
     sig = inspect.signature(SurfSwarmSeatRecord.update_data)
     params = [n for n, p in sig.parameters.items() if n != "self" and p.kind is not p.VAR_KEYWORD]
-    assert tuple(params) == SIGNATURE + TRANSITIONAL
-    assert all(sig.parameters[n].default is None for n in TRANSITIONAL)
+    assert tuple(params) == SIGNATURE
     assert any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
 
 
-async def test_the_transitional_params_are_never_painted():
+async def test_a_splatted_key_outside_the_signature_is_never_painted():
+    """The screen splats the whole payload; ``swarm_network`` left RECORD's
+    signature in the WP5 flip and must not reach the panel through ``**_kwargs``."""
     plain = await _record()
-    noisy = await _record(swarm_seat_node_rows=[{"node_key": "OLD_NODE_ROW"}],
-                          swarm_network="SEPOLIA")
+    noisy = await _record(swarm_network="SEPOLIA")
     assert plain == noisy
 
 
@@ -91,7 +88,7 @@ async def test_no_args_and_all_none_render_unavailable_without_raising():
     bare = "\n".join(await composite_lines(SurfSwarmSeatRecord, SIZE))
     assert "unavailable" in bare and "Loading" not in bare and EMPTY_LINE not in bare
     none = "\n".join(await composite_lines(
-        SurfSwarmSeatRecord, SIZE, **{k: None for k in SIGNATURE + TRANSITIONAL},
+        SurfSwarmSeatRecord, SIZE, **{k: None for k in SIGNATURE},
     ))
     assert "unavailable" in none and EMPTY_LINE not in none
 

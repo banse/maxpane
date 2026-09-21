@@ -3,8 +3,14 @@
 Swarm v2 (WP7, 2026-09-21): the 2026-09-16 body (THE FIELD, QUEUE, JUST
 SHIPPED, the score-table THROUGHPUT) is gone; ``s`` shows the hero over
 CAPABILITY | THROUGHPUT, IN FLIGHT | LAUNCHES and SITES, and the new ``a``
-shows the seat hero over ROSTER | VERDICTS, RECORD and FEEDBACK. Geometry is
+shows the seat hero over ROSTER | SEAT RECORD, RECORD and FEEDBACK. Geometry is
 ``test_surf_swarm_layout.py``'s; this file is composition and behaviour.
+
+The AGENT body reads the seat's lifetime ``/seats`` record since WP5 of
+``docs/surf_agent_seats_plan.md`` (the contract flip). The seat tests below
+that need the manager's real seat tier drive a real ``SurfManager`` over the
+network-dead doubles of ``tests/data/test_surf_manager_swarm.py`` -- never a
+payload hand-shaped to look like one.
 
 Everything asserted against **composited output** (``_compositor.render_strips()``),
 joined per row and then by newline: a string that never reaches a pixel passes
@@ -27,10 +33,13 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmSeatRecord, SurfSwarmSeatVerdicts, SurfSwarmSites,
     SurfSwarmThroughput,
 )
+from maxpane_dashboard.data import surf_swarm as sw
+from tests.data.test_surf_manager_swarm import _FakeSwarm, _seated, _settle
 from tests.screens.test_surf_screen import (
     _FakeManager, _frozen_payload, _region_text, _screen_text, _surf_app,
     _ThemedHarness,
 )
+from tests.surf_swarm_fixtures import swarm_seat_capture
 
 _SIZE = (150, 45)
 _S_PANELS = (SurfSwarmCapability, SurfSwarmThroughput, SurfSwarmInFlight,
@@ -168,9 +177,10 @@ def _seat_app(payload=None):
 
 async def test_enter_on_a_roster_row_selects_that_seat_and_refreshes():
     """``DataTable.RowSelected`` -> ``manager.select_seat(token)`` ->
-    ``start_refresh``. The frozen payload's roster is 1548 then 1601; the
-    cursor sits on the selected row (1548, index 0) after the first
-    dispatch, so the second row is a genuine move."""
+    ``start_refresh`` (decision D1: the cursor wins while it is on the
+    roster). The frozen payload's roster is 1548 then 1601; the cursor sits
+    on the selected row (1548, index 0) after the first dispatch, so the
+    second row is a genuine move."""
     app, manager = _seat_app()
     async with app.run_test(size=_SIZE) as pilot:
         screen = await _open(pilot, "a")
@@ -225,6 +235,113 @@ async def test_the_cursor_follows_the_manager_selection_after_a_refresh():
         table = roster.query_one(DataTable)
         assert roster.selected_row_index == 1
         assert table.cursor_row == 1
+
+
+async def test_a_saved_seat_off_the_roster_is_shown_with_no_roster_row_marked():
+    """Decision D1: ``/seats`` answers for any paired token, so a saved seat
+    the job window never saw is the body's seat -- its own record in the hero
+    -- and the roster marks no row (there is none to mark), never the most
+    active one in its place."""
+    seat = swarm_seat_capture("seat_420")
+    payload = _frozen_payload(
+        swarm_seat_selected={"token_id": 420, "agent_id": "50939", "selected_by": "saved"},
+        swarm_seat_state="ok",
+        swarm_seat_summary=sw.seat_summary_from_seat(seat),
+        swarm_seat_work_rows=sw.seat_work_rows(seat),
+        swarm_seat_feedback_rows=sw.seat_review_rows(seat),
+    )
+    async with _surf_app(payload).run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "a")
+        hero = _region_text(pilot.app, screen.query_one(SurfSwarmAgentHero))
+        roster = screen.query_one(SurfSwarmRoster)
+        assert "IDMD #420" in hero and "12 of 74" in hero
+        assert roster.selected_row_index is None
+        assert "▸" not in _region_text(pilot.app, roster)
+
+
+async def test_selecting_a_roster_row_makes_no_client_call_and_the_next_refresh_shows_it(tmp_path):
+    """Plan WP5: the handler is a plain write (CLAUDE.md, no network await in
+    a message handler) -- the spy client sees no call while it runs -- and
+    the seat lands one detached read later, on a later refresh.
+
+    A real ``SurfManager`` over the network-dead doubles; the chosen roster
+    seat is served #516's capture under its own token, so the landed record
+    is a number the fixture pins (4 of 10)."""
+    probe = await _seated(tmp_path / "probe", _FakeSwarm())
+    rows = probe[1]["swarm_seat_rows"]
+    await probe[0].close()
+    target = rows[1]["token_id"]
+    seats = {0: swarm_seat_capture("seat_0"),
+             target: dict(swarm_seat_capture("seat_516"), tokenId=str(target))}
+    manager, first = await _seated(tmp_path, _FakeSwarm(seats=seats))
+    assert first["swarm_seat_selected"]["token_id"] == 0
+    app = _ThemedHarness(SurfScreen(manager, poll_interval=3600, name="surf"))
+    async with app.run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "a")
+        await _settle(manager)
+        roster = screen.query_one(SurfSwarmRoster)
+        table = roster.query_one(f"#{SurfSwarmRoster.TABLE_ID}", DataTable)
+        assert roster.token_at(1) == target
+        calls_before = sum(manager.swarm_client.calls.values())
+        seat_calls_before = list(manager.swarm_client.seat_calls)
+        # The handler runs synchronously here; the refresh it starts cannot
+        # run until this coroutine yields, so any call now is the handler's.
+        screen.on_data_table_row_selected(DataTable.RowSelected(table, 1, None))
+        assert sum(manager.swarm_client.calls.values()) == calls_before
+        assert manager.swarm_client.seat_calls == seat_calls_before
+        # The refresh the handler started: the seat is chosen, its read is
+        # only now spawned -- Loading..., never seat #0's record.
+        await screen._do_refresh()
+        await pilot.pause()
+        hero = _region_text(pilot.app, screen.query_one(SurfSwarmAgentHero))
+        assert f"IDMD #{target}" in hero and "Loading" in hero
+        await _settle(manager)
+        # Exactly one read of the new seat, and it is the tier's -- a handler
+        # that scheduled its own fetch would show up here as a second call.
+        assert manager.swarm_client.seat_calls[len(seat_calls_before):] == [target]
+        await screen._do_refresh()
+        await pilot.pause()
+        hero = _region_text(pilot.app, screen.query_one(SurfSwarmAgentHero))
+        assert f"IDMD #{target}" in hero and "4 of 10" in hero and "Loading" not in hero
+    await manager.close()
+
+
+def _record_needles(seat: dict) -> list[str]:
+    """Strings only seat *seat*'s ``/seats`` record puts on the AGENT body."""
+    summary = sw.seat_summary_from_seat(seat)
+    work = sw.seat_work_rows(seat)
+    reviews = sw.seat_review_rows(seat)
+    needles = [f"{summary['accepted']} of {summary['attempts']}", summary["owner"][:6]]
+    needles += [row["job_id"][:8] for row in work[:3]]
+    needles += [row["job_id"][:8] for row in reviews[:3]]
+    return needles
+
+
+async def test_a_switch_pending_composite_shows_no_number_of_the_old_seat(tmp_path):
+    """Plan §5, the screen column: A's slot is present and B is selected.
+    Not one of A's record strings reaches the composited AGENT body -- and
+    each of them does reach it while A is the selected seat, so the needles
+    can match (a control, not an assumption)."""
+    manager, before = await _seated(tmp_path, _FakeSwarm())
+    assert before["swarm_seat_selected"]["token_id"] == 0
+    manager.set_seat(420)
+    pending = await manager.fetch_and_compute()
+    await manager.close()
+    assert pending["swarm_seat_state"] == "pending"
+    needles = _record_needles(swarm_seat_capture("seat_0"))
+    for payload, should_show in ((before, True), (pending, False)):
+        async with _surf_app(payload).run_test(size=(170, 60)) as pilot:
+            screen = await _open(pilot, "a")
+            body = screen.query_one(f"#{AGENT_BODY_ID}")
+            text = _region_text(pilot.app, body)
+            hero = _region_text(pilot.app, screen.query_one(SurfSwarmAgentHero))
+            shown = [n for n in needles if n in text or n in hero]
+            if should_show:
+                assert shown == needles, sorted(set(needles) - set(shown))
+            else:
+                assert shown == [], shown
+                assert "IDMD #420" in hero and "Loading" in hero
+                assert "IDMD #0" not in hero
 
 
 # -- the seat prompt (`i`) ----------------------------------------------------
@@ -300,6 +417,43 @@ async def test_a_typed_seat_is_saved_set_and_opens_the_agent_body(saved_seats):
         assert manager.saved == [463]
         assert app.screen is screen and screen._mode == MODE_AGENT
         assert manager.calls > calls_before, "a new seat has to refresh the seat keys"
+
+
+class _NeverPairedManager(_SavedSeatManager):
+    """``set_seat`` makes the next payload the one the real manager serves for
+    a token ``/seats`` answers 404 ``unknown_seat`` for (plan §5)."""
+
+    def set_seat(self, token) -> None:
+        super().set_seat(token)
+        self._payload = dict(
+            self._payload,
+            swarm_seat_selected={"token_id": token, "agent_id": None, "selected_by": "saved"},
+            swarm_seat_state="unknown_seat", swarm_seat_summary=None,
+            swarm_seat_work_rows=[], swarm_seat_feedback_rows=[],
+            swarm_seat_as_of_hhmm="13:50",
+        )
+
+
+async def test_a_saved_seat_never_paired_says_so_and_never_not_seen(saved_seats):
+    """Decision D1 replaces change A's ``#N not seen`` fallback: an unknown
+    saved seat is shown as itself, ``never paired`` -- a real negative --
+    and no other seat's record stands in for it."""
+    manager = _NeverPairedManager()
+    app = _ThemedHarness(SurfScreen(manager, poll_interval=30, name="surf"))
+    async with app.run_test(size=_SIZE) as pilot:
+        screen = app.screen
+        await _open(pilot, "i")
+        await _type(pilot, "#9999")
+        assert manager.saved == [9999] and screen._mode == MODE_AGENT
+        await screen._do_refresh()
+        await pilot.pause()
+        hero = _region_text(app, screen.query_one(SurfSwarmAgentHero))
+        body = _region_text(app, screen.query_one(f"#{AGENT_BODY_ID}"))
+        assert "IDMD #9999" in hero and "never paired" in hero
+        for panel in (SurfSwarmSeatVerdicts, SurfSwarmSeatRecord, SurfSwarmSeatFeedback):
+            assert "never paired" in _region_text(app, screen.query_one(panel)), panel.__name__
+        assert "not seen" not in hero + body
+        assert "IDMD #1548" not in hero
 
 
 async def test_an_invalid_seat_is_refused_on_the_prompt(saved_seats):

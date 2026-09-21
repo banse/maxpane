@@ -1,13 +1,13 @@
 """FEEDBACK -- the selected seat's scored reviews, lifetime, newest first (plan WP4).
 
-Mounted on the AGENT body (``a``); this module paints the target
+Mounted on the AGENT body (``a``); this module paints the
 ``swarm_seat_feedback_rows`` shape
-(``data/surf_models.SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT`` until the WP5 flip):
+(``data/surf_models.SURF_ROW_KEYS["swarm_seat_feedback_rows"]``):
 ``value, verdict, status, node_key, role, job_id, tx_hash, chain_id,
 sent_ts`` -- one row per ``/seats/{tokenId}`` ``reviews[]`` entry
-(``docs/surf_agent_seats_spec.md`` §3). A row is read key by key, so an
-older-shape row (the screen sends one until WP5) renders ``--`` in a cell
-whose key it lacks and never raises. The tiered-table mechanics are
+(``docs/surf_agent_seats_spec.md`` §3). A row is read key by key, so a
+row missing a key (a hand-edited cache) renders ``--`` in that cell and
+never raises. The tiered-table mechanics are
 :class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase`'s.
 
 A review is ``sent`` (tx + ``sentAt``), ``submitted`` (tx, no ``sentAt``) or

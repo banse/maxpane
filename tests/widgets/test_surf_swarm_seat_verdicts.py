@@ -3,9 +3,8 @@
 Composited assertions only. Summaries are **folded** from the committed
 ``/seats`` captures by ``data/surf_swarm.seat_summary_from_seat`` (the
 manager's own fold) and every expected number is read off that fold or the
-fixture, never hand-typed. The per-class contract is imposed against the
-target export ``SWARM_AGENT_SIGNATURES_NEXT`` until WP5 flips
-``SWARM_WIDGET_SIGNATURES``.
+fixture, never hand-typed. The per-class contract is imposed against
+``SWARM_WIDGET_SIGNATURES`` (flipped in WP5).
 
 The panel renders at ``SIZE`` = its stylesheet ``max-width`` (46), the width
 it has at the AGENT pin; the owner cell's icon and link are read back off the
@@ -16,11 +15,16 @@ from __future__ import annotations
 
 import copy
 import inspect
+import re
+from pathlib import Path
+
+import pytest
+from rich.cells import cell_len
 
 from textual.app import App
 
 from maxpane_dashboard.app import CSS_PATH
-from maxpane_dashboard.data.surf_models import SWARM_AGENT_SIGNATURES_NEXT
+from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.data.surf_swarm import seat_summary_from_seat
 from maxpane_dashboard.widgets.explorer import ETHEREUM
 from maxpane_dashboard.widgets.fmt import hhmm, mmdd
@@ -29,14 +33,16 @@ from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
 from maxpane_dashboard.widgets.surf.swarm_seat_verdicts import (
     BLOCK_IDS,
     NO_FEEDBACK_LINE,
+    PANEL_MAX_WIDTH,
     ROW_IDS,
+    VALUE_COLS,
     SurfSwarmSeatVerdicts,
 )
 from tests.surf_swarm_fixtures import swarm_seat_capture
 from tests.widgets.address_probe import LinkRecorder, icon_targets, link_targets
 from tests.widgets.surf_compositing import composite_lines
 
-SIGNATURE = SWARM_AGENT_SIGNATURES_NEXT["SurfSwarmSeatVerdicts"]
+SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmSeatVerdicts"]
 
 SEAT_420 = swarm_seat_capture("seat_420")
 SUMMARY = seat_summary_from_seat(SEAT_420)
@@ -124,6 +130,30 @@ async def test_the_defect_seat_renders_its_lifetime_record():
     for entry in SUMMARY["roles"]:
         assert f"{entry['role']} {entry['count']}" in roles
     assert "unavailable" not in "\n".join(lines)
+
+
+@pytest.mark.guard
+def test_the_panel_width_the_fits_follow_is_the_stylesheets():
+    """``PANEL_MAX_WIDTH`` is a hand-typed copy of ``minimal.tcss``; bind the two."""
+    css = Path(CSS_PATH).read_text()
+    block = re.search(r"^SurfSwarmSeatVerdicts \{(.*?)\}", css, re.S | re.M)
+    assert block, "minimal.tcss lost its SurfSwarmSeatVerdicts block"
+    width = re.search(r"max-width:\s*(\d+);", block.group(1))
+    assert width and int(width.group(1)) == PANEL_MAX_WIDTH == SIZE[0]
+
+
+async def test_the_largest_seat_fits_its_roles_and_counts_the_rest():
+    """Seat #0's roles do not fit whole at the panel's width: the line keeps
+    the busiest in the fold's order and says how many it left out."""
+    roles = _folded("seat_0")["roles"]
+    whole = " · ".join(f"{r['role']} {r['count']}" for r in roles)
+    assert len(roles) >= 2 and cell_len(whole) > VALUE_COLS, "the capture must overflow"
+    line = _row_with(await _record(swarm_seat_summary=_folded("seat_0")), "by role")
+    first = roles[0]
+    assert f"{first['role']} {first['count']} · +{len(roles) - 1} more" in line
+    for dropped in roles[1:]:
+        assert f"{dropped['role']} {dropped['count']}" not in line
+    assert cell_len(line) <= SIZE[0] and "…" not in line
 
 
 async def test_the_runtime_is_clipped_visibly_to_the_panel():
@@ -259,14 +289,25 @@ async def test_a_zero_record_renders_zeros_not_unavailable():
         assert "unavailable" not in _row_with(lines, needle), needle
 
 
-async def test_a_seat_with_no_runtime_says_unavailable_on_that_row_only():
-    """Seat #0 serves ``runtimes: []``, which the fold carries as ``None``."""
+async def test_a_seat_that_runs_nothing_says_none_never_unavailable():
+    """Seat #0 serves ``runtimes: []`` -- a real negative, which the fold
+    carries as ``""`` (WP3 review: it used to fold to ``None`` and render a
+    false ``unavailable``)."""
     summary = _folded("seat_0")
-    assert summary["runtime"] is None
+    assert summary["runtime"] == ""
     lines = await _record(swarm_seat_summary=summary)
-    assert "unavailable" in _row_with(lines, "runtime")
+    runtime = _row_with(lines, "runtime")
+    assert "none" in runtime and "unavailable" not in runtime
     assert "unavailable" not in _row_with(lines, "accepted")
     assert "⧉" in _row_with(lines, "owner")
+
+
+async def test_a_runtime_the_source_did_not_carry_says_unavailable_on_that_row_only():
+    summary = dict(_folded("seat_420"), runtime=None)
+    lines = await _record(swarm_seat_summary=summary)
+    runtime = _row_with(lines, "runtime")
+    assert "unavailable" in runtime and "none" not in runtime
+    assert "unavailable" not in _row_with(lines, "accepted")
 
 
 async def test_a_field_the_source_did_not_carry_is_unavailable_on_its_own_row_only():

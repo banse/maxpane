@@ -12,7 +12,6 @@ field it came from, so the test cannot have been derived from the fold.
 
 from __future__ import annotations
 
-import copy
 import datetime
 
 import pytest
@@ -39,7 +38,6 @@ _TWO_DAYS = 2 * _DAY
 EXECUTING_WITH_DETAIL = "f046299c-d94e-4760-9e3c-c1e2d3a1a3b2"   # createdAt 21:41:27.617Z
 EXECUTING_NO_DETAIL = "708ea465-4171-4835-b193-69f01ac1a185"     # createdAt 21:41:09.309Z
 OLD_COMPLETED = "7018907b-7466-4326-a602-e322913db496"            # 2026-09-16, reviews populated
-OLD_CANCELLED = "4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6"            # 2026-09-17, chainId 11155111
 
 
 @pytest.fixture(scope="module")
@@ -99,9 +97,7 @@ def test_every_v2_row_carries_exactly_its_contract_fields_in_order(
     _rows_match(fold.site_rows(sites), "swarm_site_rows")
     seat_rows = fold.seat_rows(details, seen)
     _rows_match(seat_rows, "swarm_seat_rows")
-    token = seat_rows[0]["token_id"]
-    _rows_match(fold.seat_node_rows(details, seen, token), "swarm_seat_node_rows")
-    _rows_match(fold.seat_feedback_rows(details, token), "swarm_seat_feedback_rows")
+    # The /seats row folds (work, reviews) are shape-checked in test_surf_swarm_seats.py.
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +253,6 @@ def test_every_rows_fold_returns_an_empty_list_for_none_and_for_empty():
     assert fold.launch_rows(None) == [] and fold.launch_rows([]) == []
     assert fold.site_rows(None) == [] and fold.site_rows([]) == []
     assert fold.seat_rows(None, None) == [] and fold.seat_rows({}, {}) == []
-    assert fold.seat_node_rows(None, None, 1) == []
-    assert fold.seat_feedback_rows(None, 1) == []
 
 
 # ---------------------------------------------------------------------------
@@ -573,7 +567,8 @@ def test_seen_since_ts_is_the_oldest_created_ts():
 
 
 # ---------------------------------------------------------------------------
-# AGENT body folds (A1): seat_rows / pick_seat / seat_node_rows / seat_feedback_rows
+# AGENT body roster fold (A1): seat_rows. The window-based seat choice, node
+# rows and feedback rows retired in the AGENT-seats WP5 (docs/surf_agent_seats_plan.md §3).
 # ---------------------------------------------------------------------------
 
 # Read off the 28 detail files by hand: every distinct nodes[].seat.tokenId
@@ -664,184 +659,6 @@ def test_seat_rows_fold_in_seen_nodes_for_jobs_no_detail_covers(details):
     assert rows[4242]["nodes"] == 1 and rows[4242]["working_now"] is True
     assert rows[4242]["agent_id"] == "77" and rows[4242]["last_active_ts"] is None
     assert len(rows) == 17
-
-
-def test_pick_seat_saved_present_most_active_and_cursor(details):
-    rows = fold.seat_rows(details, {})
-    assert rows[0]["token_id"] == 0
-    assert fold.pick_seat(rows, "1548") == {"token_id": 1548, "agent_id": "50971",
-                                           "selected_by": "saved"}
-    assert fold.pick_seat(rows, 1548)["selected_by"] == "saved"
-    for absent in (None, "", "abc", True):
-        assert fold.pick_seat(rows, absent) == {"token_id": 0, "agent_id": "50906",
-                                                "selected_by": "most_active"}
-    assert fold.pick_seat(rows, "1548", cursor_token=463) == {
-        "token_id": 463, "agent_id": "50972", "selected_by": "cursor",
-    }
-    # A cursor on a seat that is not in the rows falls through to the saved seat.
-    assert fold.pick_seat(rows, "1548", cursor_token=999999)["selected_by"] == "saved"
-    assert fold.pick_seat([], "1548") is None
-    assert fold.pick_seat(None, None) is None
-
-
-def test_pick_seat_names_a_saved_seat_the_sweep_has_not_seen(details):
-    """A saved seat off the roster falls back to the busiest -- and says so.
-
-    Showing seat #0 under "most active" while the reader saved #999999 is a
-    false statement about which seat they are looking at; ``unseen_token``
-    is what lets the hero say "#999999 not seen" instead.  A cursor pick is
-    the reader's own choice and carries no such note."""
-    rows = fold.seat_rows(details, {})
-    for saved in (999999, "999999", " 999999 "):
-        assert fold.pick_seat(rows, saved) == {
-            "token_id": 0, "agent_id": "50906", "selected_by": "most_active",
-            "unseen_token": 999999,
-        }
-    assert "unseen_token" not in fold.pick_seat(rows, 999999, cursor_token=463)
-    assert "unseen_token" not in fold.pick_seat(rows, "1548")
-
-
-def test_seat_node_rows_newest_first_without_duplicates(details):
-    rows = fold.seat_node_rows(details, {}, 1548)
-    assert len(rows) == 7
-    stamps = [r["at_ts"] for r in rows]
-    assert all(s is not None for s in stamps)
-    assert stamps == sorted(stamps, reverse=True)
-    keys = [(r["job_id"], r["node_key"]) for r in rows]
-    assert len(set(keys)) == len(keys)
-    # details/ad7bebb8….json nodes[1]: build_contract_project, implement,
-    # accepted, attempt 1, revisions 0, verdict accepted / "all checks passed".
-    row = next(r for r in rows if r["job_id"].startswith("ad7bebb8"))
-    assert row["node_key"] == "build_contract_project"
-    assert row["role"] == "implement" and row["state"] == "accepted"
-    assert row["attempt"] == 1 and row["revisions"] == 0
-    assert row["verdict_status"] == "accepted" and row["rejection_code"] is None
-    assert row["failed_checks"] == [] and row["detail"] == "all checks passed"
-    assert row["at_ts"] == _iso("2026-09-20T22:07:42.239Z")
-    assert row["template"] == details["ad7bebb8-fd1a-4268-b831-1c253a85ae4c"]["template"]
-
-
-def test_seat_node_rows_add_seen_nodes_only_for_jobs_no_detail_covers(details):
-    since = NOW - 3600
-    seen = {
-        "seen-only": {"created_ts": since, "updated_ts": since, "state": "completed",
-                      "template": "seen-t", "nodes": [
-                          {"key": "integrate_step", "seat_token": 1548,
-                           "seat_agent": "50971", "role": "integrate",
-                           "state": "failed", "verdict_status": "rejected",
-                           "rejection_code": "tests_failed", "revisions": 2,
-                           "at_ts": NOW - 10},
-                          {"key": "review_step", "seat_token": 999, "seat_agent": "o", "role": "review",
-                           "state": "accepted", "verdict_status": "accepted",
-                           "rejection_code": None, "revisions": 0, "at_ts": NOW - 5}]},
-        "ad7bebb8-fd1a-4268-b831-1c253a85ae4c": {
-            "created_ts": since, "updated_ts": since, "state": "completed", "template": "t",
-            "nodes": [{"seat_token": 1548, "seat_agent": "50971", "role": "implement",
-                       "state": "accepted", "verdict_status": "accepted",
-                       "rejection_code": None, "revisions": 0, "at_ts": NOW}]},
-    }
-    rows = fold.seat_node_rows(details, seen, 1548)
-    assert len(rows) == 8
-    top = rows[0]
-    assert top["job_id"] == "seen-only" and top["at_ts"] == NOW - 10
-    assert top == {"job_id": "seen-only", "template": "seen-t", "node_key": "integrate_step",
-                   "role": "integrate", "state": "failed", "attempt": None,
-                   "revisions": 2, "verdict_status": "rejected",
-                   "rejection_code": "tests_failed", "failed_checks": [],
-                   "detail": None, "at_ts": NOW - 10}
-    keys = [(r["job_id"], r["node_key"]) for r in rows]
-    assert len(set(keys)) == len(keys)
-
-
-def _seen_node(key, role, at):
-    return {"key": key, "seat_token": 1548, "seat_agent": "50971", "role": role,
-            "state": "accepted", "verdict_status": "accepted", "rejection_code": None,
-            "revisions": 0, "at_ts": at}
-
-
-def test_seat_node_rows_dedupes_keyed_seen_nodes_and_keeps_unkeyed_ones(details):
-    """WP3 review: one seat, two seen nodes on ONE uncovered job.
-
-    Two summaries with the same ``key`` are one node written twice and
-    collapse to one row; two without a ``key`` are two unknowns and both
-    stay -- never dropped as duplicates the fold cannot prove.
-    """
-    since = NOW - 3600
-    seen = {
-        "twice": {"created_ts": since, "updated_ts": since, "state": "completed",
-                  "template": "t", "nodes": [_seen_node("a", "implement", NOW - 1),
-                                              _seen_node("a", "implement", NOW - 1)]},
-        "unkeyed": {"created_ts": since, "updated_ts": since, "state": "completed",
-                    "template": "t", "nodes": [_seen_node(None, "review", NOW - 2),
-                                                _seen_node(None, "implement", NOW - 3)]},
-    }
-    rows = fold.seat_node_rows({}, seen, 1548)
-    assert [(r["job_id"], r["node_key"], r["role"]) for r in rows] == [
-        ("twice", "a", "implement"),
-        ("unkeyed", None, "review"),
-        ("unkeyed", None, "implement"),
-    ]
-
-
-def test_seat_node_rows_for_an_unknown_seat_is_a_real_empty(details):
-    assert fold.seat_node_rows(details, {}, 424242) == []
-
-
-def test_seat_feedback_rows_on_the_corpus_seat(details):
-    rows = fold.seat_feedback_rows(details, 1548)
-    assert len(rows) == 17  # every reviews[].entries[] with agentId "50971"
-    assert all(r["value"] == 1 for r in rows)
-    assert all(r["chain_id"] == 1 for r in rows)
-    stamps = [r["sent_ts"] for r in rows if r["sent_ts"] is not None]
-    assert stamps == sorted(stamps, reverse=True)
-    # None sent_ts sorts last (the capture has queued reviews without sentAt).
-    firsts = [r["sent_ts"] is None for r in rows]
-    assert firsts == sorted(firsts)
-    row = rows[0]
-    assert row["job_id"] and row["node_key"] and row["tx_hash"].startswith("0x")
-    assert isinstance(row["block_number"], int)
-
-
-def test_seat_feedback_rows_carry_the_old_reviews_value_100_and_sepolia_chain(details):
-    """The old completed job's review entry (value 100) and the Sepolia one.
-
-    details/7018907b….json: the node's ``seat`` is null and the review's
-    ``chainId`` is null; details/4ba29896….json: seats null too, but its
-    review is on chainId 11155111 and also scores agentId "10303" with 100.
-    Neither job resolves agent 10303 to a token on its own, so the seat is
-    hand-attached to the 7018907b node (the only edit) and the two real
-    reviews are read through it.
-    """
-    old = copy.deepcopy(details[OLD_COMPLETED])
-    assert old["nodes"][0]["seat"] is None
-    assert old["reviews"][0]["chainId"] is None
-    old["nodes"][0]["seat"] = {"tokenId": "9999", "agentId": "10303"}  # HAND-ATTACHED
-    rows = fold.seat_feedback_rows({OLD_COMPLETED: old, OLD_CANCELLED: details[OLD_CANCELLED]},
-                                   9999)
-    assert [r["job_id"] for r in rows] == [OLD_CANCELLED, OLD_COMPLETED]  # newest sent first
-    assert all(r["value"] == 100 for r in rows)
-    sepolia, mainnet_unknown = rows
-    assert sepolia["chain_id"] == 11155111
-    assert sepolia["sent_ts"] == _iso("2026-09-17T05:24:01.898Z")
-    assert mainnet_unknown["chain_id"] is None  # the capture's real null, not a guess
-    assert mainnet_unknown["node_key"] == "build_website"
-    assert mainnet_unknown["tx_hash"] == (
-        "0x83707e529aabd69f598b156f0c39b02e44a9a937f0096b987d6ac95385dd7fa5"
-    )
-    assert mainnet_unknown["block_number"] == 11714363
-    assert mainnet_unknown["sent_ts"] == _iso("2026-09-16T04:06:52.401Z")
-
-
-def test_seat_feedback_rows_for_a_seat_without_feedback_is_an_empty_list_not_none(details):
-    # Seat 1731 (details/3dd1eb8e….json, agentId "50955") -- its entries exist,
-    # so use a seat that is on a node but whose agent never appears in entries.
-    hand = {"j": {"id": "j", "nodes": [{"key": "a", "role": "implement", "state": "working",
-                                        "seat": {"tokenId": "31337", "agentId": "nobody"}}],
-                  "reviews": [{"status": "queued", "chainId": 1, "txHash": None,
-                               "blockNumber": None, "sentAt": None, "entries": []}]}}
-    assert fold.seat_feedback_rows(hand, 31337) == []
-    assert fold.seat_feedback_rows(details, 424242) == []
-    assert fold.seat_feedback_rows(details, None) == []
 
 
 # ---------------------------------------------------------------------------

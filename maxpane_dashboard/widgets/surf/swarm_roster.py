@@ -234,14 +234,9 @@ class SurfSwarmRoster(SwarmTableBase):
         swarm_seat_selected=None,
         swarm_roster_window=None,
         swarm_scores_as_of_hhmm=None,
-        swarm_seat_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
-        """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it).
-
-        ``swarm_seat_as_of_hhmm`` is transitional and ignored (the seat tier's
-        marker, not the roster's); the WP5 contract flip removes it.
-        """
+        """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it)."""
         selected = swarm_seat_selected if isinstance(swarm_seat_selected, dict) else {}
         self.selected_token = _token(selected.get("token_id"))
         self.TITLE = f"{type(self).TITLE} · {window_words(swarm_roster_window)}"

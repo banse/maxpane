@@ -25,7 +25,9 @@ This module only paints ``swarm_seat_summary`` (fields
 *pending* is ``submitted + queued``, a subset of *reviewed* (plan Q-M);
 the three status rows add up to it. A counter row is ``●`` above zero and a
 dim ``○`` at a **real zero**, which renders ``0`` (``0 of 0``) -- only a
-``None`` field renders ``unavailable``, on its own row.
+``None`` field renders ``unavailable``, on its own row. The same split holds
+for text: a ``runtime`` of ``""`` (the seat's ``runtimes`` list was served
+empty) renders a dim ``none``, never ``unavailable``.
 
 **Third-party text** -- the runtime, the role words -- goes through
 ``markup_safety.sanitize_cell`` (flatten, strip bracket runs, clip, escape)
@@ -61,9 +63,11 @@ from maxpane_dashboard.widgets.surf._swarm_seat import seat_state_line
 __all__ = [
     "BLOCK_IDS",
     "NO_FEEDBACK_LINE",
+    "PANEL_MAX_WIDTH",
     "ROW_IDS",
     "RUNTIME_COLS",
     "SurfSwarmSeatVerdicts",
+    "VALUE_COLS",
 ]
 
 #: The score row when no review carried a value: not a score of zero.
@@ -102,17 +106,48 @@ _LABELS = {
 #: The label column: the longest label is ``accepted`` / ``reviewed`` (8).
 _LABEL_WIDTH = 11
 
-#: The runtime's clip, in cells. The panel's content is ``max-width: 46``
-#: less its own and the line's ``padding: 0 1`` = 42; a row spends
-#: ``2 + 1 + 1 + _LABEL_WIDTH + 1`` = 16 before its value, leaving 26 --
+#: The panel's ``max-width`` in ``minimal.tcss`` -- a hand-typed copy of the
+#: stylesheet's number, bound to it by an agreement test in
+#: ``tests/widgets/test_surf_swarm_seat_verdicts.py``. Not a layout pin: the
+#: panel's width is WP6's to sweep, and the fits below follow it.
+PANEL_MAX_WIDTH = 46
+
+#: The panel's own and the line's ``padding: 0 1``, both sides.
+_PADDING_COLS = 2 + 2
+
+#: What a row spends before its value: ``"  " + indicator + " " + label + " "``.
+_HEAD_COLS = 2 + 1 + 1 + _LABEL_WIDTH + 1
+
+#: The cells a row's value has at the panel's max-width (26 today).
+VALUE_COLS = PANEL_MAX_WIDTH - _PADDING_COLS - _HEAD_COLS
+
+#: The runtime's clip, in cells: the value column --
 #: ``claude 2.1.278 (Claude Code)`` (28) is clipped with a visible ``…``.
-#: A widget constant, not a layout pin: the panel's width is WP6's to sweep.
-RUNTIME_COLS = 26
+RUNTIME_COLS = VALUE_COLS
 
 #: One role word's clip: a role is third-party text of no fixed length.
 _ROLE_COLS = 16
 
 ON, OFF, INFO = "●", "○", "·"
+
+
+def _fit_roles(parts: list[str], cols: int) -> str:
+    """Join role cells (escaped markup) into at most *cols* cells.
+
+    Every role whole when they all fit; otherwise the longest prefix, in the
+    fold's order (count descending), that fits beside ``+N more`` -- the roles
+    left out are counted on screen, never clipped away in silence.
+    """
+    def width(cells: list[str]) -> int:
+        return Text.from_markup(" · ".join(cells)).cell_len
+
+    if width(parts) <= cols:
+        return " · ".join(parts)
+    for keep in range(len(parts) - 1, -1, -1):
+        cells = parts[:keep] + [f"+{len(parts) - keep} more"]
+        if width(cells) <= cols:
+            return " · ".join(cells)
+    return f"+{len(parts)} more"
 
 
 def _count(value: object) -> int | None:
@@ -311,8 +346,13 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
         return Text.from_markup(f"  [yellow]●[/] [dim]{label:<{self.LABEL_WIDTH}}[/] {UNAVAILABLE}")
 
     def _runtime_line(self, runtime: object) -> Text:
+        """``runtime · <id> <version>``; ``none`` for ``""`` -- the fold's word
+        for a served, empty ``runtimes`` list (seat #0 runs nothing: a real
+        negative, never ``unavailable``); ``unavailable`` only for ``None``."""
         if runtime is None:
             return self._text_fallback("runtime")
+        if runtime == "":
+            return self._head("runtime") + Text("none", style="dim")
         # Escaped by ``sanitize_cell`` and parsed right here, inside the guard.
         return self._head("runtime") + Text.from_markup(sanitize_cell(runtime, RUNTIME_COLS))
 
@@ -327,7 +367,11 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
         )
 
     def _roles_line(self, roles: object) -> Text:
-        """``by role     implement 71 · review 1``; ``none`` for an empty list."""
+        """``by role     implement 71 · review 1``; ``none`` for an empty list.
+
+        Fitted to ``VALUE_COLS``: roles that do not fit are counted as
+        ``+N more`` (``implement 196 · +2 more`` for seat #0), never clipped.
+        """
         if not isinstance(roles, list):
             return self._text_fallback("by role")
         parts = []
@@ -342,4 +386,4 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
         head = self._head("by role", indicator=" ")
         if not parts:
             return head + Text("none", style="dim")
-        return head + Text.from_markup(" · ".join(parts))
+        return head + Text.from_markup(_fit_roles(parts, VALUE_COLS))

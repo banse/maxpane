@@ -793,13 +793,10 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
 #: **Filled for the fourth time** (WP0 of ``docs/surf_agent_seats_plan.md``,
 #: 2026-09-21): the three ``/seats`` keys (plan §1.1) are frozen in
 #: ``SWARM_KEYS`` while ``SWARM_WIDGET_SIGNATURES`` still names the
-#: window-based ones; WP3/WP4 build to ``SWARM_AGENT_SIGNATURES_NEXT`` and
-#: WP5 flips the export and empties this set again.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({
-    "swarm_seat_state",
-    "swarm_seat_work_rows",
-    "swarm_roster_window",
-})
+#: window-based ones; WP3/WP4 build to the plan's transitional targets.
+#: **Emptied for the fourth time by that plan's WP5** (2026-09-21): the
+#: export is flipped, so all three reach a widget kwarg.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -1606,46 +1603,36 @@ def _sample_data() -> dict:
         ],
         "swarm_seat_selected": {"token_id": 1548, "agent_id": "50971",
                                 "selected_by": "most_active"},
+        # The seat's lifetime /seats record (docs/surf_agent_seats_spec.md §4).
+        "swarm_seat_state": "ok",
         "swarm_seat_summary": {
-            "nodes": 7, "jobs": 6, "accepted": 7, "rejected": 0,
-            "revisions": 0, "mean_score": None, "scored": 0,
-            "working_now": True,
-            "first_seen_ts": _TS_POST_13 - 86_400.0,
-            "last_active_ts": _TS_POST_13 - 60.0,
-            "roles": [{"role": "implement", "count": 5},
+            "attempts": 10, "accepted": 4, "reviewed": 9,
+            "review_status": {"sent": 8, "submitted": 1, "queued": 0},
+            "mean_score": 1.0, "scored": 9,
+            "roles": [{"role": "implement", "count": 7},
                       {"role": "review", "count": 2}],
-            "rejection_codes": [],
+            "online": True, "owner": None,
+            "paired_ts": _TS_POST_13 - 86_400.0,
+            "last_active_ts": _TS_POST_13 - 60.0,
+            "collaborators": 3, "runtime": "claude 2.1.278",
         },
-        "swarm_seat_node_rows": [
-            {"job_id": "job-4471", "template": "surf-swarm-view",
-             "node_key": "codex-14", "role": "implement", "state": "working",
-             "attempt": 1, "revisions": 1, "verdict_status": None,
-             "rejection_code": None, "failed_checks": [], "detail": None,
-             "at_ts": _TS_POST_13 - 60.0},
-            {"job_id": "job-4402", "template": "identity-md-fix",
-             "node_key": "codex-14", "role": "implement",
-             "state": "accepted", "attempt": 2, "revisions": 1,
-             "verdict_status": "accepted", "rejection_code": None,
-             "failed_checks": ["lint"], "detail": "passed on the second run",
-             "at_ts": _TS_POST_13 - 4_000.0},
-        ],
         "swarm_seat_feedback_rows": [
-            {"value": 90, "node_key": "codex-14", "job_id": "job-4402",
+            {"value": 90, "verdict": "accepted", "status": "sent",
+             "node_key": "codex-14", "role": "implement", "job_id": "job-4402",
              "tx_hash": "0x" + "55" * 32, "chain_id": 11_155_111,
-             "block_number": 8_949_950, "sent_ts": _TS_POST_13 - 3_900.0},
-            {"value": 0, "node_key": "codex-14", "job_id": "job-4390",
-             "tx_hash": None, "chain_id": None, "block_number": None,
-             "sent_ts": None},
+             "sent_ts": _TS_POST_13 - 3_900.0},
+            {"value": 0, "verdict": "accepted", "status": "queued",
+             "node_key": "codex-14", "role": "review", "job_id": "job-4390",
+             "tx_hash": None, "chain_id": None, "sent_ts": None},
         ],
-        # The /seats work[] row (AGENT-seats WP0, plan §1.1), one per declared
-        # shape for the row-shape walk; no widget reads it until the WP5 flip.
+        "swarm_roster_window": {"jobs": 100, "oldest_ts": _TS_POST_13 - 12_000.0},
+        # The /seats work[] rows (AGENT-seats plan §1.1).
         "swarm_seat_work_rows": [
             {"job_id": "job-4402", "node_key": "codex-14", "role": "implement",
              "job_state": "completed", "objective": "Fix the identity.md link",
              "accepted_ts": _TS_POST_13 - 4_000.0},
         ],
-        # The slow tier's marker under the AGENT body's own name (A1) --
-        # the same slot as `swarm_scores_as_of_hhmm`, so the same value.
+        # The seat tier's own marker (AGENT-seats plan §1.1).
         "swarm_seat_as_of_hhmm": "13:50",
     }
 

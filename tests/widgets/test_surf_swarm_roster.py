@@ -2,10 +2,9 @@
 
 Composited assertions only (``rules/widgets.md``). The hand rows are bound to
 ``SURF_ROW_KEYS["swarm_seat_rows"]`` so a drifted shape reddens here rather
-than on screen. The per-class contract is imposed against the target export
-``SWARM_AGENT_SIGNATURES_NEXT`` until WP5 flips ``SWARM_WIDGET_SIGNATURES``;
-the one retiring parameter is named here exactly so WP5's removal is a
-visible edit. The title's window is **folded** from the committed
+than on screen. The per-class contract is imposed against
+``SWARM_WIDGET_SIGNATURES`` (flipped in WP5, which also removed the one
+transitional parameter). The title's window is **folded** from the committed
 ``jobs_window_100.json`` by ``data/surf_swarm.roster_window`` (the manager's
 own fold), never hand-typed.
 """
@@ -16,7 +15,7 @@ import inspect
 
 from textual.app import App
 
-from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_AGENT_SIGNATURES_NEXT
+from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.data.surf_swarm import roster_window
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.surf.swarm_roster import (
@@ -32,9 +31,7 @@ from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
 from tests.surf_swarm_fixtures import swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
 
-SIGNATURE = SWARM_AGENT_SIGNATURES_NEXT["SurfSwarmRoster"]
-#: Sent by the screen until WP5 (the seat tier's marker now), never painted.
-TRANSITIONAL = ("swarm_seat_as_of_hhmm",)
+SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmRoster"]
 
 JOBS_WINDOW = swarm_seat_capture("jobs_window_100")
 WINDOW = roster_window(JOBS_WINDOW["jobs"])
@@ -88,11 +85,10 @@ def _row_with(lines, needle):
 # -- the self-imposed contract ------------------------------------------------------
 
 
-def test_update_data_names_the_target_signature_then_the_transitional_param():
+def test_update_data_names_exactly_the_signature():
     sig = inspect.signature(SurfSwarmRoster.update_data)
     params = [n for n, p in sig.parameters.items() if n != "self" and p.kind is not p.VAR_KEYWORD]
-    assert tuple(params) == SIGNATURE + TRANSITIONAL
-    assert all(sig.parameters[n].default is None for n in TRANSITIONAL)
+    assert tuple(params) == SIGNATURE
     assert any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
 
 
@@ -145,7 +141,7 @@ async def test_no_args_and_all_none_render_unavailable_without_raising():
     assert "Loading" not in "\n".join(bare)
     none = await composite_lines(
         SurfSwarmRoster, SIZE,
-        **{k: None for k in SIGNATURE + TRANSITIONAL},
+        **{k: None for k in SIGNATURE},
     )
     assert "unavailable" in "\n".join(none)
 

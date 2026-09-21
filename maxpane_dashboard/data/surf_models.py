@@ -1469,12 +1469,10 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_site_rows",          # list[dict]   -- /sites
     "swarm_seat_rows",          # list[dict]   -- AGENT body roster, one per seat seen
     "swarm_seat_selected",      # dict | None  -- {token_id, agent_id, selected_by}
-    "swarm_seat_summary",       # dict | None  -- the selected seat's counters
-    "swarm_seat_node_rows",     # list[dict]   -- the selected seat's nodes, newest first  # retired in WP5
-    "swarm_seat_feedback_rows", # list[dict]   -- the selected seat's on-chain feedback
-    "swarm_seat_as_of_hhmm",    # str | None   -- the slow tier's marker, read by the AGENT body
-    # ---- AGENT body on /seats/{tokenId} (WP0, 2026-09-21), docs/surf_agent_seats_spec.md §4.
-    # Additive: no widget reads these until the WP5 flip (see SWARM_AGENT_SIGNATURES_NEXT).
+    "swarm_seat_summary",       # dict | None  -- the selected seat's lifetime record (/seats)
+    "swarm_seat_feedback_rows", # list[dict]   -- the selected seat's reviews (/seats reviews[])
+    "swarm_seat_as_of_hhmm",    # str | None   -- the seat tier's marker (SLOT_SWARM_SEAT)
+    # ---- AGENT body on /seats/{tokenId} (2026-09-21), docs/surf_agent_seats_spec.md §4.
     "swarm_seat_state",         # str | None   -- SWARM_SEAT_STATES; None = read failed, no last-good
     "swarm_seat_work_rows",     # list[dict]   -- /seats work[], lifetime, newest first
     "swarm_roster_window",      # dict | None  -- SWARM_ROSTER_WINDOW_FIELDS, for the ROSTER title
@@ -1490,22 +1488,25 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
-    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmRoster": ("swarm_seat_rows", "swarm_seat_selected", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmSeatRecord": ("swarm_seat_node_rows", "swarm_seat_as_of_hhmm", "swarm_network"),
-    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmSeatFeedback": ("swarm_seat_feedback_rows", "swarm_seat_as_of_hhmm"),
+    # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
+    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmRoster": ("swarm_seat_rows", "swarm_seat_selected", "swarm_roster_window", "swarm_scores_as_of_hhmm"),
+    "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmSeatFeedback": ("swarm_seat_feedback_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
 }
 
 # ---- AGENT body on /seats/{tokenId} (spec docs/surf_agent_seats_spec.md §4, plan §1.2) ----
 
-#: ``swarm_seat_selected``'s fields. ``unseen_token`` is not one of them (decision D1).
+#: ``swarm_seat_selected``'s fields (decision D1).
 SWARM_SEAT_SELECTED_FIELDS: tuple[str, ...] = ("token_id", "agent_id", "selected_by")
 
 #: ``swarm_seat_summary``'s fields, the seat's lifetime record from ``/seats``. Every
 #: field is ``None`` when the source did not carry it. ``reviewed`` counts every review,
 #: pending ones included (plan Q-M); ``review_status`` is keyed by
-#: :data:`SWARM_SEAT_REVIEW_STATUSES`.
+#: :data:`SWARM_SEAT_REVIEW_STATUSES`. ``runtime`` is ``""`` for a served, empty
+#: ``runtimes`` list (a real "none", seat #0) and ``None`` only when the source did not
+#: carry a usable list -- never "could not look" for a seat that runs nothing.
 SWARM_SEAT_SUMMARY_FIELDS: tuple[str, ...] = (
     "attempts", "accepted", "reviewed", "review_status", "mean_score", "scored",
     "roles", "online", "owner", "paired_ts", "last_active_ts", "collaborators", "runtime",
@@ -1522,24 +1523,6 @@ SWARM_SEAT_STATES: tuple[str, ...] = ("ok", "unknown_seat", "pending")
 
 #: ``swarm_roster_window``'s fields: the roster is folded from the ``/jobs`` window.
 SWARM_ROSTER_WINDOW_FIELDS: tuple[str, ...] = ("jobs", "oldest_ts")
-
-# ---- transitional: WP0 adds these, WP5 flips the contract to them and deletes them ----
-
-#: The target ``swarm_seat_feedback_rows`` shape (``block_number`` retires, not served).
-SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT: tuple[str, ...] = (
-    "value", "verdict", "status", "node_key", "role", "job_id", "tx_hash", "chain_id",
-    "sent_ts",
-)
-
-#: The five AGENT widgets' target signatures (plan §1.3). WP3/WP4 build to these;
-#: SWARM_WIDGET_SIGNATURES keeps the current ones until WP5.
-SWARM_AGENT_SIGNATURES_NEXT: dict[str, tuple[str, ...]] = {
-    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmRoster": ("swarm_seat_rows", "swarm_seat_selected", "swarm_roster_window", "swarm_scores_as_of_hhmm"),
-    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmSeatFeedback": ("swarm_seat_feedback_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-}
 
 
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
@@ -1835,17 +1818,12 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "accepted", "rejected", "revisions", "mean_score", "scored",
         "working_now", "last_active_ts",
     ),
-    "swarm_seat_node_rows": (  # retired in WP5
-        "job_id", "template", "node_key", "role", "state", "attempt",
-        "revisions", "verdict_status", "rejection_code",
-        "failed_checks",  # list[str]
-        "detail", "at_ts",
-    ),
-    "swarm_seat_feedback_rows": (  # WP5 reshapes to SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT
-        "value", "node_key", "job_id", "tx_hash", "chain_id", "block_number",
+    # /seats reviews[], one row per scored submission (spec §4). No block number: not served.
+    "swarm_seat_feedback_rows": (
+        "value", "verdict", "status", "node_key", "role", "job_id", "tx_hash", "chain_id",
         "sent_ts",
     ),
-    # /seats work[], one row per accepted submission (spec §4; replaces swarm_seat_node_rows).
+    # /seats work[], one row per accepted submission (spec §4).
     "swarm_seat_work_rows": (
         "job_id", "node_key", "role", "job_state", "objective", "accepted_ts",
     ),

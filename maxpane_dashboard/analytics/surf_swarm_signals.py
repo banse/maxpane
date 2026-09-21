@@ -20,7 +20,7 @@ from typing import Any
 
 __all__ = [
     "completed_within", "count_by", "duration_stats", "launch_summary",
-    "seat_summary", "seen_since_ts", "skill_summary", "state_rollup",
+    "seen_since_ts", "skill_summary", "state_rollup",
 ]
 
 
@@ -148,37 +148,3 @@ def completed_within(seen: object, now_ts: float,
         if updated is not None and updated >= floor:
             count += 1
     return count, since
-
-
-def seat_summary(node_rows: Sequence[Mapping[str, Any]],
-                 feedback_rows: Sequence[Mapping[str, Any]], *,
-                 working_now: bool) -> dict[str, Any] | None:
-    """The selected seat's counters (plan A1, ``swarm_seat_summary``).
-
-    ``None`` when the seat has no nodes: there is no seat to summarise.
-    ``mean_score`` is ``None`` and ``scored`` is ``0`` when no numeric
-    feedback value exists -- "no feedback yet" is a real empty, distinct
-    from a score of zero.
-    """
-    nodes = [r for r in node_rows if isinstance(r, Mapping)]
-    if not nodes:
-        return None
-    feedback = [r for r in feedback_rows if isinstance(r, Mapping)]
-    values = [v for v in (_number(r.get("value")) for r in feedback) if v is not None]
-    stamps = [s for s in (_number(r.get("at_ts")) for r in nodes) if s is not None]
-    statuses = [r.get("verdict_status") for r in nodes]
-    return {
-        "nodes": len(nodes),
-        "jobs": len({r.get("job_id") for r in nodes if r.get("job_id") is not None}),
-        "accepted": sum(1 for s in statuses if s == "accepted"),
-        "rejected": sum(1 for s in statuses if s == "rejected"),
-        "revisions": sum(v for v in (_number(r.get("revisions")) for r in nodes)
-                         if v is not None),
-        "mean_score": round(statistics.fmean(values), 2) if values else None,
-        "scored": len(values),
-        "working_now": bool(working_now),
-        "first_seen_ts": min(stamps) if stamps else None,
-        "last_active_ts": max(stamps) if stamps else None,
-        "roles": count_by((r.get("role") for r in nodes), "role"),
-        "rejection_codes": count_by((r.get("rejection_code") for r in nodes), "code"),
-    }

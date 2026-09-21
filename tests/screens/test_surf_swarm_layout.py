@@ -40,7 +40,6 @@ import maxpane_dashboard.data.surf_swarm as sw
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.analytics.surf_swarm_signals import (
     launch_summary,
-    seat_summary,
     skill_summary,
 )
 from maxpane_dashboard.screens.surf import (
@@ -77,7 +76,12 @@ from tests.screens.test_surf_screen import (
     _screen_text,
     _surf_app,
 )
-from tests.surf_swarm_fixtures import swarm_capture_v2, swarm_details_v2, swarm_manifest_v2
+from tests.surf_swarm_fixtures import (
+    swarm_capture_v2,
+    swarm_details_v2,
+    swarm_manifest_v2,
+    swarm_seat_capture,
+)
 
 # ---------------------------------------------------------------------------
 # The measured numbers
@@ -170,9 +174,26 @@ _NOW = dt.datetime.fromisoformat(
 ).timestamp()
 
 
+def _seat_keys(seat: dict) -> dict:
+    """The AGENT body's seat-tier keys for one committed ``/seats`` capture,
+    folded as ``SurfManager._swarm_seat_keys`` folds a read for the selected
+    token (the WP1b fold, ``docs/surf_agent_seats_plan.md``)."""
+    return {
+        "swarm_seat_state": "ok",
+        "swarm_seat_summary": sw.seat_summary_from_seat(seat),
+        "swarm_seat_work_rows": sw.seat_work_rows(seat),
+        "swarm_seat_feedback_rows": sw.seat_review_rows(seat),
+    }
+
+
 def _corpus_keys() -> dict:
     """Every v2 contract key folded from the committed capture, as the
-    manager would (``data/surf_swarm.py`` folds, ``analytics`` summaries)."""
+    manager would (``data/surf_swarm.py`` folds, ``analytics`` summaries).
+
+    The roster is the ``/jobs`` window fold; the selected seat is the most
+    active one there (``choose_seat``, nothing saved), which is seat #0 --
+    the largest committed ``/seats`` capture (26 work, 202 reviews) -- and
+    its record is the WP1b fold over that capture."""
     health = swarm_capture_v2("health")
     jobs = swarm_capture_v2("jobs")["jobs"]
     details = swarm_details_v2()
@@ -184,11 +205,10 @@ def _corpus_keys() -> dict:
     skill_rows = sw.skill_rows(skills)
     launch_rows = sw.launch_rows(launches)
     seat_rows = sw.seat_rows(details, seen)
-    selected = sw.pick_seat(seat_rows, None, None)
+    selected = sw.choose_seat(seat_rows, None, None)
     token = selected["token_id"]
-    node_rows = sw.seat_node_rows(details, seen, token)
-    feedback = sw.seat_feedback_rows(details, token)
-    working = any(r.get("state") == "working" for r in node_rows)
+    seat = swarm_seat_capture(f"seat_{token}")
+    assert sw.seat_state(seat, token) == "ok", "the corpus's most active seat has a capture"
     return {
         "swarm_agents_online": hf.get("agents_online"),
         "swarm_agents_enrolled": hf.get("agents_enrolled"),
@@ -206,9 +226,8 @@ def _corpus_keys() -> dict:
         "swarm_site_rows": sw.site_rows(sites),
         "swarm_seat_rows": seat_rows,
         "swarm_seat_selected": selected,
-        "swarm_seat_summary": seat_summary(node_rows, feedback, working_now=working),
-        "swarm_seat_node_rows": node_rows,
-        "swarm_seat_feedback_rows": feedback,
+        "swarm_roster_window": sw.roster_window(jobs),
+        **_seat_keys(seat),
         "swarm_seat_as_of_hhmm": "00:08",
         "swarm_scores_as_of_hhmm": "00:08",
         "swarm_as_of_hhmm": "00:08",
@@ -264,8 +283,14 @@ def _worst_swarm_payload() -> dict:
 
 
 def _worst_agent_payload() -> dict:
-    """A1's `a` worst case: 30 seats, the selected seat on 40 nodes with a
-    400-character detail and a rejection code each, 12 feedback rows."""
+    """The `a` worst case on the lifetime record: 30 roster seats; the
+    selected seat's RECORD at its 40-row cap with 400-character objectives
+    and long node keys; FEEDBACK over seat #0's 202 reviews with #420's
+    queued and submitted rows on top (every status and chain cell shape);
+    SEAT RECORD with #420's longest runtime and a full owner address.
+
+    Every row is a WP1b fold of a committed ``/seats`` capture, then
+    lengthened -- never hand-typed from scratch."""
     k = _corpus_keys()
     seats = _cycle(k["swarm_seat_rows"], 30)
     for i, row in enumerate(seats):
@@ -274,30 +299,25 @@ def _worst_agent_payload() -> dict:
         row["nodes"] = 40 - i
     seats[0]["token_id"] = k["swarm_seat_selected"]["token_id"]
     seats[0]["agent_id"] = k["swarm_seat_selected"]["agent_id"]
-    nodes = _cycle(k["swarm_seat_node_rows"], 40)
-    for i, row in enumerate(nodes):
+    seat0 = swarm_seat_capture("seat_0")
+    seat420 = swarm_seat_capture("seat_420")
+    work = _cycle(sw.seat_work_rows(seat0), 40)
+    for i, row in enumerate(work):
         row["job_id"] = f"{i:08x}-worst-case-job"
-        row["node_key"] = "build_contract_project"
-        row["role"] = "implement"
-        row["verdict_status"] = "rejected"
-        row["rejection_code"] = "tests_failed"
-        row["failed_checks"] = ["pytest", "ruff", "mypy"]
-        row["detail"] = (
-            "the verifier rejected the change because the suite failed on three "
-            "checks and the diff touched a pinned layout constant without a re-sweep; " * 4
+        row["node_key"] = "build_contract_project_with_a_long_key"
+        row["objective"] = (
+            "build the ERC-4626 vault and wire its deposit and withdraw paths "
+            "through the launchpad adapter, then re-sweep every pinned layout; " * 6
         )[:400]
-        row["attempt"] = 3
-        row["revisions"] = 2
-    feedback = _cycle(k["swarm_seat_feedback_rows"] or [{
-        "value": 100, "node_key": "build_contract_project",
-        "job_id": "ad7bebb8-fd1a-4268-b831-1c253a85ae4c",
-        "tx_hash": "0x" + "55" * 32, "chain_id": 1,
-        "block_number": 23_000_000, "sent_ts": _NOW - 100,
-    }], 12)
+    pending = [r for r in sw.seat_review_rows(seat420) if r["status"] != "sent"]
+    assert {r["status"] for r in pending} == {"submitted", "queued"}
+    feedback = pending + sw.seat_review_rows(seat0)
+    summary = sw.seat_summary_from_seat(seat0)
+    summary["runtime"] = sw.seat_summary_from_seat(seat420)["runtime"]
+    assert summary["owner"] and summary["runtime"]
     k.update({
-        "swarm_seat_rows": seats, "swarm_seat_node_rows": nodes,
-        "swarm_seat_feedback_rows": feedback,
-        "swarm_seat_summary": seat_summary(nodes, feedback, working_now=True),
+        "swarm_seat_rows": seats, "swarm_seat_work_rows": work,
+        "swarm_seat_feedback_rows": feedback, "swarm_seat_summary": summary,
     })
     return _frozen_payload(**k)
 

@@ -1413,16 +1413,17 @@ _NON_NUMERIC_KEYS = frozenset(
         # Five dicts: `None` vs `{}`, as `swarm_throughput` above.
         "swarm_breaker", "swarm_skill_summary", "swarm_launch_summary",
         "swarm_seat_selected", "swarm_seat_summary",
-        # Seven list[dict] row payloads.
+        # Six list[dict] row payloads (a seventh, the window fold's node
+        # rows, retired in WP5 of docs/surf_agent_seats_plan.md).
         "swarm_inflight_rows", "swarm_skill_rows", "swarm_launch_rows",
-        "swarm_site_rows", "swarm_seat_rows", "swarm_seat_node_rows",
+        "swarm_site_rows", "swarm_seat_rows",
         "swarm_seat_feedback_rows",
         # The AGENT body's own tier marker, the slow slot's clock under a
         # second name (A1).
         "swarm_seat_as_of_hhmm",
         # -- AGENT body on /seats/{tokenId} (WP0 of
-        # docs/surf_agent_seats_plan.md, 2026-09-21; no widget reads them
-        # until the WP5 flip) ----------------------------------------------
+        # docs/surf_agent_seats_plan.md, 2026-09-21; read on screen since
+        # that plan's WP5 flip) --------------------------------------------
         # None is int/float: a closed-vocabulary str (`SWARM_SEAT_STATES`,
         # the family of `pool4_stakers_state`; `None` = read failed, no
         # last-good), a list[dict] row payload (`None` vs `[]`), and a dict

@@ -1,7 +1,10 @@
 """Fold the IMD swarm control plane's reads into rows the panels render.
 
-Pure: stdlib plus the pure ``analytics/surf_swarm_signals`` rollups.  No
-network, no clock (callers pass ``now_ts``), no Textual.  The shapes this
+Pure: stdlib, the pure ``analytics/surf_swarm_signals`` rollups, the
+``data/surf_models`` contract tuples, and one constant from
+``surf_swarm_client`` (``UNKNOWN_SEAT``, the client's normalised 404 -- the
+fold imports the value, never calls the client).  No network, no clock
+(callers pass ``now_ts``), no Textual.  The shapes this
 folds are recorded in ``docs/imd_swarm_api.md``; the reader that fetches
 them is ``surf_swarm_client.py``.  The v1 folds (field / queue / blocked /
 shipped / score rows and the old ``throughput``) retired with their widgets
@@ -23,8 +26,7 @@ from maxpane_dashboard.analytics.surf_swarm_signals import (
     completed_within, count_by, duration_stats, seen_since_ts, state_rollup,
 )
 from maxpane_dashboard.data.surf_models import (
-    SURF_ROW_KEYS, SWARM_ROSTER_WINDOW_FIELDS, SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT,
-    SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
+    SURF_ROW_KEYS, SWARM_ROSTER_WINDOW_FIELDS, SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
     SWARM_SEAT_SUMMARY_FIELDS,
 )
 # A constant only: the client owns the normalised ``unknown_seat`` result, so
@@ -34,8 +36,8 @@ from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT
 __all__ = [
     "health_facts", "network_of",
     # swarm v2 (WP3)
-    "breaker", "inflight_rows", "launch_rows", "merge_seen", "pick_seat",
-    "queue_total", "seat_feedback_rows", "seat_node_rows", "seat_rows",
+    "breaker", "inflight_rows", "launch_rows", "merge_seen",
+    "queue_total", "parse_seat_token", "seat_rows",
     "seen_entry", "seen_since_ts", "site_rows", "skill_rows",
     "throughput_facts",
     # AGENT body on /seats/{tokenId} (docs/surf_agent_seats_plan.md WP1b)
@@ -107,8 +109,7 @@ def health_facts(health: Mapping[str, Any] | None) -> dict[str, Any]:
 # ``s`` body and the ``a`` AGENT body read; the v1 folds that used to sit
 # above retired in WP7.
 #
-# Rules of this section: stdlib plus the pure ``analytics/surf_swarm_signals``
-# rollups imported above; ``now_ts`` injected; every enumeration
+# Rules of this section: stdlib plus the pure imports above (module docstring); ``now_ts`` injected; every enumeration
 # open (an unknown state is its own bucket); a value not read is ``None`` and
 # a real zero is ``0``; a non-Mapping where a Mapping is expected is skipped,
 # never raised on.  Every row dict carries exactly the fields
@@ -135,17 +136,24 @@ def _float(value: object) -> float | None:
     return value
 
 
-def _parse_token(value: object) -> int | None:
-    """An IDMD token id: an int, or a str that parses to one.  Else ``None``."""
+def parse_seat_token(value: object) -> int | None:
+    """An IDMD seat token as a caller or a source named it, or ``None``.
+
+    A non-negative, non-``bool`` ``int``, or a string of ASCII digits
+    (surrounding whitespace allowed) -- the one strict parser both this fold
+    and ``SurfManager`` use (a job node's ``seat.tokenId``, a persisted seen
+    summary's ``seat_token``, the ``seat=`` argument, the ROSTER row's text).
+    ``int()`` alone would accept a sign, ``_`` separators and non-ASCII
+    digits (``"١٥٤٨"``); anything like that is no token, never a guess.
+    """
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
-        return value
+        return value if value >= 0 else None
     if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return None
+        text = value.strip()
+        if text and text.isascii() and text.isdigit():
+            return int(text)
     return None
 
 
@@ -184,7 +192,7 @@ def _seat(node: Mapping[str, Any]) -> tuple[int | None, str | None]:
     seat = node.get("seat")
     if not isinstance(seat, Mapping):
         return None, None
-    return _parse_token(seat.get("tokenId")), _str(seat.get("agentId"))
+    return parse_seat_token(seat.get("tokenId")), _str(seat.get("agentId"))
 
 
 def _verdict(node: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -452,8 +460,9 @@ def _seen_node(node: Mapping[str, Any]) -> dict[str, Any]:
     token, agent = _seat(node)
     verdict = _verdict(node)
     return {
-        # ``key`` first: it is what lets ``seat_node_rows`` tell two seen
-        # nodes of one seat on one job apart (WP3 review, 2026-09-21).
+        # ``key`` first: it tells two seen nodes of one seat on one job apart
+        # (WP3 review, 2026-09-21). Its window-fold node-rows reader retired
+        # with the /seats plan's WP5; the persisted shape is unchanged.
         "key": _str(node.get("key")),
         "seat_token": token,
         "seat_agent": agent,
@@ -552,11 +561,11 @@ def merge_seen(seen: object, jobs: object, details: object, *,
     return dict(kept)
 
 
-# -- AGENT body (plan A1) --------------------------------------------------
+# -- AGENT body roster (plan A1; the window fold ROSTER still reads) --------
 
 
 def _seat_nodes(details: object, seen: object):
-    """Every ``(job_id, template, token, agent, node_summary, node_or_None)``.
+    """Every ``(job_id, template, token, agent, node_summary)``.
 
     Detail nodes first; seen nodes only for jobs no detail covers, so a job
     read both ways is counted once.  Nodes whose seat is absent or whose
@@ -569,12 +578,12 @@ def _seat_nodes(details: object, seen: object):
             token, agent = _seat(node)
             if token is None:
                 continue
-            yield job_id, template, token, agent, _seen_node(node), node
+            yield job_id, template, token, agent, _seen_node(node)
     for job_id, entry in _seen_entries(seen).items():
         if job_id in dmap:
             continue
         for summary in entry["nodes"]:
-            token = _parse_token(summary.get("seat_token"))
+            token = parse_seat_token(summary.get("seat_token"))
             if token is None:
                 continue
             yield job_id, entry["template"], token, _str(summary.get("seat_agent")), {
@@ -587,7 +596,7 @@ def _seat_nodes(details: object, seen: object):
                 "rejection_code": _str(summary.get("rejection_code")),
                 "revisions": _int(summary.get("revisions")),
                 "at_ts": _float(summary.get("at_ts")),
-            }, None
+            }
 
 
 def _scores_by_agent(details: object) -> dict[str, list[float]]:
@@ -610,7 +619,7 @@ def seat_rows(details: object, seen: object) -> list[dict[str, Any]]:
     is this seat's agent (``None``/``0`` when there are none).
     """
     acc: dict[int, dict[str, Any]] = {}
-    for job_id, _template, token, agent, summary, _node in _seat_nodes(details, seen):
+    for job_id, _template, token, agent, summary in _seat_nodes(details, seen):
         row = acc.setdefault(token, {
             "agent": None, "agent_at": None, "nodes": 0, "jobs": set(),
             "roles": set(), "accepted": 0, "rejected": 0, "revisions": 0,
@@ -655,139 +664,6 @@ def seat_rows(details: object, seen: object) -> list[dict[str, Any]]:
     return rows
 
 
-def pick_seat(rows: object, saved_token: object,
-              cursor_token: object = None) -> dict[str, Any] | None:
-    """``swarm_seat_selected``: which seat the AGENT body shows.
-
-    ``cursor`` (the user's row selection) wins when it names a seat in
-    ``rows``; else ``saved`` (the seat saved in ``~/.maxpane/config.toml``,
-    parsed to an int) when it does; else ``most_active`` = ``rows[0]``.
-    ``None`` when there are no rows -- no seat has been seen.
-
-    A saved seat that parses but is not on the roster is carried as
-    ``unseen_token`` on the ``most_active`` fallback, so the hero can say
-    the seat it shows is standing in for another rather than swap silently.
-    """
-    seats = _mappings(rows)
-    if not seats:
-        return None
-    by_token = {r.get("token_id"): r for r in seats}
-    for candidate, how in ((cursor_token, "cursor"), (saved_token, "saved")):
-        token = _parse_token(candidate)
-        if token is not None and token in by_token:
-            return {"token_id": token, "agent_id": by_token[token].get("agent_id"),
-                    "selected_by": how}
-    top = seats[0]
-    picked = {"token_id": top.get("token_id"), "agent_id": top.get("agent_id"),
-              "selected_by": "most_active"}
-    unseen = _parse_token(saved_token)
-    if unseen is not None:
-        picked["unseen_token"] = unseen
-    return picked
-
-
-def seat_node_rows(details: object, seen: object, token: object) -> list[dict[str, Any]]:
-    """``swarm_seat_node_rows``: the seat's nodes, newest ``at_ts`` first.
-
-    Detail nodes carry the full verdict; a seen node (a job no detail
-    covers) has no ``attempt``, ``detail`` or ``failed_checks`` --
-    ``None``/``[]``, never invented -- and its ``node_key`` is the key the
-    slot stored (``None`` for a summary written without one).  No duplicate
-    ``(job_id, node_key)`` among **keyed** nodes, whichever route each came
-    by; an unkeyed node is never dropped as a duplicate, because two
-    unknowns are not known to be the same node (WP3 review, 2026-09-21).
-    """
-    wanted = _parse_token(token)
-    if wanted is None:
-        return []
-    rows: list[dict[str, Any]] = []
-    keyed: set[tuple[str, str]] = set()
-    for job_id, template, tok, _agent, summary, node in _seat_nodes(details, seen):
-        if tok != wanted:
-            continue
-        node_key = summary["key"]
-        if node_key is not None:
-            if (job_id, node_key) in keyed:
-                continue
-            keyed.add((job_id, node_key))
-        if node is not None:
-            verdict = _verdict(node)
-            checks = verdict.get("failedChecks")
-            rows.append({
-                "job_id": job_id,
-                "template": template,
-                "node_key": node_key,
-                "role": summary["role"],
-                "state": summary["state"],
-                "attempt": _int(node.get("attempt")),
-                "revisions": summary["revisions"],
-                "verdict_status": summary["verdict_status"],
-                "rejection_code": summary["rejection_code"],
-                "failed_checks": ([c for c in checks if isinstance(c, str)]
-                                  if isinstance(checks, list) else []),
-                "detail": _str(verdict.get("detail")),
-                "at_ts": summary["at_ts"],
-            })
-        else:
-            rows.append({
-                "job_id": job_id,
-                "template": template,
-                "node_key": node_key,
-                "role": summary["role"],
-                "state": summary["state"],
-                "attempt": None,
-                "revisions": summary["revisions"],
-                "verdict_status": summary["verdict_status"],
-                "rejection_code": summary["rejection_code"],
-                "failed_checks": [],
-                "detail": None,
-                "at_ts": summary["at_ts"],
-            })
-    return _newest_first(rows, "at_ts")
-
-
-def seat_feedback_rows(details: object, token: object) -> list[dict[str, Any]]:
-    """``swarm_seat_feedback_rows``: on-chain feedback for one seat, newest first.
-
-    The seat's agent id(s) are resolved from its nodes across the details;
-    every ``reviews[].entries[]`` whose ``agentId`` matches becomes a row.
-    ``[]`` is a real "no feedback yet"; the manager serves ``None`` when the
-    sweep could not run.
-    """
-    wanted = _parse_token(token)
-    if wanted is None:
-        return []
-    dmap = _details_map(details)
-    agents = {
-        agent
-        for detail in dmap.values()
-        for agent, tok in (
-            (_seat(n)[1], _seat(n)[0]) for n in _mappings(detail.get("nodes"))
-        )
-        if tok == wanted and agent is not None
-    }
-    if not agents:
-        return []
-    rows: list[dict[str, Any]] = []
-    for job_id, detail in dmap.items():
-        for review in _mappings(detail.get("reviews")):
-            chain, tx = _int(review.get("chainId")), _str(review.get("txHash"))
-            block, sent = _int(review.get("blockNumber")), _ts(review.get("sentAt"))
-            for entry in _mappings(review.get("entries")):
-                if _str(entry.get("agentId")) not in agents:
-                    continue
-                rows.append({
-                    "value": _float(entry.get("value")),
-                    "node_key": _str(entry.get("nodeKey")),
-                    "job_id": job_id,
-                    "tx_hash": tx,
-                    "chain_id": chain,
-                    "block_number": block,
-                    "sent_ts": sent,
-                })
-    return _newest_first(rows, "sent_ts")
-
-
 # -- AGENT body on /seats/{tokenId} (docs/surf_agent_seats_plan.md WP1b) -----
 #
 # The seat's lifetime record, read one token at a time by
@@ -810,8 +686,8 @@ def _seat_id(value: object) -> int | None:
 def _served_token(value: object) -> int | None:
     """``/seats``' ``tokenId``: a decimal string of ASCII digits only, or an int.
 
-    Stricter than :func:`_parse_token`: ``int()`` and ``str.isdigit`` both
-    accept non-ASCII digits (``"١٥٤٨"``), whitespace, a sign and ``_``.
+    Stricter than :func:`parse_seat_token`: no surrounding whitespace, since a
+    served id is compared, not typed.
     """
     if isinstance(value, str):
         if not value or not _ASCII_DIGITS.issuperset(value):
@@ -856,9 +732,19 @@ def seat_state(payload: object, token: object) -> str | None:
 
 
 def _runtime(runtimes: object) -> str | None:
-    """``runtimes[0]`` as the raw ``"<id> <version>"`` (plan §1.1, §9 D)."""
+    """``runtimes[0]`` as the raw ``"<id> <version>"`` (plan §1.1, §9 D).
+
+    ``""`` for a served, **empty** list -- a seat that runs nothing (seat #0)
+    is a real negative, not "could not look" (CLAUDE.md: never a false
+    degradation).  ``None`` only when the source did not carry a usable list:
+    absent, not a list, or a first entry with neither ``id`` nor ``version``.
+    """
     listed = _list(runtimes)
-    if not listed or not isinstance(listed[0], Mapping):
+    if listed is None:
+        return None
+    if not listed:
+        return ""
+    if not isinstance(listed[0], Mapping):
         return None
     parts = [p for p in (_str(listed[0].get("id")), _str(listed[0].get("version")))
              if p is not None]
@@ -931,7 +817,7 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
 
 
 def seat_review_rows(payload: object) -> list[dict[str, Any]]:
-    """``swarm_seat_feedback_rows`` (the ``_NEXT`` shape): one row per
+    """``swarm_seat_feedback_rows``: one row per
     ``reviews[]`` entry, in source order.  A ``queued`` review has no tx yet:
     its ``tx_hash`` / ``chain_id`` / ``sent_ts`` are ``None`` whatever the
     payload says, so no widget can link one."""
@@ -952,7 +838,7 @@ def seat_review_rows(payload: object) -> list[dict[str, Any]]:
             "chain_id": None if queued else _int(review.get("chainId")),
             "sent_ts": None if queued else _ts(review.get("sentAt")),
         }
-        rows.append({key: row[key] for key in SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT})
+        rows.append({key: row[key] for key in SURF_ROW_KEYS["swarm_seat_feedback_rows"]})
     return rows
 
 

@@ -20,7 +20,6 @@ from maxpane_dashboard.data import surf_swarm as fold
 from maxpane_dashboard.data.surf_models import (
     SURF_ROW_KEYS,
     SWARM_ROSTER_WINDOW_FIELDS,
-    SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT,
     SWARM_SEAT_REVIEW_STATUSES,
     SWARM_SEAT_SELECTED_FIELDS,
     SWARM_SEAT_STATES,
@@ -128,9 +127,13 @@ def test_summary_420_is_the_explorer_record(seat420):
 
 
 def test_summary_0_offline_and_no_runtime():
-    summary = fold.seat_summary_from_seat(swarm_seat_capture("seat_0"))
+    seat = swarm_seat_capture("seat_0")
+    assert seat["runtimes"] == []                           # served, and empty
+    summary = fold.seat_summary_from_seat(seat)
     assert summary["online"] is False
-    assert summary["runtime"] is None                       # runtimes: []
+    # A real negative, distinct from "the source did not carry it" (None):
+    # CLAUDE.md, never a false degradation (WP3 review, fixed in WP5).
+    assert summary["runtime"] == ""
     assert (summary["accepted"], summary["attempts"]) == (26, 209)
     assert summary["reviewed"] == 202 and summary["scored"] == 202
     assert summary["review_status"] == {"sent": 189, "submitted": 13, "queued": 0}
@@ -176,7 +179,16 @@ _BAD_FIELD_CASES = {
     "runtimes": ("runtimes", "claude", {"runtime"}),
     "runtimes_member": ("runtimes", [["claude", "2.1"]], {"runtime"}),
     "runtimes_types": ("runtimes", [{"id": 1, "version": None}], {"runtime"}),
+    "runtimes_absent": ("runtimes", None, {"runtime"}),
 }
+
+
+def test_summary_runtime_empty_list_and_missing_list_are_different_values(seat420):
+    """``[]`` is "runs nothing" (``""``); no list at all is "not carried" (``None``)."""
+    seat420["runtimes"] = []
+    assert fold.seat_summary_from_seat(seat420)["runtime"] == ""
+    del seat420["runtimes"]
+    assert fold.seat_summary_from_seat(seat420)["runtime"] is None
 
 
 @pytest.mark.parametrize("case", sorted(_BAD_FIELD_CASES))
@@ -241,7 +253,7 @@ def test_summary_empty_lists_are_real_zeros_not_none(seat420):
     assert summary["review_status"] == {"sent": 0, "submitted": 0, "queued": 0}
     assert summary["roles"] == [] and summary["collaborators"] == 0
     assert summary["mean_score"] is None       # no score is not a zero score
-    assert summary["runtime"] is None and summary["last_active_ts"] is None
+    assert summary["runtime"] == "" and summary["last_active_ts"] is None
 
 
 def test_summary_roles_skip_non_strings_and_tie_break_on_role(seat420):
@@ -325,7 +337,7 @@ def test_review_rows_420_source_order_frozen_shape(seat420):
     rows = fold.seat_review_rows(seat420)
     assert len(rows) == 72
     for row in rows:
-        assert tuple(row) == SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT
+        assert tuple(row) == SURF_ROW_KEYS["swarm_seat_feedback_rows"]
     assert rows[0] == {
         "value": 1, "verdict": "accepted", "status": "sent",
         "node_key": "oracle_assess", "role": "implement",
@@ -437,7 +449,7 @@ def test_choose_seat_saved_with_no_roster_at_all_d1():
     assert fold.choose_seat([], 1649, 420) == _sel(1649, None, "saved")
 
 
-def test_choose_seat_frozen_shape_and_no_unseen_token():
+def test_choose_seat_frozen_shape_and_nothing_else():
     for picked in (fold.choose_seat(ROSTER, 1649, None), fold.choose_seat(ROSTER, None, None),
                    fold.choose_seat(ROSTER, None, 420)):
         assert tuple(picked) == SWARM_SEAT_SELECTED_FIELDS
@@ -511,3 +523,30 @@ def test_new_names_are_exported():
     for name in ("seat_state", "seat_summary_from_seat", "seat_work_rows", "seat_review_rows",
                  "roster_window", "choose_seat", "coerce_seat_slot"):
         assert name in fold.__all__, name
+
+
+# ---------------------------------------------------------------------------
+# parse_seat_token -- the one strict parser the fold and SurfManager share (WP5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value, token", [
+    (0, 0), (420, 420), ("420", 420), (" 420\n", 420), ("0", 0),
+])
+def test_parse_seat_token_takes_a_non_negative_int_or_ascii_digits(value, token):
+    assert fold.parse_seat_token(value) == token
+
+
+@pytest.mark.parametrize("value", [
+    True, False, -1, "-1", "+1", "1_000", "١٥٤٨", "4.2", 4.2, "", "  ", None, [420],
+])
+def test_parse_seat_token_refuses_anything_else(value):
+    assert fold.parse_seat_token(value) is None
+
+
+def test_the_manager_parses_seats_with_the_folds_parser():
+    """The reuse rule: one parser, hoisted, not a manager-side copy."""
+    from maxpane_dashboard.data import surf_manager
+
+    assert not hasattr(surf_manager, "_seat_token")
+    assert not hasattr(fold, "_parse_token")

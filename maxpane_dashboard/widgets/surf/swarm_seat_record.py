@@ -181,16 +181,9 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         swarm_seat_work_rows=None,
         swarm_seat_state=None,
         swarm_seat_as_of_hhmm=None,
-        swarm_seat_node_rows=None,
-        swarm_network=None,
         **_kwargs,
     ) -> None:
-        """Refresh from the manager's flat dict.
-
-        ``swarm_seat_node_rows`` and ``swarm_network`` are transitional and
-        ignored: the screen still sends them until the WP5 contract flip,
-        which removes both parameters.
-        """
+        """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it)."""
         self._state = swarm_seat_state
         rows = swarm_seat_work_rows if swarm_seat_state == "ok" else None
         self.store(rows, swarm_seat_as_of_hhmm)
