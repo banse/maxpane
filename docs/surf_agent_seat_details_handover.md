@@ -271,3 +271,125 @@ entry (2026-09-2x: ROSTER and FEEDBACK retired, why — §1 items 1–4); `docs/
 
 Out of scope: any change to the `s` SWARM body, `/jobs` handling, the seat tier's TTL, new endpoints,
 F16 as a decision (just report whether the new pin fits), a version bump.
+
+## 8. Implementation hand-back — 2026-09-22
+
+Branch: `feature/surf-agent-seat-details`, based on fetched `autopull/main` at `c529ee5`.
+The original `fix/theme-token-markup` branch and `/Library/Vibes/autopull` were left untouched.
+No push, merge, tag, version bump or release-validation suite was performed. The full release
+suite is intentionally deferred under the repository's remote-push authorization rule.
+
+### Commits and review
+
+- `6ccb643` — handover spec.
+- `b3075b9` — WP1 contract.
+- `ccf9adc` — WP2 pure fold.
+- `c813162` — WP3 manager.
+- `8c66bbd` — widgets, screen and measured layout.
+- `9c50184` — integration correction for the retired cursor assertion.
+- `cc0b8c7` — documentation and residuals.
+
+Agency planning, backend, frontend and documentation agents were used with one repository
+writer at a time. The controller reviewed each package diff. WP3 had one important finding:
+missing node source lists must remain unavailable; a failing regression preceded the fix.
+The final whole-branch review belongs to the receiving controller, as requested in §7.
+
+### Layout and real-app observation
+
+The canonical pin blocks are in `maxpane_dashboard/screens/surf.py`:
+
+- `SURF_AGENT_FULL_LAYOUT_COLUMNS = 131`: the status bar binds. The body clears at 117
+  columns on captures and 118 on the stretched payload; RECORD reaches its full tier at 119.
+- `SURF_AGENT_FULL_LAYOUT_ROWS = 32`: the top floor is 13 rows (SEAT title, blank and eleven
+  details), RECORD's floor is 8; hero/chrome use the remaining rows. Height fell from 40 to 32.
+- `RECORD_NEVER_CLEARS_BELOW = 297`: objective clearance on both committed seat captures;
+  the 400-character worst objectives still correctly show the widen marker.
+
+Measured every integer width 60–225 at height 80 for #0, #420 and the extended worst payload;
+height 20–61 at width 150 and the final column pin; successive objective-clearance widths 225–297.
+Boundary tests cover the tier edges, pin−1/pin/pin+1 and clearance−1/clearance.
+A 35-row terminal fits. A 31-row terminal still requires scrolling; F16 remains a separate decision.
+
+The actual CLI was launched against its normal read-only network sources in isolated temporary
+homes, with saved seat 420, Python 3.11 and Textual 8.1.1. SVGs and inspected PNGs are in
+`/tmp/surf-seat-details-live/` (temporary evidence, not committed):
+
+- 134×32: panels fit, four RECORD rows visible, `+150 older`, objective widen marker visible.
+- 119×35: all fixed table columns and hero values fit, seven RECORD rows visible. The status bar
+  is below its guaranteed width; the objective remains visibly clipped.
+- 138×31: taller indicator and body scrollbar visible; RECORD begins below the initial viewport.
+
+At approximately 00:35–00:37 Europe/Berlin on 2026-09-22, seat 420 showed 190 accepted of 201
+attempts (94.5%), 351 reviewed, 270 pending, 81 sent, 6 submitted, 264 queued, 76 collaborators,
+score 0.99 on 351 and last won 09-21 23:35. Earlier queue counters differed as the queue drained.
+No live values were added to test fixtures. The source work order was not strictly chronological;
+that pre-existing behavior is F42.
+
+### Verification
+
+All runs used Python 3.11 / Textual 8.1.1. Targeted checks only; no full suite.
+
+| Check | Result |
+| --- | --- |
+| WP1 contract target | 86 passed; broader named set 267 passed with 3 planned transitional failures |
+| WP2 fold and contract | 258 passed |
+| WP3 manager | 72 passed |
+| WP4 layout | 180 passed |
+| WP4 widget/contract/registration | 202 passed |
+| WP4 complete named set | 652 passed, 3 obsolete address-anchor failures; corrected anchors passed; restored proof targets and anchors 22 passed |
+| WP5 all 50 discovered test files | 4,596 passed; 4 worker reports of the same missing-fixture collection error |
+| Final middle tier (run once) | 8,660 passed, 1 expected failure, 7 failures and 6 collection errors; causes and scoped recovery below |
+| Scoped manager seams plus local Sybilkit | 459 passed, 1 expected failure |
+| Final four screen files | 571 passed in 770.14s |
+
+The middle tier's seven failures were six absent-oracle cases and the obsolete cursor assertion.
+Its six collection errors were two installed-Sybilkit imports and four worker reports of the
+absent oracle. The cursor and Sybilkit issues were resolved with scoped checks; the fixture is
+still blocked. The exact `-m guard tests -q` command was attempted for every package; the final
+attempt stopped on the one missing-oracle collection error. Those runs are not claimed green.
+Doc discovery also matched nine fixture/helper files that are not executable test files; the
+50 `test_*.py` files ran with `--continue-on-collection-errors` and four workers to obtain useful
+results beyond the known collection blocker. Final broad commands used isolated temporary homes.
+Logs: `/tmp/wp5-docs.log`, `/tmp/wp5-guard.log`, `/tmp/final-middle-tier.log`,
+`/tmp/final-scoped-recovery.log`, `/tmp/final-surf-screens.log`.
+
+Mutation checks deliberately broke production behavior, observed the named regression fail,
+and restored by inverse edits. Commit messages contain package evidence:
+
+- WP2: undefined win rates; crossed work/review timestamps; work-only nodes; sent/submitted
+  versus queued and missing transaction hashes; strict string/integer teammates; invalid hashes.
+- WP3: exact emitted keys; stale nodes and teammates after selection changes; unavailable nodes.
+- WP4: STATUS source/label; teammates empty state and omitted count; node sanitizer; RECORD date;
+  one-cell changes in both directions for width, height and objective-clearance pins.
+
+### Deviations and remaining work
+
+- WP1's requested transitional reds conflict with “every named set green”; they were recorded
+  explicitly and resolved as the dependent packages landed. A temporary roster-window constant
+  remained importable until WP2 removed its last fold consumer.
+- Repository strip-then-escape sanitization takes precedence over the handover's literal-markup
+  wording. A mutation test proves the sanitizer is used.
+- The old RECORD clearance constant actually lived in the layout test, despite §5 locating all
+  three pins in the screen. It now has one canonical screen block and is imported by the test.
+- F30 closes only for SEAT; tokenless unknown-seat footers in RECORD/BY NODE remain F39.
+- F27 is resolved by separate feedback lines; F28's single-token cache remains open; F29 closes
+  with ROSTER removal. F40 records spec defects, F41 missing work-list conflation, F42 source order.
+- `NO_COLOR=1` was inherited from the execution environment. Color-sensitive tests and later live
+  renders removed it from child environments; production behavior and color assertions were kept.
+- The setup command installed a released Sybilkit package that lacks two modules present in
+  this checkout. The middle-tier command exposed those import errors. A scoped rerun with
+  `PYTHONPATH=$PWD/sybilkit/src` passed all manager seam and Sybilkit tests (459 passed,
+  1 expected failure). The environment now installs local Sybilkit editable
+  (`pip install --no-deps -e ./sybilkit`), and its import path was verified inside this checkout.
+  The two formerly uncollectable files then passed all 16 tests without a path override.
+- The middle-tier command also exposed one omitted test migration: a manager-seam assertion
+  still expected `_seat_cursor`. The test-only integration commit now asserts that the retired
+  state is absent while preserving saved-seat injection and no-network checks.
+- The baseline oracle fixture `tests/fixtures/surf/pool4/oracle_25955365.json` is absent here.
+  It exists in the owner's source checkout, but the explicit protection in §0 led to a pending
+  user question before copying it. No permission has arrived and no protected file was touched.
+  Six oracle-dependent tests and the market-manager module's collection therefore remain
+  blocked. This branch does not satisfy §7's all-green criterion until that baseline input is
+  supplied and the affected checks are run.
+
+Stop here for the receiving controller's whole-branch review and the owner's merge/push decision.

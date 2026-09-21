@@ -718,8 +718,9 @@ explicit corrections under its CLAUDE.md precedence rule:
 
 - Its per-package green requirement conflicts with its staged removal of contract keys and
   widgets: WP1–WP3 leave consumers awaiting later work. Transitional failures are recorded in
-  the package commits rather than represented as passing checks. The obsolete roster-window
-  constant also had to be removed in WP2 so the fold could import against WP1's contract.
+  the package commits rather than represented as passing checks. WP1 temporarily retained
+  `SWARM_ROSTER_WINDOW_FIELDS` so the old fold could import; WP2 removed the constant together
+  with its last import and consumer.
 - WP4 asks a markup-bearing node key to render literally, while the established shared
   `sanitize_cell` path flattens, strips bracket-tag runs, clips, then escapes. The implementation
   follows that shared sanitisation contract; escaped residual brackets cannot become markup.
