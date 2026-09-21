@@ -1,22 +1,23 @@
-"""The AGENT body's hero: SEAT · NODES · JOBS · ACC / REJ · REVISIONS · SCORE · STATUS.
+"""The AGENT body's hero: SEAT · ACCEPTED · REVIEWED · SCORE · COLLAB · STATUS.
 
-Composited assertions only; the payload dicts are the manager's
-``swarm_seat_selected`` / ``swarm_seat_summary`` shapes (plan A1). The
-per-class contract checks are imposed here against the frozen
-``SWARM_WIDGET_SIGNATURES`` export.
+Composited assertions only. The summaries are **folded** from the committed
+``/seats`` captures (``tests/fixtures/surf/swarm/seats/``) by
+``data/surf_swarm.seat_summary_from_seat`` -- the manager's own fold -- and
+every expected number is read back off that fold or the fixture, never
+hand-typed. The per-class contract is imposed against the target export
+``SWARM_AGENT_SIGNATURES_NEXT`` until WP5 flips ``SWARM_WIDGET_SIGNATURES``.
 
-**Composited under the real stylesheet, at the real pins** (WP7). The hero
-states no geometry of its own (``rules/widgets.md``: ``HeroBoxBase`` leaves
-every dimension to ``minimal.tcss``), so a bare ``App`` would render six
-unbordered, unpadded boxes and prove nothing about what fits. The harness
-loads ``maxpane_dashboard.app.CSS_PATH`` and renders at the AGENT body's own
-column pin and at the app-wide ``FULL_LAYOUT_COLUMNS`` -- the two widths the
-plan's one-line ``IDMD #1548 · agent 50971 · most active`` (25 cells) does
-**not** fit, which is why SEAT is three lines (module docstring).
+**Composited under the real stylesheet, at the real pins.** The hero states no
+geometry of its own (``rules/widgets.md``: ``HeroBoxBase`` leaves every
+dimension to ``minimal.tcss``), so the harness loads
+``maxpane_dashboard.app.CSS_PATH`` and renders at the AGENT body's own column
+pin and at the app-wide ``FULL_LAYOUT_COLUMNS``: six boxes with ~16 content
+cells each at the former.
 """
 
 from __future__ import annotations
 
+import copy
 import inspect
 
 import pytest
@@ -24,36 +25,47 @@ from textual.app import App
 
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.app import CSS_PATH
-from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SWARM_AGENT_SIGNATURES_NEXT
+from maxpane_dashboard.data.surf_swarm import seat_summary_from_seat
 from maxpane_dashboard.screens.surf import SURF_AGENT_FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.fmt import hhmm
+from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
     BOX_IDS,
     NO_SEAT_LINE,
     SurfSwarmAgentHero,
     SurfSwarmAgentHeroBox,
 )
+from tests.surf_swarm_fixtures import swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
 
-LAST = 1_789_000_000.0
-FIRST = 1_788_990_000.0
+SIGNATURE = SWARM_AGENT_SIGNATURES_NEXT["SurfSwarmAgentHero"]
 
-SELECTED = {"token_id": 1548, "agent_id": "50971", "selected_by": "saved"}
-SUMMARY = {
-    "nodes": 7, "jobs": 6, "accepted": 7, "rejected": 0, "revisions": 0,
-    "mean_score": 1.0, "scored": 17, "working_now": False,
-    "first_seen_ts": FIRST, "last_active_ts": LAST,
-    "roles": [{"role": "implement", "count": 5}, {"role": "review", "count": 2}],
-    "rejection_codes": [],
-}
+SEAT_420 = swarm_seat_capture("seat_420")
+SEAT_0 = swarm_seat_capture("seat_0")
+SUMMARY = seat_summary_from_seat(SEAT_420)
+SELECTED = {"token_id": int(SEAT_420["tokenId"]), "agent_id": str(SEAT_420["agentId"]),
+            "selected_by": "saved"}
 AS_OF = "04:06"
-#: The AGENT body's own column pin: six bordered boxes with a 1-cell margin
-#: and ``padding: 0 1`` leave ~16 content cells each there -- SEAT's widest
-#: line (``agent 50971``, 11; ``IDMD #1548``, 10) fits, the plan's 25-cell
-#: one-liner does not. Every ``_box_text`` below renders here by default.
+#: The AGENT body's own column pin; every ``_box_text`` renders here by default.
 SIZE = (SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)
 #: The two widths the hero has to be whole at: its body's pin and the app's.
 PINS = (SURF_AGENT_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS)
+STAT_BOXES = ("accepted", "reviewed", "score", "collab", "status")
+
+
+_DROP = object()
+
+
+def _folded(**changes) -> dict:
+    """#420's capture with top-level fields replaced, then folded."""
+    payload = copy.deepcopy(SEAT_420)
+    for key, value in changes.items():
+        if value is _DROP:
+            payload.pop(key, None)
+        else:
+            payload[key] = value
+    return seat_summary_from_seat(payload)
 
 
 class _Themed(App):
@@ -65,21 +77,21 @@ class _Themed(App):
         yield SurfSwarmAgentHero()
 
 
+def _merged(kwargs) -> dict:
+    return {"swarm_seat_selected": SELECTED, "swarm_seat_summary": SUMMARY,
+            "swarm_seat_state": "ok", "swarm_seat_as_of_hhmm": AS_OF, **kwargs}
+
+
 async def _hero(size=SIZE, **kwargs):
-    kwargs.setdefault("swarm_seat_selected", SELECTED)
-    kwargs.setdefault("swarm_seat_summary", SUMMARY)
-    kwargs.setdefault("swarm_seat_as_of_hhmm", AS_OF)
-    return "\n".join(await composite_lines(SurfSwarmAgentHero, size, css_path=CSS_PATH, **kwargs))
+    return "\n".join(await composite_lines(SurfSwarmAgentHero, size, css_path=CSS_PATH,
+                                           **_merged(kwargs)))
 
 
 async def _box_text(box_id, size=SIZE, **kwargs):
     """The composited text of one box's own region (the boxes share rows)."""
-    merged = {"swarm_seat_selected": SELECTED, "swarm_seat_summary": SUMMARY,
-              "swarm_seat_as_of_hhmm": AS_OF, **kwargs}
-
     async with _Themed().run_test(size=size) as pilot:
         hero = pilot.app.query_one(SurfSwarmAgentHero)
-        hero.update_data(**merged)
+        hero.update_data(**_merged(kwargs))
         await pilot.pause()
         box = pilot.app.query_one(f"#{box_id}")
         strips = pilot.app.screen._compositor.render_strips()
@@ -92,41 +104,191 @@ async def _box_text(box_id, size=SIZE, **kwargs):
         return "\n".join(row.rstrip() for row in sliced)
 
 
+async def _boxes(size=SIZE, **kwargs) -> dict[str, str]:
+    return {key: await _box_text(BOX_IDS[key], size=size, **kwargs) for key in BOX_IDS}
+
+
 # -- the self-imposed contract -----------------------------------------------------
 
 
-def test_update_data_names_exactly_the_frozen_signature_in_order():
+def test_update_data_names_exactly_the_target_signature_in_order():
     sig = inspect.signature(SurfSwarmAgentHero.update_data)
     params = [n for n, p in sig.parameters.items() if n != "self" and p.kind is not p.VAR_KEYWORD]
-    assert tuple(params) == SWARM_WIDGET_SIGNATURES["SurfSwarmAgentHero"]
+    assert tuple(params) == SIGNATURE
     assert any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
 
 
 async def test_no_args_and_all_none_render_unavailable_without_raising():
-    bare = await composite_lines(SurfSwarmAgentHero, SIZE)
-    assert "unavailable" in "\n".join(bare) and "Loading" not in "\n".join(bare)
-    none = await composite_lines(
-        SurfSwarmAgentHero, SIZE,
-        **{k: None for k in SWARM_WIDGET_SIGNATURES["SurfSwarmAgentHero"]},
-    )
-    assert "unavailable" in "\n".join(none)
+    """Nothing selected and no state: SEAT says so, the five stat boxes are
+    ``unavailable`` (the state is ``None``), and no ``Loading...`` seed survives."""
+    bare = "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, css_path=CSS_PATH))
+    assert bare.count("unavailable") == 5 and "Loading" not in bare
+    assert NO_SEAT_LINE in bare
+    none = "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, css_path=CSS_PATH,
+                                           **{k: None for k in SIGNATURE}))
+    assert none == bare
 
 
-def test_the_box_class_is_its_own_type_selector():
+def test_the_box_class_is_its_own_type_selector_and_the_six_boxes_are_named():
     assert SurfSwarmAgentHero.BOX_CLASS is SurfSwarmAgentHeroBox
     assert len(BOX_IDS) == 6 == len(SurfSwarmAgentHero.BOXES)
+    labels = [label for _id, label in SurfSwarmAgentHero.BOXES]
+    assert labels == ["SEAT", "ACCEPTED", "REVIEWED", "SCORE", "COLLAB", "STATUS"]
 
 
-# -- SEAT ------------------------------------------------------------------------
+async def test_the_hero_row_is_seven_lines_under_the_stylesheet():
+    """SEAT's three lines under the label and its blank row need a 7-tall box."""
+    async with _Themed().run_test(size=SIZE) as pilot:
+        hero = pilot.app.query_one(SurfSwarmAgentHero)
+        hero.update_data(**_merged({}))
+        await pilot.pause()
+        assert hero.region.height == 7
+        assert all(box.region.height == 7 for box in pilot.app.query(SurfSwarmAgentHeroBox))
+
+
+# -- the #420 record, folded ---------------------------------------------------------
 
 
 @pytest.mark.parametrize("width", PINS)
-async def test_the_seat_box_names_token_and_agent_whole_at_both_pins(width):
-    """Three lines, none of them clipped: the plan's one-line form is 25
-    cells and the box has ~16 content cells at the AGENT pin, ~17 at 143."""
-    text = await _box_text(BOX_IDS["seat"], size=(width, 9))
-    assert "SEAT" in text and "IDMD #1548" in text and "agent 50971" in text
-    assert "…" not in text, (width, text)
+async def test_the_defect_seat_renders_its_lifetime_record_whole_at_both_pins(width):
+    boxes = await _boxes(size=(width, 9))
+    status = SUMMARY["review_status"]
+    pending = status["submitted"] + status["queued"]
+    assert f"IDMD #{SELECTED['token_id']}" in boxes["seat"]
+    assert f"agent {SELECTED['agent_id']}" in boxes["seat"] and "saved" in boxes["seat"]
+    assert f"{SUMMARY['accepted']} of {SUMMARY['attempts']}" in boxes["accepted"]
+    # Q-M: pending is a subset of the reviews, never added on top.
+    assert f"{SUMMARY['reviewed']} · {pending} pending" in boxes["reviewed"]
+    assert f"+{pending}" not in boxes["reviewed"]
+    assert f"{SUMMARY['mean_score']:.2f}" in boxes["score"]
+    assert f"({SUMMARY['scored']} scored)" in boxes["score"]
+    assert f"{SUMMARY['collaborators']} seats" in boxes["collab"]
+    assert "online ●" in boxes["status"]
+    assert f"last {hhmm(SUMMARY['last_active_ts'])}" in boxes["status"]
+    assert f"as of {AS_OF}" in boxes["status"]
+    for key, text in boxes.items():
+        assert "…" not in text and "unavailable" not in text, (width, key, text)
+
+
+@pytest.mark.parametrize("width", PINS)
+async def test_the_largest_seat_fits_whole_and_reads_offline(width):
+    summary = seat_summary_from_seat(SEAT_0)
+    selected = {"token_id": 0, "agent_id": str(SEAT_0["agentId"]), "selected_by": "most_active"}
+    boxes = await _boxes(size=(width, 9), swarm_seat_selected=selected,
+                         swarm_seat_summary=summary)
+    status = summary["review_status"]
+    assert f"{summary['reviewed']} · {status['submitted'] + status['queued']} pending" in boxes["reviewed"]
+    assert "offline ○" in boxes["status"] and "online" not in boxes["status"]
+    assert "most active" in boxes["seat"]
+    for key, text in boxes.items():
+        assert "…" not in text, (width, key, text)
+
+
+async def test_no_marker_means_no_as_of_line():
+    status = await _box_text(BOX_IDS["status"], swarm_seat_as_of_hhmm="")
+    assert "as of" not in status and "online ●" in status
+
+
+# -- the seat state ------------------------------------------------------------------
+
+
+async def test_pending_says_loading_in_the_stat_boxes_and_still_names_the_seat():
+    """A switch in flight: the reader must see *which* seat is loading, and no
+    number of the seat that was shown before (A's summary under B's name)."""
+    other = {"token_id": 12345, "agent_id": "50906", "selected_by": "cursor"}
+    boxes = await _boxes(swarm_seat_selected=other, swarm_seat_state="pending",
+                         swarm_seat_as_of_hhmm=None)
+    assert "IDMD #12345" in boxes["seat"] and "agent 50906" in boxes["seat"]
+    assert "selected" in boxes["seat"] and "Loading" not in boxes["seat"]
+    for key in STAT_BOXES:
+        assert "Loading..." in boxes[key], (key, boxes[key])
+    # SUMMARY (seat #420's numbers) was passed in and must not reach a pixel.
+    whole = "\n".join(boxes.values())
+    assert f"{SUMMARY['accepted']} of" not in whole and "pending" not in whole
+
+
+async def test_a_failed_read_is_unavailable_never_zero_and_still_names_the_seat():
+    boxes = await _boxes(swarm_seat_state=None, swarm_seat_summary=None,
+                         swarm_seat_as_of_hhmm=None)
+    assert f"IDMD #{SELECTED['token_id']}" in boxes["seat"]
+    assert "unavailable" not in boxes["seat"]
+    for key in STAT_BOXES:
+        body = [line.strip("│ ") for line in boxes[key].splitlines()]
+        assert "unavailable" in body, (key, boxes[key])
+        assert "0" not in body and "0 of 0" not in boxes[key], (key, boxes[key])
+
+
+async def test_a_malformed_state_is_unavailable():
+    boxes = await _boxes(swarm_seat_state="garbage")
+    for key in STAT_BOXES:
+        assert "unavailable" in boxes[key], key
+
+
+@pytest.mark.parametrize("width", PINS)
+async def test_a_seat_that_never_paired_says_so_and_counts_nothing(width):
+    """``unknown_seat`` is a real negative, not a failure: the stat boxes show a
+    dim em dash, never ``unavailable``, and SEAT says ``never paired``."""
+    boxes = await _boxes(size=(width, 9), swarm_seat_state="unknown_seat",
+                         swarm_seat_summary=None,
+                         swarm_seat_selected={"token_id": 12345, "agent_id": None,
+                                              "selected_by": "saved"})
+    assert "IDMD #12345" in boxes["seat"] and NEVER_PAIRED_WORDS in boxes["seat"]
+    assert "…" not in boxes["seat"], (width, boxes["seat"])
+    for key in STAT_BOXES:
+        body = [line.strip("│ ") for line in boxes[key].splitlines()]
+        assert "—" in body and "unavailable" not in boxes[key], (key, boxes[key])
+
+
+async def test_no_selection_says_so_rather_than_naming_a_seat():
+    seat = await _box_text(BOX_IDS["seat"], swarm_seat_selected=None, swarm_seat_state=None,
+                           swarm_seat_summary=None, swarm_seat_as_of_hhmm=None)
+    assert NO_SEAT_LINE in seat and "IDMD" not in seat
+
+
+# -- zeros, missing fields and malformed payloads --------------------------------------
+
+
+async def test_a_zero_record_renders_zeros_not_unavailable():
+    zero = _folded(attempts=0, accepted=0, work=[], reviews=[], collaborators=[])
+    boxes = await _boxes(swarm_seat_summary=zero)
+    assert "0 of 0" in boxes["accepted"]
+    assert "0 · 0 pending" in boxes["reviewed"]
+    assert "—" in boxes["score"] and "(0 scored)" in boxes["score"]
+    assert "0 seats" in boxes["collab"]
+    for key in ("accepted", "reviewed", "score", "collab"):
+        assert "unavailable" not in boxes[key], (key, boxes[key])
+
+
+async def test_a_field_the_source_did_not_carry_is_unavailable_in_its_own_box_only():
+    """``attempts`` missing from the payload folds to ``None``: ACCEPTED says
+    ``unavailable`` -- never ``12 of 0`` -- and the other boxes keep their numbers."""
+    missing = _folded(attempts=_DROP)
+    assert missing["attempts"] is None and missing["accepted"] == SUMMARY["accepted"]
+    boxes = await _boxes(swarm_seat_summary=missing)
+    assert "unavailable" in boxes["accepted"]
+    assert " of 0" not in boxes["accepted"] and " of " not in boxes["accepted"]
+    assert f"{SUMMARY['reviewed']} · " in boxes["reviewed"]
+    assert "online ●" in boxes["status"]
+
+
+async def test_a_missing_status_split_shows_dashes_for_pending_not_zero():
+    split_less = dict(SUMMARY, review_status=None)
+    text = await _box_text(BOX_IDS["reviewed"], swarm_seat_summary=split_less)
+    assert f"{SUMMARY['reviewed']} · -- pending" in text and "· 0 pending" not in text
+
+
+async def test_malformed_payloads_land_on_unavailable_not_a_crash():
+    whole = await _hero(swarm_seat_summary="garbage")
+    assert "unavailable" in whole
+    seat = await _box_text(BOX_IDS["seat"], swarm_seat_selected=["not", "a", "dict"])
+    assert "unavailable" in seat
+    typed = dict(SUMMARY, accepted="lots", online="yes")
+    boxes = await _boxes(swarm_seat_summary=typed)
+    assert "unavailable" in boxes["accepted"] and "unavailable" in boxes["status"]
+    assert f"{SUMMARY['collaborators']} seats" in boxes["collab"]
+
+
+# -- SEAT ------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("width", PINS)
@@ -142,51 +304,6 @@ async def test_the_three_selected_by_phrasings(width):
     assert "most active" in most and "…" not in most
 
 
-@pytest.mark.parametrize("width", PINS)
-async def test_a_saved_seat_the_sweep_has_not_seen_is_named(width):
-    """The fallback seat is shown, and the saved one it stands in for is
-    named -- never a silent swap. Five digits must fit whole at both pins."""
-    text = await _box_text(
-        BOX_IDS["seat"], size=(width, 9),
-        swarm_seat_selected={"token_id": 0, "agent_id": "50906",
-                             "selected_by": "most_active", "unseen_token": 12345},
-    )
-    assert "IDMD #0" in text and "#12345 not seen" in text
-    assert "most active" not in text and "…" not in text, (width, text)
-
-
-async def test_a_malformed_unseen_token_falls_back_to_the_plain_label():
-    text = await _box_text(
-        BOX_IDS["seat"],
-        swarm_seat_selected={"token_id": 0, "agent_id": "50906",
-                             "selected_by": "most_active", "unseen_token": "[red]x"},
-    )
-    assert "most active" in text and "not seen" not in text
-
-
-async def test_the_hero_row_is_seven_lines_under_the_stylesheet():
-    """SEAT's three lines under the label and its blank row need a 7-tall
-    box (border included); ``minimal.tcss`` says so and this is where it
-    is read back off the compositor rather than off the file."""
-    async with _Themed().run_test(size=SIZE) as pilot:
-        hero = pilot.app.query_one(SurfSwarmAgentHero)
-        hero.update_data(swarm_seat_selected=SELECTED, swarm_seat_summary=SUMMARY,
-                         swarm_seat_as_of_hhmm=AS_OF)
-        await pilot.pause()
-        assert hero.region.height == 7
-        assert all(box.region.height == 7 for box in pilot.app.query(SurfSwarmAgentHeroBox))
-
-
-async def test_no_selection_is_two_different_facts():
-    """No sweep at all is ``unavailable``; a sweep that found no seat says so."""
-    unread = await _box_text(BOX_IDS["seat"], swarm_seat_selected=None, swarm_seat_summary=None,
-                             swarm_seat_as_of_hhmm=None)
-    assert "unavailable" in unread and NO_SEAT_LINE not in unread
-    swept = await _box_text(BOX_IDS["seat"], swarm_seat_selected=None, swarm_seat_summary=None,
-                            swarm_seat_as_of_hhmm=AS_OF)
-    assert NO_SEAT_LINE in swept and "unavailable" not in swept
-
-
 async def test_a_hostile_agent_id_renders_literally():
     text = await _box_text(BOX_IDS["seat"], swarm_seat_selected=dict(SELECTED, agent_id="[/x]"))
     assert "agent [/x]" in text
@@ -194,64 +311,4 @@ async def test_a_hostile_agent_id_renders_literally():
 
 async def test_a_theme_token_in_an_agent_id_does_not_raise():
     text = await _box_text(BOX_IDS["seat"], swarm_seat_selected=dict(SELECTED, agent_id="[$success]"))
-    # ``agent [$success]`` is 16 cells and fits the box at the pin: the token
-    # is *shown*, brackets and all (a parsed theme token vanishes or raises).
     assert "agent [$success]" in text
-
-
-# -- the counters -----------------------------------------------------------------
-
-
-async def test_the_counter_boxes_carry_their_numbers_and_zeros_are_real():
-    nodes = await _box_text(BOX_IDS["nodes"])
-    assert "NODES · JOBS" in nodes and "7 · 6" in nodes
-    verdicts = await _box_text(BOX_IDS["verdicts"])
-    # ``ACC / REJ``, not ``ACCEPTED / REJECTED`` (19 cells): the label has to
-    # fit the ~16-cell box at the AGENT pin without an ellipsis of its own.
-    assert "ACC / REJ" in verdicts and "7 / 0" in verdicts and "…" not in verdicts
-    revisions = await _box_text(BOX_IDS["revisions"])
-    assert "REVISIONS" in revisions
-    body_lines = [line.strip("│ ") for line in revisions.splitlines()]
-    assert "0" in body_lines
-    assert "unavailable" not in verdicts + revisions
-
-
-async def test_a_missing_summary_under_a_marker_is_an_empty_not_a_failure():
-    """The sweep ran and found no seat: the counters have nothing to say, which
-    is not the same claim as ``unavailable`` (CLAUDE.md: never a false
-    degradation). With no marker at all they *are* unavailable.
-    """
-    swept = await _box_text(BOX_IDS["nodes"], swarm_seat_selected=None, swarm_seat_summary=None)
-    assert "unavailable" not in swept and "—" in swept
-    unread = await _box_text(BOX_IDS["nodes"], swarm_seat_selected=None, swarm_seat_summary=None,
-                             swarm_seat_as_of_hhmm=None)
-    assert "unavailable" in unread
-
-
-# -- SCORE ------------------------------------------------------------------------
-
-
-async def test_the_score_box_distinguishes_no_feedback_from_zero():
-    scored = await _box_text(BOX_IDS["score"])
-    assert "1.0 (17 scored)" in scored
-    none = await _box_text(BOX_IDS["score"], swarm_seat_summary=dict(SUMMARY, mean_score=None, scored=0))
-    assert "— (0 scored)" in none and "0.0" not in none
-    zero = await _box_text(BOX_IDS["score"], swarm_seat_summary=dict(SUMMARY, mean_score=0.0, scored=3))
-    assert "0.0 (3 scored)" in zero
-
-
-# -- STATUS -----------------------------------------------------------------------
-
-
-async def test_the_status_box_says_working_or_idle_with_the_last_stamp():
-    idle = await _box_text(BOX_IDS["status"])
-    assert "idle ○" in idle and f"last {hhmm(LAST)}" in idle
-    working = await _box_text(BOX_IDS["status"], swarm_seat_summary=dict(SUMMARY, working_now=True))
-    assert "working ●" in working
-
-
-async def test_a_malformed_summary_field_lands_on_unavailable_not_a_crash():
-    text = await _box_text(BOX_IDS["nodes"], swarm_seat_summary=dict(SUMMARY, nodes="many"))
-    assert "-- · 6" in text
-    whole = await _hero(swarm_seat_summary="garbage")
-    assert "unavailable" in whole
