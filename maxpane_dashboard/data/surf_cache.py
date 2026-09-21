@@ -115,8 +115,8 @@ TIER_SWARM_SCORES = "swarm_scores"
 #: The AGENT body's one seat: ``GET /seats/{tokenId}`` for the selected token
 #: only, never a fan-out across the roster (docs/surf_agent_seats_spec.md §5).
 #: 120 s: a seat's lifetime record moves a few times an hour, and a reader's
-#: switch does not wait on this clock -- ``SurfManager.select_seat`` /
-#: ``set_seat`` call :meth:`SurfCache.mark_due`. The failure backoff is the
+#: switch does not wait on this clock -- ``SurfManager.set_seat`` calls
+#: :meth:`SurfCache.mark_due`. The failure backoff is the
 #: live tier's 120 s (plan §9 N): the same host, polled no faster when it fails.
 TIER_SWARM_SEAT = "swarm_seat"
 
@@ -520,7 +520,7 @@ class SurfCache:
     def mark_due(self, tier: str) -> None:
         """Make ``tier`` due on the next :meth:`tiers_due`, whatever its clock said.
 
-        The reader's seat switch (``SurfManager.select_seat``/``set_seat``):
+        The reader's seat switch (``SurfManager.set_seat``):
         a plain write, no I/O, so a message handler may call it. It forgets
         only the tier's next-due time -- a pending failure backoff included --
         and **never** the last-good: the slot keeps serving until a new read

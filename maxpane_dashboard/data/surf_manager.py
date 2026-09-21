@@ -1054,9 +1054,6 @@ class SurfManager:
         #: retired 2026-09-21 for the seat prompt. An IDMD token id, not a
         #: secret. Stored as given: ``sw.parse_seat_token`` parses it.
         self._seat_saved: str | int | None = seat
-        #: The reader's own row selection (:meth:`select_seat`); wins over
-        #: the saved seat while it names a seat on the roster.
-        self._seat_cursor: str | int | None = None
         #: The in-flight detached ``/seats/{token}`` read and the token it is
         #: for (the /seats plan WP2). One seat at a time: a read for a seat
         #: that is no longer selected is cancelled, never left to land.
@@ -5462,37 +5459,13 @@ class SurfManager:
             self.cache.store_last_good(SLOT_SWARM_JOBS_SEEN, seen, ts=now)
         return seen
 
-    def select_seat(self, token: str | int | None) -> None:
-        """Move the AGENT body's cursor to ``token`` (plan A1 "Which seat").
-
-        A plain attribute write -- no I/O, no await -- so it is safe to call
-        from a message handler (``DataTable.RowSelected``); the guarded
-        refresh then recomputes the seat keys from the cached sweep
-        (:meth:`_swarm_seat_keys`). Stored as given: ``sw.parse_seat_token`` parses
-        it and falls back to the saved seat, then the most active, when it
-        names nothing on the roster.
-
-        The /seats plan WP2: it also marks :data:`TIER_SWARM_SEAT` due, so the
-        next cycle's detached read fetches the new seat -- the read is the
-        cycle's, never this method's. Until that read lands the new seat is
-        ``pending`` (the slot names the token it was read for, so the old
-        seat's record is never shown under the new seat's name).
-        """
-        self._seat_cursor = token
-        self._seat_failed_token = None
-        self.cache.mark_due(TIER_SWARM_SEAT)
-
     def set_seat(self, token: str | int | None) -> None:
         """Replace the saved seat with ``token`` (the seat prompt's seam).
 
-        Drops the roster cursor too: a pick made before the reader typed a
-        seat would otherwise keep outranking what they just typed. Same
-        contract as :meth:`select_seat` -- an attribute write, no I/O, no
-        await. Persisting the choice is the caller's job, not the data
-        layer's. Marks :data:`TIER_SWARM_SEAT` due, as :meth:`select_seat` does.
+        An attribute write, no I/O and no await. Persisting the choice is
+        the caller's job. Mark the seat tier due so the next cycle reads it.
         """
         self._seat_saved = token
-        self._seat_cursor = None
         self._seat_failed_token = None
         self.cache.mark_due(TIER_SWARM_SEAT)
 
@@ -5828,46 +5801,30 @@ class SurfManager:
     def _swarm_seat_keys(
         self, slot: dict[str, Any], entry: Any, seen: Any, seat_entry: Any
     ) -> dict[str, Any]:
-        """The AGENT body's keys: the roster off the sweep, the seat off ``/seats``.
+        """The selected seat's lifetime keys from its own /seats cache slot.
 
-        **The roster** (``swarm_seat_rows`` and ``swarm_roster_window``) is
-        folded from the sweep slot
-        plus the jobs-seen map, as before: a sweep that never ran
-        (``entry is None``) publishes ``None`` for them, and one that saw no
-        seat publishes ``swarm_seat_rows == []``.
+        The internal job-window roster feeds the most-active default; a saved
+        seat wins even off that roster. Its agent ID comes from the roster,
+        then the seat payload when the roster carries none.
 
-        **The selection** is ``sw.choose_seat`` (decision D1): the cursor
-        while it is on the roster, else the saved seat whether or not it is,
-        else the most active. It needs no sweep when a seat is saved -- the
-        seat tier is independent of the sweep. ``agent_id`` comes from the
-        roster row, else the seat's own payload, else ``None``.
-
-        **The seat's record** (state, summary, work and feedback rows, and
-        ``swarm_seat_as_of_hhmm``) comes from :data:`SLOT_SWARM_SEAT` **only
-        when the slot was read for the selected token** -- never another
-        seat's numbers under this seat's name. Otherwise the state is
-        ``None`` when this seat's own read failed (``unavailable``) and
-        ``"pending"`` when none has finished (``Loading…``), with every other
-        seat key ``None``. ``unknown_seat`` is a real negative: no summary,
-        ``[]`` rows (plan §9 L). With no selection at all every seat key is
-        ``None``.
+        Serve a slot only for the selected token. A different token's slot
+        yields pending (or unavailable after failure), with no old values.
+        Unknown seats have no summary and real-empty rows. With no selected
+        seat, all seat keys are None.
         """
         swept = entry is not None
         details_map = _swarm_details_map(slot.get("details") if swept and slot else None)
         seen_map = seen if isinstance(seen, dict) else {}
         rows = sw.seat_rows(details_map, seen_map) if swept else None
-        selected = sw.choose_seat(
-            rows, sw.parse_seat_token(self._seat_saved), sw.parse_seat_token(self._seat_cursor)
-        )
+        selected = sw.choose_seat(rows, sw.parse_seat_token(self._seat_saved))
         out: dict[str, Any] = {
-            "swarm_seat_rows": rows,
             "swarm_seat_selected": selected,
             "swarm_seat_state": None,
             "swarm_seat_summary": None,
             "swarm_seat_work_rows": None,
-            "swarm_seat_feedback_rows": None,
+            "swarm_seat_node_rows": None,
+            "swarm_seat_teammates": None,
             "swarm_seat_as_of_hhmm": None,
-            "swarm_roster_window": sw.roster_window(slot.get("jobs")) if swept and slot else None,
         }
         if selected is None:
             return out
@@ -5880,14 +5837,20 @@ class SurfManager:
         out["swarm_seat_as_of_hhmm"] = seat_entry.as_of_hhmm()
         if read["state"] == "unknown_seat":
             out["swarm_seat_work_rows"] = []
-            out["swarm_seat_feedback_rows"] = []
+            out["swarm_seat_node_rows"] = []
+            out["swarm_seat_teammates"] = []
             return out
         seat = read["seat"]
         if selected["agent_id"] is None and isinstance(seat.get("agentId"), str):
             out["swarm_seat_selected"] = dict(selected, agent_id=seat["agentId"])
         out["swarm_seat_summary"] = sw.seat_summary_from_seat(seat)
         out["swarm_seat_work_rows"] = sw.seat_work_rows(seat)
-        out["swarm_seat_feedback_rows"] = sw.seat_review_rows(seat)
+        out["swarm_seat_node_rows"] = (
+            sw.seat_node_rows(seat)
+            if isinstance(seat.get("reviews"), list) or isinstance(seat.get("work"), list)
+            else None
+        )
+        out["swarm_seat_teammates"] = sw.seat_teammates(seat)
         return out
 
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
