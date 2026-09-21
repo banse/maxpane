@@ -643,27 +643,35 @@ def seat_rows(details: object, seen: object) -> list[dict[str, Any]]:
     return rows
 
 
-def pick_seat(rows: object, env_token: object,
+def pick_seat(rows: object, saved_token: object,
               cursor_token: object = None) -> dict[str, Any] | None:
     """``swarm_seat_selected``: which seat the AGENT body shows.
 
     ``cursor`` (the user's row selection) wins when it names a seat in
-    ``rows``; else ``env`` (``MAXPANE_IMD_SEAT``, parsed to an int) when it
-    does; else ``most_active`` = ``rows[0]``.  ``None`` when there are no
-    rows -- no seat has been seen.
+    ``rows``; else ``saved`` (the seat saved in ``~/.maxpane/config.toml``,
+    parsed to an int) when it does; else ``most_active`` = ``rows[0]``.
+    ``None`` when there are no rows -- no seat has been seen.
+
+    A saved seat that parses but is not on the roster is carried as
+    ``unseen_token`` on the ``most_active`` fallback, so the hero can say
+    the seat it shows is standing in for another rather than swap silently.
     """
     seats = _mappings(rows)
     if not seats:
         return None
     by_token = {r.get("token_id"): r for r in seats}
-    for candidate, how in ((cursor_token, "cursor"), (env_token, "env")):
+    for candidate, how in ((cursor_token, "cursor"), (saved_token, "saved")):
         token = _parse_token(candidate)
         if token is not None and token in by_token:
             return {"token_id": token, "agent_id": by_token[token].get("agent_id"),
                     "selected_by": how}
     top = seats[0]
-    return {"token_id": top.get("token_id"), "agent_id": top.get("agent_id"),
-            "selected_by": "most_active"}
+    picked = {"token_id": top.get("token_id"), "agent_id": top.get("agent_id"),
+              "selected_by": "most_active"}
+    unseen = _parse_token(saved_token)
+    if unseen is not None:
+        picked["unseen_token"] = unseen
+    return picked
 
 
 def seat_node_rows(details: object, seen: object, token: object) -> list[dict[str, Any]]:

@@ -1717,7 +1717,7 @@ MODE_SWARM = "swarm"
 
 #: The ``a`` AGENT body (swarm v2 plan Amendment A1, WP7) -- the **sixth**
 #: mode, and the third to swap the hero: one seat of the swarm, picked by the
-#: reader's cursor on ROSTER, else ``MAXPANE_IMD_SEAT``, else the most active
+#: reader's cursor on ROSTER, else the saved seat (``seat=``), else the most active
 #: (``sw.pick_seat``). Four panels (ROSTER, VERDICTS, RECORD, FEEDBACK) under
 #: :class:`SurfSwarmAgentHero`.
 MODE_AGENT = "agent"

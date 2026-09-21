@@ -554,8 +554,9 @@ Tighten to `isinstance(value, int)` when the file is next touched.
 ### F20 — `_NON_NUMERIC_KEYS`'s comment still names `swarm_queue_depths`
 `tests/test_surf_registration.py:1393`: historical prose about a retired key in a live triage comment; one line.
 
-### F21 — `MAXPANE_IMD_SEAT` is missing from CLAUDE.md's env-var list (owner-owned file)
-Read once in `SurfManager.__init__` (`seat=` wins), documented in README. CLAUDE.md lists every env var; add it.
+### F21 — `MAXPANE_IMD_SEAT` is missing from CLAUDE.md's env-var list (owner-owned file) — CLOSED 2026-09-21
+Closed by removal, not by listing: the owner retired the variable for a seat prompt that saves to
+`~/.maxpane/config.toml`. The seat reaches `SurfManager` only as `seat=`; nothing is left to list.
 
 ### F22 — `data/surf_swarm.__all__` re-exports `seen_since_ts`, defined in `analytics/surf_swarm_signals`
 The fold tests bind the re-export (`fold.seen_since_ts`). Either import it in the tests from analytics and drop the

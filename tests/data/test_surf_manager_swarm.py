@@ -771,26 +771,46 @@ async def test_the_default_seat_is_the_most_active(tmp_path):
     assert payload["swarm_seat_as_of_hhmm"] == payload["swarm_scores_as_of_hhmm"]
 
 
-async def test_an_explicit_seat_argument_selects_by_env(tmp_path):
+async def test_the_seat_argument_selects_the_saved_seat(tmp_path):
     _, payload = await _landed(tmp_path, _FakeSwarm(), seat="1548")
     selected = payload["swarm_seat_selected"]
-    assert selected == {"token_id": 1548, "agent_id": "50971", "selected_by": "env"}
+    assert selected == {"token_id": 1548, "agent_id": "50971", "selected_by": "saved"}
     assert len(payload["swarm_seat_feedback_rows"]) == 17, "the corpus feedback pin"
     assert payload["swarm_seat_summary"]["scored"] == 17
 
 
-async def test_the_seat_env_is_read_once_at_construction(tmp_path, monkeypatch):
+async def test_the_retired_seat_env_var_selects_nothing(tmp_path, monkeypatch):
+    """``MAXPANE_IMD_SEAT`` is gone (2026-09-21): the saved seat reaches the
+    manager only through ``seat=``, so a stale export in a shell profile
+    must not quietly pick a seat."""
     monkeypatch.setenv("MAXPANE_IMD_SEAT", "1548")
     manager, payload = await _landed(tmp_path, _FakeSwarm())
-    assert payload["swarm_seat_selected"]["selected_by"] == "env"
-    assert payload["swarm_seat_selected"]["token_id"] == 1548
+    assert payload["swarm_seat_selected"]["selected_by"] == "most_active"
+    assert payload["swarm_seat_selected"]["token_id"] == 0
+    await manager.close()
 
-    monkeypatch.setenv("MAXPANE_IMD_SEAT", "463")
+
+async def test_set_seat_replaces_the_saved_seat_and_drops_the_cursor(tmp_path):
+    """The seat prompt's seam: the typed seat wins at once -- over a roster
+    pick made earlier, which would otherwise keep outranking it."""
+    manager, _ = await _landed(tmp_path, _FakeSwarm(), seat="1548")
+    manager.select_seat(0)
     payload = await manager.fetch_and_compute()
-    assert payload["swarm_seat_selected"]["token_id"] == 1548, "the env was re-read after construction"
-    monkeypatch.delenv("MAXPANE_IMD_SEAT")
+    assert payload["swarm_seat_selected"]["selected_by"] == "cursor"
+    manager.set_seat(463)
     payload = await manager.fetch_and_compute()
-    assert payload["swarm_seat_selected"]["token_id"] == 1548
+    assert payload["swarm_seat_selected"] == {
+        "token_id": 463, "agent_id": "50972", "selected_by": "saved",
+    }
+    assert {r["job_id"] for r in payload["swarm_seat_node_rows"]} <= _seat_of(swarm_details_v2(), 463)
+    await manager.close()
+
+
+async def test_a_saved_seat_off_the_roster_is_named_not_swapped(tmp_path):
+    manager, payload = await _landed(tmp_path, _FakeSwarm(), seat=999_999)
+    selected = payload["swarm_seat_selected"]
+    assert selected["selected_by"] == "most_active" and selected["token_id"] == 0
+    assert selected["unseen_token"] == 999_999
     await manager.close()
 
 
@@ -819,7 +839,7 @@ async def test_a_cursor_outside_the_roster_falls_back(tmp_path):
     manager, _ = await _landed(tmp_path, _FakeSwarm(), seat="1548")
     manager.select_seat(999_999)
     payload = await manager.fetch_and_compute()
-    assert payload["swarm_seat_selected"]["selected_by"] == "env"
+    assert payload["swarm_seat_selected"]["selected_by"] == "saved"
     assert payload["swarm_seat_selected"]["token_id"] == 1548
     await manager.close()
 

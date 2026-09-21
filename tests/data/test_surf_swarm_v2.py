@@ -666,22 +666,39 @@ def test_seat_rows_fold_in_seen_nodes_for_jobs_no_detail_covers(details):
     assert len(rows) == 17
 
 
-def test_pick_seat_env_present_most_active_and_cursor(details):
+def test_pick_seat_saved_present_most_active_and_cursor(details):
     rows = fold.seat_rows(details, {})
     assert rows[0]["token_id"] == 0
     assert fold.pick_seat(rows, "1548") == {"token_id": 1548, "agent_id": "50971",
-                                           "selected_by": "env"}
-    assert fold.pick_seat(rows, 1548)["selected_by"] == "env"
-    for absent in (None, "", "999999", "abc", 999999):
+                                           "selected_by": "saved"}
+    assert fold.pick_seat(rows, 1548)["selected_by"] == "saved"
+    for absent in (None, "", "abc", True):
         assert fold.pick_seat(rows, absent) == {"token_id": 0, "agent_id": "50906",
                                                 "selected_by": "most_active"}
     assert fold.pick_seat(rows, "1548", cursor_token=463) == {
         "token_id": 463, "agent_id": "50972", "selected_by": "cursor",
     }
-    # A cursor on a seat that is not in the rows falls through to env.
-    assert fold.pick_seat(rows, "1548", cursor_token=999999)["selected_by"] == "env"
+    # A cursor on a seat that is not in the rows falls through to the saved seat.
+    assert fold.pick_seat(rows, "1548", cursor_token=999999)["selected_by"] == "saved"
     assert fold.pick_seat([], "1548") is None
     assert fold.pick_seat(None, None) is None
+
+
+def test_pick_seat_names_a_saved_seat_the_sweep_has_not_seen(details):
+    """A saved seat off the roster falls back to the busiest -- and says so.
+
+    Showing seat #0 under "most active" while the reader saved #999999 is a
+    false statement about which seat they are looking at; ``unseen_token``
+    is what lets the hero say "#999999 not seen" instead.  A cursor pick is
+    the reader's own choice and carries no such note."""
+    rows = fold.seat_rows(details, {})
+    for saved in (999999, "999999", " 999999 "):
+        assert fold.pick_seat(rows, saved) == {
+            "token_id": 0, "agent_id": "50906", "selected_by": "most_active",
+            "unseen_token": 999999,
+        }
+    assert "unseen_token" not in fold.pick_seat(rows, 999999, cursor_token=463)
+    assert "unseen_token" not in fold.pick_seat(rows, "1548")
 
 
 def test_seat_node_rows_newest_first_without_duplicates(details):

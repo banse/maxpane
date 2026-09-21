@@ -15,8 +15,9 @@ Token ids are integers, not addresses: no copy icon. No clock: STATUS shows
 ``last HH:MM`` through ``hhmm``, never an age.
 
 SEAT is three lines -- ``IDMD #1548`` (bold), ``agent 50971`` (dim) and how
-the seat was picked (``env`` / ``selected`` / ``most active``, dim) -- each
-eleven cells or fewer. The plan's one-line form ``agent 50971 · most
+the seat was picked (``saved`` / ``selected`` / ``most active``, dim), or
+``#N not seen`` (yellow) when a saved seat is off the roster -- each fifteen
+cells or fewer for a real IDMD id. The plan's one-line form ``agent 50971 · most
 active`` is 25 cells, and six ``1fr`` boxes at ``__main__
 .FULL_LAYOUT_COLUMNS`` (143) leave each about 20 cells of content; a line
 that cannot fit at the widest pin the app admits has to be re-cut, not
@@ -53,10 +54,10 @@ BOX_IDS = {
     "status": "surf-swarm-agent-status",
 }
 
-#: How the seat was picked (``sw.pick_seat``): the operator's
-#: ``MAXPANE_IMD_SEAT``, the roster cursor, or the busiest seat.
+#: How the seat was picked (``sw.pick_seat``): the seat saved in
+#: ``~/.maxpane/config.toml``, the roster cursor, or the busiest seat.
 _SELECTED_BY = {
-    "env": "env",
+    "saved": "saved",
     "cursor": "selected",
     "most_active": "most active",
 }
@@ -137,7 +138,14 @@ class SurfSwarmAgentHero(HeroRow):
         body.append(flatten(selected.get("agent_id")) or DASH, style="bold")
         body.append("\n")
         how = selected.get("selected_by")
-        body.append(_SELECTED_BY.get(how, flatten(how) or DASH), style="dim")
+        unseen = selected.get("unseen_token")
+        if how == "most_active" and isinstance(unseen, int) and not isinstance(unseen, bool):
+            # The busiest seat is standing in for the saved one: name the
+            # saved one rather than let "most active" pass as the reader's
+            # choice. 16 cells at the AGENT pin -- a five-digit id fits.
+            body.append(f"#{unseen} not seen", style="yellow")
+        else:
+            body.append(_SELECTED_BY.get(how, flatten(how) or DASH), style="dim")
         return body
 
     @staticmethod

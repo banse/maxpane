@@ -158,8 +158,9 @@ AGENTS (online/enrolled), WORKING, ACCEPTED 24h, QUEUE, BREAKER and SERVICES; a 
 only a failed read says `unavailable`.
 
 Press **`a`** (2026-09-21) for the AGENT body — one seat of that swarm at a time. ROSTER lists
-every seat the sweep has seen with its node count; the seat under the cursor (or `MAXPANE_IMD_SEAT`,
-or the busiest) is the one the rest of the body is about: its own hero row (SEAT · NODES · JOBS ·
+every seat the sweep has seen with its node count; the seat under the cursor (or the seat saved in
+`~/.maxpane/config.toml`, or the busiest) is the one the rest of the body is about — a saved seat the
+sweep has not seen yet stays named on the hero as `#N not seen` while the busiest stands in: its own hero row (SEAT · NODES · JOBS ·
 ACC / REJ · REVISIONS · SCORE · STATUS), RECORD (its nodes newest first, with the verifier's
 verdict and detail), VERDICTS (accepted, rejected, revisions, mean score, and the open-vocabulary
 role and rejection-code blocks) and FEEDBACK (its on-chain ERC-8004 reviews, each transaction hash

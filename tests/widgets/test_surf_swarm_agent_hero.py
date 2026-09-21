@@ -38,7 +38,7 @@ from tests.widgets.surf_compositing import composite_lines
 LAST = 1_789_000_000.0
 FIRST = 1_788_990_000.0
 
-SELECTED = {"token_id": 1548, "agent_id": "50971", "selected_by": "env"}
+SELECTED = {"token_id": 1548, "agent_id": "50971", "selected_by": "saved"}
 SUMMARY = {
     "nodes": 7, "jobs": 6, "accepted": 7, "rejected": 0, "revisions": 0,
     "mean_score": 1.0, "scored": 17, "working_now": False,
@@ -131,15 +131,37 @@ async def test_the_seat_box_names_token_and_agent_whole_at_both_pins(width):
 
 @pytest.mark.parametrize("width", PINS)
 async def test_the_three_selected_by_phrasings(width):
-    env = await _box_text(BOX_IDS["seat"], size=(width, 9),
-                          swarm_seat_selected=dict(SELECTED, selected_by="env"))
-    assert "env" in env and "…" not in env
+    saved = await _box_text(BOX_IDS["seat"], size=(width, 9),
+                            swarm_seat_selected=dict(SELECTED, selected_by="saved"))
+    assert "saved" in saved and "…" not in saved
     cursor = await _box_text(BOX_IDS["seat"], size=(width, 9),
                              swarm_seat_selected=dict(SELECTED, selected_by="cursor"))
-    assert "selected" in cursor and "MAXPANE" not in cursor and "…" not in cursor
+    assert "selected" in cursor and "saved" not in cursor and "…" not in cursor
     most = await _box_text(BOX_IDS["seat"], size=(width, 9),
                            swarm_seat_selected=dict(SELECTED, selected_by="most_active"))
     assert "most active" in most and "…" not in most
+
+
+@pytest.mark.parametrize("width", PINS)
+async def test_a_saved_seat_the_sweep_has_not_seen_is_named(width):
+    """The fallback seat is shown, and the saved one it stands in for is
+    named -- never a silent swap. Five digits must fit whole at both pins."""
+    text = await _box_text(
+        BOX_IDS["seat"], size=(width, 9),
+        swarm_seat_selected={"token_id": 0, "agent_id": "50906",
+                             "selected_by": "most_active", "unseen_token": 12345},
+    )
+    assert "IDMD #0" in text and "#12345 not seen" in text
+    assert "most active" not in text and "…" not in text, (width, text)
+
+
+async def test_a_malformed_unseen_token_falls_back_to_the_plain_label():
+    text = await _box_text(
+        BOX_IDS["seat"],
+        swarm_seat_selected={"token_id": 0, "agent_id": "50906",
+                             "selected_by": "most_active", "unseen_token": "[red]x"},
+    )
+    assert "most active" in text and "not seen" not in text
 
 
 async def test_the_hero_row_is_seven_lines_under_the_stylesheet():

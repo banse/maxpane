@@ -806,15 +806,14 @@ async def test_a_banned_talismans_log_host_is_refused_at_construction() -> None:
         await default.close()
 
 
-async def test_the_surf_seat_env_is_read_at_construction(
+async def test_the_surf_seat_is_injected_never_read_from_the_environment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """``surf_manager`` is imported long before this line runs, so a value set
-    here is *after* import by definition (plan A1 "Which seat": read at
-    manager construction, an explicit ``seat=`` winning, never at import and
-    never on a later tick). Move the ``os.environ.get`` into a signature
-    default or into ``_swarm_seat_keys`` and this reddens. The swarm double
-    raises on any call, so the read is provably not a network one."""
+    """The saved seat reaches ``SurfManager`` only as ``seat=`` -- the
+    caller reads ``~/.maxpane/config.toml``, the data layer reads no
+    configuration of its own. ``MAXPANE_IMD_SEAT`` was retired 2026-09-21;
+    set here it must change nothing. The swarm double raises on any call,
+    so construction is provably not a network read either."""
     def _build(**kw: Any) -> SurfManager:
         return SurfManager(
             cache_path=tmp_path / "surf_seam.json",
@@ -826,25 +825,15 @@ async def test_the_surf_seat_env_is_read_at_construction(
         )
 
     monkeypatch.setenv("MAXPANE_IMD_SEAT", "1548")
-    from_env = _build()
-    try:
-        assert from_env._seat_env == "1548"
-        monkeypatch.delenv("MAXPANE_IMD_SEAT")
-        assert from_env._seat_env == "1548", "the env must be read once, at construction"
-    finally:
-        await from_env.close()
-
-    monkeypatch.setenv("MAXPANE_IMD_SEAT", "1548")
-    explicit = _build(seat="463")
-    try:
-        assert explicit._seat_env == "463", "an explicit argument must beat the environment"
-    finally:
-        await explicit.close()
-
-    monkeypatch.delenv("MAXPANE_IMD_SEAT", raising=False)
     unset = _build()
     try:
-        assert unset._seat_env is None
+        assert unset._seat_saved is None, "the retired env var must not pick a seat"
         assert unset._seat_cursor is None
     finally:
         await unset.close()
+
+    explicit = _build(seat="463")
+    try:
+        assert explicit._seat_saved == "463"
+    finally:
+        await explicit.close()

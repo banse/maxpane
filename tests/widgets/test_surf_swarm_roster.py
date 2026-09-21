@@ -50,7 +50,7 @@ SEAT_463 = {
 }
 ROWS = [SEAT_0, SEAT_1548, SEAT_463]
 
-SELECTED = {"token_id": 1548, "agent_id": "50971", "selected_by": "env"}
+SELECTED = {"token_id": 1548, "agent_id": "50971", "selected_by": "saved"}
 AS_OF = "04:06"
 SIZE = (120, 14)
 

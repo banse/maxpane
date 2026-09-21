@@ -114,7 +114,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import os
 import re
 import time
 from typing import Any
@@ -1047,18 +1046,15 @@ class SurfManager:
         self._swarm_counters: dict[str, Any] | None = None
         self._swarm_jobs_read_ts: float = 0.0
         #: The seat the AGENT body shows before the reader picks one (swarm
-        #: v2 plan A1 "Which seat"): the explicit ``seat=`` argument, else
-        #: ``MAXPANE_IMD_SEAT`` -- read **here, once**, never at import and
-        #: never on a later tick, so a hosting process serving two
-        #: configurations and a test that sets the variable after import
-        #: both see the value they gave *this* instance
-        #: (``tests/data/test_manager_seams.py``). An IDMD token id, not a
+        #: v2 plan A1 "Which seat"): the ``seat=`` argument -- the seat the
+        #: caller read off ``~/.maxpane/config.toml`` -- and nothing else.
+        #: The data layer reads no configuration of its own
+        #: (``tests/data/test_manager_seams.py``); ``MAXPANE_IMD_SEAT`` was
+        #: retired 2026-09-21 for the seat prompt. An IDMD token id, not a
         #: secret. Stored as given: ``sw.pick_seat`` parses it.
-        self._seat_env: str | int | None = (
-            seat if seat is not None else os.environ.get("MAXPANE_IMD_SEAT")
-        )
+        self._seat_saved: str | int | None = seat
         #: The reader's own row selection (:meth:`select_seat`); wins over
-        #: the env while it names a seat on the roster.
+        #: the saved seat while it names a seat on the roster.
         self._seat_cursor: str | int | None = None
 
         try:
@@ -5457,10 +5453,22 @@ class SurfManager:
         from a message handler (``DataTable.RowSelected``); the guarded
         refresh then recomputes the seat keys from the cached sweep
         (:meth:`_swarm_seat_keys`). Stored as given: ``sw.pick_seat`` parses
-        it and falls back to the env seat, then the most active, when it
+        it and falls back to the saved seat, then the most active, when it
         names nothing on the roster.
         """
         self._seat_cursor = token
+
+    def set_seat(self, token: str | int | None) -> None:
+        """Replace the saved seat with ``token`` (the seat prompt's seam).
+
+        Drops the roster cursor too: a pick made before the reader typed a
+        seat would otherwise keep outranking what they just typed. Same
+        contract as :meth:`select_seat` -- an attribute write, no I/O, no
+        await. Persisting the choice is the caller's job, not the data
+        layer's.
+        """
+        self._seat_saved = token
+        self._seat_cursor = None
 
     def _spawn_swarm_scores(self, tiers: set[str], now: float) -> Any:
         """:meth:`_spawn_swarm`'s shape, one tier further out.
@@ -5706,7 +5714,7 @@ class SurfManager:
 
         The AGENT body (plan A1). The roster is every seat the sweep's
         details or the seen map name; the selection is ``sw.pick_seat``'s
-        (the reader's cursor, else the env seat, else the most active) and
+        (the reader's cursor, else the saved seat, else the most active) and
         the record, verdict summary and on-chain feedback are the selected
         seat's own. ``None`` versus ``[]`` (CLAUDE.md): a sweep that never
         ran (``entry is None``) publishes ``None`` for every key **even
@@ -5729,7 +5737,7 @@ class SurfManager:
         seen_map = seen if isinstance(seen, dict) else {}
         as_of = entry.as_of_hhmm()
         rows = sw.seat_rows(details_map, seen_map)
-        selected = sw.pick_seat(rows, self._seat_env, self._seat_cursor)
+        selected = sw.pick_seat(rows, self._seat_saved, self._seat_cursor)
         if selected is None:
             return {
                 "swarm_seat_rows": [],
