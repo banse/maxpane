@@ -828,7 +828,7 @@ async def test_the_surf_seat_is_injected_never_read_from_the_environment(
     unset = _build()
     try:
         assert unset._seat_saved is None, "the retired env var must not pick a seat"
-        assert unset._seat_cursor is None
+        assert not hasattr(unset, "_seat_cursor"), "cursor selection is retired"
     finally:
         await unset.close()
 
