@@ -4,6 +4,19 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-22** — surf's AGENT body uses SEAT beside BY NODE over RECORD
+  (`docs/surf_agent_seat_details_handover.md`). ROSTER is retired: its recent job counts looked
+  contradictory beside the seat's lifetime accepted count, and its window title understated the
+  jobs-seen data it folded. FEEDBACK is retired: the captured reviews all carried value `1`, and a
+  passed review does not mean the work won the job. The hero replaces SCORE with WIN RATE
+  (`accepted / attempts`); the true score remains in SEAT. BY NODE shows wins against reviewed
+  work, its available denominator, and TEAMMATES. STATUS's `won` stamp is the newest accepted
+  work; the old feedback `sentAt` stamp said when an oracle transaction reached the chain, not
+  when the seat worked. RECORD adds a date, launch kind and an unlinked submission-hash prefix.
+  `i` selects the saved seat; the most-active default remains. Enter-on-roster selection and the
+  cursor path are removed. The prior AGENT layout and key-retirement statements below are
+  historical; `swarm_seat_node_rows` is reintroduced with the seat-detail contract. Pin values and
+  their measured binding content live only beside the constants in `screens/surf.py`.
 - **2026-09-21** — surf's AGENT body reads the seat's lifetime record from `GET api.imd.fun/seats/{tokenId}`
   (spec `docs/surf_agent_seats_spec.md`, D1–D5): hero SEAT · ACCEPTED `12 of 74` · REVIEWED (total over `N pending`) ·
   SCORE · COLLAB · STATUS; VERDICTS became SEAT RECORD (owner address, runtime, by role); RECORD is lifetime `work[]`,

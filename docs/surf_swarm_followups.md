@@ -17,6 +17,12 @@ to fix: closed by removal, not by a fix. The hero's QUEUE box now reads `swarm_q
 `None` only when nothing could be summed and `0` for a real zero (`sw.queue_total`). F11, F12 and F15
 remain open.
 
+Seat-details update (2026-09-22): F27 is resolved by separate feedback-status rows; F29 is closed
+by removal. F30's SEAT case is resolved, its FEEDBACK case removed, and the tokenless RECORD /
+BY NODE residual is F39. F28 remains open because the single-token cache is unchanged. F40
+records handover defects; F41 records the existing missing-`work` conflation. The older status
+heading and original observations below describe their respective programmes.
+
 Worked on branch `feature/swarm-followups`. Each entry's original reasoning is kept below, unedited,
 so the argument that produced it survives alongside what actually happened.
 
@@ -531,6 +537,10 @@ the Follow-ups rule applies (Tier 0 when its file is next touched, never its own
 owner decision.
 
 ### F16 — the `s` and `a` row pins exceed the owner's terminals (OWNER DECISION)
+
+*2026-09-22:* the AGENT layout below is historical. Its seat-details replacement is measured in
+`screens/surf.py`'s pin blocks and the handover §8; the owner decision remains open.
+
 `SURF_SWARM_FULL_LAYOUT_ROWS` is 42 and `SURF_AGENT_FULL_LAYOUT_ROWS` 40; the owner's terminals are 119×35 and 138×31.
 Both bodies scroll there with `‹ taller` lit — degraded honestly, but degraded. THROUGHPUT's 16 fixed lines set the
 `s` pin (a `#surf-swarm-top { min-height: 16 }` floor was needed); VERDICTS' 13 set the `a` pin. Options: accept;
@@ -567,6 +577,10 @@ The panel height is pinned against the corpus vocabulary (six states, a handful 
 a line. Cap the blocks (top-N + `… n more`) or bind the pin to a vocabulary test.
 
 ### F24 — seat selection takes effect on the next slow-tier cycle — REWORDED 2026-09-21 (`/seats` WP2)
+
+*2026-09-22:* the cursor path and `select_seat` are removed; the saved-seat `set_seat` path still
+marks the seat tier due. The remaining timing and single-token-cache observation below applies.
+
 `select_seat(token)` is an attribute write; the AGENT body refolds when the slow tier next runs (up to its interval).
 The status bar's marker says so, but an operator expects the pick to land at once. A cheap fix: refold
 `_swarm_seat_keys` from the cached sweep on selection, no network.
@@ -591,24 +605,41 @@ Sources: the task reviews of WP0–WP6, the final whole-branch review and the co
 `docs/surf_agent_seats_spec.md`, plan `docs/surf_agent_seats_plan.md`. Minor unless stated; the Follow-ups rule
 applies (Tier 0 when its file is next touched).
 
-### F27 — SEAT RECORD's pending row clips silently at a four-digit `submitted`
+### F27 — SEAT RECORD's pending row clips silently at a four-digit `submitted` — RESOLVED 2026-09-22
+
+SEAT's rewrite gives feedback statuses separate rows, so submitted and queued no longer compete
+for the same fixed-width line. The original combined-line failure is retained below for context.
+
 `widgets/surf/swarm_seat_verdicts.py`: `N submitted · M queued` is one line under `max-width: 46`; at
 `9,000 submitted · 999 queued` it is CSS-clipped (`… que…`) at every width, and SEAT RECORD has no widen marker.
 Pending is a draining backlog (largest seen: 13 on #0), so not reachable today. Fix as REVIEWED was (WP6 fix round):
 bound the width by design, e.g. one status per line or a compact count.
 
-### F28 — one seat slot: switching back after a failed read shows `unavailable`
+### F28 — one seat slot: switching back after a failed read shows `unavailable` — OPEN
+
+*2026-09-22:* the seat-details rewrite leaves `SLOT_SWARM_SEAT` and its TTL unchanged; no
+per-token history is added, so this observation remains open.
+
 `SLOT_SWARM_SEAT` holds one token's read. A → B → (B fails) → A shows `unavailable`/`Loading…` for A, not A's older
 numbers. Correct (never another seat's numbers) but lossy. A bounded per-token map is the fix if the owner wants it
 (plan §9 B).
 
-### F29 — the ROSTER title's "last 100 jobs" may understate
+### F29 — the ROSTER title's "last 100 jobs" may understate — CLOSED BY REMOVAL 2026-09-22
+
+ROSTER and `swarm_roster_window` are retired. The internal roster fold still selects the most
+active default seat, but emits no table or misleading window title. Original observation:
+
 The roster also folds the 48 h jobs-seen map (`SLOT_SWARM_JOBS_SEEN`), so its rows can cover more than the `/jobs`
 window the title names. Owner call: fold the roster from the window only, or title it `jobs seen since HH:MM`
 (plan §9 E). Related capture note: `jobs_window_100.json` spans 02:26–05:44 UTC but was read at ~12:46 UTC, identical
 to a read 6 minutes earlier — either no jobs for ~7 h or the route lags.
 
-### F30 — "never paired" without `#N` in SEAT RECORD, RECORD and FEEDBACK
+### F30 — "never paired" without `#N` in SEAT RECORD, RECORD and FEEDBACK — SEAT RESOLVED; RESIDUAL F39
+
+*2026-09-22:* SEAT receives `swarm_seat_selected` and names `#N never paired`. FEEDBACK is removed.
+RECORD remains tokenless, as does the replacement BY NODE; that open contract gap is F39.
+Original observation:
+
 Their signatures carry no `swarm_seat_selected`, so they render the bare words; the hero names the seat
 (`IDMD #N` / `never paired` — the one-line `#N never paired` is 19 cells and the box holds ~16). Adding the token means a
 signature change in `surf_models.py` (Tier 2 trigger).
@@ -617,11 +648,19 @@ signature change in `surf_models.py` (Tier 2 trigger).
 Owner decision Q-C (2026-09-21): follow the spec (`EXPLORER` = Ethereum; `chainId` is 1 on every captured seat). If a
 seat ever carries another `chainId`, link by it and add `chain_id` to the summary.
 
-### F32 — the A1 2×2 agent-grid argument is stale
+### F32 — the A1 2×2 agent-grid argument is stale — SUPERSEDED 2026-09-22
+
+The seat-details layout replaces that grid with SEAT beside BY NODE over RECORD; current rules
+no longer claim the old A1 arithmetic as its justification. Original historical observation:
+
 `docs/decisions.md` (2026-09-21) rejected A1 on 59 + 92 tight cells; RECORD's tight tier is now 52 (+4 = 56), so the
 sum is 115 and the arithmetic no longer rules A1 out. Not re-measured; the `#:` block and `minimal.tcss` comment say so.
 
 ### F33 — test gaps (test-rigor only)
+
+*2026-09-22:* the ROSTER `TITLE` item is closed by removal of the widget. The original list is
+retained; it does not imply the other gaps have been verified or resolved in this programme.
+
 - a single role wider than `VALUE_COLS` renders only `+1 more` (no role word); untested (`swarm_seat_verdicts._fit_roles`);
 - `_runtime`'s partial case (only `id` or only `version`) is untested (`data/surf_swarm.py`);
 - no test proves repeated `update_data` does not compound ROSTER's instance `TITLE` (code is correct:
@@ -632,6 +671,10 @@ sum is 115 and the arithmetic no longer rules A1 out. Not re-measured; the `#:` 
 - the never-paired screen composite matches `never paired` as a substring.
 
 ### F34 — "no seat selected" does not say why
+
+*2026-09-22:* still open. ROSTER is removed, so its former explanation is no longer displayed;
+the default selection still depends on the internal job-data fold. Original observation:
+
 With no roster and no saved seat the hero shows `no seat selected` whether the roster is empty or the sweep failed;
 ROSTER says which. Spec §4 does not define the case (state `None`).
 
@@ -651,5 +694,59 @@ Plan §1.1 said `runtime` is `None` for an empty list (a false degradation; fixe
 (launch/site rows, curator's `SEL_REQUIRED_NEXT`); WP0's named set omitted the manager test it turned red until WP2.
 
 ### F38 — runtime wording is the source's raw text
+
+*2026-09-22:* the panel is now titled SEAT; runtime wording remains the source's raw text.
+
 SEAT RECORD shows `claude 2.1.278 (Claude Code)` / `codex codex-cli 0.149.0` — `"<id> <version>"` as served, clipped.
 Prettifying is an owner call, not a parser of vendor strings (plan §9 D).
+
+
+## F39 — F42 — seat-details programme (2026-09-22)
+
+### F39 — RECORD and BY NODE cannot name the never-paired token — OPEN
+
+The approved `SurfSwarmSeatRecord` and `SurfSwarmSeatNodes` signatures do not include
+`swarm_seat_selected`. They render `never paired` without `#N`, while SEAT and the hero identify
+the token. This is F30's remaining RECORD case plus the replacement panel's same limitation.
+Adding the selected-seat value to both signatures is a contract change (Tier 2), not a display-only
+fix. The handover's request to close all of F30 overstates what its specified signatures permit.
+
+### F40 — seat-details handover defects and resolved process deviations
+
+`docs/surf_agent_seat_details_handover.md` is the approved target, but these details required
+explicit corrections under its CLAUDE.md precedence rule:
+
+- Its per-package green requirement conflicts with its staged removal of contract keys and
+  widgets: WP1–WP3 leave consumers awaiting later work. Transitional failures are recorded in
+  the package commits rather than represented as passing checks. The obsolete roster-window
+  constant also had to be removed in WP2 so the fold could import against WP1's contract.
+- WP4 asks a markup-bearing node key to render literally, while the established shared
+  `sanitize_cell` path flattens, strips bracket-tag runs, clips, then escapes. The implementation
+  follows that shared sanitisation contract; escaped residual brackets cannot become markup.
+- §5 says all three AGENT layout constants already live in `screens/surf.py`, but
+  `RECORD_NEVER_CLEARS_BELOW` actually lived in the layout test. It is moved to the screen with
+  its measurement block so the test imports the same named production pin.
+- WP5's blanket F30 closure is only supported for SEAT. The remaining contract gap is F39.
+
+### F41 — missing `work` list still displays a real-empty RECORD — OPEN
+
+When a valid seat payload lacks a `work` list, the existing manager path still publishes
+`swarm_seat_work_rows == []`, because `seat_work_rows` folds absent and empty input alike.
+RECORD can therefore show its real-empty message for data that was not supplied. This predates
+seat-details. New node rows preserve `None` when neither the reviews nor work list is available;
+the analogous RECORD fix remains separate. The manager should preserve a missing/invalid list
+as `None` and reserve `[]` for a successfully supplied empty list, with a regression test for both.
+
+### F42 — RECORD preserves source order when acceptance times are out of sequence — OPEN
+
+An actual CLI capture for seat #420 on **2026-09-22 at approximately 00:31 Europe/Berlin**
+showed RECORD's first timestamps as `09-21 23:35`, `09-21 23:29`, `09-21 23:26`, then
+`09-21 23:32`. Evidence: `/tmp/surf-seat-details-live/seat-420-134x32.png`. This came from the
+running application's live read, not a test or a new committed fixture. It demonstrates that
+`work[]` source order is not reliably descending by `acceptedAt`; earlier capture descriptions
+remain observations of their stated dates.
+
+The existing `seat_work_rows` fold preserves source order. The seat-details specification extends
+the row fields but does not explicitly require a sorting change. If the owner wants canonical
+chronology, sort by parsed `accepted_ts` newest first, placing unknown timestamps last, and add a
+regression test with out-of-order and missing timestamps.

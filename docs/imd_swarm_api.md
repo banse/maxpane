@@ -123,6 +123,26 @@ Committed captures: `tests/fixtures/surf/swarm/seats/` (#420, #0, #1649, #516, t
 | `reviews[] {jobId, nodeKey, role, value, policy, verdict, submissionHash, status, txHash, chainId, sentAt}` | every scored submission, newest first; one per job |
 | `collaborators[] {tokenId, agentId, sharedJobs}` | seats it shared jobs with |
 
+The seat-details view uses fields already present in these **2026-09-21 committed captures**;
+this is a description of those captures, not a new live measurement:
+
+- `daemonVersion: null` on seat #0 means the daemon version was not reported. The fold preserves
+  it as an empty string, distinct from an absent or invalid field (`None`, unavailable).
+- `collaborators[]` supplies TEAMMATES, ordered by `sharedJobs` descending and token ascending.
+  `tokenId` accepts strict decimal strings or nonnegative integers; malformed entries are dropped.
+  An empty list means no teammates yet; a missing or invalid list means unavailable.
+- Nine rows of seat #0's `work[]` carry `launch` (`evm_project`); a null launch is a real absence
+  and displays `—`. Text values use the shared widget sanitiser.
+- `work[].submissionHash` is an off-chain identifier. The fold accepts exactly 64 hex characters;
+  RECORD shows its first eight characters as plain text, with no blockchain explorer link.
+
+The lifetime win rate is `accepted / attempts`; zero attempts has no defined rate. BY NODE instead
+uses won work divided by reviewed work for that node, since this route does not serve attempts
+per node. It includes nodes found only in `work[]`, with zero reviewed. A transaction in `sent` or
+`submitted` state counts toward the node's `chain` column; queued reviews do not. The latest
+`work[].acceptedAt` is the last win; the latest `reviews[].sentAt` is feedback delivery time.
+Neither timestamp establishes the seat's last attempt, which the route does not serve.
+
 `reviews[].status` takes three values:
 
 - `sent` — `txHash` and `sentAt` set;
