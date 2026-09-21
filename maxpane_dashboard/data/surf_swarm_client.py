@@ -82,9 +82,14 @@ class SwarmClient(OwnedHttpClient):
         inter_call_delay: float = SWARM_INTER_CALL_DELAY,
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
+        # ``follow_redirects=False`` (WP7): a redirect is a host this client
+        # did not choose. The pool is an allowlist of two names that are one
+        # deployment; a 3xx off either is answered by rotation to the other
+        # pool entry for that request, never by following the ``Location``
+        # to wherever it points.
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(SWARM_REQUEST_TIMEOUT),
-            follow_redirects=True,
+            follow_redirects=False,
             headers={"Accept": "application/json"},
         )
         self._owns_client = http_client is None

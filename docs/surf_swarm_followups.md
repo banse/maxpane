@@ -8,7 +8,14 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21
+
+Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
+`swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
+QUEUE's PENDING block) and F14 (a markup-only counter name rendering as `-- 3`) have no code left
+to fix: closed by removal, not by a fix. The hero's QUEUE box now reads `swarm_queue_total`, which is
+`None` only when nothing could be summed and `0` for a real zero (`sw.queue_total`). F11, F12 and F15
+remain open.
 
 Worked on branch `feature/swarm-followups`. Each entry's original reasoning is kept below, unedited,
 so the argument that produced it survives alongside what actually happened.
@@ -463,7 +470,7 @@ would keep passing throughout. Worth a comment on `_shortened_window_hash_excuse
 tests themselves) pinning them to each other, so a future editor sees why the big sweep's silence
 here is expected and not evidence the predicate is unreachable.
 
-### F13 — `swarm_queue_depths`'s upstream conflation is unchanged
+### F13 — `swarm_queue_depths`'s upstream conflation is unchanged — CLOSED BY REMOVAL 2026-09-21 (WP7)
 
 F6 (`6d3d5a1`) gave `swarm_queue_depths` a consumer (QUEUE's PENDING block,
 `maxpane_dashboard/widgets/surf/swarm_queue.py`), but the upstream shape it consumes is unchanged:
@@ -481,7 +488,7 @@ This predates this branch — `health_facts`' `depths or None` line is untouched
 made it *visible*: before F6 nothing rendered `swarm_queue_depths` at all, so the conflation had no
 panel to show through. Filed rather than fixed, on this file's own "report, do not fix" rule.
 
-### F14 — a counter whose entire name is markup renders as `-- 3`
+### F14 — a counter whose entire name is markup renders as `-- 3` — CLOSED BY REMOVAL 2026-09-21 (WP7)
 
 `swarm_queue.py`'s `_pending_line` (`swarm_queue.py:295`) builds each nonzero counter's label as
 `f"{strip_tags(name) or DASH} {count}"`, where `name` is one of the open-vocabulary `pending*` keys

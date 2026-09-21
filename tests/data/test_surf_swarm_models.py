@@ -1,10 +1,10 @@
 """The ``s`` and ``a`` bodies' data contract, as ``surf_models.py`` freezes it.
 
 WP0 of ``docs/surf_swarm_v2_implementation_plan.md`` (2026-09-21) grew the
-block from eighteen to thirty-two under Amendment A2: the fourteen v2 keys
-(§1.1's four, §1.2's four, A1's six) are appended as one contiguous tail and
-the eight keys §1 lists as "Removed" stay until WP7 retires them with their
-widgets. Every tuple below is hand-typed on purpose -- a copy an agreement
+block from eighteen to thirty-two under Amendment A2 -- the fourteen v2 keys
+(§1.1's four, §1.2's four, A1's six) appended as one contiguous tail -- and
+WP7 retired the eight keys §1 lists as "Removed" with their widgets, leaving
+twenty-four. Every tuple below is hand-typed on purpose -- a copy an agreement
 test binds is the one legitimate copy (CLAUDE.md, Conventions), and deriving
 it from the module would make the test agree with whatever the module says.
 """
@@ -17,10 +17,6 @@ from maxpane_dashboard.data.surf_models import (
     SWARM_KEYS,
     SWARM_WIDGET_SIGNATURES,
 )
-
-#: The pre-v2 row shapes. All five survive until WP7 (A2).
-SWARM_ROW_NAMES = ("swarm_field_rows", "swarm_queue_rows", "swarm_blocked_rows",
-                   "swarm_shipped_rows", "swarm_score_rows")
 
 #: The fourteen v2 keys in the order WP0 appended them (plan §1.1, §1.2, A1).
 SWARM_V2_KEYS = (
@@ -40,8 +36,9 @@ SWARM_V2_KEYS = (
     "swarm_seat_as_of_hhmm",
 )
 
-#: The eight §1 marks "Removed"; A2 defers the removal to WP7.
-SWARM_RETIRING_KEYS = (
+#: The eight §1 marks "Removed", retired in WP7 (A2). Named so the test that
+#: says they are gone cannot pass on a typo.
+SWARM_RETIRED_KEYS = (
     "swarm_jobs_in_flight",
     "swarm_jobs_blocked",
     "swarm_queue_depths",
@@ -103,10 +100,10 @@ SWARM_TARGET_WIDGETS = {
 }
 
 
-def test_the_swarm_block_is_thirty_two_keys():
-    """18 pre-v2 + 14 v2 = 32 until WP7 retires eight (A2)."""
-    assert len(SWARM_KEYS) == 32
-    assert len(set(SWARM_KEYS)) == 32
+def test_the_swarm_block_is_twenty_four_keys():
+    """18 pre-v2 + 14 v2 - 8 retired in WP7 = 24 (A2)."""
+    assert len(SWARM_KEYS) == 24
+    assert len(set(SWARM_KEYS)) == 24
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -125,36 +122,34 @@ def test_the_swarm_block_is_contiguous_and_last():
 def test_the_fourteen_v2_keys_are_the_tail_of_the_block_in_order():
     """The v2 keys are appended, not interleaved: the tail is exactly them.
 
-    Order matters because WP7 deletes the eight retiring keys by name from
-    the head and expects the tail to be the final block's second half.
+    Order matters because WP7 deleted the eight retired keys by name from
+    the head, so the tail is the final block's second half.
     """
     assert SWARM_KEYS[-14:] == SWARM_V2_KEYS
 
 
-def test_the_eight_retiring_keys_are_still_present_until_wp7():
-    """A2: removing them before WP7 reddens the manager, screen and triage
-    tests that still emit and consume them. They go with their widgets."""
-    for key in SWARM_RETIRING_KEYS:
-        assert key in SWARM_KEYS, key
-    # ...and every one of them is pre-v2, i.e. sits ahead of the tail.
-    for key in SWARM_RETIRING_KEYS:
-        assert SWARM_KEYS.index(key) < len(SWARM_KEYS) - 14, key
+def test_the_eight_retired_keys_are_gone_and_the_ten_survivors_lead():
+    """WP7 (A2): the retired keys are in no key tuple and own no row shape,
+    and the ten pre-v2 survivors are the block's head, in their old order."""
+    for key in SWARM_RETIRED_KEYS:
+        assert key not in SWARM_KEYS, key
+        assert key not in SURF_KEYS, key
+        assert key not in SURF_ROW_KEYS, key
+    assert SWARM_KEYS[:10] == (
+        "swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now",
+        "swarm_accepted_today", "swarm_services_up", "swarm_throughput",
+        "swarm_network", "swarm_as_of_hhmm", "swarm_scores_as_of_hhmm",
+        "swarm_stale",
+    )
 
 
 def test_every_swarm_row_shape_is_declared_and_is_a_payload_key():
-    for name in SWARM_ROW_NAMES + tuple(SWARM_V2_ROW_SHAPES):
+    for name in SWARM_V2_ROW_SHAPES:
         assert name in SURF_ROW_KEYS, name
         assert SURF_ROW_KEYS[name], name
         assert name in SURF_KEYS, name
-
-
-def test_the_field_row_is_exactly_the_frozen_shape():
-    """The old FIELD shape survives until WP7 deletes the widget (A2)."""
-    assert SURF_ROW_KEYS["swarm_field_rows"] == (
-        "job_id", "template", "objective", "node_key", "role", "node_state",
-        "agent_token", "agent_id", "revisions", "dispatch_note", "moved_ts",
-        "age_s",
-    )
+    # ...and the swarm owns no other row shape.
+    assert {k for k in SURF_ROW_KEYS if k.startswith("swarm_")} == set(SWARM_V2_ROW_SHAPES)
 
 
 @pytest.mark.parametrize("name", sorted(SWARM_V2_ROW_SHAPES))
@@ -197,11 +192,11 @@ def test_the_signature_names_exactly_the_eleven_target_widgets():
     assert len(SWARM_WIDGET_SIGNATURES) == 11
 
 
-def test_no_retiring_key_is_named_by_a_target_signature():
-    """The signatures describe the post-WP7 widgets: none may still lean on
-    a key that WP7 deletes, or WP7 would break its own binding."""
+def test_no_retired_key_is_named_by_a_target_signature():
+    """The signatures describe the post-WP7 widgets: none may lean on a key
+    WP7 deleted, or the screen's binding would name a key nothing emits."""
     named = {k for sig in SWARM_WIDGET_SIGNATURES.values() for k in sig}
-    assert not (named & set(SWARM_RETIRING_KEYS)), sorted(named & set(SWARM_RETIRING_KEYS))
+    assert not (named & set(SWARM_RETIRED_KEYS)), sorted(named & set(SWARM_RETIRED_KEYS))
 
 
 def test_no_swarm_key_leaks_a_raw_envelope():

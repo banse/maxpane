@@ -2,7 +2,10 @@ import httpx
 import pytest
 
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API, SwarmClient
-from tests.surf_swarm_fixtures import swarm_capture
+from tests.surf_swarm_fixtures import swarm_capture_v2, swarm_details_v2
+
+#: The one executing job of the v2 corpus that has a detail (nodes) on file.
+_EXECUTING_DETAIL = "f046299c-d94e-4760-9e3c-c1e2d3a1a3b2"
 
 
 def _client(handler, **kw) -> SwarmClient:
@@ -13,7 +16,7 @@ def _no_network(request):  # pragma: no cover - must never run
     raise AssertionError(f"a test reached the network: {request.url}")
 
 
-async def test_every_read_is_a_keyless_get_against_the_one_host():
+async def test_every_read_is_a_keyless_get_against_the_pools_first_host():
     seen = []
 
     def handler(request):
@@ -38,10 +41,35 @@ async def test_every_read_is_a_keyless_get_against_the_one_host():
     await client.close()
 
 
+async def test_the_owned_client_never_follows_a_redirect_off_the_pool():
+    """WP7: the client the module builds for itself has redirects OFF -- a
+    ``Location`` header names a host nobody allowlisted. Read off the
+    constructed ``httpx.AsyncClient``, not off a mocked transport (a
+    ``MockTransport`` never redirects, so a transport-level test could not
+    fail); and a 3xx from the first host is answered by rotating to the
+    second pool entry, not by following it anywhere."""
+    owned = SwarmClient()
+    assert owned._client.follow_redirects is False
+    await owned.close()
+
+    seen: list[str] = []
+
+    def handler(request):
+        seen.append(request.url.host)
+        if request.url.host == httpx.URL(SWARM_API).host:
+            return httpx.Response(302, headers={"Location": "https://evil.example/health"})
+        return httpx.Response(200, json={"status": "ok"})
+
+    async with _client(handler) as client:
+        assert await client.fetch_health() == {"status": "ok"}
+    assert "evil.example" not in seen
+    assert seen[0] == httpx.URL(SWARM_API).host and len(seen) == 2
+
+
 async def test_jobs_and_launches_and_sites_unwrap_their_envelopes():
     def handler(request):
         name = {"/jobs": "jobs", "/launches": "launches", "/sites": "sites"}[request.url.path]
-        return httpx.Response(200, json=swarm_capture(name))
+        return httpx.Response(200, json=swarm_capture_v2(name))
 
     async with _client(handler) as client:
         jobs = await client.fetch_jobs()
@@ -56,7 +84,7 @@ async def test_jobs_and_launches_and_sites_unwrap_their_envelopes():
 async def test_a_job_detail_is_returned_whole():
     def handler(request):
         assert request.url.path.startswith("/jobs/")
-        return httpx.Response(200, json=swarm_capture("job_executing"))
+        return httpx.Response(200, json=swarm_details_v2()[_EXECUTING_DETAIL])
 
     async with _client(handler) as client:
         job = await client.fetch_job("4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6")
@@ -300,7 +328,7 @@ async def test_fetch_job_with_a_plain_id_still_asks_the_host():
 
     def handler(request):
         seen.append(request)
-        return httpx.Response(200, json=swarm_capture("job_executing"))
+        return httpx.Response(200, json=swarm_details_v2()[_EXECUTING_DETAIL])
 
     async with _client(handler) as client:
         assert await client.fetch_job("1c47e615-c14e-4eac-bec5-6b0229c18e78") is not None

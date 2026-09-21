@@ -9,7 +9,7 @@ paths:
   - "docs/imd_swarm_api.md"
 ---
 
-# surf — the Surfboard dashboard and its four swapped bodies
+# surf — the Surfboard dashboard and its five swapped bodies
 
 Key history and withdrawn statements are in `docs/decisions.md`; this file states only what is
 true now. Layout pins live beside their constants in `#:` blocks; the terminal-layout skill's
@@ -18,12 +18,16 @@ table names them and this file repeats no numbers.
 ## Keys and bodies
 
 Surf is position 1, the `--game` default, and the dashboard prefetched at launch. Its status
-hint reads `l launchpad · 4 pool4 · s swarm`, in one markup run (adjacent differently-styled
-runs never share a composited line; the acceptance test greps for the whole phrase), read back
-off composited output against `StatusBar`'s left-label budget. `l launchpad` must never shorten.
+hint reads `l launchpad · 4 pool4 · s swarm · a agent`, in one markup run (adjacent
+differently-styled runs never share a composited line). `#status-left` is `width: auto`, so an
+over-long hint never shortens the phrase — the compositor crops the bar at the terminal edge and
+the poll word and right label fall off — which is why the layout test asserts the **whole bar**
+(right label inside the bar's region, ` poll` composited), not the phrase: the bar is whole from
+`STATUS_BAR_WHOLE_FROM` in `tests/screens/test_surf_swarm_layout.py` (measured 2026-09-21; it was
+never whole at the `4` body's own pin with either phrase). `l launchpad` must never shorten.
 
 A **mode** is a whole second body with its own panels, never two panels sharing one slot. Each
-of the four swaps `#middle-row`/`#separator`/`#bottom-row`, `escape` backs out one-way, and none
+of the five swaps `#middle-row`/`#separator`/`#bottom-row`, `escape` backs out one-way, and none
 is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` untouched):
 
 | key | mode | body | hero |
@@ -31,12 +35,15 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `l` | MODE_LAUNCHPAD | LAUNCHPAD COINS over LAUNCHPAD ACTIVITY left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail | `SurfHero` stays |
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
-| `s` | MODE_SWARM | THE FIELD beside a rail of QUEUE over THROUGHPUT; JUST SHIPPED full-width beneath | `SurfSwarmHero`: AGENTS / IN FLIGHT / ACCEPTED TODAY |
+| `s` | MODE_SWARM | CAPABILITY beside THROUGHPUT; IN FLIGHT beside LAUNCHES; SITES full-width beneath | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / QUEUE / BREAKER / SERVICES |
+| `a` | MODE_AGENT | ROSTER beside VERDICTS; RECORD; FEEDBACK — each its own row | `SurfSwarmAgentHero`: SEAT / NODES / JOBS / ACC · REJ / REVISIONS / SCORE / STATUS |
 
 `_SURF_HERO_MODES` **enumerates** the modes that get `SurfHero` rather than negating one: a body
 with a hero of its own would otherwise inherit `True` from a `!=` check and paint two heroes into
-one row. A second hero widget is composed once at startup and toggled with the body — curator's
-per-mode hero, not one widget with a mode branch. Surf's `e` and curator's `e` (export), and the
+one row. Every second hero widget (`4`, `s`, `a`) is composed once at startup and toggled with the
+body — curator's per-mode hero, not one widget with a mode branch. `_SCROLL_COLUMNS[mode]` names
+the containers whose scrolling lights `‹ taller`; every swarm and agent container that can scroll
+is registered there, bound by the layout test. Surf's `e` and curator's `e` (export), and the
 two `l`s, are separate bindings on separate screens. The feed threads replies behind an
 expand/collapse toggle, with NEW REPLY on the rail so a collapsed thread still announces itself.
 
@@ -135,29 +142,60 @@ panel; the copy icon paid for its two cells by windowing (`_ADDR_SHORT_COLS` at 
 whole address only above it), not by moving the pin. A change to a cell's contents here is a
 change to a pin — re-sweep, never adjust to a guess. PRD §4.1 carries the whole trade.
 
-## SWARM body (`s`, MODE_SWARM)
+## SWARM body (`s`, MODE_SWARM) and AGENT body (`a`, MODE_AGENT)
 
 Answers what the IMD swarm — the agent workforce this repo's own branches are built by — is doing:
-who is online, what each seat is working on and why it is stuck, what shipped, how fast work
-moves. It reads **one** keyless third-party host, the swarm's control plane
-(`docs/imd_swarm_api.md`): `data/surf_swarm_client.py` is the HTTP layer and nothing else;
-`data/surf_swarm.py` is the pure fold — no network, no clock, no Textual.
+who is online, what is executing and on which seat, what has launched, how fast work moves; and,
+on `a`, one seat's own record. Rebuilt 2026-09-21 (swarm v2, `docs/surf_swarm_v2_implementation_plan.md`,
+WP0–WP7). It reads **one** keyless third-party source under two names (`SWARM_API_HOSTS`:
+`api.imd.fun` and its Railway host — one deployment, measured by `/version`, rotated per request,
+never shrunk; `follow_redirects=False`, a redirect is a host nobody allowlisted):
+`data/surf_swarm_client.py` is the HTTP layer and nothing else; `data/surf_swarm.py` is the pure
+fold — no network, no clock (`now_ts` injected), no Textual; the shared rollups are
+`analytics/surf_swarm_signals.py`, imported by fold and widgets alike so both count with one
+implementation. The contract is `SWARM_KEYS` and `SWARM_WIDGET_SIGNATURES` in
+`data/surf_models.py`; the screen's dispatch table is bound to it by identity, and every row dict
+carries exactly its `SURF_ROW_KEYS` fields.
 
 **The job list is gated on `/health`'s own counters.** The live tier reads `GET /health` every
-run. `GET /jobs` (~27.5 KB, one shot, no pagination, no ETag or version) is re-fetched only when
-one of the host's counters (`connectedDaemons`/`activeEnrollments`/`workingNow`/
-`acceptedLastDay`, every `pending*`) has moved since the manager last saw them, or when a ceiling
-has elapsed regardless — curator's `(version_id, content_hash)` precedent one size down.
-`GET /jobs/{id}` follows for every non-terminal job (the only source of agent attribution,
-subtasks and dispatch notes); a 404 on one drops that row, not the read. A slower tier sweeps
-every detail plus `/launches` and `/sites` on its own clock, feeding score and throughput only.
-QUEUE renders `PENDING` plus the summed total and only the nonzero named counters, gated on the
-same as-of marker `_is_unavailable` uses; a dict of real zeros still renders (`PENDING 0`).
+run. `GET /jobs` (one shot, no pagination, no ETag) is re-fetched only when one of the host's
+counters (`connectedDaemons`/`activeEnrollments`/`workingNow`/`acceptedLastDay`, every `pending*`)
+has moved since the manager last saw them, or when `SWARM_LIST_CEILING_S` has elapsed regardless.
+`GET /jobs/{id}` follows for every **executing** job (plan §1.5; a 404 drops the detail, never the
+row or the read). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
+plus `/skills`, `/launches` and `/sites` on its own clock and feeds CAPABILITY, LAUNCHES, SITES and
+the whole AGENT body; `swarm_throughput` is folded off the **live** slot because its widget shows
+the live marker (two clocks never meet behind one `as of`). A third slot, `SLOT_SWARM_JOBS_SEEN`,
+is a map of every job either tier has read (pruned by age and cap, stored only when it changed so
+the 60 s tick does not rewrite the cache file for nothing): it is the sole source of `completed_24h`
+and lets ROSTER and RECORD keep a seat's nodes after the host's window has moved past them.
+
+**`None` vs `[]` is decided in the manager, never the fold.** Every `*_rows` fold answers `[]` for
+`None` and for empty input alike; only the manager knows whether the read happened, so a list never
+read publishes `None` and a read list with nothing in it publishes `[]` — checked against the
+argument (`jobs is not None`), never after a fold or by truthiness (F-C: `if jobs` once published
+`None` for a successful read of an idle swarm). `SwarmTableBase` paints the two apart: `None` is a
+yellow `unavailable` row, `[]` the panel's own real-empty word; the hero's boxes render `0` for a
+zero and `unavailable` only for `None`, and `tests/test_surf_registration.py` probes the two AGENTS
+halves (`0/--`, `--/0`) under a full outage and excludes the three bare-count boxes with a reason.
+
+**Every third-party string is escaped at the widget** (`markup_safety.sanitize_cell`); every
+address and hash goes through `widgets/address` with the explorer of its **own** row's `chain_id`
+(`explorer.for_chain_id`; unknown → no link). SITES and FEEDBACK render hashes only and are named
+exemptions in the icon sweep. The `parked_reason` cell in LAUNCHES clips to its column with a
+visible `…` (accepted, `docs/decisions.md`).
 
 **The explorer's own inference headline is deliberately absent**: no public route serves that
-number, so this view shows none of it — absent, never estimated (FWA's uncovered collections and
-pool4's NFT floor follow the same rule).
+number, so this view shows none of it — absent, never estimated.
 
-Pins: `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}`, each `#:` block naming the binding
-panel (`SWARM_TOP_ID` for rows since QUEUE's counter block landed) and the sweep. THE FIELD wraps
-its objective line instead of clipping it, with a shed marker when a continuation is dropped.
+Pins: `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` (CAPABILITY binds the width; the top
+row's `min-height` is a floor equal to THROUGHPUT's own fixed line count, so the row pin is the
+body's three rows of content and not a `1fr` split) and `SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`
+(ROSTER binds; VERDICTS' fixed lines floor its row the same way). Named permanent exceptions, each
+with a measured clearing width in the `#:` block and in the layout test (`INFLIGHT_NEVER_CLEARS_BELOW`,
+`LAUNCHES_NEVER_CLEARS_BELOW`, `LAUNCHES_HIDES_NO_COLUMN_FROM`, `RECORD_NEVER_CLEARS_BELOW`):
+IN FLIGHT and LAUNCHES share a 4fr:5fr row measured so LAUNCHES hides no table column from below
+the pin up; RECORD's detail column keeps `‹ widen` lit on the corpus and never on short details.
+Neither the plan's §2 grid nor its A1 2×2 agent grid fits under `__main__.FULL_LAYOUT_COLUMNS` at
+*tight*, which is why the rows pair as they do — `themes/minimal.tcss`'s swarm block carries the
+arithmetic.

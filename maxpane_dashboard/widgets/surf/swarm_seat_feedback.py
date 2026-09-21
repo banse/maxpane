@@ -59,7 +59,7 @@ _WHEN_COLS = 5
 _VALUE_COLS = 6
 
 #: The tx hash window at ``full`` / ``compact``: the same 17 cells surf's
-#: other swarm and pool4 panels give a hash (``swarm_shipped.ADDR_COLS``),
+#: other swarm and pool4 panels give a hash (``swarm_launches.ADDR_COLS``),
 #: ``0x`` + 8 hex + ``…`` + 6 hex through ``short_hex``.
 TX_COLS = 17
 

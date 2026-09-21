@@ -900,9 +900,9 @@ def _swarm_gate_counters(health: dict[str, Any]) -> dict[str, Any]:
 def _swarm_executing_ids(jobs: Any) -> list[str]:
     """The ids the live tier reads details for: state ``executing`` only.
 
-    Plan §1.5 -- not ``blocked`` (the old ``sw.unfinished_ids`` rule, which
-    the retired FIELD panel needed). A job without a string id is skipped;
-    there is nothing to ask the detail route for.
+    Plan §1.5 -- not every non-terminal state (``sw.unfinished_ids``, the
+    rule the FIELD panel needed before WP7 retired it). A job without a
+    string id is skipped; there is nothing to ask the detail route for.
     """
     if not isinstance(jobs, list):
         return []
@@ -941,9 +941,9 @@ def _swarm_details_map(details: Any) -> dict[str, dict[str, Any]]:
 
     The two swarm slots keep ``details`` as a list -- the shape every
     ``~/.maxpane/surf_cache.json`` written since Task 5 carries and the one
-    the pre-WP7 folds (``sw.field_rows``, ``sw.score_rows``) read -- and the
-    v2 folds take the map, so it is built here at fold time rather than
-    changing what is persisted.
+    the v1 folds read until WP7 retired them -- and the v2 folds take the
+    map, so it is built here at fold time rather than changing what is
+    persisted.
     """
     if not isinstance(details, list):
         return {}
@@ -5531,23 +5531,24 @@ class SurfManager:
         so a live-tier outage can never starve this sweep of job ids and a
         sweep failure can never touch the live slot's marker.
 
-        Unlike :meth:`_pool_swarm` this asks for **every** job's detail, not
-        just the unfinished ones: :func:`sw.score_rows` folds ``reviews`` off
-        completed jobs too, and a job that shipped days ago still has a score
-        worth showing on the leaderboard.
+        Unlike :meth:`_pool_swarm` this asks for **every** job's detail
+        (the newest :data:`SWARM_SWEEP_CAP`), not just the executing ones:
+        the AGENT body's RECORD and ROSTER (:func:`sw.seat_rows`,
+        :func:`sw.seat_node_rows`) fold verdicts off completed jobs too, and
+        a job that shipped days ago is still part of a seat's record.
 
         Stores ``{"jobs", "details", "launches", "sites"}`` -- **including**
         its own copy of the job list, fix round 1 finding 4 (reversing the
         first version, which reused the live slot's jobs instead). That
-        reuse was wrong two ways at once: :func:`sw.shipped_rows` would have
+        reuse was wrong two ways at once: the retired JUST SHIPPED fold
         merged deliveries read off the *live* slot with launches/sites read
         off *this* slot and sorted the union to a top 12, so the panel could
         show a top-12 that never existed at any single moment on the host --
         wrong rows, not merely fewer -- and a live-tier ``/health`` outage
-        would have silently blanked :func:`sw.throughput` (which needs
-        ``jobs``) even on a cycle where this sweep read a perfectly good
-        list. Paying to store this list a second time, on a 1800 s tier,
-        buys a scores panel whose rows and marker describe one moment.
+        would have silently blanked every fold that needed ``jobs`` even on
+        a cycle where this sweep read a perfectly good list. Paying to store
+        this list a second time, on a 1800 s tier, buys a sweep whose rows
+        and marker describe one moment (the seat keys read it, plan A1).
         """
         if TIER_SWARM_SCORES not in tiers:
             return {"ok": False, "payload": None}
@@ -5602,10 +5603,9 @@ class SurfManager:
         ``/health`` (and, on a re-fetch, ``/jobs``) last landed -- not a
         promise that the job list itself is that fresh. The counter gate in
         :meth:`_pool_swarm` can reuse a list from an earlier successful
-        write for up to :data:`SWARM_LIST_CEILING_S`, so the queue-derived
-        fields here (``swarm_jobs_in_flight``/``_blocked``, the queue and
-        blocked rows) can describe a list up to that much older than the
-        marker claims. Bounded and documented beats an unbounded surprise --
+        write for up to :data:`SWARM_LIST_CEILING_S`, so the list-derived
+        keys here (``swarm_inflight_rows``, ``swarm_throughput``'s window)
+        can describe a list up to that much older than the marker claims. Bounded and documented beats an unbounded surprise --
         the alternative, stamping the marker with the list's own read time
         instead of the slot's write time, would make ``/health`` (genuinely
         fresh every write) read as stale instead.
@@ -5614,8 +5614,6 @@ class SurfManager:
         jobs = slot.get("jobs") if slot else None
         details = slot.get("details") if slot else None
         facts = sw.health_facts(health)
-        queue = sw.queue_rows(jobs)
-        by_state = {row["state"]: row["count"] for row in queue}
         return {
             "swarm_agents_online": facts["agents_online"],
             "swarm_agents_enrolled": facts["agents_enrolled"],
@@ -5634,29 +5632,16 @@ class SurfManager:
                 sw.inflight_rows(jobs, _swarm_details_map(details), now_ts=now)
                 if jobs is not None else None
             ),
-            # ``0``, not ``None``, when the list was read and genuinely has
-            # no job in that state -- fix round 1 finding 3. Only a list
-            # that was never read (``jobs is None``) publishes ``None``.
-            # F-C (fix round 3): this used to read ``if jobs`` -- falsy
-            # for ``[]`` as well as ``None`` -- so a *successful* read of an
-            # idle swarm (``client.fetch_jobs()`` answering ``[]``, which
-            # ``SwarmClient._list``/``_pool_swarm`` both pass through
-            # deliberately as a real empty, not an unread one) published
-            # ``None`` and the hero rendered ``unavailable`` beside a live
-            # AGENTS card. ``jobs is not None`` is checked here, directly
-            # against the argument, before ``by_state`` (itself built off
-            # ``sw.queue_rows(jobs)``, which already folds ``None`` and
-            # ``[]`` to the same ``{}`` internally and so cannot be asked
-            # this question after the fact).
-            "swarm_jobs_in_flight": by_state.get("executing", 0) if jobs is not None else None,
-            "swarm_jobs_blocked": by_state.get("blocked", 0) if jobs is not None else None,
-            "swarm_queue_depths": facts["queue_depths"],
             "swarm_services_up": facts["services_up"],
-            "swarm_field_rows": sw.field_rows(details, now=now),
-            "swarm_queue_rows": queue,
-            "swarm_blocked_rows": sw.blocked_rows(jobs),
             # ``None`` only when the list was never read (the fold's own
-            # rule); an idle swarm is a dict of honest empties.
+            # rule); an idle swarm is a dict of honest empties. The
+            # ``jobs is not None`` test above is made directly against the
+            # argument, never after a fold: ``[]`` (``client.fetch_jobs()``
+            # answering an idle swarm, which ``SwarmClient._list`` /
+            # ``_pool_swarm`` pass through as a real empty) is a read, and a
+            # truthiness check once published ``None`` for it -- F-C, fix
+            # round 3 -- so the hero said ``unavailable`` beside a live
+            # AGENTS card.
             "swarm_throughput": sw.throughput_facts(jobs, seen, now_ts=now),
             "swarm_network": facts["network"],
             "swarm_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
@@ -5667,18 +5652,16 @@ class SurfManager:
     ) -> dict[str, Any]:
         """SLOT_SWARM_SCORES -> the sweep's own `swarm_*` keys.
 
-        ``jobs`` for ``shipped_rows`` comes off **this** slot -- fix round 1
-        finding 4 -- not the live tier's. An earlier version sourced it
-        from ``live_entry`` to avoid storing the list twice, but that merged
-        two payloads read on two different clocks into one row set:
-        ``shipped_rows`` would fold deliveries off the live slot's jobs with
-        launches/sites off this slot and sort the union to a top 12 that
-        never existed at any single moment. ``swarm_throughput`` left this
-        method in WP7 for the same two-clocks reason in the other
-        direction: its widget shows the live marker, so it is folded in
-        :meth:`_swarm_keys` off the live slot. ``live_entry`` is kept only
-        for ``swarm_stale`` below, and would go if that check ever moved to
-        :meth:`_cycle`.
+        Every key here is folded off **this** slot's own reads -- fix round
+        1 finding 4 -- never the live tier's: two payloads read on two
+        clocks must not be merged into one row set behind one marker (the
+        retired JUST SHIPPED once sorted live-slot jobs against sweep-slot
+        launches into a top 12 that never existed at any single moment).
+        ``swarm_throughput`` left this method in WP7 for the same reason in
+        the other direction: its widget shows the live marker, so it is
+        folded in :meth:`_swarm_keys` off the live slot. ``live_entry`` is
+        kept only for ``swarm_stale`` below, and would go if that check
+        ever moved to :meth:`_cycle`.
 
         ``swarm_stale`` is the staker rule (spec §6) applied to these two
         markers: ``None`` while either is missing, ``True`` only when both
@@ -5687,8 +5670,6 @@ class SurfManager:
         healthy pair flagged just because one runs on a slower clock than the
         other.
         """
-        jobs = slot.get("jobs") if slot else None
-        details = slot.get("details") if slot else None
         skills = slot.get("skills") if slot else None
         launches = slot.get("launches") if slot else None
         sites = slot.get("sites") if slot else None
@@ -5705,8 +5686,6 @@ class SurfManager:
         launch_rows = sw.launch_rows(launches) if launches is not None else None
 
         return {
-            "swarm_shipped_rows": sw.shipped_rows(jobs, details, launches, sites),
-            "swarm_score_rows": sw.score_rows(details),
             "swarm_scores_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
             "swarm_stale": stale,
             "swarm_skill_rows": skill_rows,
@@ -6212,13 +6191,12 @@ class SurfManager:
         # widget shows this tier's marker; ``completed_24h`` comes off the
         # seen map).
         data.update(self._swarm_keys(swarm_slot, swarm_entry, now, seen))
-        # The sweep's own keys, off its own slot -- ``shipped_rows`` comes
-        # from THIS slot's own ``jobs``, and this sweep persists its own copy
-        # rather than reusing the live tier's (fix round 1 finding 4; see
-        # ``_swarm_scores_keys``'s own docstring for the two-clocks
-        # argument). ``swarm_entry`` is threaded through only so
-        # ``swarm_stale`` can compare this sweep's marker against the live
-        # tier's.
+        # The sweep's own keys, off its own slot -- this sweep persists its
+        # own copy of the job list rather than reusing the live tier's (fix
+        # round 1 finding 4; see ``_swarm_scores_keys``'s own docstring for
+        # the two-clocks argument; the seat keys below read it).
+        # ``swarm_entry`` is threaded through only so ``swarm_stale`` can
+        # compare this sweep's marker against the live tier's.
         data.update(
             self._swarm_scores_keys(scores_slot, scores_entry, swarm_entry, now)
         )

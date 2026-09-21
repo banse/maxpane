@@ -512,29 +512,22 @@ EXPECTED_KEYS = {
     # fold has not landed yet" -- the ordinary state of tick 1 -- from "the
     # sweep failed", and warned on both. This key is the difference.
     "pool4_stakers_state",
-    # ---- swarm (Task 4, 2026-09-16) ----------------------------------------
+    # ---- swarm (Task 4, 2026-09-16; eight of the original eighteen retired
+    # in WP7 of the swarm v2 plan, 2026-09-21) -------------------------------
     "swarm_agents_online",
     "swarm_agents_enrolled",
     "swarm_working_now",
     "swarm_accepted_today",
-    "swarm_jobs_in_flight",
-    "swarm_jobs_blocked",
-    "swarm_queue_depths",
     "swarm_services_up",
-    "swarm_field_rows",
-    "swarm_queue_rows",
-    "swarm_blocked_rows",
-    "swarm_shipped_rows",
-    "swarm_score_rows",
     "swarm_throughput",
     "swarm_network",
     "swarm_as_of_hhmm",
     "swarm_scores_as_of_hhmm",
     "swarm_stale",
     # ---- swarm v2 (WP0, 2026-09-21) -- frozen ahead of their consumers -----
-    # Plan A2: the fourteen land now so WP1-WP6a build against one frozen
-    # contract; the eight pre-v2 keys §1 retires stay until WP7 removes them
-    # with their widgets. Same order as the module's tail.
+    # Plan A2: the fourteen landed in WP0 so WP1-WP6a built against one
+    # frozen contract; WP7 removed the eight pre-v2 keys §1 retired, with
+    # their widgets. Same order as the module's tail.
     "swarm_queue_total",
     "swarm_breaker",
     "swarm_skill_summary",
@@ -555,15 +548,16 @@ EXPECTED_KEYS = {
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    **191 = 83 + 71 + 5 + 32**: the 83 that shipped through v0.8.3, the ``p``
+    **183 = 83 + 71 + 5 + 24**: the 83 that shipped through v0.8.3, the ``p``
     body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
     cross-venue price, the backstop band and the realised return), the
     staker sweep's own five in ``POOL4_STAKERS_KEYS`` (four until
     ``pool4_stakers_state`` joined them on 2026-09-12), and the ``s``/``a``
-    bodies' thirty-two in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
+    bodies' twenty-four in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
     the fourteen swarm v2 keys WP0 froze on 2026-09-21 ahead of their
-    consumers (plan A2); eight of the eighteen retire in WP7, when the
-    block settles at 24 and this total at 183. The count is asserted
+    consumers (plan A2), less the eight of the eighteen WP7 retired with
+    their widgets the same day (the block was 32 and this total 191 in
+    between). The count is asserted
     beside the set membership on purpose: the set catches a rename, the
     count catches a key added to both sides at once by someone editing
     ``EXPECTED_KEYS`` to make a red test green instead of asking why it was
@@ -585,12 +579,12 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 191
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 183
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
-    assert len(SWARM_KEYS) == 32
+    assert len(SWARM_KEYS) == 24
     assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 83
 
 

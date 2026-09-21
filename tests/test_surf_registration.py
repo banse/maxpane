@@ -1378,29 +1378,21 @@ _NON_NUMERIC_KEYS = frozenset(
         # word `unavailable` -- a checker that only compared the `None` word
         # would have passed the defect this key fixes.
         "pool4_stakers_state",
-        # -- the `s` SWARM body (2026-09-16) ------------------------------
+        # -- the `s` SWARM body (2026-09-16; eight v1 keys retired in WP7 of
+        # the swarm v2 plan, 2026-09-21) ------------------------------------
         #
-        # Twelve of the thirteen keys below are never a bare `int`/`float`,
-        # so they have no numeric zero to confuse with a failed read -- the
-        # same reasoning every list[dict] entry above already carries,
-        # extended here to `dict` for the first time (`swarm_queue_depths`,
-        # `swarm_services_up`, `swarm_throughput`): a dict's unread state is
-        # `None` vs `{}`, the same shape as a list's `None` vs `[]`. The
-        # thirteenth, `swarm_agents_enrolled`, IS numeric -- see its own
-        # comment below the tri-state bool for why it still belongs here.
-        #
-        # `swarm_queue_depths` went unconsumed by any widget from launch
-        # (2026-09-16) until F6 (2026-09-17, `docs/surf_swarm_followups.md`)
-        # gave QUEUE a compact pending-pipeline block off it. That consumer
-        # question is `_NUMERIC_KEYS_EXCLUDED`'s kind of reasoning, not this
-        # bucket's, and never bore on why the key is listed here: it lands
-        # in this bucket purely because `dict` is not `int`/`float`, same as
-        # its two dict-typed siblings.
-        "swarm_queue_depths", "swarm_services_up", "swarm_throughput",
-        # Five list[dict] row payloads, same shape as `pool4_flow` /
-        # `pool4_hatches` / `launchpad_coins` above.
-        "swarm_field_rows", "swarm_queue_rows", "swarm_blocked_rows",
-        "swarm_shipped_rows", "swarm_score_rows",
+        # None of the keys below is a bare `int`/`float`, so none has a
+        # numeric zero to confuse with a failed read -- the same reasoning
+        # every list[dict] entry above already carries, extended to `dict`
+        # (`swarm_services_up`, `swarm_throughput`): a dict's unread state
+        # is `None` vs `{}`, the same shape as a list's `None` vs `[]`.
+        # `swarm_agents_enrolled` sat here from Task 11 to WP7 because the
+        # v1 hero printed the AGENTS fraction only when both halves were
+        # read; the v2 hero prints `--/0` for a lone zeroed `enrolled`, so
+        # the key is observable under this test's outage and moved to
+        # `_SWARM_ZERO_PROBES`. `swarm_queue_depths` and the five v1 row
+        # payloads left `SURF_KEYS` with their widgets.
+        "swarm_services_up", "swarm_throughput",
         # Two closed-vocabulary/free strings and a tier marker, the same
         # family as `pool4_network` / `pool4_as_of_hhmm` /
         # `pool4_stakers_as_of_hhmm`: `swarm_scores_as_of_hhmm` is the
@@ -1411,35 +1403,14 @@ _NON_NUMERIC_KEYS = frozenset(
         # representable `False`, and `None` means the comparison has never
         # been made.
         "swarm_stale",
-        # `swarm_agents_enrolled` IS `int | None` -- the one genuinely
-        # numeric key in this bucket, not a mis-file. It lands here rather
-        # than in `_SWARM_ZERO_PROBES` because this test's own outage shape
-        # (every `SURF_KEYS` entry `None`, never a real per-key `0`) cannot
-        # observe it independently of `swarm_agents_online`: `_agents_card`
-        # (`widgets/surf/swarm_hero.py`) prints the AGENTS fraction only when
-        # BOTH halves are non-`None`, and `DeadSourcesManager` always nulls
-        # both together, so a needle here (`"of 0"`, say) would be checked
-        # against a render `swarm_agents_online`'s own probe (`"0 of"` in
-        # `_SWARM_ZERO_PROBES`) already makes impossible -- there is no
-        # payload this test can build where `enrolled` is the only zeroed
-        # half. Verified directly (not assumed): rendering the real
-        # `SurfScreen` with `swarm_agents_online=5, swarm_agents_enrolled=0`
-        # (a genuine, reachable production state) DOES print `"of 0"` --
-        # so the key is not unobservable in general, only unobservable under
-        # THIS test's all-or-nothing outage, which is the one shape this
-        # bucket's reasoning actually requires. A needle here would be the
-        # exact vacuous-probe anti-pattern `_POOL4_ZERO_PROBES`'s own comment
-        # names -- passing by absence, on a render that never happens.
-        "swarm_agents_enrolled",
-        # -- swarm v2 (WP0, 2026-09-21) -- frozen ahead of their consumers -
+        # -- swarm v2 (WP0, 2026-09-21; wired on screen by WP7) ------------
         #
-        # Plan A2: these thirteen are in `SWARM_KEYS` before any widget
-        # reads them (WP5/WP6/WP6a build the consumers; WP7 wires them).
-        # They land in THIS bucket purely because dict/list/str is not
-        # int/float -- the same reasoning as every entry above -- not
-        # because anything has looked at how they render. The fourteenth
-        # v2 key, `swarm_queue_total`, IS numeric and sits in
-        # `_KEYS_PENDING_CONSUMERS` until WP7 gives it a probe.
+        # Plan A2: these thirteen were frozen in `SWARM_KEYS` before any
+        # widget read them (WP5/WP6/WP6a built the consumers; WP7 wired
+        # them). They land in THIS bucket purely because dict/list/str is
+        # not int/float -- the same reasoning as every entry above. The
+        # fourteenth v2 key, `swarm_queue_total`, IS numeric and is a
+        # reasoned entry in `_NUMERIC_KEYS_EXCLUDED` since WP7.
         # Five dicts: `None` vs `{}`, as `swarm_throughput` above.
         "swarm_breaker", "swarm_skill_summary", "swarm_launch_summary",
         "swarm_seat_selected", "swarm_seat_summary",
@@ -1451,6 +1422,14 @@ _NON_NUMERIC_KEYS = frozenset(
         # second name (A1).
         "swarm_seat_as_of_hhmm",
     }
+)
+
+#: The one reason three swarm hero counts share (WP7; the section that names
+#: them, at the end of the dict below, says how it was verified).
+_SWARM_BARE_COUNT = (
+    "renders a bare grouped integer in a hero box -- no distinctive needle; "
+    "the None->unavailable / 0->'0' distinction is pinned per box in "
+    "tests/widgets/test_surf_swarm_hero.py"
 )
 
 #: Numeric keys with *no render path this acceptance test can observe*, each
@@ -1699,17 +1678,28 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # `pool4_backstop_state`), the key moved to `_POOL4_USER_ZERO_PROBES`
     # with a needle read off the same (143, 60) render that condemned it,
     # and the entry went away exactly as it said it would.
-    # -- the `s` SWARM body (2026-09-16) -----------------------------------
+    # -- the `s` SWARM body (2026-09-16; hero rebuilt by swarm v2, WP7 of
+    # `docs/surf_swarm_v2_implementation_plan.md`, 2026-09-21) ---------------
     #
-    # NO exclusion any more (Task 11): all five of `SurfSwarmHero`'s
-    # independently-observable numeric keys now carry a needle in
-    # `_SWARM_ZERO_PROBES` below, verified by rendering the real
-    # `SurfScreen` with `s` pressed and one key genuinely `0`. They sat here
-    # from Task 10b to this task because `test_a_full_outage_renders_
-    # explicit_states_not_zeros` did not press `s` yet -- see
-    # `_SWARM_ZERO_PROBES`'s own comment for the needles and
-    # `swarm_agents_enrolled`'s entry in `_NON_NUMERIC_KEYS` for the one
-    # numeric key that stays excluded even now the body composites.
+    # Task 11 emptied this section: the v1 hero labelled every count
+    # (`working 0`, `0 in flight`), so each key had a distinctive needle.
+    # The v2 `SurfSwarmHero` renders WORKING, ACCEPTED 24h and QUEUE as a
+    # bare grouped integer under a label on its own line (`_count_body`,
+    # `widgets/surf/swarm_hero.py`): the zero rendering of each is the
+    # single character `0`, which matches any digit zero on any of the five
+    # bodies this test sweeps and so cannot discriminate -- a needle of `"0"`
+    # would fail on a real date, and a needle with the label would span two
+    # lines the composited text never joins. Verified by rendering the real
+    # `SurfScreen` with `s` pressed and each key alone `0` (WP7, 2026-09-21):
+    # the box reads `0`, the other five read `unavailable`. The
+    # None -> `unavailable` / 0 -> `0` distinction each box makes is pinned
+    # per box in `tests/widgets/test_surf_swarm_hero.py`
+    # (`test_queue_three_states_and_zero_is_real`,
+    # `test_every_key_none_renders_unavailable_in_every_box`); the two
+    # AGENTS halves keep their needles in `_SWARM_ZERO_PROBES`.
+    "swarm_working_now": _SWARM_BARE_COUNT,
+    "swarm_accepted_today": _SWARM_BARE_COUNT,
+    "swarm_queue_total": _SWARM_BARE_COUNT,
 }
 
 #: The ``4`` POOL4 MARKET body's zero probes: ``key -> (needle, enablers)``.
@@ -2079,37 +2069,32 @@ _POOL4_ZERO_PROBES: dict[str, str] = {
     "pool4_cap_decay_per_day": "no decay",
 }
 
-#: The ``s`` SWARM body's zero probes (Task 11, 2026-09-16): ``key -> needle``,
-#: same plain shape as :data:`_NUMERIC_ZERO_PROBES`/:data:`_POOL4_ZERO_PROBES`
-#: rather than :data:`_POOL4_USER_ZERO_PROBES`'s three-tuple form -- every one
-#: of these five renders unconditionally on ``SurfSwarmHero`` the moment ``s``
-#: reaches it, with no second key needed to "enable" it the way five of the
-#: pool4-market probes do.
+#: The ``s`` SWARM body's zero probes (Task 11, 2026-09-16; re-derived for
+#: the swarm v2 hero in WP7, 2026-09-21): ``key -> needle``, same plain shape
+#: as :data:`_NUMERIC_ZERO_PROBES`/:data:`_POOL4_ZERO_PROBES` rather than
+#: :data:`_POOL4_USER_ZERO_PROBES`'s three-tuple form -- both render
+#: unconditionally on ``SurfSwarmHero`` the moment ``s`` reaches it, with no
+#: second key needed to "enable" them the way five of the pool4-market probes
+#: do.
 #:
 #: Every needle was READ OFF composited output through the real ``SurfScreen``
 #: (``s`` pressed, one key ``0``, every other ``SURF_KEYS`` entry ``None``),
 #: never guessed -- the exact discipline ``_POOL4_ZERO_PROBES``'s own comment
-#: describes, applied here because these five sat unobserved in
-#: ``_NUMERIC_KEYS_EXCLUDED`` from Task 10b onward for precisely this reason:
-#: the swarm body never composited in ``test_a_full_outage_renders_explicit_
-#: states_not_zeros`` until this task pressed ``s`` there too.
+#: describes. The v1 hero's five needles (``"0 of"``, ``"working 0"``,
+#: ``"accepted 0"``, ``"0 in flight"``, ``"0 blocked"``) went with that hero:
+#: two of their keys retired, and the v2 hero labels no count inline.
 #:
-#: ``swarm_agents_online``'s needle is ``"0 of"``, not ``"0 of 0"``: the other
-#: half of the AGENTS fraction (``swarm_agents_enrolled``) is *also* ``None``
-#: under this test's all-or-nothing outage, so ``_agents_card`` never reaches
-#: the branch that prints a fraction at all -- the needle only has to prove
-#: that a lone zeroed ``online`` cannot leak the digit, which
-#: ``swarm_agents_online=0, swarm_agents_enrolled=5`` -> ``"2 of 3"``-shaped
-#: rendering (verified) confirms independently of ``enrolled``.
-#: ``swarm_agents_enrolled`` itself has no needle here -- see its own comment
-#: in ``_NON_NUMERIC_KEYS`` for why a second one would be vacuous under this
-#: specific test's outage shape.
+#: The v2 AGENTS box is ``online/enrolled`` with ``--`` for a missing half
+#: (``_agents_body``), so under this test's all-or-nothing outage a lone
+#: zeroed ``online`` renders exactly ``0/--`` and a lone zeroed ``enrolled``
+#: exactly ``--/0`` -- each half is observable on its own for the first time
+#: (the v1 card printed the fraction only when both were read, which is why
+#: ``swarm_agents_enrolled`` sat in ``_NON_NUMERIC_KEYS`` until now). The
+#: three bare-count boxes (WORKING, ACCEPTED 24h, QUEUE) have no
+#: distinctive needle and are reasoned entries in ``_NUMERIC_KEYS_EXCLUDED``.
 _SWARM_ZERO_PROBES: dict[str, str] = {
-    "swarm_agents_online": "0 of",              # swarm_hero.py _agents_card
-    "swarm_working_now": "working 0",           # swarm_hero.py _in_flight_card
-    "swarm_accepted_today": "accepted 0",       # swarm_hero.py _accepted_card
-    "swarm_jobs_in_flight": "0 in flight",      # swarm_hero.py _in_flight_card
-    "swarm_jobs_blocked": "0 blocked",          # swarm_hero.py _in_flight_card
+    "swarm_agents_online": "0/--",              # swarm_hero.py _agents_body
+    "swarm_agents_enrolled": "--/0",            # swarm_hero.py _agents_body
 }
 
 #: **Emptied by Task 12** (2026-08-24), which wired the last three consumers.
@@ -2133,13 +2118,14 @@ _SWARM_ZERO_PROBES: dict[str, str] = {
 #: against it.
 #:
 #: **Refilled by WP0 of the swarm v2 plan** (2026-09-21, A2) with exactly one
-#: key: `swarm_queue_total`, the one genuinely numeric key of the fourteen
-#: frozen ahead of their consumers. It has no render path until the rebuilt
-#: `SurfSwarmHero` (WP5) is wired by WP7, so a probe string for it today would
-#: pass by absence -- the vacuous-needle shape this bucket exists to prevent.
-#: The other thirteen are dict/list/str and sit in `_NON_NUMERIC_KEYS`.
-#: WP7 moves this key to a probe (or a reasoned exclusion) and empties the set.
-_KEYS_PENDING_CONSUMERS = frozenset({"swarm_queue_total"})
+#: key, `swarm_queue_total` -- the one genuinely numeric key of the fourteen
+#: frozen ahead of their consumers, with no render path until the rebuilt
+#: `SurfSwarmHero` (WP5) was wired by WP7 -- and **emptied for the second
+#: time by WP7** the same day: the key renders a bare `0` in the QUEUE box
+#: and became a reasoned entry in `_NUMERIC_KEYS_EXCLUDED` (its section says
+#: how that was verified), and the `xfail` that waited on this line left
+#: with it.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 
 def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
@@ -2189,11 +2175,6 @@ def test_every_surf_key_is_triaged_for_the_zero_catch() -> None:
     assert not extra, f"triaged a key SURF_KEYS no longer has: {extra}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="swarm v2 plan WP7 wires swarm_queue_total's consumer and empties "
-           "_KEYS_PENDING_CONSUMERS; strict so it fails the day it passes",
-)
 def test_no_surf_key_is_still_waiting_for_a_consumer():
     """`_KEYS_PENDING_CONSUMERS` is scaffolding with an expiry date.
 
@@ -2217,13 +2198,12 @@ def test_no_surf_key_is_still_waiting_for_a_consumer():
     observed, or "not a number"). The pending bucket carries no such claim,
     so a key in it is a key nothing has looked at.
 
-    **Expected to fail from WP0 of the swarm v2 plan until its WP7** (2026-09-21,
-    Amendment A2): `swarm_queue_total` is frozen ahead of its consumer and
-    waits in the pending bucket. The marker is ``xfail(strict=True)``, so the
-    moment WP7 empties the set this test XPASSes and *fails* until the marker
-    is removed in the same change -- the self-deleting-marker hazard the
-    paragraph above describes (a marker outliving what it waited for and
-    turning a real regression back into an expected failure) cannot recur.
+    **It carried ``xfail(strict=True)`` from WP0 of the swarm v2 plan to its
+    WP7** (both 2026-09-21, Amendment A2) while `swarm_queue_total` waited in
+    the pending bucket ahead of its consumer; ``strict`` meant the day WP7
+    emptied the set the test XPASSed and *failed* until the marker came off
+    in the same change -- which it did, so the self-deleting-marker hazard
+    the paragraph above describes did not recur.
     """
     from maxpane_dashboard.data.surf_models import SURF_KEYS
 

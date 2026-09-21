@@ -45,7 +45,7 @@ from maxpane_dashboard.data.surf_cache import (
 from maxpane_dashboard.data.surf_manager import (
     SWARM_JOBS_SEEN_MAX_AGE_S, SWARM_SWEEP_CAP, SurfManager,
 )
-from maxpane_dashboard.data.surf_models import SURF_KEYS
+from maxpane_dashboard.data.surf_models import SURF_KEYS, SWARM_KEYS
 from tests.data.test_surf_manager import FakeClock, FakeSurfClient, NOW
 from tests.data.test_surf_manager_pool4 import FakePool4Client
 from tests.surf_swarm_fixtures import swarm_capture_v2, swarm_details_v2
@@ -388,30 +388,40 @@ async def test_a_failed_read_leaves_the_counter_gate_armed(tmp_path):
 
 
 async def test_a_real_zero_publishes_as_zero_not_none(tmp_path):
-    """Fix round 1 finding 3: a successful read with nothing in a state
-    publishes ``0``, never ``None`` -- only a list that was never read does."""
+    """Fix round 1 finding 3, on the v2 keys since WP7: a successful read
+    with nothing executing publishes a real ``[]`` and a THROUGHPUT dict
+    whose rollup has no ``executing`` bucket -- never ``None``, which only a
+    list that was never read publishes."""
     all_completed = [dict(j, state="completed") for j in swarm_capture_v2("jobs")["jobs"][:5]]
     _, payload = await _landed(tmp_path, _FakeSwarm(jobs=all_completed))
-    assert payload["swarm_jobs_in_flight"] == 0
-    assert payload["swarm_jobs_blocked"] == 0
+    assert payload["swarm_inflight_rows"] == []
+    facts = payload["swarm_throughput"]
+    assert facts["window_n"] == 5
+    assert facts["states"] == [{"state": "completed", "count": 5}]
 
 
 async def test_an_unread_list_still_publishes_none(tmp_path):
-    """Fix round 1 finding 3's other half: an unread list is still ``None``."""
+    """Fix round 1 finding 3's other half: an unread list is still ``None``
+    on every list-derived key, and ``/health``'s own keys with it (the slot
+    is not written when the list read fails)."""
     manager = _manager(tmp_path, _FakeSwarm(fail=True))
     payload = await manager.fetch_and_compute()
-    assert payload["swarm_jobs_in_flight"] is None
-    assert payload["swarm_jobs_blocked"] is None
+    assert payload["swarm_inflight_rows"] is None
+    assert payload["swarm_throughput"] is None
+    assert payload["swarm_agents_online"] is None
     await manager.close()
 
 
 async def test_a_genuinely_empty_read_publishes_zero_not_none(tmp_path):
     """F-C: a *successful* read of an idle swarm (``{"jobs": []}``) publishes
-    ``0`` for both counts, not ``None``; the marker proves the read happened."""
+    a real empty list and a dict of honest empties (``window_n == 0``), not
+    ``None``; the marker proves the read happened."""
     _, payload = await _landed(tmp_path, _FakeSwarm(jobs=[]))
     assert payload["swarm_as_of_hhmm"] is not None, "the read must have succeeded"
-    assert payload["swarm_jobs_in_flight"] == 0
-    assert payload["swarm_jobs_blocked"] == 0
+    assert payload["swarm_inflight_rows"] == []
+    facts = payload["swarm_throughput"]
+    assert facts is not None and facts["window_n"] == 0 and facts["states"] == []
+    assert facts["dur_n"] == 0 and facts["dur_median_s"] is None
 
 
 async def test_a_failed_jobs_read_publishes_none_not_empty(tmp_path):
@@ -588,8 +598,12 @@ async def test_the_sweep_publishes_whole_rows_even_with_no_live_slot(tmp_path):
     keys = manager._swarm_scores_keys(
         scores_entry.payload, scores_entry, None, manager._clock()
     )
-    assert keys["swarm_shipped_rows"], "no shipped rows with a whole sweep slot"
+    assert keys["swarm_launch_rows"] and keys["swarm_site_rows"], (
+        "no launch/site rows with a whole sweep slot"
+    )
     assert "swarm_throughput" not in keys
+    # WP7 retired the v1 keys this method used to emit off the same slot.
+    assert "swarm_shipped_rows" not in keys and "swarm_score_rows" not in keys
     # A slot persisted before WP4 has no ``skills``: its keys are ``None``,
     # never a crash and never an empty list presented as read.
     assert keys["swarm_skill_rows"] is None and keys["swarm_skill_summary"] is None
@@ -873,14 +887,45 @@ async def test_the_payload_is_exactly_the_contract_with_or_without_the_swarm(tmp
 
 
 async def test_the_swarm_keys_are_filled_from_the_slot(tmp_path):
-    """Re-pinned on the v2 corpus: 28 connected daemons; one field row (the
-    executing job with a committed detail; the other executing job is a 404
-    and drops its row, never the read)."""
+    """Re-pinned on the v2 corpus (WP7): 28 connected daemons; two IN FLIGHT
+    rows -- both executing jobs, the one with a committed detail carrying its
+    node and the one whose detail is a 404 carrying ``None`` node fields (a
+    404 drops the detail, never the row or the read); a THROUGHPUT dict over
+    the whole hundred-job list."""
     manager, payload = await _landed(tmp_path, _FakeSwarm())
     assert payload["swarm_agents_online"] == swarm_capture_v2("health")["connectedDaemons"] == 28
-    assert len(payload["swarm_field_rows"]) == 1
-    assert payload["swarm_queue_rows"], "no queue rows published"
+    rows = payload["swarm_inflight_rows"]
+    assert len(rows) == 2
+    assert sorted(r["node_key"] is None for r in rows) == [False, True]
+    assert payload["swarm_throughput"]["window_n"] == 100
+    assert payload["swarm_queue_total"] == 45          # health.json pendingFeedback
     assert payload["swarm_as_of_hhmm"], "no marker published"
+    await manager.close()
+
+
+async def test_the_three_swarm_methods_emit_exactly_the_swarm_block(tmp_path):
+    """WP7: ``_swarm_keys`` + ``_swarm_scores_keys`` + ``_swarm_seat_keys``
+    publish the ``SWARM_KEYS`` block and nothing else, each key from exactly
+    one of them. ``_finalise`` drops a key outside ``SURF_KEYS`` with only a
+    log line, so a retired key quietly re-emitted here would never reach the
+    payload test above -- this is the test that sees it."""
+    manager, _ = await _landed(tmp_path, _FakeSwarm())
+    live = manager.cache.get_last_good(SLOT_SWARM)
+    scores = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+    seen = _seen(manager)
+    assert live is not None and scores is not None
+    parts = [
+        manager._swarm_keys(live.payload, live, manager._clock(), seen),
+        manager._swarm_scores_keys(scores.payload, scores, live, manager._clock()),
+        manager._swarm_seat_keys(scores.payload, scores, seen),
+    ]
+    emitted = Counter(k for part in parts for k in part)
+    assert set(emitted) == set(SWARM_KEYS), (
+        sorted(set(emitted) ^ set(SWARM_KEYS))
+    )
+    assert all(n == 1 for n in emitted.values()), (
+        sorted(k for k, n in emitted.items() if n > 1)
+    )
     await manager.close()
 
 

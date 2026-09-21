@@ -1452,21 +1452,13 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_agents_enrolled",    # int | None   -- active enrollments
     "swarm_working_now",        # int | None   -- daemons working this moment
     "swarm_accepted_today",     # int | None   -- accepted in the last day
-    "swarm_jobs_in_flight",     # int | None   -- jobs in state executing  # retired in WP7 (swarm v2 plan, A2)
-    "swarm_jobs_blocked",       # int | None   -- jobs in state blocked  # retired in WP7 (swarm v2 plan, A2)
-    "swarm_queue_depths",       # dict | None  -- pending* counters by name  # retired in WP7 (swarm v2 plan, A2)
     "swarm_services_up",        # dict | None  -- verifier/publisher/deployer
-    "swarm_field_rows",         # list[dict]   -- one per unfinished subtask  # retired in WP7 (swarm v2 plan, A2)
-    "swarm_queue_rows",         # list[dict]   -- state -> count  # retired in WP7 (swarm v2 plan, A2)
-    "swarm_blocked_rows",       # list[dict]   -- blocked jobs and their reason  # retired in WP7 (swarm v2 plan, A2)
-    "swarm_shipped_rows",       # list[dict]   -- deliveries, launches, sites  # retired in WP7 (swarm v2 plan, A2)
-    "swarm_score_rows",         # list[dict]   -- per agent, from the sweep  # retired in WP7 (swarm v2 plan, A2)
-    "swarm_throughput",         # dict | None  -- accepted/day, median, revisions
+    "swarm_throughput",         # dict | None  -- throughput_facts: window, states, durations, cancels
     "swarm_network",            # str | None   -- MAINNET / SEPOLIA / None
     "swarm_as_of_hhmm",         # str | None   -- SLOT_SWARM's marker
     "swarm_scores_as_of_hhmm",  # str | None   -- SLOT_SWARM_SCORES' marker
     "swarm_stale",              # bool | None  -- the two markers drifted
-    # ---- swarm v2 (WP0, 2026-09-21): frozen ahead of their consumers, see plan A2 ----
+    # ---- swarm v2 (WP0, 2026-09-21); the v1 keys they replaced retired in WP7, plan A2 ----
     "swarm_queue_total",        # int | None   -- sum of every /health.pending* counter present
     "swarm_breaker",            # dict | None  -- {"tripped": bool, "detail": str | None}; None = could not look
     "swarm_skill_summary",      # dict | None  -- total, by_role, by_judge, requires_count
@@ -1485,8 +1477,7 @@ SWARM_KEYS: tuple[str, ...] = (
 
 #: The target widgets of the ``s`` and ``a`` bodies (swarm v2 plan §1.4 + A1) and the
 #: contract keys each ``update_data`` takes, verbatim, as keyword parameters. Exported
-#: so the screen test binds to this rather than to a local copy (WP7 does the binding;
-#: until then the five pre-v2 widgets keep their local entries).
+#: so the screen test binds to this rather than to a local copy (bound in WP7).
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_queue_total", "swarm_breaker", "swarm_services_up"),
     "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
@@ -1768,23 +1759,9 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "imd",         # float -- shares converted at the vault's share price
         "pct",         # float -- share of the whole vault, never of the page
     ),
-    "swarm_field_rows": (
-        "job_id", "template", "objective", "node_key", "role", "node_state",
-        "agent_token", "agent_id", "revisions", "dispatch_note", "moved_ts",
-        "age_s",
-    ),
-    "swarm_queue_rows": ("state", "count"),
-    "swarm_blocked_rows": ("job_id", "template", "reason", "moved_ts"),
-    "swarm_shipped_rows": (
-        "kind", "job_id", "label", "commit", "chain_id", "address", "tx_hash",
-        "ens_name", "cid", "at_ts",
-    ),
-    "swarm_score_rows": (
-        "agent_id", "agent_token", "jobs_scored", "mean_score",
-        "last_tx_hash", "last_chain_id",
-    ),
-    # ---- swarm v2 (WP0, 2026-09-21): frozen ahead of their consumers, plan
-    # §1.2 + A1. The five shapes above stay until WP7 retires their widgets.
+    # ---- swarm v2 (WP0, 2026-09-21), plan §1.2 + A1. The five v1 shapes
+    # (field / queue / blocked / shipped / score rows) retired with their
+    # widgets in WP7.
     "swarm_inflight_rows": (
         "job_id", "template", "objective", "created_ts", "age_s", "node_key",
         "node_role", "node_state", "agent_token", "agent_id", "revisions",

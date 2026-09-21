@@ -2,41 +2,10 @@ import json
 
 import pytest
 
-from tests.surf_swarm_fixtures import (SWARM_FIXTURES_V2, swarm_capture, swarm_capture_v2,
-                                       swarm_details_v2, swarm_manifest_v2)
+from tests.surf_swarm_fixtures import (SWARM_FIXTURES_V2, swarm_capture_v2, swarm_details_v2,
+                                       swarm_manifest_v2)
 
-def test_every_capture_has_the_shape_the_fold_expects():
-    health = swarm_capture("health")
-    for key in ("connectedDaemons", "activeEnrollments", "workingNow",
-                "acceptedLastDay", "identity", "verifierUp"):
-        assert key in health, key
-
-    jobs = swarm_capture("jobs")["jobs"]
-    assert jobs and all({"id", "state", "template", "objective", "createdAt",
-                         "updatedAt"} <= set(j) for j in jobs)
-
-    executing = swarm_capture("job_executing")
-    assert executing["state"] == "executing"
-    assert executing["nodes"], "the executing capture has no subtasks to render"
-
-    blocked = swarm_capture("job_blocked")
-    assert blocked["state"] == "blocked" and blocked["blockedReason"]
-
-    done = swarm_capture("job_completed")
-    assert done["reviews"], "the completed capture carries no review to score"
-    assert done["reviews"][0]["entries"][0]["value"] is not None
-
-    assert swarm_capture("launches")["launches"]
-    assert swarm_capture("sites")["sites"]
-
-
-def test_a_seat_and_a_chain_id_are_present_to_fold():
-    seats = [n.get("seat") for n in swarm_capture("job_executing")["nodes"]]
-    assert any(s and s.get("tokenId") for s in seats)
-    assert swarm_capture("job_completed")["reviews"][0]["chainId"] == 11155111
-
-
-# --- the 2026-09-21 v2 corpus from api.imd.fun (plan A3; the two tests above retire in WP7) ---
+# --- the 2026-09-21 v2 corpus from api.imd.fun (plan A3) ---
 
 _LIST_CAPTURES = ("health", "version", "jobs", "skills", "launches", "sites")
 _HAND_SHAPES = ("jobs_malformed", "jobs_unknown_state", "skills_null_tier")
@@ -227,11 +196,20 @@ def test_every_a1_criterion_is_met_by_the_corpus(criterion):
     assert block["met"] is True and block["job_ids"], criterion
 
 
+#: The three ``/jobs/{id}`` captures of the retired 2026-09-16 v1 manifest
+#: (``job_blocked``, ``job_completed``, ``job_executing``), hand-typed from
+#: it before WP7 deleted the file, so the v2 manifest's record of having
+#: probed them stays checkable against something other than itself.
+_V1_MANIFEST_DETAIL_IDS = frozenset({
+    "9c6543f5-e642-4df8-9d5b-d7e7ab947f96",   # job_blocked
+    "7018907b-7466-4326-a602-e322913db496",   # job_completed
+    "4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6",   # job_executing
+})
+
+
 def test_the_old_manifest_detail_ids_were_probed_and_recorded():
     manifest = swarm_manifest_v2()
-    old = json.loads((SWARM_FIXTURES_V2.parent / "MANIFEST.json").read_text(encoding="utf-8"))
-    old_ids = {e["endpoint"].removeprefix("/jobs/") for e in old.values()
-               if e["endpoint"].startswith("/jobs/")}
+    old_ids = set(_V1_MANIFEST_DETAIL_IDS)
     assert set(manifest["details_search"]["old_manifest_ids_probed"]) == old_ids
     present = set(manifest["details_search"]["old_manifest_ids_present"])
     assert present <= old_ids and present == old_ids & set(manifest["details"])

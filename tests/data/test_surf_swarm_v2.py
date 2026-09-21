@@ -825,3 +825,51 @@ def test_seat_feedback_rows_for_a_seat_without_feedback_is_an_empty_list_not_non
     assert fold.seat_feedback_rows(hand, 31337) == []
     assert fold.seat_feedback_rows(details, 424242) == []
     assert fold.seat_feedback_rows(details, None) == []
+
+
+# ---------------------------------------------------------------------------
+# the pre-v2 folds that survived WP7 (health_facts, unfinished_ids,
+# network_of), ported off the retired 2026-09-16 captures onto the corpus
+# ---------------------------------------------------------------------------
+
+
+def test_health_facts_reads_the_counters_and_never_invents_a_zero(health):
+    facts = fold.health_facts(health)
+    # health.json: connectedDaemons 28, activeEnrollments 36, workingNow 1,
+    # acceptedLastDay 1189, the three *Up flags true.
+    assert facts["agents_online"] == 28 == health["connectedDaemons"]
+    assert facts["agents_enrolled"] == 36 == health["activeEnrollments"]
+    assert facts["working_now"] == 1
+    assert facts["accepted_today"] == 1189
+    assert facts["services_up"] == {"verifier": True, "publisher": True, "deployer": True}
+    assert facts["network"] == "MAINNET"          # identity.chainId 1
+    blank = fold.health_facts(None)
+    assert blank["agents_online"] is None and blank["accepted_today"] is None
+    assert blank["services_up"] is None and blank["network"] is None
+
+
+def test_health_facts_with_partial_payload_returns_none_for_missing_services():
+    """Unread service keys are None, never False. Only explicit false is False."""
+    partial = {"connectedDaemons": 2, "verifierUp": True, "deployerUp": False}
+    facts = fold.health_facts(partial)
+    assert facts["services_up"] == {"verifier": True, "publisher": None, "deployer": False}
+    assert facts["agents_online"] == 2 and facts["working_now"] is None
+
+
+def test_unfinished_ids_are_exactly_the_non_terminal_jobs(jobs):
+    ids = fold.unfinished_ids(jobs)
+    # jobs.json: 98 completed, 2 executing -- the two executing ids by hand.
+    assert sorted(ids) == sorted([EXECUTING_WITH_DETAIL, EXECUTING_NO_DETAIL])
+    assert fold.TERMINAL_STATES == frozenset({"completed", "cancelled"})
+    hand = [{"id": "a", "state": "blocked"}, {"id": "b", "state": "cancelled"},
+            {"id": 7, "state": "executing"}, {"state": "waiting"}]
+    assert fold.unfinished_ids(hand) == ["a"]
+    assert fold.unfinished_ids(None) == [] and fold.unfinished_ids([]) == []
+
+
+def test_network_of_is_an_allowlist():
+    assert fold.network_of(11155111) == "SEPOLIA"
+    assert fold.network_of(1) == "MAINNET"
+    assert fold.network_of(999) is None
+    assert fold.network_of(None) is None
+    assert fold.network_of("mainnet") is None

@@ -4,6 +4,29 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-21** — surf's SWARM body rebuilt (swarm v2, WP7) and the AGENT body bound to `a`; the
+  status hint is `l launchpad · 4 pool4 · s swarm · a agent`, and the status bar is asserted whole
+  (right label inside the bar, ` poll` composited) from 131 columns — the phrase-only grep it
+  replaced could not fail. Withdrawn with it: "THE FIELD beside QUEUE over THROUGHPUT, JUST SHIPPED
+  beneath", the hero's "AGENTS / IN FLIGHT / ACCEPTED TODAY", the swarm pin "116 × 28", "reads one
+  keyless host" (the client has a two-name pool of one deployment, `SWARM_API_HOSTS`;
+  `api.imd.fun` first), the eight v1 keys (`swarm_jobs_in_flight`, `swarm_jobs_blocked`,
+  `swarm_queue_depths`, `swarm_field_rows`, `swarm_queue_rows`, `swarm_blocked_rows`,
+  `swarm_shipped_rows`, `swarm_score_rows`; `SWARM_KEYS` 32 → 24, `SURF_KEYS` 191 → 183) and the
+  2026-09-16 fixtures under `tests/fixtures/surf/swarm/` (the v2 corpus under `v2/` is the only
+  one). The score table is gone: THROUGHPUT is a facts panel (`throughput_facts`) and per-agent
+  score lives on the AGENT body's VERDICTS; `swarm_throughput` is folded off the live slot because
+  its widget shows the live marker.
+- **2026-09-21** — swarm v2 layout: `SURF_SWARM_FULL_LAYOUT_COLUMNS` 141 (CAPABILITY binds),
+  `_ROWS` 42 with `#surf-swarm-top { min-height: 16 }` — a floor equal to THROUGHPUT's sixteen fixed
+  lines, added so the row pin is the body's content (without it a three-way `1fr` split only reached
+  sixteen lines at 58 rows); `SURF_AGENT_FULL_LAYOUT_COLUMNS` 134 (ROSTER binds), `_ROWS` 40
+  (VERDICTS' thirteen-line floor). The plan's §2 grid (IN FLIGHT | THROUGHPUT over CAPABILITY |
+  LAUNCHES) and A1's 2×2 agent grid were not built: 68 + 79 and 59 + 92 tight cells exceed 143.
+  IN FLIGHT beside LAUNCHES is a 4fr:5fr row and a named permanent exception (clears at 190 / 205;
+  LAUNCHES hides no column from 138); RECORD's detail column is the agent body's (lit to 168 on the
+  corpus). LAUNCHES' `parked_reason` clips to its column with a visible `…` rather than wrapping —
+  accepted. `SwarmClient` has `follow_redirects=False`: a redirect is a host nobody allowlisted.
 - **2026-09-18** — `CLAUDE.md` rewritten to a core file plus path-scoped `.claude/rules/*.md`
   (`data`, `widgets`, `dashboard-registry`, `curator`, `surf`); per-view specs moved out of the
   always-loaded file. The superpowers plugin is disabled for this project
