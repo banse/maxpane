@@ -100,8 +100,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmRoster,
-    SurfSwarmSeatFeedback,
+    SurfSwarmSeatNodes,
     SurfSwarmSeatRecord,
     SurfSwarmSeatVerdicts,
     SurfSwarmSites,
@@ -196,10 +195,9 @@ _SWARM_WIDGET_CLASSES = {
     "SurfSwarmLaunches": SurfSwarmLaunches,
     "SurfSwarmSites": SurfSwarmSites,
     "SurfSwarmAgentHero": SurfSwarmAgentHero,
-    "SurfSwarmRoster": SurfSwarmRoster,
+    "SurfSwarmSeatNodes": SurfSwarmSeatNodes,
     "SurfSwarmSeatRecord": SurfSwarmSeatRecord,
     "SurfSwarmSeatVerdicts": SurfSwarmSeatVerdicts,
-    "SurfSwarmSeatFeedback": SurfSwarmSeatFeedback,
 }
 
 #: Both halves together -- **derived from the package**, not from the two
@@ -1591,16 +1589,6 @@ def _sample_data() -> dict:
              "block_number": None, "job_id": "job-4360",
              "superseded_by": "job-4381", "failure": "pin timed out"},
         ],
-        "swarm_seat_rows": [
-            {"token_id": 1548, "agent_id": "50971", "nodes": 7, "jobs": 6,
-             "roles": ["implement", "review"], "accepted": 7, "rejected": 0,
-             "revisions": 0, "mean_score": None, "scored": 0,
-             "working_now": True, "last_active_ts": _TS_POST_13 - 60.0},
-            {"token_id": 1601, "agent_id": "51044", "nodes": 3, "jobs": 3,
-             "roles": ["review"], "accepted": 2, "rejected": 1,
-             "revisions": 2, "mean_score": 0.87, "scored": 2,
-             "working_now": False, "last_active_ts": _TS_POST_13 - 5_400.0},
-        ],
         "swarm_seat_selected": {"token_id": 1548, "agent_id": "50971",
                                 "selected_by": "most_active"},
         # The seat's lifetime /seats record (docs/surf_agent_seats_spec.md §4).
@@ -1613,24 +1601,20 @@ def _sample_data() -> dict:
                       {"role": "review", "count": 2}],
             "online": True, "owner": None,
             "paired_ts": _TS_POST_13 - 86_400.0,
-            "last_active_ts": _TS_POST_13 - 60.0,
+            "last_won_ts": _TS_POST_13 - 4_000.0,
+            "last_sent_ts": _TS_POST_13 - 60.0,
+            "agent_id": "50971", "daemon": "0.1.0", "devices": 1, "win_rate": 0.4,
             "collaborators": 3, "runtime": "claude 2.1.278",
         },
-        "swarm_seat_feedback_rows": [
-            {"value": 90, "verdict": "accepted", "status": "sent",
-             "node_key": "codex-14", "role": "implement", "job_id": "job-4402",
-             "tx_hash": "0x" + "55" * 32, "chain_id": 11_155_111,
-             "sent_ts": _TS_POST_13 - 3_900.0},
-            {"value": 0, "verdict": "accepted", "status": "queued",
-             "node_key": "codex-14", "role": "review", "job_id": "job-4390",
-             "tx_hash": None, "chain_id": None, "sent_ts": None},
-        ],
-        "swarm_roster_window": {"jobs": 100, "oldest_ts": _TS_POST_13 - 12_000.0},
+        "swarm_seat_node_rows": [
+            {"node_key":"codex-14", "roles":["implement"], "reviewed":9,
+             "won":4, "onchain":9, "queued":0}],
+        "swarm_seat_teammates": [{"token_id":1601,"agent_id":"51044","shared_jobs":3}],
         # The /seats work[] rows (AGENT-seats plan §1.1).
         "swarm_seat_work_rows": [
             {"job_id": "job-4402", "node_key": "codex-14", "role": "implement",
              "job_state": "completed", "objective": "Fix the identity.md link",
-             "accepted_ts": _TS_POST_13 - 4_000.0},
+             "accepted_ts": _TS_POST_13 - 4_000.0, "launch": None, "submission_hash": "ab"*32},
         ],
         # The seat tier's own marker (AGENT-seats plan §1.1).
         "swarm_seat_as_of_hhmm": "13:50",
@@ -8425,8 +8409,7 @@ _SWARM_CSS_SELECTORS = (
     "SurfSwarmAgentHero", "SurfSwarmAgentHero > SurfSwarmAgentHeroBox",
     "SurfSwarmCapability", "SurfSwarmThroughput", "SurfSwarmInFlight",
     "SurfSwarmLaunches", "SurfSwarmSites",
-    "SurfSwarmRoster", "SurfSwarmSeatVerdicts", "SurfSwarmSeatRecord",
-    "SurfSwarmSeatFeedback",
+    "SurfSwarmSeatNodes", "SurfSwarmSeatVerdicts", "SurfSwarmSeatRecord",
 )
 
 

@@ -28,7 +28,7 @@ from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.data.surf_swarm import seat_summary_from_seat
 from maxpane_dashboard.screens.surf import SURF_AGENT_FULL_LAYOUT_COLUMNS
-from maxpane_dashboard.widgets.fmt import hhmm
+from maxpane_dashboard.widgets.fmt import hhmm, mmdd
 from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
     BOX_IDS,
@@ -51,7 +51,7 @@ AS_OF = "04:06"
 SIZE = (SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)
 #: The two widths the hero has to be whole at: its body's pin and the app's.
 PINS = (SURF_AGENT_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS)
-STAT_BOXES = ("accepted", "reviewed", "score", "collab", "status")
+STAT_BOXES = ("accepted", "reviewed", "win_rate", "collab", "status")
 
 
 _DROP = object()
@@ -143,7 +143,7 @@ def test_the_box_class_is_its_own_type_selector_and_the_six_boxes_are_named():
     assert SurfSwarmAgentHero.BOX_CLASS is SurfSwarmAgentHeroBox
     assert len(BOX_IDS) == 6 == len(SurfSwarmAgentHero.BOXES)
     labels = [label for _id, label in SurfSwarmAgentHero.BOXES]
-    assert labels == ["SEAT", "ACCEPTED", "REVIEWED", "SCORE", "COLLAB", "STATUS"]
+    assert labels == ["SEAT", "ACCEPTED", "WIN RATE", "REVIEWED", "COLLAB", "STATUS"]
 
 
 async def test_the_hero_row_is_seven_lines_under_the_stylesheet():
@@ -171,11 +171,11 @@ async def test_the_defect_seat_renders_its_lifetime_record_whole_at_both_pins(wi
     # a line of its own under the total (see the five-digit test below).
     assert _lines(boxes["reviewed"])[-2:] == [str(SUMMARY["reviewed"]), f"{pending} pending"]
     assert f"+{pending}" not in boxes["reviewed"]
-    assert f"{SUMMARY['mean_score']:.2f}" in boxes["score"]
-    assert f"({SUMMARY['scored']} scored)" in boxes["score"]
+    assert f"{SUMMARY['win_rate']*100:.1f} %" in boxes["win_rate"]
+    assert "of attempts" in boxes["win_rate"]
     assert f"{SUMMARY['collaborators']} seats" in boxes["collab"]
     assert "online ●" in boxes["status"]
-    assert f"last {hhmm(SUMMARY['last_active_ts'])}" in boxes["status"]
+    assert f"won {mmdd(SUMMARY['last_won_ts'])} {hhmm(SUMMARY['last_won_ts'])}" in boxes["status"]
     assert f"as of {AS_OF}" in boxes["status"]
     for key, text in boxes.items():
         assert "…" not in text and "unavailable" not in text, (width, key, text)
@@ -207,11 +207,11 @@ async def test_no_marker_means_no_as_of_line():
 async def test_pending_says_loading_in_the_stat_boxes_and_still_names_the_seat():
     """A switch in flight: the reader must see *which* seat is loading, and no
     number of the seat that was shown before (A's summary under B's name)."""
-    other = {"token_id": 12345, "agent_id": "50906", "selected_by": "cursor"}
+    other = {"token_id": 12345, "agent_id": "50906", "selected_by": "saved"}
     boxes = await _boxes(swarm_seat_selected=other, swarm_seat_state="pending",
                          swarm_seat_as_of_hhmm=None)
     assert "IDMD #12345" in boxes["seat"] and "agent 50906" in boxes["seat"]
-    assert "selected" in boxes["seat"] and "Loading" not in boxes["seat"]
+    assert "saved" in boxes["seat"] and "Loading" not in boxes["seat"]
     for key in STAT_BOXES:
         assert "Loading..." in boxes[key], (key, boxes[key])
     # SUMMARY (seat #420's numbers) was passed in and must not reach a pixel.
@@ -274,7 +274,7 @@ async def test_a_five_digit_record_fits_every_box_at_both_pins(width):
     boxes = await _boxes(size=(width, 9), swarm_seat_summary=FIVE_DIGIT)
     assert _lines(boxes["reviewed"])[-2:] == ["99,999", "1,998 pending"], boxes["reviewed"]
     assert "9,999 of 99,999" in boxes["accepted"]
-    assert "(99,999 scored)" in boxes["score"]
+    assert "of attempts" in boxes["win_rate"]
     assert "9,999 seats" in boxes["collab"]
     for key, text in boxes.items():
         assert "…" not in text, (width, key, text)
@@ -288,9 +288,9 @@ async def test_a_zero_record_renders_zeros_not_unavailable():
     boxes = await _boxes(swarm_seat_summary=zero)
     assert "0 of 0" in boxes["accepted"]
     assert _lines(boxes["reviewed"])[-2:] == ["0", "0 pending"]
-    assert "—" in boxes["score"] and "(0 scored)" in boxes["score"]
+    assert "no attempts" in boxes["win_rate"]
     assert "0 seats" in boxes["collab"]
-    for key in ("accepted", "reviewed", "score", "collab"):
+    for key in ("accepted", "reviewed", "win_rate", "collab"):
         assert "unavailable" not in boxes[key], (key, boxes[key])
 
 
@@ -332,9 +332,6 @@ async def test_the_three_selected_by_phrasings(width):
     saved = await _box_text(BOX_IDS["seat"], size=(width, 9),
                             swarm_seat_selected=dict(SELECTED, selected_by="saved"))
     assert "saved" in saved and "…" not in saved
-    cursor = await _box_text(BOX_IDS["seat"], size=(width, 9),
-                             swarm_seat_selected=dict(SELECTED, selected_by="cursor"))
-    assert "selected" in cursor and "saved" not in cursor and "…" not in cursor
     most = await _box_text(BOX_IDS["seat"], size=(width, 9),
                            swarm_seat_selected=dict(SELECTED, selected_by="most_active"))
     assert "most active" in most and "…" not in most
@@ -348,3 +345,10 @@ async def test_a_hostile_agent_id_renders_literally():
 async def test_a_theme_token_in_an_agent_id_does_not_raise():
     text = await _box_text(BOX_IDS["seat"], swarm_seat_selected=dict(SELECTED, agent_id="[$success]"))
     assert "agent [$success]" in text
+
+async def test_status_names_only_the_last_won_date_not_feedback_time():
+    from maxpane_dashboard.widgets.fmt import mmdd
+    summary = dict(SUMMARY, last_won_ts=1_758_456_000, last_sent_ts=1_758_628_800)
+    text = await _box_text(BOX_IDS["status"], swarm_seat_summary=summary)
+    assert f"won {mmdd(summary['last_won_ts'])} {hhmm(summary['last_won_ts'])}" in text
+    assert "last" not in text

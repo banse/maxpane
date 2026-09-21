@@ -45,6 +45,7 @@ __all__ = [
     "fmt_liquidity",
     "hhmm",
     "mmdd",
+    "mmdd_hhmm",
 ]
 
 #: Surf's default explorer, Ethereum mainnet (Etherscan): read off
@@ -132,3 +133,8 @@ def fmt_liquidity(value) -> str:
 #: ``long_addr``'s that is a surf decision rather than a formatter, so the
 #: number stays here and the shortening does not.
 ANTI_POISONING_COLS = 17
+
+
+def mmdd_hhmm(value) -> str:
+    """Local month/day and time, keeping accepted work distinct across midnight."""
+    return f"{mmdd(value)} {hhmm(value)}"

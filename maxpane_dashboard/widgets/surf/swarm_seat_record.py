@@ -1,36 +1,10 @@
-"""RECORD -- the selected seat's accepted work, lifetime, newest first (plan WP4).
+"""RECORD: every won job in the selected seat's lifetime record.
 
-Mounted on the AGENT body (``a``); this module only paints the
-``swarm_seat_work_rows`` shape (``data/surf_models.SURF_ROW_KEYS``):
-``job_id, node_key, role, job_state, objective, accepted_ts`` -- one row per
-``/seats/{tokenId}`` ``work[]`` entry, i.e. every submission a job **used**
-(``docs/surf_agent_seats_spec.md`` §3). The verifier-detail columns (try,
-rev, verdict, detail) are gone: ``/seats`` does not serve them for lifetime
-rows (decision D3). The tiered-table mechanics -- header per width tier, the
-``as of`` marker and widen hint in the title, ``None`` vs ``[]`` -- are
-:class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase`'s.
-
-``objective`` takes the remaining budget. Every other column is a constant;
-``objective`` is the job's free text (170-199 chars on every captured seat,
-2026-09-21) and gets whatever the panel has left above
-:data:`OBJECTIVE_MIN_COLS`, clipped with a visible ``…``. A clipped objective
-lights the title's ``‹ widen`` even when no column was shed -- on the corpus
-that is every row, as ``detail`` was before it.
-
-The seat state (``swarm_seat_state``, ``widgets/surf/_swarm_seat.py``) is read
-before any row: ``"pending"`` writes ``Loading...`` under the header,
-``"unknown_seat"`` writes ``never paired`` (a real negative, never the
-real-empty sentence; plan §9 L), and ``None`` or a malformed state writes
-``unavailable``. Only ``"ok"`` paints rows: ``[]`` is :data:`EMPTY_LINE`,
-``None`` is ``unavailable``. :func:`seat_footer` is that decision, shared
-with FEEDBACK. Past :attr:`SurfSwarmSeatRecord.ROW_CAP` the footer names the
-rows not shown: ``+N older`` (plan §9 G).
-
-Colour is looked up on the raw ``job_state`` word and painted on the escaped
-text (``completed`` green, ``failed``/``cancelled`` red, everything else
-plain -- the vocabulary is open and an unknown word gets no colour, not a
-guess). Every third-party string (node key, role, state, objective) goes
-through ``markup_safety.sanitize_cell``.
+Accepted timestamps include month/day across midnight. Launch is a sanitized
+name or a real-none em dash. Submission hashes are plain eight-character
+prefixes, never explorer links. Objective takes the remaining width and
+lights ``‹ widen`` when cut. The scrollable table caps at forty rows and
+explicitly counts older rows; the seat state hides stale rows before rendering.
 """
 
 from __future__ import annotations
@@ -40,7 +14,7 @@ from rich.text import Text
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell
-from maxpane_dashboard.widgets.surf._fmt import DASH, hhmm
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
@@ -59,8 +33,8 @@ __all__ = [
 
 EMPTY_LINE = "no accepted work yet"
 
-#: ``HH:MM`` of ``accepted_ts`` (the work entry's ``acceptedAt``).
-_WHEN_COLS = 5
+#: ``MM-DD HH:MM`` of ``accepted_ts`` (the work entry's ``acceptedAt``).
+_WHEN_COLS = 11
 
 #: The first eight characters of the job id. The fold's ids are UUIDs
 #: (``ad7bebb8-fd1a-4268-b831-1c253a85ae4c``); the whole id is 36 cells and
@@ -71,8 +45,7 @@ JOB_COLS = 8
 
 #: Node ``key`` <= 22 chars on every captured seat (``build_contract_project``
 #: is 22, ``adversarial_review`` 18): the longest known key renders whole and
-#: a longer, unseen one clips with a visible ``…``. FEEDBACK imports this for
-#: its own node column.
+#: a longer, unseen one clips with a visible ``…``. BY NODE uses the same known node vocabulary.
 NODE_COLS = 22
 
 #: ``implement`` / ``integrate`` are 9; ``review`` 6.
@@ -82,10 +55,8 @@ _ROLE_COLS = 9
 #: vocabulary is open and a longer word clips with ``…``.
 _STATE_COLS = 9
 
-#: The floor of the ``objective`` column. PROVISIONAL (plan WP4): a widget
-#: constant, not a measured pin -- WP6 re-sweeps the AGENT body and owns
-#: whether this floor, and so every tier below, moves. Above the floor the
-#: column takes every cell the panel has left.
+#: The objective floor, certified with the AGENT body in the seat-details
+#: WP4 compositor sweep. Above it the column takes every remaining cell.
 OBJECTIVE_MIN_COLS = 20
 
 _STATE_COLORS = {"completed": "green", "failed": "red", "cancelled": "red"}
@@ -96,10 +67,12 @@ _SPECS = (
     ("node", "node", NODE_COLS),
     ("role", "role", _ROLE_COLS),
     ("state", "state", _STATE_COLS),
+    ("launch", "launch", 11),
+    ("sub", "sub", 8),
     ("objective", "objective", OBJECTIVE_MIN_COLS),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
-_COMPACT = tuple(key for key in _ALL if key != "role")
+_COMPACT = tuple(key for key in _ALL if key not in ("role", "launch", "sub"))
 _TIGHT = tuple(key for key in _COMPACT if key != "objective")
 _TIERS = {"full": _ALL, "compact": _COMPACT, "tight": _TIGHT}
 
@@ -108,13 +81,9 @@ def _tier_width(keep) -> int:
     return table_cols([w for k, _l, w in _SPECS if k in keep])
 
 
-#: PROVISIONAL tiers (plan WP4), each a :func:`table_cols` sum -- WP6
-#: measures them in situ. Every column with ``objective`` at its floor: 73
-#: cells plus six columns' padding = 85.
+#: Width tiers include DataTable cell padding; certified in the screen sweep.
 FULL_WIDTH = _tier_width(_ALL)
-#: Without ``role`` (9 + 2) = 74.
 COMPACT_WIDTH = _tier_width(_COMPACT)
-#: Without ``objective`` too (20 + 2) = 52.
 TIGHT_WIDTH = _tier_width(_TIGHT)
 
 
@@ -154,7 +123,7 @@ def seat_footer(state: object, rows: object, cap: int | None) -> tuple[str, str]
 
 
 class SurfSwarmSeatRecord(SwarmTableBase):
-    """RECORD -- the selected seat's accepted work, lifetime, newest first."""
+    """RECORD -- lifetime accepted work in the source-provided order."""
 
     TITLE = "RECORD"
     TABLE_ID = "surf-swarm-seat-record-table"
@@ -217,7 +186,9 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         if color:
             state_cell = f"[{color}]{state_cell}[/]"
         return {
-            "when": hhmm(item.get("accepted_ts")),
+            "when": mmdd_hhmm(item.get("accepted_ts")),
+            "launch": EMDASH if item.get("launch") is None else sanitize_cell(item["launch"], 11),
+            "sub": Text(str(item["submission_hash"])[:8]) if item.get("submission_hash") else DASH,
             "job": sanitize_cell(job, JOB_COLS),
             "node": sanitize_cell(_word(item.get("node_key")), NODE_COLS),
             "role": sanitize_cell(_word(item.get("role")), _ROLE_COLS),

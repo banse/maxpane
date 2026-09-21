@@ -149,7 +149,7 @@ async def test_a_work_row_renders_every_column():
     text = "\n".join(lines)
     assert "RECORD" in text and f"as of {AS_OF}" in text
     header = _row_with(lines, "objective").split()
-    assert header == ["when", "job", "node", "role", "state", "objective"]
+    assert header == ["when", "job", "node", "role", "state", "launch", "sub", "objective"]
 
 
 async def test_the_objective_is_clipped_with_an_ellipsis_and_the_title_says_widen():
@@ -240,3 +240,14 @@ async def test_one_below_compact_sheds_the_objective():
     header = _row_with(lines, "when").split()
     assert "objective" not in header and "‹" in "\n".join(lines)
     assert NEWEST["node_key"] in "\n".join(lines)
+
+async def test_dates_survive_midnight_and_launch_submission_are_plain():
+    from maxpane_dashboard.widgets.fmt import mmdd
+    rows = [dict(NEWEST, job_id=f"day{i}abcd", accepted_ts=1_758_456_000+i*86400,
+                 launch="evm_project" if i else None, submission_hash="ab"*32) for i in range(2)]
+    text = "\n".join(await _record(size=(180,12), swarm_seat_work_rows=rows))
+    assert mmdd(rows[0]["accepted_ts"]) != mmdd(rows[1]["accepted_ts"])
+    for row in rows:
+        assert f"{mmdd(row['accepted_ts'])} {hhmm(row['accepted_ts'])}" in text
+    assert "evm_project" in text and "abababab" in text and "—" in text
+    assert "⧉" not in text

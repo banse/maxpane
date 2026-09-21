@@ -257,8 +257,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmRoster,
-    SurfSwarmSeatFeedback,
+    SurfSwarmSeatNodes,
     SurfSwarmSeatRecord,
     SurfSwarmSeatVerdicts,
     SurfSwarmSites,
@@ -1623,102 +1622,59 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: the row scrolling inside itself from 34 to 57 -- a ``‹ taller`` lit on
 #: every terminal the owner has and cleared only by one nobody uses. The
 #: floor gives THROUGHPUT its lines first and lets the two table rows take
-#: the rest; the AGENT body's top row carries SEAT RECORD's thirteen the
+#: the rest; the AGENT body's top row carries SEAT's thirteen the
 #: same way. At the owner's 35 and 31 rows the body scrolls and the marker says
 #: so; no row of any panel is lost in silence
 #: (``test_no_height_loses_a_row_of_either_body_in_silence``).
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: The ``a`` AGENT body's own width, **new on 2026-09-21 (swarm v2 plan A1,
-#: WP7)**: the sixth body gets a sixth measurement, neither a restatement
-#: nor a derivation of :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS` (141) or of
-#: any other pin on this screen. **Re-swept the same day for the lifetime
-#: ``/seats`` record (``docs/surf_agent_seats_plan.md`` WP6)** -- new hero
-#: boxes, SEAT RECORD (was VERDICTS) with an owner cell, RECORD's
-#: ``objective`` for the verifier ``detail``, FEEDBACK's ``status``, ROSTER's
-#: window title -- and **the pin did not move: 134 again**, because ROSTER
-#: binds it and ROSTER's columns did not change.
+#: The AGENT full-layout width, re-swept 2026-09-22 after replacing ROSTER
+#: and FEEDBACK with SEAT | BY NODE above RECORD: 134 -> 131.
 #:
-#: THE GRID is not A1's 2x2 (ROSTER | RECORD over SEAT RECORD | FEEDBACK).
-#: At WP7 ROSTER's and RECORD's ``tight`` tiers alone needed 59 + 92 = 151
-#: cells of one row, more than ``__main__.FULL_LAYOUT_COLUMNS`` (143) holds.
-#: RECORD's lifetime column set is narrower (``tight`` 52 + 4), so that sum
-#: no longer rules A1 out by itself; A1 was **not** re-measured (filed, not
-#: decided here). The grid stays: full-width, RECORD keeps its ``objective``
-#: column from 79 outer columns up, measured; what it would keep beside
-#: ROSTER is unmeasured. ROSTER sits beside SEAT RECORD; RECORD and
-#: FEEDBACK each take a full-width row.
+#: HOW MEASURED: every integer width 60–225 at height 80, on committed
+#: seat #0 and #420 captures and the extended worst payload: 30 nodes,
+#: 999 teammates, 64-character node keys, five-digit node counters,
+#: four-digit submitted/queued counts, launch names and 400-character
+#: objectives. Composited tiers, hidden columns, CSS-clipped lines and
+#: region overflow were inspected; no panel overflow occurred.
 #:
-#: HOW IT WAS MEASURED (WP6). Every width from 60 to 225 at height 80, on
-#: the capture (the v2 corpus's roster, 16 seats; the most active is seat
-#: #0, whose committed ``/seats`` capture is the largest: 26 work, 202
-#: reviews) and on the worst case (30 roster seats, RECORD at its 40-row cap
-#: with 400-character objectives, FEEDBACK over #0's 202 reviews plus
-#: #420's submitted and queued ones, SEAT RECORD with #420's runtime,
-#: every lifetime counter stretched to five digits -- ``99,999`` reviews,
-#: ``9,999 of 99,999`` accepted, ``(99,999 scored)`` -- and the pending
-#: backlog to ``999 submitted · 999 queued``). The two agreed at every
-#: width except the edges named below. Tier word,
-#: ``‹``, hidden columns, CSS-clipped lines (panels and hero) and region
-#: overflow were read off composited output; overflow was zero throughout.
+#: WHAT BINDS: the status bar, including poll/errors and its whole right
+#: label, is cropped through 130 and whole from 131. The panels themselves
+#: clear at 117 on both captures and 118 on the worst payload (ACCEPTED's
+#: 9,999 of 99,999 is the last hero line). BY NODE is tight through 105,
+#: compact through 116 and full from 117; no column is hidden from 96.
+#: The hero's won date is whole from 116 on both captures. SEAT is fixed
+#: at 42 outer cells (40 content, 38 after row padding); owner retains the
+#: anti-poisoning 17-cell window plus copy icon. Runtime/daemon fit visibly,
+#: roles count omissions, and sent/submitted and queued occupy separate lines.
 #:
-#: WHICH PANEL BINDS: ``SurfSwarmRoster``, ``max-width: 86``
-#: (``swarm_roster.FULL_WIDTH`` 82 + gutter 2 + padding 2); it hides
-#: columns through 104 (106 on the worst case's 30 seats), is ``tight``
-#: through 119, ``compact`` 120-133 with ``‹`` lit and ``full`` from 134,
-#: where its share is 84 content cells. At 133 it is the sole marked panel
-#: besides RECORD, so the pin is not loose. Its title
-#: (``ROSTER · last 100 jobs since HH:MM · as of HH:MM``) is whole at the
-#: pin; the window words never shorten. On the row at 134: ROSTER 84 +
-#: SEAT RECORD 44 (under ``max-width: 46``, fr rounding) of the 133 the
-#: body's gutter leaves.
-#:
-#: THE REST, all dark at the pin. The hero's six boxes clip a value under
-#: **102** on the capture and under **120** on the worst case (the last to
-#: fit is SCORE's ``(99,999 scored)``; 118 fits too, by ``1fr`` rounding).
-#: It was 125 before the fix round, when REVIEWED painted
-#: ``202 · 13 pending`` on one line: two lifetime counters on one line is a
-#: width that grows with the seat's age (``1,202 · 13 pending`` clipped at
-#: 134), so REVIEWED paints the total over ``N pending`` and no hero line
-#: pairs two unbounded counters but ACCEPTED's, which fits. SEAT RECORD
-#: clips a line under 87 on
-#: the capture and under 93 on the worst case (#420's longer runtime); its
-#: owner is the anti-poisoning window (``short_address``, 17 cells + icon),
-#: which is what keeps ``max-width: 46`` -- the whole 42-character address
-#: plus its label would not fit it. FEEDBACK is ``tight`` through 86,
-#: ``compact`` 87-96 and ``full`` from 97.
-#:
-#: THE ONE NAMED EXCEPTION: RECORD is ``tight`` through 78, ``compact``
-#: 79-89 and ``full`` from 90, but its ``objective`` column is the job's
-#: free text and takes every cell the row has left, lighting ``‹`` while any
-#: of it is cut: on the capture (objectives of 186-198 cells on every
-#: captured seat) it clears at **268** (``RECORD_NEVER_CLEARS_BELOW``, 168
-#: on the old ``detail`` column); on the worst case (400 characters) it
-#: never clears. That is surf's announce-feed shape -- a marker tracking a
-#: real length each time -- not a permanently lit one, and the panel is
-#: excluded from "whole" by name.
-#:
-#: THE OWNER'S TWO TERMINALS: at 119 ROSTER is ``tight`` and RECORD
-#: ``full``, both marked, and the hero is whole on the capture (the worst
-#: case's ``(99,999 scored)`` clips there, by one cell); at 138 ROSTER is
-#: ``full`` and dark, RECORD ``full`` with ``‹`` lit for its cut objective.
-SURF_AGENT_FULL_LAYOUT_COLUMNS = 134
+#: RECORD's selected tight columns stop clipping horizontally from 61 on
+#: captures and 63 on the worst payload. Optional columns are still shed:
+#: it is tight through 84, compact through 118 and full from 119.
+#: Objective is the sole named content-length exception: its honest widen
+#: marker persists while the free text is cut; see RECORD_NEVER_CLEARS_BELOW.
+#: At the owner's 119 columns all table columns and hero values fit, but
+#: the status bar crops; at 138 all fixed content including the bar fits.
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 131
 
-#: The ``a`` AGENT body's own height, **new on 2026-09-21 (WP7)**, and
-#: **re-swept the same day for the ``/seats`` record (WP6): 40 again**.
-#: Every height from 20 to 61 at width 150 and at the column pin, capture
-#: and worst case: ``‹ taller`` lit through 39, dark from 40. The binder is
-#: :data:`AGENT_BODY_ID`: the top row is floored at SEAT RECORD's thirteen
-#: fixed lines -- title, blank, five signal rows (accepted, reviewed, sent,
-#: pending, score), separator, paired / runtime / owner, blank, by role --
-#: (``#surf-agent-top { min-height: 13 }``, a floor equal to content, bound
-#: by the layout test; the old VERDICTS was thirteen too, with other lines),
-#: RECORD and FEEDBACK are ``1fr`` floored at eight each, and the seven-line
-#: agent hero -- one more than the ``s`` hero's six -- is why 29 body lines
-#: clear at 40 where the ``s`` body's 32 clear at 42. **F16:** the owner's
-#: 35 and 31 rows sit under it, as before; this re-sweep did not raise it.
-#: The body scrolls there and the marker says so.
-SURF_AGENT_FULL_LAYOUT_ROWS = 40
+#: The AGENT height, re-swept 2026-09-22: 40 -> 32. Every integer height
+#: 20–61 was rendered at width 150 and at the full-layout column pin for
+#: #0, #420 and the extended worst payload. Taller is lit through 31 and
+#: dark from 32 in all cases. The binding body contains a thirteen-row top
+#: floor (SEAT title, blank, eleven detail lines) and RECORD's eight-row
+#: floor. BY NODE scrolls internally and retains all nodes. The seven-row
+#: hero and screen chrome account for the remainder. Removing FEEDBACK's
+#: row saves eight rows; the top floor stays equal to SEAT's content.
+#: The owner's 35-row terminal fits; 31 rows still needs the body scrollbar
+#: and shows taller. Both outcomes were measured at the column pin.
+SURF_AGENT_FULL_LAYOUT_ROWS = 32
+
+#: RECORD's objective-clearance onset on both committed #0 and #420 captures,
+#: measured by compositing successive widths 225–297 beyond the body sweep. The
+#: date, launch and plain submission prefix add fixed columns; objectives
+#: still take every remaining cell. The worst 400-character objectives
+#: remain visibly clipped here. This is a content exception, not a body pin.
+RECORD_NEVER_CLEARS_BELOW = 297
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
 #: curator's MODE_DASHBOARD/MODE_ANALYSIS precedent.
@@ -1754,13 +1710,9 @@ MODE_POOL4_USER = "pool4_user"
 #: than on a count.
 MODE_SWARM = "swarm"
 
-#: The ``a`` AGENT body (swarm v2 plan Amendment A1, WP7) -- the **sixth**
-#: mode, and the third to swap the hero: one seat of the swarm, picked by the
-#: reader's cursor on ROSTER, else the saved seat (``seat=``, on the roster
-#: or not), else the most active (``sw.choose_seat``). Four panels (ROSTER,
-#: SEAT RECORD, RECORD, FEEDBACK) under :class:`SurfSwarmAgentHero`; every
-#: number but ROSTER's is the seat's lifetime ``/seats`` record, and ROSTER
-#: is titled as the job window it is folded from.
+#: The ``a`` AGENT body shows the saved seat (``i``), or the most active
+#: seat in the job window. SEAT and BY NODE share its top row; RECORD spans
+#: the body below them. Every displayed counter comes from lifetime /seats.
 MODE_AGENT = "agent"
 
 #: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
@@ -2027,22 +1979,15 @@ SWARM_TOP_ID = "surf-swarm-top"
 #: beside THROUGHPUT from 2026-09-16 to WP7.
 SWARM_BOTTOM_ID = "surf-swarm-bottom"
 
-#: The ``a`` AGENT body's container id (swarm v2 plan A1, WP7): the sixth
-#: body, on :data:`SWARM_BODY_ID`'s own shape -- a ``Vertical`` of one
-#: ``Horizontal`` row (ROSTER beside SEAT RECORD) over two full-width panels
-#: (RECORD, then FEEDBACK). The plan's A1 grid (ROSTER beside RECORD,
-#: SEAT RECORD beside FEEDBACK) was measured at WP7 against the old RECORD
-#: and did not fit under 143 columns (59 + 92 = 151 at tight); it was not
-#: re-measured for the lifetime RECORD. RECORD full-width is what keeps its
-#: ``objective`` column on screen at the pin
-#: (:data:`SURF_AGENT_FULL_LAYOUT_COLUMNS`).
+#: The AGENT container: a horizontal SEAT | BY NODE row above a full-width
+#: RECORD, keeping its objective column visible at the body pin.
 AGENT_BODY_ID = "surf-agent-body"
 
-#: The agent body's only row: **ROSTER beside SEAT RECORD**. It scrolls
-#: (SEAT RECORD is ``height: auto``) and is named in ``_SCROLL_COLUMNS[MODE_AGENT]``.
+#: The AGENT top row: SEAT is auto-height, BY NODE scrolls internally.
+#: Its floor equals SEAT content; the row is registered in _SCROLL_COLUMNS.
 AGENT_TOP_ID = "surf-agent-top"
 
-#: The two swarm bodies' eleven widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
+#: The two swarm bodies' ten widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
 #: order. ``_do_refresh`` dispatches each one's contract keys by class name
 #: off this tuple, so a widget the export names and this tuple does not
 #: would never be painted -- ``tests/screens/test_surf_screen.py`` binds the
@@ -2056,10 +2001,9 @@ _SWARM_PANELS = (
     SurfSwarmLaunches,
     SurfSwarmSites,
     SurfSwarmAgentHero,
-    SurfSwarmRoster,
+    SurfSwarmSeatNodes,
     SurfSwarmSeatRecord,
     SurfSwarmSeatVerdicts,
-    SurfSwarmSeatFeedback,
 )
 
 
@@ -2976,16 +2920,15 @@ class SurfScreen(DashboardScreen):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
     }
-    SurfScreen SurfSwarmRoster {
+    SurfScreen SurfSwarmSeatNodes {
         width: 1fr;
-        max-width: 86;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
     }
     SurfScreen SurfSwarmSeatVerdicts {
-        width: 1fr;
-        max-width: 46;
+        width: 42;
+        max-width: 42;
         height: auto;
         padding: 0 1;
     }
@@ -2995,12 +2938,7 @@ class SurfScreen(DashboardScreen):
         min-height: 8;
         padding: 0 1;
     }
-    SurfScreen SurfSwarmSeatFeedback {
-        width: 100%;
-        height: 1fr;
-        min-height: 8;
-        padding: 0 1;
-    }
+
     """
 
     def __init__(
@@ -3179,10 +3117,9 @@ class SurfScreen(DashboardScreen):
         # tables -- see `AGENT_BODY_ID`.
         with Vertical(id=AGENT_BODY_ID):
             with Horizontal(id=AGENT_TOP_ID):
-                yield SurfSwarmRoster()
                 yield SurfSwarmSeatVerdicts()
+                yield SurfSwarmSeatNodes()
             yield SurfSwarmSeatRecord()
-            yield SurfSwarmSeatFeedback()
 
         yield StatusBar()
 
@@ -3364,42 +3301,13 @@ class SurfScreen(DashboardScreen):
         was free on this screen (``r``/``l``/``e``/``4``/``s``/``escape``)
         and in the app (``q``/``t``/``tab``/``m``) -- verified, not assumed;
         ``DataTable``'s own bindings (arrows, page keys, ``enter``) do not
-        include it either, so the roster's cursor and this key never collide.
+        include it either.
         """
         if self._mode == MODE_AGENT:
             self.action_show_dashboard()
             return
         self._mode = MODE_AGENT
         self._show_mode()
-
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """``enter`` on a ROSTER row picks that seat (swarm v2 plan A1).
-
-        Scoped to the roster's own table id: every other ``DataTable`` on
-        this screen has ``cursor_type = "none"`` and posts nothing, but the
-        guard is on the id rather than on that fact. The manager's
-        ``select_seat`` is a plain attribute write -- no I/O, no await, the
-        rule for a message handler -- and the guarded refresh that follows
-        recomputes the seat keys off the **cached** sweep, so the hero, the
-        record and the feedback change on this refresh; the roster's ``▸``
-        and its cursor move with them (the roster places its own cursor
-        after every paint -- a resize repaint would reset one the screen
-        placed). No manager seam (a test double without
-        ``select_seat``) means no selection, never a crash.
-        """
-        table = event.data_table
-        if table.id != SurfSwarmRoster.TABLE_ID:
-            return
-        try:
-            token = self.query_one(SurfSwarmRoster).token_at(event.cursor_row)
-        except Exception as exc:  # noqa: BLE001 -- a keypress must never crash
-            logger.debug("surf roster selection failed: %s", exc)
-            return
-        select = getattr(self._data_manager, "select_seat", None)
-        if token is None or select is None:
-            return
-        select(token)
-        self.start_refresh()
 
     def action_set_seat(self) -> None:
         """``i`` -- prompt for the seat the AGENT body is about.
@@ -3508,7 +3416,7 @@ class SurfScreen(DashboardScreen):
         # naming only the ones that can is what keeps this map a statement.
         MODE_SWARM: (f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}"),
         # The AGENT body (WP7), the same shape: the body, and the one row
-        # whose SEAT RECORD panel is ``height: auto``.
+        # whose SEAT panel is ``height: auto``.
         MODE_AGENT: (f"#{AGENT_BODY_ID}", f"#{AGENT_TOP_ID}"),
     }
 

@@ -1,55 +1,11 @@
-"""The AGENT body's hero: SEAT · ACCEPTED · REVIEWED · SCORE · COLLAB · STATUS.
+"""AGENT hero: SEAT, ACCEPTED, WIN RATE, REVIEWED, COLLAB and STATUS.
 
-A third surf hero, swapped in with the AGENT body (``a``, ``MODE_AGENT``)
-the way ``SurfSwarmHero`` swaps in with the ``s`` body. Every number here is
-the selected seat's **lifetime** record from ``GET /seats/{tokenId}``
-(``docs/surf_agent_seats_spec.md`` §3), folded by ``data/surf_swarm
-.seat_summary_from_seat`` into ``swarm_seat_summary``; this module only
-paints it, on :class:`~maxpane_dashboard.widgets.panels.HeroRow`.
-
-The boxes (spec §3, plan WP3):
-
-* **SEAT** -- ``IDMD #420`` (bold), ``agent 50939`` (dim), how the seat was
-  picked (``saved`` / ``selected`` / ``most active``, dim). It names the
-  selected seat in **every** state, so a reader watching ``Loading...`` or
-  ``unavailable`` in the other five knows which seat that is about. For
-  ``unknown_seat`` the third line is ``never paired`` (yellow): the token is
-  already on the first line, and ``#12345 never paired`` (19 cells) does not
-  fit the ~16-cell box at the AGENT pin.
-* **ACCEPTED** ``12 of 74`` -- the submissions a job used, of all attempts.
-* **REVIEWED** ``72`` over ``6 pending`` -- every scored review; *pending* is
-  ``submitted + queued``, a **subset** of the 72, never added to it (plan
-  Q-M, owner 2026-09-21). Review-accepted is not ``accepted``: the two boxes
-  never share a word.
-* **SCORE** ``1.00`` over ``(72 scored)``; ``—`` over ``(0 scored)`` when no
-  review carried a value -- no score yet is not a score of zero.
-* **COLLAB** ``24 seats`` -- the seats this one shared jobs with.
-* **STATUS** ``online ●`` / ``offline ○``, ``last HH:MM`` (newest
-  ``acceptedAt`` / ``sentAt``), and the seat tier's ``as of HH:MM``, so a
-  last-good served after a failed read is never presented as live.
-
-REVISIONS and ACC / REJ left with decision D2: ``/seats`` serves neither.
-
-``swarm_seat_state`` (``widgets/surf/_swarm_seat.py``) decides the five stat
-boxes before any number is read: ``"pending"`` → ``Loading...``, ``None``
-(or a malformed state) → ``unavailable``, ``"unknown_seat"`` → a dim ``—``
-(there is nothing to count for a seat that never paired, and that is not a
-failure). Under ``"ok"`` a field the source did not carry is ``None`` and its
-box says ``unavailable``; a real zero renders ``0`` (``0 of 0``).
-
-Token ids are integers, not addresses: no copy icon. No clock: STATUS shows
-``hhmm`` stamps, never an age.
-
-Geometry
---------
-None here (``rules/widgets.md``, ``HeroBoxBase``): ``SurfSwarmAgentHeroBox``
-exists so ``minimal.tcss`` can name it, and both swarm heroes follow one
-block there (height 7 -- label, blank, three body lines, a solid border).
-Six ``1fr`` boxes leave ~16 content cells each at the AGENT pin, which is
-why SCORE's count, REVIEWED's pending and STATUS's stamps take lines of
-their own: a box's width is bounded by its widest *line*, and no line here
-pairs two unbounded counters except ACCEPTED's ``9,999 of 99,999`` (15
-cells), which fits.
+WIN RATE is lifetime accepted / attempts; a real zero denominator says
+``no attempts`` and a missing counter says ``unavailable``. STATUS names the
+newest won work with its local date, never the feedback queue's sent time.
+The state gates every statistic before reading it. The selected IDMD token
+remains visible while its read is pending or unavailable. Geometry belongs
+to the stylesheet; all six titles share one row.
 """
 
 from __future__ import annotations
@@ -60,7 +16,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
-from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, hhmm
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     NEVER_PAIRED_STYLE,
     NEVER_PAIRED_WORDS,
@@ -70,24 +26,22 @@ from maxpane_dashboard.widgets.surf._swarm_seat import (
 
 __all__ = ["BOX_IDS", "NO_SEAT_LINE", "SurfSwarmAgentHero", "SurfSwarmAgentHeroBox"]
 
-#: SEAT when nothing is selected: no roster row, no saved seat. True whether
-#: the roster is empty or was never read -- the ROSTER panel says which.
+#: SEAT when nothing is selected: no roster row, no saved seat.
 NO_SEAT_LINE = "no seat selected"
 
 BOX_IDS = {
     "seat": "surf-swarm-agent-seat",
     "accepted": "surf-swarm-agent-accepted",
     "reviewed": "surf-swarm-agent-reviewed",
-    "score": "surf-swarm-agent-score",
+    "win_rate": "surf-swarm-agent-win-rate",
     "collab": "surf-swarm-agent-collab",
     "status": "surf-swarm-agent-status",
 }
 
 #: How the seat was picked (``sw.choose_seat``): the seat saved in
-#: ``~/.maxpane/config.toml``, the roster cursor, or the busiest seat.
+#: ``~/.maxpane/config.toml``, or the busiest seat.
 _SELECTED_BY = {
     "saved": "saved",
-    "cursor": "selected",
     "most_active": "most active",
 }
 
@@ -96,11 +50,7 @@ class SurfSwarmAgentHeroBox(HeroBoxBase):
     """One box of the AGENT hero. No geometry here: the stylesheet names this class."""
 
 
-def _count(value: object) -> int | None:
-    """A lifetime counter, or ``None``: an ``int``, not a ``bool``, not negative."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        return None
-    return value
+_count = seat_token
 
 
 class SurfSwarmAgentHero(HeroRow):
@@ -110,8 +60,8 @@ class SurfSwarmAgentHero(HeroRow):
     BOXES = (
         (BOX_IDS["seat"], "SEAT"),
         (BOX_IDS["accepted"], "ACCEPTED"),
+        (BOX_IDS["win_rate"], "WIN RATE"),
         (BOX_IDS["reviewed"], "REVIEWED"),
-        (BOX_IDS["score"], "SCORE"),
         (BOX_IDS["collab"], "COLLAB"),
         (BOX_IDS["status"], "STATUS"),
     )
@@ -133,7 +83,7 @@ class SurfSwarmAgentHero(HeroRow):
         for key, label, build in (
             ("accepted", "ACCEPTED", self._accepted_body),
             ("reviewed", "REVIEWED", self._reviewed_body),
-            ("score", "SCORE", self._score_body),
+            ("win_rate", "WIN RATE", self._win_rate_body),
             ("collab", "COLLAB", self._collab_body),
             ("status", "STATUS", lambda s: self._status_body(s, as_of)),
         ):
@@ -212,19 +162,14 @@ class SurfSwarmAgentHero(HeroRow):
         return body
 
     @staticmethod
-    def _score_body(summary: dict) -> str | Text:
-        scored = _count(summary.get("scored"))
-        mean = summary.get("mean_score")
-        if scored is None:
+    def _win_rate_body(summary: dict) -> str | Text:
+        """Lifetime accepted / attempts; zero attempts has no rate."""
+        if summary.get("attempts") == 0:
+            return Text("no attempts", style="dim")
+        rate = summary.get("win_rate")
+        if isinstance(rate, bool) or not isinstance(rate, (int, float)):
             return UNAVAILABLE
-        body = Text()
-        if mean is None or isinstance(mean, bool):
-            body.append(EMDASH, style="dim")
-        else:
-            body.append(fmt_float(mean, ".2f"), style="bold")
-        body.append("\n")
-        body.append(f"({fmt_int(scored)} scored)", style="dim")
-        return body
+        return Text(f"{fmt_float(rate * 100, '.1f')} %\nof attempts")
 
     @staticmethod
     def _collab_body(summary: dict) -> str | Text:
@@ -247,7 +192,7 @@ class SurfSwarmAgentHero(HeroRow):
         else:
             body.append_text(Text.from_markup(UNAVAILABLE))
         body.append("\n")
-        body.append(f"last {hhmm(summary.get('last_active_ts'))}", style="dim")
+        body.append(f"won {mmdd_hhmm(summary.get('last_won_ts'))}", style="dim")
         if as_of is not None:
             body.append("\n")
             body.append(f"as of {as_of}", style="dim")

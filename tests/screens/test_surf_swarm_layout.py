@@ -10,9 +10,8 @@ stop being true.
 **Re-swept from scratch on 2026-09-21.** Swarm v2 replaced every v1 panel
 (THE FIELD, QUEUE, JUST SHIPPED, the v1 hero and THROUGHPUT) with a new
 grid -- CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES
-beneath -- and added the AGENT body (ROSTER beside SEAT RECORD, RECORD,
-FEEDBACK; re-swept again the same day when the body moved onto the lifetime
-``/seats`` record, ``docs/surf_agent_seats_plan.md`` WP6). Nothing in this file compares against the v1 numbers (116 / 28)
+beneath. AGENT now shows SEAT beside BY NODE above RECORD, re-swept
+on 2026-09-22 for the seat-details handover. Nothing in this file compares against the v1 numbers (116 / 28)
 or the v1 exceptions (``FIELD_NEVER_CLEARS_BELOW``,
 ``SHIPPED_NEVER_CLEARS_BELOW``); ``docs/decisions.md`` keeps them.
 
@@ -49,6 +48,7 @@ from maxpane_dashboard.screens.surf import (
     AGENT_TOP_ID,
     SURF_AGENT_FULL_LAYOUT_COLUMNS,
     SURF_AGENT_FULL_LAYOUT_ROWS,
+    RECORD_NEVER_CLEARS_BELOW,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
     SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
     SURF_SWARM_FULL_LAYOUT_COLUMNS,
@@ -65,8 +65,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmRoster,
-    SurfSwarmSeatFeedback,
+    SurfSwarmSeatNodes,
     SurfSwarmSeatRecord,
     SurfSwarmSeatVerdicts,
     SurfSwarmSites,
@@ -95,8 +94,8 @@ from tests.surf_swarm_fixtures import (
 #: own: a pin that moves without a re-sweep reddens the agreement test.
 MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 42
-MEASURED_AGENT_COLUMNS = 134
-MEASURED_AGENT_ROWS = 40
+MEASURED_AGENT_COLUMNS = 131
+MEASURED_AGENT_ROWS = 32
 
 #: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
 #: block): the outer width at which each one's own ``‹`` goes dark on the
@@ -108,13 +107,6 @@ LAUNCHES_NEVER_CLEARS_BELOW = 205
 #: and none from it -- the ``4fr : 5fr`` seam's one job at the pin.
 LAUNCHES_HIDES_NO_COLUMN_FROM = 138
 
-#: The `a` body's one named exception: RECORD's ``objective`` column is the
-#: job's free text and lights ``‹`` while any of it is cut. On the capture
-#: (seat #0's lifetime ``work[]``, objectives of 186-198 cells) it clears
-#: here; on the worst case (400 characters) it never does. Re-measured for
-#: the ``/seats`` record (WP6): it was 168 on the verifier ``detail`` column.
-RECORD_NEVER_CLEARS_BELOW = 268
-
 #: Measured tier edges the width sweeps straddle (+-1 each).
 _S_THRESHOLDS = (
     116,  # SITES `full` from here (and the v1 column pin, crossed on purpose)
@@ -123,23 +115,23 @@ _S_THRESHOLDS = (
     145,  # IN FLIGHT `compact` from here
 )
 _A_THRESHOLDS = (
-    79,   # RECORD `compact` from here
-    87,   # FEEDBACK `compact` from here; SEAT RECORD clips no line from here (capture)
-    90,   # RECORD `full` from here (still marked for its objective)
-    93,   # SEAT RECORD clips no line from here (worst case: the longer runtime)
-    97,   # FEEDBACK `full` from here
-    102,  # the hero clips no box from here (capture)
-    105,  # ROSTER hides no column from here (capture)
-    107,  # ROSTER hides no column from here (worst case: 30 seats)
-    120,  # ROSTER `compact` from here; the hero clips no box from here
-          # (worst case: SCORE's `(99,999 scored)`; 125 while REVIEWED was one line)
+    61, 63,  # RECORD no hidden column: capture / worst
+    85,      # RECORD compact
+    96,      # BY NODE no hidden column
+    106,     # BY NODE compact
+    116,     # captured hero's won date whole
+    117,     # BY NODE full; capture body whole
+    118,     # worst hero/body whole
+    119,     # RECORD full
+    131,     # status bar whole (full-layout binder)
 )
+
 
 _EXCLUDED_FROM_WHOLE = {
     "s": {"SurfSwarmInFlight", "SurfSwarmLaunches"},
     "a": {"SurfSwarmSeatRecord"},
 }
-_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmRoster"}
+_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "StatusBar"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
 _ROW_PIN = {"s": SURF_SWARM_FULL_LAYOUT_ROWS, "a": SURF_AGENT_FULL_LAYOUT_ROWS}
 _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID}
@@ -152,8 +144,8 @@ _TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_TOP_ID}
 _FLOOR_PANEL = {"s": "SurfSwarmThroughput", "a": "SurfSwarmSeatVerdicts"}
 
 #: Each panel's own direct container, named rather than derived so a
-#: restructure that moves a panel fails loudly here. SITES, RECORD and
-#: FEEDBACK are the body's direct children.
+#: restructure that moves a panel fails loudly here. SITES and RECORD are
+#: their bodies' direct children.
 _CONTAINER_OF = {
     "s": {
         SurfSwarmCapability: SWARM_TOP_ID,
@@ -163,10 +155,9 @@ _CONTAINER_OF = {
         SurfSwarmSites: SWARM_BODY_ID,
     },
     "a": {
-        SurfSwarmRoster: AGENT_TOP_ID,
+        SurfSwarmSeatNodes: AGENT_TOP_ID,
         SurfSwarmSeatVerdicts: AGENT_TOP_ID,
         SurfSwarmSeatRecord: AGENT_BODY_ID,
-        SurfSwarmSeatFeedback: AGENT_BODY_ID,
     },
 }
 #: The containers ``_SCROLL_COLUMNS`` registers per mode -- restated by hand
@@ -196,7 +187,8 @@ def _seat_keys(seat: dict) -> dict:
         "swarm_seat_state": "ok",
         "swarm_seat_summary": sw.seat_summary_from_seat(seat),
         "swarm_seat_work_rows": sw.seat_work_rows(seat),
-        "swarm_seat_feedback_rows": sw.seat_review_rows(seat),
+        "swarm_seat_node_rows": sw.seat_node_rows(seat),
+        "swarm_seat_teammates": sw.seat_teammates(seat),
     }
 
 
@@ -219,7 +211,7 @@ def _corpus_keys() -> dict:
     skill_rows = sw.skill_rows(skills)
     launch_rows = sw.launch_rows(launches)
     seat_rows = sw.seat_rows(details, seen)
-    selected = sw.choose_seat(seat_rows, None, None)
+    selected = sw.choose_seat(seat_rows, None)
     token = selected["token_id"]
     seat = swarm_seat_capture(f"seat_{token}")
     assert sw.seat_state(seat, token) == "ok", "the corpus's most active seat has a capture"
@@ -238,9 +230,7 @@ def _corpus_keys() -> dict:
         "swarm_launch_rows": launch_rows,
         "swarm_launch_summary": launch_summary(launch_rows),
         "swarm_site_rows": sw.site_rows(sites),
-        "swarm_seat_rows": seat_rows,
         "swarm_seat_selected": selected,
-        "swarm_roster_window": sw.roster_window(jobs),
         **_seat_keys(seat),
         "swarm_seat_as_of_hhmm": "00:08",
         "swarm_scores_as_of_hhmm": "00:08",
@@ -256,6 +246,14 @@ def _cycle(rows: list, n: int) -> list:
 
 def _capture_payload() -> dict:
     return _frozen_payload(**_corpus_keys())
+
+
+def _capture420_payload() -> dict:
+    payload = _capture_payload()
+    seat = swarm_seat_capture("seat_420")
+    payload.update(_seat_keys(seat))
+    payload["swarm_seat_selected"] = {"token_id": 420, "agent_id": str(seat["agentId"]), "selected_by": "saved"}
+    return payload
 
 
 def _worst_swarm_payload() -> dict:
@@ -297,68 +295,45 @@ def _worst_swarm_payload() -> dict:
 
 
 def _worst_agent_payload() -> dict:
-    """The `a` worst case on the lifetime record: 30 roster seats; the
-    selected seat's RECORD at its 40-row cap with 400-character objectives
-    and long node keys; FEEDBACK over seat #0's 202 reviews with #420's
-    queued and submitted rows on top (every status and chain cell shape);
-    SEAT RECORD with #420's longest runtime and a full owner address; every
-    lifetime counter stretched to five digits (four for a part of one).
-
-    Every row is a WP1b fold of a committed ``/seats`` capture, then
-    lengthened -- never hand-typed from scratch."""
+    """Thirty nodes, 999 teammates, 64-character keys and five-digit counts;
+    forty work rows with launch names and 400-character objectives. Source
+    rows come from committed captures, then their values are stretched."""
     k = _corpus_keys()
-    seats = _cycle(k["swarm_seat_rows"], 30)
-    for i, row in enumerate(seats):
-        row["token_id"] = 1000 + i
-        row["agent_id"] = str(50000 + i)
-        row["nodes"] = 40 - i
-    seats[0]["token_id"] = k["swarm_seat_selected"]["token_id"]
-    seats[0]["agent_id"] = k["swarm_seat_selected"]["agent_id"]
     seat0 = swarm_seat_capture("seat_0")
     seat420 = swarm_seat_capture("seat_420")
     work = _cycle(sw.seat_work_rows(seat0), 40)
     for i, row in enumerate(work):
         row["job_id"] = f"{i:08x}-worst-case-job"
-        row["node_key"] = "build_contract_project_with_a_long_key"
+        row["node_key"] = "x"*64
+        row["launch"] = "evm_project"*6
         row["objective"] = (
             "build the ERC-4626 vault and wire its deposit and withdraw paths "
             "through the launchpad adapter, then re-sweep every pinned layout; " * 6
         )[:400]
-    pending = [r for r in sw.seat_review_rows(seat420) if r["status"] != "sent"]
-    assert {r["status"] for r in pending} == {"submitted", "queued"}
-    feedback = pending + sw.seat_review_rows(seat0)
+    nodes = _cycle(sw.seat_node_rows(seat0), 30)
+    for i, row in enumerate(nodes):
+        row.update(node_key=f"node{i}_" + "x" * 58, reviewed=99_999, won=9_999, onchain=80_001, queued=19_998)
+    teammates = [{"token_id":i,"agent_id":str(i+50_000),"shared_jobs":999-i} for i in range(999)]
     summary = sw.seat_summary_from_seat(seat0)
     summary["runtime"] = sw.seat_summary_from_seat(seat420)["runtime"]
     assert summary["owner"] and summary["runtime"]
-    # The lifetime counters have no ceiling -- seat #0 already has 202
-    # reviews, and a worst case that keeps the capture's 202 is the narrow
-    # case (the fix-round finding: ``1,202 · 13 pending`` clipped at the pin
-    # while ``202 · 13 pending`` fitted). Stretched to a realistic ceiling
-    # instead. The lifetime totals get five digits (~500x #0's 202 reviews
-    # and 209 attempts, years of a seat at the capture's rate) and a part of
-    # one four (``9,999 of 99,999``). ``submitted`` and ``queued`` are not
-    # lifetime counters but a backlog that drains as scores land on chain
-    # (#0 holds 13, #420 6), so three digits each -- ~75x the largest seen
-    # -- whose sum is the four-digit ``1,998 pending``, the hero's widest
-    # plausible form. Four digits of ``submitted`` alone clip SEAT RECORD's
-    # ``pending`` row at every width (``9,000 submitted · 999 que…`` under
-    # its ``max-width: 46``); that is filed, not measured into this case.
-    # The split still sums to ``reviewed`` (Q-M).
     summary.update(
         attempts=99_999, accepted=9_999, reviewed=99_999, scored=99_999,
         collaborators=9_999,
-        review_status={"sent": 98_001, "submitted": 999, "queued": 999},
+        review_status={"sent": 80_001, "submitted": 9_999, "queued": 9_999},
+        win_rate=9_999/99_999,
     )
     assert sum(summary["review_status"].values()) == summary["reviewed"]
     k.update({
-        "swarm_seat_rows": seats, "swarm_seat_work_rows": work,
-        "swarm_seat_feedback_rows": feedback, "swarm_seat_summary": summary,
+        "swarm_seat_work_rows": work, "swarm_seat_node_rows": nodes,
+        "swarm_seat_teammates": teammates, "swarm_seat_summary": summary,
     })
     return _frozen_payload(**k)
 
 
 PAYLOADS = {
     "capture": _capture_payload,
+    "capture420": _capture420_payload,
     "worst-s": _worst_swarm_payload,
     "worst-a": _worst_agent_payload,
 }
@@ -434,7 +409,14 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict
             for cid in set(_CONTAINER_OF[key].values())
         }
         top = screen.query_one(f"#{_TOP_ID[key]}")
+        from maxpane_dashboard.widgets.status_bar import StatusBar
+        bar = screen.query_one(StatusBar)
+        right = bar.query_one("#status-right")
+        line = _screen_text(pilot.app).split("\n")[bar.region.y]
+        status_whole = (KEY_HINT_PHRASE in line and " poll" in line
+                        and right.region.right <= bar.region.right)
         return {
+            "status_whole": status_whole,
             "marked": marked,
             "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key],
             "tiers": {name: getattr(w, "_tier", None) for name, w in widgets.items()},
@@ -451,6 +433,7 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict
 
 
 def _assert_whole(r: dict, where: str) -> None:
+    assert r["status_whole"], (where, "status bar cropped")
     assert not r["marked_besides_exceptions"], (where, sorted(r["marked_besides_exceptions"]))
     assert not r["clipped"], f"{where}: a line is CSS-clipped and nothing says so: {r['clipped']}"
     assert not any(r["hidden"].values()), (
@@ -465,8 +448,9 @@ def _assert_whole(r: dict, where: str) -> None:
 _WIDTH_SWEEP = (
     [("s", "capture", w) for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 60, 159, *_S_THRESHOLDS)]
     + [("s", "worst-s", w) for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 126, 156, *_S_THRESHOLDS)]
-    + [("a", "capture", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 159, *_A_THRESHOLDS)]
-    + [("a", "worst-a", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 149, *_A_THRESHOLDS)]
+    + [("a", "capture", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
+    + [("a", "capture420", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
+    + [("a", "worst-a", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
 )
 
 
@@ -482,7 +466,7 @@ async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width)
     if width >= _COLUMN_PIN[key]:
         _assert_whole(r, where)
     else:
-        assert r["marked_besides_exceptions"] or r["clipped"] or any(r["hidden"].values()), (
+        assert not r["status_whole"] or r["marked_besides_exceptions"] or r["clipped"] or any(r["hidden"].values()), (
             f"{where}: nothing besides the named exceptions advertises the loss"
         )
 
@@ -493,7 +477,10 @@ async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> N
     r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _COLUMN_SWEEP_HEIGHT), key)
     assert not r["overflow"], (key, payload_name, r["overflow"])
     _assert_whole(r, f"{key}/{payload_name} at the pin")
-    assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
+    if key == "s":
+        assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
+    else:
+        assert r["status_whole"]
 
 
 @pytest.mark.parametrize("key", sorted(_COLUMN_PIN))
@@ -505,6 +492,10 @@ async def test_the_column_pin_is_not_loose(key) -> None:
     pin = _COLUMN_PIN[key]
     for payload_name in ("capture", _WORST[key]):
         under = await _render(PAYLOADS[payload_name](), (pin - 1, _COLUMN_SWEEP_HEIGHT), key)
+        if key == "a":
+            assert not under["status_whole"], "status bar fits below its full-layout pin"
+            assert not under["overflow"]
+            continue
         assert under["marked_besides_exceptions"] == {_BINDING_PANEL[key]}, (
             payload_name, sorted(under["marked_besides_exceptions"]),
         )
@@ -579,6 +570,7 @@ _HEIGHT_SWEEP = (
     [("s", "capture", r) for r in boundary_set(SURF_SWARM_FULL_LAYOUT_ROWS, 20, 61, 28, 31, 35, 58)]
     + [("s", "worst-s", r) for r in boundary_set(SURF_SWARM_FULL_LAYOUT_ROWS, 30, 50, 31, 35)]
     + [("a", "capture", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
+    + [("a", "capture420", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
     + [("a", "worst-a", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 30, 50, 31, 35)]
 )
 
@@ -611,7 +603,7 @@ async def test_the_row_pin_holds_at_the_column_pin_too(key) -> None:
 async def test_the_top_row_floor_is_its_auto_height_panels_own_lines(key) -> None:
     """The one number in the swarm CSS that is not a tier width: each top
     row's ``min-height`` is the fixed line count of its ``height: auto``
-    panel (THROUGHPUT sixteen, SEAT RECORD thirteen). Bound here so the floor
+    panel (THROUGHPUT sixteen, SEAT thirteen). Bound here so the floor
     cannot drift from the content it equals: at the pin the panel, the row
     and the floor are one height, and the row never scrolls inside itself
     -- not even at 20 rows, on the worst case."""

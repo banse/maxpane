@@ -108,10 +108,6 @@ EXEMPT: dict[str, str] = {
         "quotes each site's deploy transaction hash through hash_text (a"
         " short_hex window linked to the package EXPLORER); a hash, never an"
         " address, so it carries no icon by design (swarm v2, WP7)",
-    "maxpane_dashboard.widgets.surf.swarm_seat_feedback.SurfSwarmSeatFeedback":
-        "quotes each ERC-8004 review's transaction hash through hash_text,"
-        " linked to the row's own chain_id via for_chain_id; a hash, never an"
-        " address, so it carries no icon by design (swarm v2, WP7)",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
     "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":
@@ -474,7 +470,7 @@ def _reaches_icon_machinery(module_name: str) -> bool:
     the then hash-only ``swarm_throughput`` (which imported only
     ``short_hex``, and reached only ``rowfit``/``_fmt``/``_pool4``/
     ``_swarm_chain``, none of which import the icon machinery either; the
-    v2 module imports no address helper at all, and ``swarm_seat_feedback``
+    v2 module imports no address helper at all, and ``swarm_sites``
     is the hash-only anchor now) to "not hash-only" the moment the walk went
     through the package init instead of stopping at the plain modules the
     import actually names.
@@ -560,7 +556,7 @@ def _widget_module_at(app, x: int, y: int) -> str | None:
     Textual's own widgets never import the address helper at all. Walking
     ``ancestors_with_self`` to the first ancestor that imports the helper at
     all names the widget that is actually part of the address-icon system
-    (``SurfSwarmSeatFeedback``, ``SurfSwarmLaunches``, ...); further ancestors
+    (``SurfSwarmSites``, ``SurfSwarmLaunches``, ...); further ancestors
     are container chrome (``Vertical``, ``Horizontal``, the screen itself)
     that would falsely read as address-incapable for the same reason.
     """
@@ -612,10 +608,8 @@ def test_a_hash_only_module_is_recognized_by_which_icon_helpers_it_imports():
     (added in this fix round; this assertion fails against 855d5d6, which has
     no such function).
     """
-    # Only imports hash_text/MIN_SHORT_COLS (FEEDBACK, swarm v2): structurally
-    # cannot ever print a real, icon-bearing address -- the legitimate case
-    # the exclusion exists for. SITES is the same shape (hash_text alone).
-    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_seat_feedback")
+    # SITES imports hash_text alone: structurally cannot print a real,
+    # icon-bearing address -- the legitimate case the exclusion exists for.
     assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_sites")
     # Imports address_text (LAUNCHES' artifact column): capable of the real
     # bug this finding is about, so never excused regardless of what its own
@@ -655,9 +649,9 @@ def test_a_module_reaching_icons_through_an_indirection_is_not_hash_only():
     assert not _hash_only_module("maxpane_dashboard.widgets.surf._icons")
     # The genuinely hash-only case must still hold once the walk is
     # transitive -- the fix must not trade a false negative for a false
-    # positive. FEEDBACK reaches _swarm_table, _swarm_chain, _fmt, rowfit and
+    # positive. SITES reaches _swarm_table, _fmt, rowfit and
     # panels; none of them imports the icon machinery.
-    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_seat_feedback")
+    assert _hash_only_module("maxpane_dashboard.widgets.surf.swarm_sites")
 
 
 def test_the_region_scan_only_excuses_a_hash_window_for_a_hash_only_widget():
@@ -790,7 +784,7 @@ def test_the_shortened_window_hash_excuse_requires_a_hash_only_painter():
     address = "0x" + "5" * 40
     hashes = {"0x" + "5" * 64}  # shares every digit with `address`'s own window, at any split
     non_hash_only = "maxpane_dashboard.widgets.surf.swarm_launches"
-    hash_only = "maxpane_dashboard.widgets.surf.swarm_seat_feedback"
+    hash_only = "maxpane_dashboard.widgets.surf.swarm_sites"
     # the anchors this test leans on -- pinned again so a change to either
     # widget's own imports reddens here, not silently inside the sweep below
     assert not _hash_only_module(non_hash_only)

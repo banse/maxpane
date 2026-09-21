@@ -69,6 +69,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
+    SurfSwarmSeatNodes,
     SurfSwarmSeatRecord,
     SurfSwarmSeatVerdicts,
     SurfSwarmSites,
@@ -213,7 +214,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # `chain_id`) -- so all ten belong in the strict check.
         SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput,
         SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
-        SurfSwarmAgentHero, getattr(surf_widgets, "SurfSwarmSeatNodes"), SurfSwarmSeatRecord,
+        SurfSwarmAgentHero, SurfSwarmSeatNodes, SurfSwarmSeatRecord,
         SurfSwarmSeatVerdicts,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)

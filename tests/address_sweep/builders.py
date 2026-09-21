@@ -626,11 +626,11 @@ CASES: tuple[SweepCase, ...] = (
         name="surf",
         # Mainnet by default (``widgets/surf/_fmt.EXPLORER``); the pool4 panels link
         # by ``pool4_network`` and the swarm rows by their own ``chain_id`` (the
-        # fixture's launch and feedback rows are mostly Sepolia), so all three
-        # are allowed. The ``a`` AGENT body renders one address: SEAT RECORD's
+        # fixture's launch rows are mostly Sepolia), so all three
+        # are allowed. The ``a`` AGENT body renders one address: SEAT's
         # owner, seeded as ``_SEAT_OWNER`` and linked on the package
         # ``EXPLORER`` (mainnet, this case's ``explorer``). Its other panels
-        # render hashes only (RECORD none, FEEDBACK through ``hash_text``).
+        # render no addresses; RECORD submission prefixes are plain off-chain hashes.
         explorer=ETHEREUM,
         explorers=(ETHEREUM, SEPOLIA, BASE),
         rows_pick_explorer=True,
