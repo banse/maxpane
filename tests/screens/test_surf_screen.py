@@ -789,7 +789,17 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
 #: is bound to the exported ``SWARM_WIDGET_SIGNATURES`` by identity, and the
 #: eight pre-v2 keys the plan retired left ``SWARM_KEYS`` with WP7's second
 #: commit.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
+#:
+#: **Filled for the fourth time** (WP0 of ``docs/surf_agent_seats_plan.md``,
+#: 2026-09-21): the three ``/seats`` keys (plan §1.1) are frozen in
+#: ``SWARM_KEYS`` while ``SWARM_WIDGET_SIGNATURES`` still names the
+#: window-based ones; WP3/WP4 build to ``SWARM_AGENT_SIGNATURES_NEXT`` and
+#: WP5 flips the export and empties this set again.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({
+    "swarm_seat_state",
+    "swarm_seat_work_rows",
+    "swarm_roster_window",
+})
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -1626,6 +1636,13 @@ def _sample_data() -> dict:
             {"value": 0, "node_key": "codex-14", "job_id": "job-4390",
              "tx_hash": None, "chain_id": None, "block_number": None,
              "sent_ts": None},
+        ],
+        # The /seats work[] row (AGENT-seats WP0, plan §1.1), one per declared
+        # shape for the row-shape walk; no widget reads it until the WP5 flip.
+        "swarm_seat_work_rows": [
+            {"job_id": "job-4402", "node_key": "codex-14", "role": "implement",
+             "job_state": "completed", "objective": "Fix the identity.md link",
+             "accepted_ts": _TS_POST_13 - 4_000.0},
         ],
         # The slow tier's marker under the AGENT body's own name (A1) --
         # the same slot as `swarm_scores_as_of_hhmm`, so the same value.

@@ -1390,8 +1390,7 @@ _NON_NUMERIC_KEYS = frozenset(
         # v1 hero printed the AGENTS fraction only when both halves were
         # read; the v2 hero prints `--/0` for a lone zeroed `enrolled`, so
         # the key is observable under this test's outage and moved to
-        # `_SWARM_ZERO_PROBES`. `swarm_queue_depths` and the five v1 row
-        # payloads left `SURF_KEYS` with their widgets.
+        # `_SWARM_ZERO_PROBES`.
         "swarm_services_up", "swarm_throughput",
         # Two closed-vocabulary/free strings and a tier marker, the same
         # family as `pool4_network` / `pool4_as_of_hhmm` /
@@ -1421,6 +1420,15 @@ _NON_NUMERIC_KEYS = frozenset(
         # The AGENT body's own tier marker, the slow slot's clock under a
         # second name (A1).
         "swarm_seat_as_of_hhmm",
+        # -- AGENT body on /seats/{tokenId} (WP0 of
+        # docs/surf_agent_seats_plan.md, 2026-09-21; no widget reads them
+        # until the WP5 flip) ----------------------------------------------
+        # None is int/float: a closed-vocabulary str (`SWARM_SEAT_STATES`,
+        # the family of `pool4_stakers_state`; `None` = read failed, no
+        # last-good), a list[dict] row payload (`None` vs `[]`), and a dict
+        # (`None` vs `{}`, as `swarm_throughput` above). The seat's own
+        # counters live inside `swarm_seat_summary`, already triaged here.
+        "swarm_seat_state", "swarm_seat_work_rows", "swarm_roster_window",
     }
 )
 

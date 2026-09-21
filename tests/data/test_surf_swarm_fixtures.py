@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from tests.surf_swarm_fixtures import (SWARM_FIXTURES_V2, swarm_capture_v2, swarm_details_v2,
-                                       swarm_manifest_v2)
+from tests.surf_swarm_fixtures import (SWARM_FIXTURES_SEATS, SWARM_FIXTURES_V2, swarm_capture_v2,
+                                       swarm_details_v2, swarm_manifest_v2, swarm_seat_capture)
 
 # --- the 2026-09-21 v2 corpus from api.imd.fun (plan A3) ---
 
@@ -262,3 +262,109 @@ def test_a_keyless_public_api_serves_no_secret_shaped_key_anywhere():
     assert offenders == []
     for name in ("health", "version"):
         assert _SECRET_KEYS.isdisjoint(swarm_capture_v2(name)), name
+
+
+# --- the 2026-09-21 /seats/{tokenId} captures (docs/surf_agent_seats_plan.md WP0) ---
+
+#: The eight committed captures, hand-typed from the plan's WP0 table so the
+#: manifest cannot agree with itself by losing a file.
+_SEAT_CAPTURES = (
+    "seat_420", "seat_0", "seat_1649", "seat_516", "unknown_seat_404",
+    "invalid_request_400", "jobs_window_100", "job_80c853bd_winner_only",
+)
+
+
+def test_seats_manifest_names_exactly_the_files_on_disk_and_each_parses():
+    manifest = swarm_seat_capture("MANIFEST")
+    on_disk = {p.stem for p in SWARM_FIXTURES_SEATS.glob("*.json")} - {"MANIFEST"}
+    assert set(manifest["files"]) == on_disk == set(_SEAT_CAPTURES)
+    assert manifest["host"] == "https://api.imd.fun"
+    for name, entry in manifest["files"].items():
+        body = swarm_seat_capture(name)
+        assert isinstance(body, dict), name
+        assert entry["bytes"] == (SWARM_FIXTURES_SEATS / f"{name}.json").stat().st_size, name
+        assert entry["route"].startswith("/"), name
+        assert entry["http_status"] in (200, 400, 404), name
+        assert entry["selected_because"], name
+        for field in ("captured_at", "version"):  # a value or an honest "not recorded"
+            assert isinstance(entry[field], str) and entry[field], (name, field)
+
+
+def test_seat_420_carries_the_defect_numbers():
+    """The explorer's numbers for #420 (spec §1): 74 / 12 / 72, split 66 / 5 / 1."""
+    seat = swarm_seat_capture("seat_420")
+    assert seat["tokenId"] == "420"  # served as a decimal string
+    assert (seat["attempts"], seat["accepted"], len(seat["reviews"])) == (74, 12, 72)
+    assert len(seat["work"]) == seat["accepted"]
+    statuses = [r["status"] for r in seat["reviews"]]
+    assert (statuses.count("sent"), statuses.count("submitted"), statuses.count("queued")) == (66, 5, 1)
+    assert len(statuses) == 72  # no fourth status hides in the total
+    (queued,) = [r for r in seat["reviews"] if r["status"] == "queued"]
+    assert queued["txHash"] is None and queued["chainId"] is None and queued["sentAt"] is None
+    for review in seat["reviews"]:
+        if review["status"] == "submitted":
+            assert review["txHash"] and review["sentAt"] is None
+        if review["status"] == "sent":
+            assert review["txHash"] and review["sentAt"]
+
+
+def test_every_seat_capture_carries_every_field_the_spec_names():
+    top = {"tokenId", "agentId", "chainId", "collection", "adapter", "status", "ownership",
+           "owner", "pairedAt", "online", "daemonVersion", "runtimes", "devices", "attempts",
+           "accepted", "work", "reviews", "collaborators"}
+    work = {"jobId", "objective", "jobState", "launch", "nodeKey", "role", "submissionHash",
+            "acceptedAt"}
+    review = {"jobId", "nodeKey", "role", "value", "policy", "verdict", "submissionHash",
+              "status", "txHash", "chainId", "sentAt"}
+    rows = 0
+    for name in ("seat_420", "seat_0", "seat_1649", "seat_516"):
+        seat = swarm_seat_capture(name)
+        assert not top - set(seat), (name, sorted(top - set(seat)))
+        assert seat["chainId"] == 1, name
+        for row in seat["work"]:
+            assert not work - set(row), (name, sorted(work - set(row)))
+            rows += 1
+        for row in seat["reviews"]:
+            assert not review - set(row), (name, sorted(review - set(row)))
+            assert row["status"] in ("sent", "submitted", "queued"), (name, row["status"])
+            assert "blockNumber" not in row, name
+            rows += 1
+    assert rows > 0
+
+
+def test_the_other_three_seats_pin_what_the_plan_selected_them_for():
+    zero = swarm_seat_capture("seat_0")
+    assert zero["online"] is False and zero["runtimes"] == [] and len(zero["reviews"]) == 202
+    assert swarm_seat_capture("seat_1649")["runtimes"] == [{"id": "codex", "version": "codex-cli 0.149.0"}]
+    small = swarm_seat_capture("seat_516")
+    assert (small["attempts"], small["accepted"]) == (10, 4)
+    assert [r["status"] for r in small["reviews"]].count("submitted") == 1
+
+
+def test_the_error_bodies_are_the_two_documented_errors():
+    assert swarm_seat_capture("unknown_seat_404")["error"] == "unknown_seat"
+    assert swarm_seat_capture("invalid_request_400")["error"] == "invalid_request"
+    files = swarm_seat_capture("MANIFEST")["files"]
+    assert files["unknown_seat_404"]["http_status"] == 404
+    assert files["invalid_request_400"]["http_status"] == 400
+
+
+def test_jobs_window_is_a_page_of_one_hundred_not_every_job():
+    window = swarm_seat_capture("jobs_window_100")
+    assert window["count"] == 100 == len(window["jobs"])
+
+
+def test_the_competitive_detail_lists_only_the_winner():
+    job = swarm_seat_capture("job_80c853bd_winner_only")
+    assert job["id"].startswith("80c853bd")
+    assert len(job["nodes"]) == 1
+    winner = job["nodes"][0]["seat"]["tokenId"]
+    scored = {e["agentId"] for r in job["reviews"] for e in r["entries"]}
+    assert len(scored) > 1, "the review scores more seats than the node list names"
+    assert winner == "47"
+
+
+def test_the_seat_captures_serve_no_secret_shaped_key():
+    offenders = [(name, where) for name in _SEAT_CAPTURES
+                 for where, key in _walk_keys(swarm_seat_capture(name)) if key in _SECRET_KEYS]
+    assert offenders == []

@@ -4,7 +4,9 @@ WP0 of ``docs/surf_swarm_v2_implementation_plan.md`` (2026-09-21) grew the
 block from eighteen to thirty-two under Amendment A2 -- the fourteen v2 keys
 (§1.1's four, §1.2's four, A1's six) appended as one contiguous tail -- and
 WP7 retired the eight keys §1 lists as "Removed" with their widgets, leaving
-twenty-four. Every tuple below is hand-typed on purpose -- a copy an agreement
+twenty-four. The AGENT-seats WP0 (``docs/surf_agent_seats_plan.md``, same
+day) appended three ``/seats`` keys, making twenty-seven, and froze the
+§1.2 permanent exports and the §1.3 ``_NEXT`` targets WP5 flips to. Every tuple below is hand-typed on purpose -- a copy an agreement
 test binds is the one legitimate copy (CLAUDE.md, Conventions), and deriving
 it from the module would make the test agree with whatever the module says.
 """
@@ -14,7 +16,14 @@ import pytest
 from maxpane_dashboard.data.surf_models import (
     SURF_KEYS,
     SURF_ROW_KEYS,
+    SWARM_AGENT_SIGNATURES_NEXT,
     SWARM_KEYS,
+    SWARM_ROSTER_WINDOW_FIELDS,
+    SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT,
+    SWARM_SEAT_REVIEW_STATUSES,
+    SWARM_SEAT_SELECTED_FIELDS,
+    SWARM_SEAT_STATES,
+    SWARM_SEAT_SUMMARY_FIELDS,
     SWARM_WIDGET_SIGNATURES,
 )
 
@@ -34,6 +43,14 @@ SWARM_V2_KEYS = (
     "swarm_seat_node_rows",
     "swarm_seat_feedback_rows",
     "swarm_seat_as_of_hhmm",
+)
+
+#: The three ``/seats`` keys the AGENT-seats WP0 appended after the v2 tail
+#: (``docs/surf_agent_seats_plan.md`` §1.1), in order.
+SWARM_SEATS_KEYS = (
+    "swarm_seat_state",
+    "swarm_seat_work_rows",
+    "swarm_roster_window",
 )
 
 #: The eight §1 marks "Removed", retired in WP7 (A2). Named so the test that
@@ -82,6 +99,10 @@ SWARM_V2_ROW_SHAPES = {
         "value", "node_key", "job_id", "tx_hash", "chain_id", "block_number",
         "sent_ts",
     ),
+    # AGENT-seats WP0 (plan §1.1): /seats work[], replaces swarm_seat_node_rows in WP5.
+    "swarm_seat_work_rows": (
+        "job_id", "node_key", "role", "job_state", "objective", "accepted_ts",
+    ),
 }
 
 #: The eleven target widgets of §1.4 + A1, by class name.
@@ -100,10 +121,10 @@ SWARM_TARGET_WIDGETS = {
 }
 
 
-def test_the_swarm_block_is_twenty_four_keys():
-    """18 pre-v2 + 14 v2 - 8 retired in WP7 = 24 (A2)."""
-    assert len(SWARM_KEYS) == 24
-    assert len(set(SWARM_KEYS)) == 24
+def test_the_swarm_block_is_twenty_seven_keys():
+    """18 pre-v2 + 14 v2 - 8 retired in WP7 = 24 (A2), + 3 /seats keys = 27."""
+    assert len(SWARM_KEYS) == 27
+    assert len(set(SWARM_KEYS)) == 27
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -119,13 +140,13 @@ def test_the_swarm_block_is_contiguous_and_last():
     assert positions[-1] == len(SURF_KEYS) - 1
 
 
-def test_the_fourteen_v2_keys_are_the_tail_of_the_block_in_order():
-    """The v2 keys are appended, not interleaved: the tail is exactly them.
+def test_the_fourteen_v2_keys_then_the_three_seats_keys_are_the_tail_in_order():
+    """The v2 keys are appended, not interleaved, and the /seats keys after them.
 
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-14:] == SWARM_V2_KEYS
+    assert SWARM_KEYS[-17:] == SWARM_V2_KEYS + SWARM_SEATS_KEYS
 
 
 def test_the_eight_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -201,3 +222,75 @@ def test_no_swarm_key_leaks_a_raw_envelope():
     for bad in ("swarm_jobs", "swarm_health", "swarm_details", "swarm_skills",
                 "swarm_launches", "swarm_sites"):
         assert bad not in SURF_KEYS
+
+
+# --- AGENT body on /seats/{tokenId}: WP0 freeze (docs/surf_agent_seats_plan.md §1.2, §1.3) ---
+
+
+def test_the_seats_permanent_exports_are_the_frozen_literals():
+    assert SWARM_SEAT_SELECTED_FIELDS == ("token_id", "agent_id", "selected_by")
+    assert SWARM_SEAT_SUMMARY_FIELDS == (
+        "attempts", "accepted", "reviewed", "review_status", "mean_score", "scored",
+        "roles", "online", "owner", "paired_ts", "last_active_ts", "collaborators", "runtime",
+    )
+    assert SWARM_SEAT_REVIEW_STATUSES == ("sent", "submitted", "queued")
+    # "pending" by the owner's Q-A answer (2026-09-21); None is not a member -- it is
+    # "read failed, no last-good", the absence of a state.
+    assert SWARM_SEAT_STATES == ("ok", "unknown_seat", "pending")
+    assert SWARM_ROSTER_WINDOW_FIELDS == ("jobs", "oldest_ts")
+
+
+def test_the_selected_fields_no_longer_carry_unseen_token():
+    """Decision D1 retires ``unseen_token``; the frozen tuple must not revive it."""
+    assert "unseen_token" not in SWARM_SEAT_SELECTED_FIELDS
+
+
+def test_the_next_feedback_row_is_the_frozen_literal_and_drops_block_number():
+    assert SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT == (
+        "value", "verdict", "status", "node_key", "role", "job_id", "tx_hash", "chain_id",
+        "sent_ts",
+    )
+    assert "block_number" not in SWARM_SEAT_FEEDBACK_ROW_KEYS_NEXT
+    # WP0 leaves the live shape alone; WP5 flips it.
+    assert SURF_ROW_KEYS["swarm_seat_feedback_rows"] == SWARM_V2_ROW_SHAPES["swarm_seat_feedback_rows"]
+
+
+def test_the_next_agent_signatures_are_the_frozen_literals():
+    assert SWARM_AGENT_SIGNATURES_NEXT == {
+        "SurfSwarmAgentHero": (
+            "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm",
+        ),
+        "SurfSwarmRoster": (
+            "swarm_seat_rows", "swarm_seat_selected", "swarm_roster_window", "swarm_scores_as_of_hhmm",
+        ),
+        "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+        "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+        "SurfSwarmSeatFeedback": ("swarm_seat_feedback_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    }
+
+
+def test_the_next_signatures_name_only_swarm_keys_and_reach_every_seats_key():
+    named = {k for sig in SWARM_AGENT_SIGNATURES_NEXT.values() for k in sig}
+    assert named <= set(SWARM_KEYS), sorted(named - set(SWARM_KEYS))
+    assert set(SWARM_SEATS_KEYS) <= named, sorted(set(SWARM_SEATS_KEYS) - named)
+    assert "swarm_seat_node_rows" not in named and "swarm_network" not in named
+    assert set(SWARM_AGENT_SIGNATURES_NEXT) <= set(SWARM_WIDGET_SIGNATURES)
+
+
+def test_wp0_leaves_the_live_agent_signatures_unchanged():
+    """The flip is late (plan §1.3): the screen dispatch reads SWARM_WIDGET_SIGNATURES."""
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmAgentHero"] == (
+        "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_as_of_hhmm",
+    )
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmRoster"] == (
+        "swarm_seat_rows", "swarm_seat_selected", "swarm_seat_as_of_hhmm",
+    )
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmSeatRecord"] == (
+        "swarm_seat_node_rows", "swarm_seat_as_of_hhmm", "swarm_network",
+    )
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmSeatVerdicts"] == (
+        "swarm_seat_summary", "swarm_seat_as_of_hhmm",
+    )
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmSeatFeedback"] == (
+        "swarm_seat_feedback_rows", "swarm_seat_as_of_hhmm",
+    )

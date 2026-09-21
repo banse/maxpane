@@ -27,7 +27,8 @@ the public subset.
 | Route | Result | Size |
 |---|---|---|
 | `GET /health` | swarm counters and the identity contracts | 567 B |
-| `GET /jobs` | every job, newest first | 27.5 KB (62 jobs) |
+| `GET /jobs` | the newest 100 jobs, newest first; `count` is the page length, not a total; no pagination; parameters ignored (2026-09-21). On 2026-09-16 it read as every job: 62 | 27.5 KB (62 jobs, 2026-09-16); 43.1 KB (100, 2026-09-21) |
+| `GET /seats/{tokenId}` | one seat's lifetime record (measured 2026-09-21; see [`/seats/{tokenId}`](#seatstokenid)) | 6–90 KB |
 | `GET /jobs/{id}` | one job with its subtasks, verdicts and review | 2.2 KB typical, 9.2 KB worst |
 | `GET /launches` | deployments with every contract address | 10.1 KB (16) |
 | `GET /sites` | published IPFS sites with their ENS names | 2.3 KB (4) |
@@ -37,11 +38,15 @@ the public subset.
 404 on: `/`, `/agents`, `/agents/1`, `/agents/by-token/1`, `/harness`, `/harness/state`, `/reviews`, `/scores`,
 `/attestations`, `/receipts`, `/deliveries`, `/enrollments`, `/identity`, `/verifications`, `/feedback`, `/work`,
 `/activity`, `/moves`, `/field`, `/leaderboard`, `/inference`, `/tokens`, `/operators`, `/swarm`, `/metrics`,
-`/queue`, `/seats`, `/daemons`, `/pairs`, `/status`, `/public`, `/v1/jobs`, `/api/jobs`, `/openapi.json`, `/docs`.
-The explorer's own origin serves no `/api/*` route either.
+`/queue`, `/daemons`, `/pairs`, `/status`, `/public`, `/v1/jobs`, `/api/jobs`, `/openapi.json`, `/docs`.
+The explorer's own origin serves no `/api/*` route either. (`/seats` was on this list on 2026-09-16; the bare
+route is still 404, but `/seats/{tokenId}` answers — see below.)
 
 **No filters.** `?state=executing`, `?limit=3` and `?since=…` all return the same 62 rows, so the list is
-all-or-nothing. **No caching headers**: no `cache-control`, `etag`, `age` or `last-modified`, so a conditional
+all-or-nothing. **Re-measured 2026-09-21 on `https://api.imd.fun`:** `/jobs` returns `count: 100` and exactly
+100 rows — the newest 100 jobs (that capture spans `createdAt` 02:26–05:44 UTC, about 3.3 h), with no page
+parameter and no older page. The 2026-09-16 reading of "every job" was true only while fewer than 100 existed;
+a fold over `/jobs` is a window, never a total (`tests/fixtures/surf/swarm/seats/jobs_window_100.json`). **No caching headers**: no `cache-control`, `etag`, `age` or `last-modified`, so a conditional
 request is not available either.
 
 **No rate limiting observed.** 62 sequential detail fetches spaced 120 ms apart: 62 × 200, 188.3 KB, 24.9 s.
@@ -101,6 +106,44 @@ A review is the onchain score:
 The explorer explains the scale: 100 when work is accepted first time, falling with each revision, 0 for a
 rejection, written once when the job ends, into the agent's ERC-8004 registration.
 
+### `/seats/{tokenId}`
+
+Measured **2026-09-21** on `https://api.imd.fun`, keyless GET, on 8 seats (6–90 KB; #0 is the largest, 202
+reviews). It is what the explorer's seat page renders ("12 of 74 attempts accepted", "72 scored" for #420).
+Committed captures: `tests/fixtures/surf/swarm/seats/` (#420, #0, #1649, #516, the 404 and 400 bodies; its
+`MANIFEST.json` records what is and is not known about each).
+
+| field | meaning (as measured) |
+|---|---|
+| `tokenId`, `agentId`, `chainId` (1), `collection`, `adapter` | the IDMD seat and its ERC-8004 agent |
+| `status` (`active`), `ownership` (`owned`), `owner` (0x…), `pairedAt`, `online` (bool) | the seat's pairing |
+| `daemonVersion`, `runtimes[] {id, version}`, `devices` | what runs it |
+| `attempts`, `accepted` | lifetime counters; `accepted == len(work)` on all 8 seats |
+| `work[] {jobId, objective, jobState, launch, nodeKey, role, submissionHash, acceptedAt}` | every accepted submission, newest first |
+| `reviews[] {jobId, nodeKey, role, value, policy, verdict, submissionHash, status, txHash, chainId, sentAt}` | every scored submission, newest first; one per job |
+| `collaborators[] {tokenId, agentId, sharedJobs}` | seats it shared jobs with |
+
+`reviews[].status` takes three values:
+
+- `sent` — `txHash` and `sentAt` set;
+- `submitted` — `txHash` set, **no** `sentAt`;
+- `queued` — neither, and `chainId` null.
+
+No `blockNumber` anywhere. `reviews[].verdict` was `accepted` and `value` `1` on all 566 reviews read, so
+review-accepted is not `accepted`: #420 has 72 reviews (66 sent, 5 submitted, 1 queued) and 12 accepted of 74
+attempts. **Not served:** rejections, revisions, rejection codes, failed checks, verifier detail, "working now".
+
+Errors:
+
+- `404 {"error":"unknown_seat","detail":"no device has paired with that token"}` for a token never paired — a
+  real negative, not a failed read.
+- `400 {"error":"invalid_request","detail":"expected a decimal token id"}` for a non-decimal id.
+- `/seats` with no id is `404 {"message":"Route GET:/seats not found",…}`: there is no seat list.
+
+A competitive job's detail (`/jobs/{id}`, e.g. `oracle_assess` on `80c853bd`) lists only the winning node while
+its review scores every seat that attempted it, so the job window cannot reconstruct a seat's attempts;
+`/seats/{tokenId}` is the only lifetime source.
+
 ### `/launches` and `/sites`
 
 A launch carries `launchNumber kind status chainId sourceRepoUrl sourceCommit parkedReason artifactCount
@@ -129,7 +172,8 @@ research did not chase it, and nothing in the planned view depends on it.
 - **"Inference contributed: 556.3M tokens."** The explorer's own headline. No public route serves it, and it is
   not derivable from anything that is. It stays off the dashboard.
 - **Per-agent identity beyond a number.** `seat` gives a token id and an ERC-8004 id; there is no public route
-  for an agent's name, skills or history. The avatar SVG at `/agents/by-token/{n}.svg` is an image, not data.
+  for an agent's name, skills or history. (Superseded 2026-09-21 for history: `/seats/{tokenId}` serves a seat's
+  lifetime work and reviews; still no name or skills.) The avatar SVG at `/agents/by-token/{n}.svg` is an image, not data.
 - **Reviewer attribution.** A review says which agent was *scored*, never which agent reviewed.
 - **Anything signed.** Nothing the host serves is signed or hashed. The review `txHash` is the only claim that
   can be checked against a chain.

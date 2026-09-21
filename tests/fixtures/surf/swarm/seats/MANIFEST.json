@@ -1,0 +1,97 @@
+{
+  "captured_at": "not recorded",
+  "captured_on": "2026-09-21",
+  "files": {
+    "invalid_request_400": {
+      "bytes": 66,
+      "captured_at": "not recorded",
+      "http_status": 400,
+      "route": "/seats/abc",
+      "scratchpad_mtime_utc": "2026-09-21T12:47:23Z",
+      "scratchpad_source": "s_seats_abc.json",
+      "selected_because": "The invalid_request body for a non-decimal token id.",
+      "version": "not recorded"
+    },
+    "job_80c853bd_winner_only": {
+      "bytes": 3318,
+      "captured_at": "not recorded",
+      "http_status": 200,
+      "route": "/jobs/80c853bd-8cd7-43e5-b13b-79ea17ce5027",
+      "scratchpad_mtime_utc": "2026-09-21T12:47:09Z",
+      "scratchpad_source": "j80.json",
+      "selected_because": "A competitive oracle_assess detail whose nodes list only the winner (seat #47) while its reviews score other seats, #420 among them.",
+      "version": "not recorded"
+    },
+    "jobs_window_100": {
+      "bytes": 44116,
+      "captured_at": "not recorded",
+      "http_status": 200,
+      "route": "/jobs",
+      "scratchpad_mtime_utc": "2026-09-21T12:46:55Z",
+      "scratchpad_source": "jobs_now.json",
+      "selected_because": "/jobs at count 100: the newest 100 jobs, not every job (count is the page length).",
+      "version": "not recorded"
+    },
+    "seat_0": {
+      "bytes": 90128,
+      "captured_at": "not recorded",
+      "http_status": 200,
+      "route": "/seats/0",
+      "scratchpad_mtime_utc": "2026-09-21T12:48:33Z",
+      "scratchpad_source": "seats/0.json",
+      "selected_because": "The largest seat read (202 reviews): online false, runtimes empty.",
+      "version": "not recorded"
+    },
+    "seat_1649": {
+      "bytes": 7262,
+      "captured_at": "not recorded",
+      "http_status": 200,
+      "route": "/seats/1649",
+      "scratchpad_mtime_utc": "2026-09-21T12:48:35Z",
+      "scratchpad_source": "seats/1649.json",
+      "selected_because": "The one seat read on the codex runtime (\"codex-cli 0.149.0\").",
+      "version": "not recorded"
+    },
+    "seat_420": {
+      "bytes": 34263,
+      "captured_at": "not recorded",
+      "http_status": 200,
+      "route": "/seats/420",
+      "scratchpad_mtime_utc": "2026-09-21T12:48:33Z",
+      "scratchpad_source": "seats/420.json",
+      "selected_because": "The defect seat: attempts 74, accepted 12, 72 reviews (66 sent / 5 submitted / 1 queued with txHash, chainId and sentAt null).",
+      "version": "not recorded"
+    },
+    "seat_516": {
+      "bytes": 6133,
+      "captured_at": "not recorded",
+      "http_status": 200,
+      "route": "/seats/516",
+      "scratchpad_mtime_utc": "2026-09-21T12:48:36Z",
+      "scratchpad_source": "seats/516.json",
+      "selected_because": "The smallest seat read: attempts 10, accepted 4, one submitted review.",
+      "version": "not recorded"
+    },
+    "unknown_seat_404": {
+      "bytes": 72,
+      "captured_at": "not recorded",
+      "http_status": 404,
+      "route": "/seats/99999",
+      "scratchpad_mtime_utc": "2026-09-21T12:47:23Z",
+      "scratchpad_source": "s_seats_99999.json",
+      "selected_because": "The unknown_seat body for a token no device has paired: a real negative, distinct from a failed read.",
+      "version": "not recorded"
+    }
+  },
+  "host": "https://api.imd.fun",
+  "notes": {
+    "captured_at": "No per-request capture time was recorded. scratchpad_mtime_utc is the modification time of the scratchpad file the fetch wrote (CEST converted to UTC): evidence of when, not a recorded capture time.",
+    "copied": "Every file is a byte-for-byte cp of the session scratchpad seat_capture/ copy (seat_<id>.json from <id>.json, the rest under the same name); each seat_capture file was cmp-identical to the scratchpad file named in scratchpad_source, the one the fetch wrote. Nothing was re-fetched or edited.",
+    "http_status": "404 and 400 are the statuses spec section 2 records with these bodies; 200 is inferred from a well-formed body and was not recorded separately.",
+    "jobs_window_100": "Byte-identical to the session's earlier /jobs read (scratchpad jobs.json, mtime 2026-09-21T12:40:53Z).",
+    "route": "The ids in the 404 and 400 routes are read off the scratchpad file names (s_seats_99999.json, s_seats_abc.json).",
+    "version": "/version was not read alongside these captures. The nearest read in the same session: commit 96b683332707470485c08422d804fe8afda6c29b, scratchpad version.json, mtime 2026-09-21T12:40:52Z."
+  },
+  "version": "not recorded",
+  "version_field": "commit"
+}
