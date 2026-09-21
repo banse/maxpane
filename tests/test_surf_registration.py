@@ -1418,8 +1418,9 @@ _NON_NUMERIC_KEYS = frozenset(
         "swarm_inflight_rows", "swarm_skill_rows", "swarm_launch_rows",
         "swarm_site_rows", "swarm_seat_rows",
         "swarm_seat_feedback_rows",
-        # The AGENT body's own tier marker, the slow slot's clock under a
-        # second name (A1).
+        # The AGENT body's seat marker: the seat tier's own clock, the
+        # `as of` of the /seats read for the selected seat
+        # (docs/surf_agent_seats_plan.md WP2), not the sweep's.
         "swarm_seat_as_of_hhmm",
         # -- AGENT body on /seats/{tokenId} (WP0 of
         # docs/surf_agent_seats_plan.md, 2026-09-21; read on screen since

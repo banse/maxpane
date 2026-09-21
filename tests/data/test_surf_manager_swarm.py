@@ -1174,23 +1174,94 @@ async def test_the_roster_window_is_the_sweeps_job_list(tmp_path):
     await manager.close()
 
 
-async def test_a_hand_edited_seat_slot_is_not_served(tmp_path):
-    """A persisted slot is third-party input: a bool token is refused whole,
-    so the seat is ``pending`` until its own read lands."""
+@pytest.mark.parametrize("seat_field,state", [
+    pytest.param(lambda: _seat_payload_of(420), "pending", id="state-pending"),
+    pytest.param(lambda: _seat_payload_of(516), "ok", id="ok-with-another-seats-record"),
+    pytest.param(lambda: [_seat_payload_of(420)], "ok", id="seat-is-a-list"),
+])
+async def test_a_hand_edited_seat_slot_is_not_served(tmp_path, seat_field, state):
+    """A persisted slot is third-party input, refused whole by the per-field
+    validation on load (``sw.coerce_seat_slot``), never by the token gate:
+    every slot here names the selected seat (420), so only the field checks
+    stand between it and the screen -- a state no stored slot can hold
+    (``pending`` is the manager's to say), #516's record filed under 420, and
+    an ill-typed seat. The seat stays ``pending`` while its own read is held
+    in flight (the gate is never set), so nothing it fetches can mask the
+    slot. Final-review fix wave: the ``{"token": True}`` seed this replaced
+    was already refused by the token gate, so dropping ``coerce_seat_slot``
+    from the key path left it green."""
     path = tmp_path / "surf.json"
     seed = _manager(tmp_path, _FakeSwarm(), seat=420)
     seed.cache.store_last_good(
-        SLOT_SWARM_SEAT, {"token": True, "state": "ok", "seat": _seat_payload_of(420)},
+        SLOT_SWARM_SEAT, {"token": 420, "state": state, "seat": seat_field()},
         ts=seed._clock(),
     )
     seed.cache.save()
     await seed.close()
     assert path.exists()
-    manager = _manager(tmp_path, _FakeSwarm(), seat=420)
+    swarm = _FakeSwarm(seat_gate=asyncio.Event())
+    manager = _manager(tmp_path, swarm, seat=420)
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["token"] == 420, (
+        "the slot must reach the key path naming the selected seat"
+    )
     payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_selected"]["token_id"] == 420
     assert payload["swarm_seat_state"] == "pending"
     for key in _SEAT_READ_KEYS:
         assert payload[key] is None, key
+    other = sw.seat_summary_from_seat(_seat_payload_of(516))
+    assert payload["swarm_seat_summary"] != other, "#516's numbers under #420"
+    assert payload["swarm_seat_selected"]["agent_id"] != "50992", "#516's agent under #420"
+    await manager.close()
+
+
+async def test_a_seat_read_that_raises_degrades_and_the_next_cycle_reads_again(tmp_path):
+    """``fetch_seat`` raising (not just returning ``None``): the cycle
+    survives, the seat keys are ``None`` -- never the previously read seat's
+    numbers -- and once the backoff has run out a later cycle spawns a fresh
+    read, so the tier is not stuck behind the dead one."""
+
+    class _RaisingSwarm(_FakeSwarm):
+        raising: set = set()
+
+        async def fetch_seat(self, token):
+            if token in self.raising:
+                await asyncio.sleep(0)
+                self.calls["seat"] += 1
+                self.seat_calls.append(token)
+                raise RuntimeError(f"seat {token} blew up")
+            return await super().fetch_seat(token)
+
+    clock = FakeClock(NOW)
+    swarm = _RaisingSwarm()
+    swarm.raising = {516}
+    manager, before = await _seated(tmp_path, swarm, seat=420, clock=clock)
+    assert before["swarm_seat_state"] == "ok"
+    manager.set_seat(516)
+    await manager.fetch_and_compute()
+    failed = manager._swarm_seat_task
+    await _settle(manager)
+    assert failed.done() and not failed.cancelled() and failed.exception() is None
+    assert swarm.seat_calls == [420, 516], "the raising read was attempted"
+    payload = await manager.fetch_and_compute()
+    assert set(payload) == set(SURF_KEYS), "the cycle did not survive"
+    assert payload["swarm_seat_selected"]["token_id"] == 516
+    assert payload["swarm_seat_state"] is None
+    for key in _SEAT_READ_KEYS:
+        assert payload[key] is None, key
+        assert before[key] is not None, f"{key}: #420 had a value to leak"
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["token"] == 420
+
+    swarm.raising = set()
+    clock.advance(121.0)
+    await manager.fetch_and_compute()
+    fresh = manager._swarm_seat_task
+    assert fresh is not None and fresh is not failed, "no fresh read was spawned"
+    await _settle(manager)
+    assert swarm.seat_calls == [420, 516, 516]
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_state"] == "ok"
+    assert payload["swarm_seat_summary"] == sw.seat_summary_from_seat(_seat_payload_of(516))
     await manager.close()
 
 

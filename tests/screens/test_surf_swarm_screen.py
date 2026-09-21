@@ -456,6 +456,55 @@ async def test_a_saved_seat_never_paired_says_so_and_never_not_seen(saved_seats)
         assert "IDMD #1548" not in hero
 
 
+async def _real_client_answer_for_the_404_capture(token: int):
+    """What the real ``SwarmClient.fetch_seat`` returns for the committed
+    ``unknown_seat_404.json`` body -- read through an injected
+    ``httpx.MockTransport``, so the network is never reached."""
+    import httpx
+    from maxpane_dashboard.data.surf_swarm_client import SwarmClient
+
+    body = swarm_seat_capture("unknown_seat_404")
+
+    async def _no_sleep(_s: float) -> None:
+        return None
+
+    client = SwarmClient(
+        http_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda r: httpx.Response(404, json=body))
+        ),
+        sleep=_no_sleep,
+    )
+    try:
+        return await client.fetch_seat(token)
+    finally:
+        await client.close()
+
+
+async def test_a_never_paired_seat_reaches_the_screen_through_a_real_manager(tmp_path):
+    """The never-paired chain end to end, where the test above hand-shapes
+    the payload: the real client's answer to the committed 404 capture ->
+    a real ``SurfManager``'s seat tier with the seat saved -> the composited
+    AGENT body. Final-review fix wave, 2026-09-21."""
+    answer = await _real_client_answer_for_the_404_capture(9999)
+    manager, payload = await _seated(
+        tmp_path, _FakeSwarm(seats={9999: answer}), seat=9999,
+    )
+    assert manager.swarm_client.seat_calls == [9999]
+    assert payload["swarm_seat_state"] == "unknown_seat"
+    app = _ThemedHarness(SurfScreen(manager, poll_interval=3600, name="surf"))
+    async with app.run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "a")
+        await _settle(manager)
+        hero = _region_text(app, screen.query_one(SurfSwarmAgentHero))
+        body = _region_text(app, screen.query_one(f"#{AGENT_BODY_ID}"))
+        assert "IDMD #9999" in hero and "never paired" in hero
+        for panel in (SurfSwarmSeatVerdicts, SurfSwarmSeatRecord, SurfSwarmSeatFeedback):
+            assert "never paired" in _region_text(app, screen.query_one(panel)), panel.__name__
+        assert "not seen" not in hero + body
+        assert "Loading" not in hero
+    await manager.close()
+
+
 async def test_an_invalid_seat_is_refused_on_the_prompt(saved_seats):
     from maxpane_dashboard.screens.seat_input import SeatInputScreen
     app, manager = _prompt_app()

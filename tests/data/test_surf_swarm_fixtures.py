@@ -89,9 +89,11 @@ def test_v2_details_corpus_is_at_least_twenty_five_well_formed_jobs():
             assert {"role", "state", "seat"} <= set(node), (stem, node.get("key"))
 
 
-#: Every node field `swarm_inflight_rows`, `swarm_seat_rows` and
-#: `swarm_seat_node_rows` read (plan §1.2, A1), and every verdict sub-field
-#: `swarm_seat_summary`'s rejection and failed-check counts read. A key may be
+#: Every node field `swarm_inflight_rows` and `swarm_seat_rows` (through the
+#: jobs-seen fold) read (plan §1.2, A1), and every verdict sub-field the
+#: window-era seat summary read. That summary and the node-rows fold retired
+#: when the AGENT body moved to `/seats` (docs/surf_agent_seats_plan.md WP5);
+#: the pin still guards the corpus's shape for the folds that remain. A key may be
 #: null; it may not be absent -- absence is what a silent API change looks
 #: like, and WP3's folds would render it as "not read" rather than fail.
 _NODE_FIELDS = frozenset({
