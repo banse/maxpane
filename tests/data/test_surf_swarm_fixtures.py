@@ -56,6 +56,8 @@ def test_v2_health_carries_every_field_the_hero_reads():
         assert key in health, key
     assert any(k.startswith("pending") for k in health), "no pending* counter to sum"
     assert "deployBreaker" in health  # the value may be null: null is "not tripped"
+    # `swarm_network` reads `identity.chainId`, not the identity envelope.
+    assert isinstance(health["identity"], dict) and "chainId" in health["identity"]
 
 
 def test_v2_jobs_carry_the_list_fields_the_fold_reads():
@@ -116,6 +118,55 @@ def test_v2_details_corpus_is_at_least_twenty_five_well_formed_jobs():
         assert job["nodes"], stem
         for node in job["nodes"]:
             assert {"role", "state", "seat"} <= set(node), (stem, node.get("key"))
+
+
+#: Every node field `swarm_inflight_rows`, `swarm_seat_rows` and
+#: `swarm_seat_node_rows` read (plan §1.2, A1), and every verdict sub-field
+#: `swarm_seat_summary`'s rejection and failed-check counts read. A key may be
+#: null; it may not be absent -- absence is what a silent API change looks
+#: like, and WP3's folds would render it as "not read" rather than fail.
+_NODE_FIELDS = frozenset({
+    "key", "role", "state", "seat", "attempt", "revisions", "failureReason",
+    "dispatchNote", "dispatchNoteAt", "updatedAt", "verdict",
+})
+_VERDICT_FIELDS = frozenset({
+    "status", "profile", "evaluation", "rejectionCode", "detail",
+    "failedChecks", "verifierVersion", "at",
+})
+#: Every review field `swarm_seat_feedback_rows` reads.
+_REVIEW_FIELDS = frozenset({"status", "chainId", "txHash", "blockNumber", "sentAt", "entries"})
+_ENTRY_FIELDS = frozenset({"agentId", "value", "nodeKey"})
+
+
+def test_every_detail_node_and_review_carries_every_field_the_agent_body_reads():
+    """WP1 review, Important: the corpus must prove the *detail* shape too.
+
+    Counted so the walk cannot pass by looping zero times; the counts are
+    lower bounds, not pins, because a recapture legitimately changes them.
+    """
+    nodes = verdicts = reviews = entries = 0
+    for stem, job in swarm_details_v2().items():
+        for node in job["nodes"]:
+            missing = _NODE_FIELDS - set(node)
+            assert not missing, (stem, node.get("key"), sorted(missing))
+            nodes += 1
+            verdict = node["verdict"]
+            if verdict is not None:
+                assert isinstance(verdict, dict), (stem, node.get("key"))
+                missing = _VERDICT_FIELDS - set(verdict)
+                assert not missing, (stem, node.get("key"), sorted(missing))
+                verdicts += 1
+        for review in job["reviews"]:
+            missing = _REVIEW_FIELDS - set(review)
+            assert not missing, (stem, sorted(missing))
+            reviews += 1
+            for entry in review["entries"]:
+                missing = _ENTRY_FIELDS - set(entry)
+                assert not missing, (stem, sorted(missing))
+                entries += 1
+    assert nodes >= 25 and verdicts >= 1 and reviews >= 1 and entries >= 1, (
+        nodes, verdicts, reviews, entries
+    )
 
 
 def test_swarm_details_v2_returns_one_entry_per_file():
