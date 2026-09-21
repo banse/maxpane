@@ -59,8 +59,8 @@ Measured facts the design leans on:
 labelled as window-scoped. No panel mixes the two without saying so.
 
 - **Hero** (six boxes, same geometry; contents re-swept per the terminal-layout skill):
-  SEAT `IDMD #420` / `agent 50939` / how picked · **ACCEPTED** `12 of 74` · **REVIEWED** `72` (+`n pending`
-  when submitted/queued exist) · **SCORE** mean of `reviews[].value` with `(72 scored)` · **COLLAB** `24 seats` ·
+  SEAT `IDMD #420` / `agent 50939` / how picked · **ACCEPTED** `12 of 74` · **REVIEWED** `72 · 6 pending`
+  (pending = submitted + queued, a subset of the total, not added to it; owner, plan Q-M) · **SCORE** mean of `reviews[].value` with `(72 scored)` · **COLLAB** `24 seats` ·
   **STATUS** `online ●`/`offline ○` + `last HH:MM` (newest of `acceptedAt`/`sentAt`).
   REVISIONS and ACC/REJ leave the hero — `/seats` serves neither (decision D2).
 - **VERDICTS → SEAT RECORD panel:** accepted 12 of 74 · reviewed 72 by status (sent / submitted / queued) ·
@@ -83,7 +83,9 @@ labelled as window-scoped. No panel mixes the two without saying so.
 New / changed keys (the roster keys are unchanged):
 
 - `swarm_seat_selected` — `{token_id, agent_id, selected_by}`; `selected_by` gains nothing; `unseen_token` retires.
-- `swarm_seat_state` — `"ok" | "unknown_seat" | None` (`None` = read failed or not yet read).
+- `swarm_seat_state` — `"ok" | "unknown_seat" | "pending" | None` (`"pending"` = no read of this token has
+  finished yet, a switch in flight included → `Loading…`; `None` = read failed with no last-good → `unavailable`).
+  Added 2026-09-21 by the owner (plan Q-A).
 - `swarm_seat_summary` — `{attempts, accepted, reviewed, review_status: {sent, submitted, queued},
   mean_score, scored, roles: [{role, count}], online, owner, paired_ts, last_active_ts, collaborators,
   runtime}`; every field `None` when the source did not carry it.
@@ -123,6 +125,8 @@ Read-only GET, keyless, no test on the network (committed fixtures from the WP0 
 - **D3 — RECORD's verifier detail: DROP.** RECORD is the lifetime `work[]`; no window-scoped verdict block.
 - **D4 — ROSTER columns: KEEP** `acc/rej/rev/score`, under the window title.
 - **D5 — owner address: SHOW** in the seat panel (copy icon + Etherscan).
+- **Plan Q-A/Q-C/Q-M (2026-09-21):** add a `"pending"` seat state; the owner links to the package `EXPLORER`
+  (mainnet), and the per-row `chain_id` rule gap goes in the followups doc; REVIEWED reads `72 · 6 pending`.
 
 ## 8. Sequence (the plan expands this)
 
