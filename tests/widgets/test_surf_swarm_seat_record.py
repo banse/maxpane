@@ -1,8 +1,11 @@
-"""RECORD -- the selected seat's nodes, newest first (swarm v2 plan A1, WP6a).
+"""RECORD -- the selected seat's accepted work, lifetime, newest first (plan WP4).
 
-Composited assertions only; the hand rows are bound to
-``SURF_ROW_KEYS["swarm_seat_node_rows"]``. Unwired until WP7, so the per-class
-contract checks are imposed here against ``SWARM_WIDGET_SIGNATURES``.
+Composited assertions only. Rows are **folded** from the committed ``/seats``
+captures by ``data/surf_swarm.seat_work_rows`` (the manager's own fold), and
+every expected value is read off that fold, never hand-typed. The per-class
+contract is imposed against the target export ``SWARM_AGENT_SIGNATURES_NEXT``
+until WP5 flips ``SWARM_WIDGET_SIGNATURES``; the two retiring parameters are
+named here exactly so WP5's removal is a visible edit.
 """
 
 from __future__ import annotations
@@ -10,55 +13,51 @@ from __future__ import annotations
 import inspect
 
 from rich.color import Color
+from textual.app import App
 
-from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_AGENT_SIGNATURES_NEXT
+from maxpane_dashboard.data.surf_swarm import seat_work_rows
 from maxpane_dashboard.widgets.fmt import hhmm
+from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
 from maxpane_dashboard.widgets.surf.swarm_seat_record import (
     COMPACT_WIDTH,
-    DETAIL_MIN_COLS,
     EMPTY_LINE,
     FULL_WIDTH,
     JOB_COLS,
+    OBJECTIVE_MIN_COLS,
     TIGHT_WIDTH,
     SurfSwarmSeatRecord,
 )
+from tests.surf_swarm_fixtures import swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
 
-JOB = "ad7bebb8-fd1a-4268-b831-1c253a85ae4c"
-AT = 1_789_000_000.0
-AT_OLDER = 1_788_990_000.0
+SIGNATURE = SWARM_AGENT_SIGNATURES_NEXT["SurfSwarmSeatRecord"]
+#: Sent by the screen until WP5, accepted and never painted.
+TRANSITIONAL = ("swarm_seat_node_rows", "swarm_network")
 
-NODE = {
-    "job_id": JOB, "template": "skill:build-contract-project",
-    "node_key": "build_contract_project", "role": "implement", "state": "accepted",
-    "attempt": 1, "revisions": 0, "verdict_status": "accepted", "rejection_code": None,
-    "failed_checks": [], "detail": "all checks passed", "at_ts": AT,
-}
-REJECTED = {
-    "job_id": "71cd53fa-0000-4000-8000-000000000000", "template": "skill:oracle-assess",
-    "node_key": "review_oracle", "role": "review", "state": "failed",
-    "attempt": 2, "revisions": 1, "verdict_status": "rejected", "rejection_code": "tests_failed",
-    "failed_checks": ["lint", "unit"], "detail": "two checks failed", "at_ts": AT_OLDER,
-}
-SEEN = {
-    "job_id": "9dbfeb65-0000-4000-8000-000000000000", "template": "t",
-    "node_key": None, "role": "integrate", "state": "accepted",
-    "attempt": None, "revisions": 3, "verdict_status": "accepted", "rejection_code": None,
-    "failed_checks": [], "detail": None, "at_ts": AT_OLDER - 60,
-}
-ROWS = [NODE, REJECTED, SEEN]
+ROWS_420 = seat_work_rows(swarm_seat_capture("seat_420"))
+ROWS_0 = seat_work_rows(swarm_seat_capture("seat_0"))
+NEWEST = ROWS_420[0]
 AS_OF = "04:06"
-SIZE = (140, 12)
+#: Wide enough for every column at ``full`` plus ~45 cells of objective; tall
+#: enough for #420's twelve rows, the header, the title and a footer.
+SIZE = (130, 20)
 
 
-def test_the_hand_rows_carry_exactly_the_frozen_shape():
-    for row in ROWS:
-        assert tuple(row) == SURF_ROW_KEYS["swarm_seat_node_rows"]
+def _job(row) -> str:
+    return row["job_id"][:JOB_COLS]
+
+
+def test_the_folded_rows_carry_exactly_the_frozen_shape():
+    assert ROWS_420 and ROWS_0
+    for row in ROWS_420 + ROWS_0:
+        assert tuple(row) == SURF_ROW_KEYS["swarm_seat_work_rows"]
 
 
 async def _record(size=SIZE, **kwargs):
-    kwargs.setdefault("swarm_seat_node_rows", ROWS)
+    kwargs.setdefault("swarm_seat_work_rows", ROWS_420)
+    kwargs.setdefault("swarm_seat_state", "ok")
     kwargs.setdefault("swarm_seat_as_of_hhmm", AS_OF)
     return await composite_lines(SurfSwarmSeatRecord, size, **kwargs)
 
@@ -70,157 +69,177 @@ def _row_with(lines, needle):
 # -- the self-imposed contract -----------------------------------------------------
 
 
-def test_update_data_names_exactly_the_frozen_signature_in_order():
+def test_update_data_names_the_target_signature_then_the_transitional_params():
     sig = inspect.signature(SurfSwarmSeatRecord.update_data)
     params = [n for n, p in sig.parameters.items() if n != "self" and p.kind is not p.VAR_KEYWORD]
-    assert tuple(params) == SWARM_WIDGET_SIGNATURES["SurfSwarmSeatRecord"]
+    assert tuple(params) == SIGNATURE + TRANSITIONAL
+    assert all(sig.parameters[n].default is None for n in TRANSITIONAL)
     assert any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
+
+
+async def test_the_transitional_params_are_never_painted():
+    plain = await _record()
+    noisy = await _record(swarm_seat_node_rows=[{"node_key": "OLD_NODE_ROW"}],
+                          swarm_network="SEPOLIA")
+    assert plain == noisy
+
+
+# -- the four seat states stay distinct ----------------------------------------------
 
 
 async def test_no_args_and_all_none_render_unavailable_without_raising():
     bare = "\n".join(await composite_lines(SurfSwarmSeatRecord, SIZE))
-    assert "unavailable" in bare and "Loading" not in bare
+    assert "unavailable" in bare and "Loading" not in bare and EMPTY_LINE not in bare
     none = "\n".join(await composite_lines(
-        SurfSwarmSeatRecord, SIZE,
-        **{k: None for k in SWARM_WIDGET_SIGNATURES["SurfSwarmSeatRecord"]},
+        SurfSwarmSeatRecord, SIZE, **{k: None for k in SIGNATURE + TRANSITIONAL},
     ))
-    assert "unavailable" in none
+    assert "unavailable" in none and EMPTY_LINE not in none
 
 
-# -- rows -------------------------------------------------------------------------
+async def test_a_failed_read_is_unavailable_and_never_the_real_empty_sentence():
+    """State ``None`` (read failed, no last-good) -- even beside ``[]`` rows."""
+    for rows in (None, [], ROWS_420):
+        text = "\n".join(await _record(swarm_seat_work_rows=rows, swarm_seat_state=None))
+        assert "unavailable" in text, rows
+        assert EMPTY_LINE not in text and _job(NEWEST) not in text
 
 
-async def test_a_detail_node_renders_every_column():
+async def test_ok_with_empty_rows_is_the_real_empty_sentence():
+    text = "\n".join(await _record(swarm_seat_work_rows=[]))
+    assert EMPTY_LINE in text and "unavailable" not in text
+
+
+async def test_ok_with_unread_rows_is_unavailable():
+    text = "\n".join(await _record(swarm_seat_work_rows=None))
+    assert "unavailable" in text and EMPTY_LINE not in text
+
+
+async def test_unknown_seat_says_never_paired_not_the_empty_sentence():
+    text = "\n".join(await _record(swarm_seat_work_rows=[], swarm_seat_state="unknown_seat"))
+    assert NEVER_PAIRED_WORDS in text
+    assert EMPTY_LINE not in text and "unavailable" not in text
+
+
+async def test_pending_says_loading_and_paints_no_row():
+    text = "\n".join(await _record(swarm_seat_state="pending"))
+    assert "Loading" in text
+    assert _job(NEWEST) not in text and "unavailable" not in text and EMPTY_LINE not in text
+
+
+async def test_a_malformed_state_is_unavailable():
+    text = "\n".join(await _record(swarm_seat_state="bogus"))
+    assert "unavailable" in text and _job(NEWEST) not in text
+
+
+# -- rows ---------------------------------------------------------------------------
+
+
+async def test_the_defect_seat_shows_its_twelve_accepted_jobs_newest_first():
     lines = await _record()
-    row = _row_with(lines, "build_contract_project")
-    assert hhmm(AT) in row and JOB[:JOB_COLS] in row and JOB[JOB_COLS:JOB_COLS + 4] not in row
-    assert "implement" in row and "accepted" in row and "all checks passed" in row
-    assert " 1 " in row  # try
-    assert "RECORD" in "\n".join(lines) and f"as of {AS_OF}" in "\n".join(lines)
+    ys = [next(i for i, l in enumerate(lines) if _job(row) in l) for row in ROWS_420]
+    assert len(ys) == len(ROWS_420) == swarm_seat_capture("seat_420")["accepted"]
+    assert ys == sorted(ys), "the fold's order (newest first) is kept, never re-sorted"
+    assert "older" not in "\n".join(lines), "twelve rows are under the cap"
 
 
-async def test_the_folds_order_is_kept():
+async def test_a_work_row_renders_every_column():
     lines = await _record()
-    y_new = next(i for i, l in enumerate(lines) if "build_contract_project" in l)
-    y_old = next(i for i, l in enumerate(lines) if "review_oracle" in l)
-    assert y_new < y_old
+    row = _row_with(lines, _job(NEWEST))
+    assert hhmm(NEWEST["accepted_ts"]) in row
+    assert NEWEST["job_id"][JOB_COLS:JOB_COLS + 4] not in row
+    assert NEWEST["node_key"] in row and NEWEST["role"] in row and NEWEST["job_state"] in row
+    assert NEWEST["objective"][:30] in row
+    text = "\n".join(lines)
+    assert "RECORD" in text and f"as of {AS_OF}" in text
+    header = _row_with(lines, "objective").split()
+    assert header == ["when", "job", "node", "role", "state", "objective"]
 
 
-async def test_a_rejected_node_names_its_code_and_failed_checks():
-    row = _row_with(await _record(), "review_oracle")
-    assert "rejected · tests_failed" in row
-    assert "two checks failed ✗ lint, unit" in row
-    assert "failed" in row
-
-
-async def test_a_seen_slot_node_invents_nothing():
-    """No key, no attempt, no detail: three dashes, never a guessed value."""
-    row = _row_with(await _record(), "integrate")
-    assert row.count("--") >= 3
-    assert "?" not in row.replace("??:??", "")
-    assert "accepted" in row and " 3 " in row  # rev, from the slot
+async def test_the_objective_is_clipped_with_an_ellipsis_and_the_title_says_widen():
+    lines = await _record()
+    row = _row_with(lines, _job(NEWEST))
+    assert NEWEST["objective"] not in row and row.rstrip().endswith("…")
+    assert "‹" in "\n".join(lines)
+    short = [dict(NEWEST, objective="build a hook")]
+    text = "\n".join(await _record(swarm_seat_work_rows=short))
+    assert "build a hook" in text and "‹" not in text, "an objective that fits raises no hint"
 
 
 async def test_the_state_word_is_coloured_on_the_raw_word():
-    from textual.app import App
-
     class _A(App):
         def compose(self):
             yield SurfSwarmSeatRecord()
 
+    rows = [NEWEST, dict(ROWS_420[1], job_state="failed")]
     async with _A().run_test(size=SIZE) as pilot:
         widget = pilot.app.query_one(SurfSwarmSeatRecord)
-        widget.update_data(
-            swarm_seat_node_rows=[dict(NODE, state="working"), REJECTED],
-            swarm_seat_as_of_hhmm=AS_OF,
-        )
+        widget.update_data(swarm_seat_work_rows=rows, swarm_seat_state="ok",
+                           swarm_seat_as_of_hhmm=AS_OF)
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
-        rows = ["".join(seg.text for seg in strip) for strip in strips]
-        y_w = next(i for i, r in enumerate(rows) if "working" in r)
-        y_f = next(i for i, r in enumerate(rows) if "review_oracle" in r)
-        x_w = rows[y_w].index("working")
-        x_f = rows[y_f].index("failed")
-        # A DataTable cell's ``[green]`` reaches the screen as the app's ANSI
-        # theme's green (a hex), so compare truecolor through that theme.
+        painted = ["".join(seg.text for seg in strip) for strip in strips]
+        y_c = next(i for i, r in enumerate(painted) if _job(rows[0]) in r)
+        y_f = next(i for i, r in enumerate(painted) if _job(rows[1]) in r)
+        x_c = painted[y_c].index("completed")
+        x_f = painted[y_f].index("failed")
         theme = pilot.app.ansi_theme
-        working = pilot.app.screen.get_style_at(x_w, y_w).color.get_truecolor(theme)
+        done = pilot.app.screen.get_style_at(x_c, y_c).color.get_truecolor(theme)
         failed = pilot.app.screen.get_style_at(x_f, y_f).color.get_truecolor(theme)
-        assert working == Color.parse("green").get_truecolor(theme)
+        assert done == Color.parse("green").get_truecolor(theme)
         assert failed == Color.parse("red").get_truecolor(theme)
 
 
-async def test_none_and_empty_differ():
-    empty = "\n".join(await _record(swarm_seat_node_rows=[]))
-    assert EMPTY_LINE in empty and "unavailable" not in empty
-    unread = "\n".join(await _record(swarm_seat_node_rows=None))
-    assert "unavailable" in unread and EMPTY_LINE not in unread
-
-
-async def test_a_hostile_detail_and_failed_check_render_stripped_and_never_raise():
-    hostile = dict(REJECTED, detail="[/x]PWNED detail", failed_checks=["[/x]CHECK", "unit"])
-    lines = await _record(swarm_seat_node_rows=[hostile], region_only=True)
+async def test_a_hostile_objective_and_node_key_render_literally_and_never_raise():
+    hostile = dict(NEWEST, objective="[/x]PWNED objective", node_key="[/y]NODE",
+                   role="[$error]", job_state="[bold]")
+    lines = await _record(swarm_seat_work_rows=[hostile], region_only=True)
     text = "\n".join(lines)
-    assert "PWNED detail" in text and "CHECK, unit" in text
+    assert "PWNED objective" in text and "NODE" in text
     assert "[" not in text and "]" not in text
 
 
-async def test_a_theme_token_in_a_detail_does_not_raise():
-    hostile = dict(NODE, detail="[$success] fine", rejection_code="[$error]")
-    text = "\n".join(await _record(swarm_seat_node_rows=[hostile]))
-    assert "build_contract_project" in text
+async def test_a_malformed_row_field_dashes_and_a_non_dict_row_is_skipped():
+    bad = dict(NEWEST, accepted_ts="yesterday", node_key=None, objective=None, job_id=7)
+    lines = await _record(swarm_seat_work_rows=[bad, "garbage", ROWS_420[1]])
+    row = _row_with(lines, "??:??")
+    assert row.count("--") >= 3
+    assert _job(ROWS_420[1]) in "\n".join(lines)
 
 
-async def test_a_long_detail_is_clipped_and_the_title_says_widen():
-    detail = "x" * 63
-    lines = await _record((120, 12), swarm_seat_node_rows=[dict(NODE, detail=detail)])
-    text = "\n".join(lines)
-    assert detail not in text and "xxxx…" in text
-    assert "‹" in text
-    # At SIZE the detail column has room for REJECTED's 30-cell line.
-    short = "\n".join(await _record(SIZE))
-    assert "two checks failed ✗ lint, unit" in short
-    assert "‹" not in short, "a detail that fits raises no hint"
-
-
-async def test_a_non_dict_row_is_skipped_and_the_rest_render():
-    text = "\n".join(await _record(swarm_seat_node_rows=[NODE, "garbage", REJECTED]))
-    assert "build_contract_project" in text and "review_oracle" in text
-
-
-async def test_rows_past_the_cap_are_not_drawn():
-    rows = [dict(NODE, node_key=f"node_{i:02d}") for i in range(45)]
-    lines = await _record((140, 60), swarm_seat_node_rows=rows)
-    painted = [l for l in lines if "node_" in l]
+async def test_rows_past_the_cap_are_counted_as_older():
+    """#0 has 26 accepted jobs; a cap-breaking list is the fold repeated."""
+    rows = (ROWS_0 * 2)[: SurfSwarmSeatRecord.ROW_CAP + 5]
+    lines = await _record((130, 60), swarm_seat_work_rows=rows)
+    painted = [l for l in lines if "completed" in l]
     assert len(painted) == SurfSwarmSeatRecord.ROW_CAP == 40
+    assert "+5 older" in "\n".join(lines)
+    exact = await _record((130, 60), swarm_seat_work_rows=rows[: SurfSwarmSeatRecord.ROW_CAP])
+    assert "older" not in "\n".join(exact)
 
 
-# -- tiers -------------------------------------------------------------------------
+# -- tiers (provisional; WP6 measures) ------------------------------------------------
 
 
-def test_the_tier_thresholds_descend_and_detail_has_a_floor():
+def test_the_tier_thresholds_descend():
     assert FULL_WIDTH > COMPACT_WIDTH > TIGHT_WIDTH > 0
-    assert DETAIL_MIN_COLS >= len("all checks passed")
+    assert OBJECTIVE_MIN_COLS > 0
 
 
-async def test_one_below_full_sheds_try_and_rev_and_says_widen():
+async def test_one_below_full_sheds_role_and_says_widen():
     gutter = SwarmTableBase.GUTTER_COLS
-    # At the full pin the detail column sits at its 17-cell floor, so the row
-    # carries a detail that fits it -- a clipped detail is its own hint.
-    row = dict(REJECTED, detail="two failed", failed_checks=[])
-    full_lines = await _record((FULL_WIDTH + gutter, 12), swarm_seat_node_rows=[row])
-    compact_lines = await _record((FULL_WIDTH + gutter - 1, 12), swarm_seat_node_rows=[row])
-    full, compact = "\n".join(full_lines), "\n".join(compact_lines)
-    # The header line, not the body: ``review_oracle`` contains ``rev``.
+    row = [dict(NEWEST, objective="fits")]
+    full_lines = await _record((FULL_WIDTH + gutter, 12), swarm_seat_work_rows=row)
+    compact_lines = await _record((FULL_WIDTH + gutter - 1, 12), swarm_seat_work_rows=row)
     full_header = _row_with(full_lines, "when").split()
     compact_header = _row_with(compact_lines, "when").split()
-    assert "try" in full_header and "rev" in full_header and "‹" not in full
-    assert "try" not in compact_header and "rev" not in compact_header and "‹" in compact
-    assert "two failed" in compact, "compact keeps the detail"
+    assert "role" in full_header and "‹" not in "\n".join(full_lines)
+    assert "role" not in compact_header and "‹" in "\n".join(compact_lines)
+    assert "objective" in compact_header, "compact keeps the objective"
 
 
-async def test_one_below_compact_sheds_the_detail():
+async def test_one_below_compact_sheds_the_objective():
     gutter = SwarmTableBase.GUTTER_COLS
-    tight = "\n".join(await _record((COMPACT_WIDTH + gutter - 1, 12), swarm_seat_node_rows=[REJECTED]))
-    assert "two checks" not in tight and "detail" not in tight
-    assert "rejected" in tight and "review_oracle" in tight and "‹" in tight
+    lines = await _record((COMPACT_WIDTH + gutter - 1, 12), swarm_seat_work_rows=[NEWEST])
+    header = _row_with(lines, "when").split()
+    assert "objective" not in header and "‹" in "\n".join(lines)
+    assert NEWEST["node_key"] in "\n".join(lines)

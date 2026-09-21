@@ -1,10 +1,13 @@
-"""ROSTER -- the AGENT body's seat picker (swarm v2 plan A1, WP6a).
+"""ROSTER -- the AGENT body's seat picker (swarm v2 plan A1, WP6a; seats plan WP4).
 
 Composited assertions only (``rules/widgets.md``). The hand rows are bound to
 ``SURF_ROW_KEYS["swarm_seat_rows"]`` so a drifted shape reddens here rather
-than on screen. The widget is unwired until WP7, so the per-class contract
-checks the package walk would run are imposed here, bound to the frozen
-``SWARM_WIDGET_SIGNATURES`` export.
+than on screen. The per-class contract is imposed against the target export
+``SWARM_AGENT_SIGNATURES_NEXT`` until WP5 flips ``SWARM_WIDGET_SIGNATURES``;
+the one retiring parameter is named here exactly so WP5's removal is a
+visible edit. The title's window is **folded** from the committed
+``jobs_window_100.json`` by ``data/surf_swarm.roster_window`` (the manager's
+own fold), never hand-typed.
 """
 
 from __future__ import annotations
@@ -13,7 +16,8 @@ import inspect
 
 from textual.app import App
 
-from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_AGENT_SIGNATURES_NEXT
+from maxpane_dashboard.data.surf_swarm import roster_window
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.surf.swarm_roster import (
     COMPACT_WIDTH,
@@ -21,10 +25,19 @@ from maxpane_dashboard.widgets.surf.swarm_roster import (
     FULL_WIDTH,
     SEAT_COLS,
     TIGHT_WIDTH,
+    WINDOW_UNKNOWN,
     SurfSwarmRoster,
 )
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
+from tests.surf_swarm_fixtures import swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
+
+SIGNATURE = SWARM_AGENT_SIGNATURES_NEXT["SurfSwarmRoster"]
+#: Sent by the screen until WP5 (the seat tier's marker now), never painted.
+TRANSITIONAL = ("swarm_seat_as_of_hhmm",)
+
+JOBS_WINDOW = swarm_seat_capture("jobs_window_100")
+WINDOW = roster_window(JOBS_WINDOW["jobs"])
 
 LAST_0 = 1_789_000_900.0
 LAST_1548 = 1_789_000_000.0
@@ -63,7 +76,8 @@ def test_the_hand_rows_carry_exactly_the_frozen_shape():
 async def _roster(size=SIZE, **kwargs):
     kwargs.setdefault("swarm_seat_rows", ROWS)
     kwargs.setdefault("swarm_seat_selected", SELECTED)
-    kwargs.setdefault("swarm_seat_as_of_hhmm", AS_OF)
+    kwargs.setdefault("swarm_roster_window", WINDOW)
+    kwargs.setdefault("swarm_scores_as_of_hhmm", AS_OF)
     return await composite_lines(SurfSwarmRoster, size, **kwargs)
 
 
@@ -71,19 +85,58 @@ def _row_with(lines, needle):
     return next(line for line in lines if needle in line)
 
 
-# -- the self-imposed contract (unwired until WP7) --------------------------------
+# -- the self-imposed contract ------------------------------------------------------
 
 
-def test_update_data_names_exactly_the_frozen_signature_in_order():
-    params = [
-        name for name, p in inspect.signature(SurfSwarmRoster.update_data).parameters.items()
-        if name != "self" and p.kind is not p.VAR_KEYWORD
-    ]
-    assert tuple(params) == SWARM_WIDGET_SIGNATURES["SurfSwarmRoster"]
-    assert any(
-        p.kind is p.VAR_KEYWORD
-        for p in inspect.signature(SurfSwarmRoster.update_data).parameters.values()
-    )
+def test_update_data_names_the_target_signature_then_the_transitional_param():
+    sig = inspect.signature(SurfSwarmRoster.update_data)
+    params = [n for n, p in sig.parameters.items() if n != "self" and p.kind is not p.VAR_KEYWORD]
+    assert tuple(params) == SIGNATURE + TRANSITIONAL
+    assert all(sig.parameters[n].default is None for n in TRANSITIONAL)
+    assert any(p.kind is p.VAR_KEYWORD for p in sig.parameters.values())
+
+
+async def test_the_seat_tiers_marker_is_never_the_rosters():
+    """``swarm_seat_as_of_hhmm`` is the seat tier's now (plan §9 F); the roster's
+    marker is the scores sweep's own."""
+    text = "\n".join(await _roster(swarm_scores_as_of_hhmm=None, swarm_seat_as_of_hhmm="09:09"))
+    assert "09:09" not in text and "as of" not in text
+
+
+# -- the window title (spec §3, decision D4) ------------------------------------------
+
+
+def test_the_committed_window_is_the_newest_hundred_jobs():
+    assert WINDOW["jobs"] == JOBS_WINDOW["count"] == len(JOBS_WINDOW["jobs"]) == 100
+    assert WINDOW["oldest_ts"] is not None
+
+
+async def test_the_title_names_the_job_window_and_the_scores_marker():
+    lines = await _roster()
+    title = _row_with(lines, "ROSTER")
+    expected = (f"ROSTER · last {WINDOW['jobs']} jobs since {hhmm(WINDOW['oldest_ts'])}"
+                f" · as of {AS_OF}")
+    assert expected in title
+
+
+async def test_an_unread_or_malformed_window_says_job_window_unknown():
+    for window in (None, [], {"jobs": None, "oldest_ts": None}, {"jobs": True, "oldest_ts": 1.0},
+                   {"jobs": -1, "oldest_ts": 1.0}, "100"):
+        title = _row_with(await _roster(swarm_roster_window=window), "ROSTER")
+        assert f"ROSTER · {WINDOW_UNKNOWN} · as of {AS_OF}" in title, window
+        assert "last" not in title
+
+
+async def test_a_window_with_no_stamp_keeps_the_job_count():
+    title = _row_with(await _roster(swarm_roster_window={"jobs": 7, "oldest_ts": None}), "ROSTER")
+    assert "ROSTER · last 7 jobs · as of" in title and "since" not in title
+
+
+async def test_the_window_words_survive_an_unread_roster():
+    """Rows ``None`` (unavailable) or ``[]``: the title still says what they are from."""
+    for rows in (None, []):
+        title = _row_with(await _roster(swarm_seat_rows=rows, swarm_seat_selected=None), "ROSTER")
+        assert f"last {WINDOW['jobs']} jobs" in title, rows
 
 
 async def test_no_args_and_all_none_render_unavailable_without_raising():
@@ -92,7 +145,7 @@ async def test_no_args_and_all_none_render_unavailable_without_raising():
     assert "Loading" not in "\n".join(bare)
     none = await composite_lines(
         SurfSwarmRoster, SIZE,
-        **{k: None for k in SWARM_WIDGET_SIGNATURES["SurfSwarmRoster"]},
+        **{k: None for k in SIGNATURE + TRANSITIONAL},
     )
     assert "unavailable" in "\n".join(none)
 
@@ -122,7 +175,7 @@ async def test_the_selected_row_is_marked_and_token_at_maps_it():
     async with _A().run_test(size=SIZE) as pilot:
         widget = pilot.app.query_one(SurfSwarmRoster)
         widget.update_data(
-            swarm_seat_rows=ROWS, swarm_seat_selected=SELECTED, swarm_seat_as_of_hhmm=AS_OF,
+            swarm_seat_rows=ROWS, swarm_seat_selected=SELECTED, swarm_scores_as_of_hhmm=AS_OF,
         )
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
@@ -152,7 +205,7 @@ async def test_a_non_dict_row_is_skipped_and_the_map_stays_aligned():
         widget = pilot.app.query_one(SurfSwarmRoster)
         widget.update_data(
             swarm_seat_rows=[SEAT_0, "garbage", SEAT_463], swarm_seat_selected=None,
-            swarm_seat_as_of_hhmm=AS_OF,
+            swarm_scores_as_of_hhmm=AS_OF,
         )
         await pilot.pause()
         assert widget.token_at(0) == 0 and widget.token_at(1) == 463
@@ -242,7 +295,7 @@ async def test_the_cursor_sits_on_the_selected_row_and_survives_a_resize():
     async with _A().run_test(size=SIZE) as pilot:
         roster = pilot.app.query_one(SurfSwarmRoster)
         roster.update_data(swarm_seat_rows=ROWS, swarm_seat_selected=SELECTED,
-                           swarm_seat_as_of_hhmm=AS_OF)
+                           swarm_scores_as_of_hhmm=AS_OF)
         await pilot.pause()
         table = roster.query_one(DataTable)
         assert roster.selected_row_index == 1
@@ -253,6 +306,6 @@ async def test_the_cursor_sits_on_the_selected_row_and_survives_a_resize():
         assert table.cursor_row == 1, "the resize repaint reset the cursor"
         # A selection nothing painted carries leaves the cursor alone.
         roster.update_data(swarm_seat_rows=ROWS, swarm_seat_selected=None,
-                           swarm_seat_as_of_hhmm=AS_OF)
+                           swarm_scores_as_of_hhmm=AS_OF)
         await pilot.pause()
         assert roster.selected_row_index is None

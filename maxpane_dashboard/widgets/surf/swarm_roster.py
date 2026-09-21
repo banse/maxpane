@@ -19,6 +19,24 @@ moves its own cursor onto that row after every paint (:meth:`_place_cursor`
 are indented two cells so the seat column stays aligned. The rows are
 painted in the fold's order (``nodes`` desc) and never re-sorted.
 
+The title says what the rows are folded from (``docs/surf_agent_seats_spec.md``
+§3, decision D4): the roster is still the only seat list there is, and it is
+folded from the ``/jobs`` window -- the newest 100 jobs, not every job -- so
+its ``acc/rej/rev/score`` columns are window-scoped and the title says so::
+
+    ROSTER · last 100 jobs since 02:26 · as of 04:06
+
+``swarm_roster_window`` (``{jobs, oldest_ts}``, ``data/surf_swarm.roster_window``)
+gives the words; ``since HH:MM`` is ``hhmm(oldest_ts)`` -- local time, like
+every other swarm stamp -- and is left out when no job carried a stamp. A
+window that was not read (``None``) or is malformed says
+``ROSTER · job window unknown``: the title never drops the window words while
+the rows show window-scoped numbers. The marker is the scores sweep's own
+``swarm_scores_as_of_hhmm`` (plan §9 F): ``swarm_seat_as_of_hhmm`` is the seat
+tier's now. :meth:`SwarmTableBase._render_title` builds on ``self.TITLE``, so
+the window words ride in an instance-level ``TITLE`` and the base's ``as of``
+clip and widen hint apply unchanged (no ``_swarm_table.py`` change, plan §9 P).
+
 The tiered-table mechanics -- header per width tier, the ``as of`` marker
 and widen hint in the title, ``None`` -> ``unavailable`` vs ``[]`` -> the
 panel's own sentence written under the table -- are
@@ -55,7 +73,9 @@ __all__ = [
     "FULL_WIDTH",
     "SEAT_COLS",
     "TIGHT_WIDTH",
+    "WINDOW_UNKNOWN",
     "SurfSwarmRoster",
+    "window_words",
 ]
 
 logger = logging.getLogger(__name__)
@@ -65,6 +85,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 EMPTY_LINE = "no seat seen"
+
+#: The title's window words when ``swarm_roster_window`` is unread or malformed.
+WINDOW_UNKNOWN = "job window unknown"
 
 #: ``▸ IDMD #1548``: the two-cell selection prefix, ``IDMD #`` (6) and a
 #: token id. Corpus token ids are <= 4 digits (``1548``, 17 distinct seats,
@@ -132,6 +155,29 @@ def _token(value: object) -> int | None:
     return value
 
 
+def _count(value: object) -> int | None:
+    """A job count: an ``int`` that is not a ``bool`` and not negative."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def window_words(window: object) -> str:
+    """``last 100 jobs since 02:26`` for a read window; :data:`WINDOW_UNKNOWN` otherwise.
+
+    ``since`` is left out when the window carries no usable stamp -- the job
+    count alone still says the rows are a window.
+    """
+    if not isinstance(window, dict):
+        return WINDOW_UNKNOWN
+    jobs = _count(window.get("jobs"))
+    if jobs is None:
+        return WINDOW_UNKNOWN
+    words = f"last {fmt_int(jobs)} jobs"
+    since = hhmm(window.get("oldest_ts"), unknown="")
+    return f"{words} since {since}" if since else words
+
+
 def _roles_cell(roles: object) -> str:
     if not isinstance(roles, list):
         return DASH
@@ -186,13 +232,20 @@ class SurfSwarmRoster(SwarmTableBase):
         self,
         swarm_seat_rows=None,
         swarm_seat_selected=None,
+        swarm_roster_window=None,
+        swarm_scores_as_of_hhmm=None,
         swarm_seat_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
-        """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it)."""
+        """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it).
+
+        ``swarm_seat_as_of_hhmm`` is transitional and ignored (the seat tier's
+        marker, not the roster's); the WP5 contract flip removes it.
+        """
         selected = swarm_seat_selected if isinstance(swarm_seat_selected, dict) else {}
         self.selected_token = _token(selected.get("token_id"))
-        self.store(swarm_seat_rows, swarm_seat_as_of_hhmm)
+        self.TITLE = f"{type(self).TITLE} · {window_words(swarm_roster_window)}"
+        self.store(swarm_seat_rows, swarm_scores_as_of_hhmm)
 
     def _repaint(self) -> None:
         self._tokens = []
