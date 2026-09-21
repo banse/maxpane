@@ -8,7 +8,7 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 is an owner decision)
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 is an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme
 
 Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
 `swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
@@ -551,7 +551,7 @@ narrow widths, or a right-label that yields first, would close it.
 `int()` inside the allowlist accepts `"1"`. The API sends ints; the test asserts a non-numeric string is refused.
 Tighten to `isinstance(value, int)` when the file is next touched.
 
-### F20 — `_NON_NUMERIC_KEYS`'s comment still names `swarm_queue_depths`
+### F20 — `_NON_NUMERIC_KEYS`'s comment still names `swarm_queue_depths` — CLOSED 2026-09-21 (`/seats` WP0, `8a71457`)
 `tests/test_surf_registration.py:1393`: historical prose about a retired key in a live triage comment; one line.
 
 ### F21 — `MAXPANE_IMD_SEAT` is missing from CLAUDE.md's env-var list (owner-owned file) — CLOSED 2026-09-21
@@ -566,16 +566,90 @@ re-export, or say in the `__all__` comment why the fold's public surface carries
 The panel height is pinned against the corpus vocabulary (six states, a handful of cancel reasons); a new state adds
 a line. Cap the blocks (top-N + `… n more`) or bind the pin to a vocabulary test.
 
-### F24 — seat selection takes effect on the next slow-tier cycle
+### F24 — seat selection takes effect on the next slow-tier cycle — REWORDED 2026-09-21 (`/seats` WP2)
 `select_seat(token)` is an attribute write; the AGENT body refolds when the slow tier next runs (up to its interval).
 The status bar's marker says so, but an operator expects the pick to land at once. A cheap fix: refold
 `_swarm_seat_keys` from the cached sweep on selection, no network.
+
+*Since `/seats` (WP2, `5649247`):* the seat is its own tier (`TIER_SWARM_SEAT`, 120 s). `select_seat` / `set_seat`
+stay attribute writes and `mark_due` the seat tier, so the pick lands one detached `/seats` read after the next poll,
+not a whole slow-tier interval. The switch shows `Loading…` (never the previous seat's numbers) until then. Still
+not instant; a per-token last-good map (F28) would make a switch *back* instant.
 
 ### F25 — the hero SERVICES box's worst case (33 cells) versus its share of the pin
 `verifier ● publisher ● deployer ?` is 33 cells; at 141 columns six boxes leave ~19 content cells each. Verify how the
 worst case composites at the pin (clipped with `…` is acceptable; a silent overflow is not) and pin it with a test.
 
-### F26 — `swarm_seat_selected`'s key-list comment does not name the optional `unseen_token`
+### F26 — `swarm_seat_selected`'s key-list comment does not name the optional `unseen_token` — CLOSED BY REMOVAL 2026-09-21 (`/seats` WP5, `57f429e`: `unseen_token` retired, decision D1)
 `data/surf_models.py`: the comment says `{token_id, agent_id, selected_by}`; since 4e4bc30 the `most_active` fallback
 also carries `unseen_token` when a saved seat is off the roster. Comment-only, but the file is a Tier 2 trigger — fold
 it into the next change that owns `surf_models.py`.
+
+## F27 — F38 — filed at the close of the `/seats` programme (2026-09-21)
+
+Sources: the task reviews of WP0–WP6, the final whole-branch review and the controller's checks; spec
+`docs/surf_agent_seats_spec.md`, plan `docs/surf_agent_seats_plan.md`. Minor unless stated; the Follow-ups rule
+applies (Tier 0 when its file is next touched).
+
+### F27 — SEAT RECORD's pending row clips silently at a four-digit `submitted`
+`widgets/surf/swarm_seat_verdicts.py`: `N submitted · M queued` is one line under `max-width: 46`; at
+`9,000 submitted · 999 queued` it is CSS-clipped (`… que…`) at every width, and SEAT RECORD has no widen marker.
+Pending is a draining backlog (largest seen: 13 on #0), so not reachable today. Fix as REVIEWED was (WP6 fix round):
+bound the width by design, e.g. one status per line or a compact count.
+
+### F28 — one seat slot: switching back after a failed read shows `unavailable`
+`SLOT_SWARM_SEAT` holds one token's read. A → B → (B fails) → A shows `unavailable`/`Loading…` for A, not A's older
+numbers. Correct (never another seat's numbers) but lossy. A bounded per-token map is the fix if the owner wants it
+(plan §9 B).
+
+### F29 — the ROSTER title's "last 100 jobs" may understate
+The roster also folds the 48 h jobs-seen map (`SLOT_SWARM_JOBS_SEEN`), so its rows can cover more than the `/jobs`
+window the title names. Owner call: fold the roster from the window only, or title it `jobs seen since HH:MM`
+(plan §9 E). Related capture note: `jobs_window_100.json` spans 02:26–05:44 UTC but was read at ~12:46 UTC, identical
+to a read 6 minutes earlier — either no jobs for ~7 h or the route lags.
+
+### F30 — "never paired" without `#N` in SEAT RECORD, RECORD and FEEDBACK
+Their signatures carry no `swarm_seat_selected`, so they render the bare words; the hero names the seat
+(`IDMD #N` / `never paired` — the one-line `#N never paired` is 19 cells and the box holds ~16). Adding the token means a
+signature change in `surf_models.py` (Tier 2 trigger).
+
+### F31 — the owner cell links by the package `EXPLORER`, `rules/surf.md` says per-row `chain_id`
+Owner decision Q-C (2026-09-21): follow the spec (`EXPLORER` = Ethereum; `chainId` is 1 on every captured seat). If a
+seat ever carries another `chainId`, link by it and add `chain_id` to the summary.
+
+### F32 — the A1 2×2 agent-grid argument is stale
+`docs/decisions.md` (2026-09-21) rejected A1 on 59 + 92 tight cells; RECORD's tight tier is now 52 (+4 = 56), so the
+sum is 115 and the arithmetic no longer rules A1 out. Not re-measured; the `#:` block and `minimal.tcss` comment say so.
+
+### F33 — test gaps (test-rigor only)
+- a single role wider than `VALUE_COLS` renders only `+1 more` (no role word); untested (`swarm_seat_verdicts._fit_roles`);
+- `_runtime`'s partial case (only `id` or only `version`) is untested (`data/surf_swarm.py`);
+- no test proves repeated `update_data` does not compound ROSTER's instance `TITLE` (code is correct:
+  `type(self).TITLE`);
+- no single test names "non-`unknown_seat` 404 on host 1, then a transport error on host 2" (verified by script);
+- `_VERDICT_FIELDS` in `tests/data/test_surf_swarm_fixtures.py` still pins verdict sub-fields (`failedChecks`,
+  `verifierVersion`) that no fold reads since WP5 — over-pins the corpus shape;
+- the never-paired screen composite matches `never paired` as a substring.
+
+### F34 — "no seat selected" does not say why
+With no roster and no saved seat the hero shows `no seat selected` whether the roster is empty or the sweep failed;
+ROSTER says which. Spec §4 does not define the case (state `None`).
+
+### F35 — the seat slot adds ~95 KB to `surf_cache.json`
+Measured on #0: 354 B → 95,735 B, written only when the payload changed (below `SLOT_SWARM_SCORES`' 188 KB). Joins F7
+if the write cost is ever measured as a problem.
+
+### F36 — `data/surf_swarm.py` imports `surf_swarm_client` for `UNKNOWN_SEAT`
+The pure fold now pulls `httpx` in transitively. Allowed (`data/` may import `httpx`; docstring corrected in WP5), but
+moving `UNKNOWN_SEAT` into `surf_models.py` would keep the fold client-free — relevant to the data-layer-as-a-library
+plan.
+
+### F37 — plan defects recorded for the record
+Plan §1.1 said `runtime` is `None` for an empty list (a false degradation; fixed in WP5 to `""` → `none`);
+`/seats` serves `tokenId`/`agentId` as decimal strings (spec/plan were silent; `parse_seat_token` is strict ASCII);
+`test_dashboard_screen.py -k surf` selects nothing; §3's `block_number` and `_NEXT` gates cannot reach 0 as written
+(launch/site rows, curator's `SEL_REQUIRED_NEXT`); WP0's named set omitted the manager test it turned red until WP2.
+
+### F38 — runtime wording is the source's raw text
+SEAT RECORD shows `claude 2.1.278 (Claude Code)` / `codex codex-cli 0.149.0` — `"<id> <version>"` as served, clipped.
+Prettifying is an owner call, not a parser of vendor strings (plan §9 D).

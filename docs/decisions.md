@@ -4,6 +4,17 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-21** — surf's AGENT body reads the seat's lifetime record from `GET api.imd.fun/seats/{tokenId}`
+  (spec `docs/surf_agent_seats_spec.md`, D1–D5): hero SEAT · ACCEPTED `12 of 74` · REVIEWED (total over `N pending`) ·
+  SCORE · COLLAB · STATUS; VERDICTS became SEAT RECORD (owner address, runtime, by role); RECORD is lifetime `work[]`,
+  FEEDBACK lifetime `reviews[]`; ROSTER stays window-scoped and says so in its title. Seat states: `ok`,
+  `unknown_seat` (`never paired`, a real negative), `pending` (`Loading…`), `None` (`unavailable`). Withdrawn with
+  it: "`/jobs` returns every job" (it is the newest 100; `count` is the page length); change A's `#N not seen` and
+  `unseen_token` (a saved seat off the roster is now shown from `/seats`); `MAXPANE_IMD_SEAT` (the seat is saved by
+  `i` to `[seat] token_id` in `config.toml`); the VERDICTS panel with its rejection codes, REJECTED and REVISIONS
+  (`/seats` serves neither); RECORD's verifier-detail columns (try, rev, verdict, detail); `swarm_seat_node_rows` and
+  `block_number` in feedback rows; `pick_seat` (now `choose_seat`). RECORD's objective column clears from 268 (was
+  168, the detail column); the AGENT pins held at 134 × 40.
 - **2026-09-21** — surf's SWARM body rebuilt (swarm v2, WP7) and the AGENT body bound to `a`; the
   status hint is `l launchpad · 4 pool4 · s swarm · a agent`, and the status bar is asserted whole
   (right label inside the bar, ` poll` composited) from 131 columns — the phrase-only grep it
