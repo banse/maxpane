@@ -1467,15 +1467,14 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_skill_rows",         # list[dict]   -- /skills
     "swarm_launch_rows",        # list[dict]   -- /launches
     "swarm_site_rows",          # list[dict]   -- /sites
-    "swarm_seat_rows",          # list[dict]   -- AGENT body roster, one per seat seen
     "swarm_seat_selected",      # dict | None  -- {token_id, agent_id, selected_by}
     "swarm_seat_summary",       # dict | None  -- the selected seat's lifetime record (/seats)
-    "swarm_seat_feedback_rows", # list[dict]   -- the selected seat's reviews (/seats reviews[])
     "swarm_seat_as_of_hhmm",    # str | None   -- the seat tier's marker (SLOT_SWARM_SEAT)
     # ---- AGENT body on /seats/{tokenId} (2026-09-21), docs/surf_agent_seats_spec.md §4.
     "swarm_seat_state",         # str | None   -- SWARM_SEAT_STATES; None = read failed, no last-good
     "swarm_seat_work_rows",     # list[dict]   -- /seats work[], lifetime, newest first
-    "swarm_roster_window",      # dict | None  -- SWARM_ROSTER_WINDOW_FIELDS, for the ROSTER title
+    "swarm_seat_node_rows",     # list[dict]   -- reviews/work by node; reviewed desc, won desc, key asc
+    "swarm_seat_teammates",     # list[dict] | None -- collaborators; shared_jobs desc, token_id asc
 )
 
 #: The target widgets of the ``s`` and ``a`` bodies (swarm v2 plan §1.4 + A1) and the
@@ -1490,15 +1489,15 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
     "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmRoster": ("swarm_seat_rows", "swarm_seat_selected", "swarm_roster_window", "swarm_scores_as_of_hhmm"),
+    "SurfSwarmSeatNodes": ("swarm_seat_node_rows", "swarm_seat_teammates", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmSeatFeedback": ("swarm_seat_feedback_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_selected", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
 }
 
 # ---- AGENT body on /seats/{tokenId} (spec docs/surf_agent_seats_spec.md §4, plan §1.2) ----
 
-#: ``swarm_seat_selected``'s fields (decision D1).
+#: ``swarm_seat_selected``'s fields. ``selected_by`` is ``saved`` or ``most_active``;
+#: ``agent_id`` falls back to the /seats decimal string when absent from the roster.
 SWARM_SEAT_SELECTED_FIELDS: tuple[str, ...] = ("token_id", "agent_id", "selected_by")
 
 #: ``swarm_seat_summary``'s fields, the seat's lifetime record from ``/seats``. Every
@@ -1507,9 +1506,16 @@ SWARM_SEAT_SELECTED_FIELDS: tuple[str, ...] = ("token_id", "agent_id", "selected
 #: :data:`SWARM_SEAT_REVIEW_STATUSES`. ``runtime`` is ``""`` for a served, empty
 #: ``runtimes`` list (a real "none", seat #0) and ``None`` only when the source did not
 #: carry a usable list -- never "could not look" for a seat that runs nothing.
+#: ``agent_id`` is the served decimal string; ``devices`` is an int. ``daemon`` is
+#: a str, with ``""`` for a served null (not reported), and ``None`` if absent/invalid.
+#: ``win_rate`` is accepted / attempts, a float in [0, 1]; ``None`` if either counter
+#: is missing or attempts is zero. Zero attempts means "no attempts", not unavailable.
+#: ``last_won_ts`` is the newest work[].acceptedAt; ``last_sent_ts`` is the newest
+#: reviews[].sentAt. Both are epoch floats or ``None`` when no timestamp is carried.
 SWARM_SEAT_SUMMARY_FIELDS: tuple[str, ...] = (
     "attempts", "accepted", "reviewed", "review_status", "mean_score", "scored",
-    "roles", "online", "owner", "paired_ts", "last_active_ts", "collaborators", "runtime",
+    "roles", "online", "owner", "paired_ts", "collaborators", "runtime",
+    "agent_id", "daemon", "devices", "win_rate", "last_won_ts", "last_sent_ts",
 )
 
 #: ``reviews[].status`` as served: ``sent`` (txHash + sentAt), ``submitted`` (txHash,
@@ -1521,7 +1527,8 @@ SWARM_SEAT_REVIEW_STATUSES: tuple[str, ...] = ("sent", "submitted", "queued")
 #: failed with no last-good.
 SWARM_SEAT_STATES: tuple[str, ...] = ("ok", "unknown_seat", "pending")
 
-#: ``swarm_roster_window``'s fields: the roster is folded from the ``/jobs`` window.
+#: Transitional export for the old pure fold; WP2 removes it with roster_window.
+#: This is no longer an emitted contract key.
 SWARM_ROSTER_WINDOW_FIELDS: tuple[str, ...] = ("jobs", "oldest_ts")
 
 
@@ -1812,19 +1819,24 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "label", "ens_name", "cid", "bytes", "status", "tx_hash",
         "block_number", "job_id", "superseded_by", "failure",
     ),
-    "swarm_seat_rows": (
-        "token_id", "agent_id", "nodes", "jobs",
+    # Nodes from reviews[] OR work[]; a work-only node has reviewed == 0.
+    # BY NODE win uses won / reviewed, unlike the summary's accepted / attempts.
+    "swarm_seat_node_rows": (
+        "node_key",     # str
         "roles",        # list[str]
-        "accepted", "rejected", "revisions", "mean_score", "scored",
-        "working_now", "last_active_ts",
+        "reviewed", "won", "onchain", "queued",  # int; onchain = sent + submitted
     ),
-    # /seats reviews[], one row per scored submission (spec §4). No block number: not served.
-    "swarm_seat_feedback_rows": (
-        "value", "verdict", "status", "node_key", "role", "job_id", "tx_hash", "chain_id",
-        "sent_ts",
+    # None when collaborators is not a list; drop malformed members. Tokens use
+    # the shared strict decimal-string/int parser (never bool or negative).
+    "swarm_seat_teammates": (
+        "token_id",     # int
+        "agent_id",     # str | None
+        "shared_jobs",  # int
     ),
     # /seats work[], one row per accepted submission (spec §4).
     "swarm_seat_work_rows": (
         "job_id", "node_key", "role", "job_state", "objective", "accepted_ts",
+        "launch",          # str | None; null is a real "none"
+        "submission_hash", # str | None; exactly 64 hex chars, no explorer link
     ),
 }

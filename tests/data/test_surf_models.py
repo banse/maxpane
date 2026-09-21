@@ -536,35 +536,35 @@ EXPECTED_KEYS = {
     "swarm_skill_rows",
     "swarm_launch_rows",
     "swarm_site_rows",
-    "swarm_seat_rows",
     "swarm_seat_selected",
     "swarm_seat_summary",
-    "swarm_seat_feedback_rows",
     "swarm_seat_as_of_hhmm",
     # ---- AGENT body on /seats/{tokenId} (WP0, 2026-09-21) -- frozen ahead of
     # their consumers, docs/surf_agent_seats_plan.md §1.1. Same order as the
     # module's tail.
     "swarm_seat_state",
     "swarm_seat_work_rows",
-    "swarm_roster_window",
+    "swarm_seat_node_rows",
+    "swarm_seat_teammates",
 }
 
 
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    **185 = 83 + 71 + 5 + 26**: the 83 that shipped through v0.8.3, the ``p``
+    **184 = 83 + 71 + 5 + 25**: the 83 that shipped through v0.8.3, the ``p``
     body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
     cross-venue price, the backstop band and the realised return), the
     staker sweep's own five in ``POOL4_STAKERS_KEYS`` (four until
     ``pool4_stakers_state`` joined them on 2026-09-12), and the ``s``/``a``
-    bodies' twenty-six in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
+    bodies' twenty-five in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
     the fourteen swarm v2 keys WP0 froze on 2026-09-21 ahead of their
     consumers (plan A2), less the eight of the eighteen WP7 retired with
     their widgets the same day (the block was 32 and this total 191 in
     between), plus the three ``/seats`` keys the AGENT-seats WP0 froze later
     that day (``docs/surf_agent_seats_plan.md`` §1.1; 183 before), less
-    the window fold's node-rows key, which that plan's WP5 retired (186 before). The count is asserted
+    the window fold's node-rows key, which that plan's WP5 retired (186 before),
+    then three seat-window keys retired and two seat-detail keys added (184). The count is asserted
     beside the set membership on purpose: the set catches a rename, the
     count catches a key added to both sides at once by someone editing
     ``EXPECTED_KEYS`` to make a red test green instead of asking why it was
@@ -586,12 +586,12 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 185
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 184
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
-    assert len(SWARM_KEYS) == 26
+    assert len(SWARM_KEYS) == 25
     assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 83
 
 

@@ -69,8 +69,6 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmRoster,
-    SurfSwarmSeatFeedback,
     SurfSwarmSeatRecord,
     SurfSwarmSeatVerdicts,
     SurfSwarmSites,
@@ -205,18 +203,18 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # rather than a panel changes nothing about what this list is for.
         SurfPool4UserHero, SurfPool4UStakers, SurfPool4UBurn,
         SurfPool4USignals, SurfPool4UDepth,
-        # The `s` SWARM body's six and the `a` AGENT body's five (swarm v2,
+        # The `s` SWARM body's six and the `a` AGENT body's four (swarm v2,
         # WP7, 2026-09-21; the 2026-09-16 five -- THE FIELD, QUEUE, JUST
         # SHIPPED, the score-table THROUGHPUT and the old hero -- are gone).
         # Every kwarg is spelled after its full `swarm_` contract key, bound
         # to `data/surf_models.SWARM_WIDGET_SIGNATURES` by each widget's own
         # test; `swarm_network` is accepted and never painted by IN FLIGHT,
         # LAUNCHES and RECORD (their chain word is per row, off the row's own
-        # `chain_id`) -- so all eleven belong in the strict check.
+        # `chain_id`) -- so all ten belong in the strict check.
         SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput,
         SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
-        SurfSwarmAgentHero, SurfSwarmRoster, SurfSwarmSeatRecord,
-        SurfSwarmSeatVerdicts, SurfSwarmSeatFeedback,
+        SurfSwarmAgentHero, getattr(surf_widgets, "SurfSwarmSeatNodes"), SurfSwarmSeatRecord,
+        SurfSwarmSeatVerdicts,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 

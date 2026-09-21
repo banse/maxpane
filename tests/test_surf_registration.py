@@ -1413,11 +1413,10 @@ _NON_NUMERIC_KEYS = frozenset(
         # Five dicts: `None` vs `{}`, as `swarm_throughput` above.
         "swarm_breaker", "swarm_skill_summary", "swarm_launch_summary",
         "swarm_seat_selected", "swarm_seat_summary",
-        # Six list[dict] row payloads (a seventh, the window fold's node
-        # rows, retired in WP5 of docs/surf_agent_seats_plan.md).
+        # Six list[dict] payloads, including seat nodes and teammates.
         "swarm_inflight_rows", "swarm_skill_rows", "swarm_launch_rows",
-        "swarm_site_rows", "swarm_seat_rows",
-        "swarm_seat_feedback_rows",
+        "swarm_site_rows", "swarm_seat_node_rows",
+        "swarm_seat_teammates",
         # The AGENT body's seat marker: the seat tier's own clock, the
         # `as of` of the /seats read for the selected seat
         # (docs/surf_agent_seats_plan.md WP2), not the sweep's.
@@ -1427,10 +1426,9 @@ _NON_NUMERIC_KEYS = frozenset(
         # that plan's WP5 flip) --------------------------------------------
         # None is int/float: a closed-vocabulary str (`SWARM_SEAT_STATES`,
         # the family of `pool4_stakers_state`; `None` = read failed, no
-        # last-good), a list[dict] row payload (`None` vs `[]`), and a dict
-        # (`None` vs `{}`, as `swarm_throughput` above). The seat's own
+        # last-good) and a list[dict] row payload (`None` vs `[]`). The seat's own
         # counters live inside `swarm_seat_summary`, already triaged here.
-        "swarm_seat_state", "swarm_seat_work_rows", "swarm_roster_window",
+        "swarm_seat_state", "swarm_seat_work_rows",
     }
 )
 
