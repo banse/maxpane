@@ -114,3 +114,228 @@ async def test_a_test_client_never_reaches_the_network():
     async with _client(_no_network) as client:
         with pytest.raises(AssertionError):
             await client._get("/health", raw=True)
+
+
+# ---------------------------------------------------------------------------
+# v2 (plan §0 R1, WP2): the host is a two-entry pool.  A failure rotates to the
+# next host for *that request only*; no host is ever dropped or reordered.
+# ---------------------------------------------------------------------------
+
+from maxpane_dashboard.data.surf_swarm_client import SWARM_API_HOSTS  # noqa: E402
+from tests.surf_swarm_fixtures import swarm_capture_v2  # noqa: E402
+
+FIRST_HOST, SECOND_HOST = (httpx.URL(h).host for h in SWARM_API_HOSTS[:2])
+
+
+def _hosts(seen: list[httpx.Request]) -> list[str]:
+    return [request.url.host for request in seen]
+
+
+async def test_a_503_on_the_first_host_rotates_to_the_second_for_that_request_only():
+    seen: list[httpx.Request] = []
+    body = swarm_capture_v2("health")
+
+    def handler(request):
+        seen.append(request)
+        if len(seen) == 1:
+            return httpx.Response(503, text="upstream unavailable")
+        return httpx.Response(200, json=body)
+
+    async with _client(handler) as client:
+        first = await client.fetch_health()
+        second = await client.fetch_health()
+
+    assert first == body, "the second host's 200 body is the answer"
+    assert second == body
+    # Rotation is per request: the second request starts at the first host again.
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST, FIRST_HOST]
+    assert {request.url.path for request in seen} == {"/health"}, "the same path is asked of every host"
+
+
+async def test_a_non_json_200_on_the_first_host_rotates_the_same_way():
+    seen: list[httpx.Request] = []
+    body = swarm_capture_v2("jobs")
+
+    def handler(request):
+        seen.append(request)
+        if len(seen) == 1:
+            return httpx.Response(200, text="<html>maintenance</html>")
+        return httpx.Response(200, json=body)
+
+    async with _client(handler) as client:
+        jobs = await client.fetch_jobs()
+        again = await client.fetch_jobs()
+
+    assert jobs == body["jobs"]
+    assert again == body["jobs"]
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST, FIRST_HOST]
+
+
+async def test_both_hosts_failing_is_none_after_exactly_two_requests():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(502, text="bad gateway")
+
+    async with _client(handler) as client:
+        assert await client.fetch_launches() is None
+
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST], "every host once, no third attempt"
+
+
+async def test_a_connect_error_on_host_one_rotates_and_on_both_is_none():
+    seen: list[httpx.Request] = []
+    body = swarm_capture_v2("sites")
+
+    def flaky_first(request):
+        seen.append(request)
+        if request.url.host == FIRST_HOST:
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(200, json=body)
+
+    async with _client(flaky_first) as client:
+        assert await client.fetch_sites() == body["sites"]
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+    seen.clear()
+
+    def dead_everywhere(request):
+        seen.append(request)
+        raise httpx.ConnectError("refused", request=request)
+
+    async with _client(dead_everywhere) as client:
+        assert await client.fetch_sites() is None
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_fetch_skills_unwraps_its_envelope_and_a_missing_key_is_none_not_empty():
+    body = swarm_capture_v2("skills")
+
+    async with _client(lambda request: httpx.Response(200, json=body)) as client:
+        skills = await client.fetch_skills()
+    assert skills == body["skills"]
+    assert isinstance(skills, list) and skills[0]["id"], "the v2 corpus carries skill ids"
+
+    async with _client(lambda request: httpx.Response(200, json={"count": 3})) as client:
+        assert await client.fetch_skills() is None
+
+    async with _client(lambda request: httpx.Response(200, json={"skills": {"not": "a list"}})) as client:
+        assert await client.fetch_skills() is None
+
+
+async def test_fetch_version_returns_the_dict_and_a_list_body_is_none():
+    body = swarm_capture_v2("version")
+
+    async with _client(lambda request: httpx.Response(200, json=body)) as client:
+        version = await client.fetch_version()
+    assert version == body
+    assert isinstance(version["commit"], str) and len(version["commit"]) == 40
+
+    async with _client(lambda request: httpx.Response(200, json=[body])) as client:
+        assert await client.fetch_version() is None
+
+
+async def test_the_skills_and_version_paths_are_the_documented_ones():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"skills": []})
+
+    async with _client(handler) as client:
+        await client.fetch_skills()
+        await client.fetch_version()
+
+    assert [request.url.path for request in seen] == ["/skills", "/version"]
+
+
+async def test_the_jobs_request_carries_no_query_and_no_key_shaped_header():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=swarm_capture_v2("jobs"))
+
+    async with _client(handler) as client:
+        await client.fetch_jobs()
+
+    assert len(seen) == 1
+    request = seen[0]
+    assert request.method == "GET"
+    assert request.url.path == "/jobs"
+    assert request.url.query == b"", "no filter, no page: the upstream ignores parameters (R3/R4)"
+    assert "?" not in str(request.url)
+    lowered = {k.lower() for k in request.headers}
+    assert not lowered & {"authorization", "x-api-key", "api-key", "x-token", "cookie"}
+    # Nothing beyond the transport's own plumbing and Accept: no header may
+    # carry a key-shaped value.  (The Accept header itself is set on the
+    # client the module builds, asserted construction-level above.)
+    assert lowered <= {"host", "accept", "accept-encoding", "connection", "user-agent"}, lowered
+
+
+async def test_a_path_with_a_query_string_is_refused_before_any_request():
+    seen: list[httpx.Request] = []
+
+    def handler(request):  # pragma: no cover - must never run
+        seen.append(request)
+        return httpx.Response(200, json={})
+
+    async with _client(handler) as client:
+        with pytest.raises(ValueError):
+            await client._get("/jobs?limit=50")
+
+    assert seen == []
+
+
+async def test_pacing_is_once_per_request_even_when_the_request_rotated():
+    delays: list[float] = []
+    seen: list[httpx.Request] = []
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+
+    def handler(request):
+        seen.append(request)
+        if request.url.host == FIRST_HOST:
+            return httpx.Response(503, text="upstream unavailable")
+        return httpx.Response(200, json=swarm_capture_v2("health"))
+
+    async with _client(handler, sleep=fake_sleep) as client:
+        await client.fetch_health()
+        await client.fetch_health()
+
+    assert len(seen) == 4, "two requests, each rotated once"
+    assert len(delays) == 2, "one pacing sleep per request, not per host attempt"
+    assert all(d > 0 for d in delays)
+
+
+def test_the_host_pool_is_at_least_two_https_urls_none_on_the_dead_list():
+    assert isinstance(SWARM_API_HOSTS, tuple)
+    assert len(SWARM_API_HOSTS) >= 2
+    assert len(set(SWARM_API_HOSTS)) == len(SWARM_API_HOSTS), "no duplicate host"
+    dead = ("llamarpc", "ankr", "cloudflare-eth", "reservoir", "omniatech", "blockpi", "merkle", "flashbots")
+    for host in SWARM_API_HOSTS:
+        assert host.startswith("https://"), host
+        assert not host.endswith("/"), host
+        assert "?" not in host and "key" not in host.lower(), host
+        for fragment in dead:
+            assert fragment not in host, f"{host} is on CLAUDE.md's dead list ({fragment})"
+    assert SWARM_API == SWARM_API_HOSTS[0], "the old name survives as the first host"
+
+
+async def test_a_deprecated_base_url_becomes_a_one_host_pool():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(503, text="down")
+
+    client = SwarmClient(
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        base_url="https://example.invalid/",
+    )
+    async with client:
+        assert await client.fetch_health() is None
+
+    assert _hosts(seen) == ["example.invalid"], "one host, asked once, no rotation into the default pool"
