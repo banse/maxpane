@@ -142,6 +142,22 @@ async def test_every_swarm_panel_paints_a_blank_row_under_its_title(key, cls):
     assert rows[2].strip(), f"{cls.__name__} has no content row"
 
 
+async def test_every_agent_hero_title_sits_on_the_same_row():
+    """Owner, 2026-09-21: bodies of one to three lines were centred, so ACCEPTED
+    and COLLAB sat a row below SEAT, REVIEWED, SCORE and STATUS. Every box's
+    title is its first row inside the border."""
+    from maxpane_dashboard.widgets.surf.swarm_agent_hero import SurfSwarmAgentHeroBox
+
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "a")
+        boxes = list(screen.query_one(SurfSwarmAgentHero).query(SurfSwarmAgentHeroBox))
+        firsts = [_region_text(pilot.app, b).split("\n")[1].strip(" │") for b in boxes]
+        heights = {len(str(b.render()).split("\n")) for b in boxes}
+
+    assert len(heights) > 1, "every body has the same height: nothing to align"
+    assert firsts == ["SEAT", "ACCEPTED", "REVIEWED", "SCORE", "COLLAB", "STATUS"], firsts
+
+
 async def test_the_key_hint_names_the_swarm_and_the_agent():
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         await pilot.pause()

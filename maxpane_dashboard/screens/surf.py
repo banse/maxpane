@@ -2901,7 +2901,7 @@ class SurfScreen(DashboardScreen):
         margin: 0 1;
         border: solid $panel;
         background: $surface;
-        content-align: center middle;
+        content-align: center top;
         text-align: center;
         text-wrap: nowrap;
         text-overflow: ellipsis;
