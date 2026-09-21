@@ -677,6 +677,9 @@ def _seen_node(node: Mapping[str, Any]) -> dict[str, Any]:
     token, agent = _seat(node)
     verdict = _verdict(node)
     return {
+        # ``key`` first: it is what lets ``seat_node_rows`` tell two seen
+        # nodes of one seat on one job apart (WP3 review, 2026-09-21).
+        "key": _str(node.get("key")),
         "seat_token": token,
         "seat_agent": agent,
         "role": _str(node.get("role")),
@@ -800,6 +803,7 @@ def _seat_nodes(details: object, seen: object):
             if token is None:
                 continue
             yield job_id, entry["template"], token, _str(summary.get("seat_agent")), {
+                "key": _str(summary.get("key")),
                 "seat_token": token,
                 "seat_agent": _str(summary.get("seat_agent")),
                 "role": _str(summary.get("role")),
@@ -903,29 +907,33 @@ def seat_node_rows(details: object, seen: object, token: object) -> list[dict[st
     """``swarm_seat_node_rows``: the seat's nodes, newest ``at_ts`` first.
 
     Detail nodes carry the full verdict; a seen node (a job no detail
-    covers) has no ``node_key``, ``attempt``, ``detail`` or
-    ``failed_checks`` -- ``None``/``[]``, never invented.  No duplicate
-    ``(job_id, node_key)``.
+    covers) has no ``attempt``, ``detail`` or ``failed_checks`` --
+    ``None``/``[]``, never invented -- and its ``node_key`` is the key the
+    slot stored (``None`` for a summary written without one).  No duplicate
+    ``(job_id, node_key)`` among **keyed** nodes, whichever route each came
+    by; an unkeyed node is never dropped as a duplicate, because two
+    unknowns are not known to be the same node (WP3 review, 2026-09-21).
     """
     wanted = _parse_token(token)
     if wanted is None:
         return []
     rows: list[dict[str, Any]] = []
-    keyed: set[tuple[str, str | None]] = set()
+    keyed: set[tuple[str, str]] = set()
     for job_id, template, tok, _agent, summary, node in _seat_nodes(details, seen):
         if tok != wanted:
             continue
-        if node is not None:
-            key = (job_id, _str(node.get("key")))
-            if key in keyed:
+        node_key = summary["key"]
+        if node_key is not None:
+            if (job_id, node_key) in keyed:
                 continue
-            keyed.add(key)
+            keyed.add((job_id, node_key))
+        if node is not None:
             verdict = _verdict(node)
             checks = verdict.get("failedChecks")
             rows.append({
                 "job_id": job_id,
                 "template": template,
-                "node_key": key[1],
+                "node_key": node_key,
                 "role": summary["role"],
                 "state": summary["state"],
                 "attempt": _int(node.get("attempt")),
@@ -941,7 +949,7 @@ def seat_node_rows(details: object, seen: object, token: object) -> list[dict[st
             rows.append({
                 "job_id": job_id,
                 "template": template,
-                "node_key": None,
+                "node_key": node_key,
                 "role": summary["role"],
                 "state": summary["state"],
                 "attempt": None,

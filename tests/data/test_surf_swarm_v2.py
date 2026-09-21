@@ -447,7 +447,7 @@ def test_throughput_facts_completed_24h_comes_from_the_seen_map():
 # the seen slot: seen_entry / merge_seen / seen_since_ts
 # ---------------------------------------------------------------------------
 
-_SEEN_NODE_FIELDS = ("seat_token", "seat_agent", "role", "state", "verdict_status",
+_SEEN_NODE_FIELDS = ("key", "seat_token", "seat_agent", "role", "state", "verdict_status",
                      "rejection_code", "revisions", "at_ts")
 
 
@@ -464,6 +464,7 @@ def test_seen_entry_shape_from_a_detail_and_without_one(jobs, details):
     # verdict.status accepted, rejectionCode null, revisions 0,
     # updatedAt 2026-09-20T22:15:58.655Z.
     assert entry["nodes"] == [{
+        "key": "oracle_assess",
         "seat_token": 463, "seat_agent": "50972", "role": "implement",
         "state": "working", "verdict_status": "accepted", "rejection_code": None,
         "revisions": 0, "at_ts": _iso("2026-09-20T22:15:58.655Z"),
@@ -698,11 +699,12 @@ def test_seat_node_rows_add_seen_nodes_only_for_jobs_no_detail_covers(details):
     seen = {
         "seen-only": {"created_ts": since, "updated_ts": since, "state": "completed",
                       "template": "seen-t", "nodes": [
-                          {"seat_token": 1548, "seat_agent": "50971", "role": "integrate",
+                          {"key": "integrate_step", "seat_token": 1548,
+                           "seat_agent": "50971", "role": "integrate",
                            "state": "failed", "verdict_status": "rejected",
                            "rejection_code": "tests_failed", "revisions": 2,
                            "at_ts": NOW - 10},
-                          {"seat_token": 999, "seat_agent": "o", "role": "review",
+                          {"key": "review_step", "seat_token": 999, "seat_agent": "o", "role": "review",
                            "state": "accepted", "verdict_status": "accepted",
                            "rejection_code": None, "revisions": 0, "at_ts": NOW - 5}]},
         "ad7bebb8-fd1a-4268-b831-1c253a85ae4c": {
@@ -715,13 +717,43 @@ def test_seat_node_rows_add_seen_nodes_only_for_jobs_no_detail_covers(details):
     assert len(rows) == 8
     top = rows[0]
     assert top["job_id"] == "seen-only" and top["at_ts"] == NOW - 10
-    assert top == {"job_id": "seen-only", "template": "seen-t", "node_key": None,
+    assert top == {"job_id": "seen-only", "template": "seen-t", "node_key": "integrate_step",
                    "role": "integrate", "state": "failed", "attempt": None,
                    "revisions": 2, "verdict_status": "rejected",
                    "rejection_code": "tests_failed", "failed_checks": [],
                    "detail": None, "at_ts": NOW - 10}
     keys = [(r["job_id"], r["node_key"]) for r in rows]
     assert len(set(keys)) == len(keys)
+
+
+def _seen_node(key, role, at):
+    return {"key": key, "seat_token": 1548, "seat_agent": "50971", "role": role,
+            "state": "accepted", "verdict_status": "accepted", "rejection_code": None,
+            "revisions": 0, "at_ts": at}
+
+
+def test_seat_node_rows_dedupes_keyed_seen_nodes_and_keeps_unkeyed_ones(details):
+    """WP3 review: one seat, two seen nodes on ONE uncovered job.
+
+    Two summaries with the same ``key`` are one node written twice and
+    collapse to one row; two without a ``key`` are two unknowns and both
+    stay -- never dropped as duplicates the fold cannot prove.
+    """
+    since = NOW - 3600
+    seen = {
+        "twice": {"created_ts": since, "updated_ts": since, "state": "completed",
+                  "template": "t", "nodes": [_seen_node("a", "implement", NOW - 1),
+                                              _seen_node("a", "implement", NOW - 1)]},
+        "unkeyed": {"created_ts": since, "updated_ts": since, "state": "completed",
+                    "template": "t", "nodes": [_seen_node(None, "review", NOW - 2),
+                                                _seen_node(None, "implement", NOW - 3)]},
+    }
+    rows = fold.seat_node_rows({}, seen, 1548)
+    assert [(r["job_id"], r["node_key"], r["role"]) for r in rows] == [
+        ("twice", "a", "implement"),
+        ("unkeyed", None, "review"),
+        ("unkeyed", None, "implement"),
+    ]
 
 
 def test_seat_node_rows_for_an_unknown_seat_is_a_real_empty(details):
