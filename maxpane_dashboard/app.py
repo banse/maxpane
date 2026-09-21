@@ -75,6 +75,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         # it is also the `game_id is None` fallback in _on_game_selected.
         initial_game: str = "surf",
         wallet_address: str | None = None,
+        seat: int | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -105,7 +106,10 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         self._dota_manager = DOTAManager(poll_interval=poll_interval)
         self._ttt_manager = TTTManager(poll_interval=poll_interval)
         self._talismans_manager = TalismansManager(poll_interval=poll_interval)
-        self._surf_manager = SurfManager(poll_interval=poll_interval)
+        # The saved IDMD seat (``config.get_seat``, read by ``__main__``) is
+        # handed in rather than read here: a bare ``MaxPaneApp()`` in a test
+        # must not pick up the developer's own ``~/.maxpane/config.toml``.
+        self._surf_manager = SurfManager(poll_interval=poll_interval, seat=seat)
         # THE LIST's YOU row is wallet-scoped, so the curator manager is one of
         # the few that takes the address.  It normalises with ``wallet or None``,
         # so the empty string ``get_wallet()`` returns when nothing is

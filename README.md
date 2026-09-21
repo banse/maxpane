@@ -159,7 +159,7 @@ only a failed read says `unavailable`.
 
 Press **`a`** (2026-09-21) for the AGENT body — one seat of that swarm at a time. ROSTER lists
 every seat the sweep has seen with its node count; the seat under the cursor (or the seat saved in
-`~/.maxpane/config.toml`, or the busiest) is the one the rest of the body is about — a saved seat the
+`~/.maxpane/config.toml` by `i`, or the busiest) is the one the rest of the body is about — a saved seat the
 sweep has not seen yet stays named on the hero as `#N not seen` while the busiest stands in: its own hero row (SEAT · NODES · JOBS ·
 ACC / REJ · REVISIONS · SCORE · STATUS), RECORD (its nodes newest first, with the verifier's
 verdict and detail), VERDICTS (accepted, rejected, revisions, mean score, and the open-vocabulary
@@ -435,7 +435,9 @@ live: CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES full-width 
 the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
 body — one seat of that swarm: ROSTER beside VERDICTS, then RECORD and FEEDBACK, under the
-seat's own hero row; `enter` or a click on a ROSTER row selects the seat. `esc` backs out of any of the five.
+seat's own hero row; `enter` or a click on a ROSTER row selects the seat. **`i`** asks for your own
+seat — its Identity.md NFT id — saves it to `~/.maxpane/config.toml` and opens the AGENT body on it,
+like THE LIST's `w` for a wallet. `esc` backs out of any of the five.
 The status hint names the ones that are not experimental:
 `l launchpad · 4 pool4 · s swarm · a agent`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two

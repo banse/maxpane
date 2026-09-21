@@ -45,20 +45,47 @@ def _write_config(config: dict) -> None:
     _CONFIG_FILE.write_text("\n".join(lines) + "\n")
 
 
+def _section(config: dict, name: str) -> dict:
+    """``config[name]`` when it is a table, else ``{}``.
+
+    The file is hand-editable: a top-level ``seat = 5`` instead of a
+    ``[seat]`` table is third-party input, not a reason to crash start-up.
+    """
+    value = config.get(name)
+    return value if isinstance(value, dict) else {}
+
+
 def get_wallet() -> str:
     """Return saved wallet address, or empty string if not configured."""
     # Environment variable takes precedence
     env_wallet = os.environ.get("MAXPANE_WALLET", "")
     if env_wallet:
         return env_wallet
-    config = _read_config()
-    return config.get("wallet", {}).get("address", "")
+    return _section(_read_config(), "wallet").get("address", "")
 
 
 def save_wallet(address: str) -> None:
     """Save wallet address to config file."""
     config = _read_config()
-    if "wallet" not in config:
-        config["wallet"] = {}
-    config["wallet"]["address"] = address
+    config["wallet"] = {**_section(config, "wallet"), "address": address}
+    _write_config(config)
+
+
+def get_seat() -> int | None:
+    """Return the saved Identity.md (IDMD) seat -- its NFT token id -- or ``None``.
+
+    Read from the file only; there is no environment override. The file is
+    hand-editable, so it is third-party input: anything but a non-negative
+    integer is "no seat saved", never a guess.
+    """
+    value = _section(_read_config(), "seat").get("token_id")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def save_seat(token_id: int) -> None:
+    """Save the IDMD seat's token id to the config file."""
+    config = _read_config()
+    config["seat"] = {**_section(config, "seat"), "token_id": token_id}
     _write_config(config)

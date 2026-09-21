@@ -228,6 +228,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
+from maxpane_dashboard.screens.seat_input import SeatInputScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf import (
     SurfBurnkeepers,
@@ -2260,6 +2261,10 @@ class SurfScreen(DashboardScreen):
         # `a` for AGENT (swarm v2 plan A1, WP7): free on this screen and in
         # the app, verified rather than assumed -- see `action_toggle_agent`.
         Binding("a", "toggle_agent", "Agent", show=False),
+        # `i` for IDENTITY (2026-09-21): the seat prompt -- THE LIST's `w`
+        # shape, asking for an Identity.md NFT id instead of a wallet. Free
+        # on this screen, in the app and in `DataTable`'s own bindings.
+        Binding("i", "set_seat", "Seat", show=False),
         Binding("escape", "show_dashboard", show=False),
     ]
 
@@ -3354,6 +3359,32 @@ class SurfScreen(DashboardScreen):
         if token is None or select is None:
             return
         select(token)
+        self.start_refresh()
+
+    def action_set_seat(self) -> None:
+        """``i`` -- prompt for the seat the AGENT body is about.
+
+        ``SeatInputScreen`` validates the number and persists it to
+        ``~/.maxpane/config.toml``, so the next launch opens on it too
+        (``__main__`` reads it into ``SurfManager(seat=)``).
+        """
+        self.app.push_screen(SeatInputScreen(), callback=self._seat_entered)
+
+    def _seat_entered(self, token: int | None) -> None:
+        """Callback from ``SeatInputScreen``: ``None`` means escape.
+
+        The manager's ``set_seat`` is an attribute write -- the rule for a
+        message handler -- and the refresh after it refolds the seat keys off
+        the cached sweep. The reader asked about a seat, so they land on the
+        body that is about one. No seam (a test double) still lands there.
+        """
+        if token is None:
+            return
+        set_seat = getattr(self._data_manager, "set_seat", None)
+        if set_seat is not None:
+            set_seat(token)
+        self._mode = MODE_AGENT
+        self._show_mode()
         self.start_refresh()
 
     def action_show_dashboard(self) -> None:

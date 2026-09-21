@@ -6884,14 +6884,15 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "e", "4", "s", "a", "escape"}
+    assert keys == {"r", "l", "e", "4", "s", "a", "i", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
         "the old c-swap action outlived its binding -- an action with no key "
         "is a surface nobody can reach and nobody maintains"
     )
     for action in ("action_toggle_launchpad", "action_toggle_pool4",
                    "action_toggle_pool4_user", "action_toggle_swarm",
-                   "action_toggle_agent", "action_show_dashboard"):
+                   "action_toggle_agent", "action_set_seat",
+                   "action_show_dashboard"):
         assert hasattr(SurfScreen, action), action
 
 

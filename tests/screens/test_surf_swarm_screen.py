@@ -141,8 +141,8 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
     assert SurfScreen.KEY_HINTS == "[dim]l launchpad · 4 pool4 · s swarm · a agent[/]"
 
 
-async def test_the_bindings_gained_a_and_nothing_else():
-    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "escape"}
+async def test_the_bindings_gained_a_and_i_and_nothing_else():
+    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "i", "escape"}
     assert hasattr(SurfScreen, "action_toggle_swarm")
     assert hasattr(SurfScreen, "action_toggle_agent")
 
@@ -225,3 +225,115 @@ async def test_the_cursor_follows_the_manager_selection_after_a_refresh():
         table = roster.query_one(DataTable)
         assert roster.selected_row_index == 1
         assert table.cursor_row == 1
+
+
+# -- the seat prompt (`i`) ----------------------------------------------------
+#
+# Drives the real `SeatInputScreen` through the pilot. `save_seat` is
+# monkeypatched in every test -- it writes `~/.maxpane/config.toml` -- and
+# `save_wallet` raises: the prompt subclasses the wallet prompt, and Textual
+# runs a message handler on every class in the MRO.
+
+
+class _SavedSeatManager(_SeatManager):
+    """Records ``set_seat`` as well as ``select_seat``."""
+
+    def __init__(self, payload=None) -> None:
+        super().__init__(payload)
+        self.saved: list = []
+
+    def set_seat(self, token) -> None:
+        self.saved.append(token)
+
+
+@pytest.fixture()
+def saved_seats(monkeypatch) -> list:
+    saved: list = []
+    monkeypatch.setattr("maxpane_dashboard.screens.seat_input.save_seat", saved.append)
+    monkeypatch.setattr("maxpane_dashboard.screens.seat_input.get_seat", lambda: 1548)
+
+    def _no_wallet(_address):
+        raise AssertionError("the seat prompt must never save a wallet")
+
+    monkeypatch.setattr("maxpane_dashboard.screens.wallet_input.save_wallet", _no_wallet)
+    return saved
+
+
+def _prompt_app():
+    manager = _SavedSeatManager()
+    return _ThemedHarness(SurfScreen(manager, poll_interval=30, name="surf")), manager
+
+
+async def _type(pilot, text: str) -> None:
+    from textual.widgets import Input
+    field = pilot.app.screen.query_one("#wi-input", Input)
+    field.value = ""
+    await pilot.press(*text)
+    await pilot.press("enter")
+    await pilot.pause()
+    await pilot.pause()
+
+
+async def test_i_opens_the_seat_prompt_prefilled_with_the_saved_seat(saved_seats):
+    from textual.widgets import Input
+    from maxpane_dashboard.screens.seat_input import SeatInputScreen
+    app, _ = _prompt_app()
+    async with app.run_test(size=_SIZE) as pilot:
+        await _open(pilot, "i")
+        assert isinstance(app.screen, SeatInputScreen)
+        assert app.screen.query_one("#wi-input", Input).value == "1548"
+        text = _screen_text(app.screen)
+        assert "IDENTITY.MD SEAT" in text and "Identity.md NFT id" in text
+        assert "config.toml" in text, "the durable write is disclosed before it happens"
+
+
+async def test_a_typed_seat_is_saved_set_and_opens_the_agent_body(saved_seats):
+    """From the dashboard body: the reader asked about a seat, so they land
+    on the body that is about one, and the seat keys refresh now."""
+    app, manager = _prompt_app()
+    async with app.run_test(size=_SIZE) as pilot:
+        screen = app.screen
+        await _open(pilot, "i")
+        calls_before = manager.calls
+        await _type(pilot, "#463")
+        assert saved_seats == [463]
+        assert manager.saved == [463]
+        assert app.screen is screen and screen._mode == MODE_AGENT
+        assert manager.calls > calls_before, "a new seat has to refresh the seat keys"
+
+
+async def test_an_invalid_seat_is_refused_on_the_prompt(saved_seats):
+    from maxpane_dashboard.screens.seat_input import SeatInputScreen
+    app, manager = _prompt_app()
+    async with app.run_test(size=_SIZE) as pilot:
+        await _open(pilot, "i")
+        await _type(pilot, "#")
+        assert isinstance(app.screen, SeatInputScreen)
+        assert "Invalid seat" in _screen_text(app.screen)
+        assert saved_seats == [] and manager.saved == []
+
+
+async def test_escape_leaves_the_seat_and_the_body_alone(saved_seats):
+    app, manager = _prompt_app()
+    async with app.run_test(size=_SIZE) as pilot:
+        from maxpane_dashboard.screens.seat_input import SeatInputScreen
+        screen = await _open(pilot, "s")
+        await pilot.press("i")
+        await pilot.pause()
+        await pilot.pause()
+        assert isinstance(app.screen, SeatInputScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        assert app.screen is screen and screen._mode == MODE_SWARM
+        assert saved_seats == [] and manager.saved == []
+
+
+async def test_a_manager_without_set_seat_still_saves_and_never_crashes(saved_seats):
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = pilot.app.screen
+        await _open(pilot, "i")
+        await _type(pilot, "463")
+        assert saved_seats == [463]
+        assert pilot.app.screen is screen and screen._mode == MODE_AGENT
+        assert not pilot.app._exit

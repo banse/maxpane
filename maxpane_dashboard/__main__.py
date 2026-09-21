@@ -302,7 +302,7 @@ def main():
     _maximize_terminal(_resolve_font_size(args.font_size))
 
     # Wallet: CLI flag > env var > saved config
-    from maxpane_dashboard.config import get_wallet
+    from maxpane_dashboard.config import get_seat, get_wallet
     wallet = args.wallet or get_wallet()
 
     app = MaxPaneApp(
@@ -310,6 +310,8 @@ def main():
         theme=args.theme,
         initial_game=args.game,
         wallet_address=wallet,
+        # Surf's AGENT seat: the saved config only (the `i` prompt writes it).
+        seat=get_seat(),
     )
     app.run()
 

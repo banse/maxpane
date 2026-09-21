@@ -26,6 +26,7 @@ NON_DASHBOARD_SCREEN_MODULES = (
     "splash",        # the boot animation: no data, no manager
     "game_select",   # the menu
     "wallet_input",  # the address prompt; what it echoes back is the user's own input
+    "seat_input",    # surf's seat prompt: an IDMD token id, no address on it at all
 )
 
 #: Screen subclasses that are shared machinery rather than a dashboard, so they
