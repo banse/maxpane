@@ -7,7 +7,10 @@ The host serves no filters, no caching validators and no pagination, so the
 job list is all-or-nothing; the manager's counter check, not this client,
 decides how often it is paid for.  No path ever carries a ``?``: parameters
 on ``/jobs`` are ignored upstream and would imply a page that does not exist
-(``docs/surf_swarm_v2_implementation_plan.md`` §0 R3/R4).
+(``docs/surf_swarm_v2_implementation_plan.md`` §0 R3/R4); ``_get`` raises on
+one, and the one getter that interpolates caller text into a path,
+:meth:`SwarmClient.fetch_job`, refuses an id that is not a plain path segment
+and returns ``None`` -- so the contract above holds at every public getter.
 """
 from __future__ import annotations
 
@@ -21,6 +24,18 @@ import httpx
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 
 logger = logging.getLogger(__name__)
+
+
+#: Characters that would turn a job id into a second path segment, a query
+#: or a fragment.  Whitespace is refused beside them.
+_NOT_A_SEGMENT = frozenset("?/#")
+
+
+def _is_path_segment(value: object) -> bool:
+    """``True`` for a non-empty ``str`` that is exactly one path segment."""
+    if not isinstance(value, str) or not value:
+        return False
+    return not any(ch in _NOT_A_SEGMENT or ch.isspace() for ch in value)
 
 __all__ = [
     "SWARM_API", "SWARM_API_HOSTS", "SWARM_INTER_CALL_DELAY", "SWARM_REQUEST_TIMEOUT",
@@ -150,4 +165,15 @@ class SwarmClient(OwnedHttpClient):
         return await self._list("/skills", "skills")
 
     async def fetch_job(self, job_id: str) -> dict[str, Any] | None:
+        """One job's detail, or ``None`` -- also for an id that is no path segment.
+
+        The id is interpolated into the path.  One carrying ``?``, ``/``,
+        ``#`` or whitespace, an empty one or a non-string would build a
+        request this API does not serve (``_get`` raises on ``?``), and the
+        getter contract is ``None``, never a raise -- so it is refused here,
+        before any request (WP2 review, 2026-09-21).
+        """
+        if not _is_path_segment(job_id):
+            logger.debug("swarm fetch_job refused an id that is no path segment: %r", job_id)
+            return None
         return await self._dict(f"/jobs/{job_id}")

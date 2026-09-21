@@ -288,6 +288,25 @@ async def test_a_path_with_a_query_string_is_refused_before_any_request():
     assert seen == []
 
 
+@pytest.mark.parametrize("job_id", ["abc?limit=1", "a/b", "x#y", "", "with space", 42, None])
+async def test_fetch_job_refuses_an_id_that_is_no_path_segment_and_returns_none(job_id):
+    """WP2 review: the public getter keeps the None contract ``_get``'s raise breaks."""
+    async with _client(_no_network) as client:
+        assert await client.fetch_job(job_id) is None
+
+
+async def test_fetch_job_with_a_plain_id_still_asks_the_host():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=swarm_capture("job_executing"))
+
+    async with _client(handler) as client:
+        assert await client.fetch_job("1c47e615-c14e-4eac-bec5-6b0229c18e78") is not None
+    assert [r.url.path for r in seen] == ["/jobs/1c47e615-c14e-4eac-bec5-6b0229c18e78"]
+
+
 async def test_pacing_is_once_per_request_even_when_the_request_rotated():
     delays: list[float] = []
     seen: list[httpx.Request] = []
