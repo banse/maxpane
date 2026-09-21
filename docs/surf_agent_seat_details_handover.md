@@ -288,6 +288,7 @@ suite is intentionally deferred under the repository's remote-push authorization
 - `8c66bbd` — widgets, screen and measured layout.
 - `9c50184` — integration correction for the retired cursor assertion.
 - `cc0b8c7` — documentation and residuals.
+- `ed426b2` — initial hand-back and verification record.
 
 Agency planning, backend, frontend and documentation agents were used with one repository
 writer at a time. The controller reviewed each package diff. WP3 had one important finding:
@@ -341,17 +342,24 @@ All runs used Python 3.11 / Textual 8.1.1. Targeted checks only; no full suite.
 | Final middle tier (run once) | 8,660 passed, 1 expected failure, 7 failures and 6 collection errors; causes and scoped recovery below |
 | Scoped manager seams plus local Sybilkit | 459 passed, 1 expected failure |
 | Final four screen files | 571 passed in 770.14s |
+| Fixture recovery: four previously affected files | 99 passed in 2.92s |
+| Guard recovery after authorized fixture copy | 199 passed, 9,099 deselected in 75.09s |
 
 The middle tier's seven failures were six absent-oracle cases and the obsolete cursor assertion.
 Its six collection errors were two installed-Sybilkit imports and four worker reports of the
-absent oracle. The cursor and Sybilkit issues were resolved with scoped checks; the fixture is
-still blocked. The exact `-m guard tests -q` command was attempted for every package; the final
-attempt stopped on the one missing-oracle collection error. Those runs are not claimed green.
+absent oracle. The cursor and Sybilkit issues were resolved with scoped checks. After the user
+authorized copying the existing oracle fixture, all four affected test files passed, including
+the previously uncollectable market-manager module. The exact `-m guard tests -q` command was
+attempted for every package; those initial attempts stopped during collection. Its recovery run
+now passes. All identified verification failures have scoped passing results; the original
+middle-tier run remains recorded as failed and was not repeated.
 Doc discovery also matched nine fixture/helper files that are not executable test files; the
 50 `test_*.py` files ran with `--continue-on-collection-errors` and four workers to obtain useful
 results beyond the known collection blocker. Final broad commands used isolated temporary homes.
 Logs: `/tmp/wp5-docs.log`, `/tmp/wp5-guard.log`, `/tmp/final-middle-tier.log`,
 `/tmp/final-scoped-recovery.log`, `/tmp/final-surf-screens.log`.
+Fixture recovery logs: `/tmp/seat-details-fixture-recovery.log` and
+`/tmp/seat-details-guard-recovery.log`.
 
 Mutation checks deliberately broke production behavior, observed the named regression fail,
 and restored by inverse edits. Commit messages contain package evidence:
@@ -385,11 +393,13 @@ and restored by inverse edits. Commit messages contain package evidence:
 - The middle-tier command also exposed one omitted test migration: a manager-seam assertion
   still expected `_seat_cursor`. The test-only integration commit now asserts that the retired
   state is absent while preserving saved-seat injection and no-network checks.
-- The baseline oracle fixture `tests/fixtures/surf/pool4/oracle_25955365.json` is absent here.
-  It exists in the owner's source checkout, but the explicit protection in §0 led to a pending
-  user question before copying it. No permission has arrived and no protected file was touched.
-  Six oracle-dependent tests and the market-manager module's collection therefore remain
-  blocked. This branch does not satisfy §7's all-green criterion until that baseline input is
-  supplied and the affected checks are run.
+- The baseline oracle fixture `tests/fixtures/surf/pool4/oracle_25955365.json` was initially absent.
+  After the first hand-back, the user explicitly authorized copying the existing fixture from
+  `/Library/Vibes/autopull` for local tests, with the requirement never to commit it. The copy
+  matches the source byte-for-byte (SHA-256
+  `f44b0f482ce3dc2b18faac09e2f1e5aa15789828dc097491fb28c70b8d608144`); the source is unchanged.
+  The fixture remains untracked and was never staged. The four affected test files and guard
+  check now pass in isolated temporary homes, resolving this verification blocker. No production
+  code changed, and neither the middle tier nor the full release suite was repeated.
 
 Stop here for the receiving controller's whole-branch review and the owner's merge/push decision.
