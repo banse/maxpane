@@ -1623,8 +1623,8 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: the row scrolling inside itself from 34 to 57 -- a ``‹ taller`` lit on
 #: every terminal the owner has and cleared only by one nobody uses. The
 #: floor gives THROUGHPUT its lines first and lets the two table rows take
-#: the rest; the AGENT body's top row carries VERDICTS' thirteen the same
-#: way. At the owner's 35 and 31 rows the body scrolls and the marker says
+#: the rest; the AGENT body's top row carries SEAT RECORD's thirteen the
+#: same way. At the owner's 35 and 31 rows the body scrolls and the marker says
 #: so; no row of any panel is lost in silence
 #: (``test_no_height_loses_a_row_of_either_body_in_silence``).
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
@@ -1632,54 +1632,92 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: The ``a`` AGENT body's own width, **new on 2026-09-21 (swarm v2 plan A1,
 #: WP7)**: the sixth body gets a sixth measurement, neither a restatement
 #: nor a derivation of :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS` (141) or of
-#: any other pin on this screen.
+#: any other pin on this screen. **Re-swept the same day for the lifetime
+#: ``/seats`` record (``docs/surf_agent_seats_plan.md`` WP6)** -- new hero
+#: boxes, SEAT RECORD (was VERDICTS) with an owner cell, RECORD's
+#: ``objective`` for the verifier ``detail``, FEEDBACK's ``status``, ROSTER's
+#: window title -- and **the pin did not move: 134 again**, because ROSTER
+#: binds it and ROSTER's columns did not change.
 #:
-#: THE GRID is not A1's 2x2 (ROSTER | RECORD over VERDICTS | FEEDBACK):
-#: ROSTER's and RECORD's ``tight`` tiers alone need 59 + 92 = 151 cells of
-#: one row, more than ``__main__.FULL_LAYOUT_COLUMNS`` (143) holds, so that
-#: row would hide columns at every admissible width. ROSTER sits beside
-#: VERDICTS; RECORD and FEEDBACK each take a full-width row.
+#: THE GRID is not A1's 2x2 (ROSTER | RECORD over SEAT RECORD | FEEDBACK).
+#: At WP7 ROSTER's and RECORD's ``tight`` tiers alone needed 59 + 92 = 151
+#: cells of one row, more than ``__main__.FULL_LAYOUT_COLUMNS`` (143) holds.
+#: RECORD's lifetime column set is narrower (``tight`` 52 + 4), so that sum
+#: no longer rules A1 out by itself; A1 was **not** re-measured (filed, not
+#: decided here). The grid stays: full-width, RECORD keeps its ``objective``
+#: column from 79 outer columns up, measured; what it would keep beside
+#: ROSTER is unmeasured. ROSTER sits beside SEAT RECORD; RECORD and
+#: FEEDBACK each take a full-width row.
 #:
-#: HOW IT WAS MEASURED. Every width from 60 to 225 at height 80, on the v2
-#: capture (16 seats, the most active seat on 8 nodes) and on A1's worst
-#: case (30 seats, the selected seat on 40 nodes with a 400-character
-#: verdict detail, 12 feedback rows); the two agreed at every width. Tier
-#: word, ``‹``, hidden columns, CSS-clipped lines and region overflow were
-#: read off composited output, as for the ``s`` body above.
+#: HOW IT WAS MEASURED (WP6). Every width from 60 to 225 at height 80, on
+#: the capture (the v2 corpus's roster, 16 seats; the most active is seat
+#: #0, whose committed ``/seats`` capture is the largest: 26 work, 202
+#: reviews) and on the worst case (30 roster seats, RECORD at its 40-row cap
+#: with 400-character objectives, FEEDBACK over #0's 202 reviews plus
+#: #420's submitted and queued ones, SEAT RECORD with #420's runtime,
+#: every lifetime counter stretched to five digits -- ``99,999`` reviews,
+#: ``9,999 of 99,999`` accepted, ``(99,999 scored)`` -- and the pending
+#: backlog to ``999 submitted · 999 queued``). The two agreed at every
+#: width except the edges named below. Tier word,
+#: ``‹``, hidden columns, CSS-clipped lines (panels and hero) and region
+#: overflow were read off composited output; overflow was zero throughout.
 #:
 #: WHICH PANEL BINDS: ``SurfSwarmRoster``, ``max-width: 86``
 #: (``swarm_roster.FULL_WIDTH`` 82 + gutter 2 + padding 2); it hides
-#: columns through 104, is ``tight`` through 119, ``compact`` 120-133 with
-#: ``‹`` lit and ``full`` from 134, where its share is 84 content cells. At
-#: 133 it is the sole marked panel besides RECORD, so the pin is not loose.
-#: On the row at 134: ROSTER 84 + VERDICTS 44 (under ``max-width: 46``, fr
-#: rounding) of the 133 the body's gutter leaves. VERDICTS clips a line only
-#: under 88 outer columns; FEEDBACK is ``full`` from 84.
+#: columns through 104 (106 on the worst case's 30 seats), is ``tight``
+#: through 119, ``compact`` 120-133 with ``‹`` lit and ``full`` from 134,
+#: where its share is 84 content cells. At 133 it is the sole marked panel
+#: besides RECORD, so the pin is not loose. Its title
+#: (``ROSTER · last 100 jobs since HH:MM · as of HH:MM``) is whole at the
+#: pin; the window words never shorten. On the row at 134: ROSTER 84 +
+#: SEAT RECORD 44 (under ``max-width: 46``, fr rounding) of the 133 the
+#: body's gutter leaves.
 #:
-#: THE ONE NAMED EXCEPTION: RECORD is ``tight`` through 111, ``compact``
-#: 112-121 and ``full`` from 122, but its ``detail`` column is the
-#: verifier's free text and takes every cell the row has left, lighting
-#: ``‹`` while any of it is cut: on the capture (63-character details) it
-#: clears at **168** (``RECORD_NEVER_CLEARS_BELOW``); on the worst case
-#: (400 characters) it never clears at any width swept. That is surf's
-#: announce-feed shape -- a marker tracking a real length each time -- not
-#: a permanently lit one, and the panel is excluded from "whole" by name.
+#: THE REST, all dark at the pin. The hero's six boxes clip a value under
+#: **102** on the capture and under **120** on the worst case (the last to
+#: fit is SCORE's ``(99,999 scored)``; 118 fits too, by ``1fr`` rounding).
+#: It was 125 before the fix round, when REVIEWED painted
+#: ``202 · 13 pending`` on one line: two lifetime counters on one line is a
+#: width that grows with the seat's age (``1,202 · 13 pending`` clipped at
+#: 134), so REVIEWED paints the total over ``N pending`` and no hero line
+#: pairs two unbounded counters but ACCEPTED's, which fits. SEAT RECORD
+#: clips a line under 87 on
+#: the capture and under 93 on the worst case (#420's longer runtime); its
+#: owner is the anti-poisoning window (``short_address``, 17 cells + icon),
+#: which is what keeps ``max-width: 46`` -- the whole 42-character address
+#: plus its label would not fit it. FEEDBACK is ``tight`` through 86,
+#: ``compact`` 87-96 and ``full`` from 97.
+#:
+#: THE ONE NAMED EXCEPTION: RECORD is ``tight`` through 78, ``compact``
+#: 79-89 and ``full`` from 90, but its ``objective`` column is the job's
+#: free text and takes every cell the row has left, lighting ``‹`` while any
+#: of it is cut: on the capture (objectives of 186-198 cells on every
+#: captured seat) it clears at **268** (``RECORD_NEVER_CLEARS_BELOW``, 168
+#: on the old ``detail`` column); on the worst case (400 characters) it
+#: never clears. That is surf's announce-feed shape -- a marker tracking a
+#: real length each time -- not a permanently lit one, and the panel is
+#: excluded from "whole" by name.
 #:
 #: THE OWNER'S TWO TERMINALS: at 119 ROSTER is ``tight`` and RECORD
-#: ``tight``, both marked; at 138 ROSTER is ``full`` and dark, RECORD
-#: ``full`` with ``‹`` lit for its cut detail.
+#: ``full``, both marked, and the hero is whole on the capture (the worst
+#: case's ``(99,999 scored)`` clips there, by one cell); at 138 ROSTER is
+#: ``full`` and dark, RECORD ``full`` with ``‹`` lit for its cut objective.
 SURF_AGENT_FULL_LAYOUT_COLUMNS = 134
 
-#: The ``a`` AGENT body's own height, **new on 2026-09-21 (WP7)**. Every
-#: height from 20 to 61 at width 150 and at the column pin, capture and
-#: worst case: ``‹ taller`` lit through 39, dark from 40. The binder is
-#: :data:`AGENT_BODY_ID`: the top row is floored at VERDICTS' thirteen fixed
-#: lines (``#surf-agent-top { min-height: 13 }``, a floor equal to content,
-#: bound by the layout test), RECORD and FEEDBACK are ``1fr`` floored at
-#: eight each, and the seven-line agent hero -- one more than the ``s``
-#: hero's six -- is why 29 body lines clear at 40 where the ``s`` body's 32
-#: clear at 42. The owner's 35 and 31 rows sit under it; the body scrolls
-#: and the marker says so.
+#: The ``a`` AGENT body's own height, **new on 2026-09-21 (WP7)**, and
+#: **re-swept the same day for the ``/seats`` record (WP6): 40 again**.
+#: Every height from 20 to 61 at width 150 and at the column pin, capture
+#: and worst case: ``‹ taller`` lit through 39, dark from 40. The binder is
+#: :data:`AGENT_BODY_ID`: the top row is floored at SEAT RECORD's thirteen
+#: fixed lines -- title, blank, five signal rows (accepted, reviewed, sent,
+#: pending, score), separator, paired / runtime / owner, blank, by role --
+#: (``#surf-agent-top { min-height: 13 }``, a floor equal to content, bound
+#: by the layout test; the old VERDICTS was thirteen too, with other lines),
+#: RECORD and FEEDBACK are ``1fr`` floored at eight each, and the seven-line
+#: agent hero -- one more than the ``s`` hero's six -- is why 29 body lines
+#: clear at 40 where the ``s`` body's 32 clear at 42. **F16:** the owner's
+#: 35 and 31 rows sit under it, as before; this re-sweep did not raise it.
+#: The body scrolls there and the marker says so.
 SURF_AGENT_FULL_LAYOUT_ROWS = 40
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
@@ -1718,9 +1756,11 @@ MODE_SWARM = "swarm"
 
 #: The ``a`` AGENT body (swarm v2 plan Amendment A1, WP7) -- the **sixth**
 #: mode, and the third to swap the hero: one seat of the swarm, picked by the
-#: reader's cursor on ROSTER, else the saved seat (``seat=``), else the most active
-#: (``sw.pick_seat``). Four panels (ROSTER, VERDICTS, RECORD, FEEDBACK) under
-#: :class:`SurfSwarmAgentHero`.
+#: reader's cursor on ROSTER, else the saved seat (``seat=``, on the roster
+#: or not), else the most active (``sw.choose_seat``). Four panels (ROSTER,
+#: SEAT RECORD, RECORD, FEEDBACK) under :class:`SurfSwarmAgentHero`; every
+#: number but ROSTER's is the seat's lifetime ``/seats`` record, and ROSTER
+#: is titled as the job window it is folded from.
 MODE_AGENT = "agent"
 
 #: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
@@ -1989,17 +2029,17 @@ SWARM_BOTTOM_ID = "surf-swarm-bottom"
 
 #: The ``a`` AGENT body's container id (swarm v2 plan A1, WP7): the sixth
 #: body, on :data:`SWARM_BODY_ID`'s own shape -- a ``Vertical`` of one
-#: ``Horizontal`` row (ROSTER beside VERDICTS) over two full-width panels
+#: ``Horizontal`` row (ROSTER beside SEAT RECORD) over two full-width panels
 #: (RECORD, then FEEDBACK). The plan's A1 grid (ROSTER beside RECORD,
-#: VERDICTS beside FEEDBACK) was measured and does not fit under 143
-#: columns: ROSTER's and RECORD's tight tiers alone need 59 + 92 = 151 cells
-#: of one row. RECORD full-width is what keeps its ``detail`` column -- the
-#: verifier's verdict, the point of the body -- on screen at the pin
+#: SEAT RECORD beside FEEDBACK) was measured at WP7 against the old RECORD
+#: and did not fit under 143 columns (59 + 92 = 151 at tight); it was not
+#: re-measured for the lifetime RECORD. RECORD full-width is what keeps its
+#: ``objective`` column on screen at the pin
 #: (:data:`SURF_AGENT_FULL_LAYOUT_COLUMNS`).
 AGENT_BODY_ID = "surf-agent-body"
 
-#: The agent body's only row: **ROSTER beside VERDICTS**. It scrolls
-#: (VERDICTS is ``height: auto``) and is named in ``_SCROLL_COLUMNS[MODE_AGENT]``.
+#: The agent body's only row: **ROSTER beside SEAT RECORD**. It scrolls
+#: (SEAT RECORD is ``height: auto``) and is named in ``_SCROLL_COLUMNS[MODE_AGENT]``.
 AGENT_TOP_ID = "surf-agent-top"
 
 #: The two swarm bodies' eleven widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
@@ -3468,7 +3508,7 @@ class SurfScreen(DashboardScreen):
         # naming only the ones that can is what keeps this map a statement.
         MODE_SWARM: (f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}"),
         # The AGENT body (WP7), the same shape: the body, and the one row
-        # whose VERDICTS panel is ``height: auto``.
+        # whose SEAT RECORD panel is ``height: auto``.
         MODE_AGENT: (f"#{AGENT_BODY_ID}", f"#{AGENT_TOP_ID}"),
     }
 

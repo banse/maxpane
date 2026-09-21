@@ -2417,19 +2417,23 @@ SurfPool4UDepth {
  * fr rounding) and reaches `full` at the pin;
  * IN FLIGHT beside LAUNCHES is the row that never clears -- named in the
  * layout test as `LAUNCHES_NEVER_CLEARS_BELOW`, THE FIELD's own precedent.
- * The AGENT body's A1 grid (ROSTER | RECORD over VERDICTS | FEEDBACK) fails
- * the same arithmetic (59 + 92 = 151 at tight), so ROSTER sits beside
- * VERDICTS and RECORD and FEEDBACK each take a full row; nothing on that
- * body is an exception.
+ * The AGENT body's A1 grid (ROSTER | RECORD over SEAT RECORD | FEEDBACK)
+ * failed the same arithmetic at WP7 (59 + 92 = 151 at tight, against the
+ * old verifier-detail RECORD; not re-measured for the lifetime RECORD), so
+ * ROSTER sits beside SEAT RECORD and RECORD and FEEDBACK each take a full
+ * row. RECORD is that body's one named exception: its `objective` column
+ * lights `‹` while any objective is cut (`RECORD_NEVER_CLEARS_BELOW` in
+ * the layout test; `SURF_AGENT_FULL_LAYOUT_COLUMNS`'s block).
  *
  * HEIGHTS. Every table is `height: 1fr` with `min-height: 8` (title, blank,
  * header, five rows) and scrolls inside itself with its gutter reserved by
- * `SwarmTableBase`; the two `SignalsPanelBase` panels (THROUGHPUT, VERDICTS)
+ * `SwarmTableBase`; the two `SignalsPanelBase` panels (THROUGHPUT, SEAT RECORD)
  * are `height: auto` with open-ended blocks, so the row holding each carries
  * `overflow-y: auto` and its own gutter and is named in
  * `SurfScreen._SCROLL_COLUMNS`. Each such row's floor is its panel's fixed
- * line count -- THROUGHPUT sixteen, VERDICTS thirteen (title, blank, the
- * rows, a separator, two one-line blocks); a floor equal to content, so the
+ * line count -- THROUGHPUT sixteen, SEAT RECORD thirteen (title, blank,
+ * five signal rows, a separator, paired / runtime / owner, a blank, by
+ * role; re-counted for the `/seats` record); a floor equal to content, so the
  * row never scrolls on its own and the body's marker is the one that
  * answers. Measured, and bound by the layout test (the panel's composited
  * height equals the row's floor); without the floor a `1fr` row shared
@@ -2566,7 +2570,7 @@ SurfScreen #surf-agent-body {
     scrollbar-gutter: stable;
 }
 
-/* VERDICTS' fixed thirteen lines. */
+/* SEAT RECORD's fixed thirteen lines. */
 SurfScreen #surf-agent-top {
     height: 1fr;
     min-height: 13;
@@ -2585,8 +2589,12 @@ SurfSwarmRoster {
     padding: 0 1;
 }
 
-/* Its widest fixed line (`score` at `100.0 (999 scored)` with the dot) plus
- * padding; the roles and codes blocks clip to it. */
+/* SEAT RECORD (`SurfSwarmSeatVerdicts`): `swarm_seat_verdicts.PANEL_MAX_WIDTH`
+ * restates this number and a guard binds the two. The owner renders as the
+ * anti-poisoning window (17 cells + icon), which is what keeps 46: the whole
+ * 42-character address plus its label would not fit. The runtime and the
+ * roles line are fitted to the value column; nothing clips at this width
+ * (measured from 93 outer columns up on the worst case). */
 SurfSwarmSeatVerdicts {
     width: 1fr;
     max-width: 46;
@@ -2594,8 +2602,9 @@ SurfSwarmSeatVerdicts {
     padding: 0 1;
 }
 
-/* `swarm_seat_record.FULL_WIDTH` (117) + 4 = 121; the `detail` column takes
- * every cell past it. */
+/* `swarm_seat_record.FULL_WIDTH` (85) + 4 = 89, `full` from 90 outer columns
+ * (the body's gutter is the 90th); the `objective` column takes every cell
+ * past it. */
 SurfSwarmSeatRecord {
     width: 100%;
     height: 1fr;
@@ -2603,7 +2612,8 @@ SurfSwarmSeatRecord {
     padding: 0 1;
 }
 
-/* `swarm_seat_feedback.FULL_WIDTH` (77) + 4 = 81. */
+/* `swarm_seat_feedback.FULL_WIDTH` (92) + 4 = 96, `full` from 97 outer
+ * columns (the body's gutter is the 97th). */
 SurfSwarmSeatFeedback {
     width: 100%;
     height: 1fr;

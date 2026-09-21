@@ -108,6 +108,16 @@ async def _boxes(size=SIZE, **kwargs) -> dict[str, str]:
     return {key: await _box_text(BOX_IDS[key], size=size, **kwargs) for key in BOX_IDS}
 
 
+def _lines(box: str) -> list[str]:
+    """A box's non-blank content lines, border and padding stripped."""
+    out = []
+    for row in box.split("\n"):
+        inner = row.strip().strip("│┌┐└┘─").strip()
+        if inner:
+            out.append(inner)
+    return out
+
+
 # -- the self-imposed contract -----------------------------------------------------
 
 
@@ -157,8 +167,9 @@ async def test_the_defect_seat_renders_its_lifetime_record_whole_at_both_pins(wi
     assert f"IDMD #{SELECTED['token_id']}" in boxes["seat"]
     assert f"agent {SELECTED['agent_id']}" in boxes["seat"] and "saved" in boxes["seat"]
     assert f"{SUMMARY['accepted']} of {SUMMARY['attempts']}" in boxes["accepted"]
-    # Q-M: pending is a subset of the reviews, never added on top.
-    assert f"{SUMMARY['reviewed']} · {pending} pending" in boxes["reviewed"]
+    # Q-M: pending is a subset of the reviews, never added on top -- and on
+    # a line of its own under the total (see the five-digit test below).
+    assert _lines(boxes["reviewed"])[-2:] == [str(SUMMARY["reviewed"]), f"{pending} pending"]
     assert f"+{pending}" not in boxes["reviewed"]
     assert f"{SUMMARY['mean_score']:.2f}" in boxes["score"]
     assert f"({SUMMARY['scored']} scored)" in boxes["score"]
@@ -177,7 +188,8 @@ async def test_the_largest_seat_fits_whole_and_reads_offline(width):
     boxes = await _boxes(size=(width, 9), swarm_seat_selected=selected,
                          swarm_seat_summary=summary)
     status = summary["review_status"]
-    assert f"{summary['reviewed']} · {status['submitted'] + status['queued']} pending" in boxes["reviewed"]
+    assert _lines(boxes["reviewed"])[-2:] == [
+        str(summary["reviewed"]), f"{status['submitted'] + status['queued']} pending"]
     assert "offline ○" in boxes["status"] and "online" not in boxes["status"]
     assert "most active" in boxes["seat"]
     for key, text in boxes.items():
@@ -245,6 +257,29 @@ async def test_no_selection_says_so_rather_than_naming_a_seat():
     assert NO_SEAT_LINE in seat and "IDMD" not in seat
 
 
+#: A lifetime record years on: every counter at its realistic ceiling. The
+#: totals have no ceiling of their own (seat #0 already has 202 reviews), so
+#: the box's width is bounded by its *lines*, never by the seat's age.
+FIVE_DIGIT = dict(SUMMARY, reviewed=99_999, scored=99_999, accepted=9_999, attempts=99_999,
+                  collaborators=9_999,
+                  review_status={"sent": 98_001, "submitted": 999, "queued": 999})
+
+
+@pytest.mark.parametrize("width", PINS)
+async def test_a_five_digit_record_fits_every_box_at_both_pins(width):
+    """The fix-round finding: ``1,202 · 13 pending`` on one line was cut to
+    ``pend…`` at the AGENT pin, where the hero has no ``‹``. REVIEWED paints
+    the total over the pending count, so ``99,999`` / ``1,998 pending`` fit
+    whole, and so do ACCEPTED's ``9,999 of 99,999`` and SCORE's count."""
+    boxes = await _boxes(size=(width, 9), swarm_seat_summary=FIVE_DIGIT)
+    assert _lines(boxes["reviewed"])[-2:] == ["99,999", "1,998 pending"], boxes["reviewed"]
+    assert "9,999 of 99,999" in boxes["accepted"]
+    assert "(99,999 scored)" in boxes["score"]
+    assert "9,999 seats" in boxes["collab"]
+    for key, text in boxes.items():
+        assert "…" not in text, (width, key, text)
+
+
 # -- zeros, missing fields and malformed payloads --------------------------------------
 
 
@@ -252,7 +287,7 @@ async def test_a_zero_record_renders_zeros_not_unavailable():
     zero = _folded(attempts=0, accepted=0, work=[], reviews=[], collaborators=[])
     boxes = await _boxes(swarm_seat_summary=zero)
     assert "0 of 0" in boxes["accepted"]
-    assert "0 · 0 pending" in boxes["reviewed"]
+    assert _lines(boxes["reviewed"])[-2:] == ["0", "0 pending"]
     assert "—" in boxes["score"] and "(0 scored)" in boxes["score"]
     assert "0 seats" in boxes["collab"]
     for key in ("accepted", "reviewed", "score", "collab"):
@@ -267,14 +302,15 @@ async def test_a_field_the_source_did_not_carry_is_unavailable_in_its_own_box_on
     boxes = await _boxes(swarm_seat_summary=missing)
     assert "unavailable" in boxes["accepted"]
     assert " of 0" not in boxes["accepted"] and " of " not in boxes["accepted"]
-    assert f"{SUMMARY['reviewed']} · " in boxes["reviewed"]
+    assert str(SUMMARY["reviewed"]) in _lines(boxes["reviewed"])
     assert "online ●" in boxes["status"]
 
 
 async def test_a_missing_status_split_shows_dashes_for_pending_not_zero():
     split_less = dict(SUMMARY, review_status=None)
     text = await _box_text(BOX_IDS["reviewed"], swarm_seat_summary=split_less)
-    assert f"{SUMMARY['reviewed']} · -- pending" in text and "· 0 pending" not in text
+    assert _lines(text)[-2:] == [str(SUMMARY["reviewed"]), "-- pending"]
+    assert "0 pending" not in text
 
 
 async def test_malformed_payloads_land_on_unavailable_not_a_crash():

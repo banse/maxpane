@@ -17,7 +17,7 @@ The boxes (spec §3, plan WP3):
   already on the first line, and ``#12345 never paired`` (19 cells) does not
   fit the ~16-cell box at the AGENT pin.
 * **ACCEPTED** ``12 of 74`` -- the submissions a job used, of all attempts.
-* **REVIEWED** ``72 · 6 pending`` -- every scored review; *pending* is
+* **REVIEWED** ``72`` over ``6 pending`` -- every scored review; *pending* is
   ``submitted + queued``, a **subset** of the 72, never added to it (plan
   Q-M, owner 2026-09-21). Review-accepted is not ``accepted``: the two boxes
   never share a word.
@@ -46,7 +46,10 @@ None here (``rules/widgets.md``, ``HeroBoxBase``): ``SurfSwarmAgentHeroBox``
 exists so ``minimal.tcss`` can name it, and both swarm heroes follow one
 block there (height 7 -- label, blank, three body lines, a solid border).
 Six ``1fr`` boxes leave ~16 content cells each at the AGENT pin, which is
-why SCORE's count and STATUS's stamps take lines of their own.
+why SCORE's count, REVIEWED's pending and STATUS's stamps take lines of
+their own: a box's width is bounded by its widest *line*, and no line here
+pairs two unbounded counters except ACCEPTED's ``9,999 of 99,999`` (15
+cells), which fits.
 """
 
 from __future__ import annotations
@@ -195,7 +198,12 @@ class SurfSwarmAgentHero(HeroRow):
         pending = None if submitted is None or queued is None else submitted + queued
         body = Text()
         body.append(fmt_int(reviewed), style="bold")
-        body.append(" · ", style="dim")
+        # Two lines, never ``72 · 6 pending`` on one: both are lifetime
+        # counters with no ceiling, and one line of two of them is a width
+        # that grows with the seat's age -- ``1,202 · 13 pending`` was cut
+        # to ``pend…`` at the AGENT pin, where the hero has no ``‹``. On
+        # their own lines the widest is ``9,999 pending`` (13 cells).
+        body.append("\n")
         # A subset of ``reviewed`` (plan Q-M): the reviews whose score is not
         # on chain yet. ``--`` when the split was not served, never ``0``.
         body.append(fmt_int(pending) if pending is not None else DASH,

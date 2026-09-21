@@ -10,15 +10,17 @@ stop being true.
 **Re-swept from scratch on 2026-09-21.** Swarm v2 replaced every v1 panel
 (THE FIELD, QUEUE, JUST SHIPPED, the v1 hero and THROUGHPUT) with a new
 grid -- CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES
-beneath -- and added the AGENT body (ROSTER beside VERDICTS, RECORD,
-FEEDBACK). Nothing in this file compares against the v1 numbers (116 / 28)
+beneath -- and added the AGENT body (ROSTER beside SEAT RECORD, RECORD,
+FEEDBACK; re-swept again the same day when the body moved onto the lifetime
+``/seats`` record, ``docs/surf_agent_seats_plan.md`` WP6). Nothing in this file compares against the v1 numbers (116 / 28)
 or the v1 exceptions (``FIELD_NEVER_CLEARS_BELOW``,
 ``SHIPPED_NEVER_CLEARS_BELOW``); ``docs/decisions.md`` keeps them.
 
 The geometry invariants are the pool4-market file's: at and above a column
 pin **whole** means no panel marked besides the named exceptions, no
 CSS-clipped line, no hidden ``DataTable`` column and no widget region
-extending past its own container's; below it something *other than* an
+extending past its own container's, and no CSS-clipped line in the body's
+own hero (whose boxes ellipsise); below it something *other than* an
 exception must advertise the loss. The region check is unconditional -- an
 exception may keep marking, never paint past its row. At and above a row
 pin the screen-wide ``‹ taller`` is dark; below it, lit; and wherever a
@@ -58,7 +60,9 @@ from maxpane_dashboard.screens.surf import (
     SurfScreen,
 )
 from maxpane_dashboard.widgets.surf import (
+    SurfSwarmAgentHero,
     SurfSwarmCapability,
+    SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
     SurfSwarmRoster,
@@ -104,10 +108,12 @@ LAUNCHES_NEVER_CLEARS_BELOW = 205
 #: and none from it -- the ``4fr : 5fr`` seam's one job at the pin.
 LAUNCHES_HIDES_NO_COLUMN_FROM = 138
 
-#: The `a` body's one named exception: RECORD's ``detail`` column is free
-#: text and lights ``‹`` while any of it is cut. On the capture (63-character
-#: details) it clears here; on the worst case (400 characters) it never does.
-RECORD_NEVER_CLEARS_BELOW = 168
+#: The `a` body's one named exception: RECORD's ``objective`` column is the
+#: job's free text and lights ``‹`` while any of it is cut. On the capture
+#: (seat #0's lifetime ``work[]``, objectives of 186-198 cells) it clears
+#: here; on the worst case (400 characters) it never does. Re-measured for
+#: the ``/seats`` record (WP6): it was 168 on the verifier ``detail`` column.
+RECORD_NEVER_CLEARS_BELOW = 268
 
 #: Measured tier edges the width sweeps straddle (+-1 each).
 _S_THRESHOLDS = (
@@ -117,12 +123,16 @@ _S_THRESHOLDS = (
     145,  # IN FLIGHT `compact` from here
 )
 _A_THRESHOLDS = (
-    84,   # FEEDBACK `full` from here
-    88,   # VERDICTS clips a line under here
-    105,  # ROSTER hides a column under here
-    112,  # RECORD `compact` from here
-    120,  # ROSTER `compact` from here
-    122,  # RECORD `full` from here (still marked for its detail)
+    79,   # RECORD `compact` from here
+    87,   # FEEDBACK `compact` from here; SEAT RECORD clips no line from here (capture)
+    90,   # RECORD `full` from here (still marked for its objective)
+    93,   # SEAT RECORD clips no line from here (worst case: the longer runtime)
+    97,   # FEEDBACK `full` from here
+    102,  # the hero clips no box from here (capture)
+    105,  # ROSTER hides no column from here (capture)
+    107,  # ROSTER hides no column from here (worst case: 30 seats)
+    120,  # ROSTER `compact` from here; the hero clips no box from here
+          # (worst case: SCORE's `(99,999 scored)`; 125 while REVIEWED was one line)
 )
 
 _EXCLUDED_FROM_WHOLE = {
@@ -133,6 +143,10 @@ _BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmRoster"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
 _ROW_PIN = {"s": SURF_SWARM_FULL_LAYOUT_ROWS, "a": SURF_AGENT_FULL_LAYOUT_ROWS}
 _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID}
+#: Each body's own hero. Its boxes are ``text-overflow: ellipsis``, so a box
+#: too narrow for its value is a CSS-clipped line like any panel's, and it
+#: counts as one: at and above the pin none may be clipped.
+_HERO = {"s": SurfSwarmHero, "a": SurfSwarmAgentHero}
 _TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_TOP_ID}
 #: The `height: auto` panel whose fixed line count is its row's floor.
 _FLOOR_PANEL = {"s": "SurfSwarmThroughput", "a": "SurfSwarmSeatVerdicts"}
@@ -287,7 +301,8 @@ def _worst_agent_payload() -> dict:
     selected seat's RECORD at its 40-row cap with 400-character objectives
     and long node keys; FEEDBACK over seat #0's 202 reviews with #420's
     queued and submitted rows on top (every status and chain cell shape);
-    SEAT RECORD with #420's longest runtime and a full owner address.
+    SEAT RECORD with #420's longest runtime and a full owner address; every
+    lifetime counter stretched to five digits (four for a part of one).
 
     Every row is a WP1b fold of a committed ``/seats`` capture, then
     lengthened -- never hand-typed from scratch."""
@@ -315,6 +330,26 @@ def _worst_agent_payload() -> dict:
     summary = sw.seat_summary_from_seat(seat0)
     summary["runtime"] = sw.seat_summary_from_seat(seat420)["runtime"]
     assert summary["owner"] and summary["runtime"]
+    # The lifetime counters have no ceiling -- seat #0 already has 202
+    # reviews, and a worst case that keeps the capture's 202 is the narrow
+    # case (the fix-round finding: ``1,202 · 13 pending`` clipped at the pin
+    # while ``202 · 13 pending`` fitted). Stretched to a realistic ceiling
+    # instead. The lifetime totals get five digits (~500x #0's 202 reviews
+    # and 209 attempts, years of a seat at the capture's rate) and a part of
+    # one four (``9,999 of 99,999``). ``submitted`` and ``queued`` are not
+    # lifetime counters but a backlog that drains as scores land on chain
+    # (#0 holds 13, #420 6), so three digits each -- ~75x the largest seen
+    # -- whose sum is the four-digit ``1,998 pending``, the hero's widest
+    # plausible form. Four digits of ``submitted`` alone clip SEAT RECORD's
+    # ``pending`` row at every width (``9,000 submitted · 999 que…`` under
+    # its ``max-width: 46``); that is filed, not measured into this case.
+    # The split still sums to ``reviewed`` (Q-M).
+    summary.update(
+        attempts=99_999, accepted=9_999, reviewed=99_999, scored=99_999,
+        collaborators=9_999,
+        review_status={"sent": 98_001, "submitted": 999, "queued": 999},
+    )
+    assert sum(summary["review_status"].values()) == summary["reviewed"]
     k.update({
         "swarm_seat_rows": seats, "swarm_seat_work_rows": work,
         "swarm_seat_feedback_rows": feedback, "swarm_seat_summary": summary,
@@ -392,6 +427,8 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict
             for name, w in widgets.items()
             for line in _css_clipped_lines(pilot.app, w)
         ]
+        hero = screen.query_one(_HERO[key])
+        clipped += [(type(hero).__name__, line) for line in _css_clipped_lines(pilot.app, hero)]
         scroll = {
             cid: screen.query_one(f"#{cid}").show_vertical_scrollbar
             for cid in set(_CONTAINER_OF[key].values())
@@ -429,7 +466,7 @@ _WIDTH_SWEEP = (
     [("s", "capture", w) for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 60, 159, *_S_THRESHOLDS)]
     + [("s", "worst-s", w) for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 126, 156, *_S_THRESHOLDS)]
     + [("a", "capture", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 159, *_A_THRESHOLDS)]
-    + [("a", "worst-a", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 119, 149, *_A_THRESHOLDS)]
+    + [("a", "worst-a", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 149, *_A_THRESHOLDS)]
 )
 
 
@@ -497,9 +534,10 @@ async def test_the_exceptions_are_marked_at_the_pin_and_clear_where_the_blocks_s
     at = await _render(_capture_payload(), (RECORD_NEVER_CLEARS_BELOW, _COLUMN_SWEEP_HEIGHT), "a")
     assert "SurfSwarmSeatRecord" in below["marked"], sorted(below["marked"])
     assert "SurfSwarmSeatRecord" not in at["marked"], sorted(at["marked"])
-    worst = await _render(_worst_agent_payload(), (225, _COLUMN_SWEEP_HEIGHT), "a")
+    assert at["tiers"]["SurfSwarmSeatRecord"] == "full", at["tiers"]
+    worst = await _render(_worst_agent_payload(), (RECORD_NEVER_CLEARS_BELOW, _COLUMN_SWEEP_HEIGHT), "a")
     assert "SurfSwarmSeatRecord" in worst["marked"], (
-        "a 400-character detail cleared at 225 columns -- the block says it never does"
+        "a 400-character objective cleared where the capture's 198 do -- the block says it never does"
     )
 
 
@@ -573,7 +611,7 @@ async def test_the_row_pin_holds_at_the_column_pin_too(key) -> None:
 async def test_the_top_row_floor_is_its_auto_height_panels_own_lines(key) -> None:
     """The one number in the swarm CSS that is not a tier width: each top
     row's ``min-height`` is the fixed line count of its ``height: auto``
-    panel (THROUGHPUT sixteen, VERDICTS thirteen). Bound here so the floor
+    panel (THROUGHPUT sixteen, SEAT RECORD thirteen). Bound here so the floor
     cannot drift from the content it equals: at the pin the panel, the row
     and the floor are one height, and the row never scrolls inside itself
     -- not even at 20 rows, on the worst case."""

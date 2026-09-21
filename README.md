@@ -157,14 +157,22 @@ neither icon nor link. The hero swaps too, the second Surfboard view (after `4`)
 AGENTS (online/enrolled), WORKING, ACCEPTED 24h, QUEUE, BREAKER and SERVICES; a zero is a zero and
 only a failed read says `unavailable`.
 
-Press **`a`** (2026-09-21) for the AGENT body — one seat of that swarm at a time. ROSTER lists
-every seat the sweep has seen with its node count; the seat under the cursor (or the seat saved in
-`~/.maxpane/config.toml` by `i`, or the busiest) is the one the rest of the body is about — a saved seat the
-sweep has not seen yet stays named on the hero as `#N not seen` while the busiest stands in: its own hero row (SEAT · NODES · JOBS ·
-ACC / REJ · REVISIONS · SCORE · STATUS), RECORD (its nodes newest first, with the verifier's
-verdict and detail), VERDICTS (accepted, rejected, revisions, mean score, and the open-vocabulary
-role and rejection-code blocks) and FEEDBACK (its on-chain ERC-8004 reviews, each transaction hash
-linking the chain the review names). `esc` backs out of either body, one-way.
+Press **`a`** (2026-09-21) for the AGENT body — one seat of that swarm at a time. Two clocks, and
+the screen says which is which. ROSTER is folded from the host's **job window** — the newest 100
+jobs, a few hours — and its title says so (`ROSTER · last 100 jobs since HH:MM`), so its
+per-seat counts are the window's, never a seat's total. The seat under the cursor (or the seat
+saved in `~/.maxpane/config.toml` by `i`, whether or not it is on the roster, or the busiest) is
+the one the rest of the body is about, and everything else is that seat's **lifetime record**,
+read from the seat's own keyless page (the numbers the swarm's explorer shows): its hero row
+(SEAT · ACCEPTED `12 of 74` · REVIEWED `72` over `6 pending` · SCORE · COLLAB · STATUS), SEAT
+RECORD (accepted of attempts, reviews by status, score, when it was paired, its runtime, its
+owner's address with a copy icon and an Etherscan link, and its reviews by role), RECORD (every
+accepted submission, newest first, with its job, node, role, job state and objective) and
+FEEDBACK (every scored review, newest first — its value, node, job, status, and the transaction
+hash linking the chain the review names; a queued review has none yet). "Accepted" is the work
+the job used; a review that passed is counted under REVIEWED, and the two are never merged. A seat
+that has never paired says `#N never paired`; a failed read says `unavailable`. `esc` backs out
+of either body, one-way.
 
 It reads one keyless host and nothing else — the swarm's own control plane, under two names that
 serve one deployment, rotated per request and never followed off the pool — and never the total it
@@ -434,8 +442,8 @@ IMD swarm's own control plane — the agent workforce this repo's own branches a
 live: CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES full-width beneath. `s` is
 the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
-body — one seat of that swarm: ROSTER beside VERDICTS, then RECORD and FEEDBACK, under the
-seat's own hero row; `enter` or a click on a ROSTER row selects the seat. **`i`** asks for your own
+body — one seat of that swarm: ROSTER (the job window) beside SEAT RECORD, then RECORD and
+FEEDBACK (the seat's lifetime), under the seat's own hero row; `enter` or a click on a ROSTER row selects the seat. **`i`** asks for your own
 seat — its Identity.md NFT id — saves it to `~/.maxpane/config.toml` and opens the AGENT body on it,
 like THE LIST's `w` for a wallet. `esc` backs out of any of the five.
 The status hint names the ones that are not experimental:
@@ -544,10 +552,10 @@ dark. Two panels never clear their own `‹ widen` at any width the app admits: 
 LAUNCHES hides no column from 138 up. Like the announce feed's linked-transaction post, those are
 measured and accepted conditions at this pin and below, not something a wider pin could buy back.
 The AGENT view (`a`) has its own pair, `SURF_AGENT_FULL_LAYOUT_COLUMNS` × `SURF_AGENT_FULL_LAYOUT_ROWS`
-(**134 × 40**): ROSTER decides the width, VERDICTS' thirteen fixed lines floor the top row, and
-RECORD keeps its `‹ widen` lit until 168 columns on the corpus (its detail column takes whatever is
-left and clips the verifier's free text with a visible `…` below that), never on a payload whose
-details are short.
+(**134 × 40**, re-measured for the lifetime record and unchanged): ROSTER decides the width, SEAT
+RECORD's thirteen fixed lines floor the top row, and RECORD keeps its `‹ widen` lit until 268
+columns on the committed seat (its objective column takes whatever is left and clips the job's
+free text with a visible `…` below that), never on a seat whose objectives are short.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

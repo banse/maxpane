@@ -124,6 +124,13 @@ _SURF_CREATOR = "0xC0ffee254729296a45a3885639AC7E10F9d54979"
 #: address, at every terminal size. Linked per row through
 #: ``for_chain_id(chain_id)`` -- the seeded launch is a Sepolia one.
 _SWARM_CONTRACT = "0x5b7A2f80cCe8b8f930c60D33c8fb0FA1234abCDe"
+#: The selected seat's owner on the AGENT body's SEAT RECORD panel (``a``;
+#: ``docs/surf_agent_seats_spec.md`` D5). ``/seats`` serves no chain for the
+#: owner, so it links the package ``EXPLORER`` -- mainnet, the case's own
+#: ``explorer`` -- rather than a row's ``chain_id``. The panel's
+#: ``max-width: 46`` cannot hold 42 characters plus the label, so the cell
+#: renders the anti-poisoning window, never the whole address.
+_SEAT_OWNER = "0x7A11e2d9C4b3f8E6a5D1c0B9e8F7a6D5c4B3a2E1"
 
 
 def _surf_payload() -> dict:
@@ -139,6 +146,7 @@ def _surf_payload() -> dict:
     launches = payload["swarm_launch_rows"]
     artifacts = [{**launches[0]["artifacts"][0], "address": _SWARM_CONTRACT}]
     launches[0] = {**launches[0], "artifacts": artifacts, "artifact_count": 1}
+    payload["swarm_seat_summary"] = {**payload["swarm_seat_summary"], "owner": _SEAT_OWNER}
     return payload
 
 
@@ -158,6 +166,7 @@ SURF_SEEDED: tuple[str, ...] = (
     "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",  # p: HATCHES owner row, shortened
     "0xf53c0a4E4b0F77D1a3Bc4d8e3F2a1B0c9D8e3364",  # 4: STAKERS rank 1, whole/near-whole
     _SWARM_CONTRACT,                                # s: LAUNCHES artifact, shortened
+    _SEAT_OWNER,                                    # a: SEAT RECORD owner, shortened
 )
 
 
@@ -618,9 +627,10 @@ CASES: tuple[SweepCase, ...] = (
         # Mainnet by default (``widgets/surf/_fmt.EXPLORER``); the pool4 panels link
         # by ``pool4_network`` and the swarm rows by their own ``chain_id`` (the
         # fixture's launch and feedback rows are mostly Sepolia), so all three
-        # are allowed. The ``a`` AGENT body renders hashes only (RECORD none,
-        # FEEDBACK through ``hash_text``), so it seeds no address and the sweep
-        # asserts it paints none.
+        # are allowed. The ``a`` AGENT body renders one address: SEAT RECORD's
+        # owner, seeded as ``_SEAT_OWNER`` and linked on the package
+        # ``EXPLORER`` (mainnet, this case's ``explorer``). Its other panels
+        # render hashes only (RECORD none, FEEDBACK through ``hash_text``).
         explorer=ETHEREUM,
         explorers=(ETHEREUM, SEPOLIA, BASE),
         rows_pick_explorer=True,

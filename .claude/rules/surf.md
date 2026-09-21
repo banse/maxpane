@@ -36,7 +36,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | CAPABILITY beside THROUGHPUT; IN FLIGHT beside LAUNCHES; SITES full-width beneath | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / QUEUE / BREAKER / SERVICES |
-| `a` | MODE_AGENT | ROSTER beside VERDICTS; RECORD; FEEDBACK — each its own row | `SurfSwarmAgentHero`: SEAT / NODES / JOBS / ACC · REJ / REVISIONS / SCORE / STATUS |
+| `a` | MODE_AGENT | ROSTER beside SEAT RECORD; RECORD; FEEDBACK — each its own row | `SurfSwarmAgentHero`: SEAT / ACCEPTED / REVIEWED / SCORE / COLLAB / STATUS |
 
 `_SURF_HERO_MODES` **enumerates** the modes that get `SurfHero` rather than negating one: a body
 with a hero of its own would otherwise inherit `True` from a `!=` check and paint two heroes into
@@ -49,8 +49,8 @@ expand/collapse toggle, with NEW REPLY on the rail so a collapsed thread still a
 
 ## Tiers, clocks and degraded groups
 
-`TIER_LAUNCHPAD`, `TIER_POOL4`, `TIER_POOL4_STAKERS` and the two swarm tiers are spawned and never
-awaited, each with its own last-good slot and its own `as of HH:MM` on a slower clock than the
+`TIER_LAUNCHPAD`, `TIER_POOL4`, `TIER_POOL4_STAKERS` and the three swarm tiers (`TIER_SWARM`,
+`TIER_SWARM_SCORES`, `TIER_SWARM_SEAT`) are spawned and never awaited, each with its own last-good slot and its own `as of HH:MM` on a slower clock than the
 title bar's. `SOURCE_POOL4` (`p4`) is the **eighth and last** degraded group — that name took the
 worst-case title row to exactly the pinned width — so the staker sweep and the swarm tiers
 **name no group at all**, not even with nothing to serve: they serve last-good behind their own
@@ -164,11 +164,25 @@ has moved since the manager last saw them, or when `SWARM_LIST_CEILING_S` has el
 `GET /jobs/{id}` follows for every **executing** job (plan §1.5; a 404 drops the detail, never the
 row or the read). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
 plus `/skills`, `/launches` and `/sites` on its own clock and feeds CAPABILITY, LAUNCHES, SITES and
-the whole AGENT body; `swarm_throughput` is folded off the **live** slot because its widget shows
+the AGENT body's ROSTER; `swarm_throughput` is folded off the **live** slot because its widget shows
 the live marker (two clocks never meet behind one `as of`). A third slot, `SLOT_SWARM_JOBS_SEEN`,
 is a map of every job either tier has read (pruned by age and cap, stored only when it changed so
 the 60 s tick does not rewrite the cache file for nothing): it is the sole source of `completed_24h`
-and lets ROSTER and RECORD keep a seat's nodes after the host's window has moved past them.
+and lets ROSTER keep a seat's nodes after the host's window has moved past them.
+
+**The AGENT body reads two clocks and says which is which** (`docs/surf_agent_seats_spec.md`).
+`GET /jobs` serves only the newest 100 jobs, so ROSTER — the only seat list there is — is a
+**window** and is titled as one (`ROSTER · last 100 jobs since HH:MM · as of HH:MM`, from
+`swarm_roster_window`); its `acc/rej/rev/score` stay window-scoped under that title. Every other
+number on the body is the selected seat's **lifetime** record from `GET /seats/{tokenId}` on the
+third swarm tier, `TIER_SWARM_SEAT` (one seat per cycle, the selected one; `select_seat` /
+`set_seat` only mark it due — no await in a handler; the slot stores the token it was read for, so
+a switch never shows seat A's numbers under seat B while B loads: `swarm_seat_state` is `"pending"`
+until B's read lands). Hero, SEAT RECORD, RECORD (`work[]`) and FEEDBACK (`reviews[]`) never mix
+the two clocks. `accepted` (the work the job used) and a review that passed are different counts
+and are never merged. A 404 `unknown_seat` is a real negative (`#N never paired`), distinct from a
+failed read (`unavailable`); any other 404 rotates and fails. The seat owner links the package
+`EXPLORER`, not a row's `chain_id` (spec D5; the gap with the per-row rule is filed).
 
 **`None` vs `[]` is decided in the manager, never the fold.** Every `*_rows` fold answers `[]` for
 `None` and for empty input alike; only the manager knows whether the read happened, so a list never
@@ -191,11 +205,13 @@ number, so this view shows none of it — absent, never estimated.
 Pins: `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` (CAPABILITY binds the width; the top
 row's `min-height` is a floor equal to THROUGHPUT's own fixed line count, so the row pin is the
 body's three rows of content and not a `1fr` split) and `SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`
-(ROSTER binds; VERDICTS' fixed lines floor its row the same way). Named permanent exceptions, each
+(ROSTER binds; SEAT RECORD's fixed lines floor its row the same way). Named permanent exceptions, each
 with a measured clearing width in the `#:` block and in the layout test (`INFLIGHT_NEVER_CLEARS_BELOW`,
 `LAUNCHES_NEVER_CLEARS_BELOW`, `LAUNCHES_HIDES_NO_COLUMN_FROM`, `RECORD_NEVER_CLEARS_BELOW`):
 IN FLIGHT and LAUNCHES share a 4fr:5fr row measured so LAUNCHES hides no table column from below
-the pin up; RECORD's detail column keeps `‹ widen` lit on the corpus and never on short details.
+the pin up; RECORD's `objective` column (the job's free text) keeps `‹ widen` lit on the committed seat's
+lifetime work and never on short objectives. Each of the two bodies' heroes is part of "whole":
+its boxes ellipsise, and a clipped box at or above the pin fails the sweep like a panel's line.
 Neither the plan's §2 grid nor its A1 2×2 agent grid fits under `__main__.FULL_LAYOUT_COLUMNS` at
 *tight*, which is why the rows pair as they do — `themes/minimal.tcss`'s swarm block carries the
 arithmetic.
