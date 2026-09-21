@@ -375,6 +375,7 @@ def test_every_case_is_swept_at_its_pins():
         (surf.SURF_POOL4_FULL_LAYOUT_COLUMNS, surf.SURF_POOL4_FULL_LAYOUT_ROWS),
         (surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, surf.SURF_POOL4_USER_FULL_LAYOUT_ROWS),
         (surf.SURF_SWARM_FULL_LAYOUT_COLUMNS, surf.SURF_SWARM_FULL_LAYOUT_ROWS),
+        (surf.SURF_AGENT_FULL_LAYOUT_COLUMNS, surf.SURF_AGENT_FULL_LAYOUT_ROWS),
     ]
     assert set(sizes_for(by_name["curator"], "pin")) == {(curator.CURATOR_FULL_LAYOUT_COLUMNS, SIZE[1])}
     for case in CASES:

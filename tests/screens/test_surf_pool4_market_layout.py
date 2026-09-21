@@ -1409,8 +1409,13 @@ def test_the_market_body_is_shorter_than_p_and_taller_than_the_launchpad() -> No
 #: renamed ``4 market`` to ``4 pool4``. ``s swarm`` joined the same single
 #: markup run when the `s` body shipped, the same shape as the two segments
 #: before it -- one run, not per-letter tags (see the second assertion
-#: below).
-KEY_HINT_PHRASE = "l launchpad · 4 pool4 · s swarm"
+#: below). **Four since 2026-09-21:** ``a agent`` joined when the swarm v2
+#: programme added the AGENT body; the growth was measured against every
+#: surf pin (``tests/screens/test_surf_swarm_layout.py``'s
+#: ``STATUS_BAR_WHOLE_FROM``) before this copy followed. This literal is
+#: the hand-typed copy the last assertion of the test below binds to
+#: ``SurfScreen.KEY_HINTS``.
+KEY_HINT_PHRASE = "l launchpad · 4 pool4 · s swarm · a agent"
 
 
 async def test_the_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
