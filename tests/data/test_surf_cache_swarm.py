@@ -1,8 +1,14 @@
+import json
+
+import pytest
+
+from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data.surf_cache import (
-    SLOTS, SLOT_SWARM, SLOT_SWARM_JOBS_SEEN, SLOT_SWARM_SCORES, TIERS,
-    TIER_FAILURE_BACKOFF_SECONDS, TIER_SWARM, TIER_SWARM_SCORES, TIER_TTL_SECONDS,
-    SurfCache,
+    SLOTS, SLOT_SWARM, SLOT_SWARM_JOBS_SEEN, SLOT_SWARM_SCORES, SLOT_SWARM_SEAT, TIERS,
+    TIER_FAILURE_BACKOFF_SECONDS, TIER_SWARM, TIER_SWARM_SCORES, TIER_SWARM_SEAT,
+    TIER_TTL_SECONDS, SurfCache,
 )
+from tests.surf_swarm_fixtures import swarm_seat_capture
 
 
 def test_the_swarm_has_two_tiers_with_their_own_ttls():
@@ -47,7 +53,7 @@ def test_the_jobs_seen_slot_is_registered_so_it_restores():
     ``job_id -> entry`` map both swarm tiers append to."""
     assert SLOT_SWARM_JOBS_SEEN == "swarm_jobs_seen"
     assert SLOT_SWARM_JOBS_SEEN in SLOTS
-    assert len(SLOTS) == 12
+    assert len(SLOTS) == 13
 
 
 def test_a_seen_map_round_trips_through_save_and_load(tmp_path):
@@ -82,3 +88,106 @@ def test_a_seen_map_round_trips_through_save_and_load(tmp_path):
     assert entry is not None
     assert entry.payload == seen
     assert entry.ts == clock.t - 60.0
+
+
+# ---------------------------------------------------------------------------
+# The seat tier (docs/surf_agent_seats_plan.md WP2)
+# ---------------------------------------------------------------------------
+
+
+def test_the_seat_tier_and_slot_are_registered_with_their_literals():
+    """Hand-typed, never derived: 120 s both ways (plan WP2, §9 N)."""
+    assert TIER_SWARM_SEAT == "swarm_seat" and TIER_SWARM_SEAT in TIERS
+    assert TIER_TTL_SECONDS[TIER_SWARM_SEAT] == 120.0
+    assert TIER_FAILURE_BACKOFF_SECONDS[TIER_SWARM_SEAT] == 120.0
+    assert SLOT_SWARM_SEAT == "swarm_seat" and SLOT_SWARM_SEAT in SLOTS
+
+
+def test_mark_due_makes_the_tier_due_and_keeps_the_last_good(tmp_path):
+    from tests.data.test_surf_cache import FakeClock
+
+    clock = FakeClock()
+    cache = SurfCache(path=tmp_path / "surf.json", clock=clock)
+    slot = {"token": 420, "state": "ok", "seat": swarm_seat_capture("seat_420")}
+    cache.store_last_good(SLOT_SWARM_SEAT, slot, ts=clock.t)
+    cache.mark_fetched(TIER_SWARM_SEAT, now=clock.t)
+    assert TIER_SWARM_SEAT not in cache.tiers_due(clock.t + 1.0)
+
+    cache.mark_due(TIER_SWARM_SEAT)
+    assert TIER_SWARM_SEAT in cache.tiers_due(clock.t + 1.0)
+    entry = cache.get_last_good(SLOT_SWARM_SEAT)
+    assert entry is not None and entry.payload == slot and entry.ts == clock.t
+    # No other tier moved.
+    cache.mark_fetched(TIER_SWARM, now=clock.t)
+    cache.mark_due(TIER_SWARM_SEAT)
+    assert TIER_SWARM not in cache.tiers_due(clock.t + 1.0)
+
+
+def test_mark_due_overrides_a_failure_backoff(tmp_path):
+    from tests.data.test_surf_cache import FakeClock
+
+    clock = FakeClock()
+    cache = SurfCache(path=tmp_path / "surf.json", clock=clock)
+    cache.mark_failed(TIER_SWARM_SEAT, now=clock.t)
+    assert not cache.is_due(TIER_SWARM_SEAT, now=clock.t + 60.0)
+    cache.mark_due(TIER_SWARM_SEAT)
+    assert cache.is_due(TIER_SWARM_SEAT, now=clock.t + 60.0)
+
+
+def test_mark_due_refuses_an_unknown_tier(tmp_path):
+    cache = SurfCache(path=tmp_path / "surf.json")
+    with pytest.raises(ValueError):
+        cache.mark_due("not-a-tier")
+
+
+@pytest.mark.parametrize("slot", [
+    {"token": 420, "state": "ok", "seat": swarm_seat_capture("seat_420")},
+    {"token": 999_999, "state": "unknown_seat", "seat": None},
+])
+def test_a_seat_slot_round_trips_through_save_and_load(tmp_path, slot):
+    from tests.data.test_surf_cache import FakeClock
+
+    clock = FakeClock()
+    path = tmp_path / "surf.json"
+    cache = SurfCache(path=path, clock=clock)
+    cache.store_last_good(SLOT_SWARM_SEAT, slot, ts=clock.t - 60.0)
+    cache.save()
+
+    fresh = SurfCache(path=path, clock=clock)
+    fresh.load()
+    entry = fresh.get_last_good(SLOT_SWARM_SEAT)
+    assert entry is not None and entry.ts == clock.t - 60.0
+    assert entry.payload == slot
+    assert sw.coerce_seat_slot(entry.payload) == slot
+
+
+@pytest.mark.parametrize("edit", [
+    {"token": True},                       # a bool is not a token
+    {"token": "420"},                      # nor is a string
+    {"state": "pending"},                  # never stored: not a finished read
+    {"state": "maybe"},                    # an unknown state
+    {"seat": None},                        # "ok" with no seat
+    {"seat": [1, 2]},                      # a list where the seat goes
+    {"token": 516},                        # another token's seat under this token
+])
+def test_a_hand_edited_seat_slot_loads_but_is_refused_per_field(tmp_path, edit):
+    """The cache restores the slot generically; the manager's reader
+    (``coerce_seat_slot``) refuses it whole. A hand-edited cache file is
+    third-party input (rules/data.md)."""
+    from tests.data.test_surf_cache import FakeClock
+
+    clock = FakeClock()
+    path = tmp_path / "surf.json"
+    good = {"token": 420, "state": "ok", "seat": swarm_seat_capture("seat_420")}
+    cache = SurfCache(path=path, clock=clock)
+    cache.store_last_good(SLOT_SWARM_SEAT, good, ts=clock.t - 60.0)
+    cache.save()
+    on_disk = json.loads(path.read_text())
+    on_disk["last_good"][SLOT_SWARM_SEAT]["payload"].update(edit)
+    path.write_text(json.dumps(on_disk))
+
+    fresh = SurfCache(path=path, clock=clock)
+    fresh.load()
+    entry = fresh.get_last_good(SLOT_SWARM_SEAT)
+    assert entry is not None, "the cache keeps the slot; the reader judges it"
+    assert sw.coerce_seat_slot(entry.payload) is None

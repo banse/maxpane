@@ -31,6 +31,8 @@ that reason about the seen slot's age run their clock from ``V2_NOW``.
 from __future__ import annotations
 
 import asyncio
+import copy
+import inspect
 import re
 from collections import Counter
 from datetime import datetime, timezone
@@ -40,15 +42,19 @@ import pytest
 from maxpane_dashboard.data import surf_manager as surf_manager_mod
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data.surf_cache import (
-    SLOT_SWARM, SLOT_SWARM_JOBS_SEEN, SLOT_SWARM_SCORES, TIER_SWARM, TIER_SWARM_SCORES,
+    SLOT_SWARM, SLOT_SWARM_JOBS_SEEN, SLOT_SWARM_SCORES, SLOT_SWARM_SEAT, TIER_SWARM,
+    TIER_SWARM_SCORES, TIER_SWARM_SEAT,
 )
 from maxpane_dashboard.data.surf_manager import (
     SWARM_JOBS_SEEN_MAX_AGE_S, SWARM_SWEEP_CAP, SurfManager,
 )
 from maxpane_dashboard.data.surf_models import SURF_KEYS, SWARM_KEYS
+from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT
 from tests.data.test_surf_manager import FakeClock, FakeSurfClient, NOW
 from tests.data.test_surf_manager_pool4 import FakePool4Client
-from tests.surf_swarm_fixtures import swarm_capture_v2, swarm_details_v2
+from tests.surf_swarm_fixtures import (
+    swarm_capture_v2, swarm_details_v2, swarm_seat_capture,
+)
 
 #: Just after the corpus's newest ``updatedAt`` (``2026-09-20T23:06:10.038Z``).
 V2_NOW = 1_789_945_600.0
@@ -95,13 +101,27 @@ class _FakeSwarm:
     the per-route ``fail_*`` switches serve ``None`` for that one route only,
     the client's contract for a 404 or a dead host. ``fetch_job`` answers the
     committed detail or ``None`` -- a 404 -- for an id the corpus lacks.
+
+    ``fetch_seat`` (the /seats plan WP2) serves ``seats[token]`` -- by
+    default the four committed seat captures -- and ``UNKNOWN_SEAT`` for a
+    token it has no entry for; an entry of ``None`` is every host failing.
+    ``seat_gate``, when given, holds each seat read in flight until it is
+    set, and ``seat_entered`` is set once a read has reached that point, so
+    a test awaits observable state rather than a clock.
     """
 
     def __init__(self, *, jobs=None, health=None, details=None, fail=False,
                  fail_jobs=False, fail_skills=False, fail_launches=False,
-                 fail_sites=False):
+                 fail_sites=False, seats=None, seat_gate=None):
         self.calls: Counter = Counter()
         self.detail_calls: list[str] = []
+        self.seat_calls: list[int] = []
+        self.seats: dict = (
+            {t: swarm_seat_capture(f"seat_{t}") for t in (0, 420, 516, 1649)}
+            if seats is None else dict(seats)
+        )
+        self.seat_gate = seat_gate
+        self.seat_entered = asyncio.Event()
         self._jobs = swarm_capture_v2("jobs")["jobs"] if jobs is None else jobs
         self._health = swarm_capture_v2("health") if health is None else health
         self._details = swarm_details_v2() if details is None else details
@@ -156,6 +176,18 @@ class _FakeSwarm:
         self.calls["sites"] += 1
         return None if self._fail_sites else list(swarm_capture_v2("sites")["sites"])
 
+    async def fetch_seat(self, token):
+        await asyncio.sleep(0)
+        self.calls["seat"] += 1
+        self.seat_calls.append(token)
+        self.seat_entered.set()
+        if self.seat_gate is not None:
+            await self.seat_gate.wait()
+        if token not in self.seats:
+            return dict(UNKNOWN_SEAT)
+        answer = self.seats[token]
+        return None if answer is None else copy.deepcopy(answer)
+
     async def close(self):
         return None
 
@@ -176,10 +208,10 @@ def _manager(tmp_path, swarm, **kw) -> SurfManager:
 
 
 async def _settle(manager: SurfManager) -> None:
-    """Wait for whichever swarm tiers this cycle spawned."""
-    for task in (manager._swarm_task, manager._swarm_scores_task):
-        if task is not None:
-            await task
+    """Wait for whichever swarm tiers this cycle spawned (the seat read too)."""
+    tasks = [t for t in (manager._swarm_task, manager._swarm_scores_task,
+                         manager._swarm_seat_task) if t is not None]
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _landed(tmp_path, swarm, **kw):
@@ -533,7 +565,7 @@ async def test_a_job_past_the_sweep_cap_is_still_served_from_the_seen_slot(tmp_p
     seen = _seen(manager)
     assert seen[old_id]["nodes"] == seen_before[old_id]["nodes"]
     entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
-    keys = manager._swarm_seat_keys(entry.payload, entry, seen)
+    keys = manager._swarm_seat_keys(entry.payload, entry, seen, None)
     assert [r["token_id"] for r in keys["swarm_seat_rows"]] == [4242]
     await manager.close()
 
@@ -755,28 +787,74 @@ async def test_completed_24h_is_none_until_a_day_has_accumulated_then_an_int(tmp
 
 
 # ---------------------------------------------------------------------------
-# The AGENT seat (plan A1)
+# The AGENT seat: the /seats tier (docs/surf_agent_seats_plan.md WP2)
 # ---------------------------------------------------------------------------
 
+#: The seat keys the /seats tier feeds -- never another token's values.
+_SEAT_READ_KEYS = (
+    "swarm_seat_summary", "swarm_seat_work_rows", "swarm_seat_feedback_rows",
+    "swarm_seat_as_of_hhmm",
+)
 
-async def test_the_default_seat_is_the_most_active(tmp_path):
-    _, payload = await _landed(tmp_path, _FakeSwarm())
+
+async def _seated(tmp_path, swarm, **kw):
+    """A manager that has read its selected seat, and the payload after it.
+
+    Cycle 1 spawns the sweep (and, with a saved seat, the seat read); cycle 2
+    has a roster, so a most-active seat is chosen and read; cycle 3 serves it.
+    Every step awaits the spawned tasks -- observable state, never a sleep.
+    """
+    manager = _manager(tmp_path, swarm, **kw)
+    for _ in range(2):
+        await manager.fetch_and_compute()
+        await _settle(manager)
+    payload = await manager.fetch_and_compute()
+    return manager, payload
+
+
+def _seat_payload_of(token: int) -> dict:
+    return swarm_seat_capture(f"seat_{token}")
+
+
+async def test_the_default_seat_is_the_most_active_and_its_record_is_the_seats_own(tmp_path):
+    manager, payload = await _seated(tmp_path, _FakeSwarm())
     rows = payload["swarm_seat_rows"]
     assert len(rows) == 16
-    selected = payload["swarm_seat_selected"]
-    assert selected["selected_by"] == "most_active"
-    assert selected["token_id"] == rows[0]["token_id"] == 0
-    assert selected["agent_id"] == rows[0]["agent_id"]
-    assert payload["swarm_seat_summary"]["nodes"] == len(payload["swarm_seat_node_rows"]) == rows[0]["nodes"]
-    assert payload["swarm_seat_as_of_hhmm"] == payload["swarm_scores_as_of_hhmm"]
+    assert payload["swarm_seat_selected"] == {
+        "token_id": 0, "agent_id": rows[0]["agent_id"], "selected_by": "most_active",
+    }
+    seat = _seat_payload_of(0)
+    assert payload["swarm_seat_state"] == "ok"
+    assert payload["swarm_seat_summary"] == sw.seat_summary_from_seat(seat)
+    assert payload["swarm_seat_summary"]["reviewed"] == len(seat["reviews"]) == 202
+    assert payload["swarm_seat_work_rows"] == sw.seat_work_rows(seat)
+    assert payload["swarm_seat_feedback_rows"] == sw.seat_review_rows(seat)
+    entry = manager.cache.get_last_good(SLOT_SWARM_SEAT)
+    assert payload["swarm_seat_as_of_hhmm"] == entry.as_of_hhmm()
+    assert manager.swarm_client.seat_calls == [0], "one seat, the selected one: no fan-out"
+    await manager.close()
 
 
-async def test_the_seat_argument_selects_the_saved_seat(tmp_path):
-    _, payload = await _landed(tmp_path, _FakeSwarm(), seat="1548")
-    selected = payload["swarm_seat_selected"]
-    assert selected == {"token_id": 1548, "agent_id": "50971", "selected_by": "saved"}
-    assert len(payload["swarm_seat_feedback_rows"]) == 17, "the corpus feedback pin"
-    assert payload["swarm_seat_summary"]["scored"] == 17
+async def test_the_saved_seat_wins_off_the_roster(tmp_path):
+    """D1 (rewrites the ``unseen_token`` test): ``/seats`` answers for any
+    paired token, so a saved seat the job window never saw is shown, not
+    swapped for the most active. Its ``agent_id`` comes off the payload."""
+    assert 420 not in {r["token_id"] for r in sw.seat_rows(swarm_details_v2(), {})}
+    manager, payload = await _seated(tmp_path, _FakeSwarm(), seat=420)
+    assert payload["swarm_seat_selected"] == {
+        "token_id": 420, "agent_id": "50939", "selected_by": "saved",
+    }
+    summary = payload["swarm_seat_summary"]
+    assert (summary["accepted"], summary["attempts"], summary["reviewed"]) == (12, 74, 72)
+    assert len(payload["swarm_seat_work_rows"]) == 12
+    await manager.close()
+
+
+async def test_a_saved_seat_given_as_text_parses(tmp_path):
+    manager, payload = await _seated(tmp_path, _FakeSwarm(), seat="420")
+    assert payload["swarm_seat_selected"]["token_id"] == 420
+    assert payload["swarm_seat_state"] == "ok"
+    await manager.close()
 
 
 async def test_the_retired_seat_env_var_selects_nothing(tmp_path, monkeypatch):
@@ -790,48 +868,43 @@ async def test_the_retired_seat_env_var_selects_nothing(tmp_path, monkeypatch):
     await manager.close()
 
 
-async def test_set_seat_replaces_the_saved_seat_and_drops_the_cursor(tmp_path):
-    """The seat prompt's seam: the typed seat wins at once -- over a roster
-    pick made earlier, which would otherwise keep outranking it."""
-    manager, _ = await _landed(tmp_path, _FakeSwarm(), seat="1548")
+async def test_select_seat_moves_the_cursor_and_the_record_follows(tmp_path):
+    manager, payload = await _seated(tmp_path, _FakeSwarm(), seat=420)
+    assert payload["swarm_seat_selected"]["token_id"] == 420
     manager.select_seat(0)
-    payload = await manager.fetch_and_compute()
-    assert payload["swarm_seat_selected"]["selected_by"] == "cursor"
-    manager.set_seat(463)
+    await manager.fetch_and_compute()
+    await _settle(manager)
     payload = await manager.fetch_and_compute()
     assert payload["swarm_seat_selected"] == {
-        "token_id": 463, "agent_id": "50972", "selected_by": "saved",
+        "token_id": 0, "agent_id": "50906", "selected_by": "cursor",
     }
-    assert {r["job_id"] for r in payload["swarm_seat_node_rows"]} <= _seat_of(swarm_details_v2(), 463)
-    await manager.close()
-
-
-async def test_a_saved_seat_off_the_roster_is_named_not_swapped(tmp_path):
-    manager, payload = await _landed(tmp_path, _FakeSwarm(), seat=999_999)
-    selected = payload["swarm_seat_selected"]
-    assert selected["selected_by"] == "most_active" and selected["token_id"] == 0
-    assert selected["unseen_token"] == 999_999
-    await manager.close()
-
-
-async def test_select_seat_moves_the_cursor_and_the_record_follows(tmp_path):
-    manager, payload = await _landed(tmp_path, _FakeSwarm(), seat="1548")
-    assert payload["swarm_seat_selected"]["token_id"] == 1548
-    manager.select_seat(463)
-    payload = await manager.fetch_and_compute()
-    selected = payload["swarm_seat_selected"]
-    assert selected == {"token_id": 463, "agent_id": "50972", "selected_by": "cursor"}
-    node_rows = payload["swarm_seat_node_rows"]
-    assert node_rows, "seat 463 works the executing detail in the corpus"
-    assert {r["job_id"] for r in node_rows} <= _seat_of(swarm_details_v2(), 463)
-    assert all(r["node_key"] is not None for r in node_rows)
-    assert payload["swarm_seat_summary"]["nodes"] == len(node_rows)
-    assert payload["swarm_seat_summary"]["working_now"] is True
+    assert payload["swarm_seat_summary"] == sw.seat_summary_from_seat(_seat_payload_of(0))
+    # The transitional window fold still follows the cursor until WP5.
+    assert {r["job_id"] for r in payload["swarm_seat_node_rows"]} <= _seat_of(swarm_details_v2(), 0)
     # A string token parses too -- the DataTable hands the row's text.
     manager.select_seat("1548")
     payload = await manager.fetch_and_compute()
     assert payload["swarm_seat_selected"]["token_id"] == 1548
     assert payload["swarm_seat_selected"]["selected_by"] == "cursor"
+    await manager.close()
+
+
+async def test_set_seat_replaces_the_saved_seat_and_drops_the_cursor(tmp_path):
+    """The seat prompt's seam: the typed seat wins at once -- over a roster
+    pick made earlier, which would otherwise keep outranking it."""
+    manager, _ = await _seated(tmp_path, _FakeSwarm(), seat=420)
+    manager.select_seat(0)
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_selected"]["selected_by"] == "cursor"
+    manager.set_seat(516)
+    assert manager._seat_cursor is None
+    await manager.fetch_and_compute()
+    await _settle(manager)
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_selected"] == {
+        "token_id": 516, "agent_id": "50992", "selected_by": "saved",
+    }
+    assert payload["swarm_seat_summary"]["accepted"] == 4
     await manager.close()
 
 
@@ -850,16 +923,244 @@ async def test_a_cursor_outside_the_roster_falls_back(tmp_path):
     await manager.close()
 
 
-async def test_a_sweep_that_never_ran_publishes_none_for_every_seat_key(tmp_path):
+@pytest.mark.parametrize("method,arg", [("select_seat", 0), ("set_seat", 516)])
+async def test_a_seat_switch_marks_the_tier_due_and_awaits_nothing(tmp_path, method, arg):
+    """No network await in a message path (CLAUDE.md): a plain function that
+    writes attributes and marks the tier due. The read is the next cycle's."""
+    manager, _ = await _seated(tmp_path, _FakeSwarm(), seat=420)
+    assert not manager.cache.is_due(TIER_SWARM_SEAT, manager._clock())
+    switch = getattr(manager, method)
+    assert not inspect.iscoroutinefunction(switch)
+    calls_before = Counter(manager.swarm_client.calls)
+    task_before = manager._swarm_seat_task
+    assert switch(arg) is None
+    assert manager.swarm_client.calls == calls_before, "the switch made a client call"
+    assert manager._swarm_seat_task is task_before, "the switch spawned a read"
+    assert manager.cache.is_due(TIER_SWARM_SEAT, manager._clock())
+    await manager.close()
+
+
+async def test_a_switch_while_the_new_seats_read_is_pending_shows_none_of_the_old_seat(tmp_path):
+    """A's slot is present and B is selected: every seat key is ``pending`` /
+    ``None`` and no value is A's (spec §5, plan §5 "seat switch")."""
+    manager, before = await _seated(tmp_path, _FakeSwarm())
+    assert before["swarm_seat_selected"]["token_id"] == 0
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["token"] == 0
+    manager.set_seat(420)
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_selected"] == {
+        "token_id": 420, "agent_id": None, "selected_by": "saved",
+    }
+    assert payload["swarm_seat_state"] == "pending"
+    for key in _SEAT_READ_KEYS:
+        assert payload[key] is None, key
+        assert before[key] is not None, f"{key}: A had a value to leak"
+    await _settle(manager)
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_state"] == "ok"
+    assert payload["swarm_seat_summary"]["attempts"] == 74
+    await manager.close()
+
+
+async def test_a_selected_seat_with_no_read_finished_is_pending(tmp_path):
+    """Cold start with a saved seat: the first payload is ``pending``
+    (``Loading…``), never ``None`` (``unavailable``) and never a zero."""
+    manager = _manager(tmp_path, _FakeSwarm(), seat=420)
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_selected"]["token_id"] == 420
+    assert payload["swarm_seat_state"] == "pending"
+    for key in _SEAT_READ_KEYS:
+        assert payload[key] is None, key
+    await manager.close()
+
+
+async def test_an_unknown_seat_is_a_real_negative(tmp_path):
+    """404 ``unknown_seat``: the state, no summary, real-empty rows, and the
+    marker of the read that said so (plan §9 L)."""
+    manager, payload = await _seated(
+        tmp_path, _FakeSwarm(seats={999_999: dict(UNKNOWN_SEAT)}), seat=999_999,
+    )
+    assert payload["swarm_seat_selected"] == {
+        "token_id": 999_999, "agent_id": None, "selected_by": "saved",
+    }
+    assert payload["swarm_seat_state"] == "unknown_seat"
+    assert payload["swarm_seat_summary"] is None
+    assert payload["swarm_seat_work_rows"] == []
+    assert payload["swarm_seat_feedback_rows"] == []
+    assert payload["swarm_seat_as_of_hhmm"] is not None
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload == {
+        "token": 999_999, "state": "unknown_seat", "seat": None,
+    }
+    await manager.close()
+
+
+async def test_a_failed_read_with_a_last_good_for_the_same_seat_serves_it(tmp_path):
+    clock = FakeClock(NOW)
+    swarm = _FakeSwarm()
+    manager, good = await _seated(tmp_path, swarm, seat=420, clock=clock)
+    as_of = good["swarm_seat_as_of_hhmm"]
+    assert good["swarm_seat_state"] == "ok" and as_of is not None
+    swarm.seats[420] = None                       # every host failed
+    clock.advance(121.0)
+    await manager.fetch_and_compute()
+    await _settle(manager)
+    assert swarm.seat_calls == [420, 420], "the second read happened and failed"
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_state"] == "ok"
+    for key in _SEAT_READ_KEYS:
+        assert payload[key] == good[key], key
+    assert payload["swarm_seat_as_of_hhmm"] == as_of
+    await manager.close()
+
+
+async def test_a_failed_read_with_no_last_good_is_none_never_zero(tmp_path):
+    manager, payload = await _seated(tmp_path, _FakeSwarm(seats={420: None}), seat=420)
+    assert manager.swarm_client.seat_calls == [420]
+    assert payload["swarm_seat_selected"]["token_id"] == 420
+    assert payload["swarm_seat_state"] is None
+    for key in _SEAT_READ_KEYS:
+        assert payload[key] is None, key
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT) is None
+    await manager.close()
+
+
+async def test_a_failed_read_of_b_under_a_slot_for_a_is_none_not_pending(tmp_path):
+    """The failure is remembered per token: B's read failed and B has no
+    last-good, so B is ``unavailable`` even though A's slot is present."""
+    swarm = _FakeSwarm(seats={516: None})
+    manager, _ = await _seated(tmp_path, swarm, seat=420)
+    manager.set_seat(516)
+    await manager.fetch_and_compute()
+    await _settle(manager)
+    payload = await manager.fetch_and_compute()
+    assert swarm.seat_calls == [420, 516]
+    assert payload["swarm_seat_selected"]["token_id"] == 516
+    assert payload["swarm_seat_state"] is None
+    for key in _SEAT_READ_KEYS:
+        assert payload[key] is None, key
+    # Switching to B again is a new read in flight: pending, not unavailable.
+    manager.set_seat(516)
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_state"] == "pending"
+    await manager.close()
+
+
+async def test_a_400_is_a_failed_read_and_backs_the_tier_off(tmp_path):
+    """The client turns ``400 invalid_request`` into ``None``; the manager
+    marks the tier failed (120 s) and publishes ``None``."""
+    clock = FakeClock(NOW)
+    swarm = _FakeSwarm(seats={420: None})
+    manager, payload = await _seated(tmp_path, swarm, seat=420, clock=clock)
+    assert payload["swarm_seat_state"] is None
+    assert not manager.cache.is_due(TIER_SWARM_SEAT, clock() + 60.0)
+    assert manager.cache.is_due(TIER_SWARM_SEAT, clock() + 121.0)
+    await manager.fetch_and_compute()
+    assert swarm.seat_calls == [420], "the backoff held: no retry inside 120 s"
+    await manager.close()
+
+
+async def test_a_payload_for_another_token_is_a_failed_read(tmp_path):
+    """A ``tokenId`` mismatch (seat A's record answering for B) is ``None``."""
+    swarm = _FakeSwarm(seats={420: _seat_payload_of(516)})
+    manager, payload = await _seated(tmp_path, swarm, seat=420)
+    assert payload["swarm_seat_state"] is None
+    assert payload["swarm_seat_summary"] is None
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT) is None
+    await manager.close()
+
+
+async def test_queued_reviews_carry_no_tx_chain_or_sent_time(tmp_path):
+    manager, payload = await _seated(tmp_path, _FakeSwarm(), seat=420)
+    queued = [r for r in payload["swarm_seat_feedback_rows"] if r["status"] == "queued"]
+    assert len(queued) == 1
+    assert (queued[0]["tx_hash"], queued[0]["chain_id"], queued[0]["sent_ts"]) == (None, None, None)
+    assert payload["swarm_seat_summary"]["review_status"] == {"sent": 66, "submitted": 5, "queued": 1}
+    await manager.close()
+
+
+async def test_one_seat_read_per_cycle_and_a_token_change_cancels_the_old_one(tmp_path):
+    gate = asyncio.Event()
+    swarm = _FakeSwarm(seat_gate=gate)
+    manager = _manager(tmp_path, swarm, seat=420)
+    await manager.fetch_and_compute()
+    first = manager._swarm_seat_task
+    assert first is not None
+    await swarm.seat_entered.wait()
+    await manager.fetch_and_compute()
+    assert manager._swarm_seat_task is first, "a second read stacked behind the first"
+    assert swarm.seat_calls == [420]
+
+    manager.set_seat(516)
+    await manager.fetch_and_compute()
+    assert first.cancelled(), "the old seat's read was not cancelled"
+    second = manager._swarm_seat_task
+    assert second is not first and second is not None
+    gate.set()
+    await second
+    assert swarm.seat_calls == [420, 516]
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["token"] == 516
+    await manager.close()
+
+
+async def test_a_seat_other_than_the_slots_is_read_without_waiting_for_the_ttl(tmp_path):
+    """The selection moved without a switch (the most active seat changed, or
+    a restored slot names another seat): the tier is fresh, but the selected
+    seat has no read yet, so it is read now rather than after 120 s."""
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm, seat=420)
+    now = manager._clock()
+    manager.cache.store_last_good(
+        SLOT_SWARM_SEAT, {"token": 516, "state": "ok", "seat": _seat_payload_of(516)}, ts=now,
+    )
+    manager.cache.mark_fetched(TIER_SWARM_SEAT, now)
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_state"] == "pending"
+    await _settle(manager)
+    assert swarm.seat_calls == [420]
+    await manager.close()
+
+
+async def test_close_cancels_an_in_flight_seat_read(tmp_path):
+    swarm = _FakeSwarm(seat_gate=asyncio.Event())
+    manager = _manager(tmp_path, swarm, seat=420)
+    await manager.fetch_and_compute()
+    task = manager._swarm_seat_task
+    await swarm.seat_entered.wait()
+    await manager.close()
+    assert task.cancelled()
+    assert manager._swarm_seat_task is None
+
+
+async def test_a_sweep_that_never_ran_publishes_none_for_every_roster_key(tmp_path):
     manager = _manager(tmp_path, _FakeSwarm())
     manager.cache.mark_fetched(TIER_SWARM_SCORES, manager._clock())
-    payload = await manager.fetch_and_compute()
-    await manager._swarm_task
+    await manager.fetch_and_compute()
+    await _settle(manager)
     payload = await manager.fetch_and_compute()
     assert manager.cache.get_last_good(SLOT_SWARM_SCORES) is None
     assert payload["swarm_as_of_hhmm"] is not None, "the live tier ran; the sweep did not"
-    for key in _SEAT_KEYS:
+    for key in _SEAT_KEYS + ("swarm_roster_window", "swarm_seat_work_rows", "swarm_seat_state"):
         assert payload[key] is None, key
+    assert manager.swarm_client.seat_calls == [], "no seat selected, nothing to read"
+    await manager.close()
+
+
+async def test_a_saved_seat_is_served_with_no_sweep_at_all(tmp_path):
+    """The seat tier is independent of the sweep (rewrites the meaning of the
+    test above for a saved seat): no roster, but the seat's own record."""
+    manager = _manager(tmp_path, _FakeSwarm(), seat=420)
+    manager.cache.mark_fetched(TIER_SWARM_SCORES, manager._clock())
+    await manager.fetch_and_compute()
+    await _settle(manager)
+    payload = await manager.fetch_and_compute()
+    assert manager.cache.get_last_good(SLOT_SWARM_SCORES) is None
+    assert payload["swarm_seat_rows"] is None
+    assert payload["swarm_roster_window"] is None
+    assert payload["swarm_seat_selected"] == {
+        "token_id": 420, "agent_id": "50939", "selected_by": "saved",
+    }
+    assert payload["swarm_seat_state"] == "ok"
+    assert payload["swarm_seat_summary"]["accepted"] == 12
     await manager.close()
 
 
@@ -868,16 +1169,41 @@ async def test_a_sweep_with_no_seat_publishes_an_empty_roster_and_no_selection(t
         job_id: dict(d, nodes=[dict(n, seat=None) for n in d.get("nodes") or []])
         for job_id, d in swarm_details_v2().items()
     }
-    _, payload = await _landed(tmp_path, _FakeSwarm(details=seatless), seat="1548")
+    manager, payload = await _landed(tmp_path, _FakeSwarm(details=seatless))
     assert payload["swarm_scores_as_of_hhmm"] is not None, "the sweep ran"
     assert payload["swarm_seat_rows"] == []
     assert payload["swarm_seat_selected"] is None
-    assert payload["swarm_seat_summary"] is None
-    assert payload["swarm_seat_node_rows"] is None
-    assert payload["swarm_seat_feedback_rows"] is None
-    # The marker describes the sweep, not the selection: an empty roster
-    # behind ``as of HH:MM`` is the explicit "we looked, nobody was seated".
-    assert payload["swarm_seat_as_of_hhmm"] == payload["swarm_scores_as_of_hhmm"]
+    for key in _SEAT_READ_KEYS + ("swarm_seat_node_rows", "swarm_seat_state"):
+        assert payload[key] is None, key
+    await manager.close()
+
+
+async def test_the_roster_window_is_the_sweeps_job_list(tmp_path):
+    manager, payload = await _landed(tmp_path, _FakeSwarm())
+    jobs = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload["jobs"]
+    assert payload["swarm_roster_window"] == sw.roster_window(jobs)
+    assert payload["swarm_roster_window"]["jobs"] == 100
+    await manager.close()
+
+
+async def test_a_hand_edited_seat_slot_is_not_served(tmp_path):
+    """A persisted slot is third-party input: a bool token is refused whole,
+    so the seat is ``pending`` until its own read lands."""
+    path = tmp_path / "surf.json"
+    seed = _manager(tmp_path, _FakeSwarm(), seat=420)
+    seed.cache.store_last_good(
+        SLOT_SWARM_SEAT, {"token": True, "state": "ok", "seat": _seat_payload_of(420)},
+        ts=seed._clock(),
+    )
+    seed.cache.save()
+    await seed.close()
+    assert path.exists()
+    manager = _manager(tmp_path, _FakeSwarm(), seat=420)
+    payload = await manager.fetch_and_compute()
+    assert payload["swarm_seat_state"] == "pending"
+    for key in _SEAT_READ_KEYS:
+        assert payload[key] is None, key
+    await manager.close()
 
 
 # ---------------------------------------------------------------------------
@@ -937,7 +1263,9 @@ async def test_the_three_swarm_methods_emit_exactly_the_swarm_block(tmp_path):
     parts = [
         manager._swarm_keys(live.payload, live, manager._clock(), seen),
         manager._swarm_scores_keys(scores.payload, scores, live, manager._clock()),
-        manager._swarm_seat_keys(scores.payload, scores, seen),
+        manager._swarm_seat_keys(
+            scores.payload, scores, seen, manager.cache.get_last_good(SLOT_SWARM_SEAT),
+        ),
     ]
     emitted = Counter(k for part in parts for k in part)
     assert set(emitted) == set(SWARM_KEYS), (

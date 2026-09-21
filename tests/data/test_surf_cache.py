@@ -81,7 +81,7 @@ def test_tier_ttls_match_the_prd(tmp_path):
 
     assert TIERS == (
         TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
-        TIER_POOL4_STAKERS, "swarm", "swarm_scores",
+        TIER_POOL4_STAKERS, "swarm", "swarm_scores", "swarm_seat",
     )
     assert TIER_TTL_SECONDS[TIER_FAST] == 0.0
     assert 60.0 <= TIER_TTL_SECONDS[TIER_MEDIUM] <= 120.0
@@ -223,8 +223,9 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # name the title row has columns for, so the fold serves last-good behind
     # its own stale marker and folds into `p4` only when it has nothing.
     # Plus the swarm's two tier slots and, since WP4 of the swarm v2 plan, the
-    # jobs-seen map both swarm tiers append to (`SLOT_SWARM_JOBS_SEEN`).
-    assert len(SLOTS) == 12
+    # jobs-seen map both swarm tiers append to (`SLOT_SWARM_JOBS_SEEN`), and
+    # the AGENT body's one seat (`SLOT_SWARM_SEAT`, the /seats plan WP2).
+    assert len(SLOTS) == 13
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

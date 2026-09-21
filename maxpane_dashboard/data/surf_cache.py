@@ -112,10 +112,17 @@ TIER_SWARM = "swarm"
 #: The full 62-detail sweep behind the scores and the throughput numbers.
 #: 188 KB, 25 s measured — half-hourly, never on the live path.
 TIER_SWARM_SCORES = "swarm_scores"
+#: The AGENT body's one seat: ``GET /seats/{tokenId}`` for the selected token
+#: only, never a fan-out across the roster (docs/surf_agent_seats_spec.md §5).
+#: 120 s: a seat's lifetime record moves a few times an hour, and a reader's
+#: switch does not wait on this clock -- ``SurfManager.select_seat`` /
+#: ``set_seat`` call :meth:`SurfCache.mark_due`. The failure backoff is the
+#: live tier's 120 s (plan §9 N): the same host, polled no faster when it fails.
+TIER_SWARM_SEAT = "swarm_seat"
 
 TIERS: tuple[str, ...] = (
     TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
-    TIER_POOL4_STAKERS, TIER_SWARM, TIER_SWARM_SCORES,
+    TIER_POOL4_STAKERS, TIER_SWARM, TIER_SWARM_SCORES, TIER_SWARM_SEAT,
 )
 
 TIER_TTL_SECONDS: dict[str, float] = {
@@ -127,6 +134,7 @@ TIER_TTL_SECONDS: dict[str, float] = {
     TIER_POOL4_STAKERS: 1800.0,
     TIER_SWARM: 60.0,
     TIER_SWARM_SCORES: 1800.0,
+    TIER_SWARM_SEAT: 120.0,
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
@@ -138,6 +146,7 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
     TIER_POOL4_STAKERS: 300.0,
     TIER_SWARM: 120.0,
     TIER_SWARM_SCORES: 300.0,
+    TIER_SWARM_SEAT: 120.0,
 }
 
 
@@ -157,6 +166,7 @@ SLOT_POOL4_STAKERS = "pool4_stakers"  # the sIMD Transfer fold's last-good
 SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
 SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
 SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
+SLOT_SWARM_SEAT = "swarm_seat"        # {token, state, seat}: the selected seat's /seats read
 
 SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
@@ -184,6 +194,15 @@ SLOTS: tuple[str, ...] = (
     # manager caps and prunes it on every fold; a cache file without it loads
     # unchanged (the fixture round-trip in `tests/data/test_surf_cache.py`).
     SLOT_SWARM_JOBS_SEEN,
+    # Not a degraded group either: the AGENT body's one seat, read by
+    # ``TIER_SWARM_SEAT`` (docs/surf_agent_seats_spec.md §5). The payload is
+    # ``{token, state, seat}`` -- the token it was read for travels with it,
+    # so a switch never shows seat A's record under seat B's name. Only a
+    # *finished* read is stored (``state`` ``ok`` or ``unknown_seat``); a
+    # failed one leaves the slot alone. Persisted like every slot, and so
+    # third-party input on the way back in: the manager validates it per
+    # field with ``surf_swarm.coerce_seat_slot`` before any key reads it.
+    SLOT_SWARM_SEAT,
 )
 
 
@@ -497,6 +516,18 @@ class SurfCache:
             else float(retry_after)
         )
         self._tier_next_due[tier] = self._now(now) + max(0.0, backoff)
+
+    def mark_due(self, tier: str) -> None:
+        """Make ``tier`` due on the next :meth:`tiers_due`, whatever its clock said.
+
+        The reader's seat switch (``SurfManager.select_seat``/``set_seat``):
+        a plain write, no I/O, so a message handler may call it. It forgets
+        only the tier's next-due time -- a pending failure backoff included --
+        and **never** the last-good: the slot keeps serving until a new read
+        lands, and the token it carries decides whether it is shown at all.
+        """
+        self._check_tier(tier)
+        self._tier_next_due.pop(tier, None)
 
     def seconds_until_due(self, tier: str, now: float | None = None) -> float:
         self._check_tier(tier)
@@ -1321,6 +1352,7 @@ __all__ = [
     "SLOT_SWARM",
     "SLOT_SWARM_JOBS_SEEN",
     "SLOT_SWARM_SCORES",
+    "SLOT_SWARM_SEAT",
     "SurfCache",
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",
@@ -1332,6 +1364,7 @@ __all__ = [
     "TIER_SLOW",
     "TIER_SWARM",
     "TIER_SWARM_SCORES",
+    "TIER_SWARM_SEAT",
     "TIER_TTL_SECONDS",
     "pool4_reserve_series_name",
 ]

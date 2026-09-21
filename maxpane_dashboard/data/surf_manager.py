@@ -130,7 +130,6 @@ from maxpane_dashboard.analytics.surf_signals import (
 )
 from maxpane_dashboard.analytics.surf_swarm_signals import (
     launch_summary,
-    seat_summary,
     skill_summary,
 )
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
@@ -169,6 +168,7 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_SWARM,
     SLOT_SWARM_JOBS_SEEN,
     SLOT_SWARM_SCORES,
+    SLOT_SWARM_SEAT,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
     SERIES_IMD_SUPPLY,
@@ -180,6 +180,7 @@ from maxpane_dashboard.data.surf_cache import (
     TIER_SLOW,
     TIER_SWARM,
     TIER_SWARM_SCORES,
+    TIER_SWARM_SEAT,
     SurfCache,
 )
 from maxpane_dashboard.data.surf_client import SurfClient
@@ -936,6 +937,26 @@ def _swarm_sweep_ids(jobs: Any) -> list[str]:
     return [j["id"] for j in rows[:SWARM_SWEEP_CAP]]
 
 
+def _seat_token(value: Any) -> int | None:
+    """A seat as the reader named it -> the ``int`` ``sw.choose_seat`` takes.
+
+    ``seat=`` and :meth:`SurfManager.select_seat` store what they were given:
+    an ``int`` from ``config.get_seat`` or the seat prompt, or the row's text
+    from the ROSTER ``DataTable``. A non-negative, non-``bool`` ``int``, or a
+    string of ASCII digits (surrounding whitespace allowed); anything else is
+    no choice, never a guess.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text and text.isascii() and text.isdigit():
+            return int(text)
+    return None
+
+
 def _swarm_details_map(details: Any) -> dict[str, dict[str, Any]]:
     """``job_id -> detail`` off a slot's persisted ``details`` **list**.
 
@@ -1056,6 +1077,20 @@ class SurfManager:
         #: The reader's own row selection (:meth:`select_seat`); wins over
         #: the saved seat while it names a seat on the roster.
         self._seat_cursor: str | int | None = None
+        #: The in-flight detached ``/seats/{token}`` read and the token it is
+        #: for (the /seats plan WP2). One seat at a time: a read for a seat
+        #: that is no longer selected is cancelled, never left to land.
+        self._swarm_seat_task: Any = None
+        self._swarm_seat_task_token: int | None = None
+        #: The token of the most recent seat read that **failed**, or
+        #: ``None``. It is what tells ``swarm_seat_state``'s two empty states
+        #: apart for the selected seat with no last-good of its own (spec
+        #: §4): its read failed -> ``None`` (``unavailable``); no read of it
+        #: has finished yet -> ``"pending"`` (``Loading…``). The tier clock
+        #: cannot say which token failed. A seat switch clears it: the
+        #: switch is a new read in flight. In memory only -- it describes
+        #: this session's attempts.
+        self._seat_failed_token: int | None = None
 
         try:
             self.cache.load()
@@ -1088,6 +1123,7 @@ class SurfManager:
         await self._cancel_pool4_stakers()
         await self._cancel_swarm()
         await self._cancel_swarm_scores()
+        await self._cancel_swarm_seat()
         self.save_cache()
         try:
             await self.client.close()
@@ -5455,8 +5491,16 @@ class SurfManager:
         (:meth:`_swarm_seat_keys`). Stored as given: ``sw.pick_seat`` parses
         it and falls back to the saved seat, then the most active, when it
         names nothing on the roster.
+
+        The /seats plan WP2: it also marks :data:`TIER_SWARM_SEAT` due, so the
+        next cycle's detached read fetches the new seat -- the read is the
+        cycle's, never this method's. Until that read lands the new seat is
+        ``pending`` (the slot names the token it was read for, so the old
+        seat's record is never shown under the new seat's name).
         """
         self._seat_cursor = token
+        self._seat_failed_token = None
+        self.cache.mark_due(TIER_SWARM_SEAT)
 
     def set_seat(self, token: str | int | None) -> None:
         """Replace the saved seat with ``token`` (the seat prompt's seam).
@@ -5465,10 +5509,12 @@ class SurfManager:
         seat would otherwise keep outranking what they just typed. Same
         contract as :meth:`select_seat` -- an attribute write, no I/O, no
         await. Persisting the choice is the caller's job, not the data
-        layer's.
+        layer's. Marks :data:`TIER_SWARM_SEAT` due, as :meth:`select_seat` does.
         """
         self._seat_saved = token
         self._seat_cursor = None
+        self._seat_failed_token = None
+        self.cache.mark_due(TIER_SWARM_SEAT)
 
     def _spawn_swarm_scores(self, tiers: set[str], now: float) -> Any:
         """:meth:`_spawn_swarm`'s shape, one tier further out.
@@ -5520,6 +5566,98 @@ class SurfManager:
             await task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
+
+    # -- the AGENT body's one seat: /seats/{token} (the /seats plan WP2) -----
+
+    async def _offer_swarm_seat(
+        self, tiers: set[str], token: int | None, seat_entry: Any, now: float
+    ) -> Any:
+        """Start the selected seat's read **detached**; never wait for it.
+
+        One seat per cycle, the selected one -- no fan-out across the roster.
+        A read already in flight for this token is left alone (never stacked);
+        one in flight for **another** token is cancelled and this seat's read
+        started, because nothing would ever show the old seat's answer. With
+        nothing in flight the read starts when :data:`TIER_SWARM_SEAT` is due
+        (its TTL, a failure backoff, or a switch's ``mark_due``), or when the
+        selected seat has neither a stored read nor a failed one -- the
+        selection moved without a switch (the most active seat changed, a
+        restored slot names another seat), and waiting out the TTL would hold
+        ``Loading…`` for two minutes.
+        """
+        if token is None:
+            return None
+        running = self._swarm_seat_task
+        if running is not None and not running.done():
+            if self._swarm_seat_task_token == token:
+                logger.debug("SURF seat read for #%s still in flight", token)
+                return running
+            await self._cancel_swarm_seat()
+        else:
+            slot = sw.coerce_seat_slot(getattr(seat_entry, "payload", None))
+            unread = (slot is None or slot["token"] != token) and (
+                self._seat_failed_token != token
+            )
+            if TIER_SWARM_SEAT not in tiers and not unread:
+                return None
+        self._swarm_seat_task_token = token
+        self._swarm_seat_task = asyncio.ensure_future(
+            self._swarm_seat_detached(token, now)
+        )
+        return self._swarm_seat_task
+
+    async def _swarm_seat_detached(self, token: int, now: float) -> None:
+        """:meth:`_pool_swarm_seat` with nobody to raise at. See :meth:`_swarm_detached`."""
+        try:
+            await self._pool_swarm_seat(token, now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:            # noqa: BLE001 — nobody awaits this task
+            logger.debug("SURF seat read failed: %s", exc)
+
+    async def _cancel_swarm_seat(self) -> None:
+        """Stop an in-flight seat read and wait for it to actually be gone."""
+        task = self._swarm_seat_task
+        self._swarm_seat_task = None
+        self._swarm_seat_task_token = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+
+    async def _pool_swarm_seat(self, token: int, now: float) -> dict[str, Any] | None:
+        """``GET /seats/{token}`` -> :data:`SLOT_SWARM_SEAT`, or a failed tier.
+
+        A seat dict whose ``tokenId`` is ``token`` (``"ok"``) or the client's
+        ``UNKNOWN_SEAT`` (``"unknown_seat"``, a real negative, stored with no
+        seat) is a finished read: stored as ``{token, state, seat}`` and the
+        tier marked fetched. Anything else -- ``None`` from the client (every
+        host failed, a 400, a removed route) or another token's payload -- is
+        a failed read: the tier backs off, the last-good stays, and the token
+        is remembered so the selected seat reads ``None`` rather than
+        ``pending``. The slot is rewritten only when the answer changed (plan
+        §9 J, the jobs-seen precedent): its marker then advances only when a
+        new version lands, and a 90 KB seat is not re-persisted every 120 s.
+        """
+        result = await self._guard(
+            lambda: self.swarm_client.fetch_seat(token), "swarm fetch_seat"
+        )
+        state = sw.seat_state(result, token)
+        if state is None:
+            self._seat_failed_token = token
+            self.cache.mark_failed(TIER_SWARM_SEAT, now)
+            return None
+        slot = {"token": token, "state": state, "seat": result if state == "ok" else None}
+        prior = self.cache.get_last_good(SLOT_SWARM_SEAT)
+        if prior is None or prior.payload != slot:
+            self.cache.store_last_good(SLOT_SWARM_SEAT, slot, ts=now)
+        self.cache.mark_fetched(TIER_SWARM_SEAT, now)
+        if self._seat_failed_token == token:
+            self._seat_failed_token = None
+        return slot
 
     async def _pool_swarm_scores(self, tiers: set[str], now: float) -> dict[str, Any]:
         """The sweep: the newest details, ``/skills``, ``/launches``, ``/sites``.
@@ -5708,57 +5846,74 @@ class SurfManager:
         }
 
     def _swarm_seat_keys(
-        self, slot: dict[str, Any], entry: Any, seen: Any
+        self, slot: dict[str, Any], entry: Any, seen: Any, seat_entry: Any
     ) -> dict[str, Any]:
-        """SLOT_SWARM_SCORES + the jobs-seen map -> the six `swarm_seat_*` keys.
+        """The AGENT body's keys: the roster off the sweep, the seat off ``/seats``.
 
-        The AGENT body (plan A1). The roster is every seat the sweep's
-        details or the seen map name; the selection is ``sw.pick_seat``'s
-        (the reader's cursor, else the saved seat, else the most active) and
-        the record, verdict summary and on-chain feedback are the selected
-        seat's own. ``None`` versus ``[]`` (CLAUDE.md): a sweep that never
-        ran (``entry is None``) publishes ``None`` for every key **even
-        though the live tier may already have seeded the seen map** -- the
-        sweep is this body's source (plan A1, R-F) and the seen map only
-        extends it, so a roster served off the map alone would be rows with
-        no marker behind them. A sweep that ran and saw no seat publishes
-        ``swarm_seat_rows == []`` behind its marker -- "we looked, nobody was
-        seated" -- with no selection and the selected seat's own keys
-        ``None``. The marker is the sweep slot's, named separately so the
-        body reads its own.
+        **The roster** (``swarm_seat_rows``, ``swarm_roster_window`` and the
+        transitional ``swarm_seat_node_rows``) is folded from the sweep slot
+        plus the jobs-seen map, as before: a sweep that never ran
+        (``entry is None``) publishes ``None`` for them, and one that saw no
+        seat publishes ``swarm_seat_rows == []``.
+
+        **The selection** is ``sw.choose_seat`` (decision D1): the cursor
+        while it is on the roster, else the saved seat whether or not it is,
+        else the most active. It needs no sweep when a seat is saved -- the
+        seat tier is independent of the sweep. ``agent_id`` comes from the
+        roster row, else the seat's own payload, else ``None``.
+
+        **The seat's record** (state, summary, work and feedback rows, and
+        ``swarm_seat_as_of_hhmm``) comes from :data:`SLOT_SWARM_SEAT` **only
+        when the slot was read for the selected token** -- never another
+        seat's numbers under this seat's name. Otherwise the state is
+        ``None`` when this seat's own read failed (``unavailable``) and
+        ``"pending"`` when none has finished (``Loading…``), with every other
+        seat key ``None``. ``unknown_seat`` is a real negative: no summary,
+        ``[]`` rows (plan §9 L). With no selection at all every seat key is
+        ``None``.
         """
-        if entry is None:
-            return dict.fromkeys((
-                "swarm_seat_rows", "swarm_seat_selected", "swarm_seat_summary",
-                "swarm_seat_node_rows", "swarm_seat_feedback_rows",
-                "swarm_seat_as_of_hhmm",
-            ))
-        details_map = _swarm_details_map(slot.get("details") if slot else None)
+        swept = entry is not None
+        details_map = _swarm_details_map(slot.get("details") if swept and slot else None)
         seen_map = seen if isinstance(seen, dict) else {}
-        as_of = entry.as_of_hhmm()
-        rows = sw.seat_rows(details_map, seen_map)
-        selected = sw.pick_seat(rows, self._seat_saved, self._seat_cursor)
-        if selected is None:
-            return {
-                "swarm_seat_rows": [],
-                "swarm_seat_selected": None,
-                "swarm_seat_summary": None,
-                "swarm_seat_node_rows": None,
-                "swarm_seat_feedback_rows": None,
-                "swarm_seat_as_of_hhmm": as_of,
-            }
-        token = selected["token_id"]
-        node_rows = sw.seat_node_rows(details_map, seen_map, token)
-        feedback = sw.seat_feedback_rows(details_map, token)
-        working_now = any(r.get("state") == "working" for r in node_rows)
-        return {
+        rows = sw.seat_rows(details_map, seen_map) if swept else None
+        selected = sw.choose_seat(
+            rows, _seat_token(self._seat_saved), _seat_token(self._seat_cursor)
+        )
+        out: dict[str, Any] = {
             "swarm_seat_rows": rows,
             "swarm_seat_selected": selected,
-            "swarm_seat_summary": seat_summary(node_rows, feedback, working_now=working_now),
-            "swarm_seat_node_rows": node_rows,
-            "swarm_seat_feedback_rows": feedback,
-            "swarm_seat_as_of_hhmm": as_of,
+            "swarm_seat_state": None,
+            "swarm_seat_summary": None,
+            "swarm_seat_work_rows": None,
+            "swarm_seat_feedback_rows": None,
+            "swarm_seat_as_of_hhmm": None,
+            "swarm_seat_node_rows": None,
+            "swarm_roster_window": sw.roster_window(slot.get("jobs")) if swept and slot else None,
         }
+        if selected is None:
+            return out
+        token = selected["token_id"]
+        if swept:
+            # Transitional (retired in WP5): the window fold, for the widgets
+            # that still read it until the contract flips.
+            out["swarm_seat_node_rows"] = sw.seat_node_rows(details_map, seen_map, token)
+        read = sw.coerce_seat_slot(getattr(seat_entry, "payload", None))
+        if read is None or read["token"] != token:
+            out["swarm_seat_state"] = None if self._seat_failed_token == token else "pending"
+            return out
+        out["swarm_seat_state"] = read["state"]
+        out["swarm_seat_as_of_hhmm"] = seat_entry.as_of_hhmm()
+        if read["state"] == "unknown_seat":
+            out["swarm_seat_work_rows"] = []
+            out["swarm_seat_feedback_rows"] = []
+            return out
+        seat = read["seat"]
+        if selected["agent_id"] is None and isinstance(seat.get("agentId"), str):
+            out["swarm_seat_selected"] = dict(selected, agent_id=seat["agentId"])
+        out["swarm_seat_summary"] = sw.seat_summary_from_seat(seat)
+        out["swarm_seat_work_rows"] = sw.seat_work_rows(seat)
+        out["swarm_seat_feedback_rows"] = sw.seat_review_rows(seat)
+        return out
 
     def _signal_keys(self, readings: dict[str, Any], now: float) -> dict[str, Any]:
         """Run the detectors and publish their rows plus exact feed targets."""
@@ -5917,6 +6072,12 @@ class SurfManager:
             else {}
         )
         self._spawn_swarm_scores(tiers, now)
+        # The seat slot, captured for the same reason: the seat keys below
+        # read this snapshot, and the seat read offered after them can only
+        # move ``self.cache.last_good``. The read is offered *after* the keys
+        # because it needs the token they choose; being detached, it starts
+        # no later in wall time than an earlier offer would be served.
+        seat_entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
 
         market, logs, channel, nft, activity = await asyncio.gather(
             self._pool_market(tiers, now, real_pool_id),
@@ -6210,9 +6371,18 @@ class SurfManager:
         data.update(
             self._swarm_scores_keys(scores_slot, scores_entry, swarm_entry, now)
         )
-        # The AGENT body's six keys (swarm v2 plan A1), off the same sweep
-        # slot plus the jobs-seen map.
-        data.update(self._swarm_seat_keys(scores_slot, scores_entry, seen))
+        # The AGENT body's keys: the roster off the same sweep slot plus the
+        # jobs-seen map, the selected seat's record off its own /seats slot
+        # (the /seats plan WP2) -- then that seat's read, offered detached.
+        seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry)
+        data.update(seat_keys)
+        selected_seat = seat_keys["swarm_seat_selected"]
+        await self._offer_swarm_seat(
+            tiers,
+            selected_seat["token_id"] if selected_seat is not None else None,
+            seat_entry,
+            now,
+        )
 
         signal_data = self._signal_keys(
             self._readings(
