@@ -403,3 +403,99 @@ and restored by inverse edits. Commit messages contain package evidence:
   code changed, and neither the middle tier nor the full release suite was repeated.
 
 Stop here for the receiving controller's whole-branch review and the owner's merge/push decision.
+
+---
+
+## 9. Fix wave (Claude's final review, 2026-09-22) — ONE round, then a scoped re-review
+
+Final whole-branch review verdict: **Needs fixes: 0 Critical, 2 Important** (+ 6 Minor), plus one live
+defect found by Claude and decided by the owner. Same rules as §0/§4/§6: same branch, `.venv311`, TDD,
+⚑ = mutation proof recorded in the commit message, pathspec commits, one writer, no push/merge, no
+suite. Everything here is ONE fix wave; anything you cannot close goes to the followups doc, not a
+second round. Append your hand-back as §10 (per finding: fixed + commit + test, or filed + F-number).
+
+### 9.1 OWNER DECISION — count each submission once (live defect, highest priority)
+
+Live `/seats/420` at ≈2026-09-21 23:15Z (committed for you, untracked, as
+`tests/fixtures/surf/swarm/seats/seat_420_duplicated_reviews.json` — **add it to `MANIFEST.json`**
+with route `/seats/420`, http_status 200, captured_on 2026-09-21, captured_at "≈23:15Z (live probe by
+Claude)", selected_because "reviews[] lists 154 of 197 submissions twice (stale sent/submitted/queued
+entry + a fresh queued copy, same submissionHash); acceptedAt in the '2026-09-21 21:35:42.88+00' form"):
+351 `reviews[]` entries but only **197 distinct `submissionHash`es** (= 197 distinct jobIds); duplicate
+pairs are (queued, sent) ×93, (queued, queued) ×57, (queued, submitted) ×4; the copies agree on value
+and verdict. attempts 201, accepted 190, 2 reviews `rejected` / value 0. The explorer shows "351 scored"
+— it double-counts too. Today REVIEWED shows 351, pending ~254, and BY NODE oracle_assess win 188/349 =
+54 % beside the hero's 94.5 %.
+
+**Owner's decision (2026-09-22): count once per submission.** In `data/surf_swarm.py`, one helper that
+every review consumer uses (summary, node rows — nothing may fold the raw list itself):
+- group `reviews[]` by `submissionHash` when it is a valid 64-hex string; an entry without a valid hash
+  is kept on its own (never merged by guess);
+- per group keep the entry with the most advanced status, `sent` > `submitted` > `queued` (unknown
+  status ranks lowest); tie → first in source order;
+- `reviewed`, `review_status`, `scored`/`mean_score`, `roles`, and every BY NODE counter fold the
+  deduplicated list; `last_sent_ts` may keep reading every entry (a sentAt is a sentAt).
+- add `review_entries` (int | None: the raw served length) to `SWARM_SEAT_SUMMARY_FIELDS`; SEAT shows
+  `reviewed 197 submissions · 351 entries served` **only when the two differ**, so the gap to the
+  explorer is explained on screen, not hidden. Hero REVIEWED shows the deduplicated total.
+⚑ tests (named + mutation): the fixture folds to reviewed 197 and review_entries 351; a (queued, sent)
+pair counts as sent; a hash-less entry is not merged; BY NODE oracle_assess reviewed equals its distinct
+submissions; the four older fixtures (no duplicates) fold exactly as before.
+
+Also fix §2's sentence "The two can differ in the first decimal" → the hero rate is accepted/attempts,
+BY NODE's is won/distinct-reviewed-submissions; they are different questions and may differ widely.
+
+### 9.2 Timestamp format (Claude, live)
+
+`work[].acceptedAt` is now served as `2026-09-21 21:35:42.88+00` (space, 2-digit offset) mixed with
+the old `…T…Z`; the current `_ts` parses both (checked on the live payload: 0 of 190 None) but no test
+pins it. Add one fold test on the new fixture (⚑: break the `+00` path, see it red).
+
+### 9.3 Important (reviewer)
+
+- **I1 — TEAMMATES false degradation.** `widgets/surf/swarm_seat_nodes.py:57` forces teammates to
+  `None` for any state but `ok`, so `pending` paints `Loading…` over `TEAMMATES unavailable` and
+  `unknown_seat` paints `never paired` over `TEAMMATES unavailable` (the manager emits `[]` there — a
+  real negative). Under `pending` and `unknown_seat` the panel shows **only** its state line (no
+  TEAMMATES line); `unavailable` only for `state None` or `ok` with `None`. Strengthen
+  `tests/widgets/test_surf_swarm_seat_nodes.py:54` to assert the exact composited lines per state (⚑).
+- **I2 — missing list becomes a real zero.** `data/surf_swarm.py:858` `seat_node_rows` defaults
+  counters to 0 when one of `work`/`reviews` is absent; `surf_manager.py:5850` returns `None` only when
+  both are. If either list is absent or not a list, the node rows are `None` (unavailable), never
+  `won 0` / `0.0%`. Fix the test that pins the conflation, `tests/data/test_surf_manager_swarm.py:1344`
+  `({"reviews": []}, [])` (⚑: missing `work` → `None`; `work: []` + reviews → real `won 0`).
+
+### 9.4 Minor (reviewer) — close each or file it
+
+- **M1** `swarm_seat_nodes.py:92`: `win` is 6 cells; a value over 100 % (won > reviewed, possible when
+  reviews are missing) clips to `1200.0` without `%` or a marker. Never lose the `%`: widen the column to fit the worst
+  real value, or let the panel's clip/widen marker light — a silent clip is the defect; test it.
+- **M2** `swarm_seat_verdicts.py:128`: `win 94.5% · reviewed 351` pairs the attempts rate with the
+  reviewed count. Put the rate on the `attempts N · won M` line (`… · won M (94.5 % of attempts)`) and
+  use one format for percentages across hero and SEAT (pick the hero's, hoist to `surf/_fmt.py`).
+- **M3** hero STATUS paints `won ??-?? ??:??` for a seat that never won. `accepted == 0` → `no wins
+  yet` (real negative); `last_won_ts None` with accepted > 0 or unknown → `won unavailable`; test both.
+- **M4** stale comments: `widgets/surf/_swarm_table.py:1-10` (ROSTER, FEEDBACK,
+  `swarm_roster.SeatTableBase`), `tests/data/test_surf_swarm_fixtures.py:92,107`,
+  `tests/screens/test_surf_swarm_screen.py:229` (`select_seat`), the leftover blank line in
+  `SurfScreen.DEFAULT_CSS`.
+- **M5** `.claude/skills/terminal-layout/SKILL.md:23`: list the AGENT row's numbers (131 × 32, record
+  clears at 297) like every other row, instead of "see canonical measurement blocks" — and make sure the
+  doc-pinning tests still pass (`rg -n 'SKILL\.md' tests/`).
+- **M6** file only (no code): the AGENT column pin 131 is bound by the status bar
+  (`STATUS_BAR_WHOLE_FROM`, which depends on the version/theme label), not by a panel; the body clears
+  at 117/118. A version bump or theme rename moves it. → followups doc.
+
+If 9.1 changes any rendered width (e.g. the `entries served` line, a longer percentage), re-sweep the
+affected pin in situ and update its `#:` block; say so in §10.
+
+### 9.5 Named set for the fix wave
+
+`tests/data/test_surf_swarm_seats.py tests/data/test_surf_manager_swarm.py
+tests/data/test_surf_swarm_fixtures.py tests/data/test_surf_swarm_models.py tests/data/test_surf_models.py
+tests/widgets/test_surf_swarm_seat_nodes.py tests/widgets/test_surf_swarm_seat_verdicts.py
+tests/widgets/test_surf_swarm_agent_hero.py tests/widgets/test_surf_widget_contract.py
+tests/test_surf_registration.py tests/screens/test_surf_swarm_screen.py` + `-m guard` + the
+doc-pinning files for SKILL.md; + `tests/screens/test_surf_swarm_layout.py` only if a pin moved.
+Then stop: Claude sends the findings above to ONE scoped re-review, runs the full suite once, and the
+owner decides merge and push.
