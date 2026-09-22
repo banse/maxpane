@@ -1628,8 +1628,8 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: (``test_no_height_loses_a_row_of_either_body_in_silence``).
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: The AGENT full-layout width, re-swept 2026-09-22 for the §9 fix wave:
-#: still 131 after SEAT widened from 42 to 55 outer cells.
+#: The AGENT full-layout width, re-swept 2026-09-22 for BOARD WP0:
+#: 132 after acceptance wording widened SEAT from 55 to 57 outer cells.
 #:
 #: HOW MEASURED: every integer width 60–225 at height 80, on committed
 #: seat #0, original #420, duplicated-review #420 and the extended worst
@@ -1640,29 +1640,29 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: discrepancy explanations and region overflow were inspected; no panel
 #: overflow occurred. All summary/status/node/role stress totals agree.
 #:
-#: WHAT BINDS: the status bar, including poll/errors and its whole right
-#: label, is cropped through 130 and whole from 131. Version/theme label
-#: lengths can move that threshold (follow-up F43). All four bodies clear
-#: at 130. BY NODE has no hidden column from 109, is compact from 119 and
-#: full from 130; below 62 its zero usable budget reports the default tier.
-#: The hero's won date is whole from 116 on captures; its worst ACCEPTED
-#: line clears at 118. SEAT is 55 outer cells, 53 panel cells and 51 content
-#: cells. The reviewed/served explanation fits; role lists show the longest
+#: WHAT BINDS: BY NODE is full from 132, compact from 121 and has no hidden
+#: selected column from 111; below 64 its zero usable budget reports the
+#: default tier. The status bar, including poll/errors and its right label,
+#: clears at 131. Version/theme label lengths can move that threshold (F43).
+#: The captured hero clears at 106; the worst ACCEPTED count at 124.
+#: STATUS has a 24-cell box (20 content cells) for its accepted timestamp.
+#: SEAT is 57 outer cells, 55 panel cells and 53 content cells. The reviewed/
+#: served explanation fits; role lists show the longest
 #: whole prefix plus an explicit omitted count. Owner retains the 17-cell
-#: anti-poisoning window plus copy icon. Rate sits beside attempts/wins;
+#: anti-poisoning window plus copy icon. Rate sits beside attempts/accepted;
 #: reviewed and feedback each retain their own lines.
 #:
 #: RECORD's selected tight columns stop clipping from 61 on the original
 #: captures and 63 on the duplicated-review capture and worst payload.
 #: RECORD is compact from 85 and full from 119; its geometry is unchanged.
 #: Objectives keep an honest widen marker while cut; clearance remains
-#: RECORD_NEVER_CLEARS_BELOW. Separately, oversized BY NODE win percentages
-#: light the clip/widen marker instead of losing their suffix silently.
+#: RECORD_NEVER_CLEARS_BELOW. Oversized BY NODE acceptance percentages light
+#: the clip/widen marker instead of losing their suffix silently.
 #: At 119 columns BY NODE still sheds optional columns and the status bar
-#: crops; from 131 the measured fixed content and status bar fit.
-SURF_AGENT_FULL_LAYOUT_COLUMNS = 131
+#: crops; from 132 the measured fixed content and status bar fit.
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 132
 
-#: The AGENT height, re-swept for §9 on 2026-09-22: still 32 (originally
+#: The AGENT height, re-swept for BOARD WP0 on 2026-09-22: still 32 (originally
 #: 40 -> 32). Every integer height
 #: 20–61 was rendered at width 150 and at the full-layout column pin for
 #: #0, original #420, duplicated-review #420 and the valid reviewed/served
@@ -2857,6 +2857,10 @@ class SurfScreen(DashboardScreen):
         text-wrap: nowrap;
         text-overflow: ellipsis;
     }
+    SurfScreen #surf-swarm-agent-status {
+        width: 24;
+    }
+
     SurfScreen #surf-swarm-body {
         height: 1fr;
         width: 100%;
@@ -2934,8 +2938,8 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
     }
     SurfScreen SurfSwarmSeatVerdicts {
-        width: 55;
-        max-width: 55;
+        width: 57;
+        max-width: 57;
         height: auto;
         padding: 0 1;
     }

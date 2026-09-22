@@ -8,7 +8,7 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 is an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme
 
 Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
 `swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
@@ -536,10 +536,11 @@ Sources: the WP2–WP8 reviews and the controller's own checks, all recorded in
 the Follow-ups rule applies (Tier 0 when its file is next touched, never its own branch) except where an item is an
 owner decision.
 
-### F16 — the `s` and `a` row pins exceed the owner's terminals (OWNER DECISION)
+### F16 — row pins exceed the owner's terminals — AGENT CLOSED; SWARM OWNER DECISION
 
-*2026-09-22:* the AGENT layout below is historical. Its seat-details replacement is measured in
-`screens/surf.py`'s pin blocks and the handover §8; the owner decision remains open.
+*2026-09-22:* **AGENT closed: owner accepted 32 rows, 2026-09-22.** The historical
+40-row layout below was replaced by the measured 32-row seat-details layout. SWARM `s` at
+42 rows remains open as an owner decision. Current AGENT geometry is in `screens/surf.py`'s pin blocks.
 
 `SURF_SWARM_FULL_LAYOUT_ROWS` is 42 and `SURF_AGENT_FULL_LAYOUT_ROWS` 40; the owner's terminals are 119×35 and 138×31.
 Both bodies scroll there with `‹ taller` lit — degraded honestly, but degraded. THROUGHPUT's 16 fixed lines set the
@@ -772,9 +773,11 @@ the status bar.
 `seat_work_rows` (~l.842) already applies. Hoist one `_hex64` helper in the same module and use it
 in both; Tier 0 the next time the file is touched.
 
-### F45 — the duplicated-review capture has no permanent layout case — OPEN (Minor, scoped re-review N2)
+### F45 — the duplicated-review capture has no permanent layout case — CLOSED 2026-09-22 (BOARD WP0)
 
 The AGENT `#:` blocks say `seat_420_duplicated_reviews` was swept, but `PAYLOADS` in
 `tests/screens/test_surf_swarm_layout.py` (~l.352) lists only capture, capture420 and the two worst
 payloads. The worst-a payload covers the `entries served` line, so this is test rigor only: add the
 capture to `PAYLOADS` when the layout test is next touched.
+
+Closed: `duplicates420` now participates in permanent width/height boundaries and pin assertions.

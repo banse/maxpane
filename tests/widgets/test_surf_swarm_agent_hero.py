@@ -143,7 +143,7 @@ def test_the_box_class_is_its_own_type_selector_and_the_six_boxes_are_named():
     assert SurfSwarmAgentHero.BOX_CLASS is SurfSwarmAgentHeroBox
     assert len(BOX_IDS) == 6 == len(SurfSwarmAgentHero.BOXES)
     labels = [label for _id, label in SurfSwarmAgentHero.BOXES]
-    assert labels == ["SEAT", "ACCEPTED", "WIN RATE", "REVIEWED", "COLLAB", "STATUS"]
+    assert labels == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "COLLAB", "STATUS"]
 
 
 async def test_the_hero_row_is_seven_lines_under_the_stylesheet():
@@ -175,7 +175,7 @@ async def test_the_defect_seat_renders_its_lifetime_record_whole_at_both_pins(wi
     assert "of attempts" in boxes["win_rate"]
     assert f"{SUMMARY['collaborators']} seats" in boxes["collab"]
     assert "online ●" in boxes["status"]
-    assert f"won {mmdd(SUMMARY['last_won_ts'])} {hhmm(SUMMARY['last_won_ts'])}" in boxes["status"]
+    assert f"accepted {mmdd(SUMMARY['last_won_ts'])} {hhmm(SUMMARY['last_won_ts'])}" in boxes["status"]
     assert f"as of {AS_OF}" in boxes["status"]
     for key, text in boxes.items():
         assert "…" not in text and "unavailable" not in text, (width, key, text)
@@ -350,11 +350,18 @@ async def test_status_names_only_the_last_won_date_not_feedback_time():
     from maxpane_dashboard.widgets.fmt import mmdd
     summary = dict(SUMMARY, last_won_ts=1_758_456_000, last_sent_ts=1_758_628_800)
     text = await _box_text(BOX_IDS["status"], swarm_seat_summary=summary)
-    assert f"won {mmdd(summary['last_won_ts'])} {hhmm(summary['last_won_ts'])}" in text
+    assert f"accepted {mmdd(summary['last_won_ts'])} {hhmm(summary['last_won_ts'])}" in text
     assert "last" not in text
 
 
-@pytest.mark.parametrize("accepted,expected", [(0, "no wins yet"), (3, "won unavailable"), (None, "won unavailable")])
+@pytest.mark.parametrize("accepted,expected", [(0, "none accepted yet"), (3, "accepted unavailable"), (None, "accepted unavailable")])
 async def test_status_distinguishes_no_wins_from_missing_win_timestamp(accepted, expected):
     text = await _box_text(BOX_IDS["status"], swarm_seat_summary=dict(SUMMARY, accepted=accepted, last_won_ts=None))
     assert expected in text and "??" not in text
+
+
+async def test_acceptance_words_replace_retired_win_words_in_composited_output():
+    boxes = await _boxes()
+    text = "\n".join(boxes.values())
+    assert "ACCEPT RATE" in text
+    assert "WIN RATE" not in text and "won " not in text and "wins" not in text

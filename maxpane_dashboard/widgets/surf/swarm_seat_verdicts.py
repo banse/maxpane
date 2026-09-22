@@ -1,8 +1,8 @@
 """SEAT: identity and lifetime details for the selected IDMD seat.
 
 The historical SurfSwarmSeatVerdicts class/module names remain to avoid
-unnecessary import churn. Win rate is accepted / attempts; BY NODE uses
-won / reviewed. Independent feedback lines keep four-digit backlogs whole.
+unnecessary import churn. Accept rate is accepted / attempts; BY NODE uses
+accepted / reviewed. Historical ``win_rate`` remains the contract key. Independent feedback lines keep four-digit backlogs whole.
 Runtime/daemon/roles use strip-then-escape; owner metadata uses address_text.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from maxpane_dashboard.widgets.panels import SignalsPanelBase
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, EXPLORER, fmt_win_rate, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_state_line, seat_token
 
-PANEL_MAX_WIDTH = 55
+PANEL_MAX_WIDTH = 57
 VALUE_COLS = PANEL_MAX_WIDTH - 4
 NO_FEEDBACK_LINE = "no scores yet"
 _NAMES = ("identity", "owner", "paired", "runtime", "daemon", "attempts",
@@ -123,7 +123,7 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
             rate = summary.get("win_rate")
             suffix = " (no attempts)" if summary.get("attempts") == 0 else (
                 f" ({fmt_win_rate(rate)} of attempts)" if isinstance(rate, (float, int)) and not isinstance(rate, bool) else "")
-            return Text(f"attempts {n(summary.get('attempts'))} · won {n(summary.get('accepted'))}{suffix}")
+            return Text(f"attempts {n(summary.get('attempts'))} · accepted {n(summary.get('accepted'))}{suffix}")
         if name == "reviewed":
             reviewed, entries = summary.get("reviewed"), summary.get("review_entries")
             text = f"reviewed {n(reviewed)} submissions"

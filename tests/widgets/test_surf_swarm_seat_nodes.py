@@ -25,6 +25,9 @@ def test_signature():
 async def test_nodes_and_reviewed_denominator():
     text = await _nodes()
     assert "BY NODE" in text and "TEAMMATES" in text
+    words = text.split()
+    assert "acc" in words and "rate" in words
+    assert "won" not in words and "win" not in words
     for row in ROWS:
         assert row["node_key"] in text
         if row["reviewed"]:
@@ -60,7 +63,7 @@ async def test_state_footer_is_separate_from_teammates(state, expected):
     text = await _nodes(swarm_seat_state=state, swarm_seat_node_rows=None,
                         swarm_seat_teammates=[] if state == "unknown_seat" else None)
     lines = [" ".join(line.split()) for line in text.splitlines() if line.strip()]
-    assert lines == ["BY NODE · as of 04:06", "node roles reviewed won win chain", *expected]
+    assert lines == ["BY NODE · as of 04:06", "node roles reviewed acc rate chain", *expected]
 
 async def test_every_node_is_retained_in_the_scrollable_table():
     class Harness(App):

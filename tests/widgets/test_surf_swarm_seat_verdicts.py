@@ -29,7 +29,7 @@ def test_signature():
 
 async def test_lifetime_details_and_identity_are_visible():
     text=await _record()
-    for word in ("IDMD #420",f"agent {SUMMARY['agent_id']}","owner", "online ●", "runtime", "daemon", "device", "attempts", "won", "of attempts", "reviewed", "feedback", "submitted", "queued", "score", "by role"):
+    for word in ("IDMD #420",f"agent {SUMMARY['agent_id']}","owner", "online ●", "runtime", "daemon", "device", "attempts", "accepted", "of attempts", "reviewed", "feedback", "submitted", "queued", "score", "by role"):
         assert word in text, (word,text)
     assert f"{mmdd(SUMMARY['paired_ts'])} {hhmm(SUMMARY['paired_ts'])}" in text
     assert f"{SUMMARY['win_rate']*100:.1f} %" in text
@@ -105,12 +105,18 @@ async def test_five_digit_review_entries_explanation_remains_whole():
 async def test_attempts_rate_shares_the_attempts_line_and_reviewed_stays_separate():
     summary = seat_summary_from_seat(swarm_seat_capture("seat_420_duplicated_reviews"))
     text = await _record(swarm_seat_summary=summary)
-    assert "attempts 201 · won 190 (94.5 % of attempts)" in text
+    assert "attempts 201 · accepted 190 (94.5 % of attempts)" in text
     reviewed = [line.strip() for line in text.splitlines() if "reviewed" in line]
     assert reviewed == ["reviewed 197 submissions · 351 entries served"]
 
 
 async def test_missing_attempts_and_wins_remain_whole_without_redundant_rate():
     text = await _record(swarm_seat_summary=dict(SUMMARY, attempts=None, accepted=None, win_rate=None))
-    assert "attempts unavailable · won unavailable" in text
+    assert "attempts unavailable · accepted unavailable" in text
     assert "…" not in next(line for line in text.splitlines() if "attempts" in line)
+
+
+async def test_five_digit_attempts_and_acceptance_rate_are_whole():
+    text = await _record(swarm_seat_summary=dict(SUMMARY, attempts=99_999, accepted=9_999, win_rate=9_999/99_999))
+    assert "attempts 99,999 · accepted 9,999 (10.0 % of attempts)" in text
+    assert " won " not in text

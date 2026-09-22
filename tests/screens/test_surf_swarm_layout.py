@@ -94,7 +94,7 @@ from tests.surf_swarm_fixtures import (
 #: own: a pin that moves without a re-sweep reddens the agreement test.
 MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 42
-MEASURED_AGENT_COLUMNS = 131
+MEASURED_AGENT_COLUMNS = 132
 MEASURED_AGENT_ROWS = 32
 
 #: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
@@ -116,14 +116,15 @@ _S_THRESHOLDS = (
 )
 _A_THRESHOLDS = (
     61, 63,  # RECORD no hidden column: original captures / duplicates and worst
-    62,      # BY NODE gains usable column budget and selects tight tier
+    64,      # BY NODE gains usable column budget and selects tight tier
     85,      # RECORD compact
-    109,     # BY NODE no hidden column
-    116,     # captured hero's won date whole
-    118,     # worst hero whole
-    119,     # BY NODE compact; RECORD full
-    130,     # BY NODE full; body whole on all measured payloads
-    131,     # status bar whole (full-layout binder)
+    106,     # captured hero whole with a fixed-width STATUS box
+    111,     # BY NODE selected columns stop clipping
+    119,     # RECORD full
+    121,     # BY NODE compact
+    124,     # worst ACCEPTED hero counter whole
+    131,     # status bar whole
+    132,     # BY NODE full (full-layout binder)
 )
 
 
@@ -131,7 +132,7 @@ _EXCLUDED_FROM_WHOLE = {
     "s": {"SurfSwarmInFlight", "SurfSwarmLaunches"},
     "a": {"SurfSwarmSeatRecord"},
 }
-_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "StatusBar"}
+_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmSeatNodes"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
 _ROW_PIN = {"s": SURF_SWARM_FULL_LAYOUT_ROWS, "a": SURF_AGENT_FULL_LAYOUT_ROWS}
 _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID}
@@ -248,9 +249,9 @@ def _capture_payload() -> dict:
     return _frozen_payload(**_corpus_keys())
 
 
-def _capture420_payload() -> dict:
+def _capture420_payload(name="seat_420") -> dict:
     payload = _capture_payload()
-    seat = swarm_seat_capture("seat_420")
+    seat = swarm_seat_capture(name)
     payload.update(_seat_keys(seat))
     payload["swarm_seat_selected"] = {"token_id": 420, "agent_id": str(seat["agentId"]), "selected_by": "saved"}
     return payload
@@ -352,6 +353,7 @@ def _worst_agent_payload() -> dict:
 PAYLOADS = {
     "capture": _capture_payload,
     "capture420": _capture420_payload,
+    "duplicates420": lambda: _capture420_payload("seat_420_duplicated_reviews"),
     "worst-s": _worst_swarm_payload,
     "worst-a": _worst_agent_payload,
 }
@@ -467,7 +469,8 @@ _WIDTH_SWEEP = (
     [("s", "capture", w) for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 60, 159, *_S_THRESHOLDS)]
     + [("s", "worst-s", w) for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 126, 156, *_S_THRESHOLDS)]
     + [("a", "capture", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
-    + [("a", "capture420", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
+    + [("a", name, w) for name in ("capture420", "duplicates420")
+       for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
     + [("a", "worst-a", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
 )
 
@@ -495,10 +498,8 @@ async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> N
     r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _COLUMN_SWEEP_HEIGHT), key)
     assert not r["overflow"], (key, payload_name, r["overflow"])
     _assert_whole(r, f"{key}/{payload_name} at the pin")
-    if key == "s":
-        assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
-    else:
-        assert r["status_whole"]
+    assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
+    assert r["status_whole"]
 
 
 @pytest.mark.parametrize("key", sorted(_COLUMN_PIN))
@@ -510,10 +511,6 @@ async def test_the_column_pin_is_not_loose(key) -> None:
     pin = _COLUMN_PIN[key]
     for payload_name in ("capture", _WORST[key]):
         under = await _render(PAYLOADS[payload_name](), (pin - 1, _COLUMN_SWEEP_HEIGHT), key)
-        if key == "a":
-            assert not under["status_whole"], "status bar fits below its full-layout pin"
-            assert not under["overflow"]
-            continue
         assert under["marked_besides_exceptions"] == {_BINDING_PANEL[key]}, (
             payload_name, sorted(under["marked_besides_exceptions"]),
         )
@@ -588,7 +585,8 @@ _HEIGHT_SWEEP = (
     [("s", "capture", r) for r in boundary_set(SURF_SWARM_FULL_LAYOUT_ROWS, 20, 61, 28, 31, 35, 58)]
     + [("s", "worst-s", r) for r in boundary_set(SURF_SWARM_FULL_LAYOUT_ROWS, 30, 50, 31, 35)]
     + [("a", "capture", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
-    + [("a", "capture420", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
+    + [("a", name, r) for name in ("capture420", "duplicates420")
+       for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
     + [("a", "worst-a", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 30, 50, 31, 35)]
 )
 

@@ -154,7 +154,7 @@ async def test_every_agent_hero_title_sits_on_the_same_row():
         heights = {len(str(b.render()).split("\n")) for b in boxes}
 
     assert len(heights) > 1, "every body has the same height: nothing to align"
-    assert firsts == ["SEAT", "ACCEPTED", "WIN RATE", "REVIEWED", "COLLAB", "STATUS"], firsts
+    assert firsts == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "COLLAB", "STATUS"], firsts
 
 
 async def test_the_key_hint_names_the_swarm_and_the_agent():

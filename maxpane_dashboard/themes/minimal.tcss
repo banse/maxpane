@@ -2480,6 +2480,9 @@ SurfSwarmAgentHero > SurfSwarmAgentHeroBox {
     text-wrap: nowrap;
     text-overflow: ellipsis;
 }
+#surf-swarm-agent-status {
+    width: 24;
+}
 
 SurfScreen #surf-swarm-body {
     height: 1fr;
@@ -2586,8 +2589,8 @@ SurfSwarmSeatNodes {
 /* SEAT's compact fixed width is bound to PANEL_MAX_WIDTH by a guard.
  * Rows fit third-party text visibly; feedback statuses occupy two lines. */
 SurfSwarmSeatVerdicts {
-    width: 55;
-    max-width: 55;
+    width: 57;
+    max-width: 57;
     height: auto;
     padding: 0 1;
 }

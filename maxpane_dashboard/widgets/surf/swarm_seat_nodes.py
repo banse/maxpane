@@ -1,8 +1,9 @@
-"""BY NODE: wins / reviewed for each node, not the lifetime attempts denominator.
+"""BY NODE: accepted / reviewed for each node, not the lifetime attempts denominator.
 
 Every folded node remains in the scrollable table. TEAMMATES is an independent
 fitted line, so it never replaces the read-state footer. Third-party strings
-use the package's established strip-then-escape sanitizer.
+use the package's established strip-then-escape sanitizer. Historical ``won``
+and ``win`` column keys retain their accepted-count and rate meanings.
 """
 from __future__ import annotations
 
@@ -17,8 +18,8 @@ from maxpane_dashboard.widgets.surf.swarm_seat_record import seat_footer
 
 _WIN_COLS = 6
 _SPECS = (("node", "node", 22), ("roles", "roles", 9),
-          ("reviewed", "reviewed", 8), ("won", "won", 6),
-          ("win", "win", _WIN_COLS), ("chain", "chain", 6))
+          ("reviewed", "reviewed", 8), ("won", "acc", 6),
+          ("win", "rate", _WIN_COLS), ("chain", "chain", 6))
 _ALL = tuple(k for k, _, _ in _SPECS)
 _COMPACT = tuple(k for k in _ALL if k != "roles")
 _TIGHT = ("node", "reviewed", "won", "win")

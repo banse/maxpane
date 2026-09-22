@@ -1,11 +1,12 @@
-"""AGENT hero: SEAT, ACCEPTED, WIN RATE, REVIEWED, COLLAB and STATUS.
+"""AGENT hero: SEAT, ACCEPTED, ACCEPT RATE, REVIEWED, COLLAB and STATUS.
 
-WIN RATE is lifetime accepted / attempts; a real zero denominator says
+ACCEPT RATE is lifetime accepted / attempts; a real zero denominator says
 ``no attempts`` and a missing counter says ``unavailable``. STATUS names the
-newest won work with its local date, never the feedback queue's sent time.
+newest accepted work with its local date, never the feedback queue's sent time.
 The state gates every statistic before reading it. The selected IDMD token
 remains visible while its read is pending or unavailable. Geometry belongs
-to the stylesheet; all six titles share one row.
+to the stylesheet; all six titles share one row. Historical contract keys
+``win_rate`` and ``last_won_ts`` retain their accepted-work meanings.
 """
 
 from __future__ import annotations
@@ -60,7 +61,7 @@ class SurfSwarmAgentHero(HeroRow):
     BOXES = (
         (BOX_IDS["seat"], "SEAT"),
         (BOX_IDS["accepted"], "ACCEPTED"),
-        (BOX_IDS["win_rate"], "WIN RATE"),
+        (BOX_IDS["win_rate"], "ACCEPT RATE"),
         (BOX_IDS["reviewed"], "REVIEWED"),
         (BOX_IDS["collab"], "COLLAB"),
         (BOX_IDS["status"], "STATUS"),
@@ -83,7 +84,7 @@ class SurfSwarmAgentHero(HeroRow):
         for key, label, build in (
             ("accepted", "ACCEPTED", self._accepted_body),
             ("reviewed", "REVIEWED", self._reviewed_body),
-            ("win_rate", "WIN RATE", self._win_rate_body),
+            ("win_rate", "ACCEPT RATE", self._win_rate_body),
             ("collab", "COLLAB", self._collab_body),
             ("status", "STATUS", lambda s: self._status_body(s, as_of)),
         ):
@@ -193,11 +194,11 @@ class SurfSwarmAgentHero(HeroRow):
             body.append_text(Text.from_markup(UNAVAILABLE))
         body.append("\n")
         if summary.get("accepted") == 0:
-            won = "no wins yet"
+            won = "none accepted yet"
         elif summary.get("last_won_ts") is None:
-            won = "won unavailable"
+            won = "accepted unavailable"
         else:
-            won = f"won {mmdd_hhmm(summary['last_won_ts'])}"
+            won = f"accepted {mmdd_hhmm(summary['last_won_ts'])}"
         body.append(won, style="dim")
         if as_of is not None:
             body.append("\n")
