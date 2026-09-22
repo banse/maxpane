@@ -910,7 +910,9 @@ Per polish §4, the SEAT restructure was skipped, including its advertised-model
 retirement of the responsive contributor join. Existing SEAT content/layout remains; its
 AGENT body pin is unchanged at 138×32. FLEET's advertised model mix and the new data fields
 proceed independently. No facts or approved group gaps were silently removed to lower the pin.
-An owner decision on height or a revised layout is needed before implementing this grouping.
+Owner decision in polish §7: SEAT stays as it is; F54 remains open. The produced
+`swarm_seat_live.advertised_model` and `advertised_effort` fields are intentionally unrendered
+until this grouping is reconsidered (M5). FLEET's advertised model mix is rendered separately.
 
 Measurement harness: `/tmp/test_polish_seat_budget.py`; SVGs and region/scroll JSON in
 `/tmp/polish-wp3-seat-budget-v4/`. These are local review artifacts, not shipped runtime files.
@@ -934,3 +936,11 @@ F55 adjacent measurements: the 46-cell mixed line clips at 301 terminal columns 
 cells) and is whole at 302 (46). The 60-cell all-unreported line clips at 385 and is whole at 386.
 These are content onsets, not adopted layout pins. Evidence:
 `/tmp/polish-wp5-services-width-boundary.log`.
+
+## F56 — answer cleaning cosmetically changes markup-like text — OPEN (Minor)
+
+Polish §7 M6 files cosmetic transformations such as `[/x]` → `[x]`. Safety cleaning and
+widget sanitization protect rendering, but the intermediate text can differ cosmetically
+from the supplied summary. Defer this cosmetic work until the function is next touched;
+it is outside the one fix wave. Preserve path/link privacy, idempotence and bounded work
+when addressing it, and distinguish literal text from actual Markdown syntax.

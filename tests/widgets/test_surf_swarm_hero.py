@@ -321,7 +321,6 @@ def _painted_style(app,box_id,word):
 @pytest.mark.parametrize('patch,box,word,color',[
     ({'swarm_working_now':2},WORKING,'2',2),
     ({'swarm_working_now':None},WORKING,'unavailable',3),
-    ({'swarm_queue_total':68},QUEUE,'68',3),
     ({'swarm_breaker':{'tripped':False,'detail':None}},BREAKER,'closed',2),
     ({'swarm_breaker':{'tripped':True,'detail':'failed twice'}},BREAKER,'open',1),
     ({'swarm_health_status':'ok'},SERVICES,'ok',2),
@@ -379,3 +378,22 @@ async def test_polish_mixed_services_remain_distinct_without_color():
     assert 'unavailable' not in text
     unread = await _box(SERVICES, swarm_services_up=None)
     assert 'unavailable' in unread and 'unreported' not in unread
+
+
+@pytest.mark.parametrize("count", [0, 68])
+async def test_queue_count_is_bold_without_status_color(count):
+    async with _A().run_test(size=SIZE) as pilot:
+        pilot.app.query_one(SurfSwarmHero).update_data(**{**KW, 'swarm_queue_total': count})
+        await pilot.pause()
+        queue = _painted_style(pilot.app, QUEUE, str(count))
+        default_color = pilot.app.query_one('#' + QUEUE).rich_style.color
+        assert queue.bold
+        assert queue.color == default_color
+
+
+async def test_unavailable_queue_keeps_its_yellow_word():
+    async with _A().run_test(size=SIZE) as pilot:
+        pilot.app.query_one(SurfSwarmHero).update_data(**{**KW, 'swarm_queue_total': None})
+        await pilot.pause()
+        style = _painted_style(pilot.app, QUEUE, 'unavailable')
+        assert style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]

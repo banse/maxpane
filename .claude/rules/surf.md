@@ -193,7 +193,7 @@ from unavailable. Their group keeps two lines near the pin and joins one line on
 fact fits. It survives pending/unavailable seats. Pairing joins identity; queued joins feedback.
 Worker metadata is shown in BOARD; STATUS supplies AGENT's only liveness. SEAT shares narrow
 terminals, retains its measured cap at the pin and grows from spare width above it. The polish
-SEAT grouping measured 138×37 and exceeded its ≈34-row budget (F54), so its advertised-model
+SEAT grouping exceeded its approved height budget (F54), so its advertised-model
 line and retirement of the responsive contributors join are deferred together.
 BY NODE (`SurfSwarmSeatNodes`) groups the union of `reviews[]` and `work[]` by node; its acceptance
 percentage uses the historical `won / reviewed` fields, because per-node attempts are not served. `chain` counts
@@ -276,18 +276,17 @@ No raw submission envelope or uncleaned summary is cached.
 
 **Palette:** dim labels, bold counts; green healthy/working/accepted, red offline/paused/down,
 yellow unavailable or existing pending counts. Zero working keeps `0 quiet` dim. Rates and
-scores are bold without thresholds. SWARM SERVICES keeps explicit up/down/unreported words
-and a separately served health word; its pre-existing mixed-state clipping is F55. The new
+scores and QUEUE counts are bold without thresholds or status colour. SWARM SERVICES keeps
+explicit up/down/unreported words and a separately served health word; its pre-existing mixed-state clipping is F55. The new
 health row fits the existing hero height. BOARD's offline rows are dim, per its own row design;
 its hero is unchanged by polish. Every colour assertion uses actual composited styles.
 
-CAPABILITY keeps its original seven columns at SWARM's 141-column body pin. The optional
-full tier adds `inf` and `acc/att` from `CAPABILITY_OPTIONAL_FULL_COLUMNS` (166 in the measured
-layout); at 165 only those two fields are shed. Its widen marker remains honest below that
-onset. Layout tests permit only these optional omissions and still require all original
-columns, no original clipping and no horizontal table scroll. RECORD's committed enriched
-v4 first 40 clears at 204 columns; 203 clips the 80-cell informative answer. The build reply
-from work index 125 is outside that displayed-window measurement.
+CAPABILITY keeps its original seven columns at `SURF_SWARM_FULL_LAYOUT_COLUMNS`. The optional
+full tier adds `inf` and `acc/att` from `CAPABILITY_OPTIONAL_FULL_COLUMNS`; just below that
+onset only those two fields are shed. Its widen marker remains honest below the onset. Layout
+tests permit only these optional omissions and still require all original columns, no original clipping and no horizontal table scroll. RECORD's committed enriched
+v4 first 40 clears at `RECORD_NEVER_CLEARS_BELOW`; one column below clips the informative answer.
+The build reply from work index 125 is outside that displayed-window measurement.
 
 
 ## BOARD (`b`, MODE_BOARD)
@@ -311,7 +310,8 @@ None is last in both directions, global rank is immutable and the cursor follows
 across refresh, resize and re-sort. Header clicks never select or persist a seat. Selected
 rows are bold with an accent rank; working is green, paused red, unavailable yellow and the
 whole offline row dim. Colour is checked on composited cells, including under the cursor.
-BOARD remains 141 columns and now needs 27 rows, bound by FLEET with paused detail.
+BOARD uses `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`, with grouped
+FLEET and paused detail binding height. The constants and their `#:` blocks own the measurements.
 The existing global market title remains unchanged; source clocks belong in BOARD content.
 
 IN FLIGHT keeps the folded dispatch/failure note as its last column. Actual note clipping

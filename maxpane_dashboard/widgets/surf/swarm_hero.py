@@ -151,7 +151,7 @@ def _queue_body(value) -> Text:
     count = _int_or_none(value)
     if count is None:
         return Text.from_markup(UNAVAILABLE)
-    return Text(fmt_int(count), style="bold yellow" if count > 0 else "bold")
+    return Text(fmt_int(count), style="bold")
 
 
 def _breaker_body(breaker, width: int) -> Text:

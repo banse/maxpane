@@ -191,7 +191,8 @@ visible. FLEET groups metadata under aligned labels, including an **advertised**
 with whole entries followed by exact `+N` omissions. Its CONTRIBUTORS group has a separate
 clock and the served tokens-per-completed-job metric. Worker advertisement can differ from
 the model that actually ran a RECORD submission. BOARD contains no wallet or token ranking.
-Click any LEADERBOARD column header to sort; click it again to reverse. `o` cycles the sort
+Click any LEADERBOARD column header to sort; click the active header to reverse. The default
+sort is rank, so the first click on `#` reverses it. `o` cycles the sort
 column and `O` reverses it. Global ranks and the cursor's seat identity remain stable. The
 selected seat is bold with an accent rank cell, working is green, paused red, offline dim and
 unknown yellow; every state retains its word.
@@ -199,7 +200,8 @@ unknown yellow; every state retains its word.
 SWARM and AGENT status colours retain their words: green means healthy, working or accepted;
 red means offline, paused or down; yellow marks unavailable or existing pending counts. Zero
 working is dim `quiet`. Rates and scores are bold without invented thresholds. BOARD's offline
-rows are dim. The approved larger SEAT grouping is deferred because it needs 37 rows (F54).
+rows are dim. SEAT stays as it is by owner decision; its larger grouping exceeded the budget
+(F54). QUEUE counts stay bold without status colour.
 
 It reads one keyless host and nothing else — the swarm's own control plane, under two names that
 serve one deployment, rotated per request and never followed off the pool — and never the total it
@@ -585,8 +587,8 @@ shows `‹ taller`.
 Surfboard's SWARM view (`s`) is a layout of its own too, pinned by `SURF_SWARM_FULL_LAYOUT_COLUMNS`
 and `SURF_SWARM_FULL_LAYOUT_ROWS` (**141 columns × 42 rows** since the 2026-09-21 rebuild; 116 × 28
 before it). CAPABILITY's original seven columns decide the width. Its optional `inf` and
-`acc/att` columns appear from 166 columns and retain `‹ widen` below that point. The top row decides
-the height: THROUGHPUT is sixteen fixed lines and its row is floored at exactly that, so at 42 rows
+`acc/att` columns appear from `CAPABILITY_OPTIONAL_FULL_COLUMNS` and retain `‹ widen` below it.
+The top row decides the height: THROUGHPUT is sixteen fixed lines and its row is floored at exactly that, so at 42 rows
 the body has room for the three rows without any panel scrolling inside itself and `‹ taller` goes
 dark. Mixed service states still clip in the SERVICES hero box (F55); its explicit state words
 and separate health line do not make all mixed combinations whole at this pin. IN FLIGHT and
@@ -600,8 +602,9 @@ beside those constants in `screens/surf.py` record the measured dimensions and b
 RECORD's cleaned answer takes the remaining width and clips with a visible `…`; its measured clearing
 width lives beside `RECORD_NEVER_CLEARS_BELOW` in the same file. Short answers do not light
 `‹ widen` once the table's other columns fit. The committed first 40 v4 work rows clear at
-204 columns; 203 still clips the longest answer. AGENT remains 138×32; BOARD is 141×27,
-with its grouped FLEET and paused detail binding the height.
+`RECORD_NEVER_CLEARS_BELOW`; one column below still clips the longest answer. BOARD uses
+`SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`, with grouped FLEET and
+paused detail binding height. Durations below a minute display `<1m`.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

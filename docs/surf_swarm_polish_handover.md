@@ -188,7 +188,7 @@ effort    2,274 turns · 8.3 h · rank #6 of 104
 | Box | Colour rule |
 |---|---|
 | SWARM WORKING | green when > 0; dim when 0, with the word `quiet` (the changelog says 0 working is normal, not an outage) |
-| SWARM QUEUE | bold count; yellow only for the existing pending shape |
+| SWARM QUEUE | bold count without status colour; yellow only for unavailable |
 | SWARM BREAKER | green `closed` / red `open` |
 | SWARM SERVICES | green for each up service; red for each down one; `/health.status` `ok` green, anything else red with its word |
 | AGENT STATUS | green `working N of M`; dim `idle`; red `offline` / `paused …`; yellow `unavailable` |
@@ -238,7 +238,8 @@ Keep these states distinct:
 | the job returns 404, or the seat's hash is absent from a successful read | dim `not served` |
 | empty or null summary | dim `no reply` |
 
-`model` null shows `—`; `took` missing shows `—`. These columns come from the same read, so their
+`model` null shows `—`; `took` missing shows `—`, and valid durations below 60 seconds show
+`<1m`. These columns come from the same read, so their
 states follow the answer's.
 
 Fetching (on `TIER_SWARM_SEAT`, after `/seats`, never in a handler):

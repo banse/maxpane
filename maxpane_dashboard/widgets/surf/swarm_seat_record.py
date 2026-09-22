@@ -211,7 +211,10 @@ class SurfSwarmSeatRecord(SwarmTableBase):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 return EMDASH
             minutes = int(value) // 60
-            value = f"{minutes // 60}h {minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
+            if minutes >= 60:
+                value = f"{minutes // 60}h {minutes % 60:02d}m"
+            else:
+                value = "<1m" if minutes == 0 else f"{minutes}m"
         return sanitize_cell(value, width) or EMDASH
 
     def _answer_cell(self, item: dict) -> Text:

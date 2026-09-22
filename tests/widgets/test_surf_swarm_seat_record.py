@@ -10,6 +10,7 @@ also removed the two transitional parameters).
 from __future__ import annotations
 
 import inspect
+import re
 
 from rich.color import Color
 from textual.app import App
@@ -275,11 +276,12 @@ async def test_polish_answer_states_and_same_read_usage(state,word):
         assert 'claude-sonnet-5' not in line and '7m' not in line and line.count('—')==2
 
 
-@pytest.mark.parametrize('seconds,expected',[(420,'7m'),(3840,'1h 04m'),(0,'0m'),(None,'—')])
+@pytest.mark.parametrize('seconds,expected',[(420,'7m'),(3840,'1h 04m'),(0,'<1m'),(0.1,'<1m'),(59.99,'<1m'),(60,'1m'),(None,'—')])
 async def test_polish_duration_and_missing_model(seconds,expected):
     row=dict(NEWEST,answer_state='read',answer='Done.',model=None,took_s=seconds,launch='evm_project')
     line=_row_with(await _record((200,12),swarm_seat_work_rows=[row]),_job(row))
-    assert expected in line and line.count('—')==(2 if seconds is None else 1)
+    assert re.search(r'(?<!\S)' + re.escape(expected) + r'(?!\S)', line), line
+    assert line.count('—')==(2 if seconds is None else 1)
 
 
 async def test_polish_answer_sanitization_and_actual_clipping_drive_widen():
@@ -325,5 +327,5 @@ async def test_polish_committed_hostile_submission_reaches_record_safely():
                          {payload['jobId']:{item['hash']:dict(point,read_ts=1000.,terminal=True)}})
     text='\n'.join(await _record((200,12),swarm_seat_work_rows=rows))
     assert 'Created answer.json in report.md and result.txt' in text
-    assert 'claude-sonnet-5' in text and '0m' in text and '…' in text and '‹' in text
+    assert 'claude-sonnet-5' in text and '<1m' in text and '…' in text and '‹' in text
     assert '[x]' not in text and '/Users/' not in text and '/home/' not in text and '/root/' not in text

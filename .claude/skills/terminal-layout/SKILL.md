@@ -26,7 +26,7 @@ it. This file is the method; the constants are the record.
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
 CAPABILITY's original seven columns remain whole at the SWARM body pin. Its optional `inf`
-and `acc/att` columns appear from `screens/surf.CAPABILITY_OPTIONAL_FULL_COLUMNS` (166);
+and `acc/att` columns appear from `screens/surf.CAPABILITY_OPTIONAL_FULL_COLUMNS`;
 they are named optional omissions below that onset. Mixed service-state text still clips at
 the SWARM pin (F55); this is a documented content limitation, not a whole-state guarantee.
 
