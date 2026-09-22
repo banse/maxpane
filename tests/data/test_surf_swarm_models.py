@@ -1,6 +1,6 @@
 """The ``s``, ``a`` and ``b`` bodies' data contract, as ``surf_models.py`` freezes it.
 
-The BOARD WP1 freezes thirty-two keys, including separate workers and
+The polish WP1 freezes thirty-three keys, including separate workers and
 contributors clocks and selected-seat lookups. Every tuple below is hand-typed on purpose -- a copy an agreement
 test binds is the one legitimate copy (CLAUDE.md, Conventions), and deriving
 it from the module would make the test agree with whatever the module says.
@@ -83,7 +83,7 @@ SWARM_V2_ROW_SHAPES = {
     ),
     "swarm_skill_rows": (
         "skill_id", "version", "role", "kind", "tier", "judge", "checks",
-        "requires",
+        "requires", "inference", "attempts", "accepted", "rejected", "pending",
     ),
     "swarm_launch_rows": (
         "launch_number", "kind", "status", "chain_id", "repo_url", "commit",
@@ -101,7 +101,7 @@ SWARM_V2_ROW_SHAPES = {
     # AGENT-seats WP0 (plan §1.1): /seats work[], replaced the window node rows in WP5.
     "swarm_seat_work_rows": (
         "job_id", "node_key", "role", "job_state", "objective", "accepted_ts",
-        "launch", "submission_hash",
+        "launch", "submission_hash", "answer", "answer_state", "model", "took_s",
     ),
 }
 
@@ -127,10 +127,10 @@ SWARM_TARGET_WIDGETS = {
 }
 
 
-def test_the_swarm_block_is_thirty_two_keys():
-    """Twenty-five existing keys plus seven BOARD source-separated keys."""
-    assert len(SWARM_KEYS) == 32
-    assert len(set(SWARM_KEYS)) == 32
+def test_the_swarm_block_is_thirty_three_keys():
+    """Thirty-two existing keys plus the served health status word."""
+    assert len(SWARM_KEYS) == 33
+    assert len(set(SWARM_KEYS)) == 33
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -152,7 +152,7 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-22:] == SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-23:] == SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS + ("swarm_health_status",)
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -278,11 +278,12 @@ def test_the_agent_signatures_reach_every_seats_key_and_drop_the_window_ones():
     )),
     ("SWARM_FLEET_FIELDS", (
         "runtimes", "daemons", "os", "profiles", "concurrency",
-        "heartbeat_oldest_ts", "heartbeat_newest_ts", "paused",
+        "heartbeat_oldest_ts", "heartbeat_newest_ts", "paused", "models",
     )),
     ("SWARM_SEAT_LIVE_FIELDS", (
         "live", "working", "max_concurrency", "paused_until_ts", "failures",
         "heartbeat_ts", "devices", "skills", "profiles", "platform",
+        "advertised_model", "advertised_effort", "live_state",
     )),
     ("SWARM_SEAT_CONTRIB_FIELDS", (
         "listed", "attempts", "accepted", "rejected", "pending", "turns",
@@ -321,3 +322,46 @@ def test_inflight_note_lives_in_its_row_without_an_unused_new_kwarg():
     assert SWARM_WIDGET_SIGNATURES["SurfSwarmInFlight"] == (
         "swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network",
     )
+
+
+def test_polish_answer_and_advertised_model_contracts_are_frozen():
+    assert models.SWARM_ANSWER_STATES == (
+        "read", "not_read", "unavailable", "not_served", "no_reply",
+    )
+    assert models.SWARM_ANSWER_FIELDS == ("answer", "model", "took_s", "state")
+    assert models.SWARM_ANSWER_CACHE_FIELDS == (
+        "answer", "model", "took_s", "state", "read_ts", "terminal",
+    )
+    assert models.SWARM_FLEET_MODEL_FIELDS == ("model", "effort", "count")
+
+
+def test_polish_answer_fetch_window_agrees_with_record_row_cap():
+    from maxpane_dashboard.widgets.surf.swarm_seat_record import SurfSwarmSeatRecord
+    assert models.SWARM_ANSWER_ROW_CAP == 40
+    assert models.SWARM_ANSWER_ROW_CAP == SurfSwarmSeatRecord.ROW_CAP
+
+
+def test_polish_health_status_has_a_named_hero_consumer():
+    import inspect
+    from maxpane_dashboard.widgets.surf.swarm_hero import SurfSwarmHero
+    expected = (
+        "swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now",
+        "swarm_accepted_today", "swarm_queue_total", "swarm_breaker",
+        "swarm_services_up", "swarm_health_status",
+    )
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmHero"] == expected
+    signature = inspect.signature(SurfSwarmHero.update_data)
+    actual = tuple(name for name, value in signature.parameters.items()
+                   if name != "self" and value.kind != inspect.Parameter.VAR_KEYWORD)
+    assert actual == expected
+
+
+def test_polish_unenriched_work_rows_explicitly_wait_for_answer_read():
+    from maxpane_dashboard.data.surf_swarm import seat_work_rows
+    from tests.surf_swarm_fixtures import swarm_seat_capture
+    rows = seat_work_rows(swarm_seat_capture("seat_420"))
+    assert rows
+    for row in rows:
+        assert (row["answer"], row["answer_state"], row["model"], row["took_s"]) == (
+            None, "not_read", None, None,
+        )

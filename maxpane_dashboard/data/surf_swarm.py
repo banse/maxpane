@@ -867,6 +867,7 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
             "accepted_ts": _ts(work.get("acceptedAt")),
             "launch": _str(work.get("launch")),
             "submission_hash": submission_hash,
+            "answer": None, "answer_state": "not_read", "model": None, "took_s": None,
         }
         rows.append({key: row[key] for key in keys})
     return rows

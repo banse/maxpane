@@ -1483,13 +1483,14 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_workers_as_of_hhmm", # str | None -- workers last-good marker
     "swarm_seat_live",         # dict | None -- selected-token /workers lookup, including metadata
     "swarm_seat_contrib",      # dict | None -- selected-token /contributors lookup
+    "swarm_health_status",     # str | None -- /health status word, not inferred from services
 )
 
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
 #: contract keys each ``update_data`` takes, verbatim, as keyword parameters. Exported
 #: so the screen test binds to this rather than to a local copy (bound in WP7).
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
-    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_queue_total", "swarm_breaker", "swarm_services_up"),
+    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_queue_total", "swarm_breaker", "swarm_services_up", "swarm_health_status"),
     "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
     "SurfSwarmThroughput": ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale"),
     "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
@@ -1537,8 +1538,13 @@ SWARM_BOARD_SUMMARY_FIELDS: tuple[str, ...] = (
 #: ordered by until then token. Heartbeat endpoints are epoch seconds or None.
 SWARM_FLEET_FIELDS: tuple[str, ...] = (
     "runtimes", "daemons", "os", "profiles", "concurrency",
-    "heartbeat_oldest_ts", "heartbeat_newest_ts", "paused",
+    "heartbeat_oldest_ts", "heartbeat_newest_ts", "paused", "models",
 )
+
+#: Advertised model mix counts each worker once per distinct (model, effort) pair.
+#: A worker with no usable pair contributes to {model: None, effort: None, count}.
+#: Multiple runtimes may contribute multiple pairs; counts need not sum to LIVE.
+SWARM_FLEET_MODEL_FIELDS: tuple[str, ...] = ("model", "effort", "count")
 
 #: None means /workers unread or selected token inadmissible; live=False means absent.
 #: For multiple devices sum working/capacity, count devices and use the newest
@@ -1550,9 +1556,16 @@ SWARM_FLEET_FIELDS: tuple[str, ...] = (
 #: skills is the distinct skill count, profiles a sorted distinct list, platform
 #: sorted distinct "os arch" values joined by ", ". Missing metadata stays None;
 #: served empty skills/profiles are 0/[], not unavailable.
+#: Advertised fields come only from worker runtimes[].premiumModel. No usable
+#: pair yields both None. Multiple unique pairs are sorted by (model, effort or
+#: "") and joined in corresponding order with ", "; missing efforts use "—".
+#: They describe advertisement, never a probed or actually used job model.
+#: live_state uses SWARM_BOARD_LIVE_STATES or None, preserving unknown pause
+#: evidence (F48). A known absent token is offline; unread is the whole object None.
 SWARM_SEAT_LIVE_FIELDS: tuple[str, ...] = (
     "live", "working", "max_concurrency", "paused_until_ts", "failures",
     "heartbeat_ts", "devices", "skills", "profiles", "platform",
+    "advertised_model", "advertised_effort", "live_state",
 )
 
 #: None means /contributors unread or selected token malformed. listed=False is absent;
@@ -1568,6 +1581,28 @@ SWARM_SEAT_CONTRIB_FIELDS: tuple[str, ...] = (
 #: None is unavailable (not a string state); absent from good /workers is offline.
 SWARM_BOARD_LIVE_STATES: tuple[str, ...] = ("working", "idle", "paused", "offline")
 SWARM_INFLIGHT_NOTE_KINDS: tuple[str, ...] = ("dispatch", "failure")
+
+# ---- RECORD answer enrichment (polish handover §2.5) -----------------------
+
+#: Unfetched is not_read; failed/invalid reads are unavailable; successful absence
+#: is not_served; empty/null summary is no_reply. Only read carries an answer.
+SWARM_ANSWER_STATES: tuple[str, ...] = (
+    "read", "not_read", "unavailable", "not_served", "no_reply",
+)
+SWARM_ANSWER_FIELDS: tuple[str, ...] = ("answer", "model", "took_s", "state")
+
+#: JSON slot: canonical UUID job id -> exact 64-hex submission hash -> entry.
+#: Only extracted fields and finite nonnegative read_ts / strict bool terminal
+#: persist, never summaries or raw envelopes. Queued not_read has no cache point.
+#: Every point is validated, with state/value consistency; invalid slots fail
+#: closed. Retained terminal attempts never re-read, including unavailable.
+SWARM_ANSWER_CACHE_FIELDS: tuple[str, ...] = (
+    "answer", "model", "took_s", "state", "read_ts", "terminal",
+)
+
+#: Fetch only the newest displayed RECORD window. Bound by an agreement test to
+#: SurfSwarmSeatRecord.ROW_CAP; data must never import its widget.
+SWARM_ANSWER_ROW_CAP = 40
 
 # ---- AGENT body on /seats/{tokenId} (spec docs/surf_agent_seats_spec.md §4, plan §1.2) ----
 
@@ -1891,6 +1926,8 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "skill_id", "version", "role", "kind", "tier", "judge",
         "checks",       # str | None
         "requires",     # list[str]
+        "inference",    # str | None; preserve the served word
+        "attempts", "accepted", "rejected", "pending",  # int | None, from /skills record
     ),
     "swarm_launch_rows": (
         "launch_number", "kind", "status", "chain_id", "repo_url", "commit",
@@ -1920,5 +1957,9 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "job_id", "node_key", "role", "job_state", "objective", "accepted_ts",
         "launch",          # str | None; null is a real "none"
         "submission_hash", # str | None; exactly 64 hex chars, no explorer link
+        "answer",          # str | None; first cleaned sentence of this hash
+        "answer_state",    # SWARM_ANSWER_STATES; queued is not_read
+        "model",           # str | None; actual submission usage, not advertised
+        "took_s",          # finite nonnegative float | None; submission wallClockMs / 1000
     ),
 }

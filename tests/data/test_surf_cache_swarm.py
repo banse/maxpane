@@ -53,7 +53,7 @@ def test_the_jobs_seen_slot_is_registered_so_it_restores():
     ``job_id -> entry`` map both swarm tiers append to."""
     assert SLOT_SWARM_JOBS_SEEN == "swarm_jobs_seen"
     assert SLOT_SWARM_JOBS_SEEN in SLOTS
-    assert len(SLOTS) == 15
+    assert len(SLOTS) == 16
 
 
 def test_a_seen_map_round_trips_through_save_and_load(tmp_path):
@@ -278,3 +278,16 @@ def test_i1_cache_refuses_old_source_slots_missing_identity_metadata(tmp_path, s
     fresh = SurfCache(path=cache.path, clock=clock)
     fresh.load(slot_coercers=_board_coercers())
     assert fresh.get_last_good(f'swarm_{source}') is None
+
+
+def test_polish_answers_slot_is_registered_and_refuses_unvalidated_load(tmp_path):
+    from maxpane_dashboard.data import surf_cache as mod
+    assert mod.SLOT_SWARM_ANSWERS == "swarm_answers"
+    assert SLOTS.count(mod.SLOT_SWARM_ANSWERS) == 1
+    path = tmp_path / "answers.json"
+    cache = SurfCache()
+    cache.store_last_good(mod.SLOT_SWARM_ANSWERS, {"unvalidated": {}}, ts=1000.0)
+    cache.save(str(path))
+    fresh = SurfCache()
+    fresh.load(str(path), now=1000.0)
+    assert fresh.get_last_good(mod.SLOT_SWARM_ANSWERS) is None

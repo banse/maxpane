@@ -175,6 +175,7 @@ SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across 
 SLOT_SWARM_SEAT = "swarm_seat"        # {token, state, seat}: the selected seat's /seats read
 SLOT_SWARM_WORKERS = "swarm_workers"  # normalized /workers envelope, its own version clock
 SLOT_SWARM_CONTRIBUTORS = "swarm_contributors"  # normalized /contributors envelope
+SLOT_SWARM_ANSWERS = "swarm_answers"  # job UUID -> submission hash -> extracted answer entry
 
 SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
@@ -215,6 +216,7 @@ SLOTS: tuple[str, ...] = (
     # coercer refuses the slot; this cache imports no client or fold module.
     SLOT_SWARM_WORKERS,
     SLOT_SWARM_CONTRIBUTORS,
+    SLOT_SWARM_ANSWERS,
 )
 
 
@@ -1134,7 +1136,7 @@ class SurfCache:
     ) -> None:
         """Restore saved state. Silent no-op on a missing or corrupt file.
 
-        BOARD slots require their injected per-field coercers; an absent
+        BOARD and answer slots require their injected per-field coercers; an absent
         validator refuses that slot. Injection keeps this cache independent
         of the fold/client layer and uses the same validation at consumption.
 
@@ -1190,7 +1192,7 @@ class SurfCache:
                     continue
                 try:
                     entry = LastGood.from_dict(data, now=reference)
-                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS):
+                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:
@@ -1381,6 +1383,7 @@ __all__ = [
     "SLOT_SWARM_SEAT",
     "SLOT_SWARM_WORKERS",
     "SLOT_SWARM_CONTRIBUTORS",
+    "SLOT_SWARM_ANSWERS",
     "SurfCache",
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",

@@ -203,6 +203,7 @@ class SurfSwarmHero(HeroRow):
         swarm_queue_total=None,
         swarm_breaker=None,
         swarm_services_up=None,
+        swarm_health_status=None,  # polish WP1 seam; semantic rendering lands in WP5
         **_kwargs,
     ) -> None:
         """Refresh all six boxes; every box is written on every poll (MEDI-38).
