@@ -96,7 +96,7 @@ from tests.surf_swarm_fixtures import (
 #: own: a pin that moves without a re-sweep reddens the agreement test.
 MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 42
-MEASURED_AGENT_COLUMNS = 135
+MEASURED_AGENT_COLUMNS = 139
 MEASURED_AGENT_ROWS = 33
 
 #: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
@@ -119,9 +119,11 @@ _S_THRESHOLDS = (
 _A_THRESHOLDS = (
     61, 63, 70,  # RECORD columns
     85, 119, # unchanged RECORD compact/full tiers
+    116, 117, 131,  # row-1 hero / pending RANK / NODE overflow title whole (capture)
+    129,     # row-1 hero whole (stress payload's REVIEWED `19,998 pending`)
     134,     # complete status bar
-    135,     # row-1 hero whole (binds since the card rows, 2026-09-22)
-    138,     # the pre-card pin, BY NODE's full tier
+    137,     # node row whole (stress payload's `+27 more nodes`)
+    139,     # seat row whole: OWNER's address + icon (binds since the grid)
 )
 
 
@@ -130,9 +132,11 @@ _EXCLUDED_FROM_WHOLE = {
     "a": {"SurfSwarmSeatRecord"},
     "b": set(),
 }
-#: AGENT's binder is its row-1 hero, whose boxes ellipsise rather than mark:
-#: one column under the pin it is the one clipped widget (``#:`` block).
-_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmAgentHero"}
+#: AGENT's binder is its seat-card row (OWNER), whose cards ellipsise rather
+#: than mark: one column under the pin it is the one clipped widget.
+_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmSeatCards"}
+#: Binders built from hero-style boxes: they clip with ``…`` and never mark.
+_ELLIPSIS_BINDERS = {"SurfSwarmAgentHero", "SurfSwarmSeatCards"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
 _ROW_PIN = {"s": SURF_SWARM_FULL_LAYOUT_ROWS, "a": SURF_AGENT_FULL_LAYOUT_ROWS}
 _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
@@ -586,7 +590,7 @@ async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> N
     if _BINDING_PANEL[key] == "SurfSwarmCapability":
         assert r["tiers"]["SurfSwarmCapability"] == "baseline", r["tiers"]
         assert r["columns"]["SurfSwarmCapability"] == ("skill","v","role","tier","judge","checks","requires")
-    elif _BINDING_PANEL[key] not in ("StatusBar", "SurfSwarmAgentHero"):
+    elif _BINDING_PANEL[key] != "StatusBar" and _BINDING_PANEL[key] not in _ELLIPSIS_BINDERS:
         assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
     assert r["status_whole"]
 
@@ -604,8 +608,8 @@ async def test_the_column_pin_is_not_loose(key) -> None:
             assert not under["status_whole"], "status bar fits below its full-layout pin"
             assert not under["overflow"]
             continue
-        if _BINDING_PANEL[key] == "SurfSwarmAgentHero":
-            assert {name for name, _ in under["clipped"]} == {"SurfSwarmAgentHero"}, (
+        if _BINDING_PANEL[key] in _ELLIPSIS_BINDERS:
+            assert {name for name, _ in under["clipped"]} == {_BINDING_PANEL[key]}, (
                 payload_name, under["clipped"],
             )
             assert not under["marked_besides_exceptions"], under["marked_besides_exceptions"]
@@ -745,7 +749,7 @@ KEY_HINT_PHRASE = "l launchpad · 4 pl4 · s swm · a agt · b brd"
 
 #: Whole status bar measured after §11 abbreviations: cropped through 133,
 #: whole from 134, including poll/errors and full right version/theme/game text.
-#: Body binders are now LAUNCHPAD 138, SWARM 141, AGENT 135 and BOARD 141.
+#: Body binders are now LAUNCHPAD 138, SWARM 141, AGENT 139 and BOARD 141.
 #: Pool4 protocol 99 and market 119 retain their body-only status exceptions.
 STATUS_BAR_WHOLE_FROM = 134
 

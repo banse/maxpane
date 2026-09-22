@@ -5,10 +5,10 @@ the owner's request, with the same values as hero cards. Row 1
 (``swarm_agent_hero``) already shows attempts, accepted, accept rate,
 reviewed and pending, so these rows leave them out.
 
-* :class:`SurfSwarmSeatCards` -- OWNER, RUNTIME, FEEDBACK, SCORE, BOARD, RANK.
+* :class:`SurfSwarmSeatCards` -- OWNER, RUNTIME, SCORE, FEEDBACK, RANK, BOARD.
   OWNER, RUNTIME, FEEDBACK and SCORE come from ``/seats`` and are gated by
-  ``swarm_seat_state``. BOARD and RANK come from ``/contributors`` under their
-  own clock and never borrow seats data.
+  ``swarm_seat_state``. BOARD and RANK come from ``/contributors`` and never
+  borrow seats data. BOARD's title carries no clock (owner, 2026-09-22).
 * :class:`~maxpane_dashboard.widgets.surf.swarm_node_cards.SurfSwarmNodeCards`
   (its own module: it renders no address) -- ROLES, up to :data:`NODE_CARDS` node cards,
   TEAMMATES. Nodes keep the fold's order (reviewed desc); when more exist than
@@ -36,7 +36,6 @@ from maxpane_dashboard.widgets.surf._fmt import (
     EMDASH,
     EXPLORER,
     mmdd_hhmm,
-    source_clock,
 )
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     NEVER_PAIRED_STYLE,
@@ -144,29 +143,27 @@ class SurfSwarmAgentCards(HeroRow):
 
 
 class SurfSwarmSeatCards(SurfSwarmAgentCards):
-    """Row two: OWNER, RUNTIME, FEEDBACK, SCORE, BOARD, RANK."""
+    """Row two: OWNER, RUNTIME, SCORE, FEEDBACK, RANK, BOARD (BOARD under STATUS)."""
 
     IDS = SEAT_BOX_IDS
     BOXES = (
         (SEAT_BOX_IDS["owner"], "OWNER"),
         (SEAT_BOX_IDS["runtime"], "RUNTIME"),
-        (SEAT_BOX_IDS["feedback"], "FEEDBACK"),
         (SEAT_BOX_IDS["score"], "SCORE"),
-        (SEAT_BOX_IDS["board"], "BOARD"),
+        (SEAT_BOX_IDS["feedback"], "FEEDBACK"),
         (SEAT_BOX_IDS["rank"], "RANK"),
+        (SEAT_BOX_IDS["board"], "BOARD"),
     )
 
     def update_data(self, swarm_seat_summary=None, swarm_seat_state=None,
-                    swarm_seat_contrib=None, swarm_board_as_of_hhmm=None, **_kwargs) -> None:
+                    swarm_seat_contrib=None, **_kwargs) -> None:
         super().update_data(
             swarm_seat_summary=swarm_seat_summary,
             swarm_seat_state=swarm_seat_state, swarm_seat_contrib=swarm_seat_contrib,
-            swarm_board_as_of_hhmm=swarm_board_as_of_hhmm,
         )
 
     def _paint(self, swarm_seat_summary=None,
-               swarm_seat_state=None, swarm_seat_contrib=None,
-               swarm_board_as_of_hhmm=None) -> None:
+               swarm_seat_state=None, swarm_seat_contrib=None) -> None:
         summary, state = swarm_seat_summary, swarm_seat_state
         for key, label, build in (
             ("owner", "OWNER", self._owner_body),
@@ -177,11 +174,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
             self.render_box(f"#{SEAT_BOX_IDS[key]}", label,
                             lambda key=key, build=build: self._seat_body(summary, state, key == "owner", build))
         contrib = swarm_seat_contrib
-        clock = swarm_board_as_of_hhmm
-        board_label = "BOARD"
-        if isinstance(contrib, dict) and rowfit.has_marker(clock):
-            board_label += f" · as of {source_clock(clock)}"
-        self.render_box(f"#{SEAT_BOX_IDS['board']}", board_label,
+        self.render_box(f"#{SEAT_BOX_IDS['board']}", "BOARD",
                         lambda: self._contrib_body(contrib, self._board_body))
         self.render_box(f"#{SEAT_BOX_IDS['rank']}", "RANK",
                         lambda: self._contrib_body(contrib, self._rank_body))

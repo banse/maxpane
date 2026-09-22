@@ -33,6 +33,7 @@ from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
     BOX_IDS,
     NO_SEAT_LINE,
+    WORKING_GLYPH,
     SurfSwarmAgentHero,
     SurfSwarmAgentHeroBox,
 )
@@ -134,7 +135,9 @@ async def test_no_args_and_all_none_render_unavailable_without_raising():
     """Nothing selected and no state: SEAT says so, the five stat boxes are
     ``unavailable`` (the state is ``None``), and no ``Loading...`` seed survives."""
     bare = "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, css_path=CSS_PATH))
-    assert bare.count("unavailable") == 7 and "Loading" not in bare
+    # Six: the five stat boxes and STATUS's accepted line. STATUS's title
+    # no longer names a workers clock (owner 2026-09-22), so no seventh.
+    assert bare.count("unavailable") == 6 and "Loading" not in bare
     assert NO_SEAT_LINE in bare
     none = "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, css_path=CSS_PATH,
                                            **{k: None for k in SIGNATURE}))
@@ -176,7 +179,7 @@ async def test_the_defect_seat_renders_its_lifetime_record_whole_at_both_pins(wi
     assert f"{SUMMARY['win_rate']*100:.1f} %" in boxes["win_rate"]
     assert "of attempts" in boxes["win_rate"]
     assert f"{SUMMARY['collaborators']} seats" in boxes["collab"]
-    assert "working 0 of 2" in boxes["status"]
+    assert f"{WORKING_GLYPH} 0 of 2" in boxes["status"]
     assert f"accepted {mmdd(SUMMARY['last_won_ts'])} {hhmm(SUMMARY['last_won_ts'])}" in boxes["status"]
     assert f"as of {AS_OF}" in boxes["accepted"]
     for key, text in boxes.items():
@@ -305,7 +308,7 @@ async def test_a_field_the_source_did_not_carry_is_unavailable_in_its_own_box_on
     assert "unavailable" in boxes["accepted"]
     assert " of 0" not in boxes["accepted"] and " of " not in boxes["accepted"]
     assert str(SUMMARY["reviewed"]) in _lines(boxes["reviewed"])
-    assert "working 0 of 2" in boxes["status"]
+    assert f"{WORKING_GLYPH} 0 of 2" in boxes["status"]
 
 
 async def test_a_missing_status_split_shows_dashes_for_pending_not_zero():
@@ -375,8 +378,8 @@ LIVE = dict(live=True, live_state='working', working=3, max_concurrency=8, pause
 async def test_worker_status_survives_bad_seats_without_stale_accepted_date(state):
     text=await _box_text(BOX_IDS['status'],size=(180,9),swarm_seat_state=state,
                         swarm_seat_live=LIVE,swarm_workers_as_of_hhmm='05:07')
-    assert 'working 3 of 8' in text and 'until' in text and '×7' in text
-    assert 'workers as of 05:07' in text
+    assert f'{WORKING_GLYPH} 3 of 8' in text and 'until' in text and '×7' in text
+    assert '05:07' not in text
     assert 'accepted unavailable' in text and mmdd(SUMMARY['last_won_ts']) not in text
     assert len(_lines(text)) == 4  # one title, exactly three body lines
 
@@ -387,14 +390,16 @@ async def test_worker_status_distinguishes_offline_from_unavailable(live,expecte
     assert ('offline' in text)==(expected=='offline')
     assert f"accepted {mmdd(SUMMARY['last_won_ts'])}" in text
 
-async def test_seats_clock_stays_with_accepted_and_worker_clock_with_status():
+async def test_seats_clock_stays_with_accepted_and_status_names_no_clock():
+    # Owner 2026-09-22: the STATUS title lost "workers as of HH:MM".
     boxes=await _boxes(size=(180,9),swarm_seat_live=LIVE,swarm_workers_as_of_hhmm='05:07')
     assert 'as of 04:06' in boxes['accepted']
-    assert 'workers as of 05:07' in boxes['status'] and '04:06' not in boxes['status']
+    assert _lines(boxes['status'])[0] == 'STATUS'
+    assert '05:07' not in boxes['status'] and '04:06' not in boxes['status']
 
 
 @pytest.mark.parametrize('live_state,word,color',[
-    ('working','working',2),('idle','idle',None),('offline','offline',1),
+    ('working',WORKING_GLYPH,2),('idle','idle',None),('offline','offline',1),
     ('paused','paused',1),(None,'unavailable',3),
 ])
 async def test_polish_worker_status_words_and_composited_colors(live_state,word,color):
@@ -414,8 +419,9 @@ async def test_polish_worker_status_words_and_composited_colors(live_state,word,
             plain_x=lines[plain_y].index('accepted ',region.x)
             assert style.color!=pilot.app.screen.get_style_at(plain_x,plain_y).color
         content='\n'.join(line[region.x:region.right] for line in lines[region.y:region.bottom])
-        assert 'workers as of 05:07' in content and 'accepted '+mmdd(SUMMARY['last_won_ts']) in content
-        if live_state in ('idle','paused',None):assert 'working 0 of 8' in content
+        assert 'as of' not in content and 'accepted '+mmdd(SUMMARY['last_won_ts']) in content
+        if live_state in ('idle','paused',None):assert f'{WORKING_GLYPH} 0 of 8' in content
+        assert 'working' not in content
         if live_state=='paused':assert 'until '+hhmm(1758456000) in content and '×7' in content
         assert '…' not in content
 
@@ -434,7 +440,7 @@ async def test_polish_unknown_pause_fold_reaches_unavailable_not_idle():
         text=await _box_text(BOX_IDS['status'],swarm_seat_live=live)
         assert _lines(text)[1].startswith(expected),text
         assert ('idle' in text)==(expected=='idle')
-        assert 'working 0 of ' in text
+        assert f'{WORKING_GLYPH} 0 of ' in text
 
 
 async def test_polish_accepted_reviewed_and_rate_have_composited_emphasis():

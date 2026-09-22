@@ -161,14 +161,15 @@ Press **`a`** for the AGENT body — one seat's **lifetime record** from its own
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
 uses the most active seat found in the job data. The hero shows SEAT, ACCEPTED, ACCEPT RATE,
 REVIEWED, COLLAB and STATUS. ACCEPT RATE is accepted work divided by attempts. STATUS shows
-worker capacity, any pause, and the newest accepted work from `/seats`. The worker clock is
-in its title; ACCEPTED carries the separate seats clock.
+worker capacity, any pause, and the newest accepted work from `/seats`. ACCEPTED carries the
+seats clock; the STATUS and BOARD titles name no clock (the screen title does).
 
-Two more rows of cards sit under the hero. The seat row shows OWNER (with a copy icon and
-Etherscan link, plus when the seat was paired), RUNTIME (runtime, daemon version and device
-count), FEEDBACK (reviews sent, submitted and queued), SCORE (mean score, how many reviews were
-scored and, when they differ, entries served), BOARD (accepted of attempts, rejected and pending
-on the contributors leaderboard, under its own clock) and RANK (rank, turns and hours). BOARD and
+Two more rows of cards sit under the hero, on one column grid with it and a blank row between
+rows. The seat row shows OWNER (with a copy icon and Etherscan link, plus when the seat was
+paired), RUNTIME (runtime, daemon version and device count), SCORE (mean score, how many reviews
+were scored and, when they differ, entries served), FEEDBACK (reviews sent, submitted and
+queued), RANK (rank, turns and hours) and BOARD (accepted of attempts, rejected and pending on
+the contributors leaderboard). BOARD and
 RANK stay visible when the seats read fails; a good contributors read without the seat says
 `not listed`, an unread source says `unavailable`. The node row shows ROLES (reviews by role),
 one card per node — accepted of reviewed, an acceptance percentage based on **reviewed work**
@@ -198,7 +199,8 @@ column and `O` reverses it. Global ranks and the cursor's seat identity remain s
 selected seat is bold with an accent rank cell, working is green, paused red, offline dim and
 unknown yellow; every state retains its word.
 
-SWARM and AGENT status colours retain their words: green means healthy, working or accepted;
+SWARM and AGENT status colours retain their words — except AGENT's STATUS, which writes a green
+`⚙` for "working" (`⚙ 3 of 8`, `idle · ⚙ 0 of 1`) to save width: green means healthy, working or accepted;
 red means offline, paused or down; yellow marks unavailable or existing pending counts. Zero
 working is dim `quiet`. Rates and scores are bold without invented thresholds. BOARD's offline
 rows are dim. SEAT stays as it is by owner decision; its larger grouping exceeded the budget

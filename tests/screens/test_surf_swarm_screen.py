@@ -25,8 +25,9 @@ from textual.widgets import DataTable
 
 from maxpane_dashboard.screens.surf import (
     AGENT_BODY_ID, BOARD_BODY_ID, LAUNCHPAD_BODY_ID, MODE_AGENT, MODE_SWARM, MODE_BOARD, POOL4_BODY_ID,
-    POOL4_USER_BODY_ID, SWARM_BODY_ID, SurfScreen,
+    POOL4_USER_BODY_ID, SURF_AGENT_FULL_LAYOUT_COLUMNS, SWARM_BODY_ID, SurfScreen,
 )
+from maxpane_dashboard.widgets.surf.swarm_agent_hero import WORKING_GLYPH
 from maxpane_dashboard.widgets.surf import (
     SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmCapability, SurfSwarmHero, SurfSwarmInFlight,
     SurfSwarmLaunches, SurfSwarmNodeCards,
@@ -158,7 +159,27 @@ async def test_every_agent_hero_title_sits_on_the_same_row():
         heights = {len(str(b.render()).split("\n")) for b in boxes}
 
     assert len(heights) > 1, "every body has the same height: nothing to align"
-    assert firsts == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "COLLAB", "STATUS · workers as of 04:02"], firsts
+    assert firsts == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "COLLAB", "STATUS"], firsts
+
+
+@pytest.mark.parametrize("width", [SURF_AGENT_FULL_LAYOUT_COLUMNS, 150, 169, 211])
+async def test_the_three_agent_rows_share_one_column_grid_with_a_row_between(width):
+    """Owner, 2026-09-22: the hero and both card rows line up column for
+    column at any width, and a blank row separates each pair of rows, like
+    the gap between two cards in a row. Read off composited regions."""
+    from tests.screens.test_surf_swarm_layout import _v3_agent_payload
+    from maxpane_dashboard.widgets.panels import HeroBoxBase
+
+    async with _surf_app(_v3_agent_payload()).run_test(size=(width, 60)) as pilot:
+        screen = await _open(pilot, "a")
+        rows = [screen.query_one(cls) for cls in (SurfSwarmAgentHero, SurfSwarmSeatCards, SurfSwarmNodeCards)]
+        edges = [[(b.region.x, b.region.right) for b in row.query(HeroBoxBase)] for row in rows]
+        spans = [(min(b.region.y for b in row.query(HeroBoxBase)),
+                  max(b.region.bottom for b in row.query(HeroBoxBase))) for row in rows]
+
+    assert all(len(e) == 6 for e in edges), edges
+    assert edges[0] == edges[1] == edges[2], edges
+    assert [nxt[0] - prev[1] for prev, nxt in zip(spans, spans[1:])] == [1, 1], spans
 
 
 async def test_the_agent_card_rows_carry_every_seat_and_node_value():
@@ -178,7 +199,7 @@ async def test_the_agent_card_rows_carry_every_seat_and_node_value():
         text = _region_text(pilot.app, screen.query_one(f"#{AGENT_BODY_ID}"))
 
     titles = {cls: [lines[1].strip(" │") for lines in cards] for cls, cards in rows.items()}
-    assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "FEEDBACK", "SCORE", "BOARD · as of 03:01", "RANK"]
+    assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "SCORE", "FEEDBACK", "RANK", "BOARD"]
     assert titles[SurfSwarmNodeCards][0] == "ROLES" and titles[SurfSwarmNodeCards][-1] == "TEAMMATES"
     assert all(not lines[2].strip(" │") for cards in rows.values() for lines in cards)
     for needle in ("0xe5b1275f…f64f2a ⧉", "paired 09-20 07:34", "daemon ", " device",
@@ -487,12 +508,12 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
         screen=await _open(pilot,"a")
         hero=_region_text(pilot.app,screen.query_one(SurfSwarmAgentHero))
         seat=_region_text(pilot.app,screen.query_one(SurfSwarmSeatCards))
-    assert "IDMD #420" in hero and "working 0 of 1" in hero
+    assert "IDMD #420" in hero and f"{WORKING_GLYPH} 0 of 1" in hero
     assert "accepted unavailable" in hero
     assert "189 acc of 207" in seat and "2 rejected" in seat and "16 pending" in seat
     assert "skills" not in seat and "linux arm64" not in seat
-    assert "BOARD · as of 03:01" in seat and "workers as of 04:02" not in seat
-    assert "workers as of 04:02" in hero
+    # Owner 2026-09-22: neither STATUS nor BOARD names its source clock.
+    assert "as of 03:01" not in seat and "as of 04:02" not in hero + seat
     assert "⧉" not in seat and "attempts 201" not in seat
 
 async def test_captured_executing_note_is_visible_and_honestly_cut_at_swarm_pin():
@@ -627,9 +648,11 @@ async def test_polish_agent_worker_states_keep_five_digit_counts_whole_at_pin(li
         screen=await _open(pilot,'a')
         hero=screen.query_one(SurfSwarmAgentHero)
         text=_region_text(pilot.app,screen.query_one('#surf-swarm-agent-status'))
-        assert (live_state or 'unavailable') in text
-        assert 'working '+('99,999' if live_state=='working' else '0')+' of 99,999' in text
-        assert 'workers as of 04:02' in text and 'accepted ' in text
+        # Working is the gear alone (owner 2026-09-22); the other states keep their word.
+        assert ({'working': WORKING_GLYPH}.get(live_state) or live_state or 'unavailable') in text
+        assert 'working' not in text
+        assert WORKING_GLYPH+' '+('99,999' if live_state=='working' else '0')+' of 99,999' in text
+        assert 'as of' not in text and 'accepted ' in text
         if live_state in ('working','paused'):assert '×99,999' in text
         assert not _css_clipped_lines(pilot.app,hero)
         assert '‹ taller' not in _screen_text(pilot.app).splitlines()[0]

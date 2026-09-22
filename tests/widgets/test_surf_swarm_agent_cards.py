@@ -45,7 +45,6 @@ SUMMARY = fold.seat_summary_from_seat(_SEAT)
 NODE_ROWS = fold.seat_node_rows(_SEAT)
 TEAMMATES = fold.seat_teammates(_SEAT)
 CONTRIB = swarm_agent_sources(420)["swarm_seat_contrib"]
-BOARD_AS_OF = swarm_agent_sources(420)["swarm_board_as_of_hhmm"]
 
 
 class _Themed(App):
@@ -54,8 +53,7 @@ class _Themed(App):
 
 def _seat_kwargs(**over):
     return {"swarm_seat_summary": copy.deepcopy(SUMMARY), "swarm_seat_state": "ok",
-            "swarm_seat_contrib": copy.deepcopy(CONTRIB),
-            "swarm_board_as_of_hhmm": BOARD_AS_OF, **over}
+            "swarm_seat_contrib": copy.deepcopy(CONTRIB), **over}
 
 
 def _node_kwargs(**over):
@@ -129,7 +127,7 @@ async def test_the_seat_row_shows_every_seats_and_board_value():
     assert f"{fmt_int(CONTRIB['accepted'])} acc of {fmt_int(CONTRIB['attempts'])}" in boxes["board"]
     assert f"{fmt_int(CONTRIB['rejected'])} rejected" in boxes["board"]
     assert f"{fmt_int(CONTRIB['pending'])} pending" in boxes["board"]
-    assert f"as of {BOARD_AS_OF}" in boxes["board"]
+    assert _lines(boxes["board"])[0] == "BOARD"  # owner 2026-09-22: no source clock
     assert f"#{CONTRIB['rank']} of {CONTRIB['ranked_of']}" in boxes["rank"]
     assert f"{fmt_int(CONTRIB['turns'])} turns" in boxes["rank"]
     assert f"{CONTRIB['wall_clock_s'] / 3600:.1f} h" in boxes["rank"]
@@ -172,7 +170,6 @@ async def test_board_and_rank_follow_the_contributors_read_not_the_seat():
     assert "not listed" in boxes["board"] and "not listed" in boxes["rank"]
     boxes = await _seat(swarm_seat_contrib=None)
     assert "unavailable" in boxes["board"] and "unavailable" in boxes["rank"]
-    assert "as of" not in boxes["board"]
 
 
 async def test_a_long_runtime_is_fitted_with_a_visible_ellipsis():

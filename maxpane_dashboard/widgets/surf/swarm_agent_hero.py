@@ -25,10 +25,14 @@ from maxpane_dashboard.widgets.surf._swarm_seat import (
     seat_token,
 )
 
-__all__ = ["BOX_IDS", "NO_SEAT_LINE", "SurfSwarmAgentHero", "SurfSwarmAgentHeroBox"]
+__all__ = ["BOX_IDS", "NO_SEAT_LINE", "WORKING_GLYPH", "SurfSwarmAgentHero", "SurfSwarmAgentHeroBox"]
 
 #: SEAT when nothing is selected: no roster row, no saved seat.
 NO_SEAT_LINE = "no seat selected"
+
+#: Stands for "working" in STATUS's counts (owner, 2026-09-22), beside the
+#: pause line's ⏸: one cell where the word took eight with its space.
+WORKING_GLYPH = "⚙"
 
 BOX_IDS = {
     "seat": "surf-swarm-agent-seat",
@@ -74,7 +78,6 @@ class SurfSwarmAgentHero(HeroRow):
         swarm_seat_state=None,
         swarm_seat_as_of_hhmm=None,
         swarm_seat_live=None,
-        swarm_workers_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
         """Rewrite all six boxes; the state says which kind of missing."""
@@ -91,8 +94,7 @@ class SurfSwarmAgentHero(HeroRow):
         ):
             self.render_box(f"#{BOX_IDS[key]}", label,
                             lambda build=build: self._stat_body(swarm_seat_summary, state, build))
-        self.render_box(f"#{BOX_IDS['status']}",
-                        "STATUS · workers as of " + source_clock(swarm_workers_as_of_hhmm),
+        self.render_box(f"#{BOX_IDS['status']}", "STATUS",
                         lambda: self._status_body(swarm_seat_summary, state, swarm_seat_live))
 
     # -- bodies -------------------------------------------------------------
@@ -196,7 +198,7 @@ class SurfSwarmAgentHero(HeroRow):
         live = live if isinstance(live, dict) else {}
         live_state = live.get("live_state")
         active, capacity = _count(live.get("working")), _count(live.get("max_concurrency"))
-        counts = f"working {fmt_int(active)} of {fmt_int(capacity)}"
+        counts = f"{WORKING_GLYPH} {fmt_int(active)} of {fmt_int(capacity)}"
         word = counts if live_state == "working" else (
             live_state if live_state in ("idle", "offline", "paused") else "unavailable")
         if live_state in ("idle", "paused") and active is not None and capacity is not None:

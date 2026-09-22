@@ -1497,9 +1497,9 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
-    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_live", "swarm_workers_as_of_hhmm"),
+    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_live"),
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
-    "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_contrib", "swarm_board_as_of_hhmm"),
+    "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_contrib"),
     "SurfSwarmNodeCards": ("swarm_seat_summary", "swarm_seat_node_rows", "swarm_seat_teammates", "swarm_seat_state"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
     "SurfSwarmBoardHero": ("swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),

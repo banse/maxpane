@@ -60,6 +60,14 @@ asserts a withdrawn statement is historical — do not review code against it.
   (attempts, accepted, accept rate, reviewed, pending) are not repeated; with more than four nodes
   the fourth card sums the rest. The SEAT and BY NODE statements in the entry below are
   historical. Pins moved 138×32 → 135×33 (measurements beside the constants).
+- **2026-09-22** — owner, same day: the three AGENT card rows share one column grid (column i has
+  one `fr` weight in every row), with a blank row between rows; row 2 reads OWNER / RUNTIME / SCORE
+  / FEEDBACK / RANK / BOARD so BOARD sits under STATUS. RECORD's floor went 8 → 6 to pay for the
+  blank rows. The STATUS title loses `workers as of HH:MM` and BOARD's title loses `as of HH:MM`:
+  a last-good workers or contributors read no longer names its own age on those cards (the
+  screen title keeps the body clock; ACCEPTED keeps the seats clock). Accepted by the owner as a
+  trade against the "stale presented as live" convention, as on the `4` body. STATUS writes `⚙`
+  for "working" in its counts rather than widen its column. Pins 135×33 → 139×33.
 - **2026-09-22** — surf's AGENT body uses SEAT beside BY NODE over RECORD
   (`docs/surf_agent_seat_details_handover.md`). ROSTER is retired: its recent job counts looked
   contradictory beside the seat's lifetime accepted count, and its window title understated the

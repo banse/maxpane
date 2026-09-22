@@ -182,16 +182,19 @@ numbers appearing under seat B: `swarm_seat_state` is `"pending"` until B's read
 Hero ACCEPT RATE and SEAT use `accepted / attempts`; zero attempts displays `no attempts`, while a
 missing counter displays `unavailable`. STATUS's `accepted MM-DD HH:MM` uses the newest
 `work[].acceptedAt`. Feedback `reviews[].sentAt` is a separate timestamp, never seat activity. STATUS reads worker
-capacity/pause/offline independently of seats, with its worker clock in the title and exactly
-three body lines. `swarm_seat_live.live_state` preserves unknown pause evidence as unavailable (F48);
-known zero working is idle. ACCEPTED carries the seats clock. A bad seats state hides its accepted date
+capacity/pause/offline independently of seats, with a bare `STATUS` title (its worker clock
+was removed by the owner on 2026-09-22) and exactly three body lines. `swarm_seat_live.live_state` preserves unknown pause evidence as unavailable (F48);
+known zero working is idle; STATUS writes `⚙` (`WORKING_GLYPH`) for the word "working" in its counts
+(owner, 2026-09-22). ACCEPTED carries the seats clock. A bad seats state hides its accepted date
 without hiding valid worker facts.
 The SEAT panel and the BY NODE table were replaced on 2026-09-22 (owner) by two hero-card rows
 in `widgets/surf/swarm_agent_cards.py`, inside the AGENT body above RECORD. `SurfSwarmSeatCards`:
 OWNER (address via `address_text` + package `EXPLORER`, paired stamp), RUNTIME (runtime, daemon,
-devices), FEEDBACK (sent/submitted/queued), SCORE (mean, scored, entries when they differ from
-reviewed), BOARD and RANK. BOARD and RANK read only `swarm_seat_contrib` under the board clock
-in BOARD's title, survive pending/unavailable seats, and distinguish `not listed` from
+devices), SCORE (mean, scored, entries when they differ from reviewed), FEEDBACK
+(sent/submitted/queued), RANK and BOARD -- that order puts BOARD under STATUS on the shared
+column grid (every row gives column i the same `fr` weight; blank row between rows). BOARD and
+RANK read only `swarm_seat_contrib` (BOARD's title names no clock, owner 2026-09-22),
+survive pending/unavailable seats, and distinguish `not listed` from
 `unavailable`. `SurfSwarmNodeCards`: ROLES, four node cards, TEAMMATES. Node cards use the
 historical `won / reviewed` fields, because per-node attempts are not served; `chain` counts
 reviews with a transaction in `sent` or `submitted`; with more than four nodes the fourth card
@@ -237,7 +240,7 @@ number, so this view shows none of it — absent, never estimated.
 Pins: `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` (CAPABILITY binds the width; the top
 row's `min-height` is a floor equal to THROUGHPUT's own fixed line count, so the row pin is the
 body's three rows of content and not a `1fr` split) and `SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`
-(card rows above RECORD; row 1's hero binds the width; the measured binding content lives in each pin's `#:` block).
+(card rows above RECORD on one column grid; the seat row's OWNER binds the width; RECORD's floor is 6; the measured binding content lives in each pin's `#:` block).
 Named permanent exceptions, each
 with a measured clearing width in the `#:` block and in the layout test (`INFLIGHT_NEVER_CLEARS_BELOW`,
 `LAUNCHES_NEVER_CLEARS_BELOW`, `LAUNCHES_HIDES_NO_COLUMN_FROM`, `RECORD_NEVER_CLEARS_BELOW`):

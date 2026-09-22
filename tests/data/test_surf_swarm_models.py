@@ -251,11 +251,10 @@ def test_the_agent_signatures_are_the_flipped_literals():
     assert {k: SWARM_WIDGET_SIGNATURES[k] for k in AGENT_WIDGETS} == {
         "SurfSwarmAgentHero": (
             "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm",
-            "swarm_seat_live", "swarm_workers_as_of_hhmm",
+            "swarm_seat_live",
         ),
         "SurfSwarmSeatCards": (
-            "swarm_seat_summary", "swarm_seat_state",
-            "swarm_seat_contrib", "swarm_board_as_of_hhmm",
+            "swarm_seat_summary", "swarm_seat_state", "swarm_seat_contrib",
         ),
         "SurfSwarmNodeCards": (
             "swarm_seat_summary", "swarm_seat_node_rows", "swarm_seat_teammates",

@@ -8414,6 +8414,8 @@ def test_the_market_body_css_agrees_between_default_css_and_the_stylesheet() -> 
 #: ``HeroBoxBase`` leaves every dimension to the stylesheet), so their box
 #: rules live in the two copies compared here and must agree like the rest.
 from maxpane_dashboard.widgets.surf.swarm_agent_cards import SEAT_BOX_IDS  # noqa: E402
+from maxpane_dashboard.widgets.surf.swarm_agent_hero import BOX_IDS as AGENT_HERO_BOX_IDS  # noqa: E402
+from maxpane_dashboard.widgets.surf.swarm_node_cards import NODE_BOX_IDS  # noqa: E402
 
 _SWARM_CSS_SELECTORS = (
     f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}", f"#{SWARM_BOTTOM_ID}",
@@ -8423,7 +8425,9 @@ _SWARM_CSS_SELECTORS = (
     "SurfSwarmCapability", "SurfSwarmThroughput", "SurfSwarmInFlight",
     "SurfSwarmLaunches", "SurfSwarmSites",
     "SurfSwarmAgentCards", "SurfSwarmAgentCards > SurfSwarmAgentCard", "SurfSwarmSeatRecord",
-    *(f"#{SEAT_BOX_IDS[k]}" for k in ("owner", "feedback", "score", "board", "rank")),
+    # The AGENT column grid: one weight per column, stated per card id.
+    *(f"#{box_id}" for box_id in (*AGENT_HERO_BOX_IDS.values(), *SEAT_BOX_IDS.values(),
+                                  *NODE_BOX_IDS.values())),
 )
 
 
