@@ -944,3 +944,21 @@ widget sanitization protect rendering, but the intermediate text can differ cosm
 from the supplied summary. Defer this cosmetic work until the function is next touched;
 it is outside the one fix wave. Preserve path/link privacy, idempotence and bounded work
 when addressing it, and distinguish literal text from actual Markdown syntax.
+
+## F57 — F60 — polish fix-wave scoped re-review Minors (2026-09-22, Approved)
+
+The scoped re-review of `5d1b1ed..503297b` verdicted I1–I4 and M1–M3 ADDRESSED. It filed these
+four Minors in `answer_sentence` / `_safe_stored_answer` (`maxpane_dashboard/data/surf_swarm.py`). Do them
+as Tier 0 when the function is next touched, together with F56. Keep idempotence, bounded linear
+work and the stored-safety predicate in step with the cleaner.
+
+- **F57 — a bare home directory swallows the prose after it.** The user-name pattern takes the
+  words that follow the path and stops only at and/or/but/then. `Wrote /home/bob; done` →
+  `Wrote ~`, `cd /Users/jane && ls` → `cd ~`, `Saved to /home/bob as requested.` → `Saved to ~.`
+  Text is lost but nothing leaks.
+- **F58 — UNC paths are not detected.** `\\server\Users\bob\a.json` passes through unchanged and
+  exposes `bob`, and the stored-safety predicate accepts it. Privacy gap.
+- **F59 — a non-breaking space or tab inside a user name leaks the surname.** `_HOME_USER`
+  allows only `[ ]+`, so `/Users/Jane Doe/work/a.json` → `~ Doe/work/a.json`. Privacy gap.
+- **F60 — bidi format characters pass.** Only C0/C1 controls are stripped, so `x‮y` is
+  accepted and `sanitize_cell` hands it to the RECORD cell unchanged (Unicode category Cf).
