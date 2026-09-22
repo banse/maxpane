@@ -815,3 +815,147 @@ to bite. Re-derive the SEAT top floor and the `minimal.tcss` comment (M7) from t
 **Order:** D-A (hints, re-sweep all surf pins) → D-B′ → I1 → D-C → M2, M3, M4, M7, M8 → F47
 wording → named set (§9) + `-m guard` once at the end. Append **§12** in §9's hand-back format,
 covering every item. Stop there for the scoped re-review. No push, merge, tag or full suite.
+
+---
+
+## 12. Codex amended fix-wave hand-back — 2026-09-22
+
+Completed the ONE fix wave on `feature/surf-swarm-board`, in §11 order. §10's earlier stop
+remains the historical result under the superseded D-B gate. One repository writer at a time;
+all tests used `.venv311`, an isolated temporary HOME and unset `NO_COLOR`. No network, push,
+merge, tag, middle-tier or full-suite run. The protected pool4 oracle remains untracked.
+
+### Commits
+
+| Commit | Scope |
+|---|---|
+| `c480a4c` | D-A, D-B′, M5, SEAT floor part of M7; measured pins and matching docs; F46 closed |
+| `6b038de` | I1 normalization, cache/manager propagation, AGENT unknown-rank formatting; §3/API/model comments |
+| `e623cd8` | D-C/M9, M2/M3/M4/M7/M8; click docs; M6/F47 attribution |
+| `c149a6f` | Scoped recovery of the one stale LAUNCHPAD assertion found by the final named run |
+| This hand-back commit | §12 evidence and final results |
+
+Every implementation commit contains its red→green record and named mutation proofs. All
+**41 deliberate mutations** were killed for the claimed assertion, then inverse-restored to the
+exact original source text. Only mutated-module bytecode was cleared. No test proof was obtained
+by dropping a requirement or raising a pin without measuring it.
+
+### Finding disposition and evidence
+
+| Finding | Disposition, commit and test evidence |
+|---|---|
+| **D-A** | **Fixed `c480a4c`, final assertion recovery `c149a6f`**. Exact owner hint, all body boundaries and whole-status edge measured. `test_the_key_hint_is_the_measured_phrase` failed first then passed; `test_the_key_hint_fits_the_status_bar`, `test_the_status_bar_edge_is_where_it_was_measured`, body whole/not-loose boundaries killed low/high pin and changed-hint mutations. |
+| **D-B′** | **Fixed `c480a4c`; F46 closed.** `test_fix_wave_identity_and_pairing_share_one_composited_line` and `test_fix_wave_feedback_statuses_share_one_composited_line` failed first; deleting either merged fact fails. Contributor-fit tests kill forced-one-line and never-one-line mutations. `test_agent_contributor_lines_follow_actual_screen_room_without_raising_pin` failed before the responsive cap and kills its removal. AGENT row-pin mutations in both directions fail. |
+| **M5** | **Fixed `c480a4c`**. The identity/pairing composite rejects restored `/seats` liveness. `test_fix_wave_worker_metadata_is_absent_from_seat` rejects restored worker metadata; STATUS retains worker liveness. |
+| **I1** | **Fixed `6b038de`**. Initial targeted run: 30 failed/18 passed; restored four-file run: **283 passed**. `test_i1_optional_token_counter_keeps_v3_seat420_listed` kills requiring all nine counters; `test_i1_missing_pause_keeps_v3_worker420_live_but_not_idle` kills dropping missing-pause workers and inventing idle. `test_i1_bad_token_ids_still_drop_without_made_up_malformed_identity` kills invalid tokens coerced to zero in each source. `test_i1_malformed_contributor_evidence_reaches_agent_composite_at_pin` kills lost selected-token bookkeeping. Sibling/totals/rank regressions kill partial-accounting mutations; old-slot regression kills silently defaulting absent metadata. Five-digit unknown rank clipped the clock before the formatter fix; inverse mutation fails the actual 138×32 composite. |
+| **D-C / M9** | **Fixed `e623cd8`**. `test_board_first_click_saves_clicked_seat_once_and_opens_agent` had one passing current-row case and one failing noncurrent-row case before the fix; both pass and the removed first-click behavior fails again. Header/empty-space clicks do not select; Enter and immutable token identity still pass. §2, README and API docs updated. |
+| **M2** | **Fixed `e623cd8`**. `test_the_launchpad_body_is_whole_from_its_pinned_width[128-committed-capture]` fails when `if False and show_marker` suppresses COINS' warning despite cropped status. Bare 138 literals replaced by the canonical body constant. |
+| **M3** | **Fixed `e623cd8`**. BOARD below-pin cases require both table warning and column shedding. Capture-at-pin rejects a false warning; only explicit worst payload permits its runtime exception. Stronger tests exposed two 60-column failures; a local shortened title restores the visible warning. Suppressed marker, false capture marker and removed narrow-title fallback each fail their named boundary regression. |
+| **M4** | **Fixed `e623cd8`**. `test_fitting_runtime_with_literal_ellipsis_does_not_claim_clipping` failed first; plain/tagged ellipses and fitting CJK pass after terminal-cell width comparison. Reverting to ellipsis detection fails. |
+| **M7** | **Fixed `c480a4c`, `e623cd8`**. SEAT comment derives thirteen rows; BOARD CSS in both copies matches neighbouring indentation with identical non-whitespace token streams. IN FLIGHT rationale explains preserving literal bracket text in template/objective. `test_board_full_layout_pin_has_all_columns_and_source_labels` and AGENT row-floor composites pass; comment/whitespace-only parts need no behavioral mutation. |
+| **M8** | **Fixed `e623cd8`**. `test_surf_board_body_has_no_wallet_or_token_address_text` injects wallet values into raw v3 contributor and worker rows, checks normalized/folded absence and composites BOARD. Keeping wallet in either normalizer fails this test; both inverse-restored green. |
+| **M6 / F47** | **Wording fixed `e623cd8`; production issue remains filed as F47/F23.** The extra `states` row caused the observed overflow. THROUGHPUT code unchanged; no new height inferred from the old screenshot. Final guard check passes. |
+
+I1 requires attempts/accepted/rejected/pending/turns/wallClockMs plus contributor identity.
+Token-accounting fields are optional. Valid-token workers remain present with unknown bad fields.
+Malformed contributor identities survive normalized cache and manager lookup; incomplete tokens
+cannot supply partial rows/totals/ranks. Old slots without the required metadata are refused and
+ordinary refresh repopulates them. Public widget field tuples are unchanged. The five-digit
+unknown-rank case uses `rank unavailable` to keep its clock whole; known `ranked_of` remains in data.
+
+Package evidence: D-A/D-B′ **45 focused passed**, then **22 restored proof cases passed**, with
+20 mutations; I1 **283 passed**, 11 mutations; remaining UI **22 passed**, 8 mutations.
+Transient logs/screenshots are under `/tmp/board-amend-layout-{da,db,rows,mutations}/`,
+`/tmp/board-i1-*.log`, `/tmp/board-amend-ui-proofs/`. Durable proof mappings are in the commits.
+
+The final named run exposed one old WP4 assertion still treating LAUNCHPAD's status as its
+binder at 137/138. **Fixed `c149a6f`**: renamed to
+`test_launchpad_full_width_is_bound_by_coins_with_status_already_whole`, it requires whole status
+on both sides and COINS' own warning below the pin only. It passed before proofs and again
+(**1 passed in 1.43 s**) after exact restoration. Suppressing COINS' marker and restoring the old
+long hint each failed the corresponding independent assertion. This adds two mutations to the
+39 package proofs above. No production or pin change, and no repeat of the named set or guard.
+
+### Layout result and retained limitations
+
+AGENT reaches **138 × 32** for ordinary v3 and five-digit stress, and all eleven named AGENT
+payloads. **F46 is closed.** Its top floor is 13 rows (eleven detail lines, title and mandatory
+blank), RECORD retains eight, and chrome contributes eleven. At 138×31 `‹ taller` remains correct.
+Contributors use two lines at the pin; actual-screen reflow combines v3 at 208 (not 207), stress
+at 240 (not 239), and returns to two on narrowing. Every counter and source clock remains.
+
+| Body | Columns × rows | What binds / evidence |
+|---|---|---|
+| Dashboard | 143 × no independent row pin | Bottom market row; retained 142/143 boundary |
+| LAUNCHPAD `l` | 138 × 31 | COINS width; rail height; capture/ordinary-burn boundaries |
+| Experimental pool4 `e` | 99 × 45 | HATCHES width; mainnet-capped HATCHES/VAULT rail height |
+| Pool4 market `4` | 119 × 35 | STAKERS width beside the fixed ladder; paired 12-row floors, margin and chrome |
+| SWARM `s` | 141 × 42 | CAPABILITY width; 16/8/8 row floors plus chrome |
+| AGENT `a` | 138 × 32 | BY NODE full tier; 13 + 8 body floors plus chrome |
+| BOARD `b` | 141 × 23 | LEADERBOARD full tier; FLEET twelve rows plus chrome |
+
+These widths were re-measured because D-A changed the rendered status width and D-B′ changed
+SEAT. D-A swept integers 128–145; retained smaller bodies/dashboard got adjacent boundaries.
+AGENT v3/stress swept 60–225 and heights 25–38; nine other payloads used widths 60–300 at
+boundaries. Unchanged body row boundaries were checked at their own columns. Canonical `#:`
+blocks, test constants, skill table, rules and README carry the resulting guarantees.
+
+The exact owner hint remains `l launchpad · 4 pl4 · s swm · a agt · b brd`. Whole status starts
+at **134** (133 crops); pool4's body guarantees at 99/119 still cannot promise whole status.
+F18/F43 retain that limitation. F16's SWARM 42-row issue remains open. IN FLIGHT notes, RECORD
+objectives and worst-case BOARD runtime retain the explicit content exceptions documented beside
+the pins. M3 also changed the title rendered at very narrow widths; capture/stress at 60/140
+and all five BOARD payloads at 141 reconfirmed the unchanged 141×23 guarantee. No further width
+pin was raised for the contributor group.
+
+### Final verification
+
+Ran the final named set once, using `pytest -n 4 --dist loadfile` over the following explicit
+23-file set. §9 refers to 13 review data/widget files without enumerating them; this set includes
+the 17 data/widget files identified from the branch plus its named screens/registration and the
+pool4 layout file touched by the hint change. It is a scoped superset, not a middle/full suite.
+
+```text
+tests/data/test_surf_cache.py
+tests/data/test_surf_cache_swarm.py
+tests/data/test_surf_manager_swarm.py
+tests/data/test_surf_models.py
+tests/data/test_surf_swarm_board.py
+tests/data/test_surf_swarm_client.py
+tests/data/test_surf_swarm_fixtures.py
+tests/data/test_surf_swarm_models.py
+tests/data/test_surf_swarm_seats.py
+tests/widgets/test_surf_swarm_agent_hero.py
+tests/widgets/test_surf_swarm_board_hero.py
+tests/widgets/test_surf_swarm_fleet.py
+tests/widgets/test_surf_swarm_inflight.py
+tests/widgets/test_surf_swarm_leaderboard.py
+tests/widgets/test_surf_swarm_seat_nodes.py
+tests/widgets/test_surf_swarm_seat_verdicts.py
+tests/widgets/test_surf_widget_contract.py
+tests/screens/test_surf_screen.py
+tests/screens/test_surf_swarm_layout.py
+tests/screens/test_surf_swarm_screen.py
+tests/screens/test_address_icons_everywhere.py
+tests/test_surf_registration.py
+tests/screens/test_surf_pool4_market_layout.py
+```
+
+- Named set: **1,897 passed, 1 failed in 604.97 s**; the sole stale status-binder assertion was
+  corrected in `c149a6f`, with the replacement **1 passed in 1.43 s** after both mutation proofs.
+  No unresolved failure; the entire named set was not repeated.
+- Separate `pytest -n 4 --dist loadfile -m guard`, once: **200 passed in 125.72 s**.
+- Logs: `/tmp/board-amend-final-named.log`, `/tmp/board-amend-final-guard.log`.
+- `git diff --check` clean; THROUGHPUT production and protected fixtures unchanged in this wave.
+- No full release suite: intentionally deferred under the no-push rule and the explicit §11 limit.
+
+Final `git status --short` (after committing this section; no tracked changes):
+
+```text
+?? .codex/
+?? .venv311/
+?? tests/fixtures/surf/pool4/oracle_25955365.json
+```
+
+The oracle was used only as the authorized local fixture and is not tracked. Stop here for the
+scoped re-review; no additional fix round or remote action performed.
