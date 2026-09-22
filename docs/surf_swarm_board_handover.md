@@ -760,3 +760,34 @@ guard and middle-tier results remain recorded in §8; they are not claimed as ne
 
 The protected oracle fixture remains untracked. Stop here for the owner to resolve the D-B
 height constraint before the pending fixes resume.
+
+## 11. Amendment to §9 — resolve the D-B stop and finish the wave (2026-09-22)
+
+§10's stop was correct under §9's wording, but that gate was meant for **D-B only**. This
+amendment replaces D-B's gate; every other §9 item (D-A, D-C, I1, M2–M5, M7, M8, M6/F47 wording)
+is to be done in this same wave. It is still the ONE fix wave — §10 changed no production code.
+
+**D-B′ — AGENT height.** Re-apply the §10 trial (worker metadata and worker-clock lines off AGENT,
+`/seats` liveness off the paired line = M5), plus two **merges that remove no fact**:
+
+1. `paired MM-DD HH:MM` joins the identity line: `IDMD #420 · agent 50939 · paired 09-20 07:34`.
+2. `N queued` joins the feedback line: `feedback 149 sent · 10 submitted · 38 queued`.
+   (The owner-visible 33-row PNG shows `38 queued` alone on a line; that line goes.)
+
+**Contributors: one line only where it fits, never a wider pin.** §10's trial kept the full
+single line and pushed the whole-content onset to 208/240 columns — that is not allowed.
+The contributors group stays two lines when the SEAT panel is too narrow for one, and goes to one
+line only above that width. It keeps every counter, turns, hours, rank and its own clock. The
+AGENT **column** pin is set by D-A's re-sweep and must not rise because of this group.
+
+Then measure AGENT's row minimum at its column pin, for ordinary v3 and five-digit stress.
+- ≤ 32 → close F46 with the measurement.
+- 33 or more → **do not stop and do not cut further**. Adopt the measured value as the pin, update
+  the `#:` block, and leave F46 open with the number and the binding line for the owner.
+
+Each merged line gets a composited regression (both facts on one line, the old line gone), proven
+to bite. Re-derive the SEAT top floor and the `minimal.tcss` comment (M7) from the new line count.
+
+**Order:** D-A (hints, re-sweep all surf pins) → D-B′ → I1 → D-C → M2, M3, M4, M7, M8 → F47
+wording → named set (§9) + `-m guard` once at the end. Append **§12** in §9's hand-back format,
+covering every item. Stop there for the scoped re-review. No push, merge, tag or full suite.
