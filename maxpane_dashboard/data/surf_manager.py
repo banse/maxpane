@@ -5606,7 +5606,7 @@ class SurfManager:
             "swarm_board_as_of_hhmm": contributors_entry.as_of_hhmm() if contributors is not None else None,
             "swarm_workers_as_of_hhmm": workers_entry.as_of_hhmm() if workers is not None else None,
             "swarm_seat_live": sw._seat_live_from_slot(workers, token),
-            "swarm_seat_contrib": sw._seat_contrib_from_rows(rows, token),
+            "swarm_seat_contrib": sw._seat_contrib_from_rows(rows, token, contributors),
         }
 
     # -- the AGENT body's one seat: /seats/{token} (the /seats plan WP2) -----

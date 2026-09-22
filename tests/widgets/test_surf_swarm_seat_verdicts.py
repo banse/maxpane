@@ -199,3 +199,44 @@ async def test_fix_wave_contributors_use_one_line_only_when_all_facts_fit(width,
             assert first == "contributors 207 att · 189 acc · 2 rej · 16 pend"
             assert tail in rows
             assert widget.query_one("#surf-swarm-verdicts-contributor-time").display
+
+
+@pytest.mark.parametrize('defect', ['selected-malformed', 'other-malformed'])
+@pytest.mark.parametrize('stress', [False, True], ids=['v3', 'five-digit'])
+async def test_i1_malformed_contributor_evidence_reaches_agent_composite_at_pin(tmp_path, defect, stress):
+    from tests.data.test_surf_manager_swarm import _FakeSwarm, _landed
+    from tests.screens.test_surf_swarm_layout import _v3_agent_payload
+    from tests.screens.test_surf_screen import _surf_app, _region_text
+
+    swarm = _FakeSwarm()
+    if stress:
+        selected = next(row for row in swarm.contributors['contributors'] if row['tokenId'] == '420')
+        selected.update(attempts=99999, accepted=55555, rejected=11111, pending=33333, turns=99999, wallClockMs='99999000')
+    victim = next(row for row in swarm.contributors['contributors']
+                  if (row['tokenId'] == '420') == (defect == 'selected-malformed'))
+    victim['turns'] = None
+    manager, keys = await _landed(tmp_path, swarm, seat=420)
+    try:
+        payload = _v3_agent_payload()
+        for key in ('swarm_board_summary', 'swarm_board_rows', 'swarm_seat_contrib',
+                    'swarm_board_as_of_hhmm', 'swarm_seat_live', 'swarm_workers_as_of_hhmm'):
+            payload[key] = keys[key]
+        async with _surf_app(payload).run_test(size=(138, 32)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.press('a')
+            await pilot.pause()
+            panel = pilot.app.screen.query_one(SurfSwarmSeatVerdicts)
+            text = _region_text(pilot.app, panel)
+            if defect == 'selected-malformed':
+                assert 'contributors unavailable' in text
+                assert 'not listed' not in text
+            else:
+                assert keys['swarm_seat_contrib']['rank'] is None
+                assert keys['swarm_seat_contrib']['ranked_of'] == len({row['tokenId'] for row in swarm.contributors['contributors']})
+                expected = 'contributors 99999 att · 55555 acc · 11111 rej · 33333 pend' if stress else 'contributors 207 att · 189 acc · 2 rej · 16 pend'
+                assert expected in text
+                rank_line = next(line for line in text.splitlines() if 'rank' in line)
+                assert 'as of ' + keys['swarm_board_as_of_hhmm'] in rank_line
+                assert 'rank unavailable' in rank_line and '…' not in rank_line
+    finally:
+        await manager.close()

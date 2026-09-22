@@ -244,9 +244,9 @@ New keys (names are proposals; keep them if nothing in CLAUDE.md argues otherwis
   `None` when `/workers` is unread.
 - `swarm_board_as_of_hhmm` (the contributors read), `swarm_workers_as_of_hhmm` (the workers read).
 - `swarm_seat_live`: `{live (bool), working, max_concurrency, paused_until_ts, failures,
-  heartbeat_ts, devices}`. `live False` = absent from a good read; the key is `None` when unread.
+  heartbeat_ts, devices}`. `live False` = absent from a good read; the key is `None` when unread or inadmissible.
 - `swarm_seat_contrib`: `{listed (bool), attempts, accepted, rejected, pending, turns, wall_clock_s,
-  rank, ranked_of}`. `listed False` = absent from a good read; `None` when unread.
+  rank, ranked_of}`. `listed False` = absent from a good read; `None` when unread or malformed for that token.
 
 Changes to existing contract:
 - `swarm_seat_summary` gains `skills (int)`, `profiles (list[str])`, `platform (str)` from
@@ -259,7 +259,21 @@ Changes to existing contract:
 Parsing, in `data/surf_swarm.py`:
 - decimal-string counters are parsed strictly: ASCII digits only; a bool, float, negative or garbage
   value → `None`. Reuse `parse_seat_token` / `_seat_id` for token ids; do not re-declare them.
-- A malformed row is dropped, never zero-filled.
+- Contributor admission requires token/device identity and the six displayed counters:
+  `attempts`, `accepted`, `rejected`, `pending`, `turns`, `wallClockMs`. Undisplayed
+  `inputTokens`, `outputTokens`, `cachedInputTokens` become `None` when malformed.
+- Every worker with a valid token is retained; malformed fields become unknown. Missing or
+  malformed pause state is unknown, not idle. Only a valid served pause contributes to PAUSED.
+- A bad token is dropped. A valid contributor token whose required row fields fail is recorded
+  in source `malformed_tokens`; its selected contribution is `None` (unavailable), never
+  not-listed. Valid siblings cannot turn that incomplete token into a partial BOARD row.
+- SEATS counts admitted and malformed token identities. Incomplete contributor accounting
+  makes aggregate counters and ranks unavailable; complete seats keep their own counters.
+  AGENT says `rank unavailable` without a denominator when no rank can be computed; the
+  known seat count stays available in the data, and the source clock remains whole.
+- Normalized cache slots require sorted unique nonnegative integer `malformed_tokens` lists;
+  worker rows also retain boolean `pause_known`. Old slots lacking this information are refused
+  and repopulated by the ordinary refresh. No unknown value is zero-filled.
 - A missing top-level list → the whole key is `None` (see I2 of the last wave).
 
 ---

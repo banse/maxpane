@@ -1574,3 +1574,20 @@ async def test_board_manager_load_supplies_coercers_even_for_an_injected_cache(t
     assert payload["swarm_board_rows"] == before["swarm_board_rows"]
     assert payload["swarm_seat_live"] == before["swarm_seat_live"]
     await fresh.close()
+
+
+async def test_i1_manager_preserves_malformed_token_bookkeeping_across_cache(tmp_path):
+    swarm = _FakeSwarm()
+    row = next(row for row in swarm.contributors['contributors'] if row['tokenId'] == '420')
+    sibling = copy.deepcopy(row); sibling.update(deviceKey='malformed-sibling', turns=None)
+    swarm.contributors['contributors'].append(sibling)
+    manager, payload = await _landed(tmp_path, swarm, seat=420)
+    assert payload['swarm_seat_contrib'] is None
+    assert all(row['token_id'] != 420 for row in payload['swarm_board_rows'])
+    assert manager.cache.get_last_good('swarm_contributors').payload['malformed_tokens'] == [420]
+    await manager.close()
+    fresh = _manager(tmp_path, _FakeSwarm(), seat=420)
+    restored = await fresh.fetch_and_compute()
+    assert restored['swarm_seat_contrib'] is None
+    assert restored['swarm_board_summary']['attempts'] is None
+    await fresh.close()

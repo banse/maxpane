@@ -995,40 +995,48 @@ _CONTRIBUTOR_COUNTERS = {
 }
 
 
+_CONTRIBUTOR_REQUIRED = ("attempts", "accepted", "rejected", "pending", "turns", "wall_clock_ms")
+
+
 def _string_list(value: object) -> list[str] | None:
     return list(value) if isinstance(value, list) and all(isinstance(v, str) for v in value) else None
 
 
 def normalize_contributors(payload: object) -> dict[str, Any] | None:
-    """Normalize a served envelope; require every counter before admitting a row.
+    """Admit displayed attempts/accepted/rejected/pending/turns/wallClockMs.
 
-    All counters use the existing strict ASCII decimal-string/int parser. A
-    missing list is unread; malformed members are dropped, never zero-filled.
-    The token-accounting counters are retained and aggregated, never ranked.
+    Device identity is required; undisplayed inputTokens/outputTokens/
+    cachedInputTokens are optional None. A valid token with an inadmissible
+    row is remembered, never relabelled absent. Missing lists remain unread.
     """
     if not isinstance(payload, Mapping) or not isinstance(payload.get("contributors"), list):
         return None
     rows = []
+    malformed_tokens: set[int] = set()
     for source in _mappings(payload["contributors"]):
         token = _served_token(source.get("tokenId"))
         device = _str(source.get("deviceKey"))
         counts = {name: _served_token(source.get(field)) for name, field in _CONTRIBUTOR_COUNTERS.items()}
-        if token is None or not device or any(value is None for value in counts.values()):
+        if token is None:
+            continue
+        if not device or any(counts[field] is None for field in _CONTRIBUTOR_REQUIRED):
+            malformed_tokens.add(token)
             continue
         rows.append({"device_key": device, "token_id": token, **counts})
     return {
         "receipts": _served_token(payload.get("receipts")),
         "tokens_per_completed_job": _served_token(payload.get("tokensPerCompletedJob")),
         "contributors": rows,
+        "malformed_tokens": sorted(malformed_tokens),
     }
 
 
 def normalize_workers(payload: object) -> dict[str, Any] | None:
-    """Normalize live devices; malformed identity, capacity or pause drops a row.
+    """Keep every valid-token worker; other malformed fields remain unknown.
 
-    Missing optional metadata remains None, distinct from a served empty list.
-    A malformed pause is never evidence of an idle worker. LIVE remains the
-    served envelope count even when malformed rows were omitted from the list.
+    pause_known distinguishes served null from missing/malformed pause data.
+    Only a complete until/failures pair establishes a pause. Unknown counters
+    must not become zeros; LIVE remains the independent served count.
     """
     if not isinstance(payload, Mapping) or not isinstance(payload.get("workers"), list):
         return None
@@ -1038,22 +1046,20 @@ def normalize_workers(payload: object) -> dict[str, Any] | None:
         if not isinstance(seat, Mapping):
             continue
         token = _served_token(seat.get("tokenId"))
-        device = _str(source.get("deviceKey"))
+        device = _str(source.get("deviceKey")) or None
         working = _served_token(source.get("working"))
         capacity = _served_token(source.get("maxConcurrency"))
-        if token is None or not device or working is None or capacity is None:
+        if token is None:
             continue
         until = failures = None
-        if "paused" not in source:
-            continue
-        pause = source["paused"]
-        if pause is not None:
-            if not isinstance(pause, Mapping):
-                continue
+        pause = source.get("paused")
+        pause_known = "paused" in source and pause is None
+        if isinstance(pause, Mapping):
             until = _ts(pause.get("until"))
             failures = _served_token(pause.get("consecutiveFailures"))
-            if until is None or failures is None:
-                continue
+            pause_known = until is not None and failures is not None
+            if not pause_known:
+                until = failures = None
         runtime_source = source.get("runtimes")
         runtimes = None
         if (isinstance(runtime_source, list)
@@ -1065,18 +1071,23 @@ def normalize_workers(payload: object) -> dict[str, Any] | None:
         rows.append({
             "device_key": device, "token_id": token, "agent_id": _str(seat.get("agentId")),
             "working": working, "max_concurrency": capacity,
-            "paused_until_ts": until, "failures": failures,
+            "paused_until_ts": until, "failures": failures, "pause_known": pause_known,
             "heartbeat_ts": _ts(source.get("lastHeartbeatAt")),
             "runtimes": runtimes, "daemon": _str(source.get("daemonVersion")),
             "profiles": _string_list(source.get("profiles")),
             "skills": _string_list(source.get("skills")), "os": os,
             "platform": f"{os} {arch}" if os is not None and arch is not None else None,
         })
-    return {"count": _served_token(payload.get("count")), "workers": rows}
+    return {"count": _served_token(payload.get("count")), "workers": rows, "malformed_tokens": []}
 
 
 def _valid_count(value: object) -> bool:
     return _seat_id(value) is not None
+
+
+def _valid_malformed_tokens(value: object) -> bool:
+    return (isinstance(value, list) and all(_valid_count(token) for token in value)
+            and value == sorted(set(value)))
 
 
 def _optional_count(value: object) -> bool:
@@ -1116,29 +1127,38 @@ def _coerce_board_slot(payload: object, member: str, fields: dict, row_fields: d
         if not all(check(row[key]) for key, check in row_fields.items()):
             return None
         rows.append({key: list(value) if isinstance(value, list) else value for key, value in row.items()})
-    return {**{key: payload[key] for key in fields}, member: rows}
+    return {**{key: list(payload[key]) if isinstance(payload[key], list) else payload[key]
+               for key in fields}, member: rows}
 
 
 def coerce_contributors_slot(payload: object) -> dict[str, Any] | None:
     """Validate every normalized field; cached decimal strings are not re-parsed."""
     return _coerce_board_slot(payload, "contributors", {
         "receipts": _optional_count, "tokens_per_completed_job": _optional_count,
+        "malformed_tokens": _valid_malformed_tokens,
     }, {"device_key": lambda v: isinstance(v, str) and bool(v), "token_id": _valid_count,
-        **dict.fromkeys(_CONTRIBUTOR_COUNTERS, _valid_count)})
+        **{field: _valid_count if field in _CONTRIBUTOR_REQUIRED else _optional_count
+           for field in _CONTRIBUTOR_COUNTERS}})
 
 
 def coerce_workers_slot(payload: object) -> dict[str, Any] | None:
     """Validate every normalized worker field and the paired pause timestamp/count."""
-    result = _coerce_board_slot(payload, "workers", {"count": _optional_count}, {
-        "device_key": lambda v: isinstance(v, str) and bool(v), "token_id": _valid_count,
-        "agent_id": _optional_string, "working": _valid_count, "max_concurrency": _valid_count,
+    result = _coerce_board_slot(payload, "workers", {
+        "count": _optional_count, "malformed_tokens": _valid_malformed_tokens,
+    }, {
+        "device_key": _optional_string, "token_id": _valid_count,
+        "agent_id": _optional_string, "working": _optional_count, "max_concurrency": _optional_count,
+        "pause_known": lambda value: isinstance(value, bool),
         "paused_until_ts": _optional_stamp, "failures": _optional_count,
         "heartbeat_ts": _optional_stamp, "runtimes": _optional_strings,
         "daemon": _optional_string, "profiles": _optional_strings, "skills": _optional_strings,
         "os": _optional_string, "platform": _optional_string,
     })
-    if result is not None and any((row["paused_until_ts"] is None) != (row["failures"] is None)
-                                  for row in result["workers"]):
+    if result is not None and any(
+        (row["paused_until_ts"] is None) != (row["failures"] is None)
+        or (not row["pause_known"] and row["paused_until_ts"] is not None)
+        for row in result["workers"]
+    ):
         return None
     return result
 
@@ -1156,15 +1176,24 @@ def _metadata_union(rows: list[dict], field: str) -> list[str] | None:
     return sorted({value for row in rows for value in row[field]})
 
 
+def _sum_known(values) -> int | None:
+    values = list(values)
+    return None if any(value is None for value in values) else sum(values)
+
+
+def _contributor_tokens(slot: dict) -> set[int]:
+    return {row["token_id"] for row in slot["contributors"]} | set(slot["malformed_tokens"])
+
+
 def _live_for_workers(rows: list[dict]) -> dict[str, Any]:
     live = dict.fromkeys(SWARM_SEAT_LIVE_FIELDS)
-    live.update(live=bool(rows), working=sum(row["working"] for row in rows),
-                max_concurrency=sum(row["max_concurrency"] for row in rows), devices=len(rows))
+    live.update(live=bool(rows), working=_sum_known(row["working"] for row in rows),
+                max_concurrency=_sum_known(row["max_concurrency"] for row in rows), devices=len(rows))
     if not rows:
         return live
     paused = [row for row in rows if row["paused_until_ts"] is not None]
     if paused:
-        chosen = min(paused, key=lambda row: (row["paused_until_ts"], row["device_key"]))
+        chosen = min(paused, key=lambda row: (row["paused_until_ts"], row["device_key"] or ""))
         live["paused_until_ts"], live["failures"] = chosen["paused_until_ts"], chosen["failures"]
     live["heartbeat_ts"] = max((row["heartbeat_ts"] for row in rows if row["heartbeat_ts"] is not None), default=None)
     skills = _metadata_union(rows, "skills")
@@ -1175,12 +1204,14 @@ def _live_for_workers(rows: list[dict]) -> dict[str, Any]:
     return live
 
 
-def _live_state(live: dict) -> str:
+def _live_state(live: dict, rows: list[dict]) -> str | None:
     if not live["live"]:
         return "offline"
-    if live["working"]:
+    if any(row["working"] is not None and row["working"] > 0 for row in rows):
         return "working"
-    return "paused" if live["paused_until_ts"] is not None else "idle"
+    if live["paused_until_ts"] is not None:
+        return "paused"
+    return "idle" if all(row["working"] == 0 and row["pause_known"] for row in rows) else None
 
 
 def _runtime_bucket(values: list[str] | None) -> str | None:
@@ -1202,11 +1233,14 @@ def _board_rows_from_slots(contributors: dict | None, workers: dict | None) -> l
     if contributors is None:
         return None
     grouped: dict[int, dict] = {}
+    malformed_tokens = set(contributors["malformed_tokens"])
     for row in contributors["contributors"]:
+        if row["token_id"] in malformed_tokens:
+            continue
         counts = grouped.setdefault(row["token_id"], {"devices": set(), **dict.fromkeys(_CONTRIBUTOR_COUNTERS, 0)})
         counts["devices"].add(row["device_key"])
         for field in _CONTRIBUTOR_COUNTERS:
-            counts[field] += row[field]
+            counts[field] = _sum_known((counts[field], row[field]))
     live_groups = _worker_groups(workers)
     result = []
     for token, counts in grouped.items():
@@ -1218,14 +1252,14 @@ def _board_rows_from_slots(contributors: dict | None, workers: dict | None) -> l
             rate = None
         row = {
             "rank": None, "token_id": token,
-            "agent_id": next((row["agent_id"] for row in sorted(live_rows, key=lambda row: row["device_key"])
+            "agent_id": next((row["agent_id"] for row in sorted(live_rows, key=lambda row: row["device_key"] or "")
                               if row["agent_id"] is not None), None),
             "devices": len(counts["devices"]),
             "runtime": (_runtime_bucket(_metadata_union(live_rows, "runtimes")) if live_rows
                         else "offline" if workers is not None else None),
             **{field: counts[field] for field in ("attempts", "accepted", "rejected", "pending")},
             "accept_rate": rate, "turns": counts["turns"], "wall_clock_s": _seconds(counts["wall_clock_ms"]),
-            "live_state": _live_state(live) if live is not None else None,
+            "live_state": _live_state(live, live_rows) if live is not None else None,
             "working": live["working"] if live is not None else None,
             "paused_until_ts": live["paused_until_ts"] if live is not None else None,
             "failures": live["failures"] if live is not None else None,
@@ -1234,7 +1268,7 @@ def _board_rows_from_slots(contributors: dict | None, workers: dict | None) -> l
     result.sort(key=lambda row: (-row["accepted"], row["accept_rate"] is None,
                                  -(row["accept_rate"] or 0), row["token_id"]))
     for rank, row in enumerate(result, 1):
-        row["rank"] = rank
+        row["rank"] = rank if not malformed_tokens else None
     return result
 
 
@@ -1247,17 +1281,18 @@ def _board_summary_from_slots(contributors: dict | None, workers: dict | None) -
     summary = dict.fromkeys(SWARM_BOARD_SUMMARY_FIELDS)
     if contributors is not None:
         rows = contributors["contributors"]
-        summary["seats"] = len({row["token_id"] for row in rows})
-        for field in ("attempts", "accepted", "rejected", "pending"):
-            summary[field] = sum(row[field] for row in rows)
+        summary["seats"] = len(_contributor_tokens(contributors))
+        if not contributors["malformed_tokens"]:
+            for field in ("attempts", "accepted", "rejected", "pending"):
+                summary[field] = sum(row[field] for row in rows)
         summary["receipts"] = contributors["receipts"]
         summary["tokens_per_completed_job"] = contributors["tokens_per_completed_job"]
     if workers is not None:
         rows = workers["workers"]
         summary["live"] = workers["count"]
         summary["paused"] = len({row["token_id"] for row in rows if row["paused_until_ts"] is not None})
-        summary["capacity"] = sum(row["max_concurrency"] for row in rows)
-        summary["working"] = sum(row["working"] for row in rows)
+        summary["capacity"] = _sum_known(row["max_concurrency"] for row in rows)
+        summary["working"] = _sum_known(row["working"] for row in rows)
     return summary
 
 
@@ -1283,7 +1318,7 @@ def _fleet_from_slot(slot: dict | None) -> dict | None:
         runtimes=_mix(_runtime_bucket(row["runtimes"]) for row in rows),
         daemons=_mix(row["daemon"] for row in rows), os=_mix(row["os"] for row in rows),
         profiles=_mix("+".join(sorted(set(row["profiles"]))) or "none" if row["profiles"] is not None else None for row in rows),
-        concurrency=_mix(str(row["max_concurrency"]) for row in rows),
+        concurrency=_mix(str(row["max_concurrency"]) for row in rows if row["max_concurrency"] is not None),
     )
     stamps = [row["heartbeat_ts"] for row in rows if row["heartbeat_ts"] is not None]
     result["heartbeat_oldest_ts"] = min(stamps, default=None)
@@ -1304,7 +1339,7 @@ def fleet(workers: object) -> dict | None:
 
 def _seat_live_from_slot(workers: dict | None, token: object) -> dict | None:
     wanted = _seat_id(token)
-    if workers is None or wanted is None:
+    if workers is None or wanted is None or wanted in workers["malformed_tokens"]:
         return None
     return _live_for_workers(_worker_groups(workers).get(wanted, []))
 
@@ -1314,15 +1349,16 @@ def seat_live(workers: object, token: object) -> dict | None:
     return _seat_live_from_slot(normalize_workers(workers), token)
 
 
-def _seat_contrib_from_rows(rows: list[dict] | None, token: object) -> dict | None:
+def _seat_contrib_from_rows(rows: list[dict] | None, token: object, contributors: dict | None) -> dict | None:
     wanted = _seat_id(token)
-    if rows is None or wanted is None:
+    if (rows is None or wanted is None or contributors is None
+            or wanted in contributors["malformed_tokens"]):
         return None
     result = dict.fromkeys(SWARM_SEAT_CONTRIB_FIELDS)
     result["listed"] = False
     selected = next((row for row in rows if row["token_id"] == wanted), None)
     if selected is not None:
-        result.update(listed=True, ranked_of=len(rows))
+        result.update(listed=True, ranked_of=len(_contributor_tokens(contributors)))
         for field in ("attempts", "accepted", "rejected", "pending", "turns", "wall_clock_s", "rank"):
             result[field] = selected[field]
     return result
@@ -1330,4 +1366,5 @@ def _seat_contrib_from_rows(rows: list[dict] | None, token: object) -> dict | No
 
 def seat_contrib(contributors: object, token: object) -> dict | None:
     """Selected token's lifetime contributor counters, independent of /seats."""
-    return _seat_contrib_from_rows(board_rows(contributors, None), token)
+    slot = normalize_contributors(contributors)
+    return _seat_contrib_from_rows(_board_rows_from_slots(slot, None), token, slot)

@@ -277,21 +277,36 @@ Mixed-source panels receive both markers. A failed endpoint preserves its old sl
 stores a changed successful counterpart, and schedules the tier with the 120-second backoff.
 Selecting another seat derives that token's live/contributor state from these cached slots without another board request.
 
-Contributor admission requires valid token/device identity and **all** served numeric counters,
-including the token accounting fields that are not displayed. Numeric parsing accepts nonnegative
-integers or ASCII-digit decimal strings only; booleans, floats, negatives, signs, whitespace and
-garbage are invalid. The existing strict token parser is reused. A malformed row is dropped, never
-zero-filled; a missing top-level list makes the corresponding source unread. Valid empty lists
-are real empty reads. Workers require valid token/device identity, working/maxConcurrency, and
-a served `paused: null` or valid pause object. Missing or malformed pause state drops the row
-rather than inventing an idle device. Optional metadata stays `None` if unavailable, distinct
-from served empty lists. Empty fleet metadata mixes read `none reported`.
+Contributor admission requires valid token/device identity and the six displayed counters:
+`attempts`, `accepted`, `rejected`, `pending`, `turns`, `wallClockMs`. The undisplayed
+`inputTokens`, `outputTokens`, `cachedInputTokens` are optional and become `None` if malformed.
+Numeric parsing accepts nonnegative integers or ASCII-digit decimal strings only; booleans,
+floats, negatives, signs, whitespace and garbage are invalid. The strict token parser is reused.
+A missing top-level list makes the source unread; a valid empty list is a real empty read.
 
-For a seat with multiple worker devices, sum working and concurrency, count devices and retain
-the newest heartbeat. State priority is working, then paused, then idle. For multiple pauses choose
-the earliest `until`, breaking ties by device key, and keep that device's paired failure count.
-A good workers read without a seat yields `offline`; an unread workers source yields unavailable.
-A good contributors read without a seat yields `listed: False`; unread yields `None`.
+A bad token is dropped. A valid contributor token with an inadmissible row is remembered in
+`malformed_tokens`. Its selected contribution is unavailable, and all its BOARD rows are
+suppressed, including otherwise valid siblings. SEATS counts the union of admitted and malformed
+tokens. Aggregate attempts/accepted/rejected/pending and all ranks become unavailable when
+accounting is incomplete; other complete seats retain their own counters. AGENT renders
+`rank unavailable` without a denominator in that case, preserving room for its source clock;
+`ranked_of` still carries the known seat count in data. Receipts and
+tokens-per-completed-job remain independently served values.
+
+Every valid-token worker stays present. Bad device, numeric or metadata fields become unknown.
+Internal `pause_known` distinguishes served null pause from missing/malformed pause; a valid
+pause retains its paired until/failures. Working and capacity sums are unavailable if any member
+is unknown. Positive known work proves working; otherwise a valid pause proves paused. Idle
+requires every device to have known zero work and known-null pause; other cases are unknown.
+For multiple pauses choose the earliest until, breaking ties by device key, retaining its paired
+failure count. Unknown concurrency produces no fleet bucket. Optional metadata remains `None`,
+distinct from served empty lists; empty fleet metadata mixes read `none reported`.
+
+A good workers read without a seat yields offline; unread or inadmissible yields unavailable.
+A good contributors read without a seat yields `listed: False`; unread or malformed yields
+`None`. Cache slots require sorted unique nonnegative integer `malformed_tokens` lists, and
+worker rows require boolean `pause_known`. Old normalized slots lacking this bookkeeping are
+rejected because discarded identities cannot be reconstructed; ordinary refresh repopulates them.
 
 Worker metadata belongs in **`swarm_seat_live`**, keeping `/seats` summary fields source-pure:
 `skills` is the distinct skill count, `profiles` a sorted distinct list, and `platform` the sorted

@@ -1506,17 +1506,22 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 }
 
 # ---- BOARD contract (docs/surf_swarm_board_handover.md §3) --------------------
-# Contributor rows require a usable token/device key and every served numeric
-# counter: attempts, accepted, rejected, pending, turns, wallClockMs, inputTokens,
-# outputTokens, cachedInputTokens. Decimal strings contain ASCII digits only;
-# bools, floats, signs and whitespace are invalid. Malformed rows are dropped,
-# never zero-filled; all counters aggregate per token before rendering the subset.
-# Workers require token/device identity plus working/maxConcurrency counters.
-# Missing optional metadata stays None; a served empty list is a real empty.
+# Contributor admission requires token/device identity plus six displayed counters:
+# attempts, accepted, rejected, pending, turns, wallClockMs. Undisplayed inputTokens,
+# outputTokens and cachedInputTokens may be None. ASCII decimal strings parse;
+# bools, floats, signs and whitespace do not. Bad tokens drop; valid-token rows
+# failing admission enter malformed_tokens. Their selected contribution is None,
+# never absent, and valid siblings cannot supply a partial BOARD row.
+# Every valid-token worker stays present; bad fields become unknown. Internal
+# pause_known distinguishes served null from missing/malformed pause state.
+# Both persisted slots require sorted unique integer malformed_tokens lists;
+# workers also require pause_known. Old slots without bookkeeping are refused.
 # Missing top-level lists are unread, distinct from successful empty lists.
 
 #: Fields from /contributors: seats (distinct tokens), attempts/accepted/rejected/
 #: pending sums, receipts and tokens_per_completed_job (both as served).
+#: seats includes malformed token identities; incomplete contribution accounting
+#: leaves the four aggregate counters None. Unknown worker members yield unknown sums.
 #: Fields from /workers: live (valid served count, never /health or a row count),
 #: paused (distinct seats), capacity and working sums. An unread source leaves
 #: only its own fields None; no source supplies or reconciles another's values.
@@ -1535,9 +1540,11 @@ SWARM_FLEET_FIELDS: tuple[str, ...] = (
     "heartbeat_oldest_ts", "heartbeat_newest_ts", "paused",
 )
 
-#: None means /workers unread. live=False means absent from a good read.
+#: None means /workers unread or selected token inadmissible; live=False means absent.
 #: For multiple devices sum working/capacity, count devices and use the newest
-#: heartbeat. State priority is working > paused > idle. Choose the earliest
+#: heartbeat. Known positive work proves working, then valid pause proves paused;
+#: idle requires all known zero work and known-null pause, otherwise unknown.
+#: Unknown members make working/capacity sums None. Choose the earliest
 #: paused until, then device key, retaining that device's paired failures.
 #: Worker metadata belongs here so /seats summary fields retain their source:
 #: skills is the distinct skill count, profiles a sorted distinct list, platform
@@ -1548,9 +1555,10 @@ SWARM_SEAT_LIVE_FIELDS: tuple[str, ...] = (
     "heartbeat_ts", "devices", "skills", "profiles", "platform",
 )
 
-#: None means /contributors unread. listed=False means absent from a good read;
+#: None means /contributors unread or selected token malformed. listed=False is absent;
 #: its numeric fields are None. Listed rows aggregate all devices of the token.
 #: rank/ranked_of use the whole contributor board, never the live workers list.
+#: Incomplete accounting leaves rank None and ranked_of the known token count.
 #: wall_clock_s is aggregated wallClockMs / 1000 (hours are a display conversion).
 SWARM_SEAT_CONTRIB_FIELDS: tuple[str, ...] = (
     "listed", "attempts", "accepted", "rejected", "pending", "turns",

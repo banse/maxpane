@@ -244,7 +244,7 @@ def test_board_unconfigured_load_refuses_the_slot_instead_of_trusting_it(tmp_pat
 
 
 @pytest.mark.parametrize("source", ["workers", "contributors"])
-@pytest.mark.parametrize("field,value", [("token_id", True), ("device_key", None)])
+@pytest.mark.parametrize("field,value", [("token_id", True), ("device_key", 123)])
 def test_board_hand_edited_slot_is_refused_at_load(tmp_path, source, field, value):
     from tests.data.test_surf_cache import FakeClock
     from tests.surf_swarm_fixtures import swarm_capture_v3
@@ -262,3 +262,19 @@ def test_board_hand_edited_slot_is_refused_at_load(tmp_path, source, field, valu
     assert fresh.get_last_good(f"swarm_{source}") is None
     good = "contributors" if source == "workers" else "workers"
     assert fresh.get_last_good(f"swarm_{good}") is not None
+
+
+@pytest.mark.parametrize('source', ['contributors', 'workers'])
+def test_i1_cache_refuses_old_source_slots_missing_identity_metadata(tmp_path, source):
+    from tests.data.test_surf_cache import FakeClock
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+
+    clock = FakeClock()
+    payload = getattr(sw, f'normalize_{source}')(swarm_capture_v3(source))
+    payload.pop('malformed_tokens')
+    cache = SurfCache(path=tmp_path / 'surf.json', clock=clock)
+    cache.store_last_good(f'swarm_{source}', payload, ts=clock.t)
+    cache.save()
+    fresh = SurfCache(path=cache.path, clock=clock)
+    fresh.load(slot_coercers=_board_coercers())
+    assert fresh.get_last_good(f'swarm_{source}') is None

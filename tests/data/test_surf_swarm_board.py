@@ -79,7 +79,7 @@ def test_strict_decimal_counter_parser_never_coerces_garbage(bad):
     assert sw._served_token(bad) is None
 
 
-@pytest.mark.parametrize('field', list(_COUNTERS.values()))
+@pytest.mark.parametrize('field', ['attempts', 'accepted', 'rejected', 'pending', 'turns', 'wallClockMs'])
 @pytest.mark.parametrize('bad', ['12.5', '-1', True, None])
 def test_any_malformed_required_contributor_counter_drops_its_row(contributors, field, bad):
     source = copy.deepcopy(contributors['contributors'][0])
@@ -243,9 +243,14 @@ def test_optional_worker_metadata_preserves_missing_empty_and_union(workers):
 
 
 @pytest.mark.parametrize('field,value', [('working', True), ('maxConcurrency', '-1'), ('paused', {}), ('paused', {'until': 'bad', 'consecutiveFailures': 3}), ('paused', {'until': '2026-09-22T02:00:00Z', 'consecutiveFailures': True}), ('seat', {'tokenId': False}), ('deviceKey', '')])
-def test_malformed_worker_is_dropped_not_falsely_idle(workers, field, value):
+def test_worker_field_defects_do_not_erase_a_valid_token(workers, field, value):
     row = copy.deepcopy(workers['workers'][0]); row[field] = value
-    assert sw.normalize_workers({'workers': [row]})['workers'] == []
+    normalized = sw.normalize_workers({'workers': [row]})['workers']
+    if field == 'seat':
+        assert normalized == []
+    else:
+        assert len(normalized) == 1
+        assert sw.seat_live({'workers': [row]}, int(row['seat']['tokenId']))['live'] is True
 
 
 def test_huge_wall_clock_integer_degrades_only_float_conversion(contributors):
@@ -266,7 +271,7 @@ def test_normalized_slot_roundtrips_validate_without_reparsing(contributors, wor
         assert coerce(slot) == slot
         corrupt = copy.deepcopy(slot); corrupt[name][0]['token_id'] = str(corrupt[name][0]['token_id'])
         assert coerce(corrupt) is None
-        corrupt = copy.deepcopy(slot); corrupt[name][0]['device_key'] = None
+        corrupt = copy.deepcopy(slot); corrupt[name][0]['device_key'] = 123
         assert coerce(corrupt) is None
         assert coerce({name: 'bad'}) is None
 
@@ -332,4 +337,126 @@ def test_malformed_contributor_identity_is_dropped(contributors, field, value):
 def test_normalized_worker_lists_refuse_bad_members(workers, field):
     slot = sw.normalize_workers(workers)
     slot['workers'][0][field] = ['valid', 123]
+    assert sw.coerce_workers_slot(slot) is None
+
+
+# §9 I1: malformed fields never fabricate offline / not-listed identities.
+
+@pytest.mark.parametrize('optional', ['inputTokens', 'outputTokens', 'cachedInputTokens'])
+def test_i1_optional_token_counter_keeps_v3_seat420_listed(contributors, workers, optional):
+    original_seats = {int(row['tokenId']) for row in contributors['contributors']}
+    for row in contributors['contributors']:
+        if row['tokenId'] == '420':
+            row[optional] = None
+    slot = sw.normalize_contributors(contributors)
+    normalized = next(row for row in slot['contributors'] if row['token_id'] == 420)
+    field = next(key for key, source in _COUNTERS.items() if source == optional)
+    assert normalized[field] is None
+    assert slot['malformed_tokens'] == []
+    assert sw.seat_contrib(contributors, 420)['listed'] is True
+    assert any(row['token_id'] == 420 for row in sw.board_rows(contributors, workers))
+    assert sw.board_summary(contributors, workers)['seats'] == len(original_seats)
+
+
+def test_i1_missing_pause_keeps_v3_worker420_live_but_not_idle(contributors, workers):
+    row = next(row for row in workers['workers'] if row['seat']['tokenId'] == '420')
+    row.pop('paused')
+    assert sw.seat_live(workers, 420)['live'] is True
+    selected = next(row for row in sw.board_rows(contributors, workers) if row['token_id'] == 420)
+    assert selected['live_state'] is None
+    assert selected['runtime'] != 'offline'
+    assert sw.board_summary(contributors, workers)['live'] == workers['count']
+    normalized = next(row for row in sw.normalize_workers(workers)['workers'] if row['token_id'] == 420)
+    assert normalized['pause_known'] is False
+    assert normalized['paused_until_ts'] is normalized['failures'] is None
+
+
+@pytest.mark.parametrize('source', ['contributors', 'workers'])
+@pytest.mark.parametrize('bad', [True, -1, 'not-a-token', '١٢', None])
+def test_i1_bad_token_ids_still_drop_without_made_up_malformed_identity(source, bad):
+    payload = swarm_capture_v3(source)
+    row = copy.deepcopy(payload[source][0])
+    (row['seat'] if source == 'workers' else row)['tokenId'] = bad
+    normalized = getattr(sw, f'normalize_{source}')({source: [row]})
+    assert normalized[source] == []
+    assert normalized['malformed_tokens'] == []
+
+
+@pytest.mark.parametrize('field', ['attempts', 'accepted', 'rejected', 'pending', 'turns', 'wallClockMs', 'deviceKey'])
+def test_i1_incomplete_token_suppresses_valid_sibling_and_full_source_totals(contributors, workers, field):
+    original_seats = {int(row['tokenId']) for row in contributors['contributors']}
+    original = next(row for row in contributors['contributors'] if row['tokenId'] == '420')
+    invalid = copy.deepcopy(original); invalid['deviceKey'] = 'another-device'; invalid[field] = None
+    contributors['contributors'].append(invalid)
+    slot = sw.normalize_contributors(contributors)
+    assert slot['malformed_tokens'] == [420]
+    assert sw.seat_contrib(contributors, 420) is None
+    rows = sw.board_rows(contributors, workers)
+    assert rows and all(row['token_id'] != 420 for row in rows)
+    assert all(row['rank'] is None for row in rows)
+    summary = sw.board_summary(contributors, workers)
+    assert summary['seats'] == len(original_seats)
+    assert all(summary[key] is None for key in ('attempts', 'accepted', 'rejected', 'pending'))
+    assert summary['receipts'] == contributors['receipts']
+    assert summary['tokens_per_completed_job'] == contributors['tokensPerCompletedJob']
+    good = rows[0]['token_id']
+    selected = sw.seat_contrib(contributors, good)
+    assert selected['listed'] is True and selected['rank'] is None
+    assert selected['ranked_of'] == len(original_seats)
+    assert selected['accepted'] == rows[0]['accepted']
+
+
+def test_i1_unknown_worker_counts_are_not_partial_totals_or_none_mix_buckets(workers, contributors):
+    original = copy.deepcopy(next(row for row in workers['workers'] if row['seat']['tokenId'] == '420'))
+    original.update(working=2, maxConcurrency=3, paused=None)
+    unknown = copy.deepcopy(original)
+    unknown.update(deviceKey=None, working=None, maxConcurrency=None)
+    unknown.pop('paused')
+    workers['workers'] = [original, unknown]
+    live = sw.seat_live(workers, 420)
+    assert live['live'] is True and live['devices'] == 2
+    assert live['working'] is live['max_concurrency'] is None
+    summary = sw.board_summary(contributors, workers)
+    assert summary['working'] is summary['capacity'] is None
+    assert sw.fleet(workers)['concurrency'] == [{'value': '3', 'count': 1}]
+    row = next(row for row in sw.board_rows(contributors, workers) if row['token_id'] == 420)
+    assert row['live_state'] == 'working' and row['working'] is None
+    original['working'] = 0
+    original['paused'] = {'until': '2026-09-22T02:00:00Z', 'consecutiveFailures': 3}
+    row = next(row for row in sw.board_rows(contributors, workers) if row['token_id'] == 420)
+    assert row['live_state'] == 'paused'
+    original['paused'] = None
+    row = next(row for row in sw.board_rows(contributors, workers) if row['token_id'] == 420)
+    assert row['live_state'] is None
+
+
+@pytest.mark.parametrize('source', ['workers', 'contributors'])
+@pytest.mark.parametrize('bad', [None, {}, [True], [-1], ['420'], [420, 420], [421, 420]])
+def test_i1_malformed_tokens_metadata_is_strict(source, bad):
+    slot = getattr(sw, f'normalize_{source}')(swarm_capture_v3(source))
+    slot['malformed_tokens'] = bad
+    assert getattr(sw, f'coerce_{source}_slot')(slot) is None
+
+
+@pytest.mark.parametrize('source', ['workers', 'contributors'])
+def test_i1_old_slots_lacking_lost_identity_metadata_are_refused(source):
+    slot = getattr(sw, f'normalize_{source}')(swarm_capture_v3(source))
+    slot.pop('malformed_tokens')
+    assert getattr(sw, f'coerce_{source}_slot')(slot) is None
+
+
+@pytest.mark.parametrize('bad', [None, 0, 1, 'true'])
+def test_i1_pause_known_is_a_strict_internal_boolean(workers, bad):
+    slot = sw.normalize_workers(workers)
+    slot['workers'][0]['pause_known'] = bad
+    assert sw.coerce_workers_slot(slot) is None
+
+
+def test_i1_unknown_pause_cannot_persist_a_conflicting_known_pair(workers):
+    slot = sw.normalize_workers(workers)
+    row = next(row for row in slot['workers'] if row['paused_until_ts'] is not None)
+    row['pause_known'] = False
+    assert sw.coerce_workers_slot(slot) is None
+    slot = sw.normalize_workers(workers)
+    del slot['workers'][0]['pause_known']
     assert sw.coerce_workers_slot(slot) is None

@@ -167,4 +167,6 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
             return Text(f"contributors {count('attempts')} att · {count('accepted')} acc · {count('rejected')} rej · {count('pending')} pend")
         seconds = contrib.get("wall_clock_s")
         hours = fmt_float(seconds / 3600, '.1f') if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) else "unavailable"
-        return Text(f"{count('turns')} turns · {hours} h · rank #{count('rank')} of {count('ranked_of')} · as of {source_clock(board_clock)}")
+        rank = (f"rank #{count('rank')} of {count('ranked_of')}"
+                if seat_token(contrib.get("rank")) is not None else "rank unavailable")
+        return Text(f"{count('turns')} turns · {hours} h · {rank} · as of {source_clock(board_clock)}")
