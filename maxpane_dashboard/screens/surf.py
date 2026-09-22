@@ -1763,14 +1763,23 @@ BOARD_BODY_ID = "surf-board-body"
 #: 143 is unchanged.
 SURF_BOARD_FULL_LAYOUT_COLUMNS = 141
 
-#: BOARD height, measured over every integer 20–61 at 150 and 142 columns on
-#: all five payloads above. §11 reconfirmed 22/23 at 141 on capture/stress.
-#: FLEET's twelve fixed rows (title, blank, ten detail
-#: lines) bind the body; the seven-row hero and four chrome rows total 23.
-#: LEADERBOARD has an eight-row minimum and scrolls internally with all 999
-#: stress seats retained. Taller is lit through 22 and dark from 23; both
-#: owner 35-row and 31-row terminals fit vertically.
-SURF_BOARD_FULL_LAYOUT_ROWS = 23
+#: BOARD height, remeasured 2026-09-22 for polish WP3: every row 23–32 at
+#: 141 columns, with v3 capture, v4 workers, 999-seat/five-digit stress and
+#: all three source-failure states. FLEET now has aligned labels, the model
+#: mix plus its advertised/omitted-count continuation, separate paused count
+#: and detail, two group spacers and the independent contributor sub-header.
+#: With pauses, fourteen body lines plus title and mandatory blank make 16;
+#: seven hero rows and four chrome rows make the measured worst-case 27.
+#: Without pauses (v4 capture) or without workers the detail is hidden: 15
+#: panel rows, whole from 26. Contributors-unread retains the 27-row bound.
+#: At 26 the v3/stress body scrolls and says taller; at 27 it does neither.
+#: LEADERBOARD retains all 999 stress seats and scrolls internally. The width
+#: was re-swept 60–225 on v4/stress and at source-state boundaries: all twelve
+#: columns still begin at 141; 140 sheds three. FLEET remains 37 outer cells,
+#: 35 panel cells and 33 content cells, with no silent clipping at the pin.
+#: Both owner heights (31 and 35) fit. AGENT remains 138×32: its exact approved
+#: polish grouping measured 37 rows and was skipped under the owner budget.
+SURF_BOARD_FULL_LAYOUT_ROWS = 27
 
 #: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
 #:

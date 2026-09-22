@@ -527,7 +527,9 @@ async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width)
     if width >= _COLUMN_PIN[key]:
         _assert_whole(r, where)
     else:
-        assert not r["status_whole"] or r["marked_besides_exceptions"] or r["clipped"] or any(r["hidden"].values()), (
+        assert r["marked_besides_exceptions"] or r["clipped"] or any(
+            value for name, value in r["hidden"].items() if name not in _EXCLUDED_FROM_WHOLE[key]
+        ), (
             f"{where}: nothing besides the named exceptions advertises the loss"
         )
 
@@ -766,6 +768,9 @@ def _board_payload(kind="capture"):
     from tests.surf_swarm_fixtures import swarm_board_payload, swarm_capture_v3
     payload=_capture_payload()
     payload.update(swarm_board_payload())
+    if kind == "v4":
+        from tests.surf_swarm_fixtures import swarm_capture_v4
+        payload["swarm_fleet"] = sw.fleet(swarm_capture_v4("workers"))
     if kind in ("workers-unread", "contributors-unread", "unread"):
         contributors=None if kind in ("contributors-unread","unread") else swarm_capture_v3("contributors")
         workers=None if kind in ("workers-unread","unread") else swarm_capture_v3("workers")
@@ -786,6 +791,8 @@ def _board_payload(kind="capture"):
         payload["swarm_fleet"].update(
             daemons=[{"value":str(i)+"d"*64,"count":99999-i} for i in range(20)],
             runtimes=[{"value":"r"*64,"count":99999}],
+            models=[{"model":"m"*64,"effort":"xhigh","count":99999},
+                    {"model":None,"effort":None,"count":99999}],
             paused=[{"token_id":i,"until_ts":1758456000+i,"failures":99999} for i in range(99)])
     return payload
 
@@ -800,14 +807,14 @@ def _assert_board_whole(result,where):
     assert result["clipped_fields"]["SurfSwarmLeaderboard"] <= allowed,result
 
 
-@pytest.mark.parametrize("kind",["capture","worst","workers-unread","contributors-unread","unread"])
+@pytest.mark.parametrize("kind",["capture","v4","worst","workers-unread","contributors-unread","unread"])
 async def test_board_full_layout_pin_has_all_columns_and_source_labels(kind):
     result=await _render(_board_payload(kind),(SURF_BOARD_FULL_LAYOUT_COLUMNS,SURF_BOARD_FULL_LAYOUT_ROWS),'b')
     _assert_board_whole(result,kind)
     assert not result['overflow'] and not result['taller'],result
 
 @pytest.mark.parametrize('width',boundary_set(SURF_BOARD_FULL_LAYOUT_COLUMNS,60,225,86,92,94,97,98,121,126,132,133,141))
-@pytest.mark.parametrize('kind',['capture','worst'])
+@pytest.mark.parametrize('kind',['capture','v4','worst'])
 async def test_board_width_boundaries(width,kind):
     result=await _render(_board_payload(kind),(width,80),'b')
     assert not result['overflow'],result
@@ -817,10 +824,11 @@ async def test_board_width_boundaries(width,kind):
         assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
 
 @pytest.mark.parametrize('height',boundary_set(SURF_BOARD_FULL_LAYOUT_ROWS,20,61,31,35))
-@pytest.mark.parametrize('kind',['capture','worst'])
+@pytest.mark.parametrize('kind',['capture','v4','worst'])
 async def test_board_height_boundaries(height,kind):
     result=await _render(_board_payload(kind),(SURF_BOARD_FULL_LAYOUT_COLUMNS,height),'b')
-    assert result['taller']==(height<SURF_BOARD_FULL_LAYOUT_ROWS),result
+    measured_rows = SURF_BOARD_FULL_LAYOUT_ROWS - (kind == 'v4')
+    assert result['taller']==(height<measured_rows),result
 
 async def test_board_width_pin_is_not_loose():
     result=await _render(_board_payload(),(SURF_BOARD_FULL_LAYOUT_COLUMNS-1,80),'b')
@@ -861,3 +869,13 @@ async def test_agent_contributor_lines_follow_actual_screen_room_without_raising
             assert (turns in first) is one_line, (width,rows)
             assert seat.query_one("#surf-swarm-verdicts-contributor-time").display is not one_line
             assert pilot.app.screen.query_one(SurfSwarmSeatNodes)._tier == "full"
+
+
+@pytest.mark.parametrize("kind", ["capture", "worst"])
+async def test_board_polish_row_pin_is_tight_and_keeps_fleet_whole(kind):
+    below = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS-1), 'b')
+    at = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS), 'b')
+    assert below['taller'] and any(below['scroll'].values()), below
+    assert not at['taller'] and not any(at['scroll'].values()), at
+    assert at['heights']['SurfSwarmFleet'] == 16, at
+    _assert_board_whole(at,kind)
