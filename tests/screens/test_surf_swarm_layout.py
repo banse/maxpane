@@ -115,14 +115,14 @@ _S_THRESHOLDS = (
     145,  # IN FLIGHT `compact` from here
 )
 _A_THRESHOLDS = (
-    61, 63,  # RECORD no hidden column: capture / worst
+    61, 63,  # RECORD no hidden column: original captures / duplicates and worst
+    62,      # BY NODE gains usable column budget and selects tight tier
     85,      # RECORD compact
-    96,      # BY NODE no hidden column
-    106,     # BY NODE compact
+    109,     # BY NODE no hidden column
     116,     # captured hero's won date whole
-    117,     # BY NODE full; capture body whole
-    118,     # worst hero/body whole
-    119,     # RECORD full
+    118,     # worst hero whole
+    119,     # BY NODE compact; RECORD full
+    130,     # BY NODE full; body whole on all measured payloads
     131,     # status bar whole (full-layout binder)
 )
 
@@ -296,7 +296,8 @@ def _worst_swarm_payload() -> dict:
 
 def _worst_agent_payload() -> dict:
     """Thirty nodes, 999 teammates, 64-character keys and five-digit counts;
-    forty work rows with launch names and 400-character objectives. Source
+    forty work rows with launch names and 400-character objectives. Distinct
+    reviews and raw entries differ; node, status and role totals agree. Source
     rows come from committed captures, then their values are stretched."""
     k = _corpus_keys()
     seat0 = swarm_seat_capture("seat_0")
@@ -312,18 +313,35 @@ def _worst_agent_payload() -> dict:
         )[:400]
     nodes = _cycle(sw.seat_node_rows(seat0), 30)
     for i, row in enumerate(nodes):
-        row.update(node_key=f"node{i}_" + "x" * 58, reviewed=99_999, won=9_999, onchain=80_001, queued=19_998)
+        row.update(
+            node_key=f"node{i}_" + "x" * 58,
+            reviewed=55_526 if i == 0 else 1,
+            won=9_970 if i == 0 else 1,
+            onchain=45_527 if i == 0 else 1,
+            queued=9_999 if i == 0 else 0,
+        )
     teammates = [{"token_id":i,"agent_id":str(i+50_000),"shared_jobs":999-i} for i in range(999)]
     summary = sw.seat_summary_from_seat(seat0)
     summary["runtime"] = sw.seat_summary_from_seat(seat420)["runtime"]
     assert summary["owner"] and summary["runtime"]
     summary.update(
-        attempts=99_999, accepted=9_999, reviewed=99_999, scored=99_999,
-        collaborators=9_999,
-        review_status={"sent": 80_001, "submitted": 9_999, "queued": 9_999},
+        attempts=99_999, accepted=9_999, reviewed=55_555,
+        review_entries=99_999, scored=55_555, collaborators=999,
+        review_status={"sent": 35_557, "submitted": 9_999, "queued": 9_999},
+        roles=[{"role": "implement", "count": 55_000},
+               {"role": "review", "count": 400},
+               {"role": "integrate", "count": 155}],
         win_rate=9_999/99_999,
     )
     assert sum(summary["review_status"].values()) == summary["reviewed"]
+    assert sum(row["reviewed"] for row in nodes) == summary["reviewed"]
+    assert sum(row["won"] for row in nodes) == summary["accepted"]
+    assert sum(row["onchain"] for row in nodes) == (
+        summary["review_status"]["sent"] + summary["review_status"]["submitted"]
+    )
+    assert sum(row["queued"] for row in nodes) == summary["review_status"]["queued"]
+    assert sum(row["count"] for row in summary["roles"]) == summary["reviewed"]
+    assert summary["reviewed"] < summary["review_entries"]
     k.update({
         "swarm_seat_work_rows": work, "swarm_seat_node_rows": nodes,
         "swarm_seat_teammates": teammates, "swarm_seat_summary": summary,

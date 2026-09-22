@@ -848,6 +848,19 @@ def test_the_readme_quotes_the_documented_width() -> None:
     )
 
 
+def test_terminal_layout_skill_quotes_agent_dimensions_and_record_clearance() -> None:
+    from maxpane_dashboard.screens.surf import (
+        RECORD_NEVER_CLEARS_BELOW,
+        SURF_AGENT_FULL_LAYOUT_COLUMNS,
+        SURF_AGENT_FULL_LAYOUT_ROWS,
+    )
+
+    skill = (REPO / ".claude/skills/terminal-layout/SKILL.md").read_text()
+    row = next(line for line in skill.splitlines() if line.startswith("| surf `a` agent"))
+    assert f"{SURF_AGENT_FULL_LAYOUT_COLUMNS} cols · {SURF_AGENT_FULL_LAYOUT_ROWS} rows" in row
+    assert f"RECORD clears at {RECORD_NEVER_CLEARS_BELOW}" in row
+
+
 def _surf_screen_harness():
     """The screen test module, loaded as a library (it owns the fixtures)."""
     import importlib.util

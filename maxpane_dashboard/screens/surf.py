@@ -1628,38 +1628,45 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: (``test_no_height_loses_a_row_of_either_body_in_silence``).
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: The AGENT full-layout width, re-swept 2026-09-22 after replacing ROSTER
-#: and FEEDBACK with SEAT | BY NODE above RECORD: 134 -> 131.
+#: The AGENT full-layout width, re-swept 2026-09-22 for the §9 fix wave:
+#: still 131 after SEAT widened from 42 to 55 outer cells.
 #:
 #: HOW MEASURED: every integer width 60–225 at height 80, on committed
-#: seat #0 and #420 captures and the extended worst payload: 30 nodes,
-#: 999 teammates, 64-character node keys, five-digit node counters,
-#: four-digit submitted/queued counts, launch names and 400-character
-#: objectives. Composited tiers, hidden columns, CSS-clipped lines and
-#: region overflow were inspected; no panel overflow occurred.
+#: seat #0, original #420, duplicated-review #420 and the extended worst
+#: payload: 30 nodes, 999 teammates, 64-character node keys, five-digit
+#: counters, 55,555 distinct reviews / 99,999 entries, four-digit queued
+#: and submitted counts, launch names and 400-character objectives.
+#: Composited tiers, hidden columns, CSS-clipped lines, role omissions,
+#: discrepancy explanations and region overflow were inspected; no panel
+#: overflow occurred. All summary/status/node/role stress totals agree.
 #:
 #: WHAT BINDS: the status bar, including poll/errors and its whole right
-#: label, is cropped through 130 and whole from 131. The panels themselves
-#: clear at 117 on both captures and 118 on the worst payload (ACCEPTED's
-#: 9,999 of 99,999 is the last hero line). BY NODE is tight through 105,
-#: compact through 116 and full from 117; no column is hidden from 96.
-#: The hero's won date is whole from 116 on both captures. SEAT is fixed
-#: at 42 outer cells (40 content, 38 after row padding); owner retains the
-#: anti-poisoning 17-cell window plus copy icon. Runtime/daemon fit visibly,
-#: roles count omissions, and sent/submitted and queued occupy separate lines.
+#: label, is cropped through 130 and whole from 131. Version/theme label
+#: lengths can move that threshold (follow-up F43). All four bodies clear
+#: at 130. BY NODE has no hidden column from 109, is compact from 119 and
+#: full from 130; below 62 its zero usable budget reports the default tier.
+#: The hero's won date is whole from 116 on captures; its worst ACCEPTED
+#: line clears at 118. SEAT is 55 outer cells, 53 panel cells and 51 content
+#: cells. The reviewed/served explanation fits; role lists show the longest
+#: whole prefix plus an explicit omitted count. Owner retains the 17-cell
+#: anti-poisoning window plus copy icon. Rate sits beside attempts/wins;
+#: reviewed and feedback each retain their own lines.
 #:
-#: RECORD's selected tight columns stop clipping horizontally from 61 on
-#: captures and 63 on the worst payload. Optional columns are still shed:
-#: it is tight through 84, compact through 118 and full from 119.
-#: Objective is the sole named content-length exception: its honest widen
-#: marker persists while the free text is cut; see RECORD_NEVER_CLEARS_BELOW.
-#: At the owner's 119 columns all table columns and hero values fit, but
-#: the status bar crops; at 138 all fixed content including the bar fits.
+#: RECORD's selected tight columns stop clipping from 61 on the original
+#: captures and 63 on the duplicated-review capture and worst payload.
+#: RECORD is compact from 85 and full from 119; its geometry is unchanged.
+#: Objectives keep an honest widen marker while cut; clearance remains
+#: RECORD_NEVER_CLEARS_BELOW. Separately, oversized BY NODE win percentages
+#: light the clip/widen marker instead of losing their suffix silently.
+#: At 119 columns BY NODE still sheds optional columns and the status bar
+#: crops; from 131 the measured fixed content and status bar fit.
 SURF_AGENT_FULL_LAYOUT_COLUMNS = 131
 
-#: The AGENT height, re-swept 2026-09-22: 40 -> 32. Every integer height
+#: The AGENT height, re-swept for §9 on 2026-09-22: still 32 (originally
+#: 40 -> 32). Every integer height
 #: 20–61 was rendered at width 150 and at the full-layout column pin for
-#: #0, #420 and the extended worst payload. Taller is lit through 31 and
+#: #0, original #420, duplicated-review #420 and the valid reviewed/served
+#: worst payload. Taller is lit through 31 and
 #: dark from 32 in all cases. The binding body contains a thirteen-row top
 #: floor (SEAT title, blank, eleven detail lines) and RECORD's eight-row
 #: floor. BY NODE scrolls internally and retains all nodes. The seven-row
