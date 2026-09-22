@@ -1473,7 +1473,7 @@ SWARM_KEYS: tuple[str, ...] = (
     # ---- AGENT body on /seats/{tokenId} (2026-09-21), docs/surf_agent_seats_spec.md §4.
     "swarm_seat_state",         # str | None   -- SWARM_SEAT_STATES; None = read failed, no last-good
     "swarm_seat_work_rows",     # list[dict]   -- /seats work[], lifetime, newest first
-    "swarm_seat_node_rows",     # list[dict]   -- reviews/work by node; reviewed desc, won desc, key asc
+    "swarm_seat_node_rows",     # list[dict]   -- reviews/work by node; reviewed desc, accepted desc, key asc
     "swarm_seat_teammates",     # list[dict] | None -- collaborators; shared_jobs desc, token_id asc
     # ---- BOARD (`b`, 2026-09-22); independent /contributors and /workers sources ----
     "swarm_board_summary",     # dict -- SWARM_BOARD_SUMMARY_FIELDS; unread source fields None
@@ -1941,11 +1941,14 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "block_number", "job_id", "superseded_by", "failure",
     ),
     # Nodes from reviews[] OR work[]; a work-only node has reviewed == 0.
-    # Node cards' rate uses won / reviewed, unlike the summary's accepted / attempts.
+    # Node cards' rate is accepted / attempts, the summary's rate per node.
     "swarm_seat_node_rows": (
         "node_key",     # str
         "roles",        # list[str]
-        "reviewed", "won", "onchain", "queued",  # int; onchain = sent + submitted
+        "reviewed",     # int; distinct reviews
+        "attempts",     # int | None; work[] entries, None when work[] carries no status
+        "accepted",     # int; work[] status accepted (every entry, pre-status shape)
+        "onchain", "queued",  # int; onchain = sent + submitted
     ),
     # None when collaborators is not a list; drop malformed members. Tokens use
     # the shared strict decimal-string/int parser (never bool or negative).
@@ -1954,9 +1957,12 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "agent_id",     # str | None
         "shared_jobs",  # int
     ),
-    # /seats work[], one row per accepted submission (spec §4).
+    # /seats work[], one row per submission (every status since 2026-09-22; spec §4).
     "swarm_seat_work_rows": (
-        "job_id", "node_key", "role", "job_state", "objective", "accepted_ts",
+        "job_id", "node_key", "role", "job_state",
+        "work_status",     # str | None; this seat's attempt (accepted/pending/rejected/failed), since 2026-09-22
+        "objective", "accepted_ts",
+        "submitted_ts",    # float | None; work[].submittedAt (served since 2026-09-22)
         "launch",          # str | None; null is a real "none"
         "submission_hash", # str | None; exactly 64 hex chars, no explorer link
         "answer",          # str | None; first cleaned sentence of this hash

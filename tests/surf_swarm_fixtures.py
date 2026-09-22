@@ -67,6 +67,12 @@ def swarm_agent_sources(token):
                 swarm_workers_as_of_hhmm="04:02", swarm_board_as_of_hhmm="03:01")
 
 
+def swarm_capture_v5(name: str) -> dict:
+    """One 2026-09-22 evening capture: ``work[]`` lists every attempt with its status."""
+    with open(SWARM_FIXTURES_V3.parent / 'v5' / f'{name}.json', encoding='utf-8') as fh:
+        return json.load(fh)
+
+
 def swarm_capture_v4(name: str) -> dict:
     """One polish capture from 2026-09-22, including its provenance MANIFEST."""
     with open(SWARM_FIXTURES_V3.parent / 'v4' / f'{name}.json', encoding='utf-8') as fh:

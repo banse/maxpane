@@ -233,6 +233,7 @@ from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
+from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 from maxpane_dashboard.widgets.surf import (
     SurfBurnkeepers,
     SurfBurnPipeline,
@@ -2219,8 +2220,24 @@ def _fmt_degraded(sources) -> str:
     return " · ⚠ " + ", ".join(names)
 
 
-def _title_line(data: dict, row_hint: bool = False) -> str:
+def _agent_title_head(data: dict) -> str:
+    """``Identity.md AGENT #420``: the AGENT body's name for its selected seat.
+
+    The owner asked for it on 2026-09-22 in place of the IMD price and parity,
+    which the AGENT body does not show. The number is the IDMD token id of
+    ``swarm_seat_selected``, validated as the hero's SEAT box validates it;
+    anything else renders the em dash, never a guessed seat.
+    """
+    selected = data.get("swarm_seat_selected")
+    token = seat_token(selected.get("token_id")) if isinstance(selected, dict) else None
+    return f"Identity.md AGENT #{'—' if token is None else token}"
+
+
+def _title_line(data: dict, row_hint: bool = False, agent: bool = False) -> str:
     """Compose the meta row (PRD §4).
+
+    ``agent`` -- the AGENT body is showing -- swaps the IMD price and parity
+    for :func:`_agent_title_head`; everything after them is unchanged.
 
     Ordered by what must survive a narrow terminal, because ``#title-bar`` is
     ``height: 1`` around a wrapping ``Static``: everything past the first
@@ -2275,11 +2292,12 @@ def _title_line(data: dict, row_hint: bool = False) -> str:
     widen the layout. The marker is not optional and rides ahead of both
     warnings and the row hint, matching curator's order.
     """
-    line = (
-        f"SURFBOARD · IMD {_fmt_usd(data.get('imd_price_usd'))} · "
-        f"parity {_fmt_signed_pct(data.get('parity_pct'))} · "
-        f"as of {_fmt_hhmm(data.get('as_of'))}"
-    )
+    if agent:
+        head = _agent_title_head(data)
+    else:
+        head = (f"IMD {_fmt_usd(data.get('imd_price_usd'))} · "
+                f"parity {_fmt_signed_pct(data.get('parity_pct'))}")
+    line = f"SURFBOARD · {head} · as of {_fmt_hhmm(data.get('as_of'))}"
 
     if row_hint:
         line += f" · [yellow]{TALLER_HINT}[/]"
@@ -3656,7 +3674,7 @@ class SurfScreen(DashboardScreen):
             # ahead of two warnings this branch has no payload to produce.
             line = INITIAL_TITLE + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
         else:
-            line = _title_line(self._title_data, row_hint=cut)
+            line = _title_line(self._title_data, row_hint=cut, agent=self._mode == MODE_AGENT)
         try:
             self.query_one("#title-bar", Static).update(line)
         except Exception as exc:  # noqa: BLE001 -- a title must never crash

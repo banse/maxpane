@@ -309,8 +309,10 @@ def test_work_rows_420_source_order_frozen_shape(seat420):
         "node_key": "adversarial_review",
         "role": "review",
         "job_state": "completed",
+        "work_status": None,  # the pre-status capture serves no per-attempt status
         "objective": seat420["work"][0]["objective"],
         "accepted_ts": _iso("2026-09-21T04:10:09.585Z"),
+        "submitted_ts": None,  # the pre-status capture serves no submittedAt
         "launch": seat420["work"][0]["launch"],
         "submission_hash": seat420["work"][0]["submissionHash"],
         "answer": None, "answer_state": "not_read", "model": None, "took_s": None,
@@ -520,7 +522,7 @@ def test_nodes_include_work_only_nodes_and_sort_with_roles():
     assert [r["node_key"] for r in rows] == ["b", "z", "a", "y", "work_only"]
     assert rows[1]["roles"] == ["implement", "review"]
     assert rows[-1] == {"node_key": "work_only", "roles": ["review"],
-                        "reviewed": 0, "won": 1, "onchain": 0, "queued": 0}
+                        "reviewed": 0, "attempts": None, "accepted": 1, "onchain": 0, "queued": 0}
     for row in rows:
         assert tuple(row) == SURF_ROW_KEYS["swarm_seat_node_rows"]
 
@@ -532,7 +534,7 @@ def test_nodes_onchain_counts_sent_and_submitted_but_not_queued():
         {"nodeKey": "[red]node", "status": "queued", "txHash": "0xc"},
     ], "work": []})
     assert rows == [{"node_key": "[red]node", "roles": [], "reviewed": 3,
-                     "won": 0, "onchain": 2, "queued": 1}]
+                     "attempts": 0, "accepted": 0, "onchain": 2, "queued": 1}]
 
 
 @pytest.mark.parametrize("payload", [
@@ -545,9 +547,9 @@ def test_nodes_unavailable_input_has_no_rows(payload):
     assert fold.seat_node_rows(payload) is None
 
 
-def test_nodes_served_empty_work_means_zero_wins():
+def test_nodes_served_empty_work_means_zero_attempts():
     assert fold.seat_node_rows({"reviews": [{"nodeKey": "n"}], "work": []}) == [
-        {"node_key": "n", "roles": [], "reviewed": 1, "won": 0, "onchain": 0, "queued": 0},
+        {"node_key": "n", "roles": [], "reviewed": 1, "attempts": 0, "accepted": 0, "onchain": 0, "queued": 0},
     ]
     assert fold.seat_node_rows({"reviews": [], "work": []}) == []
 
@@ -626,7 +628,7 @@ def test_duplicated_reviews_fixture_counts_distinct_submissions():
     assert summary["roles"] == [{"role": "implement", "count": 196}, {"role": "review", "count": 1}]
     assert fold.seat_node_rows(payload)[0] == {
         "node_key": "oracle_assess", "roles": ["implement"], "reviewed": 195,
-        "won": 188, "onchain": 102, "queued": 93,
+        "attempts": None, "accepted": 188, "onchain": 102, "queued": 93,
     }
 
 
@@ -646,7 +648,7 @@ def test_duplicate_review_chooses_most_advanced_status(statuses, expected):
     assert summary["scored"] == 1 and summary["mean_score"] == chosen_index
     assert summary["roles"] == [{"role": f"role{chosen_index}", "count": 1}]
     assert fold.seat_node_rows(payload) == [{"node_key": "node", "roles": [f"role{chosen_index}"],
-        "reviewed": 1, "won": 0, "onchain": int(expected != "queued"), "queued": int(expected == "queued")}]
+        "reviewed": 1, "attempts": 0, "accepted": 0, "onchain": int(expected != "queued"), "queued": int(expected == "queued")}]
 
 
 def test_duplicate_review_status_ties_keep_first_source_entry():

@@ -476,7 +476,8 @@ live: CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES full-width 
 the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
 body — one seat's lifetime record: its hero row (including ACCEPT RATE), two rows of seat and
-node cards, and RECORD beneath. **`i`** asks for your own
+node cards (ORACLE / REVIEW / BUILD, each `accepted of attempts`), and RECORD beneath; its title
+bar reads `SURFBOARD · Identity.md AGENT #<seat>` in place of the IMD price. **`i`** asks for your own
 seat — its Identity.md NFT id — saves it to `~/.maxpane/config.toml` and opens the AGENT body on it,
 like THE LIST's `w` for a wallet. **`b`** opens BOARD: the lifetime LEADERBOARD
 beside FLEET, with its own six-box hero. Enter or a single click on a leaderboard row saves that seat through

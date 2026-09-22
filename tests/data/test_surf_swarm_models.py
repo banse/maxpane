@@ -95,12 +95,13 @@ SWARM_V2_ROW_SHAPES = {
         "block_number", "job_id", "superseded_by", "failure",
     ),
     "swarm_seat_node_rows": (
-        "node_key", "roles", "reviewed", "won", "onchain", "queued",
+        "node_key", "roles", "reviewed", "attempts", "accepted", "onchain", "queued",
     ),
     "swarm_seat_teammates": ("token_id", "agent_id", "shared_jobs"),
     # AGENT-seats WP0 (plan §1.1): /seats work[], replaced the window node rows in WP5.
     "swarm_seat_work_rows": (
-        "job_id", "node_key", "role", "job_state", "objective", "accepted_ts",
+        "job_id", "node_key", "role", "job_state", "work_status", "objective", "accepted_ts",
+        "submitted_ts",
         "launch", "submission_hash", "answer", "answer_state", "model", "took_s",
     ),
 }

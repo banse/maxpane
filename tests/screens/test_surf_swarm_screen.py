@@ -186,7 +186,8 @@ async def test_the_agent_card_rows_carry_every_seat_and_node_value():
     """Owner, 2026-09-22: SEAT and BY NODE became two rows of hero cards.
     Every card's title is its first row, a blank row follows, and the values
     SEAT and BY NODE showed (less row 1's duplicates) reach the compositor on
-    the committed #420 capture."""
+    the committed #420 capture. That capture predates per-attempt ``status``
+    (2026-09-22), so its node cards show an accepted count and no rate."""
     from tests.screens.test_surf_swarm_layout import _v3_agent_payload
     from maxpane_dashboard.widgets.surf.swarm_agent_cards import SurfSwarmAgentCard
 
@@ -205,7 +206,7 @@ async def test_the_agent_card_rows_carry_every_seat_and_node_value():
     for needle in ("0xe5b1275f…f64f2a ⧉", "paired 09-20 07:34", "daemon ", " device",
                    " sent", " submitted", " queued", " scored",
                    "189 acc of 207", "2 rejected", "16 pending", "#6 of ", " turns", " h",
-                   "implement ", "oracle_assess", "188 of 195", "96.4 % · implement",
+                   "implement ", "ORACLE", "188 accepted", "— · implement",
                    "chain 157", "#1548 ×136", "+74 more"):
         assert needle in text, needle
 
@@ -656,3 +657,23 @@ async def test_polish_agent_worker_states_keep_five_digit_counts_whole_at_pin(li
         if live_state in ('working','paused'):assert '×99,999' in text
         assert not _css_clipped_lines(pilot.app,hero)
         assert '‹ taller' not in _screen_text(pilot.app).splitlines()[0]
+
+
+async def test_the_agent_title_names_the_seat_and_leaving_restores_the_market():
+    """Owner, 2026-09-22: on the AGENT body the title reads
+    ``SURFBOARD · Identity.md AGENT #<IDMD token>`` in place of IMD price and
+    parity; every other body keeps the market figures. Read off the
+    composited title bar."""
+    payload = _frozen_payload()
+    token = payload["swarm_seat_selected"]["token_id"]
+    async with _surf_app(payload).run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "a")
+        await pilot.pause()
+        title = _region_text(pilot.app, screen.query_one("#title-bar")).strip()
+        assert title.startswith(f"SURFBOARD · Identity.md AGENT #{token} · as of "), title
+        assert "IMD $" not in title and "parity" not in title
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.pause()
+        title = _region_text(pilot.app, screen.query_one("#title-bar")).strip()
+        assert title.startswith("SURFBOARD · IMD $") and "AGENT" not in title, title

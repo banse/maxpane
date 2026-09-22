@@ -1,6 +1,10 @@
-"""RECORD: every won job in the selected seat's lifetime record.
+"""RECORD: every work attempt in the selected seat's lifetime record.
 
-Accepted timestamps include month/day across midnight. Launch is a sanitized
+Since 2026-09-22 ``work[]`` lists pending, rejected and failed attempts beside
+accepted ones. ``state`` shows the attempt's own status whenever it is not
+``accepted`` (a failed attempt on a completed job must not read as a green
+``completed``), and the job's state otherwise or under the pre-status shape.
+Timestamps (submitted, else accepted) include month/day across midnight. Launch is a sanitized
 name or a real-none em dash. Submission hashes are plain eight-character
 prefixes, never explorer links. Answer takes the remaining width and
 lights ``‹ widen`` when cut. The scrollable table caps at forty rows and
@@ -33,9 +37,11 @@ __all__ = [
     "seat_footer",
 ]
 
-EMPTY_LINE = "no accepted work yet"
+EMPTY_LINE = "no work yet"
 
-#: ``MM-DD HH:MM`` of ``accepted_ts`` (the work entry's ``acceptedAt``).
+#: ``MM-DD HH:MM`` of ``submitted_ts`` (the work entry's ``submittedAt``), else
+#: ``accepted_ts``: since 2026-09-22 ``work[]`` also lists pending, rejected
+#: and failed attempts, which carry no ``acceptedAt``.
 _WHEN_COLS = 11
 
 #: The first eight characters of the job id. The fold's ids are UUIDs
@@ -61,7 +67,8 @@ _STATE_COLS = 9
 #: Above it the column takes every remaining cell.
 ANSWER_MIN_COLS = 20
 
-_STATE_COLORS = {"completed": "green", "failed": "red", "cancelled": "red"}
+_STATE_COLORS = {"completed": "green", "failed": "red", "cancelled": "red",
+                 "rejected": "red", "pending": "yellow"}
 
 _SPECS = (
     ("when", "when", _WHEN_COLS),
@@ -127,7 +134,7 @@ def seat_footer(state: object, rows: object, cap: int | None) -> tuple[str, str]
 
 
 class SurfSwarmSeatRecord(SwarmTableBase):
-    """RECORD -- lifetime accepted work in the source-provided order."""
+    """RECORD -- lifetime work attempts in the source-provided order."""
 
     TITLE = "RECORD"
     TABLE_ID = "surf-swarm-seat-record-table"
@@ -184,13 +191,15 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     def build_cells(self, item: dict) -> dict[str, object] | None:
         job_id = item.get("job_id")
         job = job_id[:JOB_COLS] if isinstance(job_id, str) and job_id else DASH
-        state = _word(item.get("job_state"))
+        status = item.get("work_status")
+        state = _word(status if status not in (None, "accepted") else item.get("job_state"))
         color = _STATE_COLORS.get(state)
         state_cell = sanitize_cell(state, _STATE_COLS)
         if color:
             state_cell = f"[{color}]{state_cell}[/]"
         return {
-            "when": mmdd_hhmm(item.get("accepted_ts")),
+            "when": mmdd_hhmm(item.get("submitted_ts") if item.get("submitted_ts") is not None
+                              else item.get("accepted_ts")),
             "launch": EMDASH if item.get("launch") is None else sanitize_cell(item["launch"], 11),
             "sub": Text(str(item["submission_hash"])[:8]) if item.get("submission_hash") else DASH,
             "job": sanitize_cell(job, JOB_COLS),

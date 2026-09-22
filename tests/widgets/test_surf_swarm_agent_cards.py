@@ -33,9 +33,10 @@ from maxpane_dashboard.widgets.surf.swarm_agent_cards import (
 from maxpane_dashboard.widgets.surf.swarm_node_cards import (
     NODE_BOX_IDS,
     NODE_CARDS,
+    NODE_TITLES,
     SurfSwarmNodeCards,
 )
-from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_seat_capture
+from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v5, swarm_seat_capture
 
 #: Wide enough that every card holds its values whole when the row splits evenly.
 SIZE = (200, 7)
@@ -189,9 +190,10 @@ async def test_the_node_row_shows_roles_nodes_and_teammates():
         assert f"{role['role']} {fmt_int(role['count'])}" in boxes["roles"]
     for i, row in enumerate(NODE_ROWS):
         box = boxes[f"node{i}"]
-        assert row["node_key"] in box
-        assert f"{fmt_int(row['won'])} of {fmt_int(row['reviewed'])}" in box
-        assert fmt_win_rate(row["won"] / row["reviewed"]) in box
+        assert _lines(box)[0].strip("│ ").startswith(NODE_TITLES[row["node_key"]])
+        # The pre-status capture serves no per-node attempts: a count, no rate.
+        assert row["attempts"] is None
+        assert f"{fmt_int(row['accepted'])} accepted" in box
         assert f"chain {fmt_int(row['onchain'])}" in box
     for i in range(len(NODE_ROWS), NODE_CARDS):
         assert "—" in boxes[f"node{i}"]
@@ -201,27 +203,64 @@ async def test_the_node_row_shows_roles_nodes_and_teammates():
 
 async def test_the_last_card_sums_the_nodes_that_do_not_fit():
     rows = [{"node_key": f"n{i}", "roles": ["implement"], "reviewed": 10 + i,
-             "won": i, "onchain": 5, "queued": 0} for i in range(NODE_CARDS + 3)]
+             "attempts": 10 + i, "accepted": i, "onchain": 5, "queued": 0}
+            for i in range(NODE_CARDS + 3)]
     boxes = await _nodes(swarm_seat_node_rows=rows)
     rest = rows[NODE_CARDS - 1:]
     last = boxes[f"node{NODE_CARDS - 1}"]
     assert f"+{len(rest)} more nodes" in last
-    won, reviewed = sum(r["won"] for r in rest), sum(r["reviewed"] for r in rest)
-    assert f"{won} of {reviewed}" in last
+    accepted, attempts = sum(r["accepted"] for r in rest), sum(r["attempts"] for r in rest)
+    assert f"{accepted} of {attempts}" in last
     assert f"chain {sum(r['onchain'] for r in rest)}" in last
     assert "n0" in boxes["node0"] and f"n{NODE_CARDS - 2}" in boxes[f"node{NODE_CARDS - 2}"]
 
 
-async def test_the_node_rate_is_won_over_reviewed_not_lifetime_attempts():
-    row = {"node_key": "k", "roles": [], "reviewed": 8, "won": 2, "onchain": 0, "queued": 0}
+async def test_the_node_rate_is_accepted_over_the_nodes_own_attempts():
+    row = {"node_key": "k", "roles": [], "reviewed": 3, "attempts": 8, "accepted": 2,
+           "onchain": 0, "queued": 0}
     boxes = await _nodes(swarm_seat_node_rows=[row])
+    assert "2 of 8" in boxes["node0"]
     assert fmt_win_rate(2 / 8) in boxes["node0"]
+    assert fmt_win_rate(2 / 3) not in boxes["node0"]
     assert fmt_win_rate(2 / SUMMARY["attempts"]) not in boxes["node0"]
 
 
+async def test_the_live_v5_seat_reconciles_node_cards_with_the_hero():
+    """2026-09-22 capture: work[] lists every attempt, so no node can exceed 100 %."""
+    seat = swarm_capture_v5("seat_420")
+    rows = fold.seat_node_rows(seat)
+    summary = fold.seat_summary_from_seat(seat)
+    assert sum(r["attempts"] for r in rows) == summary["attempts"] == 223
+    assert sum(r["accepted"] for r in rows) == summary["accepted"] == 195
+    boxes = await _nodes(swarm_seat_node_rows=rows, swarm_seat_summary=summary)
+    oracle = next(i for i, r in enumerate(rows) if r["node_key"] == "oracle_assess")
+    box = boxes[f"node{oracle}"]
+    assert "ORACLE" in _lines(box)[0]
+    assert "193 of 221" in box and fmt_win_rate(193 / 221) in box
+    titles = {_lines(boxes[f"node{i}"])[0].strip("│╭╮─ ") for i in range(len(rows))}
+    assert titles == {"ORACLE", "REVIEW", "BUILD"}
+
+
+async def test_the_overflow_card_of_a_pre_status_payload_shows_no_rate():
+    """Reviewer M1: with attempts unserved, ``+N more nodes`` reads ``N accepted``, never ``N of 0``."""
+    rows = [{"node_key": f"n{i}", "roles": [], "reviewed": 10 + i, "attempts": None,
+             "accepted": i, "onchain": 0, "queued": 0} for i in range(NODE_CARDS + 2)]
+    boxes = await _nodes(swarm_seat_node_rows=rows)
+    last = boxes[f"node{NODE_CARDS - 1}"]
+    accepted = sum(r["accepted"] for r in rows[NODE_CARDS - 1:])
+    assert f"{accepted} accepted" in last and " of " not in last
+
+
+async def test_an_unknown_node_key_keeps_its_own_title():
+    row = {"node_key": "future_node", "roles": [], "reviewed": 1, "attempts": 1,
+           "accepted": 1, "onchain": 0, "queued": 0}
+    boxes = await _nodes(swarm_seat_node_rows=[row])
+    assert "future_node" in _lines(boxes["node0"])[0]
+
+
 async def test_a_hostile_node_key_is_shown_literally():
-    row = {"node_key": "[/x][b]evil", "roles": ["[red]r"], "reviewed": 1, "won": 1,
-           "onchain": 1, "queued": 0}
+    row = {"node_key": "[/x][b]evil", "roles": ["[red]r"], "reviewed": 1, "attempts": 1,
+           "accepted": 1, "onchain": 1, "queued": 0}
     boxes = await _nodes(swarm_seat_node_rows=[row])
     assert "[/x][b]evil" in boxes["node0"]
     assert "[red]r" in boxes["node0"]
@@ -245,7 +284,8 @@ async def test_roles_and_teammates_fold_their_overflow():
 
 
 async def test_a_long_node_key_is_fitted_into_its_title():
-    row = {"node_key": "k" * 120, "roles": [], "reviewed": 1, "won": 1, "onchain": 0, "queued": 0}
+    row = {"node_key": "k" * 120, "roles": [], "reviewed": 1, "attempts": 1, "accepted": 1,
+           "onchain": 0, "queued": 0}
     boxes = await _nodes(swarm_seat_node_rows=[row])
     frame, title = boxes["node0"].split("\n")[:2]
     assert "k…" in title

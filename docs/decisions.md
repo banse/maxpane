@@ -54,6 +54,21 @@ asserts a withdrawn statement is historical — do not review code against it.
   Its live status and skills/profiles/platform come only from workers. IN FLIGHT remains
   executing-only and appends the dispatch note, falling back to a failure reason.
 
+- **2026-09-22** (evening) — IMD's `/seats/{id}` changed shape: `work[]` now lists **every**
+  attempt with a `status` (`accepted`, `pending`, `rejected`, `failed`) and a `submittedAt`;
+  `acceptedAt` is null unless accepted. The node cards counted every work entry as a win and
+  showed 110 % (`won / reviewed`); they now read `accepted of attempts` per node, which sums to
+  the hero's ACCEPTED (capture `tests/fixtures/surf/swarm/v5/seat_420.json`: 193 of 221 on
+  `oracle_assess`). Under the old shape per-node attempts were not served: the card shows the
+  accepted count and no rate. RECORD dates each row by `submittedAt` (it printed `??-?? ??:??`
+  for every unaccepted attempt) and its `state` shows the attempt's own status (`pending` yellow,
+  `rejected`/`failed` red) whenever it was not accepted — 20 of the capture's 28 unaccepted
+  attempts sit on a `completed` job and read as a green success before (review I1). Owner, same day: node cards are titled ORACLE / REVIEW / BUILD
+  (`NODE_TITLES`; an unknown key keeps its own text), and the AGENT body's title bar reads
+  `SURFBOARD · Identity.md AGENT #<token>` in place of IMD price and parity. **Not a defect:**
+  ACCEPTED (`/seats`: 195 of 223, six `failed`) and BOARD (`/contributors`: 194 of 226, no failed
+  bucket, 29 pending) disagree by definition between the two endpoints, and the committed
+  captures carry the same offset.
 - **2026-09-22** — owner: surf's AGENT body replaces the SEAT panel and the BY NODE table with
   two rows of hero cards (`widgets/surf/swarm_agent_cards.py`, `swarm_node_cards.py`): OWNER / RUNTIME / FEEDBACK /
   SCORE / BOARD / RANK, then ROLES / four node cards / TEAMMATES. Values row 1 already shows

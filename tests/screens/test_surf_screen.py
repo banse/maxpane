@@ -1615,13 +1615,15 @@ def _sample_data() -> dict:
         },
         "swarm_seat_node_rows": [
             {"node_key":"codex-14", "roles":["implement"], "reviewed":9,
-             "won":4, "onchain":9, "queued":0}],
+             "attempts":10, "accepted":4, "onchain":9, "queued":0}],
         "swarm_seat_teammates": [{"token_id":1601,"agent_id":"51044","shared_jobs":3}],
         # The /seats work[] rows (AGENT-seats plan §1.1).
         "swarm_seat_work_rows": [
             {"job_id": "job-4402", "node_key": "codex-14", "role": "implement",
-             "job_state": "completed", "objective": "Fix the identity.md link",
-             "accepted_ts": _TS_POST_13 - 4_000.0, "launch": None, "submission_hash": "ab"*32,
+             "job_state": "completed", "work_status": "accepted",
+             "objective": "Fix the identity.md link",
+             "accepted_ts": _TS_POST_13 - 4_000.0, "submitted_ts": _TS_POST_13 - 4_100.0,
+             "launch": None, "submission_hash": "ab"*32,
              "answer": None, "answer_state": "not_read", "model": None, "took_s": None},
         ],
         # The seat tier's own marker (AGENT-seats plan §1.1).
@@ -3226,6 +3228,23 @@ def test_title_line_all_none_shows_emdashes_never_zeros():
     # this row must be able to say, not one it may go quiet about.
     assert "as of —" in line
     assert "$0.00" not in line and "0.0%" not in line   # None is never 0-coerced
+
+
+@pytest.mark.parametrize("selected,word", [
+    ({"token_id": 420}, "#420"), ({"token_id": 0}, "#0"),
+    (None, "#—"), ({"token_id": True}, "#—"), ({"token_id": "420"}, "#—"),
+    ({"token_id": -1}, "#—"), ({}, "#—"),
+])
+def test_the_agent_title_names_the_idmd_seat_in_place_of_the_market(selected, word):
+    """Owner, 2026-09-22: ``SURFBOARD · Identity.md AGENT #420`` on the AGENT body."""
+    payload = _frozen_payload(degraded=["logs"], lp_owner_ok=False)
+    payload["swarm_seat_selected"] = selected
+    line = surf_mod._title_line(payload, row_hint=True, agent=True)
+    assert line.startswith(f"SURFBOARD · Identity.md AGENT {word} · as of {_AS_OF_HHMM} · ")
+    assert "IMD $" not in line and "parity" not in line
+    assert TALLER_HINT in line and "⚠ LP owner changed" in line and "⚠ logs" in line
+    assert surf_mod._title_line(payload) == surf_mod._title_line(payload, agent=False)
+    assert "AGENT" not in surf_mod._title_line(payload)
 
 
 def test_title_line_renders_degraded_and_lp_owner_warning():

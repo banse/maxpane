@@ -330,7 +330,8 @@ def _worst_agent_payload() -> dict:
         row.update(
             node_key=f"node{i}_" + "x" * 58,
             reviewed=55_526 if i == 0 else 1,
-            won=9_970 if i == 0 else 1,
+            attempts=99_970 if i == 0 else 1,
+            accepted=9_970 if i == 0 else 1,
             onchain=45_527 if i == 0 else 1,
             queued=9_999 if i == 0 else 0,
         )
@@ -349,7 +350,8 @@ def _worst_agent_payload() -> dict:
     )
     assert sum(summary["review_status"].values()) == summary["reviewed"]
     assert sum(row["reviewed"] for row in nodes) == summary["reviewed"]
-    assert sum(row["won"] for row in nodes) == summary["accepted"]
+    assert sum(row["accepted"] for row in nodes) == summary["accepted"]
+    assert sum(row["attempts"] for row in nodes) == summary["attempts"]
     assert sum(row["onchain"] for row in nodes) == (
         summary["review_status"]["sent"] + summary["review_status"]["submitted"]
     )

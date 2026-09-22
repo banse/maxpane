@@ -1,0 +1,13 @@
+{
+  "host": "https://api.imd.fun",
+  "note": "Captured 2026-09-22 evening after /seats changed shape: work[] now lists every attempt with status (accepted/pending/rejected/failed) and submittedAt; v4 work[] held accepted work only.",
+  "files": {
+    "seat_420": {
+      "url": "https://api.imd.fun/seats/420",
+      "captured_at": "2026-09-22T20:28:44.595301+00:00",
+      "http_status": 200,
+      "sha256": "05710ebaa612eeb95b06f2811c470a96806228525e97658f93d762d5071486ec",
+      "bytes": 320333
+    }
+  }
+}

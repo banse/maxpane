@@ -29,7 +29,7 @@ from maxpane_dashboard.widgets.surf.swarm_seat_record import (
     TIGHT_WIDTH,
     SurfSwarmSeatRecord,
 )
-from tests.surf_swarm_fixtures import swarm_seat_capture
+from tests.surf_swarm_fixtures import swarm_capture_v5, swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
 
 SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmSeatRecord"]
@@ -329,3 +329,42 @@ async def test_polish_committed_hostile_submission_reaches_record_safely():
     assert 'Created answer.json in report.md and result.txt' in text
     assert 'claude-sonnet-5' in text and '<1m' in text and '…' in text and '‹' in text
     assert '[x]' not in text and '/Users/' not in text and '/home/' not in text and '/root/' not in text
+
+
+async def test_every_attempt_dates_from_its_submission_on_the_v5_capture():
+    """Since 2026-09-22 ``work[]`` also lists pending, rejected and failed
+    attempts, which carry no ``acceptedAt``: RECORD dated them ``??-?? ??:??``.
+    ``submittedAt`` is served on every entry, so ``when`` reads it first."""
+    from maxpane_dashboard.widgets.fmt import mmdd
+    seat = swarm_capture_v5("seat_420")
+    rows = seat_work_rows(seat)
+    assert {w.get("status") for w in seat["work"]} >= {"accepted", "pending"}
+    assert all(row["submitted_ts"] is not None for row in rows)
+    unaccepted = [r for r in rows if r["accepted_ts"] is None]
+    assert unaccepted, "the capture must carry an attempt with no acceptedAt"
+    shown = [unaccepted[0], *rows[:3]]
+    text = "\n".join(await _record(size=(200, 14), swarm_seat_work_rows=shown))
+    assert "??" not in text
+    for row in shown:
+        assert f"{mmdd(row['submitted_ts'])} {hhmm(row['submitted_ts'])}" in text
+
+
+async def test_an_unaccepted_attempt_shows_its_own_status_not_the_jobs():
+    """Reviewer I1, 2026-09-22: a failed attempt on a completed job rendered
+    a green ``completed``. The state cell shows the attempt's status unless
+    it was accepted; colours are read off composited cells."""
+    seat = swarm_capture_v5("seat_420")
+    rows = seat_work_rows(seat)
+    picks = {}
+    for row in rows:
+        if row["job_state"] == "completed":
+            picks.setdefault(row["work_status"], row)
+    assert {"accepted", "failed", "rejected", "pending"} <= set(picks), set(picks)
+    record = SurfSwarmSeatRecord()
+    cells = {status: str(record.build_cells(row)["state"]) for status, row in picks.items()}
+    assert cells["accepted"] == "[green]completed[/]"
+    assert cells["failed"] == "[red]failed[/]"
+    assert cells["rejected"] == "[red]rejected[/]"
+    assert cells["pending"] == "[yellow]pending[/]"
+    old = dict(picks["failed"], work_status=None)
+    assert str(record.build_cells(old)["state"]) == "[green]completed[/]"

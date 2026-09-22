@@ -383,7 +383,8 @@ def test_seat_detail_folds_match_captured_lifetime_values():
         reviews = [r for r in seat["reviews"] if r["nodeKey"] == key]
         work = [r for r in seat["work"] if r["nodeKey"] == key]
         assert nodes[key]["reviewed"] == len(reviews)
-        assert nodes[key]["won"] == len(work)
+        assert nodes[key]["accepted"] == len(work)
+        assert nodes[key]["attempts"] is None  # pre-status shape: attempts not served per node
         assert nodes[key]["onchain"] == sum(r["status"] in ("sent", "submitted") for r in reviews)
     zero = swarm_seat_capture("seat_0")
     launches = [row["launch"] for row in zero["work"] if row["launch"] is not None]

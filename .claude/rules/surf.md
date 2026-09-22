@@ -195,8 +195,12 @@ devices), SCORE (mean, scored, entries when they differ from reviewed), FEEDBACK
 column grid (every row gives column i the same `fr` weight; blank row between rows). BOARD and
 RANK read only `swarm_seat_contrib` (BOARD's title names no clock, owner 2026-09-22),
 survive pending/unavailable seats, and distinguish `not listed` from
-`unavailable`. `SurfSwarmNodeCards`: ROLES, four node cards, TEAMMATES. Node cards use the
-historical `won / reviewed` fields, because per-node attempts are not served; `chain` counts
+`unavailable`. `SurfSwarmNodeCards`: ROLES, four node cards, TEAMMATES. Node cards read
+`accepted of attempts` per node (since 2026-09-22 `work[]` lists every attempt with a `status`;
+the node sums equal the hero's ACCEPTED), titled by `NODE_TITLES` (ORACLE / REVIEW / BUILD; an
+unknown key keeps its own fitted text); a pre-status payload serves no per-node attempts, so
+`attempts` is `None` and the card shows the accepted count with no rate. ACCEPTED (`/seats`) and
+BOARD (`/contributors`) differ by the endpoints' own definitions — never reconcile them. `chain` counts
 reviews with a transaction in `sent` or `submitted`; with more than four nodes the fourth card
 sums the rest (`+N more nodes`). TEAMMATES sorts by shared jobs descending, token ascending,
 shows two plus `+N more` when there are more than three; tokens are integers with no address
@@ -207,7 +211,10 @@ are never fitted, so a card too narrow for them is a CSS-clipped line the layout
 Pending and unavailable show on every seats-backed card; never paired shows once per row (OWNER,
 ROLES), dashes elsewhere. Worker metadata is shown in BOARD; STATUS supplies AGENT's only liveness.
 
-RECORD shows lifetime `work[]` with `MM-DD HH:MM`, launch kind and the first eight hex characters
+The AGENT body's title bar reads `SURFBOARD · Identity.md AGENT #<token>` (from
+`swarm_seat_selected`, em dash when none) in place of IMD price and parity; every other body keeps them.
+RECORD shows every lifetime `work[]` attempt; its `state` is the attempt's `status` unless
+`accepted` (then, or with no status served, the job's state). It shows `MM-DD HH:MM` of `submittedAt` (else `acceptedAt`), launch kind and the first eight hex characters
 of a validated submission hash. A null launch displays `—` (real none); a null `daemonVersion`
 displays `not reported`; missing daemon and counter fields remain unavailable. Review-accepted and work that won a
 job are different counts. A 404 `unknown_seat` is a real negative: row 1's SEAT box names `IDMD #N` / `never paired`

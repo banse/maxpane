@@ -2,8 +2,11 @@
 
 Replaced the BY NODE table on 2026-09-22 (owner). Nodes keep the fold's order
 (reviewed desc); when more exist than :data:`NODE_CARDS`, the last card sums
-the rest as ``+N more nodes``. The node rate is accepted / reviewed, never the
-lifetime attempts denominator, because per-node attempts are not served.
+the rest as ``+N more nodes``. A node card reads ``accepted of attempts`` --
+the hero's ACCEPTED per node -- and titles a known node key with its short
+word (:data:`NODE_TITLES`, owner 2026-09-22). Under the pre-2026-09-22
+``/seats`` shape per-node attempts were not served (``attempts`` is ``None``)
+and the card shows the accepted count with no rate.
 Teammate tokens are integers with no address icon, so this module renders no
 address (``swarm_agent_cards`` holds the row base and the seat row, whose
 OWNER card does).
@@ -26,10 +29,18 @@ from maxpane_dashboard.widgets.surf.swarm_agent_cards import (
     gate,
 )
 
-__all__ = ["NODE_BOX_IDS", "NODE_CARDS", "SurfSwarmNodeCards"]
+__all__ = ["NODE_BOX_IDS", "NODE_CARDS", "NODE_TITLES", "SurfSwarmNodeCards"]
 
 #: How many node cards row three holds before the last one sums the rest.
 NODE_CARDS = 4
+
+#: Card titles for the node keys the swarm serves (owner, 2026-09-22). An
+#: unknown key keeps its own fitted, escaped text as its title.
+NODE_TITLES = {
+    "oracle_assess": "ORACLE",
+    "adversarial_review": "REVIEW",
+    "build_contract_project": "BUILD",
+}
 
 NODE_BOX_IDS = {
     "roles": "surf-swarm-card-roles",
@@ -109,20 +120,27 @@ class SurfSwarmNodeCards(SurfSwarmAgentCards):
             rest = rows[i:]
             label = f"+{len(rest)} more nodes"
             total = {k: sum(v for r in rest if (v := seat_token(r.get(k))) is not None)
-                     for k in ("reviewed", "won", "onchain")}
+                     for k in ("accepted", "onchain")}
+            attempts = [seat_token(r.get("attempts")) for r in rest]
+            total["attempts"] = None if None in attempts else sum(attempts)
             return label, (lambda: self._node_body(key, total, roles=None))
         row = rows[i]
-        label = safe_markup(self._fit(key, row.get("node_key")) or "--")
+        node_key = row.get("node_key")
+        title = NODE_TITLES.get(node_key) if isinstance(node_key, str) else None
+        label = title or safe_markup(self._fit(key, node_key) or "--")
         return label, (lambda: self._node_body(key, row, roles=row.get("roles") or []))
 
     def _node_body(self, key: str, row: dict, roles) -> Text:
-        reviewed, won = seat_token(row.get("reviewed")), seat_token(row.get("won"))
+        attempts, accepted = seat_token(row.get("attempts")), seat_token(row.get("accepted"))
         body = Text()
-        body.append(fmt_int(won) if won is not None else "--", style="bold green" if won else "bold")
-        body.append(" of ", style="dim")
-        body.append(fmt_int(reviewed) if reviewed is not None else "--", style="bold")
+        body.append(fmt_int(accepted) if accepted is not None else "--",
+                    style="bold green" if accepted else "bold")
+        if attempts is not None:
+            body.append(" of ", style="dim").append(fmt_int(attempts), style="bold")
+        else:
+            body.append(" accepted", style="dim")
         body.append("\n")
-        rate = fmt_win_rate(won / reviewed) if won is not None and reviewed else EMDASH
+        rate = fmt_win_rate(accepted / attempts) if accepted is not None and attempts else EMDASH
         body.append(rate, style="bold")
         if roles:
             names = " · ".join(flatten(r) for r in roles)

@@ -870,8 +870,10 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
             "node_key": _str(work.get("nodeKey")),
             "role": _str(work.get("role")),
             "job_state": _str(work.get("jobState")),
+            "work_status": _str(work.get("status")),
             "objective": _str(work.get("objective")),
             "accepted_ts": _ts(work.get("acceptedAt")),
+            "submitted_ts": _ts(work.get("submittedAt")),
             "launch": _str(work.get("launch")),
             "submission_hash": submission_hash,
             "answer": None, "answer_state": "not_read", "model": None, "took_s": None,
@@ -881,16 +883,24 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
 
 
 def seat_node_rows(payload: object) -> list[dict[str, Any]] | None:
-    """Nodes from reviews and won work, sorted reviewed desc, won desc, key asc.
+    """Nodes from reviews and work, sorted reviewed desc, accepted desc, key asc.
 
-    BY NODE win uses won / reviewed, since attempts are not served per node;
-    the hero instead uses lifetime accepted / attempts. Work-only nodes keep
-    reviewed zero. Onchain counts sent/submitted reviews carrying a tx hash.
-    Both source lists must be served; a missing list makes the rows unavailable.
+    ``accepted`` / ``attempts`` are per node what the hero's ACCEPTED is per
+    seat. Since 2026-09-22 ``work[]`` lists every attempt with a ``status``
+    (accepted, pending, rejected, failed); before, it held accepted work only
+    and carried no status. So ``accepted`` counts ``status == "accepted"`` and
+    every entry with no status at all; ``attempts`` counts every
+    entry, but only when every entry carries a status -- under the old shape
+    per-node attempts were not served, and ``attempts`` is ``None``.
+    Work-only nodes keep reviewed zero. Onchain counts sent/submitted reviews
+    carrying a tx hash. Both source lists must be served; a missing list
+    makes the rows unavailable.
     """
     if (not isinstance(payload, Mapping) or not isinstance(payload.get("reviews"), list)
             or not isinstance(payload.get("work"), list)):
         return None
+    work_items = _mappings(_list(payload.get("work")))
+    attempts_served = all(isinstance(item.get("status"), str) for item in work_items)
     nodes: dict[str, dict[str, Any]] = {}
     for source in ("reviews", "work"):
         items = (_distinct_reviews(_list(payload.get(source))) if source == "reviews"
@@ -900,14 +910,19 @@ def seat_node_rows(payload: object) -> list[dict[str, Any]] | None:
             if key is None:
                 continue
             row = nodes.setdefault(key, {
-                "node_key": key, "roles": [], "reviewed": 0, "won": 0,
+                "node_key": key, "roles": [], "reviewed": 0,
+                "attempts": 0 if attempts_served else None, "accepted": 0,
                 "onchain": 0, "queued": 0,
             })
             role = _str(item.get("role"))
             if role is not None and role not in row["roles"]:
                 row["roles"].append(role)
             if source == "work":
-                row["won"] += 1
+                if row["attempts"] is not None:
+                    row["attempts"] += 1
+                status = item.get("status")
+                if status is None or status == "accepted":
+                    row["accepted"] += 1
             else:
                 row["reviewed"] += 1
                 status = item.get("status")
@@ -917,7 +932,7 @@ def seat_node_rows(payload: object) -> list[dict[str, Any]] | None:
                     row["queued"] += 1
     for row in nodes.values():
         row["roles"].sort()
-    return sorted(nodes.values(), key=lambda row: (-row["reviewed"], -row["won"], row["node_key"]))
+    return sorted(nodes.values(), key=lambda row: (-row["reviewed"], -row["accepted"], row["node_key"]))
 
 
 def seat_teammates(payload: object) -> list[dict[str, Any]] | None:

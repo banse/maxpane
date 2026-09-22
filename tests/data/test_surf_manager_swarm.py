@@ -1380,11 +1380,11 @@ async def test_teammates_preserve_unavailable_versus_empty(tmp_path, collaborato
     ({"reviews": [{"nodeKey": "n"}]}, None),
     ({"work": [{"nodeKey": "work_only", "role": "implement"}]}, None),
     ({"reviews": [{"nodeKey": "n"}], "work": []}, [
-        {"node_key": "n", "roles": [], "reviewed": 1, "won": 0, "onchain": 0, "queued": 0},
+        {"node_key": "n", "roles": [], "reviewed": 1, "attempts": 0, "accepted": 0, "onchain": 0, "queued": 0},
     ]),
     ({"reviews": [], "work": [{"nodeKey": "work_only", "role": "implement"}]}, [
         {"node_key": "work_only", "roles": ["implement"], "reviewed": 0,
-         "won": 1, "onchain": 0, "queued": 0},
+         "attempts": None, "accepted": 1, "onchain": 0, "queued": 0},
     ]),
 ])
 async def test_node_rows_distinguish_unread_children_from_served_lists(tmp_path, children, expected):
