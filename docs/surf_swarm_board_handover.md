@@ -388,3 +388,163 @@ Parsing, in `data/surf_swarm.py`:
 
 Out of scope: `/health` changes, `/seats` changes, pagination of `/jobs`, token-based rankings or
 costs, a version bump, and pushing.
+
+---
+
+## 8. Codex hand-back — 2026-09-22
+
+Branch: `feature/surf-swarm-board`, based on fetched `autopull/main` at
+`75fcb2ee89690069eb895dca16db3816c6b56e83`. The fetched ref and source repository's main/HEAD
+both passed §0 before branch creation. Packages ran in order with one repository writer.
+No push, merge, tag, version bump or full-suite run. The protected oracle fixture remains untracked.
+
+### Commits
+
+| Package | Commit | Result |
+|---|---|---|
+| Setup/captures | `c8dcb28` | handover, seven unchanged v3 captures, provenance/checksum MANIFEST |
+| WP0 | `d051dcc` | ACCEPT RATE/accepted labels, measured label geometry, F16 and F45 |
+| WP1 | `4aec105` | frozen 32-key SWARM/191-key SURF contract, loader and source documentation |
+| WP2 | `47d2247` | endpoint reads, strict folds, worker state/metadata, dispatch notes and F44 |
+| WP3 | `9218d21` | detached BOARD tier, independent validated slots and selected-seat lookups |
+| WP4 | `7899026` | BOARD widgets/body, shared seat selection and composited status coverage |
+| WP5 | `44e6255` | source-separated AGENT details, IN FLIGHT notes and measured geometry |
+| WP6 | `28f1ecf` | decisions, final API documentation and follow-ups |
+
+This §8 is committed separately after the final checks below.
+
+### Tests and mutation proofs
+
+Every ⚑ has exact mutations and failing test IDs in its package commit message. Each mutation
+was reversed before proceeding. Test processes used `.venv311`; screen composition used an
+isolated HOME with NO_COLOR removed. Tests used frozen/canned sources and no network or clipboard.
+Mutation processes cleared only the target module's bytecode and used PYTHONDONTWRITEBYTECODE.
+
+| Package | Red → verification evidence | Mutation coverage |
+|---|---|---|
+| WP0 | 17 initial failures; 61 named + 232 layout passed; guard 200 | seven changes: old title/accepted labels, SEAT/BY NODE words and both width boundaries |
+| WP1 | 20 initial failures; 311 passed + five explicitly staged signature failures; guard 200 | contract-only package; all three BOARD and two AGENT signature seams resolved by WP4/WP5 |
+| WP2 | 78 initial failures; 528 passed; guard 200 | seven changes cover all six flags: device aggregation, decimal/bool rejection, offline, pause pairing, missing vs empty contributors, dispatch precedence |
+| WP3 | 28 initial failures; 320 passed; guard 200 | six changes cover exact keys, independent failure, token isolation, load validator and both consumption validators |
+| WP4 | final focused 531 passed; COINS boundary 2 passed; guard 200 | 18 changes cover persistence, selected marker, exact omissions, third-party text/clocks, real-unavailable labels and pin boundaries; controller independently proved 142→141 fails, restored 142 passes |
+| WP5 | 15 initial failures; literal-ellipsis regression failed first; named 1,026 passed/one stale skill-read failure, recovered 13; restored affected 337 passed; guard 200 | 17 changes cover all four flags plus source gates/clocks, sanitization, literal ellipsis, narrow overflow and both height/IN FLIGHT boundaries |
+| WP6 | 4,732 passed across all 50 discovered test files; guard 200 | documentation-only; no new mutation requirement |
+
+WP4's initial named run had 885 passes and six failures: four stale expectations recovered in
+four passing checks; two declared AGENT signature seams waited for WP5. WP4's first mutation
+harness had an inverse-offset defect, repaired before rerunning all 18 proofs; that invalid run
+is excluded from the evidence. The clean harness and WP5 compare the complete restored source
+with its pre-mutation text. WP5's stale skill-row failure read 32 before its update to 36; the
+exact registration check passed in recovery and in the final restored gate.
+
+### Measured layout
+
+Canonical measurement records remain beside the constants in `screens/surf.py`; the skill table,
+CSS copies and permanent boundaries agree. Pins were remeasured because acceptance labels,
+the `b board` status hint, AGENT source groups and IN FLIGHT note widths changed rendered content.
+
+| Surface | Final columns × rows | Binding content / exception |
+|---|---|---|
+| BOARD `b` | **142 × 23** | full leaderboard columns from 141, whole status from 142; FLEET fixes height; table floor eight lines |
+| AGENT `a` | **142 × 36** | body full from 138, hero from 134, whole status from 142; SEAT's 15 detail lines require a 17-row top floor |
+| SWARM `s` | **142 × 42** | body from 141, whole status from 142; unchanged THROUGHPUT/top-row height floor |
+| LAUNCHPAD `l` | **142 × 31** | unchanged body from 138; new status hint binds width |
+| App-wide | **143 columns**, unchanged | existing market seam; no app-wide height claim |
+| Pool4 bodies | **99 × 45** experimental; **119 × 35** market, unchanged | their body pins do not promise the expanded status hint fits |
+
+WP0 first moved AGENT 131→132×32 for the accepted labels. WP4's region-only status measurement
+initially suggested 141; visual inspection showed the final `f` in `surf` was clipped. Comparing
+the expected right label to its actual composite established 142 and now permanently guards it.
+
+BOARD swept each integer width 60–225 at 80 rows and heights 20–61 at 150 and the measured pin,
+using captures, 999-seat/five-digit/long-runtime/99-pause/20-version stress and source failures.
+WP5 repeated those ranges for 11 AGENT payloads and three SWARM payloads, including #0, #420,
+duplicate reviews, v3, stress and independent missing-source states. No region overflow remained.
+A fixed 63-column SEAT overflowed at width 60; a failing regression preceded the flexible share
+capped at 63 outer / 59 content cells.
+
+BY NODE now reaches selected/compact/full widths at 105/125/138. SEAT fixed lines clear at 108
+for #0, 106 for #420/v3, 128 under five-digit stress, and 70 without a seat. Long worker metadata
+and runtime strings retain explicit ellipses; ordinary fixed labels and failures fit. IN FLIGHT's
+full-tier/no-note lower bound moves 190→**222**. The captured 81-character note clears at **532**,
+and a synthetic 309-character note at **1558**, checked in situ on both adjacent widths and with
+the full composite. These are named content exceptions, not enlarged body guarantees.
+RECORD's **297** objective onset and LAUNCHES' **205** onset remain unchanged.
+
+BOARD fits both owner heights: 119×35 uses tight columns and 138×31 compact columns, with widen
+but no taller cue. The tests do not promise whole status below 142; actual live fit also depends
+on the theme/version labels (F43). AGENT now scrolls vertically at both owner sizes
+(F46); SWARM continues to do so (F16). Long notes/record objectives may retain widen at full pins.
+
+### Resolved specification details and deviations
+
+- §0 required captures in the first commit while WP1 repeated that requirement after WP0.
+  A capture-only setup commit satisfied §0; implementation then followed WP0–WP6.
+- The mockup's 101 SEATS are device rows; the capture aggregates to **99 seats**. Tests derive
+  fixture totals. The omitted fifth daemon is `0.1.0+e9ca5510`, count 1. Workers' 91 and health's
+  92 remain independent facts, and LIVE uses the valid served count.
+- Worker metadata lives in `swarm_seat_live`, keeping `/seats` pure. IN FLIGHT's existing rows
+  argument carries note/note_kind, so no redundant widget keyword was added.
+- Cache load accepts the manager's pure coercers; absent validators refuse BOARD slots. Manager
+  revalidation also protects injected caches. No cache-to-client/fold import was introduced.
+- Source clocks identify last-good versions. Changed valid payloads update only their own slot;
+  unchanged successful reads advance scheduling. Partial failure preserves the failed source,
+  stores a changed successful counterpart and uses the 120-second backoff.
+- Missing/malformed worker pause state drops its row rather than inventing idle. Unknown optional
+  metadata remains unknown; supplied empty metadata remains a real empty read.
+- D2's old `/seats` premise is historical: v3 #420 itself serves rejected 2/pending 12. New displayed
+  rejections are contributor-sourced; the seats fold and discrepant totals are not reconciled.
+- Contributor counters use plain integers to keep the specified two-line group whole under
+  five-digit stress. Their clock shares the second line; worker metadata has its own clock line.
+  STATUS retains three body lines; its worker clock is in the title, seats clock in ACCEPTED.
+- AGENT's requested additions raise height from the accepted 32 to 36. That new requirement is
+  filed as F46; the earlier owner acceptance was not silently extended.
+
+### Final §7 checks and real CLI observations
+
+- Middle tier ran **once**, exactly the requested `-n 4 --dist loadfile -m 'not screen'
+  sybilkit/sybilkit_tests tests`: **8,973 passed, 1 xfailed**, 126.03 s.
+- Every touched screen file ran: `test_address_icons_everywhere.py`, `test_surf_screen.py`,
+  `test_surf_swarm_layout.py`, `test_surf_swarm_screen.py`: **762 passed**, 478.40 s.
+- Real `.venv311/bin/python -m maxpane_dashboard --game surf --font-size 0` processes ran
+  in sized PTYs with fresh isolated HOME, saved seat #420, NO_COLOR removed, and actual keyless
+  reads. All nine exited 0 and produced SVGs/PNGs under `/tmp/board-final-live/`:
+  `b-420-142x23`, `a-420-142x36`, `s-420-142x42`, plus each mode at 119×35 and138×31.
+  These are actual CLI captures, separate from the dead-transport test renders.
+- At approximately **06:35–06:37 Europe/Berlin on 2026-09-22**, BOARD showed 101 live-derived
+  contributor seats (the current payload differs from the frozen 99), 93–95 workers, 0 paused,
+  capacities 153–156 and 8,286 receipts. The selected #420 marker stayed visible. All 12 columns
+  and the whole status were visible at 142×23. At119×35 the tight table and at 138×31 the compact
+  table showed widen without taller; fleet values/omission counts remained readable. Status
+  cropped at 119; the captured BOARD138 frame showed its full right label.
+- AGENT at 142×36 showed seats 191/205 separately from contributors 190/208, workers 0 of 1,
+  independent clocks and metadata, without taller. RECORD retained its objective widen. Both
+  owner geometries showed taller/body scrolling; 119 also visibly abbreviated hero boxes and
+  BY NODE columns. Their status bars were cropped, consistent with the measured guarantee.
+- SWARM at 142×42 had live health/job data, while CAPABILITY/LAUNCHES/SITES said unavailable.
+  Its executing row's note was a dash, so the real capture does not claim to exercise the
+  fixture's dispatch text. IN FLIGHT/LAUNCHES retained their named widen cues. Crucially,
+  THROUGHPUT's accumulation message wrapped and lit taller even at 142×42: **F47**, not a green
+  live height result. Both owner sizes also showed taller. Frozen v3 renders and mutation
+  tests separately prove the actual dispatch note column.
+- No full suite, push, merge or tag was run. Full release validation is intentionally deferred
+  to the specified review/owner workflow. Screenshots and logs are local artifacts, not committed
+  captures; no live payload was added to the test corpus.
+
+### Follow-ups and stop point
+
+- **F44 fixed** in `47d2247`: shared `_hex64`; regression
+  `test_work_and_review_dedup_share_one_hex64_validator`.
+- **F45 fixed** in `d051dcc`: permanent duplicated-review capture in layout boundaries.
+- **F46 filed**: owner decision on AGENT's new 36-row requirement.
+- **F47 filed**: live SWARM accumulation message wraps and needs scrolling at 142×42;
+  the fixture pin does not cover that observed state. No extra layout fix wave was run.
+- **F16 SWARM remains open** at 42 rows; its AGENT 32-row acceptance is historical.
+- **F18/F43 remain open** for narrow status-bar fit and version/theme label dependency. WP4
+  fixes the incomplete composite assertion, without claiming to fix those product constraints.
+- Existing F24/F28 seats-fetch/cache limitations, F39 tokenless RECORD/BY NODE, F41 missing-work
+  conflation and F42 source chronology remain outside this scope.
+
+All requested implementation and documentation changes are committed with explicit paths.
+Only the intentional local `.codex/`, `.venv311/` and protected oracle fixture remain untracked.
+Stop here for Claude's whole-branch review and one fix wave; owner decides merge and push.
