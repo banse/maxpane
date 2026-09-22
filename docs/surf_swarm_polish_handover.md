@@ -900,3 +900,45 @@ controller runs it again once, before merge.
 **Hand-back:** commit with a pathspec on `feature/surf-swarm-polish`. Append §8.1 with the
 commit hash, the named-set counts, the mutation result, and any composite that changed in item 3.
 Do not push or merge. Do not commit the untracked oracle fixture.
+
+## 8.1 Test-only hand-back — 2026-09-22
+
+- **Commit:** `67bd9a4` (the two test files only); this documentation commit adds the hand-back.
+- **Item 1:** `test_newest_as_of_is_the_freshest_successful_read` now requires exactly 16 slots;
+  its history names `SLOT_SWARM_ANSWERS`.
+- **Item 2:** `test_the_bindings_are_refresh_and_the_two_view_toggles` includes `o` and `O` in
+  the exact key set and documents their LEADERBOARD sorting role.
+- **Item 3:** the first skill fixture row has `inference="standard"` and counts 83/70/1/12;
+  the second has `None` for all five new fields. The unchanged exact row-shape guard then
+  exposed another missing contract in the same `_sample_data()`: its RECORD row lacked
+  `answer`, `answer_state`, `model`, `took_s`. These are now explicitly unfetched
+  (`None`, `not_read`, `None`, `None`). No production code or extra test was changed.
+- **Targeted evidence:** the three tests failed before the edits and all three passed afterward
+  (1.03 s). The intermediate failure on the RECORD row was preserved as evidence rather than
+  bypassed or weakening the shape assertion.
+- **Mutation:** deleting only `inference` from `swarm_skill_rows[0]` failed
+  `test_every_list_row_in_the_fixture_matches_the_frozen_row_shape` with exactly that missing
+  key (one failed). Exact inverse restoration was verified byte-for-byte; the test then passed.
+  Logs: `/tmp/polish-residual-mutation-final-{red,green}.log`.
+- **Composites:** the full screen file passed without editing or weakening any composite expectation.
+  The skill fixture now supplies `standard` and `70/83` for the populated row, and explicit
+  unavailable values for the second row; the RECORD fixture now supplies `not_read` explicitly.
+  No production renderer or layout was changed.
+- **Named set:** **427 passed in 446.70 s** (exit 0): complete
+  `tests/data/test_surf_cache.py`, `tests/screens/test_surf_screen.py` and
+  `tests/widgets/test_surf_swarm_capability.py`.
+- **Guard:** **200 passed, 9,793 deselected in 93.27 s** (exit 0).
+- Commands used `.venv311`, temporary HOME and unset NO_COLOR. Logs:
+  `/tmp/polish-residual-named.log`, `/tmp/polish-residual-guard.log`.
+  No full suite was rerun; §8 records the controller's preceding full-suite result. No push,
+  merge or tag. The controller owns the next full-suite run.
+
+After the hand-back commit, `git status --short` has no tracked changes:
+
+```text
+?? .codex/
+?? .venv311/
+?? tests/fixtures/surf/pool4/oracle_25955365.json
+```
+
+The protected oracle fixture remains untracked and uncommitted. Stop here.
