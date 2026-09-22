@@ -167,6 +167,11 @@ class _FakeSwarm:
         detail = self._details.get(job_id)
         return dict(detail) if isinstance(detail, dict) else None
 
+    async def submissions(self, job_id):
+        await asyncio.sleep(0)
+        self.calls["submissions"] += 1
+        return None
+
     async def fetch_skills(self):
         await asyncio.sleep(0)
         self.calls["skills"] += 1
@@ -836,7 +841,12 @@ async def test_the_default_seat_is_the_most_active_and_its_record_is_the_seats_o
     assert payload["swarm_seat_state"] == "ok"
     assert payload["swarm_seat_summary"] == sw.seat_summary_from_seat(seat)
     assert payload["swarm_seat_summary"]["reviewed"] == len(seat["reviews"]) == 202
-    assert payload["swarm_seat_work_rows"] == sw.seat_work_rows(seat)
+    expected = sw.seat_work_rows(seat)
+    attempted = set(list(dict.fromkeys(row['job_id'] for row in expected[:40]))[:4])
+    for row in expected:
+        if row['job_id'] in attempted:
+            row['answer_state'] = 'unavailable'  # this fake refuses every submissions read
+    assert payload["swarm_seat_work_rows"] == expected
     assert payload["swarm_seat_node_rows"] == sw.seat_node_rows(seat)
     assert payload["swarm_seat_teammates"] == sw.seat_teammates(seat)
     entry = manager.cache.get_last_good(SLOT_SWARM_SEAT)

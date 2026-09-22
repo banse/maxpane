@@ -8,11 +8,12 @@ job list is all-or-nothing; the manager's counter check, not this client,
 decides how often it is paid for.  No path ever carries a ``?``: parameters
 on ``/jobs`` are ignored upstream and would imply a page that does not exist
 (``docs/surf_swarm_v2_implementation_plan.md`` §0 R3/R4); ``_get`` raises on
-one, and the one getter that interpolates caller text into a path,
+one. The detail getter interpolating caller text into a path,
 :meth:`SwarmClient.fetch_job`, refuses an id that is not a plain path segment
 and returns ``None`` -- so the contract above holds at every public getter.
 :meth:`SwarmClient.fetch_seat` formats an ``int`` (``{token:d}``) and refuses
-anything else before any request.
+anything else before any request. ``submissions`` validates a canonical UUID
+before interpolating a job id; any 404 is confined to that job.
 
 One getter has a third outcome besides a body and ``None``:
 ``fetch_seat`` returns a fresh copy of :data:`UNKNOWN_SEAT` for the host's
@@ -27,6 +28,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
+from uuid import UUID
 
 import httpx
 
@@ -45,6 +47,16 @@ def _is_path_segment(value: object) -> bool:
     if not isinstance(value, str) or not value:
         return False
     return not any(ch in _NOT_A_SEGMENT or ch.isspace() for ch in value)
+
+def parse_job_id(value: object) -> str | None:
+    """A canonical UUID path component, shared with answer cache validation."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return value if str(UUID(value)) == value else None
+    except ValueError:
+        return None
+
 
 __all__ = [
     "SWARM_API", "SWARM_API_HOSTS", "SWARM_INTER_CALL_DELAY", "SWARM_REQUEST_TIMEOUT",
@@ -236,6 +248,14 @@ class SwarmClient(OwnedHttpClient):
             logger.debug("swarm fetch_job refused an id that is no path segment: %r", job_id)
             return None
         return await self._dict(f"/jobs/{job_id}")
+
+    async def submissions(self, job_id: str) -> dict[str, Any] | None:
+        """One job's submissions. Every 404 is local to this job, without rotation."""
+        job = parse_job_id(job_id)
+        if job is None:
+            return None
+        body = await self._get(f"/jobs/{job}/submissions", answers_404=lambda body: True)
+        return body if isinstance(body, dict) else None
 
     async def fetch_seat(self, token: int) -> dict[str, Any] | None:
         """``GET /seats/{token}``: the seat's dict, a fresh copy of

@@ -1,9 +1,8 @@
 """Fold the IMD swarm control plane's reads into rows the panels render.
 
 Pure: stdlib, the pure ``analytics/surf_swarm_signals`` rollups, the
-``data/surf_models`` contract tuples, and one constant from
-``surf_swarm_client`` (``UNKNOWN_SEAT``, the client's normalised 404 -- the
-fold imports the value, never calls the client).  No network, no clock
+``data/surf_models`` contract tuples, and the constant ``UNKNOWN_SEAT`` / pure UUID validator from
+``surf_swarm_client``. The fold never calls the client.  No network, no clock
 (callers pass ``now_ts``), no Textual.  The shapes this
 folds are recorded in ``docs/imd_swarm_api.md``; the reader that fetches
 them is ``surf_swarm_client.py``.  The v1 folds (field / queue / blocked /
@@ -16,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import math
+import re
 import statistics
 from collections.abc import Mapping
 from typing import Any
@@ -29,10 +29,11 @@ from maxpane_dashboard.data.surf_models import (
     SURF_ROW_KEYS, SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
     SWARM_SEAT_SUMMARY_FIELDS, SWARM_BOARD_SUMMARY_FIELDS, SWARM_FLEET_FIELDS,
     SWARM_SEAT_LIVE_FIELDS, SWARM_SEAT_CONTRIB_FIELDS,
+    SWARM_ANSWER_FIELDS, SWARM_ANSWER_CACHE_FIELDS, SWARM_ANSWER_STATES, SWARM_ANSWER_ROW_CAP,
 )
-# A constant only: the client owns the normalised ``unknown_seat`` result, so
-# the fold recognises it by that one definition rather than a retyped literal.
-from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT
+# Shared constant and pure validator: the client owns the normalised 404 and
+# canonical job-id check; the fold reuses both without calling the client.
+from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT, parse_job_id
 
 __all__ = [
     "health_facts", "network_of",
@@ -88,7 +89,7 @@ def health_facts(health: Mapping[str, Any] | None) -> dict[str, Any]:
     if not isinstance(health, Mapping):
         return {"agents_online": None, "agents_enrolled": None,
                 "working_now": None, "accepted_today": None,
-                "services_up": None, "network": None}
+                "services_up": None, "network": None, "health_status": None}
     identity = health.get("identity")
     chain = identity.get("chainId") if isinstance(identity, Mapping) else None
     services_up = {}
@@ -105,6 +106,7 @@ def health_facts(health: Mapping[str, Any] | None) -> dict[str, Any]:
         "accepted_today": _int(health.get("acceptedLastDay")),
         "services_up": services_up,
         "network": network_of(chain),
+        "health_status": _str(health.get("status")),
     }
 
 
@@ -333,6 +335,8 @@ def skill_rows(skills: object) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for skill in _mappings(skills):
         requires = skill.get("requires")
+        record = skill.get("record")
+        record = record if isinstance(record, Mapping) else {}
         rows.append({
             "skill_id": _str(skill.get("id")),
             "version": _int(skill.get("version")),
@@ -343,6 +347,9 @@ def skill_rows(skills: object) -> list[dict[str, Any]]:
             "checks": _str(skill.get("checks")),
             "requires": ([r for r in requires if isinstance(r, str)]
                          if isinstance(requires, list) else []),
+            "inference": _str(skill.get("inference")),
+            **{key: _served_token(record.get(key))
+               for key in ("attempts", "accepted", "rejected", "pending")},
         })
     rows.sort(key=lambda r: (r["role"] is None, r["role"] or "",
                              r["skill_id"] is None, r["skill_id"] or ""))
@@ -1032,6 +1039,26 @@ def normalize_contributors(payload: object) -> dict[str, Any] | None:
     }
 
 
+def _advertised_models(runtimes: object) -> list[dict]:
+    pairs = set()
+    for runtime in _mappings(runtimes):
+        premium = runtime.get("premiumModel")
+        if isinstance(premium, Mapping):
+            model = _str(premium.get("model"))
+            if model:
+                pairs.add((model, _str(premium.get("effort")) or None))
+    return [{"model": model, "effort": effort}
+            for model, effort in sorted(pairs, key=lambda pair: (pair[0], pair[1] or ""))]
+
+
+def _valid_advertised_models(value: object) -> bool:
+    return (isinstance(value, list) and all(
+        isinstance(pair, Mapping) and set(pair) == {"model", "effort"}
+        and isinstance(pair["model"], str) and bool(pair["model"])
+        and (pair["effort"] is None or isinstance(pair["effort"], str) and bool(pair["effort"]))
+        for pair in value))
+
+
 def normalize_workers(payload: object) -> dict[str, Any] | None:
     """Keep every valid-token worker; other malformed fields remain unknown.
 
@@ -1075,6 +1102,7 @@ def normalize_workers(payload: object) -> dict[str, Any] | None:
             "paused_until_ts": until, "failures": failures, "pause_known": pause_known,
             "heartbeat_ts": _ts(source.get("lastHeartbeatAt")),
             "runtimes": runtimes, "daemon": _str(source.get("daemonVersion")),
+            "advertised_models": _advertised_models(runtime_source),
             "profiles": _string_list(source.get("profiles")),
             "skills": _string_list(source.get("skills")), "os": os,
             "platform": f"{os} {arch}" if os is not None and arch is not None else None,
@@ -1154,6 +1182,7 @@ def coerce_workers_slot(payload: object) -> dict[str, Any] | None:
         "heartbeat_ts": _optional_stamp, "runtimes": _optional_strings,
         "daemon": _optional_string, "profiles": _optional_strings, "skills": _optional_strings,
         "os": _optional_string, "platform": _optional_string,
+        "advertised_models": _valid_advertised_models,
     })
     if result is not None and any(
         (row["paused_until_ts"] is None) != (row["failures"] is None)
@@ -1191,7 +1220,13 @@ def _live_for_workers(rows: list[dict]) -> dict[str, Any]:
     live.update(live=bool(rows), working=_sum_known(row["working"] for row in rows),
                 max_concurrency=_sum_known(row["max_concurrency"] for row in rows), devices=len(rows))
     if not rows:
+        live["live_state"] = "offline"
         return live
+    pairs = sorted({(pair["model"], pair["effort"]) for row in rows
+                    for pair in row["advertised_models"]}, key=lambda pair: (pair[0], pair[1] or ""))
+    if pairs:
+        live["advertised_model"] = ", ".join(pair[0] for pair in pairs)
+        live["advertised_effort"] = ", ".join(pair[1] or "—" for pair in pairs)
     paused = [row for row in rows if row["paused_until_ts"] is not None]
     if paused:
         chosen = min(paused, key=lambda row: (row["paused_until_ts"], row["device_key"] or ""))
@@ -1202,6 +1237,7 @@ def _live_for_workers(rows: list[dict]) -> dict[str, Any]:
     live["profiles"] = _metadata_union(rows, "profiles")
     if all(row["platform"] is not None for row in rows):
         live["platform"] = ", ".join(sorted({row["platform"] for row in rows}))
+    live["live_state"] = _live_state(live, rows)
     return live
 
 
@@ -1321,6 +1357,14 @@ def _fleet_from_slot(slot: dict | None) -> dict | None:
         profiles=_mix("+".join(sorted(set(row["profiles"]))) or "none" if row["profiles"] is not None else None for row in rows),
         concurrency=_mix(str(row["max_concurrency"]) for row in rows if row["max_concurrency"] is not None),
     )
+    model_counts: dict[tuple, int] = {}
+    for row in rows:
+        pairs = {(pair["model"], pair["effort"]) for pair in row["advertised_models"]} or {(None, None)}
+        for pair in pairs:
+            model_counts[pair] = model_counts.get(pair, 0) + 1
+    result["models"] = [{"model": model, "effort": effort, "count": count}
+                        for (model, effort), count in sorted(model_counts.items(),
+                            key=lambda item: (-item[1], item[0][0] or "", item[0][1] or ""))]
     stamps = [row["heartbeat_ts"] for row in rows if row["heartbeat_ts"] is not None]
     result["heartbeat_oldest_ts"] = min(stamps, default=None)
     result["heartbeat_newest_ts"] = max(stamps, default=None)
@@ -1369,3 +1413,163 @@ def seat_contrib(contributors: object, token: object) -> dict | None:
     """Selected token's lifetime contributor counters, independent of /seats."""
     slot = normalize_contributors(contributors)
     return _seat_contrib_from_rows(_board_rows_from_slots(slot, None), token, slot)
+
+
+# ---- Selected RECORD answers: cleaned fields, never raw submission payloads ----
+
+
+def answer_sentence(summary: str) -> str:
+    """Clean links/absolute local paths, then split before flattening newlines.
+
+    Link destinations may contain balanced parentheses and spaces. This small
+    scanner removes the whole destination; it is not a general Markdown parser.
+    URL slashes do not match the local-path boundary. Rendering still sanitizes
+    third-party text independently.
+    """
+    text = summary
+    pattern = re.compile(r"\[([^\]\n]*)\]\(")
+    cursor = 0
+    while match := pattern.search(text, cursor):
+        end, depth = match.end(), 1
+        while end < len(text) and depth:
+            if text[end] == "(":
+                depth += 1
+            elif text[end] == ")":
+                depth -= 1
+            end += 1
+        if depth:
+            cursor = match.end()
+            continue
+        text = text[:match.start()] + match[1] + text[end:]
+        cursor = match.start() + len(match[1])
+    text = re.sub(r"(?m)^\s*```[^\n]*\n?", "", text)
+    text = text.replace('`', '').replace('**', '').replace('__', '').replace('*', '')
+    text = re.sub(r"(?m)^\s*(?:[-+•]|\d+[.)])\s+", "", text)
+
+    def basename(match):
+        raw = match[0]
+        path = raw.rstrip('.,!?;:)]}')
+        name = re.split(r"[/\\]", path.rstrip('/\\'))[-1]
+        return name + raw[len(path):]
+
+    text = re.sub(r"(?<![\w:/\\])(?:[A-Za-z]:\\|/)[^\s<>\"']+", basename, text)
+    first = re.split(r"(?<=[.!?])\s+|[\r\n]+", text.strip(), maxsplit=1)[0]
+    return ' '.join(first.split())
+
+
+def submission_answer(payload: object, job_id: object, submission_hash: object, token: object) -> dict:
+    """Select only the exact job/hash/seat; distinguish failure, absence and no reply."""
+    result = dict.fromkeys(SWARM_ANSWER_FIELDS)
+    result['state'] = 'unavailable'
+    if (parse_job_id(job_id) is None or _hex64(submission_hash) is None
+            or _seat_id(token) is None or not isinstance(payload, Mapping)
+            or payload.get('jobId') != job_id or not isinstance(payload.get('submissions'), list)):
+        return result
+    matches = [row for row in _mappings(payload['submissions']) if row.get('hash') == submission_hash]
+    if not matches:
+        result['state'] = 'not_served'
+        return result
+    item = matches[0]
+    if any(other != item for other in matches[1:]):
+        return result
+    if 'seat' in item:
+        seat = item['seat']
+        if not isinstance(seat, Mapping) or _served_token(seat.get('tokenId')) != token:
+            return result
+    if 'summary' not in item or item['summary'] is not None and not isinstance(item['summary'], str):
+        return result
+    answer = answer_sentence(item['summary'] or '')
+    result.update(answer=answer or None, state='read' if answer else 'no_reply')
+    usage = item.get('usage')
+    if isinstance(usage, Mapping):
+        result['model'] = _str(usage.get('model'))
+        milliseconds = _served_token(usage.get('wallClockMs'))
+        result['took_s'] = _seconds(milliseconds) if milliseconds is not None else None
+    return result
+
+
+def _nonnegative_finite(value: object) -> bool:
+    return value is not None and _optional_stamp(value) and value >= 0
+
+
+def coerce_answers_slot(payload: object) -> dict | None:
+    """Refuse the entire normalized slot if any identity, field or point is unsafe."""
+    if not isinstance(payload, Mapping):
+        return None
+    result = {}
+    for job, submissions in payload.items():
+        if parse_job_id(job) is None or not isinstance(submissions, Mapping) or not submissions:
+            return None
+        clean = {}
+        for key, point in submissions.items():
+            if (_hex64(key) is None or not isinstance(point, Mapping)
+                    or set(point) != set(SWARM_ANSWER_CACHE_FIELDS)):
+                return None
+            answer, state = point['answer'], point['state']
+            if (state not in SWARM_ANSWER_STATES or state == 'not_read'
+                    or not isinstance(point['terminal'], bool)
+                    or not _nonnegative_finite(point['read_ts'])
+                    or not _optional_string(point['model'])
+                    or point['took_s'] is not None and not _nonnegative_finite(point['took_s'])):
+                return None
+            if state == 'read':
+                if not isinstance(answer, str) or not answer or answer_sentence(answer) != answer:
+                    return None
+            elif answer is not None:
+                return None
+            if state in ('not_served', 'unavailable') and (point['model'] is not None or point['took_s'] is not None):
+                return None
+            clean[key] = {field: point[field] for field in SWARM_ANSWER_CACHE_FIELDS}
+        result[job] = clean
+    return result
+
+
+def prune_answers(payload: object, *, now_ts: float, cap: int, max_age_s: float) -> dict:
+    """Keep the newest bounded points, with age/future checks against injected time."""
+    valid = coerce_answers_slot(payload) or {}
+    points = [(job, key, point) for job, items in valid.items() for key, point in items.items()
+              if 0 <= now_ts - point['read_ts'] <= max_age_s]
+    points.sort(key=lambda item: (-item[2]['read_ts'], item[0], item[1]))
+    result: dict[str, dict] = {}
+    for job, key, point in points[:max(0, cap)]:
+        result.setdefault(job, {})[key] = point
+    return result
+
+
+def enrich_work_rows(rows: list[dict], answers: object) -> list[dict]:
+    """Use only exact displayed row identities; revalidate even an in-memory slot."""
+    valid = coerce_answers_slot(answers) or {}
+    result = []
+    for row in rows:
+        item = dict(row)
+        job, key = row['job_id'], row['submission_hash']
+        if parse_job_id(job) is None or _hex64(key) is None:
+            item['answer_state'] = 'unavailable'
+        elif point := valid.get(job, {}).get(key):
+            item.update(answer=point['answer'], answer_state=point['state'],
+                        model=point['model'], took_s=point['took_s'])
+        result.append(item)
+    return result
+
+
+def answer_jobs_due(rows: list[dict], answers: dict, *, now_ts: float, due_s: float, cap: int) -> list[tuple[str, list[dict]]]:
+    """Unread rows first in displayed order; due retries by oldest attempt.
+
+    Group by job so multiple selected submission hashes cost one request. Only
+    the first displayed window is eligible; terminal points never re-read while
+    retained, even if their first attempt was unavailable.
+    """
+    groups: dict[str, list[dict]] = {}
+    priorities = {}
+    for index, row in enumerate(rows[:SWARM_ANSWER_ROW_CAP]):
+        job, key = row['job_id'], row['submission_hash']
+        if parse_job_id(job) is None or _hex64(key) is None:
+            continue
+        point = answers.get(job, {}).get(key)
+        terminal = row['job_state'] in ('completed', 'cancelled', 'failed')
+        if point is not None and (point['terminal'] or terminal or now_ts - point['read_ts'] < due_s):
+            continue
+        priority = (0, index, index) if point is None else (1, point['read_ts'], index)
+        groups.setdefault(job, []).append(row)
+        priorities[job] = min(priorities.get(job, priority), priority)
+    return [(job, groups[job]) for job in sorted(groups, key=priorities.get)[:cap]]

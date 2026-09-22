@@ -271,7 +271,9 @@ def test_skill_rows_cover_the_catalogue_sorted_by_role_then_id(skills):
     row = next(r for r in rows if r["skill_id"] == "adversarial-review")
     assert row == {"skill_id": "adversarial-review", "version": 2, "role": "review",
                    "kind": "code", "tier": 1, "judge": "verifier-rerun",
-                   "checks": "foundry", "requires": []}
+                   "checks": "foundry", "requires": [], "inference": None,
+                   **{field: next(skill for skill in skills if skill["id"] == row["skill_id"])["record"][field]
+                      for field in ("attempts", "accepted", "rejected", "pending")}}
     for r in rows:
         assert isinstance(r["requires"], list)
         assert all(isinstance(x, str) for x in r["requires"])

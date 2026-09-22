@@ -171,6 +171,7 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_SWARM_SEAT,
     SLOT_SWARM_WORKERS,
     SLOT_SWARM_CONTRIBUTORS,
+    SLOT_SWARM_ANSWERS,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
     SERIES_IMD_SUPPLY,
@@ -847,6 +848,24 @@ SWARM_STALE_AFTER_S = 1860.0
 #: `/health` counter moved, so a silent list change cannot age forever.
 SWARM_LIST_CEILING_S = 300.0
 
+#: RECORD enrichment reads at most four unique jobs after the selected seat.
+#: Canonical pacing costs 4 × 0.12 = 0.48 s before transport time; the WP0 live
+#: captures measured individual submissions GETs at 0.380/0.215/0.167 s.
+#: Four jobs allow progressive fill without an unbounded 40-request seat cycle.
+#: A 2026-09-22 MockTransport replay (three v4 captures plus one oracle copy
+#: under a synthetic UUID) took 0.00553 s with pacing injected, not slept:
+#: four submissions envelopes totalled 270,288 compact UTF-8 JSON bytes;
+#: their four extracted cache points totalled 1,087 bytes. This is replay CPU
+#: and storage evidence, not measured live four-job network latency.
+SWARM_ANSWER_PER_CYCLE = 4
+#: Ten displayed RECORD windows (40 points each), across selected seats. Point
+#: age follows jobs-seen's 48-hour precedent; age/cap pruning ends the promise
+#: that retained terminal attempts, including failures, are never re-read.
+SWARM_ANSWER_CACHE_CAP = 400
+SWARM_ANSWER_MAX_AGE_S = 48 * 3600.0
+#: Nonterminal jobs may change; their reads follow the seat tier's 120 s clock.
+SWARM_ANSWER_DUE_S = 120.0
+
 #: The non-``pending*`` `/health` fields whose movement means the job list
 #: changed. The gate itself is an **open set** (swarm v2 plan §1.1, the
 #: ``swarm_queue_total`` row): :func:`_swarm_gate_counters` compares these
@@ -1077,6 +1096,7 @@ class SurfManager:
             self.cache.load(slot_coercers={
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
                 SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
+                SLOT_SWARM_ANSWERS: sw.coerce_answers_slot,
             })
         except Exception as exc:            # noqa: BLE001 — load is fail-soft; belt and braces
             logger.warning("SURF cache load failed: %s", exc)
@@ -5699,7 +5719,33 @@ class SurfManager:
         self.cache.mark_fetched(TIER_SWARM_SEAT, now)
         if self._seat_failed_token == token:
             self._seat_failed_token = None
+        if state == "ok":
+            await self._pool_swarm_answers(result, token, now)
         return slot
+
+    async def _pool_swarm_answers(self, seat: dict, token: int, now: float) -> None:
+        """Bounded per-job reads after a successful seat; failures stay local."""
+        prior = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
+        answers = sw.prune_answers(getattr(prior, "payload", None), now_ts=now,
+                                  cap=SWARM_ANSWER_CACHE_CAP, max_age_s=SWARM_ANSWER_MAX_AGE_S)
+        rows = sw.seat_work_rows(seat)
+        for row in rows[:sw.SWARM_ANSWER_ROW_CAP]:
+            point = answers.get(row["job_id"], {}).get(row["submission_hash"])
+            if point is not None and row["job_state"] in ("completed", "cancelled", "failed"):
+                point["terminal"] = True
+        for job, group in sw.answer_jobs_due(rows, answers, now_ts=now,
+                                             due_s=SWARM_ANSWER_DUE_S, cap=SWARM_ANSWER_PER_CYCLE):
+            payload = await self._guard(lambda job=job: self.swarm_client.submissions(job),
+                                        "swarm submissions")
+            for row in group:
+                answer = sw.submission_answer(payload, job, row["submission_hash"], token)
+                answers.setdefault(job, {})[row["submission_hash"]] = dict(
+                    answer, read_ts=now,
+                    terminal=row["job_state"] in ("completed", "cancelled", "failed"))
+        answers = sw.prune_answers(answers, now_ts=now, cap=SWARM_ANSWER_CACHE_CAP,
+                                  max_age_s=SWARM_ANSWER_MAX_AGE_S)
+        if prior is None or prior.payload != answers:
+            self.cache.store_last_good(SLOT_SWARM_ANSWERS, answers, ts=now)
 
     async def _pool_swarm_scores(self, tiers: set[str], now: float) -> dict[str, Any]:
         """The sweep: the newest details, ``/skills``, ``/launches``, ``/sites``.
@@ -5823,6 +5869,7 @@ class SurfManager:
                 if jobs is not None else None
             ),
             "swarm_services_up": facts["services_up"],
+            "swarm_health_status": facts["health_status"],
             # ``None`` only when the list was never read (the fold's own
             # rule); an idle swarm is a dict of honest empties. The
             # ``jobs is not None`` test above is made directly against the
@@ -5888,7 +5935,8 @@ class SurfManager:
         }
 
     def _swarm_seat_keys(
-        self, slot: dict[str, Any], entry: Any, seen: Any, seat_entry: Any
+        self, slot: dict[str, Any], entry: Any, seen: Any, seat_entry: Any,
+        answers_entry: Any = None, now: float | None = None,
     ) -> dict[str, Any]:
         """The selected seat's lifetime keys from its own /seats cache slot.
 
@@ -5933,7 +5981,10 @@ class SurfManager:
         if selected["agent_id"] is None and isinstance(seat.get("agentId"), str):
             out["swarm_seat_selected"] = dict(selected, agent_id=seat["agentId"])
         out["swarm_seat_summary"] = sw.seat_summary_from_seat(seat)
-        out["swarm_seat_work_rows"] = sw.seat_work_rows(seat)
+        answers = sw.prune_answers(getattr(answers_entry, "payload", None),
+                                  now_ts=float(self._clock()) if now is None else now,
+                                  cap=SWARM_ANSWER_CACHE_CAP, max_age_s=SWARM_ANSWER_MAX_AGE_S)
+        out["swarm_seat_work_rows"] = sw.enrich_work_rows(sw.seat_work_rows(seat), answers)
         out["swarm_seat_node_rows"] = sw.seat_node_rows(seat)
         out["swarm_seat_teammates"] = sw.seat_teammates(seat)
         return out
@@ -6101,6 +6152,7 @@ class SurfManager:
         # because it needs the token they choose; being detached, it starts
         # no later in wall time than an earlier offer would be served.
         seat_entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
+        answers_entry = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
         # Capture both source versions before offering detached work. A later
         # completion cannot misdate this cycle's data with another version's clock.
         contributors_entry = self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS)
@@ -6402,7 +6454,7 @@ class SurfManager:
         # The AGENT body's keys: the roster off the same sweep slot plus the
         # jobs-seen map, the selected seat's record off its own /seats slot
         # (the /seats plan WP2) -- then that seat's read, offered detached.
-        seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry)
+        seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry, answers_entry, now)
         data.update(seat_keys)
         selected_seat = seat_keys["swarm_seat_selected"]
         data.update(self._swarm_board_keys(

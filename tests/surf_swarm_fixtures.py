@@ -65,3 +65,9 @@ def swarm_agent_sources(token):
     return dict(swarm_seat_live=fold.seat_live(swarm_capture_v3("workers"), token),
                 swarm_seat_contrib=fold.seat_contrib(swarm_capture_v3("contributors"), token),
                 swarm_workers_as_of_hhmm="04:02", swarm_board_as_of_hhmm="03:01")
+
+
+def swarm_capture_v4(name: str) -> dict:
+    """One polish capture from 2026-09-22, including its provenance MANIFEST."""
+    with open(SWARM_FIXTURES_V3.parent / 'v4' / f'{name}.json', encoding='utf-8') as fh:
+        return json.load(fh)
