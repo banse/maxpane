@@ -271,17 +271,21 @@ uses `/contributors` only. This is a source difference, not a reconciliation opp
 The public contract is frozen in `data/surf_models.py`: `swarm_board_summary`,
 `swarm_board_rows`, `swarm_fleet`, `swarm_seat_live`, `swarm_seat_contrib`, and the independent
 `swarm_board_as_of_hhmm` / `swarm_workers_as_of_hhmm` markers. Each last-good slot retains its
-own successful-read clock. Mixed-source panels receive both markers; a failed endpoint does not
-clear the other's data or advance its own marker. Selecting another seat derives that token's
-live/contributor state from these cached slots without another board request.
+own last-good-version clock. A changed valid normalized payload updates only its source slot
+and marker; an unchanged successful read advances tier scheduling without rewriting that version.
+Mixed-source panels receive both markers. A failed endpoint preserves its old slot and marker,
+stores a changed successful counterpart, and schedules the tier with the 120-second backoff.
+Selecting another seat derives that token's live/contributor state from these cached slots without another board request.
 
 Contributor admission requires valid token/device identity and **all** served numeric counters,
 including the token accounting fields that are not displayed. Numeric parsing accepts nonnegative
 integers or ASCII-digit decimal strings only; booleans, floats, negatives, signs, whitespace and
 garbage are invalid. The existing strict token parser is reused. A malformed row is dropped, never
 zero-filled; a missing top-level list makes the corresponding source unread. Valid empty lists
-are real empty reads. Workers require valid token/device identity and working/maxConcurrency;
-optional metadata stays `None` if unavailable, distinct from served empty lists.
+are real empty reads. Workers require valid token/device identity, working/maxConcurrency, and
+a served `paused: null` or valid pause object. Missing or malformed pause state drops the row
+rather than inventing an idle device. Optional metadata stays `None` if unavailable, distinct
+from served empty lists. Empty fleet metadata mixes read `none reported`.
 
 For a seat with multiple worker devices, sum working and concurrency, count devices and retain
 the newest heartbeat. State priority is working, then paused, then idle. For multiple pauses choose
@@ -305,3 +309,23 @@ IN FLIGHT remains limited to executing jobs. Its row gains `note` and `note_kind
 wins over failureReason; absent notes remain `None`. `dispatchNoteAt` and `allowedPaths` are not
 displayed. The existing widget signature already receives `swarm_inflight_rows`, so extending
 that row contract carries the note without adding an unused top-level widget parameter.
+
+### Display and selection
+
+BOARD is the seventh body on `b`: six source-labelled hero boxes, the complete scrollable seat
+leaderboard, and fleet metadata. Enter validates the row's immutable token, saves it through
+`config.save_seat`, and follows the shared AGENT selection path without waiting on the network.
+The selection marker follows the current AGENT seat. Fleet values remain whole when shown;
+`+N` counts omitted entries. Wallets are absent from BOARD.
+
+AGENT's STATUS uses workers independently of `/seats`, with its worker clock in the title.
+The accepted timestamp still requires a good seats state; its source clock is in ACCEPTED.
+SEAT's two contributor lines and worker metadata/clock remain available independently of the
+seats response. An absent seat and an unread source retain distinct messages. Metadata is
+sanitized and visibly clipped when needed. Acceptance labels replace the old win wording;
+the historical `win_rate` and `last_won_ts` contract names retain their acceptance meaning.
+
+IN FLIGHT's last column sanitizes and clips the note, lighting `‹ widen` when content is cut.
+A literal ellipsis in a fitting source note does not itself indicate clipping. Long free-text
+notes remain a named layout exception; measured pins and exceptions live beside the constants
+in `screens/surf.py`. No blocked jobs are added to this table.

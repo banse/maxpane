@@ -540,7 +540,9 @@ owner decision.
 
 *2026-09-22:* **AGENT closed: owner accepted 32 rows, 2026-09-22.** The historical
 40-row layout below was replaced by the measured 32-row seat-details layout. SWARM `s` at
-42 rows remains open as an owner decision. Current AGENT geometry is in `screens/surf.py`'s pin blocks.
+42 rows remains open as an owner decision. BOARD WP5 subsequently adds four source-separated
+rows: its new 36-row requirement is filed separately as **F46**, without extending the owner's earlier acceptance. Current geometry is in
+`screens/surf.py`'s pin blocks.
 
 `SURF_SWARM_FULL_LAYOUT_ROWS` is 42 and `SURF_AGENT_FULL_LAYOUT_ROWS` 40; the owner's terminals are 119×35 and 138×31.
 Both bodies scroll there with `‹ taller` lit — degraded honestly, but degraded. THROUGHPUT's 16 fixed lines set the
@@ -553,6 +555,11 @@ A `DataTable` row is height 1; a 197-char corpus reason in its column would be ~
 clip. A detail view (enter on a row) would show the whole reason if the owner wants it.
 
 ### F18 — the status bar is never whole under 131 columns; the `4` body's pin is 119 (pre-existing)
+
+*BOARD update, 2026-09-22:* the added `b board` hint makes the current whole-bar threshold
+**142 columns**, verified against the complete composited right label. The `4` body's 119-column
+body pin still does not promise a whole status bar; this finding remains open. Original observation:
+
 The hint `l launchpad · 4 pool4 · s swarm · a agent` is whole from 131 (`STATUS_BAR_WHOLE_FROM`); the v1 phrase was
 whole from 121; the `4` body's 119 was whole under neither. No surf pin lies in [121, 131) so WP7 regressed nothing,
 but the `#status-left` `width: auto` crops the bar at the terminal edge rather than the phrase. A shorter hint at
@@ -756,6 +763,11 @@ regression test with out-of-order and missing timestamps.
 
 ### F43 — AGENT's status-bar width depends on the version and theme label — OPEN
 
+*BOARD update, 2026-09-22:* current whole-bar width is **142** after adding `b board`. WP4
+strengthened the test to compare the complete expected right-label text with composited output:
+region bounds alone missed the final `f` of `surf` clipped at 141. That test gap is fixed; the
+version/theme label dependency remains open. AGENT's new body height is tracked by F46.
+
 Before the §9 fix wave, the AGENT full-layout column pin was **131**, bound by
 `STATUS_BAR_WHOLE_FROM`; the body itself cleared at **117/118**. The status bar includes
 version and theme labels, so a version bump or theme rename can move that threshold without
@@ -767,7 +779,11 @@ Retain the composited status-bar coverage when updating those labels and re-meas
 pin. A layout guarantee tied to label length remains a follow-up; this fix wave does not redesign
 the status bar.
 
-### F44 — the 64-hex `submissionHash` check is written twice — OPEN (Minor, scoped re-review N1)
+### F44 — the 64-hex `submissionHash` check is written twice — CLOSED 2026-09-22 (BOARD WP2)
+
+Closed by `47d2247`: one `_hex64` helper validates both consumers. Regression:
+`tests/data/test_surf_swarm_seats.py::test_work_and_review_dedup_share_one_hex64_validator`.
+Original finding:
 
 `data/surf_swarm.py` `_distinct_reviews` (~l.762) re-states the 64-hex validation that
 `seat_work_rows` (~l.842) already applies. Hoist one `_hex64` helper in the same module and use it
@@ -781,3 +797,17 @@ payloads. The worst-a payload covers the `entries served` line, so this is test 
 capture to `PAYLOADS` when the layout test is next touched.
 
 Closed: `duplicates420` now participates in permanent width/height boundaries and pin assertions.
+
+## F46 — AGENT's new source groups require more than the accepted 32 rows — OPEN (owner decision)
+
+BOARD's WP5 adds four fixed SEAT rows: two source-labelled contributor lines, worker metadata,
+and its source clock. The measured AGENT minimum is now **36 rows**; at 35 the body still scrolls
+and `‹ taller` remains visible. The owner's 119×35 and 138×31 terminals therefore need vertical
+scrolling. Current canonical measurements remain beside `SURF_AGENT_FULL_LAYOUT_ROWS` in
+`screens/surf.py`.
+
+F16's AGENT closure records the owner's acceptance of the previous **32-row** seat-details
+layout on 2026-09-22. It does not imply acceptance of the new 36-row requirement. The new facts
+and their source separation were requested; no field was silently removed to preserve the old
+height. The owner can accept this height or request a separate layout change to recover rows.
+SWARM's existing 42-row height remains F16's open half.

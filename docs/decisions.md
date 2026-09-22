@@ -4,6 +4,25 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-22** — The owner approved surf's BOARD as the seventh body on `b`
+  (`docs/surf_swarm_board_handover.md`), keeping the existing `s` grid rather than adding a
+  fourth row to it. BOARD joins `/contributors` lifetime counters per seat with `/workers`
+  state, using separate source markers. The capture's 101 contributor device rows aggregate
+  to 99 seats; its 91 workers remain distinct from `/health.connectedDaemons` 92. Enter on
+  LEADERBOARD validates and saves the selected seat through the same writer as `i`, then opens
+  AGENT. The selected marker follows that saved/current AGENT seat, not the table cursor.
+  D2's rejection removal is partially withdrawn: `/contributors` serves rejections and AGENT
+  shows them in a separately labelled contributors group. The earlier `/seats` “not served”
+  premise is historical too: the new seat #420 capture contains `rejected: 2` and `pending: 12`.
+  This implementation leaves the `/seats` fold unchanged and does not reconcile its
+  204 attempts / 190 accepted with contributors' 207 / 189. REVISIONS remains absent.
+  `tokensPerCompletedJob` is displayed only as served, with that label; runtime-dependent token
+  accounting makes inferred totals, costs and token-based rankings inappropriate here.
+  AGENT's user-facing WIN RATE/won language becomes ACCEPT RATE/accepted; historical contract
+  keys `win_rate` and `last_won_ts` retain their names and documented acceptance meaning.
+  Its live status and skills/profiles/platform come only from workers. IN FLIGHT remains
+  executing-only and appends the dispatch note, falling back to a failure reason.
+
 - **2026-09-22** — surf's AGENT body uses SEAT beside BY NODE over RECORD
   (`docs/surf_agent_seat_details_handover.md`). ROSTER is retired: its recent job counts looked
   contradictory beside the seat's lifetime accepted count, and its window title understated the
