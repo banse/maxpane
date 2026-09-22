@@ -685,3 +685,20 @@ def test_live_accepted_at_space_and_short_offset_parse_for_every_work_row():
     assert len(rows) == 190 and all(row["accepted_ts"] is not None for row in rows)
     assert rows[0]["accepted_ts"] == 1790026542.88
     assert fold.seat_summary_from_seat(payload)["last_won_ts"] == 1790026542.88
+
+
+def test_work_and_review_dedup_share_one_hex64_validator(monkeypatch):
+    from maxpane_dashboard.data import surf_swarm as sw
+
+    seen = []
+    original = sw._hex64
+
+    def observe(value):
+        seen.append(value)
+        return original(value)
+
+    monkeypatch.setattr(sw, '_hex64', observe)
+    key = 'aB09' * 16
+    assert sw.seat_work_rows({'work': [{'submissionHash': key}]})[0]['submission_hash'] == key
+    assert sw.seat_summary_from_seat({'reviews': [{'submissionHash': key}, {'submissionHash': key}]})['reviewed'] == 1
+    assert seen == [key, key, key]

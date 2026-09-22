@@ -191,6 +191,14 @@ class SwarmClient(OwnedHttpClient):
     async def fetch_health(self) -> dict[str, Any] | None:
         return await self._dict("/health")
 
+    async def fetch_workers(self) -> dict[str, Any] | None:
+        """Live device envelope through the shared host pool and pacing."""
+        return await self._dict("/workers")
+
+    async def fetch_contributors(self) -> dict[str, Any] | None:
+        """Per-device lifetime counters, including served envelope totals."""
+        return await self._dict("/contributors")
+
     async def fetch_version(self) -> dict[str, Any] | None:
         return await self._dict("/version")
 

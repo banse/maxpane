@@ -617,3 +617,36 @@ async def test_fetch_seat_never_reaches_the_network_under_the_raising_transport(
     async with _client(_no_network) as client:
         with pytest.raises(AssertionError):
             await client.fetch_seat(420)
+
+
+@pytest.mark.parametrize('route', ['workers', 'contributors'])
+async def test_board_reads_use_canned_keyless_rotating_paced_transport(route):
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+
+    seen, delays = [], []
+    payload = swarm_capture_v3(route)
+
+    async def sleep(delay):
+        delays.append(delay)
+
+    def handler(request):
+        seen.append(request)
+        assert request.url.path == f'/{route}'
+        assert request.method == 'GET'
+        assert not {'authorization', 'cookie', 'x-api-key'} & set(request.headers)
+        return httpx.Response(503) if len(seen) == 1 else httpx.Response(200, json=payload)
+
+    async with _client(handler, sleep=sleep) as client:
+        assert await getattr(client, f'fetch_{route}')() == payload
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+    assert len(delays) == 1 and delays[0] > 0
+    async with _client(_no_network, sleep=sleep) as client:
+        with pytest.raises(AssertionError):
+            await getattr(client, f'fetch_{route}')()
+
+
+@pytest.mark.parametrize('route', ['workers', 'contributors'])
+@pytest.mark.parametrize('body', [None, [], 'garbage', 0])
+async def test_board_fetch_rejects_non_dict_body(route, body):
+    async with _client(lambda request: httpx.Response(200, json=body)) as client:
+        assert await getattr(client, f'fetch_{route}')() is None

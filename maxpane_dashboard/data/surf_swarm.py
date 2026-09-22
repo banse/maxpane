@@ -27,7 +27,8 @@ from maxpane_dashboard.analytics.surf_swarm_signals import (
 )
 from maxpane_dashboard.data.surf_models import (
     SURF_ROW_KEYS, SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
-    SWARM_SEAT_SUMMARY_FIELDS,
+    SWARM_SEAT_SUMMARY_FIELDS, SWARM_BOARD_SUMMARY_FIELDS, SWARM_FLEET_FIELDS,
+    SWARM_SEAT_LIVE_FIELDS, SWARM_SEAT_CONTRIB_FIELDS,
 )
 # A constant only: the client owns the normalised ``unknown_seat`` result, so
 # the fold recognises it by that one definition rather than a retyped literal.
@@ -43,6 +44,9 @@ __all__ = [
     # AGENT body on /seats/{tokenId} (docs/surf_agent_seats_plan.md WP1b)
     "choose_seat", "coerce_seat_slot", "seat_node_rows", "seat_teammates",
     "seat_state", "seat_summary_from_seat", "seat_work_rows",
+    "board_rows", "board_summary", "fleet", "seat_live", "seat_contrib",
+    "normalize_contributors", "normalize_workers",
+    "coerce_contributors_slot", "coerce_workers_slot",
 ]
 
 #: A job in one of these states is finished; nothing else is.
@@ -279,7 +283,7 @@ def inflight_rows(jobs: object, details: object, *,
                   now_ts: float) -> list[dict[str, Any]]:
     """``swarm_inflight_rows``: jobs in state ``executing``, newest first.
 
-    ``details`` is ``job_id -> detail | None``.  The six node fields are
+    ``details`` is ``job_id -> detail | None``.  The node fields, including dispatch/failure notes, are
     ``None`` when the detail was not read or has no active node -- the
     attribution is a fact about the detail route, not the list.
     ``agent_token`` is the seat's ``tokenId`` as an int when it parses;
@@ -295,6 +299,10 @@ def inflight_rows(jobs: object, details: object, *,
         node = _active_node(dmap.get(job_id)) if job_id is not None else None
         created = _ts(job.get("createdAt"))
         token, agent = _seat(node) if node is not None else (None, None)
+        dispatch = _str(node.get("dispatchNote")) if node is not None else None
+        failure = _str(node.get("failureReason")) if node is not None else None
+        note = dispatch if dispatch else failure or None
+        note_kind = "dispatch" if dispatch else "failure" if failure else None
         rows.append({
             "job_id": job_id,
             "template": _str(job.get("template")),
@@ -307,6 +315,8 @@ def inflight_rows(jobs: object, details: object, *,
             "agent_token": token,
             "agent_id": agent,
             "revisions": _int(node.get("revisions")) if node is not None else None,
+            "note": note,
+            "note_kind": note_kind,
         })
     return _newest_first(rows, "created_ts")
 
@@ -692,7 +702,10 @@ def _served_token(value: object) -> int | None:
     if isinstance(value, str):
         if not value or not _ASCII_DIGITS.issuperset(value):
             return None
-        return int(value)
+        try:
+            return int(value)
+        except ValueError:  # Python's oversized decimal-string safety limit
+            return None
     return _seat_id(value)
 
 
@@ -751,15 +764,22 @@ def _runtime(runtimes: object) -> str | None:
     return " ".join(parts) if parts else None
 
 
+def _hex64(value: object) -> str | None:
+    """A complete off-chain submission hash, shared by work and review folds."""
+    if (isinstance(value, str) and len(value) == 64
+            and all(c in "0123456789abcdefABCDEF" for c in value)):
+        return value
+    return None
+
+
 def _distinct_reviews(reviews: object) -> list[Mapping[str, Any]]:
     """Keep the most advanced entry per valid submission hash; ties keep first."""
     result: list[Mapping[str, Any]] = []
     positions: dict[str, int] = {}
     ranks = {"sent": 3, "submitted": 2, "queued": 1}
     for review in _mappings(reviews):
-        key = _str(review.get("submissionHash"))
-        if (key is None or len(key) != 64
-                or any(c not in "0123456789abcdefABCDEF" for c in key)):
+        key = _hex64(review.get("submissionHash"))
+        if key is None:
             result.append(review)
             continue
         if key not in positions:
@@ -837,10 +857,7 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
     keys = SURF_ROW_KEYS["swarm_seat_work_rows"]
     rows = []
     for work in _mappings(_list(payload.get("work"))):
-        submission_hash = _str(work.get("submissionHash"))
-        if (submission_hash is None or len(submission_hash) != 64
-                or any(c not in "0123456789abcdefABCDEF" for c in submission_hash)):
-            submission_hash = None
+        submission_hash = _hex64(work.get("submissionHash"))
         row = {
             "job_id": _str(work.get("jobId")),
             "node_key": _str(work.get("nodeKey")),
@@ -962,3 +979,355 @@ def coerce_seat_slot(payload: object) -> dict[str, Any] | None:
     elif not isinstance(seat, dict) or seat_state(seat, token) != "ok":
         return None
     return {"token": token, "state": state, "seat": seat}
+
+
+# -- BOARD: normalized source slots and pure folds --------------------------
+# Endpoint admission drops malformed rows. Persisted normalized slots are a
+# different trust boundary: coerce_* rejects a malformed slot as a whole rather
+# than quietly changing its counts. The manager normalizes at fetch, validates
+# at load/consumption and uses the *_from_slot(s) helpers without parsing twice.
+
+_CONTRIBUTOR_COUNTERS = {
+    "attempts": "attempts", "accepted": "accepted", "rejected": "rejected",
+    "pending": "pending", "turns": "turns", "wall_clock_ms": "wallClockMs",
+    "input_tokens": "inputTokens", "output_tokens": "outputTokens",
+    "cached_input_tokens": "cachedInputTokens",
+}
+
+
+def _string_list(value: object) -> list[str] | None:
+    return list(value) if isinstance(value, list) and all(isinstance(v, str) for v in value) else None
+
+
+def normalize_contributors(payload: object) -> dict[str, Any] | None:
+    """Normalize a served envelope; require every counter before admitting a row.
+
+    All counters use the existing strict ASCII decimal-string/int parser. A
+    missing list is unread; malformed members are dropped, never zero-filled.
+    The token-accounting counters are retained and aggregated, never ranked.
+    """
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("contributors"), list):
+        return None
+    rows = []
+    for source in _mappings(payload["contributors"]):
+        token = _served_token(source.get("tokenId"))
+        device = _str(source.get("deviceKey"))
+        counts = {name: _served_token(source.get(field)) for name, field in _CONTRIBUTOR_COUNTERS.items()}
+        if token is None or not device or any(value is None for value in counts.values()):
+            continue
+        rows.append({"device_key": device, "token_id": token, **counts})
+    return {
+        "receipts": _served_token(payload.get("receipts")),
+        "tokens_per_completed_job": _served_token(payload.get("tokensPerCompletedJob")),
+        "contributors": rows,
+    }
+
+
+def normalize_workers(payload: object) -> dict[str, Any] | None:
+    """Normalize live devices; malformed identity, capacity or pause drops a row.
+
+    Missing optional metadata remains None, distinct from a served empty list.
+    A malformed pause is never evidence of an idle worker. LIVE remains the
+    served envelope count even when malformed rows were omitted from the list.
+    """
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("workers"), list):
+        return None
+    rows = []
+    for source in _mappings(payload["workers"]):
+        seat = source.get("seat")
+        if not isinstance(seat, Mapping):
+            continue
+        token = _served_token(seat.get("tokenId"))
+        device = _str(source.get("deviceKey"))
+        working = _served_token(source.get("working"))
+        capacity = _served_token(source.get("maxConcurrency"))
+        if token is None or not device or working is None or capacity is None:
+            continue
+        until = failures = None
+        if "paused" not in source:
+            continue
+        pause = source["paused"]
+        if pause is not None:
+            if not isinstance(pause, Mapping):
+                continue
+            until = _ts(pause.get("until"))
+            failures = _served_token(pause.get("consecutiveFailures"))
+            if until is None or failures is None:
+                continue
+        runtime_source = source.get("runtimes")
+        runtimes = None
+        if (isinstance(runtime_source, list)
+                and all(isinstance(r, Mapping) and isinstance(r.get("id"), str) for r in runtime_source)):
+            runtimes = [r["id"] for r in runtime_source]
+        platform = source.get("platform")
+        os = _str(platform.get("os")) if isinstance(platform, Mapping) else None
+        arch = _str(platform.get("arch")) if isinstance(platform, Mapping) else None
+        rows.append({
+            "device_key": device, "token_id": token, "agent_id": _str(seat.get("agentId")),
+            "working": working, "max_concurrency": capacity,
+            "paused_until_ts": until, "failures": failures,
+            "heartbeat_ts": _ts(source.get("lastHeartbeatAt")),
+            "runtimes": runtimes, "daemon": _str(source.get("daemonVersion")),
+            "profiles": _string_list(source.get("profiles")),
+            "skills": _string_list(source.get("skills")), "os": os,
+            "platform": f"{os} {arch}" if os is not None and arch is not None else None,
+        })
+    return {"count": _served_token(payload.get("count")), "workers": rows}
+
+
+def _valid_count(value: object) -> bool:
+    return _seat_id(value) is not None
+
+
+def _optional_count(value: object) -> bool:
+    return value is None or _valid_count(value)
+
+
+def _optional_string(value: object) -> bool:
+    return value is None or isinstance(value, str)
+
+
+def _optional_strings(value: object) -> bool:
+    return value is None or _string_list(value) is not None
+
+
+def _optional_stamp(value: object) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _coerce_board_slot(payload: object, member: str, fields: dict, row_fields: dict) -> dict | None:
+    if not isinstance(payload, Mapping) or set(payload) != {*fields, member}:
+        return None
+    if not all(check(payload[key]) for key, check in fields.items()):
+        return None
+    if not isinstance(payload[member], list):
+        return None
+    rows = []
+    for row in payload[member]:
+        if not isinstance(row, Mapping) or set(row) != set(row_fields):
+            return None
+        if not all(check(row[key]) for key, check in row_fields.items()):
+            return None
+        rows.append({key: list(value) if isinstance(value, list) else value for key, value in row.items()})
+    return {**{key: payload[key] for key in fields}, member: rows}
+
+
+def coerce_contributors_slot(payload: object) -> dict[str, Any] | None:
+    """Validate every normalized field; cached decimal strings are not re-parsed."""
+    return _coerce_board_slot(payload, "contributors", {
+        "receipts": _optional_count, "tokens_per_completed_job": _optional_count,
+    }, {"device_key": lambda v: isinstance(v, str) and bool(v), "token_id": _valid_count,
+        **dict.fromkeys(_CONTRIBUTOR_COUNTERS, _valid_count)})
+
+
+def coerce_workers_slot(payload: object) -> dict[str, Any] | None:
+    """Validate every normalized worker field and the paired pause timestamp/count."""
+    result = _coerce_board_slot(payload, "workers", {"count": _optional_count}, {
+        "device_key": lambda v: isinstance(v, str) and bool(v), "token_id": _valid_count,
+        "agent_id": _optional_string, "working": _valid_count, "max_concurrency": _valid_count,
+        "paused_until_ts": _optional_stamp, "failures": _optional_count,
+        "heartbeat_ts": _optional_stamp, "runtimes": _optional_strings,
+        "daemon": _optional_string, "profiles": _optional_strings, "skills": _optional_strings,
+        "os": _optional_string, "platform": _optional_string,
+    })
+    if result is not None and any((row["paused_until_ts"] is None) != (row["failures"] is None)
+                                  for row in result["workers"]):
+        return None
+    return result
+
+
+def _worker_groups(slot: dict | None) -> dict[int, list[dict]]:
+    groups: dict[int, list[dict]] = {}
+    for row in slot["workers"] if slot is not None else []:
+        groups.setdefault(row["token_id"], []).append(row)
+    return groups
+
+
+def _metadata_union(rows: list[dict], field: str) -> list[str] | None:
+    if any(row[field] is None for row in rows):
+        return None
+    return sorted({value for row in rows for value in row[field]})
+
+
+def _live_for_workers(rows: list[dict]) -> dict[str, Any]:
+    live = dict.fromkeys(SWARM_SEAT_LIVE_FIELDS)
+    live.update(live=bool(rows), working=sum(row["working"] for row in rows),
+                max_concurrency=sum(row["max_concurrency"] for row in rows), devices=len(rows))
+    if not rows:
+        return live
+    paused = [row for row in rows if row["paused_until_ts"] is not None]
+    if paused:
+        chosen = min(paused, key=lambda row: (row["paused_until_ts"], row["device_key"]))
+        live["paused_until_ts"], live["failures"] = chosen["paused_until_ts"], chosen["failures"]
+    live["heartbeat_ts"] = max((row["heartbeat_ts"] for row in rows if row["heartbeat_ts"] is not None), default=None)
+    skills = _metadata_union(rows, "skills")
+    live["skills"] = len(skills) if skills is not None else None
+    live["profiles"] = _metadata_union(rows, "profiles")
+    if all(row["platform"] is not None for row in rows):
+        live["platform"] = ", ".join(sorted({row["platform"] for row in rows}))
+    return live
+
+
+def _live_state(live: dict) -> str:
+    if not live["live"]:
+        return "offline"
+    if live["working"]:
+        return "working"
+    return "paused" if live["paused_until_ts"] is not None else "idle"
+
+
+def _runtime_bucket(values: list[str] | None) -> str | None:
+    if values is None:
+        return None
+    names = set(values)
+    return "both" if names == {"codex", "claude"} else "+".join(sorted(names)) or "none"
+
+
+def _seconds(milliseconds: int) -> float | None:
+    try:
+        value = milliseconds / 1000
+        return value if math.isfinite(value) else None
+    except OverflowError:
+        return None
+
+
+def _board_rows_from_slots(contributors: dict | None, workers: dict | None) -> list[dict] | None:
+    if contributors is None:
+        return None
+    grouped: dict[int, dict] = {}
+    for row in contributors["contributors"]:
+        counts = grouped.setdefault(row["token_id"], {"devices": set(), **dict.fromkeys(_CONTRIBUTOR_COUNTERS, 0)})
+        counts["devices"].add(row["device_key"])
+        for field in _CONTRIBUTOR_COUNTERS:
+            counts[field] += row[field]
+    live_groups = _worker_groups(workers)
+    result = []
+    for token, counts in grouped.items():
+        live_rows = live_groups.get(token, [])
+        live = _live_for_workers(live_rows) if workers is not None else None
+        try:
+            rate = counts["accepted"] / counts["attempts"] if counts["attempts"] else None
+        except OverflowError:
+            rate = None
+        row = {
+            "rank": None, "token_id": token,
+            "agent_id": next((row["agent_id"] for row in sorted(live_rows, key=lambda row: row["device_key"])
+                              if row["agent_id"] is not None), None),
+            "devices": len(counts["devices"]),
+            "runtime": (_runtime_bucket(_metadata_union(live_rows, "runtimes")) if live_rows
+                        else "offline" if workers is not None else None),
+            **{field: counts[field] for field in ("attempts", "accepted", "rejected", "pending")},
+            "accept_rate": rate, "turns": counts["turns"], "wall_clock_s": _seconds(counts["wall_clock_ms"]),
+            "live_state": _live_state(live) if live is not None else None,
+            "working": live["working"] if live is not None else None,
+            "paused_until_ts": live["paused_until_ts"] if live is not None else None,
+            "failures": live["failures"] if live is not None else None,
+        }
+        result.append(row)
+    result.sort(key=lambda row: (-row["accepted"], row["accept_rate"] is None,
+                                 -(row["accept_rate"] or 0), row["token_id"]))
+    for rank, row in enumerate(result, 1):
+        row["rank"] = rank
+    return result
+
+
+def board_rows(contributors: object, workers: object) -> list[dict] | None:
+    """One row per contributor seat; workers enrich metadata, never the counters."""
+    return _board_rows_from_slots(normalize_contributors(contributors), normalize_workers(workers))
+
+
+def _board_summary_from_slots(contributors: dict | None, workers: dict | None) -> dict:
+    summary = dict.fromkeys(SWARM_BOARD_SUMMARY_FIELDS)
+    if contributors is not None:
+        rows = contributors["contributors"]
+        summary["seats"] = len({row["token_id"] for row in rows})
+        for field in ("attempts", "accepted", "rejected", "pending"):
+            summary[field] = sum(row[field] for row in rows)
+        summary["receipts"] = contributors["receipts"]
+        summary["tokens_per_completed_job"] = contributors["tokens_per_completed_job"]
+    if workers is not None:
+        rows = workers["workers"]
+        summary["live"] = workers["count"]
+        summary["paused"] = len({row["token_id"] for row in rows if row["paused_until_ts"] is not None})
+        summary["capacity"] = sum(row["max_concurrency"] for row in rows)
+        summary["working"] = sum(row["working"] for row in rows)
+    return summary
+
+
+def board_summary(contributors: object, workers: object) -> dict:
+    """Hero facts; each unread source leaves only its own fields unavailable."""
+    return _board_summary_from_slots(normalize_contributors(contributors), normalize_workers(workers))
+
+
+def _mix(values) -> list[dict]:
+    counts: dict[str, int] = {}
+    for value in values:
+        if value is not None:
+            counts[value] = counts.get(value, 0) + 1
+    return [{"value": value, "count": count} for value, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+
+
+def _fleet_from_slot(slot: dict | None) -> dict | None:
+    if slot is None:
+        return None
+    rows = slot["workers"]
+    result = dict.fromkeys(SWARM_FLEET_FIELDS)
+    result.update(
+        runtimes=_mix(_runtime_bucket(row["runtimes"]) for row in rows),
+        daemons=_mix(row["daemon"] for row in rows), os=_mix(row["os"] for row in rows),
+        profiles=_mix("+".join(sorted(set(row["profiles"]))) or "none" if row["profiles"] is not None else None for row in rows),
+        concurrency=_mix(str(row["max_concurrency"]) for row in rows),
+    )
+    stamps = [row["heartbeat_ts"] for row in rows if row["heartbeat_ts"] is not None]
+    result["heartbeat_oldest_ts"] = min(stamps, default=None)
+    result["heartbeat_newest_ts"] = max(stamps, default=None)
+    paused = []
+    for token, devices in _worker_groups(slot).items():
+        live = _live_for_workers(devices)
+        if live["paused_until_ts"] is not None:
+            paused.append({"token_id": token, "until_ts": live["paused_until_ts"], "failures": live["failures"]})
+    result["paused"] = sorted(paused, key=lambda row: (row["until_ts"], row["token_id"]))
+    return result
+
+
+def fleet(workers: object) -> dict | None:
+    """Worker-only mixes, heartbeat bounds, and one paired pause fact per seat."""
+    return _fleet_from_slot(normalize_workers(workers))
+
+
+def _seat_live_from_slot(workers: dict | None, token: object) -> dict | None:
+    wanted = _seat_id(token)
+    if workers is None or wanted is None:
+        return None
+    return _live_for_workers(_worker_groups(workers).get(wanted, []))
+
+
+def seat_live(workers: object, token: object) -> dict | None:
+    """Selected token's live state; None unread, live=False absent after a read."""
+    return _seat_live_from_slot(normalize_workers(workers), token)
+
+
+def _seat_contrib_from_rows(rows: list[dict] | None, token: object) -> dict | None:
+    wanted = _seat_id(token)
+    if rows is None or wanted is None:
+        return None
+    result = dict.fromkeys(SWARM_SEAT_CONTRIB_FIELDS)
+    result["listed"] = False
+    selected = next((row for row in rows if row["token_id"] == wanted), None)
+    if selected is not None:
+        result.update(listed=True, ranked_of=len(rows))
+        for field in ("attempts", "accepted", "rejected", "pending", "turns", "wall_clock_s", "rank"):
+            result[field] = selected[field]
+    return result
+
+
+def seat_contrib(contributors: object, token: object) -> dict | None:
+    """Selected token's lifetime contributor counters, independent of /seats."""
+    return _seat_contrib_from_rows(board_rows(contributors, None), token)
