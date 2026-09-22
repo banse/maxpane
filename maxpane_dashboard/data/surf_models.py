@@ -1498,9 +1498,10 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
     "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_live", "swarm_workers_as_of_hhmm"),
-    "SurfSwarmSeatNodes": ("swarm_seat_node_rows", "swarm_seat_teammates", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
+    "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_contrib", "swarm_board_as_of_hhmm"),
+    "SurfSwarmNodeCards": ("swarm_seat_summary", "swarm_seat_node_rows", "swarm_seat_teammates", "swarm_seat_state"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_selected", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
     "SurfSwarmBoardHero": ("swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
     "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
     "SurfSwarmFleet": ("swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
@@ -1940,7 +1941,7 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "block_number", "job_id", "superseded_by", "failure",
     ),
     # Nodes from reviews[] OR work[]; a work-only node has reviewed == 0.
-    # BY NODE win uses won / reviewed, unlike the summary's accepted / attempts.
+    # Node cards' rate uses won / reviewed, unlike the summary's accepted / attempts.
     "swarm_seat_node_rows": (
         "node_key",     # str
         "roles",        # list[str]

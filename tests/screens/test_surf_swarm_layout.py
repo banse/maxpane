@@ -47,7 +47,6 @@ from maxpane_dashboard.analytics.surf_swarm_signals import (
 from maxpane_dashboard.screens.surf import (
     BOARD_BODY_ID, SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS,
     AGENT_BODY_ID,
-    AGENT_TOP_ID,
     SURF_AGENT_FULL_LAYOUT_COLUMNS,
     SURF_AGENT_FULL_LAYOUT_ROWS,
     RECORD_NEVER_CLEARS_BELOW,
@@ -68,9 +67,9 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmSeatNodes,
+    SurfSwarmNodeCards,
+    SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
-    SurfSwarmSeatVerdicts,
     SurfSwarmSites,
     SurfSwarmThroughput,
 )
@@ -97,8 +96,8 @@ from tests.surf_swarm_fixtures import (
 #: own: a pin that moves without a re-sweep reddens the agreement test.
 MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 42
-MEASURED_AGENT_COLUMNS = 138
-MEASURED_AGENT_ROWS = 32
+MEASURED_AGENT_COLUMNS = 135
+MEASURED_AGENT_ROWS = 33
 
 #: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
 #: block): the outer width at which each one's own ``‹`` goes dark on the
@@ -118,15 +117,11 @@ _S_THRESHOLDS = (
     180, 205,        # LAUNCHES compact/full
 )
 _A_THRESHOLDS = (
-    61, 63, 70,  # RECORD columns; unselected SEAT failure labels clear
+    61, 63, 70,  # RECORD columns
     85, 119, # unchanged RECORD compact/full tiers
-    105,     # BY NODE selected columns stop clipping
-    106, 108,# SEAT fixed lines whole: #420/v3 and #0 captures
-    125,     # BY NODE compact
-    128,     # SEAT five-digit contributor line whole
-    134,     # all AGENT hero fixed content whole
-    138,     # BY NODE full
-    134,     # complete status bar; BY NODE binds at138
+    134,     # complete status bar
+    135,     # row-1 hero whole (binds since the card rows, 2026-09-22)
+    138,     # the pre-card pin, BY NODE's full tier
 )
 
 
@@ -135,7 +130,9 @@ _EXCLUDED_FROM_WHOLE = {
     "a": {"SurfSwarmSeatRecord"},
     "b": set(),
 }
-_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmSeatNodes"}
+#: AGENT's binder is its row-1 hero, whose boxes ellipsise rather than mark:
+#: one column under the pin it is the one clipped widget (``#:`` block).
+_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmAgentHero"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
 _ROW_PIN = {"s": SURF_SWARM_FULL_LAYOUT_ROWS, "a": SURF_AGENT_FULL_LAYOUT_ROWS}
 _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
@@ -143,9 +140,11 @@ _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
 #: too narrow for its value is a CSS-clipped line like any panel's, and it
 #: counts as one: at and above the pin none may be clipped.
 _HERO = {"s": SurfSwarmHero, "a": SurfSwarmAgentHero, "b": SurfSwarmBoardHero}
-_TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_TOP_ID, "b": BOARD_BODY_ID}
+#: The AGENT body has no top row since its card rows replaced SEAT | BY NODE
+#: (2026-09-22): the cards are fixed-height, so only the body can scroll.
+_TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
 #: The `height: auto` panel whose fixed line count is its row's floor.
-_FLOOR_PANEL = {"s": "SurfSwarmThroughput", "a": "SurfSwarmSeatVerdicts"}
+_FLOOR_PANEL = {"s": "SurfSwarmThroughput"}
 
 #: Each panel's own direct container, named rather than derived so a
 #: restructure that moves a panel fails loudly here. SITES and RECORD are
@@ -160,8 +159,8 @@ _CONTAINER_OF = {
         SurfSwarmSites: SWARM_BODY_ID,
     },
     "a": {
-        SurfSwarmSeatNodes: AGENT_TOP_ID,
-        SurfSwarmSeatVerdicts: AGENT_TOP_ID,
+        SurfSwarmSeatCards: AGENT_BODY_ID,
+        SurfSwarmNodeCards: AGENT_BODY_ID,
         SurfSwarmSeatRecord: AGENT_BODY_ID,
     },
 }
@@ -169,7 +168,7 @@ _CONTAINER_OF = {
 #: (the screen's dict is keyed by mode word); the marker test binds the two.
 _REGISTERED_SCROLLERS = {
     "s": (SWARM_BODY_ID, SWARM_TOP_ID),
-    "a": (AGENT_BODY_ID, AGENT_TOP_ID),
+    "a": (AGENT_BODY_ID,),
 }
 
 _COLUMN_SWEEP_HEIGHT = 80
@@ -587,7 +586,7 @@ async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> N
     if _BINDING_PANEL[key] == "SurfSwarmCapability":
         assert r["tiers"]["SurfSwarmCapability"] == "baseline", r["tiers"]
         assert r["columns"]["SurfSwarmCapability"] == ("skill","v","role","tier","judge","checks","requires")
-    elif _BINDING_PANEL[key] != "StatusBar":
+    elif _BINDING_PANEL[key] not in ("StatusBar", "SurfSwarmAgentHero"):
         assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
     assert r["status_whole"]
 
@@ -604,6 +603,13 @@ async def test_the_column_pin_is_not_loose(key) -> None:
         if _BINDING_PANEL[key] == "StatusBar":
             assert not under["status_whole"], "status bar fits below its full-layout pin"
             assert not under["overflow"]
+            continue
+        if _BINDING_PANEL[key] == "SurfSwarmAgentHero":
+            assert {name for name, _ in under["clipped"]} == {"SurfSwarmAgentHero"}, (
+                payload_name, under["clipped"],
+            )
+            assert not under["marked_besides_exceptions"], under["marked_besides_exceptions"]
+            assert under["status_whole"] and not under["overflow"]
             continue
         assert under["marked_besides_exceptions"] == {_BINDING_PANEL[key]}, (
             payload_name, sorted(under["marked_besides_exceptions"]),
@@ -698,7 +704,7 @@ async def test_the_row_pin_holds_at_the_column_pin_too(key) -> None:
     assert not at["taller"] and not any(at["scroll"].values()), at["scroll"]
 
 
-@pytest.mark.parametrize("key", sorted(_ROW_PIN))
+@pytest.mark.parametrize("key", sorted(_FLOOR_PANEL))
 async def test_the_top_row_floor_is_its_auto_height_panels_own_lines(key) -> None:
     """The one number in the swarm CSS that is not a tier width: each top
     row's ``min-height`` is the fixed line count of its ``height: auto``
@@ -739,7 +745,7 @@ KEY_HINT_PHRASE = "l launchpad · 4 pl4 · s swm · a agt · b brd"
 
 #: Whole status bar measured after §11 abbreviations: cropped through 133,
 #: whole from 134, including poll/errors and full right version/theme/game text.
-#: Body binders are now LAUNCHPAD 138, SWARM 141, AGENT 138 and BOARD 141.
+#: Body binders are now LAUNCHPAD 138, SWARM 141, AGENT 135 and BOARD 141.
 #: Pool4 protocol 99 and market 119 retain their body-only status exceptions.
 STATUS_BAR_WHOLE_FROM = 134
 
@@ -889,24 +895,6 @@ async def test_inflight_note_marker_clears_at_its_measured_content_width(payload
         assert not result['overflow'],result
 
 
-@pytest.mark.parametrize("kind,edge", [("v3",208),("worst",240)])
-async def test_agent_contributor_lines_follow_actual_screen_room_without_raising_pin(kind,edge):
-    payload = _v3_agent_payload() if kind == "v3" else _worst_agent_payload()
-    turns = "2189 turns" if kind == "v3" else "99999 turns"
-    async with _surf_app(payload).run_test(size=(138,32)) as pilot:
-        await pilot.app.screen._do_refresh()
-        await pilot.press("a")
-        for width,one_line in ((138,False),(edge-1,False),(edge,True),(138,False)):
-            await pilot.resize_terminal(width,32)
-            await pilot.pause()
-            seat = pilot.app.screen.query_one(SurfSwarmSeatVerdicts)
-            rows = _region_text(pilot.app,seat).splitlines()
-            first = next(line for line in rows if "contributors " in line)
-            assert (turns in first) is one_line, (width,rows)
-            assert seat.query_one("#surf-swarm-verdicts-contributor-time").display is not one_line
-            assert pilot.app.screen.query_one(SurfSwarmSeatNodes)._tier == "full"
-
-
 @pytest.mark.parametrize("kind", ["capture", "worst"])
 async def test_board_polish_row_pin_is_tight_and_keeps_fleet_whole(kind):
     below = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS-1), 'b')
@@ -933,8 +921,8 @@ async def test_polish_record_answer_clearance_matches_committed_v4_window():
 
 
 async def test_polish_agent_retains_existing_pin_with_enriched_record():
-    for rows,taller in ((31,True),(32,False)):
-        r=await _render(_polish_agent_payload(),(138,rows),"a")
+    for rows,taller in ((SURF_AGENT_FULL_LAYOUT_ROWS-1,True),(SURF_AGENT_FULL_LAYOUT_ROWS,False)):
+        r=await _render(_polish_agent_payload(),(SURF_AGENT_FULL_LAYOUT_COLUMNS,rows),"a")
         assert r["taller"]==taller
         assert not r["clipped"] and not r["overflow"] and not any(r["hidden"].values())
         assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","state","model","took","answer")

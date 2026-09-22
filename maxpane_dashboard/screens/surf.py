@@ -229,7 +229,6 @@ from textual.widgets import DataTable, Static
 from maxpane_dashboard import config
 from maxpane_dashboard.screens.seat_input import parse_seat
 from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
-from maxpane_dashboard.widgets.surf.swarm_seat_verdicts import PANEL_MAX_WIDTH as SEAT_PANEL_MAX_WIDTH
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
@@ -261,9 +260,9 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmSeatNodes,
+    SurfSwarmNodeCards,
+    SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
-    SurfSwarmSeatVerdicts,
     SurfSwarmSites,
     SurfSwarmThroughput,
 )
@@ -1656,45 +1655,40 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: 142 columns, on capture, v3 executing notes and stress.
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: AGENT full-layout width, re-measured 2026-09-22 for §11: 138.
-#: BY NODE binds: full from 138, compact 125, selected columns whole 105.
-#: The shortened owner hint is whole from 134, no longer the body binder.
-#: v 3 and five-digit stress were rendered at every integer 60–225 at 80 rows;
-#: original #0/#420, duplicated reviews, pending/unavailable seats, unread
-#: workers/contributors, absent and unselected seats used boundary checks
-#: from 60–300. No horizontal region overflow was observed.
+#: AGENT full-layout width, re-measured 2026-09-22 for the card rows: 135
+#: (was 138, bound by BY NODE's full tier).
+#: The owner replaced SEAT | BY NODE with two rows of hero cards
+#: (``widgets/surf/swarm_agent_cards``). Measured in situ at every integer
+#: 120–145 at 80 rows on capture, #420, duplicated reviews, the five-digit
+#: stress payload, the committed v4 RECORD and all seven v3 source states
+#: (pending, seats/workers/contributors unread, never paired, no seat).
 #:
-#: SEAT fixed facts retain their 106-cell v 3 and 128-cell stress onsets.
-#: Near the pin its capped share is 63 outer / 61 panel / 59 content cells.
-#: Above 138, the cap grows using AGENT_NODE_WIDTH_RESERVE; BY NODE retains
-#: its full tier. Ordinary v 3 contributors combine at 208 (two lines 207),
-#: five-digit stress at 240 (two lines 239). All facts and their own clock
-#: stay together; they never borrow seats data. Wide growth doesn't raise
-#: the body pin. Long runtime/daemon text still clips visibly; roles retain
-#: a whole prefix plus +N more. Worker metadata belongs in BOARD.
+#: **Binder: row 1, ``SurfSwarmAgentHero``.** It is whole from 135 and
+#: ellipsises ``ACCEPT RA…`` at 134 -- a visible cut, which the sweep
+#: counts as a clipped line. It was whole from 134 until the card rows
+#: arrived: it now gives up one right-hand column (``padding: 0 1 0 0``) so
+#: its right edge lines up with the card rows, which sit inside the body's
+#: reserved scrollbar gutter. The status bar is whole from 134, and the card
+#: rows are whole below 134 on every payload: the fixed card widths are
+#: the stress payload's widest numeric line (``55,555 acc of 99,999`` in
+#: BOARD) plus border and padding, and RUNTIME and the node row are ``1fr``
+#: with their free text fitted to the width they get (visible ``…``).
 #:
-#: Hero content remains whole from 134: STATUS's worker clock and three body
-#: lines stay independent of seats; ACCEPTED retains the seats clock.
-#: WP6 RECORD adds model/took and replaces objective with an elastic answer.
-#: At138 compact keeps when/job/node/state/model/took/answer without horizontal
-#: clipping; role/launch/sub are intentionally shed. Full order and onset are
-#: at RECORD_NEVER_CLEARS_BELOW below. The eight-row floor is unchanged.
-SURF_AGENT_FULL_LAYOUT_COLUMNS = 138
+#: RECORD is this body's one named exception and did not change: at 135
+#: its compact tier keeps when/job/node/state/model/took/answer without
+#: horizontal clipping; role/launch/sub are intentionally shed. Full order
+#: and onset are at RECORD_NEVER_CLEARS_BELOW below.
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 135
 
-#: BY NODE needs 73 outer columns; the body/top gutters reserve two more.
-#: Let SEAT grow only from spare columns, preserving its 63-column cap at 138.
-AGENT_NODE_WIDTH_RESERVE = 75
-
-#: AGENT height, §11: 32 rows at 138 columns on all eleven payloads above,
-#: measured through heights 25–38. Taller is lit through 31, dark from 32.
-#: SEAT's identity+paired and sent/submitted/queued merges lose no fact.
-#: Nine seats detail lines plus two contributor lines, title and mandatory
-#: blank row set the 13-row top floor. Worker metadata and its clock are
-#: removed; worker state remains in STATUS. RECORD retains its 8-row floor,
-#: and eleven rows of unchanged chrome complete 32. Wider one-line
-#: contributors use less content but retain the conservative top floor.
-#: Owner 119 x 35 fits vertically;138 x 31 still shows taller. F 46 can close.
-SURF_AGENT_FULL_LAYOUT_ROWS = 32
+#: AGENT height, re-measured 2026-09-22 for the card rows: 33 (was 32).
+#: The rows removed SEAT | BY NODE's 13-row top row and the body's top
+#: margin (14) and added two 7-row card rows plus RECORD's own top margin
+#: (15): one row more. Measured at 150 columns through heights 25–40 on
+#: capture, #420, duplicated reviews and the stress payload: ``‹ taller``
+#: lit through 32, dark from 33. RECORD keeps its 8-row floor; the card
+#: rows are fixed-height, so the body is the only container that scrolls.
+#: The owner's 35 rows fit; 31 shows ``‹ taller``, as it did at 32.
+SURF_AGENT_FULL_LAYOUT_ROWS = 33
 
 #: RECORD answer-clearance onset on enriched committed v4 seat420, first40
 #: source-order rows: exact captures cover displayed jobs76296dcd (27 cells)
@@ -1746,8 +1740,8 @@ MODE_POOL4_USER = "pool4_user"
 MODE_SWARM = "swarm"
 
 #: The ``a`` AGENT body shows the saved seat (``i``), or the most active
-#: seat in the job window. SEAT and BY NODE share its top row; RECORD spans
-#: the body below them. Seats, contributors and workers keep independent groups.
+#: seat in the job window. Two card rows (seat details, work by node) sit
+#: above a full-width RECORD. Seats, contributors and workers keep independent groups.
 MODE_AGENT = "agent"
 MODE_BOARD = "board"
 BOARD_BODY_ID = "surf-board-body"
@@ -2058,13 +2052,10 @@ SWARM_TOP_ID = "surf-swarm-top"
 #: beside THROUGHPUT from 2026-09-16 to WP7.
 SWARM_BOTTOM_ID = "surf-swarm-bottom"
 
-#: The AGENT container: a horizontal SEAT | BY NODE row above a full-width
-#: RECORD, keeping its answer column visible at the body pin.
+#: The AGENT container: the seat-card and node-card rows (fixed height,
+#: 2026-09-22, replacing SEAT | BY NODE) above a full-width RECORD, which
+#: keeps its answer column visible at the body pin. The body alone scrolls.
 AGENT_BODY_ID = "surf-agent-body"
-
-#: The AGENT top row: SEAT is auto-height, BY NODE scrolls internally.
-#: Its floor equals SEAT content; the row is registered in _SCROLL_COLUMNS.
-AGENT_TOP_ID = "surf-agent-top"
 
 #: The three swarm bodies' thirteen widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
 #: order. ``_do_refresh`` dispatches each one's contract keys by class name
@@ -2083,9 +2074,9 @@ _SWARM_PANELS = (
     SurfSwarmLaunches,
     SurfSwarmSites,
     SurfSwarmAgentHero,
-    SurfSwarmSeatNodes,
+    SurfSwarmSeatCards,
+    SurfSwarmNodeCards,
     SurfSwarmSeatRecord,
-    SurfSwarmSeatVerdicts,
 )
 
 
@@ -2923,6 +2914,7 @@ class SurfScreen(DashboardScreen):
     }
     SurfScreen SurfSwarmAgentHero {
         height: 7;
+        padding: 0 1 0 0;
     }
     SurfScreen SurfSwarmAgentHero > SurfSwarmAgentHeroBox {
         width: 1fr;
@@ -3001,37 +2993,37 @@ class SurfScreen(DashboardScreen):
         height: 1fr;
         width: 100%;
         padding: 0 0;
-        margin: 1 0 0 0;
+        margin: 0 0;
         overflow-y: auto;
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
     }
-    /* SEAT: eleven detail lines plus title and mandatory blank row. */
-    SurfScreen #surf-agent-top {
-        height: 1fr;
-        min-height: 13;
-        padding: 0 0;
-        overflow-y: auto;
-        scrollbar-size: 1 1;
-        scrollbar-gutter: stable;
+    SurfScreen SurfSwarmAgentCards {
+        height: 7;
     }
-    SurfScreen SurfSwarmSeatNodes {
+    SurfScreen SurfSwarmAgentCards > SurfSwarmAgentCard {
         width: 1fr;
-        height: 1fr;
-        min-height: 8;
+        height: 7;
         padding: 0 1;
+        margin: 0 1;
+        border: solid $panel;
+        background: $surface;
+        content-align: center top;
+        text-align: center;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
     }
-    SurfScreen SurfSwarmSeatVerdicts {
-        width: 1fr;
-        max-width: 63;
-        height: auto;
-        padding: 0 1;
-    }
+    SurfScreen #surf-swarm-card-owner { width: 23; }
+    SurfScreen #surf-swarm-card-feedback { width: 19; }
+    SurfScreen #surf-swarm-card-score { width: 20; }
+    SurfScreen #surf-swarm-card-board { width: 24; }
+    SurfScreen #surf-swarm-card-rank { width: 16; }
     SurfScreen SurfSwarmSeatRecord {
         width: 100%;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
+        margin: 1 0 0 0;
     }
 
     SurfSwarmBoardHero {
@@ -3242,12 +3234,11 @@ class SurfScreen(DashboardScreen):
                 yield SurfSwarmLaunches()
             yield SurfSwarmSites()
 
-        # The `a` AGENT body (swarm v2 plan A1, WP7): one row, two full-width
-        # tables -- see `AGENT_BODY_ID`.
+        # The `a` AGENT body: two card rows above a full-width RECORD -- see
+        # `AGENT_BODY_ID`.
         with Vertical(id=AGENT_BODY_ID):
-            with Horizontal(id=AGENT_TOP_ID):
-                yield SurfSwarmSeatVerdicts()
-                yield SurfSwarmSeatNodes()
+            yield SurfSwarmSeatCards()
+            yield SurfSwarmNodeCards()
             yield SurfSwarmSeatRecord()
 
         with Horizontal(id=BOARD_BODY_ID):
@@ -3281,8 +3272,6 @@ class SurfScreen(DashboardScreen):
         lag one resize behind -- lit on a terminal that now fits, dark on
         one that no longer does. Both are worse than no marker.
         """
-        for seat in self.query(SurfSwarmSeatVerdicts):
-            seat.styles.max_width = max(SEAT_PANEL_MAX_WIDTH, self.size.width - AGENT_NODE_WIDTH_RESERVE)
         self.call_after_refresh(self._render_title)
 
     # ------------------------------------------------------------------
@@ -3579,9 +3568,9 @@ class SurfScreen(DashboardScreen):
         # directly. Asking a container that cannot scroll is harmless, but
         # naming only the ones that can is what keeps this map a statement.
         MODE_SWARM: (f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}"),
-        # The AGENT body (WP7), the same shape: the body, and the one row
-        # whose SEAT panel is ``height: auto``.
-        MODE_AGENT: (f"#{AGENT_BODY_ID}", f"#{AGENT_TOP_ID}"),
+        # The AGENT body: its card rows are fixed-height, so the body is the
+        # only container on it that can scroll.
+        MODE_AGENT: (f"#{AGENT_BODY_ID}",),
         MODE_BOARD: (f"#{BOARD_BODY_ID}",),
     }
 

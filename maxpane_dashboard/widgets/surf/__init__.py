@@ -124,14 +124,14 @@ from .pool4u_hero import SurfPool4UserHero
 from .pool4u_signals import SurfPool4USignals
 from .pool4u_stakers import SurfPool4UStakers
 from .signals import DETECTOR_LABELS, SurfSignals
+from .swarm_agent_cards import SurfSwarmSeatCards
 from .swarm_agent_hero import SurfSwarmAgentHero
 from .swarm_capability import SurfSwarmCapability
 from .swarm_hero import SurfSwarmHero
 from .swarm_inflight import SurfSwarmInFlight
 from .swarm_launches import SurfSwarmLaunches
-from .swarm_seat_nodes import SurfSwarmSeatNodes
+from .swarm_node_cards import SurfSwarmNodeCards
 from .swarm_seat_record import SurfSwarmSeatRecord
-from .swarm_seat_verdicts import SurfSwarmSeatVerdicts
 from .swarm_sites import SurfSwarmSites
 from .swarm_throughput import SurfSwarmThroughput
 
@@ -168,9 +168,9 @@ __all__ = [
     "SurfSwarmHero",
     "SurfSwarmInFlight",
     "SurfSwarmLaunches",
-    "SurfSwarmSeatNodes",
+    "SurfSwarmNodeCards",
     "SurfSwarmSeatRecord",
-    "SurfSwarmSeatVerdicts",
+    "SurfSwarmSeatCards",
     "SurfSwarmSites",
     "SurfSwarmThroughput",
     "TITLE",

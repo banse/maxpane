@@ -70,9 +70,9 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmSeatNodes,
+    SurfSwarmNodeCards,
+    SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
-    SurfSwarmSeatVerdicts,
     SurfSwarmSites,
     SurfSwarmThroughput,
 )
@@ -216,8 +216,8 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput,
         SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
         SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet,
-    SurfSwarmAgentHero, SurfSwarmSeatNodes, SurfSwarmSeatRecord,
-        SurfSwarmSeatVerdicts,
+    SurfSwarmAgentHero, SurfSwarmSeatCards, SurfSwarmNodeCards,
+        SurfSwarmSeatRecord,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 
@@ -799,7 +799,7 @@ async def test_rich_rejects_a_theme_token_in_a_data_table_cell():
 
 @pytest.mark.parametrize("name", (
     "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
-    "SurfSwarmAgentHero", "SurfSwarmSeatVerdicts",
+    "SurfSwarmAgentHero", "SurfSwarmSeatCards", "SurfSwarmNodeCards",
 ))
 def test_board_and_agent_exports_implement_the_frozen_source_signatures(name):
     """BOARD WP1 freezes this seam before WP4/WP5 implement the widgets."""

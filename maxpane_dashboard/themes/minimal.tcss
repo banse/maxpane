@@ -2466,6 +2466,7 @@ SurfSwarmHero > SurfSwarmHeroBox {
 
 SurfSwarmAgentHero {
     height: 7;
+    padding: 0 1 0 0;
 }
 
 SurfSwarmAgentHero > SurfSwarmAgentHeroBox {
@@ -2601,38 +2602,40 @@ SurfScreen #surf-agent-body {
     height: 1fr;
     width: 100%;
     padding: 0 0;
-    margin: 1 0 0 0;
+    margin: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;
     scrollbar-gutter: stable;
 }
 
-/* SEAT: eleven detail lines plus title and mandatory blank row. */
-SurfScreen #surf-agent-top {
-    height: 1fr;
-    min-height: 13;
-    padding: 0 0;
-    overflow-y: auto;
-    scrollbar-size: 1 1;
-    scrollbar-gutter: stable;
+/* AGENT card rows two and three (2026-09-22; they replaced SEAT | BY NODE).
+ * Seven tall like `SurfSwarmAgentHero`: title, blank, three value lines.
+ * Fixed widths are the widest fixed/numeric line each card carries on the
+ * five-digit stress payload plus border and padding (OWNER: a 17-cell
+ * address window plus its copy icon); RUNTIME and every node-row card take
+ * `1fr` because their free text is fitted to whatever width they get. */
+SurfSwarmAgentCards {
+    height: 7;
 }
 
-/* BY NODE takes the space remaining beside SEAT. */
-SurfSwarmSeatNodes {
+SurfSwarmAgentCards > SurfSwarmAgentCard {
     width: 1fr;
-    height: 1fr;
-    min-height: 8;
+    height: 7;
     padding: 0 1;
+    margin: 0 1;
+    border: solid $panel;
+    background: $surface;
+    content-align: center top;
+    text-align: center;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
 }
 
-/* SEAT shares narrow terminals; screen resize grows its cap from spare width.
- * Rows fit third-party text visibly; feedback statuses occupy two lines. */
-SurfSwarmSeatVerdicts {
-    width: 1fr;
-    max-width: 63;
-    height: auto;
-    padding: 0 1;
-}
+SurfScreen #surf-swarm-card-owner { width: 23; }
+SurfScreen #surf-swarm-card-feedback { width: 19; }
+SurfScreen #surf-swarm-card-score { width: 20; }
+SurfScreen #surf-swarm-card-board { width: 24; }
+SurfScreen #surf-swarm-card-rank { width: 16; }
 
 /* RECORD keeps its date; optional columns shed before objective. */
 SurfSwarmSeatRecord {
@@ -2640,6 +2643,7 @@ SurfSwarmSeatRecord {
     height: 1fr;
     min-height: 8;
     padding: 0 1;
+    margin: 1 0 0 0;
 }
 
 /* ── Curator screen (THE LIST) ────────────────────────────────────────── */

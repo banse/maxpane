@@ -36,7 +36,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | CAPABILITY beside THROUGHPUT; IN FLIGHT beside LAUNCHES; SITES full-width beneath | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / QUEUE / BREAKER / SERVICES |
-| `a` | MODE_AGENT | SEAT beside BY NODE; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / ACCEPT RATE / REVIEWED / COLLAB / STATUS |
+| `a` | MODE_AGENT | seat-card row, node-card row; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / ACCEPT RATE / REVIEWED / COLLAB / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
 `_SURF_HERO_MODES` **enumerates** the modes that get `SurfHero` rather than negating one: a body
@@ -186,27 +186,29 @@ capacity/pause/offline independently of seats, with its worker clock in the titl
 three body lines. `swarm_seat_live.live_state` preserves unknown pause evidence as unavailable (F48);
 known zero working is idle. ACCEPTED carries the seats clock. A bad seats state hides its accepted date
 without hiding valid worker facts.
-SEAT (`SurfSwarmSeatVerdicts`, retaining its class/module name) shows identity, owner, pairing,
-runtime, devices, daemon, attempts/accepted, feedback statuses, score and reviews by role.
-Contributors use only `swarm_seat_contrib`, with their own clock, and distinguish not listed
-from unavailable. Their group keeps two lines near the pin and joins one line only when every
-fact fits. It survives pending/unavailable seats. Pairing joins identity; queued joins feedback.
-Worker metadata is shown in BOARD; STATUS supplies AGENT's only liveness. SEAT shares narrow
-terminals, retains its measured cap at the pin and grows from spare width above it. The polish
-SEAT grouping exceeded its approved height budget (F54), so its advertised-model
-line and retirement of the responsive contributors join are deferred together.
-BY NODE (`SurfSwarmSeatNodes`) groups the union of `reviews[]` and `work[]` by node; its acceptance
-percentage uses the historical `won / reviewed` fields, because per-node attempts are not served. `chain` counts
-reviews with a transaction in `sent` or `submitted` state. TEAMMATES sorts by shared jobs
-descending, token ascending, and appends `+N` when entries do not fit. Tokens are integers, with
-no address icon. An empty collaborators list displays `none yet`; an unavailable list displays
-`unavailable`.
+The SEAT panel and the BY NODE table were replaced on 2026-09-22 (owner) by two hero-card rows
+in `widgets/surf/swarm_agent_cards.py`, inside the AGENT body above RECORD. `SurfSwarmSeatCards`:
+OWNER (address via `address_text` + package `EXPLORER`, paired stamp), RUNTIME (runtime, daemon,
+devices), FEEDBACK (sent/submitted/queued), SCORE (mean, scored, entries when they differ from
+reviewed), BOARD and RANK. BOARD and RANK read only `swarm_seat_contrib` under the board clock
+in BOARD's title, survive pending/unavailable seats, and distinguish `not listed` from
+`unavailable`. `SurfSwarmNodeCards`: ROLES, four node cards, TEAMMATES. Node cards use the
+historical `won / reviewed` fields, because per-node attempts are not served; `chain` counts
+reviews with a transaction in `sent` or `submitted`; with more than four nodes the fourth card
+sums the rest (`+N more nodes`). TEAMMATES sorts by shared jobs descending, token ascending,
+shows two plus `+N more` when there are more than three; tokens are integers with no address
+icon; `none yet` for an empty list, `unavailable` for an unread one. Values row 1 already shows
+are not repeated. Third-party text (runtime, daemon, node keys, roles) is flattened and fitted
+to the card's content width with a visible `…` and repainted on resize; numbers and fixed words
+are never fitted, so a card too narrow for them is a CSS-clipped line the layout sweep sees.
+Pending and unavailable show on every seats-backed card; never paired shows once per row (OWNER,
+ROLES), dashes elsewhere. Worker metadata is shown in BOARD; STATUS supplies AGENT's only liveness.
 
 RECORD shows lifetime `work[]` with `MM-DD HH:MM`, launch kind and the first eight hex characters
 of a validated submission hash. A null launch displays `—` (real none); a null `daemonVersion`
 displays `not reported`; missing daemon and counter fields remain unavailable. Review-accepted and work that won a
-job are different counts. A 404 `unknown_seat` is a real negative: SEAT can name `#N never paired`
-through `swarm_seat_selected`; RECORD and BY NODE still show the tokenless state (F39). Any other
+job are different counts. A 404 `unknown_seat` is a real negative: row 1's SEAT box names `IDMD #N` / `never paired`
+through `swarm_seat_selected`; RECORD still shows the tokenless state (F39). Any other
 seat 404 rotates and fails. A submissions 404 is local to that job and never rotates the host pool.
 The owner address links the package `EXPLORER` (Ethereum, F31).
 
@@ -235,7 +237,7 @@ number, so this view shows none of it — absent, never estimated.
 Pins: `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` (CAPABILITY binds the width; the top
 row's `min-height` is a floor equal to THROUGHPUT's own fixed line count, so the row pin is the
 body's three rows of content and not a `1fr` split) and `SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`
-(SEAT beside BY NODE above RECORD; the measured binding content lives in each pin's `#:` block).
+(card rows above RECORD; row 1's hero binds the width; the measured binding content lives in each pin's `#:` block).
 Named permanent exceptions, each
 with a measured clearing width in the `#:` block and in the layout test (`INFLIGHT_NEVER_CLEARS_BELOW`,
 `LAUNCHES_NEVER_CLEARS_BELOW`, `LAUNCHES_HIDES_NO_COLUMN_FROM`, `RECORD_NEVER_CLEARS_BELOW`):

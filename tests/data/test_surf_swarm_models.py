@@ -107,7 +107,7 @@ SWARM_V2_ROW_SHAPES = {
 
 #: The four AGENT-body widgets (AGENT-seats plan §1.3).
 AGENT_WIDGETS = (
-    "SurfSwarmAgentHero", "SurfSwarmSeatNodes", "SurfSwarmSeatVerdicts",
+    "SurfSwarmAgentHero", "SurfSwarmSeatCards", "SurfSwarmNodeCards",
     "SurfSwarmSeatRecord",
 )
 
@@ -121,9 +121,9 @@ SWARM_TARGET_WIDGETS = {
     "SurfSwarmLaunches",
     "SurfSwarmSites",
     "SurfSwarmAgentHero",
-    "SurfSwarmSeatNodes",
+    "SurfSwarmSeatCards",
+    "SurfSwarmNodeCards",
     "SurfSwarmSeatRecord",
-    "SurfSwarmSeatVerdicts",
 }
 
 
@@ -253,12 +253,13 @@ def test_the_agent_signatures_are_the_flipped_literals():
             "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm",
             "swarm_seat_live", "swarm_workers_as_of_hhmm",
         ),
-        "SurfSwarmSeatNodes": (
-            "swarm_seat_node_rows", "swarm_seat_teammates", "swarm_seat_state", "swarm_seat_as_of_hhmm",
+        "SurfSwarmSeatCards": (
+            "swarm_seat_summary", "swarm_seat_state",
+            "swarm_seat_contrib", "swarm_board_as_of_hhmm",
         ),
-        "SurfSwarmSeatVerdicts": (
-            "swarm_seat_summary", "swarm_seat_selected", "swarm_seat_state", "swarm_seat_as_of_hhmm",
-            "swarm_seat_live", "swarm_seat_contrib", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
+        "SurfSwarmNodeCards": (
+            "swarm_seat_summary", "swarm_seat_node_rows", "swarm_seat_teammates",
+            "swarm_seat_state",
         ),
         "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
     }

@@ -63,7 +63,6 @@ from maxpane_dashboard.screens.surf import (
     SWARM_BOTTOM_ID,
     SWARM_TOP_ID,
     AGENT_BODY_ID,
-    AGENT_TOP_ID,
     TALLER_HINT,
     SurfScreen,
 )
@@ -105,9 +104,9 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmSeatNodes,
+    SurfSwarmNodeCards,
     SurfSwarmSeatRecord,
-    SurfSwarmSeatVerdicts,
+    SurfSwarmSeatCards,
     SurfSwarmSites,
     SurfSwarmThroughput,
 )
@@ -198,9 +197,9 @@ _SWARM_WIDGET_CLASSES = {
     "SurfSwarmLaunches": SurfSwarmLaunches,
     "SurfSwarmSites": SurfSwarmSites,
     "SurfSwarmAgentHero": SurfSwarmAgentHero,
-    "SurfSwarmSeatNodes": SurfSwarmSeatNodes,
+    "SurfSwarmNodeCards": SurfSwarmNodeCards,
     "SurfSwarmSeatRecord": SurfSwarmSeatRecord,
-    "SurfSwarmSeatVerdicts": SurfSwarmSeatVerdicts,
+    "SurfSwarmSeatCards": SurfSwarmSeatCards,
 }
 
 #: Both halves together -- **derived from the package**, not from the two
@@ -8414,14 +8413,17 @@ def test_the_market_body_css_agrees_between_default_css_and_the_stylesheet() -> 
 #: ``DEFAULT_CSS``, the two swarm heroes state none (``rules/widgets.md``:
 #: ``HeroBoxBase`` leaves every dimension to the stylesheet), so their box
 #: rules live in the two copies compared here and must agree like the rest.
+from maxpane_dashboard.widgets.surf.swarm_agent_cards import SEAT_BOX_IDS  # noqa: E402
+
 _SWARM_CSS_SELECTORS = (
     f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}", f"#{SWARM_BOTTOM_ID}",
-    f"#{AGENT_BODY_ID}", f"#{AGENT_TOP_ID}",
+    f"#{AGENT_BODY_ID}",
     "SurfSwarmHero", "SurfSwarmHero > SurfSwarmHeroBox",
     "SurfSwarmAgentHero", "SurfSwarmAgentHero > SurfSwarmAgentHeroBox",
     "SurfSwarmCapability", "SurfSwarmThroughput", "SurfSwarmInFlight",
     "SurfSwarmLaunches", "SurfSwarmSites",
-    "SurfSwarmSeatNodes", "SurfSwarmSeatVerdicts", "SurfSwarmSeatRecord",
+    "SurfSwarmAgentCards", "SurfSwarmAgentCards > SurfSwarmAgentCard", "SurfSwarmSeatRecord",
+    *(f"#{SEAT_BOX_IDS[k]}" for k in ("owner", "feedback", "score", "board", "rank")),
 )
 
 

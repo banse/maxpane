@@ -164,18 +164,19 @@ REVIEWED, COLLAB and STATUS. ACCEPT RATE is accepted work divided by attempts. S
 worker capacity, any pause, and the newest accepted work from `/seats`. The worker clock is
 in its title; ACCEPTED carries the separate seats clock.
 
-SEAT shows identity, owner (with a copy icon and Etherscan link), pairing, runtime, device count,
-daemon version, attempts and accepted work, feedback by delivery status, score and reviews by role.
-Its labelled contributor group has independent attempts, accepted, rejected, pending, turns,
-hours and rank, with its own clock; this group remains visible when the seats read fails.
-It uses two lines near the layout pin and one when every fact fits in the panel. Pairing shares
-the identity line; all feedback delivery statuses share one line. Worker metadata belongs in
-BOARD, while STATUS is AGENT's only liveness indicator. A good contributors read without the seat
-says `not listed`; an unread source or malformed contribution says `unavailable`.
-Beside it, BY NODE counts reviewed and accepted work for each node, with an acceptance percentage based on
-**reviewed work**, because the API does not serve attempts per node. Its `chain` count includes
-sent and submitted feedback transactions; TEAMMATES lists collaborators by shared jobs.
-RECORD runs below them: every won submission with date and time, job, node, role, job state,
+Two more rows of cards sit under the hero. The seat row shows OWNER (with a copy icon and
+Etherscan link, plus when the seat was paired), RUNTIME (runtime, daemon version and device
+count), FEEDBACK (reviews sent, submitted and queued), SCORE (mean score, how many reviews were
+scored and, when they differ, entries served), BOARD (accepted of attempts, rejected and pending
+on the contributors leaderboard, under its own clock) and RANK (rank, turns and hours). BOARD and
+RANK stay visible when the seats read fails; a good contributors read without the seat says
+`not listed`, an unread source says `unavailable`. The node row shows ROLES (reviews by role),
+one card per node — accepted of reviewed, an acceptance percentage based on **reviewed work**
+(the API does not serve attempts per node), the node's roles and its `chain` count of sent and
+submitted feedback transactions — and TEAMMATES by shared jobs. With more than four nodes the
+fourth card sums the rest as `+N more nodes`. Long runtime, daemon, node and role names are cut
+with a visible `…`.
+RECORD runs below the cards: every won submission with date and time, job, node, role, job state,
 launch kind, submission-hash prefix, the model used, duration and the first sentence of the
 seat's own answer. Queued, unavailable, not served and empty replies remain distinct. Links to
 local files are reduced to their labels, and absolute local paths to filenames before display.
@@ -472,8 +473,8 @@ IMD swarm's own control plane — the agent workforce this repo's own branches a
 live: CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES full-width beneath. `s` is
 the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
-body — one seat's lifetime record: SEAT beside BY NODE, with RECORD beneath, under the seat's
-own hero row (including ACCEPT RATE). **`i`** asks for your own
+body — one seat's lifetime record: its hero row (including ACCEPT RATE), two rows of seat and
+node cards, and RECORD beneath. **`i`** asks for your own
 seat — its Identity.md NFT id — saves it to `~/.maxpane/config.toml` and opens the AGENT body on it,
 like THE LIST's `w` for a wallet. **`b`** opens BOARD: the lifetime LEADERBOARD
 beside FLEET, with its own six-box hero. Enter or a single click on a leaderboard row saves that seat through
@@ -597,7 +598,7 @@ they share the second row on a 4:5 split measured so that
 LAUNCHES hides no column from 138 up. Like the announce feed's linked-transaction post, those are
 measured and accepted conditions at this pin and below, not something a wider pin could buy back.
 The AGENT view (`a`) has its own pair, `SURF_AGENT_FULL_LAYOUT_COLUMNS` ×
-`SURF_AGENT_FULL_LAYOUT_ROWS`, re-measured for SEAT beside BY NODE over RECORD. The `#:` blocks
+`SURF_AGENT_FULL_LAYOUT_ROWS`, re-measured for the card rows over RECORD. The `#:` blocks
 beside those constants in `screens/surf.py` record the measured dimensions and binding content.
 RECORD's cleaned answer takes the remaining width and clips with a visible `…`; its measured clearing
 width lives beside `RECORD_NEVER_CLEARS_BELOW` in the same file. Short answers do not light

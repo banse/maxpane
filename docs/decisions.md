@@ -54,6 +54,12 @@ asserts a withdrawn statement is historical — do not review code against it.
   Its live status and skills/profiles/platform come only from workers. IN FLIGHT remains
   executing-only and appends the dispatch note, falling back to a failure reason.
 
+- **2026-09-22** — owner: surf's AGENT body replaces the SEAT panel and the BY NODE table with
+  two rows of hero cards (`widgets/surf/swarm_agent_cards.py`, `swarm_node_cards.py`): OWNER / RUNTIME / FEEDBACK /
+  SCORE / BOARD / RANK, then ROLES / four node cards / TEAMMATES. Values row 1 already shows
+  (attempts, accepted, accept rate, reviewed, pending) are not repeated; with more than four nodes
+  the fourth card sums the rest. The SEAT and BY NODE statements in the entry below are
+  historical. Pins moved 138×32 → 135×33 (measurements beside the constants).
 - **2026-09-22** — surf's AGENT body uses SEAT beside BY NODE over RECORD
   (`docs/surf_agent_seat_details_handover.md`). ROSTER is retired: its recent job counts looked
   contradictory beside the seat's lifetime accepted count, and its window title understated the
