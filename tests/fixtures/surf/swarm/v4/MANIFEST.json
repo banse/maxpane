@@ -1,0 +1,69 @@
+{
+  "host": "https://api.imd.fun",
+  "files": {
+    "submissions_73d7dcd7": {
+      "url": "https://api.imd.fun/jobs/73d7dcd7-aab5-47f8-9462-69b8e0f8b2e9/submissions",
+      "captured_at": "2026-09-22T12:24:24.830342+00:00",
+      "http_status": 200,
+      "sha256": "d6ed2037d22f7e8016f7235653090a046aa7b77b8c3628335994150c142c2a1e",
+      "bytes": 93304,
+      "elapsed_s": 0.38
+    },
+    "submissions_76296dcd": {
+      "url": "https://api.imd.fun/jobs/76296dcd-55e2-4eaa-9e18-0c34ec1ff0e5/submissions",
+      "captured_at": "2026-09-22T12:24:25.337618+00:00",
+      "http_status": 200,
+      "sha256": "ad267181fef28e196c2cb62c93bd8cba092c9510f240934cf2f458a477beb3ee",
+      "bytes": 66328,
+      "elapsed_s": 0.215
+    },
+    "submissions_33016bad": {
+      "url": "https://api.imd.fun/jobs/33016bad-ed32-4065-8c2e-269ce6ccc0a3/submissions",
+      "captured_at": "2026-09-22T12:24:25.678233+00:00",
+      "http_status": 200,
+      "sha256": "87779305629bb69e7fac780d3707cb2685cb1ca20c03c59027b2e03126a69599",
+      "bytes": 17352,
+      "elapsed_s": 0.167
+    },
+    "seat_420": {
+      "url": "https://api.imd.fun/seats/420",
+      "captured_at": "2026-09-22T12:24:25.971621+00:00",
+      "http_status": 200,
+      "sha256": "ea170da3a0f60f862cd3634965c62d79d416e769c74fec479b0eb45600ce4adf",
+      "bytes": 280269,
+      "elapsed_s": 1.295
+    },
+    "workers": {
+      "url": "https://api.imd.fun/workers",
+      "captured_at": "2026-09-22T12:24:27.394790+00:00",
+      "http_status": 200,
+      "sha256": "cbf48f4dc8c57cacceb13ad502184fc89a7f7fbeb5e152cda189f7a8f764406a",
+      "bytes": 118252,
+      "elapsed_s": 0.163
+    },
+    "skills": {
+      "url": "https://api.imd.fun/skills",
+      "captured_at": "2026-09-22T12:24:27.683879+00:00",
+      "http_status": 200,
+      "sha256": "6e25159b9d50e2bf266623c605f147f5256bd72ccdb4676345c13cc268b8e43f",
+      "bytes": 13673,
+      "elapsed_s": 0.139
+    },
+    "health": {
+      "url": "https://api.imd.fun/health",
+      "captured_at": "2026-09-22T12:24:27.948385+00:00",
+      "http_status": 200,
+      "sha256": "f16e33b41125d9ac4da0d56d91701c5bc77121488b9a4724ef8c0dbcde67501d",
+      "bytes": 585,
+      "elapsed_s": 0.279
+    },
+    "submissions_hostile": {
+      "url": null,
+      "captured_at": "2026-09-22T12:24:28.229985+00:00",
+      "http_status": null,
+      "sha256": "c4b4370011fe0392d1e1282e88e1e87166c3cab212933de1a6a658ec770a10f5",
+      "bytes": 3181,
+      "provenance": "Hand-made from submissions_73d7dcd7: one submission with hostile markup, synthetic local paths and a 500-character sentence."
+    }
+  }
+}

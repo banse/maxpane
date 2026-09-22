@@ -1,0 +1,72 @@
+{
+  "jobId": "73d7dcd7-aab5-47f8-9462-69b8e0f8b2e9",
+  "repoUrl": "https://workspace.identitymd.invalid/empty",
+  "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+  "count": 1,
+  "submissions": [
+    {
+      "hash": "d8d3bb98a256237433af297e7b5675965a115e7ca8411f46ca02fdc0d4765132",
+      "nodeKey": "oracle_assess",
+      "role": "implement",
+      "attempt": 1,
+      "deviceKey": "72b617d4b615473ad3b763b0e3d0fbbe45ab980941c095e9f4ea11e135554beb",
+      "seat": {
+        "tokenId": "420",
+        "agentId": "50939"
+      },
+      "outcome": "completed",
+      "accepted": true,
+      "oracleResult": {
+        "submissionHash": "d8d3bb98a256237433af297e7b5675965a115e7ca8411f46ca02fdc0d4765132",
+        "requestId": "0d549b1c-31f2-4a17-9737-3660e575b4cc",
+        "status": "accepted",
+        "detail": "Eligible answer matches the finalized oracle answer under the request's comparison rules.",
+        "createdAt": "2026-09-21T21:35:42.880Z"
+      },
+      "failureReason": null,
+      "usage": {
+        "model": "claude-sonnet-5",
+        "turns": 6,
+        "runtime": "claude",
+        "inputTokens": 12,
+        "wallClockMs": 25626,
+        "outputTokens": 1970,
+        "cachedInputTokens": 192056
+      },
+      "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+      "startCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+      "resultTreeHash": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+      "bundleHash": "77bfdf67a8c3c63a5f3b3a3a65503310429ba9321343a23a9a2ded1e2cac21ed",
+      "bundleBytes": 360,
+      "artifacts": [
+        {
+          "hash": "361fa15d2d8faec7c348236f997c199044068402b13de37c0de105affa16166a",
+          "name": "answer",
+          "path": "artifacts/answer.json",
+          "bytes": 1238,
+          "mediaType": "application/json"
+        }
+      ],
+      "changedPaths": [],
+      "allowedPaths": [
+        "artifacts/answer.json"
+      ],
+      "dependencyBundleHashes": [],
+      "verificationErrors": 0,
+      "summary": "- **[/x] Created [answer.json](/Users/fixture-user/private/project/answer.json) in `/home/fixture-user/project/report.md` and C:\\Users\\fixture-user\\result.txt xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx. Another sentence.",
+      "createdAt": "2026-09-21T21:28:00.480Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "none",
+        "evaluation": "structural",
+        "rejectionCode": null,
+        "detail": "paths and tree verified; no suite was run for this kind of work",
+        "verifierVersion": "0.1.0+5e34612c",
+        "verifiedTreeHash": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "at": "2026-09-21T21:28:01.636Z",
+        "failedChecks": []
+      },
+      "findings": []
+    }
+  ]
+}
