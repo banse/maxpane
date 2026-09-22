@@ -1,4 +1,4 @@
-"""The AGENT body's hero: SEAT · ACCEPTED · REVIEWED · SCORE · COLLAB · STATUS.
+"""The AGENT body's hero: SEAT · ACCEPTED · ACCEPT RATE · REVIEWED · RANK · STATUS.
 
 Composited assertions only. The summaries are **folded** from the committed
 ``/seats`` captures (``tests/fixtures/surf/swarm/seats/``) by
@@ -33,11 +33,12 @@ from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
     BOX_IDS,
     NO_SEAT_LINE,
+    ONLINE_LINE,
     WORKING_GLYPH,
     SurfSwarmAgentHero,
     SurfSwarmAgentHeroBox,
 )
-from tests.surf_swarm_fixtures import swarm_seat_capture
+from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v5, swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
 
 SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmAgentHero"]
@@ -45,6 +46,7 @@ SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmAgentHero"]
 SEAT_420 = swarm_seat_capture("seat_420")
 SEAT_0 = swarm_seat_capture("seat_0")
 SUMMARY = seat_summary_from_seat(SEAT_420)
+CONTRIB = swarm_agent_sources(420)["swarm_seat_contrib"]
 SELECTED = {"token_id": int(SEAT_420["tokenId"]), "agent_id": str(SEAT_420["agentId"]),
             "selected_by": "saved"}
 AS_OF = "04:06"
@@ -52,7 +54,8 @@ AS_OF = "04:06"
 SIZE = (SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)
 #: The two widths the hero has to be whole at: its body's pin and the app's.
 PINS = (SURF_AGENT_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS)
-STAT_BOXES = ("accepted", "reviewed", "win_rate", "collab")
+#: The seats-gated boxes; RANK reads ``/contributors`` and is not gated.
+STAT_BOXES = ("accepted", "reviewed", "win_rate")
 
 
 _DROP = object()
@@ -82,6 +85,7 @@ def _merged(kwargs) -> dict:
     return {"swarm_seat_selected": SELECTED, "swarm_seat_summary": SUMMARY,
             "swarm_seat_state": "ok", "swarm_seat_as_of_hhmm": AS_OF,
             "swarm_seat_live": {"live":True,"live_state":"idle","working":0,"max_concurrency":2},
+            "swarm_seat_contrib": CONTRIB,
             "swarm_workers_as_of_hhmm":"05:07", **kwargs}
 
 
@@ -135,8 +139,8 @@ async def test_no_args_and_all_none_render_unavailable_without_raising():
     """Nothing selected and no state: SEAT says so, the five stat boxes are
     ``unavailable`` (the state is ``None``), and no ``Loading...`` seed survives."""
     bare = "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, css_path=CSS_PATH))
-    # Six: the five stat boxes and STATUS's accepted line. STATUS's title
-    # no longer names a workers clock (owner 2026-09-22), so no seventh.
+    # Six: the three stat boxes, RANK (no contributors read), STATUS's
+    # worker word and its accepted line.
     assert bare.count("unavailable") == 6 and "Loading" not in bare
     assert NO_SEAT_LINE in bare
     none = "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, css_path=CSS_PATH,
@@ -148,7 +152,7 @@ def test_the_box_class_is_its_own_type_selector_and_the_six_boxes_are_named():
     assert SurfSwarmAgentHero.BOX_CLASS is SurfSwarmAgentHeroBox
     assert len(BOX_IDS) == 6 == len(SurfSwarmAgentHero.BOXES)
     labels = [label for _id, label in SurfSwarmAgentHero.BOXES]
-    assert labels == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "COLLAB", "STATUS"]
+    assert labels == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "RANK", "STATUS"]
 
 
 async def test_the_hero_row_is_seven_lines_under_the_stylesheet():
@@ -178,8 +182,10 @@ async def test_the_defect_seat_renders_its_lifetime_record_whole_at_both_pins(wi
     assert f"+{pending}" not in boxes["reviewed"]
     assert f"{SUMMARY['win_rate']*100:.1f} %" in boxes["win_rate"]
     assert "of attempts" in boxes["win_rate"]
-    assert f"{SUMMARY['collaborators']} seats" in boxes["collab"]
-    assert f"{WORKING_GLYPH} 0 of 2" in boxes["status"]
+    assert f"#{CONTRIB['rank']} of {CONTRIB['ranked_of']}" in boxes["rank"]
+    assert f"{CONTRIB['turns']:,} turns" in boxes["rank"]
+    assert f"{CONTRIB['wall_clock_s'] / 3600:.1f} h" in boxes["rank"]
+    assert f"{ONLINE_LINE} · {WORKING_GLYPH} 0 of 2" in boxes["status"]
     assert f"accepted {mmdd(SUMMARY['last_won_ts'])} {hhmm(SUMMARY['last_won_ts'])}" in boxes["status"]
     assert f"as of {AS_OF}" in boxes["accepted"]
     for key, text in boxes.items():
@@ -280,7 +286,6 @@ async def test_a_five_digit_record_fits_every_box_at_both_pins(width):
     assert _lines(boxes["reviewed"])[-2:] == ["99,999", "1,998 pending"], boxes["reviewed"]
     assert "9,999 of 99,999" in boxes["accepted"]
     assert "of attempts" in boxes["win_rate"]
-    assert "9,999 seats" in boxes["collab"]
     for key, text in boxes.items():
         assert "…" not in text, (width, key, text)
 
@@ -294,8 +299,7 @@ async def test_a_zero_record_renders_zeros_not_unavailable():
     assert "0 of 0" in boxes["accepted"]
     assert _lines(boxes["reviewed"])[-2:] == ["0", "0 pending"]
     assert "no attempts" in boxes["win_rate"]
-    assert "0 seats" in boxes["collab"]
-    for key in ("accepted", "reviewed", "win_rate", "collab"):
+    for key in STAT_BOXES:
         assert "unavailable" not in boxes[key], (key, boxes[key])
 
 
@@ -326,7 +330,23 @@ async def test_malformed_payloads_land_on_unavailable_not_a_crash():
     typed = dict(SUMMARY, accepted="lots", online="yes")
     boxes = await _boxes(swarm_seat_summary=typed,swarm_seat_live={"live":"yes"})
     assert "unavailable" in boxes["accepted"] and "unavailable" in boxes["status"]
-    assert f"{SUMMARY['collaborators']} seats" in boxes["collab"]
+    assert f"#{CONTRIB['rank']} of" in boxes["rank"]
+
+
+# -- RANK ------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("state", ["pending", None, "unknown_seat"])
+async def test_rank_follows_the_contributors_read_not_the_seat(state):
+    rank = await _box_text(BOX_IDS["rank"], swarm_seat_state=state, swarm_seat_summary=None)
+    assert f"#{CONTRIB['rank']} of {CONTRIB['ranked_of']}" in rank
+
+
+@pytest.mark.parametrize("contrib,expected", [({**CONTRIB, "listed": False}, "not listed"),
+                                               (None, "unavailable")])
+async def test_rank_says_not_listed_apart_from_a_failed_read(contrib, expected):
+    rank = await _box_text(BOX_IDS["rank"], swarm_seat_contrib=contrib)
+    assert expected in rank and "#" not in rank
 
 
 # -- SEAT ------------------------------------------------------------------------------
@@ -357,6 +377,30 @@ async def test_status_names_only_the_last_won_date_not_feedback_time():
     text = await _box_text(BOX_IDS["status"], swarm_seat_summary=summary)
     assert f"accepted {mmdd(summary['last_won_ts'])} {hhmm(summary['last_won_ts'])}" in text
     assert "last" not in text
+
+
+async def test_status_says_worked_when_the_newest_attempt_is_newer_than_the_newest_accept():
+    """Owner 2026-09-22 on the live v5 capture: the newest attempt (22:07) is not accepted."""
+    summary = seat_summary_from_seat(swarm_capture_v5("seat_420"))
+    won, worked = summary["last_won_ts"], summary["last_worked_ts"]
+    assert worked > won
+    text = await _box_text(BOX_IDS["status"], swarm_seat_summary=summary)
+    assert f"worked {mmdd(worked)} {hhmm(worked)}" in text and "accepted" not in text
+
+
+@pytest.mark.parametrize("worked_delta", [0, -60, None])
+async def test_status_keeps_accepted_when_it_is_the_newest(worked_delta):
+    won = SUMMARY["last_won_ts"]
+    worked = None if worked_delta is None else won + worked_delta
+    text = await _box_text(BOX_IDS["status"], swarm_seat_summary=dict(SUMMARY, last_worked_ts=worked))
+    assert f"accepted {mmdd(won)} {hhmm(won)}" in text and "worked" not in text
+
+
+async def test_status_says_worked_for_a_seat_with_no_accepted_work():
+    worked = SUMMARY["last_won_ts"]
+    text = await _box_text(BOX_IDS["status"], swarm_seat_summary=dict(
+        SUMMARY, accepted=0, last_won_ts=None, last_worked_ts=worked))
+    assert f"worked {mmdd(worked)}" in text and "none accepted" not in text
 
 
 @pytest.mark.parametrize("accepted,expected", [(0, "none accepted yet"), (3, "accepted unavailable"), (None, "accepted unavailable")])
@@ -399,7 +443,7 @@ async def test_seats_clock_stays_with_accepted_and_status_names_no_clock():
 
 
 @pytest.mark.parametrize('live_state,word,color',[
-    ('working',WORKING_GLYPH,2),('idle','idle',None),('offline','offline',1),
+    ('working',WORKING_GLYPH,2),('idle',ONLINE_LINE,2),('offline','offline',1),
     ('paused','paused',1),(None,'unavailable',3),
 ])
 async def test_polish_worker_status_words_and_composited_colors(live_state,word,color):
@@ -413,11 +457,11 @@ async def test_polish_worker_status_words_and_composited_colors(live_state,word,
         y=next(y for y in range(region.y,region.bottom) if word in lines[y][region.x:region.right])
         x=lines[y].index(word,region.x)
         style=pilot.app.screen.get_style_at(x,y)
-        if color is not None:assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color]
-        else:
-            plain_y=next(y for y in range(region.y,region.bottom) if 'accepted ' in lines[y][region.x:region.right])
-            plain_x=lines[plain_y].index('accepted ',region.x)
-            assert style.color!=pilot.app.screen.get_style_at(plain_x,plain_y).color
+        assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color]
+        if live_state=='idle':
+            # Owner 2026-09-22: only "● online" is green; the counts after it are not.
+            count_x=lines[y].index(WORKING_GLYPH,region.x)
+            assert pilot.app.screen.get_style_at(count_x,y).color!=style.color
         content='\n'.join(line[region.x:region.right] for line in lines[region.y:region.bottom])
         assert 'as of' not in content and 'accepted '+mmdd(SUMMARY['last_won_ts']) in content
         if live_state in ('idle','paused',None):assert f'{WORKING_GLYPH} 0 of 8' in content
@@ -436,10 +480,10 @@ async def test_polish_unknown_pause_fold_reaches_unavailable_not_idle():
     row.pop('paused')
     unknown=fold.seat_live(dict(count=1,workers=[row]),token)
     assert idle['live_state']=='idle' and unknown['live_state'] is None
-    for live,expected in ((idle,'idle'),(unknown,'unavailable')):
+    for live,expected in ((idle,ONLINE_LINE),(unknown,'unavailable')):
         text=await _box_text(BOX_IDS['status'],swarm_seat_live=live)
         assert _lines(text)[1].startswith(expected),text
-        assert ('idle' in text)==(expected=='idle')
+        assert ('online' in text)==(expected==ONLINE_LINE) and 'idle' not in text
         assert f'{WORKING_GLYPH} 0 of ' in text
 
 

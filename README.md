@@ -160,23 +160,27 @@ only a failed read says `unavailable`.
 Press **`a`** for the AGENT body — one seat's **lifetime record** from its own keyless
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
 uses the most active seat found in the job data. The hero shows SEAT, ACCEPTED, ACCEPT RATE,
-REVIEWED, COLLAB and STATUS. ACCEPT RATE is accepted work divided by attempts. STATUS shows
-worker capacity, any pause, and the newest accepted work from `/seats`. ACCEPTED carries the
-seats clock; the STATUS and BOARD titles name no clock (the screen title does).
+REVIEWED, RANK (rank, turns and hours on the contributors leaderboard) and STATUS. ACCEPT RATE
+is accepted work divided by attempts. STATUS shows a green `● online` for a connected, idle
+worker (or its capacity while working), any pause, and the seat's newest activity from `/seats`:
+`worked MM-DD HH:MM` when its newest attempt is newer than its newest accepted work, otherwise
+`accepted MM-DD HH:MM`. ACCEPTED carries the seats clock; the STATUS and BOARD titles name no
+clock (the screen title does).
 
 Two more rows of cards sit under the hero, on one column grid with it and a blank row between
-rows. The seat row shows OWNER (with a copy icon and Etherscan link, plus when the seat was
-paired), RUNTIME (runtime, daemon version and device count), SCORE (mean score, how many reviews
-were scored and, when they differ, entries served), FEEDBACK (reviews sent, submitted and
-queued), RANK (rank, turns and hours) and BOARD (accepted of attempts, rejected and pending on
-the contributors leaderboard). BOARD and
-RANK stay visible when the seats read fails; a good contributors read without the seat says
-`not listed`, an unread source says `unavailable`. The node row shows ROLES (reviews by role),
-one card per node — accepted of reviewed, an acceptance percentage based on **reviewed work**
-(the API does not serve attempts per node), the node's roles and its `chain` count of sent and
-submitted feedback transactions — and TEAMMATES by shared jobs. With more than four nodes the
-fourth card sums the rest as `+N more nodes`. Long runtime, daemon, node and role names are cut
-with a visible `…`.
+rows. The seat row shows OWNER (the owner's ENS name when it has a forward-verified one, otherwise
+the address; either way with a copy icon for the address and an Etherscan link, plus when the
+seat was paired), RUNTIME (runtime, daemon version and device count), SCORE (mean score, how
+many reviews were scored and, when they differ, entries served), FEEDBACK (reviews sent,
+submitted and queued), COLLAB (how many seats it has worked with) and TEAMMATES by shared jobs.
+The node row shows ROLES (reviews by role, full names), one card each for the first three nodes
+(ORACLE, REVIEW, BUILD) — accepted of attempts, the acceptance percentage, the node's roles
+shortened (`impl`, `rev`) and its `chain` count of sent and submitted feedback transactions —
+then OTHERS, the same sums over every further node (`0 of 0` when there are none), and BOARD
+(accepted of attempts, rejected and pending on the contributors leaderboard). RANK and BOARD stay
+visible when the seats read fails; a good contributors read without the seat says `not listed`,
+an unread source says `unavailable`. Long runtime, daemon, node, role and ENS names are cut with
+a visible `…`.
 RECORD runs below the cards: every won submission with date and time, job, node, role, job state,
 launch kind, submission-hash prefix, the model used, duration and the first sentence of the
 seat's own answer. Queued, unavailable, not served and empty replies remain distinct. Links to
@@ -200,7 +204,7 @@ selected seat is bold with an accent rank cell, working is green, paused red, of
 unknown yellow; every state retains its word.
 
 SWARM and AGENT status colours retain their words — except AGENT's STATUS, which writes a green
-`⚙` for "working" (`⚙ 3 of 8`, `idle · ⚙ 0 of 1`) to save width: green means healthy, working or accepted;
+`⚙` for "working" (`⚙ 3 of 8`, `● online · ⚙ 0 of 1`) to save width: green means healthy, online, working or accepted;
 red means offline, paused or down; yellow marks unavailable or existing pending counts. Zero
 working is dim `quiet`. Rates and scores are bold without invented thresholds. BOARD's offline
 rows are dim. SEAT stays as it is by owner decision; its larger grouping exceeded the budget
@@ -477,7 +481,8 @@ the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
 body — one seat's lifetime record: its hero row (including ACCEPT RATE), two rows of seat and
 node cards (ORACLE / REVIEW / BUILD, each `accepted of attempts`), and RECORD beneath; its title
-bar reads `SURFBOARD · Identity.md AGENT #<seat>` in place of the IMD price. **`i`** asks for your own
+bar reads `SURFBOARD · Identity.md AGENT #<seat>` (the seat in green) in place of the IMD price,
+and names no degraded source groups — each AGENT card shows its own unavailable state. **`i`** asks for your own
 seat — its Identity.md NFT id — saves it to `~/.maxpane/config.toml` and opens the AGENT body on it,
 like THE LIST's `w` for a wallet. **`b`** opens BOARD: the lifetime LEADERBOARD
 beside FLEET, with its own six-box hero. Enter or a single click on a leaderboard row saves that seat through

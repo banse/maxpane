@@ -1601,3 +1601,76 @@ async def test_i1_manager_preserves_malformed_token_bookkeeping_across_cache(tmp
     assert restored['swarm_seat_contrib'] is None
     assert restored['swarm_board_summary']['attempts'] is None
     await fresh.close()
+
+
+# -- the seat owner's ENS name (owner, 2026-09-22) ------------------------------------
+
+
+class _EnsSurfClient(FakeSurfClient):
+    """The surf double plus ``fetch_ens_names``: a scripted verified-name answer."""
+
+    def __init__(self, names=None, raises=False, **kw):
+        super().__init__(**kw)
+        self.names = {} if names is None else names
+        self.raises = raises
+        self.ens_calls: list[list[str]] = []
+
+    async def fetch_ens_names(self, addresses):
+        self.ens_calls.append(list(addresses))
+        if self.raises:
+            raise RuntimeError("every state endpoint failed")
+        return dict(self.names)
+
+
+def _owner_of(token: int) -> str:
+    return sw.seat_summary_from_seat(_seat_payload_of(token))["owner"]
+
+
+async def test_the_seat_owners_verified_name_is_served(tmp_path):
+    owner = _owner_of(0)
+    client = _EnsSurfClient(names={owner.lower(): "surfsurf.eth"})
+    manager, payload = await _seated(tmp_path, _FakeSwarm(), client=client)
+    assert payload["swarm_seat_owner_ens"] == "surfsurf.eth"
+    assert client.ens_calls == [[owner]], "one owner, one lookup"
+    await manager.close()
+
+
+@pytest.mark.parametrize("client", [_EnsSurfClient(), _EnsSurfClient(raises=True), FakeSurfClient()],
+                         ids=["no-name", "raises", "no-lookup"])
+async def test_no_verified_name_serves_none_and_the_address_stays(tmp_path, client):
+    manager, payload = await _seated(tmp_path, _FakeSwarm(), client=client)
+    assert payload["swarm_seat_owner_ens"] is None
+    assert payload["swarm_seat_summary"]["owner"] == _owner_of(0)
+    await manager.close()
+
+
+async def test_a_miss_is_not_looked_up_again_until_its_ttl_passes(tmp_path):
+    from maxpane_dashboard.data import ens
+
+    clock = FakeClock(NOW)
+    client = _EnsSurfClient()
+    manager = _manager(tmp_path, _FakeSwarm(), client=client, clock=clock)
+    seat = _seat_payload_of(0)
+    await manager._resolve_seat_owner(seat, clock())
+    await manager._resolve_seat_owner(seat, clock.advance(ens.MISS_TTL_SECONDS - 1))
+    assert len(client.ens_calls) == 1
+    client.names = {seat["owner"].lower(): "late.eth"}
+    await manager._resolve_seat_owner(seat, clock.advance(2))
+    assert len(client.ens_calls) == 2
+    summary = sw.seat_summary_from_seat(seat)
+    assert manager._seat_owner_ens(summary, clock()) == "late.eth"
+    # A held name is not looked up again, and ages out after its own TTL.
+    await manager._resolve_seat_owner(seat, clock.advance(60))
+    assert len(client.ens_calls) == 2
+    assert manager._seat_owner_ens(summary, clock.advance(ens.DEFAULT_TTL_SECONDS + 1)) is None
+    await manager.close()
+
+
+async def test_a_name_held_for_one_owner_is_never_served_for_another(tmp_path):
+    client = _EnsSurfClient(names={_owner_of(0).lower(): "zero.eth"})
+    manager = _manager(tmp_path, _FakeSwarm(), client=client)
+    await manager._resolve_seat_owner(_seat_payload_of(0), NOW)
+    other = sw.seat_summary_from_seat(_seat_payload_of(420))
+    assert other["owner"].lower() != _owner_of(0).lower()
+    assert manager._seat_owner_ens(other, NOW) is None
+    await manager.close()

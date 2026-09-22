@@ -3236,13 +3236,16 @@ def test_title_line_all_none_shows_emdashes_never_zeros():
     ({"token_id": -1}, "#—"), ({}, "#—"),
 ])
 def test_the_agent_title_names_the_idmd_seat_in_place_of_the_market(selected, word):
-    """Owner, 2026-09-22: ``SURFBOARD · Identity.md AGENT #420`` on the AGENT body."""
-    payload = _frozen_payload(degraded=["logs"], lp_owner_ok=False)
+    """Owner, 2026-09-22: ``SURFBOARD · Identity.md AGENT #420`` on the AGENT body,
+    the name in green, and no degraded list ("remove the activity warning")."""
+    payload = _frozen_payload(degraded=["logs", "activity"], lp_owner_ok=False)
     payload["swarm_seat_selected"] = selected
     line = surf_mod._title_line(payload, row_hint=True, agent=True)
-    assert line.startswith(f"SURFBOARD · Identity.md AGENT {word} · as of {_AS_OF_HHMM} · ")
+    assert line.startswith(f"SURFBOARD · [ansi_green]Identity.md AGENT {word}[/] · as of {_AS_OF_HHMM} · ")
     assert "IMD $" not in line and "parity" not in line
-    assert TALLER_HINT in line and "⚠ LP owner changed" in line and "⚠ logs" in line
+    assert TALLER_HINT in line and "⚠ LP owner changed" in line
+    assert "⚠ logs" not in line and "activity" not in line
+    assert "⚠ logs, activity" in surf_mod._title_line(payload)
     assert surf_mod._title_line(payload) == surf_mod._title_line(payload, agent=False)
     assert "AGENT" not in surf_mod._title_line(payload)
 

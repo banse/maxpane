@@ -54,6 +54,19 @@ asserts a withdrawn statement is historical — do not review code against it.
   Its live status and skills/profiles/platform come only from workers. IN FLIGHT remains
   executing-only and appends the dispatch note, falling back to a failure reason.
 
+- **2026-09-22** (late) — owner: surf's AGENT cards move again. RANK goes up to the hero
+  (column 5) and COLLAB down to the seat row; TEAMMATES goes up to the seat row (column 6) and
+  BOARD down to the node row. The fourth node card becomes **OTHERS**, which always sums every
+  node after the third and reads `0 of 0` when there is none (the swarm serves other node keys --
+  `manifest`, `deploy_script`, `build_website`, `build_dapp`, `frontend_for_contract` -- that
+  seat #420 has not worked). Node cards shorten `implement`/`review` to `impl`/`rev`; ROLES keeps
+  the full names. STATUS says `worked MM-DD HH:MM` when the newest attempt (`submittedAt`) is
+  newer than the newest accepted work, and an idle worker reads a green `● online`. OWNER shows
+  the owner's forward-verified ENS name (keyless, `data/ens.py` over surf's state pool) in place
+  of the address. The AGENT title's `Identity.md AGENT #N` is green and the AGENT title prints
+  **no degraded list** ("remove the activity warning"): the groups name the other bodies'
+  sources and each AGENT card shows its own unavailable state; the LP-owner warning and the row
+  hint stay. The `+N more nodes` statements in the entries below are historical.
 - **2026-09-22** (evening) — IMD's `/seats/{id}` changed shape: `work[]` now lists **every**
   attempt with a `status` (`accepted`, `pending`, `rejected`, `failed`) and a `submittedAt`;
   `acceptedAt` is null unless accepted. The node cards counted every work entry as a win and

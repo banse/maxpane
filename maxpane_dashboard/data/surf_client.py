@@ -61,10 +61,12 @@ from maxpane_dashboard.data.rpc_classify import (
     is_range_limitation,
     looks_like_endpoint_limitation,
 )
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
     jsonrpc_payload,
+    multicall_chunks,
     pace,
 )
 from maxpane_dashboard.data.surf_models import (
@@ -209,6 +211,10 @@ PRICE_AGREE_TOLERANCE_PCT = 5.0
 
 #: Canonical Multicall3 deployment — identical address on every EVM chain.
 MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
+#: Sub-calls per ENS ``aggregate3``. Surf resolves one seat owner at a time,
+#: so each of ENS's four rounds is a single sub-call; the cap only bounds a
+#: caller that ever asks for more.
+ENS_MULTICALL_MAX_CALLS = 50
 
 #: ``getBlockNumber()`` on Multicall3 itself — recomputed during planning with
 #: this repo's keccak, not remembered.  Module-private and defined HERE because
@@ -1455,6 +1461,27 @@ class SurfClient(OwnedHttpClient):
             ops=to_int(results[2]),
             block_number=to_int(results[3]),
         )
+
+    async def fetch_ens_names(self, addresses: Sequence[str]) -> dict[str, str]:
+        """Reverse-resolve addresses to **forward-verified** ENS names.
+
+        Thin pass-through to :func:`maxpane_dashboard.data.ens.resolve_names`
+        over this client's state pool (surf's AGENT OWNER card, 2026-09-22).
+        The forward check is not optional: a reverse record needs no
+        permission from the name's owner. Cosmetic by construction -- an
+        empty dict means "render the address".
+        """
+        async def eth_call(data: str) -> Any:
+            return await self._rpc_state("eth_call", [{"to": MULTICALL3, "data": data}, "latest"])
+
+        async def multicall(calls):
+            return await multicall_chunks(eth_call, calls, max_calls=ENS_MULTICALL_MAX_CALLS, label="surf")
+
+        try:
+            return await ens.resolve_names(addresses, multicall)
+        except Exception as exc:  # noqa: BLE001 -- names are decoration
+            logger.warning("surf ENS batch failed: %s", exc)
+            return {}
 
     async def fetch_chain_state(self) -> ChainState | None:
         """The fast-tier eth_call round: one aggregate3 over nine views.

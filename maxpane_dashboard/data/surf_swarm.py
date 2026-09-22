@@ -805,8 +805,8 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     Every field is ``None`` when the source did not carry it or carried the
     wrong type; a real zero stays ``0``. ``reviewed`` counts distinct submissions,
     pending ones included (Q-M); ``scored`` / ``mean_score`` count only a
-    finite, non-bool ``value``. Win rate is lifetime accepted / attempts,
-    unlike BY NODE's won / reviewed; zero or missing attempts is undefined.
+    finite, non-bool ``value``. Win rate is lifetime accepted / attempts;
+    zero or missing attempts is undefined.
     """
     summary: dict[str, Any] = dict.fromkeys(SWARM_SEAT_SUMMARY_FIELDS)
     if not isinstance(payload, Mapping):
@@ -848,6 +848,8 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     sent_stamps = [_ts(r.get("sentAt")) for r in _mappings(reviews_raw)]
     summary["last_won_ts"] = max((s for s in won_stamps if s is not None), default=None)
     summary["last_sent_ts"] = max((s for s in sent_stamps if s is not None), default=None)
+    worked_stamps = [_ts(w.get("submittedAt")) for w in (work or [])]
+    summary["last_worked_ts"] = max((s for s in worked_stamps if s is not None), default=None)
     collaborators = _list(payload.get("collaborators"))
     summary["collaborators"] = len(collaborators) if collaborators is not None else None
     summary["runtime"] = _runtime(payload.get("runtimes"))

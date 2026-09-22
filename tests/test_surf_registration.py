@@ -1453,6 +1453,7 @@ _NON_NUMERIC_KEYS = frozenset(
         "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
         "swarm_seat_live", "swarm_seat_contrib",
         "swarm_health_status",  # served status word, never a numeric zero
+        "swarm_seat_owner_ens",  # an ENS name or None, never a number
     }
 )
 

@@ -27,7 +27,7 @@ from maxpane_dashboard.screens.surf import (
     AGENT_BODY_ID, BOARD_BODY_ID, LAUNCHPAD_BODY_ID, MODE_AGENT, MODE_SWARM, MODE_BOARD, POOL4_BODY_ID,
     POOL4_USER_BODY_ID, SURF_AGENT_FULL_LAYOUT_COLUMNS, SWARM_BODY_ID, SurfScreen,
 )
-from maxpane_dashboard.widgets.surf.swarm_agent_hero import WORKING_GLYPH
+from maxpane_dashboard.widgets.surf.swarm_agent_hero import ONLINE_LINE, WORKING_GLYPH
 from maxpane_dashboard.widgets.surf import (
     SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmCapability, SurfSwarmHero, SurfSwarmInFlight,
     SurfSwarmLaunches, SurfSwarmNodeCards,
@@ -159,7 +159,7 @@ async def test_every_agent_hero_title_sits_on_the_same_row():
         heights = {len(str(b.render()).split("\n")) for b in boxes}
 
     assert len(heights) > 1, "every body has the same height: nothing to align"
-    assert firsts == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "COLLAB", "STATUS"], firsts
+    assert firsts == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "RANK", "STATUS"], firsts
 
 
 @pytest.mark.parametrize("width", [SURF_AGENT_FULL_LAYOUT_COLUMNS, 150, 169, 211])
@@ -200,13 +200,15 @@ async def test_the_agent_card_rows_carry_every_seat_and_node_value():
         text = _region_text(pilot.app, screen.query_one(f"#{AGENT_BODY_ID}"))
 
     titles = {cls: [lines[1].strip(" │") for lines in cards] for cls, cards in rows.items()}
-    assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "SCORE", "FEEDBACK", "RANK", "BOARD"]
-    assert titles[SurfSwarmNodeCards][0] == "ROLES" and titles[SurfSwarmNodeCards][-1] == "TEAMMATES"
+    # Owner 2026-09-22: RANK went up to the hero, COLLAB down to row two;
+    # TEAMMATES up to row two, BOARD down to row three.
+    assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "SCORE", "FEEDBACK", "COLLAB", "TEAMMATES"]
+    assert titles[SurfSwarmNodeCards][0] == "ROLES" and titles[SurfSwarmNodeCards][-2:] == ["OTHERS", "BOARD"]
     assert all(not lines[2].strip(" │") for cards in rows.values() for lines in cards)
     for needle in ("0xe5b1275f…f64f2a ⧉", "paired 09-20 07:34", "daemon ", " device",
                    " sent", " submitted", " queued", " scored",
-                   "189 acc of 207", "2 rejected", "16 pending", "#6 of ", " turns", " h",
-                   "implement ", "ORACLE", "188 accepted", "— · implement",
+                   "189 acc of 207", "2 rejected", "16 pending", " seats",
+                   "implement ", "ORACLE", "188 accepted", "— · impl",
                    "chain 157", "#1548 ×136", "+74 more"):
         assert needle in text, needle
 
@@ -509,12 +511,13 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
         screen=await _open(pilot,"a")
         hero=_region_text(pilot.app,screen.query_one(SurfSwarmAgentHero))
         seat=_region_text(pilot.app,screen.query_one(SurfSwarmSeatCards))
+        nodes=_region_text(pilot.app,screen.query_one(SurfSwarmNodeCards))
     assert "IDMD #420" in hero and f"{WORKING_GLYPH} 0 of 1" in hero
-    assert "accepted unavailable" in hero
-    assert "189 acc of 207" in seat and "2 rejected" in seat and "16 pending" in seat
+    assert "accepted unavailable" in hero and "#6 of " in hero  # RANK is not seats-gated
+    assert "189 acc of 207" in nodes and "2 rejected" in nodes and "16 pending" in nodes
     assert "skills" not in seat and "linux arm64" not in seat
     # Owner 2026-09-22: neither STATUS nor BOARD names its source clock.
-    assert "as of 03:01" not in seat and "as of 04:02" not in hero + seat
+    assert "as of 03:01" not in nodes and "as of 04:02" not in hero + seat
     assert "⧉" not in seat and "attempts 201" not in seat
 
 async def test_captured_executing_note_is_visible_and_honestly_cut_at_swarm_pin():
@@ -649,8 +652,8 @@ async def test_polish_agent_worker_states_keep_five_digit_counts_whole_at_pin(li
         screen=await _open(pilot,'a')
         hero=screen.query_one(SurfSwarmAgentHero)
         text=_region_text(pilot.app,screen.query_one('#surf-swarm-agent-status'))
-        # Working is the gear alone (owner 2026-09-22); the other states keep their word.
-        assert ({'working': WORKING_GLYPH}.get(live_state) or live_state or 'unavailable') in text
+        # Working is the gear alone and idle is "● online" (owner 2026-09-22).
+        assert ({'working': WORKING_GLYPH, 'idle': ONLINE_LINE}.get(live_state) or live_state or 'unavailable') in text
         assert 'working' not in text
         assert WORKING_GLYPH+' '+('99,999' if live_state=='working' else '0')+' of 99,999' in text
         assert 'as of' not in text and 'accepted ' in text
@@ -672,6 +675,14 @@ async def test_the_agent_title_names_the_seat_and_leaving_restores_the_market():
         title = _region_text(pilot.app, screen.query_one("#title-bar")).strip()
         assert title.startswith(f"SURFBOARD · Identity.md AGENT #{token} · as of "), title
         assert "IMD $" not in title and "parity" not in title
+        # Owner 2026-09-22: the seat's name is green, as RECORD's green cells.
+        bar = screen.query_one("#title-bar").region
+        row = "".join(seg.text for seg in pilot.app.screen._compositor.render_strips()[bar.y])
+        x = row.index("Identity.md")
+        green = pilot.app.ansi_theme.ansi_colors[2]
+        for dx in (0, len(f"Identity.md AGENT #{token}") - 1):
+            assert pilot.app.screen.get_style_at(x + dx, bar.y).color.get_truecolor() == green
+        assert pilot.app.screen.get_style_at(row.index("SURFBOARD"), bar.y).color.get_truecolor() != green
         await pilot.press("escape")
         await pilot.pause()
         await pilot.pause()

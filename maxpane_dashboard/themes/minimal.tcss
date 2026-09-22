@@ -2498,9 +2498,9 @@ SurfScreen #surf-swarm-card-node1 { width: 20fr; }
 #surf-swarm-agent-reviewed { width: 19fr; }
 SurfScreen #surf-swarm-card-feedback { width: 19fr; }
 SurfScreen #surf-swarm-card-node2 { width: 19fr; }
-#surf-swarm-agent-collab { width: 18fr; }
-SurfScreen #surf-swarm-card-rank { width: 18fr; }
-SurfScreen #surf-swarm-card-node3 { width: 18fr; }
+#surf-swarm-agent-rank { width: 18fr; }
+SurfScreen #surf-swarm-card-collab { width: 18fr; }
+SurfScreen #surf-swarm-card-others { width: 18fr; }
 #surf-swarm-agent-status { width: 28fr; }
 SurfScreen #surf-swarm-card-board { width: 28fr; }
 SurfScreen #surf-swarm-card-teammates { width: 28fr; }

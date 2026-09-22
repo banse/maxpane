@@ -1,8 +1,11 @@
-"""AGENT hero: SEAT, ACCEPTED, ACCEPT RATE, REVIEWED, COLLAB and STATUS.
+"""AGENT hero: SEAT, ACCEPTED, ACCEPT RATE, REVIEWED, RANK and STATUS.
 
 ACCEPT RATE is lifetime accepted / attempts; a real zero denominator says
 ``no attempts`` and a missing counter says ``unavailable``. STATUS names the
-newest accepted work with its local date, never the feedback queue's sent time.
+newest work with its local date -- ``worked`` when the newest attempt is newer
+than the newest accepted one, else ``accepted`` (owner, 2026-09-22) -- never the
+feedback queue's sent time. An idle worker reads ``● online`` in green. RANK
+comes from ``/contributors`` and survives a pending or unavailable seat.
 The seats state gates its own statistics; workers remain independent. The selected IDMD token
 remains visible while its read is pending or unavailable. Geometry belongs
 to the stylesheet; all six titles share one row. Historical contract keys
@@ -21,11 +24,13 @@ from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     NEVER_PAIRED_STYLE,
     NEVER_PAIRED_WORDS,
+    contrib_body,
+    rank_body,
     seat_state_line,
     seat_token,
 )
 
-__all__ = ["BOX_IDS", "NO_SEAT_LINE", "WORKING_GLYPH", "SurfSwarmAgentHero", "SurfSwarmAgentHeroBox"]
+__all__ = ["BOX_IDS", "NO_SEAT_LINE", "ONLINE_LINE", "WORKING_GLYPH", "SurfSwarmAgentHero", "SurfSwarmAgentHeroBox"]
 
 #: SEAT when nothing is selected: no roster row, no saved seat.
 NO_SEAT_LINE = "no seat selected"
@@ -34,12 +39,16 @@ NO_SEAT_LINE = "no seat selected"
 #: pause line's ⏸: one cell where the word took eight with its space.
 WORKING_GLYPH = "⚙"
 
+#: STATUS for an idle worker (owner, 2026-09-22): the daemon is up and
+#: waiting, which "idle" undersold. Only this part is green.
+ONLINE_LINE = "● online"
+
 BOX_IDS = {
     "seat": "surf-swarm-agent-seat",
     "accepted": "surf-swarm-agent-accepted",
     "reviewed": "surf-swarm-agent-reviewed",
     "win_rate": "surf-swarm-agent-win-rate",
-    "collab": "surf-swarm-agent-collab",
+    "rank": "surf-swarm-agent-rank",
     "status": "surf-swarm-agent-status",
 }
 
@@ -67,7 +76,7 @@ class SurfSwarmAgentHero(HeroRow):
         (BOX_IDS["accepted"], "ACCEPTED"),
         (BOX_IDS["win_rate"], "ACCEPT RATE"),
         (BOX_IDS["reviewed"], "REVIEWED"),
-        (BOX_IDS["collab"], "COLLAB"),
+        (BOX_IDS["rank"], "RANK"),
         (BOX_IDS["status"], "STATUS"),
     )
 
@@ -78,6 +87,7 @@ class SurfSwarmAgentHero(HeroRow):
         swarm_seat_state=None,
         swarm_seat_as_of_hhmm=None,
         swarm_seat_live=None,
+        swarm_seat_contrib=None,
         **_kwargs,
     ) -> None:
         """Rewrite all six boxes; the state says which kind of missing."""
@@ -90,10 +100,11 @@ class SurfSwarmAgentHero(HeroRow):
             ("accepted", "ACCEPTED", lambda s: self._accepted_body(s, as_of)),
             ("reviewed", "REVIEWED", self._reviewed_body),
             ("win_rate", "ACCEPT RATE", self._win_rate_body),
-            ("collab", "COLLAB", self._collab_body),
         ):
             self.render_box(f"#{BOX_IDS[key]}", label,
                             lambda build=build: self._stat_body(swarm_seat_summary, state, build))
+        self.render_box(f"#{BOX_IDS['rank']}", "RANK",
+                        lambda: contrib_body(swarm_seat_contrib, rank_body))
         self.render_box(f"#{BOX_IDS['status']}", "STATUS",
                         lambda: self._status_body(swarm_seat_summary, state, swarm_seat_live))
 
@@ -181,16 +192,6 @@ class SurfSwarmAgentHero(HeroRow):
         return Text().append(fmt_win_rate(rate), style="bold").append("\nof attempts", style="dim")
 
     @staticmethod
-    def _collab_body(summary: dict) -> str | Text:
-        seats = _count(summary.get("collaborators"))
-        if seats is None:
-            return UNAVAILABLE
-        body = Text()
-        body.append(fmt_int(seats), style="bold")
-        body.append(" seat" if seats == 1 else " seats", style="dim")
-        return body
-
-    @staticmethod
     def _status_body(summary, state, live) -> Text:
         """Worker state and seats acceptance retain independent availability."""
         # The fold distinguishes a known idle worker from unknown pause
@@ -199,21 +200,30 @@ class SurfSwarmAgentHero(HeroRow):
         live_state = live.get("live_state")
         active, capacity = _count(live.get("working")), _count(live.get("max_concurrency"))
         counts = f"{WORKING_GLYPH} {fmt_int(active)} of {fmt_int(capacity)}"
-        word = counts if live_state == "working" else (
-            live_state if live_state in ("idle", "offline", "paused") else "unavailable")
+        word = counts if live_state == "working" else ONLINE_LINE if live_state == "idle" else (
+            live_state if live_state in ("offline", "paused") else "unavailable")
+        color = {"working":"green", "idle":"green", "offline":"red", "paused":"red"}.get(live_state, "yellow")
+        body = Text().append(word, style=color)
         if live_state in ("idle", "paused") and active is not None and capacity is not None:
-            word += " · " + counts
-        color = {"working":"green", "idle":"dim", "offline":"red", "paused":"red"}.get(live_state, "yellow")
-        body = Text().append(word, style=color).append("\n")
+            body.append(" · " + counts, style="dim" if live_state == "idle" else color)
+        body.append("\n")
         if live.get("paused_until_ts") is not None:
             failures = _count(live.get("failures"))
             body.append(f"⏸ until {hhmm(live['paused_until_ts'])} ×{fmt_int(failures) if failures is not None else DASH}", style="red")
         elif live_state is None and active is not None and capacity is not None:
             body.append(counts, style="dim")
-        accepted = "accepted unavailable"
-        if state == "ok" and isinstance(summary, dict):
-            if summary.get("accepted") == 0:
-                accepted = "none accepted yet"
-            elif summary.get("last_won_ts") is not None:
-                accepted = f"accepted {mmdd_hhmm(summary['last_won_ts'])}"
-        return body.append("\n").append(accepted)
+        return body.append("\n").append(SurfSwarmAgentHero._newest_line(summary, state))
+
+    @staticmethod
+    def _newest_line(summary, state) -> str:
+        """The newest thing the seat did: ``worked`` beats an older ``accepted``."""
+        if state != "ok" or not isinstance(summary, dict):
+            return "accepted unavailable"
+        won, worked = summary.get("last_won_ts"), summary.get("last_worked_ts")
+        if worked is not None and (won is None or worked > won):
+            return f"worked {mmdd_hhmm(worked)}"
+        if summary.get("accepted") == 0:
+            return "none accepted yet"
+        if won is not None:
+            return f"accepted {mmdd_hhmm(won)}"
+        return "accepted unavailable"

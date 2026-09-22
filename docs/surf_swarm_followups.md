@@ -962,3 +962,13 @@ work and the stored-safety predicate in step with the cleaner.
   allows only `[ ]+`, so `/Users/Jane Doe/work/a.json` → `~ Doe/work/a.json`. Privacy gap.
 - **F60 — bidi format characters pass.** Only C0/C1 controls are stripped, so `x‮y` is
   accepted and `sanitize_cell` hands it to the RECORD cell unchanged (Unicode category Cf).
+
+## F61 — F62 — AGENT card batch review Minors (2026-09-23)
+
+- **F61 — OTHERS sums `accepted`/`onchain` leniently.** `swarm_node_cards._others_body` drops a
+  row whose value is `None` from the sum, so it would be counted as 0. Today this cannot happen,
+  because `seat_node_rows` starts both fields at int 0. If that ever changes, make the sum strict,
+  the same way `attempts` is handled (any `None` → no total). Minor, test-rigor only.
+- **F62 — a transient ENS outage is recorded as a 1 h miss.** `ens.resolve_names` cannot tell "no
+  name" from "could not look", so `SurfManager._resolve_seat_owner` records both as a miss. While
+  that miss is held, OWNER shows the address, never a guessed name. Minor, cosmetic.

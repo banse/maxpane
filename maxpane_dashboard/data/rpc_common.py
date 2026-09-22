@@ -77,10 +77,16 @@ it raises are still per-client, for every reason set out above.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Self
 
 import httpx
+
+from maxpane_dashboard.data.evm_abi import decode_aggregate3_result, encode_aggregate3
+
+logger = logging.getLogger(__name__)
 
 #: HTTP statuses that mean "*this endpoint* is broken, gone, or blocking us",
 #: as opposed to "try again in a moment". Rotate to the next endpoint instead
@@ -169,9 +175,50 @@ class OwnedHttpClient:
         await self.close()
 
 
+async def multicall_chunks(
+    eth_call: Callable[[str], Awaitable[Any]],
+    calls: Sequence[tuple[str, str]],
+    *,
+    max_calls: int,
+    label: str,
+) -> list[tuple[bool, str]]:
+    """Batch ``(target, callData)`` pairs through Multicall3 ``aggregate3``.
+
+    *eth_call* takes the encoded ``aggregate3`` calldata and returns the raw
+    hex answer from the caller's own pool (the client keeps its policy; this
+    is the chunking and padding only). Every sub-call runs with
+    ``allowFailure=True``, and the result is **always** as long as *calls*: a
+    chunk that fails wholesale, or answers short, is padded with
+    ``(False, "0x")`` so the caller's zip stays aligned. Nothing raises --
+    hoisted from ``curator_client._multicall`` on 2026-09-22 when surf's ENS
+    lookup became its second user.
+    """
+    if not calls:
+        return []
+    out: list[tuple[bool, str]] = []
+    for start in range(0, len(calls), max_calls):
+        chunk = list(calls[start : start + max_calls])
+        data = encode_aggregate3([(t, cd, True) for (t, cd) in chunk])
+        try:
+            raw = await eth_call(data)
+        except Exception as exc:  # noqa: BLE001 -- degrade, never escape
+            logger.warning("%s multicall(%d) failed: %s", label, len(chunk), exc)
+            out.extend((False, "0x") for _ in chunk)
+            continue
+        decoded = decode_aggregate3_result(raw) if isinstance(raw, str) else []
+        if len(decoded) != len(chunk):
+            logger.warning("%s multicall returned %d results for %d calls",
+                           label, len(decoded), len(chunk))
+            decoded = list(decoded[: len(chunk)])
+            decoded += [(False, "0x")] * (len(chunk) - len(decoded))
+        out.extend(decoded)
+    return out
+
+
 __all__ = [
     "ENDPOINT_DEAD_CODES",
     "OwnedHttpClient",
     "jsonrpc_payload",
+    "multicall_chunks",
     "pace",
 ]

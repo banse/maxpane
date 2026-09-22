@@ -119,10 +119,9 @@ _S_THRESHOLDS = (
 _A_THRESHOLDS = (
     61, 63, 70,  # RECORD columns
     85, 119, # unchanged RECORD compact/full tiers
-    116, 117, 131,  # row-1 hero / pending RANK / NODE overflow title whole (capture)
+    108, 116, 117,  # node row (capture) / hero (capture) and node row (stress) / pending RANK
     129,     # row-1 hero whole (stress payload's REVIEWED `19,998 pending`)
     134,     # complete status bar
-    137,     # node row whole (stress payload's `+27 more nodes`)
     139,     # seat row whole: OWNER's address + icon (binds since the grid)
 )
 
@@ -367,6 +366,9 @@ def _worst_agent_payload() -> dict:
         profiles=["profile"+str(i)+"x"*64 for i in range(20)], platform="platform"+"x"*64)
     k["swarm_seat_contrib"] = dict(k["swarm_seat_contrib"], attempts=99_999, accepted=55_555,
         rejected=11_111, pending=33_333, turns=99_999, wall_clock_s=99_999, rank=999, ranked_of=999)
+    # OWNER shows a verified name in place of the address (2026-09-22); a
+    # long one is fitted to the address's own 17 cells.
+    k["swarm_seat_owner_ens"] = "[/x]" + "n" * 60 + ".eth"
     return _frozen_payload(**k)
 
 

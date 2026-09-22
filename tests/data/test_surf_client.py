@@ -2866,6 +2866,12 @@ def _public_fetchers() -> list[str]:
             # matters here: "absent, never zero" is only meaningful once you
             # can see what the rest of the payload did.
             "fetch_burn_fees",
+            # The seventh, on the same per-key-map precedent: addresses in,
+            # ``{address: verified name}`` out, and an address with no name
+            # -- or one that could not be read -- is ABSENT. The name is
+            # decoration (OWNER falls back to the address). Pinned by
+            # `test_fetch_ens_names_is_empty_when_every_endpoint_is_down`.
+            "fetch_ens_names",
         )
     )
 
@@ -5584,3 +5590,56 @@ def test_the_render_limit_matches_the_widget_cap() -> None:
     from maxpane_dashboard.widgets.surf.launchpad import MAX_COIN_ROWS
     # 10 -> 20 on 2026-09-15: the owner gave the coin table ACTIVITY's rows.
     assert LAUNCHPAD_RENDER_LIMIT == MAX_COIN_ROWS == 20
+
+
+# ---------------------------------------------------------------------------
+# fetch_ens_names: the AGENT OWNER card's name (2026-09-22)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_ens_names_asks_ens_through_the_state_pool_multicall(monkeypatch):
+    """The lookup is ``data/ens.resolve_names`` (forward-verified there) over an
+    ``eth_call`` to Multicall3 on the state pool; its answer is passed through."""
+    from maxpane_dashboard.data import ens
+    from tests.data.test_rpc_shared import aggregate3_return
+
+    owner = "0x" + "ab" * 20
+    seen: dict = {}
+
+    async def resolve(addresses, multicall, limit=None):
+        seen["addresses"] = list(addresses)
+        seen["answer"] = await multicall([(ens.ENS_REGISTRY, "0x0178b8bf" + "00" * 32)])
+        return {owner: "surfsurf.eth"}
+
+    monkeypatch.setattr(surf_client.ens, "resolve_names", resolve)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        return httpx.Response(200, json=_rpc_ok(payload, aggregate3_return([(True, "0x" + "00" * 31 + "07")])))
+
+    transport = RecordingTransport(handler)
+    async with _client_on(transport) as client:
+        names = await client.fetch_ens_names([owner])
+    assert names == {owner: "surfsurf.eth"} and seen["addresses"] == [owner]
+    assert seen["answer"] == [(True, "0x" + "00" * 31 + "07")]
+    [(url, _method, payload)] = transport.requests
+    assert payload["method"] == "eth_call"
+    assert payload["params"][0]["to"].lower() == surf_client.MULTICALL3.lower()
+    assert httpx.URL(url).host == httpx.URL(surf_client.STATE_RPC_PRIMARY).host
+
+
+@pytest.mark.asyncio
+async def test_fetch_ens_names_is_empty_when_every_endpoint_is_down():
+    async with _offline_client() as client:
+        assert await client.fetch_ens_names(["0x" + "ab" * 20]) == {}
+
+
+@pytest.mark.asyncio
+async def test_fetch_ens_names_contains_a_raise(monkeypatch):
+    async def boom(*_a, **_k):
+        raise ValueError("decoder bug")
+
+    monkeypatch.setattr(surf_client.ens, "resolve_names", boom)
+    async with _raising_client() as client:
+        assert await client.fetch_ens_names(["0x" + "ab" * 20]) == {}

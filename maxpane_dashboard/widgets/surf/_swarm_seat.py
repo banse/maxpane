@@ -19,7 +19,9 @@ anything else       ``UNAVAILABLE`` too: a malformed state is not a fact
 ==================  =====================================================
 
 Private to the surf package, not a shared ``widgets/*.py`` (plan §9 O): it
-exists so the never-paired literal is not typed in four panels. Pure: no
+exists so the never-paired literal is not typed in four panels, and (since
+2026-09-22) so the ``/contributors`` RANK and BOARD bodies, which sit in two
+different rows, have one definition. Pure: no
 Textual import, no clock, nothing raises.
 """
 
@@ -27,9 +29,14 @@ from __future__ import annotations
 
 from rich.text import Text
 
+from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
 from maxpane_dashboard.widgets.panels import LOADING, UNAVAILABLE
 
 __all__ = [
+    "board_body",
+    "contrib_body",
+    "count",
+    "rank_body",
     "NEVER_PAIRED_STYLE",
     "NEVER_PAIRED_TEMPLATE",
     "NEVER_PAIRED_WORDS",
@@ -79,3 +86,51 @@ def seat_state_line(state: object, token: object = None) -> Text | None:
     if state == "unknown_seat":
         return Text(never_paired(token), style=NEVER_PAIRED_STYLE)
     return Text.from_markup(UNAVAILABLE)
+
+
+# -- ``/contributors`` cards (RANK in the hero, BOARD in the node row) ------------
+#
+# Both read only ``swarm_seat_contrib`` and never borrow seats data, so they
+# survive a pending or unavailable seat. Shared here since 2026-09-22, when
+# the owner moved RANK into the hero row and BOARD into the node row.
+
+
+def count(value) -> str | None:
+    """A seat counter grouped for display, or ``None`` when it is not a count."""
+    number = seat_token(value)
+    return None if number is None else fmt_int(number)
+
+
+def contrib_body(contrib, build) -> str | Text:
+    """``build(contrib)`` for a listed seat; ``not listed`` / ``unavailable`` apart."""
+    if not isinstance(contrib, dict):
+        return UNAVAILABLE
+    if contrib.get("listed") is not True:
+        if contrib.get("listed") is False:
+            return Text("not listed", style="dim")
+        return UNAVAILABLE
+    return build(contrib)
+
+
+def board_body(contrib: dict) -> Text:
+    n = {k: count(contrib.get(k)) or "--" for k in ("attempts", "accepted", "rejected", "pending")}
+    return (Text()
+            .append(n["accepted"], style="bold green").append(" acc of ", style="dim")
+            .append(n["attempts"], style="bold")
+            .append("\n").append(n["rejected"], style="bold").append(" rejected", style="dim")
+            .append("\n").append(n["pending"], style="bold").append(" pending", style="dim"))
+
+
+def rank_body(contrib: dict) -> Text:
+    body = Text()
+    rank, of = count(contrib.get("rank")), count(contrib.get("ranked_of"))
+    if rank is None:
+        body.append("unranked", style="dim")
+    else:
+        body.append(f"#{rank}", style="bold").append(" of ", style="dim").append(of or "--", style="bold")
+    turns = count(contrib.get("turns"))
+    body.append("\n").append(turns or "--", style="bold").append(" turns", style="dim")
+    seconds = contrib.get("wall_clock_s")
+    hours = (fmt_float(seconds / 3600, ".1f")
+             if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) else "--")
+    return body.append("\n").append(hours, style="bold").append(" h", style="dim")

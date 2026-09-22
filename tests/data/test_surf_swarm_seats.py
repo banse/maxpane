@@ -25,7 +25,7 @@ from maxpane_dashboard.data.surf_models import (
     SWARM_SEAT_SUMMARY_FIELDS,
 )
 from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT
-from tests.surf_swarm_fixtures import swarm_seat_capture
+from tests.surf_swarm_fixtures import swarm_capture_v5, swarm_seat_capture
 
 
 def _iso(stamp: str) -> float:
@@ -127,6 +127,7 @@ def test_summary_420_is_the_explorer_record(seat420):
         "win_rate": seat420["accepted"] / seat420["attempts"],
         "collaborators": 24,
         "runtime": "claude 2.1.278 (Claude Code)",            # runtimes[0] id + version, raw
+        "last_worked_ts": None,     # the pre-status capture serves no submittedAt
     }
     assert tuple(summary["review_status"]) == SWARM_SEAT_REVIEW_STATUSES
 
@@ -705,3 +706,21 @@ def test_work_and_review_dedup_share_one_hex64_validator(monkeypatch):
     assert sw.seat_work_rows({'work': [{'submissionHash': key}]})[0]['submission_hash'] == key
     assert sw.seat_summary_from_seat({'reviews': [{'submissionHash': key}, {'submissionHash': key}]})['reviewed'] == 1
     assert seen == [key, key, key]
+
+
+def test_last_worked_is_the_newest_submitted_at_of_any_status():
+    """Owner 2026-09-22: STATUS says ``worked`` when the newest attempt beats the newest accept.
+
+    On the live v5 capture the newest attempt is not accepted, so the two
+    stamps differ; both are read back off the capture, never typed.
+    """
+    seat = swarm_capture_v5("seat_420")
+    summary = fold.seat_summary_from_seat(seat)
+    stamps = [_iso(w["submittedAt"]) for w in seat["work"] if w.get("submittedAt")]
+    assert summary["last_worked_ts"] == max(stamps)
+    assert summary["last_worked_ts"] > summary["last_won_ts"]
+
+
+@pytest.mark.parametrize("work", [[], [{"submittedAt": None}, {"submittedAt": "junk"}], None])
+def test_last_worked_is_none_without_a_readable_submitted_at(work):
+    assert fold.seat_summary_from_seat({"work": work})["last_worked_ts"] is None

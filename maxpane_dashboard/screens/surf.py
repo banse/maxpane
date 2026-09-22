@@ -1659,8 +1659,8 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: AGENT full-layout width, re-measured 2026-09-22 for the column grid: 139
 #: (135 for the first card rows, 138 before them, bound by BY NODE).
 #: The owner asked for the three card rows to share one column grid and for
-#: row 2 to read OWNER · RUNTIME · SCORE · FEEDBACK · RANK · BOARD, so the
-#: wide BOARD sits under the wide STATUS. Column i has the same ``fr``
+#: the wide cards to stack under STATUS (RANK in the hero since
+#: 2026-09-22; row 2 ends COLLAB · TEAMMATES, row 3 OTHERS · BOARD). Column i has the same ``fr``
 #: weight in every row (23 23 20 19 18 28): each weight is the column's
 #: widest card, measured one card at a time in situ on the payloads below.
 #: Measured in situ at every integer 125–160 at 80 rows on capture, #420,
@@ -1671,11 +1671,12 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: **Binder: row 2, ``SurfSwarmSeatCards``.** OWNER's 17-cell address
 #: window plus its copy icon is whole from 139 and ellipsises at 138 -- a
 #: visible cut, which the sweep counts as a clipped line. Measured onsets
-#: under it: the node row is whole from 137 (the stress payload's
-#: ``+27 more nodes`` title), the status bar from 134, the row-1 hero from
-#: 129 (the stress payload's ``19,998 pending``). On the capture the node
-#: row's ``+2 more nodes`` title is whole from 131 and the hero from 116;
-#: the pending payload's RANK from 117. STATUS writes ``⚙`` for
+#: under it: the node row is whole from 116 (the stress payload's
+#: ``55,555 acc of 99,999`` BOARD; OTHERS carries no overflow title since
+#: 2026-09-22), the status bar from 134, the row-1 hero from 129 (the stress
+#: payload's ``19,998 pending``). On the capture the node row is whole from
+#: 108 and the hero from 116; the pending payload's RANK (hero column 5)
+#: from 117. STATUS writes ``⚙`` for
 #: "working" (owner), so ``paused · ⚙ 0 of 99,999`` fits its 28 weight; the
 #: word cost 32. The never-paired, pending and unread payloads are whole
 #: from 134. Also swept: idle/paused/working/unknown worker states on the
@@ -2237,7 +2238,10 @@ def _title_line(data: dict, row_hint: bool = False, agent: bool = False) -> str:
     """Compose the meta row (PRD §4).
 
     ``agent`` -- the AGENT body is showing -- swaps the IMD price and parity
-    for :func:`_agent_title_head`; everything after them is unchanged.
+    for :func:`_agent_title_head`, in green, and drops the degraded list
+    (owner, 2026-09-22): its groups name the dashboard's other sources, and
+    every AGENT panel shows its own unavailable state. The row hint and the
+    LP warning are unchanged.
 
     Ordered by what must survive a narrow terminal, because ``#title-bar`` is
     ``height: 1`` around a wrapping ``Static``: everything past the first
@@ -2293,7 +2297,10 @@ def _title_line(data: dict, row_hint: bool = False, agent: bool = False) -> str:
     warnings and the row hint, matching curator's order.
     """
     if agent:
-        head = _agent_title_head(data)
+        # Built from an int token or the em dash only: nothing to escape.
+        # ``ansi_green`` is the terminal's green, as RECORD's Rich ``green``
+        # cells paint; Textual markup's bare ``green`` is CSS #008000.
+        head = f"[ansi_green]{_agent_title_head(data)}[/]"
     else:
         head = (f"IMD {_fmt_usd(data.get('imd_price_usd'))} · "
                 f"parity {_fmt_signed_pct(data.get('parity_pct'))}")
@@ -2305,7 +2312,8 @@ def _title_line(data: dict, row_hint: bool = False, agent: bool = False) -> str:
     if data.get("lp_owner_ok") is False:
         line += " · [yellow]⚠ LP owner changed[/]"
 
-    line += _fmt_degraded(data.get("degraded"))
+    if not agent:
+        line += _fmt_degraded(data.get("degraded"))
     return line
 
 
@@ -2972,9 +2980,9 @@ class SurfScreen(DashboardScreen):
     SurfScreen #surf-swarm-agent-reviewed { width: 19fr; }
     SurfScreen #surf-swarm-card-feedback { width: 19fr; }
     SurfScreen #surf-swarm-card-node2 { width: 19fr; }
-    SurfScreen #surf-swarm-agent-collab { width: 18fr; }
-    SurfScreen #surf-swarm-card-rank { width: 18fr; }
-    SurfScreen #surf-swarm-card-node3 { width: 18fr; }
+    SurfScreen #surf-swarm-agent-rank { width: 18fr; }
+    SurfScreen #surf-swarm-card-collab { width: 18fr; }
+    SurfScreen #surf-swarm-card-others { width: 18fr; }
     SurfScreen #surf-swarm-agent-status { width: 28fr; }
     SurfScreen #surf-swarm-card-board { width: 28fr; }
     SurfScreen #surf-swarm-card-teammates { width: 28fr; }

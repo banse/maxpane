@@ -5,15 +5,14 @@ the owner's request, with the same values as hero cards. Row 1
 (``swarm_agent_hero``) already shows attempts, accepted, accept rate,
 reviewed and pending, so these rows leave them out.
 
-* :class:`SurfSwarmSeatCards` -- OWNER, RUNTIME, SCORE, FEEDBACK, RANK, BOARD.
-  OWNER, RUNTIME, FEEDBACK and SCORE come from ``/seats`` and are gated by
-  ``swarm_seat_state``. BOARD and RANK come from ``/contributors`` and never
-  borrow seats data. BOARD's title carries no clock (owner, 2026-09-22).
+* :class:`SurfSwarmSeatCards` -- OWNER, RUNTIME, SCORE, FEEDBACK, COLLAB,
+  TEAMMATES, all from ``/seats`` and gated by ``swarm_seat_state``. OWNER shows
+  the owner's forward-verified ENS name in place of the address when it has
+  one (owner, 2026-09-22); the icon still copies the address. COLLAB moved here
+  from the hero and TEAMMATES from row three on 2026-09-22 (owner).
 * :class:`~maxpane_dashboard.widgets.surf.swarm_node_cards.SurfSwarmNodeCards`
-  (its own module: it renders no address) -- ROLES, up to :data:`NODE_CARDS` node cards,
-  TEAMMATES. Nodes keep the fold's order (reviewed desc); when more exist than
-  cards, the last card sums the rest as ``+N more nodes``. The node rate is
-  accepted / reviewed, never the lifetime attempts denominator.
+  (its own module: it renders no address) -- ROLES, the node cards, OTHERS and
+  BOARD (``/contributors``).
 
 Third-party text (runtime, daemon, node keys, role names) is flattened and
 **fitted to the box's content width with a visible ``…``**. Numbers and fixed
@@ -40,6 +39,7 @@ from maxpane_dashboard.widgets.surf._fmt import (
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     NEVER_PAIRED_STYLE,
     NEVER_PAIRED_WORDS,
+    count,
     seat_state_line,
     seat_token,
 )
@@ -64,18 +64,13 @@ SEAT_BOX_IDS = {
     "runtime": "surf-swarm-card-runtime",
     "feedback": "surf-swarm-card-feedback",
     "score": "surf-swarm-card-score",
-    "board": "surf-swarm-card-board",
-    "rank": "surf-swarm-card-rank",
+    "collab": "surf-swarm-card-collab",
+    "teammates": "surf-swarm-card-teammates",
 }
 
 
 #: Before the first layout a box has no width; fit nothing rather than guess.
 _UNSIZED = 10_000
-
-
-def count(value) -> str | None:
-    number = seat_token(value)
-    return None if number is None else fmt_int(number)
 
 
 def dim_dash() -> Text:
@@ -143,7 +138,7 @@ class SurfSwarmAgentCards(HeroRow):
 
 
 class SurfSwarmSeatCards(SurfSwarmAgentCards):
-    """Row two: OWNER, RUNTIME, SCORE, FEEDBACK, RANK, BOARD (BOARD under STATUS)."""
+    """Row two: OWNER, RUNTIME, SCORE, FEEDBACK, COLLAB, TEAMMATES (TEAMMATES under STATUS)."""
 
     IDS = SEAT_BOX_IDS
     BOXES = (
@@ -151,33 +146,33 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         (SEAT_BOX_IDS["runtime"], "RUNTIME"),
         (SEAT_BOX_IDS["score"], "SCORE"),
         (SEAT_BOX_IDS["feedback"], "FEEDBACK"),
-        (SEAT_BOX_IDS["rank"], "RANK"),
-        (SEAT_BOX_IDS["board"], "BOARD"),
+        (SEAT_BOX_IDS["collab"], "COLLAB"),
+        (SEAT_BOX_IDS["teammates"], "TEAMMATES"),
     )
 
     def update_data(self, swarm_seat_summary=None, swarm_seat_state=None,
-                    swarm_seat_contrib=None, **_kwargs) -> None:
+                    swarm_seat_teammates=None, swarm_seat_owner_ens=None, **_kwargs) -> None:
         super().update_data(
-            swarm_seat_summary=swarm_seat_summary,
-            swarm_seat_state=swarm_seat_state, swarm_seat_contrib=swarm_seat_contrib,
+            swarm_seat_summary=swarm_seat_summary, swarm_seat_state=swarm_seat_state,
+            swarm_seat_teammates=swarm_seat_teammates, swarm_seat_owner_ens=swarm_seat_owner_ens,
         )
 
-    def _paint(self, swarm_seat_summary=None,
-               swarm_seat_state=None, swarm_seat_contrib=None) -> None:
+    def _paint(self, swarm_seat_summary=None, swarm_seat_state=None,
+               swarm_seat_teammates=None, swarm_seat_owner_ens=None) -> None:
         summary, state = swarm_seat_summary, swarm_seat_state
+        ens_name = swarm_seat_owner_ens if isinstance(swarm_seat_owner_ens, str) else None
         for key, label, build in (
-            ("owner", "OWNER", self._owner_body),
+            ("owner", "OWNER", lambda s: self._owner_body(s, ens_name)),
             ("runtime", "RUNTIME", self._runtime_body),
             ("feedback", "FEEDBACK", self._feedback_body),
             ("score", "SCORE", self._score_body),
+            ("collab", "COLLAB", self._collab_body),
         ):
             self.render_box(f"#{SEAT_BOX_IDS[key]}", label,
                             lambda key=key, build=build: self._seat_body(summary, state, key == "owner", build))
-        contrib = swarm_seat_contrib
-        self.render_box(f"#{SEAT_BOX_IDS['board']}", "BOARD",
-                        lambda: self._contrib_body(contrib, self._board_body))
-        self.render_box(f"#{SEAT_BOX_IDS['rank']}", "RANK",
-                        lambda: self._contrib_body(contrib, self._rank_body))
+        mates = swarm_seat_teammates if state == "ok" else None
+        self.render_box(f"#{SEAT_BOX_IDS['teammates']}", "TEAMMATES",
+                        lambda: gate(state, first=False) or self._teammates_body(mates))
 
     # -- gates --------------------------------------------------------------
 
@@ -190,21 +185,12 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
             return UNAVAILABLE
         return build(summary)
 
-    @staticmethod
-    def _contrib_body(contrib, build) -> str | Text:
-        if not isinstance(contrib, dict):
-            return UNAVAILABLE
-        if contrib.get("listed") is not True:
-            if contrib.get("listed") is False:
-                return Text("not listed", style="dim")
-            return UNAVAILABLE
-        return build(contrib)
-
     # -- seats bodies -------------------------------------------------------
 
-    def _owner_body(self, summary: dict) -> Text:
+    def _owner_body(self, summary: dict, ens_name: str | None = None) -> Text:
         owner = summary.get("owner")
-        body = (address_text(owner, width=ANTI_POISONING_COLS, explorer=EXPLORER)
+        # ``address_text`` flattens the label and keeps the icon on the address.
+        body = (address_text(owner, label=ens_name, width=ANTI_POISONING_COLS, explorer=EXPLORER)
                 if isinstance(owner, str) else Text("unavailable", style="yellow"))
         body.append("\n")
         paired = summary.get("paired_ts")
@@ -266,28 +252,29 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
                 body.append("\n").append(served, style="bold").append(" entries", style="dim")
         return body
 
-    # -- contributors bodies ------------------------------------------------
+    @staticmethod
+    def _collab_body(summary: dict) -> str | Text:
+        seats = count(summary.get("collaborators"))
+        if seats is None:
+            return UNAVAILABLE
+        return Text().append(seats, style="bold").append(
+            " seat" if summary.get("collaborators") == 1 else " seats", style="dim")
 
     @staticmethod
-    def _board_body(contrib: dict) -> Text:
-        n = {k: count(contrib.get(k)) or "--" for k in ("attempts", "accepted", "rejected", "pending")}
-        return (Text()
-                .append(n["accepted"], style="bold green").append(" acc of ", style="dim")
-                .append(n["attempts"], style="bold")
-                .append("\n").append(n["rejected"], style="bold").append(" rejected", style="dim")
-                .append("\n").append(n["pending"], style="bold").append(" pending", style="dim"))
-
-    @staticmethod
-    def _rank_body(contrib: dict) -> Text:
+    def _teammates_body(mates) -> str | Text:
+        if not isinstance(mates, list):
+            return UNAVAILABLE
+        parts = [(seat_token(r.get("token_id")), seat_token(r.get("shared_jobs")))
+                 for r in mates if isinstance(r, dict)]
+        parts = [(t, n) for t, n in parts if t is not None and n is not None]
+        if not parts:
+            return Text("none yet", style="dim")
+        shown = parts if len(parts) <= 3 else parts[:2]
         body = Text()
-        rank, of = count(contrib.get("rank")), count(contrib.get("ranked_of"))
-        if rank is None:
-            body.append("unranked", style="dim")
-        else:
-            body.append(f"#{rank}", style="bold").append(" of ", style="dim").append(of or "--", style="bold")
-        turns = count(contrib.get("turns"))
-        body.append("\n").append(turns or "--", style="bold").append(" turns", style="dim")
-        seconds = contrib.get("wall_clock_s")
-        hours = (fmt_float(seconds / 3600, ".1f")
-                 if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) else "--")
-        return body.append("\n").append(hours, style="bold").append(" h", style="dim")
+        for i, (token, jobs) in enumerate(shown):
+            if i:
+                body.append("\n")
+            body.append(f"#{token}", style="bold").append(f" ×{fmt_int(jobs)}", style="dim")
+        if len(parts) > 3:
+            body.append("\n").append(f"+{len(parts) - 2} more", style="dim")
+        return body

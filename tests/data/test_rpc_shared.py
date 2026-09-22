@@ -683,3 +683,79 @@ def test_the_rationale_for_not_sharing_rpc_is_written_down() -> None:
     doc = inspect.getdoc(rpc_common) or ""
     for client in ("talismans", "ttt", "fwa", "cattown", "ocm"):
         assert client in doc, f"rpc_common's docstring no longer explains {client}"
+
+
+# ---------------------------------------------------------------------------
+# multicall_chunks: hoisted from curator_client._multicall (2026-09-22)
+# ---------------------------------------------------------------------------
+
+
+def aggregate3_return(results: list[tuple[bool, str]]) -> str:
+    """An ``aggregate3`` answer for *results*, built word by word."""
+    from maxpane_dashboard.data import evm_abi
+
+    tuples = []
+    for ok, data in results:
+        raw = data[2:]
+        tuples.append(evm_abi.encode_uint(int(ok)) + evm_abi.encode_uint(0x40)
+                      + evm_abi.encode_uint(len(raw) // 2)
+                      + raw.ljust(-(-len(raw) // 64) * 64, "0"))
+    offsets, cursor = "", 32 * len(tuples)
+    for tup in tuples:
+        offsets += evm_abi.encode_uint(cursor)
+        cursor += len(tup) // 2
+    return "0x" + evm_abi.encode_uint(0x20) + evm_abi.encode_uint(len(tuples)) + offsets + "".join(tuples)
+
+
+def _word(n: int) -> str:
+    return "0x" + format(n, "064x")
+
+
+@pytest.mark.asyncio
+async def test_multicall_chunks_splits_at_the_cap_and_keeps_order() -> None:
+    from maxpane_dashboard.data import evm_abi
+    from maxpane_dashboard.data.rpc_common import multicall_chunks
+
+    sizes: list[int] = []
+
+    async def eth_call(data: str) -> str:
+        # Each chunk answers its calls' own indices, read back off the calldata length.
+        n = len(sizes)
+        sizes.append(data.count(evm_abi.strip0x(_TARGET)[2:]))
+        return aggregate3_return([(True, _word(n * 10 + i)) for i in range(sizes[-1])])
+
+    calls = [(_TARGET, "0x12345678")] * 5
+    out = await multicall_chunks(eth_call, calls, max_calls=2, label="t")
+    assert sizes == [2, 2, 1]
+    assert [evm_abi.decode_uint(d) for _ok, d in out] == [0, 1, 10, 11, 20]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", ["raise", "0x", None, "short"])
+async def test_multicall_chunks_pads_a_failed_or_short_chunk_and_never_raises(answer) -> None:
+    from maxpane_dashboard.data.rpc_common import multicall_chunks
+
+    async def eth_call(data: str):
+        if answer == "raise":
+            raise RuntimeError("every endpoint failed")
+        if answer == "short":
+            return aggregate3_return([(True, _word(7))])
+        return answer
+
+    out = await multicall_chunks(eth_call, [(_TARGET, "0x12345678")] * 3, max_calls=50, label="t")
+    assert len(out) == 3
+    tail = out[1:] if answer == "short" else out
+    assert tail and all(item == (False, "0x") for item in tail)
+
+
+@pytest.mark.asyncio
+async def test_multicall_chunks_with_no_calls_makes_no_call() -> None:
+    from maxpane_dashboard.data.rpc_common import multicall_chunks
+
+    async def eth_call(data: str):  # pragma: no cover - must not run
+        raise AssertionError("no calls, no request")
+
+    assert await multicall_chunks(eth_call, [], max_calls=50, label="t") == []
+
+
+_TARGET = "0x00000000000c2e074ec69a0dfb2997ba6c7d2e1e"

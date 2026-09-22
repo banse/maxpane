@@ -128,10 +128,10 @@ SWARM_TARGET_WIDGETS = {
 }
 
 
-def test_the_swarm_block_is_thirty_three_keys():
-    """Thirty-two existing keys plus the served health status word."""
-    assert len(SWARM_KEYS) == 33
-    assert len(set(SWARM_KEYS)) == 33
+def test_the_swarm_block_is_thirty_four_keys():
+    """Thirty-two existing keys, the served health status word and the owner's ENS name."""
+    assert len(SWARM_KEYS) == 34
+    assert len(set(SWARM_KEYS)) == 34
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -153,7 +153,8 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-23:] == SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS + ("swarm_health_status",)
+    assert SWARM_KEYS[-24:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+                                + ("swarm_health_status", "swarm_seat_owner_ens"))
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -240,6 +241,7 @@ def test_the_seats_permanent_exports_are_the_frozen_literals():
         "attempts", "accepted", "reviewed", "review_entries", "review_status", "mean_score", "scored",
         "roles", "online", "owner", "paired_ts", "collaborators", "runtime",
         "agent_id", "daemon", "devices", "win_rate", "last_won_ts", "last_sent_ts",
+        "last_worked_ts",
     )
     assert SWARM_SEAT_REVIEW_STATUSES == ("sent", "submitted", "queued")
     # "pending" by the owner's Q-A answer (2026-09-21); None is not a member -- it is
@@ -252,13 +254,14 @@ def test_the_agent_signatures_are_the_flipped_literals():
     assert {k: SWARM_WIDGET_SIGNATURES[k] for k in AGENT_WIDGETS} == {
         "SurfSwarmAgentHero": (
             "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm",
-            "swarm_seat_live",
+            "swarm_seat_live", "swarm_seat_contrib",
         ),
         "SurfSwarmSeatCards": (
-            "swarm_seat_summary", "swarm_seat_state", "swarm_seat_contrib",
+            "swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates",
+            "swarm_seat_owner_ens",
         ),
         "SurfSwarmNodeCards": (
-            "swarm_seat_summary", "swarm_seat_node_rows", "swarm_seat_teammates",
+            "swarm_seat_summary", "swarm_seat_node_rows", "swarm_seat_contrib",
             "swarm_seat_state",
         ),
         "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),

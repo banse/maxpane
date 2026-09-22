@@ -135,6 +135,7 @@ from maxpane_dashboard.analytics.surf_swarm_signals import (
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call
 from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_pool4_market as mk
+from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data.surf_addresses import (
     ANNOUNCE,
@@ -1092,6 +1093,11 @@ class SurfManager:
         #: switch is a new read in flight. In memory only -- it describes
         #: this session's attempts.
         self._seat_failed_token: int | None = None
+        #: The seat owner's forward-verified ENS name, and its misses (OWNER
+        #: card, 2026-09-22). In memory only: one owner per seat read, so a
+        #: restart costs one lookup, and a recorded miss keeps the 120 s seat
+        #: tier from re-resolving a nameless wallet every cycle.
+        self._seat_ens = ens.NameStore(self._clock)
 
         try:
             self.cache.load(slot_coercers={
@@ -5721,8 +5727,42 @@ class SurfManager:
         if self._seat_failed_token == token:
             self._seat_failed_token = None
         if state == "ok":
+            await self._resolve_seat_owner(result, now)
             await self._pool_swarm_answers(result, token, now)
         return slot
+
+    async def _resolve_seat_owner(self, seat: dict, now: float) -> None:
+        """Look up the seat owner's ENS name unless a fresh answer is held.
+
+        Keyless, forward-verified (:mod:`maxpane_dashboard.data.ens`) over the
+        surf client's state pool. An empty answer -- no name, or no answer --
+        is recorded as a miss and retried after ``ens.MISS_TTL_SECONDS``;
+        a raise is contained by ``_guard``. Cosmetic: OWNER falls back to the
+        address, never to a guess.
+        """
+        owner = seat.get("owner")
+        if not isinstance(owner, str) or not owner:
+            return
+        key = owner.lower()
+        if (key in self._seat_ens.names_fresh(ens.DEFAULT_TTL_SECONDS, now)
+                or key in self._seat_ens.misses_fresh(ens.MISS_TTL_SECONDS, now)):
+            return
+        fetch = getattr(self.client, "fetch_ens_names", None)
+        if fetch is None:
+            return
+        names = await self._guard(lambda: fetch([owner]), "ENS seat owner")
+        name = names.get(key) if isinstance(names, dict) else None
+        if isinstance(name, str) and name:
+            self._seat_ens.set_names({key: name}, ts=now)
+        else:
+            self._seat_ens.note_misses([key], ts=now)
+
+    def _seat_owner_ens(self, summary: dict, now: float) -> str | None:
+        """The fresh verified name for ``summary["owner"]``, else ``None``."""
+        owner = summary.get("owner")
+        if not isinstance(owner, str):
+            return None
+        return self._seat_ens.names_fresh(ens.DEFAULT_TTL_SECONDS, now).get(owner.lower())
 
     async def _pool_swarm_answers(self, seat: dict, token: int, now: float) -> None:
         """Bounded per-job reads after a successful seat; failures stay local."""
@@ -5966,6 +6006,7 @@ class SurfManager:
             "swarm_seat_node_rows": None,
             "swarm_seat_teammates": None,
             "swarm_seat_as_of_hhmm": None,
+            "swarm_seat_owner_ens": None,
         }
         if selected is None:
             return out
@@ -5985,8 +6026,10 @@ class SurfManager:
         if selected["agent_id"] is None and isinstance(seat.get("agentId"), str):
             out["swarm_seat_selected"] = dict(selected, agent_id=seat["agentId"])
         out["swarm_seat_summary"] = sw.seat_summary_from_seat(seat)
+        now_ts = float(self._clock()) if now is None else now
+        out["swarm_seat_owner_ens"] = self._seat_owner_ens(out["swarm_seat_summary"], now_ts)
         answers = sw.prune_answers(getattr(answers_entry, "payload", None),
-                                  now_ts=float(self._clock()) if now is None else now,
+                                  now_ts=now_ts,
                                   cap=SWARM_ANSWER_CACHE_CAP, max_age_s=SWARM_ANSWER_MAX_AGE_S)
         out["swarm_seat_work_rows"] = sw.enrich_work_rows(sw.seat_work_rows(seat), answers)
         out["swarm_seat_node_rows"] = sw.seat_node_rows(seat)

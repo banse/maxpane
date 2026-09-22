@@ -71,10 +71,8 @@ from maxpane_dashboard.data import curator_addresses as A
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data.evm_abi import (
     decode_address,
-    decode_aggregate3_result,
     decode_uint,
     encode_address,
-    encode_aggregate3,
     strip0x,
 )
 from maxpane_dashboard.data.curator_models import (
@@ -95,6 +93,7 @@ from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
     jsonrpc_payload,
+    multicall_chunks,
     pace,
 )
 
@@ -877,31 +876,10 @@ class CuratorClient(OwnedHttpClient):
         caller's zip stays aligned with its request.  ENS resolution is the only
         caller and it is cosmetic, so nothing here raises.
         """
-        if not calls:
-            return []
-        out: list[tuple[bool, str]] = []
-        for start in range(0, len(calls), MULTICALL_MAX_CALLS):
-            chunk = list(calls[start : start + MULTICALL_MAX_CALLS])
-            data = encode_aggregate3([(t, cd, True) for (t, cd) in chunk])
-            try:
-                raw = await self._rpc_state(
-                    "eth_call", [{"to": MULTICALL3, "data": data}, "latest"]
-                )
-            except Exception as exc:  # noqa: BLE001 -- degrade, never escape
-                logger.warning("curator multicall(%d) failed: %s", len(chunk), exc)
-                out.extend((False, "0x") for _ in chunk)
-                continue
-            decoded = decode_aggregate3_result(raw) if isinstance(raw, str) else []
-            if len(decoded) != len(chunk):
-                logger.warning(
-                    "curator multicall returned %d results for %d calls",
-                    len(decoded),
-                    len(chunk),
-                )
-                decoded = list(decoded[: len(chunk)])
-                decoded += [(False, "0x")] * (len(chunk) - len(decoded))
-            out.extend(decoded)
-        return out
+        return await multicall_chunks(
+            lambda data: self._rpc_state("eth_call", [{"to": MULTICALL3, "data": data}, "latest"]),
+            calls, max_calls=MULTICALL_MAX_CALLS, label="curator",
+        )
 
     async def fetch_ens_names(
         self, addresses: Sequence[str], *, limit: int = ens.MAX_ADDRESSES

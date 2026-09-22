@@ -36,7 +36,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | CAPABILITY beside THROUGHPUT; IN FLIGHT beside LAUNCHES; SITES full-width beneath | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / QUEUE / BREAKER / SERVICES |
-| `a` | MODE_AGENT | seat-card row, node-card row; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / ACCEPT RATE / REVIEWED / COLLAB / STATUS |
+| `a` | MODE_AGENT | seat-card row, node-card row; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / ACCEPT RATE / REVIEWED / RANK / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
 `_SURF_HERO_MODES` **enumerates** the modes that get `SurfHero` rather than negating one: a body
@@ -180,29 +180,37 @@ tier due, with no network await in a handler. Its unchanged single-token slot pr
 numbers appearing under seat B: `swarm_seat_state` is `"pending"` until B's read lands.
 
 Hero ACCEPT RATE and SEAT use `accepted / attempts`; zero attempts displays `no attempts`, while a
-missing counter displays `unavailable`. STATUS's `accepted MM-DD HH:MM` uses the newest
-`work[].acceptedAt`. Feedback `reviews[].sentAt` is a separate timestamp, never seat activity. STATUS reads worker
+missing counter displays `unavailable`. STATUS's third line is the newest activity (owner,
+2026-09-22): `worked MM-DD HH:MM` (summary `last_worked_ts`, the newest `work[].submittedAt` of
+any status) when it is newer than `last_won_ts` or nothing was accepted, else `accepted MM-DD
+HH:MM` (the newest `work[].acceptedAt`). Feedback `reviews[].sentAt` is a separate timestamp, never seat activity. STATUS reads worker
 capacity/pause/offline independently of seats, with a bare `STATUS` title (its worker clock
 was removed by the owner on 2026-09-22) and exactly three body lines. `swarm_seat_live.live_state` preserves unknown pause evidence as unavailable (F48);
-known zero working is idle; STATUS writes `⚙` (`WORKING_GLYPH`) for the word "working" in its counts
-(owner, 2026-09-22). ACCEPTED carries the seats clock. A bad seats state hides its accepted date
+known zero working is idle, which STATUS writes as a green `● online` (`ONLINE_LINE`; only
+that part green, the counts after it dim); STATUS writes `⚙` (`WORKING_GLYPH`) for the word
+"working" in its counts (owner, 2026-09-22). RANK (hero column 5 since 2026-09-22) reads only
+`swarm_seat_contrib` through `_swarm_seat.contrib_body` / `rank_body`. ACCEPTED carries the seats clock. A bad seats state hides its accepted date
 without hiding valid worker facts.
 The SEAT panel and the BY NODE table were replaced on 2026-09-22 (owner) by two hero-card rows
 in `widgets/surf/swarm_agent_cards.py`, inside the AGENT body above RECORD. `SurfSwarmSeatCards`:
-OWNER (address via `address_text` + package `EXPLORER`, paired stamp), RUNTIME (runtime, daemon,
-devices), SCORE (mean, scored, entries when they differ from reviewed), FEEDBACK
-(sent/submitted/queued), RANK and BOARD -- that order puts BOARD under STATUS on the shared
-column grid (every row gives column i the same `fr` weight; blank row between rows). BOARD and
-RANK read only `swarm_seat_contrib` (BOARD's title names no clock, owner 2026-09-22),
-survive pending/unavailable seats, and distinguish `not listed` from
-`unavailable`. `SurfSwarmNodeCards`: ROLES, four node cards, TEAMMATES. Node cards read
+OWNER (address via `address_text` + package `EXPLORER`, paired stamp; `swarm_seat_owner_ens`,
+when the manager holds a forward-verified name for the owner, is the `label=` -- fitted to the
+same 17 cells, the icon still copies the address), RUNTIME (runtime, daemon, devices), SCORE
+(mean, scored, entries when they differ from reviewed), FEEDBACK (sent/submitted/queued), COLLAB
+and TEAMMATES -- TEAMMATES sits under STATUS on the shared column grid (every row gives column i
+the same `fr` weight; blank row between rows). `SurfSwarmNodeCards`: ROLES, three node cards
+(`NODE_CARDS`), OTHERS, BOARD. BOARD and RANK read only `swarm_seat_contrib` (BOARD's title
+names no clock, owner 2026-09-22), survive pending/unavailable seats, and distinguish `not
+listed` from `unavailable`; their bodies live in `_swarm_seat.py`. Node cards read
 `accepted of attempts` per node (since 2026-09-22 `work[]` lists every attempt with a `status`;
 the node sums equal the hero's ACCEPTED), titled by `NODE_TITLES` (ORACLE / REVIEW / BUILD; an
 unknown key keeps its own fitted text); a pre-status payload serves no per-node attempts, so
 `attempts` is `None` and the card shows the accepted count with no rate. ACCEPTED (`/seats`) and
 BOARD (`/contributors`) differ by the endpoints' own definitions — never reconcile them. `chain` counts
-reviews with a transaction in `sent` or `submitted`; with more than four nodes the fourth card
-sums the rest (`+N more nodes`). TEAMMATES sorts by shared jobs descending, token ascending,
+reviews with a transaction in `sent` or `submitted`; a node card shortens its roles
+(`ROLE_SHORT`: implement → impl, review → rev), ROLES keeps them whole. OTHERS always sums
+every node after the third, and reads `0 of 0` when the list was read with nothing further (a
+dash when unread). TEAMMATES sorts by shared jobs descending, token ascending,
 shows two plus `+N more` when there are more than three; tokens are integers with no address
 icon; `none yet` for an empty list, `unavailable` for an unread one. Values row 1 already shows
 are not repeated. Third-party text (runtime, daemon, node keys, roles) is flattened and fitted
@@ -212,7 +220,16 @@ Pending and unavailable show on every seats-backed card; never paired shows once
 ROLES), dashes elsewhere. Worker metadata is shown in BOARD; STATUS supplies AGENT's only liveness.
 
 The AGENT body's title bar reads `SURFBOARD · Identity.md AGENT #<token>` (from
-`swarm_seat_selected`, em dash when none) in place of IMD price and parity; every other body keeps them.
+`swarm_seat_selected`, em dash when none; green, owner 2026-09-22) in place of IMD price and
+parity, and prints no degraded list: its groups name the other bodies' sources, and every AGENT
+card carries its own unavailable state. The row hint and the LP warning stay. Every other body
+keeps all of them.
+
+The owner's ENS name is read in `SurfManager._resolve_seat_owner` after a good seat read:
+`SurfClient.fetch_ens_names` (`data/ens.resolve_names`, forward-verified, over the state pool
+through `rpc_common.multicall_chunks`), held in an `ens.NameStore` with its name and miss TTLs,
+so a nameless owner is not re-resolved every tick. A raise or an empty answer is a miss; OWNER
+shows the address.
 RECORD shows every lifetime `work[]` attempt; its `state` is the attempt's `status` unless
 `accepted` (then, or with no status served, the job's state). It shows `MM-DD HH:MM` of `submittedAt` (else `acceptedAt`), launch kind and the first eight hex characters
 of a validated submission hash. A null launch displays `—` (real none); a null `daemonVersion`
