@@ -1,0 +1,69 @@
+{
+  "host": "https://api.imd.fun",
+  "files": {
+    "workers": {
+      "route": "/workers",
+      "http_status": 200,
+      "captured_on": "2026-09-22",
+      "captured_at": "≈01:55–02:05Z (live probe by Claude)",
+      "selected_because": "91 live, 11 paused",
+      "bytes": 97420,
+      "sha256": "7db7676e291c209c9e8ee433a52fd9c241347fe13f2966f013835c883789c73b"
+    },
+    "contributors": {
+      "route": "/contributors",
+      "http_status": 200,
+      "captured_on": "2026-09-22",
+      "captured_at": "≈01:55–02:05Z (live probe by Claude)",
+      "selected_because": "per-device rows, two seats with two devices each",
+      "bytes": 32113,
+      "sha256": "67d3e919a33cce311c1d49479a30d21f65cb23ef7e9e6a62c077d3fe62dda2e3"
+    },
+    "health": {
+      "route": "/health",
+      "http_status": 200,
+      "captured_on": "2026-09-22",
+      "captured_at": "≈01:55–02:05Z (live probe by Claude)",
+      "selected_because": "connectedDaemons 92 beside workers 91",
+      "bytes": 584,
+      "sha256": "c4888e8e1defa601bfcf2e54026fd5911029a9296a1eeee38e06e5740379a7a6"
+    },
+    "seat_420_with_contributors": {
+      "route": "/seats/420",
+      "http_status": 200,
+      "captured_on": "2026-09-22",
+      "captured_at": "≈01:55–02:05Z (live probe by Claude)",
+      "selected_because": "/seats/420 read in the same minute as workers and contributors; shows the source mismatch",
+      "bytes": 208077,
+      "sha256": "edd8f84ba5b4521ac301cefc6196739f5bdfbddbcfdbbd416aff144246a7e694"
+    },
+    "job_5a4dfb13_dispatch_note": {
+      "route": "/jobs/5a4dfb13-97a0-47ad-93c5-dfaa704bcf31",
+      "http_status": 200,
+      "captured_on": "2026-09-22",
+      "captured_at": "≈01:55–02:05Z (live probe by Claude)",
+      "selected_because": "an executing job with a dispatchNote",
+      "bytes": 2074,
+      "sha256": "e170d4d3ee0a8d97a0f3696d12464f25eac72c80da1f133874883d4979057f06"
+    },
+    "job_0ed3e9f8_blocked": {
+      "route": "/jobs/0ed3e9f8-494e-4e46-b947-c6deed040745",
+      "http_status": 200,
+      "captured_on": "2026-09-22",
+      "captured_at": "≈01:55–02:05Z (live probe by Claude)",
+      "selected_because": "a failed node, budget_exhausted, seat null",
+      "bytes": 7111,
+      "sha256": "a190dbd194a44bbe385038e8f69984670e697b36aed9c2997ce67b9f23b325de"
+    },
+    "job_33016bad_two_node_verdict": {
+      "route": "/jobs/33016bad-ed32-4065-8c2e-269ce6ccc0a3",
+      "http_status": 200,
+      "captured_on": "2026-09-22",
+      "captured_at": "≈01:55–02:05Z (live probe by Claude)",
+      "selected_because": "a two-node detail carrying seat + verdict",
+      "bytes": 3096,
+      "sha256": "758fb8ea2410c08959f32cb0f09b9f922bf418b6aa67118224699e6f08d7b0ba"
+    }
+  },
+  "notes": "Owner-supplied frozen captures, added unchanged. No requests were made to create this manifest."
+}
