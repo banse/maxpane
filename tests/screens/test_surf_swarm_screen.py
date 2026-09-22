@@ -24,11 +24,11 @@ import pytest
 from textual.widgets import DataTable
 
 from maxpane_dashboard.screens.surf import (
-    AGENT_BODY_ID, LAUNCHPAD_BODY_ID, MODE_AGENT, MODE_SWARM, POOL4_BODY_ID,
+    AGENT_BODY_ID, BOARD_BODY_ID, LAUNCHPAD_BODY_ID, MODE_AGENT, MODE_SWARM, MODE_BOARD, POOL4_BODY_ID,
     POOL4_USER_BODY_ID, SWARM_BODY_ID, SurfScreen,
 )
 from maxpane_dashboard.widgets.surf import (
-    SurfSwarmAgentHero, SurfSwarmCapability, SurfSwarmHero, SurfSwarmInFlight,
+    SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmCapability, SurfSwarmHero, SurfSwarmInFlight,
     SurfSwarmLaunches, SurfSwarmSeatNodes,
     SurfSwarmSeatRecord, SurfSwarmSeatVerdicts, SurfSwarmSites,
     SurfSwarmThroughput,
@@ -46,7 +46,8 @@ _S_PANELS = (SurfSwarmCapability, SurfSwarmThroughput, SurfSwarmInFlight,
              SurfSwarmLaunches, SurfSwarmSites)
 _A_PANELS = (SurfSwarmSeatVerdicts, SurfSwarmSeatNodes, SurfSwarmSeatRecord)
 _BODIES = {"s": (SWARM_BODY_ID, _S_PANELS, SurfSwarmHero),
-           "a": (AGENT_BODY_ID, _A_PANELS, SurfSwarmAgentHero)}
+           "a": (AGENT_BODY_ID, _A_PANELS, SurfSwarmAgentHero),
+           "b": (BOARD_BODY_ID, (SurfSwarmLeaderboard,SurfSwarmFleet), SurfSwarmBoardHero)}
 
 
 async def _open(pilot, key="s"):
@@ -58,7 +59,7 @@ async def _open(pilot, key="s"):
     return pilot.app.screen
 
 
-@pytest.mark.parametrize("key,mode", [("s", MODE_SWARM), ("a", MODE_AGENT)])
+@pytest.mark.parametrize("key,mode", [("s", MODE_SWARM), ("a", MODE_AGENT), ("b", MODE_BOARD)])
 async def test_the_key_opens_its_body_and_escape_backs_out(key, mode):
     body_id = _BODIES[key][0]
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
@@ -71,7 +72,7 @@ async def test_the_key_opens_its_body_and_escape_backs_out(key, mode):
         assert screen.query_one("#middle-row").display is True
 
 
-@pytest.mark.parametrize("key", ["s", "a"])
+@pytest.mark.parametrize("key", ["s", "a", "b"])
 async def test_pressing_the_key_twice_returns_to_the_dashboard(key):
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open(pilot, key)
@@ -100,7 +101,7 @@ async def test_s_and_a_switch_directly_from_every_other_body():
             assert showing == [expected], (key, showing)
 
 
-@pytest.mark.parametrize("key", ["s", "a"])
+@pytest.mark.parametrize("key", ["s", "a", "b"])
 async def test_exactly_one_hero_shows_in_each_swarm_body(key):
     """Two swarm heroes are composed once each; ``_SURF_HERO_MODES``
     enumerates the modes that get ``SurfHero``, so neither body paints two."""
@@ -162,11 +163,11 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
         await pilot.pause()
         text = _screen_text(pilot.app)
         assert "s swarm" in text and "a agent" in text
-    assert SurfScreen.KEY_HINTS == "[dim]l launchpad · 4 pool4 · s swarm · a agent[/]"
+    assert SurfScreen.KEY_HINTS == "[dim]l launchpad · 4 pool4 · s swarm · a agent · b board[/]"
 
 
-async def test_the_bindings_gained_a_and_i_and_nothing_else():
-    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "i", "escape"}
+async def test_the_bindings_include_board_agent_and_seat_selection():
+    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "escape"}
     assert hasattr(SurfScreen, "action_toggle_swarm")
     assert hasattr(SurfScreen, "action_toggle_agent")
 
@@ -174,7 +175,6 @@ async def test_the_bindings_gained_a_and_i_and_nothing_else():
 async def test_retired_roster_selection_is_gone():
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open(pilot, "a")
-        assert not hasattr(screen, "on_data_table_row_selected")
         assert all(table.cursor_type == "none" for table in screen.query_one(f"#{AGENT_BODY_ID}").query(DataTable))
         text = _region_text(pilot.app,screen.query_one(f"#{AGENT_BODY_ID}"))
         assert "BY NODE" in text and "TEAMMATES" in text
@@ -413,3 +413,34 @@ async def test_a_manager_without_set_seat_still_saves_and_never_crashes(saved_se
         assert saved_seats == [463]
         assert pilot.app.screen is screen and screen._mode == MODE_AGENT
         assert not pilot.app._exit
+
+
+async def test_board_opens_its_own_hero_and_toggles_back():
+    from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero
+    async with _surf_app(_frozen_payload()).run_test(size=(150,45)) as pilot:
+        screen=await _open(pilot,'b')
+        assert screen._mode=='board'
+        assert [type(w) for w in screen.query('.surf-hero') if w.display]==[SurfSwarmBoardHero]
+        await pilot.press('b');await pilot.pause()
+        assert screen.query_one('#middle-row').display
+        await pilot.press('b','escape');await pilot.pause()
+        assert screen.query_one('#middle-row').display
+
+async def test_board_enter_persists_using_shared_writer_and_opens_agent(monkeypatch):
+    from maxpane_dashboard import config
+    from maxpane_dashboard.widgets.surf import SurfSwarmLeaderboard
+    from maxpane_dashboard.data import surf_swarm as fold
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+    rows=fold.board_rows(swarm_capture_v3('contributors'),swarm_capture_v3('workers'))
+    writes=[]
+    monkeypatch.setattr(config,'save_seat',lambda token:writes.append(token))
+    data=_frozen_payload(swarm_board_rows=rows)
+    async with _surf_app(data).run_test(size=(150,45)) as pilot:
+        screen=await _open(pilot,'b')
+        selected=[]
+        screen._data_manager.set_seat=lambda token:selected.append(token)
+        table=screen.query_one(SurfSwarmLeaderboard).query_one(DataTable)
+        table.focus();table.move_cursor(row=1)
+        await pilot.press('enter');await pilot.pause()
+        assert writes==selected==[rows[1]['token_id']]
+        assert screen._mode==MODE_AGENT

@@ -144,3 +144,9 @@ def mmdd_hhmm(value) -> str:
 def fmt_win_rate(rate: float) -> str:
     """A lifetime attempts rate, shared by the AGENT hero and SEAT."""
     return f"{fmt_float(rate * 100, '.1f')} %"
+
+
+def source_clock(value) -> str:
+    """A source's own HH:MM marker; never borrow another endpoint's clock."""
+    import re
+    return value if isinstance(value, str) and re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', value) else 'unavailable'

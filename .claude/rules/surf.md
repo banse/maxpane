@@ -18,7 +18,7 @@ table names them and this file repeats no numbers.
 ## Keys and bodies
 
 Surf is position 1, the `--game` default, and the dashboard prefetched at launch. Its status
-hint reads `l launchpad · 4 pool4 · s swarm · a agent`, in one markup run (adjacent
+hint reads `l launchpad · 4 pool4 · s swarm · a agent · b board`, in one markup run (adjacent
 differently-styled runs never share a composited line). `#status-left` is `width: auto`, so an
 over-long hint never shortens the phrase — the compositor crops the bar at the terminal edge and
 the poll word and right label fall off — which is why the layout test asserts the **whole bar**
@@ -27,7 +27,7 @@ the poll word and right label fall off — which is why the layout test asserts 
 never whole at the `4` body's own pin with either phrase). `l launchpad` must never shorten.
 
 A **mode** is a whole second body with its own panels, never two panels sharing one slot. Each
-of the five swaps `#middle-row`/`#separator`/`#bottom-row`, `escape` backs out one-way, and none
+of the six alternate modes swaps `#middle-row`/`#separator`/`#bottom-row`, `escape` backs out one-way, and none
 is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` untouched):
 
 | key | mode | body | hero |
@@ -36,11 +36,12 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | CAPABILITY beside THROUGHPUT; IN FLIGHT beside LAUNCHES; SITES full-width beneath | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / QUEUE / BREAKER / SERVICES |
-| `a` | MODE_AGENT | SEAT beside BY NODE; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / WIN RATE / REVIEWED / COLLAB / STATUS |
+| `a` | MODE_AGENT | SEAT beside BY NODE; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / ACCEPT RATE / REVIEWED / COLLAB / STATUS |
+| `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
 `_SURF_HERO_MODES` **enumerates** the modes that get `SurfHero` rather than negating one: a body
 with a hero of its own would otherwise inherit `True` from a `!=` check and paint two heroes into
-one row. Every second hero widget (`4`, `s`, `a`) is composed once at startup and toggled with the
+one row. Every alternate hero widget (`4`, `s`, `a`, `b`) is composed once at startup and toggled with the
 body — curator's per-mode hero, not one widget with a mode branch. `_SCROLL_COLUMNS[mode]` names
 the containers whose scrolling lights `‹ taller`; every swarm and agent container that can scroll
 is registered there, bound by the layout test. Surf's `e` and curator's `e` (export), and the
@@ -49,8 +50,8 @@ expand/collapse toggle, with NEW REPLY on the rail so a collapsed thread still a
 
 ## Tiers, clocks and degraded groups
 
-`TIER_LAUNCHPAD`, `TIER_POOL4`, `TIER_POOL4_STAKERS` and the three swarm tiers (`TIER_SWARM`,
-`TIER_SWARM_SCORES`, `TIER_SWARM_SEAT`) are spawned and never awaited, each with its own last-good slot and its own `as of HH:MM` on a slower clock than the
+`TIER_LAUNCHPAD`, `TIER_POOL4`, `TIER_POOL4_STAKERS` and the four swarm tiers (`TIER_SWARM`,
+`TIER_SWARM_SCORES`, `TIER_SWARM_SEAT`, `TIER_SWARM_BOARD`) are spawned and never awaited, with independent last-good slots and their own `as of HH:MM` on a slower clock than the
 title bar's. `SOURCE_POOL4` (`p4`) is the **eighth and last** degraded group — that name took the
 worst-case title row to exactly the pinned width — so the staker sweep and the swarm tiers
 **name no group at all**, not even with nothing to serve: they serve last-good behind their own
@@ -178,13 +179,13 @@ job-data roster. ROSTER and FEEDBACK are retired, along with Enter-on-roster sel
 tier due, with no network await in a handler. Its unchanged single-token slot prevents seat A's
 numbers appearing under seat B: `swarm_seat_state` is `"pending"` until B's read lands.
 
-Hero WIN RATE and SEAT use `accepted / attempts`; zero attempts displays `no attempts`, while a
-missing counter displays `unavailable`. STATUS's `won MM-DD HH:MM` uses the newest
+Hero ACCEPT RATE and SEAT use `accepted / attempts`; zero attempts displays `no attempts`, while a
+missing counter displays `unavailable`. STATUS's `accepted MM-DD HH:MM` uses the newest
 `work[].acceptedAt`. Feedback `reviews[].sentAt` is a separate timestamp, never seat activity.
 SEAT (`SurfSwarmSeatVerdicts`, retaining its class/module name) shows identity, owner, pairing,
-runtime, devices, daemon, attempts/wins, feedback statuses, score and reviews by role.
-BY NODE (`SurfSwarmSeatNodes`) groups the union of `reviews[]` and `work[]` by node; its win
-percentage uses `won / reviewed`, because per-node attempts are not served. `chain` counts
+runtime, devices, daemon, attempts/accepted, feedback statuses, score and reviews by role.
+BY NODE (`SurfSwarmSeatNodes`) groups the union of `reviews[]` and `work[]` by node; its acceptance
+percentage uses the historical `won / reviewed` fields, because per-node attempts are not served. `chain` counts
 reviews with a transaction in `sent` or `submitted` state. TEAMMATES sorts by shared jobs
 descending, token ascending, and appends `+N` when entries do not fit. Tokens are integers, with
 no address icon. An empty collaborators list displays `none yet`; an unavailable list displays
@@ -232,3 +233,16 @@ lifetime work and never on short objectives. Each of the two bodies' heroes is p
 its boxes ellipsise, and a clipped box at or above the pin fails the sweep like a panel's line.
 The original swarm grid decisions remain recorded in `docs/decisions.md`; the old A1 agent-grid
 arithmetic is historical (F32). AGENT now uses the seat-details handover's two-row structure.
+
+
+## BOARD (`b`, MODE_BOARD)
+
+Contributors and workers retain independent values and `as of` markers. A missing source is
+unavailable; an empty worker metadata mix says none reported. LEADERBOARD retains every seat,
+marks the selected AGENT token with `▸`, and Enter validates through `parse_seat`, calls the
+shared `config.save_seat`, then reuses `_seat_entered` (set_seat, mode, scheduled refresh;
+no network await in the event handler). Rendered row identity is token metadata, never clipped
+text or a raw-payload index. FLEET fits whole sanitized values and counts omissions with `+N`.
+Long runtime names use an explicit ellipsis/widen content exception; fixed counters cannot
+clip at the full-layout pin. BOARD's measured guarantees live beside its pins in screens/surf.py.
+The existing global market title remains unchanged; source clocks belong in BOARD content.

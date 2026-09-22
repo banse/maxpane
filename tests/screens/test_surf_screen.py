@@ -13,6 +13,8 @@ payloads fetched 2026-08-08 -- not invented.
 
 from __future__ import annotations
 
+from tests.surf_swarm_fixtures import swarm_board_payload
+
 import asyncio
 import time
 from pathlib import Path
@@ -44,7 +46,7 @@ from maxpane_dashboard.screens.surf import (
     MODE_LAUNCHPAD,
     MODE_POOL4,
     MODE_POOL4_USER,
-    MODE_AGENT,
+    MODE_AGENT, MODE_BOARD,
     MODE_SWARM,
     POOL4_BODY_ID,
     POOL4_LEFT_ID,
@@ -96,6 +98,9 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4Vault,
     SurfSignals,
     SurfSwarmAgentHero,
+    SurfSwarmBoardHero,
+    SurfSwarmLeaderboard,
+    SurfSwarmFleet,
     SurfSwarmCapability,
     SurfSwarmHero,
     SurfSwarmInFlight,
@@ -180,14 +185,12 @@ _POOL4_USER_WIDGET_CLASSES = {
     "SurfPool4Flow": SurfPool4Flow,
 }
 
-#: The ``s`` SWARM body's six widgets and the ``a`` AGENT body's five (swarm
-#: v2, WP7, 2026-09-21; the 2026-09-16 five -- THE FIELD, QUEUE, JUST SHIPPED,
-#: the score-table THROUGHPUT and the old hero -- are gone). One role dict for
-#: both bodies because the role is the same: composed hidden alongside the
-#: other bodies, shown by ``s`` or ``a``, and each body carries a **hero**
-#: (``SurfSwarmHero``, ``SurfSwarmAgentHero``) mounted in ``#hero-row`` and
-#: hidden in every mode but its own.
+#: SWARM, AGENT and BOARD share the hidden-until-selected role. Each body
+#: has its own hero mounted in #hero-row and shown only in its own mode.
 _SWARM_WIDGET_CLASSES = {
+    "SurfSwarmBoardHero": SurfSwarmBoardHero,
+    "SurfSwarmLeaderboard": SurfSwarmLeaderboard,
+    "SurfSwarmFleet": SurfSwarmFleet,
     "SurfSwarmHero": SurfSwarmHero,
     "SurfSwarmInFlight": SurfSwarmInFlight,
     "SurfSwarmThroughput": SurfSwarmThroughput,
@@ -1540,13 +1543,13 @@ def _sample_data() -> dict:
              "created_ts": _TS_POST_13 - 900.0, "age_s": 900.0,
              "node_key": "codex-14", "node_role": "implement",
              "node_state": "working", "agent_token": 1548,
-             "agent_id": "50971", "revisions": 1},
+             "agent_id": "50971", "revisions": 1, "note": None, "note_kind": None},
             {"job_id": "job-4472", "template": "surf-swarm-view",
              "objective": "throughput panel review",
              "created_ts": _TS_POST_13 - 120.0, "age_s": 120.0,
              "node_key": "claude-3", "node_role": "review",
              "node_state": "waiting", "agent_token": None,
-             "agent_id": None, "revisions": 0},
+             "agent_id": None, "revisions": 0, "note": None, "note_kind": None},
         ],
         "swarm_skill_rows": [
             {"skill_id": "implement-textual-panel", "version": "1.2.0",
@@ -1589,6 +1592,7 @@ def _sample_data() -> dict:
              "block_number": None, "job_id": "job-4360",
              "superseded_by": "job-4381", "failure": "pin timed out"},
         ],
+        **swarm_board_payload(),
         "swarm_seat_selected": {"token_id": 1548, "agent_id": "50971",
                                 "selected_by": "most_active"},
         # The seat's lifetime /seats record (docs/surf_agent_seats_spec.md §4).
@@ -2522,14 +2526,16 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width, payload)
         await pilot.pause()
         title = _title_text(pilot)
         clipped = _clipped_launchpad_lines(pilot.app, pilot.app.screen)
+        bar_whole = _status_bar_whole(pilot.app)
         if width >= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS:
+            assert bar_whole, width
             assert "‹ widen" not in title, width
             assert not clipped, (
                 f"at {width} the l body is clipping a line and nothing on "
                 f"screen says so: {clipped}"
             )
         else:
-            assert "‹ widen" in title, width
+            assert "‹ widen" in title or not bar_whole, width
 
 
 #: The burn pipeline in the state the data is normally in.
@@ -2611,7 +2617,7 @@ async def test_nothing_below_the_pin_clips_without_saying_so(width, payload) -> 
             )
 
 
-async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
+async def test_the_launchpad_body_binding_panel_is_the_coins_table() -> None:
     """Pinned by a test, not by a sentence in CLAUDE.md (curator's own
     ``test_the_analysis_binding_panel_is_the_operators_table`` precedent):
     ``SurfLaunchpadCoins`` -- its ``DataTable``'s nine fixed columns -- is
@@ -2630,7 +2636,7 @@ async def test_the_launchpad_binding_panel_is_the_coins_table() -> None:
     rail's 40..43, so it is never the panel asking for columns). See
     ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``."""
     async with _surf_app().run_test(
-        size=(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS - 1, 46)
+        size=(138 - 1, 46)
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -2856,7 +2862,7 @@ async def test_the_width_pin_holds_at_every_height_the_coin_table_is_fitted_to(
     against the constant: the marker lit one column under it, and nothing
     marked or clipped at it, with the header whole.
     """
-    pin = SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
+    pin = 138  # unchanged COINS body boundary, distinct from the status-bar pin
     seen = {}
     for width in (pin - 1, pin):
         async with _surf_app(_twenty_coin_payload()).run_test(
@@ -6872,14 +6878,14 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "e", "4", "s", "a", "i", "escape"}
+    assert keys == {"r", "l", "e", "4", "s", "a", "b", "i", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
         "the old c-swap action outlived its binding -- an action with no key "
         "is a surface nobody can reach and nobody maintains"
     )
     for action in ("action_toggle_launchpad", "action_toggle_pool4",
                    "action_toggle_pool4_user", "action_toggle_swarm",
-                   "action_toggle_agent", "action_set_seat",
+                   "action_toggle_agent", "action_toggle_board", "action_set_seat",
                    "action_show_dashboard"):
         assert hasattr(SurfScreen, action), action
 
@@ -8125,7 +8131,7 @@ def test_every_mode_names_its_scrolling_columns() -> None:
     }
     assert modes == {
         MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER, MODE_SWARM,
-        MODE_AGENT,  # the sixth body (swarm v2 plan A1, WP7)
+        MODE_AGENT, MODE_BOARD,  # AGENT and BOARD each own a hero
     }, (
         f"a mode was added or removed: {modes}"
     )
@@ -8928,3 +8934,18 @@ async def test_the_row_marker_agrees_with_the_scrollbar_at_every_height(
         f"{'lit' if lit else 'dark'} -- the title was composed before the "
         "layout settled and nothing recomposed it"
     )
+
+
+def _status_bar_whole(app):
+    bar=app.screen.query_one(StatusBar)
+    line=_screen_text(app).split('\n')[bar.region.y]
+    right=bar.query_one('#status-right')
+    return (' poll' in line and right.region.right <= bar.region.right
+            and str(right.render()).strip() == _region_text(app,right).strip())
+
+async def test_launchpad_full_width_is_bound_by_the_whole_status_bar():
+    for width in (SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS-1,SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS):
+        async with _surf_app(_ordinary_burn_payload()).run_test(size=(width,SURF_LAUNCHPAD_FULL_LAYOUT_ROWS)) as pilot:
+            await pilot.app.screen._do_refresh();await pilot.press('l');await pilot.pause()
+            assert _status_bar_whole(pilot.app)==(width>=SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS)
+            assert not _clipped_launchpad_lines(pilot.app,pilot.app.screen)

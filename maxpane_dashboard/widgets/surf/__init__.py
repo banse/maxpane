@@ -136,6 +136,7 @@ from .swarm_sites import SurfSwarmSites
 from .swarm_throughput import SurfSwarmThroughput
 
 __all__ = [
+    "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
     "DETECTOR_LABELS",
     "EMPTY_LINE",
     "FEED_TITLE",
@@ -175,3 +176,7 @@ __all__ = [
     "TITLE",
     "UNAVAILABLE_LINE",
 ]
+
+from .swarm_board_hero import SurfSwarmBoardHero
+from .swarm_leaderboard import SurfSwarmLeaderboard
+from .swarm_fleet import SurfSwarmFleet

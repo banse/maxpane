@@ -47,3 +47,13 @@ def swarm_capture_v3(name: str) -> dict:
     """One owner-supplied 2026-09-22 BOARD capture, or its provenance MANIFEST."""
     with open(SWARM_FIXTURES_V3 / f"{name}.json", encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def swarm_board_payload():
+    """Frozen v3 contributor/worker facts and their independent source clocks."""
+    from maxpane_dashboard.data import surf_swarm as fold
+    contributors, workers = swarm_capture_v3('contributors'), swarm_capture_v3('workers')
+    return dict(swarm_board_summary=fold.board_summary(contributors,workers),
+                swarm_board_rows=fold.board_rows(contributors,workers),
+                swarm_fleet=fold.fleet(workers),
+                swarm_board_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02')

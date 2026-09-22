@@ -159,8 +159,8 @@ only a failed read says `unavailable`.
 
 Press **`a`** for the AGENT body — one seat's **lifetime record** from its own keyless
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
-uses the most active seat found in the job data. The hero shows SEAT, ACCEPTED, WIN RATE,
-REVIEWED, COLLAB and STATUS. WIN RATE is accepted work divided by attempts; STATUS's `won`
+uses the most active seat found in the job data. The hero shows SEAT, ACCEPTED, ACCEPT RATE,
+REVIEWED, COLLAB and STATUS. ACCEPT RATE is accepted work divided by attempts; STATUS's `accepted`
 stamp is the newest accepted work, with a date, and the separate `as of` marker dates the read.
 
 SEAT shows identity, owner (with a copy icon and Etherscan link), pairing, runtime, device count,
@@ -174,6 +174,13 @@ and has no explorer link. A review that passed and work that won a job remain se
 SEAT names `#N never paired` for a seat that has never paired; a failed read says `unavailable`.
 `esc` backs out of either body, one-way.
 
+Press **`b`** for BOARD: aggregated lifetime contributors beside the live worker fleet.
+SEATS, ACCEPT RATE and RECEIPTS come from contributors; LIVE, PAUSED and CAPACITY come
+from workers. LEADERBOARD includes every contributor seat and scrolls; runtime/state and
+FLEET metadata keep their own source clocks. One failed endpoint leaves the other's facts
+visible. FLEET shows whole metadata entries followed by `+N` for omissions, and token usage
+only as the served tokens-per-completed-job metric. BOARD contains no wallet or token ranking.
+
 It reads one keyless host and nothing else — the swarm's own control plane, under two names that
 serve one deployment, rotated per request and never followed off the pool — and never the total it
 says it has inferred for anyone: the explorer publishes a running inference figure on its own page,
@@ -184,7 +191,8 @@ actually moved, or when a ceiling has elapsed regardless, so a counter this dash
 track can never freeze the list forever. A failed read serves each panel's own last-good behind an
 `as of HH:MM` marker rather than a blank screen, and no new degraded group was added for it — the
 title row was already full. Each body is whole from its own pin — `SURF_SWARM_FULL_LAYOUT_COLUMNS`
-× `SURF_SWARM_FULL_LAYOUT_ROWS` and `SURF_AGENT_FULL_LAYOUT_COLUMNS` × `SURF_AGENT_FULL_LAYOUT_ROWS`
+× `SURF_SWARM_FULL_LAYOUT_ROWS`, `SURF_AGENT_FULL_LAYOUT_COLUMNS` × `SURF_AGENT_FULL_LAYOUT_ROWS`,
+and `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`
 in `screens/surf.py` (the `#:` block beside each constant carries the number and how it was
 measured). One caveat worth knowing before trusting the width: IN FLIGHT and LAUNCHES, which share
 a row, do not clear their own full column sets below 190 and 205 columns, wider than every other pin
@@ -443,11 +451,14 @@ live: CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES full-width 
 the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
 body — one seat's lifetime record: SEAT beside BY NODE, with RECORD beneath, under the seat's
-own hero row (including WIN RATE). **`i`** asks for your own
+own hero row (including ACCEPT RATE). **`i`** asks for your own
 seat — its Identity.md NFT id — saves it to `~/.maxpane/config.toml` and opens the AGENT body on it,
-like THE LIST's `w` for a wallet. `esc` backs out of any of the five.
+like THE LIST's `w` for a wallet. **`b`** opens BOARD: the lifetime LEADERBOARD
+beside FLEET, with its own six-box hero. Enter on a leaderboard row saves that seat through
+the same configuration writer and opens AGENT; `▸` marks the selected seat. `esc` backs out
+of any of the six alternate bodies.
 The status hint names the ones that are not experimental:
-`l launchpad · 4 pool4 · s swarm · a agent`. In Surfboard's announce feed, `enter` or `space` on a
+`l launchpad · 4 pool4 · s swarm · a agent · b board`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you

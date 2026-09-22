@@ -1,11 +1,9 @@
-"""The `s` SWARM body's and the `a` AGENT body's measured layout (swarm v2, WP7).
+"""Measured SWARM, AGENT and BOARD layouts.
 
-Four pins live here and nowhere else: ``SURF_SWARM_FULL_LAYOUT_COLUMNS`` /
-``_ROWS`` for the ``s`` body and ``SURF_AGENT_FULL_LAYOUT_COLUMNS`` /
-``_ROWS`` for the ``a`` body. Their measurement method, their binding panel
-or container and every named exception are in their own ``#:`` blocks in
-``screens/surf.py``; this file is what makes those blocks fail when they
-stop being true.
+Each body has column and row pins in ``screens/surf.py``. Their measurement
+method, binding panel or container, and named exceptions live in the ``#:``
+blocks beside those constants; these tests fail when the blocks stop being
+true. BOARD and the complete status-text edge were measured on 2026-09-22.
 
 **Re-swept from scratch on 2026-09-21.** Swarm v2 replaced every v1 panel
 (THE FIELD, QUEUE, JUST SHIPPED, the v1 hero and THROUGHPUT) with a new
@@ -35,7 +33,9 @@ import copy
 import datetime as dt
 
 import pytest
+from tests.screens.test_surf_screen import _status_bar_whole
 from textual.widgets import DataTable
+from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
 
 import maxpane_dashboard.data.surf_swarm as sw
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
@@ -44,6 +44,7 @@ from maxpane_dashboard.analytics.surf_swarm_signals import (
     skill_summary,
 )
 from maxpane_dashboard.screens.surf import (
+    BOARD_BODY_ID, SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS,
     AGENT_BODY_ID,
     AGENT_TOP_ID,
     SURF_AGENT_FULL_LAYOUT_COLUMNS,
@@ -92,9 +93,9 @@ from tests.surf_swarm_fixtures import (
 
 #: What the sweeps found, restated by hand so the pins cannot drift on their
 #: own: a pin that moves without a re-sweep reddens the agreement test.
-MEASURED_SWARM_COLUMNS = 141
+MEASURED_SWARM_COLUMNS = 142
 MEASURED_SWARM_ROWS = 42
-MEASURED_AGENT_COLUMNS = 132
+MEASURED_AGENT_COLUMNS = 142
 MEASURED_AGENT_ROWS = 32
 
 #: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
@@ -123,24 +124,25 @@ _A_THRESHOLDS = (
     119,     # RECORD full
     121,     # BY NODE compact
     124,     # worst ACCEPTED hero counter whole
-    131,     # status bar whole
-    132,     # BY NODE full (full-layout binder)
+    132,     # BY NODE full (body binder)
+    142,     # whole status bar text (full-layout binder)
 )
 
 
 _EXCLUDED_FROM_WHOLE = {
     "s": {"SurfSwarmInFlight", "SurfSwarmLaunches"},
     "a": {"SurfSwarmSeatRecord"},
+    "b": {"SurfSwarmLeaderboard"},
 }
-_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmSeatNodes"}
+_BINDING_PANEL = {"s": "StatusBar", "a": "StatusBar"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
 _ROW_PIN = {"s": SURF_SWARM_FULL_LAYOUT_ROWS, "a": SURF_AGENT_FULL_LAYOUT_ROWS}
-_BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID}
+_BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
 #: Each body's own hero. Its boxes are ``text-overflow: ellipsis``, so a box
 #: too narrow for its value is a CSS-clipped line like any panel's, and it
 #: counts as one: at and above the pin none may be clipped.
-_HERO = {"s": SurfSwarmHero, "a": SurfSwarmAgentHero}
-_TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_TOP_ID}
+_HERO = {"s": SurfSwarmHero, "a": SurfSwarmAgentHero, "b": SurfSwarmBoardHero}
+_TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_TOP_ID, "b": BOARD_BODY_ID}
 #: The `height: auto` panel whose fixed line count is its row's floor.
 _FLOOR_PANEL = {"s": "SurfSwarmThroughput", "a": "SurfSwarmSeatVerdicts"}
 
@@ -148,6 +150,7 @@ _FLOOR_PANEL = {"s": "SurfSwarmThroughput", "a": "SurfSwarmSeatVerdicts"}
 #: restructure that moves a panel fails loudly here. SITES and RECORD are
 #: their bodies' direct children.
 _CONTAINER_OF = {
+    "b": {SurfSwarmLeaderboard: BOARD_BODY_ID, SurfSwarmFleet: BOARD_BODY_ID},
     "s": {
         SurfSwarmCapability: SWARM_TOP_ID,
         SurfSwarmThroughput: SWARM_TOP_ID,
@@ -433,8 +436,7 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict
         bar = screen.query_one(StatusBar)
         right = bar.query_one("#status-right")
         line = _screen_text(pilot.app).split("\n")[bar.region.y]
-        status_whole = (KEY_HINT_PHRASE in line and " poll" in line
-                        and right.region.right <= bar.region.right)
+        status_whole = KEY_HINT_PHRASE in line and _status_bar_whole(pilot.app)
         return {
             "status_whole": status_whole,
             "marked": marked,
@@ -443,12 +445,14 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict
             "widths": {name: w.size.width for name, w in widgets.items()},
             "heights": {name: w.region.height for name, w in widgets.items()},
             "hidden": hidden,
+            "columns": {name: tuple(str(c.label) for c in w.query_one(DataTable).columns.values()) for name,w in widgets.items() if list(w.query(DataTable))},
             "clipped": clipped,
             "overflow": _overflow(screen, key, widgets),
             "taller": TALLER_HINT in _screen_text(pilot.app).split("\n")[0],
             "scroll": scroll,
             "top_height": top.region.height,
-            "top_floor": int(top.styles.min_height.value),
+            "top_floor": int(top.styles.min_height.value) if top.styles.min_height is not None else 0,
+            "clipped_fields": {name: set(getattr(w, "_clipped_fields", ())) for name,w in widgets.items()},
         }
 
 
@@ -498,7 +502,8 @@ async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> N
     r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _COLUMN_SWEEP_HEIGHT), key)
     assert not r["overflow"], (key, payload_name, r["overflow"])
     _assert_whole(r, f"{key}/{payload_name} at the pin")
-    assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
+    if _BINDING_PANEL[key] != "StatusBar":
+        assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
     assert r["status_whole"]
 
 
@@ -511,6 +516,10 @@ async def test_the_column_pin_is_not_loose(key) -> None:
     pin = _COLUMN_PIN[key]
     for payload_name in ("capture", _WORST[key]):
         under = await _render(PAYLOADS[payload_name](), (pin - 1, _COLUMN_SWEEP_HEIGHT), key)
+        if _BINDING_PANEL[key] == "StatusBar":
+            assert not under["status_whole"], "status bar fits below its full-layout pin"
+            assert not under["overflow"]
+            continue
         assert under["marked_besides_exceptions"] == {_BINDING_PANEL[key]}, (
             payload_name, sorted(under["marked_besides_exceptions"]),
         )
@@ -570,9 +579,9 @@ def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
     assert SURF_AGENT_FULL_LAYOUT_ROWS == MEASURED_AGENT_ROWS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
-    assert SURF_SWARM_FULL_LAYOUT_COLUMNS > SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
+    assert SURF_SWARM_FULL_LAYOUT_COLUMNS >= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS > SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
-    assert SURF_AGENT_FULL_LAYOUT_COLUMNS < SURF_SWARM_FULL_LAYOUT_COLUMNS
+    assert SURF_AGENT_FULL_LAYOUT_COLUMNS <= SURF_SWARM_FULL_LAYOUT_COLUMNS
     assert LAUNCHES_HIDES_NO_COLUMN_FROM <= SURF_SWARM_FULL_LAYOUT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_ROWS < SURF_SWARM_FULL_LAYOUT_ROWS
 
@@ -652,17 +661,14 @@ async def test_no_height_loses_a_row_of_either_body_in_silence() -> None:
 # The key hint
 # ---------------------------------------------------------------------------
 
-KEY_HINT_PHRASE = "l launchpad · 4 pool4 · s swarm · a agent"
+KEY_HINT_PHRASE = "l launchpad · 4 pool4 · s swarm · a agent · b board"
 
-#: The narrowest terminal at which the WHOLE status bar composites -- the
-#: left label through ``3 errors`` and the right label
-#: (``maxpane v0.8.3 · textual-dark · surf``) -- measured 2026-09-21 on the
-#: frozen payload: 131 with this phrase (left label 93 cells), 121 with the
-#: v1 phrase (83). The bar is whole at both swarm pins (134, 141), at
-#: LAUNCHPAD's 138 and at the app-wide 143; under 131 the compositor crops
-#: the right label at the terminal edge, as it did under 121 before WP7 --
-#: the ``4`` body's 119 never had a whole bar with either phrase.
-STATUS_BAR_WHOLE_FROM = 131
+#: Whole status bar measured 2026-09-22 after b board joined the hint:
+#: cropped through 141, whole from 142, including poll/errors and the right
+#: version/theme/game label. This binds AGENT and LAUNCHPAD above the
+#: unchanged SWARM 141 body and the new BOARD 141 table. The pool4 market
+#: body 119 remains the documented pre-existing status-bar exception.
+STATUS_BAR_WHOLE_FROM = 142
 
 
 def test_the_key_hint_is_the_measured_phrase() -> None:
@@ -681,7 +687,7 @@ async def _bar_state(width: int) -> tuple[bool, str]:
         whole = (
             KEY_HINT_PHRASE in line
             and " poll" in line
-            and right.region.x + right.region.width <= bar.region.x + bar.region.width
+            and _status_bar_whole(pilot.app)
         )
         return whole, line
 
@@ -691,11 +697,11 @@ async def _bar_state(width: int) -> tuple[bool, str]:
     sorted({
         STATUS_BAR_WHOLE_FROM, SURF_AGENT_FULL_LAYOUT_COLUMNS,
         SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_COLUMNS,
-        FULL_LAYOUT_COLUMNS,
+        SURF_BOARD_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS,
     }),
 )
 async def test_the_key_hint_fits_the_status_bar(width) -> None:
-    """The phrase gained ``· a agent`` in WP7 and the whole bar must still
+    """The phrase gained ``· b board`` in WP4 and the whole bar must still
     land on the composited status line at every pin the phrase is read at.
     ``l launchpad`` never shortens.
 
@@ -705,8 +711,9 @@ async def test_the_key_hint_fits_the_status_bar(width) -> None:
     edge and the poll word, the error count and the right label fall off
     the screen while the phrase stays whole. The v1 test grepped for the
     phrase alone and could not fail on that; this one asserts the right
-    label's region ends inside the bar's and the poll word is composited
-    (a one-word growth of the phrase reddens it at 134 and 141).
+    label's region ends inside the bar's, its complete expected text is
+    composited, and the poll word remains visible. Region bounds alone
+    previously passed with the final letter cropped.
     """
     whole, line = await _bar_state(width)
     assert whole, (width, "the bar is cropped by the terminal edge", line)
@@ -718,3 +725,64 @@ async def test_the_status_bar_edge_is_where_it_was_measured() -> None:
     under, line = await _bar_state(STATUS_BAR_WHOLE_FROM - 1)
     assert not under, (STATUS_BAR_WHOLE_FROM - 1, "the bar is whole a column early", line)
     assert STATUS_BAR_WHOLE_FROM <= SURF_AGENT_FULL_LAYOUT_COLUMNS
+
+
+def _board_payload(kind="capture"):
+    from tests.surf_swarm_fixtures import swarm_board_payload, swarm_capture_v3
+    payload=_capture_payload()
+    payload.update(swarm_board_payload())
+    if kind in ("workers-unread", "contributors-unread", "unread"):
+        contributors=None if kind in ("contributors-unread","unread") else swarm_capture_v3("contributors")
+        workers=None if kind in ("workers-unread","unread") else swarm_capture_v3("workers")
+        payload.update(swarm_board_summary=sw.board_summary(contributors,workers),
+                       swarm_board_rows=sw.board_rows(contributors,workers),swarm_fleet=sw.fleet(workers),
+                       swarm_board_as_of_hhmm=None if contributors is None else "03:01",
+                       swarm_workers_as_of_hhmm=None if workers is None else "04:02")
+    if kind=="worst":
+        payload=copy.deepcopy(payload)
+        row=payload["swarm_board_rows"][0]
+        payload["swarm_board_rows"]=[dict(row,rank=i+1,token_id=i,runtime="r"*64,
+            devices=99,attempts=99999,accepted=55555,rejected=11111,pending=33333,
+            accept_rate=55555/99999,turns=99999,wall_clock_s=99999,
+            live_state="working",working=99999) for i in range(999)]
+        payload["swarm_board_summary"].update(seats=999,live=99999,paused=99,
+            working=99999,capacity=99999,attempts=99999*999,accepted=55555*999,
+            rejected=11111*999,pending=33333*999,receipts=99999,tokens_per_completed_job=99999)
+        payload["swarm_fleet"].update(
+            daemons=[{"value":str(i)+"d"*64,"count":99999-i} for i in range(20)],
+            runtimes=[{"value":"r"*64,"count":99999}],
+            paused=[{"token_id":i,"until_ts":1758456000+i,"failures":99999} for i in range(99)])
+    return payload
+
+
+def _assert_board_whole(result,where):
+    _assert_whole(result,where)
+    assert result["tiers"]["SurfSwarmLeaderboard"]=="full",result
+    assert result["columns"]["SurfSwarmLeaderboard"] == ("#","seat","runtime","dev","att","acc","rej","pend","rate","turns","hrs","state"),result
+    allowed = {"runtime"} if where == "worst" else set()
+    assert result["clipped_fields"]["SurfSwarmLeaderboard"] <= allowed,result
+
+
+@pytest.mark.parametrize("kind",["capture","worst","workers-unread","contributors-unread","unread"])
+async def test_board_full_layout_pin_has_all_columns_and_source_labels(kind):
+    result=await _render(_board_payload(kind),(SURF_BOARD_FULL_LAYOUT_COLUMNS,SURF_BOARD_FULL_LAYOUT_ROWS),'b')
+    _assert_board_whole(result,kind)
+    assert not result['overflow'] and not result['taller'],result
+
+@pytest.mark.parametrize('width',boundary_set(SURF_BOARD_FULL_LAYOUT_COLUMNS,60,225,86,92,94,97,98,121,126,132,133,141))
+@pytest.mark.parametrize('kind',['capture','worst'])
+async def test_board_width_boundaries(width,kind):
+    result=await _render(_board_payload(kind),(width,80),'b')
+    assert not result['overflow'],result
+    if width>=SURF_BOARD_FULL_LAYOUT_COLUMNS:_assert_board_whole(result,kind)
+    else:assert not result['status_whole'] or result['tiers']['SurfSwarmLeaderboard']!='full' or result['clipped'] or any(result['hidden'].values()),result
+
+@pytest.mark.parametrize('height',boundary_set(SURF_BOARD_FULL_LAYOUT_ROWS,20,61,31,35))
+@pytest.mark.parametrize('kind',['capture','worst'])
+async def test_board_height_boundaries(height,kind):
+    result=await _render(_board_payload(kind),(SURF_BOARD_FULL_LAYOUT_COLUMNS,height),'b')
+    assert result['taller']==(height<SURF_BOARD_FULL_LAYOUT_ROWS),result
+
+async def test_board_width_pin_is_not_loose():
+    result=await _render(_board_payload(),(SURF_BOARD_FULL_LAYOUT_COLUMNS-1,80),'b')
+    assert not result['status_whole'] or result['tiers']['SurfSwarmLeaderboard']!='full' or result['clipped'] or any(result['hidden'].values()),result

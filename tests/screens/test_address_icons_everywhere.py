@@ -372,6 +372,7 @@ def test_every_case_is_swept_at_its_pins():
         (surf.SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, surf.SURF_POOL4_USER_FULL_LAYOUT_ROWS),
         (surf.SURF_SWARM_FULL_LAYOUT_COLUMNS, surf.SURF_SWARM_FULL_LAYOUT_ROWS),
         (surf.SURF_AGENT_FULL_LAYOUT_COLUMNS, surf.SURF_AGENT_FULL_LAYOUT_ROWS),
+        (surf.SURF_BOARD_FULL_LAYOUT_COLUMNS, surf.SURF_BOARD_FULL_LAYOUT_ROWS),
     ]
     assert set(sizes_for(by_name["curator"], "pin")) == {(curator.CURATOR_FULL_LAYOUT_COLUMNS, SIZE[1])}
     for case in CASES:
@@ -1100,3 +1101,15 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
             problems.append(("helper-using widgets mounted but never produced an icon", silent))
 
     assert not problems, (case.name, problems)
+
+
+async def test_surf_board_body_has_no_wallet_or_token_address_text():
+    from maxpane_dashboard.screens.surf import BOARD_BODY_ID, SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS
+    from tests.screens.test_surf_screen import _surf_app, _frozen_payload, _region_text
+    payload=_frozen_payload()
+    for row in payload['swarm_board_rows']:
+        row['owner']='0x'+'a'*40
+    async with _surf_app(payload).run_test(size=(SURF_BOARD_FULL_LAYOUT_COLUMNS,SURF_BOARD_FULL_LAYOUT_ROWS)) as pilot:
+        await pilot.app.screen._do_refresh();await pilot.press('b');await pilot.pause()
+        text=_region_text(pilot.app,pilot.app.screen.query_one(f'#{BOARD_BODY_ID}'))
+        assert '0x' not in text and '⧉' not in text

@@ -226,6 +226,9 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Static
 
+from maxpane_dashboard import config
+from maxpane_dashboard.screens.seat_input import parse_seat
+from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
@@ -650,7 +653,11 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: and 20 coins drawn), with a twenty-coin payload under both the capture's
 #: burn line and the ordinary one: ``‹ widen`` lit through 137, ``BURNED``
 #: whole and nothing clipped from 138, no table scrollbar at any width.
-SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
+#: BOARD WP4 (2026-09-22): adding b board moves the whole status bar's
+#: onset to 142, now the full-layout binder. The unchanged body still clears
+#: at 138; its COINS table marks below that. In-situ capture and ordinary-burn
+#: checks retain the old body boundary and bind the status edge at 141/142.
+SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 142
 
 #: The ``l`` LAUNCHPAD body's own measured **height** (2026-08-25) -- new
 #: with the five-panel body, which is the first version of this view that
@@ -1595,7 +1602,11 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: CAPABILITY is ``tight`` with ``‹`` lit and LAUNCHES hides eleven columns
 #: behind its own horizontal scrollbar; at 138 CAPABILITY is ``compact``
 #: with ``‹`` lit, LAUNCHES is ``tight`` with ``‹`` lit and hides none.
-SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
+#: BOARD WP4: the body remains whole from 141. The b board hint makes
+#: complete status-bar text the new binder at 142 (141 loses surf's final f).
+#: Height 20–61 at the new column pin confirms the same 42-row onset.
+#: The body will be re-swept with IN FLIGHT notes in WP5.
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 142
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
 #: the 2x2 grid, 28 on 2026-09-17 (F6, QUEUE's counter block). **Re-swept to
@@ -1628,8 +1639,9 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: (``test_no_height_loses_a_row_of_either_body_in_silence``).
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: The AGENT full-layout width, re-swept 2026-09-22 for BOARD WP0:
-#: 132 after acceptance wording widened SEAT from 55 to 57 outer cells.
+#: The AGENT full-layout width, measured for BOARD WP0 and WP4 on 2026-09-22:
+#: 142 after the BOARD key hint grew the status bar; the body still clears
+#: at 132 after acceptance wording widened SEAT from 55 to 57 outer cells.
 #:
 #: HOW MEASURED: every integer width 60–225 at height 80, on committed
 #: seat #0, original #420, duplicated-review #420 and the extended worst
@@ -1640,10 +1652,11 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: discrepancy explanations and region overflow were inspected; no panel
 #: overflow occurred. All summary/status/node/role stress totals agree.
 #:
-#: WHAT BINDS: BY NODE is full from 132, compact from 121 and has no hidden
+#: WHAT BINDS: the complete status text is whole from 142 with b board.
+#: BY NODE is full from 132, compact from 121 and has no hidden
 #: selected column from 111; below 64 its zero usable budget reports the
 #: default tier. The status bar, including poll/errors and its right label,
-#: clears at 131. Version/theme label lengths can move that threshold (F43).
+#: clears at 142. Version/theme label lengths can move that threshold (F43).
 #: The captured hero clears at 106; the worst ACCEPTED count at 124.
 #: STATUS has a 24-cell box (20 content cells) for its accepted timestamp.
 #: SEAT is 57 outer cells, 55 panel cells and 53 content cells. The reviewed/
@@ -1659,8 +1672,8 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: RECORD_NEVER_CLEARS_BELOW. Oversized BY NODE acceptance percentages light
 #: the clip/widen marker instead of losing their suffix silently.
 #: At 119 columns BY NODE still sheds optional columns and the status bar
-#: crops; from 132 the measured fixed content and status bar fit.
-SURF_AGENT_FULL_LAYOUT_COLUMNS = 132
+#: crops; from 142 the measured fixed content and status bar fit.
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 142
 
 #: The AGENT height, re-swept for BOARD WP0 on 2026-09-22: still 32 (originally
 #: 40 -> 32). Every integer height
@@ -1721,6 +1734,40 @@ MODE_SWARM = "swarm"
 #: seat in the job window. SEAT and BY NODE share its top row; RECORD spans
 #: the body below them. Every displayed counter comes from lifetime /seats.
 MODE_AGENT = "agent"
+MODE_BOARD = "board"
+BOARD_BODY_ID = "surf-board-body"
+
+#: BOARD width, measured 2026-09-22: every integer 60–225 at 80 rows, with
+#: v3 capture, 999-seat stress, workers-unread, contributors-unread and both
+#: unread. Stress carries five-digit counters, 64-character runtime/daemon
+#: names, 99 paused seats and 20 daemon versions. All twelve LEADERBOARD
+#: columns are installed from 141; complete status text clears from 142.
+#: Compact begins 121; selected tight columns stop clipping at 94 with rows
+#: and 92 without rows. Independent source-clock footer clears 86 on capture,
+#: 92 with one unread source and 98 with both unread. Hero clears 97 on capture,
+#: 126 on stress, 132 with workers unread and 133 with contributors/both unread.
+#: The earlier region-only status check falsely passed 141 while surf lost
+#: its final f. The gate now compares expected and composited right text.
+#: No horizontal region overflow was observed. FLEET is 37 outer cells,
+#: 35 panel cells and 33 content cells; it preserves whole metadata values
+#: and accounts for every omitted entry with +N.
+#:
+#: Named content exception: stress runtime names exceed their eleven-cell
+#: column and retain visible ellipsis plus widen even at the full-tier pin.
+#: Only runtime may clip in that stress case; capture and source-failure
+#: labels, all fixed counters, clocks and all twelve columns fit whole.
+#: Owner 119 x 35 and 138 x 31 both fit vertically; LEADERBOARD is tight at
+#: 119 and compact at 138. Both mark widen and crop the status bar. App-wide
+#: 143 is unchanged.
+SURF_BOARD_FULL_LAYOUT_COLUMNS = 142
+
+#: BOARD height, measured over every integer 20–61 at 150 and 142 columns on
+#: all five payloads above. FLEET's twelve fixed rows (title, blank, ten detail
+#: lines) bind the body; the seven-row hero and four chrome rows total 23.
+#: LEADERBOARD has an eight-row minimum and scrolls internally with all 999
+#: stress seats retained. Taller is lit through 22 and dark from 23; both
+#: owner 35-row and 31-row terminals fit vertically.
+SURF_BOARD_FULL_LAYOUT_ROWS = 23
 
 #: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
 #:
@@ -1733,7 +1780,7 @@ MODE_AGENT = "agent"
 #: ``test_exactly_one_hero_shows_in_every_mode`` either way -- but only one of
 #: the two failures is visible to a reader who is not running the tests.
 #:
-#: **:data:`MODE_SWARM` and :data:`MODE_AGENT` are deliberately absent.**
+#: **MODE_SWARM, MODE_AGENT and MODE_BOARD are deliberately absent.**
 #: Each is a body with a hero of its own (:class:`SurfSwarmHero`,
 #: :class:`SurfSwarmAgentHero`, toggled in ``_show_mode`` the same way as
 #: :class:`SurfPool4UserHero`), and adding either here would paint two heroes
@@ -1994,13 +2041,16 @@ AGENT_BODY_ID = "surf-agent-body"
 #: Its floor equals SEAT content; the row is registered in _SCROLL_COLUMNS.
 AGENT_TOP_ID = "surf-agent-top"
 
-#: The two swarm bodies' ten widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
+#: The three swarm bodies' thirteen widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
 #: order. ``_do_refresh`` dispatches each one's contract keys by class name
 #: off this tuple, so a widget the export names and this tuple does not
 #: would never be painted -- ``tests/screens/test_surf_screen.py`` binds the
 #: two by identity of their name sets (the one legitimate hand-typed copy:
 #: the export cannot name classes without importing widgets into ``data/``).
 _SWARM_PANELS = (
+    SurfSwarmBoardHero,
+    SurfSwarmLeaderboard,
+    SurfSwarmFleet,
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmThroughput,
@@ -2256,6 +2306,7 @@ class SurfScreen(DashboardScreen):
         # shape, asking for an Identity.md NFT id instead of a wallet. Free
         # on this screen, in the app and in `DataTable`'s own bindings.
         Binding("i", "set_seat", "Seat", show=False),
+        Binding("b", "toggle_board", "Board", show=False),
         Binding("escape", "show_dashboard", show=False),
     ]
 
@@ -2320,7 +2371,7 @@ class SurfScreen(DashboardScreen):
     #: that shortens if a fourth ever has to fit, for ``4 market``'s own
     #: reason: ``l launchpad`` is the one the app-level acceptance test greps
     #: for as a contiguous string.
-    KEY_HINTS = "[dim]l launchpad · 4 pool4 · s swarm · a agent[/]"
+    KEY_HINTS = "[dim]l launchpad · 4 pool4 · s swarm · a agent · b board[/]"
 
     #: The words the status bar shows for this dashboard.
     GAME_NAME = "surf"
@@ -2949,6 +3000,29 @@ class SurfScreen(DashboardScreen):
         min-height: 8;
         padding: 0 1;
     }
+
+    SurfSwarmBoardHero { height: 7; }
+    SurfSwarmBoardHero > SurfSwarmBoardHeroBox {
+        width: 1fr;
+        height: 7;
+        padding: 0 1;
+        margin: 0 1;
+        border: solid $panel;
+        background: $surface;
+        content-align: center top;
+        text-align: center;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
+    SurfScreen #surf-board-body {
+        height: 1fr;
+        margin: 1 0 0 0;
+        overflow-y: auto;
+        scrollbar-size: 1 1;
+        scrollbar-gutter: stable;
+    }
+    SurfSwarmLeaderboard { width: 1fr; height: 1fr; min-height: 8; }
+    SurfSwarmFleet { width: 37; max-width: 37; height: auto; padding: 0 1; }
     """
 
     def __init__(
@@ -2976,7 +3050,7 @@ class SurfScreen(DashboardScreen):
     def compose(self) -> ComposeResult:
         yield Static(INITIAL_TITLE, id="title-bar")
 
-        # TWO heroes, one row, exactly one of them showing (curator's
+        # Shared hero row, exactly one hero showing (curator's
         # per-mode hero pattern). `#hero-row` itself is never hidden -- a
         # hero is on screen in every mode, as it always was -- but which one
         # is a function of `self._mode`, and `_show_mode` derives both
@@ -2991,6 +3065,7 @@ class SurfScreen(DashboardScreen):
             yield SurfPool4UserHero(classes="surf-hero")
             yield SurfSwarmHero(classes="surf-hero")
             yield SurfSwarmAgentHero(classes="surf-hero")
+            yield SurfSwarmBoardHero(classes="surf-hero")
 
         with Horizontal(id="middle-row"):
             yield SurfFeed()
@@ -3131,6 +3206,10 @@ class SurfScreen(DashboardScreen):
                 yield SurfSwarmSeatNodes()
             yield SurfSwarmSeatRecord()
 
+        with Horizontal(id=BOARD_BODY_ID):
+            yield SurfSwarmLeaderboard()
+            yield SurfSwarmFleet()
+
         yield StatusBar()
 
     # ------------------------------------------------------------------
@@ -3165,7 +3244,7 @@ class SurfScreen(DashboardScreen):
     # ------------------------------------------------------------------
 
     def _show_mode(self) -> None:
-        """Apply ``self._mode`` to the five bodies' -- and all three heroes' -- visibility.
+        """Apply ``self._mode`` to every body and hero's visibility.
 
         **Curator's ``y``/``f`` shape, hero swap included since 2026-09-11.**
         This docstring said the opposite until then: *"curator mounts a second
@@ -3214,16 +3293,18 @@ class SurfScreen(DashboardScreen):
             )
             self.query_one(f"#{SWARM_BODY_ID}").display = self._mode == MODE_SWARM
             self.query_one(f"#{AGENT_BODY_ID}").display = self._mode == MODE_AGENT
+            self.query_one(f"#{BOARD_BODY_ID}").display = self._mode == MODE_BOARD
             # The heroes, each answering to ``self._mode`` and never to the
             # other. ``SurfHero.display = not market_hero`` is available and
             # is the ``not launchpad`` defect one layer out: it would show
-            # the wrong hero on a sixth body rather than no hero, and a wrong
+            # the wrong hero on a new body rather than no hero, and a wrong
             # hero is the one of those two a reader cannot see is wrong.
             self.query_one(SurfPool4UserHero).display = (
                 self._mode == MODE_POOL4_USER
             )
             self.query_one(SurfSwarmHero).display = self._mode == MODE_SWARM
             self.query_one(SurfSwarmAgentHero).display = self._mode == MODE_AGENT
+            self.query_one(SurfSwarmBoardHero).display = self._mode == MODE_BOARD
             self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("surf mode toggle failed: %s", exc)
@@ -3318,6 +3399,25 @@ class SurfScreen(DashboardScreen):
             return
         self._mode = MODE_AGENT
         self._show_mode()
+
+    def action_toggle_board(self) -> None:
+        if self._mode == MODE_BOARD:
+            self.action_show_dashboard()
+            return
+        self._mode = MODE_BOARD
+        self._show_mode()
+        self.query_one(SurfSwarmLeaderboard).query_one(DataTable).focus()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        if self._mode != MODE_BOARD or event.data_table.id != SurfSwarmLeaderboard.TABLE_ID:
+            return
+        value = self.query_one(SurfSwarmLeaderboard).token_for_row(event.row_key)
+        token = parse_seat(str(value)) if value is not None else None
+        if token is None:
+            return
+        event.stop()
+        config.save_seat(token)
+        self._seat_entered(token)
 
     def action_set_seat(self) -> None:
         """``i`` -- prompt for the seat the AGENT body is about.
@@ -3428,6 +3528,7 @@ class SurfScreen(DashboardScreen):
         # The AGENT body (WP7), the same shape: the body, and the one row
         # whose SEAT panel is ``height: auto``.
         MODE_AGENT: (f"#{AGENT_BODY_ID}", f"#{AGENT_TOP_ID}"),
+        MODE_BOARD: (f"#{BOARD_BODY_ID}",),
     }
 
     def _rail_is_cut(self) -> bool:

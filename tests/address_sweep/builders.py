@@ -41,6 +41,7 @@ from maxpane_dashboard.screens.surf import (
     SURF_POOL4_FULL_LAYOUT_ROWS,
     SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
     SURF_POOL4_USER_FULL_LAYOUT_ROWS,
+    SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS,
     SURF_AGENT_FULL_LAYOUT_COLUMNS,
     SURF_AGENT_FULL_LAYOUT_ROWS,
     SURF_SWARM_FULL_LAYOUT_COLUMNS,
@@ -637,7 +638,7 @@ CASES: tuple[SweepCase, ...] = (
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,
-        views=((), ("l",), ("e",), ("4",), ("s",), ("a",)),
+        views=((), ("l",), ("e",), ("4",), ("s",), ("a",), ("b",)),
         seeded=SURF_SEEDED,
         pins=(
             (SURF_FULL_LAYOUT_COLUMNS, None),
@@ -646,6 +647,7 @@ CASES: tuple[SweepCase, ...] = (
             (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_POOL4_USER_FULL_LAYOUT_ROWS),
             (SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS),
             (SURF_AGENT_FULL_LAYOUT_COLUMNS, SURF_AGENT_FULL_LAYOUT_ROWS),
+            (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS),
         ),
     ),
     SweepCase(
