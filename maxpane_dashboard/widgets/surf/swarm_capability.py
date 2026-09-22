@@ -3,7 +3,7 @@
 A :class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase` --
 the tiered-table mechanics (width ladder, columns re-installed on a tier
 change, the ``as of`` marker and widen hint in the title, ``None`` vs ``[]``,
-the footer line) are the base's; this module knows the seven columns and the
+the footer line) are the base's; this module knows the nine columns and the
 summary footer.
 
 Third-party text
@@ -31,6 +31,7 @@ from maxpane_dashboard.widgets.surf._fmt import DASH
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
 
 __all__ = [
+    "BASELINE_WIDTH",
     "COMPACT_WIDTH",
     "FULL_WIDTH",
     "TIGHT_WIDTH",
@@ -72,15 +73,19 @@ _SPECS = (
     ("judge", "judge", _JUDGE_COLS),
     ("checks", "checks", _CHECKS_COLS),
     ("requires", "requires", _REQUIRES_COLS),
+    ("inference", "inf", 8),
+    ("record", "acc/att", 13),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
-_COMPACT = tuple(key for key in _ALL if key != "checks")
+_BASELINE = tuple(key for key in _ALL if key not in ("inference", "record"))
+_COMPACT = tuple(key for key in _BASELINE if key != "checks")
 _TIGHT = tuple(key for key in _COMPACT if key != "judge")
 
-#: ``full``: all seven columns -- 89 cells. The table's own need; the panel
-#: adds :attr:`SwarmTableBase.GUTTER_COLS` for its scrollbar (the catalogue is
-#: 30 rows and scrolls in any body-sized slot).
-FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)                    # 89
+#: Full adds the captured inference word (standard/economy) and five-digit
+#: accepted/attempt counts. The original seven columns stay at the baseline
+#: tier, preserving the 141-column SWARM guarantee.
+FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)
+BASELINE_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _BASELINE)
 #: ``compact``: ``checks`` shed (the cheapest column that is not the point of
 #: the panel) -- 80.
 COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)  # 80
@@ -108,13 +113,13 @@ class SurfSwarmCapability(SwarmTableBase):
     CURSOR_TYPE = "row"
 
     COLUMN_SPECS = _SPECS
-    TIER_COLUMNS = {"full": _ALL, "compact": _COMPACT, "tight": _TIGHT}
+    TIER_COLUMNS = {"full": _ALL, "baseline": _BASELINE, "compact": _COMPACT, "tight": _TIGHT}
     LADDER = rowfit.Ladder(
-        ("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH)
+        ("full", FULL_WIDTH), ("baseline", BASELINE_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH)
     )
 
-    LOADING_ROW = (LOADING, "", "", "", "", "", "")
-    EMPTY_ROW = ("No data", "", "", "", "", "", "")
+    LOADING_ROW = (LOADING, "", "", "", "", "", "", "", "")
+    EMPTY_ROW = ("No data", "", "", "", "", "", "", "", "")
 
     def update_data(
         self,
@@ -135,6 +140,8 @@ class SurfSwarmCapability(SwarmTableBase):
             "judge": sanitize_cell(item.get("judge"), _JUDGE_COLS) or DASH,
             "checks": sanitize_cell(item.get("checks"), _CHECKS_COLS) or DASH,
             "requires": _requires_cell(item.get("requires")),
+            "inference": sanitize_cell(item.get("inference"), 8) or DASH,
+            "record": sanitize_cell(f"{fmt_int(item.get('accepted'))}/{fmt_int(item.get('attempts'))}", 13),
         }
 
     def build_footer(self, summary) -> tuple[str, ...] | None:

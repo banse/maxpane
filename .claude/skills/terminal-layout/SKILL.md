@@ -20,7 +20,7 @@ it. This file is the method; the constants are the record.
 | surf `p` pool4 (key `e`, experimental, since 2026-09-15) | 99 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market (hint `4 pl4`) | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `s` swarm (hint `s swm`; 116 · 28 from 2026-09-16, re-swept for swarm v2 on 2026-09-21) | 141 cols · 42 rows | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `a` agent (SEAT, BY NODE, RECORD; re-swept 2026-09-22) | 138 cols · 32 rows; RECORD clears at 297 | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
+| surf `a` agent (SEAT, BY NODE, RECORD; re-swept 2026-09-22) | 138 cols · 32 rows; RECORD clears at 204 | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
 | surf `b` board (LEADERBOARD beside FLEET) | 141 cols · 23 rows | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |

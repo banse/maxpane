@@ -218,3 +218,26 @@ def test_cached_answers_match_exact_submission_hash_in_both_seat_orders():
               for hash_ in order]
         result=sw.enrich_work_rows(rows,answers)
         assert [row['answer'] for row in result]==[answers[job][hash_]['answer'] for hash_ in order]
+
+
+@pytest.mark.parametrize(('source','expected'),[
+    ('Used "/Users/Alice Smith/private/answer.json". Next.', 'Used "answer.json".'),
+    ('Used `/Users/Alice Smith/private/answer.json`. Next.', 'Used answer.json.'),
+    (r'Used "C:\Users\Alice Smith\private\answer.json". Next.', 'Used "answer.json".'),
+    (r'Used `C:\Users\Alice Smith\private\answer.json`. Next.', 'Used answer.json.'),
+])
+def test_delimited_absolute_paths_with_spaces_keep_only_basename(source,expected):
+    assert sw.answer_sentence(source)==expected
+    job,key,value=point();value['answer']=source
+    assert sw.coerce_answers_slot({job:{key:value}}) is None
+
+
+@pytest.mark.parametrize(('source','expected'),[
+    ('Used C:/Users/Alice/private/answer.json. Next.', 'Used answer.json.'),
+    ('Used "C:/Users/Alice Smith/private/answer.json". Next.', 'Used "answer.json".'),
+    ('Used `C:/Users/Alice Smith/private/answer.json`. Next.', 'Used answer.json.'),
+])
+def test_windows_forward_slash_absolute_paths_keep_only_basename(source,expected):
+    assert sw.answer_sentence(source)==expected
+    job,key,value=point();value['answer']=source
+    assert sw.coerce_answers_slot({job:{key:value}}) is None

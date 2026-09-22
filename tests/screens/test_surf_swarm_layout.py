@@ -34,7 +34,7 @@ import datetime as dt
 
 import pytest
 from tests.screens.test_surf_screen import _status_bar_whole
-from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v3
+from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v3, swarm_capture_v4
 from textual.widgets import DataTable
 from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
 
@@ -51,6 +51,7 @@ from maxpane_dashboard.screens.surf import (
     SURF_AGENT_FULL_LAYOUT_COLUMNS,
     SURF_AGENT_FULL_LAYOUT_ROWS,
     RECORD_NEVER_CLEARS_BELOW,
+    CAPABILITY_OPTIONAL_FULL_COLUMNS,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
     SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
     SURF_SWARM_FULL_LAYOUT_COLUMNS,
@@ -303,7 +304,7 @@ def _worst_swarm_payload() -> dict:
 
 def _worst_agent_payload() -> dict:
     """Thirty nodes, 999 teammates, 64-character keys and five-digit counts;
-    forty work rows with launch names and 400-character objectives. Distinct
+    forty work rows with launch names and 500-character answers. Distinct
     reviews and raw entries differ; node, status and role totals agree. Source
     rows come from committed captures, then their values are stretched."""
     k = _corpus_keys()
@@ -314,10 +315,13 @@ def _worst_agent_payload() -> dict:
         row["job_id"] = f"{i:08x}-worst-case-job"
         row["node_key"] = "x"*64
         row["launch"] = "evm_project"*6
-        row["objective"] = (
+        row["answer_state"] = "read"
+        row["model"] = "claude-sonnet-5"
+        row["took_s"] = 3840
+        row["answer"] = (
             "build the ERC-4626 vault and wire its deposit and withdraw paths "
             "through the launchpad adapter, then re-sweep every pinned layout; " * 6
-        )[:400]
+        )[:500]
     nodes = _cycle(sw.seat_node_rows(seat0), 30)
     for i, row in enumerate(nodes):
         row.update(
@@ -386,6 +390,34 @@ def _v3_swarm_payload():
     names = ("job_5a4dfb13_dispatch_note", "job_33016bad_two_node_verdict", "job_0ed3e9f8_blocked")
     details = [swarm_capture_v3(name) for name in names]
     payload["swarm_inflight_rows"] = sw.inflight_rows(details, {row["id"]:row for row in details}, now_ts=1_790_042_100)
+    return payload
+
+
+def _polish_agent_payload():
+    """Committed v4 seat420 with exact captured submission matches; cap is40.
+
+    Job33016bad remains at its source index125, outside the displayed window.
+    The first two jobs have committed captures; other rows stay not_read.
+    """
+    payload = _capture420_payload()
+    payload.update(_seat_keys(swarm_capture_v4("seat_420")))
+    payload["swarm_seat_live"] = sw.seat_live(swarm_capture_v4("workers"), 420)
+    answers = {}
+    for name in ("submissions_73d7dcd7", "submissions_76296dcd", "submissions_33016bad"):
+        capture = swarm_capture_v4(name)
+        for item in capture["submissions"]:
+            if int(item["seat"]["tokenId"]) != 420:
+                continue
+            point = sw.submission_answer(capture, capture["jobId"], item["hash"], 420)
+            answers.setdefault(capture["jobId"], {})[item["hash"]] = dict(point,read_ts=1000.,terminal=True)
+    payload["swarm_seat_work_rows"] = sw.enrich_work_rows(payload["swarm_seat_work_rows"], answers)
+    return payload
+
+
+def _polish_swarm_payload():
+    payload = _capture_payload()
+    payload["swarm_skill_rows"] = sw.skill_rows(swarm_capture_v4("skills")["skills"])
+    payload["swarm_skill_summary"] = skill_summary(payload["swarm_skill_rows"])
     return payload
 
 
@@ -473,10 +505,22 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict
         right = bar.query_one("#status-right")
         line = _screen_text(pilot.app).split("\n")[bar.region.y]
         status_whole = KEY_HINT_PHRASE in line and _status_bar_whole(pilot.app)
+        # Only the explicitly optional two CAPABILITY columns may be shed
+        # at baseline. Every original column, no clipping and no hidden scroll
+        # remain prerequisites; this is not a whole-panel exception.
+        optional_only = set()
+        if key == "s":
+            capability = widgets["SurfSwarmCapability"]
+            columns = tuple(str(c.label) for c in capability.query_one(DataTable).columns.values())
+            if (capability._tier == "baseline" and columns ==
+                    ("skill", "v", "role", "tier", "judge", "checks", "requires")
+                    and not capability._clipped and not hidden["SurfSwarmCapability"]
+                    and not any(name == "SurfSwarmCapability" for name, _ in clipped)):
+                optional_only.add("SurfSwarmCapability")
         return {
             "status_whole": status_whole,
             "marked": marked,
-            "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key],
+            "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key] - optional_only,
             "tiers": {name: getattr(w, "_tier", None) for name, w in widgets.items()},
             "widths": {name: w.size.width for name, w in widgets.items()},
             "heights": {name: w.region.height for name, w in widgets.items()},
@@ -540,7 +584,10 @@ async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> N
     r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _COLUMN_SWEEP_HEIGHT), key)
     assert not r["overflow"], (key, payload_name, r["overflow"])
     _assert_whole(r, f"{key}/{payload_name} at the pin")
-    if _BINDING_PANEL[key] != "StatusBar":
+    if _BINDING_PANEL[key] == "SurfSwarmCapability":
+        assert r["tiers"]["SurfSwarmCapability"] == "baseline", r["tiers"]
+        assert r["columns"]["SurfSwarmCapability"] == ("skill","v","role","tier","judge","checks","requires")
+    elif _BINDING_PANEL[key] != "StatusBar":
         assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
     assert r["status_whole"]
 
@@ -581,17 +628,6 @@ async def test_the_exceptions_are_marked_at_the_pin_and_clear_where_the_blocks_s
         assert name not in at["marked"], (name, edge, sorted(at["marked"]))
         assert at["tiers"][name] == "full", at["tiers"]
 
-    at_pin = await _render(_capture_payload(), (SURF_AGENT_FULL_LAYOUT_COLUMNS, _COLUMN_SWEEP_HEIGHT), "a")
-    assert "SurfSwarmSeatRecord" in at_pin["marked"], sorted(at_pin["marked"])
-    below = await _render(_capture_payload(), (RECORD_NEVER_CLEARS_BELOW - 1, _COLUMN_SWEEP_HEIGHT), "a")
-    at = await _render(_capture_payload(), (RECORD_NEVER_CLEARS_BELOW, _COLUMN_SWEEP_HEIGHT), "a")
-    assert "SurfSwarmSeatRecord" in below["marked"], sorted(below["marked"])
-    assert "SurfSwarmSeatRecord" not in at["marked"], sorted(at["marked"])
-    assert at["tiers"]["SurfSwarmSeatRecord"] == "full", at["tiers"]
-    worst = await _render(_worst_agent_payload(), (RECORD_NEVER_CLEARS_BELOW, _COLUMN_SWEEP_HEIGHT), "a")
-    assert "SurfSwarmSeatRecord" in worst["marked"], (
-        "a 400-character objective cleared where the capture's 198 do -- the block says it never does"
-    )
 
 
 async def test_launches_hides_no_column_from_the_measured_width() -> None:
@@ -879,3 +915,52 @@ async def test_board_polish_row_pin_is_tight_and_keeps_fleet_whole(kind):
     assert not at['taller'] and not any(at['scroll'].values()), at
     assert at['heights']['SurfSwarmFleet'] == 16, at
     _assert_board_whole(at,kind)
+
+
+async def test_polish_record_answer_clearance_matches_committed_v4_window():
+    payload=_polish_agent_payload()
+    rows=payload["swarm_seat_work_rows"]
+    assert len(rows)==191 and rows[0]["job_id"].startswith("76296dcd")
+    assert rows[1]["job_id"].startswith("73d7dcd7") and rows[125]["job_id"].startswith("33016bad")
+    name="SurfSwarmSeatRecord"
+    for width,marked in ((RECORD_NEVER_CLEARS_BELOW-1,True),(RECORD_NEVER_CLEARS_BELOW,False)):
+        r=await _render(payload,(width,80),"a")
+        assert (name in r["marked"])==marked, (width,r["marked"])
+        assert not r["hidden"][name] and not r["overflow"]
+        assert r["columns"][name]==("when","job","node","role","state","launch","sub","model","took","answer")
+    stress=await _render(_worst_agent_payload(),(RECORD_NEVER_CLEARS_BELOW,80),"a")
+    assert name in stress["marked"], "the 500-character answer must still advertise actual clipping"
+
+
+async def test_polish_agent_retains_existing_pin_with_enriched_record():
+    for rows,taller in ((31,True),(32,False)):
+        r=await _render(_polish_agent_payload(),(138,rows),"a")
+        assert r["taller"]==taller
+        assert not r["clipped"] and not r["overflow"] and not any(r["hidden"].values())
+        assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","state","model","took","answer")
+
+
+async def test_polish_capability_optional_tier_preserves_baseline_and_clears_at_measured_onset():
+    name="SurfSwarmCapability"
+    original=("skill","v","role","tier","judge","checks","requires")
+    for width in (141,CAPABILITY_OPTIONAL_FULL_COLUMNS-1,CAPABILITY_OPTIONAL_FULL_COLUMNS):
+        r=await _render(_polish_swarm_payload(),(width,42),"s")
+        full=width>=CAPABILITY_OPTIONAL_FULL_COLUMNS
+        assert r["columns"][name]==original+(("inf","acc/att") if full else ())
+        assert (name in r["marked"])== (not full)
+        assert name not in r["marked_besides_exceptions"]
+        assert r["tiers"][name]==("full" if full else "baseline")
+        assert not r["hidden"][name] and not r["clipped"] and not r["overflow"] and not r["taller"]
+    below=await _render(_polish_swarm_payload(),(140,42),"s")
+    assert "checks" not in below["columns"][name]
+    assert name in below["marked_besides_exceptions"]
+    short=await _render(_polish_swarm_payload(),(141,41),"s")
+    assert short["taller"]
+
+
+def test_polish_capability_full_tier_cap_agrees_in_both_stylesheets():
+    import re
+    from tests.test_surf_registration import _surf_block
+    for css in (SurfScreen.DEFAULT_CSS,_surf_block()):
+        rule=re.search(r'SurfSwarmCapability\s*\{([^}]+)\}',css).group(1)
+        assert re.search(r'max-width:\s*118;',rule),rule

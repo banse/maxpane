@@ -1617,6 +1617,10 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: Those payload-dependent widths do not raise the body's pin. A fitting
 #: literal ellipsis does not light widen. Unchanged template/objective cells
 #: retain their existing literal-text ellipsis behavior.
+#: WP6 amendment: CAPABILITY full now includes two optional columns. Its
+#: baseline tier retains all seven original columns at141; only optional
+#: inf/acc-att are shed through165 and advertised by widen. Full clears166.
+#: The cap grows93 to118; at141 the original91-cell allocation is unchanged.
 SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
@@ -1671,9 +1675,10 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #:
 #: Hero content remains whole from 134: STATUS's worker clock and three body
 #: lines stay independent of seats; ACCEPTED retains the seats clock.
-#: RECORD geometry is unchanged: selected tight columns clear from 61 on
-#: original captures,63 on duplicates/stress; compact 85, full 119. Objectives
-#: keep widen while cut; RECORD_NEVER_CLEARS_BELOW is unchanged.
+#: WP6 RECORD adds model/took and replaces objective with an elastic answer.
+#: At138 compact keeps when/job/node/state/model/took/answer without horizontal
+#: clipping; role/launch/sub are intentionally shed. Full order and onset are
+#: at RECORD_NEVER_CLEARS_BELOW below. The eight-row floor is unchanged.
 SURF_AGENT_FULL_LAYOUT_COLUMNS = 138
 
 #: BY NODE needs 73 outer columns; the body/top gutters reserve two more.
@@ -1691,12 +1696,20 @@ AGENT_NODE_WIDTH_RESERVE = 75
 #: Owner 119 x 35 fits vertically;138 x 31 still shows taller. F 46 can close.
 SURF_AGENT_FULL_LAYOUT_ROWS = 32
 
-#: RECORD's objective-clearance onset on both committed #0 and #420 captures,
-#: measured by compositing successive widths 225–297 beyond the body sweep. The
-#: date, launch and plain submission prefix add fixed columns; objectives
-#: still take every remaining cell. The worst 400-character objectives
-#: remain visibly clipped here. This is a content exception, not a body pin.
-RECORD_NEVER_CLEARS_BELOW = 297
+#: RECORD answer-clearance onset on enriched committed v4 seat420, first40
+#: source-order rows: exact captures cover displayed jobs76296dcd (27 cells)
+#: and73d7dcd7 (80 cells); captured job33016bad is index125, outside the cap.
+#: Dead fixture compositor: marked203 (answer79), whole204 (answer80),205;
+#: selected columns have no horizontal scroll. Five-hundred-character stress
+#: answers still clip here. This is a content exception, not a body pin.
+RECORD_NEVER_CLEARS_BELOW = 204
+
+#: CAPABILITY optional inf/acc-att columns: baseline keeps every original
+#: column from141. At165 its115-cell panel sheds only these two extras;
+#: at166 panel116/budget114 shows all nine columns without horizontal scroll.
+#: Measured in situ on committed v4 skills at42 rows; SWARM remains141x42.
+CAPABILITY_OPTIONAL_FULL_COLUMNS = 166
+
 
 #: The **three** bodies ``l``/``p``/``escape`` swap between, named on
 #: curator's MODE_DASHBOARD/MODE_ANALYSIS precedent.
@@ -2046,7 +2059,7 @@ SWARM_TOP_ID = "surf-swarm-top"
 SWARM_BOTTOM_ID = "surf-swarm-bottom"
 
 #: The AGENT container: a horizontal SEAT | BY NODE row above a full-width
-#: RECORD, keeping its objective column visible at the body pin.
+#: RECORD, keeping its answer column visible at the body pin.
 AGENT_BODY_ID = "surf-agent-body"
 
 #: The AGENT top row: SEAT is auto-height, BY NODE scrolls internally.
@@ -2950,7 +2963,7 @@ class SurfScreen(DashboardScreen):
     }
     SurfScreen SurfSwarmCapability {
         width: 1fr;
-        max-width: 93;
+        max-width: 118;
         height: 1fr;
         min-height: 8;
         padding: 0 1;

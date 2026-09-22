@@ -24,7 +24,7 @@ from maxpane_dashboard.widgets.surf.swarm_seat_record import (
     EMPTY_LINE,
     FULL_WIDTH,
     JOB_COLS,
-    OBJECTIVE_MIN_COLS,
+    ANSWER_MIN_COLS,
     TIGHT_WIDTH,
     SurfSwarmSeatRecord,
 )
@@ -37,9 +37,9 @@ ROWS_420 = seat_work_rows(swarm_seat_capture("seat_420"))
 ROWS_0 = seat_work_rows(swarm_seat_capture("seat_0"))
 NEWEST = ROWS_420[0]
 AS_OF = "04:06"
-#: Wide enough for every column at ``full`` plus ~45 cells of objective; tall
+#: Wide enough for every column at ``full`` plus room for the answer; tall
 #: enough for #420's twelve rows, the header, the title and a footer.
-SIZE = (130, 20)
+SIZE = (180, 20)
 
 
 def _job(row) -> str:
@@ -145,21 +145,22 @@ async def test_a_work_row_renders_every_column():
     assert hhmm(NEWEST["accepted_ts"]) in row
     assert NEWEST["job_id"][JOB_COLS:JOB_COLS + 4] not in row
     assert NEWEST["node_key"] in row and NEWEST["role"] in row and NEWEST["job_state"] in row
-    assert NEWEST["objective"][:30] in row
+    assert "not read" in row and NEWEST["objective"] not in row
     text = "\n".join(lines)
     assert "RECORD" in text and f"as of {AS_OF}" in text
-    header = _row_with(lines, "objective").split()
-    assert header == ["when", "job", "node", "role", "state", "launch", "sub", "objective"]
+    header = _row_with(lines, "answer").split()
+    assert header == ["when", "job", "node", "role", "state", "launch", "sub", "model", "took", "answer"]
 
 
-async def test_the_objective_is_clipped_with_an_ellipsis_and_the_title_says_widen():
-    lines = await _record()
+async def test_the_answer_is_clipped_with_an_ellipsis_and_the_title_says_widen():
+    long = dict(NEWEST, answer_state="read", answer="answer "*100)
+    lines = await _record(swarm_seat_work_rows=[long])
     row = _row_with(lines, _job(NEWEST))
-    assert NEWEST["objective"] not in row and row.rstrip().endswith("…")
+    assert long["answer"] not in row and row.rstrip().endswith("…")
     assert "‹" in "\n".join(lines)
-    short = [dict(NEWEST, objective="build a hook")]
+    short = [dict(NEWEST, answer_state="read", answer="built a hook")]
     text = "\n".join(await _record(swarm_seat_work_rows=short))
-    assert "build a hook" in text and "‹" not in text, "an objective that fits raises no hint"
+    assert "built a hook" in text and "‹" not in text, "an answer that fits raises no hint"
 
 
 async def test_the_state_word_is_coloured_on_the_raw_word():
@@ -186,12 +187,12 @@ async def test_the_state_word_is_coloured_on_the_raw_word():
         assert failed == Color.parse("red").get_truecolor(theme)
 
 
-async def test_a_hostile_objective_and_node_key_render_literally_and_never_raise():
-    hostile = dict(NEWEST, objective="[/x]PWNED objective", node_key="[/y]NODE",
+async def test_a_hostile_answer_and_node_key_render_literally_and_never_raise():
+    hostile = dict(NEWEST, answer_state="read", answer="[/x]PWNED answer", node_key="[/y]NODE",
                    role="[$error]", job_state="[bold]")
     lines = await _record(swarm_seat_work_rows=[hostile], region_only=True)
     text = "\n".join(lines)
-    assert "PWNED objective" in text and "NODE" in text
+    assert "PWNED answer" in text and "NODE" in text
     assert "[" not in text and "]" not in text
 
 
@@ -199,7 +200,7 @@ async def test_a_malformed_row_field_dashes_and_a_non_dict_row_is_skipped():
     bad = dict(NEWEST, accepted_ts="yesterday", node_key=None, objective=None, job_id=7)
     lines = await _record(swarm_seat_work_rows=[bad, "garbage", ROWS_420[1]])
     row = _row_with(lines, "??:??")
-    assert row.count("--") >= 3
+    assert row.count("--") >= 2
     assert _job(ROWS_420[1]) in "\n".join(lines)
 
 
@@ -219,26 +220,26 @@ async def test_rows_past_the_cap_are_counted_as_older():
 
 def test_the_tier_thresholds_descend():
     assert FULL_WIDTH > COMPACT_WIDTH > TIGHT_WIDTH > 0
-    assert OBJECTIVE_MIN_COLS > 0
+    assert ANSWER_MIN_COLS > 0
 
 
 async def test_one_below_full_sheds_role_and_says_widen():
     gutter = SwarmTableBase.GUTTER_COLS
-    row = [dict(NEWEST, objective="fits")]
+    row = [dict(NEWEST, answer_state="read", answer="fits")]
     full_lines = await _record((FULL_WIDTH + gutter, 12), swarm_seat_work_rows=row)
     compact_lines = await _record((FULL_WIDTH + gutter - 1, 12), swarm_seat_work_rows=row)
     full_header = _row_with(full_lines, "when").split()
     compact_header = _row_with(compact_lines, "when").split()
     assert "role" in full_header and "‹" not in "\n".join(full_lines)
     assert "role" not in compact_header and "‹" in "\n".join(compact_lines)
-    assert "objective" in compact_header, "compact keeps the objective"
+    assert "answer" in compact_header, "compact keeps the answer"
 
 
-async def test_one_below_compact_sheds_the_objective():
+async def test_one_below_compact_sheds_the_answer():
     gutter = SwarmTableBase.GUTTER_COLS
     lines = await _record((COMPACT_WIDTH + gutter - 1, 12), swarm_seat_work_rows=[NEWEST])
     header = _row_with(lines, "when").split()
-    assert "objective" not in header and "‹" in "\n".join(lines)
+    assert "answer" not in header and "‹" in "\n".join(lines)
     assert NEWEST["node_key"] in "\n".join(lines)
 
 async def test_dates_survive_midnight_and_launch_submission_are_plain():
@@ -251,3 +252,78 @@ async def test_dates_survive_midnight_and_launch_submission_are_plain():
         assert f"{mmdd(row['accepted_ts'])} {hhmm(row['accepted_ts'])}" in text
     assert "evm_project" in text and "abababab" in text and "—" in text
     assert "⧉" not in text
+
+
+import pytest
+
+
+@pytest.mark.parametrize('state,word',[
+    ('read','Built the artifact.'),('not_read','not read'),('unavailable','unavailable'),
+    ('not_served','not served'),('no_reply','no reply'),
+])
+async def test_polish_answer_states_and_same_read_usage(state,word):
+    row=dict(NEWEST, answer_state=state,answer='Built the artifact.',model='claude-sonnet-5',took_s=420,
+             objective='OBJECTIVE MUST NOT PAINT',launch='evm_project')
+    lines=await _record((200,12),swarm_seat_work_rows=[row])
+    header=_row_with(lines,'when').split()
+    assert header==['when','job','node','role','state','launch','sub','model','took','answer']
+    line=_row_with(lines,_job(row))
+    assert word in line and 'OBJECTIVE MUST NOT PAINT' not in '\n'.join(lines)
+    if state in ('read','no_reply'):
+        assert 'claude-sonnet-5' in line and '7m' in line
+    else:
+        assert 'claude-sonnet-5' not in line and '7m' not in line and line.count('—')==2
+
+
+@pytest.mark.parametrize('seconds,expected',[(420,'7m'),(3840,'1h 04m'),(0,'0m'),(None,'—')])
+async def test_polish_duration_and_missing_model(seconds,expected):
+    row=dict(NEWEST,answer_state='read',answer='Done.',model=None,took_s=seconds,launch='evm_project')
+    line=_row_with(await _record((200,12),swarm_seat_work_rows=[row]),_job(row))
+    assert expected in line and line.count('—')==(2 if seconds is None else 1)
+
+
+async def test_polish_answer_sanitization_and_actual_clipping_drive_widen():
+    row=dict(NEWEST,answer_state='read',answer='[/x]'*100+'界'*250,model='[$success]model',took_s=3840)
+    text='\n'.join(await _record((200,12),swarm_seat_work_rows=[row]))
+    assert '界' in text and '…' in text and '‹' in text and '[/x]' not in text
+    row['answer']='[/x]'*100+'fits …'
+    text='\n'.join(await _record((200,12),swarm_seat_work_rows=[row]))
+    assert 'fits …' in text and '‹' not in text and '[$success]' not in text
+
+
+async def test_polish_answer_unavailable_yellow_and_other_states_dim_in_composite():
+    class _A(App):
+        def compose(self):yield SurfSwarmSeatRecord()
+    rows=[dict(NEWEST,job_id=f'{i:08x}',answer_state=state,answer=None,model=None,took_s=None)
+          for i,state in enumerate(('not_read','unavailable','not_served','no_reply'))]
+    async with _A().run_test(size=(200,12)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmSeatRecord)
+        widget.update_data(swarm_seat_work_rows=rows,swarm_seat_state='ok')
+        await pilot.pause()
+        lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        colors=[]
+        for word in ('not read','unavailable','not served','no reply'):
+            y=next(i for i,line in enumerate(lines) if word in line)
+            style=pilot.app.screen.get_style_at(lines[y].index(word),y)
+            colors.append(style.color)
+            if word=='unavailable':
+                assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[3]
+            else:
+                # Zebra backgrounds alter the resolved dim RGB per row. Compare
+                # against the plain job cell on that same composited row.
+                job=rows[('not read','unavailable','not served','no reply').index(word)]['job_id']
+                assert style.color!=pilot.app.screen.get_style_at(lines[y].index(job),y).color
+
+
+async def test_polish_committed_hostile_submission_reaches_record_safely():
+    from tests.surf_swarm_fixtures import swarm_capture_v4
+    from maxpane_dashboard.data.surf_swarm import submission_answer,enrich_work_rows
+    payload=swarm_capture_v4('submissions_hostile')
+    item=next(item for item in payload['submissions'] if int(item['seat']['tokenId'])==420)
+    point=submission_answer(payload,payload['jobId'],item['hash'],420)
+    rows=enrich_work_rows([dict(NEWEST,job_id=payload['jobId'],submission_hash=item['hash'])],
+                         {payload['jobId']:{item['hash']:dict(point,read_ts=1000.,terminal=True)}})
+    text='\n'.join(await _record((200,12),swarm_seat_work_rows=rows))
+    assert 'Created answer.json in report.md and result.txt' in text
+    assert 'claude-sonnet-5' in text and '0m' in text and '…' in text and '‹' in text
+    assert '[x]' not in text and '/Users/' not in text and '/home/' not in text and '/root/' not in text

@@ -16,6 +16,7 @@ from textual.widgets import DataTable
 
 from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.surf.swarm_capability import (
+    BASELINE_WIDTH,
     COMPACT_WIDTH,
     FULL_WIDTH,
     TIGHT_WIDTH,
@@ -37,6 +38,7 @@ def _row(**over) -> dict:
     row = dict(
         skill_id="build-contract-project", version=2, role="implement", kind="code",
         tier=1, judge="verifier-rerun", checks="foundry", requires=[],
+        inference=None,attempts=None,accepted=None,rejected=None,pending=None,
     )
     row.update(over)
     return row
@@ -95,7 +97,7 @@ async def test_an_empty_list_is_a_real_negative_and_differs_from_none():
 
 def test_the_row_tuples_agree_with_the_column_count():
     width = len(SurfSwarmCapability.COLUMNS)
-    assert width == len(SurfSwarmCapability.COLUMN_SPECS) == 7
+    assert width == len(SurfSwarmCapability.COLUMN_SPECS) == 9
     assert len(SurfSwarmCapability.EMPTY_ROW) == width
     assert len(SurfSwarmCapability.LOADING_ROW) == width
 
@@ -108,19 +110,19 @@ async def test_null_tier_and_judge_render_a_dash_never_none():
                       swarm_scores_as_of_hhmm=AS_OF)
     line = _data_lines(text)[0]
     assert "None" not in text
-    assert line.count("--") == 4, line  # tier, judge, checks and the empty requires
+    assert line.count("--") == 7, line  # tier, judge, checks, requires, inference and both record halves
 
 
 async def test_requires_is_joined_and_empty_is_a_dash():
     """No captured skill lists two entries; a pair joins with ``, `` and, at 19
     cells against the 14-cell column, clips with a visible ``…``."""
-    text = await _cap(swarm_skill_rows=[_row(requires=["network", "tool:audio"]), _row(requires=[]),
-                                        _row(requires=["runtime:codex"])],
+    text = await _cap(swarm_skill_rows=[_row(inference="standard",accepted=1,attempts=2,requires=["network", "tool:audio"]), _row(inference="standard",accepted=1,attempts=2,requires=[]),
+                                        _row(inference="standard",accepted=1,attempts=2,requires=["runtime:codex"])],
                       swarm_scores_as_of_hhmm=AS_OF)
     first, second, third = _data_lines(text)[:3]
     assert "network, tool" in first and "…" in first, first
     assert "tool:audio" not in first
-    assert second.rstrip().endswith("--"), second
+    assert "--" in second, second
     assert "runtime:codex" in third, third
 
 
@@ -211,7 +213,7 @@ async def test_a_hostile_role_word_in_the_summary_is_stripped_not_parsed():
 # -- tiers -----------------------------------------------------------------------------
 
 _FULL = FULL_WIDTH + GUTTER + 5
-_COMPACT = FULL_WIDTH + GUTTER - 1
+_COMPACT = BASELINE_WIDTH + GUTTER - 1
 _TIGHT = COMPACT_WIDTH + GUTTER - 1
 
 
@@ -257,8 +259,35 @@ async def test_the_full_tier_hides_no_column_at_its_own_threshold():
         await pilot.pause()
         table = pilot.app.query_one(DataTable)
         assert table.max_scroll_x == 0
-        assert len(table.columns) == 7
+        assert len(table.columns) == 9
         text = "\n".join("".join(seg.text for seg in strip)
                          for strip in pilot.app.screen._compositor.render_strips())
         assert re.search(r"skill\s+v\s+role\s+tier\s+judge\s+checks\s+requires", text), text
         assert "‹" not in text
+
+
+async def test_polish_full_tier_shows_inference_and_accepted_attempts():
+    from maxpane_dashboard.data.surf_swarm import skill_rows
+    from tests.surf_swarm_fixtures import swarm_capture_v4
+    rows=skill_rows(swarm_capture_v4('skills')['skills'])
+    text=await _cap((140,40),swarm_skill_rows=rows)
+    header=next(line for line in text.splitlines() if 'requires' in line)
+    assert 'inf' in header and 'acc/att' in header
+    assert 'standard' in text and 'economy' in text and '70/83' in text
+    assert '‹' not in text
+
+
+async def test_polish_baseline_tier_retains_every_original_column():
+    text=await _cap((91,40),swarm_skill_rows=[_row(inference='standard',accepted=0,attempts=0)])
+    header=next(line for line in text.splitlines() if 'requires' in line)
+    assert header.split()==['skill','v','role','tier','judge','checks','requires']
+    assert '‹' in text
+
+
+async def test_polish_optional_cells_keep_zero_missing_and_hostile_text_distinct():
+    rows=[_row(skill_id='zero',inference='[/x]standard',accepted=0,attempts=0),
+          _row(skill_id='missing',inference=None,accepted=None,attempts=2)]
+    text=await _cap((140,20),swarm_skill_rows=rows)
+    first,second=_data_lines(text)[:2]
+    assert 'standard' in first and '0/0' in first and '[/x]' not in text
+    assert '--/2' in second

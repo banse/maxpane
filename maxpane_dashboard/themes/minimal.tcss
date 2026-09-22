@@ -2543,10 +2543,10 @@ SurfScreen #surf-swarm-top {
     scrollbar-gutter: stable;
 }
 
-/* `swarm_capability.FULL_WIDTH` (89) + gutter 2 + padding 2. */
+/* Full optional capability columns (114) + gutter 2 + padding 2. */
 SurfSwarmCapability {
     width: 1fr;
-    max-width: 93;
+    max-width: 118;
     height: 1fr;
     min-height: 8;
     padding: 0 1;

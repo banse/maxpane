@@ -2,18 +2,20 @@
 
 Accepted timestamps include month/day across midnight. Launch is a sanitized
 name or a real-none em dash. Submission hashes are plain eight-character
-prefixes, never explorer links. Objective takes the remaining width and
+prefixes, never explorer links. Answer takes the remaining width and
 lights ``‹ widen`` when cut. The scrollable table caps at forty rows and
 explicitly counts older rows; the seat state hides stale rows before rendering.
 """
 
 from __future__ import annotations
 
+import math
+
 from rich.text import Text
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int
-from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell
+from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
@@ -24,7 +26,7 @@ __all__ = [
     "FULL_WIDTH",
     "JOB_COLS",
     "NODE_COLS",
-    "OBJECTIVE_MIN_COLS",
+    "ANSWER_MIN_COLS",
     "TIGHT_WIDTH",
     "SurfSwarmSeatRecord",
     "older_line",
@@ -55,9 +57,9 @@ _ROLE_COLS = 9
 #: vocabulary is open and a longer word clips with ``…``.
 _STATE_COLS = 9
 
-#: The objective floor, certified with the AGENT body in the seat-details
-#: WP4 compositor sweep. Above it the column takes every remaining cell.
-OBJECTIVE_MIN_COLS = 20
+#: The answer floor, certified with the AGENT body in polish WP6.
+#: Above it the column takes every remaining cell.
+ANSWER_MIN_COLS = 20
 
 _STATE_COLORS = {"completed": "green", "failed": "red", "cancelled": "red"}
 
@@ -69,11 +71,13 @@ _SPECS = (
     ("state", "state", _STATE_COLS),
     ("launch", "launch", 11),
     ("sub", "sub", 8),
-    ("objective", "objective", OBJECTIVE_MIN_COLS),
+    ("model", "model", 15),
+    ("took", "took", 6),
+    ("answer", "answer", ANSWER_MIN_COLS),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
 _COMPACT = tuple(key for key in _ALL if key not in ("role", "launch", "sub"))
-_TIGHT = tuple(key for key in _COMPACT if key != "objective")
+_TIGHT = tuple(key for key in _COMPACT if key not in ("answer", "model", "took"))
 _TIERS = {"full": _ALL, "compact": _COMPACT, "tight": _TIGHT}
 
 
@@ -140,7 +144,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._objective_cols = OBJECTIVE_MIN_COLS
+        self._answer_cols = ANSWER_MIN_COLS
         self._state: object = None
 
     # -- the contract -------------------------------------------------------
@@ -167,13 +171,13 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     # -- geometry -----------------------------------------------------------
 
     def column_width(self, key: str, tier: str, budget: int, width: int) -> int:
-        if key != "objective":
+        if key != "answer":
             return width
         keep = self.TIER_COLUMNS.get(tier, ())
-        others = [w for k, _l, w in _SPECS if k != "objective" and k in keep]
+        others = [w for k, _l, w in _SPECS if k != "answer" and k in keep]
         spare = budget - table_cols(others) - CELL_PADDING if budget > 0 else 0
-        self._objective_cols = max(OBJECTIVE_MIN_COLS, spare)
-        return self._objective_cols
+        self._answer_cols = max(ANSWER_MIN_COLS, spare)
+        return self._answer_cols
 
     # -- the cells ----------------------------------------------------------
 
@@ -193,14 +197,30 @@ class SurfSwarmSeatRecord(SwarmTableBase):
             "node": sanitize_cell(_word(item.get("node_key")), NODE_COLS),
             "role": sanitize_cell(_word(item.get("role")), _ROLE_COLS),
             "state": state_cell,
-            "objective": self._objective_cell(item),
+            "model": self._usage_cell(item, "model", 15),
+            "took": self._usage_cell(item, "took_s", 6),
+            "answer": self._answer_cell(item),
         }
 
-    def _objective_cell(self, item: dict) -> str:
-        text = flatten(item.get("objective"))
-        if not text:
-            return DASH
-        width = self._objective_cols
+    def _usage_cell(self, item: dict, key: str, width: int) -> str:
+        # Metadata belongs to the same successful exact-hash submission read.
+        if item.get("answer_state") not in ("read", "no_reply"):
+            return EMDASH
+        value = item.get(key)
+        if key == "took_s":
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                return EMDASH
+            minutes = int(value) // 60
+            value = f"{minutes // 60}h {minutes % 60:02d}m" if minutes >= 60 else f"{minutes}m"
+        return sanitize_cell(value, width) or EMDASH
+
+    def _answer_cell(self, item: dict) -> Text:
+        state = item.get("answer_state")
+        if state != "read":
+            words = {"not_read": "not read", "not_served": "not served", "no_reply": "no reply"}
+            return Text(words.get(state, "unavailable"), style="dim" if state in words else "yellow")
+        text = strip_tags(item.get("answer"))
+        width = self._answer_cols
         if rowfit.cell_len(text) > width:
             self._clipped = True
-        return sanitize_cell(text, width)
+        return Text.from_markup(sanitize_cell(text, width))

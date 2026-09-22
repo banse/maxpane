@@ -1443,6 +1443,10 @@ def answer_sentence(summary: str) -> str:
         text = text[:match.start()] + match[1] + text[end:]
         cursor = match.start() + len(match[1])
     text = re.sub(r"(?m)^\s*```[^\n]*\n?", "", text)
+    # Delimited absolute paths can contain spaces; reduce the entire path
+    # before dropping Markdown backticks, retaining ordinary quote marks.
+    text = re.sub(r"([\"'`])((?:[A-Za-z]:[\\/]|/)[^\r\n]*?)\1",
+                  lambda match: match[1] + re.split(r"[/\\]", match[2].rstrip('/\\'))[-1] + match[1], text)
     text = text.replace('`', '').replace('**', '').replace('__', '').replace('*', '')
     text = re.sub(r"(?m)^\s*(?:[-+•]|\d+[.)])\s+", "", text)
 
@@ -1452,7 +1456,7 @@ def answer_sentence(summary: str) -> str:
         name = re.split(r"[/\\]", path.rstrip('/\\'))[-1]
         return name + raw[len(path):]
 
-    text = re.sub(r"(?<![\w:/\\])(?:[A-Za-z]:\\|/)[^\s<>\"']+", basename, text)
+    text = re.sub(r"(?<![\w:/\\])(?:[A-Za-z]:[\\/]|/)[^\s<>\"']+", basename, text)
     first = re.split(r"(?<=[.!?])\s+|[\r\n]+", text.strip(), maxsplit=1)[0]
     return ' '.join(first.split())
 
