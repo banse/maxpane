@@ -701,7 +701,7 @@ SEAT RECORD shows `claude 2.1.278 (Claude Code)` / `codex codex-cli 0.149.0` —
 Prettifying is an owner call, not a parser of vendor strings (plan §9 D).
 
 
-## F39 — F42 — seat-details programme (2026-09-22)
+## F39 — F43 — seat-details programme (2026-09-22)
 
 ### F39 — RECORD and BY NODE cannot name the never-paired token — OPEN
 
@@ -734,7 +734,7 @@ explicit corrections under its CLAUDE.md precedence rule:
 When a valid seat payload lacks a `work` list, the existing manager path still publishes
 `swarm_seat_work_rows == []`, because `seat_work_rows` folds absent and empty input alike.
 RECORD can therefore show its real-empty message for data that was not supplied. This predates
-seat-details. New node rows preserve `None` when neither the reviews nor work list is available;
+seat-details. New node rows preserve `None` when either the reviews or work list is unavailable;
 the analogous RECORD fix remains separate. The manager should preserve a missing/invalid list
 as `None` and reserve `[]` for a successfully supplied empty list, with a regression test for both.
 
@@ -751,3 +751,16 @@ The existing `seat_work_rows` fold preserves source order. The seat-details spec
 the row fields but does not explicitly require a sorting change. If the owner wants canonical
 chronology, sort by parsed `accepted_ts` newest first, placing unknown timestamps last, and add a
 regression test with out-of-order and missing timestamps.
+
+
+### F43 — AGENT's status-bar width depends on the version and theme label — OPEN
+
+Before the §9 fix wave, the AGENT full-layout column pin was **131**, bound by
+`STATUS_BAR_WHOLE_FROM`; the body itself cleared at **117/118**. The status bar includes
+version and theme labels, so a version bump or theme rename can move that threshold without
+changing any panel. These are the earlier measurements; the fix wave's rendered-width changes
+require a fresh final measurement.
+
+Retain the composited status-bar coverage when updating those labels and re-measure the affected
+pin. A layout guarantee tied to label length remains a follow-up; this fix wave does not redesign
+the status bar.

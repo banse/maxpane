@@ -15,9 +15,10 @@ from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
 from maxpane_dashboard.widgets.surf.swarm_seat_record import seat_footer
 
+_WIN_COLS = 6
 _SPECS = (("node", "node", 22), ("roles", "roles", 9),
           ("reviewed", "reviewed", 8), ("won", "won", 6),
-          ("win", "win", 6), ("chain", "chain", 6))
+          ("win", "win", _WIN_COLS), ("chain", "chain", 6))
 _ALL = tuple(k for k, _, _ in _SPECS)
 _COMPACT = tuple(k for k in _ALL if k != "roles")
 _TIGHT = ("node", "reviewed", "won", "win")
@@ -87,8 +88,11 @@ class SurfSwarmSeatNodes(SwarmTableBase):
     def build_cells(self, item):
         reviewed, won = item.get("reviewed"), item.get("won")
         roles = " · ".join(item.get("roles") or [])
+        win = f"{won/reviewed*100:.1f}%" if reviewed else "—"
+        if rowfit.cell_len(win) > _WIN_COLS:
+            self._clipped = True
         return {"node": sanitize_cell(item.get("node_key"), 22),
                 "roles": sanitize_cell(roles, 9),
                 "reviewed": fmt_int(reviewed), "won": fmt_int(won),
-                "win": f"{won/reviewed*100:.1f}%" if reviewed else "—",
+                "win": rowfit.clip(win, _WIN_COLS),
                 "chain": fmt_int(item.get("onchain"))}

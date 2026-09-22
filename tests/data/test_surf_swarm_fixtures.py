@@ -89,8 +89,8 @@ def test_v2_details_corpus_is_at_least_twenty_five_well_formed_jobs():
             assert {"role", "state", "seat"} <= set(node), (stem, node.get("key"))
 
 
-#: Every node field `swarm_inflight_rows` and `swarm_seat_rows` (through the
-#: jobs-seen fold) read (plan §1.2, A1), and every verdict sub-field the
+#: Every node field `swarm_inflight_rows` and the internal `seat_rows`
+#: selection fold read (plan §1.2, A1), and every verdict sub-field the
 #: window-era seat summary read. That summary and the node-rows fold retired
 #: when the AGENT body moved to `/seats` (docs/surf_agent_seats_plan.md WP5);
 #: the pin still guards the corpus's shape for the folds that remain. A key may be
@@ -104,7 +104,7 @@ _VERDICT_FIELDS = frozenset({
     "status", "profile", "evaluation", "rejectionCode", "detail",
     "failedChecks", "verifierVersion", "at",
 })
-#: Every review field `swarm_seat_feedback_rows` reads.
+#: Historical detail-review fields retained as a corpus-shape guard.
 _REVIEW_FIELDS = frozenset({"status", "chainId", "txHash", "blockNumber", "sentAt", "entries"})
 _ENTRY_FIELDS = frozenset({"agentId", "value", "nodeKey"})
 

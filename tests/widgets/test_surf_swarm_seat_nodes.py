@@ -71,3 +71,8 @@ async def test_every_node_is_retained_in_the_scrollable_table():
         panel.update_data(swarm_seat_node_rows=[dict(ROWS[0], node_key=f"node{i}") for i in range(30)], swarm_seat_teammates=[], swarm_seat_state="ok")
         await pilot.pause()
         assert panel.query_one(DataTable).row_count == 30
+
+
+async def test_oversized_win_percentage_cannot_clip_silently():
+    text = await _nodes(swarm_seat_node_rows=[dict(ROWS[0], reviewed=1, won=12)])
+    assert "1200.0%" in text or ("‹ widen" in text and "1200." in text)

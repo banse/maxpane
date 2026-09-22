@@ -1,15 +1,12 @@
-"""The swarm bodies' tiered ``DataTable`` panel -- one base under six tables (WP7 hoist).
+"""The swarm bodies' tiered ``DataTable`` panel -- one base under five tables.
 
-CAPABILITY, LAUNCHES and SITES (the ``s`` body) and ROSTER, RECORD and
-FEEDBACK (the ``a`` body) are all
-:class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`\\ s that shed
-columns by width tier, carry a slow tier's ``as of`` marker in their title and
-tell an unread list (``None``) from a real empty one (``[]``). WP6 wrote the
-mechanics once as ``swarm_capability.SwarmTableBase`` and WP6a once more as
-``swarm_roster.SeatTableBase``; this module is the one copy both sets of
-tables import now (``rules/widgets.md``: a helper two modules need is hoisted,
-never re-declared). The name carries ``Base`` because a class name is a CSS
-type selector for every subclass; no stylesheet block names it.
+CAPABILITY, LAUNCHES and SITES (the ``s`` body) and RECORD and BY NODE
+(the ``a`` body) are :class:`~maxpane_dashboard.widgets.panels.TableLeaderboard`
+subclasses that shed columns by width tier, carry a slow tier's ``as of`` marker
+in their title and tell an unread list (``None``) from a real empty one (``[]``).
+This module holds the shared mechanics (``rules/widgets.md``: a helper two
+modules need is hoisted, never re-declared). The name carries ``Base`` because a
+class name is a CSS type selector for every subclass; no stylesheet block names it.
 
 What the base adds to ``TableLeaderboard``
 --------------------------------------------
@@ -35,10 +32,10 @@ What the base adds to ``TableLeaderboard``
     column is ``#`` at 4 cells and a ``DataTable`` would cut the word to
     ``unav`` in silence -- and ``No data`` is painted only when there are no
     rows *and* no footer (the base rule, ``rules/widgets.md``);
-  - a table with :attr:`EMPTY_LINE` set (ROSTER, RECORD, FEEDBACK) keeps its
+  - a table with :attr:`EMPTY_LINE` set (RECORD, BY NODE) keeps its
     header, clears its rows and writes the sentence under the table instead
-    -- their first column is ``when`` at 5 cells and ``no nodes yet`` would
-    render ``no no``; ``EMPTY_ROW`` is the no-op ``()``.
+    -- the sentence can span the panel rather than fit one table cell;
+    ``EMPTY_ROW`` is the no-op ``()``.
 * **A footer line under the table**, not a table row. A ``DataTable`` cannot
   span cells and cuts a long cell with no ellipsis (probed on Textual 8.1.1:
   ``30 skill``); CAPABILITY's summary is 83 cells against a widest cell of
@@ -120,8 +117,8 @@ class SwarmTableBase(TableLeaderboard):
     (widest first), implements :meth:`build_cells` (a dict keyed like
     ``COLUMN_SPECS``, or ``None`` to skip the item) and optionally
     :meth:`build_footer` (a summary's parts, total first), :meth:`column_width`
-    (one column whose width is not a constant: RECORD's ``detail`` takes the
-    spare budget, FEEDBACK's ``tx`` narrows at ``tight``) or the whole
+    (one column whose width is not a constant: RECORD's ``objective`` takes the
+    spare budget) or the whole
     :meth:`column_plan` (LAUNCHES). ``update_data`` stores through
     :meth:`store`. :attr:`EMPTY_LINE` picks where a degraded state is painted.
     """
@@ -153,7 +150,7 @@ class SwarmTableBase(TableLeaderboard):
     FOOTER_CLASS = "swarm-footer"
     FOOTER_PADDING_COLS = 2
 
-    #: Geometry the six tables share: the table fills the panel, the footer is
+    #: Geometry the five tables share: the table fills the panel, the footer is
     #: one row that exists only while it has words. A panel's place in the
     #: grid is the stylesheet's.
     DEFAULT_CSS = """

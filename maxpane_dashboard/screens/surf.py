@@ -2914,7 +2914,7 @@ class SurfScreen(DashboardScreen):
     }
     SurfScreen #surf-agent-top {
         height: 1fr;
-        min-height: 14;
+        min-height: 13;
         padding: 0 0;
         overflow-y: auto;
         scrollbar-size: 1 1;
@@ -2938,7 +2938,6 @@ class SurfScreen(DashboardScreen):
         min-height: 8;
         padding: 0 1;
     }
-
     """
 
     def __init__(

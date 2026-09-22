@@ -29,7 +29,7 @@ number that module is handed.
 from __future__ import annotations
 
 from maxpane_dashboard.widgets.explorer import ETHEREUM
-from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, hhmm, mmdd
+from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_float, hhmm, mmdd
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
 __all__ = [
@@ -39,6 +39,7 @@ __all__ = [
     "EXPLORER",
     "as_float",
     "fmt_age",
+    "fmt_win_rate",
     "fmt_price",
     "fmt_compact",
     "fmt_imd",
@@ -138,3 +139,8 @@ ANTI_POISONING_COLS = 17
 def mmdd_hhmm(value) -> str:
     """Local month/day and time, keeping accepted work distinct across midnight."""
     return f"{mmdd(value)} {hhmm(value)}"
+
+
+def fmt_win_rate(rate: float) -> str:
+    """A lifetime attempts rate, shared by the AGENT hero and SEAT."""
+    return f"{fmt_float(rate * 100, '.1f')} %"

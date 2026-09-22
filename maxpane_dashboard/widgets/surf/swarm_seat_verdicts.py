@@ -12,14 +12,14 @@ from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import fmt_int, fmt_float
 from maxpane_dashboard.widgets.markup_safety import sanitize_cell
 from maxpane_dashboard.widgets.panels import SignalsPanelBase
-from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, EXPLORER, mmdd_hhmm
+from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, EXPLORER, fmt_win_rate, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_state_line, seat_token
 
 PANEL_MAX_WIDTH = 55
 VALUE_COLS = PANEL_MAX_WIDTH - 4
 NO_FEEDBACK_LINE = "no scores yet"
 _NAMES = ("identity", "owner", "paired", "runtime", "daemon", "attempts",
-          "win", "review_entries", "feedback", "queued", "score", "roles")
+          "reviewed", "feedback", "queued", "score", "roles")
 ROW_IDS = tuple(f"surf-swarm-verdicts-{name}" for name in _NAMES)
 BLOCK_IDS = {}
 
@@ -71,11 +71,6 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
             title += f" · as of {swarm_seat_as_of_hhmm}"
         self.write(".panel-title", Text(title))
         selected = swarm_seat_selected if isinstance(swarm_seat_selected, dict) else {}
-        summary = swarm_seat_summary if isinstance(swarm_seat_summary, dict) else {}
-        reviewed, entries = summary.get("reviewed"), summary.get("review_entries")
-        self.query_one("#surf-swarm-verdicts-review_entries").display = (
-            swarm_seat_state == "ok" and reviewed is not None and entries is not None
-            and reviewed != entries)
         line = seat_state_line(swarm_seat_state, selected.get("token_id"))
         if line is not None or not isinstance(swarm_seat_summary, dict):
             for i, row_id in enumerate(ROW_IDS):
@@ -125,14 +120,16 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
             daemon = self._word(summary.get("daemon"), room-7-rowfit.cell_len(tail), "not reported")
             return Text.from_markup("daemon " + daemon + tail)
         if name == "attempts":
-            return Text(f"attempts {n(summary.get('attempts'))} · won {n(summary.get('accepted'))}")
-        if name == "win":
             rate = summary.get("win_rate")
-            win = "no attempts" if summary.get("attempts") == 0 else (
-                f"{fmt_float(rate*100, '.1f')}%" if isinstance(rate,(float,int)) and not isinstance(rate,bool) else "unavailable")
-            return Text(f"win {win} · reviewed {n(summary.get('reviewed'))}")
-        if name == "review_entries":
-            return Text(f"reviewed {n(summary.get('reviewed'))} submissions · {n(summary.get('review_entries'))} entries served")
+            suffix = " (no attempts)" if summary.get("attempts") == 0 else (
+                f" ({fmt_win_rate(rate)} of attempts)" if isinstance(rate, (float, int)) and not isinstance(rate, bool) else "")
+            return Text(f"attempts {n(summary.get('attempts'))} · won {n(summary.get('accepted'))}{suffix}")
+        if name == "reviewed":
+            reviewed, entries = summary.get("reviewed"), summary.get("review_entries")
+            text = f"reviewed {n(reviewed)} submissions"
+            if reviewed is not None and entries is not None and reviewed != entries:
+                text += f" · {n(entries)} entries served"
+            return Text(text)
         status = summary.get("review_status") or {}
         if name == "feedback":
             return Text(f"feedback {n(status.get('sent'))} sent · {n(status.get('submitted'))} submitted")

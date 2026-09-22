@@ -352,3 +352,9 @@ async def test_status_names_only_the_last_won_date_not_feedback_time():
     text = await _box_text(BOX_IDS["status"], swarm_seat_summary=summary)
     assert f"won {mmdd(summary['last_won_ts'])} {hhmm(summary['last_won_ts'])}" in text
     assert "last" not in text
+
+
+@pytest.mark.parametrize("accepted,expected", [(0, "no wins yet"), (3, "won unavailable"), (None, "won unavailable")])
+async def test_status_distinguishes_no_wins_from_missing_win_timestamp(accepted, expected):
+    text = await _box_text(BOX_IDS["status"], swarm_seat_summary=dict(SUMMARY, accepted=accepted, last_won_ts=None))
+    assert expected in text and "??" not in text

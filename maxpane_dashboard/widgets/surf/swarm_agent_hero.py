@@ -13,10 +13,10 @@ from __future__ import annotations
 from rich.text import Text
 
 from maxpane_dashboard.widgets import rowfit
-from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
+from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
-from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, mmdd_hhmm
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     NEVER_PAIRED_STYLE,
     NEVER_PAIRED_WORDS,
@@ -169,7 +169,7 @@ class SurfSwarmAgentHero(HeroRow):
         rate = summary.get("win_rate")
         if isinstance(rate, bool) or not isinstance(rate, (int, float)):
             return UNAVAILABLE
-        return Text(f"{fmt_float(rate * 100, '.1f')} %\nof attempts")
+        return Text(f"{fmt_win_rate(rate)}\nof attempts")
 
     @staticmethod
     def _collab_body(summary: dict) -> str | Text:
@@ -192,7 +192,13 @@ class SurfSwarmAgentHero(HeroRow):
         else:
             body.append_text(Text.from_markup(UNAVAILABLE))
         body.append("\n")
-        body.append(f"won {mmdd_hhmm(summary.get('last_won_ts'))}", style="dim")
+        if summary.get("accepted") == 0:
+            won = "no wins yet"
+        elif summary.get("last_won_ts") is None:
+            won = "won unavailable"
+        else:
+            won = f"won {mmdd_hhmm(summary['last_won_ts'])}"
+        body.append(won, style="dim")
         if as_of is not None:
             body.append("\n")
             body.append(f"as of {as_of}", style="dim")

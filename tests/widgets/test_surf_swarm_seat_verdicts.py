@@ -29,10 +29,10 @@ def test_signature():
 
 async def test_lifetime_details_and_identity_are_visible():
     text=await _record()
-    for word in ("IDMD #420",f"agent {SUMMARY['agent_id']}","owner", "online ●", "runtime", "daemon", "device", "attempts", "won", "win", "reviewed", "feedback", "submitted", "queued", "score", "by role"):
+    for word in ("IDMD #420",f"agent {SUMMARY['agent_id']}","owner", "online ●", "runtime", "daemon", "device", "attempts", "won", "of attempts", "reviewed", "feedback", "submitted", "queued", "score", "by role"):
         assert word in text, (word,text)
     assert f"{mmdd(SUMMARY['paired_ts'])} {hhmm(SUMMARY['paired_ts'])}" in text
-    assert f"{SUMMARY['win_rate']*100:.1f}%" in text
+    assert f"{SUMMARY['win_rate']*100:.1f} %" in text
     assert "SEAT · as of 04:06" in text and "SEAT RECORD" not in text
 
 async def test_four_digit_feedback_counts_are_whole():
@@ -68,7 +68,7 @@ async def test_states_hide_stale_values(state,word):
 
 async def test_no_args_rewrites_every_line():
     text="\n".join(await composite_lines(SurfSwarmSeatVerdicts,SIZE,css_path=CSS_PATH))
-    assert text.count("unavailable")==len(ROW_IDS)-1 and "Loading" not in text
+    assert text.count("unavailable")==len(ROW_IDS) and "Loading" not in text
 
 class Linked(LinkRecorder,App):
     CSS_PATH=CSS_PATH
@@ -100,3 +100,17 @@ async def test_duplicate_review_entries_explanation_is_whole_and_only_shown_for_
 async def test_five_digit_review_entries_explanation_remains_whole():
     text = await _record(swarm_seat_summary=dict(SUMMARY, reviewed=55_555, review_entries=99_999))
     assert "reviewed 55,555 submissions · 99,999 entries served" in text
+
+
+async def test_attempts_rate_shares_the_attempts_line_and_reviewed_stays_separate():
+    summary = seat_summary_from_seat(swarm_seat_capture("seat_420_duplicated_reviews"))
+    text = await _record(swarm_seat_summary=summary)
+    assert "attempts 201 · won 190 (94.5 % of attempts)" in text
+    reviewed = [line.strip() for line in text.splitlines() if "reviewed" in line]
+    assert reviewed == ["reviewed 197 submissions · 351 entries served"]
+
+
+async def test_missing_attempts_and_wins_remain_whole_without_redundant_rate():
+    text = await _record(swarm_seat_summary=dict(SUMMARY, attempts=None, accepted=None, win_rate=None))
+    assert "attempts unavailable · won unavailable" in text
+    assert "…" not in next(line for line in text.splitlines() if "attempts" in line)

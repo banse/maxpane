@@ -226,7 +226,7 @@ async def test_a_switch_pending_composite_shows_no_number_of_the_old_seat(tmp_pa
 
 
 class _SavedSeatManager(_FakeManager):
-    """Records ``set_seat`` as well as ``select_seat``."""
+    """Records the saved-seat changes through ``set_seat``."""
 
     def __init__(self, payload=None) -> None:
         super().__init__(payload)

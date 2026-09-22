@@ -2568,7 +2568,7 @@ SurfScreen #surf-agent-body {
 /* SEAT's fixed thirteen lines. */
 SurfScreen #surf-agent-top {
     height: 1fr;
-    min-height: 14;
+    min-height: 13;
     padding: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;
