@@ -725,3 +725,136 @@ Append **§7.1** in §6.1's format:
 - `git status --short`.
 
 Stop there for the scoped re-review.
+
+## 7.1 Fix-wave hand-back — 2026-09-22
+
+### Scope and commits
+
+Completed the one fix wave on `feature/surf-swarm-polish`, starting from §7's handover commit
+`5d1b1ed`. One repository writer at a time. SEAT stays unchanged by the owner's decision;
+F54 remains open. All commits name explicit paths. No network tests, push, merge, tag,
+version bump, middle tier or full suite. Stop here for the scoped re-review.
+
+| Commit | Findings | Result |
+|---|---|---|
+| `656bc77` | I1–I4 | Per-point safety, idempotent bounded cleaning, linear link scanning, recoverable transient failures, complete home/file-path handling; conflicting spec/rules/decision/model comments corrected in the same commit |
+| `3d4727e` | M1–M6 | Canonical pin references and BOARD agreement; default-colour bold QUEUE; `<1m`; accepted default-rank click documented; F54 unrendered fields noted; cosmetic work filed as F56 |
+| This hand-back commit | §7.1 | Final results, proof index, limitations and repository status |
+
+### Red → green and disposition
+
+| Finding | Disposition and evidence |
+|---|---|
+| **I1 fixed** | Initial data batch included the generated idempotence/safety corpus, six-job probe and per-point corruption failures. The 100-example corpus includes `- 1) Wrote answer.json. More.`, `[[a](b)](c)`, `x_*_y` and `- 2) nested`. Every cleaned output is idempotent; every nonempty output survives stored safety. A forbidden `answer_sentence` replacement proves validation does not re-derive safe stored text. Deep valid prefixes also failed first, then retained the reply. Good siblings survive, only the planted bad point's job is re-read, and cycle two does not repeat retained successful terminal jobs |
+| **I2 fixed** | Both hostile 100 KB shapes are parsed only through the first 4,096 characters. The work test counts executed Python lines through the real scanner, including its inner malformed-input branches. Restoring the old rescan with the new input cap still in place exceeds the 245,760-operation bound. No wall-clock assertion is used |
+| **I3 fixed** | Recovery, retry timing, legacy frozen failures, running-to-terminal transitions and real-negative retention pass. The client preserves explicit 404 provenance; it renders as existing `not served`, without a new public state/cache field. Transient transport/parse failures remain `unavailable` and retry after `SWARM_ANSWER_DUE_S` within the four-job cap. Identity validation precedes sentinel recognition; its three new cases failed first and then passed |
+| **I4 fixed** | File URIs, colon/equal/parenthesis/quote/whitespace boundaries, POSIX/Windows home roots and spaced usernames are covered. HTTP(S) survives unchanged. Cleaning and stored-answer safety use the same link/path detectors; planted unsafe points cannot bypass them |
+| **M1 fixed** | README/rules name the constants instead of repeating the new pin numbers. The existing AGENT/RECORD skill agreement test now checks both BOARD dimensions; separate wrong-width and wrong-height mutations fail |
+| **M2 fixed** | Positive QUEUE colour failed on the actual composite before changing the style. Zero and positive counts are now bold in the widget's default foreground; unavailable keeps its yellow word |
+| **M3 fixed** | Zero, fractional and just-under-minute cases failed on `0m`, then passed with `<1m`. Exact 60 seconds remains `1m`; missing duration remains `—`. Word-boundary assertions prevent `1m` from accidentally matching `<1m`; the hostile fixture composite is updated too |
+| **M4 accepted/documented** | README says the default rank column is already active, so its first `#` header click reverses the sort |
+| **M5 documented, F54 open** | F54 explicitly records that `advertised_model`/`advertised_effort` remain unrendered until the SEAT grouping is reconsidered |
+| **M6 filed, F56 open** | Cosmetic markup-like transformations are deferred as Minor; this wave adds no cosmetic cleaner fix |
+
+Initial I1–I4 batch: **24 failed, 2 passed**. The deep-prefix case then failed once before its
+correction; strict identity-before-404 cases failed three times before theirs. Twenty-five
+old expectations explicitly contradicted the corrected specification and were migrated:
+invalid points now filter to an empty map, 404 remains distinguishable, and the no-repeat
+fixture uses a definitive negative. Final restored focused data run: **99 passed in 0.66 s**.
+Logs: `/tmp/polish-fix-data-red.log`, `/tmp/polish-fix-deep-red.log`,
+`/tmp/polish-fix-identity-{red,green}.log`, `/tmp/polish-fix-data-restored.log`.
+
+Minor test-first evidence: the initial selected run had six failures, one of which was an
+incorrect test comparison between QUEUE's default foreground and ACCEPTED's explicitly white
+foreground. Correcting that comparison left the intended positive QUEUE failure (one failed,
+two passed); it was not counted as a production defect. Restored focused minors: **11 passed
+in 1.08 s**. Logs: `/tmp/polish-fix-minor-{red,green}.log`, `/tmp/polish-fix-queue-red.log`.
+
+### Mutation proof index
+
+All **20 mutations** failed their intended assertions, were reversed by exact inverse edits,
+and passed after restoration. No mutations remain. Full parameters/reasons are in the two
+implementation commit messages; local logs are indexed below.
+
+| Finding | Mutation | Test that reddens and why |
+|---|---|---|
+| I1 | Whole-slot rejection | `test_fix_i1_bad_point_drops_only_it_and_unsafe_fields_do_not_cost_siblings`: valid sibling disappears |
+| I1 | Whole-slot rejection in manager | `test_fix_i1_six_job_slot_survives_nested_summary_and_terminal_cycle_two`: more than the one corrupted job is re-fetched |
+| I1 | Re-derive cached answer | `test_fix_i1_generated_cleaning_is_idempotent_and_stored_safety_does_not_rederive`: forbidden cleaner call fires |
+| I1 | Stop stripping after one pass | Same generated test: cleaning twice changes the output |
+| I1 | Remove grouped list-prefix stripping | `test_fix_i1_deep_valid_list_prefix_keeps_the_reply`: the valid trailing reply is lost |
+| I1 | Force terminal answers due | Six-job probe: cycle two makes extra GETs |
+| I2 | Remove input slice | `test_fix_i2_tail_after_input_cap_is_not_parsed`: data beyond 4,096 characters affects the result |
+| I2 | Restore old regex/suffix scanner, retain cap | `test_fix_i2_hostile_scan_has_bounded_linear_work_and_reads_only_4096`: repeated unclosed targets exceed the operation limit (one case fails; the nested-prefix case passes) |
+| I3 | Restore terminal-row scheduling shortcut | `test_fix_i3_transient_terminal_answer_recovers_at_next_due_cycle`: both transport and parse failures fail to recover |
+| I3 | Retain legacy frozen unavailable flag | `test_fix_i3_running_failure_and_legacy_terminal_failure_remain_retryable`: completed job stays unavailable |
+| I3 | Re-read `not_served` negatives | `test_fix_i3_real_negative_freezes_even_while_job_running`: 404 and absent-hash cases make an extra GET |
+| I3 | Collapse 404 into None | `test_submissions_uses_pool_pacing_and_404_is_one_job_failure`: explicit provenance is lost |
+| I3 | Remove identity gate | `test_fix_i3_404_sentinel_cannot_bypass_identity_validation`: invalid UUID/hash/token falsely become `not served` |
+| I4 | Bypass path cleanup | `test_fix_i4_path_detectors_cover_home_roots_boundaries_and_preserve_http`: 13 path cases fail; HTTP remains unchanged |
+| I4 | Remove cache path safety | Same path test: 13 unsafe stored strings are admitted |
+| I4/I1 | Remove cache link safety | Bad-point sibling test: stored link destination is admitted |
+| M1 | Wrong BOARD width in SKILL | `test_terminal_layout_skill_quotes_agent_dimensions_and_record_clearance`: BOARD row disagrees with the width constant |
+| M1 | Wrong BOARD height in SKILL | Same agreement test: BOARD row disagrees with the height constant |
+| M2 | Restore positive yellow QUEUE | `test_queue_count_is_bold_without_status_color[68]`: composited colour differs from the default foreground |
+| M3 | Restore `0m` | `test_polish_duration_and_missing_model`: zero, fractional and just-under-minute cases fail; all seven cases pass restored |
+
+Data proof logs: `/tmp/polish-fix-mutation-<name>.log`,
+`/tmp/polish-fix-mutation-summary.log`, `/tmp/polish-fix-identity-mutation-summary.log`.
+Minor proof logs and machine-readable results: `/tmp/polish-fix-minor-proofs/`.
+The six-job reviewer probe locally raises the request cap to six so all six populate in one
+cycle; the normal four-job bound remains separately asserted by the progressive-answer test.
+
+### Boundaries and layout
+
+- Persisted `read` answers must be nonempty strings within `ANSWER_TEXT_CAP`, with no control
+  characters, link targets or absolute paths. A malformed outer envelope still fails closed;
+  malformed points/job groups are filtered independently.
+- Home-path policy is explicit: quoted/backticked paths consume the delimited contents;
+  unquoted home usernames can contain spaces up to the next separator/end/delimiter, with
+  `and`/`or`/`but`/`then` ending them as prose. Bare homes become `~`. This does not attempt to
+  infer every possible filename/prose boundary.
+- Cleanup allows eight shrinking passes; pathological formatting that cannot settle returns
+  an empty fixed point. Valid stacked list prefixes are stripped together and preserve text.
+- No layout pin, column allocation or height changed. `<1m` adds one glyph inside the existing
+  six-cell duration column; QUEUE changes only colour. The named RECORD/BOARD boundary tests
+  verify the existing layout guarantees. No new width sweep or CLI capture was requested or run.
+- SEAT and its approved deferral remain untouched. F54 and F55 stay open; F56 is the only new
+  follow-up. No extra feature work was added to this fix wave.
+
+### Final named set and guard
+
+- Named data/widget/screen/agreement files: **499 passed in 206.51 s**.
+- Selected RECORD/BOARD layout: **125 passed, 267 deselected in 225.08 s**.
+- Combined named coverage: **624 passed**, with no overlap between the two selections.
+- Guard: **200 passed, 9,793 deselected in 132.37 s**.
+- All three commands exited 0. `git diff --check` is clean.
+
+All commands used `.venv311`, a separate temporary HOME, and unset NO_COLOR. No test used the
+network. Final named coverage was run once after the fixes, as three selections:
+
+1. Six requested data files, the two widget files, full `test_surf_swarm_screen.py`, and the
+   actual source-reading agreement files `tests/test_surf_registration.py` and
+   `tests/test_curator_registration.py`. The latter were identified by the requested
+   SKILL/README/rules search; comment-only references were not mistaken for agreement tests.
+2. `tests/screens/test_surf_swarm_layout.py -k "record or board"`; the filter was not applied
+   to the other named files.
+3. `-m guard`.
+
+Exact named paths: `/tmp/polish-fix-final-paths.txt`. Logs:
+`/tmp/polish-fix-final-named.log`, `/tmp/polish-fix-final-layout.log`,
+`/tmp/polish-fix-final-guard.log`. No full or middle suite; the controller owns release checks.
+
+### Repository hand-off
+
+After this hand-back commit, `git status --short` contains only:
+
+```text
+?? .codex/
+?? .venv311/
+?? tests/fixtures/surf/pool4/oracle_25955365.json
+```
+
+No tracked changes remain. The protected oracle fixture is still untracked and uncommitted.
+The pre-existing `.codex/` and `.venv311/` were preserved. No secrets were added. Stop here for
+the scoped re-review; no push, merge or tag was performed.
