@@ -548,3 +548,103 @@ on the theme/version labels (F43). AGENT now scrolls vertically at both owner si
 All requested implementation and documentation changes are committed with explicit paths.
 Only the intentional local `.codex/`, `.venv311/` and protected oracle fixture remain untracked.
 Stop here for Claude's whole-branch review and one fix wave; owner decides merge and push.
+
+## 9. Fix wave — final whole-branch review 2026-09-22 (the ONE fix wave)
+
+Review verdict on `c8dcb28..347ba5e`: **Needs fixes: 0 Critical, 1 Important**. Named risks all
+held (keyless GET-only, aggregation 101→99, source separation, `save_seat` reuse, markup safety,
+cache fail-closed, 131 boundary cases, six mutation proofs re-reddened for the claimed reason).
+This is the only fix wave; a scoped re-review follows, then the controller runs the full suite once.
+Same rules as §0: branch `feature/surf-swarm-board`, one writer, pathspec commits, `.venv311`,
+`env -u NO_COLOR HOME=$(mktemp -d)`, no network, never commit the pool4 oracle fixture, no push /
+merge / tag / full suite. Precedence: CLAUDE.md > this §9 > §0–§7 — where §9 contradicts §3 or §5,
+§9 wins and §3/§5 are edited to match in the same commit.
+
+### Owner decisions (2026-09-22) — these replace the open questions in §8
+
+- **D-A (status hints): shorten every hint, keep `b`.** `KEY_HINTS` becomes
+  `l launchpad · 4 pl4 · s swm · a agt · b brd` (43 cells; `rules/surf.md` requires `l launchpad`
+  never shortens — it doesn't; one markup run as before). Goal: the status hint no longer binds
+  any surf body's width. Re-sweep in situ and return each pin to what its **body** needs:
+  LAUNCHPAD (was 138 before this branch), SWARM (was 141), AGENT (body full from 138 per §8, or
+  lower after D-B), BOARD (leaderboard full from 141). If the whole bar still binds anywhere,
+  report the measured number — do not pick different words yourself. Update the `#:` blocks, the
+  terminal-layout SKILL table, `STATUS_BAR_WHOLE_FROM`, README key prose if it quotes the hint,
+  and `rules/surf.md`'s quoted hint text.
+- **D-B (F46): trim AGENT back to 32 rows at its column pin.**
+  1. Remove the worker **metadata** line (skills / profiles / platform and its clock line) from
+     AGENT — BOARD's FLEET already shows it. Worker live state stays in STATUS.
+  2. Render the contributor group on **one** line wherever it fits at the pin (it keeps its own
+     clock; still never mixed with `/seats` numbers on one line).
+  3. **M5:** drop the `/seats` `online ●` flag from SEAT's paired line (§2.3 "replaced" means
+     replaced) — STATUS's worker state is the only liveness on screen.
+  Then re-measure. If 32 is not reached, stop and report the measured row count and which line
+  binds; do not remove anything else. On 32: close F46 in `docs/surf_swarm_followups.md` with the
+  measurement; the old 17-row SEAT top floor is re-derived, not kept.
+- **D-C (M9): a mouse click on a LEADERBOARD row selects too** (saves, sets, opens AGENT), same as
+  Enter. Pin it with a pilot test (click → monkeypatched `save_seat` called once with that token)
+  and write it into §2 and README.
+
+### I1 (Important) — a present-but-malformed row must not become a real negative
+
+`data/surf_swarm.py:1016` admits a contributor row only when all nine counters parse (including
+the undisplayed `inputTokens`/`outputTokens`/`cachedInputTokens`); `:1044/:1047` drop a worker row
+with no `paused` key or any bad field; then `:1161` `live=bool(rows)` and `:1322` `listed=False`
+turn the dropped seat into `offline` / `contributors not listed` while LIVE still counts it.
+Reproduced on v3 fixtures: #420 with `cachedInputTokens=None` → `listed False`, seats 98;
+#420's worker row with `paused` popped → `live_state 'offline'`, LIVE 91.
+
+Fix:
+- Contributor admission requires only the **displayed** counters (`attempts`, `accepted`,
+  `rejected`, `pending`, and whatever else a widget actually renders — list them in the
+  docstring). An undisplayed field that fails to parse becomes `None` on that row, never a drop.
+- Worker admission: a missing or malformed `paused` is **unknown pause state** (`None`), not a
+  drop and not "not paused"; the row still counts toward live and its seat is `live`, with PAUSED
+  counting only rows whose pause state was read. Any other bad field follows the same rule:
+  unknown field, row kept, if the tokenId parsed.
+- A row whose **tokenId** parsed but which still cannot be admitted: remember that token in a
+  `malformed_tokens` set per source; `seat_live` / `seat_contrib` for such a token answer
+  `None` → the widget's `unavailable`, never `offline` / `not listed`. Only a token absent from a
+  successfully read list is a real negative.
+- Edit §3's "a malformed row is dropped" to say this (spec defect, CLAUDE.md wins).
+- Tests, each proven to bite (mutate → the named test reddens for the stated reason → inverse edit):
+  the two reproductions above as regressions (seat stays listed / live; seat count stays 99; a
+  bad-tokenId row still drops), plus a malformed-but-tokened row → `unavailable` on AGENT
+  composited.
+
+### Minors — fix in this wave
+
+- **M2** `tests/screens/test_surf_screen.py:2539`: `"‹ widen" in title or not bar_whole` cannot
+  fail below the pin. Assert the COINS widen hint directly on the body, independent of the bar
+  (proof: `if False and show_marker:` at `widgets/surf/launchpad.py:688` must redden it). Replace
+  the bare `138` at `:2640`/`:2866` with a named constant bound to the `#:` block.
+- **M3** `tests/screens/test_surf_swarm_layout.py:810–825`: the BOARD below-pin branch must assert
+  LEADERBOARD's own degradation (widen lit, a column shed), not be satisfiable by the status crop;
+  narrow `_EXCLUDED_FROM_WHOLE["b"]` to the worst-case payload only, so a false `‹ widen` at the pin
+  on the capture fails.
+- **M4** `widgets/surf/swarm_leaderboard.py:69`: detect clipping by width comparison, as WP5 did
+  for IN FLIGHT — a fitting runtime containing `…` must not light widen (regression first).
+- **M7** `themes/minimal.tcss:2598` comment "thirteen" vs `min-height: 17` (re-derive after D-B);
+  fix the BOARD block's indentation to match its neighbours in both CSS copies; restore the
+  `swarm_inflight.py` docstring rationale for why template/objective avoid `sanitize_cell`.
+- **M8** `test_surf_board_body_has_no_wallet_or_token_address_text`: inject the 0x text through a
+  field the BOARD fold actually receives (a `/contributors` / `/workers` row field), so the test
+  would redden if the fold kept `wallet`.
+
+### Not in this wave
+
+- **M6 / F47**: pre-existing — `swarm_throughput.py` is untouched; the live overflow was an extra
+  `states` row (content-dependent height, F23), not the wrap. Re-word F47 accordingly and link F23.
+- **F16** (SWARM 42 rows) stays open for the owner.
+
+### Named test set (run once at the end, plus per-item while working)
+
+The BOARD/AGENT data and widget files (the 13 from the review), `tests/screens/test_surf_screen.py`,
+`test_surf_swarm_layout.py`, `test_surf_swarm_screen.py`, `test_address_icons_everywhere.py`,
+`tests/test_surf_registration.py`, and `-m guard`. No middle tier, no full suite.
+
+### Hand-back
+
+Append **§10**: commit table, each fix with its red→green and mutation evidence, the re-measured
+pins (every surf body, columns × rows, and what binds), whether AGENT reached 32, the named-set
+result, and `git status --short`. Stop there for the scoped re-review.
