@@ -167,7 +167,7 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
 
 
 async def test_the_bindings_include_board_agent_and_seat_selection():
-    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "escape"}
+    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "escape"}
     assert hasattr(SurfScreen, "action_toggle_swarm")
     assert hasattr(SurfScreen, "action_toggle_agent")
 
@@ -508,3 +508,55 @@ async def test_board_header_and_empty_table_space_do_not_select(monkeypatch):
         await pilot.click(table,offset=(3,3))
         await pilot.pause()
         assert writes == [] and screen._mode == MODE_BOARD
+
+
+@pytest.mark.parametrize('activation',['click','enter'])
+async def test_board_header_sorts_without_saving_then_selects_sorted_token_once(monkeypatch,activation):
+    from maxpane_dashboard import config
+    from tests.widgets.test_surf_swarm_leaderboard import ROWS,tokens
+    rows=[dict(ROWS[0],token_id=10,rank=1,attempts=10),dict(ROWS[1],token_id=0,rank=2,attempts=2),dict(ROWS[2],token_id=7,rank=3,attempts=3)]
+    writes=[]
+    monkeypatch.setattr(config,'save_seat',lambda token:writes.append(token))
+    async with _surf_app(_frozen_payload(swarm_board_rows=rows)).run_test(size=(141,27)) as pilot:
+        screen=await _open(pilot,'b')
+        selected=[]
+        screen._data_manager.set_seat=lambda token:selected.append(token)
+        widget=screen.query_one(SurfSwarmLeaderboard);table=widget.query_one(DataTable)
+        header_x=1+sum(column.width+2 for column in table.ordered_columns[:4])
+        await pilot.click(table,offset=(header_x,0));await pilot.pause()
+        assert writes==selected==[] and screen._mode==MODE_BOARD
+        assert tokens(widget)==[0,7,10]
+        assert 'att▲' in _region_text(pilot.app,table)
+        await pilot.click(table,offset=(header_x,0));await pilot.pause()
+        assert writes==selected==[] and screen._mode==MODE_BOARD
+        assert tokens(widget)==[10,7,0]
+        assert 'att▼' in _region_text(pilot.app,table)
+        if activation=='click':await pilot.click(table,offset=(3,2))
+        else:
+            table.move_cursor(row=1)
+            await pilot.press('enter')
+        await pilot.pause()
+        assert writes==selected==[7] and screen._mode==MODE_AGENT
+
+
+async def test_board_sort_keys_cycle_all_columns_even_when_hidden_and_keep_hint(monkeypatch):
+    from maxpane_dashboard import config
+    from tests.widgets.test_surf_swarm_leaderboard import ROWS
+    writes=[]
+    monkeypatch.setattr(config,'save_seat',lambda token:writes.append(token))
+    async with _surf_app(_frozen_payload(swarm_board_rows=ROWS[:3])).run_test(size=(119,35)) as pilot:
+        screen=await _open(pilot,'b')
+        widget=screen.query_one(SurfSwarmLeaderboard)
+        table=widget.query_one(DataTable)
+        for key in ('seat','runtime','devices','attempts','accepted','rejected','pending','rate','turns','hours','state','rank'):
+            await pilot.press('o');await pilot.pause()
+            assert widget._sort_key==key and widget._sort_reverse is False
+            await pilot.press('O');await pilot.pause()
+            assert widget._sort_key==key and widget._sort_reverse is True
+        assert writes==[] and screen._mode==MODE_BOARD
+        await pilot.resize_terminal(141,27);await pilot.pause()
+        assert '#▼' in _region_text(pilot.app,table)
+        assert SurfScreen.KEY_HINTS=='[dim]l launchpad · 4 pl4 · s swm · a agt · b brd[/]'
+        await pilot.press('escape','o','O');await pilot.pause()
+        assert widget._sort_key=='rank' and widget._sort_reverse is True
+        assert writes==[]

@@ -48,9 +48,11 @@ class SurfSwarmLeaderboard(SwarmTableBase):
         super().__init__(*args,**kwargs)
         self._selected=None
         self._clipped_fields=set()
+        self._sort_key='rank'
+        self._sort_reverse=False
     def compose_body(self):
         for child in super().compose_body():
-            yield _SeatTable(id=child.id) if isinstance(child, DataTable) else child
+            yield _SeatTable(id=child.id, cursor_foreground_priority='renderable') if isinstance(child, DataTable) else child
         yield Static('',classes='board-clocks')
     def update_data(self,swarm_board_rows=None,swarm_seat_selected=None,
                     swarm_board_as_of_hhmm=None,swarm_workers_as_of_hhmm=None,**_kwargs):
@@ -59,8 +61,64 @@ class SurfSwarmLeaderboard(SwarmTableBase):
         self.store(swarm_board_rows,None)
         self.write('.board-clocks',Text(f'contributors as of {source_clock(swarm_board_as_of_hhmm)} · workers as of {source_clock(swarm_workers_as_of_hhmm)}'))
     def _repaint(self):
+        # Column installation and row rendering both clear the table. Capture
+        # immutable identity first; saved selection and cursor are independent.
+        try:
+            table = self.query_one(DataTable)
+        except Exception:
+            table = None
+        token = (self.token_for_row(table.ordered_rows[table.cursor_row].key)
+                 if table is not None and table.row_count else None)
         self._clipped_fields=set()
         super()._repaint()
+        if token is not None and table is not None:
+            for index, row in enumerate(table.ordered_rows):
+                if self.token_for_row(row.key) == token:
+                    table.move_cursor(row=index)
+                    break
+
+    def sort_by(self, key):
+        if key not in _ALL:
+            return
+        self._sort_reverse = not self._sort_reverse if key == self._sort_key else False
+        self._sort_key = key
+        self._repaint()
+
+    def cycle_sort(self):
+        self.sort_by(_ALL[(_ALL.index(self._sort_key) + 1) % len(_ALL)])
+
+    def reverse_sort(self):
+        self._sort_reverse = not self._sort_reverse
+        self._repaint()
+
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected):
+        if event.data_table.id == self.TABLE_ID:
+            event.stop()
+            self.sort_by(event.column_key.value)
+
+    def column_plan(self, tier, budget):
+        marker = '▼' if self._sort_reverse else '▲'
+        return tuple((key, label[:width-1] + marker if key == self._sort_key else label, width)
+                     for key, label, width in super().column_plan(tier, budget))
+
+    def _sort_value(self, item):
+        if not isinstance(item, dict):
+            return None
+        field = {'seat':'token_id', 'rate':'accept_rate', 'hours':'wall_clock_s',
+                 'state':'live_state'}.get(self._sort_key, self._sort_key)
+        value = item.get(field)
+        if self._sort_key in ('runtime', 'state'):
+            return strip_tags(flatten(value)).casefold() if isinstance(value, str) else None
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+    def render_table(self, rows, *, footer=None):
+        # Always restart from served order: ties must not inherit the previous
+        # view sort. Append missing values separately so reverse keeps them last.
+        known, missing = [], []
+        for item in rows:
+            (missing if self._sort_value(item) is None else known).append(item)
+        ordered = sorted(known, key=self._sort_value, reverse=self._sort_reverse) + missing
+        super().render_table(ordered, footer=footer)
 
     def _render_title(self, as_of):
         room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
@@ -90,7 +148,13 @@ class SurfSwarmLeaderboard(SwarmTableBase):
             if rowfit.cell_len(strip_tags(flatten(raw[key]))) > width:
                 self._clipped=True
                 self._clipped_fields.add(key)
-            if key=='seat': cell.style=Style(meta={'seat_token':token})
+            selected = token == self._selected
+            color = {'working':'green', 'paused':'red', 'idle':None, 'offline':None}.get(state, 'yellow') if key == 'state' else None
+            if selected and key == self._keys[0]:
+                color = self.app.get_css_variables().get('accent', 'cyan')
+            cell.style = Style(color=color, bold=True if selected else None,
+                               dim=True if state == 'offline' else None,
+                               meta={'seat_token':token} if key == 'seat' else None)
             cells[key]=cell
         return cells
     def token_for_row(self,row_key):

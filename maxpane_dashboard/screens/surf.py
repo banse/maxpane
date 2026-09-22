@@ -2319,6 +2319,8 @@ class SurfScreen(DashboardScreen):
         # on this screen, in the app and in `DataTable`'s own bindings.
         Binding("i", "set_seat", "Seat", show=False),
         Binding("b", "toggle_board", "Board", show=False),
+        Binding("o", "cycle_board_sort", "Sort column", show=False),
+        Binding("O", "reverse_board_sort", "Reverse sort", show=False),
         Binding("escape", "show_dashboard", show=False),
     ]
 
@@ -3438,6 +3440,14 @@ class SurfScreen(DashboardScreen):
         self._mode = MODE_BOARD
         self._show_mode()
         self.query_one(SurfSwarmLeaderboard).query_one(DataTable).focus()
+
+    def action_cycle_board_sort(self) -> None:
+        if self._mode == MODE_BOARD:
+            self.query_one(SurfSwarmLeaderboard).cycle_sort()
+
+    def action_reverse_board_sort(self) -> None:
+        if self._mode == MODE_BOARD:
+            self.query_one(SurfSwarmLeaderboard).reverse_sort()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if self._mode != MODE_BOARD or event.data_table.id != SurfSwarmLeaderboard.TABLE_ID:

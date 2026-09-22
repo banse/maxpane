@@ -802,7 +802,7 @@ def _assert_board_whole(result,where):
         result = dict(result, marked_besides_exceptions=result["marked_besides_exceptions"] - {"SurfSwarmLeaderboard"})
     _assert_whole(result,where)
     assert result["tiers"]["SurfSwarmLeaderboard"]=="full",result
-    assert result["columns"]["SurfSwarmLeaderboard"] == ("#","seat","runtime","dev","att","acc","rej","pend","rate","turns","hrs","state"),result
+    assert result["columns"]["SurfSwarmLeaderboard"] == ("#▲","seat","runtime","dev","att","acc","rej","pend","rate","turns","hrs","state"),result
     allowed = {"runtime"} if where == "worst" else set()
     assert result["clipped_fields"]["SurfSwarmLeaderboard"] <= allowed,result
 
