@@ -59,7 +59,7 @@ async def test_long_roles_are_counted_and_hostile_text_is_sanitized():
     roles=[{"role":"[/x]implement","count":99999}]+[{"role":f"role{i}","count":9} for i in range(8)]
     text=await _record(swarm_seat_summary=dict(SUMMARY, roles=roles,runtime="[/x]PWNED "+"x"*80,daemon="[$success]daemon"))
     assert "PWNED" in text and "…" in text and "[/x]" not in text and "[$success]" not in text
-    assert "+8 more" in text
+    assert "role0 9 · +7 more" in text
 
 @pytest.mark.parametrize("state,word",[("pending","Loading..."),("unknown_seat","#420 never paired"),(None,"unavailable"),("bad","unavailable")])
 async def test_states_hide_stale_values(state,word):
@@ -68,7 +68,7 @@ async def test_states_hide_stale_values(state,word):
 
 async def test_no_args_rewrites_every_line():
     text="\n".join(await composite_lines(SurfSwarmSeatVerdicts,SIZE,css_path=CSS_PATH))
-    assert text.count("unavailable")==len(ROW_IDS) and "Loading" not in text
+    assert text.count("unavailable")==len(ROW_IDS)-1 and "Loading" not in text
 
 class Linked(LinkRecorder,App):
     CSS_PATH=CSS_PATH
@@ -88,3 +88,15 @@ async def test_owner_retains_copy_icon_and_mainnet_explorer():
 def test_panel_fit_width_agrees_with_stylesheet():
     block=re.search(r"^SurfSwarmSeatVerdicts \{(.*?)\}",Path(CSS_PATH).read_text(),re.S|re.M)
     assert int(re.search(r"max-width:\s*(\d+)",block.group(1)).group(1))==PANEL_MAX_WIDTH
+
+
+async def test_duplicate_review_entries_explanation_is_whole_and_only_shown_for_a_gap():
+    summary = seat_summary_from_seat(swarm_seat_capture("seat_420_duplicated_reviews"))
+    text = await _record(swarm_seat_summary=summary)
+    assert "reviewed 197 submissions · 351 entries served" in text
+    assert "entries served" not in await _record()
+
+
+async def test_five_digit_review_entries_explanation_remains_whole():
+    text = await _record(swarm_seat_summary=dict(SUMMARY, reviewed=55_555, review_entries=99_999))
+    assert "reviewed 55,555 submissions · 99,999 entries served" in text

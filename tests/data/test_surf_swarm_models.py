@@ -220,7 +220,7 @@ def test_no_swarm_key_leaks_a_raw_envelope():
 def test_the_seats_permanent_exports_are_the_frozen_literals():
     assert SWARM_SEAT_SELECTED_FIELDS == ("token_id", "agent_id", "selected_by")
     assert SWARM_SEAT_SUMMARY_FIELDS == (
-        "attempts", "accepted", "reviewed", "review_status", "mean_score", "scored",
+        "attempts", "accepted", "reviewed", "review_entries", "review_status", "mean_score", "scored",
         "roles", "online", "owner", "paired_ts", "collaborators", "runtime",
         "agent_id", "daemon", "devices", "win_rate", "last_won_ts", "last_sent_ts",
     )

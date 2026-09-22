@@ -2914,7 +2914,7 @@ class SurfScreen(DashboardScreen):
     }
     SurfScreen #surf-agent-top {
         height: 1fr;
-        min-height: 13;
+        min-height: 14;
         padding: 0 0;
         overflow-y: auto;
         scrollbar-size: 1 1;
@@ -2927,8 +2927,8 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
     }
     SurfScreen SurfSwarmSeatVerdicts {
-        width: 42;
-        max-width: 42;
+        width: 55;
+        max-width: 55;
         height: auto;
         padding: 0 1;
     }

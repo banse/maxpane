@@ -1501,8 +1501,8 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 SWARM_SEAT_SELECTED_FIELDS: tuple[str, ...] = ("token_id", "agent_id", "selected_by")
 
 #: ``swarm_seat_summary``'s fields, the seat's lifetime record from ``/seats``. Every
-#: field is ``None`` when the source did not carry it. ``reviewed`` counts every review,
-#: pending ones included (plan Q-M); ``review_status`` is keyed by
+#: field is ``None`` when the source did not carry it. ``reviewed`` counts distinct submissions,
+#: pending ones included; ``review_entries`` is the raw served list length. ``review_status`` is keyed by
 #: :data:`SWARM_SEAT_REVIEW_STATUSES`. ``runtime`` is ``""`` for a served, empty
 #: ``runtimes`` list (a real "none", seat #0) and ``None`` only when the source did not
 #: carry a usable list -- never "could not look" for a seat that runs nothing.
@@ -1513,7 +1513,7 @@ SWARM_SEAT_SELECTED_FIELDS: tuple[str, ...] = ("token_id", "agent_id", "selected
 #: ``last_won_ts`` is the newest work[].acceptedAt; ``last_sent_ts`` is the newest
 #: reviews[].sentAt. Both are epoch floats or ``None`` when no timestamp is carried.
 SWARM_SEAT_SUMMARY_FIELDS: tuple[str, ...] = (
-    "attempts", "accepted", "reviewed", "review_status", "mean_score", "scored",
+    "attempts", "accepted", "reviewed", "review_entries", "review_status", "mean_score", "scored",
     "roles", "online", "owner", "paired_ts", "collaborators", "runtime",
     "agent_id", "daemon", "devices", "win_rate", "last_won_ts", "last_sent_ts",
 )

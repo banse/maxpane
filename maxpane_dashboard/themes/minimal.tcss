@@ -2568,7 +2568,7 @@ SurfScreen #surf-agent-body {
 /* SEAT's fixed thirteen lines. */
 SurfScreen #surf-agent-top {
     height: 1fr;
-    min-height: 13;
+    min-height: 14;
     padding: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;
@@ -2586,8 +2586,8 @@ SurfSwarmSeatNodes {
 /* SEAT's compact fixed width is bound to PANEL_MAX_WIDTH by a guard.
  * Rows fit third-party text visibly; feedback statuses occupy two lines. */
 SurfSwarmSeatVerdicts {
-    width: 42;
-    max-width: 42;
+    width: 55;
+    max-width: 55;
     height: auto;
     padding: 0 1;
 }

@@ -751,11 +751,32 @@ def _runtime(runtimes: object) -> str | None:
     return " ".join(parts) if parts else None
 
 
+def _distinct_reviews(reviews: object) -> list[Mapping[str, Any]]:
+    """Keep the most advanced entry per valid submission hash; ties keep first."""
+    result: list[Mapping[str, Any]] = []
+    positions: dict[str, int] = {}
+    ranks = {"sent": 3, "submitted": 2, "queued": 1}
+    for review in _mappings(reviews):
+        key = _str(review.get("submissionHash"))
+        if (key is None or len(key) != 64
+                or any(c not in "0123456789abcdefABCDEF" for c in key)):
+            result.append(review)
+            continue
+        if key not in positions:
+            positions[key] = len(result)
+            result.append(review)
+        else:
+            index = positions[key]
+            if ranks.get(_str(review.get("status")), 0) > ranks.get(_str(result[index].get("status")), 0):
+                result[index] = review
+    return result
+
+
 def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     """``swarm_seat_summary``: exactly :data:`SWARM_SEAT_SUMMARY_FIELDS`.
 
     Every field is ``None`` when the source did not carry it or carried the
-    wrong type; a real zero stays ``0``.  ``reviewed`` counts every review,
+    wrong type; a real zero stays ``0``. ``reviewed`` counts distinct submissions,
     pending ones included (Q-M); ``scored`` / ``mean_score`` count only a
     finite, non-bool ``value``. Win rate is lifetime accepted / attempts,
     unlike BY NODE's won / reviewed; zero or missing attempts is undefined.
@@ -765,7 +786,7 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
         return summary
     reviews_raw = _list(payload.get("reviews"))
     work_raw = _list(payload.get("work"))
-    reviews = _mappings(reviews_raw) if reviews_raw is not None else None
+    reviews = _distinct_reviews(reviews_raw) if reviews_raw is not None else None
     work = _mappings(work_raw) if work_raw is not None else None
     summary["attempts"] = _count(payload.get("attempts"))
     summary["accepted"] = _count(payload.get("accepted"))
@@ -779,6 +800,7 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
         summary["daemon"] = "" if daemon is None else _str(daemon)
     if reviews is not None:
         summary["reviewed"] = len(reviews)
+        summary["review_entries"] = len(reviews_raw)
         statuses = [_str(r.get("status")) for r in reviews]
         summary["review_status"] = {s: statuses.count(s) for s in SWARM_SEAT_REVIEW_STATUSES}
         values = [v for v in (_score(r.get("value")) for r in reviews) if v is not None]
@@ -796,7 +818,7 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     summary["owner"] = _str(payload.get("owner"))
     summary["paired_ts"] = _ts(payload.get("pairedAt"))
     won_stamps = [_ts(w.get("acceptedAt")) for w in (work or [])]
-    sent_stamps = [_ts(r.get("sentAt")) for r in (reviews or [])]
+    sent_stamps = [_ts(r.get("sentAt")) for r in _mappings(reviews_raw)]
     summary["last_won_ts"] = max((s for s in won_stamps if s is not None), default=None)
     summary["last_sent_ts"] = max((s for s in sent_stamps if s is not None), default=None)
     collaborators = _list(payload.get("collaborators"))
@@ -844,7 +866,9 @@ def seat_node_rows(payload: object) -> list[dict[str, Any]]:
         return []
     nodes: dict[str, dict[str, Any]] = {}
     for source in ("reviews", "work"):
-        for item in _mappings(_list(payload.get(source))):
+        items = (_distinct_reviews(_list(payload.get(source))) if source == "reviews"
+                 else _mappings(_list(payload.get(source))))
+        for item in items:
             key = _str(item.get("nodeKey"))
             if key is None:
                 continue

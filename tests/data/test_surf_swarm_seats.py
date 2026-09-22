@@ -110,7 +110,8 @@ def test_summary_420_is_the_explorer_record(seat420):
     assert summary == {
         "attempts": 74,                     # attempts
         "accepted": 12,                     # accepted  ("12 of 74")
-        "reviewed": 72,                     # len(reviews)
+        "reviewed": 72,                     # distinct submissions
+        "review_entries": 72,               # raw served entries
         "review_status": {"sent": 66, "submitted": 5, "queued": 1},
         "mean_score": 1.0,                  # every reviews[].value is 1
         "scored": 72,
@@ -216,7 +217,7 @@ def test_summary_reviews_not_a_list_drops_only_the_review_fields(seat420):
     good = fold.seat_summary_from_seat(seat420)
     seat420["reviews"] = {"count": 72}
     summary = fold.seat_summary_from_seat(seat420)
-    for key in ("reviewed", "review_status", "mean_score", "scored", "roles"):
+    for key in ("reviewed", "review_entries", "review_status", "mean_score", "scored", "roles"):
         assert summary[key] is None, key
     # Each timestamp keeps its own source.
     assert summary["last_sent_ts"] is None
@@ -599,3 +600,67 @@ def test_nodes_onchain_requires_a_transaction_hash():
     ]})
     assert rows[0]["reviewed"] == 3
     assert rows[0]["onchain"] == 0
+
+
+# Owner-approved submission deduplication (seat-details handover §9.1).
+def test_duplicated_reviews_fixture_counts_distinct_submissions():
+    payload = swarm_seat_capture("seat_420_duplicated_reviews")
+    summary = fold.seat_summary_from_seat(payload)
+    assert summary["reviewed"] == 197
+    assert summary["review_entries"] == 351
+    assert summary["review_status"] == {"sent": 97, "submitted": 7, "queued": 93}
+    assert summary["scored"] == 197 and summary["mean_score"] == 0.99
+    assert summary["roles"] == [{"role": "implement", "count": 196}, {"role": "review", "count": 1}]
+    assert fold.seat_node_rows(payload)[0] == {
+        "node_key": "oracle_assess", "roles": ["implement"], "reviewed": 195,
+        "won": 188, "onchain": 102, "queued": 93,
+    }
+
+
+@pytest.mark.parametrize("statuses,expected", [
+    (["queued", "sent"], "sent"), (["sent", "queued"], "sent"),
+    (["queued", "submitted"], "submitted"), (["submitted", "sent"], "sent"),
+    (["unknown", "queued"], "queued"),
+])
+def test_duplicate_review_chooses_most_advanced_status(statuses, expected):
+    payload = {"reviews": [{"submissionHash": "a" * 64, "status": status,
+                            "nodeKey": "node", "txHash": "tx", "value": i,
+                            "role": f"role{i}"} for i, status in enumerate(statuses)], "work": []}
+    chosen_index = statuses.index(expected)
+    summary = fold.seat_summary_from_seat(payload)
+    assert summary["reviewed"] == 1 and summary["review_entries"] == 2
+    assert summary["review_status"] == {status: int(status == expected) for status in ("sent", "submitted", "queued")}
+    assert summary["scored"] == 1 and summary["mean_score"] == chosen_index
+    assert summary["roles"] == [{"role": f"role{chosen_index}", "count": 1}]
+    assert fold.seat_node_rows(payload) == [{"node_key": "node", "roles": [f"role{chosen_index}"],
+        "reviewed": 1, "won": 0, "onchain": int(expected != "queued"), "queued": int(expected == "queued")}]
+
+
+def test_duplicate_review_status_ties_keep_first_source_entry():
+    payload = {"reviews": [{"submissionHash": "b" * 64, "status": "queued", "value": score,
+                            "nodeKey": node} for score, node in [(0, "first"), (1, "second")]], "work": []}
+    assert fold.seat_summary_from_seat(payload)["mean_score"] == 0
+    assert [r["node_key"] for r in fold.seat_node_rows(payload)] == ["first"]
+
+
+@pytest.mark.parametrize("bad_hash", [None, "", "a" * 63, "a" * 65, "g" * 64, "0x" + "a" * 64, 42, []])
+def test_hashless_or_invalid_hash_reviews_are_never_merged(bad_hash):
+    review = {"submissionHash": bad_hash, "nodeKey": "node", "status": "queued"}
+    payload = {"reviews": [review.copy(), review.copy()], "work": []}
+    summary = fold.seat_summary_from_seat(payload)
+    assert summary["reviewed"] == summary["review_entries"] == 2
+    assert fold.seat_node_rows(payload)[0]["reviewed"] == 2
+
+
+@pytest.mark.parametrize("token,reviewed", [(0, 202), (420, 72), (1649, 13), (516, 9)])
+def test_older_review_captures_remain_unchanged(token, reviewed):
+    payload = swarm_seat_capture(f"seat_{token}")
+    assert fold._distinct_reviews(payload["reviews"]) == payload["reviews"]
+    summary = fold.seat_summary_from_seat(payload)
+    assert summary["reviewed"] == summary["review_entries"] == summary["scored"] == reviewed
+    assert summary["mean_score"] == 1.0
+
+
+def test_review_entries_counts_the_raw_list_even_with_non_mapping_members():
+    summary = fold.seat_summary_from_seat({"reviews": [{}, "junk", None]})
+    assert summary["reviewed"] == 1 and summary["review_entries"] == 3

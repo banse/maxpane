@@ -271,7 +271,7 @@ def test_a_keyless_public_api_serves_no_secret_shaped_key_anywhere():
 #: The eight committed captures, hand-typed from the plan's WP0 table so the
 #: manifest cannot agree with itself by losing a file.
 _SEAT_CAPTURES = (
-    "seat_420", "seat_0", "seat_1649", "seat_516", "unknown_seat_404",
+    "seat_420", "seat_0", "seat_1649", "seat_516", "seat_420_duplicated_reviews", "unknown_seat_404",
     "invalid_request_400", "jobs_window_100", "job_80c853bd_winner_only",
 )
 
@@ -391,3 +391,13 @@ def test_seat_detail_folds_match_captured_lifetime_values():
     assert [row["launch"] for row in fold.seat_work_rows(zero) if row["launch"] is not None] == launches
     assert zero["daemonVersion"] is None
     assert fold.seat_summary_from_seat(zero)["daemon"] == ""
+
+
+def test_duplicated_reviews_capture_manifest_records_owner_provenance():
+    entry = swarm_seat_capture("MANIFEST")["files"]["seat_420_duplicated_reviews"]
+    assert entry["route"] == "/seats/420" and entry["http_status"] == 200
+    assert entry["captured_on"] == "2026-09-21"
+    assert entry["captured_at"] == "≈23:15Z (live probe by Claude)"
+    assert entry["selected_because"] == (
+        "reviews[] lists 154 of 197 submissions twice (stale sent/submitted/queued "
+        "entry + a fresh queued copy, same submissionHash); acceptedAt in the '2026-09-21 21:35:42.88+00' form")

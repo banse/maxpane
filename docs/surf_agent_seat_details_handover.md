@@ -125,9 +125,8 @@ measure (§5). Rules for every panel:
 
 Denominators — state them in docstrings, never mix them:
 - hero / SEAT win rate = `accepted / attempts` (lifetime counters served by `/seats`);
-- BY NODE win = `won / reviewed` for that node (`attempts` is not served per node). The two can differ
-  in the first decimal (12/164 = 7.3 % vs 12/161 = 7.5 %) — that is why the headers differ
-  ("of attempts" vs "reviewed").
+- BY NODE win = `won / distinct-reviewed-submissions` for that node (`attempts` is not served per node).
+  The hero uses `accepted / attempts`: these answer different questions and may differ widely.
 
 ---
 
