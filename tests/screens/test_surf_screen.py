@@ -8944,9 +8944,11 @@ def _status_bar_whole(app):
     return (' poll' in line and right.region.right <= bar.region.right
             and str(right.render()).strip() == _region_text(app,right).strip())
 
-async def test_launchpad_full_width_is_bound_by_the_whole_status_bar():
+async def test_launchpad_full_width_is_bound_by_coins_with_status_already_whole():
     for width in (SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS-1,SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS):
         async with _surf_app(_ordinary_burn_payload()).run_test(size=(width,SURF_LAUNCHPAD_FULL_LAYOUT_ROWS)) as pilot:
             await pilot.app.screen._do_refresh();await pilot.press('l');await pilot.pause()
-            assert _status_bar_whole(pilot.app)==(width>=SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS)
+            assert _status_bar_whole(pilot.app)
+            title=_region_text(pilot.app,pilot.app.screen.query_one("#surf-lpc-title"))
+            assert ("‹ widen" in title) == (width < SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS)
             assert not _clipped_launchpad_lines(pilot.app,pilot.app.screen)
