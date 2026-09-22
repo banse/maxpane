@@ -701,7 +701,7 @@ SEAT RECORD shows `claude 2.1.278 (Claude Code)` / `codex codex-cli 0.149.0` —
 Prettifying is an owner call, not a parser of vendor strings (plan §9 D).
 
 
-## F39 — F43 — seat-details programme (2026-09-22)
+## F39 — F45 — seat-details programme (2026-09-22)
 
 ### F39 — RECORD and BY NODE cannot name the never-paired token — OPEN
 
@@ -765,3 +765,16 @@ the pin at **131 × 32**, with the body now whole from **130**; the label depend
 Retain the composited status-bar coverage when updating those labels and re-measure the affected
 pin. A layout guarantee tied to label length remains a follow-up; this fix wave does not redesign
 the status bar.
+
+### F44 — the 64-hex `submissionHash` check is written twice — OPEN (Minor, scoped re-review N1)
+
+`data/surf_swarm.py` `_distinct_reviews` (~l.762) re-states the 64-hex validation that
+`seat_work_rows` (~l.842) already applies. Hoist one `_hex64` helper in the same module and use it
+in both; Tier 0 the next time the file is touched.
+
+### F45 — the duplicated-review capture has no permanent layout case — OPEN (Minor, scoped re-review N2)
+
+The AGENT `#:` blocks say `seat_420_duplicated_reviews` was swept, but `PAYLOADS` in
+`tests/screens/test_surf_swarm_layout.py` (~l.352) lists only capture, capture420 and the two worst
+payloads. The worst-a payload covers the `entries served` line, so this is test rigor only: add the
+capture to `PAYLOADS` when the layout test is next touched.
