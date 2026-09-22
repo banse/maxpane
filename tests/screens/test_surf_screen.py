@@ -1555,10 +1555,13 @@ def _sample_data() -> dict:
             {"skill_id": "implement-textual-panel", "version": "1.2.0",
              "role": "implement", "kind": "code", "tier": "core",
              "judge": "verifier", "checks": "pytest -q",
-             "requires": ["python>=3.11"]},
+             "requires": ["python>=3.11"], "inference": "standard",
+             "attempts": 83, "accepted": 70, "rejected": 1, "pending": 12},
             {"skill_id": "review-diff", "version": "0.9.1",
              "role": "review", "kind": "judgement", "tier": None,
-             "judge": "verifier", "checks": None, "requires": []},
+             "judge": "verifier", "checks": None, "requires": [],
+             "inference": None, "attempts": None, "accepted": None,
+             "rejected": None, "pending": None},
         ],
         "swarm_launch_rows": [
             {"launch_number": 12, "kind": "token", "status": "live",
@@ -1619,7 +1622,8 @@ def _sample_data() -> dict:
         "swarm_seat_work_rows": [
             {"job_id": "job-4402", "node_key": "codex-14", "role": "implement",
              "job_state": "completed", "objective": "Fix the identity.md link",
-             "accepted_ts": _TS_POST_13 - 4_000.0, "launch": None, "submission_hash": "ab"*32},
+             "accepted_ts": _TS_POST_13 - 4_000.0, "launch": None, "submission_hash": "ab"*32,
+             "answer": None, "answer_state": "not_read", "model": None, "took_s": None},
         ],
         # The seat tier's own marker (AGENT-seats plan §1.1).
         "swarm_seat_as_of_hhmm": "13:50",
@@ -6872,6 +6876,7 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     offer this layout. ``l`` and ``p`` are a different shape of key: each
     swaps the *whole* dashboard body for an unrelated second view (curator's
     ``y``/``f`` precedent) and leaves the hero mounted above it.
+    ``o``/``O`` sort the LEADERBOARD and are not a body toggle.
 
     This replaces ``test_the_bindings_are_refresh_and_the_launchpad_toggle``
     rather than sitting beside it: two tests asserting different exact
@@ -6879,7 +6884,7 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "e", "4", "s", "a", "b", "i", "escape"}
+    assert keys == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
         "the old c-swap action outlived its binding -- an action with no key "
         "is a surface nobody can reach and nobody maintains"

@@ -225,8 +225,9 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # Plus the swarm's two tier slots and, since WP4 of the swarm v2 plan, the
     # jobs-seen map both swarm tiers append to (`SLOT_SWARM_JOBS_SEEN`), and
     # the AGENT body's one seat (`SLOT_SWARM_SEAT`, the /seats plan WP2),
-    # then BOARD's separate contributors/workers slots.
-    assert len(SLOTS) == 15
+    # then BOARD's separate contributors/workers slots, plus the selected
+    # seat's extracted submission answers (SLOT_SWARM_ANSWERS, polish WP1).
+    assert len(SLOTS) == 16
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):
