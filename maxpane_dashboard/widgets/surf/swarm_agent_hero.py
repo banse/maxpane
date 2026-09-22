@@ -176,7 +176,7 @@ class SurfSwarmAgentHero(HeroRow):
         rate = summary.get("win_rate")
         if isinstance(rate, bool) or not isinstance(rate, (int, float)):
             return UNAVAILABLE
-        return Text(f"{fmt_win_rate(rate)}\nof attempts")
+        return Text().append(fmt_win_rate(rate), style="bold").append("\nof attempts", style="dim")
 
     @staticmethod
     def _collab_body(summary: dict) -> str | Text:
@@ -191,20 +191,27 @@ class SurfSwarmAgentHero(HeroRow):
     @staticmethod
     def _status_body(summary, state, live) -> Text:
         """Worker state and seats acceptance retain independent availability."""
-        working, pause = "unavailable", ""
-        if isinstance(live, dict) and live.get("live") is False:
-            working = "offline"
-        elif isinstance(live, dict) and live.get("live") is True:
-            active, capacity = _count(live.get("working")), _count(live.get("max_concurrency"))
-            if active is not None and capacity is not None:
-                working = f"working {fmt_int(active)} of {fmt_int(capacity)}"
-            if live.get("paused_until_ts") is not None:
-                failures = _count(live.get("failures"))
-                pause = f"⏸ until {hhmm(live['paused_until_ts'])} ×{fmt_int(failures) if failures is not None else DASH}"
+        # The fold distinguishes a known idle worker from unknown pause
+        # evidence. `live=True` with zero work alone cannot establish idle.
+        live = live if isinstance(live, dict) else {}
+        live_state = live.get("live_state")
+        active, capacity = _count(live.get("working")), _count(live.get("max_concurrency"))
+        counts = f"working {fmt_int(active)} of {fmt_int(capacity)}"
+        word = counts if live_state == "working" else (
+            live_state if live_state in ("idle", "offline", "paused") else "unavailable")
+        if live_state in ("idle", "paused") and active is not None and capacity is not None:
+            word += " · " + counts
+        color = {"working":"green", "idle":"dim", "offline":"red", "paused":"red"}.get(live_state, "yellow")
+        body = Text().append(word, style=color).append("\n")
+        if live.get("paused_until_ts") is not None:
+            failures = _count(live.get("failures"))
+            body.append(f"⏸ until {hhmm(live['paused_until_ts'])} ×{fmt_int(failures) if failures is not None else DASH}", style="red")
+        elif live_state is None and active is not None and capacity is not None:
+            body.append(counts, style="dim")
         accepted = "accepted unavailable"
         if state == "ok" and isinstance(summary, dict):
             if summary.get("accepted") == 0:
                 accepted = "none accepted yet"
             elif summary.get("last_won_ts") is not None:
                 accepted = f"accepted {mmdd_hhmm(summary['last_won_ts'])}"
-        return Text("\n".join((working, pause, accepted)))
+        return body.append("\n").append(accepted)

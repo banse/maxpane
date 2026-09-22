@@ -353,7 +353,7 @@ def _worst_agent_payload() -> dict:
         "swarm_seat_work_rows": work, "swarm_seat_node_rows": nodes,
         "swarm_seat_teammates": teammates, "swarm_seat_summary": summary,
     })
-    k["swarm_seat_live"] = dict(k["swarm_seat_live"], working=99_999, max_concurrency=99_999,
+    k["swarm_seat_live"] = dict(k["swarm_seat_live"], live=True, live_state="working", working=99_999, max_concurrency=99_999,
         failures=99_999, paused_until_ts=1_758_456_000, skills=99_999,
         profiles=["profile"+str(i)+"x"*64 for i in range(20)], platform="platform"+"x"*64)
     k["swarm_seat_contrib"] = dict(k["swarm_seat_contrib"], attempts=99_999, accepted=55_555,

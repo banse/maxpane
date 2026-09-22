@@ -16,10 +16,11 @@ What is kept from the old hero, behaviour not code
   *unreported* -- a service nobody asked about is not one that said no. The
   all-up case is **summarised** (:data:`ALL_SERVICES_UP`, 15 cells) rather
   than listing three green dots on every render; anything less than all-up
-  lists **every** service once, with a green or red ``●`` beside its name
-  and a dim ``?`` for one the dict does not report. Worst case
-  ``verifier ● publisher ● deployer ?`` is 33 cells measured on
-  ``rich.cells.cell_len``; the swarm pin's sweep says what box width buys it.
+  lists **every** service once with explicit ``up``, ``down`` or dim
+  ``unreported`` words so colour is not the only distinction. The mixed
+  example ``verifier down publisher up deployer unreported`` is 46 cells;
+  it exceeds the pin's 19 content cells (the previous 33-cell dot line
+  already clipped there). Health uses the existing second row.
   A ``swarm_services_up`` that is ``None`` or not a dict at all is the
   **whole read failing** and says ``unavailable`` like every other box
   (the common rule "a dict that is ``None`` → unavailable"; the old hero
@@ -34,14 +35,14 @@ What changed against the old hero
 * **QUEUE** is ``swarm_queue_total``, the sum of every ``/health.pending*``
   counter; ``0`` is a real empty queue.
 * **BREAKER** is the deploy breaker, three facts kept apart: not tripped
-  is the em dash (a clean negative, not a number); tripped is the host's
-  ``detail`` in red, or the word ``tripped`` when there is none; ``None``
+  is green ``closed``; tripped is red ``open`` followed by the host's
+  detail when present; ``None``
   (or anything but a dict) is ``unavailable`` -- the two are different
   facts and must never look alike (plan §1.1).
 
 Third-party text
 ----------------
-The breaker ``detail`` is the one string here the host writes. It is
+The breaker ``detail`` is host-written text. It is
 flattened, clipped to the box's own measured width (``rowfit.clip`` on
 ``cell_len``, a visible ``…``) and handed to ``render_box`` as a
 pre-built ``rich.text.Text`` -- ``Text(...)`` parses nothing, so a
@@ -50,9 +51,9 @@ cannot raise; there is no markup step for an escape to guard.
 ``markup_safety.sanitize_cell`` was *not* used for it on purpose: its
 ``strip_tags`` step deletes a complete ``[...]`` run outright, and the plan
 (WP5) requires a hostile tag to **render literally**, which a stripped
-string cannot do. Every other value is a count the manager's own fold
-produced; those go through the ``str`` path with ``safe_markup`` on the
-belt-and-suspenders convention the old hero kept.
+string cannot do. The separate health status uses the common sanitizer and
+keeps its raw-word colour decision separate from rendering. Other values are
+counts produced by the manager's fold.
 
 Geometry
 --------
@@ -70,8 +71,8 @@ from __future__ import annotations
 
 from rich.text import Text
 
-from maxpane_dashboard.widgets.fmt import DASH, EMDASH, fmt_int
-from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup
+from maxpane_dashboard.widgets.fmt import DASH, fmt_int
+from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.rowfit import clip
 
@@ -137,41 +138,60 @@ def _count_body(value) -> str:
     return _value(fmt_int(value))
 
 
-def _breaker_body(breaker, width: int) -> "str | Text":
-    """Em dash / red detail (or ``tripped``) / unavailable -- three facts."""
-    if not isinstance(breaker, dict):
-        return UNAVAILABLE
-    if not breaker.get("tripped"):
-        return _value(EMDASH)
-    detail = breaker.get("detail")
-    if detail is None:
-        return Text("tripped", style="red")
-    flat = flatten(detail)
-    if not flat:
-        return Text("tripped", style="red")
-    shown = clip(flat, width) if width > 0 else flat
-    return Text(shown, style="red")
+def _working_body(value) -> Text:
+    count = _int_or_none(value)
+    if count is None:
+        return Text.from_markup(UNAVAILABLE)
+    if count == 0:
+        return Text().append("0", style="bold dim").append(" quiet", style="dim")
+    return Text(fmt_int(count), style="bold green")
 
 
-def _services_body(services_up) -> "str | Text":
-    """``all services up``, or every service once with its own glyph."""
-    if not isinstance(services_up, dict):
-        return UNAVAILABLE
-    states = [services_up.get(name) for name in SERVICE_NAMES]
-    if all(state is True for state in states):
-        return _value(ALL_SERVICES_UP)
+def _queue_body(value) -> Text:
+    count = _int_or_none(value)
+    if count is None:
+        return Text.from_markup(UNAVAILABLE)
+    return Text(fmt_int(count), style="bold yellow" if count > 0 else "bold")
+
+
+def _breaker_body(breaker, width: int) -> Text:
+    """Closed / open with independent detail / unavailable."""
+    if not isinstance(breaker, dict) or not isinstance(breaker.get("tripped"), bool):
+        return Text.from_markup(UNAVAILABLE)
+    if breaker["tripped"] is False:
+        return Text("closed", style="green")
+    body = Text("open", style="red")
+    detail = flatten(breaker.get("detail"))
+    if detail:
+        body.append("\n" + (clip(detail, width) if width > 0 else detail))
+    return body
+
+
+def _services_body(services_up, health_status, width: int) -> Text:
+    """Existing service summary, plus the independently served health word."""
     line = Text()
-    for index, (name, state) in enumerate(zip(SERVICE_NAMES, states)):
-        if index:
-            line.append(" ")
-        line.append(name, style=_VALUE_STYLE)
-        line.append(" ")
-        if state is True:
-            line.append("●", style="green")
-        elif state is False:
-            line.append("●", style="red")
+    if not isinstance(services_up, dict):
+        line.append_text(Text.from_markup(UNAVAILABLE))
+    else:
+        states = [services_up.get(name) for name in SERVICE_NAMES]
+        if all(state is True for state in states):
+            line.append(ALL_SERVICES_UP, style="bold green")
         else:
-            line.append("?", style="dim")
+            for index, (name, state) in enumerate(zip(SERVICE_NAMES, states)):
+                if index:
+                    line.append(" ")
+                style = "green" if state is True else "red" if state is False else "dim"
+                line.append(name, style="bold " + style)
+                line.append(" up" if state is True else " down" if state is False else " unreported", style=style)
+    line.append("\n").append("health ", style="dim")
+    if health_status is None:
+        line.append("unavailable", style="yellow")
+    else:
+        # Preserve the served word, sanitized and visibly clipped if a host
+        # supplies a long status. Its colour uses the raw status, not markup.
+        shown = Text.from_markup(sanitize_cell(health_status, max(width-7, 0))) if width else Text(flatten(health_status))
+        shown.stylize("green" if health_status == "ok" else "red")
+        line.append_text(shown)
     return line
 
 
@@ -203,7 +223,7 @@ class SurfSwarmHero(HeroRow):
         swarm_queue_total=None,
         swarm_breaker=None,
         swarm_services_up=None,
-        swarm_health_status=None,  # polish WP1 seam; semantic rendering lands in WP5
+        swarm_health_status=None,
         **_kwargs,
     ) -> None:
         """Refresh all six boxes; every box is written on every poll (MEDI-38).
@@ -218,6 +238,7 @@ class SurfSwarmHero(HeroRow):
             "queue": swarm_queue_total,
             "breaker": swarm_breaker,
             "services": swarm_services_up,
+            "health_status": swarm_health_status,
         }
         self._render_view()
 
@@ -240,18 +261,18 @@ class SurfSwarmHero(HeroRow):
             lambda: _agents_body(data.get("online"), data.get("enrolled")),
         )
         self.render_box(
-            f"#{working}", "WORKING", lambda: _count_body(data.get("working")),
+            f"#{working}", "WORKING", lambda: _working_body(data.get("working")),
         )
         self.render_box(
             f"#{accepted}", "ACCEPTED 24h", lambda: _count_body(data.get("accepted")),
         )
         self.render_box(
-            f"#{queue}", "QUEUE", lambda: _count_body(data.get("queue")),
+            f"#{queue}", "QUEUE", lambda: _queue_body(data.get("queue")),
         )
         self.render_box(
             f"#{breaker}", "BREAKER",
             lambda: _breaker_body(data.get("breaker"), self._box_width(breaker)),
         )
         self.render_box(
-            f"#{services}", "SERVICES", lambda: _services_body(data.get("services")),
+            f"#{services}", "SERVICES", lambda: _services_body(data.get("services"), data.get("health_status"), self._box_width(services)),
         )

@@ -560,3 +560,42 @@ async def test_board_sort_keys_cycle_all_columns_even_when_hidden_and_keep_hint(
         await pilot.press('escape','o','O');await pilot.pause()
         assert widget._sort_key=='rank' and widget._sort_reverse is True
         assert writes==[]
+
+
+@pytest.mark.parametrize('kind',['healthy','health-unavailable','services-unavailable'])
+async def test_polish_swarm_health_second_line_fits_existing_pin(kind):
+    from tests.screens.test_surf_swarm_layout import _capture_payload
+    from tests.screens.test_surf_screen import _css_clipped_lines
+    from tests.surf_swarm_fixtures import swarm_capture_v4
+    payload=_capture_payload()
+    payload['swarm_health_status']=sw.health_facts(swarm_capture_v4('health'))['health_status']
+    if kind=='health-unavailable':payload['swarm_health_status']=None
+    if kind=='services-unavailable':payload['swarm_services_up']=None
+    async with _surf_app(payload).run_test(size=(141,42)) as pilot:
+        screen=await _open(pilot,'s')
+        hero=screen.query_one(SurfSwarmHero)
+        text=_region_text(pilot.app,screen.query_one('#surf-swarm-hero-services'))
+        assert ('health unavailable' if kind=='health-unavailable' else 'health ok') in text
+        if kind!='services-unavailable':assert 'all services up' in text
+        assert hero.region.height==6
+        assert not _css_clipped_lines(pilot.app,hero)
+        assert '‹ taller' not in _screen_text(pilot.app).splitlines()[0]
+
+
+@pytest.mark.parametrize('live_state',['working','idle','paused',None])
+async def test_polish_agent_worker_states_keep_five_digit_counts_whole_at_pin(live_state):
+    from tests.screens.test_surf_swarm_layout import _worst_agent_payload
+    from tests.screens.test_surf_screen import _css_clipped_lines
+    payload=_worst_agent_payload()
+    payload['swarm_seat_live'].update(live_state=live_state,working=99999 if live_state=='working' else 0,
+        paused_until_ts=1758456000 if live_state in ('working','paused') else None)
+    async with _surf_app(payload).run_test(size=(138,32)) as pilot:
+        screen=await _open(pilot,'a')
+        hero=screen.query_one(SurfSwarmAgentHero)
+        text=_region_text(pilot.app,screen.query_one('#surf-swarm-agent-status'))
+        assert (live_state or 'unavailable') in text
+        assert 'working '+('99,999' if live_state=='working' else '0')+' of 99,999' in text
+        assert 'workers as of 04:02' in text and 'accepted ' in text
+        if live_state in ('working','paused'):assert '×99,999' in text
+        assert not _css_clipped_lines(pilot.app,hero)
+        assert '‹ taller' not in _screen_text(pilot.app).splitlines()[0]

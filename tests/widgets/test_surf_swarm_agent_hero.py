@@ -80,7 +80,7 @@ class _Themed(App):
 def _merged(kwargs) -> dict:
     return {"swarm_seat_selected": SELECTED, "swarm_seat_summary": SUMMARY,
             "swarm_seat_state": "ok", "swarm_seat_as_of_hhmm": AS_OF,
-            "swarm_seat_live": {"live":True,"working":0,"max_concurrency":2},
+            "swarm_seat_live": {"live":True,"live_state":"idle","working":0,"max_concurrency":2},
             "swarm_workers_as_of_hhmm":"05:07", **kwargs}
 
 
@@ -188,7 +188,7 @@ async def test_the_largest_seat_fits_whole_and_reads_offline(width):
     summary = seat_summary_from_seat(SEAT_0)
     selected = {"token_id": 0, "agent_id": str(SEAT_0["agentId"]), "selected_by": "most_active"}
     boxes = await _boxes(size=(width, 9), swarm_seat_selected=selected,
-                         swarm_seat_summary=summary, swarm_seat_live={"live":False})
+                         swarm_seat_summary=summary, swarm_seat_live={"live":False,"live_state":"offline"})
     status = summary["review_status"]
     assert _lines(boxes["reviewed"])[-2:] == [
         str(summary["reviewed"]), f"{status['submitted'] + status['queued']} pending"]
@@ -368,7 +368,7 @@ async def test_acceptance_words_replace_retired_win_words_in_composited_output()
     assert "ACCEPT RATE" in text
     assert "WIN RATE" not in text and "won " not in text and "wins" not in text
 
-LIVE = dict(live=True, working=3, max_concurrency=8, paused_until_ts=1_758_456_000,
+LIVE = dict(live=True, live_state='working', working=3, max_concurrency=8, paused_until_ts=1_758_456_000,
             failures=7, skills=30, profiles=['foundry'], platform='linux x64')
 
 @pytest.mark.parametrize('state',['pending',None])
@@ -380,7 +380,7 @@ async def test_worker_status_survives_bad_seats_without_stale_accepted_date(stat
     assert 'accepted unavailable' in text and mmdd(SUMMARY['last_won_ts']) not in text
     assert len(_lines(text)) == 4  # one title, exactly three body lines
 
-@pytest.mark.parametrize('live,expected',[(None,'unavailable'),({'live':False},'offline')])
+@pytest.mark.parametrize('live,expected',[(None,'unavailable'),({'live':False,'live_state':'offline'},'offline')])
 async def test_worker_status_distinguishes_offline_from_unavailable(live,expected):
     text=await _box_text(BOX_IDS['status'],size=(180,9),swarm_seat_live=live)
     assert expected in _lines(text)
@@ -391,3 +391,61 @@ async def test_seats_clock_stays_with_accepted_and_worker_clock_with_status():
     boxes=await _boxes(size=(180,9),swarm_seat_live=LIVE,swarm_workers_as_of_hhmm='05:07')
     assert 'as of 04:06' in boxes['accepted']
     assert 'workers as of 05:07' in boxes['status'] and '04:06' not in boxes['status']
+
+
+@pytest.mark.parametrize('live_state,word,color',[
+    ('working','working',2),('idle','idle',None),('offline','offline',1),
+    ('paused','paused',1),(None,'unavailable',3),
+])
+async def test_polish_worker_status_words_and_composited_colors(live_state,word,color):
+    live=dict(live=live_state!='offline',live_state=live_state,working=2 if live_state=='working' else 0,
+              max_concurrency=8,paused_until_ts=1758456000 if live_state=='paused' else None,failures=7)
+    async with _Themed().run_test(size=SIZE) as pilot:
+        pilot.app.query_one(SurfSwarmAgentHero).update_data(**_merged(dict(swarm_seat_live=live)))
+        await pilot.pause()
+        box=pilot.app.query_one('#'+BOX_IDS['status']);region=box.region
+        lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        y=next(y for y in range(region.y,region.bottom) if word in lines[y][region.x:region.right])
+        x=lines[y].index(word,region.x)
+        style=pilot.app.screen.get_style_at(x,y)
+        if color is not None:assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color]
+        else:
+            plain_y=next(y for y in range(region.y,region.bottom) if 'accepted ' in lines[y][region.x:region.right])
+            plain_x=lines[plain_y].index('accepted ',region.x)
+            assert style.color!=pilot.app.screen.get_style_at(plain_x,plain_y).color
+        content='\n'.join(line[region.x:region.right] for line in lines[region.y:region.bottom])
+        assert 'workers as of 05:07' in content and 'accepted '+mmdd(SUMMARY['last_won_ts']) in content
+        if live_state in ('idle','paused',None):assert 'working 0 of 8' in content
+        if live_state=='paused':assert 'until '+hhmm(1758456000) in content and '×7' in content
+        assert '…' not in content
+
+
+async def test_polish_unknown_pause_fold_reaches_unavailable_not_idle():
+    from maxpane_dashboard.data import surf_swarm as fold
+    from tests.surf_swarm_fixtures import swarm_capture_v4
+    row=swarm_capture_v4('workers')['workers'][0]
+    row.update(working=0,paused=None)
+    token=int(row['seat']['tokenId'])
+    idle=fold.seat_live(dict(count=1,workers=[row]),token)
+    row.pop('paused')
+    unknown=fold.seat_live(dict(count=1,workers=[row]),token)
+    assert idle['live_state']=='idle' and unknown['live_state'] is None
+    for live,expected in ((idle,'idle'),(unknown,'unavailable')):
+        text=await _box_text(BOX_IDS['status'],swarm_seat_live=live)
+        assert _lines(text)[1].startswith(expected),text
+        assert ('idle' in text)==(expected=='idle')
+        assert 'working 0 of ' in text
+
+
+async def test_polish_accepted_reviewed_and_rate_have_composited_emphasis():
+    async with _Themed().run_test(size=SIZE) as pilot:
+        pilot.app.query_one(SurfSwarmAgentHero).update_data(**_merged({}))
+        await pilot.pause()
+        lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        for box_key,word,color in (('accepted',str(SUMMARY['accepted']),2),('accepted',str(SUMMARY['attempts']),None),
+                                   ('reviewed',str(SUMMARY['reviewed']),None),('win_rate',f"{SUMMARY['win_rate']*100:.1f}",None)):
+            region=pilot.app.query_one('#'+BOX_IDS[box_key]).region
+            y=next(y for y in range(region.y,region.bottom) if word in lines[y][region.x:region.right])
+            style=pilot.app.screen.get_style_at(lines[y].index(word,region.x),y)
+            assert style.bold,(box_key,word,style)
+            if color is not None:assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color]
