@@ -6,9 +6,8 @@ survives a restart*. It holds no clients, does no I/O other than reading and
 writing its own JSON file, and imports nothing from the project except the
 dependency-free :mod:`maxpane_dashboard.data.series_points` leaf.
 
-Six refresh tiers, the first three sized from PRD §5 (this line said "four"
-while the list below had five; the count is now derived from the list rather
-than remembered):
+Refresh tiers include the following; :data:`TIERS` owns their complete list.
+The first three are sized from PRD §5:
 
 ``fast``        every refresh (TTL 0). Three ``eth_getTransactionCount`` reads
                 plus one batched ``eth_call`` round. The announce channel
@@ -30,6 +29,8 @@ than remembered):
                 reason: a full sIMD ``Transfer`` history fold, far too
                 expensive for the pool4 tier, behind a panel that moves slowly.
                 Its own slot and its own ``as of HH:MM``.
+``swarm_board`` 120 s. Contributors and workers, independently validated slots
+                with separate last-good version timestamps.
 
 The pool4 reserve is **two series, one per network**, and that is the single
 least obvious thing in this module. ``pool4`` reads Sepolia until a mainnet
@@ -119,10 +120,13 @@ TIER_SWARM_SCORES = "swarm_scores"
 #: :meth:`SurfCache.mark_due`. The failure backoff is the
 #: live tier's 120 s (plan §9 N): the same host, polled no faster when it fails.
 TIER_SWARM_SEAT = "swarm_seat"
+#: One board refresh, two independently validated last-good sources. AGENT uses
+#: these slots too; seat selection does not change this tier's due time.
+TIER_SWARM_BOARD = "swarm_board"
 
 TIERS: tuple[str, ...] = (
     TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
-    TIER_POOL4_STAKERS, TIER_SWARM, TIER_SWARM_SCORES, TIER_SWARM_SEAT,
+    TIER_POOL4_STAKERS, TIER_SWARM, TIER_SWARM_SCORES, TIER_SWARM_SEAT, TIER_SWARM_BOARD,
 )
 
 TIER_TTL_SECONDS: dict[str, float] = {
@@ -135,6 +139,7 @@ TIER_TTL_SECONDS: dict[str, float] = {
     TIER_SWARM: 60.0,
     TIER_SWARM_SCORES: 1800.0,
     TIER_SWARM_SEAT: 120.0,
+    TIER_SWARM_BOARD: 120.0,
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
@@ -147,6 +152,7 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
     TIER_SWARM: 120.0,
     TIER_SWARM_SCORES: 300.0,
     TIER_SWARM_SEAT: 120.0,
+    TIER_SWARM_BOARD: 120.0,
 }
 
 
@@ -167,6 +173,8 @@ SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
 SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
 SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
 SLOT_SWARM_SEAT = "swarm_seat"        # {token, state, seat}: the selected seat's /seats read
+SLOT_SWARM_WORKERS = "swarm_workers"  # normalized /workers envelope, its own version clock
+SLOT_SWARM_CONTRIBUTORS = "swarm_contributors"  # normalized /contributors envelope
 
 SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
@@ -203,6 +211,10 @@ SLOTS: tuple[str, ...] = (
     # third-party input on the way back in: the manager validates it per
     # field with ``surf_swarm.coerce_seat_slot`` before any key reads it.
     SLOT_SWARM_SEAT,
+    # Validated per field at load through injected pure coercers. Missing a
+    # coercer refuses the slot; this cache imports no client or fold module.
+    SLOT_SWARM_WORKERS,
+    SLOT_SWARM_CONTRIBUTORS,
 )
 
 
@@ -1116,8 +1128,15 @@ class SurfCache:
         self._dirty = True
         return {}
 
-    def load(self, path: str | None = None, *, now: float | None = None) -> None:
+    def load(
+        self, path: str | None = None, *, now: float | None = None,
+        slot_coercers: Mapping[str, Callable[[Any], Any]] | None = None,
+    ) -> None:
         """Restore saved state. Silent no-op on a missing or corrupt file.
+
+        BOARD slots require their injected per-field coercers; an absent
+        validator refuses that slot. Injection keeps this cache independent
+        of the fold/client layer and uses the same validation at consumption.
 
         Per-section ``try``/``except``: one bad block never costs the others, and
         nothing here raises into the manager's constructor. Series points are
@@ -1170,7 +1189,14 @@ class SurfCache:
                     self._dirty = True
                     continue
                 try:
-                    self.last_good[str(slot)] = LastGood.from_dict(data, now=reference)
+                    entry = LastGood.from_dict(data, now=reference)
+                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS):
+                        coerce = (slot_coercers or {}).get(slot)
+                        clean = coerce(entry.payload) if coerce is not None else None
+                        if clean is None:
+                            raise ValueError("BOARD slot lacks a valid normalized payload")
+                        entry = LastGood(payload=clean, ts=entry.ts)
+                    self.last_good[str(slot)] = entry
                 except Exception as exc:            # noqa: BLE001
                     logger.debug("Skipping bad SURF last-good slot %s: %s", slot, exc)
                     self._dirty = True
@@ -1353,6 +1379,8 @@ __all__ = [
     "SLOT_SWARM_JOBS_SEEN",
     "SLOT_SWARM_SCORES",
     "SLOT_SWARM_SEAT",
+    "SLOT_SWARM_WORKERS",
+    "SLOT_SWARM_CONTRIBUTORS",
     "SurfCache",
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",
@@ -1365,6 +1393,7 @@ __all__ = [
     "TIER_SWARM",
     "TIER_SWARM_SCORES",
     "TIER_SWARM_SEAT",
+    "TIER_SWARM_BOARD",
     "TIER_TTL_SECONDS",
     "pool4_reserve_series_name",
 ]

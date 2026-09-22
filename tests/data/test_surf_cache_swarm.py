@@ -53,7 +53,7 @@ def test_the_jobs_seen_slot_is_registered_so_it_restores():
     ``job_id -> entry`` map both swarm tiers append to."""
     assert SLOT_SWARM_JOBS_SEEN == "swarm_jobs_seen"
     assert SLOT_SWARM_JOBS_SEEN in SLOTS
-    assert len(SLOTS) == 13
+    assert len(SLOTS) == 15
 
 
 def test_a_seen_map_round_trips_through_save_and_load(tmp_path):
@@ -191,3 +191,74 @@ def test_a_hand_edited_seat_slot_loads_but_is_refused_per_field(tmp_path, edit):
     entry = fresh.get_last_good(SLOT_SWARM_SEAT)
     assert entry is not None, "the cache keeps the slot; the reader judges it"
     assert sw.coerce_seat_slot(entry.payload) is None
+
+
+# BOARD normalized slots are validated on load by injected pure coercers.
+
+
+def _board_coercers():
+    return {"swarm_workers": sw.coerce_workers_slot, "swarm_contributors": sw.coerce_contributors_slot}
+
+
+def test_board_tier_and_two_slots_have_frozen_names_and_cadence():
+    from maxpane_dashboard.data import surf_cache as mod
+
+    assert mod.TIER_SWARM_BOARD == "swarm_board"
+    assert mod.TIER_SWARM_BOARD in TIERS
+    assert TIER_TTL_SECONDS[mod.TIER_SWARM_BOARD] == 120.0
+    assert TIER_FAILURE_BACKOFF_SECONDS[mod.TIER_SWARM_BOARD] == 120.0
+    assert mod.SLOT_SWARM_WORKERS == "swarm_workers" and mod.SLOT_SWARM_WORKERS in SLOTS
+    assert mod.SLOT_SWARM_CONTRIBUTORS == "swarm_contributors" and mod.SLOT_SWARM_CONTRIBUTORS in SLOTS
+
+
+@pytest.mark.parametrize("source", ["workers", "contributors"])
+def test_board_slots_roundtrip_with_configured_coercers(tmp_path, source):
+    from tests.data.test_surf_cache import FakeClock
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+
+    clock = FakeClock(); path = tmp_path / "surf.json"
+    slot = f"swarm_{source}"
+    payload = getattr(sw, f"normalize_{source}")(swarm_capture_v3(source))
+    cache = SurfCache(path=path, clock=clock)
+    cache.store_last_good(slot, payload, ts=clock.t - 60); cache.save()
+    fresh = SurfCache(path=path, clock=clock)
+    fresh.load(slot_coercers=_board_coercers())
+    entry = fresh.get_last_good(slot)
+    assert entry.payload == payload and entry.ts == clock.t - 60
+
+
+@pytest.mark.parametrize("source", ["workers", "contributors"])
+def test_board_unconfigured_load_refuses_the_slot_instead_of_trusting_it(tmp_path, source):
+    from tests.data.test_surf_cache import FakeClock
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+
+    clock = FakeClock(); path = tmp_path / "surf.json"
+    slot = f"swarm_{source}"
+    cache = SurfCache(path=path, clock=clock)
+    cache.store_last_good(slot, getattr(sw, f"normalize_{source}")(swarm_capture_v3(source)), ts=clock.t)
+    cache.store_last_good(SLOT_SWARM, {"health": "unrelated"}, ts=clock.t)
+    cache.save()
+    fresh = SurfCache(path=path, clock=clock); fresh.load()
+    assert fresh.get_last_good(slot) is None
+    assert fresh.get_last_good(SLOT_SWARM).payload == {"health": "unrelated"}
+
+
+@pytest.mark.parametrize("source", ["workers", "contributors"])
+@pytest.mark.parametrize("field,value", [("token_id", True), ("device_key", None)])
+def test_board_hand_edited_slot_is_refused_at_load(tmp_path, source, field, value):
+    from tests.data.test_surf_cache import FakeClock
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+
+    clock = FakeClock(); path = tmp_path / "surf.json"
+    cache = SurfCache(path=path, clock=clock)
+    for name in ("workers", "contributors"):
+        payload = getattr(sw, f"normalize_{name}")(swarm_capture_v3(name))
+        cache.store_last_good(f"swarm_{name}", payload, ts=clock.t)
+    cache.save()
+    raw = json.loads(path.read_text())
+    raw["last_good"][f"swarm_{source}"]["payload"][source][0][field] = value
+    path.write_text(json.dumps(raw))
+    fresh = SurfCache(path=path, clock=clock); fresh.load(slot_coercers=_board_coercers())
+    assert fresh.get_last_good(f"swarm_{source}") is None
+    good = "contributors" if source == "workers" else "workers"
+    assert fresh.get_last_good(f"swarm_{good}") is not None

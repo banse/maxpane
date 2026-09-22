@@ -169,6 +169,8 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_SWARM_JOBS_SEEN,
     SLOT_SWARM_SCORES,
     SLOT_SWARM_SEAT,
+    SLOT_SWARM_WORKERS,
+    SLOT_SWARM_CONTRIBUTORS,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
     SERIES_IMD_SUPPLY,
@@ -181,6 +183,7 @@ from maxpane_dashboard.data.surf_cache import (
     TIER_SWARM,
     TIER_SWARM_SCORES,
     TIER_SWARM_SEAT,
+    TIER_SWARM_BOARD,
     SurfCache,
 )
 from maxpane_dashboard.data.surf_client import SurfClient
@@ -1042,6 +1045,7 @@ class SurfManager:
         #: ``_pool4_task``/``_pool4_stakers_task``, one per tier.
         self._swarm_task: Any = None
         self._swarm_scores_task: Any = None
+        self._swarm_board_task: Any = None
         #: The `/health` counters the last live read saw, so the 27.5 KB job
         #: list is only paid for when one of them moved (spec §3).
         self._swarm_counters: dict[str, Any] | None = None
@@ -1070,7 +1074,10 @@ class SurfManager:
         self._seat_failed_token: int | None = None
 
         try:
-            self.cache.load()
+            self.cache.load(slot_coercers={
+                SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
+                SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
+            })
         except Exception as exc:            # noqa: BLE001 — load is fail-soft; belt and braces
             logger.warning("SURF cache load failed: %s", exc)
 
@@ -1100,6 +1107,7 @@ class SurfManager:
         await self._cancel_pool4_stakers()
         await self._cancel_swarm()
         await self._cancel_swarm_scores()
+        await self._cancel_swarm_board()
         await self._cancel_swarm_seat()
         self.save_cache()
         try:
@@ -5320,7 +5328,7 @@ class SurfManager:
             return POOL4_STAKERS_SWEEPING
         return POOL4_STAKERS_PENDING
 
-    # -- the swarm control plane: two tiers, two slots, two clocks -----------
+    # -- the swarm control plane: independent tiers and source clocks --------
 
     def _spawn_swarm(self, tiers: set[str], now: float) -> Any:
         """Start the live swarm read **detached**; never wait for it.
@@ -5519,6 +5527,87 @@ class SurfManager:
             await task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
+
+    # -- BOARD: one tier, independent workers/contributors last-good slots ----
+
+    def _spawn_swarm_board(self, tiers: set[str], now: float) -> Any:
+        """Refresh regardless of the visible body; never block first paint."""
+        if TIER_SWARM_BOARD not in tiers:
+            return None
+        running = self._swarm_board_task
+        if running is not None and not running.done():
+            return running
+        self._swarm_board_task = asyncio.ensure_future(self._swarm_board_detached(tiers, now))
+        return self._swarm_board_task
+
+    async def _swarm_board_detached(self, tiers: set[str], now: float) -> None:
+        try:
+            await self._pool_swarm_board(tiers, now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — nobody awaits this task
+            self.cache.mark_failed(TIER_SWARM_BOARD, now)
+            logger.debug("SURF swarm board read failed: %s", exc)
+
+    async def _cancel_swarm_board(self) -> None:
+        task = self._swarm_board_task
+        self._swarm_board_task = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+
+    async def _pool_swarm_board(self, tiers: set[str], now: float) -> dict[str, bool]:
+        """Read each endpoint once; a failed source leaves only its slot alone.
+
+        Last-good version clocks advance only when normalized payloads change.
+        Successful unchanged reads still restart the tier TTL. Partial failure
+        stores the other source's new version but takes the failure backoff.
+        """
+        if TIER_SWARM_BOARD not in tiers:
+            return {"ok": False}
+        succeeded = 0
+        for method, slot, normalize, coerce in (
+            ("fetch_contributors", SLOT_SWARM_CONTRIBUTORS, sw.normalize_contributors, sw.coerce_contributors_slot),
+            ("fetch_workers", SLOT_SWARM_WORKERS, sw.normalize_workers, sw.coerce_workers_slot),
+        ):
+            raw = await self._guard(
+                lambda method=method: getattr(self.swarm_client, method)(), f"swarm {method}",
+            )
+            payload = normalize(raw)
+            if payload is None:
+                continue
+            prior = self.cache.get_last_good(slot)
+            if coerce(getattr(prior, "payload", None)) != payload:
+                self.cache.store_last_good(slot, payload, ts=now)
+            succeeded += 1
+        if succeeded == 2:
+            self.cache.mark_fetched(TIER_SWARM_BOARD, now)
+        else:
+            self.cache.mark_failed(TIER_SWARM_BOARD, now)
+        return {"ok": succeeded == 2}
+
+    def _swarm_board_keys(self, contributors_entry: Any, workers_entry: Any, token: int | None) -> dict[str, Any]:
+        """Fold captured, validated slots; every selected-seat lookup uses token.
+
+        Coerce even in-memory entries: a cache payload is third-party input.
+        Invalid sources carry no as-of clock and cannot contaminate the other.
+        """
+        contributors = sw.coerce_contributors_slot(getattr(contributors_entry, "payload", None))
+        workers = sw.coerce_workers_slot(getattr(workers_entry, "payload", None))
+        rows = sw._board_rows_from_slots(contributors, workers)
+        return {
+            "swarm_board_summary": sw._board_summary_from_slots(contributors, workers),
+            "swarm_board_rows": rows,
+            "swarm_fleet": sw._fleet_from_slot(workers),
+            "swarm_board_as_of_hhmm": contributors_entry.as_of_hhmm() if contributors is not None else None,
+            "swarm_workers_as_of_hhmm": workers_entry.as_of_hhmm() if workers is not None else None,
+            "swarm_seat_live": sw._seat_live_from_slot(workers, token),
+            "swarm_seat_contrib": sw._seat_contrib_from_rows(rows, token),
+        }
 
     # -- the AGENT body's one seat: /seats/{token} (the /seats plan WP2) -----
 
@@ -6012,6 +6101,11 @@ class SurfManager:
         # because it needs the token they choose; being detached, it starts
         # no later in wall time than an earlier offer would be served.
         seat_entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
+        # Capture both source versions before offering detached work. A later
+        # completion cannot misdate this cycle's data with another version's clock.
+        contributors_entry = self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS)
+        workers_entry = self.cache.get_last_good(SLOT_SWARM_WORKERS)
+        self._spawn_swarm_board(tiers, now)
 
         market, logs, channel, nft, activity = await asyncio.gather(
             self._pool_market(tiers, now, real_pool_id),
@@ -6281,7 +6375,7 @@ class SurfManager:
         # own, slower marker. PRD 7.2.
         data.update(self._pool4_stakers_keys(stakers_slot, stakers_entry))
 
-        # ---- swarm (two tiers, two slots, two clocks) ----------------------
+        # ---- swarm source slots and their independent clocks ----------------
         # The jobs-seen map, read once for both folds below. It is read
         # here rather than captured beside ``scores_entry`` above,
         # deliberately: both swarm tiers append to it, within a cycle it
@@ -6311,6 +6405,10 @@ class SurfManager:
         seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry)
         data.update(seat_keys)
         selected_seat = seat_keys["swarm_seat_selected"]
+        data.update(self._swarm_board_keys(
+            contributors_entry, workers_entry,
+            selected_seat["token_id"] if selected_seat is not None else None,
+        ))
         await self._offer_swarm_seat(
             tiers,
             selected_seat["token_id"] if selected_seat is not None else None,
