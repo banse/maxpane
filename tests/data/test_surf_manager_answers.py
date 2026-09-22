@@ -60,12 +60,13 @@ async def test_progressive_answers_distinguish_queued_failed_absent_and_reply(tm
     finally: await manager.close()
 
 
-async def test_record_window_job_grouping_and_terminal_attempts_never_reread(tmp_path):
+async def test_record_window_job_grouping_and_definitive_terminal_answers_never_reread(tmp_path):
     fake=Answers(work(42,'completed')); rows=fake.seat['work']
     # Two hashes in one job cost one request and both points must be populated.
     second=fake.responses[rows[1]['jobId']]['submissions'][0]
     rows[1]['jobId']=rows[0]['jobId'];fake.responses[rows[0]['jobId']]['submissions'].append(second)
-    fake.responses[rows[2]['jobId']]=None
+    from maxpane_dashboard.data.surf_swarm_client import SUBMISSIONS_NOT_FOUND
+    fake.responses[rows[2]['jobId']]=dict(SUBMISSIONS_NOT_FOUND)
     manager=_manager(tmp_path,fake,clock=FakeClock(NOW));manager.set_seat(420)
     try:
         for cycle in range(12): await manager._pool_swarm_seat(420,NOW+cycle*120)
@@ -73,7 +74,7 @@ async def test_record_window_job_grouping_and_terminal_attempts_never_reread(tmp
         assert fake.answer_calls==expected
         result=data(manager,NOW+1320)['swarm_seat_work_rows']
         assert result[0]['answer_state']==result[1]['answer_state']=='read'
-        assert result[2]['answer_state']=='unavailable'
+        assert result[2]['answer_state']=='not_served'
         assert all(row['answer_state']=='not_read' for row in result[40:])
         assert manager_mod.SWARM_ANSWER_CACHE_CAP==400
         assert manager_mod.SWARM_ANSWER_MAX_AGE_S==48*3600
@@ -130,7 +131,7 @@ async def test_cache_load_and_consumption_revalidate_every_answer(tmp_path):
         assert data(fresh)['swarm_seat_work_rows'][0]['answer'] is None
         fresh.cache.store_last_good(SLOT_SWARM_ANSWERS,slot,ts=NOW+1);fresh.cache.save()
         last=_manager(tmp_path,Answers(work(1)),clock=clock)
-        try: assert last.cache.get_last_good(SLOT_SWARM_ANSWERS) is None
+        try: assert last.cache.get_last_good(SLOT_SWARM_ANSWERS).payload == {}
         finally: await last.close()
     finally: await manager.close();await fresh.close()
 
@@ -149,4 +150,69 @@ async def test_answer_read_is_detached_and_seat_failure_preserves_answers(tmp_pa
         fake.seats[420]=None
         await manager._pool_swarm_seat(420,NOW+120)
         assert manager.cache.get_last_good(SLOT_SWARM_ANSWERS)==before
+    finally: await manager.close()
+
+
+async def test_fix_i1_six_job_slot_survives_nested_summary_and_terminal_cycle_two(tmp_path,monkeypatch):
+    monkeypatch.setattr(manager_mod,'SWARM_ANSWER_PER_CYCLE',6) # reviewer probe, normal cap remains4
+    fake=Answers(work(6,'completed')); first=fake.seat['work'][0]['jobId']
+    fake.responses[first]['submissions'][0]['summary']='- 1) Wrote answer.json. More.'
+    manager=_manager(tmp_path,fake,clock=FakeClock(NOW));manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420,NOW)
+        rows=data(manager)['swarm_seat_work_rows']
+        assert rows[0]['answer']=='Wrote answer.json.'
+        assert all(row['answer_state']=='read' for row in rows[1:])
+        await manager._pool_swarm_seat(420,NOW+120)
+        assert len(fake.answer_calls)==6
+        slot=manager.cache.get_last_good(SLOT_SWARM_ANSWERS).payload
+        key=next(iter(slot[first]));slot[first][key]['answer']='unsafe /home/bob/secret.txt'
+        await manager._pool_swarm_seat(420,NOW+240)
+        assert fake.answer_calls[6:]==[first]
+        assert all(row['answer_state']=='read' for row in data(manager,NOW+240)['swarm_seat_work_rows'])
+    finally: await manager.close()
+
+
+@pytest.mark.parametrize('failure',[None,{'jobId':'bad','submissions':[]}])
+async def test_fix_i3_transient_terminal_answer_recovers_at_next_due_cycle(tmp_path,failure):
+    fake=Answers(work(1,'completed'));job=fake.seat['work'][0]['jobId'];good=copy.deepcopy(fake.responses[job])
+    fake.responses[job]=failure
+    manager=_manager(tmp_path,fake,clock=FakeClock(NOW));manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420,NOW)
+        assert data(manager)['swarm_seat_work_rows'][0]['answer_state']=='unavailable'
+        fake.responses[job]=good
+        await manager._pool_swarm_seat(420,NOW+119)
+        assert len(fake.answer_calls)==1
+        await manager._pool_swarm_seat(420,NOW+120)
+        assert len(fake.answer_calls)==2
+        assert data(manager,NOW+120)['swarm_seat_work_rows'][0]['answer_state']=='read'
+    finally: await manager.close()
+
+
+async def test_fix_i3_running_failure_and_legacy_terminal_failure_remain_retryable(tmp_path):
+    fake=Answers(work(1));job=fake.seat['work'][0]['jobId'];good=copy.deepcopy(fake.responses[job]);fake.responses[job]=None
+    manager=_manager(tmp_path,fake,clock=FakeClock(NOW));manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420,NOW)
+        slot=manager.cache.get_last_good(SLOT_SWARM_ANSWERS).payload
+        next(iter(slot[job].values()))['terminal']=True # legacy failure from §2.5
+        fake.seats[420]['work'][0]['jobState']='completed';fake.responses[job]=good
+        await manager._pool_swarm_seat(420,NOW+120)
+        assert len(fake.answer_calls)==2
+        assert data(manager,NOW+120)['swarm_seat_work_rows'][0]['answer_state']=='read'
+    finally: await manager.close()
+
+
+@pytest.mark.parametrize('negative',['404','absent'])
+async def test_fix_i3_real_negative_freezes_even_while_job_running(tmp_path,negative):
+    from maxpane_dashboard.data.surf_swarm_client import SUBMISSIONS_NOT_FOUND
+    fake=Answers(work(1));job=fake.seat['work'][0]['jobId']
+    fake.responses[job]=dict(SUBMISSIONS_NOT_FOUND) if negative=='404' else dict(jobId=job,submissions=[])
+    manager=_manager(tmp_path,fake,clock=FakeClock(NOW));manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420,NOW)
+        assert data(manager)['swarm_seat_work_rows'][0]['answer_state']=='not_served'
+        await manager._pool_swarm_seat(420,NOW+120)
+        assert len(fake.answer_calls)==1
     finally: await manager.close()

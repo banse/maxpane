@@ -860,7 +860,8 @@ SWARM_LIST_CEILING_S = 300.0
 SWARM_ANSWER_PER_CYCLE = 4
 #: Ten displayed RECORD windows (40 points each), across selected seats. Point
 #: age follows jobs-seen's 48-hour precedent; age/cap pruning ends the promise
-#: that retained terminal attempts, including failures, are never re-read.
+#: that retained definitive terminal answers are never re-read. Transient
+#: unavailable points retry; successful negatives freeze even for running jobs.
 SWARM_ANSWER_CACHE_CAP = 400
 SWARM_ANSWER_MAX_AGE_S = 48 * 3600.0
 #: Nonterminal jobs may change; their reads follow the seat tier's 120 s clock.
@@ -5731,7 +5732,8 @@ class SurfManager:
         rows = sw.seat_work_rows(seat)
         for row in rows[:sw.SWARM_ANSWER_ROW_CAP]:
             point = answers.get(row["job_id"], {}).get(row["submission_hash"])
-            if point is not None and row["job_state"] in ("completed", "cancelled", "failed"):
+            if (point is not None and point["state"] != "unavailable"
+                    and row["job_state"] in ("completed", "cancelled", "failed")):
                 point["terminal"] = True
         for job, group in sw.answer_jobs_due(rows, answers, now_ts=now,
                                              due_s=SWARM_ANSWER_DUE_S, cap=SWARM_ANSWER_PER_CYCLE):
@@ -5741,7 +5743,9 @@ class SurfManager:
                 answer = sw.submission_answer(payload, job, row["submission_hash"], token)
                 answers.setdefault(job, {})[row["submission_hash"]] = dict(
                     answer, read_ts=now,
-                    terminal=row["job_state"] in ("completed", "cancelled", "failed"))
+                    terminal=answer["state"] == "not_served" or (
+                        answer["state"] != "unavailable"
+                        and row["job_state"] in ("completed", "cancelled", "failed")))
         answers = sw.prune_answers(answers, now_ts=now, cap=SWARM_ANSWER_CACHE_CAP,
                                   max_age_s=SWARM_ANSWER_MAX_AGE_S)
         if prior is None or prior.payload != answers:

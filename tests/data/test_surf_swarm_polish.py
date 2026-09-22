@@ -86,15 +86,15 @@ def point():
 ])
 def test_answer_cache_refuses_any_bad_point(field, bad):
     job, key, value = point(); value[field] = bad
-    assert sw.coerce_answers_slot({job: {key: value}}) is None
+    assert sw.coerce_answers_slot({job: {key: value}}) == {}
 
 
 def test_answer_cache_rejects_invalid_keys_states_and_retains_no_raw_payload():
     job, key, value = point()
     assert sw.coerce_answers_slot({job: {key: value}}) == {job: {key: value}}
     for bad_job, bad_hash in [('bad', key), (job, key[:8]), (job, True)]:
-        assert sw.coerce_answers_slot({bad_job: {bad_hash: value}}) is None
-    assert sw.coerce_answers_slot({job: {key: dict(value, state='not_served')}}) is None
+        assert sw.coerce_answers_slot({bad_job: {bad_hash: value}}) == {}
+    assert sw.coerce_answers_slot({job: {key: dict(value, state='not_served')}}) == {}
     assert set(value) == {'answer', 'model', 'took_s', 'state', 'read_ts', 'terminal'}
 
 
@@ -167,7 +167,8 @@ async def test_submissions_uses_pool_pacing_and_404_is_one_job_failure():
         seen.append(request)
         return httpx.Response(404, text='missing')
     async with SwarmClient(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),sleep=sleep) as client:
-        assert await client.submissions(payload['jobId']) is None
+        from maxpane_dashboard.data.surf_swarm_client import SUBMISSIONS_NOT_FOUND
+        assert await client.submissions(payload['jobId']) == SUBMISSIONS_NOT_FOUND
     assert len(seen)==1 and len(sleeps)==1 and sleeps[0]==0.12
     assert seen[0].url.path == f"/jobs/{payload['jobId']}/submissions"
     assert seen[0].method=='GET'
@@ -229,7 +230,7 @@ def test_cached_answers_match_exact_submission_hash_in_both_seat_orders():
 def test_delimited_absolute_paths_with_spaces_keep_only_basename(source,expected):
     assert sw.answer_sentence(source)==expected
     job,key,value=point();value['answer']=source
-    assert sw.coerce_answers_slot({job:{key:value}}) is None
+    assert sw.coerce_answers_slot({job:{key:value}}) == {}
 
 
 @pytest.mark.parametrize(('source','expected'),[
@@ -240,4 +241,106 @@ def test_delimited_absolute_paths_with_spaces_keep_only_basename(source,expected
 def test_windows_forward_slash_absolute_paths_keep_only_basename(source,expected):
     assert sw.answer_sentence(source)==expected
     job,key,value=point();value['answer']=source
-    assert sw.coerce_answers_slot({job:{key:value}}) is None
+    assert sw.coerce_answers_slot({job:{key:value}}) == {}
+
+
+# §7 I1–I4: the final review's concrete failures, before their implementation.
+
+def test_fix_i1_generated_cleaning_is_idempotent_and_stored_safety_does_not_rederive(monkeypatch):
+    import itertools
+    examples=['- 1) Wrote answer.json. More.', '[[a](b)](c)', 'x_*_y', '- 2) nested']
+    corpus=examples + [prefix+body+suffix for prefix,body,suffix in itertools.product(
+        ('', '- ', '1) ', '**', '- 2) '*20, '['*30),
+        ('Wrote answer.json. More.', '[[a](b)](c)', 'x_*_y', '/Users/John Smith/work/answer.json'),
+        ('', '**', '\nNext.', '](target)'*30))]
+    job,key,value=point()
+    for source in corpus:
+        answer=sw.answer_sentence(source)
+        assert sw.answer_sentence(answer)==answer, (source,answer)
+        if answer:
+            stored={job:{key:dict(value,answer=answer)}}
+            assert sw.coerce_answers_slot(stored)==stored, (source,answer)
+    job,key,value=point();value['answer']='- 2) nested'
+    def forbidden(value): raise AssertionError('stored answer was re-derived')
+    monkeypatch.setattr(sw,'answer_sentence',forbidden)
+    assert sw.coerce_answers_slot({job:{key:value}})=={job:{key:value}}
+
+
+def test_fix_i1_bad_point_drops_only_it_and_unsafe_fields_do_not_cost_siblings():
+    job,key,value=point(); other='f'*64
+    for bad in (dict(value,answer='/home/bob/secret.txt'),dict(value,answer='x\x00y'),
+                dict(value,answer='x'*4097),dict(value,answer='[label](target)'),
+                dict(value,read_ts=float('inf'))):
+        assert sw.coerce_answers_slot({job:{key:value,other:bad}})=={job:{key:value}}
+    assert sw.coerce_answers_slot({'bad-job':{key:value},job:{key:value}})=={job:{key:value}}
+
+
+@pytest.mark.parametrize('source', ['[a]('*25_000, '['*50_000+']('*25_000],
+                         ids=('unclosed-target', 'nested-brackets'))
+def test_fix_i2_hostile_scan_has_bounded_linear_work_and_reads_only_4096(source):
+    import sys
+    steps=0
+    def trace(frame,event,arg):
+        nonlocal steps
+        if event=='line' and frame.f_code.co_filename==sw.__file__:
+            steps+=1
+            assert steps < 4096*60, 'link scan rescanned an unmatched suffix'
+        return trace
+    sys.settrace(trace)
+    try: answer=sw.answer_sentence(source)
+    finally: sys.settrace(None)
+    assert len(answer)<=4096
+    assert sw.answer_sentence(source[:4096])==answer
+
+
+def test_fix_i2_tail_after_input_cap_is_not_parsed():
+    source='x'*4096+' /Users/Private Person/secret.txt'
+    assert sw.answer_sentence(source)=='x'*4096
+
+
+@pytest.mark.parametrize(('source','expected'),[
+    ('file:///home/imd-worker/.identitymd/work/x/answer.json','answer.json'),
+    ('Saved at:/home/bob/answer.json.','Saved at:answer.json.'),
+    ('/Users/John Smith/work/answer.json','answer.json'),
+    ('in /home/imd-worker and','in ~ and'),
+    ('at=/Users/John Smith/private/answer.json.','at=answer.json.'),
+    ('Saved (/root/private/answer.json).','Saved (answer.json).'),
+    ('/root','~'),('/Users/John Smith','~'),
+    (r'C:\Users\Alice Smith\private\answer.json','answer.json'),
+    ('C:/Users/Alice Smith/private/answer.json','answer.json'),
+    (r'C:\Users\Alice','~'),('C:/Users/Alice','~'),
+    ('"/home/Alice Smith"','"~"'),
+    ('See https://example.org/home/bob/answer.json.','See https://example.org/home/bob/answer.json.'),
+])
+def test_fix_i4_path_detectors_cover_home_roots_boundaries_and_preserve_http(source,expected):
+    assert sw.answer_sentence(source)==expected
+    assert sw.answer_sentence(expected)==expected
+    job,key,value=point();value['answer']=source
+    cleaned=sw.coerce_answers_slot({job:{key:value}})
+    assert cleaned==({job:{key:value}} if source.startswith('See https://') else {})
+
+
+def test_fix_i1_deep_valid_list_prefix_keeps_the_reply():
+    source='- 2) '*100+'Wrote answer.json. More.'
+    assert sw.answer_sentence(source)=='Wrote answer.json.'
+
+
+@pytest.mark.parametrize('failure',['transport','parse'])
+async def test_fix_i3_client_failure_is_distinct_from_explicit_404(failure):
+    from maxpane_dashboard.data.surf_swarm_client import SUBMISSIONS_NOT_FOUND
+    payload,_=selected()
+    async def no_wait(delay): pass
+    def handler(request):
+        if failure=='transport': raise httpx.ConnectError('failed',request=request)
+        return httpx.Response(200,text='invalid JSON')
+    async with SwarmClient(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),sleep=no_wait) as client:
+        result=await client.submissions(payload['jobId'])
+    assert result is None and result != SUBMISSIONS_NOT_FOUND
+
+
+@pytest.mark.parametrize('invalid',['job','hash','token'])
+def test_fix_i3_404_sentinel_cannot_bypass_identity_validation(invalid):
+    from maxpane_dashboard.data.surf_swarm_client import SUBMISSIONS_NOT_FOUND
+    payload,item=selected();values=[payload['jobId'],item['hash'],420]
+    values[{'job':0,'hash':1,'token':2}[invalid]]=True
+    assert sw.submission_answer(SUBMISSIONS_NOT_FOUND,*values)['state']=='unavailable'

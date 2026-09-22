@@ -388,10 +388,16 @@ is suppressed. A successful empty reply may still carry its matched usage fields
 
 The answer reader permits four unique jobs after each successful selected-seat read, covering
 the first 40 RECORD rows. Unread rows precede due retries; multiple hashes from one job share
-one GET. Nonterminal results become due after 120 seconds. The validated cache keeps at most
-400 extracted points for 48 hours, with `read_ts` and `terminal` bookkeeping. Retained terminal
-results are never retried, including unavailable results; age/cap eviction permits a later read.
-A malformed loaded or consumed point refuses the whole answer slot.
+one GET. Retryable results become due after `SWARM_ANSWER_DUE_S`. The validated cache keeps
+at most 400 extracted points for 48 hours, with `read_ts` and `terminal` bookkeeping.
+Corrected by polish §7: a 404 is explicitly preserved by the client and displayed as
+`not served`, like a successfully absent hash. These real negatives and successful terminal
+reads remain frozen while retained. Transport/parse failures stay unavailable and retry even
+on terminal jobs; legacy unavailable/frozen entries become retryable. Malformed points are
+dropped independently. A safe stored string is checked for length, link targets, absolute
+paths and controls, rather than re-running sentence extraction. Extraction is bounded to
+4,096 input characters, uses linear link scanning and reaches a bounded stripping fixed point.
+`file://` and home paths are reduced without exposing bare user segments; HTTP(S) URLs remain.
 
 A four-job MockTransport replay used the three committed submission captures and one copied
 oracle payload assigned a synthetic UUID: 270,288 compact raw bytes became 1,087 cache bytes

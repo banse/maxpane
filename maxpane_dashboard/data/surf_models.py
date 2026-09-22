@@ -1585,7 +1585,7 @@ SWARM_INFLIGHT_NOTE_KINDS: tuple[str, ...] = ("dispatch", "failure")
 # ---- RECORD answer enrichment (polish handover §2.5) -----------------------
 
 #: Unfetched is not_read; failed/invalid reads are unavailable; successful absence
-#: is not_served; empty/null summary is no_reply. Only read carries an answer.
+#: (including HTTP 404) is not_served; empty/null summary is no_reply. Only read carries an answer.
 SWARM_ANSWER_STATES: tuple[str, ...] = (
     "read", "not_read", "unavailable", "not_served", "no_reply",
 )
@@ -1594,8 +1594,9 @@ SWARM_ANSWER_FIELDS: tuple[str, ...] = ("answer", "model", "took_s", "state")
 #: JSON slot: canonical UUID job id -> exact 64-hex submission hash -> entry.
 #: Only extracted fields and finite nonnegative read_ts / strict bool terminal
 #: persist, never summaries or raw envelopes. Queued not_read has no cache point.
-#: Every point is validated, with state/value consistency; invalid slots fail
-#: closed. Retained terminal attempts never re-read, including unavailable.
+#: Validate each point's state/value consistency and stored-answer safety; drop
+#: an invalid point alone. Definitive terminal answers and not_served negatives
+#: stay frozen; unavailable transport/parse failures retry after normal backoff.
 SWARM_ANSWER_CACHE_FIELDS: tuple[str, ...] = (
     "answer", "model", "took_s", "state", "read_ts", "terminal",
 )

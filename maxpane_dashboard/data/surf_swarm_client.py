@@ -15,10 +15,11 @@ and returns ``None`` -- so the contract above holds at every public getter.
 anything else before any request. ``submissions`` validates a canonical UUID
 before interpolating a job id; any 404 is confined to that job.
 
-One getter has a third outcome besides a body and ``None``:
+The seat getter distinguishes a real negative from a failed read:
 ``fetch_seat`` returns a fresh copy of :data:`UNKNOWN_SEAT` for the host's
 ``404 {"error": "unknown_seat"}`` -- a seat never paired, a real negative
-(``docs/surf_agent_seats_spec.md`` §2, §5).
+(``docs/surf_agent_seats_spec.md`` §2, §5). ``submissions`` similarly returns
+:data:`SUBMISSIONS_NOT_FOUND` for HTTP 404; transport/parse failures remain None.
 """
 from __future__ import annotations
 
@@ -96,6 +97,9 @@ SWARM_INTER_CALL_DELAY = 0.12
 #: copy -- and ``fetch_seat`` returns a fresh ``dict`` each time, so a caller
 #: may alter its own result.  Compare with ``==`` (a proxy equals its dict).
 UNKNOWN_SEAT: MappingProxyType[str, str] = MappingProxyType({"error": "unknown_seat"})
+
+#: Explicit job-local HTTP 404; None remains transient transport/parse failure.
+SUBMISSIONS_NOT_FOUND = MappingProxyType({"error": "submissions_not_found"})
 
 
 @dataclass(frozen=True)
@@ -250,11 +254,13 @@ class SwarmClient(OwnedHttpClient):
         return await self._dict(f"/jobs/{job_id}")
 
     async def submissions(self, job_id: str) -> dict[str, Any] | None:
-        """One job's submissions. Every 404 is local to this job, without rotation."""
+        """One job's submissions, explicit 404 sentinel, or transient-failure None."""
         job = parse_job_id(job_id)
         if job is None:
             return None
         body = await self._get(f"/jobs/{job}/submissions", answers_404=lambda body: True)
+        if isinstance(body, _Answered404):
+            return dict(SUBMISSIONS_NOT_FOUND)
         return body if isinstance(body, dict) else None
 
     async def fetch_seat(self, token: int) -> dict[str, Any] | None:

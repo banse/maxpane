@@ -12,7 +12,10 @@ asserts a withdrawn statement is historical — do not review code against it.
   to that same submission; worker `premiumModel` is separately labelled **advertised** in
   FLEET and is never treated as a probed or actual-run model. Four unique jobs per seat cycle
   progressively enrich the first 40 rows; the extracted cache is capped at 400 points/48 hours.
-  Retained terminal attempts, including failed reads, are not retried under the owner's rule.
+  Corrected by polish §7: successful terminal reads and real negatives remain frozen while
+  retained, but transport/parse failures retry after the normal answer backoff. The previous
+  transient-failure freeze was a spec defect, not an owner decision. A bad persisted point
+  is dropped alone; safe stored strings are validated without re-deriving their sentence.
   Meaning-bound colour is shared across SWARM/AGENT heroes and BOARD rows: green healthy/
   working/accepted, red offline/paused/rejected, yellow unavailable or existing pending counts.
   Status words remain present, labels are dim, and rates/scores gain bold without thresholds.

@@ -33,7 +33,7 @@ from maxpane_dashboard.data.surf_models import (
 )
 # Shared constant and pure validator: the client owns the normalised 404 and
 # canonical job-id check; the fold reuses both without calling the client.
-from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT, parse_job_id
+from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT, SUBMISSIONS_NOT_FOUND, parse_job_id
 
 __all__ = [
     "health_facts", "network_of",
@@ -1418,56 +1418,135 @@ def seat_contrib(contributors: object, token: object) -> dict | None:
 # ---- Selected RECORD answers: cleaned fields, never raw submission payloads ----
 
 
-def answer_sentence(summary: str) -> str:
-    """Clean links/absolute local paths, then split before flattening newlines.
+#: Parse only a first-sentence-sized prefix of untrusted summaries. At most eight
+#: shrinking cleanup passes; pathological nesting that does not settle is empty.
+#: Empty is already a fixed point, so the bound cannot return a half-cleaned value.
+ANSWER_TEXT_CAP = 4096
+_ANSWER_STRIP_PASSES = 8
 
-    Link destinations may contain balanced parentheses and spaces. This small
-    scanner removes the whole destination; it is not a general Markdown parser.
-    URL slashes do not match the local-path boundary. Rendering still sanitizes
-    third-party text independently.
+
+def _answer_link_spans(text: str) -> list[tuple[int, int, int]]:
+    """Opening label bracket, closing bracket, target end; two linear scans.
+
+    Parenthesis pairs are indexed once. Unclosed targets consume the remaining
+    suffix, never trigger another suffix scan. Nested label links remain visible
+    to the bracket stack; targets are skipped as a whole.
     """
-    text = summary
-    pattern = re.compile(r"\[([^\]\n]*)\]\(")
+    parentheses: list[int] = []
+    ends = {}
+    for index, char in enumerate(text):
+        if char == '(':
+            parentheses.append(index)
+        elif char == ')' and parentheses:
+            ends[parentheses.pop()] = index + 1
+    brackets: list[int] = []
+    spans = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == '[':
+            brackets.append(index)
+        elif char == ']' and brackets:
+            opening = brackets.pop()
+            if index + 1 < len(text) and text[index + 1] == '(':
+                end = ends.get(index + 1, len(text))
+                spans.append((opening, index, end))
+                index = end
+                continue
+        index += 1
+    return spans
+
+
+def _strip_answer_links(text: str) -> str:
+    removed = bytearray(len(text))
+    for opening, closing, end in _answer_link_spans(text):
+        removed[opening] = 1
+        removed[closing:end] = b'\1' * (end - closing)
+    return ''.join(char for index, char in enumerate(text) if not removed[index])
+
+
+# One detector is shared by cleaning and persisted-answer safety. HTTP(S) is
+# consumed first so its slash components can never be mistaken for local paths.
+# Bare home usernames may contain spaces up to the next separator/end/delimiter;
+# the prose conjunctions and/or/but/then end an undelimited home path. Quoted
+# paths have an exact delimiter and need no such boundary convention.
+_HOME_PREFIX = r'(?:/home/|/Users/|[A-Za-z]:[\\/]Users[\\/])'
+_HOME_USER = r'''[^\s/\\<>"'`]+(?:[ ]+(?!(?:and|or|but|then)\b)[^\s/\\<>"'`]+)*'''
+_ANSWER_PATH_PATTERN = re.compile(
+    r'''(?P<url>https?://[^\s<>"'`]+)|'''
+    r'''(?P<quoted>(?P<quote>["'`])(?P<qpath>(?:file://|[A-Za-z]:[\\/]|/)[^\r\n]*?)(?P=quote))|'''
+    r'''(?P<path>(?<!\w)(?:file://(?:[^/\s]+)?(?=/))?(?:'''
+    + _HOME_PREFIX + _HOME_USER + r'''(?:[\\/][^\s<>"'`]*)?'''
+    + r'''|(?:[A-Za-z]:[\\/]|/)[^\s<>"'`]*))''', re.IGNORECASE,
+)
+
+
+def _answer_paths(text: str):
+    return (match for match in _ANSWER_PATH_PATTERN.finditer(text) if match.group('url') is None)
+
+
+def _path_basename(raw: str) -> str:
+    path = re.sub(r'^file://(?:[^/]+)?(?=/)', '', raw, flags=re.IGNORECASE)
+    clean = path.rstrip('.,!?;:)]}')
+    parts = [part for part in re.split(r'[/\\]', clean.rstrip('/\\')) if part]
+    # Home roots never expose the user segment as if it were a filename.
+    home_root = (len(parts) == 2 and parts[0].lower() in ('home', 'users')
+                 or len(parts) == 1 and parts[0].lower() == 'root'
+                 or len(parts) == 3 and re.fullmatch(r'[A-Za-z]:', parts[0]) is not None
+                 and parts[1].lower() == 'users')
+    name = '~' if home_root or not parts else parts[-1]
+    return name + path[len(clean):]
+
+
+def _strip_answer_paths(text: str) -> str:
+    pieces = []
     cursor = 0
-    while match := pattern.search(text, cursor):
-        end, depth = match.end(), 1
-        while end < len(text) and depth:
-            if text[end] == "(":
-                depth += 1
-            elif text[end] == ")":
-                depth -= 1
-            end += 1
-        if depth:
-            cursor = match.end()
-            continue
-        text = text[:match.start()] + match[1] + text[end:]
-        cursor = match.start() + len(match[1])
-    text = re.sub(r"(?m)^\s*```[^\n]*\n?", "", text)
-    # Delimited absolute paths can contain spaces; reduce the entire path
-    # before dropping Markdown backticks, retaining ordinary quote marks.
-    text = re.sub(r"([\"'`])((?:[A-Za-z]:[\\/]|/)[^\r\n]*?)\1",
-                  lambda match: match[1] + re.split(r"[/\\]", match[2].rstrip('/\\'))[-1] + match[1], text)
-    text = text.replace('`', '').replace('**', '').replace('__', '').replace('*', '')
-    text = re.sub(r"(?m)^\s*(?:[-+•]|\d+[.)])\s+", "", text)
+    for match in _answer_paths(text):
+        pieces.append(text[cursor:match.start()])
+        quote = match.group('quote') or ''
+        pieces.append(quote + _path_basename(match.group('qpath') or match.group('path')) + quote)
+        cursor = match.end()
+    pieces.append(text[cursor:])
+    return ''.join(pieces)
 
-    def basename(match):
-        raw = match[0]
-        path = raw.rstrip('.,!?;:)]}')
-        name = re.split(r"[/\\]", path.rstrip('/\\'))[-1]
-        return name + raw[len(path):]
 
-    text = re.sub(r"(?<![\w:/\\])(?:[A-Za-z]:[\\/]|/)[^\s<>\"']+", basename, text)
-    first = re.split(r"(?<=[.!?])\s+|[\r\n]+", text.strip(), maxsplit=1)[0]
-    return ' '.join(first.split())
+def _safe_stored_answer(value: object) -> bool:
+    """Safety only: do not re-derive a stored answer's display formatting."""
+    return (isinstance(value, str) and 0 < len(value) <= ANSWER_TEXT_CAP
+            and not any(ord(char) < 32 or 127 <= ord(char) < 160 for char in value)
+            and not _answer_link_spans(value) and next(_answer_paths(value), None) is None)
+
+
+def answer_sentence(summary: str) -> str:
+    """Bounded, idempotent link/path/Markdown cleanup; newline precedes flattening."""
+    text = summary[:ANSWER_TEXT_CAP]
+    for _ in range(_ANSWER_STRIP_PASSES):
+        previous = text
+        text = _strip_answer_links(text)
+        text = re.sub(r'(?m)^\s*```[^\n]*\n?', '', text)
+        text = _strip_answer_paths(text)
+        text = text.replace('`', '').replace('**', '').replace('__', '').replace('*', '')
+        text = re.sub(r'(?m)^(?:\s*(?:[-+•]|\d+[.)])\s+)+', '', text)
+        first = re.split(r'(?<=[.!?])\s+|[\r\n]+', text.strip(), maxsplit=1)[0]
+        text = ' '.join(first.split())
+        text = ''.join(char for char in text if not (ord(char) < 32 or 127 <= ord(char) < 160))
+        if text == previous:
+            return text
+    return ''
+
 
 
 def submission_answer(payload: object, job_id: object, submission_hash: object, token: object) -> dict:
     """Select only the exact job/hash/seat; distinguish failure, absence and no reply."""
     result = dict.fromkeys(SWARM_ANSWER_FIELDS)
     result['state'] = 'unavailable'
-    if (parse_job_id(job_id) is None or _hex64(submission_hash) is None
-            or _seat_id(token) is None or not isinstance(payload, Mapping)
-            or payload.get('jobId') != job_id or not isinstance(payload.get('submissions'), list)):
+    if parse_job_id(job_id) is None or _hex64(submission_hash) is None or _seat_id(token) is None:
+        return result
+    if payload == SUBMISSIONS_NOT_FOUND:
+        result['state'] = 'not_served'
+        return result
+    if (not isinstance(payload, Mapping) or payload.get('jobId') != job_id
+            or not isinstance(payload.get('submissions'), list)):
         return result
     matches = [row for row in _mappings(payload['submissions']) if row.get('hash') == submission_hash]
     if not matches:
@@ -1497,34 +1576,39 @@ def _nonnegative_finite(value: object) -> bool:
 
 
 def coerce_answers_slot(payload: object) -> dict | None:
-    """Refuse the entire normalized slot if any identity, field or point is unsafe."""
+    """Drop unsafe points independently; retain every valid cached sibling."""
     if not isinstance(payload, Mapping):
         return None
     result = {}
     for job, submissions in payload.items():
         if parse_job_id(job) is None or not isinstance(submissions, Mapping) or not submissions:
-            return None
+            continue
         clean = {}
         for key, point in submissions.items():
             if (_hex64(key) is None or not isinstance(point, Mapping)
                     or set(point) != set(SWARM_ANSWER_CACHE_FIELDS)):
-                return None
+                continue
             answer, state = point['answer'], point['state']
             if (state not in SWARM_ANSWER_STATES or state == 'not_read'
                     or not isinstance(point['terminal'], bool)
                     or not _nonnegative_finite(point['read_ts'])
                     or not _optional_string(point['model'])
                     or point['took_s'] is not None and not _nonnegative_finite(point['took_s'])):
-                return None
+                continue
             if state == 'read':
-                if not isinstance(answer, str) or not answer or answer_sentence(answer) != answer:
-                    return None
+                if not _safe_stored_answer(answer):
+                    continue
             elif answer is not None:
-                return None
+                continue
             if state in ('not_served', 'unavailable') and (point['model'] is not None or point['took_s'] is not None):
-                return None
+                continue
             clean[key] = {field: point[field] for field in SWARM_ANSWER_CACHE_FIELDS}
-        result[job] = clean
+            if state == 'unavailable':
+                clean[key]['terminal'] = False  # repair ambiguous legacy frozen failures
+            elif state == 'not_served':
+                clean[key]['terminal'] = True   # successful absence is a final answer
+        if clean:
+            result[job] = clean
     return result
 
 
@@ -1561,7 +1645,7 @@ def answer_jobs_due(rows: list[dict], answers: dict, *, now_ts: float, due_s: fl
 
     Group by job so multiple selected submission hashes cost one request. Only
     the first displayed window is eligible; terminal points never re-read while
-    retained, even if their first attempt was unavailable.
+    retained. Transient unavailable points retry after the normal due interval.
     """
     groups: dict[str, list[dict]] = {}
     priorities = {}
@@ -1570,8 +1654,7 @@ def answer_jobs_due(rows: list[dict], answers: dict, *, now_ts: float, due_s: fl
         if parse_job_id(job) is None or _hex64(key) is None:
             continue
         point = answers.get(job, {}).get(key)
-        terminal = row['job_state'] in ('completed', 'cancelled', 'failed')
-        if point is not None and (point['terminal'] or terminal or now_ts - point['read_ts'] < due_s):
+        if point is not None and (point['terminal'] or now_ts - point['read_ts'] < due_s):
             continue
         priority = (0, index, index) if point is None else (1, point['read_ts'], index)
         groups.setdefault(job, []).append(row)

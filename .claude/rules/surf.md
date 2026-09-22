@@ -253,8 +253,10 @@ arithmetic is historical (F32). AGENT now uses the seat-details handover's two-r
 in the data row for other readers. The answer is the first cleaned sentence from the exact
 `work[].submissionHash` in `/jobs/{uuid}/submissions`, never another seat's or a hash prefix.
 Markdown link destinations disappear and remaining absolute local paths reduce to basenames,
-including quoted/backticked paths with spaces. Preserve newline sentence boundaries before
-flattening; widgets still sanitize third-party text.
+including quoted/backticked paths with spaces. `file://` is local; bare home roots become `~`
+without exposing the user segment. HTTP(S) URLs remain intact. Parse only the first 4,096
+characters with linear link scanning and bounded fixed-point stripping. Preserve newline
+sentence boundaries before flattening; widgets still sanitize third-party text.
 
 The answer cell distinguishes read, `not read`, `unavailable`, `not served` and `no reply`.
 Model/took render only for successful matching reads (`read`/`no_reply`); missing values and
@@ -265,9 +267,12 @@ The detached seat tier reads at most four unique submission jobs per cycle over 
 40 rows; several hashes from one job share one GET. Validate canonical UUIDs before paths;
 a submissions 404 stays local to that job. `SLOT_SWARM_ANSWERS` stores extracted fields plus
 `read_ts`/`terminal`, capped at 400 points and 48 hours, with strict load and consumption
-coercion. Nonterminal points refresh when due after 120 seconds. Retained terminal attempts,
-including failed reads, are never retried; pruning can make them eligible again. No raw
-submission envelope or uncleaned summary is cached.
+coercion. Validation drops bad points independently, keeping valid siblings. Stored answers
+must satisfy the bounded-string/link/path/control safety predicate, without re-derivation.
+Successful terminal results and real negatives (404 or a successfully absent hash) remain
+frozen while retained. Transport/parse failures retry after `SWARM_ANSWER_DUE_S`, within the
+per-cycle cap, even on terminal jobs. Legacy unavailable/frozen entries become retryable.
+No raw submission envelope or uncleaned summary is cached.
 
 **Palette:** dim labels, bold counts; green healthy/working/accepted, red offline/paused/down,
 yellow unavailable or existing pending counts. Zero working keeps `0 quiet` dim. Rates and

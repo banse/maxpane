@@ -211,13 +211,20 @@ column order:
 
 Deriving the answer (a pure function in `data/surf_swarm.py`, unit-tested on the captures):
 1. Take the submission whose `hash` equals the work row's `submissionHash`.
-2. From its `summary`:
+2. Parse at most the first 4,096 characters of `summary`, with a linear link scanner:
    - Markdown links `[text](target)` → `text` (the target is dropped: it is often a local path
      with a user name);
    - drop backticks, `**` / `__` / `*` emphasis and leading list markers;
    - replace any remaining absolute path (`/home/…`, `/Users/…`, `/root/…`, `C:\…`) with its
-     last component;
-   - flatten whitespace.
+     last component; treat `file://` URIs as paths and preserve bare HTTP(S) URLs.
+     Home directories reduce to `~`; never display the user segment as a basename.
+     Delimited paths consume their full quoted/backticked contents. An unquoted home username
+     can contain spaces up to the next separator or end/delimiter; `and`, `or`, `but`, `then`
+     terminate it as prose. This boundary is explicit because undelimited spaces are ambiguous.
+   - repeat stripping to a bounded fixed point so cleaning is idempotent; preserve sentence
+     boundaries until selecting the first sentence, then flatten whitespace. Cleanup permits
+     eight shrinking passes; pathological nesting that still does not settle becomes an empty
+     fixed point. Adjacent valid list prefixes are stripped together, preserving the reply.
 3. Take the first sentence (split on `.`/`!`/`?` followed by whitespace, or a newline). The
    widget clips it with `sanitize_cell` (third-party text).
 
@@ -228,7 +235,7 @@ Keep these states distinct:
 | answer read | the sentence |
 | submissions not fetched yet (still queued) | dim `not read` |
 | fetch failed | yellow `unavailable` |
-| the seat's hash is absent from a successful read | dim `not served` |
+| the job returns 404, or the seat's hash is absent from a successful read | dim `not served` |
 | empty or null summary | dim `no reply` |
 
 `model` null shows `—`; `took` missing shows `—`. These columns come from the same read, so their
@@ -241,15 +248,18 @@ Fetching (on `TIER_SWARM_SEAT`, after `/seats`, never in a handler):
   RECORD fills progressively; rows still queued read `not read`.
 - The client adds `submissions(job_id)`: same host pool, pacing, `follow_redirects=False`,
   the job id validated as a UUID before interpolation, and a 404 → the job's cell is
-  `unavailable`, never a rotate-and-fail of the whole tier.
+  `not served`, never a rotate-and-fail of the whole tier (corrected by §7 I3).
 - Cache: a new slot keyed by `(jobId, submissionHash)` that stores **only the extracted fields**
   (`answer`, `model`, `took_s`, `state`), never the 100 KB payload.
-  - A row whose job state is terminal (`completed`, `cancelled`, `failed`) is kept and never
-    re-read.
-  - Other rows re-read when due.
+  - Successful terminal rows and real negatives (404 or successfully absent hash) stay frozen
+    while retained. Transport/parse failures remain `unavailable` and retry after
+    `SWARM_ANSWER_DUE_S`, within `SWARM_ANSWER_PER_CYCLE`, even if the job is terminal.
+  - A running unavailable row never becomes frozen just because the job turns terminal.
   - Prune by cap and age, the `SLOT_SWARM_JOBS_SEEN` pattern.
-  - Validate every loaded point (a hand-edited cache file is third-party input); an invalid slot
-    is refused.
+  - Validate every loaded point (a hand-edited cache file is third-party input); discard only
+    an invalid point, preserving valid siblings. The outer envelope must still be a mapping.
+    Stored answers must be strings within the cap, free of link targets, absolute paths and
+    control characters. This safety predicate does not re-derive the answer.
 - Seat A's answers must never appear under seat B: the key contains the submission hash, and a
   test switches seats.
 
@@ -298,8 +308,12 @@ Fetching (on `TIER_SWARM_SEAT`, after `/seats`, never in a handler):
   plus `read_ts` and `terminal` bookkeeping. Queued `not_read` has no persisted point.
   RECORD puts the explicit read state in `answer`; model/took are shown only for `read` or
   `no_reply`, otherwise `—`, so stale metadata cannot look successfully fetched.
-  The terminal no-reread rule includes failed terminal attempts while retained; pruning can
-  make them eligible again. No raw submissions envelope or uncleaned summary is stored.
+  Real negatives (`not_served`, including 404) and successful terminal reads remain frozen
+  while retained. Transient transport/parse failures remain retryable after the normal answer
+  backoff; legacy `unavailable` points with `terminal=True` are normalized to retryable.
+  A bad point is filtered independently using the bounded-string/path/link/control safety
+  predicate. No raw submissions envelope or uncleaned summary is stored. This corrects the
+  earlier spec defect; freezing transient failures was not an owner decision.
 - Every addition goes through `SWARM_KEYS` / `SWARM_WIDGET_SIGNATURES` and the agreement tests.
   The widget restates tuples where the pattern already does.
 
@@ -368,6 +382,9 @@ For each proof, name the test that reddens and say why.
 Stop there for Claude's final whole-branch review. The owner decides merge and push.
 
 ## 6.1 Hand-back — 2026-09-22
+
+Historical evidence for the implementation through `8e2adfd`. §7 and §7.1 supersede its
+original cache-validation/retry policy; the original test and mutation results remain below.
 
 ### Scope and commits
 
