@@ -348,3 +348,60 @@ IN FLIGHT's last column sanitizes and clips the note, lighting `‹ widen` when 
 A literal ellipsis in a fitting source note does not itself indicate clipping. Long free-text
 notes remain a named layout exception; measured pins and exceptions live beside the constants
 in `screens/surf.py`. No blocked jobs are added to this table.
+
+## 2026-09-22 — polish: submission answers and advertised models
+
+Reference: `/Library/Vibes/aidude/docs/imd-api-changelog.md` §§2–4, including its afternoon
+route-discovery entry (read only). That shared file now includes the routes which the polish
+handover described as missing from it. Fresh WP0 captures are in `tests/fixtures/surf/swarm/v4/`;
+`MANIFEST.json` records each actual UTC timestamp, full URL, HTTP status, bytes and SHA-256.
+The seven requests all returned 200. Counts below describe those files, not fixed API promises.
+
+- `/jobs/{uuid}/submissions` serves every submitted attempt for that known job, with exact
+  `hash`, seat, node/role, Markdown `summary`, `usage`, outcome/oracle verdict, findings and
+  artifacts. The three captures contain 40/30/2 submissions; each includes seat #420.
+- `/jobs/{uuid}/result`, `/artifacts/{hash}` and `/bundles/{hash}` were observed by the reference's
+  author. They provide the winning bundle, raw artifacts and git bundle respectively. WP0 did
+  not refetch these three routes, and this dashboard does not consume them.
+- Submission `usage.model` is the model that **ran** the attempt. Worker
+  `runtimes[].premiumModel{model,effort}` is **advertised**, asserted by a daemon rather than
+  probed. They must not be substituted for each other. The fresh worker capture has 107 rows:
+  43 advertise gpt-6-astra/xhigh, 34 claude-fable-5-1/high, and 30 no model.
+- `/skills` now carries `inference` and lifetime `record` attempts/accepted/rejected/pending/
+  wallClockMs. Missing fields remain unknown; the model-tier names are served text.
+- `/health.status` is available as a health word. `operatorSurface`, `taskNetwork` and
+  `lotusTargets` remain outside the display contract because their meaning is not established.
+- `/workflows` joins two-stage launches. It is filed as F51; per-job co-working via submissions
+  is F52, and rejected attempts outside known jobs are F53. No workflow or global rejected-job
+  discovery was added.
+
+RECORD selects only the submission whose hash exactly matches the seat's work row. It displays
+the first sentence of the cleaned reply, with model and duration from that same read. Markdown
+link targets are discarded and remaining absolute local paths reduced to basenames. Newline
+sentence boundaries are preserved until selection; flattening comes afterward. Rendering still
+sanitizes third-party text. The raw submission payload is never persisted in the answer cache.
+
+Five answer states stay distinct: read, not read, unavailable, not served, no reply. Unknown
+model/duration on a successful matching read are em dashes. Failed, unfetched and absent rows
+show their explicit state in the answer cell and em dashes for model/duration; stale metadata
+is suppressed. A successful empty reply may still carry its matched usage fields.
+
+The answer reader permits four unique jobs after each successful selected-seat read, covering
+the first 40 RECORD rows. Unread rows precede due retries; multiple hashes from one job share
+one GET. Nonterminal results become due after 120 seconds. The validated cache keeps at most
+400 extracted points for 48 hours, with `read_ts` and `terminal` bookkeeping. Retained terminal
+results are never retried, including unavailable results; age/cap eviction permits a later read.
+A malformed loaded or consumed point refuses the whole answer slot.
+
+A four-job MockTransport replay used the three committed submission captures and one copied
+oracle payload assigned a synthetic UUID: 270,288 compact raw bytes became 1,087 cache bytes
+for four extracted points. Replay CPU/transport time was 0.00553 seconds with pacing injected,
+not slept. Required pacing adds a 0.48-second submissions floor (0.60 seconds including the
+seat GET). These are replay measurements, not a measured four-job live latency; the three
+actual WP0 submission GETs took 0.380, 0.215 and 0.167 seconds individually.
+
+CAPABILITY displays inference and accepted/attempts on its optional wider tier (166 terminal
+columns in the measured layout). The original seven columns remain whole at 141; no SWARM
+body pin was raised. The enriched first 40 RECORD rows in the v4 seat capture include the
+boilerplate and informative jobs at indices 0 and 1; the build job at 125 is not part of that
+window. Their longest cleaned answer is 80 cells and clears from 204 terminal columns.

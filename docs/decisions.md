@@ -4,6 +4,27 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-22** — Swarm polish replaces RECORD's repeated objective with the selected seat's
+  own first answer sentence, matched by full submission hash inside a known job. Markdown
+  link destinations are discarded and absolute local paths reduced before display; rendering
+  still sanitizes text. RECORD retains objective in its data contract for other readers and
+  distinguishes queued, failed, absent and empty replies. Actual `usage.model`/duration belong
+  to that same submission; worker `premiumModel` is separately labelled **advertised** in
+  FLEET and is never treated as a probed or actual-run model. Four unique jobs per seat cycle
+  progressively enrich the first 40 rows; the extracted cache is capped at 400 points/48 hours.
+  Retained terminal attempts, including failed reads, are not retried under the owner's rule.
+  Meaning-bound colour is shared across SWARM/AGENT heroes and BOARD rows: green healthy/
+  working/accepted, red offline/paused/rejected, yellow unavailable or existing pending counts.
+  Status words remain present, labels are dim, and rates/scores gain bold without thresholds.
+  BOARD rows use dim for offline as explicitly specified for that table. LEADERBOARD sorts
+  locally with immutable global rank and token cursor identity; header clicks never save a seat.
+  The approved SEAT grouping measures 138×37, above the accepted ≈34; it is skipped under the
+  per-item rule and filed as F54, preserving the existing SEAT layout and AGENT 138×32. The
+  remaining polish proceeds. F51–F53 record the explicitly deferred API opportunities.
+  BOARD measures 141×27, AGENT retains 138×32 and SWARM retains 141×42. CAPABILITY's
+  optional inference/record columns appear from 166; RECORD's committed first-40 answer
+  clearance moves to 204. Mixed SERVICES clipping remains filed as F55, including the
+  increased explicit-word width. No claim that all service combinations fit the body pin.
 - **2026-09-22** — BOARD's amended fix wave (§9/§11 of its handover) shortens the status
   hint to `l launchpad · 4 pl4 · s swm · a agt · b brd`; the full `l launchpad` wording stays.
   AGENT removes worker metadata and its separate clock from SEAT while retaining worker state

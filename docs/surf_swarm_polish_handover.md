@@ -281,12 +281,25 @@ Fetching (on `TIER_SWARM_SEAT`, after `/seats`, never in a handler):
 
 - `SURF_ROW_KEYS` for the RECORD rows gains `answer`, `answer_state`, `model`, `took_s`.
   `objective` stays in the row (other readers), but RECORD stops rendering it.
-- `swarm_fleet` gains `models` (a list of `{model, effort, count}` plus a `none` count).
+- `swarm_fleet` gains `models`, a list of `{model, effort, count}`. The explicit
+  `{model: None, effort: None, count: N}` bucket counts workers advertising no usable model.
+  Each worker contributes once per distinct model/effort pair; multiple runtimes can make
+  the sum exceed LIVE. This is advertisement, never a successful model probe.
 - `swarm_seat_live` gains `advertised_model` and `advertised_effort` (None = not advertised,
-  distinct from an unavailable read).
+  distinct from an unavailable read). Multiple distinct pairs are sorted, with model and
+  effort strings joined in the same pair order; missing effort uses `—`.
+  It also gains `live_state` using BOARD's working/idle/paused/offline/None vocabulary, so WP5
+  can preserve unknown pause evidence rather than paint it as idle (F48).
 - Skill rows gain `inference`, `attempts`, `accepted`, `rejected`, `pending`.
 - The SWARM hero payload gains `health_status`.
 - A new cache slot for answers, with its coercer registered on load (fail closed when absent).
+  Answer states are `read`, `not_read`, `unavailable`, `not_served`, `no_reply`. The persisted
+  JSON map is job UUID → exact submission hash → extracted `{answer, model, took_s, state}`
+  plus `read_ts` and `terminal` bookkeeping. Queued `not_read` has no persisted point.
+  RECORD puts the explicit read state in `answer`; model/took are shown only for `read` or
+  `no_reply`, otherwise `—`, so stale metadata cannot look successfully fetched.
+  The terminal no-reread rule includes failed terminal attempts while retained; pruning can
+  make them eligible again. No raw submissions envelope or uncleaned summary is stored.
 - Every addition goes through `SWARM_KEYS` / `SWARM_WIDGET_SIGNATURES` and the agreement tests.
   The widget restates tuples where the pattern already does.
 
@@ -353,3 +366,200 @@ For each proof, name the test that reddens and say why.
 - `git status --short`.
 
 Stop there for Claude's final whole-branch review. The owner decides merge and push.
+
+## 6.1 Hand-back — 2026-09-22
+
+### Scope and commits
+
+The fetched `autopull/main` and `91818e4` both resolved to
+`91818e49b211d43170608ef9105891e1c81a9a27`; §0 passed before branching.
+Work is on `feature/surf-swarm-polish`, with one repository writer at a time.
+All commits use explicit paths. No push, merge, tag, version bump, middle tier or full suite.
+The full release suite is deferred to the controller after review, as requested.
+
+| WP | Commit | Result |
+|---|---|---|
+| 0 | `4e1af77` | This handover, seven paced live captures, hostile variant and SHA-256 MANIFEST |
+| 1 | `91ad004` | Frozen row/payload/cache contracts and mandatory answer-slot coercer |
+| 2 | `56afd44` | Exact-hash answer extraction, bounded detached reads, validated extracted cache and new fold fields |
+| 3 | `54e7ffa` | Grouped FLEET, measured BOARD height, F50 test correction; SEAT budget skip F54 |
+| 4 | `a177e51` | Twelve-column sorting, stable token cursor, semantic row styles and no-save headers |
+| 5 | `d77b7d4` | Hero state words/colours and health; F48 fixed, mixed-services limitation F55 |
+| 6 | `bc126c2` | RECORD answer/model/took, optional CAPABILITY fields, measured onsets, complete local-path cleaning |
+| 7 | This documentation commit | Rules, README, API entry, decisions, follow-ups, layout reference and this hand-back |
+
+WP0's seven GETs returned 200, with actual UTC capture times in the committed MANIFEST.
+The three submission captures contain 40/30/2 entries and all contain seat #420. Workers
+were 107: 43 gpt-6-astra/xhigh, 34 claude-fable-5-1/high, 30 without an advertised model.
+Those are capture observations, not permanent counts. The shared aidude changelog was read
+only; its afternoon entry already contained the routes described as absent in §1.
+
+### Test-first evidence
+
+All pytest commands used `.venv311`, isolated temporary HOME and unset NO_COLOR; tests used
+fixtures/mocks and made no network requests. Counts below are each WP's final named coverage,
+not an additive count of unique tests across the branch. Red/green logs are local `/tmp/polish-wpN-*`.
+
+| WP | First red | Restored named green | Guard green |
+|---|---|---:|---:|
+| 0 | 2 missing-corpus assertions | 36 | 200 |
+| 1 | 12 contract assertions; then explicit queued-default regression after collection exposed the missing field | 371 across nonoverlapping runs | 200 |
+| 2 | 45 data/client and 6 manager assertions | 686 | 200 |
+| 3 | 4 composited FLEET cases and old 23-row BOARD pin; temporary exact SEAT layout failed at 34/36, passed at 37 | 583 (166 width cases + 417 remaining) | 200 |
+| 4 | 18 widget and 3 pilot cases | 90 (81 widget/screen + 9 affected layout) | 200 |
+| 5 | 17 composited cases; explicit service-word regression also failed before correction | 138 | 200 |
+| 6 | 10 RECORD cases, 3 CAPABILITY cases, 4 delimited-path cases, 3 Windows-forward-path cases; old RECORD pin and mismatched CSS cap red | 138 (117 widget/data + 21 layout) | 200 |
+| 7 | Documentation only; final branch gate below | 1,287 | 200 |
+
+WP6's initial final checks exposed five old `full` tier expectations at 141 and a skill-table
+297-vs-204 agreement failure. They now require the exact original seven CAPABILITY columns
+in baseline tier, and the skill quotes 204. Whole-content/scroll assertions remain. The final
+requires-empty and stale-usage tests use known other-cell values so unrelated dashes cannot
+satisfy their assertions. IN FLIGHT stress was restored byte-for-byte; only RECORD stress
+uses an answer. No production mutations remain.
+
+### Mutation evidence
+
+Every mutation below failed the intended assertion, then was reversed with exact source-byte
+restoration and a green focused or named run. Full test names, parameters, reasons and logs
+are also in the corresponding commit messages. Initial mutations that failed the wrong
+assertion or survived were rejected as evidence and corrected, as recorded here.
+
+| WP | Mutation → test that reddens and reason |
+|---|---|
+| 1 | Remove required answer coercer → `test_polish_answers_slot_is_registered_and_refuses_unvalidated_load`: unvalidated persisted payload is admitted |
+| 2 | Keep link target / keep absolute path → `test_answer_sentence_drops_private_targets_paths_and_preserves_sentence_boundaries`: destination or private path survives |
+| 2 | Compare hash prefix / bypass seat metadata → `test_exact_hash_does_not_match_a_prefix_or_another_seat`: another submission or seat receives the reply |
+| 2 | Queued→unavailable / raise four-job cap to five → `test_progressive_answers_distinguish_queued_failed_absent_and_reply`: queue/state or request bound is wrong |
+| 2 | Failed→not served / absent→unavailable → `test_submission_states_are_distinct`: failure is confused with successful absence |
+| 2 | Drop cached-answer cleaning → `test_answer_cache_refuses_any_bad_point`: a local path passes cache validation |
+| 2 | Use first cached hash → `test_cached_answers_match_exact_submission_hash_in_both_seat_orders`: replies cross seat identities. The initial one-order switch proof survived, so this two-order regression was added and killed it |
+| 2 | Omit manager's injected coercer → `test_cache_load_and_consumption_revalidate_every_answer`: real validated cache restoration fails |
+| 2 | Unknown pause→idle → `test_live_state_keeps_unknown_pause_distinct_from_idle_and_positive_evidence`: lack of evidence falsely becomes idle |
+| 3 | BOARD rows 27→26 / 28 → `test_board_polish_row_pin_is_tight_and_keeps_fleet_whole`: at-pin still scrolls / pin-minus-one already fits |
+| 3 | Paused red→default → `test_polish_paused_state_and_numbers_have_composited_styles`: composited ANSI-red assertion fails |
+| 3 | Model omission +N off by one → `test_polish_groups_align_labels_and_keep_the_advertised_model_prefix`: exact +2 continuation is wrong |
+| 3 | Inject false whole-body capture with cropped status, AGENT and SWARM → `test_the_body_is_whole_from_its_pinned_width`: status cropping alone cannot prove body degradation (F50) |
+| 4 | Add token tie-break / move None partition first → `test_every_sort_column_is_stable_and_missing_last_both_ways`: stable source order / missing-last rule fails |
+| 4 | Replace global rank with row position → `test_seat_sort_is_numeric_and_global_rank_is_not_row_position`: rendered global 9 becomes 1 |
+| 4 | Sort header also selects → `test_board_header_sorts_without_saving_then_selects_sorted_token_once`: no-save assertion sees token 10. Initial mutation failed sorting instead and was rejected; corrected mutation preserves sorting and kills no-save |
+| 4 | Paused red→default → `test_selected_and_live_states_have_composited_styles`: actual cursor-row colour fails |
+| 4 | Remove token cursor restoration → `test_cursor_token_zero_and_sort_survive_refresh_and_width_tiers`: cursor loses token 0 |
+| 5 | Offline red→default → `test_polish_worker_status_words_and_composited_colors`: composited RGB fails |
+| 5 | Unknown pause fallback→idle → `test_polish_unknown_pause_fold_reaches_unavailable_not_idle`: visible unavailable is lost (F48) |
+| 5 | Health ok green→red → `test_polish_hero_state_words_have_composited_colors`: composited health RGB fails |
+| 5 | Service words→identical dots → `test_polish_mixed_services_remain_distinct_without_color`: visible states no longer distinguish up/down |
+| 6 | RECORD 204→203 / 205 → `test_polish_record_answer_clearance_matches_committed_v4_window`: marker still lit at 203 / already dark at 204 |
+| 6 | CAPABILITY 166→165 / 167 → `test_polish_capability_optional_tier_preserves_baseline_and_clears_at_measured_onset`: optional columns absent at 165 / already present at 166 |
+| 6 | Collapse not served / allow stale usage → `test_polish_answer_states_and_same_read_usage`: distinct word lost / failed row leaks model and duration |
+| 6 | Disable clipped-answer marker → `test_polish_answer_sanitization_and_actual_clipping_drive_widen`: clipped CJK answer lacks widen |
+| 6 | Remove delimited-path pass → `test_delimited_absolute_paths_with_spaces_keep_only_basename`: four private paths survive |
+| 6 | Remove forward-slash drive separator → `test_windows_forward_slash_absolute_paths_keep_only_basename`: three C:/ paths survive |
+| 6 | Shed original checks column → `test_polish_capability_optional_tier_preserves_baseline_and_clears_at_measured_onset`: original-column guarantee fails |
+| 6 | Remove empty-requires dash → `test_requires_is_joined_and_empty_is_a_dash`: explicit empty cell is lost |
+
+Proof counts: WP1 1, WP2 12, WP3 6, WP4 6, WP5 4, WP6 11. Evidence summaries:
+`/tmp/polish-wp2-mutation-summary.log`, `/tmp/polish-wp3-proofs/results.json`,
+`/tmp/polish-wp4-proofs/`, `/tmp/polish-wp5-proofs/results.json`,
+`/tmp/polish-wp6-proofs/results.json`; WP1's log is `/tmp/polish-wp1-mutation.log`.
+
+### Measured layout and budget decisions
+
+| Body/content | Result | Binding evidence |
+|---|---|---|
+| BOARD | **141×27**, rows previously 23 | FLEET with paused detail is 16 rows + 11 chrome. At 26 it scrolls; at 27 whole. At 140 LEADERBOARD sheds three columns; 141 retains all twelve |
+| AGENT | **138×32**, unchanged | Existing SEAT/BY NODE over eight-row RECORD; 31 remains taller, 32 fits. RECORD's compact tier intentionally sheds role/launch/sub while retaining answer/model/took |
+| SWARM | **141×42**, unchanged | Original seven CAPABILITY columns bind width; sixteen-line THROUGHPUT/top row binds height. 41 remains taller. Named long-content and F55 limitations remain |
+| RECORD answer | Clears at **204**, previously objective clearance 297 | At 203 panel/answer are 200/79 cells and clip; at 204 they are 201/80 and clear; 205 remains whole |
+| CAPABILITY optional fields | Full from **166** | At 165 panel/budget 115/113 sheds only inf and acc/att; at 166 116/114 fits all nine, no horizontal scroll |
+
+The committed v4 seat has 191 work rows; RECORD displays the first 40 in source order. Its
+matched boilerplate reply at index 0 is 27 cells, and informative reply at index 1 is 80 cells.
+The build job at index 125 is outside this measured window. A synthetic 500-character answer
+and the committed hostile fixture still clip with an honest marker. CAPABILITY's forced-full
+trial at 141 overflowed horizontally by 25 cells, so the permitted wider tier is used. Both
+CSS caps are 118; allocation at 141 stays 91. All other body/status pins and KEY_HINTS remain.
+
+**Skipped under §4: F54.** The exact approved SEAT grouping needs **138×37**:
+18-row SEAT + 8-row RECORD + 11 chrome. Both captured v4 and five-digit stress were whole at
+37 and scrolled at 34/36. The entire restructure, advertised-model line and removal of the
+responsive contributors join are deferred. No facts or group gaps were removed to force 34.
+Measurement: `/tmp/test_polish_seat_budget.py`, `/tmp/polish-wp3-seat-budget-v4/`.
+
+**Filed:** F51 workflows, F52 per-job co-working, F53 rejected-attempt discovery, F54 above,
+and F55 mixed SERVICES clipping. **Fixed:** F48 unknown pause (WP5) and F50 vacuous below-pin
+test branch (WP3). F16, F47 and F49 remain outside this wave.
+
+F55 predates polish: at 141×42 the 19-cell SERVICES content already clipped its 33-cell mixed
+line. Explicit state words increase that example to 46 cells (`verifier down publ…` rendered);
+health unavailable fits its second body line. The mixed line clears at 302 terminal columns,
+all-unreported at 386; these are content measurements, not adopted pins. This branch does
+not claim every service combination is whole at 141. See follow-up evidence paths.
+
+### Final branch checks and real CLI captures
+
+- Named set: **1,287 passed in 780.22 seconds** (13:00), exit 0.
+- Guard: **200 passed, 9,757 deselected in 119.60 seconds**, exit 0.
+- `git diff --check`: clean.
+- No middle tier or full suite was run.
+
+The named set contains every touched data/widget/screen test file, plus
+`tests/screens/test_address_icons_everywhere.py` and `tests/test_surf_registration.py`.
+The final command was `.venv311/bin/python -m pytest -q` with these 19 paths:
+
+```text
+tests/data/test_surf_cache_swarm.py
+tests/data/test_surf_manager_answers.py
+tests/data/test_surf_manager_swarm.py
+tests/data/test_surf_models.py
+tests/data/test_surf_swarm_models.py
+tests/data/test_surf_swarm_polish.py
+tests/data/test_surf_swarm_polish_fixtures.py
+tests/data/test_surf_swarm_seats.py
+tests/data/test_surf_swarm_v2.py
+tests/screens/test_address_icons_everywhere.py
+tests/screens/test_surf_swarm_layout.py
+tests/screens/test_surf_swarm_screen.py
+tests/test_surf_registration.py
+tests/widgets/test_surf_swarm_agent_hero.py
+tests/widgets/test_surf_swarm_capability.py
+tests/widgets/test_surf_swarm_fleet.py
+tests/widgets/test_surf_swarm_hero.py
+tests/widgets/test_surf_swarm_leaderboard.py
+tests/widgets/test_surf_swarm_seat_record.py
+```
+
+Invocation copy: `/tmp/polish-final-named-paths.txt`; logs:
+`/tmp/polish-final-named.log` and `/tmp/polish-final-guard.log`.
+
+Six actual CLI runs used `.venv311/bin/python -m maxpane_dashboard --game surf --font-size 0`
+in sized PTYs, temporary HOME with saved seat #420, unset NO_COLOR, and Textual's screenshot
+at 45 seconds. These were live reads, separate from the offline tests. All six exited 0;
+all SVGs were converted to PNG and visually inspected. Directory: `/tmp/polish-final-live/`,
+with paired `.svg`, `.png`, `.ansi` and a local SHA-256/UTC-mtime `MANIFEST.json`.
+
+| Mode | 138×31 capture | 119×35 capture | Observed |
+|---|---|---|---|
+| BOARD | `b-420-138x31.svg` | `b-420-119x35.svg` | Selected #420, grouped FLEET, source clocks and LEADERBOARD widen; no taller |
+| AGENT | `a-420-138x31.svg` | `a-420-119x35.svg` | 31 rows shows taller and RECORD is below the visible body. At 119×35 RECORD shows four fetched replies with actual model/duration, then not read; long replies widen. Narrow hero fields clip below the width pin |
+| SWARM | `s-420-138x31.svg` | `s-420-119x35.svg` | Both show taller, 0 quiet, closed, all services up and health ok. CAPABILITY is unavailable at capture time, with its narrow-tier widen marker |
+
+The unavailable live CAPABILITY state is recorded as observed; it is not proof of a healthy
+skills read or of the new columns' live contents. Their source/rendering proof uses committed
+v4 fixtures and the named tests. Live title warnings for activity/pad were also retained.
+No retry capture was substituted to hide these states.
+
+### Repository hand-off
+
+After the WP7 documentation commit, `git status --short` has no tracked changes:
+
+```text
+?? .codex/
+?? .venv311/
+?? tests/fixtures/surf/pool4/oracle_25955365.json
+```
+
+The protected pool4 oracle fixture remains untracked and uncommitted; pre-existing `.codex/`
+and `.venv311/` are untouched. No credentials or secrets were added. All review artifacts
+under `/tmp` are local and are not part of the commits. Stop here for Claude's whole-branch
+review; the owner decides merge and push.

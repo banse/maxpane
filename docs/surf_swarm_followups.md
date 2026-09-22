@@ -844,7 +844,13 @@ THROUGHPUT production code remains unchanged by BOARD and this fix wave. Follow 
 and measure its height before choosing a remedy. No new pin is inferred from the screenshot.
 M6 in the amended wave corrects this attribution only; F47/F23 remain open.
 
-## F48 — AGENT STATUS cannot tell unknown pause state from known not-paused — OPEN (Minor, Tier 2)
+## F48 — AGENT STATUS cannot tell unknown pause state from known not-paused — CLOSED 2026-09-22 (polish WP5)
+
+Resolved through the public `swarm_seat_live.live_state` contract, populated by the shared
+worker-state fold and consumed by AGENT STATUS. Missing pause evidence stays unavailable;
+a known idle worker remains distinct. `d77b7d4` records the actual fold-to-widget test
+`test_polish_unknown_pause_fold_reaches_unavailable_not_idle` and a killed/restored mutation
+that falsely falls back to idle. The original finding follows for history.
 
 Filed by the BOARD fix-wave re-review, 2026-09-22. `widgets/surf/swarm_agent_hero.py:197-203` reads
 `swarm_seat_live` through `SWARM_SEAT_LIVE_FIELDS`, which does not carry `pause_known`. #420 with
@@ -857,8 +863,74 @@ Filed by the BOARD fix-wave re-review, 2026-09-22. `data/surf_swarm.py:1238-1239
 out of `swarm_board_rows` (99 seats vs 98 rows) with no row saying it is unavailable. The README
 discloses "every fully parsed contributor seat"; an explicit unavailable row would be more honest.
 
-## F50 — AGENT/SWARM below-pin layout branch is vacuous under 134 columns — OPEN (Minor, test rigor, pre-existing)
+## F50 — AGENT/SWARM below-pin layout branch is vacuous under 134 columns — CLOSED 2026-09-22 (polish WP3)
+
+Resolved in `54e7ffa`: below-pin tests require degradation of the body independently of the
+status bar, and exclude the named content exceptions' hidden columns from that evidence.
+Deliberately injected false whole-body results with a cropped status fail for both AGENT and
+SWARM; exact inverse restoration and the named tests pass. Original finding follows.
 
 Filed by the BOARD fix-wave re-review, 2026-09-22. `tests/screens/test_surf_swarm_layout.py:528`
 `assert not r["status_whole"] or …` is always true where the status bar is cropped (< 134) — the
 M2 shape. `test_the_column_pin_is_not_loose` still covers pin−1. Do as Tier 0 when the file is next touched.
+
+## F51 — workflows have no free SWARM layout slot — OPEN (owner design decision)
+
+Polish handover §1.3 explicitly defers `/workflows`. The read-only shared reference
+`/Library/Vibes/aidude/docs/imd-api-changelog.md` (2026-09-22) describes contractsJobId and
+frontendJobId joining two-stage launches, with status and failure. SWARM already exceeds the
+owner's heights (F16); decide placement before adding another panel. No workflow fetch is added
+in this branch.
+
+## F52 — per-job submissions expose co-working candidates — OPEN (future TEAMMATES data)
+
+Polish WP0 captures `/jobs/{id}/submissions`, which lists every attempting seat for a known job.
+This supersedes the older inference that panel membership is unavailable because `nodes[]`
+contains only one seat. A future TEAMMATES change can use the submission identities, with explicit
+scope for known jobs and attempted versus accepted work. This branch extracts only the selected
+seat's exact submission hash; it adds no co-working aggregate.
+
+## F53 — a seat's rejected attempts lack complete job discovery — OPEN (source coverage)
+
+The captured submissions contain oracle outcomes, including rejected attempts, but the seat's
+work list supplies accepted jobs. Rejected attempts inside jobs not otherwise known cannot be
+found from this path. A full per-seat rejected-attempt record therefore needs a discovery source;
+never claim the currently known jobs are the seat's complete rejected history. Deferred by polish
+handover §1.3.
+
+## F54 — approved SEAT grouping requires 37 rows — OPEN (polish budget skip)
+
+The exact polish §2.3 grouping was rendered at 138 columns with its separate pairing/model
+rows, two group gaps and CONTRIBUTORS header plus two fact rows. The measured SEAT panel is
+18 rows; RECORD needs eight and surrounding chrome eleven, so the minimum is **138×37**.
+At 34 and 36 rows the body scrolls and RECORD is not wholly visible. The WP0 v4 seat #420/workers
+with independent contributor data, and five-digit counters, were whole at 37. This exceeds the owner's accepted ≈34 rows.
+
+Per polish §4, the SEAT restructure was skipped, including its advertised-model row and
+retirement of the responsive contributor join. Existing SEAT content/layout remains; its
+AGENT body pin is unchanged at 138×32. FLEET's advertised model mix and the new data fields
+proceed independently. No facts or approved group gaps were silently removed to lower the pin.
+An owner decision on height or a revised layout is needed before implementing this grouping.
+
+Measurement harness: `/tmp/test_polish_seat_budget.py`; SVGs and region/scroll JSON in
+`/tmp/polish-wp3-seat-budget-v4/`. These are local review artifacts, not shipped runtime files.
+
+## F55 — mixed service states clip at the SWARM column pin — OPEN (pre-existing layout)
+
+WP5 measured the existing SERVICES box at 141×42: 23 outer columns and 19 content cells.
+The mixed-state line (`verifier` down, `publisher` up, `deployer` unknown) already rendered
+as `verifier ● publish…` before the polish changes. The all-up summary fits.
+
+Polish adds explicit up/down/unreported words so state does not depend on colour, and places
+`/health.status` on the available second body line. The example grows from 33 to 46 cells; the
+container width and height remain unchanged. It does not redesign the clipped mixed-state
+layout or raise SWARM's 141×42 pin. A later service layout change must preserve all service
+names/states and health status within the budget, with an actual at-pin mixed-state composite.
+At 141×42 the corrected mixed line renders `verifier down publ…`, while `health unavailable`
+is whole. Baseline evidence: `/tmp/polish-wp5-services-baseline.log`; corrected measurement:
+`/tmp/polish-wp5-services-words-measure.log`.
+
+F55 adjacent measurements: the 46-cell mixed line clips at 301 terminal columns (45 content
+cells) and is whole at 302 (46). The 60-cell all-unreported line clips at 385 and is whole at 386.
+These are content onsets, not adopted layout pins. Evidence:
+`/tmp/polish-wp5-services-width-boundary.log`.

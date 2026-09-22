@@ -176,8 +176,10 @@ Beside it, BY NODE counts reviewed and accepted work for each node, with an acce
 **reviewed work**, because the API does not serve attempts per node. Its `chain` count includes
 sent and submitted feedback transactions; TEAMMATES lists collaborators by shared jobs.
 RECORD runs below them: every won submission with date and time, job, node, role, job state,
-launch kind, submission-hash prefix and objective. The submission hash is an off-chain identifier
-and has no explorer link. A review that passed and work that won a job remain separate counts.
+launch kind, submission-hash prefix, the model used, duration and the first sentence of the
+seat's own answer. Queued, unavailable, not served and empty replies remain distinct. Links to
+local files are reduced to their labels, and absolute local paths to filenames before display.
+The submission hash is an off-chain identifier and has no explorer link. A review that passed and work that won a job remain separate counts.
 SEAT names `#N never paired` for a seat that has never paired; a failed read says `unavailable`.
 `esc` backs out of either body, one-way.
 
@@ -185,8 +187,19 @@ Press **`b`** for BOARD: aggregated lifetime contributors beside the live worker
 SEATS, ACCEPT RATE and RECEIPTS come from contributors; LIVE, PAUSED and CAPACITY come
 from workers. LEADERBOARD includes every fully parsed contributor seat and scrolls; runtime/state and
 FLEET metadata keep their own source clocks. One failed endpoint leaves the other's facts
-visible. FLEET shows whole metadata entries followed by `+N` for omissions, and token usage
-only as the served tokens-per-completed-job metric. BOARD contains no wallet or token ranking.
+visible. FLEET groups metadata under aligned labels, including an **advertised** model mix,
+with whole entries followed by exact `+N` omissions. Its CONTRIBUTORS group has a separate
+clock and the served tokens-per-completed-job metric. Worker advertisement can differ from
+the model that actually ran a RECORD submission. BOARD contains no wallet or token ranking.
+Click any LEADERBOARD column header to sort; click it again to reverse. `o` cycles the sort
+column and `O` reverses it. Global ranks and the cursor's seat identity remain stable. The
+selected seat is bold with an accent rank cell, working is green, paused red, offline dim and
+unknown yellow; every state retains its word.
+
+SWARM and AGENT status colours retain their words: green means healthy, working or accepted;
+red means offline, paused or down; yellow marks unavailable or existing pending counts. Zero
+working is dim `quiet`. Rates and scores are bold without invented thresholds. BOARD's offline
+rows are dim. The approved larger SEAT grouping is deferred because it needs 37 rows (F54).
 
 It reads one keyless host and nothing else — the swarm's own control plane, under two names that
 serve one deployment, rotated per request and never followed off the pool — and never the total it
@@ -464,6 +477,16 @@ like THE LIST's `w` for a wallet. **`b`** opens BOARD: the lifetime LEADERBOARD
 beside FLEET, with its own six-box hero. Enter or a single click on a leaderboard row saves that seat through
 the same configuration writer and opens AGENT; `▸` marks the selected seat. `esc` backs out
 of any of the six alternate bodies.
+
+| Surfboard input | Action |
+|---|---|
+| `l` / `e` / `4` / `s` / `a` / `b` | Open LAUNCHPAD / POOL4 protocol / POOL4 MARKET / SWARM / AGENT / BOARD |
+| `i` | Choose and save an IDMD seat |
+| `o` / `O` in BOARD | Cycle sort column / reverse sort |
+| LEADERBOARD header click | Sort that column; click again to reverse |
+| LEADERBOARD row click or Enter | Save that seat and open AGENT |
+| `esc` | Return to the dashboard |
+
 The status hint names the ones that are not experimental:
 `l launchpad · 4 pl4 · s swm · a agt · b brd`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two
@@ -561,20 +584,24 @@ shows `‹ taller`.
 
 Surfboard's SWARM view (`s`) is a layout of its own too, pinned by `SURF_SWARM_FULL_LAYOUT_COLUMNS`
 and `SURF_SWARM_FULL_LAYOUT_ROWS` (**141 columns × 42 rows** since the 2026-09-21 rebuild; 116 × 28
-before it). CAPABILITY decides the width — the point past which its table shows every column, which
-its `max-width` ceiling lets it reach only once its row is wide enough — and the top row decides
+before it). CAPABILITY's original seven columns decide the width. Its optional `inf` and
+`acc/att` columns appear from 166 columns and retain `‹ widen` below that point. The top row decides
 the height: THROUGHPUT is sixteen fixed lines and its row is floored at exactly that, so at 42 rows
 the body has room for the three rows without any panel scrolling inside itself and `‹ taller` goes
-dark. Two panels never clear their own `‹ widen` at any width the app admits: IN FLIGHT (clears at
-190 columns) and LAUNCHES (205), which share the second row on a 4:5 split measured so that
+dark. Mixed service states still clip in the SERVICES hero box (F55); its explicit state words
+and separate health line do not make all mixed combinations whole at this pin. IN FLIGHT and
+LAUNCHES have measured content exceptions recorded beside their constants in `screens/surf.py`;
+they share the second row on a 4:5 split measured so that
 LAUNCHES hides no column from 138 up. Like the announce feed's linked-transaction post, those are
 measured and accepted conditions at this pin and below, not something a wider pin could buy back.
 The AGENT view (`a`) has its own pair, `SURF_AGENT_FULL_LAYOUT_COLUMNS` ×
 `SURF_AGENT_FULL_LAYOUT_ROWS`, re-measured for SEAT beside BY NODE over RECORD. The `#:` blocks
 beside those constants in `screens/surf.py` record the measured dimensions and binding content.
-RECORD's objective takes the remaining width and clips with a visible `…`; its measured clearing
-width lives beside `RECORD_NEVER_CLEARS_BELOW` in the same file. Short objectives do not light
-`‹ widen` once the table's other columns fit.
+RECORD's cleaned answer takes the remaining width and clips with a visible `…`; its measured clearing
+width lives beside `RECORD_NEVER_CLEARS_BELOW` in the same file. Short answers do not light
+`‹ widen` once the table's other columns fit. The committed first 40 v4 work rows clear at
+204 columns; 203 still clips the longest answer. AGENT remains 138×32; BOARD is 141×27,
+with its grouped FLEET and paused detail binding the height.
 
 On FWA, press **`c`** to swap the odds board for the activity feed — they share the wide middle-left
 slot, so the bottom row belongs to the chase board and the settlement table alone. That split is why

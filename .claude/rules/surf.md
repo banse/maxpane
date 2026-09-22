@@ -183,7 +183,8 @@ Hero ACCEPT RATE and SEAT use `accepted / attempts`; zero attempts displays `no 
 missing counter displays `unavailable`. STATUS's `accepted MM-DD HH:MM` uses the newest
 `work[].acceptedAt`. Feedback `reviews[].sentAt` is a separate timestamp, never seat activity. STATUS reads worker
 capacity/pause/offline independently of seats, with its worker clock in the title and exactly
-three body lines. ACCEPTED carries the seats clock. A bad seats state hides its accepted date
+three body lines. `swarm_seat_live.live_state` preserves unknown pause evidence as unavailable (F48);
+known zero working is idle. ACCEPTED carries the seats clock. A bad seats state hides its accepted date
 without hiding valid worker facts.
 SEAT (`SurfSwarmSeatVerdicts`, retaining its class/module name) shows identity, owner, pairing,
 runtime, devices, daemon, attempts/accepted, feedback statuses, score and reviews by role.
@@ -191,7 +192,9 @@ Contributors use only `swarm_seat_contrib`, with their own clock, and distinguis
 from unavailable. Their group keeps two lines near the pin and joins one line only when every
 fact fits. It survives pending/unavailable seats. Pairing joins identity; queued joins feedback.
 Worker metadata is shown in BOARD; STATUS supplies AGENT's only liveness. SEAT shares narrow
-terminals, retains its measured cap at the pin and grows from spare width above it.
+terminals, retains its measured cap at the pin and grows from spare width above it. The polish
+SEAT grouping measured 138×37 and exceeded its ≈34-row budget (F54), so its advertised-model
+line and retirement of the responsive contributors join are deferred together.
 BY NODE (`SurfSwarmSeatNodes`) groups the union of `reviews[]` and `work[]` by node; its acceptance
 percentage uses the historical `won / reviewed` fields, because per-node attempts are not served. `chain` counts
 reviews with a transaction in `sent` or `submitted` state. TEAMMATES sorts by shared jobs
@@ -204,7 +207,8 @@ of a validated submission hash. A null launch displays `—` (real none); a null
 displays `not reported`; missing daemon and counter fields remain unavailable. Review-accepted and work that won a
 job are different counts. A 404 `unknown_seat` is a real negative: SEAT can name `#N never paired`
 through `swarm_seat_selected`; RECORD and BY NODE still show the tokenless state (F39). Any other
-404 rotates and fails. The owner address links the package `EXPLORER` (Ethereum, F31).
+seat 404 rotates and fails. A submissions 404 is local to that job and never rotates the host pool.
+The owner address links the package `EXPLORER` (Ethereum, F31).
 
 **`None` vs `[]` is decided in the manager, never the fold.** Every `*_rows` fold answers `[]` for
 `None` and for empty input alike; only the manager knows whether the read happened, so a list never
@@ -236,11 +240,49 @@ Named permanent exceptions, each
 with a measured clearing width in the `#:` block and in the layout test (`INFLIGHT_NEVER_CLEARS_BELOW`,
 `LAUNCHES_NEVER_CLEARS_BELOW`, `LAUNCHES_HIDES_NO_COLUMN_FROM`, `RECORD_NEVER_CLEARS_BELOW`):
 IN FLIGHT and LAUNCHES share a 4fr:5fr row measured so LAUNCHES hides no table column from below
-the pin up; RECORD's `objective` column (the job's free text) keeps `‹ widen` lit on the committed seat's
-lifetime work and never on short objectives. Each of the two bodies' heroes is part of "whole":
-its boxes ellipsise, and a clipped box at or above the pin fails the sweep like a panel's line.
+the pin up; RECORD's elastic `answer` column keeps `‹ widen` lit only when its cleaned reply
+actually clips. The committed capture's clearing width is recorded beside its constant. Heroes
+are part of the tested whole-body states; their clipped boxes fail those sweeps. F55 separately
+records the mixed SERVICES combinations which still clip and are not a whole-state guarantee.
 The original swarm grid decisions remain recorded in `docs/decisions.md`; the old A1 agent-grid
 arithmetic is historical (F32). AGENT now uses the seat-details handover's two-row structure.
+
+
+**Polish answer reads** (`docs/surf_swarm_polish_handover.md`): RECORD renders
+`when · job · node · role · state · launch · sub · model · took · answer`; objective remains
+in the data row for other readers. The answer is the first cleaned sentence from the exact
+`work[].submissionHash` in `/jobs/{uuid}/submissions`, never another seat's or a hash prefix.
+Markdown link destinations disappear and remaining absolute local paths reduce to basenames,
+including quoted/backticked paths with spaces. Preserve newline sentence boundaries before
+flattening; widgets still sanitize third-party text.
+
+The answer cell distinguishes read, `not read`, `unavailable`, `not served` and `no reply`.
+Model/took render only for successful matching reads (`read`/`no_reply`); missing values and
+other read states use `—` for those metadata cells. Failed/queued rows cannot retain stale
+metadata. This model is actual submission usage, independently of worker-advertised models.
+
+The detached seat tier reads at most four unique submission jobs per cycle over RECORD's first
+40 rows; several hashes from one job share one GET. Validate canonical UUIDs before paths;
+a submissions 404 stays local to that job. `SLOT_SWARM_ANSWERS` stores extracted fields plus
+`read_ts`/`terminal`, capped at 400 points and 48 hours, with strict load and consumption
+coercion. Nonterminal points refresh when due after 120 seconds. Retained terminal attempts,
+including failed reads, are never retried; pruning can make them eligible again. No raw
+submission envelope or uncleaned summary is cached.
+
+**Palette:** dim labels, bold counts; green healthy/working/accepted, red offline/paused/down,
+yellow unavailable or existing pending counts. Zero working keeps `0 quiet` dim. Rates and
+scores are bold without thresholds. SWARM SERVICES keeps explicit up/down/unreported words
+and a separately served health word; its pre-existing mixed-state clipping is F55. The new
+health row fits the existing hero height. BOARD's offline rows are dim, per its own row design;
+its hero is unchanged by polish. Every colour assertion uses actual composited styles.
+
+CAPABILITY keeps its original seven columns at SWARM's 141-column body pin. The optional
+full tier adds `inf` and `acc/att` from `CAPABILITY_OPTIONAL_FULL_COLUMNS` (166 in the measured
+layout); at 165 only those two fields are shed. Its widen marker remains honest below that
+onset. Layout tests permit only these optional omissions and still require all original
+columns, no original clipping and no horizontal table scroll. RECORD's committed enriched
+v4 first 40 clears at 204 columns; 203 clips the 80-cell informative answer. The build reply
+from work index 125 is outside that displayed-window measurement.
 
 
 ## BOARD (`b`, MODE_BOARD)
@@ -253,6 +295,18 @@ no network await in the event handler). Rendered row identity is token metadata,
 text or a raw-payload index. FLEET fits whole sanitized values and counts omissions with `+N`.
 Long runtime names use an explicit ellipsis/widen content exception; fixed counters cannot
 clip at the full-layout pin. BOARD's measured guarantees live beside its pins in screens/surf.py.
+FLEET uses fixed-width dim labels, grouped metadata, bold counts and an explicitly advertised
+model mix, with workers in its title clock and contributors in a separate sub-header. A worker
+counts once per distinct model/effort pair, including an explicit none bucket; multiple pairs
+can make the model-count sum exceed LIVE. Paused none is green; a paused count is red.
+
+Every LEADERBOARD column sorts through its header; repeated clicks reverse. BOARD-only `o`
+cycles all columns and `O` reverses, without changing KEY_HINTS. Sort is stable on raw values,
+None is last in both directions, global rank is immutable and the cursor follows its token
+across refresh, resize and re-sort. Header clicks never select or persist a seat. Selected
+rows are bold with an accent rank; working is green, paused red, unavailable yellow and the
+whole offline row dim. Colour is checked on composited cells, including under the cursor.
+BOARD remains 141 columns and now needs 27 rows, bound by FLEET with paused detail.
 The existing global market title remains unchanged; source clocks belong in BOARD content.
 
 IN FLIGHT keeps the folded dispatch/failure note as its last column. Actual note clipping
