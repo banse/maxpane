@@ -1,7 +1,7 @@
 # The IMD swarm: what the explorer shows and what its API serves
 
 Research for a surf body on <https://explorer.imd.fun/>. Every number and shape below was measured on
-**2026-09-16**, not taken from documentation: <https://www.imd.fun/docs/> says "protocol overview, agent
+**2026-09-16** unless a later dated capture is explicitly named, not taken from documentation: <https://www.imd.fun/docs/> says "protocol overview, agent
 architecture and integration guides coming soon" and documents no endpoint at all.
 
 ## What the explorer is
@@ -28,6 +28,8 @@ the public subset.
 |---|---|---|
 | `GET /health` | swarm counters and the identity contracts | 567 B |
 | `GET /jobs` | the newest 100 jobs, newest first; `count` is the page length, not a total; no pagination; parameters ignored (2026-09-21). On 2026-09-16 it read as every job: 62 | 27.5 KB (62 jobs, 2026-09-16); 43.1 KB (100, 2026-09-21) |
+| `GET /contributors` | per-device lifetime counters; aggregate by token (2026-09-22) | 32,113 B |
+| `GET /workers` | live devices, capacity, pauses and runtime metadata (2026-09-22) | 97,420 B |
 | `GET /seats/{tokenId}` | one seat's lifetime record (measured 2026-09-21; see [`/seats/{tokenId}`](#seatstokenid)) | 6–90 KB |
 | `GET /jobs/{id}` | one job with its subtasks, verdicts and review | 2.2 KB typical, 9.2 KB worst |
 | `GET /launches` | deployments with every contract address | 10.1 KB (16) |
@@ -136,11 +138,11 @@ this is a description of those captures, not a new live measurement:
 - `work[].submissionHash` is an off-chain identifier. The fold accepts exactly 64 hex characters;
   RECORD shows its first eight characters as plain text, with no blockchain explorer link.
 
-The lifetime win rate is `accepted / attempts`; zero attempts has no defined rate. BY NODE instead
-uses won work divided by reviewed work for that node, since this route does not serve attempts
+The lifetime ACCEPT RATE is `accepted / attempts`; zero attempts has no defined rate. BY NODE instead
+uses accepted work divided by reviewed work for that node, since this route does not serve attempts
 per node. It includes nodes found only in `work[]`, with zero reviewed. A transaction in `sent` or
 `submitted` state counts toward the node's `chain` column; queued reviews do not. The latest
-`work[].acceptedAt` is the last win; the latest `reviews[].sentAt` is feedback delivery time.
+`work[].acceptedAt` is the last accepted-work timestamp; the latest `reviews[].sentAt` is feedback delivery time.
 Neither timestamp establishes the seat's last attempt, which the route does not serve.
 
 `reviews[].status` takes three values:
@@ -151,7 +153,9 @@ Neither timestamp establishes the seat's last attempt, which the route does not 
 
 No `blockNumber` anywhere. `reviews[].verdict` was `accepted` and `value` `1` on all 566 reviews read, so
 review-accepted is not `accepted`: #420 has 72 reviews (66 sent, 5 submitted, 1 queued) and 12 accepted of 74
-attempts. **Not served:** rejections, revisions, rejection codes, failed checks, verifier detail, "working now".
+attempts. **Not served in these 2026-09-21 captures:** rejections, revisions, rejection codes,
+failed checks, verifier detail, "working now". The 2026-09-22 capture below serves rejected/pending
+counters again; that historical observation no longer describes the current corpus.
 
 Errors:
 
@@ -162,7 +166,8 @@ Errors:
 
 A competitive job's detail (`/jobs/{id}`, e.g. `oracle_assess` on `80c853bd`) lists only the winning node while
 its review scores every seat that attempted it, so the job window cannot reconstruct a seat's attempts;
-`/seats/{tokenId}` is the only lifetime source.
+`/seats/{tokenId}` was the lifetime source used for that view. The later `/contributors` capture
+also serves lifetime counters, with its own read time and totals (see below).
 
 ### `/launches` and `/sites`
 
@@ -205,3 +210,98 @@ research did not chase it, and nothing in the planned view depends on it.
 2. **Scores and throughput need the full sweep**, 188 KB, so they belong on a slow tier.
 3. **One host, unsigned, third-party.** Treat every field as third-party text: escape before markup, fit on
    cell width, and never present its word as verified.
+
+
+## BOARD captures — 2026-09-22
+
+Source: the owner's seven frozen captures in `tests/fixtures/surf/swarm/v3/`, probed by Claude
+at **≈01:55–02:05Z** on `https://api.imd.fun`. `MANIFEST.json` binds each file to its route,
+status, date, selection reason, byte length and SHA-256. These are capture observations; no new
+network requests were made while implementing the BOARD contract.
+
+### `/contributors`
+
+The envelope serves `receipts: 8226`, `tokensPerCompletedJob: 371004`, and **101 device rows
+representing 99 distinct seats**. Seats #1089 and #1129 each have two devices. BOARD's SEATS
+counts distinct token IDs, while the leaderboard's `dev` counts contributor devices per seat.
+
+Each row serves `deviceKey`, `wallet`, decimal-string `tokenId`; integer `attempts`, `accepted`,
+`rejected`, `pending`, `turns`; and decimal-string `wallClockMs`, `inputTokens`, `outputTokens`,
+`cachedInputTokens`. Across the captured rows, attempts equal accepted + rejected + pending.
+Totals are 8,226 attempts, 6,555 accepted, 242 rejected and 1,429 pending. Every counter is
+aggregated by seat before display; rank is accepted descending, accept rate descending, token
+ascending. Rate is undefined at zero attempts. Hours are aggregated wall-clock milliseconds / 3,600,000.
+
+Token counts differ substantially by runtime accounting. `tokensPerCompletedJob` could not be
+reproduced from these rows and is displayed **as served**, labelled `(served)`. No token-based
+ranking or inferred cost is produced. Wallets are not part of the BOARD row contract.
+
+### `/workers`
+
+The envelope serves `count: 91` and 91 workers, all distinct seats in this capture. Each row has
+`deviceKey`, `seat {tokenId, agentId}`, `working`, `maxConcurrency`, `paused`, `daemonVersion`,
+`runtimes [{id, version}]`, `profiles`, `tools`, `skills`, `platform {os, arch, nodeVersion}`,
+`connectedHere`, `connectedAt`, and `lastHeartbeatAt`.
+
+Eleven seats have `paused {until, consecutiveFailures}`, each at three failures. Working sums to
+zero and capacity to 151. Runtime buckets are codex 53, claude 37 and both 1; OS buckets linux 75,
+darwin 12 and win32 4. Profiles are none+foundry 68 and none 23. Concurrency counts are 1×50,
+2×30, 3×3 and 4×8. Daemon versions are served facts, without a latest/outdated judgement:
+
+| Version | Devices |
+|---|---:|
+| `0.1.0+5e34612c` | 67 |
+| `0.1.0+1308af71` | 18 |
+| `0.1.0+285d1984` | 3 |
+| `0.1.0+358bb77c` | 2 |
+| `0.1.0+e9ca5510` | 1 |
+
+The fifth daemon version is present in the frozen capture although omitted from the handover's
+four-version summary. BOARD LIVE uses the valid **served** `count`, not the row length or
+`/health.connectedDaemons`. The same-minute health capture reports 92; that independent count
+stays on SWARM.
+
+### Independent sources and normalization
+
+The selected #420 capture serves `/seats` attempts 204, accepted 190, rejected 2, pending 12.
+The contributor rows instead give attempts 207, accepted 189, rejected 2, pending 16. AGENT's
+existing attempt/accepted line remains `/seats`-only; its separately labelled contributors group
+uses `/contributors` only. This is a source difference, not a reconciliation opportunity.
+
+The public contract is frozen in `data/surf_models.py`: `swarm_board_summary`,
+`swarm_board_rows`, `swarm_fleet`, `swarm_seat_live`, `swarm_seat_contrib`, and the independent
+`swarm_board_as_of_hhmm` / `swarm_workers_as_of_hhmm` markers. Each last-good slot retains its
+own successful-read clock. Mixed-source panels receive both markers; a failed endpoint does not
+clear the other's data or advance its own marker. Selecting another seat derives that token's
+live/contributor state from these cached slots without another board request.
+
+Contributor admission requires valid token/device identity and **all** served numeric counters,
+including the token accounting fields that are not displayed. Numeric parsing accepts nonnegative
+integers or ASCII-digit decimal strings only; booleans, floats, negatives, signs, whitespace and
+garbage are invalid. The existing strict token parser is reused. A malformed row is dropped, never
+zero-filled; a missing top-level list makes the corresponding source unread. Valid empty lists
+are real empty reads. Workers require valid token/device identity and working/maxConcurrency;
+optional metadata stays `None` if unavailable, distinct from served empty lists.
+
+For a seat with multiple worker devices, sum working and concurrency, count devices and retain
+the newest heartbeat. State priority is working, then paused, then idle. For multiple pauses choose
+the earliest `until`, breaking ties by device key, and keep that device's paired failure count.
+A good workers read without a seat yields `offline`; an unread workers source yields unavailable.
+A good contributors read without a seat yields `listed: False`; unread yields `None`.
+
+Worker metadata belongs in **`swarm_seat_live`**, keeping `/seats` summary fields source-pure:
+`skills` is the distinct skill count, `profiles` a sorted distinct list, and `platform` the sorted
+distinct `os arch` values joined with commas. No missing field is presented as zero metadata.
+Fleet mixes count devices, sort count descending then value, and preserve runtime/daemon text as
+served; third-party text is sanitized in the widget. Paused fleet entries aggregate per seat and
+sort by until then token.
+
+### Detail dispatch and failure notes
+
+`job_5a4dfb13_dispatch_note` is executing and carries a node `dispatchNote` with `dispatchNoteAt`.
+`job_0ed3e9f8_blocked` contains a failed, unassigned node with `failureReason: budget_exhausted`.
+`job_33016bad_two_node_verdict` preserves a two-node example with seat attribution and verdicts.
+IN FLIGHT remains limited to executing jobs. Its row gains `note` and `note_kind`: dispatchNote
+wins over failureReason; absent notes remain `None`. `dispatchNoteAt` and `allowedPaths` are not
+displayed. The existing widget signature already receives `swarm_inflight_rows`, so extending
+that row contract carries the note without adding an unused top-level widget parameter.

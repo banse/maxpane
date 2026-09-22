@@ -1475,9 +1475,17 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_seat_work_rows",     # list[dict]   -- /seats work[], lifetime, newest first
     "swarm_seat_node_rows",     # list[dict]   -- reviews/work by node; reviewed desc, won desc, key asc
     "swarm_seat_teammates",     # list[dict] | None -- collaborators; shared_jobs desc, token_id asc
+    # ---- BOARD (`b`, 2026-09-22); independent /contributors and /workers sources ----
+    "swarm_board_summary",     # dict -- SWARM_BOARD_SUMMARY_FIELDS; unread source fields None
+    "swarm_board_rows",        # list[dict] | None -- one aggregated row per contributor token
+    "swarm_fleet",             # dict | None -- SWARM_FLEET_FIELDS, from /workers only
+    "swarm_board_as_of_hhmm",   # str | None -- contributors last-good marker
+    "swarm_workers_as_of_hhmm", # str | None -- workers last-good marker
+    "swarm_seat_live",         # dict | None -- selected-token /workers lookup, including metadata
+    "swarm_seat_contrib",      # dict | None -- selected-token /contributors lookup
 )
 
-#: The target widgets of the ``s`` and ``a`` bodies (swarm v2 plan §1.4 + A1) and the
+#: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
 #: contract keys each ``update_data`` takes, verbatim, as keyword parameters. Exported
 #: so the screen test binds to this rather than to a local copy (bound in WP7).
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
@@ -1488,11 +1496,70 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
-    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_live", "swarm_workers_as_of_hhmm"),
     "SurfSwarmSeatNodes": ("swarm_seat_node_rows", "swarm_seat_teammates", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
-    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_selected", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_selected", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
+    "SurfSwarmBoardHero": ("swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
+    "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
+    "SurfSwarmFleet": ("swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
 }
+
+# ---- BOARD contract (docs/surf_swarm_board_handover.md §3) --------------------
+# Contributor rows require a usable token/device key and every served numeric
+# counter: attempts, accepted, rejected, pending, turns, wallClockMs, inputTokens,
+# outputTokens, cachedInputTokens. Decimal strings contain ASCII digits only;
+# bools, floats, signs and whitespace are invalid. Malformed rows are dropped,
+# never zero-filled; all counters aggregate per token before rendering the subset.
+# Workers require token/device identity plus working/maxConcurrency counters.
+# Missing optional metadata stays None; a served empty list is a real empty.
+# Missing top-level lists are unread, distinct from successful empty lists.
+
+#: Fields from /contributors: seats (distinct tokens), attempts/accepted/rejected/
+#: pending sums, receipts and tokens_per_completed_job (both as served).
+#: Fields from /workers: live (valid served count, never /health or a row count),
+#: paused (distinct seats), capacity and working sums. An unread source leaves
+#: only its own fields None; no source supplies or reconciles another's values.
+SWARM_BOARD_SUMMARY_FIELDS: tuple[str, ...] = (
+    "seats", "live", "paused", "capacity", "working", "attempts", "accepted",
+    "rejected", "pending", "receipts", "tokens_per_completed_job",
+)
+
+#: /workers-only mixes: each list[{value: str, count: int}] sorts by count desc,
+#: then value. A missing metadata value does not invent a bucket. Runtime buckets
+#: combine a device's runtime IDs (codex+claude = both); each device contributes
+#: once per mix. paused entries are {token_id, until_ts, failures}, one per seat,
+#: ordered by until then token. Heartbeat endpoints are epoch seconds or None.
+SWARM_FLEET_FIELDS: tuple[str, ...] = (
+    "runtimes", "daemons", "os", "profiles", "concurrency",
+    "heartbeat_oldest_ts", "heartbeat_newest_ts", "paused",
+)
+
+#: None means /workers unread. live=False means absent from a good read.
+#: For multiple devices sum working/capacity, count devices and use the newest
+#: heartbeat. State priority is working > paused > idle. Choose the earliest
+#: paused until, then device key, retaining that device's paired failures.
+#: Worker metadata belongs here so /seats summary fields retain their source:
+#: skills is the distinct skill count, profiles a sorted distinct list, platform
+#: sorted distinct "os arch" values joined by ", ". Missing metadata stays None;
+#: served empty skills/profiles are 0/[], not unavailable.
+SWARM_SEAT_LIVE_FIELDS: tuple[str, ...] = (
+    "live", "working", "max_concurrency", "paused_until_ts", "failures",
+    "heartbeat_ts", "devices", "skills", "profiles", "platform",
+)
+
+#: None means /contributors unread. listed=False means absent from a good read;
+#: its numeric fields are None. Listed rows aggregate all devices of the token.
+#: rank/ranked_of use the whole contributor board, never the live workers list.
+#: wall_clock_s is aggregated wallClockMs / 1000 (hours are a display conversion).
+SWARM_SEAT_CONTRIB_FIELDS: tuple[str, ...] = (
+    "listed", "attempts", "accepted", "rejected", "pending", "turns",
+    "wall_clock_s", "rank", "ranked_of",
+)
+
+#: None is unavailable (not a string state); absent from good /workers is offline.
+SWARM_BOARD_LIVE_STATES: tuple[str, ...] = ("working", "idle", "paused", "offline")
+SWARM_INFLIGHT_NOTE_KINDS: tuple[str, ...] = ("dispatch", "failure")
 
 # ---- AGENT body on /seats/{tokenId} (spec docs/surf_agent_seats_spec.md §4, plan §1.2) ----
 
@@ -1793,12 +1860,24 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "imd",         # float -- shares converted at the vault's share price
         "pct",         # float -- share of the whole vault, never of the page
     ),
+    # /contributors grouped by token; accepted desc, accept_rate desc (None last),
+    # token asc. devices counts contributor devices, never the live worker count.
+    # agent_id/runtime/state come from /workers. Missing workers is unavailable
+    # (None); a good read without that token gives runtime/live_state="offline".
+    # Runtime IDs aggregate across devices; accept_rate is None at zero attempts.
+    "swarm_board_rows": (
+        "rank", "token_id", "agent_id", "devices", "runtime", "attempts", "accepted",
+        "rejected", "pending", "accept_rate", "turns", "wall_clock_s", "live_state",
+        "working", "paused_until_ts", "failures",
+    ),
     # ---- swarm v2 (WP0, 2026-09-21), plan §1.2 + A1. The five v1 shapes
     # (field / queue / blocked / shipped / score rows) retired with their
     # widgets in WP7.
     "swarm_inflight_rows": (
         "job_id", "template", "objective", "created_ts", "age_s", "node_key",
         "node_role", "node_state", "agent_token", "agent_id", "revisions",
+        "note",        # str | None -- dispatchNote preferred over failureReason, escaped by widget
+        "note_kind",   # "dispatch" | "failure" | None -- SWARM_INFLIGHT_NOTE_KINDS
     ),
     "swarm_skill_rows": (
         "skill_id", "version", "role", "kind", "tier", "judge",

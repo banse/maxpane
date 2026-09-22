@@ -1,12 +1,14 @@
-"""The ``s`` and ``a`` bodies' data contract, as ``surf_models.py`` freezes it.
+"""The ``s``, ``a`` and ``b`` bodies' data contract, as ``surf_models.py`` freezes it.
 
-The seat-details WP1 freezes twenty-five keys: retire the roster and review
-rows and the roster window, then add node rows and teammates. Every tuple below is hand-typed on purpose -- a copy an agreement
+The BOARD WP1 freezes thirty-two keys, including separate workers and
+contributors clocks and selected-seat lookups. Every tuple below is hand-typed on purpose -- a copy an agreement
 test binds is the one legitimate copy (CLAUDE.md, Conventions), and deriving
 it from the module would make the test agree with whatever the module says.
 """
 
 import pytest
+
+from maxpane_dashboard.data import surf_models as models
 
 from maxpane_dashboard.data.surf_models import (
     SURF_KEYS,
@@ -44,6 +46,13 @@ SWARM_SEATS_KEYS = (
     "swarm_seat_teammates",
 )
 
+#: BOARD additions follow the existing seat block; the sources remain separate.
+SWARM_BOARD_KEYS = (
+    "swarm_board_summary", "swarm_board_rows", "swarm_fleet",
+    "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
+    "swarm_seat_live", "swarm_seat_contrib",
+)
+
 #: The retired swarm v1 and seat-window keys. Named so the test that
 #: says they are gone cannot pass on a typo.
 SWARM_RETIRED_KEYS = (
@@ -60,11 +69,17 @@ SWARM_RETIRED_KEYS = (
     "swarm_score_rows",
 )
 
-#: The seven v2 row shapes, fields in contract order (plan §1.2 + A1).
+#: Eight surviving/new row shapes, fields in contract order (v2 plus BOARD).
 SWARM_V2_ROW_SHAPES = {
+    "swarm_board_rows": (
+        "rank", "token_id", "agent_id", "devices", "runtime", "attempts", "accepted",
+        "rejected", "pending", "accept_rate", "turns", "wall_clock_s", "live_state",
+        "working", "paused_until_ts", "failures",
+    ),
     "swarm_inflight_rows": (
         "job_id", "template", "objective", "created_ts", "age_s", "node_key",
         "node_role", "node_state", "agent_token", "agent_id", "revisions",
+        "note", "note_kind",
     ),
     "swarm_skill_rows": (
         "skill_id", "version", "role", "kind", "tier", "judge", "checks",
@@ -96,8 +111,9 @@ AGENT_WIDGETS = (
     "SurfSwarmSeatRecord",
 )
 
-#: The ten target widgets of §1.4 + A1, by class name.
+#: The thirteen SWARM, AGENT and BOARD target widgets, by class name.
 SWARM_TARGET_WIDGETS = {
+    "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
     "SurfSwarmHero",
     "SurfSwarmInFlight",
     "SurfSwarmThroughput",
@@ -111,10 +127,10 @@ SWARM_TARGET_WIDGETS = {
 }
 
 
-def test_the_swarm_block_is_twenty_five_keys():
-    """The previous 26 keys minus three retired keys plus two seat-detail keys."""
-    assert len(SWARM_KEYS) == 25
-    assert len(set(SWARM_KEYS)) == 25
+def test_the_swarm_block_is_thirty_two_keys():
+    """Twenty-five existing keys plus seven BOARD source-separated keys."""
+    assert len(SWARM_KEYS) == 32
+    assert len(set(SWARM_KEYS)) == 32
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -136,7 +152,7 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-15:] == SWARM_V2_KEYS + SWARM_SEATS_KEYS
+    assert SWARM_KEYS[-22:] == SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -196,9 +212,9 @@ def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
     assert unreached == set(), sorted(unreached)
 
 
-def test_the_signature_names_exactly_the_ten_target_widgets():
+def test_the_signature_names_exactly_the_thirteen_target_widgets():
     assert set(SWARM_WIDGET_SIGNATURES) == SWARM_TARGET_WIDGETS
-    assert len(SWARM_WIDGET_SIGNATURES) == 10
+    assert len(SWARM_WIDGET_SIGNATURES) == 13
 
 
 def test_no_retired_key_is_named_by_a_target_signature():
@@ -235,11 +251,15 @@ def test_the_agent_signatures_are_the_flipped_literals():
     assert {k: SWARM_WIDGET_SIGNATURES[k] for k in AGENT_WIDGETS} == {
         "SurfSwarmAgentHero": (
             "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm",
+            "swarm_seat_live", "swarm_workers_as_of_hhmm",
         ),
         "SurfSwarmSeatNodes": (
             "swarm_seat_node_rows", "swarm_seat_teammates", "swarm_seat_state", "swarm_seat_as_of_hhmm",
         ),
-        "SurfSwarmSeatVerdicts": ("swarm_seat_summary", "swarm_seat_selected", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+        "SurfSwarmSeatVerdicts": (
+            "swarm_seat_summary", "swarm_seat_selected", "swarm_seat_state", "swarm_seat_as_of_hhmm",
+            "swarm_seat_live", "swarm_seat_contrib", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
+        ),
         "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
     }
 
@@ -249,3 +269,55 @@ def test_the_agent_signatures_reach_every_seats_key_and_drop_the_window_ones():
     assert set(SWARM_SEATS_KEYS) <= named, sorted(set(SWARM_SEATS_KEYS) - named)
     assert "swarm_network" not in named
 
+
+
+@pytest.mark.parametrize(("name", "expected"), [
+    ("SWARM_BOARD_SUMMARY_FIELDS", (
+        "seats", "live", "paused", "capacity", "working", "attempts", "accepted",
+        "rejected", "pending", "receipts", "tokens_per_completed_job",
+    )),
+    ("SWARM_FLEET_FIELDS", (
+        "runtimes", "daemons", "os", "profiles", "concurrency",
+        "heartbeat_oldest_ts", "heartbeat_newest_ts", "paused",
+    )),
+    ("SWARM_SEAT_LIVE_FIELDS", (
+        "live", "working", "max_concurrency", "paused_until_ts", "failures",
+        "heartbeat_ts", "devices", "skills", "profiles", "platform",
+    )),
+    ("SWARM_SEAT_CONTRIB_FIELDS", (
+        "listed", "attempts", "accepted", "rejected", "pending", "turns",
+        "wall_clock_s", "rank", "ranked_of",
+    )),
+    ("SWARM_BOARD_LIVE_STATES", ("working", "idle", "paused", "offline")),
+    ("SWARM_INFLIGHT_NOTE_KINDS", ("dispatch", "failure")),
+])
+def test_board_nested_fields_and_vocabularies_are_frozen_literals(name, expected):
+    actual = getattr(models, name)
+    assert actual == expected
+    assert len(actual) == len(set(actual))
+
+
+def test_board_signatures_carry_each_source_clock():
+    assert {name: SWARM_WIDGET_SIGNATURES[name] for name in (
+        "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
+    )} == {
+        "SurfSwarmBoardHero": (
+            "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
+        ),
+        "SurfSwarmLeaderboard": (
+            "swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm",
+            "swarm_workers_as_of_hhmm",
+        ),
+        "SurfSwarmFleet": (
+            "swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm",
+            "swarm_workers_as_of_hhmm",
+        ),
+    }
+    named = {key for signature in SWARM_WIDGET_SIGNATURES.values() for key in signature}
+    assert set(SWARM_BOARD_KEYS) <= named
+
+
+def test_inflight_note_lives_in_its_row_without_an_unused_new_kwarg():
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmInFlight"] == (
+        "swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network",
+    )

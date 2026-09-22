@@ -37,7 +37,7 @@ from rich.errors import MarkupError
 from rich.text import Text
 from textual.app import App, ComposeResult
 
-from maxpane_dashboard.data.surf_models import SURF_KEYS
+from maxpane_dashboard.data.surf_models import SURF_KEYS, SWARM_WIDGET_SIGNATURES
 
 # Package root, not submodule paths: this is the surface ``screens/surf.py``
 # and its screen test import from (WP5), so the contract sweep exercises it.
@@ -793,3 +793,13 @@ async def test_rich_rejects_a_theme_token_in_a_data_table_cell():
                 await pilot.pause()
     finally:
         lp._pct_cell = original
+
+
+@pytest.mark.parametrize("name", (
+    "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
+    "SurfSwarmAgentHero", "SurfSwarmSeatVerdicts",
+))
+def test_board_and_agent_exports_implement_the_frozen_source_signatures(name):
+    """BOARD WP1 freezes this seam before WP4/WP5 implement the widgets."""
+    cls = getattr(surf_widgets, name)
+    assert _kwargs_of(cls) == SWARM_WIDGET_SIGNATURES[name]

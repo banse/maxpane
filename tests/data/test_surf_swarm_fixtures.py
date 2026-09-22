@@ -401,3 +401,63 @@ def test_duplicated_reviews_capture_manifest_records_owner_provenance():
     assert entry["selected_because"] == (
         "reviews[] lists 154 of 197 submissions twice (stale sent/submitted/queued "
         "entry + a fresh queued copy, same submissionHash); acceptedAt in the '2026-09-21 21:35:42.88+00' form")
+
+
+# --- owner-supplied 2026-09-22 BOARD captures (WP1) ---
+
+_V3_CAPTURES = (
+    "workers", "contributors", "health", "seat_420_with_contributors",
+    "job_5a4dfb13_dispatch_note", "job_0ed3e9f8_blocked",
+    "job_33016bad_two_node_verdict",
+)
+
+
+def test_v3_manifest_binds_every_capture_to_bytes_checksum_and_provenance():
+    import hashlib
+    from tests.surf_swarm_fixtures import SWARM_FIXTURES_V3, swarm_capture_v3
+
+    manifest = swarm_capture_v3("MANIFEST")
+    assert manifest["host"] == "https://api.imd.fun"
+    assert set(manifest["files"]) == set(_V3_CAPTURES)
+    assert {p.stem for p in SWARM_FIXTURES_V3.glob("*.json")} == {*_V3_CAPTURES, "MANIFEST"}
+    for name, entry in manifest["files"].items():
+        raw = (SWARM_FIXTURES_V3 / f"{name}.json").read_bytes()
+        assert entry["bytes"] == len(raw), name
+        assert entry["sha256"] == hashlib.sha256(raw).hexdigest(), name
+        assert entry["captured_on"] == "2026-09-22", name
+        assert entry["captured_at"] == "≈01:55–02:05Z (live probe by Claude)", name
+        assert entry["http_status"] == 200, name
+        assert entry["selected_because"].strip(), name
+        capture = swarm_capture_v3(name)
+        route = (f"/jobs/{capture['id']}" if name.startswith("job_")
+                 else f"/seats/{capture['tokenId']}" if name.startswith("seat_")
+                 else f"/{name}")
+        assert entry["route"] == route, name
+
+
+def test_v3_corpus_retains_device_rows_source_disagreement_and_node_notes():
+    from collections import Counter
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+
+    contributors = swarm_capture_v3("contributors")
+    rows = contributors["contributors"]
+    multiplicities = Counter(row["tokenId"] for row in rows)
+    assert {token for token, count in multiplicities.items() if count > 1} == {"1089", "1129"}
+    assert all(row["attempts"] == row["accepted"] + row["rejected"] + row["pending"] for row in rows)
+    assert sum(row["attempts"] for row in rows) == contributors["receipts"]
+    workers = swarm_capture_v3("workers")
+    assert len(workers["workers"]) == workers["count"]
+    assert swarm_capture_v3("health")["connectedDaemons"] != workers["count"]
+    seat = swarm_capture_v3("seat_420_with_contributors")
+    selected = [row for row in rows if row["tokenId"] == seat["tokenId"]]
+    assert selected
+    assert sum(row["accepted"] for row in selected) != seat["accepted"]
+    dispatch = swarm_capture_v3("job_5a4dfb13_dispatch_note")
+    assert dispatch["state"] == "executing"
+    assert any(node.get("dispatchNote") for node in dispatch["nodes"])
+    blocked = swarm_capture_v3("job_0ed3e9f8_blocked")
+    assert any(node.get("failureReason") == "budget_exhausted" and node["seat"] is None
+               for node in blocked["nodes"])
+    verdict = swarm_capture_v3("job_33016bad_two_node_verdict")
+    assert len(verdict["nodes"]) == 2
+    assert any(node.get("seat") and node.get("verdict") for node in verdict["nodes"])

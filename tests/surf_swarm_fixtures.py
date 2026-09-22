@@ -6,6 +6,7 @@ beside it retired with their folds and widgets in WP7.
 
 The 2026-09-21 ``/seats/{tokenId}`` captures (AGENT-seats plan WP0) sit under
 ``fixtures/surf/swarm/seats``, with their own ``MANIFEST.json``.
+The owner-supplied 2026-09-22 BOARD captures sit under ``fixtures/surf/swarm/v3``.
 """
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from typing import Any
 
 SWARM_FIXTURES_V2 = Path(__file__).resolve().parent / "fixtures" / "surf" / "swarm" / "v2"
 SWARM_FIXTURES_SEATS = SWARM_FIXTURES_V2.parent / "seats"
+SWARM_FIXTURES_V3 = SWARM_FIXTURES_V2.parent / "v3"
 
 
 def swarm_capture_v2(name: str) -> Any:
@@ -38,4 +40,10 @@ def swarm_manifest_v2() -> dict[str, Any]:
 def swarm_seat_capture(name: str) -> dict:
     """One ``fixtures/surf/swarm/seats/<name>.json``, e.g. ``seat_420`` or ``MANIFEST``."""
     with open(SWARM_FIXTURES_SEATS / f"{name}.json", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def swarm_capture_v3(name: str) -> dict:
+    """One owner-supplied 2026-09-22 BOARD capture, or its provenance MANIFEST."""
+    with open(SWARM_FIXTURES_V3 / f"{name}.json", encoding="utf-8") as fh:
         return json.load(fh)
