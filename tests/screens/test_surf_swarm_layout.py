@@ -94,10 +94,10 @@ from tests.surf_swarm_fixtures import (
 
 #: What the sweeps found, restated by hand so the pins cannot drift on their
 #: own: a pin that moves without a re-sweep reddens the agreement test.
-MEASURED_SWARM_COLUMNS = 142
+MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 42
-MEASURED_AGENT_COLUMNS = 142
-MEASURED_AGENT_ROWS = 36
+MEASURED_AGENT_COLUMNS = 138
+MEASURED_AGENT_ROWS = 32
 
 #: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
 #: block): the outer width at which each one's own ``‹`` goes dark on the
@@ -125,7 +125,7 @@ _A_THRESHOLDS = (
     128,     # SEAT five-digit contributor line whole
     134,     # all AGENT hero fixed content whole
     138,     # BY NODE full
-    142,     # complete status bar, full-layout binder
+    134,     # complete status bar; BY NODE binds at138
 )
 
 
@@ -134,7 +134,7 @@ _EXCLUDED_FROM_WHOLE = {
     "a": {"SurfSwarmSeatRecord"},
     "b": {"SurfSwarmLeaderboard"},
 }
-_BINDING_PANEL = {"s": "StatusBar", "a": "StatusBar"}
+_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmSeatNodes"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
 _ROW_PIN = {"s": SURF_SWARM_FULL_LAYOUT_ROWS, "a": SURF_AGENT_FULL_LAYOUT_ROWS}
 _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
@@ -664,7 +664,7 @@ async def test_the_row_pin_holds_at_the_column_pin_too(key) -> None:
 async def test_the_top_row_floor_is_its_auto_height_panels_own_lines(key) -> None:
     """The one number in the swarm CSS that is not a tier width: each top
     row's ``min-height`` is the fixed line count of its ``height: auto``
-    panel (THROUGHPUT sixteen, SEAT seventeen). Bound here so the floor
+    panel (THROUGHPUT sixteen, SEAT thirteen). Bound here so the floor
     cannot drift from the content it equals: at the pin the panel, the row
     and the floor are one height, and the row never scrolls inside itself
     -- not even at 20 rows, on the worst case."""
@@ -697,14 +697,13 @@ async def test_no_height_loses_a_row_of_either_body_in_silence() -> None:
 # The key hint
 # ---------------------------------------------------------------------------
 
-KEY_HINT_PHRASE = "l launchpad · 4 pool4 · s swarm · a agent · b board"
+KEY_HINT_PHRASE = "l launchpad · 4 pl4 · s swm · a agt · b brd"
 
-#: Whole status bar measured 2026-09-22 after b board joined the hint:
-#: cropped through 141, whole from 142, including poll/errors and the right
-#: version/theme/game label. This binds AGENT and LAUNCHPAD above the
-#: unchanged SWARM 141 body and the new BOARD 141 table. The pool4 market
-#: body 119 remains the documented pre-existing status-bar exception.
-STATUS_BAR_WHOLE_FROM = 142
+#: Whole status bar measured after §11 abbreviations: cropped through 133,
+#: whole from 134, including poll/errors and full right version/theme/game text.
+#: Body binders are now LAUNCHPAD 138, SWARM 141, AGENT 138 and BOARD 141.
+#: Pool4 protocol 99 and market 119 retain their body-only status exceptions.
+STATUS_BAR_WHOLE_FROM = 134
 
 
 def test_the_key_hint_is_the_measured_phrase() -> None:
@@ -839,3 +838,21 @@ async def test_inflight_note_marker_clears_at_its_measured_content_width(payload
         assert ("SurfSwarmInFlight" in result['marked']) == (width<edge),result
         assert result['tiers']['SurfSwarmInFlight']=="full",result
         assert not result['overflow'],result
+
+
+@pytest.mark.parametrize("kind,edge", [("v3",208),("worst",240)])
+async def test_agent_contributor_lines_follow_actual_screen_room_without_raising_pin(kind,edge):
+    payload = _v3_agent_payload() if kind == "v3" else _worst_agent_payload()
+    turns = "2189 turns" if kind == "v3" else "99999 turns"
+    async with _surf_app(payload).run_test(size=(138,32)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("a")
+        for width,one_line in ((138,False),(edge-1,False),(edge,True),(138,False)):
+            await pilot.resize_terminal(width,32)
+            await pilot.pause()
+            seat = pilot.app.screen.query_one(SurfSwarmSeatVerdicts)
+            rows = _region_text(pilot.app,seat).splitlines()
+            first = next(line for line in rows if "contributors " in line)
+            assert (turns in first) is one_line, (width,rows)
+            assert seat.query_one("#surf-swarm-verdicts-contributor-time").display is not one_line
+            assert pilot.app.screen.query_one(SurfSwarmSeatNodes)._tier == "full"

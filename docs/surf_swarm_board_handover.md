@@ -208,8 +208,11 @@ rows, 2026-09-22"). The `s` body's 42 rows remains F16's open half.
   - A seat absent from a good read: `contributors  not listed` (a real negative).
   - Unread: `contributors  unavailable`.
 
-  From `/workers`: `skills 30 · profiles none, foundry · linux x64` (the fields are third-party:
-  sanitise them).
+  Amendment §11: the contributor group keeps its source clock and every fact. It remains two
+  lines when narrow and joins one line only when the whole text fits; it must not raise the
+  AGENT column pin. Worker metadata and its clock are removed from SEAT; worker state remains
+  in STATUS. The paired timestamp joins the identity line, and queued count joins the feedback
+  line. The paired line's old `/seats` online flag is removed, leaving one liveness source.
 - REJECTED is served again, so the D2 rationale ("not served") no longer holds for rejections. Record
   that in `docs/decisions.md` in WP6.
 
@@ -288,8 +291,14 @@ Parsing, in `data/surf_swarm.py`:
   LEADERBOARD scrolls, so it floors at 8 lines like the other tables. Report whether the BOARD body
   fits the owner's 35 and 31 rows.
 - **Re-swept pins:**
-  - `SURF_AGENT_FULL_LAYOUT_*` (131 × 32): STATUS and SEAT change.
-  - `SURF_SWARM_FULL_LAYOUT_*` (141 × 42) and `INFLIGHT_NEVER_CLEARS_BELOW`: IN FLIGHT's note column.
+  - After §9/§11: AGENT **138 × 32**, SWARM **141 × 42**, BOARD **141 × 23**,
+    LAUNCHPAD **138 × 31**. AGENT's merged SEAT lines bind its re-derived 13-row top floor.
+  - Exact hint: `l launchpad · 4 pl4 · s swm · a agt · b brd`. The whole status bar is measured
+    from **134 columns**, below these four body widths; it still exceeds the pool4 body-only
+    guarantees of 99 and 119. No alternate words were substituted.
+  - Dashboard **143 columns**, experimental pool4 **99 × 45**, pool4 market **119 × 35**
+    remain their independently measured body guarantees. IN FLIGHT's note content remains
+    an explicit exception; its full-tier/no-note lower bound is 222.
 
   If a pin moves, update its `#:` block, the test thresholds and the SKILL.md row together.
 

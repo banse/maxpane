@@ -556,6 +556,10 @@ clip. A detail view (enter on a row) would show the whole reason if the owner wa
 
 ### F18 — the status bar is never whole under 131 columns; the `4` body's pin is 119 (pre-existing)
 
+*Amended fix wave, 2026-09-22:* the exact shortened hint measures a whole bar from **134**.
+LAUNCHPAD/AGENT body widths are 138 and SWARM/BOARD 141. Pool4's 99/119 body-only guarantees
+remain below the status edge; the narrow-status finding remains open. Earlier measurements:
+
 *BOARD update, 2026-09-22:* the added `b board` hint makes the current whole-bar threshold
 **142 columns**, verified against the complete composited right label. The `4` body's 119-column
 body pin still does not promise a whole status bar; this finding remains open. Original observation:
@@ -763,6 +767,11 @@ regression test with out-of-order and missing timestamps.
 
 ### F43 — AGENT's status-bar width depends on the version and theme label — OPEN
 
+*Amended fix wave, 2026-09-22:* the shortened hint moves the status edge to **134**. Complete
+composited-label assertions remain; the four larger bodies are now bound by their own content.
+The version/theme dependency and pool4 narrow-status limitation remain open. F46 is closed by
+the measured 32-row AGENT layout. Earlier measurements:
+
 *BOARD update, 2026-09-22:* current whole-bar width is **142** after adding `b board`. WP4
 strengthened the test to compare the complete expected right-label text with composited output:
 region bounds alone missed the final `f` of `surf` clipped at 141. That test gap is fixed; the
@@ -798,7 +807,15 @@ capture to `PAYLOADS` when the layout test is next touched.
 
 Closed: `duplicates420` now participates in permanent width/height boundaries and pin assertions.
 
-## F46 — AGENT's new source groups require more than the accepted 32 rows — OPEN (owner decision)
+## F46 — AGENT's new source groups require more than the accepted 32 rows — CLOSED 2026-09-22 (§11)
+
+Closed by the amended fix wave: AGENT measures **138 × 32** on ordinary v3 and five-digit
+stress. Removing the two worker metadata rows, merging paired time into identity, and merging
+queued feedback into the feedback line leaves eleven detail lines plus title/blank: a 13-row
+SEAT top floor. Contributor facts retain two lines at the pin and collapse only when they fit.
+The original §9 trial stopped correctly at 33; §11 authorized the additional fact-preserving
+merges. The owner's 138×31 terminal still needs scrolling, within the accepted 32-row choice.
+Canonical measurements and boundary tests live beside the screen pins. Original finding:
 
 BOARD's WP5 adds four fixed SEAT rows: two source-labelled contributor lines, worker metadata,
 and its source clock. The measured AGENT minimum is now **36 rows**; at 35 the body still scrolls

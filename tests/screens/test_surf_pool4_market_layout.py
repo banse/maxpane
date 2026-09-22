@@ -1415,7 +1415,7 @@ def test_the_market_body_is_shorter_than_p_and_taller_than_the_launchpad() -> No
 #: ``STATUS_BAR_WHOLE_FROM``) before this copy followed. This literal is
 #: the hand-typed copy the last assertion of the test below binds to
 #: ``SurfScreen.KEY_HINTS``.
-KEY_HINT_PHRASE = "l launchpad · 4 pool4 · s swarm · a agent"
+KEY_HINT_PHRASE = "l launchpad · 4 pl4 · s swm · a agt · b brd"
 
 
 async def test_the_key_hint_fits_the_status_bar_at_the_full_layout() -> None:

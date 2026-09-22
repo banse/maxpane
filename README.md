@@ -167,9 +167,11 @@ in its title; ACCEPTED carries the separate seats clock.
 SEAT shows identity, owner (with a copy icon and Etherscan link), pairing, runtime, device count,
 daemon version, attempts and accepted work, feedback by delivery status, score and reviews by role.
 Its labelled contributor group has independent attempts, accepted, rejected, pending, turns,
-hours and rank; worker skills, profiles and platform form another group. Each keeps its own
-clock and remains visible when the seats read fails. A good contributors read without the seat
-says `not listed`; an unread source says `unavailable`. Long worker metadata clips visibly.
+hours and rank, with its own clock; this group remains visible when the seats read fails.
+It uses two lines near the layout pin and one when every fact fits in the panel. Pairing shares
+the identity line; all feedback delivery statuses share one line. Worker metadata belongs in
+BOARD, while STATUS is AGENT's only liveness indicator. A good contributors read without the seat
+says `not listed`; an unread source says `unavailable`.
 Beside it, BY NODE counts reviewed and accepted work for each node, with an acceptance percentage based on
 **reviewed work**, because the API does not serve attempts per node. Its `chain` count includes
 sent and submitted feedback transactions; TEAMMATES lists collaborators by shared jobs.
@@ -463,7 +465,7 @@ beside FLEET, with its own six-box hero. Enter on a leaderboard row saves that s
 the same configuration writer and opens AGENT; `▸` marks the selected seat. `esc` backs out
 of any of the six alternate bodies.
 The status hint names the ones that are not experimental:
-`l launchpad · 4 pool4 · s swarm · a agent · b board`. In Surfboard's announce feed, `enter` or `space` on a
+`l launchpad · 4 pl4 · s swm · a agt · b brd`. In Surfboard's announce feed, `enter` or `space` on a
 `▸ n replies` line (or a click) opens and closes that thread. (THE LIST's `l` and Surfboard's `l` are two
 different dashboards' own bindings, not one shared key — see each dashboard's own row above for
 what it does there.) **THE LIST binds `y`** for your own standing — every send you

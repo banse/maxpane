@@ -320,9 +320,12 @@ The selection marker follows the current AGENT seat. Fleet values remain whole w
 
 AGENT's STATUS uses workers independently of `/seats`, with its worker clock in the title.
 The accepted timestamp still requires a good seats state; its source clock is in ACCEPTED.
-SEAT's two contributor lines and worker metadata/clock remain available independently of the
-seats response. An absent seat and an unread source retain distinct messages. Metadata is
-sanitized and visibly clipped when needed. Acceptance labels replace the old win wording;
+SEAT's contributor group remains available independently of the seats response. It keeps
+all counters, turns, hours, rank and its own clock on two lines at narrow widths, joining one
+only when the whole group fits. Worker metadata and its clock are no longer painted in SEAT.
+Pairing time shares identity; queued feedback shares sent/submitted. The old seats online flag
+is removed; STATUS is the liveness source. An absent seat and an unread source retain distinct
+messages. Acceptance labels replace the old win wording;
 the historical `win_rate` and `last_won_ts` contract names retain their acceptance meaning.
 
 IN FLIGHT's last column sanitizes and clips the note, lighting `‹ widen` when content is cut.

@@ -29,7 +29,7 @@ def test_signature():
 
 async def test_lifetime_details_and_identity_are_visible():
     text=await _record()
-    for word in ("IDMD #420",f"agent {SUMMARY['agent_id']}","owner", "online ●", "runtime", "daemon", "device", "attempts", "accepted", "of attempts", "reviewed", "feedback", "submitted", "queued", "score", "by role"):
+    for word in ("IDMD #420",f"agent {SUMMARY['agent_id']}","owner", "paired", "runtime", "daemon", "device", "attempts", "accepted", "of attempts", "reviewed", "feedback", "submitted", "queued", "score", "by role"):
         assert word in text, (word,text)
     assert f"{mmdd(SUMMARY['paired_ts'])} {hhmm(SUMMARY['paired_ts'])}" in text
     assert f"{SUMMARY['win_rate']*100:.1f} %" in text
@@ -131,8 +131,8 @@ async def test_contributors_never_borrow_seats_numbers_and_survive_seats_loss(st
                        swarm_board_as_of_hhmm='03:01',swarm_seat_live=LIVE,swarm_workers_as_of_hhmm='05:07')
     assert 'contributors 207 att · 189 acc · 2 rej · 16 pend' in text
     assert '2189 turns · 8.1 h · rank #4 of 101 · as of 03:01' in text
-    assert 'skills 30 · profiles none, foundry · linux x64' in text
-    assert 'workers as of 05:07' in text
+    assert 'skills' not in text and 'profiles' not in text
+    assert 'workers as of 05:07' not in text
     if state!='ok':assert 'attempts 201' not in text and '⧉' not in text
 
 @pytest.mark.parametrize('contrib,word',[(None,'unavailable'),({'listed':False},'not listed')])
@@ -142,18 +142,60 @@ async def test_contributor_absence_is_not_unavailability(contrib,word):
     assert ('not listed' in text)==(word=='not listed')
     assert f"attempts {SUMMARY['attempts']}" in text
 
-async def test_worker_metadata_is_sanitized_and_only_comes_from_workers():
+async def test_worker_metadata_has_no_seat_rendering_path():
     text=await _record(swarm_seat_live=dict(LIVE,profiles=['[/x]foundry'],platform='[$success]linux x64'))
-    assert 'profiles foundry · linux x64' in text
+    assert 'profiles' not in text and 'linux' not in text
     assert '[/x]' not in text and '[$success]' not in text
     missing=await _record(swarm_seat_summary=dict(SUMMARY,skills=777,profiles=['POISON'],platform='POISON'))
-    assert 'workers unavailable' in missing and 'POISON' not in missing and '777' not in missing
+    assert 'workers' not in missing and 'POISON' not in missing and '777' not in missing
 
 
-async def test_long_worker_metadata_has_visible_loss_but_its_clock_and_counts_are_whole():
+async def test_long_worker_metadata_stays_off_seat_while_contributor_facts_remain_whole():
     text=await _record(swarm_seat_live=dict(LIVE,profiles=["x"*64],platform="y"*64),
                        swarm_workers_as_of_hhmm="05:07",swarm_seat_contrib=CONTRIB,swarm_board_as_of_hhmm="03:01")
-    line=next(line for line in text.splitlines() if "skills 30" in line)
-    assert "profiles" in line and "…" in line
-    assert "workers as of 05:07" in text
+    assert "skills" not in text and "profiles" not in text
+    assert "workers as of 05:07" not in text
     assert "contributors 207 att · 189 acc · 2 rej · 16 pend" in text
+
+
+async def test_fix_wave_identity_and_pairing_share_one_composited_line():
+    text = await _record()
+    line = next(line.strip() for line in text.splitlines() if "IDMD #420" in line)
+    assert line == f"IDMD #420 · agent {SUMMARY['agent_id']} · paired {mmdd(SUMMARY['paired_ts'])} {hhmm(SUMMARY['paired_ts'])}"
+    assert "surf-swarm-verdicts-paired" not in ROW_IDS
+    assert "online" not in text and "offline" not in text
+
+
+async def test_fix_wave_feedback_statuses_share_one_composited_line():
+    summary = dict(SUMMARY, review_status={"sent":80_001,"submitted":9_999,"queued":9_998})
+    text = await _record(swarm_seat_summary=summary)
+    line = next(line.strip() for line in text.splitlines() if "feedback" in line)
+    assert line == "feedback 80,001 sent · 9,999 submitted · 9,998 queued"
+    assert "surf-swarm-verdicts-queued" not in ROW_IDS
+    assert sum("queued" in line for line in text.splitlines()) == 1
+
+
+async def test_fix_wave_worker_metadata_is_absent_from_seat():
+    text = await _record(swarm_seat_live=LIVE, swarm_workers_as_of_hhmm="05:07")
+    assert "skills" not in text and "profiles" not in text and "linux" not in text
+    assert "workers as of" not in text and "05:07" not in text
+
+
+@pytest.mark.parametrize("width,one_line", [(63,False),(120,True)])
+async def test_fix_wave_contributors_use_one_line_only_when_all_facts_fit(width,one_line):
+    async with Linked().run_test(size=(width,24)) as pilot:
+        widget = pilot.app.query_one(SurfSwarmSeatVerdicts)
+        widget.styles.max_width = width
+        widget.update_data(swarm_seat_summary=SUMMARY,swarm_seat_selected=SELECTED,swarm_seat_state="ok",
+                           swarm_seat_contrib=CONTRIB,swarm_board_as_of_hhmm="03:01")
+        await pilot.pause()
+        rows = ["".join(segment.text for segment in strip).strip() for strip in pilot.app.screen._compositor.render_strips()]
+        first = next(line for line in rows if "contributors 207" in line)
+        tail = "2189 turns · 8.1 h · rank #4 of 101 · as of 03:01"
+        if one_line:
+            assert first == "contributors 207 att · 189 acc · 2 rej · 16 pend · " + tail
+            assert not widget.query_one("#surf-swarm-verdicts-contributor-time").display
+        else:
+            assert first == "contributors 207 att · 189 acc · 2 rej · 16 pend"
+            assert tail in rows
+            assert widget.query_one("#surf-swarm-verdicts-contributor-time").display

@@ -2595,10 +2595,10 @@ SurfScreen #surf-agent-body {
     scrollbar-gutter: stable;
 }
 
-/* SEAT's fixed thirteen lines. */
+/* SEAT: eleven detail lines plus title and mandatory blank row. */
 SurfScreen #surf-agent-top {
     height: 1fr;
-    min-height: 17;
+    min-height: 13;
     padding: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;
@@ -2613,7 +2613,7 @@ SurfSwarmSeatNodes {
     padding: 0 1;
 }
 
-/* SEAT shares narrow terminals and caps at its measured contributor width.
+/* SEAT shares narrow terminals; screen resize grows its cap from spare width.
  * Rows fit third-party text visibly; feedback statuses occupy two lines. */
 SurfSwarmSeatVerdicts {
     width: 1fr;

@@ -229,6 +229,7 @@ from textual.widgets import DataTable, Static
 from maxpane_dashboard import config
 from maxpane_dashboard.screens.seat_input import parse_seat
 from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
+from maxpane_dashboard.widgets.surf.swarm_seat_verdicts import PANEL_MAX_WIDTH as SEAT_PANEL_MAX_WIDTH
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
@@ -654,10 +655,11 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: burn line and the ordinary one: ``‹ widen`` lit through 137, ``BURNED``
 #: whole and nothing clipped from 138, no table scrollbar at any width.
 #: BOARD WP4 (2026-09-22): adding b board moves the whole status bar's
-#: onset to 142, now the full-layout binder. The unchanged body still clears
-#: at 138; its COINS table marks below that. In-situ capture and ordinary-burn
-#: checks retain the old body boundary and bind the status edge at 141/142.
-SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 142
+#: onset to 142. §11 shortens the hint and restores the 138 body pin; its
+#: COINS table marks below that. The 128–145 capture/ordinary-burn sweep
+#: confirms 138, while complete status text clears from 134 (133 still crops).
+#: Row boundaries 30/31 were checked again at 138 with capture and 20 coins.
+SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 
 #: The ``l`` LAUNCHPAD body's own measured **height** (2026-08-25) -- new
 #: with the five-panel body, which is the first version of this view that
@@ -1602,11 +1604,12 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: CAPABILITY is ``tight`` with ``‹`` lit and LAUNCHES hides eleven columns
 #: behind its own horizontal scrollbar; at 138 CAPABILITY is ``compact``
 #: with ``‹`` lit, LAUNCHES is ``tight`` with ``‹`` lit and hides none.
-#: BOARD WP4: the body remains whole from 141. The b board hint makes
-#: complete status-bar text the new binder at 142 (141 loses surf's final f).
+#: BOARD WP4 made complete status text bind at 142. The §11 hint re-sweep
+#: restores the 141 body pin: CAPABILITY binds, while status clears at 134.
 #: Height 20–61 at the new column pin confirms the same 42-row onset.
 #: BOARD WP5 re-swept every width 60–225 at 80 rows on capture, v3 executing
-#: note and stress; full-layout width remains 142. IN FLIGHT's new last note
+#: note and stress. §11 repeated the 140/141 body boundary after the hint
+#: change. IN FLIGHT's new last note
 #: column keeps an explicit widen marker while clipped, even in full tier.
 #: Named content exception: the served 81-character note clears at 532 and
 #: the synthetic 309-character note at 1558, measured in situ beyond 225
@@ -1614,7 +1617,7 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: Those payload-dependent widths do not raise the body's pin. A fitting
 #: literal ellipsis does not light widen. Unchanged template/objective cells
 #: retain their existing literal-text ellipsis behavior.
-SURF_SWARM_FULL_LAYOUT_COLUMNS = 142
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
 #: the 2x2 grid, 28 on 2026-09-17 (F6, QUEUE's counter block). **Re-swept to
@@ -1641,56 +1644,52 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 142
 #: the row scrolling inside itself from 34 to 57 -- a ``‹ taller`` lit on
 #: every terminal the owner has and cleared only by one nobody uses. The
 #: floor gives THROUGHPUT its lines first and lets the two table rows take
-#: the rest; the AGENT body's top row carries SEAT's seventeen the
-#: same way. At the owner's 35 and 31 rows the body scrolls and the marker says
+#: the rest; AGENT's top floor now carries SEAT's thirteen the same way.
+#: (§11 reduced it from WP5's seventeen.) At the owner's 35 and 31 rows the body scrolls and the marker says
 #: so; no row of any panel is lost in silence
 #: (``test_no_height_loses_a_row_of_either_body_in_silence``).
 #: BOARD WP5 confirmed this onset again at every height 20–61, at 150 and
 #: 142 columns, on capture, v3 executing notes and stress.
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: AGENT full-layout width, measured 2026-09-22 for BOARD WP5: still 142.
-#: Every integer 60–225 at 80 rows was rendered on original #0/#420,
-#: duplicated-review #420, v3 #420, pending/unavailable seats, unread workers,
-#: unread contributors, absent and unselected seats, and the extended stress.
-#: Each capture's new groups are folded from v3 for that selected token.
-#: Stress retains 30 nodes, 999 teammates, 55,555 reviewed/99,999 entries,
-#: four-digit feedback statuses and 400-character objectives; new groups add
-#: five-digit counters, 20 long profiles and a 64-character platform.
+#: AGENT full-layout width, re-measured 2026-09-22 for §11: 138.
+#: BY NODE binds: full from 138, compact 125, selected columns whole 105.
+#: The shortened owner hint is whole from 134, no longer the body binder.
+#: v 3 and five-digit stress were rendered at every integer 60–225 at 80 rows;
+#: original #0/#420, duplicated reviews, pending/unavailable seats, unread
+#: workers/contributors, absent and unselected seats used boundary checks
+#: from 60–300. No horizontal region overflow was observed.
 #:
-#: Complete composited status text still binds at 142. BY NODE is full from
-#: 138, compact from 125, and its selected columns render whole from 105.
-#: SEAT fixed lines clear from 108 on #0, 106 on #420/v3/source failures,
-#: 70 with no selected seat, and 128 on five-digit contributor stress.
-#: Its flexible share caps at 63 outer / 61 panel / 59 content cells. A fixed
-#: 63 overflowed at 60 terminal columns; the capped share has no overflow.
-#: The hero clears from 134: STATUS is 38 cells (34 content) for the worker
-#: clock including unavailable; SEAT/ACCEPTED/REVIEWED have fixed content
-#: budgets, and RATE/COLLAB share the remainder. STATUS keeps three body
-#: lines; ACCEPTED carries the seats clock independently of workers.
+#: SEAT fixed facts retain their 106-cell v 3 and 128-cell stress onsets.
+#: Near the pin its capped share is 63 outer / 61 panel / 59 content cells.
+#: Above 138, the cap grows using AGENT_NODE_WIDTH_RESERVE; BY NODE retains
+#: its full tier. Ordinary v 3 contributors combine at 208 (two lines 207),
+#: five-digit stress at 240 (two lines 239). All facts and their own clock
+#: stay together; they never borrow seats data. Wide growth doesn't raise
+#: the body pin. Long runtime/daemon text still clips visibly; roles retain
+#: a whole prefix plus +N more. Worker metadata belongs in BOARD.
 #:
-#: Contributor counters occupy two lines; the second carries their own
-#: clock. Worker metadata has a separate worker clock. These groups remain
-#: visible when seats is pending/unavailable. They never borrow seats data.
-#: Named content limits: long worker profiles/platform and runtime text
-#: retain visible ellipses at the panel cap; role lists fit a whole prefix
-#: plus +N more. Fixed labels/counters and ordinary failure states fit whole.
-#:
+#: Hero content remains whole from 134: STATUS's worker clock and three body
+#: lines stay independent of seats; ACCEPTED retains the seats clock.
 #: RECORD geometry is unchanged: selected tight columns clear from 61 on
-#: original captures, 63 on duplicates/stress; compact from 85, full from
-#: 119. Objectives keep widen while cut; RECORD_NEVER_CLEARS_BELOW is unchanged.
-#: The full status text is verified, not just the right label's region bounds.
-SURF_AGENT_FULL_LAYOUT_COLUMNS = 142
+#: original captures,63 on duplicates/stress; compact 85, full 119. Objectives
+#: keep widen while cut; RECORD_NEVER_CLEARS_BELOW is unchanged.
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 138
 
-#: AGENT height, BOARD WP5: 36 rows, measured at every integer 20–61 at 150
-#: and 142 columns on all eleven payloads above. Taller is lit through 35,
-#: dark from 36. SEAT adds two contributor lines and two worker lines, so
-#: its title + blank + fifteen detail lines bind a 17-row top floor. RECORD
-#: retains its eight-row floor. BY NODE scrolls internally with all nodes.
-#: The hero and remaining chrome account for the rest. Owner 119x35 and
-#: 138x31 both need the body scrollbar and show taller; the earlier accepted
-#: 32-row requirement is historical, not a guarantee after these additions.
-SURF_AGENT_FULL_LAYOUT_ROWS = 36
+#: BY NODE needs 73 outer columns; the body/top gutters reserve two more.
+#: Let SEAT grow only from spare columns, preserving its 63-column cap at 138.
+AGENT_NODE_WIDTH_RESERVE = 75
+
+#: AGENT height, §11: 32 rows at 138 columns on all eleven payloads above,
+#: measured through heights 25–38. Taller is lit through 31, dark from 32.
+#: SEAT's identity+paired and sent/submitted/queued merges lose no fact.
+#: Nine seats detail lines plus two contributor lines, title and mandatory
+#: blank row set the 13-row top floor. Worker metadata and its clock are
+#: removed; worker state remains in STATUS. RECORD retains its 8-row floor,
+#: and eleven rows of unchanged chrome complete 32. Wider one-line
+#: contributors use less content but retain the conservative top floor.
+#: Owner 119 x 35 fits vertically;138 x 31 still shows taller. F 46 can close.
+SURF_AGENT_FULL_LAYOUT_ROWS = 32
 
 #: RECORD's objective-clearance onset on both committed #0 and #420 captures,
 #: measured by compositing successive widths 225–297 beyond the body sweep. The
@@ -1744,7 +1743,7 @@ BOARD_BODY_ID = "surf-board-body"
 #: v3 capture, 999-seat stress, workers-unread, contributors-unread and both
 #: unread. Stress carries five-digit counters, 64-character runtime/daemon
 #: names, 99 paused seats and 20 daemon versions. All twelve LEADERBOARD
-#: columns are installed from 141; complete status text clears from 142.
+#: columns are installed from 141; §11 complete status text clears from 134.
 #: Compact begins 121; selected tight columns stop clipping at 94 with rows
 #: and 92 without rows. Independent source-clock footer clears 86 on capture,
 #: 92 with one unread source and 98 with both unread. Hero clears 97 on capture,
@@ -1760,12 +1759,13 @@ BOARD_BODY_ID = "surf-board-body"
 #: Only runtime may clip in that stress case; capture and source-failure
 #: labels, all fixed counters, clocks and all twelve columns fit whole.
 #: Owner 119 x 35 and 138 x 31 both fit vertically; LEADERBOARD is tight at
-#: 119 and compact at 138. Both mark widen and crop the status bar. App-wide
+#: 119 and compact at 138. Both mark widen; status is cropped only at 119. App-wide
 #: 143 is unchanged.
-SURF_BOARD_FULL_LAYOUT_COLUMNS = 142
+SURF_BOARD_FULL_LAYOUT_COLUMNS = 141
 
 #: BOARD height, measured over every integer 20–61 at 150 and 142 columns on
-#: all five payloads above. FLEET's twelve fixed rows (title, blank, ten detail
+#: all five payloads above. §11 reconfirmed 22/23 at 141 on capture/stress.
+#: FLEET's twelve fixed rows (title, blank, ten detail
 #: lines) bind the body; the seven-row hero and four chrome rows total 23.
 #: LEADERBOARD has an eight-row minimum and scrolls internally with all 999
 #: stress seats retained. Taller is lit through 22 and dark from 23; both
@@ -2374,7 +2374,8 @@ class SurfScreen(DashboardScreen):
     #: that shortens if a fourth ever has to fit, for ``4 market``'s own
     #: reason: ``l launchpad`` is the one the app-level acceptance test greps
     #: for as a contiguous string.
-    KEY_HINTS = "[dim]l launchpad · 4 pool4 · s swarm · a agent · b board[/]"
+    #: §11: shortened by owner to keep the body as width binder; whole bar from 134.
+    KEY_HINTS = "[dim]l launchpad · 4 pl4 · s swm · a agt · b brd[/]"
 
     #: The words the status bar shows for this dashboard.
     GAME_NAME = "surf"
@@ -2981,9 +2982,10 @@ class SurfScreen(DashboardScreen):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
     }
+    /* SEAT: eleven detail lines plus title and mandatory blank row. */
     SurfScreen #surf-agent-top {
         height: 1fr;
-        min-height: 17;
+        min-height: 13;
         padding: 0 0;
         overflow-y: auto;
         scrollbar-size: 1 1;
@@ -3244,6 +3246,8 @@ class SurfScreen(DashboardScreen):
         lag one resize behind -- lit on a terminal that now fits, dark on
         one that no longer does. Both are worse than no marker.
         """
+        for seat in self.query(SurfSwarmSeatVerdicts):
+            seat.styles.max_width = max(SEAT_PANEL_MAX_WIDTH, self.size.width - AGENT_NODE_WIDTH_RESERVE)
         self.call_after_refresh(self._render_title)
 
     # ------------------------------------------------------------------

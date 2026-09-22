@@ -162,8 +162,8 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         await pilot.pause()
         text = _screen_text(pilot.app)
-        assert "s swarm" in text and "a agent" in text
-    assert SurfScreen.KEY_HINTS == "[dim]l launchpad · 4 pool4 · s swarm · a agent · b board[/]"
+        assert "s swm" in text and "a agt" in text
+    assert SurfScreen.KEY_HINTS == "[dim]l launchpad · 4 pl4 · s swm · a agt · b brd[/]"
 
 
 async def test_the_bindings_include_board_agent_and_seat_selection():
@@ -457,8 +457,9 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
     assert "IDMD #420" in hero and "working 0 of 1" in hero
     assert "accepted unavailable" in hero
     assert "contributors 207 att · 189 acc · 2 rej · 16 pend" in seat
-    assert "skills 30" in seat and "linux arm64" in seat
-    assert "as of 03:01" in seat and "workers as of 04:02" in seat
+    assert "skills" not in seat and "linux arm64" not in seat
+    assert "as of 03:01" in seat and "workers as of 04:02" not in seat
+    assert "workers as of 04:02" in hero
     assert "⧉" not in seat and "attempts 201" not in seat
 
 async def test_captured_executing_note_is_visible_and_honestly_cut_at_swarm_pin():

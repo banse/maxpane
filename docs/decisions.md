@@ -4,6 +4,13 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-22** — BOARD's amended fix wave (§9/§11 of its handover) shortens the status
+  hint to `l launchpad · 4 pl4 · s swm · a agt · b brd`; the full `l launchpad` wording stays.
+  AGENT removes worker metadata and its separate clock from SEAT while retaining worker state
+  in STATUS. Pairing time joins identity, queued feedback joins sent/submitted, and contributor
+  facts keep two lines at narrow widths, joining one only where every fact and clock fit.
+  `/seats` online no longer competes with worker liveness. Measured AGENT returns to 32 rows,
+  closing F46; its column pin comes from its body rather than a wider contributor line.
 - **2026-09-22** — The owner approved surf's BOARD as the seventh body on `b`
   (`docs/surf_swarm_board_handover.md`), keeping the existing `s` grid rather than adding a
   fourth row to it. BOARD joins `/contributors` lifetime counters per seat with `/workers`

@@ -18,7 +18,7 @@ table names them and this file repeats no numbers.
 ## Keys and bodies
 
 Surf is position 1, the `--game` default, and the dashboard prefetched at launch. Its status
-hint reads `l launchpad · 4 pool4 · s swarm · a agent · b board`, in one markup run (adjacent
+hint reads `l launchpad · 4 pl4 · s swm · a agt · b brd`, in one markup run (adjacent
 differently-styled runs never share a composited line). `#status-left` is `width: auto`, so an
 over-long hint never shortens the phrase — the compositor crops the bar at the terminal edge and
 the poll word and right label fall off — which is why the layout test asserts the **whole bar**
@@ -187,10 +187,11 @@ three body lines. ACCEPTED carries the seats clock. A bad seats state hides its 
 without hiding valid worker facts.
 SEAT (`SurfSwarmSeatVerdicts`, retaining its class/module name) shows identity, owner, pairing,
 runtime, devices, daemon, attempts/accepted, feedback statuses, score and reviews by role.
-Two contributor lines use only `swarm_seat_contrib`, with their own clock, and distinguish
-not listed from unavailable. Worker skills/profiles/platform use only `swarm_seat_live` and
-have a separate clock; these groups survive pending/unavailable seats. SEAT shares narrow
-terminals and caps at its measured width; long worker metadata has a visible ellipsis.
+Contributors use only `swarm_seat_contrib`, with their own clock, and distinguish not listed
+from unavailable. Their group keeps two lines near the pin and joins one line only when every
+fact fits. It survives pending/unavailable seats. Pairing joins identity; queued joins feedback.
+Worker metadata is shown in BOARD; STATUS supplies AGENT's only liveness. SEAT shares narrow
+terminals, retains its measured cap at the pin and grows from spare width above it.
 BY NODE (`SurfSwarmSeatNodes`) groups the union of `reviews[]` and `work[]` by node; its acceptance
 percentage uses the historical `won / reviewed` fields, because per-node attempts are not served. `chain` counts
 reviews with a transaction in `sent` or `submitted` state. TEAMMATES sorts by shared jobs
