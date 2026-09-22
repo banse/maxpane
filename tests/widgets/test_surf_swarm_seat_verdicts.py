@@ -17,7 +17,7 @@ from tests.widgets.address_probe import LinkRecorder, icon_targets, link_targets
 SEAT = swarm_seat_capture("seat_420")
 SUMMARY = seat_summary_from_seat(SEAT)
 SELECTED = {"token_id":420, "agent_id":SUMMARY["agent_id"], "selected_by":"saved"}
-SIZE=(PANEL_MAX_WIDTH,16)
+SIZE=(PANEL_MAX_WIDTH,24)
 async def _record(**kwargs):
     data=dict(swarm_seat_summary=SUMMARY,swarm_seat_selected=SELECTED,swarm_seat_state="ok",swarm_seat_as_of_hhmm="04:06")
     data.update(kwargs)
@@ -59,7 +59,7 @@ async def test_long_roles_are_counted_and_hostile_text_is_sanitized():
     roles=[{"role":"[/x]implement","count":99999}]+[{"role":f"role{i}","count":9} for i in range(8)]
     text=await _record(swarm_seat_summary=dict(SUMMARY, roles=roles,runtime="[/x]PWNED "+"x"*80,daemon="[$success]daemon"))
     assert "PWNED" in text and "…" in text and "[/x]" not in text and "[$success]" not in text
-    assert "role0 9 · +7 more" in text
+    assert "role0 9 · role1 9 · +6 more" in text
 
 @pytest.mark.parametrize("state,word",[("pending","Loading..."),("unknown_seat","#420 never paired"),(None,"unavailable"),("bad","unavailable")])
 async def test_states_hide_stale_values(state,word):
@@ -120,3 +120,40 @@ async def test_five_digit_attempts_and_acceptance_rate_are_whole():
     text = await _record(swarm_seat_summary=dict(SUMMARY, attempts=99_999, accepted=9_999, win_rate=9_999/99_999))
     assert "attempts 99,999 · accepted 9,999 (10.0 % of attempts)" in text
     assert " won " not in text
+
+CONTRIB=dict(listed=True,attempts=207,accepted=189,rejected=2,pending=16,turns=2189,
+             wall_clock_s=29160,rank=4,ranked_of=101)
+LIVE=dict(live=True,skills=30,profiles=['none','foundry'],platform='linux x64')
+
+@pytest.mark.parametrize('state',['ok','pending',None])
+async def test_contributors_never_borrow_seats_numbers_and_survive_seats_loss(state):
+    text=await _record(swarm_seat_state=state,swarm_seat_contrib=CONTRIB,
+                       swarm_board_as_of_hhmm='03:01',swarm_seat_live=LIVE,swarm_workers_as_of_hhmm='05:07')
+    assert 'contributors 207 att · 189 acc · 2 rej · 16 pend' in text
+    assert '2189 turns · 8.1 h · rank #4 of 101 · as of 03:01' in text
+    assert 'skills 30 · profiles none, foundry · linux x64' in text
+    assert 'workers as of 05:07' in text
+    if state!='ok':assert 'attempts 201' not in text and '⧉' not in text
+
+@pytest.mark.parametrize('contrib,word',[(None,'unavailable'),({'listed':False},'not listed')])
+async def test_contributor_absence_is_not_unavailability(contrib,word):
+    text=await _record(swarm_seat_contrib=contrib)
+    assert 'contributors '+word in text
+    assert ('not listed' in text)==(word=='not listed')
+    assert f"attempts {SUMMARY['attempts']}" in text
+
+async def test_worker_metadata_is_sanitized_and_only_comes_from_workers():
+    text=await _record(swarm_seat_live=dict(LIVE,profiles=['[/x]foundry'],platform='[$success]linux x64'))
+    assert 'profiles foundry · linux x64' in text
+    assert '[/x]' not in text and '[$success]' not in text
+    missing=await _record(swarm_seat_summary=dict(SUMMARY,skills=777,profiles=['POISON'],platform='POISON'))
+    assert 'workers unavailable' in missing and 'POISON' not in missing and '777' not in missing
+
+
+async def test_long_worker_metadata_has_visible_loss_but_its_clock_and_counts_are_whole():
+    text=await _record(swarm_seat_live=dict(LIVE,profiles=["x"*64],platform="y"*64),
+                       swarm_workers_as_of_hhmm="05:07",swarm_seat_contrib=CONTRIB,swarm_board_as_of_hhmm="03:01")
+    line=next(line for line in text.splitlines() if "skills 30" in line)
+    assert "profiles" in line and "…" in line
+    assert "workers as of 05:07" in text
+    assert "contributors 207 att · 189 acc · 2 rej · 16 pend" in text

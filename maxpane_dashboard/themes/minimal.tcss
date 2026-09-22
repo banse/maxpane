@@ -2480,8 +2480,12 @@ SurfSwarmAgentHero > SurfSwarmAgentHeroBox {
     text-wrap: nowrap;
     text-overflow: ellipsis;
 }
+/* Measured fixed content: identity, accepted clock, backlog, worker clock. */
+#surf-swarm-agent-accepted { width: 21; }
+#surf-swarm-agent-seat { width: 20; }
+#surf-swarm-agent-reviewed { width: 18; }
 #surf-swarm-agent-status {
-    width: 24;
+    width: 38;
 }
 
 
@@ -2594,7 +2598,7 @@ SurfScreen #surf-agent-body {
 /* SEAT's fixed thirteen lines. */
 SurfScreen #surf-agent-top {
     height: 1fr;
-    min-height: 13;
+    min-height: 17;
     padding: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;
@@ -2609,11 +2613,11 @@ SurfSwarmSeatNodes {
     padding: 0 1;
 }
 
-/* SEAT's compact fixed width is bound to PANEL_MAX_WIDTH by a guard.
+/* SEAT shares narrow terminals and caps at its measured contributor width.
  * Rows fit third-party text visibly; feedback statuses occupy two lines. */
 SurfSwarmSeatVerdicts {
-    width: 57;
-    max-width: 57;
+    width: 1fr;
+    max-width: 63;
     height: auto;
     padding: 0 1;
 }

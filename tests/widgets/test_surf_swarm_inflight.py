@@ -48,6 +48,7 @@ def _row(**over) -> dict:
         "agent_token": 1548,
         "agent_id": 50971,
         "revisions": 0,
+        "note": None, "note_kind": None,
     }
     row.update(over)
     return row
@@ -63,7 +64,7 @@ ROWS = [
 CHROME_COLS = 3
 
 #: Wide enough for the ``full`` tier with the corpus objective whole.
-SIZE = (FULL_WIDTH + 40 + CHROME_COLS, 12)
+SIZE = (FULL_WIDTH + 48 + CHROME_COLS, 12)
 
 
 def test_the_hand_rows_are_the_frozen_row_shape():
@@ -240,7 +241,7 @@ async def test_an_objective_is_clipped_never_wrapped():
     lines = await _lines(swarm_inflight_rows=[_row(objective=long)])
     body = [l for l in lines if l.strip() and "IN FLIGHT" not in l]
     assert len(body) == 1, lines
-    assert body[0].rstrip().endswith("…"), body
+    assert "…" in body[0] and body[0].rstrip().endswith("--"), body
 
 
 async def test_a_newline_in_an_objective_is_flattened_to_one_row():
@@ -330,7 +331,7 @@ async def test_one_below_compact_sheds_the_seat_too_and_keeps_the_objective():
 async def test_at_the_tight_floor_the_objective_still_has_twenty_cells():
     lines = await _at_log_width(TIGHT_WIDTH)
     first = next(l for l in lines if "oracle-assess" in l)
-    objective_cell = first.split("skill:oracle-assess", 1)[1].strip()
+    objective_cell = first.rsplit("  ",1)[0].split("skill:oracle-assess", 1)[1].strip()
     assert len(objective_cell) == MIN_OBJECTIVE_COLS, (objective_cell, first)
     assert objective_cell.endswith("…"), objective_cell
 
@@ -339,3 +340,19 @@ async def test_the_hint_stays_dark_when_nothing_was_shed_because_nothing_rendere
     lines = await _at_log_width(COMPACT_WIDTH - 1, rows=[])
     assert "‹" not in lines[0], lines[0]
     assert "nothing executing" in "\n".join(lines)
+
+async def test_note_is_last_sanitized_and_clipped_with_an_explicit_marker():
+    text=await _text(size=(130,12),swarm_inflight_rows=[_row(objective='objective',note='[/x]dispatch '+('x'*300),note_kind='dispatch')])
+    line=next(line for line in text.splitlines() if 'oracle-assess' in line)
+    assert 'dispatch' in line and line.index('objective')<line.index('dispatch')
+    assert '[/x]' not in line and '…' in line and '‹' in text.splitlines()[0]
+
+async def test_failure_note_is_rendered_and_none_is_a_dash():
+    text=await _text(size=(200,12),swarm_inflight_rows=[_row(note='failure details',note_kind='failure')])
+    assert 'failure details' in text
+    plain=await _text(size=(200,12),swarm_inflight_rows=[_row(note=None,note_kind=None)])
+    assert next(line for line in plain.splitlines() if 'oracle-assess' in line).rstrip().endswith('--')
+
+async def test_a_fitting_literal_note_ellipsis_does_not_claim_loss():
+    lines=await _lines(size=(180,12),swarm_inflight_rows=[_row(note='waiting…',note_kind='dispatch')])
+    assert 'waiting…' in '\n'.join(lines) and '‹' not in lines[0]

@@ -3,7 +3,7 @@
 ACCEPT RATE is lifetime accepted / attempts; a real zero denominator says
 ``no attempts`` and a missing counter says ``unavailable``. STATUS names the
 newest accepted work with its local date, never the feedback queue's sent time.
-The state gates every statistic before reading it. The selected IDMD token
+The seats state gates its own statistics; workers remain independent. The selected IDMD token
 remains visible while its read is pending or unavailable. Geometry belongs
 to the stylesheet; all six titles share one row. Historical contract keys
 ``win_rate`` and ``last_won_ts`` retain their accepted-work meanings.
@@ -14,10 +14,10 @@ from __future__ import annotations
 from rich.text import Text
 
 from maxpane_dashboard.widgets import rowfit
-from maxpane_dashboard.widgets.fmt import fmt_int
+from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
-from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd_hhmm
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd_hhmm, source_clock
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     NEVER_PAIRED_STYLE,
     NEVER_PAIRED_WORDS,
@@ -73,6 +73,8 @@ class SurfSwarmAgentHero(HeroRow):
         swarm_seat_summary=None,
         swarm_seat_state=None,
         swarm_seat_as_of_hhmm=None,
+        swarm_seat_live=None,
+        swarm_workers_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
         """Rewrite all six boxes; the state says which kind of missing."""
@@ -82,14 +84,16 @@ class SurfSwarmAgentHero(HeroRow):
         self.render_box(f"#{BOX_IDS['seat']}", "SEAT",
                         lambda: self._seat_body(selected, state))
         for key, label, build in (
-            ("accepted", "ACCEPTED", self._accepted_body),
+            ("accepted", "ACCEPTED", lambda s: self._accepted_body(s, as_of)),
             ("reviewed", "REVIEWED", self._reviewed_body),
             ("win_rate", "ACCEPT RATE", self._win_rate_body),
             ("collab", "COLLAB", self._collab_body),
-            ("status", "STATUS", lambda s: self._status_body(s, as_of)),
         ):
             self.render_box(f"#{BOX_IDS[key]}", label,
                             lambda build=build: self._stat_body(swarm_seat_summary, state, build))
+        self.render_box(f"#{BOX_IDS['status']}",
+                        "STATUS · workers as of " + source_clock(swarm_workers_as_of_hhmm),
+                        lambda: self._status_body(swarm_seat_summary, state, swarm_seat_live))
 
     # -- bodies -------------------------------------------------------------
 
@@ -126,7 +130,7 @@ class SurfSwarmAgentHero(HeroRow):
         return build(summary)
 
     @staticmethod
-    def _accepted_body(summary: dict) -> str | Text:
+    def _accepted_body(summary: dict, as_of=None) -> str | Text:
         accepted = _count(summary.get("accepted"))
         attempts = _count(summary.get("attempts"))
         if accepted is None or attempts is None:
@@ -135,6 +139,8 @@ class SurfSwarmAgentHero(HeroRow):
         body.append(fmt_int(accepted), style="bold green" if accepted else "bold")
         body.append(" of ", style="dim")
         body.append(fmt_int(attempts), style="bold")
+        if as_of is not None:
+            body.append("\nas of " + source_clock(as_of), style="dim")
         return body
 
     @staticmethod
@@ -183,25 +189,22 @@ class SurfSwarmAgentHero(HeroRow):
         return body
 
     @staticmethod
-    def _status_body(summary: dict, as_of: str | None) -> str | Text:
-        online = summary.get("online")
-        body = Text()
-        if online is True:
-            body.append("online ●", style="bold green")
-        elif online is False:
-            body.append("offline ○", style="dim")
-        else:
-            body.append_text(Text.from_markup(UNAVAILABLE))
-        body.append("\n")
-        if summary.get("accepted") == 0:
-            won = "none accepted yet"
-        elif summary.get("last_won_ts") is None:
-            won = "accepted unavailable"
-        else:
-            won = f"accepted {mmdd_hhmm(summary['last_won_ts'])}"
-        body.append(won, style="dim")
-        if as_of is not None:
-            body.append("\n")
-            body.append(f"as of {as_of}", style="dim")
-        return body
-
+    def _status_body(summary, state, live) -> Text:
+        """Worker state and seats acceptance retain independent availability."""
+        working, pause = "unavailable", ""
+        if isinstance(live, dict) and live.get("live") is False:
+            working = "offline"
+        elif isinstance(live, dict) and live.get("live") is True:
+            active, capacity = _count(live.get("working")), _count(live.get("max_concurrency"))
+            if active is not None and capacity is not None:
+                working = f"working {fmt_int(active)} of {fmt_int(capacity)}"
+            if live.get("paused_until_ts") is not None:
+                failures = _count(live.get("failures"))
+                pause = f"⏸ until {hhmm(live['paused_until_ts'])} ×{fmt_int(failures) if failures is not None else DASH}"
+        accepted = "accepted unavailable"
+        if state == "ok" and isinstance(summary, dict):
+            if summary.get("accepted") == 0:
+                accepted = "none accepted yet"
+            elif summary.get("last_won_ts") is not None:
+                accepted = f"accepted {mmdd_hhmm(summary['last_won_ts'])}"
+        return Text("\n".join((working, pause, accepted)))

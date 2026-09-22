@@ -160,12 +160,17 @@ only a failed read says `unavailable`.
 Press **`a`** for the AGENT body — one seat's **lifetime record** from its own keyless
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
 uses the most active seat found in the job data. The hero shows SEAT, ACCEPTED, ACCEPT RATE,
-REVIEWED, COLLAB and STATUS. ACCEPT RATE is accepted work divided by attempts; STATUS's `accepted`
-stamp is the newest accepted work, with a date, and the separate `as of` marker dates the read.
+REVIEWED, COLLAB and STATUS. ACCEPT RATE is accepted work divided by attempts. STATUS shows
+worker capacity, any pause, and the newest accepted work from `/seats`. The worker clock is
+in its title; ACCEPTED carries the separate seats clock.
 
 SEAT shows identity, owner (with a copy icon and Etherscan link), pairing, runtime, device count,
-daemon version, attempts and wins, feedback by delivery status, score and reviews by role.
-Beside it, BY NODE counts reviewed work and wins for each node, with a win percentage based on
+daemon version, attempts and accepted work, feedback by delivery status, score and reviews by role.
+Its labelled contributor group has independent attempts, accepted, rejected, pending, turns,
+hours and rank; worker skills, profiles and platform form another group. Each keeps its own
+clock and remains visible when the seats read fails. A good contributors read without the seat
+says `not listed`; an unread source says `unavailable`. Long worker metadata clips visibly.
+Beside it, BY NODE counts reviewed and accepted work for each node, with an acceptance percentage based on
 **reviewed work**, because the API does not serve attempts per node. Its `chain` count includes
 sent and submitted feedback transactions; TEAMMATES lists collaborators by shared jobs.
 RECORD runs below them: every won submission with date and time, job, node, role, job state,

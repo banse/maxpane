@@ -57,3 +57,11 @@ def swarm_board_payload():
                 swarm_board_rows=fold.board_rows(contributors,workers),
                 swarm_fleet=fold.fleet(workers),
                 swarm_board_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02')
+
+
+def swarm_agent_sources(token):
+    """Independently folded v3 worker/contributor facts for exactly this seat."""
+    from maxpane_dashboard.data import surf_swarm as fold
+    return dict(swarm_seat_live=fold.seat_live(swarm_capture_v3("workers"), token),
+                swarm_seat_contrib=fold.seat_contrib(swarm_capture_v3("contributors"), token),
+                swarm_workers_as_of_hhmm="04:02", swarm_board_as_of_hhmm="03:01")

@@ -1586,8 +1586,8 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #:
 #: THE TWO NAMED EXCEPTIONS, on THE FIELD's own precedent (its ``‹`` cleared
 #: at 170 while the pin stood at 116): IN FLIGHT (``4fr``) is ``tight``
-#: through 144, ``compact`` 145-189 and clears at **190**
-#: (``INFLIGHT_NEVER_CLEARS_BELOW``); LAUNCHES (``5fr``) hides columns
+#: through 176, ``compact`` 177-221 and reaches ``full`` at **222**
+#: (``INFLIGHT_NEVER_CLEARS_BELOW``, the no-note lower bound); LAUNCHES (``5fr``) hides columns
 #: through 137 and none from 138, stays ``tight`` through 179, ``compact``
 #: 180-204 and clears at **205** (``LAUNCHES_NEVER_CLEARS_BELOW``). Both
 #: markers track a real loss and clear at a reachable width -- neither is a
@@ -1605,7 +1605,15 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: BOARD WP4: the body remains whole from 141. The b board hint makes
 #: complete status-bar text the new binder at 142 (141 loses surf's final f).
 #: Height 20–61 at the new column pin confirms the same 42-row onset.
-#: The body will be re-swept with IN FLIGHT notes in WP5.
+#: BOARD WP5 re-swept every width 60–225 at 80 rows on capture, v3 executing
+#: note and stress; full-layout width remains 142. IN FLIGHT's new last note
+#: column keeps an explicit widen marker while clipped, even in full tier.
+#: Named content exception: the served 81-character note clears at 532 and
+#: the synthetic 309-character note at 1558, measured in situ beyond 225
+#: with both adjacent widths and the complete composited note checked.
+#: Those payload-dependent widths do not raise the body's pin. A fitting
+#: literal ellipsis does not light widen. Unchanged template/objective cells
+#: retain their existing literal-text ellipsis behavior.
 SURF_SWARM_FULL_LAYOUT_COLUMNS = 142
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
@@ -1633,61 +1641,56 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 142
 #: the row scrolling inside itself from 34 to 57 -- a ``‹ taller`` lit on
 #: every terminal the owner has and cleared only by one nobody uses. The
 #: floor gives THROUGHPUT its lines first and lets the two table rows take
-#: the rest; the AGENT body's top row carries SEAT's thirteen the
+#: the rest; the AGENT body's top row carries SEAT's seventeen the
 #: same way. At the owner's 35 and 31 rows the body scrolls and the marker says
 #: so; no row of any panel is lost in silence
 #: (``test_no_height_loses_a_row_of_either_body_in_silence``).
+#: BOARD WP5 confirmed this onset again at every height 20–61, at 150 and
+#: 142 columns, on capture, v3 executing notes and stress.
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: The AGENT full-layout width, measured for BOARD WP0 and WP4 on 2026-09-22:
-#: 142 after the BOARD key hint grew the status bar; the body still clears
-#: at 132 after acceptance wording widened SEAT from 55 to 57 outer cells.
+#: AGENT full-layout width, measured 2026-09-22 for BOARD WP5: still 142.
+#: Every integer 60–225 at 80 rows was rendered on original #0/#420,
+#: duplicated-review #420, v3 #420, pending/unavailable seats, unread workers,
+#: unread contributors, absent and unselected seats, and the extended stress.
+#: Each capture's new groups are folded from v3 for that selected token.
+#: Stress retains 30 nodes, 999 teammates, 55,555 reviewed/99,999 entries,
+#: four-digit feedback statuses and 400-character objectives; new groups add
+#: five-digit counters, 20 long profiles and a 64-character platform.
 #:
-#: HOW MEASURED: every integer width 60–225 at height 80, on committed
-#: seat #0, original #420, duplicated-review #420 and the extended worst
-#: payload: 30 nodes, 999 teammates, 64-character node keys, five-digit
-#: counters, 55,555 distinct reviews / 99,999 entries, four-digit queued
-#: and submitted counts, launch names and 400-character objectives.
-#: Composited tiers, hidden columns, CSS-clipped lines, role omissions,
-#: discrepancy explanations and region overflow were inspected; no panel
-#: overflow occurred. All summary/status/node/role stress totals agree.
+#: Complete composited status text still binds at 142. BY NODE is full from
+#: 138, compact from 125, and its selected columns render whole from 105.
+#: SEAT fixed lines clear from 108 on #0, 106 on #420/v3/source failures,
+#: 70 with no selected seat, and 128 on five-digit contributor stress.
+#: Its flexible share caps at 63 outer / 61 panel / 59 content cells. A fixed
+#: 63 overflowed at 60 terminal columns; the capped share has no overflow.
+#: The hero clears from 134: STATUS is 38 cells (34 content) for the worker
+#: clock including unavailable; SEAT/ACCEPTED/REVIEWED have fixed content
+#: budgets, and RATE/COLLAB share the remainder. STATUS keeps three body
+#: lines; ACCEPTED carries the seats clock independently of workers.
 #:
-#: WHAT BINDS: the complete status text is whole from 142 with b board.
-#: BY NODE is full from 132, compact from 121 and has no hidden
-#: selected column from 111; below 64 its zero usable budget reports the
-#: default tier. The status bar, including poll/errors and its right label,
-#: clears at 142. Version/theme label lengths can move that threshold (F43).
-#: The captured hero clears at 106; the worst ACCEPTED count at 124.
-#: STATUS has a 24-cell box (20 content cells) for its accepted timestamp.
-#: SEAT is 57 outer cells, 55 panel cells and 53 content cells. The reviewed/
-#: served explanation fits; role lists show the longest
-#: whole prefix plus an explicit omitted count. Owner retains the 17-cell
-#: anti-poisoning window plus copy icon. Rate sits beside attempts/accepted;
-#: reviewed and feedback each retain their own lines.
+#: Contributor counters occupy two lines; the second carries their own
+#: clock. Worker metadata has a separate worker clock. These groups remain
+#: visible when seats is pending/unavailable. They never borrow seats data.
+#: Named content limits: long worker profiles/platform and runtime text
+#: retain visible ellipses at the panel cap; role lists fit a whole prefix
+#: plus +N more. Fixed labels/counters and ordinary failure states fit whole.
 #:
-#: RECORD's selected tight columns stop clipping from 61 on the original
-#: captures and 63 on the duplicated-review capture and worst payload.
-#: RECORD is compact from 85 and full from 119; its geometry is unchanged.
-#: Objectives keep an honest widen marker while cut; clearance remains
-#: RECORD_NEVER_CLEARS_BELOW. Oversized BY NODE acceptance percentages light
-#: the clip/widen marker instead of losing their suffix silently.
-#: At 119 columns BY NODE still sheds optional columns and the status bar
-#: crops; from 142 the measured fixed content and status bar fit.
+#: RECORD geometry is unchanged: selected tight columns clear from 61 on
+#: original captures, 63 on duplicates/stress; compact from 85, full from
+#: 119. Objectives keep widen while cut; RECORD_NEVER_CLEARS_BELOW is unchanged.
+#: The full status text is verified, not just the right label's region bounds.
 SURF_AGENT_FULL_LAYOUT_COLUMNS = 142
 
-#: The AGENT height, re-swept for BOARD WP0 on 2026-09-22: still 32 (originally
-#: 40 -> 32). Every integer height
-#: 20–61 was rendered at width 150 and at the full-layout column pin for
-#: #0, original #420, duplicated-review #420 and the valid reviewed/served
-#: worst payload. Taller is lit through 31 and
-#: dark from 32 in all cases. The binding body contains a thirteen-row top
-#: floor (SEAT title, blank, eleven detail lines) and RECORD's eight-row
-#: floor. BY NODE scrolls internally and retains all nodes. The seven-row
-#: hero and screen chrome account for the remainder. Removing FEEDBACK's
-#: row saves eight rows; the top floor stays equal to SEAT's content.
-#: The owner's 35-row terminal fits; 31 rows still needs the body scrollbar
-#: and shows taller. Both outcomes were measured at the column pin.
-SURF_AGENT_FULL_LAYOUT_ROWS = 32
+#: AGENT height, BOARD WP5: 36 rows, measured at every integer 20–61 at 150
+#: and 142 columns on all eleven payloads above. Taller is lit through 35,
+#: dark from 36. SEAT adds two contributor lines and two worker lines, so
+#: its title + blank + fifteen detail lines bind a 17-row top floor. RECORD
+#: retains its eight-row floor. BY NODE scrolls internally with all nodes.
+#: The hero and remaining chrome account for the rest. Owner 119x35 and
+#: 138x31 both need the body scrollbar and show taller; the earlier accepted
+#: 32-row requirement is historical, not a guarantee after these additions.
+SURF_AGENT_FULL_LAYOUT_ROWS = 36
 
 #: RECORD's objective-clearance onset on both committed #0 and #420 captures,
 #: measured by compositing successive widths 225–297 beyond the body sweep. The
@@ -1732,7 +1735,7 @@ MODE_SWARM = "swarm"
 
 #: The ``a`` AGENT body shows the saved seat (``i``), or the most active
 #: seat in the job window. SEAT and BY NODE share its top row; RECORD spans
-#: the body below them. Every displayed counter comes from lifetime /seats.
+#: the body below them. Seats, contributors and workers keep independent groups.
 MODE_AGENT = "agent"
 MODE_BOARD = "board"
 BOARD_BODY_ID = "surf-board-body"
@@ -2908,8 +2911,12 @@ class SurfScreen(DashboardScreen):
         text-wrap: nowrap;
         text-overflow: ellipsis;
     }
+    /* Fixed content budgets: identity, accepted clock, backlog, worker clock. */
+    SurfScreen #surf-swarm-agent-accepted { width: 21; }
+    SurfScreen #surf-swarm-agent-seat { width: 20; }
+    SurfScreen #surf-swarm-agent-reviewed { width: 18; }
     SurfScreen #surf-swarm-agent-status {
-        width: 24;
+        width: 38;
     }
 
     SurfScreen #surf-swarm-body {
@@ -2976,7 +2983,7 @@ class SurfScreen(DashboardScreen):
     }
     SurfScreen #surf-agent-top {
         height: 1fr;
-        min-height: 13;
+        min-height: 17;
         padding: 0 0;
         overflow-y: auto;
         scrollbar-size: 1 1;
@@ -2989,8 +2996,8 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
     }
     SurfScreen SurfSwarmSeatVerdicts {
-        width: 57;
-        max-width: 57;
+        width: 1fr;
+        max-width: 63;
         height: auto;
         padding: 0 1;
     }

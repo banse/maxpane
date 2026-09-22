@@ -181,9 +181,16 @@ numbers appearing under seat B: `swarm_seat_state` is `"pending"` until B's read
 
 Hero ACCEPT RATE and SEAT use `accepted / attempts`; zero attempts displays `no attempts`, while a
 missing counter displays `unavailable`. STATUS's `accepted MM-DD HH:MM` uses the newest
-`work[].acceptedAt`. Feedback `reviews[].sentAt` is a separate timestamp, never seat activity.
+`work[].acceptedAt`. Feedback `reviews[].sentAt` is a separate timestamp, never seat activity. STATUS reads worker
+capacity/pause/offline independently of seats, with its worker clock in the title and exactly
+three body lines. ACCEPTED carries the seats clock. A bad seats state hides its accepted date
+without hiding valid worker facts.
 SEAT (`SurfSwarmSeatVerdicts`, retaining its class/module name) shows identity, owner, pairing,
 runtime, devices, daemon, attempts/accepted, feedback statuses, score and reviews by role.
+Two contributor lines use only `swarm_seat_contrib`, with their own clock, and distinguish
+not listed from unavailable. Worker skills/profiles/platform use only `swarm_seat_live` and
+have a separate clock; these groups survive pending/unavailable seats. SEAT shares narrow
+terminals and caps at its measured width; long worker metadata has a visible ellipsis.
 BY NODE (`SurfSwarmSeatNodes`) groups the union of `reviews[]` and `work[]` by node; its acceptance
 percentage uses the historical `won / reviewed` fields, because per-node attempts are not served. `chain` counts
 reviews with a transaction in `sent` or `submitted` state. TEAMMATES sorts by shared jobs
@@ -246,3 +253,7 @@ text or a raw-payload index. FLEET fits whole sanitized values and counts omissi
 Long runtime names use an explicit ellipsis/widen content exception; fixed counters cannot
 clip at the full-layout pin. BOARD's measured guarantees live beside its pins in screens/surf.py.
 The existing global market title remains unchanged; source clocks belong in BOARD content.
+
+IN FLIGHT keeps the folded dispatch/failure note as its last column. Actual note clipping
+lights widen in every tier; a fitting literal ellipsis does not. Full tier is a column
+guarantee, not a promise that arbitrary notes fit; measured content limits are in surf.py.

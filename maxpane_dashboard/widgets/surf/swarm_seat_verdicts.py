@@ -3,7 +3,9 @@
 The historical SurfSwarmSeatVerdicts class/module names remain to avoid
 unnecessary import churn. Accept rate is accepted / attempts; BY NODE uses
 accepted / reviewed. Historical ``win_rate`` remains the contract key. Independent feedback lines keep four-digit backlogs whole.
-Runtime/daemon/roles use strip-then-escape; owner metadata uses address_text.
+Seats, contributor counters and worker metadata retain separate source clocks
+and availability. Runtime/daemon/roles/worker metadata use strip-then-escape;
+owner metadata uses address_text.
 """
 from __future__ import annotations
 from rich.text import Text
@@ -12,14 +14,15 @@ from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import fmt_int, fmt_float
 from maxpane_dashboard.widgets.markup_safety import sanitize_cell
 from maxpane_dashboard.widgets.panels import SignalsPanelBase
-from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, EXPLORER, fmt_win_rate, mmdd_hhmm
+from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, EXPLORER, fmt_win_rate, mmdd_hhmm, source_clock
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_state_line, seat_token
 
-PANEL_MAX_WIDTH = 57
+PANEL_MAX_WIDTH = 63
 VALUE_COLS = PANEL_MAX_WIDTH - 4
 NO_FEEDBACK_LINE = "no scores yet"
 _NAMES = ("identity", "owner", "paired", "runtime", "daemon", "attempts",
-          "reviewed", "feedback", "queued", "score", "roles")
+          "reviewed", "feedback", "queued", "score", "roles",
+          "contributors", "contributor-time", "workers", "worker-clock")
 ROW_IDS = tuple(f"surf-swarm-verdicts-{name}" for name in _NAMES)
 BLOCK_IDS = {}
 
@@ -61,11 +64,16 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
             self.update_data(**self._data)
 
     def update_data(self, swarm_seat_summary=None, swarm_seat_selected=None,
-                    swarm_seat_state=None, swarm_seat_as_of_hhmm=None, **_kwargs):
+                    swarm_seat_state=None, swarm_seat_as_of_hhmm=None,
+                    swarm_seat_live=None, swarm_seat_contrib=None,
+                    swarm_board_as_of_hhmm=None, swarm_workers_as_of_hhmm=None, **_kwargs):
         self._data = dict(swarm_seat_summary=swarm_seat_summary,
                          swarm_seat_selected=swarm_seat_selected,
                          swarm_seat_state=swarm_seat_state,
-                         swarm_seat_as_of_hhmm=swarm_seat_as_of_hhmm)
+                         swarm_seat_as_of_hhmm=swarm_seat_as_of_hhmm,
+                         swarm_seat_live=swarm_seat_live, swarm_seat_contrib=swarm_seat_contrib,
+                         swarm_board_as_of_hhmm=swarm_board_as_of_hhmm,
+                         swarm_workers_as_of_hhmm=swarm_workers_as_of_hhmm)
         title = self.TITLE
         if rowfit.has_marker(swarm_seat_as_of_hhmm):
             title += f" · as of {swarm_seat_as_of_hhmm}"
@@ -73,16 +81,19 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
         selected = swarm_seat_selected if isinstance(swarm_seat_selected, dict) else {}
         line = seat_state_line(swarm_seat_state, selected.get("token_id"))
         if line is not None or not isinstance(swarm_seat_summary, dict):
-            for i, row_id in enumerate(ROW_IDS):
+            for i, row_id in enumerate(ROW_IDS[:-4]):
                 value = line if i == 0 and line is not None else Text("")
                 if swarm_seat_state not in ("pending", "unknown_seat"):
                     value = Text("unavailable", style="yellow")
                 self.write(f"#{row_id}", value)
-            return
-        summary = swarm_seat_summary
-        for name, row_id in zip(_NAMES, ROW_IDS):
-            self.write_guarded(f"#{row_id}", lambda name=name: self._line(name, summary, selected),
-                               Text(f"{name} unavailable", style="yellow"))
+        else:
+            for name, row_id in zip(_NAMES[:-4], ROW_IDS[:-4]):
+                self.write_guarded(f"#{row_id}", lambda name=name: self._line(name, swarm_seat_summary, selected),
+                                   Text(f"{name} unavailable", style="yellow"))
+        for name, row_id in zip(_NAMES[-4:], ROW_IDS[-4:]):
+            self.write_guarded(f"#{row_id}", lambda name=name: self._source_line(
+                name, swarm_seat_live, swarm_seat_contrib, swarm_board_as_of_hhmm, swarm_workers_as_of_hhmm),
+                Text(f"{name} unavailable", style="yellow"))
 
     def _room(self):
         return max(self.size.width - 2, 0) if self.size.width else VALUE_COLS
@@ -145,3 +156,29 @@ class SurfSwarmSeatVerdicts(SignalsPanelBase):
             return Text("by role unavailable")
         parts = [f"{sanitize_cell(r.get('role'),16)} {n(r.get('count'))}" for r in roles if isinstance(r,dict)]
         return Text.from_markup("by role " + (_fit_roles(parts, room-8) if parts else "none"))
+
+    def _source_line(self, name, live, contrib, board_clock, worker_clock):
+        if name == "worker-clock":
+            return Text("workers as of " + source_clock(worker_clock))
+        if name == "workers":
+            if not isinstance(live, dict):
+                return Text("workers unavailable")
+            if live.get("live") is False:
+                return Text("workers offline")
+            profiles = live.get("profiles")
+            profiles = ", ".join(str(value) for value in profiles) or "none" if isinstance(profiles, list) else "unavailable"
+            platform = live.get("platform") if live.get("platform") is not None else "unavailable"
+            text = f"skills {self._number(live.get('skills'))} · profiles {profiles} · {platform}"
+            return Text.from_markup(sanitize_cell(text, self._room()))
+        listed = isinstance(contrib, dict) and contrib.get("listed") is True
+        if not listed:
+            word = "not listed" if isinstance(contrib, dict) and contrib.get("listed") is False else "unavailable"
+            return Text("contributors " + word if name == "contributors" else "contributors as of " + source_clock(board_clock))
+        def count(key):
+            value = seat_token(contrib.get(key))
+            return str(value) if value is not None else "unavailable"
+        if name == "contributors":
+            return Text(f"contributors {count('attempts')} att · {count('accepted')} acc · {count('rejected')} rej · {count('pending')} pend")
+        seconds = contrib.get("wall_clock_s")
+        hours = fmt_float(seconds / 3600, '.1f') if seconds is not None else "unavailable"
+        return Text(f"{count('turns')} turns · {hours} h · rank #{count('rank')} of {count('ranked_of')} · as of {source_clock(board_clock)}")

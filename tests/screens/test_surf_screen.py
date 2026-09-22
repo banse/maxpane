@@ -13,7 +13,7 @@ payloads fetched 2026-08-08 -- not invented.
 
 from __future__ import annotations
 
-from tests.surf_swarm_fixtures import swarm_board_payload
+from tests.surf_swarm_fixtures import swarm_board_payload, swarm_agent_sources
 
 import asyncio
 import time
@@ -1593,6 +1593,7 @@ def _sample_data() -> dict:
              "superseded_by": "job-4381", "failure": "pin timed out"},
         ],
         **swarm_board_payload(),
+        **swarm_agent_sources(1548),
         "swarm_seat_selected": {"token_id": 1548, "agent_id": "50971",
                                 "selected_by": "most_active"},
         # The seat's lifetime /seats record (docs/surf_agent_seats_spec.md §4).

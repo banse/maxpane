@@ -34,6 +34,7 @@ import datetime as dt
 
 import pytest
 from tests.screens.test_surf_screen import _status_bar_whole
+from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v3
 from textual.widgets import DataTable
 from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
 
@@ -96,13 +97,13 @@ from tests.surf_swarm_fixtures import (
 MEASURED_SWARM_COLUMNS = 142
 MEASURED_SWARM_ROWS = 42
 MEASURED_AGENT_COLUMNS = 142
-MEASURED_AGENT_ROWS = 32
+MEASURED_AGENT_ROWS = 36
 
 #: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
 #: block): the outer width at which each one's own ``‹`` goes dark on the
 #: capture. Both sit past the width sweep's band, so folding either into
 #: "whole" would make the property unpassable rather than strict.
-INFLIGHT_NEVER_CLEARS_BELOW = 190
+INFLIGHT_NEVER_CLEARS_BELOW = 222
 LAUNCHES_NEVER_CLEARS_BELOW = 205
 #: LAUNCHES hides a column behind its horizontal scrollbar under this width
 #: and none from it -- the ``4fr : 5fr`` seam's one job at the pin.
@@ -110,22 +111,21 @@ LAUNCHES_HIDES_NO_COLUMN_FROM = 138
 
 #: Measured tier edges the width sweeps straddle (+-1 each).
 _S_THRESHOLDS = (
-    116,  # SITES `full` from here (and the v1 column pin, crossed on purpose)
-    132,  # CAPABILITY `compact` from here
-    LAUNCHES_HIDES_NO_COLUMN_FROM,
-    145,  # IN FLIGHT `compact` from here
+    87, 93, 108, 116,  # SITES selected columns/tiers; THROUGHPUT fixed lines
+    132, 138, 141,    # CAPABILITY compact/full; LAUNCHES selected columns
+    177, 222,        # IN FLIGHT compact/full (notes may still clip)
+    180, 205,        # LAUNCHES compact/full
 )
 _A_THRESHOLDS = (
-    61, 63,  # RECORD no hidden column: original captures / duplicates and worst
-    64,      # BY NODE gains usable column budget and selects tight tier
-    85,      # RECORD compact
-    106,     # captured hero whole with a fixed-width STATUS box
-    111,     # BY NODE selected columns stop clipping
-    119,     # RECORD full
-    121,     # BY NODE compact
-    124,     # worst ACCEPTED hero counter whole
-    132,     # BY NODE full (body binder)
-    142,     # whole status bar text (full-layout binder)
+    61, 63, 70,  # RECORD columns; unselected SEAT failure labels clear
+    85, 119, # unchanged RECORD compact/full tiers
+    105,     # BY NODE selected columns stop clipping
+    106, 108,# SEAT fixed lines whole: #420/v3 and #0 captures
+    125,     # BY NODE compact
+    128,     # SEAT five-digit contributor line whole
+    134,     # all AGENT hero fixed content whole
+    138,     # BY NODE full
+    142,     # complete status bar, full-layout binder
 )
 
 
@@ -236,6 +236,7 @@ def _corpus_keys() -> dict:
         "swarm_site_rows": sw.site_rows(sites),
         "swarm_seat_selected": selected,
         **_seat_keys(seat),
+        **swarm_agent_sources(token),
         "swarm_seat_as_of_hhmm": "00:08",
         "swarm_scores_as_of_hhmm": "00:08",
         "swarm_as_of_hhmm": "00:08",
@@ -255,7 +256,7 @@ def _capture_payload() -> dict:
 def _capture420_payload(name="seat_420") -> dict:
     payload = _capture_payload()
     seat = swarm_seat_capture(name)
-    payload.update(_seat_keys(seat))
+    payload.update(_seat_keys(seat), **swarm_agent_sources(420))
     payload["swarm_seat_selected"] = {"token_id": 420, "agent_id": str(seat["agentId"]), "selected_by": "saved"}
     return payload
 
@@ -285,6 +286,8 @@ def _worst_swarm_payload() -> dict:
             "build the ERC-4626 vault and wire its deposit and withdraw paths "
             "through the launchpad adapter "
         ) * 2
+        row["note"] = "dispatch " + "n" * 300
+        row["note_kind"] = "dispatch"
         row["template"] = "build_contract_project_long_template_name"
         row["node_key"] = "build_contract_project"
         row["agent_token"] = 1548 + i
@@ -350,7 +353,40 @@ def _worst_agent_payload() -> dict:
         "swarm_seat_work_rows": work, "swarm_seat_node_rows": nodes,
         "swarm_seat_teammates": teammates, "swarm_seat_summary": summary,
     })
+    k["swarm_seat_live"] = dict(k["swarm_seat_live"], working=99_999, max_concurrency=99_999,
+        failures=99_999, paused_until_ts=1_758_456_000, skills=99_999,
+        profiles=["profile"+str(i)+"x"*64 for i in range(20)], platform="platform"+"x"*64)
+    k["swarm_seat_contrib"] = dict(k["swarm_seat_contrib"], attempts=99_999, accepted=55_555,
+        rejected=11_111, pending=33_333, turns=99_999, wall_clock_s=99_999, rank=999, ranked_of=999)
     return _frozen_payload(**k)
+
+
+def _v3_agent_payload(kind="v3"):
+    payload = _capture420_payload()
+    payload.update(_seat_keys(swarm_capture_v3("seat_420_with_contributors")))
+    if kind in ("pending", "seats-unavailable"):
+        payload["swarm_seat_state"] = "pending" if kind == "pending" else None
+    elif kind == "workers-unavailable":
+        payload.update(swarm_seat_live=None, swarm_workers_as_of_hhmm=None)
+    elif kind == "contributors-unavailable":
+        payload.update(swarm_seat_contrib=None, swarm_board_as_of_hhmm=None)
+    elif kind == "absent":
+        payload.update(swarm_agent_sources(99999))
+        payload["swarm_seat_selected"] = dict(token_id=99999,agent_id=None,selected_by="saved")
+        payload.update(swarm_seat_state="unknown_seat",swarm_seat_summary=None)
+    elif kind == "no-seat":
+        payload.update(swarm_seat_selected=None,swarm_seat_live=None,swarm_seat_contrib=None,
+                       swarm_seat_summary=None,swarm_seat_state=None,
+                       swarm_workers_as_of_hhmm=None,swarm_board_as_of_hhmm=None)
+    return payload
+
+
+def _v3_swarm_payload():
+    payload = _capture_payload()
+    names = ("job_5a4dfb13_dispatch_note", "job_33016bad_two_node_verdict", "job_0ed3e9f8_blocked")
+    details = [swarm_capture_v3(name) for name in names]
+    payload["swarm_inflight_rows"] = sw.inflight_rows(details, {row["id"]:row for row in details}, now_ts=1_790_042_100)
+    return payload
 
 
 PAYLOADS = {
@@ -628,7 +664,7 @@ async def test_the_row_pin_holds_at_the_column_pin_too(key) -> None:
 async def test_the_top_row_floor_is_its_auto_height_panels_own_lines(key) -> None:
     """The one number in the swarm CSS that is not a tier width: each top
     row's ``min-height`` is the fixed line count of its ``height: auto``
-    panel (THROUGHPUT sixteen, SEAT thirteen). Bound here so the floor
+    panel (THROUGHPUT sixteen, SEAT seventeen). Bound here so the floor
     cannot drift from the content it equals: at the pin the panel, the row
     and the floor are one height, and the row never scrolls inside itself
     -- not even at 20 rows, on the worst case."""
@@ -786,3 +822,20 @@ async def test_board_height_boundaries(height,kind):
 async def test_board_width_pin_is_not_loose():
     result=await _render(_board_payload(),(SURF_BOARD_FULL_LAYOUT_COLUMNS-1,80),'b')
     assert not result['status_whole'] or result['tiers']['SurfSwarmLeaderboard']!='full' or result['clipped'] or any(result['hidden'].values()),result
+
+
+@pytest.mark.parametrize("kind", ["v3","pending","seats-unavailable","workers-unavailable","contributors-unavailable","absent","no-seat"])
+async def test_agent_independent_sources_are_whole_at_the_full_pin(kind):
+    result=await _render(_v3_agent_payload(kind),(SURF_AGENT_FULL_LAYOUT_COLUMNS,SURF_AGENT_FULL_LAYOUT_ROWS),'a')
+    _assert_whole(result,kind)
+    assert not result['taller'] and not result['overflow'],result
+
+
+@pytest.mark.parametrize("payload_name,edge", [("v3",532),("worst",1558)])
+async def test_inflight_note_marker_clears_at_its_measured_content_width(payload_name,edge):
+    payload=_v3_swarm_payload() if payload_name=="v3" else _worst_swarm_payload()
+    for width in (edge-1,edge):
+        result=await _render(payload,(width,80),'s')
+        assert ("SurfSwarmInFlight" in result['marked']) == (width<edge),result
+        assert result['tiers']['SurfSwarmInFlight']=="full",result
+        assert not result['overflow'],result

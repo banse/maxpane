@@ -1,77 +1,18 @@
-"""IN FLIGHT -- the jobs executing right now, one row each (swarm v2, WP5).
+"""IN FLIGHT: one snapshot row per executing job, in the fold's order.
 
-A **snapshot** feed on ``panels.RichLogFeed`` (``SNAPSHOT = True``): every
-poll is the whole current set, ``[]`` is the real negative ("nothing
-executing", :data:`EMPTY_LINE`) and ``None`` is "could not look"
-(``panels.UNAVAILABLE_LINE``). No row ever survives a poll -- a job that
-finished between two polls is gone from the next frame, not left up as if
-still running (``rules/widgets.md``, ``SNAPSHOT``). ``dedupe_key`` is
-irrelevant in this mode and is left at the base's default.
+Rows carry age, template, seat, role/state, objective and the last note column.
+The tier ladder sheds role/state, then seat. Objective and note share the
+remaining budget: twenty objective cells and twelve note cells at the tier
+floor, then each receives half the extra width. Long notes have an ellipsis
+and keep the title's widen marker lit even in the full tier. A literal served
+ellipsis does not itself mean clipping.
 
-Mounted in the ``s`` body since WP7, in the row THE FIELD (``swarm_field.py``,
-deleted there) used to hold, beside LAUNCHES; ``widgets/surf/__init__.py``
-exports it and ``minimal.tcss`` places it (``4fr`` against LAUNCHES' ``5fr``
--- the ratio, not a ``min-width``, is what holds this panel at its
-``compact`` tier at the app's 143-column pin).
-
-Row shape (``data/surf_models.SURF_ROW_KEYS["swarm_inflight_rows"]``,
-frozen): ``job_id, template, objective, created_ts, age_s, node_key,
-node_role, node_state, agent_token, agent_id, revisions`` -- one row per
-executing job with the job's *active* node folded in; ``agent_token`` is
-``None`` when the detail route was not read, so attribution is a fact
-about the detail route, not about the seat.
-
-The row, and what THE FIELD taught it
--------------------------------------
-``age · template · seat · role·state · objective``, columnar in a
-``RichLog(wrap=False)`` (``WRAP = False``, ``HIGHLIGHT = False``,
-``MAX_LINES = 200`` -- the talismans/ttt reasoning: a wrapped row puts its
-objective under its age and the column stops being a column; the repr
-highlighter recolours the digits inside ``IDMD #1548``). The **objective is
-the last cell and is clipped to whatever budget is left**, with a visible
-``…`` -- never wrapped: THE FIELD wrapped its objective into up to four
-lines and this panel is the *in-flight* strip, one line a job, where the
-objective's first clause is the reader's orientation and the seat and state
-are the point. Newest first is the fold's order and is not re-sorted here.
-
-Width tiers on ``rowfit.Ladder``, widest first (the numbers are
-``rowfit.row_cols`` sums of the column constants below, each with its
-``#:`` fact; a tier is the widest whole-cell layout that still leaves the
-objective its :data:`MIN_OBJECTIVE_COLS`):
-
-==========  =====  ==================================================
-Tier        Needs  Row
-==========  =====  ==================================================
-``full``    79     ``age  template  IDMD #n  role·state  objective``
-``compact`` 59     ``age  template  IDMD #n  objective``
-``tight``   45     ``age  template  objective`` (floor; always reached)
-==========  =====  ==================================================
-
-A tier below ``full`` lights ``rowfit.title_with_hint``'s marker in the
-title ("the panel names the columns it shed") -- only when rows were
-painted: an unavailable or empty feed shed nothing.
-
-Third-party text renders literally, and nothing here parses markup
--------------------------------------------------------------------
-``template``, ``objective``, ``node_role`` and ``node_state`` are whatever
-the host and the requester typed. Every cell is appended to a
-``rich.text.Text`` with ``Text.append`` after ``markup_safety.flatten``
-and ``rowfit.clip`` (``cell_len``, never ``len()``); ``Text.append``
-parses nothing, so ``[/x]`` renders as the literal four characters and
-``[$success]`` cannot raise -- there is no markup step for an escape to
-guard, which is the strongest form of the rule. ``sanitize_cell`` was
-**not** used on purpose: its ``strip_tags`` step deletes a complete
-``[...]`` run, and the plan (WP5) requires a hostile tag in an objective
-to **render literally**, which a stripped string cannot do.
-
-``swarm_network`` is accepted and never painted: the row shape carries no
-chain, so a title-level word would claim a chain of rows that name none
-(THE FIELD's reason, kept). No ``stale`` word either -- that measures the
-scores tier's drift, which this live-tier panel does not read.
-
-Purity: stdlib, ``rich``, ``textual``, ``widgets/panels``, ``widgets/fmt``,
-``widgets/rowfit``, ``widgets/markup_safety``. No ``data/``, no
-``analytics/``, no clock, no I/O.
+Notes use strip-then-escape sanitization. Existing template/objective/role/state
+cells retain their literal Text rendering contract; no markup is parsed for
+those fields. None notes render --. The data fold supplies dispatch/failure
+precedence and filters executing jobs; this widget performs no data fetch.
+Empty snapshots say nothing executing, unread snapshots say unavailable, and
+no row survives replacement by a later snapshot.
 """
 
 from __future__ import annotations
@@ -83,7 +24,7 @@ from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import DASH, fmt_age
-from maxpane_dashboard.widgets.markup_safety import flatten
+from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.panels import RichLogFeed
 
 __all__ = [
@@ -127,11 +68,13 @@ _ROLE_STATE_COLS = 18
 #: corpus objective ("Assess the oracle feed…"); below it the row would
 #: be all chrome. A tier's threshold is where the objective still gets this.
 MIN_OBJECTIVE_COLS = 20
+#: A readable prefix for the new last column; extra width is shared with objective.
+MIN_NOTE_COLS = 12
 
 
 def _fixed_cols(tier: str) -> int:
     """Columns the fixed cells cost at *tier*, gaps included -- the one
-    source both the tier widths and the render-time objective budget use."""
+    source both the tier widths and the render-time objective/note budgets use."""
     cells = (_AGE_COLS, _TEMPLATE_COLS)
     if tier == "compact":
         cells = (_AGE_COLS, _TEMPLATE_COLS, _SEAT_COLS)
@@ -141,11 +84,11 @@ def _fixed_cols(tier: str) -> int:
 
 
 #: Columns each row layout needs, objective floor included (``row_cols`` sums).
-FULL_WIDTH = _fixed_cols("full") + _GAP + MIN_OBJECTIVE_COLS        # 79
-COMPACT_WIDTH = _fixed_cols("compact") + _GAP + MIN_OBJECTIVE_COLS  # 59
+FULL_WIDTH = _fixed_cols("full") + 2 * _GAP + MIN_OBJECTIVE_COLS + MIN_NOTE_COLS        # 93
+COMPACT_WIDTH = _fixed_cols("compact") + 2 * _GAP + MIN_OBJECTIVE_COLS + MIN_NOTE_COLS  # 73
 #: The floor. ``tight`` is the ladder's last step and always matches, so
 #: this number is documentation of what the row costs there, not a gate.
-TIGHT_WIDTH = _fixed_cols("tight") + _GAP + MIN_OBJECTIVE_COLS      # 45
+TIGHT_WIDTH = _fixed_cols("tight") + 2 * _GAP + MIN_OBJECTIVE_COLS + MIN_NOTE_COLS      # 59
 
 _LADDER = rowfit.Ladder(
     ("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("tight", 0),
@@ -201,6 +144,8 @@ class SurfSwarmInFlight(RichLogFeed):
         self._payload: dict | None = None
         self._tier = "full"
         self._objective_cols = MIN_OBJECTIVE_COLS
+        self._note_cols = MIN_NOTE_COLS
+        self._note_clipped = False
 
     def update_data(
         self,
@@ -257,7 +202,15 @@ class SurfSwarmInFlight(RichLogFeed):
             line.append(rowfit.pad(pair, _ROLE_STATE_COLS), style="cyan")
         if self._objective_cols > 0:
             line.append(" " * _GAP)
-            line.append(_cell(event.get("objective"), self._objective_cols), style="dim")
+            line.append(rowfit.pad(_cell(event.get("objective"), self._objective_cols), self._objective_cols), style="dim")
+        note = event.get("note")
+        if self._note_cols > 0:
+            cell = Text.from_markup(sanitize_cell(note, self._note_cols)) if note else Text(DASH)
+            self._note_clipped |= rowfit.cell_len(strip_tags(flatten(note))) > self._note_cols
+            line.append(" " * _GAP)
+            line.append_text(cell)
+        elif note:
+            self._note_clipped = True
         return line
 
     # -- rendering ------------------------------------------------------------
@@ -294,8 +247,11 @@ class SurfSwarmInFlight(RichLogFeed):
         rows = (self._payload or {}).get("rows")
         width = self._log_width(log)
         self._tier = _LADDER.tier_for(width)
-        self._objective_cols = max(width - _fixed_cols(self._tier) - _GAP, 0)
+        free = max(width - _fixed_cols(self._tier) - 2 * _GAP, 0)
+        self._note_cols = min(MIN_NOTE_COLS + max(free - MIN_NOTE_COLS - MIN_OBJECTIVE_COLS, 0) // 2, free)
+        self._objective_cols = max(free - self._note_cols, 0)
+        self._note_clipped = False
         self.render_events(rows)
-        # The marker says a column was shed from rows that were painted; an
-        # unavailable or empty feed shed nothing and stays unmarked.
-        self._set_title(bool(rows) and self._tier != "full")
+        # A painted row may shed columns or clip its note. An unavailable or
+        # empty snapshot did neither, and a fitting literal ellipsis is not loss.
+        self._set_title(bool(rows) and (self._tier != "full" or self._note_clipped))

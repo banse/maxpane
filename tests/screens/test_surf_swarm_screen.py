@@ -155,7 +155,7 @@ async def test_every_agent_hero_title_sits_on_the_same_row():
         heights = {len(str(b.render()).split("\n")) for b in boxes}
 
     assert len(heights) > 1, "every body has the same height: nothing to align"
-    assert firsts == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "COLLAB", "STATUS"], firsts
+    assert firsts == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "COLLAB", "STATUS · workers as of 04:02"], firsts
 
 
 async def test_the_key_hint_names_the_swarm_and_the_agent():
@@ -444,3 +444,30 @@ async def test_board_enter_persists_using_shared_writer_and_opens_agent(monkeypa
         await pilot.press('enter');await pilot.pause()
         assert writes==selected==[rows[1]['token_id']]
         assert screen._mode==MODE_AGENT
+
+
+@pytest.mark.parametrize("state", ["pending", None])
+async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_unread(state):
+    from tests.screens.test_surf_swarm_layout import _v3_agent_payload
+    payload=_v3_agent_payload("pending" if state else "seats-unavailable")
+    async with _surf_app(payload).run_test(size=(170,60)) as pilot:
+        screen=await _open(pilot,"a")
+        hero=_region_text(pilot.app,screen.query_one(SurfSwarmAgentHero))
+        seat=_region_text(pilot.app,screen.query_one(SurfSwarmSeatVerdicts))
+    assert "IDMD #420" in hero and "working 0 of 1" in hero
+    assert "accepted unavailable" in hero
+    assert "contributors 207 att · 189 acc · 2 rej · 16 pend" in seat
+    assert "skills 30" in seat and "linux arm64" in seat
+    assert "as of 03:01" in seat and "workers as of 04:02" in seat
+    assert "⧉" not in seat and "attempts 201" not in seat
+
+async def test_captured_executing_note_is_visible_and_honestly_cut_at_swarm_pin():
+    from tests.screens.test_surf_swarm_layout import _v3_swarm_payload
+    from maxpane_dashboard.screens.surf import SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS
+    payload=_v3_swarm_payload()
+    assert len(payload['swarm_inflight_rows'])==1
+    assert payload['swarm_inflight_rows'][0]['job_id'].startswith('5a4dfb13')
+    async with _surf_app(payload).run_test(size=(SURF_SWARM_FULL_LAYOUT_COLUMNS,SURF_SWARM_FULL_LAYOUT_ROWS)) as pilot:
+        screen=await _open(pilot,'s')
+        text=_region_text(pilot.app,screen.query_one(SurfSwarmInFlight))
+    assert 'no online' in text and '…' in text and '‹' in text.splitlines()[0]
