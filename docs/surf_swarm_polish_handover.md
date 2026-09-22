@@ -563,3 +563,147 @@ The protected pool4 oracle fixture remains untracked and uncommitted; pre-existi
 and `.venv311/` are untouched. No credentials or secrets were added. All review artifacts
 under `/tmp` are local and are not part of the commits. Stop here for Claude's whole-branch
 review; the owner decides merge and push.
+
+## 7. Fix wave — final whole-branch review 2026-09-22 (the ONE fix wave)
+
+Review of `91818e4..8e2adfd`: **Needs fixes: 0 Critical, 4 Important**. Every named risk held:
+- keyless GET-only, UUID fullmatch, and a 404 degrades one job only;
+- detached tier with no handler await, and `SWARM_ANSWER_PER_CYCLE` in its `#:` block;
+- seat isolation by exact hash, proven;
+- five distinct states;
+- sort stable with None last, global rank, token cursor, no-save header, no key collision;
+- every changed pin ±1 reddened;
+- colour asserted on the composite;
+- contract agreement and docs.
+
+Same rules as §0. Precedence: CLAUDE.md > §7 > §0–§6. Where §7 contradicts §2.5, §3 or
+`docs/decisions.md`, edit them to match in the same commit.
+
+**Owner decision (2026-09-22): SEAT stays as it is.** F54 stays open; do not implement §2.3.
+
+### I1 — one non-idempotent summary wipes the whole answer slot (`data/surf_swarm.py:1451/1520/1533`)
+
+`coerce_answers_slot` accepts a stored answer only when `answer_sentence(answer) == answer`, and
+`answer_sentence` is not idempotent (list-marker and emphasis stripping run once:
+`- 1) Wrote answer.json.` → `1) Wrote answer.json.` → `Wrote answer.json.`). The effects:
+- `prune_answers` refuses the whole slot → `{}`;
+- every RECORD row shows `not read`;
+- terminal jobs are re-fetched every cycle.
+
+The reviewer's fuzz found 36 of 20,093 such inputs (e.g. `[[a](b)](c)`, `x_*_y`, `- 2) nested`).
+
+Fix both halves:
+- **Per-point validation** (CLAUDE.md: "Validate persisted series per point"). A bad stored point
+  is dropped alone, never the slot. The rest of the slot survives, and only the dropped job is due
+  again.
+- **The stored check is a safety predicate, not a re-derivation.** A stored `answer` is valid when:
+  - it is a `str` within the length cap;
+  - it contains no link target and no absolute path (the same detectors I4 uses);
+  - it contains no control characters.
+  Also make `answer_sentence` idempotent (iterate its strip passes to a fixed point, bounded).
+  Assert both with a property-style test over a generated corpus that includes the reviewer's
+  three examples.
+
+Regressions, each proven to bite:
+- the reviewer's 6-job probe: job 0's summary `- 1) Wrote answer.json. More.`, and the slot keeps
+  the other five `read` after one cycle;
+- no further GET for a terminal job on cycle 2;
+- one hand-planted bad point drops that point only.
+
+### I2 — quadratic link scanning on the UI loop (`surf_swarm.py:1432`)
+
+`answer_sentence('[a](' * n)` took 0.125 s at 4 KB, 1.96 s at 16 KB and 31.7 s at 64 KB. It runs
+on the app's event loop, and a seat's summary is third-party input: any seat can freeze everyone
+who selects it.
+
+Fix:
+- **bound the input:** parse at most the first 4,096 characters of `summary` (only the first
+  sentence is kept, so cut before parsing);
+- **make link stripping linear:** one left-to-right pass or a non-backtracking regex, never a
+  rescan per unclosed `[x](`.
+
+Regression: a 100 KB hostile summary (`'[a](' * 25_000`, plus a nested-bracket variant) completes
+under a generous bound (e.g. 50 ms). The test measures work, not wall-clock time: count
+characters visited or iterations. Proof: restore the old scan and the test reddens.
+
+### I3 — one failed read freezes a terminal job at `unavailable` for up to 48 h (`surf_swarm.py:1574`, `surf_manager.py:5735/5744`)
+
+A transport failure is stored as `unavailable` with `terminal=True`, and `answer_jobs_due` skips it
+until the age/cap prune. That is a *false* degradation after the source recovers (CLAUDE.md
+convention). §3 and `docs/decisions.md` called this the owner's rule; it was the spec's, and it
+is a spec defect.
+
+Fix:
+- **A 404 (or the seat's hash absent from a successful read) stays frozen**: it is a real answer
+  about that job.
+- **A transport or parse failure is never frozen.** It stays `unavailable` on screen but is due
+  again after the tier's normal backoff, still within `SWARM_ANSWER_PER_CYCLE`.
+- A running job's `unavailable` point does not inherit `terminal` when the job turns terminal.
+
+Regressions:
+- a failure followed by a recovered read → the next due cycle turns it `read`;
+- a 404 point is never re-read;
+- running → terminal does not freeze an `unavailable` point.
+
+Correct §3 and `docs/decisions.md`.
+
+### I4 — absolute local paths survive cleaning (`surf_swarm.py:1459`)
+
+The lookbehind `(?<![\w:/\\])` protects URLs, but it also skips paths after a colon or a slash:
+- `file:///home/imd-worker/.identitymd/work/x/answer.json` survives;
+- `Saved at:/home/bob/answer.json.` survives;
+- `/Users/John Smith/work/answer.json` becomes `John Smith/work/answer.json`;
+- a bare home directory (`in /home/imd-worker and`) becomes `imd-worker`, the user name.
+
+Fix:
+- `file://` URIs are paths, not links to keep. Reduce them like any path.
+- Detect an absolute path after `:`, `=`, `(`, quotes or whitespace. Keep protecting `http(s)://`
+  URLs; those are dropped as link targets only when inside `[text](target)`.
+- **Home roots** (`/home/<user>`, `/Users/<user>`, `/root`, `C:\Users\<user>`, `C:/Users/<user>`)
+  never expose `<user>`:
+  - a path under a home root reduces to its last component, provided that component is not the
+    user segment;
+  - a bare home directory becomes `~`;
+  - a user segment containing spaces is consumed up to the next `/` that starts a known
+    subdirectory, or to the end of the path (be explicit, test it).
+- Regressions: the four examples above, plus a URL that must survive unchanged, plus the I1
+  property test (cleaning ∘ cleaning = cleaning).
+
+### Minors in this wave
+
+- **M1:** remove restated pin numbers from prose (`.claude/rules/surf.md:196,280,284,309`,
+  `README.md:202,588,603`: 27, 37, 166, 204). Name the constant instead. Bind the SKILL table's
+  BOARD row (141 × 27) with the same agreement test as the AGENT row.
+- **M2:** `swarm_hero.py:154` QUEUE goes back to bold; yellow is reserved for `unavailable` and the
+  pre-existing pending counts (§2.1).
+- **M3:** `swarm_seat_record.py:213` `took` under 60 s renders `<1m` (seconds are noise at this
+  column width), never `0m`.
+
+### Not in this wave (file or leave)
+
+- **M4** (the first click on `#` under the default rank sort reverses it): accepted, since the
+  active column reverses. Note it in README.
+- **M5** (`advertised_model`/`advertised_effort` unrendered until F54): note in F54.
+- **M6** (cosmetic changes such as `[/x]` → `[x]`): add to F-next as a Minor, to do when the
+  function is next touched.
+
+### Named test set (once at the end)
+
+- `tests/data/test_surf_manager_answers.py`, `test_surf_swarm_polish.py`,
+  `test_surf_swarm_polish_fixtures.py`, `test_surf_cache_swarm.py`, `test_surf_swarm_models.py`
+  and `test_surf_models.py`;
+- `tests/widgets/test_surf_swarm_hero.py` and `test_surf_swarm_seat_record.py`;
+- `tests/screens/test_surf_swarm_screen.py` and `test_surf_swarm_layout.py -k "record or board"`;
+- the SKILL/README agreement tests (`rg -n 'SKILL\.md|README\.md|rules/' tests/` and run what it
+  names);
+- `-m guard`.
+
+### Hand-back
+
+Append **§7.1** in §6.1's format:
+- commits;
+- per-finding red→green and mutation evidence (name the test that reddens, and why);
+- the named-set and guard results;
+- `git status --short`.
+
+Stop there for the scoped re-review.
