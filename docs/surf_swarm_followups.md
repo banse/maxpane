@@ -759,7 +759,8 @@ Before the §9 fix wave, the AGENT full-layout column pin was **131**, bound by
 `STATUS_BAR_WHOLE_FROM`; the body itself cleared at **117/118**. The status bar includes
 version and theme labels, so a version bump or theme rename can move that threshold without
 changing any panel. These are the earlier measurements; the fix wave's rendered-width changes
-require a fresh final measurement.
+required a fresh final measurement. The completed sweep (handover §10, `999317f`) keeps
+the pin at **131 × 32**, with the body now whole from **130**; the label dependency remains.
 
 Retain the composited status-bar coverage when updating those labels and re-measure the affected
 pin. A layout guarantee tied to label length remains a follow-up; this fix wave does not redesign

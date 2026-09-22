@@ -498,3 +498,98 @@ tests/test_surf_registration.py tests/screens/test_surf_swarm_screen.py` + `-m g
 doc-pinning files for SKILL.md; + `tests/screens/test_surf_swarm_layout.py` only if a pin moved.
 Then stop: Claude sends the findings above to ONE scoped re-review, runs the full suite once, and the
 owner decides merge and push.
+
+---
+
+## 10. Fix-wave hand-back — 2026-09-22
+
+One authorized fix wave implemented on `feature/surf-agent-seat-details`, in §9 order.
+`d021303` records the owner's §9 instructions. The duplicated-review fixture is committed;
+`tests/fixtures/surf/pool4/oracle_25955365.json` remains untracked and was never staged.
+No push, merge, tag, version bump, full suite or second review/fix round was performed.
+The full release suite remains intentionally deferred under the remote-push authorization rule.
+
+### Finding outcomes
+
+| Finding | Outcome / commit | Test evidence |
+| --- | --- | --- |
+| §9.1 — distinct submissions | Fixed, `ebbb3e8` | `test_duplicated_reviews_fixture_counts_distinct_submissions`, status-priority/tie/hash-less/older-capture regressions, and composited SEAT explanation tests |
+| §9.2 — timestamp form | Fixed (test only), `8cebe5d` | `test_live_accepted_at_space_and_short_offset_parse_for_every_work_row` pins all 190 work rows and the first/latest timestamp |
+| I1 — TEAMMATES false degradation | Fixed, `8cebe5d` | `test_state_footer_is_separate_from_teammates` asserts exact composite lines for each state |
+| I2 — absent list reported as zero | Fixed, `8cebe5d` | `test_node_rows_distinguish_unread_children_from_served_lists` plus fold missing/invalid-list cases |
+| M1 — clipped node percentage | Fixed, `19017c1` | `test_oversized_win_percentage_cannot_clip_silently` |
+| M2 — rate placement / formatting | Fixed, `19017c1` | `test_attempts_rate_shares_the_attempts_line_and_reviewed_stays_separate` |
+| M3 — no-win timestamp state | Fixed, `19017c1` | `test_status_distinguishes_no_wins_from_missing_win_timestamp` (three cases) |
+| M4 — stale comments | Fixed, `19017c1` | Named set and source inspection |
+| M5 — layout skill table | Fixed, `999317f` | `test_terminal_layout_skill_quotes_agent_dimensions_and_record_clearance`, doc-pinning files and measurements below |
+| M6 — status-bar-dependent pin | Filed, F43 | Documentation only, as requested |
+
+The new fixture folds 351 entries to 197 reviewed submissions: 97 sent, 7 submitted and 93
+queued. `oracle_assess` has 195 distinct reviews and 188 wins. A valid hash groups entries;
+missing/invalid hashes stay separate; ties preserve source order. `review_entries` preserves
+the raw list length. The raw sent timestamps remain independently available.
+
+### TDD and mutation evidence
+
+- §9.1: 26 failing tests before implementation; 483 passed after inverse restoration. Eight
+  mutation checks failed as intended: raw summary reviews, raw node reviews, wrong sent rank,
+  last-on-tie, dropped hash-less entries, dropped older-fixture entries, deduplicated raw-entry
+  count, and hidden discrepancy explanation. Evidence is in `ebbb3e8` and `/tmp/fix91-*`.
+- §9.2 was a test-only regression for parsing that was already correct. Its first run passed;
+  deliberately rejecting the short `+00` form made it fail; restoring the parser made it pass.
+- I1: 2 failing cases before implementation; 11 passed after. Forcing TEAMMATES visible
+  failed the pending and unknown composite-line cases (2 failed, 2 passed).
+- I2: 16 failing cases before implementation. Removing either source-list guard independently
+  failed 6 cases (15 passed) each; restored combined §9.2/I1/I2 targets: 279 passed in 2.76s.
+  Evidence is in `8cebe5d` and `/tmp/fix92-*`, `/tmp/fix93-*`.
+- M1–M3: 5 failing cases before implementation; 58 passed after. Removing the percentage clip
+  flag failed M1; removing the attempts-rate suffix failed M2; restoring placeholder dates
+  failed all three M3 cases. Restored widget/contract/fixture targets: 186 passed in 15.83s.
+  Evidence is in `19017c1` and `/tmp/fix94-*`.
+- M5: the new skill-table agreement test failed against “See canonical measurement blocks”
+  before the numeric row was restored. Final named verification includes this regression.
+
+### Layout and final validation
+
+The rendered width changed: SEAT increased from 42 to **55 outer cells** (53 panel cells,
+51 text cells), so the affected AGENT layout was remeasured in situ after all display fixes.
+The final pins remain **131 columns × 32 rows**. The fixed body now clears at **130** for all
+four payloads; the status bar still binds 131 (F43). BY NODE has no hidden column from 109,
+is compact from 119 and full from 130. Hero text clears at 116 on captures and 118 on the
+stress payload. The top floor remains thirteen rows with eleven SEAT detail lines.
+
+All **1,000 samples** passed: every integer width 60–225 at height 80 (664 samples), and every
+integer height 20–61 at widths 150 and 131 (336 samples), on #0, original #420, duplicated-review
+#420 and the valid worst payload. The worst case has 55,555 distinct reviews / 99,999 entries,
+30 nodes, 999 teammates, long keys and objectives; node/status/role totals agree. Independent
+checks verified the exact visible role prefix and omitted count, both discrepancy sentences,
+CSS clipping, hidden columns, panel overflow, status-bar geometry and taller state. The worst
+role line keeps `implement 55,000 · review 400 · +1 more`. PNG inspection of the duplicate and
+worst captures agrees.
+
+RECORD geometry and tier thresholds did not change; its **297** clearance was therefore not
+re-swept. Canonical `#:` blocks and test boundary values were updated in `999317f`.
+Evidence: `/tmp/surf-fixwave-layout/summary.json`, `measurements.jsonl`, and four SVG captures;
+PNG inspections are in the same directory. These are temporary evidence, not committed artifacts.
+
+All final checks used `.venv311` (Python 3.11 / Textual 8.1.1), isolated temporary homes,
+`NO_COLOR` removed from the child environment, and frozen/no-network test seams:
+
+- §9.5 named set plus all three executable `SKILL.md` doc-pinning files:
+  **715 passed in 78.35s**. The extra files are `tests/test_curator_registration.py` and
+  `tests/widgets/test_surf_rowfit.py`; `tests/test_surf_registration.py` is already named.
+- `-m guard tests -q`: **200 passed, 9,143 deselected in 102.37s**.
+- Logs: `/tmp/fix-wave-final-named.log`, `/tmp/fix-wave-final-guard.log`.
+- The complete `tests/screens/test_surf_swarm_layout.py` run was intentionally omitted:
+  no pin moved, matching §9.5. The affected rendered geometry was verified by the sweep above.
+
+### Scope and hand-off
+
+No new endpoint or network test was introduced. The one shared review helper serves the seat
+summary and node fold; the only raw-review scan retained is the explicitly permitted sent-time
+scan. F43 records the version/theme-label dependency without changing status-bar code.
+F41 (RECORD missing-work handling) and F42 (source-order chronology) remain separately filed;
+this wave fixes I2 for BY NODE as requested. All ⚑ mutations were inverse-restored before
+verification; no mutation is left in the tree.
+
+Stop here for Claude's one scoped re-review of §9 findings and the owner's merge/push decision.
