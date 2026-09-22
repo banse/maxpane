@@ -843,3 +843,22 @@ THROUGHPUT production code remains unchanged by BOARD and this fix wave. Follow 
 [F23](#f23--throughputs-statecancel-blocks-are-unbounded-in-rows): add the extra-states-row canned regression
 and measure its height before choosing a remedy. No new pin is inferred from the screenshot.
 M6 in the amended wave corrects this attribution only; F47/F23 remain open.
+
+## F48 — AGENT STATUS cannot tell unknown pause state from known not-paused — OPEN (Minor, Tier 2)
+
+Filed by the BOARD fix-wave re-review, 2026-09-22. `widgets/surf/swarm_agent_hero.py:197-203` reads
+`swarm_seat_live` through `SWARM_SEAT_LIVE_FIELDS`, which does not carry `pause_known`. #420 with
+`paused` popped renders `working 0 of 1` like a seat known not to be paused, while BOARD's
+LEADERBOARD shows `unavailable` for the same seat. Fix needs a contract key (Tier 2).
+
+## F49 — a malformed-but-tokened contributor seat is counted in SEATS but has no LEADERBOARD row — OPEN (Minor)
+
+Filed by the BOARD fix-wave re-review, 2026-09-22. `data/surf_swarm.py:1238-1239` leaves such a seat
+out of `swarm_board_rows` (99 seats vs 98 rows) with no row saying it is unavailable. The README
+discloses "every fully parsed contributor seat"; an explicit unavailable row would be more honest.
+
+## F50 — AGENT/SWARM below-pin layout branch is vacuous under 134 columns — OPEN (Minor, test rigor, pre-existing)
+
+Filed by the BOARD fix-wave re-review, 2026-09-22. `tests/screens/test_surf_swarm_layout.py:528`
+`assert not r["status_whole"] or …` is always true where the status bar is cropped (< 134) — the
+M2 shape. `test_the_column_pin_is_not_loose` still covers pin−1. Do as Tier 0 when the file is next touched.
