@@ -648,3 +648,115 @@ The BOARD/AGENT data and widget files (the 13 from the review), `tests/screens/t
 Append **§10**: commit table, each fix with its red→green and mutation evidence, the re-measured
 pins (every surf body, columns × rows, and what binds), whether AGENT reached 32, the named-set
 result, and `git status --short`. Stop there for the scoped re-review.
+
+---
+
+## 10. Codex fix-wave hand-back — stopped at D-B, 2026-09-22
+
+**AGENT did not reach 32 rows.** The exact requested row removals produced a measured
+**33-row** minimum. Per §9 D-B (“If 32 is not reached, stop and report … do not remove
+anything else”), the wave stopped at this gate. No production fix was retained; the trial
+and its temporary tests were reversed by explicit inverse edits, with every changed file
+compared against its captured original text. F46 remains open.
+
+Branch: `feature/surf-swarm-board`; starting HEAD: `61c5f28` (the committed §9 instructions).
+One repository writer; a separate planning agent was read-only. No network, middle tier,
+full suite, push, merge or tag.
+
+### Commit table
+
+| Change | Commit/result |
+|---|---|
+| Approved §9 instructions | `61c5f28`, already present before this run |
+| D-B/M5 feasibility trial | Uncommitted; entirely inverse-restored after the stop gate |
+| This hand-back | Documentation-only commit, `docs(surf): report D-B 33-row stop gate` |
+
+### D-B measurement and red → green evidence
+
+The trial removed the worker metadata and worker-clock rows, joined the two contributor
+rows into one line retaining every counter, turns, hours, rank and its own clock, and removed
+`/seats` liveness from the paired line (M5). It preserved STATUS worker state, every other
+SEAT fact, title spacing, hero geometry and RECORD's existing floor. Both CSS copies used
+the actual reduced SEAT floor.
+
+- Temporary widget regressions
+  `test_fix_wave_contributors_keep_every_fact_and_clock_on_one_line` and
+  `test_fix_wave_worker_metadata_and_seats_liveness_are_absent`: **2 failed → 2 passed**.
+- An in-situ fixture screen probe measured ordinary v3 and five-digit stress payloads,
+  widths 190–245 and heights 31–35 at their whole-content widths.
+- Temporary `test_fix_wave_agent_requested_height_gate`, parameterized across both payloads
+  at 32 and 33 rows: **2 failed at 32; 2 passed at 33**, 3.56 s. Both 32-row cases reached
+  the actual `taller` assertion after passing horizontal-content, overflow and 14-row floor
+  assertions. This was a measured height failure, not a prediction from arithmetic.
+- At 33 rows: SEAT/top region starts at y=10 and is 14 rows; RECORD starts at y=24 and is
+  8 rows; status is at y=32. At 32, `‹ taller` and body scrolling remain; RECORD is below
+  the initial viewport. The controller inspected the 32/33 rendered PNGs.
+- Binder: **12 SEAT detail lines + title + mandatory blank = 14 rows**. RECORD's existing
+  floor is **8**; unchanged remaining chrome uses **11**: measured total **33**.
+  `.claude/rules/widgets.md` requires the title blank; it was not removed to force success.
+- Keeping the original full labels on one contributor line also widened this diagnostic
+  trial: whole-content onset **208 columns** for v3, **240** for five-digit stress.
+  These are unoptimized trial measurements, **not proposed or adopted pins**. Even with
+  enough width for every fact, the height remained 33. No additional field removal or
+  layout redesign was inferred from D-B.
+
+The temporary trial patch and evidence are local:
+`/tmp/board-wave-gate/trial.patch`, `results.json`, `inverse-proof.json`,
+`v3-208x32.png`, `v3-208x33.png`; test logs:
+`/tmp/board-wave-gate-red.log`, `board-wave-gate-green.log`,
+`board-wave-gate-height-test.log`, `board-wave-gate-restored-green.log`.
+No successful fix or mutation proof is claimed for an unlanded trial. Reaching 32 requires
+an additional owner decision about which further row or layout constraint may change.
+
+### Findings left pending by the stop gate
+
+| §9 item | Result |
+|---|---|
+| D-A shortened hints and body-bound pins | Pending; current hints and pins restored/unchanged |
+| D-B / F46 | Measured 33, not 32; stopped as directed; F46 remains open |
+| D-C / M9 row click selection | Pending |
+| I1 malformed-but-tokened source rows | Pending; no normalization/cache change made |
+| M2 COINS assertion and named boundary | Pending |
+| M3 BOARD degradation assertion/exclusion | Pending |
+| M4 literal runtime ellipsis | Pending |
+| M5 duplicate `/seats` liveness | Trial regression passed; change restored with D-B |
+| M7 CSS comments/indentation and IN FLIGHT rationale | Pending |
+| M8 wallet test provenance | Pending |
+| M6 / F47 wording correction | Pending; §9's correction attributes the observed overflow to an extra states row (F23), not the wrap |
+| F16 SWARM height | Remains open as instructed |
+
+§3/§5, the skill table and canonical pin comments were not rewritten for a trial that was
+not adopted. No later fix or additional fix wave was performed after the stop condition.
+
+### Production pins after restoration
+
+These are the existing §8 measurements, **not new certifications from this stopped wave**.
+
+| Surf body | Columns × rows | Existing binder |
+|---|---|---|
+| Dashboard | 143 × no single fixed row pin | IMD MARKET seam; rail scrolling is separately measured |
+| LAUNCHPAD `l` | 142 × 31 | Expanded status hint; body itself clears at 138 |
+| Experimental pool4 `e` | 99 × 45 | HATCHES/rail; body guarantee excludes whole status |
+| Pool4 market `4` | 119 × 35 | Existing ladder/rail content; body guarantee excludes whole status |
+| SWARM `s` | 142 × 42 | Status width; THROUGHPUT/top-row floor, with F23/F47 content-dependent residual |
+| AGENT `a` | 142 × 36 | Status width; existing 17-row SEAT top floor |
+| BOARD `b` | 142 × 23 | Status width; FLEET height, eight-line table floor |
+
+### Verification and final status
+
+After exact inverse restoration, the original SEAT widget file and AGENT row/floor boundary
+tests passed: **27 passed in 5.94 s**. `git diff --check` is clean. Only this hand-back is
+committed. The final named set and guard run were **not run**: the explicit D-B stop occurred
+before a completed fix wave existed to verify. The preceding implementation's green named,
+guard and middle-tier results remain recorded in §8; they are not claimed as new results here.
+
+`git status --short` after the documentation commit:
+
+```text
+?? .codex/
+?? .venv311/
+?? tests/fixtures/surf/pool4/oracle_25955365.json
+```
+
+The protected oracle fixture remains untracked. Stop here for the owner to resolve the D-B
+height constraint before the pending fixes resume.
