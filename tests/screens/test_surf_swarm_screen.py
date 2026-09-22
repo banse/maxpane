@@ -472,3 +472,39 @@ async def test_captured_executing_note_is_visible_and_honestly_cut_at_swarm_pin(
         screen=await _open(pilot,'s')
         text=_region_text(pilot.app,screen.query_one(SurfSwarmInFlight))
     assert 'no online' in text and '…' in text and '‹' in text.splitlines()[0]
+
+
+@pytest.mark.parametrize("row_index", [0,1])
+async def test_board_first_click_saves_clicked_seat_once_and_opens_agent(monkeypatch,row_index):
+    from maxpane_dashboard import config
+    from maxpane_dashboard.data import surf_swarm as fold
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+    rows=fold.board_rows(swarm_capture_v3('contributors'),swarm_capture_v3('workers'))
+    writes=[]
+    monkeypatch.setattr(config,'save_seat',lambda token:writes.append(token))
+    async with _surf_app(_frozen_payload(swarm_board_rows=rows)).run_test(size=(141,32)) as pilot:
+        screen=await _open(pilot,'b')
+        selected=[]
+        screen._data_manager.set_seat=lambda token:selected.append(token)
+        table=screen.query_one(SurfSwarmLeaderboard).query_one(DataTable)
+        assert table.cursor_row == 0
+        await pilot.click(table,offset=(3,row_index+1))
+        await pilot.pause()
+        assert writes == selected == [rows[row_index]['token_id']]
+        assert screen._mode == MODE_AGENT
+
+
+async def test_board_header_and_empty_table_space_do_not_select(monkeypatch):
+    from maxpane_dashboard import config
+    from maxpane_dashboard.data import surf_swarm as fold
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+    rows=fold.board_rows(swarm_capture_v3('contributors'),swarm_capture_v3('workers'))[:1]
+    writes=[]
+    monkeypatch.setattr(config,'save_seat',lambda token:writes.append(token))
+    async with _surf_app(_frozen_payload(swarm_board_rows=rows)).run_test(size=(141,32)) as pilot:
+        screen=await _open(pilot,'b')
+        table=screen.query_one(SurfSwarmLeaderboard).query_one(DataTable)
+        await pilot.click(table,offset=(3,0))
+        await pilot.click(table,offset=(3,3))
+        await pilot.pause()
+        assert writes == [] and screen._mode == MODE_BOARD

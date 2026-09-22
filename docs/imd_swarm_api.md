@@ -328,9 +328,10 @@ that row contract carries the note without adding an unused top-level widget par
 ### Display and selection
 
 BOARD is the seventh body on `b`: six source-labelled hero boxes, the complete scrollable seat
-leaderboard, and fleet metadata. Enter validates the row's immutable token, saves it through
+leaderboard, and fleet metadata. Enter or a single mouse click validates the row's immutable token, saves it through
 `config.save_seat`, and follows the shared AGENT selection path without waiting on the network.
-The selection marker follows the current AGENT seat. Fleet values remain whole when shown;
+A first click on a noncurrent row selects immediately; each activation saves once. Header and
+empty-space clicks do not select. The selection marker follows the current AGENT seat. Fleet values remain whole when shown;
 `+N` counts omitted entries. Wallets are absent from BOARD.
 
 AGENT's STATUS uses workers independently of `/seats`, with its worker clock in the title.

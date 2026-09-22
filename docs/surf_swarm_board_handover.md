@@ -177,9 +177,10 @@ rows, 2026-09-22"). The `s` body's 42 rows remains F16's open half.
     `unavailable`.
   - The wallet is **not** shown here: AGENT already shows the owner as an address cell. No token column.
   - `▸` marks the current AGENT seat.
-  - **Enter on a row = what `i` does with that number:** validate, persist to `~/.maxpane/config.toml`
+  - **Enter or a single mouse click on a row = what `i` does with that number:** validate, persist to `~/.maxpane/config.toml`
     through `maxpane_dashboard.config.save_seat` — the function `SeatInputScreen` uses (`screens/seat_input.py:81`); no second writer, call the
-    manager's `set_seat`, and open AGENT. No network await in the handler.
+    manager's `set_seat`, and open AGENT. A first click on a different row selects immediately;
+    each activation saves once. Header/empty-space clicks do not select. No network await in the handler.
 - **FLEET** (new widget, a fixed-line panel): runtime / daemon / os / profile / slots mixes as
   `value count`, sorted by count desc then value, as many as fit then `+N`. Also:
   - the heartbeat range (oldest–newest `lastHeartbeatAt`, `HH:MM:SS`);

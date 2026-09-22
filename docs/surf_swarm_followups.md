@@ -829,19 +829,17 @@ and their source separation were requested; no field was silently removed to pre
 height. The owner can accept this height or request a separate layout change to recover rows.
 SWARM's existing 42-row height remains F16's open half.
 
-## F47 — live SWARM accumulation message can still require scrolling at its fixture pin — OPEN
+## F47 — live SWARM's extra states row exceeds its fixture height — OPEN (F23)
 
 The required real CLI render on **2026-09-22 around 06:35 Europe/Berlin**, with a fresh isolated
-HOME at **142×42**, showed `‹ taller` and a THROUGHPUT scrollbar. Its `completed 24h` line read
-`accumulating since` with `17:45` wrapped onto the following line; the bottom `cancel reasons`
+HOME at **142×42**, showed `‹ taller` and a THROUGHPUT scrollbar; bottom `cancel reasons`
 content was not fully visible. Evidence: `/tmp/board-final-live/s-420-142x42.svg` and `.png`.
-This is a live observation, not a passing full-layout capture. BOARD at 142×23 and AGENT at
-142×36 did fit their body heights during the same check.
+The scoped review identified the extra **`states` row** as the cause: this is F23's
+content-dependent THROUGHPUT height. The visible accumulation message was not the cause of the
+overflow. BOARD at 142×23 and AGENT at 142×36 fit their body heights during that historical check.
 
-The completed fixture sweeps cover the capture, stress and v3 note payloads, but do not establish
-the same height guarantee for this accumulation state. THROUGHPUT's accumulation renderer was
-unchanged by BOARD. This is related to F23's content-dependent height, with a distinct observed
-wrapped-message case. Preserve the real negative (`completed_24h: None` means history still
-accumulating), add a canned accumulation-state layout regression, and measure its actual height
-before deciding whether to shorten the line or revise the guarantee. No extra pin is inferred
-from this single screenshot. Filed at §7 for Claude's final review; no additional fix wave run.
+The fixture sweeps do not establish the same height guarantee for the extra-states-row payload.
+THROUGHPUT production code remains unchanged by BOARD and this fix wave. Follow up under
+[F23](#f23--throughputs-statecancel-blocks-are-unbounded-in-rows): add the extra-states-row canned regression
+and measure its height before choosing a remedy. No new pin is inferred from the screenshot.
+M6 in the amended wave corrects this attribution only; F47/F23 remain open.

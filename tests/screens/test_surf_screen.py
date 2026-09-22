@@ -2536,7 +2536,7 @@ async def test_the_launchpad_body_is_whole_from_its_pinned_width(width, payload)
                 f"screen says so: {clipped}"
             )
         else:
-            assert "‹ widen" in title or not bar_whole, width
+            assert "‹ widen" in _region_text(pilot.app, pilot.app.screen.query_one("#surf-lpc-title")), width
 
 
 #: The burn pipeline in the state the data is normally in.
@@ -2637,7 +2637,7 @@ async def test_the_launchpad_body_binding_panel_is_the_coins_table() -> None:
     rail's 40..43, so it is never the panel asking for columns). See
     ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS``."""
     async with _surf_app().run_test(
-        size=(138 - 1, 46)
+        size=(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS - 1, 46)
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -2863,7 +2863,7 @@ async def test_the_width_pin_holds_at_every_height_the_coin_table_is_fitted_to(
     against the constant: the marker lit one column under it, and nothing
     marked or clipped at it, with the header whole.
     """
-    pin = 138  # unchanged COINS body boundary, distinct from the status-bar pin
+    pin = SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS  # COINS binds the documented body width
     seen = {}
     for width in (pin - 1, pin):
         async with _surf_app(_twenty_coin_payload()).run_test(

@@ -54,3 +54,10 @@ async def test_worker_unavailable_and_offline_are_whole_and_distinct():
     assert unread.count('unavailable')==2 and 'unavai…' not in unread
     offline=await render([dict(ROWS[0],runtime='offline',live_state='offline')])
     assert offline.count('offline')==2 and 'unavailable' not in offline
+
+
+async def test_fitting_runtime_with_literal_ellipsis_does_not_claim_clipping():
+    for runtime,visible in (("waiting…","waiting…"),("[/x]waiting…","waiting…"),("界界界界界","界界界界界")):
+        text=await render([dict(ROWS[0],runtime=runtime)])
+        assert visible in text
+        assert '‹ widen' not in text.splitlines()[0], text

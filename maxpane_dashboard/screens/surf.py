@@ -3010,7 +3010,9 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
     }
 
-    SurfSwarmBoardHero { height: 7; }
+    SurfSwarmBoardHero {
+        height: 7;
+    }
     SurfSwarmBoardHero > SurfSwarmBoardHeroBox {
         width: 1fr;
         height: 7;
@@ -3030,8 +3032,17 @@ class SurfScreen(DashboardScreen):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
     }
-    SurfSwarmLeaderboard { width: 1fr; height: 1fr; min-height: 8; }
-    SurfSwarmFleet { width: 37; max-width: 37; height: auto; padding: 0 1; }
+    SurfSwarmLeaderboard {
+        width: 1fr;
+        height: 1fr;
+        min-height: 8;
+    }
+    SurfSwarmFleet {
+        width: 37;
+        max-width: 37;
+        height: auto;
+        padding: 0 1;
+    }
     """
 
     def __init__(

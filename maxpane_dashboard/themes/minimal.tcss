@@ -2489,28 +2489,40 @@ SurfSwarmAgentHero > SurfSwarmAgentHeroBox {
 }
 
 
-    SurfSwarmBoardHero { height: 7; }
-    SurfSwarmBoardHero > SurfSwarmBoardHeroBox {
-        width: 1fr;
-        height: 7;
-        padding: 0 1;
-        margin: 0 1;
-        border: solid $panel;
-        background: $surface;
-        content-align: center top;
-        text-align: center;
-        text-wrap: nowrap;
-        text-overflow: ellipsis;
-    }
-    SurfScreen #surf-board-body {
-        height: 1fr;
-        margin: 1 0 0 0;
-        overflow-y: auto;
-        scrollbar-size: 1 1;
-        scrollbar-gutter: stable;
-    }
-    SurfSwarmLeaderboard { width: 1fr; height: 1fr; min-height: 8; }
-    SurfSwarmFleet { width: 37; max-width: 37; height: auto; padding: 0 1; }
+SurfSwarmBoardHero {
+    height: 7;
+}
+SurfSwarmBoardHero > SurfSwarmBoardHeroBox {
+    width: 1fr;
+    height: 7;
+    padding: 0 1;
+    margin: 0 1;
+    border: solid $panel;
+    background: $surface;
+    content-align: center top;
+    text-align: center;
+    text-wrap: nowrap;
+    text-overflow: ellipsis;
+}
+SurfScreen #surf-board-body {
+    height: 1fr;
+    margin: 1 0 0 0;
+    overflow-y: auto;
+    scrollbar-size: 1 1;
+    scrollbar-gutter: stable;
+}
+SurfSwarmLeaderboard {
+    width: 1fr;
+    height: 1fr;
+    min-height: 8;
+}
+SurfSwarmFleet {
+    width: 37;
+    max-width: 37;
+    height: auto;
+    padding: 0 1;
+}
+
 SurfScreen #surf-swarm-body {
     height: 1fr;
     width: 100%;

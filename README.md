@@ -171,7 +171,7 @@ hours and rank, with its own clock; this group remains visible when the seats re
 It uses two lines near the layout pin and one when every fact fits in the panel. Pairing shares
 the identity line; all feedback delivery statuses share one line. Worker metadata belongs in
 BOARD, while STATUS is AGENT's only liveness indicator. A good contributors read without the seat
-says `not listed`; an unread source says `unavailable`.
+says `not listed`; an unread source or malformed contribution says `unavailable`.
 Beside it, BY NODE counts reviewed and accepted work for each node, with an acceptance percentage based on
 **reviewed work**, because the API does not serve attempts per node. Its `chain` count includes
 sent and submitted feedback transactions; TEAMMATES lists collaborators by shared jobs.
@@ -183,7 +183,7 @@ SEAT names `#N never paired` for a seat that has never paired; a failed read say
 
 Press **`b`** for BOARD: aggregated lifetime contributors beside the live worker fleet.
 SEATS, ACCEPT RATE and RECEIPTS come from contributors; LIVE, PAUSED and CAPACITY come
-from workers. LEADERBOARD includes every contributor seat and scrolls; runtime/state and
+from workers. LEADERBOARD includes every fully parsed contributor seat and scrolls; runtime/state and
 FLEET metadata keep their own source clocks. One failed endpoint leaves the other's facts
 visible. FLEET shows whole metadata entries followed by `+N` for omissions, and token usage
 only as the served tokens-per-completed-job metric. BOARD contains no wallet or token ranking.
@@ -461,7 +461,7 @@ body — one seat's lifetime record: SEAT beside BY NODE, with RECORD beneath, u
 own hero row (including ACCEPT RATE). **`i`** asks for your own
 seat — its Identity.md NFT id — saves it to `~/.maxpane/config.toml` and opens the AGENT body on it,
 like THE LIST's `w` for a wallet. **`b`** opens BOARD: the lifetime LEADERBOARD
-beside FLEET, with its own six-box hero. Enter on a leaderboard row saves that seat through
+beside FLEET, with its own six-box hero. Enter or a single click on a leaderboard row saves that seat through
 the same configuration writer and opens AGENT; `▸` marks the selected seat. `esc` backs out
 of any of the six alternate bodies.
 The status hint names the ones that are not experimental:

@@ -132,7 +132,7 @@ _A_THRESHOLDS = (
 _EXCLUDED_FROM_WHOLE = {
     "s": {"SurfSwarmInFlight", "SurfSwarmLaunches"},
     "a": {"SurfSwarmSeatRecord"},
-    "b": {"SurfSwarmLeaderboard"},
+    "b": set(),
 }
 _BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmSeatNodes"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
@@ -791,6 +791,8 @@ def _board_payload(kind="capture"):
 
 
 def _assert_board_whole(result,where):
+    if where == "worst":
+        result = dict(result, marked_besides_exceptions=result["marked_besides_exceptions"] - {"SurfSwarmLeaderboard"})
     _assert_whole(result,where)
     assert result["tiers"]["SurfSwarmLeaderboard"]=="full",result
     assert result["columns"]["SurfSwarmLeaderboard"] == ("#","seat","runtime","dev","att","acc","rej","pend","rate","turns","hrs","state"),result
@@ -810,7 +812,9 @@ async def test_board_width_boundaries(width,kind):
     result=await _render(_board_payload(kind),(width,80),'b')
     assert not result['overflow'],result
     if width>=SURF_BOARD_FULL_LAYOUT_COLUMNS:_assert_board_whole(result,kind)
-    else:assert not result['status_whole'] or result['tiers']['SurfSwarmLeaderboard']!='full' or result['clipped'] or any(result['hidden'].values()),result
+    else:
+        assert 'SurfSwarmLeaderboard' in result['marked'], result
+        assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
 
 @pytest.mark.parametrize('height',boundary_set(SURF_BOARD_FULL_LAYOUT_ROWS,20,61,31,35))
 @pytest.mark.parametrize('kind',['capture','worst'])
@@ -820,7 +824,8 @@ async def test_board_height_boundaries(height,kind):
 
 async def test_board_width_pin_is_not_loose():
     result=await _render(_board_payload(),(SURF_BOARD_FULL_LAYOUT_COLUMNS-1,80),'b')
-    assert not result['status_whole'] or result['tiers']['SurfSwarmLeaderboard']!='full' or result['clipped'] or any(result['hidden'].values()),result
+    assert 'SurfSwarmLeaderboard' in result['marked'], result
+    assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
 
 
 @pytest.mark.parametrize("kind", ["v3","pending","seats-unavailable","workers-unavailable","contributors-unavailable","absent","no-seat"])

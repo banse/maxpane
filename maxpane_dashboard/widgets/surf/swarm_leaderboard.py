@@ -5,7 +5,7 @@ from textual.widgets import DataTable, Static
 from textual.widgets.data_table import RowDoesNotExist
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int, fmt_float, hhmm
-from maxpane_dashboard.widgets.markup_safety import sanitize_cell
+from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import source_clock
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
@@ -19,6 +19,18 @@ _SPECS=(('rank','#',3),('seat','seat',7),('runtime','runtime',11),('devices','de
 _ALL=tuple(key for key,_,_ in _SPECS)
 _COMPACT=tuple(key for key in _ALL if key not in ('turns','hours','devices'))
 _TIGHT=('rank','seat','attempts','accepted','rate','state')
+
+class _SeatTable(DataTable):
+    """A BOARD row's first click uses the same selection message as Enter."""
+    async def _on_click(self, event):
+        event.prevent_default()  # Delegate once; Textual otherwise also calls its MRO handler.
+        meta = event.style.meta
+        row, column = meta.get("row"), meta.get("column")
+        if (isinstance(row, int) and 0 <= row < self.row_count
+                and isinstance(column, int) and 0 <= column < len(self.columns)):
+            self.move_cursor(row=row, column=column, scroll=False)
+        await super()._on_click(event)
+
 
 class SurfSwarmLeaderboard(SwarmTableBase):
     TITLE='LEADERBOARD · lifetime'
@@ -37,7 +49,8 @@ class SurfSwarmLeaderboard(SwarmTableBase):
         self._selected=None
         self._clipped_fields=set()
     def compose_body(self):
-        yield from super().compose_body()
+        for child in super().compose_body():
+            yield _SeatTable(id=child.id) if isinstance(child, DataTable) else child
         yield Static('',classes='board-clocks')
     def update_data(self,swarm_board_rows=None,swarm_seat_selected=None,
                     swarm_board_as_of_hhmm=None,swarm_workers_as_of_hhmm=None,**_kwargs):
@@ -48,6 +61,14 @@ class SurfSwarmLeaderboard(SwarmTableBase):
     def _repaint(self):
         self._clipped_fields=set()
         super()._repaint()
+
+    def _render_title(self, as_of):
+        room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
+        widen = self._widen or self._clipped
+        base = self.TITLE
+        if widen and room and rowfit.cell_len(base) + 2 + rowfit.cell_len(rowfit.WIDEN_HINT) > room:
+            base = "LEADERBOARD"
+        self.write(".panel-title", Text(rowfit.title_with_hint(base, widen, room)))
 
     def build_cells(self,item):
         token=seat_token(item.get('token_id'))
@@ -66,7 +87,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
         cells={}
         for key,_,width in _SPECS:
             cell=Text.from_markup(sanitize_cell(raw[key],width))
-            if '…' in cell.plain:
+            if rowfit.cell_len(strip_tags(flatten(raw[key]))) > width:
                 self._clipped=True
                 self._clipped_fields.add(key)
             if key=='seat': cell.style=Style(meta={'seat_token':token})

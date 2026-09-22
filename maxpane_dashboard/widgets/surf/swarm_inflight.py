@@ -9,7 +9,10 @@ ellipsis does not itself mean clipping.
 
 Notes use strip-then-escape sanitization. Existing template/objective/role/state
 cells retain their literal Text rendering contract; no markup is parsed for
-those fields. None notes render --. The data fold supplies dispatch/failure
+those fields. Template and objective deliberately avoid sanitize_cell: its
+strip_tags step would delete meaningful user text in square brackets. Rich
+Text keeps those brackets literal without interpreting them as markup.
+None notes render --. The data fold supplies dispatch/failure
 precedence and filters executing jobs; this widget performs no data fetch.
 Empty snapshots say nothing executing, unread snapshots say unavailable, and
 no row survives replacement by a later snapshot.

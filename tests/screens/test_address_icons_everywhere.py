@@ -1106,9 +1106,21 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
 async def test_surf_board_body_has_no_wallet_or_token_address_text():
     from maxpane_dashboard.screens.surf import BOARD_BODY_ID, SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS
     from tests.screens.test_surf_screen import _surf_app, _frozen_payload, _region_text
-    payload=_frozen_payload()
-    for row in payload['swarm_board_rows']:
-        row['owner']='0x'+'a'*40
+    from maxpane_dashboard.data import surf_swarm as fold
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+    contributors=swarm_capture_v3("contributors")
+    workers=swarm_capture_v3("workers")
+    contributors["contributors"][0]["wallet"]="0x"+"a"*40
+    workers["workers"][0]["wallet"]="0x"+"b"*40
+    normalized_contributors=fold.normalize_contributors(contributors)
+    normalized_workers=fold.normalize_workers(workers)
+    rows=fold.board_rows(contributors,workers)
+    assert rows and normalized_contributors and normalized_workers
+    for source_rows in (normalized_contributors["contributors"],normalized_workers["workers"],rows):
+        assert all("wallet" not in row for row in source_rows)
+        assert not any("0x" in str(value) for row in source_rows for value in row.values())
+    payload=_frozen_payload(swarm_board_rows=rows,
+        swarm_board_summary=fold.board_summary(contributors,workers),swarm_fleet=fold.fleet(workers))
     async with _surf_app(payload).run_test(size=(SURF_BOARD_FULL_LAYOUT_COLUMNS,SURF_BOARD_FULL_LAYOUT_ROWS)) as pilot:
         await pilot.app.screen._do_refresh();await pilot.press('b');await pilot.pause()
         text=_region_text(pilot.app,pilot.app.screen.query_one(f'#{BOARD_BODY_ID}'))
