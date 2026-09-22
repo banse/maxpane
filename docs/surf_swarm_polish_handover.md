@@ -858,3 +858,45 @@ After this hand-back commit, `git status --short` contains only:
 No tracked changes remain. The protected oracle fixture is still untracked and uncommitted.
 The pre-existing `.codex/` and `.venv311/` were preserved. No secrets were added. Stop here for
 the scoped re-review; no push, merge or tag was performed.
+
+## 8. Full-suite residuals — 2026-09-22 (Tier 0, test-only)
+
+The scoped re-review of `5d1b1ed..503297b` gave its verdict: **Approved**. I1–I4 and M1–M3 are
+ADDRESSED, and Minors F57–F60 are filed (cc04104). The controller then ran the full suite once
+on `cc04104`, in parallel with `-n 4 --dist loadfile` and an isolated `HOME`:
+**10,434 passed, 3 failed, 1 xfailed** (11:37).
+
+All three failures are agreement tests. This branch changed the contracts they bind but did not
+update the tests. None of the named sets in §6.1 or §7.1 included these tests. No production code
+changes in this section.
+
+1. `tests/data/test_surf_cache.py::test_newest_as_of_is_the_freshest_successful_read`
+   asserts `len(SLOTS) == 15`, but `SLOT_SWARM_ANSWERS` makes 16.
+   - Update the count.
+   - Extend the comment's slot history with one clause for the answers slot.
+   - Keep the assertion exact (`==`).
+2. `tests/screens/test_surf_screen.py::test_the_bindings_are_refresh_and_the_two_view_toggles`
+   asserts the exact `BINDINGS` key set, which lacks the approved §2.6 keys `o` and `O`.
+   - Add them to the expected set.
+   - Add one docstring sentence: `o`/`O` sort the LEADERBOARD and are not a body toggle.
+3. `tests/screens/test_surf_screen.py::test_every_list_row_in_the_fixture_matches_the_frozen_row_shape`
+   fails because `_sample_data()["swarm_skill_rows"]` (around line 1554) lacks the WP0 keys
+   `inference`, `attempts`, `accepted`, `rejected` and `pending`.
+   - Give each fixture row realistic values in the served vocabulary.
+   - One row should carry real counts and an inference word. The other should carry `None` for
+     every new key, so both the read and the unavailable paths are composited.
+   - This row-shape gap means CAPABILITY's new columns have never been composited in this file's
+     screen tests. Once the rows carry the keys, re-run the file. If a composite expectation now
+     changes, it is evidence and not noise: record in the hand-back what changed and why the new
+     output is right. Do not loosen an assertion to make it pass.
+
+**Mutation proof:** for item 3, restore one missing key and confirm the row-shape test reddens
+at that key. Items 1 and 2 are exact-equality guards and need no mutation proof.
+
+**Named set:** `tests/data/test_surf_cache.py`, `tests/screens/test_surf_screen.py`,
+`tests/widgets/test_surf_swarm_capability.py` (if present) and `-m guard`. No full suite; the
+controller runs it again once, before merge.
+
+**Hand-back:** commit with a pathspec on `feature/surf-swarm-polish`. Append §8.1 with the
+commit hash, the named-set counts, the mutation result, and any composite that changed in item 3.
+Do not push or merge. Do not commit the untracked oracle fixture.
