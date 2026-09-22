@@ -54,6 +54,7 @@ class SurfSwarmSeatNodes(SwarmTableBase):
     def update_data(self, swarm_seat_node_rows=None, swarm_seat_teammates=None,
                     swarm_seat_state=None, swarm_seat_as_of_hhmm=None, **_kwargs):
         self._state = swarm_seat_state
+        self.query_one(".swarm-teammates").display = self._state not in ("pending", "unknown_seat")
         self._teammates = swarm_seat_teammates if self._state == "ok" else None
         self.store(swarm_seat_node_rows if self._state == "ok" else None, swarm_seat_as_of_hhmm)
 

@@ -50,11 +50,17 @@ async def test_markup_node_uses_established_strip_then_escape():
     assert "visible" in text and "review" in text and "[/x]" not in text
     assert "unavailable" not in text
 
-@pytest.mark.parametrize("state,word", [("pending", "Loading..."), ("unknown_seat", "never paired"), (None,"unavailable")])
-async def test_state_footer_is_separate_from_teammates(state,word):
-    text = await _nodes(swarm_seat_state=state)
-    assert word in text and "TEAMMATES" in text
-    assert ROWS[0]["node_key"] not in text and "#" not in text
+@pytest.mark.parametrize("state,expected", [
+    ("pending", ["Loading..."]),
+    ("unknown_seat", ["never paired"]),
+    (None, ["unavailable", "TEAMMATES unavailable"]),
+    ("ok", ["unavailable", "TEAMMATES unavailable"]),
+])
+async def test_state_footer_is_separate_from_teammates(state, expected):
+    text = await _nodes(swarm_seat_state=state, swarm_seat_node_rows=None,
+                        swarm_seat_teammates=[] if state == "unknown_seat" else None)
+    lines = [" ".join(line.split()) for line in text.splitlines() if line.strip()]
+    assert lines == ["BY NODE · as of 04:06", "node roles reviewed won win chain", *expected]
 
 async def test_every_node_is_retained_in_the_scrollable_table():
     class Harness(App):

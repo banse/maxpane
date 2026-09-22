@@ -1341,8 +1341,16 @@ async def test_teammates_preserve_unavailable_versus_empty(tmp_path, collaborato
     ({}, None),
     ({"reviews": {}, "work": None}, None),
     ({"reviews": [], "work": []}, []),
-    ({"reviews": []}, []),
-    ({"work": [{"nodeKey": "work_only", "role": "implement"}]}, [
+    ({"reviews": []}, None),
+    ({"work": []}, None),
+    ({"reviews": [], "work": {}}, None),
+    ({"reviews": None, "work": []}, None),
+    ({"reviews": [{"nodeKey": "n"}]}, None),
+    ({"work": [{"nodeKey": "work_only", "role": "implement"}]}, None),
+    ({"reviews": [{"nodeKey": "n"}], "work": []}, [
+        {"node_key": "n", "roles": [], "reviewed": 1, "won": 0, "onchain": 0, "queued": 0},
+    ]),
+    ({"reviews": [], "work": [{"nodeKey": "work_only", "role": "implement"}]}, [
         {"node_key": "work_only", "roles": ["implement"], "reviewed": 0,
          "won": 1, "onchain": 0, "queued": 0},
     ]),

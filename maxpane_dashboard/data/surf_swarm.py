@@ -855,15 +855,17 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
     return rows
 
 
-def seat_node_rows(payload: object) -> list[dict[str, Any]]:
+def seat_node_rows(payload: object) -> list[dict[str, Any]] | None:
     """Nodes from reviews and won work, sorted reviewed desc, won desc, key asc.
 
     BY NODE win uses won / reviewed, since attempts are not served per node;
     the hero instead uses lifetime accepted / attempts. Work-only nodes keep
     reviewed zero. Onchain counts sent/submitted reviews carrying a tx hash.
+    Both source lists must be served; a missing list makes the rows unavailable.
     """
-    if not isinstance(payload, Mapping):
-        return []
+    if (not isinstance(payload, Mapping) or not isinstance(payload.get("reviews"), list)
+            or not isinstance(payload.get("work"), list)):
+        return None
     nodes: dict[str, dict[str, Any]] = {}
     for source in ("reviews", "work"):
         items = (_distinct_reviews(_list(payload.get(source))) if source == "reviews"

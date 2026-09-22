@@ -529,14 +529,26 @@ def test_nodes_onchain_counts_sent_and_submitted_but_not_queued():
         {"nodeKey": "[red]node", "status": "sent", "txHash": "0xa"},
         {"nodeKey": "[red]node", "status": "submitted", "txHash": "0xb"},
         {"nodeKey": "[red]node", "status": "queued", "txHash": "0xc"},
-    ]})
+    ], "work": []})
     assert rows == [{"node_key": "[red]node", "roles": [], "reviewed": 3,
                      "won": 0, "onchain": 2, "queued": 1}]
 
 
-@pytest.mark.parametrize("payload", [None, [], {}, {"reviews": "x", "work": None}])
+@pytest.mark.parametrize("payload", [
+    None, [], {}, {"reviews": "x", "work": None},
+    {"reviews": []}, {"work": []}, {"reviews": [], "work": {}},
+    {"reviews": None, "work": []},
+    {"reviews": [{"nodeKey": "n"}]}, {"work": [{"nodeKey": "n"}]},
+])
 def test_nodes_unavailable_input_has_no_rows(payload):
-    assert fold.seat_node_rows(payload) == []
+    assert fold.seat_node_rows(payload) is None
+
+
+def test_nodes_served_empty_work_means_zero_wins():
+    assert fold.seat_node_rows({"reviews": [{"nodeKey": "n"}], "work": []}) == [
+        {"node_key": "n", "roles": [], "reviewed": 1, "won": 0, "onchain": 0, "queued": 0},
+    ]
+    assert fold.seat_node_rows({"reviews": [], "work": []}) == []
 
 
 def test_teammates_strict_tokens_and_sorting():
@@ -597,7 +609,7 @@ def test_nodes_onchain_requires_a_transaction_hash():
         {"nodeKey": "n", "status": "sent"},
         {"nodeKey": "n", "status": "submitted", "txHash": ""},
         {"nodeKey": "n", "status": "sent", "txHash": 42},
-    ]})
+    ], "work": []})
     assert rows[0]["reviewed"] == 3
     assert rows[0]["onchain"] == 0
 
@@ -664,3 +676,12 @@ def test_older_review_captures_remain_unchanged(token, reviewed):
 def test_review_entries_counts_the_raw_list_even_with_non_mapping_members():
     summary = fold.seat_summary_from_seat({"reviews": [{}, "junk", None]})
     assert summary["reviewed"] == 1 and summary["review_entries"] == 3
+
+
+def test_live_accepted_at_space_and_short_offset_parse_for_every_work_row():
+    payload = swarm_seat_capture("seat_420_duplicated_reviews")
+    assert payload["work"][0]["acceptedAt"] == "2026-09-21 21:35:42.88+00"
+    rows = fold.seat_work_rows(payload)
+    assert len(rows) == 190 and all(row["accepted_ts"] is not None for row in rows)
+    assert rows[0]["accepted_ts"] == 1790026542.88
+    assert fold.seat_summary_from_seat(payload)["last_won_ts"] == 1790026542.88

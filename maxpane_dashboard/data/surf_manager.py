@@ -5845,11 +5845,7 @@ class SurfManager:
             out["swarm_seat_selected"] = dict(selected, agent_id=seat["agentId"])
         out["swarm_seat_summary"] = sw.seat_summary_from_seat(seat)
         out["swarm_seat_work_rows"] = sw.seat_work_rows(seat)
-        out["swarm_seat_node_rows"] = (
-            sw.seat_node_rows(seat)
-            if isinstance(seat.get("reviews"), list) or isinstance(seat.get("work"), list)
-            else None
-        )
+        out["swarm_seat_node_rows"] = sw.seat_node_rows(seat)
         out["swarm_seat_teammates"] = sw.seat_teammates(seat)
         return out
 
