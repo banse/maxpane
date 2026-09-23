@@ -467,6 +467,26 @@
    "captured_at": null,
    "endpoint": null,
    "note": "A PERSISTED pool4 discovery payload, as it would sit in ~/.maxpane/, hand-edited to claim 'adopted'.  The claimed hook's low 14 bits are 0x0000 and its token() answer is a stranger's ERC-20, so it fails both the flag gate and the token gate.  Those are the fixture's contents; the test that reads it names what it demonstrates.\n\nAMENDMENT A27 (2026-09-01) -- WHAT THIS FIXTURE NO LONGER SHOWS.  An earlier version of this note said 'the manager must RE-VERIFY a persisted adoption on read'.  THAT DEFENCE HAS BEEN DELETED, not weakened.  WP7 removed the persisted address from the candidate set entirely and WP3 deleted reverify_persisted, so THE CACHE NOMINATES NOTHING AND A PERSISTED ADDRESS IS NEVER ADJUDICATED -- there is no verdict to re-verify, because there is no candidate.  The reason is that the fingerprint is FORGEABLE: a 0x2840-shaped address was mined in ~16,000 tries by the security pass and in 20,141 tries -- under a second -- by WP3, and fingerprint_verdict returns 'adopted' for such an address as soon as its own contract answers real mainnet IMD to token() and zero words to the rest, four of the five getters being pure liveness checks any contract passes.  The old promise held ONLY for this fixture's 0x0000 address; against an attacker who mines one it returned 'adopted'.  PROVENANCE -- a transaction signed by the announce wallet -- IS THE ONLY UNFORGEABLE GATE, and the persisted path was the one path that skipped it.  If the self-post naming the hook ever ages out of the channel window (~64 days, S15), the fix is to read more of the channel or to re-establish provenance from the chain, NEVER to re-nominate from storage."
+  },
+  {
+   "fixture": "mainnet_flow_logs_liquidity_fee.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_flow_logs_liquidity_fee.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-23T12:34:41.135523Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "THE LIQUIDITY-FEE CASE.  Tx 0xd5dc8a2a20787b5795423680482071dfb84cb8c5a2570d19cecbc37ce8e65dc6 (block 26038050) carries three PoolManager ModifyLiquidity on the hook pool and a hook FeeCollected (logIndex 397) with NO Swap at all: the hook also takes a fee on a liquidity operation.  v0.9.0's decoder read that fee as a short Swap read and blanked POOL4 FLOW and BURN & SUPPLY for the 7,200-block window (reported 2026-09-23).  Every ordinary swap here also emits a ModifyLiquidity BETWEEN its Swap and its fee (Swap 34, ModifyLiquidity 35, FeeCollected 37), so the fee still belongs to the Swap.  This file: the HOOK's own logs."
+  },
+  {
+   "fixture": "mainnet_flow_swaps_liquidity_fee.json",
+   "synthetic": false,
+   "request_sibling": "mainnet_flow_swaps_liquidity_fee.request.json",
+   "chain": "mainnet",
+   "block_number": null,
+   "captured_at": "2026-09-23T12:34:41.135523Z",
+   "endpoint": "https://ethereum-rpc.publicnode.com",
+   "note": "THE LIQUIDITY-FEE CASE.  Tx 0xd5dc8a2a20787b5795423680482071dfb84cb8c5a2570d19cecbc37ce8e65dc6 (block 26038050) carries three PoolManager ModifyLiquidity on the hook pool and a hook FeeCollected (logIndex 397) with NO Swap at all: the hook also takes a fee on a liquidity operation.  v0.9.0's decoder read that fee as a short Swap read and blanked POOL4 FLOW and BURN & SUPPLY for the 7,200-block window (reported 2026-09-23).  Every ordinary swap here also emits a ModifyLiquidity BETWEEN its Swap and its fee (Swap 34, ModifyLiquidity 35, FeeCollected 37), so the fee still belongs to the Swap.  This file: the PoolManager's Swap and ModifyLiquidity logs for the hook pool over the same range, one filter [[Swap, ModifyLiquidity], pool_id]."
   }
  ]
 }

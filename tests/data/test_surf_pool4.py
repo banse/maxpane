@@ -995,6 +995,82 @@ def test_a_short_swap_read_is_unread_rather_than_fewer_swaps():
     assert P.decode_flow_events(swaps=[], hook_logs=hook_logs) is None
 
 
+#: The one mainnet tx whose hook fee rides a liquidity operation, no Swap.
+LIQUIDITY_FEE_TX = load("mainnet_flow_swaps_liquidity_fee")["liquidity_fee_tx"]
+
+
+def _liquidity_pair() -> tuple[list[dict], list[dict]]:
+    return (logs_of(load("mainnet_flow_swaps_liquidity_fee")),
+            logs_of(load("mainnet_flow_logs_liquidity_fee")))
+
+
+def test_a_fee_on_a_liquidity_operation_is_not_a_short_swap_read():
+    """v0.9.0 blanked FLOW and BURN & SUPPLY for a day over tx ``0xd5dc8a2a20``:
+    three PoolManager ``ModifyLiquidity`` on the pool, a hook ``FeeCollected``
+    after the first, and no ``Swap``.  The pool's own ``ModifyLiquidity``
+    before the fee is what says the Swap read is not short -- the fee is not a
+    row, and every swap in the window still is.
+    """
+    swaps, hook_logs = _liquidity_pair()
+    in_tx = [l for l in swaps if l["transactionHash"] == LIQUIDITY_FEE_TX]
+    assert in_tx and all(
+        l["topics"][0] == P.TOPIC_MODIFY_LIQUIDITY for l in in_tx
+    ), "the capture's point: a liquidity-only tx"
+    assert any(l["transactionHash"] == LIQUIDITY_FEE_TX
+               and l["topics"][0] == P.TOPIC_FEE_COLLECTED for l in hook_logs)
+
+    rows = P.decode_flow_events(swaps=swaps, hook_logs=hook_logs, limit=None)
+    assert rows is not None
+    swap_txs = {l["transactionHash"] for l in swaps
+                if l["topics"][0] == P.TOPIC_SWAP}
+    assert len(swap_txs) == 5
+    assert {r.tx_hash for r in rows} == swap_txs
+    assert LIQUIDITY_FEE_TX not in {r.tx_hash for r in rows}
+
+
+def test_a_swaps_fee_is_its_own_across_the_hooks_modify_liquidity():
+    """Every swap here emits a ``ModifyLiquidity`` BETWEEN its ``Swap`` and its
+    fee (``Swap 34, ModifyLiquidity 35, FeeCollected 37``).  The fee is still
+    the Swap's: the liquidity event is a fallback owner, never a nearer one.
+    The rows must equal the decode with every liquidity event, and the
+    liquidity-only tx, taken out.
+    """
+    swaps, hook_logs = _liquidity_pair()
+    rows = P.decode_flow_events(swaps=swaps, hook_logs=hook_logs, limit=None)
+    bare = P.decode_flow_events(
+        swaps=[l for l in swaps if l["topics"][0] == P.TOPIC_SWAP],
+        hook_logs=[l for l in hook_logs
+                   if l["transactionHash"] != LIQUIDITY_FEE_TX],
+        limit=None,
+    )
+    assert rows == bare and len(rows) == 5
+    for row in rows:
+        fee = row.fee_token_wei if row.side == "sell" else row.fee_eth_wei
+        assert fee is not None and fee > 0, row
+
+
+def test_a_liquidity_event_after_the_fee_does_not_excuse_it():
+    """Only a ``ModifyLiquidity`` BEFORE the fee in its tx makes it a liquidity
+    fee.  One after it -- or in another tx -- leaves the fee orphaned, and an
+    orphaned fee is still a short Swap read.
+    """
+    swaps, hook_logs = _liquidity_pair()
+    fee = next(l for l in hook_logs if l["transactionHash"] == LIQUIDITY_FEE_TX
+               and l["topics"][0] == P.TOPIC_FEE_COLLECTED)
+    fee_index = int(fee["logIndex"], 16)
+    later = [l for l in swaps if l["transactionHash"] != LIQUIDITY_FEE_TX
+             or int(l["logIndex"], 16) > fee_index]
+    assert len(later) < len(swaps), "a liquidity event before the fee was dropped"
+    assert P.decode_flow_events(swaps=later, hook_logs=hook_logs) is None
+
+
+def test_an_empty_swap_read_is_still_short_beside_a_liquidity_fee():
+    """The new excuse must not swallow the old guard: a read that returned
+    nothing has no ``ModifyLiquidity`` either, so its fees are orphans."""
+    _swaps, hook_logs = _liquidity_pair()
+    assert P.decode_flow_events(swaps=[], hook_logs=hook_logs) is None
+
+
 def test_the_default_cap_is_the_contracts_and_keeps_the_newest():
     capped = P.decode_flow_events(
         swaps=logs_of(load("mainnet_flow_swaps_quiet_burn")),
@@ -1434,6 +1510,10 @@ def test_the_maths_are_total_over_all_none(fn):
 #: "reuse before you build" against a boundary table written before it was
 #: considered; a second copy of ``strip0x`` here is exactly the divergence that
 #: rule exists to stop.
+#: ``surf_addresses`` (2026-09-23) holds the PoolManager's ``ModifyLiquidity``
+#: topic, which the flow decoder needs to tell a fee on a liquidity operation
+#: from a short Swap read; it imports nothing, and re-declaring the topic here
+#: would be the second copy the same rule forbids.
 #:
 #: Every one of them is re-scanned below, transitively, so the allowance
 #: carries its own proof rather than trusting a name.
@@ -1442,6 +1522,7 @@ _ALLOWED_DATA_MODULES = frozenset({
     "maxpane_dashboard.data.surf_v4",
     "maxpane_dashboard.data.surf_models",
     "maxpane_dashboard.data.evm_abi",
+    "maxpane_dashboard.data.surf_addresses",
 })
 
 #: What purity means here.  ``time`` and ``datetime`` are on it because an
@@ -1499,7 +1580,7 @@ def test_the_allowed_modules_are_themselves_pure_transitively():
     """The allowance carries its own proof.
 
     A name check alone would be weaker than the ban it relaxes: the moment one
-    of the four grows an ``httpx`` import, ``surf_pool4`` has a transitive path
+    of them grows an ``httpx`` import, ``surf_pool4`` has a transitive path
     to the network and the check above stays green.  This one follows every
     ``maxpane_dashboard.*`` name out of an allowed module and scans that one
     too, to a fixed point.
@@ -1606,9 +1687,11 @@ def test_every_public_name_is_exported():
     # ``surf_models``'s own names and belong to that module's surface.
     # ``POOL4_FLOW_LIMIT`` joined on 2026-09-14: the flow decoder caps its rows
     # at the contract's own number rather than restating it.
+    # ``TOPIC_MODIFY_LIQUIDITY`` joined on 2026-09-23 and is ``surf_addresses``'.
     reexported = {"POOL4_DISCOVERY_STATES", "POOL4_FLOW_SIDES", "POOL4_NETWORKS",
                   "POOL4_DISCOVERY_SOURCES",
-                  "POOL4_COUNTER_STATES", "POOL4_FLOW_LIMIT"}
+                  "POOL4_COUNTER_STATES", "POOL4_FLOW_LIMIT",
+                  "TOPIC_MODIFY_LIQUIDITY"}
     missing = public - set(P.__all__) - {"WEI"} - reexported
     assert not missing, f"public but unexported: {sorted(missing)}"
 

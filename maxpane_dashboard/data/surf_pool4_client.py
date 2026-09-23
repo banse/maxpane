@@ -1610,14 +1610,18 @@ class Pool4Client(OwnedHttpClient):
         *,
         network: str,
     ) -> list[dict] | None:
-        """The PoolManager's ``Swap`` logs for ONE pool, raw, or ``None``.
+        """The PoolManager's ``Swap``/``ModifyLiquidity`` logs for ONE pool, or ``None``.
 
         The row source for POOL4 FLOW (2026-09-14).  The hook's own logs
         cannot supply it: ``Swap`` is emitted by the PoolManager, and what the
         hook emits beside a swap depends on the burn state -- with headroom
         under the cap a swap leaves nothing but a bare ``FeeCollected``, which
-        names neither a side nor a size.  Filtered ``[TOPIC_SWAP, pool_id]``,
-        so it is this one pool's swaps and nothing else the singleton handles.
+        names neither a side nor a size.  Filtered ``[[TOPIC_SWAP,
+        TOPIC_MODIFY_LIQUIDITY], pool_id]``, so it is this one pool's events and
+        nothing else the singleton handles.  The ``ModifyLiquidity`` half
+        (2026-09-23): the hook also takes a fee on a liquidity operation, and
+        the decoder needs that pool's ``ModifyLiquidity`` to tell such a fee
+        from a short Swap read.  One filter, so no extra request.
 
         **Same pool, same paging, same classification** as
         :meth:`fetch_flow_logs`: both go through :meth:`_fetch_logs`, so the
@@ -1637,7 +1641,7 @@ class Pool4Client(OwnedHttpClient):
             return None
         return await self._fetch_logs(
             pool_manager, from_block, to_block, network=network,
-            topics=[P.TOPIC_SWAP, "0x" + body.lower()],
+            topics=[[P.TOPIC_SWAP, P.TOPIC_MODIFY_LIQUIDITY], "0x" + body.lower()],
             label="fetch_swap_logs",
         )
 
@@ -1648,7 +1652,7 @@ class Pool4Client(OwnedHttpClient):
         to_block: int,
         *,
         network: str,
-        topics: list[str] | None = None,
+        topics: list[str | list[str]] | None = None,
         label: str,
     ) -> list[dict] | None:
         """The one log-sweep loop: budgeted window, bounded halving, ``None``.
@@ -1698,7 +1702,7 @@ class Pool4Client(OwnedHttpClient):
         from_block: int,
         to_block: int,
         window: int,
-        topics: list[str] | None = None,
+        topics: list[str | list[str]] | None = None,
     ) -> list[dict]:
         """Page ``[from_block, to_block]`` in *window*-sized chunks.
 
@@ -1746,7 +1750,7 @@ class Pool4Client(OwnedHttpClient):
         pool_manager: str,
         pool_id: str,
     ) -> list[Pool4FlowEvent] | None:
-        """Both reads -- the pool's ``Swap`` logs and the hook's -- decoded.
+        """Both reads -- the pool's ``Swap``/``ModifyLiquidity`` logs and the hook's -- decoded.
 
         One row per swap, joined to the hook's fee and burn legs, by
         :func:`~surf_pool4.decode_flow_events`.  Every row this returns, uncapped.

@@ -62,6 +62,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from maxpane_dashboard.data.evm_abi import strip0x
 from maxpane_dashboard.data.keccak import keccak256, keccak256_text
+from maxpane_dashboard.data.surf_addresses import TOPIC_MODIFY_LIQUIDITY
 from maxpane_dashboard.data.surf_models import (
     POOL4_COUNTER_STATES,
     POOL4_DISCOVERY_SOURCES,
@@ -1697,6 +1698,17 @@ def decode_flow_events(
     transaction is simply not a row; it still counts in
     :func:`unsettled_legs`.
 
+    **So is a fee on a liquidity operation** (2026-09-23).  The hook also
+    collects on the pool's own ``ModifyLiquidity``: mainnet tx
+    ``0xd5dc8a2a20`` (``mainnet_flow_swaps_liquidity_fee``) carries three
+    ``ModifyLiquidity`` and a ``FeeCollected`` with no ``Swap`` at all, and the
+    rule above blanked FLOW and BURN & SUPPLY for a day over it.  *swaps* is
+    therefore the pool's ``Swap`` **and** ``ModifyLiquidity`` read, and a fee
+    with no ``Swap`` before it but a ``ModifyLiquidity`` before it is not a row
+    and not a short read.  It is a fallback only: every ordinary swap also
+    emits a ``ModifyLiquidity`` between its ``Swap`` and its fee, and that fee
+    still belongs to the ``Swap``.
+
     *limit* is :data:`POOL4_FLOW_LIMIT` by default; ``None`` returns every row,
     for callers that audit a window rather than paint one.
     """
@@ -1707,6 +1719,12 @@ def decode_flow_events(
          if isinstance(l, Mapping) and _topic0_of(l) == TOPIC_SWAP),
         key=_log_key,
     )
+    liquidity_by_tx: dict[str, list[tuple[int, int]]] = {}
+    for l in swaps:
+        if isinstance(l, Mapping) and _topic0_of(l) == TOPIC_MODIFY_LIQUIDITY:
+            liquidity_by_tx.setdefault(
+                str(l.get("transactionHash") or ""), []
+            ).append(_log_key(l))
     ordered = sorted(
         (l for l in hook_logs if isinstance(l, Mapping)), key=_log_key
     )
@@ -1729,8 +1747,13 @@ def decode_flow_events(
             else:
                 break
         if owner is None:
-            if _topic0_of(log) == TOPIC_FEE_COLLECTED:
+            if _topic0_of(log) == TOPIC_FEE_COLLECTED and not any(
+                k < key
+                for k in liquidity_by_tx.get(str(log.get("transactionHash") or ""), ())
+            ):
                 # The hook took a fee on a swap this Swap read does not have.
+                # A fee after the pool's own ModifyLiquidity with no Swap
+                # before it is a fee on a liquidity operation: not a row.
                 return None
             continue
         legs.setdefault(_log_key(owner), []).append(log)

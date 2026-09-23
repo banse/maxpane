@@ -1304,8 +1304,14 @@ async def test_a_quiet_window_is_empty_and_a_dead_pool_is_none():
 # --- the PoolManager Swap read (2026-09-14) --------------------------------
 
 
+#: ``Swap`` or ``ModifyLiquidity``, one pool (2026-09-23): the decoder needs the
+#: pool's liquidity operations to tell a fee on one from a short Swap read.
+SWAP_FILTER_TOPICS = [[P.TOPIC_SWAP, P.TOPIC_MODIFY_LIQUIDITY], POOL_ID.lower()]
+
+
 async def test_the_swap_read_asks_the_pool_manager_for_one_pools_swaps():
-    """``[TOPIC_SWAP, pool_id]`` on the PoolManager, through the LOG pool.
+    """``[[TOPIC_SWAP, TOPIC_MODIFY_LIQUIDITY], pool_id]`` on the PoolManager,
+    through the LOG pool.
 
     And the hook read's filter is unchanged -- no ``topics`` key -- because the
     two share one sweep loop and a topic leaking into the hook's filter would
@@ -1326,8 +1332,25 @@ async def test_the_swap_read_asks_the_pool_manager_for_one_pools_swaps():
     swap_filters = [f for _u, f in filters if f["address"] == POOL_MANAGER]
     hook_filters = [f for _u, f in filters if f["address"] == HOOK]
     assert swap_filters and hook_filters
-    assert all(f["topics"] == [P.TOPIC_SWAP, POOL_ID.lower()] for f in swap_filters)
+    assert all(f["topics"] == SWAP_FILTER_TOPICS for f in swap_filters)
     assert all("topics" not in f for f in hook_filters)
+
+
+async def test_flow_events_survive_a_fee_on_a_liquidity_operation():
+    """End to end on the v0.9.0 capture: the client serves the pool's Swap and
+    ModifyLiquidity read to the decoder, and the liquidity-only fee in
+    ``0xd5dc8a2a20`` costs no rows rather than the whole panel."""
+    transport = RecordingTransport(flow_and_swap_handler(
+        "mainnet_flow_logs_liquidity_fee", "mainnet_flow_swaps_liquidity_fee"))
+    client = _client_on(transport)
+    rows = await client.fetch_flow_events(
+        HOOK, 26_037_950, 26_038_150, network=SEPOLIA,
+        pool_manager=POOL_MANAGER, pool_id=POOL_ID)
+    assert rows is not None and len(rows) == 5
+    swap_filters = [p["params"][0] for (_u, _m, p) in transport.requests
+                    if p["params"][0]["address"] == POOL_MANAGER]
+    assert swap_filters and all(
+        f["topics"] == SWAP_FILTER_TOPICS for f in swap_filters)
 
 
 async def test_the_swap_read_pages_on_the_hook_reads_halving_ladder():
@@ -1338,7 +1361,7 @@ async def test_the_swap_read_pages_on_the_hook_reads_halving_ladder():
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         flt = payload["params"][0]
-        assert flt["topics"] == [P.TOPIC_SWAP, POOL_ID.lower()]
+        assert flt["topics"] == SWAP_FILTER_TOPICS
         span = int(flt["toBlock"], 16) - int(flt["fromBlock"], 16) + 1
         spans.append(span)
         if span > cap:

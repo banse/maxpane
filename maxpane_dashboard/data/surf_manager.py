@@ -3158,7 +3158,7 @@ class SurfManager:
     async def _pool4_logs(
         self, hook_addr: str, head_block: Any, network: str, hook: Any = None
     ) -> tuple[Any, int | None, int | None, Any]:
-        """The hook's logs, and its pool's ``Swap`` logs, over one window.
+        """The hook's logs, and its pool's ``Swap``/``ModifyLiquidity`` logs, over one window.
 
         The window is the trailing :data:`POOL4_LOG_WINDOW_BLOCKS`, and both
         reads cover **exactly** it: the flow decoder joins them per swap, and a
@@ -3176,7 +3176,8 @@ class SurfManager:
         folded into a running total at all.
 
         ``swaps`` is the PoolManager ``Swap`` read (2026-09-14), POOL4 FLOW's
-        row source. It needs the hook round's own ``poolId()`` and
+        row source, with the pool's ``ModifyLiquidity`` in the same filter
+        since 2026-09-23. It needs the hook round's own ``poolId()`` and
         ``poolManager()``, so it is ``None`` -- not ``[]`` -- when that round
         did not name them. **It is one more log sweep per pool4 tick**: the
         7,200-block window pages at 2,400 blocks, so three more
