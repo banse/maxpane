@@ -312,9 +312,11 @@ The answer cell distinguishes read, `not read`, `unavailable`, `not served` and 
 Model/took/tok render only for successful matching reads (`read`/`no_reply`); missing values and
 other read states use `—` for those metadata cells. Failed/queued rows cannot retain stale
 metadata. This model is actual submission usage, independently of worker-advertised models.
-`tok` uses `usage.outputTokens`, strictly nonnegative integers, through shared `fmt_compact`
-(`1.5K`, `22.0K`). Exact cleaned Claude/GPT model ids shorten by rule in RECORD and FLEET;
-FLEET keeps the effort word. Unknown model ids remain cleaned text, clipped by their caller.
+`tok` uses `usage.outputTokens`, strictly nonnegative integers: plain integers below 1,000,
+then shared `fmt_compact` (`1.5K`, `22.0K`), carrying 999,500–999,999 to `1.0M`.
+Exact cleaned Claude/GPT model ids shorten by rule in RECORD and FLEET; FLEET keeps the effort
+word only for a nonempty cleaned model. A tag-only model shows `—` without effort. Unknown
+model ids remain cleaned text, clipped by their caller.
 
 The detached seat tier reads at most four unique submission jobs per cycle over RECORD's first
 40 rows; several hashes from one job share one GET. Validate canonical UUIDs before paths;

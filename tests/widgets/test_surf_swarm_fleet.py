@@ -144,3 +144,10 @@ async def test_polish_paused_state_and_numbers_have_composited_styles(paused,col
         count_x=lines[token_y].index(str(SUMMARY['tokens_per_completed_job'])[0],lines[token_y].index('tokens/job')+10)
         assert pilot.app.screen.get_style_at(count_x,token_y).bold
         if paused:assert '#420 until' in '\n'.join(lines)
+
+
+async def test_tag_only_model_uses_empty_dash_without_effort():
+    text = await render(dict(FLEET, models=[dict(model='[/x][$success]', effort='high', count=2)]))
+    model_line = next(line.strip() for line in text.splitlines() if line.strip().startswith('model '))
+    assert model_line == 'model      — 2'
+    assert 'high' not in model_line and 'none' not in model_line

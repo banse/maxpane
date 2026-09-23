@@ -577,3 +577,19 @@ async def test_red_prefix_alone_pushes_answer_past_width_and_lights_widen():
     row['panel_state']='outvoted'
     after='\n'.join(await _record(size,swarm_seat_work_rows=[row]))
     assert 'panel 4571' in after and '…' in after and '‹' in after
+
+
+@pytest.mark.parametrize('tokens,shown', [
+    (0, '0'), (1, '1'), (812, '812'), (999, '999'), (1000, '1.0K'),
+    (1534, '1.5K'), (22000, '22.0K'), (999499, '999.5K'),
+    (999500, '1.0M'), (999999, '1.0M'), (1234567, '1.2M'),
+])
+async def test_token_counts_fit_six_cells_without_decimal_integers_or_unit_overflow(tokens, shown):
+    from rich.cells import cell_len
+    row = dict(NEWEST, answer_state='read', answer='Done.', output_tokens=tokens)
+    lines = await _record((220, 12), swarm_seat_work_rows=[row])
+    header = _row_with(lines, 'when')
+    line = _row_with(lines, _job(row))
+    rendered = line[header.index('tok'):header.index('answer')].strip()
+    assert rendered == shown
+    assert cell_len(rendered) <= 6

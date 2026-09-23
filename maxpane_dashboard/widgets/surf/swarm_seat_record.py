@@ -243,7 +243,8 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         elif key == "output_tokens":
             if type(value) is not int or value < 0:
                 return EMDASH
-            value = fmt_compact(value)
+            value = fmt_int(value) if value < 1000 else (
+                "1.0M" if 999_500 <= value < 1_000_000 else fmt_compact(value))
             if value == DASH:
                 return EMDASH
         elif key == "took_s":

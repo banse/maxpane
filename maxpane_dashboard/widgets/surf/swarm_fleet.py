@@ -89,8 +89,9 @@ class SurfSwarmFleet(SignalsPanelBase):
         for row in rows:
             if isinstance(row, dict):
                 model = row.get('model')
-                name = short_model(model) or 'none'
-                if model is not None and row.get('effort') is not None:
+                cleaned = short_model(model)
+                name = 'none' if model is None else cleaned or '—'
+                if cleaned and row.get('effort') is not None:
                     name += ' ' + strip_tags(flatten(row['effort']))
                 parts.append(self._item(name, row.get('count')))
         keep = len(parts)
