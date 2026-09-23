@@ -353,7 +353,7 @@ def test_site_rows_newest_updated_first(sites):
         "bytes": 2445908, "status": "named",
         "tx_hash": "0x9d46eec7e6f2cad4ef760022b3edda30cbd85761530934fc3926c40902a25986",
         "block_number": 26021387, "job_id": "115a2caa-323b-411a-bc39-e69977e85e34",
-        "superseded_by": None, "failure": None,
+        "superseded_by": None,
     }
     assert len(stamps) == len(rows)
 

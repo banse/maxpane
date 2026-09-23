@@ -33,8 +33,9 @@ Rows
 Only a site that is a site shows (owner, 2026-09-23): a row replaced by a
 newer build (``superseded_by`` set, or ``status`` ``superseded``) and a row
 with no ENS name (a queued or failed build that never got one -- the feed
-held two, 88 attempts each, "no static export") are left out. An empty list
-after that is the panel's ``No data``, a real negative.
+held two, 88 attempts each, "no static export") are left out. An empty feed is the panel's ``No data``; a feed whose
+every row was left out reads ``No current site`` (F68) -- both real
+negatives, but different ones.
 
 Cells
 -----
@@ -81,12 +82,12 @@ __all__ = [
 
 #: A site label: 13 is the widest captured (``site-7018907b``).
 _LABEL_COLS = 13
-#: The label cell: sized for ``<label> → <label>``, two labels and a
-#: three-cell arrow, when a superseded row still showed. Superseded rows left
-#: the panel on 2026-09-23 (owner), so no row renders the arrow any more; the
-#: width is kept because narrowing it moves the SWARM body's width tiers,
-#: which the owner has not asked for (F67).
-_LABEL_CELL_COLS = _LABEL_COLS + 3 + _LABEL_COLS                       # 29
+#: The label cell: one label. It was 29 (``<label> → <label>``) while a
+#: superseded row showed its successor; those rows left the panel on
+#: 2026-09-23 (owner), and F67 gave the 16 cells back -- SITES' tiers moved
+#: 116/108/87 -> 100/92/72 (``screens/surf.py`` SWARM ``#:`` block); the body
+#: pin did not (CAPABILITY binds it).
+_LABEL_CELL_COLS = _LABEL_COLS                                          # 13
 #: The ENS suffix every captured name carries.
 _ENS_SUFFIX = ".site.identitymd.eth"
 #: ``ens``: ``<label>.site.identitymd.eth`` -- 33 at the widest captured
@@ -114,13 +115,13 @@ _ALL = tuple(key for key, _l, _w in _SPECS)
 _COMPACT = tuple(key for key in _ALL if key != "size")
 _TIGHT = tuple(key for key in _COMPACT if key != "cid")
 
-#: ``full``: all five columns -- 111 cells.
-FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)                      # 111
+#: ``full``: all five columns -- 95 cells.
+FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)                      # 95
 #: ``compact``: ``size`` shed (the cheapest column; the CID still identifies
-#: the pin) -- 103.
-COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)  # 103
-#: ``tight``: ``cid`` shed too; the ENS name and the tx stay -- 85.
-TIGHT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _TIGHT)      # 85
+#: the pin) -- 87.
+COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)  # 87
+#: ``tight``: ``cid`` shed too; the ENS name and the tx stay -- 69.
+TIGHT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _TIGHT)      # 69
 
 #: Colour looked up on the **raw** status word; ``named`` is the corpus's
 #: own live state (6/6 rows) and is green beside the brief's ``published``/
@@ -190,6 +191,10 @@ class SurfSwarmSites(SwarmTableBase):
 
     LOADING_ROW = (LOADING, "", "", "", "")
     EMPTY_ROW = ("No data", "", "", "", "")
+    #: ``/sites`` answered with rows and every one was left out (F68): a
+    #: different fact from an empty feed. Not ``live``: the panel never
+    #: claims reachability.
+    ALL_HIDDEN_ROW = ("No current site", "", "", "", "")
 
     def update_data(
         self,
@@ -198,8 +203,14 @@ class SurfSwarmSites(SwarmTableBase):
         **_kwargs,
     ) -> None:
         """Refresh from the manager's flat dict (``SWARM_WIDGET_SIGNATURES``)."""
+        # Set per poll on the instance, so the base paints whichever word
+        # this poll's empty list means.
+        self.EMPTY_ROW = type(self).EMPTY_ROW
         if isinstance(swarm_site_rows, list):
-            swarm_site_rows = [row for row in swarm_site_rows if _is_current_site(row)]
+            shown = [row for row in swarm_site_rows if _is_current_site(row)]
+            if swarm_site_rows and not shown:
+                self.EMPTY_ROW = self.ALL_HIDDEN_ROW
+            swarm_site_rows = shown
         self.store(swarm_site_rows, swarm_scores_as_of_hhmm)
 
     def build_cells(self, item: dict) -> dict[str, str | Text]:

@@ -983,22 +983,36 @@ work and the stored-safety predicate in step with the cleaner.
 
 ## F64 — F65 — AGENT owner batch review Minors (2026-09-23)
 
-- **F64 — CONTRIBUTORS floors its hours.** `swarm_fleet.py` writes `wall_clock_ms // 3,600,000`,
+- **F64 — CLOSED 2026-09-23 (`docs/decisions.md`).** Was: **CONTRIBUTORS floors its hours.** `swarm_fleet.py` writes `wall_clock_ms // 3,600,000`,
   so 59 minutes reads `0 h` and 5.9 h reads `5 h`. Round, or give a sub-hour form.
-- **F65 — a failed RECORD row paints an unreadable answer red.** `swarm_seat_record.py` repaints
+- **F65 — CLOSED 2026-09-23 (`docs/decisions.md`).** Was: **a failed RECORD row paints an unreadable answer red.** `swarm_seat_record.py` repaints
   the whole answer cell red on `failed`, so a yellow `unavailable` (could not read) takes the
   failed colour; the unread states could keep their own style.
-- **F66 — whole-thousands node counts can read equal or overflow the unit.** `swarm_node_cards._whole`
+- **F66 — CLOSED 2026-09-23 (`docs/decisions.md`).** Was: **whole-thousands node counts can read equal or overflow the unit.** `swarm_node_cards._whole`
   rounds 4,600 of 5,400 to `5K of 5K` (the rate line below stays true) and 999,600 to `1000K`
   rather than `1M`. Reached only below the AGENT pin (127-128 and 130 on the stress payload).
 
 ## F67 — SITES owner batch residual (2026-09-23)
 
-- **F67 — SITES' label column is wider than anything it can now show.** `_LABEL_CELL_COLS` (29)
+- **F67 — CLOSED 2026-09-23 (`docs/decisions.md`).** Was: **SITES' label column is wider than anything it can now show.** `_LABEL_CELL_COLS` (29)
   was sized for `<label> → <label>`; superseded rows no longer show, so the widest label is the
   13-cell `site-7018907b`. Narrowing it frees 16 cells for the other columns but moves the SWARM
-  body's width tiers (`_S_THRESHOLDS`), so it waits for the owner.- **F68 — an all-hidden SITES list reads `No data`.** When `/sites` returns rows but every one is
+  body's width tiers (`_S_THRESHOLDS`), so it waits for the owner.
+- **F68 — CLOSED 2026-09-23 (`docs/decisions.md`).** Was: **an all-hidden SITES list reads `No data`.** When `/sites` returns rows but every one is
   superseded or nameless, the panel cannot be told from an empty feed; "no live site" would be
   exact. Owner's call on the wording.
-- **F69 — `swarm_site_rows` still carries `superseded_by` and `failure`.** Neither renders any more
+- **F69 — CLOSED 2026-09-23 (`docs/decisions.md`).** Was: **`swarm_site_rows` still carries `superseded_by` and `failure`.** Neither renders any more
   (only the SITES filter reads `superseded_by`); prune with the contract if it is next touched.
+
+## F70 — follow-ups batch residual (2026-09-23)
+
+- **F70 — the node cards' middle form is the shared `fmt_compact`, which prints `1000.0K` for
+  999,960 and `500.0` for 500.** A card reaches it only when `fmt_int` does not fit, so the pair
+  `500 of 50,011` can read `500.0 of 50.0K` below the AGENT pin. Fixing it touches the shared
+  `widgets/sparkline_common.fmt_compact` (Tier 2) or adds a node-card-local form. Minor.
+- **F71 — `_whole` carries K into M only.** `swarm_node_cards._whole(999_999_999)` reads `1000M`
+  (review 2026-09-23, probed); the same class as F66 one unit up. Nothing realistic reaches it.
+  Minor; do it with F70.
+- **F72 — SITES' two empty words sit in different columns.** `No current site` (15 cells) no
+  longer fits the 13-cell label column since F67, so `_degraded_row` lays it under `ens`, while
+  `No data` stays under `label`. The documented base rule, cosmetic only. Minor.

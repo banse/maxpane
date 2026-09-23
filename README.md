@@ -157,7 +157,7 @@ explorer, because the corpus mixes mainnet and Sepolia in one list. SITES, the E
 runs full-width beneath: a site's name resolves a content hash rather than a wallet, so it carries
 no copy icon, but a click on it opens the site itself (`mswap.site.identitymd.eth` opens
 `https://mswap.site.identitymd.eth.limo/`). A build replaced by a newer one and a build that never
-got a name are left out. The hero swaps too, the second Surfboard view (after `4`) to do so, for
+got a name are left out; when that leaves nothing, the panel says `No current site`, not `No data`. The hero swaps too, the second Surfboard view (after `4`) to do so, for
 AGENTS (online/enrolled), WORKING, ACCEPTED 24h, QUEUE, BREAKER and SERVICES; a zero is a zero and
 only a failed read says `unavailable`.
 
@@ -182,7 +182,8 @@ The node row shows ROLES (reviews by role, full names), one card each for the th
 the acceptance percentage, the node's roles shortened (`impl`, `rev`) and its `chain` count of
 sent and submitted feedback transactions — then OTHERS, the same sums over every other node; a
 card with no attempts, nothing accepted and no chain count, OTHERS included, shows `—`, and a
-count too wide for its card is shortened (`10.0K`, then `10K`) rather than cut. Then BOARD
+count too wide for its card is shortened (`10.0K`, then `10K`) rather than cut, never so far that
+two different counts read alike or the wrong way round (`4.6K of 5K`, not `5K of 5K`). Then BOARD
 (accepted of attempts, rejected and pending on the contributors leaderboard). RANK and BOARD stay
 visible when the seats read fails; a good contributors read without the seat says `not listed`,
 an unread source says `unavailable`. Long runtime, daemon, node, role and ENS names are cut with
@@ -191,7 +192,7 @@ RECORD runs below the cards, with no blank row under its title: every attempt wi
 time, job (the first eight characters of its id, linked to its page on `explorer.imd.fun`), node
 (`oracle`, `review`, `build`), role, state, the model used, duration and the first sentence of
 the seat's own answer — in red when the attempt failed. Queued, unavailable, not served and
-empty replies remain distinct. Links to local files are reduced to their labels, and absolute
+empty replies remain distinct, and keep their own colours on a failed attempt. Links to local files are reduced to their labels, and absolute
 local paths to filenames before display. A review that passed and work that won a job remain separate counts.
 SEAT names `#N never paired` for a seat that has never paired; a failed read says `unavailable`.
 `esc` backs out of either body, one-way.
@@ -203,7 +204,7 @@ FLEET metadata keep their own source clocks. One failed endpoint leaves the othe
 visible. FLEET groups metadata under aligned labels, including an **advertised** model mix,
 with whole entries followed by exact `+N` omissions. Its CONTRIBUTORS group has a separate
 clock, a blank row, then devices and seats, accepted of attempts, rejected and pending, turns
-and hours of wall clock, input and output tokens, and the served tokens-per-completed-job
+and wall-clock hours (rounded; minutes under half an hour), input and output tokens, and the served tokens-per-completed-job
 metric; a pair too wide for its line keeps its first value and counts the rest as `+N`. The
 LEADERBOARD table sits one cell in from its title. Worker advertisement can differ from
 the model that actually ran a RECORD submission. BOARD contains no wallet or token ranking.

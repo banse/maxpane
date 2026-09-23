@@ -36,6 +36,8 @@ from maxpane_dashboard.widgets.surf.swarm_node_cards import (
     NODE_TITLES,
     ROLE_SHORT,
     SurfSwarmNodeCards,
+    _reading,
+    _whole,
 )
 from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v5, swarm_seat_capture
 
@@ -396,3 +398,36 @@ async def test_node_counts_go_compact_only_when_the_full_form_does_not_fit():
     assert "5.0K of 50.0K" in mid["others"], "one decimal first, whole thousands only if needed"
     wide = await _nodes(swarm_seat_node_rows=[big], size=(200, 30))
     assert "9,970 of 99,970" in wide["others"] and "chain 45,527" in wide["others"]
+
+
+async def test_whole_thousands_never_read_two_different_counts_as_one():
+    """F66: at the width where ``100K of 100K`` would fit, 99,600 of 100,400
+    keeps the smaller count's decimal instead of reading as a full rate."""
+    pair = _row("manifest", attempts=100_400, accepted=99_600)
+    narrow = await _nodes(swarm_seat_node_rows=[pair], size=(110, 30))
+    assert "99.6K of 100K" in narrow["others"] and "100K of 100K" not in narrow["others"]
+    assert "…" not in narrow["others"]
+    near = _row("manifest", attempts=100_400, accepted=100_040)
+    narrow = await _nodes(swarm_seat_node_rows=[near], size=(114, 30))
+    assert "100.0K of 100K" not in narrow["others"], "``100.0K`` and ``100K`` read alike"
+    assert "100K of 100.4K" in narrow["others"] and "…" not in narrow["others"]
+
+
+@pytest.mark.parametrize("accepted,attempts", [(5_460, 5_480), (5_500, 5_520), (4_600, 5_400)])
+@pytest.mark.parametrize("width", [100, 105, 110])
+async def test_a_shortened_pair_never_reads_the_wrong_way_round(accepted, attempts, width):
+    """Review 2026-09-23: 5,460 of 5,480 read ``5.5K of 5K`` -- a rate over 100 %."""
+    card = await _nodes(swarm_seat_node_rows=[_row("manifest", attempts=attempts,
+                                                   accepted=accepted)], size=(width, 30))
+    line = _lines(card["others"])[1]
+    shown = [part.strip() for part in line.split(" of ")]
+    assert len(shown) == 2 and "…" not in line, line
+    low, high = (_reading(part) for part in shown)
+    assert low < high, line
+
+
+@pytest.mark.parametrize("value,shown", [(999, "999"), (1_000, "1K"), (999_499, "999K"),
+                                         (999_600, "1M"), (1_000_000, "1M"), (2_600_000, "3M")])
+def test_whole_carries_a_rounded_thousand_thousands_into_millions(value, shown):
+    """F66: 999,600 read ``1000K``."""
+    assert _whole(value) == shown

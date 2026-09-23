@@ -8,7 +8,7 @@ Timestamps (submitted, else accepted) include month/day across midnight.
 The job cell links a canonical job id to its IMD explorer page; the node
 cell is the node's short word (:data:`_swarm_seat.NODE_TITLES`). Launch and
 submission hash are not columns (owner, 2026-09-22: the answer gets the room);
-a failed attempt's answer is red. Answer takes the remaining width and
+a failed attempt's read answer is red. Answer takes the remaining width and
 lights ``‹ widen`` when cut. The title has no blank row under it (owner,
 2026-09-22, this panel only). The scrollable table caps at forty rows and
 explicitly counts older rows; the seat state hides stale rows before rendering.
@@ -212,8 +212,9 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         node_key = item.get("node_key")
         title = NODE_TITLES.get(node_key) if isinstance(node_key, str) else None
         answer = self._answer_cell(item)
-        if state == "failed":
-            # Plain red, not red over the not-read words' dim: dim would halve it.
+        if state == "failed" and item.get("answer_state") == "read":
+            # Only a read answer takes the failed colour: the unread words keep
+            # their own dim / yellow, which say why there is no answer (F65).
             answer = Text(answer.plain, style="red")
         return {
             "when": mmdd_hhmm(item.get("submitted_ts") if item.get("submitted_ts") is not None

@@ -42,7 +42,7 @@ def _site(**over) -> dict:
     row = dict(
         label="roll", ens_name="roll.site.identitymd.eth", cid=CID, bytes=2_445_908,
         status="named", tx_hash=TX, block_number=26_021_387,
-        job_id="115a2caa-323b-411a-bc39-e69977e85e34", superseded_by=None, failure=None,
+        job_id="115a2caa-323b-411a-bc39-e69977e85e34", superseded_by=None,
     )
     row.update(over)
     return row
@@ -181,19 +181,33 @@ async def test_replaced_and_nameless_rows_are_left_out():
             _site(label=None, ens_name="work.site.identitymd.eth",
                   superseded_by="c828b3f1-6dfd-41ac-bc6c-f5ab0ccdf67d"),
             _site(label="old", status="superseded"),
-            _site(label=None, ens_name=None, status="queued", tx_hash=None,
-                  failure="no static export: nothing named index.html"),
+            _site(label=None, ens_name=None, status="queued", tx_hash=None),
             _site(label="cmns", ens_name="cmns.site.identitymd.eth")]
     text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
     assert len(lines) == 2 and "work" in lines[0] and "cmns" in lines[1], lines
-    assert "→" not in text and "static export" not in text and "old" not in text, text
+    assert "→" not in text and "old" not in text, text
 
 
-async def test_a_list_that_filters_to_nothing_is_no_data_not_unavailable():
+async def test_a_list_that_filters_to_nothing_says_so_not_no_data():
+    """F68: rows arrived and all were left out -- not an empty feed."""
     rows = [_site(ens_name=None, status="queued"), _site(superseded_by="x")]
     text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
-    assert "No data" in text and "unavailable" not in text.lower(), text
+    assert "No current site" in text and "No data" not in text, text
+    assert "unavailable" not in text.lower(), text
+
+
+async def test_an_empty_feed_after_an_all_hidden_one_is_no_data_again():
+    """The all-hidden word is this poll's, never carried into the next."""
+    async with _Probe().run_test(size=SIZE) as pilot:
+        widget = pilot.app.query_one(SurfSwarmSites)
+        widget.update_data(swarm_site_rows=[_site(ens_name=None)], swarm_scores_as_of_hhmm=AS_OF)
+        await pilot.pause()
+        widget.update_data(swarm_site_rows=[], swarm_scores_as_of_hhmm=AS_OF)
+        await pilot.pause()
+        text = "\n".join("".join(seg.text for seg in strip)
+                         for strip in pilot.app.screen._compositor.render_strips())
+    assert "No data" in text and "No current site" not in text, text
 
 
 async def test_the_label_is_coloured_on_the_raw_status_and_escaped():
@@ -221,7 +235,7 @@ async def test_the_label_is_coloured_on_the_raw_status_and_escaped():
 
 async def test_the_panel_claims_no_reachability():
     """PRD §3: SITES shows what was published, never whether it answers."""
-    rows = [_site(), _site(label="gone", status="failed", ens_name=None, failure="pin failed"),
+    rows = [_site(), _site(label="gone", status="failed", ens_name=None),
             _site(label="old", status="superseded", superseded_by="roll")]
     text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
     assert re.search(r"\b(up|down|online|offline)\b", text, re.I) is None, text

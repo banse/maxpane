@@ -216,7 +216,7 @@ async def test_a_job_id_that_is_not_a_canonical_uuid_is_shown_but_never_linked()
     assert any("day1abc…" in line for line in painted)
 
 
-async def test_a_failed_attempt_writes_its_answer_in_red():
+async def test_a_failed_attempt_writes_its_read_answer_in_red():
     class _A(App):
         def compose(self):
             yield SurfSwarmSeatRecord()
@@ -225,7 +225,8 @@ async def test_a_failed_attempt_writes_its_answer_in_red():
                  answer="wrote outside the task"),
             dict(NEWEST, job_id="0000bbbb", work_status="rejected", answer_state="read",
                  answer="check passes with ok"),
-            dict(NEWEST, job_id="0000cccc", work_status="failed", answer_state="not_read")]
+            dict(NEWEST, job_id="0000cccc", work_status="failed", answer_state="not_read"),
+            dict(NEWEST, job_id="0000dddd", work_status="failed", answer_state="garbled")]
     async with _A().run_test(size=SIZE) as pilot:
         widget = pilot.app.query_one(SurfSwarmSeatRecord)
         widget.update_data(swarm_seat_work_rows=rows, swarm_seat_state="ok",
@@ -241,7 +242,9 @@ async def test_a_failed_attempt_writes_its_answer_in_red():
             return pilot.app.screen.get_style_at(painted[y].index(word), y).color.get_truecolor(theme)
 
         assert colour("wrote outside") == red
-        assert colour("not read") == red, "a failed row's answer word is red whatever it says"
+        assert colour("not read") != red, "F65: an unread word keeps its own style"
+        assert colour("unavailable") == Color.parse("yellow").get_truecolor(theme), \
+            "F65: a could-not-read answer stays yellow on a failed row"
         assert colour("check passes") != red, "only failed, never rejected"
 
 

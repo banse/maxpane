@@ -112,7 +112,8 @@ LAUNCHES_HIDES_NO_COLUMN_FROM = 138
 
 #: Measured tier edges the width sweeps straddle (+-1 each).
 _S_THRESHOLDS = (
-    87, 93, 108, 116,  # SITES selected columns/tiers; THROUGHPUT fixed lines
+    72, 92, 100,  # SITES hidden columns / compact / full (F67, 2026-09-23)
+    93,           # THROUGHPUT fixed lines
     132, 138, 141,    # CAPABILITY compact/full; LAUNCHES selected columns
     177, 222,        # IN FLIGHT compact/full (notes may still clip)
     180, 205,        # LAUNCHES compact/full
@@ -664,6 +665,19 @@ async def test_launches_hides_no_column_from_the_measured_width() -> None:
     for width in (SURF_SWARM_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS):
         r = await _render(_worst_swarm_payload(), (width, _COLUMN_SWEEP_HEIGHT), "s")
         assert r["hidden"]["SurfSwarmLaunches"] == 0, (width, r["hidden"])
+
+
+@pytest.mark.parametrize("width,tier,hidden", [
+    (71, "tight", True), (72, "tight", False), (91, "tight", False),
+    (92, "compact", False), (99, "compact", False), (100, "full", False),
+])
+async def test_sites_tiers_are_the_measured_onsets(width, tier, hidden) -> None:
+    """F67 (2026-09-23): the label column is one label wide, so SITES is
+    ``full`` from 100, ``compact`` 92-99 and hides no column from 72 (the
+    ``screens/surf.py`` SWARM block; they were 116 / 108 / 87 at 29 cells)."""
+    r = await _render(_capture_payload(), (width, _COLUMN_SWEEP_HEIGHT), "s")
+    assert r["tiers"]["SurfSwarmSites"] == tier, (width, r["tiers"]["SurfSwarmSites"])
+    assert bool(r["hidden"]["SurfSwarmSites"]) is hidden, (width, r["hidden"])
 
 
 def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:

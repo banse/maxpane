@@ -1583,8 +1583,10 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: THROUGHPUT 44 under its ``max-width: 46`` (fr rounding) -- 135 of 140,
 #: the rest is rounding, not slack to spend. THROUGHPUT paints its widest
 #: fixed line whole from 93 outer columns and never marks or clips above it.
-#: SITES is ``full`` from 116, ``compact`` 108-115, ``tight`` at or under
-#: 107 with hidden columns under 87.
+#: SITES is ``full`` from 100, ``compact`` 92-99, ``tight`` at or under
+#: 91 with hidden columns under 72 (re-swept 2026-09-23 for F67, the label
+#: column 29 -> 13; every width 60-159 on capture and worst case, which
+#: agreed; the body pin did not move -- CAPABILITY binds it, SITES never did).
 #:
 #: THE TWO NAMED EXCEPTIONS, on THE FIELD's own precedent (its ``‹`` cleared
 #: at 170 while the pin stood at 116): IN FLIGHT (``4fr``) is ``tight``

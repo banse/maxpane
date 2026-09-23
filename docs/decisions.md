@@ -4,6 +4,12 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-23** — Follow-ups F64–F69 closed. CONTRIBUTORS rounds wall-clock hours, `N min`
+  under half an hour. A failed RECORD row paints only a read answer red. A node card never reads
+  two different counts as one or the wrong way round (`4.6K of 5K`, never `5.5K of 5K`), and `999,600` reads `1M`. SITES' label column went
+  29 → 13, so its tiers moved from 116/108/87 to 100/92/72; the SWARM pin (141, bound by CAPABILITY)
+  did not move. An all-hidden `/sites` reads `No current site`, not `live`, because the panel never
+  claims reachability. `failure` left `swarm_site_rows`; `superseded_by` stays, for the filter.
 - **2026-09-23** — SITES' ens column opens the site: `<label>.site.identitymd.eth` links to
   `https://<label>.site.identitymd.eth.limo/` through a new allowlisted `SITES` explorer (kind
   `site`; the value must be one lower-case LDH label under `site.identitymd.eth`, and only that

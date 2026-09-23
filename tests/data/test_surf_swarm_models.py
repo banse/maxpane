@@ -92,7 +92,7 @@ SWARM_V2_ROW_SHAPES = {
     ),
     "swarm_site_rows": (
         "label", "ens_name", "cid", "bytes", "status", "tx_hash",
-        "block_number", "job_id", "superseded_by", "failure",
+        "block_number", "job_id", "superseded_by",
     ),
     "swarm_seat_node_rows": (
         "node_key", "roles", "reviewed", "attempts", "accepted", "onchain", "queued",

@@ -213,7 +213,8 @@ order (ORACLE / REVIEW / BUILD, hoisted to `_swarm_seat.py`), titled whether or 
 worked it; an unknown key never titles a card and is summed into OTHERS. A card with no
 attempts, nothing accepted and no chain count -- absent node or zeros -- reads a dim `—`, OTHERS
 too (owner, 2026-09-22); a count that does not fit its card steps down `9,970` → `10.0K` → `10K`,
-never cut; a pre-status payload serves no per-node attempts, so
+never cut; a form that reads two different counts as one number, or the wrong way round, is skipped (`4.6K of 5K`, the
+smaller keeping its decimal, not `5K of 5K`), and `10K` carries into `1M` (F66); a pre-status payload serves no per-node attempts, so
 `attempts` is `None` and the card shows the accepted count with no rate. ACCEPTED (`/seats`) and
 BOARD (`/contributors`) differ by the endpoints' own definitions — never reconcile them. `chain` counts
 reviews with a transaction in `sent` or `submitted`; a node card shortens its roles
@@ -245,7 +246,7 @@ cell is the id's first eight characters, linked to `explorer.imd.fun/jobs/<uuid>
 UUID (`address.job_text` on `_fmt.JOB_EXPLORER`, the allowlisted `explorer.IMD`; anything else
 plain); the node cell is the key's lower-cased `NODE_TITLES` word (an unknown key fitted to
 `NODE_COLS` with `…`). Launch and submission hash are not columns since 2026-09-22 (owner: the
-answer gets the room); a failed attempt's answer is red. RECORD alone has no blank row under
+answer gets the room); a failed attempt's *read* answer is red; the unread words keep their own dim/yellow (F65). RECORD alone has no blank row under
 its title (its own `DEFAULT_CSS`, owner 2026-09-22). A null `daemonVersion`
 displays `not reported`; missing daemon and counter fields remain unavailable. Review-accepted and work that won a
 job are different counts. A 404 `unknown_seat` is a real negative: row 1's SEAT box names `IDMD #N` / `never paired`
@@ -270,7 +271,9 @@ onchain address or transaction hash uses `widgets/address` with its row's `chain
 `EXPLORER` by the decision above. SITES renders content hashes only and is a named exemption in
 the icon sweep; its ens column links a `<label>.site.identitymd.eth` name to
 `https://<label>.site.identitymd.eth.limo/` through `address.site_text` (explorer `SITES`, kind
-`site`; owner 2026-09-23), and it leaves out superseded rows and rows with no ENS name. RECORD's job id is not an address: it links the IMD explorer (not a chain)
+`site`; owner 2026-09-23), and it leaves out superseded rows and rows with no ENS name -- a feed that leaves nothing reads
+`No current site`, an empty feed `No data` (F68). `swarm_site_rows` keeps `superseded_by` for that
+filter only; `failure` left the contract (F69), and the label column is one label wide (F67). RECORD's job id is not an address: it links the IMD explorer (not a chain)
 through `address.job_text`, with no icon; TEAMMATES tokens pass through no address helper. The `parked_reason` cell in LAUNCHES clips to its column with a
 visible `…` (accepted, `docs/decisions.md`).
 
@@ -338,7 +341,7 @@ The build reply from work index 125 is outside that displayed-window measurement
 
 Contributors and workers retain independent values and `as of` markers. FLEET's
 CONTRIBUTORS group (owner, 2026-09-22) has a blank row under its sub-header, then devices ·
-seats, accepted of attempts, rejected · pending, turns · wall-clock hours and input · output
+seats, accepted of attempts, rejected · pending, turns · wall-clock hours (rounded; `N min` under half an hour, F64) and input · output
 tokens (compact), then tokens/job; each line's first value unread is the whole line
 `unavailable`, a missing second value is omitted, and a pair too wide keeps its first value
 plus `+N`. The input/output sums are `None` when any row does not serve them. LEADERBOARD's

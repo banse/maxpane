@@ -1946,7 +1946,8 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
     ),
     "swarm_site_rows": (
         "label", "ens_name", "cid", "bytes", "status", "tx_hash",
-        "block_number", "job_id", "superseded_by", "failure",
+        "block_number", "job_id",
+        "superseded_by",  # str | None; read only by SITES' filter (a replaced build hides)
     ),
     # Nodes from reviews[] OR work[]; a work-only node has reviewed == 0.
     # Node cards' rate is accepted / attempts, the summary's rate per node.

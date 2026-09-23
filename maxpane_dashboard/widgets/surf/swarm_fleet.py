@@ -20,6 +20,7 @@ _NAMES = ('runtime', 'model', 'model-note', 'daemon', 'os', 'profile', 'slots',
           'heartbeat', None, 'paused', 'paused-detail', None, 'contributors', None,
           'devices', 'accepted', 'rejected', 'turns', 'tokens-io', 'tokens')
 _MS_PER_HOUR = 3_600_000
+_MS_PER_MINUTE = 60_000
 _MIXES = {'runtime': 'runtimes', 'daemon': 'daemons', 'os': 'os',
           'profile': 'profiles', 'slots': 'concurrency'}
 
@@ -108,6 +109,14 @@ class SurfSwarmFleet(SignalsPanelBase):
         out = Text(fmt_compact(value) if compact else fmt_int(value), style='bold')
         return out.append(' ' + word, style='dim') if word else out
 
+    @classmethod
+    def _wall_clock(cls, ms):
+        """Wall-clock time to the nearest hour; under half an hour, whole minutes
+        (a floor read 59 minutes as ``0 h`` and 5.9 h as ``5 h``, F64)."""
+        if ms < _MS_PER_HOUR // 2:
+            return cls._count((ms + _MS_PER_MINUTE // 2) // _MS_PER_MINUTE, 'min')
+        return cls._count((ms + _MS_PER_HOUR // 2) // _MS_PER_HOUR, 'h')
+
     def _contributors(self, name, summary):
         """One /contributors line; its first value unread is the whole line unread."""
         summary = summary if isinstance(summary, dict) else {}
@@ -122,7 +131,7 @@ class SurfSwarmFleet(SignalsPanelBase):
                                            get('pending') is not None and self._count(get('pending'), 'pending')]),
             'turns': (get('turns'), [self._count(get('turns')),
                                      get('wall_clock_ms') is not None
-                                     and self._count(get('wall_clock_ms') // _MS_PER_HOUR, 'h')]),
+                                     and self._wall_clock(get('wall_clock_ms'))]),
             'tokens-io': (get('input_tokens'), [self._count(get('input_tokens'), 'in', compact=True),
                                                 get('output_tokens') is not None
                                                 and self._count(get('output_tokens'), 'out', compact=True)]),

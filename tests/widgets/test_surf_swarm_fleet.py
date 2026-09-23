@@ -81,9 +81,18 @@ async def test_contributors_show_devices_outcomes_turns_and_tokens():
         f"devices    {s['devices']:,} · {s['seats']:,} seats",
         f"accepted   {s['accepted']:,} of {s['attempts']:,}",
         f"rejected   {s['rejected']:,} · {s['pending']:,} pending",
-        f"turns      {s['turns']:,} · {s['wall_clock_ms']//3_600_000:,} h",
+        f"turns      {s['turns']:,} · {(s['wall_clock_ms']+1_800_000)//3_600_000:,} h",
         f"tokens     {s['input_tokens']/1e6:.1f}M in · {s['output_tokens']/1e6:.1f}M out",
     ]
+
+
+@pytest.mark.parametrize('ms,shown',[(59*60_000,'1 h'),(int(5.9*3_600_000),'6 h'),
+    (int(5.4*3_600_000),'5 h'),(29*60_000+29_000,'29 min'),(0,'0 min'),(30*60_000,'1 h')])
+async def test_contributor_hours_round_and_under_half_an_hour_read_minutes(ms,shown):
+    """F64: 59 minutes floored to ``0 h`` and 5.9 h to ``5 h``."""
+    lines=(await render(summary=dict(SUMMARY,wall_clock_ms=ms))).splitlines()
+    turns=next(l.strip() for l in lines if l.strip().startswith('turns '))
+    assert turns==f"turns      {SUMMARY['turns']:,} · {shown}"
 
 
 async def test_an_unread_contributor_value_is_unavailable_never_zero():

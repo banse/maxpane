@@ -407,7 +407,6 @@ def site_rows(sites: object) -> list[dict[str, Any]]:
             "block_number": _int(site.get("blockNumber")),
             "job_id": _str(site.get("jobId")),
             "superseded_by": _str(site.get("supersededBy")),
-            "failure": _str(site.get("failure")),
             "_updated_ts": _ts(site.get("updatedAt")),
         })
     _newest_first(rows, "_updated_ts")
