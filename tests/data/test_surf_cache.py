@@ -227,7 +227,9 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # the AGENT body's one seat (`SLOT_SWARM_SEAT`, the /seats plan WP2),
     # then BOARD's separate contributors/workers slots, plus the selected
     # seat's extracted submission answers (SLOT_SWARM_ANSWERS, polish WP1).
-    assert len(SLOTS) == 16
+    # Oracle facts (SLOT_SWARM_ORACLE) and complete request history
+    # (SLOT_SWARM_ORACLE_INDEX) are also independent last-good slots.
+    assert len(SLOTS) == 18
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

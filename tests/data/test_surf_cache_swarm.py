@@ -53,7 +53,7 @@ def test_the_jobs_seen_slot_is_registered_so_it_restores():
     ``job_id -> entry`` map both swarm tiers append to."""
     assert SLOT_SWARM_JOBS_SEEN == "swarm_jobs_seen"
     assert SLOT_SWARM_JOBS_SEEN in SLOTS
-    assert len(SLOTS) == 17
+    assert len(SLOTS) == 18
 
 
 def test_a_seen_map_round_trips_through_save_and_load(tmp_path):
