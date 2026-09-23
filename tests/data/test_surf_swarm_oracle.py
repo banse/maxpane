@@ -7,10 +7,11 @@ import pytest
 
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data.surf_models import SWARM_ORACLE_CACHE_FIELDS, SWARM_ORACLE_NODE_KEYS
+from tests.surf_swarm_fixtures import SWARM_ORACLE_DETAIL_IDS, swarm_oracle_details
 
 ROOT = Path(__file__).parents[1] / 'fixtures/surf/swarm/oracle'
 SEAT = json.loads((ROOT / 'seat_420.json').read_bytes())
-DETAILS = [json.loads(p.read_bytes()) for p in sorted(ROOT.glob('request_*.json'))]
+DETAILS = swarm_oracle_details()
 ROWS = sw.seat_work_rows(SEAT)
 
 
@@ -188,3 +189,12 @@ def test_bool_answer_comes_from_agreement_not_numeric_figure(answer):
         assert point(detail, row)['answer_bool'] is None
         bad_point = dict(value, answer_bool=bad)
         assert sw.coerce_oracle_slot({row['job_id']: {row['submission_hash']: bad_point}}) == {}
+
+
+def test_committed_details_are_exactly_the_listed_ids_and_the_manifest_agrees():
+    on_disk = {p.stem[len('request_'):] for p in ROOT.glob('request_*.json')}
+    assert on_disk == set(SWARM_ORACLE_DETAIL_IDS)
+    files = json.loads((ROOT / 'MANIFEST.json').read_bytes())['files']
+    listed = {name[len('request_'):] for name, entry in files.items()
+              if name.startswith('request_') and entry.get('committed', True)}
+    assert listed == on_disk

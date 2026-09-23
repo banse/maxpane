@@ -20,6 +20,10 @@ HOST = 'https://api.imd.fun'
 
 
 def summarize():
+    manifest = json.loads((ROOT / 'MANIFEST.json').read_text())
+    if any(entry.get('committed') is False for entry in manifest['files'].values()):
+        raise SystemExit('--summarize needs the full corpus; the committed set is slimmed '
+                         '(MANIFEST "slimmed"). Re-run the capture first.')
     seat = json.loads((ROOT / 'seat_420.json').read_bytes())
     work = [row for row in seat['work'] if row['nodeKey'] == 'oracle_assess']
     details = [json.loads(p.read_bytes()) for p in ROOT.glob('request_*.json')]
