@@ -3,7 +3,7 @@
 GET only, a two-host pool, no key of any kind.  Every fetch returns ``None``
 rather than raising: a failed read is not a zero and not an empty list.
 
-The host serves no filters, no caching validators and no pagination, so the
+The /jobs route serves no filters, no caching validators and no pagination, so the
 job list is all-or-nothing; the manager's counter check, not this client,
 decides how often it is paid for.  No path ever carries a ``?``: parameters
 on ``/jobs`` are ignored upstream and would imply a page that does not exist
@@ -14,6 +14,8 @@ and returns ``None`` -- so the contract above holds at every public getter.
 :meth:`SwarmClient.fetch_seat` formats an ``int`` (``{token:d}``) and refuses
 anything else before any request. ``submissions`` validates a canonical UUID
 before interpolating a job id; any 404 is confined to that job.
+Oracle reads use /oracle/requests and /oracle/requests/{uuid}; only the list
+getter supplies validated limit/before query parameters separately from the path.
 
 The seat getter distinguishes a real negative from a failed read:
 ``fetch_seat`` returns a fresh copy of :data:`UNKNOWN_SEAT` for the host's
@@ -25,7 +27,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+import re
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
@@ -115,7 +118,8 @@ def _is_unknown_seat(body: object) -> bool:
 
 class SwarmClient(OwnedHttpClient):
     """Reads ``/health``, ``/jobs``, ``/jobs/{id}``, ``/launches``,
-    ``/seats/{token}``, ``/sites``, ``/skills``, ``/version``."""
+    ``/seats/{token}``, ``/sites``, ``/skills``, ``/version``,
+    ``/oracle/requests``, ``/oracle/requests/{uuid}``."""
 
     def __init__(
         self,
@@ -152,6 +156,7 @@ class SwarmClient(OwnedHttpClient):
         path: str,
         *,
         raw: bool = False,
+        params: Mapping[str, str] | None = None,
         answers_404: Callable[[Any], bool] | None = None,
     ) -> Any:
         """One GET, tried once per host in pool order.
@@ -170,7 +175,7 @@ class SwarmClient(OwnedHttpClient):
         await self._sleep(self._delay)
         for attempt, host in enumerate(self._hosts):
             try:
-                response = await self._client.get(host + path)
+                response = await self._client.get(host + path, params=params)
             except (httpx.HTTPError, OSError) as exc:
                 logger.debug("swarm GET %s%s failed: %s", host, path, exc)
                 continue
@@ -203,6 +208,26 @@ class SwarmClient(OwnedHttpClient):
     async def _dict(self, path: str) -> dict[str, Any] | None:
         body = await self._get(path)
         return body if isinstance(body, dict) else None
+
+    async def fetch_oracle_requests(self, *, limit: int, before: str | None = None) -> list[dict] | None:
+        """Oracle pagination alone accepts query parameters; [] is a real empty."""
+        if type(limit) is not int or not 1 <= limit <= 500:
+            return None
+        if before is not None and (not isinstance(before, str) or re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z", before) is None):
+            return None
+        params = {"limit": str(limit)}
+        if before is not None:
+            params["before"] = before
+        body = await self._get("/oracle/requests", params=params)
+        rows = body.get("requests") if isinstance(body, dict) else None
+        return rows if isinstance(rows, list) else None
+
+    async def fetch_oracle_request(self, request_id: str) -> dict | None:
+        """A removed route or unknown request is an unavailable read, never absence."""
+        if parse_job_id(request_id) is None:
+            return None
+        return await self._dict("/oracle/requests/" + request_id)
 
     async def fetch_health(self) -> dict[str, Any] | None:
         return await self._dict("/health")

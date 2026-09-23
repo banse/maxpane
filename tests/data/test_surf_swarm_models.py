@@ -103,6 +103,8 @@ SWARM_V2_ROW_SHAPES = {
         "job_id", "node_key", "role", "job_state", "work_status", "objective", "accepted_ts",
         "submitted_ts",
         "launch", "submission_hash", "answer", "answer_state", "model", "took_s",
+        "output_tokens", "panel_state", "panel_agreed", "panel_members", "panel_size",
+        "panel_figure", "panel_answer_type",
     ),
 }
 
@@ -333,9 +335,9 @@ def test_polish_answer_and_advertised_model_contracts_are_frozen():
     assert models.SWARM_ANSWER_STATES == (
         "read", "not_read", "unavailable", "not_served", "no_reply",
     )
-    assert models.SWARM_ANSWER_FIELDS == ("answer", "model", "took_s", "state")
+    assert models.SWARM_ANSWER_FIELDS == ("answer", "model", "took_s", "output_tokens", "state")
     assert models.SWARM_ANSWER_CACHE_FIELDS == (
-        "answer", "model", "took_s", "state", "read_ts", "terminal",
+        "answer", "model", "took_s", "output_tokens", "state", "read_ts", "terminal",
     )
     assert models.SWARM_FLEET_MODEL_FIELDS == ("model", "effort", "count")
 
@@ -370,3 +372,21 @@ def test_polish_unenriched_work_rows_explicitly_wait_for_answer_read():
         assert (row["answer"], row["answer_state"], row["model"], row["took_s"]) == (
             None, "not_read", None, None,
         )
+
+
+def test_oracle_contract_and_row_defaults():
+    from maxpane_dashboard.data.surf_swarm import seat_work_rows
+    assert models.SWARM_PANEL_STATES == (
+        "agreed", "outvoted", "no_quorum_in", "no_quorum_out", "assessing", "blocked",
+        "off_panel", "not_oracle", "not_read", "unavailable",
+    )
+    assert models.SWARM_ORACLE_NODE_KEYS == ("oracle_assess",)
+    assert models.SWARM_ORACLE_CACHE_FIELDS == (
+        "request_id", "status", "in_cluster", "on_panel", "agreed", "members",
+        "panel_size", "figure", "answer_type", "read_ts", "terminal",
+    )
+    for node, state in [("oracle_assess", "not_read"), ("implement", "not_oracle")]:
+        row = seat_work_rows({"work": [{"nodeKey": node}]})[0]
+        assert set(row) == set(models.SURF_ROW_KEYS["swarm_seat_work_rows"])
+        assert row["panel_state"] == state
+        assert row["output_tokens"] is None

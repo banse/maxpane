@@ -650,3 +650,48 @@ async def test_board_reads_use_canned_keyless_rotating_paced_transport(route):
 async def test_board_fetch_rejects_non_dict_body(route, body):
     async with _client(lambda request: httpx.Response(200, json=body)) as client:
         assert await getattr(client, f'fetch_{route}')() is None
+
+
+async def test_oracle_query_and_detail_use_exact_urls_with_rotation():
+    job = '00000000-0000-4000-8000-000000000001'
+    calls = []
+    before = '2026-09-23T20:00:00.123Z'
+    query = 'limit=200&before=2026-09-23T20%3A00%3A00.123Z'
+    def handler(request):
+        calls.append(str(request.url))
+        assert str(request.url) in (
+            f'https://one.test/oracle/requests?{query}', f'https://two.test/oracle/requests?{query}',
+            f'https://one.test/oracle/requests/{job}',
+        )
+        assert request.method == 'GET'
+        if request.url.host == 'one.test' and request.url.path == '/oracle/requests':
+            return httpx.Response(503)
+        return httpx.Response(200, json={'requests': []} if request.url.query else {'id': job})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client = SwarmClient(http_client=http, hosts=('https://one.test', 'https://two.test'), inter_call_delay=0)
+        assert await client.fetch_oracle_requests(limit=200, before=before) == []
+        assert await client.fetch_oracle_request(job) == {'id': job}
+        assert len(calls) == 3
+
+
+@pytest.mark.parametrize('limit,before', [(True,None),(0,None),(501,None),('200',None),(200,''),(200,'yesterday'),(200,True),(200,'2026-09-23T20:00:00Z\n')])
+async def test_oracle_invalid_parameters_make_no_request(limit,before):
+    def handler(request):
+        raise AssertionError(f'unexpected request: {request.url}')
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client=SwarmClient(http_client=http,inter_call_delay=0)
+        assert await client.fetch_oracle_requests(limit=limit,before=before) is None
+        assert await client.fetch_oracle_request('../bad') is None
+
+
+@pytest.mark.parametrize('status,body,expected', [(200,{'requests':[]},[]),(200,{},None),(400,{'error':'invalid_id'},None),(404,{},None)])
+async def test_oracle_empty_is_distinct_from_failed_read(status,body,expected):
+    job='00000000-0000-4000-8000-000000000001'
+    def handler(request):
+        assert request.url.path in ('/oracle/requests','/oracle/requests/'+job)
+        return httpx.Response(status,json=body)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        client=SwarmClient(http_client=http,inter_call_delay=0)
+        assert await client.fetch_oracle_requests(limit=500) == expected
+        if status != 200:
+            assert await client.fetch_oracle_request(job) is None

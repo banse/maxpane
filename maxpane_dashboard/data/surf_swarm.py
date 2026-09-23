@@ -29,6 +29,7 @@ from maxpane_dashboard.data.surf_models import (
     SURF_ROW_KEYS, SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
     SWARM_SEAT_SUMMARY_FIELDS, SWARM_BOARD_SUMMARY_FIELDS, SWARM_FLEET_FIELDS,
     SWARM_SEAT_LIVE_FIELDS, SWARM_SEAT_CONTRIB_FIELDS,
+    SWARM_ORACLE_NODE_KEYS, SWARM_ORACLE_CACHE_FIELDS,
     SWARM_ANSWER_FIELDS, SWARM_ANSWER_CACHE_FIELDS, SWARM_ANSWER_STATES, SWARM_ANSWER_ROW_CAP,
 )
 # Shared constant and pure validator: the client owns the normalised 404 and
@@ -878,6 +879,10 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
             "launch": _str(work.get("launch")),
             "submission_hash": submission_hash,
             "answer": None, "answer_state": "not_read", "model": None, "took_s": None,
+            "output_tokens": None,
+            "panel_state": "not_read" if work.get("nodeKey") in SWARM_ORACLE_NODE_KEYS else "not_oracle",
+            "panel_agreed": None, "panel_members": None, "panel_size": None,
+            "panel_figure": None, "panel_answer_type": None,
         }
         rows.append({key: row[key] for key in keys})
     return rows
@@ -1585,6 +1590,8 @@ def submission_answer(payload: object, job_id: object, submission_hash: object, 
     usage = item.get('usage')
     if isinstance(usage, Mapping):
         result['model'] = _str(usage.get('model'))
+        tokens = usage.get('outputTokens')
+        result['output_tokens'] = tokens if type(tokens) is int and tokens >= 0 else None
         milliseconds = _served_token(usage.get('wallClockMs'))
         result['took_s'] = _seconds(milliseconds) if milliseconds is not None else None
     return result
@@ -1612,6 +1619,7 @@ def coerce_answers_slot(payload: object) -> dict | None:
                     or not isinstance(point['terminal'], bool)
                     or not _nonnegative_finite(point['read_ts'])
                     or not _optional_string(point['model'])
+                    or point['output_tokens'] is not None and not (type(point['output_tokens']) is int and point['output_tokens'] >= 0)
                     or point['took_s'] is not None and not _nonnegative_finite(point['took_s'])):
                 continue
             if state == 'read':
@@ -1619,7 +1627,7 @@ def coerce_answers_slot(payload: object) -> dict | None:
                     continue
             elif answer is not None:
                 continue
-            if state in ('not_served', 'unavailable') and (point['model'] is not None or point['took_s'] is not None):
+            if state in ('not_served', 'unavailable') and (point['model'] is not None or point['took_s'] is not None or point['output_tokens'] is not None):
                 continue
             clean[key] = {field: point[field] for field in SWARM_ANSWER_CACHE_FIELDS}
             if state == 'unavailable':
@@ -1654,7 +1662,7 @@ def enrich_work_rows(rows: list[dict], answers: object) -> list[dict]:
             item['answer_state'] = 'unavailable'
         elif point := valid.get(job, {}).get(key):
             item.update(answer=point['answer'], answer_state=point['state'],
-                        model=point['model'], took_s=point['took_s'])
+                        model=point['model'], took_s=point['took_s'], output_tokens=point['output_tokens'])
         result.append(item)
     return result
 

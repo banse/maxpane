@@ -138,7 +138,7 @@ The list response is never persisted. The list is re-walked each cycle, but only
 `oracle_point(detail, job_id, submission_hash, *, now_ts) -> dict | None`. It returns `None` for anything it cannot
 trust, and the manager stores that as a `status: None` point in the `unavailable` state (terminal False).
 
-- The detail must be a Mapping with `jobId == job_id`, `status` a str, `members` a list, and
+- The detail must be a Mapping with `jobId == job_id`, `status` a str, `members` a list (owner-approved exception: null means an empty list for `blocked`), and
   `agreement` either a Mapping or null (**assessing** and **blocked** panels may carry no agreement; capture one of each
   and code from the fixture, not from this sentence).
 - Match on `submissionHash` only, **never on `wallet`** and never on `jobId` alone. More than one member with the
@@ -158,11 +158,11 @@ trust, and the manager stores that as a `status: None` point in the `unavailable
 | node not in `SWARM_ORACLE_NODE_KEYS` | `not_oracle` |
 | no point | `not_read` |
 | point status `None` | `unavailable` |
+| `blocked` (checked before final off-panel) | `blocked` |
 | `off_panel` point, or status final and `on_panel` False | `off_panel` |
 | `attested`, in cluster / not in cluster | `agreed` / `outvoted` |
 | `disagreed`, in / not in | `no_quorum_in` / `no_quorum_out` |
 | `assessing` | `assessing` (whatever `on_panel` says) |
-| `blocked` | `blocked` |
 | any other status string | `unavailable` (the vocabulary is open. Log it once at debug) |
 
 `coerce_oracle_slot` validates each point on its own, like `coerce_answers_slot`: canonical UUID keys, 64-hex
@@ -251,7 +251,7 @@ Assert against **composited** output (`render_strips()`), including styles for e
 Cover: every `panel_state`; a `None` count in each counted state; the red-row prefix on a wei
 figure longer than 2^53 (the exact digits must appear); `tok` for `None`, `0`, `1534`, `22000` and a bool;
 tier membership for full, compact and tight; and `role` absent from every tier. Hostile `panel_figure` and
-`model` (`[/x]`) must render as literal text.
+`model` (`[/x]`) must render as cleaned, markup-safe text; a value consisting only of removed tags uses the normal empty-value display (owner-approved correction).
 
 ---
 

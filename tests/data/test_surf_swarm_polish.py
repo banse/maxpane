@@ -39,7 +39,8 @@ def test_captured_answer_uses_own_exact_hash_and_same_usage():
         payload, item = selected(name)
         answer = sw.submission_answer(payload, payload['jobId'], item['hash'], 420)
         assert answer == dict(answer=sw.answer_sentence(item['summary']), state='read',
-                              model=item['usage']['model'], took_s=item['usage']['wallClockMs'] / 1000)
+                              model=item['usage']['model'], took_s=item['usage']['wallClockMs'] / 1000,
+                              output_tokens=item['usage'].get('outputTokens'))
         assert '/home/' not in answer['answer'] and '/Users/' not in answer['answer']
         assert len(answer['answer']) > 0
 
@@ -95,7 +96,7 @@ def test_answer_cache_rejects_invalid_keys_states_and_retains_no_raw_payload():
     for bad_job, bad_hash in [('bad', key), (job, key[:8]), (job, True)]:
         assert sw.coerce_answers_slot({bad_job: {bad_hash: value}}) == {}
     assert sw.coerce_answers_slot({job: {key: dict(value, state='not_served')}}) == {}
-    assert set(value) == {'answer', 'model', 'took_s', 'state', 'read_ts', 'terminal'}
+    assert set(value) == {'answer', 'model', 'took_s', 'output_tokens', 'state', 'read_ts', 'terminal'}
 
 
 def test_answer_pruning_counts_points_not_jobs_and_refuses_old_or_future_entries():
@@ -344,3 +345,23 @@ def test_fix_i3_404_sentinel_cannot_bypass_identity_validation(invalid):
     payload,item=selected();values=[payload['jobId'],item['hash'],420]
     values[{'job':0,'hash':1,'token':2}[invalid]]=True
     assert sw.submission_answer(SUBMISSIONS_NOT_FOUND,*values)['state']=='unavailable'
+
+
+@pytest.mark.parametrize('value', [None, 0, 1534, 22000, True, -1, 1.5, '12'])
+def test_output_tokens_are_strict_nonnegative_ints(value):
+    payload, item = selected()
+    payload['submissions'] = [item]
+    item['usage']['outputTokens'] = value
+    answer = sw.submission_answer(payload, payload['jobId'], item['hash'], 420)
+    expected = value if type(value) is int and value >= 0 else None
+    assert answer['output_tokens'] == expected
+    job, key, point_value = point()
+    point_value['output_tokens'] = value
+    valid = sw.coerce_answers_slot({job: {key: point_value}})
+    assert bool(valid) == (value is None or type(value) is int and value >= 0)
+
+
+def test_legacy_answer_points_are_dropped_for_reread():
+    job, key, value = point()
+    value.pop('output_tokens')
+    assert sw.coerce_answers_slot({job: {key: value}}) == {}

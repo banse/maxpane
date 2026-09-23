@@ -1596,7 +1596,7 @@ SWARM_INFLIGHT_NOTE_KINDS: tuple[str, ...] = ("dispatch", "failure")
 SWARM_ANSWER_STATES: tuple[str, ...] = (
     "read", "not_read", "unavailable", "not_served", "no_reply",
 )
-SWARM_ANSWER_FIELDS: tuple[str, ...] = ("answer", "model", "took_s", "state")
+SWARM_ANSWER_FIELDS: tuple[str, ...] = ("answer", "model", "took_s", "output_tokens", "state")
 
 #: JSON slot: canonical UUID job id -> exact 64-hex submission hash -> entry.
 #: Only extracted fields and finite nonnegative read_ts / strict bool terminal
@@ -1605,12 +1605,28 @@ SWARM_ANSWER_FIELDS: tuple[str, ...] = ("answer", "model", "took_s", "state")
 #: an invalid point alone. Definitive terminal answers and not_served negatives
 #: stay frozen; unavailable transport/parse failures retry after normal backoff.
 SWARM_ANSWER_CACHE_FIELDS: tuple[str, ...] = (
-    "answer", "model", "took_s", "state", "read_ts", "terminal",
+    "answer", "model", "took_s", "output_tokens", "state", "read_ts", "terminal",
 )
 
 #: Fetch only the newest displayed RECORD window. Bound by an agreement test to
 #: SurfSwarmSeatRecord.ROW_CAP; data must never import its widget.
 SWARM_ANSWER_ROW_CAP = 40
+
+#: RECORD outcomes: not_read has no point; unavailable is a failed/ambiguous read.
+#: off_panel is a settled negative; not_oracle is outside the oracle node set.
+SWARM_PANEL_STATES = (
+    "agreed", "outvoted", "no_quorum_in", "no_quorum_out", "assessing", "blocked",
+    "off_panel", "not_oracle", "not_read", "unavailable",
+)
+#: Data-only node membership; widgets consume panel_state.
+SWARM_ORACLE_NODE_KEYS = ("oracle_assess",)
+#: Extracted facts only, keyed by job UUID then submission hash. Never raw details.
+SWARM_ORACLE_CACHE_FIELDS = (
+    "request_id", "status", "in_cluster", "on_panel", "agreed", "members",
+    "panel_size", "figure", "answer_type", "read_ts", "terminal",
+)
+
+
 
 # ---- AGENT body on /seats/{tokenId} (spec docs/surf_agent_seats_spec.md §4, plan §1.2) ----
 
@@ -1978,5 +1994,8 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "answer_state",    # SWARM_ANSWER_STATES; queued is not_read
         "model",           # str | None; actual submission usage, not advertised
         "took_s",          # finite nonnegative float | None; submission wallClockMs / 1000
+        "output_tokens",
+        "panel_state", "panel_agreed", "panel_members", "panel_size",
+        "panel_figure", "panel_answer_type",
     ),
 }
