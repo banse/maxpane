@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Surfboard AGENT: RECORD adds panel agreement and output-token columns, removes role, and
+  shortens model names. Outvoted rows show the panel figure or actual YES/NO answer; no-quorum
+  panels are visibly closed while STATE retains the served attempt status. Panel reads are
+  bounded, cached and fail locally. FLEET uses the same model short names with effort retained.
+
 ## v0.9.1 — 2026-09-23
 
 - Surfboard `4` POOL4 MARKET: RECENT FLOW and BURN & SUPPLY no longer read `unavailable` for a

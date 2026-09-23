@@ -1658,7 +1658,7 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: 142 columns, on capture, v3 executing notes and stress.
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: AGENT full-layout width, re-measured 2026-09-22 for the column grid: 139
+#: AGENT full-layout width, re-verified 2026-09-23 with oracle RECORD: 139
 #: (135 for the first card rows, 138 before them, bound by BY NODE).
 #: The owner asked for the three card rows to share one column grid and for
 #: the wide cards to stack under STATUS (RANK in the hero since
@@ -1691,13 +1691,15 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: right edge lines up with the card rows inside the body's scrollbar gutter.
 #:
 #: RECORD is this body's one named exception: at 139 its full tier keeps
-#: when/job/node/role/state/model/took/answer without horizontal clipping
-#: (full from 105, compact 94-104, tight below; before launch/sub left the
-#: table on 2026-09-22 role was shed here). Full order and onset are at
+#: when/job/node/state/model/took/panel/tok/answer without horizontal clipping.
+#: Re-swept 2026-09-23: full from 107, compact 99-106 (drops tok), tight
+#: below 99 (also drops answer/model/took, keeps panel). table_cols needs
+#: 102/94/53 cells; the screen contributes five cells of gutters/padding.
+#: Full order and content-clearance onset are at
 #: RECORD_NEVER_CLEARS_BELOW below.
 SURF_AGENT_FULL_LAYOUT_COLUMNS = 139
 
-#: AGENT height, re-measured 2026-09-22 for the column grid: 33 (unchanged).
+#: AGENT height, re-verified 2026-09-23 with oracle RECORD: 33 (unchanged).
 #: The owner asked for a blank row above each card row, matching the
 #: two-cell gap between cards (+2), and allowed RECORD to shrink to pay
 #: for it: RECORD's floor went 8 -> 6 (-2). Measured at 139 columns through
@@ -1710,16 +1712,20 @@ SURF_AGENT_FULL_LAYOUT_COLUMNS = 139
 #: fit; 31 shows ``‹ taller``.
 SURF_AGENT_FULL_LAYOUT_ROWS = 33
 
-#: RECORD answer-clearance onset on enriched committed v4 seat420, first40
-#: source-order rows: exact captures cover displayed jobs76296dcd (27 cells)
-#: and73d7dcd7 (80 cells); captured job33016bad is index125, outside the cap.
-#: Dead fixture compositor: marked203 (answer79), whole204 (answer80),205;
-#: selected columns have no horizontal scroll. Five-hundred-character stress
-#: answers still clip here. This is a content exception, not a body pin.
-#: 204 -> 165 on 2026-09-22: the owner dropped launch/sub and narrowed node
-#: to six cells (oracle/review/build) so the answer gets the room. Swept
-#: 206 -> 151 on the same payload: marked at 164, whole from 165.
-RECORD_NEVER_CLEARS_BELOW = 165
+#: RECORD answer-clearance onset, re-swept 2026-09-23 in the real AGENT body.
+#: The committed v4 seat420 first40 rows are enriched with exact submission
+#: captures and the new raw oracle corpus: 37 agreed, three off-panel.
+#: Jobs76296dcd and73d7dcd7 have 27/80-cell replies; job33016bad at index125
+#: remains outside the cap. table_cols reports full102/compact94/tight53;
+#: in situ compact begins99 and full107 (98/106 still shed a tier).
+#: Probed80-220 then both sides of every measured edge: no hidden selected
+#: column or region overflow. At166 the 80-cell answer clips;167 and168
+#: are whole. Five-hundred-character stress replies still mark at167.
+#: This is a content exception, not the 139x33 body pin. Prefixes can make
+#: other payloads wider; the latest oracle seat capture is checked separately.
+#: Earlier clearances:204 ->165 when launch/sub left (2026-09-22), then
+#: 165 ->167 for panel/tok and short models (2026-09-23).
+RECORD_NEVER_CLEARS_BELOW = 167
 
 #: CAPABILITY optional inf/acc-att columns: baseline keeps every original
 #: column from141. At165 its115-cell panel sheds only these two extras;

@@ -31,6 +31,8 @@ the public subset.
 | `GET /contributors` | per-device lifetime counters; aggregate by token (2026-09-22) | 32,113 B |
 | `GET /workers` | live devices, capacity, pauses and runtime metadata (2026-09-22) | 97,420 B |
 | `GET /seats/{tokenId}` | one seat's lifetime record (measured 2026-09-21; see [`/seats/{tokenId}`](#seatstokenid)) | 6–90 KB |
+| `GET /oracle/requests` | paged oracle requests; `limit` ≤ 500, ISO `before` cursor (2026-09-23) | raw captures in `swarm/oracle` |
+| `GET /oracle/requests/{uuid}` | panel membership, agreement and attestation (2026-09-23) | full raw detail bodies committed |
 | `GET /jobs/{id}` | one job with its subtasks, verdicts and review | 2.2 KB typical, 9.2 KB worst |
 | `GET /launches` | deployments with every contract address | 10.1 KB (16) |
 | `GET /sites` | published IPFS sites with their ENS names | 2.3 KB (4) |
@@ -44,7 +46,7 @@ the public subset.
 The explorer's own origin serves no `/api/*` route either. (`/seats` was on this list on 2026-09-16; the bare
 route is still 404, but `/seats/{tokenId}` answers — see below.)
 
-**No filters.** `?state=executing`, `?limit=3` and `?since=…` all return the same 62 rows, so the list is
+**No filters on `/jobs`.** `?state=executing`, `?limit=3` and `?since=…` all return the same 62 rows, so the list is
 all-or-nothing. **Re-measured 2026-09-21 on `https://api.imd.fun`:** `/jobs` returns `count: 100` and exactly
 100 rows — the newest 100 jobs (that capture spans `createdAt` 02:26–05:44 UTC, about 3.3 h), with no page
 parameter and no older page. The 2026-09-16 reading of "every job" was true only while fewer than 100 existed;
@@ -411,3 +413,43 @@ columns in the measured layout). The original seven columns remain whole at 141;
 body pin was raised. The enriched first 40 RECORD rows in the v4 seat capture include the
 boilerplate and informative jobs at indices 0 and 1; the build job at 125 is not part of that
 window. Their longest cleaned answer is 80 cells and clears from 204 terminal columns.
+
+
+### `/oracle/requests` and `/oracle/requests/{uuid}` — captured 2026-09-23
+
+The same keyless source (`api.imd.fun` and its existing Railway name) serves oracle reads.
+The raw corpus and per-file URL, timestamp, HTTP status, byte count and SHA-256 are under
+`tests/fixtures/surf/swarm/oracle/`; `tests/scripts/capture_oracle_requests.py --summarize`
+re-derives the seat join offline. Capture spacing was 0.2 seconds; the 245 responses were
+captured from 21:12:44 to 21:14:24 UTC. Tests never import the network capture script.
+
+`GET /oracle/requests` returns `{attester, count, requests[]}`, newest first. Unlike `/jobs`,
+it supports `limit` (up to 500) and `before=<ISO createdAt>`; offset/page/status are ignored.
+The client validates limit as a non-bool integer and the UTC cursor before sending a request.
+The capture walks the complete history in three pages of at most 200 requests.
+List entries include `id`, `jobId`, `status`, `createdAt`, `answerType`, `question`, `window`
+and attestation metadata. The list does not contain member hashes and is never persisted.
+
+`GET /oracle/requests/{uuid}` includes `members[]`, `agreement`, `panelSize`, `quorum` and
+`toleranceBps`. Observed states: attested, disagreed, assessing and blocked. Assessing can have
+null agreement; a blocked detail has both null members and null agreement. Treat that blocked
+members value as empty, while keeping the explicit blocked outcome.
+Malformed `not-a-uuid` returned HTTP 400 `invalid_id`; the canonical unknown UUID returned 404.
+For this feature both are failed reads, never evidence of an off-panel submission.
+
+Join `/seats/{token}.work[].jobId` to the list to select details, then match the exact
+`work[].submissionHash` against `members[].submissionHash`. A wallet can own several seats;
+jobId alone is not membership. Agreement is membership in `agreement.cluster`, not equality
+with `agreement.figure`: the capture includes an unequal in-cluster figure at toleranceBps=1000.
+Conflicting duplicate member hashes and duplicate listed jobIds are ambiguous.
+
+`agreement.figure` is retained only as a decimal string and is never converted to float.
+**Bool answers are separate:** 22 captured bool details include numeric figures unrelated to
+truth (e.g. figure `263154`, answer false). Display YES/NO from strict boolean `agreement.answer`,
+carried as cached `answer_bool` / row `panel_answer_bool`; never derive it from figure.
+Members' notes, questions and raw details do not enter the runtime cache.
+
+Re-derived seat #420 counts: 243 oracle work rows; 219 on a panel, including 205 in the
+agreement cluster, 11 outside it and 3 assessing; 24 have no matching panel member.
+The capture contains 196 attested-in, 3 attested-out, 9 disagreed-in and 8 disagreed-out rows.
+No attested outvoted zero-figure seat answer remained in this captured history.

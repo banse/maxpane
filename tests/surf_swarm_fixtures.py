@@ -77,3 +77,28 @@ def swarm_capture_v4(name: str) -> dict:
     """One polish capture from 2026-09-22, including its provenance MANIFEST."""
     with open(SWARM_FIXTURES_V3.parent / 'v4' / f'{name}.json', encoding='utf-8') as fh:
         return json.load(fh)
+
+
+def swarm_oracle_capture(name: str) -> dict:
+    """One unmodified 2026-09-23 oracle capture, including seat_420 and MANIFEST."""
+    with open(SWARM_FIXTURES_V3.parent / 'oracle' / f'{name}.json', encoding='utf-8') as fh:
+        return json.load(fh)
+
+
+def swarm_oracle_details() -> list[dict]:
+    """Every captured detail in deterministic filename order."""
+    return [swarm_oracle_capture(path.stem)
+            for path in sorted((SWARM_FIXTURES_V3.parent / 'oracle').glob('request_*.json'))]
+
+
+def swarm_oracle_rows(rows: list[dict]) -> list[dict]:
+    """Join captured detail evidence onto existing rows through the production fold."""
+    from maxpane_dashboard.data import surf_swarm as fold
+    oracle = {}
+    for detail in swarm_oracle_details():
+        for row in rows:
+            if row['job_id'] == detail['jobId']:
+                point = fold.oracle_point(detail, row['job_id'], row['submission_hash'], now_ts=1000.)
+                if point is not None:
+                    oracle.setdefault(row['job_id'], {})[row['submission_hash']] = point
+    return fold.enrich_panel_rows(rows, oracle, fold.SWARM_ORACLE_NODE_KEYS)

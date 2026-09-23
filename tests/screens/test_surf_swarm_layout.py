@@ -34,7 +34,8 @@ import datetime as dt
 
 import pytest
 from tests.screens.test_surf_screen import _status_bar_whole
-from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v3, swarm_capture_v4
+from tests.surf_swarm_fixtures import (swarm_agent_sources, swarm_capture_v3, swarm_capture_v4,
+                                       swarm_oracle_capture, swarm_oracle_rows)
 from textual.widgets import DataTable
 from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
 
@@ -119,7 +120,7 @@ _S_THRESHOLDS = (
     180, 205,        # LAUNCHES compact/full
 )
 _A_THRESHOLDS = (
-    94, 105, # RECORD tight/compact/full (since launch/sub left it, 2026-09-22)
+    99, 107, # RECORD compact/full with panel/tok and short models, 2026-09-23
     108, 116, 117,  # node row (capture) / hero (capture) and node row (stress) / pending RANK
     129,     # row-1 hero whole (stress payload's REVIEWED `19,998 pending`)
     128, 130,  # stress OTHERS `5.0K of 50.0K` (129, 131-141) / `5K of 50K` (127-128, 130)
@@ -428,7 +429,8 @@ def _polish_agent_payload():
                 continue
             point = sw.submission_answer(capture, capture["jobId"], item["hash"], 420)
             answers.setdefault(capture["jobId"], {})[item["hash"]] = dict(point,read_ts=1000.,terminal=True)
-    payload["swarm_seat_work_rows"] = sw.enrich_work_rows(payload["swarm_seat_work_rows"], answers)
+    rows = sw.enrich_work_rows(payload["swarm_seat_work_rows"], answers)
+    payload["swarm_seat_work_rows"] = swarm_oracle_rows(rows)
     return payload
 
 
@@ -940,6 +942,7 @@ async def test_board_polish_row_pin_is_tight_and_keeps_fleet_whole(kind):
 async def test_polish_record_answer_clearance_matches_committed_v4_window():
     payload=_polish_agent_payload()
     rows=payload["swarm_seat_work_rows"]
+    assert {r["panel_state"] for r in rows[:40]} == {"agreed", "off_panel"}
     assert len(rows)==191 and rows[0]["job_id"].startswith("76296dcd")
     assert rows[1]["job_id"].startswith("73d7dcd7") and rows[125]["job_id"].startswith("33016bad")
     name="SurfSwarmSeatRecord"
@@ -947,7 +950,7 @@ async def test_polish_record_answer_clearance_matches_committed_v4_window():
         r=await _render(payload,(width,80),"a")
         assert (name in r["marked"])==marked, (width,r["marked"])
         assert not r["hidden"][name] and not r["overflow"]
-        assert r["columns"][name]==("when","job","node","role","state","model","took","answer")
+        assert r["columns"][name]==("when","job","node","state","model","took","panel","tok","answer")
     stress=await _render(_worst_agent_payload(),(RECORD_NEVER_CLEARS_BELOW,80),"a")
     assert name in stress["marked"], "the 500-character answer must still advertise actual clipping"
 
@@ -957,7 +960,7 @@ async def test_polish_agent_retains_existing_pin_with_enriched_record():
         r=await _render(_polish_agent_payload(),(SURF_AGENT_FULL_LAYOUT_COLUMNS,rows),"a")
         assert r["taller"]==taller
         assert not r["clipped"] and not r["overflow"] and not any(r["hidden"].values())
-        assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","role","state","model","took","answer")
+        assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","state","model","took","panel","tok","answer")
 
 
 async def test_polish_capability_optional_tier_preserves_baseline_and_clears_at_measured_onset():
@@ -984,3 +987,28 @@ def test_polish_capability_full_tier_cap_agrees_in_both_stylesheets():
     for css in (SurfScreen.DEFAULT_CSS,_surf_block()):
         rule=re.search(r'SurfSwarmCapability\s*\{([^}]+)\}',css).group(1)
         assert re.search(r'max-width:\s*118;',rule),rule
+
+
+@pytest.mark.sweep
+@pytest.mark.parametrize('width,tier',[(98,'tight'),(99,'compact'),(100,'compact'),
+                                      (106,'compact'),(107,'full'),(108,'full')])
+async def test_oracle_record_tier_onsets_in_agent_body(width,tier):
+    result=await _render(_polish_agent_payload(),(width,80),'a')
+    name='SurfSwarmSeatRecord'
+    assert result['tiers'][name]==tier
+    assert 'panel' in result['columns'][name] and 'role' not in result['columns'][name]
+    assert ('tok' in result['columns'][name])==(tier=='full')
+    assert not result['hidden'][name] and not result['overflow']
+
+
+@pytest.mark.sweep
+async def test_oracle_latest_seat_fits_existing_agent_pin():
+    payload=_polish_agent_payload()
+    payload.update(_seat_keys(swarm_oracle_capture('seat_420')))
+    rows=payload['swarm_seat_work_rows']
+    payload['swarm_seat_work_rows']=swarm_oracle_rows(rows)
+    assert len(rows)==245 and sum(r['node_key']=='oracle_assess' for r in rows)==243
+    for height in (32,33):
+        result=await _render(payload,(139,height),'a')
+        assert result['taller']==(height<33)
+        assert not result['overflow'] and not result['clipped'] and not any(result['hidden'].values())

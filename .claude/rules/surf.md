@@ -155,7 +155,8 @@ who is online, what is executing and on which seat, what has launched, how fast 
 on `a`, one seat's own record. Rebuilt 2026-09-21 (swarm v2, `docs/surf_swarm_v2_implementation_plan.md`,
 WP0–WP7). It reads **one** keyless third-party source under two names (`SWARM_API_HOSTS`:
 `api.imd.fun` and its Railway host — one deployment, measured by `/version`, rotated per request,
-never shrunk; `follow_redirects=False`, a redirect is a host nobody allowlisted):
+never shrunk; `follow_redirects=False`, a redirect is a host nobody allowlisted). The same source
+serves `/oracle/requests` (paged) and `/oracle/requests/{uuid}` for RECORD panel outcomes:
 `data/surf_swarm_client.py` is the HTTP layer and nothing else; `data/surf_swarm.py` is the pure
 fold — no network, no clock (`now_ts` injected), no Textual; the shared rollups are
 `analytics/surf_swarm_signals.py`, imported by fold and widgets alike so both count with one
@@ -240,7 +241,8 @@ The owner's ENS name is read in `SurfManager._resolve_seat_owner` after a good s
 through `rpc_common.multicall_chunks`), held in an `ens.NameStore` with its name and miss TTLs,
 so a nameless owner is not re-resolved every tick. A raise or an empty answer is a miss; OWNER
 shows the address.
-RECORD shows every lifetime `work[]` attempt; its `state` is the attempt's `status` unless
+RECORD columns are `when · job · node · state · model · took · panel · tok · answer`.
+It shows every lifetime `work[]` attempt; its `state` is the attempt's `status` unless
 `accepted` (then, or with no status served, the job's state). It shows `MM-DD HH:MM` of `submittedAt` (else `acceptedAt`); the job
 cell is the id's first eight characters, linked to `explorer.imd.fun/jobs/<uuid>` for a canonical
 UUID (`address.job_text` on `_fmt.JOB_EXPLORER`, the allowlisted `explorer.IMD`; anything else
@@ -297,7 +299,7 @@ arithmetic is historical (F32). AGENT now uses the seat-details handover's two-r
 
 
 **Polish answer reads** (`docs/surf_swarm_polish_handover.md`): RECORD renders
-`when · job · node · role · state · model · took · answer`; objective remains
+`when · job · node · state · model · took · panel · tok · answer`; objective remains
 in the data row for other readers. The answer is the first cleaned sentence from the exact
 `work[].submissionHash` in `/jobs/{uuid}/submissions`, never another seat's or a hash prefix.
 Markdown link destinations disappear and remaining absolute local paths reduce to basenames,
@@ -307,9 +309,12 @@ characters with linear link scanning and bounded fixed-point stripping. Preserve
 sentence boundaries before flattening; widgets still sanitize third-party text.
 
 The answer cell distinguishes read, `not read`, `unavailable`, `not served` and `no reply`.
-Model/took render only for successful matching reads (`read`/`no_reply`); missing values and
+Model/took/tok render only for successful matching reads (`read`/`no_reply`); missing values and
 other read states use `—` for those metadata cells. Failed/queued rows cannot retain stale
 metadata. This model is actual submission usage, independently of worker-advertised models.
+`tok` uses `usage.outputTokens`, strictly nonnegative integers, through shared `fmt_compact`
+(`1.5K`, `22.0K`). Exact cleaned Claude/GPT model ids shorten by rule in RECORD and FLEET;
+FLEET keeps the effort word. Unknown model ids remain cleaned text, clipped by their caller.
 
 The detached seat tier reads at most four unique submission jobs per cycle over RECORD's first
 40 rows; several hashes from one job share one GET. Validate canonical UUIDs before paths;
@@ -322,6 +327,29 @@ frozen while retained. Transport/parse failures retry after `SWARM_ANSWER_DUE_S`
 per-cycle cap, even on terminal jobs. Legacy unavailable/frozen entries become retryable.
 No raw submission envelope or uncleaned summary is cached.
 
+**Oracle panel reads** (`docs/surf_oracle_panels_plan.md`): after submission enrichment,
+only oracle nodes in the first 40 RECORD rows are eligible. Join list `jobId` to requests,
+then confirm `members[].submissionHash`; never join by wallet or infer agreement from price equality.
+Duplicate job matches or conflicting duplicate member hashes are unavailable. Walk at most four
+200-request pages using `before=<oldest createdAt>` and read at most four due details. With no due
+rows, make zero requests. Retained attested/disagreed/blocked points are terminal; assessing or
+failed points retry after 120 seconds. `SLOT_SWARM_ORACLE` retains extracted facts only, at most
+400 points for 48 hours. Validate each persisted point; cancellation stores no partial oracle slot.
+A failed list/detail keeps prior evidence, or yields `unavail` when no cached point exists.
+No new top-level key, clock or degraded group is introduced.
+
+PANEL states: agreed/outvoted show green `✓ agreed/members` or red `✗ agreed/members`;
+no_quorum_in/out show dim green/red `✓ no-q` / `✗ no-q` (closed even if STATE says pending);
+assessing shows yellow `… members/size` (members only if size is absent); blocked is dim
+`blocked`, including captured null members; off_panel/not_oracle show dim `–`;
+not_read is dim `not read`, unavailable is yellow `unavail`. Missing required counts are
+unavailable. Off-panel requires covered list history or a final panel without the hash.
+On outvoted/no_quorum_out rows, ANSWER prefixes `panel <figure> · `, including unread replies.
+Figures retain exact decimal strings. Bool panels instead use strict `agreement.answer` via
+`panel_answer_bool`: YES/NO; absent or malformed bool is `unavail`, never inferred from figure.
+Full RECORD keeps every column; compact drops tok; tight also drops answer/model/took and keeps panel.
+The data row retains role for other readers, but no RECORD tier displays it.
+
 **Palette:** dim labels, bold counts; green healthy/working/accepted, red offline/paused/down,
 yellow unavailable or existing pending counts. Zero working keeps `0 quiet` dim. Rates and
 scores and QUEUE counts are bold without thresholds or status colour. SWARM SERVICES keeps
@@ -333,7 +361,7 @@ CAPABILITY keeps its original seven columns at `SURF_SWARM_FULL_LAYOUT_COLUMNS`.
 full tier adds `inf` and `acc/att` from `CAPABILITY_OPTIONAL_FULL_COLUMNS`; just below that
 onset only those two fields are shed. Its widen marker remains honest below the onset. Layout
 tests permit only these optional omissions and still require all original columns, no original clipping and no horizontal table scroll. RECORD's committed enriched
-v4 first 40 clears at `RECORD_NEVER_CLEARS_BELOW`; one column below clips the informative answer.
+v4 first 40, joined to the committed oracle details, clears at `RECORD_NEVER_CLEARS_BELOW`; one column below clips the informative answer.
 The build reply from work index 125 is outside that displayed-window measurement.
 
 

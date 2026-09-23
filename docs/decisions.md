@@ -4,6 +4,11 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-23** — Oracle RECORD replaces the displayed role column with panel and output tokens;
+  role remains in the data contract. Compact drops tok; tight retains panel. Bool output uses the
+  separately served `agreement.answer`, not figure: the raw corpus includes a nonzero figure
+  beside false. The earlier proposed figure-to-bool mapping is withdrawn. Model ids shorten by
+  exact cleaned patterns in RECORD/FLEET; no lookup table is used.
 - **2026-09-23** — Follow-ups F64–F69 closed. CONTRIBUTORS rounds wall-clock hours, `N min`
   under half an hour. A failed RECORD row paints only a read answer red. A node card never reads
   two different counts as one or the wrong way round (`4.6K of 5K`, never `5.5K of 5K`), and `999,600` reads `1M`. SITES' label column went
