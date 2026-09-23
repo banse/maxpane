@@ -141,6 +141,7 @@ def test_hhmm_mmdd_fallbacks():
 # ---------------------------------------------------------------------
 
 from maxpane_dashboard.widgets.surf.hero import (  # noqa: E402
+    BOARD_KEYS,
     SurfHero,
     _burn_lines,
     _flow_lines,
@@ -172,7 +173,6 @@ _FULL_HERO = {
     "burn_accrued": 1_234.56,
     "burn_staged": 45.0,
     "burn_ready": False,
-    "imd_supply": 2376731.868679,
     "imd_burned_cum": 15745.0,
 }
 
@@ -342,12 +342,37 @@ async def test_hero_full_payload_renders_all_four_boxes_on_screen():
     assert "FLOW · 20:20" in screen
     # BURN: the tri-state headline plus the pipeline's own numbers.
     assert "NOT READY" in screen
-    # SUPPLY: full-precision supply + the burn this install has observed.
-    # The word "observed" is load-bearing: the widget cannot know the
-    # all-time total, so it must not imply one (WP4 open issue 4).
-    assert "2,376,732 IMD" in screen
+    # BURN's third line: the burn this install has observed. The word
+    # "observed" is load-bearing: the widget cannot know the all-time total,
+    # so it must not imply one (WP4 open issue 4).
     assert "burned 15,745 observed" in screen
     assert "cum" not in screen
+    # BOARDS (owner, 2026-09-22) replaced IMD SUPPLY: the body keys.
+    assert "BOARDS" in screen and "IMD SUPPLY" not in screen
+    for key, word in BOARD_KEYS:
+        assert f"'{key}' - {word}" in screen
+
+
+async def test_the_boards_box_is_a_left_aligned_block_under_its_title():
+    """THE LIST filter card's alignment: the key lines share one left edge
+    and the block is centred in the box; the title follows with no blank."""
+    _, screen = await _render_hero(**_FULL_HERO)
+    lines = screen.splitlines()
+    y = next(i for i, line in enumerate(lines) if "BOARDS" in line)
+    starts = [lines[y + 1 + i].index(f"'{key}'") for i, (key, _) in enumerate(BOARD_KEYS)]
+    assert len(set(starts)) == 1, starts
+    title_mid = lines[y].index("BOARDS") + len("BOARDS") / 2
+    width = max(len(f"'{k}' - {w}") for k, w in BOARD_KEYS)
+    assert abs(starts[0] + width / 2 - title_mid) <= 1
+
+
+def test_every_boards_key_opens_that_body_on_the_surf_screen():
+    """Agreement: each key the box names is bound to the body its word names."""
+    from maxpane_dashboard.screens.surf import SurfScreen
+    action = {b.key: b.action for b in SurfScreen.BINDINGS}
+    assert {key: action.get(key) for key, _ in BOARD_KEYS} == {
+        "a": "toggle_agent", "b": "toggle_board", "s": "toggle_swarm", "4": "toggle_pool4_user",
+    }
 
 
 async def test_hero_zero_observed_burn_never_claims_none_was_ever_burned():
@@ -370,8 +395,6 @@ async def test_hero_zero_observed_burn_never_claims_none_was_ever_burned():
         screen = _screen_text(app)
         assert "no burn observed yet" in screen
         assert "burned 0" not in screen
-        # The supply beside it is live and must still render.
-        assert "2,376,732 IMD" in screen
 
         # None is "we have never read a supply", not "zero burned".
         widget.update_data(**{**_FULL_HERO, "imd_burned_cum": None})
@@ -496,7 +519,7 @@ def test_every_hero_tier_fits_the_width_it_advertises():
     grown creator count.
     """
     from maxpane_dashboard.widgets.markup_safety import visible_len
-    from maxpane_dashboard.widgets.surf.hero import TIER_WIDTHS, _supply_lines
+    from maxpane_dashboard.widgets.surf.hero import TIER_WIDTHS, _boards_lines
 
     #: Plausible future growth, not today's captured state -- the reviewer's
     #: own examples from fix round 1: a 7-digit count for the two fields
@@ -534,8 +557,7 @@ def test_every_hero_tier_fits_the_width_it_advertises():
             # the "why compact" note in ``_burn_lines``'s own docstring.
             for accrued in (0.0, 1_234.56, 15_745.0, None):
                 renderings.append(_burn_lines(accrued, 45.0, ready, 15_745.0, tier))
-        for burned in (15745.0, 0.0, None):
-            renderings.append(_supply_lines(2376731.868679, burned, tier))
+        renderings.append(_boards_lines(tier))
 
         for lines in renderings:
             widest = max(visible_len(line) for line in lines)
@@ -2119,3 +2141,16 @@ def test_hero_tier_ladder_agrees_with_the_body_it_replaced():
     for w in widths:
         assert module._tier_for(w) == _old_tier_for(w), w
     assert {module._tier_for(w) for w in widths} == {"compact", "tight", "minimal"}
+
+
+def test_the_boards_box_drops_quotes_and_dash_only_at_the_minimal_tier():
+    """``'b' - leaderboard`` from ``tight`` up; ``b leaderboard`` (13 cells) at
+    ``minimal``, where the quoted form's 15 cells lit the hero's marker at 87."""
+    from maxpane_dashboard.widgets.surf.hero import _boards_lines
+
+    assert [l.strip() for l in _boards_lines("minimal")[1:]] == [
+        "a idm agent", "b leaderboard", "s swarm", "4 pool4"]
+    for tier in ("tight", "compact"):
+        assert [l.strip() for l in _boards_lines(tier)[1:]] == [
+            "'a' - idm agent", "'b' - leaderboard", "'s' - swarm", "'4' - pool4"]
+    assert max(len(l) for l in _boards_lines("minimal")[1:]) == 13

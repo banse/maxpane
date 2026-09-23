@@ -1337,8 +1337,11 @@ def _board_summary_from_slots(contributors: dict | None, workers: dict | None) -
         rows = contributors["contributors"]
         summary["seats"] = len(_contributor_tokens(contributors))
         if not contributors["malformed_tokens"]:
-            for field in ("attempts", "accepted", "rejected", "pending"):
+            for field in ("attempts", "accepted", "rejected", "pending", "turns", "wall_clock_ms"):
                 summary[field] = sum(row[field] for row in rows)
+            for field in ("input_tokens", "output_tokens"):
+                summary[field] = _sum_known(row[field] for row in rows)
+            summary["devices"] = len(rows)
         summary["receipts"] = contributors["receipts"]
         summary["tokens_per_completed_job"] = contributors["tokens_per_completed_job"]
     if workers is not None:

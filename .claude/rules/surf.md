@@ -39,6 +39,11 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `a` | MODE_AGENT | seat-card row, node-card row; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / ACCEPT RATE / REVIEWED / RANK / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
+`SurfHero`'s fourth box is BOARDS (owner, 2026-09-22; it replaced IMD SUPPLY): `hero.BOARD_KEYS`
+lists `a`/`b`/`s`/`4` in THE LIST filter card's shape, and an agreement test binds each key to
+its `SurfScreen` binding. `imd_supply` is still read and no widget shows it. The `minimal`
+tier writes `b leaderboard` (13 cells, no quotes or dash) so the hero's marker stays dark at 87.
+
 `_SURF_HERO_MODES` **enumerates** the modes that get `SurfHero` rather than negating one: a body
 with a hero of its own would otherwise inherit `True` from a `!=` check and paint two heroes into
 one row. Every alternate hero widget (`4`, `s`, `a`, `b`) is composed once at startup and toggled with the
@@ -116,7 +121,7 @@ delta is four fast-tier reads, one pure depth-ladder analytics module, and a lon
 `pool4_stakers_as_of_hhmm`. A digit key on a *screen* is an established pattern (curator's filter
 presets) and collides with nothing app-level.
 
-**Three hero cards, not four**: surf's own hero already says `BURN` and `SUPPLY`, and a pool4
+**Three hero cards, not four**: surf's own hero said `BURN` and `SUPPLY` when this was decided, and a pool4
 card called BURN would show hook trim burns, so burn lives in the chart panel.
 
 **`SurfPool4Flow` lives in this body only** (since 2026-09-14). `_do_refresh` dispatches RECENT
@@ -203,17 +208,21 @@ the same `fr` weight; blank row between rows). `SurfSwarmNodeCards`: ROLES, thre
 names no clock, owner 2026-09-22), survive pending/unavailable seats, and distinguish `not
 listed` from `unavailable`; their bodies live in `_swarm_seat.py`. Node cards read
 `accepted of attempts` per node (since 2026-09-22 `work[]` lists every attempt with a `status`;
-the node sums equal the hero's ACCEPTED), titled by `NODE_TITLES` (ORACLE / REVIEW / BUILD; an
-unknown key keeps its own fitted text); a pre-status payload serves no per-node attempts, so
+the node sums equal the hero's ACCEPTED). Each known key has its own card, in `NODE_TITLES`
+order (ORACLE / REVIEW / BUILD, hoisted to `_swarm_seat.py`), titled whether or not the seat
+worked it; an unknown key never titles a card and is summed into OTHERS. A card with no
+attempts, nothing accepted and no chain count -- absent node or zeros -- reads a dim `—`, OTHERS
+too (owner, 2026-09-22); a count that does not fit its card steps down `9,970` → `10.0K` → `10K`,
+never cut; a pre-status payload serves no per-node attempts, so
 `attempts` is `None` and the card shows the accepted count with no rate. ACCEPTED (`/seats`) and
 BOARD (`/contributors`) differ by the endpoints' own definitions — never reconcile them. `chain` counts
 reviews with a transaction in `sent` or `submitted`; a node card shortens its roles
-(`ROLE_SHORT`: implement → impl, review → rev), ROLES keeps them whole. OTHERS always sums
-every node after the third, and reads `0 of 0` when the list was read with nothing further (a
-dash when unread). TEAMMATES sorts by shared jobs descending, token ascending,
+(`ROLE_SHORT`: implement → impl, review → rev), ROLES keeps them whole. OTHERS sums every
+node no card names (a dash when there is nothing to sum or the list is unread). TEAMMATES sorts by shared jobs descending, token ascending,
 shows two plus `+N more` when there are more than three; tokens are integers with no address
 icon; `none yet` for an empty list, `unavailable` for an unread one. Values row 1 already shows
-are not repeated. Third-party text (runtime, daemon, node keys, roles) is flattened and fitted
+are not repeated. The hero's SEAT box drops the word for a saved seat and keeps `most active`
+for the chosen one. Third-party text (runtime, daemon, roles; RECORD's unknown node keys) is flattened and fitted
 to the card's content width with a visible `…` and repainted on resize; numbers and fixed words
 are never fitted, so a card too narrow for them is a CSS-clipped line the layout sweep sees.
 Pending and unavailable show on every seats-backed card; never paired shows once per row (OWNER,
@@ -231,8 +240,13 @@ through `rpc_common.multicall_chunks`), held in an `ens.NameStore` with its name
 so a nameless owner is not re-resolved every tick. A raise or an empty answer is a miss; OWNER
 shows the address.
 RECORD shows every lifetime `work[]` attempt; its `state` is the attempt's `status` unless
-`accepted` (then, or with no status served, the job's state). It shows `MM-DD HH:MM` of `submittedAt` (else `acceptedAt`), launch kind and the first eight hex characters
-of a validated submission hash. A null launch displays `—` (real none); a null `daemonVersion`
+`accepted` (then, or with no status served, the job's state). It shows `MM-DD HH:MM` of `submittedAt` (else `acceptedAt`); the job
+cell is the id's first eight characters, linked to `explorer.imd.fun/jobs/<uuid>` for a canonical
+UUID (`address.job_text` on `_fmt.JOB_EXPLORER`, the allowlisted `explorer.IMD`; anything else
+plain); the node cell is the key's lower-cased `NODE_TITLES` word (an unknown key fitted to
+`NODE_COLS` with `…`). Launch and submission hash are not columns since 2026-09-22 (owner: the
+answer gets the room); a failed attempt's answer is red. RECORD alone has no blank row under
+its title (its own `DEFAULT_CSS`, owner 2026-09-22). A null `daemonVersion`
 displays `not reported`; missing daemon and counter fields remain unavailable. Review-accepted and work that won a
 job are different counts. A 404 `unknown_seat` is a real negative: row 1's SEAT box names `IDMD #N` / `never paired`
 through `swarm_seat_selected`; RECORD still shows the tokenless state (F39). Any other
@@ -254,8 +268,8 @@ halves (`0/--`, `--/0`) under a full outage and excludes the three bare-count bo
 onchain address or transaction hash uses `widgets/address` with its row's `chain_id`
 (`explorer.for_chain_id`; unknown → no link), except the seat owner, which uses the package
 `EXPLORER` by the decision above. SITES renders content hashes only and is a named exemption in
-the icon sweep. RECORD's off-chain submission hash is plain text with no explorer link; neither
-it nor TEAMMATES tokens pass through the address helpers. The `parked_reason` cell in LAUNCHES clips to its column with a
+the icon sweep. RECORD's job id is not an address: it links the IMD explorer (not a chain)
+through `address.job_text`, with no icon; TEAMMATES tokens pass through no address helper. The `parked_reason` cell in LAUNCHES clips to its column with a
 visible `…` (accepted, `docs/decisions.md`).
 
 **The explorer's own inference headline is deliberately absent**: no public route serves that
@@ -278,7 +292,7 @@ arithmetic is historical (F32). AGENT now uses the seat-details handover's two-r
 
 
 **Polish answer reads** (`docs/surf_swarm_polish_handover.md`): RECORD renders
-`when · job · node · role · state · launch · sub · model · took · answer`; objective remains
+`when · job · node · role · state · model · took · answer`; objective remains
 in the data row for other readers. The answer is the first cleaned sentence from the exact
 `work[].submissionHash` in `/jobs/{uuid}/submissions`, never another seat's or a hash prefix.
 Markdown link destinations disappear and remaining absolute local paths reduce to basenames,
@@ -320,7 +334,13 @@ The build reply from work index 125 is outside that displayed-window measurement
 
 ## BOARD (`b`, MODE_BOARD)
 
-Contributors and workers retain independent values and `as of` markers. A missing source is
+Contributors and workers retain independent values and `as of` markers. FLEET's
+CONTRIBUTORS group (owner, 2026-09-22) has a blank row under its sub-header, then devices ·
+seats, accepted of attempts, rejected · pending, turns · wall-clock hours and input · output
+tokens (compact), then tokens/job; each line's first value unread is the whole line
+`unavailable`, a missing second value is omitted, and a pair too wide keeps its first value
+plus `+N`. The input/output sums are `None` when any row does not serve them. LEADERBOARD's
+table has a 1-cell left margin and a 1-cell scrollbar (`GUTTER_COLS` stays 2). A missing source is
 unavailable; an empty worker metadata mix says none reported. LEADERBOARD retains every seat,
 marks the selected AGENT token with `▸`, and Enter validates through `parse_seat`, calls the
 shared `config.save_seat`, then reuses `_seat_entered` (set_seat, mode, scheduled refresh;

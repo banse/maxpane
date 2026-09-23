@@ -13,6 +13,11 @@ fetches, signs or sends anything, and the app itself makes no request.
 Pure: ``re`` and ``dataclasses`` only. No Rich, no Textual, no I/O, no ``data/``.
 An unknown chain gets **no** link, never a guessed one (:func:`for_network`).
 
+One allowlisted explorer is not a chain's: :data:`IMD` opens a swarm job's
+page on ``explorer.imd.fun`` (owner, 2026-09-22, RECORD's job column). Each
+explorer names the kinds it serves, so a job link on etherscan, or an
+address on the IMD explorer, is refused like a malformed value.
+
 :data:`ADDRESS_RE` restates ``widgets/address.ADDRESS_RE`` because this module
 sits below the address helper (which imports it) and may not import it back;
 ``tests/widgets/test_explorer.py`` holds the agreement test that binds the two
@@ -25,9 +30,10 @@ import re
 from dataclasses import dataclass
 
 __all__ = [
-    "ADDRESS_RE", "BASE", "ETHEREUM", "EXPLORERS", "Explorer", "KINDS", "SEPOLIA",
-    "TX_HASH_RE", "address_url", "for_chain_id", "for_network", "is_address",
-    "is_tx_hash", "open_action", "parse_open_action", "tx_url", "url_for",
+    "ADDRESS_RE", "BASE", "ETHEREUM", "EXPLORERS", "Explorer", "IMD", "JOB_ID_RE", "KINDS",
+    "SEPOLIA", "TX_HASH_RE", "address_url", "for_chain_id", "for_network", "is_address",
+    "is_job_id", "is_tx_hash", "is_valid", "job_url", "open_action", "parse_open_action",
+    "tx_url", "url_for",
 ]
 
 #: Matched with ``fullmatch``, never ``^…$`` (PRD §3.1 AMENDED): the value is
@@ -37,8 +43,12 @@ ADDRESS_RE = re.compile(r"0x[0-9a-fA-F]{40}")
 #: A transaction hash: ``0x`` + 64 hex, ``fullmatch`` only.
 TX_HASH_RE = re.compile(r"0x[0-9a-fA-F]{64}")
 
-#: The two page kinds a link can open.
-KINDS = ("address", "tx")
+#: A swarm job id: a canonical lower-case UUID, ``fullmatch`` only -- the
+#: shape the swarm serves and the IMD explorer's ``/jobs/`` path takes.
+JOB_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+#: The page kinds a link can open; each explorer serves a subset.
+KINDS = ("address", "tx", "job")
 
 
 @dataclass(frozen=True)
@@ -47,14 +57,17 @@ class Explorer:
 
     name: str
     base_url: str
+    kinds: tuple[str, ...] = ("address", "tx")
 
 
 ETHEREUM = Explorer("etherscan", "https://etherscan.io")
 BASE = Explorer("basescan", "https://basescan.org")
 SEPOLIA = Explorer("sepolia", "https://sepolia.etherscan.io")
+#: The IMD swarm's own explorer: job pages only, never a chain's address or tx.
+IMD = Explorer("imd", "https://explorer.imd.fun", ("job",))
 
 #: The allowlist every action round-trips through, by name.
-EXPLORERS: dict[str, Explorer] = {e.name: e for e in (ETHEREUM, BASE, SEPOLIA)}
+EXPLORERS: dict[str, Explorer] = {e.name: e for e in (ETHEREUM, BASE, SEPOLIA, IMD)}
 
 #: Network words as surf spells them (``surf_models.POOL4_NETWORKS``,
 #: ``_swarm_chain.chain_word``): upper-case, exact. Case matters -- a word this
@@ -80,7 +93,8 @@ _ACTION_PREFIX = "app.open_explorer("
 #: quote-free values, ``", "`` between them -- so a ``fullmatch`` plus the
 #: allowlist checks *is* the inverse; ``tests/widgets/test_explorer.py``
 #: round-trips every explorer and kind through both functions to bind them.
-_ACTION_RE = re.compile(r"app\.open_explorer\('([a-z]+)', '([a-z]+)', '(0x[0-9a-fA-F]+)'\)")
+_ACTION_RE = re.compile(
+    r"app\.open_explorer\('([a-z]+)', '([a-z]+)', '(0x[0-9a-fA-F]+|[0-9a-f-]{36})'\)")
 
 
 def is_address(value: object) -> bool:
@@ -91,6 +105,11 @@ def is_address(value: object) -> bool:
 def is_tx_hash(value: object) -> bool:
     """True only for a whole, well-formed 32-byte transaction hash."""
     return isinstance(value, str) and TX_HASH_RE.fullmatch(value) is not None
+
+
+def is_job_id(value: object) -> bool:
+    """True only for a whole, canonical lower-case UUID."""
+    return isinstance(value, str) and JOB_ID_RE.fullmatch(value) is not None
 
 
 def for_network(word: object) -> Explorer | None:
@@ -117,7 +136,19 @@ def _valid(kind: str, value: object) -> bool:
         return is_address(value)
     if kind == "tx":
         return is_tx_hash(value)
+    if kind == "job":
+        return is_job_id(value)
     return False
+
+
+def is_valid(explorer: object, kind: object, value: object) -> bool:
+    """True when *explorer* is allowlisted, serves *kind*, and *value* is one.
+
+    The one check behind every link: the writer (:func:`open_action`), the
+    parser and the app's action (``explorer_action``) all ask it.
+    """
+    return (isinstance(explorer, Explorer) and EXPLORERS.get(explorer.name) == explorer
+            and isinstance(kind, str) and kind in explorer.kinds and _valid(kind, value))
 
 
 def _allowlisted(explorer: object) -> Explorer:
@@ -147,13 +178,22 @@ def tx_url(explorer: Explorer, tx_hash: str) -> str:
     return f"{_allowlisted(explorer).base_url}/tx/{tx_hash}"
 
 
+def job_url(explorer: Explorer, job_id: str) -> str:
+    """``https://…/jobs/<uuid>`` for a **validated** job id; ``ValueError`` otherwise."""
+    if not is_job_id(job_id):
+        raise ValueError("not a job id")
+    return f"{_allowlisted(explorer).base_url}/jobs/{job_id}"
+
+
 def url_for(explorer: Explorer, kind: str, value: str) -> str:
-    """:func:`address_url` or :func:`tx_url` by ``kind``; ``ValueError`` on anything else."""
+    """The page for *kind* on an explorer that serves it; ``ValueError`` on anything else."""
+    if not is_valid(explorer, kind, value):
+        raise ValueError("not a link this explorer serves")
     if kind == "address":
         return address_url(explorer, value)
     if kind == "tx":
         return tx_url(explorer, value)
-    raise ValueError("not a link kind")
+    return job_url(explorer, value)
 
 
 def open_action(explorer: Explorer, kind: str, value: str) -> str:
@@ -162,10 +202,8 @@ def open_action(explorer: Explorer, kind: str, value: str) -> str:
     ``app.open_explorer('etherscan', 'address', '0x…')``. Raises ``ValueError``
     rather than write an action for a value it would not parse back.
     """
-    if explorer.name not in EXPLORERS or EXPLORERS[explorer.name] != explorer:
-        raise ValueError("not an allowlisted explorer")
-    if not _valid(kind, value):
-        raise ValueError(f"not a {kind}")
+    if not is_valid(explorer, kind, value):
+        raise ValueError(f"not a {kind} this explorer serves")
     return f"{_ACTION_PREFIX}{explorer.name!r}, {kind!r}, {value!r})"
 
 
@@ -184,6 +222,6 @@ def parse_open_action(action: object) -> tuple[Explorer, str, str] | None:
         return None
     name, kind, value = match.groups()
     explorer = EXPLORERS.get(name)
-    if explorer is None or kind not in KINDS or not _valid(kind, value):
+    if explorer is None or not is_valid(explorer, kind, value):
         return None
     return explorer, kind, value

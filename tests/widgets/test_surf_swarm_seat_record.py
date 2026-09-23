@@ -18,18 +18,21 @@ from textual.app import App
 from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.data.surf_swarm import seat_work_rows
 from maxpane_dashboard.widgets.fmt import hhmm
-from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
+from maxpane_dashboard.widgets import explorer as X
+from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS, NODE_TITLES
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
 from maxpane_dashboard.widgets.surf.swarm_seat_record import (
     COMPACT_WIDTH,
     EMPTY_LINE,
     FULL_WIDTH,
     JOB_COLS,
+    NODE_COLS,
     ANSWER_MIN_COLS,
     TIGHT_WIDTH,
     SurfSwarmSeatRecord,
 )
 from tests.surf_swarm_fixtures import swarm_capture_v5, swarm_seat_capture
+from tests.widgets.address_probe import link_targets
 from tests.widgets.surf_compositing import composite_lines
 
 SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmSeatRecord"]
@@ -45,6 +48,11 @@ SIZE = (180, 20)
 
 def _job(row) -> str:
     return row["job_id"][:JOB_COLS]
+
+
+def _node(row) -> str:
+    """The short word RECORD's node column shows for a known key."""
+    return NODE_TITLES[row["node_key"]].lower()
 
 
 def test_the_folded_rows_carry_exactly_the_frozen_shape():
@@ -145,12 +153,97 @@ async def test_a_work_row_renders_every_column():
     row = _row_with(lines, _job(NEWEST))
     assert hhmm(NEWEST["accepted_ts"]) in row
     assert NEWEST["job_id"][JOB_COLS:JOB_COLS + 4] not in row
-    assert NEWEST["node_key"] in row and NEWEST["role"] in row and NEWEST["job_state"] in row
+    cells = row.split()
+    assert cells[3] == _node(NEWEST) and NEWEST["node_key"] not in row
+    assert NEWEST["role"] in row and NEWEST["job_state"] in row
     assert "not read" in row and NEWEST["objective"] not in row
     text = "\n".join(lines)
     assert "RECORD" in text and f"as of {AS_OF}" in text
     header = _row_with(lines, "answer").split()
-    assert header == ["when", "job", "node", "role", "state", "launch", "sub", "model", "took", "answer"]
+    assert header == ["when", "job", "node", "role", "state", "model", "took", "answer"]
+
+
+async def test_the_title_has_no_blank_row_under_it():
+    """Owner, 2026-09-22: RECORD alone drops ``PanelBase``'s blank row."""
+    lines = await _record()
+    y = next(i for i, line in enumerate(lines) if "RECORD" in line)
+    assert lines[y + 1].split()[:3] == ["when", "job", "node"], lines[y:y + 2]
+
+
+async def test_every_known_node_key_shows_its_card_word_and_an_unknown_one_is_fitted():
+    rows = [dict(NEWEST, job_id=f"{i:08x}", node_key=key)
+            for i, key in enumerate([*NODE_TITLES, "integrate_everything"])]
+    lines = await _record(swarm_seat_work_rows=rows)
+    for row in rows[:-1]:
+        assert _row_with(lines, _job(row)).split()[3] == NODE_TITLES[row["node_key"]].lower()
+    unknown = _row_with(lines, _job(rows[-1])).split()[3]
+    assert unknown == "integ…" and len(unknown) == NODE_COLS
+
+
+async def _record_links(rows):
+    from textual.app import App as _App
+
+    class _A(_App):
+        def compose(self):
+            yield SurfSwarmSeatRecord()
+
+    async with _A().run_test(size=SIZE) as pilot:
+        widget = pilot.app.query_one(SurfSwarmSeatRecord)
+        widget.update_data(swarm_seat_work_rows=rows, swarm_seat_state="ok",
+                           swarm_seat_as_of_hhmm=AS_OF)
+        await pilot.pause()
+        painted = ["".join(s.text for s in strip)
+                   for strip in pilot.app.screen._compositor.render_strips()]
+        return painted, link_targets(pilot.app)
+
+
+async def test_a_job_id_links_its_imd_explorer_page_on_every_shown_cell():
+    painted, links = await _record_links([NEWEST])
+    y = next(i for i, line in enumerate(painted) if _job(NEWEST) in line)
+    x = painted[y].index(_job(NEWEST))
+    cells = [t for t in links if t[1] == y]
+    assert [t[0] for t in cells] == list(range(x, x + JOB_COLS)), "the whole shown id, no more"
+    url = f"https://explorer.imd.fun/jobs/{NEWEST['job_id']}"
+    assert {t[2:] for t in cells} == {("imd", "job", NEWEST["job_id"], url)}
+    assert X.is_job_id(NEWEST["job_id"])
+
+
+async def test_a_job_id_that_is_not_a_canonical_uuid_is_shown_but_never_linked():
+    rows = [dict(NEWEST, job_id=bad) for bad in
+            ("day1abcd-not-a-uuid", NEWEST["job_id"].upper(), "../../x" + NEWEST["job_id"][7:])]
+    painted, links = await _record_links(rows)
+    assert links == []
+    assert any("day1abc…" in line for line in painted)
+
+
+async def test_a_failed_attempt_writes_its_answer_in_red():
+    class _A(App):
+        def compose(self):
+            yield SurfSwarmSeatRecord()
+
+    rows = [dict(NEWEST, job_id="0000aaaa", work_status="failed", answer_state="read",
+                 answer="wrote outside the task"),
+            dict(NEWEST, job_id="0000bbbb", work_status="rejected", answer_state="read",
+                 answer="check passes with ok"),
+            dict(NEWEST, job_id="0000cccc", work_status="failed", answer_state="not_read")]
+    async with _A().run_test(size=SIZE) as pilot:
+        widget = pilot.app.query_one(SurfSwarmSeatRecord)
+        widget.update_data(swarm_seat_work_rows=rows, swarm_seat_state="ok",
+                           swarm_seat_as_of_hhmm=AS_OF)
+        await pilot.pause()
+        painted = ["".join(s.text for s in strip)
+                   for strip in pilot.app.screen._compositor.render_strips()]
+        theme = pilot.app.ansi_theme
+        red = Color.parse("red").get_truecolor(theme)
+
+        def colour(word):
+            y = next(i for i, line in enumerate(painted) if word in line)
+            return pilot.app.screen.get_style_at(painted[y].index(word), y).color.get_truecolor(theme)
+
+        assert colour("wrote outside") == red
+        assert colour("not read") == red, "a failed row's answer word is red whatever it says"
+        assert colour("check passes") != red, "only failed, never rejected"
+
 
 
 async def test_the_answer_is_clipped_with_an_ellipsis_and_the_title_says_widen():
@@ -241,9 +334,9 @@ async def test_one_below_compact_sheds_the_answer():
     lines = await _record((COMPACT_WIDTH + gutter - 1, 12), swarm_seat_work_rows=[NEWEST])
     header = _row_with(lines, "when").split()
     assert "answer" not in header and "‹" in "\n".join(lines)
-    assert NEWEST["node_key"] in "\n".join(lines)
+    assert _row_with(lines, _job(NEWEST)).split()[3] == _node(NEWEST)
 
-async def test_dates_survive_midnight_and_launch_submission_are_plain():
+async def test_dates_survive_midnight_and_launch_submission_are_not_columns():
     from maxpane_dashboard.widgets.fmt import mmdd
     rows = [dict(NEWEST, job_id=f"day{i}abcd", accepted_ts=1_758_456_000+i*86400,
                  launch="evm_project" if i else None, submission_hash="ab"*32) for i in range(2)]
@@ -251,7 +344,9 @@ async def test_dates_survive_midnight_and_launch_submission_are_plain():
     assert mmdd(rows[0]["accepted_ts"]) != mmdd(rows[1]["accepted_ts"])
     for row in rows:
         assert f"{mmdd(row['accepted_ts'])} {hhmm(row['accepted_ts'])}" in text
-    assert "evm_project" in text and "abababab" in text and "—" in text
+    # Owner, 2026-09-22: launch and sub were hidden so the answer gets the room.
+    assert "launch" not in text and "sub" not in text.split()
+    assert "evm_project" not in text and "abababab" not in text
     assert "⧉" not in text
 
 
@@ -267,7 +362,7 @@ async def test_polish_answer_states_and_same_read_usage(state,word):
              objective='OBJECTIVE MUST NOT PAINT',launch='evm_project')
     lines=await _record((200,12),swarm_seat_work_rows=[row])
     header=_row_with(lines,'when').split()
-    assert header==['when','job','node','role','state','launch','sub','model','took','answer']
+    assert header==['when','job','node','role','state','model','took','answer']
     line=_row_with(lines,_job(row))
     assert word in line and 'OBJECTIVE MUST NOT PAINT' not in '\n'.join(lines)
     if state in ('read','no_reply'):

@@ -97,7 +97,8 @@ def test_missing_contributors_is_unread_not_an_empty_board(source, workers):
     assert sw.board_rows(source, workers) is None
     assert sw.seat_contrib(source, 420) is None
     summary = sw.board_summary(source, workers)
-    for key in ('seats', 'attempts', 'accepted', 'rejected', 'pending', 'receipts', 'tokens_per_completed_job'):
+    for key in ('seats', 'attempts', 'accepted', 'rejected', 'pending', 'devices', 'turns',
+                'wall_clock_ms', 'input_tokens', 'output_tokens', 'receipts', 'tokens_per_completed_job'):
         assert summary[key] is None
     assert summary['live'] == workers['count']
 
@@ -133,8 +134,12 @@ def test_board_summary_keeps_both_sources_and_served_totals(contributors, worker
     summary = sw.board_summary(contributors, workers)
     assert tuple(summary) == SWARM_BOARD_SUMMARY_FIELDS
     assert summary['seats'] == len({row['tokenId'] for row in contributors['contributors']})
-    for key in ('attempts', 'accepted', 'rejected', 'pending'):
+    for key in ('attempts', 'accepted', 'rejected', 'pending', 'turns'):
         assert summary[key] == sum(row[key] for row in contributors['contributors'])
+    for key, served in (('wall_clock_ms', 'wallClockMs'), ('input_tokens', 'inputTokens'),
+                        ('output_tokens', 'outputTokens')):
+        assert summary[key] == sum(int(row[served]) for row in contributors['contributors'])
+    assert summary['devices'] == len(contributors['contributors'])
     assert summary['live'] == workers['count']
     assert summary['paused'] == len({row['seat']['tokenId'] for row in workers['workers'] if row['paused']})
     assert summary['capacity'] == sum(row['maxConcurrency'] for row in workers['workers'])
@@ -145,6 +150,27 @@ def test_board_summary_keeps_both_sources_and_served_totals(contributors, worker
     assert sw.board_summary(contributors, modified)['live'] == 999
     assert sw.board_summary(contributors, dict(workers, count=True))['live'] is None
     assert sw.board_summary(None, None) == dict.fromkeys(SWARM_BOARD_SUMMARY_FIELDS)
+
+
+def test_contributor_token_sums_are_unknown_when_one_row_does_not_serve_them(contributors):
+    """inputTokens/outputTokens are optional per row: one unserved row makes
+    that sum unknown, never a smaller number; the required counters still sum."""
+    source = copy.deepcopy(contributors)
+    del source['contributors'][0]['inputTokens']
+    summary = sw.board_summary(source, None)
+    assert summary['input_tokens'] is None
+    assert summary['output_tokens'] == sum(int(r['outputTokens']) for r in source['contributors'])
+    assert summary['turns'] == sum(r['turns'] for r in source['contributors'])
+
+
+def test_a_malformed_contributor_leaves_every_contributor_sum_unknown(contributors):
+    source = copy.deepcopy(contributors)
+    source['contributors'][0]['turns'] = '-1'
+    summary = sw.board_summary(source, None)
+    for key in ('attempts', 'accepted', 'rejected', 'pending', 'devices', 'turns',
+                'wall_clock_ms', 'input_tokens', 'output_tokens'):
+        assert summary[key] is None, key
+    assert summary['seats'] == len({r['tokenId'] for r in source['contributors']})
 
 
 def test_fleet_mixes_and_heartbeats_are_derived_from_each_worker(workers):

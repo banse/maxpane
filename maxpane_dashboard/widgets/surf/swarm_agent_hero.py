@@ -52,10 +52,12 @@ BOX_IDS = {
     "status": "surf-swarm-agent-status",
 }
 
-#: How the seat was picked (``sw.choose_seat``): the seat saved in
-#: ``~/.maxpane/config.toml``, or the busiest seat.
+#: How the seat was picked (``sw.choose_seat``), said only when it is not the
+#: seat you saved in ``~/.maxpane/config.toml``: a saved seat is the normal
+#: case and SEAT says nothing (owner, 2026-09-22); the busiest seat stands in
+#: for no saved one and says so.
 _SELECTED_BY = {
-    "saved": "saved",
+    "saved": "",
     "most_active": "most active",
 }
 
@@ -128,7 +130,8 @@ class SurfSwarmAgentHero(HeroRow):
             body.append(NEVER_PAIRED_WORDS, style=NEVER_PAIRED_STYLE)
         else:
             how = selected.get("selected_by")
-            body.append(_SELECTED_BY.get(how, flatten(how) or DASH), style="dim")
+            word = _SELECTED_BY.get(how) if isinstance(how, str) else None
+            body.append(flatten(how) or DASH if word is None else word, style="dim")
         return body
 
     @staticmethod

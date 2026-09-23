@@ -5,15 +5,21 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags
 from maxpane_dashboard.widgets.panels import SignalsPanelBase
+from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 from maxpane_dashboard.widgets.surf._fmt import source_clock
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 
 # Eleven cells align the longest label, tokens/job, plus one separating cell.
 # At BOARD's 37 outer cells the content is 33, leaving 22 for whole mix items.
 # The model's second line carries its exact omitted count and advertised note.
+# CONTRIBUTORS has a blank row under its sub-header and five /contributors
+# lines (owner, 2026-09-22: "show more data about the contributors"); a pair
+# that outgrows its line keeps its first value and counts the rest as +N.
 LABEL_WIDTH = 11
 _NAMES = ('runtime', 'model', 'model-note', 'daemon', 'os', 'profile', 'slots',
-          'heartbeat', None, 'paused', 'paused-detail', None, 'contributors', 'tokens')
+          'heartbeat', None, 'paused', 'paused-detail', None, 'contributors', None,
+          'devices', 'accepted', 'rejected', 'turns', 'tokens-io', 'tokens')
+_MS_PER_HOUR = 3_600_000
 _MIXES = {'runtime': 'runtimes', 'daemon': 'daemons', 'os': 'os',
           'profile': 'profiles', 'slots': 'concurrency'}
 
@@ -97,9 +103,40 @@ class SurfSwarmFleet(SignalsPanelBase):
         note += Text('(advertised)', style='dim')
         return prefix + value, note
 
+    @staticmethod
+    def _count(value, word='', compact=False):
+        out = Text(fmt_compact(value) if compact else fmt_int(value), style='bold')
+        return out.append(' ' + word, style='dim') if word else out
+
+    def _contributors(self, name, summary):
+        """One /contributors line; its first value unread is the whole line unread."""
+        summary = summary if isinstance(summary, dict) else {}
+        get = lambda key: seat_token(summary.get(key))
+        first, parts = {
+            'devices': (get('devices'), [self._count(get('devices')),
+                                         get('seats') is not None and self._count(get('seats'), 'seats')]),
+            'accepted': (get('accepted'), [self._count(get('accepted')) + (
+                Text(' of ', style='dim') + self._count(get('attempts'))
+                if get('attempts') is not None else Text())]),
+            'rejected': (get('rejected'), [self._count(get('rejected')),
+                                           get('pending') is not None and self._count(get('pending'), 'pending')]),
+            'turns': (get('turns'), [self._count(get('turns')),
+                                     get('wall_clock_ms') is not None
+                                     and self._count(get('wall_clock_ms') // _MS_PER_HOUR, 'h')]),
+            'tokens-io': (get('input_tokens'), [self._count(get('input_tokens'), 'in', compact=True),
+                                                get('output_tokens') is not None
+                                                and self._count(get('output_tokens'), 'out', compact=True)]),
+        }[name]
+        label = 'tokens' if name == 'tokens-io' else name
+        if first is None:
+            return self._label(label) + Text('unavailable', style='yellow')
+        return self._fit(label, [part for part in parts if part])
+
     def _line(self, name, fleet, summary, clock):
         if name == 'contributors':
             return Text('CONTRIBUTORS · as of ' + source_clock(clock), style='dim')
+        if name in ('devices', 'accepted', 'rejected', 'turns', 'tokens-io'):
+            return self._contributors(name, summary)
         if name == 'tokens':
             value = summary.get('tokens_per_completed_job') if isinstance(summary, dict) else None
             return self._label('tokens/job') + (Text('unavailable', style='yellow') if value is None else

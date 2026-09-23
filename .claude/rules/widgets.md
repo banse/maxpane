@@ -58,7 +58,9 @@ window rule (8/6 at 17 cells) is surf's anti-poisoning form.
 
 **And a link to its chain's explorer** (Branch 4 of the refactor programme, both work packages
 landed 2026-09-20). `widgets/explorer.py` is the one module that
-names an explorer (`ETHEREUM`, `BASE`, `SEPOLIA`; `for_network(word)` for surf's per-row network
+names an explorer (`ETHEREUM`, `BASE`, `SEPOLIA`, and `IMD` -- the swarm's own site, whose one
+kind is `job`, linked by `address.job_text` for a canonical lowercase UUID; each `Explorer` names
+the `kinds` it serves and `is_valid` checks kind and value together; `for_network(word)` for surf's per-row network
 words and `for_chain_id(id)` for a swarm row's `chain_id`, `None` for anything unknown — never a
 guess), builds a URL (`address_url`, `tx_url`) and
 writes or reads the action `app.open_explorer(name, kind, value)`. Pass `explorer=` to

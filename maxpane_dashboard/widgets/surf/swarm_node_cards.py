@@ -1,10 +1,12 @@
 """AGENT card row three: ROLES, the node cards, OTHERS and BOARD.
 
-Replaced the BY NODE table on 2026-09-22 (owner). Nodes keep the fold's order
-(reviewed desc). The first :data:`NODE_CARDS` nodes get a card each, titled
-with a known key's short word (:data:`NODE_TITLES`); OTHERS always sums every
-node after them (owner, 2026-09-22), and reads ``0 of 0`` when the list was
-read and there are none. A node card reads ``accepted of attempts`` -- the
+Replaced the BY NODE table on 2026-09-22 (owner). Each known node key has a
+card of its own, in :data:`NODE_TITLES` order and titled with its short word
+whether or not the seat worked it (owner, 2026-09-22); OTHERS sums every node
+the table does not name. A card with nothing to show -- the node is absent,
+or it has no attempts and nothing accepted -- reads a dim ``—``, OTHERS too
+(owner: "when the node values are 0 always show the -"). A node card reads
+``accepted of attempts`` -- the
 hero's ACCEPTED per node. Under the pre-2026-09-22 ``/seats`` shape per-node
 attempts were not served (``attempts`` is ``None``) and the card shows the
 accepted count with no rate. The roles after a node's rate are shortened
@@ -18,10 +20,11 @@ from rich.text import Text
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int
-from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup
+from maxpane_dashboard.widgets.sparkline_common import fmt_compact
+from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import UNAVAILABLE
 from maxpane_dashboard.widgets.surf._fmt import EMDASH, fmt_win_rate
-from maxpane_dashboard.widgets.surf._swarm_seat import board_body, contrib_body, seat_token
+from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, board_body, contrib_body, seat_token
 from maxpane_dashboard.widgets.surf.swarm_agent_cards import (
     SurfSwarmAgentCards,
     count,
@@ -31,20 +34,25 @@ from maxpane_dashboard.widgets.surf.swarm_agent_cards import (
 
 __all__ = ["NODE_BOX_IDS", "NODE_CARDS", "NODE_TITLES", "ROLE_SHORT", "SurfSwarmNodeCards"]
 
-#: How many nodes get a card of their own; OTHERS sums the rest.
-NODE_CARDS = 3
+#: How many nodes get a card of their own -- one per known key, in
+#: :data:`NODE_TITLES` order; OTHERS sums every other key.
+NODE_CARDS = len(NODE_TITLES)
+_CARD_KEYS = tuple(NODE_TITLES)
 
 #: Role names shortened after a node card's rate (owner, 2026-09-22). An
 #: unknown role keeps its own fitted text.
 ROLE_SHORT = {"implement": "impl", "review": "rev"}
 
-#: Card titles for the node keys the swarm serves (owner, 2026-09-22). An
-#: unknown key keeps its own fitted, escaped text as its title.
-NODE_TITLES = {
-    "oracle_assess": "ORACLE",
-    "adversarial_review": "REVIEW",
-    "build_contract_project": "BUILD",
-}
+def _whole(value: int) -> str:
+    """A count in whole thousands or millions (``10K``, ``2M``): the node
+    cards' last short form, for when ``fmt_compact``'s decimal does not fit."""
+    for size, unit in ((1_000_000, "M"), (1_000, "K")):
+        if abs(value) >= size:
+            return f"{round(value / size)}{unit}"
+    return fmt_int(value)
+
+
+_NUMS = (fmt_int, fmt_compact, _whole)
 
 NODE_BOX_IDS = {
     "roles": "surf-swarm-card-roles",
@@ -83,8 +91,8 @@ class SurfSwarmNodeCards(SurfSwarmAgentCards):
         rows = None if rows is None else [r for r in rows if isinstance(r, dict)]
         for i in range(NODE_CARDS):
             key = f"node{i}"
-            label, build = self._node_card(i, rows, blocked, state)
-            self.render_box(f"#{NODE_BOX_IDS[key]}", label, build)
+            build = self._node_card(i, rows, blocked, state)
+            self.render_box(f"#{NODE_BOX_IDS[key]}", NODE_TITLES[_CARD_KEYS[i]], build)
         self.render_box(f"#{NODE_BOX_IDS['others']}", "OTHERS",
                         lambda: self._others_body(rows, blocked, state))
         contrib = swarm_seat_contrib
@@ -117,26 +125,41 @@ class SurfSwarmNodeCards(SurfSwarmAgentCards):
     def _node_card(self, i: int, rows, blocked, state):
         key = f"node{i}"
         if blocked is not None:
-            return "NODE", (lambda: gate(state, first=False) or dim_dash())
+            return lambda: gate(state, first=False) or dim_dash()
         if rows is None:
-            return "NODE", (lambda: UNAVAILABLE if i == 0 else dim_dash())
+            return lambda: UNAVAILABLE if i == 0 else dim_dash()
         if not rows:
-            return "NODE", (lambda: Text("no nodes yet", style="dim") if i == 0 else dim_dash())
-        if i >= len(rows):
-            return "NODE", dim_dash
-        row = rows[i]
-        node_key = row.get("node_key")
-        title = NODE_TITLES.get(node_key) if isinstance(node_key, str) else None
-        label = title or safe_markup(self._fit(key, node_key) or "--")
-        return label, (lambda: self._node_body(key, row, roles=row.get("roles") or []))
+            return lambda: Text("no nodes yet", style="dim") if i == 0 else dim_dash()
+        row = next((r for r in rows if r.get("node_key") == _CARD_KEYS[i]), None)
+        if row is None or self._empty(row):
+            return dim_dash
+        return lambda: self._node_body(key, row, roles=row.get("roles") or [])
+
+    @staticmethod
+    def _empty(row: dict) -> bool:
+        """Every count the card shows is zero or unread: the card has nothing
+        to say. A node with reviews but no work still has a ``chain`` count,
+        and that is not nothing."""
+        return not any(seat_token(row.get(k)) for k in ("accepted", "attempts", "onchain"))
+
+    def _num(self, key: str, line):
+        """The first of ``fmt_int``, ``fmt_compact`` (``10.0K``) and
+        :func:`_whole` (``10K``) whose *line* fits card *key* -- a shorter
+        honest number, never a cut one; the last one stands if none fits."""
+        for num in _NUMS:
+            if rowfit.cell_len(line(num)) <= self._room(key):
+                return num
+        return _NUMS[-1]
 
     def _node_body(self, key: str, row: dict, roles) -> Text:
         attempts, accepted = seat_token(row.get("attempts")), seat_token(row.get("accepted"))
+        num = self._num(key, lambda n: (n(accepted) if accepted is not None else "--") + (
+            f" of {n(attempts)}" if attempts is not None else " accepted"))
         body = Text()
-        body.append(fmt_int(accepted) if accepted is not None else "--",
+        body.append(num(accepted) if accepted is not None else "--",
                     style="bold green" if accepted else "bold")
         if attempts is not None:
-            body.append(" of ", style="dim").append(fmt_int(attempts), style="bold")
+            body.append(" of ", style="dim").append(num(attempts), style="bold")
         else:
             body.append(" accepted", style="dim")
         body.append("\n")
@@ -147,21 +170,24 @@ class SurfSwarmNodeCards(SurfSwarmAgentCards):
                               for r in roles)
             reserved = rowfit.cell_len(rate) + 3
             body.append(" · ", style="dim").append(self._fit(key, names, reserved=reserved), style="dim")
-        chain = count(row.get("onchain"))
+        onchain = seat_token(row.get("onchain"))
+        chain = None if onchain is None else self._num(key, lambda n: f"chain {n(onchain)}")(onchain)
         body.append("\n").append("chain ", style="dim").append(chain or "--", style="bold")
         return body
 
     # -- OTHERS -------------------------------------------------------------
 
     def _others_body(self, rows, blocked, state) -> str | Text:
-        """Every node after the first :data:`NODE_CARDS`, summed; ``0 of 0`` for none."""
+        """Every node no card names, summed; a dim ``—`` when that is nothing."""
         if blocked is not None:
             return gate(state, first=False) or dim_dash()
         if rows is None:
             return dim_dash()
-        rest = rows[NODE_CARDS:]
+        rest = [r for r in rows if r.get("node_key") not in _CARD_KEYS]
         total = {k: sum(v for r in rest if (v := seat_token(r.get(k))) is not None)
                  for k in ("accepted", "onchain")}
         attempts = [seat_token(r.get("attempts")) for r in rest]
         total["attempts"] = None if None in attempts else sum(attempts)
+        if self._empty(total):
+            return dim_dash()
         return self._node_body("others", total, roles=None)

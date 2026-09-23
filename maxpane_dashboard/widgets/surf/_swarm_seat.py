@@ -38,12 +38,22 @@ __all__ = [
     "count",
     "rank_body",
     "NEVER_PAIRED_STYLE",
+    "NODE_TITLES",
     "NEVER_PAIRED_TEMPLATE",
     "NEVER_PAIRED_WORDS",
     "never_paired",
     "seat_state_line",
     "seat_token",
 ]
+
+#: The short word for each node key the swarm serves (owner, 2026-09-22):
+#: the node cards' titles and RECORD's node column (lower-cased there, like
+#: its other cells). An unknown key keeps its own fitted, escaped text.
+NODE_TITLES = {
+    "oracle_assess": "ORACLE",
+    "adversarial_review": "REVIEW",
+    "build_contract_project": "BUILD",
+}
 
 #: The real negative's words on their own -- where the seat's number is
 #: already on the line above (the hero's SEAT box), or not known to the panel.

@@ -1672,8 +1672,11 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: window plus its copy icon is whole from 139 and ellipsises at 138 -- a
 #: visible cut, which the sweep counts as a clipped line. Measured onsets
 #: under it: the node row is whole from 116 (the stress payload's
-#: ``55,555 acc of 99,999`` BOARD; OTHERS carries no overflow title since
-#: 2026-09-22), the status bar from 134, the row-1 hero from 129 (the stress
+#: ``55,555 acc of 99,999`` BOARD). OTHERS sums every node key the named
+#: cards do not since 2026-09-22 (seat_0 serves deploy_script/manifest), so
+#: a node card's counts shorten instead of cutting: full ``5,011 of 50,011``
+#: at 142-143 and 145+, ``5.0K of 50.0K`` at 144, 129 and 131-141, whole
+#: ``5K of 50K`` at 127-128 and 130 (fr rounding interleaves them). The status bar from 134, the row-1 hero from 129 (the stress
 #: payload's ``19,998 pending``). On the capture the node row is whole from
 #: 108 and the hero from 116; the pending payload's RANK (hero column 5)
 #: from 117. STATUS writes ``⚙`` for
@@ -1685,9 +1688,10 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: Row 1 gives up one right-hand column (``padding: 0 1 0 0``) so its
 #: right edge lines up with the card rows inside the body's scrollbar gutter.
 #:
-#: RECORD is this body's one named exception: at 139 its compact tier keeps
-#: when/job/node/state/model/took/answer without horizontal clipping;
-#: role/launch/sub are intentionally shed. Full order and onset are at
+#: RECORD is this body's one named exception: at 139 its full tier keeps
+#: when/job/node/role/state/model/took/answer without horizontal clipping
+#: (full from 105, compact 94-104, tight below; before launch/sub left the
+#: table on 2026-09-22 role was shed here). Full order and onset are at
 #: RECORD_NEVER_CLEARS_BELOW below.
 SURF_AGENT_FULL_LAYOUT_COLUMNS = 139
 
@@ -1696,7 +1700,10 @@ SURF_AGENT_FULL_LAYOUT_COLUMNS = 139
 #: two-cell gap between cards (+2), and allowed RECORD to shrink to pay
 #: for it: RECORD's floor went 8 -> 6 (-2). Measured at 139 columns through
 #: heights 26–45 on the twelve payloads named above: ``‹ taller`` lit
-#: through 32, dark from 33 on every one. The card rows are fixed-height,
+#: through 32, dark from 33 on every one. Re-swept 2026-09-22 when RECORD
+#: lost the blank row under its title (the owner's exception for this body
+#: only): still 33 on all twelve -- the freed row lands inside RECORD's
+#: 6-row floor and so never reaches the pin. The card rows are fixed-height,
 #: so the body is the only container that scrolls. The owner's 35 rows
 #: fit; 31 shows ``‹ taller``.
 SURF_AGENT_FULL_LAYOUT_ROWS = 33
@@ -1707,7 +1714,10 @@ SURF_AGENT_FULL_LAYOUT_ROWS = 33
 #: Dead fixture compositor: marked203 (answer79), whole204 (answer80),205;
 #: selected columns have no horizontal scroll. Five-hundred-character stress
 #: answers still clip here. This is a content exception, not a body pin.
-RECORD_NEVER_CLEARS_BELOW = 204
+#: 204 -> 165 on 2026-09-22: the owner dropped launch/sub and narrowed node
+#: to six cells (oracle/review/build) so the answer gets the room. Swept
+#: 206 -> 151 on the same payload: marked at 164, whole from 165.
+RECORD_NEVER_CLEARS_BELOW = 165
 
 #: CAPABILITY optional inf/acc-att columns: baseline keeps every original
 #: column from141. At165 its115-cell panel sheds only these two extras;
@@ -1776,12 +1786,24 @@ BOARD_BODY_ID = "surf-board-body"
 #: column and retain visible ellipsis plus widen even at the full-tier pin.
 #: Only runtime may clip in that stress case; capture and source-failure
 #: labels, all fixed counters, clocks and all twelve columns fit whole.
-#: Owner 119 x 35 and 138 x 31 both fit vertically; LEADERBOARD is tight at
+#: Owner 119 x 35 fits vertically (138 x 31 did until the 33-row pin, below); LEADERBOARD is tight at
 #: 119 and compact at 138. Both mark widen; status is cropped only at 119. App-wide
 #: 143 is unchanged.
 SURF_BOARD_FULL_LAYOUT_COLUMNS = 141
 
-#: BOARD height, remeasured 2026-09-22 for polish WP3: every row 23–32 at
+#: BOARD height, 27 -> 33 on 2026-09-22 (owner: a blank row under
+#: CONTRIBUTORS and "more data about the contributors" -- five lines:
+#: devices · seats, accepted of attempts, rejected · pending, turns · hours,
+#: tokens in · out). FLEET went 16 -> 22 rows with pauses (21 without), and
+#: the body followed it one for one. Re-measured at 141 columns through
+#: heights 45 down to 21 on capture, v4, stress and all three source-failure
+#: states: ``‹ taller`` lit through 32 and dark from 33 on capture, stress and
+#: contributors-unread; v4, workers-unread and both-unread are whole from 32.
+#: The width did not move (every payload marks first at 140; stress's named
+#: runtime exception marks at 141 as before). The owner's 35 rows fit; 31
+#: now shows ``‹ taller`` -- the price of the five lines, not a margin.
+#:
+#: Before that, remeasured 2026-09-22 for polish WP3: every row 23–32 at
 #: 141 columns, with v3 capture, v4 workers, 999-seat/five-digit stress and
 #: all three source-failure states. FLEET now has aligned labels, the model
 #: mix plus its advertised/omitted-count continuation, separate paused count
@@ -1795,9 +1817,9 @@ SURF_BOARD_FULL_LAYOUT_COLUMNS = 141
 #: was re-swept 60–225 on v4/stress and at source-state boundaries: all twelve
 #: columns still begin at 141; 140 sheds three. FLEET remains 37 outer cells,
 #: 35 panel cells and 33 content cells, with no silent clipping at the pin.
-#: Both owner heights (31 and 35) fit. AGENT remains 138×32: its exact approved
-#: polish grouping measured 37 rows and was skipped under the owner budget.
-SURF_BOARD_FULL_LAYOUT_ROWS = 27
+#: Both owner heights (31 and 35) fitted then. AGENT remained 138×32: its exact
+#: approved polish grouping measured 37 rows and was skipped under the owner budget.
+SURF_BOARD_FULL_LAYOUT_ROWS = 33
 
 #: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
 #:
@@ -3808,7 +3830,6 @@ class SurfScreen(DashboardScreen):
                 burn_accrued=data.get("burn_accrued"),
                 burn_staged=data.get("burn_staged"),
                 burn_ready=data.get("burn_ready"),
-                imd_supply=data.get("imd_supply"),
                 imd_burned_cum=data.get("imd_burned_cum"),
             )
         except Exception as exc:

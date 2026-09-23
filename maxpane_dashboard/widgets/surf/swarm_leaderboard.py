@@ -41,7 +41,12 @@ class SurfSwarmLeaderboard(SwarmTableBase):
     TIER_COLUMNS={'full':_ALL,'compact':_COMPACT,'tight':_TIGHT}
     LADDER=rowfit.Ladder(*((name,table_cols(w for key,_,w in _SPECS if key in keep))
                           for name,keep in TIER_COLUMNS.items()))
+    #: Owner, 2026-09-22: one blank cell left of the table, one fewer on its
+    #: right -- a 1-cell margin paid for by a 1-cell vertical scrollbar, so
+    #: ``GUTTER_COLS`` (2) is margin plus scrollbar and the ladder's budget,
+    #: and with it the BOARD width pin, is unchanged.
     DEFAULT_CSS='''
+    SurfSwarmLeaderboard > DataTable { margin: 0 0 0 1; scrollbar-size-vertical: 1; }
     SurfSwarmLeaderboard > .board-clocks { height: 1; padding: 0 1; text-wrap: nowrap; text-overflow: ellipsis; }
     '''
     def __init__(self,*args,**kwargs):

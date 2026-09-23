@@ -4,10 +4,13 @@ Since 2026-09-22 ``work[]`` lists pending, rejected and failed attempts beside
 accepted ones. ``state`` shows the attempt's own status whenever it is not
 ``accepted`` (a failed attempt on a completed job must not read as a green
 ``completed``), and the job's state otherwise or under the pre-status shape.
-Timestamps (submitted, else accepted) include month/day across midnight. Launch is a sanitized
-name or a real-none em dash. Submission hashes are plain eight-character
-prefixes, never explorer links. Answer takes the remaining width and
-lights ``‹ widen`` when cut. The scrollable table caps at forty rows and
+Timestamps (submitted, else accepted) include month/day across midnight.
+The job cell links a canonical job id to its IMD explorer page; the node
+cell is the node's short word (:data:`_swarm_seat.NODE_TITLES`). Launch and
+submission hash are not columns (owner, 2026-09-22: the answer gets the room);
+a failed attempt's answer is red. Answer takes the remaining width and
+lights ``‹ widen`` when cut. The title has no blank row under it (owner,
+2026-09-22, this panel only). The scrollable table caps at forty rows and
 explicitly counts older rows; the seat state hides stale rows before rendering.
 """
 
@@ -18,10 +21,11 @@ import math
 from rich.text import Text
 
 from maxpane_dashboard.widgets import rowfit
+from maxpane_dashboard.widgets.address import job_text
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
-from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, mmdd_hhmm
-from maxpane_dashboard.widgets.surf._swarm_seat import seat_state_line
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm
+from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
 __all__ = [
@@ -48,13 +52,14 @@ _WHEN_COLS = 11
 #: (``ad7bebb8-fd1a-4268-b831-1c253a85ae4c``); the whole id is 36 cells and
 #: no use on screen, the first group is how the swarm's own pages and this
 #: repo's tests name a job. A head slice, never a head-and-tail window (that
-#: is an address formatter's shape, ``tests/test_address_rule.py``).
+#: is an address formatter's shape, ``tests/test_address_rule.py``). The
+#: shown group links the whole id's explorer page (``address.job_text``).
 JOB_COLS = 8
 
-#: Node ``key`` <= 22 chars on every captured seat (``build_contract_project``
-#: is 22, ``adversarial_review`` 18): the longest known key renders whole and
-#: a longer, unseen one clips with a visible ``…``. BY NODE uses the same known node vocabulary.
-NODE_COLS = 22
+#: The widest known short word (``oracle``, ``review``; ``build`` 5). An
+#: unknown node key is fitted to it with a visible ``…`` (owner, 2026-09-22:
+#: the answer gets the cells the 22-cell keys took).
+NODE_COLS = 6
 
 #: ``implement`` / ``integrate`` are 9; ``review`` 6.
 _ROLE_COLS = 9
@@ -76,14 +81,12 @@ _SPECS = (
     ("node", "node", NODE_COLS),
     ("role", "role", _ROLE_COLS),
     ("state", "state", _STATE_COLS),
-    ("launch", "launch", 11),
-    ("sub", "sub", 8),
     ("model", "model", 15),
     ("took", "took", 6),
     ("answer", "answer", ANSWER_MIN_COLS),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
-_COMPACT = tuple(key for key in _ALL if key not in ("role", "launch", "sub"))
+_COMPACT = tuple(key for key in _ALL if key != "role")
 _TIGHT = tuple(key for key in _COMPACT if key not in ("answer", "model", "took"))
 _TIERS = {"full": _ALL, "compact": _COMPACT, "tight": _TIGHT}
 
@@ -139,6 +142,15 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     TITLE = "RECORD"
     TABLE_ID = "surf-swarm-seat-record-table"
     CURSOR_TYPE = "none"
+
+    #: The one panel title with no blank row under it (owner, 2026-09-22):
+    #: the exception to ``PanelBase``'s ``margin: 0 0 1 0``, stated here
+    #: where the panel is declared and pinned in the title-blank-row test.
+    DEFAULT_CSS = """
+    SurfSwarmSeatRecord > .panel-title {
+        margin: 0;
+    }
+    """
     #: Kept at 40 for lifetime rows (plan §9 G); the footer counts the rest.
     ROW_CAP = 40
 
@@ -197,18 +209,22 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         state_cell = sanitize_cell(state, _STATE_COLS)
         if color:
             state_cell = f"[{color}]{state_cell}[/]"
+        node_key = item.get("node_key")
+        title = NODE_TITLES.get(node_key) if isinstance(node_key, str) else None
+        answer = self._answer_cell(item)
+        if state == "failed":
+            # Plain red, not red over the not-read words' dim: dim would halve it.
+            answer = Text(answer.plain, style="red")
         return {
             "when": mmdd_hhmm(item.get("submitted_ts") if item.get("submitted_ts") is not None
                               else item.get("accepted_ts")),
-            "launch": EMDASH if item.get("launch") is None else sanitize_cell(item["launch"], 11),
-            "sub": Text(str(item["submission_hash"])[:8]) if item.get("submission_hash") else DASH,
-            "job": sanitize_cell(job, JOB_COLS),
-            "node": sanitize_cell(_word(item.get("node_key")), NODE_COLS),
+            "job": job_text(job_id, JOB_COLS, explorer=JOB_EXPLORER) if job != DASH else DASH,
+            "node": title.lower() if title else sanitize_cell(_word(node_key), NODE_COLS),
             "role": sanitize_cell(_word(item.get("role")), _ROLE_COLS),
             "state": state_cell,
             "model": self._usage_cell(item, "model", 15),
             "took": self._usage_cell(item, "took_s", 6),
-            "answer": self._answer_cell(item),
+            "answer": answer,
         }
 
     def _usage_cell(self, item: dict, key: str, width: int) -> str:

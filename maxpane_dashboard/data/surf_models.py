@@ -1524,15 +1524,18 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 # Missing top-level lists are unread, distinct from successful empty lists.
 
 #: Fields from /contributors: seats (distinct tokens), attempts/accepted/rejected/
-#: pending sums, receipts and tokens_per_completed_job (both as served).
+#: pending sums, devices (admitted rows), turns and wall_clock_ms sums, the
+#: input/output token sums (optional per row, so one unserved row leaves its sum
+#: None), receipts and tokens_per_completed_job (both as served).
 #: seats includes malformed token identities; incomplete contribution accounting
-#: leaves the four aggregate counters None. Unknown worker members yield unknown sums.
+#: leaves every aggregate counter None. Unknown worker members yield unknown sums.
 #: Fields from /workers: live (valid served count, never /health or a row count),
 #: paused (distinct seats), capacity and working sums. An unread source leaves
 #: only its own fields None; no source supplies or reconciles another's values.
 SWARM_BOARD_SUMMARY_FIELDS: tuple[str, ...] = (
     "seats", "live", "paused", "capacity", "working", "attempts", "accepted",
-    "rejected", "pending", "receipts", "tokens_per_completed_job",
+    "rejected", "pending", "devices", "turns", "wall_clock_ms", "input_tokens",
+    "output_tokens", "receipts", "tokens_per_completed_job",
 )
 
 #: /workers-only mixes: each list[{value: str, count: int}] sorts by count desc,

@@ -108,6 +108,9 @@ EXEMPT: dict[str, str] = {
         "quotes each site's deploy transaction hash through hash_text (a"
         " short_hex window linked to the package EXPLORER); a hash, never an"
         " address, so it carries no icon by design (swarm v2, WP7)",
+    "maxpane_dashboard.widgets.surf.swarm_seat_record.SurfSwarmSeatRecord":
+        "links each job id to explorer.imd.fun/jobs through job_text (a UUID"
+        " head slice); a job id, never an address, so no icon (2026-09-22)",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
     "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":

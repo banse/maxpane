@@ -18,7 +18,8 @@ each glyph through :func:`copy_action`, so the format still lives only here.
 window or the label standing in for it, never the icon -- is an OSC 8
 hyperlink to that explorer's page (Cmd+click in the terminal) and carries the
 ``@click`` action ``explorer_action.ExplorerLinkMixin`` opens it with;
-:func:`hash_text` does the same for a transaction hash. With ``explorer=None``
+:func:`hash_text` does the same for a transaction hash and :func:`job_text`
+for a swarm job id on the IMD explorer. With ``explorer=None``
 every function renders exactly as it did before the links existed.
 """
 
@@ -32,6 +33,7 @@ from rich.text import Text
 
 from maxpane_dashboard.widgets.explorer import (
     Explorer,
+    is_job_id,
     is_tx_hash,
     open_action,
     parse_open_action,
@@ -40,7 +42,7 @@ from maxpane_dashboard.widgets.explorer import (
 
 __all__ = [
     "ADDRESS_RE", "COPY_GLYPH", "ICON_COLS", "MIN_SHORT_COLS", "PROSE_ADDRESS_RE",
-    "address_prose", "address_text", "copy_action", "hash_text", "is_address",
+    "address_prose", "address_text", "copy_action", "hash_text", "is_address", "job_text",
     "is_copy_click", "is_explorer_click", "parse_copy_action", "short_address",
     "short_hex",
 ]
@@ -246,6 +248,30 @@ def hash_text(
     out = Text(shown, style=style)
     if explorer is not None and is_tx_hash(tx_hash):
         if (link := _link(explorer, "tx", tx_hash)) is not None:
+            out.stylize(link, 0, len(shown))
+    return out
+
+
+def job_text(
+    job_id: object,
+    width: int,
+    *,
+    explorer: Explorer | None = None,
+    style: str | Style = "",
+) -> Text:
+    """A swarm job id's first *width* characters, as a ``Text``.
+
+    A head slice, never a head-and-tail window (that is an address's shape).
+    No icon (a job id is not an address). With ``explorer`` a canonical UUID
+    links the whole shown span to its ``/jobs/`` page; anything else -- a
+    malformed or hostile id, a non-string -- renders plain and unlinked.
+    """
+    if not isinstance(job_id, str) or not job_id:
+        return Text("--", style=style)
+    shown = job_id[:width] if is_job_id(job_id) else _fit(_clean_label(job_id), width)
+    out = Text(shown, style=style)
+    if explorer is not None and is_job_id(job_id):
+        if (link := _link(explorer, "job", job_id)) is not None:
             out.stylize(link, 0, len(shown))
     return out
 

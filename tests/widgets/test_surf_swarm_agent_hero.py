@@ -174,7 +174,7 @@ async def test_the_defect_seat_renders_its_lifetime_record_whole_at_both_pins(wi
     status = SUMMARY["review_status"]
     pending = status["submitted"] + status["queued"]
     assert f"IDMD #{SELECTED['token_id']}" in boxes["seat"]
-    assert f"agent {SELECTED['agent_id']}" in boxes["seat"] and "saved" in boxes["seat"]
+    assert f"agent {SELECTED['agent_id']}" in boxes["seat"] and "saved" not in boxes["seat"]
     assert f"{SUMMARY['accepted']} of {SUMMARY['attempts']}" in boxes["accepted"]
     # Q-M: pending is a subset of the reviews, never added on top -- and on
     # a line of its own under the total (see the five-digit test below).
@@ -222,7 +222,7 @@ async def test_pending_says_loading_in_the_stat_boxes_and_still_names_the_seat()
     boxes = await _boxes(swarm_seat_selected=other, swarm_seat_state="pending",
                          swarm_seat_as_of_hhmm=None)
     assert "IDMD #12345" in boxes["seat"] and "agent 50906" in boxes["seat"]
-    assert "saved" in boxes["seat"] and "Loading" not in boxes["seat"]
+    assert "IDMD #12345" in boxes["seat"] and "Loading" not in boxes["seat"]
     for key in STAT_BOXES:
         assert "Loading..." in boxes[key], (key, boxes[key])
     # SUMMARY (seat #420's numbers) was passed in and must not reach a pixel.
@@ -353,10 +353,11 @@ async def test_rank_says_not_listed_apart_from_a_failed_read(contrib, expected):
 
 
 @pytest.mark.parametrize("width", PINS)
-async def test_the_three_selected_by_phrasings(width):
+async def test_a_saved_seat_says_nothing_and_the_busiest_says_most_active(width):
+    """Owner, 2026-09-22: ``saved`` is the normal case and SEAT drops the word."""
     saved = await _box_text(BOX_IDS["seat"], size=(width, 9),
                             swarm_seat_selected=dict(SELECTED, selected_by="saved"))
-    assert "saved" in saved and "…" not in saved
+    assert "saved" not in saved and "--" not in saved and "IDMD #" in saved
     most = await _box_text(BOX_IDS["seat"], size=(width, 9),
                            swarm_seat_selected=dict(SELECTED, selected_by="most_active"))
     assert "most active" in most and "…" not in most

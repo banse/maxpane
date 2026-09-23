@@ -18,14 +18,55 @@ from maxpane_dashboard.widgets import explorer as X
 ADDR = "0x" + "abcdef0123" * 4          # 40 hex
 TX = "0x" + "ab" * 32                   # 64 hex
 MIXED = "0x" + "AbCdEf0123" * 4
+JOB = "a2cf385f-8c95-46e1-b184-a8fe2f732edb"   # the owner's example, 2026-09-22
+CHAIN_EXPLORERS = [e for e in X.EXPLORERS.values() if e is not X.IMD]
 
 
-def test_the_three_explorers_and_their_origins():
-    assert X.ETHEREUM == X.Explorer("etherscan", "https://etherscan.io")
-    assert X.BASE == X.Explorer("basescan", "https://basescan.org")
-    assert X.SEPOLIA == X.Explorer("sepolia", "https://sepolia.etherscan.io")
-    assert X.EXPLORERS == {"etherscan": X.ETHEREUM, "basescan": X.BASE, "sepolia": X.SEPOLIA}
-    assert X.KINDS == ("address", "tx")
+def test_the_four_explorers_their_origins_and_kinds():
+    assert X.ETHEREUM == X.Explorer("etherscan", "https://etherscan.io", ("address", "tx"))
+    assert X.BASE == X.Explorer("basescan", "https://basescan.org", ("address", "tx"))
+    assert X.SEPOLIA == X.Explorer("sepolia", "https://sepolia.etherscan.io", ("address", "tx"))
+    assert X.IMD == X.Explorer("imd", "https://explorer.imd.fun", ("job",))
+    assert X.EXPLORERS == {"etherscan": X.ETHEREUM, "basescan": X.BASE, "sepolia": X.SEPOLIA,
+                           "imd": X.IMD}
+    assert X.KINDS == ("address", "tx", "job")
+    assert all(set(e.kinds) <= set(X.KINDS) for e in X.EXPLORERS.values())
+
+
+def test_a_job_links_to_the_imd_explorer_page_the_owner_named():
+    assert X.job_url(X.IMD, JOB) == f"https://explorer.imd.fun/jobs/{JOB}"
+    assert X.url_for(X.IMD, "job", JOB) == X.job_url(X.IMD, JOB)
+    action = X.open_action(X.IMD, "job", JOB)
+    assert action == f"app.open_explorer('imd', 'job', {JOB!r})"
+    assert X.parse_open_action(action) == (X.IMD, "job", JOB)
+
+
+def test_a_job_id_is_a_whole_canonical_lower_case_uuid():
+    assert X.is_job_id(JOB)
+    for bad in (JOB.upper(), JOB + "\n", JOB[:-1], JOB + "0", JOB.replace("-", ""),
+                JOB[:8], "../" + JOB[3:], JOB.replace("a", "g", 1), None, 12, ""):
+        assert not X.is_job_id(bad), repr(bad)
+
+
+def test_each_explorer_serves_only_its_own_kinds():
+    for explorer in CHAIN_EXPLORERS:
+        assert not X.is_valid(explorer, "job", JOB)
+        with pytest.raises(ValueError):
+            X.open_action(explorer, "job", JOB)
+        with pytest.raises(ValueError):
+            X.url_for(explorer, "job", JOB)
+        forged = X.open_action(X.IMD, "job", JOB).replace("'imd'", repr(explorer.name))
+        assert X.parse_open_action(forged) is None
+    for kind, value in (("address", ADDR), ("tx", TX)):
+        assert not X.is_valid(X.IMD, kind, value)
+        with pytest.raises(ValueError):
+            X.open_action(X.IMD, kind, value)
+        with pytest.raises(ValueError):
+            X.url_for(X.IMD, kind, value)
+    with pytest.raises(ValueError):
+        X.open_action(X.Explorer("imd", "https://evil.example", ("job",)), "job", JOB)
+    assert X.parse_open_action(f"app.open_explorer('imd', 'job', '{JOB.upper()}')") is None
+    assert X.parse_open_action(f"app.open_explorer('imd', 'job', '{JOB}'); app.quit()") is None
 
 
 def test_an_explorer_is_frozen():
@@ -107,7 +148,7 @@ def test_for_chain_id_agrees_with_the_swarm_data_layer_in_both_directions():
     assert {cid for cid, e in X._CHAIN_IDS.items() if e in known_words} == set(_NETWORKS)
 
 
-@pytest.mark.parametrize("explorer", list(X.EXPLORERS.values()), ids=lambda e: e.name)
+@pytest.mark.parametrize("explorer", CHAIN_EXPLORERS, ids=lambda e: e.name)
 @pytest.mark.parametrize("kind,value", [("address", ADDR), ("address", MIXED), ("tx", TX)])
 def test_every_explorer_round_trips_both_kinds(explorer, kind, value):
     action = X.open_action(explorer, kind, value)

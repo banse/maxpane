@@ -199,3 +199,23 @@ async def test_selected_and_live_states_have_composited_styles(cursor_row):
             assert offline.color!=plain.color,(column.key,offline,plain)
         assert 'offline' in lines[offline_y]
         assert widget.token_for_row(table.ordered_rows[1].key)==1
+
+
+async def test_the_table_has_one_blank_cell_left_and_one_scrollbar_cell_right():
+    """Owner, 2026-09-22: the table sits one cell in from the panel's left edge
+    (its header one right of the title) and its scrollbar is one cell, so the
+    ladder budget (``GUTTER_COLS``) and the BOARD pin are unchanged."""
+    async with SortHarness().run_test(size=(120,12)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_board_rows=ROWS,swarm_board_as_of_hhmm='03:01',
+                           swarm_workers_as_of_hhmm='04:02')
+        await pilot.pause()
+        table=widget.query_one(DataTable)
+        assert table.region.x==widget.region.x+1
+        assert table.region.right==widget.region.right
+        assert table.show_vertical_scrollbar and table.scrollbar_size_vertical==1
+        assert widget.GUTTER_COLS==1+table.scrollbar_size_vertical
+        painted=_painted_rows(pilot.app)
+        title=next(line for line in painted if 'LEADERBOARD' in line)
+        header=next(line for line in painted if '#▲' in line)
+        assert header.index('#')==title.index('L')+1

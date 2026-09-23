@@ -13,7 +13,7 @@ user's browser. The app makes no request, signs nothing, sends nothing.
 from __future__ import annotations
 
 from maxpane_dashboard.status_message import MESSAGE_S, post_status_message
-from maxpane_dashboard.widgets.explorer import EXPLORERS, KINDS, Explorer, is_address, is_tx_hash, url_for
+from maxpane_dashboard.widgets.explorer import EXPLORERS, Explorer, is_valid, url_for
 
 __all__ = ["ExplorerLinkMixin", "UNAVAILABLE", "explorer_message"]
 
@@ -40,12 +40,7 @@ class ExplorerLinkMixin:
         # only way to invoke an action. The URL is rebuilt from the parts that
         # passed (widgets/explorer.url_for) and never taken from any text.
         explorer = EXPLORERS.get(name) if isinstance(name, str) else None
-        valid = (
-            explorer is not None
-            and kind in KINDS
-            and (is_address(value) if kind == "address" else is_tx_hash(value))
-        )
-        if not valid:
+        if explorer is None or not is_valid(explorer, kind, value):
             post_status_message(self, explorer_message(None), seconds=self.EXPLORER_MESSAGE_S)
             return
         try:

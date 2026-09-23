@@ -33,7 +33,7 @@ from maxpane_dashboard.app import MaxPaneApp
 from maxpane_dashboard.copy_action import CopyAddressMixin
 from maxpane_dashboard.explorer_action import ExplorerLinkMixin
 from maxpane_dashboard.widgets import explorer as X
-from maxpane_dashboard.widgets.address import COPY_GLYPH, address_text, hash_text
+from maxpane_dashboard.widgets.address import COPY_GLYPH, address_text, hash_text, job_text
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from tests.widgets.address_probe import CopyRecorder, LinkRecorder, icon_targets, link_targets
 
@@ -87,6 +87,31 @@ async def test_a_click_on_the_hash_opens_its_tx_page():
         assert _message(app) == "opened basescan"
 
 
+JOB = "a2cf385f-8c95-46e1-b184-a8fe2f732edb"
+
+
+class _JobApp(LinkRecorder, CopyRecorder, ExplorerLinkMixin, App):
+    EXPLORER_MESSAGE_S = 60.0
+
+    def compose(self):
+        yield Static(Text("job ").append_text(job_text(JOB, 8, explorer=X.IMD)), id="s")
+        yield StatusBar()
+
+
+async def test_a_click_on_a_job_id_opens_its_imd_explorer_page():
+    """Owner, 2026-09-22: RECORD's job cell opens explorer.imd.fun/jobs/<uuid>."""
+    app = _JobApp()
+    async with app.run_test(size=(80, 6)) as pilot:
+        await pilot.pause()
+        cells = [t for t in link_targets(app) if t[3] == "job"]
+        assert [t[0] for t in cells] == list(range(4, 12))
+        await pilot.click(offset=(cells[3][0], cells[3][1]))
+        await pilot.pause()
+        assert app.opened == [f"https://explorer.imd.fun/jobs/{JOB}"]
+        assert app.copied == []
+        assert _message(app) == "opened imd"
+
+
 async def test_a_click_on_the_glyph_copies_and_opens_nothing():
     app = _App()
     async with app.run_test(size=(80, 6)) as pilot:
@@ -123,6 +148,10 @@ async def test_the_separating_space_is_neither_link_nor_icon():
     ("etherscan", None, ADDR),
     ("etherscan", "address", None),
     (X.ETHEREUM, "address", ADDR),            # the object, not its name: not what an action carries
+    ("imd", "address", ADDR),                 # the IMD explorer serves jobs only
+    ("etherscan", "job", "a2cf385f-8c95-46e1-b184-a8fe2f732edb"),  # a job is not a chain page
+    ("imd", "job", "A2CF385F-8C95-46E1-B184-A8FE2F732EDB"),        # canonical lower case only
+    ("imd", "job", "a2cf385f-8c95-46e1-b184-a8fe2f732edb/../x"),
 ])
 async def test_an_invalid_action_opens_nothing_and_says_unavailable(name, kind, value):
     app = _App()

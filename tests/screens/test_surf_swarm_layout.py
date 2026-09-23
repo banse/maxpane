@@ -74,6 +74,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmThroughput,
 )
 from tests.screens._sweeps import boundary_set
+from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES
 from tests.screens.test_surf_screen import (
     _css_clipped_lines,
     _frozen_payload,
@@ -117,10 +118,11 @@ _S_THRESHOLDS = (
     180, 205,        # LAUNCHES compact/full
 )
 _A_THRESHOLDS = (
-    61, 63, 70,  # RECORD columns
-    85, 119, # unchanged RECORD compact/full tiers
+    94, 105, # RECORD tight/compact/full (since launch/sub left it, 2026-09-22)
     108, 116, 117,  # node row (capture) / hero (capture) and node row (stress) / pending RANK
     129,     # row-1 hero whole (stress payload's REVIEWED `19,998 pending`)
+    128, 130,  # stress OTHERS `5.0K of 50.0K` (129, 131-141) / `5K of 50K` (127-128, 130)
+    142, 144, 145,  # stress OTHERS full `5,011 of 50,011` (142-143, 145+) / `5.0K` (144, <=141)
     134,     # complete status bar
     139,     # seat row whole: OWNER's address + icon (binds since the grid)
 )
@@ -325,14 +327,22 @@ def _worst_agent_payload() -> dict:
             "through the launchpad adapter, then re-sweep every pinned layout; " * 6
         )[:500]
     nodes = _cycle(sw.seat_node_rows(seat0), 30)
+    # The three known keys get the named cards (fixed slots since
+    # 2026-09-22) and the other 27 sum into OTHERS -- the committed seat_0
+    # already serves two such keys. Five-digit counts land in ORACLE *and*
+    # in OTHERS (the first unknown node), the narrowest card they can reach;
+    # the pair splits the old single node's totals so they still agree with
+    # the summary (OTHERS then reads ``5,011 of 50,011``).
+    known = tuple(NODE_TITLES)
     for i, row in enumerate(nodes):
+        big = {0: 0, len(known): 1}.get(i)
         row.update(
-            node_key=f"node{i}_" + "x" * 58,
-            reviewed=55_526 if i == 0 else 1,
-            attempts=99_970 if i == 0 else 1,
-            accepted=9_970 if i == 0 else 1,
-            onchain=45_527 if i == 0 else 1,
-            queued=9_999 if i == 0 else 0,
+            node_key=known[i] if i < len(known) else f"node{i}_" + "x" * 58,
+            reviewed=(27_764, 27_763)[big] if big is not None else 1,
+            attempts=(49_986, 49_985)[big] if big is not None else 1,
+            accepted=(4_986, 4_985)[big] if big is not None else 1,
+            onchain=22_764 if big is not None else 1,
+            queued=(5_000, 4_999)[big] if big is not None else 0,
         )
     teammates = [{"token_id":i,"agent_id":str(i+50_000),"shared_jobs":999-i} for i in range(999)]
     summary = sw.seat_summary_from_seat(seat0)
@@ -909,7 +919,7 @@ async def test_board_polish_row_pin_is_tight_and_keeps_fleet_whole(kind):
     at = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS), 'b')
     assert below['taller'] and any(below['scroll'].values()), below
     assert not at['taller'] and not any(at['scroll'].values()), at
-    assert at['heights']['SurfSwarmFleet'] == 16, at
+    assert at['heights']['SurfSwarmFleet'] == 22, at  # 16 + blank + five contributor lines
     _assert_board_whole(at,kind)
 
 
@@ -923,7 +933,7 @@ async def test_polish_record_answer_clearance_matches_committed_v4_window():
         r=await _render(payload,(width,80),"a")
         assert (name in r["marked"])==marked, (width,r["marked"])
         assert not r["hidden"][name] and not r["overflow"]
-        assert r["columns"][name]==("when","job","node","role","state","launch","sub","model","took","answer")
+        assert r["columns"][name]==("when","job","node","role","state","model","took","answer")
     stress=await _render(_worst_agent_payload(),(RECORD_NEVER_CLEARS_BELOW,80),"a")
     assert name in stress["marked"], "the 500-character answer must still advertise actual clipping"
 
@@ -933,7 +943,7 @@ async def test_polish_agent_retains_existing_pin_with_enriched_record():
         r=await _render(_polish_agent_payload(),(SURF_AGENT_FULL_LAYOUT_COLUMNS,rows),"a")
         assert r["taller"]==taller
         assert not r["clipped"] and not r["overflow"] and not any(r["hidden"].values())
-        assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","state","model","took","answer")
+        assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","role","state","model","took","answer")
 
 
 async def test_polish_capability_optional_tier_preserves_baseline_and_clears_at_measured_onset():

@@ -9,7 +9,7 @@ WORKERS=swarm_capture_v3('workers')
 FLEET=fold.fleet(WORKERS)
 SUMMARY=fold.board_summary(swarm_capture_v3('contributors'),WORKERS)
 async def render(fleet=FLEET,summary=SUMMARY):
-    return '\n'.join(await composite_lines(SurfSwarmFleet,(37,20),css_path=CSS_PATH,
+    return '\n'.join(await composite_lines(SurfSwarmFleet,(37,30),css_path=CSS_PATH,
         swarm_fleet=fleet,swarm_board_summary=summary,
         swarm_board_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02'))
 async def test_mixes_tokens_and_clocks_have_distinct_sources():
@@ -68,7 +68,38 @@ async def test_polish_groups_align_labels_and_keep_the_advertised_model_prefix()
     assert not lines[paused-1].strip() and not lines[header-1].strip()
     assert 'FLEET · workers as of 04:02' in text
     assert 'tokens / completed job' not in text
-    assert 'served' in lines[header+1]
+    assert not lines[header+1].strip(), 'owner 2026-09-22: a blank row under CONTRIBUTORS'
+    assert 'served' in lines[header+7]
+
+
+async def test_contributors_show_devices_outcomes_turns_and_tokens():
+    lines=(await render(summary=SUMMARY)).splitlines()
+    header=next(i for i,line in enumerate(lines) if 'CONTRIBUTORS' in line)
+    body=[line.strip() for line in lines[header+2:header+7]]
+    s=SUMMARY
+    assert body==[
+        f"devices    {s['devices']:,} · {s['seats']:,} seats",
+        f"accepted   {s['accepted']:,} of {s['attempts']:,}",
+        f"rejected   {s['rejected']:,} · {s['pending']:,} pending",
+        f"turns      {s['turns']:,} · {s['wall_clock_ms']//3_600_000:,} h",
+        f"tokens     {s['input_tokens']/1e6:.1f}M in · {s['output_tokens']/1e6:.1f}M out",
+    ]
+
+
+async def test_an_unread_contributor_value_is_unavailable_never_zero():
+    text=await render(summary=dict(SUMMARY,devices=None,attempts=None,input_tokens=None,
+                                   wall_clock_ms=None))
+    assert 'devices    unavailable' in text and 'tokens     unavailable' in text
+    assert any(l.strip()==f"accepted   {SUMMARY['accepted']:,}" for l in text.splitlines())
+    assert any(l.strip()==f"turns      {SUMMARY['turns']:,}" for l in text.splitlines())
+    none=await render(summary=None)
+    for label in ('devices','accepted','rejected','turns','tokens'):
+        assert f'{label:<11}unavailable' in none
+
+
+async def test_a_contributor_pair_too_wide_for_its_line_counts_its_second_value():
+    text=await render(summary=dict(SUMMARY,rejected=99_999_999,pending=99_999_999))
+    assert any(l.strip()=='rejected   99,999,999 · +1' for l in text.splitlines()), text
 
 
 async def test_polish_model_missing_none_and_hostile_values_are_distinct():
@@ -88,7 +119,7 @@ async def test_polish_paused_state_and_numbers_have_composited_styles(paused,col
     class Harness(App):
         CSS_PATH=CSS_PATH
         def compose(self):yield SurfSwarmFleet()
-    async with Harness().run_test(size=(37,24)) as pilot:
+    async with Harness().run_test(size=(37,30)) as pilot:
         pilot.app.query_one(SurfSwarmFleet).update_data(swarm_fleet=dict(FLEET,paused=paused),swarm_board_summary=SUMMARY)
         await pilot.pause()
         lines=[''.join(seg.text for seg in strip) for strip in pilot.app.screen._compositor.render_strips()]

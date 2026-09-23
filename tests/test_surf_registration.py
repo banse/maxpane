@@ -1476,6 +1476,11 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # pixel; if a future screen edit starts reading it, this key must move
     # into `_NUMERIC_ZERO_PROBES` in the same change.
     "eth_usd": "never read by screens/surf.py or any widgets/surf/* module",
+    # Probed as `"0 IMD"` through the hero's IMD SUPPLY box until the owner
+    # replaced that box with BOARDS (2026-09-22). The manager still computes
+    # it and nothing renders it, so the old needle could only ever be absent
+    # -- a probe that cannot fail. If a widget renders it again, move it back.
+    "imd_supply": "no widget renders it since IMD SUPPLY became BOARDS (2026-09-22)",
     # Mentioned only in a code comment in screens/surf.py; never passed to
     # StatusBar.update_data or any widget's update_data.
     "as_of": "never read by screens/surf.py or any widgets/surf/* module",
@@ -1892,7 +1897,6 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # by rendering. Note that `lp_imd`'s needle was also a *duplicate* of
     # `imd_supply`'s, one line below: it could only ever have gone red on
     # the sibling's rendering, never its own.
-    "imd_supply": "0 IMD",                       # hero.py _supply_lines
     # The field's own honest zero rendering (distinct from `imd_burned_cum
     # is None` -> "burned --"): this is the exact shape the house rule
     # guards -- a fabricated 0 here would falsely claim "we watched and

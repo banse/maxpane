@@ -136,12 +136,17 @@ _TITLED = [(k, c) for k, (_id, panels, _h) in _BODIES.items() for c in panels
 
 @pytest.mark.parametrize("key,cls", _TITLED, ids=[c.__name__ for _k, c in _TITLED])
 async def test_every_swarm_panel_paints_a_blank_row_under_its_title(key, cls):
+    """RECORD is the one exception, and it is asserted, not skipped: the owner
+    removed its blank row for the AGENT body only (2026-09-22)."""
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open(pilot, key)
         panel = next(iter(screen.query_one(f"#{_BODIES[key][0]}").query(cls)))
         rows = _region_text(pilot.app, panel).split("\n")
 
     assert rows[0].strip(), f"{cls.__name__} has no title row"
+    if cls is SurfSwarmSeatRecord:
+        assert rows[1].strip().startswith("when"), "RECORD's header must follow its title directly"
+        return
     assert not rows[1].strip(), f"{cls.__name__} has no blank row under its title"
     assert rows[2].strip(), f"{cls.__name__} has no content row"
 

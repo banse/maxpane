@@ -54,9 +54,11 @@ decoy pool · burn readiness · hot coin. Each renders `state · age · one-line
 re-fires on a *new* event: baselines advance on the successful read that detected the last one,
 and never on a failed read — an outage cannot fire a burn or un-fire a migration.
 
-The hero (LAUNCHPAD · FLOW · BURN · SUPPLY) reads the launchpad: how big the coin population is
+The hero (LAUNCHPAD · FLOW · BURN · BOARDS) reads the launchpad: how big the coin population is
 and how fast it is growing, how many distinct creators are behind it, how much of it is actually
 trading, and what the burn pipeline owes — the IMD side under BURN, the ETH side under FLOW.
+BOARDS lists the keys that open the other boards: `'a' - idm agent`, `'b' - leaderboard`,
+`'s' - swarm` and `'4' - pool4` (the narrowest hero tier writes `b leaderboard`, without the quotes and dash).
 LAUNCHPAD and FLOW carry the launchpad tier's own `as of HH:MM` on their titles, because that
 tier refreshes on a slower clock than the title bar's and a failed sweep leaves the last good
 numbers standing behind an older marker rather than blanking them.
@@ -85,7 +87,7 @@ who has actually pushed the button. BURNKEEPERS is the new one: `bridgeToBaseBur
 callable by anyone, so this ranks the wallets that have called it by IMD burned and shows the
 LayerZero fee each really paid — the fee, not the transaction's value, whose surplus the executor
 refunds. maxpane never calls it, and never offers to: it only reports that it is callable and
-what it has cost the people who did. The hero (LAUNCHPAD · FLOW · BURN · SUPPLY) stays on screen
+what it has cost the people who did. The hero (LAUNCHPAD · FLOW · BURN · BOARDS) stays on screen
 the whole time; `esc` backs out, one-way. The launchpad view is whole from **138 columns**,
 inside the 143 the widest dashboard already asks for, and from **31 rows** — below that it
 scrolls and says `‹ taller`.
@@ -173,19 +175,22 @@ the address; either way with a copy icon for the address and an Etherscan link, 
 seat was paired), RUNTIME (runtime, daemon version and device count), SCORE (mean score, how
 many reviews were scored and, when they differ, entries served), FEEDBACK (reviews sent,
 submitted and queued), COLLAB (how many seats it has worked with) and TEAMMATES by shared jobs.
-The node row shows ROLES (reviews by role, full names), one card each for the first three nodes
-(ORACLE, REVIEW, BUILD) — accepted of attempts, the acceptance percentage, the node's roles
-shortened (`impl`, `rev`) and its `chain` count of sent and submitted feedback transactions —
-then OTHERS, the same sums over every further node (`0 of 0` when there are none), and BOARD
+The node row shows ROLES (reviews by role, full names), one card each for the three nodes
+(ORACLE, REVIEW, BUILD), titled whether or not the seat has worked them — accepted of attempts,
+the acceptance percentage, the node's roles shortened (`impl`, `rev`) and its `chain` count of
+sent and submitted feedback transactions — then OTHERS, the same sums over every other node; a
+card with no attempts, nothing accepted and no chain count, OTHERS included, shows `—`, and a
+count too wide for its card is shortened (`10.0K`, then `10K`) rather than cut. Then BOARD
 (accepted of attempts, rejected and pending on the contributors leaderboard). RANK and BOARD stay
 visible when the seats read fails; a good contributors read without the seat says `not listed`,
 an unread source says `unavailable`. Long runtime, daemon, node, role and ENS names are cut with
 a visible `…`.
-RECORD runs below the cards: every won submission with date and time, job, node, role, job state,
-launch kind, submission-hash prefix, the model used, duration and the first sentence of the
-seat's own answer. Queued, unavailable, not served and empty replies remain distinct. Links to
-local files are reduced to their labels, and absolute local paths to filenames before display.
-The submission hash is an off-chain identifier and has no explorer link. A review that passed and work that won a job remain separate counts.
+RECORD runs below the cards, with no blank row under its title: every attempt with date and
+time, job (the first eight characters of its id, linked to its page on `explorer.imd.fun`), node
+(`oracle`, `review`, `build`), role, state, the model used, duration and the first sentence of
+the seat's own answer — in red when the attempt failed. Queued, unavailable, not served and
+empty replies remain distinct. Links to local files are reduced to their labels, and absolute
+local paths to filenames before display. A review that passed and work that won a job remain separate counts.
 SEAT names `#N never paired` for a seat that has never paired; a failed read says `unavailable`.
 `esc` backs out of either body, one-way.
 
@@ -195,7 +200,10 @@ from workers. LEADERBOARD includes every fully parsed contributor seat and scrol
 FLEET metadata keep their own source clocks. One failed endpoint leaves the other's facts
 visible. FLEET groups metadata under aligned labels, including an **advertised** model mix,
 with whole entries followed by exact `+N` omissions. Its CONTRIBUTORS group has a separate
-clock and the served tokens-per-completed-job metric. Worker advertisement can differ from
+clock, a blank row, then devices and seats, accepted of attempts, rejected and pending, turns
+and hours of wall clock, input and output tokens, and the served tokens-per-completed-job
+metric; a pair too wide for its line keeps its first value and counts the rest as `+N`. The
+LEADERBOARD table sits one cell in from its title. Worker advertisement can differ from
 the model that actually ran a RECORD submission. BOARD contains no wallet or token ranking.
 Click any LEADERBOARD column header to sort; click the active header to reverse. The default
 sort is rank, so the first click on `#` reverses it. `o` cycles the sort
@@ -468,7 +476,7 @@ Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap
 LIST's `l` view it cycles the full-width table through raw, cleaned and filtered. **Surfboard binds `l`** to swap
 the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand rail — with the
-hero (LAUNCHPAD · FLOW · BURN · SUPPLY) left on screen the whole time; `esc` backs out, one-way.
+hero (LAUNCHPAD · FLOW · BURN · BOARDS) left on screen the whole time; `esc` backs out, one-way.
 **It binds `e`**, experimental and unadvertised, the same way for the pool4 protocol — THE SPLIT and THE RATCHET on the left,
 HATCHES and sIMD VAULT in the rail, the same hero left where it was. **And it binds `4`** for the
 POOL4 MARKET view — the same protocol read as a market rather than as a machine: RECENT FLOW

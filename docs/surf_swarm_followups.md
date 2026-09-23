@@ -972,3 +972,22 @@ work and the stored-safety predicate in step with the cleaner.
 - **F62 — a transient ENS outage is recorded as a 1 h miss.** `ens.resolve_names` cannot tell "no
   name" from "could not look", so `SurfManager._resolve_seat_owner` records both as a miss. While
   that miss is held, OWNER shows the address, never a guessed name. Minor, cosmetic.
+
+## F63 — AGENT owner batch residual (2026-09-23)
+
+- **F63 — CLOSED in the same change.** OTHERS sums every node key the named cards do not
+  (the committed `seat_0` serves `deploy_script` and `manifest`), and a five-digit sum cut to
+  `99,9…` below 145. Fixed before commit: a node card's counts step down to `fmt_compact`
+  (`5.0K of 50.0K`), then whole thousands (`5K of 50K`), whenever the fuller form does not fit, and the stress payload keeps a
+  five-digit OTHERS. Kept here only so the number is not reused.
+
+## F64 — F65 — AGENT owner batch review Minors (2026-09-23)
+
+- **F64 — CONTRIBUTORS floors its hours.** `swarm_fleet.py` writes `wall_clock_ms // 3,600,000`,
+  so 59 minutes reads `0 h` and 5.9 h reads `5 h`. Round, or give a sub-hour form.
+- **F65 — a failed RECORD row paints an unreadable answer red.** `swarm_seat_record.py` repaints
+  the whole answer cell red on `failed`, so a yellow `unavailable` (could not read) takes the
+  failed colour; the unread states could keep their own style.
+- **F66 — whole-thousands node counts can read equal or overflow the unit.** `swarm_node_cards._whole`
+  rounds 4,600 of 5,400 to `5K of 5K` (the rate line below stays true) and 999,600 to `1000K`
+  rather than `1M`. Reached only below the AGENT pin (127-128 and 130 on the stress payload).

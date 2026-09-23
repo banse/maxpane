@@ -278,7 +278,8 @@ def test_the_agent_signatures_reach_every_seats_key_and_drop_the_window_ones():
 @pytest.mark.parametrize(("name", "expected"), [
     ("SWARM_BOARD_SUMMARY_FIELDS", (
         "seats", "live", "paused", "capacity", "working", "attempts", "accepted",
-        "rejected", "pending", "receipts", "tokens_per_completed_job",
+        "rejected", "pending", "devices", "turns", "wall_clock_ms", "input_tokens",
+        "output_tokens", "receipts", "tokens_per_completed_job",
     )),
     ("SWARM_FLEET_FIELDS", (
         "runtimes", "daemons", "os", "profiles", "concurrency",

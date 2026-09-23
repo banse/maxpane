@@ -28,7 +28,7 @@ number that module is handed.
 
 from __future__ import annotations
 
-from maxpane_dashboard.widgets.explorer import ETHEREUM
+from maxpane_dashboard.widgets.explorer import ETHEREUM, IMD
 from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_float, hhmm, mmdd
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
@@ -37,6 +37,7 @@ __all__ = [
     "DASH",
     "EMDASH",
     "EXPLORER",
+    "JOB_EXPLORER",
     "as_float",
     "fmt_age",
     "fmt_win_rate",
@@ -57,6 +58,11 @@ __all__ = [
 #: from the network their own payload names (``data/surf_pool4_client.py`` reads
 #: Sepolia and mainnet, ``data/surf_swarm`` rows carry a ``chain_id``).
 EXPLORER = ETHEREUM
+
+#: Where a swarm job id links: the IMD swarm's own explorer
+#: (``explorer.imd.fun/jobs/<uuid>``, owner 2026-09-22), the site whose
+#: ``api.imd.fun`` the swarm tiers read. Not a chain explorer.
+JOB_EXPLORER = IMD
 
 
 def fmt_imd(value) -> str:

@@ -1,4 +1,4 @@
-"""Hero row for the surf dashboard: LAUNCHPAD · FLOW · BURN · SUPPLY.
+"""Hero row for the surf dashboard: LAUNCHPAD · FLOW · BURN · BOARDS.
 
 Four boxes answering PRD §4's hero-left slot. This is the row's second
 rebuild. The 2026-08-23 v3->v4 migration already replaced **HOOK** (a v4
@@ -39,7 +39,7 @@ request** -- and asks the two questions POOL/LP no longer could:
 
 **Both boxes carry the launchpad tier's own clock on their title line**
 (``LAUNCHPAD · 20:20``, off ``launchpad_as_of_hhmm``) rather than the bare
-titles BURN and SUPPLY keep. The title bar above shows the *fast* tier's
+titles BURN and BOARDS keep. The title bar above shows the *fast* tier's
 ``as of``; the launchpad tier refreshes every 600s (its own slower slot, the
 curator ``f`` analysis precedent), so a bare title would let these two boxes
 sit under a clock claiming seconds while the numbers beneath it are up to
@@ -80,15 +80,12 @@ confident and green through an outage.
   collapse into the same word as a genuine "not ready yet" -- the inverse of
   the curator rail bug where a dead group's "-- unknown" and a real "none
   yet" both read confident and green through an outage.
-* **SUPPLY** -- IMD totalSupply + the burn *this install has observed*.
-  Unchanged from the previous hero: ``imd_burned_cum`` is an accumulator
-  over successive supply readings (WP4.5), so it covers the observation
-  window and nothing before it, and the three states stay distinct --
-  ``None`` -> em-dash (no supply read yet, or the read failed), ``0.0`` ->
-  ``no burn observed yet`` (watched, nothing moved), positive -> the
-  quantity. A ``None`` supply renders an em-dash: rendering ``0`` here is
-  the false-BURN twin CLAUDE.md's "a failed read is None, never 0" exists
-  to prevent.
+* **BOARDS** -- the keys that open surf's other bodies (:data:`BOARD_KEYS`),
+  laid out like THE LIST's filter card: the title, then one left-aligned
+  block centred in the box. It replaced **IMD SUPPLY** on 2026-09-22
+  (owner). The manager still reads ``imd_supply``, but no box on this row
+  shows it and the hero no longer takes it; the observed burn (``imd_burned_cum``) keeps its three
+  states on BURN's third line.
 
 Copied from ``fwa/fwa_hero_metrics.py`` and adapted to the surf data
 contract (PRD §5 ``hero`` keys). Primitives only: this module imports
@@ -365,7 +362,7 @@ def _burn_lines(burn_accrued, burn_staged, burn_ready, imd_burned_cum, tier: str
     stg_str = fmt_imd(staged) if staged is not None else DASH
     pipeline = f"{acc_str}/{stg_str}" if _short(tier) else f"acc {acc_str} · stg {stg_str}"
 
-    # Same three-state shape as SUPPLY's own burn line (None -> dash,
+    # The retired IMD SUPPLY box's three-state shape (None -> dash,
     # <=0 -> "no burn yet" in words, >0 -> the quantity) -- it is the same
     # accumulator, just also relevant to the pipeline that produces it.
     if cum is None:
@@ -378,32 +375,23 @@ def _burn_lines(burn_accrued, burn_staged, burn_ready, imd_burned_cum, tier: str
     return ["[dim]BURN[/]", "", big, f"[dim]{pipeline}[/]", f"[dim]{cum_line}[/]"]
 
 
-def _supply_lines(imd_supply, imd_burned_cum, tier: str) -> list[str]:
-    """SUPPLY box: IMD totalSupply + the burn *this install has observed*."""
-    supply = as_float(imd_supply)
-    burned = as_float(imd_burned_cum)
-    # None is a failed read, never 0 -- the false-BURN twin (PRD §6.1).  The
-    # quantity is never abbreviated or cut: if it outgrows the box the marker
-    # fires instead, because a number cut mid-digits still reads as a number.
-    big = f"[bold]{supply:,.0f} IMD[/]" if supply is not None else f"[dim]{EMDASH}[/]"
-    # Three states, because the key has three meanings (WP4.5):
-    #   None -> no successful supply read yet / read failed  -> dash
-    #   0.0  -> watched, nothing moved                       -> say so in words
-    #   >0   -> the burn observed since we started watching  -> quantity
-    # "observed", not "cum": the ~58,849 IMD of PRD §1 was burned before any
-    # install existed and this widget can never see it, so a bare
-    # "burned 0 cum" on day one would be a confident false statement.  The
-    # narrow forms keep that distinction -- "burn N" is still scoped by the
-    # box, and "no burn yet" still refuses to claim none was ever burned.
-    if burned is None:
-        second = f"burn {DASH}" if _short(tier) else f"burned {DASH}"
-    elif burned <= 0:
-        second = "no burn yet" if _short(tier) else "no burn observed yet"
+#: The BOARDS box (owner, 2026-09-22), in the owner's order and words. Each
+#: key must be a SurfScreen binding (``tests/widgets/test_surf_widgets_a.py``).
+BOARD_KEYS = (("a", "idm agent"), ("b", "leaderboard"), ("s", "swarm"), ("4", "pool4"))
+
+
+def _boards_lines(tier: str) -> list[str]:
+    """BOARDS box: THE LIST filter card's shape -- the title, then the key
+    lines padded to one width so the centred block is left-aligned. The
+    ``minimal`` tier drops the quotes and the `` -``: ``b leaderboard`` is
+    13 cells, which keeps the hero's marker dark down to 87 columns (the
+    quoted 15-cell form lit it there)."""
+    if tier == "minimal":
+        rows = [f"{key} {word}" for key, word in BOARD_KEYS]
     else:
-        second = (
-            f"burn {burned:,.0f}" if _short(tier) else f"burned {burned:,.0f} observed"
-        )
-    return ["[dim]IMD SUPPLY[/]", "", big, f"[dim]{second}[/]", "[dim] [/]"]
+        rows = [f"'{key}' - {word}" for key, word in BOARD_KEYS]
+    width = max(len(row) for row in rows)
+    return ["[dim]BOARDS[/]", *(row.ljust(width) for row in rows)]
 
 
 class SurfHeroBox(Static):
@@ -430,7 +418,7 @@ class SurfHeroBox(Static):
 
 
 class SurfHero(Horizontal):
-    """Row of four hero boxes: LAUNCHPAD · FLOW · BURN · SUPPLY."""
+    """Row of four hero boxes: LAUNCHPAD · FLOW · BURN · BOARDS."""
 
     # Height 7 with zero vertical padding, like FWAHeroMetrics: the boxes
     # carry five content lines and `padding: 1 2` would clip the last one
@@ -460,7 +448,7 @@ class SurfHero(Horizontal):
         self._payload: dict = {}
 
     def compose(self) -> ComposeResult:
-        for box_id in ("surf-hero-launchpad", "surf-hero-flow", "surf-hero-burn", "surf-hero-supply"):
+        for box_id in ("surf-hero-launchpad", "surf-hero-flow", "surf-hero-burn", "surf-hero-boards"):
             yield SurfHeroBox("[dim]Loading...[/]", id=box_id, classes="surf-hero-box")
 
     def update_data(
@@ -475,7 +463,6 @@ class SurfHero(Horizontal):
         burn_accrued=None,
         burn_staged=None,
         burn_ready=None,
-        imd_supply=None,
         imd_burned_cum=None,
         **_kwargs,
     ) -> None:
@@ -501,7 +488,6 @@ class SurfHero(Horizontal):
             "burn_accrued": burn_accrued,
             "burn_staged": burn_staged,
             "burn_ready": burn_ready,
-            "imd_supply": imd_supply,
             "imd_burned_cum": imd_burned_cum,
             "seen": True,
         }
@@ -519,7 +505,7 @@ class SurfHero(Horizontal):
         try:
             boxes = {
                 key: self.query_one(f"#surf-hero-{key}", SurfHeroBox)
-                for key in ("launchpad", "flow", "burn", "supply")
+                for key in ("launchpad", "flow", "burn", "boards")
             }
         except Exception:  # not composed yet
             return
@@ -551,8 +537,4 @@ class SurfHero(Horizontal):
                 tier,
             )
         )
-        boxes["supply"].render_lines_at_tier(
-            lambda tier: _supply_lines(
-                data.get("imd_supply"), data.get("imd_burned_cum"), tier
-            )
-        )
+        boxes["boards"].render_lines_at_tier(_boards_lines)

@@ -293,7 +293,6 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "burn_accrued": "burn_accrued",
         "burn_staged": "burn_staged",
         "burn_ready": "burn_ready",
-        "imd_supply": "imd_supply",
         "imd_burned_cum": "imd_burned_cum",
     },
     "SurfSignals": {
@@ -758,6 +757,9 @@ META_KEYS = frozenset({
 _KEYS_WITHOUT_A_RENDERER = frozenset({
     "pool_venue", "pool_fee_bps",
     "lp_state", "lp_imd", "lp_weth",
+    # 2026-09-22: the owner replaced the IMD SUPPLY hero card with BOARDS;
+    # the key is still read (manager and cache) but no widget shows it.
+    "imd_supply",
     # The eight swarm v1 keys sat here between WP7's two commits (2026-09-21):
     # their widgets -- THE FIELD, QUEUE, JUST SHIPPED, the score-table
     # THROUGHPUT -- left with the first, the keys, folds and fixtures with the
@@ -2266,11 +2268,11 @@ async def test_the_hero_survives_the_launchpad_body_swap() -> None:
         assert screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is True
 
         hero = _region_text(pilot.app, screen.query_one(SurfHero))
-        for title in ("LAUNCHPAD", "FLOW", "BURN", "IMD SUPPLY"):
+        for title in ("LAUNCHPAD", "FLOW", "BURN", "BOARDS"):
             assert title in hero, f"the hero lost its {title} box under `l`"
-        # The live numbers, not just the frame: BURN and SUPPLY read the fast
-        # tier and are the pair that would go dark if the hero were swapped.
-        assert "2,376,732 IMD" in hero
+        # The live numbers, not just the frame: BURN reads the fast tier and
+        # would go dark if the hero were swapped.
+        assert "'b' - leaderboard" in hero
         assert "READY" in hero
 
 
@@ -3551,7 +3553,7 @@ async def test_refresh_renders_title_and_all_panels():
         # The hero's own titles reach the compositor -- POOL/LP/BURN/SUPPLY,
         # rebuilt 2026-08-23 for the v4 migration (widgets/surf/hero.py).
         assert "POOL" in text
-        assert "IMD SUPPLY" in text
+        assert "BOARDS" in text and "'a' - idm agent" in text
         # The observed burn reached the hero, and PRD §1's all-time ledger is
         # nowhere on screen — the manager cannot produce it. At 150 columns
         # the hero owns the full row (unlike the pre-2026-08-09 layout this
@@ -5533,12 +5535,13 @@ async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
 
     for whole in (
         # The titles. LAUNCHPAD and FLOW carry the launchpad tier's own
-        # slower clock; BURN and SUPPLY read the fast tier and carry none,
-        # which is the distinction the clock exists to make visible.
-        "LAUNCHPAD · 01:14", "FLOW · 01:14", "BURN", "IMD SUPPLY",
+        # slower clock; BURN reads the fast tier and carries none, which is
+        # the distinction the clock exists to make visible. BOARDS is keys.
+        "LAUNCHPAD · 01:14", "FLOW · 01:14", "BURN", "BOARDS",
         # The numbers, whole and comma-grouped.
         "146 coins", "73 creators", "4,683 swaps", "673 traders",
-        "2.4187 ETH", "2,376,732 IMD", "READY",
+        "2.4187 ETH", "READY",
+        "'a' - idm agent", "'b' - leaderboard", "'s' - swarm", "'4' - pool4",
         # This width reaches the *widest* tier, so the fields the narrow
         # tiers compress are all here in full, with the words that scope
         # them ("24h", "acc"/"stg", "observed") intact.
@@ -5618,7 +5621,16 @@ async def test_the_hero_spends_new_columns_in_the_documented_order():
     # vs `minimal` beyond the shared `_short()` check. Asserted rather than
     # assumed, so a body that starts differentiating them turns this into a
     # real two-tier check instead of a silently weakened one.
-    assert _hero_fields(narrow) - {"slow"} == _hero_fields(tight) - {"01:14"}
+    # BOARDS is the other: ``minimal`` writes ``b leaderboard`` where
+    # ``tight`` writes ``'b' - leaderboard``, and it is asserted separately.
+    from maxpane_dashboard.widgets.surf.hero import _boards_lines
+
+    def keys(tier):
+        return {w for line in _boards_lines(tier)[1:] for w in line.split()}
+
+    assert keys("minimal") <= _hero_fields(narrow) and keys("tight") <= _hero_fields(tight)
+    assert (_hero_fields(narrow) - {"slow"} - keys("minimal")
+            == _hero_fields(tight) - {"01:14"} - keys("tight"))
 
     # Past `compact`, extra columns buy nothing: the two widest renders agree
     # field for field. Without this the collapsed ladder would be untested.
@@ -8293,9 +8305,9 @@ async def test_the_hero_survives_the_pool4_body_swap() -> None:
         screen = pilot.app.screen
         assert screen.query_one(f"#{POOL4_BODY_ID}").display is True
         hero = _region_text(pilot.app, screen.query_one(SurfHero))
-        for title in ("LAUNCHPAD", "FLOW", "BURN", "IMD SUPPLY"):
+        for title in ("LAUNCHPAD", "FLOW", "BURN", "BOARDS"):
             assert title in hero, f"the hero lost its {title} box under `p`"
-        assert "2,376,732 IMD" in hero
+        assert "'4' - pool4" in hero
         assert "READY" in hero
 
 
