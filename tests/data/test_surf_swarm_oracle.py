@@ -152,17 +152,70 @@ def test_due_rows_respect_window_identities_terminal_and_retry_age():
     assert sw.oracle_rows_due([dict(row,node_key='build'),dict(row,submission_hash='bad')],{},now_ts=1000,due_s=120)==[]
 
 
-def test_request_matching_rejects_duplicate_job_and_tracks_coverage():
-    detail,row=captured();request={k:detail[k] for k in ('id','jobId','createdAt')}
-    matched,ambiguous,negative=sw.match_requests([request],[row])
-    assert matched=={row['job_id']:detail['id']} and not ambiguous and not negative
-    matched,ambiguous,negative=sw.match_requests([request,dict(request,id='00000000-0000-4000-8000-000000000001')],[row])
-    assert not matched and ambiguous=={row['job_id']} and not negative
-    other=dict(row,job_id='00000000-0000-4000-8000-000000000002')
-    assert sw.match_requests([request],[other])[2]=={other['job_id']}
-    assert sw.match_requests([], [other])[2]==set()
-    assert sw.match_requests([], [other], end_of_history=True)[2]=={other['job_id']}
-    assert sw.match_requests([dict(request,createdAt='2099-01-01T00:00:00Z')],[other])[2]==set()
+def test_request_matching_rejects_duplicate_job_and_requires_complete_coverage():
+    detail, row = captured()
+    request = {k: detail[k] for k in ('id', 'jobId', 'createdAt')}
+    index = dict(jobs={}, newest='2026-09-24T00:00:00Z', oldest=request['createdAt'], complete=False)
+    sw.add_oracle_index_page(index, [request, request])
+    assert sw.match_requests(index, [row]) == ({row['job_id']: detail['id']}, set(), set())
+    other = dict(row, job_id='00000000-0000-4000-8000-000000000002')
+    assert sw.match_requests(index, [other])[2] == set()
+    index['complete'] = True
+    assert sw.match_requests(index, [other])[2] == {other['job_id']}
+    assert sw.match_requests(index, [dict(other, submitted_ts=sw.oracle_cursor_ts(index['newest']) + 1)])[2] == set()
+    sw.add_oracle_index_page(index, [dict(request, id='00000000-0000-4000-8000-000000000001')])
+    assert sw.match_requests(index, [row]) == ({}, {row['job_id']}, set())
+
+
+@pytest.mark.parametrize('change', [
+    {'jobs': {'bad': None}}, {'complete': 1}, {'extra': 1},
+    {'newest': '2026-09-23T19:00:00+00:00'}, {'oldest': '2099-01-01T00:00:00Z'},
+    {'jobs': {}}, {'newest': None},
+])
+def test_hostile_index_is_rejected_whole(change):
+    detail, row = captured()
+    index = dict(jobs={row['job_id']: detail['id']}, newest='2026-09-24T00:00:00Z',
+                 oldest=detail['createdAt'], complete=True)
+    assert sw.coerce_oracle_index(index) == index
+    assert sw.coerce_oracle_index(dict(index, **change)) is None
+
+
+def test_complete_captured_list_index_finds_242_jobs_and_only_one_absence():
+    pages = [json.loads((ROOT / f'list_{i}.json').read_bytes())['requests'] for i in (1, 2, 3)]
+    index = sw.empty_oracle_index()
+    for page in pages:
+        assert sw.oracle_index_page(page) is not None
+        sw.add_oracle_index_page(index, page)
+    stamps = [r['createdAt'] for page in pages for r in page]
+    index.update(newest=max(stamps, key=sw.oracle_cursor_ts),
+                 oldest=min(stamps, key=sw.oracle_cursor_ts), complete=True)
+    rows = [r for r in sw.seat_work_rows(json.loads((ROOT / 'seat_420.json').read_bytes()))
+            if r['node_key'] in SWARM_ORACLE_NODE_KEYS]
+    matched, ambiguous, negative = sw.match_requests(index, rows)
+    assert not ambiguous
+    assert sum(r['job_id'] in matched for r in rows) == 242
+    assert sum(r['job_id'] in negative for r in rows) == 1
+    slot = {r['job_id']: {r['submission_hash']: sw.oracle_empty_point('off_panel', now_ts=1000)}
+            for r in rows if r['job_id'] in negative}
+    enriched = sw.enrich_panel_rows(rows, slot, SWARM_ORACLE_NODE_KEYS)
+    assert sum(r['panel_state'] == 'off_panel' for r in enriched) == 1
+    assert sum(r['panel_state'] == 'not_read' for r in enriched) == 242
+    # Every retained detail selected by the list is joined by hash, never by job alone.
+    from tests.surf_swarm_fixtures import swarm_oracle_details
+    retained = {d['id']: d for d in swarm_oracle_details()}
+    checked = 0
+    for row in rows:
+        detail = retained.get(matched.get(row['job_id']))
+        if detail is None:
+            continue
+        value = point(detail, row)
+        member = any(m['submissionHash'] == row['submission_hash'] for m in detail.get('members') or [])
+        assert value['on_panel'] is member
+        if not member:
+            expected = detail['status'] if detail['status'] in ('blocked', 'assessing') else 'off_panel'
+            assert enrich(row, value)['panel_state'] == expected
+        checked += 1
+    assert checked > 40
 
 
 def test_prune_bounds_each_point_and_checks_age():

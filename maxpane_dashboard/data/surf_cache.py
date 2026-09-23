@@ -175,6 +175,7 @@ SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across 
 SLOT_SWARM_SEAT = "swarm_seat"        # {token, state, seat}: the selected seat's /seats read
 SLOT_SWARM_WORKERS = "swarm_workers"  # normalized /workers envelope, its own version clock
 SLOT_SWARM_CONTRIBUTORS = "swarm_contributors"  # normalized /contributors envelope
+SLOT_SWARM_ORACLE_INDEX = "swarm_oracle_index"  # complete request history, never age-pruned
 SLOT_SWARM_ORACLE = "swarm_oracle"  # job UUID -> hash -> extracted panel facts
 SLOT_SWARM_ANSWERS = "swarm_answers"  # job UUID -> submission hash -> extracted answer entry
 
@@ -219,6 +220,7 @@ SLOTS: tuple[str, ...] = (
     SLOT_SWARM_CONTRIBUTORS,
     SLOT_SWARM_ANSWERS,
     SLOT_SWARM_ORACLE,
+    SLOT_SWARM_ORACLE_INDEX,
 )
 
 
@@ -1194,7 +1196,7 @@ class SurfCache:
                     continue
                 try:
                     entry = LastGood.from_dict(data, now=reference)
-                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE):
+                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:
@@ -1387,6 +1389,7 @@ __all__ = [
     "SLOT_SWARM_CONTRIBUTORS",
     "SLOT_SWARM_ANSWERS",
     "SLOT_SWARM_ORACLE",
+    "SLOT_SWARM_ORACLE_INDEX",
     "SurfCache",
     "TIERS",
     "TIER_FAILURE_BACKOFF_SECONDS",

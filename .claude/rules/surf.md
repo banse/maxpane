@@ -330,11 +330,14 @@ No raw submission envelope or uncleaned summary is cached.
 **Oracle panel reads** (`docs/surf_oracle_panels_plan.md`): after submission enrichment,
 only oracle nodes in the first 40 RECORD rows are eligible. Join list `jobId` to requests,
 then confirm `members[].submissionHash`; never join by wallet or infer agreement from price equality.
-Duplicate job matches or conflicting duplicate member hashes are unavailable. Walk at most four
-200-request pages using `before=<oldest createdAt>` and read at most four due details. With no due
-rows, make zero requests. Retained attested/disagreed/blocked points are terminal; assessing or
+Different requests for one job or conflicting duplicate member hashes are unavailable.
+`SLOT_SWARM_ORACLE_INDEX` keeps validated job/request identities and complete-history boundaries,
+without age pruning. Read lists only for unresolved due jobs: forward refresh then backfill share
+a cap of four 500-request pages, with strictly validated UTC cursors. A forward gap beyond the
+cap discards the index. An empty first page over an existing index is a failed read. Indexed
+jobs go directly to details; read at most four due details. With no due rows, make zero requests. Retained attested/disagreed/blocked points are terminal; assessing or
 failed points retry after 120 seconds. `SLOT_SWARM_ORACLE` retains extracted facts only, at most
-400 points for 48 hours. Validate each persisted point; cancellation stores no partial oracle slot.
+400 points for 48 hours. Validate each persisted point; cancellation stores neither partial oracle points nor a partial index.
 A failed list/detail keeps prior evidence, or yields `unavail` when no cached point exists.
 No new top-level key, clock or degraded group is introduced.
 
@@ -343,7 +346,8 @@ no_quorum_in/out show dim green/red `✓ no-q` / `✗ no-q` (closed even if STAT
 assessing shows yellow `… members/size` (members only if size is absent); blocked is dim
 `blocked`, including captured null members; off_panel/not_oracle show dim `–`;
 not_read is dim `not read`, unavailable is yellow `unavail`. Missing required counts are
-unavailable. Off-panel requires covered list history or a final panel without the hash.
+unavailable. Off-panel requires a complete request index whose newest timestamp covers the row’s
+submission, or a final panel without the hash. A page older than submission is never an absence proof.
 On outvoted/no_quorum_out rows, ANSWER prefixes `panel <figure> · `, including unread replies.
 Figures retain exact decimal strings. Bool panels instead use strict `agreement.answer` via
 `panel_answer_bool`: YES/NO; absent or malformed bool is `unavail`, never inferred from figure.

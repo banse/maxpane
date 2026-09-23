@@ -6,7 +6,7 @@ import pytest
 
 from maxpane_dashboard.data import surf_manager as mod
 from maxpane_dashboard.data import surf_swarm as sw
-from maxpane_dashboard.data.surf_cache import SLOT_SWARM_ORACLE, SLOT_SWARM_SEAT, SLOT_SWARM_ANSWERS, TIER_SWARM_SEAT
+from maxpane_dashboard.data.surf_cache import SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_SEAT, SLOT_SWARM_ANSWERS, TIER_SWARM_SEAT
 from tests.data.test_surf_manager_answers import Answers, work, NOW
 from tests.data.test_surf_manager_swarm import _manager
 from tests.data.test_surf_manager import FakeClock
@@ -100,45 +100,133 @@ async def test_failures_leave_seat_fetched_and_answer_intact(tmp_path,failure):
     finally: await manager.close()
 
 
-@pytest.mark.parametrize('reason',['matched','short','older','cap'])
-async def test_page_walk_stop_reasons_and_negative_coverage(tmp_path,monkeypatch,reason):
-    monkeypatch.setattr(mod,'SWARM_ORACLE_PAGE_LIMIT',2)
-    monkeypatch.setattr(mod,'SWARM_ORACLE_PAGE_CAP',2)
-    fake=Oracle();match=fake.requests[0]
-    extra=dict(match,id='20000000-0000-4000-8000-000000000000',jobId='30000000-0000-4000-8000-000000000000')
-    if reason=='matched': fake.lists=[[match,extra]]
-    elif reason=='short': fake.lists=[[]]
-    elif reason=='older': fake.lists=[[extra,dict(extra,jobId='30000000-0000-4000-8000-000000000001')]]
-    else:
-        extra['createdAt']='2026-09-23T23:00:00Z'
-        second=dict(extra,jobId='30000000-0000-4000-8000-000000000001',createdAt='2026-09-23T22:00:00Z')
-        fake.lists=[[extra,dict(extra)],[second,dict(second)]]
-    manager=_manager(tmp_path,fake,clock=FakeClock(NOW));manager.set_seat(420)
+def seed_index(manager, *, complete=True, newest='2026-09-23T21:00:00Z'):
+    index = dict(jobs={'30000000-0000-4000-8000-000000000000':
+                       '20000000-0000-4000-8000-000000000000'},
+                 newest=newest, oldest='2026-09-20T00:00:00Z', complete=complete)
+    manager.cache.store_last_good(SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
+    return index
+
+
+async def test_complete_index_proves_only_submissions_within_coverage(tmp_path):
+    fake = Oracle(); manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    seed_index(manager)
     try:
-        await manager._pool_swarm_seat(420,NOW)
-        calls=[c for c in fake.oracle_calls if c[0]=='list']
-        assert len(calls)==(2 if reason=='cap' else 1)
-        assert rows(manager)[0]['panel_state']=={'matched':'agreed','short':'off_panel','older':'off_panel','cap':'not_read'}[reason]
-        if reason=='cap': assert calls[1][2]=='2026-09-23T23:00:00Z'
+        await manager._pool_swarm_seat(420, NOW)
+        assert rows(manager)[0]['panel_state'] == 'off_panel'
+        assert fake.oracle_calls == []
     finally: await manager.close()
 
 
-async def test_walk_second_page_finds_request_and_failure_preserves_prior(tmp_path,monkeypatch):
-    monkeypatch.setattr(mod,'SWARM_ORACLE_PAGE_LIMIT',1)
-    fake=Oracle(status='assessing');match=fake.requests[0]
-    extra=dict(match,jobId='30000000-0000-4000-8000-000000000000',createdAt='2026-09-23T23:00:00Z')
-    fake.lists=[[extra],[match]]
-    manager=_manager(tmp_path,fake,clock=FakeClock(NOW));manager.set_seat(420)
+async def test_due_indexed_rows_need_no_list_even_when_assessing(tmp_path):
+    fake = Oracle(status='assessing')
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
     try:
-        await manager._pool_swarm_seat(420,NOW)
-        assert rows(manager)[0]['panel_state']=='assessing'
-        prior=manager.cache.get_last_good(SLOT_SWARM_ORACLE)
-        fake.lists=[None]
-        await manager._pool_swarm_seat(420,NOW+120)
+        await manager._pool_swarm_seat(420, NOW)
+        fake.oracle_calls.clear()
+        await manager._pool_swarm_seat(420, NOW + 120)
+        assert [c[0] for c in fake.oracle_calls] == ['detail']
+        assert rows(manager, NOW + 120)[0]['panel_state'] == 'assessing'
+        prior = manager.cache.get_last_good(SLOT_SWARM_ORACLE)
+        fake.details = {}
+        await manager._pool_swarm_seat(420, NOW + 240)
         assert manager.cache.get_last_good(SLOT_SWARM_ORACLE) is prior
-        fake.lists=[[match]];fake.details={}
-        await manager._pool_swarm_seat(420,NOW+240)
-        assert manager.cache.get_last_good(SLOT_SWARM_ORACLE) is prior
+    finally: await manager.close()
+
+
+@pytest.mark.parametrize('populated', [False, True])
+async def test_empty_first_page_is_failure_for_nonempty_index(tmp_path, populated):
+    fake = Oracle(); fake.lists = [[]]
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    previous = seed_index(manager, newest='2026-09-23T19:00:00Z') if populated else None
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert rows(manager)[0]['panel_state'] == ('unavailable' if populated else 'not_read')
+        index = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload
+        assert index == (previous if populated else dict(sw.empty_oracle_index(), complete=True))
+    finally: await manager.close()
+
+
+@pytest.mark.parametrize('bad_stamp', ['2026-09-23T19:00:00+00:00', '2026-02-30T00:00:00Z', '123'])
+async def test_invalid_page_timestamp_never_becomes_a_cursor(tmp_path, bad_stamp):
+    fake = Oracle(); fake.requests[0]['createdAt'] = bad_stamp
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert rows(manager)[0]['panel_state'] == 'unavailable'
+        assert fake.oracle_calls == [('list', 500, None)]
+    finally: await manager.close()
+
+
+async def test_hostile_index_is_discarded_on_load_and_rebuilt(tmp_path):
+    fake = Oracle(); manager = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    manager.cache.store_last_good(SLOT_SWARM_ORACLE_INDEX,
+        dict(jobs={'bad': 'also bad'}, newest='2026-09-23T21:00:00Z',
+             oldest='2026-09-23T19:00:00Z', complete=True), ts=NOW)
+    manager.cache.save(); await manager.close()
+    fresh = _manager(tmp_path, fake, clock=FakeClock(NOW)); fresh.set_seat(420)
+    try:
+        assert fresh.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX) is None
+        await fresh._pool_swarm_seat(420, NOW)
+        assert rows(fresh)[0]['panel_state'] == 'agreed'
+        assert sw.coerce_oracle_index(fresh.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload)
+    finally: await fresh.close()
+
+
+async def test_forward_gap_beyond_page_cap_discards_index(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_LIMIT', 1)
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_CAP', 2)
+    fake = Oracle(); match = fake.requests[0]
+    fake.lists = [[dict(match, createdAt='2026-09-23T23:00:00Z')],
+                  [dict(match, createdAt='2026-09-23T22:00:00Z')]]
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    seed_index(manager, newest='2026-09-23T19:00:00Z')
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload == sw.empty_oracle_index()
+        assert rows(manager)[0]['panel_state'] == 'not_read'
+        assert [c[0] for c in fake.oracle_calls] == ['list', 'list']
+    finally: await manager.close()
+
+
+async def test_backfill_resumes_next_cycle_with_shared_budget(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_LIMIT', 1)
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_CAP', 2)
+    fake = Oracle(); match = fake.requests[0]
+    first = dict(match, id='20000000-0000-4000-8000-000000000001',
+                 jobId='30000000-0000-4000-8000-000000000001', createdAt='2026-09-23T21:00:00Z')
+    second = dict(first, id='20000000-0000-4000-8000-000000000002',
+                  jobId='30000000-0000-4000-8000-000000000002', createdAt='2026-09-23T20:00:00Z')
+    pages = iter([[first], [second], [first], [match]])
+    async def fetch(**kwargs):
+        fake.oracle_calls.append(('list', kwargs['limit'], kwargs.get('before')))
+        return next(pages)
+    fake.fetch_oracle_requests = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert rows(manager)[0]['panel_state'] == 'not_read'
+        assert not manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload['complete']
+        await manager._pool_swarm_seat(420, NOW + 120)
+        assert rows(manager, NOW + 120)[0]['panel_state'] == 'agreed'
+        assert [c[2] for c in fake.oracle_calls if c[0] == 'list'] == [
+            None, first['createdAt'], None, second['createdAt']]
+    finally: await manager.close()
+
+
+async def test_failed_forward_page_keeps_additions_without_advancing_coverage(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_LIMIT', 1)
+    fake = Oracle(); match = fake.requests[0]
+    extra = dict(match, createdAt='2026-09-23T23:00:00Z')
+    fake.lists = [[extra], None]
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    previous = seed_index(manager, newest='2026-09-23T19:00:00Z')
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        index = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload
+        assert index['newest'] == previous['newest']
+        assert index['jobs'][match['jobId']] == match['id']
+        assert rows(manager)[0]['panel_state'] == 'agreed'
     finally: await manager.close()
 
 
@@ -175,5 +263,65 @@ async def test_cancel_mid_oracle_walk_never_stores_partial_slot(tmp_path,monkeyp
         await manager._cancel_swarm_seat()
         assert task.cancelled()
         assert manager.cache.get_last_good(SLOT_SWARM_ORACLE) is None
+        assert manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX) is None
         assert manager.cache.last_fetch_ts(TIER_SWARM_SEAT)==NOW
     finally: fake.list_gate.set();await manager.close()
+
+
+async def test_request_older_than_submission_on_page_two_is_never_off_panel(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_LIMIT', 1)
+    fake = Oracle()
+    match = fake.requests[0]
+    unrelated = dict(match, id='20000000-0000-4000-8000-000000000000',
+                     jobId='30000000-0000-4000-8000-000000000000',
+                     createdAt='2026-09-23T19:30:00Z')
+    pages = iter([[unrelated], [match], []])
+
+    async def fetch(**kwargs):
+        fake.oracle_calls.append(('list', kwargs['limit'], kwargs.get('before')))
+        return next(pages)
+
+    fake.fetch_oracle_requests = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert rows(manager)[0]['panel_state'] == 'agreed'
+        assert len([c for c in fake.oracle_calls if c[0] == 'list']) == 3
+    finally:
+        await manager.close()
+
+
+async def test_valid_index_survives_restart_beyond_point_retention_without_list_read(tmp_path):
+    fake = Oracle(status='assessing')
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    await manager._pool_swarm_seat(420, NOW)
+    index = copy.deepcopy(manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload)
+    manager.cache.save(); await manager.close()
+    later = NOW + 49 * 3600
+    fake.oracle_calls.clear()
+    fresh = _manager(tmp_path, fake, clock=FakeClock(later)); fresh.set_seat(420)
+    try:
+        assert fresh.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload == index
+        await fresh._pool_swarm_seat(420, later)
+        assert [c[0] for c in fake.oracle_calls] == ['detail']
+        assert rows(fresh, later)[0]['panel_state'] == 'assessing'
+    finally: await fresh.close()
+
+
+async def test_forward_refresh_closes_gap_and_extends_complete_index(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_LIMIT', 1)
+    fake = Oracle(); match = fake.requests[0]
+    fake.lists = [[dict(match, createdAt='2026-09-23T21:00:00Z')],
+                  [dict(id='20000000-0000-4000-8000-000000000000',
+                        jobId='30000000-0000-4000-8000-000000000000',
+                        createdAt='2026-09-23T19:00:00Z')]]
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    previous = seed_index(manager, newest='2026-09-23T19:00:00Z')
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        index = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload
+        assert index['complete'] and index['oldest'] == previous['oldest']
+        assert index['newest'] == '2026-09-23T21:00:00Z'
+        assert rows(manager)[0]['panel_state'] == 'agreed'
+        assert [c[0] for c in fake.oracle_calls] == ['list', 'list', 'detail']
+    finally: await manager.close()

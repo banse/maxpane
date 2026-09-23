@@ -68,8 +68,8 @@ about 96, and tight about 53. Compact keeps `answer`, `model` and `took` for pan
 
 ```python
 #: One per RECORD row. The first eight are joined outcomes (handover §3, §5B).
-#: not_oracle = the row's node is not oracle_assess; off_panel = the list was read back past
-#: the row's submittedAt and no request carries its jobId, or a final panel's members lack
+#: not_oracle = the row's node is not oracle_assess; off_panel = a complete index whose
+#: newest covers submittedAt has no jobId, or a final panel's members lack
 #: its hash (failed runs never reach a panel) -- a real negative; not_read = not fetched
 #: yet; unavailable = the read failed or was ambiguous, with no cached point.
 SWARM_PANEL_STATES = (

@@ -1805,34 +1805,80 @@ def oracle_rows_due(rows: list[dict], oracle: object, *, now_ts: float, due_s: f
     return [row for _, row in sorted(due, key=lambda item: item[0])]
 
 
-def match_requests(list_rows: list[dict], due_rows: list[dict], *, end_of_history: bool = False) -> tuple[dict, set, set]:
-    """Resolve jobs from the walked list; duplicates are ambiguous, never first wins."""
-    groups: dict[str, list] = {}
-    stamps = []
-    for item in list_rows:
-        if not isinstance(item, Mapping):
-            continue
-        stamp = _ts(item.get('createdAt'))
-        if stamp is not None:
-            stamps.append(stamp)
-        job = parse_job_id(item.get('jobId'))
-        if job is not None:
-            groups.setdefault(job, []).append(item)
+def oracle_cursor_ts(value: object) -> float | None:
+    """Validate a served UTC ISO cursor before comparing it or sending it back."""
+    if not isinstance(value, str) or re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z", value) is None:
+        return None
+    return _ts(value)
+
+
+def empty_oracle_index() -> dict:
+    return dict(jobs={}, newest=None, oldest=None, complete=False)
+
+
+def coerce_oracle_index(payload: object) -> dict | None:
+    """The history proof is indivisible: reject any hostile or inconsistent slot."""
+    if (not isinstance(payload, dict) or set(payload) != {'jobs', 'newest', 'oldest', 'complete'}
+            or not isinstance(payload['jobs'], dict) or type(payload['complete']) is not bool):
+        return None
+    jobs = payload['jobs']
+    if any(parse_job_id(job) != job or job is None
+           or request is not None and (parse_job_id(request) != request)
+           for job, request in jobs.items()):
+        return None
+    requests = [request for request in jobs.values() if request is not None]
+    if len(set(requests)) != len(requests):
+        return None
+    if jobs:
+        newest, oldest = (oracle_cursor_ts(payload[key]) for key in ('newest', 'oldest'))
+        if newest is None or oldest is None or oldest > newest:
+            return None
+    elif payload['newest'] is not None or payload['oldest'] is not None:
+        return None
+    return dict(payload, jobs=dict(jobs))
+
+
+def oracle_index_page(page: object) -> list[dict] | None:
+    """Validate the entire page before extending a history proof."""
+    if not isinstance(page, list):
+        return None
+    clean = []
+    for item in page:
+        if (not isinstance(item, Mapping) or parse_job_id(item.get('jobId')) is None
+                or parse_job_id(item.get('id')) is None
+                or oracle_cursor_ts(item.get('createdAt')) is None):
+            return None
+        clean.append({key: item[key] for key in ('jobId', 'id', 'createdAt')})
+    return clean
+
+
+def add_oracle_index_page(index: dict, page: list[dict]) -> None:
+    """Merge identities; repeated sightings are safe, conflicting requests ambiguous."""
+    for item in page:
+        job, request = item['jobId'], item['id']
+        if job in index['jobs'] and index['jobs'][job] != request:
+            index['jobs'][job] = None
+        else:
+            index['jobs'][job] = request
+
+
+def match_requests(index: object, due_rows: list[dict]) -> tuple[dict, set, set]:
+    """Only a complete history covering submission time can prove absence."""
+    valid = coerce_oracle_index(index) or empty_oracle_index()
     matched, ambiguous, negative = {}, set(), set()
-    oldest = min(stamps, default=None)
+    newest = oracle_cursor_ts(valid['newest'])
     for row in due_rows:
         job = row['job_id']
-        requests = groups.get(job, [])
-        if len(requests) > 1:
-            ambiguous.add(job)
-        elif requests:
-            request_id = parse_job_id(requests[0].get('id'))
-            if request_id is None:
+        if job in valid['jobs']:
+            request = valid['jobs'][job]
+            if request is None:
                 ambiguous.add(job)
             else:
-                matched[job] = request_id
-        elif end_of_history or (oldest is not None and row.get('submitted_ts') is not None
-                                and oldest < row['submitted_ts']):
+                matched[job] = request
+        elif (valid['complete'] and newest is not None
+              and type(row.get('submitted_ts')) in (int, float)
+              and newest >= row['submitted_ts']):
             negative.add(job)
     return matched, ambiguous, negative
 

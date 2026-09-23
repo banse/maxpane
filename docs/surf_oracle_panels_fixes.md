@@ -15,7 +15,7 @@ Each item: make the fix, add a regression test, and prove the test bites where t
 
 | id | severity | what | where | done when |
 |---|---|---|---|---|
-| **C1** | Critical | Rows were marked final `off_panel` from a page boundary that proves nothing, and an empty first page settled every row as absent | `surf_swarm.match_requests` (~1808–1836), `surf_manager._pool_swarm_oracle` (~5816–5860), `SWARM_ORACLE_PAGE_*` | Implement the **request index** exactly as plan §2 step 3 (amended): new slot `SLOT_SWARM_ORACLE_INDEX`, forward refresh, backfill, and absence only from a complete index whose newest ≥ `submitted_ts`. `PAGE_LIMIT` becomes 500. Rewrite the `#:` blocks. **Prove:** (a) the reviewer's case: seat request on page 2, a newer unrelated request on page 1, `PAGE_LIMIT` patched to 1. It must end `agreed`/`outvoted` after the backfill, never `off_panel`. Revert the fix and show that this test goes red. (b) An empty first page on a non-empty index is a failed read. (c) A hostile index slot is discarded and rebuilt. (d) A gap larger than the page cap discards the index. (e) The fixture replay: build the index from the committed list pages and confirm that every seat-420 row the handover counts as matched (219) is found, and that only the 24 counted as not on a panel become `off_panel` |
+| **C1** | Critical | Rows were marked final `off_panel` from a page boundary that proves nothing, and an empty first page settled every row as absent | `surf_swarm.match_requests` (~1808–1836), `surf_manager._pool_swarm_oracle` (~5816–5860), `SWARM_ORACLE_PAGE_*` | Implement the **request index** exactly as plan §2 step 3 (amended): new slot `SLOT_SWARM_ORACLE_INDEX`, forward refresh, backfill, and absence only from a complete index whose newest ≥ `submitted_ts`. `PAGE_LIMIT` becomes 500. Rewrite the `#:` blocks. **Prove:** (a) the reviewer's case: seat request on page 2, a newer unrelated request on page 1, `PAGE_LIMIT` patched to 1. It must end `agreed`/`outvoted` after the backfill, never `off_panel`. Revert the fix and show that this test goes red. (b) An empty first page on a non-empty index is a failed read. (c) A hostile index slot is discarded and rebuilt. (d) A gap larger than the page cap discards the index. (e) The fixture replay: build the index from the committed list pages and confirm that every seat-420 row the handover counts as matched (219) is found, and verify the 24 nonmembers as 19 `off_panel`, 4 `blocked`, and 1 additional `assessing` (owner-approved correction below) |
 | **M1** | Minor | A quiet seat re-read 4 list pages every 120 s forever | same | Covered by C1. Add a test: a seat whose due rows are all in a complete index makes **zero** list calls |
 | **M4** | Minor | The manager used the private `sw._ts`, and the cursor depended on the served format | manager ~5816+ | Covered by C1: a public helper, and the strict ISO check before a stamp becomes a cursor |
 | **I1** | Important | `tests/data/test_surf_cache.py::test_newest_as_of_is_the_freshest_successful_read` counts slots (`len(SLOTS) == 16`); now 18 with the index | `tests/data/test_surf_cache.py:230` | Update the count **and** name the two new slots in the comment. The test goes green |
@@ -57,3 +57,16 @@ The tests need about 50 of the 246 files under `tests/fixtures/surf/swarm/oracle
 - The controller (Claude) then runs ONE scoped re-review of these findings, the full suite once, and, with the owner's
   go, strips the removed fixture blobs from the branch history (a backup ref is kept) before merge. You do **not**
   rewrite history.
+
+### Owner-approved replay clarification (2026-09-24)
+
+The 219 matched rows in the handover count hash memberships, not listed job IDs. The list
+contains 242 of the 243 oracle jobs; only one job is absent. Replaying all original details
+from `83e2127` through the new index and panel fold yields 196 agreed, 3 outvoted,
+9 no_quorum_in, 8 no_quorum_out, 4 assessing, 4 blocked and 19 off_panel. Of the 24
+nonmembers, four belong to blocked panels and one to an assessing panel; their explicit
+states take precedence. The owner approved these expectations and a one-time full-corpus
+replay, with a permanent test of all list pages plus the retained membership fixtures.
+The controller already committed plan/brief (`10b0c2d`) and fixture slimming (`3b6ccae`)
+before the implementation commits. Per the owner’s later instruction, skip §2 and leave the
+fixture directory and SWARM_ORACLE_DETAIL_IDS unchanged; no new detail files are needed.

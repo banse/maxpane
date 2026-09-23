@@ -428,7 +428,13 @@ it supports `limit` (up to 500) and `before=<ISO createdAt>`; offset/page/status
 The client validates limit as a non-bool integer and the UTC cursor before sending a request.
 The capture walks the complete history in three pages of at most 200 requests.
 List entries include `id`, `jobId`, `status`, `createdAt`, `answerType`, `question`, `window`
-and attestation metadata. The list does not contain member hashes and is never persisted.
+and attestation metadata. The list does not contain member hashes; raw list bodies are never cached.
+`SLOT_SWARM_ORACLE_INDEX` retains only job/request identities (conflicts become null), newest/oldest
+strict UTC cursors and a complete flag. Runtime uses pages of 500 with a shared four-page budget:
+forward refresh closes the gap to the old newest, then backfill continues from oldest. Exceeding
+the forward budget discards the index. Failed pages preserve prior coverage; an empty first page
+over a nonempty index is a failure. Only complete history whose newest covers submission can
+prove an absent job off-panel. Known jobs need no list refresh; the index is never age-pruned.
 
 `GET /oracle/requests/{uuid}` includes `members[]`, `agreement`, `panelSize`, `quorum` and
 `toleranceBps`. Observed states: attested, disagreed, assessing and blocked. Assessing can have

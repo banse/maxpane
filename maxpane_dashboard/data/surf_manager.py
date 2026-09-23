@@ -174,6 +174,7 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_SWARM_CONTRIBUTORS,
     SLOT_SWARM_ANSWERS,
     SLOT_SWARM_ORACLE,
+    SLOT_SWARM_ORACLE_INDEX,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
     SERIES_IMD_SUPPLY,
@@ -869,9 +870,10 @@ SWARM_ANSWER_MAX_AGE_S = 48 * 3600.0
 #: Nonterminal jobs may change; their reads follow the seat tier's 120 s clock.
 SWARM_ANSWER_DUE_S = 120.0
 
-#: 590 requests in 4.7 days on 2026-09-23 (~125/day): 200 covers ~1.6 days.
-SWARM_ORACLE_PAGE_LIMIT = 200
-#: Four pages cover ~6.4 days at that measured rate, bounding each cycle.
+#: Route cap 500; the 590-request capture needs two pages for a complete index.
+SWARM_ORACLE_PAGE_LIMIT = 500
+#: Shared forward/backfill budget: 2,000 requests (~16 days at 125/day).
+#: A forward gap beyond this cap discards the index for a fresh rebuild.
 SWARM_ORACLE_PAGE_CAP = 4
 #: Details averaged ~50 KB in the 2026-09-23 capture; four bound each cycle.
 SWARM_ORACLE_PER_CYCLE = 4
@@ -1119,6 +1121,7 @@ class SurfManager:
                 SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
                 SLOT_SWARM_ANSWERS: sw.coerce_answers_slot,
                 SLOT_SWARM_ORACLE: sw.coerce_oracle_slot,
+                SLOT_SWARM_ORACLE_INDEX: sw.coerce_oracle_index,
             })
         except Exception as exc:            # noqa: BLE001 — load is fail-soft; belt and braces
             logger.warning("SURF cache load failed: %s", exc)
@@ -5809,40 +5812,21 @@ class SurfManager:
             self.cache.store_last_good(SLOT_SWARM_ANSWERS, answers, ts=now)
 
     async def _pool_swarm_oracle(self, seat: dict, token: int, now: float) -> None:
-        """Bounded list/detail walk; publish the slot only after every await completes."""
+        """Resolve due panels through the history index; publish only after all awaits."""
         prior = self.cache.get_last_good(SLOT_SWARM_ORACLE)
         oracle = sw.prune_oracle(getattr(prior, "payload", None), now_ts=now,
                                  cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
         due = sw.oracle_rows_due(sw.seat_work_rows(seat), oracle, now_ts=now, due_s=SWARM_ORACLE_DUE_S)
         if not due:
             return
-        listed, before = [], None
-        matched, ambiguous, negative = {}, set(), set()
+        index_prior = self.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX)
+        index = sw.coerce_oracle_index(getattr(index_prior, "payload", None)) or sw.empty_oracle_index()
+        matched, ambiguous, negative = sw.match_requests(index, due)
         failed = False
-        for _ in range(SWARM_ORACLE_PAGE_CAP):
-            page = await self._guard(
-                lambda: self.swarm_client.fetch_oracle_requests(limit=SWARM_ORACLE_PAGE_LIMIT, before=before),
-                "swarm oracle requests")
-            if not isinstance(page, list):
-                failed = True
-                break
-            listed.extend(page)
-            short = len(page) < SWARM_ORACLE_PAGE_LIMIT
-            matched, ambiguous, negative = sw.match_requests(listed, due, end_of_history=short)
-            unmatched = [row for row in due if row["job_id"] not in matched and row["job_id"] not in ambiguous]
-            if not unmatched or short or all(row["job_id"] in negative for row in unmatched):
-                break
-            stamps = [(sw._ts(item.get("createdAt")), item.get("createdAt"))
-                      for item in page if isinstance(item, dict)]
-            stamps = [(ts, raw) for ts, raw in stamps if ts is not None]
-            if not stamps:
-                failed = True
-                break
-            oldest, cursor = min(stamps)
-            if before is not None and oldest >= sw._ts(before):
-                failed = True
-                break
-            before = cursor
+        if any(row['job_id'] not in matched and row['job_id'] not in ambiguous
+               and row['job_id'] not in negative for row in due):
+            index, failed = await self._refresh_oracle_index(index)
+            matched, ambiguous, negative = sw.match_requests(index, due)
         groups: dict[str, list[dict]] = {}
         for row in due:
             job, key = row["job_id"], row["submission_hash"]
@@ -5868,6 +5852,61 @@ class SurfManager:
                                 cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
         if prior is None or prior.payload != oracle:
             self.cache.store_last_good(SLOT_SWARM_ORACLE, oracle, ts=now)
+
+        if index_prior is None or index_prior.payload != index:
+            self.cache.store_last_good(SLOT_SWARM_ORACLE_INDEX, index, ts=now)
+
+    async def _refresh_oracle_index(self, index: dict) -> tuple[dict, bool]:
+        """Forward refresh then backfill, sharing one page budget; never publish mid-await."""
+        previous_newest = sw.oracle_cursor_ts(index['newest'])
+        newest = index['newest']
+        before = None
+        forward = True
+        for _ in range(SWARM_ORACLE_PAGE_CAP):
+            raw = await self._guard(
+                lambda: self.swarm_client.fetch_oracle_requests(limit=SWARM_ORACLE_PAGE_LIMIT, before=before),
+                "swarm oracle requests")
+            page = sw.oracle_index_page(raw)
+            if page is None or (before is None and not page and index['jobs']):
+                return index, True
+            if page:
+                oldest_item = min(page, key=lambda item: sw.oracle_cursor_ts(item['createdAt']))
+                oldest = oldest_item['createdAt']
+                latest = max(page, key=lambda item: sw.oracle_cursor_ts(item['createdAt']))['createdAt']
+                if before is not None and sw.oracle_cursor_ts(oldest) >= sw.oracle_cursor_ts(before):
+                    return index, True
+                sw.add_oracle_index_page(index, page)
+                if newest is None or sw.oracle_cursor_ts(latest) > sw.oracle_cursor_ts(newest):
+                    newest = latest
+            short = len(page) < SWARM_ORACLE_PAGE_LIMIT
+            if forward:
+                closed = (previous_newest is None or short
+                          or sw.oracle_cursor_ts(oldest) <= previous_newest)
+                if not closed:
+                    before = oldest
+                    continue
+                index['newest'] = newest
+                if short:
+                    # This forward walk reached the end, so it covers the whole history.
+                    index['oldest'] = oldest if page else index['oldest']
+                    index['complete'] = True
+                    return index, False
+                if index['oldest'] is None:
+                    index['oldest'] = oldest
+                if index['complete']:
+                    return index, False
+                forward = False
+            else:
+                if page:
+                    index['oldest'] = oldest
+                if short:
+                    index['complete'] = True
+                    return index, False
+            before = index['oldest']
+        if forward:
+            # More than the bounded forward window: no contiguous absence proof remains.
+            return sw.empty_oracle_index(), False
+        return index, False
 
     async def _pool_swarm_scores(self, tiers: set[str], now: float) -> dict[str, Any]:
         """The sweep: the newest details, ``/skills``, ``/launches``, ``/sites``.
