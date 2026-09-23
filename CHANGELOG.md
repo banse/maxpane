@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.1 — 2026-09-23
 
 - Surfboard `4` POOL4 MARKET: RECENT FLOW and BURN & SUPPLY no longer read `unavailable` for a
   day after the pool4 hook takes a fee on a liquidity operation rather than a swap (mainnet tx
