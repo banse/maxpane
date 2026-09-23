@@ -170,3 +170,21 @@ def test_prune_bounds_each_point_and_checks_age():
     assert set(sw.prune_oracle(slot,now_ts=5,cap=2,max_age_s=10)[job])=={f'{i:064x}' for i in (3,4)}
     assert sw.prune_oracle(slot,now_ts=10,cap=400,max_age_s=2)=={}
     assert sw.prune_oracle({job:{row['submission_hash']:value}},now_ts=999)=={}
+
+
+@pytest.mark.parametrize('answer', [True, False])
+def test_bool_answer_comes_from_agreement_not_numeric_figure(answer):
+    detail = next(copy.deepcopy(d) for d in DETAILS if d.get('answerType') == 'bool'
+                  and (d.get('agreement') or {}).get('answer') is answer
+                  and (d.get('agreement') or {}).get('figure') is not None)
+    member = detail['members'][0]
+    row = dict(ROWS[0], job_id=detail['jobId'], submission_hash=member['submissionHash'])
+    value = point(detail, row)
+    assert value['answer_bool'] is answer
+    assert enrich(row, value)['panel_answer_bool'] is answer
+    assert value['figure'] == detail['agreement']['figure']
+    for bad in (0, 1, 'true', 'false', []):
+        detail['agreement']['answer'] = bad
+        assert point(detail, row)['answer_bool'] is None
+        bad_point = dict(value, answer_bool=bad)
+        assert sw.coerce_oracle_slot({row['job_id']: {row['submission_hash']: bad_point}}) == {}

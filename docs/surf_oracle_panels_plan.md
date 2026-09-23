@@ -39,7 +39,7 @@ about 96, and tight about 53. Compact keeps `answer`, `model` and `took` for pan
 
 - **`panel` is 9 cells, not 8.** Panels run up to 112 members, so `✓ 105/112` is 9 cells. 8 would clip
   the widest real value. Derive the width in code (`1 + 1 + 3 + 1 + 3`), with a `#:` comment.
-- **`tok` goes through `sparkline_common.fmt_compact`**, whose suffix is upper-case (`1.5K`, `22K`), not the
+- **`tok` goes through `sparkline_common.fmt_compact`**, whose suffix is upper-case (`1.5K`, `22.0K`), not the
   handover's `1.5k`. That is the reuse rule: do not write a second compact formatter. `fmt_compact` prints `--` for a
   non-number, and this cell prints `—` (EMDASH, like `model`/`took`). Map it at the call site.
 - **A 64-hex hash equal to the seat's hash, on a panel whose `jobId` appears twice in the list, is
@@ -59,6 +59,7 @@ about 96, and tight about 53. Compact keeps `answer`, `model` and `took` for pan
 "panel_size",      # int | None; panelSize (assessing denominator)
 "panel_figure",    # str | None; agreement.figure, decimal STRING, never parsed to float
 "panel_answer_type", # str | None; answerType ("uint256", "bool", …) as served, flattened
+"panel_answer_bool", # bool | None; agreement.answer, strict bool (owner-approved extension)
 ```
 
 `role` **stays** in the data row, because other readers use it. Only the RECORD widget stops showing it.
@@ -82,7 +83,7 @@ SWARM_ORACLE_NODE_KEYS = ("oracle_assess",)
 #: facts only: never members' notes, never the question, never the raw detail.
 SWARM_ORACLE_CACHE_FIELDS = (
     "request_id", "status", "in_cluster", "on_panel", "agreed", "members",
-    "panel_size", "figure", "answer_type", "read_ts", "terminal",
+    "panel_size", "figure", "answer_type", "answer_bool", "read_ts", "terminal",
 )
 ```
 
@@ -233,8 +234,9 @@ and on hostile input (`[/x]`, a 200-character id, `claude-opus-5-5\n`, which bec
 
   If a needed count is `None`, show `unavail`. Never print `None` or `?/?`.
 - **Answer cell on red rows** (`outvoted` and `no_quorum_out`): prefix `panel <figure> · ` before
-  the cleaned answer. For `answer_type == "bool"`, map the figure **only** from what a captured bool fixture shows
-  (§6 WP0). If WP0 finds no bool request, leave the figure raw and file a follow-up. Clip as today, so
+  the cleaned answer. Owner-approved extension: for `answer_type == "bool"`, use the strict bool
+  `agreement.answer` via cached `answer_bool` and row `panel_answer_bool`: true → YES, false → NO,
+  absent/invalid → unavail. Never infer a boolean from figure (captured `263154` accompanies false). Clip as today, so
   `‹ widen` lights when the prefix pushes the answer past its width. Keep the prefix even when the answer
   state is not `read` (`panel 4571… · not read`).
 - Update the module docstring (column list and the owner dates).

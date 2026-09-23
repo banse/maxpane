@@ -6,7 +6,7 @@ from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags
 from maxpane_dashboard.widgets.panels import SignalsPanelBase
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
-from maxpane_dashboard.widgets.surf._fmt import source_clock
+from maxpane_dashboard.widgets.surf._fmt import source_clock, short_model
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 
 # Eleven cells align the longest label, tokens/job, plus one separating cell.
@@ -89,7 +89,7 @@ class SurfSwarmFleet(SignalsPanelBase):
         for row in rows:
             if isinstance(row, dict):
                 model = row.get('model')
-                name = 'none' if model is None else strip_tags(flatten(model))
+                name = short_model(model) or 'none'
                 if model is not None and row.get('effort') is not None:
                     name += ' ' + strip_tags(flatten(row['effort']))
                 parts.append(self._item(name, row.get('count')))

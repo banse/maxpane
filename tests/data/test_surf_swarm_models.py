@@ -104,7 +104,7 @@ SWARM_V2_ROW_SHAPES = {
         "submitted_ts",
         "launch", "submission_hash", "answer", "answer_state", "model", "took_s",
         "output_tokens", "panel_state", "panel_agreed", "panel_members", "panel_size",
-        "panel_figure", "panel_answer_type",
+        "panel_figure", "panel_answer_type", "panel_answer_bool",
     ),
 }
 
@@ -383,7 +383,7 @@ def test_oracle_contract_and_row_defaults():
     assert models.SWARM_ORACLE_NODE_KEYS == ("oracle_assess",)
     assert models.SWARM_ORACLE_CACHE_FIELDS == (
         "request_id", "status", "in_cluster", "on_panel", "agreed", "members",
-        "panel_size", "figure", "answer_type", "read_ts", "terminal",
+        "panel_size", "figure", "answer_type", "answer_bool", "read_ts", "terminal",
     )
     for node, state in [("oracle_assess", "not_read"), ("implement", "not_oracle")]:
         row = seat_work_rows({"work": [{"nodeKey": node}]})[0]

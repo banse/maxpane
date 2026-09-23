@@ -28,6 +28,9 @@ number that module is handed.
 
 from __future__ import annotations
 
+import re
+from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags
+
 from maxpane_dashboard.widgets.explorer import ETHEREUM, IMD, SITES
 from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_float, hhmm, mmdd
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
@@ -49,6 +52,7 @@ __all__ = [
     "hhmm",
     "mmdd",
     "mmdd_hhmm",
+    "short_model",
 ]
 
 #: Surf's default explorer, Ethereum mainnet (Etherscan): read off
@@ -161,3 +165,17 @@ def source_clock(value) -> str:
     """A source's own HH:MM marker; never borrow another endpoint's clock."""
     import re
     return value if isinstance(value, str) and re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', value) else 'unavailable'
+
+
+def short_model(raw: object) -> str | None:
+    """Shorten only whole cleaned model ids; callers own clipping and escaping."""
+    text = strip_tags(flatten(raw))
+    if not text:
+        return None
+    if match := re.fullmatch(r"claude-([a-z]+)-(\d+)(?:-(\d+))?", text):
+        family, major, minor = match.groups()
+        return f"{family} {major}" + (f".{minor}" if minor is not None else "")
+    if match := re.fullmatch(r"gpt-(\d+(?:\.\d+)?)-([a-z]+)", text):
+        version, name = match.groups()
+        return f"{name} {version}"
+    return text

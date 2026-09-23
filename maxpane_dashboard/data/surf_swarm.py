@@ -884,7 +884,7 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
             "output_tokens": None,
             "panel_state": "not_read" if work.get("nodeKey") in SWARM_ORACLE_NODE_KEYS else "not_oracle",
             "panel_agreed": None, "panel_members": None, "panel_size": None,
-            "panel_figure": None, "panel_answer_type": None,
+            "panel_figure": None, "panel_answer_type": None, "panel_answer_bool": None,
         }
         rows.append({key: row[key] for key in keys})
     return rows
@@ -1742,6 +1742,7 @@ def oracle_point(detail: object, job_id: str, submission_hash: str, *, now_ts: f
         on_panel=bool(matches), agreed=_oracle_count(agreement.get('agreed')), members=len(members),
         panel_size=_oracle_count(detail.get('panelSize')), figure=_oracle_figure(agreement.get('figure')),
         answer_type=' '.join(answer_type.split()) if isinstance(answer_type, str) else None,
+        answer_bool=agreement.get('answer') if type(agreement.get('answer')) is bool else None,
         read_ts=now_ts, terminal=status in _ORACLE_FINAL,
     )
 
@@ -1761,6 +1762,7 @@ def coerce_oracle_slot(payload: object) -> dict | None:
                 continue
             if (point['request_id'] is not None and parse_job_id(point['request_id']) is None
                     or not _optional_string(point['status']) or not _optional_string(point['answer_type'])
+                    or point['answer_bool'] is not None and type(point['answer_bool']) is not bool
                     or any(type(point[name]) is not bool for name in ('in_cluster', 'on_panel', 'terminal'))
                     or not _nonnegative_finite(point['read_ts'])
                     or any(point[name] is not None and _oracle_count(point[name]) is None
@@ -1841,7 +1843,7 @@ def enrich_panel_rows(rows: list[dict], oracle: object, node_keys: tuple[str, ..
     result = []
     for row in rows:
         item = dict(row, panel_agreed=None, panel_members=None, panel_size=None,
-                    panel_figure=None, panel_answer_type=None)
+                    panel_figure=None, panel_answer_type=None, panel_answer_bool=None)
         point = valid.get(row['job_id'], {}).get(row['submission_hash'])
         if row['node_key'] not in node_keys:
             state = 'not_oracle'
@@ -1865,7 +1867,7 @@ def enrich_panel_rows(rows: list[dict], oracle: object, node_keys: tuple[str, ..
                     _log_oracle_status(status)
             item.update(panel_agreed=point['agreed'], panel_members=point['members'],
                         panel_size=point['panel_size'], panel_figure=point['figure'],
-                        panel_answer_type=point['answer_type'])
+                        panel_answer_type=point['answer_type'], panel_answer_bool=point['answer_bool'])
         item['panel_state'] = state
         result.append(item)
     return result

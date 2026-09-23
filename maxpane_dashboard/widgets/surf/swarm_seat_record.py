@@ -1,5 +1,8 @@
 """RECORD: every work attempt in the selected seat's lifetime record.
 
+Owner, 2026-09-23: when/job/node/state/model/took/panel/tok/answer.
+Role is hidden; short model names make room for panel evidence and output tokens.
+
 Since 2026-09-22 ``work[]`` lists pending, rejected and failed attempts beside
 accepted ones. ``state`` shows the attempt's own status whenever it is not
 ``accepted`` (a failed attempt on a completed job must not read as a green
@@ -24,7 +27,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import job_text
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
-from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm, short_model, fmt_compact
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
@@ -61,8 +64,8 @@ JOB_COLS = 8
 #: the answer gets the cells the 22-cell keys took).
 NODE_COLS = 6
 
-#: ``implement`` / ``integrate`` are 9; ``review`` 6.
-_ROLE_COLS = 9
+#: Widest captured panel has 112 members: glyph + space + 105/112.
+_PANEL_COLS = 1 + 1 + 3 + 1 + 3
 
 #: ``completed`` is 9 -- the only ``jobState`` on the four captured seats; the
 #: vocabulary is open and a longer word clips with ``…``.
@@ -79,14 +82,15 @@ _SPECS = (
     ("when", "when", _WHEN_COLS),
     ("job", "job", JOB_COLS),
     ("node", "node", NODE_COLS),
-    ("role", "role", _ROLE_COLS),
     ("state", "state", _STATE_COLS),
-    ("model", "model", 15),
+    ("model", "model", 9),
     ("took", "took", 6),
+    ("panel", "panel", _PANEL_COLS),
+    ("tok", "tok", 6),
     ("answer", "answer", ANSWER_MIN_COLS),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
-_COMPACT = tuple(key for key in _ALL if key != "role")
+_COMPACT = tuple(key for key in _ALL if key != "tok")
 _TIGHT = tuple(key for key in _COMPACT if key not in ("answer", "model", "took"))
 _TIERS = {"full": _ALL, "compact": _COMPACT, "tight": _TIGHT}
 
@@ -221,10 +225,11 @@ class SurfSwarmSeatRecord(SwarmTableBase):
                               else item.get("accepted_ts")),
             "job": job_text(job_id, JOB_COLS, explorer=JOB_EXPLORER) if job != DASH else DASH,
             "node": title.lower() if title else sanitize_cell(_word(node_key), NODE_COLS),
-            "role": sanitize_cell(_word(item.get("role")), _ROLE_COLS),
             "state": state_cell,
-            "model": self._usage_cell(item, "model", 15),
+            "model": self._usage_cell(item, "model", 9),
             "took": self._usage_cell(item, "took_s", 6),
+            "panel": self._panel_cell(item),
+            "tok": self._usage_cell(item, "output_tokens", 6),
             "answer": answer,
         }
 
@@ -233,7 +238,15 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         if item.get("answer_state") not in ("read", "no_reply"):
             return EMDASH
         value = item.get(key)
-        if key == "took_s":
+        if key == "model":
+            value = short_model(value)
+        elif key == "output_tokens":
+            if type(value) is not int or value < 0:
+                return EMDASH
+            value = fmt_compact(value)
+            if value == DASH:
+                return EMDASH
+        elif key == "took_s":
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 return EMDASH
             minutes = int(value) // 60
@@ -243,13 +256,44 @@ class SurfSwarmSeatRecord(SwarmTableBase):
                 value = "<1m" if minutes == 0 else f"{minutes}m"
         return sanitize_cell(value, width) or EMDASH
 
+    def _panel_cell(self, item: dict) -> Text:
+        state = item.get("panel_state")
+        words = {
+            "no_quorum_in": ("✓ no-q", "dim green"),
+            "no_quorum_out": ("✗ no-q", "dim red"),
+            "blocked": ("blocked", "dim"), "off_panel": ("–", "dim"),
+            "not_oracle": ("–", "dim"), "not_read": ("not read", "dim"),
+        }
+        text, style = words.get(state, ("unavail", "yellow"))
+        members, agreed, size = (item.get(key) for key in ("panel_members", "panel_agreed", "panel_size"))
+        valid_members = type(members) is int and members >= 0
+        if state in ("agreed", "outvoted") and valid_members and type(agreed) is int and agreed >= 0:
+            text = f"{'✓' if state == 'agreed' else '✗'} {agreed}/{members}"
+            style = "green" if state == "agreed" else "red"
+        elif state == "assessing" and valid_members:
+            if size is None:
+                text = f"… {members}"
+            elif type(size) is int and size >= 0:
+                text = f"… {members}/{size}"
+        return Text.from_markup(sanitize_cell(text, _PANEL_COLS), style=style)
+
     def _answer_cell(self, item: dict) -> Text:
         state = item.get("answer_state")
+        style = ""
         if state != "read":
             words = {"not_read": "not read", "not_served": "not served", "no_reply": "no reply"}
-            return Text(words.get(state, "unavailable"), style="dim" if state in words else "yellow")
-        text = strip_tags(item.get("answer"))
+            text = words.get(state, "unavailable")
+            style = "dim" if state in words else "yellow"
+        else:
+            text = strip_tags(item.get("answer"))
+        if item.get("panel_state") in ("outvoted", "no_quorum_out"):
+            if item.get("panel_answer_type") == "bool":
+                answer = item.get("panel_answer_bool")
+                figure = ("YES" if answer else "NO") if type(answer) is bool else "unavail"
+            else:
+                figure = strip_tags(item.get("panel_figure")) or "unavail"
+            text = f"panel {figure} · {text}"
         width = self._answer_cols
         if rowfit.cell_len(text) > width:
             self._clipped = True
-        return Text.from_markup(sanitize_cell(text, width))
+        return Text.from_markup(sanitize_cell(text, width), style=style)

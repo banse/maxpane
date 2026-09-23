@@ -62,7 +62,7 @@ async def test_polish_groups_align_labels_and_keep_the_advertised_model_prefix()
     for label in labels:
         line=next(line.strip() for line in lines if line.strip().startswith(label+' '))
         assert line.startswith(label.ljust(11)), (label,line)
-    assert 'gpt-6-astra xhigh 43' in text and '+2 (advertised)' in text
+    assert 'astra 6 xhigh 43' in text and '+2 (advertised)' in text
     header=next(i for i,line in enumerate(lines) if 'CONTRIBUTORS · as of 03:01' in line)
     paused=next(i for i,line in enumerate(lines) if line.strip().startswith('paused '))
     assert not lines[paused-1].strip() and not lines[header-1].strip()

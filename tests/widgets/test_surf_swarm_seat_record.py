@@ -155,12 +155,12 @@ async def test_a_work_row_renders_every_column():
     assert NEWEST["job_id"][JOB_COLS:JOB_COLS + 4] not in row
     cells = row.split()
     assert cells[3] == _node(NEWEST) and NEWEST["node_key"] not in row
-    assert NEWEST["role"] in row and NEWEST["job_state"] in row
+    assert NEWEST["job_state"] in row
     assert "not read" in row and NEWEST["objective"] not in row
     text = "\n".join(lines)
     assert "RECORD" in text and f"as of {AS_OF}" in text
     header = _row_with(lines, "answer").split()
-    assert header == ["when", "job", "node", "role", "state", "model", "took", "answer"]
+    assert header == ["when", "job", "node", "state", "model", "took", "panel", "tok", "answer"]
 
 
 async def test_the_title_has_no_blank_row_under_it():
@@ -320,15 +320,15 @@ def test_the_tier_thresholds_descend():
     assert ANSWER_MIN_COLS > 0
 
 
-async def test_one_below_full_sheds_role_and_says_widen():
+async def test_one_below_full_sheds_tok_and_says_widen():
     gutter = SwarmTableBase.GUTTER_COLS
     row = [dict(NEWEST, answer_state="read", answer="fits")]
     full_lines = await _record((FULL_WIDTH + gutter, 12), swarm_seat_work_rows=row)
     compact_lines = await _record((FULL_WIDTH + gutter - 1, 12), swarm_seat_work_rows=row)
     full_header = _row_with(full_lines, "when").split()
     compact_header = _row_with(compact_lines, "when").split()
-    assert "role" in full_header and "‹" not in "\n".join(full_lines)
-    assert "role" not in compact_header and "‹" in "\n".join(compact_lines)
+    assert "tok" in full_header and "‹" not in "\n".join(full_lines)
+    assert "tok" not in compact_header and "‹" in "\n".join(compact_lines)
     assert "answer" in compact_header, "compact keeps the answer"
 
 
@@ -365,13 +365,13 @@ async def test_polish_answer_states_and_same_read_usage(state,word):
              objective='OBJECTIVE MUST NOT PAINT',launch='evm_project')
     lines=await _record((200,12),swarm_seat_work_rows=[row])
     header=_row_with(lines,'when').split()
-    assert header==['when','job','node','role','state','model','took','answer']
+    assert header==['when','job','node','state','model','took','panel','tok','answer']
     line=_row_with(lines,_job(row))
     assert word in line and 'OBJECTIVE MUST NOT PAINT' not in '\n'.join(lines)
     if state in ('read','no_reply'):
-        assert 'claude-sonnet-5' in line and '7m' in line
+        assert 'sonnet 5' in line and '7m' in line
     else:
-        assert 'claude-sonnet-5' not in line and '7m' not in line and line.count('—')==2
+        assert 'sonnet 5' not in line and '7m' not in line and line.count('—')==3
 
 
 @pytest.mark.parametrize('seconds,expected',[(420,'7m'),(3840,'1h 04m'),(0,'<1m'),(0.1,'<1m'),(59.99,'<1m'),(60,'1m'),(None,'—')])
@@ -379,7 +379,7 @@ async def test_polish_duration_and_missing_model(seconds,expected):
     row=dict(NEWEST,answer_state='read',answer='Done.',model=None,took_s=seconds,launch='evm_project')
     line=_row_with(await _record((200,12),swarm_seat_work_rows=[row]),_job(row))
     assert re.search(r'(?<!\S)' + re.escape(expected) + r'(?!\S)', line), line
-    assert line.count('—')==(2 if seconds is None else 1)
+    assert line.count('—')==(3 if seconds is None else 2)
 
 
 async def test_polish_answer_sanitization_and_actual_clipping_drive_widen():
@@ -425,7 +425,7 @@ async def test_polish_committed_hostile_submission_reaches_record_safely():
                          {payload['jobId']:{item['hash']:dict(point,read_ts=1000.,terminal=True)}})
     text='\n'.join(await _record((200,12),swarm_seat_work_rows=rows))
     assert 'Created answer.json in report.md and result.txt' in text
-    assert 'claude-sonnet-5' in text and '<1m' in text and '…' in text and '‹' in text
+    assert 'sonnet 5' in text and '<1m' in text and '…' in text and '‹' in text
     assert '[x]' not in text and '/Users/' not in text and '/home/' not in text and '/root/' not in text
 
 
@@ -466,3 +466,114 @@ async def test_an_unaccepted_attempt_shows_its_own_status_not_the_jobs():
     assert cells["pending"] == "[yellow]pending[/]"
     old = dict(picks["failed"], work_status=None)
     assert str(record.build_cells(old)["state"]) == "[green]completed[/]"
+
+
+@pytest.mark.parametrize('raw,expected', [
+    ('claude-sonnet-5','sonnet 5'),('claude-opus-5','opus 5'),
+    ('claude-opus-5-5','opus 5.5'),('claude-fable-5-1','fable 5.1'),
+    ('gpt-6-astra','astra 6'),('gpt-6-sol','sol 6'),('gpt-6-luna','luna 6'),
+    ('gpt-5.6-luna','luna 5.6'),('gpt-5.6-terra','terra 5.6'),('gpt-5.6-sol','sol 5.6'),
+    ('gpt-5.5','gpt-5.5'),('[/x]',None),(None,None),('',None),
+    ('x'*200,'x'*200),('claude-opus-5-5\n','opus 5.5'),
+    ('claude-opus-5-5-extra','claude-opus-5-5-extra'),
+])
+def test_short_model_exact_cleaned_patterns(raw,expected):
+    from maxpane_dashboard.widgets.surf._fmt import short_model
+    assert short_model(raw)==expected
+
+
+@pytest.mark.parametrize('state,word,color,dim', [
+    ('agreed','✓ 35/36','green',False),('outvoted','✗ 35/36','red',False),
+    ('no_quorum_in','✓ no-q','green',True),('no_quorum_out','✗ no-q','red',True),
+    ('assessing','… 36/112','yellow',False),('blocked','blocked',None,True),
+    ('off_panel','–',None,True),('not_oracle','–',None,True),
+    ('not_read','not read',None,True),('unavailable','unavail','yellow',False),
+])
+async def test_panel_states_and_styles_reach_compositor(state,word,color,dim):
+    class Harness(App):
+        def compose(self): yield SurfSwarmSeatRecord()
+    row=dict(NEWEST,answer_state='read',answer='Done.',panel_state=state,
+             panel_agreed=35,panel_members=36,panel_size=112)
+    async with Harness().run_test(size=(220,12)) as pilot:
+        pilot.app.query_one(SurfSwarmSeatRecord).update_data(swarm_seat_work_rows=[row],swarm_seat_state='ok')
+        await pilot.pause()
+        lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        y=next(i for i,line in enumerate(lines) if _job(row) in line)
+        x=lines[y].index(word)
+        style=pilot.app.screen.get_style_at(x,y)
+        from textual.filter import dim_color
+        if color:
+            expected=Color.from_triplet(Color.parse(color).get_truecolor(pilot.app.ansi_theme))
+        else:
+            # The plain node cell supplies the same row's foreground/background.
+            expected=pilot.app.screen.get_style_at(lines[y].index(_node(row)),y).color
+        if dim:
+            expected=dim_color(style.bgcolor,expected)
+        assert style.color.get_truecolor(pilot.app.ansi_theme)==expected.get_truecolor(pilot.app.ansi_theme)
+
+
+@pytest.mark.parametrize('state,field', [('agreed','panel_agreed'),('agreed','panel_members'),
+    ('outvoted','panel_agreed'),('outvoted','panel_members'),('assessing','panel_members')])
+async def test_missing_panel_counts_are_unavailable(state,field):
+    row=dict(NEWEST,panel_state=state,panel_agreed=35,panel_members=36,panel_size=112)
+    row[field]=None
+    text='\n'.join(await _record(swarm_seat_work_rows=[row]))
+    assert 'unavail' in _row_with(text.splitlines(),_job(row))
+    assert 'None' not in text and '?/?' not in text
+
+
+@pytest.mark.parametrize('value,expected',[(None,'—'),(0,'0'),(1534,'1.5K'),(22000,'22.0K'),(True,'—')])
+async def test_output_tokens_in_composited_tok_column(value,expected):
+    row=dict(NEWEST,answer_state='read',answer='Done.',output_tokens=value)
+    lines=await _record((220,12),swarm_seat_work_rows=[row])
+    header=_row_with(lines,'when');line=_row_with(lines,_job(row))
+    assert line[header.index('tok'):header.index('answer')].strip()==expected
+
+
+@pytest.mark.parametrize('state',['outvoted','no_quorum_out'])
+@pytest.mark.parametrize('answer_state',['read','not_read'])
+async def test_red_rows_prefix_exact_wei_even_before_answer_read(state,answer_state):
+    row=dict(NEWEST,panel_state=state,panel_agreed=35,panel_members=36,panel_figure='457162630000000001',
+             panel_answer_type='uint256',answer_state=answer_state,answer='Done.')
+    text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
+    assert 'panel 457162630000000001 · '+('Done.' if answer_state=='read' else 'not read') in text
+
+
+@pytest.mark.parametrize('answer,word',[(True,'YES'),(False,'NO'),(None,'unavail')])
+async def test_bool_prefix_uses_explicit_answer(answer,word):
+    row=dict(NEWEST,panel_state='outvoted',panel_agreed=35,panel_members=36,panel_figure='263154',
+             panel_answer_type='bool',panel_answer_bool=answer,answer_state='read',answer='Done.')
+    text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
+    assert f'panel {word} · Done.' in text and '263154' not in text
+
+
+async def test_assessing_without_size_and_hostile_strings_are_cleaned():
+    row=dict(NEWEST,panel_state='assessing',panel_members=3,panel_size=None,
+             model='[/x]gpt-6-astra',answer_state='read',answer='Done.')
+    text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
+    assert '… 3' in text and 'astra 6' in text and '[/x]' not in text
+    row.update(panel_state='outvoted',panel_agreed=1,panel_members=2,panel_figure='[/x]42',panel_answer_type='uint256')
+    text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
+    assert 'panel 42 · Done.' in text and '[/x]' not in text
+
+
+async def test_panel_survives_all_tiers_and_role_is_absent():
+    gutter=SwarmTableBase.GUTTER_COLS
+    row=dict(NEWEST,panel_state='agreed',panel_agreed=105,panel_members=112)
+    for width,expected in [(FULL_WIDTH,('when','job','node','state','model','took','panel','tok','answer')),
+                           (COMPACT_WIDTH,('when','job','node','state','model','took','panel','answer')),
+                           (TIGHT_WIDTH,('when','job','node','state','panel'))]:
+        lines=await _record((width+gutter,12),swarm_seat_work_rows=[row])
+        assert tuple(_row_with(lines,'when').split())==expected
+        assert '✓ 105/112' in '\n'.join(lines)
+
+
+async def test_red_prefix_alone_pushes_answer_past_width_and_lights_widen():
+    row=dict(NEWEST,answer_state='read',answer='fits',panel_state='agreed',
+             panel_agreed=35,panel_members=36,panel_figure='457162630000000001',panel_answer_type='uint256')
+    size=(FULL_WIDTH+SwarmTableBase.GUTTER_COLS,12)
+    before='\n'.join(await _record(size,swarm_seat_work_rows=[row]))
+    assert '‹' not in before
+    row['panel_state']='outvoted'
+    after='\n'.join(await _record(size,swarm_seat_work_rows=[row]))
+    assert 'panel 4571' in after and '…' in after and '‹' in after
