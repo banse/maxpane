@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import datetime
 import math
+import logging
+from functools import lru_cache
 import re
 import statistics
 from collections.abc import Mapping
@@ -1687,3 +1689,188 @@ def answer_jobs_due(rows: list[dict], answers: dict, *, now_ts: float, due_s: fl
         groups.setdefault(job, []).append(row)
         priorities[job] = min(priorities.get(job, priority), priority)
     return [(job, groups[job]) for job in sorted(groups, key=priorities.get)[:cap]]
+
+
+# ---- Oracle panels: exact submission identities, extracted facts only ------
+_ORACLE_FINAL = frozenset(('attested', 'disagreed', 'blocked', 'off_panel'))
+_ORACLE_FIGURE = re.compile(r'-?[0-9]{1,80}(\.[0-9]{1,40})?')
+
+
+def _oracle_count(value: object) -> int | None:
+    return value if type(value) is int and value >= 0 else None
+
+
+def _oracle_figure(value: object) -> str | None:
+    return value if isinstance(value, str) and _ORACLE_FIGURE.fullmatch(value) else None
+
+
+def oracle_empty_point(status: str | None, *, now_ts: float) -> dict:
+    """A settled absence or failed read, distinct from a row not fetched yet."""
+    point = dict.fromkeys(SWARM_ORACLE_CACHE_FIELDS)
+    point.update(status=status, in_cluster=False, on_panel=False, read_ts=now_ts,
+                 terminal=status in _ORACLE_FINAL)
+    return point
+
+
+def oracle_point(detail: object, job_id: str, submission_hash: str, *, now_ts: float) -> dict | None:
+    """Join only by exact hash; price tolerance is already resolved by cluster membership."""
+    if (parse_job_id(job_id) is None or _hex64(submission_hash) is None
+            or not isinstance(detail, Mapping) or detail.get('jobId') != job_id
+            or parse_job_id(detail.get('id')) is None or not isinstance(detail.get('status'), str)):
+        return None
+    status = detail['status']
+    members = detail.get('members')
+    if members is None and status == 'blocked':
+        members = []  # Captured blocked requests serve null (owner-approved).
+    agreement = detail.get('agreement')
+    if (not isinstance(members, list) or any(not isinstance(m, Mapping) for m in members)
+            or agreement is not None and not isinstance(agreement, Mapping)):
+        return None
+    if agreement is None:
+        if status not in ('assessing', 'blocked'):
+            return None
+        agreement = {'cluster': []}
+    cluster = agreement.get('cluster')
+    if not isinstance(cluster, list) or any(_hex64(key) is None for key in cluster):
+        return None
+    matches = [member for member in members if member.get('submissionHash') == submission_hash]
+    if matches and any(member != matches[0] for member in matches[1:]):
+        return None
+    answer_type = detail.get('answerType')
+    return dict(
+        request_id=detail['id'], status=status, in_cluster=submission_hash in cluster,
+        on_panel=bool(matches), agreed=_oracle_count(agreement.get('agreed')), members=len(members),
+        panel_size=_oracle_count(detail.get('panelSize')), figure=_oracle_figure(agreement.get('figure')),
+        answer_type=' '.join(answer_type.split()) if isinstance(answer_type, str) else None,
+        read_ts=now_ts, terminal=status in _ORACLE_FINAL,
+    )
+
+
+def coerce_oracle_slot(payload: object) -> dict | None:
+    """Validate each persisted point independently; never retain a raw envelope."""
+    if not isinstance(payload, Mapping):
+        return None
+    result = {}
+    for job, items in payload.items():
+        if parse_job_id(job) is None or not isinstance(items, Mapping):
+            continue
+        clean = {}
+        for key, point in items.items():
+            if (_hex64(key) is None or not isinstance(point, Mapping)
+                    or set(point) != set(SWARM_ORACLE_CACHE_FIELDS)):
+                continue
+            if (point['request_id'] is not None and parse_job_id(point['request_id']) is None
+                    or not _optional_string(point['status']) or not _optional_string(point['answer_type'])
+                    or any(type(point[name]) is not bool for name in ('in_cluster', 'on_panel', 'terminal'))
+                    or not _nonnegative_finite(point['read_ts'])
+                    or any(point[name] is not None and _oracle_count(point[name]) is None
+                           for name in ('agreed', 'members', 'panel_size'))
+                    or point['figure'] is not None and _oracle_figure(point['figure']) is None):
+                continue
+            if point['terminal'] != (point['status'] in _ORACLE_FINAL):
+                continue
+            clean[key] = dict(point)
+        if clean:
+            result[job] = clean
+    return result
+
+
+def prune_oracle(payload: object, *, now_ts: float, cap: int = 400, max_age_s: float = 48 * 3600) -> dict:
+    """Bound retained points, newest first, with an injected clock."""
+    points = [(job, key, point) for job, items in (coerce_oracle_slot(payload) or {}).items()
+              for key, point in items.items() if 0 <= now_ts - point['read_ts'] <= max_age_s]
+    points.sort(key=lambda item: (-item[2]['read_ts'], item[0], item[1]))
+    result: dict[str, dict] = {}
+    for job, key, point in points[:max(0, cap)]:
+        result.setdefault(job, {})[key] = point
+    return result
+
+
+def oracle_rows_due(rows: list[dict], oracle: object, *, now_ts: float, due_s: float) -> list[dict]:
+    """Only the displayed oracle window: unread first, then oldest due retries."""
+    valid = coerce_oracle_slot(oracle) or {}
+    due = []
+    for index, row in enumerate(rows[:SWARM_ANSWER_ROW_CAP]):
+        job, key = row['job_id'], row['submission_hash']
+        if (row['node_key'] not in SWARM_ORACLE_NODE_KEYS
+                or parse_job_id(job) is None or _hex64(key) is None):
+            continue
+        point = valid.get(job, {}).get(key)
+        if point is not None and (point['terminal'] or now_ts - point['read_ts'] < due_s):
+            continue
+        priority = (0, index) if point is None else (1, point['read_ts'])
+        due.append((priority, row))
+    return [row for _, row in sorted(due, key=lambda item: item[0])]
+
+
+def match_requests(list_rows: list[dict], due_rows: list[dict], *, end_of_history: bool = False) -> tuple[dict, set, set]:
+    """Resolve jobs from the walked list; duplicates are ambiguous, never first wins."""
+    groups: dict[str, list] = {}
+    stamps = []
+    for item in list_rows:
+        if not isinstance(item, Mapping):
+            continue
+        stamp = _ts(item.get('createdAt'))
+        if stamp is not None:
+            stamps.append(stamp)
+        job = parse_job_id(item.get('jobId'))
+        if job is not None:
+            groups.setdefault(job, []).append(item)
+    matched, ambiguous, negative = {}, set(), set()
+    oldest = min(stamps, default=None)
+    for row in due_rows:
+        job = row['job_id']
+        requests = groups.get(job, [])
+        if len(requests) > 1:
+            ambiguous.add(job)
+        elif requests:
+            request_id = parse_job_id(requests[0].get('id'))
+            if request_id is None:
+                ambiguous.add(job)
+            else:
+                matched[job] = request_id
+        elif end_of_history or (oldest is not None and row.get('submitted_ts') is not None
+                                and oldest < row['submitted_ts']):
+            negative.add(job)
+    return matched, ambiguous, negative
+
+
+def enrich_panel_rows(rows: list[dict], oracle: object, node_keys: tuple[str, ...]) -> list[dict]:
+    """Add panel evidence without changing the source's work/answer state."""
+    valid = coerce_oracle_slot(oracle) or {}
+    result = []
+    for row in rows:
+        item = dict(row, panel_agreed=None, panel_members=None, panel_size=None,
+                    panel_figure=None, panel_answer_type=None)
+        point = valid.get(row['job_id'], {}).get(row['submission_hash'])
+        if row['node_key'] not in node_keys:
+            state = 'not_oracle'
+        elif point is None:
+            state = 'not_read'
+        else:
+            status = point['status']
+            if status == 'blocked':
+                state = 'blocked'
+            elif status == 'off_panel' or status in _ORACLE_FINAL and not point['on_panel']:
+                state = 'off_panel'
+            elif status == 'attested':
+                state = 'agreed' if point['in_cluster'] else 'outvoted'
+            elif status == 'disagreed':
+                state = 'no_quorum_in' if point['in_cluster'] else 'no_quorum_out'
+            elif status == 'assessing':
+                state = 'assessing'
+            else:
+                state = 'unavailable'
+                if status is not None:
+                    _log_oracle_status(status)
+            item.update(panel_agreed=point['agreed'], panel_members=point['members'],
+                        panel_size=point['panel_size'], panel_figure=point['figure'],
+                        panel_answer_type=point['answer_type'])
+        item['panel_state'] = state
+        result.append(item)
+    return result
+
+
+@lru_cache(maxsize=128)
+def _log_oracle_status(status: str) -> None:
+    logging.getLogger(__name__).debug("Unknown oracle panel status: %s", status)
