@@ -1,0 +1,2000 @@
+{
+  "host": "https://api.imd.fun",
+  "note": {
+    "derived": {
+      "counts": {
+        "oracle_work": 243,
+        "matched": 219,
+        "assessing": 3,
+        "attested": 199,
+        "in_cluster": 205,
+        "attested_in": 196,
+        "not_on_panel": 24,
+        "not_on_panel_accepted": 12,
+        "disagreed": 17,
+        "outside_cluster": 11,
+        "disagreed_out": 8,
+        "not_on_panel_pending": 6,
+        "disagreed_in": 9,
+        "not_on_panel_failed": 6,
+        "attested_out": 3
+      },
+      "coverage": [
+        "assessing_out",
+        "attested_in",
+        "attested_out",
+        "blocked",
+        "bool",
+        "disagreed_in",
+        "disagreed_out",
+        "tolerance_unequal"
+      ],
+      "note": "No attested outvoted seat-420 member with figure 0 in the captured history."
+    },
+    "assessing_present_in_list": true,
+    "bool_present_in_list": true,
+    "list_count": 590
+  },
+  "files": {
+    "seat_420": {
+      "url": "https://api.imd.fun/seats/420",
+      "captured_at": "2026-09-23T21:12:44.745918+00:00",
+      "http_status": 200,
+      "sha256": "4ced7db4238b9bd4fad590b8592c6c7e5b52d216a951e0584cd95ab11c3a658c",
+      "bytes": 343835,
+      "selected_because": "join source: every seat attempt"
+    },
+    "list_1": {
+      "url": "https://api.imd.fun/oracle/requests?limit=200",
+      "captured_at": "2026-09-23T21:12:46.496583+00:00",
+      "http_status": 200,
+      "sha256": "9d11b068c141fa98552814807ecdd8c7c83c390add03980ceb44b6a372840051",
+      "bytes": 173588,
+      "selected_because": "complete list history for reproducible counts"
+    },
+    "list_2": {
+      "url": "https://api.imd.fun/oracle/requests?limit=200&before=2026-09-21T18%3A54%3A07.178Z",
+      "captured_at": "2026-09-23T21:12:47.006045+00:00",
+      "http_status": 200,
+      "sha256": "6decd54eea9941477981bba5e30f158e27b2526094690e9164b00982c93e4d70",
+      "bytes": 158018,
+      "selected_because": "complete list history for reproducible counts"
+    },
+    "list_3": {
+      "url": "https://api.imd.fun/oracle/requests?limit=200&before=2026-09-21T02%3A26%3A32.542Z",
+      "captured_at": "2026-09-23T21:12:47.415096+00:00",
+      "http_status": 200,
+      "sha256": "e410cfbe6ca12784c830e9a4610628e80c35c24e40622fe559c4b8b08587b1bc",
+      "bytes": 110488,
+      "selected_because": "complete list history for reproducible counts"
+    },
+    "request_a3ad758f-5f6b-4b97-afd3-c874760a93b8": {
+      "url": "https://api.imd.fun/oracle/requests/a3ad758f-5f6b-4b97-afd3-c874760a93b8",
+      "captured_at": "2026-09-23T21:12:47.747035+00:00",
+      "http_status": 200,
+      "sha256": "317eb1634e06fbdf2a6e8fbcb0d9a7c7f6a1ecbf49973603be9959d5b5ad7990",
+      "bytes": 54865,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_eca2be09-caf4-4311-8751-8da6efd45bcd": {
+      "url": "https://api.imd.fun/oracle/requests/eca2be09-caf4-4311-8751-8da6efd45bcd",
+      "captured_at": "2026-09-23T21:12:48.095427+00:00",
+      "http_status": 200,
+      "sha256": "bbfd8e1f67f9a12d103c0b9780bf93e3af11a49c10da95f323d49ddfc3dadf8a",
+      "bytes": 55981,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7d86b32c-c65d-4f85-a599-c99db1bb071d": {
+      "url": "https://api.imd.fun/oracle/requests/7d86b32c-c65d-4f85-a599-c99db1bb071d",
+      "captured_at": "2026-09-23T21:12:48.431080+00:00",
+      "http_status": 200,
+      "sha256": "51c5250518816d2645f6f9b22655cb4de0bc44ad973a0cd051514551925abf26",
+      "bytes": 76301,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_db8fdb24-c365-4e7c-af30-c7a64bc8c03d": {
+      "url": "https://api.imd.fun/oracle/requests/db8fdb24-c365-4e7c-af30-c7a64bc8c03d",
+      "captured_at": "2026-09-23T21:12:48.787876+00:00",
+      "http_status": 200,
+      "sha256": "fe297ee2fa55c42f4ea6853dbec66512c637e26ef3b3ab86bf16ed3e74fbe8af",
+      "bytes": 55340,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_3735bbf0-6bd2-453a-90a5-b0d2c65a942b": {
+      "url": "https://api.imd.fun/oracle/requests/3735bbf0-6bd2-453a-90a5-b0d2c65a942b",
+      "captured_at": "2026-09-23T21:12:49.179304+00:00",
+      "http_status": 200,
+      "sha256": "2303fe175d823ffe9beee79b6c99d6116323db3904d57b06c10cbf9a91e36e21",
+      "bytes": 56636,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e57e86e9-19c7-4f22-be42-d1e04ee1c93d": {
+      "url": "https://api.imd.fun/oracle/requests/e57e86e9-19c7-4f22-be42-d1e04ee1c93d",
+      "captured_at": "2026-09-23T21:12:49.528395+00:00",
+      "http_status": 200,
+      "sha256": "23f831828d610d0113057f60b003db64dffd6b6f421a7d69b7dd397896cb3408",
+      "bytes": 55380,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_44f4bf62-ad87-4f42-8900-51d8531b89d7": {
+      "url": "https://api.imd.fun/oracle/requests/44f4bf62-ad87-4f42-8900-51d8531b89d7",
+      "captured_at": "2026-09-23T21:12:49.870025+00:00",
+      "http_status": 200,
+      "sha256": "39364a0456416de2a6d36ab2b58d37ced9e82b8c64b5aa2f4f25b3ad5f271483",
+      "bytes": 72055,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_868cf0af-35bb-4654-b3e9-45179b83e4a2": {
+      "url": "https://api.imd.fun/oracle/requests/868cf0af-35bb-4654-b3e9-45179b83e4a2",
+      "captured_at": "2026-09-23T21:12:50.218324+00:00",
+      "http_status": 200,
+      "sha256": "4ed8c5ecb7230f0ed31939e4c16a76457ade31e31aa71ab1c76e2928d55b32b9",
+      "bytes": 55310,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_f71242da-9393-4dbc-b08f-328a193eeeed": {
+      "url": "https://api.imd.fun/oracle/requests/f71242da-9393-4dbc-b08f-328a193eeeed",
+      "captured_at": "2026-09-23T21:12:50.583158+00:00",
+      "http_status": 200,
+      "sha256": "20eaf505b7f0576b071336eb275c68959e1c0c68c13a0589948b779edd21a4f6",
+      "bytes": 55317,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0abb05ab-078d-4815-8039-a8ab1b5a02fc": {
+      "url": "https://api.imd.fun/oracle/requests/0abb05ab-078d-4815-8039-a8ab1b5a02fc",
+      "captured_at": "2026-09-23T21:12:50.921251+00:00",
+      "http_status": 200,
+      "sha256": "b8e74f719f100bbaae80f7cec19bf530f1b18f205462acb303273375db13d8ed",
+      "bytes": 55491,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_98c57c0d-f328-4a55-88c7-60b35cfd360e": {
+      "url": "https://api.imd.fun/oracle/requests/98c57c0d-f328-4a55-88c7-60b35cfd360e",
+      "captured_at": "2026-09-23T21:12:51.288641+00:00",
+      "http_status": 200,
+      "sha256": "05263ee32466e10a54fb155c855507762b659c27badf8aadd23e979b8a1b6bcf",
+      "bytes": 61898,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_005a4ed9-8e78-41fa-a7b4-b86fec5c8f09": {
+      "url": "https://api.imd.fun/oracle/requests/005a4ed9-8e78-41fa-a7b4-b86fec5c8f09",
+      "captured_at": "2026-09-23T21:12:51.640844+00:00",
+      "http_status": 200,
+      "sha256": "f9108d535a16792a57497282446e9e57502764e91319d9619ac3ad347af77667",
+      "bytes": 71627,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_280cb8c1-f8f1-452c-9ff2-7e4cabec3ad6": {
+      "url": "https://api.imd.fun/oracle/requests/280cb8c1-f8f1-452c-9ff2-7e4cabec3ad6",
+      "captured_at": "2026-09-23T21:12:51.993010+00:00",
+      "http_status": 200,
+      "sha256": "df7b5bd6f875fd5844959fc40cbda1ebe6acb3f599bb350c946c6cef00ab22bf",
+      "bytes": 60561,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e18ee544-0cfc-47c6-a3ba-ba51b11cbf1f": {
+      "url": "https://api.imd.fun/oracle/requests/e18ee544-0cfc-47c6-a3ba-ba51b11cbf1f",
+      "captured_at": "2026-09-23T21:12:52.361837+00:00",
+      "http_status": 200,
+      "sha256": "b7e41e8d90dde8eeab2e45552b698c128e84142556a8e4c18a8bc772bd254c3f",
+      "bytes": 61940,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_9b80f9b5-594f-4f79-852d-11788875f503": {
+      "url": "https://api.imd.fun/oracle/requests/9b80f9b5-594f-4f79-852d-11788875f503",
+      "captured_at": "2026-09-23T21:12:52.701342+00:00",
+      "http_status": 200,
+      "sha256": "b916285ab894e3bc9167b997104e8d21f956cbd6a64209de6c7cf8e12c7621e5",
+      "bytes": 66803,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_f01018ad-bffb-49ff-883c-82440e7c39d4": {
+      "url": "https://api.imd.fun/oracle/requests/f01018ad-bffb-49ff-883c-82440e7c39d4",
+      "captured_at": "2026-09-23T21:12:53.056692+00:00",
+      "http_status": 200,
+      "sha256": "638cadf1c1d76e155df841cc60e5b3486b33c5806f28f2761ea67c01d9c274d0",
+      "bytes": 63818,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_99a17f66-2b06-4969-b37c-8cd87790c46d": {
+      "url": "https://api.imd.fun/oracle/requests/99a17f66-2b06-4969-b37c-8cd87790c46d",
+      "captured_at": "2026-09-23T21:12:53.390362+00:00",
+      "http_status": 200,
+      "sha256": "4985c3a255ddf8dca443b45496ac9d3793eae76d85aafb50cc14a675849bb146",
+      "bytes": 70632,
+      "selected_because": "bool shape"
+    },
+    "request_cb54d60b-78d9-4443-8193-e6cb01d99c59": {
+      "url": "https://api.imd.fun/oracle/requests/cb54d60b-78d9-4443-8193-e6cb01d99c59",
+      "captured_at": "2026-09-23T21:12:54.334542+00:00",
+      "http_status": 200,
+      "sha256": "7936f6dfc51ef297363a418e1b3ccabf8a86cb406c1edbd68aa36a427d52e834",
+      "bytes": 159093,
+      "selected_because": "seat 420 job; confirm membership by submissionHash; assessing shape"
+    },
+    "request_540c570c-8c66-4681-a921-31bfafa9a279": {
+      "url": "https://api.imd.fun/oracle/requests/540c570c-8c66-4681-a921-31bfafa9a279",
+      "captured_at": "2026-09-23T21:12:55.158403+00:00",
+      "http_status": 200,
+      "sha256": "7351ce7c4422fbe8d27fc64976afb135d87892e269dfae5b76a8dab066dde426",
+      "bytes": 160302,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_141d4e30-3bc4-41c1-99a3-9cb489883cc8": {
+      "url": "https://api.imd.fun/oracle/requests/141d4e30-3bc4-41c1-99a3-9cb489883cc8",
+      "captured_at": "2026-09-23T21:12:55.998947+00:00",
+      "http_status": 200,
+      "sha256": "811f895c08fe4be913036428dab18aa7f85032cf418286b1ab2708d0e9ab489b",
+      "bytes": 179692,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_48030cbe-24b6-4c97-9818-c259b8b6657a": {
+      "url": "https://api.imd.fun/oracle/requests/48030cbe-24b6-4c97-9818-c259b8b6657a",
+      "captured_at": "2026-09-23T21:12:56.346563+00:00",
+      "http_status": 200,
+      "sha256": "12e0b53ea543756b4fb5d0882cf20196ea14b789f0ff1e4bbdf1a24b814a9366",
+      "bytes": 91351,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_10b728ec-679a-46dc-8beb-cdc900355bbd": {
+      "url": "https://api.imd.fun/oracle/requests/10b728ec-679a-46dc-8beb-cdc900355bbd",
+      "captured_at": "2026-09-23T21:12:56.698320+00:00",
+      "http_status": 200,
+      "sha256": "d3e611637d2e26b0f00a6d5ee61cf7ab652060a3086af4b7bfe2177551077cb5",
+      "bytes": 139598,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1fb7dfef-c85f-4505-8776-f0dc433a0974": {
+      "url": "https://api.imd.fun/oracle/requests/1fb7dfef-c85f-4505-8776-f0dc433a0974",
+      "captured_at": "2026-09-23T21:12:57.059503+00:00",
+      "http_status": 200,
+      "sha256": "50e02d70113d86139ba131df756e921dd694d60ad2001607882a35ae04b06644",
+      "bytes": 139679,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_a2e5d7fc-462c-4c93-9a64-9fcc4f8c2dd9": {
+      "url": "https://api.imd.fun/oracle/requests/a2e5d7fc-462c-4c93-9a64-9fcc4f8c2dd9",
+      "captured_at": "2026-09-23T21:12:57.401655+00:00",
+      "http_status": 200,
+      "sha256": "01d8011b470fdf76eae79d8cbdad39c2d6b979fdc81e2d8fd43bd7924ece7446",
+      "bytes": 158258,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_a79173eb-81bd-4336-b4e1-e84ee34c0370": {
+      "url": "https://api.imd.fun/oracle/requests/a79173eb-81bd-4336-b4e1-e84ee34c0370",
+      "captured_at": "2026-09-23T21:12:57.802390+00:00",
+      "http_status": 200,
+      "sha256": "25c1f3c544c6b7ad4ae47083829bc88bb62ecb82378337296afe15dca9374972",
+      "bytes": 135916,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7a2458fc-abcb-48e0-ba59-72f12e2f3bc8": {
+      "url": "https://api.imd.fun/oracle/requests/7a2458fc-abcb-48e0-ba59-72f12e2f3bc8",
+      "captured_at": "2026-09-23T21:12:58.406019+00:00",
+      "http_status": 200,
+      "sha256": "1d3eecafef2eedca47a995066c15262bf9ab41271cb7eee2fa1835d9190e7e5b",
+      "bytes": 141122,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e3edfd5f-6f52-4a54-bc9d-45780aa5a5c4": {
+      "url": "https://api.imd.fun/oracle/requests/e3edfd5f-6f52-4a54-bc9d-45780aa5a5c4",
+      "captured_at": "2026-09-23T21:12:58.809142+00:00",
+      "http_status": 200,
+      "sha256": "01d20fdaf59072700f8aca90bb761c6eaacb75c404ed38f3c45277712b8bd929",
+      "bytes": 157326,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_07f327e5-b83d-4e9b-a969-c1910345e6f4": {
+      "url": "https://api.imd.fun/oracle/requests/07f327e5-b83d-4e9b-a969-c1910345e6f4",
+      "captured_at": "2026-09-23T21:12:59.482195+00:00",
+      "http_status": 200,
+      "sha256": "af1a45254974ff880b6631164359c36a2e5608a7bb76b47ed55e65e079fde096",
+      "bytes": 135280,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_6d2b61d2-1c5a-485a-9909-818952bd9985": {
+      "url": "https://api.imd.fun/oracle/requests/6d2b61d2-1c5a-485a-9909-818952bd9985",
+      "captured_at": "2026-09-23T21:13:00.555629+00:00",
+      "http_status": 200,
+      "sha256": "b83c881aa6f902a3237d125746a82d8bbe6ec74f54b16c1902b5f9cd135dbe79",
+      "bytes": 125620,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_944177b4-65af-40cf-8d01-f713a4e1c705": {
+      "url": "https://api.imd.fun/oracle/requests/944177b4-65af-40cf-8d01-f713a4e1c705",
+      "captured_at": "2026-09-23T21:13:01.593096+00:00",
+      "http_status": 200,
+      "sha256": "e02c7e13bbdeda34cf0aea643877273a987685171f6d5f8ffffbba8ed2511088",
+      "bytes": 127309,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_5a3ed1e2-7f54-46e1-9c6e-af25828ccc81": {
+      "url": "https://api.imd.fun/oracle/requests/5a3ed1e2-7f54-46e1-9c6e-af25828ccc81",
+      "captured_at": "2026-09-23T21:13:01.972917+00:00",
+      "http_status": 200,
+      "sha256": "3c20673773be50067d66c74afcdce18d0c1a0b351991c6087f7377b218513bd4",
+      "bytes": 138503,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_07747e14-6ff9-43d4-9278-20811f505560": {
+      "url": "https://api.imd.fun/oracle/requests/07747e14-6ff9-43d4-9278-20811f505560",
+      "captured_at": "2026-09-23T21:13:03.542827+00:00",
+      "http_status": 200,
+      "sha256": "9820a132a64d87abe448f70050c789697ba7af0272fa71f1ad5d3cc93c81c8f5",
+      "bytes": 138004,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_76ed2012-053e-4a76-8f31-e01510723963": {
+      "url": "https://api.imd.fun/oracle/requests/76ed2012-053e-4a76-8f31-e01510723963",
+      "captured_at": "2026-09-23T21:13:04.115550+00:00",
+      "http_status": 200,
+      "sha256": "b4132f453860e0de4481696f6602493ee1578672e57cd9bfdc3bd256b045b089",
+      "bytes": 132166,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_2bd47834-c7ff-4a98-b581-1ac21c71587f": {
+      "url": "https://api.imd.fun/oracle/requests/2bd47834-c7ff-4a98-b581-1ac21c71587f",
+      "captured_at": "2026-09-23T21:13:04.476065+00:00",
+      "http_status": 200,
+      "sha256": "39b3ff5517654b5038939ccdf05868fd314d719da6c2a0664c578ddd5f3dc96a",
+      "bytes": 135354,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_02505ccf-5ff6-47ca-8a90-7b8bad94e51a": {
+      "url": "https://api.imd.fun/oracle/requests/02505ccf-5ff6-47ca-8a90-7b8bad94e51a",
+      "captured_at": "2026-09-23T21:13:04.820506+00:00",
+      "http_status": 200,
+      "sha256": "0fbfb74cd0d293415da7927e93cee11d6d1865bd387fd4a531a53ed3437e56b8",
+      "bytes": 78415,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8886cca0-1b25-42cb-b9e0-1454891d9f6a": {
+      "url": "https://api.imd.fun/oracle/requests/8886cca0-1b25-42cb-b9e0-1454891d9f6a",
+      "captured_at": "2026-09-23T21:13:05.158489+00:00",
+      "http_status": 200,
+      "sha256": "68394ae8e3e771c42ae17860b273cd0d761ecc81bd61843fe1640bc8f651bdcd",
+      "bytes": 79258,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b37256c4-3afb-4be1-b2d1-f1cdef077256": {
+      "url": "https://api.imd.fun/oracle/requests/b37256c4-3afb-4be1-b2d1-f1cdef077256",
+      "captured_at": "2026-09-23T21:13:05.508229+00:00",
+      "http_status": 200,
+      "sha256": "41d3a96f9149849fe2010fa0ea33d11f276e44a140d2813337523437ca37e510",
+      "bytes": 75192,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_939edd81-6a1e-4b0a-8925-5313c6b6f1cb": {
+      "url": "https://api.imd.fun/oracle/requests/939edd81-6a1e-4b0a-8925-5313c6b6f1cb",
+      "captured_at": "2026-09-23T21:13:05.858627+00:00",
+      "http_status": 200,
+      "sha256": "875c171df5ab16dba4407ecc9f27418a0868c9a8f04d3881560bb33db3d00648",
+      "bytes": 45207,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_d69d1afa-7368-46ce-b4d0-3148e5d6293f": {
+      "url": "https://api.imd.fun/oracle/requests/d69d1afa-7368-46ce-b4d0-3148e5d6293f",
+      "captured_at": "2026-09-23T21:13:06.204749+00:00",
+      "http_status": 200,
+      "sha256": "dab2525313b060c711ca4c1faef69db44847b511f454c3ad5dfed2e873c1daf2",
+      "bytes": 36796,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_796637c0-3422-4997-b5cf-a29678cecadb": {
+      "url": "https://api.imd.fun/oracle/requests/796637c0-3422-4997-b5cf-a29678cecadb",
+      "captured_at": "2026-09-23T21:13:06.548097+00:00",
+      "http_status": 200,
+      "sha256": "4f62e1e3513eda572905a60e7da94154d13dc66a4f9a8b06f3286fb527b2e1c6",
+      "bytes": 105376,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_a3bac47e-a8d6-4fc5-bae4-a337de1f5084": {
+      "url": "https://api.imd.fun/oracle/requests/a3bac47e-a8d6-4fc5-bae4-a337de1f5084",
+      "captured_at": "2026-09-23T21:13:06.899977+00:00",
+      "http_status": 200,
+      "sha256": "010bc8abc1171208c128d6eabc49b474de5d0a467c9380e21ff662a11f588b8f",
+      "bytes": 4740,
+      "selected_because": "seat 420 job; confirm membership by submissionHash; blocked shape"
+    },
+    "request_69bb3140-30bc-49c4-b0bd-1c7115c161b4": {
+      "url": "https://api.imd.fun/oracle/requests/69bb3140-30bc-49c4-b0bd-1c7115c161b4",
+      "captured_at": "2026-09-23T21:13:08.942157+00:00",
+      "http_status": 200,
+      "sha256": "51ce3553c8f3427cfc8f0b0a9e9cf47cdbf8dbd9751cda84c4cf6b8c0c8f2c45",
+      "bytes": 140327,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c0305cf0-7a04-473c-89e1-b7181093cc3e": {
+      "url": "https://api.imd.fun/oracle/requests/c0305cf0-7a04-473c-89e1-b7181093cc3e",
+      "captured_at": "2026-09-23T21:13:09.288614+00:00",
+      "http_status": 200,
+      "sha256": "0f048a30ac6980f24d6707ad3e94ba7b9e272939c913bb4f3a80d5d076811e5a",
+      "bytes": 86899,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_254b54c7-2309-4da3-b24f-2397162b24f7": {
+      "url": "https://api.imd.fun/oracle/requests/254b54c7-2309-4da3-b24f-2397162b24f7",
+      "captured_at": "2026-09-23T21:13:09.642335+00:00",
+      "http_status": 200,
+      "sha256": "299fc874eb8ee7d6ec7b693aa27105b15b192e8114e057d07a9137a4189eb883",
+      "bytes": 79982,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_85467b52-2c57-48ce-aa62-b83605e911a8": {
+      "url": "https://api.imd.fun/oracle/requests/85467b52-2c57-48ce-aa62-b83605e911a8",
+      "captured_at": "2026-09-23T21:13:09.986437+00:00",
+      "http_status": 200,
+      "sha256": "b355f92fc5f3ab12d27f4dcda0ba0fc75d6390e4e5797a671a9082d6c23b043f",
+      "bytes": 81837,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b7957c46-a869-4a61-bfb8-9d5860fa8470": {
+      "url": "https://api.imd.fun/oracle/requests/b7957c46-a869-4a61-bfb8-9d5860fa8470",
+      "captured_at": "2026-09-23T21:13:10.347759+00:00",
+      "http_status": 200,
+      "sha256": "4335a990609fb16f3a63278eb67ed468bf096abb7e039108ddd368de4dc5d9b0",
+      "bytes": 85925,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_59765c35-cbd3-41c2-a916-638ba22f252a": {
+      "url": "https://api.imd.fun/oracle/requests/59765c35-cbd3-41c2-a916-638ba22f252a",
+      "captured_at": "2026-09-23T21:13:10.696425+00:00",
+      "http_status": 200,
+      "sha256": "147f1001daa2a5217a7d7e3a5026424184457fb9795b50cd8ffa7d7b68e01cac",
+      "bytes": 80877,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_97e6e503-d2b5-4184-8d5f-e48e7edf3125": {
+      "url": "https://api.imd.fun/oracle/requests/97e6e503-d2b5-4184-8d5f-e48e7edf3125",
+      "captured_at": "2026-09-23T21:13:11.051497+00:00",
+      "http_status": 200,
+      "sha256": "7b8075286a7a315e3f0c240bc527200422519add8edcb0c797e2bb6ca1408bd8",
+      "bytes": 87843,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0d549b1c-31f2-4a17-9737-3660e575b4cc": {
+      "url": "https://api.imd.fun/oracle/requests/0d549b1c-31f2-4a17-9737-3660e575b4cc",
+      "captured_at": "2026-09-23T21:13:11.402351+00:00",
+      "http_status": 200,
+      "sha256": "05083356eb99160fde214c3cd8d8d7875cecbfc9a6e421461167d7a4695bb806",
+      "bytes": 125815,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7a552f7f-bfd3-4a5a-9485-188e166bc1d5": {
+      "url": "https://api.imd.fun/oracle/requests/7a552f7f-bfd3-4a5a-9485-188e166bc1d5",
+      "captured_at": "2026-09-23T21:13:11.787624+00:00",
+      "http_status": 200,
+      "sha256": "adc4e379cba07fdd7ca9cab0eb88c71513a1482e51f5eaefa6831bc515532500",
+      "bytes": 93687,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_adbbfbb5-c6d3-4e47-adad-df7536d0ba3e": {
+      "url": "https://api.imd.fun/oracle/requests/adbbfbb5-c6d3-4e47-adad-df7536d0ba3e",
+      "captured_at": "2026-09-23T21:13:12.147194+00:00",
+      "http_status": 200,
+      "sha256": "ceff4a7ef582f108a6740b32b08880755d1a3692be6932dc408c1fe0029a11ca",
+      "bytes": 88710,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_50f47ec0-80c6-492b-8461-517afb9f7acf": {
+      "url": "https://api.imd.fun/oracle/requests/50f47ec0-80c6-492b-8461-517afb9f7acf",
+      "captured_at": "2026-09-23T21:13:12.494807+00:00",
+      "http_status": 200,
+      "sha256": "aa2a9d93c238ba2ad5805a7ae0710c5fadebacd8a09d16106179651a724de3f7",
+      "bytes": 80832,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_3b1fd330-0185-4b39-bcd5-e399177efbe2": {
+      "url": "https://api.imd.fun/oracle/requests/3b1fd330-0185-4b39-bcd5-e399177efbe2",
+      "captured_at": "2026-09-23T21:13:12.831505+00:00",
+      "http_status": 200,
+      "sha256": "0b5776448c6c4fc54d24506b99f3c845479dbdcd4335946e50edab11f19b95dd",
+      "bytes": 79869,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_3558c5dc-c2ca-4d0b-aff1-a0fd8bb34906": {
+      "url": "https://api.imd.fun/oracle/requests/3558c5dc-c2ca-4d0b-aff1-a0fd8bb34906",
+      "captured_at": "2026-09-23T21:13:13.227167+00:00",
+      "http_status": 200,
+      "sha256": "4c24e0106416199c5d0d36936bd3fe03016b6ebb9daefb2437d8a460189d873e",
+      "bytes": 81353,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_afbda533-0494-4e22-a35e-cbea7ff71baf": {
+      "url": "https://api.imd.fun/oracle/requests/afbda533-0494-4e22-a35e-cbea7ff71baf",
+      "captured_at": "2026-09-23T21:13:13.581523+00:00",
+      "http_status": 200,
+      "sha256": "d0cbccdcf491bb03fadcfa86f7c8bce4c96f336892431dde072fb8d1ad4749df",
+      "bytes": 134298,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_9c68a5f8-eeee-4eeb-bc2a-19b4330133fe": {
+      "url": "https://api.imd.fun/oracle/requests/9c68a5f8-eeee-4eeb-bc2a-19b4330133fe",
+      "captured_at": "2026-09-23T21:13:13.929895+00:00",
+      "http_status": 200,
+      "sha256": "354a2ae61058d5acfe51d8f820c465c999769705ae2b71c9532cddbc2459d206",
+      "bytes": 83597,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_11a12ed2-3f62-431d-9a19-f5bb5783ce51": {
+      "url": "https://api.imd.fun/oracle/requests/11a12ed2-3f62-431d-9a19-f5bb5783ce51",
+      "captured_at": "2026-09-23T21:13:14.278979+00:00",
+      "http_status": 200,
+      "sha256": "483af8d22dfb57769116894bfd669542ea919328a2918fa8648951df9fdc8d83",
+      "bytes": 92019,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_a2750009-7da2-40c2-a9e2-2f0889592315": {
+      "url": "https://api.imd.fun/oracle/requests/a2750009-7da2-40c2-a9e2-2f0889592315",
+      "captured_at": "2026-09-23T21:13:14.623329+00:00",
+      "http_status": 200,
+      "sha256": "91bca453f7aa7a2c8b367cbe69b41c87a72a0f7837c0ca9a3889b43fa8172803",
+      "bytes": 97094,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_f4d77ccb-9f0d-45ad-9d28-f6c969a1f214": {
+      "url": "https://api.imd.fun/oracle/requests/f4d77ccb-9f0d-45ad-9d28-f6c969a1f214",
+      "captured_at": "2026-09-23T21:13:14.964202+00:00",
+      "http_status": 200,
+      "sha256": "3edf5351858606e0cd874c73c2182e2165f5485ccc0bc4197faac9e0652fafcd",
+      "bytes": 81623,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_d88995bf-e9f3-4c94-a0eb-0ab57274616f": {
+      "url": "https://api.imd.fun/oracle/requests/d88995bf-e9f3-4c94-a0eb-0ab57274616f",
+      "captured_at": "2026-09-23T21:13:15.317205+00:00",
+      "http_status": 200,
+      "sha256": "28fb4cb7e48e964fb854421b9de801d6d634834da7f2d1dd43289f6a949ad65a",
+      "bytes": 97213,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_2c2e1815-1a9b-4f48-ae81-822486193185": {
+      "url": "https://api.imd.fun/oracle/requests/2c2e1815-1a9b-4f48-ae81-822486193185",
+      "captured_at": "2026-09-23T21:13:15.666986+00:00",
+      "http_status": 200,
+      "sha256": "9f2d2444bdd4245f4281d7bb6885b19e1b653d37211660a925a95c37713c2346",
+      "bytes": 85210,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_afe9509c-c8b7-4b7c-9c61-4b499e0562c7": {
+      "url": "https://api.imd.fun/oracle/requests/afe9509c-c8b7-4b7c-9c61-4b499e0562c7",
+      "captured_at": "2026-09-23T21:13:16.029634+00:00",
+      "http_status": 200,
+      "sha256": "3376b796e32c7a50634d6073dfc8ffe3cc1bf8a389aeba58909b0917cd303874",
+      "bytes": 101237,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b4a872c9-0de5-40ae-9958-8a4c4aa72ea0": {
+      "url": "https://api.imd.fun/oracle/requests/b4a872c9-0de5-40ae-9958-8a4c4aa72ea0",
+      "captured_at": "2026-09-23T21:13:16.364624+00:00",
+      "http_status": 200,
+      "sha256": "a56534f09ddecc83356799f1b87339501fde596dc078ef14a25d2864ecfbea5c",
+      "bytes": 88632,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_5b2c8acb-9351-41c1-b18b-db472cee8da1": {
+      "url": "https://api.imd.fun/oracle/requests/5b2c8acb-9351-41c1-b18b-db472cee8da1",
+      "captured_at": "2026-09-23T21:13:16.714555+00:00",
+      "http_status": 200,
+      "sha256": "69ba396c62c3cc02db0cdfbb21106a3bfa3b20c21b278e1ed637d5afcbe30336",
+      "bytes": 85356,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_426f378a-4f6e-4907-8dc2-b13bbfdf767d": {
+      "url": "https://api.imd.fun/oracle/requests/426f378a-4f6e-4907-8dc2-b13bbfdf767d",
+      "captured_at": "2026-09-23T21:13:17.060297+00:00",
+      "http_status": 200,
+      "sha256": "965cf1cdefb5df71db1933695ef307da303391a89095736e40bd0676d65c1483",
+      "bytes": 94079,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ae17564e-5305-496a-ba7b-d5d3ed2d4232": {
+      "url": "https://api.imd.fun/oracle/requests/ae17564e-5305-496a-ba7b-d5d3ed2d4232",
+      "captured_at": "2026-09-23T21:13:17.409097+00:00",
+      "http_status": 200,
+      "sha256": "4d3ed509b19c8852694f58422c6da255bec8ddc53f33181a752b17d177598e97",
+      "bytes": 80956,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ecf525e8-ecf0-4f7c-9010-99beed941f74": {
+      "url": "https://api.imd.fun/oracle/requests/ecf525e8-ecf0-4f7c-9010-99beed941f74",
+      "captured_at": "2026-09-23T21:13:17.748117+00:00",
+      "http_status": 200,
+      "sha256": "ec61adf50faea6b0dfa62f6e5e9584991f66a3b274766860511fdc78c19f5f17",
+      "bytes": 85225,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0a926771-1d74-42d3-8b37-4214b8e41da1": {
+      "url": "https://api.imd.fun/oracle/requests/0a926771-1d74-42d3-8b37-4214b8e41da1",
+      "captured_at": "2026-09-23T21:13:18.081955+00:00",
+      "http_status": 200,
+      "sha256": "dfadbe23213c94cc128c20e5174aeb937585a8f5952ee92692dcdbe81e512a50",
+      "bytes": 80303,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e84a70fe-651a-4886-a5e5-3befff1ddb14": {
+      "url": "https://api.imd.fun/oracle/requests/e84a70fe-651a-4886-a5e5-3befff1ddb14",
+      "captured_at": "2026-09-23T21:13:18.418432+00:00",
+      "http_status": 200,
+      "sha256": "7f8fbf17db7d26698b9e9e93c033eb64c1d556b244c1b1e960b4c9751b01d598",
+      "bytes": 88765,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b62b3491-0c6a-4cbf-b806-da7c589a14e9": {
+      "url": "https://api.imd.fun/oracle/requests/b62b3491-0c6a-4cbf-b806-da7c589a14e9",
+      "captured_at": "2026-09-23T21:13:18.801424+00:00",
+      "http_status": 200,
+      "sha256": "4248772c91fcdb2283909bfc96d9abb75ebaeb4e30ab9ab85a58457e77f51ad0",
+      "bytes": 84619,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_fa91fe5b-2d50-4059-a44c-f1418ac54d2d": {
+      "url": "https://api.imd.fun/oracle/requests/fa91fe5b-2d50-4059-a44c-f1418ac54d2d",
+      "captured_at": "2026-09-23T21:13:19.154533+00:00",
+      "http_status": 200,
+      "sha256": "598606dc8fb3baa66ada7fdbc9451ef52be169cd39b335f84eb5d5bbf65416c2",
+      "bytes": 91787,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0674f6d0-dd54-4b30-8e42-29e83754c8f0": {
+      "url": "https://api.imd.fun/oracle/requests/0674f6d0-dd54-4b30-8e42-29e83754c8f0",
+      "captured_at": "2026-09-23T21:13:19.512430+00:00",
+      "http_status": 200,
+      "sha256": "9d2b6e6ae8ccfceeff7c6e879b7ef34c8d15e28a8e35618be2e82a9ca157a47f",
+      "bytes": 83510,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7256df1b-8c01-4903-b6e5-abb7a7bbde7c": {
+      "url": "https://api.imd.fun/oracle/requests/7256df1b-8c01-4903-b6e5-abb7a7bbde7c",
+      "captured_at": "2026-09-23T21:13:20.085538+00:00",
+      "http_status": 200,
+      "sha256": "6157780ebe21434eb69817cbffb8a8f77979dde3460caa1513b83efc815f7fcf",
+      "bytes": 90341,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1898659f-f180-4237-91af-1b0c03673a21": {
+      "url": "https://api.imd.fun/oracle/requests/1898659f-f180-4237-91af-1b0c03673a21",
+      "captured_at": "2026-09-23T21:13:20.437306+00:00",
+      "http_status": 200,
+      "sha256": "a1c14ad39d10bc01514ac76b1d97e1781a2300073c0c6ab8ff17c32bf35fcd5f",
+      "bytes": 81525,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_35335001-74dc-49dc-820c-5ef111338287": {
+      "url": "https://api.imd.fun/oracle/requests/35335001-74dc-49dc-820c-5ef111338287",
+      "captured_at": "2026-09-23T21:13:20.772247+00:00",
+      "http_status": 200,
+      "sha256": "35dc1d9c0ce66a5420541c072ba7314226503f91a7d967c63934ed8e7dc5ff35",
+      "bytes": 82602,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_2398659b-27d3-4163-9d8b-2fb59c5ecc30": {
+      "url": "https://api.imd.fun/oracle/requests/2398659b-27d3-4163-9d8b-2fb59c5ecc30",
+      "captured_at": "2026-09-23T21:13:21.171553+00:00",
+      "http_status": 200,
+      "sha256": "d18f5fe386aeb996b31bc30464948d471a00e52fba2dc1bb2335f4ff2ca51959",
+      "bytes": 87076,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8f353284-92c5-4b0e-9c1b-9f991fe9c79e": {
+      "url": "https://api.imd.fun/oracle/requests/8f353284-92c5-4b0e-9c1b-9f991fe9c79e",
+      "captured_at": "2026-09-23T21:13:21.512462+00:00",
+      "http_status": 200,
+      "sha256": "f1357050b2b5a9ab6260b21806aa7e22f687a03dc4490379799e9a2c94709aac",
+      "bytes": 89294,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c069469a-d8d2-4bf2-a415-e01d2263d168": {
+      "url": "https://api.imd.fun/oracle/requests/c069469a-d8d2-4bf2-a415-e01d2263d168",
+      "captured_at": "2026-09-23T21:13:21.854430+00:00",
+      "http_status": 200,
+      "sha256": "488d8c22c6ba2d43dab53ff1113d8ea56ce5e7abc1d851661a4fa230b2b8d236",
+      "bytes": 88102,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1b86f828-314b-4c32-bc90-e18b4b5d4488": {
+      "url": "https://api.imd.fun/oracle/requests/1b86f828-314b-4c32-bc90-e18b4b5d4488",
+      "captured_at": "2026-09-23T21:13:22.199125+00:00",
+      "http_status": 200,
+      "sha256": "57d9a0524c6d15b0e8a62fafcaed0a111a057cc2930127c4b2b75f00cd97c7a2",
+      "bytes": 54287,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_5bb025b2-99cb-473f-9c2e-e613ff018505": {
+      "url": "https://api.imd.fun/oracle/requests/5bb025b2-99cb-473f-9c2e-e613ff018505",
+      "captured_at": "2026-09-23T21:13:23.026935+00:00",
+      "http_status": 200,
+      "sha256": "1a9d5bb38efbe85257afba0164c41cf0c32f37ea63dd509a62ac30578d59bec2",
+      "bytes": 58035,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_61aceca7-85c5-41c5-a340-dd2495dcf79e": {
+      "url": "https://api.imd.fun/oracle/requests/61aceca7-85c5-41c5-a340-dd2495dcf79e",
+      "captured_at": "2026-09-23T21:13:23.369670+00:00",
+      "http_status": 200,
+      "sha256": "4a37cc80177982439dd853eb238437d171edd3f7a5dd71409efb1cfbd4426e5d",
+      "bytes": 59686,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_9857a440-4204-452b-95e5-58347d2716c9": {
+      "url": "https://api.imd.fun/oracle/requests/9857a440-4204-452b-95e5-58347d2716c9",
+      "captured_at": "2026-09-23T21:13:23.711866+00:00",
+      "http_status": 200,
+      "sha256": "3ff205fdfc20898522d3bec572768e6d83c5e95398a3fb7a458b5f142e215bc0",
+      "bytes": 57850,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_6149c315-1989-4bc8-ae0e-e9493233ae84": {
+      "url": "https://api.imd.fun/oracle/requests/6149c315-1989-4bc8-ae0e-e9493233ae84",
+      "captured_at": "2026-09-23T21:13:24.053766+00:00",
+      "http_status": 200,
+      "sha256": "b3a17d039232eeb8ad4a504076679b9377320bb70b9e1b86b20adb43d8f8cd40",
+      "bytes": 48846,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c3025ea9-961f-4b2e-ac1b-cea008c55248": {
+      "url": "https://api.imd.fun/oracle/requests/c3025ea9-961f-4b2e-ac1b-cea008c55248",
+      "captured_at": "2026-09-23T21:13:24.389770+00:00",
+      "http_status": 200,
+      "sha256": "87cb61ce2a4226842e4b2a70890b1654a6081d6c4617d06df40f2df765b06941",
+      "bytes": 55538,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_f19d9273-c9b7-4040-a2f9-ba094337353f": {
+      "url": "https://api.imd.fun/oracle/requests/f19d9273-c9b7-4040-a2f9-ba094337353f",
+      "captured_at": "2026-09-23T21:13:24.727977+00:00",
+      "http_status": 200,
+      "sha256": "9ffddbf1402bde906e4d2b0d387ee7e8454076ea1c46b1c7863b30526e0a6697",
+      "bytes": 54215,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8fc5052c-8c6a-48de-905f-791dc03c006c": {
+      "url": "https://api.imd.fun/oracle/requests/8fc5052c-8c6a-48de-905f-791dc03c006c",
+      "captured_at": "2026-09-23T21:13:25.090729+00:00",
+      "http_status": 200,
+      "sha256": "3b861706d72d04c3332a8f7cee902a8393cb9402d5f466f4a2f0075e5bdf7ec1",
+      "bytes": 54259,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_08f59ace-2c7c-4e3b-b1b2-b0788666ea27": {
+      "url": "https://api.imd.fun/oracle/requests/08f59ace-2c7c-4e3b-b1b2-b0788666ea27",
+      "captured_at": "2026-09-23T21:13:25.430978+00:00",
+      "http_status": 200,
+      "sha256": "bfa9b361d6c04e1f207ab711ed71d3d70c57fa89f6866f40225f926e2e0e0105",
+      "bytes": 58266,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_76f7ad0e-b9f3-400e-8d9b-93d864181882": {
+      "url": "https://api.imd.fun/oracle/requests/76f7ad0e-b9f3-400e-8d9b-93d864181882",
+      "captured_at": "2026-09-23T21:13:25.762441+00:00",
+      "http_status": 200,
+      "sha256": "6d7b13abcbc76a38b531a7e141f026affb2f4dae6f5bfd89fdeaeb3ab37334f9",
+      "bytes": 54578,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_23c7037a-99e7-405b-a165-1f61ef1ed770": {
+      "url": "https://api.imd.fun/oracle/requests/23c7037a-99e7-405b-a165-1f61ef1ed770",
+      "captured_at": "2026-09-23T21:13:26.122480+00:00",
+      "http_status": 200,
+      "sha256": "a705c636fbc21c0a6e297984e7c77a468bd7d22a661c2f55182a8d0732a63ca1",
+      "bytes": 54825,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7b383d87-b211-4f8f-bdd4-37bf369b477a": {
+      "url": "https://api.imd.fun/oracle/requests/7b383d87-b211-4f8f-bdd4-37bf369b477a",
+      "captured_at": "2026-09-23T21:13:26.463417+00:00",
+      "http_status": 200,
+      "sha256": "bce67612065a8e05af57b6dee2714cd6e41bb217da20c11cf3f87d94bb044108",
+      "bytes": 52361,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_211ba284-03f8-4074-b751-8f6c93612f83": {
+      "url": "https://api.imd.fun/oracle/requests/211ba284-03f8-4074-b751-8f6c93612f83",
+      "captured_at": "2026-09-23T21:13:26.816610+00:00",
+      "http_status": 200,
+      "sha256": "987beeaa3890d017364da75f3ba4bafb7ab3adda18d3ceeb3ab056606bb2b063",
+      "bytes": 54192,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_08dc67fa-435e-4aad-bbf2-4169bff8acf8": {
+      "url": "https://api.imd.fun/oracle/requests/08dc67fa-435e-4aad-bbf2-4169bff8acf8",
+      "captured_at": "2026-09-23T21:13:27.202470+00:00",
+      "http_status": 200,
+      "sha256": "1b012008c5414f7d7a01725a4e7db674998319cdb042525ba51d4959bcbd947a",
+      "bytes": 56230,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ef31aa48-cbd6-4652-bd55-bcb1bd62007a": {
+      "url": "https://api.imd.fun/oracle/requests/ef31aa48-cbd6-4652-bd55-bcb1bd62007a",
+      "captured_at": "2026-09-23T21:13:27.591232+00:00",
+      "http_status": 200,
+      "sha256": "b972c0549f50da8767128520e0a94a7ccd3bd04bf6d78e5cb7aeb662cfcfe910",
+      "bytes": 49377,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1c38c9c3-2f4d-4b3a-b914-d6f646db28c7": {
+      "url": "https://api.imd.fun/oracle/requests/1c38c9c3-2f4d-4b3a-b914-d6f646db28c7",
+      "captured_at": "2026-09-23T21:13:27.921345+00:00",
+      "http_status": 200,
+      "sha256": "fd4c3a293b9a39d5253da4f34471b6514fe26a0e0b67bea6be2b3eb81a1860da",
+      "bytes": 54187,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_bf156129-83a0-482d-9dce-92646fd86e98": {
+      "url": "https://api.imd.fun/oracle/requests/bf156129-83a0-482d-9dce-92646fd86e98",
+      "captured_at": "2026-09-23T21:13:28.258031+00:00",
+      "http_status": 200,
+      "sha256": "d8d900852ff295fbc1a132df90dc485518ab4a1887f2e0af4c31b38f74fa35e1",
+      "bytes": 51090,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1012c934-4eb3-449b-a609-157a34d2cbfa": {
+      "url": "https://api.imd.fun/oracle/requests/1012c934-4eb3-449b-a609-157a34d2cbfa",
+      "captured_at": "2026-09-23T21:13:28.659444+00:00",
+      "http_status": 200,
+      "sha256": "9c9aa95e94c4df5e3a74d0d2bd6f2c22f1f5083aabedacbcea1055e52c3cc43b",
+      "bytes": 74443,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_73c9e5f1-5da2-4b2e-be5d-3925f44d3368": {
+      "url": "https://api.imd.fun/oracle/requests/73c9e5f1-5da2-4b2e-be5d-3925f44d3368",
+      "captured_at": "2026-09-23T21:13:29.187442+00:00",
+      "http_status": 200,
+      "sha256": "89485b27fc44d7fcddca29161dc82a21990a2a9c74b6ac3205d121de3c2a259d",
+      "bytes": 74874,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_085924f4-8797-4369-8d7e-32d65d7ab072": {
+      "url": "https://api.imd.fun/oracle/requests/085924f4-8797-4369-8d7e-32d65d7ab072",
+      "captured_at": "2026-09-23T21:13:29.673029+00:00",
+      "http_status": 200,
+      "sha256": "49b659fbe3c50572aae902ccf8283b3fd0dac3d5d099e4e013a557530baa6c89",
+      "bytes": 65923,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_fd6599a5-9a91-4579-96f8-406435d3ce47": {
+      "url": "https://api.imd.fun/oracle/requests/fd6599a5-9a91-4579-96f8-406435d3ce47",
+      "captured_at": "2026-09-23T21:13:30.100058+00:00",
+      "http_status": 200,
+      "sha256": "fc54750df5571ce7c1caaded6e3777e25c8dc4c02ec8e7455e93c8a9fc877aaf",
+      "bytes": 72557,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_f2402e4a-fc6a-4577-814b-a889af0b0d95": {
+      "url": "https://api.imd.fun/oracle/requests/f2402e4a-fc6a-4577-814b-a889af0b0d95",
+      "captured_at": "2026-09-23T21:13:30.452208+00:00",
+      "http_status": 200,
+      "sha256": "c5cfada4bc8a214cd157448f2b2eda1590bd2b96ae370aa02ee87408b6ae540b",
+      "bytes": 70499,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_30f881b8-04ba-428e-b2dc-aa93b1e47048": {
+      "url": "https://api.imd.fun/oracle/requests/30f881b8-04ba-428e-b2dc-aa93b1e47048",
+      "captured_at": "2026-09-23T21:13:30.795615+00:00",
+      "http_status": 200,
+      "sha256": "fd988d3033e26b729ff79ff136c3cfa5c58d4612e4cebd577b9696ae484af96a",
+      "bytes": 71688,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_57dc9edf-8304-4f2f-8705-994fa0142a88": {
+      "url": "https://api.imd.fun/oracle/requests/57dc9edf-8304-4f2f-8705-994fa0142a88",
+      "captured_at": "2026-09-23T21:13:34.845278+00:00",
+      "http_status": 200,
+      "sha256": "4b30a2299c6282ffb1d4fca21aaa00acaffce220e190848c29f4ebc178df2dd5",
+      "bytes": 67832,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_965210a9-a695-4ff7-b032-5d27b6caeac7": {
+      "url": "https://api.imd.fun/oracle/requests/965210a9-a695-4ff7-b032-5d27b6caeac7",
+      "captured_at": "2026-09-23T21:13:35.195305+00:00",
+      "http_status": 200,
+      "sha256": "f08d9ac5e02e135b70888df4cfaf5c4aade49b501b15aa9710d129cf6a3f6672",
+      "bytes": 76705,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ec341e78-13ef-4135-bc82-41b3205f744d": {
+      "url": "https://api.imd.fun/oracle/requests/ec341e78-13ef-4135-bc82-41b3205f744d",
+      "captured_at": "2026-09-23T21:13:35.671952+00:00",
+      "http_status": 200,
+      "sha256": "59bd6019e1a1be617a3ee094938a181daa77507607575be99e1e10c8ff75e05b",
+      "bytes": 71049,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ababf004-be12-477c-8010-43e35a52c049": {
+      "url": "https://api.imd.fun/oracle/requests/ababf004-be12-477c-8010-43e35a52c049",
+      "captured_at": "2026-09-23T21:13:36.037304+00:00",
+      "http_status": 200,
+      "sha256": "d694fa931cd42e199c535c6a6db80661e9d0c194d1229bb8c52e7744dacb7f2e",
+      "bytes": 65303,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_775a697e-f92a-48f3-af1e-653f560aee17": {
+      "url": "https://api.imd.fun/oracle/requests/775a697e-f92a-48f3-af1e-653f560aee17",
+      "captured_at": "2026-09-23T21:13:36.375512+00:00",
+      "http_status": 200,
+      "sha256": "c54b240d9f04eec349ba037b62178542125cacd46b3eaf3dfcf6cdbc1dbfc823",
+      "bytes": 71496,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_3eebf792-14fb-496c-a27a-349fb230bc20": {
+      "url": "https://api.imd.fun/oracle/requests/3eebf792-14fb-496c-a27a-349fb230bc20",
+      "captured_at": "2026-09-23T21:13:36.746169+00:00",
+      "http_status": 200,
+      "sha256": "3d75c6e79626bb8aaea0162ac59336f5e40da33046adbd8477836689ac7c0088",
+      "bytes": 79271,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_636e8a72-7db8-40e9-84b1-13634a381b9b": {
+      "url": "https://api.imd.fun/oracle/requests/636e8a72-7db8-40e9-84b1-13634a381b9b",
+      "captured_at": "2026-09-23T21:13:37.092437+00:00",
+      "http_status": 200,
+      "sha256": "d66ea044e3b40343f5ee595ec5416c8b8843b63dcd30d1023948dd4c31579a0f",
+      "bytes": 83228,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0f3a776a-76c8-4ba2-a9e1-e68ce3a4349d": {
+      "url": "https://api.imd.fun/oracle/requests/0f3a776a-76c8-4ba2-a9e1-e68ce3a4349d",
+      "captured_at": "2026-09-23T21:13:37.438461+00:00",
+      "http_status": 200,
+      "sha256": "93a73d49a227ac7d1e8d65620ab9b2598c705eb6ccaf912880255adbb3485d34",
+      "bytes": 69972,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c91c88c9-cdb4-49dd-8a16-f05f7341b821": {
+      "url": "https://api.imd.fun/oracle/requests/c91c88c9-cdb4-49dd-8a16-f05f7341b821",
+      "captured_at": "2026-09-23T21:13:37.803003+00:00",
+      "http_status": 200,
+      "sha256": "882ff1d7535cf7db34fefdd2a2bf640b1d72595bde42513995366a90508582f2",
+      "bytes": 75367,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7c99ed3d-cb39-4f27-8175-c05c2fd91475": {
+      "url": "https://api.imd.fun/oracle/requests/7c99ed3d-cb39-4f27-8175-c05c2fd91475",
+      "captured_at": "2026-09-23T21:13:38.139872+00:00",
+      "http_status": 200,
+      "sha256": "1c8fdd97285c3d1d166fa2d51df99083bc1f05025ed41d5e4e14b245c68ee2b7",
+      "bytes": 74504,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c573d1fd-377b-44d1-b3f2-0481f1d29257": {
+      "url": "https://api.imd.fun/oracle/requests/c573d1fd-377b-44d1-b3f2-0481f1d29257",
+      "captured_at": "2026-09-23T21:13:38.497187+00:00",
+      "http_status": 200,
+      "sha256": "b59bd65acfb1d94e8cc8fcfc8a9c6d7a2c2f5384c37daa7fd52257358c0c73bf",
+      "bytes": 79442,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e99e1b4a-db1e-42a8-8817-e16043bcc3eb": {
+      "url": "https://api.imd.fun/oracle/requests/e99e1b4a-db1e-42a8-8817-e16043bcc3eb",
+      "captured_at": "2026-09-23T21:13:38.847221+00:00",
+      "http_status": 200,
+      "sha256": "f80133bff2b6dc0d8d6aad04f8fd1eafdf64181111c59661f3c93651a645c9a3",
+      "bytes": 72251,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_80a8cc5d-815b-400e-9d3c-1081a31d10b2": {
+      "url": "https://api.imd.fun/oracle/requests/80a8cc5d-815b-400e-9d3c-1081a31d10b2",
+      "captured_at": "2026-09-23T21:13:39.231036+00:00",
+      "http_status": 200,
+      "sha256": "abf56ed869bdbaeb91b47ae32c721b179f05358aa15d2d7f7608d11952dc55b5",
+      "bytes": 70509,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_6f3654c7-8ce5-4f3c-925c-9e606b3bf908": {
+      "url": "https://api.imd.fun/oracle/requests/6f3654c7-8ce5-4f3c-925c-9e606b3bf908",
+      "captured_at": "2026-09-23T21:13:39.627304+00:00",
+      "http_status": 200,
+      "sha256": "7f9b55bcba41a1038295652321be49337fb16cc93baecbf59061813f197b00b5",
+      "bytes": 71316,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e598f368-ed9a-46b3-ab57-ea13e22567ef": {
+      "url": "https://api.imd.fun/oracle/requests/e598f368-ed9a-46b3-ab57-ea13e22567ef",
+      "captured_at": "2026-09-23T21:13:39.965608+00:00",
+      "http_status": 200,
+      "sha256": "dad90ea64f86981f0518669be08836caf1b3b83061258556b57edd1e45a719ee",
+      "bytes": 75130,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_a48516e5-8d4c-4fe6-a3c6-9faa44ae6433": {
+      "url": "https://api.imd.fun/oracle/requests/a48516e5-8d4c-4fe6-a3c6-9faa44ae6433",
+      "captured_at": "2026-09-23T21:13:40.319447+00:00",
+      "http_status": 200,
+      "sha256": "d2e3a1e053042fcf946fa3c008dfe0dcec0f1253017b071d44fef488c8410c80",
+      "bytes": 79756,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c4099a06-0b38-43dc-bf8a-40a3b86935b0": {
+      "url": "https://api.imd.fun/oracle/requests/c4099a06-0b38-43dc-bf8a-40a3b86935b0",
+      "captured_at": "2026-09-23T21:13:41.015081+00:00",
+      "http_status": 200,
+      "sha256": "97dd8f57432f6da7fe7e03a5d851b8687ebb41064177aff59459e839e06b5257",
+      "bytes": 66730,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_346d20d3-d86e-4f1f-aa21-0d388f4e0d57": {
+      "url": "https://api.imd.fun/oracle/requests/346d20d3-d86e-4f1f-aa21-0d388f4e0d57",
+      "captured_at": "2026-09-23T21:13:41.359024+00:00",
+      "http_status": 200,
+      "sha256": "b59c77522e8f5f49c8193f7292d45f90fd7bae04fd7bb3fc239789377177bba6",
+      "bytes": 137483,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_a9a4d5c9-e2f0-44f2-b9b1-06d05a24159d": {
+      "url": "https://api.imd.fun/oracle/requests/a9a4d5c9-e2f0-44f2-b9b1-06d05a24159d",
+      "captured_at": "2026-09-23T21:13:41.720000+00:00",
+      "http_status": 200,
+      "sha256": "c1e1ef4f89906b540c170d00858694706ba8956e1c6df4b01deb0e60a1e2d72a",
+      "bytes": 130667,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ad932b48-8876-42fb-ab10-a635d5620bde": {
+      "url": "https://api.imd.fun/oracle/requests/ad932b48-8876-42fb-ab10-a635d5620bde",
+      "captured_at": "2026-09-23T21:13:42.149696+00:00",
+      "http_status": 200,
+      "sha256": "d97b5597588a29b9fa2caa8967ef8d064eb15e64d2b0b89b03f10d7087a29e7a",
+      "bytes": 131651,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1002deeb-5819-4756-b837-ebf848f35c16": {
+      "url": "https://api.imd.fun/oracle/requests/1002deeb-5819-4756-b837-ebf848f35c16",
+      "captured_at": "2026-09-23T21:13:42.502203+00:00",
+      "http_status": 200,
+      "sha256": "207ac3821ab629c4085a10d3775596ad55d7a9946a84d00560e002c2e8296050",
+      "bytes": 137646,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_75a4a0d2-aec4-48ff-8b8e-3df639720ce0": {
+      "url": "https://api.imd.fun/oracle/requests/75a4a0d2-aec4-48ff-8b8e-3df639720ce0",
+      "captured_at": "2026-09-23T21:13:42.870520+00:00",
+      "http_status": 200,
+      "sha256": "1c215b74f88ab8a8e12ab4ff13286c3f0783d9654d6e1347415437f63fc41440",
+      "bytes": 133563,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_050caf37-5fd7-4565-954d-a1a4938d13b7": {
+      "url": "https://api.imd.fun/oracle/requests/050caf37-5fd7-4565-954d-a1a4938d13b7",
+      "captured_at": "2026-09-23T21:13:43.241240+00:00",
+      "http_status": 200,
+      "sha256": "bb42aa89f0af17ede1c839ab283669484c45b48d80d06418753ba659110cbeaf",
+      "bytes": 135597,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ceacf805-e6b6-4473-8026-03f316318488": {
+      "url": "https://api.imd.fun/oracle/requests/ceacf805-e6b6-4473-8026-03f316318488",
+      "captured_at": "2026-09-23T21:13:43.587378+00:00",
+      "http_status": 200,
+      "sha256": "610f7a1b4c465c3facaa5d29e117df7e5d9f3572e56f986943226ebf9c82dc7a",
+      "bytes": 132574,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_69796242-5d51-4e6a-ba8c-8f7a68ad402c": {
+      "url": "https://api.imd.fun/oracle/requests/69796242-5d51-4e6a-ba8c-8f7a68ad402c",
+      "captured_at": "2026-09-23T21:13:43.941098+00:00",
+      "http_status": 200,
+      "sha256": "02ca63737289f176ffb291d470e345cbd09a9c827749ac2a5b65cda22caaf72f",
+      "bytes": 136459,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8dd16206-74a2-47bd-a1f1-d068580cbc5f": {
+      "url": "https://api.imd.fun/oracle/requests/8dd16206-74a2-47bd-a1f1-d068580cbc5f",
+      "captured_at": "2026-09-23T21:13:44.304833+00:00",
+      "http_status": 200,
+      "sha256": "3e23d0ea39087eb1aa2e51c08cbc5d9a9b84f21dee599d4c103119fedf06ca6b",
+      "bytes": 139542,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0fde8f87-25d5-46e3-82ce-5fa9f9b82063": {
+      "url": "https://api.imd.fun/oracle/requests/0fde8f87-25d5-46e3-82ce-5fa9f9b82063",
+      "captured_at": "2026-09-23T21:13:44.651094+00:00",
+      "http_status": 200,
+      "sha256": "e1b50d9a23ae6d76a89de23ae0e9f5048ae014ab3d2e6f07d66e8edaaf059526",
+      "bytes": 138282,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e2431c41-bcc0-4ebd-bda1-9bf80e43ddb4": {
+      "url": "https://api.imd.fun/oracle/requests/e2431c41-bcc0-4ebd-bda1-9bf80e43ddb4",
+      "captured_at": "2026-09-23T21:13:44.992554+00:00",
+      "http_status": 200,
+      "sha256": "4cd6f58142d11d8753311868a30fae27fb9388c5f865413001bafa721a86f32d",
+      "bytes": 134368,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_2ba4f60d-5cd3-451c-a66b-22af553a544d": {
+      "url": "https://api.imd.fun/oracle/requests/2ba4f60d-5cd3-451c-a66b-22af553a544d",
+      "captured_at": "2026-09-23T21:13:45.332190+00:00",
+      "http_status": 200,
+      "sha256": "65a49945d4b61a97fb8b64814bce488efe4c6f760cf608bf5a6c7e598a5840ba",
+      "bytes": 135724,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7dd0cb4a-61c8-4a8f-ae2e-9c46fe21f912": {
+      "url": "https://api.imd.fun/oracle/requests/7dd0cb4a-61c8-4a8f-ae2e-9c46fe21f912",
+      "captured_at": "2026-09-23T21:13:45.682538+00:00",
+      "http_status": 200,
+      "sha256": "b72422b2a35a9644297daa0227241fa829b36295c9b852b546612018cf451320",
+      "bytes": 129643,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c572e332-84ed-41d8-8106-bcec232f7dd6": {
+      "url": "https://api.imd.fun/oracle/requests/c572e332-84ed-41d8-8106-bcec232f7dd6",
+      "captured_at": "2026-09-23T21:13:46.058489+00:00",
+      "http_status": 200,
+      "sha256": "67c3f7d8f2567d9644aa95444847ea927442424fa7f95728df1682a91713a6fb",
+      "bytes": 140375,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_d09db91e-72f3-4b31-8562-60038a082348": {
+      "url": "https://api.imd.fun/oracle/requests/d09db91e-72f3-4b31-8562-60038a082348",
+      "captured_at": "2026-09-23T21:13:46.414440+00:00",
+      "http_status": 200,
+      "sha256": "8e527d8af1c96429f3e48c25b0bddf1d96b31c452a9dcaf4213027ac1e6bc94d",
+      "bytes": 135557,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_bc5b7034-2e93-4142-bafc-beebaa7f729f": {
+      "url": "https://api.imd.fun/oracle/requests/bc5b7034-2e93-4142-bafc-beebaa7f729f",
+      "captured_at": "2026-09-23T21:13:46.762097+00:00",
+      "http_status": 200,
+      "sha256": "a13a492f55bda98fdeb087719bfcc565e417b0eba1f4016ab5d367a7de42d252",
+      "bytes": 130358,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e28ad60b-8575-4f1c-903b-dd47f21a9282": {
+      "url": "https://api.imd.fun/oracle/requests/e28ad60b-8575-4f1c-903b-dd47f21a9282",
+      "captured_at": "2026-09-23T21:13:47.123214+00:00",
+      "http_status": 200,
+      "sha256": "b29e96238fe4e905f889821a7da3d1b448005378911f4c4730e7e9d6c27ea0a6",
+      "bytes": 130510,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_d2f501fa-a258-4fb6-acc5-3542e746c3a3": {
+      "url": "https://api.imd.fun/oracle/requests/d2f501fa-a258-4fb6-acc5-3542e746c3a3",
+      "captured_at": "2026-09-23T21:13:47.502931+00:00",
+      "http_status": 200,
+      "sha256": "29ad212216f60776d1aaae7e379295fa00c6c9b3476d311a142108c65f145f5d",
+      "bytes": 134546,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_6d2c8770-bf36-4449-a76e-0e602904cdbc": {
+      "url": "https://api.imd.fun/oracle/requests/6d2c8770-bf36-4449-a76e-0e602904cdbc",
+      "captured_at": "2026-09-23T21:13:47.850577+00:00",
+      "http_status": 200,
+      "sha256": "7cc3e7509497609d963110190398b33f954585acee53f6b1a63d844206271d5a",
+      "bytes": 139343,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_42e8362d-512e-42ee-a578-2463bb9757f0": {
+      "url": "https://api.imd.fun/oracle/requests/42e8362d-512e-42ee-a578-2463bb9757f0",
+      "captured_at": "2026-09-23T21:13:48.221305+00:00",
+      "http_status": 200,
+      "sha256": "23fb7e22c97e031f6f1acf5ca54f9f1976583d3bcc3afd08e440ea21e5758d9f",
+      "bytes": 135158,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_d1bf3b5b-5091-4e4b-858c-f6eae7618543": {
+      "url": "https://api.imd.fun/oracle/requests/d1bf3b5b-5091-4e4b-858c-f6eae7618543",
+      "captured_at": "2026-09-23T21:13:48.575429+00:00",
+      "http_status": 200,
+      "sha256": "784a242044f437c301ea03d1d4ea71da975a54516873a8c48baec325b888ea00",
+      "bytes": 129013,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ce041185-91ba-45d0-9a29-3695ac103332": {
+      "url": "https://api.imd.fun/oracle/requests/ce041185-91ba-45d0-9a29-3695ac103332",
+      "captured_at": "2026-09-23T21:13:48.921521+00:00",
+      "http_status": 200,
+      "sha256": "6e8bb443c875137d88005150a17edb0a38f7356346c1f458b8ed10589b280b47",
+      "bytes": 133309,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ceada165-c2be-4980-9546-64b175fdb24c": {
+      "url": "https://api.imd.fun/oracle/requests/ceada165-c2be-4980-9546-64b175fdb24c",
+      "captured_at": "2026-09-23T21:13:49.267551+00:00",
+      "http_status": 200,
+      "sha256": "643f6588d3cdea25987ed762df843e9f3e9afacbdfb4d321cb0fec5560de496b",
+      "bytes": 143320,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_5e47030a-9a2b-4110-b6d4-48c99efc7bb9": {
+      "url": "https://api.imd.fun/oracle/requests/5e47030a-9a2b-4110-b6d4-48c99efc7bb9",
+      "captured_at": "2026-09-23T21:13:49.624890+00:00",
+      "http_status": 200,
+      "sha256": "71c1e92625289ba9c6744b0d2cd6fe39cc7fe6969f365015f73ac68365ca12dd",
+      "bytes": 129943,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_2b04bfd2-2ae9-468b-ae85-a2c2c80f9362": {
+      "url": "https://api.imd.fun/oracle/requests/2b04bfd2-2ae9-468b-ae85-a2c2c80f9362",
+      "captured_at": "2026-09-23T21:13:49.974925+00:00",
+      "http_status": 200,
+      "sha256": "288b26d06db8448eae7bcc4e17468a3e2e7476c53b8c0d08544d915a82171d26",
+      "bytes": 132792,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b1123516-1005-4377-ba6a-850832e92727": {
+      "url": "https://api.imd.fun/oracle/requests/b1123516-1005-4377-ba6a-850832e92727",
+      "captured_at": "2026-09-23T21:13:50.351215+00:00",
+      "http_status": 200,
+      "sha256": "21b006f514ae3ec993f9cf4c3a931238737a04a71f32378b20972e0605b1139c",
+      "bytes": 134913,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_94e3d053-6e34-4855-b563-fd2186d0d9cf": {
+      "url": "https://api.imd.fun/oracle/requests/94e3d053-6e34-4855-b563-fd2186d0d9cf",
+      "captured_at": "2026-09-23T21:13:50.711458+00:00",
+      "http_status": 200,
+      "sha256": "9b62c341855f59b8dbd1e63d2157a63579ce23c0c13a658a7001a83d58763a1f",
+      "bytes": 136830,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0b662263-964a-42f6-a23e-2a3c7634cb98": {
+      "url": "https://api.imd.fun/oracle/requests/0b662263-964a-42f6-a23e-2a3c7634cb98",
+      "captured_at": "2026-09-23T21:13:51.086106+00:00",
+      "http_status": 200,
+      "sha256": "711c41290c4678d2bbd1c0d22af1909e27e2e563a336908aad1987e2f53fe382",
+      "bytes": 143635,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c03870fb-7a78-421e-a0e8-5ebbffc4a81f": {
+      "url": "https://api.imd.fun/oracle/requests/c03870fb-7a78-421e-a0e8-5ebbffc4a81f",
+      "captured_at": "2026-09-23T21:13:51.460470+00:00",
+      "http_status": 200,
+      "sha256": "73ed349ae799fcfe997cac9ff85226ca82d46901614c4ac4bcd3a75751a6f6de",
+      "bytes": 141213,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e4fd443c-042e-4cf8-88c4-fee07de6e1ad": {
+      "url": "https://api.imd.fun/oracle/requests/e4fd443c-042e-4cf8-88c4-fee07de6e1ad",
+      "captured_at": "2026-09-23T21:13:51.835952+00:00",
+      "http_status": 200,
+      "sha256": "98b78438f8ec87e9180ae5bc529d7bd520c478dba863de2182a8fc55bd6c8d9a",
+      "bytes": 146878,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0e245e12-1af1-49f5-8018-7f3c3468cc17": {
+      "url": "https://api.imd.fun/oracle/requests/0e245e12-1af1-49f5-8018-7f3c3468cc17",
+      "captured_at": "2026-09-23T21:13:52.180630+00:00",
+      "http_status": 200,
+      "sha256": "fb38315a8e3029b3335c67d1cf24a4cfa4a07a601b14d71b9ca6c6119d46e7ae",
+      "bytes": 144222,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_cf976406-0eb8-41d6-bdee-ed8185c70ac1": {
+      "url": "https://api.imd.fun/oracle/requests/cf976406-0eb8-41d6-bdee-ed8185c70ac1",
+      "captured_at": "2026-09-23T21:13:52.528439+00:00",
+      "http_status": 200,
+      "sha256": "acf29534d3d6fa82cb2ab0fc0ff6403ec6ae2afa4715775dd519342bec33393f",
+      "bytes": 132917,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_cf15ffa3-bcc7-4bd6-a5dc-d68b25b1516b": {
+      "url": "https://api.imd.fun/oracle/requests/cf15ffa3-bcc7-4bd6-a5dc-d68b25b1516b",
+      "captured_at": "2026-09-23T21:13:52.889587+00:00",
+      "http_status": 200,
+      "sha256": "d86375d27ef4113e7930d4cba809aabb77aeeb331f8ac50a24cc6f7cfbdc43e2",
+      "bytes": 139942,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_684574c2-7e0e-49ad-8786-011eb4fb132e": {
+      "url": "https://api.imd.fun/oracle/requests/684574c2-7e0e-49ad-8786-011eb4fb132e",
+      "captured_at": "2026-09-23T21:13:53.234792+00:00",
+      "http_status": 200,
+      "sha256": "22bd3e9653145eac824e5a731679f224cc4a1838c2d28951e4b324779f6c03ca",
+      "bytes": 135248,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_5cf3c0f5-524b-4c3e-b865-507d5da18b03": {
+      "url": "https://api.imd.fun/oracle/requests/5cf3c0f5-524b-4c3e-b865-507d5da18b03",
+      "captured_at": "2026-09-23T21:13:53.594791+00:00",
+      "http_status": 200,
+      "sha256": "f3680e34b0cf55725128fb9b1d49dd2980f1ffb372f10bba73ce08d1f17626e4",
+      "bytes": 138465,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_26d2285c-42cd-46b2-8a36-ccf58bad3f78": {
+      "url": "https://api.imd.fun/oracle/requests/26d2285c-42cd-46b2-8a36-ccf58bad3f78",
+      "captured_at": "2026-09-23T21:13:53.944641+00:00",
+      "http_status": 200,
+      "sha256": "5955dc5cf5116b7bbd81aeef6af565a0218ca4bd69e011c6e05b709efd421994",
+      "bytes": 135763,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_366c07b1-50e4-4e5d-afee-3acb66a685fe": {
+      "url": "https://api.imd.fun/oracle/requests/366c07b1-50e4-4e5d-afee-3acb66a685fe",
+      "captured_at": "2026-09-23T21:13:54.388178+00:00",
+      "http_status": 200,
+      "sha256": "473ef67fe7143cbe45163d141e3d9a06990cae59b0440d562bd58e6e8c20e02a",
+      "bytes": 127253,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e06d0e24-82da-430d-a70c-3d1a42f3dc28": {
+      "url": "https://api.imd.fun/oracle/requests/e06d0e24-82da-430d-a70c-3d1a42f3dc28",
+      "captured_at": "2026-09-23T21:13:54.740262+00:00",
+      "http_status": 200,
+      "sha256": "70c0516470cedbadf23e4b5cafc6935de344cfdc110406a98c0e14243ccf7c75",
+      "bytes": 143213,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_55a490fe-3f03-4c22-9303-e6cfb2128bc2": {
+      "url": "https://api.imd.fun/oracle/requests/55a490fe-3f03-4c22-9303-e6cfb2128bc2",
+      "captured_at": "2026-09-23T21:13:55.129525+00:00",
+      "http_status": 200,
+      "sha256": "6bb2fea025e7cd6e5cd55d72195137dd2e39c5c3c86bd2941d22c069a8cb5e64",
+      "bytes": 131433,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b7d68fa0-5295-4479-a9e4-10f715cf7f39": {
+      "url": "https://api.imd.fun/oracle/requests/b7d68fa0-5295-4479-a9e4-10f715cf7f39",
+      "captured_at": "2026-09-23T21:13:55.511274+00:00",
+      "http_status": 200,
+      "sha256": "32d3d5e6e04bb067988d0fd7853579fd2a7fc89288e727360f96e07f5f55bdcc",
+      "bytes": 136120,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_95653f3e-5c39-412e-9bf8-3b7fd96f5fe8": {
+      "url": "https://api.imd.fun/oracle/requests/95653f3e-5c39-412e-9bf8-3b7fd96f5fe8",
+      "captured_at": "2026-09-23T21:13:55.868938+00:00",
+      "http_status": 200,
+      "sha256": "d477d5be5d4053638a1dd096efbf38bbf8e7c7be0ee69b497a5b9be85b90e3f1",
+      "bytes": 143775,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8fa35aa8-2241-4816-b0f9-af7a40e2f008": {
+      "url": "https://api.imd.fun/oracle/requests/8fa35aa8-2241-4816-b0f9-af7a40e2f008",
+      "captured_at": "2026-09-23T21:13:56.215184+00:00",
+      "http_status": 200,
+      "sha256": "b497f2280b66dae144741572a6819d99a7f3bd3a440b663b492b99bdd0c6ecbb",
+      "bytes": 141388,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ca785464-4fda-4ecf-9f5c-0ccf6f203021": {
+      "url": "https://api.imd.fun/oracle/requests/ca785464-4fda-4ecf-9f5c-0ccf6f203021",
+      "captured_at": "2026-09-23T21:13:56.557091+00:00",
+      "http_status": 200,
+      "sha256": "842aa6437ecfe3153365bd678e40b4bbe503f89dab35817c54abafc7268cee27",
+      "bytes": 136949,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_657bd731-adbb-45e2-abdc-8529a01a374e": {
+      "url": "https://api.imd.fun/oracle/requests/657bd731-adbb-45e2-abdc-8529a01a374e",
+      "captured_at": "2026-09-23T21:13:56.900182+00:00",
+      "http_status": 200,
+      "sha256": "4d96f0422f9ffb0aefe2388708581b90b0e4d4ca6539ccd343015eb44df40c7f",
+      "bytes": 143786,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_04c534b8-8a2c-431b-9375-d517725e41a4": {
+      "url": "https://api.imd.fun/oracle/requests/04c534b8-8a2c-431b-9375-d517725e41a4",
+      "captured_at": "2026-09-23T21:13:57.233152+00:00",
+      "http_status": 200,
+      "sha256": "0f65c99b877950564ac491fac25413e36c79ed30960cda3975cf58966faee7cd",
+      "bytes": 9851,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_dfe6e40a-f127-42ea-921d-9da04ab7bd38": {
+      "url": "https://api.imd.fun/oracle/requests/dfe6e40a-f127-42ea-921d-9da04ab7bd38",
+      "captured_at": "2026-09-23T21:13:57.568318+00:00",
+      "http_status": 200,
+      "sha256": "28f62fdd6104a794f738638d4a924659307eaa96154f0bfc74f7da120222cdae",
+      "bytes": 11000,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_72e79041-39ac-48b5-8ed3-4fbafd2d79a6": {
+      "url": "https://api.imd.fun/oracle/requests/72e79041-39ac-48b5-8ed3-4fbafd2d79a6",
+      "captured_at": "2026-09-23T21:13:57.916955+00:00",
+      "http_status": 200,
+      "sha256": "0f5cb96cfe9593b305eee3764dfbeeab6c5353f2a367c6202ebe19ec713b4fdc",
+      "bytes": 8852,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_bec175eb-a797-47b5-b0a9-028dee1cfc62": {
+      "url": "https://api.imd.fun/oracle/requests/bec175eb-a797-47b5-b0a9-028dee1cfc62",
+      "captured_at": "2026-09-23T21:13:58.261570+00:00",
+      "http_status": 200,
+      "sha256": "c74cba381c65ddf5628251217ff25aeb2f0d6c8cd7e650639e008332bedaa034",
+      "bytes": 11519,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_6334b598-63de-4c11-a8f7-451de3f75df8": {
+      "url": "https://api.imd.fun/oracle/requests/6334b598-63de-4c11-a8f7-451de3f75df8",
+      "captured_at": "2026-09-23T21:13:58.598873+00:00",
+      "http_status": 200,
+      "sha256": "1b71a71e48dd169ecb055d70313d7e799b6b7e8a2828dbc4871f6a7c7e964371",
+      "bytes": 7331,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_cd2da39b-1896-4e5d-8094-bb8f864d87ae": {
+      "url": "https://api.imd.fun/oracle/requests/cd2da39b-1896-4e5d-8094-bb8f864d87ae",
+      "captured_at": "2026-09-23T21:13:58.956016+00:00",
+      "http_status": 200,
+      "sha256": "f0b5e0d125d017ce11a21740e6ce87525a39723af4d5de03bacc09291c8da79d",
+      "bytes": 47846,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_87728adc-d78c-4f1c-87c8-b2bf4577be18": {
+      "url": "https://api.imd.fun/oracle/requests/87728adc-d78c-4f1c-87c8-b2bf4577be18",
+      "captured_at": "2026-09-23T21:13:59.291382+00:00",
+      "http_status": 200,
+      "sha256": "e7839811635b0508a50112064e41f92f3d767517398d45e662efd9cf5c648305",
+      "bytes": 42986,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b4384dd9-6d22-4951-9d1c-23a699d50444": {
+      "url": "https://api.imd.fun/oracle/requests/b4384dd9-6d22-4951-9d1c-23a699d50444",
+      "captured_at": "2026-09-23T21:13:59.631589+00:00",
+      "http_status": 200,
+      "sha256": "34930bf7971ac5d61ecb0d75f28d6085c2d716769adb59150e83e5ca159cd681",
+      "bytes": 39595,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1f85f469-176e-47e0-8f48-05ec13036a27": {
+      "url": "https://api.imd.fun/oracle/requests/1f85f469-176e-47e0-8f48-05ec13036a27",
+      "captured_at": "2026-09-23T21:13:59.971117+00:00",
+      "http_status": 200,
+      "sha256": "7d48cb0ebfe0628de89c3721f9fdc7c9894321af366d96c25964c0f2e471defd",
+      "bytes": 54875,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8b13ef3b-f754-4ba0-a21f-a7d75e3c6977": {
+      "url": "https://api.imd.fun/oracle/requests/8b13ef3b-f754-4ba0-a21f-a7d75e3c6977",
+      "captured_at": "2026-09-23T21:14:00.342837+00:00",
+      "http_status": 200,
+      "sha256": "0a513eff1ebf9a720aa8b529c366efadc8882ce13596be72128720ce7b98267a",
+      "bytes": 48096,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0ad6364e-0494-459b-9953-1c9f2d07cbdc": {
+      "url": "https://api.imd.fun/oracle/requests/0ad6364e-0494-459b-9953-1c9f2d07cbdc",
+      "captured_at": "2026-09-23T21:14:00.689471+00:00",
+      "http_status": 200,
+      "sha256": "0f3bfac8c40d7bb39e351a714ce1fac7cef851cfee97cc9284fb97d971e483a0",
+      "bytes": 51628,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ef5a8750-b76b-4468-bd80-5dc2c41d1672": {
+      "url": "https://api.imd.fun/oracle/requests/ef5a8750-b76b-4468-bd80-5dc2c41d1672",
+      "captured_at": "2026-09-23T21:14:01.033202+00:00",
+      "http_status": 200,
+      "sha256": "3da9be23477f45fd6282fcc92034933ebbd848beac08a0c3ac8c519aafa5f6b3",
+      "bytes": 58308,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_bac4ba30-0a2b-4e02-aa7f-0f8a07ca50b9": {
+      "url": "https://api.imd.fun/oracle/requests/bac4ba30-0a2b-4e02-aa7f-0f8a07ca50b9",
+      "captured_at": "2026-09-23T21:14:01.377953+00:00",
+      "http_status": 200,
+      "sha256": "ff515a014a8c316caa6efec7874d0d0c7f002cbc7da7bda9235f8463eb2fa777",
+      "bytes": 46355,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_2e612653-1c93-491d-ab76-a43dd433d42f": {
+      "url": "https://api.imd.fun/oracle/requests/2e612653-1c93-491d-ab76-a43dd433d42f",
+      "captured_at": "2026-09-23T21:14:01.737702+00:00",
+      "http_status": 200,
+      "sha256": "d6caa395e5c32aeee58fdec9d11b77e85c9cf854001c3047c1eb797041f2736e",
+      "bytes": 42158,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_9528c740-fdd8-44e3-aa73-30e16bef9016": {
+      "url": "https://api.imd.fun/oracle/requests/9528c740-fdd8-44e3-aa73-30e16bef9016",
+      "captured_at": "2026-09-23T21:14:02.078462+00:00",
+      "http_status": 200,
+      "sha256": "32e63f786d709465be88d3e8ba1cece0cc3cc214745360d5b074f2c39708a5c6",
+      "bytes": 53577,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_edf86b7c-26f4-47f9-b067-1c82357fb4e6": {
+      "url": "https://api.imd.fun/oracle/requests/edf86b7c-26f4-47f9-b067-1c82357fb4e6",
+      "captured_at": "2026-09-23T21:14:02.423760+00:00",
+      "http_status": 200,
+      "sha256": "67b927c2591f1b1fd360ab4256b32c3e345b75491b9cd0731f190744d144dd7a",
+      "bytes": 48344,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_46972dff-6328-4a34-a0d7-52b170a0adeb": {
+      "url": "https://api.imd.fun/oracle/requests/46972dff-6328-4a34-a0d7-52b170a0adeb",
+      "captured_at": "2026-09-23T21:14:02.768919+00:00",
+      "http_status": 200,
+      "sha256": "7ac1fb41ad3b449873d8731baba169dc3eb3db19e1468e322172cccaa1cc43cd",
+      "bytes": 41904,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_94c04efc-2d92-4b90-9e5b-f445560e3f2b": {
+      "url": "https://api.imd.fun/oracle/requests/94c04efc-2d92-4b90-9e5b-f445560e3f2b",
+      "captured_at": "2026-09-23T21:14:03.102190+00:00",
+      "http_status": 200,
+      "sha256": "2105abc8b5c141c8468ae02eba90e412342c2c1c1cdbf8f21c184732716b9fc8",
+      "bytes": 46599,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_6a203e55-b146-4c45-b1a3-c7bfb9006ec4": {
+      "url": "https://api.imd.fun/oracle/requests/6a203e55-b146-4c45-b1a3-c7bfb9006ec4",
+      "captured_at": "2026-09-23T21:14:03.434734+00:00",
+      "http_status": 200,
+      "sha256": "e33c3628ea0ba4c320761b909722dbc274b86058045571f3974dd48c4cf0a0ca",
+      "bytes": 42590,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_3bcb0e83-86c4-483f-9c70-d1b3382ef359": {
+      "url": "https://api.imd.fun/oracle/requests/3bcb0e83-86c4-483f-9c70-d1b3382ef359",
+      "captured_at": "2026-09-23T21:14:03.769502+00:00",
+      "http_status": 200,
+      "sha256": "b0ca960738a2c0571cc0bd5f23772119e4e8adb9427d8132fd560dc626dfcd64",
+      "bytes": 46113,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7902c861-4d6f-4362-8f70-ddc22e768ead": {
+      "url": "https://api.imd.fun/oracle/requests/7902c861-4d6f-4362-8f70-ddc22e768ead",
+      "captured_at": "2026-09-23T21:14:04.116709+00:00",
+      "http_status": 200,
+      "sha256": "cab6f24ecd6e3bd85427a09c59621b4091c3c94f9be33746dafcdbb33b3cc75b",
+      "bytes": 44037,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8e9f0b24-20f1-464c-9160-c440f4baed71": {
+      "url": "https://api.imd.fun/oracle/requests/8e9f0b24-20f1-464c-9160-c440f4baed71",
+      "captured_at": "2026-09-23T21:14:04.449764+00:00",
+      "http_status": 200,
+      "sha256": "5c3d7099839b02713210aec9aa32d9e257675c912e6563591f3caac7244fca7c",
+      "bytes": 41850,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_86ad11bb-b065-45b8-bfd2-81e51eec0e2d": {
+      "url": "https://api.imd.fun/oracle/requests/86ad11bb-b065-45b8-bfd2-81e51eec0e2d",
+      "captured_at": "2026-09-23T21:14:04.782707+00:00",
+      "http_status": 200,
+      "sha256": "da5663b1c6ad28351010102f8a894cad6bb4eee98026add58e97a8b4e4ffcb58",
+      "bytes": 52183,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_18f0e465-7888-4e3b-9954-937327012434": {
+      "url": "https://api.imd.fun/oracle/requests/18f0e465-7888-4e3b-9954-937327012434",
+      "captured_at": "2026-09-23T21:14:05.184999+00:00",
+      "http_status": 200,
+      "sha256": "4898b5b3220238ec2362dd6f5604c3eee7a5287afaf8cc2426fbfe845bdaa7c8",
+      "bytes": 52508,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_cff80a95-0d8d-4597-9af3-9e958d4cf98e": {
+      "url": "https://api.imd.fun/oracle/requests/cff80a95-0d8d-4597-9af3-9e958d4cf98e",
+      "captured_at": "2026-09-23T21:14:05.523838+00:00",
+      "http_status": 200,
+      "sha256": "a85f37327037cf441f5a881f2572ff0e332912268d4c9e91b2e9f7ddd33e0a49",
+      "bytes": 43502,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1e6551b0-6082-49b9-8de8-f8088b7a026b": {
+      "url": "https://api.imd.fun/oracle/requests/1e6551b0-6082-49b9-8de8-f8088b7a026b",
+      "captured_at": "2026-09-23T21:14:05.864866+00:00",
+      "http_status": 200,
+      "sha256": "60409e9440c0d295e7dbf86440ee1688d67e6d2fe89d35fcf6ae89f002e41e48",
+      "bytes": 45804,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_5d5d2bef-4317-42fb-99e3-4dde426ea2cd": {
+      "url": "https://api.imd.fun/oracle/requests/5d5d2bef-4317-42fb-99e3-4dde426ea2cd",
+      "captured_at": "2026-09-23T21:14:06.205784+00:00",
+      "http_status": 200,
+      "sha256": "f7269da59922b971d156abfffc752a511252aabdba88819c8caad1ea3338eeca",
+      "bytes": 42050,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ab8f03a5-5b47-47c5-813b-c649fcf954d0": {
+      "url": "https://api.imd.fun/oracle/requests/ab8f03a5-5b47-47c5-813b-c649fcf954d0",
+      "captured_at": "2026-09-23T21:14:06.539556+00:00",
+      "http_status": 200,
+      "sha256": "1727788b8cca58f791d058969ed0cf6febd1e8efadeffd4ef7b5040329f23f75",
+      "bytes": 42267,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_e31602e9-2841-45b4-b5c9-9f8986368a4a": {
+      "url": "https://api.imd.fun/oracle/requests/e31602e9-2841-45b4-b5c9-9f8986368a4a",
+      "captured_at": "2026-09-23T21:14:06.871111+00:00",
+      "http_status": 200,
+      "sha256": "657e8ad26cfd3dba95856b306ad1ef299e0cbcafa478a74a315820ae70420790",
+      "bytes": 42429,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_db88a0e3-efe1-4351-b857-21ebd69a6efe": {
+      "url": "https://api.imd.fun/oracle/requests/db88a0e3-efe1-4351-b857-21ebd69a6efe",
+      "captured_at": "2026-09-23T21:14:07.208858+00:00",
+      "http_status": 200,
+      "sha256": "9cc924b37d3a321424a94499d0653a9a2e0798bc3abb2dacea7f0ad24c0baf11",
+      "bytes": 41528,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_78751513-4f3f-472e-988e-558078ffce81": {
+      "url": "https://api.imd.fun/oracle/requests/78751513-4f3f-472e-988e-558078ffce81",
+      "captured_at": "2026-09-23T21:14:07.568350+00:00",
+      "http_status": 200,
+      "sha256": "8bd1929815190b0ee4ecec1e7660af4496f59311ec736dcc307a331743aaa1d2",
+      "bytes": 43853,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_fe30a8ef-cd59-46e5-be05-062df3d78bd2": {
+      "url": "https://api.imd.fun/oracle/requests/fe30a8ef-cd59-46e5-be05-062df3d78bd2",
+      "captured_at": "2026-09-23T21:14:07.902094+00:00",
+      "http_status": 200,
+      "sha256": "d4c5c7edda66c219bfbf12ebee0d953d578761141acebbd1f64a0a1bd4b1df24",
+      "bytes": 44543,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_a697cdf5-750b-4054-967f-f0b8b1c74eca": {
+      "url": "https://api.imd.fun/oracle/requests/a697cdf5-750b-4054-967f-f0b8b1c74eca",
+      "captured_at": "2026-09-23T21:14:08.307666+00:00",
+      "http_status": 200,
+      "sha256": "a085c8108a85ab050fde4995eee65740d08a62e6fe55516fe6dd01732b942f00",
+      "bytes": 55800,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_bdaa5c97-02a3-43ca-ae5e-65883a9fcb78": {
+      "url": "https://api.imd.fun/oracle/requests/bdaa5c97-02a3-43ca-ae5e-65883a9fcb78",
+      "captured_at": "2026-09-23T21:14:08.649718+00:00",
+      "http_status": 200,
+      "sha256": "09ef9bf6f34dcce4ea98ace8fc192dfcc883940574b4fadb2e2b945d0841836f",
+      "bytes": 9130,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_873dbf55-bbf6-47bb-98ec-b25402855316": {
+      "url": "https://api.imd.fun/oracle/requests/873dbf55-bbf6-47bb-98ec-b25402855316",
+      "captured_at": "2026-09-23T21:14:08.992513+00:00",
+      "http_status": 200,
+      "sha256": "82955285c9be2cd4c1ae26b9c9b7b63cf1d3db649636d3d1cd0a91dee5c0c233",
+      "bytes": 10414,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_608addbb-611d-486a-916e-dec39b0d62c4": {
+      "url": "https://api.imd.fun/oracle/requests/608addbb-611d-486a-916e-dec39b0d62c4",
+      "captured_at": "2026-09-23T21:14:09.333633+00:00",
+      "http_status": 200,
+      "sha256": "e6d19d3724383e6f5c8b41359be0e242b68c7b81e9971a9af9a5356471e88e47",
+      "bytes": 11505,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_6a6c3e31-0643-4602-b32e-edb5f4514590": {
+      "url": "https://api.imd.fun/oracle/requests/6a6c3e31-0643-4602-b32e-edb5f4514590",
+      "captured_at": "2026-09-23T21:14:09.673276+00:00",
+      "http_status": 200,
+      "sha256": "7117729baa88861421929daa129b7e985292cf5ea3fe6a4f8bb94928289419a0",
+      "bytes": 1134,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_1e9d2374-218c-489c-a186-ab897cdc2d99": {
+      "url": "https://api.imd.fun/oracle/requests/1e9d2374-218c-489c-a186-ab897cdc2d99",
+      "captured_at": "2026-09-23T21:14:10.016702+00:00",
+      "http_status": 200,
+      "sha256": "5e6ba4dbff3315bf8a90369637e4fd6de8a7af713db12e8f142ba139bdadd8a5",
+      "bytes": 13936,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_9dd9d721-ea2d-4ad1-98be-7fcd8cbd5d59": {
+      "url": "https://api.imd.fun/oracle/requests/9dd9d721-ea2d-4ad1-98be-7fcd8cbd5d59",
+      "captured_at": "2026-09-23T21:14:10.360949+00:00",
+      "http_status": 200,
+      "sha256": "dc26dcb1b042fdca4f416dcd5fe383ff3b3165827f38d10599b977ba8fba6f0b",
+      "bytes": 27383,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_05e0546f-927a-4655-9ac0-7ce8236feb0c": {
+      "url": "https://api.imd.fun/oracle/requests/05e0546f-927a-4655-9ac0-7ce8236feb0c",
+      "captured_at": "2026-09-23T21:14:10.700569+00:00",
+      "http_status": 200,
+      "sha256": "3148016f5fa8450ca44ff8cd75df9d05f19a777066f1ed0f681f4a7efec72974",
+      "bytes": 30842,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_36198061-5132-4044-b13e-ea2deee9ebdc": {
+      "url": "https://api.imd.fun/oracle/requests/36198061-5132-4044-b13e-ea2deee9ebdc",
+      "captured_at": "2026-09-23T21:14:11.038298+00:00",
+      "http_status": 200,
+      "sha256": "63b83cb90b15161fccc4dbba20eef8885eb4c8c2b712c0fc65c7777325b4686b",
+      "bytes": 34678,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_4388f78b-ab28-4acf-a8d2-364dc1dc591e": {
+      "url": "https://api.imd.fun/oracle/requests/4388f78b-ab28-4acf-a8d2-364dc1dc591e",
+      "captured_at": "2026-09-23T21:14:11.372287+00:00",
+      "http_status": 200,
+      "sha256": "b4bd0d062ab2c0aede448accda78fe6c89f50933993c541d2d47bf642b7bc2db",
+      "bytes": 28215,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_37af018f-cac7-4001-9078-1e9a370bbb29": {
+      "url": "https://api.imd.fun/oracle/requests/37af018f-cac7-4001-9078-1e9a370bbb29",
+      "captured_at": "2026-09-23T21:14:11.720645+00:00",
+      "http_status": 200,
+      "sha256": "efa0001e31d9ad50bf0c417b22f5cc94e389791b79a2097a800dd35c95a87003",
+      "bytes": 26058,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8573deb0-7ec9-4036-8242-1deab74f68cd": {
+      "url": "https://api.imd.fun/oracle/requests/8573deb0-7ec9-4036-8242-1deab74f68cd",
+      "captured_at": "2026-09-23T21:14:12.073709+00:00",
+      "http_status": 200,
+      "sha256": "77e95dc91aa4324790f7c6fa53ea5a169ef4f0301814c298e85adb0a4c5a07bd",
+      "bytes": 22368,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_427228b5-eb13-4e54-8a2d-0b2b1dcec6ed": {
+      "url": "https://api.imd.fun/oracle/requests/427228b5-eb13-4e54-8a2d-0b2b1dcec6ed",
+      "captured_at": "2026-09-23T21:14:12.417792+00:00",
+      "http_status": 200,
+      "sha256": "72d64e2c01b66ce6c03cf9f4a87314df1db1a3277c63be14cba12687281036d6",
+      "bytes": 23769,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ff9cea3e-a82c-440e-a254-da3b782f1d5d": {
+      "url": "https://api.imd.fun/oracle/requests/ff9cea3e-a82c-440e-a254-da3b782f1d5d",
+      "captured_at": "2026-09-23T21:14:12.778936+00:00",
+      "http_status": 200,
+      "sha256": "430eed4927932577b74f2c52cbd126eb4d71cbea9d40e782b23d3c1d5e42c3b6",
+      "bytes": 32274,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_2bb24c07-b307-4660-a9b5-d5ca20522f37": {
+      "url": "https://api.imd.fun/oracle/requests/2bb24c07-b307-4660-a9b5-d5ca20522f37",
+      "captured_at": "2026-09-23T21:14:13.137497+00:00",
+      "http_status": 200,
+      "sha256": "0e50ccf913a3ec6f1e01848cca6c53618e77f6ac1729d479a894e29cc04a9116",
+      "bytes": 27573,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0c9b282c-1ca1-4f9f-884c-92da8af82621": {
+      "url": "https://api.imd.fun/oracle/requests/0c9b282c-1ca1-4f9f-884c-92da8af82621",
+      "captured_at": "2026-09-23T21:14:13.476286+00:00",
+      "http_status": 200,
+      "sha256": "ee01f2c0411b32c8566cff0aaab7a335141dbe4c90bdadbc11235adbd4897fb4",
+      "bytes": 27579,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_d2050e0e-670a-4387-bbaf-236c49f509ad": {
+      "url": "https://api.imd.fun/oracle/requests/d2050e0e-670a-4387-bbaf-236c49f509ad",
+      "captured_at": "2026-09-23T21:14:13.830419+00:00",
+      "http_status": 200,
+      "sha256": "250c0b6f60df1ba1bba7d415c32d427440c1e1bd3389d72b0f66c71bb0d3b2ef",
+      "bytes": 26616,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_45bbefeb-5dd6-4ed6-8415-42ce7dbafa3e": {
+      "url": "https://api.imd.fun/oracle/requests/45bbefeb-5dd6-4ed6-8415-42ce7dbafa3e",
+      "captured_at": "2026-09-23T21:14:14.163793+00:00",
+      "http_status": 200,
+      "sha256": "ade14f550255cd429f2d55dd36dc0add1a101de43fd09a0bd79f145c426d1702",
+      "bytes": 30733,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_d8dd52cc-d0fc-46cb-9d79-94d80f62bb9a": {
+      "url": "https://api.imd.fun/oracle/requests/d8dd52cc-d0fc-46cb-9d79-94d80f62bb9a",
+      "captured_at": "2026-09-23T21:14:14.512629+00:00",
+      "http_status": 200,
+      "sha256": "36c851a105122b455ece80636a7d917000852f3c9a507f39fa32f28cbe54d717",
+      "bytes": 23474,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8d0ce202-ec6c-499e-9e4a-3daba0274a06": {
+      "url": "https://api.imd.fun/oracle/requests/8d0ce202-ec6c-499e-9e4a-3daba0274a06",
+      "captured_at": "2026-09-23T21:14:14.868444+00:00",
+      "http_status": 200,
+      "sha256": "48782fff7b80c5d58a808906b4570452a3998ed6da69d8b8b1efd0fca32c0897",
+      "bytes": 30165,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7fe22908-bb04-4dd5-a544-451a43cec7bb": {
+      "url": "https://api.imd.fun/oracle/requests/7fe22908-bb04-4dd5-a544-451a43cec7bb",
+      "captured_at": "2026-09-23T21:14:15.252874+00:00",
+      "http_status": 200,
+      "sha256": "8e1ae655b60ff1e04e6e7ba89f60ddacdb2a580bbe7b87c16e206b067b6084ef",
+      "bytes": 31236,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c033b9ec-2d96-4bd1-93f0-f212c484a9f5": {
+      "url": "https://api.imd.fun/oracle/requests/c033b9ec-2d96-4bd1-93f0-f212c484a9f5",
+      "captured_at": "2026-09-23T21:14:15.597397+00:00",
+      "http_status": 200,
+      "sha256": "23914f9eccf74f510cd5c21cf676e30760cc90ff9eba8083bd131bacbfcc53c3",
+      "bytes": 23065,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b6710265-c62f-473d-82ef-e77b84bf1018": {
+      "url": "https://api.imd.fun/oracle/requests/b6710265-c62f-473d-82ef-e77b84bf1018",
+      "captured_at": "2026-09-23T21:14:15.937999+00:00",
+      "http_status": 200,
+      "sha256": "d980faec6ecc3acf8e3c9da558d81da7f2a6f9be6eb404d469c468b7aaefb11d",
+      "bytes": 19929,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_206c8189-b2da-4cdf-bcc4-bd3ac1717551": {
+      "url": "https://api.imd.fun/oracle/requests/206c8189-b2da-4cdf-bcc4-bd3ac1717551",
+      "captured_at": "2026-09-23T21:14:16.279330+00:00",
+      "http_status": 200,
+      "sha256": "748c75cef7d095eed9eeb3d239771092866fc69b81abd60489905088453b5eea",
+      "bytes": 20933,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_34cbdc0e-a2c1-4607-a59c-a276b2ee016d": {
+      "url": "https://api.imd.fun/oracle/requests/34cbdc0e-a2c1-4607-a59c-a276b2ee016d",
+      "captured_at": "2026-09-23T21:14:16.639526+00:00",
+      "http_status": 200,
+      "sha256": "52d418b4a87bfcf1bfe0de782845ee6f6e03580c5824f2a7fa00c009641baad5",
+      "bytes": 19337,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0b38a215-127f-4ae0-8f6f-cff515577603": {
+      "url": "https://api.imd.fun/oracle/requests/0b38a215-127f-4ae0-8f6f-cff515577603",
+      "captured_at": "2026-09-23T21:14:16.976820+00:00",
+      "http_status": 200,
+      "sha256": "5652aeea1eb6b20268a683287054bb5504ec6e15f795c621d4193b015253cd5c",
+      "bytes": 21201,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_47b31abe-93a9-48c3-a4ed-f4cea626cc33": {
+      "url": "https://api.imd.fun/oracle/requests/47b31abe-93a9-48c3-a4ed-f4cea626cc33",
+      "captured_at": "2026-09-23T21:14:17.309907+00:00",
+      "http_status": 200,
+      "sha256": "eafcc4d8c8473c7060299f33799f42281402e9965eba18a7c26d2f0ae5f56a2a",
+      "bytes": 17344,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_811125b8-798d-401a-a344-11ce9d82bd75": {
+      "url": "https://api.imd.fun/oracle/requests/811125b8-798d-401a-a344-11ce9d82bd75",
+      "captured_at": "2026-09-23T21:14:17.645633+00:00",
+      "http_status": 200,
+      "sha256": "96794fed2e86025ba8d6eab75765e2d3a7df741f1e2c437ae46a9ba75f5d92da",
+      "bytes": 18633,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_3995b39f-7e1b-4b4c-ba7b-b5a8333959f0": {
+      "url": "https://api.imd.fun/oracle/requests/3995b39f-7e1b-4b4c-ba7b-b5a8333959f0",
+      "captured_at": "2026-09-23T21:14:17.978560+00:00",
+      "http_status": 200,
+      "sha256": "6d8eb256ed95e8b5de9009a72d01f957ae1aaee9679f502c2dd9c0e31ab35cb7",
+      "bytes": 18282,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_4508af1b-b5f3-4996-827d-33ed5d5590df": {
+      "url": "https://api.imd.fun/oracle/requests/4508af1b-b5f3-4996-827d-33ed5d5590df",
+      "captured_at": "2026-09-23T21:14:18.318906+00:00",
+      "http_status": 200,
+      "sha256": "db83b27f219d266d0804b08b34fb1206a5f90ff818591a6858f3edc009b513bf",
+      "bytes": 18230,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_3b19adb3-13f1-48f2-a00f-f17e36de12af": {
+      "url": "https://api.imd.fun/oracle/requests/3b19adb3-13f1-48f2-a00f-f17e36de12af",
+      "captured_at": "2026-09-23T21:14:18.665505+00:00",
+      "http_status": 200,
+      "sha256": "b0ac3ac34f310d41b0d932d210813dbb07b8871857f5d84e1a95f0156a0356c3",
+      "bytes": 15328,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_dec10e25-4c04-42bc-a6f0-1dc0a30af9d4": {
+      "url": "https://api.imd.fun/oracle/requests/dec10e25-4c04-42bc-a6f0-1dc0a30af9d4",
+      "captured_at": "2026-09-23T21:14:19.020539+00:00",
+      "http_status": 200,
+      "sha256": "5e7d6c1731441f0a9111e51100f68a08013965300605a0854abd058bf56961bd",
+      "bytes": 11463,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_c3da2712-eb2c-4a84-8db1-5804556d42fd": {
+      "url": "https://api.imd.fun/oracle/requests/c3da2712-eb2c-4a84-8db1-5804556d42fd",
+      "captured_at": "2026-09-23T21:14:19.362094+00:00",
+      "http_status": 200,
+      "sha256": "e3273ba7859fc0096ccaccdc12a19e0af6258dabc485adb8788e94d2116d1aac",
+      "bytes": 9125,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_0e656f91-d30d-4372-a820-3d1d4159faa7": {
+      "url": "https://api.imd.fun/oracle/requests/0e656f91-d30d-4372-a820-3d1d4159faa7",
+      "captured_at": "2026-09-23T21:14:19.694535+00:00",
+      "http_status": 200,
+      "sha256": "5b44762f734caa72b49bf561df630dd542dedaea0f4b17a520b79ff279f4a4fe",
+      "bytes": 10687,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_858a82e4-9036-41e3-acf3-13ad34f7e012": {
+      "url": "https://api.imd.fun/oracle/requests/858a82e4-9036-41e3-acf3-13ad34f7e012",
+      "captured_at": "2026-09-23T21:14:20.046192+00:00",
+      "http_status": 200,
+      "sha256": "4b8c3982770af4e173522399537ed5bb055494d86d5e71dd85436a20437797eb",
+      "bytes": 25042,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b6966d4e-146e-45b2-b2ed-41a223801ab6": {
+      "url": "https://api.imd.fun/oracle/requests/b6966d4e-146e-45b2-b2ed-41a223801ab6",
+      "captured_at": "2026-09-23T21:14:20.394889+00:00",
+      "http_status": 200,
+      "sha256": "770e592e26dfdf0f2923b1009475ae6491ea7a670d1037507f313a2706794ac6",
+      "bytes": 15021,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_7475a5c1-70c0-4834-b8cd-d5f87b499f5a": {
+      "url": "https://api.imd.fun/oracle/requests/7475a5c1-70c0-4834-b8cd-d5f87b499f5a",
+      "captured_at": "2026-09-23T21:14:20.751073+00:00",
+      "http_status": 200,
+      "sha256": "88ec064924803f1e1649abddbef39b89987c5f0c33409eeae78e412f9a809769",
+      "bytes": 14442,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_651c82c6-9cd3-49f9-a52d-630a97877619": {
+      "url": "https://api.imd.fun/oracle/requests/651c82c6-9cd3-49f9-a52d-630a97877619",
+      "captured_at": "2026-09-23T21:14:21.090043+00:00",
+      "http_status": 200,
+      "sha256": "b7536106fa6bf868961a3ccaeb67d83270f1f65f2016f0f37aba8211b961d9f0",
+      "bytes": 19854,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_8ccd7691-8cde-47cc-8333-36848252f7d2": {
+      "url": "https://api.imd.fun/oracle/requests/8ccd7691-8cde-47cc-8333-36848252f7d2",
+      "captured_at": "2026-09-23T21:14:21.431620+00:00",
+      "http_status": 200,
+      "sha256": "9c41f9f0a0d40274895c5b739dca24ad9ca71df11dd294851a23515bed69254b",
+      "bytes": 12970,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_ff35d3a0-79ef-4baa-95f6-3d2fda4d2537": {
+      "url": "https://api.imd.fun/oracle/requests/ff35d3a0-79ef-4baa-95f6-3d2fda4d2537",
+      "captured_at": "2026-09-23T21:14:21.826467+00:00",
+      "http_status": 200,
+      "sha256": "40f098f8208e0fc55339e3852fc8511bce03f55284b66411ed1f15cf63e20ddb",
+      "bytes": 12387,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_39862e63-9cc9-42cd-a7b4-edabe29ca119": {
+      "url": "https://api.imd.fun/oracle/requests/39862e63-9cc9-42cd-a7b4-edabe29ca119",
+      "captured_at": "2026-09-23T21:14:22.164608+00:00",
+      "http_status": 200,
+      "sha256": "0e39a0ed01772ef1ff49e3d9a31d06adc5a48c23cb09c636868d9826ca72d60d",
+      "bytes": 17669,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_32ef80c4-739b-49d1-93cd-f5d5e2b9c604": {
+      "url": "https://api.imd.fun/oracle/requests/32ef80c4-739b-49d1-93cd-f5d5e2b9c604",
+      "captured_at": "2026-09-23T21:14:22.500598+00:00",
+      "http_status": 200,
+      "sha256": "668367d4e3184c5a35faaec0f0fe0758851a9255347fe856360b8859f39caa82",
+      "bytes": 11911,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_80f047d0-c97f-4626-8a7c-a4bcdbd247c2": {
+      "url": "https://api.imd.fun/oracle/requests/80f047d0-c97f-4626-8a7c-a4bcdbd247c2",
+      "captured_at": "2026-09-23T21:14:22.828704+00:00",
+      "http_status": 200,
+      "sha256": "ecf796b613785425d00099760518c072ada2d63c7c2b9e57d9606e37af6e67b1",
+      "bytes": 10264,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_b9352bdb-7b89-4411-983f-362a5beb92d7": {
+      "url": "https://api.imd.fun/oracle/requests/b9352bdb-7b89-4411-983f-362a5beb92d7",
+      "captured_at": "2026-09-23T21:14:23.170465+00:00",
+      "http_status": 200,
+      "sha256": "fd6f71e0aea918cf40bc9f1508e9df54141ead2bce7a41ee0ab44776025bd1ed",
+      "bytes": 10096,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "request_fd88ea42-f34b-478a-bdd4-a6d8215607f7": {
+      "url": "https://api.imd.fun/oracle/requests/fd88ea42-f34b-478a-bdd4-a6d8215607f7",
+      "captured_at": "2026-09-23T21:14:23.518118+00:00",
+      "http_status": 200,
+      "sha256": "4b0d8f887a013aa0421d5b893aee8f37cdb7e6ef67cb8c1e235bcf4c2d2a2b21",
+      "bytes": 13915,
+      "selected_because": "seat 420 job; confirm membership by submissionHash"
+    },
+    "invalid_id": {
+      "url": "https://api.imd.fun/oracle/requests/not-a-uuid",
+      "captured_at": "2026-09-23T21:14:23.855344+00:00",
+      "http_status": 400,
+      "sha256": "d507053e4f161e908cd72e22c473a3e1cd0ccaa8402b9a058294ca03dc09ba20",
+      "bytes": 22,
+      "selected_because": "malformed id status"
+    },
+    "unknown_id": {
+      "url": "https://api.imd.fun/oracle/requests/00000000-0000-4000-8000-000000000000",
+      "captured_at": "2026-09-23T21:14:24.194726+00:00",
+      "http_status": 404,
+      "sha256": "539d31c4834cf286466c22e0b6bd747f75eede76139797952ddba0985e4fdb16",
+      "bytes": 27,
+      "selected_because": "well-formed unknown id status"
+    }
+  }
+}
