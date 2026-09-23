@@ -107,17 +107,35 @@ A failure stays local to this step and never fails the seat tier.
 2. **Due rows** = candidates with no cached point, or with a cached point that is not `terminal` and is older than
    `SWARM_ORACLE_DUE_S` (120 s). If there are no due rows, **make no request at all**, not even the list. The
    steady state costs nothing once every visible panel is final.
-3. **List walk**: `fetch_oracle_requests(limit=SWARM_ORACLE_PAGE_LIMIT, before=None)`, then keep paging with
-   `before=<oldest createdAt of the previous page>` while (a) some due row's `job_id` is still unmatched,
-   (b) the previous page was full (`len == limit`), (c) its oldest `createdAt` is **later** than
-   the oldest unmatched due row's `submitted_ts` (a request is created before any submission to it),
-   and (d) fewer than `SWARM_ORACLE_PAGE_CAP` pages have been read this cycle. Constants: `PAGE_LIMIT = 200`,
-   `PAGE_CAP = 4`. Put each value in a `#:` block with the measurement behind it (590 requests over
-   4.7 days on 2026-09-23, so about 125 a day).
-   - A due row whose job is unmatched **after** the walk reached a page older than its `submitted_ts`, or reached
-     a short page (the end of history), is `off_panel`, stored `terminal=True`.
-   - A row that is still unmatched when the page cap stops the walk stays not_read. It gets no point.
-   - A failed list read (`None`) ends the walk. Rows it could not settle keep their prior point; rows without a cached point receive a nonterminal `status: None` error point (`unavailable`).
+3. **Request index** (amended 2026-09-24 after review finding C1; the original list-walk rule is withdrawn).
+   A request is created **before** any submission to it, but by an unknown margin (measured on the WP0 capture:
+   median 1,233 s, max 10,737 s). So seeing a page older than a row's `submitted_ts` proves nothing about that
+   row, and the only proof that a job has no panel is a **complete** index of the whole history. Keep one:
+   - **Slot** `SLOT_SWARM_ORACLE_INDEX`: `{"jobs": {job_id: request_id | None}, "newest": ISO, "oldest": ISO,
+     "complete": bool}`. `None` marks a job id that two different requests carry (ambiguous → `unavailable`,
+     no detail read). Only canonical UUIDs and strict `…Z` ISO stamps survive coercion; a hostile or
+     inconsistent slot is discarded whole and rebuilt. It is **never pruned by age**: an absence proof needs the whole history.
+     It grows about 125 entries a day (~14 KB a day), about 50 KB at 590 requests. Growth is follow-up F-O1, not a fix.
+   - **When the list is read at all:** only when some due row's job is **not** in the index and the index cannot
+     prove it absent (below). A due row whose job **is** in the index goes straight to step 4. Once every visible
+     row is final, the list is not read. That also fixes review finding M1.
+   - **Forward refresh** (new requests): page from the newest (`before=None`) with `limit=SWARM_ORACLE_PAGE_LIMIT`
+     (now **500**, the route's cap) until a page reaches an item with `createdAt <= index.newest`, or a short page, or
+     `SWARM_ORACLE_PAGE_CAP` (4) pages. If the cap stops it before it closes the gap, **discard the index**
+     (set it empty and not complete). A gap of more than 2,000 requests means about 16 days offline; rebuilding is simpler than tracking gaps.
+   - **Backfill** (old requests, while `complete` is false): page from `before=index.oldest` within the same
+     per-cycle page cap (shared with the forward refresh; forward goes first). A short page sets `complete = true`.
+     A first build therefore takes one or two cycles at today's 590 requests.
+   - **Absence is proven** only when `complete` is true **and** `index.newest >= row.submitted_ts`. Such a row is
+     `off_panel`, stored `terminal=True`, and it stays final, because no request can be created for a job after its submission.
+     In any other case an unmatched row stays `not_read` (no point) and is retried on the next cycle's refresh.
+   - A failed or unparseable page (`None`, a `createdAt` that fails the strict ISO check) ends this cycle's paging. The
+     index keeps what earlier pages added. Rows it could not settle keep their prior point; rows without one get
+     the nonterminal `status: None` error point (`unavailable`), as before.
+   - A `200 {"requests": []}` first page on an index that already holds entries is a failed read, not the end of
+     history (review finding C1, second case). An empty first page only counts as a real, complete empty when the index is empty too.
+   - Timestamps are ordered through a **public** helper in `data/surf_swarm.py` (M4: the manager must not reach
+     into `sw._ts`). The cursor sent as `before=` is the served string that passed the strict check.
 4. **Details**: group the matched due rows by request id. Fetch at most `SWARM_ORACLE_PER_CYCLE = 4`
    details per cycle, unread before due, in displayed order (copy `answer_jobs_due`'s ordering).
    Each detail becomes one point per seat hash (§3). `terminal = status in ("attested","disagreed","blocked")`.
@@ -130,7 +148,7 @@ A failure stays local to this step and never fails the seat tier.
    oracle, node_keys)` after `enrich_work_rows`. **No new top-level payload key**, no new `as of`, and no
    degraded group (rules/surf.md: the swarm tiers name no group).
 
-The list response is never persisted. The list is re-walked each cycle, but only while a row is due.
+Raw list responses are never persisted; only the job→request index is (step 3).
 
 ---
 
