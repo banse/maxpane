@@ -108,16 +108,19 @@ def test_the_row_tuples_agree_with_the_column_count():
 # -- cells -------------------------------------------------------------------------------
 
 
+SITE_URL = "https://roll.site.identitymd.eth.limo/"
+
+
 async def test_the_tx_links_on_etherscan_mainnet_with_no_icon():
-    assert await _urls([_site()]) == [f"https://etherscan.io/tx/{TX}"]
+    assert await _urls([_site()]) == [f"https://etherscan.io/tx/{TX}", SITE_URL]
     text = await _sites(swarm_site_rows=[_site()], swarm_scores_as_of_hhmm=AS_OF)
     assert COPY_GLYPH not in text, "a hash is outside the copy rule"
     assert TX[: 2 + 8] in text, text
 
 
 async def test_a_value_that_is_not_a_tx_hash_renders_plain_and_unlinked():
-    assert await _urls([_site(tx_hash="0x" + "9d" * 20)]) == []
-    assert await _urls([_site(tx_hash=None)]) == []
+    assert await _urls([_site(tx_hash="0x" + "9d" * 20)]) == [SITE_URL]
+    assert await _urls([_site(tx_hash=None)]) == [SITE_URL]
     text = await _sites(swarm_site_rows=[_site(tx_hash=None)], swarm_scores_as_of_hhmm=AS_OF)
     assert _data_lines(text)[0].rstrip().endswith("--"), text
 
@@ -153,32 +156,51 @@ async def test_size_is_compact_bytes_and_a_dash_when_unknown():
     assert "17.2K" in as_str, as_str
 
 
-async def test_a_failure_replaces_the_missing_ens_escaped():
-    rows = [_site(ens_name=None, failure="pin failed [/x] hard"),
-            _site(label="lone", ens_name=None, failure="ipfs[timeout"),
-            _site(label="both", ens_name="both.site.identitymd.eth", failure="ignored failure"),
-            _site(label="neither", ens_name=None, failure=None)]
+async def test_the_ens_name_opens_its_eth_limo_site_with_no_icon():
+    """Owner 2026-09-23: a click on ``mswap.site.identitymd.eth`` opens
+    ``https://mswap.site.identitymd.eth.limo/``."""
+    rows = [_site(label="mswap", ens_name="mswap.site.identitymd.eth", tx_hash=None)]
+    assert await _urls(rows) == ["https://mswap.site.identitymd.eth.limo/"]
     text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
-    first, lone, both, neither = _data_lines(text)[:4]
-    assert "pin failed" in first and "hard" in first and "[/x]" not in text, first
-    assert "ipfs[timeout" in lone, lone
-    assert "both.site.identitymd.eth" in both and "ignored failure" not in both, both
-    assert "--" in neither, neither
+    assert "mswap.site.identitymd.eth" in text and COPY_GLYPH not in text, text
 
 
-async def test_a_superseded_row_points_at_its_successor():
-    rows = [_site(status="superseded", superseded_by="roll2"), _site(label="v2")]
+async def test_a_name_outside_site_identitymd_eth_shows_but_never_links():
+    for name in ("mswap.evil.eth", "a.b.site.identitymd.eth", "MSWAP.site.identitymd.eth",
+                 "x.site.identitymd.eth[/x]"):
+        rows = [_site(ens_name=name, tx_hash=None)]
+        assert await _urls(rows) == [], name
+        text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+        assert _data_lines(text), (name, text)
+
+
+async def test_replaced_and_nameless_rows_are_left_out():
+    """Owner 2026-09-23: the build replaced by ``work`` and the two queued
+    builds with no ENS name (88 attempts, "no static export") do not show."""
+    rows = [_site(label="work", ens_name="work.site.identitymd.eth"),
+            _site(label=None, ens_name="work.site.identitymd.eth",
+                  superseded_by="c828b3f1-6dfd-41ac-bc6c-f5ab0ccdf67d"),
+            _site(label="old", status="superseded"),
+            _site(label=None, ens_name=None, status="queued", tx_hash=None,
+                  failure="no static export: nothing named index.html"),
+            _site(label="cmns", ens_name="cmns.site.identitymd.eth")]
     text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
-    first, second = _data_lines(text)[:2]
-    assert "roll → roll2" in first, first
-    assert "→" not in second
+    lines = _data_lines(text)
+    assert len(lines) == 2 and "work" in lines[0] and "cmns" in lines[1], lines
+    assert "→" not in text and "static export" not in text and "old" not in text, text
+
+
+async def test_a_list_that_filters_to_nothing_is_no_data_not_unavailable():
+    rows = [_site(ens_name=None, status="queued"), _site(superseded_by="x")]
+    text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    assert "No data" in text and "unavailable" not in text.lower(), text
 
 
 async def test_the_label_is_coloured_on_the_raw_status_and_escaped():
     # Row 0 is the focused table's cursor row and paints in the cursor style,
     # so the two probed rows sit below it.
     rows = [_site(label="odd[one", status="[/x]named"), _site(status="named"),
-            _site(label="gone", status="failed", ens_name=None, failure="x")]
+            _site(label="gone", status="failed", ens_name="gone.site.identitymd.eth")]
     async with _Probe().run_test(size=SIZE) as pilot:
         widget = pilot.app.query_one(SurfSwarmSites)
         widget.update_data(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
@@ -206,17 +228,18 @@ async def test_the_panel_claims_no_reachability():
 
 
 async def test_a_non_dict_row_is_skipped_and_the_cap_holds():
-    """``TableLeaderboard`` caps the *items* first and skips a non-dict without
-    a gap, so a junk item inside the cap costs one line and never raises."""
+    """A non-dict is left out with the hidden rows, before the cap, so junk
+    and hidden rows never cost one of the ten lines and never raise."""
     clean = [_site(label=f"s{n:02d}") for n in range(15)]
     text = await _sites((SIZE[0], 30), swarm_site_rows=clean, swarm_scores_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
     assert len(lines) == 10, len(lines)
     assert "s00" in lines[0] and "s09" in lines[-1] and "s10" not in text
-    text = await _sites((SIZE[0], 30), swarm_site_rows=[42] + clean, swarm_scores_as_of_hhmm=AS_OF)
+    junk = [42, _site(label="gone", ens_name=None), _site(label="old", superseded_by="s00")]
+    text = await _sites((SIZE[0], 30), swarm_site_rows=junk + clean, swarm_scores_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
-    assert len(lines) == 9, len(lines)
-    assert "s00" in lines[0] and "s08" in lines[-1] and "s09" not in text
+    assert len(lines) == 10, len(lines)
+    assert "s00" in lines[0] and "s09" in lines[-1] and "s10" not in text
 
 
 async def test_the_title_carries_the_marker_only_when_it_is_real():

@@ -28,12 +28,21 @@ the ENS name, the pinned size, the CID window and the naming tx -- and never
 whether the site answers. No ``up``/``down`` word appears in it, and a test
 asserts none does.
 
+Rows
+----
+Only a site that is a site shows (owner, 2026-09-23): a row replaced by a
+newer build (``superseded_by`` set, or ``status`` ``superseded``) and a row
+with no ENS name (a queued or failed build that never got one -- the feed
+held two, 88 attempts each, "no static export") are left out. An empty list
+after that is the panel's ``No data``, a real negative.
+
 Cells
 -----
 ``label`` is coloured on the raw ``status`` word (``named``/``published``/
-``live`` green, ``superseded`` dim, ``failed`` red, anything else plain) and a
-``superseded_by`` row appends `` → <label>`` to it. ``failure`` (escaped)
-replaces the ``ens`` cell when the row has no ENS name and a failure. ``size``
+``live`` green, ``failed`` red, anything else plain). ``ens`` links the
+name to its eth.limo page (:func:`~maxpane_dashboard.widgets.address.site_text`
+on ``_fmt.SITE_EXPLORER``; owner, 2026-09-23) -- a
+``<label>.site.identitymd.eth`` name only, anything else plain. ``size``
 is ``bytes`` compacted (``2.4M``, ``17.2K``; whole under 1,000 -- bytes are
 integers, and ``fmt_compact``'s ``584.0`` would say otherwise). ``cid`` is a
 head…tail window built here (:func:`_window_cid`) because a CID is base32,
@@ -50,12 +59,12 @@ from rich.cells import cell_len
 from rich.text import Text
 
 from maxpane_dashboard.widgets import rowfit
-from maxpane_dashboard.widgets.address import hash_text
+from maxpane_dashboard.widgets.address import hash_text, site_text
 from maxpane_dashboard.widgets.fmt import as_float, fmt_int
 from maxpane_dashboard.widgets.markup_safety import safe_markup, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.panels import LOADING
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
-from maxpane_dashboard.widgets.surf._fmt import DASH, EXPLORER
+from maxpane_dashboard.widgets.surf._fmt import DASH, EXPLORER, SITE_EXPLORER
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
 
 __all__ = [
@@ -72,10 +81,11 @@ __all__ = [
 
 #: A site label: 13 is the widest captured (``site-7018907b``).
 _LABEL_COLS = 13
-#: The label cell: a superseded row is ``<label> → <label>``, two labels and
-#: a three-cell arrow. The corpus holds no superseded row (6/6 ``named``), so
-#: the second half is the first half's own measurement reused, not a guess at
-#: a different vocabulary; a longer pair clips with a visible ``…``.
+#: The label cell: sized for ``<label> → <label>``, two labels and a
+#: three-cell arrow, when a superseded row still showed. Superseded rows left
+#: the panel on 2026-09-23 (owner), so no row renders the arrow any more; the
+#: width is kept because narrowing it moves the SWARM body's width tiers,
+#: which the owner has not asked for (F67).
 _LABEL_CELL_COLS = _LABEL_COLS + 3 + _LABEL_COLS                       # 29
 #: The ENS suffix every captured name carries.
 _ENS_SUFFIX = ".site.identitymd.eth"
@@ -116,9 +126,14 @@ TIGHT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _TIGHT)      # 85
 #: own live state (6/6 rows) and is green beside the brief's ``published``/
 #: ``live``; anything unknown renders plain.
 _STATUS_COLOURS = {
-    "named": "green", "published": "green", "live": "green",
-    "superseded": "dim", "failed": "red",
+    "named": "green", "published": "green", "live": "green", "failed": "red",
 }
+
+
+def _is_current_site(row: object) -> bool:
+    """A row the panel shows: a mapping with an ENS name, not replaced."""
+    return (isinstance(row, dict) and bool(row.get("ens_name"))
+            and not row.get("superseded_by") and row.get("status") != "superseded")
 
 
 def _window_cid(value, width: int) -> str:
@@ -183,26 +198,21 @@ class SurfSwarmSites(SwarmTableBase):
         **_kwargs,
     ) -> None:
         """Refresh from the manager's flat dict (``SWARM_WIDGET_SIGNATURES``)."""
+        if isinstance(swarm_site_rows, list):
+            swarm_site_rows = [row for row in swarm_site_rows if _is_current_site(row)]
         self.store(swarm_site_rows, swarm_scores_as_of_hhmm)
 
     def build_cells(self, item: dict) -> dict[str, str | Text]:
         raw_status = item.get("status")
         label = strip_tags(item.get("label")) or DASH
-        successor = strip_tags(item.get("superseded_by"))
-        if successor:
-            label = f"{label} → {successor}"
         label_cell = sanitize_cell(label, _LABEL_CELL_COLS)
         colour = _STATUS_COLOURS.get(raw_status) if isinstance(raw_status, str) else None
         if colour:
             label_cell = f"[{colour}]{label_cell}[/]"
 
-        ens = sanitize_cell(item.get("ens_name"), _ENS_COLS)
-        failure = sanitize_cell(item.get("failure"), _ENS_COLS)
-        ens_cell = f"[red]{failure}[/]" if not ens and failure else (ens or DASH)
-
         return {
             "label": label_cell,
-            "ens": ens_cell,
+            "ens": site_text(item.get("ens_name"), _ENS_COLS, explorer=SITE_EXPLORER),
             "size": _fmt_bytes(item.get("bytes")),
             "cid": safe_markup(_window_cid(item.get("cid"), CID_COLS)),
             # Mainnet, by measurement (module docstring); no chain field exists.

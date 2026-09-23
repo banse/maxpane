@@ -57,7 +57,7 @@ and never on a failed read — an outage cannot fire a burn or un-fire a migrati
 The hero (LAUNCHPAD · FLOW · BURN · BOARDS) reads the launchpad: how big the coin population is
 and how fast it is growing, how many distinct creators are behind it, how much of it is actually
 trading, and what the burn pipeline owes — the IMD side under BURN, the ETH side under FLOW.
-BOARDS lists the keys that open the other boards: `'a' - idm agent`, `'b' - leaderboard`,
+BOARDS lists the keys that open the other boards: `'a' - imd agent`, `'b' - leaderboard`,
 `'s' - swarm` and `'4' - pool4` (the narrowest hero tier writes `b leaderboard`, without the quotes and dash).
 LAUNCHPAD and FLOW carry the launchpad tier's own `as of HH:MM` on their titles, because that
 tier refreshes on a slower clock than the title bar's and a failed sweep leaves the last good
@@ -155,7 +155,9 @@ LAUNCHES — the deployed artifacts, one row per launch with its status, chain, 
 contract address, every real address carrying the copy icon and linking its **own** chain's
 explorer, because the corpus mixes mainnet and Sepolia in one list. SITES, the ENS-named sites,
 runs full-width beneath: a site's name resolves a content hash rather than a wallet, so it carries
-neither icon nor link. The hero swaps too, the second Surfboard view (after `4`) to do so, for
+no copy icon, but a click on it opens the site itself (`mswap.site.identitymd.eth` opens
+`https://mswap.site.identitymd.eth.limo/`). A build replaced by a newer one and a build that never
+got a name are left out. The hero swaps too, the second Surfboard view (after `4`) to do so, for
 AGENTS (online/enrolled), WORKING, ACCEPTED 24h, QUEUE, BREAKER and SERVICES; a zero is a zero and
 only a failed read says `unavailable`.
 

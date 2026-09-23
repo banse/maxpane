@@ -28,7 +28,7 @@ number that module is handed.
 
 from __future__ import annotations
 
-from maxpane_dashboard.widgets.explorer import ETHEREUM, IMD
+from maxpane_dashboard.widgets.explorer import ETHEREUM, IMD, SITES
 from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_float, hhmm, mmdd
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
@@ -38,6 +38,7 @@ __all__ = [
     "EMDASH",
     "EXPLORER",
     "JOB_EXPLORER",
+    "SITE_EXPLORER",
     "as_float",
     "fmt_age",
     "fmt_win_rate",
@@ -63,6 +64,10 @@ EXPLORER = ETHEREUM
 #: (``explorer.imd.fun/jobs/<uuid>``, owner 2026-09-22), the site whose
 #: ``api.imd.fun`` the swarm tiers read. Not a chain explorer.
 JOB_EXPLORER = IMD
+
+#: Where a swarm site's ENS name links: its eth.limo gateway page,
+#: ``https://<label>.site.identitymd.eth.limo/`` (owner, 2026-09-23).
+SITE_EXPLORER = SITES
 
 
 def fmt_imd(value) -> str:

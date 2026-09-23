@@ -19,7 +19,8 @@ window or the label standing in for it, never the icon -- is an OSC 8
 hyperlink to that explorer's page (Cmd+click in the terminal) and carries the
 ``@click`` action ``explorer_action.ExplorerLinkMixin`` opens it with;
 :func:`hash_text` does the same for a transaction hash and :func:`job_text`
-for a swarm job id on the IMD explorer. With ``explorer=None``
+for a swarm job id on the IMD explorer, :func:`site_text` for a swarm site's
+ENS name through eth.limo. With ``explorer=None``
 every function renders exactly as it did before the links existed.
 """
 
@@ -34,6 +35,7 @@ from rich.text import Text
 from maxpane_dashboard.widgets.explorer import (
     Explorer,
     is_job_id,
+    is_site,
     is_tx_hash,
     open_action,
     parse_open_action,
@@ -42,7 +44,7 @@ from maxpane_dashboard.widgets.explorer import (
 
 __all__ = [
     "ADDRESS_RE", "COPY_GLYPH", "ICON_COLS", "MIN_SHORT_COLS", "PROSE_ADDRESS_RE",
-    "address_prose", "address_text", "copy_action", "hash_text", "is_address", "job_text",
+    "address_prose", "address_text", "copy_action", "hash_text", "is_address", "job_text", "site_text",
     "is_copy_click", "is_explorer_click", "parse_copy_action", "short_address",
     "short_hex",
 ]
@@ -273,6 +275,29 @@ def job_text(
     if explorer is not None and is_job_id(job_id):
         if (link := _link(explorer, "job", job_id)) is not None:
             out.stylize(link, 0, len(shown))
+    return out
+
+
+def site_text(
+    ens_name: object,
+    width: int,
+    *,
+    explorer: Explorer | None = None,
+    style: str | Style = "",
+) -> Text:
+    """A swarm site's ENS name fitted to *width*, as a ``Text``.
+
+    No icon (a name is not an address). With ``explorer`` a whole
+    ``<label>.site.identitymd.eth`` name links the shown span to its eth.limo
+    page; anything else -- another name, a hostile string, a non-string --
+    renders fitted, cleaned and unlinked.
+    """
+    if not isinstance(ens_name, str) or not ens_name:
+        return Text("--", style=style)
+    out = Text(_fit(_clean_label(ens_name), width), style=style)
+    if explorer is not None and is_site(ens_name):
+        if (link := _link(explorer, "site", ens_name)) is not None:
+            out.stylize(link, 0, len(out.plain))
     return out
 
 

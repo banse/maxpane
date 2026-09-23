@@ -268,7 +268,9 @@ halves (`0/--`, `--/0`) under a full outage and excludes the three bare-count bo
 onchain address or transaction hash uses `widgets/address` with its row's `chain_id`
 (`explorer.for_chain_id`; unknown → no link), except the seat owner, which uses the package
 `EXPLORER` by the decision above. SITES renders content hashes only and is a named exemption in
-the icon sweep. RECORD's job id is not an address: it links the IMD explorer (not a chain)
+the icon sweep; its ens column links a `<label>.site.identitymd.eth` name to
+`https://<label>.site.identitymd.eth.limo/` through `address.site_text` (explorer `SITES`, kind
+`site`; owner 2026-09-23), and it leaves out superseded rows and rows with no ENS name. RECORD's job id is not an address: it links the IMD explorer (not a chain)
 through `address.job_text`, with no icon; TEAMMATES tokens pass through no address helper. The `parked_reason` cell in LAUNCHES clips to its column with a
 visible `…` (accepted, `docs/decisions.md`).
 

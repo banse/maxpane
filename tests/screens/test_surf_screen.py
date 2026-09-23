@@ -3553,7 +3553,7 @@ async def test_refresh_renders_title_and_all_panels():
         # The hero's own titles reach the compositor -- POOL/LP/BURN/SUPPLY,
         # rebuilt 2026-08-23 for the v4 migration (widgets/surf/hero.py).
         assert "POOL" in text
-        assert "BOARDS" in text and "'a' - idm agent" in text
+        assert "BOARDS" in text and "'a' - imd agent" in text
         # The observed burn reached the hero, and PRD §1's all-time ledger is
         # nowhere on screen — the manager cannot produce it. At 150 columns
         # the hero owns the full row (unlike the pre-2026-08-09 layout this
@@ -5541,7 +5541,7 @@ async def test_the_hero_cuts_neither_a_number_nor_a_title_at_the_pinned_width():
         # The numbers, whole and comma-grouped.
         "146 coins", "73 creators", "4,683 swaps", "673 traders",
         "2.4187 ETH", "READY",
-        "'a' - idm agent", "'b' - leaderboard", "'s' - swarm", "'4' - pool4",
+        "'a' - imd agent", "'b' - leaderboard", "'s' - swarm", "'4' - pool4",
         # This width reaches the *widest* tier, so the fields the narrow
         # tiers compress are all here in full, with the words that scope
         # them ("24h", "acc"/"stg", "observed") intact.

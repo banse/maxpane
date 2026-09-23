@@ -4,6 +4,14 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-23** — SITES' ens column opens the site: `<label>.site.identitymd.eth` links to
+  `https://<label>.site.identitymd.eth.limo/` through a new allowlisted `SITES` explorer (kind
+  `site`; the value must be one lower-case LDH label under `site.identitymd.eth`, and only that
+  label reaches the URL's host). No copy icon: a name is not an address. SITES now leaves out a
+  row replaced by a newer build (`superseded_by`/`superseded`) and a row with no ENS name (the
+  feed's two queued builds, 88 attempts, "no static export"); the owner chose both over hiding
+  the live `work` row. The failure-in-ens and `label → successor` renderings went with them; the
+  label column keeps its 29 cells (F67). BOARDS' first key reads `imd agent` (was a typo).
 - **2026-09-22** — AGENT/BOARD/SURFBOARD owner batch. The three node cards are fixed slots
   titled ORACLE, REVIEW and BUILD; a zero or unread value shows `-` on every card including
   OTHERS, which sums only node keys outside the three. SEAT no longer prints "saved". RECORD
@@ -17,7 +25,7 @@ asserts a withdrawn statement is historical — do not review code against it.
   rejected/pending, turns/hours and input/output tokens, each unknown as a whole line when a
   contributor row does not serve it; BOARD goes 141x27 -> 141x33, so the owner's 31-row
   terminal now shows `‹ taller` there. The SURFBOARD's IMD SUPPLY hero card becomes BOARDS
-  (`'a' - idm agent`, `'b' - leaderboard`, `'s' - swarm`, `'4' - pool4`, left-aligned like THE
+  (`'a' - imd agent`, `'b' - leaderboard`, `'s' - swarm`, `'4' - pool4`, left-aligned like THE
   LIST's filter card); `imd_supply` is still read but no longer shown anywhere.
 - **2026-09-22** — Swarm polish replaces RECORD's repeated objective with the selected seat's
   own first answer sentence, matched by full submission hash inside a known job. Markdown

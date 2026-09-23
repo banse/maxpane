@@ -33,7 +33,7 @@ from maxpane_dashboard.app import MaxPaneApp
 from maxpane_dashboard.copy_action import CopyAddressMixin
 from maxpane_dashboard.explorer_action import ExplorerLinkMixin
 from maxpane_dashboard.widgets import explorer as X
-from maxpane_dashboard.widgets.address import COPY_GLYPH, address_text, hash_text, job_text
+from maxpane_dashboard.widgets.address import COPY_GLYPH, address_text, hash_text, job_text, site_text
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from tests.widgets.address_probe import CopyRecorder, LinkRecorder, icon_targets, link_targets
 
@@ -110,6 +110,44 @@ async def test_a_click_on_a_job_id_opens_its_imd_explorer_page():
         assert app.opened == [f"https://explorer.imd.fun/jobs/{JOB}"]
         assert app.copied == []
         assert _message(app) == "opened imd"
+
+
+SITE = "mswap.site.identitymd.eth"
+
+
+class _SiteApp(LinkRecorder, CopyRecorder, ExplorerLinkMixin, App):
+    EXPLORER_MESSAGE_S = 60.0
+
+    def compose(self):
+        yield Static(Text("ens ").append_text(site_text(SITE, 33, explorer=X.SITES)), id="s")
+        yield StatusBar()
+
+
+async def test_a_click_on_a_site_name_opens_its_eth_limo_page():
+    """Owner, 2026-09-23: SITES' ens cell opens https://<label>.site.identitymd.eth.limo/."""
+    app = _SiteApp()
+    async with app.run_test(size=(80, 6)) as pilot:
+        await pilot.pause()
+        cells = [t for t in link_targets(app) if t[3] == "site"]
+        assert [t[0] for t in cells] == list(range(4, 4 + len(SITE)))
+        await pilot.click(offset=(cells[5][0], cells[5][1]))
+        await pilot.pause()
+        assert app.opened == ["https://mswap.site.identitymd.eth.limo/"]
+        assert app.copied == []
+        assert _message(app) == "opened sites"
+
+
+def test_site_text_fits_and_links_only_a_site_name():
+    linked = site_text(SITE, 33, explorer=X.SITES)
+    assert linked.plain == SITE and COPY_GLYPH not in linked.plain
+    assert {span.style.link for span in linked.spans} == {"https://mswap.site.identitymd.eth.limo/"}
+    assert site_text(SITE, 10, explorer=X.SITES).plain == "mswap.sit…"
+    assert site_text(SITE, 33).spans == [], "no explorer, no link"
+    for bad in ("mswap.evil.eth", "a\nb.site.identitymd.eth", "MSWAP.site.identitymd.eth"):
+        out = site_text(bad, 33, explorer=X.SITES)
+        assert out.spans == [] and "\n" not in out.plain, bad
+    assert site_text(None, 33, explorer=X.SITES).plain == "--"
+    assert site_text(SITE, 33, explorer=X.IMD).spans == [], "an explorer that serves no site"
 
 
 async def test_a_click_on_the_glyph_copies_and_opens_nothing():

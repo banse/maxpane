@@ -2149,8 +2149,8 @@ def test_the_boards_box_drops_quotes_and_dash_only_at_the_minimal_tier():
     from maxpane_dashboard.widgets.surf.hero import _boards_lines
 
     assert [l.strip() for l in _boards_lines("minimal")[1:]] == [
-        "a idm agent", "b leaderboard", "s swarm", "4 pool4"]
+        "a imd agent", "b leaderboard", "s swarm", "4 pool4"]
     for tier in ("tight", "compact"):
         assert [l.strip() for l in _boards_lines(tier)[1:]] == [
-            "'a' - idm agent", "'b' - leaderboard", "'s' - swarm", "'4' - pool4"]
+            "'a' - imd agent", "'b' - leaderboard", "'s' - swarm", "'4' - pool4"]
     assert max(len(l) for l in _boards_lines("minimal")[1:]) == 13

@@ -107,7 +107,9 @@ EXEMPT: dict[str, str] = {
     "maxpane_dashboard.widgets.surf.swarm_sites.SurfSwarmSites":
         "quotes each site's deploy transaction hash through hash_text (a"
         " short_hex window linked to the package EXPLORER); a hash, never an"
-        " address, so it carries no icon by design (swarm v2, WP7)",
+        " address, so it carries no icon by design (swarm v2, WP7); its ens"
+        " column links a site name to eth.limo through site_text (2026-09-23),"
+        " a name, never an address",
     "maxpane_dashboard.widgets.surf.swarm_seat_record.SurfSwarmSeatRecord":
         "links each job id to explorer.imd.fun/jobs through job_text (a UUID"
         " head slice); a job id, never an address, so no icon (2026-09-22)",

@@ -991,3 +991,14 @@ work and the stored-safety predicate in step with the cleaner.
 - **F66 — whole-thousands node counts can read equal or overflow the unit.** `swarm_node_cards._whole`
   rounds 4,600 of 5,400 to `5K of 5K` (the rate line below stays true) and 999,600 to `1000K`
   rather than `1M`. Reached only below the AGENT pin (127-128 and 130 on the stress payload).
+
+## F67 — SITES owner batch residual (2026-09-23)
+
+- **F67 — SITES' label column is wider than anything it can now show.** `_LABEL_CELL_COLS` (29)
+  was sized for `<label> → <label>`; superseded rows no longer show, so the widest label is the
+  13-cell `site-7018907b`. Narrowing it frees 16 cells for the other columns but moves the SWARM
+  body's width tiers (`_S_THRESHOLDS`), so it waits for the owner.- **F68 — an all-hidden SITES list reads `No data`.** When `/sites` returns rows but every one is
+  superseded or nameless, the panel cannot be told from an empty feed; "no live site" would be
+  exact. Owner's call on the wording.
+- **F69 — `swarm_site_rows` still carries `superseded_by` and `failure`.** Neither renders any more
+  (only the SITES filter reads `superseded_by`); prune with the contract if it is next touched.

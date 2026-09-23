@@ -377,7 +377,7 @@ def _burn_lines(burn_accrued, burn_staged, burn_ready, imd_burned_cum, tier: str
 
 #: The BOARDS box (owner, 2026-09-22), in the owner's order and words. Each
 #: key must be a SurfScreen binding (``tests/widgets/test_surf_widgets_a.py``).
-BOARD_KEYS = (("a", "idm agent"), ("b", "leaderboard"), ("s", "swarm"), ("4", "pool4"))
+BOARD_KEYS = (("a", "imd agent"), ("b", "leaderboard"), ("s", "swarm"), ("4", "pool4"))
 
 
 def _boards_lines(tier: str) -> list[str]:

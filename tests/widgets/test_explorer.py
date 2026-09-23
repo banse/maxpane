@@ -19,17 +19,19 @@ ADDR = "0x" + "abcdef0123" * 4          # 40 hex
 TX = "0x" + "ab" * 32                   # 64 hex
 MIXED = "0x" + "AbCdEf0123" * 4
 JOB = "a2cf385f-8c95-46e1-b184-a8fe2f732edb"   # the owner's example, 2026-09-22
-CHAIN_EXPLORERS = [e for e in X.EXPLORERS.values() if e is not X.IMD]
+CHAIN_EXPLORERS = [e for e in X.EXPLORERS.values() if e not in (X.IMD, X.SITES)]
+SITE = "mswap.site.identitymd.eth"
 
 
-def test_the_four_explorers_their_origins_and_kinds():
+def test_the_five_explorers_their_origins_and_kinds():
     assert X.ETHEREUM == X.Explorer("etherscan", "https://etherscan.io", ("address", "tx"))
     assert X.BASE == X.Explorer("basescan", "https://basescan.org", ("address", "tx"))
     assert X.SEPOLIA == X.Explorer("sepolia", "https://sepolia.etherscan.io", ("address", "tx"))
     assert X.IMD == X.Explorer("imd", "https://explorer.imd.fun", ("job",))
+    assert X.SITES == X.Explorer("sites", "https://site.identitymd.eth.limo", ("site",))
     assert X.EXPLORERS == {"etherscan": X.ETHEREUM, "basescan": X.BASE, "sepolia": X.SEPOLIA,
-                           "imd": X.IMD}
-    assert X.KINDS == ("address", "tx", "job")
+                           "imd": X.IMD, "sites": X.SITES}
+    assert X.KINDS == ("address", "tx", "job", "site")
     assert all(set(e.kinds) <= set(X.KINDS) for e in X.EXPLORERS.values())
 
 
@@ -39,6 +41,28 @@ def test_a_job_links_to_the_imd_explorer_page_the_owner_named():
     action = X.open_action(X.IMD, "job", JOB)
     assert action == f"app.open_explorer('imd', 'job', {JOB!r})"
     assert X.parse_open_action(action) == (X.IMD, "job", JOB)
+
+
+def test_a_site_opens_its_eth_limo_page_the_owner_named():
+    """Owner 2026-09-23: mswap.site.identitymd.eth -> https://mswap.site.identitymd.eth.limo/"""
+    assert X.site_url(X.SITES, SITE) == "https://mswap.site.identitymd.eth.limo/"
+    assert X.url_for(X.SITES, "site", SITE) == X.site_url(X.SITES, SITE)
+    action = X.open_action(X.SITES, "site", SITE)
+    assert action == f"app.open_explorer('sites', 'site', {SITE!r})"
+    assert X.parse_open_action(action) == (X.SITES, "site", SITE)
+    assert X.site_url(X.SITES, "site-7018907b.site.identitymd.eth") == (
+        "https://site-7018907b.site.identitymd.eth.limo/")
+
+
+def test_a_site_is_one_lower_case_label_under_site_identitymd_eth():
+    assert X.is_site(SITE) and X.is_site("a.site.identitymd.eth") and X.is_site("x" * 63 + ".site.identitymd.eth")
+    for bad in (SITE.upper(), SITE + "\n", SITE + ".evil", "evil.com/" + SITE, "a.b.site.identitymd.eth",
+                "-a.site.identitymd.eth", "a-.site.identitymd.eth", "x" * 64 + ".site.identitymd.eth",
+                ".site.identitymd.eth", "site.identitymd.eth", "mswap.identitymd.eth",
+                "mswap.site.identitymd.eth.limo", "mswap@evil.site.identitymd.eth", None, 12, ""):
+        assert not X.is_site(bad), repr(bad)
+        with pytest.raises(ValueError):
+            X.site_url(X.SITES, bad)
 
 
 def test_a_job_id_is_a_whole_canonical_lower_case_uuid():
@@ -67,6 +91,21 @@ def test_each_explorer_serves_only_its_own_kinds():
         X.open_action(X.Explorer("imd", "https://evil.example", ("job",)), "job", JOB)
     assert X.parse_open_action(f"app.open_explorer('imd', 'job', '{JOB.upper()}')") is None
     assert X.parse_open_action(f"app.open_explorer('imd', 'job', '{JOB}'); app.quit()") is None
+    for explorer in (*CHAIN_EXPLORERS, X.IMD):
+        assert not X.is_valid(explorer, "site", SITE)
+        with pytest.raises(ValueError):
+            X.url_for(explorer, "site", SITE)
+        forged = X.open_action(X.SITES, "site", SITE).replace("'sites'", repr(explorer.name))
+        assert X.parse_open_action(forged) is None
+    for kind, value in (("address", ADDR), ("tx", TX), ("job", JOB)):
+        assert not X.is_valid(X.SITES, kind, value)
+        with pytest.raises(ValueError):
+            X.url_for(X.SITES, kind, value)
+    with pytest.raises(ValueError):
+        X.open_action(X.Explorer("sites", "https://evil.example", ("site",)), "site", SITE)
+    with pytest.raises(ValueError):
+        X.site_url(X.Explorer("sites", "https://evil.example", ("site",)), SITE)
+    assert X.parse_open_action(f"app.open_explorer('sites', 'site', 'evil.example')") is None
 
 
 def test_an_explorer_is_frozen():
