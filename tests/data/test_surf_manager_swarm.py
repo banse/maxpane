@@ -846,6 +846,9 @@ async def test_the_default_seat_is_the_most_active_and_its_record_is_the_seats_o
     for row in expected:
         if row['job_id'] in attempted:
             row['answer_state'] = 'unavailable'  # this fake refuses every submissions read
+    for row in expected[:40]:
+        if row["node_key"] in sw.SWARM_ORACLE_NODE_KEYS:
+            row["panel_state"] = "unavailable"  # this fake refuses oracle reads too
     assert payload["swarm_seat_work_rows"] == expected
     assert payload["swarm_seat_node_rows"] == sw.seat_node_rows(seat)
     assert payload["swarm_seat_teammates"] == sw.seat_teammates(seat)

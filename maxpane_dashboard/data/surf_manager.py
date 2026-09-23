@@ -173,6 +173,7 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_SWARM_WORKERS,
     SLOT_SWARM_CONTRIBUTORS,
     SLOT_SWARM_ANSWERS,
+    SLOT_SWARM_ORACLE,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
     SERIES_IMD_SUPPLY,
@@ -868,6 +869,19 @@ SWARM_ANSWER_MAX_AGE_S = 48 * 3600.0
 #: Nonterminal jobs may change; their reads follow the seat tier's 120 s clock.
 SWARM_ANSWER_DUE_S = 120.0
 
+#: 590 requests in 4.7 days on 2026-09-23 (~125/day): 200 covers ~1.6 days.
+SWARM_ORACLE_PAGE_LIMIT = 200
+#: Four pages cover ~6.4 days at that measured rate, bounding each cycle.
+SWARM_ORACLE_PAGE_CAP = 4
+#: Details averaged ~50 KB in the 2026-09-23 capture; four bound each cycle.
+SWARM_ORACLE_PER_CYCLE = 4
+#: Assessing panels follow the selected-seat tier's two-minute clock.
+SWARM_ORACLE_DUE_S = 120.0
+#: Ten displayed windows, retained for the same 48-hour horizon as answers.
+SWARM_ORACLE_CACHE_CAP = 400
+SWARM_ORACLE_MAX_AGE_S = 48 * 3600.0
+
+
 #: The non-``pending*`` `/health` fields whose movement means the job list
 #: changed. The gate itself is an **open set** (swarm v2 plan §1.1, the
 #: ``swarm_queue_total`` row): :func:`_swarm_gate_counters` compares these
@@ -1104,6 +1118,7 @@ class SurfManager:
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
                 SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
                 SLOT_SWARM_ANSWERS: sw.coerce_answers_slot,
+                SLOT_SWARM_ORACLE: sw.coerce_oracle_slot,
             })
         except Exception as exc:            # noqa: BLE001 — load is fail-soft; belt and braces
             logger.warning("SURF cache load failed: %s", exc)
@@ -5730,6 +5745,7 @@ class SurfManager:
         if state == "ok":
             await self._resolve_seat_owner(result, now)
             await self._pool_swarm_answers(result, token, now)
+            await self._pool_swarm_oracle(result, token, now)
         return slot
 
     async def _resolve_seat_owner(self, seat: dict, now: float) -> None:
@@ -5791,6 +5807,67 @@ class SurfManager:
                                   max_age_s=SWARM_ANSWER_MAX_AGE_S)
         if prior is None or prior.payload != answers:
             self.cache.store_last_good(SLOT_SWARM_ANSWERS, answers, ts=now)
+
+    async def _pool_swarm_oracle(self, seat: dict, token: int, now: float) -> None:
+        """Bounded list/detail walk; publish the slot only after every await completes."""
+        prior = self.cache.get_last_good(SLOT_SWARM_ORACLE)
+        oracle = sw.prune_oracle(getattr(prior, "payload", None), now_ts=now,
+                                 cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
+        due = sw.oracle_rows_due(sw.seat_work_rows(seat), oracle, now_ts=now, due_s=SWARM_ORACLE_DUE_S)
+        if not due:
+            return
+        listed, before = [], None
+        matched, ambiguous, negative = {}, set(), set()
+        failed = False
+        for _ in range(SWARM_ORACLE_PAGE_CAP):
+            page = await self._guard(
+                lambda: self.swarm_client.fetch_oracle_requests(limit=SWARM_ORACLE_PAGE_LIMIT, before=before),
+                "swarm oracle requests")
+            if not isinstance(page, list):
+                failed = True
+                break
+            listed.extend(page)
+            short = len(page) < SWARM_ORACLE_PAGE_LIMIT
+            matched, ambiguous, negative = sw.match_requests(listed, due, end_of_history=short)
+            unmatched = [row for row in due if row["job_id"] not in matched and row["job_id"] not in ambiguous]
+            if not unmatched or short or all(row["job_id"] in negative for row in unmatched):
+                break
+            stamps = [(sw._ts(item.get("createdAt")), item.get("createdAt"))
+                      for item in page if isinstance(item, dict)]
+            stamps = [(ts, raw) for ts, raw in stamps if ts is not None]
+            if not stamps:
+                failed = True
+                break
+            oldest, cursor = min(stamps)
+            if before is not None and oldest >= sw._ts(before):
+                failed = True
+                break
+            before = cursor
+        groups: dict[str, list[dict]] = {}
+        for row in due:
+            job, key = row["job_id"], row["submission_hash"]
+            if job in ambiguous:
+                oracle.setdefault(job, {})[key] = sw.oracle_empty_point(None, now_ts=now)
+            elif job in negative:
+                oracle.setdefault(job, {})[key] = sw.oracle_empty_point("off_panel", now_ts=now)
+            elif job in matched:
+                groups.setdefault(matched[job], []).append(row)
+            elif failed and key not in oracle.get(job, {}):
+                oracle.setdefault(job, {})[key] = sw.oracle_empty_point(None, now_ts=now)
+        for request_id, group in list(groups.items())[:SWARM_ORACLE_PER_CYCLE]:
+            detail = await self._guard(lambda request_id=request_id: self.swarm_client.fetch_oracle_request(request_id),
+                                       "swarm oracle request")
+            for row in group:
+                job, key = row["job_id"], row["submission_hash"]
+                point = sw.oracle_point(detail, job, key, now_ts=now)
+                if point is not None:
+                    oracle.setdefault(job, {})[key] = point
+                elif key not in oracle.get(job, {}):
+                    oracle.setdefault(job, {})[key] = sw.oracle_empty_point(None, now_ts=now)
+        oracle = sw.prune_oracle(oracle, now_ts=now,
+                                cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
+        if prior is None or prior.payload != oracle:
+            self.cache.store_last_good(SLOT_SWARM_ORACLE, oracle, ts=now)
 
     async def _pool_swarm_scores(self, tiers: set[str], now: float) -> dict[str, Any]:
         """The sweep: the newest details, ``/skills``, ``/launches``, ``/sites``.
@@ -5981,7 +6058,7 @@ class SurfManager:
 
     def _swarm_seat_keys(
         self, slot: dict[str, Any], entry: Any, seen: Any, seat_entry: Any,
-        answers_entry: Any = None, now: float | None = None,
+        answers_entry: Any = None, now: float | None = None, oracle_entry: Any = None,
     ) -> dict[str, Any]:
         """The selected seat's lifetime keys from its own /seats cache slot.
 
@@ -6032,7 +6109,10 @@ class SurfManager:
         answers = sw.prune_answers(getattr(answers_entry, "payload", None),
                                   now_ts=now_ts,
                                   cap=SWARM_ANSWER_CACHE_CAP, max_age_s=SWARM_ANSWER_MAX_AGE_S)
-        out["swarm_seat_work_rows"] = sw.enrich_work_rows(sw.seat_work_rows(seat), answers)
+        oracle = sw.prune_oracle(getattr(oracle_entry, "payload", None), now_ts=now_ts,
+                                 cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
+        out["swarm_seat_work_rows"] = sw.enrich_panel_rows(
+            sw.enrich_work_rows(sw.seat_work_rows(seat), answers), oracle, sw.SWARM_ORACLE_NODE_KEYS)
         out["swarm_seat_node_rows"] = sw.seat_node_rows(seat)
         out["swarm_seat_teammates"] = sw.seat_teammates(seat)
         return out
@@ -6201,6 +6281,7 @@ class SurfManager:
         # no later in wall time than an earlier offer would be served.
         seat_entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
         answers_entry = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
+        oracle_entry = self.cache.get_last_good(SLOT_SWARM_ORACLE)
         # Capture both source versions before offering detached work. A later
         # completion cannot misdate this cycle's data with another version's clock.
         contributors_entry = self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS)
@@ -6502,7 +6583,7 @@ class SurfManager:
         # The AGENT body's keys: the roster off the same sweep slot plus the
         # jobs-seen map, the selected seat's record off its own /seats slot
         # (the /seats plan WP2) -- then that seat's read, offered detached.
-        seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry, answers_entry, now)
+        seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry, answers_entry, now, oracle_entry)
         data.update(seat_keys)
         selected_seat = seat_keys["swarm_seat_selected"]
         data.update(self._swarm_board_keys(
