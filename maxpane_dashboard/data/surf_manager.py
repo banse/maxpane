@@ -5867,7 +5867,11 @@ class SurfManager:
                 lambda: self.swarm_client.fetch_oracle_requests(limit=SWARM_ORACLE_PAGE_LIMIT, before=before),
                 "swarm oracle requests")
             page = sw.oracle_index_page(raw)
-            if page is None or (before is None and not page and index['jobs']):
+            # An empty newest page is a failed read, never "the history is empty":
+            # the route serves hundreds of requests, and trusting one glitched
+            # ``[]`` as complete let the next page close the index without
+            # backfill (re-review N1, 2026-09-24).
+            if page is None or (before is None and not page):
                 return index, True
             if page:
                 oldest_item = min(page, key=lambda item: sw.oracle_cursor_ts(item['createdAt']))

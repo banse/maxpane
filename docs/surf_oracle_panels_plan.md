@@ -132,8 +132,10 @@ A failure stays local to this step and never fails the seat tier.
    - A failed or unparseable page (`None`, a `createdAt` that fails the strict ISO check) ends this cycle's paging. The
      index keeps what earlier pages added. Rows it could not settle keep their prior point; rows without one get
      the nonterminal `status: None` error point (`unavailable`), as before.
-   - A `200 {"requests": []}` first page on an index that already holds entries is a failed read, not the end of
-     history (review finding C1, second case). An empty first page only counts as a real, complete empty when the index is empty too.
+   - A `200 {"requests": []}` first page is always a failed read, never the end of history (review finding C1,
+     second case). Amended after re-review N1 (2026-09-24): an empty first page on an empty index used to count as a
+     complete empty, and a later cycle's first page could then close the index without a backfill, so rows got a
+     false `off_panel`. A complete index with no entries is discarded on load.
    - Timestamps are ordered through a **public** helper in `data/surf_swarm.py` (M4: the manager must not reach
      into `sw._ts`). The cursor sent as `before=` is the served string that passed the strict check.
 4. **Details**: group the matched due rows by request id. Fetch at most `SWARM_ORACLE_PER_CYCLE = 4`

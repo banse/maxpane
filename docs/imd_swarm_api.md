@@ -433,7 +433,7 @@ and attestation metadata. The list does not contain member hashes; raw list bodi
 strict UTC cursors and a complete flag. Runtime uses pages of 500 with a shared four-page budget:
 forward refresh closes the gap to the old newest, then backfill continues from oldest. Exceeding
 the forward budget discards the index. Failed pages preserve prior coverage; an empty first page
-over a nonempty index is a failure. Only complete history whose newest covers submission can
+is always a failure, even on an empty index. Only complete history whose newest covers submission can
 prove an absent job off-panel. Known jobs need no list refresh; the index is never age-pruned.
 
 `GET /oracle/requests/{uuid}` includes `members[]`, `agreement`, `panelSize`, `quorum` and

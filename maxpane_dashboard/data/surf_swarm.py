@@ -1834,7 +1834,8 @@ def coerce_oracle_index(payload: object) -> dict | None:
         newest, oldest = (oracle_cursor_ts(payload[key]) for key in ('newest', 'oldest'))
         if newest is None or oldest is None or oldest > newest:
             return None
-    elif payload['newest'] is not None or payload['oldest'] is not None:
+    elif payload['newest'] is not None or payload['oldest'] is not None or payload['complete']:
+        # A complete index with no entries is not a history proof (re-review N1).
         return None
     return dict(payload, jobs=dict(jobs))
 

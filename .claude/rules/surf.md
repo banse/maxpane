@@ -336,7 +336,8 @@ Different requests for one job or conflicting duplicate member hashes are unavai
 `SLOT_SWARM_ORACLE_INDEX` keeps validated job/request identities and complete-history boundaries,
 without age pruning. Read lists only for unresolved due jobs: forward refresh then backfill share
 a cap of four 500-request pages, with strictly validated UTC cursors. A forward gap beyond the
-cap discards the index. An empty first page over an existing index is a failed read. Indexed
+cap discards the index. An empty first page is always a failed read, and a complete index with no entries is
+discarded on load (re-review N1). Indexed
 jobs go directly to details; read at most four due details. With no due rows, make zero requests. Retained attested/disagreed/blocked points are terminal; assessing or
 failed points retry after 120 seconds. `SLOT_SWARM_ORACLE` retains extracted facts only, at most
 400 points for 48 hours. Validate each persisted point; cancellation stores neither partial oracle points nor a partial index.

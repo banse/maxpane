@@ -3,6 +3,10 @@
 - **F-O1 — request-index growth:** the complete history cannot be age-pruned while it proves
   absence. At the captured ~125 requests/day it adds ~14 KB/day (~50 KB for 590 requests).
   Revisit storage only after measuring growth; retain complete-history semantics.
+- **N2 — one request id under two jobs (Minor, re-review 2026-09-24):** if the list serves the same
+  request id for two job ids, index coercion rejects the whole slot on every cycle. The row stays
+  `not read` and the list is re-read each cycle. Only hostile or broken server data triggers this. The fix is to map
+  the duplicate id's jobs to `None` (unavailable) instead of discarding the index.
 - **5A remains an owner decision:** ORACLE-tile panel-agreement totals and open/closed pending
   counts are out of scope. RECORD now exposes each panel outcome without changing STATE.
 - **Controller work:** one review per WP, whole-branch review and one full-suite run before merge.

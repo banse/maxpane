@@ -135,16 +135,51 @@ async def test_due_indexed_rows_need_no_list_even_when_assessing(tmp_path):
 
 
 @pytest.mark.parametrize('populated', [False, True])
-async def test_empty_first_page_is_failure_for_nonempty_index(tmp_path, populated):
+async def test_empty_first_page_is_a_failed_read(tmp_path, populated):
     fake = Oracle(); fake.lists = [[]]
     manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
     previous = seed_index(manager, newest='2026-09-23T19:00:00Z') if populated else None
     try:
         await manager._pool_swarm_seat(420, NOW)
-        assert rows(manager)[0]['panel_state'] == ('unavailable' if populated else 'not_read')
-        index = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload
-        assert index == (previous if populated else dict(sw.empty_oracle_index(), complete=True))
+        assert rows(manager)[0]['panel_state'] == 'unavailable'
+        entry = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX)
+        if populated:
+            assert entry.payload == previous
+        else:
+            assert entry is None or not entry.payload['complete']
     finally: await manager.close()
+
+
+async def test_glitched_empty_first_build_never_completes_the_index_later(tmp_path, monkeypatch):
+    # Re-review N1: cycle 1 serves one empty page on a first build; cycle 2
+    # serves a newer unrelated request, then the seat's, then the end. The
+    # seat's request is older than page 1 and must still be found.
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_LIMIT', 1)
+    fake = Oracle()
+    match = fake.requests[0]
+    unrelated = dict(match, id='20000000-0000-4000-8000-000000000000',
+                     jobId='30000000-0000-4000-8000-000000000000',
+                     createdAt='2026-09-23T21:00:00Z')
+    pages = iter([[], [unrelated], [match], []])
+
+    async def fetch(**kwargs):
+        fake.oracle_calls.append(('list', kwargs['limit'], kwargs.get('before')))
+        return next(pages)
+
+    fake.fetch_oracle_requests = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert rows(manager)[0]['panel_state'] == 'unavailable'
+        await manager._pool_swarm_seat(420, NOW + 120)
+        assert rows(manager, NOW + 120)[0]['panel_state'] == 'agreed'
+    finally:
+        await manager.close()
+
+
+def test_a_complete_index_with_no_entries_is_discarded_on_load():
+    assert sw.coerce_oracle_index(dict(sw.empty_oracle_index(), complete=True)) is None
+    assert sw.coerce_oracle_index(sw.empty_oracle_index()) == sw.empty_oracle_index()
 
 
 @pytest.mark.parametrize('bad_stamp', ['2026-09-23T19:00:00+00:00', '2026-02-30T00:00:00Z', '123'])
