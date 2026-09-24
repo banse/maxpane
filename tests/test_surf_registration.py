@@ -1452,6 +1452,8 @@ _NON_NUMERIC_KEYS = frozenset(
         "swarm_board_summary", "swarm_board_rows", "swarm_fleet",
         "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
         "swarm_seat_live", "swarm_seat_contrib",
+        # Runtime versions/clocks are dictionaries; fleet reference is a tuple.
+        "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon",
         "swarm_health_status",  # served status word, never a numeric zero
         "swarm_seat_owner_ens",  # an ENS name or None, never a number
     }
@@ -1738,6 +1740,10 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "swarm_working_now": _SWARM_BARE_COUNT,
     "swarm_accepted_today": _SWARM_BARE_COUNT,
     "swarm_queue_total": _SWARM_BARE_COUNT,
+    "swarm_seat_rank_delta": (
+        "zero and None both omit the movement line; nonzero direction/color and "
+        "zero omission are composited in test_rank_move_has_composited_direction_and_color"
+    ),
 }
 
 #: The ``4`` POOL4 MARKET body's zero probes: ``key -> (needle, enablers)``.

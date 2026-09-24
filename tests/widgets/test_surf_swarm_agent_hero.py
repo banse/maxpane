@@ -502,7 +502,7 @@ async def test_polish_accepted_reviewed_and_rate_have_composited_emphasis():
             if color is not None:assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color]
 
 
-@pytest.mark.parametrize('delta,word,color', [(2,'▲2',2),(-3,'▼3',1),(None,None,None)])
+@pytest.mark.parametrize('delta,word,color', [(2,'▲2',2),(-3,'▼3',1),(None,None,None),(0,None,None)])
 async def test_rank_move_has_composited_direction_and_color(delta, word, color):
     async with _Themed().run_test(size=SIZE) as pilot:
         pilot.app.query_one(SurfSwarmAgentHero).update_data(**_merged({'swarm_seat_rank_delta':delta}))
