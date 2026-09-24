@@ -30,7 +30,7 @@ from maxpane_dashboard.screens.surf import (
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import ONLINE_LINE, WORKING_GLYPH
 from maxpane_dashboard.widgets.surf import (
     SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmCapability, SurfSwarmHero, SurfSwarmInFlight,
-    SurfSwarmLaunches, SurfSwarmNodeCards,
+    SurfSwarmLaunches,
     SurfSwarmSeatRecord, SurfSwarmSeatCards, SurfSwarmSites,
     SurfSwarmThroughput,
 )
@@ -45,7 +45,7 @@ from tests.surf_swarm_fixtures import swarm_seat_capture
 _SIZE = (150, 45)
 _S_PANELS = (SurfSwarmCapability, SurfSwarmThroughput, SurfSwarmInFlight,
              SurfSwarmLaunches, SurfSwarmSites)
-_A_PANELS = (SurfSwarmSeatCards, SurfSwarmNodeCards, SurfSwarmSeatRecord)
+_A_PANELS = (SurfSwarmSeatCards, SurfSwarmSeatRecord)
 _BODIES = {"s": (SWARM_BODY_ID, _S_PANELS, SurfSwarmHero),
            "a": (AGENT_BODY_ID, _A_PANELS, SurfSwarmAgentHero),
            "b": (BOARD_BODY_ID, (SurfSwarmLeaderboard,SurfSwarmFleet), SurfSwarmBoardHero)}
@@ -131,7 +131,7 @@ async def test_every_swarm_panel_reaches_the_compositor(key, cls):
 #: sits inside its border (``HeroRow``), and the card-title test below
 #: covers them.
 _TITLED = [(k, c) for k, (_id, panels, _h) in _BODIES.items() for c in panels
-           if c not in (SurfSwarmSeatCards, SurfSwarmNodeCards)]
+           if c not in (SurfSwarmSeatCards,)]
 
 
 @pytest.mark.parametrize("key,cls", _TITLED, ids=[c.__name__ for _k, c in _TITLED])
@@ -168,7 +168,7 @@ async def test_every_agent_hero_title_sits_on_the_same_row():
 
 
 @pytest.mark.parametrize("width", [SURF_AGENT_FULL_LAYOUT_COLUMNS, 150, 169, 211])
-async def test_the_three_agent_rows_share_one_column_grid_with_a_row_between(width):
+async def test_the_two_agent_rows_share_one_column_grid_with_a_row_between(width):
     """Owner, 2026-09-22: the hero and both card rows line up column for
     column at any width, and a blank row separates each pair of rows, like
     the gap between two cards in a row. Read off composited regions."""
@@ -177,14 +177,14 @@ async def test_the_three_agent_rows_share_one_column_grid_with_a_row_between(wid
 
     async with _surf_app(_v3_agent_payload()).run_test(size=(width, 60)) as pilot:
         screen = await _open(pilot, "a")
-        rows = [screen.query_one(cls) for cls in (SurfSwarmAgentHero, SurfSwarmSeatCards, SurfSwarmNodeCards)]
+        rows = [screen.query_one(cls) for cls in (SurfSwarmAgentHero, SurfSwarmSeatCards)]
         edges = [[(b.region.x, b.region.right) for b in row.query(HeroBoxBase)] for row in rows]
         spans = [(min(b.region.y for b in row.query(HeroBoxBase)),
                   max(b.region.bottom for b in row.query(HeroBoxBase))) for row in rows]
 
     assert all(len(e) == 6 for e in edges), edges
-    assert edges[0] == edges[1] == edges[2], edges
-    assert [nxt[0] - prev[1] for prev, nxt in zip(spans, spans[1:])] == [1, 1], spans
+    assert edges[0] == edges[1], edges
+    assert [nxt[0] - prev[1] for prev, nxt in zip(spans, spans[1:])] == [1], spans
 
 
 async def test_the_agent_card_rows_carry_every_seat_and_node_value():
@@ -199,22 +199,20 @@ async def test_the_agent_card_rows_carry_every_seat_and_node_value():
     async with _surf_app(_v3_agent_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open(pilot, "a")
         rows = {}
-        for cls in (SurfSwarmSeatCards, SurfSwarmNodeCards):
+        for cls in (SurfSwarmSeatCards,):
             cards = list(screen.query_one(cls).query(SurfSwarmAgentCard))
             rows[cls] = [_region_text(pilot.app, c).split("\n") for c in cards]
         text = _region_text(pilot.app, screen.query_one(f"#{AGENT_BODY_ID}"))
+        assert not screen.query("SurfSwarmNodeCards")
 
     titles = {cls: [lines[1].strip(" │") for lines in cards] for cls, cards in rows.items()}
     # Owner 2026-09-22: RANK went up to the hero, COLLAB down to row two;
     # TEAMMATES up to row two, BOARD down to row three.
-    assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "SCORE", "FEEDBACK", "COLLAB", "TEAMMATES"]
-    assert titles[SurfSwarmNodeCards][0] == "ROLES" and titles[SurfSwarmNodeCards][-2:] == ["OTHERS", "BOARD"]
+    assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "SCORE", "FEEDBACK", "COLLAB", "NODES"]
     assert all(not lines[2].strip(" │") for cards in rows.values() for lines in cards)
     for needle in ("0xe5b1275f…f64f2a ⧉", "paired 09-20 07:34", "daemon ", " device",
                    " sent", " submitted", " queued", " scored",
-                   "189 acc of 207", "2 rejected", "16 pending", " seats",
-                   "implement ", "ORACLE", "188 accepted", "— · impl",
-                   "chain 157", "#1548 ×136", "+74 more"):
+                   " seats", "ORACLE 188 —", "#1548 ×136"):
         assert needle in text, needle
 
 
@@ -237,7 +235,7 @@ async def test_retired_roster_selection_is_gone():
         screen = await _open(pilot, "a")
         assert all(table.cursor_type == "none" for table in screen.query_one(f"#{AGENT_BODY_ID}").query(DataTable))
         text = _region_text(pilot.app,screen.query_one(f"#{AGENT_BODY_ID}"))
-        assert "TEAMMATES" in text and "ROSTER" not in text
+        assert "NODES" in text and "ROSTER" not in text
         # The retired FEEDBACK *panel* is gone; the FEEDBACK card (2026-09-22)
         # shows the seat's sent/submitted/queued counts, never a feedback list.
         assert "FEEDBACK" in text and "BY NODE" not in text
@@ -385,7 +383,7 @@ async def test_a_saved_seat_never_paired_says_so_and_never_not_seen(saved_seats)
         hero = _region_text(app, screen.query_one(SurfSwarmAgentHero))
         body = _region_text(app, screen.query_one(f"#{AGENT_BODY_ID}"))
         assert "IDMD #9999" in hero and "never paired" in hero
-        for panel in (SurfSwarmSeatCards, SurfSwarmSeatRecord, SurfSwarmNodeCards):
+        for panel in (SurfSwarmSeatCards, SurfSwarmSeatRecord):
             assert "never paired" in _region_text(app, screen.query_one(panel)), panel.__name__
         assert "not seen" not in hero + body
         assert "IDMD #1548" not in hero
@@ -433,7 +431,7 @@ async def test_a_never_paired_seat_reaches_the_screen_through_a_real_manager(tmp
         hero = _region_text(app, screen.query_one(SurfSwarmAgentHero))
         body = _region_text(app, screen.query_one(f"#{AGENT_BODY_ID}"))
         assert "IDMD #9999" in hero and "never paired" in hero
-        for panel in (SurfSwarmSeatCards, SurfSwarmSeatRecord, SurfSwarmNodeCards):
+        for panel in (SurfSwarmSeatCards, SurfSwarmSeatRecord):
             assert "never paired" in _region_text(app, screen.query_one(panel)), panel.__name__
         assert "not seen" not in hero + body
         assert "Loading" not in hero
@@ -516,13 +514,11 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
         screen=await _open(pilot,"a")
         hero=_region_text(pilot.app,screen.query_one(SurfSwarmAgentHero))
         seat=_region_text(pilot.app,screen.query_one(SurfSwarmSeatCards))
-        nodes=_region_text(pilot.app,screen.query_one(SurfSwarmNodeCards))
     assert "IDMD #420" in hero and f"{WORKING_GLYPH} 0 of 1" in hero
     assert "accepted unavailable" in hero and "#6 of " in hero  # RANK is not seats-gated
-    assert "189 acc of 207" in nodes and "2 rejected" in nodes and "16 pending" in nodes
     assert "skills" not in seat and "linux arm64" not in seat
     # Owner 2026-09-22: neither STATUS nor BOARD names its source clock.
-    assert "as of 03:01" not in nodes and "as of 04:02" not in hero + seat
+    assert "as of 04:02" not in hero + seat
     assert "⧉" not in seat and "attempts 201" not in seat
 
 async def test_captured_executing_note_is_visible_and_honestly_cut_at_swarm_pin():

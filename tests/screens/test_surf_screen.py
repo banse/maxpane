@@ -104,7 +104,6 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmNodeCards,
     SurfSwarmSeatRecord,
     SurfSwarmSeatCards,
     SurfSwarmSites,
@@ -197,7 +196,6 @@ _SWARM_WIDGET_CLASSES = {
     "SurfSwarmLaunches": SurfSwarmLaunches,
     "SurfSwarmSites": SurfSwarmSites,
     "SurfSwarmAgentHero": SurfSwarmAgentHero,
-    "SurfSwarmNodeCards": SurfSwarmNodeCards,
     "SurfSwarmSeatRecord": SurfSwarmSeatRecord,
     "SurfSwarmSeatCards": SurfSwarmSeatCards,
 }
@@ -8515,7 +8513,6 @@ def test_the_market_body_css_agrees_between_default_css_and_the_stylesheet() -> 
 #: rules live in the two copies compared here and must agree like the rest.
 from maxpane_dashboard.widgets.surf.swarm_agent_cards import SEAT_BOX_IDS  # noqa: E402
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import BOX_IDS as AGENT_HERO_BOX_IDS  # noqa: E402
-from maxpane_dashboard.widgets.surf.swarm_node_cards import NODE_BOX_IDS  # noqa: E402
 
 _SWARM_CSS_SELECTORS = (
     f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}", f"#{SWARM_BOTTOM_ID}",
@@ -8526,8 +8523,7 @@ _SWARM_CSS_SELECTORS = (
     "SurfSwarmLaunches", "SurfSwarmSites",
     "SurfSwarmAgentCards", "SurfSwarmAgentCards > SurfSwarmAgentCard", "SurfSwarmSeatRecord",
     # The AGENT column grid: one weight per column, stated per card id.
-    *(f"#{box_id}" for box_id in (*AGENT_HERO_BOX_IDS.values(), *SEAT_BOX_IDS.values(),
-                                  *NODE_BOX_IDS.values())),
+    *(f"#{box_id}" for box_id in (*AGENT_HERO_BOX_IDS.values(), *SEAT_BOX_IDS.values())),
 )
 
 

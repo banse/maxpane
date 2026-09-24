@@ -29,11 +29,13 @@ from __future__ import annotations
 
 from rich.text import Text
 
+from maxpane_dashboard.widgets import rowfit
+from maxpane_dashboard.widgets.sparkline_common import fmt_compact
+
 from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
 from maxpane_dashboard.widgets.panels import LOADING, UNAVAILABLE
 
 __all__ = [
-    "board_body",
     "contrib_body",
     "count",
     "rank_body",
@@ -122,15 +124,6 @@ def contrib_body(contrib, build) -> str | Text:
     return build(contrib)
 
 
-def board_body(contrib: dict) -> Text:
-    n = {k: count(contrib.get(k)) or "--" for k in ("attempts", "accepted", "rejected", "pending")}
-    return (Text()
-            .append(n["accepted"], style="bold green").append(" acc of ", style="dim")
-            .append(n["attempts"], style="bold")
-            .append("\n").append(n["rejected"], style="bold").append(" rejected", style="dim")
-            .append("\n").append(n["pending"], style="bold").append(" pending", style="dim"))
-
-
 def rank_body(contrib: dict) -> Text:
     body = Text()
     rank, of = count(contrib.get("rank")), count(contrib.get("ranked_of"))
@@ -144,3 +137,57 @@ def rank_body(contrib: dict) -> Text:
     hours = (fmt_float(seconds / 3600, ".1f")
              if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) else "--")
     return body.append("\n").append(hours, style="bold").append(" h", style="dim")
+
+
+def _whole(value: int) -> str:
+    """A count in whole thousands or millions (``10K``, ``2M``): the node
+    cards' last short form, for when ``fmt_compact``'s decimal does not fit."""
+    if abs(value) < 1_000:
+        return fmt_int(value)
+    # A thousands count that rounds to 1000K is carried into ``M`` (F66:
+    # 999,600 read ``1000K``).
+    if abs(round(value / 1_000)) < 1_000:
+        return f"{round(value / 1_000)}K"
+    return f"{round(value / 1_000_000)}M"
+
+
+_NUMS = (fmt_int, fmt_compact, _whole)
+_UNITS = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}
+
+
+def _reading(text: str) -> float:
+    """The number a shown count reads as: ``100.0K`` and ``100K`` read alike."""
+    text = text.replace(",", "")
+    return float(text[:-1]) * _UNITS[text[-1]] if text[-1:] in _UNITS else float(text)
+
+
+def _forms(values: tuple) -> list:
+    """:data:`_NUMS` plus, for a pair, one value a decimal finer than the
+    other -- the smaller first (``4.6K of 5K``), then the larger
+    (``100K of 100.4K``, where ``100.0K of 100K`` would read alike) -- kept
+    only while the readings keep the *values*' strict order: no two
+    different counts read alike (F66: 4,600 of 5,400 read ``5K of 5K``) and
+    none reads the wrong way round (5,460 of 5,480 as ``5.5K of 5K``)."""
+    forms = list(_NUMS)
+    if len(set(values)) > 1:
+        low = min(values)
+        forms.append(lambda v: fmt_compact(v) if v == low else _whole(v))
+        forms.append(lambda v: _whole(v) if v == low else fmt_compact(v))
+    ordered = sorted(set(values))
+    return [num for num in forms
+            if all(_reading(num(a)) < _reading(num(b)) for a, b in zip(ordered, ordered[1:]))]
+
+
+
+def _num(room: int, line, *values):
+    """The first of ``fmt_int``, ``fmt_compact`` (``10.0K``) and
+    :func:`_whole` (``10K``) whose *line* fits card *key* -- a shorter
+    honest number, never a cut one; the last one stands if none fits.
+    A form that reads two different *values* as one number, or the wrong
+    way round, is not honest and is skipped (:func:`_forms`)."""
+    honest = _forms(values)
+    for num in honest:
+        if rowfit.cell_len(line(num)) <= room:
+            return num
+    return honest[-1]
+

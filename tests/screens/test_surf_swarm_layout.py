@@ -68,7 +68,6 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmNodeCards,
     SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
     SurfSwarmSites,
@@ -99,7 +98,7 @@ from tests.surf_swarm_fixtures import (
 MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 42
 MEASURED_AGENT_COLUMNS = 139
-MEASURED_AGENT_ROWS = 33
+MEASURED_AGENT_ROWS = 25
 
 #: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
 #: block): the outer width at which each one's own ``‹`` goes dark on the
@@ -121,10 +120,7 @@ _S_THRESHOLDS = (
 )
 _A_THRESHOLDS = (
     99, 107, # RECORD compact/full with panel/tok and short models, 2026-09-23
-    108, 116, 117,  # node row (capture) / hero (capture) and node row (stress) / pending RANK
-    129,     # row-1 hero whole (stress payload's REVIEWED `19,998 pending`)
-    128, 130,  # stress OTHERS `5.0K of 50.0K` (129, 131-141) / `5K of 50K` (127-128, 130)
-    142, 144, 145,  # stress OTHERS full `5,011 of 50,011` (142-143, 145+) / `5.0K` (144, <=141)
+    116, 117, 129,  # captured hero, pending RANK, five-digit stress hero
     134,     # complete status bar
     139,     # seat row whole: OWNER's address + icon (binds since the grid)
 )
@@ -167,7 +163,6 @@ _CONTAINER_OF = {
     },
     "a": {
         SurfSwarmSeatCards: AGENT_BODY_ID,
-        SurfSwarmNodeCards: AGENT_BODY_ID,
         SurfSwarmSeatRecord: AGENT_BODY_ID,
     },
 }
@@ -710,7 +705,7 @@ _HEIGHT_SWEEP = (
     + [("a", "capture", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
     + [("a", name, r) for name in ("capture420", "duplicates420")
        for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
-    + [("a", "worst-a", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 30, 50, 31, 35)]
+    + [("a", "worst-a", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 40, 24, 25, 26)]
 )
 
 
@@ -1014,7 +1009,35 @@ async def test_oracle_latest_seat_fits_existing_agent_pin():
     rows=payload['swarm_seat_work_rows']
     payload['swarm_seat_work_rows']=swarm_oracle_rows(rows)
     assert len(rows)==245 and sum(r['node_key']=='oracle_assess' for r in rows)==243
-    for height in (32,33):
+    for height in (24,25):
         result=await _render(payload,(139,height),'a')
-        assert result['taller']==(height<33)
+        assert result['taller']==(height<SURF_AGENT_FULL_LAYOUT_ROWS)
         assert not result['overflow'] and not result['clipped'] and not any(result['hidden'].values())
+
+
+@pytest.mark.parametrize('kind', ['capture', 'capture420', 'duplicates420', 'worst-a', 'polish',
+                                  'v3', 'pending', 'seats-unavailable', 'workers-unavailable',
+                                  'contributors-unavailable', 'absent', 'no-seat'])
+@pytest.mark.parametrize('height', [20, 24, 25, 26, 40])
+async def test_agent_merged_rows_boundary(kind, height):
+    payload = (PAYLOADS[kind]() if kind in PAYLOADS else
+               _polish_agent_payload() if kind == 'polish' else _v3_agent_payload(kind))
+    result = await _render(payload, (SURF_AGENT_FULL_LAYOUT_COLUMNS, height), 'a')
+    _assert_whole(result, (kind, height))
+    assert result['taller'] == (height < SURF_AGENT_FULL_LAYOUT_ROWS)
+    assert not result['overflow']
+
+
+@pytest.mark.parametrize('kind', ['capture', 'capture420', 'duplicates420', 'worst-a', 'polish',
+                                  'v3', 'pending', 'seats-unavailable', 'workers-unavailable',
+                                  'contributors-unavailable', 'absent', 'no-seat'])
+@pytest.mark.parametrize('width', boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 125, 160, 129, 134))
+async def test_agent_merged_cards_width_boundary(kind, width):
+    payload = (PAYLOADS[kind]() if kind in PAYLOADS else
+               _polish_agent_payload() if kind == 'polish' else _v3_agent_payload(kind))
+    result = await _render(payload, (width, 80), 'a')
+    assert not result['overflow']
+    if width >= SURF_AGENT_FULL_LAYOUT_COLUMNS:
+        _assert_whole(result, (kind, width))
+    elif kind in ('capture', 'capture420', 'duplicates420', 'worst-a', 'polish', 'v3'):
+        assert any(name == 'SurfSwarmSeatCards' for name, _ in result['clipped'])

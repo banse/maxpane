@@ -2481,29 +2481,23 @@ SurfSwarmAgentHero > SurfSwarmAgentHeroBox {
     text-wrap: nowrap;
     text-overflow: ellipsis;
 }
-/* One column grid for the three AGENT card rows (owner, 2026-09-22):
+/* One column grid for the two AGENT card rows (owner, 2026-09-22):
  * column i has the same weight in every row, so the rows' borders line up
  * at any width. Each weight is that column's widest measured card
  * (border and padding included) on the AGENT sweep payloads; with
  * weight = need, every card is whole once the row has their sum. */
 #surf-swarm-agent-seat { width: 23fr; }
 SurfScreen #surf-swarm-card-owner { width: 23fr; }
-SurfScreen #surf-swarm-card-roles { width: 23fr; }
 #surf-swarm-agent-accepted { width: 23fr; }
 SurfScreen #surf-swarm-card-runtime { width: 23fr; }
-SurfScreen #surf-swarm-card-node0 { width: 23fr; }
 #surf-swarm-agent-win-rate { width: 20fr; }
 SurfScreen #surf-swarm-card-score { width: 20fr; }
-SurfScreen #surf-swarm-card-node1 { width: 20fr; }
 #surf-swarm-agent-reviewed { width: 19fr; }
 SurfScreen #surf-swarm-card-feedback { width: 19fr; }
-SurfScreen #surf-swarm-card-node2 { width: 19fr; }
 #surf-swarm-agent-rank { width: 18fr; }
 SurfScreen #surf-swarm-card-collab { width: 18fr; }
-SurfScreen #surf-swarm-card-others { width: 18fr; }
 #surf-swarm-agent-status { width: 28fr; }
-SurfScreen #surf-swarm-card-board { width: 28fr; }
-SurfScreen #surf-swarm-card-teammates { width: 28fr; }
+SurfScreen #surf-swarm-card-nodes { width: 28fr; }
 
 
 SurfSwarmBoardHero {

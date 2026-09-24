@@ -199,7 +199,9 @@ Today answers, oracle panels and job details are read only for `rows[:SWARM_ANSW
   `_SCROLL_COLUMNS` and the address sweep's AGENT case, as each applies.
 - Re-sweep both AGENT pins in situ (§1.5).
 - **Tests (composited):**
-  - The #420 capture gives COLLAB `261 seats` plus two teammate lines.
+  - Owner amendment: the committed submissions #420 capture gives COLLAB `232 seats`,
+    `#1626 ×158`, `#1731 ×150`; ORACLE is `219 / 256` (`85.5 %`).
+    The screenshot examples above remain synthetic layout cases.
   - NODES shows ORACLE, REVIEW, `+2 more` with the fixture's numbers.
   - Exactly 3 nodes: all shown.
   - An unknown key is fitted with `…`.

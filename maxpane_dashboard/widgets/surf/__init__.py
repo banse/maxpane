@@ -130,7 +130,6 @@ from .swarm_capability import SurfSwarmCapability
 from .swarm_hero import SurfSwarmHero
 from .swarm_inflight import SurfSwarmInFlight
 from .swarm_launches import SurfSwarmLaunches
-from .swarm_node_cards import SurfSwarmNodeCards
 from .swarm_seat_record import SurfSwarmSeatRecord
 from .swarm_sites import SurfSwarmSites
 from .swarm_throughput import SurfSwarmThroughput
@@ -168,7 +167,6 @@ __all__ = [
     "SurfSwarmHero",
     "SurfSwarmInFlight",
     "SurfSwarmLaunches",
-    "SurfSwarmNodeCards",
     "SurfSwarmSeatRecord",
     "SurfSwarmSeatCards",
     "SurfSwarmSites",

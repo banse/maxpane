@@ -70,7 +70,6 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmNodeCards,
     SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
     SurfSwarmSites,
@@ -216,7 +215,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput,
         SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
         SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet,
-    SurfSwarmAgentHero, SurfSwarmSeatCards, SurfSwarmNodeCards,
+    SurfSwarmAgentHero, SurfSwarmSeatCards,
         SurfSwarmSeatRecord,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
@@ -386,6 +385,7 @@ def test_every_widget_accepts_the_whole_flat_dict(cls):
 #: ``pool4u_signals`` needed the same number -- two copies of one conversion,
 #: which is how two panels on one screen come to disagree (carry-over C1).
 _PURE_ANALYTICS_ALLOWED = frozenset({
+    "maxpane_dashboard.analytics.surf_swarm_signals",
     "maxpane_dashboard.analytics.surf_feed",
     "maxpane_dashboard.analytics.surf_pool4_depth",
 })
@@ -799,7 +799,7 @@ async def test_rich_rejects_a_theme_token_in_a_data_table_cell():
 
 @pytest.mark.parametrize("name", (
     "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
-    "SurfSwarmAgentHero", "SurfSwarmSeatCards", "SurfSwarmNodeCards",
+    "SurfSwarmAgentHero", "SurfSwarmSeatCards",
 ))
 def test_board_and_agent_exports_implement_the_frozen_source_signatures(name):
     """BOARD WP1 freezes this seam before WP4/WP5 implement the widgets."""

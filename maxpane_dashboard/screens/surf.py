@@ -266,7 +266,6 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
-    SurfSwarmNodeCards,
     SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
     SurfSwarmSites,
@@ -1667,55 +1666,29 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: (135 for the first card rows, 138 before them, bound by BY NODE).
 #: The owner asked for the three card rows to share one column grid and for
 #: the wide cards to stack under STATUS (RANK in the hero since
-#: 2026-09-22; row 2 ends COLLAB · TEAMMATES, row 3 OTHERS · BOARD). Column i has the same ``fr``
-#: weight in every row (23 23 20 19 18 28): each weight is the column's
-#: widest card, measured one card at a time in situ on the payloads below.
-#: Measured in situ at every integer 125–160 at 80 rows on capture, #420,
-#: duplicated reviews, the five-digit stress payload, the committed v4
-#: RECORD and all seven v3 source states (pending, seats/workers/
-#: contributors unread, never paired, no seat).
+#: 2026-09-24: COLLAB lists the top two teammates, NODES takes the last
+#: seat-card slot; the third card row is removed. Both remaining rows use
+#: the same column weights (23 23 20 19 18 28).
+#: In-situ boundary sweep on capture, #420, duplicated reviews, five-digit
+#: stress, v4 RECORD and seven v3 source states: OWNER's 17-cell address
+#: plus copy icon is whole from 139 and visibly cut at 138. The width stays
+#: 139. Free node/runtime text fits with an explicit ellipsis; NODES counts
+#: shorten honestly. Status bar whole from 134, stress hero from 129,
+#: captured hero from 116 and pending RANK from 117.
+#: Row 1 gives up one right-hand column (padding: 0 1 0 0) to line up with
+#: the seat row inside the body's reserved scrollbar gutter.
 #:
-#: **Binder: row 2, ``SurfSwarmSeatCards``.** OWNER's 17-cell address
-#: window plus its copy icon is whole from 139 and ellipsises at 138 -- a
-#: visible cut, which the sweep counts as a clipped line. Measured onsets
-#: under it: the node row is whole from 116 (the stress payload's
-#: ``55,555 acc of 99,999`` BOARD). OTHERS sums every node key the named
-#: cards do not since 2026-09-22 (seat_0 serves deploy_script/manifest), so
-#: a node card's counts shorten instead of cutting: full ``5,011 of 50,011``
-#: at 142-143 and 145+, ``5.0K of 50.0K`` at 144, 129 and 131-141, whole
-#: ``5K of 50K`` at 127-128 and 130 (fr rounding interleaves them). The status bar from 134, the row-1 hero from 129 (the stress
-#: payload's ``19,998 pending``). On the capture the node row is whole from
-#: 108 and the hero from 116; the pending payload's RANK (hero column 5)
-#: from 117. STATUS writes ``⚙`` for
-#: "working" (owner), so ``paused · ⚙ 0 of 99,999`` fits its 28 weight; the
-#: word cost 32. The never-paired, pending and unread payloads are whole
-#: from 134. Also swept: idle/paused/working/unknown worker states on the
-#: stress payload (sixteen payloads in all, every one whole from 139). Free text
-#: (runtime, daemon, node keys, role names) is fitted with a visible ``…``.
-#: Row 1 gives up one right-hand column (``padding: 0 1 0 0``) so its
-#: right edge lines up with the card rows inside the body's scrollbar gutter.
-#:
-#: RECORD is this body's one named exception: at 139 its full tier keeps
-#: when/job/node/state/model/took/panel/tok/answer without horizontal clipping.
-#: Re-swept 2026-09-23: full from 107, compact 99-106 (drops tok), tight
-#: below 99 (also drops answer/model/took, keeps panel). table_cols needs
-#: 102/94/53 cells; the screen contributes five cells of gutters/padding.
-#: Full order and content-clearance onset are at
-#: RECORD_NEVER_CLEARS_BELOW below.
+#: RECORD remains the named content exception. Full/compact/tight require
+#: 102/94/53 table cells, with five screen cells of gutters/padding:
+#: full from 107, compact from 99. Its content-clearance onset is below.
 SURF_AGENT_FULL_LAYOUT_COLUMNS = 139
 
-#: AGENT height, re-verified 2026-09-23 with oracle RECORD: 33 (unchanged).
-#: The owner asked for a blank row above each card row, matching the
-#: two-cell gap between cards (+2), and allowed RECORD to shrink to pay
-#: for it: RECORD's floor went 8 -> 6 (-2). Measured at 139 columns through
-#: heights 26–45 on the twelve payloads named above: ``‹ taller`` lit
-#: through 32, dark from 33 on every one. Re-swept 2026-09-22 when RECORD
-#: lost the blank row under its title (the owner's exception for this body
-#: only): still 33 on all twelve -- the freed row lands inside RECORD's
-#: 6-row floor and so never reaches the pin. The card rows are fixed-height,
-#: so the body is the only container that scrolls. The owner's 35 rows
-#: fit; 31 shows ``‹ taller``.
-SURF_AGENT_FULL_LAYOUT_ROWS = 33
+#: AGENT height, re-swept 2026-09-24: 33 -> 25 after removing the third
+#: seven-row card row and its blank row. At 139 columns, named capture,
+#: #420, duplicate, five-digit stress, v4 and seven v3 source-state payloads
+#: show taller at 24 and clear it at 25 and 26. RECORD retains its six-row
+#: floor; the body remains the only container scrolling fixed card content.
+SURF_AGENT_FULL_LAYOUT_ROWS = 25
 
 #: RECORD answer-clearance onset, re-swept 2026-09-23 in the real AGENT body.
 #: The committed v4 seat420 first40 rows are enriched with exact submission
@@ -1726,7 +1699,7 @@ SURF_AGENT_FULL_LAYOUT_ROWS = 33
 #: Probed80-220 then both sides of every measured edge: no hidden selected
 #: column or region overflow. At166 the 80-cell answer clips;167 and168
 #: are whole. Five-hundred-character stress replies still mark at167.
-#: This is a content exception, not the 139x33 body pin. Prefixes can make
+#: This is a content exception, not the 139x25 body pin. Prefixes can make
 #: other payloads wider; the latest oracle seat capture is checked separately.
 #: Earlier clearances:204 ->165 when launch/sub left (2026-09-22), then
 #: 165 ->167 for panel/tok and short models (2026-09-23).
@@ -3001,29 +2974,23 @@ class SurfScreen(DashboardScreen):
         text-wrap: nowrap;
         text-overflow: ellipsis;
     }
-    /* One column grid for the three AGENT card rows (owner, 2026-09-22):
+    /* One column grid for the two AGENT card rows (owner, 2026-09-22):
      * column i has the same weight in every row, so the rows' borders line up
      * at any width. Each weight is that column's widest measured card
      * (border and padding included) on the AGENT sweep payloads; with
      * weight = need, every card is whole once the row has their sum. */
     SurfScreen #surf-swarm-agent-seat { width: 23fr; }
     SurfScreen #surf-swarm-card-owner { width: 23fr; }
-    SurfScreen #surf-swarm-card-roles { width: 23fr; }
     SurfScreen #surf-swarm-agent-accepted { width: 23fr; }
     SurfScreen #surf-swarm-card-runtime { width: 23fr; }
-    SurfScreen #surf-swarm-card-node0 { width: 23fr; }
     SurfScreen #surf-swarm-agent-win-rate { width: 20fr; }
     SurfScreen #surf-swarm-card-score { width: 20fr; }
-    SurfScreen #surf-swarm-card-node1 { width: 20fr; }
     SurfScreen #surf-swarm-agent-reviewed { width: 19fr; }
     SurfScreen #surf-swarm-card-feedback { width: 19fr; }
-    SurfScreen #surf-swarm-card-node2 { width: 19fr; }
     SurfScreen #surf-swarm-agent-rank { width: 18fr; }
     SurfScreen #surf-swarm-card-collab { width: 18fr; }
-    SurfScreen #surf-swarm-card-others { width: 18fr; }
     SurfScreen #surf-swarm-agent-status { width: 28fr; }
-    SurfScreen #surf-swarm-card-board { width: 28fr; }
-    SurfScreen #surf-swarm-card-teammates { width: 28fr; }
+    SurfScreen #surf-swarm-card-nodes { width: 28fr; }
 
     SurfScreen #surf-swarm-body {
         height: 1fr;
@@ -3323,7 +3290,6 @@ class SurfScreen(DashboardScreen):
         # `AGENT_BODY_ID`.
         with Vertical(id=AGENT_BODY_ID):
             yield SurfSwarmSeatCards()
-            yield SurfSwarmNodeCards()
             yield SurfSwarmSeatRecord()
 
         with Horizontal(id=BOARD_BODY_ID):
