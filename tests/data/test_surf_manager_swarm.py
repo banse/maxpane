@@ -849,6 +849,16 @@ async def test_the_default_seat_is_the_most_active_and_its_record_is_the_seats_o
     for row in expected[:40]:
         if row["node_key"] in sw.SWARM_ORACLE_NODE_KEYS:
             row["panel_state"] = "unavailable"  # this fake refuses oracle reads too
+    # The two eligible job reads: one absent detail and one captured completed job.
+    for row in expected:
+        if row['job_id'] == 'ca470b98-5e99-4771-8b9b-da4c01310a18':
+            row['job_read'] = 'unavailable'
+        elif row['job_id'] == '416e1862-53a2-4f3d-bfd8-e0475ab52ac9':
+            row.update(job_read='read', job_detail_state='completed', job_nodes=[
+                dict(key='adversarial_review', role='review', state='accepted', attempt=1, failure_reason=None),
+                dict(key='build_contract_project', role='implement', state='accepted', attempt=1, failure_reason=None),
+                dict(key='manifest', role='integrate', state='accepted', attempt=1, failure_reason=None),
+            ])
     assert payload["swarm_seat_work_rows"] == expected
     assert payload["swarm_seat_node_rows"] == sw.seat_node_rows(seat)
     assert payload["swarm_seat_teammates"] == sw.seat_teammates(seat)

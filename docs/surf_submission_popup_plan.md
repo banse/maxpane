@@ -64,7 +64,11 @@ On `7b9c907d`: hunt_a ready/1, hunt_b **failed/3 runtime_error**, hunt_c ready/2
 verify waiting/0; `seat` null on every node. The existing `SLOT_SWARM_JOBS_SEEN` keeps node summaries **without**
 `failureReason`, `attempt` or `blockedReason`. Do not widen that shared slot; §3 adds a new one.
 
-**Also found (G1):** oracle request `4c11a919` has `answerType: "bytes32[]"`, a list of 0x + 64-hex pool ids. The
+**Capture correction (2026-09-24):** `4c11a919…` is the job id; the oracle list maps it to
+request `1ad552f0-7f24-4e94-9c48-d25a79a88ce9`. Fresh captures and sizes are recorded in
+`docs/imd_swarm_api.md` and `submissions/MANIFEST.json`.
+
+**Also found (G1):** oracle job `4c11a919` has `answerType: "bytes32[]"`, a list of 0x + 64-hex pool ids. The
 branch's normalisation turns any list other than `address[]` into `None`, so RECORD showed `—`. Fixed in WP1.
 
 ## 2. Behaviour

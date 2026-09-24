@@ -193,8 +193,12 @@ time, job (the first eight characters of its id, linked to its page on `explorer
 (`oracle`, `review`, `build`), state, the model used, duration, panel outcome, output tokens and the seat's own answer.
 Joined oracle rows show the answer.json value and the start of its notes; a cut row's `»` opens
 the cached question, full retained value and notes. Failed members show their reason in red.
-Other rows show the first sentence of the reply — in red when the attempt failed. Queued, unavailable, not served and
-empty replies remain distinct, and keep their own colours on a failed attempt. Links to local files are reduced to their labels, and absolute
+Other rows show the first sentence of the reply — in red when the attempt failed. Their `»` opens a
+SUBMISSION popup with the retained reply, job and node state, usage and other seats on the job.
+It appears when a successfully read reply is cut or the attempt failed/rejected, even if the text fits.
+Failed builds label their published text as an excerpt: the actual build error may be absent.
+Queued, unavailable, not served and empty replies remain distinct, and keep their own colours
+on a failed attempt. Links to local files are reduced to their labels, and absolute
 local paths to filenames before display. A review that passed and work that won a job remain separate counts.
 SEAT names `#N never paired` for a seat that has never paired; a failed read says `unavailable`.
 `esc` backs out of either body, one-way.
@@ -509,9 +513,9 @@ of any of the six alternate bodies.
 | `o` / `O` in BOARD | Cycle sort column / reverse sort |
 | LEADERBOARD header click | Sort that column; click again to reverse |
 | LEADERBOARD row click or Enter | Save that seat and open AGENT |
-| RECORD `»` click | Open the cached oracle answer, question and notes |
-| Enter / `esc` in ANSWER | Close the popup and return to AGENT |
-| `esc` outside ANSWER | Return to the dashboard |
+| RECORD `»` click | Open ANSWER (joined oracle value, question and notes) or SUBMISSION (reply, job and usage) |
+| Enter / `esc` in ANSWER or SUBMISSION | Close the popup and return to AGENT |
+| `esc` outside a popup | Return to the dashboard |
 
 The status hint names the ones that are not experimental:
 `l launchpad · 4 pl4 · s swm · a agt · b brd`. In Surfboard's announce feed, `enter` or `space` on a
@@ -623,10 +627,11 @@ measured and accepted conditions at this pin and below, not something a wider pi
 The AGENT view (`a`) has its own pair, `SURF_AGENT_FULL_LAYOUT_COLUMNS` ×
 `SURF_AGENT_FULL_LAYOUT_ROWS`, re-measured for the card rows over RECORD. The `#:` blocks
 beside those constants in `screens/surf.py` record the measured dimensions and binding content.
-RECORD's cleaned answer takes the remaining width and clips with a visible `…`; its measured clearing
-width lives beside `RECORD_NEVER_CLEARS_BELOW` in the same file. Short answers do not light
-`‹ widen` once the table's other columns fit. The committed first 40 v4 work rows clear at
-`RECORD_NEVER_CLEARS_BELOW`; one column below still clips the longest answer. BOARD uses
+RECORD's cleaned answer takes the remaining width. Rows with an ANSWER or SUBMISSION button
+do not light `‹ widen` for a cut reply. The historical button-less fallback clearing width lives
+beside `RECORD_NEVER_CLEARS_BELOW` in the same file: the committed first 40 v4 work rows without
+valid popup identities clear there; one column below still clips the longest answer. Short answers
+do not light `‹ widen` once the table's other columns fit. BOARD uses
 `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`, with grouped FLEET and
 paused detail binding height. Durations below a minute display `<1m`.
 

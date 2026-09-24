@@ -291,8 +291,8 @@ with a measured clearing width in the `#:` block and in the layout test (`INFLIG
 `LAUNCHES_NEVER_CLEARS_BELOW`, `LAUNCHES_HIDES_NO_COLUMN_FROM`, `RECORD_NEVER_CLEARS_BELOW`):
 IN FLIGHT and LAUNCHES share a 4fr:5fr row measured so LAUNCHES hides no table column from below
 the pin up; RECORD's elastic `answer` column keeps `‹ widen` lit only when its cleaned reply
-actually clips. The committed capture's clearing width is recorded beside its constant. Heroes
-are part of the tested whole-body states; their clipped boxes fail those sweeps. F55 separately
+actually clips and has no popup button. The button-less capture's clearing width is recorded
+beside its constant. Heroes are part of the tested whole-body states; their clipped boxes fail those sweeps. F55 separately
 records the mixed SERVICES combinations which still clip and are not a whole-state guarantee.
 The original swarm grid decisions remain recorded in `docs/decisions.md`; the old A1 agent-grid
 arithmetic is historical (F32). AGENT now uses the seat-details handover's two-row structure.
@@ -327,7 +327,21 @@ must satisfy the bounded-string/link/path/control safety predicate, without re-d
 Successful terminal results and real negatives (404 or a successfully absent hash) remain
 frozen while retained. Transport/parse failures retry after `SWARM_ANSWER_DUE_S`, within the
 per-cycle cap, even on terminal jobs. Legacy unavailable/frozen entries become retryable.
-No raw submission envelope or uncleaned summary is cached.
+Owner-approved persistence change (2026-09-24): a bounded, cleaned reply (≤ 4,096 chars) and
+other seats' first lines (≤ 200) persist; never a raw envelope. Reply cleaning preserves indentation,
+newlines and box characters, expands tabs, and removes ANSI, other controls, local paths and
+Markdown targets. Cuts never end inside a 0x hex run. Other seats exclude the exact own hash,
+are sorted by node key/token and capped at eight; oracle nodes do not get other-seat summaries.
+Each answer point fits 8,000 compact UTF-8 JSON bytes, trimming other lines, reply, then failed
+checks through the shared oracle/submission budget helper. Reply has its own newline-aware
+safety check. Old shapes are dropped per point and re-read within the existing four-job cap.
+
+`SLOT_SWARM_JOB_DETAIL` stores bounded job state, blocked reason and up to 16 nodes with
+key/role/state/attempt/failure reason, plus `read_ts`/`terminal`. The existing `fetch_job` reads
+at most two jobs per seat cycle, from non-oracle or failed/rejected rows in the 40-row window.
+Nonterminal results retry after 120 seconds; completed/failed/cancelled are terminal, **blocked
+is not**. Cap at 400 jobs/48 hours with the injected clock. Failed reads are unavailable; absent
+points are not read. Row `job_detail_state` is separate from the original seat `job_state`.
 
 **Oracle panel reads** (`docs/surf_oracle_panels_plan.md`): after submission enrichment,
 only oracle nodes in the first 40 RECORD rows are eligible. Join list `jobId` to requests,
@@ -365,14 +379,28 @@ The data row retains role for other readers, but no RECORD tier displays it.
 **Joined oracle answers** (`docs/surf_answer_popup_plan.md`): exact member membership plus strict boolean
 `member.ok` selects answer.json's own value and notes for RECORD. Invalid values remain `None` without
 losing membership. Use the request's answerType: strict bool → true/false (display YES/NO), uint256 →
-1–78 decimal digits, address[] → at most 20 validated addresses joined by spaces; other scalar values
-are flattened and capped at 200 characters. Question/reason/notes caps are 1,000/200/4,000 characters;
+1–78 decimal digits, address[] → at most 20 validated addresses joined by spaces. Other …[]
+types accept at most 20 strings, each fullmatching 0x plus 1–64 hex digits or 1–78 decimal digits.
+RECORD shows `N values`; ANSWER lists full values one per line without address icons or links.
+Other scalar values are flattened and capped at 200 characters. Question/reason/notes caps are
+1,000/200/4,000 characters;
 question and notes keep newlines, other controls are removed. To meet the byte budget, trim notes,
 then question, then reason; preserve the value. Off-panel facts are all None; old cache shapes are dropped.
 Joined cuts end in `… »` and do not light `‹ widen`. Only validated job UUID/hash identities get the
 button. It opens a cached snapshot in `OracleAnswerScreen`; Enter/Escape dismiss to AGENT. Question,
 notes and address[] values use shared address helpers and the row's chain explorer; unknown chains
 remain copyable without a link. Opening never fetches; closing uses the normal refresh guard.
+
+**Other submission replies** (`docs/surf_submission_popup_plan.md`): non-joined rows with a valid
+job UUID/hash and answer state read/no_reply get `»` when cut or failed/rejected. It opens a
+`SubmissionDetailScreen` snapshot of the exact job/hash from the last rendered rows. Unread,
+not-served and unavailable replies get no button. Failed/rejected rows get it even when uncut.
+Any row with a popup button is exempt from reply-based `‹ widen`; button-less cuts still mark.
+Both popups share `RecordDetailScreen`'s frame, focused vertical scroll and pinned centred footer;
+Enter/Escape return to AGENT. Job/nodes, objective, this seat's status/usage/checks/findings/artifacts,
+reply and up to eight other seats are shown from cache. `local_build_failed` alone gets the excerpt
+note. Prose wraps, never scrolls horizontally; addresses use shared helpers without an explorer
+because these jobs carry no chain id. Every third-party string reaches Static as pre-built Text.
 
 **Palette:** dim labels, bold counts; green healthy/working/accepted, red offline/paused/down,
 yellow unavailable or existing pending counts. Zero working keeps `0 quiet` dim. Rates and
@@ -385,8 +413,8 @@ CAPABILITY keeps its original seven columns at `SURF_SWARM_FULL_LAYOUT_COLUMNS`.
 full tier adds `inf` and `acc/att` from `CAPABILITY_OPTIONAL_FULL_COLUMNS`; just below that
 onset only those two fields are shed. Its widen marker remains honest below the onset. Layout
 tests permit only these optional omissions and still require all original columns, no original clipping and no horizontal table scroll. RECORD's committed enriched
-v4 first 40 submission-message fallback clears at `RECORD_NEVER_CLEARS_BELOW`; one column below clips the informative answer.
-Joined answer.json rows are exempt: their popup button replaces the widen marker.
+v4 first 40 button-less submission-message fallback clears at `RECORD_NEVER_CLEARS_BELOW`; one column below clips the informative answer.
+Rows with ANSWER or SUBMISSION buttons are exempt: their popup replaces the reply widen marker.
 The build reply from work index 125 is outside that displayed-window measurement.
 
 

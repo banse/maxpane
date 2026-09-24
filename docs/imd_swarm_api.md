@@ -480,3 +480,65 @@ Re-derived seat #420 counts: 243 oracle work rows; 219 on a panel, including 205
 agreement cluster, 11 outside it and 3 assessing; 24 have no matching panel member.
 The capture contains 196 attested-in, 3 attested-out, 9 disagreed-in and 8 disagreed-out rows.
 No attested outvoted zero-figure seat answer remained in this captured history.
+
+### SUBMISSION popup capture — 2026-09-24
+
+Read-only, keyless captures at 11:45:53–11:46:49 UTC identify control-plane commit
+`aa8ff6ee4dbf18f61216fac372241449a958f5fd` (newer than the plan's initial `23659b86` probe).
+`tests/scripts/capture_submissions.py` saves raw responses and provenance in
+`tests/fixtures/surf/swarm/submissions/MANIFEST.json`: URL, status, SHA-256, bytes, UTC capture
+time and deployment commit. All eight GETs returned 200. Tests use an injected transport
+which rejects uncaptured routes; they never run the capture script.
+
+| Capture | Raw bytes | Observation |
+|---|---:|---|
+| version | 195 | Deployment identity |
+| seat_420 | 359,002 | Work-window/hash provenance |
+| hunt_submissions | 10,688 | Eight attempts; seat 420's hunt_d plus seven other seats |
+| hunt_job | 3,667 | Blocked; `node hunt_b: runtime_error` |
+| bundle_submissions | 162,369 | 90 attempts; seat 420's `bundle upload failed (500)` |
+| bundle_job | 1,355 | Job state and node facts |
+| oracle_list | 388,855 | Job-to-request identity provenance |
+| oracle/filtered/bytes32.json | 6,918 | One exact filtered member with five pool ids |
+
+The hunt job is `7b9c907d-99b9-405b-8491-6088c77d4cc9`; the bundle job is
+`2d73c9e2-c5cc-4a2e-a51f-f1a384606ab6`. Hunt's summary is 2,051 characters with
+`failureReason=local_build_failed`, 61 turns, 1,376.131 seconds, 74,958 output tokens and
+about 6.2 million cached input tokens. Its forge log starts mid-line and ends mid-warning:
+**the published excerpt does not contain the compile error**. The popup never identifies an
+unseen error. Six other seats report runtime_error and one path_violation. Job nodes include
+hunt_b failed at attempt 3, with runtime_error; blocked is retryable, not a terminal job state.
+Bundle's matched attempt has failureReason internal_error, six turns and no other-seat panel.
+
+No completed non-oracle job was present in the captured first 40 work rows. Per the approved
+fallback, the existing `v4/submissions_33016bad.json` supplies a completed review with its own
+reply and usage. The plan's `4c11a919…` was a **job id**, not a request id: the captured list
+maps it to request `1ad552f0-7f24-4e94-9c48-d25a79a88ce9`. The capture resumed using already
+saved bodies/timestamps after resolving that distinction, without refetching those bodies.
+The filtered bytes32 fixture's provenance lives in the new submissions manifest.
+
+`answerType=bytes32[]` supplies five full 0x + 64-hex pool ids. Non-address …[] types normalize
+only lists of at most 20 strings fullmatching 0x + 1–64 hex digits or 1–78 decimal digits.
+RECORD displays `N values`, and ANSWER lists each full value without copy icons or explorer
+links. Address[] retains its existing address behavior.
+
+The answers cache now persists a cleaned reply (4,096 characters), strict failure/usage facts,
+failed-check names (300 characters), findings count, up to ten artifact name/byte pairs and,
+for non-oracle nodes, up to eight other-seat summaries (200 characters each). It never stores
+raw response envelopes. One point is bounded to 8,000 compact UTF-8 JSON bytes, including
+read timestamp and terminal flag, by trimming other lines, reply, then failed checks. This
+shares the oracle point's byte-budget helper; the oracle's existing 6,000-byte default-JSON
+budget remains unchanged. Old answer shapes are invalidated per point and re-read.
+
+Measured compact answer point sizes with `read_ts=1000.0`: hunt **3,832**, bundle **343**,
+completed review **4,511** bytes. Multibyte stress points exercising each cascade step yield
+**7,998 / 7,998 / 8,000** bytes. The bytes32 oracle point is **1,715** bytes in its existing
+JSON encoding. The answer slot's 400 points permit at most 3.2 MB of point bodies; job keys
+and the outer cache envelope add overhead.
+
+The separate `SLOT_SWARM_JOB_DETAIL` stores only bounded job state/reason and up to 16 nodes'
+key/role/state/attempt/failureReason, plus read_ts/terminal. It reads at most two jobs per seat
+cycle from non-oracle or failed/rejected rows in RECORD's first 40, retries nonterminal reads
+after 120 seconds and retains at most 400 jobs for 48 hours. A failed read stays unavailable;
+completed/failed/cancelled are terminal, blocked is not. The row's `job_detail_state` leaves
+its original seat-reported `job_state` intact. Popup opening reads only a cached snapshot.
