@@ -40,3 +40,21 @@ its oracle request is `1ad552f0-7f24-4e94-9c48-d25a79a88ce9`.
 The layout test certifies the historical button-less RECORD case at 167 columns. That scope
 is already stated beside `RECORD_NEVER_CLEARS_BELOW`; a future layout pass can add a separate
 button-bearing measurement. The submission fix wave changes neither the test nor the pin.
+
+## Filed by the submission fix-wave re-review (2026-09-24, all Minor)
+
+- **F6 — coercion cost, partly addressed.** The single-scan `_safe_reply` is 3–4× faster and
+  equivalent to the old check (200,000-string fuzz, 0 differences), but on replies that contain `/`
+  or URLs a 400-point slot still costs ≈ 0.09–0.16 s per coercion and ≈ 0.46 s per seat cycle
+  (target ≤ 0.1 s). The commit's 0.0877 s figure was measured on slash-free prose, which takes the
+  early return in `_safe_answer_markup`. Measure again with the committed hunt reply before acting.
+- **N1 — fifth coercion per cycle.** F4 added `sw.enrich_work_rows(...)` inside
+  `_pool_swarm_job_details`, a fifth full `coerce_answers_slot` per cycle (with 5802, 5826, 6188,
+  6194). The job pool could reuse the rows the answer pool already validated.
+- **N2 — eligibility vs button identity drift.** `job_details_due` checks the hash with `_hex64`
+  (accepts uppercase); the button's `valid_identity` needs lowercase. An uppercase hash would get a
+  job read without a button (at most 2 wasted reads per cycle). Share one predicate with
+  `can_open_submission`.
+- **N3 — perf test covers only the fast path.**
+  `test_plain_replies_skip_python_link_parser_at_cache_cap` uses slash-free replies; add a
+  URL-bearing case at the cap.
