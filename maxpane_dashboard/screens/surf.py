@@ -2981,9 +2981,9 @@ class SurfScreen(DashboardScreen):
      * weight = need, every card is whole once the row has their sum. */
     SurfScreen #surf-swarm-agent-seat { width: 23fr; }
     SurfScreen #surf-swarm-card-owner { width: 23fr; }
-    SurfScreen #surf-swarm-agent-accepted { width: 23fr; }
+    SurfScreen #surf-swarm-agent-work { width: 23fr; }
     SurfScreen #surf-swarm-card-runtime { width: 23fr; }
-    SurfScreen #surf-swarm-agent-win-rate { width: 20fr; }
+    SurfScreen #surf-swarm-agent-accepted { width: 20fr; }
     SurfScreen #surf-swarm-card-score { width: 20fr; }
     SurfScreen #surf-swarm-agent-reviewed { width: 19fr; }
     SurfScreen #surf-swarm-card-feedback { width: 19fr; }

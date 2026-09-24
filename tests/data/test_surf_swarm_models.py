@@ -259,7 +259,7 @@ def test_the_agent_signatures_are_the_flipped_literals():
     """AGENT-seats plan §1.3, flipped in WP5 (the screen dispatch reads these)."""
     assert {k: SWARM_WIDGET_SIGNATURES[k] for k in AGENT_WIDGETS} == {
         "SurfSwarmAgentHero": (
-            "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm",
+            "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state",
             "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta",
         ),
         "SurfSwarmSeatCards": (

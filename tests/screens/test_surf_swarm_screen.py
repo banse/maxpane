@@ -164,7 +164,7 @@ async def test_every_agent_hero_title_sits_on_the_same_row():
         heights = {len(str(b.render()).split("\n")) for b in boxes}
 
     assert len(heights) > 1, "every body has the same height: nothing to align"
-    assert firsts == ["SEAT", "ACCEPTED", "ACCEPT RATE", "REVIEWED", "RANK", "STATUS"], firsts
+    assert firsts == ["SEAT", "WORK", "ACCEPTED", "REVIEWED", "RANK", "STATUS"], firsts
 
 
 @pytest.mark.parametrize("width", [SURF_AGENT_FULL_LAYOUT_COLUMNS, 150, 169, 211])

@@ -37,6 +37,7 @@ __all__ = [
     "contrib_body",
     "count",
     "rank_body",
+    "work_body",
     "NEVER_PAIRED_STYLE",
     "NODE_TITLES",
     "NEVER_PAIRED_TEMPLATE",
@@ -118,19 +119,36 @@ def contrib_body(contrib, build) -> str | Text:
     return build(contrib)
 
 
-def rank_body(contrib: dict) -> Text:
+def rank_body(contrib: dict, delta=None) -> Text:
     body = Text()
     rank, of = count(contrib.get("rank")), count(contrib.get("ranked_of"))
     if rank is None:
         body.append("unranked", style="dim")
     else:
         body.append(f"#{rank}", style="bold").append(" of ", style="dim").append(of or "--", style="bold")
+    if rank is not None and isinstance(delta, int) and not isinstance(delta, bool) and delta:
+        body.append("\n").append(("▲" if delta > 0 else "▼") + fmt_int(abs(delta)),
+                                style="bold green" if delta > 0 else "bold red")
+    return body
+
+
+def work_body(contrib: dict) -> Text:
+    """Contributor work totals, separate from rank and its movement."""
     turns = count(contrib.get("turns"))
-    body.append("\n").append(turns or "--", style="bold").append(" turns", style="dim")
+    body = Text().append(turns or "--", style="bold").append(" turns", style="dim")
     seconds = contrib.get("wall_clock_s")
     hours = (fmt_float(seconds / 3600, ".1f")
              if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) else "--")
-    return body.append("\n").append(hours, style="bold").append(" h", style="dim")
+    body.append("\n").append(hours, style="bold").append(" h", style="dim")
+    tokens = seat_token(contrib.get("output_tokens"))
+    try:
+        text = "--" if tokens is None else fmt_int(tokens) if tokens < 1000 else fmt_compact(tokens)
+        # Beyond the compact formatter's B suffix, use bounded scientific notation.
+        if len(text) > 8:
+            text = f"{tokens:.1e}"
+    except (OverflowError, ValueError):
+        text = "--"
+    return body.append("\n").append(text, style="dim" if text == "--" else "bold").append(" tokens", style="dim")
 
 
 def _whole(value: int) -> str:

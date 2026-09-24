@@ -1,6 +1,6 @@
-"""AGENT hero: SEAT, ACCEPTED, ACCEPT RATE, REVIEWED, RANK and STATUS.
+"""AGENT hero: SEAT, WORK, ACCEPTED, REVIEWED, RANK and STATUS.
 
-ACCEPT RATE is lifetime accepted / attempts; a real zero denominator says
+ACCEPTED includes the lifetime accepted / attempts rate; a real zero denominator says
 ``no attempts`` and a missing counter says ``unavailable``. STATUS names the
 newest work with its local date -- ``worked`` when the newest attempt is newer
 than the newest accepted one, else ``accepted`` (owner, 2026-09-22) -- never the
@@ -16,16 +16,16 @@ from __future__ import annotations
 
 from rich.text import Text
 
-from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
-from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd_hhmm, source_clock
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     NEVER_PAIRED_STYLE,
     NEVER_PAIRED_WORDS,
     contrib_body,
     rank_body,
+    work_body,
     seat_state_line,
     seat_token,
 )
@@ -45,9 +45,9 @@ ONLINE_LINE = "● online"
 
 BOX_IDS = {
     "seat": "surf-swarm-agent-seat",
+    "work": "surf-swarm-agent-work",
     "accepted": "surf-swarm-agent-accepted",
     "reviewed": "surf-swarm-agent-reviewed",
-    "win_rate": "surf-swarm-agent-win-rate",
     "rank": "surf-swarm-agent-rank",
     "status": "surf-swarm-agent-status",
 }
@@ -75,8 +75,8 @@ class SurfSwarmAgentHero(HeroRow):
     BOX_CLASS = SurfSwarmAgentHeroBox
     BOXES = (
         (BOX_IDS["seat"], "SEAT"),
+        (BOX_IDS["work"], "WORK"),
         (BOX_IDS["accepted"], "ACCEPTED"),
-        (BOX_IDS["win_rate"], "ACCEPT RATE"),
         (BOX_IDS["reviewed"], "REVIEWED"),
         (BOX_IDS["rank"], "RANK"),
         (BOX_IDS["status"], "STATUS"),
@@ -87,7 +87,6 @@ class SurfSwarmAgentHero(HeroRow):
         swarm_seat_selected=None,
         swarm_seat_summary=None,
         swarm_seat_state=None,
-        swarm_seat_as_of_hhmm=None,
         swarm_seat_live=None,
         swarm_seat_contrib=None,
         swarm_seat_rank_delta=None,
@@ -96,18 +95,18 @@ class SurfSwarmAgentHero(HeroRow):
         """Rewrite all six boxes; the state says which kind of missing."""
         selected = swarm_seat_selected
         state = swarm_seat_state
-        as_of = swarm_seat_as_of_hhmm if rowfit.has_marker(swarm_seat_as_of_hhmm) else None
         self.render_box(f"#{BOX_IDS['seat']}", "SEAT",
                         lambda: self._seat_body(selected, state))
         for key, label, build in (
-            ("accepted", "ACCEPTED", lambda s: self._accepted_body(s, as_of)),
+            ("accepted", "ACCEPTED", self._accepted_body),
             ("reviewed", "REVIEWED", self._reviewed_body),
-            ("win_rate", "ACCEPT RATE", self._win_rate_body),
         ):
             self.render_box(f"#{BOX_IDS[key]}", label,
                             lambda build=build: self._stat_body(swarm_seat_summary, state, build))
+        self.render_box(f"#{BOX_IDS['work']}", "WORK",
+                        lambda: contrib_body(swarm_seat_contrib, work_body))
         self.render_box(f"#{BOX_IDS['rank']}", "RANK",
-                        lambda: contrib_body(swarm_seat_contrib, rank_body))
+                        lambda: contrib_body(swarm_seat_contrib, lambda c: rank_body(c, swarm_seat_rank_delta)))
         self.render_box(f"#{BOX_IDS['status']}", "STATUS",
                         lambda: self._status_body(swarm_seat_summary, state, swarm_seat_live))
 
@@ -147,7 +146,7 @@ class SurfSwarmAgentHero(HeroRow):
         return build(summary)
 
     @staticmethod
-    def _accepted_body(summary: dict, as_of=None) -> str | Text:
+    def _accepted_body(summary: dict) -> str | Text:
         accepted = _count(summary.get("accepted"))
         attempts = _count(summary.get("attempts"))
         if accepted is None or attempts is None:
@@ -156,9 +155,8 @@ class SurfSwarmAgentHero(HeroRow):
         body.append(fmt_int(accepted), style="bold green" if accepted else "bold")
         body.append(" of ", style="dim")
         body.append(fmt_int(attempts), style="bold")
-        if as_of is not None:
-            body.append("\nas of " + source_clock(as_of), style="dim")
-        return body
+        rate = SurfSwarmAgentHero._win_rate_body(summary)
+        return body.append("\n") + (Text.from_markup(rate) if isinstance(rate, str) else rate)
 
     @staticmethod
     def _reviewed_body(summary: dict) -> str | Text:
@@ -193,7 +191,7 @@ class SurfSwarmAgentHero(HeroRow):
         rate = summary.get("win_rate")
         if isinstance(rate, bool) or not isinstance(rate, (int, float)):
             return UNAVAILABLE
-        return Text().append(fmt_win_rate(rate), style="bold").append("\nof attempts", style="dim")
+        return Text().append(fmt_win_rate(rate), style="bold")
 
     @staticmethod
     def _status_body(summary, state, live) -> Text:
