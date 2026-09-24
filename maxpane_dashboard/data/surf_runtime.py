@@ -17,7 +17,7 @@ def coerce_runtime_slot(payload, *, now):
         if version is not None and npm_version(version) is None:
             continue
         if (isinstance(stamp, bool) or not isinstance(stamp, (int, float))
-                or not math.isfinite(stamp) or stamp < 0 or stamp > now):
+                or stamp < 0 or stamp > now or not math.isfinite(stamp)):
             continue
         clean[runtime] = {'version':version, 'checked_ts':stamp}
     return clean

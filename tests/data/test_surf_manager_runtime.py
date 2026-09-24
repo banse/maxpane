@@ -154,3 +154,10 @@ async def test_new_seat_reads_only_its_new_package_inside_other_package_ttl(tmp_
         assert npm.calls == {'claude':1, 'codex':1}
     finally:
         await manager.close()
+
+
+@pytest.mark.parametrize('stamp', [None, True, 'x', -1, float('nan'), float('inf'), NOW + 1, 10**1000])
+def test_runtime_cache_timestamp_validation_preserves_valid_siblings(stamp):
+    from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
+    good = {'version':'2.1.281', 'checked_ts':NOW}
+    assert coerce_runtime_slot({'claude':good, 'codex':{'version':'0.156.1', 'checked_ts':stamp}}, now=NOW) == {'claude':good}
