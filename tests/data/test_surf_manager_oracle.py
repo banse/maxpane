@@ -39,10 +39,41 @@ class Oracle(Answers):
         return copy.deepcopy(self.requests)
 
     async def fetch_oracle_request(self,request_id,submission_hash):
-        assert any(r['submissionHash'] == submission_hash for r in self.seat['work'])
-        self.oracle_calls.append(('detail',request_id))
+        self.oracle_calls.append(('detail',request_id,submission_hash))
         await asyncio.sleep(0)
-        return copy.deepcopy(self.details.get(request_id))
+        detail = copy.deepcopy(self.details.get(request_id))
+        if detail is not None and isinstance(detail.get('members'), list):
+            detail['members'] = [m for m in detail['members'] if m['submissionHash'] == submission_hash]
+        return detail
+
+
+async def test_shared_job_reads_each_hash_and_keeps_its_own_member_facts(tmp_path):
+    fake = Oracle(2)
+    first, second = fake.seat['work']
+    second['jobId'] = first['jobId']
+    detail = next(iter(fake.details.values()))
+    detail['answerType'] = 'bool'
+    template = detail['members'][0]
+    detail['members'] = [dict(template, submissionHash=row['submissionHash'],
+                              answer=dict(template['answer'], answer=value, notes=note))
+                         for row, value, note in [(first, True, 'First evidence'), (second, False, 'Second evidence')]]
+    detail['agreement']['cluster'] = [first['submissionHash'], second['submissionHash']]
+    fake.details = {detail['id']: detail}
+    fake.requests = [{k: detail[k] for k in ('id', 'jobId', 'createdAt')}]
+    assert (await fake.fetch_oracle_request(detail['id'], 'f'*64))['members'] == []
+    fake.oracle_calls.clear()
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert [c[1:] for c in fake.oracle_calls if c[0] == 'detail'] == [
+            (detail['id'], first['submissionHash']), (detail['id'], second['submissionHash'])]
+        result = {row['submission_hash']: row for row in rows(manager)}
+        for source, value, note in [(first, 'true', 'First evidence'), (second, 'false', 'Second evidence')]:
+            row = result[source['submissionHash']]
+            assert row['oracle_seat_answer'] == value
+            assert row['oracle_notes'] == note and row['oracle_member_ok'] is True
+    finally:
+        await manager.close()
 
 
 def rows(manager,now=NOW):

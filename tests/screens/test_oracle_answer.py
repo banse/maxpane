@@ -1,6 +1,4 @@
 """ANSWER popup: composited content, geometry and real app-level click paths."""
-import asyncio
-
 import pytest
 from rich.cells import cell_len
 from textual.app import App
@@ -131,6 +129,39 @@ async def test_popup_action_revalidates_and_reports_disappeared_row():
         await screen.action_open_oracle_answer(row['job_id'],row['submission_hash'])
         assert pilot.app.screen is screen
         assert screen.query_one(StatusBar).message=='answer no longer listed'
+
+
+async def test_same_job_popup_click_selects_exact_joined_member():
+    first = oracle_row(submission_hash='1'*64, oracle_question='First question', oracle_notes='First evidence '*100)
+    second = oracle_row(submission_hash='2'*64, oracle_question='Second question', oracle_notes='Second evidence '*100)
+    absent = oracle_row(submission_hash='3'*64, oracle_member_ok=None)
+    payload = _sample_data()
+    payload.update(swarm_seat_state='ok', swarm_seat_work_rows=[first, second, absent])
+    manager = _FakeManager(payload); screen = SurfScreen(manager, poll_interval=9999)
+    async with _Harness(screen).run_test(size=(139, 33)) as pilot:
+        await settled(pilot, lambda: manager.calls > 0 and not screen._refresh_in_flight)
+        await pilot.press('a'); await pilot.pause()
+        for row in (first, second):
+            target = None
+            for y, strip in enumerate(screen._compositor.render_strips()):
+                x = 0
+                for segment in strip:
+                    for char in segment.text:
+                        action = screen.get_style_at(x, y).meta.get('@click', '')
+                        if char == '»' and row['submission_hash'] in action:
+                            target = (x, y)
+                        x += cell_len(char)
+            assert target is not None
+            await pilot.click(offset=target)
+            await settled(pilot, lambda: isinstance(pilot.app.screen, OracleAnswerScreen))
+            text = '\n'.join(lines(pilot.app))
+            assert row['oracle_question'] in text
+            assert row['oracle_notes'].split()[0] + ' evidence' in text
+            await pilot.press('enter')
+            await settled(pilot, lambda: pilot.app.screen is screen and not screen._refresh_in_flight)
+        await screen.action_open_oracle_answer(absent['job_id'], absent['submission_hash'])
+        assert pilot.app.screen is screen
+        assert screen.query_one(StatusBar).message == 'answer no longer listed'
 
 
 async def test_resume_real_manager_keeps_fresh_seat_answers_and_oracle_cache(tmp_path):

@@ -303,6 +303,13 @@ def test_known_final_without_agreement_is_a_failed_read(status, agreement):
     assert enrich(row, failed)['panel_state'] == 'unavailable'
 
 
+@pytest.mark.parametrize('status', ['', '  '])
+def test_empty_or_whitespace_status_is_a_failed_read(status):
+    detail, row = captured()
+    detail['status'] = status
+    assert point(detail, row) is None
+
+
 def test_member_failure_and_normalized_paragraphs():
     detail, row = captured()
     member = next(m for m in detail['members'] if m['submissionHash'] == row['submission_hash'])

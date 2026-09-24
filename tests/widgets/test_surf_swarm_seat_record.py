@@ -521,6 +521,21 @@ async def test_missing_panel_counts_are_unavailable(state,field):
     assert 'None' not in text and '?/?' not in text
 
 
+@pytest.mark.parametrize('state,agreed,quorum,size,expected', [
+    ('agreed', 34, None, 49, '✓ 34'), ('outvoted', 34, None, 49, '✗ 34'),
+    ('assessing', 3, 3, None, '…'), ('assessing', 3, 3, 200, '… of 200'),
+    ('agreed', 80, 80, 112, '✓ 80/80'),
+])
+async def test_panel_fallback_exact_composited_cell(state, agreed, quorum, size, expected):
+    row = dict(NEWEST, panel_state=state, panel_agreed=agreed, panel_quorum=quorum, panel_size=size)
+    lines = await _record((220, 12), swarm_seat_work_rows=[row])
+    header = _row_with(lines, 'when')
+    cell = _row_with(lines, _job(row))[header.index('panel'):header.index('tok')].strip()
+    assert cell == expected
+    if state == 'assessing' and size is None:
+        assert not any(char.isdigit() for char in cell)
+
+
 @pytest.mark.parametrize('value,expected',[(None,'—'),(0,'0'),(1534,'1.5K'),(22000,'22.0K'),(True,'—')])
 async def test_output_tokens_in_composited_tok_column(value,expected):
     row=dict(NEWEST,answer_state='read',answer='Done.',output_tokens=value)
