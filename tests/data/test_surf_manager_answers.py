@@ -381,3 +381,21 @@ async def test_record_open_filter_enriches_old_failed_attempt_before_windowing(t
         assert fake.answer_calls == fake.detail_calls == [fake.seat['work'][80]['jobId']]
     finally:
         await manager.close()
+
+
+@pytest.mark.parametrize("cap,open_only", [
+    (None, False), ("x", False), (1.5, False), (True, False), ([], False),
+    (60, "yes"), (60, None),
+])
+async def test_record_view_invalid_values_leave_manager_unchanged(tmp_path, monkeypatch, cap, open_only):
+    from unittest.mock import Mock
+    manager = _manager(tmp_path, Answers(), clock=FakeClock(NOW))
+    try:
+        manager.set_record_view(80, True)
+        mark_due = Mock()
+        monkeypatch.setattr(manager.cache, "mark_due", mark_due)
+        manager.set_record_view(cap, open_only)
+        assert (manager.record_cap, manager.record_open_only) == (80, True)
+        mark_due.assert_not_called()
+    finally:
+        await manager.close()

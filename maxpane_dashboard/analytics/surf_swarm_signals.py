@@ -20,7 +20,7 @@ from typing import Any
 
 __all__ = [
     "completed_within", "count_by", "duration_stats", "launch_summary",
-    "seen_since_ts", "skill_summary", "state_rollup", "record_state", "record_window",
+    "seen_since_ts", "skill_summary", "state_rollup", "record_state", "record_selected", "record_window",
 ]
 
 
@@ -150,13 +150,22 @@ def completed_within(seen: object, now_ts: float,
     return count, since
 
 
-def record_state(row: Mapping[str, Any]) -> str | None:
+def record_state(row: object) -> str | None:
     """The attempt state, with accepted/pre-status rows taking the job state."""
+    if not isinstance(row, Mapping):
+        return None
     status = row.get("work_status")
     return row.get("job_state") if status in (None, "accepted") else status
 
 
-def record_window(rows: Sequence[dict], cap: int, open_only: bool) -> list[dict]:
+def record_selected(rows: object, open_only: bool) -> list[Mapping[str, Any]]:
+    """Valid rows in source order, filtered by the displayed state."""
+    if not isinstance(rows, (list, tuple)):
+        return []
+    return [row for row in rows if isinstance(row, Mapping)
+            and (not open_only or record_state(row) != "completed")]
+
+
+def record_window(rows: object, cap: int, open_only: bool) -> list[Mapping[str, Any]]:
     """Filter before windowing; retain source order within the 40..400 view."""
-    selected = [row for row in rows if not open_only or record_state(row) != "completed"]
-    return selected[:max(40, min(400, cap))]
+    return record_selected(rows, open_only)[:max(40, min(400, cap))]

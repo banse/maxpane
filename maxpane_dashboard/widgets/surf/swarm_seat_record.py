@@ -25,7 +25,7 @@ from rich.text import Text
 from rich.style import Style
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.analytics.surf_swarm_signals import record_state, record_window
+from maxpane_dashboard.analytics.surf_swarm_signals import record_selected, record_state, record_window
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import job_text
@@ -117,26 +117,19 @@ def _line_style(line: Text) -> str:
     return str(line.spans[0].style) if line.spans else ""
 
 
-def older_line(rows: object, cap: int | None) -> str | None:
-    """``+N older`` for the rows past *cap*, or ``None`` when every row is shown."""
-    if not isinstance(rows, list) or cap is None or len(rows) <= cap:
+def older_line(filtered_count: int, cap: int) -> str | None:
+    """``+N older`` for selected rows past *cap*, or ``None`` when all fit."""
+    if filtered_count <= cap:
         return None
-    return f"+{fmt_int(len(rows) - cap)} older"
+    return f"+{fmt_int(filtered_count - cap)} older"
 
 
-def seat_footer(state: object, rows: object, cap: int | None) -> tuple[str, str] | None:
-    """What a seat table's footer says instead of the base's, as ``(words, style)``.
-
-    The seat state first (``_swarm_seat.seat_state_line``: pending, never
-    paired, unavailable); then, for ``"ok"``, the ``+N older`` line when the
-    rows run past *cap*. ``None`` leaves the base's own footer (the real-empty
-    sentence, ``unavailable`` for an unread list, or none) standing.
-    """
+def seat_footer(state: object) -> tuple[str, str] | None:
+    """Seat-state override as ``(words, style)``; ``None`` keeps the table footer."""
     line = seat_state_line(state)
     if line is not None:
         return line.plain, _line_style(line)
-    older = older_line(rows, cap)
-    return (older, "dim") if older else None
+    return None
 
 
 class SurfSwarmSeatRecord(SwarmTableBase):
@@ -189,6 +182,8 @@ class SurfSwarmSeatRecord(SwarmTableBase):
 
     def set_record_view(self, cap: int, open_only: bool) -> None:
         """Repaint the cached rows; view state is supplied by the screen."""
+        if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(open_only, bool):
+            return
         cap = max(40, min(self.MAX_CAP, cap))
         if (self.ROW_CAP, self._open_only) == (cap, open_only):
             return
@@ -198,11 +193,8 @@ class SurfSwarmSeatRecord(SwarmTableBase):
 
     def _store_view(self, as_of) -> None:
         rows = self._all_rows
-        if isinstance(rows, list):
-            self._filtered_count = sum(not self._open_only or record_state(row) != "completed" for row in rows)
-            rows = record_window(rows, self.ROW_CAP, self._open_only)
-        else:
-            self._filtered_count = 0
+        self._filtered_count = len(record_selected(rows, self._open_only))
+        rows = record_window(rows, self.ROW_CAP, self._open_only) if isinstance(rows, (list, tuple)) else None
         self.store(rows, as_of)
 
     def render_table(self, rows, *, footer=None) -> None:
@@ -216,14 +208,14 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         if not self.is_mounted:
             return
         super()._repaint()
-        footer = seat_footer(self._state, None, None)
+        footer = seat_footer(self._state)
         if footer is not None:
             words, style = footer
             self._write_footer((words,), style=style)
-        elif isinstance(self._all_rows, list):
-            older = max(0, self._filtered_count - self.ROW_CAP)
+        elif isinstance(self._all_rows, (list, tuple)):
+            older = older_line(self._filtered_count, self.ROW_CAP)
             if older:
-                text = Text(f"+{fmt_int(older)} older", style="dim")
+                text = Text(older, style="dim")
                 if self.ROW_CAP < self.MAX_CAP:
                     text.append(" · ").append("more", style=Style(bold=True, meta={"@click": "screen.record_more()"}))
                 footer_widget = self.query_one(f"#{self.footer_id}", Static)

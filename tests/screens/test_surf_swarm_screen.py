@@ -810,3 +810,43 @@ async def test_record_filter_title_is_whole_at_every_tier(width,tier):
         if tier == 'full':
             header = _region_text(pilot.app, record.query_one(DataTable)).splitlines()[0]
             assert header.index('took') < header.index('tok') < header.index('panel')
+
+
+async def test_record_view_resets_on_refresh_seat_change_but_not_initial_refresh(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from maxpane_dashboard.data.surf_manager import SurfManager
+    from tests.screens.test_oracle_answer import settled
+
+    payload = _record_view_payload()
+    payload["swarm_seat_selected"] = {**payload["swarm_seat_selected"], "token_id": 420}
+    manager = _FakeManager(payload)
+    manager.record_cap, manager.record_open_only = 40, False
+    manager.cache = SimpleNamespace(mark_due=Mock())
+    manager.set_record_view = Mock(side_effect=lambda cap, open_only:
+                                  SurfManager.set_record_view(manager, cap, open_only))
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    monkeypatch.setattr(screen, "start_refresh", lambda: None)
+    async with _ThemedHarness(screen).run_test(size=(139, 35)) as pilot:
+        assert screen._record_seat_token is None
+        await screen._do_refresh()
+        await pilot.press("a")
+        record = screen.query_one(SurfSwarmSeatRecord)
+        table = record.query_one(DataTable)
+        await settled(pilot, lambda: table.row_count == 40)
+        assert screen._record_seat_token == 420
+        manager.set_record_view.assert_not_called()
+        manager.cache.mark_due.assert_not_called()
+        for action in ("screen.record_more()", "screen.record_filter('open')"):
+            x, y, _ = _record_click_target(screen, action)
+            await pilot.click(offset=(x, y))
+        await settled(pilot, lambda: table.row_count == 60 and record._open_only)
+        assert (screen.record_cap, screen.record_open_only) == (60, True)
+        assert (manager.record_cap, manager.record_open_only) == (60, True)
+        manager._payload = {**payload, "swarm_seat_selected": {**payload["swarm_seat_selected"], "token_id": 421}}
+        await screen._do_refresh()
+        await settled(pilot, lambda: table.row_count == 40 and not record._open_only)
+        assert (screen.record_cap, screen.record_open_only) == (40, False)
+        assert (manager.record_cap, manager.record_open_only) == (40, False)
+        assert screen._record_seat_token == 421
+        manager.set_record_view.assert_called_with(40, False)

@@ -756,3 +756,35 @@ async def test_record_view_counts_filtered_older_rows_and_stops_at_cache_cap():
 def test_record_view_maximum_agrees_with_retained_data():
     from maxpane_dashboard.data.surf_manager import SWARM_ANSWER_CACHE_CAP
     assert SurfSwarmSeatRecord.MAX_CAP == SWARM_ANSWER_CACHE_CAP == 400
+
+
+@pytest.mark.parametrize("cap,open_only", [
+    (None, False), ("x", False), (1.5, False), (True, False), ([], False),
+    (60, "yes"), (60, None),
+])
+def test_record_view_invalid_values_leave_widget_unchanged(monkeypatch, cap, open_only):
+    from unittest.mock import Mock
+    record = SurfSwarmSeatRecord()
+    record.set_record_view(80, True)
+    store = Mock()
+    monkeypatch.setattr(record, "_store_view", store)
+    record.set_record_view(cap, open_only)
+    assert (record.ROW_CAP, record._open_only) == (80, True)
+    store.assert_not_called()
+
+
+@pytest.mark.parametrize("open_only", [False, True])
+async def test_record_malformed_items_are_neither_shown_nor_counted(open_only):
+    from textual.widgets import DataTable
+    rows = [dict(NEWEST, work_status="failed") for _ in range(51)]
+    rows[20:20] = ["bad", 3, None] * 5
+    async with App().run_test(size=(139, 20)) as pilot:
+        record = SurfSwarmSeatRecord()
+        await pilot.app.mount(record)
+        record.set_record_view(40, open_only)
+        record.update_data(swarm_seat_work_rows=rows, swarm_seat_state="ok")
+        await pilot.pause()
+        text = "\n".join("".join(seg.text for seg in strip)
+                         for strip in pilot.app.screen._compositor.render_strips())
+        assert "+11 older · more" in text
+        assert record.query_one(DataTable).row_count == 40

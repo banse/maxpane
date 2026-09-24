@@ -1105,9 +1105,10 @@ class SurfManager:
         #: (``tests/data/test_manager_seams.py``); ``MAXPANE_IMD_SEAT`` was
         #: retired 2026-09-21 for the seat prompt. An IDMD token id, not a
         #: secret. Stored as given: ``sw.parse_seat_token`` parses it.
+        self._seat_saved: str | int | None = seat
+        #: Screen-owned RECORD view, bounded to 40..400; resets on a seat change.
         self.record_cap = sw.SWARM_ANSWER_ROW_CAP
         self.record_open_only = False
-        self._seat_saved: str | int | None = seat
         #: The in-flight detached ``/seats/{token}`` read and the token it is
         #: for (the /seats plan WP2). One seat at a time: a read for a seat
         #: that is no longer selected is cancelled, never left to land.
@@ -5541,6 +5542,8 @@ class SurfManager:
 
     def set_record_view(self, cap: int, open_only: bool) -> None:
         """Update eligibility without I/O; the next seat cycle fills this window."""
+        if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(open_only, bool):
+            return
         self.record_cap = max(sw.SWARM_ANSWER_ROW_CAP, min(SWARM_ANSWER_CACHE_CAP, cap))
         self.record_open_only = open_only
         self.cache.mark_due(TIER_SWARM_SEAT)
