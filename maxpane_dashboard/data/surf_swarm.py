@@ -1721,12 +1721,24 @@ _ORACLE_FACTS = ('question', 'chain_id', 'member_ok', 'member_reason', 'seat_ans
 ORACLE_POINT_BYTES = 6000
 
 
+def _oracle_prefix(text: str, cap: int) -> str | None:
+    """Never turn a cut hex run into a different, apparently valid address."""
+    if len(text) > cap:
+        for run in re.finditer(r'0x[0-9a-fA-F]+', text):
+            if run.start() >= cap:
+                break
+            if cap < run.end():
+                cap = run.start()
+                break
+    return text[:cap].rstrip() or None
+
+
 def _oracle_text(value: object, cap: int, *, paragraphs: bool = True) -> str | None:
     if not isinstance(value, str):
         return None
     clean = ''.join(c for c in value if c == '\n' or not unicodedata.category(c).startswith('C'))
     clean = '\n'.join(' '.join(line.split()) for line in clean.split('\n')) if paragraphs else ' '.join(clean.split())
-    return clean.strip()[:cap].rstrip() or None
+    return _oracle_prefix(clean.strip(), cap)
 
 
 def _seat_answer(value: object, kind: str | None) -> str | None:
@@ -1768,12 +1780,12 @@ def _bound_oracle_point(point: dict) -> dict | None:
         low, high = 0, len(text)
         while low < high:
             mid = (low + high + 1) // 2
-            point[name] = text[:mid].rstrip() or None
+            point[name] = _oracle_prefix(text, mid)
             if _oracle_bytes(point) <= ORACLE_POINT_BYTES:
                 low = mid
             else:
                 high = mid - 1
-        point[name] = text[:low].rstrip() or None
+        point[name] = _oracle_prefix(text, low)
     return point if _oracle_bytes(point) <= ORACLE_POINT_BYTES else None
 
 

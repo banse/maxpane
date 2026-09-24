@@ -536,6 +536,23 @@ async def test_panel_fallback_exact_composited_cell(state, agreed, quorum, size,
         assert not any(char.isdigit() for char in cell)
 
 
+async def test_large_panel_counts_fit_without_changing_record_tiers():
+    assert (FULL_WIDTH, COMPACT_WIDTH, TIGHT_WIDTH) == (102, 94, 53)
+    row = dict(NEWEST, panel_state='agreed', panel_agreed=123456789, panel_quorum=987654321,
+               output_tokens=1534, answer_state='read', answer='Done.')
+    lines = await _record((220, 12), swarm_seat_work_rows=[row])
+    header = _row_with(lines, 'when'); line = _row_with(lines, _job(row))
+    assert line[header.index('panel'):header.index('tok')].strip() == '✓ 123456…'
+    assert line[header.index('tok'):header.index('answer')].strip() == '1.5K'
+
+
+@pytest.mark.parametrize('reason,expected', [(None, 'failed · —'), ('[/x]Invalid input', 'failed · Invalid input')])
+async def test_failed_member_wording_in_record(reason, expected):
+    row = oracle_row(oracle_member_ok=False, oracle_member_reason=reason)
+    lines = await _record((220, 12), swarm_seat_work_rows=[row])
+    assert expected in _row_with(lines, _job(row))
+
+
 @pytest.mark.parametrize('value,expected',[(None,'—'),(0,'0'),(1534,'1.5K'),(22000,'22.0K'),(True,'—')])
 async def test_output_tokens_in_composited_tok_column(value,expected):
     row=dict(NEWEST,answer_state='read',answer='Done.',output_tokens=value)

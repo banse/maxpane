@@ -206,12 +206,29 @@ async def test_popup_preserves_full_uint256_and_lists_every_address():
         assert all(address+' ⧉' in '\n'.join(lines(pilot.app)) for address in addresses)
 
 
-async def test_popup_failed_member_displays_reason_in_red():
+@pytest.mark.parametrize('reason,expected', [('Invalid input', 'failed · Invalid input'),
+    (None, 'failed · —'), ('[/x]Invalid input', 'failed · Invalid input')])
+async def test_popup_failed_member_displays_reason_in_red(reason, expected):
     from rich.color import Color
-    row=oracle_row(oracle_member_ok=False,oracle_member_reason='Invalid input',oracle_notes='Details.')
+    row=oracle_row(oracle_member_ok=False,oracle_member_reason=reason,oracle_notes='Details.')
     async with PopupApp(row).run_test(size=(80,24)) as pilot:
         await pilot.pause()
         shown=lines(pilot.app)
-        y=next(i for i,line in enumerate(shown) if 'failed · Invalid input' in line)
-        x=shown[y].index('failed · Invalid input')
+        y=next(i for i,line in enumerate(shown) if expected in line)
+        x=shown[y].index(expected)
         assert pilot.app.screen.get_style_at(x,y).color.get_truecolor(pilot.app.ansi_theme)==Color.parse('red').get_truecolor(pilot.app.ansi_theme)
+
+
+@pytest.mark.parametrize('mode', ['cap', 'bytes'])
+async def test_trimmed_hex_has_no_fake_address_icon_or_link(mode):
+    from tests.data.test_surf_swarm_oracle import hex_cut_case, point, enrich
+    detail, source = hex_cut_case(mode)
+    row = enrich(source, point(detail, source))
+    row.update(oracle_question='Question', oracle_chain_id=1, panel_answer_type='bool', oracle_seat_answer='true')
+    async with PopupApp(row).run_test(size=(139, 33)) as pilot:
+        await pilot.pause()
+        scroll = pilot.app.screen.query_one(VerticalScroll)
+        scroll.scroll_end(animate=False)
+        await settled(pilot, lambda: scroll.scroll_y == scroll.max_scroll_y)
+        assert '0x' not in '\n'.join(lines(pilot.app))
+        assert not icon_targets(pilot.app) and not link_targets(pilot.app)

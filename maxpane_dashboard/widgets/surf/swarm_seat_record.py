@@ -28,7 +28,7 @@ from maxpane_dashboard.widgets.address import job_text
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm, short_model, fmt_compact
-from maxpane_dashboard.widgets.surf._oracle_answer import joined, record_answer, panel_text
+from maxpane_dashboard.widgets.surf._oracle_answer import _PANEL_COLS, joined, record_answer, panel_text
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
@@ -64,9 +64,6 @@ JOB_COLS = 8
 #: unknown node key is fitted to it with a visible ``…`` (owner, 2026-09-22:
 #: the answer gets the cells the 22-cell keys took).
 NODE_COLS = 6
-
-#: Widest captured panel has 112 members: glyph + space + 105/112.
-_PANEL_COLS = 1 + 1 + 3 + 1 + 3
 
 #: ``completed`` is 9 -- the only ``jobState`` on the four captured seats; the
 #: vocabulary is open and a longer word clips with ``…``.

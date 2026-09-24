@@ -12,6 +12,13 @@ from maxpane_dashboard.widgets.surf._icons import mark_addresses, keep_units, li
 
 _HASH = re.compile(r'[0-9a-f]{64}')
 
+#: Panel glyph, space and three-digit agreed/quorum counts (105/112).
+_PANEL_COLS = 1 + 1 + 3 + 1 + 3
+
+
+def failed_answer(row):
+    return 'failed · ' + (strip_tags(row.get('oracle_member_reason')) or '—')
+
 
 def valid_identity(job, submission_hash):
     return (is_job_id(job)
@@ -68,12 +75,12 @@ def panel_text(row, *, detail=False):
         else:
             word += ' · '
         return Text(f'{word}agreed {agreed} · quorum {quorum} · panel {size} · {consensus_value(row)}', style=style)
-    return Text.from_markup(sanitize_cell(text, 9), style=style)
+    return Text.from_markup(sanitize_cell(text, _PANEL_COLS), style=style)
 
 
 def record_answer(row, width):
     failed = row.get('oracle_member_ok') is False
-    raw = ('failed · ' + (strip_tags(row.get('oracle_member_reason')) or '—') if failed
+    raw = (failed_answer(row) if failed
            else seat_value(row, compact=True) + (' · ' + strip_tags(row.get('oracle_notes'))
                                                  if strip_tags(row.get('oracle_notes')) else ''))
     marked, _, spans = mark_addresses(raw)

@@ -11,7 +11,7 @@ from maxpane_dashboard.widgets.address import address_prose, address_text
 from maxpane_dashboard.widgets.explorer import for_chain_id
 from maxpane_dashboard.widgets.markup_safety import sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import mmdd_hhmm
-from maxpane_dashboard.widgets.surf._oracle_answer import seat_value, panel_text
+from maxpane_dashboard.widgets.surf._oracle_answer import seat_value, panel_text, failed_answer
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES
 
 
@@ -45,7 +45,7 @@ class OracleAnswerScreen(ModalScreen[None]):
         explorer = for_chain_id(row.get('oracle_chain_id'))
         value = Text('this seat   ')
         if row.get('oracle_member_ok') is False:
-            value.append_text(address_prose('failed · ' + (strip_tags(row.get('oracle_member_reason')) or '—'),
+            value.append_text(address_prose(failed_answer(row),
                                              explorer=explorer, style='red'))
         elif row.get('panel_answer_type') == 'address[]' and row.get('oracle_seat_answer') is not None:
             addresses = row['oracle_seat_answer'].split()

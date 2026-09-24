@@ -324,18 +324,57 @@ def test_member_failure_and_normalized_paragraphs():
     assert all(value[k] is None for k in ('question','chain_id','member_ok','member_reason','seat_answer','notes'))
 
 
-@pytest.mark.parametrize('text', ['x', '界', '😀', '"\\'])
-def test_maximal_member_point_fits_actual_json_byte_budget(text):
+@pytest.mark.parametrize('text,trim_reason', [('x', False), ('界', False), ('😀', False), ('"\\', False), ('😀', True)])
+def test_maximal_member_point_fits_actual_json_byte_budget(text, trim_reason):
     detail, row = captured()
     member = next(m for m in detail['members'] if m['submissionHash'] == row['submission_hash'])
     detail.update(question=text*1000, answerType='address[]')
     member.update(reason=text*200)
     member['answer'].update(answer=['0x'+'1'*40]*20, notes=text*4001)
+    if trim_reason:
+        detail['answerType'] = 'x'*4500
+        member['answer']['answer'] = 'preserved value'
     value = point(detail, row)
     assert len(json.dumps(value).encode()) <= 6000
-    assert value['seat_answer'] == ' '.join(['0x'+'1'*40]*20)
+    assert value['seat_answer'] == ('preserved value' if trim_reason else ' '.join(['0x'+'1'*40]*20))
     assert len(value['notes'] or '') <= 4000
     assert sw.coerce_oracle_slot({row['job_id']: {row['submission_hash']: value}})
+    if trim_reason:
+        assert value['question'] is None and value['notes'] is None
+        assert 0 < len(value['member_reason']) < 200
+
+
+def hex_cut_case(mode):
+    detail, row = captured()
+    member = next(m for m in detail['members'] if m['submissionHash'] == row['submission_hash'])
+    raw_hash = '0x' + 'ab'*32
+    member['answer']['notes'] = ('x'*3957 if mode == 'cap' else 'Evidence') + ' ' + raw_hash
+    if mode == 'bytes':
+        detail['answerType'] = ''
+        member['answer']['answer'] = 'value'
+        member['reason'] = None
+        detail['question'] = None
+        probe = point(detail, row)
+        probe['notes'] = 'Evidence ' + raw_hash[:42]
+        # Force the byte-bound prefix to end at a false 42-character address.
+        detail['answerType'] = 'x'*(6000 - len(json.dumps(probe).encode()))
+    return detail, row
+
+
+@pytest.mark.parametrize('mode', ['cap', 'bytes'])
+def test_hex_run_cut_never_becomes_a_fake_address_and_roundtrips(mode):
+    detail, row = hex_cut_case(mode)
+    value = point(detail, row)
+    assert value['notes'] == ('x'*3957 if mode == 'cap' else 'Evidence')
+    slot = {row['job_id']: {row['submission_hash']: value}}
+    assert sw.coerce_oracle_slot(slot) == slot
+
+
+@pytest.mark.parametrize('cut', [1, 2, 3, 42, 65])
+def test_any_cut_inside_hex_drops_the_entire_run(cut):
+    raw_hash = '0x' + 'ab'*32
+    assert sw._oracle_text('Evidence ' + raw_hash, len('Evidence ') + cut) == 'Evidence'
+    assert sw._oracle_text('Evidence ' + raw_hash, 200) == 'Evidence ' + raw_hash
 
 
 @pytest.mark.parametrize('changes', [dict(notes='x'*4001), dict(notes='bad\x00'), dict(chain_id=True),
