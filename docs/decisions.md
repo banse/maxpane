@@ -4,6 +4,11 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-24** — AGENT RUNTIME uses npm latest for Claude Code/Codex and the unique fleet
+  plurality for daemon equality; yellow `↑` reserves its own cells and the tooltip names the
+  basis. Checks are hourly per package, only in AGENT, with no extra workers request.
+  WORK takes contributor turns/hours/output tokens; ACCEPTED combines counts and rate and
+  leaves freshness to RECORD; RANK persists the change since the last move per seat.
 - **2026-09-24** — AGENT's third card row is removed: ROLES, per-node chain counts/short roles,
   OTHERS and contributor BOARD counts leave the screen; RANK and all payload facts remain.
   COLLAB adds two teammates, NODES replaces TEAMMATES, height falls 33 → 25 at unchanged width 139.

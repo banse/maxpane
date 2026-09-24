@@ -163,6 +163,12 @@ names; the rotation / pagination POLICY stays in the client next to its tests, a
 
 **The DOTA game API is NXDOMAIN.** The Bakery season ended 2026-06-12; its API still serves.
 
+**Keyless package registry:** `registry.npmjs.org` serves only the fixed npm `latest` paths
+for `@anthropic-ai/claude-code` and `@openai/codex` through `NpmRegistryClient` (OwnedHttpClient).
+One five-second attempt, no retry loop; retain only a bounded, validated `version`. AGENT
+checks at most two packages per cycle, with a persisted one-hour per-package TTL. Tests use
+trimmed captured responses under `tests/fixtures/surf/npm/` and injected transports.
+
 ## Tiers and clocks
 
 Surf oracle details use `GET /oracle/requests/{uuid}?members=<submissionHash>` with a validated

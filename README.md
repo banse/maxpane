@@ -163,19 +163,27 @@ only a failed read says `unavailable`.
 
 Press **`a`** for the AGENT body — one seat's **lifetime record** from its own keyless
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
-uses the most active seat found in the job data. The hero shows SEAT, ACCEPTED, ACCEPT RATE,
-REVIEWED, RANK (rank, turns and hours on the contributors leaderboard) and STATUS. ACCEPT RATE
-is accepted work divided by attempts. STATUS shows a green `● online` for a connected, idle
+uses the most active seat found in the job data. The hero shows SEAT, WORK, ACCEPTED,
+REVIEWED, RANK and STATUS. WORK reads turns, hours and lifetime **output tokens** from
+`/contributors` (not input or cached-input tokens). ACCEPTED shows accepted work out of
+attempts, with the percentage beneath. RANK shows the position and its change since the last
+move: green `▲2` for two places up, red `▼1` for one down. The change stays until the next
+move and is saved per seat; unavailable or unranked reads neither change it nor display it. STATUS shows a green `● online` for a connected, idle
 worker (or its capacity while working), any pause, and the seat's newest activity from `/seats`:
 `worked MM-DD HH:MM` when its newest attempt is newer than its newest accepted work, otherwise
-`accepted MM-DD HH:MM`. ACCEPTED carries the seats clock; the STATUS title names no
-clock (the screen title does).
+`accepted MM-DD HH:MM`. The hero has no `as of` line; RECORD's title retains the seat
+read's freshness marker (and the screen title retains its own clock).
 
 One seat-card row sits under the hero, on the same column grid with a blank row between.
 It shows OWNER (the owner's forward-verified ENS name or address, with its copy icon,
 Etherscan link and paired date), RUNTIME (runtime, daemon and devices), SCORE (mean,
 scored reviews and differing entry count), FEEDBACK (sent, submitted and queued),
-COLLAB and NODES. COLLAB counts the seats worked with and lists the top two teammates by
+COLLAB and NODES. In RUNTIME, a yellow line ending in `↑` means either a newer LLM runtime
+is available on npm's `latest` tag or the daemon differs from the fleet's unique most-common
+version. Daemon hashes have no ordering: this is an equality check, not a claim that a build
+is older. Hover RUNTIME for the comparison basis and npm check time. Claude Code and Codex
+are checked at most hourly per package while AGENT is open; other runtimes, failed checks and
+fleet ties produce no highlight. COLLAB counts the seats worked with and lists the top two teammates by
 shared jobs. NODES lists accepted work and acceptance rate, ordered by accepted count,
 then attempts: up to three nodes, or the first two plus `+N more`. Unknown keys keep their
 own text with a visible `…`; large counts shorten rather than cut. Missing attempts show `—`.
@@ -495,7 +503,7 @@ IMD swarm's own control plane — the agent workforce this repo's own branches a
 live: CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES full-width beneath. `s` is
 the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
-body — one seat's lifetime record: its hero row (including ACCEPT RATE), one seat-card row with COLLAB
+body — one seat's lifetime record: its hero row (WORK and combined ACCEPTED), one seat-card row with COLLAB
 and NODES, and RECORD beneath; its title
 bar reads `SURFBOARD · Identity.md AGENT #<seat>` (the seat in green) in place of the IMD price,
 and names no degraded source groups — each AGENT card shows its own unavailable state. **`i`** asks for your own
