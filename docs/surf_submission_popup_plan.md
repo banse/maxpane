@@ -99,7 +99,7 @@ Share the frame with the ANSWER popup: hoist title, sections, the focused `Verti
 ```
 SUBMISSION · 7b9c907d · hunt_d · tests · 09-24 06:13
 
-JOB        blocked · node hunt_b: runtime_error                           (job detail; `not read yet` / `unavailable`)
+JOB        blocked · node hunt_b: runtime_error                           (job detail; `not read yet` / `unavailable`; cached reads end in `· as of HH:MM`)
 NODES      hunt_a ready 1 · hunt_b failed 3 runtime_error · hunt_c ready 2 · hunt_d ready 2 · report waiting · verify waiting
 OBJECTIVE  🐸 Fren Review — pepes help pepes. The Identity.md swarm red-teams …   (row `objective`, whole, wrapped)
 
@@ -123,6 +123,8 @@ OTHER SEATS ON THIS JOB (7)
 
 - **State colours:** RECORD's `_STATE_COLORS` (`swarm_seat_record.py:76`). Hoist it into `_oracle_answer.py` and
   import it in both places; never copy it.
+- **JOB** ends in `· as of HH:MM` from `job_read_ts` for cached successful and failed reads,
+  using shared `widgets/fmt.hhmm`. `not_read` has no marker. Retained facts may be up to 48 h old.
 - **REPLY** renders the stored reply line by line and keeps its indentation and box-drawing characters.
   - Lines longer than the box **wrap**. Do not truncate, and do not scroll horizontally; the ANSWER popup's
     `max_scroll_x == 0` rule holds here too.
@@ -163,9 +165,10 @@ They are read from the submissions body already fetched, so they cost no new req
 `#:` block currently say "never summaries". They become: "a bounded, cleaned reply (≤ 4,096 chars) and other
 seats' first lines (≤ 200) persist; never a raw envelope". Update both.
 
-- **Size:** one answer point is ≤ 8,000 bytes as compact UTF-8 JSON, after a trim cascade: `others` lines, then
-  `reply`, then `failed_checks`. Hoist the F-series byte-budget cascade into one helper both slots use; do not write
-  a second one. Worst case 400 points × 8 KB ≈ 3.2 MB beside the oracle slot's ≈ 2.1 MB.
+- **Size:** one answer point is ≤ 8,000 bytes in the on-disk default `json.dump` encoding (`ensure_ascii=True`,
+  default separators), after a trim cascade: `others` lines, then `reply`, `failed_checks`, and finally `answer`. Hoist the F-series byte-budget cascade into one helper both slots use; do not write
+  a second one. Worst case 400 points × 8,000 bytes = 3.2 MB of point bodies, plus the outer cache envelope,
+  beside the oracle slot's 400 × 6,000 bytes = 2.4 MB of point bodies. Measured cases are in the API doc.
 - **Migration:** old points lack the fields and are dropped, then re-read (≤ 4 jobs a cycle). Accepted.
 - **Validation:** `coerce_answers_slot` validates every new field per point, and a hostile field drops only that point.
   The stored-answer safety check (`_safe_stored_answer`) must not reject a `reply` for its newlines. Give `reply` its
@@ -181,8 +184,9 @@ Keyed job UUID → `{state, blocked_reason, nodes, read_ts, terminal}`.
   job can resume).
 
 Reads:
-- Through the existing `fetch_job`, only for jobs of rows in RECORD's 40-row window whose node key is not an oracle
-  key, or whose `work_status` is failed/rejected.
+- Through the existing `fetch_job`, only for rows in RECORD's first 40 eligible for SUBMISSION:
+  not joined, `answer_state` in `read`/`no_reply`, and a valid job UUID/hash. Node key and work status
+  do not affect eligibility; off-panel oracle rows qualify.
 - At most **2 per cycle**, due every 120 s while nonterminal, cap 400 entries, max age 48 h, with the injected clock.
 - A failed read is `unavailable`, never an empty job.
 - Add the slot to `surf_cache` and to the slot-count test with its name in the comment (lesson I1).
@@ -197,6 +201,7 @@ Reads:
 
 **Name collision:** the row already has `job_state` (from `/seats` `jobState`). Name the detail's state
 `job_detail_state`, and keep the old key untouched.
+Append `job_read_ts` (float | None): the cached job point's `read_ts`, including failed reads; None without a point.
 
 Update `_sample_data()` and the frozen-shape agreement tests with realistic values: the hunt row, a bundle-500 oracle
 row, a completed review row, and a row with no point.

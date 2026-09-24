@@ -267,3 +267,30 @@ async def test_large_non_ascii_answer_stays_read_and_loadable(tmp_path, summary)
         assert 'unavailable' not in SurfSwarmSeatRecord()._answer_cell(row).plain
     finally:
         await manager.close()
+
+
+async def test_off_panel_job_is_read_but_joined_oracle_job_is_not(tmp_path):
+    import json
+    from tests.data.test_surf_swarm_answers import ROOT
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_ORACLE
+    fake = Answers(work(2, 'completed'))
+    oracle = {}
+    jobs = [row['jobId'] for row in fake.seat['work']]
+    for index, row in enumerate(fake.seat['work']):
+        row.update(nodeKey='oracle_assess', workStatus='accepted')
+        fake.responses[row['jobId']]['submissions'][0]['summary'] = 'Review evidence '*50
+        if index == 0:
+            value = sw.oracle_empty_point('off_panel', now_ts=NOW)
+        else:
+            detail = json.loads((ROOT/'oracle/filtered/bytes32.json').read_text())
+            detail['jobId'] = row['jobId']
+            detail['members'][0]['submissionHash'] = row['submissionHash']
+            value = sw.oracle_point(detail, row['jobId'], row['submissionHash'], now_ts=NOW)
+        oracle[row['jobId']] = {row['submissionHash']: value}
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    manager.cache.store_last_good(SLOT_SWARM_ORACLE, oracle, ts=NOW)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert fake.detail_calls == jobs[:1]
+    finally:
+        await manager.close()

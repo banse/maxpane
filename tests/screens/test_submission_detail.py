@@ -154,3 +154,22 @@ async def test_cached_large_integer_usage_cannot_crash_popup():
         text = await all_visible(pilot)
         assert 'bundle upload failed (500)' in text and 'cached in' in text
         assert pilot.app.screen.query_one(VerticalScroll).max_scroll_x == 0
+
+
+@pytest.mark.parametrize('state', ['read', 'unavailable', 'not_read'])
+async def test_job_line_exposes_cached_read_time(state):
+    from maxpane_dashboard.widgets.fmt import hhmm
+    row = row_for()
+    assert row['job_read_ts'] == 1000.0
+    row['job_read'] = state
+    if state == 'not_read':
+        row['job_read_ts'] = None
+    async with SubmissionApp(row).run_test(size=(139, 33)) as pilot:
+        await pilot.pause()
+        text = '\n'.join(lines(pilot.app))
+        if state == 'not_read':
+            assert 'not read yet' in text and 'as of' not in text
+        else:
+            assert 'as of '+hhmm(1000.0) in text
+            expected = 'blocked · node hunt_b: runtime_error' if state == 'read' else 'unavailable'
+            assert expected+' · as of '+hhmm(1000.0) in text

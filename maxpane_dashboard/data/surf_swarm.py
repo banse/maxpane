@@ -892,7 +892,7 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
             "sub_reply": None, "sub_failure_reason": None, "sub_turns": None,
             "sub_cached_input_tokens": None, "sub_failed_checks": None, "sub_findings": None,
             "sub_artifacts": None, "sub_others": None, "sub_others_total": None,
-            "job_read": "not_read", "job_detail_state": None, "job_blocked_reason": None, "job_nodes": None,
+            "job_read": "not_read", "job_detail_state": None, "job_blocked_reason": None, "job_nodes": None, "job_read_ts": None,
         }
         rows.append({key: row[key] for key in keys})
     return rows
@@ -1732,7 +1732,9 @@ def job_details_due(rows: list[dict], points: dict, *, now_ts: float, cap=2, due
     due = {}
     for index,row in enumerate(rows[:SWARM_ANSWER_ROW_CAP]):
         job = row['job_id']
-        if parse_job_id(job) is None or (row['node_key'] in SWARM_ORACLE_NODE_KEYS and row['work_status'] not in ('failed','rejected')):
+        if (parse_job_id(job) is None or _hex64(row.get('submission_hash')) is None
+                or type(row.get('oracle_member_ok')) is bool
+                or row.get('answer_state') not in ('read', 'no_reply')):
             continue
         point = points.get(job)
         if point is not None and (point['terminal'] or now_ts-point['read_ts'] < due_s):
@@ -1748,7 +1750,7 @@ def enrich_job_rows(rows: list[dict], points: object) -> list[dict]:
         p = valid.get(row['job_id'])
         result.append(dict(row, job_read=('read' if p['state'] is not None else 'unavailable') if p else 'not_read',
             job_detail_state=p['state'] if p else None, job_blocked_reason=p['blocked_reason'] if p else None,
-            job_nodes=p['nodes'] if p else None))
+            job_nodes=p['nodes'] if p else None, job_read_ts=float(p['read_ts']) if p else None))
     return result
 
 

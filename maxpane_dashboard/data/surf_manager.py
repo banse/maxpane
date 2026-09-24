@@ -5822,7 +5822,12 @@ class SurfManager:
     async def _pool_swarm_job_details(self, seat: dict, now: float) -> None:
         prior = self.cache.get_last_good(SLOT_SWARM_JOB_DETAIL)
         points = sw.prune_job_details(getattr(prior, 'payload', None), now_ts=now)
-        for job in sw.job_details_due(sw.seat_work_rows(seat), points, now_ts=now):
+        answers = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
+        oracle = self.cache.get_last_good(SLOT_SWARM_ORACLE)
+        rows = sw.enrich_panel_rows(
+            sw.enrich_work_rows(sw.seat_work_rows(seat), getattr(answers, 'payload', None)),
+            getattr(oracle, 'payload', None), sw.SWARM_ORACLE_NODE_KEYS)
+        for job in sw.job_details_due(rows, points, now_ts=now):
             detail = await self._guard(lambda: self.swarm_client.fetch_job(job), 'swarm popup job')
             point = sw.job_detail_point(detail, job, now_ts=now)
             points[job] = point

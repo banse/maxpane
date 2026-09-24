@@ -338,10 +338,13 @@ safety check. Old shapes are dropped per point and re-read within the existing f
 
 `SLOT_SWARM_JOB_DETAIL` stores bounded job state, blocked reason and up to 16 nodes with
 key/role/state/attempt/failure reason, plus `read_ts`/`terminal`. The existing `fetch_job` reads
-at most two jobs per seat cycle, from non-oracle or failed/rejected rows in the 40-row window.
+at most two jobs per seat cycle, from rows eligible for SUBMISSION in the 40-row window:
+not joined, answer state read/no_reply, valid UUID/hash. Off-panel oracle rows qualify.
 Nonterminal results retry after 120 seconds; completed/failed/cancelled are terminal, **blocked
 is not**. Cap at 400 jobs/48 hours with the injected clock. Failed reads are unavailable; absent
 points are not read. Row `job_detail_state` is separate from the original seat `job_state`.
+`job_read_ts` retains successful and failed read timestamps; JOB ends in `· as of HH:MM`
+through shared `hhmm` whenever a cached point exists. `not_read` has no marker.
 
 **Oracle panel reads** (`docs/surf_oracle_panels_plan.md`): after submission enrichment,
 only oracle nodes in the first 40 RECORD rows are eligible. Join list `jobId` to requests,

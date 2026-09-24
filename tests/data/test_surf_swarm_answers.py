@@ -119,13 +119,22 @@ def test_others_and_artifacts_caps_with_strict_numbers_and_old_shape_drop():
     assert value['failed_checks']=='check1, check2'
 
 
-def test_job_window_filters_successful_oracles_and_caps_jobs():
-    seat=capture('seat_420'); rows=sw.seat_work_rows(seat)
-    expected=[]
-    for row in rows[:40]:
-        if (row['node_key'] not in sw.SWARM_ORACLE_NODE_KEYS or row['work_status'] in ('failed','rejected')) and row['job_id'] not in expected:
-            expected.append(row['job_id'])
-    assert sw.job_details_due(rows,{},now_ts=1000)==expected[:2]
+@pytest.mark.parametrize('changes,eligible', [
+    ({'node_key': 'oracle_assess', 'panel_state': 'off_panel', 'work_status': 'accepted'}, True),
+    ({'oracle_member_ok': True}, False), ({'oracle_member_ok': False}, False),
+    ({'answer_state': 'no_reply'}, True), ({'answer_state': 'not_read'}, False),
+    ({'answer_state': 'unavailable'}, False), ({'submission_hash': 'bad'}, False),
+    ({'job_id': 'bad'}, False),
+])
+def test_job_details_follow_submission_eligibility(changes, eligible):
+    from maxpane_dashboard.widgets.surf._oracle_answer import can_open_submission
+    payload, item = own()
+    row = dict(job_id=payload['jobId'], submission_hash=item['hash'], node_key='hunt_d',
+               work_status='accepted', answer_state='read', oracle_member_ok=None)
+    row.update(changes)
+    assert can_open_submission(row) is eligible
+    assert sw.job_details_due([row], {}, now_ts=1000) == ([row['job_id']] if eligible else [])
+    assert sw.job_details_due([dict(row, answer_state='not_read')]*40+[row], {}, now_ts=1000) == []
 
 
 @pytest.mark.parametrize('items,expected', [

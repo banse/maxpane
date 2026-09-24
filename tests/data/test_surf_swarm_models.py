@@ -108,7 +108,7 @@ SWARM_V2_ROW_SHAPES = {
         "oracle_question", "oracle_chain_id", "oracle_member_ok", "oracle_member_reason", "oracle_seat_answer", "oracle_notes",
         "sub_reply", "sub_failure_reason", "sub_turns", "sub_cached_input_tokens",
         "sub_failed_checks", "sub_findings", "sub_artifacts", "sub_others", "sub_others_total",
-        "job_read", "job_detail_state", "job_blocked_reason", "job_nodes",
+        "job_read", "job_detail_state", "job_blocked_reason", "job_nodes", "job_read_ts",
     ),
 }
 

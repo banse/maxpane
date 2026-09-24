@@ -2021,5 +2021,6 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "job_detail_state",    # str | None; detail state, distinct from seat job_state
         "job_blocked_reason",  # str | None; cleaned, <= 200 chars
         "job_nodes",           # list[dict] | None; <= 16 bounded node facts
+        "job_read_ts",         # float | None; timestamp of the cached job read, including failure
     ),
 }

@@ -325,6 +325,7 @@ def test_work_rows_420_source_order_frozen_shape(seat420):
         "sub_cached_input_tokens": None, "sub_failed_checks": None, "sub_findings": None,
         "sub_artifacts": None, "sub_others": None, "sub_others_total": None,
         "job_read": "not_read", "job_detail_state": None, "job_blocked_reason": None, "job_nodes": None,
+        "job_read_ts": None,
     }
     assert rows[-1]["accepted_ts"] == _iso("2026-09-20T17:48:55.121Z")
     assert [r["job_id"] for r in rows] == [w["jobId"] for w in seat420["work"]]
