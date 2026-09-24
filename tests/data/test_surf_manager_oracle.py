@@ -86,6 +86,26 @@ async def test_assessing_retries_only_after_120_seconds(tmp_path):
     finally: await manager.close()
 
 
+@pytest.mark.parametrize('status', ['attested', 'disagreed'])
+async def test_known_final_without_agreement_retries_next_due_cycle(tmp_path, status):
+    fake = Oracle(status=status)
+    detail = next(iter(fake.details.values()))
+    agreement = detail['agreement']
+    detail['agreement'] = None
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert rows(manager)[0]['panel_state'] == 'unavailable'
+        point = next(iter(next(iter(manager.cache.get_last_good(SLOT_SWARM_ORACLE).payload.values())).values()))
+        assert not point['terminal']
+        detail['agreement'] = agreement
+        await manager._pool_swarm_seat(420, NOW + 120)
+        assert len([c for c in fake.oracle_calls if c[0] == 'detail']) == 2
+        assert rows(manager, NOW + 120)[0]['panel_state'] == ('agreed' if status == 'attested' else 'no_quorum_in')
+    finally:
+        await manager.close()
+
+
 @pytest.mark.parametrize('failure',['list','detail'])
 async def test_failures_leave_seat_fetched_and_answer_intact(tmp_path,failure):
     fake=Oracle()

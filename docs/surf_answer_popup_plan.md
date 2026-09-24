@@ -127,7 +127,7 @@ What is the floor price of Moonbirds on Ethereum mainnet, in wei, as of the pinn
 
 ANSWER
 this seat   457162630000000000
-panel       agreed 34 · quorum 35 · panel 49 · 457160520000000000    (panel_* keys; `—` for any absent part)
+panel       agreed 34 · quorum 35 · panel 49 · 457162630000000000    (panel_* keys; `—` for any absent part)
 
 NOTES
 Fetched https://opensea.io/collection/moonbirds with curl (User-Agent set to avoid bot
@@ -140,7 +140,8 @@ block) at a time coinciding with the pinned closing block's timestamp …   (wra
   through `address_text` (full 42 characters, ` ⧉`, linked per chain). A failed member shows
   `failed · <reason>` in red in place of the value.
 - **Panel line:** reuse RECORD's panel-cell wording and only `panel_*` keys already on the row. Never
-  compare figures and never parse `figure` as a float (rules/surf.md).
+  compare figures and never parse `figure` as a float (rules/surf.md). The numeric example uses
+  `agreement.figure` via `panel_figure`, the same value as RECORD's `panel <figure>`, not `agreement.answer`.
 - **Question and notes:** they keep their paragraph breaks (newlines) and are wrapped. Every address goes
   through `address_prose(…, explorer=for_chain_id(chain_id))`. Every string arrives as a pre-built `rich.text.Text`;
   no third-party markup string ever reaches `Static.update`.
@@ -230,8 +231,13 @@ The answer type is the **request's** `answerType`, never the member's copy.
   and the `members: []` behaviour.
 
 **Unknown statuses (documented, not yet observed live):** the point builder no longer returns `None` just because
-`agreement` is null and the status is outside `assessing`/`blocked`. For any non-empty status string it builds the
-point with an empty cluster, so this seat's answer.json facts survive. The panel state for a status other than the
+`agreement` is null and the status is outside `assessing`/`blocked`. The relaxation applies only to a
+non-empty status string outside `_ORACLE_FINAL` and outside `assessing`/`blocked`: documented
+`reproducing`, `mismatch`, `refused`, `failed`, or a new status. It builds a point with an empty cluster,
+so this seat's answer.json facts survive. A known final status (`attested`, `disagreed`) with null or
+non-mapping agreement remains a failed read: return `None`, show `unavailable`, retry when due,
+and never retain it as a terminal verdict. Assessing/blocked keep their existing null-agreement handling.
+The panel state for a status other than the
 four known ones stays exactly what the row shows today when no point exists (`unavailable`), and such a
 point is not terminal (`_ORACLE_FINAL` is unchanged). Test `refused` and `failed` with a found member: the popup
 opens and the panel line reads `unavailable`. A non-string or empty status still returns `None`.

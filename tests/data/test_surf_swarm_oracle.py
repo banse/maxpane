@@ -292,6 +292,17 @@ def test_unknown_status_with_null_agreement_preserves_member_answer(status):
     assert enrich(row, value)['oracle_member_ok'] is True
 
 
+@pytest.mark.parametrize('status', ['attested', 'disagreed'])
+@pytest.mark.parametrize('agreement', [None, [], 'invalid'])
+def test_known_final_without_agreement_is_a_failed_read(status, agreement):
+    detail, row = captured()
+    detail.update(status=status, agreement=agreement)
+    assert point(detail, row) is None
+    failed = sw.oracle_empty_point(None, now_ts=1000)
+    assert not failed['terminal']
+    assert enrich(row, failed)['panel_state'] == 'unavailable'
+
+
 def test_member_failure_and_normalized_paragraphs():
     detail, row = captured()
     member = next(m for m in detail['members'] if m['submissionHash'] == row['submission_hash'])

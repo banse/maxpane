@@ -1815,6 +1815,8 @@ def oracle_point(detail: object, job_id: str, submission_hash: str, *, now_ts: f
             or agreement is not None and not isinstance(agreement, Mapping)):
         return None
     if agreement is None:
+        if status in _ORACLE_FINAL and status != 'blocked':
+            return None
         agreement = {'cluster': []}
     cluster = agreement.get('cluster')
     if not isinstance(cluster, list) or any(_hex64(key) is None for key in cluster):
