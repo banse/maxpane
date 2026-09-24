@@ -190,7 +190,7 @@ an unread source says `unavailable`. Long runtime, daemon, node, role and ENS na
 a visible `…`.
 RECORD runs below the cards, with no blank row under its title: every attempt with date and
 time, job (the first eight characters of its id, linked to its page on `explorer.imd.fun`), node
-(`oracle`, `review`, `build`), state, panel outcome, the model used, duration and the seat's own answer.
+(`oracle`, `review`, `build`), state, the model used, duration, panel outcome, output tokens and the seat's own answer.
 Joined oracle rows show the answer.json value and the start of its notes; a cut row's `»` opens
 the cached question, full retained value and notes. Failed members show their reason in red.
 Other rows show the first sentence of the reply — in red when the attempt failed. Queued, unavailable, not served and

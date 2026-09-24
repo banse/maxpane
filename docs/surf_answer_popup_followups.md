@@ -22,5 +22,6 @@ contract and presentation separately; their current clipping still uses the wide
   state. Opening the snapshot causes no reads.
 - Layout pins remain unchanged. The legacy submission-message fallback retains its measured
   widen boundary; joined answer cuts use `»` instead.
-- Minor coverage follow-up: when manager oracle tests are next touched, explicitly cover two
-  distinct submission hashes sharing one request. Runtime groups reads by request/hash pair.
+- The shared-request coverage follow-up is completed by fix F2: a filtering fake records each
+  request/hash pair and verifies distinct member facts for two hashes of one job. Fix F7 covers
+  the corresponding popup selection through both row buttons.
