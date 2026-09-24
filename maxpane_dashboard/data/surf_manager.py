@@ -118,7 +118,10 @@ import re
 import time
 from typing import Any
 
-from maxpane_dashboard.analytics.surf_swarm_signals import record_window
+from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIME_PACKAGES, npm_version
+from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
+from maxpane_dashboard.data.surf_cache import SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
+from maxpane_dashboard.analytics.surf_swarm_signals import record_window, fleet_majority
 from maxpane_dashboard.analytics import surf_pool4_depth as pool4_depth
 from maxpane_dashboard.analytics.surf_feed import select_feed_window
 from maxpane_dashboard.analytics.surf_signals import (
@@ -1018,6 +1021,7 @@ class SurfManager:
         cache: Any = None,
         pool4_client: Any = None,
         swarm_client: Any = None,
+        npm_client: Any = None,
         seat: str | int | None = None,
     ) -> None:
         self.poll_interval = poll_interval
@@ -1040,6 +1044,9 @@ class SurfManager:
         self.swarm_client = (
             swarm_client if swarm_client is not None else SwarmClient()
         )
+        self.npm_client = npm_client if npm_client is not None else NpmRegistryClient()
+        self._agent_active = False
+        self._runtime_task = None
         self.cache = cache if cache is not None else SurfCache(
             path=self._cache_path, clock=clock
         )
@@ -1132,6 +1139,7 @@ class SurfManager:
         try:
             self.cache.load(slot_coercers={
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
+                SLOT_SWARM_RUNTIME_LATEST: lambda value: coerce_runtime_slot(value, now=self._clock()),
                 SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
                 SLOT_SWARM_ANSWERS: sw.coerce_answers_slot,
                 SLOT_SWARM_JOB_DETAIL: sw.coerce_job_detail_slot,
@@ -1169,7 +1177,18 @@ class SurfManager:
         await self._cancel_swarm_scores()
         await self._cancel_swarm_board()
         await self._cancel_swarm_seat()
+        task = self._runtime_task
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
         self.save_cache()
+        try:
+            await self.npm_client.close()
+        except Exception as exc:
+            logger.debug("closing the npm client failed: %s", exc)
         try:
             await self.client.close()
         except Exception as exc:            # noqa: BLE001
@@ -5599,6 +5618,57 @@ class SurfManager:
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
 
+    def set_agent_active(self, active: bool) -> None:
+        """Screen-owned eligibility; no I/O in the mode-change handler."""
+        self._agent_active = active is True
+
+    def _runtime_points(self, now):
+        entry = self.cache.get_last_good(SLOT_SWARM_RUNTIME_LATEST)
+        return coerce_runtime_slot(getattr(entry, "payload", None), now=now) or {}
+
+    def _runtime_keys(self, now):
+        points = self._runtime_points(now)
+        return {
+            "swarm_runtime_latest": {key: point["version"] for key, point in points.items()},
+            "swarm_runtime_as_of_hhmm": {key: LastGood(None, point["checked_ts"]).as_of_hhmm() for key, point in points.items()},
+        }
+
+    def _spawn_runtime_latest(self, seat_entry, token, now):
+        if not self._agent_active or token is None:
+            return None
+        if self._runtime_task is not None and not self._runtime_task.done():
+            return self._runtime_task
+        payload = getattr(seat_entry, "payload", None)
+        if not isinstance(payload, dict) or payload.get("token") != token or payload.get("state") != "ok":
+            return None
+        seat = payload.get("seat")
+        runtimes = seat.get("runtimes") if isinstance(seat, dict) else None
+        if not isinstance(runtimes, list):
+            return None
+        points = self._runtime_points(now)
+        due = []
+        for runtime in RUNTIME_PACKAGES:
+            if not any(isinstance(row, dict) and row.get("id") == runtime for row in runtimes):
+                continue
+            point = points.get(runtime)
+            if point is None or now - point["checked_ts"] >= TIER_TTL_SECONDS[TIER_SWARM_RUNTIME_LATEST]:
+                due.append(runtime)
+        if not due:
+            return None
+        self._runtime_task = asyncio.ensure_future(self._read_runtime_latest(due, now))
+        return self._runtime_task
+
+    async def _read_runtime_latest(self, runtimes, now):
+        for runtime in runtimes:
+            if not self._agent_active:
+                break
+            version = await self._guard(lambda: self.npm_client.fetch_latest(runtime), "npm latest")
+            points = self._runtime_points(now)
+            points[runtime] = {"version": npm_version(version), "checked_ts": now}
+            self.cache.store_last_good(SLOT_SWARM_RUNTIME_LATEST, points, ts=now)
+            mark = self.cache.mark_fetched if points[runtime]["version"] is not None else self.cache.mark_failed
+            mark(TIER_SWARM_RUNTIME_LATEST, now)
+
     # -- BOARD: one tier, independent workers/contributors last-good slots ----
 
     def _spawn_swarm_board(self, tiers: set[str], now: float) -> Any:
@@ -5674,10 +5744,12 @@ class SurfManager:
             "swarm_board_summary": sw._board_summary_from_slots(contributors, workers),
             "swarm_board_rows": rows,
             "swarm_fleet": sw._fleet_from_slot(workers),
+            "swarm_fleet_daemon": fleet_majority([row["daemon"] for row in workers["workers"]]) if workers is not None else None,
             "swarm_board_as_of_hhmm": contributors_entry.as_of_hhmm() if contributors is not None else None,
             "swarm_workers_as_of_hhmm": workers_entry.as_of_hhmm() if workers is not None else None,
             "swarm_seat_live": sw._seat_live_from_slot(workers, token),
             "swarm_seat_contrib": sw._seat_contrib_from_rows(rows, token, contributors),
+            "swarm_seat_rank_delta": None,
         }
 
     # -- the AGENT body's one seat: /seats/{token} (the /seats plan WP2) -----
@@ -6685,6 +6757,8 @@ class SurfManager:
         seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry, answers_entry, now, oracle_entry)
         data.update(seat_keys)
         selected_seat = seat_keys["swarm_seat_selected"]
+        data.update(self._runtime_keys(now))
+        self._spawn_runtime_latest(seat_entry, selected_seat["token_id"] if selected_seat else None, now)
         data.update(self._swarm_board_keys(
             contributors_entry, workers_entry,
             selected_seat["token_id"] if selected_seat is not None else None,

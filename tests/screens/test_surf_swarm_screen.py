@@ -861,3 +861,18 @@ async def test_record_view_resets_on_refresh_seat_change_but_not_initial_refresh
         assert (manager.record_cap, manager.record_open_only) == (40, False)
         assert screen._record_seat_token == 421
         manager.set_record_view.assert_called_with(40, False)
+
+
+async def test_runtime_checks_follow_agent_mode_without_io_in_the_toggle(monkeypatch):
+    from unittest.mock import Mock
+    manager = _FakeManager(_record_view_payload())
+    manager.set_agent_active = Mock()
+    screen = SurfScreen(manager, poll_interval=30, name='surf')
+    monkeypatch.setattr(screen, 'start_refresh', lambda: None)
+    async with _ThemedHarness(screen).run_test(size=(139, 35)) as pilot:
+        before = manager.calls
+        await pilot.press('a')
+        manager.set_agent_active.assert_called_with(True)
+        await pilot.press('s')
+        manager.set_agent_active.assert_called_with(False)
+        assert manager.calls == before

@@ -225,6 +225,9 @@ def _manager(tmp_path, swarm, **kw) -> SurfManager:
     test file in this package does. The clock defaults to a fixed
     :class:`FakeClock` so "61 seconds later" is exact, never a race.
     """
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    kw.setdefault("npm_client", SimpleNamespace(fetch_latest=AsyncMock(return_value=None), close=AsyncMock()))
     kw.setdefault("client", FakeSurfClient())
     kw.setdefault("pool4_client", FakePool4Client())
     kw.setdefault("clock", FakeClock(NOW))
@@ -234,7 +237,7 @@ def _manager(tmp_path, swarm, **kw) -> SurfManager:
 async def _settle(manager: SurfManager) -> None:
     """Wait for whichever swarm tiers this cycle spawned (the seat read too)."""
     tasks = [t for t in (manager._swarm_task, manager._swarm_scores_task,
-                         manager._swarm_seat_task, getattr(manager, "_swarm_board_task", None)) if t is not None]
+                         manager._swarm_seat_task, getattr(manager, "_swarm_board_task", None), getattr(manager, "_runtime_task", None)) if t is not None]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
@@ -1298,7 +1301,7 @@ async def test_the_swarm_keys_are_filled_from_the_slot(tmp_path):
     await manager.close()
 
 
-async def test_the_four_swarm_methods_emit_exactly_the_swarm_block(tmp_path):
+async def test_the_swarm_folds_emit_exactly_the_swarm_block(tmp_path):
     """BOARD WP3 adds ``_swarm_board_keys`` to the three existing methods, which
     publish the ``SWARM_KEYS`` block and nothing else, each key from exactly
     one of them. ``_finalise`` drops a key outside ``SURF_KEYS`` with only a
@@ -1310,6 +1313,7 @@ async def test_the_four_swarm_methods_emit_exactly_the_swarm_block(tmp_path):
     seen = _seen(manager)
     assert live is not None and scores is not None
     parts = [
+        manager._runtime_keys(manager._clock()),
         manager._swarm_keys(live.payload, live, manager._clock(), seen),
         manager._swarm_scores_keys(scores.payload, scores, live, manager._clock()),
         manager._swarm_seat_keys(
@@ -1403,8 +1407,8 @@ async def test_node_rows_distinguish_unread_children_from_served_lists(tmp_path,
 # BOARD: one independent tier, two last-good sources and cached seat lookups.
 
 _BOARD_KEYS = (
-    "swarm_board_summary", "swarm_board_rows", "swarm_fleet", "swarm_board_as_of_hhmm",
-    "swarm_workers_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib",
+    "swarm_board_summary", "swarm_board_rows", "swarm_fleet", "swarm_fleet_daemon", "swarm_board_as_of_hhmm",
+    "swarm_workers_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta",
 )
 
 

@@ -123,10 +123,12 @@ TIER_SWARM_SEAT = "swarm_seat"
 #: One board refresh, two independently validated last-good sources. AGENT uses
 #: these slots too; seat selection does not change this tier's due time.
 TIER_SWARM_BOARD = "swarm_board"
+#: npm latest is checked at most once per package per hour, only in AGENT.
+TIER_SWARM_RUNTIME_LATEST = "swarm_runtime_latest"
 
 TIERS: tuple[str, ...] = (
     TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
-    TIER_POOL4_STAKERS, TIER_SWARM, TIER_SWARM_SCORES, TIER_SWARM_SEAT, TIER_SWARM_BOARD,
+    TIER_POOL4_STAKERS, TIER_SWARM, TIER_SWARM_SCORES, TIER_SWARM_SEAT, TIER_SWARM_BOARD, TIER_SWARM_RUNTIME_LATEST,
 )
 
 TIER_TTL_SECONDS: dict[str, float] = {
@@ -140,6 +142,7 @@ TIER_TTL_SECONDS: dict[str, float] = {
     TIER_SWARM_SCORES: 1800.0,
     TIER_SWARM_SEAT: 120.0,
     TIER_SWARM_BOARD: 120.0,
+    TIER_SWARM_RUNTIME_LATEST: 3600.0,
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
@@ -153,6 +156,7 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
     TIER_SWARM_SCORES: 300.0,
     TIER_SWARM_SEAT: 120.0,
     TIER_SWARM_BOARD: 120.0,
+    TIER_SWARM_RUNTIME_LATEST: 3600.0,
 }
 
 
@@ -173,6 +177,7 @@ SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
 SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
 SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
 SLOT_SWARM_SEAT = "swarm_seat"        # {token, state, seat}: the selected seat's /seats read
+SLOT_SWARM_RUNTIME_LATEST = "swarm_runtime_latest"  # runtime -> version and last attempt timestamp
 SLOT_SWARM_WORKERS = "swarm_workers"  # normalized /workers envelope, its own version clock
 SLOT_SWARM_CONTRIBUTORS = "swarm_contributors"  # normalized /contributors envelope
 SLOT_SWARM_ORACLE_INDEX = "swarm_oracle_index"  # complete request history, never age-pruned
@@ -218,6 +223,7 @@ SLOTS: tuple[str, ...] = (
     # Validated per field at load through injected pure coercers. Missing a
     # coercer refuses the slot; this cache imports no client or fold module.
     SLOT_SWARM_WORKERS,
+    SLOT_SWARM_RUNTIME_LATEST,
     SLOT_SWARM_CONTRIBUTORS,
     SLOT_SWARM_ANSWERS,
     SLOT_SWARM_JOB_DETAIL,
@@ -1198,11 +1204,13 @@ class SurfCache:
                     continue
                 try:
                     entry = LastGood.from_dict(data, now=reference)
-                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL):
+                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:
                             raise ValueError("BOARD slot lacks a valid normalized payload")
+                        if clean != entry.payload:
+                            self._dirty = True
                         entry = LastGood(payload=clean, ts=entry.ts)
                     self.last_good[str(slot)] = entry
                 except Exception as exc:            # noqa: BLE001
@@ -1388,6 +1396,7 @@ __all__ = [
     "SLOT_SWARM_SCORES",
     "SLOT_SWARM_SEAT",
     "SLOT_SWARM_WORKERS",
+    "SLOT_SWARM_RUNTIME_LATEST",
     "SLOT_SWARM_CONTRIBUTORS",
     "SLOT_SWARM_ANSWERS",
     "SLOT_SWARM_JOB_DETAIL",
@@ -1406,6 +1415,7 @@ __all__ = [
     "TIER_SWARM_SCORES",
     "TIER_SWARM_SEAT",
     "TIER_SWARM_BOARD",
+    "TIER_SWARM_RUNTIME_LATEST",
     "TIER_TTL_SECONDS",
     "pool4_reserve_series_name",
 ]

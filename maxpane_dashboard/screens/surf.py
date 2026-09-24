@@ -3397,6 +3397,11 @@ class SurfScreen(DashboardScreen):
             self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("surf mode toggle failed: %s", exc)
+        setter = getattr(self._data_manager, "set_agent_active", None)
+        if setter is not None:
+            setter(self._mode == MODE_AGENT)
+            if self._mode == MODE_AGENT:
+                self.start_refresh()
         # The row marker is about whichever body is now showing (only the
         # dashboard body's right rail can scroll), so it has to be re-read --
         # deferred, exactly like ``on_resize``, because the newly-shown body

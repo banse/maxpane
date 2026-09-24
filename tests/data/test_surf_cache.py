@@ -81,7 +81,7 @@ def test_tier_ttls_match_the_prd(tmp_path):
 
     assert TIERS == (
         TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
-        TIER_POOL4_STAKERS, "swarm", "swarm_scores", "swarm_seat", "swarm_board",
+        TIER_POOL4_STAKERS, "swarm", "swarm_scores", "swarm_seat", "swarm_board", "swarm_runtime_latest",
     )
     assert TIER_TTL_SECONDS[TIER_FAST] == 0.0
     assert 60.0 <= TIER_TTL_SECONDS[TIER_MEDIUM] <= 120.0
@@ -112,6 +112,9 @@ def test_tier_ttls_match_the_prd(tmp_path):
     assert TIER_POOL4_STAKERS not in c.tiers_due()
 
     clock.advance(TIER_TTL_SECONDS[TIER_POOL4_STAKERS])
+    assert "swarm_runtime_latest" not in c.tiers_due()
+    assert TIER_TTL_SECONDS["swarm_runtime_latest"] == 3600
+    clock.advance(3600)
     assert set(c.tiers_due()) == set(TIERS)
 
 
@@ -230,7 +233,7 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # Oracle facts (SLOT_SWARM_ORACLE) and complete request history
     # (SLOT_SWARM_ORACLE_INDEX) are also independent last-good slots.
     # Selected-job detail (SLOT_SWARM_JOB_DETAIL) is a separate popup slot.
-    assert len(SLOTS) == 19
+    assert len(SLOTS) == 20
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):
