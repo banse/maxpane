@@ -309,3 +309,46 @@ async def test_runtime_card_checks_fit_arrows_and_explain_basis(width, runtime, 
                                  if key not in ('swarm_runtime_latest','swarm_runtime_as_of_hhmm','swarm_fleet_daemon')})
             await pilot.pause()
             assert _region_text(pilot.app, box).splitlines() == before
+
+
+@pytest.mark.parametrize('latest,expected', [
+    (None, 'update check pending'),
+    ({}, 'update check pending'),
+    ({'codex': '0.156.1'}, 'update check pending'),
+    ({'claude': None}, 'update check unavailable'),
+    ({'claude': '[/x]'}, 'update check unavailable'),
+    ({'claude': '2.1.282'}, 'latest claude-code 2.1.282 (npm, as of 17:33)'),
+])
+async def test_runtime_tooltip_distinguishes_pending_from_failed_without_changing_body(latest, expected):
+    from rich.text import Text
+    from tests.screens.test_surf_screen import _region_text
+    kwargs = _seat_kwargs(swarm_seat_summary={**SUMMARY, 'runtime': 'claude 9.0.0'},
+                          swarm_runtime_as_of_hhmm={'claude': '17:33'})
+    async with _Themed().run_test(size=SIZE) as pilot:
+        await pilot.app.mount(SurfSwarmSeatCards())
+        cards = pilot.app.query_one(SurfSwarmSeatCards)
+        box = cards.query_one('#' + SEAT_BOX_IDS['runtime'])
+        cards.update_data(**kwargs, swarm_runtime_latest={'claude': '2.1.282'})
+        await pilot.pause()
+        before = _region_text(pilot.app, box)
+        cards.update_data(**kwargs, swarm_runtime_latest=latest)
+        await pilot.pause()
+        assert isinstance(box.tooltip, Text)
+        assert box.tooltip.plain == expected + '\nno fleet majority'
+        assert _region_text(pilot.app, box) == before
+
+
+@pytest.mark.parametrize('state,summary', [
+    ('pending', SUMMARY), ('unknown_seat', SUMMARY), ('unavailable', SUMMARY), ('ok', None),
+])
+async def test_gated_runtime_clears_previous_seat_tooltip(state, summary):
+    async with _Themed().run_test(size=SIZE) as pilot:
+        await pilot.app.mount(SurfSwarmSeatCards())
+        cards = pilot.app.query_one(SurfSwarmSeatCards)
+        box = cards.query_one('#' + SEAT_BOX_IDS['runtime'])
+        cards.update_data(**_seat_kwargs())
+        await pilot.pause()
+        assert box.tooltip is not None
+        cards.update_data(**_seat_kwargs(swarm_seat_state=state, swarm_seat_summary=summary))
+        await pilot.pause()
+        assert box.tooltip is None

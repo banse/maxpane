@@ -153,7 +153,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
                swarm_runtime_latest=None, swarm_runtime_as_of_hhmm=None, swarm_fleet_daemon=None) -> None:
         summary, state = swarm_seat_summary, swarm_seat_state
         if self.is_mounted:
-            self.query_one(f"#{SEAT_BOX_IDS['runtime']}").tooltip = Text("update check unavailable")
+            self.query_one(f"#{SEAT_BOX_IDS['runtime']}").tooltip = None
         ens_name = swarm_seat_owner_ens if isinstance(swarm_seat_owner_ens, str) else None
         for key, label, build in (
             ("owner", "OWNER", lambda s: self._owner_body(s, ens_name)),
@@ -201,6 +201,8 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         tooltip = Text()
         if runtime_id not in ("claude", "codex"):
             tooltip.append("runtime not checked")
+        elif not isinstance(latest, dict) or runtime_id not in latest:
+            tooltip.append("update check pending")
         elif runtime_semver(runtime_id, newest) is None:
             tooltip.append("update check unavailable")
         else:
