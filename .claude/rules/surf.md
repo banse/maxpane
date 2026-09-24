@@ -338,24 +338,41 @@ without age pruning. Read lists only for unresolved due jobs: forward refresh th
 a cap of four 500-request pages, with strictly validated UTC cursors. A forward gap beyond the
 cap discards the index. An empty first page is always a failed read, and a complete index with no entries is
 discarded on load (re-review N1). Indexed
-jobs go directly to details; read at most four due details. With no due rows, make zero requests. Retained attested/disagreed/blocked points are terminal; assessing or
-failed points retry after 120 seconds. `SLOT_SWARM_ORACLE` retains extracted facts only, at most
-400 points for 48 hours. Validate each persisted point; cancellation stores neither partial oracle points nor a partial index.
+jobs go directly to details with `?members=<submissionHash>`; read at most four due request/hash pairs.
+Keep the exact-hash and conflicting-duplicate checks even on filtered bodies. With no due rows, make zero requests.
+Retained attested/disagreed/blocked points are terminal; assessing or failed points retry after 120 seconds.
+Any other nonempty status preserves joined answer facts, shows unavailable and remains nonterminal.
+`SLOT_SWARM_ORACLE` retains extracted facts only, at most 400 points for 48 hours and 6,000 serialized
+JSON bytes per point. Validate each persisted point; cancellation stores neither partial oracle points nor a partial index.
 A failed list/detail keeps prior evidence, or yields `unavail` when no cached point exists.
 No new top-level key, clock or degraded group is introduced.
 
-PANEL states: agreed/outvoted show green `✓ agreed/members` or red `✗ agreed/members`;
+PANEL states: agreed/outvoted show green `✓ agreed/quorum` or red `✗ agreed/quorum`;
+with quorum absent show just the glyph and agreed count. `panel_quorum` comes from strict nonnegative
+`detail.quorum`; neither filtered member count nor `panelSize` is a submitted-member count.
 no_quorum_in/out show dim green/red `✓ no-q` / `✗ no-q` (closed even if STATE says pending);
-assessing shows yellow `… members/size` (members only if size is absent); blocked is dim
+assessing shows yellow `… of <panelSize>` (`…` if size is absent); blocked is dim
 `blocked`, including captured null members; off_panel/not_oracle show dim `–`;
 not_read is dim `not read`, unavailable is yellow `unavail`. Missing required counts are
 unavailable. Off-panel requires a complete request index whose newest timestamp covers the row’s
 submission, or a final panel without the hash. A page older than submission is never an absence proof.
-On outvoted/no_quorum_out rows, ANSWER prefixes `panel <figure> · `, including unread replies.
+On non-joined outvoted/no_quorum_out rows, ANSWER prefixes `panel <figure> · `, including unread replies.
 Figures retain exact decimal strings. Bool panels instead use strict `agreement.answer` via
 `panel_answer_bool`: YES/NO; absent or malformed bool is `unavail`, never inferred from figure.
 Full RECORD keeps every column; compact drops tok; tight also drops answer/model/took and keeps panel.
 The data row retains role for other readers, but no RECORD tier displays it.
+
+**Joined oracle answers** (`docs/surf_answer_popup_plan.md`): exact member membership plus strict boolean
+`member.ok` selects answer.json's own value and notes for RECORD. Invalid values remain `None` without
+losing membership. Use the request's answerType: strict bool → true/false (display YES/NO), uint256 →
+1–78 decimal digits, address[] → at most 20 validated addresses joined by spaces; other scalar values
+are flattened and capped at 200 characters. Question/reason/notes caps are 1,000/200/4,000 characters;
+question and notes keep newlines, other controls are removed. To meet the byte budget, trim notes,
+then question, then reason; preserve the value. Off-panel facts are all None; old cache shapes are dropped.
+Joined cuts end in `… »` and do not light `‹ widen`. Only validated job UUID/hash identities get the
+button. It opens a cached snapshot in `OracleAnswerScreen`; Enter/Escape dismiss to AGENT. Question,
+notes and address[] values use shared address helpers and the row's chain explorer; unknown chains
+remain copyable without a link. Opening never fetches; closing uses the normal refresh guard.
 
 **Palette:** dim labels, bold counts; green healthy/working/accepted, red offline/paused/down,
 yellow unavailable or existing pending counts. Zero working keeps `0 quiet` dim. Rates and
@@ -368,7 +385,8 @@ CAPABILITY keeps its original seven columns at `SURF_SWARM_FULL_LAYOUT_COLUMNS`.
 full tier adds `inf` and `acc/att` from `CAPABILITY_OPTIONAL_FULL_COLUMNS`; just below that
 onset only those two fields are shed. Its widen marker remains honest below the onset. Layout
 tests permit only these optional omissions and still require all original columns, no original clipping and no horizontal table scroll. RECORD's committed enriched
-v4 first 40, joined to the committed oracle details, clears at `RECORD_NEVER_CLEARS_BELOW`; one column below clips the informative answer.
+v4 first 40 submission-message fallback clears at `RECORD_NEVER_CLEARS_BELOW`; one column below clips the informative answer.
+Joined answer.json rows are exempt: their popup button replaces the widen marker.
 The build reply from work index 125 is outside that displayed-window measurement.
 
 

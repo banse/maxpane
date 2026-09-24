@@ -190,8 +190,10 @@ an unread source says `unavailable`. Long runtime, daemon, node, role and ENS na
 a visible `…`.
 RECORD runs below the cards, with no blank row under its title: every attempt with date and
 time, job (the first eight characters of its id, linked to its page on `explorer.imd.fun`), node
-(`oracle`, `review`, `build`), role, state, the model used, duration and the first sentence of
-the seat's own answer — in red when the attempt failed. Queued, unavailable, not served and
+(`oracle`, `review`, `build`), state, panel outcome, the model used, duration and the seat's own answer.
+Joined oracle rows show the answer.json value and the start of its notes; a cut row's `»` opens
+the cached question, full retained value and notes. Failed members show their reason in red.
+Other rows show the first sentence of the reply — in red when the attempt failed. Queued, unavailable, not served and
 empty replies remain distinct, and keep their own colours on a failed attempt. Links to local files are reduced to their labels, and absolute
 local paths to filenames before display. A review that passed and work that won a job remain separate counts.
 SEAT names `#N never paired` for a seat that has never paired; a failed read says `unavailable`.
@@ -507,7 +509,9 @@ of any of the six alternate bodies.
 | `o` / `O` in BOARD | Cycle sort column / reverse sort |
 | LEADERBOARD header click | Sort that column; click again to reverse |
 | LEADERBOARD row click or Enter | Save that seat and open AGENT |
-| `esc` | Return to the dashboard |
+| RECORD `»` click | Open the cached oracle answer, question and notes |
+| Enter / `esc` in ANSWER | Close the popup and return to AGENT |
+| `esc` outside ANSWER | Return to the dashboard |
 
 The status hint names the ones that are not experimental:
 `l launchpad · 4 pl4 · s swm · a agt · b brd`. In Surfboard's announce feed, `enter` or `space` on a

@@ -165,6 +165,14 @@ names; the rotation / pagination POLICY stays in the client next to its tests, a
 
 ## Tiers and clocks
 
+Surf oracle details use `GET /oracle/requests/{uuid}?members=<submissionHash>` with a validated
+64-lowercase-hex hash. A live probe measured 159,079 bytes full versus 2,979 filtered. HTTP 200
+with `members: []` is a real membership negative for that hash; a failed read stays None. Always
+confirm the exact hash locally and reject conflicting duplicates. Filtered bodies retain agreement
+and quorum; never use their member count or `panelSize` as the submitted count. Cache only bounded
+extracted answer facts (6,000 serialized bytes per point), never the raw detail. Capture provenance
+and current samples are documented in `docs/imd_swarm_api.md`.
+
 Long reads (`TIER_ANALYSIS`, `TIER_LAUNCHPAD`, `TIER_POOL4`, `TIER_POOL4_STAKERS`, the swarm
 tiers) are spawned and never awaited, so first paint never waits on them
 (`test_the_first_payload_is_not_behind_the_analysis_read` fails by timing out). Each carries its

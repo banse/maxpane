@@ -32,7 +32,7 @@ the public subset.
 | `GET /workers` | live devices, capacity, pauses and runtime metadata (2026-09-22) | 97,420 B |
 | `GET /seats/{tokenId}` | one seat's lifetime record (measured 2026-09-21; see [`/seats/{tokenId}`](#seatstokenid)) | 6–90 KB |
 | `GET /oracle/requests` | paged oracle requests; `limit` ≤ 500, ISO `before` cursor (2026-09-23) | raw captures in `swarm/oracle` |
-| `GET /oracle/requests/{uuid}` | panel membership, agreement and attestation (2026-09-23) | full raw detail bodies committed |
+| `GET /oracle/requests/{uuid}?members=<submissionHash>` | filtered membership, agreement and attestation (2026-09-24) | full and filtered raw detail bodies committed |
 | `GET /jobs/{id}` | one job with its subtasks, verdicts and review | 2.2 KB typical, 9.2 KB worst |
 | `GET /launches` | deployments with every contract address | 10.1 KB (16) |
 | `GET /sites` | published IPFS sites with their ENS names | 2.3 KB (4) |
@@ -443,6 +443,21 @@ members value as empty, while keeping the explicit blocked outcome.
 Malformed `not-a-uuid` returned HTTP 400 `invalid_id`; the canonical unknown UUID returned 404.
 For this feature both are failed reads, never evidence of an off-panel submission.
 
+Runtime now sends `?members=<submissionHash>` (strict lowercase 64-hex) and reads at most four
+due request/hash pairs per cycle. The filter retains `agreement.cluster`; an unknown hash returns
+HTTP 200 with `members: []`, a real negative for that hash. The local exact-hash and duplicate
+checks still apply if the server returns an unfiltered body. A 2026-09-24 probe measured
+159,079 bytes full versus 2,979 filtered on a 112-member panel. `panelSize` was 200, so it cannot
+replace the lost submitted-member count. Cache `quorum` and row `panel_quorum` instead come from
+strict nonnegative `detail.quorum`; assessing displays panel size only.
+
+The committed `oracle/filtered/` hit, miss and assessing captures were taken on 2026-09-24 at
+01:13:36–01:13:39 UTC against control-plane commit `61d04d62e2ac32abb81a0d205f569fd7c77976e3`.
+Their raw sizes are 5,743, 4,670 and 3,318 bytes; MANIFEST.json records each URL, status, timestamp,
+SHA-256 and deployment commit. The assessing full body measured 159,079 bytes. These are new
+samples, distinct from the earlier 2,979-byte probe. Reproduce via the capture script's `--member`
+mode; tests serve these files through an injected transport and require the query parameter.
+
 Join `/seats/{token}.work[].jobId` to the list to select details, then match the exact
 `work[].submissionHash` against `members[].submissionHash`. A wallet can own several seats;
 jobId alone is not membership. Agreement is membership in `agreement.cluster`, not equality
@@ -453,7 +468,13 @@ Conflicting duplicate member hashes and duplicate listed jobIds are ambiguous.
 **Bool answers are separate:** 22 captured bool details include numeric figures unrelated to
 truth (e.g. figure `263154`, answer false). Display YES/NO from strict boolean `agreement.answer`,
 carried as cached `answer_bool` / row `panel_answer_bool`; never derive it from figure.
-Members' notes, questions and raw details do not enter the runtime cache.
+The exact matched member supplies this seat's answer.json facts: strict `ok`, reason, normalized
+answer and notes; question, chainId and answerType come from the request. Invalid answer values
+become None without losing membership. Question/reason/notes are capped at 1,000/200/4,000
+characters and the whole serialized point at 6,000 bytes, trimming notes before question before
+reason while preserving the answer. Cache at most 400 points; raw details never enter the cache.
+Unknown nonempty statuses (including documented refused/failed) with null agreement keep these
+facts but render an unavailable, nonterminal panel. Malformed or empty statuses are failed reads.
 
 Re-derived seat #420 counts: 243 oracle work rows; 219 on a panel, including 205 in the
 agreement cluster, 11 outside it and 3 assessing; 24 have no matching panel member.
