@@ -245,3 +245,25 @@ async def test_popup_job_details_cap_terminal_blocked_retry_and_failure(tmp_path
         assert sw.prune_job_details(points,now_ts=NOW+49*3600)=={}
     finally:
         await manager.close()
+
+
+@pytest.mark.parametrize('summary', ['审计发现'*700+'。', '━'*3000, '😀'*3000], ids=['cjk', 'boxes', 'emoji'])
+async def test_large_non_ascii_answer_stays_read_and_loadable(tmp_path, summary):
+    import json
+    fake = Answers(work(1, 'completed'))
+    job = fake.seat['work'][0]['jobId']
+    fake.responses[job]['submissions'][0]['summary'] = summary
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        slot = manager.cache.get_last_good(SLOT_SWARM_ANSWERS).payload
+        assert sw.coerce_answers_slot(slot) == slot
+        value = next(iter(slot[job].values()))
+        assert value['state'] == 'read'
+        assert len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode()) <= 8000
+        row = data(manager)['swarm_seat_work_rows'][0]
+        assert row['answer_state'] == 'read' and row['answer']
+        from maxpane_dashboard.widgets.surf.swarm_seat_record import SurfSwarmSeatRecord
+        assert 'unavailable' not in SurfSwarmSeatRecord()._answer_cell(row).plain
+    finally:
+        await manager.close()

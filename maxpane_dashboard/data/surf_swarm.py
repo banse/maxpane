@@ -1674,6 +1674,8 @@ def _valid_submission_facts(point: Mapping) -> bool:
 def bound_answer_point(point: dict) -> dict | None:
     targets = [(other, 'line', '') for other in point.get('others') or []]
     targets += [(point, 'reply', None), (point, 'failed_checks', None)]
+    if point.get('state') == 'read':
+        targets.append((point, 'answer', '…'))
     return _bound_text_fields(point, targets, ANSWER_POINT_BYTES, compact=True)
 
 
@@ -1919,7 +1921,11 @@ def _text_prefix(text: str, cap: int) -> str | None:
             if cap < run.end():
                 cap = run.start()
                 break
-    return text[:cap].rstrip() or None
+    prefix = text[:cap]
+    # A truncated URL scheme must not become a local path at load time.
+    if len(text) > cap and (partial := re.search(r'https?:/{1,2}$', prefix, re.IGNORECASE)):
+        prefix = prefix[:partial.start()]
+    return prefix.rstrip() or None
 
 
 def _oracle_text(value: object, cap: int, *, paragraphs: bool = True) -> str | None:

@@ -146,3 +146,40 @@ def test_completed_review_fallback_preserves_its_reply_and_usage():
     assert value['state'] == 'read' and value['reply'] == sw.clean_reply(item['summary'])
     assert value['turns'] == item['usage']['turns']
     assert value['others_total'] == len(payload['submissions'])-1
+
+
+@pytest.mark.parametrize('tail', ['https:/', 'https://'])
+@pytest.mark.parametrize('field,cap', [('others', 200), ('reply', 4096), ('failed_checks', 300)])
+def test_url_character_cuts_survive_load_unchanged(field, cap, tail):
+    payload, item = own()
+    text = 'x'*(cap-len(tail)-1) + ' https://example.com/path'
+    if field == 'others':
+        sibling = next(i for i in payload['submissions'] if i['hash'] != item['hash'])
+        sibling['summary'] = text
+    elif field == 'reply':
+        item['summary'] = 'Done.\n' + text[6:]
+    else:
+        item['verdict'] = {'failedChecks': [text]}
+    value = point(payload, item)
+    slot = {payload['jobId']: {item['hash']: value}}
+    assert sw.coerce_answers_slot(slot) == slot
+
+
+@pytest.mark.parametrize('tail', ['https:/', 'https://'])
+@pytest.mark.parametrize('field', ['others', 'reply', 'failed_checks'])
+def test_url_byte_cuts_survive_load_unchanged(monkeypatch, field, tail):
+    payload, item = own()
+    value = point(payload, item)
+    value.update(reply=None, failed_checks=None)
+    for other in value['others']:
+        other['line'] = ''
+    target = value['others'][0] if field == 'others' else value
+    key = 'line' if field == 'others' else field
+    target[key] = 'prefix ' + tail
+    limit = len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode())
+    target[key] = 'prefix https://example.com/path'
+    monkeypatch.setattr(sw, 'ANSWER_POINT_BYTES', limit)
+    result = sw.bound_answer_point(value)
+    assert result is not None
+    slot = {payload['jobId']: {item['hash']: result}}
+    assert sw.coerce_answers_slot(slot) == slot
