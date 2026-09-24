@@ -6,7 +6,9 @@ from maxpane_dashboard.screens.submission_detail import SubmissionDetailScreen
 from maxpane_dashboard.screens.surf import SurfScreen, MODE_AGENT
 from maxpane_dashboard.data import surf_swarm as sw
 from tests.data.test_surf_swarm_answers import capture, own, point
-from tests.screens.test_oracle_answer import PopupApp, lines, settled
+from tests.screens.test_oracle_answer import PopupApp, lines, settled, x_button
+from maxpane_dashboard.screens.oracle_answer import OracleAnswerScreen
+from tests.widgets.test_surf_swarm_seat_record import oracle_row
 from tests.screens.test_surf_screen import _Harness, _FakeManager, _sample_data
 from tests.widgets.address_probe import icon_targets, link_targets
 
@@ -185,3 +187,14 @@ async def test_record_and_submission_share_the_token_carry():
     async with SubmissionApp(row).run_test(size=(139, 33)) as pilot:
         text = await all_visible(pilot)
         assert '1.0M out' in text and '999.7K' not in text
+
+
+@pytest.mark.parametrize('size',[(80,24),(139,33),(40,12)])
+@pytest.mark.parametrize('kind',['answer','submission'])
+async def test_top_right_x_closes_either_popup(kind,size):
+    app=PopupApp(oracle_row(),OracleAnswerScreen) if kind=='answer' else SubmissionApp(row_for())
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        popup=pilot.app.screen
+        await pilot.click(offset=x_button(pilot.app))
+        await settled(pilot,lambda:pilot.app.screen is not popup)

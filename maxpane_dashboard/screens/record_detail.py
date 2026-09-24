@@ -1,9 +1,10 @@
 """Shared cached RECORD popup frame: snapshot, focused scroll and pinned close hint."""
 from copy import deepcopy
 
+from rich.style import Style
 from rich.text import Text
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
@@ -22,9 +23,11 @@ class RecordDetailScreen(ModalScreen[None]):
     RecordDetailScreen .record-detail-box {
         width: 100%; max-width: 110; height: 100%; border: solid $accent; padding: 0 2;
     }
+    RecordDetailScreen .record-detail-head { height: 1; margin: 0 0 1 0; }
     RecordDetailScreen .record-detail-title {
-        height: 1; margin: 0 0 1 0; text-wrap: nowrap; text-overflow: ellipsis;
+        width: 1fr; height: 1; text-wrap: nowrap; text-overflow: ellipsis;
     }
+    RecordDetailScreen .record-detail-x { width: 2; height: 1; text-align: right; }
     RecordDetailScreen .record-detail-scroll { height: 1fr; min-height: 1; overflow-x: hidden; }
     RecordDetailScreen .record-detail-scroll Static { height: auto; width: 100%; }
     RecordDetailScreen .record-detail-heading { margin: 1 0 0 0; }
@@ -38,7 +41,11 @@ class RecordDetailScreen(ModalScreen[None]):
     def compose(self):
         prefix = self.ID_PREFIX
         with Vertical(id=prefix+'-box', classes='record-detail-box'):
-            yield Static(Text(), id=prefix+'-title', classes='record-detail-title')
+            with Horizontal(classes='record-detail-head'):
+                yield Static(Text(), id=prefix+'-title', classes='record-detail-title')
+                # Top-right close button (owner, 2026-09-24): a click does what Space/Esc do.
+                yield Static(Text('X', style=Style(bold=True, meta={'@click': 'screen.close'})),
+                             id=prefix+'-x', classes='record-detail-x')
             with VerticalScroll(id=prefix+'-scroll', classes='record-detail-scroll'):
                 yield from self.compose_sections()
             yield Static(Text('PRESS SPACE OR ESC TO CLOSE', style='dim'), id=prefix+'-close', classes='record-detail-close')

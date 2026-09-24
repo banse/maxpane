@@ -256,8 +256,12 @@ async def test_clipped_answer_has_popup_instead_of_widen():
     assert long["answer"] not in row and row.rstrip().endswith("… »")
     assert "‹" not in "\n".join(lines)
     short = [dict(NEWEST, answer_state="read", answer="built a hook")]
-    text = "\n".join(await _record(swarm_seat_work_rows=short))
+    lines = await _record(swarm_seat_work_rows=short)
+    text = "\n".join(lines)
     assert "built a hook" in text and "‹" not in text, "an answer that fits raises no hint"
+    # Every answer carries the popup, not only cut ones (owner, 2026-09-24).
+    row = _row_with(lines, _job(NEWEST))
+    assert row.rstrip().endswith("built a hook »") and "…" not in row
 
 
 async def test_the_state_word_is_coloured_on_the_raw_word():
@@ -647,14 +651,13 @@ async def test_joined_answer_value_and_popup_action_reach_compositor(value, note
         y=next(i for i,line in enumerate(lines) if _job(row) in line)
         line=lines[y]
         assert 'Closing message.' not in line and not widget._clipped
-        assert ('»' in line) is cut
-        if cut:
-            x=line.index('»')
-            assert line[x-2:x]=='… '
-            assert pilot.app.screen.get_style_at(x,y).meta['@click']==f"screen.open_oracle_answer('{row['job_id']}','{row['submission_hash']}')"
-            assert '@click' not in pilot.app.screen.get_style_at(x-1,y).meta
-        else:
-            assert 'NO · Short.' in line
+        # Every joined answer carries the popup, cut or not (owner, 2026-09-24).
+        x=line.index('»')
+        assert (line[x-2:x]=='… ') is cut
+        assert pilot.app.screen.get_style_at(x,y).meta['@click']==f"screen.open_oracle_answer('{row['job_id']}','{row['submission_hash']}')"
+        assert '@click' not in pilot.app.screen.get_style_at(x-1,y).meta
+        if not cut:
+            assert 'NO · Short. »' in line
 
 
 @pytest.mark.parametrize('bad', ['bad', "');x('", 'a'*64+'\n'])
@@ -701,6 +704,7 @@ async def test_joined_failed_member_is_red_and_keeps_popup_action():
     ({'work_status':'failed','answer':'Short.'},True),
     ({'work_status':'rejected','answer_state':'no_reply','answer':None},True),
     ({'work_status':'accepted','answer':'Long '*100},True),
+    ({'work_status':'accepted','answer':'Short.'},True),
     ({'answer_state':'not_read','answer':'Long '*100},False),
     ({'answer_state':'unavailable','work_status':'failed'},False),
     ({'job_id':'bad','answer':'Long '*100},False),

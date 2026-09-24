@@ -397,18 +397,20 @@ Other scalar values are flattened and capped at 200 characters. Question/reason/
 1,000/200/4,000 characters;
 question and notes keep newlines, other controls are removed. To meet the byte budget, trim notes,
 then question, then reason; preserve the value. Off-panel facts are all None; old cache shapes are dropped.
-Joined cuts end in `… »` and do not light `‹ widen`. Only validated job UUID/hash identities get the
-button. It opens a cached snapshot in `OracleAnswerScreen`; Space/Escape dismiss to AGENT (Enter does not, owner 2026-09-24). Question,
+Every joined answer ends in `»`, cut (`… »`) or not (owner 2026-09-24); the button's two cells come out of
+the answer's own budget, so no column widens and no pin moves. Cuts do not light `‹ widen`. Only validated
+job UUID/hash identities get the button. It opens a cached snapshot in `OracleAnswerScreen`; Space/Escape or
+the frame's top-right `X` dismiss to AGENT (Enter does not, owner 2026-09-24). Question,
 notes and address[] values use shared address helpers and the row's chain explorer; unknown chains
 remain copyable without a link. Opening never fetches; closing uses the normal refresh guard.
 
 **Other submission replies** (`docs/surf_submission_popup_plan.md`): non-joined rows with a valid
-job UUID/hash and answer state read/no_reply get `»` when cut or failed/rejected. It opens a
+job UUID/hash and answer state read/no_reply always get `»` (owner 2026-09-24: every answer, not only cut ones). It opens a
 `SubmissionDetailScreen` snapshot of the exact job/hash from the last rendered rows. Unread,
-not-served and unavailable replies get no button. Failed/rejected rows get it even when uncut.
+not-served and unavailable replies get no button.
 Any row with a popup button is exempt from reply-based `‹ widen`; button-less cuts still mark.
 Both popups share `RecordDetailScreen`'s frame, focused vertical scroll and pinned centred footer;
-Space/Escape return to AGENT. Job/nodes, objective, this seat's status/usage/checks/findings/artifacts,
+Space/Escape or a click on the `X` at the frame's top right return to AGENT. Job/nodes, objective, this seat's status/usage/checks/findings/artifacts,
 reply and up to eight other seats are shown from cache. `local_build_failed` alone gets the excerpt
 note. Prose wraps, never scrolls horizontally; addresses use shared helpers without an explorer
 because these jobs carry no chain id. Every third-party string reaches Static as pre-built Text.

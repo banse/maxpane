@@ -327,7 +327,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         width = self._answer_cols
         eligible = can_open_submission(item)
         rendered, cut, button = fit_popup_text(item, text, width, 'open_submission' if eligible else None,
-            force=item.get('work_status') in ('failed','rejected'), style=style)
+            style=style)
         if cut and not button:
             self._clipped = True
         return rendered

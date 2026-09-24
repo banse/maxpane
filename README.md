@@ -189,11 +189,12 @@ pending, rejected, cancelled, blocked, unknown and unread states. Filtering happ
 the row limit. Click `more` beneath the table to show another 20 rows, up to 400; older rows
 are counted after filtering. The window starts at 40 again when the seat changes and is not
 saved. New rows fill with cached facts and subsequent normal reads, preserving scroll position.
-Joined oracle rows show the answer.json value and the start of its notes; a cut row's `»` opens
+Joined oracle rows show the answer.json value and the start of its notes; the row's `»` opens
 the cached question, full retained value and notes. Failed members show their reason in red.
 Other rows show the first sentence of the reply — in red when the attempt failed. Their `»` opens a
 SUBMISSION popup with the retained reply, job and node state, usage and other seats on the job.
-It appears when a successfully read reply is cut or the attempt failed/rejected, even if the text fits.
+It appears on every successfully read reply, whether or not the text fits. Space, Escape or the
+`X` at the popup's top right close it.
 Failed builds label their published text as an excerpt: the actual build error may be absent.
 Queued, unavailable, not served and empty replies remain distinct, and keep their own colours
 on a failed attempt. Links to local files are reduced to their labels, and absolute

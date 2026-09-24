@@ -111,10 +111,12 @@ def record_answer(row, width):
                           style='red' if failed else '', explorer=for_chain_id(row.get('oracle_chain_id')))[0]
 
 
-def fit_popup_text(row, raw, width, action=None, *, force=False, style='', explorer=None):
+def fit_popup_text(row, raw, width, action=None, *, style='', explorer=None):
+    # Every popup-eligible answer carries its button, cut or not (owner, 2026-09-24);
+    # the button's two cells come out of the text budget, so no column widens.
     marked, _, spans = mark_addresses(raw)
     cut = rowfit.cell_len(marked) > width
-    button = bool(action) and (cut or force) and valid_identity(row.get('job_id'), row.get('submission_hash'))
+    button = bool(action) and valid_identity(row.get('job_id'), row.get('submission_hash'))
     budget = max(0, width - (2 if button else 0))
     fitted = keep_units(marked, spans, rowfit.clip(marked, budget))
     if cut and not fitted:

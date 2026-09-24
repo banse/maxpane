@@ -93,7 +93,19 @@ async def test_popup_snapshot_invalid_and_failed_answers(state):
         if state=='unavailable': assert 'unavailable' in text
 
 
-@pytest.mark.parametrize('key', ['space','escape'])
+def x_button(app):
+    """The composited top-right close button: its cell, on the title's row at the frame's right."""
+    screen=app.screen
+    title=screen.query_one('.record-detail-title'); box=screen.query_one('.record-detail-box')
+    line=lines(app)[title.region.y]
+    x=line.rindex('X')
+    assert x>=title.region.right and x<box.region.right-1, 'X sits right of the title, inside the frame'
+    assert all(ch in ' │' for ch in line[x+1:box.region.right]), 'nothing between X and the border'
+    assert screen.get_style_at(x,title.region.y).meta.get('@click')=='screen.close'
+    return x,title.region.y
+
+
+@pytest.mark.parametrize('key', ['space','escape','X'])
 async def test_record_popup_click_closes_back_to_agent_and_resumes_guarded_refresh(key):
     row=oracle_row()
     payload=_sample_data(); payload.update(swarm_seat_state='ok',swarm_seat_work_rows=[row])
@@ -117,7 +129,8 @@ async def test_record_popup_click_closes_back_to_agent_and_resumes_guarded_refre
         # Enter no longer closes (owner, 2026-09-24): only space and escape do.
         await pilot.press('enter'); await pilot.pause()
         assert isinstance(pilot.app.screen,OracleAnswerScreen)
-        await pilot.press(key)
+        if key=='X': await pilot.click(offset=x_button(pilot.app))
+        else: await pilot.press(key)
         await settled(pilot,lambda:pilot.app.screen is screen and manager.calls>before and not screen._refresh_in_flight)
         assert screen._mode==MODE_AGENT and screen._refresh_timer is not None
 
