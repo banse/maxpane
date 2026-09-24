@@ -50,6 +50,8 @@ __all__ = [
 ]
 
 EMPTY_LINE = "no work yet"
+#: Right-aligned on the title line where it fits whole; ``i`` is the screen's seat prompt.
+SEAT_HINT = "type 'i' to change seat"
 
 #: ``MM-DD HH:MM`` of ``submitted_ts`` (the work entry's ``submittedAt``), else
 #: ``accepted_ts``: since 2026-09-22 ``work[]`` also lists pending, rejected
@@ -237,9 +239,16 @@ class SurfSwarmSeatRecord(SwarmTableBase):
                                           meta={"@click": f"screen.record_filter('{mode}')"}))
         if rowfit.has_marker(as_of):
             title.append(f" · as of {rowfit.clip(as_of, 5)}")
-        hinted = rowfit.title_with_hint(title.plain, self._widen or self._clipped,
-                                       max(self.size.width - self.TITLE_PADDING_COLS, 0))
+        room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
+        hinted = rowfit.title_with_hint(title.plain, self._widen or self._clipped, room)
         title.append(hinted[len(title.plain):])
+        # Right-aligned seat hint (owner, 2026-09-24); shown only where it fits
+        # whole after the widen marker, so it never costs the title a line. It
+        # ends where the answer column's text ends: the title's text starts one
+        # cell right of the table and the last cell keeps one cell of padding.
+        gap = room - 2 - title.cell_len - len(SEAT_HINT)
+        if room and gap >= 2:
+            title.append(" " * gap).append(SEAT_HINT, style="dim")
         self.query_one(".panel-title", Static).auto_links = False
         self.write(".panel-title", title)
 

@@ -236,7 +236,9 @@ shows the address.
 RECORD columns are `when · job · node · state · model · took · tok · panel · answer`.
 The title is `RECORD · all · not completed · as of HH:MM`: fixed click actions
 `screen.record_filter('all')` / `screen.record_filter('open')`, revalidated by the screen.
-The active mode is bold accent, the inactive mode dim. `record_state` in pure analytics
+The active mode is bold accent, the inactive mode dim. A dim, unclickable `SEAT_HINT`
+(`type 'i' to change seat`, owner 2026-09-24) ends flush with the answer column's text, after any
+widen marker, only where it fits whole; it never adds a title line or moves a pin. `record_state` in pure analytics
 owns the displayed state, shared by widget and manager. `not completed` keeps every state
 except completed, including None. `record_window` filters first, then clamps the view to
 40..400 and takes its rows. Older counts are after filtering; empty filtered views say

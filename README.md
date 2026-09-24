@@ -184,7 +184,7 @@ RANK stays in the hero and remains available when the seats read fails.
 RECORD runs below the cards, with no blank row under its title: every attempt with date and
 time, job (the first eight characters of its id, linked to its page on `explorer.imd.fun`), node
 (`oracle`, `review`, `build`), state, the model used, duration, output tokens, panel outcome and the seat's own answer.
-The title's `all` / `not completed` clicks select the view; the latter includes failed,
+The title's right end reads `type 'i' to change seat` where it fits whole. Its `all` / `not completed` clicks select the view; the latter includes failed,
 pending, rejected, cancelled, blocked, unknown and unread states. Filtering happens before
 the row limit. Click `more` beneath the table to show another 20 rows, up to 400; older rows
 are counted after filtering. The window starts at 40 again when the seat changes and is not

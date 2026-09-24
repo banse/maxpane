@@ -807,6 +807,17 @@ async def test_record_filter_title_is_whole_at_every_tier(width,tier):
         assert 'RECORD · all · not completed · as of 17:33' in text
         assert title.region.height == 1 and record._tier == tier
         assert ('‹' in text) == (record._widen or record._clipped)
+        # The seat hint sits flush right where it fits whole, never on a second line (owner, 2026-09-24).
+        from maxpane_dashboard.widgets.surf.swarm_seat_record import SEAT_HINT
+        line = text.splitlines()[0].rstrip()
+        assert (SEAT_HINT in line) is (width >= 99)
+        if width >= 99:
+            assert line.endswith(SEAT_HINT), line
+            table = record.query_one(DataTable)
+            text_end = table.region.x + sum(c.get_render_width(table) for c in table.ordered_columns) - 1
+            assert title.region.x + len(line) == text_end, 'flush with the answer column text'
+            x = title.region.x + line.index(SEAT_HINT)
+            assert '@click' not in pilot.app.screen.get_style_at(x, title.region.y).meta
         if tier == 'full':
             header = _region_text(pilot.app, record.query_one(DataTable)).splitlines()[0]
             assert header.index('took') < header.index('tok') < header.index('panel')
