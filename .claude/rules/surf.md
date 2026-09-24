@@ -185,7 +185,7 @@ job-data roster. ROSTER and FEEDBACK are retired, along with Enter-on-roster sel
 tier due, with no network await in a handler. Its unchanged single-token slot prevents seat A's
 numbers appearing under seat B: `swarm_seat_state` is `"pending"` until B's read lands.
 
-Hero WORK reads turns, hours and lifetime output tokens from `/contributors` through
+Hero WORK reads turns, lifetime output tokens and hours (in that line order, owner 2026-09-25) from `/contributors` through
 `swarm_seat_contrib` and `_swarm_seat.work_body`. Input and cached-input tokens are excluded;
 missing output tokens say `-- tokens`. WORK and RANK distinguish `not listed` from
 `unavailable` independently of the seats state. ACCEPTED combines `accepted of attempts`

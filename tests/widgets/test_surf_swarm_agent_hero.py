@@ -524,7 +524,7 @@ async def test_rank_move_has_composited_direction_and_color(delta, word, color):
     (10**30,'1.0e+30 tokens'),(10**1000,'-- tokens')])
 async def test_work_output_tokens_are_bounded_and_honest(tokens, expected):
     text = await _box_text(BOX_IDS['work'], swarm_seat_contrib={**CONTRIB, 'output_tokens':tokens})
-    assert _lines(text) == ['WORK', f"{CONTRIB['turns']:,} turns", f"{CONTRIB['wall_clock_s']/3600:.1f} h", expected]
+    assert _lines(text) == ['WORK', f"{CONTRIB['turns']:,} turns", expected, f"{CONTRIB['wall_clock_s']/3600:.1f} h"]
 
 
 @pytest.mark.parametrize('contrib,word', [(None,'unavailable'),({'listed':False},'not listed')])
@@ -542,7 +542,7 @@ async def test_committed_420_capture_reaches_work_accepted_and_rank():
     from tests.surf_swarm_fixtures import swarm_capture_v3
     summary = seat_summary_from_seat(swarm_capture_v3('seat_420_with_contributors'))
     boxes = await _boxes(swarm_seat_summary=summary)
-    assert _lines(boxes['work']) == ['WORK', '2,189 turns', '8.1 h', '1.2M tokens']
+    assert _lines(boxes['work']) == ['WORK', '2,189 turns', '1.2M tokens', '8.1 h']
     assert _lines(boxes['accepted']) == ['ACCEPTED', '190 of 204', '93.1 %']
     assert _lines(boxes['rank']) == ['RANK', '#6 of 99']
 
@@ -553,7 +553,7 @@ async def test_owner_hero_example_is_an_explicit_synthetic_layout_case(width):
                          swarm_seat_summary={**SUMMARY, 'accepted':242, 'attempts':280, 'win_rate':242/280},
                          swarm_seat_contrib={**CONTRIB, 'turns':3063, 'wall_clock_s':11.9*3600,
                                              'output_tokens':1_700_000, 'rank':8, 'ranked_of':306})
-    assert _lines(boxes['work']) == ['WORK', '3,063 turns', '11.9 h', '1.7M tokens']
+    assert _lines(boxes['work']) == ['WORK', '3,063 turns', '1.7M tokens', '11.9 h']
     assert _lines(boxes['accepted']) == ['ACCEPTED', '242 of 280', '86.4 %']
     assert _lines(boxes['rank']) == ['RANK', '#8 of 306']
     assert 'as of' not in '\n'.join(boxes.values())
