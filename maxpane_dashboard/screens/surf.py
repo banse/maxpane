@@ -2125,7 +2125,6 @@ _SWARM_PANELS = (
     SurfSwarmSites,
     SurfSwarmAgentHero,
     SurfSwarmSeatCards,
-    SurfSwarmNodeCards,
     SurfSwarmSeatRecord,
 )
 

@@ -23,6 +23,8 @@ import math
 
 from rich.text import Text
 
+from maxpane_dashboard.analytics.surf_swarm_signals import record_state
+
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import job_text
 from maxpane_dashboard.widgets.fmt import fmt_int
@@ -202,8 +204,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     def build_cells(self, item: dict) -> dict[str, object] | None:
         job_id = item.get("job_id")
         job = job_id[:JOB_COLS] if isinstance(job_id, str) and job_id else DASH
-        status = item.get("work_status")
-        state = _word(status if status not in (None, "accepted") else item.get("job_state"))
+        state = _word(record_state(item))
         color = _STATE_COLORS.get(state)
         state_cell = sanitize_cell(state, _STATE_COLS)
         if color:

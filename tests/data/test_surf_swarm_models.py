@@ -114,7 +114,7 @@ SWARM_V2_ROW_SHAPES = {
 
 #: The four AGENT-body widgets (AGENT-seats plan §1.3).
 AGENT_WIDGETS = (
-    "SurfSwarmAgentHero", "SurfSwarmSeatCards", "SurfSwarmNodeCards",
+    "SurfSwarmAgentHero", "SurfSwarmSeatCards",
     "SurfSwarmSeatRecord",
 )
 
@@ -129,7 +129,6 @@ SWARM_TARGET_WIDGETS = {
     "SurfSwarmSites",
     "SurfSwarmAgentHero",
     "SurfSwarmSeatCards",
-    "SurfSwarmNodeCards",
     "SurfSwarmSeatRecord",
 }
 
@@ -220,9 +219,9 @@ def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
     assert unreached == set(), sorted(unreached)
 
 
-def test_the_signature_names_exactly_the_thirteen_target_widgets():
+def test_the_signature_names_exactly_the_twelve_target_widgets():
     assert set(SWARM_WIDGET_SIGNATURES) == SWARM_TARGET_WIDGETS
-    assert len(SWARM_WIDGET_SIGNATURES) == 13
+    assert len(SWARM_WIDGET_SIGNATURES) == 12
 
 
 def test_no_retired_key_is_named_by_a_target_signature():
@@ -264,11 +263,7 @@ def test_the_agent_signatures_are_the_flipped_literals():
         ),
         "SurfSwarmSeatCards": (
             "swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates",
-            "swarm_seat_owner_ens",
-        ),
-        "SurfSwarmNodeCards": (
-            "swarm_seat_summary", "swarm_seat_node_rows", "swarm_seat_contrib",
-            "swarm_seat_state",
+            "swarm_seat_owner_ens", "swarm_seat_node_rows",
         ),
         "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
     }

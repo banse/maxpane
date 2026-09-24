@@ -151,7 +151,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
     )
 
     def update_data(self, swarm_seat_summary=None, swarm_seat_state=None,
-                    swarm_seat_teammates=None, swarm_seat_owner_ens=None, **_kwargs) -> None:
+                    swarm_seat_teammates=None, swarm_seat_owner_ens=None, swarm_seat_node_rows=None, **_kwargs) -> None:
         super().update_data(
             swarm_seat_summary=swarm_seat_summary, swarm_seat_state=swarm_seat_state,
             swarm_seat_teammates=swarm_seat_teammates, swarm_seat_owner_ens=swarm_seat_owner_ens,

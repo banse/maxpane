@@ -20,7 +20,7 @@ from typing import Any
 
 __all__ = [
     "completed_within", "count_by", "duration_stats", "launch_summary",
-    "seen_since_ts", "skill_summary", "state_rollup",
+    "seen_since_ts", "skill_summary", "state_rollup", "record_state", "record_window",
 ]
 
 
@@ -148,3 +148,15 @@ def completed_within(seen: object, now_ts: float,
         if updated is not None and updated >= floor:
             count += 1
     return count, since
+
+
+def record_state(row: Mapping[str, Any]) -> str | None:
+    """The attempt state, with accepted/pre-status rows taking the job state."""
+    status = row.get("work_status")
+    return row.get("job_state") if status in (None, "accepted") else status
+
+
+def record_window(rows: Sequence[dict], cap: int, open_only: bool) -> list[dict]:
+    """Filter before windowing; retain source order within the 40..400 view."""
+    selected = [row for row in rows if not open_only or record_state(row) != "completed"]
+    return selected[:max(40, min(400, cap))]

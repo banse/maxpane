@@ -312,3 +312,33 @@ def test_module_is_pure_stdlib_and_clockless():
         for banned in ("maxpane_dashboard", "httpx", "aiohttp", "textual", "time"):
             assert not name.startswith(banned), (name, banned)
             assert not name.startswith(f"{banned}."), (name, banned)
+
+
+@pytest.mark.parametrize('status', ['pending', 'failed', 'rejected', 'cancelled', 'blocked', 'quarantined', None])
+def test_record_state_and_open_window_keep_every_noncompleted_state(status):
+    row = {'work_status': status, 'job_state': None if status is None else 'completed'}
+    assert sig.record_state(row) == status
+    assert sig.record_window([row], 40, True) == [row]
+
+
+@pytest.mark.parametrize('status', ['accepted', None])
+def test_record_state_falls_back_to_job_state(status):
+    row = {'work_status': status, 'job_state': 'completed'}
+    assert sig.record_state(row) == 'completed'
+    assert sig.record_window([row], 40, True) == []
+    assert sig.record_window([row], 40, False) == [row]
+
+
+def test_record_window_filters_before_limiting_and_keeps_source_order():
+    completed = [{'work_status': 'accepted', 'job_state': 'completed'} for _ in range(50)]
+    failed = [{'work_status': 'failed', 'id': i} for i in range(90)]
+    rows = completed + failed
+    assert sig.record_window(rows, 80, True) == failed[:80]
+    assert sig.record_window(rows, 80, False) == rows[:80]
+    assert len(rows) == 140
+
+
+@pytest.mark.parametrize(('cap', 'expected'), [(-1, 40), (0, 40), (39, 40), (60, 60), (400, 400), (401, 400)])
+def test_record_window_clamps_to_retained_cache(cap, expected):
+    rows = [{'work_status': None} for _ in range(500)]
+    assert len(sig.record_window(rows, cap, False)) == expected
