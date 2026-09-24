@@ -1622,8 +1622,9 @@ SWARM_PANEL_STATES = (
 SWARM_ORACLE_NODE_KEYS = ("oracle_assess",)
 #: Extracted facts only, keyed by job UUID then submission hash. Never raw details.
 SWARM_ORACLE_CACHE_FIELDS = (
-    "request_id", "status", "in_cluster", "on_panel", "agreed", "members",
+    "request_id", "status", "in_cluster", "on_panel", "agreed", "quorum",
     "panel_size", "figure", "answer_type", "answer_bool", "read_ts", "terminal",
+    "question", "chain_id", "member_ok", "member_reason", "seat_answer", "notes",
 )
 
 
@@ -1995,8 +1996,14 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "model",           # str | None; actual submission usage, not advertised
         "took_s",          # finite nonnegative float | None; submission wallClockMs / 1000
         "output_tokens",
-        "panel_state", "panel_agreed", "panel_members", "panel_size",
+        "panel_state", "panel_agreed", "panel_quorum", "panel_size",
         "panel_figure", "panel_answer_type",
         "panel_answer_bool",  # bool | None; actual agreement.answer, never inferred from figure
+        "oracle_question",     # str | None; normalized lines, <= 1000 chars
+        "oracle_chain_id",     # strict int | None; request chain, never guessed
+        "oracle_member_ok",    # bool | None; exact-hash member validity
+        "oracle_member_reason", # str | None; <= 200 chars
+        "oracle_seat_answer",  # str | None; typed normalization, invalid -> None
+        "oracle_notes",        # str | None; paragraphs retained, <= 4000 chars
     ),
 }

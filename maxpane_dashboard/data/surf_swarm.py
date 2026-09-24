@@ -883,8 +883,10 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
             "answer": None, "answer_state": "not_read", "model": None, "took_s": None,
             "output_tokens": None,
             "panel_state": "not_read" if work.get("nodeKey") in SWARM_ORACLE_NODE_KEYS else "not_oracle",
-            "panel_agreed": None, "panel_members": None, "panel_size": None,
+            "panel_agreed": None, "panel_quorum": None, "panel_size": None,
             "panel_figure": None, "panel_answer_type": None, "panel_answer_bool": None,
+            "oracle_question": None, "oracle_chain_id": None, "oracle_member_ok": None,
+            "oracle_member_reason": None, "oracle_seat_answer": None, "oracle_notes": None,
         }
         rows.append({key: row[key] for key in keys})
     return rows
