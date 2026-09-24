@@ -5736,7 +5736,7 @@ class SurfManager:
         if not isinstance(contrib, dict) or contrib.get("listed") is not True or sw._seat_id(token) is None:
             return None
         rank = contrib.get("rank")
-        if sw._seat_id(rank) is None or rank == 0:
+        if sw._seat_id(rank) is None or rank == 0 or rank > sw.RANK_MAX:
             return None
         entry = self.cache.get_last_good(SLOT_SWARM_SEAT_RANK)
         points = sw.coerce_rank_slot(getattr(entry, "payload", None)) or {}

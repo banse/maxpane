@@ -2275,6 +2275,10 @@ def _log_oracle_status(status: str) -> None:
 
 
 
+#: BOARD lists hundreds of seats; this is only a sanity bound for stored and live ranks.
+RANK_MAX = 10**6
+
+
 def coerce_rank_slot(payload: object) -> dict | None:
     """Per-seat last rank and previous rank; drop malformed points independently."""
     if not isinstance(payload, dict):
@@ -2286,9 +2290,9 @@ def coerce_rank_slot(payload: object) -> dict | None:
         if not isinstance(point, dict) or set(point) != {"rank", "prev"}:
             continue
         rank, prev = point["rank"], point["prev"]
-        if not _valid_count(rank) or rank == 0:
+        if not _valid_count(rank) or rank == 0 or rank > RANK_MAX:
             continue
-        if prev is not None and (not _valid_count(prev) or prev == 0):
+        if prev is not None and (not _valid_count(prev) or prev == 0 or prev > RANK_MAX):
             continue
         clean[token] = {"rank":rank, "prev":prev}
     return clean

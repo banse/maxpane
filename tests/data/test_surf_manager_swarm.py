@@ -1726,6 +1726,23 @@ async def test_rank_cache_drops_malformed_points_on_load(tmp_path, bad):
         await restored.close()
 
 
+@pytest.mark.parametrize('token', [420, 421])
+async def test_out_of_range_live_rank_has_no_delta_and_leaves_slot_unchanged(tmp_path, monkeypatch, token):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK
+    manager = _manager(tmp_path, _FakeSwarm())
+    try:
+        manager._seat_rank_delta(420, {'listed': True, 'rank': 8})
+        assert manager._seat_rank_delta(420, {'listed': True, 'rank': 6}) == 2
+        before = copy.deepcopy(manager.cache.get_last_good(SLOT_SWARM_SEAT_RANK))
+        monkeypatch.setattr(sw, '_seat_contrib_from_rows',
+                            lambda *_: {'listed': True, 'rank': 10**6 + 1})
+        data = manager._swarm_board_keys(None, None, token)
+        assert data['swarm_seat_rank_delta'] is None
+        assert manager.cache.get_last_good(SLOT_SWARM_SEAT_RANK) == before
+    finally:
+        await manager.close()
+
+
 async def test_contributors_fold_updates_selected_rank_history(tmp_path):
     from maxpane_dashboard.data.surf_cache import LastGood
     manager = _manager(tmp_path, _FakeSwarm())

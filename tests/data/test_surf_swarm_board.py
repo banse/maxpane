@@ -500,3 +500,14 @@ def test_selected_contributor_output_tokens_aggregate_devices_and_preserve_unkno
     assert sw.seat_contrib(source, 420)['output_tokens'] == expected + int(extra['outputTokens'])
     extra.pop('outputTokens')
     assert sw.seat_contrib(source, 420)['output_tokens'] is None
+
+
+@pytest.mark.parametrize('field', ['rank', 'prev'])
+@pytest.mark.parametrize('value', [10**6, 10**6 + 1, 10**30])
+def test_rank_slot_sanity_bound_keeps_valid_siblings(field, value):
+    sibling = {'rank': 6, 'prev': 8}
+    point = {'rank': 3, 'prev': None, field: value}
+    expected = {'420': sibling}
+    if value == 10**6:
+        expected['421'] = point
+    assert sw.coerce_rank_slot({'420': sibling, '421': point}) == expected
