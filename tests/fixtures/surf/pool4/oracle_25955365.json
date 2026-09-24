@@ -1,0 +1,78 @@
+{
+ "_comment": "Independent oracle: output of the pool4hook-research skill (github.com/surfer77/pool4hook-research-skill), a second implementation of this protocol's math by its own author. Captured 2026-09-11. EVIDENCE -- never regenerate this to make a test pass. Ladder rows come from the skill's TEXT table: `depth --json` carries only inputs, not the rows.",
+ "block": 25955365,
+ "tick": 68181,
+ "position_liquidity": 690471276437502400000,
+ "backstop_lower": 68340,
+ "backstop_liquidity": 746855403398064100000,
+ "backstop_principal_eth": 24.509049954890273,
+ "reference_pool_id": "0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3",
+ "reference_tick": 68180,
+ "hook_lp_fee_bps": 10000,
+ "reference_lp_fee_bps": 10000,
+ "sell_side": [
+  {
+   "move_pct": 1,
+   "full_range_eth": 0.11,
+   "backstop_eth": 0.0,
+   "band_used_pct": 0.0,
+   "hook_total_eth": 0.11
+  },
+  {
+   "move_pct": 2,
+   "full_range_eth": 0.23,
+   "backstop_eth": 0.05,
+   "band_used_pct": 0.0,
+   "hook_total_eth": 0.28
+  },
+  {
+   "move_pct": 5,
+   "full_range_eth": 0.58,
+   "backstop_eth": 0.43,
+   "band_used_pct": 2.0,
+   "hook_total_eth": 1.01
+  },
+  {
+   "move_pct": 10,
+   "full_range_eth": 1.17,
+   "backstop_eth": 1.07,
+   "band_used_pct": 4.0,
+   "hook_total_eth": 2.24
+  },
+  {
+   "move_pct": 20,
+   "full_range_eth": 2.41,
+   "backstop_eth": 2.41,
+   "band_used_pct": 10.0,
+   "hook_total_eth": 4.82
+  },
+  {
+   "move_pct": 30,
+   "full_range_eth": 3.73,
+   "backstop_eth": 3.84,
+   "band_used_pct": 16.0,
+   "hook_total_eth": 7.57
+  },
+  {
+   "move_pct": 50,
+   "full_range_eth": 6.69,
+   "backstop_eth": 7.04,
+   "band_used_pct": 29.0,
+   "hook_total_eth": 13.73
+  },
+  {
+   "move_pct": 75,
+   "full_range_eth": 11.42,
+   "backstop_eth": 12.16,
+   "band_used_pct": 50.0,
+   "hook_total_eth": 23.58
+  },
+  {
+   "move_pct": 90,
+   "full_range_eth": 15.62,
+   "backstop_eth": 16.7,
+   "band_used_pct": 68.0,
+   "hook_total_eth": 32.31
+  }
+ ]
+}
