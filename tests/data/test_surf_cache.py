@@ -233,7 +233,7 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # Oracle facts (SLOT_SWARM_ORACLE) and complete request history
     # (SLOT_SWARM_ORACLE_INDEX) are also independent last-good slots.
     # Selected-job detail (SLOT_SWARM_JOB_DETAIL) is a separate popup slot.
-    assert len(SLOTS) == 20
+    assert len(SLOTS) == 21
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

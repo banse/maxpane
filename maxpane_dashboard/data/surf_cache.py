@@ -177,6 +177,7 @@ SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
 SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
 SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
 SLOT_SWARM_SEAT = "swarm_seat"        # {token, state, seat}: the selected seat's /seats read
+SLOT_SWARM_SEAT_RANK = "swarm_seat_rank"  # token -> last rank and previous rank
 SLOT_SWARM_RUNTIME_LATEST = "swarm_runtime_latest"  # runtime -> version and last attempt timestamp
 SLOT_SWARM_WORKERS = "swarm_workers"  # normalized /workers envelope, its own version clock
 SLOT_SWARM_CONTRIBUTORS = "swarm_contributors"  # normalized /contributors envelope
@@ -224,6 +225,7 @@ SLOTS: tuple[str, ...] = (
     # coercer refuses the slot; this cache imports no client or fold module.
     SLOT_SWARM_WORKERS,
     SLOT_SWARM_RUNTIME_LATEST,
+    SLOT_SWARM_SEAT_RANK,
     SLOT_SWARM_CONTRIBUTORS,
     SLOT_SWARM_ANSWERS,
     SLOT_SWARM_JOB_DETAIL,
@@ -1204,7 +1206,7 @@ class SurfCache:
                     continue
                 try:
                     entry = LastGood.from_dict(data, now=reference)
-                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST):
+                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:
@@ -1397,6 +1399,7 @@ __all__ = [
     "SLOT_SWARM_SEAT",
     "SLOT_SWARM_WORKERS",
     "SLOT_SWARM_RUNTIME_LATEST",
+    "SLOT_SWARM_SEAT_RANK",
     "SLOT_SWARM_CONTRIBUTORS",
     "SLOT_SWARM_ANSWERS",
     "SLOT_SWARM_JOB_DETAIL",

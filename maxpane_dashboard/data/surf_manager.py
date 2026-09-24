@@ -120,7 +120,7 @@ from typing import Any
 
 from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIME_PACKAGES, npm_version
 from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
-from maxpane_dashboard.data.surf_cache import SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
+from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK, SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
 from maxpane_dashboard.analytics.surf_swarm_signals import record_window, fleet_majority
 from maxpane_dashboard.analytics import surf_pool4_depth as pool4_depth
 from maxpane_dashboard.analytics.surf_feed import select_feed_window
@@ -1139,6 +1139,7 @@ class SurfManager:
         try:
             self.cache.load(slot_coercers={
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
+                SLOT_SWARM_SEAT_RANK: sw.coerce_rank_slot,
                 SLOT_SWARM_RUNTIME_LATEST: lambda value: coerce_runtime_slot(value, now=self._clock()),
                 SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
                 SLOT_SWARM_ANSWERS: sw.coerce_answers_slot,
@@ -5731,6 +5732,23 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM_BOARD, now)
         return {"ok": succeeded == 2}
 
+    def _seat_rank_delta(self, token, contrib):
+        if not isinstance(contrib, dict) or contrib.get("listed") is not True or sw._seat_id(token) is None:
+            return None
+        rank = contrib.get("rank")
+        if sw._seat_id(rank) is None or rank == 0:
+            return None
+        entry = self.cache.get_last_good(SLOT_SWARM_SEAT_RANK)
+        points = sw.coerce_rank_slot(getattr(entry, "payload", None)) or {}
+        key = str(token)
+        point = points.get(key)
+        if point is None or point["rank"] != rank:
+            point = {"rank":rank, "prev":point["rank"] if point is not None else None}
+            points[key] = point
+            self.cache.store_last_good(SLOT_SWARM_SEAT_RANK, points, ts=self._clock())
+        prev = point["prev"]
+        return prev - rank if prev is not None else None
+
     def _swarm_board_keys(self, contributors_entry: Any, workers_entry: Any, token: int | None) -> dict[str, Any]:
         """Fold captured, validated slots; every selected-seat lookup uses token.
 
@@ -5740,6 +5758,7 @@ class SurfManager:
         contributors = sw.coerce_contributors_slot(getattr(contributors_entry, "payload", None))
         workers = sw.coerce_workers_slot(getattr(workers_entry, "payload", None))
         rows = sw._board_rows_from_slots(contributors, workers)
+        contrib = sw._seat_contrib_from_rows(rows, token, contributors)
         return {
             "swarm_board_summary": sw._board_summary_from_slots(contributors, workers),
             "swarm_board_rows": rows,
@@ -5748,8 +5767,8 @@ class SurfManager:
             "swarm_board_as_of_hhmm": contributors_entry.as_of_hhmm() if contributors is not None else None,
             "swarm_workers_as_of_hhmm": workers_entry.as_of_hhmm() if workers is not None else None,
             "swarm_seat_live": sw._seat_live_from_slot(workers, token),
-            "swarm_seat_contrib": sw._seat_contrib_from_rows(rows, token, contributors),
-            "swarm_seat_rank_delta": None,
+            "swarm_seat_contrib": contrib,
+            "swarm_seat_rank_delta": self._seat_rank_delta(token, contrib),
         }
 
     # -- the AGENT body's one seat: /seats/{token} (the /seats plan WP2) -----

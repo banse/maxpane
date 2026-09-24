@@ -243,7 +243,8 @@ def test_selected_contrib_rank_uses_aggregated_board_and_stays_separate_from_sea
     assert tuple(selected) == SWARM_SEAT_CONTRIB_FIELDS
     row = next(row for row in rows if row['token_id'] == int(seat['tokenId']))
     assert selected == {'listed': True, **{key: row[key] for key in (
-        'attempts', 'accepted', 'rejected', 'pending', 'turns', 'wall_clock_s', 'rank')}, 'ranked_of': len(rows)}
+        'attempts', 'accepted', 'rejected', 'pending', 'turns', 'wall_clock_s', 'rank')}, 'ranked_of': len(rows),
+        'output_tokens': sum(int(r['outputTokens']) for r in contributors['contributors'] if int(r['tokenId']) == int(seat['tokenId']))}
     assert selected['accepted'] != seat['accepted']
     assert sw.seat_contrib({'contributors': []}, int(seat['tokenId']))['listed'] is False
     assert sw.seat_contrib(None, int(seat['tokenId'])) is None
@@ -486,3 +487,16 @@ def test_i1_unknown_pause_cannot_persist_a_conflicting_known_pair(workers):
     slot = sw.normalize_workers(workers)
     del slot['workers'][0]['pause_known']
     assert sw.coerce_workers_slot(slot) is None
+
+
+def test_selected_contributor_output_tokens_aggregate_devices_and_preserve_unknown(contributors):
+    source = copy.deepcopy(contributors)
+    rows = [r for r in source['contributors'] if int(r['tokenId']) == 420]
+    assert rows
+    expected = sum(int(r['outputTokens']) for r in rows)
+    assert sw.seat_contrib(source, 420)['output_tokens'] == expected
+    extra = copy.deepcopy(rows[0]); extra['deviceKey'] = 'extra-output-device'
+    source['contributors'].append(extra)
+    assert sw.seat_contrib(source, 420)['output_tokens'] == expected + int(extra['outputTokens'])
+    extra.pop('outputTokens')
+    assert sw.seat_contrib(source, 420)['output_tokens'] is None

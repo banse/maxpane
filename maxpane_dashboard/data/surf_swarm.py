@@ -1440,6 +1440,8 @@ def _seat_contrib_from_rows(rows: list[dict] | None, token: object, contributors
         result.update(listed=True, ranked_of=len(_contributor_tokens(contributors)))
         for field in ("attempts", "accepted", "rejected", "pending", "turns", "wall_clock_s", "rank"):
             result[field] = selected[field]
+        result["output_tokens"] = _sum_known(
+            row["output_tokens"] for row in contributors["contributors"] if row["token_id"] == wanted)
     return result
 
 
@@ -2270,3 +2272,23 @@ def enrich_panel_rows(rows: list[dict], oracle: object, node_keys: tuple[str, ..
 @lru_cache(maxsize=128)
 def _log_oracle_status(status: str) -> None:
     logging.getLogger(__name__).debug("Unknown oracle panel status: %s", status)
+
+
+
+def coerce_rank_slot(payload: object) -> dict | None:
+    """Per-seat last rank and previous rank; drop malformed points independently."""
+    if not isinstance(payload, dict):
+        return None
+    clean = {}
+    for token, point in payload.items():
+        if not isinstance(token, str) or _served_token(token) is None or str(_served_token(token)) != token:
+            continue
+        if not isinstance(point, dict) or set(point) != {"rank", "prev"}:
+            continue
+        rank, prev = point["rank"], point["prev"]
+        if not _valid_count(rank) or rank == 0:
+            continue
+        if prev is not None and (not _valid_count(prev) or prev == 0):
+            continue
+        clean[token] = {"rank":rank, "prev":prev}
+    return clean

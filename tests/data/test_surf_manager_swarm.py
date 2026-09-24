@@ -1681,3 +1681,66 @@ async def test_a_name_held_for_one_owner_is_never_served_for_another(tmp_path):
     assert other["owner"].lower() != _owner_of(0).lower()
     assert manager._seat_owner_ens(other, NOW) is None
     await manager.close()
+
+
+async def test_rank_delta_tracks_last_move_per_seat_and_survives_restart(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK
+    manager = _manager(tmp_path, _FakeSwarm())
+    def observe(token, rank, listed=True):
+        return manager._seat_rank_delta(token, {'listed':listed, 'rank':rank})
+    try:
+        assert observe(420, 8) is None
+        assert observe(420, 6) == 2
+        assert observe(420, 6) == 2
+        assert observe(420, 9) == -3
+        prior = copy.deepcopy(manager.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload)
+        assert observe(420, None) is None
+        assert observe(420, 1, False) is None
+        assert manager.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload == prior
+        assert observe(421, 4) is None
+        manager.set_seat(420)
+        assert observe(420, 9) == -3
+    finally:
+        await manager.close()
+    restarted = _manager(tmp_path, _FakeSwarm())
+    try:
+        assert restarted._seat_rank_delta(420, {'listed':True, 'rank':9}) == -3
+        assert restarted._seat_rank_delta(421, {'listed':True, 'rank':4}) is None
+    finally:
+        await restarted.close()
+
+
+@pytest.mark.parametrize('bad', ['x', -1, True, 0])
+async def test_rank_cache_drops_malformed_points_on_load(tmp_path, bad):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK
+    manager = _manager(tmp_path, _FakeSwarm())
+    manager.cache.store_last_good(SLOT_SWARM_SEAT_RANK, {
+        '420': {'rank':6, 'prev':8}, '421': {'rank':bad, 'prev':None},
+        '422': {'rank':5, 'prev':bad},
+    }, ts=NOW)
+    await manager.close()
+    restored = _manager(tmp_path, _FakeSwarm())
+    try:
+        assert restored.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload == {'420': {'rank':6, 'prev':8}}
+    finally:
+        await restored.close()
+
+
+async def test_contributors_fold_updates_selected_rank_history(tmp_path):
+    from maxpane_dashboard.data.surf_cache import LastGood
+    manager = _manager(tmp_path, _FakeSwarm())
+    raw = swarm_capture_v3('contributors')
+    first = sw.normalize_contributors(raw)
+    try:
+        data = manager._swarm_board_keys(LastGood(first, NOW), None, 420)
+        rank = data['swarm_seat_contrib']['rank']
+        assert data['swarm_seat_rank_delta'] is None
+        updated = copy.deepcopy(first)
+        for row in updated['contributors']:
+            if row['token_id'] == 420:
+                row['accepted'] = row['attempts'] = 10_000_000
+        data = manager._swarm_board_keys(LastGood(updated, NOW + 1), None, 420)
+        assert data['swarm_seat_contrib']['rank'] == 1
+        assert data['swarm_seat_rank_delta'] == rank - 1
+    finally:
+        await manager.close()
