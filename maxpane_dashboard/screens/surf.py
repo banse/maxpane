@@ -1662,10 +1662,7 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: 142 columns, on capture, v3 executing notes and stress.
 SURF_SWARM_FULL_LAYOUT_ROWS = 42
 
-#: AGENT full-layout width, re-verified 2026-09-23 with oracle RECORD: 139
-#: (135 for the first card rows, 138 before them, bound by BY NODE).
-#: The owner asked for the three card rows to share one column grid and for
-#: the wide cards to stack under STATUS (RANK in the hero since
+#: AGENT full-layout width, re-swept 2026-09-24: 139 (unchanged).
 #: 2026-09-24: COLLAB lists the top two teammates, NODES takes the last
 #: seat-card slot; the third card row is removed. Both remaining rows use
 #: the same column weights (23 23 20 19 18 28).
@@ -1690,7 +1687,10 @@ SURF_AGENT_FULL_LAYOUT_COLUMNS = 139
 #: floor; the body remains the only container scrolling fixed card content.
 SURF_AGENT_FULL_LAYOUT_ROWS = 25
 
-#: RECORD answer-clearance onset, re-swept 2026-09-23 in the real AGENT body.
+#: RECORD answer-clearance onset, re-swept 2026-09-24 in the real AGENT body.
+#: Moving tok before panel leaves tiers 102/94/53 and clearance 167 unchanged.
+#: Clickable all/not completed and as-of are whole at screen widths 58/99/107/139;
+#: the widen hint remains visible when the tier or reply requires it.
 #: The committed v4 seat420 first40 rows are enriched with exact submission
 #: captures and the new raw oracle corpus: 37 agreed, three off-panel.
 #: Jobs76296dcd and73d7dcd7 have 27/80-cell replies; job33016bad at index125
@@ -2080,7 +2080,7 @@ SWARM_BOTTOM_ID = "surf-swarm-bottom"
 #: keeps its answer column visible at the body pin. The body alone scrolls.
 AGENT_BODY_ID = "surf-agent-body"
 
-#: The three swarm bodies' thirteen widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
+#: The three swarm bodies' twelve widgets, in ``SWARM_WIDGET_SIGNATURES``'s own
 #: order. ``_do_refresh`` dispatches each one's contract keys by class name
 #: off this tuple, so a widget the export names and this tuple does not
 #: would never be painted -- ``tests/screens/test_surf_screen.py`` binds the
@@ -3130,6 +3130,9 @@ class SurfScreen(DashboardScreen):
         #: hero) or MODE_LAUNCHPAD (the ``l`` view). The hero row is not
         #: part of either -- it stays mounted and visible regardless.
         self._mode: str = MODE_DASHBOARD
+        self.record_cap = SurfSwarmSeatRecord.ROW_CAP
+        self.record_open_only = False
+        self._record_seat_token = None
 
     # ------------------------------------------------------------------
     # Layout
@@ -3286,7 +3289,7 @@ class SurfScreen(DashboardScreen):
                 yield SurfSwarmLaunches()
             yield SurfSwarmSites()
 
-        # The `a` AGENT body: two card rows above a full-width RECORD -- see
+        # The `a` AGENT body: one seat-card row above a full-width RECORD -- see
         # `AGENT_BODY_ID`.
         with Vertical(id=AGENT_BODY_ID):
             yield SurfSwarmSeatCards()
@@ -3535,9 +3538,35 @@ class SurfScreen(DashboardScreen):
         set_seat = getattr(self._data_manager, "set_seat", None)
         if set_seat is not None:
             set_seat(token)
+        self.record_cap = SurfSwarmSeatRecord.ROW_CAP
+        self.record_open_only = False
+        self._record_seat_token = token
+        self._repaint_record_view()
         self._mode = MODE_AGENT
         self._show_mode()
         self.start_refresh()
+
+    def _repaint_record_view(self) -> None:
+        self.query_one(SurfSwarmSeatRecord).set_record_view(self.record_cap, self.record_open_only)
+
+    def _record_view_changed(self) -> None:
+        setter = getattr(self._data_manager, "set_record_view", None)
+        if setter is not None:
+            setter(self.record_cap, self.record_open_only)
+        self._repaint_record_view()
+        self.start_refresh()
+
+    def action_record_more(self) -> None:
+        if self._mode != MODE_AGENT or self.record_cap >= SurfSwarmSeatRecord.MAX_CAP:
+            return
+        self.record_cap = min(SurfSwarmSeatRecord.MAX_CAP, self.record_cap + 20)
+        self._record_view_changed()
+
+    def action_record_filter(self, mode: str) -> None:
+        if self._mode != MODE_AGENT or mode not in ("all", "open"):
+            return
+        self.record_open_only = mode == "open"
+        self._record_view_changed()
 
     def action_show_dashboard(self) -> None:
         """``escape`` -- one-way back out of **any** alternate body."""
@@ -4351,6 +4380,16 @@ class SurfScreen(DashboardScreen):
         # live tier's panels, `swarm_scores_as_of_hhmm` for the sweep's,
         # `swarm_seat_as_of_hhmm` for the seat's) are the export's, made once
         # in `data/surf_models.py` rather than re-argued here.
+        selected = data.get("swarm_seat_selected")
+        token = selected.get("token_id") if isinstance(selected, dict) else None
+        if token != self._record_seat_token:
+            self.record_cap = SurfSwarmSeatRecord.ROW_CAP
+            self.record_open_only = False
+            setter = getattr(self._data_manager, "set_record_view", None)
+            if setter is not None and self._record_seat_token is not None:
+                setter(self.record_cap, self.record_open_only)
+            self._record_seat_token = token
+        self._repaint_record_view()
         for cls in _SWARM_PANELS:
             try:
                 keys = SWARM_WIDGET_SIGNATURES[cls.__name__]

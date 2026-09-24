@@ -160,7 +160,7 @@ async def test_a_work_row_renders_every_column():
     text = "\n".join(lines)
     assert "RECORD" in text and f"as of {AS_OF}" in text
     header = _row_with(lines, "answer").split()
-    assert header == ["when", "job", "node", "state", "model", "took", "panel", "tok", "answer"]
+    assert header == ["when", "job", "node", "state", "model", "took", "tok", "panel", "answer"]
 
 
 async def test_the_title_has_no_blank_row_under_it():
@@ -305,7 +305,7 @@ async def test_rows_past_the_cap_are_counted_as_older():
     """#0 has 26 accepted jobs; a cap-breaking list is the fold repeated."""
     rows = (ROWS_0 * 2)[: SurfSwarmSeatRecord.ROW_CAP + 5]
     lines = await _record((130, 60), swarm_seat_work_rows=rows)
-    painted = [l for l in lines if "completed" in l]
+    painted = [l for l in lines if "completed" in l and "RECORD" not in l]
     assert len(painted) == SurfSwarmSeatRecord.ROW_CAP == 40
     assert "+5 older" in "\n".join(lines)
     exact = await _record((130, 60), swarm_seat_work_rows=rows[: SurfSwarmSeatRecord.ROW_CAP])
@@ -365,7 +365,7 @@ async def test_polish_answer_states_and_same_read_usage(state,word):
              objective='OBJECTIVE MUST NOT PAINT',launch='evm_project')
     lines=await _record((200,12),swarm_seat_work_rows=[row])
     header=_row_with(lines,'when').split()
-    assert header==['when','job','node','state','model','took','panel','tok','answer']
+    assert header==['when','job','node','state','model','took','tok','panel','answer']
     line=_row_with(lines,_job(row))
     assert word in line and 'OBJECTIVE MUST NOT PAINT' not in '\n'.join(lines)
     if state in ('read','no_reply'):
@@ -530,7 +530,7 @@ async def test_panel_fallback_exact_composited_cell(state, agreed, quorum, size,
     row = dict(NEWEST, panel_state=state, panel_agreed=agreed, panel_quorum=quorum, panel_size=size)
     lines = await _record((220, 12), swarm_seat_work_rows=[row])
     header = _row_with(lines, 'when')
-    cell = _row_with(lines, _job(row))[header.index('panel'):header.index('tok')].strip()
+    cell = _row_with(lines, _job(row))[header.index('panel'):header.index('answer')].strip()
     assert cell == expected
     if state == 'assessing' and size is None:
         assert not any(char.isdigit() for char in cell)
@@ -542,8 +542,8 @@ async def test_large_panel_counts_fit_without_changing_record_tiers():
                output_tokens=1534, answer_state='read', answer='Done.')
     lines = await _record((220, 12), swarm_seat_work_rows=[row])
     header = _row_with(lines, 'when'); line = _row_with(lines, _job(row))
-    assert line[header.index('panel'):header.index('tok')].strip() == '✓ 123456…'
-    assert line[header.index('tok'):header.index('answer')].strip() == '1.5K'
+    assert line[header.index('panel'):header.index('answer')].strip() == '✓ 123456…'
+    assert line[header.index('tok'):header.index('panel')].strip() == '1.5K'
 
 
 @pytest.mark.parametrize('reason,expected', [(None, 'failed · —'), ('[/x]Invalid input', 'failed · Invalid input')])
@@ -558,7 +558,7 @@ async def test_output_tokens_in_composited_tok_column(value,expected):
     row=dict(NEWEST,answer_state='read',answer='Done.',output_tokens=value)
     lines=await _record((220,12),swarm_seat_work_rows=[row])
     header=_row_with(lines,'when');line=_row_with(lines,_job(row))
-    assert line[header.index('tok'):header.index('answer')].strip()==expected
+    assert line[header.index('tok'):header.index('panel')].strip()==expected
 
 
 @pytest.mark.parametrize('state',['outvoted','no_quorum_out'])
@@ -591,7 +591,7 @@ async def test_assessing_without_size_and_hostile_strings_are_cleaned():
 async def test_panel_survives_all_tiers_and_role_is_absent():
     gutter=SwarmTableBase.GUTTER_COLS
     row=dict(NEWEST,panel_state='agreed',panel_agreed=105,panel_quorum=112)
-    for width,expected in [(FULL_WIDTH,('when','job','node','state','model','took','panel','tok','answer')),
+    for width,expected in [(FULL_WIDTH,('when','job','node','state','model','took','tok','panel','answer')),
                            (COMPACT_WIDTH,('when','job','node','state','model','took','panel','answer')),
                            (TIGHT_WIDTH,('when','job','node','state','panel'))]:
         lines=await _record((width+gutter,12),swarm_seat_work_rows=[row])
@@ -621,7 +621,7 @@ async def test_token_counts_fit_six_cells_without_decimal_integers_or_unit_overf
     lines = await _record((220, 12), swarm_seat_work_rows=[row])
     header = _row_with(lines, 'when')
     line = _row_with(lines, _job(row))
-    rendered = line[header.index('tok'):header.index('answer')].strip()
+    rendered = line[header.index('tok'):header.index('panel')].strip()
     assert rendered == shown
     assert cell_len(rendered) <= 6
 
@@ -733,3 +733,26 @@ async def test_bytes32_answer_cell_counts_values():
     row=oracle_row(panel_answer_type='bytes32[]',oracle_seat_answer=' '.join(['0x'+'a'*64]*2),oracle_notes='Done.')
     text='\n'.join(await _record(swarm_seat_work_rows=[row]))
     assert '2 values · Done.' in text
+
+
+async def test_record_view_counts_filtered_older_rows_and_stops_at_cache_cap():
+    from textual.widgets import DataTable
+    rows = [dict(NEWEST, work_status='accepted', job_state='completed') for _ in range(60)]
+    rows += [dict(NEWEST, work_status='failed', job_state='completed') for _ in range(405)]
+    async with App().run_test(size=(139,20)) as pilot:
+        record = SurfSwarmSeatRecord()
+        await pilot.app.mount(record)
+        record.update_data(swarm_seat_work_rows=rows, swarm_seat_state='ok')
+        record.set_record_view(80, True)
+        await pilot.pause()
+        text = '\n'.join(''.join(seg.text for seg in strip) for strip in pilot.app.screen._compositor.render_strips())
+        assert '+325 older · more' in text and record.query_one(DataTable).row_count == 80
+        record.set_record_view(800, True)
+        await pilot.pause()
+        text = '\n'.join(''.join(seg.text for seg in strip) for strip in pilot.app.screen._compositor.render_strips())
+        assert '+5 older' in text and 'more' not in text and record.query_one(DataTable).row_count == 400
+
+
+def test_record_view_maximum_agrees_with_retained_data():
+    from maxpane_dashboard.data.surf_manager import SWARM_ANSWER_CACHE_CAP
+    assert SurfSwarmSeatRecord.MAX_CAP == SWARM_ANSWER_CACHE_CAP == 400

@@ -951,7 +951,7 @@ async def test_polish_record_answer_clearance_matches_committed_v4_window():
         r=await _render(payload,(width,80),"a")
         assert (name in r["marked"])==marked, (width,r["marked"])
         assert not r["hidden"][name] and not r["overflow"]
-        assert r["columns"][name]==("when","job","node","state","model","took","panel","tok","answer")
+        assert r["columns"][name]==("when","job","node","state","model","took","tok","panel","answer")
     stress=await _render(_worst_agent_payload(),(RECORD_NEVER_CLEARS_BELOW,80),"a")
     assert name in stress["marked"], "the 500-character answer must still advertise actual clipping"
 
@@ -961,7 +961,7 @@ async def test_polish_agent_retains_existing_pin_with_enriched_record():
         r=await _render(_polish_agent_payload(),(SURF_AGENT_FULL_LAYOUT_COLUMNS,rows),"a")
         assert r["taller"]==taller
         assert not r["clipped"] and not r["overflow"] and not any(r["hidden"].values())
-        assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","state","model","took","panel","tok","answer")
+        assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","state","model","took","tok","panel","answer")
 
 
 async def test_polish_capability_optional_tier_preserves_baseline_and_clears_at_measured_onset():

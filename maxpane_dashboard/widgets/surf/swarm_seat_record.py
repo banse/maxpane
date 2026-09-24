@@ -1,6 +1,6 @@
 """RECORD: every work attempt in the selected seat's lifetime record.
 
-Owner, 2026-09-23: when/job/node/state/model/took/panel/tok/answer.
+Owner, 2026-09-23: when/job/node/state/model/took/tok/panel/answer.
 Role is hidden; short model names make room for panel evidence and output tokens.
 
 Since 2026-09-22 ``work[]`` lists pending, rejected and failed attempts beside
@@ -13,8 +13,8 @@ cell is the node's short word (:data:`_swarm_seat.NODE_TITLES`). Launch and
 submission hash are not columns (owner, 2026-09-22: the answer gets the room);
 a failed attempt's read answer is red. Answer takes the remaining width and
 lights ``‹ widen`` when cut only if there is no popup button. The title has no blank row under it (owner,
-2026-09-22, this panel only). The scrollable table caps at forty rows and
-explicitly counts older rows; the seat state hides stale rows before rendering.
+2026-09-22, this panel only). The scrollable table starts at forty rows, grows through `more` up to 400
+and can filter out completed attempts; the seat state hides stale rows before rendering.
 """
 
 from __future__ import annotations
@@ -22,8 +22,10 @@ from __future__ import annotations
 import math
 
 from rich.text import Text
+from rich.style import Style
+from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.analytics.surf_swarm_signals import record_state
+from maxpane_dashboard.analytics.surf_swarm_signals import record_state, record_window
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import job_text
@@ -82,8 +84,8 @@ _SPECS = (
     ("state", "state", _STATE_COLS),
     ("model", "model", 9),
     ("took", "took", 6),
-    ("panel", "panel", _PANEL_COLS),
     ("tok", "tok", 6),
+    ("panel", "panel", _PANEL_COLS),
     ("answer", "answer", ANSWER_MIN_COLS),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
@@ -154,6 +156,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     """
     #: Kept at 40 for lifetime rows (plan §9 G); the footer counts the rest.
     ROW_CAP = 40
+    MAX_CAP = 400
 
     COLUMN_SPECS = _SPECS
     TIER_COLUMNS = _TIERS
@@ -166,6 +169,9 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         super().__init__(*args, **kwargs)
         self._answer_cols = ANSWER_MIN_COLS
         self._state: object = None
+        self._all_rows = None
+        self._open_only = False
+        self._filtered_count = 0
 
     # -- the contract -------------------------------------------------------
 
@@ -178,15 +184,72 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     ) -> None:
         """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it)."""
         self._state = swarm_seat_state
-        rows = swarm_seat_work_rows if swarm_seat_state == "ok" else None
-        self.store(rows, swarm_seat_as_of_hhmm)
+        self._all_rows = swarm_seat_work_rows if swarm_seat_state == "ok" else None
+        self._store_view(swarm_seat_as_of_hhmm)
+
+    def set_record_view(self, cap: int, open_only: bool) -> None:
+        """Repaint the cached rows; view state is supplied by the screen."""
+        cap = max(40, min(self.MAX_CAP, cap))
+        if (self.ROW_CAP, self._open_only) == (cap, open_only):
+            return
+        self.ROW_CAP = cap
+        self._open_only = open_only
+        self._store_view((self._payload or {}).get("as_of"))
+
+    def _store_view(self, as_of) -> None:
+        rows = self._all_rows
+        if isinstance(rows, list):
+            self._filtered_count = sum(not self._open_only or record_state(row) != "completed" for row in rows)
+            rows = record_window(rows, self.ROW_CAP, self._open_only)
+        else:
+            self._filtered_count = 0
+        self.store(rows, as_of)
+
+    def render_table(self, rows, *, footer=None) -> None:
+        table = self.query_one(DataTable)
+        position, cursor = table.scroll_offset, table.cursor_coordinate
+        super().render_table(rows, footer=footer)
+        table.move_cursor(row=cursor.row, column=cursor.column, scroll=False)
+        self.call_after_refresh(table.scroll_to, x=position.x, y=position.y, animate=False, force=True)
 
     def _repaint(self) -> None:
+        if not self.is_mounted:
+            return
         super()._repaint()
-        footer = seat_footer(self._state, (self._payload or {}).get("rows"), self.ROW_CAP)
+        footer = seat_footer(self._state, None, None)
         if footer is not None:
             words, style = footer
             self._write_footer((words,), style=style)
+        elif isinstance(self._all_rows, list):
+            older = max(0, self._filtered_count - self.ROW_CAP)
+            if older:
+                text = Text(f"+{fmt_int(older)} older", style="dim")
+                if self.ROW_CAP < self.MAX_CAP:
+                    text.append(" · ").append("more", style=Style(bold=True, meta={"@click": "screen.record_more()"}))
+                footer_widget = self.query_one(f"#{self.footer_id}", Static)
+                footer_widget.auto_links = False
+                footer_widget.display = True
+                footer_widget.update(text)
+            elif self._open_only and not self._filtered_count:
+                self._write_footer(("no incomplete records",))
+
+    def _render_title(self, as_of) -> None:
+        title = Text("RECORD · ")
+        accent = self.app.get_css_variables().get("accent", "cyan")
+        for index, (word, mode, active) in enumerate((("all", "all", not self._open_only),
+                                                     ("not completed", "open", self._open_only))):
+            if index:
+                title.append(" · ")
+            title.append(word, style=Style(color=accent if active else None,
+                                          bold=active, dim=not active,
+                                          meta={"@click": f"screen.record_filter('{mode}')"}))
+        if rowfit.has_marker(as_of):
+            title.append(f" · as of {rowfit.clip(as_of, 5)}")
+        hinted = rowfit.title_with_hint(title.plain, self._widen or self._clipped,
+                                       max(self.size.width - self.TITLE_PADDING_COLS, 0))
+        title.append(hinted[len(title.plain):])
+        self.query_one(".panel-title", Static).auto_links = False
+        self.write(".panel-title", title)
 
     # -- geometry -----------------------------------------------------------
 

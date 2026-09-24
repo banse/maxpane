@@ -169,7 +169,7 @@ async def test_every_agent_hero_title_sits_on_the_same_row():
 
 @pytest.mark.parametrize("width", [SURF_AGENT_FULL_LAYOUT_COLUMNS, 150, 169, 211])
 async def test_the_two_agent_rows_share_one_column_grid_with_a_row_between(width):
-    """Owner, 2026-09-22: the hero and both card rows line up column for
+    """Owner, 2026-09-22: the hero and seat-card row line up column for
     column at any width, and a blank row separates each pair of rows, like
     the gap between two cards in a row. Read off composited regions."""
     from tests.screens.test_surf_swarm_layout import _v3_agent_payload
@@ -187,12 +187,8 @@ async def test_the_two_agent_rows_share_one_column_grid_with_a_row_between(width
     assert [nxt[0] - prev[1] for prev, nxt in zip(spans, spans[1:])] == [1], spans
 
 
-async def test_the_agent_card_rows_carry_every_seat_and_node_value():
-    """Owner, 2026-09-22: SEAT and BY NODE became two rows of hero cards.
-    Every card's title is its first row, a blank row follows, and the values
-    SEAT and BY NODE showed (less row 1's duplicates) reach the compositor on
-    the committed #420 capture. That capture predates per-attempt ``status``
-    (2026-09-22), so its node cards show an accepted count and no rate."""
+async def test_the_agent_card_row_keeps_seat_values_and_has_no_third_row():
+    """The merged seat row preserves title spacing and renders captured facts."""
     from tests.screens.test_surf_swarm_layout import _v3_agent_payload
     from maxpane_dashboard.widgets.surf.swarm_agent_cards import SurfSwarmAgentCard
 
@@ -206,8 +202,7 @@ async def test_the_agent_card_rows_carry_every_seat_and_node_value():
         assert not screen.query("SurfSwarmNodeCards")
 
     titles = {cls: [lines[1].strip(" │") for lines in cards] for cls, cards in rows.items()}
-    # Owner 2026-09-22: RANK went up to the hero, COLLAB down to row two;
-    # TEAMMATES up to row two, BOARD down to row three.
+    # Owner 2026-09-24: merged COLLAB/NODES occupy one seat-card row.
     assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "SCORE", "FEEDBACK", "COLLAB", "NODES"]
     assert all(not lines[2].strip(" │") for cards in rows.values() for lines in cards)
     for needle in ("0xe5b1275f…f64f2a ⧉", "paired 09-20 07:34", "daemon ", " device",
@@ -689,3 +684,129 @@ async def test_the_agent_title_names_the_seat_and_leaving_restores_the_market():
         await pilot.pause()
         title = _region_text(pilot.app, screen.query_one("#title-bar")).strip()
         assert title.startswith("SURFBOARD · IMD $") and "AGENT" not in title, title
+
+
+# RECORD view: real composited click targets; refresh scheduling is observed separately.
+def _record_view_payload(count=65):
+    payload = _frozen_payload()
+    source = payload['swarm_seat_work_rows'][0]
+    payload.update(swarm_seat_state='ok', swarm_seat_as_of_hhmm='17:33',
+                   swarm_seat_work_rows=[dict(source, job_id=f'{i:08x}-0000-4000-8000-000000000000',
+                                              work_status='failed', job_state='completed') for i in range(count)])
+    return payload
+
+
+def _record_click_target(screen, action):
+    from rich.cells import cell_len
+    for y, strip in enumerate(screen._compositor.render_strips()):
+        x = 0
+        for segment in strip:
+            for char in segment.text:
+                style = screen.get_style_at(x, y)
+                if style.meta.get('@click') == action:
+                    return x, y, style
+                x += cell_len(char)
+    raise AssertionError(f'No composited target for {action}')
+
+
+async def test_record_more_clicks_preserve_position_show_twenty_then_remainder(monkeypatch):
+    from tests.screens.test_oracle_answer import settled
+    async with _surf_app(_record_view_payload()).run_test(size=(139,35)) as pilot:
+        screen = await _open(pilot, 'a')
+        manager = screen._data_manager
+        changes, refreshes = [], []
+        monkeypatch.setattr(manager, 'set_record_view', lambda cap, open_only: changes.append((cap, open_only)), raising=False)
+        monkeypatch.setattr(screen, 'start_refresh', lambda: refreshes.append(True))
+        record = screen.query_one(SurfSwarmSeatRecord); table = record.query_one(DataTable)
+        assert table.row_count == 40
+        table.move_cursor(row=7, scroll=False)
+        table.scroll_to(y=5, animate=False, force=True)
+        await settled(pilot, lambda: table.scroll_y == 5)
+        before = manager.calls
+        for count, older in [(60, '+5 older'), (65, None)]:
+            x, y, style = _record_click_target(screen, 'screen.record_more()')
+            assert style.bold and style.color == screen.get_style_at(x-3, y).color
+            await pilot.click(offset=(x,y))
+            await settled(pilot, lambda: table.row_count == count)
+            assert table.cursor_row == 7 and table.scroll_y == 5
+            footer = record.query_one(f'#{record.footer_id}')
+            if older:
+                assert older in _region_text(pilot.app, footer)
+            else:
+                assert not footer.display
+        assert changes == [(60,False),(80,False)] and len(refreshes) == 2
+        assert manager.calls == before
+        await screen._do_refresh()
+        await settled(pilot, lambda: table.row_count == 65)
+        assert table.cursor_row == 7 and table.scroll_y == 5
+        screen._seat_entered(421)
+        await settled(pilot, lambda: table.row_count == 40)
+        assert screen.record_cap == 40 and not screen.record_open_only
+
+
+async def test_record_filter_click_uses_displayed_state_and_preserves_cap(monkeypatch):
+    from tests.screens.test_oracle_answer import settled
+    payload = _record_view_payload(61)
+    rows = payload['swarm_seat_work_rows']
+    for row in rows: row['work_status'] = 'accepted'
+    states = ['pending','failed','rejected','cancelled','blocked','novel',None]
+    for row, state in zip(rows[50:], states):
+        row.update(work_status=state, job_state=None if state is None else 'completed')
+    async with _surf_app(payload).run_test(size=(139,40)) as pilot:
+        screen = await _open(pilot, 'a'); manager = screen._data_manager
+        changes, refreshes = [], []
+        monkeypatch.setattr(manager,'set_record_view',lambda cap, op: changes.append((cap,op)),raising=False)
+        monkeypatch.setattr(screen,'start_refresh',lambda: refreshes.append(True))
+        before = manager.calls
+        record = screen.query_one(SurfSwarmSeatRecord); table = record.query_one(DataTable)
+        x,y,_ = _record_click_target(screen, 'screen.record_more()')
+        await pilot.click(offset=(x,y)); await settled(pilot,lambda: table.row_count == 60)
+        x,y,style = _record_click_target(screen,"screen.record_filter('open')")
+        assert not style.bold
+        inactive_color = style.color
+        await pilot.click(offset=(x,y)); await settled(pilot,lambda: table.row_count == 7)
+        _,_,style = _record_click_target(screen,"screen.record_filter('open')")
+        assert style.bold and not style.dim
+        from rich.color import Color
+        assert style.color == Color.parse(pilot.app.get_css_variables()['accent'])
+        assert style.color != inactive_color
+        body = _region_text(pilot.app, table)
+        assert 'completed' not in body
+        assert all(state in body for state in states if state is not None)
+        screen.action_record_filter('x')
+        assert changes == [(60,False),(60,True)] and len(refreshes) == 2
+        x,y,_ = _record_click_target(screen,"screen.record_filter('all')")
+        await pilot.click(offset=(x,y)); await settled(pilot,lambda: table.row_count == 60)
+        assert changes[-1] == (60,False) and screen.record_cap == 60
+        assert manager.calls == before
+
+
+async def test_record_filtered_empty_footer_and_unread_are_distinct(monkeypatch):
+    from tests.screens.test_oracle_answer import settled
+    payload = _record_view_payload(3)
+    for row in payload['swarm_seat_work_rows']: row['work_status'] = 'accepted'
+    async with _surf_app(payload).run_test(size=(139,25)) as pilot:
+        screen = await _open(pilot,'a')
+        monkeypatch.setattr(screen,'start_refresh',lambda: None)
+        record = screen.query_one(SurfSwarmSeatRecord)
+        x,y,_ = _record_click_target(screen,"screen.record_filter('open')")
+        await pilot.click(offset=(x,y))
+        await settled(pilot,lambda: record.query_one(DataTable).row_count == 0)
+        assert 'no incomplete records' in _region_text(pilot.app,record)
+        record.update_data(swarm_seat_work_rows=None,swarm_seat_state='ok')
+        await pilot.pause()
+        assert 'unavailable' in _region_text(pilot.app,record)
+
+
+@pytest.mark.parametrize('width,tier', [(58,'tight'),(99,'compact'),(107,'full'),(139,'full')])
+async def test_record_filter_title_is_whole_at_every_tier(width,tier):
+    async with _surf_app(_record_view_payload()).run_test(size=(width,25)) as pilot:
+        screen = await _open(pilot,'a'); record = screen.query_one(SurfSwarmSeatRecord)
+        title = record.query_one('.panel-title')
+        text = _region_text(pilot.app,title)
+        assert 'RECORD · all · not completed · as of 17:33' in text
+        assert title.region.height == 1 and record._tier == tier
+        assert ('‹' in text) == (record._widen or record._clipped)
+        if tier == 'full':
+            header = _region_text(pilot.app, record.query_one(DataTable)).splitlines()[0]
+            assert header.index('took') < header.index('tok') < header.index('panel')
