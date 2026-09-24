@@ -285,11 +285,12 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
             label = known or flatten(key)
             accepted, attempts = seat_token(row.get("accepted")), seat_token(row.get("attempts"))
             rate = fmt_win_rate(accepted / attempts) if accepted is not None and attempts else EMDASH
+            if not known:
+                exact_count = fmt_int(accepted) if accepted is not None else "--"
+                label = self._fit("nodes", key, reserved=rowfit.cell_len(exact_count + rate) + 2)
             num = _num(self._room("nodes"), lambda n: f"{label} {n(accepted) if accepted is not None else '--'} {rate}",
                        *((accepted,) if accepted is not None else ()))
             count_text = num(accepted) if accepted is not None else "--"
-            if not known:
-                label = self._fit("nodes", key, reserved=rowfit.cell_len(count_text + rate) + 2)
             body.append(label, style="dim").append(" ")
             body.append(count_text, style="bold green" if accepted else "bold")
             body.append(" ").append(rate, style="bold")

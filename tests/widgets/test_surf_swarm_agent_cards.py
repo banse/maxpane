@@ -256,3 +256,13 @@ async def test_plan_screenshot_values_remain_a_synthetic_layout_case():
                                               _row('hunt_d',accepted=0,attempts=1)])
     assert _lines(boxes['collab']) == ['COLLAB','261 seats','#1626 ×161','#1731 ×151']
     assert _lines(boxes['nodes']) == ['NODES','ORACLE 224 85.2 %','REVIEW 1 100.0 %','+2 more']
+
+
+@pytest.mark.parametrize("accepted,attempts,expected", [(224, 263, "224 85.2 %"), (2224, 2630, "2,224 84.6 %")])
+async def test_long_unknown_node_keeps_exact_accepted_count(accepted, attempts, expected):
+    boxes = await _cards(SurfSwarmSeatCards, SEAT_BOX_IDS,
+                         _seat_kwargs(swarm_seat_node_rows=[_row("x" * 40, accepted=accepted, attempts=attempts)]),
+                         size=(139, 7))
+    line = _lines(boxes["nodes"])[1]
+    assert "…" in line
+    assert line.endswith(" " + expected)
