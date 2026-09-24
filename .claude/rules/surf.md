@@ -392,7 +392,7 @@ Other scalar values are flattened and capped at 200 characters. Question/reason/
 question and notes keep newlines, other controls are removed. To meet the byte budget, trim notes,
 then question, then reason; preserve the value. Off-panel facts are all None; old cache shapes are dropped.
 Joined cuts end in `… »` and do not light `‹ widen`. Only validated job UUID/hash identities get the
-button. It opens a cached snapshot in `OracleAnswerScreen`; Enter/Escape dismiss to AGENT. Question,
+button. It opens a cached snapshot in `OracleAnswerScreen`; Space/Escape dismiss to AGENT (Enter does not, owner 2026-09-24). Question,
 notes and address[] values use shared address helpers and the row's chain explorer; unknown chains
 remain copyable without a link. Opening never fetches; closing uses the normal refresh guard.
 
@@ -402,7 +402,7 @@ job UUID/hash and answer state read/no_reply get `»` when cut or failed/rejecte
 not-served and unavailable replies get no button. Failed/rejected rows get it even when uncut.
 Any row with a popup button is exempt from reply-based `‹ widen`; button-less cuts still mark.
 Both popups share `RecordDetailScreen`'s frame, focused vertical scroll and pinned centred footer;
-Enter/Escape return to AGENT. Job/nodes, objective, this seat's status/usage/checks/findings/artifacts,
+Space/Escape return to AGENT. Job/nodes, objective, this seat's status/usage/checks/findings/artifacts,
 reply and up to eight other seats are shown from cache. `local_build_failed` alone gets the excerpt
 note. Prose wraps, never scrolls horizontally; addresses use shared helpers without an explorer
 because these jobs carry no chain id. Every third-party string reaches Static as pre-built Text.

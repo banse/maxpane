@@ -39,7 +39,7 @@ async def test_popup_content_footer_geometry_and_scrolling(size):
     async with PopupApp(row).run_test(size=size) as pilot:
         await pilot.pause()
         text='\n'.join(lines(pilot.app))
-        assert 'PRESS ENTER TO CLOSE' in text and 'ANSWER ·' in text
+        assert 'PRESS SPACE OR ESC TO CLOSE' in text and 'ANSWER ·' in text
         if size[0]>=80:
             assert 'QUESTION' in text and 'this seat' in text and 'YES' in text
             assert 'agreed 34 · quorum 35 · panel 49' in text and 'Start of notes.' in text
@@ -48,14 +48,14 @@ async def test_popup_content_footer_geometry_and_scrolling(size):
         assert scroll.has_focus and scroll.max_scroll_x==0
         assert footer.region.bottom<=size[1]-1
         line=lines(pilot.app)[footer.region.y]
-        x=line.index('PRESS ENTER TO CLOSE')
-        assert abs(x+(len('PRESS ENTER TO CLOSE')/2)-size[0]/2)<=1
+        x=line.index('PRESS SPACE OR ESC TO CLOSE')
+        assert abs(x+(len('PRESS SPACE OR ESC TO CLOSE')/2)-size[0]/2)<=1
         for widget in pilot.app.screen.query('*'):
             if widget.region.width and widget.is_on_screen:
                 assert widget.region.right<=size[0] and widget.region.x>=0
         await pilot.press('pagedown')
         await settled(pilot, lambda: scroll.scroll_y>0)
-        assert 'PRESS ENTER TO CLOSE' in '\n'.join(lines(pilot.app))
+        assert 'PRESS SPACE OR ESC TO CLOSE' in '\n'.join(lines(pilot.app))
 
 
 @pytest.mark.parametrize('chain', [1,56,4663])
@@ -93,7 +93,7 @@ async def test_popup_snapshot_invalid_and_failed_answers(state):
         if state=='unavailable': assert 'unavailable' in text
 
 
-@pytest.mark.parametrize('key', ['enter','escape'])
+@pytest.mark.parametrize('key', ['space','escape'])
 async def test_record_popup_click_closes_back_to_agent_and_resumes_guarded_refresh(key):
     row=oracle_row()
     payload=_sample_data(); payload.update(swarm_seat_state='ok',swarm_seat_work_rows=[row])
@@ -114,6 +114,9 @@ async def test_record_popup_click_closes_back_to_agent_and_resumes_guarded_refre
         await pilot.click(offset=(x,y))
         await settled(pilot,lambda:isinstance(pilot.app.screen,OracleAnswerScreen))
         assert manager.calls==before and screen._refresh_timer is None
+        # Enter no longer closes (owner, 2026-09-24): only space and escape do.
+        await pilot.press('enter'); await pilot.pause()
+        assert isinstance(pilot.app.screen,OracleAnswerScreen)
         await pilot.press(key)
         await settled(pilot,lambda:pilot.app.screen is screen and manager.calls>before and not screen._refresh_in_flight)
         assert screen._mode==MODE_AGENT and screen._refresh_timer is not None
@@ -157,7 +160,7 @@ async def test_same_job_popup_click_selects_exact_joined_member():
             text = '\n'.join(lines(pilot.app))
             assert row['oracle_question'] in text
             assert row['oracle_notes'].split()[0] + ' evidence' in text
-            await pilot.press('enter')
+            await pilot.press('space')
             await settled(pilot, lambda: pilot.app.screen is screen and not screen._refresh_in_flight)
         await screen.action_open_oracle_answer(absent['job_id'], absent['submission_hash'])
         assert pilot.app.screen is screen
@@ -185,7 +188,7 @@ async def test_resume_real_manager_keeps_fresh_seat_answers_and_oracle_cache(tmp
             await settled(pilot,lambda:isinstance(pilot.app.screen,OracleAnswerScreen))
             assert manager._cycle_count==cycle
             manager.client.calls.clear()
-            await pilot.press('enter')
+            await pilot.press('space')
             await settled(pilot,lambda:pilot.app.screen is screen and manager._cycle_count>cycle and not screen._refresh_in_flight)
             assert (fake.oracle_calls,fake.answer_calls,fake.seat_calls)==calls
             # The fast chain tier intentionally has TTL=0: those reads remain normal.

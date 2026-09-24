@@ -514,7 +514,7 @@ of any of the six alternate bodies.
 | LEADERBOARD header click | Sort that column; click again to reverse |
 | LEADERBOARD row click or Enter | Save that seat and open AGENT |
 | RECORD `»` click | Open ANSWER (joined oracle value, question and notes) or SUBMISSION (reply, job and usage) |
-| Enter / `esc` in ANSWER or SUBMISSION | Close the popup and return to AGENT |
+| `space` / `esc` in ANSWER or SUBMISSION | Close the popup and return to AGENT |
 | `esc` outside a popup | Return to the dashboard |
 
 The status hint names the ones that are not experimental:

@@ -15,7 +15,7 @@ class RecordDetailScreen(ModalScreen[None]):
     TITLE_WORD = ''
     ID_PREFIX = 'record-detail'
     SHOW_ROLE = False
-    BINDINGS = [Binding('enter', 'close', show=False, priority=True),
+    BINDINGS = [Binding('space', 'close', show=False, priority=True),
                 Binding('escape', 'close', show=False, priority=True)]
     DEFAULT_CSS = '''
     RecordDetailScreen { align: center middle; padding: 1 0; }
@@ -41,7 +41,7 @@ class RecordDetailScreen(ModalScreen[None]):
             yield Static(Text(), id=prefix+'-title', classes='record-detail-title')
             with VerticalScroll(id=prefix+'-scroll', classes='record-detail-scroll'):
                 yield from self.compose_sections()
-            yield Static(Text('PRESS ENTER TO CLOSE', style='dim'), id=prefix+'-close', classes='record-detail-close')
+            yield Static(Text('PRESS SPACE OR ESC TO CLOSE', style='dim'), id=prefix+'-close', classes='record-detail-close')
 
     def compose_sections(self):
         raise NotImplementedError

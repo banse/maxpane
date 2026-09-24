@@ -41,8 +41,8 @@ async def test_hunt_submission_content_and_geometry(size):
         assert scroll.has_focus and scroll.max_scroll_x==0
         footer=screen.query_one('#submission-detail-close')
         assert footer.region.bottom<=size[1]-1
-        line=lines(pilot.app)[footer.region.y];x=line.index('PRESS ENTER TO CLOSE')
-        assert abs(x+len('PRESS ENTER TO CLOSE')/2-size[0]/2)<=1
+        line=lines(pilot.app)[footer.region.y];x=line.index('PRESS SPACE OR ESC TO CLOSE')
+        assert abs(x+len('PRESS SPACE OR ESC TO CLOSE')/2-size[0]/2)<=1
         for widget in screen.query('*'):
             if widget.is_on_screen and widget.region.width:
                 assert widget.region.x>=0 and widget.region.right<=size[0]
@@ -52,7 +52,7 @@ async def test_hunt_submission_content_and_geometry(size):
                 'failed · local_build_failed','fable 5.1','61 turns','22m 56s','75.0K out','6.2M cached in',
                 'published excerpt only','the local build failed','OTHER SEATS ON THIS JOB (7)', '#1', '#1548']:
                 assert word in text,word
-        assert 'PRESS ENTER TO CLOSE' in lines(pilot.app)[footer.region.y]
+        assert 'PRESS SPACE OR ESC TO CLOSE' in lines(pilot.app)[footer.region.y]
 
 
 async def test_bundle_failure_and_unread_job_have_no_other_seats_or_excerpt():
@@ -74,7 +74,7 @@ async def test_reply_indentation_addresses_and_markup_are_safe():
         assert not link_targets(pilot.app)
 
 
-@pytest.mark.parametrize('key',['enter','escape'])
+@pytest.mark.parametrize('key',['space','escape'])
 async def test_submission_click_exact_hash_snapshot_and_close_to_agent(key):
     first=row_for(); second=dict(first,submission_hash='f'*64,sub_reply='Second member reply',sub_others=[])
     payload=_sample_data();payload.update(swarm_seat_state='ok',swarm_seat_work_rows=[first,second])
@@ -99,6 +99,8 @@ async def test_submission_click_exact_hash_snapshot_and_close_to_agent(key):
             assert pilot.app.screen.row['sub_reply']==row['sub_reply']
             saved=pilot.app.screen.row['sub_reply'];row['sub_reply']='changed later'
             assert pilot.app.screen.row['sub_reply']==saved
+            await pilot.press('enter');await pilot.pause()
+            assert isinstance(pilot.app.screen,SubmissionDetailScreen)
             await pilot.press(key)
             await settled(pilot,lambda:pilot.app.screen is screen and not screen._refresh_in_flight)
             assert screen._mode==MODE_AGENT
