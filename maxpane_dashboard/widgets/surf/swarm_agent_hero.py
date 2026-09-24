@@ -122,16 +122,18 @@ class SurfSwarmAgentHero(HeroRow):
         body = Text()
         body.append(f"IDMD #{DASH if token is None else token}", style="bold")
         body.append("\n")
-        # ``Text.append`` parses nothing: a hostile agent id renders literally.
-        body.append("agent ", style="dim")
-        body.append(flatten(selected.get("agent_id")) or DASH, style="bold")
-        body.append("\n")
+        # Line 2 is blank, as in STATUS (owner, 2026-09-25); only the rare
+        # selection word (never paired, most active) takes it.
         if state == "unknown_seat":
             body.append(NEVER_PAIRED_WORDS, style=NEVER_PAIRED_STYLE)
         else:
             how = selected.get("selected_by")
             word = _SELECTED_BY.get(how) if isinstance(how, str) else None
             body.append(flatten(how) or DASH if word is None else word, style="dim")
+        body.append("\n")
+        # ``Text.append`` parses nothing: a hostile agent id renders literally.
+        body.append("agent ", style="dim")
+        body.append(flatten(selected.get("agent_id")) or DASH, style="bold")
         return body
 
     @staticmethod
@@ -156,7 +158,8 @@ class SurfSwarmAgentHero(HeroRow):
         body.append(" of ", style="dim")
         body.append(fmt_int(attempts), style="bold")
         rate = SurfSwarmAgentHero._win_rate_body(summary)
-        return body.append("\n") + (Text.from_markup(rate) if isinstance(rate, str) else rate)
+        # A blank row between the two lines, as in STATUS (owner, 2026-09-25).
+        return body.append("\n\n") + (Text.from_markup(rate) if isinstance(rate, str) else rate)
 
     @staticmethod
     def _reviewed_body(summary: dict) -> str | Text:
@@ -174,8 +177,9 @@ class SurfSwarmAgentHero(HeroRow):
         # counters with no ceiling, and one line of two of them is a width
         # that grows with the seat's age -- ``1,202 · 13 pending`` was cut
         # to ``pend…`` at the AGENT pin, where the hero has no ``‹``. On
-        # their own lines the widest is ``9,999 pending`` (13 cells).
-        body.append("\n")
+        # their own lines the widest is ``9,999 pending`` (13 cells). A blank
+        # row separates them, as in STATUS (owner, 2026-09-25).
+        body.append("\n\n")
         # A subset of ``reviewed`` (plan Q-M): the reviews whose score is not
         # on chain yet. ``--`` when the split was not served, never ``0``.
         body.append(fmt_int(pending) if pending is not None else DASH,

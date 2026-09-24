@@ -557,3 +557,30 @@ async def test_owner_hero_example_is_an_explicit_synthetic_layout_case(width):
     assert _lines(boxes['accepted']) == ['ACCEPTED', '242 of 280', '86.4 %']
     assert _lines(boxes['rank']) == ['RANK', '#8 of 306']
     assert 'as of' not in '\n'.join(boxes.values())
+
+
+def _inner_rows(box: str) -> list[str]:
+    """A box's rows between its borders, blank rows kept."""
+    rows = [row.strip().strip("│┌┐└┘─").strip() for row in box.split("\n")]
+    while rows and not rows[0]:
+        rows.pop(0)
+    while rows and not rows[-1]:
+        rows.pop()
+    return rows
+
+
+async def test_two_line_boxes_have_a_blank_row_between_their_lines_like_status():
+    """Owner, 2026-09-25: label, blank, line 1, blank, line 2 -- STATUS's rhythm.
+    SEAT's blank line 2 carries only a rare selection word (most active, never paired)."""
+    boxes = await _boxes(swarm_seat_rank_delta=2,
+                         swarm_seat_selected=dict(SELECTED, selected_by="saved"))
+    for key in ("seat", "accepted", "reviewed", "rank"):
+        rows = _inner_rows(boxes[key])
+        assert len(rows) == 5 and rows[1] == "" and rows[3] == "", (key, rows)
+        assert all(rows[i] for i in (0, 2, 4)), (key, rows)
+
+
+async def test_seat_selection_word_takes_the_blank_line_above_the_agent():
+    most = _inner_rows(await _box_text(BOX_IDS["seat"],
+                       swarm_seat_selected=dict(SELECTED, selected_by="most_active")))
+    assert most[2:] == ["IDMD #420", "most active", "agent 50939"], most

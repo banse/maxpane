@@ -127,7 +127,8 @@ def rank_body(contrib: dict, delta=None) -> Text:
     else:
         body.append(f"#{rank}", style="bold").append(" of ", style="dim").append(of or "--", style="bold")
     if rank is not None and isinstance(delta, int) and not isinstance(delta, bool) and delta:
-        body.append("\n").append(("▲" if delta > 0 else "▼") + fmt_int(abs(delta)),
+        # A blank row above the move, as in STATUS (owner, 2026-09-25).
+        body.append("\n\n").append(("▲" if delta > 0 else "▼") + fmt_int(abs(delta)),
                                 style="bold green" if delta > 0 else "bold red")
     return body
 
