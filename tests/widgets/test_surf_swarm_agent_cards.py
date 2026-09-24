@@ -266,3 +266,46 @@ async def test_long_unknown_node_keeps_exact_accepted_count(accepted, attempts, 
     line = _lines(boxes["nodes"])[1]
     assert "…" in line
     assert line.endswith(" " + expected)
+
+
+@pytest.mark.parametrize('width', [139, 58])
+@pytest.mark.parametrize('runtime,latest,daemon,majority,runtime_up,daemon_up,basis', [
+    ('claude 2.1.278 (Claude Code)', '2.1.282', '0.1.0+abc', ('0.1.0+abc',2,3), True, False, 'latest claude-code 2.1.282'),
+    ('codex codex-cli 0.155.0-alpha.9.2', '0.155.0', '0.1.0+abc', ('0.1.0+abc',2,3), True, False, 'latest codex 0.155.0'),
+    ('claude 9.0.0', '2.1.282', '0.1.0+abc', ('0.1.0+abc',2,3), False, False, 'npm, as of 17:33'),
+    ('unknown [/x]', '2.1.282', '0.1.0+abc', ('0.1.0+abc',2,3), False, False, 'runtime not checked'),
+    ('claude 2.1.278 (Claude Code)', None, '0.1.0+abc', ('0.1.0+abc',2,3), False, False, 'update check unavailable'),
+    ('claude 2.1.282', '2.1.282', '0.1.0+def', ('0.1.0+abc',2,3), False, True, 'fleet daemon 0.1.0+abc on 2/3'),
+    ('claude 2.1.282', '2.1.282', '0.1.0+def', None, False, False, 'no fleet majority'),
+])
+async def test_runtime_card_checks_fit_arrows_and_explain_basis(width, runtime, latest, daemon, majority,
+                                                               runtime_up, daemon_up, basis):
+    from rich.text import Text
+    from tests.screens.test_surf_screen import _frozen_payload, _surf_app, _region_text
+    payload = _frozen_payload()
+    runtime_id = runtime.partition(' ')[0]
+    payload.update(swarm_seat_state='ok',
+                   swarm_seat_summary={**SUMMARY, 'runtime':runtime, 'daemon':daemon},
+                   swarm_runtime_latest={runtime_id:latest},
+                   swarm_runtime_as_of_hhmm={runtime_id:'17:33'}, swarm_fleet_daemon=majority)
+    async with _surf_app(payload).run_test(size=(width, 35)) as pilot:
+        screen = pilot.app.screen
+        await screen._do_refresh()
+        await pilot.press('a')
+        box = screen.query_one('#surf-swarm-card-runtime')
+        assert isinstance(box.tooltip, Text)
+        assert basis in box.tooltip.plain
+        rows = _region_text(pilot.app, box).splitlines()
+        arrows = [(y, line.index('↑')) for y, line in enumerate(rows) if '↑' in line]
+        assert len(arrows) == int(runtime_up) + int(daemon_up)
+        for y, x in arrows:
+            style = screen.get_style_at(box.region.x + x, box.region.y + y)
+            assert style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
+        if not runtime_up and not daemon_up:
+            # Compare the actual painted region against the old, unchecked path.
+            before = rows
+            cards = screen.query_one(SurfSwarmSeatCards)
+            cards.update_data(**{key:payload.get(key) for key in SWARM_WIDGET_SIGNATURES['SurfSwarmSeatCards']
+                                 if key not in ('swarm_runtime_latest','swarm_runtime_as_of_hhmm','swarm_fleet_daemon')})
+            await pilot.pause()
+            assert _region_text(pilot.app, box).splitlines() == before

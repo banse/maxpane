@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from rich.text import Text
 
+from maxpane_dashboard.analytics.surf_swarm_signals import runtime_semver, runtime_outdated, daemon_differs
+
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
@@ -142,15 +144,21 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
             swarm_seat_summary=swarm_seat_summary, swarm_seat_state=swarm_seat_state,
             swarm_seat_teammates=swarm_seat_teammates, swarm_seat_owner_ens=swarm_seat_owner_ens,
             swarm_seat_node_rows=swarm_seat_node_rows,
+            swarm_runtime_latest=swarm_runtime_latest, swarm_runtime_as_of_hhmm=swarm_runtime_as_of_hhmm,
+            swarm_fleet_daemon=swarm_fleet_daemon,
         )
 
     def _paint(self, swarm_seat_summary=None, swarm_seat_state=None,
-               swarm_seat_teammates=None, swarm_seat_owner_ens=None, swarm_seat_node_rows=None) -> None:
+               swarm_seat_teammates=None, swarm_seat_owner_ens=None, swarm_seat_node_rows=None,
+               swarm_runtime_latest=None, swarm_runtime_as_of_hhmm=None, swarm_fleet_daemon=None) -> None:
         summary, state = swarm_seat_summary, swarm_seat_state
+        if self.is_mounted:
+            self.query_one(f"#{SEAT_BOX_IDS['runtime']}").tooltip = Text("update check unavailable")
         ens_name = swarm_seat_owner_ens if isinstance(swarm_seat_owner_ens, str) else None
         for key, label, build in (
             ("owner", "OWNER", lambda s: self._owner_body(s, ens_name)),
-            ("runtime", "RUNTIME", self._runtime_body),
+            ("runtime", "RUNTIME", lambda s: self._runtime_body(
+                s, swarm_runtime_latest, swarm_runtime_as_of_hhmm, swarm_fleet_daemon)),
             ("feedback", "FEEDBACK", self._feedback_body),
             ("score", "SCORE", self._score_body),
             ("collab", "COLLAB", lambda s: self._collab_body(s, swarm_seat_teammates)),
@@ -184,17 +192,39 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
             return body.append("paired unavailable", style="yellow")
         return body.append("paired ", style="dim").append(mmdd_hhmm(paired), style="bold")
 
-    def _runtime_body(self, summary: dict) -> Text:
-        body = Text()
+    def _runtime_body(self, summary: dict, latest=None, clocks=None, majority=None) -> Text:
         runtime = summary.get("runtime")
+        runtime_id, _, version = runtime.partition(" ") if isinstance(runtime, str) else (None, "", None)
+        newest = latest.get(runtime_id) if isinstance(latest, dict) else None
+        outdated = runtime_outdated(runtime_id, version, newest)
+        different = daemon_differs(summary.get("daemon"), majority)
+        tooltip = Text()
+        if runtime_id not in ("claude", "codex"):
+            tooltip.append("runtime not checked")
+        elif runtime_semver(runtime_id, newest) is None:
+            tooltip.append("update check unavailable")
+        else:
+            package = "claude-code" if runtime_id == "claude" else "codex"
+            stamp = clocks.get(runtime_id) if isinstance(clocks, dict) else None
+            tooltip.append(f"latest {package} {newest} (npm, as of {flatten(stamp) or 'unavailable'})")
+        if isinstance(majority, (tuple, list)) and len(majority) == 3:
+            tooltip.append(f"\nfleet daemon {majority[0]} on {majority[1]}/{majority[2]} reporting workers")
+        else:
+            tooltip.append("\nno fleet majority")
+        self.query_one(f"#{SEAT_BOX_IDS['runtime']}").tooltip = tooltip
+        body = Text()
         if runtime is None:
             body.append("unavailable", style="yellow")
+        elif outdated is True:
+            body.append(self._fit("runtime", runtime, reserved=2) + " ↑", style="yellow")
         else:
             body.append(self._fit("runtime", runtime) or "none", style="bold")
         body.append("\n")
         daemon = summary.get("daemon")
         if daemon is None:
             body.append("daemon unavailable", style="yellow")
+        elif different is True:
+            body.append(self._fit("runtime", "daemon " + daemon, reserved=2) + " ↑", style="yellow")
         else:
             body.append("daemon ", style="dim")
             body.append(self._fit("runtime", daemon, reserved=7) or "not reported")
