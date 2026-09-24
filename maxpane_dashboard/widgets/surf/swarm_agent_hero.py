@@ -90,6 +90,7 @@ class SurfSwarmAgentHero(HeroRow):
         swarm_seat_as_of_hhmm=None,
         swarm_seat_live=None,
         swarm_seat_contrib=None,
+        swarm_seat_rank_delta=None,
         **_kwargs,
     ) -> None:
         """Rewrite all six boxes; the state says which kind of missing."""

@@ -370,3 +370,48 @@ def test_record_selected_accepts_mappings_without_clamping():
     assert sig.record_selected(rows, True) == [failed] * 405
     assert sig.record_selected(rows, False) == [completed] + [failed] * 405
     assert sig.record_state(failed) == "failed"
+
+
+@pytest.mark.parametrize('runtime,text,expected', [
+    ('claude', '2.1.278 (Claude Code)', (2, 1, 278)),
+    ('claude', '2.1.281', (2, 1, 281)),
+    ('codex', 'codex-cli 0.155.1', (0, 155, 1)),
+    ('codex', 'codex-cli 0.155.0-alpha.9.2', (0, 155, 0)),
+])
+def test_runtime_semver_served_shapes(runtime, text, expected):
+    assert sig.runtime_semver(runtime, text)[:3] == expected
+
+
+@pytest.mark.parametrize('value', [None, 4, True, '2.1', 'v2.1.281', '[/x]',
+    '9' * 1000 + '.0.0', ' 2.1.281', '2.1.281\n', '2.1.281 ', '01.2.3',
+    '1.2.3-alpha.01', '1.2.3-', '1.2.3+'])
+def test_runtime_semver_rejects_hostile_and_malformed_versions(value):
+    assert sig.runtime_semver('claude', value) is None
+    assert sig.runtime_outdated('claude', value, '2.1.281') is None
+
+
+@pytest.mark.parametrize('runtime,seat,latest,expected', [
+    ('claude', '2.1.278 (Claude Code)', '2.1.281', True),
+    ('claude', '2.1.281', '2.1.281', False),
+    ('claude', '2.2.0', '2.1.281', False),
+    ('codex', 'codex-cli 0.155.0-alpha.9.2', '0.155.0', True),
+    ('codex', '0.155.0-alpha.9.2', '0.155.0-alpha.10', True),
+    ('codex', '0.155.0-alpha.10', '0.155.0-alpha.9.2', False),
+    ('codex', '1.0.0+one', '1.0.0+two', False),
+    ('unknown', '1.0.0', '2.0.0', None),
+    ('claude', '1.0.0', None, None),
+])
+def test_runtime_outdated_orders_semver(runtime, seat, latest, expected):
+    assert sig.runtime_outdated(runtime, seat, latest) is expected
+
+
+def test_fleet_daemon_unique_plurality_and_equality_only():
+    majority = sig.fleet_majority(['0.1.0+abc', None, '[/x]', '0.1.0+abc', '0.1.0+def'])
+    assert majority == ('0.1.0+abc', 2, 3)
+    assert sig.daemon_differs('0.1.0+def', majority) is True
+    assert sig.daemon_differs('0.1.0+abc', majority) is False
+    assert sig.daemon_differs('[/x]', majority) is None
+    assert sig.daemon_differs(None, majority) is None
+    assert sig.daemon_differs('0.1.0+def', None) is None
+    for versions in (None, [], ['0.1.0+abc', '0.1.0+def'], ['bad', None]):
+        assert sig.fleet_majority(versions) is None

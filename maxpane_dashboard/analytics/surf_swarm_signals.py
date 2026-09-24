@@ -14,11 +14,14 @@ representable zero is ``0``.
 from __future__ import annotations
 
 import math
+import re
+from collections import Counter
 import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 __all__ = [
+    "runtime_semver", "runtime_outdated", "fleet_majority", "daemon_differs",
     "completed_within", "count_by", "duration_stats", "launch_summary",
     "seen_since_ts", "skill_summary", "state_rollup", "record_state", "record_selected", "record_window",
 ]
@@ -169,3 +172,64 @@ def record_selected(rows: object, open_only: bool) -> list[Mapping[str, Any]]:
 def record_window(rows: object, cap: int, open_only: bool) -> list[Mapping[str, Any]]:
     """Filter before windowing; retain source order within the 40..400 view."""
     return record_selected(rows, open_only)[:max(40, min(400, cap))]
+
+
+# Bounded semver core, prerelease and build metadata; no surrounding whitespace.
+_VERSION = re.compile(r"(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})"
+                      r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+                      r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
+
+
+def _semver(text: object) -> tuple | None:
+    if not isinstance(text, str) or len(text) > 64:
+        return None
+    match = _VERSION.fullmatch(text)
+    if match is None:
+        return None
+    prerelease = match[4]
+    parts = []
+    if prerelease is not None:
+        for part in prerelease.split("."):
+            if part.isascii() and part.isdigit():
+                if len(part) > 1 and part.startswith("0"):
+                    return None
+                parts.append((0, int(part)))
+            else:
+                parts.append((1, part))
+    # A release sorts above every prerelease; build metadata has no precedence.
+    return (*map(int, match.group(1, 2, 3)), tuple(parts) if prerelease else ((2, ""),))
+
+
+def runtime_semver(runtime_id: object, version_text: object) -> tuple | None:
+    """Strict npm versions and the two known CLI banners, in SemVer order."""
+    if runtime_id not in ("claude", "codex") or not isinstance(version_text, str):
+        return None
+    if runtime_id == "claude" and version_text.endswith(" (Claude Code)"):
+        version_text = version_text.removesuffix(" (Claude Code)")
+    elif runtime_id == "codex" and version_text.startswith("codex-cli "):
+        version_text = version_text.removeprefix("codex-cli ")
+    return _semver(version_text)
+
+
+def runtime_outdated(runtime_id: object, seat_version: object, latest_version: object) -> bool | None:
+    seat, latest = runtime_semver(runtime_id, seat_version), runtime_semver(runtime_id, latest_version)
+    return seat < latest if seat is not None and latest is not None else None
+
+
+def fleet_majority(versions: object) -> tuple[str, int, int] | None:
+    """Unique plurality among workers reporting a valid daemon version."""
+    if not isinstance(versions, list):
+        return None
+    counts = Counter(version for version in versions if _semver(version) is not None)
+    top = counts.most_common(2)
+    if not top or (len(top) > 1 and top[0][1] == top[1][1]):
+        return None
+    return top[0][0], top[0][1], sum(counts.values())
+
+
+def daemon_differs(seat_daemon: object, majority: object) -> bool | None:
+    """Build hashes have no order: only equality with the fleet is claimed."""
+    if (_semver(seat_daemon) is None or not isinstance(majority, (list, tuple))
+            or len(majority) != 3 or _semver(majority[0]) is None):
+        return None
+    return seat_daemon != majority[0]

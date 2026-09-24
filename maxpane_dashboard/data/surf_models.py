@@ -1487,6 +1487,10 @@ SWARM_KEYS: tuple[str, ...] = (
     # Forward-verified ENS name of the seat owner (2026-09-22, owner); None = no
     # verified name or not looked up yet -- OWNER then shows the address.
     "swarm_seat_owner_ens",    # str | None
+    "swarm_runtime_latest",   # dict runtime id -> version | None
+    "swarm_runtime_as_of_hhmm", # dict runtime id -> last attempt HH:MM | None
+    "swarm_fleet_daemon",     # (version, count, reporting workers) | None
+    "swarm_seat_rank_delta",  # int | None; previous rank minus current rank
 )
 
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
@@ -1500,9 +1504,9 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
-    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib"),
+    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta"),
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
-    "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates", "swarm_seat_owner_ens", "swarm_seat_node_rows"),
+    "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates", "swarm_seat_owner_ens", "swarm_seat_node_rows", "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
     "SurfSwarmBoardHero": ("swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
     "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
@@ -1581,7 +1585,7 @@ SWARM_SEAT_LIVE_FIELDS: tuple[str, ...] = (
 #: wall_clock_s is aggregated wallClockMs / 1000 (hours are a display conversion).
 SWARM_SEAT_CONTRIB_FIELDS: tuple[str, ...] = (
     "listed", "attempts", "accepted", "rejected", "pending", "turns",
-    "wall_clock_s", "rank", "ranked_of",
+    "wall_clock_s", "rank", "ranked_of", "output_tokens",
 )
 
 #: None is unavailable (not a string state); absent from good /workers is offline.

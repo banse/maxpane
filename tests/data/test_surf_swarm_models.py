@@ -133,10 +133,10 @@ SWARM_TARGET_WIDGETS = {
 }
 
 
-def test_the_swarm_block_is_thirty_four_keys():
+def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
     """Thirty-two existing keys, the served health status word and the owner's ENS name."""
-    assert len(SWARM_KEYS) == 34
-    assert len(set(SWARM_KEYS)) == 34
+    assert len(SWARM_KEYS) == 38
+    assert len(set(SWARM_KEYS)) == 38
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -158,8 +158,9 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-24:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
-                                + ("swarm_health_status", "swarm_seat_owner_ens"))
+    assert SWARM_KEYS[-28:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+                                + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
+                                   "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta"))
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -259,11 +260,12 @@ def test_the_agent_signatures_are_the_flipped_literals():
     assert {k: SWARM_WIDGET_SIGNATURES[k] for k in AGENT_WIDGETS} == {
         "SurfSwarmAgentHero": (
             "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_as_of_hhmm",
-            "swarm_seat_live", "swarm_seat_contrib",
+            "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta",
         ),
         "SurfSwarmSeatCards": (
             "swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates",
             "swarm_seat_owner_ens", "swarm_seat_node_rows",
+            "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon",
         ),
         "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
     }
@@ -293,7 +295,7 @@ def test_the_agent_signatures_reach_every_seats_key_and_drop_the_window_ones():
     )),
     ("SWARM_SEAT_CONTRIB_FIELDS", (
         "listed", "attempts", "accepted", "rejected", "pending", "turns",
-        "wall_clock_s", "rank", "ranked_of",
+        "wall_clock_s", "rank", "ranked_of", "output_tokens",
     )),
     ("SWARM_BOARD_LIVE_STATES", ("working", "idle", "paused", "offline")),
     ("SWARM_INFLIGHT_NOTE_KINDS", ("dispatch", "failure")),
