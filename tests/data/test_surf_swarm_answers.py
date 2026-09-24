@@ -64,18 +64,22 @@ def test_hostile_reply_field_drops_only_its_point(field,bad):
     assert sw.coerce_answers_slot({payload['jobId']:{item['hash']:old}})=={}
 
 
-@pytest.mark.parametrize('step', ['others', 'reply', 'failed_checks'])
+@pytest.mark.parametrize('step', ['others', 'reply', 'failed_checks', 'answer'])
 def test_answer_byte_cascade_exercises_each_step(step):
     payload,item=own(); value=point(payload,item)
     value.update(reply='😀'*4096, failed_checks='😀'*300)
     for other in value['others']: other['line']='😀'*200
     if step=='others': value['reply']='x'*3000
     if step=='failed_checks': value['model']='m'*6500
+    if step=='answer': value['answer']='审计发现'*700+'。'
     result=sw.bound_answer_point(copy.deepcopy(value))
-    assert result and len(json.dumps(result,ensure_ascii=False,separators=(',',':')).encode())<=8000
+    assert result and len(json.dumps(result).encode())<=8000
     if step=='others': assert any(len(r['line'])<200 for r in result['others'])
     if step=='reply': assert all(not r['line']for r in result['others']) and len(result['reply'])<4096
     if step=='failed_checks': assert result['reply'] is None and len(result['failed_checks'] or '')<300
+    if step=='answer':
+        assert result['reply'] is None and result['failed_checks'] is None
+        assert len(result['answer']) < 2801
     assert sw.coerce_answers_slot({payload['jobId']:{item['hash']:result}})
 
 
@@ -185,10 +189,53 @@ def test_url_byte_cuts_survive_load_unchanged(monkeypatch, field, tail):
     target = value['others'][0] if field == 'others' else value
     key = 'line' if field == 'others' else field
     target[key] = 'prefix ' + tail
-    limit = len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode())
+    limit = len(json.dumps(value).encode())
     target[key] = 'prefix https://example.com/path'
     monkeypatch.setattr(sw, 'ANSWER_POINT_BYTES', limit)
     result = sw.bound_answer_point(value)
     assert result is not None
     slot = {payload['jobId']: {item['hash']: result}}
     assert sw.coerce_answers_slot(slot) == slot
+
+
+def test_mixed_job_excludes_each_oracle_sibling():
+    payload, item = own()
+    before = point(payload, item)
+    oracle = dict(item, hash='f'*64, nodeKey='oracle_assess', seat={'tokenId': '9999'})
+    payload['submissions'].append(oracle)
+    value = point(payload, item)
+    assert value['others'] == before['others']
+    assert value['others_total'] == before['others_total'] == 7
+    assert sw.submission_answer(payload, payload['jobId'], oracle['hash'], 9999)['others'] is None
+
+
+def test_loader_uses_disk_encoding_for_answer_bound():
+    payload, item = own()
+    value = point(payload, item)
+    value.update(reply='😀'*1000)
+    assert len(json.dumps(value).encode()) > 8000
+    assert sw.coerce_answers_slot({payload['jobId']: {item['hash']: value}}) == {}
+
+
+@pytest.mark.parametrize('text,safe', [
+    ('line\n    ┃ 审计', True), ('nonbreaking\u00a0space', True), ('[bold]', True),
+    ('https://example.com/path', True), ('https://example.com/\x00secret', False),
+    ('https://example.com/\u200bsecret', False), ('bad\x7f', False), ('bad\u200b', False),
+    ('bad\ue000', False), ('bad\ud800', False), ('[label](https://example.com)', False),
+    ('/Users/user/private.txt', False), ('C:\\Users\\user\\private.txt', False),
+])
+def test_reply_safety_preserves_unicode_and_rejects_unsafe_text(text, safe):
+    assert sw._safe_reply(text) is safe
+
+
+def test_plain_replies_skip_python_link_parser_at_cache_cap(monkeypatch):
+    payload, item = own()
+    value = point(payload, item)
+    value.update(answer='Observed result.', reply='x'*4096)
+    for other in value['others']:
+        other['line'] = 'x'*100
+    slot = {payload['jobId']: {f'{i:064x}': copy.deepcopy(value) for i in range(400)}}
+    def unexpected_parse(text):
+        raise AssertionError('plain prose must not run the Python Markdown parser')
+    monkeypatch.setattr(sw, '_answer_link_spans', unexpected_parse)
+    assert len(sw.coerce_answers_slot(slot)[payload['jobId']]) == 400

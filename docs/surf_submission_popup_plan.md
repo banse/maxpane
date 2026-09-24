@@ -168,7 +168,9 @@ seats' first lines (≤ 200) persist; never a raw envelope". Update both.
 - **Size:** one answer point is ≤ 8,000 bytes in the on-disk default `json.dump` encoding (`ensure_ascii=True`,
   default separators), after a trim cascade: `others` lines, then `reply`, `failed_checks`, and finally `answer`. Hoist the F-series byte-budget cascade into one helper both slots use; do not write
   a second one. Worst case 400 points × 8,000 bytes = 3.2 MB of point bodies, plus the outer cache envelope,
-  beside the oracle slot's 400 × 6,000 bytes = 2.4 MB of point bodies. Measured cases are in the API doc.
+  beside the oracle slot's 400 × 6,000 bytes = 2.4 MB of point bodies. With `read_ts=2000000000.0`,
+  measured hunt/bundle/review points are 4,382/380/4,560 bytes, the bytes32 oracle point 1,723 bytes,
+  and the largest stress point exactly 8,000 bytes; reproduction details are in the API doc.
 - **Migration:** old points lack the fields and are dropped, then re-read (≤ 4 jobs a cycle). Accepted.
 - **Validation:** `coerce_answers_slot` validates every new field per point, and a hostile field drops only that point.
   The stored-answer safety check (`_safe_stored_answer`) must not reject a `reply` for its newlines. Give `reply` its

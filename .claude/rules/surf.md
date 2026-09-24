@@ -331,9 +331,11 @@ Owner-approved persistence change (2026-09-24): a bounded, cleaned reply (≤ 4,
 other seats' first lines (≤ 200) persist; never a raw envelope. Reply cleaning preserves indentation,
 newlines and box characters, expands tabs, and removes ANSI, other controls, local paths and
 Markdown targets. Cuts never end inside a 0x hex run. Other seats exclude the exact own hash,
-are sorted by node key/token and capped at eight; oracle nodes do not get other-seat summaries.
-Each answer point fits 8,000 compact UTF-8 JSON bytes, trimming other lines, reply, then failed
-checks through the shared oracle/submission budget helper. Reply has its own newline-aware
+are sorted by node key/token and capped at eight; oracle siblings are excluded independently,
+and oracle nodes do not get other-seat summaries.
+Each answer point fits 8,000 bytes in default on-disk JSON encoding, trimming other lines, reply,
+failed checks, then answer through the shared oracle/submission budget helper. Partial URL schemes
+are removed at cuts so load-time safety remains satisfied. Reply has its own newline-aware
 safety check. Old shapes are dropped per point and re-read within the existing four-job cap.
 
 `SLOT_SWARM_JOB_DETAIL` stores bounded job state, blocked reason and up to 16 nodes with

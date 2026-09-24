@@ -178,9 +178,9 @@ failureReason, usage, failed-check names, findings count and artifact name/bytes
 also retain up to eight other seats' first lines. The 2026-09-24 hunt capture has eight submissions
 (10,688 bytes); its 2,051-character failed-build summary contains only a published warning excerpt,
 not the build error. `/jobs/{uuid}` supplies blockedReason and node attempts/failureReason into
-`SLOT_SWARM_JOB_DETAIL`, separate from jobs-seen. It is capped at two reads/cycle, 400 jobs/48 h;
+`SLOT_SWARM_JOB_DETAIL`, separate from jobs-seen. It reads eligible SUBMISSION jobs (including off-panel oracle rows), capped at two reads/cycle, 400 jobs/48 h;
 blocked retries after 120 seconds. Never infer a successful/empty job from a failed read.
-The new reply facts share an 8,000-byte compact UTF-8 point budget; old points are dropped.
+The new reply facts share an 8,000-byte default on-disk JSON point budget; old points are dropped.
 Typed non-address lists such as bytes32[] retain up to 20 full hex/decimal string values and have
 no address semantics. Capture sizes, deployment identity and job/request join are in the API doc.
 

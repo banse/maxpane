@@ -260,7 +260,7 @@ async def test_large_non_ascii_answer_stays_read_and_loadable(tmp_path, summary)
         assert sw.coerce_answers_slot(slot) == slot
         value = next(iter(slot[job].values()))
         assert value['state'] == 'read'
-        assert len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode()) <= 8000
+        assert len(json.dumps(value).encode()) <= 8000
         row = data(manager)['swarm_seat_work_rows'][0]
         assert row['answer_state'] == 'read' and row['answer']
         from maxpane_dashboard.widgets.surf.swarm_seat_record import SurfSwarmSeatRecord

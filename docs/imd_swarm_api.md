@@ -525,20 +525,33 @@ links. Address[] retains its existing address behavior.
 The answers cache now persists a cleaned reply (4,096 characters), strict failure/usage facts,
 failed-check names (300 characters), findings count, up to ten artifact name/byte pairs and,
 for non-oracle nodes, up to eight other-seat summaries (200 characters each). It never stores
-raw response envelopes. One point is bounded to 8,000 compact UTF-8 JSON bytes, including
-read timestamp and terminal flag, by trimming other lines, reply, then failed checks. This
+raw response envelopes. One point is bounded to 8,000 bytes in the on-disk default `json.dump` encoding
+(`ensure_ascii=True`, default separators), including read timestamp and terminal flag, by trimming
+other lines, reply, failed checks, and finally the RECORD answer. Every cut is hex-safe and backs
+off incomplete HTTP(S) URL schemes so the loader accepts the retained text. This
 shares the oracle point's byte-budget helper; the oracle's existing 6,000-byte default-JSON
 budget remains unchanged. Old answer shapes are invalidated per point and re-read.
 
-Measured compact answer point sizes with `read_ts=1000.0`: hunt **3,832**, bundle **343**,
-completed review **4,511** bytes. Multibyte stress points exercising each cascade step yield
-**7,998 / 7,998 / 8,000** bytes. The bytes32 oracle point is **1,715** bytes in its existing
-JSON encoding. The answer slot's 400 points permit at most 3.2 MB of point bodies; job keys
-and the outer cache envelope add overhead.
+Measured with `read_ts=2000000000.0` and the default disk encoding: hunt **4,382**, bundle
+**380**, completed review **4,560** bytes. Multibyte stress points exercising other lines, reply,
+failed checks and answer trimming yield **7,996 / 7,996 / 7,990 / 7,998** bytes; an ASCII stress
+point reaches **8,000** exactly. The bytes32 oracle point is **1,723** bytes with the same
+explicit timestamp (the earlier 1,715-byte measurement used integer `1000`). The answer slot's
+400 points permit at most 3.2 MB of point bodies; the oracle slot's 400 × 6,000-byte bound
+permits 2.4 MB. Job/hash keys and the outer cache envelope add overhead.
+
+A 400-point synthetic slot of 5,884-byte points measured **0.445620 s** for one coercion and
+**2.222154 s** for a cycle before optimization. After the native printable-text check and shared
+regex safety scan, the same replay takes **0.016754 s / 0.087721 s** (medians of three runs).
+The cycle includes answer read/prune, eligible-job enrichment and the emitted RECORD fold.
+Full per-point validation still runs at load and consumption, including hostile-field checks;
+ordinary prose no longer runs Python's per-character Markdown parser.
 
 The separate `SLOT_SWARM_JOB_DETAIL` stores only bounded job state/reason and up to 16 nodes'
 key/role/state/attempt/failureReason, plus read_ts/terminal. It reads at most two jobs per seat
-cycle from non-oracle or failed/rejected rows in RECORD's first 40, retries nonterminal reads
+cycle from rows eligible for SUBMISSION in RECORD's first 40 (not joined, successfully read answer,
+valid UUID/hash), including off-panel oracle rows. It retries nonterminal reads
 after 120 seconds and retains at most 400 jobs for 48 hours. A failed read stays unavailable;
 completed/failed/cancelled are terminal, blocked is not. The row's `job_detail_state` leaves
-its original seat-reported `job_state` intact. Popup opening reads only a cached snapshot.
+its original seat-reported `job_state` intact. `job_read_ts` supplies the JOB line's `as of HH:MM`
+for both successful and failed cached reads. Popup opening reads only a cached snapshot.

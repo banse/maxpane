@@ -1544,11 +1544,27 @@ def _strip_answer_paths(text: str) -> str:
     return ''.join(pieces)
 
 
+# Scan paths and potential Markdown links together; ordinary prose needs neither parser.
+_STORED_MARKUP_PATTERN = re.compile(_ANSWER_PATH_PATTERN.pattern + r'|(?P<link>\]\()', re.IGNORECASE)
+_STORED_CONTROLS = re.compile(r'[\x00-\x1f\x7f-\x9f]')
+
+
+def _safe_answer_markup(value: str) -> bool:
+    if '/' not in value and '\\' not in value and '](' not in value:
+        return True
+    for match in _STORED_MARKUP_PATTERN.finditer(value):
+        if match.group('link') is not None:
+            if _answer_link_spans(value):
+                return False
+        elif match.group('url') is None:
+            return False
+    return True
+
+
 def _safe_stored_answer(value: object) -> bool:
     """Safety only: do not re-derive a stored answer's display formatting."""
     return (isinstance(value, str) and 0 < len(value) <= ANSWER_TEXT_CAP
-            and not any(ord(char) < 32 or 127 <= ord(char) < 160 for char in value)
-            and not _answer_link_spans(value) and next(_answer_paths(value), None) is None)
+            and _STORED_CONTROLS.search(value) is None and _safe_answer_markup(value))
 
 
 def answer_sentence(summary: str) -> str:
@@ -1591,8 +1607,9 @@ def clean_reply(value: object, cap: int = ANSWER_TEXT_CAP) -> str | None:
 
 def _safe_reply(value: object, cap: int = ANSWER_TEXT_CAP) -> bool:
     return (isinstance(value, str) and len(value) <= cap
-            and not any(c != '\n' and unicodedata.category(c).startswith('C') for c in value)
-            and not _answer_link_spans(value) and next(_answer_paths(value), None) is None)
+            and (value.replace('\n', '').isprintable()
+                 or not any(c != '\n' and unicodedata.category(c).startswith('C') for c in value))
+            and _safe_answer_markup(value))
 
 
 def _submission_text(value: object, cap: int) -> str | None:
@@ -1617,7 +1634,8 @@ def _submission_facts(payload: Mapping, item: Mapping) -> dict:
     if item.get('nodeKey') not in SWARM_ORACLE_NODE_KEYS:
         others = []
         for other in payload['submissions']:
-            if not isinstance(other, Mapping) or other.get('hash') == item['hash']:
+            if (not isinstance(other, Mapping) or other.get('hash') == item['hash']
+                    or other.get('nodeKey') in SWARM_ORACLE_NODE_KEYS):
                 continue
             seat = other.get('seat'); token = _served_token(seat.get('tokenId')) if isinstance(seat, Mapping) else None
             if token is None:
@@ -1640,7 +1658,7 @@ def _valid_short_text(value: object, cap: int, *, optional=True) -> bool:
 
 
 def _valid_submission_facts(point: Mapping) -> bool:
-    if _json_bytes(point, compact=True) > ANSWER_POINT_BYTES:
+    if _json_bytes(point) > ANSWER_POINT_BYTES:
         return False
     if point['state'] not in ('read', 'no_reply'):
         return all(point[k] is None for k in SUBMISSION_FACT_FIELDS)
@@ -1676,7 +1694,7 @@ def bound_answer_point(point: dict) -> dict | None:
     targets += [(point, 'reply', None), (point, 'failed_checks', None)]
     if point.get('state') == 'read':
         targets.append((point, 'answer', '…'))
-    return _bound_text_fields(point, targets, ANSWER_POINT_BYTES, compact=True)
+    return _bound_text_fields(point, targets, ANSWER_POINT_BYTES)
 
 
 _JOB_FINAL = {'completed', 'failed', 'cancelled'}
@@ -1963,10 +1981,9 @@ def _seat_answer(value: object, kind: str | None) -> str | None:
     return None
 
 
-def _json_bytes(point: Mapping, *, compact=False) -> int:
+def _json_bytes(point: Mapping) -> int:
     try:
-        options = dict(ensure_ascii=False, separators=(',', ':')) if compact else {}
-        return len(json.dumps(dict(point), **options).encode())
+        return len(json.dumps(dict(point)).encode())
     except (ValueError, TypeError, OverflowError):
         return math.inf
 
@@ -1975,24 +1992,24 @@ def _oracle_bytes(point: Mapping) -> int:
     return _json_bytes(point)
 
 
-def _bound_text_fields(point: dict, targets, limit: int, *, compact=False) -> dict | None:
+def _bound_text_fields(point: dict, targets, limit: int) -> dict | None:
     for container, name, empty in targets:
-        if _json_bytes(point, compact=compact) <= limit:
+        if _json_bytes(point) <= limit:
             return point
         text = container[name] or ''
         container[name] = empty
-        if _json_bytes(point, compact=compact) > limit:
+        if _json_bytes(point) > limit:
             continue
         low, high = 0, len(text)
         while low < high:
             mid = (low + high + 1) // 2
             container[name] = _text_prefix(text, mid) or empty
-            if _json_bytes(point, compact=compact) <= limit:
+            if _json_bytes(point) <= limit:
                 low = mid
             else:
                 high = mid - 1
         container[name] = _text_prefix(text, low) or empty
-    return point if _json_bytes(point, compact=compact) <= limit else None
+    return point if _json_bytes(point) <= limit else None
 
 
 def _bound_oracle_point(point: dict) -> dict | None:
