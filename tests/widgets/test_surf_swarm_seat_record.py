@@ -485,7 +485,7 @@ def test_short_model_exact_cleaned_patterns(raw,expected):
 @pytest.mark.parametrize('state,word,color,dim', [
     ('agreed','✓ 35/36','green',False),('outvoted','✗ 35/36','red',False),
     ('no_quorum_in','✓ no-q','green',True),('no_quorum_out','✗ no-q','red',True),
-    ('assessing','… 36/112','yellow',False),('blocked','blocked',None,True),
+    ('assessing','… of 112','yellow',False),('blocked','blocked',None,True),
     ('off_panel','–',None,True),('not_oracle','–',None,True),
     ('not_read','not read',None,True),('unavailable','unavail','yellow',False),
 ])
@@ -493,7 +493,7 @@ async def test_panel_states_and_styles_reach_compositor(state,word,color,dim):
     class Harness(App):
         def compose(self): yield SurfSwarmSeatRecord()
     row=dict(NEWEST,answer_state='read',answer='Done.',panel_state=state,
-             panel_agreed=35,panel_members=36,panel_size=112)
+             panel_agreed=35,panel_quorum=36,panel_size=112)
     async with Harness().run_test(size=(220,12)) as pilot:
         pilot.app.query_one(SurfSwarmSeatRecord).update_data(swarm_seat_work_rows=[row],swarm_seat_state='ok')
         await pilot.pause()
@@ -512,10 +512,9 @@ async def test_panel_states_and_styles_reach_compositor(state,word,color,dim):
         assert style.color.get_truecolor(pilot.app.ansi_theme)==expected.get_truecolor(pilot.app.ansi_theme)
 
 
-@pytest.mark.parametrize('state,field', [('agreed','panel_agreed'),('agreed','panel_members'),
-    ('outvoted','panel_agreed'),('outvoted','panel_members'),('assessing','panel_members')])
+@pytest.mark.parametrize('state,field', [('agreed','panel_agreed'),('outvoted','panel_agreed')])
 async def test_missing_panel_counts_are_unavailable(state,field):
-    row=dict(NEWEST,panel_state=state,panel_agreed=35,panel_members=36,panel_size=112)
+    row=dict(NEWEST,panel_state=state,panel_agreed=35,panel_quorum=36,panel_size=112)
     row[field]=None
     text='\n'.join(await _record(swarm_seat_work_rows=[row]))
     assert 'unavail' in _row_with(text.splitlines(),_job(row))
@@ -533,7 +532,7 @@ async def test_output_tokens_in_composited_tok_column(value,expected):
 @pytest.mark.parametrize('state',['outvoted','no_quorum_out'])
 @pytest.mark.parametrize('answer_state',['read','not_read'])
 async def test_red_rows_prefix_exact_wei_even_before_answer_read(state,answer_state):
-    row=dict(NEWEST,panel_state=state,panel_agreed=35,panel_members=36,panel_figure='457162630000000001',
+    row=dict(NEWEST,panel_state=state,panel_agreed=35,panel_quorum=36,panel_figure='457162630000000001',
              panel_answer_type='uint256',answer_state=answer_state,answer='Done.')
     text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
     assert 'panel 457162630000000001 · '+('Done.' if answer_state=='read' else 'not read') in text
@@ -541,25 +540,25 @@ async def test_red_rows_prefix_exact_wei_even_before_answer_read(state,answer_st
 
 @pytest.mark.parametrize('answer,word',[(True,'YES'),(False,'NO'),(None,'unavail')])
 async def test_bool_prefix_uses_explicit_answer(answer,word):
-    row=dict(NEWEST,panel_state='outvoted',panel_agreed=35,panel_members=36,panel_figure='263154',
+    row=dict(NEWEST,panel_state='outvoted',panel_agreed=35,panel_quorum=36,panel_figure='263154',
              panel_answer_type='bool',panel_answer_bool=answer,answer_state='read',answer='Done.')
     text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
     assert f'panel {word} · Done.' in text and '263154' not in text
 
 
 async def test_assessing_without_size_and_hostile_strings_are_cleaned():
-    row=dict(NEWEST,panel_state='assessing',panel_members=3,panel_size=None,
+    row=dict(NEWEST,panel_state='assessing',panel_quorum=3,panel_size=None,
              model='[/x]gpt-6-astra',answer_state='read',answer='Done.')
     text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
-    assert '… 3' in text and 'astra 6' in text and '[/x]' not in text
-    row.update(panel_state='outvoted',panel_agreed=1,panel_members=2,panel_figure='[/x]42',panel_answer_type='uint256')
+    assert '…' in text and 'astra 6' in text and '[/x]' not in text
+    row.update(panel_state='outvoted',panel_agreed=1,panel_quorum=2,panel_figure='[/x]42',panel_answer_type='uint256')
     text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
     assert 'panel 42 · Done.' in text and '[/x]' not in text
 
 
 async def test_panel_survives_all_tiers_and_role_is_absent():
     gutter=SwarmTableBase.GUTTER_COLS
-    row=dict(NEWEST,panel_state='agreed',panel_agreed=105,panel_members=112)
+    row=dict(NEWEST,panel_state='agreed',panel_agreed=105,panel_quorum=112)
     for width,expected in [(FULL_WIDTH,('when','job','node','state','model','took','panel','tok','answer')),
                            (COMPACT_WIDTH,('when','job','node','state','model','took','panel','answer')),
                            (TIGHT_WIDTH,('when','job','node','state','panel'))]:
@@ -570,7 +569,7 @@ async def test_panel_survives_all_tiers_and_role_is_absent():
 
 async def test_red_prefix_alone_pushes_answer_past_width_and_lights_widen():
     row=dict(NEWEST,answer_state='read',answer='fits',panel_state='agreed',
-             panel_agreed=35,panel_members=36,panel_figure='457162630000000001',panel_answer_type='uint256')
+             panel_agreed=35,panel_quorum=36,panel_figure='457162630000000001',panel_answer_type='uint256')
     size=(FULL_WIDTH+SwarmTableBase.GUTTER_COLS,12)
     before='\n'.join(await _record(size,swarm_seat_work_rows=[row]))
     assert '‹' not in before
@@ -593,3 +592,74 @@ async def test_token_counts_fit_six_cells_without_decimal_integers_or_unit_overf
     rendered = line[header.index('tok'):header.index('answer')].strip()
     assert rendered == shown
     assert cell_len(rendered) <= 6
+
+
+def oracle_row(**overrides):
+    return dict(dict(NEWEST, answer_state='read', answer='Closing message.', panel_state='agreed',
+                     panel_agreed=34, panel_quorum=35, panel_size=49, panel_answer_type='bool',
+                     oracle_member_ok=True, oracle_seat_answer='true', oracle_question='Is it true?',
+                     oracle_member_reason=None, oracle_notes='The evidence. ' * 100, oracle_chain_id=1), **overrides)
+
+
+@pytest.mark.parametrize('value,notes,cut', [('true','Long notes. '*100,True),('false','Short.',False),('9'*78,'',True)])
+async def test_joined_answer_value_and_popup_action_reach_compositor(value, notes, cut):
+    row = oracle_row(oracle_seat_answer=value, oracle_notes=notes,
+                     panel_answer_type='uint256' if value[0]=='9' else 'bool')
+    class Harness(App):
+        def compose(self): yield SurfSwarmSeatRecord()
+    async with Harness().run_test(size=(140,12)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmSeatRecord)
+        widget.update_data(swarm_seat_work_rows=[row],swarm_seat_state='ok')
+        await pilot.pause()
+        lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        y=next(i for i,line in enumerate(lines) if _job(row) in line)
+        line=lines[y]
+        assert 'Closing message.' not in line and not widget._clipped
+        assert ('»' in line) is cut
+        if cut:
+            x=line.index('»')
+            assert line[x-2:x]=='… '
+            assert pilot.app.screen.get_style_at(x,y).meta['@click']==f"screen.open_oracle_answer('{row['job_id']}','{row['submission_hash']}')"
+            assert '@click' not in pilot.app.screen.get_style_at(x-1,y).meta
+        else:
+            assert 'NO · Short.' in line
+
+
+@pytest.mark.parametrize('bad', ['bad', "');x('", 'a'*64+'\n'])
+async def test_joined_hostile_identity_never_draws_popup_button(bad):
+    row=oracle_row(submission_hash=bad)
+    lines=await _record((140,12),swarm_seat_work_rows=[row])
+    assert '»' not in '\n'.join(lines)
+
+
+@pytest.mark.parametrize('chain', [1,56,4663])
+async def test_joined_visible_addresses_are_whole_linked_for_known_chain_only(chain):
+    from tests.widgets.address_probe import icon_targets, link_targets
+    address='0x'+'1'*40
+    row=oracle_row(oracle_chain_id=chain,oracle_notes=address+' then '+('long '*100))
+    class Harness(App):
+        def compose(self): yield SurfSwarmSeatRecord()
+    async with Harness().run_test(size=(220,12)) as pilot:
+        pilot.app.query_one(SurfSwarmSeatRecord).update_data(swarm_seat_work_rows=[row],swarm_seat_state='ok')
+        await pilot.pause()
+        assert any(target[2]==address for target in icon_targets(pilot.app))
+        links=[target for target in link_targets(pilot.app) if target[4]==address]
+        assert bool(links) is (chain==1)
+        lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        assert address+' ⧉' in '\n'.join(lines)
+    tight='\n'.join(await _record((110,12),swarm_seat_work_rows=[row]))
+    assert '0x' not in tight and '… »' in tight
+
+
+async def test_joined_failed_member_is_red_and_keeps_popup_action():
+    row=oracle_row(oracle_member_ok=False,oracle_member_reason='Invalid input. '*40,work_status='failed')
+    class Harness(App):
+        def compose(self): yield SurfSwarmSeatRecord()
+    async with Harness().run_test(size=(140,12)) as pilot:
+        pilot.app.query_one(SurfSwarmSeatRecord).update_data(swarm_seat_work_rows=[row],swarm_seat_state='ok')
+        await pilot.pause()
+        lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        y=next(i for i,l in enumerate(lines) if 'failed · Invalid' in l)
+        x=lines[y].index('failed · Invalid')
+        assert pilot.app.screen.get_style_at(x,y).color.get_truecolor(pilot.app.ansi_theme)==Color.parse('red').get_truecolor(pilot.app.ansi_theme)
+        assert 'open_oracle_answer' in pilot.app.screen.get_style_at(lines[y].index('»'),y).meta['@click']

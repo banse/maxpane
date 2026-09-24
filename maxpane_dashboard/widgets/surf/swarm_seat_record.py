@@ -28,6 +28,7 @@ from maxpane_dashboard.widgets.address import job_text
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm, short_model, fmt_compact
+from maxpane_dashboard.widgets.surf._oracle_answer import joined, record_answer, panel_text
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
@@ -216,7 +217,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         node_key = item.get("node_key")
         title = NODE_TITLES.get(node_key) if isinstance(node_key, str) else None
         answer = self._answer_cell(item)
-        if state == "failed" and item.get("answer_state") == "read":
+        if state == "failed" and item.get("answer_state") == "read" and not joined(item):
             # Only a read answer takes the failed colour: the unread words keep
             # their own dim / yellow, which say why there is no answer (F65).
             answer = Text(answer.plain, style="red")
@@ -258,27 +259,11 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         return sanitize_cell(value, width) or EMDASH
 
     def _panel_cell(self, item: dict) -> Text:
-        state = item.get("panel_state")
-        words = {
-            "no_quorum_in": ("✓ no-q", "dim green"),
-            "no_quorum_out": ("✗ no-q", "dim red"),
-            "blocked": ("blocked", "dim"), "off_panel": ("–", "dim"),
-            "not_oracle": ("–", "dim"), "not_read": ("not read", "dim"),
-        }
-        text, style = words.get(state, ("unavail", "yellow"))
-        members, agreed, size = (item.get(key) for key in ("panel_members", "panel_agreed", "panel_size"))
-        valid_members = type(members) is int and members >= 0
-        if state in ("agreed", "outvoted") and valid_members and type(agreed) is int and agreed >= 0:
-            text = f"{'✓' if state == 'agreed' else '✗'} {agreed}/{members}"
-            style = "green" if state == "agreed" else "red"
-        elif state == "assessing" and valid_members:
-            if size is None:
-                text = f"… {members}"
-            elif type(size) is int and size >= 0:
-                text = f"… {members}/{size}"
-        return Text.from_markup(sanitize_cell(text, _PANEL_COLS), style=style)
+        return panel_text(item)
 
     def _answer_cell(self, item: dict) -> Text:
+        if joined(item):
+            return record_answer(item, self._answer_cols)
         state = item.get("answer_state")
         style = ""
         if state != "read":
