@@ -177,6 +177,7 @@ SLOT_SWARM_WORKERS = "swarm_workers"  # normalized /workers envelope, its own ve
 SLOT_SWARM_CONTRIBUTORS = "swarm_contributors"  # normalized /contributors envelope
 SLOT_SWARM_ORACLE_INDEX = "swarm_oracle_index"  # complete request history, never age-pruned
 SLOT_SWARM_ORACLE = "swarm_oracle"  # job UUID -> hash -> extracted panel facts
+SLOT_SWARM_JOB_DETAIL = "swarm_job_detail"  # job UUID -> bounded popup job facts
 SLOT_SWARM_ANSWERS = "swarm_answers"  # job UUID -> submission hash -> extracted answer entry
 
 SLOTS: tuple[str, ...] = (
@@ -219,6 +220,7 @@ SLOTS: tuple[str, ...] = (
     SLOT_SWARM_WORKERS,
     SLOT_SWARM_CONTRIBUTORS,
     SLOT_SWARM_ANSWERS,
+    SLOT_SWARM_JOB_DETAIL,
     SLOT_SWARM_ORACLE,
     SLOT_SWARM_ORACLE_INDEX,
 )
@@ -1388,6 +1390,7 @@ __all__ = [
     "SLOT_SWARM_WORKERS",
     "SLOT_SWARM_CONTRIBUTORS",
     "SLOT_SWARM_ANSWERS",
+    "SLOT_SWARM_JOB_DETAIL",
     "SLOT_SWARM_ORACLE",
     "SLOT_SWARM_ORACLE_INDEX",
     "SurfCache",

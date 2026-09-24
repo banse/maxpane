@@ -1600,12 +1600,15 @@ SWARM_ANSWER_FIELDS: tuple[str, ...] = ("answer", "model", "took_s", "output_tok
 
 #: JSON slot: canonical UUID job id -> exact 64-hex submission hash -> entry.
 #: Only extracted fields and finite nonnegative read_ts / strict bool terminal
-#: persist, never summaries or raw envelopes. Queued not_read has no cache point.
+#: persist, including bounded cleaned replies (4096 chars) and other seats' first
+#: lines (200 chars), never raw envelopes. Queued not_read has no cache point.
 #: Validate each point's state/value consistency and stored-answer safety; drop
 #: an invalid point alone. Definitive terminal answers and not_served negatives
 #: stay frozen; unavailable transport/parse failures retry after normal backoff.
 SWARM_ANSWER_CACHE_FIELDS: tuple[str, ...] = (
     "answer", "model", "took_s", "output_tokens", "state", "read_ts", "terminal",
+    "reply", "failure_reason", "turns", "cached_input_tokens", "failed_checks",
+    "findings", "artifacts", "others", "others_total",
 )
 
 #: Fetch only the newest displayed RECORD window. Bound by an agreement test to
@@ -2005,5 +2008,18 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "oracle_member_reason", # str | None; <= 200 chars
         "oracle_seat_answer",  # str | None; typed normalization, invalid -> None
         "oracle_notes",        # str | None; paragraphs retained, <= 4000 chars
+        "sub_reply",           # str | None; cleaned reply, indentation kept, <= 4096 chars
+        "sub_failure_reason",  # str | None; validated failure code
+        "sub_turns",           # strict nonnegative int | None
+        "sub_cached_input_tokens", # strict nonnegative int | None
+        "sub_failed_checks",   # str | None; cleaned names, <= 300 chars
+        "sub_findings",        # strict nonnegative int | None; count
+        "sub_artifacts",       # list[dict] | None; <= 10 names and sizes
+        "sub_others",          # list[dict] | None; <= 8 other submissions
+        "sub_others_total",    # strict nonnegative int | None; count before cap
+        "job_read",            # read / not_read / unavailable
+        "job_detail_state",    # str | None; detail state, distinct from seat job_state
+        "job_blocked_reason",  # str | None; cleaned, <= 200 chars
+        "job_nodes",           # list[dict] | None; <= 16 bounded node facts
     ),
 }

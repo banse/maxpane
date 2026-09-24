@@ -106,6 +106,9 @@ SWARM_V2_ROW_SHAPES = {
         "output_tokens", "panel_state", "panel_agreed", "panel_quorum", "panel_size",
         "panel_figure", "panel_answer_type", "panel_answer_bool",
         "oracle_question", "oracle_chain_id", "oracle_member_ok", "oracle_member_reason", "oracle_seat_answer", "oracle_notes",
+        "sub_reply", "sub_failure_reason", "sub_turns", "sub_cached_input_tokens",
+        "sub_failed_checks", "sub_findings", "sub_artifacts", "sub_others", "sub_others_total",
+        "job_read", "job_detail_state", "job_blocked_reason", "job_nodes",
     ),
 }
 
@@ -339,6 +342,8 @@ def test_polish_answer_and_advertised_model_contracts_are_frozen():
     assert models.SWARM_ANSWER_FIELDS == ("answer", "model", "took_s", "output_tokens", "state")
     assert models.SWARM_ANSWER_CACHE_FIELDS == (
         "answer", "model", "took_s", "output_tokens", "state", "read_ts", "terminal",
+        "reply", "failure_reason", "turns", "cached_input_tokens", "failed_checks",
+        "findings", "artifacts", "others", "others_total",
     )
     assert models.SWARM_FLEET_MODEL_FIELDS == ("model", "effort", "count")
 
