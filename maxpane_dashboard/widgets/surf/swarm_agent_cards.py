@@ -80,11 +80,11 @@ def gate(state, first: bool) -> str | Text | None:
 
 
 class SurfSwarmAgentCard(HeroBoxBase):
-    """One card in AGENT rows two and three. No geometry here: the stylesheet names this class."""
+    """One card in the AGENT seat row. No geometry here: the stylesheet names this class."""
 
 
 class SurfSwarmAgentCards(HeroRow):
-    """Shared behaviour of the two card rows: keep the payload, repaint on resize.
+    """Seat-card row mechanics: keep the payload, repaint on resize.
 
     Third-party text is fitted to each card's own content width, so a resize
     has to repaint -- after the refresh, when the cards have their new size.

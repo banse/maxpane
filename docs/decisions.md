@@ -4,6 +4,11 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-24** — AGENT's third card row is removed: ROLES, per-node chain counts/short roles,
+  OTHERS and contributor BOARD counts leave the screen; RANK and all payload facts remain.
+  COLLAB adds two teammates, NODES replaces TEAMMATES, height falls 33 → 25 at unchanged width 139.
+  RECORD moves tok before panel and gains click-only all/not-completed filtering plus a 40..400
+  view growing by 20; shared filter-before-window selection drives display and enrichment.
 - **2026-09-24** — 5A dropped by the owner: the AGENT ORACLE card gets no panel-agreement or
   open/closed request totals line. RECORD's per-row PANEL column (5B) is the only oracle-outcome
   display. Record popups (ANSWER, SUBMISSION) close on Space or Escape, not Enter, and are not

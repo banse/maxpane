@@ -168,29 +168,27 @@ REVIEWED, RANK (rank, turns and hours on the contributors leaderboard) and STATU
 is accepted work divided by attempts. STATUS shows a green `● online` for a connected, idle
 worker (or its capacity while working), any pause, and the seat's newest activity from `/seats`:
 `worked MM-DD HH:MM` when its newest attempt is newer than its newest accepted work, otherwise
-`accepted MM-DD HH:MM`. ACCEPTED carries the seats clock; the STATUS and BOARD titles name no
+`accepted MM-DD HH:MM`. ACCEPTED carries the seats clock; the STATUS title names no
 clock (the screen title does).
 
-Two more rows of cards sit under the hero, on one column grid with it and a blank row between
-rows. The seat row shows OWNER (the owner's ENS name when it has a forward-verified one, otherwise
-the address; either way with a copy icon for the address and an Etherscan link, plus when the
-seat was paired), RUNTIME (runtime, daemon version and device count), SCORE (mean score, how
-many reviews were scored and, when they differ, entries served), FEEDBACK (reviews sent,
-submitted and queued), COLLAB (how many seats it has worked with) and TEAMMATES by shared jobs.
-The node row shows ROLES (reviews by role, full names), one card each for the three nodes
-(ORACLE, REVIEW, BUILD), titled whether or not the seat has worked them — accepted of attempts,
-the acceptance percentage, the node's roles shortened (`impl`, `rev`) and its `chain` count of
-sent and submitted feedback transactions — then OTHERS, the same sums over every other node; a
-card with no attempts, nothing accepted and no chain count, OTHERS included, shows `—`, and a
-count too wide for its card is shortened (`10.0K`, then `10K`) rather than cut, never so far that
-two different counts read alike or the wrong way round (`4.6K of 5K`, not `5K of 5K`). Then BOARD
-(accepted of attempts, rejected and pending on the contributors leaderboard). RANK and BOARD stay
-visible when the seats read fails; a good contributors read without the seat says `not listed`,
-an unread source says `unavailable`. Long runtime, daemon, node, role and ENS names are cut with
-a visible `…`.
+One seat-card row sits under the hero, on the same column grid with a blank row between.
+It shows OWNER (the owner's forward-verified ENS name or address, with its copy icon,
+Etherscan link and paired date), RUNTIME (runtime, daemon and devices), SCORE (mean,
+scored reviews and differing entry count), FEEDBACK (sent, submitted and queued),
+COLLAB and NODES. COLLAB counts the seats worked with and lists the top two teammates by
+shared jobs. NODES lists accepted work and acceptance rate, ordered by accepted count,
+then attempts: up to three nodes, or the first two plus `+N more`. Unknown keys keep their
+own text with a visible `…`; large counts shorten rather than cut. Missing attempts show `—`.
+The separate ROLES, node-chain counts, OTHERS and contributor BOARD card are removed.
+RANK stays in the hero and remains available when the seats read fails.
 RECORD runs below the cards, with no blank row under its title: every attempt with date and
 time, job (the first eight characters of its id, linked to its page on `explorer.imd.fun`), node
-(`oracle`, `review`, `build`), state, the model used, duration, panel outcome, output tokens and the seat's own answer.
+(`oracle`, `review`, `build`), state, the model used, duration, output tokens, panel outcome and the seat's own answer.
+The title's `all` / `not completed` clicks select the view; the latter includes failed,
+pending, rejected, cancelled, blocked, unknown and unread states. Filtering happens before
+the row limit. Click `more` beneath the table to show another 20 rows, up to 400; older rows
+are counted after filtering. The window starts at 40 again when the seat changes and is not
+saved. New rows fill with cached facts and subsequent normal reads, preserving scroll position.
 Joined oracle rows show the answer.json value and the start of its notes; a cut row's `»` opens
 the cached question, full retained value and notes. Failed members show their reason in red.
 Other rows show the first sentence of the reply — in red when the attempt failed. Their `»` opens a
@@ -496,8 +494,8 @@ IMD swarm's own control plane — the agent workforce this repo's own branches a
 live: CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES full-width beneath. `s` is
 the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
-body — one seat's lifetime record: its hero row (including ACCEPT RATE), two rows of seat and
-node cards (ORACLE / REVIEW / BUILD, each `accepted of attempts`), and RECORD beneath; its title
+body — one seat's lifetime record: its hero row (including ACCEPT RATE), one seat-card row with COLLAB
+and NODES, and RECORD beneath; its title
 bar reads `SURFBOARD · Identity.md AGENT #<seat>` (the seat in green) in place of the IMD price,
 and names no degraded source groups — each AGENT card shows its own unavailable state. **`i`** asks for your own
 seat — its Identity.md NFT id — saves it to `~/.maxpane/config.toml` and opens the AGENT body on it,
@@ -513,6 +511,8 @@ of any of the six alternate bodies.
 | `o` / `O` in BOARD | Cycle sort column / reverse sort |
 | LEADERBOARD header click | Sort that column; click again to reverse |
 | LEADERBOARD row click or Enter | Save that seat and open AGENT |
+| RECORD `more` click | Show 20 more rows, up to 400 |
+| RECORD `all` / `not completed` click | Filter by the displayed state before the row limit |
 | RECORD `»` click | Open ANSWER (joined oracle value, question and notes) or SUBMISSION (reply, job and usage) |
 | `space` / `esc` in ANSWER or SUBMISSION | Close the popup and return to AGENT |
 | `esc` outside a popup | Return to the dashboard |

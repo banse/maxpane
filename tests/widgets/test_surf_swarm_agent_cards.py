@@ -1,4 +1,4 @@
-"""AGENT card rows two and three: SEAT cards (OWNER … TEAMMATES) and NODE cards (ROLES … BOARD).
+"""AGENT merged seat cards: OWNER … COLLAB and NODES.
 
 Composited assertions only, under the real stylesheet. The payloads are
 **folded** from the committed ``/seats`` capture
@@ -158,7 +158,7 @@ async def test_score_with_nothing_scored_is_a_real_zero_not_a_failure():
 
 
 @pytest.mark.parametrize("state, needle", [("pending", "loading"), ("error", "unavailable")])
-async def test_a_seat_state_replaces_every_seats_card_but_not_the_board(state, needle):
+async def test_a_seat_state_replaces_every_seats_card(state, needle):
     boxes = await _seat(swarm_seat_state=state)
     for key in ("owner", "runtime", "feedback", "score", "collab", "nodes"):
         assert needle in boxes[key].lower(), key
@@ -244,3 +244,15 @@ async def test_submission_capture_420_merged_cards():
                         swarm_seat_node_rows=fold.seat_node_rows(seat))
     assert _lines(boxes['collab']) == ['COLLAB', '232 seats', '#1626 ×158', '#1731 ×150']
     assert _lines(boxes['nodes']) == ['NODES', 'ORACLE 219 85.5 %', 'REVIEW 1 100.0 %', '+2 more']
+
+
+async def test_plan_screenshot_values_remain_a_synthetic_layout_case():
+    boxes = await _seat(swarm_seat_summary={**SUMMARY, 'collaborators':261},
+                        swarm_seat_teammates=[{'token_id':1626,'shared_jobs':161},
+                                              {'token_id':1731,'shared_jobs':151}],
+                        swarm_seat_node_rows=[_row('oracle_assess',accepted=224,attempts=263),
+                                              _row('adversarial_review',attempts=1),
+                                              _row('build_contract_project',attempts=1),
+                                              _row('hunt_d',accepted=0,attempts=1)])
+    assert _lines(boxes['collab']) == ['COLLAB','261 seats','#1626 ×161','#1731 ×151']
+    assert _lines(boxes['nodes']) == ['NODES','ORACLE 224 85.2 %','REVIEW 1 100.0 %','+2 more']

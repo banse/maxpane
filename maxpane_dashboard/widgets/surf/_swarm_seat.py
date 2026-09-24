@@ -19,10 +19,8 @@ anything else       ``UNAVAILABLE`` too: a malformed state is not a fact
 ==================  =====================================================
 
 Private to the surf package, not a shared ``widgets/*.py`` (plan §9 O): it
-exists so the never-paired literal is not typed in four panels, and (since
-2026-09-22) so the ``/contributors`` RANK and BOARD bodies, which sit in two
-different rows, have one definition. Pure: no
-Textual import, no clock, nothing raises.
+holds seat-state words, NODE_TITLES, the contributor RANK body and honest
+count forms reused by the merged NODES card. No clock or I/O.
 """
 
 from __future__ import annotations
@@ -100,11 +98,7 @@ def seat_state_line(state: object, token: object = None) -> Text | None:
     return Text.from_markup(UNAVAILABLE)
 
 
-# -- ``/contributors`` cards (RANK in the hero, BOARD in the node row) ------------
-#
-# Both read only ``swarm_seat_contrib`` and never borrow seats data, so they
-# survive a pending or unavailable seat. Shared here since 2026-09-22, when
-# the owner moved RANK into the hero row and BOARD into the node row.
+# -- Contributor RANK: independent of seat availability -------------------
 
 
 def count(value) -> str | None:
@@ -181,7 +175,7 @@ def _forms(values: tuple) -> list:
 
 def _num(room: int, line, *values):
     """The first of ``fmt_int``, ``fmt_compact`` (``10.0K``) and
-    :func:`_whole` (``10K``) whose *line* fits card *key* -- a shorter
+    :func:`_whole` (``10K``) whose *line* fits *room* cells -- a shorter
     honest number, never a cut one; the last one stands if none fits.
     A form that reads two different *values* as one number, or the wrong
     way round, is not honest and is skipped (:func:`_forms`)."""

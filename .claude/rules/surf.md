@@ -36,7 +36,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | CAPABILITY beside THROUGHPUT; IN FLIGHT beside LAUNCHES; SITES full-width beneath | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / QUEUE / BREAKER / SERVICES |
-| `a` | MODE_AGENT | seat-card row, node-card row; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / ACCEPT RATE / REVIEWED / RANK / STATUS |
+| `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED / ACCEPT RATE / REVIEWED / RANK / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
 `SurfHero`'s fourth box is BOARDS (owner, 2026-09-22; it replaced IMD SUPPLY): `hero.BOARD_KEYS`
@@ -197,38 +197,30 @@ that part green, the counts after it dim); STATUS writes `⚙` (`WORKING_GLYPH`)
 "working" in its counts (owner, 2026-09-22). RANK (hero column 5 since 2026-09-22) reads only
 `swarm_seat_contrib` through `_swarm_seat.contrib_body` / `rank_body`. ACCEPTED carries the seats clock. A bad seats state hides its accepted date
 without hiding valid worker facts.
-The SEAT panel and the BY NODE table were replaced on 2026-09-22 (owner) by two hero-card rows
-in `widgets/surf/swarm_agent_cards.py`, inside the AGENT body above RECORD. `SurfSwarmSeatCards`:
-OWNER (address via `address_text` + package `EXPLORER`, paired stamp; `swarm_seat_owner_ens`,
-when the manager holds a forward-verified name for the owner, is the `label=` -- fitted to the
-same 17 cells, the icon still copies the address), RUNTIME (runtime, daemon, devices), SCORE
-(mean, scored, entries when they differ from reviewed), FEEDBACK (sent/submitted/queued), COLLAB
-and TEAMMATES -- TEAMMATES sits under STATUS on the shared column grid (every row gives column i
-the same `fr` weight; blank row between rows). `SurfSwarmNodeCards`: ROLES, three node cards
-(`NODE_CARDS`), OTHERS, BOARD. BOARD and RANK read only `swarm_seat_contrib` (BOARD's title
-names no clock, owner 2026-09-22), survive pending/unavailable seats, and distinguish `not
-listed` from `unavailable`; their bodies live in `_swarm_seat.py`. Node cards read
-`accepted of attempts` per node (since 2026-09-22 `work[]` lists every attempt with a `status`;
-the node sums equal the hero's ACCEPTED). Each known key has its own card, in `NODE_TITLES`
-order (ORACLE / REVIEW / BUILD, hoisted to `_swarm_seat.py`), titled whether or not the seat
-worked it; an unknown key never titles a card and is summed into OTHERS. A card with no
-attempts, nothing accepted and no chain count -- absent node or zeros -- reads a dim `—`, OTHERS
-too (owner, 2026-09-22); a count that does not fit its card steps down `9,970` → `10.0K` → `10K`,
-never cut; a form that reads two different counts as one number, or the wrong way round, is skipped (`4.6K of 5K`, the
-smaller keeping its decimal, not `5K of 5K`), and `10K` carries into `1M` (F66); a pre-status payload serves no per-node attempts, so
-`attempts` is `None` and the card shows the accepted count with no rate. ACCEPTED (`/seats`) and
-BOARD (`/contributors`) differ by the endpoints' own definitions — never reconcile them. `chain` counts
-reviews with a transaction in `sent` or `submitted`; a node card shortens its roles
-(`ROLE_SHORT`: implement → impl, review → rev), ROLES keeps them whole. OTHERS sums every
-node no card names (a dash when there is nothing to sum or the list is unread). TEAMMATES sorts by shared jobs descending, token ascending,
-shows two plus `+N more` when there are more than three; tokens are integers with no address
-icon; `none yet` for an empty list, `unavailable` for an unread one. Values row 1 already shows
-are not repeated. The hero's SEAT box drops the word for a saved seat and keeps `most active`
-for the chosen one. Third-party text (runtime, daemon, roles; RECORD's unknown node keys) is flattened and fitted
-to the card's content width with a visible `…` and repainted on resize; numbers and fixed words
-are never fitted, so a card too narrow for them is a CSS-clipped line the layout sweep sees.
-Pending and unavailable show on every seats-backed card; never paired shows once per row (OWNER,
-ROLES), dashes elsewhere. Worker metadata is shown in BOARD; STATUS supplies AGENT's only liveness.
+AGENT has one seat-card row in `widgets/surf/swarm_agent_cards.py` below its hero and above
+RECORD. `SurfSwarmSeatCards` shows OWNER (address/verified ENS via `address_text` and package
+`EXPLORER`, paired stamp), RUNTIME (runtime, daemon, devices), SCORE (mean, scored, differing
+entries), FEEDBACK (sent/submitted/queued), COLLAB and NODES. Both rows use the same column
+weights with a blank row between. NODES sits under STATUS.
+
+COLLAB keeps its collaborator count and adds the top two teammate tokens, ordered by shared
+jobs descending then token ascending; bold `#token`, dim `×N`, never `+N more`. An empty
+list says `none yet`, an unread list `unavailable`, below the count.
+NODES reads `swarm_seat_node_rows`: include attempts > 0 or accepted > 0, sorted by accepted
+descending, attempts descending, `NODE_TITLES` order, then key. Each line is dim node name,
+bold accepted count (green above zero) and bold `fmt_win_rate(accepted / attempts)`; missing
+or zero attempts show `—`. Known names are ORACLE/REVIEW/BUILD, unknown keys retain their
+flattened, fitted text with a visible `…`. Up to three nodes show in full; more show two and
+`+N more`. Empty is `no nodes yet`, unread is `unavailable`. Counts shorten through the
+honest forms in `_swarm_seat.py`: `fmt_int`, `fmt_compact`, whole K/M, never a clipped number.
+Pending/unavailable gate all seats-backed cards; never paired is said once in OWNER, with
+dashes elsewhere. Runtime, daemon and ENS names retain explicit ellipsis fitting.
+
+The third card row and `SurfSwarmNodeCards` module are removed (owner, 2026-09-24): ROLES,
+per-node chain counts and short role names, OTHERS and the contributor BOARD counts leave
+AGENT. Their payload facts remain. `rank_body` and `contrib_body` still supply the hero's
+RANK independently of seat availability; unused `board_body` is deleted. Worker metadata
+remains in the separate BOARD body; STATUS supplies AGENT's liveness.
 
 The AGENT body's title bar reads `SURFBOARD · Identity.md AGENT #<token>` (from
 `swarm_seat_selected`, em dash when none; green, owner 2026-09-22) in place of IMD price and
@@ -241,7 +233,21 @@ The owner's ENS name is read in `SurfManager._resolve_seat_owner` after a good s
 through `rpc_common.multicall_chunks`), held in an `ens.NameStore` with its name and miss TTLs,
 so a nameless owner is not re-resolved every tick. A raise or an empty answer is a miss; OWNER
 shows the address.
-RECORD columns are `when · job · node · state · model · took · panel · tok · answer`.
+RECORD columns are `when · job · node · state · model · took · tok · panel · answer`.
+The title is `RECORD · all · not completed · as of HH:MM`: fixed click actions
+`screen.record_filter('all')` / `screen.record_filter('open')`, revalidated by the screen.
+The active mode is bold accent, the inactive mode dim. `record_state` in pure analytics
+owns the displayed state, shared by widget and manager. `not completed` keeps every state
+except completed, including None. `record_window` filters first, then clamps the view to
+40..400 and takes its rows. Older counts are after filtering; empty filtered views say
+`no incomplete records`, unread remains unavailable.
+`screen.record_more()` adds 20 to screen-owned `record_cap` (initially 40, maximum 400),
+keeping cursor and scroll position. Its footer target is bold dim `more`; at the cap only
+the remaining older count stays. Both actions call the I/O-free `SurfManager.set_record_view`,
+which stores cap/open_only and marks `TIER_SWARM_SEAT` due, repaint cached rows, then schedule
+the usual guarded refresh. No handler awaits network. A seat change resets 40/all in manager
+and screen; the view is not persisted, and filter toggles keep the cap.
+
 It shows every lifetime `work[]` attempt; its `state` is the attempt's `status` unless
 `accepted` (then, or with no status served, the job's state). It shows `MM-DD HH:MM` of `submittedAt` (else `acceptedAt`); the job
 cell is the id's first eight characters, linked to `explorer.imd.fun/jobs/<uuid>` for a canonical
@@ -276,7 +282,7 @@ the icon sweep; its ens column links a `<label>.site.identitymd.eth` name to
 `site`; owner 2026-09-23), and it leaves out superseded rows and rows with no ENS name -- a feed that leaves nothing reads
 `No current site`, an empty feed `No data` (F68). `swarm_site_rows` keeps `superseded_by` for that
 filter only; `failure` left the contract (F69), and the label column is one label wide (F67). RECORD's job id is not an address: it links the IMD explorer (not a chain)
-through `address.job_text`, with no icon; TEAMMATES tokens pass through no address helper. The `parked_reason` cell in LAUNCHES clips to its column with a
+through `address.job_text`, with no icon; COLLAB teammate tokens pass through no address helper. The `parked_reason` cell in LAUNCHES clips to its column with a
 visible `…` (accepted, `docs/decisions.md`).
 
 **The explorer's own inference headline is deliberately absent**: no public route serves that
@@ -295,11 +301,11 @@ actually clips and has no popup button. The button-less capture's clearing width
 beside its constant. Heroes are part of the tested whole-body states; their clipped boxes fail those sweeps. F55 separately
 records the mixed SERVICES combinations which still clip and are not a whole-state guarantee.
 The original swarm grid decisions remain recorded in `docs/decisions.md`; the old A1 agent-grid
-arithmetic is historical (F32). AGENT now uses the seat-details handover's two-row structure.
+arithmetic is historical (F32). AGENT now has its hero and one seat-card row above elastic RECORD.
 
 
 **Polish answer reads** (`docs/surf_swarm_polish_handover.md`): RECORD renders
-`when · job · node · state · model · took · panel · tok · answer`; objective remains
+`when · job · node · state · model · took · tok · panel · answer`; objective remains
 in the data row for other readers. The answer is the first cleaned sentence from the exact
 `work[].submissionHash` in `/jobs/{uuid}/submissions`, never another seat's or a hash prefix.
 Markdown link destinations disappear and remaining absolute local paths reduce to basenames,
@@ -318,8 +324,8 @@ Exact cleaned Claude/GPT model ids shorten by rule in RECORD and FLEET; FLEET ke
 word only for a nonempty cleaned model. A tag-only model shows `—` without effort. Unknown
 model ids remain cleaned text, clipped by their caller.
 
-The detached seat tier reads at most four unique submission jobs per cycle over RECORD's first
-40 rows; several hashes from one job share one GET. Validate canonical UUIDs before paths;
+The detached seat tier reads at most four unique submission jobs per cycle over RECORD's selected
+`record_window`; several hashes from one job share one GET. Validate canonical UUIDs before paths;
 a submissions 404 stays local to that job. `SLOT_SWARM_ANSWERS` stores extracted fields plus
 `read_ts`/`terminal`, capped at 400 points and 48 hours, with strict load and consumption
 coercion. Validation drops bad points independently, keeping valid siblings. Stored answers
@@ -340,7 +346,7 @@ safety check. Old shapes are dropped per point and re-read within the existing f
 
 `SLOT_SWARM_JOB_DETAIL` stores bounded job state, blocked reason and up to 16 nodes with
 key/role/state/attempt/failure reason, plus `read_ts`/`terminal`. The existing `fetch_job` reads
-at most two jobs per seat cycle, from rows eligible for SUBMISSION in the 40-row window:
+at most two jobs per seat cycle, from rows eligible for SUBMISSION in the selected `record_window`:
 not joined, answer state read/no_reply, valid UUID/hash. Off-panel oracle rows qualify.
 Nonterminal results retry after 120 seconds; completed/failed/cancelled are terminal, **blocked
 is not**. Cap at 400 jobs/48 hours with the injected clock. Failed reads are unavailable; absent
@@ -349,7 +355,7 @@ points are not read. Row `job_detail_state` is separate from the original seat `
 through shared `hhmm` whenever a cached point exists. `not_read` has no marker.
 
 **Oracle panel reads** (`docs/surf_oracle_panels_plan.md`): after submission enrichment,
-only oracle nodes in the first 40 RECORD rows are eligible. Join list `jobId` to requests,
+only oracle nodes in the selected `record_window` are eligible. Join list `jobId` to requests,
 then confirm `members[].submissionHash`; never join by wallet or infer agreement from price equality.
 Different requests for one job or conflicting duplicate member hashes are unavailable.
 `SLOT_SWARM_ORACLE_INDEX` keeps validated job/request identities and complete-history boundaries,
