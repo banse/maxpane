@@ -110,9 +110,6 @@ EXEMPT: dict[str, str] = {
         " address, so it carries no icon by design (swarm v2, WP7); its ens"
         " column links a site name to eth.limo through site_text (2026-09-23),"
         " a name, never an address",
-    "maxpane_dashboard.widgets.surf.swarm_seat_record.SurfSwarmSeatRecord":
-        "links each job id to explorer.imd.fun/jobs through job_text (a UUID"
-        " head slice); a job id, never an address, so no icon (2026-09-22)",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
     "maxpane_dashboard.widgets.curator.wallet.CuratorWalletHero":
@@ -1046,6 +1043,14 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                 if (name, link_kind, link_value, url) in seen_links:
                     continue  # one report per span, not per cell
                 seen_links.add((name, link_kind, link_value, url))
+                if link_kind == "job":
+                    from maxpane_dashboard.widgets.address import is_job_id
+                    from maxpane_dashboard.widgets.explorer import IMD
+                    if not is_job_id(link_value) or link_value not in _strings_in(served):
+                        problems.append((label, x, y, link_value, "job link not held in payload"))
+                    if name != IMD.name or url != url_for(IMD, "job", link_value):
+                        problems.append((label, x, y, url, "wrong job explorer URL"))
+                    continue
                 held = hashes if link_kind == "tx" else in_payload
                 if link_value.lower() not in held:
                     problems.append((label, x, y, link_kind, link_value, "link to a value the payload does not hold"))

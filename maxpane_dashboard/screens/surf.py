@@ -229,6 +229,10 @@ from textual.widgets import DataTable, Static
 from maxpane_dashboard import config
 from maxpane_dashboard.screens.seat_input import parse_seat
 from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
+from copy import deepcopy
+from maxpane_dashboard.screens.oracle_answer import OracleAnswerScreen
+from maxpane_dashboard.widgets.surf._oracle_answer import valid_identity, joined
+from maxpane_dashboard.status_message import post_status_message
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
@@ -3742,6 +3746,17 @@ class SurfScreen(DashboardScreen):
     # Refresh flow
     # ------------------------------------------------------------------
 
+    async def action_open_oracle_answer(self, job_id: str, submission_hash: str) -> None:
+        if not valid_identity(job_id, submission_hash):
+            return
+        row = next((row for row in getattr(self, '_oracle_answer_rows', ())
+                    if row.get('job_id') == job_id and row.get('submission_hash') == submission_hash
+                    and joined(row)), None)
+        if row is None:
+            post_status_message(self.app, 'answer no longer listed')
+            return
+        await self.app.push_screen(OracleAnswerScreen(row))
+
     async def _do_refresh(self) -> None:
         try:
             data = await self._data_manager.fetch_and_compute()
@@ -4366,6 +4381,9 @@ class SurfScreen(DashboardScreen):
             try:
                 keys = SWARM_WIDGET_SIGNATURES[cls.__name__]
                 self.query_one(cls).update_data(**{k: data.get(k) for k in keys})
+                if cls is SurfSwarmSeatRecord:
+                    rows = data.get('swarm_seat_work_rows')
+                    self._oracle_answer_rows = deepcopy(rows) if isinstance(rows, list) and data.get('swarm_seat_state') == 'ok' else []
             except Exception as exc:
                 logger.debug("Failed to update %s: %s", cls.__name__, exc)
 

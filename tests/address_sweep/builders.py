@@ -148,6 +148,7 @@ def _surf_payload() -> dict:
     artifacts = [{**launches[0]["artifacts"][0], "address": _SWARM_CONTRACT}]
     launches[0] = {**launches[0], "artifacts": artifacts, "artifact_count": 1}
     payload["swarm_seat_summary"] = {**payload["swarm_seat_summary"], "owner": _SEAT_OWNER}
+    payload["swarm_seat_work_rows"][2]["oracle_notes"] = _SURF_PROSE
     return payload
 
 
