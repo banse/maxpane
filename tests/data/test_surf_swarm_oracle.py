@@ -146,9 +146,9 @@ def test_due_rows_respect_window_identities_terminal_and_retry_age():
     slot={row['job_id']:{rows[0]['submission_hash']:value,
                        rows[1]['submission_hash']:dict(value,terminal=False,status='assessing')}}
     due=sw.oracle_rows_due(rows,slot,now_ts=1119,due_s=120)
-    assert due==rows[2:40]
+    assert due==rows[2:]
     due=sw.oracle_rows_due(rows,slot,now_ts=1120,due_s=120)
-    assert due==rows[2:40]+rows[1:2]
+    assert due==rows[2:]+rows[1:2]
     assert sw.oracle_rows_due([dict(row,node_key='build'),dict(row,submission_hash='bad')],{},now_ts=1000,due_s=120)==[]
 
 

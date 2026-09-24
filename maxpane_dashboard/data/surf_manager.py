@@ -118,6 +118,7 @@ import re
 import time
 from typing import Any
 
+from maxpane_dashboard.analytics.surf_swarm_signals import record_window
 from maxpane_dashboard.analytics import surf_pool4_depth as pool4_depth
 from maxpane_dashboard.analytics.surf_feed import select_feed_window
 from maxpane_dashboard.analytics.surf_signals import (
@@ -1104,6 +1105,8 @@ class SurfManager:
         #: (``tests/data/test_manager_seams.py``); ``MAXPANE_IMD_SEAT`` was
         #: retired 2026-09-21 for the seat prompt. An IDMD token id, not a
         #: secret. Stored as given: ``sw.parse_seat_token`` parses it.
+        self.record_cap = sw.SWARM_ANSWER_ROW_CAP
+        self.record_open_only = False
         self._seat_saved: str | int | None = seat
         #: The in-flight detached ``/seats/{token}`` read and the token it is
         #: for (the /seats plan WP2). One seat at a time: a read for a seat
@@ -5530,8 +5533,16 @@ class SurfManager:
         An attribute write, no I/O and no await. Persisting the choice is
         the caller's job. Mark the seat tier due so the next cycle reads it.
         """
+        self.record_cap = sw.SWARM_ANSWER_ROW_CAP
+        self.record_open_only = False
         self._seat_saved = token
         self._seat_failed_token = None
+        self.cache.mark_due(TIER_SWARM_SEAT)
+
+    def set_record_view(self, cap: int, open_only: bool) -> None:
+        """Update eligibility without I/O; the next seat cycle fills this window."""
+        self.record_cap = max(sw.SWARM_ANSWER_ROW_CAP, min(SWARM_ANSWER_CACHE_CAP, cap))
+        self.record_open_only = open_only
         self.cache.mark_due(TIER_SWARM_SEAT)
 
     def _spawn_swarm_scores(self, tiers: set[str], now: float) -> Any:
@@ -5801,8 +5812,8 @@ class SurfManager:
         prior = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
         answers = sw.prune_answers(getattr(prior, "payload", None), now_ts=now,
                                   cap=SWARM_ANSWER_CACHE_CAP, max_age_s=SWARM_ANSWER_MAX_AGE_S)
-        rows = sw.seat_work_rows(seat)
-        for row in rows[:sw.SWARM_ANSWER_ROW_CAP]:
+        rows = record_window(sw.seat_work_rows(seat), self.record_cap, self.record_open_only)
+        for row in rows:
             point = answers.get(row["job_id"], {}).get(row["submission_hash"])
             if (point is not None and point["state"] != "unavailable"
                     and row["job_state"] in ("completed", "cancelled", "failed")):
@@ -5837,6 +5848,7 @@ class SurfManager:
         rows = sw.enrich_panel_rows(
             sw.enrich_work_rows(sw.seat_work_rows(seat), getattr(answers, 'payload', None)),
             getattr(oracle, 'payload', None), sw.SWARM_ORACLE_NODE_KEYS)
+        rows = record_window(rows, self.record_cap, self.record_open_only)
         for job in sw.job_details_due(rows, points, now_ts=now,
                                       cap=SWARM_JOB_DETAIL_PER_CYCLE, due_s=SWARM_JOB_DETAIL_DUE_S):
             detail = await self._guard(lambda: self.swarm_client.fetch_job(job), 'swarm popup job')
@@ -5852,7 +5864,8 @@ class SurfManager:
         prior = self.cache.get_last_good(SLOT_SWARM_ORACLE)
         oracle = sw.prune_oracle(getattr(prior, "payload", None), now_ts=now,
                                  cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
-        due = sw.oracle_rows_due(sw.seat_work_rows(seat), oracle, now_ts=now, due_s=SWARM_ORACLE_DUE_S)
+        rows = record_window(sw.seat_work_rows(seat), self.record_cap, self.record_open_only)
+        due = sw.oracle_rows_due(rows, oracle, now_ts=now, due_s=SWARM_ORACLE_DUE_S)
         if not due:
             return
         index_prior = self.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX)

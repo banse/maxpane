@@ -1749,7 +1749,7 @@ def prune_job_details(payload: object, *, now_ts: float, cap=400, max_age_s=48*3
 
 def job_details_due(rows: list[dict], points: dict, *, now_ts: float, cap=2, due_s=120) -> list[str]:
     due = {}
-    for index,row in enumerate(rows[:SWARM_ANSWER_ROW_CAP]):
+    for index,row in enumerate(rows):
         job = row['job_id']
         if (parse_job_id(job) is None or _hex64(row.get('submission_hash')) is None
                 or type(row.get('oracle_member_ok')) is bool
@@ -1894,7 +1894,7 @@ def answer_jobs_due(rows: list[dict], answers: dict, *, now_ts: float, due_s: fl
     """
     groups: dict[str, list[dict]] = {}
     priorities = {}
-    for index, row in enumerate(rows[:SWARM_ANSWER_ROW_CAP]):
+    for index, row in enumerate(rows):
         job, key = row['job_id'], row['submission_hash']
         if parse_job_id(job) is None or _hex64(key) is None:
             continue
@@ -2136,7 +2136,7 @@ def oracle_rows_due(rows: list[dict], oracle: object, *, now_ts: float, due_s: f
     """Only the displayed oracle window: unread first, then oldest due retries."""
     valid = coerce_oracle_slot(oracle) or {}
     due = []
-    for index, row in enumerate(rows[:SWARM_ANSWER_ROW_CAP]):
+    for index, row in enumerate(rows):
         job, key = row['job_id'], row['submission_hash']
         if (row['node_key'] not in SWARM_ORACLE_NODE_KEYS
                 or parse_job_id(job) is None or _hex64(key) is None):

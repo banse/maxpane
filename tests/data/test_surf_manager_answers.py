@@ -329,3 +329,55 @@ async def test_named_job_detail_limits_control_reads_pruning_and_retry(tmp_path,
         assert manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload == {}
     finally:
         await manager.close()
+
+
+async def test_record_view_setter_is_io_free_clamped_and_seat_reset(tmp_path):
+    fake = Answers(); manager = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    try:
+        manager.cache.mark_fetched(TIER_SWARM_SEAT, NOW)
+        manager.set_record_view(800, True)
+        assert (manager.record_cap, manager.record_open_only) == (400, True)
+        assert TIER_SWARM_SEAT in manager.cache.tiers_due(NOW)
+        assert fake.answer_calls == fake.detail_calls == []
+        manager.set_record_view(1, False)
+        assert manager.record_cap == 40
+        manager.set_record_view(80, True)
+        manager.set_seat(421)
+        assert (manager.record_cap, manager.record_open_only) == (40, False)
+    finally:
+        await manager.close()
+
+
+async def test_record_view_80_enriches_answers_and_job_details_past_forty_with_budgets(tmp_path):
+    fake = Answers(work(81, 'completed'))
+    for row in fake.seat['work']: row['nodeKey'] = 'hunt_d'
+    calls = []
+    async def fetch(job):
+        calls.append(job)
+        return dict(id=job, state='completed', nodes=[], blockedReason=None)
+    fake.fetch_job = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    manager.set_record_view(80, False)
+    try:
+        for cycle in range(40):
+            before = len(fake.answer_calls), len(calls)
+            await manager._pool_swarm_seat(420, NOW+cycle*120)
+            assert len(fake.answer_calls)-before[0] <= 4
+            assert len(calls)-before[1] <= 2
+        expected = [r['jobId'] for r in fake.seat['work'][:80]]
+        assert fake.answer_calls == calls == expected
+    finally:
+        await manager.close()
+
+
+async def test_record_open_filter_enriches_old_failed_attempt_before_windowing(tmp_path):
+    fake = Answers(work(81, 'completed'))
+    for row in fake.seat['work']: row.update(nodeKey='hunt_d', status='accepted')
+    fake.seat['work'][80]['status'] = 'failed'
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    manager.set_record_view(40, True)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert fake.answer_calls == fake.detail_calls == [fake.seat['work'][80]['jobId']]
+    finally:
+        await manager.close()

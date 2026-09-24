@@ -412,3 +412,29 @@ async def test_forward_refresh_closes_gap_and_extends_complete_index(tmp_path, m
         assert rows(manager)[0]['panel_state'] == 'agreed'
         assert [c[0] for c in fake.oracle_calls] == ['list', 'list', 'detail']
     finally: await manager.close()
+
+
+async def test_record_view_80_enriches_old_oracle_rows_with_four_pair_budget(tmp_path):
+    fake = Oracle(81); manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    manager.set_record_view(80, False)
+    try:
+        for cycle in range(20):
+            before = sum(c[0] == 'detail' for c in fake.oracle_calls)
+            await manager._pool_swarm_seat(420, NOW+cycle*120)
+            assert sum(c[0] == 'detail' for c in fake.oracle_calls)-before == 4
+        assert [c[1] for c in fake.oracle_calls if c[0] == 'detail'] == list(fake.details)[:80]
+    finally:
+        await manager.close()
+
+
+async def test_record_open_filter_enriches_old_oracle_attempt(tmp_path):
+    fake = Oracle(81)
+    for row in fake.seat['work']: row['status'] = 'accepted'
+    fake.seat['work'][80]['status'] = 'rejected'
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    manager.set_record_view(40, True)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert [c[1] for c in fake.oracle_calls if c[0] == 'detail'] == list(fake.details)[80:]
+    finally:
+        await manager.close()

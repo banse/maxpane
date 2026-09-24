@@ -138,7 +138,8 @@ def test_job_details_follow_submission_eligibility(changes, eligible):
     row.update(changes)
     assert can_open_submission(row) is eligible
     assert sw.job_details_due([row], {}, now_ts=1000) == ([row['job_id']] if eligible else [])
-    assert sw.job_details_due([dict(row, answer_state='not_read')]*40+[row], {}, now_ts=1000) == []
+    # The caller supplies the selected window; eligibility must not truncate it again.
+    assert sw.job_details_due([dict(row, answer_state='not_read')]*40+[row], {}, now_ts=1000) == ([row['job_id']] if eligible else [])
 
 
 @pytest.mark.parametrize('items,expected', [
