@@ -1730,7 +1730,9 @@ SURF_AGENT_FULL_LAYOUT_ROWS = 33
 #: Earlier clearances:204 ->165 when launch/sub left (2026-09-22), then
 #: 165 ->167 for panel/tok and short models (2026-09-23).
 #: 167 remains the submission-message fallback clearance for this v4 window.
-#: Joined answer.json rows use their popup button instead of the widen marker.
+#: Every eligible popup row uses its button instead of the widen marker.
+#: Only button-less cuts (unread/failed reads or invalid identities) still count;
+#: 167 remains the historical clearance of the v4 text without popup eligibility.
 RECORD_NEVER_CLEARS_BELOW = 167
 
 #: CAPABILITY optional inf/acc-att columns: baseline keeps every original

@@ -249,12 +249,12 @@ async def test_a_failed_attempt_writes_its_read_answer_in_red():
 
 
 
-async def test_the_answer_is_clipped_with_an_ellipsis_and_the_title_says_widen():
+async def test_clipped_answer_has_popup_instead_of_widen():
     long = dict(NEWEST, answer_state="read", answer="answer "*100)
     lines = await _record(swarm_seat_work_rows=[long])
     row = _row_with(lines, _job(NEWEST))
-    assert long["answer"] not in row and row.rstrip().endswith("…")
-    assert "‹" in "\n".join(lines)
+    assert long["answer"] not in row and row.rstrip().endswith("… »")
+    assert "‹" not in "\n".join(lines)
     short = [dict(NEWEST, answer_state="read", answer="built a hook")]
     text = "\n".join(await _record(swarm_seat_work_rows=short))
     assert "built a hook" in text and "‹" not in text, "an answer that fits raises no hint"
@@ -385,7 +385,7 @@ async def test_polish_duration_and_missing_model(seconds,expected):
 async def test_polish_answer_sanitization_and_actual_clipping_drive_widen():
     row=dict(NEWEST,answer_state='read',answer='[/x]'*100+'界'*250,model='[$success]model',took_s=3840)
     text='\n'.join(await _record((200,12),swarm_seat_work_rows=[row]))
-    assert '界' in text and '…' in text and '‹' in text and '[/x]' not in text
+    assert '界' in text and '…' in text and '»' in text and '‹' not in text and '[/x]' not in text
     row['answer']='[/x]'*100+'fits …'
     text='\n'.join(await _record((200,12),swarm_seat_work_rows=[row]))
     assert 'fits …' in text and '‹' not in text and '[$success]' not in text
@@ -425,7 +425,7 @@ async def test_polish_committed_hostile_submission_reaches_record_safely():
                          {payload['jobId']:{item['hash']:dict(point,read_ts=1000.,terminal=True)}})
     text='\n'.join(await _record((200,12),swarm_seat_work_rows=rows))
     assert 'Created answer.json in report.md and result.txt' in text
-    assert 'sonnet 5' in text and '<1m' in text and '…' in text and '‹' in text
+    assert 'sonnet 5' in text and '<1m' in text and '…' in text and '»' in text and '‹' not in text
     assert '[x]' not in text and '/Users/' not in text and '/home/' not in text and '/root/' not in text
 
 
@@ -599,7 +599,7 @@ async def test_panel_survives_all_tiers_and_role_is_absent():
         assert '✓ 105/112' in '\n'.join(lines)
 
 
-async def test_red_prefix_alone_pushes_answer_past_width_and_lights_widen():
+async def test_red_prefix_alone_pushes_answer_past_width_and_adds_popup():
     row=dict(NEWEST,answer_state='read',answer='fits',panel_state='agreed',
              panel_agreed=35,panel_quorum=36,panel_figure='457162630000000001',panel_answer_type='uint256')
     size=(FULL_WIDTH+SwarmTableBase.GUTTER_COLS,12)
@@ -607,7 +607,7 @@ async def test_red_prefix_alone_pushes_answer_past_width_and_lights_widen():
     assert '‹' not in before
     row['panel_state']='outvoted'
     after='\n'.join(await _record(size,swarm_seat_work_rows=[row]))
-    assert 'panel 4571' in after and '…' in after and '‹' in after
+    assert 'panel 4571' in after and '…' in after and '»' in after and '‹' not in after
 
 
 @pytest.mark.parametrize('tokens,shown', [
@@ -695,3 +695,41 @@ async def test_joined_failed_member_is_red_and_keeps_popup_action():
         x=lines[y].index('failed · Invalid')
         assert pilot.app.screen.get_style_at(x,y).color.get_truecolor(pilot.app.ansi_theme)==Color.parse('red').get_truecolor(pilot.app.ansi_theme)
         assert 'open_oracle_answer' in pilot.app.screen.get_style_at(lines[y].index('»'),y).meta['@click']
+
+
+@pytest.mark.parametrize('changes,button', [
+    ({'work_status':'failed','answer':'Short.'},True),
+    ({'work_status':'rejected','answer_state':'no_reply','answer':None},True),
+    ({'work_status':'accepted','answer':'Long '*100},True),
+    ({'answer_state':'not_read','answer':'Long '*100},False),
+    ({'answer_state':'unavailable','work_status':'failed'},False),
+    ({'job_id':'bad','answer':'Long '*100},False),
+    ({'submission_hash':'a'*64+'\n','answer':'Long '*100},False),
+])
+async def test_submission_button_rules_and_click_meta(changes,button):
+    row=oracle_row(**dict(dict(oracle_member_ok=None,panel_state='not_oracle',answer='Short.'),**changes))
+    class Harness(App):
+        def compose(self): yield SurfSwarmSeatRecord()
+    async with Harness().run_test(size=(139,12)) as pilot:
+        record=pilot.app.query_one(SurfSwarmSeatRecord)
+        record.update_data(swarm_seat_work_rows=[row],swarm_seat_state='ok')
+        await pilot.pause()
+        targets=[]
+        for y,strip in enumerate(pilot.app.screen._compositor.render_strips()):
+            x=0
+            for segment in strip:
+                for char in segment.text:
+                    if char=='»': targets.append(pilot.app.screen.get_style_at(x,y).meta)
+                    x+=1
+        assert bool(targets) is button
+        if button:
+            assert [m['@click'] for m in targets]==[f"screen.open_submission('{row['job_id']}','{row['submission_hash']}')"]
+            assert not record._clipped
+        elif changes.get('answer','').startswith('Long') and row['answer_state']=='read':
+            assert record._clipped
+
+
+async def test_bytes32_answer_cell_counts_values():
+    row=oracle_row(panel_answer_type='bytes32[]',oracle_seat_answer=' '.join(['0x'+'a'*64]*2),oracle_notes='Done.')
+    text='\n'.join(await _record(swarm_seat_work_rows=[row]))
+    assert '2 values · Done.' in text

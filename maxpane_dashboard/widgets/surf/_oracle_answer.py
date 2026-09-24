@@ -14,6 +14,8 @@ _HASH = re.compile(r'[0-9a-f]{64}')
 
 #: Panel glyph, space and three-digit agreed/quorum counts (105/112).
 _PANEL_COLS = 1 + 1 + 3 + 1 + 3
+_STATE_COLORS = {'completed': 'green', 'failed': 'red', 'cancelled': 'red',
+                 'rejected': 'red', 'pending': 'yellow'}
 
 
 def failed_answer(row):
@@ -36,9 +38,10 @@ def seat_value(row, *, compact=False):
         return '—'
     if kind == 'bool':
         return {'true': 'YES', 'false': 'NO'}.get(value, '—')
-    if kind == 'address[]' and compact:
+    if isinstance(kind, str) and kind.endswith('[]') and compact:
         count = len(value.split())
-        return f'{count} address' + ('es' if count != 1 else '')
+        noun = 'address' if kind == 'address[]' else 'value'
+        return f'{count} {noun}' + (('es' if kind == 'address[]' else 's') if count != 1 else '')
     if compact and kind not in ('uint256', 'address[]'):
         return rowfit.clip(strip_tags(value), 24)
     return strip_tags(value)
@@ -78,21 +81,31 @@ def panel_text(row, *, detail=False):
     return Text.from_markup(sanitize_cell(text, _PANEL_COLS), style=style)
 
 
+def can_open_submission(row):
+    return (not joined(row) and row.get('answer_state') in ('read', 'no_reply')
+            and valid_identity(row.get('job_id'), row.get('submission_hash')))
+
+
 def record_answer(row, width):
     failed = row.get('oracle_member_ok') is False
     raw = (failed_answer(row) if failed
            else seat_value(row, compact=True) + (' · ' + strip_tags(row.get('oracle_notes'))
                                                  if strip_tags(row.get('oracle_notes')) else ''))
+    return fit_popup_text(row, raw, width, 'open_oracle_answer',
+                          style='red' if failed else '', explorer=for_chain_id(row.get('oracle_chain_id')))[0]
+
+
+def fit_popup_text(row, raw, width, action=None, *, force=False, style='', explorer=None):
     marked, _, spans = mark_addresses(raw)
     cut = rowfit.cell_len(marked) > width
-    button = cut and valid_identity(row.get('job_id'), row.get('submission_hash'))
+    button = bool(action) and (cut or force) and valid_identity(row.get('job_id'), row.get('submission_hash'))
     budget = max(0, width - (2 if button else 0))
     fitted = keep_units(marked, spans, rowfit.clip(marked, budget))
     if cut and not fitted:
         fitted = '…'
-    text = Text.from_markup(sanitize_cell(unmark(fitted), budget), style='red' if failed else '')
-    link_prose(text, explorer=for_chain_id(row.get('oracle_chain_id')))
+    text = Text.from_markup(sanitize_cell(unmark(fitted), budget), style=style)
+    link_prose(text, explorer=explorer)
     if button:
         text.append(' ').append('»', style=Style(meta={
-            '@click': f"screen.open_oracle_answer('{row['job_id']}','{row['submission_hash']}')"}))
-    return text
+            '@click': f"screen.{action}('{row['job_id']}','{row['submission_hash']}')"}))
+    return text, cut, button

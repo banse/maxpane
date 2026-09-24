@@ -28,7 +28,7 @@ from maxpane_dashboard.widgets.address import job_text
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm, short_model, fmt_compact
-from maxpane_dashboard.widgets.surf._oracle_answer import _PANEL_COLS, joined, record_answer, panel_text
+from maxpane_dashboard.widgets.surf._oracle_answer import _PANEL_COLS, _STATE_COLORS, joined, record_answer, panel_text, can_open_submission, fit_popup_text
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
@@ -72,9 +72,6 @@ _STATE_COLS = 9
 #: The answer floor, certified with the AGENT body in polish WP6.
 #: Above it the column takes every remaining cell.
 ANSWER_MIN_COLS = 20
-
-_STATE_COLORS = {"completed": "green", "failed": "red", "cancelled": "red",
-                 "rejected": "red", "pending": "yellow"}
 
 _SPECS = (
     ("when", "when", _WHEN_COLS),
@@ -217,7 +214,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         if state == "failed" and item.get("answer_state") == "read" and not joined(item):
             # Only a read answer takes the failed colour: the unread words keep
             # their own dim / yellow, which say why there is no answer (F65).
-            answer = Text(answer.plain, style="red")
+            answer.stylize("red")
         return {
             "when": mmdd_hhmm(item.get("submitted_ts") if item.get("submitted_ts") is not None
                               else item.get("accepted_ts")),
@@ -277,6 +274,9 @@ class SurfSwarmSeatRecord(SwarmTableBase):
                 figure = strip_tags(item.get("panel_figure")) or "unavail"
             text = f"panel {figure} · {text}"
         width = self._answer_cols
-        if rowfit.cell_len(text) > width:
+        eligible = can_open_submission(item)
+        rendered, cut, button = fit_popup_text(item, text, width, 'open_submission' if eligible else None,
+            force=item.get('work_status') in ('failed','rejected'), style=style)
+        if cut and not button:
             self._clipped = True
-        return Text.from_markup(sanitize_cell(text, width), style=style)
+        return rendered

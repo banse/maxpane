@@ -948,10 +948,10 @@ async def test_polish_record_answer_clearance_matches_committed_v4_window():
     name="SurfSwarmSeatRecord"
     joined = await _render(payload, (RECORD_NEVER_CLEARS_BELOW-1,80), "a")
     assert name not in joined["marked"], "joined cuts use the popup affordance"
-    # The existing 167-cell exception measures the submission-message fallback.
-    # Exercise that path independently of the newly available member answer facts.
+    # The existing 167-cell exception measures text without popup eligibility.
+    # A missing hash exercises the remaining button-less fallback honestly.
     payload = dict(payload, swarm_seat_work_rows=[dict(row, **{
-        key: None for key in row if key.startswith('oracle_')}) for row in rows])
+        key: None for key in row if key.startswith('oracle_') or key == 'submission_hash'}) for row in rows])
     for width,marked in ((RECORD_NEVER_CLEARS_BELOW-1,True),(RECORD_NEVER_CLEARS_BELOW,False)):
         r=await _render(payload,(width,80),"a")
         assert (name in r["marked"])==marked, (width,r["marked"])
