@@ -7,7 +7,7 @@
   request id for two job ids, index coercion rejects the whole slot on every cycle. The row stays
   `not read` and the list is re-read each cycle. Only hostile or broken server data triggers this. The fix is to map
   the duplicate id's jobs to `None` (unavailable) instead of discarding the index.
-- **5A remains an owner decision:** ORACLE-tile panel-agreement totals and open/closed pending
+- **5A dropped by the owner (2026-09-24, `docs/decisions.md`):** ORACLE-tile panel-agreement totals and open/closed pending
   counts are out of scope. RECORD now exposes each panel outcome without changing STATE.
 - **Controller work:** one review per WP, whole-branch review and one full-suite run before merge.
   No full suite was run by the implementer.

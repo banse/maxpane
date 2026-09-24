@@ -4,6 +4,10 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-09-24** — 5A dropped by the owner: the AGENT ORACLE card gets no panel-agreement or
+  open/closed request totals line. RECORD's per-row PANEL column (5B) is the only oracle-outcome
+  display. Record popups (ANSWER, SUBMISSION) close on Space or Escape, not Enter, and are not
+  opened by keyboard (F-A1 deferred).
 - **2026-09-23** — Oracle RECORD replaces the displayed role column with panel and output tokens;
   role remains in the data contract. Compact drops tok; tight retains panel. Bool output uses the
   separately served `agreement.answer`, not figure: the raw corpus includes a nonzero figure
