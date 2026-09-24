@@ -318,7 +318,9 @@ def test_work_rows_420_source_order_frozen_shape(seat420):
         "submission_hash": seat420["work"][0]["submissionHash"],
         "answer": None, "answer_state": "not_read", "model": None, "took_s": None,
         "output_tokens": None, "panel_state": "not_oracle", "panel_agreed": None,
-        "panel_members": None, "panel_size": None, "panel_figure": None, "panel_answer_type": None, "panel_answer_bool": None,
+        "panel_quorum": None, "panel_size": None, "panel_figure": None, "panel_answer_type": None, "panel_answer_bool": None,
+        "oracle_question": None, "oracle_chain_id": None, "oracle_member_ok": None,
+        "oracle_member_reason": None, "oracle_seat_answer": None, "oracle_notes": None,
     }
     assert rows[-1]["accepted_ts"] == _iso("2026-09-20T17:48:55.121Z")
     assert [r["job_id"] for r in rows] == [w["jobId"] for w in seat420["work"]]

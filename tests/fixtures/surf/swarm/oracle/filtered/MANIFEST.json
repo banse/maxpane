@@ -1,0 +1,49 @@
+{
+  "host": "https://api.imd.fun",
+  "files": {
+    "version": {
+      "url": "https://api.imd.fun/version",
+      "captured_at": "2026-09-24T01:13:36.563838+00:00",
+      "http_status": 200,
+      "sha256": "8118be9437d2e446d9959e096b037d447348150ec50c9844e1b391b335c1e252",
+      "bytes": 195,
+      "control_plane_commit": "61d04d62e2ac32abb81a0d205f569fd7c77976e3"
+    },
+    "hit": {
+      "url": "https://api.imd.fun/oracle/requests/005a4ed9-8e78-41fa-a7b4-b86fec5c8f09?members=205d51597dd230683e89e879062917e8367297586b73be1b2045042a1ddb8ce5",
+      "captured_at": "2026-09-24T01:13:36.893275+00:00",
+      "http_status": 200,
+      "sha256": "56304a13f1144019e3eb273b5aacb9f7f03ccaf66b086c96e1649a77b780db8b",
+      "bytes": 5743,
+      "control_plane_commit": "61d04d62e2ac32abb81a0d205f569fd7c77976e3"
+    },
+    "miss": {
+      "url": "https://api.imd.fun/oracle/requests/005a4ed9-8e78-41fa-a7b4-b86fec5c8f09?members=0000000000000000000000000000000000000000000000000000000000000000",
+      "captured_at": "2026-09-24T01:13:37.219609+00:00",
+      "http_status": 200,
+      "sha256": "d3b65d8be6c3dd0b80c36df65f3c4ffcd4dcc91750a4857c494c20604e48a51e",
+      "bytes": 4670,
+      "control_plane_commit": "61d04d62e2ac32abb81a0d205f569fd7c77976e3"
+    },
+    "assessing": {
+      "url": "https://api.imd.fun/oracle/requests/cb54d60b-78d9-4443-8193-e6cb01d99c59?members=01b53415a3904850d98678616e37f8bf2e9521776d59133807dd25e168ccd2fa",
+      "captured_at": "2026-09-24T01:13:39.211113+00:00",
+      "http_status": 200,
+      "sha256": "35b5fbd441bfe029e0f9eb679fe6350576c5e0ecff6700c4a9b3dfe486d6d1b2",
+      "bytes": 3318,
+      "control_plane_commit": "61d04d62e2ac32abb81a0d205f569fd7c77976e3"
+    }
+  },
+  "version": {
+    "commit": "61d04d62e2ac32abb81a0d205f569fd7c77976e3",
+    "branch": "master",
+    "deployedAt": null,
+    "protocolVersion": 1,
+    "features": {
+      "scheduling": true,
+      "verificationQueue": true,
+      "startCommitAttribution": true
+    }
+  },
+  "assessing_full_bytes": 159079
+}

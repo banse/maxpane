@@ -14,6 +14,8 @@ Every value here is ``None`` when it was not read.  A zero is a zero.
 from __future__ import annotations
 
 import datetime
+import json
+import unicodedata
 import math
 import logging
 from functools import lru_cache
@@ -1714,11 +1716,95 @@ def oracle_empty_point(status: str | None, *, now_ts: float) -> dict:
     return point
 
 
+_ORACLE_TEXT_CAPS = {'question': 1000, 'member_reason': 200, 'notes': 4000}
+_ORACLE_FACTS = ('question', 'chain_id', 'member_ok', 'member_reason', 'seat_answer', 'notes')
+ORACLE_POINT_BYTES = 6000
+
+
+def _oracle_text(value: object, cap: int, *, paragraphs: bool = True) -> str | None:
+    if not isinstance(value, str):
+        return None
+    clean = ''.join(c for c in value if c == '\n' or not unicodedata.category(c).startswith('C'))
+    clean = '\n'.join(' '.join(line.split()) for line in clean.split('\n')) if paragraphs else ' '.join(clean.split())
+    return clean.strip()[:cap].rstrip() or None
+
+
+def _seat_answer(value: object, kind: str | None) -> str | None:
+    if kind == 'bool':
+        return ('true' if value else 'false') if type(value) is bool else None
+    if kind == 'uint256':
+        return value if isinstance(value, str) and re.fullmatch(r'[0-9]{1,78}', value) else None
+    if kind == 'address[]':
+        if (not isinstance(value, list) or len(value) > 20
+                or any(not isinstance(v, str) or re.fullmatch(r'0x[0-9a-fA-F]{40}', v) is None for v in value)):
+            return None
+        return ' '.join(value)
+    if isinstance(value, str):
+        return _oracle_text(value, 200, paragraphs=False)
+    if type(value) in (int, float):
+        try:
+            return _oracle_text(str(value), 200, paragraphs=False) if math.isfinite(value) else None
+        except (OverflowError, ValueError):
+            return None
+    return None
+
+
+def _oracle_bytes(point: Mapping) -> int:
+    try:
+        return len(json.dumps(dict(point)).encode())
+    except (ValueError, TypeError, OverflowError):
+        return ORACLE_POINT_BYTES + 1
+
+
+def _bound_oracle_point(point: dict) -> dict | None:
+    # Match surf_cache's json.dump encoding, including escaped Unicode and quotes.
+    for name in ('notes', 'question', 'member_reason'):
+        if _oracle_bytes(point) <= ORACLE_POINT_BYTES:
+            return point
+        text = point[name] or ''
+        point[name] = None
+        if _oracle_bytes(point) > ORACLE_POINT_BYTES:
+            continue
+        low, high = 0, len(text)
+        while low < high:
+            mid = (low + high + 1) // 2
+            point[name] = text[:mid].rstrip() or None
+            if _oracle_bytes(point) <= ORACLE_POINT_BYTES:
+                low = mid
+            else:
+                high = mid - 1
+        point[name] = text[:low].rstrip() or None
+    return point if _oracle_bytes(point) <= ORACLE_POINT_BYTES else None
+
+
+def _valid_oracle_facts(point: Mapping) -> bool:
+    if _oracle_bytes(point) > ORACLE_POINT_BYTES:
+        return False
+    if not point['on_panel']:
+        return all(point[name] is None for name in _ORACLE_FACTS)
+    if type(point['member_ok']) is not bool or (point['chain_id'] is not None and type(point['chain_id']) is not int):
+        return False
+    for name, cap in _ORACLE_TEXT_CAPS.items():
+        text = point[name]
+        if text is not None and (not isinstance(text, str) or _oracle_text(text, cap, paragraphs=name != 'member_reason') != text):
+            return False
+    value, kind = point['seat_answer'], point['answer_type']
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
+    if kind == 'bool':
+        return value in ('true', 'false')
+    raw = value.split(' ') if kind == 'address[]' and value else [] if kind == 'address[]' else value
+    return _seat_answer(raw, kind) == value
+
+
 def oracle_point(detail: object, job_id: str, submission_hash: str, *, now_ts: float) -> dict | None:
     """Join only by exact hash; price tolerance is already resolved by cluster membership."""
     if (parse_job_id(job_id) is None or _hex64(submission_hash) is None
             or not isinstance(detail, Mapping) or detail.get('jobId') != job_id
-            or parse_job_id(detail.get('id')) is None or not isinstance(detail.get('status'), str)):
+            or parse_job_id(detail.get('id')) is None or not isinstance(detail.get('status'), str)
+            or not detail['status'].strip()):
         return None
     status = detail['status']
     members = detail.get('members')
@@ -1729,8 +1815,6 @@ def oracle_point(detail: object, job_id: str, submission_hash: str, *, now_ts: f
             or agreement is not None and not isinstance(agreement, Mapping)):
         return None
     if agreement is None:
-        if status not in ('assessing', 'blocked'):
-            return None
         agreement = {'cluster': []}
     cluster = agreement.get('cluster')
     if not isinstance(cluster, list) or any(_hex64(key) is None for key in cluster):
@@ -1739,14 +1823,27 @@ def oracle_point(detail: object, job_id: str, submission_hash: str, *, now_ts: f
     if matches and any(member != matches[0] for member in matches[1:]):
         return None
     answer_type = detail.get('answerType')
-    return dict(
+    point = dict(
         request_id=detail['id'], status=status, in_cluster=submission_hash in cluster,
-        on_panel=bool(matches), agreed=_oracle_count(agreement.get('agreed')), members=len(members),
+        on_panel=bool(matches), agreed=_oracle_count(agreement.get('agreed')), quorum=_oracle_count(detail.get('quorum')),
         panel_size=_oracle_count(detail.get('panelSize')), figure=_oracle_figure(agreement.get('figure')),
         answer_type=' '.join(answer_type.split()) if isinstance(answer_type, str) else None,
         answer_bool=agreement.get('answer') if type(agreement.get('answer')) is bool else None,
         read_ts=now_ts, terminal=status in _ORACLE_FINAL,
     )
+    point.update(dict.fromkeys(_ORACLE_FACTS))
+    if matches:
+        member = matches[0]
+        if type(member.get('ok')) is not bool:
+            return None
+        answer = member.get('answer')
+        answer = answer if isinstance(answer, Mapping) else {}
+        point.update(question=_oracle_text(detail.get('question'), 1000),
+                     chain_id=detail.get('chainId') if type(detail.get('chainId')) is int else None,
+                     member_ok=member['ok'], member_reason=_oracle_text(member.get('reason'), 200, paragraphs=False),
+                     seat_answer=_seat_answer(answer.get('answer'), point['answer_type']),
+                     notes=_oracle_text(answer.get('notes'), 4000))
+    return _bound_oracle_point(point)
 
 
 def coerce_oracle_slot(payload: object) -> dict | None:
@@ -1768,10 +1865,12 @@ def coerce_oracle_slot(payload: object) -> dict | None:
                     or any(type(point[name]) is not bool for name in ('in_cluster', 'on_panel', 'terminal'))
                     or not _nonnegative_finite(point['read_ts'])
                     or any(point[name] is not None and _oracle_count(point[name]) is None
-                           for name in ('agreed', 'members', 'panel_size'))
+                           for name in ('agreed', 'quorum', 'panel_size'))
                     or point['figure'] is not None and _oracle_figure(point['figure']) is None):
                 continue
             if point['terminal'] != (point['status'] in _ORACLE_FINAL):
+                continue
+            if not _valid_oracle_facts(point):
                 continue
             clean[key] = dict(point)
         if clean:
@@ -1891,8 +1990,9 @@ def enrich_panel_rows(rows: list[dict], oracle: object, node_keys: tuple[str, ..
     valid = coerce_oracle_slot(oracle) or {}
     result = []
     for row in rows:
-        item = dict(row, panel_agreed=None, panel_members=None, panel_size=None,
+        item = dict(row, panel_agreed=None, panel_quorum=None, panel_size=None,
                     panel_figure=None, panel_answer_type=None, panel_answer_bool=None)
+        item.update({'oracle_' + name: None for name in _ORACLE_FACTS})
         point = valid.get(row['job_id'], {}).get(row['submission_hash'])
         if row['node_key'] not in node_keys:
             state = 'not_oracle'
@@ -1914,7 +2014,9 @@ def enrich_panel_rows(rows: list[dict], oracle: object, node_keys: tuple[str, ..
                 state = 'unavailable'
                 if status is not None:
                     _log_oracle_status(status)
-            item.update(panel_agreed=point['agreed'], panel_members=point['members'],
+            if point['on_panel']:
+                item.update({'oracle_' + name: point[name] for name in _ORACLE_FACTS})
+            item.update(panel_agreed=point['agreed'], panel_quorum=point['quorum'],
                         panel_size=point['panel_size'], panel_figure=point['figure'],
                         panel_answer_type=point['answer_type'], panel_answer_bool=point['answer_bool'])
         item['panel_state'] = state

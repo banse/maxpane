@@ -54,14 +54,14 @@ def test_captured_panel_outcomes(status,inside,state):
     assert value['on_panel'] is True
     assert enrich(row,value)['panel_state'] == state
     assert value['terminal'] == (status != 'assessing')
-    assert value['members'] == len(detail['members'])
+    assert value['quorum'] == detail['quorum']
 
 
 def test_blocked_null_members_is_a_closed_blocked_panel():
     detail = next(copy.deepcopy(d) for d in DETAILS if d['status']=='blocked' and d['members'] is None)
     row = dict(ROWS[0],job_id=detail['jobId'])
     value = point(detail,row)
-    assert value['members']==0 and value['terminal'] and not value['on_panel']
+    assert value['quorum']==detail['quorum'] and value['terminal'] and not value['on_panel']
     assert enrich(row,value)['panel_state']=='blocked'
 
 
@@ -251,3 +251,93 @@ def test_committed_details_are_exactly_the_listed_ids_and_the_manifest_agrees():
     listed = {name[len('request_'):] for name, entry in files.items()
               if name.startswith('request_') and entry.get('committed', True)}
     assert listed == on_disk
+
+
+@pytest.mark.parametrize('kind', ['bool', 'uint256', 'address[]'])
+def test_member_answer_facts_use_request_type_and_exact_hash(kind):
+    detail, member = next((copy.deepcopy(d), m) for d in DETAILS if d['answerType'] == kind
+                          for m in d.get('members') or [] if m.get('ok') is True)
+    row = dict(ROWS[0], job_id=detail['jobId'], submission_hash=member['submissionHash'])
+    value = point(detail, row)
+    raw = member['answer']['answer']
+    expected = ('true' if raw else 'false') if kind == 'bool' else ' '.join(raw) if kind == 'address[]' else raw
+    assert value['seat_answer'] == expected
+    assert value['question'] == ' '.join(detail['question'].split())
+    assert value['chain_id'] == detail['chainId']
+    assert value['member_ok'] is True and value['notes']
+    assert value['quorum'] == detail['quorum']
+    joined = enrich(row, value)
+    assert joined['oracle_seat_answer'] == expected and joined['oracle_member_ok'] is True
+    detail['members'][0]['answer']['answerType'] = 'irrelevant'
+    assert point(detail, row)['seat_answer'] == expected
+
+
+@pytest.mark.parametrize('kind,raw', [('bool', 1), ('uint256', '1'*79), ('uint256', 12),
+                                      ('address[]', ['bad']), ('address[]', ['0x'+'1'*40]*21)])
+def test_invalid_member_values_preserve_membership_with_no_guessed_value(kind, raw):
+    detail, row = captured()
+    member = next(m for m in detail['members'] if m['submissionHash'] == row['submission_hash'])
+    detail['answerType'] = kind; member['answer']['answer'] = raw
+    value = point(detail, row)
+    assert value['seat_answer'] is None and value['on_panel'] and value['member_ok'] is True
+    assert enrich(row, value)['oracle_member_ok'] is True
+
+
+@pytest.mark.parametrize('status', ['refused', 'failed'])
+def test_unknown_status_with_null_agreement_preserves_member_answer(status):
+    detail, row = captured(); detail.update(status=status, agreement=None)
+    value = point(detail, row)
+    assert value and not value['terminal'] and value['notes']
+    assert enrich(row, value)['panel_state'] == 'unavailable'
+    assert enrich(row, value)['oracle_member_ok'] is True
+
+
+def test_member_failure_and_normalized_paragraphs():
+    detail, row = captured()
+    member = next(m for m in detail['members'] if m['submissionHash'] == row['submission_hash'])
+    member.update(ok=False, reason=' Invalid   input\x00 ')
+    member['answer']['notes'] = ' first   line\n\nsecond\x00 [/x] '
+    value = point(detail, row)
+    assert value['member_ok'] is False and value['member_reason'] == 'Invalid input'
+    assert value['notes'] == 'first line\n\nsecond [/x]'
+    member['submissionHash'] = 'f'*64
+    value = point(detail, row)
+    assert not value['on_panel']
+    assert all(value[k] is None for k in ('question','chain_id','member_ok','member_reason','seat_answer','notes'))
+
+
+@pytest.mark.parametrize('text', ['x', '界', '😀', '"\\'])
+def test_maximal_member_point_fits_actual_json_byte_budget(text):
+    detail, row = captured()
+    member = next(m for m in detail['members'] if m['submissionHash'] == row['submission_hash'])
+    detail.update(question=text*1000, answerType='address[]')
+    member.update(reason=text*200)
+    member['answer'].update(answer=['0x'+'1'*40]*20, notes=text*4001)
+    value = point(detail, row)
+    assert len(json.dumps(value).encode()) <= 6000
+    assert value['seat_answer'] == ' '.join(['0x'+'1'*40]*20)
+    assert len(value['notes'] or '') <= 4000
+    assert sw.coerce_oracle_slot({row['job_id']: {row['submission_hash']: value}})
+
+
+@pytest.mark.parametrize('changes', [dict(notes='x'*4001), dict(notes='bad\x00'), dict(chain_id=True),
+    dict(member_ok=1), dict(question='q'*1001), dict(member_reason='r'*201),
+    dict(notes='😀'*4000), dict(on_panel=False), dict(answer_type='bool', seat_answer='yes')])
+def test_new_member_fields_drop_only_hostile_point(changes):
+    detail, row = captured(); value = point(detail, row)
+    bad = dict(value, **changes)
+    assert sw.coerce_oracle_slot({row['job_id']: {row['submission_hash']: value, 'f'*64: bad}}) == {
+        row['job_id']: {row['submission_hash']: value}}
+    old = {k:v for k,v in value.items() if k not in ('question','chain_id','member_ok','member_reason','seat_answer','notes')}
+    assert sw.coerce_oracle_slot({row['job_id']: {row['submission_hash']: old}}) == {}
+
+
+def test_filtered_body_never_joins_a_different_member_hash():
+    detail = json.loads((ROOT / 'filtered/hit.json').read_bytes())
+    member = detail['members'][0]
+    row = dict(ROWS[0], job_id=detail['jobId'], submission_hash=member['submissionHash'])
+    assert point(detail, row)['on_panel'] is True
+    member['submissionHash'] = 'f'*64
+    value = point(detail, row)
+    assert value['on_panel'] is False and value['seat_answer'] is None
+    assert enrich(row, value)['oracle_member_ok'] is None

@@ -119,11 +119,61 @@ def capture():
     print(json.dumps(manifest['note'], indent=2))
 
 
+def capture_member():
+    """Small filtered evidence set; never rewrite the original full-corpus manifest."""
+    out = ROOT / 'filtered'
+    out.mkdir(exist_ok=True)
+    manifest = {'host': HOST, 'files': {}}
+    seat = json.loads((ROOT / 'seat_420.json').read_bytes())
+    work = {(row['jobId'], row['submissionHash']) for row in seat['work']}
+    chosen = next((detail, member) for path in sorted(ROOT.glob('request_*.json'))
+                  for detail in [json.loads(path.read_bytes())]
+                  for member in detail.get('members') or []
+                  if (detail['jobId'], member['submissionHash']) in work)
+    with httpx.Client(timeout=30, headers={'Accept': 'application/json'}) as client:
+        def get(name, path, params=None):
+            time.sleep(0.2)
+            response = client.get(HOST + path, params=params)
+            response.raise_for_status()
+            raw = response.content
+            (out / (name + '.json')).write_bytes(raw)
+            manifest['files'][name] = dict(url=str(response.url),
+                captured_at=datetime.now(timezone.utc).isoformat(), http_status=response.status_code,
+                sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
+            return response.json()
+        manifest['version'] = get('version', '/version')
+        detail, member = chosen
+        path = '/oracle/requests/' + detail['id']
+        hit = get('hit', path, {'members': member['submissionHash']})
+        assert any(m['submissionHash'] == member['submissionHash'] for m in hit['members'])
+        miss = get('miss', path, {'members': '0' * 64})
+        assert miss['members'] == []
+        listed = client.get(HOST + '/oracle/requests', params={'limit': '500'})
+        listed.raise_for_status()
+        assessing = next((r for r in listed.json()['requests'] if r['status'] == 'assessing'), None)
+        if assessing:
+            path = '/oracle/requests/' + assessing['id']
+            full = client.get(HOST + path); full.raise_for_status()
+            members = full.json().get('members') or []
+            key = members[0]['submissionHash'] if members else '0' * 64
+            get('assessing', path, {'members': key})
+            manifest['assessing_full_bytes'] = len(full.content)
+        else:
+            manifest['assessing'] = 'No live assessing request in the newest 500.'
+    for entry in manifest['files'].values():
+        entry['control_plane_commit'] = manifest['version']['commit']
+    (out / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    print(json.dumps({name: entry['bytes'] for name, entry in manifest['files'].items()}))
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--summarize', action='store_true')
+    parser.add_argument('--member', action='store_true')
     args = parser.parse_args()
-    if args.summarize:
+    if args.member:
+        capture_member()
+    elif args.summarize:
         result = summarize()
         manifest = json.loads((ROOT / 'MANIFEST.json').read_text())
         rows = [r for p in ROOT.glob('list_*.json') for r in json.loads(p.read_bytes())['requests']]

@@ -38,7 +38,8 @@ class Oracle(Answers):
             return copy.deepcopy(self.lists[0 if before is None else 1])
         return copy.deepcopy(self.requests)
 
-    async def fetch_oracle_request(self,request_id):
+    async def fetch_oracle_request(self,request_id,submission_hash):
+        assert any(r['submissionHash'] == submission_hash for r in self.seat['work'])
         self.oracle_calls.append(('detail',request_id))
         await asyncio.sleep(0)
         return copy.deepcopy(self.details.get(request_id))

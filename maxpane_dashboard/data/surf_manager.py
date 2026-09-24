@@ -5827,7 +5827,7 @@ class SurfManager:
                and row['job_id'] not in negative for row in due):
             index, failed = await self._refresh_oracle_index(index)
             matched, ambiguous, negative = sw.match_requests(index, due)
-        groups: dict[str, list[dict]] = {}
+        groups: dict[tuple[str, str], list[dict]] = {}
         for row in due:
             job, key = row["job_id"], row["submission_hash"]
             if job in ambiguous:
@@ -5835,11 +5835,11 @@ class SurfManager:
             elif job in negative:
                 oracle.setdefault(job, {})[key] = sw.oracle_empty_point("off_panel", now_ts=now)
             elif job in matched:
-                groups.setdefault(matched[job], []).append(row)
+                groups.setdefault((matched[job], key), []).append(row)
             elif failed and key not in oracle.get(job, {}):
                 oracle.setdefault(job, {})[key] = sw.oracle_empty_point(None, now_ts=now)
-        for request_id, group in list(groups.items())[:SWARM_ORACLE_PER_CYCLE]:
-            detail = await self._guard(lambda request_id=request_id: self.swarm_client.fetch_oracle_request(request_id),
+        for (request_id, submission_hash), group in list(groups.items())[:SWARM_ORACLE_PER_CYCLE]:
+            detail = await self._guard(lambda: self.swarm_client.fetch_oracle_request(request_id, submission_hash),
                                        "swarm oracle request")
             for row in group:
                 job, key = row["job_id"], row["submission_hash"]

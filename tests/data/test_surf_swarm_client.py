@@ -661,16 +661,16 @@ async def test_oracle_query_and_detail_use_exact_urls_with_rotation():
         calls.append(str(request.url))
         assert str(request.url) in (
             f'https://one.test/oracle/requests?{query}', f'https://two.test/oracle/requests?{query}',
-            f'https://one.test/oracle/requests/{job}',
+            f'https://one.test/oracle/requests/{job}?members={"a"*64}',
         )
         assert request.method == 'GET'
         if request.url.host == 'one.test' and request.url.path == '/oracle/requests':
             return httpx.Response(503)
-        return httpx.Response(200, json={'requests': []} if request.url.query else {'id': job})
+        return httpx.Response(200, json={'requests': []} if request.url.path == '/oracle/requests' else {'id': job})
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         client = SwarmClient(http_client=http, hosts=('https://one.test', 'https://two.test'), inter_call_delay=0)
         assert await client.fetch_oracle_requests(limit=200, before=before) == []
-        assert await client.fetch_oracle_request(job) == {'id': job}
+        assert await client.fetch_oracle_request(job, 'a'*64) == {'id': job}
         assert len(calls) == 3
 
 
@@ -681,7 +681,7 @@ async def test_oracle_invalid_parameters_make_no_request(limit,before):
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
         client=SwarmClient(http_client=http,inter_call_delay=0)
         assert await client.fetch_oracle_requests(limit=limit,before=before) is None
-        assert await client.fetch_oracle_request('../bad') is None
+        assert await client.fetch_oracle_request('../bad', 'a'*64) is None
 
 
 @pytest.mark.parametrize('status,body,expected', [(200,{'requests':[]},[]),(200,{},None),(400,{'error':'invalid_id'},None),(404,{},None)])
@@ -694,4 +694,31 @@ async def test_oracle_empty_is_distinct_from_failed_read(status,body,expected):
         client=SwarmClient(http_client=http,inter_call_delay=0)
         assert await client.fetch_oracle_requests(limit=500) == expected
         if status != 200:
-            assert await client.fetch_oracle_request(job) is None
+            assert await client.fetch_oracle_request(job, 'a'*64) is None
+
+
+@pytest.mark.parametrize('name', ['hit', 'miss', 'assessing'])
+async def test_filtered_oracle_fixtures_require_exact_member_query(name):
+    import json
+    from pathlib import Path
+    from urllib.parse import urlsplit, parse_qs
+    root = Path(__file__).parents[1] / 'fixtures/surf/swarm/oracle/filtered'
+    body = json.loads((root / (name + '.json')).read_bytes())
+    manifest = json.loads((root / 'MANIFEST.json').read_bytes())
+    submission_hash = parse_qs(urlsplit(manifest['files'][name]['url']).query)['members'][0]
+    def handler(request):
+        assert dict(request.url.params) == {'members': submission_hash}
+        assert request.url.path == '/oracle/requests/' + body['id']
+        return httpx.Response(200, json=body)
+    client = _client(handler, inter_call_delay=0)
+    try:
+        assert await client.fetch_oracle_request(body['id'], submission_hash) == body
+    finally: await client.close()
+
+
+@pytest.mark.parametrize('bad', [None, 1, '', 'a'*63, 'A'*64, 'a'*64+'\n', "');bad('"])
+async def test_filtered_oracle_invalid_hash_never_sends_request(bad):
+    client = _client(_no_network, inter_call_delay=0)
+    try:
+        assert await client.fetch_oracle_request('00000000-0000-4000-8000-000000000001', bad) is None
+    finally: await client.close()

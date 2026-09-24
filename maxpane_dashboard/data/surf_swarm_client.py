@@ -223,11 +223,13 @@ class SwarmClient(OwnedHttpClient):
         rows = body.get("requests") if isinstance(body, dict) else None
         return rows if isinstance(rows, list) else None
 
-    async def fetch_oracle_request(self, request_id: str) -> dict | None:
+    async def fetch_oracle_request(self, request_id: str, submission_hash: str) -> dict | None:
         """A removed route or unknown request is an unavailable read, never absence."""
-        if parse_job_id(request_id) is None:
+        if (parse_job_id(request_id) is None or not isinstance(submission_hash, str)
+                or re.fullmatch(r"[0-9a-f]{64}", submission_hash) is None):
             return None
-        return await self._dict("/oracle/requests/" + request_id)
+        body = await self._get("/oracle/requests/" + request_id, params={"members": submission_hash})
+        return body if isinstance(body, dict) else None
 
     async def fetch_health(self) -> dict[str, Any] | None:
         return await self._dict("/health")
