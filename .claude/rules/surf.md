@@ -227,7 +227,9 @@ fleets have no reference. Daemon comparison is equality only, never hash orderin
 An outdated runtime or differing daemon is yellow with a trailing ` ↑`; reserve its two
 cells within the existing fit budget. All other lines retain their old rendering. The RUNTIME
 box tooltip is a literal `Text`: npm latest/version/check time, fleet reference/count, or
-`update check unavailable`, `runtime not checked`, `no fleet majority`. No new workers read,
+`update check pending` (runtime id absent from `swarm_runtime_latest`: not yet checked),
+`update check unavailable` (a checked version of None: the read failed), `runtime not checked`,
+`no fleet majority`; a pending, unknown or unavailable seat has no tooltip. No new workers read,
 no new degraded group, no pin change.
 
 COLLAB keeps its collaborator count and adds the top two teammate tokens, ordered by shared
