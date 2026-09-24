@@ -126,3 +126,23 @@ def test_job_window_filters_successful_oracles_and_caps_jobs():
         if (row['node_key'] not in sw.SWARM_ORACLE_NODE_KEYS or row['work_status'] in ('failed','rejected')) and row['job_id'] not in expected:
             expected.append(row['job_id'])
     assert sw.job_details_due(rows,{},now_ts=1000)==expected[:2]
+
+
+@pytest.mark.parametrize('items,expected', [
+    ([], ''), (['0x1', '9'*78, '0x'+'F'*64], '0x1 '+'9'*78+' 0x'+'F'*64),
+    (['1']*20, ' '.join(['1']*20)), (['1']*21, None),
+    (['0x'], None), (['0x'+'a'*65], None), (['9'*79], None),
+    (['1\n'], None), (['-1'], None), ([1], None), ([True], None),
+])
+def test_non_address_arrays_require_bounded_full_string_items(items, expected):
+    assert sw._seat_answer(items, 'bytes32[]') == expected
+
+
+def test_completed_review_fallback_preserves_its_reply_and_usage():
+    payload = json.loads((ROOT/'v4/submissions_33016bad.json').read_text())
+    item = next(i for i in payload['submissions'] if str(i['seat']['tokenId']) == '420')
+    value = point(payload, item)
+    assert item['nodeKey'] not in sw.SWARM_ORACLE_NODE_KEYS
+    assert value['state'] == 'read' and value['reply'] == sw.clean_reply(item['summary'])
+    assert value['turns'] == item['usage']['turns']
+    assert value['others_total'] == len(payload['submissions'])-1

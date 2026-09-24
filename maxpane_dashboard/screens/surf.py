@@ -231,7 +231,8 @@ from maxpane_dashboard.screens.seat_input import parse_seat
 from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
 from copy import deepcopy
 from maxpane_dashboard.screens.oracle_answer import OracleAnswerScreen
-from maxpane_dashboard.widgets.surf._oracle_answer import valid_identity, joined
+from maxpane_dashboard.screens.submission_detail import SubmissionDetailScreen
+from maxpane_dashboard.widgets.surf._oracle_answer import valid_identity, joined, can_open_submission
 from maxpane_dashboard.status_message import post_status_message
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
@@ -3749,15 +3750,21 @@ class SurfScreen(DashboardScreen):
     # ------------------------------------------------------------------
 
     async def action_open_oracle_answer(self, job_id: str, submission_hash: str) -> None:
+        await self._open_record_detail(job_id, submission_hash, joined, OracleAnswerScreen)
+
+    async def action_open_submission(self, job_id: str, submission_hash: str) -> None:
+        await self._open_record_detail(job_id, submission_hash, can_open_submission, SubmissionDetailScreen)
+
+    async def _open_record_detail(self, job_id, submission_hash, eligible, screen_type):
         if not valid_identity(job_id, submission_hash):
             return
         row = next((row for row in getattr(self, '_oracle_answer_rows', ())
                     if row.get('job_id') == job_id and row.get('submission_hash') == submission_hash
-                    and joined(row)), None)
+                    and eligible(row)), None)
         if row is None:
             post_status_message(self.app, 'answer no longer listed')
             return
-        await self.app.push_screen(OracleAnswerScreen(row))
+        await self.app.push_screen(screen_type(row))
 
     async def _do_refresh(self) -> None:
         try:

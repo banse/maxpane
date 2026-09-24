@@ -824,7 +824,7 @@ _SPOOF = "0xF3083828702C1989710CECA517412071c2f60Ee6"          # 1-gwei lookalik
 
 def _sample_data() -> dict:
     """A representative full payload, every value captures-derived."""
-    return {
+    data = {
         # -- meta ---------------------------------------------------------
         "as_of": _AS_OF,
         "degraded": [],
@@ -1670,6 +1670,33 @@ def _sample_data() -> dict:
         # The seat tier's own marker (AGENT-seats plan §1.1).
         "swarm_seat_as_of_hhmm": "13:50",
     }
+
+    # Captured submission facts, with synthetic hashes to distinguish popup cases.
+    defaults = dict(sub_reply=None, sub_failure_reason=None, sub_turns=None, sub_cached_input_tokens=None,
+        sub_failed_checks=None, sub_findings=None, sub_artifacts=None, sub_others=None, sub_others_total=None,
+        job_read='not_read', job_detail_state=None, job_blocked_reason=None, job_nodes=None)
+    data['swarm_seat_work_rows'] = [dict(row, **defaults) for row in data['swarm_seat_work_rows']]
+    source = data['swarm_seat_work_rows'][0]
+    data['swarm_seat_work_rows'].extend([
+        dict(source, job_id='7b9c907d-99b9-405b-8491-6088c77d4cc9', submission_hash='34'*32,
+            node_key='hunt_d', role='tests', work_status='failed', job_state='blocked',
+            objective='Fren Review', answer='the local build failed, so this was not submitted:',
+            model='claude-fable-5-1', took_s=1376.131, output_tokens=74958,
+            sub_reply='the local build failed, so this was not submitted:\n    Published warning excerpt.',
+            sub_failure_reason='local_build_failed', sub_turns=61, sub_cached_input_tokens=6204550,
+            sub_findings=0, sub_artifacts=[], sub_others=[], sub_others_total=0,
+            job_read='read', job_detail_state='blocked', job_blocked_reason='node hunt_b: runtime_error',
+            job_nodes=[dict(key='hunt_b',role='tests',state='failed',attempt=3,failure_reason='runtime_error')]),
+        dict(source, job_id='00000000-0000-4000-8000-000000000004', submission_hash='56'*32,
+            node_key='oracle_assess', work_status='failed', panel_state='unavailable',
+            answer='bundle upload failed (500)', sub_reply='bundle upload failed (500)',
+            sub_failure_reason='internal_error', sub_turns=6),
+        dict(source, job_id='00000000-0000-4000-8000-000000000005', submission_hash='78'*32,
+            node_key='review', work_status='accepted', answer='Review complete.', sub_reply='Review complete.\nChecks passed.',
+            sub_turns=10, sub_findings=0, sub_artifacts=[], sub_others=[], sub_others_total=0,
+            job_read='read', job_detail_state='completed', job_nodes=[]),
+    ])
+    return data
 
 
 #: The MAINNET deployment, from ``docs/imd_pool4_mainnet.md`` -- every number

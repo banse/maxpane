@@ -16,10 +16,10 @@ from tests.screens.test_surf_screen import _FakeManager, _sample_data, _Harness
 
 
 class PopupApp(CopyAddressMixin, ExplorerLinkMixin, LinkRecorder, App):
-    def __init__(self, row):
-        super().__init__(); self.row = row
+    def __init__(self, row, screen_type=OracleAnswerScreen):
+        super().__init__(); self.row = row; self.screen_type = screen_type
     def on_mount(self):
-        self.push_screen(OracleAnswerScreen(self.row))
+        self.push_screen(self.screen_type(self.row))
 
 
 def lines(app):
@@ -231,4 +231,17 @@ async def test_trimmed_hex_has_no_fake_address_icon_or_link(mode):
         scroll.scroll_end(animate=False)
         await settled(pilot, lambda: scroll.scroll_y == scroll.max_scroll_y)
         assert '0x' not in '\n'.join(lines(pilot.app))
+        assert not icon_targets(pilot.app) and not link_targets(pilot.app)
+
+
+async def test_bytes32_values_are_full_lines_without_icons_or_links():
+    from tests.data.test_surf_swarm_answers import ROOT
+    import json
+    detail=json.loads((ROOT/'oracle/filtered/bytes32.json').read_text())
+    values=detail['members'][0]['answer']['answer']
+    row=oracle_row(panel_answer_type='bytes32[]',oracle_seat_answer=' '.join(values),oracle_question='Pool ids',oracle_notes='Evidence')
+    async with PopupApp(row).run_test(size=(139,33)) as pilot:
+        await pilot.pause()
+        text='\n'.join(lines(pilot.app))
+        assert all(value in text for value in values)
         assert not icon_targets(pilot.app) and not link_targets(pilot.app)

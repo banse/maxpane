@@ -34,6 +34,9 @@ class OracleAnswerScreen(RecordDetailScreen):
             for index, address in enumerate(addresses):
                 if index: value.append('\n            ')
                 value.append_text(address_text(address, explorer=explorer))
+        elif str(row.get('panel_answer_type') or '').endswith('[]') and row.get('oracle_seat_answer') is not None:
+            values = row['oracle_seat_answer'].split()
+            value.append('\n            '.join(values) if values else '0 values')
         else:
             value.append_text(address_prose(seat_value(row), explorer=explorer))
         yield from self.section('QUESTION', address_prose(_paragraphs(row.get('oracle_question')), explorer=explorer), first=True)
