@@ -239,3 +239,13 @@ def test_plain_replies_skip_python_link_parser_at_cache_cap(monkeypatch):
         raise AssertionError('plain prose must not run the Python Markdown parser')
     monkeypatch.setattr(sw, '_answer_link_spans', unexpected_parse)
     assert len(sw.coerce_answers_slot(slot)[payload['jobId']]) == 400
+
+
+@pytest.mark.parametrize('text,safe', [
+    ('https://example.com/[label](target)', False),
+    ('[label https://example.com/](target)', False),
+    ('https://example.com/](literal)', True),
+])
+def test_url_embedded_markdown_keeps_both_safety_checks(text, safe):
+    assert sw._safe_reply(text) is safe
+    assert sw._safe_stored_answer(text) is safe

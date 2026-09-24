@@ -294,3 +294,38 @@ async def test_off_panel_job_is_read_but_joined_oracle_job_is_not(tmp_path):
         assert fake.detail_calls == jobs[:1]
     finally:
         await manager.close()
+
+
+async def test_named_job_detail_limits_control_reads_pruning_and_retry(tmp_path, monkeypatch):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_JOB_DETAIL
+    assert (manager_mod.SWARM_JOB_DETAIL_PER_CYCLE, manager_mod.SWARM_JOB_DETAIL_CACHE_CAP,
+            manager_mod.SWARM_JOB_DETAIL_MAX_AGE_S, manager_mod.SWARM_JOB_DETAIL_DUE_S) == (2, 400, 48*3600, 120)
+    monkeypatch.setattr(manager_mod, 'SWARM_JOB_DETAIL_PER_CYCLE', 1)
+    monkeypatch.setattr(manager_mod, 'SWARM_JOB_DETAIL_CACHE_CAP', 2)
+    monkeypatch.setattr(manager_mod, 'SWARM_JOB_DETAIL_MAX_AGE_S', 10)
+    monkeypatch.setattr(manager_mod, 'SWARM_JOB_DETAIL_DUE_S', 5)
+    fake = Answers(work(3, 'completed'))
+    jobs = [row['jobId'] for row in fake.seat['work']]
+    calls = []
+    async def fetch(job):
+        calls.append(job)
+        return dict(id=job, state='blocked', nodes=[], blockedReason=None)
+    fake.fetch_job = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        for cycle in range(3):
+            await manager._pool_swarm_seat(420, NOW+cycle)
+            assert calls == jobs[:cycle+1]
+        points = manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload
+        assert set(points) == set(jobs[1:])
+        fake.seats[420]['work'] = fake.seats[420]['work'][2:]
+        await manager._pool_swarm_seat(420, NOW+6)
+        assert calls == jobs
+        await manager._pool_swarm_seat(420, NOW+7)
+        assert calls == jobs+jobs[2:]
+        assert data(manager, NOW+18)['swarm_seat_work_rows'][0]['job_read'] == 'not_read'
+        fake.seats[420]['work'] = []
+        await manager._pool_swarm_seat(420, NOW+18)
+        assert manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload == {}
+    finally:
+        await manager.close()

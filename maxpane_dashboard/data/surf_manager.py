@@ -871,6 +871,15 @@ SWARM_ANSWER_MAX_AGE_S = 48 * 3600.0
 #: Nonterminal jobs may change; their reads follow the seat tier's 120 s clock.
 SWARM_ANSWER_DUE_S = 120.0
 
+#: Progressive job context for successfully read SUBMISSION rows in RECORD's window.
+SWARM_JOB_DETAIL_PER_CYCLE = 2
+#: Retain at most ten 40-row windows of extracted job context across seats.
+SWARM_JOB_DETAIL_CACHE_CAP = 400
+#: Expire retained job context after the same 48-hour horizon as answer facts.
+SWARM_JOB_DETAIL_MAX_AGE_S = 48 * 3600.0
+#: Blocked and other nonterminal jobs may resume; retry after two minutes.
+SWARM_JOB_DETAIL_DUE_S = 120.0
+
 #: Route cap 500; the 590-request capture needs two pages for a complete index.
 SWARM_ORACLE_PAGE_LIMIT = 500
 #: Shared forward/backfill budget: 2,000 requests (~16 days at 125/day).
@@ -5821,17 +5830,20 @@ class SurfManager:
 
     async def _pool_swarm_job_details(self, seat: dict, now: float) -> None:
         prior = self.cache.get_last_good(SLOT_SWARM_JOB_DETAIL)
-        points = sw.prune_job_details(getattr(prior, 'payload', None), now_ts=now)
+        points = sw.prune_job_details(getattr(prior, 'payload', None), now_ts=now,
+                                      cap=SWARM_JOB_DETAIL_CACHE_CAP, max_age_s=SWARM_JOB_DETAIL_MAX_AGE_S)
         answers = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
         oracle = self.cache.get_last_good(SLOT_SWARM_ORACLE)
         rows = sw.enrich_panel_rows(
             sw.enrich_work_rows(sw.seat_work_rows(seat), getattr(answers, 'payload', None)),
             getattr(oracle, 'payload', None), sw.SWARM_ORACLE_NODE_KEYS)
-        for job in sw.job_details_due(rows, points, now_ts=now):
+        for job in sw.job_details_due(rows, points, now_ts=now,
+                                      cap=SWARM_JOB_DETAIL_PER_CYCLE, due_s=SWARM_JOB_DETAIL_DUE_S):
             detail = await self._guard(lambda: self.swarm_client.fetch_job(job), 'swarm popup job')
             point = sw.job_detail_point(detail, job, now_ts=now)
             points[job] = point
-        points = sw.prune_job_details(points, now_ts=now)
+        points = sw.prune_job_details(points, now_ts=now,
+                                      cap=SWARM_JOB_DETAIL_CACHE_CAP, max_age_s=SWARM_JOB_DETAIL_MAX_AGE_S)
         if prior is None or prior.payload != points:
             self.cache.store_last_good(SLOT_SWARM_JOB_DETAIL, points, ts=now)
 
@@ -6182,7 +6194,8 @@ class SurfManager:
             sw.enrich_work_rows(sw.seat_work_rows(seat), answers), oracle, sw.SWARM_ORACLE_NODE_KEYS)
         details = self.cache.get_last_good(SLOT_SWARM_JOB_DETAIL)
         out['swarm_seat_work_rows'] = sw.enrich_job_rows(out['swarm_seat_work_rows'],
-            sw.prune_job_details(getattr(details, 'payload', None), now_ts=now_ts))
+            sw.prune_job_details(getattr(details, 'payload', None), now_ts=now_ts,
+                                 cap=SWARM_JOB_DETAIL_CACHE_CAP, max_age_s=SWARM_JOB_DETAIL_MAX_AGE_S))
         out["swarm_seat_node_rows"] = sw.seat_node_rows(seat)
         out["swarm_seat_teammates"] = sw.seat_teammates(seat)
         return out

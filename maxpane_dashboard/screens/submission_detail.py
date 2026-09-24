@@ -6,23 +6,16 @@ from rich.text import Text
 from maxpane_dashboard.screens.record_detail import RecordDetailScreen
 from maxpane_dashboard.widgets.address import address_prose
 from maxpane_dashboard.widgets.fmt import hhmm
-from maxpane_dashboard.widgets.surf._fmt import short_model, fmt_compact
-from maxpane_dashboard.widgets.surf._oracle_answer import _STATE_COLORS
+from maxpane_dashboard.widgets.surf._fmt import short_model
+from maxpane_dashboard.widgets.surf._oracle_answer import _STATE_COLORS, tok_text
 
 
 def _prose(value, *, style=''):
     return address_prose(str(value) if value is not None else '—', explorer=None, style=style)
 
 
-def _count(value, *, compact=False):
-    if type(value) is not int or value < 0:
-        return '—'
-    if compact and value >= 1000:
-        try:
-            return fmt_compact(value)
-        except OverflowError:
-            pass  # Valid cached integers can exceed the shared formatter's float range.
-    return str(value)
+def _count(value):
+    return str(value) if type(value) is int and value >= 0 else '—'
 
 
 def _runtime(value):
@@ -66,8 +59,8 @@ class SubmissionDetailScreen(RecordDetailScreen):
         if row.get('sub_failure_reason'):
             this_seat += ' · ' + row['sub_failure_reason']
         usage = ' · '.join([short_model(row.get('model')) or '—', _count(row.get('sub_turns'))+' turns',
-            _runtime(row.get('took_s')), _count(row.get('output_tokens'), compact=True)+' out',
-            _count(row.get('sub_cached_input_tokens'), compact=True)+' cached in'])
+            _runtime(row.get('took_s')), tok_text(row.get('output_tokens'))+' out',
+            tok_text(row.get('sub_cached_input_tokens'))+' cached in'])
         artifacts = ', '.join(f"{a['name']} ({_count(a.get('bytes'))} bytes)" for a in row.get('sub_artifacts') or []) or '—'
         facts = f"checks failed: {row.get('sub_failed_checks') or '—'} · findings {_count(row.get('sub_findings'))} · artifacts {artifacts}"
         yield from self.section('THIS SEAT', _prose(this_seat, style=_STATE_COLORS.get(status, '')), _prose(usage), _prose(facts))

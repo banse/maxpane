@@ -12,7 +12,7 @@ The job cell links a canonical job id to its IMD explorer page; the node
 cell is the node's short word (:data:`_swarm_seat.NODE_TITLES`). Launch and
 submission hash are not columns (owner, 2026-09-22: the answer gets the room);
 a failed attempt's read answer is red. Answer takes the remaining width and
-lights ``‹ widen`` when cut. The title has no blank row under it (owner,
+lights ``‹ widen`` when cut only if there is no popup button. The title has no blank row under it (owner,
 2026-09-22, this panel only). The scrollable table caps at forty rows and
 explicitly counts older rows; the seat state hides stale rows before rendering.
 """
@@ -27,8 +27,8 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import job_text
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
-from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm, short_model, fmt_compact
-from maxpane_dashboard.widgets.surf._oracle_answer import _PANEL_COLS, _STATE_COLORS, joined, record_answer, panel_text, can_open_submission, fit_popup_text
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm, short_model
+from maxpane_dashboard.widgets.surf._oracle_answer import _PANEL_COLS, _STATE_COLORS, joined, record_answer, panel_text, can_open_submission, fit_popup_text, tok_text
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
@@ -236,12 +236,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         if key == "model":
             value = short_model(value)
         elif key == "output_tokens":
-            if type(value) is not int or value < 0:
-                return EMDASH
-            value = fmt_int(value) if value < 1000 else (
-                "1.0M" if 999_500 <= value < 1_000_000 else fmt_compact(value))
-            if value == DASH:
-                return EMDASH
+            value = tok_text(value)
         elif key == "took_s":
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 return EMDASH

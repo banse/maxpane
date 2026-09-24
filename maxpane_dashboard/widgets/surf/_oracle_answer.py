@@ -8,6 +8,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import is_job_id
 from maxpane_dashboard.widgets.explorer import for_chain_id
 from maxpane_dashboard.widgets.markup_safety import sanitize_cell, strip_tags
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_compact
 from maxpane_dashboard.widgets.surf._icons import mark_addresses, keep_units, link_prose, unmark
 
 _HASH = re.compile(r'[0-9a-f]{64}')
@@ -16,6 +17,21 @@ _HASH = re.compile(r'[0-9a-f]{64}')
 _PANEL_COLS = 1 + 1 + 3 + 1 + 3
 _STATE_COLORS = {'completed': 'green', 'failed': 'red', 'cancelled': 'red',
                  'rejected': 'red', 'pending': 'yellow'}
+
+
+def tok_text(value):
+    """Submission token counts: strict integers, with RECORD's million carry."""
+    if type(value) is not int or value < 0:
+        return EMDASH
+    if value < 1000:
+        return str(value)
+    if 999_500 <= value < 1_000_000:
+        return '1.0M'
+    try:
+        text = fmt_compact(value)
+    except OverflowError:
+        return str(value)
+    return EMDASH if text == DASH else text
 
 
 def failed_answer(row):

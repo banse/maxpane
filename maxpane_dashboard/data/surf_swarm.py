@@ -1553,7 +1553,8 @@ def _safe_answer_markup(value: str) -> bool:
     if '/' not in value and '\\' not in value and '](' not in value:
         return True
     for match in _STORED_MARKUP_PATTERN.finditer(value):
-        if match.group('link') is not None:
+        # URL matches consume their whole token, including possible Markdown syntax.
+        if match.group('link') is not None or (match.group('url') is not None and '](' in match.group()):
             if _answer_link_spans(value):
                 return False
         elif match.group('url') is None:

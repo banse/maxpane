@@ -173,3 +173,13 @@ async def test_job_line_exposes_cached_read_time(state):
             assert 'as of '+hhmm(1000.0) in text
             expected = 'blocked · node hunt_b: runtime_error' if state == 'read' else 'unavailable'
             assert expected+' · as of '+hhmm(1000.0) in text
+
+
+async def test_record_and_submission_share_the_token_carry():
+    from tests.widgets.test_surf_swarm_seat_record import _record
+    row = row_for('bundle')
+    row['output_tokens'] = 999700
+    assert '1.0M' in '\n'.join(await _record(swarm_seat_work_rows=[row]))
+    async with SubmissionApp(row).run_test(size=(139, 33)) as pilot:
+        text = await all_visible(pilot)
+        assert '1.0M out' in text and '999.7K' not in text

@@ -11,7 +11,7 @@ changing the table's cursor or Enter behavior. Keep Enter/Escape inside either p
 `docs/surf_submission_popup_plan.md` adds SUBMISSION for successfully read non-joined rows,
 when cut or failed/rejected. A shared popup frame shows the bounded reply, job/node state,
 usage and up to eight other seats. The approved cache persists cleaned reply text within an
-8,000-byte point budget; the two-read job-detail slot retries blocked jobs. G1 also retains
+8,000-byte on-disk point budget; the two-read job-detail slot retries blocked jobs. G1 also retains
 bytes32[] values and displays them without address semantics.
 
 The captured failed-build reply starts mid-line and ends mid-warning; the compile error is not
@@ -34,3 +34,9 @@ its oracle request is `1ad552f0-7f24-4e94-9c48-d25a79a88ce9`.
 - The shared-request coverage follow-up is completed by fix F2: a filtering fake records each
   request/hash pair and verifies distinct member facts for two hashes of one job. Fix F7 covers
   the corresponding popup selection through both row buttons.
+
+## M7 — historical button-less layout measurement
+
+The layout test certifies the historical button-less RECORD case at 167 columns. That scope
+is already stated beside `RECORD_NEVER_CLEARS_BELOW`; a future layout pass can add a separate
+button-bearing measurement. The submission fix wave changes neither the test nor the pin.
