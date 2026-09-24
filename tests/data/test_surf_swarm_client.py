@@ -722,3 +722,28 @@ async def test_filtered_oracle_invalid_hash_never_sends_request(bad):
     try:
         assert await client.fetch_oracle_request('00000000-0000-4000-8000-000000000001', bad) is None
     finally: await client.close()
+
+
+@pytest.mark.parametrize('name', ['hunt_submissions','hunt_job','bundle_submissions','bundle_job','bytes32'])
+async def test_submission_popup_captures_require_exact_recorded_route(name):
+    import json
+    from pathlib import Path
+    from urllib.parse import urlsplit
+    root=Path(__file__).parents[1]/'fixtures/surf/swarm'
+    entry=json.loads((root/'submissions/MANIFEST.json').read_text())['files'][name]
+    body=json.loads((root/entry['path']).read_text())
+    url=urlsplit(entry['url'])
+    def handler(request):
+        assert request.method=='GET' and request.url.path==url.path and request.url.query.decode()==url.query
+        return httpx.Response(200,json=body)
+    client=_client(handler,inter_call_delay=0)
+    try:
+        if name=='bytes32':
+            from urllib.parse import parse_qs
+            result=await client.fetch_oracle_request(body['id'],parse_qs(url.query)['members'][0])
+        elif name.endswith('submissions'):
+            result=await client.submissions(body['jobId'])
+        else:
+            result=await client.fetch_job(body['id'])
+        assert result==body
+    finally: await client.close()

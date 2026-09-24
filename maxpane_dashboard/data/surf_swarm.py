@@ -1553,7 +1553,7 @@ def _safe_stored_answer(value: object) -> bool:
 
 def answer_sentence(summary: str) -> str:
     """Bounded, idempotent link/path/Markdown cleanup; newline precedes flattening."""
-    text = summary[:ANSWER_TEXT_CAP]
+    text = _text_prefix(summary, ANSWER_TEXT_CAP) or ''
     for _ in range(_ANSWER_STRIP_PASSES):
         previous = text
         text = _strip_answer_links(text)
@@ -1570,9 +1570,189 @@ def answer_sentence(summary: str) -> str:
 
 
 
+SUBMISSION_FACT_FIELDS = SWARM_ANSWER_CACHE_FIELDS[7:]
+ANSWER_POINT_BYTES = 8000
+_FAILURE_REASON = re.compile(r'[a-z][a-z0-9_]{0,63}')
+_ANSI_ESCAPE = re.compile(r'\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-_])')
+
+
+def clean_reply(value: object, cap: int = ANSWER_TEXT_CAP) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = _ANSI_ESCAPE.sub('', value).replace('\t', '    ')
+    text = ''.join(c for c in text if c == '\n' or not unicodedata.category(c).startswith('C'))
+    for _ in range(_ANSWER_STRIP_PASSES):
+        clean = _strip_answer_paths(_strip_answer_links(text))
+        if clean == text:
+            return (text if len(text) <= cap else _text_prefix(text, cap)) or None
+        text = clean
+    return None
+
+
+def _safe_reply(value: object, cap: int = ANSWER_TEXT_CAP) -> bool:
+    return (isinstance(value, str) and len(value) <= cap
+            and not any(c != '\n' and unicodedata.category(c).startswith('C') for c in value)
+            and not _answer_link_spans(value) and next(_answer_paths(value), None) is None)
+
+
+def _submission_text(value: object, cap: int) -> str | None:
+    clean = clean_reply(value)
+    return _text_prefix(' '.join(clean.split()), cap) if clean else None
+
+
+def _failure_reason(value: object) -> str | None:
+    return value if isinstance(value, str) and _FAILURE_REASON.fullmatch(value) else None
+
+
+def _submission_facts(payload: Mapping, item: Mapping) -> dict:
+    usage = item.get('usage'); usage = usage if isinstance(usage, Mapping) else {}
+    verdict = item.get('verdict')
+    checks = verdict.get('failedChecks') if isinstance(verdict, Mapping) else None
+    names = [_submission_text(c if isinstance(c, str) else c.get('name') if isinstance(c, Mapping) else None, 300)
+             for c in checks] if isinstance(checks, list) else []
+    artifacts = item.get('artifacts')
+    artifacts = [dict(name=_submission_text(a.get('name'), 80) or '—', bytes=_oracle_count(a.get('bytes')))
+                 for a in artifacts[:10] if isinstance(a, Mapping)] if isinstance(artifacts, list) else None
+    others = None
+    if item.get('nodeKey') not in SWARM_ORACLE_NODE_KEYS:
+        others = []
+        for other in payload['submissions']:
+            if not isinstance(other, Mapping) or other.get('hash') == item['hash']:
+                continue
+            seat = other.get('seat'); token = _served_token(seat.get('tokenId')) if isinstance(seat, Mapping) else None
+            if token is None:
+                continue
+            others.append(dict(node_key=_submission_text(other.get('nodeKey'), 40) or '—', token=token,
+                outcome=_submission_text(other.get('outcome'), 20) or '—',
+                failure_reason=_failure_reason(other.get('failureReason')),
+                line=_text_prefix(answer_sentence(clean_reply(other.get('summary')) or ''), 200) or ''))
+        others.sort(key=lambda row: (row['node_key'], row['token']))
+    return dict(reply=clean_reply(item.get('summary')), failure_reason=_failure_reason(item.get('failureReason')),
+        turns=_oracle_count(usage.get('turns')), cached_input_tokens=_oracle_count(usage.get('cachedInputTokens')),
+        failed_checks=_text_prefix(', '.join(n for n in names if n), 300) if isinstance(verdict, Mapping) else None,
+        findings=len(item['findings']) if isinstance(item.get('findings'), list) else None,
+        artifacts=artifacts, others=others[:8] if others is not None else None,
+        others_total=len(others) if others is not None else None)
+
+
+def _valid_short_text(value: object, cap: int, *, optional=True) -> bool:
+    return value is None and optional or (_safe_reply(value, cap) and '\n' not in value)
+
+
+def _valid_submission_facts(point: Mapping) -> bool:
+    if _json_bytes(point, compact=True) > ANSWER_POINT_BYTES:
+        return False
+    if point['state'] not in ('read', 'no_reply'):
+        return all(point[k] is None for k in SUBMISSION_FACT_FIELDS)
+    if (point['reply'] is not None and not _safe_reply(point['reply'])
+            or point['failure_reason'] is not None and _failure_reason(point['failure_reason']) is None
+            or any(point[k] is not None and _oracle_count(point[k]) is None
+                   for k in ('turns', 'cached_input_tokens', 'findings', 'others_total'))
+            or not _valid_short_text(point['failed_checks'], 300)):
+        return False
+    artifacts = point['artifacts']
+    if artifacts is not None and (not isinstance(artifacts, list) or len(artifacts) > 10 or any(
+            not isinstance(a, Mapping) or set(a) != {'name','bytes'}
+            or not _valid_short_text(a['name'], 80, optional=False)
+            or a['bytes'] is not None and _oracle_count(a['bytes']) is None for a in artifacts)):
+        return False
+    others = point['others']
+    if others is None:
+        return point['others_total'] is None
+    if (not isinstance(others, list) or len(others) > 8 or point['others_total'] is None
+            or point['others_total'] < len(others) or any(
+                not isinstance(o, Mapping) or set(o) != {'node_key','token','outcome','failure_reason','line'}
+                or _oracle_count(o['token']) is None
+                or not _valid_short_text(o['node_key'],40,optional=False)
+                or not _valid_short_text(o['outcome'],20,optional=False)
+                or not _valid_short_text(o['line'],200,optional=False)
+                or o['failure_reason'] is not None and _failure_reason(o['failure_reason']) is None for o in others)):
+        return False
+    return others == sorted(others, key=lambda o: (o['node_key'], o['token']))
+
+
+def bound_answer_point(point: dict) -> dict | None:
+    targets = [(other, 'line', '') for other in point.get('others') or []]
+    targets += [(point, 'reply', None), (point, 'failed_checks', None)]
+    return _bound_text_fields(point, targets, ANSWER_POINT_BYTES, compact=True)
+
+
+_JOB_FINAL = {'completed', 'failed', 'cancelled'}
+_JOB_FIELDS = {'state','blocked_reason','nodes','read_ts','terminal'}
+
+
+def job_detail_point(detail: object, job: str, *, now_ts: float) -> dict:
+    empty = dict(state=None, blocked_reason=None, nodes=None, read_ts=now_ts, terminal=False)
+    if (not isinstance(detail, Mapping) or detail.get('id') != job
+            or not isinstance(detail.get('state'), str) or not detail['state'].strip()
+            or not isinstance(detail.get('nodes'), list)):
+        return empty
+    state = _submission_text(detail['state'],40)
+    nodes = [dict(key=_submission_text(n.get('key'),40) or '—', role=_submission_text(n.get('role'),20) or '—',
+                  state=_submission_text(n.get('state'),20) or '—', attempt=_oracle_count(n.get('attempt')),
+                  failure_reason=_failure_reason(n.get('failureReason')))
+             for n in detail['nodes'][:16] if isinstance(n, Mapping)]
+    return dict(state=state, blocked_reason=_submission_text(detail.get('blockedReason'),200), nodes=nodes,
+                read_ts=now_ts, terminal=state in _JOB_FINAL)
+
+
+def coerce_job_detail_slot(payload: object) -> dict | None:
+    if not isinstance(payload, Mapping):
+        return None
+    result = {}
+    for job, p in payload.items():
+        if (parse_job_id(job) is None or not isinstance(p, Mapping) or set(p) != _JOB_FIELDS
+                or not _nonnegative_finite(p['read_ts']) or type(p['terminal']) is not bool
+                or not _valid_short_text(p['state'],40) or not _valid_short_text(p['blocked_reason'],200)
+                or p['terminal'] != (p['state'] in _JOB_FINAL)):
+            continue
+        nodes = p['nodes']
+        if p['state'] is None:
+            if nodes is not None or p['blocked_reason'] is not None:
+                continue
+        elif not p['state'] or not isinstance(nodes,list) or len(nodes)>16 or any(
+                not isinstance(n,Mapping) or set(n)!={'key','role','state','attempt','failure_reason'}
+                or not all(_valid_short_text(n[k],cap,optional=False) for k,cap in [('key',40),('role',20),('state',20)])
+                or n['attempt'] is not None and _oracle_count(n['attempt']) is None
+                or n['failure_reason'] is not None and _failure_reason(n['failure_reason']) is None for n in nodes):
+            continue
+        result[job] = dict(p)
+    return result
+
+
+def prune_job_details(payload: object, *, now_ts: float, cap=400, max_age_s=48*3600) -> dict:
+    points = [(job,p) for job,p in (coerce_job_detail_slot(payload) or {}).items()
+              if 0 <= now_ts-p['read_ts'] <= max_age_s]
+    return dict(sorted(points,key=lambda pair:(-pair[1]['read_ts'],pair[0]))[:cap])
+
+
+def job_details_due(rows: list[dict], points: dict, *, now_ts: float, cap=2, due_s=120) -> list[str]:
+    due = {}
+    for index,row in enumerate(rows[:SWARM_ANSWER_ROW_CAP]):
+        job = row['job_id']
+        if parse_job_id(job) is None or (row['node_key'] in SWARM_ORACLE_NODE_KEYS and row['work_status'] not in ('failed','rejected')):
+            continue
+        point = points.get(job)
+        if point is not None and (point['terminal'] or now_ts-point['read_ts'] < due_s):
+            continue
+        due.setdefault(job, (0,index) if point is None else (1,point['read_ts']))
+    return sorted(due,key=due.get)[:cap]
+
+
+def enrich_job_rows(rows: list[dict], points: object) -> list[dict]:
+    valid = coerce_job_detail_slot(points) or {}
+    result = []
+    for row in rows:
+        p = valid.get(row['job_id'])
+        result.append(dict(row, job_read=('read' if p['state'] is not None else 'unavailable') if p else 'not_read',
+            job_detail_state=p['state'] if p else None, job_blocked_reason=p['blocked_reason'] if p else None,
+            job_nodes=p['nodes'] if p else None))
+    return result
+
+
 def submission_answer(payload: object, job_id: object, submission_hash: object, token: object) -> dict:
     """Select only the exact job/hash/seat; distinguish failure, absence and no reply."""
-    result = dict.fromkeys(SWARM_ANSWER_FIELDS)
+    result = dict.fromkeys((*SWARM_ANSWER_FIELDS, *SUBMISSION_FACT_FIELDS))
     result['state'] = 'unavailable'
     if parse_job_id(job_id) is None or _hex64(submission_hash) is None or _seat_id(token) is None:
         return result
@@ -1595,6 +1775,7 @@ def submission_answer(payload: object, job_id: object, submission_hash: object, 
             return result
     if 'summary' not in item or item['summary'] is not None and not isinstance(item['summary'], str):
         return result
+    result.update(_submission_facts(payload, item))
     answer = answer_sentence(item['summary'] or '')
     result.update(answer=answer or None, state='read' if answer else 'no_reply')
     usage = item.get('usage')
@@ -1639,6 +1820,8 @@ def coerce_answers_slot(payload: object) -> dict | None:
                 continue
             if state in ('not_served', 'unavailable') and (point['model'] is not None or point['took_s'] is not None or point['output_tokens'] is not None):
                 continue
+            if not _valid_submission_facts(point):
+                continue
             clean[key] = {field: point[field] for field in SWARM_ANSWER_CACHE_FIELDS}
             if state == 'unavailable':
                 clean[key]['terminal'] = False  # repair ambiguous legacy frozen failures
@@ -1667,12 +1850,14 @@ def enrich_work_rows(rows: list[dict], answers: object) -> list[dict]:
     result = []
     for row in rows:
         item = dict(row)
+        item.update({'sub_' + k: None for k in SUBMISSION_FACT_FIELDS})
         job, key = row['job_id'], row['submission_hash']
         if parse_job_id(job) is None or _hex64(key) is None:
             item['answer_state'] = 'unavailable'
         elif point := valid.get(job, {}).get(key):
             item.update(answer=point['answer'], answer_state=point['state'],
                         model=point['model'], took_s=point['took_s'], output_tokens=point['output_tokens'])
+            item.update({'sub_' + k: point[k] for k in SUBMISSION_FACT_FIELDS})
         result.append(item)
     return result
 
@@ -1725,7 +1910,7 @@ _ORACLE_FACTS = ('question', 'chain_id', 'member_ok', 'member_reason', 'seat_ans
 ORACLE_POINT_BYTES = 6000
 
 
-def _oracle_prefix(text: str, cap: int) -> str | None:
+def _text_prefix(text: str, cap: int) -> str | None:
     """Never turn a cut hex run into a different, apparently valid address."""
     if len(text) > cap:
         for run in re.finditer(r'0x[0-9a-fA-F]+', text):
@@ -1742,7 +1927,7 @@ def _oracle_text(value: object, cap: int, *, paragraphs: bool = True) -> str | N
         return None
     clean = ''.join(c for c in value if c == '\n' or not unicodedata.category(c).startswith('C'))
     clean = '\n'.join(' '.join(line.split()) for line in clean.split('\n')) if paragraphs else ' '.join(clean.split())
-    return _oracle_prefix(clean.strip(), cap)
+    return _text_prefix(clean.strip(), cap)
 
 
 def _seat_answer(value: object, kind: str | None) -> str | None:
@@ -1755,6 +1940,11 @@ def _seat_answer(value: object, kind: str | None) -> str | None:
                 or any(not isinstance(v, str) or re.fullmatch(r'0x[0-9a-fA-F]{40}', v) is None for v in value)):
             return None
         return ' '.join(value)
+    if isinstance(kind, str) and kind.endswith('[]'):
+        if (not isinstance(value, list) or len(value) > 20
+                or any(not isinstance(v, str) or re.fullmatch(r'0x[0-9a-fA-F]{1,64}|[0-9]{1,78}', v) is None for v in value)):
+            return None
+        return ' '.join(value)
     if isinstance(value, str):
         return _oracle_text(value, 200, paragraphs=False)
     if type(value) in (int, float):
@@ -1765,32 +1955,40 @@ def _seat_answer(value: object, kind: str | None) -> str | None:
     return None
 
 
-def _oracle_bytes(point: Mapping) -> int:
+def _json_bytes(point: Mapping, *, compact=False) -> int:
     try:
-        return len(json.dumps(dict(point)).encode())
+        options = dict(ensure_ascii=False, separators=(',', ':')) if compact else {}
+        return len(json.dumps(dict(point), **options).encode())
     except (ValueError, TypeError, OverflowError):
-        return ORACLE_POINT_BYTES + 1
+        return math.inf
 
 
-def _bound_oracle_point(point: dict) -> dict | None:
-    # Match surf_cache's json.dump encoding, including escaped Unicode and quotes.
-    for name in ('notes', 'question', 'member_reason'):
-        if _oracle_bytes(point) <= ORACLE_POINT_BYTES:
+def _oracle_bytes(point: Mapping) -> int:
+    return _json_bytes(point)
+
+
+def _bound_text_fields(point: dict, targets, limit: int, *, compact=False) -> dict | None:
+    for container, name, empty in targets:
+        if _json_bytes(point, compact=compact) <= limit:
             return point
-        text = point[name] or ''
-        point[name] = None
-        if _oracle_bytes(point) > ORACLE_POINT_BYTES:
+        text = container[name] or ''
+        container[name] = empty
+        if _json_bytes(point, compact=compact) > limit:
             continue
         low, high = 0, len(text)
         while low < high:
             mid = (low + high + 1) // 2
-            point[name] = _oracle_prefix(text, mid)
-            if _oracle_bytes(point) <= ORACLE_POINT_BYTES:
+            container[name] = _text_prefix(text, mid) or empty
+            if _json_bytes(point, compact=compact) <= limit:
                 low = mid
             else:
                 high = mid - 1
-        point[name] = _oracle_prefix(text, low)
-    return point if _oracle_bytes(point) <= ORACLE_POINT_BYTES else None
+        container[name] = _text_prefix(text, low) or empty
+    return point if _json_bytes(point, compact=compact) <= limit else None
+
+
+def _bound_oracle_point(point: dict) -> dict | None:
+    return _bound_text_fields(point, [(point, k, None) for k in ('notes','question','member_reason')], ORACLE_POINT_BYTES)
 
 
 def _valid_oracle_facts(point: Mapping) -> bool:
@@ -1811,7 +2009,8 @@ def _valid_oracle_facts(point: Mapping) -> bool:
         return False
     if kind == 'bool':
         return value in ('true', 'false')
-    raw = value.split(' ') if kind == 'address[]' and value else [] if kind == 'address[]' else value
+    is_list = isinstance(kind, str) and kind.endswith('[]')
+    raw = value.split(' ') if is_list and value else [] if is_list else value
     return _seat_answer(raw, kind) == value
 
 

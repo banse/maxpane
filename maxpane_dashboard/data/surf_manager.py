@@ -174,6 +174,7 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_SWARM_CONTRIBUTORS,
     SLOT_SWARM_ANSWERS,
     SLOT_SWARM_ORACLE,
+    SLOT_SWARM_JOB_DETAIL,
     SLOT_SWARM_ORACLE_INDEX,
     SERIES_IMD_PRICE_USD,
     pool4_reserve_series_name,
@@ -1120,6 +1121,7 @@ class SurfManager:
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
                 SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
                 SLOT_SWARM_ANSWERS: sw.coerce_answers_slot,
+                SLOT_SWARM_JOB_DETAIL: sw.coerce_job_detail_slot,
                 SLOT_SWARM_ORACLE: sw.coerce_oracle_slot,
                 SLOT_SWARM_ORACLE_INDEX: sw.coerce_oracle_index,
             })
@@ -5749,6 +5751,7 @@ class SurfManager:
             await self._resolve_seat_owner(result, now)
             await self._pool_swarm_answers(result, token, now)
             await self._pool_swarm_oracle(result, token, now)
+            await self._pool_swarm_job_details(result, now)
         return slot
 
     async def _resolve_seat_owner(self, seat: dict, now: float) -> None:
@@ -5801,15 +5804,31 @@ class SurfManager:
                                         "swarm submissions")
             for row in group:
                 answer = sw.submission_answer(payload, job, row["submission_hash"], token)
-                answers.setdefault(job, {})[row["submission_hash"]] = dict(
+                point = dict(
                     answer, read_ts=now,
                     terminal=answer["state"] == "not_served" or (
                         answer["state"] != "unavailable"
                         and row["job_state"] in ("completed", "cancelled", "failed")))
+                point = sw.bound_answer_point(point)
+                if point is None:
+                    point = dict.fromkeys(sw.SWARM_ANSWER_CACHE_FIELDS)
+                    point.update(state='unavailable', read_ts=now, terminal=False)
+                answers.setdefault(job, {})[row['submission_hash']] = point
         answers = sw.prune_answers(answers, now_ts=now, cap=SWARM_ANSWER_CACHE_CAP,
                                   max_age_s=SWARM_ANSWER_MAX_AGE_S)
         if prior is None or prior.payload != answers:
             self.cache.store_last_good(SLOT_SWARM_ANSWERS, answers, ts=now)
+
+    async def _pool_swarm_job_details(self, seat: dict, now: float) -> None:
+        prior = self.cache.get_last_good(SLOT_SWARM_JOB_DETAIL)
+        points = sw.prune_job_details(getattr(prior, 'payload', None), now_ts=now)
+        for job in sw.job_details_due(sw.seat_work_rows(seat), points, now_ts=now):
+            detail = await self._guard(lambda: self.swarm_client.fetch_job(job), 'swarm popup job')
+            point = sw.job_detail_point(detail, job, now_ts=now)
+            points[job] = point
+        points = sw.prune_job_details(points, now_ts=now)
+        if prior is None or prior.payload != points:
+            self.cache.store_last_good(SLOT_SWARM_JOB_DETAIL, points, ts=now)
 
     async def _pool_swarm_oracle(self, seat: dict, token: int, now: float) -> None:
         """Resolve due panels through the history index; publish only after all awaits."""
@@ -6156,6 +6175,9 @@ class SurfManager:
                                  cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
         out["swarm_seat_work_rows"] = sw.enrich_panel_rows(
             sw.enrich_work_rows(sw.seat_work_rows(seat), answers), oracle, sw.SWARM_ORACLE_NODE_KEYS)
+        details = self.cache.get_last_good(SLOT_SWARM_JOB_DETAIL)
+        out['swarm_seat_work_rows'] = sw.enrich_job_rows(out['swarm_seat_work_rows'],
+            sw.prune_job_details(getattr(details, 'payload', None), now_ts=now_ts))
         out["swarm_seat_node_rows"] = sw.seat_node_rows(seat)
         out["swarm_seat_teammates"] = sw.seat_teammates(seat)
         return out

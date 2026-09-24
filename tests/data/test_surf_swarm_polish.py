@@ -38,7 +38,7 @@ def test_captured_answer_uses_own_exact_hash_and_same_usage():
     for name in ('submissions_73d7dcd7', 'submissions_76296dcd', 'submissions_hostile'):
         payload, item = selected(name)
         answer = sw.submission_answer(payload, payload['jobId'], item['hash'], 420)
-        assert answer == dict(answer=sw.answer_sentence(item['summary']), state='read',
+        assert {k:answer[k] for k in sw.SWARM_ANSWER_FIELDS} == dict(answer=sw.answer_sentence(item['summary']), state='read',
                               model=item['usage']['model'], took_s=item['usage']['wallClockMs'] / 1000,
                               output_tokens=item['usage'].get('outputTokens'))
         assert '/home/' not in answer['answer'] and '/Users/' not in answer['answer']
@@ -96,7 +96,7 @@ def test_answer_cache_rejects_invalid_keys_states_and_retains_no_raw_payload():
     for bad_job, bad_hash in [('bad', key), (job, key[:8]), (job, True)]:
         assert sw.coerce_answers_slot({bad_job: {bad_hash: value}}) == {}
     assert sw.coerce_answers_slot({job: {key: dict(value, state='not_served')}}) == {}
-    assert set(value) == {'answer', 'model', 'took_s', 'output_tokens', 'state', 'read_ts', 'terminal'}
+    assert set(value) == set(sw.SWARM_ANSWER_CACHE_FIELDS)
 
 
 def test_answer_pruning_counts_points_not_jobs_and_refuses_old_or_future_entries():

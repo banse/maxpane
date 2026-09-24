@@ -1198,7 +1198,7 @@ class SurfCache:
                     continue
                 try:
                     entry = LastGood.from_dict(data, now=reference)
-                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX):
+                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:

@@ -216,3 +216,32 @@ async def test_fix_i3_real_negative_freezes_even_while_job_running(tmp_path,nega
         await manager._pool_swarm_seat(420,NOW+120)
         assert len(fake.answer_calls)==1
     finally: await manager.close()
+
+
+async def test_popup_job_details_cap_terminal_blocked_retry_and_failure(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_JOB_DETAIL
+    fake = Answers(work(4, 'completed'))
+    for row in fake.seat['work']: row['nodeKey'] = 'hunt_d'
+    jobs = [row['jobId'] for row in fake.seat['work']]
+    calls = []
+    async def fetch(job):
+        calls.append(job)
+        if job == jobs[3]: return None
+        return dict(id=job, state='blocked' if job == jobs[0] else 'completed', nodes=[], blockedReason='runtime_error')
+    fake.fetch_job = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert calls == jobs[:2]
+        await manager._pool_swarm_seat(420, NOW+119)
+        assert calls == jobs
+        await manager._pool_swarm_seat(420, NOW+120)
+        assert calls == jobs + jobs[:1]
+        points = manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload
+        assert points[jobs[1]]['terminal'] and not points[jobs[0]]['terminal']
+        result = manager._swarm_seat_keys({},None,{},manager.cache.get_last_good(SLOT_SWARM_SEAT),None,NOW+120)
+        assert result['swarm_seat_work_rows'][3]['job_read'] == 'unavailable'
+        assert len(sw.prune_job_details({**points,'bad':{}},now_ts=NOW+120,cap=2)) == 2
+        assert sw.prune_job_details(points,now_ts=NOW+49*3600)=={}
+    finally:
+        await manager.close()

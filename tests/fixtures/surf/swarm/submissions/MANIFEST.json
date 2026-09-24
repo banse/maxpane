@@ -1,0 +1,78 @@
+{
+  "host": "https://api.imd.fun",
+  "files": {
+    "version": {
+      "url": "https://api.imd.fun/version",
+      "captured_at": "2026-09-24T11:45:53.083557+00:00",
+      "http_status": 200,
+      "sha256": "d7d0453011db1afb8ebf4fae60c04ca9580df9d886b2123b06e1a6f284ad648d",
+      "bytes": 195,
+      "path": "submissions/version.json",
+      "control_plane_commit": "aa8ff6ee4dbf18f61216fac372241449a958f5fd"
+    },
+    "seat_420": {
+      "url": "https://api.imd.fun/seats/420",
+      "captured_at": "2026-09-24T11:45:53.694678+00:00",
+      "http_status": 200,
+      "sha256": "9a9086da306712a0a91e25ed54197016299824d793f17c26610dc904e79384bb",
+      "bytes": 359002,
+      "path": "submissions/seat_420.json",
+      "control_plane_commit": "aa8ff6ee4dbf18f61216fac372241449a958f5fd"
+    },
+    "hunt_submissions": {
+      "url": "https://api.imd.fun/jobs/7b9c907d-99b9-405b-8491-6088c77d4cc9/submissions",
+      "captured_at": "2026-09-24T11:45:53.862692+00:00",
+      "http_status": 200,
+      "sha256": "c9ed7e9052c2ff606741636d4af9d5784d6a9cd9eeb7dae708096e1cd362d69a",
+      "bytes": 10688,
+      "path": "submissions/hunt_submissions.json",
+      "control_plane_commit": "aa8ff6ee4dbf18f61216fac372241449a958f5fd"
+    },
+    "hunt_job": {
+      "url": "https://api.imd.fun/jobs/7b9c907d-99b9-405b-8491-6088c77d4cc9",
+      "captured_at": "2026-09-24T11:45:54.022569+00:00",
+      "http_status": 200,
+      "sha256": "3d5b4d9d0adb25e82e698f0741545900d900032e6af58da27f01402eaded332a",
+      "bytes": 3667,
+      "path": "submissions/hunt_job.json",
+      "control_plane_commit": "aa8ff6ee4dbf18f61216fac372241449a958f5fd"
+    },
+    "bundle_submissions": {
+      "url": "https://api.imd.fun/jobs/2d73c9e2-c5cc-4a2e-a51f-f1a384606ab6/submissions",
+      "captured_at": "2026-09-24T11:45:54.561539+00:00",
+      "http_status": 200,
+      "sha256": "3c4a4bd899b22bda7695a33dd8c9bcee58c1f1168024e241151205df3bd73d8a",
+      "bytes": 162369,
+      "path": "submissions/bundle_submissions.json",
+      "control_plane_commit": "aa8ff6ee4dbf18f61216fac372241449a958f5fd"
+    },
+    "bundle_job": {
+      "url": "https://api.imd.fun/jobs/2d73c9e2-c5cc-4a2e-a51f-f1a384606ab6",
+      "captured_at": "2026-09-24T11:45:54.766299+00:00",
+      "http_status": 200,
+      "sha256": "cbfddd2d5e9a15ee781481700b36413f6d9c3fc5f9f3db7b5e108a0ece79de1c",
+      "bytes": 1355,
+      "path": "submissions/bundle_job.json",
+      "control_plane_commit": "aa8ff6ee4dbf18f61216fac372241449a958f5fd"
+    },
+    "oracle_list": {
+      "url": "https://api.imd.fun/oracle/requests?limit=500",
+      "captured_at": "2026-09-24T11:45:55.254997+00:00",
+      "http_status": 200,
+      "sha256": "eb05c2660a5782421daf2dbbfe8b6d97ea37a52dd932c786a637de55a53cc585",
+      "bytes": 388855,
+      "path": "submissions/oracle_list.json",
+      "control_plane_commit": "aa8ff6ee4dbf18f61216fac372241449a958f5fd"
+    },
+    "bytes32": {
+      "url": "https://api.imd.fun/oracle/requests/1ad552f0-7f24-4e94-9c48-d25a79a88ce9?members=a1284c29bb4e5f3c696b27515a6110305e50198a7286c4380b42fe2dcfcf58a8",
+      "captured_at": "2026-09-24T11:46:49.324353+00:00",
+      "http_status": 200,
+      "sha256": "3ce7b14c31dc9eaa4710d7feed06a58f3b6dec0f2c24ea0c700edbb2a1f4453a",
+      "bytes": 6918,
+      "path": "oracle/filtered/bytes32.json",
+      "control_plane_commit": "aa8ff6ee4dbf18f61216fac372241449a958f5fd"
+    }
+  },
+  "completed_fallback": "v4/submissions_33016bad.json"
+}

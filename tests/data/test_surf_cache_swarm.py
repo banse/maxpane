@@ -53,7 +53,8 @@ def test_the_jobs_seen_slot_is_registered_so_it_restores():
     ``job_id -> entry`` map both swarm tiers append to."""
     assert SLOT_SWARM_JOBS_SEEN == "swarm_jobs_seen"
     assert SLOT_SWARM_JOBS_SEEN in SLOTS
-    assert len(SLOTS) == 18
+    # SLOT_SWARM_JOB_DETAIL adds bounded popup job facts, independently of jobs-seen.
+    assert len(SLOTS) == 19
 
 
 def test_a_seen_map_round_trips_through_save_and_load(tmp_path):
@@ -291,3 +292,18 @@ def test_polish_answers_slot_is_registered_and_refuses_unvalidated_load(tmp_path
     fresh = SurfCache()
     fresh.load(str(path), now=1000.0)
     assert fresh.get_last_good(mod.SLOT_SWARM_ANSWERS) is None
+
+
+def test_popup_job_detail_slot_roundtrips_with_per_point_coercion(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_JOB_DETAIL, SurfCache
+    from maxpane_dashboard.data import surf_swarm as sw
+    from tests.data.test_surf_swarm_answers import capture
+    source=capture('hunt_job'); job=source['id']
+    point=sw.job_detail_point(source,job,now_ts=1000)
+    path=tmp_path/'cache.json'
+    cache=SurfCache(path,clock=lambda:1000)
+    cache.store_last_good(SLOT_SWARM_JOB_DETAIL,{job:point,'bad':point},ts=1000)
+    cache.save()
+    restored=SurfCache(path,clock=lambda:1000)
+    restored.load(slot_coercers={SLOT_SWARM_JOB_DETAIL:sw.coerce_job_detail_slot})
+    assert restored.get_last_good(SLOT_SWARM_JOB_DETAIL).payload=={job:point}
