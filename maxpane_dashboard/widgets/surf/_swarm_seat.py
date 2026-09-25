@@ -134,9 +134,12 @@ def rank_body(contrib: dict, delta=None) -> Text:
 
 
 def work_body(contrib: dict) -> Text:
-    """Contributor work totals (turns, output tokens, hours), separate from rank and its movement."""
-    turns = count(contrib.get("turns"))
-    body = Text().append(turns or "--", style="bold").append(" turns", style="dim")
+    """Contributor work: hours, a blank line as in STATUS, then output tokens
+    (owner, 2026-09-25; turns left WORK and stay on BOARD)."""
+    seconds = contrib.get("wall_clock_s")
+    hours = (fmt_float(seconds / 3600, ".1f")
+             if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) else "--")
+    body = Text().append(hours, style="bold").append(" h", style="dim")
     tokens = seat_token(contrib.get("output_tokens"))
     try:
         text = "--" if tokens is None else fmt_int(tokens) if tokens < 1000 else fmt_compact(tokens)
@@ -145,12 +148,7 @@ def work_body(contrib: dict) -> Text:
             text = f"{tokens:.1e}"
     except (OverflowError, ValueError):
         text = "--"
-    body.append("\n").append(text, style="dim" if text == "--" else "bold").append(" tokens", style="dim")
-    # Hours come last (owner, 2026-09-25): turns, output tokens, then wall-clock hours.
-    seconds = contrib.get("wall_clock_s")
-    hours = (fmt_float(seconds / 3600, ".1f")
-             if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) else "--")
-    return body.append("\n").append(hours, style="bold").append(" h", style="dim")
+    return body.append("\n\n").append(text, style="dim" if text == "--" else "bold").append(" tokens", style="dim")
 
 
 def _whole(value: int) -> str:
