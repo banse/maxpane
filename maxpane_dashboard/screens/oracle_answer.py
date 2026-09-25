@@ -5,7 +5,7 @@ from maxpane_dashboard.screens.record_detail import RecordDetailScreen
 from maxpane_dashboard.widgets.address import address_prose, address_text
 from maxpane_dashboard.widgets.explorer import for_chain_id
 from maxpane_dashboard.widgets.markup_safety import strip_tags
-from maxpane_dashboard.widgets.surf._oracle_answer import seat_value, panel_text, failed_answer
+from maxpane_dashboard.widgets.surf._oracle_answer import bytes32_text, seat_value, panel_text, failed_answer
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES
 
 
@@ -39,6 +39,11 @@ class OracleAnswerScreen(RecordDetailScreen):
             value.append('\n            '.join(values) if values else '0 values')
         else:
             value.append_text(address_prose(seat_value(row), explorer=explorer))
+            text = bytes32_text(row.get('oracle_seat_answer')) if row.get('panel_answer_type') == 'bytes32' else None
+            if text is not None:
+                # The decoded text on its own line under the hex (owner, 2026-09-25);
+                # ``Text.append`` parses no markup.
+                value.append('\n            ').append(text)
         yield from self.section('QUESTION', address_prose(_paragraphs(row.get('oracle_question')), explorer=explorer), first=True)
         yield from self.section('ANSWER', value, Text('panel       ') + panel_text(row, detail=True))
         yield from self.section('NOTES', address_prose(_paragraphs(row.get('oracle_notes')), explorer=explorer))

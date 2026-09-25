@@ -12,6 +12,24 @@ from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_compact
 from maxpane_dashboard.widgets.surf._icons import mark_addresses, keep_units, link_prose, unmark
 
 _HASH = re.compile(r'[0-9a-f]{64}')
+_BYTES32 = re.compile(r'0x[0-9a-fA-F]{64}')
+
+
+def bytes32_text(value):
+    """A ``bytes32`` answer read as the request defines it: UTF-8 text,
+    right-padded with zero bytes (``/oracle/requests/{id}`` ``definitions``,
+    2026-09-25). Anything else -- an interior zero, invalid UTF-8, a control
+    character, all zeros -- is ``None`` and the hex stays the only reading."""
+    if not isinstance(value, str) or _BYTES32.fullmatch(value) is None:
+        return None
+    raw = bytes.fromhex(value[2:]).rstrip(b'\0')
+    if not raw:
+        return None
+    try:
+        text = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        return None
+    return text if text.isprintable() and text.strip() else None
 
 #: Panel glyph, space and three-digit agreed/quorum counts (105/112).
 _PANEL_COLS = 1 + 1 + 3 + 1 + 3
@@ -58,6 +76,9 @@ def seat_value(row, *, compact=False):
         count = len(value.split())
         noun = 'address' if kind == 'address[]' else 'value'
         return f'{count} {noun}' + (('es' if kind == 'address[]' else 's') if count != 1 else '')
+    if compact and kind == 'bytes32' and bytes32_text(value) is not None:
+        # RECORD shows the text; the popup keeps the hex and adds the text below.
+        return rowfit.clip(strip_tags(bytes32_text(value)), 24)
     if compact and kind not in ('uint256', 'address[]'):
         return rowfit.clip(strip_tags(value), 24)
     return strip_tags(value)

@@ -427,7 +427,10 @@ losing membership. Use the request's answerType: strict bool → true/false (dis
 1–78 decimal digits, address[] → at most 20 validated addresses joined by spaces. Other …[]
 types accept at most 20 strings, each fullmatching 0x plus 1–64 hex digits or 1–78 decimal digits.
 RECORD shows `N values`; ANSWER lists full values one per line without address icons or links.
-Other scalar values are flattened and capped at 200 characters. Question/reason/notes caps are
+Other scalar values are flattened and capped at 200 characters. A `bytes32` value is UTF-8 text
+right-padded with zero bytes (the request's own `definitions`): RECORD shows the decoded text,
+the popup keeps the hex and prints the text on the line beneath (owner, 2026-09-25). Anything that
+does not decode to printable text keeps the hex alone; the cache stores the hex unchanged. Question/reason/notes caps are
 1,000/200/4,000 characters;
 question and notes keep newlines, other controls are removed. To meet the byte budget, trim notes,
 then question, then reason; preserve the value. Off-panel facts are all None; old cache shapes are dropped.

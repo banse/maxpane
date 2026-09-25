@@ -261,3 +261,49 @@ async def test_bytes32_values_are_full_lines_without_icons_or_links():
         text='\n'.join(lines(pilot.app))
         assert all(value in text for value in values)
         assert not icon_targets(pilot.app) and not link_targets(pilot.app)
+
+
+#: Live request 82d5e221 (2026-09-25): answerType bytes32, every member answered this;
+#: its definitions say "plain UTF-8 text ... right-padded with zero bytes".
+CROATIA = '0x' + b'Croatia'.hex() + '00' * 25
+
+
+@pytest.mark.parametrize('value,expected', [
+    (CROATIA, 'Croatia'),
+    ('0x' + 'Straßburg'.encode().hex().ljust(64, '0'), 'Straßburg'),
+    ('0x' + b'X'.hex() * 32, 'X' * 32),
+    ('0x' + '00' * 32, None),                        # all zeros: no text
+    ('0x' + (b'Ab' + b'\0' + b'c').hex().ljust(64, '0'), None),   # interior zero
+    ('0x' + (b'A\nB').hex().ljust(64, '0'), None),   # control character
+    ('0x' + 'ff' * 2 + '00' * 30, None),             # invalid UTF-8
+    ('0x' + b' '.hex() + '00' * 31, None),           # whitespace only
+    (CROATIA[:-2], None), (None, None), (42, None),
+])
+def test_bytes32_text_decodes_only_the_defined_shape(value, expected):
+    from maxpane_dashboard.widgets.surf._oracle_answer import bytes32_text
+    assert bytes32_text(value) == expected
+
+
+def test_record_cell_shows_decoded_bytes32_and_keeps_hex_when_undecodable():
+    from maxpane_dashboard.widgets.surf._oracle_answer import seat_value
+    row = oracle_row(panel_answer_type='bytes32', oracle_seat_answer=CROATIA)
+    assert seat_value(row, compact=True) == 'Croatia'
+    assert seat_value(row) == CROATIA
+    raw = '0x' + 'ff' * 32
+    assert seat_value(dict(row, oracle_seat_answer=raw), compact=True).startswith('0xffff')
+    # Only bytes32: the same hex under another type is never decoded.
+    assert seat_value(dict(row, panel_answer_type='string'), compact=True).startswith('0x4372')
+
+
+@pytest.mark.parametrize('kind,shown', [('bytes32', True), ('string', False)])
+async def test_popup_shows_decoded_text_on_the_line_under_the_hex(kind, shown):
+    row = oracle_row(panel_answer_type=kind, oracle_seat_answer=CROATIA, oracle_notes='Notes.')
+    async with PopupApp(row).run_test(size=(139, 33)) as pilot:
+        await pilot.pause()
+        rows = lines(pilot.app)
+        y = next(i for i, line in enumerate(rows) if 'this seat' in line)
+        assert CROATIA in rows[y]
+        below = rows[y + 1]
+        start = rows[y].index(CROATIA)
+        assert (below[start:start + len(CROATIA)].strip() == 'Croatia') is shown, below
+        assert ('Croatia' in '\n'.join(rows)) is shown
