@@ -1,11 +1,39 @@
 # Changelog
 
-## Unreleased
+## v0.9.2 — 2026-09-25
 
-- Surfboard AGENT: RECORD adds panel agreement and output-token columns, removes role, and
-  shortens model names. Outvoted rows show the panel figure or actual YES/NO answer; no-quorum
-  panels are visibly closed while STATE retains the served attempt status. Panel reads are
-  bounded, cached and fail locally. FLEET uses the same model short names with effort retained.
+63 commits since v0.9.1. Every data source is still keyless and read-only. All of it is in
+Surfboard's `a` AGENT view.
+
+### RECORD
+
+- New columns: `tok` (output tokens) and `panel` (oracle panel agreement, e.g. `✓ 39/35`). The
+  role column is gone and model names are shortened (FLEET uses the same short names, keeping the
+  effort word). Outvoted rows show the panel's figure or its YES/NO answer; a panel that closed
+  without quorum shows as closed.
+- Oracle rows show the seat's own answer.json value and notes. `bytes32` answers are decoded to
+  their text (`Strasbourg`, not `0x5374…`); a value that is not valid text keeps its hex.
+- Every answer ends in `»`, which opens a popup:
+  - **ANSWER** (oracle rows): question, this seat's answer (the full hex, with the decoded text
+    beneath for `bytes32`), the panel result and notes;
+  - **SUBMISSION** (other rows): the job and its nodes, the objective, this seat's status, usage,
+    checks, findings and full reply, and up to eight other seats' answers.
+  Both popups close with Space, Escape or the `X` at the top right.
+- `more` loads 20 older rows at a time (up to 400); the title toggles `all` / `not completed`;
+  the title ends with `type 'i' to change seat`.
+
+### Cards and hero
+
+- COLLAB lists the seat's top two teammates; NODES shows accepted count and rate per node
+  (ORACLE / REVIEW / BUILD). The third card row (ROLES, per-node cards, OTHERS, BOARD) is gone,
+  so RECORD gets the room.
+- RUNTIME turns a line yellow with `↑` when an update is available: the claude or codex version
+  is behind the latest npm release (`@anthropic-ai/claude-code`, `@openai/codex`, checked hourly),
+  or the daemon differs from the version most of the fleet runs. The tooltip says what it
+  compared against, or that the check is pending or failed.
+- Hero: WORK (hours and output tokens), ACCEPTED (`242 of 280`, then the rate), RANK with a
+  green `▲N` / red `▼N` since the seat's rank last moved. SEAT, WORK, ACCEPTED, REVIEWED and RANK
+  leave their second line blank, as STATUS does.
 
 ## v0.9.1 — 2026-09-23
 
