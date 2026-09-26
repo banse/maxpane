@@ -210,7 +210,7 @@ from maxpane_dashboard.data.surf_models import (
     Pool4Discovery,
 )
 from maxpane_dashboard.data.surf_pool4_client import Pool4Client
-from maxpane_dashboard.data.surf_swarm_client import SwarmClient
+from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY, SwarmClient
 from maxpane_dashboard.data.surf_v4 import price_eth_per_imd
 
 logger = logging.getLogger(__name__)
@@ -1130,6 +1130,7 @@ class SurfManager:
         #: switch is a new read in flight. In memory only -- it describes
         #: this session's attempts.
         self._seat_failed_token: int | None = None
+        self._seat_busy_token: int | None = None
         #: The seat owner's forward-verified ENS name, and its misses (OWNER
         #: card, 2026-09-22). In memory only: one owner per seat read, so a
         #: restart costs one lookup, and a recorded miss keeps the 120 s seat
@@ -1140,6 +1141,7 @@ class SurfManager:
             self.cache.load(slot_coercers={
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
                 SLOT_SWARM_SEAT_RANK: sw.coerce_rank_slot,
+                SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=self._clock()),
                 SLOT_SWARM_RUNTIME_LATEST: lambda value: coerce_runtime_slot(value, now=self._clock()),
                 SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
                 SLOT_SWARM_ANSWERS: sw.coerce_answers_slot,
@@ -5558,6 +5560,7 @@ class SurfManager:
         self.record_open_only = False
         self._seat_saved = token
         self._seat_failed_token = None
+        self._seat_busy_token = None
         self.cache.mark_due(TIER_SWARM_SEAT)
 
     def set_record_view(self, cap: int, open_only: bool) -> None:
@@ -5771,7 +5774,7 @@ class SurfManager:
             "swarm_seat_rank_delta": self._seat_rank_delta(token, contrib),
         }
 
-    # -- the AGENT body's one seat: /seats/{token} (the /seats plan WP2) -----
+    # -- the AGENT body's selected seat: /seats/{token} ----------------------
 
     async def _offer_swarm_seat(
         self, tiers: set[str], token: int | None, seat_entry: Any, now: float
@@ -5798,9 +5801,9 @@ class SurfManager:
                 return running
             await self._cancel_swarm_seat()
         else:
-            slot = sw.coerce_seat_slot(getattr(seat_entry, "payload", None))
-            unread = (slot is None or slot["token"] != token) and (
-                self._seat_failed_token != token
+            slot = sw.coerce_seat_slot(getattr(seat_entry, "payload", None), now=now)
+            unread = (slot is None or str(token) not in slot["seats"]) and (
+                self._seat_failed_token != token and self._seat_busy_token != token
             )
             if TIER_SWARM_SEAT not in tiers and not unread:
                 return None
@@ -5833,34 +5836,35 @@ class SurfManager:
             pass
 
     async def _pool_swarm_seat(self, token: int, now: float) -> dict[str, Any] | None:
-        """``GET /seats/{token}`` -> :data:`SLOT_SWARM_SEAT`, or a failed tier.
+        """Update the selected token's last-good; busy and failures back off.
 
-        A seat dict whose ``tokenId`` is ``token`` (``"ok"``) or the client's
-        ``UNKNOWN_SEAT`` (``"unknown_seat"``, a real negative, stored with no
-        seat) is a finished read: stored as ``{token, state, seat}`` and the
-        tier marked fetched. Anything else -- ``None`` from the client (every
-        host failed, a 400, a removed route) or another token's payload -- is
-        a failed read: the tier backs off, the last-good stays, and the token
-        is remembered so the selected seat reads ``None`` rather than
-        ``pending``. The slot is rewritten only when the answer changed (plan
-        §9 J, the jobs-seen precedent): its marker then advances only when a
-        new version lands, and a 90 KB seat is not re-persisted every 120 s.
+        An identical finished read keeps its own timestamp and is not stored
+        again. A changed record advances only that seat's marker.
         """
         result = await self._guard(
             lambda: self.swarm_client.fetch_seat(token), "swarm fetch_seat"
         )
         state = sw.seat_state(result, token)
         if state is None:
-            self._seat_failed_token = token
+            self._seat_busy_token = token if result == SEAT_BUSY else None
+            self._seat_failed_token = None if result == SEAT_BUSY else token
             self.cache.mark_failed(TIER_SWARM_SEAT, now)
             return None
-        slot = {"token": token, "state": state, "seat": result if state == "ok" else None}
         prior = self.cache.get_last_good(SLOT_SWARM_SEAT)
+        slot = sw.coerce_seat_slot(getattr(prior, "payload", None), now=now) or {"seats": {}}
+        seats = slot["seats"]
+        point = {"state": state, "seat": result if state == "ok" else None}
+        previous = seats.get(str(token))
+        if previous is None or any(previous[key] != value for key, value in point.items()):
+            seats[str(token)] = dict(point, read_ts=now)
+            slot = sw.coerce_seat_slot(slot, now=now)
         if prior is None or prior.payload != slot:
             self.cache.store_last_good(SLOT_SWARM_SEAT, slot, ts=now)
         self.cache.mark_fetched(TIER_SWARM_SEAT, now)
         if self._seat_failed_token == token:
             self._seat_failed_token = None
+        if self._seat_busy_token == token:
+            self._seat_busy_token = None
         if state == "ok":
             await self._resolve_seat_owner(result, now)
             await self._pool_swarm_answers(result, token, now)
@@ -6252,8 +6256,8 @@ class SurfManager:
         seat wins even off that roster. Its agent ID comes from the roster,
         then the seat payload when the roster carries none.
 
-        Serve a slot only for the selected token. A different token's slot
-        yields pending (or unavailable after failure), with no old values.
+        Serve only the selected token's entry and its own timestamp. With no
+        entry, expose its pending, busy or unavailable read state.
         Unknown seats have no summary and real-empty rows. With no selected
         seat, all seat keys are None.
         """
@@ -6265,6 +6269,7 @@ class SurfManager:
         out: dict[str, Any] = {
             "swarm_seat_selected": selected,
             "swarm_seat_state": None,
+            "swarm_seat_read": None,
             "swarm_seat_summary": None,
             "swarm_seat_work_rows": None,
             "swarm_seat_node_rows": None,
@@ -6275,12 +6280,21 @@ class SurfManager:
         if selected is None:
             return out
         token = selected["token_id"]
-        read = sw.coerce_seat_slot(getattr(seat_entry, "payload", None))
-        if read is None or read["token"] != token:
-            out["swarm_seat_state"] = None if self._seat_failed_token == token else "pending"
+        now_ts = float(self._clock()) if now is None else now
+        slot_read = sw.coerce_seat_slot(getattr(seat_entry, "payload", None), now=now_ts)
+        read = slot_read["seats"].get(str(token)) if slot_read is not None else None
+        out["swarm_seat_read"] = (
+            "busy" if self._seat_busy_token == token else
+            "failed" if self._seat_failed_token == token else None
+        )
+        if read is None:
+            out["swarm_seat_state"] = (
+                "busy" if self._seat_busy_token == token else
+                None if self._seat_failed_token == token else "pending"
+            )
             return out
         out["swarm_seat_state"] = read["state"]
-        out["swarm_seat_as_of_hhmm"] = seat_entry.as_of_hhmm()
+        out["swarm_seat_as_of_hhmm"] = LastGood(payload=None, ts=read["read_ts"]).as_of_hhmm()
         if read["state"] == "unknown_seat":
             out["swarm_seat_work_rows"] = []
             out["swarm_seat_node_rows"] = []
@@ -6290,7 +6304,6 @@ class SurfManager:
         if selected["agent_id"] is None and isinstance(seat.get("agentId"), str):
             out["swarm_seat_selected"] = dict(selected, agent_id=seat["agentId"])
         out["swarm_seat_summary"] = sw.seat_summary_from_seat(seat)
-        now_ts = float(self._clock()) if now is None else now
         out["swarm_seat_owner_ens"] = self._seat_owner_ens(out["swarm_seat_summary"], now_ts)
         answers = sw.prune_answers(getattr(answers_entry, "payload", None),
                                   now_ts=now_ts,

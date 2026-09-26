@@ -176,7 +176,7 @@ SLOT_POOL4_STAKERS = "pool4_stakers"  # the sIMD Transfer fold's last-good
 SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
 SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
 SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
-SLOT_SWARM_SEAT = "swarm_seat"        # {token, state, seat}: the selected seat's /seats read
+SLOT_SWARM_SEAT = "swarm_seat"        # {seats: token -> {state, seat, read_ts}}
 SLOT_SWARM_SEAT_RANK = "swarm_seat_rank"  # token -> last rank and previous rank
 SLOT_SWARM_RUNTIME_LATEST = "swarm_runtime_latest"  # runtime -> version and last attempt timestamp
 SLOT_SWARM_WORKERS = "swarm_workers"  # normalized /workers envelope, its own version clock
@@ -212,14 +212,8 @@ SLOTS: tuple[str, ...] = (
     # manager caps and prunes it on every fold; a cache file without it loads
     # unchanged (the fixture round-trip in `tests/data/test_surf_cache.py`).
     SLOT_SWARM_JOBS_SEEN,
-    # Not a degraded group either: the AGENT body's one seat, read by
-    # ``TIER_SWARM_SEAT`` (docs/surf_agent_seats_spec.md §5). The payload is
-    # ``{token, state, seat}`` -- the token it was read for travels with it,
-    # so a switch never shows seat A's record under seat B's name. Only a
-    # *finished* read is stored (``state`` ``ok`` or ``unknown_seat``); a
-    # failed one leaves the slot alone. Persisted like every slot, and so
-    # third-party input on the way back in: the manager validates it per
-    # field with ``surf_swarm.coerce_seat_slot`` before any key reads it.
+    # Finished per-seat reads, independently validated on load. Each selected
+    # token serves only its own record and read timestamp; failures preserve it.
     SLOT_SWARM_SEAT,
     # Validated per field at load through injected pure coercers. Missing a
     # coercer refuses the slot; this cache imports no client or fold module.
@@ -1206,7 +1200,17 @@ class SurfCache:
                     continue
                 try:
                     entry = LastGood.from_dict(data, now=reference)
-                    if slot in (SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK):
+                    if slot == SLOT_SWARM_SEAT and isinstance(entry.payload, dict) and "seats" not in entry.payload:
+                        legacy = entry.payload
+                        token = legacy.get("token")
+                        if type(token) is not int or token < 0:
+                            raise ValueError("invalid legacy seat token")
+                        entry = LastGood(payload={"seats": {str(token): {
+                            "state": legacy.get("state"), "seat": legacy.get("seat"),
+                            "read_ts": entry.ts,
+                        }}}, ts=entry.ts)
+                        self._dirty = True
+                    if slot in (SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:

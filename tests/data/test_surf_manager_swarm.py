@@ -49,7 +49,7 @@ from maxpane_dashboard.data.surf_manager import (
     SWARM_JOBS_SEEN_MAX_AGE_S, SWARM_SWEEP_CAP, SurfManager,
 )
 from maxpane_dashboard.data.surf_models import SURF_KEYS, SWARM_KEYS
-from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT
+from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY, UNKNOWN_SEAT
 from tests.data.test_surf_manager import FakeClock, FakeSurfClient, NOW
 from tests.data.test_surf_manager_pool4 import FakePool4Client
 from tests.surf_swarm_fixtures import (
@@ -937,7 +937,7 @@ async def test_a_switch_while_the_new_seats_read_is_pending_shows_none_of_the_ol
     ``None`` and no value is A's (spec §5, plan §5 "seat switch")."""
     manager, before = await _seated(tmp_path, _FakeSwarm())
     assert before["swarm_seat_selected"]["token_id"] == 0
-    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["token"] == 0
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["seats"].keys() == {"0"}
     manager.set_seat(420)
     payload = await manager.fetch_and_compute()
     assert payload["swarm_seat_selected"] == {
@@ -982,7 +982,8 @@ async def test_an_unknown_seat_is_a_real_negative(tmp_path):
     assert payload["swarm_seat_teammates"] == []
     assert payload["swarm_seat_as_of_hhmm"] is not None
     assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload == {
-        "token": 999_999, "state": "unknown_seat", "seat": None,
+        "seats": {"999999": {"state": "unknown_seat", "seat": None,
+                              "read_ts": manager._clock()}},
     }
     await manager.close()
 
@@ -1090,7 +1091,7 @@ async def test_one_seat_read_per_cycle_and_a_token_change_cancels_the_old_one(tm
     gate.set()
     await second
     assert swarm.seat_calls == [420, 516]
-    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["token"] == 516
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["seats"].keys() == {"516"}
     await manager.close()
 
 
@@ -1102,7 +1103,7 @@ async def test_a_seat_other_than_the_slots_is_read_without_waiting_for_the_ttl(t
     manager = _manager(tmp_path, swarm, seat=420)
     now = manager._clock()
     manager.cache.store_last_good(
-        SLOT_SWARM_SEAT, {"token": 516, "state": "ok", "seat": _seat_payload_of(516)}, ts=now,
+        SLOT_SWARM_SEAT, {"seats": {"516": {"state": "ok", "seat": _seat_payload_of(516), "read_ts": now}}}, ts=now,
     )
     manager.cache.mark_fetched(TIER_SWARM_SEAT, now)
     payload = await manager.fetch_and_compute()
@@ -1173,20 +1174,12 @@ async def test_a_sweep_with_no_seat_has_no_selection(tmp_path):
     pytest.param(lambda: [_seat_payload_of(420)], "ok", id="seat-is-a-list"),
 ])
 async def test_a_hand_edited_seat_slot_is_not_served(tmp_path, seat_field, state):
-    """A persisted slot is third-party input, refused whole by the per-field
-    validation on load (``sw.coerce_seat_slot``), never by the token gate:
-    every slot here names the selected seat (420), so only the field checks
-    stand between it and the screen -- a state no stored slot can hold
-    (``pending`` is the manager's to say), #516's record filed under 420, and
-    an ill-typed seat. The seat stays ``pending`` while its own read is held
-    in flight (the gate is never set), so nothing it fetches can mask the
-    slot. Final-review fix wave: the ``{"token": True}`` seed this replaced
-    was already refused by the token gate, so dropping ``coerce_seat_slot``
-    from the key path left it green."""
+    """Invalid per-seat state or mismatched records are dropped on load."""
     path = tmp_path / "surf.json"
     seed = _manager(tmp_path, _FakeSwarm(), seat=420)
     seed.cache.store_last_good(
-        SLOT_SWARM_SEAT, {"token": 420, "state": state, "seat": seat_field()},
+        SLOT_SWARM_SEAT, {"seats": {"420": {
+            "state": state, "seat": seat_field(), "read_ts": seed._clock()}}},
         ts=seed._clock(),
     )
     seed.cache.save()
@@ -1194,9 +1187,7 @@ async def test_a_hand_edited_seat_slot_is_not_served(tmp_path, seat_field, state
     assert path.exists()
     swarm = _FakeSwarm(seat_gate=asyncio.Event())
     manager = _manager(tmp_path, swarm, seat=420)
-    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["token"] == 420, (
-        "the slot must reach the key path naming the selected seat"
-    )
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload == {"seats": {}}
     payload = await manager.fetch_and_compute()
     assert payload["swarm_seat_selected"]["token_id"] == 420
     assert payload["swarm_seat_state"] == "pending"
@@ -1243,7 +1234,7 @@ async def test_a_seat_read_that_raises_degrades_and_the_next_cycle_reads_again(t
     for key in _SEAT_READ_KEYS:
         assert payload[key] is None, key
         assert before[key] is not None, f"{key}: #420 had a value to leak"
-    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["token"] == 420
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["seats"].keys() == {"420"}
 
     swarm.raising = set()
     clock.advance(121.0)
@@ -1761,3 +1752,76 @@ async def test_contributors_fold_updates_selected_rank_history(tmp_path):
         assert data['swarm_seat_rank_delta'] == rank - 1
     finally:
         await manager.close()
+
+
+async def test_seat_a_then_b_then_a_busy_keeps_a_record_and_own_timestamp(tmp_path):
+    clock = FakeClock(NOW)
+    swarm = _FakeSwarm()
+    manager, a = await _seated(tmp_path, swarm, seat=420, clock=clock)
+    clock.advance(180)
+    manager.set_seat(516)
+    await manager.fetch_and_compute()
+    await _settle(manager)
+    b = await manager.fetch_and_compute()
+    assert a["swarm_seat_summary"] != b["swarm_seat_summary"]
+    assert a["swarm_seat_as_of_hhmm"] != b["swarm_seat_as_of_hhmm"]
+    clock.advance(180)
+    swarm.seats[420] = dict(SEAT_BUSY)
+    manager.set_seat(420)
+    await manager.fetch_and_compute()
+    await _settle(manager)
+    result = await manager.fetch_and_compute()
+    assert result["swarm_seat_state"] == "ok"
+    assert result["swarm_seat_read"] == "busy"
+    for key in _SEAT_READ_KEYS:
+        assert result[key] == a[key], key
+    assert not manager.cache.is_due(TIER_SWARM_SEAT, clock() + 60)
+    swarm.seats[420] = _seat_payload_of(420)
+    clock.advance(121)
+    await manager.fetch_and_compute()
+    await _settle(manager)
+    assert (await manager.fetch_and_compute())["swarm_seat_read"] is None
+    await manager.close()
+
+
+@pytest.mark.parametrize("result,state,read", [
+    (dict(SEAT_BUSY), "busy", "busy"), (None, None, "failed"),
+])
+async def test_never_read_seat_busy_is_distinct_from_failed(tmp_path, result, state, read):
+    manager, payload = await _seated(tmp_path, _FakeSwarm(seats={420: result}), seat=420)
+    assert payload["swarm_seat_state"] == state
+    assert payload["swarm_seat_read"] == read
+    assert all(payload[key] is None for key in _SEAT_READ_KEYS)
+    assert manager.swarm_client.seat_calls == [420], "busy must respect the backoff"
+    manager.set_seat(420)
+    assert (await manager.fetch_and_compute())["swarm_seat_read"] is None
+    await manager.close()
+
+
+async def test_seat_slot_keeps_six_newest_of_seven_finished_reads(tmp_path):
+    clock = FakeClock(NOW)
+    manager = _manager(tmp_path, _FakeSwarm(), clock=clock)
+    for token in range(2000, 2007):
+        await manager._pool_swarm_seat(token, clock())
+        clock.advance(60)
+    seats = manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["seats"]
+    assert list(seats) == [str(token) for token in range(2006, 2000, -1)]
+    await manager.close()
+
+
+async def test_unchanged_seat_is_not_restored_or_retimestamped(tmp_path, monkeypatch):
+    clock = FakeClock(NOW)
+    manager, first = await _seated(tmp_path, _FakeSwarm(), seat=420, clock=clock)
+    before = copy.deepcopy(manager.cache.get_last_good(SLOT_SWARM_SEAT))
+    stores = []
+    original = manager.cache.store_last_good
+    def store(slot, *args, **kwargs):
+        stores.append(slot)
+        return original(slot, *args, **kwargs)
+    monkeypatch.setattr(manager.cache, "store_last_good", store)
+    clock.advance(121)
+    await manager._pool_swarm_seat(420, clock())
+    assert SLOT_SWARM_SEAT not in stores
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT) == before
+    assert (await manager.fetch_and_compute())["swarm_seat_as_of_hhmm"] == first["swarm_seat_as_of_hhmm"]
+    await manager.close()

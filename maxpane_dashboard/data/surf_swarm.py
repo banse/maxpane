@@ -29,6 +29,7 @@ from typing import Any
 from maxpane_dashboard.analytics.surf_swarm_signals import (
     completed_within, count_by, duration_stats, seen_since_ts, state_rollup,
 )
+from maxpane_dashboard.data.series_points import CLOCK_SKEW_TOLERANCE_SECONDS
 from maxpane_dashboard.data.surf_models import (
     SURF_ROW_KEYS, SWARM_SEAT_REVIEW_STATUSES, SWARM_SEAT_SELECTED_FIELDS, SWARM_SEAT_STATES,
     SWARM_SEAT_SUMMARY_FIELDS, SWARM_BOARD_SUMMARY_FIELDS, SWARM_FLEET_FIELDS,
@@ -1000,27 +1001,29 @@ def choose_seat(rows: object, saved_token: object) -> dict[str, Any] | None:
 _SLOT_STATES = ("ok", "unknown_seat")
 
 
-def coerce_seat_slot(payload: object) -> dict[str, Any] | None:
-    """The persisted ``{token, state, seat}`` slot, validated per field, or
-    ``None`` -- the slot is discarded, never half-trusted.
-
-    ``token`` a non-negative non-bool ``int``; ``state`` ``ok`` or
-    ``unknown_seat``; ``seat`` a dict whose ``tokenId`` is ``token`` for
-    ``ok``, and ``None`` for ``unknown_seat``.
-    """
-    if not isinstance(payload, Mapping):
+def coerce_seat_slot(payload: object, *, now: float) -> dict[str, Any] | None:
+    """Validate finished reads independently, retaining the six newest seats."""
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("seats"), Mapping):
         return None
-    token = _seat_id(payload.get("token"))
-    state = payload.get("state")
-    seat = payload.get("seat")
-    if token is None or state not in _SLOT_STATES:
-        return None
-    if state == "unknown_seat":
-        if seat is not None:
-            return None
-    elif not isinstance(seat, dict) or seat_state(seat, token) != "ok":
-        return None
-    return {"token": token, "state": state, "seat": seat}
+    seats = {}
+    for key, point in payload["seats"].items():
+        token = _served_token(key) if isinstance(key, str) else None
+        if token is None or str(token) != key or not isinstance(point, Mapping):
+            continue
+        state, seat, read_ts = point.get("state"), point.get("seat"), point.get("read_ts")
+        if state not in _SLOT_STATES:
+            continue
+        if state == "unknown_seat":
+            if seat is not None:
+                continue
+        elif not isinstance(seat, dict) or seat_state(seat, token) != "ok":
+            continue
+        if (not _nonnegative_finite(read_ts)
+                or read_ts > now + CLOCK_SKEW_TOLERANCE_SECONDS):
+            continue
+        seats[key] = {"state": state, "seat": seat, "read_ts": float(read_ts)}
+    newest = sorted(seats, key=lambda key: (-seats[key]["read_ts"], int(key)))[:SEAT_SLOT_CAP]
+    return {"seats": {key: seats[key] for key in newest}}
 
 
 # -- BOARD: normalized source slots and pure folds --------------------------

@@ -145,7 +145,7 @@ def test_mark_due_refuses_an_unknown_tier(tmp_path):
     {"token": 420, "state": "ok", "seat": swarm_seat_capture("seat_420")},
     {"token": 999_999, "state": "unknown_seat", "seat": None},
 ])
-def test_a_seat_slot_round_trips_through_save_and_load(tmp_path, slot):
+def test_an_old_seat_slot_migrates_with_its_stored_timestamp(tmp_path, slot):
     from tests.data.test_surf_cache import FakeClock
 
     clock = FakeClock()
@@ -153,13 +153,21 @@ def test_a_seat_slot_round_trips_through_save_and_load(tmp_path, slot):
     cache = SurfCache(path=path, clock=clock)
     cache.store_last_good(SLOT_SWARM_SEAT, slot, ts=clock.t - 60.0)
     cache.save()
+    version = json.loads(path.read_text())["version"]
 
     fresh = SurfCache(path=path, clock=clock)
-    fresh.load()
+    fresh.load(slot_coercers={SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=clock.t)})
     entry = fresh.get_last_good(SLOT_SWARM_SEAT)
     assert entry is not None and entry.ts == clock.t - 60.0
-    assert entry.payload == slot
-    assert sw.coerce_seat_slot(entry.payload) == slot
+    expected = {"seats": {str(slot["token"]): {
+        "state": slot["state"], "seat": slot["seat"], "read_ts": clock.t - 60.0}}}
+    assert entry.payload == expected
+    assert sw.coerce_seat_slot(entry.payload, now=clock.t) == expected
+    fresh.save()
+    assert json.loads(path.read_text())["version"] == version
+    restored = SurfCache(path=path, clock=clock)
+    restored.load(slot_coercers={SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=clock.t)})
+    assert restored.get_last_good(SLOT_SWARM_SEAT) == entry
 
 
 @pytest.mark.parametrize("edit", [
@@ -171,10 +179,8 @@ def test_a_seat_slot_round_trips_through_save_and_load(tmp_path, slot):
     {"seat": [1, 2]},                      # a list where the seat goes
     {"token": 516},                        # another token's seat under this token
 ])
-def test_a_hand_edited_seat_slot_loads_but_is_refused_per_field(tmp_path, edit):
-    """The cache restores the slot generically; the manager's reader
-    (``coerce_seat_slot``) refuses it whole. A hand-edited cache file is
-    third-party input (rules/data.md)."""
+def test_a_hand_edited_legacy_seat_slot_is_refused_on_load(tmp_path, edit):
+    """Legacy migration never legitimizes malformed seat identity or state."""
     from tests.data.test_surf_cache import FakeClock
 
     clock = FakeClock()
@@ -188,10 +194,9 @@ def test_a_hand_edited_seat_slot_loads_but_is_refused_per_field(tmp_path, edit):
     path.write_text(json.dumps(on_disk))
 
     fresh = SurfCache(path=path, clock=clock)
-    fresh.load()
+    fresh.load(slot_coercers={SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=clock.t)})
     entry = fresh.get_last_good(SLOT_SWARM_SEAT)
-    assert entry is not None, "the cache keeps the slot; the reader judges it"
-    assert sw.coerce_seat_slot(entry.payload) is None
+    assert entry is None or entry.payload == {"seats": {}}
 
 
 # BOARD normalized slots are validated on load by injected pure coercers.
@@ -307,3 +312,18 @@ def test_popup_job_detail_slot_roundtrips_with_per_point_coercion(tmp_path):
     restored=SurfCache(path,clock=lambda:1000)
     restored.load(slot_coercers={SLOT_SWARM_JOB_DETAIL:sw.coerce_job_detail_slot})
     assert restored.get_last_good(SLOT_SWARM_JOB_DETAIL).payload=={job:point}
+
+
+@pytest.mark.parametrize("bad", [
+    {"state": "ok", "seat": None, "read_ts": 900.0},
+    {"state": "unknown_seat", "seat": None, "read_ts": 1301.0},
+])
+def test_seat_slot_load_drops_malformed_or_future_entry_keeps_sibling(tmp_path, bad):
+    path = tmp_path / "surf.json"
+    sibling = {"state": "ok", "seat": swarm_seat_capture("seat_420"), "read_ts": 900.0}
+    cache = SurfCache(path=path, clock=lambda: 1000.0)
+    cache.store_last_good(SLOT_SWARM_SEAT, {"seats": {"420": sibling, "516": bad}}, ts=1000.0)
+    cache.save()
+    fresh = SurfCache(path=path, clock=lambda: 1000.0)
+    fresh.load(slot_coercers={SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=1000.0)})
+    assert fresh.get_last_good(SLOT_SWARM_SEAT).payload == {"seats": {"420": sibling}}

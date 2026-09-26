@@ -409,41 +409,44 @@ def test_choose_seat_skips_junk_rows_for_most_active():
 # ---------------------------------------------------------------------------
 
 
-def test_coerce_seat_slot_accepts_an_ok_slot_and_an_unknown_seat_slot(seat420):
-    slot = {"token": 420, "state": "ok", "seat": seat420}
-    assert fold.coerce_seat_slot(slot) == slot
-    unknown = {"token": 7, "state": "unknown_seat", "seat": None}
-    assert fold.coerce_seat_slot(unknown) == unknown
-    assert fold.coerce_seat_slot(MappingProxyType(unknown)) == unknown
+def test_coerce_seat_slot_accepts_finished_entries_and_strips_extra_fields(seat420):
+    point = {"state": "ok", "seat": seat420, "read_ts": 100.0}
+    unknown = {"state": "unknown_seat", "seat": None, "read_ts": 80.0}
+    payload = {"seats": {"420": dict(point, extra=1), "7": unknown}, "extra": 1}
+    assert fold.coerce_seat_slot(MappingProxyType(payload), now=100) == {
+        "seats": {"420": point, "7": unknown}}
 
 
-def test_coerce_seat_slot_returns_exactly_the_three_fields(seat420):
-    got = fold.coerce_seat_slot({"token": 420, "state": "ok", "seat": seat420, "extra": 1})
-    assert tuple(got) == ("token", "state", "seat")
-
-
-@pytest.mark.parametrize("slot", [
-    {"token": True, "state": "ok", "seat": {"tokenId": "1"}},              # bool token
-    {"token": -1, "state": "ok", "seat": {"tokenId": "1"}},                # negative
-    {"token": "420", "state": "ok", "seat": {"tokenId": "420"}},           # str token
-    {"token": 420.0, "state": "ok", "seat": {"tokenId": "420"}},
-    {"token": 420, "state": "gone", "seat": {"tokenId": "420"}},           # unknown state
-    {"token": 420, "state": None, "seat": {"tokenId": "420"}},
-    {"token": 420, "state": "ok", "seat": None},                           # None seat with ok
-    {"token": 420, "state": "ok", "seat": ["tokenId", "420"]},             # list seat
-    {"token": 420, "state": "unknown_seat", "seat": {"tokenId": "420"}},   # seat with unknown
-    {"token": 420, "state": "pending", "seat": {"tokenId": "420"}},        # a slot is a finished read
-    {"token": 420, "state": "pending", "seat": None},
-    {"token": 420, "state": "ok", "seat": {"tokenId": "421"}},             # seat for another token
-    {"state": "ok", "seat": {"tokenId": "420"}},                           # missing token
+@pytest.mark.parametrize("token,edit", [
+    (True, {}), (-1, {}), (420, {}), ("0420", {}), ("+420", {}),
+    ("٤٢٠", {}), ("420.0", {}), ("420", {"state": "pending"}),
+    ("420", {"state": "busy"}), ("420", {"state": "gone"}),
+    ("420", {"state": None}), ("420", {"seat": None}),
+    ("420", {"seat": [1, 2]}), ("420", {"seat": {"tokenId": "421"}}),
+    ("420", {"state": "unknown_seat"}), ("420", {"read_ts": None}),
+    ("420", {"read_ts": True}), ("420", {"read_ts": "100"}),
+    ("420", {"read_ts": -1}), ("420", {"read_ts": float("nan")}),
+    ("420", {"read_ts": float("inf")}), ("420", {"read_ts": 401}),
+    pytest.param("420", {"read_ts": 10**1000}, id="oversized-timestamp"),
+    pytest.param("4" * 4301, {}, id="oversized-token"),
 ])
-def test_coerce_seat_slot_refuses(slot):
-    assert fold.coerce_seat_slot(slot) is None
+def test_coerce_seat_slot_drops_bad_entry_and_keeps_sibling(seat420, token, edit):
+    sibling = {"state": "unknown_seat", "seat": None, "read_ts": 0.0}
+    point = dict(state="ok", seat=seat420, read_ts=100.0)
+    point.update(edit)
+    assert fold.coerce_seat_slot({"seats": {token: point, "7": sibling}}, now=100) == {
+        "seats": {"7": sibling}}
 
 
-@pytest.mark.parametrize("payload", [None, [], [420, "ok", {}], "slot", 420])
+def test_coerce_seat_slot_caps_and_breaks_timestamp_ties_by_numeric_token():
+    point = {"state": "unknown_seat", "seat": None, "read_ts": 400.0}
+    payload = {"seats": {str(token): point for token in (20, 10, 9, 8, 7, 6, 5)}}
+    assert list(fold.coerce_seat_slot(payload, now=100)["seats"]) == ["5", "6", "7", "8", "9", "10"]
+
+
+@pytest.mark.parametrize("payload", [None, [], [420, "ok", {}], "slot", 420, {}, {"seats": []}])
 def test_coerce_seat_slot_refuses_a_non_mapping(payload):
-    assert fold.coerce_seat_slot(payload) is None
+    assert fold.coerce_seat_slot(payload, now=100) is None
 
 
 def test_states_the_fold_can_emit_are_frozen_states(seat420):
