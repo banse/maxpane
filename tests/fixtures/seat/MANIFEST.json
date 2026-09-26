@@ -1,5 +1,19 @@
 {
   "version": 1,
   "root": "tests/fixtures/seat",
-  "entries": {}
+  "entries": {
+    "grammar/control_chars.txt": {
+      "origin": "hand-written (spec §14 control_chars.txt): a working: line carrying OSC 52 + OSC 0 + BEL, a U+202E/U+202C bidi line forging an accepted line, a heartbeat with NUL/DEL/CSI, a phase line with TAB/BS/US",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "79bd8043acb83253c483fa5af92c7c3e23e92ba5626683b15ffba9f0d0bcb3d1",
+      "bytes": 387,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [
+        "control_chars"
+      ],
+      "notes": "raw control bytes are the test input for redactor step 0 (mutation proof 23, input half); never redact this file"
+    }
+  }
 }
