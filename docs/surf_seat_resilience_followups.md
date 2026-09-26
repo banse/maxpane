@@ -88,3 +88,21 @@ passed (three manager cases and two widget cases), as did the package runs above
 
 The controller's full-suite run remains required before integration, as specified in the plan.
 There is no merge, push or tag in this work package.
+
+## Controller fix wave and follow-ups (2026-09-26)
+
+The controller rebased the branch onto main `b7cb92a`; only `CHANGELOG.md` conflicted. The whole-branch
+review (opus) found **C1**: `_spawn_runtime_latest` still read the old single-token slot, so the npm
+check never ran and `tests/data/test_surf_manager_runtime.py` failed 3 of 14 (that file was not in
+the WP2 dependent set). Fixed: the gate reads only the selected token's own entry, and a new test
+covers seat isolation (a mutation that serves any entry turns it red).
+
+Filed, not fixed:
+- **F-S1: the loading word is stricter than the manager** (review M1). The widget's
+  `valid_identity` accepts only lowercase `[0-9a-f]{64}`; the manager's `_hex64` also accepts
+  uppercase. A row with an uppercase hash will be read but shows `not read` instead of `loading…`.
+  This errs on the safe side: it never promises a read that does not come.
+- **F-S2: the cap evicts by the last change, not the last read** (review M2). An unchanged finished
+  read keeps its old `read_ts`, so the slot is not re-stored. As a result the 6-seat cap orders
+  seats by when their data last changed, not by when they were last read. The plan said "most
+  recently read". Low impact, because only a seventh seat evicts anything.

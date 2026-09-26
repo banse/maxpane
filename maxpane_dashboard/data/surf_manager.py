@@ -5642,10 +5642,12 @@ class SurfManager:
             return None
         if self._runtime_task is not None and not self._runtime_task.done():
             return self._runtime_task
-        payload = getattr(seat_entry, "payload", None)
-        if not isinstance(payload, dict) or payload.get("token") != token or payload.get("state") != "ok":
+        # The per-seat slot (seat resilience plan §2.3): only the selected token's own entry.
+        slot = sw.coerce_seat_slot(getattr(seat_entry, "payload", None), now=now)
+        read = slot["seats"].get(str(token)) if slot is not None else None
+        if read is None or read["state"] != "ok":
             return None
-        seat = payload.get("seat")
+        seat = read["seat"]
         runtimes = seat.get("runtimes") if isinstance(seat, dict) else None
         if not isinstance(runtimes, list):
             return None

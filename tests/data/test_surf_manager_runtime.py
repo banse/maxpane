@@ -161,3 +161,21 @@ def test_runtime_cache_timestamp_validation_preserves_valid_siblings(stamp):
     from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
     good = {'version':'2.1.281', 'checked_ts':NOW}
     assert coerce_runtime_slot({'claude':good, 'codex':{'version':'0.156.1', 'checked_ts':stamp}}, now=NOW) == {'claude':good}
+
+
+async def test_npm_gate_reads_only_the_selected_seats_own_entry(tmp_path):
+    """Per-seat slot (seat resilience C1): seat 420's cached record must not start
+    npm checks for seat 421, whose own read has not finished."""
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT
+    clock, npm = FakeClock(NOW), FakeNpm()
+    manager, _ = await _seated(tmp_path, _FakeSwarm(seats=seats()), seat=420, clock=clock, npm_client=npm)
+    try:
+        entry = manager.cache.get_last_good(SLOT_SWARM_SEAT)
+        assert '420' in entry.payload['seats']
+        manager.set_agent_active(True)
+        assert manager._spawn_runtime_latest(entry, 421, clock()) is None
+        assert manager._spawn_runtime_latest(entry, 420, clock()) is not None
+        await _settle(manager)
+        assert npm.calls == {'claude': 1, 'codex': 1}
+    finally:
+        await manager.close()
