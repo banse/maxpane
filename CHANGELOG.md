@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.3 — 2026-09-26
+
+- Surfboard `a` AGENT: STATUS no longer reads `⚙ 9 of 1` when a seat runs more jobs than its
+  `maxConcurrency`. Oracle jobs do not count against that limit, so a seat can legitimately run
+  more of them at once; STATUS then reads `⚙ 9 working`.
+
 ## v0.9.2 — 2026-09-25
 
 63 commits since v0.9.1. Every data source is still keyless and read-only. All of it is in
