@@ -487,3 +487,58 @@ def test_row_fields_are_gated_by_their_own_source():
 # ---------------------------------------------------------------------------
 # Task 1.10 — the five degraded status_v2_* fixtures
 # ---------------------------------------------------------------------------
+
+
+def test_offline_fixture_has_no_api_sources_and_flags_offline():
+    # spec §7: under --offline the API sources are absent entirely; §8 VERDICTS reads `local only`
+    doc = _load("status_v2_offline.json")
+    assert not any(name in doc["sources"] for name in ("standing", "seatWork", "reasons", "plane"))
+    flat = sm.fold_status_document(doc)
+    assert flat["seat_offline"] is True
+    assert flat["seat_queue"] is None and flat["seat_standing_attempts"] is None and flat["seat_plane_version"] is None
+    assert flat["seat_tasks_rows"][0]["outcome"] == "unknown"
+    assert flat["seat_agent_id"] == 51075, "a configured agent id survives --offline (K)"
+    assert flat["seat_control_gate"]["planeMode"] == "local-only"
+    assert set(flat["seat_sources"]) == set(sm.SOURCE_NAMES) - {"standing", "seatWork", "reasons", "plane"}
+    assert flat["seat_as_of_hhmm"]["standing"] is None
+
+
+def test_tail_dead_fixture_blanks_every_tail_fed_key():
+    flat = sm.fold_status_document(_load("status_v2_tail_dead.json"))
+    for key, source in sm.SEAT_FIELD_SOURCES.items():
+        if source == "tail":
+            assert flat[key] is None, key
+    assert flat["seat_sources"]["tail"]["reason"] == "tail: exited rc=1 — retry in 8s"
+    assert flat["seat_unit_active_state"] == "active" and flat["seat_standing_attempts"] == 288
+    assert flat["seat_log_seq"] == 0 and flat["error_count"] == 1
+
+
+def test_api_down_fixture_blanks_the_api_fed_keys_only():
+    flat = sm.fold_status_document(_load("status_v2_api_down.json"))
+    for key, source in sm.SEAT_FIELD_SOURCES.items():
+        if source in ("standing", "seatWork", "reasons", "plane"):
+            assert flat[key] is None, key
+    assert flat["seat_offline"] is False, "api down is not --offline"
+    assert flat["seat_daemon_state"] == "alive" and flat["seat_today_tasks"] == 12
+    assert flat["seat_sources"]["plane"]["reason"].startswith("HTTP 500")
+    assert flat["error_count"] == 4
+
+
+def test_local_only_and_gate_unknown_fixtures_keep_the_gate_block():
+    local_only = sm.fold_status_document(_load("status_v2_local_only_gate.json"))
+    assert local_only["seat_control_gate"]["planeMode"] == "local-only" and local_only["seat_control_gate"]["safe"] is True
+    assert local_only["seat_standing_working"] == 0, "standing is ok:false but not yet unavailable -- last-good kept"
+    unknown = sm.fold_status_document(_load("status_v2_gate_unknown.json"))
+    assert unknown["seat_control_gate"]["safe"] is False
+    assert unknown["seat_control_gate"]["reason"] == "gate unknown: outbox unreadable"
+    assert unknown["seat_control_gate"]["outboxFiles"] is None
+    assert unknown["seat_machine_outbox_files"] is None and unknown["seat_machine_work_dirs"] is None
+
+
+@pytest.mark.parametrize("name", STATUS_FIXTURES)
+def test_every_status_v2_fixture_validates_and_folds(name):
+    doc = _load(name)
+    assert sm.validate_status_document(doc) is None, name
+    flat = sm.fold_status_document(doc)
+    assert tuple(flat) == sm.SEAT_KEYS
+    assert "$" not in json.dumps(flat), "no currency anywhere (spec §10)"

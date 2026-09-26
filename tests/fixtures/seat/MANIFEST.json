@@ -60,6 +60,61 @@
       "daemon_version": "0.1.0+5bfa8261",
       "allow": [],
       "notes": "validate_status_document refuses it as with_secret (canary: hex64 at seat.deviceKeyPublic); the hex64 is not a real key"
+    },
+    "status/status_v2_tail_dead.json": {
+      "origin": "status_v2_healthy.json with sources.tail ok:false (exited rc=1, threadAliveAt 52 s old, unavailable) while the daemon block still carries stale values",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "4e636517955d97fdefa08ed988c8743f6552a337ad4fb802125b4070d345c781",
+      "bytes": 15576,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "derived from status_v2_healthy.json by the Task 1.10 generator (explicit field assignments); validates None and folds to SEAT_KEYS"
+    },
+    "status/status_v2_api_down.json": {
+      "origin": "status_v2_healthy.json with sources.standing/seatWork/reasons/plane ok:false failures 3 unavailable:true (HTTP 500 x3); last-good values kept in the document",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "a98e0d8a0c728b45a9dcda02689786a1c84d6f44c269b3eb6517710d16114816",
+      "bytes": 15736,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "derived from status_v2_healthy.json by the Task 1.10 generator (explicit field assignments); validates None and folds to SEAT_KEYS"
+    },
+    "status/status_v2_offline.json": {
+      "origin": "status_v2_healthy.json under --offline: the four API sources absent, queue/standing/plane null, rows outcome unknown, gate planeMode local-only",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "23bdfdf4facef8b3471f8bd677a14682ba4146699f98be369dfeffd0dc52f803",
+      "bytes": 13961,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "derived from status_v2_healthy.json by the Task 1.10 generator (explicit field assignments); validates None and folds to SEAT_KEYS"
+    },
+    "status/status_v2_local_only_gate.json": {
+      "origin": "status_v2_healthy.json with sources.standing ok:false after one timeout (last-good kept, not unavailable) and control.gate planeMode local-only, safe true",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "0c40133347c5f998c6e9365b80f92e6f8e4f14d1439a505f673145605c7da1c9",
+      "bytes": 15614,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "derived from status_v2_healthy.json by the Task 1.10 generator (explicit field assignments); validates None and folds to SEAT_KEYS"
+    },
+    "status/status_v2_gate_unknown.json": {
+      "origin": "status_v2_healthy.json with sources.workstat ok:false (outbox permission denied), machine.outboxFiles null and control.gate safe false: gate unknown: outbox unreadable",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "d50d63cd29417090a1b655ff89fc5fccf36b6d7a618e5dd4f4be347e6a914435",
+      "bytes": 15603,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "derived from status_v2_healthy.json by the Task 1.10 generator (explicit field assignments); validates None and folds to SEAT_KEYS"
     }
   }
 }

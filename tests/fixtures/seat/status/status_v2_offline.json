@@ -1,0 +1,577 @@
+{
+  "schemaVersion": 2,
+  "producer": "pepepane 0.1.0",
+  "startedAtUtc": "2026-09-26T03:40:07Z",
+  "completedAtUtc": "2026-09-26T03:40:12Z",
+  "host": {
+    "kind": "systemd",
+    "unit": "imd-worker.service",
+    "container": null,
+    "runtime": "codex",
+    "hostname": "ubuntu"
+  },
+  "sources": {
+    "tail": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:40:11Z",
+      "ageS": 4,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": "s=3f6d0e4b1a2c4d5e8f9a0b1c2d3e4f50;i=2a7b;b=9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f;m=1b2c3d4e5f;t=6a7b8c9d0e1f2;x=3f4e5d6c7b8a9",
+      "threadAliveAt": "2026-09-26T03:40:11Z"
+    },
+    "unit": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:40:11Z",
+      "ageS": 1,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    },
+    "broker": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:40:10Z",
+      "ageS": 2,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    },
+    "seat": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:35:10Z",
+      "ageS": 302,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    },
+    "status": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:35:10Z",
+      "ageS": 302,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    },
+    "skills": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:35:11Z",
+      "ageS": 301,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    },
+    "sessions": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:38:12Z",
+      "ageS": 120,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    },
+    "workstat": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:36:10Z",
+      "ageS": 242,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    },
+    "hints": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:35:10Z",
+      "ageS": 302,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    },
+    "auth": {
+      "ok": true,
+      "asOfUtc": "2026-09-26T03:35:10Z",
+      "ageS": 302,
+      "reason": null,
+      "trust": "host",
+      "failures": 0,
+      "unavailable": false,
+      "watermark": null,
+      "threadAliveAt": null
+    }
+  },
+  "seat": {
+    "tokenId": 7,
+    "agentId": 51075,
+    "deviceKeyPublic": "72b617d4",
+    "wallet": "0x887b9f",
+    "server": "https://api.imd.fun",
+    "eligibility": "eligible — this machine can receive work",
+    "capacity": 1,
+    "offers": [
+      "code",
+      "fuzz",
+      "research"
+    ],
+    "daemonVersion": "0.1.0+5bfa8261",
+    "runtime": {
+      "id": "codex",
+      "version": "codex-cli 0.157.0"
+    },
+    "releaseAvailable": null,
+    "buildMismatch": false,
+    "skills": {
+      "offered": 31,
+      "on": 31,
+      "optOut": [],
+      "needsNetwork": 7,
+      "rows": [
+        {
+          "id": "oracle-assess",
+          "on": true,
+          "needs": null
+        },
+        {
+          "id": "public-rpcs",
+          "on": true,
+          "needs": "network"
+        },
+        {
+          "id": "foundry-fuzz",
+          "on": true,
+          "needs": "tool:forge"
+        }
+      ]
+    },
+    "tools": [],
+    "inference": {
+      "economy": {
+        "codex": {
+          "model": "gpt-6-luna",
+          "effort": "medium"
+        }
+      },
+      "standard": {
+        "codex": {
+          "model": "gpt-6-luna",
+          "effort": "medium"
+        }
+      },
+      "premium": {
+        "codex": {
+          "model": "gpt-6-astra",
+          "effort": "xhigh"
+        }
+      }
+    },
+    "premiumAdvertised": {
+      "model": "gpt-6-astra",
+      "effort": "xhigh"
+    },
+    "hints": {
+      "path": "~/.codex/AGENTS.md",
+      "bytes": 1791,
+      "sha8": "3f2a9c1e",
+      "mtimeUtc": "2026-09-24T18:02:11Z"
+    },
+    "configChangedSinceStart": false
+  },
+  "daemon": {
+    "state": "alive",
+    "uptime": "14h42m",
+    "work": "idle",
+    "running": 0,
+    "submittedSinceStart": 77,
+    "lastHeartbeatUtc": "2026-09-26T03:40:08.226Z",
+    "heartbeatAgeS": 4,
+    "idleBeats": 9,
+    "fleetOnline": 406,
+    "fleetEnrolled": 417,
+    "pausedHint": null,
+    "invocationId": "5e0c1a2b3c4d4e5f8a9b0c1d2e3f4a5b",
+    "lastAdmittedUtc": "2026-09-25T11:45:43Z",
+    "disconnects24h": 5,
+    "reconnects24h": 14,
+    "consecutiveDisconnectedBeats": 0
+  },
+  "auth": {
+    "degraded": false,
+    "reasons": [],
+    "sinceUtc": null,
+    "credentialFileMtimeUtc": "2026-09-25T23:38:43Z"
+  },
+  "unit": {
+    "activeState": "active",
+    "subState": "running",
+    "mainPid": 98508,
+    "sinceUtc": "2026-09-25T11:45:41Z",
+    "restarts": 0,
+    "bootEnabled": false,
+    "restartPolicy": "always/30s",
+    "killMode": "control-group",
+    "stopTimeoutS": 30,
+    "gracefulStopPossible": true,
+    "memoryCurrentB": 115798016,
+    "memoryPeakB": 188592128,
+    "memoryMaxB": 3221225472,
+    "cpuQuota": "100%",
+    "tasksCurrent": 11
+  },
+  "current": null,
+  "queue": null,
+  "tasks": {
+    "window": {
+      "fromUtc": "2026-09-22T12:00:00.628Z",
+      "toUtc": "2026-09-26T03:40:11Z",
+      "source": "journald",
+      "rows": 2,
+      "gapNote": null,
+      "ledgerSinceUtc": "2026-09-26T03:00:00Z"
+    },
+    "rows": [
+      {
+        "key": "7/0c1f9727/2026-09-26T03:23:44.909Z",
+        "nodeId8": "0c1f9727",
+        "nodeId": "0c1f9727-4c1e-4b8a-9f0d-2a6e7b3c5d11",
+        "jobId": "b1fb1439-7d2e-4a0f-8c3b-9e5d1f2a6b70",
+        "role": "implement",
+        "kind": "code",
+        "acceptedUtc": "2026-09-26T03:23:44.909Z",
+        "submittedUtc": "2026-09-26T03:24:17.136Z",
+        "storedUtc": "2026-09-26T03:24:17.236Z",
+        "hash12": "c4d9714ffb95",
+        "durationS": 32.2,
+        "agentRan": true,
+        "preAgentFailure": false,
+        "cancelled": null,
+        "leaseClosed": false,
+        "repair": false,
+        "resent": false,
+        "interruptedByRestart": false,
+        "runtime": "codex",
+        "model": "gpt-6-luna",
+        "effort": "medium",
+        "tierDerived": "economy/standard",
+        "turns": 3,
+        "turnsDefinition": "agent_messages",
+        "tokens": {
+          "input": 17864,
+          "output": 812,
+          "cached": 92928,
+          "cacheWrite": 0
+        },
+        "sideModelTokens": null,
+        "ttftMs": 1807,
+        "wallMs": 22400,
+        "turn1Context": 24000,
+        "maxTurnsReached": false,
+        "apiErrors": [],
+        "sessionFiles": 1,
+        "tokensReason": null,
+        "outcome": "unknown",
+        "outcomeAsOfUtc": null,
+        "acceptedAtApi": null,
+        "verdictLagS": null,
+        "failureReason": null,
+        "failureClass": null,
+        "nodeKey": "oracle_assess",
+        "objective": "Assess the oracle answer for job b1fb1439",
+        "source": {
+          "row": "local",
+          "outcome": "none",
+          "reason": "none"
+        },
+        "phases": [
+          "preparing",
+          "working",
+          "checking",
+          "bundling",
+          "uploading"
+        ],
+        "lastMessage": "Created artifacts/answer.json",
+        "lastMessageUtc": "2026-09-26T03:24:10.781Z",
+        "workDirAbnormal": false,
+        "maxTurns": 60
+      },
+      {
+        "key": "7/7073b7a6/2026-09-25T23:36:03.545Z",
+        "nodeId8": "7073b7a6",
+        "nodeId": "7073b7a6-2f1e-4d3c-8b9a-0c1d2e3f4a5b",
+        "jobId": "d5a88bd1-eae2-4120-acef-70e7a412adad",
+        "role": "implement",
+        "kind": "code",
+        "acceptedUtc": "2026-09-25T23:36:03.545Z",
+        "submittedUtc": "2026-09-25T23:36:37.658Z",
+        "storedUtc": "2026-09-25T23:36:37.749Z",
+        "hash12": "dde8a2de8df4",
+        "durationS": 34.1,
+        "agentRan": true,
+        "preAgentFailure": false,
+        "cancelled": null,
+        "leaseClosed": false,
+        "repair": false,
+        "resent": false,
+        "interruptedByRestart": false,
+        "runtime": "codex",
+        "model": "gpt-6-luna",
+        "effort": "medium",
+        "tierDerived": "economy/standard",
+        "turns": 1,
+        "turnsDefinition": "agent_messages",
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "cached": 0,
+          "cacheWrite": 0
+        },
+        "sideModelTokens": null,
+        "ttftMs": null,
+        "wallMs": 33704,
+        "turn1Context": null,
+        "maxTurnsReached": false,
+        "apiErrors": [
+          {
+            "status": 401,
+            "message": "unexpected status 401 Unauthorized: Incorrect API key provided: sk-[redacted]",
+            "atUtc": "2026-09-25T23:36:37.600Z"
+          }
+        ],
+        "sessionFiles": 1,
+        "tokensReason": "runtime reported no usage",
+        "outcome": "unknown",
+        "outcomeAsOfUtc": null,
+        "acceptedAtApi": null,
+        "verdictLagS": null,
+        "failureReason": null,
+        "failureClass": null,
+        "nodeKey": "oracle_assess",
+        "objective": "Assess the oracle answer for job d5a88bd1",
+        "source": {
+          "row": "local",
+          "outcome": "none",
+          "reason": "none"
+        },
+        "phases": [
+          "preparing",
+          "working"
+        ],
+        "lastMessage": null,
+        "lastMessageUtc": null,
+        "workDirAbnormal": true,
+        "maxTurns": 60
+      }
+    ]
+  },
+  "today": {
+    "dayUtc": "2026-09-26",
+    "tasks": 12,
+    "stored": 11,
+    "notStored": 1,
+    "p50S": 28,
+    "longestS": 252,
+    "accepted": null,
+    "rejected": null,
+    "failed": null,
+    "pending": null,
+    "verdictLagP50S": null,
+    "verdictsAsOfUtc": null,
+    "divergence": null
+  },
+  "cost": {
+    "windowDays": 7,
+    "tasks": 118,
+    "excluded": {
+      "doctor": 2,
+      "manual": 1
+    },
+    "turns": 341,
+    "tokens": {
+      "input": 2100000,
+      "output": 96000,
+      "cached": 24000000,
+      "cacheWrite": 0
+    },
+    "buckets": [
+      {
+        "model": "gpt-6-luna",
+        "effort": "medium",
+        "tierDerived": "economy/standard",
+        "tasks": 118,
+        "turnsP50": 3,
+        "tokens": {
+          "input": 2100000,
+          "output": 96000,
+          "cached": 24000000,
+          "cacheWrite": 0
+        },
+        "wallP50S": 24.8,
+        "wallP90S": 86.9,
+        "ttftP50Ms": 2481,
+        "turn1ContextP50": 24000,
+        "maxTurnsHits": 0,
+        "authErrors": 3
+      }
+    ],
+    "sideModel": null,
+    "series": {
+      "outputTokensPerDay": [
+        [
+          "2026-09-24",
+          131000
+        ],
+        [
+          "2026-09-25",
+          120000
+        ],
+        [
+          "2026-09-26",
+          14000
+        ]
+      ],
+      "tasksPerDay": [
+        [
+          "2026-09-24",
+          61
+        ],
+        [
+          "2026-09-25",
+          45
+        ],
+        [
+          "2026-09-26",
+          12
+        ]
+      ],
+      "acceptedPerDay": [
+        [
+          "2026-09-24",
+          52
+        ],
+        [
+          "2026-09-25",
+          40
+        ],
+        [
+          "2026-09-26",
+          9
+        ]
+      ]
+    },
+    "depth": {
+      "ledgerFromUtc": "2026-09-22T12:00:00.628Z",
+      "sessionsFromUtc": "2026-09-22T12:00:00Z",
+      "expiredRows": 0,
+      "skipped": {
+        "oversize": 0
+      }
+    }
+  },
+  "quota": {
+    "provider": "codex",
+    "window": "weekly",
+    "usedPercent": 45.0,
+    "resetsAtUtc": "2026-09-28T21:50:11Z",
+    "sampledAtUtc": "2026-09-26T03:24:15Z",
+    "planType": "pro",
+    "reason": null
+  },
+  "standing": {
+    "attempts": null,
+    "accepted": null,
+    "rejected": null,
+    "failed": null,
+    "pending": null,
+    "countersInconsistent": null,
+    "working": null,
+    "running": [],
+    "consecutiveFailures": null,
+    "pausedUntil": null,
+    "breaker": null,
+    "recentFailures": [],
+    "presenceConnected": null,
+    "heartbeatAgeMs": null,
+    "asOfUtc": null
+  },
+  "plane": {
+    "version": null,
+    "verifierUp": null,
+    "verifierLastSeenUtc": null,
+    "awaitingVerdict": null,
+    "connectedDaemons": null,
+    "asOfUtc": null
+  },
+  "machine": {
+    "load1": 0.02,
+    "memAvailMiB": 2964,
+    "diskFreeGiB": 109.0,
+    "workDirs": 288,
+    "workBytes": 58314752,
+    "abnormalLeaseDirs": 7,
+    "outboxFiles": 0,
+    "journal": {
+      "firstUtc": "2026-09-22T12:00:00Z",
+      "lastUtc": "2026-09-26T03:40:11Z",
+      "capNote": "~347 MiB resolved at boot; 4 GiB after a journald restart"
+    },
+    "transcriptRetention": {
+      "kind": "codex-rollouts",
+      "plainDays": 7,
+      "deleteDays": null,
+      "zstdReadable": true
+    },
+    "orphans": []
+  },
+  "control": {
+    "brokerReachable": true,
+    "gate": {
+      "idleBeats": 9,
+      "idleBeatsRequired": 4,
+      "planeRunning": null,
+      "planeAsOfUtc": null,
+      "planeMode": "local-only",
+      "lastLifecycleLine": "2026-09-26T03:24:17.136Z submitted implement for 0c1f9727",
+      "lifecycleOpen": false,
+      "outboxFiles": 0,
+      "unitActive": true,
+      "safe": true,
+      "reason": "plane half removed by --offline — typed local-only ack at apply"
+    },
+    "drain": null,
+    "inFlight": null,
+    "restartRequired": false,
+    "lastAudit": [
+      {
+        "ts": "2026-09-25T11:45:41Z",
+        "seq": 1287,
+        "verb": "restart",
+        "phase": "verify",
+        "planId": "7f3a9c1e2b4d6081",
+        "outcome": "applied",
+        "verified": true,
+        "connected": true
+      }
+    ]
+  }
+}
