@@ -261,23 +261,22 @@ def test_lease_closed_is_not_an_attempt(tmp_path: Path) -> None:
     assert row["submittedUtc"] == "2026-09-26T02:48:19.156Z"
     assert row["storedUtc"] is None and row["hash12"] is None and row["leaseClosed"] is True
     # the NEXT task's stored line attaches to the next task, never to the lease-closed row
-    (nxt,) = _by_node(ledger, "5e0c3a11")
-    assert nxt["hash12"] == "9d0e5f6a7b8c" and nxt["leaseClosed"] is False
+    (nxt,) = _by_node(ledger, "f3230435")
+    assert nxt["hash12"] == "d9bebae54a7d" and nxt["leaseClosed"] is False
     ledger.close()
 
 
 def test_cancel_attaches_to_open_row_not_by_prefix(tmp_path: Path) -> None:
     """Mutation proof 6 (spec §14): `cancelled <lease8>` names the LEASE — attach by time, never by id match.
 
-    The slice carries a decoy row whose node8 equals the lease id (16a4df90); an id-matching
-    implementation attaches the cancel there and leaves the open row untouched.
+    The real captured slice has no node8 matching the lease id (16a4df90); an id-matching
+    implementation attaches nowhere and leaves the open row untouched.
     """
     ledger = _ledger(tmp_path, now=1790391000.0)
     ledger.ingest(_lines("cancel_lease_closed.txt"))
     (open_at_that_instant,) = _by_node(ledger, "b6d17f8d")
-    (decoy,) = _by_node(ledger, "16a4df90")
+    assert _by_node(ledger, "16a4df90") == []
     assert open_at_that_instant["cancelled"] == "superseded"
-    assert decoy["cancelled"] is None and decoy["hash12"] == "0a1b2c3d4e5f"
     ledger.close()
 
 
@@ -349,9 +348,9 @@ class TestDetectorState:
         ledger = _ledger(tmp_path, now=now)
         ledger.ingest(_lines("redeploy_wave.txt"))
         st = ledger.state
-        assert st.consecutive_disconnected == 0 and st.last_admitted_utc == "2026-09-26T02:45:26.180Z"
+        assert st.consecutive_disconnected == 0 and st.last_admitted_utc == "2026-09-26T02:45:26.585Z"
         assert st.disconnects_24h == 1 and st.reconnects_24h == 1  # the 09-24 window is older than 24 h
-        assert (st.fleet_online, st.fleet_enrolled) == (398, 417)
+        assert (st.fleet_online, st.fleet_enrolled) == (406, 417)
         mid = SeatLedger(tmp_path / "mid.sqlite", seat=7, now=lambda: g.parse_ts("2026-09-24T22:23:00.000Z"))
         mid.ingest(_lines("redeploy_wave.txt")[:12])
         assert mid.state.consecutive_disconnected == 3 and mid.state.disconnects_24h == 1 and mid.state.reconnects_24h == 0
@@ -711,6 +710,6 @@ class TestRollups:
         ledger = _ledger(tmp_path, now=1790391000.0)
         ledger.ingest(_lines("cancel_lease_closed.txt"))
         today = ledger.today("2026-09-26")
-        assert (today["tasks"], today["stored"], today["notStored"]) == (3, 2, 1)
+        assert (today["tasks"], today["stored"], today["notStored"]) == (3, 1, 2)
         assert type(today["p50S"]) is int and type(today["longestS"]) is int
         ledger.close()

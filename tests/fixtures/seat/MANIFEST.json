@@ -257,32 +257,32 @@
       "bytes": 2886
     },
     "grammar/cancel_lease_closed.txt": {
-      "origin": "reconstruction from fill1 FACTS / fill6 §2 timestamps (imd-vps journal 2026-09-26T02:47:59Z-02:48:19Z is not in the scratchpad corpus)",
-      "captured_at": "2026-09-26T08:30:00Z",
+      "origin": "imd-vps journalctl -u imd-worker.service -o cat --no-pager (owner capture 2026-09-26, /Library/Vibes/aidude/data/surf/pepepane-corpus)",
+      "captured_at": "2026-09-26T19:36:00Z",
       "redactions": [
         "control_chars",
         "sk",
         "hex64>=32"
       ],
-      "synthetic": true,
+      "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "b6d17f8d lines carry the measured stamps; the leading 16a4df90 row is a decoy whose node8 equals the lease id (proof 6); 5e0c3a11 and the hashes are invented. Replace via Task 2.5 Step 7 (owner-run) and set synthetic false",
-      "sha256": "d1d4e25fc22c5494210420b21a75c2000f2aed7d9c3b0519ad186f013ecafae4",
-      "bytes": 1451
+      "notes": "Real 20-line cancel capture: b6d17f8d lease closed, f3230435 stored, 7f3ebced still open; no node matches lease16a4df90.",
+      "sha256": "75e42d02b6e2a98297fe842d2d35ad062a708aadabf0673d31566832908115e3",
+      "bytes": 1591
     },
     "grammar/redeploy_wave.txt": {
-      "origin": "imd-vps journalctl -u imd-worker.service -o cat --no-pager, 2026-09-22T12:00:00Z -> 2026-09-26T02:31:55Z (the research scratchpad copy journal7d.txt, 13,734 lines) (2026-09-24T22:21:39Z->22:23:49Z, real) + reconstruction of the 2026-09-26T02:45:25Z wave from fill5 §7",
-      "captured_at": "2026-09-26T04:31:00Z",
+      "origin": "imd-vps journalctl -u imd-worker.service -o cat --no-pager (owner capture 2026-09-26, /Library/Vibes/aidude/data/surf/pepepane-corpus)",
+      "captured_at": "2026-09-26T19:36:00Z",
       "redactions": [
         "control_chars",
         "sk",
         "hex64>=32"
       ],
-      "synthetic": true,
+      "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "first window: four 502s, `admitted` lags 84 s; second window (synthetic stamps): `disconnected … fleet 6 online` -> admitted 1.1 s. Replace the second window via Task 2.5 Step 7 (owner-run)",
-      "sha256": "62a83fd66f27c3eb527f3b4921c7366721d07f72dfa37f716ef739e06930e710",
-      "bytes": 1489
+      "notes": "First window remains the 2026-09-24 22:21–22:23 corpus slice; second is the real 15-line 09-26 capture: reconnecting without server closed, one fleet6 disconnected beat, admitted then5f890f2e stored.",
+      "sha256": "6fb68c9036baaaeb55e4231dd9125b97085944e89ae859b1b401a1a85d7bf170",
+      "bytes": 2157
     },
     "grammar/open_accept_after_idle.txt": {
       "origin": "hand-written (spec §14 fixture list)",
