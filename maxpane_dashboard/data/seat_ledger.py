@@ -249,8 +249,17 @@ class SeatLedger:
                 n += 1
                 if line.kind == g.KIND_UNKNOWN:
                     unknown += 1
-                if line.ts and (self._state.last_ts is None or line.ts > self._state.last_ts):
-                    self._state.last_ts = line.ts
+                if line.ts:
+                    if self._state.invocation is not None and line.invocation is not None \
+                            and line.invocation != self._state.invocation:
+                        self._restart_boundary(cur, line)
+                        restarts += 1
+                        events.append("restart")
+                        self._state.pending_boundary = True
+                    if line.invocation is not None:
+                        self._state.invocation = line.invocation
+                    if self._state.last_ts is None or line.ts > self._state.last_ts:
+                        self._state.last_ts = line.ts
                 kind = line.kind
                 if kind in g.ACCEPTED_KINDS:
                     if self._accept(cur, line):
@@ -279,8 +288,38 @@ class SeatLedger:
                     self._resending(cur, line)
                 elif kind == g.KIND_LOCAL_FAIL:
                     self._local_fail(cur, line)
+                elif kind == g.KIND_RATE_LIMITED:
+                    self._state.paused_local_utc = line.ts
+                elif kind == g.KIND_HEARTBEAT:
+                    self._heartbeat(line)
+                elif kind == g.KIND_ADMITTED:
+                    self._state.last_admitted_utc = line.ts
+                    self._connection_event(line, "admitted")
+                elif kind in (g.KIND_SERVER_CLOSED, g.KIND_WS_RESPONSE, g.KIND_WS_SOCKET, g.KIND_RECONNECTING):
+                    # every loss prints `reconnecting in`; a silent drop prints nothing else (captured 2026-09-26 02:45)
+                    self._connection_event(line, "disconnect")
+                elif kind == g.KIND_RUNTIMES:
+                    self._state.runtimes = line.fields.get("list")
+                    if self._state.pending_boundary:
+                        self._state.pending_boundary = False
+                    else:
+                        self._restart_boundary(cur, line)
+                        restarts += 1
+                        events.append("restart")
+                elif kind == g.KIND_RELEASE_OK:
+                    self._state.daemon_version = line.fields.get("version")
+                    self._state.release_available = None
+                elif kind == g.KIND_RELEASE_AVAIL:
+                    self._state.daemon_version = line.fields.get("installed")
+                    self._state.release_available = line.fields.get("available")
+                elif kind == g.KIND_UPDATED:
+                    self._state.daemon_version = line.fields.get("to")
+                    self._state.release_available = None
+                elif kind == g.KIND_BUILD_SKEW:
+                    self._state.build_mismatch = True
                 if kind in g.ACCEPTED_KINDS or kind in g.TERMINAL_KINDS:
                     self._state.last_lifecycle = line
+        self._recount_beats()
         return IngestResult(lines=n, opened=opened, closed=closed, stored=stored, restarts=restarts,
                             unknown=unknown, events=tuple(events))
 
@@ -452,6 +491,82 @@ class SeatLedger:
         )
         self._state.open_key = None
         self._state.current = None
+
+    def _restart_boundary(self, cur: sqlite3.Cursor, line: LogLine) -> None:
+        if self._state.open_key is not None:
+            cur.execute(
+                "UPDATE tasks SET interrupted_by_restart = 1, updated_utc = ? WHERE key = ?",
+                (_iso(self._now()), self._state.open_key),
+            )
+        self._state.open_key = None
+        self._state.current = None
+        self._state.submitted_since_start = None
+        self._state.build_mismatch = False
+        self._state.release_available = None
+        self._state.paused_hint = None
+
+
+    def _heartbeat(self, line: LogLine) -> None:
+        f = line.fields
+        epoch = parse_ts(line.ts)
+        self._state.last_heartbeat = line
+        if f.get("state") == "disconnected":
+            state = "disconnected"
+        elif f.get("work") == "idle":
+            state = "idle"
+        else:
+            state = "running"
+        if epoch is not None:
+            self._state.heartbeats_recent.append((epoch, state))
+        if f.get("submitted") is not None:
+            self._state.submitted_since_start = int(f["submitted"])
+        if f.get("online") is not None:
+            self._state.fleet_online = int(f["online"])
+            self._state.fleet_enrolled = int(f["enrolled"]) if f.get("enrolled") is not None else None
+            self._state.fleet_seen_utc = line.ts
+        if f.get("until") is not None:
+            self._state.paused_hint = {
+                "until": f["until"],
+                "failedRuns": int(f["failed"]) if f.get("failed") else None,
+                "reason": redact_agent_sentence(f.get("reason") or "") or None,
+                "seenUtc": line.ts,
+            }
+        else:
+            self._state.paused_hint = None
+
+
+    def _connection_event(self, line: LogLine, kind: str) -> None:
+        epoch = parse_ts(line.ts)
+        if epoch is None:
+            return
+        events = self._state.connection_events
+        if kind == "disconnect" and events and events[-1][1] == "disconnect":
+            return  # one loss = one event, however many retries print
+        events.append((epoch, kind))
+
+
+    def _recount_beats(self) -> None:
+        now = self._now()
+        st = self._state
+        st.heartbeats_recent = [(t, s) for (t, s) in st.heartbeats_recent if t >= now - IDLE_WINDOW_S]
+        idle = 0
+        for _, s in reversed(st.heartbeats_recent):
+            if s != "idle":
+                break
+            idle += 1
+        st.idle_beats = idle
+        disconnected = 0
+        for _, s in reversed(st.heartbeats_recent):
+            if s != "disconnected":
+                break
+            disconnected += 1
+        st.consecutive_disconnected = disconnected
+        st.connection_events = [(t, k) for (t, k) in st.connection_events if t >= now - CONNECTION_WINDOW_S]
+        st.disconnects_24h = sum(1 for _, k in st.connection_events if k == "disconnect")
+        st.reconnects_24h = sum(1 for _, k in st.connection_events if k == "admitted")
+        if st.current is not None and st.open_key is not None:
+            accepted = parse_ts(st.current.get("startedUtc") or "")
+            st.current["elapsedS"] = None if accepted is None else max(0, int(now - accepted))
 
     # ------------------------------------------------------------------ rows
     def _row(self, cur: sqlite3.Cursor, key: str) -> sqlite3.Row:

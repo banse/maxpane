@@ -279,3 +279,121 @@ def test_cancel_attaches_to_open_row_not_by_prefix(tmp_path: Path) -> None:
     assert open_at_that_instant["cancelled"] == "superseded"
     assert decoy["cancelled"] is None and decoy["hash12"] == "0a1b2c3d4e5f"
     ledger.close()
+
+
+# ---------------------------------------------------------------------------------------- Task 2.8
+class TestRestartBoundaries:
+    def test_runtimes_line_is_a_restart_boundary(self, tmp_path: Path) -> None:
+        """Appendix B: RUNTIMES closes an open row as interruptedByRestart and resets submittedSinceStart."""
+        ledger = _ledger(tmp_path, now=1790337000.0)
+        ledger.ingest(_classify(["2026-09-25T11:45:20.000Z accepted implement 0c1f9727 — artifacts/answer.json (max 60 turns)"]))
+        result = ledger.ingest(_lines("restart_boundary.txt"))
+        assert result.restarts == 1 and "restart" in result.events
+        (row,) = ledger.rows()
+        assert row["interruptedByRestart"] is True and row["submittedUtc"] is None and ledger.open_row() is None
+        st = ledger.state
+        assert st.submitted_since_start == 0 and st.daemon_version == "0.1.0+5bfa8261" and st.runtimes == "codex codex-cli 0.157.0"
+        assert st.last_admitted_utc == "2026-09-25T11:45:41.968Z" and st.fleet_online == 362
+        ledger.close()
+
+    def test_state_is_restored_from_sqlite_on_reopen(self, tmp_path: Path) -> None:
+        ledger = _ledger(tmp_path, now=1790391000.0)
+        ledger.ingest(_lines("open_accept_after_idle.txt"))
+        ledger.close()
+        reopened = _ledger(tmp_path, now=1790391000.0)
+        assert reopened.open_row()["nodeId8"] == "0c1f9727" and reopened.state.current["nodeId8"] == "0c1f9727"
+        reopened.close()
+
+
+def test_invocation_change_is_a_restart_boundary(tmp_path: Path) -> None:
+    """Header Review Focus 1: a crash-restart without the `runtimes:` banner in the window — the journald
+    `_SYSTEMD_INVOCATION_ID` change alone closes the open row `interruptedByRestart` and resets the counter."""
+    ledger = _ledger(tmp_path, now=1790337000.0)
+    ledger.ingest(_classify([
+        "2026-09-25T11:44:59.469Z alive 15h6m · idle · 108 submitted · fleet 362 online, 370 enrolled",
+        "2026-09-25T11:45:20.000Z accepted implement 0c1f9727 — artifacts/answer.json (max 60 turns)",
+    ], invocation="aaaa"))
+    assert ledger.state.submitted_since_start == 108
+    result = ledger.ingest(_classify([
+        "2026-09-25T11:46:11.851Z alive 0m · idle · 0 submitted · fleet 362 online, 370 enrolled",
+    ], invocation="bbbb"))
+    assert result.restarts == 1 and result.events == ("restart",)
+    (row,) = ledger.rows()
+    assert row["interruptedByRestart"] is True and ledger.open_row() is None
+    assert ledger.state.invocation == "bbbb" and ledger.state.submitted_since_start == 0
+    # a later `runtimes:` line of the same start does not count a second restart
+    again = ledger.ingest(_classify(["2026-09-25T11:46:12.000Z runtimes: codex codex-cli 0.157.0 (using codex, as asked)"], invocation="bbbb"))
+    assert again.restarts == 0
+    ledger.close()
+
+
+class TestDetectorState:
+    def test_idle_beats_count_only_recent_consecutive_idle_heartbeats(self, tmp_path: Path) -> None:
+        """Spec §9 / §11 gate (a): idle beats = consecutive `idle` among heartbeats newer than now − 3 min."""
+        now = g.parse_ts("2026-09-26T03:24:05.000Z")
+        ledger = _ledger(tmp_path, now=now)
+        ledger.ingest(_lines("open_accept_after_idle.txt"))
+        st = ledger.state
+        assert st.idle_beats == 4 and st.last_heartbeat.ts == "2026-09-26T03:23:45.104Z"
+        assert ledger.open_row() is not None and st.last_lifecycle.kind in g.ACCEPTED_KINDS  # gate (c) must refuse
+        assert st.current["elapsedS"] == 4
+        # a frozen tail cannot vouch "idle": with the clock 10 min later the beats age out
+        stale = SeatLedger(tmp_path / "stale.sqlite", seat=7, now=lambda: now + 600)
+        stale.ingest(_lines("open_accept_after_idle.txt"))
+        assert stale.state.idle_beats == 0 and stale.state.heartbeats_recent == []
+        ledger.close(); stale.close()
+
+    def test_disconnected_beats_and_connection_counters(self, tmp_path: Path) -> None:
+        """Spec §6 rule 3: two consecutive `disconnected` beats; a redeploy wave is one loss + one admitted."""
+        now = g.parse_ts("2026-09-26T02:46:00.000Z")
+        ledger = _ledger(tmp_path, now=now)
+        ledger.ingest(_lines("redeploy_wave.txt"))
+        st = ledger.state
+        assert st.consecutive_disconnected == 0 and st.last_admitted_utc == "2026-09-26T02:45:26.180Z"
+        assert st.disconnects_24h == 1 and st.reconnects_24h == 1  # the 09-24 window is older than 24 h
+        assert (st.fleet_online, st.fleet_enrolled) == (398, 417)
+        mid = SeatLedger(tmp_path / "mid.sqlite", seat=7, now=lambda: g.parse_ts("2026-09-24T22:23:00.000Z"))
+        mid.ingest(_lines("redeploy_wave.txt")[:12])
+        assert mid.state.consecutive_disconnected == 3 and mid.state.disconnects_24h == 1 and mid.state.reconnects_24h == 0
+        # a SILENT drop (captured 2026-09-26 02:45, seat #7): no `server closed:`/502/socket line, only `reconnecting` -> still one loss
+        silent = SeatLedger(tmp_path / "silent.sqlite", seat=7, now=lambda: g.parse_ts("2026-09-26T02:46:00.000Z"))
+        silent.ingest(_classify([
+            "2026-09-26T02:44:55.471Z alive 14h59m · idle · 80 submitted · fleet 402 online, 417 enrolled",
+            "2026-09-26T02:45:23.814Z reconnecting in 1.7s",
+            "2026-09-26T02:45:25.485Z disconnected 14h59m · idle · 80 submitted · fleet 6 online, 417 enrolled",
+            "2026-09-26T02:45:25.706Z connected to api.imd.fun",
+            "2026-09-26T02:45:26.585Z admitted (session 94f3d61f)",
+        ]))
+        assert silent.state.disconnects_24h == 1 and silent.state.reconnects_24h == 1
+        assert silent.state.last_admitted_utc == "2026-09-26T02:45:26.585Z"
+        ledger.close(); mid.close(); silent.close()
+
+    def test_paused_hint_and_fleet_from_heartbeats(self, tmp_path: Path) -> None:
+        """Spec §5.1: pausedHint carries until/failedRuns/reason (redacted); fleet is null when the clause is absent."""
+        now = g.parse_ts("2026-09-25T23:56:30.000Z")
+        ledger = _ledger(tmp_path, now=now)
+        ledger.ingest(_lines("heartbeat_lingering_pause.txt")[:16])
+        hint = ledger.state.paused_hint
+        assert hint["until"] == "23:53" and hint["failedRuns"] == 3 and hint["seenUtc"] == "2026-09-25T23:55:52.556Z"
+        assert "sk-[redacted]" in hint["reason"] and SK_RE.search(hint["reason"]) is None
+        ledger.ingest(_lines("heartbeat_lingering_pause.txt")[16:])
+        assert ledger.state.paused_hint is None  # the newest beat carries no suffix
+        assert ledger.state.submitted_since_start == 17
+        nofleet = SeatLedger(tmp_path / "nofleet.sqlite", seat=7, now=lambda: g.parse_ts("2026-09-25T15:13:25.000Z"))
+        nofleet.ingest(_lines("heartbeat_no_fleet.txt")[:8])
+        assert nofleet.state.fleet_online == 320 and nofleet.state.fleet_seen_utc == "2026-09-25T15:12:44.631Z"
+        assert nofleet.state.last_heartbeat.fields["online"] is None
+        ledger.close(); nofleet.close()
+
+    def test_release_available_and_build_mismatch(self, tmp_path: Path) -> None:
+        ledger = _ledger(tmp_path)
+        ledger.ingest(_classify([
+            "2026-09-23T19:56:32.045Z 0.1.0+79f4f4d5 installed; 0.1.0+61d04d62 is available; when idle, stop the worker and run `imd update`, or start with --auto-update so it happens by itself",
+            "2026-09-23T19:56:33.000Z build mismatch: control plane 0.1.0+aa634633",
+        ]))
+        st = ledger.state
+        assert (st.daemon_version, st.release_available, st.build_mismatch) == ("0.1.0+79f4f4d5", "0.1.0+61d04d62", True)
+        ledger.ingest(_classify(["2026-09-23T19:58:33.000Z runtimes: codex codex-cli 0.157.0 (using codex, as asked)",
+                                 "2026-09-23T19:58:33.300Z release 0.1.0+61d04d62, the latest"]))
+        assert (st.daemon_version, st.release_available, st.build_mismatch) == ("0.1.0+61d04d62", None, False)
+        ledger.close()
