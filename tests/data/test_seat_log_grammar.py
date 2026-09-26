@@ -196,3 +196,16 @@ class TestUnitEventsAndHelpers:
         journald = "2026-09-25T11:45:41.217Z shutting down"
         assert g.strip_docker_prefix(journald) == journald
         assert g.strip_docker_prefix("Started imd-worker.service - IMD worker (Codex, seat #7).") == "Started imd-worker.service - IMD worker (Codex, seat #7)."
+
+
+# ---------------------------------------------------------------------------------------- Task 2.3
+def test_prose_never_forges_an_accept() -> None:
+    """Mutation proof 2 (spec §14): every pattern is anchored at the stamp and matched with fullmatch.
+
+    The real journal line 4876 ("… the accepted recipe must cite …") and four labelled forgeries
+    (a quoted accept template inside working: prose, a quoted stored line, an unstamped accept and
+    a stamped accept with trailing text) must never become an accept or a stored event.
+    """
+    kinds = _kinds("prose_forgery.txt")
+    assert kinds == ["model_line", "heartbeat", "phase", "heartbeat", "heartbeat", "phase", "phase", "unknown", "unknown"]
+    assert not any(k in g.ACCEPTED_KINDS or k == g.KIND_STORED for k in kinds)
