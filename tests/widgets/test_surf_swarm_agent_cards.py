@@ -157,7 +157,7 @@ async def test_score_with_nothing_scored_is_a_real_zero_not_a_failure():
     assert "unavailable" not in boxes["score"]
 
 
-@pytest.mark.parametrize("state, needle", [("pending", "loading"), ("error", "unavailable")])
+@pytest.mark.parametrize("state, needle", [("pending", "loading"), ("busy", "busy · retrying"), ("error", "unavailable")])
 async def test_a_seat_state_replaces_every_seats_card(state, needle):
     boxes = await _seat(swarm_seat_state=state)
     for key in ("owner", "runtime", "feedback", "score", "collab", "nodes"):
@@ -339,7 +339,7 @@ async def test_runtime_tooltip_distinguishes_pending_from_failed_without_changin
 
 
 @pytest.mark.parametrize('state,summary', [
-    ('pending', SUMMARY), ('unknown_seat', SUMMARY), ('unavailable', SUMMARY), ('ok', None),
+    ('busy', SUMMARY), ('pending', SUMMARY), ('unknown_seat', SUMMARY), ('unavailable', SUMMARY), ('ok', None),
 ])
 async def test_gated_runtime_clears_previous_seat_tooltip(state, summary):
     async with _Themed().run_test(size=SIZE) as pilot:

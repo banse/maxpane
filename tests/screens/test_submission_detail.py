@@ -61,7 +61,7 @@ async def test_bundle_failure_and_unread_job_have_no_other_seats_or_excerpt():
     row=row_for('bundle');row.update(job_read='not_read',job_detail_state=None)
     async with SubmissionApp(row).run_test(size=(139,33)) as pilot:
         text=await all_visible(pilot)
-        assert 'bundle upload failed (500)' in text and 'not read yet' in text
+        assert 'bundle upload failed (500)' in text and 'loading…' in text
         assert 'OTHER SEATS' not in text and 'published excerpt' not in text
 
 
@@ -172,7 +172,7 @@ async def test_job_line_exposes_cached_read_time(state):
         await pilot.pause()
         text = '\n'.join(lines(pilot.app))
         if state == 'not_read':
-            assert 'not read yet' in text and 'as of' not in text
+            assert 'loading…' in text and 'as of' not in text
         else:
             assert 'as of '+hhmm(1000.0) in text
             expected = 'blocked · node hunt_b: runtime_error' if state == 'read' else 'unavailable'
@@ -198,3 +198,33 @@ async def test_top_right_x_closes_either_popup(kind,size):
         popup=pilot.app.screen
         await pilot.click(offset=x_button(pilot.app))
         await settled(pilot,lambda:pilot.app.screen is not popup)
+
+
+@pytest.mark.parametrize('changes,word', [
+    ({}, 'loading…'),
+    ({'job_detail_state': 'failed'}, 'loading…'),
+    ({'answer_state': 'no_reply'}, 'loading…'),
+    ({'node_key': 'oracle_assess', 'panel_state': 'off_panel'}, 'loading…'),
+    ({'job_id': 'bad-job'}, 'not read yet'),
+    ({'submission_hash': 'bad-hash'}, 'not read yet'),
+    ({'oracle_member_ok': True}, 'not read yet'),
+    ({'oracle_member_ok': False}, 'not read yet'),
+    ({'answer_state': 'not_read'}, 'not read yet'),
+    ({'answer_state': 'unavailable'}, 'not read yet'),
+    ({'answer_state': 'not_served'}, 'not read yet'),
+    ({'answer_state': None}, 'not read yet'),
+])
+async def test_unread_job_loading_requires_manager_eligibility(changes, word):
+    row = dict(row_for(), job_read='not_read', job_read_ts=None, job_detail_state=None)
+    row.update(changes)
+    async with SubmissionApp(row).run_test(size=(139, 33)) as pilot:
+        await pilot.pause()
+        painted = lines(pilot.app)
+        assert word in '\n'.join(painted)
+        if word == 'not read yet':
+            assert 'loading…' not in '\n'.join(painted)
+        else:
+            from textual.filter import dim_color
+            y = next(i for i, line in enumerate(painted) if word in line)
+            style = pilot.app.screen.get_style_at(painted[y].index(word), y)
+            assert style.color == dim_color(style.bgcolor, pilot.app.screen.rich_style.color)

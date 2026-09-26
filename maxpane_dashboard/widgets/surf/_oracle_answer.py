@@ -11,6 +11,9 @@ from maxpane_dashboard.widgets.markup_safety import sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_compact
 from maxpane_dashboard.widgets.surf._icons import mark_addresses, keep_units, link_prose, unmark
 
+# Bound to the data contract by the widget eligibility agreement test.
+ORACLE_NODE_KEYS = ("oracle_assess",)
+
 _HASH = re.compile(r'[0-9a-f]{64}')
 _BYTES32 = re.compile(r'0x[0-9a-fA-F]{64}')
 
@@ -102,6 +105,9 @@ def panel_text(row, *, detail=False):
         'blocked': ('blocked', 'dim'), 'off_panel': ('–', 'dim'),
         'not_oracle': ('–', 'dim'), 'not_read': ('not read', 'dim'),
     }.get(state, ('unavail', 'yellow'))
+    if state == 'not_read' and row.get('node_key') in ORACLE_NODE_KEYS and valid_identity(
+            row.get('job_id'), row.get('submission_hash')):
+        text = 'loading…'
     agreed, quorum, size = (_count(row.get(key)) for key in ('panel_agreed','panel_quorum','panel_size'))
     if state in ('agreed', 'outvoted') and agreed != '—':
         text = f"{'✓' if state == 'agreed' else '✗'} {agreed}" + (f'/{quorum}' if quorum != '—' else '')

@@ -64,21 +64,23 @@ def dim_dash() -> Text:
     return Text(EMDASH, style="dim")
 
 
-def gate(state, first: bool) -> str | Text | None:
+def gate(state, first: bool, room: int = _UNSIZED) -> str | Text | None:
     """What a seats-backed card shows instead of its values; ``None`` for ``"ok"``.
 
     A never-paired seat is a real negative, said once per row (its first
     card) as row 1's SEAT box says it -- the seat number is already there --
-    and the other cards show a dash. Pending and a failed read show on every
-    card, since each card's value is what is missing.
+    and the other cards show a dash. Pending, busy and a failed read show on
+    every card. COLLAB has 14 cells at the AGENT pin: busy uses two existing
+    body lines there so both words remain whole.
     """
     if state == "ok":
         return None
     if state == "unknown_seat":
         return Text(NEVER_PAIRED_WORDS, style=NEVER_PAIRED_STYLE) if first else dim_dash()
-    if state == "pending":
-        return seat_state_line(state)
-    return UNAVAILABLE
+    line = seat_state_line(state)
+    if state == "busy" and line.cell_len > room:
+        return Text(line.plain.replace(" · ", " ·\n"), style=line.style)
+    return line
 
 
 class SurfSwarmAgentCard(HeroBoxBase):
@@ -164,15 +166,15 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
             ("collab", "COLLAB", lambda s: self._collab_body(s, swarm_seat_teammates)),
         ):
             self.render_box(f"#{SEAT_BOX_IDS[key]}", label,
-                            lambda key=key, build=build: self._seat_body(summary, state, key == "owner", build))
+                            lambda key=key, build=build: self._seat_body(summary, state, key == "owner", build, self._room(key)))
         self.render_box(f"#{SEAT_BOX_IDS['nodes']}", "NODES",
-                        lambda: gate(state, first=False) or self._nodes_body(swarm_seat_node_rows))
+                        lambda: gate(state, first=False, room=self._room("nodes")) or self._nodes_body(swarm_seat_node_rows))
 
     # -- gates --------------------------------------------------------------
 
     @staticmethod
-    def _seat_body(summary, state, first, build) -> str | Text:
-        blocked = gate(state, first)
+    def _seat_body(summary, state, first, build, room=_UNSIZED) -> str | Text:
+        blocked = gate(state, first, room)
         if blocked is not None:
             return blocked
         if not isinstance(summary, dict):

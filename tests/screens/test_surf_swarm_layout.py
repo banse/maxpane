@@ -1041,3 +1041,36 @@ async def test_agent_merged_cards_width_boundary(kind, width):
         _assert_whole(result, (kind, width))
     elif kind in ('capture', 'capture420', 'duplicates420', 'worst-a', 'polish', 'v3'):
         assert any(name == 'SurfSwarmSeatCards' for name, _ in result['clipped'])
+
+
+async def test_busy_agent_words_fit_every_seat_box_at_unchanged_pins():
+    from rich.color import Color
+    from maxpane_dashboard.widgets.surf.swarm_agent_hero import BOX_IDS
+    from maxpane_dashboard.widgets.surf.swarm_agent_cards import SEAT_BOX_IDS
+
+    payload = _v3_agent_payload()
+    payload.update(swarm_seat_state='busy', swarm_seat_read='busy')
+    size = (SURF_AGENT_FULL_LAYOUT_COLUMNS, SURF_AGENT_FULL_LAYOUT_ROWS)
+    result = await _render(payload, size, 'a')
+    _assert_whole(result, 'busy')
+    assert not result['taller'] and not result['overflow']
+    async with _surf_app(payload).run_test(size=size) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press('a')
+        await pilot.pause()
+        screen = pilot.app.screen
+        for id_ in [BOX_IDS['accepted'], BOX_IDS['reviewed'], *SEAT_BOX_IDS.values()]:
+            box = screen.query_one('#' + id_)
+            region = _region_text(pilot.app, box)
+            if id_ == SEAT_BOX_IDS['collab']:
+                assert 'busy · retrying' not in region
+            else:
+                assert 'busy · retrying' in region
+            assert 'busy · retrying' in ' '.join(region.replace('│', ' ').split()), id_
+            painted = [''.join(s.text for s in strip) for strip in screen._compositor.render_strips()]
+            y = next(y for y in range(box.region.y, box.region.bottom)
+                     if 'busy ·' in painted[y][box.region.x:box.region.right])
+            x = painted[y].index('busy ·', box.region.x)
+            style = screen.get_style_at(x, y)
+            assert style.color.get_truecolor(pilot.app.ansi_theme) == Color.parse('yellow').get_truecolor(pilot.app.ansi_theme)
+        assert screen.query_one('#' + SEAT_BOX_IDS['runtime']).tooltip is None

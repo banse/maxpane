@@ -26,11 +26,11 @@ from maxpane_dashboard.widgets.surf._swarm_seat import (
 def test_every_contract_state_has_a_word_of_its_own():
     """``ok`` paints numbers; every other contract state, and ``None``, is a
     different line -- a real negative is never the words of a failure."""
-    assert set(SWARM_SEAT_STATES) == {"ok", "pending", "unknown_seat"}
+    assert set(SWARM_SEAT_STATES) == {"ok", "pending", "unknown_seat", "busy"}
     lines = {state: seat_state_line(state, 420) for state in (*SWARM_SEAT_STATES, None)}
     assert lines["ok"] is None
     shown = {state: line.plain for state, line in lines.items() if line is not None}
-    assert len(set(shown.values())) == len(shown) == 3, shown
+    assert len(set(shown.values())) == len(shown) == 4, shown
 
 
 def test_pending_is_the_shared_loading_seed():

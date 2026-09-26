@@ -7,7 +7,7 @@ from maxpane_dashboard.screens.record_detail import RecordDetailScreen
 from maxpane_dashboard.widgets.address import address_prose
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.surf._fmt import short_model
-from maxpane_dashboard.widgets.surf._oracle_answer import _STATE_COLORS, tok_text
+from maxpane_dashboard.widgets.surf._oracle_answer import _STATE_COLORS, can_open_submission, tok_text
 
 
 def _prose(value, *, style=''):
@@ -39,9 +39,11 @@ class SubmissionDetailScreen(RecordDetailScreen):
                 job += ' · ' + row['job_blocked_reason']
         else:
             job = 'not read yet' if row.get('job_read') == 'not_read' else 'unavailable'
+            if row.get('job_read') == 'not_read' and can_open_submission(row):
+                job = 'loading…'
         if row.get('job_read') != 'not_read' and row.get('job_read_ts') is not None:
             job += ' · as of ' + hhmm(row['job_read_ts'])
-        yield from self.section('JOB', _prose(job, style=_STATE_COLORS.get(state, '')), first=True)
+        yield from self.section('JOB', _prose(job, style='dim' if job == 'loading…' else _STATE_COLORS.get(state, '')), first=True)
         nodes = Text()
         for node in row.get('job_nodes') or []:
             if nodes:

@@ -156,7 +156,7 @@ async def test_a_work_row_renders_every_column():
     cells = row.split()
     assert cells[3] == _node(NEWEST) and NEWEST["node_key"] not in row
     assert NEWEST["job_state"] in row
-    assert "not read" in row and NEWEST["objective"] not in row
+    assert "loading…" in row and NEWEST["objective"] not in row
     text = "\n".join(lines)
     assert "RECORD" in text and f"as of {AS_OF}" in text
     header = _row_with(lines, "answer").split()
@@ -361,7 +361,7 @@ import pytest
 
 
 @pytest.mark.parametrize('state,word',[
-    ('read','Built the artifact.'),('not_read','not read'),('unavailable','unavailable'),
+    ('read','Built the artifact.'),('not_read','loading…'),('unavailable','unavailable'),
     ('not_served','not served'),('no_reply','no reply'),
 ])
 async def test_polish_answer_states_and_same_read_usage(state,word):
@@ -491,12 +491,12 @@ def test_short_model_exact_cleaned_patterns(raw,expected):
     ('no_quorum_in','✓ no-q','green',True),('no_quorum_out','✗ no-q','red',True),
     ('assessing','… of 112','yellow',False),('blocked','blocked',None,True),
     ('off_panel','–',None,True),('not_oracle','–',None,True),
-    ('not_read','not read',None,True),('unavailable','unavail','yellow',False),
+    ('not_read','loading…',None,True),('unavailable','unavail','yellow',False),
 ])
 async def test_panel_states_and_styles_reach_compositor(state,word,color,dim):
     class Harness(App):
         def compose(self): yield SurfSwarmSeatRecord()
-    row=dict(NEWEST,answer_state='read',answer='Done.',panel_state=state,
+    row=dict(NEWEST,node_key='oracle_assess',answer_state='read',answer='Done.',panel_state=state,
              panel_agreed=35,panel_quorum=36,panel_size=112)
     async with Harness().run_test(size=(220,12)) as pilot:
         pilot.app.query_one(SurfSwarmSeatRecord).update_data(swarm_seat_work_rows=[row],swarm_seat_state='ok')
@@ -571,7 +571,7 @@ async def test_red_rows_prefix_exact_wei_even_before_answer_read(state,answer_st
     row=dict(NEWEST,panel_state=state,panel_agreed=35,panel_quorum=36,panel_figure='457162630000000001',
              panel_answer_type='uint256',answer_state=answer_state,answer='Done.')
     text='\n'.join(await _record((220,12),swarm_seat_work_rows=[row]))
-    assert 'panel 457162630000000001 · '+('Done.' if answer_state=='read' else 'not read') in text
+    assert 'panel 457162630000000001 · '+('Done.' if answer_state=='read' else 'loading…') in text
 
 
 @pytest.mark.parametrize('answer,word',[(True,'YES'),(False,'NO'),(None,'unavail')])
@@ -792,3 +792,88 @@ async def test_record_malformed_items_are_neither_shown_nor_counted(open_only):
                          for strip in pilot.app.screen._compositor.render_strips())
         assert "+11 older · more" in text
         assert record.query_one(DataTable).row_count == 40
+
+
+@pytest.mark.parametrize('width', [70, 139, 180])
+async def test_busy_record_title_is_yellow_and_keeps_its_own_as_of(width):
+    class Harness(App):
+        def compose(self):
+            yield SurfSwarmSeatRecord()
+
+    async with Harness().run_test(size=(width, 16)) as pilot:
+        record = pilot.app.query_one(SurfSwarmSeatRecord)
+        for read in ('busy', 'failed', None):
+            record.update_data(swarm_seat_work_rows=ROWS_420, swarm_seat_state='ok',
+                               swarm_seat_as_of_hhmm=AS_OF, swarm_seat_read=read)
+            await pilot.pause()
+            lines = [''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+            y = next(i for i, line in enumerate(lines) if 'RECORD' in line)
+            title = lines[y]
+            assert f'as of {AS_OF}' in title
+            assert (' · busy' in title) == (read == 'busy')
+            if read == 'busy':
+                assert f'as of {AS_OF} · busy' in title
+                style = pilot.app.screen.get_style_at(title.index('busy'), y)
+                assert style.color.get_truecolor(pilot.app.ansi_theme) == Color.parse('yellow').get_truecolor(pilot.app.ansi_theme)
+                if width == 70:
+                    assert "type 'i'" not in title
+            assert _job(NEWEST) in '\n'.join(lines)
+
+
+async def test_busy_record_without_last_good_has_yellow_footer_and_no_stale_rows():
+    class Harness(App):
+        def compose(self):
+            yield SurfSwarmSeatRecord()
+
+    async with Harness().run_test(size=SIZE) as pilot:
+        record = pilot.app.query_one(SurfSwarmSeatRecord)
+        record.update_data(swarm_seat_work_rows=ROWS_420, swarm_seat_state='busy', swarm_seat_read='busy')
+        await pilot.pause()
+        lines = [''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        text = '\n'.join(lines)
+        assert 'busy · retrying' in text and 'unavailable' not in text and _job(NEWEST) not in text
+        y = next(i for i, line in enumerate(lines) if 'busy · retrying' in line)
+        style = pilot.app.screen.get_style_at(lines[y].index('busy'), y)
+        # A Static's whole-text style resolves through Textual's CSS palette.
+        from textual.color import Color as CSSColor
+        assert style.color == CSSColor.parse('yellow').rich_color
+
+
+@pytest.mark.parametrize('changes,words', [
+    ({}, ('loading…', 'loading…')),
+    ({'job_id': 'bad-job'}, ('not read', 'not read')),
+    ({'submission_hash': 'bad-hash'}, ('not read', 'not read')),
+    ({'node_key': 'build_contract_project', 'panel_state': 'not_oracle'}, ('–', 'loading…')),
+    ({'node_key': 'build_contract_project'}, ('not read', 'loading…')),
+])
+async def test_pending_answer_and_panel_loading_only_for_eligible_rows(changes, words):
+    from textual.filter import dim_color
+
+    class Harness(App):
+        def compose(self):
+            yield SurfSwarmSeatRecord()
+
+    row = dict(NEWEST, node_key='oracle_assess', answer_state='not_read', panel_state='not_read')
+    row.update(changes)
+    async with Harness().run_test(size=SIZE) as pilot:
+        pilot.app.query_one(SurfSwarmSeatRecord).update_data(swarm_seat_work_rows=[row], swarm_seat_state='ok')
+        await pilot.pause()
+        lines = [''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        header = _row_with(lines, 'when')
+        y = next(i for i, line in enumerate(lines) if _job(row) in line)
+        line = lines[y]
+        for column, word in zip(('panel', 'answer'), words):
+            start = header.index(column)
+            x = line.index(word, start)
+            assert x == start
+            style = pilot.app.screen.get_style_at(x, y)
+            plain = pilot.app.screen.get_style_at(line.index(_node(row)), y).color
+            assert style.color == dim_color(style.bgcolor, plain)
+        if changes == {}:
+            assert 'not read' not in line
+
+
+def test_widget_oracle_eligibility_agrees_with_manager_contract():
+    from maxpane_dashboard.data.surf_models import SWARM_ORACLE_NODE_KEYS
+    from maxpane_dashboard.widgets.surf._oracle_answer import ORACLE_NODE_KEYS
+    assert ORACLE_NODE_KEYS == SWARM_ORACLE_NODE_KEYS

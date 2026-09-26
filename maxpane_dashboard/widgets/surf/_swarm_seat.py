@@ -11,6 +11,7 @@ state               what the panel says
 ``"pending"``       :data:`~maxpane_dashboard.widgets.panels.LOADING` --
                     no read of this token has finished yet, a switch in
                     flight included (plan Q-A)
+``"busy"``          yellow ``busy · retrying`` -- the host asks us to wait
 ``"unknown_seat"``  ``#N never paired`` -- the 404 real negative, a fact
                     about the seat and not a failure (decision D1)
 ``None``            :data:`~maxpane_dashboard.widgets.panels.UNAVAILABLE` --
@@ -92,6 +93,8 @@ def seat_state_line(state: object, token: object = None) -> Text | None:
     """
     if state == "ok":
         return None
+    if state == "busy":
+        return Text("busy · retrying", style="yellow")
     if state == "pending":
         return Text.from_markup(LOADING)
     if state == "unknown_seat":

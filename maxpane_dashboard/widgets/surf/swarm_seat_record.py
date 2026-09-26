@@ -32,7 +32,7 @@ from maxpane_dashboard.widgets.address import job_text
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm, short_model
-from maxpane_dashboard.widgets.surf._oracle_answer import _PANEL_COLS, _STATE_COLORS, joined, record_answer, panel_text, can_open_submission, fit_popup_text, tok_text
+from maxpane_dashboard.widgets.surf._oracle_answer import _PANEL_COLS, _STATE_COLORS, joined, record_answer, panel_text, can_open_submission, fit_popup_text, tok_text, valid_identity
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
 
@@ -164,6 +164,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         super().__init__(*args, **kwargs)
         self._answer_cols = ANSWER_MIN_COLS
         self._state: object = None
+        self._read: object = None
         self._all_rows = None
         self._open_only = False
         self._filtered_count = 0
@@ -180,6 +181,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     ) -> None:
         """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it)."""
         self._state = swarm_seat_state
+        self._read = swarm_seat_read
         self._all_rows = swarm_seat_work_rows if swarm_seat_state == "ok" else None
         self._store_view(swarm_seat_as_of_hhmm)
 
@@ -240,6 +242,8 @@ class SurfSwarmSeatRecord(SwarmTableBase):
                                           meta={"@click": f"screen.record_filter('{mode}')"}))
         if rowfit.has_marker(as_of):
             title.append(f" · as of {rowfit.clip(as_of, 5)}")
+        if self._state == "ok" and self._read == "busy":
+            title.append(" · ").append("busy", style="yellow")
         room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
         hinted = rowfit.title_with_hint(title.plain, self._widen or self._clipped, room)
         title.append(hinted[len(title.plain):])
@@ -324,6 +328,8 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         if state != "read":
             words = {"not_read": "not read", "not_served": "not served", "no_reply": "no reply"}
             text = words.get(state, "unavailable")
+            if state == "not_read" and valid_identity(item.get("job_id"), item.get("submission_hash")):
+                text = "loading…"
             style = "dim" if state in words else "yellow"
         else:
             text = strip_tags(item.get("answer"))
