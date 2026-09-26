@@ -519,3 +519,317 @@ SEAT_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "seat_sources", "seat_as_of_hhmm", "seat_host_kind",
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# fold_status_document
+# ---------------------------------------------------------------------------
+
+_SOURCE_KEYS = tuple(empty_source())
+_LAST_TASK_KEYS = ("nodeId8", "storedUtc", "hash12", "outcome", "verdictLagS", "acceptedUtc")
+
+
+def _dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _clean(value: object, field: str | None = None) -> object:
+    """Redact every string leaf; leave ``None``/bool/int/float alone; stringify anything else."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return redact(value, field)
+    if isinstance(value, (dict, list, tuple)):
+        return redact_tree(value, field=field)
+    return redact(value, field)
+
+
+class _Fold:
+    """Per-call state: the sources block, the gating decisions, the row shaper."""
+
+    def __init__(self, sources: Mapping[str, Any]) -> None:
+        self.sources = sources
+
+    def gated(self, name: str | None) -> bool:
+        """True when a value fed by source *name* must fold to ``None`` (mutation proof 8).
+
+        A source that is ``ok: false`` gates its fields, except an API source
+        (:data:`LAST_GOOD_SOURCES`) that is not yet ``unavailable`` -- its
+        last-good values stay behind their own ``asOfUtc``.  An absent source
+        (``--offline`` removes the API entries) and ``ok: null`` gate nothing:
+        the document carries ``None`` there anyway.
+        """
+        if name is None:
+            return False
+        source = self.sources.get(name)
+        if not isinstance(source, dict) or source.get("ok") is not False:
+            return False
+        if name in LAST_GOOD_SOURCES and source.get("unavailable") is not True:
+            return False
+        return True
+
+    def value(self, key: str, raw: object, field: str | None = None) -> object:
+        if self.gated(SEAT_FIELD_SOURCES.get(key)):
+            return None
+        return _clean(raw, field)
+
+    def block(self, key: str, raw: object) -> dict | None:
+        if self.gated(SEAT_FIELD_SOURCES.get(key)) or not isinstance(raw, dict):
+            return None
+        return {name: _clean(raw.get(name), name) for name in SEAT_BLOCK_KEYS[key]}
+
+    def rows(self, key: str, raw: object) -> list[dict] | None:
+        if self.gated(SEAT_FIELD_SOURCES.get(key)):
+            return None
+        if not isinstance(raw, (list, tuple)):
+            return []
+        return [self.row(key, item) for item in raw if isinstance(item, dict)]
+
+    def row(self, key: str, raw: Mapping[str, Any]) -> dict:
+        gates = SEAT_ROW_FIELD_SOURCES.get(key, {})
+        out: dict = {}
+        for name in SEAT_ROW_KEYS[key]:
+            if name in gates and self.gated(gates[name]):
+                out[name] = _ROW_GATED_VALUES.get(name)
+            else:
+                out[name] = _clean(raw.get(name), name)
+        return out
+
+
+def fold_status_document(
+    doc: dict,
+    *,
+    now: float | None = None,
+    log_lines: Sequence[dict] = (),
+    log_seq: int = 0,
+) -> dict:
+    """The §7 document to the flat dict of exactly :data:`SEAT_KEYS`.
+
+    ``now=None`` makes ``completedAtUtc`` the reference clock, so a fixture
+    folds deterministically.  Every value is source-gated (:class:`_Fold`),
+    redacted and ``None``-never-``0``.  ``log_lines`` are the tail's
+    ``LogLine`` dicts; only those with ``seq > log_seq`` are emitted.  The five
+    WP7 keys -- ``seat_hero_state``, ``seat_hero_reasons``,
+    ``seat_daemon_offline``, ``seat_log_footer``, ``seat_ledger_footer`` --
+    are left blank here and completed by ``analytics/seat_signals``.
+    """
+    d = _dict(doc)
+    sources = _dict(d.get("sources"))
+    f = _Fold(sources)
+    host = _dict(d.get("host"))
+    seat = _dict(d.get("seat"))
+    runtime = _dict(seat.get("runtime"))
+    skills = _dict(seat.get("skills"))
+    daemon = _dict(d.get("daemon"))
+    auth = _dict(d.get("auth"))
+    unit = _dict(d.get("unit"))
+    tasks = _dict(d.get("tasks"))
+    today = _dict(d.get("today"))
+    cost = _dict(d.get("cost"))
+    standing = _dict(d.get("standing"))
+    plane = _dict(d.get("plane"))
+    machine = _dict(d.get("machine"))
+    control = _dict(d.get("control"))
+
+    completed_epoch = parse_iso(d.get("completedAtUtc"))
+    if now is None:
+        last_updated: float = 0.0 if completed_epoch is not None else 999.0
+    elif completed_epoch is None:
+        last_updated = 999.0
+    else:
+        last_updated = max(0.0, float(now) - completed_epoch)
+    poll = d.get("pollInterval")
+    poll_interval = poll if isinstance(poll, int) and not isinstance(poll, bool) and poll > 0 else POLL_INTERVAL_DEFAULT
+
+    flat_sources: dict[str, dict] = {}
+    for name in SOURCE_NAMES:
+        source = sources.get(name)
+        if isinstance(source, dict):
+            flat_sources[name] = {k: _clean(source.get(k), k) for k in _SOURCE_KEYS}
+    rows = f.rows("seat_tasks_rows", tasks.get("rows"))
+    first_row = rows[0] if rows else None
+    last_task = None if first_row is None else {k: first_row.get(k) for k in _LAST_TASK_KEYS}
+    new_lines = [
+        {k: _clean(_dict(line).get(k), k) for k in SEAT_ROW_KEYS["seat_log_lines"]}
+        for line in log_lines
+        if isinstance(line, dict) and isinstance(line.get("seq"), int) and line["seq"] > log_seq
+    ]
+    if f.gated("tail"):
+        new_lines_out: list[dict] | None = None
+    else:
+        new_lines_out = new_lines
+    newest_seq = max([log_seq] + [line["seq"] for line in new_lines])
+
+    flat: dict[str, Any] = {
+        # meta
+        "seat_schema_version": _clean(d.get("schemaVersion")),
+        "seat_producer": _clean(d.get("producer")),
+        "seat_started_at_utc": _clean(d.get("startedAtUtc")),
+        "seat_completed_at_utc": _clean(d.get("completedAtUtc")),
+        "seat_host_kind": _clean(host.get("kind")),
+        "seat_host_unit": _clean(host.get("unit")),
+        "seat_host_container": _clean(host.get("container")),
+        "seat_host_runtime": _clean(host.get("runtime")),
+        "seat_hostname": _clean(host.get("hostname")),
+        "seat_offline": not any(name in sources for name in LAST_GOOD_SOURCES),
+        "seat_sources": flat_sources,
+        "seat_as_of_hhmm": {name: as_of_hhmm(_dict(sources.get(name)).get("asOfUtc")) for name in SOURCE_NAMES},
+        # seat
+        "seat_token_id": f.value("seat_token_id", seat.get("tokenId")),
+        "seat_agent_id": f.value("seat_agent_id", seat.get("agentId")),
+        "seat_device_key_public": f.value("seat_device_key_public", truncate_id(seat.get("deviceKeyPublic"))),
+        "seat_wallet": f.value("seat_wallet", truncate_id(seat.get("wallet"))),
+        "seat_server": f.value("seat_server", seat.get("server")),
+        "seat_eligibility": f.value("seat_eligibility", seat.get("eligibility")),
+        "seat_capacity": f.value("seat_capacity", seat.get("capacity")),
+        "seat_offers": f.value("seat_offers", seat.get("offers")),
+        "seat_daemon_version": f.value("seat_daemon_version", seat.get("daemonVersion")),
+        "seat_runtime_id": f.value("seat_runtime_id", runtime.get("id")),
+        "seat_runtime_version": f.value("seat_runtime_version", runtime.get("version")),
+        "seat_release_available": f.value("seat_release_available", seat.get("releaseAvailable")),
+        "seat_build_mismatch": f.value("seat_build_mismatch", seat.get("buildMismatch")),
+        "seat_skills_offered": f.value("seat_skills_offered", skills.get("offered")),
+        "seat_skills_on": f.value("seat_skills_on", skills.get("on")),
+        "seat_skills_opt_out": f.value("seat_skills_opt_out", skills.get("optOut")),
+        "seat_skills_needs_network": f.value("seat_skills_needs_network", skills.get("needsNetwork")),
+        "seat_skills_rows": f.rows("seat_skills_rows", skills.get("rows")),
+        "seat_tools": f.value("seat_tools", seat.get("tools")),
+        "seat_inference": f.value("seat_inference", seat.get("inference")),
+        "seat_premium_advertised": f.value("seat_premium_advertised", seat.get("premiumAdvertised")),
+        "seat_hints": f.value("seat_hints", seat.get("hints")),
+        "seat_config_changed_since_start": f.value("seat_config_changed_since_start", seat.get("configChangedSinceStart")),
+        # daemon
+        "seat_daemon_state": f.value("seat_daemon_state", daemon.get("state")),
+        "seat_daemon_uptime": f.value("seat_daemon_uptime", daemon.get("uptime")),
+        "seat_daemon_work": f.value("seat_daemon_work", daemon.get("work")),
+        "seat_daemon_running": f.value("seat_daemon_running", daemon.get("running")),
+        "seat_daemon_submitted_since_start": f.value("seat_daemon_submitted_since_start", daemon.get("submittedSinceStart")),
+        "seat_daemon_last_heartbeat_utc": f.value("seat_daemon_last_heartbeat_utc", daemon.get("lastHeartbeatUtc")),
+        "seat_daemon_heartbeat_age_s": f.value("seat_daemon_heartbeat_age_s", daemon.get("heartbeatAgeS")),
+        "seat_daemon_idle_beats": f.value("seat_daemon_idle_beats", daemon.get("idleBeats")),
+        "seat_daemon_fleet_online": f.value("seat_daemon_fleet_online", daemon.get("fleetOnline")),
+        "seat_daemon_fleet_enrolled": f.value("seat_daemon_fleet_enrolled", daemon.get("fleetEnrolled")),
+        "seat_daemon_paused_hint": f.value("seat_daemon_paused_hint", daemon.get("pausedHint")),
+        "seat_daemon_invocation_id": f.value("seat_daemon_invocation_id", daemon.get("invocationId")),
+        "seat_daemon_last_admitted_utc": f.value("seat_daemon_last_admitted_utc", daemon.get("lastAdmittedUtc")),
+        "seat_daemon_disconnects_24h": f.value("seat_daemon_disconnects_24h", daemon.get("disconnects24h")),
+        "seat_daemon_reconnects_24h": f.value("seat_daemon_reconnects_24h", daemon.get("reconnects24h")),
+        "seat_daemon_consecutive_disconnected_beats": f.value(
+            "seat_daemon_consecutive_disconnected_beats", daemon.get("consecutiveDisconnectedBeats")
+        ),
+        "seat_daemon_offline": None,  # WP7 (analytics/seat_signals.offline_state)
+        # auth
+        "seat_auth_degraded": f.value("seat_auth_degraded", auth.get("degraded")),
+        "seat_auth_reasons": f.value("seat_auth_reasons", auth.get("reasons")),
+        "seat_auth_since_utc": f.value("seat_auth_since_utc", auth.get("sinceUtc")),
+        "seat_auth_credential_file_mtime_utc": f.value(
+            "seat_auth_credential_file_mtime_utc", auth.get("credentialFileMtimeUtc")
+        ),
+        # unit
+        "seat_unit_active_state": f.value("seat_unit_active_state", unit.get("activeState")),
+        "seat_unit_sub_state": f.value("seat_unit_sub_state", unit.get("subState")),
+        "seat_unit_main_pid": f.value("seat_unit_main_pid", unit.get("mainPid")),
+        "seat_unit_since_utc": f.value("seat_unit_since_utc", unit.get("sinceUtc")),
+        "seat_unit_restarts": f.value("seat_unit_restarts", unit.get("restarts")),
+        "seat_unit_boot_enabled": f.value("seat_unit_boot_enabled", unit.get("bootEnabled")),
+        "seat_unit_restart_policy": f.value("seat_unit_restart_policy", unit.get("restartPolicy")),
+        "seat_unit_kill_mode": f.value("seat_unit_kill_mode", unit.get("killMode")),
+        "seat_unit_stop_timeout_s": f.value("seat_unit_stop_timeout_s", unit.get("stopTimeoutS")),
+        "seat_unit_graceful_stop_possible": f.value("seat_unit_graceful_stop_possible", unit.get("gracefulStopPossible")),
+        "seat_unit_memory_current_b": f.value("seat_unit_memory_current_b", unit.get("memoryCurrentB")),
+        "seat_unit_memory_peak_b": f.value("seat_unit_memory_peak_b", unit.get("memoryPeakB")),
+        "seat_unit_memory_max_b": f.value("seat_unit_memory_max_b", unit.get("memoryMaxB")),
+        "seat_unit_cpu_quota": f.value("seat_unit_cpu_quota", unit.get("cpuQuota")),
+        "seat_unit_tasks_current": f.value("seat_unit_tasks_current", unit.get("tasksCurrent")),
+        # current / queue
+        "seat_current": f.block("seat_current", d.get("current")),
+        "seat_queue": f.block("seat_queue", d.get("queue")),
+        # tasks
+        "seat_tasks_window": f.value("seat_tasks_window", tasks.get("window")),
+        "seat_tasks_rows": rows,
+        "seat_last_task": last_task,
+        # today
+        "seat_today_day_utc": f.value("seat_today_day_utc", today.get("dayUtc")),
+        "seat_today_tasks": f.value("seat_today_tasks", today.get("tasks")),
+        "seat_today_stored": f.value("seat_today_stored", today.get("stored")),
+        "seat_today_not_stored": f.value("seat_today_not_stored", today.get("notStored")),
+        "seat_today_p50_s": f.value("seat_today_p50_s", today.get("p50S")),
+        "seat_today_longest_s": f.value("seat_today_longest_s", today.get("longestS")),
+        "seat_today_accepted": f.value("seat_today_accepted", today.get("accepted")),
+        "seat_today_rejected": f.value("seat_today_rejected", today.get("rejected")),
+        "seat_today_failed": f.value("seat_today_failed", today.get("failed")),
+        "seat_today_pending": f.value("seat_today_pending", today.get("pending")),
+        "seat_today_verdict_lag_p50_s": f.value("seat_today_verdict_lag_p50_s", today.get("verdictLagP50S")),
+        "seat_today_verdicts_as_of_utc": f.value("seat_today_verdicts_as_of_utc", today.get("verdictsAsOfUtc")),
+        "seat_today_divergence": f.value("seat_today_divergence", today.get("divergence")),
+        # cost
+        "seat_cost_window_days": f.value("seat_cost_window_days", cost.get("windowDays")),
+        "seat_cost_tasks": f.value("seat_cost_tasks", cost.get("tasks")),
+        "seat_cost_excluded": f.value("seat_cost_excluded", cost.get("excluded")),
+        "seat_cost_turns": f.value("seat_cost_turns", cost.get("turns")),
+        "seat_cost_tokens": f.value("seat_cost_tokens", cost.get("tokens")),
+        "seat_cost_buckets": f.rows("seat_cost_buckets", cost.get("buckets")),
+        "seat_cost_side_model": f.value("seat_cost_side_model", cost.get("sideModel")),
+        "seat_cost_series": f.value("seat_cost_series", cost.get("series")),
+        "seat_cost_depth": f.value("seat_cost_depth", cost.get("depth")),
+        "seat_quota": f.block("seat_quota", d.get("quota")),
+        # standing
+        "seat_standing_attempts": f.value("seat_standing_attempts", standing.get("attempts")),
+        "seat_standing_accepted": f.value("seat_standing_accepted", standing.get("accepted")),
+        "seat_standing_rejected": f.value("seat_standing_rejected", standing.get("rejected")),
+        "seat_standing_failed": f.value("seat_standing_failed", standing.get("failed")),
+        "seat_standing_pending": f.value("seat_standing_pending", standing.get("pending")),
+        "seat_standing_counters_inconsistent": f.value(
+            "seat_standing_counters_inconsistent", standing.get("countersInconsistent")
+        ),
+        "seat_standing_working": f.value("seat_standing_working", standing.get("working")),
+        "seat_standing_running": f.rows("seat_standing_running", standing.get("running")),
+        "seat_standing_consecutive_failures": f.value(
+            "seat_standing_consecutive_failures", standing.get("consecutiveFailures")
+        ),
+        "seat_standing_paused_until": f.value("seat_standing_paused_until", standing.get("pausedUntil")),
+        "seat_standing_breaker": f.value("seat_standing_breaker", standing.get("breaker")),
+        "seat_standing_recent_failures": f.rows("seat_standing_recent_failures", standing.get("recentFailures")),
+        "seat_standing_presence_connected": f.value("seat_standing_presence_connected", standing.get("presenceConnected")),
+        "seat_standing_heartbeat_age_ms": f.value("seat_standing_heartbeat_age_ms", standing.get("heartbeatAgeMs")),
+        "seat_standing_as_of_utc": f.value("seat_standing_as_of_utc", standing.get("asOfUtc")),
+        # plane
+        "seat_plane_version": f.value("seat_plane_version", plane.get("version")),
+        "seat_plane_verifier_up": f.value("seat_plane_verifier_up", plane.get("verifierUp")),
+        "seat_plane_verifier_last_seen_utc": f.value("seat_plane_verifier_last_seen_utc", plane.get("verifierLastSeenUtc")),
+        "seat_plane_awaiting_verdict": f.value("seat_plane_awaiting_verdict", plane.get("awaitingVerdict")),
+        "seat_plane_connected_daemons": f.value("seat_plane_connected_daemons", plane.get("connectedDaemons")),
+        "seat_plane_as_of_utc": f.value("seat_plane_as_of_utc", plane.get("asOfUtc")),
+        # machine
+        "seat_machine_load1": f.value("seat_machine_load1", machine.get("load1")),
+        "seat_machine_mem_avail_mib": f.value("seat_machine_mem_avail_mib", machine.get("memAvailMiB")),
+        "seat_machine_disk_free_gib": f.value("seat_machine_disk_free_gib", machine.get("diskFreeGiB")),
+        "seat_machine_work_dirs": f.value("seat_machine_work_dirs", machine.get("workDirs")),
+        "seat_machine_work_bytes": f.value("seat_machine_work_bytes", machine.get("workBytes")),
+        "seat_machine_abnormal_lease_dirs": f.value("seat_machine_abnormal_lease_dirs", machine.get("abnormalLeaseDirs")),
+        "seat_machine_outbox_files": f.value("seat_machine_outbox_files", machine.get("outboxFiles")),
+        "seat_machine_journal": f.value("seat_machine_journal", machine.get("journal")),
+        "seat_machine_transcript_retention": f.value(
+            "seat_machine_transcript_retention", machine.get("transcriptRetention")
+        ),
+        "seat_machine_orphans": f.rows("seat_machine_orphans", machine.get("orphans")),
+        # control
+        "seat_control_broker_reachable": f.value("seat_control_broker_reachable", control.get("brokerReachable")),
+        "seat_control_gate": f.block("seat_control_gate", control.get("gate")),
+        "seat_control_drain": f.block("seat_control_drain", control.get("drain")),
+        "seat_control_in_flight": f.block("seat_control_in_flight", control.get("inFlight")),
+        "seat_control_restart_required": f.value("seat_control_restart_required", control.get("restartRequired")),
+        "seat_control_last_audit": f.rows("seat_control_last_audit", control.get("lastAudit")),
+        # derived for widgets -- WP7 completes the first two and the footers
+        "seat_hero_state": None,
+        "seat_hero_reasons": [],
+        "seat_log_lines": new_lines_out,
+        "seat_log_seq": newest_seq,
+        "seat_log_footer": "",
+        "seat_ledger_footer": "",
+        # status bar
+        "last_updated_seconds_ago": last_updated,
+        "error_count": sum(1 for s in sources.values() if isinstance(s, dict) and s.get("ok") is False),
+        "poll_interval": poll_interval,
+    }
+    return {key: flat[key] for key in SEAT_KEYS}

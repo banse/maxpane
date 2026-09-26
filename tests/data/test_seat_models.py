@@ -269,3 +269,221 @@ def test_field_sources_cover_every_seat_key_exactly():
     assert sm.SEAT_FIELD_SOURCES["seat_agent_id"] is None and sm.SEAT_FIELD_SOURCES["seat_token_id"] is None
     assert sm.SEAT_FIELD_SOURCES["seat_control_gate"] == "broker"
     assert sm.SEAT_FIELD_SOURCES["poll_interval"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 1.9 — fold_status_document on the healthy fixture
+# ---------------------------------------------------------------------------
+
+
+def test_healthy_fixture_validates_and_folds_to_exactly_seat_keys():
+    doc = _load("status_v2_healthy.json")
+    assert sm.validate_status_document(doc) is None
+    flat = sm.fold_status_document(doc)
+    assert tuple(flat) == sm.SEAT_KEYS
+
+
+def test_fold_maps_the_blocks_to_their_keys():
+    flat = sm.fold_status_document(_load("status_v2_healthy.json"))
+    assert flat["seat_schema_version"] == 2 and flat["seat_producer"] == "pepepane 0.1.0"
+    assert flat["seat_host_kind"] == "systemd" and flat["seat_hostname"] == "ubuntu" and flat["seat_host_container"] is None
+    assert flat["seat_offline"] is False
+    assert flat["seat_token_id"] == 7 and flat["seat_agent_id"] == 51075
+    assert flat["seat_device_key_public"] == "72b617d4" and flat["seat_wallet"] == "0x887b9f"
+    assert flat["seat_eligibility"] == "eligible — this machine can receive work"
+    assert flat["seat_capacity"] == 1 and flat["seat_offers"] == ["code", "fuzz", "research"]
+    assert flat["seat_runtime_id"] == "codex" and flat["seat_runtime_version"] == "codex-cli 0.157.0"
+    assert flat["seat_skills_offered"] == 31 and flat["seat_skills_rows"][1] == {"id": "public-rpcs", "on": True, "needs": "network"}
+    assert flat["seat_inference"]["premium"] == {"codex": {"model": "gpt-6-astra", "effort": "xhigh"}}
+    assert flat["seat_daemon_state"] == "alive" and flat["seat_daemon_idle_beats"] == 9 and flat["seat_daemon_running"] == 0
+    assert flat["seat_daemon_fleet_online"] == 406 and flat["seat_daemon_paused_hint"] is None
+    assert flat["seat_auth_degraded"] is False and flat["seat_auth_credential_file_mtime_utc"] == "2026-09-25T23:38:43Z"
+    assert flat["seat_unit_memory_current_b"] == 115798016 and flat["seat_unit_boot_enabled"] is False
+    assert flat["seat_unit_graceful_stop_possible"] is True
+    assert flat["seat_current"] is None
+    assert flat["seat_queue"] == {"ready": 27, "eligible": 0, "fleetOnline": 396,
+                                  "blocked": [{"reason": "at capacity", "nodes": 27}], "asOfUtc": "2026-09-26T03:40:09Z"}
+    assert flat["seat_tasks_window"]["source"] == "journald" and flat["seat_tasks_window"]["rows"] == 2
+    assert flat["seat_today_tasks"] == 12 and flat["seat_today_accepted"] == 9 and flat["seat_today_divergence"]["ok"] is True
+    assert flat["seat_cost_tokens"] == {"input": 2100000, "output": 96000, "cached": 24000000, "cacheWrite": 0}
+    assert flat["seat_cost_buckets"][0]["ttftP50Ms"] == 2481 and flat["seat_quota"]["usedPercent"] == 45.0
+    assert flat["seat_standing_attempts"] == 288 and flat["seat_standing_accepted"] == 244
+    assert flat["seat_standing_counters_inconsistent"] is False and flat["seat_standing_running"] == []
+    assert flat["seat_standing_recent_failures"][0]["reason"] == "runtime_error"
+    assert flat["seat_plane_awaiting_verdict"] == 7 and flat["seat_plane_connected_daemons"] == 409
+    assert flat["seat_machine_work_dirs"] == 288 and flat["seat_machine_outbox_files"] == 0 and flat["seat_machine_orphans"] == []
+    assert flat["seat_machine_journal"]["capNote"].startswith("~347 MiB")
+    assert flat["seat_control_broker_reachable"] is True and flat["seat_control_gate"]["safe"] is True
+    assert flat["seat_control_gate"]["planeMode"] == "plane+local" and flat["seat_control_drain"] is None
+    assert flat["seat_control_last_audit"][0]["planId"] == "7f3a9c1e2b4d6081"
+
+
+def test_fold_normalises_rows_and_blocks_to_their_key_lists():
+    flat = sm.fold_status_document(_load("status_v2_healthy.json"))
+    for list_key in ("seat_tasks_rows", "seat_skills_rows", "seat_cost_buckets", "seat_standing_recent_failures",
+                     "seat_control_last_audit"):
+        assert flat[list_key], list_key
+        for row in flat[list_key]:
+            assert tuple(row) == sm.SEAT_ROW_KEYS[list_key], list_key
+    for block_key in ("seat_queue", "seat_control_gate", "seat_quota"):
+        assert tuple(flat[block_key]) == sm.SEAT_BLOCK_KEYS[block_key], block_key
+    assert flat["seat_tasks_rows"][0]["hash12"] == "c4d9714ffb95" and flat["seat_tasks_rows"][0]["outcome"] == "accepted"
+    assert flat["seat_tasks_rows"][1]["failureReason"] == "runtime_error"
+    assert flat["seat_last_task"] == {"nodeId8": "0c1f9727", "storedUtc": "2026-09-26T03:24:17.236Z",
+                                      "hash12": "c4d9714ffb95", "outcome": "accepted", "verdictLagS": 900,
+                                      "acceptedUtc": "2026-09-26T03:23:44.909Z"}
+    # a sparse row gains every column as None
+    doc = _load("status_v2_healthy.json")
+    doc["tasks"]["rows"] = [{"nodeId8": "deadbeef"}, "not a row"]
+    rows = sm.fold_status_document(doc)["seat_tasks_rows"]
+    assert len(rows) == 1 and rows[0]["nodeId8"] == "deadbeef" and rows[0]["hash12"] is None
+
+
+def test_fold_truncates_identifiers_and_redacts_every_string():
+    # spec §13: device key / wallet to 8 chars at fold time; every third-party string through redact() (step 0 first)
+    doc = _load("status_v2_healthy.json")
+    doc["seat"]["deviceKeyPublic"] = HEX64
+    doc["seat"]["wallet"] = "0x887b9f1234567890abcdef"
+    doc["seat"]["eligibility"] = "eligible \x1b]0;evil\x07 sk-svcac********"
+    doc["daemon"]["pausedHint"] = {"until": "23:53", "failedRuns": 3, "reason": "401: sk-svcac******** \u202e"}
+    doc["tasks"]["rows"][0]["objective"] = "ghp_" + "A" * 36
+    doc["standing"]["recentFailures"][0]["reason"] = "Bearer abcdefgh12345678"
+    flat = sm.fold_status_document(doc)
+    assert flat["seat_device_key_public"] == "01234567" and flat["seat_wallet"] == "0x887b9f"
+    assert flat["seat_eligibility"] == "eligible \u241b]0;evil sk-[redacted]"
+    assert flat["seat_daemon_paused_hint"] == {"until": "23:53", "failedRuns": 3, "reason": "401: sk-[redacted] "}
+    assert flat["seat_tasks_rows"][0]["objective"] == "[github-token]"
+    assert flat["seat_standing_recent_failures"][0]["reason"] == "Bearer [redacted]"
+    assert "svcac" not in json.dumps(flat)
+
+
+def test_fold_emits_only_log_lines_newer_than_the_seq_the_widget_saw():
+    # contract C.4: seat_log_lines = lines with seq > log_seq; seat_log_seq = the newest emitted
+    lines = [
+        {"seq": 1, "ts": "2026-09-26T03:40:01.000Z", "kind": "heartbeat", "text": "\u2026", "invocation": "5e0c", "cursor": "s=1"},
+        {"seq": 2, "ts": "2026-09-26T03:40:05.000Z", "kind": "phase", "text": "  working: sk-abcd \x07", "invocation": "5e0c", "cursor": "s=2"},
+        {"seq": 3, "ts": "2026-09-26T03:40:09.000Z", "kind": "submitted", "text": "submitted implement for 0c1f9727", "invocation": "5e0c"},
+    ]
+    doc = _load("status_v2_healthy.json")
+    flat = sm.fold_status_document(doc, log_lines=lines, log_seq=1)
+    assert [line["seq"] for line in flat["seat_log_lines"]] == [2, 3]
+    assert flat["seat_log_lines"][0]["text"] == "  working: sk-[redacted] "
+    assert tuple(flat["seat_log_lines"][1]) == sm.SEAT_ROW_KEYS["seat_log_lines"] and flat["seat_log_lines"][1]["cursor"] is None
+    assert flat["seat_log_seq"] == 3
+    empty = sm.fold_status_document(doc, log_lines=(), log_seq=7)
+    assert empty["seat_log_lines"] == [] and empty["seat_log_seq"] == 7
+
+
+def test_fold_is_deterministic_without_a_clock_and_ages_with_one():
+    doc = _load("status_v2_healthy.json")
+    assert sm.fold_status_document(doc) == sm.fold_status_document(doc)
+    assert sm.fold_status_document(doc)["last_updated_seconds_ago"] == 0
+    assert sm.fold_status_document(doc, now=1790394012.0 + 42)["last_updated_seconds_ago"] == 42
+    assert sm.fold_status_document(doc, now=1790394012.0 - 5)["last_updated_seconds_ago"] == 0
+    assert sm.fold_status_document({"schemaVersion": 2}, now=1.0)["last_updated_seconds_ago"] == 999
+
+
+def test_fold_as_of_hhmm_names_every_source():
+    flat = sm.fold_status_document(_load("status_v2_healthy.json"))
+    assert tuple(flat["seat_as_of_hhmm"]) == sm.SOURCE_NAMES
+    assert all(re.fullmatch(r"\d\d:\d\d", value) for value in flat["seat_as_of_hhmm"].values())
+    assert flat["seat_as_of_hhmm"]["tail"] == sm.as_of_hhmm("2026-09-26T03:40:11Z")
+    assert tuple(flat["seat_sources"]) == sm.SOURCE_NAMES
+    assert tuple(flat["seat_sources"]["tail"]) == tuple(sm.empty_source())
+
+
+def test_fold_status_bar_keys_are_numbers():
+    doc = _load("status_v2_healthy.json")
+    flat = sm.fold_status_document(doc)
+    assert flat["error_count"] == 0 and flat["poll_interval"] == 5
+    doc["pollInterval"] = 10
+    assert sm.fold_status_document(doc)["poll_interval"] == 10
+    doc["pollInterval"] = True
+    assert sm.fold_status_document(doc)["poll_interval"] == 5
+
+
+def test_fold_leaves_the_wp7_keys_blank():
+    # contract C.14: WP7 completes seat_hero_state, seat_hero_reasons, seat_daemon_offline, seat_log_footer, seat_ledger_footer
+    flat = sm.fold_status_document(_load("status_v2_healthy.json"))
+    assert flat["seat_hero_state"] is None and flat["seat_hero_reasons"] == []
+    assert flat["seat_daemon_offline"] is None
+    assert flat["seat_log_footer"] == "" and flat["seat_ledger_footer"] == ""
+
+
+def test_fold_never_raises_on_a_sparse_or_empty_document():
+    for doc in ({"schemaVersion": 2}, {}, sm.empty_document(started_at_utc="2026-09-26T03:40:07Z", host=HOST)):
+        flat = sm.fold_status_document(doc)
+        assert tuple(flat) == sm.SEAT_KEYS
+        for key, value in flat.items():
+            if isinstance(value, (dict, list)) or key in ("seat_offline", "seat_log_seq", "last_updated_seconds_ago",
+                                                          "error_count", "poll_interval", "seat_log_footer",
+                                                          "seat_ledger_footer", "seat_schema_version", "seat_producer",
+                                                          "seat_started_at_utc", "seat_host_kind", "seat_host_unit",
+                                                          "seat_host_runtime", "seat_hostname"):
+                continue
+            assert value is None, f"{key} folded to {value!r} from a sparse document"
+    assert sm.fold_status_document("not a dict")["seat_daemon_state"] is None  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Task 1.9 (continued) — per-field source gating (mutation proof 8)
+# ---------------------------------------------------------------------------
+
+
+def test_not_ok_source_yields_none_even_with_values():
+    # spec §14 mutation proof 8: values from a not-ok source fold to None -- per field (stats ok while inspect failed)
+    doc = _load("status_v2_healthy.json")
+    doc["sources"]["unit"].update({"ok": False, "reason": "inspect timed out 25 s", "failures": 1, "unavailable": True})
+    assert doc["unit"]["memoryCurrentB"] == 115798016, "the document still carries the stale value"
+    flat = sm.fold_status_document(doc)
+    assert flat["seat_unit_memory_current_b"] is None
+    assert flat["seat_unit_active_state"] is None
+    assert flat["seat_machine_load1"] is None
+    # ...while every field fed by a source that IS ok keeps its value
+    assert flat["seat_daemon_state"] == "alive"
+    assert flat["seat_machine_work_dirs"] == 288
+    assert flat["seat_standing_attempts"] == 288
+    assert flat["seat_sources"]["unit"]["reason"] == "inspect timed out 25 s"
+    assert flat["error_count"] == 1
+    # tokenId C(status) -> K (spec §7): a failed `imd status` gates the eligibility, never the saved token id
+    doc = _load("status_v2_healthy.json")
+    doc["sources"]["status"].update({"ok": False, "reason": "socket timeout 20 s"})
+    flat = sm.fold_status_document(doc)
+    assert flat["seat_eligibility"] is None and flat["seat_token_id"] == 7  # spec §8 `IDMD #7 (saved)`
+
+
+def test_last_good_api_sources_keep_values_until_unavailable():
+    # spec §6 rule 4 / contract C.4: an API source on ok:false keeps its last-good values until `unavailable`
+    doc = _load("status_v2_healthy.json")
+    doc["sources"]["standing"].update({"ok": False, "reason": "HTTP 500", "failures": 1, "unavailable": False})
+    kept = sm.fold_status_document(doc)
+    assert kept["seat_standing_working"] == 0 and kept["seat_queue"]["ready"] == 27 and kept["seat_agent_id"] == 51075
+    doc["sources"]["standing"].update({"failures": 3, "unavailable": True})
+    gone = sm.fold_status_document(doc)
+    assert gone["seat_standing_working"] is None and gone["seat_queue"] is None
+    assert gone["seat_agent_id"] == 51075, "the agent id carries its own A -> K fallback and is never gated"  # spec §7
+    assert gone["seat_standing_attempts"] == 288, "the lifetime counters come from seatWork, which is still ok"
+    # a local source never keeps last-good: ok:false gates at once
+    doc = _load("status_v2_healthy.json")
+    doc["sources"]["skills"].update({"ok": False, "reason": "imd skills format changed", "unavailable": False})
+    assert sm.fold_status_document(doc)["seat_skills_rows"] is None
+
+
+def test_row_fields_are_gated_by_their_own_source():
+    # spec §7 tasks rows: outcome 'unknown' when the API is unavailable; failureReason from `reasons`
+    doc = _load("status_v2_healthy.json")
+    doc["sources"]["seatWork"].update({"ok": False, "failures": 3, "unavailable": True})
+    flat = sm.fold_status_document(doc)
+    row = flat["seat_tasks_rows"][0]
+    assert row["outcome"] == "unknown" and row["verdictLagS"] is None and row["acceptedAtApi"] is None
+    assert row["nodeId8"] == "0c1f9727" and row["hash12"] == "c4d9714ffb95", "local facts are untouched"
+    assert flat["seat_tasks_rows"][1]["failureReason"] == "runtime_error", "reasons is still ok"
+    assert flat["seat_last_task"]["outcome"] == "unknown"
+    assert flat["seat_today_accepted"] is None and flat["seat_today_tasks"] == 12
+    doc["sources"]["reasons"].update({"ok": False, "failures": 3, "unavailable": True})
+    assert sm.fold_status_document(doc)["seat_tasks_rows"][1]["failureReason"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 1.10 — the five degraded status_v2_* fixtures
+# ---------------------------------------------------------------------------
