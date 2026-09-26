@@ -218,7 +218,7 @@ class SwarmClient(OwnedHttpClient):
                 )
             return body
         logger.debug("swarm GET %s failed on every host", path)
-        return dict(SEAT_BUSY) if busy_hosts == len(self._hosts) else None
+        return SEAT_BUSY if busy_hosts == len(self._hosts) else None
 
     async def _dict(self, path: str) -> dict[str, Any] | None:
         body = await self._get(path)
@@ -322,4 +322,6 @@ class SwarmClient(OwnedHttpClient):
         body = await self._get(f"/seats/{token:d}", answers_404=_is_unknown_seat, seat_busy=True)
         if isinstance(body, _Answered404):
             return dict(UNKNOWN_SEAT)
-        return body if isinstance(body, dict) else None
+        if body is SEAT_BUSY:
+            return dict(SEAT_BUSY)
+        return body if isinstance(body, dict) and body.get("error") != "busy" else None

@@ -810,8 +810,13 @@ async def test_fetch_seat_busy_then_success_returns_the_seat():
     assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
 
 
-async def test_busy_body_without_503_and_busy_on_other_routes_remain_failures():
-    async with _client(lambda r: httpx.Response(500, json=_busy_body()),
+@pytest.mark.parametrize("status", [200, 500])
+@pytest.mark.parametrize("fixture", ["seats_503_busy.json", "seats_busy_error_only.json"])
+async def test_busy_body_without_503_and_busy_on_other_routes_remain_failures(status, fixture):
+    import json
+    from tests.surf_swarm_fixtures import SWARM_FIXTURES_V2
+    body = json.loads((SWARM_FIXTURES_V2.parent / fixture).read_text())
+    async with _client(lambda r: httpx.Response(status, json=body),
                        inter_call_delay=0) as client:
         assert await client.fetch_seat(420) is None
     async with _client(lambda r: httpx.Response(503, json=_busy_body()),
