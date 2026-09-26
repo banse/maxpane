@@ -261,3 +261,37 @@ class TestEdgeSlices:
     def test_open_accept_after_idle_slice(self) -> None:
         kinds = _kinds("open_accept_after_idle.txt")
         assert kinds == ["heartbeat"] * 4 + ["accepted_code", "phase", "model_line"]
+
+
+# ---------------------------------------------------------------------------------------- Task 2.12
+@pytest.mark.parametrize("name, docker", [("journal7d.txt", False), ("docker420.log", True)])
+def test_corpus_is_covered_by_the_grammar(name: str, docker: bool) -> None:
+    """Spec §14 grammar corpus: the redacted VPS journal and Mac docker log classify with (almost) no unknowns.
+
+    Both corpora are the scratchpad captures of 2026-09-26 (13,734 / 15,882 lines). Every accept has a
+    terminal line, stored trails submitted by at most one, and no committed byte matches SK_RE / CONTROL_RE.
+    """
+    path = FIXTURES / name
+    if not path.exists():
+        pytest.skip(f"{name} not captured yet (Task 2.12, owner-run)")
+    raw = path.read_text(encoding="utf-8")
+    assert SK_RE.search(raw) is None and CONTROL_RE.search(raw.replace("\n", "")) is None
+    counts: dict[str, int] = {}
+    unknown: list[str] = []
+    for line in raw.splitlines():
+        text = g.strip_docker_prefix(line) if docker else line
+        kind = g.classify(text).kind
+        counts[kind] = counts.get(kind, 0) + 1
+        if kind == g.KIND_UNKNOWN:
+            unknown.append(text)
+    accepts = counts.get("accepted_code", 0) + counts.get("accepted_research", 0) + counts.get("accepted_fuzz", 0)
+    closes = counts.get("submitted", 0) + counts.get("answered", 0) + counts.get("fuzz_outcome", 0)
+    assert accepts == closes and accepts > 250
+    assert 0 <= closes - counts.get("stored", 0) <= 1
+    assert counts["heartbeat"] > 0.6 * sum(counts.values())
+    assert all("getaddrinfo EAI_AGAIN" in u for u in unknown), unknown[:5]
+    assert len(unknown) <= 1
+    if name == "journal7d.txt":
+        assert counts["unit_event"] == 41 and counts["accepted_research"] == 1 and counts["answered"] == 1
+    else:
+        assert counts["resending"] == 2 and counts["ws_socket"] == 8

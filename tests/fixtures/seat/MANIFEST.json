@@ -293,6 +293,36 @@
       "notes": "four idle beats then an accept 15 s later with no terminal line: idle_beats == 4 AND lifecycle open -> the gate must refuse (proof 24, WP6)",
       "sha256": "8e6df3e5a4581108dfa8d1f91d9bec3b000502f42084a48ff7e9461b596748a5",
       "bytes": 608
+    },
+    "grammar/journal7d.txt": {
+      "origin": "imd-vps journalctl -u imd-worker.service -o cat --no-pager, 2026-09-22T12:00:00Z -> 2026-09-26T02:31:55Z (the research scratchpad copy journal7d.txt, 13,734 lines)",
+      "captured_at": "2026-09-26T04:31:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "jwt",
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261 (from 2026-09-25 11:45; earlier builds 0.155.1-era 79f4f4d5, 61d04d62 appear in the window)",
+      "notes": "census (Task 2.12 test): heartbeat 10376, phase 1460, stored 277, accepted_code 276, submitted 276, model_line 271, reconnecting 225, connected 171, admitted 164, server_closed 77, ws_response 63, unit_event 41, release_avail 21, runtimes 9, profiles 9, release_ok 8, shutting_down 8, accepted_research 1, answered 1, unknown 0; 30 heartbeats carried the masked sk- fragment -> sk-[redacted]",
+      "sha256": "dfd15ba38723f356587cbd4eef8f2195161ea52ba7f29fa420d61eb9ebe1facd",
+      "bytes": 1255895
+    },
+    "grammar/docker420.log": {
+      "origin": "Mac `docker logs --timestamps imd-worker` via perl alarm 90, 2026-09-21T19:57:26Z -> 2026-09-26T03:23Z (the research scratchpad copy docker420.log, 15,882 lines)",
+      "captured_at": "2026-09-26T05:23:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "jwt",
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261 (from 2026-09-24 04:12; earlier 5e34612c-era builds appear in the window)",
+      "notes": "keeps Docker's --timestamps RFC3339Nano prefix (9 fraction digits on every line) for WP3; census: heartbeat 12401, phase 1501, accepted_code 292, submitted 292, stored 292, model_line 291, reconnecting 244, connected 186, admitted 179, server_closed 83, ws_response 57, release_avail 23, runtimes 8, profiles 8, ws_socket 8, release_ok 7, shutting_down 7, resending 2, unknown 1 (`getaddrinfo EAI_AGAIN api.imd.fun`); two 40-hex addresses in agent prose -> <hex>",
+      "sha256": "5d4acc3b6b6e988b49d435508c576e2ddad2752a94437dbb8abeeb376cddc240",
+      "bytes": 1897707
     }
   }
 }

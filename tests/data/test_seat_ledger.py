@@ -713,3 +713,45 @@ class TestRollups:
         assert (today["tasks"], today["stored"], today["notStored"]) == (3, 1, 2)
         assert type(today["p50S"]) is int and type(today["longestS"]) is int
         ledger.close()
+
+
+# ---------------------------------------------------------------------------------------- Task 2.12
+class TestCorpus:
+    def test_replaying_500_lines_twice_is_idempotent(self, tmp_path: Path) -> None:
+        """Spec §9 Watermarks: ledger rows are idempotent upserts — replaying the same lines yields identical rows."""
+        source = (FIXTURES / "journal7d.txt")
+        if not source.exists():
+            pytest.skip("journal7d.txt not captured yet (Task 2.12, owner-run)")
+        raw = source.read_text(encoding="utf-8").splitlines()[6000:6500]
+        ledger = _ledger(tmp_path, now=1790391000.0)
+        first = ledger.ingest(g.classify(line, seq=i) for i, line in enumerate(raw))
+        snapshot = [tuple(r) for r in ledger._conn.execute("SELECT * FROM tasks ORDER BY key")]
+        # a re-attached tail (cursor lost, `--since` fallback) re-delivers the same lines with new seq numbers
+        second = ledger.ingest(g.classify(line, seq=10_000 + i) for i, line in enumerate(raw))
+        replay = [tuple(r) for r in ledger._conn.execute("SELECT * FROM tasks ORDER BY key")]
+        assert first.opened == 5 and second.opened == 0 and second.stored == 0  # lines 6000–6500 hold five accepts
+        assert len(snapshot) == len(replay) == ledger.counts()["rows"]
+        assert [s[:-1] for s in snapshot] == [r[:-1] for r in replay]  # every column but updated_utc identical
+        ledger.close()
+
+
+def test_corpus_ledger_counts(tmp_path: Path) -> None:
+    """Spec §14 grammar corpus through the ledger: 277 VPS rows (276 implement + 1 research), all stored;
+    292 Mac rows all stored, 3 repairs, 2 re-sends; 5 + 1 pre-agent failures."""
+    for name, seat, rows, pre_agent, repairs, resent in (("journal7d.txt", 7, 277, 5, 0, 0), ("docker420.log", 420, 292, 1, 3, 2)):
+        path = FIXTURES / name
+        if not path.exists():
+            pytest.skip(f"{name} not captured yet (Task 2.12, owner-run)")
+        docker = name.endswith(".log")
+        lines = [g.classify(g.strip_docker_prefix(l) if docker else l, seq=i)
+                 for i, l in enumerate(path.read_text(encoding="utf-8").splitlines())]
+        ledger = SeatLedger(tmp_path / f"{seat}.sqlite", seat=seat, now=lambda: 1790391000.0)
+        result = ledger.ingest(lines)
+        all_rows = ledger.rows(limit=1000)
+        assert len(all_rows) == rows == result.opened and result.stored == rows
+        assert all(r["storedUtc"] and r["hash12"] for r in all_rows) and ledger.open_row() is None
+        assert sum(1 for r in all_rows if r["preAgentFailure"]) == pre_agent
+        assert sum(1 for r in all_rows if r["repair"]) == repairs and sum(1 for r in all_rows if r["resent"]) == resent
+        assert result.restarts == (9 if seat == 7 else 8)  # every `runtimes:` banner incl. the first start
+        assert not any(r["interruptedByRestart"] for r in all_rows)  # 16/16 restarts were idle (fill1 §0)
+        ledger.close()
