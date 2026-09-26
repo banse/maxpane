@@ -1,0 +1,10 @@
+2026-09-25T15:12:38.379Z connected to api.imd.fun
+2026-09-25T15:12:39.159Z admitted (session 4598ae24)
+2026-09-25T15:12:44.631Z alive 3h27m · idle · 0 submitted · fleet 320 online, 372 enrolled
+2026-09-25T15:13:12.445Z server closed: server_shutdown — control plane restarting
+2026-09-25T15:13:12.458Z reconnecting in 1.3s
+2026-09-25T15:13:14.170Z connected to api.imd.fun
+2026-09-25T15:13:19.323Z admitted (session 68f15288)
+2026-09-25T15:13:19.512Z disconnected 3h27m · idle · 0 submitted
+2026-09-25T15:13:47.477Z alive 3h28m · idle · 0 submitted · fleet 362 online, 372 enrolled
+2026-09-25T15:14:14.632Z alive 3h28m · idle · 0 submitted · fleet 363 online, 372 enrolled

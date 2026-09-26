@@ -209,3 +209,27 @@ def test_prose_never_forges_an_accept() -> None:
     kinds = _kinds("prose_forgery.txt")
     assert kinds == ["model_line", "heartbeat", "phase", "heartbeat", "heartbeat", "phase", "phase", "unknown", "unknown"]
     assert not any(k in g.ACCEPTED_KINDS or k == g.KIND_STORED for k in kinds)
+
+
+# ---------------------------------------------------------------------------------------- Task 2.4
+class TestJournalSlices:
+    def test_restart_boundary_slice(self) -> None:
+        kinds = _kinds("restart_boundary.txt")
+        assert kinds[:7] == ["heartbeat", "unit_event", "shutting_down", "unit_event", "unit_event", "unit_event", "unit_event"]
+        assert kinds[7:] == ["runtimes", "profiles", "connected", "release_ok", "admitted", "heartbeat", "heartbeat"]
+
+    def test_heartbeat_no_fleet_slice(self) -> None:
+        lines = [g.classify(l) for l in _lines("heartbeat_no_fleet.txt")]
+        no_fleet = [l for l in lines if l.kind == g.KIND_HEARTBEAT and l.fields["online"] is None]
+        assert len(no_fleet) == 1 and no_fleet[0].fields["state"] == "disconnected"
+
+    def test_research_slice(self) -> None:
+        research = _kinds("research_question.txt")
+        assert research.count("accepted_research") == 1 and research.count("answered") == 1 and research.count("stored") == 1
+
+    def test_lingering_pause_slice(self) -> None:
+        linger = [g.classify(l) for l in _lines("heartbeat_lingering_pause.txt")]
+        paused_while_running = [l for l in linger if l.kind == g.KIND_HEARTBEAT and l.fields["until"] and l.fields["running"]]
+        assert len(paused_while_running) == 2 and all(l.fields["until"] == "23:53" for l in paused_while_running)
+        assert "unknown" not in [l.kind for l in linger]
+        assert SK_RE.search("\n".join(_lines("heartbeat_lingering_pause.txt"))) is None  # redacted before commit
