@@ -1447,6 +1447,8 @@ _NON_NUMERIC_KEYS = frozenset(
         # last-good) and a list[dict] row payload (`None` vs `[]`). The seat's own
         # counters live inside `swarm_seat_summary`, already triaged here.
         "swarm_seat_state", "swarm_seat_work_rows",
+        # Latest seat-read outcome is a nullable status string, never a number.
+        "swarm_seat_read",
         # BOARD: four nested dicts, one row list, and two independent clocks.
         # None is unread; an empty list/dict is not a numeric zero probe.
         "swarm_board_summary", "swarm_board_rows", "swarm_fleet",

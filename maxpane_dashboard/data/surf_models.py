@@ -1491,6 +1491,7 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_runtime_as_of_hhmm", # dict runtime id -> last attempt HH:MM | None
     "swarm_fleet_daemon",     # (version, count, reporting workers) | None
     "swarm_seat_rank_delta",  # int | None; previous rank minus current rank
+    "swarm_seat_read",        # str | None; latest selected-seat read: busy, failed, or finished/unread
 )
 
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
@@ -1507,7 +1508,7 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta"),
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
     "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates", "swarm_seat_owner_ens", "swarm_seat_node_rows", "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon"),
-    "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+    "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_read"),
     "SurfSwarmBoardHero": ("swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
     "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
     "SurfSwarmFleet": ("swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
@@ -1667,8 +1668,8 @@ SWARM_SEAT_REVIEW_STATUSES: tuple[str, ...] = ("sent", "submitted", "queued")
 
 #: ``swarm_seat_state``'s non-``None`` values. ``unknown_seat`` is the 404 real negative;
 #: ``pending`` = no read of this token has finished yet (plan Q-A); ``None`` = the read
-#: failed with no last-good.
-SWARM_SEAT_STATES: tuple[str, ...] = ("ok", "unknown_seat", "pending")
+#: failed with no last-good; ``busy`` = every host asked us to retry, with no last-good.
+SWARM_SEAT_STATES: tuple[str, ...] = ("ok", "unknown_seat", "pending", "busy")
 
 #: Every key ``SurfManager.fetch_and_compute()`` returns — the parallel-agent
 #: interface, frozen by docs/surf_PRD.md §5.  Every numeric is ``float|int|None``

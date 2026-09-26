@@ -55,6 +55,9 @@ __all__ = [
     "coerce_contributors_slot", "coerce_workers_slot",
 ]
 
+#: Retain at most six seats: a large seat record is ~90 KB.
+SEAT_SLOT_CAP = 6
+
 #: A job in one of these states is finished; nothing else is.
 
 #: Chain ids this view knows how to name.  An allowlist, so an unknown chain
@@ -993,8 +996,8 @@ def choose_seat(rows: object, saved_token: object) -> dict[str, Any] | None:
     return None
 
 
-#: A persisted seat slot is a *finished* read: ``pending`` is never stored.
-_SLOT_STATES = tuple(s for s in SWARM_SEAT_STATES if s != "pending")
+#: A persisted seat slot is a *finished* read: ``pending`` and ``busy`` are never stored.
+_SLOT_STATES = ("ok", "unknown_seat")
 
 
 def coerce_seat_slot(payload: object) -> dict[str, Any] | None:

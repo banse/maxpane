@@ -64,7 +64,7 @@ def parse_job_id(value: object) -> str | None:
 
 __all__ = [
     "SWARM_API", "SWARM_API_HOSTS", "SWARM_INTER_CALL_DELAY", "SWARM_REQUEST_TIMEOUT",
-    "SwarmClient", "UNKNOWN_SEAT",
+    "SwarmClient", "UNKNOWN_SEAT", "SEAT_BUSY",
 ]
 
 #: The swarm's control plane, as a pool.  Measured 2026-09-21 (plan §0 R1):
@@ -100,6 +100,9 @@ SWARM_INTER_CALL_DELAY = 0.12
 #: copy -- and ``fetch_seat`` returns a fresh ``dict`` each time, so a caller
 #: may alter its own result.  Compare with ``==`` (a proxy equals its dict).
 UNKNOWN_SEAT: MappingProxyType[str, str] = MappingProxyType({"error": "unknown_seat"})
+
+#: Every seat host reported temporary load shedding, distinct from a failed read.
+SEAT_BUSY: MappingProxyType[str, str] = MappingProxyType({"error": "busy"})
 
 #: Explicit job-local HTTP 404; None remains transient transport/parse failure.
 SUBMISSIONS_NOT_FOUND = MappingProxyType({"error": "submissions_not_found"})

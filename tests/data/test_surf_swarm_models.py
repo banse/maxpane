@@ -135,8 +135,8 @@ SWARM_TARGET_WIDGETS = {
 
 def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
     """Thirty-two existing keys, the served health status word and the owner's ENS name."""
-    assert len(SWARM_KEYS) == 38
-    assert len(set(SWARM_KEYS)) == 38
+    assert len(SWARM_KEYS) == 39
+    assert len(set(SWARM_KEYS)) == 39
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -158,9 +158,9 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-28:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-29:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
                                 + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
-                                   "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta"))
+                                   "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read"))
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -252,7 +252,7 @@ def test_the_seats_permanent_exports_are_the_frozen_literals():
     assert SWARM_SEAT_REVIEW_STATUSES == ("sent", "submitted", "queued")
     # "pending" by the owner's Q-A answer (2026-09-21); None is not a member -- it is
     # "read failed, no last-good", the absence of a state.
-    assert SWARM_SEAT_STATES == ("ok", "unknown_seat", "pending")
+    assert SWARM_SEAT_STATES == ("ok", "unknown_seat", "pending", "busy")
 
 
 def test_the_agent_signatures_are_the_flipped_literals():
@@ -267,7 +267,7 @@ def test_the_agent_signatures_are_the_flipped_literals():
             "swarm_seat_owner_ens", "swarm_seat_node_rows",
             "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon",
         ),
-        "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm"),
+        "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_read"),
     }
 
 
@@ -394,3 +394,17 @@ def test_oracle_contract_and_row_defaults():
         assert set(row) == set(models.SURF_ROW_KEYS["swarm_seat_work_rows"])
         assert row["panel_state"] == state
         assert row["output_tokens"] is None
+
+
+def test_seat_resilience_contract_freezes_the_busy_sentinel_and_cache_cap():
+    from types import MappingProxyType
+    from maxpane_dashboard.data import surf_swarm, surf_swarm_client
+
+    assert isinstance(surf_swarm_client.SEAT_BUSY, MappingProxyType)
+    assert dict(surf_swarm_client.SEAT_BUSY) == {"error": "busy"}
+    assert "SEAT_BUSY" in surf_swarm_client.__all__
+    with pytest.raises(TypeError):
+        surf_swarm_client.SEAT_BUSY["error"] = "changed"
+    assert surf_swarm.SEAT_SLOT_CAP == 6
+    assert [name for name, signature in SWARM_WIDGET_SIGNATURES.items()
+            if "swarm_seat_read" in signature] == ["SurfSwarmSeatRecord"]

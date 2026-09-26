@@ -175,6 +175,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         swarm_seat_work_rows=None,
         swarm_seat_state=None,
         swarm_seat_as_of_hhmm=None,
+        swarm_seat_read=None,
         **_kwargs,
     ) -> None:
         """Refresh from the manager's flat dict (``**_kwargs``: the screen splats it)."""
