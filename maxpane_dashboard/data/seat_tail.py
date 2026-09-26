@@ -311,7 +311,54 @@ class TailState:
                 pass
 
 
+# --- gap and stale-backfill rules (pure) ------------------------------------------------
+
+
+def detect_gap(*, first_realtime_utc: str | None, last_ts_utc: str | None, exit_code: int | None) -> str | None:
+    """The journald gap rule (spec §5.1 VPS transport, §9 Watermarks).
+
+    Returns ``"gap <lastTs>→<first available>"`` when the first returned record is more than
+    ``GAP_TOLERANCE_S`` newer than the persisted ``last_ts_utc``, **or** when the attach exited
+    non-zero before delivering anything (``first_realtime_utc`` is then ``None`` and rendered
+    ``?``). ``None`` when there is nothing to compare against (first run) or no gap.
+    """
+    if last_ts_utc is None:
+        return None
+    if exit_code not in (None, 0):
+        return f"gap {last_ts_utc}→{first_realtime_utc or '?'}"
+    if first_realtime_utc is None:
+        return None
+    first, last = parse_iso(first_realtime_utc), parse_iso(last_ts_utc)
+    if first is None or last is None:
+        return None
+    if first > last + GAP_TOLERANCE_S:
+        return f"gap {last_ts_utc}→{first_realtime_utc}"
+    return None
+
+
+def backfill_is_stale(*, newest_backfill_ts: str | None, watermark_ts: str | None, follower_first_ts: str | None) -> bool:
+    """The discard rule for the untrusted docker ``--since`` body (spec §5.1 Mac transport).
+
+    Stale when the body has no daemon stamp at all, when its newest stamp is older than the
+    persisted watermark, or when it is more than ``GAP_TOLERANCE_S`` older than the first
+    stamped line the trusted follower delivered.
+    """
+    newest = parse_iso(newest_backfill_ts)
+    if newest is None:
+        return True
+    watermark = parse_iso(watermark_ts)
+    if watermark is not None and newest < watermark:
+        return True
+    follower_first = parse_iso(follower_first_ts)
+    if follower_first is not None and newest < follower_first - GAP_TOLERANCE_S:
+        return True
+    return False
+
+
 __all__ = [
+    'backfill_is_stale',
+    'detect_gap',
+
     'TailState',
 
     "ALIVE_STAMP_S", "BACKOFF_MAX_S", "BACKOFF_MIN_S", "CONTAINER_DEFAULT", "DAEMON_STAMP_RE",

@@ -24,6 +24,9 @@ import pytest
 from maxpane_dashboard.analytics.seat_redact import redact
 from maxpane_dashboard.data import seat_tail
 from maxpane_dashboard.data.seat_tail import (
+    backfill_is_stale,
+    detect_gap,
+
     TailState,
 
     ALIVE_STAMP_S,
@@ -201,3 +204,37 @@ def test_tail_state_save_failure_is_logged_not_raised(tmp_path, caplog):
     target.write_text("")
     TailState(kind="x").save(target / TAIL_FILE)      # parent is a file -> OSError inside
     assert "failed to save tail state" in caplog.text
+
+# =============================================================================
+# Task 3.3 -- detect_gap / backfill_is_stale
+# =============================================================================
+
+
+def test_detect_gap_is_from_data_not_exit_code():
+    # spec §5.1 VPS transport: a first entry newer than lastTsUtc + 60 s is a gap even with exit 0
+    last = "2026-09-24T04:12:00.000Z"
+    assert detect_gap(first_realtime_utc="2026-09-26T03:40:07.120Z", last_ts_utc=last, exit_code=0) == \
+        "gap 2026-09-24T04:12:00.000Z→2026-09-26T03:40:07.120Z"
+    # exactly +60 s is NOT a gap ("newer than lastTsUtc + 60 s")
+    assert detect_gap(first_realtime_utc="2026-09-24T04:13:00.000Z", last_ts_utc=last, exit_code=0) is None
+    assert detect_gap(first_realtime_utc="2026-09-24T04:13:00.001Z", last_ts_utc=last, exit_code=0) is not None
+    # an entry older than lastTs (the --since fallback re-reads from lastTs) is not a gap
+    assert detect_gap(first_realtime_utc="2026-09-24T04:11:30.000Z", last_ts_utc=last, exit_code=0) is None
+
+
+def test_detect_gap_on_non_zero_exit_and_on_nothing_to_compare():
+    assert detect_gap(first_realtime_utc=None, last_ts_utc="2026-09-24T04:12:00.000Z", exit_code=1) == \
+        "gap 2026-09-24T04:12:00.000Z→?"
+    assert detect_gap(first_realtime_utc=None, last_ts_utc="2026-09-24T04:12:00.000Z", exit_code=0) is None
+    assert detect_gap(first_realtime_utc="2026-09-26T03:40:07.120Z", last_ts_utc=None, exit_code=1) is None  # first run
+
+
+def test_backfill_is_stale_rule():
+    # spec §5.1 Mac transport: compared with the persisted watermark AND the follower's first line
+    wm, first = "2026-09-20T12:59:40.000Z", "2026-09-20T13:05:12.001Z"
+    assert backfill_is_stale(newest_backfill_ts=None, watermark_ts=wm, follower_first_ts=first) is True
+    assert backfill_is_stale(newest_backfill_ts="2026-09-20T10:04:41.220Z", watermark_ts=wm, follower_first_ts=first) is True
+    assert backfill_is_stale(newest_backfill_ts="2026-09-20T13:00:00.000Z", watermark_ts=wm, follower_first_ts=first) is True   # > 60 s before the follower
+    assert backfill_is_stale(newest_backfill_ts="2026-09-20T13:04:30.000Z", watermark_ts=wm, follower_first_ts=first) is False
+    assert backfill_is_stale(newest_backfill_ts="2026-09-20T13:06:00.000Z", watermark_ts=None, follower_first_ts=None) is False
+    assert backfill_is_stale(newest_backfill_ts="2026-09-20T13:04:30.000Z", watermark_ts=None, follower_first_ts=first) is False
