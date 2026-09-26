@@ -202,7 +202,8 @@ capacity/pause/offline independently of seats, with a bare `STATUS` title (its w
 was removed by the owner on 2026-09-22) and exactly three body lines. `swarm_seat_live.live_state` preserves unknown pause evidence as unavailable (F48);
 known zero working is idle, which STATUS writes as a green `● online` (`ONLINE_LINE`; only
 that part green, the counts after it dim); STATUS writes `⚙` (`WORKING_GLYPH`) for the word
-"working" in its counts (owner, 2026-09-22). RANK (hero column 5 since 2026-09-22) reads only
+"working" in its counts (owner, 2026-09-22). A working count above `max_concurrency` (oracle jobs do not count
+against it) reads `⚙ N working` without the misleading `of N` (owner, 2026-09-26). RANK (hero column 5 since 2026-09-22) reads only
 `swarm_seat_contrib` through `_swarm_seat.contrib_body` / `rank_body`. RANK's second line is
 `swarm_seat_rank_delta`: previous rank minus current rank, green `▲N` upward or red `▼N`
 downward. `SLOT_SWARM_SEAT_RANK` persists each seat's `{rank, prev}`; validate each point on

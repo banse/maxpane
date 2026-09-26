@@ -584,3 +584,13 @@ async def test_seat_selection_word_takes_the_blank_line_above_the_agent():
     most = _inner_rows(await _box_text(BOX_IDS["seat"],
                        swarm_seat_selected=dict(SELECTED, selected_by="most_active")))
     assert most[2:] == ["IDMD #420", "most active", "agent 50939"], most
+
+
+@pytest.mark.parametrize('working,cap,expected', [
+    (9, 1, '⚙ 9 working'),      # live #420, 2026-09-26: oracle jobs exceed maxConcurrency
+    (1, 1, '⚙ 1 of 1'), (2, 4, '⚙ 2 of 4'),
+])
+async def test_status_drops_capacity_when_working_exceeds_it(working, cap, expected):
+    text = await _box_text(BOX_IDS['status'], swarm_seat_live={
+        'live': True, 'live_state': 'working', 'working': working, 'max_concurrency': cap})
+    assert _lines(text)[1] == expected

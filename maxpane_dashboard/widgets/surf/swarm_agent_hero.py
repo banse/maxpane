@@ -206,6 +206,11 @@ class SurfSwarmAgentHero(HeroRow):
         live_state = live.get("live_state")
         active, capacity = _count(live.get("working")), _count(live.get("max_concurrency"))
         counts = f"{WORKING_GLYPH} {fmt_int(active)} of {fmt_int(capacity)}"
+        # Oracle jobs do not count against maxConcurrency (live #420, 2026-09-26:
+        # working 9, maxConcurrency 1), so a count above capacity drops the
+        # misleading ``of N`` (owner, 2026-09-26).
+        if active is not None and capacity is not None and active > capacity:
+            counts = f"{WORKING_GLYPH} {fmt_int(active)} working"
         word = counts if live_state == "working" else ONLINE_LINE if live_state == "idle" else (
             live_state if live_state in ("offline", "paused") else "unavailable")
         color = {"working":"green", "idle":"green", "offline":"red", "paused":"red"}.get(live_state, "yellow")
