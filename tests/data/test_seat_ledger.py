@@ -397,3 +397,131 @@ class TestDetectorState:
                                  "2026-09-23T19:58:33.300Z release 0.1.0+61d04d62, the latest"]))
         assert (st.daemon_version, st.release_available, st.build_mismatch) == ("0.1.0+61d04d62", None, False)
         ledger.close()
+
+
+# ---------------------------------------------------------------------------------------- Task 2.9
+WORK_ROWS = [
+    {"jobId": "6c296b69-8c22-435c-a2c2-56ab1660bb4e", "objective": "Compare floors", "jobState": "completed",
+     "nodeKey": "oracle_assess", "role": "implement", "status": "accepted",
+     "submissionHash": "f7ef8612dee7a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a",
+     "submittedAt": "2026-09-23T19:35:16.822Z", "acceptedAt": "2026-09-23 19:52:36.822+00"},
+    {"jobId": "9f1c2d3e-0000-4000-8000-000000000001", "objective": "x", "jobState": "blocked",
+     "nodeKey": "oracle_assess", "role": "implement", "status": "failed",
+     "submissionHash": "5b83f0929a19ffffffffffffffffffffffffffffffffffffffffffffffffffff",
+     "submittedAt": "2026-09-24T05:36:50.343Z", "acceptedAt": None},
+    {"jobId": "9f1c2d3e-0000-4000-8000-000000000002", "objective": "pending research", "jobState": "open",
+     "nodeKey": "hunt_d", "role": "tests", "status": "pending", "submissionHash": None,
+     "submittedAt": "2026-09-24T05:36:50.343Z", "acceptedAt": None},
+    {"jobId": "9f1c2d3e-0000-4000-8000-000000000003", "status": "rejected", "submissionHash": 12345,
+     "submittedAt": "2026-09-24T05:36:50.343Z"},
+    {"jobId": "9f1c2d3e-0000-4000-8000-000000000004", "status": "accepted",
+     "submissionHash": "000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffff",
+     "submittedAt": "2026-09-24T05:36:50.343Z", "acceptedAt": "2026-09-24 05:40:00+00"},
+]
+
+
+class TestApiJoins:
+    def test_attach_work_joins_by_hash12_prefix(self, tmp_path: Path) -> None:
+        """Spec §6: verdict per row by `submissionHash.startswith(hash12)`; verdict lag from Postgres-text acceptedAt."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_lines("double_accept.txt"))
+        joined = ledger.attach_work(WORK_ROWS, as_of_utc="2026-09-26T03:40:09Z")
+        assert joined == 2
+        accepted = [r for r in _by_node(ledger, "4cf722c7") if r["hash12"] == "f7ef8612dee7"][0]
+        assert accepted["outcome"] == "accepted" and accepted["outcomeAsOfUtc"] == "2026-09-26T03:40:09Z"
+        assert accepted["jobId"] == "6c296b69-8c22-435c-a2c2-56ab1660bb4e" and accepted["nodeKey"] == "oracle_assess"
+        assert accepted["acceptedAtApi"] == "2026-09-23 19:52:36.822+00" and accepted["verdictLagS"] == 1040
+        assert accepted["source"] == {"row": "local", "outcome": "api", "reason": "none"}
+        failed = [r for r in _by_node(ledger, "4cf722c7") if r["hash12"] == "5b83f0929a19"][0]
+        assert failed["outcome"] == "failed" and failed["verdictLagS"] is None and failed["failureReason"] is None
+        untouched = [r for r in ledger.rows() if r["hash12"] == "cee9e3163b14"][0]
+        assert untouched["outcome"] is None
+        ledger.close()
+
+    def test_duplicate_hash12_prefers_the_stored_row_nearest_before_submitted_at(self, tmp_path: Path) -> None:
+        """Header Review Focus 4: two rows with one hash12 → the row whose storedUtc is nearest before submittedAt."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_classify([
+            "2026-09-24T05:00:00.000Z accepted implement aaaa1111 — a (max 60 turns)",
+            "2026-09-24T05:00:10.000Z submitted implement for aaaa1111",
+            "2026-09-24T05:00:11.000Z submission stored (000000000000) — awaiting verdict",
+        ]))
+        ledger._conn.execute("INSERT INTO tasks(key, seat, node8, accepted_utc, submitted_utc, stored_utc, hash12, source_row) "
+                             "VALUES ('7/bbbb2222/2026-09-24T05:30:00.000Z', 7, 'bbbb2222', '2026-09-24T05:30:00.000Z', "
+                             "'2026-09-24T05:30:10.000Z', '2026-09-24T05:30:11.000Z', '000000000000', 'local')")
+        ledger._conn.commit()
+        assert ledger.attach_work([WORK_ROWS[4]], as_of_utc="2026-09-26T03:40:09Z") == 1
+        joined = [r for r in ledger.rows() if r["outcome"] == "accepted"]
+        assert len(joined) == 1 and joined[0]["nodeId8"] == "bbbb2222"
+        ledger.close()
+
+    def test_attach_reason_and_failed_rows_needing_reason(self, tmp_path: Path) -> None:
+        """Spec §6: reasons are the enum word only; ≤2 failed rows older than the standing window per cycle."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_lines("double_accept.txt"))
+        ledger.attach_work(WORK_ROWS, as_of_utc="2026-09-26T03:40:09Z")
+        needing = ledger.failed_rows_needing_reason(older_than_utc="2026-09-25T03:40:09Z")
+        assert [r["jobId"] for r in needing] == ["9f1c2d3e-0000-4000-8000-000000000001"]
+        assert ledger.failed_rows_needing_reason(older_than_utc="2026-09-24T00:00:00Z") == []
+        updated = ledger.attach_reason("9f1c2d3e-0000-4000-8000-000000000001", reason="runtime_error",
+                                       failure_class="machine", source="submissions")
+        assert updated == 1
+        (row,) = [r for r in ledger.rows() if r["outcome"] == "failed"]
+        assert (row["failureReason"], row["failureClass"], row["source"]["reason"]) == ("runtime_error", "machine", "submissions")
+        assert ledger.failed_rows_needing_reason(older_than_utc="2026-09-25T03:40:09Z") == []
+        assert ledger.attach_reason("no-such-job", reason="internal_error", failure_class=None, source="standing") == 0
+        ledger.close()
+
+    def test_seed_api_rows_never_overwrites_a_local_row(self, tmp_path: Path) -> None:
+        """Spec §5.6 / §16 #15: history rows are flagged `source.row == "api"`; a hash the ledger holds is skipped."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_lines("double_accept.txt"))
+        inserted = ledger.seed_api_rows(WORK_ROWS + [
+            {"jobId": "9f1c2d3e-0000-4000-8000-000000000009", "role": "implement", "status": "accepted", "nodeKey": "oracle_assess",
+             "objective": "older than the log", "submissionHash": "abcdef012345ffffffffffffffffffffffffffffffffffffffffffffffffffff",
+             "submittedAt": "2026-09-20T18:00:00.000Z", "acceptedAt": "2026-09-20 18:17:20+00"},
+        ], seat=7)
+        assert inserted == 2  # WORK_ROWS[4] (unknown hash) and the pre-log row; f7ef…/5b83… exist locally; null/int hashes skipped
+        api_rows = [r for r in ledger.rows(limit=100) if r["source"]["row"] == "api"]
+        assert len(api_rows) == 2 and all(r["nodeId8"] is None and r["hash12"] for r in api_rows)
+        old = [r for r in api_rows if r["hash12"] == "abcdef012345"][0]
+        assert old["acceptedUtc"] == "2026-09-20T18:00:00.000Z" and old["outcome"] == "accepted" and old["verdictLagS"] == 1040
+        local = [r for r in _by_node(ledger, "4cf722c7") if r["hash12"] == "f7ef8612dee7"][0]
+        assert local["source"]["row"] == "local" and local["acceptedUtc"] == "2026-09-23T19:34:26.693Z"
+        assert ledger.seed_api_rows(WORK_ROWS, seat=7) == 0  # idempotent
+        ledger.close()
+
+
+def test_null_submission_hash_never_joins(tmp_path: Path) -> None:
+    """Header Review Focus 4: a `null` or non-string `submissionHash` is skipped — `str.startswith(None)` would raise
+    inside the tick; the rows stay `unknown` (None) and counters are validated elsewhere."""
+    ledger = _ledger(tmp_path, now=1790230000.0)
+    ledger.ingest(_lines("double_accept.txt"))
+    joined = ledger.attach_work([WORK_ROWS[2], WORK_ROWS[3], {"status": "accepted"}, "not a dict"],
+                                as_of_utc="2026-09-26T03:40:09Z")
+    assert joined == 0 and all(r["outcome"] is None for r in ledger.rows())
+    ledger.close()
+
+
+class TestWorkDirs:
+    def test_work_dirs_attach_ids_and_the_abnormal_flag(self, tmp_path: Path) -> None:
+        """Spec §5.2 work-stat / §8 LEDGER detail: the dir name gives the full ids; mtime ≈ accept picks the attempt."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_lines("double_accept.txt"))
+        node = "4cf722c7-101e-473b-a153-3315d3673a83"
+        job = "6c296b69-8c22-435c-a2c2-56ab1660bb4e"
+        joined = ledger.attach_work_dirs([
+            {"jobId": job, "nodeId": node, "mtimeUtc": "2026-09-23T19:34:27Z", "abnormal": True},
+            {"jobId": job, "nodeId": node, "mtimeUtc": "2026-09-24T05:36:50Z", "abnormal": False},
+            {"jobId": "x", "nodeId": "ffffffff-0000-4000-8000-000000000000", "mtimeUtc": "2026-09-23T19:34:27Z", "abnormal": True},
+            {"jobId": "y", "nodeId": node, "mtimeUtc": "2026-09-23T12:00:00Z", "abnormal": True},  # no accept within 300 s
+            {"jobId": "z", "nodeId": None, "mtimeUtc": None, "abnormal": True},
+            "not a dict",
+        ])
+        assert joined == 2
+        by_accept = {r["acceptedUtc"]: r for r in _by_node(ledger, "4cf722c7")}
+        flagged = by_accept["2026-09-23T19:34:26.693Z"]
+        assert flagged["workDirAbnormal"] is True and flagged["nodeId"] == node and flagged["jobId"] == job
+        assert by_accept["2026-09-24T05:36:49.988Z"]["workDirAbnormal"] is False
+        assert by_accept["2026-09-23T17:08:39.905Z"]["workDirAbnormal"] is None and by_accept["2026-09-23T17:08:39.905Z"]["nodeId"] is None
+        ledger.close()

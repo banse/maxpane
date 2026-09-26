@@ -639,6 +639,162 @@ class SeatLedger:
         return {"rows": row["n"], "sinceUtc": row["since"]}
 
 
+    # ------------------------------------------------------------------ API joins
+    def attach_work(self, work: list[dict], *, as_of_utc: str) -> int:
+        """Join ``/seats/<id>?work=N`` rows by ``submissionHash.startswith(hash12)``; a null hash never joins."""
+        joined = 0
+        with self._conn:
+            for item in work:
+                if not isinstance(item, dict):
+                    continue
+                full_hash = item.get("submissionHash")
+                if not isinstance(full_hash, str) or len(full_hash) < 12:
+                    continue
+                hash12 = full_hash[:12]
+                candidates = self._conn.execute(
+                    "SELECT key, stored_utc FROM tasks WHERE hash12 = ? AND seat IS ?", (hash12, self._seat)
+                ).fetchall()
+                if not candidates:
+                    continue
+                submitted_epoch = _parse_api_timestamp(item.get("submittedAt"))
+                if len(candidates) > 1 and submitted_epoch is not None:
+                    def distance(c: sqlite3.Row) -> tuple[int, float]:
+                        stored = parse_ts(c["stored_utc"] or "")
+                        if stored is None:
+                            return (2, 0.0)
+                        return (0 if stored <= submitted_epoch else 1, abs(submitted_epoch - stored))
+                    candidates = sorted(candidates, key=distance)
+                target = candidates[0]
+                status = item.get("status")
+                outcome = status if status in ("accepted", "rejected", "failed", "pending") else "unknown"
+                accepted_at_api = item.get("acceptedAt") if isinstance(item.get("acceptedAt"), str) else None
+                lag = None
+                if outcome == "accepted":
+                    stored_epoch = parse_ts(target["stored_utc"] or "")
+                    verdict_epoch = _parse_api_timestamp(accepted_at_api)
+                    if stored_epoch is not None and verdict_epoch is not None:
+                        lag = int(verdict_epoch - stored_epoch)
+                self._conn.execute(
+                    "UPDATE tasks SET outcome = ?, outcome_as_of_utc = ?, accepted_at_api = ?, verdict_lag_s = ?, "
+                    "job_id = COALESCE(?, job_id), node_key = COALESCE(?, node_key), objective = COALESCE(?, objective), "
+                    "source_outcome = 'api', updated_utc = ? WHERE key = ?",
+                    (outcome, as_of_utc, accepted_at_api, lag,
+                     item.get("jobId") if isinstance(item.get("jobId"), str) else None,
+                     redact(item.get("nodeKey")) if isinstance(item.get("nodeKey"), str) else None,
+                     redact_agent_sentence(item.get("objective")) if isinstance(item.get("objective"), str) else None,
+                     _iso(self._now()), target["key"]),
+                )
+                joined += 1
+        return joined
+
+    def attach_work_dirs(self, entries: list[dict]) -> int:
+        """Join ``work-stat`` ``newest`` entries ``{jobId, nodeId, mtimeUtc, abnormal}`` to local rows (spec §5.2, §8 LEDGER detail).
+
+        The dir name carries the full ids and its mtime ≈ the accept time, so an entry joins the row of ``nodeId[:8]``
+        whose ``accepted_utc`` is nearest the mtime within ``WORK_DIR_JOIN_S`` (node8 repeats across attempts); it sets
+        ``work_dir_abnormal`` and fills a missing ``node_id``/``job_id``. Entries without a usable id or stamp are skipped.
+        """
+        joined = 0
+        with self._conn:
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                node_id, job_id = entry.get("nodeId"), entry.get("jobId")
+                mtime = _parse_api_timestamp(entry.get("mtimeUtc"))
+                if not isinstance(node_id, str) or len(node_id) < 8 or mtime is None:
+                    continue
+                best: tuple[float, str] | None = None
+                for row in self._conn.execute(
+                    "SELECT key, accepted_utc FROM tasks WHERE node8 = ? AND seat IS ? AND source_row = 'local'",
+                    (node_id[:8], self._seat),
+                ).fetchall():
+                    accepted = parse_ts(row["accepted_utc"])
+                    if accepted is None:
+                        continue
+                    delta = abs(mtime - accepted)
+                    if delta <= WORK_DIR_JOIN_S and (best is None or delta < best[0]):
+                        best = (delta, row["key"])
+                if best is None:
+                    continue
+                abnormal = entry.get("abnormal")
+                self._conn.execute(
+                    "UPDATE tasks SET work_dir_abnormal = ?, node_id = COALESCE(node_id, ?), job_id = COALESCE(job_id, ?), "
+                    "updated_utc = ? WHERE key = ?",
+                    (int(abnormal) if isinstance(abnormal, bool) else None, node_id,
+                     job_id if isinstance(job_id, str) else None, _iso(self._now()), best[1]),
+                )
+                joined += 1
+        return joined
+
+    def attach_reason(self, job_id: str, *, reason: str, failure_class: str | None, source: str,
+                      at: str | None = None) -> int:
+        """Set the failure reason (enum word only, never a summary) on this seat's failed rows of ``job_id``."""
+        rows = self._conn.execute(
+            "SELECT key, stored_utc FROM tasks WHERE job_id = ? AND seat IS ? AND outcome = 'failed'", (job_id, self._seat)
+        ).fetchall()
+        if not rows:
+            return 0
+        at_epoch = _parse_api_timestamp(at)
+        if at_epoch is not None and len(rows) > 1:
+            rows = sorted(rows, key=lambda r: abs((parse_ts(r["stored_utc"] or "") or 0.0) - at_epoch))[:1]
+        with self._conn:
+            for row in rows:
+                self._conn.execute(
+                    "UPDATE tasks SET failure_reason = ?, failure_class = ?, source_reason = ?, updated_utc = ? WHERE key = ?",
+                    (redact(reason), redact(failure_class) if failure_class else None, source, _iso(self._now()), row["key"]),
+                )
+        return len(rows)
+
+    def failed_rows_needing_reason(self, *, older_than_utc: str, limit: int = REASONS_PER_CYCLE) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM tasks WHERE outcome = 'failed' AND failure_reason IS NULL AND job_id IS NOT NULL "
+            "AND stored_utc IS NOT NULL AND stored_utc < ? ORDER BY stored_utc DESC LIMIT ?",
+            (older_than_utc, limit),
+        ).fetchall()
+        return [self._to_row_dict(r) for r in rows]
+
+    def seed_api_rows(self, work: list[dict], *, seat: int) -> int:
+        """History rows from ``/seats/<id>?work=1000``: ``source_row='api'``; never overwrites a local row."""
+        inserted = 0
+        with self._conn:
+            for item in work:
+                if not isinstance(item, dict):
+                    continue
+                full_hash = item.get("submissionHash")
+                if not isinstance(full_hash, str) or len(full_hash) < 12:
+                    continue
+                hash12 = full_hash[:12]
+                if self._conn.execute("SELECT 1 FROM tasks WHERE hash12 = ? AND seat IS ?", (hash12, seat)).fetchone():
+                    continue
+                submitted_at = item.get("submittedAt") if isinstance(item.get("submittedAt"), str) else None
+                if submitted_at is None:
+                    continue
+                status = item.get("status")
+                outcome = status if status in ("accepted", "rejected", "failed", "pending") else "unknown"
+                key = task_key(seat, hash12[:8], submitted_at)
+                accepted_at_api = item.get("acceptedAt") if isinstance(item.get("acceptedAt"), str) else None
+                lag = None
+                if outcome == "accepted":
+                    s, v = _parse_api_timestamp(submitted_at), _parse_api_timestamp(accepted_at_api)
+                    if s is not None and v is not None:
+                        lag = int(v - s)
+                cur = self._conn.execute(
+                    "INSERT OR IGNORE INTO tasks(key, seat, node8, job_id, role, kind, accepted_utc, submitted_utc, "
+                    "stored_utc, hash12, outcome, outcome_as_of_utc, accepted_at_api, verdict_lag_s, node_key, objective, "
+                    "source_row, source_outcome, source_reason, phases_json, updated_utc) "
+                    "VALUES (?, ?, ?, ?, ?, 'code', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'api', 'api', 'none', '[]', ?)",
+                    (key, seat, hash12[:8], item.get("jobId") if isinstance(item.get("jobId"), str) else None,
+                     redact(item.get("role")) if isinstance(item.get("role"), str) else None,
+                     submitted_at, submitted_at, submitted_at, hash12, outcome, _iso(self._now()), accepted_at_api, lag,
+                     redact(item.get("nodeKey")) if isinstance(item.get("nodeKey"), str) else None,
+                     redact_agent_sentence(item.get("objective")) if isinstance(item.get("objective"), str) else None,
+                     _iso(self._now())),
+                )
+                if cur.rowcount == 1:
+                    inserted += 1
+        return inserted
+
+
 __all__ = [
     "LEDGER_FILE", "LEDGER_SCHEMA_VERSION", "LEDGER_BUSY_TIMEOUT_MS", "PRE_AGENT_FAILURE_S", "RESEARCH_JOIN_S",
     "IDLE_WINDOW_S", "CONNECTION_WINDOW_S", "REASONS_PER_CYCLE", "TRANSCRIPT_RETENTION_DAYS", "WORK_DIR_JOIN_S",
