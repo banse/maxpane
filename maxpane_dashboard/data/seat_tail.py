@@ -517,7 +517,118 @@ def journald_factory(
     return make
 
 
+class DockerLogsSource:
+    """``docker logs -f --tail 200 --timestamps <container>`` plus an untrusted ``--since`` backfill.
+
+    The follower argv is the ONLY docker read form trusted for "latest" (spec §5.1 Mac
+    transport); ``--since`` is never the follower. ``backfill()`` runs the one-shot
+    ``docker logs --since <watermark> --timestamps`` under ``run(timeout=backfill_timeout_s)``
+    and returns its lines with ``trusted=False``; the caller decides with ``backfill_is_stale``.
+    ``None`` means no backfill body (no watermark, timeout, non-zero exit or OSError).
+    """
+
+    kind = KIND_DOCKER
+
+    def __init__(
+        self,
+        container: str = CONTAINER_DEFAULT,
+        *,
+        watermark_ts: str | None = None,
+        popen: Callable[..., Any] = subprocess.Popen,
+        run: Runner = subprocess.run,
+        backfill_timeout_s: float = DOCKER_BACKFILL_TIMEOUT_S,
+        stop_timeout_s: float = 5.0,
+    ) -> None:
+        self._container = container
+        self._watermark_ts = watermark_ts
+        self._popen = popen
+        self._run = run
+        self._backfill_timeout_s = backfill_timeout_s
+        self._stop_timeout_s = stop_timeout_s
+        self._proc: Any = None
+
+    def follower_argv(self) -> list[str]:
+        return ["docker", "logs", "-f", "--tail", str(DOCKER_TAIL_LINES), "--timestamps", self._container]
+
+    def backfill_argv(self) -> list[str]:
+        since = self._watermark_ts or DOCKER_FIRST_RUN_SINCE
+        return ["docker", "logs", "--since", since, "--timestamps", self._container]
+
+    def open(self) -> None:
+        argv = self.follower_argv()
+        self._proc = self._popen(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0
+        )
+
+    def lines(self) -> Iterator[RawLine | None]:
+        if self._proc is None:
+            return
+        for line in _iter_pipe_lines(self._proc, tick_s=ALIVE_STAMP_S):
+            if line is None:
+                yield None
+                continue
+            _, text = split_docker_prefix(line)
+            yield RawLine(text=text)
+        try:
+            self._proc.wait(self._stop_timeout_s)
+        except subprocess.TimeoutExpired:
+            pass
+
+    def exit_code(self) -> int | None:
+        return None if self._proc is None else self._proc.poll()
+
+    def close(self) -> None:
+        if self._proc is not None:
+            _stop_process(self._proc, self._stop_timeout_s)
+
+    def backfill(self) -> list[RawLine] | None:
+        argv = self.backfill_argv()
+        try:
+            completed = self._run(
+                argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=self._backfill_timeout_s,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            logger.warning("docker logs --since backfill failed: %s", exc)
+            return None
+        if completed.returncode != 0:
+            logger.warning("docker logs --since backfill exited rc=%s", completed.returncode)
+            return None
+        body = completed.stdout or b""
+        if isinstance(body, bytes):
+            body = body.decode("utf-8", "replace")
+        out: list[RawLine] = []
+        for line in body.splitlines():
+            if not line:
+                continue
+            _, text = split_docker_prefix(line)
+            out.append(RawLine(text=text, trusted=False))
+        return out
+
+
+def docker_factory(
+    container: str = CONTAINER_DEFAULT,
+    *,
+    popen: Callable[..., Any] = subprocess.Popen,
+    run: Runner = subprocess.run,
+    backfill_timeout_s: float = DOCKER_BACKFILL_TIMEOUT_S,
+    stop_timeout_s: float = 5.0,
+) -> Callable[["TailState"], DockerLogsSource]:
+    """The ``source_factory`` for the Mac: the trusted follower plus the untrusted backfill."""
+
+    def make(state: TailState) -> DockerLogsSource:
+        return DockerLogsSource(
+            container, watermark_ts=state.watermark_ts, popen=popen, run=run,
+            backfill_timeout_s=backfill_timeout_s, stop_timeout_s=stop_timeout_s,
+        )
+
+    return make
+
+
 __all__ = [
+    'DockerLogsSource',
+    'docker_factory',
+
     'JournaldSource',
     'journald_factory',
 

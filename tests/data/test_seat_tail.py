@@ -24,6 +24,9 @@ import pytest
 from maxpane_dashboard.analytics.seat_redact import redact
 from maxpane_dashboard.data import seat_tail
 from maxpane_dashboard.data.seat_tail import (
+    DockerLogsSource,
+    docker_factory,
+
     JournaldSource,
     journald_factory,
 
@@ -391,3 +394,61 @@ def test_journald_factory_picks_cursor_then_since_fallback_then_first_run():
     assert make(TailState(cursor=None, last_ts_utc="2026-09-24T04:12:00.000Z")).argv()[-2:] == \
         ["--since", "2026-09-24 04:12:00 UTC"]
     assert make(TailState()).argv()[-2:] == ["--since", "-14d"]
+
+# =============================================================================
+# Task 3.5 -- DockerLogsSource
+# =============================================================================
+
+
+def test_docker_follower_argv_is_only_the_trusted_form():
+    # spec §5.1 Mac transport / §9 Docker equivalent: `-f --tail 200 --timestamps` is the ONLY trusted read;
+    # `--since` is never the follower. Mutation: --tail != 200, or a --since follower -> this reddens.
+    popen = ScriptedPopen([b""])
+    src = DockerLogsSource("imd-worker", watermark_ts="2026-09-26T03:40:07.120Z", popen=popen)
+    assert src.follower_argv() == ["docker", "logs", "-f", "--tail", "200", "--timestamps", "imd-worker"]
+    src.open()
+    argv, kw = popen.calls[0]
+    assert argv == ["docker", "logs", "-f", "--tail", str(DOCKER_TAIL_LINES), "--timestamps", "imd-worker"]
+    assert "--since" not in argv and argv.count("--tail") == 1 and argv[argv.index("--tail") + 1] == "200"
+    assert "shell" not in kw
+    assert src.kind == KIND_DOCKER
+
+
+def test_docker_follower_strips_the_timestamps_prefix_and_keeps_unstamped_lines():
+    body = ("2026-09-26T03:40:07.123456789Z " + HB1 + "\n" + "2026-09-26T03:40:09.5Z " + NPM + "\n").encode()
+    src = DockerLogsSource(popen=ScriptedPopen([body]))
+    src.open()
+    got = [r for r in src.lines() if r is not None]
+    assert [r.text for r in got] == [HB1, NPM]
+    assert all(r.trusted and r.cursor is None for r in got)
+
+
+def test_docker_backfill_runs_since_watermark_with_timeout_and_is_untrusted():
+    # spec §5.1 Mac transport: one-shot `docker logs --since <watermark> --timestamps`, 25 s timeout, untrusted
+    run = ScriptedRun(stdout=_fixture_bytes("docker_stale_segment.log"))
+    src = DockerLogsSource("imd-worker", watermark_ts="2026-09-20T12:59:40.000Z", run=run)
+    body = src.backfill()
+    argv, kw = run.calls[0]
+    assert argv == ["docker", "logs", "--since", "2026-09-20T12:59:40.000Z", "--timestamps", "imd-worker"]
+    assert kw["timeout"] == DOCKER_BACKFILL_TIMEOUT_S == 25 and "shell" not in kw
+    assert body is not None and len(body) == 6
+    assert body[0].text.startswith("2026-09-20T09:58:12.301Z alive") and all(not r.trusted for r in body)
+    assert max(daemon_stamp(r.text) for r in body) == "2026-09-20T10:04:41.220Z"
+
+
+def test_docker_backfill_first_run_uses_the_14_day_window_and_failures_yield_none():
+    assert DockerLogsSource().backfill_argv() == ["docker", "logs", "--since", DOCKER_FIRST_RUN_SINCE, "--timestamps", "imd-worker"]
+    timeout = ScriptedRun(raise_exc=subprocess.TimeoutExpired("docker", 25))
+    assert DockerLogsSource(run=timeout).backfill() is None
+    missing = ScriptedRun(raise_exc=FileNotFoundError("docker"))
+    assert DockerLogsSource(run=missing).backfill() is None
+    failed = ScriptedRun(stdout=b"Error response from daemon: No such container\n", rc=1)
+    assert DockerLogsSource(run=failed).backfill() is None
+
+
+def test_docker_factory_passes_the_persisted_watermark_to_the_backfill():
+    run = ScriptedRun(stdout=b"")
+    make = docker_factory("imd-worker", popen=ScriptedPopen([b""]), run=run)
+    src = make(TailState(kind=KIND_DOCKER, watermark_ts="2026-09-26T03:40:07.120Z"))
+    src.backfill()
+    assert run.calls[0][0][3] == "2026-09-26T03:40:07.120Z"

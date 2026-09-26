@@ -337,6 +337,20 @@
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
       "notes": "record 1 is systemd's own `Started` line (PID 1, UNIT= and INVOCATION_ID= without underscore, no _SYSTEMD_INVOCATION_ID); records 2-9 are one daemon invocation a1b2c3d4…; cursors and ids are obviously synthetic 32-hex"
+    },
+    "grammar/docker_stale_segment.log": {
+      "origin": "synthetic: a `docker logs --since <watermark> --timestamps imd-worker` body of the kind seen on 2026-09-20 after a Docker Desktop restart, when --tail 400 / --since / no-tail all returned the PREVIOUS segment 3 h stale with no error (collectors §1.3; _worker_page.py:298-305; fill8 §3)",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "d43b24b8e3c14613024ff8a73e5a2a444a3e721141488f9f8a97cbe45217da61",
+      "bytes": 716,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+285d1984",
+      "notes": "newest daemon stamp 2026-09-20T10:04:41.220Z; the test's follower starts 2026-09-20T13:05:12.001Z and the persisted watermark is 12:59:40.000Z; Docker prefixes carry 9, 3 and trimmed fractional digits on purpose (Go RFC3339Nano trims zeros)"
     }
   }
 }
