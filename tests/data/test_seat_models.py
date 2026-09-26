@@ -218,3 +218,54 @@ def test_validate_refuses_over_2mib():
     assert refusal is not None and refusal.code == "too_large" and refusal.detail.endswith(" B > 2 MiB")
     # size is checked before the schema: an oversize v1 document is too_large, not wrong_schema
     assert sm.validate_status_document({"schemaVersion": 1}, raw_bytes=sm.MAX_DOCUMENT_BYTES + 1).code == "too_large"
+
+
+# ---------------------------------------------------------------------------
+# Task 1.8 — SEAT_KEYS, SEAT_ROW_KEYS, SEAT_BLOCK_KEYS, SEAT_FIELD_SOURCES, SEAT_WIDGET_SIGNATURES
+# ---------------------------------------------------------------------------
+
+
+def test_seat_keys_are_unique_and_prefixed():
+    assert len(sm.SEAT_KEYS) == len(set(sm.SEAT_KEYS))
+    status_bar = {"last_updated_seconds_ago", "error_count", "poll_interval"}
+    assert status_bar <= set(sm.SEAT_KEYS)
+    assert all(key.startswith("seat_") for key in sm.SEAT_KEYS if key not in status_bar)
+    assert sm.SEAT_KEYS[-3:] == ("last_updated_seconds_ago", "error_count", "poll_interval")
+
+
+def test_every_widget_signature_key_is_a_seat_key():
+    # contract C.4: every name in every signature is in SEAT_KEYS (the PANELS adapters are keys(*signature))
+    assert set(sm.SEAT_WIDGET_SIGNATURES) == {
+        "SeatHero", "SeatNow", "SeatLedgerTable", "SeatLog", "SeatConfig", "SeatCost", "SeatMachine",
+    }
+    keys = set(sm.SEAT_KEYS)
+    for widget, signature in sm.SEAT_WIDGET_SIGNATURES.items():
+        assert len(signature) == len(set(signature)), f"{widget} repeats a key"
+        missing = [name for name in signature if name not in keys]
+        assert not missing, f"{widget} names keys outside SEAT_KEYS: {missing}"
+
+
+def test_every_row_and_block_key_is_a_seat_key():
+    keys = set(sm.SEAT_KEYS)
+    assert set(sm.SEAT_ROW_KEYS) <= keys
+    assert set(sm.SEAT_BLOCK_KEYS) <= keys
+    assert set(sm.SEAT_ROW_FIELD_SOURCES) <= set(sm.SEAT_ROW_KEYS)
+    for list_key, fields in sm.SEAT_ROW_FIELD_SOURCES.items():
+        assert set(fields) <= set(sm.SEAT_ROW_KEYS[list_key])
+        assert set(fields.values()) <= set(sm.SOURCE_NAMES)
+    for name, columns in sm.SEAT_ROW_KEYS.items():
+        assert len(columns) == len(set(columns)), name
+
+
+def test_field_sources_cover_every_seat_key_exactly():
+    # spec §7: sources are mapped per field -- every key has a decision, none is invented
+    assert set(sm.SEAT_FIELD_SOURCES) == set(sm.SEAT_KEYS)
+    assert set(sm.SEAT_FIELD_SOURCES.values()) <= set(sm.SOURCE_NAMES) | {None}
+    assert sm.SEAT_FIELD_SOURCES["seat_unit_memory_current_b"] == "unit"
+    assert sm.SEAT_FIELD_SOURCES["seat_daemon_state"] == "tail"
+    assert sm.SEAT_FIELD_SOURCES["seat_standing_attempts"] == "seatWork"      # lifetime counters: /seats/<id>?work=
+    assert sm.SEAT_FIELD_SOURCES["seat_standing_running"] == "standing"
+    # spec §7: tokenId C(status) -> K, agentId A(enrollment.agentId) -> K -- the fallback lives in the value, never gated
+    assert sm.SEAT_FIELD_SOURCES["seat_agent_id"] is None and sm.SEAT_FIELD_SOURCES["seat_token_id"] is None
+    assert sm.SEAT_FIELD_SOURCES["seat_control_gate"] == "broker"
+    assert sm.SEAT_FIELD_SOURCES["poll_interval"] is None
