@@ -9,13 +9,17 @@ deletes ``PEPEPANE_*`` before every test.
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import tomllib
 from pathlib import Path
 
 import pytest
 
+pytest_plugins = ["pytester"]
+
 REPO = Path(__file__).resolve().parent.parent
 PYPROJECT = REPO / "pyproject.toml"
+CONFTEST = REPO / "tests" / "conftest.py"
 
 #: Spec §12.1 "Pins" / contract §A.3: the exact versions the PEPEPANE layout was measured on.
 SEAT_PINS = {"textual": "8.2.8", "rich": "15.0.0", "httpx": "0.28.1", "pydantic": "2.13.5"}
@@ -65,3 +69,23 @@ def test_the_repo_venv_carries_the_seat_pins():
     suite runs in must be the pinned one, or a green layout sweep proves nothing."""
     installed = {name: importlib.metadata.version(name) for name in SEAT_PINS}
     assert installed == SEAT_PINS
+
+
+def test_pepepane_env_is_deleted_before_every_test(pytester, monkeypatch):
+    """Spec §14 Rules / contract §A.3: ``tests/conftest.py`` deletes every ``PEPEPANE_*``
+    variable through an autouse fixture. Run the real conftest in an isolated session
+    with two variables set; the inner test must see none. Mutation: remove
+    ``_no_pepepane_env`` from ``tests/conftest.py`` -> the inner run fails -> red."""
+    monkeypatch.setenv("PEPEPANE_HOST", "docker")
+    monkeypatch.setenv("PEPEPANE_BROKER", "/run/imd-dash/broker.sock")
+    pytester.makeconftest(CONFTEST.read_text(encoding="utf-8"))
+    pytester.makepyfile(test_inner="""
+        import os
+
+        def test_no_pepepane_variable_reaches_a_test():
+            assert [k for k in os.environ if k.startswith("PEPEPANE_")] == []
+    """)
+    result = pytester.runpytest("-p", "no:cacheprovider", "-q")
+    result.assert_outcomes(passed=1)
+    # The outer session's variables are untouched: the fixture deletes per test and restores.
+    assert os.environ["PEPEPANE_HOST"] == "docker"

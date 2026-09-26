@@ -31,3 +31,18 @@ def _forbid_real_browser(monkeypatch):
         raise AssertionError(f"a test reached the real browser: {url!r}")
 
     monkeypatch.setattr("webbrowser.open", _refuse)
+
+
+@pytest.fixture(autouse=True)
+def _no_pepepane_env(monkeypatch):
+    """No test inherits a ``PEPEPANE_*`` variable from the developer's shell (spec §14 Rules).
+
+    ``seat_cli`` reads ``PEPEPANE_HOST`` / ``_UNIT`` / ``_CONTAINER`` / ``_BROKER`` /
+    ``_SEAT`` / ``_AGENT`` / ``_OFFLINE`` / ``_CONFIG`` as configuration; a suite that saw
+    the operator's real broker socket or seat would test the wrong machine. Every CLI
+    test also passes ``env={}`` explicitly (contract §E); this fixture is the belt.
+    """
+    import os  # local: tests/conftest.py is append-only at its end (contract §A.3)
+
+    for name in [key for key in os.environ if key.startswith("PEPEPANE_")]:
+        monkeypatch.delenv(name, raising=False)
