@@ -44,7 +44,7 @@ _SHIMS = [
 
 #: The hoisted shared modules: none may import back into ``widgets/surf/``
 #: (spec §15: "otherwise the hoisted shared module would import back into widgets/surf/").
-_SHARED = ["swarm_table.py", "seat_words.py"]
+_SHARED = ["swarm_table.py", "seat_words.py", "fmt.py"]
 
 def _imports(path: Path) -> list[tuple[str, str]]:
     """``(module, name)`` for every import statement in *path*; ``("x", "*")`` for a star."""
@@ -129,3 +129,50 @@ def test_seat_words_docstring_says_shared():
     assert seat_words.seat_token(420) == 420 and seat_words.seat_token(True) is None
     assert seat_words.count(1490) == "1,490" and seat_words.count(-1) is None
     assert seat_words.seat_state_line("ok") is None
+
+
+# -- move 3: the two formatters -----------------------------------------------
+
+
+def test_fmt_owns_mmdd_hhmm_and_short_model():
+    """Contract §C.1: both bodies moved verbatim into ``widgets/fmt.py`` and joined ``__all__``."""
+    assert "mmdd_hhmm" in fmt.__all__ and "short_model" in fmt.__all__
+    assert fmt.mmdd_hhmm(0) == "??-?? ??:??"
+    assert fmt.mmdd_hhmm(None) == "??-?? ??:??"
+    stamp = 1_790_000_000
+    assert fmt.mmdd_hhmm(stamp) == f"{fmt.mmdd(stamp)} {fmt.hhmm(stamp)}"
+    assert re.fullmatch(r"\d\d-\d\d \d\d:\d\d", fmt.mmdd_hhmm(stamp))
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("claude-sonnet-5", "sonnet 5"), ("claude-opus-5-5", "opus 5.5"), ("claude-fable-5-1", "fable 5.1"),
+    ("gpt-6-luna", "luna 6"), ("gpt-5.6-terra", "terra 5.6"), ("gpt-5.5", "gpt-5.5"),
+    ("[/x]", None), (None, None), ("", None), ("claude-opus-5-5\n", "opus 5.5"),
+    ("claude-opus-5-5-extra", "claude-opus-5-5-extra"),
+])
+def test_short_model_exact_cleaned_patterns_from_the_shared_home(raw, expected):
+    """The surf cases of ``test_surf_swarm_seat_record.py::test_short_model_exact_cleaned_patterns``,
+    asserted against ``widgets.fmt`` so the move changed no rendering."""
+    assert fmt.short_model(raw) == expected
+
+
+def test_surf_fmt_reexports_the_moved_formatters():
+    """Contract §A.1: ``_fmt.py`` re-exports both (same objects), keeps them in its ``__all__``
+    and no longer declares either. Mutation: paste ``short_model`` back into ``_fmt.py`` -> red."""
+    assert surf_fmt.mmdd_hhmm is fmt.mmdd_hhmm
+    assert surf_fmt.short_model is fmt.short_model
+    assert "mmdd_hhmm" in surf_fmt.__all__ and "short_model" in surf_fmt.__all__
+    declared = _declared(Path(surf_fmt.__file__))
+    assert "mmdd_hhmm" not in declared and "short_model" not in declared
+    imports = _imports(Path(surf_fmt.__file__))
+    assert ("maxpane_dashboard.widgets.fmt", "mmdd_hhmm") in imports
+    assert ("maxpane_dashboard.widgets.fmt", "short_model") in imports
+
+
+def test_record_detail_and_submission_detail_still_import_through_the_shim():
+    """``screens/record_detail.py:12`` and ``screens/submission_detail.py:9`` are never edited
+    (contract §A.4); they must keep resolving through ``widgets/surf/_fmt.py``."""
+    from maxpane_dashboard.screens import record_detail, submission_detail
+
+    assert record_detail.mmdd_hhmm is fmt.mmdd_hhmm
+    assert submission_detail.short_model is fmt.short_model

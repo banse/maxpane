@@ -7,7 +7,8 @@ Pure functions, no I/O, no Textual imports, nothing raises.
 
 Since 2026-09-20 (``docs/refactor_programme_2026_09.md`` Branch 3 WP-B) the
 dashboard-agnostic names -- ``DASH``, ``EMDASH``, ``as_float``, ``fmt_age``,
-``hhmm``, ``mmdd`` -- are defined once in ``widgets/fmt.py`` and re-exported
+``hhmm``, ``mmdd``, and since 2026-09-26 ``mmdd_hhmm`` and ``short_model`` (pepepane
+hoist) -- are defined once in ``widgets/fmt.py`` and re-exported
 here so the surf widgets' imports did not move.  What this module still
 defines is the surf-only set: ``fmt_imd``, ``fmt_price``, ``fmt_liquidity``
 and :data:`ANTI_POISONING_COLS`.
@@ -28,11 +29,18 @@ number that module is handed.
 
 from __future__ import annotations
 
-import re
-from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags
-
 from maxpane_dashboard.widgets.explorer import ETHEREUM, IMD, SITES
-from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_float, hhmm, mmdd
+from maxpane_dashboard.widgets.fmt import (
+    DASH,
+    EMDASH,
+    as_float,
+    fmt_age,
+    fmt_float,
+    hhmm,
+    mmdd,
+    mmdd_hhmm,
+    short_model,
+)
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
 __all__ = [
@@ -151,13 +159,8 @@ def fmt_liquidity(value) -> str:
 ANTI_POISONING_COLS = 17
 
 
-def mmdd_hhmm(value) -> str:
-    """Local month/day and time, keeping accepted work distinct across midnight."""
-    return f"{mmdd(value)} {hhmm(value)}"
-
-
 def fmt_win_rate(rate: float) -> str:
-    """A lifetime attempts rate, shared by the AGENT hero and SEAT."""
+    """A lifetime attempts rate, shared by the AGENT hero and PEPEPANE."""
     return f"{fmt_float(rate * 100, '.1f')} %"
 
 
@@ -166,16 +169,3 @@ def source_clock(value) -> str:
     import re
     return value if isinstance(value, str) and re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', value) else 'unavailable'
 
-
-def short_model(raw: object) -> str | None:
-    """Shorten only whole cleaned model ids; callers own clipping and escaping."""
-    text = strip_tags(flatten(raw))
-    if not text:
-        return None
-    if match := re.fullmatch(r"claude-([a-z]+)-(\d+)(?:-(\d+))?", text):
-        family, major, minor = match.groups()
-        return f"{family} {major}" + (f".{minor}" if minor is not None else "")
-    if match := re.fullmatch(r"gpt-(\d+(?:\.\d+)?)-([a-z]+)", text):
-        version, name = match.groups()
-        return f"{name} {version}"
-    return text

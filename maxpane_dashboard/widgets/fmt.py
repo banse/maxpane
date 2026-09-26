@@ -38,11 +38,22 @@ markup-safe text; the calling widget passes the result through
 or a ``DataTable`` cell.  Escaping in both places would double-escape and
 print a literal ``\\[`` to the user, so this module deliberately does not
 import ``safe_markup`` at all.
+
+Hoisted on 2026-09-26 (pepepane): :func:`mmdd_hhmm` and :func:`short_model`
+moved here verbatim from ``widgets/surf/_fmt.py`` (which re-exports them) because
+the PEPEPANE dashboard needs both and a ``widgets/seat/`` module importing from
+``widgets/surf/`` is the cross-package import rules/widgets.md hoists.
+``short_model`` is the one function here that cleans a third-party string (a
+model id) through ``markup_safety.strip_tags``/``flatten`` before matching it;
+that is stripping, not escaping -- ``safe_markup`` is still not imported.
 """
 
 from __future__ import annotations
 
+import re
 import time
+
+from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags
 
 __all__ = [
     "DASH",
@@ -57,7 +68,9 @@ __all__ = [
     "fmt_points",
     "hhmm",
     "mmdd",
+    "mmdd_hhmm",
     "safe_get",
+    "short_model",
 ]
 
 #: Unknown scalar.  Two columns, so a dashed cell never re-flows a table.
@@ -262,3 +275,22 @@ def mmdd(timestamp, unknown: str = "??-??") -> str:
         return f"{t.tm_mon:02d}-{t.tm_mday:02d}"
     except (TypeError, ValueError, OSError, OverflowError):
         return unknown
+
+
+def mmdd_hhmm(value) -> str:
+    """Local month/day and time, keeping accepted work distinct across midnight."""
+    return f"{mmdd(value)} {hhmm(value)}"
+
+
+def short_model(raw: object) -> str | None:
+    """Shorten only whole cleaned model ids; callers own clipping and escaping."""
+    text = strip_tags(flatten(raw))
+    if not text:
+        return None
+    if match := re.fullmatch(r"claude-([a-z]+)-(\d+)(?:-(\d+))?", text):
+        family, major, minor = match.groups()
+        return f"{family} {major}" + (f".{minor}" if minor is not None else "")
+    if match := re.fullmatch(r"gpt-(\d+(?:\.\d+)?)-([a-z]+)", text):
+        version, name = match.groups()
+        return f"{name} {version}"
+    return text

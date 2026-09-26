@@ -41,7 +41,7 @@ def test_the_export_list_is_exactly_the_public_surface():
     assert set(fmt.__all__) == {
         "DASH", "EMDASH", "as_float", "fmt_age", "fmt_countdown", "fmt_eth",
         "fmt_float", "fmt_int", "fmt_pct", "fmt_points", "hhmm", "mmdd",
-        "safe_get",
+        "mmdd_hhmm", "safe_get", "short_model",
     }
     for name in fmt.__all__:
         assert hasattr(fmt, name), name
@@ -242,9 +242,13 @@ def test_safe_get_reads_a_dict_including_a_stored_none():
 
 def test_fmt_is_pure_enough_for_a_widget_to_import():
     """It sits under ``widgets/``, so it may reach neither I/O nor ``data/``
-    nor ``analytics/`` nor Textual.  ``time`` is the one allowed extra --
+    nor ``analytics/`` nor Textual.  ``time`` is an allowed extra --
     ``hhmm`` / ``mmdd`` render a caller-supplied timestamp -- and the next
-    test proves the clock itself is never read.
+    test proves the clock itself is never read.  Since the pepepane hoist
+    (2026-09-26) ``re`` and ``widgets.markup_safety`` are allowed too:
+    ``short_model`` cleans a model id through ``strip_tags``/``flatten``
+    before matching it -- stripping, not escaping; ``safe_markup`` is still
+    not imported.
     """
     path = Path(fmt.__file__)
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -254,7 +258,7 @@ def test_fmt_is_pure_enough_for_a_widget_to_import():
             imported.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
-    allowed = {"__future__", "time"}
+    allowed = {"__future__", "time", "re", "maxpane_dashboard.widgets.markup_safety"}
     assert imported <= allowed, f"`fmt` reaches {sorted(imported - allowed)}"
 
 
