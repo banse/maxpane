@@ -255,3 +255,97 @@ asserts a withdrawn statement is historical — do not review code against it.
 - **Standing** — `__version__` comes from installed distribution metadata; an editable install
   writes it once, so re-run `pip install -e .` after a version bump. This venv reported `0.3.2`
   for three months and four releases before that was understood.
+- **2026-09-26 (pepepane)** — The entries below belong to the `pepepane` fork branch and are
+  appended at the end of this file rather than at its top, breaking newest-first once, so that
+  `git merge main` from upstream never conflicts here (spec §1 #7; §15 "Shared surfaces" — append-only,
+  at the file's end).
+- **2026-09-26 — PEPEPANE-CTRL** — MaxPane's read-only charter is relaxed for `pepepane` only: the control
+  verbs (restart, drain-restart, stop, start, enable/disable at boot, skills set, kill-orphans, doctor)
+  exist as broker verbs behind plan → apply → verify with one audit line per phase; the TUI process
+  stays read-only and never gains a write path of its own (spec §11, §16 #1). The charter relaxation
+  itself (§16 #1) was approved by the owner on 2026-09-26, the same day the branch and the console
+  script were named `pepepane`; the verb list above is the §16 #3 default (and `doctor` the §16 #14
+  default), both accepted by the owner on 2026-09-26 together with the other §16 defaults.
+- **2026-09-26** — No six-surface registration for PEPEPANE: the lean `pepepane` entrypoint is the product on
+  both hosts. `app.py`, `__main__.py`, `screens/game_select.py`, the four `MANAGER_ATTRS` copies and
+  `ALL_GAMES` are untouched, so they stay correct by construction (spec §15, §16 #10).
+- **2026-09-26** — `subprocess` and `socket` are allowed in `data/seat_tail.py` and
+  `data/seat_broker_client.py` only, behind seams with timeouts: every `subprocess.run` passes `timeout=`
+  and a list argv, every follower has a documented stop timeout (spec §14 Rules, §15).
+- **2026-09-26** — The daemon-log tail is drained on the poll tick inside `SeatManager.fetch_and_compute()`,
+  not by a screen timer or a Textual worker, which never starts the tail. Outside `data/seat_manager.py` and its
+  tests, `start_tail()` is called only by `seat_cli.py`, and only when not `--once`. Under `--once`,
+  `SeatManager.backfill()` calls it itself: it starts the follower, drains after `BACKFILL_QUIET_S` of quiet
+  (cap `BACKFILL_MAX_S`) and stops it before returning, so `--once` leaves no follower. This deviates from
+  spec §4.3 "(no thread)" (header owner note 7) (spec §4.3, §9, §15).
+- **2026-09-26** — docker subprocesses on the Mac exist only as one long-lived `docker logs -f --tail 200
+  --timestamps` follower and on a 30 s tier with 25 s timeouts on bare docker calls (a wrapped `docker exec` gets
+  the host belt of WP6's bullet below) plus a 5-min breaker per verb, overriding
+  the blanket ban in the untracked `docs/seat_PRD.md` §3 (spec §4.2, §12.2, §15).
+- **2026-09-26** — PEPEPANE's hero row: QUOTA moved to COST, WORK merged into LIVE, GATE and TODAY added — the
+  six boxes are `SEAT · LIVE · TODAY · VERDICTS · GATE · UNIT` (spec §8, §15).
+- **2026-09-26** — textual pinned to 8.2.8 (with `rich==15.0.0`, `httpx==0.28.1`, `pydantic==2.13.5`) in the
+  `seat` optional-dependency group and `deploy/vps/requirements.lock`; `tests/screens/test_surf_swarm_layout.py`
+  measured 545/545 on 8.2.8 after the hoist below, and the sweep is re-run on every Textual bump
+  (spec §12.1, §15; fill7 §5).
+- **2026-09-26** — Seat per-day series live in `seat_ledger.sqlite`'s `days` table (one store for rows and
+  rollups); `SeriesCache` is JSON-only and would duplicate the ledger — a recorded exception to
+  rules/data.md "Series caches subclass `data/series_cache.SeriesCache`", which stays true for every other
+  dashboard (spec §5.6, §15).
+- **2026-09-26** — Seat CSS lives only in `SeatScreen.DEFAULT_CSS` (ids `#seat-*`); `SeatApp` loads the shared
+  `themes/minimal.tcss` for theme and base-widget rules but nothing seat-specific is appended to that
+  sheet — the DEFAULT_CSS/tcss agreement rule assumes one app loading one sheet, which does not describe
+  two entrypoints; the agreement test is replaced by `SeatApp.CSS_PATH == app.CSS_PATH` (spec §8, §14, §15).
+- **2026-09-26** — Runtime-executing broker children (`imd whoami|status|skills|tools|doctor`,
+  `imd skills add|remove`, the session summarisers) run as `systemd-run` transient units
+  `imd-dash-<verb>-<seq>` with the worker unit's posture, never inside the broker's cgroup (spec §4.1b, §15).
+- **2026-09-26** — `apply` returns when the command exits; verification is the separate `verify` read verb;
+  restart success (`shutting down` → `runtimes:` within 30 s → `verified`) and reconnection (`admitted` →
+  `connected`) are reported separately, never as one verdict (spec §11, §15).
+- **2026-09-26** — No currency anywhere in v1, including Claude Code's list-price estimate: no currency marker in any
+  panel, document field, fixture-derived render or code path; `cost-state.totalCostUSD` is never read
+  (spec §10, §15, §16 #11).
+- **2026-09-26** — Hoist (rules/widgets.md: a helper two packages need is hoisted, never re-declared):
+  `widgets/surf/_swarm_table.py` → `widgets/swarm_table.py` (its `DASH` now imported from `widgets/fmt.py`),
+  `widgets/surf/_swarm_seat.py` → `widgets/seat_words.py`, and `mmdd_hhmm` / `short_model` from
+  `widgets/surf/_fmt.py` into `widgets/fmt.py`; re-export shims stay at all three old paths so no
+  `widgets/surf` body or test changed. The three `seat: hoist … (n/3)` commits are the separately
+  upstreamable range the spec calls the hoist commit (spec §15 "Hoist commit").
+- **2026-09-26 (contract decision)** — The broker runs under `python3 -I`, which keeps the script's own
+  directory off `sys.path`; so `imd_dashd/imd_dashd.py`, `gate.py` and `projection.py` begin with
+  `import os, sys; sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))` and import
+  siblings package-qualified (`from imd_dashd import verbs`). The deploy layout is therefore the package
+  directory copied verbatim — `BROKER_DIR = /opt/imd-dash/broker/imd_dashd` — and
+  `ExecStart=/usr/bin/python3 -I /opt/imd-dash/broker/imd_dashd/imd_dashd.py` supersedes the spec's
+  `/opt/imd-dash/broker/imd_dashd.py` spelling (contract §C.11; spec §12.1).
+- **2026-09-26 (contract decision)** — Transient children can see the broker scripts:
+  `TemporaryFileSystem=/opt:ro` + `BindReadOnlyPaths=/opt/imd-worker` would hide `/opt/imd-dash`, so
+  `TRANSIENT_PROPERTIES` adds `-p BindReadOnlyPaths=/opt/imd-dash/broker` (root-owned, read-only,
+  MANIFEST-pinned source, no secret); the summarisers stay self-contained regardless so the Mac stdin
+  path works (contract §C.11, §C.8; spec §4.1b).
+- **2026-09-26 (contract deviation, WP0)** — `tests/fixtures/seat/MANIFEST.json` entries may carry one optional
+  key beyond the contract's eight: `allow`, a list drawn from `control_chars` (only for a `synthetic: true`
+  fixture — the injection sample `grammar/control_chars.txt`) and `sk` (only for a server-masked fragment
+  such as `sk-svcac********`; an unmasked key never passes). Without it the manifest guard would refuse the
+  two fixtures spec §14 requires (contract §D).
+- **2026-09-27 (Codex build)** — The owner brief replaces the plan's original checkout and
+  interpreter setup: build in `/Users/banse/codex/maxpane` from BASE
+  `65908e0c0f8e74f5877a39e1619fcbb0dd4cd688`, with the dedicated Python 3.11 venv
+  `.venv-pepepane`. The BASE full suite precedes all changes; the two earlier pin-upgrade suite
+  runs are replaced by this baseline. The measured hoist neighbourhood is 697 cases and the
+  Surf sweep is 545 cases; those counts govern the branch's gates. BASE's two drag-selection
+  assertion failures in `tests/test_select_to_copy.py` remain unchanged. Tests unset `NO_COLOR`
+  and isolate `HOME`. The owner's latest instruction selects sequential Agency agents without
+  Superpowers workflows or worktrees; the branch stays local and checked out when finished.
+- **2026-09-27 (execution deviation, WP0)** — The hoists use filesystem moves followed by explicit
+  staging because the sandbox permits the approved Git writes but not `git mv`. Editable
+  reinstalls use `--no-index --no-deps --no-build-isolation` with the already installed build
+  tooling. Surf sweep runs use `-n 4 --dist load` to distribute the one file without changing
+  its test scope or assertions; only one pytest invocation runs at a time. The no-currency
+  decision above spells out the marker in words to keep shell-symbol prose out of new text.
+- **2026-09-27 (owner correction, spec §13)** — The owner confirmed the specific-first redaction
+  order: match `sk-ant-` before generic `sk-`, as frozen contract §C.3 and Task 1.2 require.
+  Keep the negative lookahead that protects the already redacted `sk-ant-[redacted]` placeholder.
+  This corrects the spec's listed generic-first order, which would consume an Anthropic key
+  before the specific rule could match. The read-only aidude spec remains unchanged; WP9's
+  adapted `docs/pepepane_PRD.md` reflects this correction.

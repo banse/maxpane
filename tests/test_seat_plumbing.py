@@ -89,3 +89,42 @@ def test_pepepane_env_is_deleted_before_every_test(pytester, monkeypatch):
     result.assert_outcomes(passed=1)
     # The outer session's variables are untouched: the fixture deletes per test and restores.
     assert os.environ["PEPEPANE_HOST"] == "docker"
+
+
+DECISIONS = REPO / "docs" / "decisions.md"
+
+#: One distinctive phrase per dated §15 / contract entry WP0 appends (spec §15 "Shared surfaces").
+SEAT_DECISION_PHRASES = (
+    "**2026-09-26 — PEPEPANE-CTRL**",
+    "No six-surface registration for PEPEPANE",
+    "`subprocess` and `socket` are allowed in `data/seat_tail.py` and",
+    "drained on the poll tick inside `SeatManager.fetch_and_compute()`",
+    "docker subprocesses on the Mac exist only as one long-lived `docker logs -f --tail 200",
+    "QUOTA moved to COST, WORK merged into LIVE, GATE and TODAY added",
+    "textual pinned to 8.2.8",
+    "Seat per-day series live in `seat_ledger.sqlite`'s `days` table",
+    "Seat CSS lives only in `SeatScreen.DEFAULT_CSS`",
+    "run as `systemd-run` transient units",
+    "`apply` returns when the command exits; verification is the separate `verify` read verb",
+    "No currency anywhere in v1",
+    "`widgets/surf/_swarm_table.py` → `widgets/swarm_table.py`",
+    "`BROKER_DIR = /opt/imd-dash/broker/imd_dashd`",
+    "`-p BindReadOnlyPaths=/opt/imd-dash/broker`",
+    "(contract deviation, WP0)",
+    "**2026-09-27 (Codex build)**",
+    "**2026-09-27 (execution deviation, WP0)**",
+    "**2026-09-27 (owner correction, spec §13)**",
+)
+
+
+@pytest.mark.guard
+def test_decisions_record_the_pepepane_entries():
+    """Spec §15 "Shared surfaces": every dated 2026-09-26 decision is in ``docs/decisions.md``,
+    appended after the last upstream entry (append-only, at the file's end). Mutation: delete one
+    entry -> red; move the block to the top -> red."""
+    text = DECISIONS.read_text(encoding="utf-8")
+    anchor = text.index("**2026-09-26 (pepepane)**")
+    assert anchor > text.index("- **Standing**"), "the pepepane block is appended after the upstream entries"
+    for phrase in SEAT_DECISION_PHRASES:
+        assert text.count(phrase) == 1, f"missing or duplicated decision: {phrase}"
+        assert text.index(phrase) > anchor, f"decision outside the pepepane block: {phrase}"
