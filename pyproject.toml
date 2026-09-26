@@ -30,6 +30,7 @@ dependencies = [
 
 [project.scripts]
 maxpane = "maxpane_dashboard.__main__:main"
+pepepane = "maxpane_dashboard.seat_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/banse/maxpane"
@@ -56,4 +57,16 @@ markers = [
     "screen: composites a whole dashboard (everything under tests/screens)",
     "sweep: integer size sweep certifying a layout pin (a boundary set since 2026-09-19)",
     "guard: reads repo source or docs rather than exercising code",
+    "host: opt-in tests that run journalctl/docker on the real host; never in CI",
+]
+
+[project.optional-dependencies]
+# pepepane (2026-09-26): the versions the PEPEPANE layout pins were measured on (spec §12.1;
+# fill7 §5) and the top of the VPS wheel closure; deploy/vps/requirements.lock carries the
+# hashes. The `dependencies` block above is untouched (contract §A.4).
+seat = [
+    "textual==8.2.8",
+    "rich==15.0.0",
+    "httpx==0.28.1",
+    "pydantic==2.13.5",
 ]
