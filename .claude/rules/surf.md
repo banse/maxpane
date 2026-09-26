@@ -182,8 +182,25 @@ and retains nodes for the internal most-active-seat selection after the host's w
 job-data roster. ROSTER and FEEDBACK are retired, along with Enter-on-roster selection,
 `select_seat` and the cursor path. The roster remains an internal fold, not an emitted contract key.
 `GET /seats/{tokenId}` runs on `TIER_SWARM_SEAT`, one seat per cycle. `set_seat` only marks that
-tier due, with no network await in a handler. Its unchanged single-token slot prevents seat A's
-numbers appearing under seat B: `swarm_seat_state` is `"pending"` until B's read lands.
+tier due, with no network await in a handler. `SLOT_SWARM_SEAT` stores
+`{"seats": {"<token>": {"state": "ok"|"unknown_seat", "seat": dict|None, "read_ts": float}}}`.
+Keep six entries, newest `read_ts` first, ties by numeric token ascending. Keys are canonical
+decimal strings. Validate
+entries independently, retaining valid siblings; timestamps use the cache's clock-skew tolerance.
+Legacy `{token, state, seat}` slots migrate using their stored slot timestamp, without a schema
+version bump. Identical seat content keeps its timestamp and does not rewrite the slot.
+Only the selected token's entry supplies its record and `as of HH:MM`; switching seats never
+borrows another seat's numbers. With no entry, the state is `"pending"` before a completed read,
+`"busy"` after a busy response, and None after another failure.
+
+A busy response is HTTP 503 with a JSON object whose `error` is exactly `"busy"`. Rotate through
+the unchanged host pool; only all hosts answering busy yields `SEAT_BUSY`. Mixed failures stay
+None. Busy reads use normal failure backoff and preserve last-good. `swarm_seat_read` distinguishes
+`"busy"`, `"failed"` and None independently of the cached record's state. Empty seat-backed
+panels show yellow `busy · retrying` (COLLAB wraps after `·` at the AGENT pin, within its existing
+body height); with a record, RECORD's title appends yellow `busy` after
+its own `as of HH:MM`. Shed the seat hint first if space is tight. Other read failures add no
+title word. Busy without a record gates the RUNTIME tooltip, just like pending.
 
 SEAT, WORK, ACCEPTED, REVIEWED and RANK keep line 2 of their body blank, as STATUS does (owner,
 2026-09-25); SEAT's blank line carries only a rare selection word (`most active`, `never paired`).
@@ -349,7 +366,10 @@ without exposing the user segment. HTTP(S) URLs remain intact. Parse only the fi
 characters with linear link scanning and bounded fixed-point stripping. Preserve newline
 sentence boundaries before flattening; widgets still sanitize third-party text.
 
-The answer cell distinguishes read, `not read`, `unavailable`, `not served` and `no reply`.
+The answer cell distinguishes read, dim `loading…`, `unavailable`, `not served` and `no reply`.
+Loading promises a scheduled read: only rows inside RECORD's selected window with a canonical
+job UUID and lowercase 64-hex submission hash qualify. An ineligible `not_read` row keeps
+`not read`; malformed identities enriched by the manager are `unavailable`.
 Model/took/tok render only for successful matching reads (`read`/`no_reply`); missing values and
 other read states use `—` for those metadata cells. Failed/queued rows cannot retain stale
 metadata. This model is actual submission usage, independently of worker-advertised models.
@@ -385,7 +405,9 @@ at most two jobs per seat cycle, from rows eligible for SUBMISSION in the select
 not joined, answer state read/no_reply, valid UUID/hash. Off-panel oracle rows qualify.
 Nonterminal results retry after 120 seconds; completed/failed/cancelled are terminal, **blocked
 is not**. Cap at 400 jobs/48 hours with the injected clock. Failed reads are unavailable; absent
-points are not read. Row `job_detail_state` is separate from the original seat `job_state`.
+points have `job_read = "not_read"`. SUBMISSION displays dim `loading…` for these only when
+the row meets the job-detail eligibility above; an ineligible row keeps `not read yet`.
+Row `job_detail_state` is separate from the original seat `job_state`.
 `job_read_ts` retains successful and failed read timestamps; JOB ends in `· as of HH:MM`
 through shared `hhmm` whenever a cached point exists. `not_read` has no marker.
 
@@ -413,7 +435,9 @@ with quorum absent show just the glyph and agreed count. `panel_quorum` comes fr
 no_quorum_in/out show dim green/red `✓ no-q` / `✗ no-q` (closed even if STATE says pending);
 assessing shows yellow `… of <panelSize>` (`…` if size is absent); blocked is dim
 `blocked`, including captured null members; off_panel/not_oracle show dim `–`;
-not_read is dim `not read`, unavailable is yellow `unavail`. Missing required counts are
+not_read is dim `loading…` for an eligible oracle row in the selected window with a valid
+job UUID/hash; ineligible not_read rows keep dim `not read`. Non-oracle rows retain `–`.
+Unavailable is yellow `unavail`. Missing required counts are
 unavailable. Off-panel requires a complete request index whose newest timestamp covers the row’s
 submission, or a final panel without the hash. A page older than submission is never an absence proof.
 On non-joined outvoted/no_quorum_out rows, ANSWER prefixes `panel <figure> · `, including unread replies.

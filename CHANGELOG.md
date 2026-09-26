@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Surfboard AGENT: keep the last good record for up to six seats, each with its own timestamp.
+  Temporary host overload shows `busy · retrying`, or `busy` beside the cached record's timestamp.
+  Eligible pending answers, oracle panels and submission job details now say `loading…`.
+
 ## v0.9.3 — 2026-09-26
 
 - Surfboard `a` AGENT: STATUS no longer reads `⚙ 9 of 1` when a seat runs more jobs than its
