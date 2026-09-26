@@ -199,6 +199,100 @@
       "notes": "the 401 pause suffix lingers past 23:53 while `1 task running` (23:54:22, 23:55:52) and is gone at 23:56:22; masked key -> sk-[redacted]; fill1 §5",
       "sha256": "f8b538b96fc0e38912993fef0f8b3efe2a5ecfeca474cb701df3a8c8d322f94d",
       "bytes": 2777
+    },
+    "grammar/repair_once.txt": {
+      "origin": "Mac `docker logs --timestamps imd-worker` via perl alarm 90, 2026-09-21T19:57:26Z -> 2026-09-26T03:23Z (the research scratchpad copy docker420.log, 15,882 lines); nodes ce645231, a3d3cada, e78e1517; --timestamps prefix stripped; heartbeats and agent prose lines removed",
+      "captured_at": "2026-09-26T05:23:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "each `repairing:` is followed by one more `bundling:` and exactly ONE submitted + ONE stored (3/3); fill6 §2",
+      "sha256": "5057b4f57dbc8e17c82b6f98621164836499742a206b43d97c62048380ee931c",
+      "bytes": 2048
+    },
+    "grammar/resend.txt": {
+      "origin": "Mac `docker logs --timestamps imd-worker` via perl alarm 90, 2026-09-21T19:57:26Z -> 2026-09-26T03:23Z (the research scratchpad copy docker420.log, 15,882 lines); 2026-09-22T17:21:19Z->17:21:25Z and 2026-09-26T00:00:23Z->00:00:37Z; --timestamps prefix stripped",
+      "captured_at": "2026-09-26T05:23:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "two in-process outbox re-sends, each yielding exactly one `submission stored` (7f11d6b7f9d0, 3538ff5d2068); fill1 §4, fill6 §2",
+      "sha256": "8093247aa0d6f08e9ce2e5c69cc4349143b29d12ec48557f3c7cbb0a68bbeb7c",
+      "bytes": 1307
+    },
+    "grammar/fast_fail_no_working.txt": {
+      "origin": "imd-vps journalctl -u imd-worker.service -o cat --no-pager, 2026-09-22T12:00:00Z -> 2026-09-26T02:31:55Z (the research scratchpad copy journal7d.txt, 13,734 lines) (5 windows on 2026-09-24) + Mac `docker logs --timestamps imd-worker` via perl alarm 90, 2026-09-21T19:57:26Z -> 2026-09-26T03:23Z (the research scratchpad copy docker420.log, 15,882 lines) (8eac278c, prefix stripped)",
+      "captured_at": "2026-09-26T05:23:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "six sub-second accept->submit runs with no `working:` line; all six API rows failed/blocked; fill6 §2",
+      "sha256": "f3e1ef69488fa2d6b29667d5d71cc47be5c2040bd6512e433e2c99d7d60fd381",
+      "bytes": 1994
+    },
+    "grammar/double_accept.txt": {
+      "origin": "Mac `docker logs --timestamps imd-worker` via perl alarm 90, 2026-09-21T19:57:26Z -> 2026-09-26T03:23Z (the research scratchpad copy docker420.log, 15,882 lines) (3aa1c610 x3, lifecycle lines only, prefix stripped) + imd-vps journalctl -u imd-worker.service -o cat --no-pager, 2026-09-22T12:00:00Z -> 2026-09-26T02:31:55Z (the research scratchpad copy journal7d.txt, 13,734 lines) (4cf722c7 x3, heartbeats dropped)",
+      "captured_at": "2026-09-26T05:23:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "node8 repeats within a seat (3x) and across seats (4cf722c7 also on the Mac at 17:08:52) -> key (seat, node8, acceptedAt); fill6 §2",
+      "sha256": "9272ca7a432333e120f56cea709f78a07c1476bd39224021a8ac0bc9b22fe5cc",
+      "bytes": 2886
+    },
+    "grammar/cancel_lease_closed.txt": {
+      "origin": "reconstruction from fill1 FACTS / fill6 §2 timestamps (imd-vps journal 2026-09-26T02:47:59Z-02:48:19Z is not in the scratchpad corpus)",
+      "captured_at": "2026-09-26T08:30:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "b6d17f8d lines carry the measured stamps; the leading 16a4df90 row is a decoy whose node8 equals the lease id (proof 6); 5e0c3a11 and the hashes are invented. Replace via Task 2.5 Step 7 (owner-run) and set synthetic false",
+      "sha256": "d1d4e25fc22c5494210420b21a75c2000f2aed7d9c3b0519ad186f013ecafae4",
+      "bytes": 1451
+    },
+    "grammar/redeploy_wave.txt": {
+      "origin": "imd-vps journalctl -u imd-worker.service -o cat --no-pager, 2026-09-22T12:00:00Z -> 2026-09-26T02:31:55Z (the research scratchpad copy journal7d.txt, 13,734 lines) (2026-09-24T22:21:39Z->22:23:49Z, real) + reconstruction of the 2026-09-26T02:45:25Z wave from fill5 §7",
+      "captured_at": "2026-09-26T04:31:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "first window: four 502s, `admitted` lags 84 s; second window (synthetic stamps): `disconnected … fleet 6 online` -> admitted 1.1 s. Replace the second window via Task 2.5 Step 7 (owner-run)",
+      "sha256": "62a83fd66f27c3eb527f3b4921c7366721d07f72dfa37f716ef739e06930e710",
+      "bytes": 1489
+    },
+    "grammar/open_accept_after_idle.txt": {
+      "origin": "hand-written (spec §14 fixture list)",
+      "captured_at": "2026-09-26T08:30:00Z",
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "four idle beats then an accept 15 s later with no terminal line: idle_beats == 4 AND lifecycle open -> the gate must refuse (proof 24, WP6)",
+      "sha256": "8e6df3e5a4581108dfa8d1f91d9bec3b000502f42084a48ff7e9461b596748a5",
+      "bytes": 608
     }
   }
 }

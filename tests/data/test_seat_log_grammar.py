@@ -233,3 +233,31 @@ class TestJournalSlices:
         assert len(paused_while_running) == 2 and all(l.fields["until"] == "23:53" for l in paused_while_running)
         assert "unknown" not in [l.kind for l in linger]
         assert SK_RE.search("\n".join(_lines("heartbeat_lingering_pause.txt"))) is None  # redacted before commit
+
+
+# ---------------------------------------------------------------------------------------- Task 2.5
+class TestEdgeSlices:
+    def test_cancel_slice(self) -> None:
+        cancel = _kinds("cancel_lease_closed.txt")
+        assert cancel.count("cancelled") == 1 and cancel.count("server_error") == 1 and "unknown" not in cancel
+
+    def test_repair_resend_fastfail_double_slices(self) -> None:
+        repair = _kinds("repair_once.txt")
+        assert repair.count("accepted_code") == 3 and repair.count("submitted") == 3 and repair.count("stored") == 3
+        assert sum(1 for l in _lines("repair_once.txt") if g.classify(l).fields.get("phase") == "repairing") == 3
+        resend = _kinds("resend.txt")
+        assert resend.count("resending") == 2 and resend.count("stored") == 2
+        fast = _kinds("fast_fail_no_working.txt")
+        assert fast.count("accepted_code") == 6 and fast.count("model_line") == 0
+        double = _kinds("double_accept.txt")
+        assert double.count("accepted_code") == 6 and "unknown" not in double
+
+    def test_redeploy_wave_slice(self) -> None:
+        wave = [g.classify(l) for l in _lines("redeploy_wave.txt")]
+        disconnected = [l for l in wave if l.kind == g.KIND_HEARTBEAT and l.fields["state"] == "disconnected"]
+        assert len(disconnected) == 5 and any(l.fields["online"] == "6" for l in disconnected)
+        assert sum(1 for l in wave if l.kind == g.KIND_ADMITTED) == 2
+
+    def test_open_accept_after_idle_slice(self) -> None:
+        kinds = _kinds("open_accept_after_idle.txt")
+        assert kinds == ["heartbeat"] * 4 + ["accepted_code", "phase", "model_line"]
