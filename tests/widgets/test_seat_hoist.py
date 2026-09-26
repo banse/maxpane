@@ -34,12 +34,17 @@ _SHIMS = [
         ("_EMPTY_ITEM",),
         id="_swarm_table",
     ),
+    pytest.param(
+        "maxpane_dashboard.widgets.surf._swarm_seat",
+        "maxpane_dashboard.widgets.seat_words",
+        ("_whole", "_forms", "_num", "_reading"),
+        id="_swarm_seat",
+    ),
 ]
 
 #: The hoisted shared modules: none may import back into ``widgets/surf/``
 #: (spec §15: "otherwise the hoisted shared module would import back into widgets/surf/").
-_SHARED = ["swarm_table.py"]
-
+_SHARED = ["swarm_table.py", "seat_words.py"]
 
 def _imports(path: Path) -> list[tuple[str, str]]:
     """``(module, name)`` for every import statement in *path*; ``("x", "*")`` for a star."""
@@ -108,3 +113,19 @@ def test_shims_reexport_every_public_name(shim_name, shared_name, private):
     for name in (*shared.__all__, *private):
         assert getattr(shim, name) is getattr(shared, name), f"{shim_name}.{name} is not the shared object"
     assert _declared(Path(shim.__file__)) == [], "a shim re-exports; it declares nothing"
+
+
+def test_seat_words_docstring_says_shared():
+    """Contract §C.2: the 'Private to the surf package' sentence is replaced."""
+    from maxpane_dashboard.widgets import seat_words
+
+    assert "Private to the surf package" not in (seat_words.__doc__ or "")
+    assert "Shared by the surf AGENT body and PEPEPANE" in (seat_words.__doc__ or "")
+    assert seat_words.NODE_TITLES == {
+        "oracle_assess": "ORACLE",
+        "adversarial_review": "REVIEW",
+        "build_contract_project": "BUILD",
+    }
+    assert seat_words.seat_token(420) == 420 and seat_words.seat_token(True) is None
+    assert seat_words.count(1490) == "1,490" and seat_words.count(-1) is None
+    assert seat_words.seat_state_line("ok") is None
