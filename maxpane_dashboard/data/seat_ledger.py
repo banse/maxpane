@@ -795,6 +795,166 @@ class SeatLedger:
         return inserted
 
 
+    # ------------------------------------------------------------------ sessions
+    def attach_sessions(self, sessions: list[dict], *, runtime: str) -> int:
+        """Join summariser output (contract C.8 ``SESSION_KEYS``) to rows; doctor/manual/unknown are stored unattached."""
+        attached = 0
+        with self._conn:
+            for s in sessions:
+                if not isinstance(s, dict) or not isinstance(s.get("path"), str):
+                    continue
+                key = self._task_key_for_session(s)
+                tokens = s.get("tokens") if isinstance(s.get("tokens"), dict) else {}
+                self._conn.execute(
+                    "INSERT INTO sessions(path, task_key, runtime, cwd, kind, started_utc, mtime, model, effort, turns, "
+                    "tokens_input, tokens_output, tokens_cached, tokens_cache_write, side_model_json, ttft_ms, wall_ms, "
+                    "turn1_context, max_turns_reached, api_errors_json, quota_json, bytes, skipped_oversize, error) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(path) DO UPDATE SET task_key = excluded.task_key, kind = excluded.kind, mtime = excluded.mtime, "
+                    "model = excluded.model, effort = excluded.effort, turns = excluded.turns, tokens_input = excluded.tokens_input, "
+                    "tokens_output = excluded.tokens_output, tokens_cached = excluded.tokens_cached, "
+                    "tokens_cache_write = excluded.tokens_cache_write, side_model_json = excluded.side_model_json, "
+                    "ttft_ms = excluded.ttft_ms, wall_ms = excluded.wall_ms, turn1_context = excluded.turn1_context, "
+                    "max_turns_reached = excluded.max_turns_reached, api_errors_json = excluded.api_errors_json, "
+                    "quota_json = excluded.quota_json, bytes = excluded.bytes, skipped_oversize = excluded.skipped_oversize, "
+                    "error = excluded.error",
+                    (s["path"], key, s.get("runtime") or runtime, s.get("cwd") or s.get("slug"), s.get("kind"),
+                     s.get("startedUtc"), s.get("mtime"), s.get("model"), s.get("effort"), s.get("turns"),
+                     tokens.get("input"), tokens.get("output"), tokens.get("cached"), tokens.get("cacheWrite"),
+                     _dumps(s.get("sideModel")), s.get("ttftMs"), s.get("wallMs"), s.get("turn1Context"),
+                     1 if s.get("maxTurnsReached") else 0 if s.get("maxTurnsReached") is not None else None,
+                     _dumps([{"status": e.get("status"), "message": redact(e.get("message")), "atUtc": e.get("atUtc")}
+                             for e in (s.get("apiErrors") or []) if isinstance(e, dict)]),
+                     _dumps(s.get("quota")), s.get("bytes"), s.get("skippedOversize"), s.get("error")),
+                )
+                if key is not None:
+                    self._aggregate_sessions(key, runtime)
+                    attached += 1
+        return attached
+
+    def _task_key_for_session(self, s: dict) -> str | None:
+        kind = s.get("kind")
+        if kind not in ("task", "research"):
+            return None  # doctor / manual / unknown are excluded from cost (spec §10)
+        started = _parse_api_timestamp(s.get("startedUtc"))
+        if kind == "research":
+            if started is None:
+                return None
+            rows = self._conn.execute(
+                "SELECT key, accepted_utc FROM tasks WHERE kind = 'research' AND seat IS ? AND source_row = 'local'",
+                (self._seat,),
+            ).fetchall()
+            best = None
+            for row in rows:
+                accepted = parse_ts(row["accepted_utc"])
+                if accepted is None:
+                    continue
+                delta = abs(started - accepted)
+                if delta <= RESEARCH_JOIN_S and (best is None or delta < best[0]):
+                    best = (delta, row["key"])
+            return None if best is None else best[1]
+        node_id = s.get("nodeId")
+        job_id = s.get("jobId")
+        if not isinstance(node_id, str) or len(node_id) < 8:
+            return None
+        rows = self._conn.execute(
+            "SELECT key, accepted_utc, submitted_utc FROM tasks WHERE node8 = ? AND seat IS ? AND source_row = 'local' "
+            "ORDER BY accepted_utc",
+            (node_id[:8], self._seat),
+        ).fetchall()
+        if not rows:
+            return None
+        mtime = s.get("mtime")
+        anchor = started if started is not None else (float(mtime) if isinstance(mtime, (int, float)) else None)
+        chosen = rows[-1]
+        if anchor is not None:
+            # multi-attempt nodes share one cwd: pick the attempt whose accept precedes the session start most closely
+            preceding = [r for r in rows if (parse_ts(r["accepted_utc"]) or float("inf")) <= anchor + RESEARCH_JOIN_S]
+            if preceding:
+                chosen = preceding[-1]
+        self._conn.execute(
+            "UPDATE tasks SET node_id = ?, job_id = COALESCE(job_id, ?), updated_utc = ? WHERE key = ?",
+            (node_id, job_id if isinstance(job_id, str) else None, _iso(self._now()), chosen["key"]),
+        )
+        return chosen["key"]
+
+    def _aggregate_sessions(self, key: str, runtime: str) -> None:
+        """Per attempt: tokens additive across files, turns NOT (max), sessionFiles = N (fill3 §2)."""
+        rows = self._conn.execute("SELECT * FROM sessions WHERE task_key = ? ORDER BY mtime", (key,)).fetchall()
+        if not rows:
+            return
+        # The stored session's own runtime wins over the caller's: WP7's first sessions cycle passes a guess ("codex") before
+        # `imd status` has named the runtime, while the Mac broker always answers with Claude transcripts (spec §10 turns definition).
+        runtime = rows[-1]["runtime"] or runtime
+
+        def total(column: str) -> int | None:
+            values = [r[column] for r in rows if r[column] is not None]
+            return sum(values) if values else None
+
+        turns = [r["turns"] for r in rows if r["turns"] is not None]
+        ttft = [r["ttft_ms"] for r in rows if r["ttft_ms"] is not None]
+        walls = [r["wall_ms"] for r in rows if r["wall_ms"] is not None]
+        t1 = [r["turn1_context"] for r in rows if r["turn1_context"] is not None]
+        newest = rows[-1]
+        errors: list = []
+        for r in rows:
+            errors.extend(_loads(r["api_errors_json"]) or [])
+        side: dict | None = None
+        for r in rows:
+            sm = _loads(r["side_model_json"])
+            if isinstance(sm, dict):
+                if side is None:
+                    side = {"model": sm.get("model"), "input": 0, "output": 0}
+                side["input"] += int(sm.get("input") or 0)
+                side["output"] += int(sm.get("output") or 0)
+        tier = None
+        if self._tier_lookup is not None:
+            accepted = self._conn.execute("SELECT accepted_utc FROM tasks WHERE key = ?", (key,)).fetchone()
+            tier = self._tier_lookup(runtime, newest["model"], newest["effort"],
+                                     accepted["accepted_utc"] if accepted else None, seat=self._seat)
+        self._conn.execute(
+            "UPDATE tasks SET runtime = COALESCE(runtime, ?), model = COALESCE(?, model), effort = ?, tier_derived = COALESCE(?, tier_derived), "
+            "turns = ?, turns_definition = ?, tokens_input = ?, tokens_output = ?, tokens_cached = ?, tokens_cache_write = ?, "
+            "side_model_json = ?, ttft_ms = ?, wall_ms = ?, turn1_context = ?, max_turns_reached = ?, api_errors_json = ?, "
+            "session_files = ?, tokens_reason = NULL, updated_utc = ? WHERE key = ?",
+            (runtime, newest["model"], newest["effort"], tier,
+             max(turns) if turns else None, "agent_messages" if runtime == "codex" else "user_lines",
+             total("tokens_input"), total("tokens_output"), total("tokens_cached"), total("tokens_cache_write"),
+             _dumps(side), min(ttft) if ttft else None, sum(walls) if walls else None, t1[0] if t1 else None,
+             1 if any(r["max_turns_reached"] for r in rows) else 0, _dumps(errors), len(rows), _iso(self._now()), key),
+        )
+
+    def unattached_sessions(self, *, since_utc: str) -> list[dict]:
+        """Doctor/manual/unknown summaries stored with task_key NULL, for ``seat_cost.summarise(sessions=...)`` (spec §7 ``cost.excluded``)."""
+        rows = self._conn.execute(
+            "SELECT kind, started_utc FROM sessions WHERE task_key IS NULL AND kind IN ('doctor', 'manual', 'unknown') "
+            "AND started_utc IS NOT NULL AND started_utc >= ? ORDER BY started_utc",
+            (since_utc,),
+        ).fetchall()
+        return [{"kind": r["kind"], "startedUtc": r["started_utc"]} for r in rows]
+
+    def mark_expired_transcripts(self, *, runtime: str, now_utc: str, days: int = TRANSCRIPT_RETENTION_DAYS) -> int:
+        """Spec §5.4 Claude retention: local rows no transcript joined within ``days`` read ``tokens_reason = 'transcript expired'``.
+
+        Claude Code sweeps transcripts older than ``cleanupPeriodDays`` (30); codex never deletes rollouts, so it returns 0
+        there. Pre-agent failures (no agent ran, no transcript ever existed) and fuzz campaigns (tokens null by construction)
+        are never marked; a session that joins later clears the reason (``_aggregate_sessions`` sets it NULL).
+        """
+        if runtime != "claude":
+            return 0
+        now_epoch = _parse_api_timestamp(now_utc)
+        if now_epoch is None:
+            return 0
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE tasks SET tokens_reason = 'transcript expired', updated_utc = ? WHERE seat IS ? AND source_row = 'local' "
+                "AND tokens_input IS NULL AND tokens_reason IS NULL AND COALESCE(pre_agent_failure, 0) = 0 "
+                "AND COALESCE(kind, '') != 'fuzz' AND accepted_utc < ?",
+                (_iso(self._now()), self._seat, _iso(now_epoch - days * 86400)),
+            )
+        return cur.rowcount
+
+
 __all__ = [
     "LEDGER_FILE", "LEDGER_SCHEMA_VERSION", "LEDGER_BUSY_TIMEOUT_MS", "PRE_AGENT_FAILURE_S", "RESEARCH_JOIN_S",
     "IDLE_WINDOW_S", "CONNECTION_WINDOW_S", "REASONS_PER_CYCLE", "TRANSCRIPT_RETENTION_DAYS", "WORK_DIR_JOIN_S",

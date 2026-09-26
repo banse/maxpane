@@ -525,3 +525,146 @@ class TestWorkDirs:
         assert by_accept["2026-09-24T05:36:49.988Z"]["workDirAbnormal"] is False
         assert by_accept["2026-09-23T17:08:39.905Z"]["workDirAbnormal"] is None and by_accept["2026-09-23T17:08:39.905Z"]["nodeId"] is None
         ledger.close()
+
+
+# ---------------------------------------------------------------------------------------- Task 2.10
+CODEX_SESSION = {
+    "path": "/home/imd-worker/.codex/sessions/2026/09/23/rollout-2026-09-23T19-34-27-uuid.jsonl", "runtime": "codex",
+    "cwd": "/home/imd-worker/.identitymd/work/6c296b69-8c22-435c-a2c2-56ab1660bb4e/4cf722c7-101e-473b-a153-3315d3673a83",
+    "slug": None, "kind": "task", "jobId": "6c296b69-8c22-435c-a2c2-56ab1660bb4e",
+    "nodeId": "4cf722c7-101e-473b-a153-3315d3673a83", "startedUtc": "2026-09-23T19:34:27.500Z",
+    "endedUtc": "2026-09-23T19:35:15.900Z", "mtime": 1790364915.9, "bytes": 200000, "model": "gpt-5.6-luna", "effort": "medium",
+    "turns": 3, "turnsDefinition": "agent_messages", "tokens": {"input": 17864, "output": 812, "cached": 92928, "cacheWrite": 0},
+    "sideModel": None, "ttftMs": 1807, "wallMs": 22400, "turn1Context": 24000, "maxTurnsReached": False, "maxTurns": 60,
+    "apiErrors": [], "lastAgentMessageEmpty": False, "tokenCountInfoMissing": False, "taskCompleteErrorPresent": False,
+    "quota": {"usedPercent": 45.0, "windowMinutes": 10080, "resetsAtUtc": "2026-09-28T21:50:11Z", "planType": "pro",
+              "sampledAtUtc": "2026-09-23T19:35:15Z"}, "skippedOversize": 0, "error": None,
+}
+
+
+class TestSessions:
+    def test_attach_sessions_joins_a_task_by_node_and_time(self, tmp_path: Path) -> None:
+        """Spec §10 fixture pair: Codex 15bb693b-style 17,864 / 92,928 / 812, turns 3 — attached to the matching attempt."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_lines("double_accept.txt"))
+        assert ledger.attach_sessions([CODEX_SESSION], runtime="codex") == 1
+        row = [r for r in _by_node(ledger, "4cf722c7") if r["acceptedUtc"] == "2026-09-23T19:34:26.693Z"][0]
+        assert row["tokens"] == {"input": 17864, "output": 812, "cached": 92928, "cacheWrite": 0}
+        assert (row["turns"], row["turnsDefinition"], row["effort"], row["sessionFiles"]) == (3, "agent_messages", "medium", 1)
+        assert row["nodeId"] == "4cf722c7-101e-473b-a153-3315d3673a83" and row["jobId"] == "6c296b69-8c22-435c-a2c2-56ab1660bb4e"
+        assert (row["ttftMs"], row["wallMs"], row["turn1Context"], row["maxTurnsReached"]) == (1807, 22400, 24000, False)
+        others = [r for r in _by_node(ledger, "4cf722c7") if r["acceptedUtc"] != "2026-09-23T19:34:26.693Z"]
+        assert all(r["tokens"] is None for r in others)
+        ledger.close()
+
+    def test_multi_file_attempt_adds_tokens_but_not_turns(self, tmp_path: Path) -> None:
+        """Spec §10 / fill3 §2: 7b9c907d hunt_d — tokens additive across files (73,695 + 1,263), turns not (61 ≠ 58 + 8)."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_classify(["2026-09-24T03:50:34.996Z accepted tests e78e1517 — test/fren-review/hunt_d (max 60 turns)",
+                                 "2026-09-24T04:13:46.135Z submitted tests for e78e1517"]))
+        a = dict(CODEX_SESSION, path="/x/a.jsonl", nodeId="e78e1517-0000-4000-8000-000000000000", startedUtc="2026-09-24T03:52:33.000Z",
+                 mtime=1790306000.0, tokens={"input": 70000, "output": 3695, "cached": 0, "cacheWrite": 0}, turns=58)
+        b = dict(CODEX_SESSION, path="/x/b.jsonl", nodeId="e78e1517-0000-4000-8000-000000000000", startedUtc="2026-09-24T04:05:00.000Z",
+                 mtime=1790307000.0, tokens={"input": 1000, "output": 263, "cached": 0, "cacheWrite": 0}, turns=8)
+        assert ledger.attach_sessions([a, b], runtime="codex") == 2
+        (row,) = ledger.rows()
+        assert row["tokens"]["input"] + row["tokens"]["output"] == 74958 and row["turns"] == 58 and row["sessionFiles"] == 2
+        ledger.close()
+
+    def test_research_session_joins_within_two_seconds_and_probes_are_excluded(self, tmp_path: Path) -> None:
+        """Spec §10: research joins by cwd == work root + start within RESEARCH_JOIN_S; doctor/manual never attach."""
+        ledger = _ledger(tmp_path, now=1790457000.0)
+        ledger.ingest(_lines("research_question.txt"))
+        research = dict(CODEX_SESSION, path="/r.jsonl", kind="research", jobId=None, nodeId=None,
+                        cwd="/home/imd-worker/.identitymd/work", startedUtc="2026-09-25T18:08:55.948Z", model="gpt-5.6-luna",
+                        tokens={"input": 24568, "output": 2835, "cached": 45056, "cacheWrite": 0}, turns=2)
+        doctor = dict(CODEX_SESSION, path="/d.jsonl", kind="doctor", jobId=None, nodeId=None, startedUtc="2026-09-25T18:08:56.000Z")
+        manual = dict(CODEX_SESSION, path="/m.jsonl", kind="manual", jobId=None, nodeId=None, startedUtc="2026-09-25T18:08:56.000Z")
+        late = dict(research, path="/late.jsonl", startedUtc="2026-09-25T18:09:10.000Z")
+        assert ledger.attach_sessions([research, doctor, manual, late], runtime="codex") == 1
+        (row,) = ledger.rows()
+        assert row["tokens"] == {"input": 24568, "output": 2835, "cached": 45056, "cacheWrite": 0} and row["sessionFiles"] == 1
+        stored = {r[0]: r[1] for r in ledger._conn.execute("SELECT path, task_key FROM sessions")}
+        assert stored["/r.jsonl"] == row["key"] and stored["/d.jsonl"] is None and stored["/m.jsonl"] is None and stored["/late.jsonl"] is None
+        # the late research session stays unattached too, but only doctor/manual/unknown are cost exclusions (spec §7)
+        assert sorted(s["kind"] for s in ledger.unattached_sessions(since_utc="2026-09-25T00:00:00Z")) == ["doctor", "manual"]
+        ledger.close()
+
+    def test_api_error_messages_are_redacted_when_stored(self, tmp_path: Path) -> None:
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_lines("double_accept.txt"))
+        session = dict(CODEX_SESSION, apiErrors=[{"status": 401, "message": "401 Unauthorized: Incorrect API key provided: sk-svcac********",
+                                                  "atUtc": "2026-09-23T19:34:30.000Z"}])
+        ledger.attach_sessions([session], runtime="codex")
+        row = [r for r in _by_node(ledger, "4cf722c7") if r["acceptedUtc"] == "2026-09-23T19:34:26.693Z"][0]
+        assert row["apiErrors"][0]["status"] == 401 and "sk-[redacted]" in row["apiErrors"][0]["message"]
+        assert SK_RE.search(str(row["apiErrors"])) is None
+        ledger.close()
+
+    def test_unattached_sessions_feed_cost_exclusions(self, tmp_path: Path) -> None:
+        """Spec §7 ``cost.excluded`` / §8 COST ``excluded 2 doctor``: the task_key-NULL summaries are read back for seat_cost."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.attach_sessions([{"path": "/r/d.jsonl", "kind": "doctor", "startedUtc": "2026-09-23T10:00:00.000Z"},
+                                {"path": "/r/m.jsonl", "kind": "manual", "startedUtc": "2026-09-23T11:00:00.000Z"},
+                                {"path": "/r/o.jsonl", "kind": "doctor", "startedUtc": "2026-09-01T11:00:00.000Z"}], runtime="codex")
+        assert ledger.unattached_sessions(since_utc="2026-09-19T00:00:00Z") == [
+            {"kind": "doctor", "startedUtc": "2026-09-23T10:00:00.000Z"}, {"kind": "manual", "startedUtc": "2026-09-23T11:00:00.000Z"}]
+        ledger.close()
+
+    def test_unjoined_claude_rows_older_than_30_days_are_marked_expired(self, tmp_path: Path) -> None:
+        """Spec §5.4 Claude retention: a row no transcript joined within 30 days reads ``tokens: null``, reason ``transcript expired``."""
+        ledger = _ledger(tmp_path, seat=420, now=1790391000.0)
+        ledger.ingest(_classify([
+            "2026-08-26T10:00:00.000Z accepted implement aaaa1111 — a (max 60 turns)",
+            "2026-08-26T10:00:01.000Z   working: running claude on claude-sonnet-5",
+            "2026-08-26T10:01:00.000Z submitted implement for aaaa1111",
+            "2026-08-26T10:01:00.100Z submission stored (aaaa11110000) — awaiting verdict",
+            "2026-08-26T11:00:00.000Z accepted implement bbbb2222 — a (max 60 turns)",
+            "2026-08-26T11:00:00.400Z submitted implement for bbbb2222",
+            "2026-08-26T11:00:00.500Z submission stored (bbbb22220000) — awaiting verdict",
+            "2026-08-28T10:00:00.000Z accepted implement cccc3333 — a (max 60 turns)",
+            "2026-08-28T10:00:01.000Z   working: running claude on claude-sonnet-5",
+            "2026-08-28T10:01:00.000Z submitted implement for cccc3333",
+            "2026-08-28T10:01:00.100Z submission stored (cccc33330000) — awaiting verdict",
+        ]))
+        now_utc = "2026-09-26T12:00:00Z"
+        assert ledger.mark_expired_transcripts(runtime="codex", now_utc=now_utc) == 0  # codex rollouts are never deleted
+        assert ledger.mark_expired_transcripts(runtime="claude", now_utc=now_utc) == 1
+        reasons = {r["nodeId8"]: (r["tokens"], r["tokensReason"], r["preAgentFailure"]) for r in ledger.rows()}
+        assert reasons == {"aaaa1111": (None, "transcript expired", False),  # 31 days old, never joined
+                           "bbbb2222": (None, None, True),  # pre-agent failure: no transcript ever existed
+                           "cccc3333": (None, None, False)}  # 29 days old: still inside the window
+        assert ledger.mark_expired_transcripts(runtime="claude", now_utc=now_utc) == 0  # idempotent
+        # a transcript that still joins (the summariser caught it before the sweep) clears the reason
+        late = dict(CODEX_SESSION, path="/c/aaaa.jsonl", runtime="claude", nodeId="aaaa1111-0000-4000-8000-000000000000",
+                    jobId=None, startedUtc="2026-08-26T10:00:01.500Z")
+        assert ledger.attach_sessions([late], runtime="claude") == 1
+        (row,) = _by_node(ledger, "aaaa1111")
+        assert row["tokensReason"] is None and row["tokens"]["output"] == 812
+        ledger.close()
+
+    def test_the_sessions_own_runtime_wins_over_the_callers_guess(self, tmp_path: Path) -> None:
+        """Spec §10 ``turnsDefinition``: WP7's first sessions cycle passes ``runtime="codex"`` before ``imd status`` names the
+        runtime, and the Mac broker answers with Claude transcripts anyway; the stored session's ``runtime`` decides the turns
+        definition and the effort re-derivation, so a Claude row never reads ``agent_messages``."""
+        calls: list[tuple] = []
+
+        def lookup(runtime, model, effort, at, *, seat=None):
+            calls.append((runtime, model, effort))
+            return f"{runtime}/{effort}" if str(model).startswith(runtime) else None  # like tier_for: codex never knows a claude model
+
+        ledger = _ledger(tmp_path, seat=420, now=1790391000.0, tier_lookup=lookup)
+        ledger.ingest(_classify([
+            "2026-09-26T01:00:00.000Z accepted implement dddd4444 — a (max 60 turns)",
+            "2026-09-26T01:00:01.000Z   working: running claude on claude-sonnet-5",
+            "2026-09-26T01:05:00.000Z submitted implement for dddd4444",
+        ]))
+        assert _by_node(ledger, "dddd4444")[0]["tierDerived"] == "claude/None"  # accept-time tier, derived without the effort
+        claude = dict(CODEX_SESSION, path="/home/imd/.claude/projects/-home-imd--identitymd-work-x/dddd.jsonl", runtime="claude",
+                      nodeId="dddd4444-0000-4000-8000-000000000000", jobId=None, startedUtc="2026-09-26T01:00:01.500Z",
+                      model="claude-sonnet-5", effort="high", turnsDefinition="user_lines", quota=None)
+        assert ledger.attach_sessions([claude], runtime="codex") == 1  # the caller's guess is wrong
+        (row,) = _by_node(ledger, "dddd4444")
+        assert (row["turnsDefinition"], row["effort"], row["tierDerived"]) == ("user_lines", "high", "claude/high")
+        assert calls[-1] == ("claude", "claude-sonnet-5", "high")
+        ledger.close()
