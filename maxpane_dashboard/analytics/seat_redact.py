@@ -139,3 +139,84 @@ def redact_agent_sentence(text: object) -> str:
     """
     flat = " ".join(redact(text).split())
     return flat[:AGENT_SENTENCE_CAP]
+
+
+def redact_tree(value: object, *, field: str | None = None) -> object:
+    """Recursively :func:`redact` every string in a dict/list tree.
+
+    A dict key is passed as *field* for its value (so ``{"submissionHash":
+    <hex64>}`` keeps its hash) and is itself redacted; a list inherits the key
+    it hangs under.  Non-string scalars come back unchanged; a tuple comes back
+    as a list (JSON has no tuple).
+    """
+    if isinstance(value, dict):
+        out: dict = {}
+        for key, item in value.items():
+            if isinstance(key, str):
+                out[redact(key)] = redact_tree(item, field=key)
+            else:
+                out[key] = redact_tree(item, field=field)
+        return out
+    if isinstance(value, (list, tuple)):
+        return [redact_tree(item, field=field) for item in value]
+    if isinstance(value, str):
+        return redact(value, field)
+    return value
+
+
+def find_secret_path(
+    value: object,
+    *,
+    allowed_hex64_fields: frozenset[str] = frozenset(),
+    field: str | None = None,
+) -> tuple[str, str] | None:
+    """First canary hit in a tree as ``(kind, dotted path)``, or ``None``.
+
+    Kinds, in the order checked at each node: ``"key_name"`` (a dict key
+    matching :data:`SECRET_KEY_RE`), then for a string value ``"sk"``
+    (:data:`SK_RE`), ``"jwt"`` (:data:`JWT_RE`) and ``"hex64"``
+    (:data:`HEX64_RE` under a key not in *allowed_hex64_fields*; a list
+    inherits its key).  The path reads ``tasks.rows[3].hash12``; the root is
+    ``""``.  Never raises.
+    """
+    return _walk(value, allowed_hex64_fields, field, "")
+
+
+def find_secret(
+    value: object,
+    *,
+    allowed_hex64_fields: frozenset[str] = frozenset(),
+    field: str | None = None,
+) -> str | None:
+    """The kind of the first canary hit (see :func:`find_secret_path`), or ``None``."""
+    hit = find_secret_path(value, allowed_hex64_fields=allowed_hex64_fields, field=field)
+    return None if hit is None else hit[0]
+
+
+def _walk(
+    value: object, allowed: frozenset[str], field: str | None, path: str
+) -> tuple[str, str] | None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_text = key if isinstance(key, str) else str(key)
+            child = f"{path}.{key_text}" if path else key_text
+            if SECRET_KEY_RE.search(key_text):
+                return ("key_name", child)
+            hit = _walk(item, allowed, key_text, child)
+            if hit is not None:
+                return hit
+        return None
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            hit = _walk(item, allowed, field, f"{path}[{index}]")
+            if hit is not None:
+                return hit
+        return None
+    if isinstance(value, str):
+        if SK_RE.search(value):
+            return ("sk", path)
+        if JWT_RE.search(value):
+            return ("jwt", path)
+        if field not in allowed and HEX64_RE.search(value):
+            return ("hex64", path)
+    return None

@@ -181,3 +181,60 @@ def test_masked_key_never_reaches_a_strip_or_the_ledger():
     paused_hint = {"until": "23:53", "failedRuns": 3, "reason": sr.redact(reason)}
     assert paused_hint["reason"] == "unexpected status 401 Unauthorized: Incorrect API key provided: sk-[redacted]"
     assert sr.SK_RE.search(json.dumps(paused_hint)) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 1.4 — trees and the canary
+# ---------------------------------------------------------------------------
+
+
+def test_redact_tree_passes_dict_keys_as_field_and_lists_inherit():
+    tree = {"submissionHash": HEX64, "other": HEX64, "nested": [{"txHash": HEX64}, HEX64], "n": 0}
+    out = sr.redact_tree(tree)
+    assert out["submissionHash"] == HEX64
+    assert out["other"] == "<hex64>"
+    assert out["nested"][0]["txHash"] == HEX64
+    assert out["nested"][1] == "<hex64>"
+    assert out["n"] == 0
+
+
+def test_redact_tree_redacts_keys_and_leaves_scalars():
+    assert sr.redact_tree({HEX64: 1}) == {"<hex64>": 1}
+    assert sr.redact_tree({"note": "sk-abcd", "f": 1.5, "b": True, "z": None, "t": ("sk-abcd",)}) == {
+        "note": "sk-[redacted]", "f": 1.5, "b": True, "z": None, "t": ["sk-[redacted]"],
+    }
+
+
+def test_find_secret_names_the_kind_in_check_order():
+    # spec §13 projection canary + §7 refusal rules: key names, sk, jwt, then any hex64 outside the allowed fields
+    assert sr.find_secret({"devicePrivateKey": "x"}) == "key_name"
+    assert sr.find_secret({"a": {"Mnemonic": None}}) == "key_name"
+    assert sr.find_secret({"a": "sk-abcd"}) == "sk"
+    assert sr.find_secret({"a": "eyJ" + "a" * 10}) == "jwt"
+    assert sr.find_secret({"a": HEX64}) == "hex64"
+    assert sr.find_secret({"submissionHash": HEX64}) == "hex64"
+    assert sr.find_secret({"submissionHash": HEX64}, allowed_hex64_fields=frozenset({"submissionHash"})) is None
+    assert sr.find_secret({"deviceKey": HEX64}, allowed_hex64_fields=frozenset({"deviceKey"})) is None
+    assert sr.find_secret({"deviceKey": HEX64}) == "hex64"
+    assert sr.find_secret({"hashes": [HEX64]}, allowed_hex64_fields=frozenset({"hashes"})) is None
+    assert sr.find_secret({"ok": "fine", "n": [1, 2.0, True, None]}) is None
+    assert sr.find_secret("sk-abcd") == "sk"
+    assert sr.find_secret(None) is None
+
+
+def test_find_secret_path_names_the_leaf():
+    assert sr.find_secret_path({"tasks": {"rows": [{}, {}, {}, {"hash12": HEX64}]}}) == ("hex64", "tasks.rows[3].hash12")
+    assert sr.find_secret_path({"seat": {"devicePrivateKey": None}}) == ("key_name", "seat.devicePrivateKey")
+    assert sr.find_secret_path({"daemon": {"pausedHint": {"reason": "sk-abcd"}}}) == ("sk", "daemon.pausedHint.reason")
+    assert sr.find_secret_path(HEX64) == ("hex64", "")
+    assert sr.find_secret_path({"clean": 1}) is None
+
+
+def test_redact_tree_scrubs_a_ledger_row_from_the_401_fixture():
+    # the "ledger" half of mutation proof 12: the row shape seat_ledger persists, through redact_tree
+    line = next(l for l in _fixture_lines("heartbeat_paused_401.txt") if "sk-svcac" in l)
+    row = {"lastMessage": line, "apiErrors": [{"status": 401, "message": line}], "pausedHint": {"reason": line}}
+    assert sr.find_secret(row) == "sk"
+    scrubbed = sr.redact_tree(row)
+    assert "svcac" not in json.dumps(scrubbed)
+    assert sr.find_secret(scrubbed) is None
