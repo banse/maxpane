@@ -355,7 +355,172 @@ def backfill_is_stale(*, newest_backfill_ts: str | None, watermark_ts: str | Non
     return False
 
 
+def _iter_pipe_lines(proc: Any, *, tick_s: float) -> Iterator[str | None]:
+    """Yield decoded lines from ``proc.stdout``; ``None`` when ``tick_s`` passes with no data.
+
+    Reads the raw fd with ``select`` so a silent daemon never blocks the thread for longer
+    than one tick. EOF (the child closed its end) ends the iteration.
+    """
+    fd = proc.stdout.fileno()
+    buffer = b""
+    while True:
+        ready, _, _ = select.select([fd], [], [], tick_s)
+        if not ready:
+            yield None
+            continue
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            if buffer:
+                yield buffer.decode("utf-8", "replace").rstrip("\r")
+            return
+        buffer += chunk
+        while True:
+            newline = buffer.find(b"\n")
+            if newline < 0:
+                break
+            line, buffer = buffer[:newline], buffer[newline + 1:]
+            yield line.decode("utf-8", "replace").rstrip("\r")
+
+
+def _stop_process(proc: Any, stop_timeout_s: float) -> None:
+    """SIGTERM, wait ``stop_timeout_s``, then SIGKILL. Idempotent; never raises."""
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(stop_timeout_s)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(1.0)
+    except (OSError, ValueError):
+        pass
+    try:
+        if proc.stdout is not None:
+            proc.stdout.close()
+    except (OSError, ValueError):
+        pass
+
+
+def _message_text(value: object) -> str:
+    """journald encodes a non-UTF-8 ``MESSAGE`` as an array of byte values."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list) and all(isinstance(b, int) and 0 <= b < 256 for b in value):
+        return bytes(value).decode("utf-8", "replace")
+    return "" if value is None else str(value)
+
+
+class JournaldSource:
+    """``journalctl -u <unit> -o json -f`` behind an injected ``popen`` (spec §5.1 VPS transport).
+
+    ``cursor`` wins over ``since``: ``--after-cursor <cursor>`` when a cursor is known, else
+    ``--since <since>`` (``JOURNAL_FIRST_RUN_SINCE`` on a first run, ``journal_since_arg()``
+    of the last stamp on a gap fallback). ``stop_timeout_s`` is how long ``close()`` waits
+    after SIGTERM before SIGKILL.
+    """
+
+    kind = KIND_JOURNALD
+
+    def __init__(
+        self,
+        unit: str = WORKER_UNIT_DEFAULT,
+        *,
+        cursor: str | None = None,
+        since: str | None = JOURNAL_FIRST_RUN_SINCE,
+        popen: Callable[..., Any] = subprocess.Popen,
+        stop_timeout_s: float = 5.0,
+    ) -> None:
+        self._unit = unit
+        self._cursor = cursor
+        self._since = since or JOURNAL_FIRST_RUN_SINCE
+        self._popen = popen
+        self._stop_timeout_s = stop_timeout_s
+        self._proc: Any = None
+
+    def argv(self) -> list[str]:
+        base = ["journalctl", "-u", self._unit, "-o", "json", "-f"]
+        if self._cursor:
+            return base + ["--after-cursor", self._cursor]
+        return base + ["--since", self._since]
+
+    def open(self) -> None:
+        argv = self.argv()
+        self._proc = self._popen(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0
+        )
+
+    def lines(self) -> Iterator[RawLine | None]:
+        if self._proc is None:
+            return
+        for line in _iter_pipe_lines(self._proc, tick_s=ALIVE_STAMP_S):
+            if line is None:
+                yield None
+                continue
+            raw = self._parse_record(line)
+            if raw is not None:
+                yield raw
+        try:
+            self._proc.wait(self._stop_timeout_s)
+        except subprocess.TimeoutExpired:
+            pass
+
+    @staticmethod
+    def _parse_record(line: str) -> RawLine | None:
+        try:
+            record = json.loads(line)
+        except ValueError:
+            return None
+        if not isinstance(record, dict):
+            return None
+        realtime: int | None = None
+        try:
+            realtime = int(record["__REALTIME_TIMESTAMP"])
+        except (KeyError, TypeError, ValueError):
+            realtime = None
+        return RawLine(
+            text=_message_text(record.get("MESSAGE")),
+            cursor=_str_or_none(record.get("__CURSOR")),
+            invocation=_str_or_none(record.get("_SYSTEMD_INVOCATION_ID")),
+            realtime_us=realtime,
+        )
+
+    def exit_code(self) -> int | None:
+        return None if self._proc is None else self._proc.poll()
+
+    def close(self) -> None:
+        if self._proc is not None:
+            _stop_process(self._proc, self._stop_timeout_s)
+
+    def backfill(self) -> list[RawLine] | None:
+        return None
+
+
+def journald_factory(
+    unit: str = WORKER_UNIT_DEFAULT,
+    *,
+    popen: Callable[..., Any] = subprocess.Popen,
+    stop_timeout_s: float = 5.0,
+) -> Callable[["TailState"], JournaldSource]:
+    """The ``source_factory`` for the VPS: cursor -> ``--after-cursor``; else ``--since``.
+
+    A state with ``cursor`` attaches after it. A state with no cursor but a ``last_ts_utc``
+    (the gap fallback, spec §5.1) attaches ``--since <lastTsUtc>``; a fresh state uses
+    ``JOURNAL_FIRST_RUN_SINCE``.
+    """
+
+    def make(state: TailState) -> JournaldSource:
+        if state.cursor:
+            return JournaldSource(unit, cursor=state.cursor, popen=popen, stop_timeout_s=stop_timeout_s)
+        since = journal_since_arg(state.last_ts_utc) if state.last_ts_utc else JOURNAL_FIRST_RUN_SINCE
+        return JournaldSource(unit, since=since, popen=popen, stop_timeout_s=stop_timeout_s)
+
+    return make
+
+
 __all__ = [
+    'JournaldSource',
+    'journald_factory',
+
     'backfill_is_stale',
     'detect_gap',
 

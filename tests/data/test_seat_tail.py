@@ -24,6 +24,9 @@ import pytest
 from maxpane_dashboard.analytics.seat_redact import redact
 from maxpane_dashboard.data import seat_tail
 from maxpane_dashboard.data.seat_tail import (
+    JournaldSource,
+    journald_factory,
+
     backfill_is_stale,
     detect_gap,
 
@@ -238,3 +241,153 @@ def test_backfill_is_stale_rule():
     assert backfill_is_stale(newest_backfill_ts="2026-09-20T13:04:30.000Z", watermark_ts=wm, follower_first_ts=first) is False
     assert backfill_is_stale(newest_backfill_ts="2026-09-20T13:06:00.000Z", watermark_ts=None, follower_first_ts=None) is False
     assert backfill_is_stale(newest_backfill_ts="2026-09-20T13:04:30.000Z", watermark_ts=None, follower_first_ts=first) is False
+
+
+# --- a Popen recorder that serves bytes over a real pipe ---------------------------------
+
+
+class _Proc:
+    def __init__(self, body: bytes, rc: int) -> None:
+        read_fd, write_fd = os.pipe()
+        os.write(write_fd, body)
+        os.close(write_fd)                      # EOF once the body is consumed
+        self.stdout = os.fdopen(read_fd, "rb", buffering=0)
+        self._rc = rc
+        self.returncode: int | None = None
+        self.terminated = False
+        self.killed = False
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout=None) -> int:
+        self.returncode = self._rc
+        return self._rc
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self.returncode = self._rc
+
+    def kill(self) -> None:
+        self.killed = True
+        self.returncode = self._rc
+
+
+class ScriptedPopen:
+    """``popen`` seam: records every argv, serves one scripted body per call."""
+
+    def __init__(self, bodies: list[bytes], rcs: list[int] | None = None) -> None:
+        self.bodies = list(bodies)
+        self.rcs = list(rcs or [0] * len(bodies))
+        self.calls: list[tuple[list[str], dict]] = []
+        self.procs: list[_Proc] = []
+
+    def __call__(self, argv, **kw) -> _Proc:
+        self.calls.append((list(argv), dict(kw)))
+        index = min(len(self.calls) - 1, len(self.bodies) - 1)
+        proc = _Proc(self.bodies[index], self.rcs[index])
+        self.procs.append(proc)
+        return proc
+
+
+class ScriptedRun:
+    """``run`` seam: records argv + kwargs, returns a ``CompletedProcess`` or raises."""
+
+    def __init__(self, stdout: bytes = b"", rc: int = 0, raise_exc: BaseException | None = None) -> None:
+        self.stdout, self.rc, self.raise_exc = stdout, rc, raise_exc
+        self.calls: list[tuple[list[str], dict]] = []
+
+    def __call__(self, argv, **kw) -> subprocess.CompletedProcess:
+        self.calls.append((list(argv), dict(kw)))
+        if self.raise_exc is not None:
+            raise self.raise_exc
+        return subprocess.CompletedProcess(list(argv), self.rc, stdout=self.stdout, stderr=b"")
+
+
+def _fixture_bytes(name: str) -> bytes:
+    return (FIXTURES / name).read_bytes()
+
+
+# =============================================================================
+# Task 3.4 -- JournaldSource
+# =============================================================================
+
+
+def test_journald_argv_forms_are_the_two_documented_ones():
+    # spec §5.1 VPS transport: -o json -f --after-cursor=<cursor>; first run --since -14d
+    assert JournaldSource().argv() == ["journalctl", "-u", "imd-worker.service", "-o", "json", "-f", "--since", "-14d"]
+    assert JournaldSource("imd-worker.service", cursor="s=1;i=2").argv()[-2:] == ["--after-cursor", "s=1;i=2"]
+    assert JournaldSource(since="2026-09-24 04:12:00 UTC").argv()[-2:] == ["--since", "2026-09-24 04:12:00 UTC"]
+    src = JournaldSource(cursor="s=1;i=2", since="2026-09-24 04:12:00 UTC")
+    assert "--since" not in src.argv()             # a cursor wins over since
+
+
+def test_journald_source_parses_o_json_records_from_the_fixture():
+    # fixture grammar/journal_json_records.jsonl: the -o json shape with __CURSOR, __REALTIME_TIMESTAMP,
+    # _SYSTEMD_INVOCATION_ID and MESSAGE carrying the daemon's own stamp (vps §2)
+    popen = ScriptedPopen([_fixture_bytes("journal_json_records.jsonl")])
+    src = JournaldSource("imd-worker.service", cursor="s=00000000000000000000000000000001;i=1ef", popen=popen)
+    src.open()
+    argv, kw = popen.calls[0]
+    assert argv == ["journalctl", "-u", "imd-worker.service", "-o", "json", "-f",
+                    "--after-cursor", "s=00000000000000000000000000000001;i=1ef"]
+    assert kw["stdout"] is subprocess.PIPE and "shell" not in kw
+    got = [r for r in src.lines() if r is not None]
+    assert len(got) == 9
+    unit_event, runtimes, heartbeat = got[0], got[1], got[2]
+    assert unit_event.text == "Started imd-worker.service - IdentityMD worker daemon."
+    assert unit_event.invocation is None                       # systemd's own line: no _SYSTEMD_INVOCATION_ID
+    assert unit_event.cursor.startswith("s=") and unit_event.realtime_us == 1790393995000000
+    assert runtimes.text.endswith("runtimes: codex (using codex, as asked)")
+    assert heartbeat.invocation == "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+    assert realtime_us_to_iso(heartbeat.realtime_us) == "2026-09-26T03:40:07.120Z" == daemon_stamp(heartbeat.text)
+    assert all(r.trusted for r in got)
+    assert src.exit_code() == 0
+
+
+def test_journald_source_tolerates_binary_message_and_garbage_lines():
+    body = b"\n".join([
+        b"not json at all",
+        json.dumps({"__CURSOR": "s=1", "__REALTIME_TIMESTAMP": "1790394007120000",
+                    "MESSAGE": list("2026-09-26T03:40:07.120Z alive 1m".encode())}).encode(),
+        json.dumps(["a", "list"]).encode(),
+        json.dumps({"__CURSOR": "s=2", "__REALTIME_TIMESTAMP": "not-a-number", "MESSAGE": None}).encode(),
+    ]) + b"\n"
+    src = JournaldSource(popen=ScriptedPopen([body]))
+    src.open()
+    got = [r for r in src.lines() if r is not None]
+    assert [r.text for r in got] == ["2026-09-26T03:40:07.120Z alive 1m", ""]
+    assert got[1].realtime_us is None and got[1].cursor == "s=2"
+
+
+def test_journald_close_terminates_then_kills_within_stop_timeout():
+    class _Hang(_Proc):
+        def wait(self, timeout=None):
+            if not self.killed:
+                raise subprocess.TimeoutExpired("journalctl", timeout)
+            self.returncode = 137
+            return 137
+
+    class _HangPopen(ScriptedPopen):
+        def __call__(self, argv, **kw):
+            self.calls.append((list(argv), dict(kw)))
+            proc = _Hang(b"", 137)
+            self.procs.append(proc)
+            return proc
+
+    popen = _HangPopen([b""])
+    src = JournaldSource(popen=popen, stop_timeout_s=0.01)
+    src.open()
+    src.close()
+    proc = popen.procs[0]
+    assert proc.terminated and proc.killed
+    src.close()                                  # idempotent
+
+
+def test_journald_factory_picks_cursor_then_since_fallback_then_first_run():
+    popen = ScriptedPopen([b""])
+    make = journald_factory("imd-worker.service", popen=popen)
+    assert make(TailState(cursor="s=9;i=a")).argv()[-2:] == ["--after-cursor", "s=9;i=a"]
+    assert make(TailState(cursor=None, last_ts_utc="2026-09-24T04:12:00.000Z")).argv()[-2:] == \
+        ["--since", "2026-09-24 04:12:00 UTC"]
+    assert make(TailState()).argv()[-2:] == ["--since", "-14d"]

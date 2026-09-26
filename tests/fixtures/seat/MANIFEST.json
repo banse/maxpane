@@ -323,6 +323,20 @@
       "notes": "keeps Docker's --timestamps RFC3339Nano prefix (9 fraction digits on every line) for WP3; census: heartbeat 12401, phase 1501, accepted_code 292, submitted 292, stored 292, model_line 291, reconnecting 244, connected 186, admitted 179, server_closed 83, ws_response 57, release_avail 23, runtimes 8, profiles 8, ws_socket 8, release_ok 7, shutting_down 7, resending 2, unknown 1 (`getaddrinfo EAI_AGAIN api.imd.fun`); two 40-hex addresses in agent prose -> <hex>",
       "sha256": "5d4acc3b6b6e988b49d435508c576e2ddad2752a94437dbb8abeeb376cddc240",
       "bytes": 1897707
+    },
+    "grammar/journal_json_records.jsonl": {
+      "origin": "synthetic: the `journalctl -u imd-worker.service -o json` record shape verified on imd-vps (vps §2: __CURSOR, __SEQNUM, __REALTIME_TIMESTAMP, PRIORITY=6, _PID, _COMM=MainThread, SYSLOG_IDENTIFIER=imd, _SYSTEMD_INVOCATION_ID, MESSAGE with the daemon's own ISO-ms stamp) around one real-shaped task 0c1f9727; shape re-verified by the owner-run capture in WP3 Task 3.4",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "efc4becaf9fc67574aef30161f3a5f8e3caebf581c5babefdf6e1c47ad4ea07e",
+      "bytes": 5107,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "record 1 is systemd's own `Started` line (PID 1, UNIT= and INVOCATION_ID= without underscore, no _SYSTEMD_INVOCATION_ID); records 2-9 are one daemon invocation a1b2c3d4…; cursors and ids are obviously synthetic 32-hex"
     }
   }
 }
