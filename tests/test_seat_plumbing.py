@@ -114,6 +114,8 @@ SEAT_DECISION_PHRASES = (
     "**2026-09-27 (Codex build)**",
     "**2026-09-27 (execution deviation, WP0)**",
     "**2026-09-27 (owner correction, spec §13)**",
+    "(contract decision, WP2) — a local `task failed:` line appends the pseudo-phase `failed`",
+    "(contract decision, WP2) — the seat ledger adds `sessions_skipped_oversize`",
 )
 
 

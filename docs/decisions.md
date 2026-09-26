@@ -349,3 +349,17 @@ asserts a withdrawn statement is historical — do not review code against it.
   This corrects the spec's listed generic-first order, which would consume an Anthropic key
   before the specific rule could match. The read-only aidude spec remains unchanged; WP9's
   adapted `docs/pepepane_PRD.md` reflects this correction.
+
+
+- **2026-09-26 (contract decision, WP2) — a local `task failed:` line appends the pseudo-phase `failed`** to the open ledger
+  row and closes it unsubmitted; spec §5.1's `localFailure` row flag is `"failed" in row["phases"]`, so the `tasks` schema
+  of contract §C.6 gains no column. The line occurred 0 times in both corpora (13,734 VPS + 15,882 Mac lines), and
+  `SeatLedger._load_state` never reopens such a row (spec §5.1; contract §C.6).
+- **2026-09-26 (contract decision, WP2) — the seat ledger adds `sessions_skipped_oversize`** to `META_KEYS` (the manager adds
+  each summariser call's oversize count there, because the `--since` watermark reports an oversize file once and the COST
+  footer needs the total) and three methods beyond contract §C.6: `attach_work_dirs` (spec §5.2 `work-stat` entries set
+  `work_dir_abnormal` and the full `node_id`/`job_id` on the row whose accept lies within 300 s of the dir mtime),
+  `unattached_sessions` (the doctor/manual/unknown summaries that `seat_cost.summarise(sessions=…)` counts into
+  `cost.excluded`, spec §7) and `mark_expired_transcripts` (Claude rows no transcript joined within `cleanupPeriodDays` = 30
+  read `tokens_reason = "transcript expired"`, spec §5.4). `today()` reports `p50S`/`longestS`/`verdictLagP50S` in whole
+  seconds as spec §7 prints them; `rollup_day`/`days` keep the REAL columns (spec §5.6, §7).
