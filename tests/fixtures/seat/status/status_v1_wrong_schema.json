@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-09-26T03:40:07Z",
+  "seat": {
+    "tokenId": 420,
+    "agentId": 50939,
+    "capacity": "1 concurrent task",
+    "offers": "code, fuzz, research"
+  },
+  "container": {
+    "name": "imd-worker",
+    "running": true,
+    "status": "Up 4 days",
+    "restartCount": 0,
+    "startedAt": "2026-09-21T19:57:03Z"
+  },
+  "fleet": {"online": 78, "enrolled": 84},
+  "reputation": {"rows": []},
+  "cost": {"inputTokens": 4200000, "outputTokens": 190000},
+  "tasks": [
+    {"nodeId": "8eac278c", "phase": "submitted", "answer": "the floor is 0.42 ETH"}
+  ]
+}

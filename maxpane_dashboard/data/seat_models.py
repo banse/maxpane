@@ -218,3 +218,31 @@ def truncate_id(value: object, n: int = 8) -> str | None:
     if not text:
         return None
     return text[:n]
+
+
+def validate_status_document(doc: object, *, raw_bytes: int | None = None) -> Refusal | None:
+    """The §7 refusal rules, in order; ``None`` means the document may be consumed.
+
+    ``raw_bytes`` is the size of the bytes the document was read from; when
+    the caller has only the object, the size is measured by serialising it.
+    The canary allows **no** 64-hex value anywhere: a valid document truncated
+    its device key at fold time.
+    """
+    if not isinstance(doc, dict):
+        return Refusal("not_an_object", f"type={type(doc).__name__}")
+    size = raw_bytes
+    if size is None:
+        try:
+            size = len(json.dumps(doc, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8"))
+        except (TypeError, ValueError, RecursionError):
+            size = None
+    if size is not None and size > MAX_DOCUMENT_BYTES:
+        return Refusal("too_large", f"{size:,} B > 2 MiB")
+    version = doc.get("schemaVersion")
+    if version != SCHEMA_VERSION or isinstance(version, bool):
+        return Refusal("wrong_schema", f"schemaVersion={version!r}")
+    hit = find_secret_path(doc, allowed_hex64_fields=frozenset())
+    if hit is not None:
+        kind, path = hit
+        return Refusal("with_secret", f"canary: {kind} at {path}")
+    return None

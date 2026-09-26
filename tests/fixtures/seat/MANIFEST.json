@@ -27,6 +27,39 @@
         "sk"
       ],
       "notes": "the masked sk-svcac******** fragment is the control plane's own masking and is kept on purpose (redactor test input, mutation proof 12); the corpus carries no control bytes and no hex>=32; capture time approximate"
+    },
+    "status/status_v2_healthy.json": {
+      "origin": "hand-written status document v2 (spec §7 example values: seat #7, agent 51075, counters 288 = 244+5+11+28, the 09-25 failed row); every sources.*.asOfUtc precedes completedAtUtc",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "95acd045f33e30e0f4c3a09f30df044f01e2c474a80a4bff75a09d3fd0526a26",
+      "bytes": 13294,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "the document every WP folds; contains no hex64, sk-, eyJ, secret key name or $"
+    },
+    "status/status_v1_wrong_schema.json": {
+      "origin": "hand-written, shaped like aidude's worker-status.json v1 (fill4): generatedAtUtc, container, fleet, reputation, string capacity",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "9a6ef770aec6beabb45a4b403610994d0804cc1f4e180509ae8010bb4bc16769",
+      "bytes": 596,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "validate_status_document refuses it as wrong_schema (schemaVersion=1)"
+    },
+    "status/status_v2_with_secret.json": {
+      "origin": "hand-written v2 document whose seat.deviceKeyPublic was not truncated: a synthetic 64-hex value (0123456789abcdef x4)",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "0fdddce349319618a0b25193cb82ccee3533ba844ace0a3cd535f96552495910",
+      "bytes": 621,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "validate_status_document refuses it as with_secret (canary: hex64 at seat.deviceKeyPublic); the hex64 is not a real key"
     }
   }
 }

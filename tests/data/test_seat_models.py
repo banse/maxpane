@@ -144,3 +144,77 @@ def test_seat_models_imports_are_pure():
     assert froms & {m for m in froms if m and m.startswith("maxpane_dashboard")} == {
         "maxpane_dashboard.analytics.seat_redact"
     }
+
+
+# ---------------------------------------------------------------------------
+# Task 1.7 — validate_status_document
+# ---------------------------------------------------------------------------
+
+
+def _minimal_v2() -> dict:
+    return {"schemaVersion": 2, "producer": "pepepane 0.1.0", "seat": {"tokenId": 7, "deviceKeyPublic": "72b617d4"}}
+
+
+def test_validate_accepts_a_clean_v2_document():
+    assert sm.validate_status_document(_minimal_v2()) is None
+    assert sm.validate_status_document(sm.empty_document(started_at_utc="2026-09-26T03:40:07Z", host=HOST)) is None
+    assert sm.validate_status_document(_load("status_v2_healthy.json")) is None
+
+
+def test_validate_refuses_not_an_object():
+    assert sm.validate_status_document([]) == sm.Refusal("not_an_object", "type=list")
+    assert sm.validate_status_document("{}") == sm.Refusal("not_an_object", "type=str")
+    assert sm.validate_status_document(None) == sm.Refusal("not_an_object", "type=NoneType")
+
+
+def test_validate_refuses_wrong_schema():
+    # spec §7 refusal rules: schemaVersion != 2 -> wrong_schema (aidude v1 is the case that matters)
+    refusal = sm.validate_status_document(_load("status_v1_wrong_schema.json"))
+    assert refusal == sm.Refusal("wrong_schema", "schemaVersion=1")
+    assert sm.validate_status_document({"producer": "x"}) == sm.Refusal("wrong_schema", "schemaVersion=None")
+    assert sm.validate_status_document({"schemaVersion": "2"}) == sm.Refusal("wrong_schema", "schemaVersion='2'")
+    assert sm.validate_status_document({"schemaVersion": True}) is not None
+    # a wrong schema is reported before a secret is looked for
+    assert sm.validate_status_document({"schemaVersion": 1, "k": HEX64}).code == "wrong_schema"
+
+
+def test_validate_refuses_any_hex64():
+    # spec §7: in a valid document NO 64-hex value survives -- even under an otherwise-allowed field name
+    refusal = sm.validate_status_document(_load("status_v2_with_secret.json"))
+    assert refusal == sm.Refusal("with_secret", "canary: hex64 at seat.deviceKeyPublic")
+    doc = _minimal_v2()
+    doc["tasks"] = {"rows": [{"hash12": HEX64}]}
+    assert sm.validate_status_document(doc) == sm.Refusal("with_secret", "canary: hex64 at tasks.rows[0].hash12")
+    doc = _minimal_v2()
+    doc["submissionHash"] = HEX64
+    assert sm.validate_status_document(doc) == sm.Refusal("with_secret", "canary: hex64 at submissionHash")
+    doc = _minimal_v2()
+    doc["seat"]["deviceKey"] = HEX64
+    assert sm.validate_status_document(doc).code == "with_secret"
+
+
+def test_validate_refuses_secret_key_names_sk_and_jwt():
+    doc = _minimal_v2()
+    doc["seat"]["devicePrivateKey"] = None
+    assert sm.validate_status_document(doc) == sm.Refusal("with_secret", "canary: key_name at seat.devicePrivateKey")
+    doc = _minimal_v2()
+    doc["daemon"] = {"pausedHint": {"reason": "Incorrect API key provided: sk-svcac********"}}
+    assert sm.validate_status_document(doc) == sm.Refusal("with_secret", "canary: sk at daemon.pausedHint.reason")
+    doc = _minimal_v2()
+    doc["auth"] = {"reasons": ["token eyJhbGciOiJIUzI1NiJ9"]}
+    assert sm.validate_status_document(doc) == sm.Refusal("with_secret", "canary: jwt at auth.reasons[0]")
+
+
+def test_validate_refuses_over_2mib():
+    # spec §7: > 2 MiB -> refused; exactly 2 MiB passes
+    doc = _minimal_v2()
+    assert sm.validate_status_document(doc, raw_bytes=sm.MAX_DOCUMENT_BYTES + 1) == sm.Refusal(
+        "too_large", "2,097,153 B > 2 MiB"
+    )
+    assert sm.validate_status_document(doc, raw_bytes=sm.MAX_DOCUMENT_BYTES) is None
+    big = _minimal_v2()
+    big["seat"]["eligibility"] = "e" * (sm.MAX_DOCUMENT_BYTES + 10)
+    refusal = sm.validate_status_document(big)
+    assert refusal is not None and refusal.code == "too_large" and refusal.detail.endswith(" B > 2 MiB")
+    # size is checked before the schema: an oversize v1 document is too_large, not wrong_schema
+    assert sm.validate_status_document({"schemaVersion": 1}, raw_bytes=sm.MAX_DOCUMENT_BYTES + 1).code == "too_large"
