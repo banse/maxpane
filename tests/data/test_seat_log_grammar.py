@@ -1,0 +1,171 @@
+"""Grammar tests for ``data/seat_log_grammar.py`` (spec §5.1, Appendix B; contract C.5)."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+from maxpane_dashboard.analytics.seat_redact import CONTROL_RE, SK_RE
+from maxpane_dashboard.data import seat_log_grammar as g
+
+FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "seat" / "grammar"
+
+
+def _lines(name: str) -> list[str]:
+    return (FIXTURES / name).read_text(encoding="utf-8").splitlines()
+
+
+def _kinds(name: str) -> list[str]:
+    return [g.classify(line).kind for line in _lines(name)]
+
+
+class TestModuleShape:
+    def test_thirty_one_stamped_patterns_in_match_order(self) -> None:
+        """Contract C.5: 31 (kind, pattern) pairs; MODEL_LINE and MODEL_REFUSE before PHASE; RATE_LIMITED last."""
+        kinds = [kind for kind, _ in g.PATTERNS]
+        assert len(kinds) == 31 and len(set(kinds)) == 31
+        assert kinds.index(g.KIND_MODEL_LINE) < kinds.index(g.KIND_PHASE)
+        assert kinds.index(g.KIND_MODEL_REFUSE) < kinds.index(g.KIND_PHASE)
+        assert kinds[-1] == g.KIND_RATE_LIMITED
+
+    def test_every_pattern_is_ascii_and_anchored_at_the_stamp(self) -> None:
+        """Appendix B: compile with re.ASCII; every body starts with TS (the ``^(?P<ts>…) `` anchor) and ends with $."""
+        for _, pattern in g.PATTERNS:
+            assert pattern.flags & re.ASCII
+            assert pattern.pattern.startswith(g.TS)
+            assert pattern.pattern.endswith("$")
+
+    def test_kind_sets(self) -> None:
+        assert g.ACCEPTED_KINDS == {"accepted_code", "accepted_research", "accepted_fuzz"}
+        assert g.TERMINAL_KINDS == {"submitted", "answered", "fuzz_outcome", "stored", "cancelled"}
+        assert g.CONNECTION_KINDS == {"connected", "admitted", "server_closed", "reconnecting", "ws_response", "ws_socket"}
+        assert g.HIGHLIGHT_KINDS == {"rate_limited", "build_skew", "release_avail", "local_fail", "resending", "cancelled"}
+        assert g.GRAMMAR_VERSION == "0.1.0+5bfa8261"
+        assert g.is_accept("accepted_fuzz") and g.is_terminal("stored") and not g.is_terminal("phase")
+
+
+class TestClassifyEachKind:
+    def test_heartbeat_with_fleet(self) -> None:
+        line = g.classify("2026-09-26T02:28:25.226Z alive 14h42m · idle · 77 submitted · fleet 406 online, 417 enrolled")
+        assert line.kind == g.KIND_HEARTBEAT and line.ts == "2026-09-26T02:28:25.226Z"
+        f = line.fields
+        assert (f["state"], f["uptime"], f["work"], f["submitted"], f["online"], f["enrolled"]) == (
+            "alive", "14h42m", "idle", "77", "406", "417")
+        assert f["running"] is None and f["until"] is None
+
+    def test_heartbeat_without_fleet_clause(self) -> None:
+        """Spec §5.1: the fleet clause is absent when the 5 s GET /health failed (427+ lines)."""
+        line = g.classify("2026-09-25T15:13:19.512Z disconnected 3h27m · idle · 0 submitted")
+        assert line.kind == g.KIND_HEARTBEAT
+        assert line.fields["state"] == "disconnected" and line.fields["online"] is None
+
+    def test_heartbeat_running_and_paused_suffix_is_redacted_before_matching(self) -> None:
+        raw = ("2026-09-25T23:55:52.556Z alive 12h10m · 1 task running · 16 submitted · fleet 403 online, 412 enrolled"
+               " · paused until 23:53 after 3 failed runs: unexpected status 401 Unauthorized: Incorrect API key provided:"
+               " sk-svcac******** — run imd doctor")
+        line = g.classify(raw)
+        assert line.kind == g.KIND_HEARTBEAT
+        assert line.fields["running"] == "1" and line.fields["until"] == "23:53" and line.fields["failed"] == "3"
+        assert "sk-svcac" not in line.text and "sk-[redacted]" in line.fields["reason"]
+
+    def test_heartbeat_unregistered_suffix(self) -> None:
+        line = g.classify("2026-09-26T02:28:25.226Z alive 1m · idle · 0 submitted · token not registered as an agent — run imd doctor")
+        assert line.kind == g.KIND_HEARTBEAT and line.fields["unregistered"]
+
+    def test_accept_lines(self) -> None:
+        code = g.classify("2026-09-26T01:52:44.909Z accepted implement 0c1f9727 — artifacts/answer.json (max 60 turns)")
+        assert code.kind == g.KIND_ACCEPTED_CODE
+        assert (code.fields["role"], code.fields["node8"], code.fields["paths"], code.fields["max_turns"]) == (
+            "implement", "0c1f9727", "artifacts/answer.json", "60")
+        tests = g.classify("2026-09-24T03:50:34.996Z accepted tests e78e1517 — test/fren-review/hunt_d, review/hunt_d.md (max 60 turns)")
+        assert tests.kind == g.KIND_ACCEPTED_CODE and tests.fields["role"] == "tests"
+        research = g.classify("2026-09-25T18:08:55.020Z accepted question ec996927")
+        assert research.kind == g.KIND_ACCEPTED_RESEARCH and research.fields["node8"] == "ec996927"
+        fuzz = g.classify("2026-09-24T04:24:01.000Z accepted campaign cb1949ef — test/Harness.t.sol (256 runs)")
+        assert fuzz.kind == g.KIND_ACCEPTED_FUZZ and fuzz.fields["runs"] == "256"
+
+    def test_phase_and_model_lines(self) -> None:
+        phase = g.classify("2026-09-22T05:14:45.887Z   repairing: fixing failed checks within this assignment")
+        assert phase.kind == g.KIND_PHASE and phase.fields["phase"] == "repairing"
+        model = g.classify("2026-09-26T01:52:45.400Z   working: running codex on gpt-6-luna")
+        assert model.kind == g.KIND_MODEL_LINE and (model.fields["rt"], model.fields["model"]) == ("codex", "gpt-6-luna")
+        over = g.classify("2026-09-26T01:52:45.400Z   working: " + "x" * 161)
+        assert over.kind == g.KIND_UNKNOWN  # the daemon slices prose at 160 (bundle §3.1); longer is not a daemon line
+        bare = g.classify("2026-09-26T01:52:45.400Z   working: running claude")
+        assert bare.kind == g.KIND_MODEL_LINE and bare.fields["model"] is None
+        refuse = g.classify("2026-09-26T01:52:45.400Z   working: codex refused model gpt-6-astra; running on its default model instead")
+        assert refuse.kind == g.KIND_MODEL_REFUSE and refuse.fields["model"] == "gpt-6-astra"
+
+    def test_terminal_lines(self) -> None:
+        assert g.classify("2026-09-26T01:53:17.136Z submitted implement for 0c1f9727").fields["node8"] == "0c1f9727"
+        assert g.classify("2026-09-25T18:09:56.031Z answered ec996927 with 2 citation(s)").fields["citations"] == "2"
+        stored = g.classify("2026-09-26T02:28:23.225Z submission stored (c4d9714ffb95) — awaiting verdict")
+        assert stored.kind == g.KIND_STORED and stored.fields["hash12"] == "c4d9714ffb95"
+        cancel = g.classify("2026-09-26T02:48:18.153Z cancelled 16a4df90: superseded")
+        assert cancel.kind == g.KIND_CANCELLED and (cancel.fields["lease8"], cancel.fields["reason"]) == ("16a4df90", "superseded")
+        for text in ("counterexample for invariant_totalSupply", "campaign could not run: the harness did not build",
+                     "exhausted 256 runs, nothing found"):
+            assert g.classify(f"2026-09-24T04:26:00.000Z {text}").kind == g.KIND_FUZZ_OUTCOME
+
+    def test_error_resend_and_rate_limit_lines(self) -> None:
+        err = g.classify("2026-09-26T02:48:19.226Z server error (unknown_lease): lease_closed: lease is expired")
+        assert err.kind == g.KIND_SERVER_ERROR and err.fields["code"] == "unknown_lease"
+        assert g.classify("2026-09-22T17:21:24.081Z re-sending 1 unacknowledged result(s)").fields["n"] == "1"
+        fail = g.classify("2026-09-26T00:00:00.000Z question failed: boom")
+        assert fail.kind == g.KIND_LOCAL_FAIL and fail.fields["what"] == "question"
+        rate = g.classify("2026-09-26T00:00:00.000Z codex remains rate limited; releasing task after runtime shutdown; pausing new work for five minutes")
+        assert rate.kind == g.KIND_RATE_LIMITED
+
+    def test_connection_lines(self) -> None:
+        assert g.classify("2026-09-25T11:45:41.663Z connected to api.imd.fun").fields["host"] == "api.imd.fun"
+        assert g.classify("2026-09-25T11:45:41.968Z admitted (session 29904530)").fields["session8"] == "29904530"
+        closed = g.classify("2026-09-25T15:13:12.445Z server closed: server_shutdown — control plane restarting")
+        assert closed.kind == g.KIND_SERVER_CLOSED and closed.fields["reason"] == "server_shutdown"
+        assert g.classify("2026-09-24T22:21:56.620Z reconnecting in 3.8s").fields["seconds"] == "3.8"
+        assert g.classify("2026-09-24T22:21:56.620Z Unexpected server response: 502").fields["code"] == "502"
+        for msg in ("socket hang up", "Client network socket disconnected before secure TLS connection was established"):
+            assert g.classify(f"2026-09-21T20:38:40.992Z {msg}").kind == g.KIND_WS_SOCKET
+
+    def test_startup_and_update_lines(self) -> None:
+        rt = g.classify("2026-09-25T11:45:41.489Z runtimes: codex codex-cli 0.157.0 (using codex, as asked)")
+        assert rt.kind == g.KIND_RUNTIMES and rt.fields["list"] == "codex codex-cli 0.157.0" and rt.fields["rt"] == "codex"
+        assert g.classify("2026-09-25T11:45:41.501Z execution profiles: none, foundry").kind == g.KIND_PROFILES
+        assert g.classify("2026-09-25T11:45:41.501Z tools advertised: a, b").fields["tools"] == "a, b"
+        assert g.classify("2026-09-25T11:45:41.804Z release 0.1.0+5bfa8261, the latest").fields["version"] == "0.1.0+5bfa8261"
+        avail = g.classify("2026-09-23T19:56:32.045Z 0.1.0+79f4f4d5 installed; 0.1.0+61d04d62 is available; when idle, stop the worker and run `imd update`, or start with --auto-update so it happens by itself")
+        assert avail.kind == g.KIND_RELEASE_AVAIL and (avail.fields["installed"], avail.fields["available"]) == ("0.1.0+79f4f4d5", "0.1.0+61d04d62")
+        skew = g.classify("2026-09-23T19:56:32.045Z control plane runs build 0.1.0+aa634633; this checkout is 0.1.0+5bfa8261 — update when idle")
+        assert skew.kind == g.KIND_BUILD_SKEW and (skew.fields["plane"], skew.fields["local"]) == ("0.1.0+aa634633", "0.1.0+5bfa8261")
+        assert g.classify("2026-09-23T19:56:32.045Z build mismatch: control plane 0.1.0+aa634633").kind == g.KIND_BUILD_SKEW
+        assert g.classify("2026-09-25T11:45:41.217Z shutting down").kind == g.KIND_SHUTTING_DOWN
+        upd = g.classify("2026-09-24T04:12:40.000Z updated 0.1.0+61d04d62 → 0.1.0+aa8ff6ee (downloaded, verified, installed)")
+        assert upd.kind == g.KIND_UPDATED and upd.fields["to"] == "0.1.0+aa8ff6ee"
+        assert g.classify("2026-09-22T11:56:18.000Z paired to token 7").fields["token"] == "7"
+
+    def test_unknown_lines(self) -> None:
+        """Spec §5.1: anything that matches no pattern is unknown (LOG only); a stamped unknown keeps its stamp."""
+        unknown = g.classify("2026-09-21T20:38:54.151Z getaddrinfo EAI_AGAIN api.imd.fun")
+        assert unknown.kind == g.KIND_UNKNOWN and unknown.ts == "2026-09-21T20:38:54.151Z" and unknown.fields == {}
+        assert g.classify("npm warn deprecated something").kind == g.KIND_UNKNOWN
+        assert g.classify("npm warn deprecated something").ts == ""
+
+    def test_log_line_carries_transport_fields(self) -> None:
+        line = g.classify("2026-09-25T11:45:41.217Z shutting down", invocation="abc", cursor="s=1;i=2", seq=7)
+        assert (line.invocation, line.cursor, line.seq) == ("abc", "s=1;i=2", 7)
+        with pytest.raises(Exception):
+            line.kind = "x"  # type: ignore[misc]  # frozen
+
+    def test_model_line_matches_before_phase(self) -> None:
+        """Contract C.5 order rule: ``  working: running codex on gpt-6-luna`` satisfies PHASE too; order decides."""
+        line = g.classify("2026-09-26T01:52:45.400Z   working: running codex on gpt-6-luna")
+        assert line.kind == g.KIND_MODEL_LINE
+        assert g.PHASE.fullmatch(line.text) is not None  # the ambiguity is real, the order resolves it
+
+    def test_control_characters_are_stripped_before_matching(self) -> None:
+        """Spec §13 step 0 / Appendix B: an OSC-52 payload inside working: prose still classifies as phase."""
+        raw = "2026-09-26T01:52:50.000Z   working: done \x1b]52;c;AAAA\x07\x1b]0;x\x07 ‮ reversed"
+        line = g.classify(raw)
+        assert line.kind == g.KIND_PHASE
+        assert "\x07" not in line.text and "‮" not in line.text and "␛" in line.text
