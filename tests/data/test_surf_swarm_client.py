@@ -747,3 +747,73 @@ async def test_submission_popup_captures_require_exact_recorded_route(name):
             result=await client.fetch_job(body['id'])
         assert result==body
     finally: await client.close()
+
+
+# Seat resilience WP1: busy is an all-host outcome, and only for /seats.
+def _busy_body():
+    import json
+    from tests.surf_swarm_fixtures import SWARM_FIXTURES_V2
+    return json.loads((SWARM_FIXTURES_V2.parent / "seats_503_busy.json").read_text())
+
+
+async def test_fetch_seat_all_hosts_busy_returns_busy_without_shrinking_the_pool():
+    from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY
+    seen = []
+    async with _client(_recording(seen, lambda r: httpx.Response(503, json=_busy_body())),
+                       inter_call_delay=0) as client:
+        first = await client.fetch_seat(420)
+        assert first == SEAT_BUSY
+        first["error"] = "tampered"
+        assert await client.fetch_seat(420) == SEAT_BUSY
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST, FIRST_HOST, SECOND_HOST]
+
+
+@pytest.mark.parametrize("busy_first", [True, False])
+async def test_fetch_seat_mixed_busy_and_server_error_is_failed(busy_first):
+    seen = []
+    def respond(request):
+        busy = (request.url.host == FIRST_HOST) == busy_first
+        return httpx.Response(503 if busy else 500, json=(
+            _busy_body() if busy else swarm_seat_capture("invalid_request_400")))
+    async with _client(_recording(seen, respond), inter_call_delay=0) as client:
+        assert await client.fetch_seat(420) is None
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_fetch_seat_503_with_another_error_is_not_busy():
+    seen = []
+    async with _client(_recording(seen, lambda r: httpx.Response(
+            503, json=swarm_seat_capture("invalid_request_400"))), inter_call_delay=0) as client:
+        assert await client.fetch_seat(420) is None
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+@pytest.mark.parametrize("fixture", ["seats_503_not_json.txt", "seats_503_non_object.json"])
+async def test_fetch_seat_503_without_a_json_object_is_not_busy(fixture):
+    from tests.surf_swarm_fixtures import SWARM_FIXTURES_V2
+    body = (SWARM_FIXTURES_V2.parent / fixture).read_bytes()
+    seen = []
+    async with _client(_recording(seen, lambda r: httpx.Response(503, content=body)),
+                       inter_call_delay=0) as client:
+        assert await client.fetch_seat(420) is None
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_fetch_seat_busy_then_success_returns_the_seat():
+    seen = []
+    def respond(request):
+        if request.url.host == FIRST_HOST:
+            return httpx.Response(503, json=_busy_body())
+        return httpx.Response(200, json=swarm_seat_capture("seat_420"))
+    async with _client(_recording(seen, respond), inter_call_delay=0) as client:
+        assert await client.fetch_seat(420) == swarm_seat_capture("seat_420")
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+
+async def test_busy_body_without_503_and_busy_on_other_routes_remain_failures():
+    async with _client(lambda r: httpx.Response(500, json=_busy_body()),
+                       inter_call_delay=0) as client:
+        assert await client.fetch_seat(420) is None
+    async with _client(lambda r: httpx.Response(503, json=_busy_body()),
+                       inter_call_delay=0) as client:
+        assert await client.fetch_health() is None

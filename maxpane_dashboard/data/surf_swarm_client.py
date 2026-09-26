@@ -161,6 +161,7 @@ class SwarmClient(OwnedHttpClient):
         raw: bool = False,
         params: Mapping[str, str] | None = None,
         answers_404: Callable[[Any], bool] | None = None,
+        seat_busy: bool = False,
     ) -> Any:
         """One GET, tried once per host in pool order.
 
@@ -172,10 +173,14 @@ class SwarmClient(OwnedHttpClient):
         predicate accepts is an *answer*, returned as ``_Answered404(body)``
         with no further host asked.  Any other 404 -- a removed route, an HTML
         page -- rotates like every other non-200.
+
+        ``seat_busy`` opts seat reads into a distinct result only when every
+        host returns HTTP 503 with the exact JSON error ``busy``.
         """
         if "?" in path:
             raise ValueError(f"the swarm API takes no query parameters: {path!r}")
         await self._sleep(self._delay)
+        busy_hosts = 0
         for attempt, host in enumerate(self._hosts):
             try:
                 response = await self._client.get(host + path, params=params)
@@ -189,6 +194,13 @@ class SwarmClient(OwnedHttpClient):
                     answer = None
                 if answers_404(answer):
                     return _Answered404(answer)
+            if seat_busy and response.status_code == 503:
+                try:
+                    error = response.json()
+                except ValueError:
+                    error = None
+                if isinstance(error, dict) and error.get("error") == "busy":
+                    busy_hosts += 1
             if response.status_code != 200:
                 logger.debug("swarm GET %s%s -> %s", host, path, response.status_code)
                 continue
@@ -206,7 +218,7 @@ class SwarmClient(OwnedHttpClient):
                 )
             return body
         logger.debug("swarm GET %s failed on every host", path)
-        return None
+        return dict(SEAT_BUSY) if busy_hosts == len(self._hosts) else None
 
     async def _dict(self, path: str) -> dict[str, Any] | None:
         body = await self._get(path)
@@ -295,7 +307,7 @@ class SwarmClient(OwnedHttpClient):
 
     async def fetch_seat(self, token: int) -> dict[str, Any] | None:
         """``GET /seats/{token}``: the seat's dict, a fresh copy of
-        :data:`UNKNOWN_SEAT`, or ``None``.
+        :data:`UNKNOWN_SEAT` or :data:`SEAT_BUSY`, or ``None``.
 
         ``UNKNOWN_SEAT`` is the host's ``404 unknown_seat`` -- a token never
         paired, an answer: no other host is asked.  Any other 404 is a failed
@@ -307,7 +319,7 @@ class SwarmClient(OwnedHttpClient):
         if isinstance(token, bool) or not isinstance(token, int) or token < 0:
             logger.debug("swarm fetch_seat refused a token that is no non-negative int: %r", token)
             return None
-        body = await self._get(f"/seats/{token:d}", answers_404=_is_unknown_seat)
+        body = await self._get(f"/seats/{token:d}", answers_404=_is_unknown_seat, seat_busy=True)
         if isinstance(body, _Answered404):
             return dict(UNKNOWN_SEAT)
         return body if isinstance(body, dict) else None
