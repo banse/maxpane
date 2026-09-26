@@ -179,6 +179,23 @@ HIGHLIGHT_KINDS = frozenset(
     {KIND_RATE_LIMITED, KIND_BUILD_SKEW, KIND_RELEASE_AVAIL, KIND_LOCAL_FAIL, KIND_RESENDING, KIND_CANCELLED}
 )
 
+#: systemd's own lines carry no daemon stamp. Measured in journal7d.txt: 25 lines are
+#: ``Started|Stopping|Stopped imd-worker.service - …`` and 16 are prefixed by the unit name
+#: (``imd-worker.service: Deactivated successfully.``, ``imd-worker.service: Consumed …``) —
+#: the optional ``<unit>.service: `` head is a recorded deviation from contract C.5.
+UNIT_EVENT_RE = re.compile(
+    r"(?:[\w@.-]+\.service: )?(?P<event>Started|Stopped|Stopping|Consumed|Deactivated|Scheduled restart)\b.*",
+    re.ASCII,
+)
+
+#: Docker's ``--timestamps`` prefix is RFC3339Nano: 9 fraction digits on 15,882 of 15,882
+#: measured lines; Go trims trailing zeros, so 1–9 are accepted. The daemon's own stamp has
+#: exactly 3. A first stamp is Docker's when a second stamp follows it or when its fraction
+#: is not 3 digits; otherwise the line is a bare daemon line and is returned unchanged.
+_DOCKER_PREFIX_RE = re.compile(
+    r"^(?P<stamp>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.(?P<frac>\d{1,9}))?Z) (?P<rest>.*)$", re.ASCII | re.DOTALL
+)
+
 @dataclass(frozen=True)
 class LogLine:
     ts: str  # the daemon's ISO ms Z stamp as printed; "" for unit events / unstamped unknown lines
@@ -200,11 +217,25 @@ def classify(line: str, *, invocation: str | None = None, cursor: str | None = N
                 ts=match.group("ts"), invocation=invocation, text=text, kind=kind, cursor=cursor,
                 fields=match.groupdict(), seq=seq,
             )
+    unit = UNIT_EVENT_RE.fullmatch(text)
+    if unit is not None:
+        return LogLine(
+            ts="", invocation=invocation, text=text, kind=KIND_UNIT_EVENT, cursor=cursor,
+            fields={"event": unit.group("event")}, seq=seq,
+        )
     stamped = _TS_RE.match(text)
     return LogLine(
         ts=stamped.group("ts") if stamped is not None else "", invocation=invocation, text=text,
         kind=KIND_UNKNOWN, cursor=cursor, fields={}, seq=seq,
     )
+
+
+def parse_ts(ts: str) -> float | None:
+    """Epoch seconds from the daemon's ``YYYY-MM-DDTHH:MM:SS.mmmZ`` stamp; ``None`` when unusable."""
+    try:
+        return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        return None
 
 
 def is_terminal(kind: str) -> bool:
@@ -215,12 +246,29 @@ def is_accept(kind: str) -> bool:
     return kind in ACCEPTED_KINDS
 
 
+def strip_docker_prefix(raw: str) -> str:
+    """Drop Docker's ``--timestamps`` prefix; the daemon's own stamp remains.
+
+    A Docker line without a daemon stamp (a node crash trace, an npm warning) still loses its
+    prefix and then classifies ``unknown``. A journald line — one 3-digit stamp and no second
+    stamp — is returned unchanged, so the function is safe to call on either transport.
+    """
+    match = _DOCKER_PREFIX_RE.match(raw)
+    if match is None:
+        return raw
+    rest = match.group("rest")
+    frac = match.group("frac") or ""
+    if len(frac) != 3 or _TS_RE.match(rest) is not None:
+        return rest
+    return raw
+
+
 __all__ = [
     "GRAMMAR_VERSION", "TS", "HEARTBEAT", "ACCEPTED_CODE", "ACCEPTED_RESEARCH", "ACCEPTED_FUZZ", "PHASE",
     "MODEL_LINE", "MODEL_REFUSE", "SUBMITTED", "ANSWERED", "FUZZ_OUTCOME", "STORED", "CANCELLED", "SERVER_ERROR",
     "RESENDING", "LOCAL_FAIL", "RATE_LIMITED", "CONNECTED", "ADMITTED", "SERVER_CLOSED", "RECONNECTING",
     "WS_RESPONSE", "WS_SOCKET", "RUNTIMES", "PROFILES", "TOOLS_ADV", "RELEASE_OK", "RELEASE_AVAIL", "BUILD_SKEW",
-    "SHUTTING_DOWN", "UPDATED", "PAIRED", "PATTERNS",
+    "SHUTTING_DOWN", "UPDATED", "PAIRED", "PATTERNS", "UNIT_EVENT_RE",
     "KIND_HEARTBEAT", "KIND_ACCEPTED_CODE", "KIND_ACCEPTED_RESEARCH", "KIND_ACCEPTED_FUZZ", "KIND_PHASE",
     "KIND_MODEL_LINE", "KIND_MODEL_REFUSE", "KIND_SUBMITTED", "KIND_ANSWERED", "KIND_FUZZ_OUTCOME", "KIND_STORED",
     "KIND_CANCELLED", "KIND_SERVER_ERROR", "KIND_RESENDING", "KIND_LOCAL_FAIL", "KIND_RATE_LIMITED", "KIND_CONNECTED",
@@ -228,5 +276,5 @@ __all__ = [
     "KIND_PROFILES", "KIND_TOOLS_ADV", "KIND_RELEASE_OK", "KIND_RELEASE_AVAIL", "KIND_BUILD_SKEW", "KIND_SHUTTING_DOWN",
     "KIND_UPDATED", "KIND_PAIRED", "KIND_UNIT_EVENT", "KIND_UNKNOWN",
     "ACCEPTED_KINDS", "TERMINAL_KINDS", "CONNECTION_KINDS", "HIGHLIGHT_KINDS",
-    "LogLine", "classify", "is_accept", "is_terminal",
+    "LogLine", "classify", "parse_ts", "is_terminal", "is_accept", "strip_docker_prefix",
 ]

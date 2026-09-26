@@ -115,6 +115,20 @@
       "daemon_version": "0.1.0+5bfa8261",
       "allow": [],
       "notes": "derived from status_v2_healthy.json by the Task 1.10 generator (explicit field assignments); validates None and folds to SEAT_KEYS"
+    },
+    "grammar/unit_events.txt": {
+      "origin": "imd-vps journalctl -u imd-worker.service -o cat --no-pager, 2026-09-22T12:00:00Z -> 2026-09-26T02:31:55Z (the research scratchpad copy journal7d.txt, 13,734 lines); systemd's own lines (no daemon stamp), first occurrence of each of the 8 distinct forms",
+      "captured_at": "2026-09-26T04:31:00Z",
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "25 lines are `Started|Stopping|Stopped imd-worker.service - …`, 16 carry the `imd-worker.service: ` head (Deactivated/Consumed) — contract deviation 1",
+      "sha256": "5042a6fc04d1a58b9591fbd8bd76642bca1554f825b59a829af4143221e60e4e",
+      "bytes": 642
     }
   }
 }

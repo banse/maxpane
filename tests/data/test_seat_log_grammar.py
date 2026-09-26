@@ -169,3 +169,30 @@ class TestClassifyEachKind:
         line = g.classify(raw)
         assert line.kind == g.KIND_PHASE
         assert "\x07" not in line.text and "‮" not in line.text and "␛" in line.text
+
+
+# ---------------------------------------------------------------------------------------- Task 2.2
+class TestUnitEventsAndHelpers:
+    def test_unit_events(self) -> None:
+        """Spec §5.1: systemd's own lines lack the daemon stamp and classify as unit events (both measured forms)."""
+        for line in _lines("unit_events.txt"):
+            classified = g.classify(line)
+            assert classified.kind == g.KIND_UNIT_EVENT and classified.ts == "", line
+        assert g.classify("imd-worker.service: Scheduled restart job, restart counter is at 1.").fields["event"] == "Scheduled restart"
+        assert g.classify("Started imd-worker.service - IMD worker (Codex, seat #7).").fields["event"] == "Started"
+        assert g.classify("Started something else entirely").kind == g.KIND_UNIT_EVENT  # the regex is deliberately loose
+        assert g.classify("2026-09-25T11:45:41.217Z Started imd-worker.service").kind == g.KIND_UNKNOWN  # a stamped line is the daemon's
+
+    def test_parse_ts(self) -> None:
+        assert g.parse_ts("2026-09-25T11:45:41.489Z") == 1790336741.489
+        assert g.parse_ts("") is None and g.parse_ts("2026-09-25 11:45") is None
+
+    def test_strip_docker_prefix(self) -> None:
+        """Docker's RFC3339Nano prefix goes; the daemon's stamp stays; a journald line is untouched."""
+        docker = "2026-09-21T19:57:26.361783469Z 2026-09-21T19:57:26.361Z runtimes: claude 2.1.278 (Claude Code) (using claude, as asked)"
+        assert g.strip_docker_prefix(docker) == "2026-09-21T19:57:26.361Z runtimes: claude 2.1.278 (Claude Code) (using claude, as asked)"
+        assert g.strip_docker_prefix("2026-09-21T20:38:54.151911678Z npm warn something") == "npm warn something"
+        assert g.strip_docker_prefix("2026-09-21T20:38:54.15Z npm warn something") == "npm warn something"  # Go trims zeros
+        journald = "2026-09-25T11:45:41.217Z shutting down"
+        assert g.strip_docker_prefix(journald) == journald
+        assert g.strip_docker_prefix("Started imd-worker.service - IMD worker (Codex, seat #7).") == "Started imd-worker.service - IMD worker (Codex, seat #7)."

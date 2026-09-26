@@ -1,0 +1,8 @@
+Started imd-worker.service - IMD worker (Codex, seat #7).
+Stopping imd-worker.service - IMD worker (Codex, seat #7)...
+imd-worker.service: Deactivated successfully.
+Stopped imd-worker.service - IMD worker (Codex, seat #7).
+imd-worker.service: Consumed 539ms CPU time over 3min 28.126s wall clock time, 72.1M memory peak.
+imd-worker.service: Consumed 31.554s CPU time over 6h 22min 58.265s wall clock time, 156.1M memory peak.
+imd-worker.service: Consumed 2min 28.102s CPU time over 21h 50min 17.371s wall clock time, 287.2M memory peak.
+imd-worker.service: Consumed 33.869s CPU time over 3h 39min 46.954s wall clock time, 187.3M memory peak.
