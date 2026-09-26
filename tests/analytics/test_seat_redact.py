@@ -145,3 +145,39 @@ def test_redact_runs_step_0_before_the_rules():
     assert sr.redact("\x00sk-abcd\x00") == "sk-[redacted]"
     assert sr.redact("sk-\u202eabcd") == "sk-[redacted]"
     assert sr.redact("\x1b[31msk-abcd") == "\u241b[31msk-[redacted]"
+
+
+# ---------------------------------------------------------------------------
+# Task 1.3 — agent sentences and the real masked-key heartbeat
+# ---------------------------------------------------------------------------
+
+
+def test_redact_agent_sentence_collapses_whitespace_and_caps_160():
+    # spec §13: whitespace collapse and a 160-char cap on agent sentences (the daemon's own two operations)
+    text = "Created\n\n artifacts/answer.json \t\t then  " + "x" * 300
+    out = sr.redact_agent_sentence(text)
+    assert out.startswith("Created artifacts/answer.json then xxxx")
+    assert "  " not in out and "\n" not in out and "\t" not in out
+    assert len(out) == sr.AGENT_SENTENCE_CAP == 160
+    assert sr.redact_agent_sentence(None) == ""
+
+
+def test_masked_key_never_reaches_a_strip_or_the_ledger():
+    # spec §14 mutation proof 12 (redactor half): the real sk-svcac******** fragment from the 09-25 heartbeat
+    lines = _fixture_lines("heartbeat_paused_401.txt")
+    assert len(lines) == 91
+    masked = [line for line in lines if "sk-svcac" in line]
+    assert len(masked) == 30, "the slice carries exactly 30 heartbeats with the masked fragment"
+    for line in masked:
+        out = sr.redact(line)
+        assert "svcac" not in out
+        assert "sk-[redacted] — run imd doctor" in out
+        beat = HEARTBEAT.fullmatch(out)
+        assert beat is not None, out
+        assert beat.group("reason") == "unexpected status 401 Unauthorized: Incorrect API key provided: sk-[redacted]"
+        assert "svcac" not in sr.redact_agent_sentence(line)
+    # the strings the ledger would persist from this incident
+    reason = masked[0].split("failed runs: ", 1)[1].split(" — run imd doctor")[0]
+    paused_hint = {"until": "23:53", "failedRuns": 3, "reason": sr.redact(reason)}
+    assert paused_hint["reason"] == "unexpected status 401 Unauthorized: Incorrect API key provided: sk-[redacted]"
+    assert sr.SK_RE.search(json.dumps(paused_hint)) is None

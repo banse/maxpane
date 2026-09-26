@@ -14,6 +14,19 @@
         "control_chars"
       ],
       "notes": "raw control bytes are the test input for redactor step 0 (mutation proof 23, input half); never redact this file"
+    },
+    "grammar/heartbeat_paused_401.txt": {
+      "origin": "imd-vps journalctl -u imd-worker.service -o cat (seat #7), 2026-09-25T23:36:03.545Z to 23:56:04.359Z; lines 12782-12872 of the 7-day corpus journal7d.txt",
+      "captured_at": "2026-09-26T04:00:00Z",
+      "sha256": "5250fe87a70bd56655a62667e7b3c870601ec14646b020e64ad5a57f6f129e18",
+      "bytes": 12235,
+      "redactions": [],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [
+        "sk"
+      ],
+      "notes": "the masked sk-svcac******** fragment is the control plane's own masking and is kept on purpose (redactor test input, mutation proof 12); the corpus carries no control bytes and no hex>=32; capture time approximate"
     }
   }
 }

@@ -128,3 +128,14 @@ def redact(text: object, field: str | None = None) -> str:
     if field not in HEX64_ALLOWED_FIELDS:
         out = HEX64_RE.sub(HEX64_PLACEHOLDER, out)
     return out
+
+
+def redact_agent_sentence(text: object) -> str:
+    """:func:`redact`, then whitespace collapse, then the 160-character cap.
+
+    The two operations the daemon applies to a ``working:`` sentence before
+    it logs it (``\\s+`` to one space, ``slice(160)``), so an agent sentence
+    that arrived by another road renders like one that came through the log.
+    """
+    flat = " ".join(redact(text).split())
+    return flat[:AGENT_SENTENCE_CAP]
