@@ -105,3 +105,26 @@ def strip_controls(text: str) -> str:
     out = text.replace("\x1b", ESC_GLYPH)
     out = CONTROL_RE.sub("", out)
     return BIDI_FORMAT_RE.sub("", out)
+
+
+def redact(text: object, field: str | None = None) -> str:
+    """Control-strip, then the rule table in order, then the 64-hex rule.
+
+    ``None`` is ``""``; any other object is ``str()``-ed inside its own
+    ``try`` so a value whose ``__str__`` raises degrades to ``""`` rather than
+    taking a panel or the broker down.  *field* is the dict key the value sat
+    under; a 64-hex value survives only when that key is in
+    :data:`HEX64_ALLOWED_FIELDS`.
+    """
+    if text is None:
+        return ""
+    try:
+        out = str(text)
+    except Exception:
+        return ""
+    out = strip_controls(out)
+    for pattern, replacement in RULES:
+        out = pattern.sub(replacement, out)
+    if field not in HEX64_ALLOWED_FIELDS:
+        out = HEX64_RE.sub(HEX64_PLACEHOLDER, out)
+    return out

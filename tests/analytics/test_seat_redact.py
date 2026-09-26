@@ -91,3 +91,57 @@ def test_manifest_guard_patterns_match_the_redactor():
     for text in ("sk-svcac********", "sk-ant-api03-abcd", "sk-proj-zzzz9999"):
         assert sr.SK_RE.search(text) and guard.SK_RE.search(text), text
     assert sr.SK_RE.search("sk-[redacted]") is None and guard.SK_RE.search("sk-[redacted]") is None
+
+
+# ---------------------------------------------------------------------------
+# Task 1.2 — the ordered rule table and redact()
+# ---------------------------------------------------------------------------
+
+
+def test_redact_none_and_unprintable_objects_are_empty():
+    class Boom:
+        def __str__(self):
+            raise RuntimeError("no")
+
+    assert sr.redact(None) == ""
+    assert sr.redact(Boom()) == ""
+    assert sr.redact(42) == "42"
+
+
+def test_sk_ant_precedes_sk():
+    # spec §13 order rule: sk-ant- must not be left as sk-[redacted]
+    out = sr.redact("key sk-ant-api03-abcd1234 and sk-proj-zzzz9999 end")
+    assert out == "key sk-ant-[redacted] and sk-[redacted] end"
+    assert sr.RULES[0][1] == "sk-ant-[redacted]" and sr.RULES[1][1] == "sk-[redacted]"
+
+
+def test_jwt_bearer_github_and_query_rules():
+    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+    assert sr.redact(f"auth {jwt} ok") == "auth [jwt] ok"
+    assert sr.redact("Authorization: Bearer abcDEF123456") == "Authorization: Bearer [redacted]"
+    assert sr.redact("ghp_" + "A" * 36) == "[github-token]"
+    assert sr.redact("gho_" + "b" * 20 + " ghs_" + "c" * 25) == "[github-token] [github-token]"
+    assert sr.redact("https://x/y?token=abc&sig=def&page=2") == "https://x/y?token=[redacted]&sig=[redacted]&page=2"
+    # a bare header segment is not a JWT for the *rule* (two segments needed) but is for the canary
+    assert sr.redact("eyJhbGciOiJIUzI1NiJ9") == "eyJhbGciOiJIUzI1NiJ9"
+    assert sr.JWT_RE.search("eyJhbGciOiJIUzI1NiJ9") is not None
+
+
+def test_hex64_placeholder_unless_the_field_is_allowed():
+    # spec §13: <hex64> unless the field is a known hash/public-key field
+    assert sr.redact(HEX64) == "<hex64>"
+    assert sr.redact(f"tx {HEX64} mined") == "tx <hex64> mined"
+    assert sr.redact(HEX64, field="submissionHash") == HEX64
+    assert sr.redact(HEX64, field="txHash") == HEX64
+    assert sr.redact(HEX64, field="deviceKey") == HEX64
+    assert sr.redact(HEX64, field="hash12") == "<hex64>"
+    assert sr.redact(HEX64[:-1]) == HEX64[:-1]          # 63 hex is not a key
+    assert sr.redact(HEX64 + "0") == HEX64 + "0"        # 65 hex has no word boundary at 64
+    assert sr.HEX64_ALLOWED_FIELDS == frozenset({"submissionHash", "txHash", "deviceKey"})
+
+
+def test_redact_runs_step_0_before_the_rules():
+    # a NUL or a bidi control inside a key must not hide it from the sk rule
+    assert sr.redact("\x00sk-abcd\x00") == "sk-[redacted]"
+    assert sr.redact("sk-\u202eabcd") == "sk-[redacted]"
+    assert sr.redact("\x1b[31msk-abcd") == "\u241b[31msk-[redacted]"
