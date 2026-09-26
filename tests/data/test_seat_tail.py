@@ -24,6 +24,8 @@ import pytest
 from maxpane_dashboard.analytics.seat_redact import redact
 from maxpane_dashboard.data import seat_tail
 from maxpane_dashboard.data.seat_tail import (
+    TailState,
+
     ALIVE_STAMP_S,
     BACKOFF_MAX_S,
     BACKOFF_MIN_S,
@@ -160,3 +162,42 @@ def test_journal_since_arg_is_the_systemd_time_form():
     assert journal_since_arg("2026-09-24T04:12:00.999Z") == "2026-09-24 04:12:00 UTC"  # floored second
     assert journal_since_arg(None) == JOURNAL_FIRST_RUN_SINCE
     assert journal_since_arg("garbage") == JOURNAL_FIRST_RUN_SINCE
+
+# =============================================================================
+# Task 3.2 -- TailState
+# =============================================================================
+
+
+def test_tail_state_roundtrip_is_atomic_and_0600(tmp_path):
+    # spec §9 Watermarks: ~/.maxpane/seat_tail.json {"kind","cursor","lastTsUtc","invocation"}
+    path = tmp_path / ".maxpane" / TAIL_FILE
+    state = TailState(kind=KIND_JOURNALD, cursor="s=1;i=2", last_ts_utc="2026-09-26T03:40:07.120Z",
+                      invocation="a1b2", watermark_ts=None)
+    state.save(path)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert not (tmp_path / ".maxpane" / (TAIL_FILE + ".tmp")).exists()
+    payload = json.loads(path.read_text())
+    assert payload == {"version": 1, "kind": "journald", "cursor": "s=1;i=2",
+                       "lastTsUtc": "2026-09-26T03:40:07.120Z", "invocation": "a1b2", "watermarkTs": None}
+    assert TailState.load(path) == state
+
+
+def test_tail_state_missing_corrupt_or_foreign_version_yields_defaults(tmp_path):
+    assert TailState.load(tmp_path / "nope.json") == TailState()
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    assert TailState.load(bad) == TailState()
+    bad.write_text(json.dumps([1, 2]))
+    assert TailState.load(bad) == TailState()
+    bad.write_text(json.dumps({"version": 2, "cursor": "x"}))
+    assert TailState.load(bad).cursor is None
+    # a hand-edited value of the wrong type is third-party input, not a crash
+    bad.write_text(json.dumps({"version": 1, "cursor": 17, "lastTsUtc": ["a"]}))
+    assert TailState.load(bad) == TailState()
+
+
+def test_tail_state_save_failure_is_logged_not_raised(tmp_path, caplog):
+    target = tmp_path / "file-not-dir"
+    target.write_text("")
+    TailState(kind="x").save(target / TAIL_FILE)      # parent is a file -> OSError inside
+    assert "failed to save tail state" in caplog.text

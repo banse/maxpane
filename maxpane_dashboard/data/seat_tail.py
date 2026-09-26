@@ -244,7 +244,76 @@ class ListLineSource:
         return None if self._backfill is None else list(self._backfill)
 
 
+def _str_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+# --- persisted state --------------------------------------------------------------------
+
+_STATE_KEYS = {
+    "kind": "kind", "cursor": "cursor", "lastTsUtc": "last_ts_utc",
+    "invocation": "invocation", "watermarkTs": "watermark_ts",
+}
+
+
+@dataclass
+class TailState:
+    """``~/.maxpane/seat_tail.json`` -- the follower's watermark (spec §9 Watermarks).
+
+    ``cursor`` is journald's ``__CURSOR``; ``last_ts_utc`` is the newest DAEMON stamp
+    ingested on either runtime (never Docker's ``-t`` stamp, never "last line seen");
+    ``watermark_ts`` equals ``last_ts_utc`` for docker and is kept separate for clarity.
+    """
+
+    version: int = 1
+    kind: str | None = None
+    cursor: str | None = None
+    last_ts_utc: str | None = None
+    invocation: str | None = None
+    watermark_ts: str | None = None
+
+    @classmethod
+    def load(cls, path: Path) -> "TailState":
+        """Read ``path``; a missing, corrupt, foreign-version or non-object file yields defaults."""
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            logger.info("no tail state to load (%s): %s", path, exc)
+            return cls()
+        if not isinstance(payload, dict) or payload.get("version") != 1:
+            logger.warning("tail state %s has an unexpected shape; starting fresh", path)
+            return cls()
+        state = cls()
+        for json_key, attr in _STATE_KEYS.items():
+            setattr(state, attr, _str_or_none(payload.get(json_key)))
+        return state
+
+    def to_payload(self) -> dict[str, Any]:
+        data = asdict(self)
+        return {"version": self.version, **{k: data[attr] for k, attr in _STATE_KEYS.items()}}
+
+    def save(self, path: Path) -> None:
+        """Atomic write (tmp + ``os.replace``), mode 0600. Never raises: a failed save is logged."""
+        path = Path(path)
+        tmp = path.with_name(path.name + ".tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(self.to_payload(), handle)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, path)
+        except OSError as exc:
+            logger.warning("failed to save tail state %s: %s", path, exc)
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
 __all__ = [
+    'TailState',
+
     "ALIVE_STAMP_S", "BACKOFF_MAX_S", "BACKOFF_MIN_S", "CONTAINER_DEFAULT", "DAEMON_STAMP_RE",
     "DEDUP_KEYS_MAX", "DOCKER_BACKFILL_TIMEOUT_S", "DOCKER_FIRST_RUN_SINCE", "DOCKER_TAIL_LINES",
     "DOCKER_TS_PREFIX_RE", "GAP_TOLERANCE_S", "JOURNAL_FIRST_RUN_SINCE", "KIND_DOCKER",
