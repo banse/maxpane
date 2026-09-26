@@ -92,3 +92,190 @@ class TestSchema:
     def test_task_key(self) -> None:
         assert task_key(7, "0c1f9727", "2026-09-26T01:52:44.909Z") == "7/0c1f9727/2026-09-26T01:52:44.909Z"
         assert task_key(None, "0c1f9727", "2026-09-26T01:52:44.909Z") == "-/0c1f9727/2026-09-26T01:52:44.909Z"
+
+
+# ---------------------------------------------------------------------------------------- Task 2.7
+class TestStateMachine:
+    def test_rows_carry_exactly_the_contract_keys(self, tmp_path: Path) -> None:
+        ledger = _ledger(tmp_path, now=1790457000.0)
+        ledger.ingest(_lines("research_question.txt"))
+        (row,) = ledger.rows()
+        assert set(row) == set(SEAT_ROW_KEYS["seat_tasks_rows"])
+        assert row["kind"] == "research" and row["role"] == "question" and row["hash12"] == "3f166c0de71b"
+        assert row["source"] == {"row": "local", "outcome": "none", "reason": "none"}
+        assert isinstance(ledger.ingest([]), IngestResult) and isinstance(ledger.state, LedgerState)
+        ledger.close()
+
+    def test_full_lifecycle_row(self, tmp_path: Path) -> None:
+        """Appendix B: accept opens, model line proves the agent ran, submitted closes, stored sets hash12."""
+        ledger = _ledger(tmp_path, now=1790380000.0)
+        result = ledger.ingest(_lines("heartbeat_lingering_pause.txt"))
+        assert (result.opened, result.closed, result.stored, result.restarts, result.unknown) == (3, 2, 2, 0, 0)
+        assert result.events.count("accepted") == 3 and result.events.count("stored") == 2
+        first = _by_node(ledger, "2fc3b00f")[0]
+        assert first["acceptedUtc"] == "2026-09-25T23:54:11.178Z" and first["submittedUtc"] == "2026-09-25T23:54:37.418Z"
+        assert first["storedUtc"] == "2026-09-25T23:54:37.499Z" and first["hash12"] == "54f724419d3a"
+        assert first["agentRan"] is True and first["preAgentFailure"] is False and first["model"] == "gpt-6-luna"
+        assert first["runtime"] == "codex" and first["phases"] == ["preparing", "working", "checking", "bundling", "uploading"]
+        assert first["lastMessage"].startswith("Created [artifacts/answer.json]") and 26 < first["durationS"] < 27
+        assert first["outcome"] is None  # verdicts exist only at the API (spec §2)
+        # the third accept (5501ac4d) is still open
+        open_row = ledger.open_row()
+        assert open_row is not None and open_row["nodeId8"] == "5501ac4d" and open_row["submittedUtc"] is None
+        assert ledger.state.current["nodeId8"] == "5501ac4d" and ledger.state.current["phase"] == "working"
+        assert set(ledger.state.current) == set(SEAT_BLOCK_KEYS["seat_current"])
+        assert ledger.state.last_lifecycle.kind == g.KIND_ACCEPTED_CODE
+        ledger.close()
+
+    def test_same_node_on_two_seats_are_two_rows(self, tmp_path: Path) -> None:
+        """fill6 §2: 4cf722c7 was accepted on the VPS 17:08:39 and on the Mac 17:08:52 — the key carries the seat."""
+        vps = SeatLedger(tmp_path / "vps.sqlite", seat=7, now=lambda: 1790230000.0)
+        mac = SeatLedger(tmp_path / "mac.sqlite", seat=420, now=lambda: 1790230000.0)
+        vps.ingest(_classify(["2026-09-23T17:08:39.905Z accepted implement 4cf722c7 — artifacts/answer.json (max 60 turns)"]))
+        mac.ingest(_classify(["2026-09-23T17:08:52.171Z accepted implement 4cf722c7 — artifacts/answer.json (max 60 turns)"]))
+        assert vps.rows()[0]["key"] == "7/4cf722c7/2026-09-23T17:08:39.905Z"
+        assert mac.rows()[0]["key"] == "420/4cf722c7/2026-09-23T17:08:52.171Z"
+        vps.close(); mac.close()
+
+    def test_pre_agent_failure_needs_no_working_line_and_under_one_second(self, tmp_path: Path) -> None:
+        """Spec §5.1: sub-second accept→submit with no `working:` line = pre-agent failure, 0 tokens (six measured)."""
+        ledger = _ledger(tmp_path, now=1790391000.0)
+        ledger.ingest(_lines("fast_fail_no_working.txt"))
+        rows = ledger.rows()
+        assert len(rows) == 6 and all(r["preAgentFailure"] is True and r["agentRan"] is False for r in rows)
+        assert all(r["durationS"] < 1.0 for r in rows) and all(r["hash12"] for r in rows)
+        # the Mac one was stored through a re-send after a socket drop
+        (mac,) = _by_node(ledger, "8eac278c")
+        assert mac["resent"] is True and mac["hash12"] == "3538ff5d2068"
+        ledger.close()
+
+    def test_repair_yields_one_submission_and_sets_repair(self, tmp_path: Path) -> None:
+        """Spec §5.1: `repairing:` → one more `bundling:` then exactly ONE submitted (3/3 on the Mac)."""
+        ledger = _ledger(tmp_path, now=1790220000.0)
+        result = ledger.ingest(_lines("repair_once.txt"))
+        assert (result.opened, result.closed, result.stored) == (3, 3, 3)
+        rows = ledger.rows()
+        assert all(r["repair"] is True for r in rows) and all("repairing" in r["phases"] for r in rows)
+        (tests_row,) = [r for r in rows if r["role"] == "tests"]
+        assert tests_row["nodeId8"] == "e78e1517" and tests_row["model"] == "claude-fable-5-1" and tests_row["runtime"] == "claude"
+        ledger.close()
+
+    def test_resend_yields_exactly_one_stored(self, tmp_path: Path) -> None:
+        """Spec §5.1: a re-send yields exactly one `stored` (2/2); the row is flagged `resent`."""
+        ledger = _ledger(tmp_path, now=1790391000.0)
+        ledger.ingest(_classify([
+            "2026-09-22T17:20:00.000Z accepted implement 4a2a12e5 — artifacts/answer.json (max 60 turns)",
+            "2026-09-22T17:20:01.000Z   working: running claude on claude-sonnet-5",
+        ]) + _lines("resend.txt"))
+        (row,) = _by_node(ledger, "4a2a12e5")
+        assert row["resent"] is True and row["hash12"] == "7f11d6b7f9d0" and row["storedUtc"] == "2026-09-22T17:21:24.252Z"
+        assert ledger.counts()["rows"] == 2  # 4a2a12e5 + 8eac278c, one stored line each
+        ledger.close()
+
+    def test_research_row_closes_on_answered(self, tmp_path: Path) -> None:
+        ledger = _ledger(tmp_path, now=1790457000.0)
+        ledger.ingest(_lines("research_question.txt"))
+        (row,) = ledger.rows()
+        assert (row["kind"], row["role"], row["submittedUtc"], row["hash12"]) == (
+            "research", "question", "2026-09-25T18:09:56.031Z", "3f166c0de71b")
+        assert row["agentRan"] is False and row["preAgentFailure"] is False  # 61 s: no `working:` line is normal for research
+        ledger.close()
+
+    def test_fuzz_row_closes_on_outcome_with_zero_tokens_by_construction(self, tmp_path: Path) -> None:
+        """Spec §5.1 / fill6 §3: a campaign prints only accept + outcome; tokens stay null (never 0)."""
+        ledger = _ledger(tmp_path)
+        ledger.ingest(_classify([
+            "2026-09-24T04:24:01.000Z accepted campaign cb1949ef — test/Harness.t.sol (256 runs)",
+            "2026-09-24T04:26:10.000Z campaign could not run: the harness did not build",
+        ]))
+        (row,) = ledger.rows()
+        assert (row["kind"], row["role"], row["submittedUtc"]) == ("fuzz", "campaign", "2026-09-24T04:26:10.000Z")
+        assert row["tokens"] is None and row["preAgentFailure"] is False
+        ledger.close()
+
+    def test_model_refuse_marks_agent_ran_with_default_model(self, tmp_path: Path) -> None:
+        ledger = _ledger(tmp_path)
+        ledger.ingest(_classify([
+            "2026-09-26T01:00:00.000Z accepted implement 0c1f9727 — artifacts/answer.json (max 60 turns)",
+            "2026-09-26T01:00:00.500Z   working: codex refused model gpt-6-astra; running on its default model instead",
+        ]))
+        row = ledger.open_row()
+        assert row["agentRan"] is True and row["model"] is None and row["runtime"] == "codex"
+        ledger.close()
+
+    def test_tier_lookup_is_injected(self, tmp_path: Path) -> None:
+        """Contract C.6: `tier_lookup(runtime, model, effort, at, *, seat)` is injected; None until WP4/WP7 wire it."""
+        calls: list[tuple] = []
+
+        def lookup(runtime, model, effort, at, *, seat=None):
+            calls.append((runtime, model, effort, at, seat))
+            return "economy/standard"
+
+        ledger = _ledger(tmp_path, tier_lookup=lookup)
+        ledger.ingest(_classify([
+            "2026-09-26T01:00:00.000Z accepted implement 0c1f9727 — artifacts/answer.json (max 60 turns)",
+            "2026-09-26T01:00:00.500Z   working: running codex on gpt-6-luna",
+        ]))
+        assert ledger.open_row()["tierDerived"] == "economy/standard"
+        assert calls == [("codex", "gpt-6-luna", None, "2026-09-26T01:00:00.500Z", 7)]
+        plain = SeatLedger(tmp_path / "plain.sqlite", seat=7, now=lambda: T0)
+        plain.ingest(_classify(["2026-09-26T01:00:00.000Z accepted implement 0c1f9727 — a (max 60 turns)",
+                                "2026-09-26T01:00:00.500Z   working: running codex on gpt-6-luna"]))
+        assert plain.open_row()["tierDerived"] is None
+        ledger.close(); plain.close()
+
+    def test_agent_sentence_is_redacted_before_persisting(self, tmp_path: Path) -> None:
+        """Spec §13: redact before every sqlite write (masked key fragment, OSC payload, whitespace collapse)."""
+        ledger = _ledger(tmp_path)
+        ledger.ingest(_classify([
+            "2026-09-26T01:00:00.000Z accepted implement 0c1f9727 — artifacts/answer.json (max 60 turns)",
+            "2026-09-26T01:00:00.500Z   working: running codex on gpt-6-luna",
+            "2026-09-26T01:00:05.000Z   working: the key was sk-svcac******** and \x1b]52;c;AAAA\x07   then " + "x" * 90,
+        ]))
+        message = ledger.open_row()["lastMessage"]
+        assert message.startswith("the key was sk-[redacted] and \u241b]52;c;AAAA then xxx")
+        assert SK_RE.search(message) is None and "\x07" not in message and "  " not in message and len(message) <= 160
+        dump = "\n".join(str(tuple(r)) for r in ledger._conn.execute("SELECT * FROM tasks"))
+        assert SK_RE.search(dump) is None
+        ledger.close()
+
+
+def test_double_accept_keeps_every_row(tmp_path: Path) -> None:
+    """Mutation proof 1 (spec §14): key by (seat, node8, acceptedAt) — node8 repeats up to 3× (fill6 §2)."""
+    ledger = _ledger(tmp_path, now=1790230000.0)
+    ledger.ingest(_lines("double_accept.txt"))
+    assert ledger.counts()["rows"] == 6
+    assert len(_by_node(ledger, "4cf722c7")) == 3 and len(_by_node(ledger, "3aa1c610")) == 3
+    hashes = {r["hash12"] for r in ledger.rows()}
+    assert hashes == {"5be358c456eb", "4e3eef449076", "50596a6ec16e", "cee9e3163b14", "f7ef8612dee7", "5b83f0929a19"}
+    keys = {r["key"] for r in ledger.rows()}
+    assert "7/4cf722c7/2026-09-23T17:08:39.905Z" in keys and "7/4cf722c7/2026-09-24T05:36:49.988Z" in keys
+    ledger.close()
+
+
+def test_lease_closed_is_not_an_attempt(tmp_path: Path) -> None:
+    """Mutation proof 5 (spec §14): `submitted` without `stored` = lease-closed, never an attempt (fill6 §2)."""
+    ledger = _ledger(tmp_path, now=1790391000.0)
+    ledger.ingest(_lines("cancel_lease_closed.txt"))
+    (row,) = _by_node(ledger, "b6d17f8d")
+    assert row["submittedUtc"] == "2026-09-26T02:48:19.156Z"
+    assert row["storedUtc"] is None and row["hash12"] is None and row["leaseClosed"] is True
+    # the NEXT task's stored line attaches to the next task, never to the lease-closed row
+    (nxt,) = _by_node(ledger, "5e0c3a11")
+    assert nxt["hash12"] == "9d0e5f6a7b8c" and nxt["leaseClosed"] is False
+    ledger.close()
+
+
+def test_cancel_attaches_to_open_row_not_by_prefix(tmp_path: Path) -> None:
+    """Mutation proof 6 (spec §14): `cancelled <lease8>` names the LEASE — attach by time, never by id match.
+
+    The slice carries a decoy row whose node8 equals the lease id (16a4df90); an id-matching
+    implementation attaches the cancel there and leaves the open row untouched.
+    """
+    ledger = _ledger(tmp_path, now=1790391000.0)
+    ledger.ingest(_lines("cancel_lease_closed.txt"))
+    (open_at_that_instant,) = _by_node(ledger, "b6d17f8d")
+    (decoy,) = _by_node(ledger, "16a4df90")
+    assert open_at_that_instant["cancelled"] == "superseded"
+    assert decoy["cancelled"] is None and decoy["hash12"] == "0a1b2c3d4e5f"
+    ledger.close()

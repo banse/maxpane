@@ -239,6 +239,220 @@ class SeatLedger:
                 (key, json.dumps(value)),
             )
 
+    # ------------------------------------------------------------------ ingest (Appendix B state machine)
+    def ingest(self, lines: Iterable[LogLine]) -> IngestResult:
+        n = opened = closed = stored = restarts = unknown = 0
+        events: list[str] = []
+        with self._conn:
+            cur = self._conn.cursor()
+            for line in lines:
+                n += 1
+                if line.kind == g.KIND_UNKNOWN:
+                    unknown += 1
+                if line.ts and (self._state.last_ts is None or line.ts > self._state.last_ts):
+                    self._state.last_ts = line.ts
+                kind = line.kind
+                if kind in g.ACCEPTED_KINDS:
+                    if self._accept(cur, line):
+                        opened += 1
+                    events.append("accepted")
+                elif kind == g.KIND_MODEL_LINE:
+                    self._model(cur, line, line.fields.get("rt"), line.fields.get("model"))
+                elif kind == g.KIND_MODEL_REFUSE:
+                    self._model(cur, line, line.fields.get("rt"), None)
+                elif kind == g.KIND_PHASE:
+                    self._phase(cur, line)
+                elif kind in (g.KIND_SUBMITTED, g.KIND_ANSWERED, g.KIND_FUZZ_OUTCOME):
+                    if self._close(cur, line):
+                        closed += 1
+                    events.append("submitted")
+                elif kind == g.KIND_STORED:
+                    if self._stored(cur, line):
+                        stored += 1
+                    events.append("stored")
+                elif kind == g.KIND_CANCELLED:
+                    self._cancelled(cur, line)
+                elif kind == g.KIND_SERVER_ERROR:
+                    if line.fields.get("code") == "unknown_lease":
+                        self._lease_closed(cur, line)
+                elif kind == g.KIND_RESENDING:
+                    self._resending(cur, line)
+                elif kind == g.KIND_LOCAL_FAIL:
+                    self._local_fail(cur, line)
+                if kind in g.ACCEPTED_KINDS or kind in g.TERMINAL_KINDS:
+                    self._state.last_lifecycle = line
+        return IngestResult(lines=n, opened=opened, closed=closed, stored=stored, restarts=restarts,
+                            unknown=unknown, events=tuple(events))
+
+    # --- per-kind handlers ---------------------------------------------------------------
+    def _accept(self, cur: sqlite3.Cursor, line: LogLine) -> bool:
+        f = line.fields
+        node8 = f["node8"] or ""
+        if line.kind == g.KIND_ACCEPTED_RESEARCH:
+            role, kind = "question", "research"
+        elif line.kind == g.KIND_ACCEPTED_FUZZ:
+            role, kind = "campaign", "fuzz"
+        else:
+            role, kind = f.get("role"), "code"
+        key = task_key(self._seat, node8, line.ts)
+        if self._state.open_key not in (None, key):
+            # capacity is 1: a new accept while a row is open leaves that row unclosed (leaseClosed unknown)
+            self._state.open_key = None
+        exists = cur.execute("SELECT 1 FROM tasks WHERE key = ?", (key,)).fetchone() is not None
+        max_turns = int(f["max_turns"]) if f.get("max_turns") else None
+        cur.execute(
+            "INSERT INTO tasks(key, seat, node8, role, kind, accepted_utc, max_turns, agent_ran, pre_agent_failure, "
+            "lease_closed, repair, resent, interrupted_by_restart, source_row, source_outcome, source_reason, "
+            "phases_json, updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 'local', 'none', 'none', '[]', ?) "
+            "ON CONFLICT(key) DO UPDATE SET role = excluded.role, kind = excluded.kind, max_turns = excluded.max_turns, "
+            "updated_utc = excluded.updated_utc",
+            (key, self._seat, node8, role, kind, line.ts, max_turns, _iso(self._now())),
+        )
+        self._state.open_key = key
+        self._state.last_accept_ts = line.ts
+        self._state.current = self._current_from_row(self._row(cur, key))
+        return not exists
+
+
+    def _open(self, cur: sqlite3.Cursor) -> sqlite3.Row | None:
+        return None if self._state.open_key is None else self._row(cur, self._state.open_key)
+
+
+    def _model(self, cur: sqlite3.Cursor, line: LogLine, runtime: str | None, model: str | None) -> None:
+        row = self._open(cur)
+        if row is None:
+            return
+        tier = None
+        if self._tier_lookup is not None:
+            tier = self._tier_lookup(runtime, model, None, line.ts, seat=self._seat)
+        phases = list(_loads(row["phases_json"]) or [])
+        if "working" not in phases:
+            phases.append("working")
+        cur.execute(
+            "UPDATE tasks SET agent_ran = 1, runtime = ?, model = ?, tier_derived = ?, phases_json = ?, updated_utc = ? "
+            "WHERE key = ?",
+            (runtime, model, tier, _dumps(phases), _iso(self._now()), row["key"]),
+        )
+        self._state.current = self._current_from_row(self._row(cur, row["key"]))
+
+
+    def _phase(self, cur: sqlite3.Cursor, line: LogLine) -> None:
+        row = self._open(cur)
+        if row is None:
+            return
+        phase = line.fields.get("phase") or ""
+        phases = list(_loads(row["phases_json"]) or [])
+        if phase not in phases:
+            phases.append(phase)
+        repair = 1 if (phase == "repairing" or row["repair"]) else 0
+        if phase == "working":
+            message = redact_agent_sentence(line.fields.get("msg") or "")
+            cur.execute(
+                "UPDATE tasks SET phases_json = ?, repair = ?, last_message = ?, last_message_utc = ?, updated_utc = ? "
+                "WHERE key = ?",
+                (_dumps(phases), repair, message, line.ts, _iso(self._now()), row["key"]),
+            )
+        else:
+            cur.execute(
+                "UPDATE tasks SET phases_json = ?, repair = ?, updated_utc = ? WHERE key = ?",
+                (_dumps(phases), repair, _iso(self._now()), row["key"]),
+            )
+        self._state.current = self._current_from_row(self._row(cur, row["key"]))
+        if self._state.current is not None:
+            self._state.current["phase"] = phase
+
+
+    def _close(self, cur: sqlite3.Cursor, line: LogLine) -> bool:
+        node8 = line.fields.get("node8")
+        row = None
+        if node8:
+            row = cur.execute(
+                "SELECT * FROM tasks WHERE node8 = ? AND seat IS ? AND submitted_utc IS NULL AND source_row = 'local' "
+                "AND accepted_utc <= ? ORDER BY accepted_utc DESC LIMIT 1",
+                (node8, self._seat, line.ts),
+            ).fetchone()
+        if row is None and node8 is None:  # fuzz outcome lines carry no node8: the open row
+            row = self._open(cur)
+        if row is None:
+            return False
+        accepted = parse_ts(row["accepted_utc"])
+        submitted = parse_ts(line.ts)
+        duration = None if accepted is None or submitted is None else max(0.0, submitted - accepted)
+        pre_agent = 1 if (not row["agent_ran"] and duration is not None and duration < PRE_AGENT_FAILURE_S) else 0
+        cur.execute(
+            "UPDATE tasks SET submitted_utc = ?, duration_s = ?, pre_agent_failure = ?, updated_utc = ? WHERE key = ?",
+            (line.ts, duration, pre_agent, _iso(self._now()), row["key"]),
+        )
+        if self._state.open_key == row["key"]:
+            self._state.open_key = None
+            self._state.current = None
+        return True
+
+
+    def _stored(self, cur: sqlite3.Cursor, line: LogLine) -> bool:
+        hash12 = line.fields.get("hash12")
+        already = cur.execute("SELECT key FROM tasks WHERE hash12 = ? AND seat IS ?", (hash12, self._seat)).fetchone()
+        if already is not None:
+            return False  # replay
+        row = cur.execute(
+            "SELECT * FROM tasks WHERE seat IS ? AND source_row = 'local' AND submitted_utc IS NOT NULL "
+            "AND stored_utc IS NULL AND COALESCE(lease_closed, 0) = 0 AND submitted_utc <= ? AND submitted_utc >= ? "
+            "ORDER BY submitted_utc DESC LIMIT 1",
+            (self._seat, line.ts, self._state.last_accept_ts or ""),
+        ).fetchone()
+        if row is None:
+            return False  # a stored line after the next accept never resurrects an older row (spec §5.1 ledger rules)
+        cur.execute(
+            "UPDATE tasks SET stored_utc = ?, hash12 = ?, updated_utc = ? WHERE key = ?",
+            (line.ts, hash12, _iso(self._now()), row["key"]),
+        )
+        return True
+
+
+    def _cancelled(self, cur: sqlite3.Cursor, line: LogLine) -> None:
+        # the line carries the LEASE id, which appears nowhere else: attach by time, never by prefix (fill6 §6)
+        row = self._open(cur)
+        if row is None:
+            return
+        cur.execute(
+            "UPDATE tasks SET cancelled = ?, updated_utc = ? WHERE key = ?",
+            (line.fields.get("reason"), _iso(self._now()), row["key"]),
+        )
+        self._state.current = self._current_from_row(self._row(cur, row["key"]))
+
+
+    def _lease_closed(self, cur: sqlite3.Cursor, line: LogLine) -> None:
+        row = cur.execute(
+            "SELECT * FROM tasks WHERE seat IS ? AND source_row = 'local' AND submitted_utc IS NOT NULL "
+            "AND stored_utc IS NULL AND submitted_utc <= ? ORDER BY submitted_utc DESC LIMIT 1",
+            (self._seat, line.ts),
+        ).fetchone()
+        if row is None:
+            return
+        cur.execute("UPDATE tasks SET lease_closed = 1, updated_utc = ? WHERE key = ?", (_iso(self._now()), row["key"]))
+
+
+    def _resending(self, cur: sqlite3.Cursor, line: LogLine) -> None:
+        cur.execute(
+            "UPDATE tasks SET resent = 1, updated_utc = ? WHERE seat IS ? AND source_row = 'local' "
+            "AND submitted_utc IS NOT NULL AND stored_utc IS NULL AND COALESCE(lease_closed, 0) = 0 AND submitted_utc <= ?",
+            (_iso(self._now()), self._seat, line.ts),
+        )
+
+
+    def _local_fail(self, cur: sqlite3.Cursor, line: LogLine) -> None:
+        row = self._open(cur)
+        if row is None:
+            return
+        phases = list(_loads(row["phases_json"]) or [])
+        phases.append("failed")  # spec §5.1 localFailure == "failed" in row["phases"] (contract C.6 decision; no column)
+        cur.execute(
+            "UPDATE tasks SET phases_json = ?, last_message = ?, last_message_utc = ?, updated_utc = ? WHERE key = ?",
+            (_dumps(phases), redact_agent_sentence(line.fields.get("msg") or ""), line.ts, _iso(self._now()), row["key"]),
+        )
+        self._state.open_key = None
+        self._state.current = None
+
     # ------------------------------------------------------------------ rows
     def _row(self, cur: sqlite3.Cursor, key: str) -> sqlite3.Row:
         return cur.execute("SELECT * FROM tasks WHERE key = ?", (key,)).fetchone()
