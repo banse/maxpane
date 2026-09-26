@@ -238,3 +238,40 @@ def test_redact_tree_scrubs_a_ledger_row_from_the_401_fixture():
     scrubbed = sr.redact_tree(row)
     assert "svcac" not in json.dumps(scrubbed)
     assert sr.find_secret(scrubbed) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 1.5 — the broker copy
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.guard
+def test_redact_copies_are_byte_identical():
+    # spec §13: imd_dashd/redact.py is the byte-identical copy of analytics/seat_redact.py
+    tui = (REPO / "maxpane_dashboard" / "analytics" / "seat_redact.py").read_bytes()
+    broker = (REPO / "imd_dashd" / "redact.py").read_bytes()
+    assert tui == broker
+
+
+@pytest.mark.guard
+@pytest.mark.parametrize("relative", ["maxpane_dashboard/analytics/seat_redact.py", "imd_dashd/redact.py"])
+def test_redact_modules_import_only_re(relative):
+    # contract C.3: `from __future__ import annotations` and `import re` only -- the broker runs on /usr/bin/python3
+    tree = ast.parse((REPO / relative).read_text(encoding="utf-8"))
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imports.append(node.module or "")
+    assert sorted(imports) == ["__future__", "re"]
+
+
+def test_imd_dashd_redact_agrees_with_the_analytics_copy():
+    from imd_dashd import redact as broker_redact
+
+    for name in ("control_chars.txt", "heartbeat_paused_401.txt"):
+        for line in _fixture_lines(name):
+            assert broker_redact.redact(line) == sr.redact(line)
+            assert broker_redact.find_secret(line) == sr.find_secret(line)
+    assert broker_redact.RULES == sr.RULES
