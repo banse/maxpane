@@ -955,6 +955,93 @@ class SeatLedger:
         return cur.rowcount
 
 
+    # ------------------------------------------------------------------ day rollups
+    def _day_rows(self, day_utc: str) -> list[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT * FROM tasks WHERE substr(accepted_utc, 1, 10) = ? ORDER BY accepted_utc", (day_utc,)
+        ).fetchall()
+
+    def _summarise_day(self, day_utc: str) -> dict:
+        rows = self._day_rows(day_utc)
+        stored = [r for r in rows if r["stored_utc"]]
+        durations = [r["duration_s"] for r in rows if r["duration_s"] is not None]
+        lags = [r["verdict_lag_s"] for r in rows if r["verdict_lag_s"] is not None]
+        counts = {o: sum(1 for r in rows if r["outcome"] == o) for o in ("accepted", "rejected", "failed", "pending")}
+        sources = {r["source_row"] for r in rows}
+
+        def total(column: str) -> int | None:
+            values = [r[column] for r in rows if r[column] is not None]
+            return sum(values) if values else None
+
+        return {
+            "dayUtc": day_utc, "tasks": len(rows), "stored": len(stored), "notStored": len(rows) - len(stored),
+            "accepted": counts["accepted"], "rejected": counts["rejected"], "failed": counts["failed"],
+            "pending": counts["pending"], "tokens": {"input": total("tokens_input"), "output": total("tokens_output"),
+                                                     "cached": total("tokens_cached"), "cacheWrite": total("tokens_cache_write")},
+            "turns": total("turns"), "p50S": _median(durations), "longestS": max(durations) if durations else None,
+            "verdictLagP50S": _median(lags),
+            "verdictsAsOfUtc": max((r["outcome_as_of_utc"] for r in rows if r["outcome_as_of_utc"]), default=None),
+            "source": {"tasks": ("mixed" if len(sources) > 1 else next(iter(sources))) if sources else None,
+                       "verdicts": "api" if any(r["outcome"] for r in rows) else None,
+                       "tokens": "sessions" if any(r["tokens_output"] is not None for r in rows) else None},
+        }
+
+    def rollup_day(self, day_utc: str, *, now_utc: str) -> dict:
+        summary = self._summarise_day(day_utc)
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO days(day_utc, tasks, stored, not_stored, accepted, rejected, failed, pending, tokens_input, "
+                "tokens_output, tokens_cached, tokens_cache_write, turns, p50_s, longest_s, verdict_lag_p50_s, source_json, "
+                "updated_utc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(day_utc) DO UPDATE SET tasks = excluded.tasks, stored = excluded.stored, "
+                "not_stored = excluded.not_stored, accepted = excluded.accepted, rejected = excluded.rejected, "
+                "failed = excluded.failed, pending = excluded.pending, tokens_input = excluded.tokens_input, "
+                "tokens_output = excluded.tokens_output, tokens_cached = excluded.tokens_cached, "
+                "tokens_cache_write = excluded.tokens_cache_write, turns = excluded.turns, p50_s = excluded.p50_s, "
+                "longest_s = excluded.longest_s, verdict_lag_p50_s = excluded.verdict_lag_p50_s, "
+                "source_json = excluded.source_json, updated_utc = excluded.updated_utc",
+                (day_utc, summary["tasks"], summary["stored"], summary["notStored"], summary["accepted"],
+                 summary["rejected"], summary["failed"], summary["pending"], summary["tokens"]["input"],
+                 summary["tokens"]["output"], summary["tokens"]["cached"], summary["tokens"]["cacheWrite"],
+                 summary["turns"], summary["p50S"], summary["longestS"], summary["verdictLagP50S"],
+                 _dumps(summary["source"]), now_utc),
+            )
+        return {**summary, "updatedUtc": now_utc}
+
+    def days(self, n: int = 14) -> list[dict]:
+        """The newest ``n`` rolled-up days, oldest first (the series order ``seat_cost.series_from_days`` wants)."""
+        rows = self._conn.execute("SELECT * FROM days ORDER BY day_utc DESC LIMIT ?", (n,)).fetchall()
+        out = []
+        for r in reversed(rows):
+            out.append({
+                "dayUtc": r["day_utc"], "tasks": r["tasks"], "stored": r["stored"], "notStored": r["not_stored"],
+                "accepted": r["accepted"], "rejected": r["rejected"], "failed": r["failed"], "pending": r["pending"],
+                "tokens": {"input": r["tokens_input"], "output": r["tokens_output"], "cached": r["tokens_cached"],
+                           "cacheWrite": r["tokens_cache_write"]},
+                "turns": r["turns"], "p50S": r["p50_s"], "longestS": r["longest_s"], "verdictLagP50S": r["verdict_lag_p50_s"],
+                "source": _loads(r["source_json"]), "updatedUtc": r["updated_utc"],
+            })
+        return out
+
+    def today(self, day_utc: str) -> dict:
+        """The §7 ``today`` block minus ``divergence`` (WP7 adds that from the plane), computed live from ``tasks``.
+
+        ``p50S``/``longestS``/``verdictLagP50S`` are whole seconds, as spec §7 prints them (``"p50S": 28``) and as WP7's
+        fallback ``seat_signals.rollup_today`` rounds them; ``rollup_day``/``days`` keep the REAL column values.
+        """
+        s = self._summarise_day(day_utc)
+
+        def whole(value: float | None) -> int | None:
+            return None if value is None else int(round(value))
+
+        return {
+            "dayUtc": s["dayUtc"], "tasks": s["tasks"], "stored": s["stored"], "notStored": s["notStored"],
+            "p50S": whole(s["p50S"]), "longestS": whole(s["longestS"]), "accepted": s["accepted"], "rejected": s["rejected"],
+            "failed": s["failed"], "pending": s["pending"], "verdictLagP50S": whole(s["verdictLagP50S"]),
+            "verdictsAsOfUtc": s["verdictsAsOfUtc"],
+        }
+
+
 __all__ = [
     "LEDGER_FILE", "LEDGER_SCHEMA_VERSION", "LEDGER_BUSY_TIMEOUT_MS", "PRE_AGENT_FAILURE_S", "RESEARCH_JOIN_S",
     "IDLE_WINDOW_S", "CONNECTION_WINDOW_S", "REASONS_PER_CYCLE", "TRANSCRIPT_RETENTION_DAYS", "WORK_DIR_JOIN_S",

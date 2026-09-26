@@ -668,3 +668,49 @@ class TestSessions:
         assert (row["turnsDefinition"], row["effort"], row["tierDerived"]) == ("user_lines", "high", "claude/high")
         assert calls[-1] == ("claude", "claude-sonnet-5", "high")
         ledger.close()
+
+
+# ---------------------------------------------------------------------------------------- Task 2.11
+class TestRollups:
+    def test_rollup_day_and_days_and_today(self, tmp_path: Path) -> None:
+        """Spec §5.6: per-day counts with source per figure live in the sqlite `days` table (not a SeriesCache)."""
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_lines("double_accept.txt"))
+        ledger.attach_work(WORK_ROWS, as_of_utc="2026-09-26T03:40:09Z")
+        ledger.attach_sessions([CODEX_SESSION], runtime="codex")
+        day = ledger.rollup_day("2026-09-23", now_utc="2026-09-26T03:41:00Z")
+        assert (day["tasks"], day["stored"], day["notStored"], day["accepted"], day["failed"], day["pending"]) == (2, 2, 0, 1, 0, 0)
+        assert day["tokens"]["output"] == 812 and day["turns"] == 3 and day["verdictLagP50S"] == 1040
+        assert day["longestS"] > day["p50S"] > 0 and day["updatedUtc"] == "2026-09-26T03:41:00Z"
+        assert day["source"] == {"tasks": "local", "verdicts": "api", "tokens": "sessions"}
+        ledger.rollup_day("2026-09-22", now_utc="2026-09-26T03:41:00Z")
+        ledger.rollup_day("2026-09-24", now_utc="2026-09-26T03:41:00Z")
+        days = ledger.days(n=14)
+        assert [d["dayUtc"] for d in days] == ["2026-09-22", "2026-09-23", "2026-09-24"]  # oldest first
+        assert days[0]["tasks"] == 3 and days[2]["failed"] == 1 and days[0]["tokens"]["output"] is None
+        assert [d["dayUtc"] for d in ledger.days(n=2)] == ["2026-09-23", "2026-09-24"]
+        today = ledger.today("2026-09-24")
+        assert set(today) == {"dayUtc", "tasks", "stored", "notStored", "p50S", "longestS", "accepted", "rejected", "failed",
+                              "pending", "verdictLagP50S", "verdictsAsOfUtc"}
+        assert (today["tasks"], today["failed"], today["verdictsAsOfUtc"]) == (1, 1, "2026-09-26T03:40:09Z")
+        assert all(today[k] is None or type(today[k]) is int for k in ("p50S", "longestS", "verdictLagP50S"))  # spec §7 whole seconds
+        assert ledger.today("2026-09-30")["tasks"] == 0 and ledger.today("2026-09-30")["p50S"] is None
+        ledger.close()
+
+    def test_rollup_day_is_an_upsert(self, tmp_path: Path) -> None:
+        ledger = _ledger(tmp_path, now=1790230000.0)
+        ledger.ingest(_lines("double_accept.txt"))
+        ledger.rollup_day("2026-09-23", now_utc="2026-09-26T03:41:00Z")
+        ledger.rollup_day("2026-09-23", now_utc="2026-09-26T03:46:00Z")
+        assert ledger._conn.execute("SELECT COUNT(*) FROM days").fetchone()[0] == 1
+        assert ledger.days()[0]["updatedUtc"] == "2026-09-26T03:46:00Z"
+        ledger.close()
+
+    def test_lease_closed_row_is_not_stored_today(self, tmp_path: Path) -> None:
+        """Mutation proof 5 (day half): the lease-closed b6d17f8d counts as a task, not as stored."""
+        ledger = _ledger(tmp_path, now=1790391000.0)
+        ledger.ingest(_lines("cancel_lease_closed.txt"))
+        today = ledger.today("2026-09-26")
+        assert (today["tasks"], today["stored"], today["notStored"]) == (3, 2, 1)
+        assert type(today["p50S"]) is int and type(today["longestS"]) is int
+        ledger.close()
