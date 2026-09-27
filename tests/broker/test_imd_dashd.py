@@ -418,7 +418,7 @@ def test_drain_restart_can_be_armed_while_a_task_runs(tmp_path):
     plan = planned["plan"]
     applied = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
     assert applied["result"]["outcome"] == "armed" and runner.argvs("systemctl", "restart") == []
-    assert call(broker, "restart", {"offline": False})["error"] == "gate_blocked"                 # restart itself stays gated
+    assert call(broker, "restart", {"offline": False})["error"] == "drain_already_armed"  # cancel first
 # ==== Task 6.11: verify, doctor, skills-set ====================================================================
 
 
@@ -653,7 +653,7 @@ def test_drain_restart_arms_rearms_and_fires_through_the_fresh_gate(tmp_path):
     assert result["outcome"] == "armed" and set(result["drain"]) == {"armedAtUtc", "idleBeats", "rearmed", "expiresAtUtc"}
     ping = call(broker, "ping")["data"]
     assert ping["drain_armed"] is True and ping["drain"] == result["drain"]          # the SEAT_BLOCK_KEYS["seat_control_drain"] dict
-    assert call(broker, "restart", {"offline": False})["ok"]                          # armed is not in flight
+    assert call(broker, "restart", {"offline": False})["error"] == "drain_already_armed"
     assert call(broker, "drain-restart", {"offline": False})["error"] == "drain_already_armed"
     # two idle beats, then work: re-armed
     for _ in (1, 2):
@@ -1141,3 +1141,27 @@ def test_lifecycle_no_match_exit_is_success_only_for_exact_systemd_case(tmp_path
         assert result["ok"] and result["plan"]["preconditions"]["lifecycle_open"] is False
     else:
         assert result["error"] == "gate_unknown(lifecycle)"
+
+
+@pytest.mark.parametrize("verb", ["restart", "stop"])
+def test_armed_drain_refuses_manual_plan_and_preexisting_apply(tmp_path, verb):
+    broker, runner, _journal, _clock, audit = make_broker(tmp_path)
+    earlier = call(broker, verb)["plan"]
+    drain = call(broker, "drain-restart", {"offline": True})["plan"]
+    assert call(broker, "apply", {"plan_id": drain["plan_id"], "confirm": drain["plan_id"][:4]})["ok"]
+    preview = call(broker, verb)
+    apply = call(broker, "apply", {"plan_id": earlier["plan_id"], "confirm": earlier["plan_id"][:4]})
+    for result in (preview, apply):
+        assert result["error"] == "drain_already_armed"
+        assert "cancel-drain" in result["detail"]["hint"]
+    assert not runner.argvs("systemctl", verb)
+    assert sum(r["outcome"] == "drain_already_armed" for r in audit_lines(audit)) == 2
+
+
+def test_malformed_plan_id_is_audited_without_echoing_it(tmp_path):
+    broker, _runner, _journal, _clock, audit = make_broker(tmp_path)
+    secret = "malformed-private-marker"
+    assert call(broker, "apply", {"plan_id": secret, "confirm": "bad"})["error"] == "unknown_plan"
+    records = audit_lines(audit)
+    assert records[-1]["phase"] == "refused" and records[-1]["outcome"] == "unknown_plan"
+    assert secret not in audit.path.read_text()

@@ -789,7 +789,16 @@ class Broker:
             return verbs.err("busy", self._in_flight_detail())
         return None
 
+    def _armed_drain_refusal(self, verb: str, peer_uid: int) -> dict | None:
+        if verb in ("restart", "stop") and self._drain.armed is not None:
+            self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="drain_already_armed")
+            return verbs.err("drain_already_armed", {"hint": "cancel-drain before a manual restart or stop"})
+        return None
+
     def _plan(self, verb: str, args: dict, peer_uid: int) -> dict:
+        refusal = self._armed_drain_refusal(verb, peer_uid)
+        if refusal is not None:
+            return refusal
         busy = self._busy()
         if busy is not None:
             self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="busy", args={"names": sorted(args)})
@@ -949,6 +958,7 @@ class Broker:
     def _apply(self, args: dict, peer_uid: int) -> dict:
         plan_id = str(args["plan_id"])
         if not verbs.PLAN_ID_RE.fullmatch(plan_id):
+            self._log(peer_uid=peer_uid, verb="apply", phase="refused", outcome="unknown_plan")
             return verbs.err("unknown_plan")
         if not self._lock.acquire(blocking=False):
             self._log(peer_uid=peer_uid, verb="apply", phase="refused", plan_id=plan_id, outcome="busy")
@@ -994,6 +1004,9 @@ class Broker:
                 self._lock.release()
 
     def _apply_gated(self, plan: Plan, args: dict, peer_uid: int) -> dict:
+        refusal = self._armed_drain_refusal(plan.verb, peer_uid)
+        if refusal is not None:
+            return refusal
         offline = bool(plan.args.get("offline", False))
         force_node8 = args.get("force_node8")
         if plan.force_node8 and force_node8 != plan.force_node8:
