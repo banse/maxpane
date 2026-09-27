@@ -8,7 +8,7 @@ the rule with the probe's stdout, keep the `## N. …` headings it emits, and re
 
 What the run records that no fixture can (spec §18 open questions 17–20): the exit status and seek behaviour of
 `journalctl --after-cursor` with a vacuumed cursor on systemd 259; whether `compression.zstd` imports on the VPS's
-Python 3.14.4 build; whether `imd status` and `imd doctor` complete under the transient-unit posture and their scopes'
+Python 3.14.4 build; lifecycle grep-before-limit and no-match behavior; whether `imd status` and `imd doctor` complete under the transient-unit posture and their scopes'
 `memory.peak`; the sysstat `HISTORY` depth; plus the slice `memory.peak` after a real `pepepane` session and the audit
 and verify lines of one drained restart (owner, by hand — the probe prints the procedure under its last heading).
 
@@ -35,18 +35,19 @@ and its full tier clears at **210 columns**. VPS physical peak, child peaks and 
 2. connect(/run/imd-dash/broker.sock) as imd-worker fails (EACCES: 0660 root:imd-dash in a 0755 root dir)
 3. journalctl -u imd-worker.service as imd-dash: 14-day read count (group systemd-journal)
 4. journalctl --after-cursor with a deliberately stale cursor: exit status and first entry vs the oldest
-5. systemctl show imd-worker.service as imd-dash (unprivileged D-Bus read)
-6. cgroup counters of imd-worker.service as imd-dash (0644)
-7. python3 -c 'import compression.zstd' on /usr/bin/python3 (rollouts older than 7 days)
-8. pepepane --once --offline as imd-dash (PATH via the /usr/local/bin symlink, imports, exit status)
-9. broker ping (version, posture_ok, drain_armed, in_flight)
-10. seat projection canary: no secret key name, no stray hex64, deviceKey == whoami
-11. status through the broker as a transient unit, with the child scope's memory.peak
-12. doctor through the broker (plan, apply, verify), with the child scope's memory.peak
-13. plan restart while a task runs is refused; never applied by this script
-14. sha256sum -c MANIFEST.sha256 on the installed broker files, units, wheel and lock (root)
-15. runuser -u imd-worker -- ls /home/imd-dash must fail (root)
-16. sshd -T -C user=imd-dash: allowtcpforwarding no (root)
-17. systemctl show user-<uid>.slice: MemoryMax, CPUQuota, MemoryPeak (root)
-18. grep HISTORY /etc/sysstat/sysstat: sar depth (root)
-19. drained restart at a natural idle gap: audit lines, verify, slice memory.peak (owner, by hand)
+5. journalctl lifecycle --grep: newest match before limit, pcre2 and no-match exit status
+6. systemctl show imd-worker.service as imd-dash (unprivileged D-Bus read)
+7. cgroup counters of imd-worker.service as imd-dash (0644)
+8. python3 -c 'import compression.zstd' on /usr/bin/python3 (rollouts older than 7 days)
+9. pepepane --once --offline as imd-dash (PATH via the /usr/local/bin symlink, imports, exit status)
+10. broker ping (version, posture_ok, drain_armed, in_flight)
+11. seat projection canary: no secret key name, no stray hex64, deviceKey == whoami
+12. status through the broker as a transient unit, with the child scope's memory.peak
+13. doctor through the broker (plan, apply, verify), with the child scope's memory.peak
+14. plan restart while a task runs is refused; never applied by this script
+15. sha256sum -c MANIFEST.sha256 on the installed broker files, units, wheel and lock (root)
+16. runuser -u imd-worker -- ls /home/imd-dash must fail (root)
+17. sshd -T -C user=imd-dash: allowtcpforwarding no (root)
+18. systemctl show user-<uid>.slice: MemoryMax, CPUQuota, MemoryPeak (root)
+19. grep HISTORY /etc/sysstat/sysstat: sar depth (root)
+20. drained restart at a natural idle gap: audit lines, verify, slice memory.peak (owner, by hand)

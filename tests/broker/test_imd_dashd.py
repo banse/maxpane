@@ -1177,3 +1177,11 @@ def test_lifecycle_history_failure_does_not_become_empty_success(tmp_path, failu
         return journal(argv, kw)
     runner.script[("journalctl",)] = read
     assert call(broker, "restart", {"offline": True})["error"] == "gate_unknown(lifecycle)"
+
+
+def test_lifecycle_journal_argv_is_the_broker_history_command(tmp_path):
+    from imd_dashd.imd_dashd import lifecycle_journal_argv
+    broker, runner, *_ = make_broker(tmp_path)
+    call(broker, "gate")
+    assert lifecycle_journal_argv() in runner.argvs("journalctl")
+    assert lifecycle_journal_argv(pattern="(?!)")[-5:] == ["--grep", "(?!)", "--lines", "1", "--case-sensitive=yes"]

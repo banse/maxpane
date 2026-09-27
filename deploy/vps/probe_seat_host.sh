@@ -28,6 +28,7 @@ TITLES=(
   "connect(/run/imd-dash/broker.sock) as imd-worker fails (EACCES: 0660 root:imd-dash in a 0755 root dir)"
   "journalctl -u imd-worker.service as imd-dash: 14-day read count (group systemd-journal)"
   "journalctl --after-cursor with a deliberately stale cursor: exit status and first entry vs the oldest"
+  "journalctl lifecycle --grep: newest match before limit, pcre2 and no-match exit status"
   "systemctl show imd-worker.service as imd-dash (unprivileged D-Bus read)"
   "cgroup counters of imd-worker.service as imd-dash (0644)"
   "python3 -c 'import compression.zstd' on /usr/bin/python3 (rollouts older than 7 days)"
@@ -171,21 +172,73 @@ print(d.get("__REALTIME_TIMESTAMP"), str(d.get("MESSAGE",""))[:80])' 2>&1 | scru
   result "recorded -- spec §5.1: a vacuumed cursor may exit 0 and seek to the oldest entry; the reader detects the gap from data (first entry vs lastTsUtc + 60 s), not from this exit status; the fallback re-attach's --since 'YYYY-MM-DD HH:MM:SS UTC' form must exit 0 here"
 }
 p05() {
+  /usr/bin/python3 -I - <<'PYPROBE' | code_block
+# BEGIN LIFECYCLE_PROBE
+import json
+import subprocess
+import sys
+sys.path.insert(0, "/opt/imd-dash/broker")
+from imd_dashd.imd_dashd import lifecycle_journal_argv
+from imd_dashd.gate import newest_lifecycle, HEARTBEAT_RE
+
+def read(argv, label, *, show_output=True):
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=12)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(label + " unreadable:", type(exc).__name__)
+        return None
+    print(label + " exit status:", done.returncode)
+    if show_output:
+        print(label + " stdout:", done.stdout)
+        print(label + " stderr:", done.stderr)
+    return done
+
+def messages(done):
+    rows = []
+    if done is not None:
+        for line in done.stdout.splitlines():
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(record, dict) and isinstance(record.get("MESSAGE"), str):
+                rows.append(record["MESSAGE"])
+    return rows
+
+argv = lifecycle_journal_argv()
+# Bounded independent unfiltered history. Insufficient retained history is inconclusive.
+baseline = read(argv[:7] + ["--lines", "10000"], "unfiltered history", show_output=False)
+filtered = read(argv, "lifecycle")
+rows = messages(baseline)
+expected, _open = newest_lifecycle(rows)
+actual = messages(filtered)
+print("newest entry heartbeat:", bool(rows and HEARTBEAT_RE.match(rows[-1])))
+print("grep/pcre2:", "PASS" if filtered is not None and (filtered.returncode == 0 or (filtered.returncode == 1 and filtered.stdout.strip() == "-- No entries --")) and not filtered.stderr else "FAIL")
+if baseline is None or baseline.returncode or expected is None:
+    print("filter-before-limit: inconclusive (no lifecycle in bounded baseline)")
+else:
+    print("filter-before-limit:", "PASS" if actual == [expected] else "FAIL")
+read(lifecycle_journal_argv(pattern="(?!)"), "no-match")
+# END LIFECYCLE_PROBE
+PYPROBE
+  result "recorded -- filtered history must select the latest lifecycle even after a newer heartbeat; no-match must report exit 1, -- No entries -- and empty stderr; no action was applied"
+}
+p06() {
   as_dash systemctl show "$WORKER_UNIT" --timestamp=utc -p ActiveState,SubState,MainPID,NRestarts,ActiveEnterTimestamp,ExecMainStartTimestamp,UnitFileState,Restart,RestartUSec,MemoryMax,CPUQuotaPerSecUSec,TasksMax,TasksCurrent,KillMode,TimeoutStopUSec,IPAddressDeny 2>&1 | code_block
   result "recorded -- gracefulStopPossible = KillMode control-group and TimeoutStopUSec >= 30 s; IPAddressDeny is what the broker copies onto its transient children (§4.1b)"
 }
-p06() {
+p07() {
   local f
   for f in memory.current memory.peak memory.max cpu.max; do printf '%s: %s\n' "$f" "$(as_dash cat "$CGROUP/$f" 2>&1)"; done | code_block
   result "recorded"
 }
-p07() {
+p08() {
   local rc=0 out
   out="$(as_dash /usr/bin/python3 -c 'import compression.zstd, sys; print("compression.zstd ok", sys.version.split()[0])' 2>&1)" || rc=$?
   printf 'exit status: %d\n%s\n' "$rc" "$out" | code_block
   if [ "$rc" = 0 ]; then result "PASS -- .jsonl.zst rollouts will be readable"; else result "recorded -- ImportError: COST will read 'rollouts > 7 d unreadable (compression.zstd missing)' (§5.4); plain .jsonl unaffected"; fi
 }
-p08() {
+p09() {
   local out rc=0
   out="$(mktemp)"
   as_dash pepepane --once --offline > "$out" 2> "$out.err" || rc=$?
@@ -208,11 +261,11 @@ PY
   rm -f "$out" "$out.err"
   if [ "$rc" = 0 ]; then result "PASS -- the lean entrypoint imports and runs as $DASH_USER through /usr/local/bin/pepepane"; else result "FAIL -- exit $rc; see stderr above"; fi
 }
-p09() {
+p10() {
   broker_call "$DASH_USER" '{"v":1,"verb":"ping","args":{}}' | scrub | code_block
   result "recorded -- version is the broker's VERSION; posture_ok false means IPAddressDeny could not be read and every runtime verb answers child_posture_unavailable"
 }
-p10() {
+p11() {
   local seat who
   seat="$(broker_call "$DASH_USER" '{"v":1,"verb":"seat","args":{}}')"
   who="$(broker_call "$DASH_USER" '{"v":1,"verb":"whoami","args":{}}')"
@@ -246,12 +299,12 @@ print("PASS" if not bad_names and not stray and key and data.get("deviceKey") ==
 PY
   result "see PASS/FAIL above (spec §13 projection canary: key names, sk-/eyJ, whoami match, no other hex64, exactly 8 source keys)"
 }
-p11() {
+p12() {
   broker_call "$DASH_USER" '{"v":1,"verb":"status","args":{}}' | scrub | head -c 3000 | code_block
   peak_of_glob 'imd-dash-status-*'
   result "recorded -- proves the transient-unit posture (ProtectHome=tmpfs, TemporaryFileSystem=/opt:ro, copied IPAddressDeny) lets imd status run; the peak sizes MemoryMax=512M"
 }
-p12() {
+p13() {
   if [ "$SKIP_DOCTOR" = 1 ]; then printf 'skipped (--skip-doctor): doctor spends one runtime turn and leaves a work/doctor-* transcript\n'; result "skipped"; return; fi
   local plan pid confirm req resp i
   plan="$(broker_call "$DASH_USER" '{"v":1,"verb":"doctor","args":{}}')"
@@ -274,7 +327,7 @@ p12() {
   peak_of_glob 'imd-dash-doctor-*'
   result "recorded -- RuntimeMaxSec=120 (90 s smoke + ~30 s network checks); output above is redacted by the broker; the runtime turn is excluded from COST by its work/doctor-* cwd"
 }
-p13() {
+p14() {
   local plan mode
   printf 'gate preview:\n'
   broker_call "$DASH_USER" '{"v":1,"verb":"gate","args":{"offline":false}}' | scrub | code_block
@@ -285,7 +338,7 @@ p13() {
   printf 'preconditions.plane.mode: %s\n' "${mode:-<no plan: see the reply above>}" | code_block
   result "recorded -- gate_unknown(lifecycle) means only a failed lifecycle read; expected ok:false error gate_blocked while a task runs, ok:true with preconditions when idle; at idle preconditions.plane.mode must read plane+local (local-only means the broker has no --seat: check /etc/systemd/system/imd-dashd.service.d/10-seat.conf); either way nothing was applied"
 }
-p14() {
+p15() {
   [ -f "$MANIFEST" ] || { printf 'missing %s\n' "$MANIFEST" | code_block; result "FAIL"; return; }
   local uid; uid="$(id -u "$DASH_USER")"
   printf 'broker files under %s/broker:\n' "$PREFIX"
@@ -301,27 +354,27 @@ p14() {
   (cd "$PREFIX" && grep -E '  deploy/vps/(wheels/maxpane-.*\.whl|requirements\.lock)$' "$MANIFEST" | sed 's#  deploy/vps/#  #' | sha256sum -c --strict 2>&1) | code_block
   result "every line above must read OK (20-hide-dash.conf reads FAILED open or read until step 7 has been run)"
 }
-p15() {
+p16() {
   local rc=0 out
   out="$(as_worker ls "$DASH_HOME" 2>&1)" || rc=$?
   printf 'exit status: %d\n%s\n' "$rc" "$out" | code_block
   if [ "$rc" != 0 ]; then result "PASS -- $DASH_HOME (0700) is closed to $WORKER_USER"; else result "FAIL -- the worker uid listed the dash home"; fi
 }
-p16() {
+p17() {
   local v; v="$(sshd -T -C user="$DASH_USER" 2>&1 | grep -i -E '^(allowtcpforwarding|x11forwarding|allowagentforwarding|permittty) ')"
   printf '%s\n' "$v" | code_block
   case "$v" in *"allowtcpforwarding no"*) result "PASS -- the Match User block applies" ;; *) result "FAIL -- sshd -T does not show allowtcpforwarding no for $DASH_USER" ;; esac
 }
-p17() {
+p18() {
   local uid; uid="$(id -u "$DASH_USER")"
   systemctl show "user-$uid.slice" -p MemoryMax -p CPUQuotaPerSecUSec -p MemoryCurrent -p MemoryPeak 2>&1 | code_block
   result "recorded -- MemoryMax must read 268435456 (256M); MemoryPeak is meaningful only while or after an imd-dash login ran pepepane (the §14 slice peak)"
 }
-p18() {
+p19() {
   { grep -E '^HISTORY' /etc/sysstat/sysstat 2>&1 || printf 'HISTORY not set (sysstat default 7 days)\n'; ls /var/log/sysstat 2>&1 | head -n 40; } | code_block
   result "recorded -- the depth MACHINE's sar sparkline can reach (spec §5.5)"
 }
-p19() {
+p20() {
   cat <<TEXT | code_block
 owner, by hand, at a natural idle gap (spec §14; §11 idle gate G):
   a) ssh -t $DASH_USER@<host> pepepane      -> press c (CONTROL), then r (restart) or d (drain-restart); type the plan id's first 4 chars

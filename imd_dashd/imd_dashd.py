@@ -368,6 +368,14 @@ def _decide_kill_watch(watch: VerifyWatch, *, pids: set[int], pgids: set[int]) -
 # ---------------------------------------------------------------- the broker
 
 
+def lifecycle_journal_argv(unit: str = WORKER_UNIT, *, pattern: str | None = None) -> list[str]:
+    """Exact filtered history query shared with the owner-run VPS compatibility probe."""
+    if pattern is None:
+        pattern = re.sub(r"\(\?P<[^>]+>", "(?:", f"(?:{ACCEPTED_RE.pattern}|{TERMINAL_RE.pattern})")
+    return ["journalctl", "-u", unit, "-o", "json", "--no-pager", "--show-cursor",
+            "--grep", pattern, "--lines", "1", "--case-sensitive=yes"]
+
+
 class Broker:
     def __init__(self, *, run: Runner = subprocess.run, popen: Callable = subprocess.Popen,
                  peer_uid_of: Callable[[socket.socket], int], allowed_uid: int, audit: Audit, now: Clock = time.time,
@@ -469,8 +477,7 @@ class Broker:
         argv = ["journalctl", "-u", self._unit, "-o", "json", "--no-pager", "--show-cursor"]
         if lifecycle_only:
             # Filter inside journald before limiting output: history may predate idle heartbeats by days.
-            pattern = re.sub(r"\(\?P<[^>]+>", "(?:", f"(?:{ACCEPTED_RE.pattern}|{TERMINAL_RE.pattern})")
-            argv += ["--grep", pattern, "--lines", "1", "--case-sensitive=yes"]
+            argv = lifecycle_journal_argv(self._unit)
         elif after_cursor:
             argv += ["--after-cursor", after_cursor]
         else:

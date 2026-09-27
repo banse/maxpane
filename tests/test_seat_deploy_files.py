@@ -15,6 +15,7 @@ unit file must name the deployed path, never the checkout's.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import subprocess
 import tomllib
@@ -354,6 +355,7 @@ PROBE_TITLES_MUST_MENTION = (
     ("connect", WORKER_USER, "fails"),
     ("journalctl", "read count"),
     ("--after-cursor", "stale"),
+    ("journalctl", "lifecycle", "--grep", "no-match"),
     ("systemctl show",),
     ("cgroup",),
     ("compression.zstd",),
@@ -871,3 +873,35 @@ def test_changelog_and_decisions_have_the_dated_entries():
     for phrase in WP9_DECISION_PHRASES:
         assert decisions.count(phrase) == 1, f"missing or duplicated decision: {phrase}"
         assert decisions.index(phrase) > anchor, f"decision outside the pepepane block: {phrase}"
+
+
+def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(monkeypatch, capsys):
+    from imd_dashd.imd_dashd import lifecycle_journal_argv
+    text = PROBE_SH.read_text()
+    body = text.split("# BEGIN LIFECYCLE_PROBE\n", 1)[1].split("# END LIFECYCLE_PROBE", 1)[0]
+    assert 'sys.path.insert(0, "/opt/imd-dash/broker")' in body
+    assert "from imd_dashd.imd_dashd import lifecycle_journal_argv" in body
+    assert "ACCEPTED_RE.pattern" not in body and "TERMINAL_RE.pattern" not in body
+    older = "2026-09-27T10:00:00.000Z accepted question deadbeef"
+    terminal = "2026-09-27T10:01:00.000Z question failed: executor threw"
+    heartbeat = "2026-09-27T10:02:00.000Z alive 2m · idle · 0 submitted"
+    records = lambda messages: "\n".join(json.dumps({"MESSAGE": message}) for message in messages)
+    calls = []
+    def fake(argv, **kwargs):
+        calls.append(argv)
+        assert kwargs["timeout"] == 12
+        if "--grep" not in argv:
+            return subprocess.CompletedProcess(argv, 0, records([older, terminal, heartbeat]), "")
+        if argv[argv.index("--grep") + 1] == "(?!)":
+            return subprocess.CompletedProcess(argv, 1, "-- No entries --\n", "")
+        assert argv == lifecycle_journal_argv()
+        return subprocess.CompletedProcess(argv, 0, records([terminal]), "")
+    monkeypatch.setattr(subprocess, "run", fake)
+    exec(compile(body, "<synthetic lifecycle probe>", "exec"), {})
+    output = capsys.readouterr().out
+    assert "filter-before-limit: PASS" in output
+    assert "newest entry heartbeat: True" in output
+    assert "grep/pcre2: PASS" in output
+    assert "no-match exit status: 1" in output
+    assert "-- No entries --" in output and "no-match stderr:" in output
+    assert len(calls) == 3
