@@ -363,3 +363,56 @@ asserts a withdrawn statement is historical — do not review code against it.
   `cost.excluded`, spec §7) and `mark_expired_transcripts` (Claude rows no transcript joined within `cleanupPeriodDays` = 30
   read `tokens_reason = "transcript expired"`, spec §5.4). `today()` reports `p50S`/`longestS`/`verdictLagP50S` in whole
   seconds as spec §7 prints them; `rollup_day`/`days` keep the REAL columns (spec §5.6, §7).
+
+
+- **2026-09-26 (contract decision, WP4)** — Both session summarisers (`imd_dashd/summarise_codex.py`,
+  `summarise_claude.py`) are single self-contained stdlib files fed to `python3 -` on both hosts; they share
+  no code, so `iter_bounded_lines` / `iso_ms` exist twice on purpose. Test seams `clock=` and `wall_s=` are
+  keyword-only additions to `summarise_file` / `summarise_dir`; `budget_s` defaults to 40 s (Codex, inside
+  `RuntimeMaxSec=60`) and 15 s (Claude, inside the in-container `timeout … 20`) (spec §5.4; contract §C.8).
+- **2026-09-26 (contract decision, WP4)** — A compressed rollout reports its plain `.jsonl` path and a rollout
+  caught mid-compression is reported once: codex renames rollouts to `.jsonl.zst` after 7 days with a fresh
+  mtime, and the ledger upserts sessions by path, so a second path would add an attempt's tokens twice
+  (spec §5.4; fill8 §4).
+- **2026-09-26 (contract decision, WP4)** — Codex turns count `item_completed` items whose type lower-cased
+  with `_` removed is `agentmessage` (rollouts say `AgentMessage`, the exec stream `agent_message`); tokens are
+  `{0,0,0,0}` for a finished run without a usage report and `None` for a run in flight or cut short by the 5 s
+  per-file clock; Codex sessions carry no max-turn figures, Claude sessions no Codex failure flags or quota
+  (spec §10; fill3 §2–§3).
+- **2026-09-26 (contract decision, WP4)** — `seat_cost.summarise(…, sessions=())` counts doctor / manual /
+  unknown summaries into `excluded` (unknown folds into manual); `BUCKET_KEYS` / `QUOTA_KEYS` mirror
+  `seat_models` because analytics may not import `data.*`; a day with an unknown figure is omitted from the
+  COST series, never drawn as 0 (spec §7, §10).
+- **2026-09-26 (contract decision, WP4)** — `TIER_HISTORY` carries 11 rows dated at the six instants of spec
+  §10: besides the listed changes it records #7's economy override and wrapper default before 09-22 18:26,
+  Claude Code's opus-5/high default before 2.1.280 and the pre-`61d04d62` codex economy constant
+  gpt-5.6-terra/low (fill2 §2–§4; memory notes); a seat's own rows beat seat-less rows whatever their date;
+  the projection's `inference` block replaces the rows for runs at or after the newest applicable row;
+  owner decision §16 #16 confirms the rows (spec §10).
+- **2026-09-26 (contract decision, WP4)** — `seat_auth.pause_hint_active` repeats WP7's
+  `seat_signals.pausedhint_active` rule (`until` still ahead, hint ≤ 330 s old) because WP4 cannot depend on
+  WP7; a lingering `paused until` suffix never degrades auth (header Review Focus 3; fill1 §5).
+- **2026-09-26 (contract deviation, WP4)** — Spec §14's "64 MiB+ file stub via a size-only manifest entry" is a
+  sparse `truncate()` on `tmp_path` inside the tests (the manifest guard has no size-only entries); the 2 MiB
+  oversize line is committed for real. `sessions/rollout_401.jsonl` is a labelled synthetic stand-in in the
+  vps §4 reading until the owner-run capture (WP4 Task 4.3 Step 9) replaces it with the real rollout reduced to
+  metadata; the tests accept both readings (spec §10, §14).
+
+
+- **2026-09-27 (execution record, WP4)** — Task 4.3 Step 9 replaced the synthetic 401
+  fixture with the captured metadata-only rollout before WP4 completion. Its SHA256 and
+  4,148-byte length matched the corpus manifest immediately before copying; fixture bytes
+  remain identical. The fixture manifest uses the corpus capture time, 19:32:59Z, correcting
+  the reference script's stale 19:31:00Z. The capture records a null final agent message,
+  a task-complete error, and null usage. Both defensive failure readings remain supported.
+  No live recapture or aidude edit was performed.
+- **2026-09-27 (execution departure, WP4)** — Task 4.4 commit 62b31ba followed a failed
+  final mutation-restoration check because the inverse edit matched a docstring substring.
+  The explicit repair commit 959094d restored the watermark and docstring, with 31 scoped
+  tests green before Task 4.5. A later repeat of the watermark mutation failed its named
+  regression, and an exact positional inverse restored green. Subsequent commit commands
+  are gated on successful verification; history was preserved.
+- **2026-09-27 (execution departure, WP4)** — Task 4.5 additionally ran the reference
+  plan's existing Homebrew Python 3.14 zstd pytest command with no repository conftest:
+  four passed. No dependencies or shared environment were changed. The dedicated Python
+  3.11 venv remains authoritative for pytest; later Python 3.14 checks compile source only.
