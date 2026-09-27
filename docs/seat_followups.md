@@ -68,14 +68,16 @@ repo say so. The §16 owner decisions (all decided 2026-09-26) that leave a step
     `test_releasing_a_drag_copies_the_selection` and `test_ctrl_c_after_a_drag_copies_the_same_way` failed before this
     branch (one extra selected character / trailing space). BASE: 11261 passed, 2 failed, 1 xfailed. Do not repair them
     as PEPEPANE changes. BASE neighbourhood was 697 and Surf was 545; their historical plan counts were 672 and 544.
-24. **Final-review findings implemented; scoped re-review pending.** The critical review reproduced transient
+24. **Final-review findings resolved and independently approved (2026-09-27).** The critical review reproduced transient
     thread-start lock leaks and queued socket applies (R1/R2). Both brokers now clean up failed startup and complete
     the watch; root admits bounded concurrent requests and refuses writes received during an active write. Review also
     found raw session metadata crossing socket/SQLite boundaries (R3) and absent lifecycle history treated as terminal
     (R4). Deep redaction now covers both brokers and direct session persistence; normal restart/stop/drain requires
     actual latest terminal evidence, including bounded older-history retrieval with stale-segment refusal on Mac.
-    Named regressions and deliberate inverse-restored mutations pass. The original reviewer must still disposition
-    R1–R4 and refreshed artifacts; this entry does not claim approval.
+    Named regressions and deliberate inverse-restored mutations pass. The original reviewer marked R1–R4 ADDRESSED
+    at commit 314e316, independently checking 21 distinct cases, the delayed-decode busy snapshot mutation, all 21
+    MANIFEST/archive entries, every wheel hash and packaged source bytes. No Critical or Important finding remains
+    in the scoped re-review. This approval is separate from the final full-suite result.
 25. **Resolved spec/plan defects.** Owner-confirmed specific-first redactor order and plain yellow pending are in
     the PRD header. Bounded synchronous once backfill, centralized screen CSS, complete orphan identity/group checks,
     apply-time doctor cooldown, completed transient failure reporting, audit redaction, nonblocking CONTROL workers,
