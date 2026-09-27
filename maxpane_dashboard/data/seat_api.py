@@ -385,6 +385,44 @@ def submissions_for_seat(data: Json, seat: int) -> list[dict]:
     return [s for s in items if isinstance(s, Mapping) and s.get("seatTokenId") == seat]
 
 
+def _service_entry(services: object, name: str) -> Mapping:
+    """``/services`` as ``{name: {...}}`` or ``{"services": [{"name": ...}]}`` -- both shapes tolerated."""
+    src = _mapping(services)
+    entry = src.get(name)
+    if isinstance(entry, Mapping):
+        return entry
+    rows = src.get("services")
+    if isinstance(rows, list):
+        for row in rows:
+            if _mapping(row).get("name") == name:
+                return _mapping(row)
+    return {}
+
+
+def normalise_plane(services: Json, health: Json, *, as_of_utc: str | None = None) -> dict:
+    """The §7 ``plane`` block from ``/services`` + ``/health``; every leaf ``None`` when unread, never ``0``.
+
+    ``awaitingVerdict`` and ``computedAt`` are undocumented (fill5 §6) and passed through as-is;
+    ``verifierUp`` prefers ``/health.verifierUp`` and falls back to the verifier service row.
+    """
+    health_src = _mapping(health)
+    verifier = _service_entry(services, "verifier")
+    verifier_up = _bool_or_none(health_src.get("verifierUp"))
+    if verifier_up is None:
+        verifier_up = _bool_or_none(verifier.get("up"))
+    return {
+        "version": _str_or_none(health_src.get("version")),
+        "verifierUp": verifier_up,
+        "verifierLastSeenUtc": _str_or_none(verifier.get("lastSeenAt")),
+        "verifierClaims": _int_or_none(verifier.get("claims")),
+        "awaitingVerdict": _int_or_none(health_src.get("awaitingVerdict")),
+        "connectedDaemons": _int_or_none(health_src.get("connectedDaemons")),
+        "activeEnrollments": _int_or_none(health_src.get("activeEnrollments")),
+        "computedAt": _str_or_none(health_src.get("computedAt")),
+        "asOfUtc": as_of_utc,
+    }
+
+
 def _retry_reason(labels: Sequence[str]) -> str:
     """``["500", "500"]`` -> ``"500 ×2 (retrying)"``; mixed labels join with `` · `` in first-seen order."""
     counts: dict[str, int] = {}
@@ -532,3 +570,14 @@ class SeatApiClient(OwnedHttpClient):
 
     async def health(self) -> ApiResult:
         return await self._get("/health")
+
+
+__all__ = [
+    "API_HOSTS", "API_RETRY_ONCE", "API_TIMEOUT_S", "ApiResult", "COUNTER_KEYS", "FAILURE_CLASSES", "FAILURE_REASONS",
+    "MAX_BODY_BYTES", "MAX_REASONS_PER_CYCLE", "PLANE_KEYS", "QUEUE_KEYS", "REASON_OTHER", "RECENT_FAILURE_KEYS",
+    "REQUEST_HEADERS", "RETRY_DELAY_S", "RUNNING_ROW_KEYS", "SEAT_WORK_BACKFILL_ROWS", "SEAT_WORK_MAX_ROWS",
+    "SEAT_WORK_ROWS", "STANDING_KEYS", "SUBMISSION_KEYS", "SeatApiClient", "USAGE_INT_KEYS", "WORK_ROW_KEYS",
+    "WORK_STATUSES", "drop_summaries", "failure_class_word", "normalise_plane", "normalise_standing",
+    "normalise_submission", "normalise_work_row", "parse_json_tolerant", "reason_word", "seat_counters",
+    "submissions_for_seat", "validate_counters",
+]

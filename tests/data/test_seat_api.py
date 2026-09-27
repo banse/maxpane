@@ -628,3 +628,73 @@ async def test_a_404_on_submissions_is_an_answer_not_a_retry():
         result = await client.job_submissions(JOB)
     assert result.ok is False and result.status == 404 and result.reason == "404" and len(seen) == 1
     assert str(seen[0].url) == f"{SWARM_API_HOSTS[0]}/jobs/{JOB}/submissions"
+
+
+# ---------------------------------------------------------------------------
+# Task 5.9 — plane block + hygiene
+# ---------------------------------------------------------------------------
+
+def test_normalise_plane_from_services_and_health():
+    """Spec §7 plane block from /services + /health (spec §6 last row); undocumented fields labelled, None never 0."""
+    plane = seat_api.normalise_plane(_fixture("services.json"), _fixture("health.json"), as_of_utc="2026-09-26T03:40:07Z")
+    assert tuple(plane) == seat_api.PLANE_KEYS
+    assert plane["version"] == "0.1.0+aa634633" and plane["verifierUp"] is True
+    assert plane["verifierLastSeenUtc"] == "2026-09-26T03:32:58.104Z" and plane["verifierClaims"] == 1568791
+    assert plane["awaitingVerdict"] == 7 and plane["connectedDaemons"] == 409 and plane["activeEnrollments"] == 417
+    assert plane["computedAt"] == "2026-09-26T03:40:05.344Z" and plane["asOfUtc"] == "2026-09-26T03:40:07Z"
+    nothing = seat_api.normalise_plane(None, None)
+    assert tuple(nothing) == seat_api.PLANE_KEYS and all(v is None for v in nothing.values())
+    # the list-shaped /services variant is read the same way; verifierUp falls back to the service row when /health is absent
+    listed = {"services": [{"name": "verifier", "up": False, "lastSeenAt": "2026-09-26T03:00:00.000Z", "claims": 5}]}
+    assert seat_api.normalise_plane(listed, None)["verifierUp"] is False
+    assert seat_api.normalise_plane(listed, None)["verifierClaims"] == 5
+
+
+async def test_every_string_in_a_result_passes_the_redactor():
+    """Spec §6 (every string hostile: control strip + redact) + §13: a body carrying an OSC 52 clipboard write, the
+    masked 09-25 key fragment and a 64-hex under a non-allowed field leaves the client harmless; ints and the
+    allowed `submissionHash` survive."""
+    hostile = {
+        "attempts": 1, "accepted": 1, "rejected": 0, "failed": 0, "pending": 0,
+        "work": [{"jobId": "j", "status": "accepted", "submissionHash": HEX,
+                  "objective": "run \x1b]52;c;AAAA\x07 with sk-svcac******** and " + HEX + " \u202eevil",
+                  "acceptedAt": "2026-09-26 03:11:29.985+00", "submittedAt": "2026-09-26T03:10:20.985Z", "launch": None}],
+    }
+    async with _client(lambda request: httpx.Response(200, json=hostile)) as client:
+        result = await client.seat_work(7, work=1)
+    objective = result.data["work"][0]["objective"]
+    assert "\x1b" not in objective and "\x07" not in objective and "\u202e" not in objective
+    assert "\u241b" in objective and "sk-[redacted]" in objective and "<hex64>" in objective and "sk-svcac" not in objective
+    assert result.data["work"][0]["submissionHash"] == HEX                   # allowed field, kept whole
+    assert result.data["attempts"] == 1 and isinstance(result.data["attempts"], int)
+    assert seat_api.normalise_work_row(result.data["work"][0])["acceptedAt"] == "2026-09-26T03:11:29.985Z"
+
+
+@pytest.mark.guard
+def test_seat_api_is_pure_of_textual_subprocess_and_socket():
+    """Spec §14 purity: data/seat_tail.py and data/seat_broker_client.py are the ONLY seat modules allowed
+    subprocess/socket; seat_api imports httpx and nothing from textual."""
+    tree = ast.parse((REPO / "maxpane_dashboard" / "data" / "seat_api.py").read_text(encoding="utf-8"))
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+    assert not imported & {"textual", "subprocess", "socket", "rich"}
+    assert "httpx" in imported and "maxpane_dashboard" in imported
+    assert not any(isinstance(n, ast.Attribute) and n.attr in {"run", "Popen"} and isinstance(n.value, ast.Name)
+                   and n.value.id == "subprocess" for n in ast.walk(tree))
+
+
+def test_public_names_match_the_contract():
+    """Contract C.10 names + this WP's additive names are exported; nothing private leaks through __all__."""
+    public = set(seat_api.__all__)
+    assert {"ApiResult", "SeatApiClient", "parse_json_tolerant", "drop_summaries", "validate_counters",
+            "normalise_work_row", "normalise_standing", "reason_word", "API_TIMEOUT_S", "SEAT_WORK_ROWS",
+            "SEAT_WORK_BACKFILL_ROWS", "MAX_REASONS_PER_CYCLE", "FAILURE_REASONS", "FAILURE_CLASSES", "API_HOSTS"} <= public
+    assert {"seat_counters", "failure_class_word", "normalise_submission", "submissions_for_seat", "normalise_plane"} <= public
+    assert not [name for name in public if name.startswith("_")]
+    assert all(hasattr(seat_api, name) for name in public)
+    for name in ("standing", "seat_work", "job_submissions", "services", "health", "backfill", "last_good", "_get"):
+        assert callable(getattr(seat_api.SeatApiClient, name))
