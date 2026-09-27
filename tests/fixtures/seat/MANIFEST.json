@@ -776,6 +776,184 @@
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
       "notes": "input to tests.broker._harness.write_fake_proc(); pids and ticks are synthetic; the cmdlines are the measured ones"
+    },
+    "cli/5bfa8261/imd_status_seat7.txt": {
+      "origin": "STAND-IN shaped from vps §1/§47 for `runuser -l imd-worker -c 'imd status'` on imd-vps; replace via the capture step of Task 6.14",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "4542022e3b53be998c26632e5a461d9721e9156bd223c37fbfb7f3f84f9b2726",
+      "bytes": 377,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "device line carries the synthetic public key of the projection fixtures"
+    },
+    "cli/5bfa8261/imd_status_seat420.txt": {
+      "origin": "STAND-IN shaped from bundle §1 for `docker exec imd-worker imd status` on the Mac; replace via the capture step of Task 6.14",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "f259e3b95a7041d3b8ad89dbfce99e8547c6f4e6ec3a9871de8c4f9cdde3dee5",
+      "bytes": 374,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "synthetic device key"
+    },
+    "cli/5bfa8261/imd_skills.txt": {
+      "origin": "STAND-IN: 31 rows, the 7 needs-network and 4 needs-tool ids of vps §47 plus 20 plausible ids; replace via the capture step of Task 6.14",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "7cd51ea7e64f0d97c9dd69457f378ee5163708311ed18ad99367f60ff7cdda98",
+      "bytes": 792,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "header line is the measured `31 skills offered, 31 on here.`"
+    },
+    "cli/5bfa8261/imd_tools_none.txt": {
+      "origin": "the measured `imd tools` line on imd-vps (vps §47)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "9c472e1cf2f8e283dce82fafb7177760597c2e2143f6cc3e1610d83492f4a9f6",
+      "bytes": 62,
+      "redactions": [],
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": ""
+    },
+    "cli/5bfa8261/imd_help.txt": {
+      "origin": "STAND-IN: `imd --help` -> `unknown command: --help` + usage (vps §47, fill2 §13); subcommand list from bundle §1",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "43953ec11036a02602f2b280be5bee7c9b06ec3becc1fd46cb1f1df0e693e4c4",
+      "bytes": 705,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "test_cli_stand_ins_agree_with_the_broker_and_the_unit_file: lists every imd subcommand the brokers exec; `update` is listed but is no broker verb"
+    },
+    "cli/5bfa8261/imd_doctor.txt": {
+      "origin": "STAND-IN composed from the measured doctor lines of vps §47 and runbook §9.1; keeps the $0.114 figure the verify path must strip",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "c0dacfb2b8f6006cf7c088f22f1b3510582ccdce4137caf3bf5f5cb18b5268c3",
+      "bytes": 1093,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "synthetic device key; replace via the capture step of Task 6.14"
+    },
+    "cli/5bfa8261/imd_whoami.txt": {
+      "origin": "STAND-IN: the synthetic public key (64 hex) — `imd whoami` prints exactly one such line (bundle §1)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "27d61457681771da4acb2e915bf0afe186158bb511bd284c8d37a127e9a7e40c",
+      "bytes": 65,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": ""
+    },
+    "cli/systemctl_show.txt": {
+      "origin": "STAND-IN from the measured `systemctl show imd-worker.service` values of vps §1 (MainPID 98508, ActiveEnterTimestamp 2026-09-25 11:45:41 UTC, UnitFileState=disabled)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "8ae53d3f1527964cb7bf15f7611b2a2547e9986213ca389595e1a6ff234a02e2",
+      "bytes": 564,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": "replace via the capture step of Task 6.14"
+    },
+    "cli/systemctl_cat.txt": {
+      "origin": "STAND-IN reconstruction of /etc/systemd/system/imd-worker.service from vps §1 (every directive named there)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "032d25954e294670f7c2bbe3bb0389767f2b35a095c8ac4139eb2f472df4cc28",
+      "bytes": 1305,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": "the operator IPs 82.165.187.96 89.167.27.194 are the measured ones (safety §1); its IPAddressDeny= lines are compared by test_cli_stand_ins_agree_with_the_broker_and_the_unit_file"
+    },
+    "cli/systemctl_show_ipaddressdeny.txt": {
+      "origin": "STAND-IN: `systemctl show imd-worker.service -p IPAddressDeny` in systemd's normalised form (vps §1)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "2993ca11e55d6fca2dc358240f9b904c83a9ac48b7668c87819e26137a702d70",
+      "bytes": 136,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": "test_cli_stand_ins_agree_with_the_broker_and_the_unit_file: the value read_ip_address_deny copies equals the unit file's two IPAddressDeny= lines with bare hosts as /32"
+    },
+    "cli/docker_inspect.json": {
+      "origin": "STAND-IN: `docker inspect imd-worker` reduced to the fields the reader uses, values from fill1 §3 (StopTimeout null, Init null, RestartCount 0, StartedAt 2026-09-25T11:45:54Z)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "26df4f0d36788aeba143aaf66f2ccb244a6b4a2e61d08ccc125c8359d3e18a71",
+      "bytes": 1332,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": "ids synthetic; replace via the capture step of Task 6.14"
+    },
+    "cli/docker_stats.txt": {
+      "origin": "STAND-IN: one `docker stats --no-stream --format '{{json .}}'` line with the measured 130.8MiB / 3.5GiB, 3.65 %, 11 pids (collectors §48)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "fb3b46bec9db77b08f9f9b4ee7da279a6fd1b32080c85706d0fe0d16d858d42b",
+      "bytes": 191,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": ""
+    },
+    "cli/docker_ps_orphan.txt": {
+      "origin": "hand-written: `ps -o pid,ppid,pgid,etimes,rss,args -u imd` inside the container with a hung `imd doctor` exec (ppid 0, 90 min) beside the daemon tree",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "8bdeba4df57a8d32a336ccf5bd5bccde39f633fbee0710fb32a398d897e28d66",
+      "bytes": 529,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": "the exec'd doctor is outside PID 1's tree: the Mac orphan case of spec §5.5"
+    },
+    "cli/cgroup/memory.current": {
+      "origin": "the measured /sys/fs/cgroup/system.slice/imd-worker.service/memory.current (vps §57)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "74b58bfc089ea296d5e9a8ce0b9e6179f89c32137acb135490130d5e1e47cab1",
+      "bytes": 10,
+      "redactions": [],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": ""
+    },
+    "cli/cgroup/memory.peak": {
+      "origin": "the measured memory.peak (vps §57)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "6d658492c3acf062fb6dcff848e130a86cc59a777debe8c7e4b9accec58033b1",
+      "bytes": 10,
+      "redactions": [],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": ""
+    },
+    "cli/cgroup/memory.max": {
+      "origin": "the measured memory.max = 3 G (vps §57)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "e299e7e064963e64b8955bf05efe3e8151603ac8410068ae44c09285dd88707b",
+      "bytes": 11,
+      "redactions": [],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": ""
+    },
+    "cli/cgroup/cpu.max": {
+      "origin": "the measured cpu.max `100000 100000` = 100 % (vps §57)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "261369fa24cb11ef3776980c85360401b9cdc7cf51aaa7a27e7acad94d662607",
+      "bytes": 14,
+      "redactions": [],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": ""
     }
   }
 }

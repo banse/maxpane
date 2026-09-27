@@ -1,0 +1,21 @@
+[
+ {
+  "Id": "3f9c0000000000000000000000000000000000000000000000000000000420aa",
+  "Created": "2026-09-21T19:57:02.104Z",
+  "Path": "docker-entrypoint.sh",
+  "Args": ["imd", "start", "--runtime", "claude", "--concurrency", "1"],
+  "State": {"Status": "running", "Running": true, "Paused": false, "Restarting": false, "OOMKilled": false, "Dead": false,
+            "Pid": 48213, "ExitCode": 0, "Error": "", "StartedAt": "2026-09-25T11:45:54.274Z", "FinishedAt": "2026-09-25T11:45:53.878Z"},
+  "Image": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "Name": "/imd-worker",
+  "RestartCount": 0,
+  "HostConfig": {"Binds": ["imd-home:/home/imd/.identitymd", "imd-claude:/home/imd/.claude", "imd-npm:/home/imd/.npm-global"],
+                 "LogConfig": {"Type": "json-file", "Config": {}},
+                 "RestartPolicy": {"Name": "unless-stopped", "MaximumRetryCount": 0},
+                 "CapDrop": ["ALL"], "Init": null, "StopTimeout": null, "StopSignal": null,
+                 "Memory": 3758096384, "NanoCpus": 6000000000, "PidsLimit": null},
+  "Config": {"Hostname": "3f9c0000aaaa", "User": "imd", "Image": "imd-worker:285d1984-forge",
+             "Cmd": ["imd", "start", "--runtime", "claude", "--concurrency", "1"], "StopSignal": null,
+             "Entrypoint": ["docker-entrypoint.sh"]}
+ }
+]

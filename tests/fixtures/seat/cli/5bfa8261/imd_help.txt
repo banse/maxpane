@@ -1,0 +1,15 @@
+unknown command: --help
+
+usage: imd <command> [options]
+
+  start        run the worker (--runtime claude|codex, --concurrency 1-4, --server URL, --auto-update)
+  service      install|restart|status|logs|start|stop|uninstall the user service
+  pair         pair this machine with an Identity.md token
+  status       show configuration, runtimes and server eligibility
+  doctor       check the machine end to end and ask the network why it is or is not offered work
+  unlink       release the pairing
+  whoami       print this device's public key
+  site         publish|status|names
+  skills       list|remove|off|add <id>
+  tools        list|add|key|forget|remove
+  update       install the latest release

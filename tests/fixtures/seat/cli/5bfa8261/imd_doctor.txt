@@ -1,0 +1,25 @@
+imd doctor · daemon 0.1.0+5bfa8261
+config    /home/imd-worker/.identitymd/config.json
+server    https://api.imd.fun
+device    72b617d4a1c3e5f70918273645b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e
+token     7
+→ codex    codex-cli 0.157.0
+
+✓ git         2.51.0
+✓ forge       1.8.3
+✓ codex run   answered in 2.3s · gpt-6-luna · $0.114
+✓ work root   /home/imd-worker/.identitymd/work · 108.9 GB free
+✗ memory      3.7 GB — contract projects compiled with via_ir need about 8.0 GB; below that forge is killed before the daemon's own build and the whole run is lost. Add memory or offer no contract work.
+✓ config      owner only
+✓ plane       api.imd.fun · build 0.1.0+404dcb6b · 409 online, 417 enrolled
+✓ release     0.1.0+5bfa8261, the latest
+✓ socket      challenge from api.imd.fun in 173ms
+✓ github      154ms
+
+the network says
+· enrollment  active · token 7 · agent 51075
+· presence    connected · heartbeat 4s ago
+· standing    no pause · 3 failed runs in the last day
+· queue       27 ready · 0 eligible · blocked: at capacity 27
+
+1 thing to fix: memory

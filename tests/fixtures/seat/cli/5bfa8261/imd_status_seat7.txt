@@ -1,0 +1,12 @@
+config    /home/imd-worker/.identitymd/config.json
+server    https://api.imd.fun
+device    72b617d4a1c3e5f70918273645b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e
+token     7
+capacity  1 concurrent task(s)
+
+✗ claude   claude not found on PATH
+→ codex    codex-cli 0.157.0
+
+tasks run on: codex
+offers: code, fuzz, research
+server active: eligible — this machine can receive work

@@ -296,3 +296,285 @@ def _text(value: object) -> str:
 # ---------------------------------------------------------------- parsers
 
 
+_USEC_UNITS = (("ms", 0.001), ("us", 0.000001), ("min", 60.0), ("s", 1.0), ("h", 3600.0), ("d", 86400.0), ("w", 604800.0))
+
+
+def _usec_to_s(value: str | None) -> float | None:
+    if not value or value == "infinity":
+        return None
+    total = 0.0
+    for part in value.split():
+        for suffix, factor in _USEC_UNITS:
+            if part.endswith(suffix) and part[:-len(suffix)].replace(".", "", 1).isdigit():
+                total += float(part[:-len(suffix)]) * factor
+                break
+        else:
+            return None
+    return total
+
+
+def _int_or_none(value: object) -> int | None:
+    text = str(value).strip() if value is not None else ""
+    return int(text) if text.isdigit() else None
+
+
+_SYSTEMD_STAMP_RE = re.compile(r"(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) UTC")
+
+
+def _systemd_stamp(value: str | None) -> str | None:
+    """``Thu 2026-09-25 11:45:41 UTC`` -> ``2026-09-25T11:45:41Z`` (``--timestamp=utc``); ``None`` otherwise."""
+    match = _SYSTEMD_STAMP_RE.search(value or "")
+    return f"{match.group(1)}T{match.group(2)}Z" if match else None
+
+
+def parse_systemctl_show(text: str) -> dict:
+    """``key=value`` lines -> the §7 unit block; USec fields to seconds; ``infinity`` -> ``None``; never 0 for a missing field."""
+    props = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+    stop_s = _usec_to_s(props.get("TimeoutStopUSec"))
+    kill_mode = props.get("KillMode") or None
+    quota_s = _usec_to_s(props.get("CPUQuotaPerSecUSec"))
+    memory_max = props.get("MemoryMax")
+    return {
+        "activeState": props.get("ActiveState") or None,
+        "subState": props.get("SubState") or None,
+        "mainPid": _int_or_none(props.get("MainPID")) or None,
+        "sinceUtc": _systemd_stamp(props.get("ActiveEnterTimestamp")),
+        "execMainStartUtc": _systemd_stamp(props.get("ExecMainStartTimestamp")),
+        "restarts": _int_or_none(props.get("NRestarts")),
+        "bootEnabled": None if props.get("UnitFileState") is None else props.get("UnitFileState") == "enabled",
+        "unitFileState": props.get("UnitFileState") or None,
+        "restartPolicy": (f"{props['Restart']}/{props.get('RestartUSec', '?')}" if props.get("Restart") else None),
+        "killMode": kill_mode,
+        "stopTimeoutS": stop_s,
+        "gracefulStopPossible": None if kill_mode is None or stop_s is None else (kill_mode == "control-group" and stop_s >= 30),
+        "memoryMaxB": None if memory_max in (None, "", "infinity") else _int_or_none(memory_max),
+        "cpuQuota": None if quota_s is None else f"{int(round(quota_s * 100))}%",
+        "tasksMax": _int_or_none(props.get("TasksMax")),
+        "tasksCurrent": _int_or_none(props.get("TasksCurrent")),
+        "execStart": props.get("ExecStart") or None,
+    }
+
+
+def parse_docker_inspect(body: Json) -> dict:
+    """``docker inspect`` (a one-element list or the element) -> the docker unit facts; ``StopTimeout null`` = engine default 10 s."""
+    doc = body[0] if isinstance(body, list) and body else body
+    if not isinstance(doc, dict):
+        return {}
+    state = doc.get("State") or {}
+    host = doc.get("HostConfig") or {}
+    config = doc.get("Config") or {}
+    stop_timeout = host.get("StopTimeout")
+    stop_s = 10 if stop_timeout is None else stop_timeout
+    init = bool(host.get("Init")) if host.get("Init") is not None else False
+    started = str(state.get("StartedAt") or "")
+    started_utc = started[:19] + "Z" if len(started) >= 19 and started[10] == "T" else None
+    nano = host.get("NanoCpus") or 0
+    return {
+        "running": state.get("Running") if isinstance(state.get("Running"), bool) else None,
+        "status": state.get("Status") or None,
+        "startedAt": started_utc,
+        "oomKilled": state.get("OOMKilled") if isinstance(state.get("OOMKilled"), bool) else None,
+        "restartCount": doc.get("RestartCount") if isinstance(doc.get("RestartCount"), int) else None,
+        "restartPolicy": (host.get("RestartPolicy") or {}).get("Name") or None,
+        "stopTimeoutS": stop_s,
+        "stopTimeoutConfigured": stop_timeout is not None,
+        "init": init,
+        "gracefulStopPossible": (stop_s >= 45) or init,
+        "memoryMaxB": host.get("Memory") or None,
+        "cpuQuota": f"{nano / 1e9:g} cpus" if nano else None,
+        "logConfig": {"type": (host.get("LogConfig") or {}).get("Type"), "config": (host.get("LogConfig") or {}).get("Config") or {}},
+        "image": config.get("Image") or None,
+        # the §7 unit block keys (contract §C.12 read_unit; WP1 empty_document["unit"]), beside the docker-shaped ones
+        "activeState": "active" if state.get("Running") is True else (state.get("Status") or None),
+        "subState": state.get("Status") or None,
+        "mainPid": state.get("Pid") or None,
+        "sinceUtc": started_utc,
+        "restarts": doc.get("RestartCount") if isinstance(doc.get("RestartCount"), int) else None,
+        "bootEnabled": ((host.get("RestartPolicy") or {}).get("Name") in ("always", "unless-stopped")) if host.get("RestartPolicy") else None,
+    }
+
+
+_SIZE_UNITS = {"B": 1, "kB": 1000, "KB": 1000, "KiB": 1024, "MB": 1000 ** 2, "MiB": 1024 ** 2, "GB": 1000 ** 3, "GiB": 1024 ** 3}
+_SIZE_RE = re.compile(r"^\s*([\d.]+)\s*([A-Za-z]+)\s*$")
+
+
+def _size_to_bytes(text: str) -> int | None:
+    match = _SIZE_RE.match(text or "")
+    if not match or match.group(2) not in _SIZE_UNITS:
+        return None
+    return int(float(match.group(1)) * _SIZE_UNITS[match.group(2)])
+
+
+def parse_docker_stats(line: str) -> dict:
+    """One ``docker stats --no-stream --format '{{json .}}'`` line -> memory/cpu/pids; ``None`` for anything unparsable."""
+    try:
+        row = json.loads(line) if line else {}
+    except ValueError:
+        row = {}
+    mem = str(row.get("MemUsage") or "").split("/")[0]
+    cpu = str(row.get("CPUPerc") or "").rstrip("%")
+    try:
+        cpu_pct: float | None = float(cpu) if cpu else None
+    except ValueError:
+        cpu_pct = None
+    return {"memoryCurrentB": _size_to_bytes(mem) if mem else None, "cpuPct": cpu_pct, "pids": _int_or_none(row.get("PIDs"))}
+
+
+def parse_cgroup(root: Path) -> dict:
+    """``memory.current/peak/max`` and ``cpu.max`` under *root* -> ints / ``"100%"``; ``max`` -> ``None``."""
+    out: dict = {"memoryCurrentB": None, "memoryPeakB": None, "memoryMaxB": None, "cpuQuota": None}
+    for key, name in (("memoryCurrentB", "memory.current"), ("memoryPeakB", "memory.peak"), ("memoryMaxB", "memory.max")):
+        try:
+            text = (Path(root) / name).read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        out[key] = None if text == "max" else _int_or_none(text)
+    try:
+        quota, period = (Path(root) / "cpu.max").read_text(encoding="utf-8").split()
+        if quota != "max" and period.isdigit() and int(period) > 0:
+            out["cpuQuota"] = f"{int(round(int(quota) / int(period) * 100))}%"
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+_STATUS_FIELDS = {"config", "server", "device", "token", "capacity"}
+_RUNTIME_ROW_RE = re.compile(r"^(?P<mark>[→✓✗])\s+(?P<id>\S+)\s*(?P<rest>.*)$")
+
+
+def parse_imd_status(lines: Sequence[str], *, daemon_version: str | None = None) -> dict:
+    """``imd status`` text (lifted from aidude ``_worker_page.py:395-424``) -> fields; per-field ``None`` + ``parseError`` on drift."""
+    fields: dict[str, str] = {}
+    runtimes: list[dict] = []
+    offers: list[str] | None = None
+    eligibility: str | None = None
+    tasks_run_on: str | None = None
+    for raw in lines:
+        line = str(raw).strip()
+        if not line:
+            continue
+        row = _RUNTIME_ROW_RE.match(line)
+        if row:
+            runtimes.append({"mark": row.group("mark"), "id": row.group("id"), "detail": row.group("rest").strip() or None,
+                             "chosen": row.group("mark") == "→", "available": row.group("mark") in "→✓"})
+            continue
+        if line.startswith("offers:"):
+            offers = [part.strip() for part in line.split(":", 1)[1].split(",") if part.strip()]
+            continue
+        if line.startswith("tasks run on:"):
+            tasks_run_on = line.split(":", 1)[1].strip() or None
+            continue
+        if line.startswith("server") and "active" in line and ":" in line:
+            eligibility = line.split(":", 1)[1].strip() or None
+            continue
+        parts = line.split(None, 1)
+        if len(parts) == 2 and parts[0] in _STATUS_FIELDS:
+            fields.setdefault(parts[0], parts[1].strip())
+    chosen = next((r for r in runtimes if r["chosen"]), None)
+    runtime = None
+    if chosen:
+        detail = (chosen["detail"] or "").split()
+        runtime = {"id": chosen["id"], "version": " ".join(detail) or None}
+    capacity_text = fields.get("capacity", "")
+    capacity = _int_or_none(capacity_text.split()[0]) if capacity_text else None
+    parsed_anything = bool(fields or runtimes or offers or eligibility)
+    return {
+        "configPath": fields.get("config"), "server": fields.get("server"),
+        "deviceKey": fields.get("device") if fields.get("device") and re.fullmatch(r"[0-9a-f]{64}", fields["device"]) else None,
+        "tokenId": _int_or_none(fields.get("token")), "capacity": capacity, "runtimes": runtimes, "runtime": runtime,
+        "tasksRunOn": tasks_run_on, "offers": offers, "eligibility": eligibility,
+        "parseError": None if parsed_anything else f"imd status format changed in {daemon_version or 'unknown build'}",
+    }
+
+
+_SKILLS_HEADER_RE = re.compile(r"^(?P<offered>\d+) skills? offered, (?P<on>\d+) on here\.?$")
+_SKILL_ROW_RE = re.compile(r"^(?P<state>on|off)\s+(?P<id>\S+)(?:\s+—\s+needs\s+(?P<needs>.+))?$")
+
+
+def parse_imd_skills(lines: Sequence[str]) -> dict:
+    """``imd skills`` text -> ``{"offered","on","rows":[{"id","on","needs"}],"needsNetwork"}``."""
+    offered: int | None = None
+    on: int | None = None
+    rows: list[dict] = []
+    for raw in lines:
+        line = str(raw).strip()
+        header = _SKILLS_HEADER_RE.match(line)
+        if header:
+            offered, on = int(header.group("offered")), int(header.group("on"))
+            continue
+        row = _SKILL_ROW_RE.match(line)
+        if row:
+            needs = (row.group("needs") or "").strip() or None
+            rows.append({"id": row.group("id"), "on": row.group("state") == "on", "needs": needs})
+    return {"offered": offered, "on": on, "rows": rows, "needsNetwork": sum(1 for r in rows if r["needs"] == "network")}
+
+
+_TOOLS_NONE_RE = re.compile(r"^no tools configured\b")
+_TOOL_ROW_RE = re.compile(r"^(?:ready|not ready)\s+(?P<id>[a-z0-9][a-z0-9._-]*)\b")
+
+
+def parse_imd_tools(lines: Sequence[str]) -> list[str]:
+    ids: list[str] = []
+    for raw in lines:
+        line = str(raw).strip()
+        if not line or _TOOLS_NONE_RE.match(line):
+            continue
+        row = _TOOL_ROW_RE.match(line)
+        if row:
+            ids.append(row.group("id"))
+    return ids
+
+
+def parse_whoami(lines: Sequence[str]) -> str | None:
+    for raw in lines:
+        line = str(raw).strip()
+        if re.fullmatch(r"[0-9a-f]{64}", line):
+            return line
+    return None
+
+
+_PS_HEADER_RE = re.compile(r"^\s*PID\s+PPID\s+PGID\s+ELAPSED\s+RSS\s+COMMAND\s*$")
+
+
+def parse_docker_ps(text: str, *, min_age_s: float = 3600.0, worker_uid: int = 1000) -> list[dict]:
+    """``ps -o pid,ppid,pgid,etimes,rss,args -u imd`` inside the container -> orphan candidates (spec §5.5 Mac).
+
+    A candidate is older than an hour and NOT a descendant of PID 1 (the daemon); ``docker exec``'d
+    processes have ppid 0. Rows carry ``SEAT_ROW_KEYS["seat_machine_orphans"]`` exactly; ``trust`` is
+    the caller's (``container``).
+    """
+    procs: list[dict] = []
+    for raw in text.splitlines():
+        if not raw.strip() or _PS_HEADER_RE.match(raw):
+            continue
+        parts = raw.split(None, 5)
+        if len(parts) < 6 or not all(p.lstrip("-").isdigit() for p in parts[:5]):
+            continue
+        pid, ppid, pgid, etimes, rss = (int(p) for p in parts[:5])
+        procs.append({"pid": pid, "ppid": ppid, "pgid": pgid, "age_s": etimes, "rss_b": rss * 1024, "uid": worker_uid,
+                      "cmd": redact_agent_sentence(parts[5])[:80], "cgroup": "container"})
+    by_pid = {p["pid"]: p for p in procs}
+
+    def under_daemon(proc: dict) -> bool:
+        seen = set()
+        current = proc
+        while current["pid"] not in seen:
+            seen.add(current["pid"])
+            if current["pid"] == 1:
+                return True
+            current = by_pid.get(current["ppid"])
+            if current is None:
+                return False
+        return False
+
+    keys = SEAT_ROW_KEYS["seat_machine_orphans"]
+    out: list[dict] = []
+    for proc in procs:
+        if proc["age_s"] <= min_age_s or under_daemon(proc) or proc["cmd"].startswith("ps "):
+            continue
+        members = [{"pid": m["pid"], "uid": m["uid"], "cgroup": m["cgroup"], "cmd": m["cmd"]} for m in procs
+                   if m["pgid"] == proc["pgid"] and m["pid"] != proc["pid"]]
+        row = {"pid": proc["pid"], "pgid": proc["pgid"], "uid": proc["uid"], "cgroup": proc["cgroup"], "ageS": proc["age_s"],
+               "rssB": proc["rss_b"], "cmd": proc["cmd"], "pgidMembers": members}
+        out.append({k: row.get(k) for k in keys})
+    return out

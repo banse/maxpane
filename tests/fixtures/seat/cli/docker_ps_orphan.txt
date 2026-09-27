@@ -1,0 +1,6 @@
+    PID    PPID    PGID ELAPSED   RSS COMMAND
+      1       0       1  345601 118120 node /home/imd/.npm-global/bin/imd start --runtime claude --concurrency 1
+    412       0     412    5412 131204 node /home/imd/.npm-global/bin/imd doctor
+    418     412     412    5411  96512 claude -p --output-format stream-json --max-turns 1 --model claude-opus-5-5
+    520       1     520      41  88000 claude -p --output-format stream-json --max-turns 60
+    900       0     900       0   3120 ps -o pid,ppid,pgid,etimes,rss,args -u imd

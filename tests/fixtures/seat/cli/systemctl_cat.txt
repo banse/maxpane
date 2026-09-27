@@ -1,0 +1,42 @@
+# /etc/systemd/system/imd-worker.service
+[Unit]
+Description=IMD worker (Codex, seat #7)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/home/imd-worker/.codex/auth.json
+ConditionPathExists=/home/imd-worker/.identitymd/config.json
+
+[Service]
+User=imd-worker
+Group=imd-worker
+WorkingDirectory=/home/imd-worker
+Environment=HOME=/home/imd-worker
+Environment=PATH=/opt/imd-worker/bin:/opt/imd-worker/node/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/imd-worker/bin/imd start --runtime codex --concurrency 1
+Restart=always
+RestartSec=30s
+TimeoutStopSec=30
+KillMode=control-group
+UMask=0077
+CPUQuota=100%
+MemoryMax=3G
+TasksMax=256
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindPaths=/home/imd-worker
+TemporaryFileSystem=/opt:ro
+BindReadOnlyPaths=/opt/imd-worker
+InaccessiblePaths=-/var/lib/docker -/run/docker.sock -/run/containerd -/run/dbus -/run/systemd/private
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+# keep tasks off cloud metadata, private ranges, and the operator's other hosts
+IPAddressDeny=169.254.0.0/16 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10
+IPAddressDeny=82.165.187.96 89.167.27.194
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

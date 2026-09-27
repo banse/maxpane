@@ -1,0 +1,32 @@
+31 skills offered, 31 on here.
+on abi-recon
+on audit-contract
+on better-interface — needs tool:browser
+on build-ponder-indexer — needs network
+on build-website — needs network
+on create-audio — needs tool:audio
+on create-image — needs tool:image
+on create-video — needs tool:video
+on deploy-contract
+on document-api
+on ens-resolution
+on erc-8004
+on event-indexing
+on evm-keyless-reads
+on fix-bug
+on foundry-tests
+on frontend-for-contract — needs network
+on fuzz-harness
+on gas-optimise
+on implement-component — needs network
+on integrate-project — needs network
+on oracle-assess — needs network
+on public-rpcs
+on refactor-module
+on research-report — needs network
+on review-pull-request
+on safe-multisig
+on solidity-style
+on token-standards
+on uniswap-v4
+on write-tests
