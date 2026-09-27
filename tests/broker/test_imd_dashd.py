@@ -1095,7 +1095,7 @@ def test_gate_requires_history_and_refetches_latest_lifecycle_at_apply(tmp_path,
     clock = Clock()
     journal = Journal([hb(clock() - age) for age in (120, 90, 60, 30)])
     broker, runner, *_ = make_broker(tmp_path, clock=clock, journal=journal)
-    assert call(broker, verb, {'offline': True})['error'] == 'gate_unknown(lifecycle)'
+    assert call(broker, verb, {'offline': True})['plan']['preconditions']['lifecycle_open'] is False
     journal.add(msg(clock() - 7 * 86400, 'submitted implement for 0c1f9727'))
     plan = call(broker, verb, {'offline': True})['plan']
     assert plan['preconditions']['lifecycle_open'] is False
@@ -1109,7 +1109,7 @@ def test_gate_requires_history_and_refetches_latest_lifecycle_at_apply(tmp_path,
     assert history_calls and all('--since' not in argv and argv[argv.index('--lines') + 1] == '1' for argv in history_calls)
 
 
-def test_drain_missing_lifecycle_stays_armed_without_restarting(tmp_path):
+def test_drain_successful_empty_lifecycle_can_restart(tmp_path):
     clock = Clock()
     journal = Journal([hb(clock() - age) for age in (120, 90, 60, 30)])
     broker, runner, *_ = make_broker(tmp_path, clock=clock, journal=journal)
@@ -1117,5 +1117,27 @@ def test_drain_missing_lifecycle_stays_armed_without_restarting(tmp_path):
     assert call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})['ok']
     for offset in (1, 2, 3, 4): journal.add(hb(clock() + offset))
     clock.advance(31)
-    assert 'drain_rearmed' in broker.tick()
-    assert broker._drain.armed is not None and not runner.argvs('systemctl', 'restart')
+    assert 'drain_fire' in broker.tick()
+    assert broker._drain.armed is None and runner.argvs('systemctl', 'restart')
+
+
+@pytest.mark.parametrize("rc,out,err", [
+    (1, b"-- No entries --\n", b""),
+    (1, b"-- No entries --\n", b"PCRE2 unavailable"),
+    (2, b"-- No entries --\n", b""),
+    (1, b"", b""),
+    (1, b'{"MESSAGE":"x"}\n-- No entries --\n', b""),
+    (0, b"garbage", b""),
+])
+def test_lifecycle_no_match_exit_is_success_only_for_exact_systemd_case(tmp_path, rc, out, err):
+    journal = Journal([hb(NOW - age) for age in (120, 90, 60, 30)])
+    def read(argv, kw):
+        if "--grep" in argv:
+            return subprocess.CompletedProcess(argv, rc, out, err)
+        return journal(argv, kw)
+    broker, *_ = make_broker(tmp_path, journal=journal, script={("journalctl",): read})
+    result = call(broker, "restart", {"offline": True})
+    if (rc, out, err) == (1, b"-- No entries --\n", b""):
+        assert result["ok"] and result["plan"]["preconditions"]["lifecycle_open"] is False
+    else:
+        assert result["error"] == "gate_unknown(lifecycle)"

@@ -74,6 +74,8 @@ class Journal:
             import re
             pattern = re.compile(argv[argv.index("--grep") + 1])
             selected = [(i, ln) for i, ln in indexed if pattern.search(ln[1])][-int(argv[argv.index("--lines") + 1]):]
+            if not selected:
+                return subprocess.CompletedProcess(argv, 1, b"-- No entries --\n", b"")
         elif "--after-cursor" in argv:
             cursor = argv[argv.index("--after-cursor") + 1]
             after = int(cursor.rsplit("=", 1)[1])

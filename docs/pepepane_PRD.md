@@ -18,6 +18,7 @@
 > - **Owner corrections confirmed 2026-09-27:** §13 applies specific `sk-ant-` before generic `sk-`, preserving the
 >   negative lookahead for already-redacted placeholders. §8 renders plain yellow `pending` when the authoritative
 >   `disagreed` / `awaiting` distinction is unavailable; never infer a suffix or label pending as running.
+> - **Owner D1 confirmed 2026-09-27:** gate step (c) treats successful empty lifecycle history as idle; only failed or unreadable reads are `gate_unknown(lifecycle)`. Stale Mac history remains unknown.
 > - The build used `/Users/banse/codex/maxpane` at BASE `65908e0c0f8e74f5877a39e1619fcbb0dd4cd688`.
 >   BASE hoist neighbourhood was 697 (historical plan 672); Surf sweep was 545 (historical plan 544).
 > - All seat CSS is in `SeatScreen.DEFAULT_CSS`; the lean `--once` performs bounded synchronous backfill without a tail thread.

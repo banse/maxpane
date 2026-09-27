@@ -335,6 +335,7 @@ class LocalDockerBroker(_CallMixin):
         self._run = run
         self._now = now
         self.offline = offline
+        self._injected_tail = tail_lines
         self._tail_lines = tail_lines or self._docker_tail      # WP8 injects none: read the trusted `docker logs --tail 200`
         self._breaker_s = breaker_s
         self._timeout_s = timeout_s
@@ -440,33 +441,39 @@ class LocalDockerBroker(_CallMixin):
         inspect = self._inspect()
         unit_active = None if inspect is None else inspect.get("running")
         graceful = None if inspect is None else inspect.get("gracefulStopPossible")
-        lines = list(self._tail_lines())
-        if _gate_mod.newest_lifecycle([text for _, text in lines])[0] is None and lines:
-            # Independent bounded history; Docker can return a stale segment for older-log reads.
-            # It is evidence only if it reaches the current live window's newest daemon stamp.
-            history = self._docker_tail(_limit=10000)
-            if history and history[-1][0] >= max(epoch for epoch, _ in lines):
+        if self._injected_tail is not None:
+            lines, lifecycle_ok = list(self._injected_tail()), True
+        else:
+            lines, lifecycle_ok = self._docker_tail_read()
+        if _gate_mod.newest_lifecycle([text for _, text in lines])[0] is None:
+            history, history_ok = self._docker_tail_read(_limit=10000)
+            # Empty/older segments cannot corroborate a nonempty live window.
+            current = not lines or bool(history and history[-1][0] >= max(epoch for epoch, _ in lines))
+            lifecycle_ok = lifecycle_ok and history_ok and current
+            if lifecycle_ok:
                 lines = sorted(set(history + lines))
         return _gate_mod.evaluate(journal_lines=lines, standing=self._standing(), offline=self.offline,
                                   outbox_files=self._outbox_files(), unit_active=unit_active, graceful_stop_possible=graceful,
-                                  now=self._now())
+                                  now=self._now(), lifecycle_read_succeeded=lifecycle_ok)
 
     def _docker_tail(self, *, _limit: int = 200) -> list[tuple[float, str]]:
-        """Recent daemon lines for the gate, verify and the drain when no tail is injected: the trusted
-        ``docker logs --tail 200`` form (spec §5.1); Docker's RFC3339Nano prefix is dropped, the daemon's own stamp decides."""
+        return self._docker_tail_read(_limit=_limit)[0]
+
+    def _docker_tail_read(self, *, _limit: int = 200) -> tuple[list[tuple[float, str]], bool]:
+        """Trusted Docker logs, preserving read success independently of an empty result."""
         try:
             done = self._docker("logs", ["docker", "logs", "--tail", str(_limit), "--timestamps", self.container])
         except BrokerError:
-            return []
+            return [], False
         if done.returncode != 0:
-            return []
+            return [], False
         out: list[tuple[float, str]] = []
         for raw in (_text(done.stdout) + "\n" + _text(done.stderr)).splitlines():
             text = raw.split(" ", 1)[1] if " " in raw else raw
             epoch = _gate_mod.parse_iso(text[:24])
             if epoch is not None:
                 out.append((epoch, redact(text)))
-        return sorted(out)
+        return sorted(out), True
 
     def _log(self, **fields) -> int:
         try:

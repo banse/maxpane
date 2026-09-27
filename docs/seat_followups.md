@@ -73,7 +73,7 @@ repo say so. The §16 owner decisions (all decided 2026-09-26) that leave a step
     the watch; root admits bounded concurrent requests and refuses writes received during an active write. Review also
     found raw session metadata crossing socket/SQLite boundaries (R3) and absent lifecycle history treated as terminal
     (R4). Deep redaction now covers both brokers and direct session persistence; normal restart/stop/drain requires
-    actual latest terminal evidence, including bounded older-history retrieval with stale-segment refusal on Mac.
+    a terminal latest lifecycle line or a successful empty history read (owner D1, 2026-09-27); failed reads remain unknown, with bounded older-history retrieval and stale-segment refusal on Mac.
     Named regressions and deliberate inverse-restored mutations pass. The original reviewer marked R1–R4 ADDRESSED
     at commit 314e316, independently checking 21 distinct cases, the delayed-decode busy snapshot mutation, all 21
     MANIFEST/archive entries, every wheel hash and packaged source bytes. No Critical or Important finding remains

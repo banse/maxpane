@@ -816,3 +816,23 @@ def test_local_drain_missing_lifecycle_never_fires(tmp_path):
     clock.advance(31)
     assert 'drain_rearmed' in broker.tick()
     assert broker._drain.armed is not None and not runner.argvs('docker', 'restart')
+
+
+@pytest.mark.parametrize("failure", [None, "first", "history", "stale"])
+def test_mac_empty_history_requires_two_successful_current_reads(tmp_path, failure):
+    clock = Clock()
+    live = [hb(clock() - age) for age in (120, 90, 60, 30)]
+    def logs(argv, kw):
+        limit = argv[argv.index("--tail") + 1]
+        if failure == ("first" if limit == "200" else "history"):
+            return subprocess.CompletedProcess(argv, 1, b"", b"unreadable")
+        rows = live[:1] if failure == "stale" and limit == "10000" else live
+        return subprocess.CompletedProcess(argv, 0, "\n".join("docker-stamp " + t for _, t in rows).encode(), b"")
+    runner = RecordingRunner(_docker_script())
+    runner.script[("docker", "logs")] = logs
+    broker = LocalDockerBroker("imd-worker", run=runner, audit_path=tmp_path / "audit.jsonl", now=clock, offline=True, seat=420)
+    result = broker.read("gate")
+    if failure is None:
+        assert result["safe"] and result["lifecycle_open"] is False
+    else:
+        assert result["unknown"] == "lifecycle" and not result["safe"]

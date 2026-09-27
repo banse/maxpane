@@ -148,10 +148,15 @@ def _mmss(seconds: float) -> str:
 
 def evaluate(*, journal_lines: Sequence[tuple[float, str]], standing: dict | None, offline: bool,
              outbox_files: int | None, unit_active: bool | None, graceful_stop_possible: bool | None,
-             now: float) -> GateResult:
+             now: float, lifecycle_read_succeeded: bool) -> GateResult:
     lines = list(journal_lines)
     beats, newest_age = idle_beats(lines, now=now)
     last_line, lifecycle_open = newest_lifecycle([text for _, text in lines])
+
+    if not lifecycle_read_succeeded:
+        lifecycle_open = None
+    elif lifecycle_open is None:
+        lifecycle_open = False  # D1: successful empty history means no open task
 
     plane: dict = {"mode": "local-only", "running": None, "as_of": None, "standing_age_s": None}
     if not offline and isinstance(standing, dict):

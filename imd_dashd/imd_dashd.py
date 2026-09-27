@@ -454,6 +454,11 @@ class Broker:
     # ------------------------------------------------------------ journal / unit / outbox reads (root)
 
     def _journal(self, *, since_s: int | None = None, after_cursor: str | None = None, lifecycle_only: bool = False) -> tuple[list[tuple[float, str]], str | None]:
+        lines, cursor, _succeeded = self._journal_read(since_s=since_s, after_cursor=after_cursor, lifecycle_only=lifecycle_only)
+        return lines, cursor
+
+    def _journal_read(self, *, since_s: int | None = None, after_cursor: str | None = None,
+                      lifecycle_only: bool = False) -> tuple[list[tuple[float, str]], str | None, bool]:
         argv = ["journalctl", "-u", self._unit, "-o", "json", "--no-pager", "--show-cursor"]
         if lifecycle_only:
             # Filter inside journald before limiting output: history may predate idle heartbeats by days.
@@ -466,9 +471,14 @@ class Broker:
         try:
             done = self._run(argv, capture_output=True, timeout=INPROCESS_TIMEOUT_S["gate"])
         except (subprocess.TimeoutExpired, OSError):
-            return [], None
-        if done.returncode != 0:
-            return [], None
+            return [], None, False
+        stdout = _text(done.stdout)
+        if lifecycle_only and done.returncode == 1 and not _text(done.stderr):
+            # systemd's grep-compatible no-match result; no JSON record may accompany it.
+            if stdout.strip() == "-- No entries --":
+                return [], None, True
+        if done.returncode != 0 or (lifecycle_only and _text(done.stderr)):
+            return [], None, False
         lines: list[tuple[float, str]] = []
         cursor: str | None = None
         for raw in _text(done.stdout).splitlines():
@@ -491,7 +501,7 @@ class Broker:
             except (TypeError, ValueError):
                 epoch = parse_iso(message[:24]) or 0.0
             lines.append((epoch, redact(message)))
-        return lines, cursor
+        return lines, cursor, bool(lines or cursor or not stdout.strip() or stdout.strip() == "-- No entries --")
 
     def _unit_active(self) -> bool | None:
         try:
@@ -540,11 +550,12 @@ class Broker:
 
     def _gate(self, *, offline: bool) -> tuple[GateResult, list[tuple[float, str]], str | None]:
         lines, cursor = self._journal()
-        lifecycle, _ = self._journal(lifecycle_only=True)
+        lifecycle, _, lifecycle_ok = self._journal_read(lifecycle_only=True)
         lines = sorted(set(lines + lifecycle))
         result = evaluate(journal_lines=lines, standing=self._standing(offline), offline=offline,
                           outbox_files=self._outbox_files(), unit_active=self._unit_active(),
-                          graceful_stop_possible=self.graceful_stop_possible, now=self._now())
+                          graceful_stop_possible=self.graceful_stop_possible, now=self._now(),
+                          lifecycle_read_succeeded=lifecycle_ok)
         return result, lines, cursor
 
     # ------------------------------------------------------------ transport

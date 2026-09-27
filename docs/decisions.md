@@ -275,9 +275,8 @@ asserts a withdrawn statement is historical — do not review code against it.
 - **2026-09-26** — The daemon-log tail is drained on the poll tick inside `SeatManager.fetch_and_compute()`,
   not by a screen timer or a Textual worker, which never starts the tail. Outside `data/seat_manager.py` and its
   tests, `start_tail()` is called only by `seat_cli.py`, and only when not `--once`. Under `--once`,
-  `SeatManager.backfill()` calls it itself: it starts the follower, drains after `BACKFILL_QUIET_S` of quiet
-  (cap `BACKFILL_MAX_S`) and stops it before returning, so `--once` leaves no follower. This deviates from
-  spec §4.3 "(no thread)" (header owner note 7) (spec §4.3, §9, §15).
+  the original follower-starting backfill described here is superseded by the 2026-09-27 WP7 correction:
+  `SeatManager.backfill()` consumes a bounded source synchronously and never starts a follower, satisfying spec §4.3.
 - **2026-09-26** — docker subprocesses on the Mac exist only as one long-lived `docker logs -f --tail 200
   --timestamps` follower and on a 30 s tier with 25 s timeouts on bare docker calls (a wrapped `docker exec` gets
   the host belt of WP6's bullet below) plus a 5-min breaker per verb, overriding
@@ -655,3 +654,9 @@ A successful standing read reporting running tasks blocks the gate regardless of
 ### 2026-09-27 — PEPEPANE fix 11: executor failures are terminal
 
 The root/Mac lifecycle matcher and TUI terminal-kind set now include local task, question and campaign failures. Research fill1 section 2 and fill6 section 1 establish that executor exceptions emit this final line without a subsequent submission. This corrects the plan's omission.
+
+### 2026-09-27 — PEPEPANE fix 2, owner D1: successful empty history is idle
+
+D1 supersedes the R4 sentences “An absent anchored lifecycle record is unknown, never terminal” and “Missing or truncated history therefore refuses normal restart/stop and re-arms drain.” A successful history read with no lifecycle match now means no open task. Only a failed, timed-out or unreadable read produces `gate_unknown(lifecycle)`. The explicit `lifecycle_read_succeeded` argument to `gate.evaluate` carries that distinction. Root accepts systemd exit 1 only with the no-entries marker, no JSON record and empty stderr. Mac requires successful live/history reads and retains the stale-segment refusal; an empty older segment cannot corroborate a nonempty live window.
+
+The standing retry remains unchanged: two attempts of up to 8 seconds run inside the root child's 12-second deadline. A slow first attempt can exhaust that outer budget, degrading to `local-only` and requiring its typed acknowledgement. This existing bounded fallback is documented rather than extending the gate deadline.

@@ -32,7 +32,7 @@ IDLE_9 = [hb(30 * i) for i in range(9, 0, -1)] + [hb(11)]      # ten idle beats,
 def ok_gate(**overrides) -> GateResult:
     kwargs = dict(journal_lines=IDLE_9 + [line(20 * 60 + 17, "submitted implement for 0c1f9727")],
                   standing=FRESH_PLANE, offline=False, outbox_files=0, unit_active=True,
-                  graceful_stop_possible=True, now=NOW)
+                  graceful_stop_possible=True, now=NOW, lifecycle_read_succeeded=True)
     kwargs.update(overrides)
     # keep the journal in time order whatever the override
     kwargs["journal_lines"] = sorted(kwargs["journal_lines"], key=lambda item: item[0])
@@ -246,8 +246,9 @@ def test_gate_unknown_outbox_cannot_be_acked(tmp_path):
     assert call(broker2, "restart", {"offline": True})["error"] == "gate_unknown(unit)"
 
 
-def test_missing_lifecycle_is_unknown_but_aged_terminal_is_valid():
-    missing = ok_gate(journal_lines=IDLE_9)
+def test_failed_lifecycle_read_is_unknown_but_successful_empty_is_idle():
+    assert ok_gate(journal_lines=IDLE_9).safe
+    missing = ok_gate(journal_lines=IDLE_9, lifecycle_read_succeeded=False)
     assert not missing.safe and missing.unknown == 'lifecycle'
     assert missing.last_lifecycle_line is None and missing.lifecycle_open is None
     aged = line(7 * 86400, 'submitted implement for 0c1f9727')
