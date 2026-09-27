@@ -552,3 +552,69 @@ asserts a withdrawn statement is historical — do not review code against it.
   local Apple SDK's `sys/resource.h`; the sample is the greater of current and lifetime peak physical footprint.
   A run with no positive sample exits 1, as does exceeding the unchanged 160 MiB ceiling. Tests fake the fallback
   and no-sample seams and measure the real dedicated `pepepane` launcher with fresh HOME and fixture/offline data.
+
+
+- **2026-09-26 (WP9)** — `deploy/vps/MANIFEST.sha256` lists repo-relative paths (`imd_dashd/*.py`, every `deploy/vps/*`
+  file the installer copies or feeds to pip, the fork wheel under `deploy/vps/wheels/`), so one file verifies the staged
+  tree on the VPS before anything is copied and, path-mapped, the installed copies afterwards; wheels are never committed
+  (`deploy/vps/.gitignore`), the lock and the MANIFEST are, and `scripts/build_wheels.sh` regenerates both at the commit
+  that is deployed (contract §C.18; spec §12.1).
+- **2026-09-26 (WP9)** — The fork wheel enters `requirements.lock` as `maxpane==<version> --hash=sha256:…`, so one
+  `pip install --no-index --find-links … --only-binary=:all: --require-hashes -r requirements.lock` installs the 20-wheel
+  dependency closure and the fork under one hash check; the same hash is in `MANIFEST.sha256` and a guard binds the two (spec §12.1
+  install route (a)).
+- **2026-09-26 (WP9)** — `install.sh` installs the worker drop-in only with `--worker-dropin` (§16 #4 was approved on 2026-09-26;
+  the flag marks the idle moment the owner picks) and never restarts, stops or starts `imd-worker.service` — a guard reads the file for those strings; the
+  drop-in takes effect at the next drained restart from CONTROL (spec §12.1 step 7). It gives the root broker its seat
+  through a rendered `imd-dashd.service.d/10-seat.conf` (`ExecStart=` reset, then `… imd_dashd.py --seat N`), so the
+  MANIFEST-pinned unit keeps the contract's text and the gate's fresh standing read (spec §11 step (b)) has a seat.
+- **2026-09-26 (WP9)** — `probe_seat_host.sh` issues `plan restart` and never `apply`; `doctor` is the one write verb it
+  applies (one runtime turn, `--skip-doctor` opts out); the §14 drained restart is the owner's, by hand, recorded under
+  the probe's last heading (spec §14 "Only on the VPS").
+- **2026-09-26 (WP9)** — The no-currency guard over the seat docs
+  (`tests/test_seat_deploy_files.py::test_no_dollar_sign_in_docs_seat_files_except_the_no_currency_rule_sentence`) covers
+  the six documents written for the fork (`seat_status_schema_v2.md`, `seat_install.md`, `seat_install_probe.md`,
+  `seat_followups.md`, `deploy/mac/README.md`, `deploy/vps/VERIFY.md`): prose may carry a currency marker only in the one sentence
+  that states the rule, and a currency marker before a digit inside a code block fails. `pepepane_PRD.md` and `pepepane_plan.md`
+  are verbatim copies of the spec and the plan, which discuss the rule itself, and are exempt by name (spec §10).
+- **2026-09-26 (WP9)** — `docs/seat_PRD.md` and `docs/seat_implementation_plan.md` (untracked on `main`) are committed on
+  `pepepane` with the dated overridden banner as line 1 and their bodies unchanged, so the banner guard is
+  deterministic on any checkout; `main` never carried them, so `git merge main` cannot conflict on them (spec §15).
+- **2026-09-26 (WP9)** — The deploy guard restates `/opt/imd-dash/broker/imd_dashd` and `/usr/bin/python3` as literals
+  beside the imported `SOCKET_PATH` / `AUDIT_PATH` / `VERSION` / `CHILD_ENV` / `TRANSIENT_PROPERTIES`, rather than
+  importing the broker's `BROKER_DIR`, which resolves to the running package's own directory so the same files import
+  under pytest and under `python3 -I` on the VPS; the unit file must name the deployed path, never the checkout's
+  (contract §B, §C.11).
+- **2026-09-26 (WP9)** — `CHANGELOG.md` gains its `## pepepane (unreleased) — 2026-09-26` section at the end of the file,
+  not at the top the contract names: the header rules every shared file append-only at its end, and an upstream
+  `## v0.9.4` lands exactly at the top; the section's first sentence says so (spec §1 #7; contract §A.3).
+
+
+- **2026-09-27 (WP9, build interpreter departure)** — `scripts/build_wheels.sh` honors an explicit interpreter so
+  pip download uses this branch's dedicated Python 3.11 venv; the default remains compatible with the reference plan.
+  The shell assignment is:
+  ```sh
+  PYTHON="${PYTHON:-$REPO/.venv/bin/python}"
+  ```
+  The build produced 20 dependency wheels plus the fork wheel, 21 lock requirements and 21 MANIFEST lines, including
+  the added `process_snapshot.py`. The parent performed the sole authorized network build; later manifest/tarball
+  regeneration is offline. Wheel files remain ignored. All documented build paths use the Codex clone.
+- **2026-09-27 (WP9, probe output correction)** — The reference probe's hex-only scrub could emit journal secret
+  fragments, terminal controls and currency markers. Every output code block now passes through the installed broker's
+  stdlib redactor, then the same marker suppression used at the manager boundary (bound by an agreement regression),
+  retaining the original additional long-hex mask. The root script imports no MaxPane code. Synthetic hostile output
+  and currency cases fail before the fix; removal of the redactor fails the named test.
+- **2026-09-27 (WP9, probe read deadline correction)** — A fixed 20-second socket deadline was shorter than synchronous
+  `status` (30 seconds plus the 15-second subprocess belt). The probe derives a bounded 140-second ceiling from the
+  broker's exported maximum runtime and belt plus five seconds. `doctor` apply is asynchronous; its verification is
+  polled separately as before. No live probe ran during the build.
+- **2026-09-27 (WP9, guard and provenance refinements)** — The installer guard checks the executable hash-required pip
+  command, so usage comments cannot mask its removal. The PRD correction guard checks the adaptation header, so the
+  historical spec body cannot mask a missing ExecStart correction. SHA256 guards preserve all four copied document
+  bodies byte-for-byte; both confirmed owner corrections live only in the PRD header. The lineage docs were copied
+  read-only from the two authorized untracked originals. Follow-ups 21–27 transfer the build ledger's remaining owner
+  work, BASE failures, unverified review questions and resolved defects after the reference follow-up file was created.
+- **2026-09-27 (WP9, measured documentation)** — The install/probe docs distinguish the actual 58.8 MiB lean Mac cold
+  peak from the historical 142 MiB full-app peak; the unchanged CI ceiling is 160 MiB. Layout records use WP8's actual
+  134-column/50-row body and 210-column LEDGER full tier. VPS measurements are still pending. The changelog reports
+  the BASE-measured 545-case Surf sweep, and the adapted plan records 697 hoist tests rather than its historical 672.

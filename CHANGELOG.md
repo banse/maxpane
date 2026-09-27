@@ -140,3 +140,41 @@ Surfboard's `a` AGENT view.
 - Tests: about 10,500, all network-free, run in parallel with
   `pytest -n 4 --dist loadfile`. Guards enforce the copy-icon and explorer rules on every
   dashboard.
+
+
+
+## pepepane (unreleased) — 2026-09-26
+
+This section sits below the release history on purpose: the `pepepane` branch appends to every shared file at its end so
+that `git merge main` from upstream never conflicts here (spec §1 #7; `docs/decisions.md`). The branch adds one dashboard,
+**PEPEPANE**, behind a lean `pepepane` console script that runs on the IdentityMD worker host itself — VPS seat #7 as user
+`imd-dash`, Mac seat #420 beside Docker Desktop. Nothing is registered in the `maxpane` menu; `main`'s dashboards,
+`app.py`, `__main__.py` and `themes/minimal.tcss` are unchanged.
+
+- **PEPEPANE** (`pepepane`, key `c` for CONTROL): hero `SEAT · LIVE · TODAY · VERDICTS · GATE · UNIT`; panels NOW (with the
+  "why idle" queue line), LOG (the raw daemon lines, control-stripped and redacted), LEDGER (one row per `accepted` line,
+  keyed so it cannot lie: stored ≠ submitted ≠ accepted; verdicts joined by `hash12`), COST (API-equal token formulas per
+  runtime, buckets per model/effort, the Codex weekly quota — tokens, never dollars), CONFIG & SKILLS (derived tiers, the
+  hints fingerprint, `restart required`), MACHINE (unit, host, retention, orphans, plane). Local sources first: journald
+  or `docker logs`, config-home names and mtimes, runtime transcripts, `imd` CLI text, systemd/cgroup/docker counters;
+  `api.imd.fun` only for verdicts, standing and plane facts, and `--offline` removes it. `pepepane --once` prints the
+  status document (schema v2, `docs/seat_status_schema_v2.md`) — usable over plain ssh at 3 a.m.
+- **Control verbs** — the one recorded break of MaxPane's read-only charter, for this branch only (`docs/decisions.md`
+  PEPEPANE-CTRL): restart, drained restart, stop/start, boot enable/disable, skills on/off, kill-orphans, doctor, as
+  plan → apply → verify through the root stdlib broker `imd_dashd/` over a unix socket on the VPS (`SO_PEERCRED`, single-use
+  plan ids, one write in flight, a fresh idle gate at apply, transient `systemd-run` children with the worker's posture,
+  an audit line per phase) and an in-process Docker broker on the Mac. The TUI process itself stays read-only. Tier,
+  capacity and update are static CONTROL lines, not verbs.
+- **Deploy** (`deploy/vps/`): socket-activated `imd-dashd.socket` / `imd-dashd.service`, the worker drop-in
+  `20-hide-dash.conf`, the TUI slice fence `50-pepepane.conf`, the sshd `Match User imd-dash` block, `install.sh` (steps 1–8,
+  idempotent, `--dry-run`, offline `pip --require-hashes` from `requirements.lock`), `probe_seat_host.sh` (the install-day
+  checks → `docs/seat_install_probe.md`), `MANIFEST.sha256` + `VERIFY.md`; `scripts/build_wheels.sh` builds the
+  hash-pinned wheel set and the deploy tarball on the Mac. `deploy/mac/README.md` for seat #420.
+- **Hoist** (separately upstreamable, three commits): `widgets/swarm_table.py`, `widgets/seat_words.py`,
+  `widgets/fmt.mmdd_hhmm` / `short_model`, with re-export shims at the old paths; the 545-case surf sweep read 545/545 on
+  textual 8.2.8.
+- **Pins**: `[project.optional-dependencies] seat` = textual 8.2.8, rich 15.0.0, httpx 0.28.1, pydantic 2.13.5;
+  `requires-python >= 3.11`; everything under `imd_dashd/` is Python 3.11 syntax and stdlib only.
+- **Docs**: `docs/pepepane_PRD.md` (the spec), `docs/pepepane_plan.md`, `docs/seat_status_schema_v2.md`,
+  `docs/seat_install.md`, `docs/seat_install_probe.md` (placeholder until the owner runs the probe), `docs/seat_followups.md`;
+  `docs/seat_PRD.md` and `docs/seat_implementation_plan.md` carry an overridden banner.

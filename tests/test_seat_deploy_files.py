@@ -832,3 +832,42 @@ def test_historical_document_bodies_remain_byte_identical():
         raw = (REPO / rel).read_bytes()
         body = raw.partition(b"\n---\n\n")[2] if "pepepane_" in rel else raw.split(b"\n\n", 1)[1]
         assert hashlib.sha256(body).hexdigest() == expected, rel
+
+
+# --- Task 9.10: CHANGELOG.md + docs/decisions.md ----------------------------------------------------------------
+
+CHANGELOG = REPO / "CHANGELOG.md"
+DECISIONS = REPO / "docs" / "decisions.md"
+CHANGELOG_HEADING = "## pepepane (unreleased) — 2026-09-26"
+#: One distinctive prefix per WP9 bullet in docs/decisions.md (each exactly once, after the pepepane anchor).
+WP9_DECISION_PHRASES = (
+    "**2026-09-26 (WP9)** — `deploy/vps/MANIFEST.sha256` lists repo-relative paths",
+    "**2026-09-26 (WP9)** — The fork wheel enters `requirements.lock`",
+    "**2026-09-26 (WP9)** — `install.sh` installs the worker drop-in only with `--worker-dropin`",
+    "**2026-09-26 (WP9)** — `probe_seat_host.sh` issues `plan restart` and never `apply`",
+    "**2026-09-26 (WP9)** — The no-currency guard over the seat docs",
+    "**2026-09-26 (WP9)** — `docs/seat_PRD.md` and `docs/seat_implementation_plan.md`",
+    "**2026-09-26 (WP9)** — The deploy guard restates `/opt/imd-dash/broker/imd_dashd`",
+    "**2026-09-26 (WP9)** — `CHANGELOG.md` gains its `## pepepane (unreleased) — 2026-09-26` section at the end",
+)
+
+
+def test_changelog_and_decisions_have_the_dated_entries():
+    """Contract §A.3 / spec §15 'Shared surfaces': one dated pepepane changelog section, appended
+    after the release history (deviation #2), naming what the branch adds; and the WP9 decisions in
+    docs/decisions.md, each once, inside the pepepane block. Mutation: delete a bullet -> red; move
+    the changelog section above ## v0.9.3 -> red."""
+    changelog = CHANGELOG.read_text(encoding="utf-8")
+    assert changelog.count(CHANGELOG_HEADING) == 1
+    release_headings = [m.start() for m in re.finditer(r"^## v\d", changelog, re.M)]
+    assert release_headings, "the upstream release history is still there"
+    assert changelog.index(CHANGELOG_HEADING) > max(release_headings), "appended after the release history"
+    section = changelog[changelog.index(CHANGELOG_HEADING):]
+    for needle in ("pepepane", "PEPEPANE", "imd_dashd", "deploy/vps/", "docs/seat_status_schema_v2.md", "docs/seat_followups.md",
+                   "textual 8.2.8", "read-only", "tokens, never dollars", "plan → apply → verify"):
+        assert needle in section, needle
+    decisions = DECISIONS.read_text(encoding="utf-8")
+    anchor = decisions.index("**2026-09-26 (pepepane)**")
+    for phrase in WP9_DECISION_PHRASES:
+        assert decisions.count(phrase) == 1, f"missing or duplicated decision: {phrase}"
+        assert decisions.index(phrase) > anchor, f"decision outside the pepepane block: {phrase}"
