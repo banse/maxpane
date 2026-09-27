@@ -245,3 +245,122 @@ def resolve_settings(args: argparse.Namespace, env: Mapping[str, str], config_pa
     settings["backfill_api"] = bool(getattr(args, "backfill_api", False))
     settings["log_level"] = getattr(args, "log_level", "WARNING")
     return settings
+
+
+def build_manager(settings: Mapping) -> SeatManager:
+    """The ONLY place a real source, broker, unit reader or API client is constructed (spec §15).
+
+    ``systemd``: a ``JournaldSource`` factory (``--after-cursor`` from the persisted state, else
+    ``--since <lastTsUtc>``, else ``--since -14d``), ``UnixSocketBroker``, ``SystemdUnitReader``. ``docker``: a
+    ``DockerLogsSource`` factory (the trusted ``-f --tail 200`` follower), the in-process
+    ``LocalDockerBroker`` with its 0600 audit file, ``DockerUnitReader``. ``fixture``:
+    WP7's ``build_fixture_manager`` -- no host, no Docker, no network (spec §4.4). ``--offline``
+    hands the manager no API client at all.
+    """
+    host = settings["host"]
+    offline = bool(settings.get("offline"))
+    poll = int(settings.get("poll_interval") or MIN_POLL_INTERVAL)
+    seat, agent = settings.get("seat"), settings.get("agent")
+    if host == "fixture":
+        return build_fixture_manager(Path(str(settings["fixture"])), offline=offline, seat=seat, agent=agent, poll_interval=poll)
+    maxpane_dir = Path.home() / ".maxpane"
+    api = None if offline else SeatApiClient()
+    if host == "systemd":
+        unit = str(settings["unit"])
+
+        def tail(state):
+            # cursor -> --after-cursor; no cursor but lastTsUtc (the gap fallback after a vacuumed cursor or a
+            # non-zero exit) -> --since <lastTsUtc>; neither -> JOURNAL_FIRST_RUN_SINCE (journal_since_arg(None)).
+            return JournaldSource(unit, cursor=state.cursor, since=None if state.cursor else journal_since_arg(state.last_ts_utc))
+
+        return SeatManager(
+            tail=tail, broker=UnixSocketBroker(str(settings["broker"]), offline=offline), api=api, unit_reader=SystemdUnitReader(unit),
+            host="systemd", unit=unit, container=None, seat=seat, agent=agent, offline=offline, poll_interval=poll, maxpane_dir=maxpane_dir,
+        )
+    if host == "docker":
+        container = str(settings["container"])
+
+        def tail(state):
+            return DockerLogsSource(container, watermark_ts=state.watermark_ts)
+
+        # ``seat=``: gate step (b)'s fresh standing read runs inside the Mac broker too (spec §11). No ``tail_lines``:
+        # the broker reads its own ``docker logs --tail`` window at plan/apply/verify (deviation 17).
+        return SeatManager(
+            tail=tail, broker=LocalDockerBroker(container, audit_path=maxpane_dir / "seat_audit.jsonl", offline=offline, seat=seat), api=api,
+            unit_reader=DockerUnitReader(container), host="docker", unit=None, container=container, seat=seat, agent=agent, offline=offline,
+            poll_interval=poll, maxpane_dir=maxpane_dir,
+        )
+    raise ValueError(f"unknown host {host!r}")
+
+
+def run_once(manager, *, backfill_api: bool = False) -> tuple[int, str]:
+    """``--once``: backfill, fetch, settle, fetch, print the status document v2 -- usable over plain ssh at 3 a.m. (spec §4.3).
+
+    ``fetch_and_compute`` starts the broker/API tiers as detached tasks and ``close`` cancels whatever is still in
+    flight, so one fetch alone would print a document without seat, status, skills, sessions, workstat, standing,
+    seatWork or plane. ``settle()`` (WP7: "tests and --once") awaits the in-flight tiers and the second fetch folds
+    what they returned. The document is validated first (spec §7 refusal rules); a refusal prints
+    ``{"refused": <code>, "detail": …}`` and exits :data:`EXIT_REFUSED`. No thread is started here.
+    """
+
+    async def _go() -> dict:
+        try:
+            await manager.backfill(api=backfill_api)
+            await manager.fetch_and_compute()
+            await manager.settle()
+            await manager.fetch_and_compute()
+            return manager.document()
+        finally:
+            await manager.close()
+
+    document = asyncio.run(_go())
+    refusal = validate_status_document(document)
+    if refusal is not None:
+        return EXIT_REFUSED, json.dumps({"refused": refusal.code, "detail": refusal.detail}, ensure_ascii=False)
+    return EXIT_OK, json.dumps(document, ensure_ascii=False, indent=2)
+
+
+def _configure_logging(level: str) -> None:
+    """File logging under ``~/.maxpane`` so warnings never bleed into the TUI (the ``__main__`` shape)."""
+    log_dir = Path.home() / ".maxpane"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(level=getattr(logging, level, logging.WARNING), format="%(asctime)s %(name)s %(levelname)s %(message)s",
+                        filename=str(log_dir / "maxpane.log"), filemode="a")
+    for noisy in ("httpx", "httpcore", "pydantic"):
+        logging.getLogger(noisy).setLevel(logging.ERROR)
+
+
+def _apply_font_size(size: int) -> None:
+    """iTerm2's font-size OSC only, and only when asked (``0`` leaves the terminal alone)."""
+    if size > 0 and os.environ.get("TERM_PROGRAM", "") == "iTerm.app":
+        sys.stdout.write(f"\033]1337;SetFontSize={size}\a")
+        sys.stdout.flush()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        settings = resolve_settings(args, os.environ, DEFAULT_CONFIG)
+    except ValueError as exc:
+        parser.error(str(exc))  # exits EXIT_USAGE
+    if settings["host"] == "fixture" and (settings["fixture"] is None or not Path(str(settings["fixture"])).is_dir()):
+        print("pepepane: --host fixture needs --fixture <case dir> (tests/fixtures/seat/<case>/)", file=sys.stderr)
+        return EXIT_HOST
+    _configure_logging(settings["log_level"])
+    manager = build_manager(settings)  # exactly one manager (spec §15)
+    if settings["once"]:
+        code, text = run_once(manager, backfill_api=settings["backfill_api"])
+        print(text)
+        return code
+    if settings["backfill_api"]:
+        asyncio.run(manager.backfill(api=True))
+    if not settings["once"]:
+        manager.start_tail()  # the ONLY call site (spec §4.3, §9); never under --once
+    _apply_font_size(settings["font_size"])
+    SeatApp(manager, poll_interval=settings["poll_interval"], theme=settings["theme"]).run()
+    return EXIT_OK
+
+
+if __name__ == "__main__":  # pragma: no cover -- `python -m maxpane_dashboard.seat_cli`
+    sys.exit(main())

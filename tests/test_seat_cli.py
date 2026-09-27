@@ -173,3 +173,233 @@ def test_seat_app_constructs_no_manager_of_its_own():
 
     source = inspect.getsource(seat_cli.SeatApp.__init__)
     assert "Manager(" not in source and "build_manager" not in source
+
+
+# ---------------------------------------------------------------------------
+# Task 8.12 -- build_manager, run_once, main
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+HEALTHY_CASE = Path(__file__).resolve().parent / "fixtures" / "seat" / "healthy"
+
+
+class _Recorder:
+    """Stands in for a source/broker/reader class: records its construction, does nothing."""
+
+    made: list[tuple[str, tuple, dict]] = []
+
+    def __init__(self, *args, **kwargs) -> None:
+        _Recorder.made.append((type(self).__name__, args, kwargs))
+
+
+def _recorder(name: str):
+    return type(name, (_Recorder,), {})
+
+
+def _settings(**overrides) -> dict:
+    base = {"host": "systemd", "unit": "imd-worker.service", "container": "imd-worker", "broker": "/run/imd-dash/broker.sock", "seat": 7, "agent": 51075,
+            "offline": False, "fixture": None, "poll_interval": 5, "theme": "minimal", "font_size": 0, "once": False, "backfill_api": False, "log_level": "WARNING"}
+    base.update(overrides)
+    return base
+
+
+@pytest.fixture
+def recorders(monkeypatch):
+    _Recorder.made = []
+    for name in ("JournaldSource", "DockerLogsSource", "UnixSocketBroker", "LocalDockerBroker", "SystemdUnitReader", "DockerUnitReader", "SeatApiClient"):
+        monkeypatch.setattr(seat_cli, name, _recorder(name))
+    managers: list[dict] = []
+
+    class _FakeSeatManager:
+        def __init__(self, **kwargs) -> None:
+            managers.append(kwargs)
+            self.kwargs = kwargs
+            self.tail_started = 0
+            self.closed = 0
+
+        def start_tail(self) -> bool:
+            self.tail_started += 1
+            return True
+
+        async def backfill(self, *, api: bool = False) -> dict:
+            self.backfilled = api
+            return {}
+
+        async def fetch_and_compute(self) -> dict:
+            self.fetched = getattr(self, "fetched", 0) + 1
+            return {}
+
+        async def settle(self) -> None:
+            self.settled = getattr(self, "settled", 0) + 1
+
+        def document(self) -> dict:
+            return json.loads((Path(__file__).resolve().parent / "fixtures" / "seat" / "status" / "status_v2_healthy.json").read_text(encoding="utf-8"))
+
+        async def close(self) -> None:
+            self.closed += 1
+
+    monkeypatch.setattr(seat_cli, "SeatManager", _FakeSeatManager)
+    return managers
+
+
+def test_build_manager_wires_the_systemd_host(recorders):
+    manager = seat_cli.build_manager(_settings())
+    names = [name for name, _a, _k in _Recorder.made]
+    assert names == ["SeatApiClient", "UnixSocketBroker", "SystemdUnitReader"], names
+    broker = next(k for n, a, k in _Recorder.made if n == "UnixSocketBroker")
+    assert broker == {"offline": False} and next(a for n, a, k in _Recorder.made if n == "UnixSocketBroker") == ("/run/imd-dash/broker.sock",)
+    kwargs = manager.kwargs
+    assert kwargs["host"] == "systemd" and kwargs["unit"] == "imd-worker.service" and kwargs["container"] is None
+    assert kwargs["seat"] == 7 and kwargs["agent"] == 51075 and kwargs["offline"] is False and kwargs["poll_interval"] == 5
+    assert callable(kwargs["tail"]), "the tail is a factory the manager calls with its TailState"
+
+    class _State:
+        cursor = "s=abc;i=1"
+        last_ts_utc = None
+        watermark_ts = None
+
+    kwargs["tail"](_State())
+    journald = next((a, k) for n, a, k in _Recorder.made if n == "JournaldSource")
+    assert journald == (("imd-worker.service",), {"cursor": "s=abc;i=1", "since": None})
+    _State.cursor = None
+    kwargs["tail"](_State())
+    assert _Recorder.made[-1][2] == {"cursor": None, "since": seat_cli.JOURNAL_FIRST_RUN_SINCE}
+    # spec §5.1/§9: a vacuumed cursor is cleared and lastTsUtc kept -> the next attach is `--since <lastTsUtc>`
+    _State.last_ts_utc = "2026-09-24T04:12:00.000Z"
+    kwargs["tail"](_State())
+    assert _Recorder.made[-1][2] == {"cursor": None, "since": "2026-09-24 04:12:00 UTC"}
+
+
+def test_build_manager_wires_the_docker_host_and_offline_drops_the_api(recorders):
+    manager = seat_cli.build_manager(_settings(host="docker", offline=True, container="imd-w"))
+    names = [name for name, _a, _k in _Recorder.made]
+    assert "SeatApiClient" not in names and names == ["LocalDockerBroker", "DockerUnitReader"], names
+    broker_args, broker_kwargs = next((a, k) for n, a, k in _Recorder.made if n == "LocalDockerBroker")
+    assert broker_args == ("imd-w",) and broker_kwargs["offline"] is True and broker_kwargs["audit_path"].name == "seat_audit.jsonl"
+    # spec §11 gate step (b): the in-process Mac broker makes the fresh standing read, which needs the seat
+    assert broker_kwargs["seat"] == 7
+    assert "tail_lines" not in broker_kwargs, "the Mac broker reads its own docker logs tail (deviation 17)"
+    assert manager.kwargs["host"] == "docker" and manager.kwargs["container"] == "imd-w" and manager.kwargs["unit"] is None and manager.kwargs["api"] is None
+
+    class _State:
+        cursor = None
+        watermark_ts = "2026-09-26T03:40:11.000Z"
+
+    manager.kwargs["tail"](_State())
+    assert _Recorder.made[-1][:1] == ("DockerLogsSource",) and _Recorder.made[-1][2] == {"watermark_ts": "2026-09-26T03:40:11.000Z"}
+
+
+def test_build_manager_hands_the_fixture_host_to_build_fixture_manager(monkeypatch, recorders):
+    calls = []
+    monkeypatch.setattr(seat_cli, "build_fixture_manager", lambda case_dir, **kw: calls.append((case_dir, kw)) or "fixture-manager")
+    out = seat_cli.build_manager(_settings(host="fixture", fixture=str(HEALTHY_CASE), offline=True))
+    assert out == "fixture-manager" and calls == [(HEALTHY_CASE, {"offline": True, "seat": 7, "agent": 51075, "poll_interval": 5})]
+    assert _Recorder.made == [] and recorders == [], "the fixture host constructs no real source, broker, reader or api"
+
+
+def test_run_once_prints_the_validated_v2_document_or_refuses(recorders):
+    manager = seat_cli.build_manager(_settings())
+    code, text = seat_cli.run_once(manager)
+    assert code == seat_cli.EXIT_OK
+    doc = json.loads(text)
+    assert doc["schemaVersion"] == 2 and doc["seat"]["tokenId"] == 7 and manager.closed == 1 and manager.backfilled is False
+    # the tiers are detached tasks: fetch, settle (await them), fetch again, so --once carries broker and API data
+    assert manager.fetched == 2 and manager.settled == 1
+    manager = seat_cli.build_manager(_settings())
+    manager.document = lambda: {"schemaVersion": 1, "generatedAtUtc": "x"}
+    code, text = seat_cli.run_once(manager, backfill_api=True)
+    assert code == seat_cli.EXIT_REFUSED and json.loads(text) == {"refused": "wrong_schema", "detail": "schemaVersion=1"} and manager.backfilled is True
+
+
+def test_run_once_against_the_real_fixture_manager(tmp_path, monkeypatch):
+    # spec §4.4: the fixture host touches no host, no Docker, no network -- so the real manager may run here
+    if not HEALTHY_CASE.is_dir():
+        pytest.skip("WP7's healthy fixture case is not committed yet")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    manager = seat_cli.build_fixture_manager(HEALTHY_CASE, offline=True, seat=7, agent=51075, poll_interval=5)
+    code, text = seat_cli.run_once(manager)
+    assert code == seat_cli.EXIT_OK
+    doc = json.loads(text)
+    assert doc["schemaVersion"] == 2 and "standing" not in doc.get("sources", {}), "--offline removes the API sources"
+
+
+def test_main_constructs_exactly_one_manager_and_starts_the_tail_only_when_not_once(monkeypatch, recorders, capsys):
+    ran: list[dict] = []
+
+    class _StubApp:
+        def __init__(self, manager, *, poll_interval, theme, **kwargs) -> None:
+            ran.append({"manager": manager, "poll_interval": poll_interval, "theme": theme})
+
+        def run(self) -> None:
+            ran[-1]["ran"] = True
+
+    monkeypatch.setattr(seat_cli, "SeatApp", _StubApp)
+    monkeypatch.setattr(seat_cli, "_configure_logging", lambda level: None)
+    monkeypatch.setattr(seat_cli, "_apply_font_size", lambda size: None)
+    monkeypatch.setattr(seat_cli, "get_seat", lambda: None)
+    monkeypatch.setattr(seat_cli, "DEFAULT_CONFIG", Path("/nonexistent/pepepane.toml"))
+    monkeypatch.setattr(seat_cli.os, "environ", {})
+    code = seat_cli.main(["--host", "systemd", "--seat", "7", "--theme", "matrix", "--poll-interval", "10"])
+    assert code == seat_cli.EXIT_OK and len(recorders) == 1
+    manager = ran[0]["manager"]
+    assert manager.tail_started == 1 and ran[0]["ran"] is True and ran[0]["poll_interval"] == 10 and ran[0]["theme"] == "matrix"
+    recorders.clear()
+    ran.clear()
+    code = seat_cli.main(["--host", "systemd", "--seat", "7", "--once"])
+    out = capsys.readouterr().out
+    assert code == seat_cli.EXIT_OK and len(recorders) == 1 and ran == [], "--once never builds the app"
+    assert json.loads(out)["schemaVersion"] == 2
+
+
+def test_start_tail_is_called_only_by_seat_cli_and_not_under_once(monkeypatch, recorders):
+    # spec §4.3/§9: the ONLY call site is main(), and never under --once
+    monkeypatch.setattr(seat_cli, "SeatApp", type("StubApp", (), {"__init__": lambda self, m, **k: None, "run": lambda self: None}))
+    monkeypatch.setattr(seat_cli, "_configure_logging", lambda level: None)
+    monkeypatch.setattr(seat_cli, "_apply_font_size", lambda size: None)
+    monkeypatch.setattr(seat_cli, "get_seat", lambda: None)
+    monkeypatch.setattr(seat_cli, "DEFAULT_CONFIG", Path("/nonexistent/pepepane.toml"))
+    monkeypatch.setattr(seat_cli.os, "environ", {})
+    started: list[int] = []
+    made = []
+
+    class _Counting:
+        def __init__(self, **kwargs) -> None:
+            made.append(self)
+
+        def start_tail(self) -> bool:
+            started.append(1)
+            return True
+
+        async def backfill(self, *, api=False):
+            return {}
+
+        async def fetch_and_compute(self):
+            return {}
+
+        async def settle(self):
+            pass
+
+        def document(self):
+            return json.loads((Path(__file__).resolve().parent / "fixtures" / "seat" / "status" / "status_v2_healthy.json").read_text(encoding="utf-8"))
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(seat_cli, "SeatManager", _Counting)
+    assert seat_cli.main(["--host", "systemd", "--seat", "7", "--once", "--offline"]) == seat_cli.EXIT_OK
+    assert started == [] and len(made) == 1
+    assert seat_cli.main(["--host", "systemd", "--seat", "7", "--offline"]) == seat_cli.EXIT_OK
+    assert started == [1] and len(made) == 2
+
+
+def test_main_refuses_a_fixture_host_without_a_directory(monkeypatch, capsys):
+    monkeypatch.setattr(seat_cli, "get_seat", lambda: None)
+    monkeypatch.setattr(seat_cli, "DEFAULT_CONFIG", Path("/nonexistent/pepepane.toml"))
+    monkeypatch.setattr(seat_cli.os, "environ", {})
+    assert seat_cli.main(["--host", "fixture"]) == seat_cli.EXIT_HOST
+    assert seat_cli.main(["--host", "fixture", "--fixture", "/nonexistent/case"]) == seat_cli.EXIT_HOST
+    assert "--fixture" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as exc:
+        seat_cli.main(["--host", "bogus"])
+    assert exc.value.code == seat_cli.EXIT_USAGE
