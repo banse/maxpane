@@ -27,7 +27,7 @@ __all__ = [
     "as_of_hhmm", "config_changed_since_start", "counters_consistent", "day_utc", "divergence", "gate_preview",
     "graceful_stop_possible", "hero_state", "iso_z", "ledger_footer", "log_footer", "offline_state",
     "parse_iso", "parse_pg_timestamp", "pausedhint_active", "rollup_today", "short_build", "source_word",
-    "staleness", "tail_state", "verdict_lag_s",
+    "staleness", "tail_state", "verdict_lag_s", "STALE_BACKFILL_REASON",
 ]
 
 HEARTBEAT_STALE_S = 90          #: amber; 3 x the daemon's 30 s LIVENESS_MS (spec §8 hero, §9)
@@ -520,3 +520,86 @@ def gate_preview(gate: Mapping | None, *, broker_reachable: bool | None, drain: 
     if reason_text.startswith("gate unknown") or reason_text.startswith("task running") or reason_text.startswith("unit inactive"):
         return reason_text, "red"
     return reason_text, "amber"
+
+
+# ---------------------------------------------------------------------------
+# footers
+# ---------------------------------------------------------------------------
+
+_TAIL_WORDS = {"journald": "journalctl -f", "docker-log": "docker logs -f", "list": "fixture replay", "fixture": "fixture replay"}
+_LEDGER_SOURCE_WORDS = {"journald": "journald", "docker-log": "docker log since", "list": "fixture log", "fixture": "fixture log"}
+STALE_BACKFILL_REASON = "backfill stale segment, discarded"   #: == data.seat_tail.STALE_BACKFILL_REASON (restated: analytics imports no data module)
+
+
+def _clean_text(value: object) -> str:
+    text = redact(value)
+    return text.replace("$", "")
+
+
+def log_footer(*, kind: str | None, cursor_age_s: float | None, grammar_version: str | None,
+               verified_version: str | None, reason: str | None) -> str:
+    """``tail: journalctl -f · cursor age 4 s · grammar 5bfa8261 ✓`` (spec §8 LOG footer).
+
+    *grammar_version* is the daemon build the tail observed (``runtimes:``/``release`` lines);
+    *verified_version* is the build the grammar is pinned to (``seat_log_grammar.GRAMMAR_VERSION``).
+    A different observed build reads ``grammar unverified for <ver>`` (spec §5.1); *reason* (the tail
+    thread's) is appended when present.  No ``$`` and no control character ever survives.
+    """
+    transport = _TAIL_WORDS.get(kind or "", kind) if kind else None
+    age = f"{int(cursor_age_s)} s" if isinstance(cursor_age_s, (int, float)) and not isinstance(cursor_age_s, bool) else "—"
+    if verified_version is None:
+        grammar = "—"
+    elif grammar_version is None:
+        grammar = f"{short_build(verified_version)} (daemon version unknown)"
+    elif grammar_version == verified_version:
+        grammar = f"{short_build(verified_version)} ✓"
+    else:
+        grammar = f"unverified for {_clean_text(grammar_version)}"
+    text = f"tail: {transport or '—'} · cursor age {age} · grammar {grammar}"
+    if isinstance(reason, str) and reason:
+        text += f" · {_clean_text(reason)}"
+    return text
+
+
+def ledger_footer(*, source: str | None, from_utc: str | None, rows: int | None, ledger_since_utc: str | None,
+                  gap_note: str | None, divergence: Mapping | None, tail_reason: str | None,
+                  backfill_discarded_utc: str | None = None) -> str:
+    """The LEDGER footer: window · rows · ledger depth · gap · divergence (spec §8 LEDGER).
+
+    ``journald 09-22 12:00 → now · 291 rows · ledger sqlite since 09-26 · stored today 11 = plane 11 ✓``;
+    ``docker log since 09-21 19:57 · 288 rows · gap … · ⚠ stored 57 vs plane 55 — grammar drift?``;
+    a discarded docker backfill appends ``· backfill HH:MM discarded (stale segment)`` from the sticky
+    *backfill_discarded_utc* (``tasks.window.backfillDiscardedUtc``), else ``· backfill discarded (stale
+    segment)`` while the tail's own reason still says so.  ``ledger unavailable`` when no source is known.
+    """
+    if not source:
+        return "ledger unavailable"
+    parts: list[str] = []
+    start = parse_iso(from_utc)
+    word = _LEDGER_SOURCE_WORDS.get(source, source)
+    if start is None:
+        parts.append(word)
+    elif source == "journald":
+        parts.append(f"{word} {_local_mmdd_hhmm(start)} → now")
+    else:
+        parts.append(f"{word} {_local_mmdd_hhmm(start)}")
+    if isinstance(rows, int) and not isinstance(rows, bool):
+        parts.append(f"{rows} rows")
+    since = parse_iso(ledger_since_utc)
+    if since is not None:
+        parts.append(f"ledger sqlite since {_local_mmdd_hhmm(since)[:5]}")
+    if isinstance(gap_note, str) and gap_note:
+        parts.append(_clean_text(gap_note))
+    if isinstance(divergence, Mapping) and divergence.get("localStored") is not None and divergence.get("planeRowsSubmittedToday") is not None:
+        local = divergence["localStored"]
+        plane = divergence["planeRowsSubmittedToday"]
+        if divergence.get("ok"):
+            parts.append(f"stored today {local} = plane {plane} ✓")
+        else:
+            parts.append(f"⚠ stored {local} vs plane {plane} — grammar drift?")
+    discarded = as_of_hhmm(backfill_discarded_utc) if isinstance(backfill_discarded_utc, str) else None
+    if discarded is not None:
+        parts.append(f"backfill {discarded} discarded (stale segment)")
+    elif tail_reason == STALE_BACKFILL_REASON:
+        parts.append("backfill discarded (stale segment)")
+    return " · ".join(parts)

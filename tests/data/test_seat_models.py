@@ -142,7 +142,8 @@ def test_seat_models_imports_are_pure():
     assert modules.isdisjoint({"textual", "rich", "subprocess", "socket", "httpx"}), modules
     froms = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
     assert froms & {m for m in froms if m and m.startswith("maxpane_dashboard")} == {
-        "maxpane_dashboard.analytics.seat_redact"
+        "maxpane_dashboard.analytics.seat_redact",
+        "maxpane_dashboard.analytics.seat_signals",
     }
 
 
@@ -402,12 +403,37 @@ def test_fold_status_bar_keys_are_numbers():
     assert sm.fold_status_document(doc)["poll_interval"] == 5
 
 
-def test_fold_leaves_the_wp7_keys_blank():
+def test_fold_completes_the_wp7_keys():
     # contract C.14: WP7 completes seat_hero_state, seat_hero_reasons, seat_daemon_offline, seat_log_footer, seat_ledger_footer
     flat = sm.fold_status_document(_load("status_v2_healthy.json"))
-    assert flat["seat_hero_state"] is None and flat["seat_hero_reasons"] == []
-    assert flat["seat_daemon_offline"] is None
-    assert flat["seat_log_footer"] == "" and flat["seat_ledger_footer"] == ""
+    assert flat["seat_hero_state"] == "green" and flat["seat_hero_reasons"] == []
+    assert flat["seat_daemon_offline"] is False
+    assert flat["seat_log_footer"] == "tail: journalctl -f · cursor age 4 s · grammar 5bfa8261 ✓"
+    assert flat["seat_ledger_footer"].startswith("journald ") and flat["seat_ledger_footer"].endswith("· stored today 11 = plane 11 ✓")
+    dead = sm.fold_status_document(_load("status_v2_tail_dead.json"))
+    assert dead["seat_hero_state"] == "red" and dead["seat_hero_reasons"][0] == "tail dead 52 s"
+    assert dead["seat_daemon_offline"] is None, "no heartbeat facts survive a dead tail"
+    assert dead["seat_log_footer"].endswith("· tail: exited rc=1 — retry in 8s")
+    assert dead["seat_ledger_footer"] == "ledger unavailable"
+    offline = sm.fold_status_document(_load("status_v2_offline.json"))
+    assert offline["seat_hero_state"] == "green" and "plane" not in offline["seat_ledger_footer"]
+    sparse = sm.fold_status_document({"schemaVersion": 2})
+    assert sparse["seat_hero_state"] is None and sparse["seat_daemon_offline"] is None
+    assert sparse["seat_log_footer"] == "tail: — · cursor age — · grammar 5bfa8261 (daemon version unknown)"
+    assert sparse["seat_ledger_footer"] == "ledger unavailable"
+    # spec §6 rule 4 / mutation proof 8: the hero reads source-gated values. A live standing (presenceConnected true,
+    # heartbeatAgeMs 4100) adds the plane clause to a stale local heartbeat; an `unavailable` standing adds nothing
+    live_plane = _load("status_v2_healthy.json")
+    live_plane["daemon"]["heartbeatAgeS"] = 183
+    assert sm.fold_status_document(live_plane)["seat_hero_reasons"] == ["heartbeat 183 s old", "plane sees us · local tail stale"]
+    stale_plane = _load("status_v2_api_down.json")
+    stale_plane["daemon"]["heartbeatAgeS"] = 183
+    stale = sm.fold_status_document(stale_plane)
+    assert stale["seat_hero_state"] == "amber" and stale["seat_hero_reasons"] == ["heartbeat 183 s old"]
+    stale_plane["standing"]["presenceConnected"] = False
+    stale_plane["daemon"]["heartbeatAgeS"] = 300
+    lost = sm.fold_status_document(stale_plane)
+    assert lost["seat_hero_state"] == "amber" and lost["seat_daemon_offline"] is False, "a stale `connected: false` never reds the hero"
 
 
 def test_fold_never_raises_on_a_sparse_or_empty_document():

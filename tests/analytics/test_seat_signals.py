@@ -400,3 +400,56 @@ def test_gate_preview_words_and_colours():
     assert ss.gate_preview(gate, broker_reachable=True, drain=drain) == (f"drain armed {ss.as_of_hhmm('2026-09-26T03:02:00Z')} · 2/4 idle beats", "amber")
     flight = {"verb": "restart", "planId": "7f3a9c1e2b4d6081", "sinceUtc": "2026-09-26T03:40:30Z"}
     assert ss.gate_preview(gate, broker_reachable=True, in_flight=flight) == ("restart in flight (plan 7f3a) · verifying", "amber")
+
+
+# ---------------------------------------------------------------------------
+# Task 7.5 — footers
+# ---------------------------------------------------------------------------
+
+
+def test_log_footer_names_the_transport_cursor_age_and_grammar():
+    # spec §8 LOG footer: `tail: journalctl -f · cursor age 4 s · grammar 5bfa8261 ✓`; a build without a fixture dir -> `grammar unverified for <ver>`
+    assert ss.log_footer(kind="journald", cursor_age_s=4, grammar_version="0.1.0+5bfa8261", verified_version="0.1.0+5bfa8261", reason=None) == \
+        "tail: journalctl -f · cursor age 4 s · grammar 5bfa8261 ✓"
+    assert ss.log_footer(kind="docker-log", cursor_age_s=31.6, grammar_version="0.1.0+6c2c43ef", verified_version="0.1.0+5bfa8261", reason=None) == \
+        "tail: docker logs -f · cursor age 31 s · grammar unverified for 0.1.0+6c2c43ef"
+    assert ss.log_footer(kind="list", cursor_age_s=None, grammar_version=None, verified_version="0.1.0+5bfa8261", reason=None) == \
+        "tail: fixture replay · cursor age — · grammar 5bfa8261 (daemon version unknown)"
+    assert ss.log_footer(kind="journald", cursor_age_s=52, grammar_version="0.1.0+5bfa8261", verified_version="0.1.0+5bfa8261",
+                         reason="tail: exited rc=1 — retry in 8s") == \
+        "tail: journalctl -f · cursor age 52 s · grammar 5bfa8261 ✓ · tail: exited rc=1 — retry in 8s"
+    assert ss.log_footer(kind=None, cursor_age_s=None, grammar_version=None, verified_version=None, reason=None) == "tail: — · cursor age — · grammar —"
+    assert "$" not in ss.log_footer(kind="journald", cursor_age_s=1, grammar_version="x", verified_version="y", reason="cost $3")
+    assert "\x1b" not in ss.log_footer(kind="journald", cursor_age_s=1, grammar_version="x", verified_version="x", reason="\x1b]0;evil\x07")
+
+
+def test_ledger_footer_names_the_window_ledger_gap_and_divergence():
+    # spec §8 LEDGER footer, three shapes
+    ok = ss.ledger_footer(source="journald", from_utc="2026-09-22T12:00:00.628Z", rows=291, ledger_since_utc="2026-09-26T03:00:00Z",
+                          gap_note=None, divergence={"localStored": 11, "planeRowsSubmittedToday": 11, "ok": True}, tail_reason=None)
+    assert ok == (f"journald {ss._local_mmdd_hhmm(ss.parse_iso('2026-09-22T12:00:00.628Z'))} → now · 291 rows · ledger sqlite since "
+                  f"{ss._local_mmdd_hhmm(ss.parse_iso('2026-09-26T03:00:00Z'))[:5]} · stored today 11 = plane 11 ✓")
+    drift = ss.ledger_footer(source="docker-log", from_utc="2026-09-21T19:57:00Z", rows=288, ledger_since_utc=None,
+                             gap_note="gap 2026-09-24T04:12:00Z→2026-09-24T04:15:00Z",
+                             divergence={"localStored": 57, "planeRowsSubmittedToday": 55, "ok": False}, tail_reason=None)
+    assert drift == (f"docker log since {ss._local_mmdd_hhmm(ss.parse_iso('2026-09-21T19:57:00Z'))} · 288 rows · "
+                     "gap 2026-09-24T04:12:00Z→2026-09-24T04:15:00Z · ⚠ stored 57 vs plane 55 — grammar drift?")
+    stale = ss.ledger_footer(source="docker-log", from_utc="2026-09-21T19:57:00Z", rows=288, ledger_since_utc=None, gap_note=None,
+                             divergence=None, tail_reason="backfill stale segment, discarded")
+    assert stale.endswith("· backfill discarded (stale segment)")
+    # spec §8: `backfill 03:07 discarded (stale segment)` -- the sticky note (WP3 backfill_note/backfill_at) survives a later exit reason
+    sticky = ss.ledger_footer(source="docker-log", from_utc="2026-09-21T19:57:00Z", rows=288, ledger_since_utc=None, gap_note=None,
+                              divergence=None, tail_reason="tail: exited rc=1 — retry in 8s", backfill_discarded_utc="2026-09-26T03:07:00Z")
+    assert sticky.endswith(f"· backfill {ss.as_of_hhmm('2026-09-26T03:07:00Z')} discarded (stale segment)")
+    assert sticky.count("backfill") == 1
+    offline = ss.ledger_footer(source="journald", from_utc="2026-09-22T12:00:00Z", rows=10, ledger_since_utc=None, gap_note=None, divergence=None, tail_reason=None)
+    assert offline.endswith("· 10 rows") and "plane" not in offline
+    assert ss.ledger_footer(source=None, from_utc=None, rows=None, ledger_since_utc=None, gap_note=None, divergence=None, tail_reason=None) == "ledger unavailable"
+    assert "$" not in ss.ledger_footer(source="journald", from_utc=None, rows=1, ledger_since_utc=None, gap_note="gap $", divergence=None, tail_reason=None)
+
+
+@pytest.mark.guard
+def test_grammar_pin_matches():
+    from maxpane_dashboard.data.seat_log_grammar import GRAMMAR_VERSION
+    from maxpane_dashboard.data.seat_models import GRAMMAR_VERSION_PINNED
+    assert GRAMMAR_VERSION_PINNED == GRAMMAR_VERSION

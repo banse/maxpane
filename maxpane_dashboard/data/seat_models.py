@@ -1,6 +1,6 @@
 """Status document schema v2 and the flat ``seat_*`` contract of the PEPEPANE dashboard.
 
-Boundaries: standard library plus ``analytics.seat_redact`` only -- no Textual,
+Boundaries: standard library plus ``analytics.seat_redact`` and ``analytics.seat_signals`` -- no Textual,
 no ``subprocess``, no ``socket``, no ``httpx`` (the WP8 purity walk and
 ``tests/data/test_seat_models.py::test_seat_models_imports_are_pure`` assert
 it).  ``data/seat_manager.py`` builds the document and calls
@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 from maxpane_dashboard.analytics.seat_redact import find_secret_path, redact, redact_tree
+from maxpane_dashboard.analytics.seat_signals import hero_state, ledger_footer, log_footer, offline_state
 
 __all__ = [
     "LAST_GOOD_SOURCES",
@@ -70,6 +71,10 @@ MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 #: minimum.  ``StatusBar.update_data`` formats it as ``f"{poll_interval}s
 #: poll"``, so it must be an int, never ``None``.
 POLL_INTERVAL_DEFAULT = 5
+#: The daemon build the log grammar is pinned to (== data.seat_log_grammar.GRAMMAR_VERSION; restated so this
+#: module keeps its two-import purity rule).  ``tests/data/test_seat_models.py::test_grammar_pin_matches`` binds them.
+GRAMMAR_VERSION_PINNED = "0.1.0+5bfa8261"
+
 
 SOURCE_NAMES: tuple[str, ...] = (
     "tail", "unit", "broker", "seat", "status", "skills", "sessions", "workstat", "hints", "auth",
@@ -611,7 +616,7 @@ def fold_status_document(
     ``LogLine`` dicts; only those with ``seq > log_seq`` are emitted.  The five
     WP7 keys -- ``seat_hero_state``, ``seat_hero_reasons``,
     ``seat_daemon_offline``, ``seat_log_footer``, ``seat_ledger_footer`` --
-    are left blank here and completed by ``analytics/seat_signals``.
+    are derived by ``analytics/seat_signals``.
     """
     d = _dict(doc)
     sources = _dict(d.get("sources"))
@@ -659,6 +664,46 @@ def fold_status_document(
     else:
         new_lines_out = new_lines
     newest_seq = max([log_seq] + [line["seq"] for line in new_lines])
+
+    tail_src = _dict(sources.get("tail"))
+    window = _dict(tasks.get("window"))
+    tail_gated = f.gated("tail")
+    # spec §6 rule 4 / mutation proof 8: the hero reads source-gated blocks -- a gated source (tail not ok, unit not ok,
+    # standing `unavailable`) contributes none of its stale last-good values. `sources` stays intact (tail-dead / tail-exited
+    # detection reads it) and `control.restartRequired` is kept.
+    hero_doc = dict(d)
+    if f.gated("standing"):
+        hero_doc["standing"] = {}
+    if tail_gated:
+        hero_doc["daemon"] = {}
+    if f.gated("unit"):
+        hero_doc["unit"] = {}
+    hero, hero_reasons = hero_state(hero_doc, now=float(now) if now is not None else (completed_epoch if completed_epoch is not None else 0.0))
+    if tail_gated:
+        daemon_offline = None
+    else:
+        daemon_offline = offline_state(
+            consecutive_disconnected_beats=daemon.get("consecutiveDisconnectedBeats"),
+            presence_connected=None if f.gated("standing") else standing.get("presenceConnected"),
+            heartbeat_age_s=daemon.get("heartbeatAgeS"),
+        )
+    log_foot = log_footer(
+        kind=window.get("source") if isinstance(window.get("source"), str) else None,
+        cursor_age_s=None if tail_gated else daemon.get("heartbeatAgeS"),
+        grammar_version=seat.get("daemonVersion") if isinstance(seat.get("daemonVersion"), str) else None,
+        verified_version=GRAMMAR_VERSION_PINNED,
+        reason=tail_src.get("reason") if isinstance(tail_src.get("reason"), str) else None,
+    )
+    ledger_foot = ledger_footer(
+        source=None if tail_gated else window.get("source"),
+        from_utc=window.get("fromUtc"),
+        rows=window.get("rows"),
+        ledger_since_utc=window.get("ledgerSinceUtc"),
+        gap_note=window.get("gapNote"),
+        divergence=None if f.gated("seatWork") else today.get("divergence"),
+        tail_reason=tail_src.get("reason") if isinstance(tail_src.get("reason"), str) else None,
+        backfill_discarded_utc=window.get("backfillDiscardedUtc") if isinstance(window.get("backfillDiscardedUtc"), str) else None,
+    )
 
     flat: dict[str, Any] = {
         # meta
@@ -717,7 +762,7 @@ def fold_status_document(
         "seat_daemon_consecutive_disconnected_beats": f.value(
             "seat_daemon_consecutive_disconnected_beats", daemon.get("consecutiveDisconnectedBeats")
         ),
-        "seat_daemon_offline": None,  # WP7 (analytics/seat_signals.offline_state)
+        "seat_daemon_offline": daemon_offline,
         # auth
         "seat_auth_degraded": f.value("seat_auth_degraded", auth.get("degraded")),
         "seat_auth_reasons": f.value("seat_auth_reasons", auth.get("reasons")),
@@ -821,12 +866,12 @@ def fold_status_document(
         "seat_control_restart_required": f.value("seat_control_restart_required", control.get("restartRequired")),
         "seat_control_last_audit": f.rows("seat_control_last_audit", control.get("lastAudit")),
         # derived for widgets -- WP7 completes the first two and the footers
-        "seat_hero_state": None,
-        "seat_hero_reasons": [],
+        "seat_hero_state": hero,
+        "seat_hero_reasons": [redact(r) for r in hero_reasons],
         "seat_log_lines": new_lines_out,
         "seat_log_seq": newest_seq,
-        "seat_log_footer": "",
-        "seat_ledger_footer": "",
+        "seat_log_footer": log_foot,
+        "seat_ledger_footer": ledger_foot,
         # status bar
         "last_updated_seconds_ago": last_updated,
         "error_count": sum(1 for s in sources.values() if isinstance(s, dict) and s.get("ok") is False),
