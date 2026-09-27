@@ -686,6 +686,54 @@
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
       "notes": "only to prove `working` (a 30 s heartbeat echo behind a 30 s cache) is never rendered; deviceKey scrubbed"
+    },
+    "broker/projection_ok.json": {
+      "origin": "hand-written: the 8-key config.json shape of bundle §2 with synthetic keys (both 64-hex values are made up and load-bearing for the canary tests)",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "75aabea810cdd67cb32b7e55216286818df9b66948176c61554e42fa72f97e15",
+      "bytes": 565,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "input to project(); never a real config.json"
+    },
+    "broker/projection_leaky.json": {
+      "origin": "hand-written: a broken projection OUTPUT that leaked devicePrivateKey (spec §13 canary (1))",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "df42d9f8668ce5a49fab01adb97c143c09363171aec24ebaef1630d6a584efe4",
+      "bytes": 366,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "refused as canary: key_name; synthetic 64-hex values"
+    },
+    "broker/projection_swapped_key.json": {
+      "origin": "hand-written: a projection output whose deviceKey carries the private-key value (spec §13 canary (3))",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "1d4851a92f0c9b73fb92569926304ecfe4b1160bf8a567d60239ac8f45d094f9",
+      "bytes": 276,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "refused only by the whoami match: canary: devicekey_mismatch"
+    },
+    "broker/projection_extra_key.json": {
+      "origin": "hand-written: a 9-key config.json (agentId added) — schema drift (spec §5.2 (ii), §13 canary (5))",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "321499320a6f3dea92cd58d0380efc73230ce8780fcf5a465be211fc5652503b",
+      "bytes": 371,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "project() raises KeyError('unknown_keys'); projection.py exits 3"
     }
   }
 }

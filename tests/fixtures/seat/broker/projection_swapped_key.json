@@ -1,0 +1,10 @@
+{
+  "server": "https://api.imd.fun",
+  "deviceKey": "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1b0a",
+  "wallet": "0x887b0000000000000000000000000000000000a7",
+  "tokenId": 7,
+  "maxConcurrency": 1,
+  "skillsOptOut": [],
+  "inference": null,
+  "tools": []
+}
