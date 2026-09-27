@@ -582,3 +582,227 @@ async def test_config_changed_since_start_uses_the_unit_anchor(tmp_path):
     await m.fetch_and_compute()
     assert m.document()["control"]["restartRequired"] is False
     await m.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 7.9 — broker tiers: broker_status, workstat, sessions
+# ---------------------------------------------------------------------------
+
+DEVICE_KEY = "72b617d4" + "00" * 28        # synthetic 64-hex public key; only its first 8 chars ever enter the document
+JOB = "b1fb1439-7d2e-4a0f-8c3b-9e5d1f2a6b70"
+NODE = "0c1f9727-4c1e-4b8a-9f0d-2a6e7b3c5d11"
+STATUS_LINES = [
+    "config /home/imd-worker/.identitymd/config.json",
+    "server https://api.imd.fun",
+    "device scrubbed-7",
+    "token 7",
+    "capacity 1 concurrent task(s)",
+    "✗ claude not found",
+    "→ codex codex-cli 0.157.0",
+    "tasks run on: codex",
+    "offers: code, fuzz, research",
+    "server active: eligible — this machine can receive work",
+]
+SKILLS_LINES = ["31 skills offered, 31 on here.", "on oracle-assess", "on public-rpcs — needs network", "on foundry-fuzz — needs tool:forge"]
+SESSIONS_JSON = {
+    "sessions": [{
+        "path": "/home/imd-worker/.codex/sessions/2026/09/26/rollout-2026-09-26T03-23-49-abc.jsonl", "runtime": "codex",
+        "cwd": f"/home/imd-worker/.identitymd/work/{JOB}/{NODE}", "slug": None, "kind": "task", "jobId": JOB, "nodeId": NODE,
+        "startedUtc": "2026-09-26T03:23:49.400Z", "endedUtc": "2026-09-26T03:24:11.800Z", "mtime": 1790393051.8, "bytes": 200000,
+        "model": "gpt-6-luna", "effort": "medium", "turns": 3, "turnsDefinition": "agent_messages",
+        "tokens": {"input": 17864, "output": 812, "cached": 92928, "cacheWrite": 0}, "sideModel": None, "ttftMs": 1807, "wallMs": 22400,
+        "turn1Context": 24000, "maxTurnsReached": False, "maxTurns": 60, "apiErrors": [], "lastAgentMessageEmpty": False,
+        "tokenCountInfoMissing": False, "taskCompleteErrorPresent": False,
+        "quota": {"usedPercent": 45.0, "windowMinutes": 10080, "resetsAtUtc": "2026-09-28T21:50:11Z", "planType": "pro", "sampledAtUtc": "2026-09-26T03:24:15Z"},
+        "skippedOversize": 0, "error": None,
+    }],
+    "skipped": {"oversize": 0}, "watermarkMtime": 1790393051.8, "zstdReadable": True, "reason": None,
+}
+RESPONSES = {
+    "ping": {"pid": 4242, "version": "imd-dashd 0.1.0", "uptime_s": 12.5, "drain_armed": False, "in_flight": None, "posture_ok": True},
+    "whoami": {"deviceKey": DEVICE_KEY},
+    "seat": {"server": "https://api.imd.fun", "deviceKey": DEVICE_KEY, "wallet": "0x887b9f1234567890abcdef1234567890abcdef12", "tokenId": 7,
+             "maxConcurrency": 1, "skillsOptOut": [], "inference": {"economy": {"codex": {"model": "gpt-6-luna", "effort": "medium"}},
+             "standard": {"codex": {"model": "gpt-6-luna", "effort": "medium"}}, "premium": {"codex": {"model": "gpt-6-astra", "effort": "xhigh"}}},
+             "tools": [], "configMtimeUtc": "2026-09-25T11:45:00Z"},
+    "status": {"lines": STATUS_LINES, "rc": 0, "unit": "imd-dash-status-1"},
+    "skills": {"lines": SKILLS_LINES, "rc": 0, "unit": "imd-dash-skills-2"},
+    "tools": {"lines": ["no tools configured (/home/imd-worker/.identitymd/tools.json)"], "rc": 0, "unit": "imd-dash-tools-3"},
+    "hints-stat": {"path": "~/.codex/AGENTS.md", "bytes": 1791, "sha8": "3f2a9c1e", "mtimeUtc": "2026-09-24T18:02:11Z"},
+    "auth-mtime": {"path": "~/.codex/auth.json", "mtimeUtc": "2026-09-25T23:38:43Z"},
+    "sessions": SESSIONS_JSON,
+    "work-stat": {"count": 288, "bytes": 58314752, "abnormal": 7, "newest": [{"jobId": JOB, "nodeId": NODE, "mtimeUtc": "2026-09-26T03:23:45Z", "abnormal": False}]},
+    "outbox": {"files": 0},
+    "orphans": {"candidates": []},
+    "gate": {"safe": True, "reason": None, "idle_beats": 9, "idle_beats_required": 4, "newest_heartbeat_age_s": 11.0,
+             "plane": {"mode": "plane+local", "running": 0, "as_of": "2026-09-26T03:40:09Z", "standing_age_s": 0.4},
+             "last_lifecycle_line": "2026-09-26T03:24:17.136Z submitted implement for 0c1f9727", "lifecycle_open": False,
+             "outbox_files": 0, "unit_active": True, "graceful_stop_possible": True, "unknown": None},
+    "audit-tail": {"lines": [{"ts": "2026-09-25T11:45:41Z", "seq": 1287, "peer_uid": 1001, "verb": "restart", "phase": "verify",
+                              "plan_id": "7f3a9c1e2b4d6081", "args": {}, "preconditions": {}, "outcome": "applied", "verified": True,
+                              "connected": True, "cursor_before": "s=1", "cursor_after": "s=2"}]},
+}
+
+
+def _calls(broker, verb):
+    return [args for v, args in broker.calls if v == verb]
+
+
+async def _two_cycles(m):
+    await m.fetch_and_compute()
+    await m.settle()
+    return await m.fetch_and_compute()
+
+
+async def test_broker_status_tier_feeds_seat_status_skills_hints_auth(tmp_path):
+    # spec §4.3 TIER_BROKER_STATUS 600 s (seat, status, skills, tools, hints-stat, auth-mtime; whoami once); §7 seat block
+    clock = Clock()
+    broker = FakeBroker(responses=RESPONSES)
+    m = _manager(tmp_path, now=clock, broker=broker, runtime="codex")
+    flat = await _two_cycles(m)
+    doc = m.document()
+    for name in ("seat", "status", "skills", "hints", "auth"):
+        assert doc["sources"][name]["ok"] is True and doc["sources"][name]["asOfUtc"] == "2026-09-26T03:40:12Z", name
+    seat = doc["seat"]
+    assert seat["tokenId"] == 7 and seat["deviceKeyPublic"] == "72b617d4" and seat["wallet"] == "0x887b9f"
+    assert seat["server"] == "https://api.imd.fun" and seat["eligibility"] == "eligible — this machine can receive work"
+    assert seat["capacity"] == 1 and seat["offers"] == ["code", "fuzz", "research"]
+    assert seat["runtime"] == {"id": "codex", "version": "codex-cli 0.157.0"}
+    assert seat["skills"]["offered"] == 31 and seat["skills"]["on"] == 31 and seat["skills"]["optOut"] == []
+    assert seat["skills"]["rows"][1] == {"id": "public-rpcs", "on": True, "needs": "network"}
+    assert seat["tools"] == [] and seat["inference"]["premium"] == {"codex": {"model": "gpt-6-astra", "effort": "xhigh"}}
+    assert seat["hints"] == {"path": "~/.codex/AGENTS.md", "bytes": 1791, "sha8": "3f2a9c1e", "mtimeUtc": "2026-09-24T18:02:11Z"}
+    assert doc["auth"]["credentialFileMtimeUtc"] == "2026-09-25T23:38:43Z"
+    assert DEVICE_KEY not in json.dumps(doc), "the 64-hex key never enters the document (spec §13)"
+    assert models.validate_status_document(doc) is None
+    assert flat["seat_device_key_public"] == "72b617d4" and flat["seat_skills_rows"][2]["needs"] == "tool:forge"
+    assert len(_calls(broker, "whoami")) == 1 and len(_calls(broker, "status")) == 1
+    clock.advance(600)
+    await _two_cycles(m)
+    assert len(_calls(broker, "status")) == 2 and len(_calls(broker, "whoami")) == 1, "whoami once per session (spec §5.3)"
+    await m.close()
+
+
+async def test_broker_status_failures_are_per_source_and_container_trust(tmp_path):
+    # spec §7 sources per field; §4.2 Mac CLI values carry trust: container; a canary refusal names itself
+    clock = Clock()
+
+    def refused(args):
+        raise BrokerError("projection_refused", {"canary": "devicekey_mismatch"})
+
+    responses = dict(RESPONSES, seat=refused)
+    broker = FakeBroker(responses=responses, trust="container")
+    m = _manager(tmp_path, now=clock, broker=broker, host="docker", container="imd-worker", runtime="claude",
+                 unit_reader=StubUnitReader(UNIT_OK, HOST_OK), seat=None)     # no configured seat: tokenId must come from `imd status`
+    await _two_cycles(m)
+    doc = m.document()
+    assert doc["sources"]["seat"]["ok"] is False and "canary" in doc["sources"]["seat"]["reason"]
+    assert doc["sources"]["status"]["ok"] is True and doc["sources"]["status"]["trust"] == "container"
+    assert doc["sources"]["skills"]["trust"] == "container" and doc["sources"]["unit"]["trust"] == "host"
+    assert doc["seat"]["tokenId"] == 7, "status still answers"
+    assert doc["seat"]["inference"] is None and doc["seat"]["wallet"] is None, "no projection, no config values"
+    await m.close()
+
+
+async def test_workstat_tier_feeds_machine_and_control(tmp_path):
+    # spec §4.3 TIER_WORKSTAT 300 s (work-stat, outbox, orphans) + deviation 8 (ping, gate preview, audit-tail); §7 machine/control
+    clock = Clock()
+    broker = FakeBroker(responses=RESPONSES)
+    m = _manager(tmp_path, now=clock, broker=broker)
+    flat = await _two_cycles(m)
+    doc = m.document()
+    assert doc["sources"]["workstat"]["ok"] is True and doc["sources"]["broker"]["ok"] is True
+    machine = doc["machine"]
+    assert (machine["workDirs"], machine["workBytes"], machine["abnormalLeaseDirs"], machine["outboxFiles"], machine["orphans"]) == (288, 58314752, 7, 0, [])
+    control = doc["control"]
+    assert control["brokerReachable"] is True and control["drain"] is None and control["inFlight"] is None
+    assert tuple(control["gate"]) == models.SEAT_BLOCK_KEYS["seat_control_gate"]
+    assert control["gate"]["idleBeats"] == 9 and control["gate"]["planeMode"] == "plane+local" and control["gate"]["planeRunning"] == 0
+    assert control["gate"]["planeAsOfUtc"] == "2026-09-26T03:40:09Z" and control["gate"]["safe"] is True and control["gate"]["outboxFiles"] == 0
+    assert control["lastAudit"] == [{"ts": "2026-09-25T11:45:41Z", "seq": 1287, "verb": "restart", "phase": "verify",
+                                     "planId": "7f3a9c1e2b4d6081", "outcome": "applied", "verified": True, "connected": True}]
+    assert _calls(broker, "gate") == [{"offline": False}] and _calls(broker, "audit-tail") == [{"n": 5}]
+    assert flat["seat_control_gate"]["safe"] is True and flat["seat_machine_work_dirs"] == 288
+    # an unreachable broker: the broker source fails with a reason, nothing else is attempted
+    down = FakeBroker(reachable=False)
+    m2 = _manager(tmp_path / "b", now=clock, broker=down)
+    await _two_cycles(m2)
+    src = m2.document()["sources"]["broker"]
+    assert src["ok"] is False and src["reason"] == "broker unreachable" and m2.document()["control"]["brokerReachable"] is False
+    assert _calls(down, "gate") == []
+    await m.close()
+    await m2.close()
+
+
+async def test_outbox_unreadable_is_none_never_zero(tmp_path):
+    # spec §11 (d): an unreadable outbox is unknown -- None in the document, never 0
+    clock = Clock()
+
+    def unreadable(args):
+        raise BrokerError("unreadable", {"what": "outbox"})
+
+    broker = FakeBroker(responses=dict(RESPONSES, outbox=unreadable))
+    m = _manager(tmp_path, now=clock, broker=broker)
+    await _two_cycles(m)
+    doc = m.document()
+    assert doc["machine"]["outboxFiles"] is None and doc["machine"]["workDirs"] == 288
+    assert doc["sources"]["workstat"]["ok"] is False and "outbox" in doc["sources"]["workstat"]["reason"]
+    await m.close()
+
+
+async def test_sessions_tier_attaches_sessions_and_fills_cost_quota_auth(tmp_path):
+    # spec §4.3 TIER_SESSIONS 120 s; §5.4 watermark = newest mtime handed to `sessions --since`; §7 cost/quota/auth blocks; §10 no currency
+    clock = Clock()
+    # one flag-less `imd doctor` run in the same answer: stored by WP2 with task_key NULL, never a ledger row (spec §10)
+    doctor = dict(SESSIONS_JSON["sessions"][0], path="/home/imd-worker/.codex/sessions/2026/09/26/rollout-2026-09-26T02-40-12-doc.jsonl",
+                  cwd="/home/imd-worker", kind="doctor", jobId=None, nodeId=None, startedUtc="2026-09-26T02:40:12.000Z",
+                  endedUtc="2026-09-26T02:40:30.000Z", mtime=T0 - 3570, quota=None)
+    broker = FakeBroker(responses=dict(RESPONSES, sessions=dict(SESSIONS_JSON, sessions=SESSIONS_JSON["sessions"] + [doctor])))
+    m = _manager(tmp_path, now=clock, broker=broker, runtime="codex")
+    m.feed_lines(STARTUP + LIFECYCLE + HEARTBEATS)
+    flat = await _two_cycles(m)
+    doc = m.document()
+    assert doc["sources"]["sessions"]["ok"] is True
+    assert _calls(broker, "sessions")[0] == {"since": 0.0, "runtime": "codex"}
+    assert m._ledger.meta_get("sessions_watermark_mtime") == 1790393051.8
+    row = doc["tasks"]["rows"][0]
+    assert row["tokens"] == {"input": 17864, "output": 812, "cached": 92928, "cacheWrite": 0} and row["turns"] == 3
+    assert row["tierDerived"] == "economy/standard", "spec §10: gpt-6-luna/medium on #7 after 09-23 19:56 (re-derived with the effort)"
+    cost = doc["cost"]
+    assert cost["windowDays"] == 7 and cost["tasks"] == 1 and cost["tokens"]["output"] == 812
+    assert cost["excluded"] == {"doctor": 1, "manual": 0}, "spec §10: doctor runs are excluded AND counted (mutation proof 14's other half)"
+    assert cost["buckets"][0]["model"] == "gpt-6-luna" and tuple(cost["buckets"][0]) == models.SEAT_ROW_KEYS["seat_cost_buckets"]
+    assert cost["depth"]["skipped"] == {"oversize": 0} and cost["depth"]["ledgerFromUtc"] is not None
+    assert set(cost["series"]) == {"outputTokensPerDay", "tasksPerDay", "acceptedPerDay"}
+    # spec §5.6 / §8 COST sparkline: rolled up into the sqlite days table; only days the ledger covers (09-26), never a padded 0
+    assert cost["series"]["tasksPerDay"] == [["2026-09-26", 1]] and cost["series"]["outputTokensPerDay"] == [["2026-09-26", 812]]
+    assert doc["quota"] == {"provider": "codex", "window": "weekly", "usedPercent": 45.0, "resetsAtUtc": "2026-09-28T21:50:11Z",
+                            "sampledAtUtc": "2026-09-26T03:24:15Z", "planType": "pro", "reason": None}
+    assert doc["auth"]["degraded"] is False and doc["auth"]["reasons"] == []
+    assert doc["machine"]["transcriptRetention"]["zstdReadable"] is True
+    assert "$" not in json.dumps(doc)
+    clock.advance(120)
+    await _two_cycles(m)
+    assert _calls(broker, "sessions")[1] == {"since": 1790393051.8, "runtime": "codex"}, "the watermark moves"
+    assert flat["seat_cost_tasks"] == 1
+    assert m.document()["cost"]["excluded"] == {"doctor": 1, "manual": 0}, "the same doctor session read twice counts once"
+    await m.close()
+
+
+async def test_oversize_skips_accumulate_across_incremental_calls(tmp_path):
+    # spec §5.4 hostile size (`sessions.skipped.oversize`) / §8 COST footer `N oversize skipped`: the summariser is incremental
+    # (--since), so each skipped file is reported once; the running total lives in ledger meta instead of resetting every 120 s
+    clock = Clock()
+    answers = iter([1, 0])
+
+    def sessions(args):
+        return dict(SESSIONS_JSON, skipped={"oversize": next(answers, 0)})
+
+    m = _manager(tmp_path, now=clock, broker=FakeBroker(responses=dict(RESPONSES, sessions=sessions)), runtime="codex")
+    await _two_cycles(m)
+    assert m.document()["cost"]["depth"]["skipped"] == {"oversize": 1}
+    clock.advance(120)
+    await _two_cycles(m)
+    assert m.document()["cost"]["depth"]["skipped"] == {"oversize": 1}, "the second call reported 0; the footer keeps 1"
+    assert m._ledger.meta_get("sessions_skipped_oversize") == 1
+    await m.close()

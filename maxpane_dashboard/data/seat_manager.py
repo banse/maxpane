@@ -410,6 +410,10 @@ class SeatManager:
     def _spawn_tiers(self, now: float) -> None:
         if self._host == DOCKER_HOST and self._unit_reader is not None:
             self._spawn("unit", lambda: asyncio.to_thread(self._read_unit_host, float(self._clock())), now)
+        self._spawn("broker_status", self._tier_broker_status, now)
+        self._spawn("workstat", self._tier_workstat, now)
+        self._spawn("sessions", self._tier_sessions, now)
+
 
 
     # ------------------------------------------------------------------ tier bookkeeping
@@ -511,18 +515,18 @@ class SeatManager:
         doc = models.empty_document(producer=self._producer, started_at_utc=started_at, host=self._host_block())
         doc["sources"] = {name: self._source_entry(name, now) for name in models.SOURCE_NAMES}
         doc["sources"]["tail"] = self._tail_source(now)
+        doc["seat"] = self._seat_block()
+        doc["host"]["runtime"] = self._runtime
         doc["daemon"] = self._daemon_block(now)
         doc["current"] = self._current_block(now)
         doc["tasks"] = self._tasks_block(now)
         doc["today"] = self._today_block(now, doc["tasks"]["rows"])
-        st = self._state
-        doc["seat"].update({
-            "daemonVersion": st.daemon_version,
-            "releaseAvailable": st.release_available,
-            "buildMismatch": bool(st.build_mismatch) if st.daemon_version is not None else None,
-        })
+        doc["auth"] = self._auth_block(now, doc["tasks"]["rows"])
         doc["unit"] = self._unit_block()
+        doc["cost"] = self._cost_block(now)
+        doc["quota"] = self._quota_block()
         doc["machine"] = self._machine_block()
+        doc["control"] = self._control_block()
         changed = self._config_changed(doc["unit"])
         doc["seat"]["configChangedSinceStart"] = changed
         doc["control"]["restartRequired"] = True if (changed is True or self._restart_required) else (False if changed is False else None)
@@ -530,6 +534,7 @@ class SeatManager:
             for name in ("standing", "seatWork", "reasons", "plane"):
                 doc["sources"].pop(name, None)     # absent entirely under --offline (spec §7)
         return doc
+
 
 
     def _tail_source(self, now: float) -> dict:
@@ -801,13 +806,350 @@ class SeatManager:
             block["transcriptRetention"] = {"kind": "codex-rollouts", "plainDays": 7, "deleteDays": None, "zstdReadable": zstd}
         elif runtime == "claude":
             block["transcriptRetention"] = {"kind": "claude-transcripts", "deleteDays": 30}
-        # Task 7.9 fills workDirs/workBytes/abnormalLeaseDirs/outboxFiles/orphans from the workstat tier.
+        work = self._payload("workstat")
+        if isinstance(work, Mapping):
+            stat = work.get("workStat") if isinstance(work.get("workStat"), Mapping) else {}
+            outbox = work.get("outbox") if isinstance(work.get("outbox"), Mapping) else {}
+            orphans = work.get("orphans") if isinstance(work.get("orphans"), Mapping) else {}
+            block["workDirs"] = stat.get("count")
+            block["workBytes"] = stat.get("bytes")
+            block["abnormalLeaseDirs"] = stat.get("abnormal")
+            block["outboxFiles"] = outbox.get("files")
+            candidates = orphans.get("candidates")
+            block["orphans"] = [dict(c) for c in candidates if isinstance(c, Mapping)] if isinstance(candidates, list) else []
         return block
+
 
     def _config_changed(self, unit_block: Mapping) -> bool | None:
         projection = self._payload("seat")
         mtime = projection.get("configMtimeUtc") if isinstance(projection, Mapping) else None
         return sig.config_changed_since_start(mtime_utc=mtime, anchor_utc=unit_block.get("sinceUtc"))
+
+    async def _broker_read(self, verb: str, args: Mapping | None = None) -> Any:
+        """One read verb; the socket call blocks (20 s client timeout), so it runs in a worker thread."""
+        return await asyncio.to_thread(self._broker.read, verb, dict(args) if args else None)
+
+    @staticmethod
+    def _broker_reason(exc: BaseException) -> str:
+        code = getattr(exc, "code", None)
+        detail = getattr(exc, "detail", None)
+        if code == "projection_refused":
+            kind = detail.get("canary") if isinstance(detail, Mapping) else None
+            return f"config projection unavailable — broker refused payload (canary{': ' + str(kind) if kind else ''})"
+        if code == "unreadable":
+            what = detail.get("what") if isinstance(detail, Mapping) else None
+            return f"{what or 'read'} unreadable"
+        if code:
+            return f"broker: {code}"
+        return f"{type(exc).__name__}: {redact(str(exc))[:120]}"
+
+    async def _read_into(self, source: str, verb: str, args: Mapping | None, shape: Callable[[Any], Any]) -> Any:
+        """Read *verb* and land its shaped payload on *source*; a failure lands nothing and counts once."""
+        try:
+            data = await self._broker_read(verb, args)
+            payload = shape(data)
+        except Exception as exc:                     # noqa: BLE001 -- per-source degradation
+            self._fail(source, self._broker_reason(exc), float(self._clock()))
+            logger.debug("PEPEPANE broker %s failed: %s", verb, exc)
+            return None
+        self._land(source, payload, float(self._clock()))
+        return payload
+
+    async def _tier_broker_status(self) -> None:
+        if self._whoami_key is None:
+            try:
+                data = await self._broker_read("whoami")
+                key = data.get("deviceKey") if isinstance(data, Mapping) else None
+                if not key and isinstance(data, Mapping) and isinstance(data.get("lines"), list):
+                    key = parse_whoami(data["lines"])
+                self._whoami_key = key if isinstance(key, str) and key else None
+            except Exception as exc:                 # noqa: BLE001 -- whoami is a convenience; the projection carries the key too
+                logger.debug("PEPEPANE whoami failed: %s", exc)
+
+        def shape_seat(data: Any) -> dict:
+            return dict(data) if isinstance(data, Mapping) else {}
+
+        def shape_lines(parser: Callable[[Sequence[str]], Any]) -> Callable[[Any], dict]:
+            def shape(data: Any) -> dict:
+                lines = data.get("lines") if isinstance(data, Mapping) else None
+                lines = [str(line) for line in lines] if isinstance(lines, list) else []
+                return {"parsed": parser(lines), "rc": data.get("rc") if isinstance(data, Mapping) else None}
+            return shape
+
+        seat_payload = await self._read_into("seat", "seat", None, shape_seat)
+        await self._read_into("status", "status", None, shape_lines(parse_imd_status))
+        await self._read_into("skills", "skills", None, shape_lines(parse_imd_skills))
+        if seat_payload is not None and not seat_payload.get("tools"):
+            try:
+                tools_data = await self._broker_read("tools")
+                lines = tools_data.get("lines") if isinstance(tools_data, Mapping) else None
+                seat_payload["toolsListing"] = parse_imd_tools([str(l) for l in lines]) if isinstance(lines, list) else []
+            except Exception as exc:                 # noqa: BLE001 -- tools is a detail of the seat source
+                logger.debug("PEPEPANE tools failed: %s", exc)
+        await self._read_into("hints", "hints-stat", None, lambda d: dict(d) if isinstance(d, Mapping) else {})
+        await self._read_into("auth", "auth-mtime", None, lambda d: dict(d) if isinstance(d, Mapping) else {})
+
+    async def _tier_workstat(self) -> None:
+        now = float(self._clock())
+        try:
+            reachable = await asyncio.to_thread(self._broker.reachable)
+        except Exception as exc:                     # noqa: BLE001
+            logger.debug("PEPEPANE ping failed: %s", exc)
+            reachable = False
+        if not reachable:
+            self._fail("broker", "broker unreachable", now)
+            self._fail("workstat", "broker unreachable", now)
+            return
+        control: dict[str, Any] = {"reachable": True, "ping": None, "gate": None, "audit": []}
+        problems: list[str] = []
+        for verb, args, key in (("ping", None, "ping"), ("gate", {"offline": self._offline}, "gate"), ("audit-tail", {"n": 5}, "audit")):
+            try:
+                data = await self._broker_read(verb, args)
+                control[key] = data.get("lines") if key == "audit" and isinstance(data, Mapping) else data
+            except Exception as exc:                 # noqa: BLE001
+                problems.append(f"{verb}: {self._broker_reason(exc)}")
+        self._land("broker", control, float(self._clock()))
+        if problems:
+            self._fail("broker", "; ".join(problems), float(self._clock()))
+
+        work: dict[str, Any] = {"workStat": None, "outbox": None, "orphans": None}
+        problems = []
+        for verb, key in (("work-stat", "workStat"), ("outbox", "outbox"), ("orphans", "orphans")):
+            try:
+                work[key] = await self._broker_read(verb)
+            except Exception as exc:                 # noqa: BLE001
+                problems.append(f"{verb}: {self._broker_reason(exc)}")
+        stat = work.get("workStat")
+        newest = stat.get("newest") if isinstance(stat, Mapping) else None
+        if isinstance(newest, list):                 # work_dir_abnormal / node_id / job_id on the matching rows (WP2 deviation 12, spec §5.2)
+            try:
+                self._ledger.attach_work_dirs([dict(e) for e in newest if isinstance(e, Mapping)])
+            except Exception as exc:                 # noqa: BLE001 -- a detail of the ledger; the read itself landed
+                logger.debug("PEPEPANE attach_work_dirs failed: %s", exc)
+        self._land("workstat", work, float(self._clock()))
+        if problems:
+            self._fail("workstat", "; ".join(problems), float(self._clock()))
+
+    async def _tier_sessions(self) -> None:
+        since = self._ledger.meta_get("sessions_watermark_mtime")
+        since_f = float(since) if isinstance(since, (int, float)) and not isinstance(since, bool) else 0.0
+        # a guess until `_seat_block` reads the runtime from `imd status` (the first cycle and every --once run); the Mac broker
+        # answers with Claude transcripts whatever it is asked, so WP2's attach_sessions takes each stored session's own
+        # `runtime` for turnsDefinition and the tier re-derivation -- this argument is only the fallback (spec §10)
+        runtime = self._runtime or "codex"
+        data = await self._broker_read("sessions", {"since": since_f, "runtime": runtime})
+        if not isinstance(data, Mapping):
+            raise ValueError("sessions: not an object")
+        sessions = [s for s in (data.get("sessions") or []) if isinstance(s, Mapping)]
+        if sessions:
+            self._ledger.attach_sessions([dict(s) for s in sessions], runtime=runtime)
+        if self._runtime is not None:                # the retention sweep is a claude rule: never run it on the guess
+            self._ledger.mark_expired_transcripts(runtime=self._runtime, now_utc=sig.iso_z(float(self._clock())))   # WP2 deviation 12
+        watermark = data.get("watermarkMtime")
+        if isinstance(watermark, (int, float)) and not isinstance(watermark, bool) and float(watermark) > since_f:
+            self._ledger.meta_set("sessions_watermark_mtime", float(watermark))
+        newest = max(sessions, key=lambda s: float(s.get("mtime") or 0.0)) if sessions else None
+        quotas = [s["quota"] for s in sessions if isinstance(s.get("quota"), Mapping) and s["quota"].get("sampledAtUtc")]
+        newest_quota = max(quotas, key=lambda q: sig.parse_iso(q.get("sampledAtUtc")) or 0.0) if quotas else None
+        previous = self._payload("sessions")
+        if newest_quota is None and isinstance(previous, Mapping):
+            newest_quota = previous.get("newestQuota")      # the quota is refreshed only while a task runs (spec §10)
+        if newest is None and isinstance(previous, Mapping):
+            newest = previous.get("newestSession")
+        # the summariser is incremental, so an oversize file is reported once: keep the running total (spec §8 COST footer)
+        skipped = data.get("skipped") if isinstance(data.get("skipped"), Mapping) else {}
+        fresh = skipped.get("oversize")
+        total = self._ledger.meta_get("sessions_skipped_oversize")
+        total = total if isinstance(total, int) and not isinstance(total, bool) else None
+        if isinstance(fresh, int) and not isinstance(fresh, bool):
+            total = (total or 0) + max(0, fresh)
+            self._ledger.meta_set("sessions_skipped_oversize", total)
+        self._land("sessions", {
+            "skipped": {"oversize": total},
+            "watermarkMtime": watermark,
+            "zstdReadable": data.get("zstdReadable"),
+            "reason": data.get("reason"),
+            "newestSession": dict(newest) if isinstance(newest, Mapping) else None,
+            "newestQuota": dict(newest_quota) if isinstance(newest_quota, Mapping) else None,
+        }, float(self._clock()))
+        self._rollup_series()
+
+    def _rollup_series(self) -> None:
+        """Upsert the COST series window into WP2's ``days`` table (deviation 12; spec §5.6, §8 COST ``output tokens/day · 14 d``).
+
+        Only days the ledger covers are rolled up: a day before the first row is unknown, never a 0.
+        """
+        try:
+            now = float(self._clock())
+            since = str(self._ledger.counts().get("sinceUtc") or "")[:10]
+            if not since:
+                return
+            for back in range(SERIES_DAYS):
+                day = sig.day_utc(now - back * 86400)
+                if day >= since:
+                    self._ledger.rollup_day(day, now_utc=sig.iso_z(now))
+        except Exception as exc:                     # noqa: BLE001 -- the series is a detail; the tier's own read already landed
+            self._error_count += 1
+            logger.warning("PEPEPANE days rollup failed: %s", exc)
+
+    @staticmethod
+    def _first_int(value: object) -> int | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            digits = "".join(ch if ch.isdigit() else " " for ch in value).split()
+            return int(digits[0]) if digits else None
+        return None
+
+    @staticmethod
+    def _as_list(value: object) -> list:
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return []
+
+    def _seat_block(self) -> dict:
+        block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["seat"]
+        status = self._payload("status")
+        parsed = status.get("parsed") if isinstance(status, Mapping) and isinstance(status.get("parsed"), Mapping) else {}
+        proj = self._payload("seat") if isinstance(self._payload("seat"), Mapping) else {}
+        skills = self._payload("skills")
+        skills_parsed = skills.get("parsed") if isinstance(skills, Mapping) and isinstance(skills.get("parsed"), Mapping) else {}
+        standing = self._payload("standing") if isinstance(self._payload("standing"), Mapping) else {}
+        hints = self._payload("hints")
+        runtime_id, runtime_version = None, None
+        for row in self._as_list(parsed.get("runtimes")):
+            if row.startswith("→"):
+                parts = row.lstrip("→").strip().split(None, 1)
+                runtime_id = parts[0] if parts else None
+                runtime_version = parts[1] if len(parts) > 1 else None
+        if isinstance(parsed.get("runtime"), Mapping):
+            runtime_id = parsed["runtime"].get("id") or runtime_id
+            runtime_version = parsed["runtime"].get("version") or runtime_version
+        if self._runtime is None and runtime_id in ("codex", "claude"):
+            self._runtime = runtime_id
+        block.update({
+            "tokenId": self._first_int(parsed.get("tokenId")) or self._first_int(proj.get("tokenId")) or self._seat,   # WP6 parse_imd_status key
+            "agentId": standing.get("agentId") if standing.get("agentId") is not None else self._agent,
+            "deviceKeyPublic": models.truncate_id(self._whoami_key or proj.get("deviceKey"), sig.ID_TRUNCATE_CHARS),
+            "wallet": models.truncate_id(proj.get("wallet"), sig.ID_TRUNCATE_CHARS),
+            "server": proj.get("server") or parsed.get("server") or None,
+            "eligibility": parsed.get("eligibility") or None,
+            "capacity": self._first_int(parsed.get("capacity")) or self._first_int(proj.get("maxConcurrency")),
+            "offers": self._as_list(parsed.get("offers")),
+            "daemonVersion": self._state.daemon_version,
+            "runtime": {"id": runtime_id or self._runtime, "version": runtime_version},
+            "releaseAvailable": self._state.release_available,
+            "buildMismatch": bool(self._state.build_mismatch) if self._state.daemon_version is not None else None,
+            "skills": {
+                "offered": self._first_int(skills_parsed.get("offered")),
+                "on": self._first_int(skills_parsed.get("on")),
+                "optOut": list(proj.get("skillsOptOut") or []),
+                "needsNetwork": self._first_int(skills_parsed.get("needsNetwork")),
+                "rows": [dict(r) for r in (skills_parsed.get("rows") or []) if isinstance(r, Mapping)],
+            },
+            "tools": list(proj.get("tools") or proj.get("toolsListing") or []),
+            "inference": dict(proj["inference"]) if isinstance(proj.get("inference"), Mapping) else None,
+            "premiumAdvertised": dict(standing["premiumAdvertised"]) if isinstance(standing.get("premiumAdvertised"), Mapping) else None,
+            "hints": dict(hints) if isinstance(hints, Mapping) and hints else None,
+        })
+        return block
+
+    def _auth_block(self, now: float, rows: Sequence[Mapping]) -> dict:
+        sessions = self._payload("sessions") if isinstance(self._payload("sessions"), Mapping) else {}
+        newest = sessions.get("newestSession")
+        auth_payload = self._payload("auth") if isinstance(self._payload("auth"), Mapping) else {}
+        state = seat_auth.auth_state(
+            paused_hint=self._state.paused_hint,
+            newest_transcript=newest if self._runtime == "claude" else None,
+            newest_rollout=newest if self._runtime == "codex" else None,
+            recent_rows=list(rows[:10]),
+            credential_mtime_utc=auth_payload.get("mtimeUtc"),
+            now=now,
+        )
+        return {
+            "degraded": state.get("degraded"),
+            "reasons": [redact(r) for r in (state.get("reasons") or [])],
+            "sinceUtc": state.get("sinceUtc"),
+            "credentialFileMtimeUtc": auth_payload.get("mtimeUtc"),
+        }
+
+    def _cost_block(self, now: float) -> dict:
+        block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["cost"]
+        sessions = self._payload("sessions")
+        if not isinstance(sessions, Mapping):
+            return block
+        rows = self._ledger.rows(limit=10000)
+        # doctor/manual/unknown runs never become rows: WP2 keeps them unattached, summarise counts them as excluded (spec §10)
+        excluded = self._ledger.unattached_sessions(since_utc=sig.iso_z(now - COST_WINDOW_DAYS * 86400))
+        summary = seat_cost.summarise(rows, window_days=COST_WINDOW_DAYS, now=now, sessions=excluded)
+        for key in ("windowDays", "tasks", "excluded", "turns", "tokens", "buckets", "sideModel"):
+            if key in summary:
+                block[key] = summary[key]
+        block["series"] = seat_cost.series_from_days(self._ledger.days(SERIES_DAYS), n=SERIES_DAYS)
+        depth = dict(summary.get("depth") or {})
+        depth.setdefault("ledgerFromUtc", self._ledger.counts().get("sinceUtc"))
+        depth.setdefault("sessionsFromUtc", self._ledger.meta_get("ledger_since_utc"))
+        depth["expiredRows"] = sum(1 for r in rows if isinstance(r, Mapping) and r.get("tokensReason") == "transcript expired")
+        depth["skipped"] = dict(sessions.get("skipped") or {"oversize": None})
+        block["depth"] = {k: depth.get(k) for k in ("ledgerFromUtc", "sessionsFromUtc", "expiredRows", "skipped")}
+        return block
+
+    def _quota_block(self) -> dict:
+        sessions = self._payload("sessions") if isinstance(self._payload("sessions"), Mapping) else {}
+        return seat_cost.quota_block(sessions.get("newestQuota"), runtime=self._runtime or "codex")
+
+    def _control_block(self) -> dict:
+        block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["control"]
+        control = self._payload("broker")
+        if "broker" in self._attempted:
+            block["brokerReachable"] = bool(control.get("reachable")) if isinstance(control, Mapping) else False
+        if not isinstance(control, Mapping):
+            return block
+        gate = control.get("gate")
+        if isinstance(gate, Mapping):
+            plane = gate.get("plane") if isinstance(gate.get("plane"), Mapping) else {}
+            block["gate"] = {
+                "idleBeats": gate.get("idle_beats"), "idleBeatsRequired": gate.get("idle_beats_required"),
+                "planeRunning": plane.get("running"), "planeAsOfUtc": plane.get("as_of"), "planeMode": plane.get("mode"),
+                "lastLifecycleLine": gate.get("last_lifecycle_line"), "lifecycleOpen": gate.get("lifecycle_open"),
+                "outboxFiles": gate.get("outbox_files"), "unitActive": gate.get("unit_active"),
+                "safe": gate.get("safe"), "reason": gate.get("reason"),
+            }
+        ping = control.get("ping") if isinstance(control.get("ping"), Mapping) else {}
+        flight = ping.get("in_flight")
+        if isinstance(flight, Mapping):
+            block["inFlight"] = {"verb": flight.get("verb"), "planId": flight.get("plan_id"), "sinceUtc": flight.get("since")}
+        drain = ping.get("drain")
+        if isinstance(drain, Mapping):
+            block["drain"] = {k: drain.get(k) for k in models.SEAT_BLOCK_KEYS["seat_control_drain"]}
+        elif ping.get("drain_armed") is True:
+            block["drain"] = {k: None for k in models.SEAT_BLOCK_KEYS["seat_control_drain"]}
+        audit = control.get("audit")
+        if isinstance(audit, list):
+            block["lastAudit"] = [
+                {"ts": a.get("ts"), "seq": a.get("seq"), "verb": a.get("verb"), "phase": a.get("phase"), "planId": a.get("plan_id"),
+                 "outcome": a.get("outcome"), "verified": a.get("verified"), "connected": a.get("connected")}
+                for a in audit if isinstance(a, Mapping)
+            ]
+        return block
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
