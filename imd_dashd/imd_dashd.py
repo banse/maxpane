@@ -32,8 +32,8 @@ from imd_dashd import verbs
 from imd_dashd.audit import Audit, iso_utc
 from imd_dashd.child_unit import RUNTIME_MAX_S, Runner, read_ip_address_deny, run_inprocess, run_transient, unit_name
 from imd_dashd.drain import Drain, DrainState
-from imd_dashd.gate import ACCEPTED_RE, HEARTBEAT_RE, GateResult, evaluate, parse_iso
-from imd_dashd.redact import find_secret, redact, redact_agent_sentence
+from imd_dashd.gate import ACCEPTED_RE, HEARTBEAT_RE, TERMINAL_RE, GateResult, evaluate, parse_iso
+from imd_dashd.redact import find_secret, redact, redact_agent_sentence, redact_tree
 from imd_dashd.process_snapshot import snapshot as process_snapshot
 
 Clock = Callable[[], float]
@@ -392,6 +392,8 @@ class Broker:
         self._watches: dict[str, VerifyWatch] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._lock = threading.Lock()
+        self._state_lock = threading.RLock()
+        self._audit_lock = threading.Lock()
         self._in_flight: dict | None = None
         self._drain = Drain(now=now)
         self._drain_offline = False
@@ -412,12 +414,14 @@ class Broker:
     # ------------------------------------------------------------ helpers
 
     def _next_seq(self) -> int:
-        self._seq += 1
-        return self._seq
+        with self._audit_lock:
+            self._seq += 1
+            return self._seq
 
     def _log(self, **fields) -> int:
         try:
-            return self._audit.append(**fields)
+            with self._audit_lock:
+                return self._audit.append(**fields)
         except (OSError, TypeError, ValueError):
             return -1
 
@@ -449,15 +453,21 @@ class Broker:
 
     # ------------------------------------------------------------ journal / unit / outbox reads (root)
 
-    def _journal(self, *, since_s: int | None = None, after_cursor: str | None = None) -> tuple[list[tuple[float, str]], str | None]:
+    def _journal(self, *, since_s: int | None = None, after_cursor: str | None = None, lifecycle_only: bool = False) -> tuple[list[tuple[float, str]], str | None]:
         argv = ["journalctl", "-u", self._unit, "-o", "json", "--no-pager", "--show-cursor"]
-        if after_cursor:
+        if lifecycle_only:
+            # Filter inside journald before limiting output: history may predate idle heartbeats by days.
+            pattern = re.sub(r"\(\?P<[^>]+>", "(?:", f"(?:{ACCEPTED_RE.pattern}|{TERMINAL_RE.pattern})")
+            argv += ["--grep", pattern, "--lines", "1", "--case-sensitive=yes"]
+        elif after_cursor:
             argv += ["--after-cursor", after_cursor]
         else:
             argv += ["--since", f"-{since_s or JOURNAL_WINDOW_S}s"]
         try:
             done = self._run(argv, capture_output=True, timeout=INPROCESS_TIMEOUT_S["gate"])
         except (subprocess.TimeoutExpired, OSError):
+            return [], None
+        if done.returncode != 0:
             return [], None
         lines: list[tuple[float, str]] = []
         cursor: str | None = None
@@ -530,6 +540,8 @@ class Broker:
 
     def _gate(self, *, offline: bool) -> tuple[GateResult, list[tuple[float, str]], str | None]:
         lines, cursor = self._journal()
+        lifecycle, _ = self._journal(lifecycle_only=True)
+        lines = sorted(set(lines + lifecycle))
         result = evaluate(journal_lines=lines, standing=self._standing(offline), offline=offline,
                           outbox_files=self._outbox_files(), unit_active=self._unit_active(),
                           graceful_stop_possible=self.graceful_stop_possible, now=self._now())
@@ -538,6 +550,9 @@ class Broker:
     # ------------------------------------------------------------ transport
 
     def serve_connection(self, conn: socket.socket) -> None:
+        self._serve_connection(conn)
+
+    def _serve_connection(self, conn: socket.socket, *, _arrival_busy: dict | None = None) -> None:
         """One JSON line in, one out, close (spec §11 protocol)."""
         response: dict
         peer = -1
@@ -558,7 +573,11 @@ class Broker:
                     self._log(peer_uid=peer, verb=None, phase="refused", outcome=f"bad_request: {exc}")
                     response = verbs.err("bad_request", {"reason": str(exc)})
                 else:
-                    response = self.handle({"v": verbs.PROTOCOL_VERSION, "verb": verb, "args": args}, peer_uid=peer)
+                    if _arrival_busy is not None and verb not in verbs.READ_VERBS:
+                        self._log(peer_uid=peer, verb=verb, phase="refused", outcome="busy")
+                        response = verbs.err("busy", _arrival_busy)
+                    else:
+                        response = self.handle({"v": verbs.PROTOCOL_VERSION, "verb": verb, "args": args}, peer_uid=peer)
         except (OSError, ValueError) as exc:
             response = verbs.err("internal", {"reason": exc.__class__.__name__})
         try:
@@ -572,6 +591,16 @@ class Broker:
                 pass
 
     def handle(self, request: dict, *, peer_uid: int) -> dict:
+        # Admission never waits behind the state lock held by a slow write or drain.
+        verb = request.get("verb") if isinstance(request, dict) else None
+        busy = self._in_flight_detail()
+        if peer_uid == self._allowed_uid and busy is not None and verb in (*verbs.WRITE_VERBS, verbs.APPLY_VERB):
+            self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="busy")
+            return verbs.err("busy", busy)
+        with self._state_lock:
+            return self._handle(request, peer_uid=peer_uid)
+
+    def _handle(self, request: dict, *, peer_uid: int) -> dict:
         """The whole verb dispatch; never raises."""
         self._last_activity = self._now()
         if peer_uid != self._allowed_uid:
@@ -706,13 +735,7 @@ class Broker:
             body = json.loads(_text(result.stdout))
         except ValueError:
             return verbs.err("unreadable", {"what": "summariser output", "rc": result.rc})
-        if isinstance(body, dict):
-            for session in body.get("sessions", []) or []:
-                if isinstance(session, dict):
-                    for error in session.get("apiErrors", []) or []:
-                        if isinstance(error, dict) and "message" in error:
-                            error["message"] = redact(error["message"])
-        return verbs.ok(data=body)
+        return verbs.ok(data=redact_tree(body))
 
     def _work_stat(self) -> dict:
         root = f"{self._home}/.identitymd/work"
@@ -948,8 +971,9 @@ class Broker:
                 self._log(peer_uid=peer_uid, verb="doctor", phase="refused", plan_id=plan_id, outcome="doctor_too_soon")
                 return verbs.err("doctor_too_soon")
             if plan.verb in ("skills-set", "doctor"):
-                release = False                                    # the thread releases the lock when the child exits
-                return self._apply_transient(plan, peer_uid)
+                result = self._apply_transient(plan, peer_uid)
+                release = not result.get("ok", False)  # transfer cleanup only after successful thread start
+                return result
             if plan.verb == "kill-orphans":
                 return self._apply_kill(plan, peer_uid)
             return verbs.err("internal", {"reason": "unhandled verb"})
@@ -1017,6 +1041,7 @@ class Broker:
         seq_no = self._next_seq()
         watch = VerifyWatch(plan_id=plan.plan_id, verb=verb, kind="transient", cursor_before=None, started=self._now())
         self._watches[plan.plan_id] = watch
+        previous_doctor = self._last_doctor
         if verb == "doctor":
             self._last_doctor = self._now()
 
@@ -1046,9 +1071,17 @@ class Broker:
 
         seq = self._log(peer_uid=peer_uid, verb=verb, phase="apply", plan_id=plan.plan_id, preconditions=plan.preconditions,
                         outcome="started", args={"unit": unit_name(verb, seq_no)})
-        thread = threading.Thread(target=worker, name=f"imd-dashd-{verb}-{seq_no}", daemon=True)
-        self._threads[plan.plan_id] = thread
-        thread.start()
+        try:
+            thread = threading.Thread(target=worker, name=f"imd-dashd-{verb}-{seq_no}", daemon=True)
+            self._threads[plan.plan_id] = thread
+            thread.start()
+        except Exception:  # constructor/start failure: no worker owns cleanup yet
+            self._threads.pop(plan.plan_id, None)
+            self._last_doctor = previous_doctor  # no child ran: preserve the preceding cooldown
+            watch.done, watch.verified, watch.reason = True, False, "thread start failed"
+            self._log(peer_uid=peer_uid, verb=plan.verb, phase="verify", plan_id=plan.plan_id,
+                      outcome="thread start failed", verified=False)
+            return verbs.err("internal", {"reason": "thread start failed"})
         return verbs.ok(result={"outcome": "started", "exit_code": None, "cursor_before": None, "audit_seq": seq,
                                 "preconditions": plan.preconditions, "unit": unit_name(verb, seq_no)})
 
@@ -1167,6 +1200,10 @@ class Broker:
         self._reads_flushed_at = now
 
     def tick(self, now: float | None = None) -> list[str]:
+        with self._state_lock:
+            return self._tick(now)
+
+    def _tick(self, now: float | None = None) -> list[str]:
         """Drain beats, plan/watch expiry, SIGKILL follow-ups. Returns the audit events it wrote (tests read them)."""
         now = self._now() if now is None else now
         events: list[str] = []
@@ -1241,6 +1278,8 @@ class Broker:
         if not self._lock.acquire(blocking=False):
             self._drain.restore(armed_before)    # keep waiting (same drain, same deadline): something else is in flight
             return
+        plan_id = secrets.token_hex(8)
+        self._in_flight = {"verb": "drain-restart", "plan_id": plan_id, "since": iso_utc(self._now())}
         try:
             gate, _lines, cursor_before = self._gate(offline=self._drain_offline)
             preconditions = _preconditions(gate)
@@ -1250,7 +1289,7 @@ class Broker:
                           outcome=gate.reason or f"plane {gate.plane['mode']}")
                 events.append("drain_rearmed")
                 return
-            plan = Plan(plan_id=secrets.token_hex(8), verb="drain-restart", args={"offline": self._drain_offline},
+            plan = Plan(plan_id=plan_id, verb="drain-restart", args={"offline": self._drain_offline},
                         argv=["systemctl", "restart", self._unit], created=self._now(), expires=self._now(),
                         preconditions=preconditions, inverse=None, verify={}, force_node8=None, spent=True)
             self._in_flight = {"verb": "drain-restart", "plan_id": plan.plan_id, "since": iso_utc(self._now())}
@@ -1274,21 +1313,59 @@ class Broker:
         self.stop_requested = True
 
     def serve_forever(self, listener: socket.socket) -> None:
+        """Bounded admission stays responsive while one serialized operation writes.
+
+        Seven connections and one housekeeping thread at most, with no task queue.
+        Busy is captured at accept and checked again at dispatch so a concurrent
+        apply cannot become a delayed write after the first one exits.
+        """
         listener.settimeout(1.0)
-        while not self.stop_requested:
+        slots = threading.BoundedSemaphore(7)
+        connections: list[threading.Thread] = []
+        tick_thread = None
+
+        def serve(conn, busy):
             try:
-                conn, _addr = listener.accept()
-            except socket.timeout:
-                conn = None
-            except OSError:
-                break
-            if conn is not None:
-                self.serve_connection(conn)
-            now = self._now()
-            if now - self._last_tick >= TICK_S:
-                self.tick(now)
-            if self.idle_exit_due(now):
-                break
+                self._serve_connection(conn, _arrival_busy=busy)
+            finally:
+                slots.release()
+
+        try:
+            while not self.stop_requested:
+                try:
+                    conn, _addr = listener.accept()
+                except socket.timeout:
+                    conn = None
+                except OSError:
+                    break
+                connections = [thread for thread in connections if thread.is_alive()]
+                if conn is not None:
+                    busy = self._in_flight_detail()
+                    if slots.acquire(blocking=False):
+                        try:
+                            thread = threading.Thread(target=serve, args=(conn, busy), name="imd-dash-request")
+                            thread.start()
+                        except (RuntimeError, OSError):
+                            slots.release()
+                            conn.close()
+                        else:
+                            connections.append(thread)
+                    else:
+                        conn.close()  # overload is refused, never queued for a later write
+                now = self._now()
+                if now - self._last_tick >= TICK_S and (tick_thread is None or not tick_thread.is_alive()):
+                    try:
+                        tick_thread = threading.Thread(target=self.tick, args=(now,), name="imd-dash-tick")
+                        tick_thread.start()
+                    except (RuntimeError, OSError):
+                        tick_thread = None
+                if self.idle_exit_due(now):
+                    break
+        finally:
+            for thread in connections:
+                thread.join()
+            if tick_thread is not None:
+                tick_thread.join()
 
 
 # ---------------------------------------------------------------- pure helpers

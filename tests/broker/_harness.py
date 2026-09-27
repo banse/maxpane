@@ -70,7 +70,11 @@ class Journal:
 
     def __call__(self, argv: list[str], kw: dict) -> subprocess.CompletedProcess:
         indexed = list(enumerate(self.lines))
-        if "--after-cursor" in argv:
+        if "--grep" in argv:
+            import re
+            pattern = re.compile(argv[argv.index("--grep") + 1])
+            selected = [(i, ln) for i, ln in indexed if pattern.search(ln[1])][-int(argv[argv.index("--lines") + 1]):]
+        elif "--after-cursor" in argv:
             cursor = argv[argv.index("--after-cursor") + 1]
             after = int(cursor.rsplit("=", 1)[1])
             selected = [(i, ln) for i, ln in indexed if i > after]

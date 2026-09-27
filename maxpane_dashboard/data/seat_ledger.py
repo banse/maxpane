@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from maxpane_dashboard.analytics.seat_redact import redact, redact_agent_sentence
+from maxpane_dashboard.analytics.seat_redact import redact, redact_agent_sentence, redact_tree
 from maxpane_dashboard.data import seat_log_grammar as g
 from maxpane_dashboard.data.seat_log_grammar import LogLine, parse_ts
 from maxpane_dashboard.data.seat_models import SEAT_BLOCK_KEYS, SEAT_ROW_KEYS
@@ -798,6 +798,8 @@ class SeatLedger:
     # ------------------------------------------------------------------ sessions
     def attach_sessions(self, sessions: list[dict], *, runtime: str) -> int:
         """Join summariser output (contract C.8 ``SESSION_KEYS``) to rows; doctor/manual/unknown are stored unattached."""
+        sessions = redact_tree(sessions)
+        runtime = redact(runtime)
         attached = 0
         with self._conn:
             for s in sessions:

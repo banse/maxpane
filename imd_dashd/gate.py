@@ -170,6 +170,8 @@ def evaluate(*, journal_lines: Sequence[tuple[float, str]], standing: dict | Non
         unknown, reason = "outbox", "gate unknown: outbox unreadable"
     elif unit_active is None:
         unknown, reason = "unit", "gate unknown: unit unreadable"
+    elif lifecycle_open is None:
+        unknown, reason = "lifecycle", "gate unknown: terminal lifecycle evidence unavailable"
     elif lifecycle_open:
         node8 = _accepted_node8(last_line or "") or "?"
         accept_epoch = next((epoch for epoch, text in reversed(lines) if text == last_line), None)

@@ -111,3 +111,8 @@ def test_module_is_pure_stdlib():
     source = inspect.getsource(verbs)
     assert "maxpane" not in source
     assert "import subprocess" not in source and "import socket" not in source
+
+
+def test_missing_lifecycle_has_explicit_wire_error():
+    from imd_dashd.verbs import err
+    assert err("gate_unknown(lifecycle)", {"reason": "missing"})["error"] == "gate_unknown(lifecycle)"

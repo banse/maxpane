@@ -217,4 +217,4 @@ typing-inspection==0.4.4 \
 
 # pepepane fork wheel, built by scripts/build_wheels.sh from this checkout; PyPI has a different maxpane 0.9.3
 maxpane==0.9.3 \
-    --hash=sha256:0cfffb292b99819a2d7f5704c4aa199bd872db2d45b3a21f45bf36f26a27848a
+    --hash=sha256:851b56ee118b46c7e0165dd6a6443a6421795083bf511124fe7e07bf36b4a742

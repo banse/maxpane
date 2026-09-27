@@ -946,3 +946,176 @@ def test_imd_dashd_byte_compiles_and_the_client_has_timeouts():
         compile(path.read_text(encoding="utf-8"), str(path), "exec", dont_inherit=True)
     assert _calls_missing_timeout(CLIENT_FILE) == []
     assert "shell=True" not in CLIENT_FILE.read_text(encoding="utf-8")
+
+@pytest.mark.parametrize('failure', ['construct', 'start'])
+def test_transient_thread_failure_finishes_watch_and_releases_lock(tmp_path, monkeypatch, failure):
+    import threading
+    broker, *_ = make_broker(tmp_path)
+    plan = call(broker, 'doctor')['plan']
+    def fail(*args, **kwargs):
+        raise RuntimeError('synthetic thread exhaustion')
+    with monkeypatch.context() as patch:
+        if failure == 'construct':
+            patch.setattr(threading, 'Thread', fail)
+        else:
+            patch.setattr(threading.Thread, 'start', fail)
+        result = call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})
+    assert result['error'] == 'internal'
+    assert not broker._lock.locked() and broker._in_flight is None
+    watch = broker._watches[plan['plan_id']]
+    assert watch.done and watch.verified is False and watch.reason == 'thread start failed'
+    assert plan['plan_id'] not in broker._threads
+    # No child was started: failure must not burn the doctor cooldown.
+    assert call(broker, 'doctor')['ok']
+    start = call(broker, 'start')['plan']
+    assert call(broker, 'apply', {'plan_id': start['plan_id'], 'confirm': start['plan_id'][:4]})['ok']
+
+
+def test_sessions_redacts_actual_summary_metadata_recursively(tmp_path):
+    from imd_dashd.summarise_codex import summarise_file
+    synthetic = 'sk-review_SYNTHETIC_fragment'
+    fixture = Path('tests/fixtures/seat/sessions/rollout_task.jsonl')
+    records = [json.loads(line) for line in fixture.read_text().splitlines()]
+    for rec in records:
+        if rec.get('type') == 'turn_context':
+            rec['payload']['model'] = synthetic
+    rollout = tmp_path / 'rollout-synthetic.jsonl'
+    rollout.write_text('\n'.join(json.dumps(r) for r in records))
+    session = summarise_file(str(rollout), work_root='/home/imd-worker/.identitymd/work', now=0)
+    session['quota'] = {synthetic: [synthetic, '\x1b[31mquota\x00']}
+    broker, runner, *_ = make_broker(tmp_path)
+    runner.script[('systemd-run',)] = (0, json.dumps({'sessions': [session]}))
+    clean = call(broker, 'sessions', {'runtime': 'codex', 'since': 0})['data']['sessions'][0]
+    assert clean['model'] == 'sk-[redacted]'
+    assert clean['quota'] == {'sk-[redacted]': ['sk-[redacted]', '␛[31mquota']}
+    assert clean['tokens'] == session['tokens'] and clean['path'] == session['path']
+
+
+@pytest.mark.parametrize('drain', [False, True])
+def test_serving_loop_refuses_arrivals_during_write_and_drain(tmp_path, drain):
+    import queue
+    import threading
+    import socket
+    broker, runner, journal, clock, audit = make_broker(tmp_path)
+    plans = [call(broker, 'restart')['plan'] for _ in range(2)]
+    if drain:
+        armed = call(broker, 'drain-restart', {'offline': True})['plan']
+        assert call(broker, 'apply', {'plan_id': armed['plan_id'], 'confirm': armed['plan_id'][:4]})['ok']
+        # Each post-arm heartbeat is consumed by the production scheduler's tick.
+        for offset in (1, 2, 3, 4):
+            journal.add(hb(clock() + offset))
+        clock.advance(31)
+    class Conn:
+        def __init__(self, verb, args):
+            self.raw = json.dumps({'v': 1, 'verb': verb, 'args': args}).encode() + b'\n'
+            self.response = None
+            self.done = threading.Event()
+        def settimeout(self, timeout): pass
+        def recv(self, limit):
+            raw, self.raw = self.raw, b''
+            return raw
+        def sendall(self, raw):
+            self.response = json.loads(raw)
+            self.done.set()
+        def close(self): pass
+    incoming = queue.Queue()
+    class Listener:
+        def settimeout(self, timeout): pass
+        def accept(self):
+            item = incoming.get(timeout=4)
+            if item == 'tick': raise socket.timeout()
+            if item is None: raise OSError('finished')
+            return item, None
+    second = Conn('apply', {'plan_id': plans[1]['plan_id'], 'confirm': plans[1]['plan_id'][:4]})
+    preview = Conn('restart', {})
+    observations = []
+    def restart(argv, kw):
+        incoming.put(second)
+        incoming.put(preview)
+        try:
+            observations.append(second.done.wait(2) and preview.done.wait(2))
+        finally:
+            incoming.put(None)
+        return subprocess.CompletedProcess(argv, 0, b'', b'')
+    runner.script[('systemctl', 'restart')] = restart
+    first = Conn('apply', {'plan_id': plans[0]['plan_id'], 'confirm': plans[0]['plan_id'][:4]})
+    incoming.put('tick' if drain else first)
+    broker.serve_forever(Listener())
+    assert observations == [True], 'admission must respond while the write still holds the lock'
+    assert len(runner.argvs('systemctl', 'restart')) == 1
+    for conn in (second, preview):
+        assert conn.response['error'] == 'busy'
+        assert conn.response['detail']['verb'] == ('drain-restart' if drain else 'restart')
+        assert conn.response['detail']['plan_id'] and conn.response['detail']['since']
+    assert not broker._lock.locked()
+    # Rejected apply did not consume the previously issued single-use plan.
+    assert not broker._plans._plans[plans[1]['plan_id']].spent
+    records = audit_lines(audit)
+    assert [r['seq'] for r in records] == list(range(1, len(records) + 1))
+
+
+def test_serving_loop_bounds_connections_without_queueing_overload(tmp_path):
+    import threading
+    broker, *_ = make_broker(tmp_path)
+    release = threading.Event()
+    class Conn:
+        def __init__(self):
+            self.reading = threading.Event()
+            self.sent = False
+            self.closed = False
+        def settimeout(self, timeout): assert timeout == 5.0
+        def recv(self, limit):
+            self.reading.set()
+            assert release.wait(2)
+            return b'{"v":1,"verb":"ping","args":{}}\n'
+        def sendall(self, raw): self.sent = True
+        def close(self):
+            self.closed = True
+            if self is connections[-1]: release.set()
+    connections = [Conn() for _ in range(8)]
+    class Listener:
+        i = 0
+        def settimeout(self, timeout): pass
+        def accept(self):
+            if self.i == 8: raise OSError('finished')
+            if self.i: assert connections[self.i - 1].reading.wait(2)
+            conn = connections[self.i]
+            self.i += 1
+            return conn, None
+    try:
+        broker.serve_forever(Listener())
+    finally:
+        release.set()
+    assert all(c.sent and c.closed for c in connections[:7])
+    assert connections[-1].closed and not connections[-1].sent and not connections[-1].reading.is_set()
+
+
+@pytest.mark.parametrize('verb', ['restart', 'stop'])
+def test_gate_requires_history_and_refetches_latest_lifecycle_at_apply(tmp_path, verb):
+    clock = Clock()
+    journal = Journal([hb(clock() - age) for age in (120, 90, 60, 30)])
+    broker, runner, *_ = make_broker(tmp_path, clock=clock, journal=journal)
+    assert call(broker, verb, {'offline': True})['error'] == 'gate_unknown(lifecycle)'
+    journal.add(msg(clock() - 7 * 86400, 'submitted implement for 0c1f9727'))
+    plan = call(broker, verb, {'offline': True})['plan']
+    assert plan['preconditions']['lifecycle_open'] is False
+    journal.add(msg(clock() - 1, 'accepted question deadbeef'))
+    result = call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4], 'local_only_ack': 'local-only'})
+    assert result['error'] == 'gate_blocked' and not runner.argvs('systemctl', verb)
+    journal.add(msg(clock(), 'answered deadbeef with 1 citation(s)'))
+    plan = call(broker, verb, {'offline': True})['plan']
+    assert call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4], 'local_only_ack': 'local-only'})['ok']
+    history_calls = [argv for argv in runner.argvs('journalctl') if '--grep' in argv]
+    assert history_calls and all('--since' not in argv and argv[argv.index('--lines') + 1] == '1' for argv in history_calls)
+
+
+def test_drain_missing_lifecycle_stays_armed_without_restarting(tmp_path):
+    clock = Clock()
+    journal = Journal([hb(clock() - age) for age in (120, 90, 60, 30)])
+    broker, runner, *_ = make_broker(tmp_path, clock=clock, journal=journal)
+    plan = call(broker, 'drain-restart', {'offline': True})['plan']
+    assert call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})['ok']
+    for offset in (1, 2, 3, 4): journal.add(hb(clock() + offset))
+    clock.advance(31)
+    assert 'drain_rearmed' in broker.tick()
+    assert broker._drain.armed is not None and not runner.argvs('systemctl', 'restart')

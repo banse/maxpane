@@ -755,3 +755,25 @@ def test_corpus_ledger_counts(tmp_path: Path) -> None:
         assert result.restarts == (9 if seat == 7 else 8)  # every `runtimes:` banner incl. the first start
         assert not any(r["interruptedByRestart"] for r in all_rows)  # 16/16 restarts were idle (fill1 §0)
         ledger.close()
+
+
+def test_attach_sessions_sanitizes_every_string_before_sqlite(tmp_path):
+    import json
+    from maxpane_dashboard.data.seat_ledger import SeatLedger
+    secret = 'sk-review_SYNTHETIC_fragment'
+    session = {'path': '/ordinary/session.jsonl', 'runtime': 'codex', 'kind': 'manual',
+               'cwd': '/ordinary/work', 'model': secret, 'effort': '\x1b[31mhigh\x00',
+               'tokens': {'input': 123, 'output': 45, 'cached': 67, 'cacheWrite': 89},
+               'sideModel': [{'model': secret, 'input': 12}], 'quota': {secret: [secret]},
+               'apiErrors': [{'message': secret, 'atUtc': secret, 'status': 401}], 'error': secret}
+    ledger = SeatLedger(tmp_path / 'sanitized.sqlite', seat=7)
+    try:
+        ledger.attach_sessions([session], runtime='codex')
+        row = dict(ledger._conn.execute('SELECT * FROM sessions').fetchone())
+        assert secret not in json.dumps(row) and '\\u001b' not in json.dumps(row) and '\\u0000' not in json.dumps(row)
+        assert row['model'] == 'sk-[redacted]' and row['effort'] == '␛[31mhigh'
+        assert row['path'] == session['path'] and row['cwd'] == session['cwd']
+        assert [row['tokens_' + k] for k in ('input', 'output', 'cached', 'cache_write')] == [123, 45, 67, 89]
+        assert session['model'] == secret  # caller's data is not mutated
+    finally:
+        ledger.close()

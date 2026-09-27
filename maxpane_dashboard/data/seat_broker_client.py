@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from maxpane_dashboard.analytics.seat_redact import redact, redact_agent_sentence
+from maxpane_dashboard.analytics.seat_redact import redact, redact_agent_sentence, redact_tree
 from maxpane_dashboard.data.seat_models import SEAT_ROW_KEYS
 
 try:  # the Mac runs an editable checkout where the top-level stdlib package imports; the VPS wheel has no imd_dashd
@@ -440,16 +440,25 @@ class LocalDockerBroker(_CallMixin):
         inspect = self._inspect()
         unit_active = None if inspect is None else inspect.get("running")
         graceful = None if inspect is None else inspect.get("gracefulStopPossible")
-        return _gate_mod.evaluate(journal_lines=list(self._tail_lines()), standing=self._standing(), offline=self.offline,
+        lines = list(self._tail_lines())
+        if _gate_mod.newest_lifecycle([text for _, text in lines])[0] is None and lines:
+            # Independent bounded history; Docker can return a stale segment for older-log reads.
+            # It is evidence only if it reaches the current live window's newest daemon stamp.
+            history = self._docker_tail(_limit=10000)
+            if history and history[-1][0] >= max(epoch for epoch, _ in lines):
+                lines = sorted(set(history + lines))
+        return _gate_mod.evaluate(journal_lines=lines, standing=self._standing(), offline=self.offline,
                                   outbox_files=self._outbox_files(), unit_active=unit_active, graceful_stop_possible=graceful,
                                   now=self._now())
 
-    def _docker_tail(self) -> list[tuple[float, str]]:
+    def _docker_tail(self, *, _limit: int = 200) -> list[tuple[float, str]]:
         """Recent daemon lines for the gate, verify and the drain when no tail is injected: the trusted
         ``docker logs --tail 200`` form (spec §5.1); Docker's RFC3339Nano prefix is dropped, the daemon's own stamp decides."""
         try:
-            done = self._docker("logs", ["docker", "logs", "--tail", "200", "--timestamps", self.container])
+            done = self._docker("logs", ["docker", "logs", "--tail", str(_limit), "--timestamps", self.container])
         except BrokerError:
+            return []
+        if done.returncode != 0:
             return []
         out: list[tuple[float, str]] = []
         for raw in (_text(done.stdout) + "\n" + _text(done.stderr)).splitlines():
@@ -525,11 +534,7 @@ class LocalDockerBroker(_CallMixin):
                 body = json.loads(_text(done.stdout))
             except ValueError:
                 raise BrokerError("unreadable", {"what": "summariser output", "rc": done.returncode}) from None
-            for session in (body.get("sessions") or []) if isinstance(body, dict) else []:
-                for error in session.get("apiErrors") or []:
-                    if isinstance(error, dict) and "message" in error:
-                        error["message"] = redact(error["message"])
-            return body
+            return redact_tree(body)
         if verb == "outbox":
             count = self._outbox_files()
             if count is None:
@@ -767,8 +772,9 @@ class LocalDockerBroker(_CallMixin):
                 self._log(peer_uid=os.getuid(), verb="doctor", phase="refused", plan_id=plan_id, outcome="doctor_too_soon")
                 return _verbs_mod.err("doctor_too_soon")
             if plan.verb in ("skills-set", "doctor"):
-                release = False
-                return self._apply_transient(plan)
+                result = self._apply_transient(plan)
+                release = not result.get("ok", False)  # transfer cleanup only after successful thread start
+                return result
             if plan.verb == "kill-orphans":
                 return self._apply_kill(plan)
             return _verbs_mod.err("internal", {"reason": "unhandled verb"})
@@ -796,6 +802,7 @@ class LocalDockerBroker(_CallMixin):
     def _apply_transient(self, plan) -> dict:
         watch = _broker_mod.VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind="transient", cursor_before=None, started=self._now())
         self._watches[plan.plan_id] = watch
+        previous_doctor = self._last_doctor
         if plan.verb == "doctor":
             self._last_doctor = self._now()
 
@@ -823,9 +830,17 @@ class LocalDockerBroker(_CallMixin):
                 self._lock.release()
 
         seq = self._log(peer_uid=os.getuid(), verb=plan.verb, phase="apply", plan_id=plan.plan_id, preconditions=plan.preconditions, outcome="started")
-        thread = threading.Thread(target=worker, name=f"seat-docker-{plan.verb}", daemon=True)
-        self._threads[plan.plan_id] = thread
-        thread.start()
+        try:
+            thread = threading.Thread(target=worker, name=f"seat-docker-{plan.verb}", daemon=True)
+            self._threads[plan.plan_id] = thread
+            thread.start()
+        except Exception:  # constructor/start failure: no worker owns cleanup yet
+            self._threads.pop(plan.plan_id, None)
+            self._last_doctor = previous_doctor  # no child ran: preserve the preceding cooldown
+            watch.done, watch.verified, watch.reason = True, False, "thread start failed"
+            self._log(peer_uid=os.getuid(), verb=plan.verb, phase="verify", plan_id=plan.plan_id,
+                      outcome="thread start failed", verified=False)
+            return _verbs_mod.err("internal", {"reason": "thread start failed"})
         return _verbs_mod.ok(result={"outcome": "started", "exit_code": None, "cursor_before": None, "audit_seq": seq,
                                      "preconditions": plan.preconditions, "unit": None})
 

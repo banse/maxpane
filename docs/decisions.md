@@ -618,3 +618,32 @@ asserts a withdrawn statement is historical — do not review code against it.
   peak from the historical 142 MiB full-app peak; the unchanged CI ceiling is 160 MiB. Layout records use WP8's actual
   134-column/50-row body and 210-column LEDGER full tier. VPS measurements are still pending. The changelog reports
   the BASE-measured 545-case Surf sweep, and the adapted plan records 697 hoist tests rather than its historical 672.
+
+- **2026-09-27 (final review R1, transient startup cleanup)** — Both brokers retain apply's cleanup ownership until
+  the transient thread has successfully started. Constructor or start failure completes the watch as failed, removes
+  the worker entry, clears in-flight state and releases the write lock through the normal error path. No child ran,
+  so this failure restores the preceding doctor cooldown rather than charging a new ten-minute interval. Root and Mac
+  regressions inject both failures and prove a subsequent legal write succeeds.
+- **2026-09-27 (final review R2, bounded socket admission)** — The reference synchronous listener queued concurrent
+  applies until the previous write completed. The production listener now admits at most seven connection threads and
+  one housekeeping thread, with no task queue. Peer checking and request decoding precede responses; in-flight detail
+  captured at accept and checked again before state serialization produces an audited busy refusal during ordinary and
+  drain-fired writes. Busy refusals do not consume plans, preserving the existing apply contract. Shared request/tick
+  state is serialized independently of admission; audit append and child sequence allocation are synchronized.
+  Excess connections close instead of waiting to execute later. Real serve-loop tests hold the command open until both
+  concurrent apply and plan refusals arrive, and prove overload is bounded.
+- **2026-09-27 (final review R3, summary trust boundaries)** — Both sessions broker return paths and the ledger's
+  direct session-ingestion boundary now apply the existing frozen deep redactor to every string, including nested
+  mapping keys. The reference implementation sanitized only API-error messages. Actual fixture-derived model metadata,
+  nested secret fragments and terminal controls now reach neither socket consumers nor SQLite in raw form; ordinary
+  paths, identifiers, joins, numeric token totals and data shapes retain their meanings. The two redactor copies remain
+  unchanged and byte-identical.
+- **2026-09-27 (final review R4, lifecycle evidence and contract addition)** — An absent anchored lifecycle record is
+  unknown, never terminal. `ERRORS` gains `gate_unknown(lifecycle)` so this required refusal has an explicit wire shape;
+  no existing symbol or signature changes. Root queries the latest anchored lifecycle match independently of the
+  short heartbeat window, limiting journal output to one matching record with the existing child deadline and no age
+  cutoff. Mac uses a bounded 10,000-line older-log read only when its live window lacks lifecycle evidence, and accepts
+  it only if its newest daemon timestamp reaches the live window's newest timestamp; stale segments are discarded.
+  Missing or truncated history therefore refuses normal restart/stop and re-arms drain. Aged terminal evidence is valid,
+  a newer accept supersedes it, and the existing explicit force rules stay separate. The journal test driver now models
+  filtering before limiting; no idle evidence is invented. Offline artifacts are rebuilt and rehashed after these fixes.

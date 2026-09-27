@@ -244,3 +244,13 @@ def test_gate_unknown_outbox_cannot_be_acked(tmp_path):
     # and a docker-style unit unknown is the same class (spec §11 (e))
     broker2, _r, _j, _c, _a = make_broker(tmp_path / "b", script={("systemctl", "is-active", "imd-worker.service"): (0, "")})
     assert call(broker2, "restart", {"offline": True})["error"] == "gate_unknown(unit)"
+
+
+def test_missing_lifecycle_is_unknown_but_aged_terminal_is_valid():
+    missing = ok_gate(journal_lines=IDLE_9)
+    assert not missing.safe and missing.unknown == 'lifecycle'
+    assert missing.last_lifecycle_line is None and missing.lifecycle_open is None
+    aged = line(7 * 86400, 'submitted implement for 0c1f9727')
+    assert ok_gate(journal_lines=[aged] + IDLE_9).safe
+    opened = ok_gate(journal_lines=[aged] + IDLE_9 + [line(1, 'accepted question deadbeef')])
+    assert not opened.safe and opened.lifecycle_open is True

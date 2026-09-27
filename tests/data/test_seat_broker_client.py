@@ -744,3 +744,75 @@ def test_local_doctor_cooldown_is_rechecked_at_apply(tmp_path):
         if second.plan_id in broker._threads:
             broker._threads[second.plan_id].join(timeout=5)
     assert len([a for a, _ in runner.calls if a[-2:] == ['imd', 'doctor']]) == 1
+
+@pytest.mark.parametrize('failure', ['construct', 'start'])
+def test_local_transient_thread_failure_finishes_watch_and_releases_lock(tmp_path, monkeypatch, failure):
+    broker, *_ = _local(tmp_path)
+    plan = broker.plan('doctor')
+    def fail(*args, **kwargs):
+        raise RuntimeError('synthetic thread exhaustion')
+    with monkeypatch.context() as patch:
+        if failure == 'construct':
+            patch.setattr(threading, 'Thread', fail)
+        else:
+            patch.setattr(threading.Thread, 'start', fail)
+        with pytest.raises(BrokerError) as exc:
+            broker.apply(plan.plan_id, plan.plan_id[:4])
+    assert exc.value.code == 'internal'
+    assert not broker._lock.locked() and broker._in_flight is None
+    watch = broker._watches[plan.plan_id]
+    assert watch.done and watch.verified is False and watch.reason == 'thread start failed'
+    assert plan.plan_id not in broker._threads
+    assert broker.plan('doctor').verb == 'doctor'
+    start = broker.plan('start')
+    assert broker.apply(start.plan_id, start.plan_id[:4]).outcome == 'applied'
+
+
+def test_local_sessions_redacts_all_nested_metadata(tmp_path):
+    body = {'sessions': [{'path': '/ordinary/session.jsonl', 'model': 'sk-review_SYNTHETIC_fragment',
+                         'tokens': {'input': 234, 'output': 56},
+                         'sideModel': [{'model': 'sk-ant-review_SYNTHETIC_fragment', 'tokens': 7}],
+                         'quota': {'nested': ['\x1b[31mquota\x00']}}]}
+    broker, *_ = _local(tmp_path, script={('docker', 'exec'): (0, json.dumps(body))})
+    clean = broker.read('sessions', {'runtime': 'claude', 'since': 0})['sessions'][0]
+    assert clean['model'] == 'sk-[redacted]'
+    assert clean['sideModel'] == [{'model': 'sk-ant-[redacted]', 'tokens': 7}]
+    assert clean['quota'] == {'nested': ['␛[31mquota']}
+    assert clean['tokens'] == body['sessions'][0]['tokens'] and clean['path'] == '/ordinary/session.jsonl'
+
+
+@pytest.mark.parametrize('verb', ['restart', 'stop'])
+def test_local_gate_requires_fresh_complete_lifecycle_history(tmp_path, verb):
+    clock = Clock()
+    live = [hb(clock() - age) for age in (120, 90, 60, 30)]
+    history = [msg(clock() - 7 * 86400, 'submitted implement for 0c1f9727')] + live
+    def logs(argv, kw):
+        return subprocess.CompletedProcess(argv, 0, '\n'.join('docker-stamp ' + text for _, text in history).encode(), b'')
+    broker, runner, lines, _ = _local(tmp_path, tail=live, clock=clock, script={('docker', 'logs'): logs})
+    plan = broker.plan(verb)
+    assert plan.preconditions['lifecycle_open'] is False
+    assert any(argv[argv.index('--tail') + 1] == '10000' for argv in runner.argvs('docker', 'logs'))
+    # The stale-segment trap must never authorize a write using the older terminal.
+    history[:] = history[:1]
+    with pytest.raises(BrokerError) as exc:
+        broker.apply(plan.plan_id, plan.plan_id[:4], local_only_ack='local-only')
+    assert exc.value.code == 'gate_unknown(lifecycle)' and not runner.argvs('docker', verb)
+    history.extend(live + [msg(clock() - 1, 'accepted question deadbeef')])
+    with pytest.raises(BrokerError) as exc:
+        broker.plan(verb)
+    assert exc.value.code == 'gate_blocked'
+    history.append(msg(clock(), 'answered deadbeef with 1 citation(s)'))
+    plan = broker.plan(verb)
+    assert broker.apply(plan.plan_id, plan.plan_id[:4], local_only_ack='local-only').outcome == 'applied'
+
+
+def test_local_drain_missing_lifecycle_never_fires(tmp_path):
+    clock = Clock()
+    broker, runner, lines, _ = _local(tmp_path, tail=[hb(clock() - age) for age in (120, 90, 60, 30)], clock=clock,
+                                    script={('docker', 'logs'): (0, '')})
+    plan = broker.plan('drain-restart')
+    broker.apply(plan.plan_id, plan.plan_id[:4])
+    for offset in (1, 2, 3, 4): lines.append(hb(clock() + offset))
+    clock.advance(31)
+    assert 'drain_rearmed' in broker.tick()
+    assert broker._drain.armed is not None and not runner.argvs('docker', 'restart')
