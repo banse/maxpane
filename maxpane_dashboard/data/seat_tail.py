@@ -732,7 +732,11 @@ class TailThread:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            self.run_once()
+            try:
+                self.run_once()
+            except Exception as exc:  # never let the thread die silently (spec §18 risk row)
+                logger.exception("tail thread run failed")
+                self._note_exit(None, delivered=0, detail=f"crashed: {exc}")
             if self._stop.is_set():
                 break
             self._wait(self._backoff_s or self._backoff_min)
@@ -881,8 +885,16 @@ class TailThread:
         return 1
 
     def _note_exit(self, rc: int | None, *, delivered: int, detail: str | None = None) -> None:
+        """Bookkeeping for one source exit: restarts, backoff 1 -> 30 s, the reason line.
+
+        A run that delivered at least one line resets the backoff to the floor; consecutive
+        empty exits double it up to ``BACKOFF_MAX_S`` (1, 2, 4, 8, 16, 30, 30 ...).
+        """
         self._restarts += 1
-        self._backoff_s = self._backoff_min
+        if self._backoff_s is None or delivered > 0:
+            self._backoff_s = self._backoff_min
+        else:
+            self._backoff_s = min(self._backoff_s * 2, self._backoff_max)
         retry = f"retry in {int(self._backoff_s)}s"
         if detail is not None:
             self._reason = f"tail: {detail} — {retry}"

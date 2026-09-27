@@ -845,3 +845,110 @@ def test_open_failure_is_a_reason_not_a_crash():
     thread.run_once()
     assert thread.reason == "tail: open failed (journalctl) — retry in 1s"
     assert thread.restarts == 1
+
+# =============================================================================
+# Task 3.9 -- exit / backoff / reason; purity; opt-in host test
+# =============================================================================
+
+
+def test_dead_thread_reports_reason_and_backoff_ceiling_30s():
+    # spec §9 Follower / §18 "tail thread dies silently": on exit the thread restarts with backoff 1->30 s
+    # and reports `tail: exited rc=N — retry in Ns` through sources.tail.reason
+    thread, _ = _thread(lambda st: ListLineSource([], exit_code=1))
+    reasons = []
+    for _ in range(7):
+        thread.run_once()
+        reasons.append(thread.reason)
+    assert reasons == [f"tail: exited rc=1 — retry in {n}s" for n in (1, 2, 4, 8, 16, 30, 30)]
+    assert thread.backoff_s == BACKOFF_MAX_S == 30 and thread.restarts == 7
+
+
+def test_a_healthy_run_resets_the_backoff_and_clears_the_reason():
+    calls = 0
+
+    def factory(st):
+        nonlocal calls
+        calls += 1
+        return ListLineSource([] if calls < 4 else [HB1], exit_code=1)
+
+    thread, q = _thread(factory)
+    for _ in range(3):
+        thread.run_once()
+    assert thread.backoff_s == 4
+    thread.run_once()
+    assert q.qsize() == 1 and thread.backoff_s == BACKOFF_MIN_S
+    assert thread.reason == "tail: exited rc=1 — retry in 1s"        # set at exit, after the line cleared it
+
+
+def test_loop_survives_a_factory_exception(tmp_path):
+    def factory(st):
+        raise RuntimeError("boom")
+
+    thread, _ = _thread(factory)
+    thread._stop.clear()
+    calls = {"n": 0}
+
+    def wait_once(seconds):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            thread._stop.set()
+
+    thread._wait = wait_once
+    thread._loop()
+    assert thread.reason.startswith("tail: crashed: boom — retry in") and thread.restarts == 2
+
+
+def test_every_subprocess_call_has_a_timeout_or_stop_timeout_and_a_list_argv():
+    # spec §14 Rules (3): data/seat_tail.py is one of two seat modules allowed subprocess; every run has
+    # timeout=, every Popen owner documents stop_timeout_s, argv is a list, never shell=True
+    source = Path(seat_tail.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    run_calls, popen_calls = [], []
+    for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
+        init = next((f for f in cls.body if isinstance(f, ast.FunctionDef) and f.name == "__init__"), None)
+        has_stop_timeout = init is not None and any(a.arg == "stop_timeout_s" for a in init.args.kwonlyargs + init.args.args)
+        for node in ast.walk(cls):
+            if not isinstance(node, ast.Call):
+                continue
+            name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+            assert not any(k.arg == "shell" for k in node.keywords), ast.dump(node)
+            if name in {"run", "_run"}:
+                run_calls.append(node)
+                assert any(k.arg == "timeout" for k in node.keywords), f"{cls.name}: {name} without timeout="
+            if name in {"Popen", "_popen", "popen"}:
+                popen_calls.append(node)
+                assert has_stop_timeout, f"{cls.name} spawns without a stop_timeout_s"
+            if name in {"run", "_run", "Popen", "_popen", "popen"}:
+                first = node.args[0]
+                assert isinstance(first, ast.List) or (isinstance(first, ast.Name) and first.id == "argv"), ast.dump(first)
+    assert len(run_calls) == 1 and len(popen_calls) == 2
+    assert "shell=True" not in source
+
+
+def test_seat_tail_imports_no_textual_httpx_or_widgets():
+    # spec §14 Rules (2)/(3): no Textual import under data/; the tail talks to nothing but the queue
+    tree = ast.parse(Path(seat_tail.__file__).read_text(encoding="utf-8"))
+    names = set()
+    for node in tree.body:                              # module level only; TailThread.__init__ resolves WP2 lazily
+        if isinstance(node, ast.Import):
+            names.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            names.add(node.module)
+    assert not any(n.startswith(("textual", "httpx", "rich", "maxpane_dashboard.widgets", "maxpane_dashboard.screens")) for n in names), names
+    assert "maxpane_dashboard.data.seat_log_grammar" not in names   # resolved lazily in TailThread.__init__
+
+
+@pytest.mark.host
+def test_host_journald_source_follows_the_real_unit_for_two_seconds():
+    """Opt-in only (`-m host`): the real journalctl, two seconds, no assertion on content."""
+    if shutil.which("journalctl") is None:
+        pytest.skip("no journalctl on this host")
+    src = JournaldSource("imd-worker.service", since="-1h", stop_timeout_s=2.0)
+    src.open()
+    stop = threading.Timer(2.0, src.close)
+    stop.start()
+    try:
+        count = sum(1 for item in src.lines() if item is not None)
+    finally:
+        stop.cancel()
+    assert count >= 0
