@@ -660,3 +660,64 @@ def test_schema_doc_maps_every_v1_key_and_names_every_v2_block():
     for code in ("wrong_schema", "with_secret", "too_large", "not_an_object"):
         assert f"`{code}`" in text, code
     assert NO_CURRENCY_SENTENCE in text
+
+
+# --- Task 9.8: docs/seat_install.md + deploy/mac/README.md + the pepepane.toml keys --------------------------------
+
+from maxpane_dashboard.seat_cli import DEFAULT_CONFIG, ENV, HOSTS  # noqa: E402
+
+INSTALL_DOC = REPO / "docs" / "seat_install.md"
+MAC_README = REPO / "deploy" / "mac" / "README.md"
+
+
+def test_install_sh_writes_pepepane_toml_with_seat_cli_env_keys():
+    """Spec §12.1 'Runtime configuration for the TUI': install.sh writes /home/imd-dash/.config/pepepane.toml
+    with exactly the keys seat_cli reads (CLI > PEPEPANE_* env > file > config.get_seat() > defaults),
+    host=systemd, the worker unit, the broker's SOCKET_PATH, seat and agent -- configuration, never a
+    secret. Mutation: write ``token = 7`` instead of ``seat = 7`` -> red; write the broker path with a
+    typo -> red."""
+    proc = _run_bash(str(INSTALL_SH), "--dry-run", "--seat", "7", "--agent", "51075")
+    assert proc.returncode == 0, proc.stderr
+    rendered = [ln[6:] for ln in proc.stdout.splitlines() if ln.startswith("    | ")]
+    cfg = tomllib.loads("\n".join(rendered) + "\n")["pepepane"]
+    assert set(cfg) == {"host", "unit", "broker", "seat", "agent"}
+    assert set(cfg) <= set(ENV), f"every key written is one seat_cli reads: {set(cfg) - set(ENV)}"
+    assert cfg["host"] == "systemd" and cfg["host"] in HOSTS
+    assert cfg["unit"] == WORKER_UNIT
+    assert cfg["broker"] == SOCKET_PATH
+    assert cfg["seat"] == 7 and cfg["agent"] == 51075
+    assert DEFAULT_CONFIG.name == "pepepane.toml" and DEFAULT_CONFIG.parent.name == ".config"
+    assert f"/home/{DASH_USER}/.config/pepepane.toml" in proc.stdout
+    for line in rendered:
+        assert "sk-" not in line and "eyJ" not in line, "never a secret"
+
+
+def test_seat_install_doc_names_the_sequence_the_child_env_and_the_broker_version():
+    """Spec §12.1: the runbook the owner follows names the build, the staging tarball, the dry run, the
+    eight steps (a table row per step), the owner-step flag (`--worker-dropin` at an idle gap) and the `--route b` fallback to the decided route a, the probe, the daily ssh path, the
+    verbatim child environment (§4.1a), the budgets and the broker version ``ping`` returns."""
+    text = INSTALL_DOC.read_text(encoding="utf-8")
+    for needle in ("scripts/build_wheels.sh --out deploy/vps", "seat-deploy-", "install.sh --dry-run", "--authorized-keys",
+                   "--worker-dropin", "--route b", "probe_seat_host.sh", "--require-hashes", "/usr/local/bin/pepepane",
+                   f"ssh -t {DASH_USER}@", "pepepane --once --offline", "docs/seat_install_probe.md", "deploy/vps/VERIFY.md",
+                   VERSION, "MemoryMax=256M", "MemoryMax=128M", "MemoryMax=512M", "systemd-journal", "sockets.target",
+                   "Restart=always", "boot: disabled"):
+        assert needle in text, needle
+    for n in range(1, 9):
+        assert re.search(rf"^\| {n} \| ", text, re.M), f"no table row for step {n}"
+    for key, value in CHILD_ENV.items():
+        assert f"`{key}={value}`" in text, f"the child env line {key}={value} is quoted"
+
+
+def test_mac_readme_matches_the_parity_design():
+    """Spec §12.2 / §4.2: the Mac runs the same entrypoint with an in-process LocalDockerBroker, into
+    .venv-seat from the pepepane checkout; every CLI-fed value is container-reported; --force stays
+    off in v1 even after the §16 #8 recreate (enabling it is follow-up item 13); nothing new is
+    mounted; the aidude launchd jobs keep running."""
+    text = MAC_README.read_text(encoding="utf-8")
+    for needle in ("--host docker --container imd-worker", ".venv-seat", "uv pip install", "'.[seat]'", "pepepane",
+                   "LocalDockerBroker", "seat_audit.jsonl", "--stop-timeout 45 --init", "(container)", "--once",
+                   "--offline", "timeout=25", "timeout -s TERM", "--host fixture", "worker-page", "worker-notify",
+                   "imd-npm", "#18"):
+        assert needle in text, needle
+    assert "docker.sock" not in text, "nothing mounts the Docker socket"

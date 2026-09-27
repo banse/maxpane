@@ -20,6 +20,15 @@ bash /opt/imd-dash/src/deploy/vps/probe_seat_host.sh > /root/seat_install_probe.
 
 ---
 
+## Mac build measurements (2026-09-27)
+
+The lean entrypoint cold physical peak was **58.8 MiB**, measured on macOS arm64 with Python 3.11.15 and Textual 8.2.8
+using the libproc fallback in `scripts/pty_footprint2.py`; the budget stays 160 MiB. The historical **142 MiB** research
+measurement used the full MaxPaneApp with all managers and is a different measurement. The lean import graph still
+loads the Base/FrenPet module graphs through `data/__init__.py`, but constructs only SeatManager.
+The in-situ healthy and worst fixture layout measured **134 columns by 50 rows**; LEDGER has a named width exception
+and its full tier clears at **210 columns**. VPS physical peak, child peaks and layout certification are not yet run.
+
 ## Sections
 
 1. connect(/run/imd-dash/broker.sock) as imd-dash succeeds (ping)
