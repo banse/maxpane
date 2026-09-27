@@ -178,3 +178,124 @@ def classify_cwd(cwd: str, *, work_root: str) -> tuple[str, str | None, str | No
         if len(parts) == 2 and UUID_RE.fullmatch(parts[0]) and UUID_RE.fullmatch(parts[1]):
             return ("task", parts[0], parts[1])
     return ("unknown", None, None)
+
+
+def _empty_session(path: str, st: os.stat_result) -> dict:
+    session = dict.fromkeys(SESSION_KEYS)
+    session.update(path=_cap(path, 512), runtime="codex", mtime=st.st_mtime, bytes=st.st_size, kind="unknown",
+                   turnsDefinition="agent_messages", apiErrors=[], skippedOversize=0)
+    return session
+
+
+def _quota(rate_limits, ts) -> dict | None:
+    if not isinstance(rate_limits, dict):
+        return None
+    primary = rate_limits.get("primary")
+    if not isinstance(primary, dict):
+        return None
+    used = primary.get("used_percent")
+    if isinstance(used, bool) or not isinstance(used, (int, float)):
+        return None
+    return {
+        "usedPercent": float(used),
+        "windowMinutes": _int(primary.get("window_minutes")),
+        "resetsAtUtc": iso_s(primary.get("resets_at")),
+        "planType": _cap(rate_limits.get("plan_type"), 40),
+        "sampledAtUtc": iso_s(ts),
+    }
+
+
+def _open(path: str):
+    if path.endswith(".zst"):
+        return ZSTD.open(path, "rb")
+    return open(path, "rb")
+
+
+def summarise_file(path: str, *, work_root: str, now: float, clock=time.monotonic,
+                   wall_s: float = PER_FILE_WALL_S) -> dict | None:
+    """One rollout -> a ``SESSION_KEYS`` dict; ``None`` when unreadable, not a regular file,
+    over ``MAX_FILE_BYTES`` or a ``.zst`` without ``compression.zstd``.
+
+    *now* is accepted for the contract's signature and deliberately unused: the summary is a
+    pure function of the file, so fixture output is deterministic.
+    """
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode) or st.st_size > MAX_FILE_BYTES:
+        return None
+    if path.endswith(".zst") and ZSTD is None:
+        return None
+    session = _empty_session(path, st)
+    counts = {"oversize": 0}
+    cwd = started = ended = meta_ts = model = effort = total_usage = quota = None
+    turns = 0
+    turn1 = None
+    task_complete = None
+    try:
+        with _open(path) as fh:
+            for raw in iter_bounded_lines(fh, counts, deadline=clock() + wall_s, clock=clock):
+                rec = _loads(raw)
+                if rec is None:
+                    continue
+                ts = rec.get("timestamp")
+                if isinstance(ts, str):
+                    started = started or ts
+                    ended = ts
+                kind = rec.get("type")
+                payload = rec.get("payload") if isinstance(rec.get("payload"), dict) else {}
+                if kind == "session_meta":
+                    cwd = cwd or (payload.get("cwd") if isinstance(payload.get("cwd"), str) else None)
+                    meta_ts = meta_ts or (payload.get("timestamp") if isinstance(payload.get("timestamp"), str) else None)
+                elif kind == "turn_context":
+                    model = model or (payload.get("model") if isinstance(payload.get("model"), str) else None)
+                    effort = effort or (payload.get("effort") if isinstance(payload.get("effort"), str) else None)
+                elif kind == "token_usage_record":
+                    usage = payload.get("usage")
+                    if turn1 is None and isinstance(usage, dict):
+                        turn1 = _int(usage.get("input_tokens"))
+                elif kind == "event_msg":
+                    event = payload.get("type")
+                    if event == "item_completed":
+                        item = payload.get("item")
+                        item_type = item.get("type") if isinstance(item, dict) else None
+                        if isinstance(item_type, str) and item_type.lower().replace("_", "") == "agentmessage":
+                            turns += 1
+                    elif event == "token_count":
+                        info = payload.get("info")
+                        if isinstance(info, dict) and isinstance(info.get("total_token_usage"), dict):
+                            total_usage = info["total_token_usage"]
+                        sample = _quota(payload.get("rate_limits"), ts)
+                        if sample is not None:
+                            quota = sample
+                    elif event == "task_complete":
+                        task_complete = payload
+    except _WallClock:
+        session["error"] = "per-file wall clock exceeded"
+    except _TooBig:
+        counts["oversize"] += 1
+        session["error"] = "decompressed size > 64 MiB"
+    except Exception as exc:  # noqa: BLE001 -- OSError, EOFError, ZstdError: one bad file never kills the call
+        session["error"] = "unreadable: " + type(exc).__name__
+    kind, job_id, node_id = classify_cwd(cwd, work_root=work_root) if cwd else ("unknown", None, None)
+    session.update(cwd=_cap(cwd, 512), kind=kind, jobId=job_id, nodeId=node_id,
+                   startedUtc=iso_ms(meta_ts or started), endedUtc=iso_ms(ended),
+                   model=_cap(model, 128), effort=_cap(effort, 32), skippedOversize=counts["oversize"], quota=quota)
+    if session["error"] is not None:
+        return session  # partial parse: classification kept, figures withheld (None, never a partial sum)
+    session["turns"] = turns
+    session["turn1Context"] = turn1
+    if total_usage is not None:
+        raw_input = _int(total_usage.get("input_tokens")) or 0
+        cached = _int(total_usage.get("cached_input_tokens")) or 0
+        session["tokens"] = {
+            "input": max(raw_input - cached, 0),
+            "output": _int(total_usage.get("output_tokens")) or 0,
+            "cached": cached,
+            "cacheWrite": _int(total_usage.get("cache_write_input_tokens")) or 0,
+        }
+    if task_complete is not None:
+        session["ttftMs"] = _int(task_complete.get("time_to_first_token_ms"))
+        session["wallMs"] = _int(task_complete.get("duration_ms"))
+    return session

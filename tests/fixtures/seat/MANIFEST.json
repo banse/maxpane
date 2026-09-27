@@ -365,6 +365,20 @@
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
       "notes": "first __REALTIME_TIMESTAMP 1790394007120000 = 2026-09-26T03:40:07.120Z; the real behaviour is recorded by probe_seat_host.sh (spec §14, §18 open 17)"
+    },
+    "sessions/rollout_task.jsonl": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [
+        "prompts",
+        "tool_io",
+        "base_instructions"
+      ],
+      "origin": "synthetic: codex-cli 0.157.0 rollout shape (vps §2, cost §1) carrying the numbers of job 15bb693b node 4b9b896f (cost §0.4)",
+      "notes": "5 token_usage_records, 3 AgentMessage items; last total 110,792 in / 92,928 cached / 812 out -> API 17,864 / 92,928 / 812, turns 3",
+      "sha256": "8443e480eca7fc543f957c6d896145af7baa9c16b3dee2cac370775c2b8bec98",
+      "bytes": 10962
     }
   }
 }
