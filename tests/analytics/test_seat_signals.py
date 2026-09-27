@@ -194,3 +194,87 @@ def test_pausedhint_active_equals_seat_auth_rule():
                  {"until": "23:53"}, {"until": "25:00", "seenUtc": seen}, None, {"until": 5}):
         for dt in (0, 60, 329, 331, 1200, 3600):
             assert ss.pausedhint_active(hint, now=base + dt) == seat_auth.pause_hint_active(hint, now=base + dt), (hint, dt)
+
+
+# ---------------------------------------------------------------------------
+# Task 7.3 — config-changed grace, graceful stop, divergence, today rollup
+# ---------------------------------------------------------------------------
+
+
+def test_start_time_rewrite_is_not_a_change():
+    # spec §5.2 / §14 mutation proof 16: the daemon rewrites config.json at every start (both seats pass
+    # --concurrency), so an mtime inside anchor + 60 s is the start itself, not an operator edit.
+    # systemd anchor: ActiveEnterTimestamp 2026-09-25 11:45:41 UTC vs mtime `Sep 25 11:45` (minute resolution, vps §1)
+    anchor = "2026-09-25T11:45:41Z"
+    assert ss.config_changed_since_start(mtime_utc="2026-09-25T11:45:00Z", anchor_utc=anchor) is False
+    assert ss.config_changed_since_start(mtime_utc="2026-09-25T11:45:41Z", anchor_utc=anchor) is False
+    assert ss.config_changed_since_start(mtime_utc="2026-09-25T11:46:41Z", anchor_utc=anchor) is False   # exactly +60 s
+    assert ss.config_changed_since_start(mtime_utc="2026-09-25T11:46:42Z", anchor_utc=anchor) is True    # +61 s
+    # Docker anchor: State.StartedAt with nanoseconds (spec §5.5 Mac)
+    started = "2026-09-21T19:57:03.123456789Z"
+    assert ss.config_changed_since_start(mtime_utc="2026-09-21T19:57:03Z", anchor_utc=started) is False
+    assert ss.config_changed_since_start(mtime_utc="2026-09-21T19:58:03Z", anchor_utc=started) is False   # +59.88 s
+    assert ss.config_changed_since_start(mtime_utc="2026-09-21T19:58:04Z", anchor_utc=started) is True
+    # an edit long after the start; an mtime before the start (restored backup) is not a change either
+    assert ss.config_changed_since_start(mtime_utc="2026-09-25T14:00:00Z", anchor_utc=anchor) is True
+    assert ss.config_changed_since_start(mtime_utc="2026-09-25T09:00:00Z", anchor_utc=anchor) is False
+    assert ss.config_changed_since_start(mtime_utc=None, anchor_utc=anchor) is None
+    assert ss.config_changed_since_start(mtime_utc="2026-09-25T14:00:00Z", anchor_utc=None) is None
+    assert ss.config_changed_since_start(mtime_utc="garbage", anchor_utc=anchor) is None
+    assert ss.config_changed_since_start(mtime_utc="2026-09-25T11:45:50Z", anchor_utc=anchor, grace_s=0) is True
+
+
+def test_graceful_stop_possible_on_both_hosts():
+    # spec §5.5: systemd KillMode=control-group and TimeoutStopSec >= 30 -> true on #7;
+    # docker StopTimeout >= 45 or Init -> false today (StopTimeout null = 10, no init)
+    assert ss.graceful_stop_possible(kill_mode="control-group", stop_timeout_s=30) is True
+    assert ss.graceful_stop_possible(kill_mode="control-group", stop_timeout_s=29) is False
+    assert ss.graceful_stop_possible(kill_mode="mixed", stop_timeout_s=90) is False
+    assert ss.graceful_stop_possible(kill_mode="control-group", stop_timeout_s=None) is None
+    assert ss.graceful_stop_possible(kill_mode=None, stop_timeout_s=30) is None
+    assert ss.graceful_stop_possible(kill_mode=None, stop_timeout_s=None, docker_stop_timeout_s=None, docker_init=False) is False
+    assert ss.graceful_stop_possible(kill_mode=None, stop_timeout_s=None, docker_stop_timeout_s=10, docker_init=False) is False
+    assert ss.graceful_stop_possible(kill_mode=None, stop_timeout_s=None, docker_stop_timeout_s=45, docker_init=False) is True
+    assert ss.graceful_stop_possible(kill_mode=None, stop_timeout_s=None, docker_stop_timeout_s=10, docker_init=True) is True
+    assert ss.graceful_stop_possible(kill_mode=None, stop_timeout_s=None) is None
+
+
+def test_divergence_compares_local_stored_with_plane_rows():
+    # spec §7 today.divergence / §8 LEDGER footer: the grammar-drift detector
+    assert ss.divergence(local_stored_today=11, plane_rows_submitted_today=11) == {"localStored": 11, "planeRowsSubmittedToday": 11, "ok": True}
+    assert ss.divergence(local_stored_today=57, plane_rows_submitted_today=55) == {"localStored": 57, "planeRowsSubmittedToday": 55, "ok": False}
+    assert ss.divergence(local_stored_today=None, plane_rows_submitted_today=11) is None
+    assert ss.divergence(local_stored_today=11, plane_rows_submitted_today=None) is None
+
+
+def _row(node8, accepted, *, stored=True, duration=30.0, outcome=None, lag=None, outcome_as_of=None):
+    return {
+        "nodeId8": node8, "acceptedUtc": accepted, "storedUtc": accepted if stored else None,
+        "durationS": duration, "outcome": outcome, "verdictLagS": lag, "outcomeAsOfUtc": outcome_as_of,
+    }
+
+
+def test_rollup_today_counts_only_the_day_and_never_sums_axes():
+    # spec §7 today block; spec §2 "three outcome axes, never summed": tasks/stored are local, verdicts are api
+    rows = [
+        _row("aaaaaaaa", "2026-09-26T03:23:44.909Z", duration=32.2, outcome="accepted", lag=900, outcome_as_of="2026-09-26T03:40:10Z"),
+        _row("bbbbbbbb", "2026-09-26T02:10:00.000Z", duration=252.0, outcome="pending", outcome_as_of="2026-09-26T03:40:10Z"),
+        _row("cccccccc", "2026-09-26T01:00:00.000Z", duration=28.0, outcome="failed", outcome_as_of="2026-09-26T03:30:00Z"),
+        _row("dddddddd", "2026-09-26T00:30:00.000Z", stored=False, duration=0.4, outcome="unknown"),
+        _row("eeeeeeee", "2026-09-25T23:36:03.545Z", duration=34.1, outcome="failed", outcome_as_of="2026-09-26T03:40:10Z"),   # yesterday
+        {"nodeId8": "ffffffff", "acceptedUtc": None},                                                                          # unusable
+        "not a row",
+    ]
+    today = ss.rollup_today(rows, day_utc="2026-09-26")
+    assert tuple(today) == ("dayUtc", "tasks", "stored", "notStored", "p50S", "longestS", "accepted", "rejected",
+                            "failed", "pending", "verdictLagP50S", "verdictsAsOfUtc")
+    assert today["dayUtc"] == "2026-09-26" and today["tasks"] == 4 and today["stored"] == 3 and today["notStored"] == 1
+    assert today["p50S"] == 30 and today["longestS"] == 252
+    assert (today["accepted"], today["rejected"], today["failed"], today["pending"]) == (1, 0, 1, 1)
+    assert today["verdictLagP50S"] == 900 and today["verdictsAsOfUtc"] == "2026-09-26T03:40:10Z"
+    empty = ss.rollup_today([], day_utc="2026-09-26")
+    assert empty["tasks"] == 0 and empty["stored"] == 0 and empty["p50S"] is None and empty["longestS"] is None
+    assert empty["accepted"] is None and empty["verdictLagP50S"] is None and empty["verdictsAsOfUtc"] is None
+    # a day with rows but no verdict yet: counts are 0 (rows exist, none judged), never None
+    unjudged = ss.rollup_today([_row("aaaaaaaa", "2026-09-26T03:23:44.909Z", outcome="unknown")], day_utc="2026-09-26")
+    assert (unjudged["accepted"], unjudged["rejected"], unjudged["failed"], unjudged["pending"]) == (0, 0, 0, 0)

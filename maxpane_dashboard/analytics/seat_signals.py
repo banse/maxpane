@@ -270,3 +270,103 @@ def counters_consistent(block: Mapping | None) -> bool | None:
     if any(v is None for v in values.values()):
         return None
     return values["attempts"] == values["accepted"] + values["rejected"] + values["failed"] + values["pending"]
+
+
+# ---------------------------------------------------------------------------
+# config, stop semantics, rollups
+# ---------------------------------------------------------------------------
+
+
+def config_changed_since_start(*, mtime_utc: str | None, anchor_utc: str | None,
+                               grace_s: int = CONFIG_REWRITE_GRACE_S) -> bool | None:
+    """``mtime > anchor + grace`` (spec §5.2; mutation proof 16).
+
+    *anchor_utc* is systemd's ``ActiveEnterTimestamp`` or Docker's ``State.StartedAt``; the daemon
+    rewrites ``config.json`` at every start when ``--concurrency`` is passed, and the rewrite was
+    measured in the same minute as the start on both seats, so the grace absorbs the rewrite, clock
+    skew and a slow start.  ``None`` when either stamp is missing or unreadable.
+    """
+    mtime = parse_iso(mtime_utc)
+    anchor = parse_iso(anchor_utc)
+    if mtime is None or anchor is None:
+        return None
+    return mtime > anchor + float(grace_s)
+
+
+def graceful_stop_possible(*, kill_mode: str | None, stop_timeout_s: float | None,
+                           docker_stop_timeout_s: float | None = None, docker_init: bool | None = None) -> bool | None:
+    """Spec §5.5: systemd ``KillMode=control-group and TimeoutStopSec >= 30``; Docker ``StopTimeout >= 45 or Init``.
+
+    The Docker rule applies when either Docker keyword is given (``StopTimeout`` ``None`` is Docker's
+    10 s default); otherwise the systemd rule, ``None`` when its inputs are unknown.
+    """
+    if docker_stop_timeout_s is not None or docker_init is not None:
+        timeout = DOCKER_DEFAULT_STOP_TIMEOUT_S if docker_stop_timeout_s is None else float(docker_stop_timeout_s)
+        return bool(docker_init) or timeout >= MAC_GRACEFUL_STOP_TIMEOUT_S
+    if kill_mode is None or stop_timeout_s is None:
+        return None
+    return kill_mode == "control-group" and float(stop_timeout_s) >= VPS_GRACEFUL_STOP_TIMEOUT_S
+
+
+def divergence(*, local_stored_today: int | None, plane_rows_submitted_today: int | None) -> dict | None:
+    """The grammar-drift detector of the LEDGER footer (spec §7 ``today.divergence``); ``None`` when a side is unknown."""
+    local = _int_or_none(local_stored_today)
+    plane = _int_or_none(plane_rows_submitted_today)
+    if local is None or plane is None:
+        return None
+    return {"localStored": local, "planeRowsSubmittedToday": plane, "ok": local == plane}
+
+
+def _median(values: Sequence[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return float(ordered[mid])
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def _round_or_none(value: float | None) -> int | None:
+    return None if value is None else int(round(value))
+
+
+def rollup_today(rows: Sequence[Mapping], *, day_utc: str) -> dict:
+    """The §7 ``today`` block minus ``divergence`` over ledger rows (``SEAT_ROW_KEYS["seat_tasks_rows"]`` shape).
+
+    Local axis: ``tasks`` = rows accepted on *day_utc*, ``stored``/``notStored`` by ``storedUtc``,
+    ``p50S``/``longestS`` over ``durationS``.  Plane axis: ``accepted/rejected/failed/pending`` count
+    the rows' ``outcome`` words and are ``None`` only when the day has no rows at all (the widget then
+    reads ``no tasks yet today``); the two axes are never added (spec §2).
+    """
+    todays: list[Mapping] = []
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        accepted = parse_iso(row.get("acceptedUtc"))
+        if accepted is None or globals()["day_utc"](accepted) != day_utc:
+            continue
+        todays.append(row)
+    durations = [float(r["durationS"]) for r in todays if isinstance(r.get("durationS"), (int, float)) and not isinstance(r.get("durationS"), bool)]
+    lags = [float(r["verdictLagS"]) for r in todays if isinstance(r.get("verdictLagS"), (int, float)) and not isinstance(r.get("verdictLagS"), bool)]
+    verdict_stamps = [r["outcomeAsOfUtc"] for r in todays if parse_iso(r.get("outcomeAsOfUtc")) is not None]
+    stored = sum(1 for r in todays if r.get("storedUtc"))
+    counts: dict[str, int | None]
+    if todays:
+        counts = {word: sum(1 for r in todays if r.get("outcome") == word) for word in ("accepted", "rejected", "failed", "pending")}
+    else:
+        counts = {word: None for word in ("accepted", "rejected", "failed", "pending")}
+    return {
+        "dayUtc": day_utc,
+        "tasks": len(todays),
+        "stored": stored,
+        "notStored": len(todays) - stored,
+        "p50S": _round_or_none(_median(durations)),
+        "longestS": _round_or_none(max(durations)) if durations else None,
+        "accepted": counts["accepted"],
+        "rejected": counts["rejected"],
+        "failed": counts["failed"],
+        "pending": counts["pending"],
+        "verdictLagP50S": _round_or_none(_median(lags)),
+        "verdictsAsOfUtc": max(verdict_stamps, key=lambda s: parse_iso(s) or 0.0) if verdict_stamps else None,
+    }
