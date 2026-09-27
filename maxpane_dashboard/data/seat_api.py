@@ -107,3 +107,31 @@ def parse_json_tolerant(body: bytes | bytearray | str) -> Json:
     else:
         raise TypeError(f"parse_json_tolerant wants bytes or str, not {type(body).__name__}")
     return json.loads(strip_controls(text), strict=False)
+
+
+def drop_summaries(value: Json) -> Json:
+    """A copy of *value* with every ``summary`` key removed, at any depth.
+
+    Spec §6 names ``recentFailures[].summary`` and ``submissions[].summary`` (raw runtime error
+    text, once carrying a masked provider key); dropping the key wherever it appears is the
+    superset that needs no list of parents.  Nothing is mutated.
+    """
+    if isinstance(value, Mapping):
+        return {k: drop_summaries(v) for k, v in value.items() if k != "summary"}
+    if isinstance(value, list):
+        return [drop_summaries(v) for v in value]
+    return value
+
+
+def reason_word(value: object) -> str | None:
+    """The FailureReason enum word, ``REASON_OTHER`` for anything else, ``None`` for ``None``."""
+    if value is None:
+        return None
+    return value if isinstance(value, str) and value in FAILURE_REASONS else REASON_OTHER
+
+
+def failure_class_word(value: object) -> str | None:
+    """``infrastructure`` | ``machine`` | ``unclear`` (spec §6), ``REASON_OTHER`` otherwise, ``None`` for ``None``."""
+    if value is None:
+        return None
+    return value if isinstance(value, str) and value in FAILURE_CLASSES else REASON_OTHER

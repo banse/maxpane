@@ -80,3 +80,41 @@ def test_constants_match_the_contract():
     result = seat_api.ApiResult(ok=False, data=None, status=None, as_of_utc=None, reason="timeout", elapsed_s=0.0, route="/health")
     with pytest.raises(AttributeError):      # frozen dataclass
         result.ok = True                      # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Task 5.2 — summaries dropped, reasons as enum words
+# ---------------------------------------------------------------------------
+
+def test_drop_summaries_removes_every_summary_key_and_copies():
+    """Spec §6 traps: recentFailures[].summary and submissions[].summary are raw runtime error text
+    (a masked provider key sat in one on 09-25) and are dropped before parsing completes; nothing
+    else changes and the input is not mutated."""
+    src = {
+        "standing": {"recentFailures": [{"reason": "runtime_error", "summary": "401 Unauthorized … sk-svcac********", "jobId": JOB}]},
+        "submissions": [{"summary": "wrote outside the task's allowed paths: err.log", "hash": HEX}],
+        "nested": [[{"summary": "deep"}]],
+        "count": 2,
+    }
+    frozen = json.dumps(src, sort_keys=True)
+    out = seat_api.drop_summaries(src)
+    assert out == {
+        "standing": {"recentFailures": [{"reason": "runtime_error", "jobId": JOB}]},
+        "submissions": [{"hash": HEX}],
+        "nested": [[{}]],
+        "count": 2,
+    }
+    assert json.dumps(src, sort_keys=True) == frozen          # a copy, not an in-place edit
+    assert '"summary"' not in json.dumps(out)
+    assert seat_api.drop_summaries("summary") == "summary" and seat_api.drop_summaries(None) is None
+
+
+def test_reason_word_is_the_enum_word_or_other():
+    """Spec §6 rule 5: failure reasons are shown as the enum word, never a free-text summary."""
+    assert seat_api.reason_word("runtime_error") == "runtime_error"
+    assert seat_api.reason_word("budget_exhausted") == "budget_exhausted"        # wire enum member (fill1 §4)
+    assert seat_api.reason_word("401 Unauthorized: Incorrect API key provided") == "other"
+    assert seat_api.reason_word("RUNTIME_ERROR") == "other" and seat_api.reason_word(7) == "other"
+    assert seat_api.reason_word(None) is None
+    assert seat_api.failure_class_word("machine") == "machine"
+    assert seat_api.failure_class_word("weird") == "other" and seat_api.failure_class_word(None) is None
