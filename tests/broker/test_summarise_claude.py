@@ -152,3 +152,75 @@ def test_synthetic_model_is_an_error_not_a_model(tmp_path):
     s = scl.summarise_file(str(path), now=0.0)
     assert s["model"] == "claude-sonnet-5" and [e["status"] for e in s["apiErrors"]] == [400, 400, 400]
     assert s["tokens"]["output"] == 1267
+
+
+# ---- Task 4.8: the directory walk, hostile size, the CLI and the stdin path ------------------
+
+
+def _projects(tmp_path: Path) -> Path:
+    _place(tmp_path, "transcript_max_turns.jsonl", f"{TASK}doctor-Ab3dE9", mtime=1790300000.0)
+    _place(tmp_path, "transcript_multi_attempt/b.jsonl", f"{TASK}{HUNT_JOB}-{HUNT_NODE}", "b.jsonl", 1790310000.0)
+    _place(tmp_path, "transcript_f7b20ce4.jsonl", f"{TASK}{F7_JOB}-{F7_NODE}", mtime=1790385000.0)
+    return tmp_path / "projects"
+
+
+def test_claude_summarise_dir_walks_slug_dirs_only(tmp_path):
+    # spec §5.4: <root>/<slug>/*.jsonl, oldest first; symlinks and anything deeper or outside a slug dir are never read
+    root = _projects(tmp_path)
+    (root / f"{TASK}{F7_JOB}-{F7_NODE}" / "link.jsonl").symlink_to(SESSIONS / "transcript_cost_state_haiku.jsonl")
+    nested = root / f"{TASK}{F7_JOB}-{F7_NODE}" / "subagents"
+    nested.mkdir()
+    shutil.copyfile(SESSIONS / "transcript_cost_state_haiku.jsonl", nested / "deep.jsonl")
+    shutil.copyfile(SESSIONS / "transcript_cost_state_haiku.jsonl", root / "stray.jsonl")
+    result = scl.summarise_dir(str(root), since_mtime=0.0, budget_s=15.0, now=0.0)
+    assert [s["kind"] for s in result["sessions"]] == ["doctor", "task", "task"]
+    assert result["watermarkMtime"] == 1790385000.0 and result["zstdReadable"] is None and result["reason"] is None
+    later = scl.summarise_dir(str(root), since_mtime=1790310000.0, budget_s=15.0, now=0.0)
+    assert [s["nodeId"] for s in later["sessions"]] == [F7_NODE]
+
+
+def test_research_session_is_summarised_not_dropped(tmp_path):
+    # spec §5.4 research rule: a session in exactly -home-imd--identitymd-work is kept (the ledger joins it by time)
+    _place(tmp_path, "transcript_f7b20ce4.jsonl", "-home-imd--identitymd-work", mtime=1790385000.0)
+    _place(tmp_path, "transcript_f7b20ce4.jsonl", "-home-imd", mtime=1790385001.0)
+    result = scl.summarise_dir(str(tmp_path / "projects"), since_mtime=0.0, budget_s=15.0, now=0.0)
+    assert [(s["slug"], s["kind"]) for s in result["sessions"]] == [("-home-imd--identitymd-work", "research"),
+                                                                    ("-home-imd", "manual")]
+    assert result["sessions"][0]["tokens"]["output"] == 1267 and result["sessions"][0]["jobId"] is None
+
+
+def test_claude_oversize_file_and_line_are_skipped(tmp_path):
+    # spec §5.4 hostile size: a > 64 MiB transcript is never opened; a 2 MiB line is skipped unparsed and counted
+    slug = f"{TASK}{F7_JOB}-{F7_NODE}"
+    path = _place(tmp_path, "transcript_f7b20ce4.jsonl", slug)
+    fat = {"type": "user", "timestamp": "2026-09-26T01:10:20.000Z", "message": {"content": "B" * (2 * 1024 * 1024)}}
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(fat) + "\n")
+    huge = path.parent / "huge.jsonl"
+    with open(huge, "wb") as fh:
+        fh.write(b'{"type":"user"}\n')
+        fh.truncate(scl.MAX_FILE_BYTES + 1)
+    os.utime(huge, (1790390000.0, 1790390000.0))
+    result = scl.summarise_dir(str(tmp_path / "projects"), since_mtime=0.0, budget_s=15.0, now=0.0)
+    [s] = result["sessions"]
+    assert s["turns"] == 5 and s["skippedOversize"] == 1  # the 2 MiB user line would have made it 6
+    assert result["skipped"] == {"oversize": 2} and result["reason"].startswith("skipped 2 oversize")
+
+
+def test_main_prints_one_json_object(tmp_path, capsys):
+    root = _projects(tmp_path)
+    assert scl.main(["--root", str(root), "--since", "0", "--budget", "15"]) == 0
+    doc = json.loads(capsys.readouterr().out)
+    assert set(doc) == {"sessions", "skipped", "watermarkMtime", "zstdReadable", "reason"}
+    assert [s["kind"] for s in doc["sessions"]] == ["doctor", "task", "task"]
+
+
+def test_summariser_runs_from_stdin_like_docker_exec(tmp_path):
+    # spec §4.2: the Mac broker runs `docker exec -i imd-worker timeout -s TERM -k 5 20 python3 -` with this file on stdin
+    root = _projects(tmp_path)
+    done = subprocess.run([sys.executable, "-", "--root", str(root), "--since", "1790310000"], input=SCRIPT.read_bytes(),
+                          capture_output=True, timeout=60, env={"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path)},
+                          check=False)
+    assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+    doc = json.loads(done.stdout)
+    assert [s["tokens"] for s in doc["sessions"]] == [{"input": 10, "output": 1267, "cached": 149963, "cacheWrite": 0}]
