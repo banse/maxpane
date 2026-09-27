@@ -48,27 +48,43 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-#: PEPEPANE full-layout width. **Starting value 143 (contract §B); Task 8.13 measures it with**
-#: ``boundary_set`` on textual 8.2.8 and rewrites this block with the binder, the onsets and
-#: the payloads swept. Until then: six hero boxes at ``1fr`` give ~17 content cells each at
-#: 143, which every hero line's shortest form was designed to fit (widgets/seat/hero.py);
-#: NOW | LOG split 2fr:3fr, LEDGER | COST 3fr:2fr, CONFIG | MACHINE 1fr:1fr. The LEDGER's
-#: ``full`` tier costs 123 cells + gutter and is the named exception below.
-SEAT_FULL_LAYOUT_COLUMNS = 143
+#: PEPEPANE full-layout width, measured 2026-09-27 on textual 8.2.8.
+#: Both healthy and spec §14 worst payloads first stay whole at 134 columns,
+#: measured downward from 230 through 100 in the real screen containers.
+#: COST binds: at 133 it marks ‹ widen; at 134 only the named LEDGER exception
+#: marks. No hero clipping, hidden table columns, CSS-clipped line, row overflow
+#: or cropped status bar remains at the pin. The same pin holds at 50 rows.
+#: Six hero boxes remain 1fr; NOW/LOG 2:3, LEDGER/COST 3:2, CONFIG/MACHINE 1:1.
+#: The body reserves its scrollbar gutter, so height does not change this seam.
+#: The boundary certificate straddles 108 (tight table fits), 134 (body clears),
+#: 178 (compact tier), and 210 (full tier), plus the 100/230 band endpoints.
+#: LOG is raw unbounded scrollback: its own horizontal scrollbar advertises long
+#: lines and keeps their full redacted text accessible; it has no fixed row budget.
+SEAT_FULL_LAYOUT_COLUMNS = 134
 
-#: PEPEPANE full-layout height. **Starting value 42 (contract §B); Task 8.13 measures it.** The
-#: floors below sum to 1 (title) + 7 (hero) + 1 (the hero's ``margin: 0 0 1 0``) + 7 (row 1:
-#: NOW's five lines) + 14 (row 2: COST's nine rows + title + blank + the 3-line strip) + 19
-#: (row 3: CONFIG's twelve rows -- the #7 wrapper row included, plan deviation 14 -- + title +
-#: blank + a 4-row skills table + the one-line ``#seat-cfg-skills-footer``) + 1 (status bar)
-#: = 50, so the sweep is expected to move this number; the block is rewritten with what the
-#: sweep finds.
-SEAT_FULL_LAYOUT_ROWS = 42
+#: PEPEPANE full-layout height, measured 2026-09-27 on textual 8.2.8.
+#: Both healthy and worst payloads first stay whole at 50 rows, measured down
+#: from 70 through 24 at 150 columns and checked again at the column pin.
+#: At 49 the body scrolls and the screen-wide ‹ taller is lit; at 50 both are
+#: dark and no direct painting child lies below its panel. CONFIG binds row 3:
+#: twelve facts + title/blank + four-row skills table + its footer need 19 rows.
+#: Row floors are NOW/LOG 7, LEDGER/COST 14 and CONFIG/MACHINE 19; title 1,
+#: hero 7 plus bottom margin 1, and status bar 1 complete the measured height.
+#: The worst payload includes 31 skills, 20 ledger rows, 40 long log lines,
+#: three orphans and all hero states; unbounded tables/logs scroll internally.
+#: Boundary tests straddle 50 and the 24/70 endpoints; a tightness test rejects
+#: a larger pin even when every at-or-above geometry assertion would pass.
+SEAT_FULL_LAYOUT_ROWS = 50
 
-#: LEDGER's own clearance: the terminal width from which its ten-column ``full`` tier is whole
-#: inside the 3fr half of row 2. **Starting value 210; Task 8.13 measures it** (the RECORD
-#: precedent ``RECORD_NEVER_CLEARS_BELOW``). At the pin the LEDGER renders ``tight`` and marks
-#: ``‹ widen`` honestly (plan deviation 7).
+#: LEDGER full-tier clearance, measured 2026-09-27 on textual 8.2.8.
+#: Healthy fixture: first continuously full at 210 terminal columns (downward
+#: sweep from 260). At 209 it still marks; 210 and 211 show all ten columns.
+#: The full tier costs 123 content cells plus table gutter inside its 3fr share.
+#: Actual in-situ transitions: tight ceases horizontal scrolling at 108;
+#: compact begins at 178; full begins at 210. The body pin uses tight and an
+#: honest ‹ widen. Hidden columns remain forbidden from the body pin upward.
+#: Width boundary sets straddle each onset for healthy and worst payloads;
+#: the exception is the LEDGER mark, never hidden columns or region overflow.
 LEDGER_NEVER_CLEARS_BELOW = 210
 
 #: Restated from ``screens/surf.py`` (never imported from there -- the fork touches no surf module);
