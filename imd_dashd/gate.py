@@ -16,9 +16,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # python3 -I: no script dir
 
+import argparse
 import json
 import re
 import time
+import urllib.error
+import urllib.request
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 
@@ -190,3 +193,53 @@ def evaluate(*, journal_lines: Sequence[tuple[float, str]], standing: dict | Non
         last_lifecycle_line=last_line, lifecycle_open=lifecycle_open, outbox_files=outbox_files,
         unit_active=unit_active, graceful_stop_possible=graceful_stop_possible, unknown=unknown,
     )
+# ---------------------------------------------------------------- the plane half (dropped child)
+
+_urlopen = urllib.request.urlopen          # seam: tests monkeypatch this; production never does
+
+
+def fetch_standing_running(url: str, *, timeout_s: float = GATE_STANDING_TIMEOUT_S) -> dict:
+    """``GET /seats/<id>/standing`` -> ``{"running_count": len(standing.running), "at": iso}``; retry once.
+
+    Only the count leaves this child: root never sees objectives, reasons or summaries (spec §11 (b)).
+    Raises the last ``OSError``/``ValueError`` after the retry so the broker degrades to local-only.
+    """
+    last: Exception | None = None
+    for _attempt in range(2):
+        try:
+            request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "imd-dashd/0.1.0"})
+            with _urlopen(request, timeout=timeout_s) as response:
+                if getattr(response, "status", 200) >= 500:
+                    raise urllib.error.HTTPError(url, response.status, "server error", None, None)
+                body = json.loads(response.read().decode("utf-8", "replace"), strict=False)
+            standing = body.get("standing") if isinstance(body, dict) else None
+            running = standing.get("running") if isinstance(standing, dict) else None
+            if not isinstance(running, list):
+                raise ValueError("standing.running missing")
+            return {"running_count": len(running), "at": iso_utc_ms(time.time())}
+        except (OSError, ValueError) as exc:          # URLError/HTTPError/timeout are OSError subclasses
+            last = exc
+    assert last is not None
+    raise last
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="gate.py", add_help=False)
+    parser.add_argument("--standing", required=True)
+    parser.add_argument("--timeout", type=float, default=GATE_STANDING_TIMEOUT_S)
+    args = parser.parse_args(argv)
+    try:
+        result = fetch_standing_running(args.standing, timeout_s=args.timeout)
+    except (OSError, ValueError) as exc:
+        sys.stdout.write(json.dumps({"error": exc.__class__.__name__}) + "\n")
+        return 1
+    sys.stdout.write(json.dumps(result) + "\n")
+    return 0
+
+
+__all__ = ["ACCEPTED_RE", "GATE_STANDING_MAX_AGE_S", "GATE_STANDING_TIMEOUT_S", "GateResult", "HEARTBEAT_RE",
+           "IDLE_BEATS_REQUIRED", "IDLE_WINDOW_S", "TERMINAL_RE", "evaluate", "fetch_standing_running",
+           "idle_beats", "iso_utc", "iso_utc_ms", "main", "newest_lifecycle", "parse_iso"]
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -139,3 +139,66 @@ def test_plane_half_is_local_only_when_offline_failed_or_stale():
     assert result.plane["mode"] == "local-only" and result.plane["standing_age_s"] == 25.0
     assert ok_gate(offline=True).safe is True           # local checks pass; the broker demands the typed ack
     assert ok_gate(standing={"running_count": 1, "at": gate.iso_utc_ms(NOW - 0.3)}).reason == "plane reports 1 running"
+# ---------------------------------------------------------------- the dropped urllib child (Task 6.5)
+
+import urllib.error  # noqa: E402
+
+from imd_dashd.gate import fetch_standing_running  # noqa: E402
+
+
+class _Response:
+    def __init__(self, body: object, status: int = 200) -> None:
+        self._body = json.dumps(body).encode()
+        self.status = status
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+def test_fetch_standing_running_returns_only_the_count_and_retries_once(monkeypatch):
+    # spec §11 (b): "returns only {running_count, at} to root"; retry once on failure
+    calls: list[str] = []
+    bodies = iter([urllib.error.URLError("boom"), _Response({"standing": {"running": [{"jobId": "j", "objective": "secret prose"}]}})])
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        item = next(bodies)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    monkeypatch.setattr(gate, "_urlopen", fake_urlopen)
+    result = fetch_standing_running("https://api.imd.fun/seats/7/standing", timeout_s=8)
+    assert set(result) == {"running_count", "at"} and result["running_count"] == 1
+    assert gate.parse_iso(result["at"]) is not None and result["at"][-5] == "."   # millisecond stamp
+    assert calls == ["https://api.imd.fun/seats/7/standing"] * 2
+    assert "objective" not in json.dumps(result)
+
+
+def test_fetch_standing_running_raises_after_two_failures_and_on_bad_shape(monkeypatch):
+    monkeypatch.setattr(gate, "_urlopen", lambda request, timeout: _Response({"standing": {}}))
+    with pytest.raises(ValueError):
+        fetch_standing_running("https://api.imd.fun/seats/7/standing")
+    monkeypatch.setattr(gate, "_urlopen", lambda request, timeout: _Response({"error": "shm"}, status=500))
+    with pytest.raises(urllib.error.HTTPError):
+        fetch_standing_running("https://api.imd.fun/seats/7/standing")
+
+
+def test_main_prints_one_json_line_and_exit_codes(monkeypatch, capsys):
+    monkeypatch.setattr(gate, "_urlopen", lambda request, timeout: _Response({"standing": {"running": []}}))
+    assert gate.main(["--standing", "https://api.imd.fun/seats/7/standing"]) == 0
+    out = capsys.readouterr().out
+    assert out.count("\n") == 1 and json.loads(out)["running_count"] == 0
+
+    def down(request, timeout):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(gate, "_urlopen", down)
+    assert gate.main(["--standing", "https://api.imd.fun/seats/7/standing", "--timeout", "1"]) == 1
+    assert json.loads(capsys.readouterr().out) == {"error": "URLError"}
