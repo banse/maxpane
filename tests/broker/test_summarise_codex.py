@@ -140,3 +140,81 @@ def test_unreadable_and_non_regular_files_return_none(tmp_path):
     assert sc.summarise_file(str(tmp_path / "missing.jsonl"), work_root=WORK, now=0.0) is None
     assert sc.summarise_file(str(link), work_root=WORK, now=0.0) is None  # a task could plant a link to config.json
     assert sc.summarise_file(str(target.parent), work_root=WORK, now=0.0) is None
+
+
+# ---- Task 4.3: research, doctor, manual and the 401 failure shapes ---------------------------
+
+
+def test_clean_run_has_no_failure_flags(tmp_path):
+    # spec §10 failure signature inputs: a normal completion reports all three flags False and no apiErrors
+    s = sc.summarise_file(str(_copy(tmp_path, "rollout_task.jsonl")), work_root=WORK, now=0.0)
+    assert (s["lastAgentMessageEmpty"], s["tokenCountInfoMissing"], s["taskCompleteErrorPresent"]) == (False, False, False)
+    assert s["apiErrors"] == []
+
+
+def test_research_rollout_is_the_work_root(tmp_path):
+    # fill6 §2/§6: cwd = work root, no model passed (wrapper gpt-5.6-luna), 69,624 / 45,056 / 2,835, 0.9 s after the accept
+    s = sc.summarise_file(str(_copy(tmp_path, "rollout_research_workroot.jsonl")), work_root=WORK, now=0.0)
+    assert (s["kind"], s["jobId"], s["nodeId"]) == ("research", None, None)
+    assert s["tokens"] == {"input": 24568, "output": 2835, "cached": 45056, "cacheWrite": 0}
+    assert (s["model"], s["turns"], s["startedUtc"]) == ("gpt-5.6-luna", 2, "2026-09-25T18:08:55.921Z")
+
+
+def test_doctor_and_manual_rollouts_are_labelled(tmp_path):
+    # spec §10 exclusions: work/doctor-* (11 rollouts), /tmp (7), /home/imd-worker (2) -- labelled, never tasks
+    assert sc.summarise_file(str(_copy(tmp_path, "rollout_doctor.jsonl")), work_root=WORK, now=0.0)["kind"] == "doctor"
+    text = (SESSIONS / "rollout_task.jsonl").read_text(encoding="utf-8")
+    for n, cwd in enumerate(("/tmp", "/home/imd-worker")):
+        swapped = text.replace(f"{WORK}/{JOB}/{NODE}", cwd)
+        path = _write(tmp_path, swapped.splitlines(), f"2026/09/22/rollout-2026-09-22T12-0{n}-00-manual.jsonl")
+        s = sc.summarise_file(str(path), work_root=WORK, now=0.0)
+        assert (s["kind"], s["jobId"]) == ("manual", None)
+
+
+def test_committed_401_rollout_trips_the_failure_fields(tmp_path):
+    # spec §10: whichever of the two readings the committed rollout_401.jsonl records, it matches the signature
+    s = sc.summarise_file(str(_copy(tmp_path, "rollout_401.jsonl", "2026/09/25/rollout-2026-09-25T23-36-05-0401.jsonl")),
+                          work_root=WORK, now=0.0)
+    assert s["kind"] == "task" and sc.UUID_RE.fullmatch(s["jobId"] or "") and sc.UUID_RE.fullmatch(s["nodeId"] or "")
+    assert s["lastAgentMessageEmpty"] is True
+    assert s["tokenCountInfoMissing"] is True or s["taskCompleteErrorPresent"] is True
+
+
+def _shape(kind: str) -> list[str]:
+    """The 401 rollout with its token_count and task_complete lines rewritten to one reading (spec §10)."""
+    lines = (SESSIONS / "rollout_401.jsonl").read_text(encoding="utf-8").splitlines()
+    head = [line for line in lines if '"token_count"' not in line and '"task_complete"' not in line]
+    info = None if kind in ("A", "B") else {"total_token_usage": {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0}}
+    complete = {"type": "task_complete", "turn_id": "turn-1", "duration_ms": 31101, "time_to_first_token_ms": None,
+                "last_agent_message": "" if kind == "A" else None}
+    if kind in ("B", "C"):
+        complete["error"] = {"message": "unexpected status 401 Unauthorized: Incorrect API key provided: sk-svcac********, "
+                                        "url: https://chatgpt.com/backend-api/codex/responses"}
+    return head + [
+        json.dumps({"timestamp": "2026-09-25T23:36:05.690Z", "type": "event_msg", "payload": {"type": "token_count", "info": info}}),
+        json.dumps({"timestamp": "2026-09-25T23:36:36.314Z", "type": "event_msg", "payload": complete}),
+    ]
+
+
+@pytest.mark.parametrize("kind, flags, status", [
+    ("A", (True, True, False), None),  # cost §4: last_agent_message "" + token_count.info null, no error event
+    ("B", (True, True, True), 401),  # vps §4: last_agent_message null + task_complete.error.message
+    ("C", (True, False, True), 401),  # null + error with a usage report present: the error clause alone
+])
+def test_both_401_shapes_set_the_signature_fields(tmp_path, kind, flags, status):
+    path = _write(tmp_path, _shape(kind), f"2026/09/25/rollout-2026-09-25T23-36-05-{kind}.jsonl")
+    s = sc.summarise_file(str(path), work_root=WORK, now=0.0)
+    assert (s["lastAgentMessageEmpty"], s["tokenCountInfoMissing"], s["taskCompleteErrorPresent"]) == flags
+    assert [e["status"] for e in s["apiErrors"]] == ([status] if status else [])
+    assert s["tokens"] == {"input": 0, "output": 0, "cached": 0, "cacheWrite": 0}
+
+
+def test_api_error_message_is_raw_for_the_caller_to_redact(tmp_path):
+    # contract §C.8: the summariser passes apiErrors[].message on unredacted; the broker redacts it (spec §13)
+    from maxpane_dashboard.analytics.seat_redact import SK_RE, redact
+
+    s = sc.summarise_file(str(_write(tmp_path, _shape("B"), "2026/09/25/rollout-2026-09-25T23-36-05-raw.jsonl")),
+                          work_root=WORK, now=0.0)
+    message = s["apiErrors"][0]["message"]
+    assert "sk-svcac********" in message and s["apiErrors"][0]["atUtc"] == "2026-09-25T23:36:36.314Z"
+    assert SK_RE.search(redact(message)) is None and "sk-[redacted]" in redact(message)

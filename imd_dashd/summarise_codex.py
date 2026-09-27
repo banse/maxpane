@@ -233,6 +233,7 @@ def summarise_file(path: str, *, work_root: str, now: float, clock=time.monotoni
     turns = 0
     turn1 = None
     task_complete = None
+    task_complete_ts = None
     try:
         with _open(path) as fh:
             for raw in iter_bounded_lines(fh, counts, deadline=clock() + wall_s, clock=clock):
@@ -271,6 +272,7 @@ def summarise_file(path: str, *, work_root: str, now: float, clock=time.monotoni
                             quota = sample
                     elif event == "task_complete":
                         task_complete = payload
+                        task_complete_ts = ts
     except _WallClock:
         session["error"] = "per-file wall clock exceeded"
     except _TooBig:
@@ -286,6 +288,7 @@ def summarise_file(path: str, *, work_root: str, now: float, clock=time.monotoni
         return session  # partial parse: classification kept, figures withheld (None, never a partial sum)
     session["turns"] = turns
     session["turn1Context"] = turn1
+    session["tokenCountInfoMissing"] = total_usage is None
     if total_usage is not None:
         raw_input = _int(total_usage.get("input_tokens")) or 0
         cached = _int(total_usage.get("cached_input_tokens")) or 0
@@ -295,7 +298,23 @@ def summarise_file(path: str, *, work_root: str, now: float, clock=time.monotoni
             "cached": cached,
             "cacheWrite": _int(total_usage.get("cache_write_input_tokens")) or 0,
         }
+    elif task_complete is not None:
+        # finished without a usage report: the runtime consumed nothing it reported (API: all zero, cost §4)
+        session["tokens"] = {"input": 0, "output": 0, "cached": 0, "cacheWrite": 0}
     if task_complete is not None:
         session["ttftMs"] = _int(task_complete.get("time_to_first_token_ms"))
         session["wallMs"] = _int(task_complete.get("duration_ms"))
+        session["lastAgentMessageEmpty"] = task_complete.get("last_agent_message") in ("", None)
+        error = task_complete.get("error")
+        present = error not in (None, "", {}, [])
+        session["taskCompleteErrorPresent"] = present
+        if present:
+            message = error.get("message") if isinstance(error, dict) else error
+            message = message if isinstance(message, str) else json.dumps(error)[:MESSAGE_CAP]
+            match = STATUS_RE.search(message)
+            session["apiErrors"] = [{"status": int(match.group(1)) if match else None,
+                                     "message": message[:MESSAGE_CAP], "atUtc": iso_ms(task_complete_ts)}]
+    else:
+        session["lastAgentMessageEmpty"] = False
+        session["taskCompleteErrorPresent"] = False
     return session
