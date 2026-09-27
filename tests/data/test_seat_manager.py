@@ -1260,3 +1260,104 @@ async def test_once_journal_gap_fallback_shares_total_deadline(tmp_path, monkeyp
         await m.fetch_and_compute()
         assert m.document()["tasks"]["window"]["gapNote"].startswith("gap ")
     await m.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 7.12 — the fixture host and the three dev-mode cases
+# ---------------------------------------------------------------------------
+
+
+async def _run_case(name, *, cycles=2):
+    m = sm_mod.build_fixture_manager(FIXTURES / name)
+    assert m.start_tail() is True
+    expected = len((FIXTURES / name / "log.txt").read_text(encoding="utf-8").splitlines())
+    deadline = time.monotonic() + 5.0
+    while m.pending_lines() < expected and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+    flat = None
+    for _ in range(cycles):
+        flat = await m.fetch_and_compute()
+        await m.settle()
+    flat = await m.fetch_and_compute()
+    return m, flat
+
+
+def test_load_case_inherits_sibling_dirs():
+    # deviation 9: tail_dead/ and api_down/ carry case.json + log.txt and inherit broker/, api/, unit/ from healthy/
+    healthy = sm_mod.load_case(FIXTURES / "healthy")
+    assert (healthy["seat"], healthy["agent"], healthy["runtime"], healthy["host"], healthy["tail_exit_code"]) == (7, 51075, "codex", "systemd", 0)
+    assert healthy["now_utc"] == "2026-09-26T03:40:12Z" and healthy["api_mode"] == "fixtures"
+    assert healthy["broker_dir"] == FIXTURES / "healthy" / "broker" and healthy["unit_dir"] == FIXTURES / "healthy" / "unit"
+    dead = sm_mod.load_case(FIXTURES / "tail_dead")
+    assert dead["tail_exit_code"] == 1 and dead["log"] == FIXTURES / "tail_dead" / "log.txt"
+    assert dead["broker_dir"] == FIXTURES / "healthy" / "broker" and dead["api_dir"] == FIXTURES / "healthy" / "api"
+    down = sm_mod.load_case(FIXTURES / "api_down")
+    assert down["api_mode"] == "down" and down["api_dir"] is None and down["unit_dir"] == FIXTURES / "healthy" / "unit"
+
+
+def test_fixture_api_handler_maps_routes_and_can_be_down():
+    handler = sm_mod.fixture_api_handler(FIXTURES / "healthy" / "api", seat=7)
+    ok = handler(httpx.Request("GET", "https://api.imd.fun/seats/7/standing"))
+    assert ok.status_code == 200 and json.loads(ok.content)["standing"]["working"] == 1
+    assert handler(httpx.Request("GET", "https://api.imd.fun/seats/7?work=60&reviews=0")).status_code == 200
+    assert handler(httpx.Request("GET", "https://api.imd.fun/health")).status_code == 200
+    assert handler(httpx.Request("GET", "https://api.imd.fun/jobs/b1fb1439-0000-4000-8000-000000000000/submissions")).status_code == 404
+    assert handler(httpx.Request("GET", "https://api.imd.fun/workers")).status_code == 404
+    down = sm_mod.fixture_api_handler(None, seat=7)
+    assert down(httpx.Request("GET", "https://api.imd.fun/health")).status_code == 500
+
+
+async def test_fixture_host_healthy_case_is_green_and_fully_populated():
+    # spec §4.4: the same screen with a replayed log, FakeBroker fixtures and an api transport of fixture bodies -- no host, no network
+    m, flat = await _run_case("healthy")
+    doc = m.document()
+    assert models.validate_status_document(doc) is None and "$" not in json.dumps(doc)
+    assert flat["seat_hero_state"] == "green" and flat["seat_hero_reasons"] == []
+    assert flat["seat_token_id"] == 7 and flat["seat_agent_id"] == 51075 and flat["seat_device_key_public"] == "72b617d4"
+    assert flat["seat_daemon_state"] == "alive" and flat["seat_daemon_idle_beats"] >= 4 and flat["seat_daemon_fleet_online"] == 406
+    assert flat["seat_tasks_rows"][0]["hash12"] == "c4d9714ffb95" and flat["seat_tasks_rows"][0]["outcome"] in ("unknown", "accepted", "pending")
+    assert flat["seat_standing_working"] == 1 and flat["seat_queue"]["ready"] == 27 and flat["seat_plane_connected_daemons"] == 409
+    assert flat["seat_unit_active_state"] == "active" and flat["seat_unit_graceful_stop_possible"] is True
+    assert flat["seat_control_broker_reachable"] is True and flat["seat_control_gate"]["safe"] is True
+    assert flat["seat_cost_tasks"] is not None and flat["seat_quota"]["provider"] == "codex"
+    assert flat["seat_machine_work_dirs"] == 288 and flat["seat_skills_offered"] == 31
+    assert all(src["ok"] is True for src in doc["sources"].values()), {k: v for k, v in doc["sources"].items() if v["ok"] is not True}
+    assert flat["seat_log_footer"].startswith("tail: fixture replay") and flat["seat_ledger_footer"].startswith("fixture log")
+    await m.close()
+
+
+async def test_fixture_host_tail_dead_case_is_red_with_local_panels_stale():
+    m, flat = await _run_case("tail_dead")
+    doc = m.document()
+    assert doc["sources"]["tail"]["ok"] is False and doc["sources"]["tail"]["reason"].startswith("tail: exited rc=1")
+    assert flat["seat_hero_state"] == "red" and "tail exited" in flat["seat_hero_reasons"]
+    assert flat["seat_daemon_state"] is None, "tail-fed keys are gated"
+    assert flat["seat_standing_working"] == 1 and flat["seat_unit_active_state"] == "active", "everything else is inherited from healthy/"
+    await m.close()
+
+
+async def test_fixture_host_api_down_case_keeps_local_panels():
+    m, flat = await _run_case("api_down", cycles=3)
+    doc = m.document()
+    # the plane reason is `services: 500 …; health: 500 …` (both halves failed), so the check is `"500" in`, not startswith
+    for name in ("standing", "seatWork", "plane"):
+        assert doc["sources"][name]["ok"] is False and "500" in doc["sources"][name]["reason"], name
+        assert doc["sources"][name]["unavailable"] is True, "no last-good ever: unavailable at once"
+    assert doc["sources"]["reasons"]["ok"] is True, "no row ever became `failed` (seatwork never landed), so nothing was fetched"
+    assert flat["seat_hero_state"] == "green" and flat["seat_daemon_state"] == "alive" and flat["seat_daemon_fleet_online"] is None
+    assert flat["seat_standing_working"] is None and flat["seat_queue"] is None and flat["seat_tasks_rows"][0]["outcome"] == "unknown"
+    assert flat["seat_offline"] is False, "api down is not --offline"
+    await m.close()
+
+
+async def test_fixture_manager_honours_offline_seat_agent_and_poll_interval():
+    # WP8 deviation 10: seat_cli.build_manager hands --offline / --seat / --agent / --poll-interval to the fixture host
+    m = sm_mod.build_fixture_manager(FIXTURES / "healthy", offline=True, seat=7, agent=51075, poll_interval=3)
+    assert m._api is None and m.broker.offline is True, "--offline builds no api client and marks every plan offline"
+    await m.fetch_and_compute()
+    await m.settle()
+    flat = await m.fetch_and_compute()
+    doc = m.document()
+    assert not any(name in doc["sources"] for name in ("standing", "seatWork", "reasons", "plane")), "--offline removes the API sources"
+    assert doc["pollInterval"] == 3 and flat["seat_offline"] is True and doc["seat"]["agentId"] == 51075
+    await m.close()

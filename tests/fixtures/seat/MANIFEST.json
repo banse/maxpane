@@ -954,6 +954,284 @@
       "synthetic": false,
       "daemon_version": null,
       "notes": ""
+    },
+    "api_down/case.json": {
+      "origin": "hand-written case descriptor (contract §D)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "d40bc70465930fafdd4250359abd1ce1a57cf4f2e3315bc038f282f21c844a97",
+      "bytes": 223,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case: inherits healthy/ (broker, unit); every api request answers 500; heartbeats lack the fleet clause as measured when /health fails"
+    },
+    "api_down/log.txt": {
+      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps §3, fill6 §1); stamps chosen to match status_v2_healthy.json",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "7ece4a1cddf87630ff48d634139724f2101b7e3f920b36aae29126f061f85843",
+      "bytes": 1227,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case: inherits healthy/ (broker, unit); every api request answers 500; heartbeats lack the fleet clause as measured when /health fails"
+    },
+    "healthy/api/health.json": {
+      "origin": "copied from tests/fixtures/seat/api/ (WP5 synthetic bodies)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "90a1bf9f79e1881dcc8a318eb81194306d28e85049a00e7cec462c1e5ec29543",
+      "bytes": 865,
+      "redactions": [
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/api/seat_work.json": {
+      "origin": "copied from tests/fixtures/seat/api/ (WP5 synthetic bodies)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "2524d1446d17a6da2cb63e57ddeb8a3516ee7d07a630be7487056670015b7a59",
+      "bytes": 10620,
+      "redactions": [
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/api/services.json": {
+      "origin": "copied from tests/fixtures/seat/api/ (WP5 synthetic bodies)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "a539c459b88f59c66f64ccabcb7e77b4b7f15b401491309869735e9b153c33d5",
+      "bytes": 412,
+      "redactions": [
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/api/standing.json": {
+      "origin": "copied from tests/fixtures/seat/api/ (WP5 synthetic bodies)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "0dd03510d06e6991db48a8808173fedbef18e292e6edc8d1dd083ae696bd2c25",
+      "bytes": 2364,
+      "redactions": [
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/audit-tail.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "81bbcb0ba0c81e12f725b59ba1185652996bb0e3da1cae6f16086c53c6526406",
+      "bytes": 379,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/auth-mtime.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "27cd0a93088284818016a7e22591fe7b94bb3538688a74fb8f95af868e6dfb22",
+      "bytes": 73,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/gate.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "a12581cdf82988ff3657ad360a07765378f3b4edc303b927fd3a4687b290a2f7",
+      "bytes": 454,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/hints-stat.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "17b77aba024fdc497d0a504f576eac667450d9b593a799029c1f8e8c747fbcaa",
+      "bytes": 112,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/orphans.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "ad211a82dcba4781fae8ee4c73c0954b2b66a29db98c2f709c1bf01fc2ef98a0",
+      "bytes": 23,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/outbox.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "8fd5cabed0e309af100b0d21afb9740c38b474cb2063b82bad2c145abe64bc59",
+      "bytes": 17,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/ping.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "fc035c62c5f660d3971f1dea0b867e51c437b78d3b5cb546892920057e462836",
+      "bytes": 137,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/seat.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "38da09c06f1b28f83880ea5424257708d958ca1a3c762dca4c512ce08ceffb56",
+      "bytes": 642,
+      "redactions": [
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/sessions.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "04165f0a47c0d44e80c17a9f8f6b0900ab5b896a3f744cf97f6bca0699f4b30d",
+      "bytes": 1486,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/skills.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "1cdee0af4c3311cb68a5a0a0da8f3e7d78995f000aca6e1e929efd77839e858f",
+      "bytes": 208,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/status.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "e88f3d6a88cf305b064d7e3aa96086c6510a39aaa05005190a0a1c0221a2f9f7",
+      "bytes": 419,
+      "redactions": [
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/tools.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "acdc0dceed766008f1f6b7994af9e68c1455c604ef40448b98e3d4ac175136bc",
+      "bytes": 130,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/whoami.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "cffe79b11e07d9e2c3f5ad367899948d3ed13bce30d5d28fe5c4e0035c807133",
+      "bytes": 86,
+      "redactions": [
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/broker/work-stat.json": {
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "112a275c481a22a1ef0cea5b12e3c237559a84faab2340c76f7e78db263825c9",
+      "bytes": 265,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/case.json": {
+      "origin": "hand-written case descriptor (contract §D)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "2ae8d6895590d8db121983f43a6d91f18aa4b7db8878ef0a64e9112d56b66eb2",
+      "bytes": 203,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/log.txt": {
+      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps §3, fill6 §1); stamps chosen to match status_v2_healthy.json",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "25c447f721c084bab48f59136600d46266b4b57f6c7f2ea0de9e3b40c152f014",
+      "bytes": 2126,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "healthy/unit/systemctl_show.txt": {
+      "origin": "hand-composed `systemctl show imd-worker.service --timestamp=utc -p …` output with the vps §1 values",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "5290e9604bea1a5dfa3001c03adc0427f61a5ac6150b9549df442209e633159a",
+      "bytes": 609,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
+    },
+    "tail_dead/case.json": {
+      "origin": "hand-written case descriptor (contract §D)",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "97d81afeb5f98aee763a173c5ae33332cd3808ef3349196b438efdb27820f1ec",
+      "bytes": 227,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case: inherits healthy/ (broker, api, unit); the log source exits rc=1 so the follower reports `tail: exited` (hero red)"
+    },
+    "tail_dead/log.txt": {
+      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps §3, fill6 §1); stamps chosen to match status_v2_healthy.json",
+      "captured_at": "2026-09-26T10:00:00Z",
+      "sha256": "5823ad851eb32d7db7a88c343b8ac3bb88ef84cdccd24cb9ec7437be6c3a49db",
+      "bytes": 1205,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "dev-mode case: inherits healthy/ (broker, api, unit); the log source exits rc=1 so the follower reports `tail: exited` (hero red)"
     }
   }
 }

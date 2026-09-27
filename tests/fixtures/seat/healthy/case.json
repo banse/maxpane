@@ -1,0 +1,11 @@
+{
+  "seat": 7,
+  "agent": 51075,
+  "runtime": "codex",
+  "host": "systemd",
+  "hostname": "ubuntu",
+  "time_scale": null,
+  "nowUtc": "2026-09-26T03:40:12Z",
+  "tail_exit_code": 0,
+  "api": "fixtures"
+}

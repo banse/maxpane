@@ -1,0 +1,16 @@
+{
+  "lines": [
+    "config /home/imd-worker/.identitymd/config.json",
+    "server https://api.imd.fun",
+    "device scrubbed-7",
+    "token 7",
+    "capacity 1 concurrent task(s)",
+    "✗ claude not found",
+    "→ codex codex-cli 0.157.0",
+    "tasks run on: codex",
+    "offers: code, fuzz, research",
+    "server active: eligible — this machine can receive work"
+  ],
+  "rc": 0,
+  "unit": "imd-dash-status-1"
+}

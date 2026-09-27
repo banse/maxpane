@@ -1,0 +1,30 @@
+{
+  "server": "https://api.imd.fun",
+  "deviceKey": "72b617d400000000000000000000000000000000000000000000000000000000",
+  "wallet": "0x887b9f1234567890abcdef1234567890abcdef12",
+  "tokenId": 7,
+  "maxConcurrency": 1,
+  "skillsOptOut": [],
+  "inference": {
+    "economy": {
+      "codex": {
+        "model": "gpt-6-luna",
+        "effort": "medium"
+      }
+    },
+    "standard": {
+      "codex": {
+        "model": "gpt-6-luna",
+        "effort": "medium"
+      }
+    },
+    "premium": {
+      "codex": {
+        "model": "gpt-6-astra",
+        "effort": "xhigh"
+      }
+    }
+  },
+  "tools": [],
+  "configMtimeUtc": "2026-09-25T11:45:00Z"
+}

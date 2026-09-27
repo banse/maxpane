@@ -1,0 +1,20 @@
+{
+  "verifier": {
+    "version": "0.1.0+aa634633",
+    "up": true,
+    "lastSeenAt": "2026-09-26T03:32:58.104Z",
+    "claims": 1568791
+  },
+  "publisher": {
+    "version": "0.1.0+aa634633",
+    "up": true,
+    "lastSeenAt": "2026-09-26T03:32:41.771Z",
+    "claims": 2150
+  },
+  "deployer": {
+    "version": "0.1.0+aa634633",
+    "up": true,
+    "lastSeenAt": "2026-09-26T03:32:12.009Z",
+    "claims": 1804
+  }
+}

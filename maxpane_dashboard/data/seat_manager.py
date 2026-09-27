@@ -1465,3 +1465,127 @@ __all__ = [
     "TIER_SEATWORK_SETTLED_S", "TIER_SESSIONS_S", "TIER_SOURCES", "TIER_STANDING_PLAN_OPEN_S", "TIER_STANDING_S", "TIER_TTL_S",
     "TIER_UNIT_S", "TIER_WORKSTAT_S",
 ]
+
+
+# ---------------------------------------------------------------------------
+# the fixture host (spec §4.4): --host fixture --fixture tests/fixtures/seat/<case>/
+# ---------------------------------------------------------------------------
+
+
+def load_case(case_dir: str | Path) -> dict:
+    """Read ``case.json``; a case may ``inherit`` a sibling's ``broker/``, ``api/`` and ``unit/`` dirs (deviation 9)."""
+    case_path = Path(case_dir)
+    case = json.loads((case_path / "case.json").read_text(encoding="utf-8"))
+    inherit = case.get("inherit")
+    base = case_path.parent / str(inherit) if isinstance(inherit, str) and inherit else None
+
+    def pick(sub: str) -> Path | None:
+        own = case_path / sub
+        if own.is_dir():
+            return own
+        if base is not None and (base / sub).is_dir():
+            return base / sub
+        return None
+
+    api_mode = str(case.get("api", "fixtures"))
+    host = str(case.get("host", SYSTEMD_HOST))
+    if host not in HOST_KINDS:
+        raise ValueError(f"case.json host must be one of {HOST_KINDS}, not {host!r}")
+    return {
+        "dir": case_path,
+        "seat": int(case.get("seat", 7)),
+        "agent": int(case["agent"]) if isinstance(case.get("agent"), int) and not isinstance(case.get("agent"), bool) else None,
+        "runtime": str(case.get("runtime", "codex")),
+        "host": host,
+        "time_scale": case.get("time_scale"),
+        "now_utc": case.get("nowUtc"),
+        "tail_exit_code": int(case.get("tail_exit_code", 0)),
+        "api_mode": api_mode,
+        "log": case_path / "log.txt",
+        "broker_dir": pick("broker"),
+        "api_dir": None if api_mode == "down" else pick("api"),
+        "unit_dir": pick("unit"),
+        "hostname": str(case.get("hostname", "fixture")),
+    }
+
+
+def fixture_api_handler(api_dir: Path | None, *, seat: int) -> Callable[[httpx.Request], httpx.Response]:
+    """An ``httpx.MockTransport`` handler serving the case's api bodies; ``api_dir=None`` answers 500 to everything (api down)."""
+    headers = {"content-type": "application/json"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if api_dir is None:
+            return httpx.Response(500, json={"error": "internal_error", "detail": "fixture case: api down"})
+        path = request.url.path
+        name: str | None = None
+        if path == f"/seats/{seat}/standing":
+            name = "standing.json"
+        elif path == f"/seats/{seat}":
+            name = "seat_work.json"
+        elif path.startswith("/jobs/") and path.endswith("/submissions"):
+            name = f"job_{path.split('/')[2][:8]}_submissions.json"
+        elif path == "/health":
+            name = "health.json"
+        elif path == "/services":
+            name = "services.json"
+        if name is None or not (api_dir / name).is_file():
+            return httpx.Response(404, json={"error": "not_found"})
+        return httpx.Response(200, content=(api_dir / name).read_bytes(), headers=headers)
+
+    return handler
+
+
+def build_fixture_manager(case_dir: str | Path, *, now: Clock | None = None, offline: bool = False, seat: int | None = None,
+                          agent: int | None = None, poll_interval: int = 5) -> SeatManager:
+    """The dev-mode manager: a replayed log, FakeBroker payloads, fixture api bodies, a fixture unit reader; touches no host.
+
+    The clock is *now*, else the case's fixed ``nowUtc`` (deterministic screenshots), else the wall clock.
+    The ledger and tail state live in a fresh temporary directory, never in ``~/.maxpane``.  ``offline``, ``seat``,
+    ``agent`` and ``poll_interval`` are pepepane's own flags (WP8 deviation 10): ``--offline`` builds no api client at
+    all, ``seat``/``agent`` override the case's values.
+    """
+    import tempfile
+
+    case = load_case(case_dir)
+    if now is not None:
+        clock: Clock = now
+    else:
+        fixed = sig.parse_iso(case["now_utc"])
+        clock = (lambda: fixed) if fixed is not None else time.time      # type: ignore[assignment]
+    lines = case["log"].read_text(encoding="utf-8").splitlines() if case["log"].is_file() else []
+    exit_code = case["tail_exit_code"]
+    seat_id = seat if seat is not None else case["seat"]
+    served = {"first": True}
+
+    def factory(state: TailState) -> LineSource:
+        if served["first"]:
+            served["first"] = False
+            source = ListLineSource(lines, exit_code=exit_code, time_scale=case["time_scale"])
+            # a clean replay holds the attach open (never `tail: exited rc=0` for good); tail_dead/ keeps its dying source
+            return _ReplaySource(source) if exit_code == 0 else source
+        if exit_code:
+            return ListLineSource([], exit_code=exit_code)       # a follower that keeps dying (tail_dead/)
+        return _QuietSource()
+
+    if case["broker_dir"] is None:
+        broker: BrokerProtocol = FakeBroker(reachable=False)
+    else:
+        responses = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in sorted(case["broker_dir"].glob("*.json"))}
+        broker = FakeBroker(responses=responses)
+    api = None if offline else seat_api.SeatApiClient(
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(fixture_api_handler(case["api_dir"], seat=seat_id))),
+        now=clock,
+    )
+    unit_reader = FixtureUnitReader(case["unit_dir"].parent) if case["unit_dir"] is not None else None
+    scratch = Path(tempfile.mkdtemp(prefix="pepepane-fixture-"))
+    manager = SeatManager(
+        tail=factory, broker=broker, api=api, unit_reader=unit_reader, now=clock,
+        host=case["host"], unit="imd-worker.service", container="imd-worker" if case["host"] == DOCKER_HOST else None,
+        runtime=case["runtime"], seat=seat_id, agent=agent if agent is not None else case["agent"], offline=offline,
+        poll_interval=poll_interval, maxpane_dir=scratch, hostname=case["hostname"],
+    )
+    manager._tail_state.kind = KIND_LIST        # tasks.window.source / footers read `fixture`, not the host's transport
+    return manager
+
+
+__all__ += ["build_fixture_manager", "fixture_api_handler", "load_case"]

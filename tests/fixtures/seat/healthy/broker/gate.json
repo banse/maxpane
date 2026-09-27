@@ -1,0 +1,19 @@
+{
+  "safe": true,
+  "reason": null,
+  "idle_beats": 9,
+  "idle_beats_required": 4,
+  "newest_heartbeat_age_s": 11.0,
+  "plane": {
+    "mode": "plane+local",
+    "running": 0,
+    "as_of": "2026-09-26T03:40:09Z",
+    "standing_age_s": 0.4
+  },
+  "last_lifecycle_line": "2026-09-26T03:24:17.136Z submitted implement for 0c1f9727",
+  "lifecycle_open": false,
+  "outbox_files": 0,
+  "unit_active": true,
+  "graceful_stop_possible": true,
+  "unknown": null
+}

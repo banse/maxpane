@@ -486,3 +486,19 @@ asserts a withdrawn statement is historical — do not review code against it.
   preserving the brief's limit of two edits to the existing model tests. The API-reasons fixture records
   forwarded requests once, preserving exact request counts. The LOG currency guard checks the first,
   nonempty emitted batch because later cycles have already drained it; the prescribed mutation now fails.
+
+- **2026-09-27 (contract refinements, WP7)** — The signals timestamp parser copies WP5's grammar
+  verbatim with an equality guard; an empty document has no hero color. WP1's fold-completion and import
+  purity tests receive the two approved edits. Gate wording accepts optional drain and in-flight records;
+  the manager and signals expose the plan's additive constants, timestamp/build helpers, fixture helpers
+  and manager lifecycle/testing seams without changing earlier signatures.
+- **2026-09-27 (partial sources and scheduling, WP7)** — Partial unit/host reads land per field with
+  `sources.unit.ok = True` and a reason; absent fields remain unknown. WP8 must render that reason even
+  when `ok` is true. Paused hints retain `seenUtc` for expiry. Gate, ping and audit reads share the workstat
+  tier, with a five-second lifecycle-event bump. A capped API work slice that does not reach yesterday
+  leaves divergence unknown. The tasks window retains `backfillDiscardedUtc` for the LEDGER footer.
+- **2026-09-27 (fixtures and retained history, WP7)** — The tail-dead and API-down cases inherit the
+  healthy case's directories; healthy contains all fourteen broker reads and four API responses. All
+  twenty-five new fixture files are explicitly synthetic and registered with byte lengths and digests.
+  Unattached sessions contribute to excluded counts, incremental oversize counts persist, transcript
+  expiry and work-directory attachment are wired, and sessions/API-work landings roll up the days table.

@@ -1,0 +1,13 @@
+{
+  "count": 288,
+  "bytes": 58314752,
+  "abnormal": 7,
+  "newest": [
+    {
+      "jobId": "b1fb1439-7d2e-4a0f-8c3b-9e5d1f2a6b70",
+      "nodeId": "0c1f9727-4c1e-4b8a-9f0d-2a6e7b3c5d11",
+      "mtimeUtc": "2026-09-26T03:23:45Z",
+      "abnormal": false
+    }
+  ]
+}

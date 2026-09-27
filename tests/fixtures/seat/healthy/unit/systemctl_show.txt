@@ -1,0 +1,18 @@
+ActiveState=active
+SubState=running
+MainPID=98508
+NRestarts=0
+ActiveEnterTimestamp=Thu 2026-09-25 11:45:41 UTC
+ExecMainStartTimestamp=Thu 2026-09-25 11:45:41 UTC
+UnitFileState=disabled
+Restart=always
+RestartUSec=30s
+MemoryMax=3221225472
+CPUQuotaPerSecUSec=1s
+TasksMax=256
+TasksCurrent=11
+KillMode=control-group
+TimeoutStopUSec=30s
+ExecStart={ path=/opt/imd-worker/bin/imd ; argv[]=/opt/imd-worker/bin/imd start --runtime codex --concurrency 1 ; ignore_errors=no ; start_time=[Thu 2026-09-25 11:45:41 UTC] ; stop_time=[n/a] ; pid=98508 ; code=(null) ; status=0/0 }
+MemoryCurrent=115798016
+MemoryPeak=188592128

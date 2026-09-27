@@ -1,0 +1,19 @@
+{
+  "lines": [
+    {
+      "ts": "2026-09-25T11:45:41Z",
+      "seq": 1287,
+      "peer_uid": 1001,
+      "verb": "restart",
+      "phase": "verify",
+      "plan_id": "7f3a9c1e2b4d6081",
+      "args": {},
+      "preconditions": {},
+      "outcome": "applied",
+      "verified": true,
+      "connected": true,
+      "cursor_before": "s=1",
+      "cursor_after": "s=2"
+    }
+  ]
+}

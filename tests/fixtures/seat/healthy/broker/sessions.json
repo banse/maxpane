@@ -1,0 +1,52 @@
+{
+  "sessions": [
+    {
+      "path": "/home/imd-worker/.codex/sessions/2026/09/26/rollout-2026-09-26T03-23-49-abc.jsonl",
+      "runtime": "codex",
+      "cwd": "/home/imd-worker/.identitymd/work/b1fb1439-7d2e-4a0f-8c3b-9e5d1f2a6b70/0c1f9727-4c1e-4b8a-9f0d-2a6e7b3c5d11",
+      "slug": null,
+      "kind": "task",
+      "jobId": "b1fb1439-7d2e-4a0f-8c3b-9e5d1f2a6b70",
+      "nodeId": "0c1f9727-4c1e-4b8a-9f0d-2a6e7b3c5d11",
+      "startedUtc": "2026-09-26T03:23:49.400Z",
+      "endedUtc": "2026-09-26T03:24:11.800Z",
+      "mtime": 1790393051.8,
+      "bytes": 200000,
+      "model": "gpt-6-luna",
+      "effort": "medium",
+      "turns": 3,
+      "turnsDefinition": "agent_messages",
+      "tokens": {
+        "input": 17864,
+        "output": 812,
+        "cached": 92928,
+        "cacheWrite": 0
+      },
+      "sideModel": null,
+      "ttftMs": 1807,
+      "wallMs": 22400,
+      "turn1Context": 24000,
+      "maxTurnsReached": false,
+      "maxTurns": 60,
+      "apiErrors": [],
+      "lastAgentMessageEmpty": false,
+      "tokenCountInfoMissing": false,
+      "taskCompleteErrorPresent": false,
+      "quota": {
+        "usedPercent": 45.0,
+        "windowMinutes": 10080,
+        "resetsAtUtc": "2026-09-28T21:50:11Z",
+        "planType": "pro",
+        "sampledAtUtc": "2026-09-26T03:24:15Z"
+      },
+      "skippedOversize": 0,
+      "error": null
+    }
+  ],
+  "skipped": {
+    "oversize": 0
+  },
+  "watermarkMtime": 1790393051.8,
+  "zstdReadable": true,
+  "reason": null
+}
