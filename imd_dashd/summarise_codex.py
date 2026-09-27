@@ -1,0 +1,180 @@
+"""Codex rollout summariser for the PEPEPANE dashboard (spec §5.4, §10; contract §C.8).
+
+Self-contained on purpose: the broker runs this file as a transient unit on the VPS
+(``/usr/bin/python3`` 3.14.4) and it must equally run when piped to ``python3 -``. It
+therefore imports only the standard library, nothing from ``imd_dashd`` or
+``maxpane_dashboard``, and is Python 3.11 syntax (no ``type`` statements, no nested
+same-quote f-strings). It emits metadata only -- model, effort, turns, token classes,
+timings, quota, failure flags -- never a prompt, a tool result or an agent message. The
+one free-text field it passes on, ``apiErrors[].message``, is redacted by the caller.
+
+API-equal definitions (spec §10; reconciled 40/40 against the control plane, fill3 §3):
+
+* turns = ``event_msg`` ``item_completed`` whose ``item.type`` case-normalises to
+  ``agentmessage`` -- never the ``token_usage_record`` count (2.33x over lifetime);
+* tokens from the LAST ``token_count.info.total_token_usage``: input = ``input_tokens -
+  cached_input_tokens``, cached = ``cached_input_tokens``, output = ``output_tokens``
+  (includes reasoning), cacheWrite = ``cache_write_input_tokens`` (always 0 today);
+* ttft / wall = ``task_complete.time_to_first_token_ms`` / ``duration_ms``; turn-1
+  context = the first ``token_usage_record.usage.input_tokens`` (cached included);
+* quota = the newest ``token_count.rate_limits.primary`` + ``plan_type``.
+
+Hostile size (spec §5.4): the files live under the worker uid, so a task can append
+arbitrarily large lines. Files over 64 MiB are skipped unopened, lines over 1 MiB are
+skipped unparsed and counted, a file gets a 5 s wall clock and a call a budget.
+``.jsonl.zst`` rollouts (codex-cli compresses after 7 days) are read through
+``compression.zstd`` only when it imports; otherwise they are reported, not read.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import stat
+import sys
+import time
+from datetime import datetime, timezone
+
+try:  # stdlib only from Python 3.14, and only when built against libzstd (spec §5.4, §18 open 19)
+    from compression import zstd as ZSTD
+except ImportError:  # Python 3.11 in the container, or a 3.14 build without libzstd
+    ZSTD = None
+
+MAX_FILE_BYTES = 64 * 1024 * 1024  #: skip larger files unopened (spec §5.4)
+MAX_LINE_BYTES = 1024 * 1024  #: skip longer lines unparsed (spec §5.4)
+PER_FILE_WALL_S = 5.0  #: per-file wall clock (spec §5.4)
+DEFAULT_BUDGET_S = 40.0  #: per-call budget inside the transient unit's RuntimeMaxSec=60 (contract §B)
+CODEX_PLAIN_ROLLOUT_DAYS = 7  #: MIN_ROLLOUT_AGE in codex-cli 0.157.0: older rollouts become .jsonl.zst (fill8 §4)
+CODEX_EXCLUDED_CWDS = ("/tmp", "/home/imd-worker")  #: exact manual cwds (fill6 §6: 7 + 2 rollouts)
+DOCTOR_PREFIX = "doctor-"  #: `imd doctor` smoke runs: cwd work/doctor-XXXXXX (fill3 §0)
+ZSTD_MISSING_REASON = "rollouts > 7 d unreadable (compression.zstd missing)"
+STR_CAP = 200  #: every emitted identifier string is capped (a task can write the file)
+MESSAGE_CAP = 500  #: apiErrors[].message cap; the caller redacts it
+UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+STATUS_RE = re.compile(r"\bstatus (\d{3})\b")
+
+SESSION_KEYS = (
+    "path", "runtime", "cwd", "slug", "kind", "jobId", "nodeId", "startedUtc", "endedUtc", "mtime", "bytes",
+    "model", "effort", "turns", "turnsDefinition", "tokens", "sideModel", "ttftMs", "wallMs", "turn1Context",
+    "maxTurnsReached", "maxTurns", "apiErrors", "lastAgentMessageEmpty", "tokenCountInfoMissing",
+    "taskCompleteErrorPresent", "quota", "skippedOversize", "error",
+)
+
+
+class _WallClock(Exception):
+    """The per-file wall clock ran out."""
+
+
+class _TooBig(Exception):
+    """A stream produced more than MAX_FILE_BYTES (a decompression bomb)."""
+
+
+def iter_bounded_lines(fh, counts: dict, *, max_line: int = MAX_LINE_BYTES, max_total: int = MAX_FILE_BYTES,
+                       deadline: float | None = None, clock=time.monotonic):
+    """Yield the complete lines of a binary stream that are at most *max_line* bytes.
+
+    Reads at most ``max_line + 1`` bytes per call, so a multi-hundred-MB line never sits
+    in memory; an oversize line is drained in ``max_line`` chunks, counted in
+    ``counts["oversize"]`` and never yielded. Raises ``_WallClock`` past *deadline* and
+    ``_TooBig`` past *max_total* bytes read.
+    """
+    total = 0
+    while True:
+        if deadline is not None and clock() > deadline:
+            raise _WallClock()
+        chunk = fh.readline(max_line + 1)
+        if not chunk:
+            return
+        total += len(chunk)
+        if total > max_total:
+            raise _TooBig()
+        if len(chunk) > max_line and not chunk.endswith(b"\n"):
+            counts["oversize"] = counts.get("oversize", 0) + 1
+            while True:
+                if deadline is not None and clock() > deadline:
+                    raise _WallClock()
+                rest = fh.readline(max_line)
+                total += len(rest)
+                if total > max_total:
+                    raise _TooBig()
+                if not rest or rest.endswith(b"\n"):
+                    break
+            continue
+        yield chunk
+
+
+def _loads(raw: bytes) -> dict | None:
+    try:
+        obj = json.loads(raw)
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _int(value) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _cap(value, cap: int = STR_CAP) -> str | None:
+    return value[:cap] if isinstance(value, str) and value else None
+
+
+def _parse_time(value) -> datetime | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    if isinstance(value, str) and value:
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return None
+
+
+def iso_ms(value) -> str | None:
+    """ISO text or epoch seconds -> ``2026-09-26T02:33:41.912Z`` (millisecond precision, UTC)."""
+    parsed = _parse_time(value)
+    if parsed is None:
+        return None
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def iso_s(value) -> str | None:
+    """ISO text or epoch seconds -> ``2026-09-28T21:50:11Z`` (second precision, UTC)."""
+    parsed = _parse_time(value)
+    if parsed is None:
+        return None
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def classify_cwd(cwd: str, *, work_root: str) -> tuple[str, str | None, str | None]:
+    """``(kind, jobId, nodeId)`` for a rollout's ``session_meta.cwd`` (spec §5.4, §10; fill6 §6).
+
+    ``<work_root>/<jobId>/<nodeId>`` -> task; exactly ``<work_root>`` -> research (answerQuestion
+    runs with ``workspace: workRoot``); a basename ``doctor-*`` -> doctor; ``/tmp`` or
+    ``/home/imd-worker`` exactly -> manual; anything else -> unknown.
+    """
+    if not isinstance(cwd, str) or not cwd:
+        return ("unknown", None, None)
+    path = cwd.rstrip("/") or "/"
+    root = work_root.rstrip("/") or "/"
+    if path == root:
+        return ("research", None, None)
+    if os.path.basename(path).startswith(DOCTOR_PREFIX):
+        return ("doctor", None, None)
+    if path in CODEX_EXCLUDED_CWDS:
+        return ("manual", None, None)
+    if path.startswith(root + "/"):
+        parts = path[len(root) + 1:].split("/")
+        if len(parts) == 2 and UUID_RE.fullmatch(parts[0]) and UUID_RE.fullmatch(parts[1]):
+            return ("task", parts[0], parts[1])
+    return ("unknown", None, None)
