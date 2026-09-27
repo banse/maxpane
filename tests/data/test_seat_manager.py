@@ -806,3 +806,228 @@ async def test_oversize_skips_accumulate_across_incremental_calls(tmp_path):
     assert m.document()["cost"]["depth"]["skipped"] == {"oversize": 1}, "the second call reported 0; the footer keeps 1"
     assert m._ledger.meta_get("sessions_skipped_oversize") == 1
     await m.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 7.10 — api tiers: standing, seatwork, reasons, plane; unavailable; offline
+# ---------------------------------------------------------------------------
+
+API_FIX = FIXTURES / "api"
+
+
+async def _no_sleep(seconds: float) -> None:
+    return None
+
+
+def _api_nosleep(handler):
+    from maxpane_dashboard.data.seat_api import SeatApiClient
+
+    return SeatApiClient(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), sleep=_no_sleep)
+
+
+class FixtureApi:
+    """Serves the WP5 api fixtures by path; ``mode`` flips every answer to a 500; records every request."""
+
+    def __init__(self, seat=7):
+        self.seat, self.mode, self.requests = seat, "ok", []
+        self.bodies = {
+            f"/seats/{seat}/standing": "seat7_standing.json", f"/seats/{seat}": "seat7_work20.json",
+            "/health": "health.json", "/services": "services.json",
+        }
+
+    def __call__(self, request):
+        self.requests.append(request)
+        if self.mode == "500":
+            return httpx.Response(500, json={"error": "internal_error", "detail": "No space left on device"})
+        path = request.url.path
+        if path.startswith("/jobs/") and path.endswith("/submissions"):
+            return httpx.Response(200, content=(API_FIX / "job_b1fb1439_submissions.json").read_bytes(),
+                                  headers={"content-type": "application/json"})
+        name = self.bodies.get(path)
+        if name is None:
+            return httpx.Response(404, json={"error": "not_found"})
+        return httpx.Response(200, content=(API_FIX / name).read_bytes(), headers={"content-type": "application/json"})
+
+    def paths(self, prefix):
+        # path + query ("/seats/7?work=60&reviews=0"): httpx's url.path never carries the query string
+        urls = [str(r.url).split("https://api.imd.fun", 1)[-1] for r in self.requests]
+        return [u for u in urls if u.startswith(prefix)]
+
+
+async def test_api_tiers_feed_standing_seatwork_and_plane(tmp_path):
+    # spec §6 route table; §7 standing/queue/plane blocks; §4.3 cadences; standing is never read with ?queue=0 (proof 9 lives in WP5)
+    clock = Clock()
+    api = FixtureApi()
+    m = _manager(tmp_path, now=clock, api=_api_nosleep(api))
+    m.feed_lines(STARTUP + LIFECYCLE + HEARTBEATS)
+    flat = await _two_cycles(m)
+    doc = m.document()
+    for name in ("standing", "seatWork", "reasons", "plane"):
+        assert doc["sources"][name]["ok"] is True and doc["sources"][name]["asOfUtc"] == "2026-09-26T03:40:12Z", name
+    assert api.paths("/seats/7/standing") == ["/seats/7/standing"], "no query string, ever (spec §6)"
+    assert api.paths("/seats/7?") == ["/seats/7?work=60&reviews=0"]
+    st = doc["standing"]
+    assert (st["attempts"], st["accepted"], st["rejected"], st["failed"], st["pending"]) == (288, 244, 5, 11, 28) and st["countersInconsistent"] is False
+    assert st["working"] == 1 and st["running"][0]["nodeKey"] == "oracle_assess" and st["presenceConnected"] is True
+    assert st["breaker"] == {"failures": 3, "cooldownMs": 900000} and st["recentFailures"][0]["reason"] == "runtime_error"
+    assert st["asOfUtc"] == "2026-09-26T03:24:55.812Z", "the plane's own `at`, never our fold time"
+    assert doc["queue"] == {"ready": 27, "eligible": 0, "fleetOnline": 396, "blocked": [{"reason": "at capacity", "nodes": 27}], "asOfUtc": "2026-09-26T03:24:55.812Z"}
+    assert doc["seat"]["agentId"] == 51075 and doc["seat"]["premiumAdvertised"] == {"model": "gpt-6-astra", "effort": "xhigh"}
+    plane = doc["plane"]
+    assert plane["version"] == "0.1.0+aa634633" and plane["verifierUp"] is True and plane["awaitingVerdict"] == 7 and plane["connectedDaemons"] == 409
+    assert plane["verifierLastSeenUtc"] == "2026-09-26T03:32:58.104Z" and plane["asOfUtc"] == "2026-09-26T03:40:12Z"
+    assert doc["today"]["divergence"] == {"localStored": 1, "planeRowsSubmittedToday": 19, "ok": False}, "1 stored locally today vs 19 plane rows: drift is reported, never hidden"
+    assert doc["current"] is None
+    assert flat["seat_standing_working"] == 1 and flat["seat_queue"]["ready"] == 27 and flat["seat_plane_awaiting_verdict"] == 7
+    assert flat["seat_agent_id"] == 51075
+    await m.close()
+
+
+async def test_seatwork_backs_off_to_300s_once_every_open_row_has_a_verdict(tmp_path):
+    # spec §4.3: TIER_SEATWORK 120 s; 300 s once all open rows have verdicts
+    clock = Clock()
+    api = FixtureApi()
+    m = _manager(tmp_path, now=clock, api=_api_nosleep(api))
+    await _two_cycles(m)                                    # no rows at all -> nothing open -> settled
+    assert m.due("seatwork", clock.now + 120) is False and m.due("seatwork", clock.now + 300) is True
+    # one stored row whose hash is not in the fixture (seat7_work20.json row 0 IS c4d9714ffb95…, status accepted -- WP5 ANCHOR_HASH)
+    m.feed_lines([line.replace("c4d9714ffb95", "0123456789ab") for line in STARTUP + LIFECYCLE])
+    clock.advance(300)
+    await _two_cycles(m)
+    assert m.due("seatwork", clock.now + 120) is True, "an open row without a verdict: back to 120 s"
+    await m.close()
+
+
+async def test_offline_removes_api_tiers_and_marks_every_plan_offline(tmp_path):
+    # spec §1 #1, §4.3, §4.4, §11 (b): --offline reads nothing from the api and makes every broker plan `local-only`
+    clock = Clock()
+    gate = dict(RESPONSES["gate"], plane={"mode": "local-only", "running": None, "as_of": None, "standing_age_s": None})
+    broker = FakeBroker(responses=dict(RESPONSES, gate=gate))
+    m = _manager(tmp_path, now=clock, api=_api(_no_network), broker=broker, offline=True)
+    m.feed_lines(STARTUP + LIFECYCLE + HEARTBEATS)
+    flat = await _two_cycles(m)
+    doc = m.document()
+    assert m._api is None and m.broker.offline is True
+    assert not any(name in doc["sources"] for name in ("standing", "seatWork", "reasons", "plane"))
+    assert _calls(broker, "gate") == [{"offline": True}], "every plan/gate request carries offline: true"
+    assert doc["standing"]["attempts"] is None and doc["queue"] is None and doc["plane"]["version"] is None
+    assert doc["tasks"]["rows"][0]["outcome"] in (None, "unknown") and doc["today"]["divergence"] is None
+    assert doc["seat"]["agentId"] == 51075, "the configured PEPEPANE_AGENT survives --offline (spec §8 SEAT)"
+    assert flat["seat_offline"] is True and flat["seat_control_gate"]["planeMode"] == "local-only"
+    assert flat["seat_daemon_state"] == "alive" and flat["seat_tasks_rows"][0]["outcome"] == "unknown"
+    assert not any(src["unavailable"] for src in doc["sources"].values()), "absent, not unavailable"
+    await m.close()
+
+
+async def test_api_unavailable_after_3_failures_or_10_min_keeps_local_panels(tmp_path):
+    # spec §6 rule 4: last-good behind its own asOfUtc; `unavailable` after 3 consecutive failures or 10 min without a good read;
+    # total API failure leaves every local panel intact
+    clock = Clock()
+    api = FixtureApi()
+    m = _manager(tmp_path, now=clock, api=_api_nosleep(api), unit_reader=StubUnitReader(UNIT_OK, HOST_OK))   # the unit gives the hero evidence
+    m.feed_lines(STARTUP + LIFECYCLE + HEARTBEATS)
+    await _two_cycles(m)
+    assert m.document()["sources"]["standing"]["ok"] is True
+    api.mode = "500"
+    for failure in (1, 2):
+        clock.advance(60)
+        flat = await _two_cycles(m)
+        src = m.document()["sources"]["standing"]
+        assert src["ok"] is False and src["failures"] == failure and src["unavailable"] is False, failure
+        assert src["asOfUtc"] == "2026-09-26T03:40:12Z" and src["reason"].startswith("500")
+        assert m.document()["standing"]["working"] == 1 and flat["seat_standing_working"] == 1, "last-good stays until unavailable"
+    clock.advance(60)
+    flat = await _two_cycles(m)
+    src = m.document()["sources"]["standing"]
+    assert src["failures"] == 3 and src["unavailable"] is True
+    assert flat["seat_standing_working"] is None and flat["seat_queue"] is None
+    assert flat["seat_daemon_state"] == "alive" and flat["seat_tasks_rows"][0]["hash12"] == "c4d9714ffb95", "local panels intact"
+    # a dead plane is not a dead seat: the hero leads with the local heartbeat's own age (T0+180 s vs 03:40:08.226) -- amber, never red offline
+    # the `unavailable` standing's last-good presenceConnected/heartbeatAgeMs never feeds the hero (no `plane sees us · local tail stale`)
+    assert flat["seat_hero_state"] == "amber" and flat["seat_hero_reasons"] == ["heartbeat 183 s old"]
+    # the 10-minute rule: one good read, one failure a minute later (kept), then nothing good for 10 min
+    clock2 = Clock()
+    api2 = FixtureApi()
+    m2 = _manager(tmp_path / "b", now=clock2, api=_api_nosleep(api2))
+    await _two_cycles(m2)
+    api2.mode = "500"
+    clock2.advance(61)
+    await _two_cycles(m2)
+    assert m2.document()["sources"]["standing"]["unavailable"] is False and m2.document()["sources"]["standing"]["failures"] == 1
+    clock2.advance(540)                                    # 601 s since the good read
+    await _two_cycles(m2)
+    src = m2.document()["sources"]["standing"]
+    assert src["failures"] == 2 and src["unavailable"] is True and src["ageS"] == 601
+    await m.close()
+    await m2.close()
+
+
+def _failed_history(hour, node8, hash12):
+    return [
+        f"2026-09-24T{hour:02d}:00:00.000Z accepted implement {node8} — artifacts/answer.json (max 60 turns)",
+        f"2026-09-24T{hour:02d}:00:03.000Z   working: running codex on gpt-6-luna",
+        f"2026-09-24T{hour:02d}:00:30.000Z submitted implement for {node8}",
+        f"2026-09-24T{hour:02d}:00:30.100Z submission stored ({hash12}) — awaiting verdict",
+    ]
+
+
+async def test_reasons_tier_fetches_at_most_two_jobs_per_cycle(tmp_path):
+    # spec §6: /jobs/<jobId>/submissions only for failed rows older than the 24 h standing window, <= 2 jobs per cycle, each job once
+    clock = Clock()
+    jobs = [f"aaaaaaa{i}-0000-4000-8000-000000000000" for i in (1, 2, 3)]
+    nodes = ["11111111", "22222222", "33333333"]
+    hashes = ["a" * 12, "b" * 12, "c" * 12]
+
+    def handler(request):
+        path = request.url.path
+        if path == "/seats/7":
+            api_fix.requests.append(request)
+            work = [{"jobId": jobs[i], "objective": f"job {i}", "jobState": "completed", "nodeKey": "oracle_assess", "role": "implement",
+                     "status": "failed", "submissionHash": hashes[i] + "0" * 52, "submittedAt": f"2026-09-24T0{i + 1}:00:30.100Z",
+                     "acceptedAt": None, "launch": None} for i in range(3)]
+            return httpx.Response(200, json={"tokenId": 7, "agentId": 51075, "attempts": 3, "accepted": 0, "rejected": 0, "failed": 3, "pending": 0,
+                                             "work": work, "online": True, "devices": 1, "daemonVersion": "0.1.0+5bfa8261", "runtimes": []})
+        return api_fix(request)
+
+    api_fix = FixtureApi()
+    m = _manager(tmp_path, now=clock, api=_api_nosleep(handler))
+    for i in range(3):
+        m.feed_lines(_failed_history(i + 1, nodes[i], hashes[i]))
+    # httpx.MockTransport answers without yielding to the event loop (httpx 0.28.1), so the seatwork tier -- spawned before reasons --
+    # has attached the three failed rows when the reasons tier's first step runs: two jobs already in the first cycle
+    await _two_cycles(m)
+    assert [r["outcome"] for r in m.document()["tasks"]["rows"]] == ["failed", "failed", "failed"]
+    assert len(api_fix.paths("/jobs/")) == 2, "at most two jobs per cycle"
+    reasons = [r["failureReason"] for r in m.document()["tasks"]["rows"]]
+    assert reasons.count("runtime_error") == 2 and reasons.count(None) == 1
+    assert m.document()["sources"]["reasons"]["ok"] is True
+    clock.advance(300)
+    await _two_cycles(m)
+    assert len(api_fix.paths("/jobs/")) == 3, "the third job on the next cycle; each job fetched once"
+    assert [r["failureReason"] for r in m.document()["tasks"]["rows"]] == ["runtime_error"] * 3
+    assert [r["source"]["reason"] for r in m.document()["tasks"]["rows"]] == ["submissions"] * 3
+    assert '"summary"' not in json.dumps(m.document()), "summaries never persist or render (spec §6)"
+    await m.close()
+
+
+async def test_fleet_falls_back_to_health_after_five_minutes_without_the_clause(tmp_path):
+    # spec §6 `/services` + `/health` row: fleet online/enrolled come from the heartbeat clause first; /health fills the gap once the
+    # clause has been missing for > 5 min (427+ clause-less lines measured) -- an old clause is never shown as current
+    assert sm_mod.FLEET_CLAUSE_STALE_S == 300
+    clock = Clock()
+    beats = [
+        "2026-09-26T03:33:32.000Z alive 14h35m · idle · 77 submitted · fleet 406 online, 417 enrolled",   # T0 - 400 s
+        "2026-09-26T03:39:38.226Z alive 14h41m · idle · 77 submitted",
+        "2026-09-26T03:40:08.226Z alive 14h42m · idle · 77 submitted",
+    ]
+    m = _manager(tmp_path, now=clock, api=_api_nosleep(FixtureApi()))
+    m.feed_lines(beats)
+    await _two_cycles(m)
+    daemon = m.document()["daemon"]
+    assert (daemon["fleetOnline"], daemon["fleetEnrolled"]) == (409, 417), "the 400-s-old clause gives way to /health"
+    m2 = _manager(tmp_path / "b", now=clock, api=_api(_no_network), offline=True)
+    m2.feed_lines(beats)
+    await _two_cycles(m2)
+    assert (m2.document()["daemon"]["fleetOnline"], m2.document()["daemon"]["fleetEnrolled"]) == (None, None), "never the stale clause"
+    await m.close()
+    await m2.close()

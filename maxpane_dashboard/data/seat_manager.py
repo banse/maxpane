@@ -70,6 +70,7 @@ DOCKER_BREAKER_S = 300          #: 5-min breaker per verb after any timeout (§4
 LEDGER_ROWS_ON_SCREEN = 60      #: tasks.window.rows in the v2 document (§7)
 COST_WINDOW_DAYS = 7
 SERIES_DAYS = 14
+FLEET_CLAUSE_STALE_S = 300      #: spec §6: /health fills daemon.fleetOnline/fleetEnrolled once the heartbeat clause is > 5 min old
 BACKFILL_QUIET_S = 2.0          #: (invented) --once: the backfill is complete when no line arrived for 2 s ...
 BACKFILL_MAX_S = 25.0           #: ... or after 25 s (the docker backfill timeout, contract §B)
 FIXTURE_HOST = "fixture"
@@ -186,6 +187,10 @@ def _single_source_factory(source: LineSource) -> Callable[[TailState], LineSour
     return factory
 
 
+class _TierFailure(Exception):
+    """A tier read that answered `not ok` -- lands nothing, counts one failure, retries after min(TTL, 60 s)."""
+
+
 class SeatManager:
     """Owner of the tail queue, the ledger, the tiers and the last document (contract §C.13)."""
 
@@ -268,6 +273,7 @@ class SeatManager:
         self._reason: dict[str, str | None] = {name: None for name in models.SOURCE_NAMES}
         self._attempted: set[str] = set()
         self._whoami_key: str | None = None
+        self._seatwork_settled = False
         self._error_count = 0
         self.plan_open = False
         self._restart_required = False
@@ -413,6 +419,13 @@ class SeatManager:
         self._spawn("broker_status", self._tier_broker_status, now)
         self._spawn("workstat", self._tier_workstat, now)
         self._spawn("sessions", self._tier_sessions, now)
+        if self._offline or self._api is None or self._seat is None:
+            return                                   # --offline removes STANDING, SEATWORK, REASONS, PLANE (spec §4.3)
+        self._spawn("standing", self._tier_standing, now)
+        self._spawn("seatwork", self._tier_seatwork, now)
+        self._spawn("reasons", self._tier_reasons, now)
+        self._spawn("plane", self._tier_plane, now)
+
 
 
 
@@ -421,7 +434,10 @@ class SeatManager:
     def _ttl(self, tier: str) -> float:
         if tier == "standing" and self.plan_open:
             return float(TIER_STANDING_PLAN_OPEN_S)
+        if tier == "seatwork" and self._seatwork_settled:
+            return float(TIER_SEATWORK_SETTLED_S)
         return float(TIER_TTL_S[tier])
+
 
     def _mark_read(self, tier: str, now: float, *, ok: bool = True) -> None:
         """A completed tier read: the next offer is TTL away (min(TTL, TIER_RETRY_S) after a failure)."""
@@ -442,14 +458,19 @@ class SeatManager:
                 self._mark_read(tier, float(self._clock()), ok=True)
             except asyncio.CancelledError:
                 raise
+            except _TierFailure as exc:
+                for name in TIER_SOURCES[tier]:
+                    self._fail(name, str(exc), float(self._clock()))
+                self._mark_read(tier, float(self._clock()), ok=False)
+                logger.debug("PEPEPANE tier %s not ok: %s", tier, exc)
             except Exception as exc:                 # noqa: BLE001 -- nobody awaits this task
-                self._error_count += 1
                 for name in TIER_SOURCES[tier]:
                     self._fail(name, f"{type(exc).__name__}: {redact(str(exc))[:120]}", float(self._clock()))
                 self._mark_read(tier, float(self._clock()), ok=False)
                 logger.warning("PEPEPANE tier %s failed: %s", tier, exc)
 
         self._in_flight[tier] = asyncio.ensure_future(run())
+
 
     def _land(self, source: str, payload: Any, ts: float) -> None:
         """A good read of *source*: last-good replaced, failures reset."""
@@ -527,6 +548,10 @@ class SeatManager:
         doc["quota"] = self._quota_block()
         doc["machine"] = self._machine_block()
         doc["control"] = self._control_block()
+        doc["standing"] = self._standing_block()
+        doc["queue"] = self._queue_block()
+        doc["plane"] = self._plane_block(now)
+        doc["daemon"].update(self._fleet_counts(now))
         changed = self._config_changed(doc["unit"])
         doc["seat"]["configChangedSinceStart"] = changed
         doc["control"]["restartRequired"] = True if (changed is True or self._restart_required) else (False if changed is False else None)
@@ -705,7 +730,17 @@ class SeatManager:
         block["elapsedS"] = int(max(0.0, now - started)) if started is not None else None
         if block.get("lastMessage"):
             block["lastMessage"] = redact_agent_sentence(block["lastMessage"])
+        standing = self._payload("standing")
+        running = standing.get("running") if isinstance(standing, Mapping) else None
+        if isinstance(running, list) and running and isinstance(running[0], Mapping):
+            first = running[0]
+            block["planeSince"] = first.get("since")
+            block["objective"] = block.get("objective") or first.get("objective")
+            block["nodeKey"] = block.get("nodeKey") or first.get("nodeKey")
+            if block.get("jobId") is None:
+                block["jobId"] = first.get("jobId")
         return block
+
 
     def _tasks_block(self, now: float) -> dict:
         rows = self._ledger.rows(limit=LEDGER_ROWS_ON_SCREEN)
@@ -734,8 +769,11 @@ class SeatManager:
             logger.debug("PEPEPANE ledger.today failed (%s); rolling up the window", exc)
             today = sig.rollup_today(rows, day_utc=day)
         today.setdefault("dayUtc", day)
-        today["divergence"] = None                   # Task 7.10 fills it from the seatwork tier
+        seatwork = self._payload("seatWork")
+        plane_today = seatwork.get("planeRowsSubmittedToday") if isinstance(seatwork, Mapping) else None
+        today["divergence"] = sig.divergence(local_stored_today=today.get("stored"), plane_rows_submitted_today=plane_today)
         return today
+
 
     def _read_unit_host(self, now: float) -> None:
         """One unit + host read, landed per field (deviation 6; spec §7, fill4 §5).
@@ -1137,6 +1175,139 @@ class SeatManager:
             ]
         return block
 
+    async def _tier_standing(self) -> None:
+        assert self._api is not None and self._seat is not None
+        result = await self._api.standing(self._seat)
+        if not result.ok:
+            raise _TierFailure(result.reason or "standing failed")
+        block = seat_api.normalise_standing(result.data if isinstance(result.data, Mapping) else {})
+        for failure in block.get("recentFailures") or []:
+            job = failure.get("jobId") if isinstance(failure, Mapping) else None
+            reason = failure.get("reason") if isinstance(failure, Mapping) else None
+            if job and reason:
+                try:
+                    self._ledger.attach_reason(str(job), reason=str(reason), failure_class=None, source="standing", at=failure.get("at"))
+                except Exception as exc:             # noqa: BLE001
+                    logger.debug("PEPEPANE attach_reason(standing) failed: %s", exc)
+        self._land("standing", block, float(self._clock()))
+
+    async def _tier_seatwork(self) -> None:
+        assert self._api is not None and self._seat is not None
+        result = await self._api.seat_work(self._seat)
+        if not result.ok:
+            raise _TierFailure(result.reason or "seat work failed")
+        body = result.data if isinstance(result.data, Mapping) else {}
+        counters = {key: body.get(key) for key in ("attempts", "accepted", "rejected", "failed", "pending")}
+        consistent = sig.counters_consistent(counters)
+        counters["countersInconsistent"] = None if consistent is None else (not consistent)
+        rows = [seat_api.normalise_work_row(r) for r in (body.get("work") or []) if isinstance(r, Mapping)]
+        now = float(self._clock())
+        self._ledger.attach_work(rows, as_of_utc=sig.iso_z(now))
+        today = sig.day_utc(now)
+        submitted = [sig.parse_iso(r.get("submittedAt")) for r in rows]
+        submitted = [s for s in submitted if s is not None]
+        plane_today = sum(1 for s in submitted if sig.day_utc(s) == today)
+        complete = len(rows) < seat_api.SEAT_WORK_ROWS or (bool(submitted) and sig.day_utc(min(submitted)) < today)
+        self._land("seatWork", {"counters": counters, "planeRowsSubmittedToday": plane_today if complete else None,
+                                "rows": len(rows), "daemonVersion": body.get("daemonVersion")}, now)
+        open_rows = [r for r in self._ledger.rows(limit=LEDGER_ROWS_ON_SCREEN)
+                     if r.get("storedUtc") and r.get("outcome") in (None, "unknown", "pending")]
+        self._seatwork_settled = not open_rows
+        self._rollup_series()                        # verdicts moved: the days table's accepted/failed counts follow (Task 7.9)
+
+    async def _tier_reasons(self) -> None:
+        assert self._api is not None and self._seat is not None
+        now = float(self._clock())
+        cutoff = sig.iso_z(now - 24 * 3600)
+        rows = self._ledger.failed_rows_needing_reason(older_than_utc=cutoff, limit=seat_api.MAX_REASONS_PER_CYCLE)
+        fetched: list[str] = []
+        problems: list[str] = []
+        for row in rows[: seat_api.MAX_REASONS_PER_CYCLE]:
+            job = row.get("jobId")
+            if not isinstance(job, str) or not job:
+                continue
+            result = await self._api.job_submissions(job)
+            fetched.append(job)
+            if not result.ok:
+                problems.append(f"{job[:8]}: {result.reason}")
+                continue
+            data = result.data if isinstance(result.data, Mapping) else {}
+            mine = [s for s in (data.get("submissions") or []) if isinstance(s, Mapping) and s.get("seatTokenId") == self._seat]
+            match = next((s for s in mine if s.get("hash12") == row.get("hash12")), None)
+            if match is None:
+                failed = [s for s in mine if s.get("outcome") == "failed"]
+                match = max(failed, key=lambda s: sig.parse_iso(s.get("createdAt")) or 0.0) if failed else None
+            if match is None:
+                continue
+            reason = seat_api.reason_word(match.get("failureReason")) or "other"
+            self._ledger.attach_reason(job, reason=reason, failure_class=match.get("failureClass"), source="submissions",
+                                       at=match.get("createdAt"))
+        if problems and len(problems) == len(fetched):
+            raise _TierFailure("; ".join(problems))
+        self._land("reasons", {"fetched": fetched, "problems": problems}, float(self._clock()))
+
+    async def _tier_plane(self) -> None:
+        assert self._api is not None
+        services = await self._api.services()
+        health = await self._api.health()
+        if not services.ok and not health.ok:
+            raise _TierFailure(f"services: {services.reason}; health: {health.reason}")
+        # WP5's normaliser (hoisted, never re-declared): it reads both `/services` shapes, dict-keyed and {"services": [{"name": …}]}
+        block = seat_api.normalise_plane(services.data if services.ok else None, health.data if health.ok else None)
+        self._land("plane", block, float(self._clock()))
+
+    def _standing_block(self) -> dict:
+        block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["standing"]
+        seatwork = self._payload("seatWork")
+        counters = seatwork.get("counters") if isinstance(seatwork, Mapping) and isinstance(seatwork.get("counters"), Mapping) else {}
+        for key in ("attempts", "accepted", "rejected", "failed", "pending", "countersInconsistent"):
+            block[key] = counters.get(key)
+        standing = self._payload("standing")
+        if isinstance(standing, Mapping):
+            for key in ("working", "running", "consecutiveFailures", "pausedUntil", "breaker", "recentFailures",
+                        "presenceConnected", "heartbeatAgeMs", "asOfUtc"):
+                if key in standing:
+                    block[key] = standing[key]
+        return block
+
+    def _queue_block(self) -> dict | None:
+        standing = self._payload("standing")
+        queue_block = standing.get("queue") if isinstance(standing, Mapping) else None
+        if not isinstance(queue_block, Mapping):
+            return None
+        return {key: queue_block.get(key) for key in models.SEAT_BLOCK_KEYS["seat_queue"]}
+
+    def _plane_block(self, now: float) -> dict:
+        block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["plane"]
+        entry = self._last_good.get("plane")
+        if entry is None:
+            return block
+        payload, ts = entry
+        if isinstance(payload, Mapping):
+            block.update({k: payload.get(k) for k in ("version", "verifierUp", "verifierLastSeenUtc", "awaitingVerdict", "connectedDaemons")})
+        block["asOfUtc"] = sig.iso_z(ts)
+        return block
+
+    def _fleet_counts(self, now: float) -> dict:
+        """``daemon.fleetOnline/fleetEnrolled``: the heartbeat clause while it is at most :data:`FLEET_CLAUSE_STALE_S` old,
+        else ``/health`` while the plane source is ok, else ``None`` -- never an old clause as if current (spec §6)."""
+        st = self._state
+        seen = parse_ts(st.fleet_seen_utc) if isinstance(st.fleet_seen_utc, str) and st.fleet_seen_utc else None
+        if seen is not None and now - seen <= FLEET_CLAUSE_STALE_S:
+            return {"fleetOnline": st.fleet_online, "fleetEnrolled": st.fleet_enrolled}
+        plane = self._payload("plane")
+        if not self._offline and isinstance(plane, Mapping) and self._failures.get("plane", 0) == 0:
+            return {"fleetOnline": plane.get("connectedDaemons"), "fleetEnrolled": plane.get("activeEnrollments")}
+        return {"fleetOnline": None, "fleetEnrolled": None}
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1171,7 +1342,7 @@ class SeatManager:
 __all__ = [
     "BACKFILL_MAX_S", "BACKFILL_QUIET_S", "CONTAINER_TRUST_SOURCES", "COST_WINDOW_DAYS", "DOCKER_BREAKER_S", "DOCKER_HOST",
     "DOCKER_TIMEOUT_S", "EVENT_BUMP_SEATWORK_S", "EVENT_BUMP_SESSIONS_S", "EVENT_BUMP_STANDING_S", "EVENT_BUMP_WORKSTAT_S",
-    "FIXTURE_HOST", "HOST_KINDS", "LEDGER_ROWS_ON_SCREEN", "LOG_RING", "OFFLINE_REMOVES", "SERIES_DAYS", "SYSTEMD_HOST",
+    "FLEET_CLAUSE_STALE_S", "FIXTURE_HOST", "HOST_KINDS", "LEDGER_ROWS_ON_SCREEN", "LOG_RING", "OFFLINE_REMOVES", "SERIES_DAYS", "SYSTEMD_HOST",
     "SeatManager", "TIERS", "TIER_BROKER_STATUS_S", "TIER_PLANE_S", "TIER_REASONS_S", "TIER_RETRY_S", "TIER_SEATWORK_S",
     "TIER_SEATWORK_SETTLED_S", "TIER_SESSIONS_S", "TIER_SOURCES", "TIER_STANDING_PLAN_OPEN_S", "TIER_STANDING_S", "TIER_TTL_S",
     "TIER_UNIT_S", "TIER_WORKSTAT_S",
