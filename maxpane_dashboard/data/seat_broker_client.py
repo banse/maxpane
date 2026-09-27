@@ -227,7 +227,7 @@ class UnixSocketBroker(_CallMixin):
             raise BrokerError("unreachable", {"path": self.path, "reason": exc.__class__.__name__}) from None
         try:
             sock.settimeout(timeout_s)
-            sock.sendall(line)
+            sock.sendall(line)  # newline frames the request; never half-close (broker EOF means abandoned)
             chunks = bytearray()
             while b"\n" not in chunks and len(chunks) < 4 * 1024 * 1024:
                 chunk = sock.recv(65536)

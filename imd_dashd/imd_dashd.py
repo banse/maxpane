@@ -18,6 +18,7 @@ import argparse
 import json
 import re
 import secrets
+import select
 import signal
 import socket
 import struct
@@ -74,6 +75,8 @@ SO_PEERCRED = getattr(socket, "SO_PEERCRED", 17)         # Linux value; macOS la
 
 APPLY_START_BUDGET_S = 5.0  # admission, transient starts and initial orphan signals
 APPLY_EXEC_DEADLINE_S = 15.0  # systemctl enqueue after bounded fresh gate reads
+MAX_CONNECTIONS = 10
+MAX_SERIALIZED_READS = 4
 
 
 class PlanError(Exception):
@@ -371,6 +374,21 @@ def _decide_kill_watch(watch: VerifyWatch, *, pids: set[int], pgids: set[int]) -
 # ---------------------------------------------------------------- the broker
 
 
+def connection_alive(conn: socket.socket | None) -> bool:
+    """Nonblocking EOF check without altering the request socket's timeout.
+
+    UnixSocketBroker sends a newline and never half-closes; SHUT_WR therefore means abandonment.
+    Test connection objects without fileno are treated as alive.
+    """
+    if conn is None or not hasattr(conn, "fileno"):
+        return True
+    try:
+        readable, _, _ = select.select([conn], [], [], 0)
+        return not readable or conn.recv(1, socket.MSG_PEEK) != b""
+    except (OSError, ValueError):
+        return False
+
+
 def systemctl_argv(verb: str, unit: str = WORKER_UNIT) -> list[str]:
     """Keep the verb first for both recorder prefix matching and readable previews."""
     return ["systemctl", verb, *(["--no-block"] if verb in ("start", "restart", "stop") else []), unit]
@@ -419,7 +437,8 @@ class Broker:
                  peer_uid_of: Callable[[socket.socket], int], allowed_uid: int, audit: Audit, now: Clock = time.time,
                  seat: int | None, monotonic: Clock = time.monotonic, worker_home: str = "/home/imd-worker", socket_path: str = SOCKET_PATH,
                  standing_url: str = STANDING_URL, proc_root: str = "/proc", unit: str = WORKER_UNIT,
-                 broker_dir: str = BROKER_DIR, python: str = PYTHON, worker_uid: int = WORKER_UID) -> None:
+                 broker_dir: str = BROKER_DIR, python: str = PYTHON, worker_uid: int = WORKER_UID,
+                 connection_alive_of: Callable = connection_alive) -> None:
         self._run = run
         self._popen = popen                     # reserved for a journal follower; the v1 drain polls on the tick
         self._peer_uid_of = peer_uid_of
@@ -445,6 +464,8 @@ class Broker:
         self._lock = threading.Lock()
         self._state_lock = threading.RLock()
         self._read_lock = threading.Lock()
+        self._read_slots = threading.BoundedSemaphore(MAX_SERIALIZED_READS)
+        self._connection_alive = connection_alive_of
         self._counts_lock = threading.Lock()
         self._audit_lock = threading.Lock()
         self._in_flight: dict | None = None
@@ -671,7 +692,7 @@ class Broker:
                         self._log(peer_uid=peer, verb=verb, phase="refused", outcome="busy")
                         response = verbs.err("busy", _arrival_busy)
                     else:
-                        response = self.handle({"v": verbs.PROTOCOL_VERSION, "verb": verb, "args": args}, peer_uid=peer, _accepted_at=_accepted_at)
+                        response = self.handle({"v": verbs.PROTOCOL_VERSION, "verb": verb, "args": args}, peer_uid=peer, _accepted_at=_accepted_at, _conn=conn)
         except (OSError, ValueError) as exc:
             response = verbs.err("internal", {"reason": exc.__class__.__name__})
         try:
@@ -684,7 +705,7 @@ class Broker:
             except OSError:
                 pass
 
-    def handle(self, request: dict, *, peer_uid: int, _accepted_at: float | None = None) -> dict:
+    def handle(self, request: dict, *, peer_uid: int, _accepted_at: float | None = None, _conn: socket.socket | None = None) -> dict:
         # Read serialization never delays writes or ping; state sections contain no children.
         accepted_at = self._monotonic() if _accepted_at is None else _accepted_at
         verb = request.get("verb") if isinstance(request, dict) else None
@@ -692,10 +713,30 @@ class Broker:
         if peer_uid == self._allowed_uid and busy is not None and verb in (*verbs.WRITE_VERBS, verbs.APPLY_VERB):
             self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="busy")
             return verbs.err("busy", busy)
-        if verb in verbs.READ_VERBS and verb != "ping":
-            with self._read_lock:
-                return self._handle(request, peer_uid=peer_uid, accepted_at=accepted_at)
+        if peer_uid == self._allowed_uid and self._needs_read_lock(verb):
+            if not self._read_slots.acquire(blocking=False):
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="busy")
+                return verbs.err("busy", {"reason": "read queue full"})
+            locked = False
+            try:
+                while self._connection_alive(_conn):
+                    locked = self._read_lock.acquire(timeout=0.5)
+                    if locked:
+                        if not self._connection_alive(_conn):
+                            break
+                        return self._handle(request, peer_uid=peer_uid, accepted_at=accepted_at)
+                return verbs.err("busy", {"reason": "client disconnected"})
+            finally:
+                if locked:
+                    self._read_lock.release()
+                self._read_slots.release()
         return self._handle(request, peer_uid=peer_uid, accepted_at=accepted_at)
+
+    def _needs_read_lock(self, verb: object) -> bool:
+        if verb not in verbs.READ_VERBS:
+            return False
+        return (verb in verbs.TRANSIENT_VERBS or
+                (self._whoami_key is None and (verb == "seat" or (verb == "gate" and self._seat is None))))
 
     def _handle(self, request: dict, *, peer_uid: int, accepted_at: float) -> dict:
         """The whole verb dispatch; never raises."""
@@ -1510,12 +1551,13 @@ class Broker:
     def serve_forever(self, listener: socket.socket) -> None:
         """Bounded admission stays responsive while one serialized operation writes.
 
-        Seven connections and one housekeeping thread at most, with no task queue.
+        Ten connections and one housekeeping thread at most. Decoded transient reads
+        occupy at most four slots; control/root reads have six reserved slots.
         Busy is captured at accept and checked again at dispatch so a concurrent
         apply cannot become a delayed write after the first one exits.
         """
         listener.settimeout(1.0)
-        slots = threading.BoundedSemaphore(7)
+        slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
         connections: list[threading.Thread] = []
         tick_thread = None
 

@@ -354,3 +354,135 @@ def test_slow_gate_and_queue_command_reply_before_client_timeout(tmp_path):
     assert conn.response["error"] == "timeout"
     assert mono() < CLIENT_TIMEOUT_S
     assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is False
+
+
+@pytest.mark.parametrize("verb,args", [("verify", None), ("gate", {}), ("audit-tail", {"n": 5}), ("orphans", {}), ("outbox", {})])
+def test_slow_transient_read_does_not_block_root_or_worker_reads(tmp_path, verb, args):
+    broker, runner, *_ = make_broker(tmp_path)
+    plan = call(broker, "restart")["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    started, release = threading.Event(), threading.Event()
+    def slow(argv, kw):
+        started.set()
+        assert release.wait(3)
+        return subprocess.CompletedProcess(argv, 0, b"ok", b"")
+    runner.script[("systemd-run",)] = slow
+    conn = Conn(verb, args if args is not None else {"plan_id": plan["plan_id"]})
+    with serving(broker) as incoming:
+        incoming.put(Conn("status"))
+        assert started.wait(1)
+        try:
+            incoming.put(conn)
+            assert conn.done.wait(PING_TIMEOUT_S)
+            assert conn.response["ok"]
+        finally:
+            release.set()
+
+
+def test_serialized_read_set_pins_root_bypass_and_dynamic_projection(tmp_path):
+    from imd_dashd import verbs
+    broker, *_ = make_broker(tmp_path)
+    bypass = set(verbs.READ_VERBS) & set(verbs.ROOT_VERBS)
+    assert bypass == {"ping", "orphans", "gate", "verify", "audit-tail"}
+    assert all(not broker._needs_read_lock(verb) for verb in bypass)
+    assert all(not broker._needs_read_lock(verb) for verb in ("outbox", "work-stat", "hints-stat", "auth-mtime"))
+    assert all(broker._needs_read_lock(verb) for verb in set(verbs.READ_VERBS) & set(verbs.TRANSIENT_VERBS))
+    broker._seat = None
+    assert broker._needs_read_lock("seat") and broker._needs_read_lock("gate")
+
+
+
+def test_eof_check_is_immediate_for_live_timeout_socket_and_half_close():
+    from imd_dashd.imd_dashd import connection_alive
+    left, right = socket.socketpair()
+    try:
+        left.settimeout(5)
+        result, done = [], threading.Event()
+        def inspect():
+            result.append(connection_alive(left))
+            done.set()
+        thread = threading.Thread(target=inspect)
+        thread.start()
+        assert done.wait(0.5), "MSG_PEEK must not inherit the five-second polling wait"
+        thread.join()
+        assert result == [True] and left.gettimeout() == 5
+        right.sendall(b"x")
+        assert connection_alive(left) and left.recv(1) == b"x"
+        right.shutdown(socket.SHUT_WR)
+        assert connection_alive(left) is False
+        assert connection_alive(Conn("ping")) is True
+    finally:
+        left.close()
+        right.close()
+
+
+def test_serialized_read_queue_reserves_control_slots_and_reaps_abandoned_waiters(tmp_path):
+    from imd_dashd.imd_dashd import MAX_CONNECTIONS, MAX_SERIALIZED_READS, connection_alive
+    assert MAX_CONNECTIONS == 10 and MAX_SERIALIZED_READS == 4
+    broker, runner, *_ = make_broker(tmp_path)
+    plan = call(broker, "restart")["plan"]
+    started, release = threading.Event(), threading.Event()
+    entered = queue.Queue()
+    gone = queue.Queue()
+    original_handle = broker.handle
+    def handle(request, **kwargs):
+        if kwargs.get("_conn") is not None and isinstance(kwargs["_conn"], socket.socket):
+            entered.put(kwargs["_conn"])
+        return original_handle(request, **kwargs)
+    broker.handle = handle
+    def alive(conn):
+        value = connection_alive(conn)
+        if not value:
+            gone.put(conn)
+        return value
+    broker._connection_alive = alive
+    def slow(argv, kw):
+        started.set()
+        assert release.wait(4)
+        return subprocess.CompletedProcess(argv, 0, b"ok", b"")
+    runner.script[("systemd-run",)] = slow
+    clients = []
+    with serving(broker) as incoming:
+        incoming.put(Conn("status"))
+        assert started.wait(1)
+        try:
+            for _ in range(6):
+                client, server = socket.socketpair()
+                clients.append(client)
+                client.sendall(b'{"v":1,"verb":"status","args":{}}\n')
+                incoming.put(server)
+                assert entered.get(timeout=1) is server
+            # The first three wait; subsequent reads are refused promptly, while six slots remain for control.
+            for client in clients[3:]:
+                client.settimeout(1)
+                response = json.loads(client.recv(65536))
+                assert response["error"] == "busy" and response["detail"] == {"reason": "read queue full"}
+            for client in clients:
+                client.close()
+            for _ in range(3):
+                gone.get(timeout=1)
+            for conn in (Conn("ping"), apply_conn(plan), Conn("verify", {"plan_id": plan["plan_id"]})):
+                incoming.put(conn)
+                assert conn.done.wait(PING_TIMEOUT_S) and conn.response["ok"]
+            # The slow child remains blocked: no waiter is allowed to start another child after EOF.
+            assert len(runner.argvs("systemd-run")) == 1
+        finally:
+            for client in clients: client.close()
+            release.set()
+
+
+def test_slow_sender_does_not_block_accept_loop(tmp_path):
+    broker, *_ = make_broker(tmp_path)
+    blocked, release = threading.Event(), threading.Event()
+    def slow_send():
+        blocked.set()
+        assert release.wait(2)
+    with serving(broker) as incoming:
+        incoming.put(Conn("ping", before_read=slow_send))
+        assert blocked.wait(1)
+        try:
+            ping = Conn("ping")
+            incoming.put(ping)
+            assert ping.done.wait(PING_TIMEOUT_S) and ping.response["ok"]
+        finally:
+            release.set()

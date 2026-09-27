@@ -1072,12 +1072,13 @@ def test_serving_loop_bounds_connections_without_queueing_overload(tmp_path):
         def close(self):
             self.closed = True
             if self is connections[-1]: release.set()
-    connections = [Conn() for _ in range(8)]
+    from imd_dashd.imd_dashd import MAX_CONNECTIONS
+    connections = [Conn() for _ in range(MAX_CONNECTIONS + 1)]
     class Listener:
         i = 0
         def settimeout(self, timeout): pass
         def accept(self):
-            if self.i == 8: raise OSError('finished')
+            if self.i == len(connections): raise OSError('finished')
             if self.i: assert connections[self.i - 1].reading.wait(2)
             conn = connections[self.i]
             self.i += 1
@@ -1086,7 +1087,7 @@ def test_serving_loop_bounds_connections_without_queueing_overload(tmp_path):
         broker.serve_forever(Listener())
     finally:
         release.set()
-    assert all(c.sent and c.closed for c in connections[:7])
+    assert all(c.sent and c.closed for c in connections[:-1])
     assert connections[-1].closed and not connections[-1].sent and not connections[-1].reading.is_set()
 
 

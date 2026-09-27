@@ -876,3 +876,26 @@ def test_local_canary_refuses_nested_device_key(tmp_path, monkeypatch, as_list):
     audit = (tmp_path / "seat_audit.jsonl").read_text()
     assert json.loads(audit.splitlines()[-1])["outcome"] == "canary: hex64"
     assert nested not in audit and PUBLIC_KEY not in audit
+
+
+
+def test_unix_client_frames_request_without_half_closing():
+    from imd_dashd.imd_dashd import connection_alive
+    seen = []
+    threads = []
+    def connect(path, timeout_s):
+        ours, theirs = socket.socketpair()
+        def serve():
+            try:
+                request = theirs.recv(65536)
+                seen.append(request.endswith(b"\n") and connection_alive(theirs))
+                theirs.sendall(b'{"ok":true,"data":{}}\n')
+            finally:
+                theirs.close()
+        thread = threading.Thread(target=serve)
+        threads.append(thread)
+        thread.start()
+        return ours
+    assert UnixSocketBroker(connect=connect).read("ping") == {}
+    for thread in threads: thread.join(1)
+    assert seen == [True]
