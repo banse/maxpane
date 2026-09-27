@@ -17,8 +17,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from maxpane_dashboard.analytics.seat_redact import strip_controls
@@ -135,3 +136,111 @@ def failure_class_word(value: object) -> str | None:
     if value is None:
         return None
     return value if isinstance(value, str) and value in FAILURE_CLASSES else REASON_OTHER
+
+
+def _int_or_none(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _str_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _bool_or_none(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def _mapping(value: object) -> Mapping:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _parse_pg_timestamp(text: object) -> float | None:
+    """Epoch seconds from Postgres text (``2026-09-26 03:11:29.985+00``) or ISO Z; ``None`` when unusable.
+
+    WP7's public ``analytics.seat_signals.parse_pg_timestamp`` is a verbatim copy of this body
+    (contract deviation recorded in WP5.md); the two must stay equal.
+    """
+    if not isinstance(text, str):
+        return None
+    match = _PG_TS_RE.match(text.strip())
+    if match is None:
+        return None
+    year, month, day, hour, minute, second, fraction, tz = match.groups()
+    micro = int((fraction or "0").ljust(6, "0")[:6])
+    offset = timedelta(0)
+    if tz and tz != "Z":
+        sign = -1 if tz[0] == "-" else 1
+        digits = tz[1:].replace(":", "")
+        hours = int(digits[:2])
+        minutes = int(digits[2:4]) if len(digits) >= 4 else 0
+        offset = sign * timedelta(hours=hours, minutes=minutes)
+    try:
+        stamp = datetime(int(year), int(month), int(day), int(hour), int(minute), int(second), micro,
+                         tzinfo=timezone(offset))
+    except ValueError:
+        return None
+    return stamp.timestamp()
+
+
+def _iso_z(epoch: float, *, millis: bool = True) -> str:
+    stamp = datetime.fromtimestamp(epoch, tz=timezone.utc)
+    text = stamp.strftime("%Y-%m-%dT%H:%M:%S")
+    if millis:
+        text += f".{stamp.microsecond // 1000:03d}"
+    return text + "Z"
+
+
+def _normalise_stamp(value: object) -> str | None:
+    epoch = _parse_pg_timestamp(value)
+    return _iso_z(epoch) if epoch is not None else None
+
+
+def normalise_work_row(row: Mapping) -> dict:
+    """One ``/seats/<id>.work[]`` row with exactly :data:`WORK_ROW_KEYS`.
+
+    ``acceptedAt`` arrives as Postgres text and ``submittedAt`` as ISO Z (spec §6 seats row);
+    both leave as ISO Z with milliseconds or ``None``.  ``submissionHash`` is kept whole (the
+    ledger joins by ``startswith(hash12)``); a non-string hash is ``None`` so no join ever raises.
+    ``status`` outside the four verdict words is ``"unknown"``; missing keys are ``None``, never ``0``.
+    """
+    src = _mapping(row)
+    out: dict[str, Any] = {key: src.get(key) for key in WORK_ROW_KEYS}
+    status = out["status"]
+    if isinstance(status, str) and status.lower() in WORK_STATUSES:
+        out["status"] = status.lower()
+    else:
+        out["status"] = None if status is None else "unknown"
+    digest = out["submissionHash"]
+    out["submissionHash"] = digest if isinstance(digest, str) and digest else None
+    out["acceptedAt"] = _normalise_stamp(out["acceptedAt"])
+    out["submittedAt"] = _normalise_stamp(out["submittedAt"])
+    for key in ("jobId", "objective", "jobState", "nodeKey", "role"):
+        out[key] = _str_or_none(out[key])
+    return out
+
+
+def validate_counters(seat_body: Mapping) -> bool:
+    """``attempts == accepted + rejected + failed + pending``, every counter an ``int`` (not a bool).
+
+    Measured on 417/417 seats (fill5 §3, spec §6 seats row); a body that violates it, or lacks a
+    counter, is ``False`` -- the caller renders ``counters inconsistent (api)`` instead of numbers.
+    """
+    values = {key: _int_or_none(_mapping(seat_body).get(key)) for key in COUNTER_KEYS}
+    if any(v is None for v in values.values()):
+        return False
+    return values["attempts"] == values["accepted"] + values["rejected"] + values["failed"] + values["pending"]
+
+
+def seat_counters(seat_body: Mapping) -> dict:
+    """The five lifetime counters as served plus ``countersInconsistent`` (spec §7 standing block).
+
+    ``countersInconsistent`` is ``True`` when the identity fails on five ints, ``False`` when it
+    holds, ``None`` when a counter is missing (nothing to check).  The counters are never
+    'repaired' into the sum -- mutation proof 36.
+    """
+    values = {key: _int_or_none(_mapping(seat_body).get(key)) for key in COUNTER_KEYS}
+    if any(v is None for v in values.values()):
+        flag: bool | None = None
+    else:
+        flag = not validate_counters(seat_body)
+    return {**values, "countersInconsistent": flag}

@@ -163,3 +163,62 @@ def test_api_fixtures_are_summary_free_redacted_and_registered():
     assert _fixture("seat7_work20_inconsistent.json")["attempts"] == 290
     assert _fixture("workers_standing_q0.json")["queue"] is None
     assert _fixture("seat7_500.json")["error"] == "internal_error"
+
+
+# ---------------------------------------------------------------------------
+# Task 5.4 — Postgres timestamps, work rows, the counters identity
+# ---------------------------------------------------------------------------
+
+def test_postgres_timestamp_and_verdict_lag():
+    """Spec §6 seats row: `acceptedAt` is Postgres text `2026-09-26 03:11:29.985+00`, `submittedAt` ISO `Z`;
+    mutation proof 21.  The measured 69 s pending->accepted flip (fill5 §3: submitted 03:10:20, accepted 03:11:29)."""
+    p = seat_api._parse_pg_timestamp
+    assert p("2026-09-26 03:11:29.985+00") == p("2026-09-26T03:11:29.985Z") == 1790392289.985
+    assert p("2026-09-26 05:11:29.985+02") == p("2026-09-26 05:11:29.985+02:00") == p("2026-09-26 05:11:29.985+0200") == 1790392289.985
+    assert p("2026-09-26 03:11:29+00") == 1790392289.0 and p("2026-09-26T03:11:29Z") == 1790392289.0
+    assert p("not a stamp") is None and p(None) is None and p(1790392289) is None and p("2026-13-01 00:00:00+00") is None
+    row = seat_api.normalise_work_row({
+        "jobId": "e7a1c2d3-4b5f-4a6e-9c8d-0f1e2d3c4b5a", "objective": "Assess the rebalance", "jobState": "completed",
+        "nodeKey": "oracle_assess", "role": "implement", "status": "accepted", "submissionHash": HEX,
+        "submittedAt": "2026-09-26T03:10:20.985Z", "acceptedAt": "2026-09-26 03:11:29.985+00", "launch": None,
+    })
+    assert row["acceptedAt"] == "2026-09-26T03:11:29.985Z" and row["submittedAt"] == "2026-09-26T03:10:20.985Z"
+    assert p(row["acceptedAt"]) - p(row["submittedAt"]) == 69.0          # the verdict lag WP7 renders as `+1 m 9 s`
+    assert row["submissionHash"] == HEX and row["status"] == "accepted" and tuple(row) == seat_api.WORK_ROW_KEYS
+    # an unparseable stamp is None -- never the raw text, never 0; a null hash never joins; odd status words are "unknown"
+    assert seat_api.normalise_work_row({"acceptedAt": "yesterday", "status": "Weird", "submissionHash": None})["acceptedAt"] is None
+    assert seat_api.normalise_work_row({"status": "Weird"})["status"] == "unknown"
+    assert seat_api.normalise_work_row({"status": "ACCEPTED", "submissionHash": 42})["submissionHash"] is None
+    assert seat_api.normalise_work_row({})["status"] is None and seat_api.normalise_work_row("junk")["jobId"] is None
+
+
+def test_inconsistent_counters_are_flagged():
+    """Spec §6 seats row + §7 standing block, mutation proof 36: attempts == accepted+rejected+failed+pending
+    (417/417 seats, fill5 §3).  A violating body is flagged and never 'repaired' into the sum."""
+    good, bad = _fixture("seat7_work20.json"), _fixture("seat7_work20_inconsistent.json")
+    assert seat_api.validate_counters(good) is True
+    assert seat_api.seat_counters(good) == {"attempts": 288, "accepted": 244, "rejected": 5, "failed": 11, "pending": 28,
+                                            "countersInconsistent": False}
+    assert seat_api.validate_counters(bad) is False
+    flagged = seat_api.seat_counters(bad)
+    assert flagged["countersInconsistent"] is True
+    assert flagged["attempts"] == 290 and flagged["accepted"] + flagged["rejected"] + flagged["failed"] + flagged["pending"] == 288
+    # a missing, string or bool counter can never validate; nothing to check -> None, not False-as-a-verdict
+    assert seat_api.validate_counters({**good, "failed": "11"}) is False
+    assert seat_api.validate_counters({**good, "failed": True}) is False
+    assert seat_api.validate_counters({k: v for k, v in good.items() if k != "pending"}) is False
+    assert seat_api.seat_counters({})["countersInconsistent"] is None and seat_api.seat_counters({})["attempts"] is None
+
+
+def test_work_rows_normalise_to_exact_keys_and_iso_stamps():
+    """Every fixture row leaves with exactly WORK_ROW_KEYS and ISO-Z millisecond stamps (or None)."""
+    import re
+    iso_ms = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$")
+    rows = [seat_api.normalise_work_row(r) for r in _fixture("seat7_work20.json")["work"]]
+    assert len(rows) == 20 and all(tuple(r) == seat_api.WORK_ROW_KEYS for r in rows)
+    assert all(iso_ms.match(r["submittedAt"]) for r in rows)
+    assert all(r["acceptedAt"] is None or iso_ms.match(r["acceptedAt"]) for r in rows)
+    assert all(r["status"] in seat_api.WORK_STATUSES for r in rows)
+    assert all(r["acceptedAt"] is None for r in rows if r["status"] == "pending")   # pending rows carry no acceptedAt
+    assert all(r["acceptedAt"] is not None for r in rows if r["status"] == "accepted")   # an accepted row always has its verdict stamp
+    assert any(r["status"] == "accepted" for r in rows)
