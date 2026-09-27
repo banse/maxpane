@@ -1127,7 +1127,8 @@ class Broker:
                 result = self._dispatch_apply(plan, args, peer_uid, now)
             except (OSError, ValueError) as exc:
                 result = verbs.err("internal", {"reason": type(exc).__name__})
-            if not result.get("ok") and not result.get("detail", {}).get("partial"):
+            uncertain = result.get("error") == "timeout" and result.get("detail", {}).get("outcome") == "timeout"
+            if not result.get("ok") and not result.get("detail", {}).get("partial") and not uncertain:
                 with self._state_lock:
                     watch = self._watches[plan_id]
                     watch.kind, watch.done, watch.verified = "none", True, False
@@ -1209,6 +1210,7 @@ class Broker:
         refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id, budget=APPLY_EXEC_DEADLINE_S)
         if refusal is not None:
             return refusal
+        started = self._now()  # evidence may arrive before the queue command returns
         try:
             done = self._run(list(plan.argv), capture_output=True, timeout=SYSTEMCTL_TIMEOUT_S)
             exit_code: int | None = done.returncode
@@ -1218,7 +1220,7 @@ class Broker:
             exit_code = -1
         kind = {"restart": "restart", "drain-restart": "restart", "stop": "stop", "start": "start",
                 "enable-boot": "enabled", "disable-boot": "disabled"}[plan.verb]
-        watch = VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind=kind, cursor_before=cursor_before, started=self._now())
+        watch = VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind=kind, cursor_before=cursor_before, started=started)
         self._watches[plan.plan_id] = watch
         outcome = "applied" if exit_code == 0 else ("timeout" if exit_code is None else f"exit {exit_code}")
         seq = self._log(peer_uid=peer_uid, verb=plan.verb, phase="apply", plan_id=plan.plan_id, preconditions=preconditions,
@@ -1226,8 +1228,9 @@ class Broker:
         if exit_code != 0:
             code = "timeout" if exit_code is None else "internal"
             detail = {"outcome": outcome, "exit_code": exit_code, "audit_seq": seq}
-            watch.kind, watch.done, watch.verified = "none", True, False
-            watch.reason = code + ": " + json.dumps(detail, sort_keys=True)
+            if exit_code is not None:  # a timeout may follow successful job acceptance
+                watch.kind, watch.done, watch.verified = "none", True, False
+                watch.reason = code + ": " + json.dumps(detail, sort_keys=True)
             return verbs.err(code, detail)
         return verbs.ok(result={"outcome": "applied", "exit_code": exit_code, "cursor_before": cursor_before, "audit_seq": seq,
                                 "preconditions": preconditions})

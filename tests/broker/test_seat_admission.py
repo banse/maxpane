@@ -353,7 +353,7 @@ def test_slow_gate_and_queue_command_reply_before_client_timeout(tmp_path):
         assert conn.done.wait(1)
     assert conn.response["error"] == "timeout"
     assert mono() < CLIENT_TIMEOUT_S
-    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is False
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None
 
 
 @pytest.mark.parametrize("verb,args", [("verify", None), ("gate", {}), ("audit-tail", {"n": 5}), ("orphans", {}), ("outbox", {})])

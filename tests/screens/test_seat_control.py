@@ -754,3 +754,91 @@ async def test_partial_kill_retains_pids_and_polls_real_watch(tmp_path, monkeypa
         assert 'verified ✓' in text and 'kill-orphans' in text
         assert calls.count('audit-tail') >= 3, 'audit refreshes at open, partial apply and final verification'
         assert calls.count('kill-orphans') == calls.count('apply') == 1
+
+
+@pytest.mark.parametrize("succeeded", [False, True])
+async def test_recovered_skill_apply_keeps_restart_required_workflow(tmp_path, succeeded):
+    import asyncio
+    from maxpane_dashboard.data.seat_broker_client import BrokerError, UnixSocketBroker
+    from tests.broker._harness import make_broker, transient
+    from tests.data.test_seat_broker_client import _served
+    from tests.screens.test_seat_control import DOC, _A, _Manager, _manual_control, _painted, _screen_text
+
+    state = {'on': True}
+    def children(argv, kwargs):
+        if argv[-1] == 'skills':
+            return transient(('on' if state['on'] else 'off') + ' oracle-assess — needs network\n')
+        if argv[-2:] == ['remove', 'oracle-assess']:
+            if not succeeded:
+                return transient('failed', rc=1)
+            state['on'] = False
+        return transient('')
+    root, _runner, _journal, clock, _audit = make_broker(tmp_path, script={('systemd-run',): children})
+    class LostReply(UnixSocketBroker):
+        def call(self, verb, args=None, **kwargs):
+            response = super().call(verb, args, **kwargs)
+            if verb == 'apply':
+                raise BrokerError('transport', {'reason': 'TimeoutError'})
+            return response
+    broker = LostReply(connect=_served(root))
+    manager = _Manager(DOC, broker)
+    async with _A(manager).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, clock)
+        await control._plan_verb('skills-set', {'skill_id': 'oracle-assess', 'on': False})
+        plan_id = control._plan.plan_id
+        assert control._plan.restart_required_after is True
+        await control._apply(plan_id[:4])
+        await _painted(pilot)
+        await asyncio.to_thread(root._threads[plan_id].join, 2)
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == 'done'
+        assert ('verified ✓' if succeeded else 'verify: not seen') in _screen_text(pilot)
+        assert manager.restart_required_calls == ([True] if succeeded else [])
+        assert ('restart required — press [d] to drain-restart' in _screen_text(pilot)) is succeeded
+        await control._poll_verify()
+        await _painted(pilot)
+        assert manager.restart_required_calls == ([True] if succeeded else []), 'repeated verification has no duplicate effects'
+
+
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("has_cursor", [False, True])
+async def test_root_queue_timeout_verifies_actual_outcome_and_clears_restart_note(tmp_path, completed, has_cursor):
+    import subprocess
+    from maxpane_dashboard.data.seat_broker_client import UnixSocketBroker
+    from tests.broker._harness import make_broker, msg
+    from tests.data.test_seat_broker_client import _served
+
+    root, runner, journal, clock, _audit = make_broker(tmp_path)
+    def queue(argv, kwargs):
+        clock.advance(2)
+        if completed:
+            journal.add(msg(clock(), 'shutting down'))
+            clock.advance(0.3)
+            journal.add(msg(clock(), 'runtimes: codex'))
+        raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+    runner.script[('systemctl', 'restart')] = queue
+    broker = UnixSocketBroker(connect=_served(root))
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, clock)
+        control._restart_note = 'restart required — press [d] to drain-restart'
+        await control._plan_verb('restart', {})
+        await control._apply(control._plan.plan_id[:4])
+        await _painted(pilot)
+        assert control.mode == 'verifying'
+        _assert_color(pilot, 'outcome unknown — checking verify', 3)
+        if not has_cursor:
+            root._watches[control._plan.plan_id].cursor_before = None
+        await control._poll_verify()
+        await _painted(pilot)
+        if completed:
+            assert control.mode == 'done' and 'verified ✓' in _screen_text(pilot)
+            assert 'restart required — press [d] to drain-restart' not in _screen_text(pilot)
+        else:
+            assert control.mode == 'verifying'
+            clock.advance(31)
+            await control._poll_verify()
+            await _painted(pilot)
+            assert control.mode == 'done' and 'verify: not seen' in _screen_text(pilot)
+            assert 'restart required — press [d] to drain-restart' in _screen_text(pilot)
+        assert len(runner.argvs('systemctl', 'restart')) == 1

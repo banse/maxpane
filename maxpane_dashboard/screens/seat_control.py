@@ -188,6 +188,7 @@ class SeatControlScreen(ModalScreen[None]):
         self._force_confirmed = False
         self._submit_pending = False
         self._status = Text("")
+        self._success_effects_plan_id: str | None = None
         self._outcome_unknown = False
         self._partial_note: str | None = None
         #: kept under every later status until a restart is applied (spec §11 skills set: drain-restart is step 2)
@@ -557,6 +558,15 @@ class SeatControlScreen(ModalScreen[None]):
             self._busy = False
         self._mode = "verifying"
         self._focus_input(False)
+        self._apply_success_effects(plan)
+        self._set_status(f"{_word(result.outcome)} · verifying …", "yellow")
+        self.run_worker(self._load_audit(), exclusive=True, group="seat-control-audit")
+
+    def _apply_success_effects(self, plan) -> None:
+        """Apply the successful plan's UI effects once, including recovered replies."""
+        if self._success_effects_plan_id == plan.plan_id:
+            return
+        self._success_effects_plan_id = plan.plan_id
         if plan.verb in ("restart", "drain-restart"):
             self._restart_note = None  # step 2 taken: the restart the note asked for is applied
         if getattr(plan, "restart_required_after", False):
@@ -565,8 +575,6 @@ class SeatControlScreen(ModalScreen[None]):
             if callable(set_required):
                 set_required(True)
             self._restart_note = "restart required — press [d] to drain-restart"
-        self._set_status(f"{_word(result.outcome)} · verifying …", "yellow")
-        self.run_worker(self._load_audit(), exclusive=True, group="seat-control-audit")
 
     async def _poll_verify(self) -> None:
         plan = self._plan
@@ -600,6 +608,7 @@ class SeatControlScreen(ModalScreen[None]):
         self._force_node8 = None
         lines = [_word(line) for line in (result.verify_lines or [])]
         if result.verified is True:
+            self._apply_success_effects(plan)
             connected = result.connected
             connected_word = "yes" if connected is True else (_word(connected) if connected else "not yet reported")
             status = Text.assemble(("verified ✓", "green"))
