@@ -226,3 +226,119 @@ def test_sshd_match_block_denies_forwarding_for_imd_dash():
         "PermitTTY": "yes",
     }
     assert sum(ln.startswith("Match") for ln in lines) == 1
+
+
+# --- Task 9.3: install.sh ---------------------------------------------------------------------------
+
+INSTALL_SH = DEPLOY / "install.sh"
+STRICT_MODE = "set -euo pipefail"
+STEP_TITLES = (                                   #: spec §12.1 "Install sequence" 1..8, as install.sh prints them
+    "== step 1:", "== step 2:", "== step 3:", "== step 4:", "== step 5:", "== step 6:", "== step 7:", "== step 8:",
+)
+
+
+def _bash_n(path: Path) -> None:
+    """``bash -n`` parses the script (macOS ships bash 3.2, so the scripts stay 3.2-compatible)."""
+    proc = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True, timeout=20)
+    assert proc.returncode == 0, proc.stderr
+
+
+def _run_bash(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run a deploy script in a minimal environment; nothing here may touch the host (dry-run / list only)."""
+    return subprocess.run(["bash", *args], capture_output=True, text=True, timeout=60,
+                          env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C", **(env or {})})
+
+
+def test_install_sh_is_bash_strict_and_symlinks_usr_local_bin_pepepane():
+    """Spec §12.1 PATH: ``ssh host cmd`` runs a non-interactive bash whose skel .bashrc returns before
+    any user additions, so the venv goes on PATH through a root-owned symlink in /usr/local/bin, never
+    a .bashrc line. Bash strict mode + the hash-pinned offline install are the other two lines that
+    must never disappear. Mutation: drop ``--require-hashes`` -> red; ``ln -s`` into ~/.local/bin -> red."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    assert lines[0] == "#!/usr/bin/env bash"
+    assert STRICT_MODE in [ln.strip() for ln in lines[:12]], "strict mode in the header, before any command"
+    assert INSTALL_SH.stat().st_mode & 0o111, "install.sh is executable"
+    assert re.search(r'ln -sfn "\$VENV/bin/pepepane" /usr/local/bin/pepepane', text)
+    assert 'VENV="$PREFIX/venv"' in text and 'PREFIX=/opt/imd-dash' in text
+    assert "--no-index" in text and "--require-hashes" in text and "--only-binary=:all:" in text
+    assert re.search(r'(?m)^run "\$VENV/bin/python" -m pip install .*--require-hashes -r "\$LOCK"$', text)
+    assert "sha256sum -c" in text
+    assert "useradd -m -s /bin/bash -G systemd-journal" in text
+    assert "chmod 0700" in text
+    _bash_n(INSTALL_SH)
+
+
+def test_install_sh_dry_run_prints_the_eight_steps_in_order(tmp_path):
+    """Spec §12.1 install sequence 1..8: ``--dry-run`` prints every command it would run, runs none,
+    needs neither root nor Linux, and keeps the step order. Mutation: swap steps 5 and 6 -> red;
+    let dry-run execute ``ln`` -> the ``[dry-run]`` prefix disappears -> red."""
+    key = tmp_path / "imd-dash.pub"
+    key.write_text("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyForTheGuard imd-dash@probe\n")
+    proc = _run_bash(str(INSTALL_SH), "--dry-run", "--route", "a", "--authorized-keys", str(key))
+    assert proc.returncode == 0, proc.stderr
+    out = proc.stdout
+    positions = [out.index(title) for title in STEP_TITLES]
+    assert positions == sorted(positions), "steps print in spec order"
+    assert "[dry-run] apt-get install -y --no-install-recommends python3.14-venv" in out
+    assert "[dry-run] useradd -m -s /bin/bash -G systemd-journal imd-dash" in out
+    assert "[dry-run] chmod 0700 /home/imd-dash" in out
+    assert f"[dry-run] install -m 0600 -o imd-dash -g imd-dash {key} /home/imd-dash/.ssh/authorized_keys" in out
+    assert "--require-hashes -r /opt/imd-dash/requirements.lock" in out
+    assert "[dry-run] ln -sfn /opt/imd-dash/venv/bin/pepepane /usr/local/bin/pepepane" in out
+    assert "[dry-run] systemctl enable --now imd-dashd.socket" in out
+    assert "[dry-run] sshd -t" in out and "[dry-run] systemctl reload ssh" in out
+    assert "20-hide-dash.conf" in out and "--worker-dropin" in out, "step 7 names the flag it is waiting for"
+    assert "probe_seat_host.sh" in out, "step 8 prints the probe command"
+    assert "\n  + " not in out, "nothing was executed in dry-run mode"
+
+
+def test_install_sh_never_restarts_stops_or_starts_the_worker():
+    """Spec §12.1 step 7 and §11: the drop-in takes effect at a DRAINED restart issued through the
+    broker's gate; the installer has no gate and therefore no restart. Mutation: add
+    ``run systemctl restart imd-worker.service`` -> red."""
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    for verb in ("systemctl restart", "systemctl stop", "systemctl start", "systemctl kill"):
+        assert verb not in text, verb
+    assert "systemctl enable --now imd-dashd.socket" in text, "the one unit the installer starts is the socket"
+
+
+def test_install_sh_refuses_bad_routes_and_route_b_without_the_pip_wheel(tmp_path):
+    """Spec §16 #2: routes are a (apt python3.14-venv) or b (venv --without-pip + pip wheel bootstrap,
+    fill7 §3); b without ``--pip-wheel`` cannot bootstrap pip and must say so instead of running
+    ``python3 -m venv`` (which fails on the VPS: no ensurepip). Mutation: default the pip wheel -> red."""
+    bad = _run_bash(str(INSTALL_SH), "--dry-run", "--route", "c")
+    assert bad.returncode == 1 and "--route must be a or b" in bad.stderr
+    no_wheel = _run_bash(str(INSTALL_SH), "--dry-run", "--route", "b")
+    assert no_wheel.returncode == 1 and "--pip-wheel" in no_wheel.stderr
+    wheel = tmp_path / "pip-26.2.1-py3-none-any.whl"
+    wheel.write_bytes(b"PK\x05\x06" + b"\0" * 18)
+    ok = _run_bash(str(INSTALL_SH), "--dry-run", "--route", "b", "--pip-wheel", str(wheel))
+    assert ok.returncode == 0, ok.stderr
+    assert "[dry-run] python3 -m venv --without-pip /opt/imd-dash/venv" in ok.stdout
+    assert f"{wheel}/pip install --no-index {wheel}" in ok.stdout
+    usage = _run_bash(str(INSTALL_SH), "--dry-run", "--bogus")
+    assert usage.returncode == 1 and "unknown argument" in usage.stderr
+
+
+def test_install_sh_gives_the_broker_its_seat():
+    """Spec §11 gate step (b): at every apply the broker re-reads ``GET /seats/<id>/standing`` itself
+    (``standing_age_s <= 2``); §1 criterion 4 and the drain fire condition need that plane half. The root
+    broker learns <id> only from ``--seat`` (WP6 ``main``: default ``None`` -> ``_standing_url_for_seat()``
+    is ``None`` -> every gate is ``local-only`` and a drain re-arms until ``drain_expired``). The
+    MANIFEST-pinned unit stays the contract's verbatim text, so install.sh writes the seat into a drop-in
+    that resets and re-states ExecStart, before the socket is enabled. Mutation: drop the drop-in -> red;
+    render ``--seat`` without its value -> red; skip the empty ``ExecStart=`` reset -> red (systemd refuses
+    a second ExecStart= for Type=simple)."""
+    proc = _run_bash(str(INSTALL_SH), "--dry-run", "--seat", "7")
+    assert proc.returncode == 0, proc.stderr
+    out = proc.stdout
+    assert "/etc/systemd/system/imd-dashd.service.d/10-seat.conf" in out
+    rendered = [ln[6:] for ln in out.splitlines() if ln.startswith("    > ")]
+    assert "[Service]" in rendered
+    starts = [ln for ln in rendered if ln.startswith("ExecStart=")]
+    assert starts == ["ExecStart=", f"ExecStart={BROKER_PYTHON} -I {DEPLOY_BROKER_DIR}/imd_dashd.py --seat 7"]
+    step5 = out[out.index("== step 5:"):out.index("== step 6:")]
+    dropin_at = step5.index("[dry-run] install -m 0644 <the 10-seat.conf above>")
+    assert dropin_at < step5.index("[dry-run] systemctl daemon-reload") < step5.index("[dry-run] systemctl enable --now imd-dashd.socket")
+    assert "--seat" not in SERVICE_UNIT.read_text(encoding="utf-8"), "the unit file itself stays the contract text (Task 9.1)"
