@@ -875,7 +875,8 @@ def test_changelog_and_decisions_have_the_dated_entries():
         assert decisions.index(phrase) > anchor, f"decision outside the pepepane block: {phrase}"
 
 
-def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(monkeypatch, capsys):
+@pytest.mark.parametrize("latest", ["heartbeat", "terminal", "older-heartbeat"])
+def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(monkeypatch, capsys, latest):
     from imd_dashd.imd_dashd import lifecycle_journal_argv
     text = PROBE_SH.read_text()
     body = text.split("# BEGIN LIFECYCLE_PROBE\n", 1)[1].split("# END LIFECYCLE_PROBE", 1)[0]
@@ -885,13 +886,16 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
     older = "2026-09-27T10:00:00.000Z accepted question deadbeef"
     terminal = "2026-09-27T10:01:00.000Z question failed: executor threw"
     heartbeat = "2026-09-27T10:02:00.000Z alive 2m · idle · 0 submitted"
+    baseline_rows = [older, terminal, heartbeat]
+    if latest == "terminal": baseline_rows = [older, terminal]
+    if latest == "older-heartbeat": baseline_rows[-1] = heartbeat.replace("10:02", "10:00")
     records = lambda messages: "\n".join(json.dumps({"MESSAGE": message, "_HOSTNAME": "private-host", "_CMDLINE": "private-argv", "__CURSOR": "private-cursor"}) for message in messages)
     calls = []
     def fake(argv, **kwargs):
         calls.append(argv)
         assert kwargs["timeout"] == 12
         if "--grep" not in argv:
-            return subprocess.CompletedProcess(argv, 0, records([older, terminal, heartbeat]), "")
+            return subprocess.CompletedProcess(argv, 0, records(baseline_rows), "")
         if argv[argv.index("--grep") + 1] == "(?!)":
             return subprocess.CompletedProcess(argv, 1, "", "")
         assert argv == lifecycle_journal_argv()
@@ -899,8 +903,12 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
     monkeypatch.setattr(subprocess, "run", fake)
     exec(compile(body, "<synthetic lifecycle probe>", "exec"), {})
     output = capsys.readouterr().out
-    assert "filter-before-limit: PASS" in output
-    assert "newest entry heartbeat: True" in output
+    if latest == "heartbeat":
+        assert "filter-before-limit: PASS" in output
+    else:
+        assert "filter-before-limit: inconclusive (newest entry is not a heartbeat)" in output
+        assert "filter-before-limit: PASS" not in output
+    assert "newest entry heartbeat: " + str(latest != "terminal") in output
     assert "grep/pcre2: PASS" in output
     assert "no-match exit status: 1" in output
     assert "no-match acceptance: PASS" in output and "no-match stderr:" in output

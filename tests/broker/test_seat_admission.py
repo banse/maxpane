@@ -486,3 +486,19 @@ def test_slow_sender_does_not_block_accept_loop(tmp_path):
             assert ping.done.wait(PING_TIMEOUT_S) and ping.response["ok"]
         finally:
             release.set()
+
+
+def test_bounded_apply_does_not_retry_unresolved_seat_identity(tmp_path):
+    broker, runner, *_ = make_broker(tmp_path)
+    mono = Clock(0)
+    broker._monotonic = mono
+    plan = call(broker, "restart")["plan"]
+    broker._seat = None
+    broker._whoami_key = None
+    def slow_identity(argv, kw):
+        mono.advance(35)
+        return subprocess.CompletedProcess(argv, 1, b"", b"")
+    runner.script[("systemd-run",)] = slow_identity
+    response = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4], "local_only_ack": "local-only"})
+    assert response["ok"] and response["result"]["preconditions"]["plane"]["mode"] == "local-only"
+    assert not runner.argvs("systemd-run") and mono() < 20

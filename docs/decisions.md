@@ -803,3 +803,7 @@ Empty executor messages and journald-stripped failure lines now share terminal s
 ### 2026-09-27 — PEPEPANE second round fix 8: partial signal failures
 
 Initial group and individual orphan signals now route timeout, OS error and nonzero command exits through the partial-action finalizer. Already signalled targets retain their audit, completion watch and identity-checked follow-up; remaining candidates are named as skipped. A failure before any signal is explicitly nonpartial and audited. This adds failure handling to the reference implementation without issuing extra signals.
+
+### 2026-09-27 — PEPEPANE E1 edge: unresolved seat identity
+
+The installer supplies a seat id, and normal plans resolve a missing id through the projection. If identity is still unresolved when a bounded apply starts, its plane read is unavailable/local-only instead of launching an unbounded whoami transient. The existing explicit local-only acknowledgement remains mandatory. Ordinary plan/read identity resolution is preserved, and offline gates avoid identity lookup entirely. This closes the dynamic-identity edge of the root reply budget.

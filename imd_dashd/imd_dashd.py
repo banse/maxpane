@@ -634,8 +634,11 @@ class Broker:
         return len([ln for ln in _text(result.stdout).splitlines() if ln.strip()])
 
     def _standing(self, offline: bool, deadline: float | None = None) -> dict | None:
+        # Plans resolve dynamic identity; apply must not start an unbounded whoami transient.
+        if offline or (deadline is not None and self._seat is None):
+            return None
         url = self._standing_url_for_seat()
-        if offline or url is None:
+        if url is None:
             return None
         result = run_inprocess([self._python, "-I", os.path.join(self._broker_dir, "gate.py"), "--standing", url],
                                run=self._run, timeout_s=self._read_timeout(INPROCESS_TIMEOUT_S["gate"], deadline))
