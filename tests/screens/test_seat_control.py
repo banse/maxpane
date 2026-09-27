@@ -726,6 +726,12 @@ async def test_partial_kill_retains_pids_and_polls_real_watch(tmp_path, monkeypa
         return subprocess.CompletedProcess(argv, 0, b'', b'')
     runner.script[('kill', '-TERM')] = signal
     broker = UnixSocketBroker(connect=_served(root))
+    calls = []
+    original_call = broker.call
+    def recorded_call(verb, args=None, **kwargs):
+        calls.append(verb)
+        return original_call(verb, args, **kwargs)
+    monkeypatch.setattr(broker, 'call', recorded_call)
     async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
         control = await _manual_control(pilot, clock)
         await control._plan_verb('kill-orphans', {'pids': [64876, 64877]})
@@ -734,6 +740,11 @@ async def test_partial_kill_retains_pids_and_polls_real_watch(tmp_path, monkeypa
         assert control.mode == 'verifying'
         text = _screen_text(pilot)
         assert 'killed pids: 64876' in text and 'skipped pids: 64877' in text
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == 'verifying'
+        assert 'killed pids: 64876' in _screen_text(pilot)
+        assert 'skipped pids: 64877' in _screen_text(pilot)
         root.tick(clock() + 12)
         await control._poll_verify()
         await _painted(pilot)
@@ -741,3 +752,5 @@ async def test_partial_kill_retains_pids_and_polls_real_watch(tmp_path, monkeypa
         text = _screen_text(pilot)
         assert 'killed pids: 64876' in text and 'skipped pids: 64877' in text
         assert 'verified ✓' in text and 'kill-orphans' in text
+        assert calls.count('audit-tail') >= 3, 'audit refreshes at open, partial apply and final verification'
+        assert calls.count('kill-orphans') == calls.count('apply') == 1

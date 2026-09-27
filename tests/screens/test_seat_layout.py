@@ -352,3 +352,19 @@ async def measure() -> dict:
 
 if __name__ == "__main__":  # pragma: no cover -- `.venv/bin/python -m tests.screens.test_seat_layout`
     print(asyncio.run(measure()))
+
+
+async def test_unattributed_running_is_visible_in_now_and_live_at_the_pin():
+    app = _seat_app(unattributed_payload())
+    async with app.run_test(size=(SEAT_FULL_LAYOUT_COLUMNS, SEAT_FULL_LAYOUT_ROWS)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert '⚙ 3 tasks running' in _region_text(pilot.app, screen.query_one(SeatNow))
+        assert '⚙ 3 tasks running' in _region_text(pilot.app, screen.query_one(SeatHero))
+        widget = screen.query_one('#seat-now-task')
+        rows = _screen_text(pilot.app).splitlines()
+        y = widget.region.y
+        x = rows[y].index('3 tasks running')
+        style = screen.get_style_at(x, y)
+        assert style.color.get_truecolor(pilot.app.ansi_theme) == pilot.app.ansi_theme.ansi_colors[3]

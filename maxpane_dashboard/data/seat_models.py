@@ -496,7 +496,7 @@ SEAT_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
         "seat_hero_state", "seat_hero_reasons", "seat_sources", "seat_as_of_hhmm", "seat_offline", "seat_host_kind",
     ),
     "SeatNow": (
-        "seat_current", "seat_queue", "seat_last_task", "seat_daemon_work", "seat_daemon_state",
+        "seat_current", "seat_queue", "seat_last_task", "seat_daemon_work", "seat_daemon_state", "seat_daemon_running",
         "seat_auth_degraded", "seat_auth_reasons", "seat_auth_credential_file_mtime_utc",
         "seat_standing_running", "seat_sources", "seat_as_of_hhmm", "seat_offline",
     ),

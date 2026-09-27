@@ -315,3 +315,21 @@ async def test_log_masked_key_never_reaches_a_strip():
                                  seat_log_seq=1, seat_log_footer="")
     text = "\n".join(rows)
     assert "sk-svcac" not in text and "provided: sk-" in text
+
+
+@pytest.mark.parametrize('count', [1, 3])
+async def test_unattributed_daemon_running_agrees_with_live_hero(count):
+    rows = await _now(WIDE, **_healthy(seat_current=None, seat_daemon_running=count))
+    assert _line(rows, 0) == f"⚙ {count} task{'s' if count != 1 else ''} running"
+    assert 'idle since' not in _line(rows, 0)
+
+
+async def test_running_fallback_preserves_unavailable_and_plane_facts():
+    payload = _healthy(seat_current=None, seat_daemon_running=3, seat_standing_running=RUNNING)
+    rows = await _now(WIDE, **payload)
+    assert _line(rows, 0) == '⚙ 3 tasks running'
+    assert 'oracle_assess' in _line(rows, 1), 'plane attribution stays on its own line'
+    rows = await _now(WIDE, **_source(payload, 'tail', ok=False, reason='offline'))
+    assert _line(rows, 0) == 'unavailable (tail: offline)'
+    rows = await _now(WIDE, **_healthy(seat_daemon_running=0, seat_standing_running=RUNNING))
+    assert 'plane assigned oracle_assess' in _line(rows, 0)

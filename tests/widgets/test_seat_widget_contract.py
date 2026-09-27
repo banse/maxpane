@@ -241,3 +241,11 @@ def test_update_data_names_exactly_the_contract_signature(name):
     assert all(p.default is None for p in named), name
     assert all(p.name in SEAT_KEYS for p in named), name
     assert any(p.kind is p.VAR_KEYWORD for p in params.values()), f"{name}.update_data lacks **_kwargs"
+
+
+def test_now_signature_independently_names_the_daemon_running_count():
+    assert SEAT_WIDGET_SIGNATURES['SeatNow'] == (
+        'seat_current', 'seat_queue', 'seat_last_task', 'seat_daemon_work', 'seat_daemon_state', 'seat_daemon_running',
+        'seat_auth_degraded', 'seat_auth_reasons', 'seat_auth_credential_file_mtime_utc',
+        'seat_standing_running', 'seat_sources', 'seat_as_of_hhmm', 'seat_offline',
+    )

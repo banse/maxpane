@@ -108,7 +108,7 @@ repo say so. The §16 owner decisions (all decided 2026-09-26) that leave a step
     estimate. The owner should review that larger privileged surface before deployment; the estimate is not a tested
     size limit, and no automatic source reduction is proposed.
 31. **Public-push hygiene, before any public push.** This round records the work; it does not publish or make these
-    fixture/lineage changes. Replace real host IPs `82.165.187.96` and `89.167.27.194` with documentation addresses
+    fixture/lineage changes. Replace the two real host IPs in the fixture deny lists with documentation addresses
     in `192.0.2.x` in `tests/broker/_harness.py`, `tests/broker/test_seat_child_unit.py`,
     `tests/fixtures/seat/cli/systemctl_cat.txt` and `tests/fixtures/seat/cli/systemctl_show_ipaddressdeny.txt`.
     Rehash both captures in `tests/fixtures/seat/MANIFEST.json`, correct its note naming the addresses, and replace
@@ -118,3 +118,5 @@ repo say so. The §16 owner decisions (all decided 2026-09-26) that leave a step
     synthetic identities using the `0x…c1a1` convention. Review local `/Users/banse/...` paths in the docs as well.
 
 32. **Fix-round review R1–R3 independently approved (2026-09-27).** Unreadable lifecycle records now fail closed despite a cursor or neighboring valid record. A single in-flight snapshot protects accept and dispatch during write completion. Partial orphan actions retain an actual-target apply audit and verification watch on deadline or snapshot refusal, with explicit partial-action error detail. Permanent deterministic regressions cover these cases. The independent scoped reviewer marked all three ADDRESSED at `5233d4e`: 34 named checks passed, inverse mutations failed in 12/2/4 cases, and 18 checks passed after exact restoration. No Critical or Important finding remains in this scoped review.
+
+33. **Recursive deviceKey redaction allowance (recorded residual, 2026-09-27).** The general `redact` and `redact_tree` APIs still preserve long hex values under a field named `deviceKey` at any depth. That field name alone does not prove the value is public. The seat projection separately enforces the exact root path and a whoami match; its nested-key refusal tests stay in place. A future change can restrict the general allowance to the two whoami call sites with callers and fixtures audited together. Until then, do not treat recursive redaction alone as proof that an arbitrary payload contains no private key. This round explicitly records the residual under fix brief 2 item 9 and leaves the shared API unchanged.

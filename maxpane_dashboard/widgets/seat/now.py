@@ -1,7 +1,7 @@
 """NOW: the current task, the plane's view of it, the agent's sentence, the queue, the auth line (spec §8 NOW).
 
-Five ``.panel-line`` Statics (:data:`SeatNow.LINE_IDS`). The task line has four
-states -- working (a ``seat_current`` block), plane-assigned (``standing.running[0]``
+Five ``.panel-line`` Statics (:data:`SeatNow.LINE_IDS`). The task line has five
+states -- working (a ``seat_current`` block), unattributed daemon running, plane-assigned (``standing.running[0]``
 exists but no local ``accepted`` line yet; the plane leads by 1–4 s, fill5 §1),
 idle (the last task, its hash12 and its verdict lag), and ``unavailable (tail: …)``.
 The **queue line** is the only keyless answer to "idle because of me or because of
@@ -71,7 +71,7 @@ class SeatNow(PanelBase):
 
     def update_data(
         self,
-        seat_current=None, seat_queue=None, seat_last_task=None, seat_daemon_work=None, seat_daemon_state=None,
+        seat_current=None, seat_queue=None, seat_last_task=None, seat_daemon_work=None, seat_daemon_state=None, seat_daemon_running=None,
         seat_auth_degraded=None, seat_auth_reasons=None, seat_auth_credential_file_mtime_utc=None,
         seat_standing_running=None, seat_sources=None, seat_as_of_hhmm=None, seat_offline=None,
         **_kwargs,
@@ -129,6 +129,10 @@ class SeatNow(PanelBase):
                 text_of((node, "bold"), (f" · {phase}", "")),
             )
             return fit_forms(forms, room)[0]
+        count = _count(f.get("seat_daemon_running"))
+        if count is not None and count > 0:
+            plural = "s" if count != 1 else ""
+            return fit_forms((text_of((f"⚙ {count} task{plural} running", "yellow")),), room)[0]
         if running and isinstance(running[0], dict):
             key = _word(running[0].get("nodeKey")) or DASH
             forms = (text_of((f"plane assigned {key} — waiting for the daemon line", "yellow")), text_of((f"plane assigned {key}", "yellow")))

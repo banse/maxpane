@@ -20,6 +20,9 @@ The click test is deliberately not on that list (see its docstring).
 from __future__ import annotations
 
 import re
+import runpy
+
+import pytest
 
 import textual
 from textual.app import App
@@ -34,7 +37,7 @@ ADDR = "0x" + "abcdef0123" * 4
 LINE = "hello world selection probe"
 # Owner D2: 8.2.8 includes the end cell; 8.1.1 excludes it. Intermediate
 # 8.1.2–8.2.7 were not bisected, so retain the historical expectation below 8.2.8.
-TEXTUAL_INCLUSIVE_DRAG = tuple(map(int, re.match(r"(\d+)\.(\d+)\.(\d+)", textual.__version__).groups())) >= (8, 2, 8)
+TEXTUAL_INCLUSIVE_DRAG = tuple(int(part or 0) for part in re.match(r"(\d+)\.(\d+)(?:\.(\d+))?", textual.__version__).groups()) >= (8, 2, 8)
 
 
 class _App(CopyAddressMixin, App):
@@ -156,3 +159,10 @@ async def test_a_screen_without_a_status_bar_does_not_raise_on_the_selection_pat
 def test_the_real_app_routes_textuals_copy_through_the_mixin():
     assert MaxPaneApp.copy_to_clipboard is CopyAddressMixin.copy_to_clipboard
     assert MaxPaneApp.on_text_selected is CopyAddressMixin.on_text_selected
+
+
+@pytest.mark.parametrize("version,inclusive", [("8.3", True), ("8.2", False), ("8.1.1", False), ("8.2.8", True), ("8.3.0rc1", True)])
+def test_drag_boundary_version_parser_accepts_missing_patch(monkeypatch, version, inclusive):
+    monkeypatch.setattr(textual, "__version__", version)
+    loaded = runpy.run_path(__file__)
+    assert loaded["TEXTUAL_INCLUSIVE_DRAG"] is inclusive
