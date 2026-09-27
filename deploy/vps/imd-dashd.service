@@ -1,0 +1,29 @@
+[Unit]
+Description=IMD seat dashboard broker (root, stdlib Python)
+Requires=imd-dashd.socket
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I /opt/imd-dash/broker/imd_dashd/imd_dashd.py
+User=root
+Group=root
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER
+AmbientCapabilities=
+ProtectSystem=strict
+InaccessiblePaths=-/home/imd-dash
+LogsDirectory=imd-dash
+LogsDirectoryMode=0700
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+MemoryMax=128M
+CPUQuota=50%
+TasksMax=64
+TimeoutStopSec=15
