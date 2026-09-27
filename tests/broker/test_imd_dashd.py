@@ -418,3 +418,152 @@ def test_drain_restart_can_be_armed_while_a_task_runs(tmp_path):
     applied = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
     assert applied["result"]["outcome"] == "armed" and runner.argvs("systemctl", "restart") == []
     assert call(broker, "restart", {"offline": False})["error"] == "gate_blocked"                 # restart itself stays gated
+# ==== Task 6.11: verify, doctor, skills-set ====================================================================
+
+
+def _applied_restart(tmp_path, journal=None):
+    broker, runner, journal, clock, audit = make_broker(tmp_path, journal=journal)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    return broker, runner, journal, clock, audit, plan["plan_id"]
+
+
+def test_restart_verified_without_admitted(tmp_path):
+    # mutation proof 32: `shutting down` -> `runtimes:` +0.3 s = verified; `admitted` is a separate fact
+    broker, _runner, journal, clock, audit, plan_id = _applied_restart(tmp_path)
+    clock.advance(1)
+    journal.add(msg(clock() - 0.6, "shutting down"),
+                msg(clock() - 0.3, "runtimes: codex codex-cli 0.157.0 (using codex, as asked)"),
+                msg(clock() - 0.2, "connected to api.imd.fun"))
+    clock.advance(3)
+    data = call(broker, "verify", {"plan_id": plan_id})["data"]
+    assert data["verified"] is True
+    assert isinstance(data["connected"], str) and data["connected"].startswith("pending (reconnecting since ")
+    assert data["verify_lines"][0].endswith("Z shutting down") and "runtimes: codex" in data["verify_lines"][1]
+    assert data["cursor_after"].startswith("s=") and data["elapsed_s"] == 4.0 and data["reason"] is None
+    # `admitted` arrives 70 s later (a redeploy wave, fill5 §7) -> connected flips, verified never changed
+    clock.advance(70)
+    journal.add(msg(clock() - 1, "admitted (session 1a2b3c4d)"))
+    data = call(broker, "verify", {"plan_id": plan_id})["data"]
+    assert data["verified"] is True and data["connected"] is True
+    phases = [(ln["phase"], ln["verified"], ln["connected"]) for ln in audit_lines(audit) if ln["phase"] == "verify"]
+    assert phases[0][1] is True and str(phases[0][2]).startswith("pending") and phases[-1][2] is True
+
+
+def test_verify_times_out_to_false_not_null(tmp_path):
+    # header Review Focus 5: nothing for 30 s after apply -> verified False with a reason, never null forever
+    broker, _runner, _journal, clock, _audit, plan_id = _applied_restart(tmp_path)
+    assert VERIFY_WITHIN_S == 30
+    clock.advance(29)
+    assert call(broker, "verify", {"plan_id": plan_id})["data"]["verified"] is None
+    clock.advance(2)
+    data = call(broker, "verify", {"plan_id": plan_id})["data"]
+    assert data["verified"] is False and data["reason"] == "no shutting down within 30 s"
+    assert call(broker, "ping")["data"]["in_flight"] is None                         # the write lock was released at apply
+    assert call(broker, "verify", {"plan_id": "0123456789abcdef"})["error"] == "unknown_plan"
+
+
+def test_verify_late_runtimes_is_false_and_stop_needs_inactive(tmp_path):
+    broker, runner, journal, clock, _audit, plan_id = _applied_restart(tmp_path)
+    journal.add(msg(clock() + 1, "shutting down"), msg(clock() + 35, "runtimes: codex codex-cli 0.157.0 (using codex)"))
+    clock.advance(40)
+    data = call(broker, "verify", {"plan_id": plan_id})["data"]
+    assert data["verified"] is False and data["reason"].startswith("runtimes: 34.0 s after shutting down")
+    # stop: `shutting down` + ActiveState=inactive
+    plan = call(broker, "stop", {"offline": False})["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    journal.add(msg(clock() + 1, "shutting down"))
+    clock.advance(2)
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None   # still active
+    runner.script[("systemctl", "is-active", "imd-worker.service")] = (3, "inactive\n")
+    data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert data["verified"] is True and data["connected"] is None
+
+
+def test_enable_boot_verify_uses_is_enabled(tmp_path):
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "enable-boot", {})["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert data["verified"] is False and data["reason"] == "systemctl is-enabled says disabled"   # the scripted host still says disabled
+    runner.script[("systemctl", "is-enabled", "imd-worker.service")] = (0, "enabled\n")
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is True
+
+
+def _wait(broker, plan_id):
+    broker._threads[plan_id].join(timeout=5)
+    assert not broker._threads[plan_id].is_alive()
+
+
+def test_doctor_apply_returns_started_and_verify_carries_redacted_output(tmp_path):
+    lines = "imd doctor · daemon 0.1.0+5bfa8261\n✓ codex run answered in 2.3s ($0.114 estimated)\n✗ memory 3.7 GB\n"
+    broker, runner, _journal, clock, _audit = make_broker(tmp_path, script={("systemd-run",): lambda argv, kw: transient(lines, rc=1)})
+    plan = call(broker, "doctor", {})["plan"]
+    assert plan["argv"] == ["imd", "doctor"] and plan["inverse"] is None
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
+    assert result["outcome"] == "started" and result["unit"] == "imd-dash-doctor-1"
+    _wait(broker, plan["plan_id"])
+    (argv, kw), = [(a, k) for a, k in runner.calls if a and a[0] == "systemd-run"]
+    assert argv == transient_argv("doctor", 1, ["imd", "doctor"], ip_address_deny=IP_DENY, runtime_max_s=120)
+    assert kw["timeout"] == 135
+    data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert data["verified"] is False and data["reason"] == "exit 1"
+    assert "$" not in "".join(data["verify_lines"]) and any("memory 3.7 GB" in ln for ln in data["verify_lines"])
+    assert "0.114" not in "".join(data["verify_lines"])                              # the figure itself goes, not just the `$`
+    assert call(broker, "ping")["data"]["in_flight"] is None
+    # spec §11: never on a timer; >= 10 min apart
+    assert DOCTOR_MIN_INTERVAL_S == 600
+    assert call(broker, "doctor", {})["error"] == "doctor_too_soon"
+    clock.advance(601)
+    assert call(broker, "doctor", {})["ok"]
+
+
+def test_doctor_and_skills_set_need_the_child_posture(tmp_path):
+    broker, runner, _journal, _clock, _audit = make_broker(
+        tmp_path, script={("systemctl", "show", "imd-worker.service", "-p", "IPAddressDeny", "--value"): (1, "")})
+    assert call(broker, "doctor", {})["error"] == "child_posture_unavailable"
+    assert call(broker, "skills-set", {"skill_id": "oracle-assess", "on": False})["error"] == "child_posture_unavailable"
+    assert runner.argvs("systemd-run") == []
+    assert call(broker, "restart", {"offline": False})["ok"]                          # systemctl needs no runtime child
+
+
+def test_bad_skill_id_is_refused_and_not_echoed(tmp_path):
+    # mutation proof 33: a skill_id with a space or `;` never reaches argv, and the audit never echoes it
+    broker, runner, _journal, _clock, audit = make_broker(tmp_path)
+    for bad in ("oracle assess", "oracle;rm -rf /", "../etc", "Oracle-Assess"):
+        assert call(broker, "skills-set", {"skill_id": bad, "on": False}) == {"ok": False, "error": "bad_skill_id", "detail": {}}
+    assert runner.argvs("systemd-run") == []
+    text = (tmp_path / "audit.jsonl").read_text()
+    assert "oracle assess" not in text and "rm -rf" not in text and "../etc" not in text
+    assert audit_lines(audit)[-1]["args"] == {"skill_id": "<refused>", "on": False}
+    assert audit_lines(audit)[-1]["outcome"] == "bad_skill_id"
+
+
+def test_skills_set_is_a_transient_add_or_remove_and_marks_restart_required(tmp_path):
+    host = {"listing": "31 skills offered, 31 on here.\non oracle-assess — needs network\non implement-component — needs network\n"}
+
+    def children(argv, kw):
+        if argv[-1] == "skills":
+            return transient(host["listing"])
+        if argv[-2:] == ["remove", "oracle-assess"]:                    # the scripted daemon honours the remove only
+            host["listing"] = host["listing"].replace("31 on here.\non oracle-assess", "30 on here.\noff oracle-assess")
+        return transient("")
+
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path, script={("systemd-run",): children})
+    assert call(broker, "skills-set", {"skill_id": "not-offered", "on": False})["error"] == "skill_not_listed"
+    plan = call(broker, "skills-set", {"skill_id": "oracle-assess", "on": False})["plan"]
+    assert plan["argv"] == ["imd", "skills", "remove", "oracle-assess"] and plan["restart_required_after"] is True
+    assert plan["inverse"] == {"verb": "skills-set", "args": {"skill_id": "oracle-assess", "on": True}}
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
+    assert result["outcome"] == "started"
+    _wait(broker, plan["plan_id"])
+    unit_argv = next(a for a in runner.argvs("systemd-run") if a[-4:] == ["imd", "skills", "remove", "oracle-assess"])
+    assert "--unit=imd-dash-skills-set-2" in unit_argv
+    assert runner.argvs("systemd-run")[-1][-2:] == ["imd", "skills"]                 # spec §11 skills row: verify by re-listing
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is True    # the re-listing says `off`
+    plan = call(broker, "skills-set", {"skill_id": "oracle-assess", "on": True})["plan"]
+    assert plan["argv"] == ["imd", "skills", "add", "oracle-assess"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    _wait(broker, plan["plan_id"])
+    data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert data["verified"] is False and data["reason"] == "re-listing disagrees"    # exit 0, but the listing still says off

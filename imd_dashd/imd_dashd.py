@@ -863,7 +863,78 @@ class Broker:
         return verbs.ok(result={"outcome": "applied", "exit_code": exit_code, "cursor_before": cursor_before, "audit_seq": seq,
                                 "preconditions": preconditions})
 
+    def _apply_transient(self, plan: Plan, peer_uid: int) -> dict:
+        verb = plan.verb
+        seq_no = self._next_seq()
+        watch = VerifyWatch(plan_id=plan.plan_id, verb=verb, kind="transient", cursor_before=None, started=self._now())
+        self._watches[plan.plan_id] = watch
+        if verb == "doctor":
+            self._last_doctor = self._now()
+
+        def worker() -> None:
+            try:
+                result = run_transient(verb, seq_no, plan.argv, run=self._run, ip_address_deny=self.ip_address_deny or "")
+                watch.lines = [_CURRENCY_FIGURE_RE.sub("", redact(ln)) for ln in _text(result.stdout).splitlines() if ln.strip()]
+                watch.rc = result.rc
+                watch.verified = (result.rc == 0) and not result.timed_out
+                watch.reason = "timed out (unit killed)" if result.timed_out else (None if result.rc == 0 else f"exit {result.rc}")
+                if verb == "skills-set" and watch.verified:
+                    self._skills_listing = None                     # the re-listing below refreshes it
+                    listing = self._transient_read("skills")        # spec §11 skills row: verify by re-listing
+                    rows = [ln.split() for ln in (listing.get("data") or {}).get("lines", [])] if listing.get("ok") else []
+                    row = next((r for r in rows if len(r) > 1 and r[0] in ("on", "off") and r[1] == plan.args["skill_id"]), None)
+                    watch.verified = row is not None and (row[0] == "on") is bool(plan.args["on"])
+                    if not watch.verified:
+                        watch.reason = "re-listing disagrees"
+            finally:
+                watch.done = True
+                self._log(peer_uid=peer_uid, verb=verb, phase="verify", plan_id=plan.plan_id, outcome="finished",
+                          verified=watch.verified)
+                self._in_flight = None
+                self._lock.release()
+
+        seq = self._log(peer_uid=peer_uid, verb=verb, phase="apply", plan_id=plan.plan_id, preconditions=plan.preconditions,
+                        outcome="started", args={"unit": unit_name(verb, seq_no)})
+        thread = threading.Thread(target=worker, name=f"imd-dashd-{verb}-{seq_no}", daemon=True)
+        self._threads[plan.plan_id] = thread
+        thread.start()
+        return verbs.ok(result={"outcome": "started", "exit_code": None, "cursor_before": None, "audit_seq": seq,
+                                "preconditions": plan.preconditions, "unit": unit_name(verb, seq_no)})
+
     # ------------------------------------------------------------ verify
+
+    def _verify(self, plan_id: str) -> dict:
+        watch = self._watches.get(plan_id)
+        if watch is None:
+            return verbs.err("unknown_plan", {"plan_id": plan_id})
+        now = self._now()
+        if watch.kind == "transient":
+            if not watch.done:
+                return verbs.ok(data={"verified": None, "connected": None, "verify_lines": [], "cursor_after": None,
+                                      "elapsed_s": round(now - watch.started, 1), "audit_seq": None, "reason": None})
+            return verbs.ok(data={"verified": watch.verified, "connected": None, "verify_lines": list(watch.lines),
+                                  "cursor_after": None, "elapsed_s": round(now - watch.started, 1), "audit_seq": None,
+                                  "reason": watch.reason, "rc": watch.rc})
+        if watch.kind in ("none", "kill"):          # decided at apply (drain arm, cancel-drain) or by tick() (kill-orphans)
+            return verbs.ok(data=watch.to_dict(now, None))
+        lines: list[tuple[float, str]] = []
+        if watch.cursor_before:
+            lines, cursor_after = self._journal(after_cursor=watch.cursor_before)
+            if cursor_after:
+                watch.cursor_after = cursor_after
+        else:
+            lines, _cursor = self._journal(since_s=int(now - watch.started) + 5)
+            lines = [(e, t) for e, t in lines if e >= watch.started - 1]
+        unit_active = self._unit_active() if watch.kind == "stop" else None
+        unit_enabled = self._unit_enabled() if watch.kind in ("enabled", "disabled") else None
+        previously = (watch.verified, watch.connected)
+        watch.update(lines, now, unit_active=unit_active, unit_enabled=unit_enabled)
+        seq = None
+        if (watch.verified, watch.connected) != previously:
+            seq = self._log(verb=watch.verb, phase="verify", plan_id=plan_id, outcome="verified" if watch.verified else
+                            ("pending" if watch.verified is None else "not verified"), verified=watch.verified,
+                            connected=watch.connected, cursor_before=watch.cursor_before, cursor_after=watch.cursor_after)
+        return verbs.ok(data=watch.to_dict(now, seq))
 
     # ------------------------------------------------------------ housekeeping
 
