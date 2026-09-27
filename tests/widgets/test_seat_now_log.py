@@ -185,3 +185,133 @@ async def test_masked_key_never_reaches_a_strip():
 async def test_hostile_markup_in_third_party_text_renders_literally():
     rows = await _now(WIDE, **_healthy(seat_current=dict(CURRENT, objective="[/x][bold]evil[/] plan"), seat_standing_running=RUNNING))
     assert "[bold]" not in "\n".join(rows) and "evil" in _line(rows, 1)
+
+
+# ---------------------------------------------------------------------------
+# LOG (Task 8.4)
+# ---------------------------------------------------------------------------
+
+from maxpane_dashboard.data import seat_log_grammar as grammar  # noqa: E402  (a test may import data)
+from maxpane_dashboard.widgets.seat.log import SeatLog  # noqa: E402
+
+LOG_SIGNATURE = SEAT_WIDGET_SIGNATURES["SeatLog"]
+
+
+def _lines(*specs: tuple[int, str, str]) -> list[dict]:
+    """``(seq, kind, text)`` -> ``SEAT_ROW_KEYS["seat_log_lines"]`` dicts with a stamp derived from the seq."""
+    return [{"seq": seq, "ts": f"2026-09-26T03:40:{seq % 60:02d}.000Z", "kind": kind,
+             "text": f"2026-09-26T03:40:{seq % 60:02d}.000Z {text}", "invocation": None, "cursor": None}
+            for seq, kind, text in specs]
+
+
+HEARTBEAT = "alive 14h42m · idle · 77 submitted · fleet 406 online, 417 enrolled"
+
+
+class _LogHarness(App):
+    CSS_PATH = CSS_PATH
+    from maxpane_dashboard.screens.seat import SeatScreen
+    CSS = SeatScreen.DEFAULT_CSS
+
+    def compose(self):
+        yield SeatLog()
+
+
+async def _log_rows(pilot) -> list[str]:
+    log = pilot.app.query_one(RichLog)
+    return ["".join(seg.text for seg in strip) for strip in log.lines]
+
+
+def test_seat_log_kind_words_equal_the_grammar_sets():
+    # plan deviation 4: the widget restates the grammar words it may not import; this binds the two
+    assert SeatLog.CONNECTION_KINDS == grammar.CONNECTION_KINDS
+    assert SeatLog.HIGHLIGHT_KINDS == grammar.HIGHLIGHT_KINDS
+    assert SeatLog.HEARTBEAT_KIND == grammar.KIND_HEARTBEAT
+    assert SeatLog.LOG_ID == "seat-log" and SeatLog.WRAP is False and SeatLog.HIGHLIGHT is False and SeatLog.MAX_LINES == 400
+
+
+async def test_seat_log_is_append_only_across_polls(monkeypatch):
+    # spec §9 batch-per-poll: a second poll with no new seq never clears; an overlapping poll appends only the unseen
+    async with _LogHarness().run_test(size=(120, 12)) as pilot:
+        widget = pilot.app.query_one(SeatLog)
+        log = pilot.app.query_one(RichLog)
+        cleared: list[str] = []
+        original_clear = log.clear
+        monkeypatch.setattr(log, "clear", lambda: (cleared.append("clear"), original_clear())[1])
+        widget.update_data(seat_log_lines=_lines((1, "heartbeat", HEARTBEAT), (2, "accepted_code", "accepted implement 0c1f9727 — src (max 60 turns)"),
+                                                 (3, "phase", "  working: running codex on gpt-6-luna")), seat_log_seq=3, seat_log_footer="tail: journalctl -f")
+        await pilot.pause()
+        assert len(await _log_rows(pilot)) == 3
+        first_clear = len(cleared)  # the placeholder's one clear, at most
+        widget.update_data(seat_log_lines=[], seat_log_seq=3, seat_log_footer="tail: journalctl -f")
+        await pilot.pause()
+        assert len(await _log_rows(pilot)) == 3 and len(cleared) == first_clear, "an empty poll must not clear a populated log"
+        widget.update_data(seat_log_lines=_lines((2, "accepted_code", "dup"), (3, "phase", "dup"), (4, "submitted", "submitted implement for 0c1f9727")),
+                           seat_log_seq=4, seat_log_footer="tail: journalctl -f")
+        await pilot.pause()
+        rows = await _log_rows(pilot)
+        assert len(rows) == 4 and len(cleared) == first_clear
+        assert "dup" not in "\n".join(rows) and rows[-1].strip().endswith("submitted implement for 0c1f9727")
+        assert widget.last_seq == 4
+        widget.update_data(seat_log_lines=None, seat_log_seq=4, seat_log_footer="frozen 03:41 · restarting in 4s")
+        await pilot.pause()
+        assert len(await _log_rows(pilot)) == 4, "a gated tail freezes the log, it does not empty it"
+
+
+async def test_heartbeats_collapse_and_expand_on_toggle():
+    async with _LogHarness().run_test(size=(120, 14)) as pilot:
+        widget = pilot.app.query_one(SeatLog)
+        widget.update_data(seat_log_lines=_lines(*[(i, "heartbeat", HEARTBEAT) for i in range(1, 6)], (6, "accepted_code", "accepted implement 0c1f9727 — src (max 60 turns)")),
+                           seat_log_seq=6, seat_log_footer="")
+        await pilot.pause()
+        assert len(await _log_rows(pilot)) == 6
+        assert widget.toggle_heartbeats() is True
+        await pilot.pause()
+        rows = await _log_rows(pilot)
+        assert len(rows) == 1 and "accepted implement" in rows[0]
+        assert widget.toggle_heartbeats() is False
+        await pilot.pause()
+        assert len(await _log_rows(pilot)) == 6
+
+
+async def test_tall_toggles_a_class_the_screen_can_size():
+    async with _LogHarness().run_test(size=(120, 12)) as pilot:
+        widget = pilot.app.query_one(SeatLog)
+        assert widget.toggle_tall() is True and widget.has_class(SeatLog.TALL_CLASS)
+        assert widget.toggle_tall() is False and not widget.has_class(SeatLog.TALL_CLASS)
+
+
+def test_rows_are_styled_by_kind():
+    widget = SeatLog()
+    connection = widget.format_row(_lines((1, "reconnecting", "reconnecting in 4.2s"))[0])
+    lifecycle = widget.format_row(_lines((2, "submitted", "submitted implement for 0c1f9727"))[0])
+    highlight = widget.format_row(_lines((3, "release_avail", "0.1.0+5bfa8261 installed; 0.1.0+5c1d2e3f is available; run imd update"))[0])
+    assert str(connection.style) == "dim" and str(highlight.style) == "bold yellow" and str(lifecycle.style) in ("", "none")
+    assert connection.plain.endswith("reconnecting in 4.2s") and connection.plain[2] == ":" and connection.plain[5] == ":"
+    assert widget.dedupe_key({"seq": 7}) == "7" and widget.dedupe_key({"seq": None}) is None and widget.dedupe_key({}) is None
+
+
+async def test_the_footer_and_the_empty_placeholder():
+    rows = await composite_lines(SeatLog, (100, 8), css_path=CSS_PATH, region_only=True, seat_log_lines=[], seat_log_seq=0,
+                                 seat_log_footer="tail: journalctl -f · cursor age 4 s · grammar 5bfa8261 ✓")
+    text = "\n".join(rows)
+    assert rows[0].strip() == "LOG" and "no lines yet" in text and "grammar 5bfa8261" in text
+
+
+async def test_log_control_codes_never_reach_a_strip():
+    # spec §14 mutation proof 23 (LOG half)
+    for raw in CONTROL_LINES:
+        rows = await composite_lines(SeatLog, (160, 8), css_path=CSS_PATH, region_only=True,
+                                     seat_log_lines=[{"seq": 1, "ts": raw[:24], "kind": "phase", "text": raw, "invocation": None, "cursor": None}],
+                                     seat_log_seq=1, seat_log_footer="")
+        text = "\n".join(rows)
+        assert not (set(text) & FORBIDDEN), [hex(ord(c)) for c in text if c in FORBIDDEN]
+
+
+async def test_log_masked_key_never_reaches_a_strip():
+    # spec §14 mutation proof 12 (strip half, LOG); ``strip_tags`` deletes the ``[redacted]`` placeholder,
+    # so the painted remnant reads ``… provided: sk- — run imd doctor``.
+    rows = await composite_lines(SeatLog, (200, 8), css_path=CSS_PATH, region_only=True,
+                                 seat_log_lines=[{"seq": 1, "ts": MASKED_LINE[:24], "kind": "heartbeat", "text": MASKED_LINE, "invocation": None, "cursor": None}],
+                                 seat_log_seq=1, seat_log_footer="")
+    text = "\n".join(rows)
+    assert "sk-svcac" not in text and "provided: sk-" in text
