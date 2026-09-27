@@ -1,0 +1,8 @@
+{
+ "synthetic": true,
+ "note": "one unacknowledged submit frame as outbox/<leaseId>.json would hold it; the broker counts names and never reads the body",
+ "leaseId": "16a4df90-5555-4555-8555-555555555555",
+ "type": "submit",
+ "nodeId": "b6d17f8d-6666-4666-8666-666666666666",
+ "submissionHash": "c4d9714ffb95aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000"
+}

@@ -1,0 +1,1 @@
+marker for contract §D's outbox_unreadable/ (spec §11 (d)); no test reads it: the broker counts the outbox with `ls -1A` through the Runner seam, so the tests script rc 2 instead

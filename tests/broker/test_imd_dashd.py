@@ -148,3 +148,111 @@ def test_read_verbs_are_audited_as_counts_only(tmp_path):
     call(broker, "ping")
     broker.shutdown()                                                                # idle exit / SIGTERM flushes the rest
     assert audit_lines(audit)[-1]["args"] == {"counts": {"ping": 1}}
+# ==== Task 6.9: read verbs ================================================================================
+
+
+from imd_dashd.child_unit import CHILD_ENV, transient_argv  # noqa: E402
+
+
+def test_child_posture_unavailable_refuses_runtime_verbs(tmp_path):
+    # spec §4.1b: if IPAddressDeny cannot be read, runtime-executing verbs are refused, in-process reads still work
+    broker, runner, _journal, _clock, _audit = make_broker(
+        tmp_path, script={("systemctl", "show", "imd-worker.service", "-p", "IPAddressDeny", "--value"): (1, "")})
+    assert broker.ip_address_deny is None and call(broker, "ping")["data"]["posture_ok"] is False
+    for verb, args in (("status", {}), ("whoami", {}), ("skills", {}), ("tools", {}), ("seat", {}),
+                       ("sessions", {"since": 0.0, "runtime": "codex"})):
+        assert call(broker, verb, args)["error"] == "child_posture_unavailable", verb
+    assert runner.argvs("systemd-run") == []
+    assert call(broker, "outbox") == {"ok": True, "data": {"files": 0}}
+
+
+def test_status_read_runs_a_transient_unit_with_the_worker_posture(tmp_path):
+    text = "config  /home/imd-worker/.identitymd/config.json\nserver  https://api.imd.fun\ntoken   7\n"
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path, script={("systemd-run",): lambda argv, kw: transient(text)})
+    data = call(broker, "status")["data"]
+    assert data == {"lines": text.splitlines(), "rc": 0, "unit": "imd-dash-status-1"}
+    (argv, kw), = [(a, k) for a, k in runner.calls if a and a[0] == "systemd-run"]
+    assert argv == transient_argv("status", 1, ["imd", "status"], ip_address_deny=IP_DENY, runtime_max_s=30)
+    assert kw["timeout"] == 45 and "env" not in kw                                  # env travels as --setenv, not to systemd-run
+
+
+def test_seat_projection_passes_the_canary_and_whoami_is_cached(tmp_path):
+    from imd_dashd.projection import project
+    payload = project(json.loads((FIXTURES / "projection_ok.json").read_text()), None)
+    broker_dir = broker_mod.BROKER_DIR
+    broker, runner, _journal, _clock, _audit = make_broker(
+        tmp_path, script={(PYTHON, "-I", os.path.join(broker_dir, "projection.py")): lambda argv, kw: projection_child(payload)})
+    data = call(broker, "seat")["data"]
+    assert data["deviceKey"] == PUBLIC_KEY and data["tokenId"] == 7 and PRIVATE_KEY not in json.dumps(data)
+    call(broker, "seat")
+    assert len([a for a in runner.argvs("systemd-run") if a[-1] == "whoami"]) == 1  # once per broker life
+    projections = [(a, k) for a, k in runner.calls if a[:2] == [PYTHON, "-I"] and a[2].endswith("projection.py")]
+    assert len(projections) == 2                                                     # the projection itself is not cached
+    argv, kw = projections[0]
+    assert argv[3:] == ["--config", "/home/imd-worker/.identitymd/config.json", "--tools", "/home/imd-worker/.identitymd/tools.json"]
+    assert kw["user"] == "imd-worker" and kw["env"] == CHILD_ENV and kw["timeout"] == 10
+
+
+def test_outbox_unreadable_is_an_error_not_zero(tmp_path):
+    broker, _runner, _journal, _clock, _audit = make_broker(tmp_path, script={("ls", "-1A"): (2, "")})
+    assert call(broker, "outbox") == {"ok": False, "error": "unreadable", "detail": {"what": "outbox"}}
+    # one unacknowledged submit frame (fixture broker/outbox_pending.json): the broker counts names, never reads bodies
+    lease = json.loads((FIXTURES / "outbox_pending.json").read_text())["leaseId"]
+    broker2, _r, _j, _c, _a = make_broker(tmp_path / "b", script={("ls", "-1A"): (0, f"{lease}.json\n")})
+    assert call(broker2, "outbox")["data"] == {"files": 1}
+
+
+def test_work_stat_parses_the_find_listing(tmp_path):
+    fixture = json.loads((FIXTURES / "work_stat.json").read_text())
+    broker, runner, _journal, _clock, _audit = make_broker(
+        tmp_path, script={("find",): (0, fixture["find_listing"]), ("du", "-sb"): (0, f"{fixture['du_bytes']}\t/home/imd-worker/.identitymd/work\n")})
+    assert call(broker, "work-stat")["data"] == fixture["expected"]
+    find_argv = runner.argvs("find")[0]
+    assert find_argv == ["find", "/home/imd-worker/.identitymd/work", "-mindepth", "1", "-maxdepth", "4", "-printf", "%y\t%T@\t%P\n"]
+    assert [k["user"] for a, k in runner.calls if a[0] in ("find", "du")] == ["imd-worker", "imd-worker"]
+
+
+def test_sessions_runs_the_summariser_as_a_transient_unit_and_redacts_messages(tmp_path):
+    body = {"sessions": [{"path": "x", "apiErrors": [{"status": 401, "message": "Incorrect API key provided: sk-svcac1234abcd", "atUtc": "t"}]}],
+            "skipped": {"oversize": 0}}
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path, script={("systemd-run",): lambda argv, kw: transient(json.dumps(body))})
+    data = call(broker, "sessions", {"since": 1790000000.5, "runtime": "codex"})["data"]
+    assert data["sessions"][0]["apiErrors"][0]["message"] == "Incorrect API key provided: sk-[redacted]"
+    argv = runner.argvs("systemd-run")[0]
+    assert argv[argv.index("--") + 1:] == [PYTHON, "-I", os.path.join(broker_mod.BROKER_DIR, "summarise_codex.py"), "--root",
+                                          "/home/imd-worker/.codex/sessions", "--since", "1790000000.5", "--work-root",
+                                          "/home/imd-worker/.identitymd/work"]
+    assert "-p" in argv and "RuntimeMaxSec=60" in argv
+
+
+def test_hints_stat_and_auth_mtime_never_open_the_credential_file(tmp_path):
+    broker, runner, _journal, _clock, _audit = make_broker(
+        tmp_path, script={("stat", "-c"): (0, "1791 1790400000\n"), ("sha256sum",): (0, "3f2a9b8c7d6e5f40 /home/imd-worker/.codex/AGENTS.md\n")})
+    hints = call(broker, "hints-stat")["data"]
+    assert hints == {"path": "/home/imd-worker/.codex/AGENTS.md", "mtimeUtc": "2026-09-26T05:20:00Z", "bytes": 1791, "sha8": "3f2a9b8c"}
+    auth = call(broker, "auth-mtime")["data"]
+    assert auth == {"path": "/home/imd-worker/.codex/auth.json", "mtimeUtc": "2026-09-26T05:20:00Z"}
+    auth_calls = [a for a, _ in runner.calls if "/home/imd-worker/.codex/auth.json" in a]
+    assert auth_calls == [["stat", "-c", "%s %Y", "/home/imd-worker/.codex/auth.json"]]    # stat only, never cat/sha256sum
+
+
+def test_gate_read_is_a_preview_with_the_gate_result_shape(tmp_path):
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
+    data = call(broker, "gate", {"offline": False})["data"]
+    assert data["safe"] is True and data["plane"]["mode"] == "plane+local" and data["outbox_files"] == 0
+    assert runner.argvs(PYTHON, "-I") and runner.argvs("ls", "-1A") and runner.argvs("systemctl", "is-active")
+    assert call(broker, "gate", {"offline": True})["data"]["plane"]["mode"] == "local-only"
+
+
+def test_standing_url_falls_back_to_the_projection_token(tmp_path):
+    # WP9's imd-dashd.service runs the broker without --seat: the seat id comes from the canary-checked projection,
+    # so the plane half of the gate (spec §11 (b)) is read in production instead of every gate being local-only
+    from imd_dashd.projection import project
+    payload = project(json.loads((FIXTURES / "projection_ok.json").read_text()), None)
+    child = (PYTHON, "-I", os.path.join(broker_mod.BROKER_DIR, "projection.py"))
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path, seat=None, script={child: lambda argv, kw: projection_child(payload)})
+    assert call(broker, "gate", {"offline": False})["data"]["plane"]["mode"] == "plane+local"
+    standing = [a for a in runner.argvs(PYTHON, "-I") if a[2].endswith("gate.py")]
+    assert standing[-1][-1] == "https://api.imd.fun/seats/7/standing"
+    call(broker, "gate", {"offline": False})
+    assert len([a for a in runner.argvs(PYTHON, "-I") if a[2].endswith("projection.py")]) == 1       # learned once

@@ -194,6 +194,11 @@ class Broker:
         return None if self._in_flight is None else dict(self._in_flight)
 
     def _standing_url_for_seat(self) -> str | None:
+        if self._seat is None:                                   # no --seat in ExecStart: take tokenId from the canary-checked projection
+            answer = self._seat_projection(self._allowed_uid)
+            token = answer.get("data", {}).get("tokenId") if answer.get("ok") else None
+            if isinstance(token, int) and not isinstance(token, bool) and token > 0:
+                self._seat = token
         return None if self._seat is None else self._standing_url.format(seat=self._seat)
 
     def _read_graceful(self) -> bool | None:
@@ -398,6 +403,120 @@ class Broker:
             return self._transient_read(verb)
         return verbs.err("bad_verb", {"verb": verb})
 
+    def _transient(self, verb: str, argv: Sequence[str]):
+        if self.ip_address_deny is None:
+            return None
+        return run_transient(verb, self._next_seq(), argv, run=self._run, ip_address_deny=self.ip_address_deny)
+
+    def _transient_read(self, verb: str) -> dict:
+        result = self._transient(verb, ["imd", verb])
+        if result is None:
+            return verbs.err("child_posture_unavailable", {"verb": verb})
+        if result.timed_out:
+            return verbs.err("timeout", {"verb": verb, "unit": result.unit})
+        # whoami prints the public key: redact with the allowed field so the hex64 rule keeps it (spec §13 canary (3))
+        lines = [redact(ln, "deviceKey" if verb == "whoami" else None) for ln in _text(result.stdout).splitlines() if ln.strip()]
+        if verb == "whoami":
+            key = next((ln.strip() for ln in lines if len(ln.strip()) == 64 and all(c in "0123456789abcdef" for c in ln.strip())), None)
+            if key is None:
+                return verbs.err("whoami_unavailable", {"rc": result.rc})
+            self._whoami_key = key
+            return verbs.ok(data={"deviceKey": key})
+        if verb == "skills":
+            self._skills_listing = {ln.split()[1] for ln in lines if ln.split()[:1] in (["on"], ["off"]) and len(ln.split()) > 1}
+        return verbs.ok(data={"lines": lines, "rc": result.rc, "unit": result.unit})
+
+    def _seat_projection(self, peer_uid: int) -> dict:
+        if self._whoami_key is None:
+            answer = self._transient_read("whoami")
+            if not answer.get("ok"):
+                if answer.get("error") == "child_posture_unavailable":
+                    return answer
+                return verbs.err("whoami_unavailable", answer.get("detail", {}))
+        result = run_inprocess([self._python, "-I", os.path.join(self._broker_dir, "projection.py"),
+                                "--config", f"{self._home}/.identitymd/config.json", "--tools", f"{self._home}/.identitymd/tools.json"],
+                               run=self._run, timeout_s=INPROCESS_TIMEOUT_S["seat"])
+        if result.timed_out:
+            return verbs.err("timeout", {"verb": "seat"})
+        try:
+            payload = json.loads(_text(result.stdout))
+        except ValueError:
+            payload = None
+        if result.rc == 3 or (isinstance(payload, dict) and payload.get("error") == "unknown_keys"):
+            return self._canary_refused("unknown_keys", peer_uid)
+        if result.rc != 0 or not isinstance(payload, dict):
+            return verbs.err("unreadable", {"what": "config projection", "rc": result.rc})
+        kind = find_secret(payload, allowed_hex64_fields=frozenset({"deviceKey"}))
+        if kind is not None:
+            return self._canary_refused(kind, peer_uid)
+        if payload.get("deviceKey") != self._whoami_key:
+            return self._canary_refused("devicekey_mismatch", peer_uid)
+        return verbs.ok(data=payload)
+
+    def _canary_refused(self, kind: str, peer_uid: int) -> dict:
+        self._log(peer_uid=peer_uid, verb="seat", phase="canary", outcome=f"canary: {kind}")
+        return verbs.err("projection_refused", {"canary": kind})
+
+    def _sessions(self, args: dict) -> dict:
+        runtime = str(args["runtime"])
+        if runtime not in RUNTIME_PATHS:
+            return verbs.err("bad_args", {"runtime": runtime})
+        script = os.path.join(self._broker_dir, f"summarise_{runtime}.py")
+        argv = [self._python, "-I", script, "--root", f"{self._home}/{RUNTIME_PATHS[runtime]['sessions']}",
+                "--since", repr(float(args["since"]))]
+        if runtime == "codex":
+            argv += ["--work-root", f"{self._home}/.identitymd/work"]
+        result = self._transient("sessions", argv)
+        if result is None:
+            return verbs.err("child_posture_unavailable", {"verb": "sessions"})
+        if result.timed_out:
+            return verbs.err("timeout", {"verb": "sessions", "unit": result.unit})
+        try:
+            body = json.loads(_text(result.stdout))
+        except ValueError:
+            return verbs.err("unreadable", {"what": "summariser output", "rc": result.rc})
+        if isinstance(body, dict):
+            for session in body.get("sessions", []) or []:
+                if isinstance(session, dict):
+                    for error in session.get("apiErrors", []) or []:
+                        if isinstance(error, dict) and "message" in error:
+                            error["message"] = redact(error["message"])
+        return verbs.ok(data=body)
+
+    def _work_stat(self) -> dict:
+        root = f"{self._home}/.identitymd/work"
+        listing = run_inprocess(["find", root, "-mindepth", "1", "-maxdepth", "4", "-printf", "%y\t%T@\t%P\n"],
+                                run=self._run, timeout_s=INPROCESS_TIMEOUT_S["work-stat"])
+        if listing.timed_out or listing.rc != 0:
+            return verbs.err("unreadable", {"what": "work"})
+        usage = run_inprocess(["du", "-sb", root], run=self._run, timeout_s=INPROCESS_TIMEOUT_S["work-stat"])
+        total: int | None = None
+        if not usage.timed_out and usage.rc == 0:
+            try:
+                total = int(_text(usage.stdout).split()[0])
+            except (IndexError, ValueError):
+                total = None
+        return verbs.ok(data=parse_work_listing(_text(listing.stdout), total_bytes=total))
+
+    def _stat_verb(self, what: str, *, with_sha: bool) -> dict:
+        for runtime in ("codex", "claude"):
+            path = f"{self._home}/{RUNTIME_PATHS[runtime][what]}"
+            result = run_inprocess(["stat", "-c", "%s %Y", path], run=self._run, timeout_s=INPROCESS_TIMEOUT_S[f"{what}-stat" if what == "hints" else "auth-mtime"])
+            if result.timed_out or result.rc != 0:
+                continue
+            try:
+                size, mtime = _text(result.stdout).split()
+                data = {"path": path, "mtimeUtc": iso_utc(int(mtime))}
+            except ValueError:
+                continue
+            if not with_sha:
+                return verbs.ok(data=data)
+            digest = run_inprocess(["sha256sum", path], run=self._run, timeout_s=INPROCESS_TIMEOUT_S["hints-stat"])
+            sha8 = _text(digest.stdout).split()[0][:8] if (not digest.timed_out and digest.rc == 0 and _text(digest.stdout).split()) else None
+            data.update({"bytes": int(size), "sha8": sha8})
+            return verbs.ok(data=data)
+        return verbs.err("unreadable", {"what": what})
+
     # ------------------------------------------------------------ write verbs: plan
 
     # ------------------------------------------------------------ write verbs: apply
@@ -477,6 +596,33 @@ def _usec_to_s(value: str | None) -> float | None:
             return None
     return total
 
+
+def parse_work_listing(text: str, *, total_bytes: int | None) -> dict:
+    """``find -printf "%y\\t%T@\\t%P\\n"`` (depth 1-4 under work/) -> the work-stat data shape (contract C.11)."""
+    nodes: dict[tuple[str, str], dict] = {}
+    for raw in text.splitlines():
+        parts = raw.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        kind, mtime_text, rel = parts
+        segments = rel.split("/")
+        if len(segments) < 2:
+            continue
+        key = (segments[0], segments[1])
+        entry = nodes.setdefault(key, {"jobId": segments[0], "nodeId": segments[1], "mtime": 0.0, "abnormal": False})
+        if len(segments) == 2 and kind == "d":
+            try:
+                entry["mtime"] = float(mtime_text)
+            except ValueError:
+                entry["mtime"] = 0.0
+        # the disk signature of an abnormally ended lease: `.imd/reads` or anything under `artifacts/` still
+        # present after the run (a normal run empties both -- spec §5.2, vps §6.3)
+        if len(segments) == 4 and ((segments[2] == ".imd" and segments[3] == "reads") or segments[2] == "artifacts"):
+            entry["abnormal"] = True
+    rows = sorted(nodes.values(), key=lambda r: r["mtime"], reverse=True)
+    newest = [{"jobId": r["jobId"], "nodeId": r["nodeId"], "mtimeUtc": iso_utc(r["mtime"]) if r["mtime"] else None,
+               "abnormal": r["abnormal"]} for r in rows[:20]]
+    return {"count": len(rows), "bytes": total_bytes, "abnormal": sum(1 for r in rows if r["abnormal"]), "newest": newest}
 
 def _read_line(conn: socket.socket, limit: int) -> bytes:
     chunks = bytearray()

@@ -83,3 +83,48 @@ def test_main_never_opens_a_backup_copy(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out) == {"error": "refused_path"}
     assert projection.BACKUP_RE.search("/home/imd-worker/.identitymd/config.json") is None
     assert projection.BACKUP_RE.search("/home/imd-worker/.identitymd/config.json.bak-1") is not None
+# ---------------------------------------------------------------- the canary the broker runs on the projection (spec §13)
+
+import os  # noqa: E402
+
+from imd_dashd import imd_dashd as broker_mod  # noqa: E402
+from tests.broker._harness import PYTHON, audit_lines, call, make_broker, projection_child  # noqa: E402
+
+PROJECTION_CHILD = (PYTHON, "-I", os.path.join(broker_mod.BROKER_DIR, "projection.py"))
+
+
+def test_projection_canary_refuses_and_audits(tmp_path):
+    # mutation proof 18: a projection that carries devicePrivateKey is refused (canary: key_name) and audited without the value
+    broker, _runner, _journal, _clock, audit = make_broker(
+        tmp_path, script={PROJECTION_CHILD: lambda argv, kw: projection_child(_load("projection_leaky.json"))})
+    assert call(broker, "seat") == {"ok": False, "error": "projection_refused", "detail": {"canary": "key_name"}}
+    last = audit_lines(audit)[-1]
+    assert last["phase"] == "canary" and last["outcome"] == "canary: key_name" and last["verb"] == "seat"
+    text = (tmp_path / "audit.jsonl").read_text()
+    assert PRIVATE not in text and PUBLIC not in text
+    # an sk- value anywhere in the payload is refused too
+    payload = project(_load("projection_ok.json"), None)
+    payload["server"] = "https://api.imd.fun?key=sk-svcac1234abcd"
+    broker._run.script[PROJECTION_CHILD] = lambda argv, kw: projection_child(payload)
+    assert call(broker, "seat")["detail"] == {"canary": "sk"}
+
+
+def test_projection_canary_refuses_swapped_key(tmp_path):
+    # mutation proof 29: public/private swapped -- same byte shape, so only the whoami match catches it
+    broker, _runner, _journal, _clock, audit = make_broker(
+        tmp_path, script={PROJECTION_CHILD: lambda argv, kw: projection_child(_load("projection_swapped_key.json"))})
+    assert call(broker, "seat") == {"ok": False, "error": "projection_refused", "detail": {"canary": "devicekey_mismatch"}}
+    assert audit_lines(audit)[-1]["outcome"] == "canary: devicekey_mismatch"
+    assert PRIVATE not in (tmp_path / "audit.jsonl").read_text()
+    # a second 64-hex value under any other key is refused as hex64 even when deviceKey matches
+    payload = project(_load("projection_ok.json"), None)
+    payload["wallet"] = PRIVATE
+    broker._run.script[PROJECTION_CHILD] = lambda argv, kw: projection_child(payload)
+    assert call(broker, "seat")["detail"] == {"canary": "hex64"}
+
+
+def test_projection_unknown_keys_exit_3_is_a_canary_refusal(tmp_path):
+    broker, _runner, _journal, _clock, audit = make_broker(
+        tmp_path, script={PROJECTION_CHILD: lambda argv, kw: projection_child({"error": "unknown_keys"}, rc=3)})
+    assert call(broker, "seat")["detail"] == {"canary": "unknown_keys"}
+    assert audit_lines(audit)[-1]["outcome"] == "canary: unknown_keys"

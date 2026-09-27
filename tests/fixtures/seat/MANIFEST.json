@@ -734,6 +734,38 @@
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
       "notes": "project() raises KeyError('unknown_keys'); projection.py exits 3"
+    },
+    "broker/work_stat.json": {
+      "origin": "hand-written: a `find -printf '%y\\t%T@\\t%P\\n'` listing of two work/<jobId>/<nodeId> dirs (one abnormal-lease signature per vps §6.3) and the expected work-stat data",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "494805c6dcdbfa5021b9b1eda12b7169916fb85ae4f5fccc4e44cb9b10b39cdc",
+      "bytes": 1617,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "uuids synthetic; bytes = the measured 57 MB of #7 (fill8 §1)"
+    },
+    "broker/outbox_pending.json": {
+      "origin": "hand-written: one outbox/<leaseId>.json entry as the daemon writes it (bundle §2); the broker only counts names",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "e4ea84277012fb5d6a51c12da2ceda2c09f41640ee3b92b950881cc307cc45d2",
+      "bytes": 365,
+      "redactions": [
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "its leaseId names the one `ls -1A outbox` line of test_outbox_unreadable_is_an_error_not_zero (files: 1); the body is never read"
+    },
+    "broker/outbox_unreadable/.keep": {
+      "origin": "hand-written marker for the outbox_unreadable/ directory contract §D lists (spec §11 (d))",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "99d4416594cbabd6ba714f4de325e13b73c1868339764dbcb0f4b4db20f48a72",
+      "bytes": 181,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": "no test reads this file; the unreadable case is scripted (`ls -1A` rc 2) in the broker and gate tests"
     }
   }
 }
