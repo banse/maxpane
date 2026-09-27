@@ -401,10 +401,16 @@ class SeatManager:
 
 
     def _inline_step(self, now: float) -> None:
-        """Task 7.8 fills this in (systemd/fixture unit + host reads)."""
+        """Systemd and the fixture host read the unit inline (ms); docker rides the 30 s `unit` tier."""
+        if self._unit_reader is None or self._host == DOCKER_HOST:
+            return
+        self._read_unit_host(now)
+
 
     def _spawn_tiers(self, now: float) -> None:
-        """Tasks 7.8–7.10 fill this in (docker unit, broker tiers, api tiers)."""
+        if self._host == DOCKER_HOST and self._unit_reader is not None:
+            self._spawn("unit", lambda: asyncio.to_thread(self._read_unit_host, float(self._clock())), now)
+
 
     # ------------------------------------------------------------------ tier bookkeeping
 
@@ -515,6 +521,11 @@ class SeatManager:
             "releaseAvailable": st.release_available,
             "buildMismatch": bool(st.build_mismatch) if st.daemon_version is not None else None,
         })
+        doc["unit"] = self._unit_block()
+        doc["machine"] = self._machine_block()
+        changed = self._config_changed(doc["unit"])
+        doc["seat"]["configChangedSinceStart"] = changed
+        doc["control"]["restartRequired"] = True if (changed is True or self._restart_required) else (False if changed is False else None)
         if self._offline:
             for name in ("standing", "seatWork", "reasons", "plane"):
                 doc["sources"].pop(name, None)     # absent entirely under --offline (spec §7)
@@ -720,6 +731,87 @@ class SeatManager:
         today.setdefault("dayUtc", day)
         today["divergence"] = None                   # Task 7.10 fills it from the seatwork tier
         return today
+
+    def _read_unit_host(self, now: float) -> None:
+        """One unit + host read, landed per field (deviation 6; spec §7, fill4 §5).
+
+        A partial read (a ``reason`` key, or one of the two reads missing) lands what answered with ``ok: True``
+        and the reason; the failed half is absent from the new payload, so it reads ``None`` -- never the previous
+        read's value.  ``ok: False`` (a counted failure) only when neither read answered.
+        """
+        assert self._unit_reader is not None
+        unit: dict | None
+        host: dict | None
+        try:
+            unit = self._unit_reader.read_unit()
+        except Exception as exc:                     # noqa: BLE001
+            logger.debug("PEPEPANE unit read failed: %s", exc)
+            unit = None
+        try:
+            host = self._unit_reader.read_host()
+        except Exception as exc:                     # noqa: BLE001
+            logger.debug("PEPEPANE host read failed: %s", exc)
+            host = None
+        ts = float(self._clock())
+        if not isinstance(unit, Mapping) and not isinstance(host, Mapping):
+            self._fail("unit", "unit and host reads failed", ts)
+            return
+        unit_map = dict(unit) if isinstance(unit, Mapping) else {}
+        reason = unit_map.pop("reason", None)
+        if not isinstance(unit, Mapping):
+            reason = reason or "unit read failed"
+        elif not isinstance(host, Mapping):
+            reason = reason or "host read failed"
+        self._land("unit", {"unit": unit_map, "host": dict(host) if isinstance(host, Mapping) else {}}, ts)
+        if reason:
+            self._reason["unit"] = redact(str(reason))   # per field: ok stays True, the reason names the half that failed
+
+    def _unit_block(self) -> dict:
+        block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["unit"]
+        payload = self._payload("unit")
+        unit = payload.get("unit") if isinstance(payload, Mapping) else None
+        if not isinstance(unit, Mapping):
+            return block
+        for key in block:
+            if key in unit:
+                block[key] = unit[key]
+        if block.get("gracefulStopPossible") is None:
+            if self._host == DOCKER_HOST:
+                block["gracefulStopPossible"] = sig.graceful_stop_possible(
+                    kill_mode=None, stop_timeout_s=None,
+                    docker_stop_timeout_s=unit.get("stopTimeoutS"), docker_init=bool(unit.get("init", False)),
+                )
+            else:
+                block["gracefulStopPossible"] = sig.graceful_stop_possible(
+                    kill_mode=unit.get("killMode"), stop_timeout_s=unit.get("stopTimeoutS"),
+                )
+        return block
+
+    def _machine_block(self) -> dict:
+        block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["machine"]
+        payload = self._payload("unit")
+        host = payload.get("host") if isinstance(payload, Mapping) else None
+        if isinstance(host, Mapping):
+            for key in ("load1", "memAvailMiB", "diskFreeGiB", "journal"):
+                block[key] = host.get(key)
+        runtime = self._runtime
+        if runtime == "codex":
+            sessions = self._payload("sessions")
+            zstd = sessions.get("zstdReadable") if isinstance(sessions, Mapping) else None
+            block["transcriptRetention"] = {"kind": "codex-rollouts", "plainDays": 7, "deleteDays": None, "zstdReadable": zstd}
+        elif runtime == "claude":
+            block["transcriptRetention"] = {"kind": "claude-transcripts", "deleteDays": 30}
+        # Task 7.9 fills workDirs/workBytes/abnormalLeaseDirs/outboxFiles/orphans from the workstat tier.
+        return block
+
+    def _config_changed(self, unit_block: Mapping) -> bool | None:
+        projection = self._payload("seat")
+        mtime = projection.get("configMtimeUtc") if isinstance(projection, Mapping) else None
+        return sig.config_changed_since_start(mtime_utc=mtime, anchor_utc=unit_block.get("sinceUtc"))
+
+
+
+
 
 
 

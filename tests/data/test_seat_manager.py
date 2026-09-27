@@ -441,3 +441,144 @@ async def test_restart_boundary_clears_restart_required(tmp_path):
                            "2026-09-26T03:40:10.402Z runtimes: codex codex-cli 0.157.0 (using codex, as asked)"])
     assert "restart" in result.events and m._restart_required is False
     await m.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 7.8 — unit/host reads, unit + machine blocks, configChangedSinceStart
+# ---------------------------------------------------------------------------
+
+import copy
+
+UNIT_OK = {
+    "activeState": "active", "subState": "running", "mainPid": 98508, "sinceUtc": "2026-09-25T11:45:41Z", "restarts": 0,
+    "bootEnabled": False, "restartPolicy": "always/30s", "killMode": "control-group", "stopTimeoutS": 30,
+    "memoryCurrentB": 115798016, "memoryPeakB": 188592128, "memoryMaxB": 3221225472, "cpuQuota": "100%", "tasksCurrent": 11,
+}
+HOST_OK = {"load1": 0.02, "memAvailMiB": 2964, "diskFreeGiB": 109.0, "hostname": "ubuntu",
+           "journal": {"firstUtc": "2026-09-22T12:00:00Z", "lastUtc": "2026-09-26T03:40:11Z",
+                       "capNote": "~347 MiB resolved at boot; 4 GiB after a journald restart"}}
+
+
+class StubUnitReader:
+    def __init__(self, unit, host):
+        self.unit, self.host, self.calls = unit, host, 0
+
+    def read_unit(self):
+        self.calls += 1
+        return copy.deepcopy(self.unit)
+
+    def read_host(self):
+        return copy.deepcopy(self.host)
+
+
+async def test_systemd_unit_is_read_inline_every_tick(tmp_path):
+    # spec §4.3 step 2: VPS systemctl show · cgroup · loadavg · statvfs inline (<= ms); gracefulStopPossible derived (§5.5)
+    clock = Clock()
+    reader = StubUnitReader(UNIT_OK, HOST_OK)
+    m = _manager(tmp_path, now=clock, unit_reader=reader, runtime="codex")
+    for _ in range(3):
+        await m.fetch_and_compute()
+    assert reader.calls == 3, "inline, every tick, never tiered on systemd"
+    doc = m.document()
+    assert doc["sources"]["unit"]["ok"] is True and doc["sources"]["unit"]["asOfUtc"] == "2026-09-26T03:40:12Z"
+    unit = doc["unit"]
+    assert unit["activeState"] == "active" and unit["memoryCurrentB"] == 115798016 and unit["stopTimeoutS"] == 30
+    assert unit["gracefulStopPossible"] is True and unit["sinceUtc"] == "2026-09-25T11:45:41Z"
+    assert set(unit) == set(models.empty_document(started_at_utc="x", host={})["unit"])
+    machine = doc["machine"]
+    assert machine["load1"] == 0.02 and machine["memAvailMiB"] == 2964 and machine["diskFreeGiB"] == 109.0
+    assert machine["journal"]["capNote"].startswith("~347 MiB")
+    assert machine["transcriptRetention"] == {"kind": "codex-rollouts", "plainDays": 7, "deleteDays": None, "zstdReadable": None}
+    assert doc["seat"]["configChangedSinceStart"] is None, "no config mtime read yet (Task 7.9)"
+    await m.close()
+
+
+async def test_docker_unit_is_a_30s_tier_and_claude_retention(tmp_path):
+    clock = Clock()
+    docker_unit = dict(UNIT_OK, killMode=None, stopTimeoutS=10, init=False, sinceUtc="2026-09-21T19:57:03.123456789Z")
+    reader = StubUnitReader(docker_unit, {"load1": 1.5, "memAvailMiB": 900, "diskFreeGiB": 40.0, "hostname": "mac", "journal": None})
+    # hostname passed explicitly: host.hostname is the constructor's value (or platform.node()), never the host read's
+    m = _manager(tmp_path, now=clock, unit_reader=reader, host="docker", container="imd-worker", runtime="claude", hostname="mac")
+    await m.fetch_and_compute()
+    await m.settle()
+    await m.fetch_and_compute()
+    await m.settle()
+    assert reader.calls == 1, "docker inspect/stats ride TIER_UNIT (30 s), never inline (spec §4.3)"
+    clock.advance(30)
+    await m.fetch_and_compute()
+    await m.settle()
+    assert reader.calls == 2
+    doc = m.document()
+    assert doc["host"] == {"kind": "docker", "unit": None, "container": "imd-worker", "runtime": "claude", "hostname": "mac"}
+    assert doc["unit"]["gracefulStopPossible"] is False, "StopTimeout 10, no init (fill1 §3)"
+    assert doc["machine"]["transcriptRetention"] == {"kind": "claude-transcripts", "deleteDays": 30}
+    await m.close()
+
+
+async def test_docker_stats_ok_while_inspect_failed_is_per_field(tmp_path):
+    # spec §7 `sources` mapped per field (fill4 §5: docker inspect and stats fail independently) / §14 mutation proof 8, manager half:
+    # the half that answered is served, the failed half is None (never a stale or zero value), the host read is never gated on an
+    # inspect failure, the reason rides sources.unit, and the hero is not red (the tail owns liveness)
+    clock = Clock()
+    partial = {"memoryCurrentB": 115798016, "activeState": None, "subState": None, "reason": "inspect timed out 25 s"}
+    reader = StubUnitReader(partial, {"load1": 0.5, "memAvailMiB": 1200, "diskFreeGiB": 40.0, "hostname": "mac", "journal": None})
+    m = _manager(tmp_path, now=clock, unit_reader=reader, host="docker", container="imd-worker", runtime="claude")
+    await m.fetch_and_compute()
+    await m.settle()
+    flat = await m.fetch_and_compute()
+    doc = m.document()
+    src = doc["sources"]["unit"]
+    assert src["ok"] is True and src["reason"] == "inspect timed out 25 s" and src["failures"] == 0
+    assert src["asOfUtc"] == "2026-09-26T03:40:12Z"
+    assert flat["seat_unit_memory_current_b"] == 115798016, "stats answered: served"
+    assert flat["seat_unit_active_state"] is None and doc["unit"]["stopTimeoutS"] is None, "inspect failed: None, never 0"
+    assert flat["seat_machine_load1"] == 0.5, "the host read answered: never gated on an inspect failure"
+    assert flat["seat_sources"]["unit"]["reason"] == "inspect timed out 25 s", "WP8's UNIT box renders the reason amber"
+    assert flat["seat_hero_state"] != "red", "an inspect timeout turns UNIT amber, never the hero (spec §9)"
+    # the next read answers inspect only: the previous memory figure is gone, never served as live
+    reader.unit = {"activeState": "running", "subState": "running", "stopTimeoutS": 10, "init": False, "reason": "stats timed out 25 s"}
+    clock.advance(30)
+    await m.fetch_and_compute()
+    await m.settle()
+    flat = await m.fetch_and_compute()
+    assert flat["seat_unit_active_state"] == "running" and flat["seat_unit_memory_current_b"] is None
+    assert m.document()["sources"]["unit"]["reason"] == "stats timed out 25 s"
+    # a total failure: both reads None
+    m2 = _manager(tmp_path / "b", now=clock, unit_reader=StubUnitReader(None, None), host="systemd")
+    await m2.fetch_and_compute()
+    src = m2.document()["sources"]["unit"]
+    assert src["ok"] is False and src["reason"] == "unit and host reads failed" and src["asOfUtc"] is None
+    await m.close()
+    await m2.close()
+
+
+async def test_a_raising_unit_reader_is_a_counted_failure(tmp_path):
+    # spec §4.3: fetch_and_compute never raises -- a unit reader that explodes is one counted, reasoned failure of sources.unit
+    m = _manager(tmp_path, unit_reader=RaisingUnitReader())
+    flat = await m.fetch_and_compute()
+    assert tuple(flat) == models.SEAT_KEYS and m.error_count >= 1
+    src = m.document()["sources"]["unit"]
+    assert src["ok"] is False and src["reason"] == "unit and host reads failed" and src["failures"] == 1
+    await m.close()
+
+
+async def test_config_changed_since_start_uses_the_unit_anchor(tmp_path):
+    # spec §5.2: mtime > ActiveEnterTimestamp + 60 s; the projection's configMtimeUtc arrives with the `seat` source
+    clock = Clock()
+    m = _manager(tmp_path, now=clock, unit_reader=StubUnitReader(UNIT_OK, HOST_OK))
+    m._land("seat", {"configMtimeUtc": "2026-09-25T11:45:00Z"}, clock.now)
+    await m.fetch_and_compute()
+    assert m.document()["seat"]["configChangedSinceStart"] is False
+    m._land("seat", {"configMtimeUtc": "2026-09-25T14:00:00Z"}, clock.now)
+    await m.fetch_and_compute()
+    assert m.document()["seat"]["configChangedSinceStart"] is True
+    assert m.document()["control"]["restartRequired"] is True, "a changed config needs a restart (spec §8 CONFIG)"
+    # the CONTROL modal's skills-set flag (spec §11) is cleared by the next restart boundary (Task 7.7), not by a TUI restart
+    m._land("seat", {"configMtimeUtc": "2026-09-25T11:45:00Z"}, clock.now)
+    m.set_restart_required(True)
+    await m.fetch_and_compute()
+    assert m.document()["control"]["restartRequired"] is True
+    m.feed_lines(["2026-09-26T03:40:10.402Z runtimes: codex codex-cli 0.157.0 (using codex, as asked)"])
+    await m.fetch_and_compute()
+    assert m.document()["control"]["restartRequired"] is False
+    await m.close()
