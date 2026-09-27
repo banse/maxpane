@@ -627,3 +627,36 @@ def test_verify_md_explains_the_check_and_what_it_does_not_prove():
     for needle in ("sha256sum -c", "--require-hashes", "--manifest-only", "does not prove", "unsigned",
                    "authorship", "deploy/vps/wheels/", "/opt/imd-dash/MANIFEST.sha256", "probe_seat_host.sh"):
         assert needle in text, needle
+
+
+# --- Task 9.7: docs/seat_status_schema_v2.md -------------------------------------------------------------------
+
+from maxpane_dashboard.data.seat_models import PRODUCER, SCHEMA_VERSION, SOURCE_NAMES, empty_document  # noqa: E402
+
+SCHEMA_DOC = REPO / "docs" / "seat_status_schema_v2.md"
+#: fill4 §3: the 13 top-level keys of the aidude mode-B writer's v1 document (`jq keys`).
+V1_TOP_LEVEL = ("schemaVersion", "generatedAtUtc", "seat", "daemon", "host", "container", "fleet", "current",
+                "tasks", "reputation", "cost", "standing", "sources")
+#: Spec §10: the one sentence allowed to carry a ``$`` in the seat docs (Task 9.9's guard).
+NO_CURRENCY_SENTENCE = "no `$` figure in any panel, document field or code path"
+
+
+def test_schema_doc_maps_every_v1_key_and_names_every_v2_block():
+    """Spec §7 'Versioning vs aidude schema v1': v2 is a new contract, and the mapping table is what
+    The Lineup and the aidude writer adopt. Every v2 top-level block (derived from
+    ``empty_document``), every source name, every v1 top-level key (as the first cell of a mapping
+    row), the three refusal codes and the no-currency sentence are in the document. Mutation: drop
+    the ``reputation`` row -> red; rename a source -> red."""
+    text = SCHEMA_DOC.read_text(encoding="utf-8")
+    assert f"`schemaVersion: {SCHEMA_VERSION}`" in text and f"`{PRODUCER}`" in text
+    doc = empty_document(started_at_utc="2026-09-26T00:00:00Z",
+                         host={"kind": "systemd", "unit": WORKER_UNIT, "container": None, "runtime": "codex", "hostname": "ubuntu"})
+    for block in doc:
+        assert f"`{block}`" in text, f"v2 block {block} is not described"
+    for name in SOURCE_NAMES:
+        assert f"`{name}`" in text, f"source {name} is not described"
+    for key in V1_TOP_LEVEL:
+        assert re.search(rf"^\| `{re.escape(key)}[`.\[]", text, re.M), f"no mapping row starts with v1 `{key}`"
+    for code in ("wrong_schema", "with_secret", "too_large", "not_an_object"):
+        assert f"`{code}`" in text, code
+    assert NO_CURRENCY_SENTENCE in text
