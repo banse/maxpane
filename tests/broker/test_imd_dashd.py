@@ -1185,3 +1185,20 @@ def test_lifecycle_journal_argv_is_the_broker_history_command(tmp_path):
     call(broker, "gate")
     assert lifecycle_journal_argv() in runner.argvs("journalctl")
     assert lifecycle_journal_argv(pattern="(?!)")[-5:] == ["--grep", "(?!)", "--lines", "1", "--case-sensitive=yes"]
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_projection_canary_refuses_nested_device_key(tmp_path, as_list):
+    from imd_dashd.projection import project
+    source = json.loads((FIXTURES / "projection_nested_device_key.json").read_text())
+    nested = source["inference"]["deviceKey"]
+    if as_list:
+        source["inference"] = [source["inference"]]
+    payload = project(source, None)
+    child = (PYTHON, "-I", os.path.join(broker_mod.BROKER_DIR, "projection.py"))
+    broker, _runner, _journal, _clock, audit = make_broker(
+        tmp_path, script={child: lambda argv, kw: projection_child(payload)})
+    response = call(broker, "seat")
+    assert response == {"ok": False, "error": "projection_refused", "detail": {"canary": "hex64"}}
+    assert audit_lines(audit)[-1]["outcome"] == "canary: hex64"
+    assert nested not in json.dumps(audit_lines(audit)) and PUBLIC_KEY not in json.dumps(audit_lines(audit))

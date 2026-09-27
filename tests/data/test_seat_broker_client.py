@@ -851,3 +851,28 @@ def test_local_ping_skips_due_inline_drain_tick(tmp_path, monkeypatch):
         pytest.fail("ping dispatched inline housekeeping")
     monkeypatch.setattr(broker, "tick", forbidden)
     assert broker.read("ping")["drain_armed"]
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_local_canary_refuses_nested_device_key(tmp_path, monkeypatch, as_list):
+    from imd_dashd.projection import project
+    source = json.loads((CLI.parent / "broker" / "projection_nested_device_key.json").read_text())
+    nested = source["inference"]["deviceKey"]
+    if as_list:
+        source["inference"] = [source["inference"]]
+    payload = project(source, None)
+    monkeypatch.setattr(client, "broker_script", lambda name: b"# " + name.encode())
+    default_exec = _docker_script()[("docker", "exec")]
+
+    def exec_answer(argv, kw):
+        if "--config" in argv:
+            return subprocess.CompletedProcess(argv, 0, json.dumps(payload).encode(), b"")
+        return default_exec(argv, kw)
+
+    broker, _runner, _lines, _clock = _local(tmp_path, script={("docker", "exec"): exec_answer})
+    with pytest.raises(BrokerError) as exc:
+        broker.read("seat")
+    assert exc.value.code == "projection_refused" and exc.value.detail == {"canary": "hex64"}
+    audit = (tmp_path / "seat_audit.jsonl").read_text()
+    assert json.loads(audit.splitlines()[-1])["outcome"] == "canary: hex64"
+    assert nested not in audit and PUBLIC_KEY not in audit

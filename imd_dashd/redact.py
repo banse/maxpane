@@ -168,6 +168,7 @@ def find_secret_path(
     value: object,
     *,
     allowed_hex64_fields: frozenset[str] = frozenset(),
+    allowed_hex64_paths: frozenset[str] = frozenset(),
     field: str | None = None,
 ) -> tuple[str, str] | None:
     """First canary hit in a tree as ``(kind, dotted path)``, or ``None``.
@@ -176,25 +177,28 @@ def find_secret_path(
     matching :data:`SECRET_KEY_RE`), then for a string value ``"sk"``
     (:data:`SK_RE`), ``"jwt"`` (:data:`JWT_RE`) and ``"hex64"``
     (:data:`HEX64_RE` under a key not in *allowed_hex64_fields*; a list
-    inherits its key).  The path reads ``tasks.rows[3].hash12``; the root is
+    inherits its key), unless its exact path is in *allowed_hex64_paths*.
+    Path allowances do not propagate to children or array items. The path reads ``tasks.rows[3].hash12``; the root is
     ``""``.  Never raises.
     """
-    return _walk(value, allowed_hex64_fields, field, "")
+    return _walk(value, allowed_hex64_fields, allowed_hex64_paths, field, "")
 
 
 def find_secret(
     value: object,
     *,
     allowed_hex64_fields: frozenset[str] = frozenset(),
+    allowed_hex64_paths: frozenset[str] = frozenset(),
     field: str | None = None,
 ) -> str | None:
     """The kind of the first canary hit (see :func:`find_secret_path`), or ``None``."""
-    hit = find_secret_path(value, allowed_hex64_fields=allowed_hex64_fields, field=field)
+    hit = find_secret_path(value, allowed_hex64_fields=allowed_hex64_fields,
+                           allowed_hex64_paths=allowed_hex64_paths, field=field)
     return None if hit is None else hit[0]
 
 
 def _walk(
-    value: object, allowed: frozenset[str], field: str | None, path: str
+    value: object, allowed: frozenset[str], allowed_paths: frozenset[str], field: str | None, path: str
 ) -> tuple[str, str] | None:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -202,13 +206,13 @@ def _walk(
             child = f"{path}.{key_text}" if path else key_text
             if SECRET_KEY_RE.search(key_text):
                 return ("key_name", child)
-            hit = _walk(item, allowed, key_text, child)
+            hit = _walk(item, allowed, allowed_paths, key_text, child)
             if hit is not None:
                 return hit
         return None
     if isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
-            hit = _walk(item, allowed, field, f"{path}[{index}]")
+            hit = _walk(item, allowed, allowed_paths, field, f"{path}[{index}]")
             if hit is not None:
                 return hit
         return None
@@ -217,6 +221,6 @@ def _walk(
             return ("sk", path)
         if JWT_RE.search(value):
             return ("jwt", path)
-        if field not in allowed and HEX64_RE.search(value):
+        if field not in allowed and path not in allowed_paths and HEX64_RE.search(value):
             return ("hex64", path)
     return None

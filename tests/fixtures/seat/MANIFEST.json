@@ -3,7 +3,7 @@
   "root": "tests/fixtures/seat",
   "entries": {
     "grammar/control_chars.txt": {
-      "origin": "hand-written (spec §14 control_chars.txt): a working: line carrying OSC 52 + OSC 0 + BEL, a U+202E/U+202C bidi line forging an accepted line, a heartbeat with NUL/DEL/CSI, a phase line with TAB/BS/US",
+      "origin": "hand-written (spec \u00a714 control_chars.txt): a working: line carrying OSC 52 + OSC 0 + BEL, a U+202E/U+202C bidi line forging an accepted line, a heartbeat with NUL/DEL/CSI, a phase line with TAB/BS/US",
       "captured_at": "2026-09-26T00:00:00Z",
       "sha256": "79bd8043acb83253c483fa5af92c7c3e23e92ba5626683b15ffba9f0d0bcb3d1",
       "bytes": 387,
@@ -29,7 +29,7 @@
       "notes": "the masked sk-svcac******** fragment is the control plane's own masking and is kept on purpose (redactor test input, mutation proof 12); the corpus carries no control bytes and no hex>=32; capture time approximate"
     },
     "status/status_v2_healthy.json": {
-      "origin": "hand-written status document v2 (spec §7 example values: seat #7, agent 51075, counters 288 = 244+5+11+28, the 09-25 failed row); every sources.*.asOfUtc precedes completedAtUtc",
+      "origin": "hand-written status document v2 (spec \u00a77 example values: seat #7, agent 51075, counters 288 = 244+5+11+28, the 09-25 failed row); every sources.*.asOfUtc precedes completedAtUtc",
       "captured_at": "2026-09-26T00:00:00Z",
       "sha256": "95acd045f33e30e0f4c3a09f30df044f01e2c474a80a4bff75a09d3fd0526a26",
       "bytes": 13294,
@@ -126,7 +126,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "25 lines are `Started|Stopping|Stopped imd-worker.service - …`, 16 carry the `imd-worker.service: ` head (Deactivated/Consumed) — contract deviation 1",
+      "notes": "25 lines are `Started|Stopping|Stopped imd-worker.service - \u2026`, 16 carry the `imd-worker.service: ` head (Deactivated/Consumed) \u2014 contract deviation 1",
       "sha256": "5042a6fc04d1a58b9591fbd8bd76642bca1554f825b59a829af4143221e60e4e",
       "bytes": 642
     },
@@ -140,7 +140,7 @@
       ],
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "lines 6-9 are synthetic: a quoted accept template inside working: prose, a quoted stored line, an unstamped accept, a stamped accept with trailing text (spec §14 proof 2)",
+      "notes": "lines 6-9 are synthetic: a quoted accept template inside working: prose, a quoted stored line, an unstamped accept, a stamped accept with trailing text (spec \u00a714 proof 2)",
       "sha256": "b6152a92ebe6fe290a72d95ee639dcae0777799d56c16f40e8abd6c574c06b42",
       "bytes": 987
     },
@@ -154,7 +154,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "operator restart: Stopping -> shutting down -> Stopped/Consumed -> Started -> runtimes: (+0.272 s) -> admitted; fill1 §1",
+      "notes": "operator restart: Stopping -> shutting down -> Stopped/Consumed -> Started -> runtimes: (+0.272 s) -> admitted; fill1 \u00a71",
       "sha256": "3ef7ed33c9bbf99e96fc768397cdd3ae4d913c925781a7d912e9e8359aee902f",
       "bytes": 955
     },
@@ -168,7 +168,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "15:13:19.512 `disconnected 3h27m · idle · 0 submitted` has no fleet clause (GET /health failed); spec §5.1",
+      "notes": "15:13:19.512 `disconnected 3h27m \u00b7 idle \u00b7 0 submitted` has no fleet clause (GET /health failed); spec \u00a75.1",
       "sha256": "d8a468758339b8e57c528e8bd485f4bdfffa836aeac4bd4f3db4e2b4e20838d3",
       "bytes": 686
     },
@@ -182,7 +182,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "the only research task on the VPS: accepted question ec996927 -> answered with 2 citation(s) -> submission stored (3f166c0de71b); fill6 §2",
+      "notes": "the only research task on the VPS: accepted question ec996927 -> answered with 2 citation(s) -> submission stored (3f166c0de71b); fill6 \u00a72",
       "sha256": "c41a1d7a811c0d8ccc92ba68e5831245cc3d91ab0728b2fea12778f0271d3278",
       "bytes": 786
     },
@@ -196,7 +196,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "the 401 pause suffix lingers past 23:53 while `1 task running` (23:54:22, 23:55:52) and is gone at 23:56:22; masked key -> sk-[redacted]; fill1 §5",
+      "notes": "the 401 pause suffix lingers past 23:53 while `1 task running` (23:54:22, 23:55:52) and is gone at 23:56:22; masked key -> sk-[redacted]; fill1 \u00a75",
       "sha256": "f8b538b96fc0e38912993fef0f8b3efe2a5ecfeca474cb701df3a8c8d322f94d",
       "bytes": 2777
     },
@@ -210,7 +210,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "each `repairing:` is followed by one more `bundling:` and exactly ONE submitted + ONE stored (3/3); fill6 §2",
+      "notes": "each `repairing:` is followed by one more `bundling:` and exactly ONE submitted + ONE stored (3/3); fill6 \u00a72",
       "sha256": "5057b4f57dbc8e17c82b6f98621164836499742a206b43d97c62048380ee931c",
       "bytes": 2048
     },
@@ -224,7 +224,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "two in-process outbox re-sends, each yielding exactly one `submission stored` (7f11d6b7f9d0, 3538ff5d2068); fill1 §4, fill6 §2",
+      "notes": "two in-process outbox re-sends, each yielding exactly one `submission stored` (7f11d6b7f9d0, 3538ff5d2068); fill1 \u00a74, fill6 \u00a72",
       "sha256": "8093247aa0d6f08e9ce2e5c69cc4349143b29d12ec48557f3c7cbb0a68bbeb7c",
       "bytes": 1307
     },
@@ -238,7 +238,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "six sub-second accept->submit runs with no `working:` line; all six API rows failed/blocked; fill6 §2",
+      "notes": "six sub-second accept->submit runs with no `working:` line; all six API rows failed/blocked; fill6 \u00a72",
       "sha256": "f3e1ef69488fa2d6b29667d5d71cc47be5c2040bd6512e433e2c99d7d60fd381",
       "bytes": 1994
     },
@@ -252,7 +252,7 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "node8 repeats within a seat (3x) and across seats (4cf722c7 also on the Mac at 17:08:52) -> key (seat, node8, acceptedAt); fill6 §2",
+      "notes": "node8 repeats within a seat (3x) and across seats (4cf722c7 also on the Mac at 17:08:52) -> key (seat, node8, acceptedAt); fill6 \u00a72",
       "sha256": "9272ca7a432333e120f56cea709f78a07c1476bd39224021a8ac0bc9b22fe5cc",
       "bytes": 2886
     },
@@ -280,12 +280,12 @@
       ],
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "First window remains the 2026-09-24 22:21–22:23 corpus slice; second is the real 15-line 09-26 capture: reconnecting without server closed, one fleet6 disconnected beat, admitted then5f890f2e stored.",
+      "notes": "First window remains the 2026-09-24 22:21\u201322:23 corpus slice; second is the real 15-line 09-26 capture: reconnecting without server closed, one fleet6 disconnected beat, admitted then5f890f2e stored.",
       "sha256": "6fb68c9036baaaeb55e4231dd9125b97085944e89ae859b1b401a1a85d7bf170",
       "bytes": 2157
     },
     "grammar/open_accept_after_idle.txt": {
-      "origin": "hand-written (spec §14 fixture list)",
+      "origin": "hand-written (spec \u00a714 fixture list)",
       "captured_at": "2026-09-26T08:30:00Z",
       "redactions": [],
       "synthetic": true,
@@ -325,7 +325,7 @@
       "bytes": 1897707
     },
     "grammar/journal_json_records.jsonl": {
-      "origin": "synthetic: the `journalctl -u imd-worker.service -o json` record shape verified on imd-vps (vps §2: __CURSOR, __SEQNUM, __REALTIME_TIMESTAMP, PRIORITY=6, _PID, _COMM=MainThread, SYSLOG_IDENTIFIER=imd, _SYSTEMD_INVOCATION_ID, MESSAGE with the daemon's own ISO-ms stamp) around one real-shaped task 0c1f9727; shape re-verified by the owner-run capture in WP3 Task 3.4",
+      "origin": "synthetic: the `journalctl -u imd-worker.service -o json` record shape verified on imd-vps (vps \u00a72: __CURSOR, __SEQNUM, __REALTIME_TIMESTAMP, PRIORITY=6, _PID, _COMM=MainThread, SYSLOG_IDENTIFIER=imd, _SYSTEMD_INVOCATION_ID, MESSAGE with the daemon's own ISO-ms stamp) around one real-shaped task 0c1f9727; shape re-verified by the owner-run capture in WP3 Task 3.4",
       "captured_at": "2026-09-26T00:00:00Z",
       "sha256": "efc4becaf9fc67574aef30161f3a5f8e3caebf581c5babefdf6e1c47ad4ea07e",
       "bytes": 5107,
@@ -336,10 +336,10 @@
       ],
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "record 1 is systemd's own `Started` line (PID 1, UNIT= and INVOCATION_ID= without underscore, no _SYSTEMD_INVOCATION_ID); records 2-9 are one daemon invocation a1b2c3d4…; cursors and ids are obviously synthetic 32-hex"
+      "notes": "record 1 is systemd's own `Started` line (PID 1, UNIT= and INVOCATION_ID= without underscore, no _SYSTEMD_INVOCATION_ID); records 2-9 are one daemon invocation a1b2c3d4\u2026; cursors and ids are obviously synthetic 32-hex"
     },
     "grammar/docker_stale_segment.log": {
-      "origin": "synthetic: a `docker logs --since <watermark> --timestamps imd-worker` body of the kind seen on 2026-09-20 after a Docker Desktop restart, when --tail 400 / --since / no-tail all returned the PREVIOUS segment 3 h stale with no error (collectors §1.3; _worker_page.py:298-305; fill8 §3)",
+      "origin": "synthetic: a `docker logs --since <watermark> --timestamps imd-worker` body of the kind seen on 2026-09-20 after a Docker Desktop restart, when --tail 400 / --since / no-tail all returned the PREVIOUS segment 3 h stale with no error (collectors \u00a71.3; _worker_page.py:298-305; fill8 \u00a73)",
       "captured_at": "2026-09-26T00:00:00Z",
       "sha256": "d43b24b8e3c14613024ff8a73e5a2a444a3e721141488f9f8a97cbe45217da61",
       "bytes": 716,
@@ -353,7 +353,7 @@
       "notes": "newest daemon stamp 2026-09-20T10:04:41.220Z; the test's follower starts 2026-09-20T13:05:12.001Z and the persisted watermark is 12:59:40.000Z; Docker prefixes carry 9, 3 and trimmed fractional digits on purpose (Go RFC3339Nano trims zeros)"
     },
     "grammar/journal_vacuumed_cursor.jsonl": {
-      "origin": "synthetic: what `--after-cursor=<vacuumed cursor>` may return on systemd 259 when sd_journal_seek_cursor lands on the closest surviving entry with exit 0 (spec §5.1 VPS transport; fill8 OPEN) — three records two days newer than the test's persisted lastTsUtc 2026-09-24T04:12:00.000Z, under a NEW invocation id",
+      "origin": "synthetic: what `--after-cursor=<vacuumed cursor>` may return on systemd 259 when sd_journal_seek_cursor lands on the closest surviving entry with exit 0 (spec \u00a75.1 VPS transport; fill8 OPEN) \u2014 three records two days newer than the test's persisted lastTsUtc 2026-09-24T04:12:00.000Z, under a NEW invocation id",
       "captured_at": "2026-09-26T00:00:00Z",
       "sha256": "13ef4882840e638e2e6dcc90e8b8431a1ebfe786bfafed14b315c786fd90a0e9",
       "bytes": 1796,
@@ -364,7 +364,7 @@
       ],
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "first __REALTIME_TIMESTAMP 1790394007120000 = 2026-09-26T03:40:07.120Z; the real behaviour is recorded by probe_seat_host.sh (spec §14, §18 open 17)"
+      "notes": "first __REALTIME_TIMESTAMP 1790394007120000 = 2026-09-26T03:40:07.120Z; the real behaviour is recorded by probe_seat_host.sh (spec \u00a714, \u00a718 open 17)"
     },
     "sessions/rollout_task.jsonl": {
       "captured_at": "2026-09-26T12:00:00Z",
@@ -375,7 +375,7 @@
         "tool_io",
         "base_instructions"
       ],
-      "origin": "synthetic: codex-cli 0.157.0 rollout shape (vps §2, cost §1) carrying the numbers of job 15bb693b node 4b9b896f (cost §0.4)",
+      "origin": "synthetic: codex-cli 0.157.0 rollout shape (vps \u00a72, cost \u00a71) carrying the numbers of job 15bb693b node 4b9b896f (cost \u00a70.4)",
       "notes": "5 token_usage_records, 3 AgentMessage items; last total 110,792 in / 92,928 cached / 812 out -> API 17,864 / 92,928 / 812, turns 3",
       "sha256": "8443e480eca7fc543f957c6d896145af7baa9c16b3dee2cac370775c2b8bec98",
       "bytes": 10962
@@ -389,7 +389,7 @@
         "tool_io",
         "base_instructions"
       ],
-      "origin": "synthetic: the one #7 research rollout of fill6 §2/§6 (cwd = work root; 69,624 in / 45,056 cached / 2,835 out)",
+      "origin": "synthetic: the one #7 research rollout of fill6 \u00a72/\u00a76 (cwd = work root; 69,624 in / 45,056 cached / 2,835 out)",
       "notes": "starts 0.9 s after `accepted question ec996927` (RESEARCH_JOIN_S = 2.0)",
       "sha256": "1c2de60beacba910db9f67ac79ad82abfd81b9ff5188765f2117dacb1d21087d",
       "bytes": 3495
@@ -403,8 +403,8 @@
         "tool_io",
         "base_instructions"
       ],
-      "origin": "synthetic: an `imd doctor` smoke rollout (fill3 §0, fill6 §6: cwd work/doctor-XXXXXX, maxTurns 1)",
-      "notes": "excluded from cost (spec §10)",
+      "origin": "synthetic: an `imd doctor` smoke rollout (fill3 \u00a70, fill6 \u00a76: cwd work/doctor-XXXXXX, maxTurns 1)",
+      "notes": "excluded from cost (spec \u00a710)",
       "sha256": "305e708a7765dc56e9c33b01aafd56b878e3526e0e36c47a94df32a1b59f62ad",
       "bytes": 1864
     },
@@ -430,7 +430,7 @@
       "synthetic": true,
       "daemon_version": null,
       "redactions": [],
-      "origin": "synthetic: spec §5.4 hostile size -- one 2 MiB agent-message line between two real ones",
+      "origin": "synthetic: spec \u00a75.4 hostile size -- one 2 MiB agent-message line between two real ones",
       "notes": "parsed, the 2 MiB line would make turns 3; skipped, turns stay 2. The > 64 MiB file is a sparse truncate() on tmp_path: the manifest has no size-only entries",
       "sha256": "ca7aab8459795a92bb06dcb8aa3fcef501a62294e94586a0a1194b85616791b2",
       "bytes": 2098974
@@ -454,7 +454,7 @@
       "synthetic": true,
       "daemon_version": null,
       "redactions": [],
-      "origin": "spec §5.4 / fill6 §3, §6.3: Claude project slugs with the expected kind per slug",
+      "origin": "spec \u00a75.4 / fill6 \u00a73, \u00a76.3: Claude project slugs with the expected kind per slug",
       "notes": "tab-separated; -home-imd--identitymd-work is research and must NOT be excluded (mutation proof 35)",
       "sha256": "869273cdd57e7b6589b2a6d9662dd5befc229268493ac59f1a02e52f33bb6c1f",
       "bytes": 410
@@ -468,7 +468,7 @@
         "tool_io",
         "credential_org"
       ],
-      "origin": "synthetic: Claude Code 2.1.282 transcript shape (cost §1) carrying the numbers of node f7b20ce4 / job 48e53e33 (cost §0.2, fill3 §2)",
+      "origin": "synthetic: Claude Code 2.1.282 transcript shape (cost \u00a71) carrying the numbers of node f7b20ce4 / job 48e53e33 (cost \u00a70.2, fill3 \u00a72)",
       "notes": "7 assistant lines / 5 message ids: dedup 5 turns / 10 in / 1,267 out / 149,963 cached = API; per-line 1,629 out",
       "sha256": "93d05abb92d0c4f942420f54669de819241aeb5db88e98c6196f5f42799b70ed",
       "bytes": 6746
@@ -482,7 +482,7 @@
         "tool_io",
         "credential_org"
       ],
-      "origin": "synthetic: hunt_d attempt 2 of 7b9c907d, file 1 of 2 (fill3 §2)",
+      "origin": "synthetic: hunt_d attempt 2 of 7b9c907d, file 1 of 2 (fill3 \u00a72)",
       "notes": "58 user lines, 73,695 output, one api_error 500 line, totalDuration 1,202,379 ms",
       "sha256": "6538364322f7df582d969773755a324ca1c3b68c99282f0eabc20ed39ca03a0d",
       "bytes": 57324
@@ -496,7 +496,7 @@
         "tool_io",
         "credential_org"
       ],
-      "origin": "synthetic: hunt_d attempt 2 of 7b9c907d, file 2 of 2 (fill3 §2)",
+      "origin": "synthetic: hunt_d attempt 2 of 7b9c907d, file 2 of 2 (fill3 \u00a72)",
       "notes": "8 user lines, 1,263 output; API output 74,958 = 73,695 + 1,263 while API turns 61 != 58 + 8",
       "sha256": "43e01f9de63f0c167c8cdb1dec8efff75ad83f84215136f3198dfd6b2b0a9d51",
       "bytes": 8227
@@ -510,7 +510,7 @@
         "tool_io",
         "credential_org"
       ],
-      "origin": "synthetic: a transcript whose cost-state carries the SDK side model claude-haiku-4-5-20251001 (fill3 §2)",
+      "origin": "synthetic: a transcript whose cost-state carries the SDK side model claude-haiku-4-5-20251001 (fill3 \u00a72)",
       "notes": "side model 31,415 in / 273 out is reported separately, never added",
       "sha256": "317df845365b9925c9976a737e34a0018d1afdfbadb9b1b0823f7cc64bdcc225",
       "bytes": 2463
@@ -524,7 +524,7 @@
         "tool_io",
         "credential_org"
       ],
-      "origin": "synthetic: `system` api_error 401 OAuth access token has been revoked, retried twice (cost §1; 09-24 03:52Z)",
+      "origin": "synthetic: `system` api_error 401 OAuth access token has been revoked, retried twice (cost \u00a71; 09-24 03:52Z)",
       "notes": "no assistant reply; cost-state present -> tokens 0",
       "sha256": "ccc5b126bbc72d2fb6944eaff5253f9523d685f1fb7f3c6e1c86cf8e0c33ae9f",
       "bytes": 1142
@@ -538,13 +538,13 @@
         "tool_io",
         "credential_org"
       ],
-      "origin": "synthetic: attachment max_turns_reached 52/53 then 7/8 (cost §0.5 repair pass)",
+      "origin": "synthetic: attachment max_turns_reached 52/53 then 7/8 (cost \u00a70.5 repair pass)",
       "notes": "compact on purpose: pins the attachment reader, not the turn count",
       "sha256": "1022852a926df4a38392515a8645b54292b6ec2d17fcd75374e7332221ba0fa7",
       "bytes": 2963
     },
     "api/seat7_standing.json": {
-      "origin": "GET https://api.imd.fun/seats/7/standing — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "origin": "GET https://api.imd.fun/seats/7/standing \u2014 hand-built from the measured field lists (fill5 \u00a71/\u00a74/\u00a76, fill1 \u00a74, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
       "captured_at": "2026-09-26T09:00:00Z",
       "sha256": "0dd03510d06e6991db48a8808173fedbef18e292e6edc8d1dd083ae696bd2c25",
       "bytes": 2364,
@@ -560,7 +560,7 @@
       "notes": "seats form: queue{ready,fleetOnline,eligible,blocked}, devices; no summary field on this form; working case (running[0] present)"
     },
     "api/workers_standing_q0.json": {
-      "origin": "GET https://api.imd.fun/workers/<deviceKey>/standing?queue=0 — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "origin": "GET https://api.imd.fun/workers/<deviceKey>/standing?queue=0 \u2014 hand-built from the measured field lists (fill5 \u00a71/\u00a74/\u00a76, fill1 \u00a74, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
       "captured_at": "2026-09-26T09:00:00Z",
       "sha256": "3fcf9d1a26409156d8fa056a1bc4401ebecffe549b5921843f2ae1301b155ea8",
       "bytes": 2224,
@@ -573,10 +573,10 @@
       ],
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "proves queue: null on the ?queue=0 form (spec §6 trap); recentFailures[].summary removed"
+      "notes": "proves queue: null on the ?queue=0 form (spec \u00a76 trap); recentFailures[].summary removed"
     },
     "api/seat7_work20.json": {
-      "origin": "GET https://api.imd.fun/seats/7?work=20&reviews=0 — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "origin": "GET https://api.imd.fun/seats/7?work=20&reviews=0 \u2014 hand-built from the measured field lists (fill5 \u00a71/\u00a74/\u00a76, fill1 \u00a74, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
       "captured_at": "2026-09-26T09:00:00Z",
       "sha256": "2524d1446d17a6da2cb63e57ddeb8a3516ee7d07a630be7487056670015b7a59",
       "bytes": 10620,
@@ -589,7 +589,7 @@
       ],
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "counters 288/244/5/11/28 consistent; work[].acceptedAt Postgres text, submittedAt ISO Z; row 0 = the 69 s flip (fill5 §3); row 1 failed, joins job_b1fb1439_submissions.json by hash"
+      "notes": "counters 288/244/5/11/28 consistent; work[].acceptedAt Postgres text, submittedAt ISO Z; row 0 = the 69 s flip (fill5 \u00a73); row 1 failed, joins job_b1fb1439_submissions.json by hash"
     },
     "api/seat7_work20_inconsistent.json": {
       "origin": "derived from api/seat7_work20.json with attempts set to 290 (sum of the four is 288)",
@@ -608,7 +608,7 @@
       "notes": "counters violate attempts == accepted+rejected+failed+pending -> `counters inconsistent (api)`; synthetic forever"
     },
     "api/seat7_500.json": {
-      "origin": "HTTP 500 body of GET https://api.imd.fun/seats/7 (fill5 §4: 16 of 60 reads) — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "origin": "HTTP 500 body of GET https://api.imd.fun/seats/7 (fill5 \u00a74: 16 of 60 reads) \u2014 hand-built from the measured field lists (fill5 \u00a71/\u00a74/\u00a76, fill1 \u00a74, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
       "captured_at": "2026-09-26T09:00:00Z",
       "sha256": "5e46db068013dadb47ccc6a07f5fa430f1e7ddaf5f66cce85fb8ef989798145e",
       "bytes": 155,
@@ -624,7 +624,7 @@
       "notes": "Postgres shared-memory exhaustion; segment id is a placeholder"
     },
     "api/job_b1fb1439_submissions.json": {
-      "origin": "GET https://api.imd.fun/jobs/<jobId>/submissions — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "origin": "GET https://api.imd.fun/jobs/<jobId>/submissions \u2014 hand-built from the measured field lists (fill5 \u00a71/\u00a74/\u00a76, fill1 \u00a74, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
       "captured_at": "2026-09-26T09:00:00Z",
       "sha256": "60a6d732e5a36641ef3b204a4746006212eefca465d29bc8e1e609b0fecf6d5c",
       "bytes": 3956,
@@ -637,10 +637,10 @@
       ],
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "three failed/runtime_error/machine attempts of seat 7 (the 09-25 23:36–23:38 401 wave) + one accepted attempt of seat 1204; summary removed; deviceKey scrubbed"
+      "notes": "three failed/runtime_error/machine attempts of seat 7 (the 09-25 23:36\u201323:38 401 wave) + one accepted attempt of seat 1204; summary removed; deviceKey scrubbed"
     },
     "api/health.json": {
-      "origin": "GET https://api.imd.fun/health — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "origin": "GET https://api.imd.fun/health \u2014 hand-built from the measured field lists (fill5 \u00a71/\u00a74/\u00a76, fill1 \u00a74, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
       "captured_at": "2026-09-26T09:00:00Z",
       "sha256": "90a1bf9f79e1881dcc8a318eb81194306d28e85049a00e7cec462c1e5ec29543",
       "bytes": 865,
@@ -653,10 +653,10 @@
       ],
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "25 keys incl. undocumented awaitingVerdict and computedAt (fill5 §6)"
+      "notes": "25 keys incl. undocumented awaitingVerdict and computedAt (fill5 \u00a76)"
     },
     "api/services.json": {
-      "origin": "GET https://api.imd.fun/services — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "origin": "GET https://api.imd.fun/services \u2014 hand-built from the measured field lists (fill5 \u00a71/\u00a74/\u00a76, fill1 \u00a74, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
       "captured_at": "2026-09-26T09:00:00Z",
       "sha256": "a539c459b88f59c66f64ccabcb7e77b4b7f15b401491309869735e9b153c33d5",
       "bytes": 412,
@@ -672,7 +672,7 @@
       "notes": "verifier/publisher/deployer with version, up, lastSeenAt, claims; dict-keyed shape assumed, confirmed at capture"
     },
     "api/workers_row.json": {
-      "origin": "one row of GET https://api.imd.fun/workers — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "origin": "one row of GET https://api.imd.fun/workers \u2014 hand-built from the measured field lists (fill5 \u00a71/\u00a74/\u00a76, fill1 \u00a74, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
       "captured_at": "2026-09-26T09:00:00Z",
       "sha256": "41223478485b709f1ef534a5ae0d7bd126f5a0e19b7476d8adce043594baecab",
       "bytes": 520,
@@ -688,7 +688,7 @@
       "notes": "only to prove `working` (a 30 s heartbeat echo behind a 30 s cache) is never rendered; deviceKey scrubbed"
     },
     "broker/projection_ok.json": {
-      "origin": "hand-written: the 8-key config.json shape of bundle §2 with synthetic keys (both 64-hex values are made up and load-bearing for the canary tests)",
+      "origin": "hand-written: the 8-key config.json shape of bundle \u00a72 with synthetic keys (both 64-hex values are made up and load-bearing for the canary tests)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "75aabea810cdd67cb32b7e55216286818df9b66948176c61554e42fa72f97e15",
       "bytes": 565,
@@ -700,7 +700,7 @@
       "notes": "input to project(); never a real config.json"
     },
     "broker/projection_leaky.json": {
-      "origin": "hand-written: a broken projection OUTPUT that leaked devicePrivateKey (spec §13 canary (1))",
+      "origin": "hand-written: a broken projection OUTPUT that leaked devicePrivateKey (spec \u00a713 canary (1))",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "df42d9f8668ce5a49fab01adb97c143c09363171aec24ebaef1630d6a584efe4",
       "bytes": 366,
@@ -712,7 +712,7 @@
       "notes": "refused as canary: key_name; synthetic 64-hex values"
     },
     "broker/projection_swapped_key.json": {
-      "origin": "hand-written: a projection output whose deviceKey carries the private-key value (spec §13 canary (3))",
+      "origin": "hand-written: a projection output whose deviceKey carries the private-key value (spec \u00a713 canary (3))",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "1d4851a92f0c9b73fb92569926304ecfe4b1160bf8a567d60239ac8f45d094f9",
       "bytes": 276,
@@ -724,7 +724,7 @@
       "notes": "refused only by the whoami match: canary: devicekey_mismatch"
     },
     "broker/projection_extra_key.json": {
-      "origin": "hand-written: a 9-key config.json (agentId added) — schema drift (spec §5.2 (ii), §13 canary (5))",
+      "origin": "hand-written: a 9-key config.json (agentId added) \u2014 schema drift (spec \u00a75.2 (ii), \u00a713 canary (5))",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "321499320a6f3dea92cd58d0380efc73230ce8780fcf5a465be211fc5652503b",
       "bytes": 371,
@@ -736,17 +736,17 @@
       "notes": "project() raises KeyError('unknown_keys'); projection.py exits 3"
     },
     "broker/work_stat.json": {
-      "origin": "hand-written: a `find -printf '%y\\t%T@\\t%P\\n'` listing of two work/<jobId>/<nodeId> dirs (one abnormal-lease signature per vps §6.3) and the expected work-stat data",
+      "origin": "hand-written: a `find -printf '%y\\t%T@\\t%P\\n'` listing of two work/<jobId>/<nodeId> dirs (one abnormal-lease signature per vps \u00a76.3) and the expected work-stat data",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "494805c6dcdbfa5021b9b1eda12b7169916fb85ae4f5fccc4e44cb9b10b39cdc",
       "bytes": 1617,
       "redactions": [],
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
-      "notes": "uuids synthetic; bytes = the measured 57 MB of #7 (fill8 §1)"
+      "notes": "uuids synthetic; bytes = the measured 57 MB of #7 (fill8 \u00a71)"
     },
     "broker/outbox_pending.json": {
-      "origin": "hand-written: one outbox/<leaseId>.json entry as the daemon writes it (bundle §2); the broker only counts names",
+      "origin": "hand-written: one outbox/<leaseId>.json entry as the daemon writes it (bundle \u00a72); the broker only counts names",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "e4ea84277012fb5d6a51c12da2ceda2c09f41640ee3b92b950881cc307cc45d2",
       "bytes": 365,
@@ -758,7 +758,7 @@
       "notes": "its leaseId names the one `ls -1A outbox` line of test_outbox_unreadable_is_an_error_not_zero (files: 1); the body is never read"
     },
     "broker/outbox_unreadable/.keep": {
-      "origin": "hand-written marker for the outbox_unreadable/ directory contract §D lists (spec §11 (d))",
+      "origin": "hand-written marker for the outbox_unreadable/ directory contract \u00a7D lists (spec \u00a711 (d))",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "99d4416594cbabd6ba714f4de325e13b73c1868339764dbcb0f4b4db20f48a72",
       "bytes": 181,
@@ -768,7 +768,7 @@
       "notes": "no test reads this file; the unreadable case is scripted (`ls -1A` rc 2) in the broker and gate tests"
     },
     "broker/procs_orphan.json": {
-      "origin": "hand-written from vps §6.1: the 35 h stuck `runuser … codex exec … | tail -2` pipeline re-keyed to pgid 64861 = the root `bash -c` of a non-tty ssh session",
+      "origin": "hand-written from vps \u00a76.1: the 35 h stuck `runuser \u2026 codex exec \u2026 | tail -2` pipeline re-keyed to pgid 64861 = the root `bash -c` of a non-tty ssh session",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "5c3a43ccba3059d1b16fd5c9a6c94efcce6a423d719ab0b69a014e552ea907ad",
       "bytes": 3505,
@@ -778,7 +778,7 @@
       "notes": "input to tests.broker._harness.write_fake_proc(); pids and ticks are synthetic; the cmdlines are the measured ones"
     },
     "cli/5bfa8261/imd_status_seat7.txt": {
-      "origin": "STAND-IN shaped from vps §1/§47 for `runuser -l imd-worker -c 'imd status'` on imd-vps; replace via the capture step of Task 6.14",
+      "origin": "STAND-IN shaped from vps \u00a71/\u00a747 for `runuser -l imd-worker -c 'imd status'` on imd-vps; replace via the capture step of Task 6.14",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "4542022e3b53be998c26632e5a461d9721e9156bd223c37fbfb7f3f84f9b2726",
       "bytes": 377,
@@ -790,7 +790,7 @@
       "notes": "device line carries the synthetic public key of the projection fixtures"
     },
     "cli/5bfa8261/imd_status_seat420.txt": {
-      "origin": "STAND-IN shaped from bundle §1 for `docker exec imd-worker imd status` on the Mac; replace via the capture step of Task 6.14",
+      "origin": "STAND-IN shaped from bundle \u00a71 for `docker exec imd-worker imd status` on the Mac; replace via the capture step of Task 6.14",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "f259e3b95a7041d3b8ad89dbfce99e8547c6f4e6ec3a9871de8c4f9cdde3dee5",
       "bytes": 374,
@@ -802,7 +802,7 @@
       "notes": "synthetic device key"
     },
     "cli/5bfa8261/imd_skills.txt": {
-      "origin": "STAND-IN: 31 rows, the 7 needs-network and 4 needs-tool ids of vps §47 plus 20 plausible ids; replace via the capture step of Task 6.14",
+      "origin": "STAND-IN: 31 rows, the 7 needs-network and 4 needs-tool ids of vps \u00a747 plus 20 plausible ids; replace via the capture step of Task 6.14",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "7cd51ea7e64f0d97c9dd69457f378ee5163708311ed18ad99367f60ff7cdda98",
       "bytes": 792,
@@ -812,7 +812,7 @@
       "notes": "header line is the measured `31 skills offered, 31 on here.`"
     },
     "cli/5bfa8261/imd_tools_none.txt": {
-      "origin": "the measured `imd tools` line on imd-vps (vps §47)",
+      "origin": "the measured `imd tools` line on imd-vps (vps \u00a747)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "9c472e1cf2f8e283dce82fafb7177760597c2e2143f6cc3e1610d83492f4a9f6",
       "bytes": 62,
@@ -822,7 +822,7 @@
       "notes": ""
     },
     "cli/5bfa8261/imd_help.txt": {
-      "origin": "STAND-IN: `imd --help` -> `unknown command: --help` + usage (vps §47, fill2 §13); subcommand list from bundle §1",
+      "origin": "STAND-IN: `imd --help` -> `unknown command: --help` + usage (vps \u00a747, fill2 \u00a713); subcommand list from bundle \u00a71",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "43953ec11036a02602f2b280be5bee7c9b06ec3becc1fd46cb1f1df0e693e4c4",
       "bytes": 705,
@@ -832,7 +832,7 @@
       "notes": "test_cli_stand_ins_agree_with_the_broker_and_the_unit_file: lists every imd subcommand the brokers exec; `update` is listed but is no broker verb"
     },
     "cli/5bfa8261/imd_doctor.txt": {
-      "origin": "STAND-IN composed from the measured doctor lines of vps §47 and runbook §9.1; keeps the $0.114 figure the verify path must strip",
+      "origin": "STAND-IN composed from the measured doctor lines of vps \u00a747 and runbook \u00a79.1; keeps the $0.114 figure the verify path must strip",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "c0dacfb2b8f6006cf7c088f22f1b3510582ccdce4137caf3bf5f5cb18b5268c3",
       "bytes": 1093,
@@ -844,7 +844,7 @@
       "notes": "synthetic device key; replace via the capture step of Task 6.14"
     },
     "cli/5bfa8261/imd_whoami.txt": {
-      "origin": "STAND-IN: the synthetic public key (64 hex) — `imd whoami` prints exactly one such line (bundle §1)",
+      "origin": "STAND-IN: the synthetic public key (64 hex) \u2014 `imd whoami` prints exactly one such line (bundle \u00a71)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "27d61457681771da4acb2e915bf0afe186158bb511bd284c8d37a127e9a7e40c",
       "bytes": 65,
@@ -856,7 +856,7 @@
       "notes": ""
     },
     "cli/systemctl_show.txt": {
-      "origin": "STAND-IN from the measured `systemctl show imd-worker.service` values of vps §1 (MainPID 98508, ActiveEnterTimestamp 2026-09-25 11:45:41 UTC, UnitFileState=disabled)",
+      "origin": "STAND-IN from the measured `systemctl show imd-worker.service` values of vps \u00a71 (MainPID 98508, ActiveEnterTimestamp 2026-09-25 11:45:41 UTC, UnitFileState=disabled)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "8ae53d3f1527964cb7bf15f7611b2a2547e9986213ca389595e1a6ff234a02e2",
       "bytes": 564,
@@ -866,17 +866,17 @@
       "notes": "replace via the capture step of Task 6.14"
     },
     "cli/systemctl_cat.txt": {
-      "origin": "STAND-IN reconstruction of /etc/systemd/system/imd-worker.service from vps §1 (every directive named there)",
+      "origin": "STAND-IN reconstruction of /etc/systemd/system/imd-worker.service from vps \u00a71 (every directive named there)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "032d25954e294670f7c2bbe3bb0389767f2b35a095c8ac4139eb2f472df4cc28",
       "bytes": 1305,
       "redactions": [],
       "synthetic": true,
       "daemon_version": null,
-      "notes": "the operator IPs 82.165.187.96 89.167.27.194 are the measured ones (safety §1); its IPAddressDeny= lines are compared by test_cli_stand_ins_agree_with_the_broker_and_the_unit_file"
+      "notes": "the operator IPs 82.165.187.96 89.167.27.194 are the measured ones (safety \u00a71); its IPAddressDeny= lines are compared by test_cli_stand_ins_agree_with_the_broker_and_the_unit_file"
     },
     "cli/systemctl_show_ipaddressdeny.txt": {
-      "origin": "STAND-IN: `systemctl show imd-worker.service -p IPAddressDeny` in systemd's normalised form (vps §1)",
+      "origin": "STAND-IN: `systemctl show imd-worker.service -p IPAddressDeny` in systemd's normalised form (vps \u00a71)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "2993ca11e55d6fca2dc358240f9b904c83a9ac48b7668c87819e26137a702d70",
       "bytes": 136,
@@ -886,7 +886,7 @@
       "notes": "test_cli_stand_ins_agree_with_the_broker_and_the_unit_file: the value read_ip_address_deny copies equals the unit file's two IPAddressDeny= lines with bare hosts as /32"
     },
     "cli/docker_inspect.json": {
-      "origin": "STAND-IN: `docker inspect imd-worker` reduced to the fields the reader uses, values from fill1 §3 (StopTimeout null, Init null, RestartCount 0, StartedAt 2026-09-25T11:45:54Z)",
+      "origin": "STAND-IN: `docker inspect imd-worker` reduced to the fields the reader uses, values from fill1 \u00a73 (StopTimeout null, Init null, RestartCount 0, StartedAt 2026-09-25T11:45:54Z)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "26df4f0d36788aeba143aaf66f2ccb244a6b4a2e61d08ccc125c8359d3e18a71",
       "bytes": 1332,
@@ -896,7 +896,7 @@
       "notes": "ids synthetic; replace via the capture step of Task 6.14"
     },
     "cli/docker_stats.txt": {
-      "origin": "STAND-IN: one `docker stats --no-stream --format '{{json .}}'` line with the measured 130.8MiB / 3.5GiB, 3.65 %, 11 pids (collectors §48)",
+      "origin": "STAND-IN: one `docker stats --no-stream --format '{{json .}}'` line with the measured 130.8MiB / 3.5GiB, 3.65 %, 11 pids (collectors \u00a748)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "fb3b46bec9db77b08f9f9b4ee7da279a6fd1b32080c85706d0fe0d16d858d42b",
       "bytes": 191,
@@ -913,10 +913,10 @@
       "redactions": [],
       "synthetic": true,
       "daemon_version": null,
-      "notes": "the exec'd doctor is outside PID 1's tree: the Mac orphan case of spec §5.5"
+      "notes": "the exec'd doctor is outside PID 1's tree: the Mac orphan case of spec \u00a75.5"
     },
     "cli/cgroup/memory.current": {
-      "origin": "the measured /sys/fs/cgroup/system.slice/imd-worker.service/memory.current (vps §57)",
+      "origin": "the measured /sys/fs/cgroup/system.slice/imd-worker.service/memory.current (vps \u00a757)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "74b58bfc089ea296d5e9a8ce0b9e6179f89c32137acb135490130d5e1e47cab1",
       "bytes": 10,
@@ -926,7 +926,7 @@
       "notes": ""
     },
     "cli/cgroup/memory.peak": {
-      "origin": "the measured memory.peak (vps §57)",
+      "origin": "the measured memory.peak (vps \u00a757)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "6d658492c3acf062fb6dcff848e130a86cc59a777debe8c7e4b9accec58033b1",
       "bytes": 10,
@@ -936,7 +936,7 @@
       "notes": ""
     },
     "cli/cgroup/memory.max": {
-      "origin": "the measured memory.max = 3 G (vps §57)",
+      "origin": "the measured memory.max = 3 G (vps \u00a757)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "e299e7e064963e64b8955bf05efe3e8151603ac8410068ae44c09285dd88707b",
       "bytes": 11,
@@ -946,7 +946,7 @@
       "notes": ""
     },
     "cli/cgroup/cpu.max": {
-      "origin": "the measured cpu.max `100000 100000` = 100 % (vps §57)",
+      "origin": "the measured cpu.max `100000 100000` = 100 % (vps \u00a757)",
       "captured_at": "2026-09-26T09:30:00Z",
       "sha256": "261369fa24cb11ef3776980c85360401b9cdc7cf51aaa7a27e7acad94d662607",
       "bytes": 14,
@@ -956,7 +956,7 @@
       "notes": ""
     },
     "api_down/case.json": {
-      "origin": "hand-written case descriptor (contract §D)",
+      "origin": "hand-written case descriptor (contract \u00a7D)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "d40bc70465930fafdd4250359abd1ce1a57cf4f2e3315bc038f282f21c844a97",
       "bytes": 223,
@@ -966,7 +966,7 @@
       "notes": "dev-mode case: inherits healthy/ (broker, unit); every api request answers 500; heartbeats lack the fleet clause as measured when /health fails"
     },
     "api_down/log.txt": {
-      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps §3, fill6 §1); stamps chosen to match status_v2_healthy.json",
+      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps \u00a73, fill6 \u00a71); stamps chosen to match status_v2_healthy.json",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "7ece4a1cddf87630ff48d634139724f2101b7e3f920b36aae29126f061f85843",
       "bytes": 1227,
@@ -1032,7 +1032,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/audit-tail.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "81bbcb0ba0c81e12f725b59ba1185652996bb0e3da1cae6f16086c53c6526406",
       "bytes": 379,
@@ -1042,7 +1042,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/auth-mtime.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "27cd0a93088284818016a7e22591fe7b94bb3538688a74fb8f95af868e6dfb22",
       "bytes": 73,
@@ -1052,7 +1052,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/gate.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "a12581cdf82988ff3657ad360a07765378f3b4edc303b927fd3a4687b290a2f7",
       "bytes": 454,
@@ -1062,7 +1062,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/hints-stat.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "17b77aba024fdc497d0a504f576eac667450d9b593a799029c1f8e8c747fbcaa",
       "bytes": 112,
@@ -1072,7 +1072,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/orphans.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "ad211a82dcba4781fae8ee4c73c0954b2b66a29db98c2f709c1bf01fc2ef98a0",
       "bytes": 23,
@@ -1082,7 +1082,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/outbox.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "8fd5cabed0e309af100b0d21afb9740c38b474cb2063b82bad2c145abe64bc59",
       "bytes": 17,
@@ -1092,7 +1092,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/ping.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "fc035c62c5f660d3971f1dea0b867e51c437b78d3b5cb546892920057e462836",
       "bytes": 137,
@@ -1102,7 +1102,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/seat.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "38da09c06f1b28f83880ea5424257708d958ca1a3c762dca4c512ce08ceffb56",
       "bytes": 642,
@@ -1116,7 +1116,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/sessions.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "04165f0a47c0d44e80c17a9f8f6b0900ab5b896a3f744cf97f6bca0699f4b30d",
       "bytes": 1486,
@@ -1126,7 +1126,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/skills.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "1cdee0af4c3311cb68a5a0a0da8f3e7d78995f000aca6e1e929efd77839e858f",
       "bytes": 208,
@@ -1136,7 +1136,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/status.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "e88f3d6a88cf305b064d7e3aa96086c6510a39aaa05005190a0a1c0221a2f9f7",
       "bytes": 419,
@@ -1150,7 +1150,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/tools.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "acdc0dceed766008f1f6b7994af9e68c1455c604ef40448b98e3d4ac175136bc",
       "bytes": 130,
@@ -1160,7 +1160,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/whoami.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "cffe79b11e07d9e2c3f5ad367899948d3ed13bce30d5d28fe5c4e0035c807133",
       "bytes": 86,
@@ -1174,7 +1174,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/broker/work-stat.json": {
-      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
+      "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract \u00a7C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "112a275c481a22a1ef0cea5b12e3c237559a84faab2340c76f7e78db263825c9",
       "bytes": 265,
@@ -1184,7 +1184,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/case.json": {
-      "origin": "hand-written case descriptor (contract §D)",
+      "origin": "hand-written case descriptor (contract \u00a7D)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "2ae8d6895590d8db121983f43a6d91f18aa4b7db8878ef0a64e9112d56b66eb2",
       "bytes": 203,
@@ -1194,7 +1194,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/log.txt": {
-      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps §3, fill6 §1); stamps chosen to match status_v2_healthy.json",
+      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps \u00a73, fill6 \u00a71); stamps chosen to match status_v2_healthy.json",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "25c447f721c084bab48f59136600d46266b4b57f6c7f2ea0de9e3b40c152f014",
       "bytes": 2126,
@@ -1204,7 +1204,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "healthy/unit/systemctl_show.txt": {
-      "origin": "hand-composed `systemctl show imd-worker.service --timestamp=utc -p …` output with the vps §1 values",
+      "origin": "hand-composed `systemctl show imd-worker.service --timestamp=utc -p \u2026` output with the vps \u00a71 values",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "5290e9604bea1a5dfa3001c03adc0427f61a5ac6150b9549df442209e633159a",
       "bytes": 609,
@@ -1214,7 +1214,7 @@
       "notes": "dev-mode case for `pepepane --host fixture --fixture tests/fixtures/seat/healthy/`: seat #7, codex, systemd; every read verb answered so no panel is degraded"
     },
     "tail_dead/case.json": {
-      "origin": "hand-written case descriptor (contract §D)",
+      "origin": "hand-written case descriptor (contract \u00a7D)",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "97d81afeb5f98aee763a173c5ae33332cd3808ef3349196b438efdb27820f1ec",
       "bytes": 227,
@@ -1224,7 +1224,7 @@
       "notes": "dev-mode case: inherits healthy/ (broker, api, unit); the log source exits rc=1 so the follower reports `tail: exited` (hero red)"
     },
     "tail_dead/log.txt": {
-      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps §3, fill6 §1); stamps chosen to match status_v2_healthy.json",
+      "origin": "hand-composed from the daemon's 5bfa8261 line templates (vps \u00a73, fill6 \u00a71); stamps chosen to match status_v2_healthy.json",
       "captured_at": "2026-09-26T10:00:00Z",
       "sha256": "5823ad851eb32d7db7a88c343b8ac3bb88ef84cdccd24cb9ec7437be6c3a49db",
       "bytes": 1205,
@@ -1232,6 +1232,16 @@
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
       "notes": "dev-mode case: inherits healthy/ (broker, api, unit); the log source exits rc=1 so the follower reports `tail: exited` (hero red)"
+    },
+    "broker/projection_nested_device_key.json": {
+      "origin": "synthetic, nested deviceKey canary refusal regression",
+      "captured_at": "2026-09-27T00:00:00Z",
+      "sha256": "6b86cc4e2ee04b05537d24a500e673a8a8395e40175755bb894a51ec9e0e4cd4",
+      "bytes": 758,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": "Eight-key config source shape, existing synthetic public/private pair plus synthetic inference.deviceKey. Projection strips the root private field but must refuse the nested key."
     }
   }
 }

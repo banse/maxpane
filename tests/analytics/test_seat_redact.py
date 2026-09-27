@@ -275,3 +275,19 @@ def test_imd_dashd_redact_agrees_with_the_analytics_copy():
             assert broker_redact.redact(line) == sr.redact(line)
             assert broker_redact.find_secret(line) == sr.find_secret(line)
     assert broker_redact.RULES == sr.RULES
+
+
+def test_exact_hex64_paths_do_not_allow_nested_keys_or_array_items():
+    allowed = frozenset({"deviceKey"})
+    assert sr.find_secret({"deviceKey": HEX64}, allowed_hex64_paths=allowed) is None
+    for tree, path in (
+        ({"inference": {"deviceKey": HEX64}}, "inference.deviceKey"),
+        ({"inference": [{"deviceKey": HEX64}]}, "inference[0].deviceKey"),
+        ({"deviceKey": [HEX64]}, "deviceKey[0]"),
+    ):
+        assert sr.find_secret_path(tree, allowed_hex64_paths=allowed) == ("hex64", path)
+        assert sr.find_secret(tree, allowed_hex64_paths=allowed) == "hex64"
+        # Existing key-name allowance remains recursive, including list inheritance.
+        assert sr.find_secret(tree, allowed_hex64_fields=allowed) is None
+    assert sr.find_secret({"inference": {"deviceKey": HEX64}},
+                          allowed_hex64_paths=frozenset({"inference.deviceKey"})) is None

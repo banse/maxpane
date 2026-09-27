@@ -674,3 +674,15 @@ Root state locks now protect only short in-memory snapshots/updates. Slow reads 
 ### 2026-09-27 — PEPEPANE fix 3: lifecycle journal probe
 
 Spec section 14's owner-run probe list gains a lifecycle journal section after the stale-cursor section (20 sections total). The probe imports the new module-level `lifecycle_journal_argv` from the installed broker and uses the same argv as root history reads, including the LOCAL_FAIL correction. It compares the latest lifecycle against a bounded unfiltered history, reports PCRE2/grep support and captures stdout, stderr and exit status for the same argv with a nonmatching pattern. If the independent 10,000-record baseline contains no lifecycle, the comparison is explicitly inconclusive. This probe remains owner-run; build validation uses shell syntax, list output and an injected synthetic runner only.
+
+
+## 2026-09-27 — PEPEPANE fix 4: exact projection key allowance
+
+The projection canary permits long hex only at the exact root `deviceKey` path,
+then verifies it against `imd whoami`. A nested `inference.deviceKey`, including
+one inside an array, is refused and audited without either key. The additive
+`allowed_hex64_paths` keyword on `find_secret` and `find_secret_path` enforces
+spec §13's "any other" value rule; the existing `allowed_hex64_fields` keyword
+keeps its recursive key-name semantics for other callers. Both redactor copies
+remain byte-identical. A synthetic eight-key source fixture exercises the real
+projection function and both broker canaries.

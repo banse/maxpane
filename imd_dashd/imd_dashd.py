@@ -736,7 +736,7 @@ class Broker:
             return self._canary_refused("unknown_keys", peer_uid)
         if result.rc != 0 or not isinstance(payload, dict):
             return verbs.err("unreadable", {"what": "config projection", "rc": result.rc})
-        kind = find_secret(payload, allowed_hex64_fields=frozenset({"deviceKey"}))
+        kind = find_secret(payload, allowed_hex64_paths=frozenset({"deviceKey"}))
         if kind is not None:
             return self._canary_refused(kind, peer_uid)
         if payload.get("deviceKey") != self._whoami_key:

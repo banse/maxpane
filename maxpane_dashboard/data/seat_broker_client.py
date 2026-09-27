@@ -590,7 +590,7 @@ class LocalDockerBroker(_CallMixin):
         if done.returncode != 0 or not isinstance(payload, dict):
             raise BrokerError("unreadable", {"what": "config projection", "rc": done.returncode})
         from maxpane_dashboard.analytics.seat_redact import find_secret
-        kind = find_secret(payload, allowed_hex64_fields=frozenset({"deviceKey"}))
+        kind = find_secret(payload, allowed_hex64_paths=frozenset({"deviceKey"}))
         if kind is not None:
             return self._canary(kind)
         if payload.get("deviceKey") != self._whoami_key:
