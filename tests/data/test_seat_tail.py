@@ -648,3 +648,130 @@ def test_a_classify_that_raises_drops_the_line_and_keeps_the_follower():
     thread, q = _thread(lambda st: ListLineSource([HB1, HB2, ACC]), classify=classify)
     thread.run_once()
     assert [l.text for l in _drain(q)] == [HB1, ACC]
+
+# =============================================================================
+# Task 3.7 -- docker behaviour in the thread: dedup, backfill discard (#31), prefix before classify
+# =============================================================================
+
+
+def _stale_body() -> list[str]:
+    return [split_docker_prefix(line)[1] for line in _fixture_bytes("docker_stale_segment.log").decode().splitlines() if line]
+
+
+FOLLOWER_0920 = [
+    "2026-09-20T13:05:12.001Z alive 6h19m · idle · 5 submitted · fleet 62 online, 71 enrolled",
+    "2026-09-20T13:05:42.002Z alive 6h20m · idle · 5 submitted · fleet 62 online, 71 enrolled",
+]
+
+
+def test_stale_backfill_is_discarded_not_a_gap():
+    # spec §5.1 Mac transport (mutation proof #31): a --since backfill whose newest stamp is older than the
+    # watermark is discarded whole -> sources.tail.reason = "backfill stale segment, discarded"; it is NOT a
+    # gap footer and never resurrects old rows. Fixture docker_stale_segment.log is 3 h older than the follower.
+    state = TailState(kind=KIND_DOCKER, last_ts_utc="2026-09-20T12:59:40.000Z", watermark_ts="2026-09-20T12:59:40.000Z")
+    reason_while_following: list[str | None] = []
+
+    class _Follower(ListLineSource):
+        kind = KIND_DOCKER
+
+        def lines(self):
+            yield from super().lines()
+            reason_while_following.append(holder[0].reason)   # what sources.tail.reason says while the follower runs
+
+    holder: list[TailThread] = []
+    src = _Follower(FOLLOWER_0920, backfill=_stale_body())
+    thread, q = _thread(lambda st: src, state=state)
+    holder.append(thread)
+    thread.run_once()
+    texts = [l.text for l in _drain(q)]
+    assert texts == FOLLOWER_0920                     # not one 09:58–10:04 line reached the queue
+    assert reason_while_following == [STALE_BACKFILL_REASON]
+    assert thread.backfill_note == STALE_BACKFILL_REASON and thread.backfill_at == 1_790_000_000.0
+    assert thread.gap_note is None
+    assert state.watermark_ts == "2026-09-20T13:05:42.002Z" == state.last_ts_utc
+
+
+def test_stale_backfill_through_docker_source_end_to_end():
+    # the same rule with the real DockerLogsSource: the follower body (trusted) and the --since body (fixture)
+    follower = "".join(f"2026-09-20T13:05:{12 + 30 * i:02d}.00{i + 1}00000Z {line}\n" for i, line in enumerate(FOLLOWER_0920)).encode()
+    popen = ScriptedPopen([follower])
+    run = ScriptedRun(stdout=_fixture_bytes("docker_stale_segment.log"))
+    state = TailState(kind=KIND_DOCKER, last_ts_utc="2026-09-20T12:59:40.000Z", watermark_ts="2026-09-20T12:59:40.000Z")
+    thread, q = _thread(docker_factory("imd-worker", popen=popen, run=run), state=state)
+    thread.run_once()
+    assert [l.text for l in _drain(q)] == FOLLOWER_0920
+    assert thread.backfill_note == STALE_BACKFILL_REASON and thread.gap_note is None
+    assert run.calls[0][0][:4] == ["docker", "logs", "--since", "2026-09-20T12:59:40.000Z"]
+    assert popen.calls[0][0] == ["docker", "logs", "-f", "--tail", "200", "--timestamps", "imd-worker"]
+
+
+def test_fresh_backfill_is_ingested_before_the_follower_lines():
+    # the positive half of the discard rule: a body reaching up to the follower's window is history, in order
+    body = ["2026-09-20T13:00:12.000Z alive 6h14m · idle · 5 submitted · fleet 62 online, 71 enrolled",
+            "2026-09-20T13:04:42.000Z alive 6h18m · idle · 5 submitted · fleet 62 online, 71 enrolled"]
+    state = TailState(kind=KIND_DOCKER, last_ts_utc="2026-09-20T12:59:40.000Z", watermark_ts="2026-09-20T12:59:40.000Z")
+    src = ListLineSource(FOLLOWER_0920, backfill=body)
+    src.kind = KIND_DOCKER
+    thread, q = _thread(lambda st: src, state=state)
+    thread.run_once()
+    assert [l.text for l in _drain(q)] == body + FOLLOWER_0920
+    assert thread.backfill_note is None and thread.gap_note is None
+    assert thread.backfill_at == 1_790_000_000.0
+
+
+def test_backfill_with_no_stamped_follower_line_is_judged_at_exit():
+    state = TailState(kind=KIND_DOCKER, watermark_ts="2026-09-20T12:59:40.000Z", last_ts_utc="2026-09-20T12:59:40.000Z")
+    src = ListLineSource([NPM], backfill=_stale_body())
+    src.kind = KIND_DOCKER
+    thread, q = _thread(lambda st: src, state=state)
+    thread.run_once()
+    assert [l.text for l in _drain(q)] == [NPM]
+    assert thread.backfill_note == STALE_BACKFILL_REASON
+
+
+def test_docker_timestamp_prefix_is_stripped_before_classify():
+    # header Review Focus #2: a line with Docker's RFC3339Nano prefix but no daemon stamp classifies unknown,
+    # goes to LOG only and never moves the watermark; the prefix never reaches classify()
+    body = ("2026-09-26T03:40:07.123456789Z " + HB1 + "\n"
+            "2026-09-26T03:40:08.000000001Z " + NPM + "\n"
+            "2026-09-26T03:40:37.121999999Z " + HB2 + "\n").encode()
+    seen: list[str] = []
+
+    def classify(text, *, invocation=None, cursor=None, seq=0):
+        seen.append(text)
+        return _stub_classify(text, invocation=invocation, cursor=cursor, seq=seq)
+
+    state = TailState(kind=KIND_DOCKER)
+    thread, q = _thread(docker_factory("imd-worker", popen=ScriptedPopen([body]), run=ScriptedRun(stdout=b"")),
+                        state=state, classify=classify)
+    thread.run_once()
+    assert seen == [HB1, NPM, HB2]
+    assert not any(re.match(r"^\d{4}-\d\d-\d\dT[\d:.]+Z \d{4}-", t) for t in seen)
+    lines = _drain(q)
+    assert [l.kind for l in lines] == ["heartbeat", "unknown", "heartbeat"]
+    assert state.watermark_ts == "2026-09-26T03:40:37.121Z"
+
+
+def test_docker_reattach_dedups_redelivered_tail_lines_by_ts_and_text():
+    # spec §5.1 Mac transport: dedup by (ts, text); `-f --tail 200` re-delivers the same 200 lines at every re-attach
+    state = TailState(kind=KIND_DOCKER)
+    first = ListLineSource([HB1, HB2], exit_code=1)
+    second = ListLineSource([HB1, HB2, ACC], exit_code=1)
+    first.kind = second.kind = KIND_DOCKER
+    sources = iter([first, second])
+    thread, q = _thread(lambda st: next(sources), state=state)
+    thread.run_once()
+    thread.run_once()
+    assert [l.text for l in _drain(q)] == [HB1, HB2, ACC]
+    assert thread.restarts == 2 and thread.reason == "tail: exited rc=1 — retry in 1s"
+
+
+def test_dedup_set_is_bounded():
+    state = TailState(kind=KIND_DOCKER)
+    lines = [f"2026-09-26T{h:02d}:{m:02d}:{s:02d}.000Z alive 1m · idle · 0 submitted"
+             for h in range(1, 3) for m in range(60) for s in range(0, 60, 3)]   # 2,400 distinct stamps
+    src = ListLineSource(lines)
+    src.kind = KIND_DOCKER
+    thread, q = _thread(lambda st: src, state=state)
+    thread.run_once()
+    assert q.qsize() == 2400 and len(thread._seen) == DEDUP_KEYS_MAX

@@ -672,6 +672,7 @@ class TailThread:
         self._backoff_s: float | None = None
         self._seq = 0
         self._dirty = False
+        self._seen: OrderedDict[tuple[str, str], None] = OrderedDict()
 
     # -- properties ---------------------------------------------------------------------
 
@@ -748,12 +749,22 @@ class TailThread:
     # -- one source lifetime ------------------------------------------------------------
 
     def run_once(self) -> None:
-        """Open one source, follow it until it exits, note the exit. No sleeping in here."""
+        """Open one source, follow it until it exits, note the exit. No sleeping in here.
+
+        Docker: the untrusted ``--since`` body from ``source.backfill()`` is held until the
+        follower's first *stamped* line, then judged with ``backfill_is_stale`` against the
+        watermark persisted before this attach and that first stamp; a stale body is discarded
+        whole, a fresh one is emitted before the held follower lines (chronological order).
+        """
         self._stamp()
+        watermark_before = self._state.watermark_ts
         source = self._source_factory(self._state)
         source.open()
         self._source = source
         self._state.kind = source.kind
+        pending_backfill = source.backfill()
+        held: list[RawLine] = []
+        follower_first_ts: str | None = None
         delivered = 0
         try:
             for raw in source.lines():
@@ -763,16 +774,47 @@ class TailThread:
                 if raw is None:
                     self.persist()
                     continue
-                if delivered == 0:
+                if delivered == 0 and not held:
                     self._reason = None
+                if pending_backfill is not None:
+                    held.append(raw)
+                    if follower_first_ts is None:
+                        follower_first_ts = daemon_stamp(raw.text)
+                    if follower_first_ts is None:
+                        continue
+                    delivered += self._resolve_backfill(pending_backfill, watermark_before, follower_first_ts)
+                    pending_backfill = None
+                    for item in held:
+                        delivered += self._emit(item, source.kind)
+                    held = []
+                    continue
                 delivered += self._emit(raw, source.kind)
         finally:
+            if pending_backfill is not None:
+                delivered += self._resolve_backfill(pending_backfill, watermark_before, follower_first_ts)
+                for item in held:
+                    delivered += self._emit(item, source.kind)
             source.close()
             self._source = None
         if self._stop.is_set():
             self.persist(force=True)
             return
         self._note_exit(source.exit_code(), delivered=delivered)
+
+    def _resolve_backfill(self, body: list[RawLine], watermark_before: str | None, follower_first_ts: str | None) -> int:
+        stamps = [stamp for stamp in (daemon_stamp(raw.text) for raw in body) if stamp]
+        newest = max(stamps) if stamps else None
+        self._backfill_at = self._now()
+        if backfill_is_stale(newest_backfill_ts=newest, watermark_ts=watermark_before, follower_first_ts=follower_first_ts):
+            self._reason = STALE_BACKFILL_REASON
+            self._backfill_note = STALE_BACKFILL_REASON
+            logger.info("%s (newest %s, watermark %s, follower first %s)", STALE_BACKFILL_REASON, newest, watermark_before, follower_first_ts)
+            return 0
+        self._backfill_note = None
+        emitted = 0
+        for raw in body:
+            emitted += self._emit(raw, KIND_DOCKER)
+        return emitted
 
     def _emit(self, raw: RawLine, kind: str) -> int:
         text = self._redact(raw.text)
@@ -782,6 +824,13 @@ class TailThread:
             logger.exception("classify failed; line dropped")
             return 0
         ts = getattr(line, "ts", "") or ""
+        if kind == KIND_DOCKER and ts:
+            key = (ts, getattr(line, "text", text))
+            if key in self._seen:
+                return 0
+            self._seen[key] = None
+            while len(self._seen) > DEDUP_KEYS_MAX:
+                self._seen.popitem(last=False)
         self._seq += 1
         self._queue.put(line)
         if raw.cursor is not None:
