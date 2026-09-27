@@ -686,3 +686,14 @@ spec §13's "any other" value rule; the existing `allowed_hex64_fields` keyword
 keeps its recursive key-name semantics for other callers. Both redactor copies
 remain byte-identical. A synthetic eight-key source fixture exercises the real
 projection function and both broker canaries.
+
+
+## 2026-09-27 — PEPEPANE fix 5: long-hex hardening beyond §13
+
+Owner-approved deviation from spec §13's literal lowercase, exactly-64 pattern:
+`HEX64_RE` now detects runs of at least 64 hex digits, including uppercase,
+optional `0x` prefixes and word-adjacent values. Both canary detection and
+redaction use `(?<![0-9A-Fa-f])(?:0x)?[0-9A-Fa-f]{64,}(?![0-9A-Fa-f])`.
+The field allowlist remains exactly `submissionHash`, `txHash`, `deviceKey`;
+there is no SHA-256 exception. Whoami still supplies the `deviceKey` field.
+Both copies remain byte-identical, and 65-digit values are now redacted too.

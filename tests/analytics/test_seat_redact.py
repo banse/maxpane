@@ -136,7 +136,7 @@ def test_hex64_placeholder_unless_the_field_is_allowed():
     assert sr.redact(HEX64, field="deviceKey") == HEX64
     assert sr.redact(HEX64, field="hash12") == "<hex64>"
     assert sr.redact(HEX64[:-1]) == HEX64[:-1]          # 63 hex is not a key
-    assert sr.redact(HEX64 + "0") == HEX64 + "0"        # 65 hex has no word boundary at 64
+    assert sr.redact(HEX64 + "0") == "<hex64>"         # long hex remains secret-shaped
     assert sr.HEX64_ALLOWED_FIELDS == frozenset({"submissionHash", "txHash", "deviceKey"})
 
 
@@ -291,3 +291,15 @@ def test_exact_hex64_paths_do_not_allow_nested_keys_or_array_items():
         assert sr.find_secret(tree, allowed_hex64_fields=allowed) is None
     assert sr.find_secret({"inference": {"deviceKey": HEX64}},
                           allowed_hex64_paths=frozenset({"inference.deviceKey"})) is None
+
+
+@pytest.mark.parametrize("value", [HEX64.upper(), "0x" + HEX64, "0x" + HEX64.upper(),
+                                   "z" + HEX64 + "z", HEX64 * 2, "0x" + HEX64 * 2])
+def test_long_hex_forms_are_redacted_and_detected(value):
+    expected = "z<hex64>z" if value.startswith("z") else "<hex64>"
+    assert sr.redact(value) == expected
+    assert sr.find_secret({"unexpected": value}) == "hex64"
+    assert sr.redact(value, field="sha256") == expected
+    for field in ("deviceKey", "txHash", "submissionHash"):
+        assert sr.redact(value, field=field) == value
+    assert sr.redact("0x" + "a" * 40) == "0x" + "a" * 40

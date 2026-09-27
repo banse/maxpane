@@ -21,10 +21,11 @@ by a network-selected model inside a ``working:`` sentence) would otherwise
 reach the operator's terminal over ssh.  A bare ESC is made *visible* as ``\u241b``
 so an attempted escape is seen rather than silently swallowed; every other C0
 byte except TAB and LF, DEL, the C1 range and the Unicode bidi/format controls
-are removed.  Then the ordered rule table, then the 64-hex rule with its
+are removed.  Then the ordered rule table, then the 64-or-more-hex rule with its
 field-aware allowance.
 
-The 64-hex rule is field-aware because the one secret this design exists to
+The long-hex rule detects lowercase, uppercase, optional ``0x`` prefixes and
+word-adjacent runs of at least 64 hex digits. It is field-aware because the one secret this design exists to
 protect -- the Ed25519 device private key -- is byte-shape-identical to the
 public ``deviceKey`` (both 64 hex).  :func:`find_secret` is the canary the
 broker and the status-document validator run over whole trees; it detects and
@@ -80,7 +81,7 @@ RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"), "[github-token]"),
     (re.compile(r"([?&](?:token|key|sig|signature|secret)=)[^&\s]+"), r"\1[redacted]"),
 )
-HEX64_RE = re.compile(r"\b[0-9a-f]{64}\b")
+HEX64_RE = re.compile(r"(?<![0-9A-Fa-f])(?:0x)?[0-9A-Fa-f]{64,}(?![0-9A-Fa-f])")
 HEX64_PLACEHOLDER = "<hex64>"
 #: The fields whose value may legitimately be 64 hex.  ``deviceKey`` only after
 #: the broker's whoami match (spec §13, projection canary); the status-document
