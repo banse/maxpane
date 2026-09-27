@@ -160,6 +160,8 @@ def evaluate(*, journal_lines: Sequence[tuple[float, str]], standing: dict | Non
             age = max(0.0, now - at)
             plane["as_of"] = standing.get("at")
             plane["standing_age_s"] = round(age, 1)
+            if running > 0:
+                plane["running"] = running  # positive evidence stays blocking even when stale
             if age <= GATE_STANDING_MAX_AGE_S:
                 plane["mode"] = "plane+local"
                 plane["running"] = running
@@ -180,7 +182,7 @@ def evaluate(*, journal_lines: Sequence[tuple[float, str]], standing: dict | Non
             HEARTBEAT_RE.match(t) and HEARTBEAT_RE.match(t).group("work") != "idle"
             for _, t in lines[-1:] if HEARTBEAT_RE.match(t)):
         reason = "task running (newest heartbeat)"
-    elif plane["mode"] == "plane+local" and plane["running"]:
+    elif plane["running"]:
         reason = f"plane reports {plane['running']} running"
     elif beats < IDLE_BEATS_REQUIRED:
         reason = f"idle {beats}/{IDLE_BEATS_REQUIRED} beats"

@@ -254,3 +254,10 @@ def test_missing_lifecycle_is_unknown_but_aged_terminal_is_valid():
     assert ok_gate(journal_lines=[aged] + IDLE_9).safe
     opened = ok_gate(journal_lines=[aged] + IDLE_9 + [line(1, 'accepted question deadbeef')])
     assert not opened.safe and opened.lifecycle_open is True
+
+
+def test_stale_positive_standing_never_allows_an_idle_gate():
+    result = ok_gate(standing={"running_count": 2, "at": gate.iso_utc_ms(NOW - 25)})
+    assert not result.safe and result.reason == "plane reports 2 running"
+    assert result.plane["mode"] == "local-only"
+    assert result.plane["running"] == 2

@@ -647,3 +647,7 @@ asserts a withdrawn statement is historical — do not review code against it.
   Missing or truncated history therefore refuses normal restart/stop and re-arms drain. Aged terminal evidence is valid,
   a newer accept supersedes it, and the existing explicit force rules stay separate. The journal test driver now models
   filtering before limiting; no idle evidence is invented. Offline artifacts are rebuilt and rehashed after these fixes.
+
+### 2026-09-27 — PEPEPANE fix 7: stale positive standing
+
+A successful standing read reporting running tasks blocks the gate regardless of age. Only a fresh zero earns `plane+local`; stale positive counts remain visible in `local-only`. This corrects the plan's freshness check without weakening the idle gate.
