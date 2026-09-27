@@ -397,8 +397,8 @@ class SeatManager:
         return flat
 
     def _drain_step(self, now: float) -> None:
-        """Task 7.7 fills this in (queue -> ledger -> ring -> bumps)."""
-        self._last_events = ()
+        self.drain()
+
 
     def _inline_step(self, now: float) -> None:
         """Task 7.8 fills this in (systemd/fixture unit + host reads)."""
@@ -505,20 +505,233 @@ class SeatManager:
         doc = models.empty_document(producer=self._producer, started_at_utc=started_at, host=self._host_block())
         doc["sources"] = {name: self._source_entry(name, now) for name in models.SOURCE_NAMES}
         doc["sources"]["tail"] = self._tail_source(now)
+        doc["daemon"] = self._daemon_block(now)
+        doc["current"] = self._current_block(now)
+        doc["tasks"] = self._tasks_block(now)
+        doc["today"] = self._today_block(now, doc["tasks"]["rows"])
+        st = self._state
+        doc["seat"].update({
+            "daemonVersion": st.daemon_version,
+            "releaseAvailable": st.release_available,
+            "buildMismatch": bool(st.build_mismatch) if st.daemon_version is not None else None,
+        })
         if self._offline:
             for name in ("standing", "seatWork", "reasons", "plane"):
                 doc["sources"].pop(name, None)     # absent entirely under --offline (spec §7)
         return doc
 
+
     def _tail_source(self, now: float) -> dict:
-        """Task 7.7 completes this (watermark, thread liveness, backfill notes)."""
+        """``sources.tail`` (spec §7): thread liveness, watermark, backfill notes."""
         entry = models.empty_source()
-        entry.update({"ok": None, "reason": "tail thread not running"})   # never started = not read yet (ok None), not dead
+        entry["watermark"] = self._tail_state.cursor or self._tail_state.last_ts_utc
+        as_of = self._last_drain_at
+        thread = self._thread
+        if thread is not None:
+            alive_at = thread.alive_at
+            ok, reason = sig.tail_state(alive_at=alive_at, now=now)
+            thread_reason = thread.reason
+            if ok and isinstance(thread_reason, str) and thread_reason.startswith("tail: exited"):
+                ok, reason = False, thread_reason
+            elif reason is None and thread_reason:
+                reason = thread_reason                # a gap note or the stale-backfill discard: informational
+            entry.update({
+                "ok": ok, "reason": redact(reason) if reason else None, "unavailable": not ok,
+                "threadAliveAt": sig.iso_z(alive_at) if alive_at is not None else None,
+            })
+        elif self._backfill_done:
+            ok = self._backfill_lines > 0
+            entry.update({"ok": ok, "reason": None if ok else "backfill returned no lines", "unavailable": not ok})
+        else:
+            entry.update({"ok": None, "reason": "tail thread not running"})   # never started = not read yet, not dead
+            return entry
+        if as_of is not None:
+            entry["asOfUtc"] = sig.iso_z(as_of)
+            entry["ageS"] = int(max(0.0, now - as_of))
         return entry
+
 
     def _line_dict(self, line: LogLine) -> dict:
         return {"seq": line.seq, "ts": line.ts, "kind": line.kind, "text": line.text,
                 "invocation": line.invocation, "cursor": line.cursor}
+
+    def drain(self) -> IngestResult:
+        """Empty the queue into the ledger, the ring and the detector state.  Pure ingest, no I/O but sqlite."""
+        lines: list[LogLine] = []
+        while True:
+            try:
+                lines.append(self._queue.get_nowait())
+            except queue.Empty:
+                break
+        return self._ingest(lines)
+
+    def feed_lines(self, lines: Iterable[str | LogLine]) -> IngestResult:
+        """(invented) The test/fixture seam: classify raw lines and ingest them exactly as drain() would."""
+        prepared: list[LogLine] = []
+        for item in lines:
+            if isinstance(item, LogLine):
+                prepared.append(item)
+            elif isinstance(item, str):
+                prepared.append(classify(item))
+        return self._ingest(prepared)
+
+    def _ingest(self, lines: Sequence[LogLine]) -> IngestResult:
+        now = float(self._clock())
+        self._last_drain_at = now
+        if not lines:
+            self._last_events = ()
+            try:
+                self._ledger.ingest(())              # no line: the ledger still recounts beats against the clock (spec §9)
+            except Exception as exc:                 # noqa: BLE001 -- the tail must not die with the ledger
+                self._error_count += 1
+                logger.warning("PEPEPANE ledger recount failed: %s", exc)
+            return _EMPTY_INGEST
+        stamped: list[LogLine] = []
+        for line in lines:
+            self._seq += 1
+            stamped.append(dataclasses.replace(line, seq=self._seq))
+        self._ring.extend(stamped)
+        try:
+            result = self._ledger.ingest(stamped)
+        except Exception as exc:                     # noqa: BLE001 -- the tail must not die with the ledger
+            self._error_count += 1
+            logger.warning("PEPEPANE ledger ingest failed for %d lines: %s", len(stamped), exc)
+            result = _EMPTY_INGEST
+        self._apply_bumps(result.events)
+        self._last_events = tuple(result.events)
+        return result
+
+    def _apply_bumps(self, events: Sequence[str]) -> None:
+        """Event-driven re-reads (spec §4.3): the API and the summariser lag the daemon by a known amount."""
+        for event in events:
+            if event == "submitted":
+                self.bump("sessions", EVENT_BUMP_SESSIONS_S)
+                self.bump("standing", EVENT_BUMP_STANDING_S)
+                self.bump("workstat", EVENT_BUMP_WORKSTAT_S)
+            elif event == "stored":
+                self.bump("seatwork", EVENT_BUMP_SEATWORK_S)
+                self.bump("workstat", EVENT_BUMP_WORKSTAT_S)
+            elif event == "accepted":
+                self.bump("workstat", EVENT_BUMP_WORKSTAT_S)
+            elif event == "restart":
+                self._restart_required = False       # the restart boundary (contract C.6) ends a skills-set's `restart required`
+
+    @property
+    def _state(self) -> LedgerState:
+        return self._ledger.state
+
+    def _tail_kind(self) -> str | None:
+        """``tasks.window.source``: the persisted tail kind when known, else the configured host's transport."""
+        kind = self._tail_state.kind
+        if kind == KIND_LIST:
+            return "fixture"
+        if kind:
+            return kind
+        return {SYSTEMD_HOST: "journald", DOCKER_HOST: "docker-log", FIXTURE_HOST: "fixture"}[self._host]
+
+    def _newest_ts(self) -> str | None:
+        for line in reversed(self._ring):
+            if line.ts:
+                return line.ts
+        return self._tail_state.last_ts_utc
+
+    def _backfill_discarded(self) -> str | None:
+        """``tasks.window.backfillDiscardedUtc`` (deviation 11): WP3's sticky stale-segment discard, remembered past the thread."""
+        thread = self._thread
+        if thread is not None and getattr(thread, "backfill_note", None) == STALE_BACKFILL_REASON:
+            at = getattr(thread, "backfill_at", None)
+            if isinstance(at, (int, float)) and not isinstance(at, bool):
+                self._backfill_discarded_utc = sig.iso_z(float(at))
+        return self._backfill_discarded_utc
+
+    def _daemon_block(self, now: float) -> dict:
+        st = self._state
+        hb = st.last_heartbeat
+        block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["daemon"]
+        if hb is not None:
+            fields = dict(hb.fields)
+            idle = fields.get("work") == "idle"
+            running = fields.get("running")
+            hb_epoch = parse_ts(hb.ts)
+            block.update({
+                "state": fields.get("state"),
+                "uptime": fields.get("uptime"),
+                "work": "idle" if idle else "running",
+                "running": 0 if idle else (int(running) if isinstance(running, str) and running.isdigit() else None),
+                "lastHeartbeatUtc": hb.ts or None,
+                "heartbeatAgeS": int(max(0.0, now - hb_epoch)) if hb_epoch is not None else None,
+            })
+        hint = st.paused_hint
+        block.update({
+            "submittedSinceStart": st.submitted_since_start,
+            "idleBeats": st.idle_beats if hb is not None else None,
+            "fleetOnline": st.fleet_online,
+            "fleetEnrolled": st.fleet_enrolled,
+            "pausedHint": None if not isinstance(hint, Mapping) else {
+                "until": hint.get("until"), "failedRuns": hint.get("failedRuns"),
+                "reason": redact_agent_sentence(hint.get("reason")) if hint.get("reason") else None,
+                "seenUtc": hint.get("seenUtc"),
+            },
+            "invocationId": st.invocation,
+            "lastAdmittedUtc": st.last_admitted_utc,
+            "disconnects24h": st.disconnects_24h if hb is not None else None,
+            "reconnects24h": st.reconnects_24h if hb is not None else None,
+            "consecutiveDisconnectedBeats": st.consecutive_disconnected if hb is not None else None,
+        })
+        return block
+
+    def _current_block(self, now: float) -> dict | None:
+        current = self._state.current
+        if not isinstance(current, Mapping):
+            return None
+        block = {key: current.get(key) for key in models.SEAT_BLOCK_KEYS["seat_current"]}
+        started = sig.parse_iso(block.get("startedUtc"))
+        block["elapsedS"] = int(max(0.0, now - started)) if started is not None else None
+        if block.get("lastMessage"):
+            block["lastMessage"] = redact_agent_sentence(block["lastMessage"])
+        return block
+
+    def _tasks_block(self, now: float) -> dict:
+        rows = self._ledger.rows(limit=LEDGER_ROWS_ON_SCREEN)
+        for row in rows:
+            if row.get("outcome") is None:
+                row["outcome"] = "unknown"   # spec §7: no verdict attached (not stored, API unavailable, or --offline)
+        counts = self._ledger.counts()
+        return {
+            "window": {
+                "fromUtc": counts.get("sinceUtc"),
+                "toUtc": self._newest_ts(),
+                "source": self._tail_kind(),
+                "rows": len(rows),
+                "gapNote": self._thread.gap_note if self._thread is not None else None,
+                "ledgerSinceUtc": self._ledger.meta_get("ledger_since_utc"),
+                "backfillDiscardedUtc": self._backfill_discarded(),
+            },
+            "rows": rows,
+        }
+
+    def _today_block(self, now: float, rows: Sequence[Mapping]) -> dict:
+        day = sig.day_utc(now)
+        try:
+            today = dict(self._ledger.today(day))
+        except Exception as exc:                     # noqa: BLE001 -- the pure rollup over the window is the fallback
+            logger.debug("PEPEPANE ledger.today failed (%s); rolling up the window", exc)
+            today = sig.rollup_today(rows, day_utc=day)
+        today.setdefault("dayUtc", day)
+        today["divergence"] = None                   # Task 7.10 fills it from the seatwork tier
+        return today
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 __all__ = [
