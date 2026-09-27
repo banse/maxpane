@@ -39,7 +39,7 @@ class TestModuleShape:
 
     def test_kind_sets(self) -> None:
         assert g.ACCEPTED_KINDS == {"accepted_code", "accepted_research", "accepted_fuzz"}
-        assert g.TERMINAL_KINDS == {"submitted", "answered", "fuzz_outcome", "stored", "cancelled"}
+        assert g.TERMINAL_KINDS == {"submitted", "answered", "fuzz_outcome", "stored", "cancelled", "local_fail"}
         assert g.CONNECTION_KINDS == {"connected", "admitted", "server_closed", "reconnecting", "ws_response", "ws_socket"}
         assert g.HIGHLIGHT_KINDS == {"rate_limited", "build_skew", "release_avail", "local_fail", "resending", "cancelled"}
         assert g.GRAMMAR_VERSION == "0.1.0+5bfa8261"
@@ -295,3 +295,7 @@ def test_corpus_is_covered_by_the_grammar(name: str, docker: bool) -> None:
         assert counts["unit_event"] == 41 and counts["accepted_research"] == 1 and counts["answered"] == 1
     else:
         assert counts["resending"] == 2 and counts["ws_socket"] == 8
+
+
+def test_local_failure_is_a_terminal_kind():
+    assert g.is_terminal(g.KIND_LOCAL_FAIL)

@@ -45,6 +45,7 @@ TERMINAL_RE = re.compile(
     TS + r"(?:submitted (?:implement|tests|review|integrate) for [0-9a-f]{8}"
     r"|answered [0-9a-f]{8} with \d+ citation\(s\)"
     r"|counterexample for .+|campaign could not run: .+|exhausted \d+ runs, nothing found"
+    r"|(?:task|question|campaign) failed: .+"
     r"|submission stored \([0-9a-f]{12}\) — awaiting verdict"
     r"|cancelled [0-9a-f]{8}: (?:lease_expired|job_cancelled|superseded|operator))$", re.ASCII)
 

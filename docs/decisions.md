@@ -651,3 +651,7 @@ asserts a withdrawn statement is historical — do not review code against it.
 ### 2026-09-27 — PEPEPANE fix 7: stale positive standing
 
 A successful standing read reporting running tasks blocks the gate regardless of age. Only a fresh zero earns `plane+local`; stale positive counts remain visible in `local-only`. This corrects the plan's freshness check without weakening the idle gate.
+
+### 2026-09-27 — PEPEPANE fix 11: executor failures are terminal
+
+The root/Mac lifecycle matcher and TUI terminal-kind set now include local task, question and campaign failures. Research fill1 section 2 and fill6 section 1 establish that executor exceptions emit this final line without a subsequent submission. This corrects the plan's omission.

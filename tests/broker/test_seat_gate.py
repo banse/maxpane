@@ -261,3 +261,12 @@ def test_stale_positive_standing_never_allows_an_idle_gate():
     assert not result.safe and result.reason == "plane reports 2 running"
     assert result.plane["mode"] == "local-only"
     assert result.plane["running"] == 2
+
+
+@pytest.mark.parametrize("kind", ["task", "question", "campaign"])
+def test_local_executor_failure_closes_lifecycle(kind):
+    failed = line(150, f"{kind} failed: executor threw")
+    accepted = line(200, "accepted question deadbeef")
+    result = ok_gate(journal_lines=[accepted, failed] + IDLE_9)
+    assert result.safe and result.lifecycle_open is False
+    assert result.last_lifecycle_line == failed[1]
