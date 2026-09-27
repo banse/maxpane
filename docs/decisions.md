@@ -502,3 +502,53 @@ asserts a withdrawn statement is historical — do not review code against it.
   twenty-five new fixture files are explicitly synthetic and registered with byte lengths and digests.
   Unattached sessions contribute to excluded counts, incremental oversize counts persist, transcript
   expiry and work-directory attachment are wired, and sessions/API-work landings roll up the days table.
+
+- **2026-09-27 (contract decision, WP8) — `SeatLog.render_events` appends** the rows whose `seq` it has not seen and
+  never `clear()`s on a poll (the batch-per-poll contract of spec §9); the `RichLogFeed` base repaints the whole feed
+  whenever anything is new, which on a live log would flicker every 5 s and scroll the reader away. Only a user action
+  (`h`) repaints, from the widget's own ring. `SeatLog` restates the grammar's kind words because a widget may not import
+  `maxpane_dashboard.data`; `tests/widgets/test_seat_now_log.py::test_seat_log_kind_words_equal_the_grammar_sets` binds
+  them (contract §C.15; spec §8 LOG, §14).
+- **2026-09-27 (contract deviation, WP8) — the address sweep verifies a seeded job id through its IMD job link**, not
+  through a copy icon: PEPEPANE renders no 0x address at all (device key and wallet are truncated to 8 characters at fold time,
+  spec §13) and its one link kind is the job link on the LEDGER's node cell, so `tests/screens/test_address_icons_everywhere.py`
+  gained a job-seed branch (a seeded value `is_job_id` accepts must be held in the payload and linked on `explorer.imd.fun`
+  in some view). Address seeds are unchanged; the other fourteen cases render exactly as before (spec §14 "Widgets/screen").
+- **2026-09-27 (contract deviation, WP8) — hero lines are tuples of honest forms**, longest first, and a box paints the
+  first that fits its content width; only when the shortest form still does not fit is it clipped with `…` and the box
+  raises `‹ widen` in its bottom border. The spec's hero wordings (up to 55 cells) cannot fit six boxes at the
+  dashboard width, and `widgets/seat_words._num`'s rule — a shorter honest number, never a cut one — is the repo's
+  answer to that. Hero geometry lives in `SeatScreen.DEFAULT_CSS` (the tcss carries no block for it and is not touched);
+  CONFIG, COST and MACHINE rows shorten the same way (spec §8 HERO; terminal-layout skill "shorten the value"). The
+  hero has no title row (each box's border is region row 0), so `tests/widgets/test_title_blank_row.py` gains six seat
+  rows, not the seven contract §A.3 names; the hero's shape is bound by `tests/widgets/test_seat_hero.py`.
+- **2026-09-27 (contract deviation, WP8) — LEDGER is the PEPEPANE body's named width exception** (`LEDGER_NEVER_CLEARS_BELOW`,
+  measured; the `RECORD_NEVER_CLEARS_BELOW` precedent): its ten-column `full` tier costs 123 cells plus the gutter and
+  clears only on a wide terminal, so at the pin it renders `tight` and marks `‹ widen` honestly while the region,
+  hidden-column and CSS-clip checks still apply. `seat_cli.py` restates `__main__`'s two argparse validators because
+  importing `__main__` imports `app.py` on its second line, which the lean-entrypoint AST guard forbids; behaviour is
+  bound by `tests/test_seat_cli.py::test_poll_interval_and_font_size_validators_match_main` (spec §15).
+
+- **2026-09-27 (owner correction, WP8) — pending stays yellow without an invented suffix** when the data supplies
+  no authoritative disagreed/awaiting distinction. The owner confirmed this correction to spec §8 on this date;
+  the LEDGER never infers that distinction and never paints pending green or running. The actual composited cell
+  is tested. WP9's adapted PRD must carry this and the earlier specific-before-generic `sk-ant-` redaction correction.
+- **2026-09-27 (spec alignment, WP8) — all seat CSS lives in `SeatScreen.DEFAULT_CSS`**, including hero geometry,
+  panel children and CONTROL. This supersedes plan deviation 8's widget-local CSS proposal and follows spec §8/§15
+  and the owner brief. Isolated harnesses load this same sheet; the screen's CSS is unscoped so its explicitly
+  seat-named selectors also reach pushed modals. `themes/minimal.tcss` is unchanged. Width and height were actually
+  measured on healthy and worst payloads; the adjacent pin blocks and terminal-layout skill table own the numbers.
+  LOG keeps complete redacted raw lines in horizontal scrollback with a visible scrollbar; a composited regression
+  reaches a long line's final text. Both width and height pins have tests that reject too-small and too-large values.
+- **2026-09-27 (plan correction, WP8) — CONTROL submissions run in a worker** so a broker apply cannot block Escape.
+  An immediate submission guard prevents overlapping writes. A forced local-only plan requires the node8 twice
+  (planning and applying) and then an independent typed `local-only` acknowledgement; both values reach the frozen
+  broker contract. Focused regressions exposed both reference defects before the correction. The timer already ran
+  verification responsively and retains its callback. Unchanged paints are suppressed; modal tests await workers
+  and rendered frames with bounded timeouts, not arbitrary wall-clock pauses.
+- **2026-09-27 (measurement correction, WP8) — footprint requires a positive sample**. The driver first tries the
+  original macOS `footprint` command; after one failed attachment or unusable result it permanently switches to
+  read-only `/usr/lib/libproc.dylib` `proc_pid_rusage(pid, RUSAGE_INFO_V4)`. Its 296-byte ctypes structure follows the
+  local Apple SDK's `sys/resource.h`; the sample is the greater of current and lifetime peak physical footprint.
+  A run with no positive sample exits 1, as does exceeding the unchanged 160 MiB ceiling. Tests fake the fallback
+  and no-sample seams and measure the real dedicated `pepepane` launcher with fresh HOME and fixture/offline data.

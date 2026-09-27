@@ -516,6 +516,12 @@ async def test_broker_apply_does_not_block_escape_or_issue_a_second_write(held_v
             field.post_message(Input.Submitted(field, field.value))
             await asyncio.wait_for(entered.wait(), 1)
             try:
+                field.value = PLAN_ID[:4]
+                control.post_message(Input.Submitted(field, field.value))
+                processed = asyncio.Event()
+                control.call_later(processed.set)
+                await asyncio.wait_for(processed.wait(), 1)
+                assert len(_calls(broker, "apply")) == 1
                 await asyncio.wait_for(pilot.press("escape"), 1)
                 assert not isinstance(pilot.app.screen, SeatControlScreen)
                 assert len(_calls(broker, "apply")) == 1

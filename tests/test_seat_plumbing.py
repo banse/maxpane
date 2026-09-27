@@ -127,6 +127,14 @@ SEAT_DECISION_PHRASES = (
     "(security correction, WP6) — the Mac kill path uses a complete metadata snapshot",
     "(protocol correction, WP6) — doctor cooldown is checked again at apply",
     "(security correction, WP6) — every audit string is redacted at the write boundary",
+    "(contract decision, WP8) — `SeatLog.render_events` appends",
+    "(contract deviation, WP8) — the address sweep verifies a seeded job id through its IMD job link",
+    "(contract deviation, WP8) — hero lines are tuples of honest forms",
+    "(contract deviation, WP8) — LEDGER is the PEPEPANE body's named width exception",
+    "(owner correction, WP8) — pending stays yellow without an invented suffix",
+    "(spec alignment, WP8) — all seat CSS lives in `SeatScreen.DEFAULT_CSS`",
+    "(plan correction, WP8) — CONTROL submissions run in a worker",
+    "(measurement correction, WP8) — footprint requires a positive sample",
 )
 
 
