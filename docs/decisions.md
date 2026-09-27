@@ -720,3 +720,21 @@ ids, cursors and 40-digit addresses remain outside the long-hex rule.
 No fixture bytes were changed for this guard. The original server-masked
 heartbeat and its `redactions: []` entry are preserved. The additive nested-key
 fixture from fix 4 is synthetic and carries its own digest and source notes.
+
+
+## 2026-09-27 — PEPEPANE fixes 8–9: independent liveness facts
+
+CONTROL renders successful verification in green and the separate connected span
+in green only for literal `True`; pending, false and not-yet-reported connection
+states are yellow. Verification detail and the yellow restart-required note keep
+their previous semantics. The status helper accepts a Rich `Text` so those spans
+survive composition (spec §11's separate restart and reconnection facts).
+
+A heartbeat reporting running tasks without an attributable `seat_current` now
+renders `⚙ N task(s) running` in yellow and contributes amber to the hero. Tail
+death, inactive unit, offline and stale-heartbeat warnings retain precedence.
+This implements the owner fix brief's explicit missing-current state rather than
+claiming green idle from the daemon's alive state. The boundary sweep includes
+that state in the worst payload as well as healthy and attributed work. Measured
+on Textual 8.2.8: the existing 134-column/50-row pins and 210-column full LEDGER
+tier hold; CONFIG still sets the height. No pin, CSS or protected surface changed.

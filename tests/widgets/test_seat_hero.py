@@ -383,3 +383,30 @@ async def test_third_party_text_is_redacted_in_the_hero():
     assert "sk-svcac" not in joined and "codex-cli sk-" in joined, joined
     evil = await _boxes(WIDE, **_healthy(seat_eligibility="[/x][bold]evil"))
     assert "[bold]" not in "\n".join(evil["seat"])
+
+
+@pytest.mark.parametrize("running,words", [(1, "⚙ 1 task running"), (3, "⚙ 3 tasks running")])
+async def test_unattributed_running_tasks_are_amber_never_idle(running, words):
+    payload = _healthy(seat_daemon_running=running, seat_current=None, seat_hero_state="green")
+    boxes = await _boxes(WIDE, **payload)
+    assert boxes["live"][0] == words
+    assert boxes["-colour"] == "amber"
+    color, ansi = await _style_at(words, WIDE, **payload)
+    assert color == ansi[3]
+
+
+@pytest.mark.parametrize("fields,prefix,color", [
+    ({"seat_daemon_offline": True}, "○ disconnected", "red"),
+    ({"seat_daemon_heartbeat_age_s": 95}, "◐ heartbeat", "amber"),
+    ({"seat_unit_active_state": "inactive"}, "○ unit inactive", "red"),
+])
+async def test_unattributed_work_keeps_liveness_warning_precedence(fields, prefix, color):
+    boxes = await _boxes(WIDE, **_healthy(seat_daemon_running=3, seat_current=None, **fields))
+    assert boxes["live"][0].startswith(prefix)
+    assert boxes["-colour"] == color
+
+
+async def test_dead_tail_overrides_unattributed_work():
+    payload = _source(_healthy(seat_daemon_running=3, seat_current=None), "tail", ok=False)
+    boxes = await _boxes(WIDE, **payload)
+    assert boxes["live"][0].startswith("tail died") and boxes["-colour"] == "red"

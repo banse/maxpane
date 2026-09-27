@@ -276,8 +276,8 @@ class SeatControlScreen(ModalScreen[None]):
         self._write("#seat-control-static", static)
         self._write("#seat-control-status", self._status)
 
-    def _set_status(self, words: str, style: str = "") -> None:
-        self._status = Text(words, style=style)
+    def _set_status(self, words: str | Text, style: str = "") -> None:
+        self._status = words.copy() if isinstance(words, Text) else Text(words, style=style)
         if self._restart_note:
             self._status.append("\n" + self._restart_note, style="yellow")
         self._write("#seat-control-status", self._status)
@@ -561,7 +561,11 @@ class SeatControlScreen(ModalScreen[None]):
         if result.verified is True:
             connected = result.connected
             connected_word = "yes" if connected is True else (_word(connected) if connected else "not yet reported")
-            self._set_status("verified ✓ · connected: " + connected_word + ("\n" + "\n".join(lines) if lines else ""), "green")
+            status = Text.assemble(("verified ✓ · ", "green"))
+            status.append("connected: " + connected_word, style="green" if connected is True else "yellow")
+            if lines:
+                status.append("\n" + "\n".join(lines), style="green")
+            self._set_status(status)
         else:
             self._set_status(f"verify: not seen — check LOG ({_word(result.reason) or 'no reason'})" + ("\n" + "\n".join(lines) if lines else ""), "red")
         self.run_worker(self._load_audit(), exclusive=True, group="seat-control-audit")

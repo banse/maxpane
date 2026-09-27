@@ -356,6 +356,10 @@ class SeatHero(HeroRow):
             plural = "s" if running > 1 else ""
             first = ((f"⚙ {running} task{plural} · {node} · {elapsed} · {phase}", "green"), (f"⚙ {node} · {elapsed}", "green"), (f"⚙ {node}", "green"))
             local = "green"
+        elif running > 0:
+            plural = "s" if running > 1 else ""
+            first = ((f"⚙ {running} task{plural} running", "yellow"),)
+            local = "amber"
         elif state == "alive":
             first = ((f"● alive {uptime} · idle · hb {hb_word}", "green"), (f"● alive {uptime} · idle", "green"), ("● alive · idle", "green"))
             local = "green"

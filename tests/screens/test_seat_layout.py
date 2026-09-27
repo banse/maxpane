@@ -101,7 +101,13 @@ def worst_payload() -> dict:
     return flat
 
 
-PAYLOADS = {"healthy": _seat_payload, "worst": worst_payload}
+def unattributed_payload() -> dict:
+    flat = worst_payload()
+    flat.update(seat_current=None, seat_daemon_running=3)
+    return flat
+
+
+PAYLOADS = {"healthy": _seat_payload, "worst": worst_payload, "unattributed": unattributed_payload}
 
 
 # ---------------------------------------------------------------------------

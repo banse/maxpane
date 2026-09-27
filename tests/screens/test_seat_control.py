@@ -529,3 +529,31 @@ async def test_broker_apply_does_not_block_escape_or_issue_a_second_write(held_v
                 release.set()
     finally:
         release.set()
+
+
+@pytest.mark.parametrize("connected,word,color", [
+    (True, "yes", 2),
+    ("pending (reconnecting since 03:40:31)", "pending (reconnecting since 03:40:31)", 3),
+    (False, "not yet reported", 3),
+    (None, "not yet reported", 3),
+])
+async def test_verified_and_connection_have_independent_composited_colors(connected, word, color):
+    broker = _broker(verify=_verify_sequence((True, connected, None)))
+    async with _A(_Manager(DOC, broker)).run_test(size=(134, 50)) as pilot:
+        await _painted(pilot)
+        await pilot.press("r")
+        await _painted(pilot)
+        await _type(pilot, PLAN_ID[:4])
+        for _ in range(30):
+            await _painted(pilot)
+            if pilot.app.screen.mode == "done":
+                break
+        assert pilot.app.screen.mode == "done"
+        rows = _screen_text(pilot).splitlines()
+        y = next(y for y, row in enumerate(rows) if "verified ✓" in row)
+        row = rows[y]
+        assert "connected: " + word in row
+        for token, expected in (("verified ✓", 2), ("connected:", color), (word, color)):
+            style = pilot.app.screen.get_style_at(row.index(token), y)
+            assert style.color.get_truecolor(pilot.app.ansi_theme) == pilot.app.ansi_theme.ansi_colors[expected]
+        assert "shutting down" in _screen_text(pilot), "verification detail remains visible"
