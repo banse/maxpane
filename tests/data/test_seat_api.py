@@ -698,3 +698,58 @@ def test_public_names_match_the_contract():
     assert all(hasattr(seat_api, name) for name in public)
     for name in ("standing", "seat_work", "job_submissions", "services", "health", "backfill", "last_good", "_get"):
         assert callable(getattr(seat_api.SeatApiClient, name))
+
+
+# ---------------------------------------------------------------------------
+# Task 5.10 — the owner-run captures keep the measured shapes
+# ---------------------------------------------------------------------------
+
+CAPTURED = FIXTURES / "captured"
+
+
+def _captured(name: str):
+    path = CAPTURED / name
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+@pytest.mark.guard
+def test_captured_bodies_keep_the_measured_shapes():
+    """Spec §6 rule 6 + §14 fixtures: the redacted live captures under api/captured/ (WP5 Task 5.10, owner-run)
+    are clean, registered as captured, and still carry every shape the synthetic bodies model.  Shape only, never
+    a value: the synthetic api/*.json stay the inputs of every value-pinned test.  A red line here is plane drift
+    and goes to aidude docs/imd-api-changelog.md §3 as a dated entry."""
+    import re
+
+    if not CAPTURED.is_dir():
+        pytest.skip("no owner-run capture yet (WP5 Task 5.10)")
+    entries = json.loads((FIXTURES.parent / "MANIFEST.json").read_text(encoding="utf-8"))["entries"]
+    names = sorted(p.name for p in CAPTURED.glob("*.json"))
+    assert {"health.json", "seat7_standing.json", "seat7_work20.json", "services.json", "workers_row.json"} <= set(names)
+    for name in names:
+        raw = (CAPTURED / name).read_bytes()
+        text = raw.decode("utf-8")
+        body = json.loads(text)
+        assert not seat_redact.CONTROL_RE.search(text) and not seat_redact.SK_RE.search(text), name
+        assert '"summary"' not in json.dumps(body), name
+        assert all(isinstance(k, str) and k.startswith("scrubbed-") for k in _device_keys(body)), name
+        assert seat_redact.find_secret(body, allowed_hex64_fields=frozenset({"submissionHash", "hash", "txHash"})) is None, name
+        entry = entries[f"api/captured/{name}"]
+        assert entry["synthetic"] is False and entry["sha256"] == hashlib.sha256(raw).hexdigest(), name
+    iso_ms = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$")
+    work = _captured("seat7_work20.json")
+    assert seat_api.validate_counters(work) is True
+    rows = [seat_api.normalise_work_row(r) for r in work["work"]]
+    assert rows and all(tuple(r) == seat_api.WORK_ROW_KEYS for r in rows)
+    assert all(r[k] is None or iso_ms.match(r[k]) for r in rows for k in ("submittedAt", "acceptedAt"))
+    block = seat_api.normalise_standing(_captured("seat7_standing.json"))
+    assert tuple(block) == seat_api.STANDING_KEYS and tuple(block["queue"]) == seat_api.QUEUE_KEYS
+    assert all(isinstance(block["queue"][k], int) for k in ("ready", "eligible", "fleetOnline"))
+    q0 = _captured("workers_standing_q0.json")
+    if q0 is not None:                      # captured only when the owner could read seat 7's public device key
+        assert seat_api.normalise_standing(q0)["queue"] is None
+    subs = _captured("job_b1fb1439_submissions.json")
+    if subs is not None:                    # captured only when the captured work20 held a failed row
+        items = seat_api._prepare_submissions(subs)["submissions"]
+        assert all(tuple(s) == seat_api.SUBMISSION_KEYS for s in items)
+    plane = seat_api.normalise_plane(_captured("services.json"), _captured("health.json"))
+    assert tuple(plane) == seat_api.PLANE_KEYS and isinstance(plane["version"], str)
