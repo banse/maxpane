@@ -128,6 +128,97 @@ class PlanStore:
             del self._plans[plan_id]
 
 
+@dataclass
+class VerifyWatch:
+    """Per applied plan: what the journal said after ``cursor_before`` (spec §11 protocol bullet 4).
+
+    ``verified`` and ``connected`` are two facts and never share one verdict: restart success is
+    ``shutting down`` followed by ``runtimes:`` within VERIFY_WITHIN_S; ``connected`` is ``admitted (session``.
+    """
+    plan_id: str
+    verb: str
+    kind: str                      # "restart" | "start" | "stop" | "enabled" | "disabled" | "transient" | "kill" | "none"
+    cursor_before: str | None
+    started: float
+    verified: bool | None = None
+    connected: bool | str | None = None
+    reason: str | None = None
+    lines: list[str] = field(default_factory=list)
+    cursor_after: str | None = None
+    shutting_down_at: float | None = None
+    runtimes_at: float | None = None
+    reconnecting_since: float | None = None
+    unit_state: str | None = None
+    done: bool = False              # transient: the thread finished
+    rc: int | None = None
+    targets: list[tuple[str, int]] = field(default_factory=list)   # kill: ("pid" | "pgid", id) each SIGTERM went to
+
+    def update(self, lines: Sequence[tuple[float, str]], now: float, *, unit_active: bool | None = None,
+               unit_enabled: bool | None = None) -> None:
+        for epoch, text in lines:
+            short = _short_line(text)
+            if short not in self.lines:
+                self.lines.append(short)
+            body = text.split(" ", 1)[1] if " " in text else text
+            if body == "shutting down" and self.shutting_down_at is None:
+                self.shutting_down_at = epoch
+            elif body.startswith("runtimes: ") and self.runtimes_at is None and (
+                    self.kind != "restart" or self.shutting_down_at is not None):
+                self.runtimes_at = epoch
+            elif body.startswith("admitted (session "):
+                self.connected = True
+            elif (body.startswith("reconnecting in ") or body.startswith("connected to ")) and self.connected is not True:
+                self.reconnecting_since = self.reconnecting_since or epoch
+        if self.connected is not True and self.lines:
+            since = self.reconnecting_since or self.shutting_down_at or self.runtimes_at or self.started
+            self.connected = "pending (reconnecting since " + time.strftime("%H:%M:%S", time.gmtime(since)) + ")"
+        if self.kind == "restart":
+            if self.shutting_down_at is not None and self.runtimes_at is not None:
+                self.verified = self.runtimes_at - self.shutting_down_at <= VERIFY_WITHIN_S
+                if not self.verified:
+                    self.reason = f"runtimes: {self.runtimes_at - self.shutting_down_at:.1f} s after shutting down (> {VERIFY_WITHIN_S} s)"
+            elif self.shutting_down_at is None and now - self.started > VERIFY_WITHIN_S:
+                self.verified, self.reason = False, f"no shutting down within {VERIFY_WITHIN_S} s"
+            elif self.shutting_down_at is not None and now - self.shutting_down_at > VERIFY_WITHIN_S:
+                self.verified, self.reason = False, f"no runtimes: within {VERIFY_WITHIN_S} s of shutting down"
+        elif self.kind == "start":
+            if self.runtimes_at is not None:
+                self.verified = True
+            elif now - self.started > VERIFY_WITHIN_S:
+                self.verified, self.reason = False, f"no runtimes: within {VERIFY_WITHIN_S} s"
+        elif self.kind == "stop":
+            self.connected = None                                  # a stopped daemon has no connection to report
+            if unit_active is not None:
+                self.unit_state = "active" if unit_active else "inactive"
+            if self.shutting_down_at is not None and unit_active is False:
+                self.verified = True
+            elif now - self.started > VERIFY_WITHIN_S:
+                self.verified, self.reason = False, "no shutting down + ActiveState=inactive within 30 s"
+        elif self.kind in ("enabled", "disabled"):
+            self.connected = None
+            if unit_enabled is not None:
+                self.verified = unit_enabled is (self.kind == "enabled")
+                if not self.verified:
+                    self.reason = f"systemctl is-enabled says {'enabled' if unit_enabled else 'disabled'}"
+
+    def to_dict(self, now: float, audit_seq: int | None) -> dict:
+        return {"verified": self.verified, "connected": self.connected, "verify_lines": list(self.lines),
+                "cursor_after": self.cursor_after, "elapsed_s": round(now - self.started, 1), "audit_seq": audit_seq,
+                "reason": self.reason}
+
+
+def _short_line(text: str) -> str:
+    """``2026-09-26T03:40:31.101Z shutting down`` -> ``03:40:31.101Z shutting down`` (spec §11 example)."""
+    text = redact(text)
+    if len(text) > 24 and text[10] == "T" and text[23] == "Z":
+        return text[11:]
+    return text
+
+
+def _drain_verify_line(drain: dict, required: object) -> str:
+    """The ``verify`` line of an armed drain (a ``kind="none"`` watch: arming has nothing to wait for)."""
+    return f"drain armed · {drain['idleBeats']}/{required} idle beats · expires {drain['expiresAtUtc'][11:16]} UTC"
+
 # ---------------------------------------------------------------- /proc reading (orphans)
 
 
@@ -519,7 +610,258 @@ class Broker:
 
     # ------------------------------------------------------------ write verbs: plan
 
+    def _busy(self) -> dict | None:
+        if self._in_flight is not None:
+            return verbs.err("busy", self._in_flight_detail())
+        return None
+
+    def _plan(self, verb: str, args: dict, peer_uid: int) -> dict:
+        busy = self._busy()
+        if busy is not None:
+            self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="busy", args={"names": sorted(args)})
+            return busy
+        offline = bool(args.get("offline", False))
+        force_node8 = args.get("force_node8")
+        preconditions: dict = {}
+        argv: list[str]
+        verify: dict = {"verified_when": [], "within_s": VERIFY_WITHIN_S, "connected_when": None, "reported_separately": True}
+        inverse: dict | None = None
+        restart_required_after = False
+        warning = WARNING
+        if verb in verbs.GATED_VERBS:
+            gate, _lines, _cursor = self._gate(offline=offline)
+            preconditions = _preconditions(gate)
+            if verb != "drain-restart":                # spec §11: drain-restart = plain confirm to arm; G runs at fire time
+                refusal = self._gate_refusal(gate, force_node8, verb, peer_uid, preconditions)
+                if refusal is not None:
+                    return refusal
+            if verb == "restart":
+                argv = ["systemctl", "restart", self._unit]
+                verify = {"verified_when": ["shutting down", "runtimes:"], "within_s": VERIFY_WITHIN_S,
+                          "connected_when": "admitted (session", "reported_separately": True}
+                inverse = {"verb": "stop", "args": {}}
+            elif verb == "stop":
+                argv = ["systemctl", "stop", self._unit]
+                verify = {"verified_when": ["shutting down", "ActiveState=inactive"], "within_s": VERIFY_WITHIN_S,
+                          "connected_when": None, "reported_separately": True}
+                inverse = {"verb": "start", "args": {}}
+            else:  # drain-restart
+                argv = ["systemctl", "restart", self._unit]
+                verify = {"verified_when": ["shutting down", "runtimes:"], "within_s": VERIFY_WITHIN_S,
+                          "connected_when": "admitted (session", "reported_separately": True}
+                inverse = {"verb": "cancel-drain", "args": {}}
+                if self._drain.armed is not None:
+                    self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="drain_already_armed")
+                    return verbs.err("drain_already_armed", self._drain.armed.to_dict())
+                warning = ("arms a broker-side wait for 4 consecutive idle heartbeats; the same fresh gate runs at fire time; "
+                           "expires after 4 h; survives TUI exit; a broker restart drops it") + " · " + WARNING
+        elif verb == "start":
+            argv = ["systemctl", "start", self._unit]
+            preconditions = {"unit_active": self._unit_active()}
+            verify = {"verified_when": ["runtimes:"], "within_s": VERIFY_WITHIN_S, "connected_when": "admitted (session",
+                      "reported_separately": True}
+            inverse = {"verb": "stop", "args": {}}
+            warning = "starts the seat; it will accept work as soon as it is admitted"
+        elif verb in ("enable-boot", "disable-boot"):
+            argv = ["systemctl", "enable" if verb == "enable-boot" else "disable", self._unit]
+            preconditions = {"boot_enabled": self._unit_enabled()}
+            verify = {"verified_when": ["systemctl is-enabled"], "within_s": VERIFY_WITHIN_S, "connected_when": None,
+                      "reported_separately": True}
+            inverse = {"verb": verbs.INVERSE[verb], "args": {}}
+            warning = "no technical risk; changes only what happens at the next boot"
+        elif verb == "cancel-drain":
+            if self._drain.armed is None:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="drain_not_armed")
+                return verbs.err("drain_not_armed")
+            argv = []
+            preconditions = {"drain": self._drain.armed.to_dict()}
+            warning = "clears the armed drain; nothing is restarted"
+        elif verb == "skills-set":
+            skill_id = args["skill_id"]
+            if not verbs.SKILL_ID_RE.fullmatch(skill_id):
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="bad_skill_id",
+                          args={"skill_id": "<refused>", "on": bool(args["on"])})
+                return verbs.err("bad_skill_id")
+            if self._skills_listing is None:
+                self._transient_read("skills")
+            if self._skills_listing is not None and skill_id not in self._skills_listing:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="skill_not_listed", args={"skill_id": skill_id})
+                return verbs.err("skill_not_listed", {"skill_id": skill_id})
+            if self.ip_address_deny is None:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="child_posture_unavailable", args={"skill_id": skill_id})
+                return verbs.err("child_posture_unavailable", {"verb": verb})
+            argv = ["imd", "skills", "add" if args["on"] else "remove", skill_id]
+            preconditions = {"skill_id": skill_id, "on": bool(args["on"]), "listed": self._skills_listing is not None}
+            verify = {"verified_when": ["imd skills re-listed"], "within_s": RUNTIME_MAX_S["skills-set"], "connected_when": None,
+                      "reported_separately": True}
+            inverse = {"verb": "skills-set", "args": {"skill_id": skill_id, "on": not args["on"]}}
+            restart_required_after = True
+            warning = "skillsOptOut is read once at daemon start: the change applies after a (drained) restart"
+        elif verb == "doctor":
+            now = self._now()
+            if self._last_doctor is not None and now - self._last_doctor < DOCTOR_MIN_INTERVAL_S:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="doctor_too_soon")
+                return verbs.err("doctor_too_soon", {"next_allowed_at": iso_utc(self._last_doctor + DOCTOR_MIN_INTERVAL_S)})
+            if self.ip_address_deny is None:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="child_posture_unavailable")
+                return verbs.err("child_posture_unavailable", {"verb": verb})
+            argv = ["imd", "doctor"]
+            preconditions = {"last_doctor_utc": None if self._last_doctor is None else iso_utc(self._last_doctor),
+                             "runtime_max_s": RUNTIME_MAX_S["doctor"]}
+            verify = {"verified_when": ["exit 0"], "within_s": RUNTIME_MAX_S["doctor"], "connected_when": None,
+                      "reported_separately": True}
+            warning = "spends one runtime turn and quota; leaves a work/doctor-* transcript; excluded from cost by cwd"
+        elif verb == "kill-orphans":
+            procs = read_procs(self._proc_root, now=self._now())
+            candidates = {c["pid"]: c for c in select_orphans(procs, worker_uid=self._worker_uid)}
+            pids = [int(p) for p in args["pids"]]
+            if any(p not in candidates for p in pids):
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="bad_args", args={"pids": pids})
+                return verbs.err("bad_args", {"reason": "every pid must be a current orphan candidate", "pids": pids})
+            plan_rows = [candidates[p] for p in pids]
+            mode = {}
+            for pgid in sorted({candidates[p]["pgid"] for p in pids}):
+                mode[str(pgid)] = "group" if group_kill_allowed(procs, pgid, worker_uid=self._worker_uid) else "individual"
+            argv = ["kill", "-TERM"]
+            preconditions = {"candidates": plan_rows, "kill_mode_by_pgid": mode, "min_age_s": ORPHAN_MIN_AGE_S,
+                             "sigkill_after_s": KILL_GRACE_S}
+            verify = {"verified_when": ["pids gone"], "within_s": KILL_GRACE_S, "connected_when": None, "reported_separately": True}
+            warning = "kills the listed processes with SIGTERM (SIGKILL after 10 s); pgid members are listed in preconditions"
+        else:
+            return verbs.err("bad_verb", {"verb": verb})
+
+        plan = self._plans.create(verb, args, argv, preconditions, inverse, verify, force_node8=force_node8)
+        seq = self._log(peer_uid=peer_uid, verb=verb, phase="plan", plan_id=plan.plan_id,
+                        args={k: ("<node8>" if k == "force_node8" and v else v) for k, v in args.items()},
+                        preconditions=preconditions, outcome="planned")
+        return verbs.ok(plan={"plan_id": plan.plan_id, "verb": verb, "argv": argv, "expires_at": iso_utc(plan.expires),
+                              "single_use": True, "preconditions": preconditions, "warning": warning, "inverse": inverse,
+                              "verify": verify, "restart_required_after": restart_required_after, "audit_seq": seq})
+
+    def _gate_refusal(self, gate: GateResult, force_node8: object, verb: str, peer_uid: int, preconditions: dict) -> dict | None:
+        """The plan-time and apply-time refusal for a gated verb; ``None`` when the gate lets it through."""
+        if gate.unknown is not None:
+            code = f"gate_unknown({gate.unknown})"
+            self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome=code, preconditions=preconditions)
+            return verbs.err(code, {"reason": gate.reason, "preconditions": preconditions})
+        if force_node8:
+            if gate.graceful_stop_possible is not True:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="force_disabled", preconditions=preconditions)
+                return verbs.err("force_disabled", {"graceful_stop_possible": gate.graceful_stop_possible})
+            running = _running_node8(gate)
+            if running is None or force_node8 != running:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="force_node8_mismatch", preconditions=preconditions)
+                return verbs.err("force_node8_mismatch", {"running": running})
+            # (a)-(c) bypassed; (d) and (e) never
+            if gate.outbox_files != 0:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="gate_blocked", preconditions=preconditions)
+                return verbs.err("gate_blocked", {"reason": f"outbox {gate.outbox_files} file(s)", "preconditions": preconditions})
+            if gate.unit_active is not True:
+                self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="gate_blocked", preconditions=preconditions)
+                return verbs.err("gate_blocked", {"reason": "unit inactive", "preconditions": preconditions})
+            return None
+        if not gate.safe:
+            self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="gate_blocked", preconditions=preconditions)
+            return verbs.err("gate_blocked", {"reason": gate.reason, "preconditions": preconditions})
+        return None
+
     # ------------------------------------------------------------ write verbs: apply
+
+    def _apply(self, args: dict, peer_uid: int) -> dict:
+        plan_id = str(args["plan_id"])
+        if not verbs.PLAN_ID_RE.fullmatch(plan_id):
+            return verbs.err("unknown_plan")
+        if not self._lock.acquire(blocking=False):
+            self._log(peer_uid=peer_uid, verb="apply", phase="refused", plan_id=plan_id, outcome="busy")
+            return verbs.err("busy", self._in_flight_detail() or {})
+        release = True
+        try:
+            now = self._now()
+            try:
+                plan = self._plans.consume(plan_id, now)
+            except PlanError as exc:
+                self._log(peer_uid=peer_uid, verb="apply", phase="refused", plan_id=plan_id, outcome=exc.code)
+                return verbs.err(exc.code, exc.detail)
+            if args["confirm"] != plan_id[:4]:
+                self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan_id, outcome="bad_confirm")
+                return verbs.err("bad_confirm")
+            self._in_flight = {"verb": plan.verb, "plan_id": plan_id, "since": iso_utc(now)}
+            if plan.verb in verbs.GATED_VERBS:
+                return self._apply_gated(plan, args, peer_uid)
+            if plan.verb in ("start", "enable-boot", "disable-boot"):
+                return self._apply_systemctl(plan, peer_uid)
+            if plan.verb == "cancel-drain":
+                event = self._drain.cancel()
+                # WP8's CONTROL polls verify after every apply (contract §C.16): nothing to wait for, verified at once
+                self._watches[plan_id] = VerifyWatch(plan_id=plan_id, verb=plan.verb, kind="none", cursor_before=None,
+                                                     started=now, verified=True, lines=["drain cleared · nothing restarted"])
+                seq = self._log(peer_uid=peer_uid, verb=plan.verb, phase=event, plan_id=plan_id, outcome="cancelled")
+                return verbs.ok(result={"outcome": "cancelled", "exit_code": 0, "cursor_before": None, "audit_seq": seq,
+                                        "preconditions": plan.preconditions})
+            if plan.verb in ("skills-set", "doctor"):
+                release = False                                    # the thread releases the lock when the child exits
+                return self._apply_transient(plan, peer_uid)
+            if plan.verb == "kill-orphans":
+                return self._apply_kill(plan, peer_uid)
+            return verbs.err("internal", {"reason": "unhandled verb"})
+        finally:
+            if release:
+                self._in_flight = None
+                self._lock.release()
+
+    def _apply_gated(self, plan: Plan, args: dict, peer_uid: int) -> dict:
+        offline = bool(plan.args.get("offline", False))
+        force_node8 = args.get("force_node8")
+        if plan.force_node8 and force_node8 != plan.force_node8:
+            self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan.plan_id, outcome="force_node8_mismatch")
+            return verbs.err("force_node8_mismatch", {"reason": "type the running node8 at plan AND apply"})
+        if plan.verb == "drain-restart":
+            self._drain_offline = offline
+            event = self._drain.arm(plan.plan_id)
+            # arming is verified at once (a kind="none" watch, so verify never answers unknown_plan to WP8's CONTROL);
+            # the restart the drain fires later is verified under its own synthetic plan id (Task 6.12 `_fire_drain`)
+            self._watches[plan.plan_id] = VerifyWatch(
+                plan_id=plan.plan_id, verb=plan.verb, kind="none", cursor_before=None, started=self._now(), verified=True,
+                lines=[_drain_verify_line(self._drain.armed.to_dict(), plan.preconditions.get("idle_beats_required"))])
+            seq = self._log(peer_uid=peer_uid, verb=plan.verb, phase=event, plan_id=plan.plan_id,
+                            preconditions=plan.preconditions, outcome="armed")
+            return verbs.ok(result={"outcome": "armed", "exit_code": None, "cursor_before": None, "audit_seq": seq,
+                                    "preconditions": plan.preconditions, "drain": self._drain.armed.to_dict()})
+        gate, _lines, cursor_before = self._gate(offline=offline)           # FRESH at apply (spec §11 (a)-(e))
+        preconditions = _preconditions(gate)
+        refusal = self._gate_refusal(gate, plan.force_node8, plan.verb, peer_uid, preconditions)
+        if refusal is not None:
+            return refusal
+        if gate.plane["mode"] == "local-only" and not plan.force_node8 and args.get("local_only_ack") != verbs.LOCAL_ONLY_ACK:
+            self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan.plan_id,
+                      outcome="local_only_ack_required", preconditions=preconditions)
+            return verbs.err("local_only_ack_required", {"plane": gate.plane, "ack": verbs.LOCAL_ONLY_ACK})
+        return self._exec_systemctl(plan, preconditions, cursor_before, peer_uid)
+
+    def _apply_systemctl(self, plan: Plan, peer_uid: int) -> dict:
+        _lines, cursor_before = self._journal(since_s=60)
+        return self._exec_systemctl(plan, plan.preconditions, cursor_before, peer_uid)
+
+    def _exec_systemctl(self, plan: Plan, preconditions: dict, cursor_before: str | None, peer_uid: int) -> dict:
+        try:
+            done = self._run(list(plan.argv), capture_output=True, timeout=SYSTEMCTL_TIMEOUT_S)
+            exit_code: int | None = done.returncode
+        except subprocess.TimeoutExpired:
+            exit_code = None
+        except OSError:
+            exit_code = -1
+        kind = {"restart": "restart", "drain-restart": "restart", "stop": "stop", "start": "start",
+                "enable-boot": "enabled", "disable-boot": "disabled"}[plan.verb]
+        watch = VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind=kind, cursor_before=cursor_before, started=self._now())
+        self._watches[plan.plan_id] = watch
+        outcome = "applied" if exit_code == 0 else ("timeout" if exit_code is None else f"exit {exit_code}")
+        seq = self._log(peer_uid=peer_uid, verb=plan.verb, phase="apply", plan_id=plan.plan_id, preconditions=preconditions,
+                        outcome=outcome, cursor_before=cursor_before)
+        if exit_code != 0:
+            return verbs.err("timeout" if exit_code is None else "internal",
+                             {"outcome": outcome, "exit_code": exit_code, "audit_seq": seq})
+        return verbs.ok(result={"outcome": "applied", "exit_code": exit_code, "cursor_before": cursor_before, "audit_seq": seq,
+                                "preconditions": preconditions})
 
     # ------------------------------------------------------------ verify
 
@@ -596,6 +938,22 @@ def _usec_to_s(value: str | None) -> float | None:
             return None
     return total
 
+
+def _preconditions(gate: GateResult) -> dict:
+    return {"idle_beats": gate.idle_beats, "idle_beats_required": gate.idle_beats_required,
+            "newest_heartbeat_age_s": gate.newest_heartbeat_age_s, "plane": dict(gate.plane),
+            "last_lifecycle_line": gate.last_lifecycle_line, "lifecycle_open": gate.lifecycle_open,
+            "outbox_files": gate.outbox_files, "unit_active": gate.unit_active,
+            "graceful_stop_possible": gate.graceful_stop_possible}
+
+
+def _running_node8(gate: GateResult) -> str | None:
+    if not gate.lifecycle_open or not gate.last_lifecycle_line:
+        return None
+    match = ACCEPTED_RE.match(gate.last_lifecycle_line)
+    if not match:
+        return None
+    return match.group("node8") or match.group("node8_q") or match.group("node8_c")
 
 def parse_work_listing(text: str, *, total_bytes: int | None) -> dict:
     """``find -printf "%y\\t%T@\\t%P\\n"`` (depth 1-4 under work/) -> the work-stat data shape (contract C.11)."""

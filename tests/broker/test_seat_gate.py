@@ -202,3 +202,45 @@ def test_main_prints_one_json_line_and_exit_codes(monkeypatch, capsys):
     monkeypatch.setattr(gate, "_urlopen", down)
     assert gate.main(["--standing", "https://api.imd.fun/seats/7/standing", "--timeout", "1"]) == 1
     assert json.loads(capsys.readouterr().out) == {"error": "URLError"}
+# ---------------------------------------------------------------- the gate as the broker applies it (Task 6.10; spec §11 (b), (d))
+
+from tests.broker._harness import Journal, audit_lines, call, make_broker  # noqa: E402  (broker-level halves of proofs 7 and 28)
+
+
+def test_local_only_gate_needs_typed_ack(tmp_path):
+    # mutation proof 7 (drop the plane half): a plan under --offline (or a failed standing read) is `local-only`
+    # and apply needs the typed `local-only` ack; a redeploy wave must not block a 3 a.m. restart (spec §11 (b))
+    broker, runner, _journal, _clock, audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": True})["plan"]
+    assert plan["preconditions"]["plane"] == {"mode": "local-only", "running": None, "as_of": None, "standing_age_s": None}
+    assert runner.argvs("python3", "-I") == []                                      # no standing child under offline
+    refused = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert refused["error"] == "local_only_ack_required" and refused["detail"]["ack"] == "local-only"
+    assert runner.argvs("systemctl", "restart") == []
+    plan = call(broker, "restart", {"offline": True})["plan"]
+    applied = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4], "local_only_ack": "local-only"})
+    assert applied["ok"] and applied["result"]["preconditions"]["plane"]["mode"] == "local-only"
+    assert len(runner.argvs("systemctl", "restart")) == 1
+    # a failed standing read (not offline) is local-only too
+    runner.script[("python3", "-I", broker._broker_dir + "/gate.py")] = (1, '{"error":"URLError"}\n')
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    assert plan["preconditions"]["plane"]["mode"] == "local-only"
+    assert call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["error"] == "local_only_ack_required"
+    assert audit_lines(audit)[-1]["outcome"] == "local_only_ack_required"
+
+
+def test_gate_unknown_outbox_cannot_be_acked(tmp_path):
+    # mutation proof 28, broker half: `ls outbox` fails -> gate_unknown(outbox); no ack, no --force overrides it
+    broker, runner, _journal, _clock, audit = make_broker(tmp_path, script={("ls", "-1A"): (2, "")})
+    refused = call(broker, "restart", {"offline": True})
+    assert refused["error"] == "gate_unknown(outbox)" and refused["detail"]["reason"] == "gate unknown: outbox unreadable"
+    assert audit_lines(audit)[-1]["outcome"] == "gate_unknown(outbox)"
+    # even a plan made while the outbox was readable is re-read fresh at apply
+    runner.script[("ls", "-1A")] = (0, "")
+    plan = call(broker, "restart", {"offline": True})["plan"]
+    runner.script[("ls", "-1A")] = (2, "")
+    late = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4], "local_only_ack": "local-only"})
+    assert late["error"] == "gate_unknown(outbox)" and runner.argvs("systemctl", "restart") == []
+    # and a docker-style unit unknown is the same class (spec §11 (e))
+    broker2, _r, _j, _c, _a = make_broker(tmp_path / "b", script={("systemctl", "is-active", "imd-worker.service"): (0, "")})
+    assert call(broker2, "restart", {"offline": True})["error"] == "gate_unknown(unit)"

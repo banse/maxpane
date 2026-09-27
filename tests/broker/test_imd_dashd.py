@@ -256,3 +256,165 @@ def test_standing_url_falls_back_to_the_projection_token(tmp_path):
     assert standing[-1][-1] == "https://api.imd.fun/seats/7/standing"
     call(broker, "gate", {"offline": False})
     assert len([a for a in runner.argvs(PYTHON, "-I") if a[2].endswith("projection.py")]) == 1       # learned once
+# ==== Task 6.10: plan -> apply for restart, stop, start, enable/disable, cancel-drain ==========================
+
+
+def test_plan_id_is_single_use(tmp_path):
+    # mutation proof 25: a consumed plan id cannot be applied twice
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    assert len(plan["plan_id"]) == 16 and plan["single_use"] is True
+    first = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert first["ok"] and first["result"]["outcome"] == "applied"
+    second = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert second == {"ok": False, "error": "plan_spent", "detail": {"plan_id": plan["plan_id"]}}
+    assert len(runner.argvs("systemctl", "restart")) == 1
+
+
+def test_plan_expires_after_60s(tmp_path):
+    # spec §11: plan ids are valid 60 s; an injected clock at 61 s -> plan_expired
+    broker, runner, journal, clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    assert plan["expires_at"] == "2026-09-21T14:14:20Z"                              # NOW + 60
+    clock.advance(61)
+    late = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert late["error"] == "plan_expired" and late["detail"]["plan_id"] == plan["plan_id"]
+    assert runner.argvs("systemctl", "restart") == []
+    journal.add(*[hb(clock() - age) for age in (100, 70, 40, 10)])                  # the seat kept idling meanwhile
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    clock.advance(60)                                                                # exactly the TTL still applies
+    journal.add(hb(clock() - 40), hb(clock() - 10))
+    assert call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["ok"]
+
+
+def test_bad_confirm_and_unknown_plan(tmp_path):
+    broker, _runner, _journal, _clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    assert call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": "zzzz"})["error"] == "bad_confirm"
+    assert call(broker, "apply", {"plan_id": "0123456789abcdef", "confirm": "0123"})["error"] == "unknown_plan"
+    assert call(broker, "apply", {"plan_id": "not-a-plan", "confirm": "not-"})["error"] == "unknown_plan"
+
+
+def test_second_write_while_in_flight_is_refused(tmp_path):
+    # mutation proof 26: while systemctl runs, any other plan/apply of a write verb -> busy {verb, plan_id, since}
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    other = call(broker, "stop", {"offline": False})["plan"]
+    seen: list[dict] = []
+
+    def slow_restart(argv, kw):
+        seen.append(call(broker, "restart", {"offline": False}))                     # a second TUI plans …
+        seen.append(call(broker, "apply", {"plan_id": other["plan_id"], "confirm": other["plan_id"][:4]}))   # … or applies
+        seen.append(call(broker, "ping"))                                            # reads are never blocked
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    runner.script[("systemctl", "restart")] = slow_restart
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert result["ok"] and result["result"]["outcome"] == "applied"
+    assert seen[0]["error"] == "busy" and seen[1]["error"] == "busy"
+    assert seen[0]["detail"] == {"verb": "restart", "plan_id": plan["plan_id"], "since": "2026-09-21T14:13:20Z"}
+    assert seen[2]["ok"] and seen[2]["data"]["in_flight"] == seen[0]["detail"]
+    assert len(runner.argvs("systemctl", "restart")) == 1
+    assert call(broker, "ping")["data"]["in_flight"] is None                         # released on exit
+
+
+def test_apply_returns_before_verify_completes(tmp_path):
+    # mutation proof 27: apply returns when systemctl exits -- it never waits for `admitted` or even `runtimes:`
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    calls_before = len(runner.calls)
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
+    assert set(result) == {"outcome", "exit_code", "cursor_before", "audit_seq", "preconditions"}
+    assert result["outcome"] == "applied" and result["exit_code"] == 0 and result["cursor_before"].startswith("s=")
+    assert "verified" not in result and "connected" not in result
+    during_apply = [argv for argv, _ in runner.calls[calls_before:]]
+    assert not any("--after-cursor" in argv for argv in during_apply)              # no post-apply journal wait inside apply
+    assert during_apply[-1] == ["systemctl", "restart", "imd-worker.service"]      # systemctl is the LAST thing apply does
+
+
+def test_restart_plan_has_the_spec_shape(tmp_path):
+    broker, _runner, _journal, _clock, audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    assert plan["verb"] == "restart" and plan["argv"] == ["systemctl", "restart", "imd-worker.service"]
+    assert set(plan["preconditions"]) == {"idle_beats", "idle_beats_required", "newest_heartbeat_age_s", "plane",
+                                          "last_lifecycle_line", "lifecycle_open", "outbox_files", "unit_active",
+                                          "graceful_stop_possible"}
+    assert plan["preconditions"]["plane"] == {"mode": "plane+local", "running": 0, "as_of": "2026-09-21T14:13:19.600Z", "standing_age_s": 0.4}
+    assert plan["preconditions"]["idle_beats"] == 6 and plan["preconditions"]["outbox_files"] == 0
+    assert plan["preconditions"]["last_lifecycle_line"].endswith("submitted implement for 0c1f9727")
+    assert plan["inverse"] == {"verb": "stop", "args": {}}
+    assert plan["verify"] == {"verified_when": ["shutting down", "runtimes:"], "within_s": 30, "connected_when": "admitted (session",
+                              "reported_separately": True}
+    assert plan["warning"].startswith("a task assigned in the ~1–5 s") and plan["restart_required_after"] is False
+    assert audit_lines(audit)[-1]["phase"] == "plan" and audit_lines(audit)[-1]["preconditions"] == plan["preconditions"]
+
+
+def test_plan_restart_is_refused_while_a_task_runs(tmp_path):
+    journal = Journal(idle_window(NOW)[:-1] + [hb(NOW - 11, "1 task running")])
+    broker, runner, _journal, _clock, audit = make_broker(tmp_path, journal=journal)
+    refused = call(broker, "restart", {"offline": False})
+    assert refused["error"] == "gate_blocked" and refused["detail"]["reason"].startswith("task running")
+    assert runner.argvs("systemctl", "restart") == []
+    assert audit_lines(audit)[-1]["outcome"] == "gate_blocked"
+
+
+def test_apply_re_reads_the_gate_fresh(tmp_path):
+    # spec §11: "apply re-reads everything fresh -- cached preconditions are not a gate"
+    broker, runner, journal, clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    clock.advance(3)
+    journal.add(msg(clock() - 1, "accepted implement 3aa1c610 — src/ (max 60 turns)"))     # assigned between plan and apply
+    refused = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert refused["error"] == "gate_blocked" and refused["detail"]["reason"] == "task running 3aa1c610 · 0:01"
+    assert runner.argvs("systemctl", "restart") == []
+    assert len(runner.argvs(PYTHON, "-I")) == 2                                      # one standing read at plan, one FRESH at apply
+
+
+def test_force_requires_the_running_node8_twice_and_a_graceful_unit(tmp_path):
+    journal = Journal(idle_window(NOW)[:-1] + [hb(NOW - 11, "1 task running"),
+                                              msg(NOW - 42, "accepted implement 0c1f9727 — src/ (max 60 turns)")])
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path, journal=journal)
+    assert call(broker, "restart", {"offline": False, "force_node8": "deadbeef"})["error"] == "force_node8_mismatch"
+    plan = call(broker, "restart", {"offline": False, "force_node8": "0c1f9727"})["plan"]
+    assert plan["preconditions"]["lifecycle_open"] is True                            # (a)-(c) bypassed, shown honestly
+    assert call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["error"] == "force_node8_mismatch"
+    plan = call(broker, "restart", {"offline": False, "force_node8": "0c1f9727"})["plan"]
+    applied = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4], "force_node8": "0c1f9727"})
+    assert applied["ok"] and len(runner.argvs("systemctl", "restart")) == 1
+    # force never bypasses (d): a pending outbox still blocks
+    runner.script[("ls", "-1A")] = (0, "16a4df90-5555-4555-8555-555555555555.json\n")
+    assert call(broker, "restart", {"offline": False, "force_node8": "0c1f9727"})["error"] == "gate_blocked"
+    # and force is disabled when the unit cannot stop gracefully
+    ungraceful, _r, _j, _c, _a = make_broker(tmp_path / "b", journal=journal,
+                                              script={("systemctl", "show", "imd-worker.service", "-p", "KillMode"): (0, "KillMode=process\nTimeoutStopUSec=10s\n")})
+    assert ungraceful.graceful_stop_possible is False
+    assert call(ungraceful, "restart", {"offline": False, "force_node8": "0c1f9727"})["error"] == "force_disabled"
+
+
+def test_start_enable_disable_plans_and_apply(tmp_path):
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
+    for verb, argv, inverse in (("start", ["systemctl", "start", "imd-worker.service"], "stop"),
+                                ("enable-boot", ["systemctl", "enable", "imd-worker.service"], "disable-boot"),
+                                ("disable-boot", ["systemctl", "disable", "imd-worker.service"], "enable-boot")):
+        plan = call(broker, verb, {})["plan"]
+        assert plan["argv"] == argv and plan["inverse"]["verb"] == inverse
+        result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
+        assert result["outcome"] == "applied" and runner.argvs(*argv[:2]) == [argv]
+
+
+def test_cancel_drain_without_a_drain_is_refused(tmp_path):
+    broker, _runner, _journal, _clock, _audit = make_broker(tmp_path)
+    assert call(broker, "cancel-drain", {})["error"] == "drain_not_armed"
+
+
+def test_drain_restart_can_be_armed_while_a_task_runs(tmp_path):
+    # spec §11 drain-restart row: "plain confirm to arm; G at fire time" -- waiting out a running task is the point
+    journal = Journal(idle_window(NOW)[:-1] + [hb(NOW - 11, "1 task running"),
+                                              msg(NOW - 42, "accepted implement 0c1f9727 — src/ (max 60 turns)")])
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path, journal=journal)
+    planned = call(broker, "drain-restart", {"offline": False})
+    assert planned["ok"] is True and planned["plan"]["preconditions"]["lifecycle_open"] is True     # the preview, not a gate
+    plan = planned["plan"]
+    applied = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert applied["result"]["outcome"] == "armed" and runner.argvs("systemctl", "restart") == []
+    assert call(broker, "restart", {"offline": False})["error"] == "gate_blocked"                 # restart itself stays gated
