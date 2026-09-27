@@ -536,3 +536,95 @@ async def test_seat_is_validated_before_any_request():
             assert standing.ok is False and standing.reason == "bad seat" and standing.route == "/seats/?/standing"
             assert work.ok is False and work.reason == "bad seat" and work.route == "/seats/?"
             assert standing.status is None and standing.data is None
+
+
+# ---------------------------------------------------------------------------
+# Task 5.8 — /jobs/<uuid>/submissions
+# ---------------------------------------------------------------------------
+
+async def test_job_submissions_refuses_a_non_uuid_job_id():
+    """Spec §6 (`/jobs/<jobId>/submissions` keyed by jobId) + the surf client's rule that caller text never
+    reaches a path: anything but a canonical lowercase UUID is refused before any request and never echoed."""
+    async with _client(_no_network) as client:
+        for bad in ("b1fb1439", "../health", "B1FB1439-7E2A-4D61-9F3B-2C8E5A1D0B47", "", None, 7,
+                    "b1fb1439-7e2a-4d61-9f3b-2c8e5a1d0b47?queue=0", "b1fb1439-7e2a-4d61-9f3b-2c8e5a1d0b47/x"):
+            result = await client.job_submissions(bad)   # type: ignore[arg-type]
+            assert result.ok is False and result.reason == "bad job id" and result.data is None and result.status is None
+            assert result.route == "/jobs/?/submissions"
+
+
+async def test_summaries_are_dropped_before_any_string_is_kept():
+    """Spec §6 traps + §13: recentFailures[].summary and submissions[].summary are raw runtime error text
+    (a masked provider key sat in one on 09-25); they are dropped before redaction, persistence or render --
+    the sentinel appears nowhere in either result, and neither does the key."""
+    sentinel = "SUMMARY-SENTINEL-4f2a"
+    standing = _fixture("workers_standing_q0.json")        # the form that carries summary in the wild
+    for entry in standing["standing"]["recentFailures"]:
+        entry["summary"] = f"{sentinel} 401 Unauthorized: Incorrect API key provided: sk-svcac********"
+    subs = _fixture("job_b1fb1439_submissions.json")
+    for item in subs["submissions"]:
+        item["summary"] = f"{sentinel} wrote outside the task's allowed paths: err.log"
+
+    def handler(request):
+        return httpx.Response(200, json=standing if request.url.path.endswith("/standing") else subs)
+
+    async with _client(handler) as client:
+        r1 = await client.standing(7)
+        r2 = await client.job_submissions(JOB)
+    for result in (r1, r2):
+        assert result.ok
+        dumped = json.dumps(result.data)
+        assert sentinel not in dumped and '"summary"' not in dumped and "sk-svcac" not in dumped
+    assert all("summary" not in f for f in seat_api.normalise_standing(r1.data)["recentFailures"])
+
+
+async def test_submission_hash_survives_redaction_and_device_keys_do_not():
+    """The 64-hex `hash` is the ledger's join key and must survive the redactor (as `submissionHash`, an allowed
+    field); a 64-hex deviceKey must not (8 chars, spec §13 identifiers)."""
+    body = {"jobId": JOB, "count": 1, "submissions": [{
+        "hash": HEX, "nodeKey": "oracle_assess", "role": "implement", "attempt": 1,
+        "deviceKey": "7" * 64, "seat": {"tokenId": 7, "agentId": 51075}, "outcome": "failed", "accepted": False,
+        "failureReason": "runtime_error", "failureClass": "machine",
+        "usage": {"model": None, "runtime": "codex", "turns": 0, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0, "wallClockMs": 33704},
+        "createdAt": "2026-09-25T23:37:56.035Z", "repoUrl": "https://x", "summary": "gone",
+    }], "repoUrl": "https://github.com/example/oracle-panel", "baseCommit": "deadbeef"}
+
+    async with _client(lambda request: httpx.Response(200, json=body)) as client:
+        result = await client.job_submissions(JOB)
+    item = result.data["submissions"][0]
+    assert tuple(item) == seat_api.SUBMISSION_KEYS
+    assert item["submissionHash"] == HEX and item["hash12"] == HEX[:12]
+    assert item["deviceKey8"] == "7" * 8 and "7" * 64 not in json.dumps(result.data)
+    assert item["seatTokenId"] == 7 and item["seatAgentId"] == 51075 and item["attempt"] == 1
+    assert item["outcome"] == "failed" and item["failureReason"] == "runtime_error" and item["failureClass"] == "machine"
+    assert item["usage"] == {"turns": 0, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0, "wallClockMs": 33704,
+                             "model": None, "runtime": "codex"}
+    assert set(result.data) == {"jobId", "count", "submissions"} and "repoUrl" not in json.dumps(result.data)
+    assert seat_api.normalise_submission({"hash": "not-hex", "seat": 7})["submissionHash"] is None
+    assert seat_api.normalise_submission({"hash": "not-hex", "seat": 7})["seatTokenId"] == 7   # an int `seat` is tolerated
+
+
+async def test_submissions_are_filtered_to_the_seat():
+    """Spec §6 submissions row: filter submissions[] to our seat; reasons are enum words only."""
+    async with _client(lambda request: httpx.Response(200, json=_fixture("job_b1fb1439_submissions.json"))) as client:
+        result = await client.job_submissions(JOB)
+    mine = seat_api.submissions_for_seat(result.data, 7)
+    assert mine and all(s["seatTokenId"] == 7 for s in mine)
+    assert len(mine) < len(result.data["submissions"])                         # another seat's attempt is excluded
+    assert all(tuple(s) == seat_api.SUBMISSION_KEYS for s in mine)
+    assert all(s["failureReason"] in seat_api.FAILURE_REASONS + (seat_api.REASON_OTHER, None) for s in mine)
+    assert all(s["failureClass"] in seat_api.FAILURE_CLASSES + (seat_api.REASON_OTHER, None) for s in mine)
+    assert seat_api.submissions_for_seat(result.data, 999999) == [] and seat_api.submissions_for_seat(None, 7) == []
+
+
+async def test_a_404_on_submissions_is_an_answer_not_a_retry():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(404, json={"error": "not_found"})
+
+    async with _client(handler) as client:
+        result = await client.job_submissions(JOB)
+    assert result.ok is False and result.status == 404 and result.reason == "404" and len(seen) == 1
+    assert str(seen[0].url) == f"{SWARM_API_HOSTS[0]}/jobs/{JOB}/submissions"

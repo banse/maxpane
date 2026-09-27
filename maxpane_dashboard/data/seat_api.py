@@ -29,7 +29,7 @@ import httpx
 
 from maxpane_dashboard.analytics.seat_redact import redact_tree, strip_controls
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
-from maxpane_dashboard.data.surf_swarm_client import SWARM_API_HOSTS
+from maxpane_dashboard.data.surf_swarm_client import SWARM_API_HOSTS, parse_job_id
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +328,63 @@ def normalise_standing(body: Mapping) -> dict:
     }
 
 
+def normalise_submission(item: Mapping) -> dict:
+    """One ``/jobs/<id>/submissions.submissions[]`` item reduced to :data:`SUBMISSION_KEYS`.
+
+    Runs **before** redaction: the 64-hex ``hash`` is renamed ``submissionHash`` (a redactor-allowed
+    field, so the ledger's hash join survives) and ``hash12`` is its 12-char prefix; ``deviceKey`` is
+    cut to 8 chars here so no 64-hex device key ever leaves this module; ``summary`` is already gone.
+    """
+    src = _mapping(item)
+    digest = src.get("hash")
+    digest = digest if isinstance(digest, str) and _HEX64_RE.fullmatch(digest) else None
+    seat = src.get("seat")
+    seat_token = _int_or_none(_mapping(seat).get("tokenId")) if isinstance(seat, Mapping) else _int_or_none(seat)
+    seat_agent = _int_or_none(_mapping(seat).get("agentId")) if isinstance(seat, Mapping) else None
+    device_key = src.get("deviceKey")
+    usage_src = src.get("usage")
+    usage = None
+    if isinstance(usage_src, Mapping):
+        usage = {key: _int_or_none(usage_src.get(key)) for key in USAGE_INT_KEYS}
+        usage["model"] = _str_or_none(usage_src.get("model"))
+        usage["runtime"] = _str_or_none(usage_src.get("runtime"))
+    return {
+        "submissionHash": digest,
+        "hash12": digest[:12] if digest else None,
+        "seatTokenId": seat_token,
+        "seatAgentId": seat_agent,
+        "deviceKey8": device_key[:8] if isinstance(device_key, str) else None,
+        "nodeKey": _str_or_none(src.get("nodeKey")),
+        "role": _str_or_none(src.get("role")),
+        "attempt": _int_or_none(src.get("attempt")),
+        "outcome": _str_or_none(src.get("outcome")),
+        "accepted": _bool_or_none(src.get("accepted")),
+        "failureReason": reason_word(src.get("failureReason")),
+        "failureClass": failure_class_word(src.get("failureClass")),
+        "usage": usage,
+        "createdAt": _str_or_none(src.get("createdAt")),
+    }
+
+
+def _prepare_submissions(body: Json) -> Json:
+    """The ``prepare`` hook of the submissions route: keep ``jobId``/``count``, normalise every item, drop the rest."""
+    src = _mapping(body)
+    items = src.get("submissions")
+    return {
+        "jobId": _str_or_none(src.get("jobId")),
+        "count": _int_or_none(src.get("count")),
+        "submissions": [normalise_submission(s) for s in items if isinstance(s, Mapping)] if isinstance(items, list) else [],
+    }
+
+
+def submissions_for_seat(data: Json, seat: int) -> list[dict]:
+    """The normalised submissions of one seat (spec §6: filter ``submissions[]`` to our seat)."""
+    items = _mapping(data).get("submissions")
+    if not isinstance(items, list):
+        return []
+    return [s for s in items if isinstance(s, Mapping) and s.get("seatTokenId") == seat]
+
+
 def _retry_reason(labels: Sequence[str]) -> str:
     """``["500", "500"]`` -> ``"500 ×2 (retrying)"``; mixed labels join with `` · `` in first-seen order."""
     counts: dict[str, int] = {}
@@ -459,6 +516,16 @@ class SeatApiClient(OwnedHttpClient):
     async def backfill(self, seat: int) -> ApiResult:
         """The one-time history read: ``seat_work(seat, work=SEAT_WORK_BACKFILL_ROWS, reviews=0)``."""
         return await self.seat_work(seat, work=SEAT_WORK_BACKFILL_ROWS, reviews=0)
+
+    async def job_submissions(self, job_id: str) -> ApiResult:
+        """``GET /jobs/<uuid>/submissions`` with summaries dropped and items normalised (:data:`SUBMISSION_KEYS`).
+
+        Anything but a canonical lowercase UUID is refused before any request and never echoed.
+        """
+        job = parse_job_id(job_id)
+        if job is None:
+            return self._refused("/jobs/?/submissions", "bad job id")
+        return await self._get(f"/jobs/{job}/submissions", prepare=_prepare_submissions)
 
     async def services(self) -> ApiResult:
         return await self._get("/services")
