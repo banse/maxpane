@@ -364,7 +364,7 @@ async def _enter(view, app, pilot) -> None:
 
 
 def test_every_case_is_swept_at_its_pins():
-    from maxpane_dashboard.screens import curator, surf
+    from maxpane_dashboard.screens import curator, seat, surf
 
     by_name = {case.name: case for case in CASES}
     assert sizes_for(by_name["surf"], "pin") == [
@@ -377,8 +377,9 @@ def test_every_case_is_swept_at_its_pins():
         (surf.SURF_BOARD_FULL_LAYOUT_COLUMNS, surf.SURF_BOARD_FULL_LAYOUT_ROWS),
     ]
     assert set(sizes_for(by_name["curator"], "pin")) == {(curator.CURATOR_FULL_LAYOUT_COLUMNS, SIZE[1])}
+    assert set(sizes_for(by_name["seat"], "pin")) == {(seat.SEAT_FULL_LAYOUT_COLUMNS, seat.SEAT_FULL_LAYOUT_ROWS)}
     for case in CASES:
-        if case.name not in ("surf", "curator"):
+        if case.name not in ("surf", "curator", "seat"):
             assert set(sizes_for(case, "pin")) == {(FULL_LAYOUT_COLUMNS, SIZE[1])}, case.name
     ids = {p.id for p in _size_params()}
     assert {f"{c.name}-{k}" for c in CASES for k in ("wide", "pin")} <= ids
@@ -943,8 +944,16 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
     in_payload = _addresses_in(served)
     hashes = _hashes_in(served)
     labels = _LabelIndex(served)
-    seeded = {a.lower() for a in case.seeded}
+    from maxpane_dashboard.widgets.explorer import is_job_id
+    # A seeded job id (a dashboard with no address at all, PEPEPANE) is verified through its IMD job
+    # link, never through a copy icon; an address seed is unchanged.
+    seeded_jobs = {s for s in case.seeded if is_job_id(s)}
+    seeded = {a.lower() for a in case.seeded if a not in seeded_jobs}
     problems: list[tuple] = []
+    served_strings = set(_strings_in(served))
+    if not seeded_jobs <= served_strings:
+        problems.append(("a seeded job id is not in the payload", sorted(seeded_jobs - served_strings)))
+    linked_jobs: set[str] = set()
     if not seeded <= in_payload:
         problems.append(("a seeded address is not in the payload", sorted(seeded - in_payload)))
 
@@ -1050,6 +1059,7 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                         problems.append((label, x, y, link_value, "job link not held in payload"))
                     if name != IMD.name or url != url_for(IMD, "job", link_value):
                         problems.append((label, x, y, url, "wrong job explorer URL"))
+                    linked_jobs.add(link_value)
                     continue
                 held = hashes if link_kind == "tx" else in_payload
                 if link_value.lower() not in held:
@@ -1106,6 +1116,9 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
         missing = seeded - copied_somewhere
         if missing:
             problems.append(("seeded addresses never got an icon in any view", sorted(missing)))
+        missing_jobs = seeded_jobs - linked_jobs
+        if missing_jobs:
+            problems.append(("seeded job ids never got a link in any view", sorted(missing_jobs)))
         silent = sorted(k for k in mounted if k not in covered and k not in EXEMPT)
         if silent:
             problems.append(("helper-using widgets mounted but never produced an icon", silent))

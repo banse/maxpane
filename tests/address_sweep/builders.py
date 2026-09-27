@@ -51,6 +51,10 @@ from maxpane_dashboard.screens.surf import (
 from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
 from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA
+from maxpane_dashboard.widgets.explorer import IMD
+from maxpane_dashboard.data.seat_models import fold_status_document as _seat_fold
+from maxpane_dashboard.screens.seat import SEAT_FULL_LAYOUT_COLUMNS, SEAT_FULL_LAYOUT_ROWS, SeatScreen
+import json as _json
 from tests.address_sweep.case import SweepCase
 from tests.screens import test_curator_screen as _curator
 from tests.screens import test_frenpet_screens as _frenpet
@@ -621,6 +625,52 @@ BAKERY_SEEDED: tuple[str, ...] = (
 )
 
 
+# -- seat (pepepane) ---------------------------------------------------------
+
+#: The healthy fixture's newest ledger row's job. PEPEPANE renders no 0x address at all (spec §13:
+#: device key and wallet truncated to 8 characters at fold time); its one link kind is the IMD
+#: job link on the LEDGER's node cell, so this case seeds a **job id**, verified through links
+#: (``test_address_icons_everywhere.py`` job-seed branch; plan deviation 1).
+SEAT_JOB_UUID = "b1fb1439-7d2e-4a0f-8c3b-9e5d1f2a6b70"
+
+_SEAT_FIXTURE = Path(maxpane_dashboard.__file__).resolve().parents[1] / "tests" / "fixtures" / "seat" / "status" / "status_v2_healthy.json"
+_SEAT_LOG_LINES = [
+    {"seq": 1, "ts": "2026-09-26T03:23:44.909Z", "kind": "accepted_code", "invocation": None, "cursor": None,
+     "text": "2026-09-26T03:23:44.909Z accepted implement 0c1f9727 — src/ (max 60 turns)"},
+    {"seq": 2, "ts": "2026-09-26T03:24:17.136Z", "kind": "submitted", "invocation": None, "cursor": None,
+     "text": "2026-09-26T03:24:17.136Z submitted implement for 0c1f9727"},
+    {"seq": 3, "ts": "2026-09-26T03:24:17.236Z", "kind": "stored", "invocation": None, "cursor": None,
+     "text": "2026-09-26T03:24:17.236Z submission stored (c4d9714ffb95) — awaiting verdict"},
+    {"seq": 4, "ts": "2026-09-26T03:40:08.226Z", "kind": "heartbeat", "invocation": None, "cursor": None,
+     "text": "2026-09-26T03:40:08.226Z alive 14h42m · idle · 77 submitted · fleet 406 online, 417 enrolled"},
+]
+
+
+def _seat_payload() -> dict:
+    """The WP1 healthy status document folded by the manager's own fold, with four log lines."""
+    doc = _json.loads(_SEAT_FIXTURE.read_text(encoding="utf-8"))
+    flat = _seat_fold(doc, log_lines=_SEAT_LOG_LINES, log_seq=0)
+    assert flat["seat_tasks_rows"][0]["jobId"] == SEAT_JOB_UUID, "the seeded job is the ledger's newest row"
+    return flat
+
+
+class _SeatCopyHarness(CopyRecorder, App):
+    """Push the seat screen under the real stylesheet, as ``SeatApp`` does (``CSS_PATH`` equal by test)."""
+
+    CSS_PATH = _TCSS
+
+    def __init__(self, screen) -> None:
+        super().__init__()
+        self._screen = screen
+
+    def on_mount(self) -> None:
+        self.push_screen(self._screen)
+
+
+def _seat_app(payload: dict | None = None) -> App:
+    return _SeatCopyHarness(SeatScreen(_PayloadManager(payload if payload is not None else _seat_payload()), poll_interval=5, name="seat"))
+
+
 # -- the registry ----------------------------------------------------------------
 
 CASES: tuple[SweepCase, ...] = (
@@ -777,4 +827,16 @@ CASES: tuple[SweepCase, ...] = (
         payload=_bakery_payload,
         seeded=BAKERY_SEEDED,
     ),
+    SweepCase(
+        name="seat",
+        # widgets/seat/_chain.EXPLORER: job pages on explorer.imd.fun, never a chain's address
+        # (PEPEPANE shows no 0x address -- spec §13). The seeded value is a job id (deviation 1).
+        explorer=IMD,
+        screen_class=SeatScreen,
+        build=_seat_app,
+        payload=_seat_payload,
+        seeded=(SEAT_JOB_UUID,),
+        pins=((SEAT_FULL_LAYOUT_COLUMNS, SEAT_FULL_LAYOUT_ROWS),),
+    ),
+
 )
