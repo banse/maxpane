@@ -1259,6 +1259,28 @@
       "allow": [
         "synthetic_refusal"
       ]
+    },
+    "grammar/local_fail_empty.txt": {
+      "origin": "hand-written empty executor failure regression for owner second fix brief 6",
+      "captured_at": "2026-09-27T00:00:00Z",
+      "sha256": "5a6c9870a778c83b4f45318235034a54ab9e2638f736b4981ea07ab09f38c48a",
+      "bytes": 95,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "synthetic accepted question and terminal empty failure; preserves trailing space or journald-stripped form"
+    },
+    "grammar/local_fail_stripped.txt": {
+      "origin": "hand-written empty executor failure regression for owner second fix brief 6",
+      "captured_at": "2026-09-27T00:00:00Z",
+      "sha256": "5e75e4e25b3b69a0d0fdb8c9cc2a7cf5c00475464b6558a30ce303976a915fbc",
+      "bytes": 94,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "allow": [],
+      "notes": "synthetic accepted question and terminal empty failure; preserves trailing space or journald-stripped form"
     }
   }
 }

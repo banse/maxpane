@@ -806,7 +806,7 @@ def test_local_gate_requires_fresh_complete_lifecycle_history(tmp_path, verb):
     assert broker.apply(plan.plan_id, plan.plan_id[:4], local_only_ack='local-only').outcome == 'applied'
 
 
-def test_local_drain_missing_lifecycle_never_fires(tmp_path):
+def test_local_drain_stale_history_segment_never_fires(tmp_path):
     clock = Clock()
     broker, runner, lines, _ = _local(tmp_path, tail=[hb(clock() - age) for age in (120, 90, 60, 30)], clock=clock,
                                     script={('docker', 'logs'): (0, '')})

@@ -69,7 +69,7 @@ SERVER_ERROR = re.compile(
     re.ASCII,
 )
 RESENDING = re.compile(TS + r"re-sending (?P<n>\d+) unacknowledged result\(s\)$", re.ASCII)
-LOCAL_FAIL = re.compile(TS + r"(?P<what>task|question|campaign) failed: (?P<msg>.*)$", re.ASCII)
+LOCAL_FAIL = re.compile(TS + r"(?P<what>task|question|campaign) failed:(?: (?P<msg>.*))?$", re.ASCII)
 RATE_LIMITED = re.compile(TS + r"(?P<msg>.+); pausing new work for five minutes$", re.ASCII)
 
 CONNECTED = re.compile(TS + r"connected to (?P<host>\S+)$", re.ASCII)

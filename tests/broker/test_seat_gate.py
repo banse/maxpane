@@ -271,3 +271,12 @@ def test_local_executor_failure_closes_lifecycle(kind):
     result = ok_gate(journal_lines=[accepted, failed] + IDLE_9)
     assert result.safe and result.lifecycle_open is False
     assert result.last_lifecycle_line == failed[1]
+
+
+@pytest.mark.parametrize("fixture", ["local_fail_empty.txt", "local_fail_stripped.txt"])
+def test_empty_local_failure_fixtures_are_terminal(fixture):
+    from pathlib import Path
+    rows = (Path(__file__).parents[1] / "fixtures/seat/grammar" / fixture).read_text().splitlines()
+    for kind in ("task", "question", "campaign"):
+        failed = rows[-1].replace("question failed", kind + " failed")
+        assert newest_lifecycle([rows[0], failed]) == (failed, False)

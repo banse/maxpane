@@ -348,7 +348,7 @@ p14() {
   printf '%s\n' "$plan" | scrub | code_block
   mode="$(printf '%s' "$plan" | json_get plan preconditions plane mode)"
   printf 'preconditions.plane.mode: %s\n' "${mode:-<no plan: see the reply above>}" | code_block
-  result "recorded -- gate_unknown(lifecycle) means only a failed lifecycle read; expected ok:false error gate_blocked while a task runs, ok:true with preconditions when idle; at idle preconditions.plane.mode must read plane+local (local-only means the broker has no --seat: check /etc/systemd/system/imd-dashd.service.d/10-seat.conf); either way nothing was applied"
+  result "recorded -- gate_unknown(lifecycle) means only a failed lifecycle read; expected ok:false error gate_blocked while a task runs, ok:true with preconditions when idle; at idle preconditions.plane.mode must read plane+local (local-only means offline mode or unavailable/stale plane evidence; check standing-read diagnostics and /etc/systemd/system/imd-dashd.service.d/10-seat.conf); either way nothing was applied"
 }
 p15() {
   [ -f "$MANIFEST" ] || { printf 'missing %s\n' "$MANIFEST" | code_block; result "FAIL"; return; }

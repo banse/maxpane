@@ -637,7 +637,7 @@ asserts a withdrawn statement is historical — do not review code against it.
   nested secret fragments and terminal controls now reach neither socket consumers nor SQLite in raw form; ordinary
   paths, identifiers, joins, numeric token totals and data shapes retain their meanings. The two redactor copies remain
   unchanged and byte-identical.
-- **2026-09-27 (final review R4, lifecycle evidence and contract addition)** — An absent anchored lifecycle record is
+- **2026-09-27 (final review R4, lifecycle evidence and contract addition; empty-history policy superseded by D1)** — An absent anchored lifecycle record is
   unknown, never terminal. `ERRORS` gains `gate_unknown(lifecycle)` so this required refusal has an explicit wire shape;
   no existing symbol or signature changes. Root queries the latest anchored lifecycle match independently of the
   short heartbeat window, limiting journal output to one matching record with the existing child deadline and no age
@@ -795,3 +795,7 @@ Root ping, verify, audit-tail and orphans bypass the slow-read lock. Gate bypass
 ### 2026-09-27 — PEPEPANE second round fix 5, owner E2: Mac armed drain
 
 LocalDockerBroker now rejects manual restart and stop while a drain is armed at both plan and apply. The existing `drain_already_armed` error carries the cancel-drain hint; apply refusals include the consumed plan identifier in audit. Container trust and force-disabled rules are unchanged. This ports the root safety addition from the first corrective round.
+
+### 2026-09-27 — PEPEPANE second round fix 6 and lifecycle wording
+
+Empty executor messages and journald-stripped failure lines now share terminal semantics in gate and grammar: task, question or campaign followed by failed and its colon, with an optional space/message. The grammar preserves the optional msg group; synthetic fixture pairs prove both forms close the ledger. Gate/probe wording now distinguishes a failed or unreadable lifecycle history from successful empty history. The stale Mac segment refusal remains; its regression name now describes that condition. The original R4 empty-history claim is visibly marked superseded by D1.

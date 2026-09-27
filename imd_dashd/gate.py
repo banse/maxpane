@@ -45,7 +45,7 @@ TERMINAL_RE = re.compile(
     TS + r"(?:submitted (?:implement|tests|review|integrate) for [0-9a-f]{8}"
     r"|answered [0-9a-f]{8} with \d+ citation\(s\)"
     r"|counterexample for .+|campaign could not run: .+|exhausted \d+ runs, nothing found"
-    r"|(?:task|question|campaign) failed: .+"
+    r"|(?:task|question|campaign) failed:(?: .*)?"
     r"|submission stored \([0-9a-f]{12}\) — awaiting verdict"
     r"|cancelled [0-9a-f]{8}: (?:lease_expired|job_cancelled|superseded|operator))$", re.ASCII)
 
@@ -179,7 +179,7 @@ def evaluate(*, journal_lines: Sequence[tuple[float, str]], standing: dict | Non
     elif unit_active is None:
         unknown, reason = "unit", "gate unknown: unit unreadable"
     elif lifecycle_open is None:
-        unknown, reason = "lifecycle", "gate unknown: terminal lifecycle evidence unavailable"
+        unknown, reason = "lifecycle", "gate unknown: lifecycle history read failed or unreadable"
     elif lifecycle_open:
         node8 = _accepted_node8(last_line or "") or "?"
         accept_epoch = next((epoch for epoch, text in reversed(lines) if text == last_line), None)

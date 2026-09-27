@@ -777,3 +777,17 @@ def test_attach_sessions_sanitizes_every_string_before_sqlite(tmp_path):
         assert session['model'] == secret  # caller's data is not mutated
     finally:
         ledger.close()
+
+
+@pytest.mark.parametrize("fixture", ["local_fail_empty.txt", "local_fail_stripped.txt"])
+def test_empty_local_failure_closes_the_ledger_row(tmp_path, fixture):
+    ledger = _ledger(tmp_path)
+    try:
+        lines = _lines(fixture)
+        assert lines[-1].kind == g.KIND_LOCAL_FAIL
+        assert lines[-1].fields["msg"] in (None, "")
+        ledger.ingest(lines)
+        assert ledger.open_row() is None
+        assert ledger.state.last_lifecycle.kind == g.KIND_LOCAL_FAIL
+    finally:
+        ledger.close()
