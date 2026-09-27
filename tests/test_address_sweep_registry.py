@@ -31,6 +31,8 @@ NON_DASHBOARD_SCREEN_MODULES = (
     "submission_detail", # cached modal; dedicated test_submission_detail.py address coverage
     "oracle_answer",
     "seat_task_detail",  # pepepane: cached modal over one LEDGER row; tests/screens/test_seat_task_detail.py
+    "seat_control",      # pepepane: the CONTROL modal; no data of its own; tests/screens/test_seat_control.py
+
  # cached modal; question/notes/value icons and links tested in test_oracle_answer.py
 )
 
