@@ -14,9 +14,11 @@ never ``maxpane_dashboard.data``, ``subprocess``, ``socket`` or ``httpx``.
 
 from __future__ import annotations
 
+from maxpane_dashboard.widgets.seat.config import SeatConfig
 from maxpane_dashboard.widgets.seat.hero import SeatHero, SeatHeroBox
 from maxpane_dashboard.widgets.seat.ledger import SeatLedgerTable
 from maxpane_dashboard.widgets.seat.log import SeatLog
+from maxpane_dashboard.widgets.seat.machine import SeatMachine
 from maxpane_dashboard.widgets.seat.now import SeatNow
 
-__all__: list[str] = ["SeatHero", "SeatNow", "SeatLedgerTable", "SeatLog"]
+__all__: list[str] = ["SeatHero", "SeatNow", "SeatLedgerTable", "SeatLog", "SeatConfig", "SeatMachine"]
