@@ -409,19 +409,21 @@
       "bytes": 1864
     },
     "sessions/rollout_401.jsonl": {
-      "captured_at": "2026-09-26T12:00:00Z",
-      "synthetic": true,
-      "daemon_version": null,
+      "origin": "imd-vps /home/imd-worker/.codex/sessions/2026/09/25/rollout-2026-09-25T23-36-05-*.jsonl reduced by Task 4.3 Step 9",
+      "captured_at": "2026-09-26T19:32:59Z",
+      "sha256": "307270b40ea7e84d353cb326918574d0597e05e4463f21aff7b383e3e25f5447",
+      "bytes": 4148,
       "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32",
         "prompts",
         "tool_io",
-        "base_instructions",
-        "sk"
+        "base_instructions"
       ],
-      "origin": "synthetic stand-in in the vps §4 reading until the owner-run capture of rollout-2026-09-25T23-36-05 replaces it (Task 4.3 Step 9)",
-      "notes": "task_complete: last_agent_message null + error.message (key already sk-[redacted]); token_count.info null",
-      "sha256": "213c9bcfeb3a72e419f6a698160f83f77c6e1860d68eb46dd409211ccc178bfa",
-      "bytes": 1525
+      "synthetic": false,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "task_complete kept verbatim after redaction; recorded shape: last_agent_message=None, error=present, token_count.info=null"
     }
   }
 }
