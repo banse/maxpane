@@ -1126,11 +1126,16 @@ def test_drain_successful_empty_lifecycle_can_restart(tmp_path):
     (1, b"-- No entries --\n", b"PCRE2 unavailable"),
     (2, b"-- No entries --\n", b""),
     (1, b"", b""),
+    (1, b"-- cursor: s=0;i=1;b=0;m=0;t=0;x=0\n", b""),
+    (1, b"-- cursor: x\n", b"Hint: failed"),
+    (0, b"", b""),
+    (0, b"-- cursor: x\n", b""),
+    (0, b"-- No entries --\n", b""),
     (1, b'{"MESSAGE":"x"}\n-- No entries --\n', b""),
     (0, b"garbage", b""),
     (0, b"", b"PCRE2 unavailable"),
 ])
-def test_lifecycle_no_match_exit_is_success_only_for_exact_systemd_case(tmp_path, rc, out, err):
+def test_lifecycle_no_match_accepts_measured_json_forms_only(tmp_path, rc, out, err):
     journal = Journal([hb(NOW - age) for age in (120, 90, 60, 30)])
     def read(argv, kw):
         if "--grep" in argv:
@@ -1138,7 +1143,7 @@ def test_lifecycle_no_match_exit_is_success_only_for_exact_systemd_case(tmp_path
         return journal(argv, kw)
     broker, *_ = make_broker(tmp_path, journal=journal, script={("journalctl",): read})
     result = call(broker, "restart", {"offline": True})
-    if (rc, out, err) == (1, b"-- No entries --\n", b""):
+    if rc == 1 and not err and (not out or out.startswith(b"-- cursor: ") or out == b"-- No entries --\n"):
         assert result["ok"] and result["plan"]["preconditions"]["lifecycle_open"] is False
     else:
         assert result["error"] == "gate_unknown(lifecycle)"
@@ -1289,3 +1294,9 @@ def test_no_signal_snapshot_refusal_is_explicitly_not_partial(tmp_path, monkeypa
     assert result["error"] == "unreadable"
     assert result["detail"]["partial"] is False and result["detail"]["killed"] == []
     assert not runner.argvs("kill") and not broker._pending_kills
+
+
+def test_lifecycle_argv_preserves_diagnostic_stderr_and_omits_cursor():
+    from imd_dashd.imd_dashd import lifecycle_journal_argv
+    argv = lifecycle_journal_argv()
+    assert not {"--show-cursor", "-q", "--quiet"}.intersection(argv)

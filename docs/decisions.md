@@ -657,7 +657,7 @@ The root/Mac lifecycle matcher and TUI terminal-kind set now include local task,
 
 ### 2026-09-27 — PEPEPANE fix 2, owner D1: successful empty history is idle
 
-D1 supersedes the R4 sentences “An absent anchored lifecycle record is unknown, never terminal” and “Missing or truncated history therefore refuses normal restart/stop and re-arms drain.” A successful history read with no lifecycle match now means no open task. Only a failed, timed-out or unreadable read produces `gate_unknown(lifecycle)`. The explicit `lifecycle_read_succeeded` argument to `gate.evaluate` carries that distinction. Root accepts systemd exit 1 only with the no-entries marker, no JSON record and empty stderr. Mac requires successful live/history reads and retains the stale-segment refusal; an empty older segment cannot corroborate a nonempty live window.
+D1 supersedes the R4 sentences “An absent anchored lifecycle record is unknown, never terminal” and “Missing or truncated history therefore refuses normal restart/stop and re-arms drain.” A successful history read with no lifecycle match now means no open task. Only a failed, timed-out or unreadable read produces `gate_unknown(lifecycle)`. The explicit `lifecycle_read_succeeded` argument to `gate.evaluate` carries that distinction. Root acceptance is corrected by the second-round measured JSON outcome entry below; the no-entries marker is a plain-text form. Mac requires successful live/history reads and retains the stale-segment refusal; an empty older segment cannot corroborate a nonempty live window.
 
 The standing retry remains unchanged: two attempts of up to 8 seconds run inside the root child's 12-second deadline. A slow first attempt can exhaust that outer budget, degrading to `local-only` and requiring its typed acknowledgement. This existing bounded fallback is documented rather than extending the gate deadline.
 
@@ -775,3 +775,7 @@ audit/verification state after a partial orphan action. Commit `5233d4e` fixes a
 three. The same reviewer marked R1–R3 ADDRESSED after 34 named checks and inverse
 mutation proofs, with exact restoration. The deploy closure is rebuilt once after
 this review closure; the seat suite and final full suite validate that final tree.
+
+### 2026-09-27 — PEPEPANE second round fix 1: measured lifecycle outcomes
+
+The VPS systemd 259.5 JSON grep no-match is exit 1 with empty output and stderr. The shared `lifecycle_read_outcome` also accepts marker/cursor-only exit 1, but refuses exit 0 without a valid record and all diagnostics or malformed mixed output. Lifecycle argv now omits the unused cursor and retains stderr diagnostics. The owner-run probe imports this outcome helper, slices its baseline at the grep option, requires a genuinely newer heartbeat for filter-before-limit PASS, and prints JSON record fields only from MESSAGE and __REALTIME_TIMESTAMP. This corrects the first-round D1 marker assumption; no live probe was run.

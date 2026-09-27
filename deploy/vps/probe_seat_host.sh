@@ -178,7 +178,7 @@ import json
 import subprocess
 import sys
 sys.path.insert(0, "/opt/imd-dash/broker")
-from imd_dashd.imd_dashd import lifecycle_journal_argv
+from imd_dashd.imd_dashd import lifecycle_journal_argv, lifecycle_read_outcome
 from imd_dashd.gate import newest_lifecycle, HEARTBEAT_RE
 
 def read(argv, label, *, show_output=True):
@@ -189,7 +189,16 @@ def read(argv, label, *, show_output=True):
         return None
     print(label + " exit status:", done.returncode)
     if show_output:
-        print(label + " stdout:", done.stdout)
+        safe_lines = []
+        for line in done.stdout.splitlines():
+            try:
+                record = json.loads(line)
+            except ValueError:
+                safe_lines.append(line)
+            else:
+                if isinstance(record, dict):
+                    safe_lines.append(json.dumps({key: record[key] for key in ("MESSAGE", "__REALTIME_TIMESTAMP") if key in record}))
+        print(label + " stdout:", "\n".join(safe_lines))
         print(label + " stderr:", done.stderr)
     return done
 
@@ -207,21 +216,24 @@ def messages(done):
 
 argv = lifecycle_journal_argv()
 # Bounded independent unfiltered history. Insufficient retained history is inconclusive.
-baseline = read(argv[:7] + ["--lines", "10000"], "unfiltered history", show_output=False)
+baseline = read(argv[:argv.index("--grep")] + ["--lines", "10000"], "unfiltered history", show_output=False)
 filtered = read(argv, "lifecycle")
 rows = messages(baseline)
 expected, _open = newest_lifecycle(rows)
 actual = messages(filtered)
 print("newest entry heartbeat:", bool(rows and HEARTBEAT_RE.match(rows[-1])))
-print("grep/pcre2:", "PASS" if filtered is not None and (filtered.returncode == 0 or (filtered.returncode == 1 and filtered.stdout.strip() == "-- No entries --")) and not filtered.stderr else "FAIL")
+print("grep/pcre2:", "PASS" if filtered is not None and lifecycle_read_outcome(filtered.returncode, filtered.stdout, filtered.stderr)[1] else "FAIL")
 if baseline is None or baseline.returncode or expected is None:
     print("filter-before-limit: inconclusive (no lifecycle in bounded baseline)")
+elif not rows or not HEARTBEAT_RE.match(rows[-1]) or rows[-1][:24] <= expected[:24]:
+    print("filter-before-limit: inconclusive (newest entry is not a heartbeat)")
 else:
     print("filter-before-limit:", "PASS" if actual == [expected] else "FAIL")
-read(lifecycle_journal_argv(pattern="(?!)"), "no-match")
+no_match = read(lifecycle_journal_argv(pattern="(?!)"), "no-match")
+print("no-match acceptance:", "PASS" if no_match is not None and lifecycle_read_outcome(no_match.returncode, no_match.stdout, no_match.stderr) == ([], True) else "FAIL")
 # END LIFECYCLE_PROBE
 PYPROBE
-  result "recorded -- filtered history must select the latest lifecycle even after a newer heartbeat; no-match must report exit 1, -- No entries -- and empty stderr; no action was applied"
+  result "recorded -- filtered history must select the latest lifecycle even after a newer heartbeat; JSON no-match must report exit 1, empty stdout and empty stderr; no action was applied"
 }
 p06() {
   as_dash systemctl show "$WORKER_UNIT" --timestamp=utc -p ActiveState,SubState,MainPID,NRestarts,ActiveEnterTimestamp,ExecMainStartTimestamp,UnitFileState,Restart,RestartUSec,MemoryMax,CPUQuotaPerSecUSec,TasksMax,TasksCurrent,KillMode,TimeoutStopUSec,IPAddressDeny 2>&1 | code_block

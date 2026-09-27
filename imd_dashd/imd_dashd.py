@@ -372,8 +372,38 @@ def lifecycle_journal_argv(unit: str = WORKER_UNIT, *, pattern: str | None = Non
     """Exact filtered history query shared with the owner-run VPS compatibility probe."""
     if pattern is None:
         pattern = re.sub(r"\(\?P<[^>]+>", "(?:", f"(?:{ACCEPTED_RE.pattern}|{TERMINAL_RE.pattern})")
-    return ["journalctl", "-u", unit, "-o", "json", "--no-pager", "--show-cursor",
+    return ["journalctl", "-u", unit, "-o", "json", "--no-pager",
             "--grep", pattern, "--lines", "1", "--case-sensitive=yes"]
+
+
+def lifecycle_read_outcome(returncode: int, stdout: bytes | str, stderr: bytes | str) -> tuple[list[dict], bool]:
+    """Measured JSON grep outcomes, shared by the broker and owner-run probe.
+
+    Empty exit 1 is a successful no-match; diagnostics or malformed/mixed records fail closed.
+    """
+    if stderr or returncode not in (0, 1):
+        return [], False
+    try:
+        text = stdout.decode("utf-8") if isinstance(stdout, bytes) else stdout
+        records = []
+        for raw in text.splitlines():
+            if not raw.strip() or raw.strip() == "-- No entries --" or raw.startswith("-- cursor: "):
+                continue
+            record = json.loads(raw)
+            if not isinstance(record, dict):
+                return [], False
+            message = record.get("MESSAGE")
+            if isinstance(message, list):
+                if not all(type(b) is int and 0 <= b < 256 for b in message):
+                    return [], False
+                message = bytes(message).decode("utf-8")
+            if not isinstance(message, str):
+                return [], False
+            records.append({**record, "MESSAGE": message})
+        succeeded = bool(records) if returncode == 0 else not records
+        return (records if succeeded else []), succeeded
+    except (UnicodeDecodeError, ValueError, TypeError):
+        return [], False
 
 
 class Broker:
@@ -491,11 +521,13 @@ class Broker:
             stdout = done.stdout.decode("utf-8") if lifecycle_only and isinstance(done.stdout, bytes) else _text(done.stdout)
         except UnicodeDecodeError:
             return [], None, False
-        if lifecycle_only and done.returncode == 1 and not _text(done.stderr):
-            # systemd's grep-compatible no-match result; no JSON record may accompany it.
-            if stdout.strip() == "-- No entries --":
+        if lifecycle_only:
+            records, succeeded = lifecycle_read_outcome(done.returncode, done.stdout, done.stderr)
+            if not succeeded:
+                return [], None, False
+            if not records:
                 return [], None, True
-        if done.returncode != 0 or (lifecycle_only and _text(done.stderr)):
+        elif done.returncode != 0:
             return [], None, False
         lines: list[tuple[float, str]] = []
         cursor: str | None = None

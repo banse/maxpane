@@ -885,7 +885,7 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
     older = "2026-09-27T10:00:00.000Z accepted question deadbeef"
     terminal = "2026-09-27T10:01:00.000Z question failed: executor threw"
     heartbeat = "2026-09-27T10:02:00.000Z alive 2m · idle · 0 submitted"
-    records = lambda messages: "\n".join(json.dumps({"MESSAGE": message}) for message in messages)
+    records = lambda messages: "\n".join(json.dumps({"MESSAGE": message, "_HOSTNAME": "private-host", "_CMDLINE": "private-argv", "__CURSOR": "private-cursor"}) for message in messages)
     calls = []
     def fake(argv, **kwargs):
         calls.append(argv)
@@ -893,7 +893,7 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
         if "--grep" not in argv:
             return subprocess.CompletedProcess(argv, 0, records([older, terminal, heartbeat]), "")
         if argv[argv.index("--grep") + 1] == "(?!)":
-            return subprocess.CompletedProcess(argv, 1, "-- No entries --\n", "")
+            return subprocess.CompletedProcess(argv, 1, "", "")
         assert argv == lifecycle_journal_argv()
         return subprocess.CompletedProcess(argv, 0, records([terminal]), "")
     monkeypatch.setattr(subprocess, "run", fake)
@@ -903,5 +903,7 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
     assert "newest entry heartbeat: True" in output
     assert "grep/pcre2: PASS" in output
     assert "no-match exit status: 1" in output
-    assert "-- No entries --" in output and "no-match stderr:" in output
+    assert "no-match acceptance: PASS" in output and "no-match stderr:" in output
+    assert calls[0] == lifecycle_journal_argv()[:lifecycle_journal_argv().index("--grep")] + ["--lines", "10000"]
     assert len(calls) == 3
+    assert "private-host" not in output and "private-argv" not in output and "private-cursor" not in output

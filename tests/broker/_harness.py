@@ -59,14 +59,15 @@ class Journal:
     def cursor(index: int) -> str:
         return f"s=deadbeef;i={index}"
 
-    def render(self, selected: list[tuple[int, tuple[float, str]]]) -> bytes:
+    def render(self, selected: list[tuple[int, tuple[float, str]]], *, show_cursor: bool = True) -> bytes:
         out = []
         for index, (epoch, message) in selected:
             out.append(json.dumps({"MESSAGE": message, "__REALTIME_TIMESTAMP": str(int(epoch * 1_000_000)),
                                    "__CURSOR": self.cursor(index), "_SYSTEMD_INVOCATION_ID": "inv0001"}))
         last = selected[-1][0] if selected else len(self.lines) - 1
-        out.append(f"-- cursor: {self.cursor(max(last, -1))}")
-        return ("\n".join(out) + "\n").encode()
+        if show_cursor:
+            out.append(f"-- cursor: {self.cursor(max(last, -1))}")
+        return ("\n".join(out) + ("\n" if out else "")).encode()
 
     def __call__(self, argv: list[str], kw: dict) -> subprocess.CompletedProcess:
         indexed = list(enumerate(self.lines))
@@ -75,7 +76,7 @@ class Journal:
             pattern = re.compile(argv[argv.index("--grep") + 1])
             selected = [(i, ln) for i, ln in indexed if pattern.search(ln[1])][-int(argv[argv.index("--lines") + 1]):]
             if not selected:
-                return subprocess.CompletedProcess(argv, 1, b"-- No entries --\n", b"")
+                return subprocess.CompletedProcess(argv, 1, self.render([], show_cursor="--show-cursor" in argv), b"")
         elif "--after-cursor" in argv:
             cursor = argv[argv.index("--after-cursor") + 1]
             after = int(cursor.rsplit("=", 1)[1])
@@ -85,7 +86,7 @@ class Journal:
             seconds = float(since.strip("-s"))
             now = self.now()
             selected = [(i, ln) for i, ln in indexed if ln[0] >= now - seconds]
-        return subprocess.CompletedProcess(argv, 0, self.render(selected), b"")
+        return subprocess.CompletedProcess(argv, 0, self.render(selected, show_cursor="--show-cursor" in argv), b"")
 
     now = staticmethod(lambda: NOW)
 
