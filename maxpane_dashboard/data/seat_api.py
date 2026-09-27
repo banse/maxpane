@@ -338,6 +338,13 @@ def _retry_reason(labels: Sequence[str]) -> str:
 
 # --- the client -------------------------------------------------------------------------
 
+def _seat_segment(seat: object) -> str | None:
+    """``"7"`` for a non-negative ``int`` (never a bool); ``None`` refuses before any request is built."""
+    if isinstance(seat, bool) or not isinstance(seat, int) or seat < 0:
+        return None
+    return f"{seat:d}"
+
+
 class SeatApiClient(OwnedHttpClient):
     """Spec §6 API fallback: four route families, gzip, 20 s, retry once, redacted, last-good remembered."""
 
@@ -431,6 +438,27 @@ class SeatApiClient(OwnedHttpClient):
             return result
         elapsed = round(time.monotonic() - started, 3)
         return ApiResult(False, None, last_status, None, _retry_reason(labels), elapsed, route)
+
+    async def standing(self, seat: int) -> ApiResult:
+        """``GET /seats/<id>/standing`` -- **no query string, ever** (``?queue=0`` returns ``queue: null``)."""
+        segment = _seat_segment(seat)
+        if segment is None:
+            return self._refused("/seats/?/standing", "bad seat")
+        return await self._get(f"/seats/{segment}/standing")
+
+    async def seat_work(self, seat: int, *, work: int = SEAT_WORK_ROWS, reviews: int = 0) -> ApiResult:
+        """``GET /seats/<id>?work=N&reviews=0``: lifetime counters + the newest N ``work[]`` rows."""
+        segment = _seat_segment(seat)
+        if segment is None:
+            return self._refused("/seats/?", "bad seat")
+        for value in (work, reviews):
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= SEAT_WORK_MAX_ROWS:
+                return self._refused(f"/seats/{segment}", "bad params")
+        return await self._get(f"/seats/{segment}", params={"work": str(work), "reviews": str(reviews)})
+
+    async def backfill(self, seat: int) -> ApiResult:
+        """The one-time history read: ``seat_work(seat, work=SEAT_WORK_BACKFILL_ROWS, reviews=0)``."""
+        return await self.seat_work(seat, work=SEAT_WORK_BACKFILL_ROWS, reviews=0)
 
     async def services(self) -> ApiResult:
         return await self._get("/services")

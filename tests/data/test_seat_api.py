@@ -420,3 +420,119 @@ async def test_health_and_services_are_redacted_and_remembered_as_last_good():
         assert client.last_good("/nowhere") is None
     async with _client(_no_network) as fresh:
         assert fresh.last_good("/health") is None
+
+
+# ---------------------------------------------------------------------------
+# Task 5.7 — standing / seat_work / backfill
+# ---------------------------------------------------------------------------
+
+async def test_working_now_and_queue_come_from_seat_standing_only():
+    """Spec §6 never-used + mutation proof 9: 'working now' and the queue line come from
+    GET /seats/<id>/standing with NO query string; /workers is never requested; ?queue=0 (which
+    returns queue: null -- workers_standing_q0.json) is never sent; a /workers row's `working` is never read."""
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=_fixture("seat7_standing.json"))
+
+    async with _client(handler) as client:
+        result = await client.standing(7)
+    assert result.ok and [str(r.url) for r in seen] == [f"{SWARM_API_HOSTS[0]}/seats/7/standing"]
+    assert seen[0].url.query == b""
+    block = seat_api.normalise_standing(result.data)
+    assert isinstance(block["working"], int) and tuple(block["queue"]) == seat_api.QUEUE_KEYS
+    assert isinstance(block["queue"]["ready"], int) and isinstance(block["queue"]["eligible"], int)
+    assert block["queue"]["asOfUtc"] == result.data["at"]
+    # why the query string matters: the ?queue=0 form has no queue at all
+    assert seat_api.normalise_standing(_fixture("workers_standing_q0.json"))["queue"] is None
+    # and a /workers row (top-level `working`, a heartbeat echo behind a 30 s cache) never feeds `working`
+    assert seat_api.normalise_standing(_fixture("workers_row.json"))["working"] is None
+    # the client has no method that could reach /workers at all
+    assert not [name for name in dir(seat_api.SeatApiClient) if "worker" in name.lower()]
+
+
+async def test_no_query_string_reaches_standing():
+    """Spec §6 standing row: `?queue=0` returns `queue: null` -- never use it if the queue line is wanted."""
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=_fixture("seat7_standing.json"))
+
+    async with _client(handler) as client:
+        await client.standing(7)
+        await client.standing(420)
+    assert [r.url.raw_path for r in seen] == [b"/seats/7/standing", b"/seats/420/standing"]
+    assert all(b"?" not in r.url.raw_path and b"queue" not in r.url.raw_path for r in seen)
+
+
+async def test_api_500_is_unavailable_not_zero():
+    """Spec §6 seats row (HTTP 500 on 16/60 reads: retry once, keep last-good, render `verdicts as of HH:MM`,
+    never 0) + mutation proof 22."""
+    seen = []
+    mode = {"fail": False}
+
+    def handler(request):
+        seen.append(request)
+        if mode["fail"]:
+            return httpx.Response(500, json=_fixture("seat7_500.json"))
+        return httpx.Response(200, json=_fixture("seat7_work20.json"))
+
+    async with _client(handler) as client:
+        good = await client.seat_work(7)
+        assert good.ok and good.data["attempts"] == 288 and good.as_of_utc == "2026-09-26T03:40:07Z"
+        assert good.route == "/seats/7?work=60&reviews=0"
+        mode["fail"] = True
+        bad = await client.seat_work(7)
+    assert bad.ok is False and bad.status == 500 and bad.data is None and bad.as_of_utc is None
+    assert bad.reason == "500 ×2 (retrying)"
+    assert [r.url.host for r in seen[1:]] == [FIRST_HOST, SECOND_HOST]      # exactly one retry, on the other host
+    kept = client.last_good(bad.route)
+    assert kept is good and kept.data["attempts"] == 288                     # last-good survives the 500
+    assert not isinstance(bad.data, int)                                     # never a zero
+
+
+async def test_seat_work_sends_work_and_reviews_and_validates_them():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=_fixture("seat7_work20.json"))
+
+    async with _client(handler) as client:
+        default = await client.seat_work(7)
+        twenty = await client.seat_work(7, work=20)
+        assert default.ok and twenty.ok
+        for bad_value in (-1, 1001, True, "20", 2.5):
+            refused = await client.seat_work(7, work=bad_value)   # type: ignore[arg-type]
+            assert refused.ok is False and refused.reason == "bad params" and refused.route == "/seats/7"
+        refused = await client.seat_work(7, reviews=5000)
+        assert refused.reason == "bad params"
+    assert [r.url.query for r in seen] == [b"work=60&reviews=0", b"work=20&reviews=0"]
+    assert seat_api.validate_counters(default.data) is True                  # the redaction pipeline keeps ints
+
+
+async def test_backfill_asks_for_1000_rows_and_zero_reviews():
+    """Spec §5.6 / §16 #15: one-time history seed from /seats/<id>?work=1000&reviews=0."""
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=_fixture("seat7_work20.json"))
+
+    async with _client(handler) as client:
+        result = await client.backfill(420)
+    assert result.ok and result.route == "/seats/420?work=1000&reviews=0"
+    assert str(seen[0].url) == f"{SWARM_API_HOSTS[0]}/seats/420?work=1000&reviews=0"
+
+
+async def test_seat_is_validated_before_any_request():
+    """As SwarmClient.fetch_seat: an int formatted with {seat:d}; a bool, a negative, a str or a float never builds a path."""
+    async with _client(_no_network) as client:
+        for bad in (-1, True, "7", 7.0, None):
+            standing = await client.standing(bad)      # type: ignore[arg-type]
+            work = await client.seat_work(bad)         # type: ignore[arg-type]
+            assert standing.ok is False and standing.reason == "bad seat" and standing.route == "/seats/?/standing"
+            assert work.ok is False and work.reason == "bad seat" and work.route == "/seats/?"
+            assert standing.status is None and standing.data is None
