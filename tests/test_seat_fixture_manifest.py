@@ -8,12 +8,15 @@ empty ``entries``; every WP that adds a fixture adds the entry. Two guards:
 * ``test_every_fixture_has_a_matching_manifest_entry`` -- sha256 and byte size match,
   no file without an entry, no entry without a file, every entry well-formed;
 * ``test_no_fixture_contains_control_chars_or_sk`` -- no committed text carries a
-  C0/C1/DEL control character, a bidi/format control or an ``sk-`` key. Two declared
-  exceptions exist, both opt-in per entry through ``allow``: ``"control_chars"`` for a
+  C0/C1/DEL control character, a bidi/format control, an ``sk-`` key, JWT, secret
+  field name or unexpected long hex. Declared per-entry exceptions are: ``"control_chars"`` for a
   fixture that is ``synthetic: true`` (``grammar/control_chars.txt`` *is* the
   injection sample, spec §13 proof 23) and ``"sk"`` for the server-masked fragment
   (``sk-svcac********``) a heartbeat carried (contract §D notes) -- an unmasked key
-  never passes, allowed or not.
+  never passes, allowed or not. ``"synthetic_refusal"`` permits only exact sample
+  values and paths in the designated canary fixtures; JWTs remain forbidden.
+  Public hash/key fields, exact CLI device lines, Docker identity fields and the
+  oversize transcript's exact filler have narrow context checks below.
 
 The checkers are pure functions over a root and a manifest dict, so the two
 ``tmp_path`` tests below prove they can fail while the committed tree is still empty
@@ -26,6 +29,8 @@ import hashlib
 import json
 import re
 from pathlib import Path
+
+from maxpane_dashboard.analytics.seat_redact import HEX64_RE, JWT_RE, SECRET_KEY_RE
 
 import pytest
 
@@ -50,7 +55,25 @@ REDACTIONS = frozenset({
     "control_chars", "sk", "jwt", "hex64>=32", "deviceKey", "recentFailures.summary",
     "submissions.summary", "prompts", "tool_io", "base_instructions", "credential_org",
 })
-ALLOW = frozenset({"control_chars", "sk"})
+ALLOW = frozenset({"control_chars", "sk", "synthetic_refusal"})
+HEX_FIELDS = frozenset({"submissionHash", "hash", "txHash", "deviceKey"})
+# Exact deliberate sample values and paths, never a whole-file secret exemption.
+SYNTHETIC_PRIVATE = "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1b0a"
+REFUSAL_VALUES = {
+    "broker/projection_ok.json": {"devicePrivateKey": SYNTHETIC_PRIVATE},
+    "broker/projection_leaky.json": {"devicePrivateKey": SYNTHETIC_PRIVATE},
+    "broker/projection_extra_key.json": {"devicePrivateKey": SYNTHETIC_PRIVATE},
+    "broker/projection_swapped_key.json": {"deviceKey": SYNTHETIC_PRIVATE},
+    "broker/projection_nested_device_key.json": {
+        "devicePrivateKey": SYNTHETIC_PRIVATE, "inference.deviceKey": "ab" * 32,
+    },
+    "status/status_v2_with_secret.json": {"seat.deviceKeyPublic": "0123456789abcdef" * 4},
+}
+CLI_DEVICE_FILES = frozenset({
+    "cli/5bfa8261/imd_status_seat7.txt", "cli/5bfa8261/imd_status_seat420.txt",
+    "cli/5bfa8261/imd_doctor.txt",
+})
+PLAIN_SECRET_NAME_RE = re.compile(r"privateKey|devicePrivateKey|mnemonic|secret", re.IGNORECASE)
 CAPTURED_AT_RE = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
 #: Compressed fixtures (``sessions/rollout_task.jsonl.zst``) are pinned by sha256/bytes only;
 #: their text is scanned by the summariser tests where ``compression.zstd`` imports.
@@ -92,6 +115,9 @@ def _check_entry(relpath: str, entry: object) -> list[str]:
         problems.append(f"{relpath}: allow must be a list drawn from {sorted(ALLOW)}")
     elif "control_chars" in allow and entry.get("synthetic") is not True:
         problems.append(f"{relpath}: only a synthetic fixture may carry control characters")
+    if isinstance(allow, list) and "synthetic_refusal" in allow:
+        if entry.get("synthetic") is not True or relpath not in REFUSAL_VALUES:
+            problems.append(f"{relpath}: synthetic_refusal requires a designated synthetic refusal fixture")
     return problems
 
 
@@ -121,27 +147,88 @@ def _check_tree(root: Path, manifest: dict) -> list[str]:
 
 
 def _scan_content(root: Path, manifest: dict) -> list[str]:
-    """Control characters, bidi/format controls and ``sk-`` keys in every text fixture."""
+    """Scan decoded JSON/JSONL and plain text, with narrowly scoped fixture exceptions."""
     problems: list[str] = []
     entries = manifest.get("entries", {}) if isinstance(manifest.get("entries"), dict) else {}
-    for path in _files(root):
-        relpath = path.relative_to(root).as_posix()
-        if path.suffix in BINARY_SUFFIXES:
+    for file in _files(root):
+        relpath = file.relative_to(root).as_posix()
+        if file.suffix in BINARY_SUFFIXES:
             continue
         try:
-            text = path.read_bytes().decode("utf-8")
+            text = file.read_bytes().decode("utf-8")
         except UnicodeDecodeError:
             problems.append(f"{relpath}: not UTF-8 (a text fixture) and not a known binary suffix")
             continue
         entry = entries.get(relpath) if isinstance(entries.get(relpath), dict) else {}
         allow = set(entry.get("allow", [])) if isinstance(entry.get("allow", []), list) else set()
         controls_ok = "control_chars" in allow and entry.get("synthetic") is True
+        refusal_values = (REFUSAL_VALUES.get(relpath, {})
+                          if "synthetic_refusal" in allow and entry.get("synthetic") is True else {})
+
+        def problem(kind: str, path: str) -> None:
+            problems.append(f"{relpath}: contains {kind} at {path or '<root>'}")
+
+        # JSON decoding discards formatting whitespace; retain the raw-byte guard
+        # as well as checking decoded strings for escaped controls.
         if not controls_ok and (CONTROL_RE.search(text) or BIDI_FORMAT_RE.search(text)):
-            problems.append(f"{relpath}: contains a control or bidi/format character")
-        for match in SK_RE.finditer(text):
-            if "sk" in allow and MASKED_SK_RE.fullmatch(match.group(0)):
-                continue
-            problems.append(f"{relpath}: contains an sk- key at offset {match.start()}")
+            problem("a control or bidi/format character", "raw text")
+
+        def scan_string(value: str, path: str, *, field: str | None = None,
+                        hex_ok: bool = False, plain: bool = False) -> None:
+            if not controls_ok and (CONTROL_RE.search(value) or BIDI_FORMAT_RE.search(value)):
+                problem("a control or bidi/format character", path)
+            for match in SK_RE.finditer(value):
+                if "sk" not in allow or not MASKED_SK_RE.fullmatch(match.group(0)):
+                    problem("an sk- key", path)
+            if JWT_RE.search(value):
+                problem("a JWT", path)
+            if plain and PLAIN_SECRET_NAME_RE.search(value):
+                problem("a secret key name", path)
+            if field not in HEX_FIELDS and not hex_ok and HEX64_RE.search(value):
+                problem("hex64", path)
+
+        def walk(value: object, path: str = "", field: str | None = None) -> None:
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    child_path = f"{path}.{key}" if path else key
+                    if SECRET_KEY_RE.search(key) and not (child_path in refusal_values and
+                                                          refusal_values[child_path] == child):
+                        problem("a secret key name", child_path)
+                    scan_string(key, child_path + " (key)")
+                    walk(child, child_path, key)
+            elif isinstance(value, list):
+                for index, child in enumerate(value):
+                    walk(child, f"{path}[{index}]")
+            elif isinstance(value, str):
+                hex_ok = refusal_values.get(path) == value
+                if relpath == "cli/docker_inspect.json":
+                    hex_ok |= (path == "[0].Id" and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+                               or path == "[0].Image" and re.fullmatch(r"sha256:[0-9a-f]{64}", value) is not None)
+                if relpath == "sessions/rollout_oversize_line.jsonl" and path == "payload.item.text":
+                    hex_ok |= value == "A" * (2 * 1024 * 1024)
+                scan_string(value, path, field=field, hex_ok=hex_ok)
+
+        def object_pairs(pairs: list[tuple[str, object]]) -> dict:
+            value = {}
+            for key, child in pairs:
+                if key in value:
+                    problem("a duplicate JSON key", key)
+                value[key] = child
+            return value
+
+        try:
+            walk(json.loads(text, object_pairs_hook=object_pairs, parse_int=str, parse_float=str))
+        except json.JSONDecodeError:
+            # Journald captures and transcripts may contain one JSON object per line.
+            for index, line in enumerate(text.split("\n")):
+                try:
+                    walk(json.loads(line, object_pairs_hook=object_pairs, parse_int=str, parse_float=str))
+                except json.JSONDecodeError:
+                    hex_ok = (relpath in CLI_DEVICE_FILES and
+                              re.fullmatch(r"device[ \t]+[0-9a-f]{64}", line) is not None)
+                    if relpath == "cli/5bfa8261/imd_whoami.txt":
+                        hex_ok = re.fullmatch(r"[0-9a-f]{64}", line) is not None
+                    scan_string(line, f"line {index + 1}", hex_ok=hex_ok, plain=True)
     return problems
 
 
@@ -221,7 +308,10 @@ def test_the_tree_checker_catches_missing_entries_wrong_digests_and_wrong_sizes(
 def test_the_entry_checker_refuses_bad_vocabulary_and_controls_in_a_captured_file():
     data = b"x"
     assert _check_entry("a", _entry(data, redactions=["ansi"])) != []
-    assert _check_entry("a", _entry(data, allow=["hex64"])) != []
+    assert _check_entry("a", _entry(data, allow=["all_secrets"])) != []
+    assert _check_entry("a", _entry(data, allow=["synthetic_refusal"])) != []
+    assert _check_entry("broker/projection_leaky.json", _entry(data, allow=["synthetic_refusal"], synthetic=False)) != []
+    assert _check_entry("broker/projection_leaky.json", _entry(data, allow=["synthetic_refusal"])) == []
     assert _check_entry("a", _entry(data, captured_at="2026-09-26 08:00")) != []
     assert _check_entry("a", _entry(data, synthetic="yes")) != []
     assert _check_entry("a", _entry(data, extra="key")) != []
@@ -254,3 +344,84 @@ def test_the_content_scan_catches_controls_bidi_and_keys_and_honours_the_declare
     assert flagged == {"esc.txt", "bidi.txt", "key.txt", "unmasked_allowed.txt", "controls_captured.txt"}
     # The captured file with controls is also refused by the entry checker (belt and braces).
     assert _check_entry("controls_captured.txt", entries["controls_captured.txt"]) != []
+
+
+@pytest.mark.parametrize("payload, category", [
+    ({"unexpected": "ab" * 32}, "hex64"),
+    ({"unexpected": "0x" + "AB" * 64}, "hex64"),
+    ({"unexpected": "z" + "ab" * 32 + "z"}, "hex64"),
+    ({"unexpected": "eyJ" + "a" * 12 + "." + "b" * 12}, "JWT"),
+    ({"devicePrivateKey": "[removed]"}, "secret key name"),
+    ({"devicePrivateKey": None}, "secret key name"),
+    ({"nested": [{"Mnemonic": "[removed]"}]}, "secret key name"),
+])
+def test_content_scan_refuses_unlisted_secret_values_and_keys(tmp_path, payload, category):
+    data = json.dumps(payload).encode()
+    (tmp_path / "unlisted.json").write_bytes(data)
+    assert any(category in p for p in _scan_content(tmp_path, {"entries": {}}))
+
+
+@pytest.mark.parametrize("payload, category", [
+    ({"deviceKey": "eyJ" + "a" * 12}, "JWT"),
+    ({"hash": "eyJ" + "a" * 12}, "JWT"),
+    ({"devicePrivateKey": "eyJ" + "a" * 12}, "JWT"),
+    ({"devicePrivateKey": "cd" * 32}, "hex64"),
+    ({"unexpected": "ab" * 32}, "hex64"),
+    ({"nested": {"devicePrivateKey": "[removed]"}}, "secret key name"),
+])
+def test_refusal_allowance_does_not_hide_unrelated_or_new_secrets(tmp_path, payload, category):
+    (tmp_path / "broker").mkdir()
+    name = "broker/projection_leaky.json"
+    data = json.dumps(payload).encode()
+    (tmp_path / name).write_bytes(data)
+    manifest = {"entries": {name: _entry(data, allow=["synthetic_refusal"])}}
+    assert any(category in p for p in _scan_content(tmp_path, manifest))
+
+
+def test_json_escapes_cannot_hide_jwt_or_secret_key_names(tmp_path):
+    # Raw scanning cannot see these; the decoded JSON values/keys must also be checked.
+    data = b'{"devicePrivate\\u004bey":"removed","note":"\\u0065yJaaaaaaaaaaaa"}'
+    (tmp_path / "escaped.json").write_bytes(data)
+    problems = _scan_content(tmp_path, {"entries": {}})
+    assert any("secret key name" in p for p in problems)
+    assert any("JWT" in p for p in problems)
+
+
+def test_fixture_hex_exceptions_are_context_limited(tmp_path):
+    files = {
+        "public.json": {"hash": "ab" * 32, "submissionHash": "cd" * 32,
+                        "txHash": "ef" * 32, "deviceKey": "01" * 32,
+                        "wallet": "0x" + "a" * 40, "INVOCATION_ID": "b" * 32},
+        "cli/docker_inspect.json": [{"Id": "a" * 64, "Image": "sha256:" + "b" * 64,
+                                     "Config": {"Id": "c" * 64}}],
+    }
+    for name, payload in files.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload))
+    cli = tmp_path / "cli/5bfa8261/imd_status_seat7.txt"
+    cli.parent.mkdir(parents=True)
+    cli.write_text("device    " + "a" * 64 + "\nnote " + "b" * 64 + "\n")
+    (tmp_path / "other.txt").write_text("device " + "a" * 64 + "\n")
+    problems = _scan_content(tmp_path, {"entries": {}})
+    assert len(problems) == 3
+    assert any("cli/docker_inspect.json" in p and "Config.Id" in p for p in problems)
+    assert any("imd_status_seat7.txt" in p and "hex64" in p for p in problems)
+    assert any("other.txt" in p and "hex64" in p for p in problems)
+    assert not any("public.json" in p for p in problems)
+
+
+def test_duplicate_json_keys_cannot_hide_a_secret(tmp_path):
+    data = '{"unexpected":"' + "ab" * 32 + '","unexpected":"safe"}'
+    (tmp_path / "duplicate.json").write_text(data)
+    assert _scan_content(tmp_path, {"entries": {}})
+
+
+def test_plain_numeric_hex_is_not_lost_to_json_number_decoding(tmp_path):
+    (tmp_path / "numeric.txt").write_text("1" * 64)
+    assert any("hex64" in p for p in _scan_content(tmp_path, {"entries": {}}))
+
+
+def test_json_whitespace_keeps_the_original_raw_control_guard(tmp_path):
+    (tmp_path / "control.json").write_bytes(b'{"ok":\r1}')
+    assert any("control" in p for p in _scan_content(tmp_path, {"entries": {}}))

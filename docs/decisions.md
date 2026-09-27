@@ -697,3 +697,26 @@ redaction use `(?<![0-9A-Fa-f])(?:0x)?[0-9A-Fa-f]{64,}(?![0-9A-Fa-f])`.
 The field allowlist remains exactly `submissionHash`, `txHash`, `deviceKey`;
 there is no SHA-256 exception. Whoami still supplies the `deviceKey` field.
 Both copies remain byte-identical, and 65-digit values are now redacted too.
+
+
+## 2026-09-27 — PEPEPANE fix 10: fixture content guard
+
+The fixture guard now scans decoded JSON and JSONL keys and strings, plus plain
+text, for JWTs, secret field names and the hardened long-hex pattern. JSON
+escapes, duplicate keys and numeric-only long hex cannot bypass the scan.
+The fixture-only public/hash allowlist is `submissionHash`, `hash`, `txHash`,
+`deviceKey`; it never exempts JWTs or secret field names. It does not expand the
+production redactor's three-field allowlist.
+
+The new per-entry `allow: ["synthetic_refusal"]` applies only to the six named
+synthetic projection/status source and refusal samples, at exact documented
+paths with exact synthetic values. It cannot exempt another private-key value,
+a nested secret key, JWT, or unrelated hex. Additional hex exceptions are only
+complete device lines in three named CLI captures, the bare key in the whoami
+capture, `[0].Id`/`[0].Image` in the Docker inspect capture, and the exact
+2 MiB A filler at `payload.item.text` in the oversize transcript. Short journald
+ids, cursors and 40-digit addresses remain outside the long-hex rule.
+
+No fixture bytes were changed for this guard. The original server-masked
+heartbeat and its `redactions: []` entry are preserved. The additive nested-key
+fixture from fix 4 is synthetic and carries its own digest and source notes.
