@@ -342,3 +342,116 @@ def test_install_sh_gives_the_broker_its_seat():
     dropin_at = step5.index("[dry-run] install -m 0644 <the 10-seat.conf above>")
     assert dropin_at < step5.index("[dry-run] systemctl daemon-reload") < step5.index("[dry-run] systemctl enable --now imd-dashd.socket")
     assert "--seat" not in SERVICE_UNIT.read_text(encoding="utf-8"), "the unit file itself stays the contract text (Task 9.1)"
+
+
+# --- Task 9.4: probe_seat_host.sh + docs/seat_install_probe.md ---------------------------------------------
+
+PROBE_SH = DEPLOY / "probe_seat_host.sh"
+PROBE_DOC = REPO / "docs" / "seat_install_probe.md"
+#: Spec §14 "Only on the VPS": every item, as a substring one of the probe's titles must carry, in order.
+PROBE_TITLES_MUST_MENTION = (
+    ("connect", DASH_USER, "succeeds"),
+    ("connect", WORKER_USER, "fails"),
+    ("journalctl", "read count"),
+    ("--after-cursor", "stale"),
+    ("systemctl show",),
+    ("cgroup",),
+    ("compression.zstd",),
+    ("pepepane --once --offline",),
+    ("ping",),
+    ("seat projection", "whoami"),
+    ("status", "memory.peak"),
+    ("doctor", "memory.peak"),
+    ("plan restart", "never applied"),
+    ("sha256sum -c", "MANIFEST"),
+    ("ls /home/imd-dash", "must fail"),
+    ("sshd -T", "allowtcpforwarding"),
+    ("user-<uid>.slice", "MemoryMax"),
+    ("HISTORY", "sysstat"),
+    ("drained restart", "by hand"),
+)
+
+
+def _probe_titles() -> list[str]:
+    proc = _run_bash(str(PROBE_SH), "--list")
+    assert proc.returncode == 0, proc.stderr
+    titles = []
+    for line in proc.stdout.splitlines():
+        m = re.fullmatch(r"(\d+)\. (.+)", line)
+        assert m, f"--list prints numbered titles only: {line!r}"
+        assert int(m.group(1)) == len(titles) + 1, "numbered 1..N without gaps"
+        titles.append(m.group(2))
+    return titles
+
+
+def test_probe_lists_the_two_connect_checks_first():
+    """Spec §14: 'first two lines -- connect(/run/imd-dash/broker.sock) as imd-dash succeeds, as
+    imd-worker fails' -- the pair that proves DirectoryMode=0755 + SocketMode=0660 + the worker
+    drop-in at once. The socket path in the titles is the broker's SOCKET_PATH. Mutation: move the
+    journalctl count above the connect checks -> red; drop the imd-worker negative -> red."""
+    titles = _probe_titles()
+    assert all(word in titles[0] for word in PROBE_TITLES_MUST_MENTION[0]), titles[0]
+    assert all(word in titles[1] for word in PROBE_TITLES_MUST_MENTION[1]), titles[1]
+    assert SOCKET_PATH in titles[0] and SOCKET_PATH in titles[1]
+    _bash_n(PROBE_SH)
+    assert PROBE_SH.read_text(encoding="utf-8").splitlines()[0] == "#!/usr/bin/env bash"
+    assert STRICT_MODE in PROBE_SH.read_text(encoding="utf-8")
+
+
+def test_probe_covers_every_only_on_the_vps_item_in_order():
+    """Spec §14 'Only on the VPS', §5.1 (stale cursor), §5.4 (compression.zstd), §5.5 (HISTORY),
+    §4.1b (child memory.peak), §12.1 (MANIFEST, sshd, slice): every item is a section, in the spec's
+    order, and the script never applies a restart. Mutation: delete the HISTORY section -> red;
+    add ``"verb":"apply"`` with a restart plan -> red."""
+    titles = _probe_titles()
+    assert len(titles) == len(PROBE_TITLES_MUST_MENTION), titles
+    for title, words in zip(titles, PROBE_TITLES_MUST_MENTION):
+        assert all(word in title for word in words), (title, words)
+    text = PROBE_SH.read_text(encoding="utf-8")
+    assert UNIT_PREFIX + "status-*" in text and UNIT_PREFIX + "doctor-*" in text, "child memory.peak via the transient unit glob"
+    assert "--skip-doctor" in text
+    assert text.count('"verb":"apply"') == 1, "exactly one apply (doctor); plan restart is never applied"
+    assert '"verb":"restart"' in text
+    assert "s=00000000000000000000000000000000" in text, "the deliberately stale cursor"
+    assert "import compression.zstd" in text
+    assert "sed -E 's/[0-9a-fA-F]{32,}/<hex>/g'" in text, "every reply is scrubbed of hex >= 32 before it is printed"
+    assert "$" not in " ".join(titles), "titles are prose: they land in docs/seat_install_probe.md"
+
+
+def test_probe_placeholder_doc_lists_the_probe_sections():
+    """Spec §14 / §16 #17: docs/seat_install_probe.md is a placeholder until the owner runs the probe
+    once; its numbered list (or, once pasted, its ``## N.`` headings) is the probe's own list, so the
+    doc cannot describe a probe that no longer exists. Mutation: renumber a section -> red."""
+    text = PROBE_DOC.read_text(encoding="utf-8")
+    assert text.startswith("# PEPEPANE install probe")
+    found = []
+    for line in text.splitlines():
+        m = re.fullmatch(r"(?:## )?(\d+)\. (.+)", line.strip())
+        if m:
+            found.append(m.group(2).strip())
+    assert found == _probe_titles()
+    if "placeholder" in text.lower():
+        assert "not yet run" in text.lower(), "a placeholder says so in its first paragraph"
+
+
+def test_probe_redacts_all_code_blocks_with_the_broker_redactor():
+    """Synthetic hostile journal text must be scrubbed before a probe report emits it."""
+    import sys
+    text = PROBE_SH.read_text()
+    assert "code_block() { printf '~~~\\n'; scrub; printf '~~~\\n'; }" in text
+    match = re.search(r"# BEGIN PROBE_REDACTOR\n(.*?)\n# END PROBE_REDACTOR", text, re.S)
+    assert match, "the probe must reuse the installed stdlib redactor"
+    code = match.group(1).replace('"/opt/imd-dash/broker"', repr(str(REPO)))
+    hostile = "sk-ant-example0000 Bearer examplecredential0000 " + "a" * 64 + "\x1b]52;c;AAAA\x07\u202e\n"
+    proc = subprocess.run([sys.executable, "-I", "-c", code], input=hostile,
+                          capture_output=True, text=True, timeout=10)
+    assert proc.returncode == 0, proc.stderr
+    assert "example0000" not in proc.stdout and "examplecredential0000" not in proc.stdout
+    assert "a" * 64 not in proc.stdout and "\x1b" not in proc.stdout and "\u202e" not in proc.stdout
+    assert "sk-ant-[redacted]" in proc.stdout and "Bearer [redacted]" in proc.stdout
+
+
+def test_probe_socket_read_budget_covers_synchronous_broker_reads():
+    text = PROBE_SH.read_text()
+    assert "from imd_dashd.child_unit import RUNTIME_MAX_S, SUBPROCESS_BELT_S" in text
+    assert "s.settimeout(max(RUNTIME_MAX_S.values()) + SUBPROCESS_BELT_S + 5)" in text
