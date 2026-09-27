@@ -34,6 +34,17 @@ from typing import Any, Protocol
 from maxpane_dashboard.analytics.seat_redact import redact, redact_agent_sentence
 from maxpane_dashboard.data.seat_models import SEAT_ROW_KEYS
 
+try:  # the Mac runs an editable checkout where the top-level stdlib package imports; the VPS wheel has no imd_dashd
+    from imd_dashd import audit as _audit_mod
+    from imd_dashd import drain as _drain_mod
+    from imd_dashd import gate as _gate_mod
+    from imd_dashd import verbs as _verbs_mod
+    from imd_dashd import imd_dashd as _broker_mod
+    IMD_DASHD_AVAILABLE = True
+except ImportError:                                   # pragma: no cover - exercised only on a wheel install
+    _audit_mod = _drain_mod = _gate_mod = _verbs_mod = _broker_mod = None
+    IMD_DASHD_AVAILABLE = False
+
 Runner = Callable[..., "subprocess.CompletedProcess[bytes]"]
 Clock = Callable[[], float]
 Json = Any
@@ -46,6 +57,8 @@ MAC_STOP_TIMEOUT_S = 30
 MAC_CONTAINER = "imd-worker"
 SOCKET_PATH = "/run/imd-dash/broker.sock"
 AUDIT_FILE_MAC = "seat_audit.jsonl"
+LOCAL_BROKER_VERSION = "pepepane local-docker broker 0.1.0"
+
 #: Client-side copies of the broker enum (the TUI needs them on the VPS, where ``imd_dashd`` is not
 #: installed); ``tests/data/test_seat_broker_client.py::test_client_enum_equals_the_broker_enum`` binds them.
 PROTOCOL_VERSION = 1
@@ -58,7 +71,13 @@ GATED_VERBS = ("restart", "stop", "drain-restart")
 TRANSIENT_VERBS = ("whoami", "status", "skills", "tools", "sessions", "doctor", "skills-set")
 SKILL_ID_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}", re.ASCII)
 LOCAL_ONLY_ACK = "local-only"
+NOT_ON_DOCKER = ("enable-boot", "disable-boot")     # `unless-stopped` already covers boot (spec §11 verb table)
+
 #: In-container ``timeout -s TERM -k <grace> <secs>`` per exec kind (spec §4.2, §5.3, §11)
+CONTAINER_TIMEOUTS = {"status": (5, 25), "skills": (5, 25), "whoami": (5, 25), "tools": (5, 25), "seat": (5, 20),
+                      "sessions": (5, 20), "doctor": (10, 120), "skills-set": (10, 25)}
+LOCAL_TICK_S = 5.0                                   #: LocalDockerBroker.call() runs tick() when this long has passed
+
 class BrokerError(Exception):
     def __init__(self, code: str, detail: Mapping | None = None) -> None:
         super().__init__(code)
@@ -289,6 +308,755 @@ def _iso(epoch: float) -> str:
 def _text(value: object) -> str:
     return value.decode("utf-8", "replace") if isinstance(value, bytes) else ("" if value is None else str(value))
 
+
+def broker_script(name: str) -> bytes:
+    """The bytes of ``imd_dashd/<name>.py`` to pipe into the container's ``python3 -`` (projection, summariser)."""
+    if not IMD_DASHD_AVAILABLE:
+        raise BrokerError("unavailable", {"reason": "imd_dashd package not importable"})
+    path = Path(_verbs_mod.__file__).with_name(f"{name}.py")
+    try:
+        return path.read_bytes()
+    except OSError:
+        raise BrokerError("unavailable", {"reason": f"{name}.py missing"}) from None
+
+
+class LocalDockerBroker(_CallMixin):
+    """The Mac parity broker (spec §4.2, §12.2): shape, not privilege, is the mitigation."""
+
+    kind = "docker"
+
+    def __init__(self, container: str = MAC_CONTAINER, *, run: Runner = subprocess.run, audit_path: Path | None = None,
+                 now: Clock = time.time, offline: bool = False, tail_lines: Callable[[], Sequence[tuple[float, str]]] | None = None,
+                 breaker_s: float = DOCKER_BREAKER_S, timeout_s: float = DOCKER_TIMEOUT_S, seat: int | None = None,
+                 standing_url: str = "https://api.imd.fun/seats/{seat}/standing") -> None:
+        if not IMD_DASHD_AVAILABLE:
+            raise BrokerError("unavailable", {"reason": "LocalDockerBroker needs the imd_dashd package (editable checkout)"})
+        self.container = container
+        self._run = run
+        self._now = now
+        self.offline = offline
+        self._tail_lines = tail_lines or self._docker_tail      # WP8 injects none: read the trusted `docker logs --tail 200`
+        self._breaker_s = breaker_s
+        self._timeout_s = timeout_s
+        self._seat = seat
+        self._standing_url = standing_url
+        path = Path(audit_path) if audit_path else Path.home() / ".maxpane" / AUDIT_FILE_MAC
+        self._audit = _audit_mod.Audit(path, now=now, mode=0o600)
+        self._plans = _broker_mod.PlanStore(now=now)
+        self._watches: dict[str, Any] = {}
+        self._threads: dict[str, threading.Thread] = {}
+        self._lock = threading.Lock()
+        self._in_flight: dict | None = None
+        self._breaker_until: dict[str, float] = {}
+        self._drain = _drain_mod.Drain(now=now)
+        self._started = now()
+        self._last_doctor: float | None = None
+        self._whoami_key: str | None = None
+        self._skills_listing: set[str] | None = None
+        self._pending_kills: list[tuple[float, str, int]] = []
+        self._kill_snapshots: dict[tuple[str, int], dict] = {}
+        self._drain_watermark = self._started               #: the newest heartbeat epoch the drain has consumed
+        self._drain_fired: set[str] = set()                 #: drain-fired restarts still awaiting their verify line
+        self._last_tick = self._started
+        self._tick_lock = threading.Lock()
+        self._read_counts: dict[str, int] = {}
+        self._reads_flushed_at = self._started
+
+    def trust(self) -> str:
+        return "container"
+
+    # -- docker plumbing --------------------------------------------------------------------------
+
+    def _docker(self, family: str, argv: Sequence[str], *, stdin: bytes | None = None,
+                timeout_s: float | None = None) -> subprocess.CompletedProcess:
+        """One docker call behind the per-verb breaker (spec §12.2). ``stdin`` feeds a script; otherwise stdin is
+        ``DEVNULL``, so ``docker exec -i`` never attaches the TUI's own terminal. ``timeout_s`` is the host-side belt
+        (25 s by default; above the in-container limit for a wrapped exec -- deviation 15)."""
+        now = self._now()
+        until = self._breaker_until.get(family)
+        if until is not None and now < until:
+            raise BrokerError("timeout", {"breaker_until": _iso(until), "family": family})
+        io: dict = {"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}
+        try:
+            return self._run(list(argv), capture_output=True, timeout=timeout_s or self._timeout_s, **io)
+        except subprocess.TimeoutExpired:
+            self._breaker_until[family] = now + self._breaker_s
+            raise BrokerError("timeout", {"family": family, "breaker_until": _iso(now + self._breaker_s)}) from None
+        except OSError as exc:
+            raise BrokerError("unreachable", {"reason": exc.__class__.__name__}) from None
+
+    def _exec_argv(self, inner: Sequence[str], *, kind: str | None) -> list[str]:
+        """``docker exec -i <c> [timeout -s TERM -k <g> <s>] <inner>`` -- the in-container timeout for imd/python3/node."""
+        argv = ["docker", "exec", "-i", self.container]
+        if kind is not None:
+            grace, secs = CONTAINER_TIMEOUTS[kind]
+            argv += ["timeout", "-s", "TERM", "-k", str(grace), str(secs)]
+        return argv + list(inner)
+
+    def _exec(self, inner: Sequence[str], *, kind: str | None, family: str, stdin: bytes | None = None) -> subprocess.CompletedProcess:
+        # host-side belt: 25 s for a bare coreutils exec, grace + secs + 5 above a wrapped exec's in-container limit (deviation 15)
+        belt = None if kind is None else sum(CONTAINER_TIMEOUTS[kind]) + 5
+        return self._docker(family, self._exec_argv(inner, kind=kind), stdin=stdin, timeout_s=belt)
+
+    def _inspect(self) -> dict | None:
+        try:
+            done = self._docker("inspect", ["docker", "inspect", self.container])
+        except BrokerError:
+            return None
+        if done.returncode != 0:
+            return None
+        try:
+            return parse_docker_inspect(json.loads(_text(done.stdout)))
+        except ValueError:
+            return None
+
+    def _outbox_files(self) -> int | None:
+        try:
+            done = self._exec(["ls", "-1A", "/home/imd/.identitymd/outbox"], kind=None, family="outbox")
+        except BrokerError:
+            return None
+        if done.returncode != 0:
+            return None
+        return len([ln for ln in _text(done.stdout).splitlines() if ln.strip()])
+
+    def _standing(self) -> dict | None:
+        if self.offline:
+            return None
+        if self._seat is None:                        # built without seat=: take tokenId from the canary-checked projection
+            try:
+                token = self._seat_projection().get("tokenId")
+            except BrokerError:
+                token = None
+            if isinstance(token, int) and not isinstance(token, bool) and token > 0:
+                self._seat = token
+        if self._seat is None:
+            return None
+        try:
+            return _gate_mod.fetch_standing_running(self._standing_url.format(seat=self._seat))
+        except (OSError, ValueError):
+            return None
+
+    def _gate(self):
+        inspect = self._inspect()
+        unit_active = None if inspect is None else inspect.get("running")
+        graceful = None if inspect is None else inspect.get("gracefulStopPossible")
+        return _gate_mod.evaluate(journal_lines=list(self._tail_lines()), standing=self._standing(), offline=self.offline,
+                                  outbox_files=self._outbox_files(), unit_active=unit_active, graceful_stop_possible=graceful,
+                                  now=self._now())
+
+    def _docker_tail(self) -> list[tuple[float, str]]:
+        """Recent daemon lines for the gate, verify and the drain when no tail is injected: the trusted
+        ``docker logs --tail 200`` form (spec §5.1); Docker's RFC3339Nano prefix is dropped, the daemon's own stamp decides."""
+        try:
+            done = self._docker("logs", ["docker", "logs", "--tail", "200", "--timestamps", self.container])
+        except BrokerError:
+            return []
+        out: list[tuple[float, str]] = []
+        for raw in (_text(done.stdout) + "\n" + _text(done.stderr)).splitlines():
+            text = raw.split(" ", 1)[1] if " " in raw else raw
+            epoch = _gate_mod.parse_iso(text[:24])
+            if epoch is not None:
+                out.append((epoch, redact(text)))
+        return sorted(out)
+
+    def _log(self, **fields) -> int:
+        try:
+            return self._audit.append(**fields)
+        except (OSError, TypeError, ValueError):
+            return -1
+
+    # -- dispatch ----------------------------------------------------------------------------------
+
+    def call(self, verb: str, args: Mapping | None = None, *, timeout_s: float = CLIENT_TIMEOUT_S) -> dict:
+        if self._now() - self._last_tick >= LOCAL_TICK_S:
+            try:
+                self.tick()                        # the in-process drain and SIGKILL follow-ups advance with the client's calls
+            except BrokerError:
+                pass
+        args = dict(args or {})
+        code = _verbs_mod.validate_args(verb, args)
+        if code is not None:
+            self._log(peer_uid=os.getuid(), verb=verb if verb in _verbs_mod.ALL_VERBS else None, phase="refused", outcome=code,
+                      args={"names": sorted(args)})
+            raise BrokerError(code, {"verb": verb})
+        if verb in READ_VERBS:
+            self._read_counts[verb] = self._read_counts.get(verb, 0) + 1          # audited as counts only (spec §11)
+            return _check_wire(_verbs_mod.ok(data=self._read(verb, args)))
+        if verb == APPLY_VERB:
+            return _check_wire(self._apply(args))
+        return _check_wire(self._plan(verb, args))
+
+    # -- reads --------------------------------------------------------------------------------------
+
+    def _lines(self, done: subprocess.CompletedProcess) -> list[str]:
+        return [redact(ln) for ln in _text(done.stdout).splitlines() if ln.strip()]
+
+    def _read(self, verb: str, args: dict) -> Json:
+        if verb == "ping":
+            return {"pid": os.getpid(), "version": LOCAL_BROKER_VERSION, "uptime_s": round(self._now() - self._started, 1),
+                    "drain_armed": self._drain.armed is not None, "in_flight": None if self._in_flight is None else dict(self._in_flight),
+                    "posture_ok": True, "drain": None if self._drain.armed is None else self._drain.armed.to_dict()}
+        if verb == "audit-tail":
+            return {"lines": self._audit.tail(max(1, min(int(args["n"]), 200)))}
+        if verb == "gate":
+            return self._gate().to_dict()
+        if verb == "verify":
+            return self._verify(str(args["plan_id"]))
+        if verb in ("status", "skills", "tools"):
+            done = self._exec(["imd", verb], kind=verb, family=verb)
+            lines = self._lines(done)
+            if verb == "skills":
+                self._skills_listing = {ln.split()[1] for ln in lines if ln.split()[:1] in (["on"], ["off"]) and len(ln.split()) > 1}
+            return {"lines": lines, "rc": done.returncode, "unit": None}
+        if verb == "whoami":
+            done = self._exec(["imd", "whoami"], kind="whoami", family="whoami")
+            key = parse_whoami([redact(ln, "deviceKey") for ln in _text(done.stdout).splitlines()])
+            if key is None:
+                raise BrokerError("whoami_unavailable", {"rc": done.returncode})
+            self._whoami_key = key
+            return {"deviceKey": key}
+        if verb == "seat":
+            return self._seat_projection()
+        if verb == "sessions":
+            script = broker_script("summarise_claude")
+            done = self._exec(["python3", "-", "--root", "/home/imd/.claude/projects", "--since", repr(float(args["since"]))],
+                              kind="sessions", family="sessions", stdin=script)
+            try:
+                body = json.loads(_text(done.stdout))
+            except ValueError:
+                raise BrokerError("unreadable", {"what": "summariser output", "rc": done.returncode}) from None
+            for session in (body.get("sessions") or []) if isinstance(body, dict) else []:
+                for error in session.get("apiErrors") or []:
+                    if isinstance(error, dict) and "message" in error:
+                        error["message"] = redact(error["message"])
+            return body
+        if verb == "outbox":
+            count = self._outbox_files()
+            if count is None:
+                raise BrokerError("unreadable", {"what": "outbox"})
+            return {"files": count}
+        if verb == "work-stat":
+            listing = self._exec(["find", "/home/imd/.identitymd/work", "-mindepth", "1", "-maxdepth", "4", "-printf", "%y\t%T@\t%P\n"],
+                                 kind=None, family="work-stat")
+            if listing.returncode != 0:
+                raise BrokerError("unreadable", {"what": "work"})
+            usage = self._exec(["du", "-sb", "/home/imd/.identitymd/work"], kind=None, family="work-stat")
+            total = None
+            try:
+                total = int(_text(usage.stdout).split()[0]) if usage.returncode == 0 else None
+            except (IndexError, ValueError):
+                total = None
+            return _broker_mod.parse_work_listing(_text(listing.stdout), total_bytes=total)
+        if verb in ("hints-stat", "auth-mtime"):
+            path = "/home/imd/CLAUDE.md" if verb == "hints-stat" else "/home/imd/.claude/.credentials.json"
+            done = self._exec(["stat", "-c", "%s %Y", path], kind=None, family=verb)
+            if done.returncode != 0:
+                raise BrokerError("unreadable", {"what": verb})
+            size, mtime = _text(done.stdout).split()
+            data = {"path": path, "mtimeUtc": _iso(int(mtime))}
+            if verb == "hints-stat":
+                digest = self._exec(["sha256sum", path], kind=None, family=verb)
+                parts = _text(digest.stdout).split()
+                data.update({"bytes": int(size), "sha8": parts[0][:8] if digest.returncode == 0 and parts else None})
+            return data
+        if verb == "orphans":
+            done = self._exec(["ps", "-o", "pid,ppid,pgid,etimes,rss,args", "-u", "imd"], kind=None, family="orphans")
+            return {"candidates": parse_docker_ps(_text(done.stdout))}
+        raise BrokerError("bad_verb", {"verb": verb})
+
+    def _seat_projection(self) -> dict:
+        if self._whoami_key is None:
+            self._read("whoami", {})
+        done = self._exec(["python3", "-", "--config", "/home/imd/.identitymd/config.json", "--tools", "/home/imd/.identitymd/tools.json"],
+                          kind="seat", family="seat", stdin=broker_script("projection"))
+        try:
+            payload = json.loads(_text(done.stdout))
+        except ValueError:
+            payload = None
+        if done.returncode == 3 or (isinstance(payload, dict) and payload.get("error") == "unknown_keys"):
+            return self._canary("unknown_keys")
+        if done.returncode != 0 or not isinstance(payload, dict):
+            raise BrokerError("unreadable", {"what": "config projection", "rc": done.returncode})
+        from maxpane_dashboard.analytics.seat_redact import find_secret
+        kind = find_secret(payload, allowed_hex64_fields=frozenset({"deviceKey"}))
+        if kind is not None:
+            return self._canary(kind)
+        if payload.get("deviceKey") != self._whoami_key:
+            return self._canary("devicekey_mismatch")
+        return payload
+
+    def _canary(self, kind: str) -> dict:
+        self._log(peer_uid=os.getuid(), verb="seat", phase="canary", outcome=f"canary: {kind}")
+        raise BrokerError("projection_refused", {"canary": kind})
+
+    # -- plan / apply / verify ----------------------------------------------------------------------
+
+    def _plan(self, verb: str, args: dict) -> dict:
+        if self._in_flight is not None:
+            self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="busy", args={"names": sorted(args)})
+            return _verbs_mod.err("busy", dict(self._in_flight))
+        if verb in NOT_ON_DOCKER:
+            self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="bad_verb")
+            return _verbs_mod.err("bad_verb", {"verb": verb, "reason": "docker restart policy unless-stopped covers boot"})
+        preconditions: dict = {}
+        inverse: dict | None = None
+        verify = {"verified_when": [], "within_s": _broker_mod.VERIFY_WITHIN_S, "connected_when": None, "reported_separately": True}
+        restart_required_after = False
+        warning = _broker_mod.WARNING
+        argv: list[str]
+        if verb in GATED_VERBS:
+            gate = self._gate()
+            preconditions = _broker_mod._preconditions(gate)
+            if args.get("force_node8"):
+                # spec §4.2 / §16 #8: --force is ALWAYS disabled on the Mac in v1, even after the recreate (follow-up item 13)
+                self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="force_disabled", preconditions=preconditions)
+                return _verbs_mod.err("force_disabled", {"graceful_stop_possible": gate.graceful_stop_possible,
+                                                         "reason": "recreate the container with --stop-timeout 45 --init first"})
+            if verb != "drain-restart":                # spec §11: drain-restart = plain confirm to arm; G runs at fire time
+                if gate.unknown is not None:
+                    self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome=f"gate_unknown({gate.unknown})", preconditions=preconditions)
+                    return _verbs_mod.err(f"gate_unknown({gate.unknown})", {"reason": gate.reason, "preconditions": preconditions})
+                if not gate.safe:
+                    self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="gate_blocked", preconditions=preconditions)
+                    return _verbs_mod.err("gate_blocked", {"reason": gate.reason, "preconditions": preconditions})
+            elif self._drain.armed is not None:
+                self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="drain_already_armed")
+                return _verbs_mod.err("drain_already_armed", self._drain.armed.to_dict())
+            if verb == "stop":
+                argv = ["docker", "stop", "-t", str(MAC_STOP_TIMEOUT_S), self.container]
+                verify = {"verified_when": ["shutting down", "container not running"], "within_s": _broker_mod.VERIFY_WITHIN_S,
+                          "connected_when": None, "reported_separately": True}
+                inverse = {"verb": "start", "args": {}}
+            else:
+                argv = ["docker", "restart", "-t", str(MAC_STOP_TIMEOUT_S), self.container]
+                verify = {"verified_when": ["shutting down", "runtimes:"], "within_s": _broker_mod.VERIFY_WITHIN_S,
+                          "connected_when": "admitted (session", "reported_separately": True}
+                inverse = {"verb": "stop" if verb == "restart" else "cancel-drain", "args": {}}
+                if verb == "drain-restart":
+                    warning = "in-process drain: dies with the TUI (spec §11); " + _broker_mod.WARNING
+        elif verb == "start":
+            argv = ["docker", "start", self.container]
+            inspect = self._inspect()
+            preconditions = {"unit_active": None if inspect is None else inspect.get("running")}
+            verify = {"verified_when": ["runtimes:"], "within_s": _broker_mod.VERIFY_WITHIN_S, "connected_when": "admitted (session",
+                      "reported_separately": True}
+            inverse = {"verb": "stop", "args": {}}
+            warning = "starts the container; it accepts work as soon as it is admitted"
+        elif verb == "cancel-drain":
+            if self._drain.armed is None:
+                self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="drain_not_armed")
+                return _verbs_mod.err("drain_not_armed")
+            argv = []
+            preconditions = {"drain": self._drain.armed.to_dict()}
+            warning = "clears the armed drain; nothing is restarted"
+        elif verb == "skills-set":
+            skill_id = args["skill_id"]
+            if not SKILL_ID_RE.fullmatch(skill_id):
+                self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="bad_skill_id", args={"skill_id": "<refused>", "on": bool(args["on"])})
+                return _verbs_mod.err("bad_skill_id")
+            if self._skills_listing is None:
+                try:
+                    self._read("skills", {})
+                except BrokerError:
+                    pass
+            if self._skills_listing is not None and skill_id not in self._skills_listing:
+                self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="skill_not_listed", args={"skill_id": skill_id})
+                return _verbs_mod.err("skill_not_listed", {"skill_id": skill_id})
+            argv = self._exec_argv(["imd", "skills", "add" if args["on"] else "remove", skill_id], kind="skills-set")
+            preconditions = {"skill_id": skill_id, "on": bool(args["on"]), "listed": self._skills_listing is not None, "trust": "container"}
+            verify = {"verified_when": ["imd skills re-listed"], "within_s": 25, "connected_when": None, "reported_separately": True}
+            inverse = {"verb": "skills-set", "args": {"skill_id": skill_id, "on": not args["on"]}}
+            restart_required_after = True
+            warning = "skillsOptOut is read once at daemon start: the change applies after a (drained) restart"
+        elif verb == "doctor":
+            now = self._now()
+            if self._last_doctor is not None and now - self._last_doctor < _broker_mod.DOCTOR_MIN_INTERVAL_S:
+                self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="doctor_too_soon")
+                return _verbs_mod.err("doctor_too_soon", {"next_allowed_at": _iso(self._last_doctor + _broker_mod.DOCTOR_MIN_INTERVAL_S)})
+            argv = self._exec_argv(["imd", "doctor"], kind="doctor")
+            preconditions = {"last_doctor_utc": None if self._last_doctor is None else _iso(self._last_doctor), "runtime_max_s": 120}
+            verify = {"verified_when": ["exit 0"], "within_s": 120, "connected_when": None, "reported_separately": True}
+            warning = "spends one runtime turn and quota; leaves a work/doctor-* transcript; the kill happens inside the container"
+        elif verb == "kill-orphans":
+            candidates = {c["pid"]: c for c in self._read("orphans", {})["candidates"]}
+            pids = [int(p) for p in args["pids"]]
+            if any(p not in candidates for p in pids):
+                self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="bad_args", args={"pids": pids})
+                return _verbs_mod.err("bad_args", {"reason": "every pid must be a current orphan candidate", "pids": pids})
+            rows = [candidates[p] for p in pids]
+            procs = self._process_snapshot()
+            kill_snapshot = {p["pid"]: _broker_mod._proc_identity(p) for p in procs}
+            if not all(self._kill_identity_safe(procs, "pid", pid, kill_snapshot) for pid in pids):
+                return _verbs_mod.err("bad_args", {"reason": "orphan identity unavailable"})
+            mode = {str(pgid): ("group" if self._kill_identity_safe(procs, "pgid", pgid, kill_snapshot) else "individual")
+                    for pgid in sorted({r["pgid"] for r in rows})}
+            argv = self._exec_argv(["kill", "-TERM"], kind=None)
+            preconditions = {"candidates": rows, "kill_mode_by_pgid": mode, "min_age_s": _broker_mod.ORPHAN_MIN_AGE_S,
+                             "sigkill_after_s": _broker_mod.KILL_GRACE_S, "trust": "container"}
+            verify = {"verified_when": ["pids gone"], "within_s": _broker_mod.KILL_GRACE_S, "connected_when": None, "reported_separately": True}
+            warning = "kills inside the container with SIGTERM (SIGKILL after 10 s); the ps listing is container-reported"
+        else:
+            self._log(peer_uid=os.getuid(), verb=None, phase="refused", outcome="bad_verb")
+            return _verbs_mod.err("bad_verb", {"verb": verb})
+        plan = self._plans.create(verb, args, argv, preconditions, inverse, verify, force_node8=None)
+        if verb == "kill-orphans":
+            plan.kill_snapshot = kill_snapshot
+        seq = self._log(peer_uid=os.getuid(), verb=verb, phase="plan", plan_id=plan.plan_id, args={k: v for k, v in args.items()},
+                        preconditions=preconditions, outcome="planned")
+        return _verbs_mod.ok(plan={"plan_id": plan.plan_id, "verb": verb, "argv": argv, "expires_at": _iso(plan.expires), "single_use": True,
+                                   "preconditions": preconditions, "warning": warning, "inverse": inverse, "verify": verify,
+                                   "restart_required_after": restart_required_after, "audit_seq": seq})
+
+    def _apply(self, args: dict) -> dict:
+        plan_id = str(args["plan_id"])
+        audit_id = plan_id if _verbs_mod.PLAN_ID_RE.fullmatch(plan_id) else None     # never echo a malformed id
+        if not self._lock.acquire(blocking=False):
+            self._log(peer_uid=os.getuid(), verb="apply", phase="refused", plan_id=audit_id, outcome="busy")
+            return _verbs_mod.err("busy", dict(self._in_flight or {}))
+        release = True
+        try:
+            now = self._now()
+            try:
+                plan = self._plans.consume(plan_id, now)
+            except _broker_mod.PlanError as exc:
+                self._log(peer_uid=os.getuid(), verb="apply", phase="refused", plan_id=audit_id, outcome=exc.code)
+                return _verbs_mod.err(exc.code, exc.detail)
+            if args["confirm"] != plan_id[:4]:
+                self._log(peer_uid=os.getuid(), verb=plan.verb, phase="refused", plan_id=plan_id, outcome="bad_confirm")
+                return _verbs_mod.err("bad_confirm")
+            self._in_flight = {"verb": plan.verb, "plan_id": plan_id, "since": _iso(now)}
+            if plan.verb in GATED_VERBS:
+                if plan.verb == "drain-restart":
+                    if self._drain.armed is not None:
+                        self._log(peer_uid=os.getuid(), verb=plan.verb, phase="refused", plan_id=plan_id, outcome="drain_already_armed")
+                        return _verbs_mod.err("drain_already_armed", self._drain.armed.to_dict())
+                    self._drain_watermark = now                           # tick() counts only heartbeats after the arm
+                    event = self._drain.arm(plan_id)
+                    # verified at once, like the root broker (WP8's CONTROL polls verify after every apply, contract §C.16)
+                    self._watches[plan_id] = _broker_mod.VerifyWatch(
+                        plan_id=plan_id, verb=plan.verb, kind="none", cursor_before=None, started=now, verified=True,
+                        lines=[_broker_mod._drain_verify_line(self._drain.armed.to_dict(), plan.preconditions.get("idle_beats_required"))])
+                    seq = self._log(peer_uid=os.getuid(), verb=plan.verb, phase=event, plan_id=plan_id, preconditions=plan.preconditions, outcome="armed")
+                    return _verbs_mod.ok(result={"outcome": "armed", "exit_code": None, "cursor_before": None, "audit_seq": seq,
+                                                 "preconditions": plan.preconditions, "drain": self._drain.armed.to_dict()})
+                gate = self._gate()                                             # FRESH at apply (spec §11)
+                preconditions = _broker_mod._preconditions(gate)
+                if gate.unknown is not None:
+                    self._log(peer_uid=os.getuid(), verb=plan.verb, phase="refused", plan_id=plan_id, outcome=f"gate_unknown({gate.unknown})",
+                              preconditions=preconditions)
+                    return _verbs_mod.err(f"gate_unknown({gate.unknown})", {"reason": gate.reason, "preconditions": preconditions})
+                if not gate.safe:
+                    self._log(peer_uid=os.getuid(), verb=plan.verb, phase="refused", plan_id=plan_id, outcome="gate_blocked", preconditions=preconditions)
+                    return _verbs_mod.err("gate_blocked", {"reason": gate.reason, "preconditions": preconditions})
+                if gate.plane["mode"] == "local-only" and args.get("local_only_ack") != LOCAL_ONLY_ACK:
+                    self._log(peer_uid=os.getuid(), verb=plan.verb, phase="refused", plan_id=plan_id, outcome="local_only_ack_required",
+                              preconditions=preconditions)
+                    return _verbs_mod.err("local_only_ack_required", {"plane": gate.plane, "ack": LOCAL_ONLY_ACK})
+                return self._exec_docker_write(plan, preconditions)
+            if plan.verb == "start":
+                return self._exec_docker_write(plan, plan.preconditions)
+            if plan.verb == "cancel-drain":
+                event = self._drain.cancel()
+                self._watches[plan_id] = _broker_mod.VerifyWatch(plan_id=plan_id, verb=plan.verb, kind="none", cursor_before=None,
+                                                                 started=now, verified=True, lines=["drain cleared · nothing restarted"])
+                seq = self._log(peer_uid=os.getuid(), verb=plan.verb, phase=event, plan_id=plan_id, outcome="cancelled")
+                return _verbs_mod.ok(result={"outcome": "cancelled", "exit_code": 0, "cursor_before": None, "audit_seq": seq,
+                                             "preconditions": plan.preconditions})
+            if plan.verb in ("skills-set", "doctor"):
+                release = False
+                return self._apply_transient(plan)
+            if plan.verb == "kill-orphans":
+                return self._apply_kill(plan)
+            return _verbs_mod.err("internal", {"reason": "unhandled verb"})
+        finally:
+            if release:
+                self._in_flight = None
+                self._lock.release()
+
+    def _exec_docker_write(self, plan, preconditions: dict) -> dict:
+        started = self._now()
+        try:
+            done = self._docker(plan.argv[1], plan.argv)
+            exit_code: int | None = done.returncode
+        except BrokerError as exc:
+            exit_code = None if exc.code == "timeout" else -1
+        kind = {"restart": "restart", "drain-restart": "restart", "stop": "stop", "start": "start"}[plan.verb]
+        watch = _broker_mod.VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind=kind, cursor_before=None, started=started)
+        self._watches[plan.plan_id] = watch
+        outcome = "applied" if exit_code == 0 else ("timeout" if exit_code is None else f"exit {exit_code}")
+        seq = self._log(peer_uid=os.getuid(), verb=plan.verb, phase="apply", plan_id=plan.plan_id, preconditions=preconditions, outcome=outcome)
+        if exit_code != 0:
+            return _verbs_mod.err("timeout" if exit_code is None else "internal", {"outcome": outcome, "exit_code": exit_code, "audit_seq": seq})
+        return _verbs_mod.ok(result={"outcome": "applied", "exit_code": 0, "cursor_before": None, "audit_seq": seq, "preconditions": preconditions})
+
+    def _apply_transient(self, plan) -> dict:
+        watch = _broker_mod.VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind="transient", cursor_before=None, started=self._now())
+        self._watches[plan.plan_id] = watch
+        if plan.verb == "doctor":
+            self._last_doctor = self._now()
+
+        def worker() -> None:
+            try:
+                done = self._docker(plan.verb, plan.argv, timeout_s=sum(CONTAINER_TIMEOUTS[plan.verb]) + 5)
+                watch.lines = [_broker_mod._CURRENCY_FIGURE_RE.sub("", redact(ln)) for ln in _text(done.stdout).splitlines() if ln.strip()]
+                watch.rc = done.returncode
+                watch.verified = done.returncode == 0
+                watch.reason = None if done.returncode == 0 else f"exit {done.returncode}"
+                if plan.verb == "skills-set" and watch.verified:
+                    self._skills_listing = None
+                    listing = self._read("skills", {})           # spec §11 skills row: verify by re-listing (container-reported)
+                    rows = [ln.split() for ln in listing.get("lines", [])]
+                    row = next((r for r in rows if len(r) > 1 and r[0] in ("on", "off") and r[1] == plan.args["skill_id"]), None)
+                    watch.verified = row is not None and (row[0] == "on") is bool(plan.args["on"])
+                    if not watch.verified:
+                        watch.reason = "re-listing disagrees"
+            except BrokerError as exc:
+                watch.verified, watch.reason = False, exc.code
+            finally:
+                watch.done = True
+                self._log(peer_uid=os.getuid(), verb=plan.verb, phase="verify", plan_id=plan.plan_id, outcome="finished", verified=watch.verified)
+                self._in_flight = None
+                self._lock.release()
+
+        seq = self._log(peer_uid=os.getuid(), verb=plan.verb, phase="apply", plan_id=plan.plan_id, preconditions=plan.preconditions, outcome="started")
+        thread = threading.Thread(target=worker, name=f"seat-docker-{plan.verb}", daemon=True)
+        self._threads[plan.plan_id] = thread
+        thread.start()
+        return _verbs_mod.ok(result={"outcome": "started", "exit_code": None, "cursor_before": None, "audit_seq": seq,
+                                     "preconditions": plan.preconditions, "unit": None})
+
+    def _process_snapshot(self) -> list[dict]:
+        done = self._exec(["python3", "-", "--proc-snapshot"], kind="sessions", family="kill-orphans",
+                          stdin=broker_script("process_snapshot"))
+        try:
+            rows = json.loads(_text(done.stdout))
+            keys = {"pid", "ppid", "pgid", "uid", "cgroup", "start_ticks", "age_s"}
+            valid = isinstance(rows, list) and all(
+                isinstance(r, dict) and set(r) == keys
+                and all(isinstance(r[k], int) and not isinstance(r[k], bool) and r[k] >= 0
+                        for k in ("pid", "ppid", "pgid", "uid", "start_ticks"))
+                and isinstance(r["cgroup"], str) and bool(r["cgroup"])
+                and isinstance(r["age_s"], (int, float)) and not isinstance(r["age_s"], bool)
+                for r in rows)
+            valid = valid and len({r["pid"] for r in rows}) == len(rows)
+        except (ValueError, TypeError):
+            valid = False
+        if done.returncode != 0 or not valid:
+            self._log(verb="kill-orphans", phase="refused", outcome="process snapshot unavailable")
+            raise BrokerError("unreadable", {"what": "process snapshot"})
+        return rows
+
+    @staticmethod
+    def _orphan_identity_safe(row: dict, rows: list[dict], snapshot: dict) -> bool:
+        if (row["uid"] != 1000 or row["age_s"] <= _broker_mod.ORPHAN_MIN_AGE_S
+                or snapshot.get(row["pid"]) != _broker_mod._proc_identity(row)):
+            return False
+        by_pid = {r["pid"]: r for r in rows}
+        seen = set()
+        current = row
+        while current["pid"] not in seen:
+            seen.add(current["pid"])
+            if current["pid"] == 1:
+                return False
+            if current["ppid"] == 0:
+                return True
+            current = by_pid.get(current["ppid"])
+            if current is None:
+                return False
+        return False
+
+    def _kill_identity_safe(self, rows: list[dict], kind: str, ident: int, snapshot: dict) -> bool:
+        members = [r for r in rows if r["pgid" if kind == "pgid" else "pid"] == ident]
+        return bool(members) and all(self._orphan_identity_safe(r, rows, snapshot) for r in members)
+
+    def _apply_kill(self, plan) -> dict:
+        now = self._now()
+        killed: list[dict] = []
+        skipped: list[dict] = []
+        for pgid_text, mode in plan.preconditions["kill_mode_by_pgid"].items():
+            members = [r for r in plan.preconditions["candidates"] if str(r["pgid"]) == pgid_text]
+            pgid = int(pgid_text)
+            rows = self._process_snapshot()
+            if (mode == "group" and self._kill_identity_safe(rows, "pgid", pgid, plan.kill_snapshot)
+                    and all(self._kill_identity_safe(rows, "pid", m["pid"], plan.kill_snapshot) for m in members)):
+                done = self._exec(["kill", "-TERM", "--", f"-{pgid}"], kind=None, family="kill-orphans")
+                if done.returncode != 0:
+                    raise BrokerError("unreadable", {"what": "kill failed"})
+                self._pending_kills.append((now + _broker_mod.KILL_GRACE_S, "pgid", pgid))
+                self._kill_snapshots[("pgid", pgid)] = dict(plan.kill_snapshot)
+                killed.append({"mode": "group", "pgid": pgid, "pids": [m["pid"] for m in members]})
+            else:
+                for row in members:
+                    rows = self._process_snapshot()
+                    if not self._kill_identity_safe(rows, "pid", row["pid"], plan.kill_snapshot):
+                        skipped.append({"pid": row["pid"], "reason": "changed since plan"})
+                        continue
+                    done = self._exec(["kill", "-TERM", str(row["pid"])], kind=None, family="kill-orphans")
+                    if done.returncode != 0:
+                        raise BrokerError("unreadable", {"what": "kill failed"})
+                    self._pending_kills.append((now + _broker_mod.KILL_GRACE_S, "pid", row["pid"]))
+                    self._kill_snapshots[("pid", row["pid"])] = dict(plan.kill_snapshot)
+                    killed.append({"mode": "individual", "pid": row["pid"]})
+        # the plan's verify ("pids gone"): tick() decides it over the ps listing once every SIGKILL follow-up has run
+        targets = [("pgid", k["pgid"]) if k["mode"] == "group" else ("pid", k["pid"]) for k in killed]
+        self._watches[plan.plan_id] = _broker_mod.VerifyWatch(plan_id=plan.plan_id, verb="kill-orphans", kind="kill", cursor_before=None,
+                                                              started=now, targets=targets, verified=None if targets else True)
+        seq = self._log(peer_uid=os.getuid(), verb="kill-orphans", phase="apply", plan_id=plan.plan_id,
+                        preconditions={"pids": [r["pid"] for r in plan.preconditions["candidates"]]}, outcome="applied" if killed else "nothing to kill")
+        return _verbs_mod.ok(result={"outcome": "applied", "exit_code": 0, "cursor_before": None, "audit_seq": seq,
+                                     "preconditions": plan.preconditions, "killed": killed, "skipped": skipped})
+
+    def _verify(self, plan_id: str) -> dict:
+        watch = self._watches.get(plan_id)
+        if watch is None:
+            raise BrokerError("unknown_plan", {"plan_id": plan_id})
+        now = self._now()
+        if watch.kind == "transient":
+            return {"verified": watch.verified if watch.done else None, "connected": None, "verify_lines": list(watch.lines) if watch.done else [],
+                    "cursor_after": None, "elapsed_s": round(now - watch.started, 1), "audit_seq": None, "reason": watch.reason if watch.done else None}
+        if watch.kind in ("none", "kill"):          # decided at apply (drain arm, cancel-drain) or by tick() (kill-orphans)
+            return watch.to_dict(now, None)
+        lines = [(e, t) for e, t in self._tail_lines() if e >= watch.started - 1]
+        unit_active = None
+        if watch.kind == "stop":
+            inspect = self._inspect()
+            unit_active = None if inspect is None else inspect.get("running")
+        previously = (watch.verified, watch.connected)
+        watch.update(lines, now, unit_active=unit_active)
+        seq = None
+        if (watch.verified, watch.connected) != previously:          # one verify line per change, like the root broker
+            seq = self._log(peer_uid=os.getuid(), verb=watch.verb, phase="verify", plan_id=plan_id,
+                            outcome="verified" if watch.verified else ("pending" if watch.verified is None else "not verified"),
+                            verified=watch.verified, connected=watch.connected)
+        return watch.to_dict(now, seq)
+
+    # -- housekeeping: the in-process drain (spec §11 drain-restart, Mac column) ---------------------
+
+    def _flush_read_counts(self, now: float) -> None:
+        """Read verbs are audited as counts only (spec §11; deviation 16): one ``reads`` line per READ_COUNT_FLUSH_S."""
+        if not self._read_counts or now - self._reads_flushed_at < _broker_mod.READ_COUNT_FLUSH_S:
+            return
+        self._log(peer_uid=os.getuid(), verb=None, phase="reads", outcome="counts", args={"counts": dict(self._read_counts)})
+        self._read_counts = {}
+        self._reads_flushed_at = now
+
+    def tick(self, now: float | None = None) -> list[str]:
+        """Plan purge, the hourly read-count line, the verify line of a drain-fired restart, drain heartbeats from the tail
+        (``drain_rearmed`` / ``drain_fire`` through the same fresh gate, then ``docker restart -t 30`` / ``drain_expired``)
+        and the ``kill-orphans`` SIGKILL after ``KILL_GRACE_S``. In-process: it runs only while the TUI does (spec §11).
+        Returns the audit events it wrote."""
+        if not self._tick_lock.acquire(blocking=False):
+            return []
+        try:
+            now = self._now() if now is None else now
+            events: list[str] = []
+            self._flush_read_counts(now)
+            self._plans.purge(now)
+            for fired in list(self._drain_fired):
+                try:
+                    data = self._verify(fired)
+                except BrokerError:
+                    data = {}
+                if data.get("verified") is not None or fired not in self._watches:
+                    self._drain_fired.discard(fired)
+            if self._drain.armed is not None:
+                event = self._drain.tick(now)
+                if event:
+                    events.append(event)
+                    self._log(peer_uid=os.getuid(), verb="drain-restart", phase=event, outcome="expired")
+                else:
+                    for epoch, text in list(self._tail_lines()):
+                        match = _gate_mod.HEARTBEAT_RE.match(text)
+                        if not match or epoch <= self._drain_watermark:
+                            continue
+                        self._drain_watermark = epoch
+                        armed_before = self._drain.armed
+                        event = self._drain.on_heartbeat("idle" if match.group("work") == "idle" else "running", epoch)
+                        if event:
+                            events.append(event)
+                            if event == _drain_mod.EVENT_FIRE:
+                                self._fire_drain(events, armed_before)
+                            else:
+                                self._log(peer_uid=os.getuid(), verb="drain-restart", phase=event,
+                                          plan_id=None if self._drain.armed is None else self._drain.armed.plan_id, outcome=event)
+                        if self._drain.armed is None:
+                            break
+            still: list[tuple[float, str, int]] = []
+            sigkilled: set[tuple[str, int]] = set()
+            for deadline, kind, ident in self._pending_kills:
+                if now < deadline:
+                    still.append((deadline, kind, ident))
+                    continue
+                snapshot = self._kill_snapshots.pop((kind, ident), {})
+                try:
+                    rows = self._process_snapshot()
+                except BrokerError:
+                    rows = []
+                safe = self._kill_identity_safe(rows, kind, ident, snapshot)
+                if not safe:
+                    self._log(verb="kill-orphans", phase="refused", outcome="identity unavailable or changed before SIGKILL")
+                if safe:
+                    argv = ["kill", "-KILL", "--", f"-{ident}"] if kind == "pgid" else ["kill", "-KILL", str(ident)]
+                    try:
+                        self._exec(argv, kind=None, family="kill-orphans")
+                    except BrokerError:
+                        pass
+                    events.append("sigkill")
+                    sigkilled.add((kind, ident))
+            self._pending_kills = still
+            self._resolve_kill_watches(now, sigkilled)             # the kill-orphans verify, as the root broker decides it
+            self._last_tick = now
+            return events
+        finally:
+            self._tick_lock.release()
+
+    def _resolve_kill_watches(self, now: float, sigkilled: set[tuple[str, int]]) -> None:
+        """The root broker's ``kill-orphans`` verdict (``_decide_kill_watch``) over the container's ``ps`` listing: decided
+        once no SIGKILL follow-up is queued for the watch and none went out on this tick; an unreadable listing is a
+        ``false`` naming why, never a silent pass. One ``verify`` audit line per decision."""
+        queued = {(kind, ident) for _deadline, kind, ident in self._pending_kills}
+        ready = [w for w in self._watches.values() if w.kind == "kill" and w.verified is None
+                 and not any(t in queued or t in sigkilled for t in w.targets)]
+        if not ready:
+            return
+        try:
+            rows = self._process_snapshot()
+        except BrokerError as exc:
+            for watch in ready:
+                watch.verified, watch.reason = False, f"ps listing unavailable ({exc.code})"
+            rows = None
+        for watch in ready:
+            if rows is not None:
+                _broker_mod._decide_kill_watch(watch, pids={r["pid"] for r in rows}, pgids={r["pgid"] for r in rows})
+            self._log(peer_uid=os.getuid(), verb=watch.verb, phase="verify", plan_id=watch.plan_id,
+                      outcome="verified" if watch.verified else "not verified", verified=watch.verified)
+
+    def _fire_drain(self, events: list[str], armed_before) -> None:
+        """``drain_fire``: the same fresh gate (a)-(e) as apply, then ``docker restart -t 30``; otherwise the SAME drain
+        waits on (``Drain.restore``: plan id and ``DRAIN_MAX_S`` deadline unchanged)."""
+        if not self._lock.acquire(blocking=False):
+            self._drain.restore(armed_before)                    # a write is in flight: keep waiting
+            return
+        try:
+            gate = self._gate()
+            preconditions = _broker_mod._preconditions(gate)
+            if gate.unknown is not None or not gate.safe or (gate.plane["mode"] == "local-only" and not self.offline):
+                self._drain.restore(armed_before)
+                self._log(peer_uid=os.getuid(), verb="drain-restart", phase="drain_rearmed", plan_id=armed_before.plan_id,
+                          preconditions=preconditions, outcome=gate.reason or f"plane {gate.plane['mode']}")
+                events.append("drain_rearmed")
+                return
+            plan = self._plans.create("drain-restart", {"offline": self.offline},
+                                      ["docker", "restart", "-t", str(MAC_STOP_TIMEOUT_S), self.container], preconditions, None, {})
+            plan.spent = True                                    # synthetic: never appliable by id
+            self._in_flight = {"verb": "drain-restart", "plan_id": plan.plan_id, "since": _iso(self._now())}
+            self._log(peer_uid=os.getuid(), verb="drain-restart", phase="drain_fire", plan_id=plan.plan_id,
+                      preconditions=preconditions, outcome="firing")
+            self._exec_docker_write(plan, preconditions)
+            self._drain_fired.add(plan.plan_id)
+        finally:
+            self._in_flight = None
+            self._lock.release()
 
 # ---------------------------------------------------------------- host readers
 
@@ -712,3 +1480,12 @@ def parse_docker_ps(text: str, *, min_age_s: float = 3600.0, worker_uid: int = 1
                "rssB": proc["rss_b"], "cmd": proc["cmd"], "pgidMembers": members}
         out.append({k: row.get(k) for k in keys})
     return out
+__all__ = [
+    "APPLY_VERB", "AUDIT_FILE_MAC", "ApplyResult", "BrokerError", "BrokerProtocol", "CLIENT_TIMEOUT_S", "CONTAINER_TIMEOUTS",
+    "DOCKER_BREAKER_S", "DOCKER_TIMEOUT_S", "DockerUnitReader", "FakeBroker", "FixtureUnitReader", "GATED_VERBS",
+    "IMD_DASHD_AVAILABLE", "LOCAL_ONLY_ACK", "LOCAL_TICK_S", "LocalDockerBroker", "MAC_CONTAINER", "MAC_STOP_TIMEOUT_S", "NOT_ON_DOCKER",
+    "PROTOCOL_VERSION", "Plan", "READ_VERBS", "SKILL_ID_RE", "SOCKET_PATH", "SYSTEMCTL_PROPS", "SystemdUnitReader",
+    "TRANSIENT_VERBS", "UnitReader", "UnixSocketBroker", "VerifyResult", "WRITE_VERBS", "broker_script", "parse_cgroup",
+    "parse_docker_inspect", "parse_docker_ps", "parse_docker_stats", "parse_imd_skills", "parse_imd_status", "parse_imd_tools",
+    "parse_systemctl_show", "parse_whoami",
+]

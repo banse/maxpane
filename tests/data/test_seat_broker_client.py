@@ -330,3 +330,402 @@ def test_fixture_unit_reader_reads_either_host_shape(tmp_path):
     assert unit["running"] is True and unit["pids"] == 11 and unit["activeState"] == "active" and unit["restarts"] == 0
     assert FixtureUnitReader(tmp_path / "empty").read_unit() is None
     assert FixtureUnitReader(tmp_path / "empty").read_host()["hostname"] == "fixture"
+# ==== Task 6.16: LocalDockerBroker ==========================================================================
+
+from maxpane_dashboard.data.seat_broker_client import CONTAINER_TIMEOUTS, LocalDockerBroker  # noqa: E402
+
+
+def _container_procs():
+    return [{"pid": pid, "ppid": ppid, "pgid": pgid, "uid": 1000, "start_ticks": pid * 100,
+             "cgroup": "0::/", "age_s": 5400} for pid, ppid, pgid in ((1, 0, 1), (412, 0, 412), (418, 412, 412))]
+
+
+def _docker_script(tail_ok: bool = True) -> dict:
+    inspect_body = (CLI / "docker_inspect.json").read_text()
+
+    def exec_answer(argv, kw):
+        inner = argv[argv.index("imd-worker") + 1:]
+        if inner[:1] == ["timeout"]:
+            inner = inner[6:]
+        if inner == ["imd", "whoami"]:
+            return subprocess.CompletedProcess(argv, 0, (PUBLIC_KEY + "\n").encode(), b"")
+        if inner == ["imd", "status"]:
+            return subprocess.CompletedProcess(argv, 0, (BUILD / "imd_status_seat420.txt").read_bytes(), b"")
+        if inner == ["imd", "skills"]:
+            return subprocess.CompletedProcess(argv, 0, (BUILD / "imd_skills.txt").read_bytes(), b"")
+        if inner == ["imd", "tools"]:
+            return subprocess.CompletedProcess(argv, 0, (BUILD / "imd_tools_none.txt").read_bytes(), b"")
+        if inner == ["imd", "doctor"]:
+            return subprocess.CompletedProcess(argv, 1, (BUILD / "imd_doctor.txt").read_bytes(), b"")
+        if inner[:2] == ["imd", "skills"]:
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+        if "--proc-snapshot" in inner:
+            return subprocess.CompletedProcess(argv, 0, json.dumps(_container_procs()).encode(), b"")
+        if inner[:1] == ["python3"]:
+            script = kw.get("input") or b""
+            if b"--config" in b" ".join(a.encode() for a in inner):
+                payload = {"server": "https://api.imd.fun", "deviceKey": PUBLIC_KEY, "wallet": "0x887b", "tokenId": 420,
+                           "maxConcurrency": 1, "skillsOptOut": [], "inference": None, "tools": []}
+                return subprocess.CompletedProcess(argv, 0, json.dumps(payload).encode(), b"")
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"sessions": [], "skipped": {"oversize": 0}, "stdin_bytes": len(script)}).encode(), b"")
+        if inner[:1] == ["ls"]:
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+        if inner[:1] == ["ps"]:
+            return subprocess.CompletedProcess(argv, 0, (CLI / "docker_ps_orphan.txt").read_bytes(), b"")
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+
+    return {("docker", "inspect"): (0, inspect_body), ("docker", "exec"): exec_answer,
+            ("docker", "restart"): (0, ""), ("docker", "stop"): (0, ""), ("docker", "start"): (0, "")}
+
+
+def _local(tmp_path, *, tail=None, offline=True, clock=None, script=None):
+    clock = clock or Clock()
+    lines = list(tail) if tail is not None else idle_window(clock())
+    runner = RecordingRunner(_docker_script())
+    runner.script.update(script or {})
+    broker = LocalDockerBroker("imd-worker", run=runner, audit_path=tmp_path / "seat_audit.jsonl", now=clock, offline=offline,
+                               tail_lines=lambda: lines, seat=420)
+    return broker, runner, lines, clock
+
+
+def test_every_docker_exec_of_imd_python_node_is_wrapped_in_container_timeout(tmp_path, monkeypatch):
+    # spec §4.2: killing the docker exec client does not stop the exec'd process -> coreutils timeout INSIDE the container
+    monkeypatch.setattr(client, "broker_script", lambda name: b"# " + name.encode())
+    broker, runner, _lines, _clock = _local(tmp_path)
+    for verb, args in (("status", {}), ("skills", {}), ("whoami", {}), ("tools", {}), ("seat", {}),
+                       ("sessions", {"since": 0.0, "runtime": "claude"})):
+        broker.read(verb, args)
+    for verb in ("doctor", "skills-set"):
+        plan = broker.plan(verb, {"skill_id": "oracle-assess", "on": False} if verb == "skills-set" else {})
+        broker.apply(plan.plan_id, plan.plan_id[:4])
+        broker._threads[plan.plan_id].join(timeout=5)
+    execs = [argv for argv, _ in runner.calls if argv[:2] == ["docker", "exec"]]
+    runtime_execs = [a for a in execs if any(tok in ("imd", "python3", "node") for tok in a)]
+    assert len(runtime_execs) >= 8, "status, skills, whoami, tools, seat(+whoami), sessions, doctor, skills-set"
+    for argv in execs:
+        inner = argv[4:]
+        first = inner[0] if inner else None
+        if first == "timeout":
+            assert inner[1:5] == ["-s", "TERM", "-k", inner[4]] and inner[5].isdigit()
+            assert inner[6] in ("imd", "python3", "node")
+            kind = inner[7] if inner[6] == "imd" else ("seat" if "--config" in inner else "sessions")
+            if inner[6:9] == ["imd", "skills", "remove"] or inner[6:9] == ["imd", "skills", "add"]:
+                kind = "skills-set"
+            assert (int(inner[4]), int(inner[5])) == CONTAINER_TIMEOUTS[kind], inner
+        else:
+            assert first not in ("imd", "python3", "node"), argv           # coreutils (ls/find/stat/ps/kill) may run bare
+    for argv, kw in runner.calls:        # the host-side belt: 25 s, or grace + secs + 5 above a wrapped exec's in-container limit
+        wrapped = argv[:2] == ["docker", "exec"] and argv[4:5] == ["timeout"]
+        assert kw["timeout"] == (int(argv[8]) + int(argv[9]) + 5 if wrapped else 25), argv
+    # `docker exec -i` never reads the TUI's terminal: a script travels as input=, everything else gets stdin=DEVNULL
+    assert all(kw.get("input") is not None or kw.get("stdin") is subprocess.DEVNULL for a, kw in runner.calls if a[:2] == ["docker", "exec"])
+    doctor = next(a for a in execs if a[-2:] == ["imd", "doctor"])
+    assert doctor[4:10] == ["timeout", "-s", "TERM", "-k", "10", "120"]
+
+
+def test_force_disabled_when_not_graceful(tmp_path):
+    # spec §4.2 / §16 #8: gracefulStopPossible is false on the Mac (StopTimeout null, no init) -> --force ALWAYS force_disabled
+    running = idle_window(NOW)[:-1] + [hb(NOW - 11, "1 task running"), msg(NOW - 42, "accepted implement 0c1f9727 — src/ (max 60 turns)")]
+    broker, runner, _lines, _clock = _local(tmp_path, tail=running)
+    with pytest.raises(BrokerError) as exc:
+        broker.plan("restart", {"force_node8": "0c1f9727"})
+    assert exc.value.code == "force_disabled" and exc.value.detail["graceful_stop_possible"] is False
+    with pytest.raises(BrokerError) as exc:
+        broker.plan("restart")
+    assert exc.value.code == "gate_blocked" and exc.value.detail["reason"].startswith("task running 0c1f9727")
+    assert runner.argvs("docker", "restart") == []
+    # drain-restart is a plain confirm to arm (spec §11): the running task is exactly what it waits out
+    drain = broker.plan("drain-restart")
+    assert drain.preconditions["lifecycle_open"] is True
+    assert broker.apply(drain.plan_id, drain.plan_id[:4]).outcome == "armed" and runner.argvs("docker", "restart") == []
+    with pytest.raises(BrokerError) as exc:
+        broker.plan("drain-restart")
+    assert exc.value.code == "drain_already_armed"
+    # even a graceful-looking inspect does not enable force here: the rule is the broker's, not the inspect's
+    recreated = json.loads((CLI / "docker_inspect.json").read_text())
+    recreated[0]["HostConfig"].update(StopTimeout=45, Init=True)
+    broker2, _r, _l, _c = _local(tmp_path / "b", tail=running, script={("docker", "inspect"): (0, json.dumps(recreated))})
+    with pytest.raises(BrokerError) as exc:
+        broker2.plan("restart", {"force_node8": "0c1f9727"})
+    assert exc.value.code == "force_disabled"
+
+
+def test_local_docker_plan_apply_verify_over_the_tail(tmp_path):
+    broker, runner, lines, clock = _local(tmp_path)
+    assert broker.kind == "docker" and broker.trust() == "container" and broker.reachable() is True
+    assert broker.read("ping")["drain"] is None and broker.read("ping")["drain_armed"] is False
+    plan = broker.plan("restart")
+    assert plan.argv == ["docker", "restart", "-t", "30", "imd-worker"] and plan.inverse == {"verb": "stop", "args": {}}
+    assert plan.preconditions["plane"]["mode"] == "local-only" and plan.preconditions["graceful_stop_possible"] is False
+    assert plan.preconditions["unit_active"] is True and plan.preconditions["outbox_files"] == 0
+    with pytest.raises(BrokerError) as exc:
+        broker.apply(plan.plan_id, plan.plan_id[:4])
+    assert exc.value.code == "local_only_ack_required"                                 # offline=True -> typed ack
+    plan = broker.plan("restart")
+    result = broker.apply(plan.plan_id, plan.plan_id[:4], local_only_ack="local-only")
+    assert result.outcome == "applied" and runner.argvs("docker", "restart") == [["docker", "restart", "-t", "30", "imd-worker"]]
+    with pytest.raises(BrokerError) as exc:
+        broker.apply(plan.plan_id, plan.plan_id[:4], local_only_ack="local-only")
+    assert exc.value.code == "plan_spent"
+    lines.extend([msg(clock() + 0.5, "shutting down"), msg(clock() + 1.4, "runtimes: claude Claude Code 2.1.282 (using claude)")])
+    clock.advance(3)
+    verify = broker.verify(plan.plan_id)
+    assert verify.verified is True and str(verify.connected).startswith("pending")
+    lines.append(msg(clock() + 1, "admitted (session 1a2b3c4d)"))
+    clock.advance(2)
+    assert broker.verify(plan.plan_id).connected is True
+    stop = broker.plan("stop")
+    assert stop.argv == ["docker", "stop", "-t", "30", "imd-worker"]
+    start = broker.plan("start")
+    assert start.argv == ["docker", "start", "imd-worker"]
+    with pytest.raises(BrokerError) as exc:
+        broker.plan("enable-boot")
+    assert exc.value.code == "bad_verb"                                                 # n/a: unless-stopped
+
+
+def test_local_docker_gate_fails_closed_on_inspect_timeout_and_unreadable_outbox(tmp_path):
+    broker, runner, _lines, _clock = _local(tmp_path, script={("docker", "inspect"): timeout_for(["docker", "inspect"], 25)})
+    with pytest.raises(BrokerError) as exc:
+        broker.plan("restart")
+    assert exc.value.code == "gate_unknown(unit)"                                      # spec §11 (e), fill4 §1
+    assert broker.read("gate")["unknown"] == "unit"
+    broker2, _r, _l, _c = _local(tmp_path / "b")
+
+    def ls_fails(argv, kw):
+        return subprocess.CompletedProcess(argv, 2, b"", b"Permission denied")
+
+    def exec_answer(argv, kw):
+        inner = argv[argv.index("imd-worker") + 1:]
+        return ls_fails(argv, kw) if inner[:1] == ["ls"] else _docker_script()[("docker", "exec")](argv, kw)
+
+    broker2._run.script[("docker", "exec")] = exec_answer
+    with pytest.raises(BrokerError) as exc:
+        broker2.plan("restart")
+    assert exc.value.code == "gate_unknown(outbox)"
+
+
+def test_local_docker_breaker_opens_for_five_minutes_after_a_timeout(tmp_path):
+    clock = Clock()
+    broker, runner, _lines, _clock = _local(tmp_path, clock=clock, script={("docker", "inspect"): timeout_for(["docker", "inspect"], 25)})
+    assert broker.read("gate")["unit_active"] is None
+    inspects = len(runner.argvs("docker", "inspect"))
+    clock.advance(60)
+    broker.read("gate")
+    assert len(runner.argvs("docker", "inspect")) == inspects                          # breaker open: not retried
+    clock.advance(300)
+    runner.script[("docker", "inspect")] = (0, (CLI / "docker_inspect.json").read_text())
+    assert broker.read("gate")["unit_active"] is True
+
+
+def test_local_docker_audit_is_0600_and_orphans_kill_inside_the_container(tmp_path):
+    broker, runner, _lines, _clock = _local(tmp_path)
+    broker.plan("start")
+    mode = stat.S_IMODE(os.stat(tmp_path / "seat_audit.jsonl").st_mode)
+    assert mode == 0o600 and broker.read("audit-tail", {"n": 1})["lines"][0]["phase"] == "plan"
+    candidates = broker.read("orphans")["candidates"]
+    assert [c["pid"] for c in candidates] == [412, 418]
+    plan = broker.plan("kill-orphans", {"pids": [412, 418]})
+    assert plan.preconditions["kill_mode_by_pgid"] == {"412": "group"} and plan.preconditions["trust"] == "container"
+    broker.apply(plan.plan_id, plan.plan_id[:4])
+    kills = [a for a in runner.argvs("docker", "exec") if "kill" in a]
+    assert kills == [["docker", "exec", "-i", "imd-worker", "kill", "-TERM", "--", "-412"]]
+
+
+def test_local_docker_seat_projection_is_canary_checked_and_container_tagged(tmp_path, monkeypatch):
+    monkeypatch.setattr(client, "broker_script", lambda name: b"# " + name.encode())
+    broker, runner, _lines, _clock = _local(tmp_path)
+    data = broker.read("seat")
+    assert data["deviceKey"] == PUBLIC_KEY and data["tokenId"] == 420
+    projection = [a for a in runner.argvs("docker", "exec") if "--config" in a][0]
+    assert projection[4:10] == ["timeout", "-s", "TERM", "-k", "5", "20"] and projection[10:12] == ["python3", "-"]
+    kw = [k for a, k in runner.calls if a == projection][0]
+    assert kw["input"] == b"# projection"                                            # the script travels on stdin, never in argv
+    status = broker.read("status")
+    assert status["unit"] is None and parse_imd_status(status["lines"])["tokenId"] == 420
+    assert broker.trust() == "container"                                             # every CLI-fed Mac value is container-reported
+
+
+def test_local_docker_reads_its_own_tail_and_its_seat(tmp_path, monkeypatch):
+    # WP8 may build LocalDockerBroker without tail_lines or seat: the gate then reads `docker logs --tail 200 --timestamps`
+    # itself (spec §5.1 trusted form, §11 (a) "the tail (Mac)") and the standing URL takes tokenId from the projection
+    from tests.broker._harness import stamp
+    monkeypatch.setattr(client, "broker_script", lambda name: b"# " + name.encode())
+    clock = Clock()
+    logs = "".join(f"{text[:23]}456789Z {text}\n" for _epoch, text in idle_window(clock()))
+    runner = RecordingRunner(_docker_script())
+    runner.script[("docker", "logs")] = (0, logs)
+    urls: list[str] = []
+
+    def standing(url, *, timeout_s=8):
+        urls.append(url)
+        return {"running_count": 0, "at": stamp(clock() - 0.4)}
+
+    monkeypatch.setattr(client._gate_mod, "fetch_standing_running", standing)
+    broker = LocalDockerBroker("imd-worker", run=runner, audit_path=tmp_path / "seat_audit.jsonl", now=clock, offline=False)
+    plan = broker.plan("restart")
+    assert plan.preconditions["idle_beats"] >= 4 and plan.preconditions["plane"]["mode"] == "plane+local"
+    assert urls == ["https://api.imd.fun/seats/420/standing"]
+    assert runner.argvs("docker", "logs")[0] == ["docker", "logs", "--tail", "200", "--timestamps", "imd-worker"]
+
+
+def test_local_docker_drain_rearms_and_fires_through_the_fresh_gate(tmp_path):
+    # spec §11 drain-restart, Mac column: the same loop over the tail, in-process -- it dies with the TUI
+    broker, runner, lines, clock = _local(tmp_path)
+    plan = broker.plan("drain-restart")
+    assert "dies with the TUI" in plan.warning
+    assert broker.apply(plan.plan_id, plan.plan_id[:4]).outcome == "armed" and broker.read("ping")["drain_armed"] is True
+    for _ in (1, 2):
+        clock.advance(30)
+        lines.append(hb(clock() - 5))
+        broker.tick()
+    clock.advance(30)
+    lines.append(hb(clock() - 5, "1 task running"))
+    assert "drain_rearmed" in broker.tick()
+    lines.append(msg(clock() - 0.5, "submitted implement for 4cf722c7"))
+    events: list[str] = []
+    for _ in range(4):
+        clock.advance(30)
+        lines.append(hb(clock() - 5))
+        events = broker.tick()
+    assert "drain_fire" in events and runner.argvs("docker", "restart") == [["docker", "restart", "-t", "30", "imd-worker"]]
+    phases = [ln["phase"] for ln in broker.read("audit-tail", {"n": 50})["lines"] if ln["phase"] != "plan"]
+    assert phases == ["drain_armed", "drain_rearmed", "drain_fire", "apply"] and broker.read("ping")["drain_armed"] is False
+    lines.extend([msg(clock() + 0.5, "shutting down"), msg(clock() + 1.4, "runtimes: claude Claude Code 2.1.282 (using claude)")])
+    clock.advance(3)
+    broker.tick()                                                                    # the fired restart gets its verify line
+    phases = [ln["phase"] for ln in broker.read("audit-tail", {"n": 50})["lines"] if ln["phase"] != "plan"]
+    assert phases == ["drain_armed", "drain_rearmed", "drain_fire", "apply", "verify"]
+
+
+def test_local_docker_kill_orphans_sigkills_after_grace(tmp_path):
+    # spec §11 kill-orphans, Mac column: `kill -TERM -<pgid>` inside the container, SIGKILL after 10 s if still listed
+    broker, runner, _lines, clock = _local(tmp_path)
+    plan = broker.plan("kill-orphans", {"pids": [412, 418]})
+    broker.apply(plan.plan_id, plan.plan_id[:4])
+    assert broker.verify(plan.plan_id).verified is None                             # answered (contract §C.16), not yet decided
+    assert broker.tick(clock() + 5) == []
+    assert broker.tick(clock() + 11) == ["sigkill"]                                  # the ps listing still shows pgid 412
+    kills = [a for a in runner.argvs("docker", "exec") if "kill" in a]
+    assert kills == [["docker", "exec", "-i", "imd-worker", "kill", "-TERM", "--", "-412"],
+                     ["docker", "exec", "-i", "imd-worker", "kill", "-KILL", "--", "-412"]]
+    assert broker.verify(plan.plan_id).verified is None                             # SIGKILLed on that tick: decided on the next
+    assert broker.tick(clock() + 30) == []                                           # one follow-up per kill, never repeated
+    verdict = broker.verify(plan.plan_id)                                            # the ps listing STILL shows pgid 412
+    assert verdict.verified is False and verdict.reason == "still listed after SIGKILL: pgid 412"
+
+
+def test_local_docker_drain_arm_and_cancel_answer_verify(tmp_path):
+    # WP8's CONTROL polls verify after every apply (contract §C.16): the Mac answers an arm and a cancel at once, like the root
+    broker, runner, _lines, _clock = _local(tmp_path)
+    plan = broker.plan("drain-restart")
+    assert broker.apply(plan.plan_id, plan.plan_id[:4]).outcome == "armed"
+    verdict = broker.verify(plan.plan_id)
+    assert verdict.verified is True and verdict.reason is None
+    assert verdict.verify_lines == ["drain armed · 0/4 idle beats · expires 18:13 UTC"]                # NOW 14:13:20 + 4 h
+    cancel = broker.plan("cancel-drain")
+    assert broker.apply(cancel.plan_id, cancel.plan_id[:4]).outcome == "cancelled"
+    verdict = broker.verify(cancel.plan_id)
+    assert verdict.verified is True and verdict.verify_lines == ["drain cleared · nothing restarted"]
+    assert runner.argvs("docker", "restart") == []
+
+
+def test_local_docker_audits_every_refusal_each_verify_flip_and_read_counts(tmp_path):
+    # spec §11: "Every plan, apply, verify and refusal appends an audit line" -- the Mac keeps the same audit
+    broker, _runner, lines, clock = _local(tmp_path)
+    with pytest.raises(BrokerError):
+        broker.call("restart", {"offline": "yes"})                                   # bad_args
+    with pytest.raises(BrokerError):
+        broker.plan("enable-boot")                                                    # bad_verb (n/a on docker)
+    plan = broker.plan("restart")
+    with pytest.raises(BrokerError):
+        broker.apply(plan.plan_id, "zzzz")                                            # bad_confirm (the plan is consumed)
+    with pytest.raises(BrokerError):
+        broker.apply(plan.plan_id, plan.plan_id[:4], local_only_ack="local-only")     # plan_spent
+    plan = broker.plan("restart")
+    with pytest.raises(BrokerError):
+        broker.apply(plan.plan_id, plan.plan_id[:4])                                  # local_only_ack_required
+    plan = broker.plan("restart")
+    broker.apply(plan.plan_id, plan.plan_id[:4], local_only_ack="local-only")
+    lines.extend([msg(clock() + 0.5, "shutting down"), msg(clock() + 1.4, "runtimes: claude Claude Code 2.1.282 (using claude)")])
+    clock.advance(3)
+    assert broker.verify(plan.plan_id).verified is True
+    broker.verify(plan.plan_id)                                                       # no change -> no second verify line
+    audit = [json.loads(ln) for ln in (tmp_path / "seat_audit.jsonl").read_text().splitlines()]
+    assert [ln["outcome"] for ln in audit if ln["phase"] == "refused"] == [
+        "bad_args", "bad_verb", "bad_confirm", "plan_spent", "local_only_ack_required"]
+    verifies = [ln for ln in audit if ln["phase"] == "verify"]
+    assert len(verifies) == 1 and verifies[0]["verified"] is True and verifies[0]["plan_id"] == plan.plan_id
+    assert audit[0]["args"] == {"names": ["offline"]}                                 # names, never values
+    broker.tick(clock() + 3601)                                                       # reads: hourly counts only (deviation 16)
+    last = json.loads((tmp_path / "seat_audit.jsonl").read_text().splitlines()[-1])
+    assert last["phase"] == "reads" and last["args"] == {"counts": {"verify": 2}}
+
+
+def test_local_docker_breaker_is_per_verb(tmp_path):
+    # spec §12.2 "a 5-min breaker per verb after a timeout": a hung `imd status` must not blind gate step (d)
+    broker, runner, _lines, _clock = _local(tmp_path)
+    answer = runner.script[("docker", "exec")]
+
+    def status_hangs(argv, kw):
+        if argv[-2:] == ["imd", "status"]:
+            raise subprocess.TimeoutExpired(argv, kw["timeout"])
+        return answer(argv, kw)
+
+    runner.script[("docker", "exec")] = status_hangs
+    with pytest.raises(BrokerError) as exc:
+        broker.read("status")
+    assert exc.value.code == "timeout" and exc.value.detail["family"] == "status"
+    assert broker.read("outbox") == {"files": 0} and broker.read("gate")["unknown"] is None
+    calls = len(runner.calls)
+    with pytest.raises(BrokerError) as exc:
+        broker.read("status")                                                          # this verb's breaker is open for 5 min
+    assert "breaker_until" in exc.value.detail and len(runner.calls) == calls
+
+
+@pytest.mark.parametrize("phase", ["plan", "term"])
+@pytest.mark.parametrize("drift", ["start_ticks", "cgroup", "uid", "new_member"])
+def test_local_kill_rechecks_exact_identity_and_whole_group(tmp_path, phase, drift):
+    broker, runner, _lines, clock = _local(tmp_path)
+    plan = broker.plan("kill-orphans", {"pids": [412, 418]})
+    if phase == "term":
+        broker.apply(plan.plan_id, plan.plan_id[:4])
+    procs = _container_procs()
+    if drift == "new_member":
+        procs.append(dict(procs[1], pid=500, uid=0))
+    else:
+        procs[1][drift] = {"start_ticks": 41201, "cgroup": "0::/changed", "uid": 0}[drift]
+    answer = runner.script[("docker", "exec")]
+    def changed(argv, kw):
+        if "--proc-snapshot" in argv:
+            return subprocess.CompletedProcess(argv, 0, json.dumps(procs).encode(), b"")
+        return answer(argv, kw)
+    runner.script[("docker", "exec")] = changed
+    before = len(runner.calls)
+    if phase == "plan":
+        broker.apply(plan.plan_id, plan.plan_id[:4])
+    else:
+        broker.tick(clock() + 11)
+    signals = [a for a, _kw in runner.calls[before:] if "kill" in a]
+    assert not any("-412" in a for a in signals), signals
+    if drift != "new_member":
+        assert not any(a[-1] == "412" for a in signals), signals
+    snapshots = [(a, kw) for a, kw in runner.calls if "--proc-snapshot" in a]
+    assert snapshots and all(a[4:10] == ["timeout", "-s", "TERM", "-k", "5", "20"] for a, _ in snapshots)
+    assert all(kw["timeout"] == 30 and kw.get("input") for _, kw in snapshots)
+
+
+@pytest.mark.parametrize("failure", ["timeout", "rc", "invalid"])
+def test_local_kill_refuses_unavailable_snapshot(tmp_path, failure):
+    broker, runner, _lines, clock = _local(tmp_path)
+    plan = broker.plan("kill-orphans", {"pids": [412, 418]})
+    answer = runner.script[("docker", "exec")]
+    def unavailable(argv, kw):
+        if "--proc-snapshot" in argv:
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired(argv, kw["timeout"])
+            return subprocess.CompletedProcess(argv, 1 if failure == "rc" else 0, b"{}", b"")
+        return answer(argv, kw)
+    runner.script[("docker", "exec")] = unavailable
+    with pytest.raises(BrokerError):
+        broker.apply(plan.plan_id, plan.plan_id[:4])
+    assert not [a for a, _ in runner.calls if "kill" in a]
