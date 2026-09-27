@@ -293,6 +293,140 @@ def _text(value: object) -> str:
 # ---------------------------------------------------------------- host readers
 
 
+class UnitReader(Protocol):
+    def read_unit(self) -> dict | None: ...
+    def read_host(self) -> dict | None: ...
+
+
+SYSTEMCTL_PROPS = ("ActiveState,SubState,MainPID,NRestarts,ActiveEnterTimestamp,ExecMainStartTimestamp,UnitFileState,Restart,"
+                   "RestartUSec,MemoryMax,CPUQuotaPerSecUSec,TasksMax,TasksCurrent,KillMode,TimeoutStopUSec,ExecStart")
+
+
+def _host_facts(home: str) -> dict:
+    facts: dict = {"hostname": os.uname().nodename, "load1": None, "memAvailMiB": None, "diskFreeGiB": None, "journal": None}
+    try:
+        facts["load1"] = round(os.getloadavg()[0], 2)
+    except (OSError, AttributeError):
+        pass
+    try:
+        with open("/proc/meminfo", "rb") as fh:
+            for raw in fh:
+                if raw.startswith(b"MemAvailable:"):
+                    facts["memAvailMiB"] = int(raw.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        vfs = os.statvfs(home)
+        facts["diskFreeGiB"] = round(vfs.f_bavail * vfs.f_frsize / 1024 ** 3, 1)
+    except OSError:
+        pass
+    return facts
+
+
+class SystemdUnitReader:
+    def __init__(self, unit: str = "imd-worker.service", *, run: Runner = subprocess.run,
+                 cgroup_root: Path = Path("/sys/fs/cgroup/system.slice"), proc: Path = Path("/proc"), home: str = "/home") -> None:
+        self.unit = unit
+        self._run = run
+        self._cgroup_root = Path(cgroup_root)
+        self._proc = Path(proc)
+        self._home = home
+
+    def read_unit(self) -> dict | None:
+        try:
+            done = self._run(["systemctl", "show", self.unit, "--timestamp=utc", "-p", SYSTEMCTL_PROPS], capture_output=True, timeout=5)
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+        if done.returncode != 0:
+            return None
+        unit = parse_systemctl_show(_text(done.stdout))
+        unit.update(parse_cgroup(self._cgroup_root / self.unit))
+        return unit
+
+    def read_host(self) -> dict | None:
+        return _host_facts(self._home)
+
+
+class DockerUnitReader:
+    def __init__(self, container: str = MAC_CONTAINER, *, run: Runner = subprocess.run, timeout_s: float = DOCKER_TIMEOUT_S,
+                 breaker_s: float = DOCKER_BREAKER_S, now: Clock = time.time) -> None:
+        self.container = container
+        self._run = run
+        self._timeout_s = timeout_s
+        self._breaker_s = breaker_s
+        self._now = now
+        self.breaker_until: dict[str, float] = {}
+
+    def _call(self, name: str, argv: list[str]) -> tuple[subprocess.CompletedProcess | None, str | None]:
+        """``(completed, None)`` on rc 0, else ``(None, reason)``; a timeout opens the breaker for ``breaker_s``."""
+        now = self._now()
+        if self.breaker_until.get(name, 0.0) > now:
+            return None, f"{name} skipped: breaker open until {_iso(self.breaker_until[name])}"
+        try:
+            done = self._run(argv, capture_output=True, timeout=self._timeout_s)
+        except subprocess.TimeoutExpired:
+            self.breaker_until[name] = now + self._breaker_s          # 5-min breaker per verb after any timeout (spec §4.2)
+            return None, f"{name} timed out {self._timeout_s:g} s"
+        except OSError as exc:
+            return None, f"{name} failed: {exc.__class__.__name__}"
+        if done.returncode != 0:
+            return None, f"{name} exited rc={done.returncode}"
+        return done, None
+
+    def read_unit(self) -> dict | None:
+        """``docker inspect`` and ``docker stats`` fail independently: a missing half is ``None``, never 0 (fill4 §5).
+
+        A partial block carries ``"reason"`` naming the failed half, so the manager marks the unit source
+        failed while keeping the values it did get (WP7 deviation 6, spec §14 mutation proof 8).
+        """
+        inspect, inspect_reason = self._call("inspect", ["docker", "inspect", self.container])
+        stats, stats_reason = self._call("stats", ["docker", "stats", "--no-stream", "--format", "{{json .}}", self.container])
+        if inspect is None and stats is None:
+            return None
+        unit: dict = {}
+        reasons = [r for r in (inspect_reason, stats_reason) if r]
+        if inspect is not None:
+            try:
+                unit.update(parse_docker_inspect(json.loads(_text(inspect.stdout))))
+            except ValueError:
+                reasons.append("inspect output is not JSON")
+        if stats is not None:
+            text = _text(stats.stdout).strip()
+            unit.update(parse_docker_stats(text.splitlines()[-1] if text else ""))
+        if not unit:
+            return None
+        if reasons:
+            unit["reason"] = "; ".join(reasons)
+        return unit
+
+    def read_host(self) -> dict | None:
+        return _host_facts(str(Path.home()))
+
+
+class FixtureUnitReader:
+    def __init__(self, case_dir: Path) -> None:
+        self.case_dir = Path(case_dir)
+
+    def read_unit(self) -> dict | None:
+        unit_dir = self.case_dir / "unit"
+        if (unit_dir / "systemctl_show.txt").exists():
+            unit = parse_systemctl_show((unit_dir / "systemctl_show.txt").read_text(encoding="utf-8"))
+            if (unit_dir / "cgroup").is_dir():
+                unit.update(parse_cgroup(unit_dir / "cgroup"))
+            return unit
+        if (unit_dir / "docker_inspect.json").exists():
+            unit = parse_docker_inspect(json.loads((unit_dir / "docker_inspect.json").read_text(encoding="utf-8")))
+            if (unit_dir / "docker_stats.txt").exists():
+                unit.update(parse_docker_stats((unit_dir / "docker_stats.txt").read_text(encoding="utf-8").strip().splitlines()[-1]))
+            return unit
+        return None
+
+    def read_host(self) -> dict | None:
+        path = self.case_dir / "unit" / "host.json"
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+        return {"hostname": "fixture", "load1": None, "memAvailMiB": None, "diskFreeGiB": None, "journal": None}
+
 # ---------------------------------------------------------------- parsers
 
 

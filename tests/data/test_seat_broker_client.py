@@ -260,3 +260,73 @@ def test_cli_stand_ins_agree_with_the_broker_and_the_unit_file():
     unit_file = (CLI / "systemctl_cat.txt").read_text(encoding="utf-8").splitlines()
     declared = " ".join(ln.split("=", 1)[1] for ln in unit_file if ln.startswith("IPAddressDeny="))
     assert copied.split() == [a if "/" in a else a + "/32" for a in declared.split()]   # systemd prints bare hosts as /32
+# ==== Task 6.15: host readers ===============================================================================
+
+from maxpane_dashboard.data.seat_broker_client import DockerUnitReader, FixtureUnitReader, SystemdUnitReader  # noqa: E402
+
+
+def test_systemd_unit_reader_merges_show_and_cgroup(tmp_path):
+    cgroup_root = tmp_path / "cgroup" / "system.slice"
+    (cgroup_root / "imd-worker.service").mkdir(parents=True)
+    for name in ("memory.current", "memory.peak", "memory.max", "cpu.max"):
+        (cgroup_root / "imd-worker.service" / name).write_bytes((CLI / "cgroup" / name).read_bytes())
+    runner = RecordingRunner({("systemctl", "show"): (0, (CLI / "systemctl_show.txt").read_text())})
+    reader = SystemdUnitReader(run=runner, cgroup_root=cgroup_root, home=str(tmp_path))
+    unit = reader.read_unit()
+    assert unit["activeState"] == "active" and unit["memoryCurrentB"] == 116146176 and unit["memoryPeakB"] == 188592128
+    argv, kw = runner.calls[0]
+    assert argv[:4] == ["systemctl", "show", "imd-worker.service", "--timestamp=utc"] and argv[4] == "-p"
+    assert argv[5].split(",") == ["ActiveState", "SubState", "MainPID", "NRestarts", "ActiveEnterTimestamp", "ExecMainStartTimestamp",
+                                  "UnitFileState", "Restart", "RestartUSec", "MemoryMax", "CPUQuotaPerSecUSec", "TasksMax",
+                                  "TasksCurrent", "KillMode", "TimeoutStopUSec", "ExecStart"]
+    assert kw["timeout"] == 5
+    assert SystemdUnitReader(run=RecordingRunner({("systemctl", "show"): timeout_for(["systemctl"], 5)})).read_unit() is None
+    host = reader.read_host()
+    assert set(host) == {"hostname", "load1", "memAvailMiB", "diskFreeGiB", "journal"} and host["diskFreeGiB"] is not None
+
+
+def test_docker_unit_reader_has_25s_timeouts_and_a_5_minute_breaker():
+    clock = Clock()
+    inspect_body = (CLI / "docker_inspect.json").read_text()
+    runner = RecordingRunner({("docker", "inspect"): (0, inspect_body), ("docker", "stats"): (0, (CLI / "docker_stats.txt").read_text())})
+    reader = DockerUnitReader("imd-worker", run=runner, now=clock)
+    unit = reader.read_unit()
+    assert unit["running"] is True and unit["memoryCurrentB"] == int(130.8 * 1024 ** 2) and unit["gracefulStopPossible"] is False
+    assert unit["activeState"] == "active" and unit["sinceUtc"] == "2026-09-25T11:45:54Z" and unit["restarts"] == 0   # the §7 block
+    assert "reason" not in unit
+    assert all(kw["timeout"] == 25 for _, kw in runner.calls)
+    assert runner.calls[1][0] == ["docker", "stats", "--no-stream", "--format", "{{json .}}", "imd-worker"]
+    # inspect times out (fill4 §1: 2 of 3 cycles on 09-26): stats still answers; inspect skipped for 5 min
+    runner.script[("docker", "inspect")] = timeout_for(["docker", "inspect"], 25)
+    unit = reader.read_unit()
+    assert unit["memoryCurrentB"] == int(130.8 * 1024 ** 2) and "running" not in unit  # per-field, never 0 (fill4 §5)
+    assert unit["reason"] == "inspect timed out 25 s"                                    # the partial block names its gap
+    calls_before = len(runner.calls)
+    clock.advance(60)
+    partial = reader.read_unit()
+    assert [a[:2] for a, _ in runner.calls[calls_before:]] == [["docker", "stats"]]   # breaker open: no inspect attempt
+    assert partial["reason"].startswith("inspect skipped: breaker open until ")
+    clock.advance(300)
+    runner.script[("docker", "inspect")] = (0, inspect_body)
+    full = reader.read_unit()
+    assert full["running"] is True and "reason" not in full
+    both_down = DockerUnitReader(run=RecordingRunner({("docker",): timeout_for(["docker"], 25)}))
+    assert both_down.read_unit() is None
+
+
+def test_fixture_unit_reader_reads_either_host_shape(tmp_path):
+    systemd_case = tmp_path / "systemd" / "unit"
+    systemd_case.mkdir(parents=True)
+    (systemd_case / "systemctl_show.txt").write_text((CLI / "systemctl_show.txt").read_text())
+    (systemd_case / "cgroup").mkdir()
+    (systemd_case / "cgroup" / "memory.peak").write_text("188592128\n")
+    unit = FixtureUnitReader(tmp_path / "systemd").read_unit()
+    assert unit["activeState"] == "active" and unit["memoryPeakB"] == 188592128
+    docker_case = tmp_path / "docker" / "unit"
+    docker_case.mkdir(parents=True)
+    (docker_case / "docker_inspect.json").write_text((CLI / "docker_inspect.json").read_text())
+    (docker_case / "docker_stats.txt").write_text((CLI / "docker_stats.txt").read_text())
+    unit = FixtureUnitReader(tmp_path / "docker").read_unit()
+    assert unit["running"] is True and unit["pids"] == 11 and unit["activeState"] == "active" and unit["restarts"] == 0
+    assert FixtureUnitReader(tmp_path / "empty").read_unit() is None
+    assert FixtureUnitReader(tmp_path / "empty").read_host()["hostname"] == "fixture"
