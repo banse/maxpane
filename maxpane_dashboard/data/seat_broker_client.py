@@ -603,7 +603,16 @@ class LocalDockerBroker(_CallMixin):
 
     # -- plan / apply / verify ----------------------------------------------------------------------
 
+    def _armed_drain_refusal(self, verb: str, plan_id: str | None = None) -> dict | None:
+        if verb in ("restart", "stop") and self._drain.armed is not None:
+            self._log(peer_uid=os.getuid(), verb=verb, phase="refused", plan_id=plan_id, outcome="drain_already_armed")
+            return _verbs_mod.err("drain_already_armed", {"hint": "cancel-drain before a manual restart or stop"})
+        return None
+
     def _plan(self, verb: str, args: dict) -> dict:
+        refusal = self._armed_drain_refusal(verb)
+        if refusal is not None:
+            return refusal
         if self._in_flight is not None:
             self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="busy", args={"names": sorted(args)})
             return _verbs_mod.err("busy", dict(self._in_flight))
@@ -737,6 +746,9 @@ class LocalDockerBroker(_CallMixin):
                 self._log(peer_uid=os.getuid(), verb=plan.verb, phase="refused", plan_id=plan_id, outcome="bad_confirm")
                 return _verbs_mod.err("bad_confirm")
             self._in_flight = {"verb": plan.verb, "plan_id": plan_id, "since": _iso(now)}
+            refusal = self._armed_drain_refusal(plan.verb, plan_id)
+            if refusal is not None:
+                return refusal
             if plan.verb in GATED_VERBS:
                 if plan.verb == "drain-restart":
                     if self._drain.armed is not None:

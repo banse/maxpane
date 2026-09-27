@@ -899,3 +899,20 @@ def test_unix_client_frames_request_without_half_closing():
     assert UnixSocketBroker(connect=connect).read("ping") == {}
     for thread in threads: thread.join(1)
     assert seen == [True]
+
+
+@pytest.mark.parametrize("verb", ["restart", "stop"])
+def test_local_armed_drain_refuses_manual_plan_and_preexisting_apply(tmp_path, verb):
+    broker, runner, *_ = _local(tmp_path)
+    earlier = broker.plan(verb)
+    drain = broker.plan("drain-restart")
+    broker.apply(drain.plan_id, drain.plan_id[:4])
+    for action in (lambda: broker.plan(verb), lambda: broker.apply(earlier.plan_id, earlier.plan_id[:4], local_only_ack="local-only")):
+        with pytest.raises(BrokerError) as caught:
+            action()
+        assert caught.value.code == "drain_already_armed"
+        assert "cancel-drain" in caught.value.detail["hint"]
+    assert not runner.argvs("docker", verb)
+    audit = broker.read("audit-tail", {"n": 20})["lines"]
+    refused = [row for row in audit if row["outcome"] == "drain_already_armed"]
+    assert len(refused) == 2 and refused[-1]["plan_id"] == earlier.plan_id
