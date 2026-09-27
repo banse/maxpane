@@ -434,6 +434,20 @@
       "notes": "parsed, the 2 MiB line would make turns 3; skipped, turns stay 2. The > 64 MiB file is a sparse truncate() on tmp_path: the manifest has no size-only entries",
       "sha256": "ca7aab8459795a92bb06dcb8aa3fcef501a62294e94586a0a1194b85616791b2",
       "bytes": 2098974
+    },
+    "sessions/rollout_task.jsonl.zst": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [
+        "prompts",
+        "tool_io",
+        "base_instructions"
+      ],
+      "origin": "zstd -19 of sessions/rollout_task.jsonl",
+      "notes": "read only where compression.zstd imports (Python 3.14 built with libzstd); digest depends on the zstd version that wrote it",
+      "sha256": "fde0055f0080bcc9946c7c6d07f6d64080a1e460340c5c00bba322b85c12cbd0",
+      "bytes": 1305
     }
   }
 }

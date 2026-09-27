@@ -332,3 +332,61 @@ def test_main_prints_one_json_object(tmp_path, capsys):
     assert set(doc) == {"sessions", "skipped", "watermarkMtime", "zstdReadable", "reason"}
     assert [tuple(s) for s in doc["sessions"]] == [sc.SESSION_KEYS] * 3
     assert doc["sessions"][2]["tokens"] == {"input": 17864, "output": 812, "cached": 92928, "cacheWrite": 0}
+
+
+# ---- Task 4.5: compressed rollouts (.jsonl.zst) ----------------------------------------------
+
+
+@pytest.mark.skipif(sc.ZSTD is None, reason="compression.zstd does not import on this interpreter (Python < 3.14)")
+def test_zst_rollout_reads_like_the_plain_one(tmp_path):
+    # spec §5.4: codex-cli 0.157.0 compresses rollouts older than 7 days; read through compression.zstd when it imports
+    path = _copy(tmp_path, "rollout_task.jsonl.zst", "2026/09/26/rollout-2026-09-26T02-33-41-0199f3a2.jsonl.zst")
+    result = sc.summarise_dir(str(tmp_path / "sessions"), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0)
+    [s] = result["sessions"]
+    assert s["tokens"] == {"input": 17864, "output": 812, "cached": 92928, "cacheWrite": 0} and s["turns"] == 3
+    assert result["zstdReadable"] is True and result["reason"] is None
+    assert s["path"] == str(path)[: -len(".zst")]
+
+
+def test_zst_without_compression_zstd_is_reported_not_read(tmp_path, monkeypatch):
+    # spec §5.4 / §8 COST degraded: the reason names the real cause, the plain path keeps working
+    monkeypatch.setattr(sc, "ZSTD", None)
+    _copy(tmp_path, "rollout_task.jsonl.zst", "2026/09/14/rollout-2026-09-14T02-33-41-old.jsonl.zst", 1789000000.0)
+    _copy(tmp_path, "rollout_research_workroot.jsonl", "2026/09/25/rollout-2026-09-25T18-08-55-0001.jsonl", 1790359795.0)
+    result = sc.summarise_dir(str(tmp_path / "sessions"), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0)
+    assert [s["kind"] for s in result["sessions"]] == ["research"]
+    assert result["zstdReadable"] is False
+    assert result["reason"] == "rollouts > 7 d unreadable (compression.zstd missing): 1 file(s)"
+    assert result["watermarkMtime"] == 1790359795.0
+
+
+def test_compressed_rollout_keeps_the_plain_path_identity(tmp_path, monkeypatch):
+    # compression renames rollout-X.jsonl -> rollout-X.jsonl.zst with a new mtime; reporting the plain path lets the
+    # ledger upsert by path replace the row instead of adding a second file to the attempt (tokens would double)
+    plain = _copy(tmp_path, "rollout_task.jsonl", "2026/09/26/rollout-2026-09-26T02-33-41-0199f3a2.jsonl", 1790390044.0)
+
+    class FakeZstd:
+        @staticmethod
+        def open(path, mode):
+            return open(str(path)[: -len(".zst")], mode)  # decompression stand-in: serve the plain twin's bytes
+
+    monkeypatch.setattr(sc, "ZSTD", FakeZstd)
+    both = sc.summarise_dir(str(tmp_path / "sessions"), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0)
+    zst = plain.with_name(plain.name + ".zst")
+    zst.write_bytes(b"compressed stand-in")
+    os.utime(zst, (1790995000.0, 1790995000.0))
+    later = sc.summarise_dir(str(tmp_path / "sessions"), since_mtime=both["watermarkMtime"], work_root=WORK,
+                             budget_s=40.0, now=0.0)
+    assert [s["path"] for s in later["sessions"]] == [str(plain)]
+    assert later["sessions"][0]["tokens"] == both["sessions"][0]["tokens"]
+
+
+def test_plain_and_zst_twins_in_one_call_yield_one_session(tmp_path, monkeypatch):
+    # a rollout caught mid-compression exists twice for one run; one session is reported, never two
+    plain = _copy(tmp_path, "rollout_task.jsonl", "2026/09/26/rollout-2026-09-26T02-33-41-0199f3a2.jsonl", 1790390044.0)
+    zst = plain.with_name(plain.name + ".zst")
+    zst.write_bytes(b"compressed stand-in")
+    os.utime(zst, (1790995000.0, 1790995000.0))
+    monkeypatch.setattr(sc, "ZSTD", None)
+    result = sc.summarise_dir(str(tmp_path / "sessions"), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0)
+    assert [s["path"] for s in result["sessions"]] == [str(plain)] and result["reason"] is None

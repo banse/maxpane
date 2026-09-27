@@ -182,7 +182,9 @@ def classify_cwd(cwd: str, *, work_root: str) -> tuple[str, str | None, str | No
 
 def _empty_session(path: str, st: os.stat_result) -> dict:
     session = dict.fromkeys(SESSION_KEYS)
-    session.update(path=_cap(path, 512), runtime="codex", mtime=st.st_mtime, bytes=st.st_size, kind="unknown",
+    # a compressed rollout keeps its plain name as identity: codex renames rollout-X.jsonl -> .jsonl.zst after
+    # 7 days with a fresh mtime, and the ledger upserts by path -- a second path would double the attempt's tokens
+    session.update(path=_cap(path.removesuffix(".zst"), 512), runtime="codex", mtime=st.st_mtime, bytes=st.st_size, kind="unknown",
                    turnsDefinition="agent_messages", apiErrors=[], skippedOversize=0)
     return session
 
@@ -321,12 +323,12 @@ def summarise_file(path: str, *, work_root: str, now: float, clock=time.monotoni
 
 
 def _candidates(root: str) -> list[tuple[float, str, int]]:
-    """``(mtime, path, size)`` of every regular ``rollout-*.jsonl`` under *root*; symlinks never followed."""
+    """``(mtime, path, size)`` of every regular ``rollout-*.jsonl[.zst]`` under *root*; symlinks never followed."""
     found = []
     for base, dirs, files in os.walk(root, followlinks=False):
         dirs.sort()
         for name in sorted(files):
-            if not name.startswith("rollout-") or not name.endswith(".jsonl"):
+            if not name.startswith("rollout-") or not (name.endswith(".jsonl") or name.endswith(".jsonl.zst")):
                 continue
             path = os.path.join(base, name)
             try:
@@ -339,6 +341,21 @@ def _candidates(root: str) -> list[tuple[float, str, int]]:
     return found
 
 
+def _drop_twins(pending: list[tuple[float, str, int]]) -> list[tuple[float, str, int]]:
+    """A rollout caught mid-compression exists as both ``.jsonl`` and ``.jsonl.zst``: keep one -- the ``.zst``
+    when it can be read, else the plain file."""
+    names = {path for _, path, _ in pending}
+    keep = []
+    for entry in pending:
+        path = entry[1]
+        if path.endswith(".zst") and path.removesuffix(".zst") in names and ZSTD is None:
+            continue
+        if not path.endswith(".zst") and path + ".zst" in names and ZSTD is not None:
+            continue
+        keep.append(entry)
+    return keep
+
+
 def summarise_dir(root: str, *, since_mtime: float, work_root: str, budget_s: float = DEFAULT_BUDGET_S, now: float,
                   clock=time.monotonic, wall_s: float = PER_FILE_WALL_S) -> dict:
     """Every rollout with ``mtime > since_mtime``, oldest first, inside *budget_s*.
@@ -349,13 +366,14 @@ def summarise_dir(root: str, *, since_mtime: float, work_root: str, budget_s: fl
     start = clock()
     sessions: list[dict] = []
     oversize = 0
+    zstd_skipped = 0
     errors = 0
     watermark = float(since_mtime)
     notes: list[str] = []
     if not os.path.isdir(root):
         return {"sessions": [], "skipped": {"oversize": 0}, "watermarkMtime": watermark,
                 "zstdReadable": ZSTD is not None, "reason": "sessions root missing"}
-    pending = [c for c in _candidates(root) if c[0] > since_mtime]
+    pending = _drop_twins([c for c in _candidates(root) if c[0] > since_mtime])
     done = 0
     for mtime, path, size in pending:
         if clock() - start > budget_s:
@@ -367,6 +385,9 @@ def summarise_dir(root: str, *, since_mtime: float, work_root: str, budget_s: fl
         if size > MAX_FILE_BYTES:
             oversize += 1
             continue
+        if path.endswith(".zst") and ZSTD is None:
+            zstd_skipped += 1
+            continue
         session = summarise_file(path, work_root=work_root, now=now, clock=clock, wall_s=wall_s)
         if session is None:
             errors += 1
@@ -377,6 +398,8 @@ def summarise_dir(root: str, *, since_mtime: float, work_root: str, budget_s: fl
         sessions.append(session)
     if oversize:
         notes.insert(0, f"skipped {oversize} oversize (file > 64 MiB or line > 1 MiB)")
+    if zstd_skipped:
+        notes.append(f"{ZSTD_MISSING_REASON}: {zstd_skipped} file(s)")
     if errors:
         notes.append(f"{errors} file(s) unreadable or partial")
     return {"sessions": sessions, "skipped": {"oversize": oversize}, "watermarkMtime": watermark,
