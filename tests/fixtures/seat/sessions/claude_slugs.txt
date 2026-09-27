@@ -1,0 +1,12 @@
+-home-imd	manual
+-tmp	manual
+-tmp-probe-ws	manual
+-tmp-probe-ws2	manual
+-tmp-probe-ws3	manual
+-home-imd--identitymd-work	research
+-home-imd--identitymd-work-doctor-Ab3dE9	doctor
+-home-imd--identitymd-work-48e53e33-7c1d-4e2a-9b5f-3a6d8c0e1f24-f7b20ce4-2b9a-4c6d-8e1f-5a7b9c0d2e36	task
+-home-imd--identitymd-workspace	unknown
+-home-imd--identitymd-work-notauuid	unknown
+-home-imdx	unknown
+-tmp-probe-ws4	unknown
