@@ -6,7 +6,7 @@ therefore imports only the standard library, nothing from ``imd_dashd`` or
 ``maxpane_dashboard``, and is Python 3.11 syntax (no ``type`` statements, no nested
 same-quote f-strings). It emits metadata only -- model, effort, turns, token classes,
 timings, quota, failure flags -- never a prompt, a tool result or an agent message. The
-one free-text field it watermark = max(float(since_mtime), min(watermark, mtime - 1e-6))es on, ``apiErrors[].message``, is redacted by the caller.
+one free-text field it passes on, ``apiErrors[].message``, is redacted by the caller.
 
 API-equal definitions (spec §10; reconciled 40/40 against the control plane, fill3 §3):
 
@@ -360,7 +360,7 @@ def summarise_dir(root: str, *, since_mtime: float, work_root: str, budget_s: fl
     for mtime, path, size in pending:
         if clock() - start > budget_s:
             notes.append(f"budget exhausted after {done} of {len(pending)} files")
-            pass
+            watermark = max(float(since_mtime), min(watermark, mtime - 1e-6))
             break
         done += 1
         watermark = max(watermark, mtime)
