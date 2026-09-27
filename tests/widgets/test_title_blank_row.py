@@ -128,7 +128,43 @@ _FPP_SIGNALS = dict(
 
 #: ``(id, widget class, payload)``. The id is what a failure names, so it says
 #: the state as well as the panel wherever a panel has more than one.
+# pepepane (WP8): the six titled PEPEPANE panels, fed the WP1 healthy fixture folded by the manager's own fold.
+# SeatHero is not here: a HeroRow has no title, and each box's ``border: solid $panel`` puts the border on
+# region row 0 and the box label on row 1 (plan deviation 15).
+import json as _json  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+from maxpane_dashboard.data.seat_models import SEAT_WIDGET_SIGNATURES as _SEAT_SIG, fold_status_document as _seat_fold  # noqa: E402
+from maxpane_dashboard.widgets.seat import (  # noqa: E402
+    SeatConfig,
+    SeatCost,
+    SeatLedgerTable,
+    SeatLog,
+    SeatMachine,
+    SeatNow,
+)
+
+_SEAT_FLAT = _seat_fold(_json.loads((_Path(__file__).resolve().parents[1] / "fixtures" / "seat" / "status" / "status_v2_healthy.json").read_text(encoding="utf-8")))
+
+
+def _seat_payload_for(name: str) -> dict:
+    return {key: _SEAT_FLAT[key] for key in _SEAT_SIG[name]}
+
+
 _PANELS = [
+    # -- seat (pepepane, WP8) ------------------------------------------------
+    # Six titled panels; the untitled HeroRow is covered by tests/widgets/test_seat_hero.py (plan deviation 15).
+    ("SeatNow", SeatNow, _seat_payload_for("SeatNow")),
+    ("SeatLedgerTable", SeatLedgerTable, _seat_payload_for("SeatLedgerTable")),
+    # The log's row 2 is its first line, so the payload carries one.
+    ("SeatLog", SeatLog, {**_seat_payload_for("SeatLog"), "seat_log_lines": [{
+        "seq": 1, "ts": "2026-09-26T03:40:08.226Z", "kind": "heartbeat",
+        "text": "2026-09-26T03:40:08.226Z alive 14h42m · idle · 77 submitted · fleet 406 online, 417 enrolled",
+        "invocation": None, "cursor": None}], "seat_log_seq": 1}),
+    ("SeatConfig", SeatConfig, _seat_payload_for("SeatConfig")),
+    ("SeatCost", SeatCost, _seat_payload_for("SeatCost")),
+    ("SeatMachine", SeatMachine, _seat_payload_for("SeatMachine")),
+
     # -- bakery (hidden) --------------------------------------------------
     ("CookieChart", CookieChart, {"histories": {"bakery": _SERIES}}),
     ("SignalsPanel", SignalsPanel, {

@@ -218,3 +218,26 @@ def test_job_link_style_links_a_canonical_uuid_and_nothing_else():
     assert style.meta == {"@click": open_action(IMD, "job", job)}
     for bad in (None, "", job.upper(), "day1abcd-not-a-uuid", 7, "../../x" + job[7:]):
         assert _chain.job_link_style(bad) is None, bad
+
+
+# -- the update_data signatures against the frozen contract (Task 8.7) ---------------------
+
+from maxpane_dashboard.data.seat_models import SEAT_KEYS, SEAT_WIDGET_SIGNATURES  # noqa: E402  (a test may import data)
+
+
+def test_seat_package_exports_exactly_the_eight_names():
+    assert seat_widgets.__all__ == ["SeatHero", "SeatNow", "SeatLedgerTable", "SeatLog", "SeatConfig", "SeatCost", "SeatMachine", "SeatCostSpark"]
+    assert set(SEAT_WIDGET_SIGNATURES) == set(seat_widgets.__all__) - {"SeatCostSpark"}
+    assert not hasattr(seat_widgets.SeatCostSpark, "update_data")
+
+
+@pytest.mark.parametrize("name", sorted(SEAT_WIDGET_SIGNATURES))
+def test_update_data_names_exactly_the_contract_signature(name):
+    # contract §C.4/§C.15: every keyword is a SEAT_KEYS name with default None, in the contract's order, plus **_kwargs
+    cls = getattr(seat_widgets, name)
+    params = inspect.signature(cls.update_data).parameters
+    named = [p for p in params.values() if p.name != "self" and p.kind is not p.VAR_KEYWORD]
+    assert tuple(p.name for p in named) == SEAT_WIDGET_SIGNATURES[name]
+    assert all(p.default is None for p in named), name
+    assert all(p.name in SEAT_KEYS for p in named), name
+    assert any(p.kind is p.VAR_KEYWORD for p in params.values()), f"{name}.update_data lacks **_kwargs"

@@ -1339,6 +1339,11 @@ MIGRATED_PACKAGES = {
     # found must still be in that ``__all__``: the re-export is the contract
     # ``screens/bakery.py`` and the agreement tests import through.
     "bakery": 6,
+    # pepepane (WP8). Seven update_data classes -- SeatHero, SeatNow, SeatLedgerTable,
+    # SeatLog, SeatConfig, SeatCost, SeatMachine; the eighth export, SeatCostSpark, is the
+    # strip COST composes and has no update_data (contract §C.15).
+    "seat": 7,
+
 }
 
 #: The migrated "packages" that are a set of top-level modules rather than a
