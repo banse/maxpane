@@ -46,6 +46,7 @@ from maxpane_dashboard.data.seat_tail import (
 )
 
 logger = logging.getLogger(__name__)
+_monotonic = time.monotonic
 
 Clock = Callable[[], float]
 
@@ -187,6 +188,47 @@ def _single_source_factory(source: LineSource) -> Callable[[TailState], LineSour
     return factory
 
 
+class _BoundedSource:
+    """Synchronous --once source with total and quiet deadlines on idle ticks.
+
+    Source operations already carry their transport timeouts. The total deadline
+    also covers the Docker backfill and any journald cursor fallback attempt.
+    """
+
+    def __init__(self, inner: LineSource, deadline: float) -> None:
+        self._inner = inner
+        self.kind = inner.kind
+        self._deadline = deadline
+        self._closed = False
+
+    def open(self) -> None:
+        self._inner.open()
+
+    def lines(self):
+        last_line = _monotonic()
+        for raw in self._inner.lines():
+            now = _monotonic()
+            if now >= self._deadline:
+                return
+            if raw is None:
+                if now - last_line >= BACKFILL_QUIET_S:
+                    return
+            else:
+                last_line = now
+            yield raw
+
+    def backfill(self):
+        return self._inner.backfill()
+
+    def exit_code(self):
+        return self._inner.exit_code()
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._inner.close()
+
+
 class _TierFailure(Exception):
     """A tier read that answered `not ok` -- lands nothing, counts one failure, retries after min(TTL, 60 s)."""
 
@@ -259,6 +301,7 @@ class SeatManager:
         self._tail_state = TailState.load(self._maxpane_dir / TAIL_FILE)
         self._backfill_lines = 0
         self._backfill_done = False
+        self._backfill_gap_note: str | None = None
         self._backfill_discarded_utc: str | None = None   # sticky WP3 backfill_note/backfill_at (deviation 11; Task 7.7)
 
         self._ring: deque[LogLine] = deque(maxlen=LOG_RING)
@@ -382,7 +425,7 @@ class SeatManager:
         self._inline_step(now)
         self._spawn_tiers(now)
         doc = self._build_document(now, started_at)
-        doc = redact_tree(doc)
+        doc = self._no_currency(redact_tree(doc))
         doc["completedAtUtc"] = sig.iso_z(float(self._clock()))   # after every source has been folded in (mutation proof 13)
         refusal = models.validate_status_document(doc)
         if refusal is not None:
@@ -397,10 +440,12 @@ class SeatManager:
             self._refusal = None
         doc["pollInterval"] = self._poll_interval
         self._document = doc
-        new_lines = [self._line_dict(line) for line in self._ring if line.seq > self._emitted_seq]
+        # the LOG panel is a panel too: no `$` reaches it either (header Global Constraints, spec §10)
+        new_lines = [self._no_currency(self._line_dict(line)) for line in self._ring if line.seq > self._emitted_seq]
         flat = models.fold_status_document(doc, now=float(self._clock()), log_lines=new_lines, log_seq=self._emitted_seq)
         self._emitted_seq = int(flat.get("seat_log_seq") or self._emitted_seq)
         return flat
+
 
     def _drain_step(self, now: float) -> None:
         self.drain()
@@ -754,7 +799,7 @@ class SeatManager:
                 "toUtc": self._newest_ts(),
                 "source": self._tail_kind(),
                 "rows": len(rows),
-                "gapNote": self._thread.gap_note if self._thread is not None else None,
+                "gapNote": self._thread.gap_note if self._thread is not None else self._backfill_gap_note,
                 "ledgerSinceUtc": self._ledger.meta_get("ledger_since_utc"),
                 "backfillDiscardedUtc": self._backfill_discarded(),
             },
@@ -1300,6 +1345,18 @@ class SeatManager:
             return {"fleetOnline": plane.get("connectedDaemons"), "fleetEnrolled": plane.get("activeEnrollments")}
         return {"fleetOnline": None, "fleetEnrolled": None}
 
+    @classmethod
+    def _no_currency(cls, value: Any) -> Any:
+        """Remove every ``$`` from every string leaf (spec §10: tokens, never dollars -- no exception, no flag)."""
+        if isinstance(value, str):
+            return value.replace("$", "")
+        if isinstance(value, dict):
+            return {cls._no_currency(k) if isinstance(k, str) else k: cls._no_currency(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [cls._no_currency(v) for v in value]
+        if isinstance(value, tuple):
+            return [cls._no_currency(v) for v in value]
+        return value
 
 
 
@@ -1337,6 +1394,67 @@ class SeatManager:
 
 
 
+
+
+
+
+    async def backfill(self, *, api: bool = False) -> dict:
+        """Consume a bounded local source synchronously; never start a tail thread.
+
+        TailThread.run_once supplies the existing classifier, Docker stale-segment
+        checks and journal cursor fallback. API history retains local ledger rows.
+        """
+        summary: dict[str, Any] = {"lines": 0, "apiRows": 0, "apiError": None}
+        if self._tail_factory is not None and self._thread is None and not self._backfill_done:
+            deadline = _monotonic() + BACKFILL_MAX_S
+            opened: list[_BoundedSource] = []
+
+            def factory(state: TailState) -> LineSource:
+                source = _BoundedSource(self._tail_factory(state), deadline)
+                opened.append(source)
+                return source
+
+            consumer = TailThread(factory, self._queue, state=self._tail_state,
+                                  state_path=self._maxpane_dir / TAIL_FILE, now=self._clock)
+            try:
+                cursor = self._tail_state.cursor
+                consumer.run_once()
+                if (cursor is not None and self._tail_state.cursor is None
+                        and consumer.gap_note and _monotonic() < deadline):
+                    consumer.run_once()
+            except Exception as exc:
+                self._error_count += 1
+                logger.warning("PEPEPANE synchronous backfill failed: %s", redact(str(exc)))
+            finally:
+                for source in opened:
+                    source.close()
+                self._backfill_gap_note = consumer.gap_note
+                if consumer.backfill_note == STALE_BACKFILL_REASON and consumer.backfill_at is not None:
+                    self._backfill_discarded_utc = sig.iso_z(consumer.backfill_at)
+                result = self.drain()
+                self._backfill_lines = result.lines
+                summary["lines"] = result.lines
+                consumer.persist(force=True)
+                self._backfill_done = True
+        if api:
+            if self._offline or self._api is None:
+                summary["apiError"] = "offline"
+            elif self._seat is None:
+                summary["apiError"] = "no seat configured"
+            else:
+                try:
+                    result = await self._api.backfill(self._seat)
+                except Exception as exc:             # noqa: BLE001
+                    result = None
+                    summary["apiError"] = f"{type(exc).__name__}"
+                if result is not None and result.ok:
+                    body = result.data if isinstance(result.data, Mapping) else {}
+                    rows = [seat_api.normalise_work_row(r) for r in (body.get("work") or []) if isinstance(r, Mapping)]
+                    summary["apiRows"] = int(self._ledger.seed_api_rows(rows, seat=self._seat))
+                    self._ledger.meta_set("api_backfill_done_utc", sig.iso_z(float(self._clock())))
+                elif result is not None:
+                    summary["apiError"] = result.reason or "api backfill failed"
+        return summary
 
 
 __all__ = [

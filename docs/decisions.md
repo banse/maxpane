@@ -474,3 +474,15 @@ asserts a withdrawn statement is historical — do not review code against it.
   existing frozen stdlib redactor before JSON serialization, including arbitrary refused argument names and
   nested fields. Caller allowlists still restrict the schema. Synthetic credential/control-character tests and
   a mutation prove the boundary; visible control glyphs follow the established redactor contract.
+
+- **2026-09-27 (spec correction, WP7)** — `--once` consumes its bounded log backfill synchronously
+  through `TailThread.run_once()` without starting a thread, as spec §4.3 requires. A local source wrapper
+  enforces the 25-second total and 2-second quiet deadlines, delegates stale Docker backfill handling, and
+  closes each source in `finally`. A journald cursor-gap fallback shares the same total deadline. Backfill
+  persistence, sticky notes and idempotence remain intact; deterministic idle, continuous, failing, stale
+  Docker and journal sources prove the behavior without a live process. This supersedes Task 7.11's
+  temporary-thread reference implementation.
+- **2026-09-27 (test corrections, WP7)** — The timestamp grammar pin lives in the new signals tests,
+  preserving the brief's limit of two edits to the existing model tests. The API-reasons fixture records
+  forwarded requests once, preserving exact request counts. The LOG currency guard checks the first,
+  nonempty emitted batch because later cycles have already drained it; the prescribed mutation now fails.

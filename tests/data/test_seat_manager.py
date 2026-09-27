@@ -1031,3 +1031,232 @@ async def test_fleet_falls_back_to_health_after_five_minutes_without_the_clause(
     assert (m2.document()["daemon"]["fleetOnline"], m2.document()["daemon"]["fleetEnrolled"]) == (None, None), "never the stale clause"
     await m.close()
     await m2.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 7.11 — completedAtUtc, validate before fold, no currency, backfill, close
+# ---------------------------------------------------------------------------
+
+
+async def test_completed_at_is_after_every_source_as_of(tmp_path):
+    # spec §7 (both stamps) / §14 mutation proof 13: completedAtUtc is stamped after every source has been folded in
+    clock = Clock(ticking=True)                             # +1 s per read: order becomes visible in the stamps
+    m = _manager(tmp_path, now=clock, unit_reader=StubUnitReader(UNIT_OK, HOST_OK), broker=FakeBroker(responses=RESPONSES),
+                 api=_api_nosleep(FixtureApi()), runtime="codex")
+    m.feed_lines(STARTUP + LIFECYCLE + HEARTBEATS)
+    # a completed --once backfill: `_tail_source` stamps asOfUtc from the drain (no thread runs in this test)
+    m._backfill_done, m._backfill_lines = True, len(STARTUP + LIFECYCLE + HEARTBEATS)
+    for _ in range(3):
+        await m.fetch_and_compute()
+        await m.settle()
+    doc = m.document()
+    started = models.parse_iso(doc["startedAtUtc"])
+    completed = models.parse_iso(doc["completedAtUtc"])
+    assert started is not None and completed is not None and started < completed
+    stamped = {name: src["asOfUtc"] for name, src in doc["sources"].items() if src["asOfUtc"] is not None}
+    assert {"tail", "unit", "seat", "status", "standing", "seatWork", "plane"} <= set(stamped), stamped
+    for name, as_of in stamped.items():
+        assert models.parse_iso(as_of) <= completed, f"{name} asOfUtc {as_of} is after completedAtUtc {doc['completedAtUtc']}"
+    assert models.parse_iso(stamped["tail"]) > started, "the drain happens after the start stamp"
+    assert models.parse_iso(stamped["unit"]) > started, "the inline unit read happens after the start stamp"
+    flat = models.fold_status_document(doc, now=clock.now)
+    assert flat["last_updated_seconds_ago"] >= 0
+    await m.close()
+
+
+async def test_document_validates_before_fold(tmp_path, monkeypatch):
+    # spec §7 refusal rules / §4.3 step 4: the document is validated before it is folded; a refused document never reaches document()
+    order: list[str] = []
+    real_validate, real_fold = models.validate_status_document, models.fold_status_document
+
+    def spy_validate(doc, *, raw_bytes=None):
+        order.append("validate")
+        return real_validate(doc, raw_bytes=raw_bytes)
+
+    def spy_fold(doc, **kw):
+        order.append("fold")
+        return real_fold(doc, **kw)
+
+    monkeypatch.setattr(models, "validate_status_document", spy_validate)
+    monkeypatch.setattr(models, "fold_status_document", spy_fold)
+    m = _manager(tmp_path, now=Clock(), broker=FakeBroker(responses=RESPONSES))
+    await m.fetch_and_compute()
+    assert order == ["validate", "fold"]
+    # a refusal: the leaky document is dropped, an empty one with the refusal reason is published, the error is counted
+    monkeypatch.setattr(models, "validate_status_document",
+                        lambda doc, *, raw_bytes=None: models.Refusal("with_secret", "canary: hex64 at seat.deviceKeyPublic"))
+    m.feed_lines(HEARTBEATS)
+    errors = m.error_count
+    flat = await m.fetch_and_compute()
+    doc = m.document()
+    assert m.error_count == errors + 1
+    assert doc["daemon"]["state"] is None and doc["seat"]["tokenId"] is None, "nothing of the refused document survives"
+    assert all(src["ok"] is None and src["reason"] == "document refused (with_secret)" and src["unavailable"] is True for src in doc["sources"].values())
+    assert flat["seat_daemon_state"] is None and flat["seat_hero_state"] is None, "nothing was read, so nothing is asserted"
+    assert real_validate(doc) is None, "the published replacement is itself valid"
+    await m.close()
+
+
+async def test_no_currency_anywhere_in_the_document(tmp_path):
+    # spec §10 no-currency rule (unconditional): no `$` in any document field, whatever a third party prints
+    clock = Clock()
+    responses = dict(RESPONSES, status={"lines": STATUS_LINES[:-1] + ["server active: eligible — est. $0.070 per task"], "rc": 0, "unit": "u"})
+    m = _manager(tmp_path, now=clock, broker=FakeBroker(responses=responses), api=_api_nosleep(FixtureApi()))
+    m.feed_lines(STARTUP + LIFECYCLE[:3] + [
+        "2026-09-26T03:24:10.781Z   working: Spent $3.20 of the budget; wrote artifacts/answer.json",
+        "2026-09-26T03:40:08.226Z alive 14h42m · 1 task running · 77 submitted · fleet 406 online, 417 enrolled · paused until 23:53 after 3 failed runs: budget $12 exceeded — run imd doctor",
+    ])
+    first_flat = await m.fetch_and_compute()
+    assert first_flat["seat_log_lines"]
+    assert "$" not in json.dumps(first_flat)
+    await m.settle()
+    flat = await m.fetch_and_compute()
+    doc = m.document()
+    assert "$" not in json.dumps(doc), json.dumps(doc)[:400]
+    assert "$" not in json.dumps(flat)
+    assert doc["current"]["lastMessage"] == "Spent 3.20 of the budget; wrote artifacts/answer.json"
+    assert doc["seat"]["eligibility"] == "eligible — est. 0.070 per task"
+    await m.close()
+
+
+async def test_backfill_once_ingests_without_starting_the_thread(tmp_path, monkeypatch):
+    # spec §4.3 `pepepane --once = backfill() + one fetch_and_compute()`; §5.6 cold-start backfill; api=True seeds history rows (§16 #15)
+    monkeypatch.setattr(sm_mod, "BACKFILL_QUIET_S", 0.2)
+    clock = Clock()
+    api = FixtureApi()
+    m = _manager(tmp_path, now=clock, tail=ListLineSource(STARTUP + LIFECYCLE + HEARTBEATS), api=_api_nosleep(api))
+    summary = await m.backfill()
+    assert summary["lines"] == len(STARTUP + LIFECYCLE + HEARTBEATS) and summary["apiRows"] == 0
+    assert m.tail_thread is None and m.pending_lines() == 0
+    await m.fetch_and_compute()
+    doc = m.document()
+    assert doc["sources"]["tail"]["ok"] is True and doc["sources"]["tail"]["reason"] is None
+    assert doc["daemon"]["state"] == "alive" and len(doc["tasks"]["rows"]) == 1
+    summary = await m.backfill(api=True)
+    # seat7_work20.json row 0 is the local LIFECYCLE row (hash12 c4d9714ffb95): seed_api_rows never overwrites it, so 19 are new
+    assert summary["apiRows"] == 19 and summary["lines"] == 0, "a second call adds no tail lines"
+    assert api.paths("/seats/7?").count("/seats/7?work=1000&reviews=0") == 1
+    assert m._ledger.meta_get("api_backfill_done_utc") == "2026-09-26T03:40:12Z"
+    assert m._ledger.counts()["rows"] >= 20, "api history rows seeded (source api), the local row kept"
+    await m.fetch_and_compute()
+    assert m.document()["sources"]["tail"]["ok"] is True, "the first backfill's lines still vouch for the tail"
+    await m.close()
+    # --offline: the api half is skipped and says so
+    m2 = _manager(tmp_path / "b", now=clock, tail=ListLineSource(HEARTBEATS), offline=True, api=_api(_no_network))
+    summary = await m2.backfill(api=True)
+    assert summary["lines"] == 2 and summary["apiRows"] == 0 and summary["apiError"] == "offline"
+    await m2.close()
+
+
+async def test_close_is_idempotent_and_closes_the_owned_api(tmp_path):
+    m = sm_mod.SeatManager(maxpane_dir=tmp_path, now=Clock(), seat=7)     # owns its SeatApiClient; no request is ever made
+    client = m._api._client
+    await m.close()
+    assert client.is_closed
+    await m.close()
+    m2 = _manager(tmp_path / "b", api=_api(_no_network))                  # injected: never closed by us
+    injected = m2._api._client
+    await m2.close()
+    assert not injected.is_closed
+    await injected.aclose()
+
+
+class _MonotonicClock:
+    def __init__(self):
+        self.value = 0.0
+
+    def __call__(self):
+        return self.value
+
+
+class _BoundedTestSource(ListLineSource):
+    def __init__(self, clock, mode):
+        super().__init__([])
+        self.clock, self.mode, self.closed, self.yields = clock, mode, False, 0
+
+    def lines(self):
+        from maxpane_dashboard.data.seat_tail import RawLine
+        while self.yields < 100:
+            self.yields += 1
+            self.clock.value += 1
+            if self.mode == "error":
+                raise OSError("fixture stream failure")
+            yield None if self.mode == "idle" else RawLine(HEARTBEATS[-1] + f" tick {self.yields}")
+        pytest.fail("backfill did not bound source consumption")
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.mark.parametrize("mode,deadline", [("idle", 2), ("continuous", 25), ("error", 1)])
+async def test_once_consumes_synchronously_with_deadlines_and_close(tmp_path, monkeypatch, mode, deadline):
+    clock = _MonotonicClock()
+    source = _BoundedTestSource(clock, mode)
+    monkeypatch.setattr(sm_mod, "_monotonic", clock, raising=False)
+    m = _manager(tmp_path, tail=lambda state: source, offline=True)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("--once started a tail thread")
+
+    monkeypatch.setattr(m, "start_tail", forbidden)
+    monkeypatch.setattr(threading.Thread, "start", forbidden)
+    summary = await m.backfill()
+    assert source.closed and source.yields == deadline
+    assert clock.value == deadline
+    assert m.tail_thread is None and m.pending_lines() == 0 and m._backfill_done
+    assert summary["lines"] == (24 if mode == "continuous" else 0)
+    assert (await m.backfill())["lines"] == 0
+    await m.close()
+
+
+async def test_once_preserves_stale_docker_discard_and_watermark(tmp_path, monkeypatch):
+    from maxpane_dashboard.data.seat_tail import RawLine, KIND_DOCKER, TAIL_FILE
+    clock = _MonotonicClock()
+    source = ListLineSource([RawLine(HEARTBEATS[-1])], backfill=LIFECYCLE)
+    source.kind = KIND_DOCKER
+    monkeypatch.setattr(sm_mod, "_monotonic", clock, raising=False)
+    m = _manager(tmp_path, tail=lambda state: source, offline=True, host="docker")
+    result = await m.backfill()
+    assert result["lines"] == 1 and m._ledger.counts()["rows"] == 0
+    await m.fetch_and_compute()
+    window = m.document()["tasks"]["window"]
+    assert window["backfillDiscardedUtc"] == "2026-09-26T03:40:12Z" and window["gapNote"] is None
+    assert TailState.load(tmp_path / TAIL_FILE).watermark_ts == "2026-09-26T03:40:08.226Z"
+    await m.close()
+
+
+@pytest.mark.parametrize("spent,attempts", [(1, 2), (25, 1)])
+async def test_once_journal_gap_fallback_shares_total_deadline(tmp_path, monkeypatch, spent, attempts):
+    from maxpane_dashboard.data.seat_tail import RawLine, KIND_JOURNALD
+    clock = _MonotonicClock()
+    sources, cursors = [], []
+
+    class Source(ListLineSource):
+        kind = KIND_JOURNALD
+
+        def lines(self):
+            clock.value += spent
+            yield RawLine(HEARTBEATS[-1], cursor="fresh", realtime_us=int(T0 * 1_000_000))
+
+        def close(self):
+            self.closed = True
+
+    def factory(state):
+        cursors.append(state.cursor)
+        source = Source([])
+        source.closed = False
+        sources.append(source)
+        return source
+
+    monkeypatch.setattr(sm_mod, "_monotonic", clock, raising=False)
+    m = _manager(tmp_path, tail=factory, offline=True)
+    m._tail_state.cursor = "vacuumed"
+    m._tail_state.last_ts_utc = "2026-09-26T03:00:00Z"
+    summary = await m.backfill()
+    assert len(sources) == attempts and all(s.closed for s in sources)
+    assert cursors == (["vacuumed", None] if attempts == 2 else ["vacuumed"])
+    assert summary["lines"] == (1 if attempts == 2 else 0)
+    if attempts == 2:
+        await m.fetch_and_compute()
+        assert m.document()["tasks"]["window"]["gapNote"].startswith("gap ")
+    await m.close()
