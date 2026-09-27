@@ -145,3 +145,71 @@ def test_module_is_pure():
     names = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     names |= {(n.module or "").split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     assert not names & {"textual", "subprocess", "socket", "httpx", "maxpane_dashboard"}
+
+
+# ---- Task 4.12: series, quota and the no-currency rule --------------------------------------
+
+
+def test_quota_keys_match_the_status_schema():
+    # contract §C.4: the quota block has exactly SEAT_BLOCK_KEYS["seat_quota"], in that order
+    from maxpane_dashboard.data.seat_models import SEAT_BLOCK_KEYS
+
+    assert sc.QUOTA_KEYS == SEAT_BLOCK_KEYS["seat_quota"]
+
+
+def test_series_from_days_skips_unknown_days():
+    # spec §8 COST sparkline `output tokens/day · 14 d` from the sqlite days table (oldest first)
+    days = [{"dayUtc": f"2026-09-{d:02d}", "tasks": d, "accepted": d - 1, "tokens": {"output": d * 1000}} for d in range(10, 27)]
+    days[-2]["tokens"] = None
+    series = sc.series_from_days(days, n=14)
+    assert series["tasksPerDay"][0] == ["2026-09-13", 13] and series["tasksPerDay"][-1] == ["2026-09-26", 26]
+    assert len(series["tasksPerDay"]) == 14 and len(series["outputTokensPerDay"]) == 13
+    assert ["2026-09-25", 25000] not in series["outputTokensPerDay"] and series["acceptedPerDay"][-1] == ["2026-09-26", 25]
+
+
+def test_quota_block_codex_weekly_and_claude_unobservable():
+    # spec §10 quota gauge: Codex newest weekly sample with its age; Claude "not observable locally", never fabricated
+    sample = {"usedPercent": 45.0, "windowMinutes": 10080, "resetsAtUtc": "2026-09-28T21:50:11Z", "planType": "pro",
+              "sampledAtUtc": "2026-09-26T02:33:59Z"}
+    assert sc.quota_block(sample, runtime="codex") == {
+        "provider": "codex", "window": "weekly", "usedPercent": 45.0, "resetsAtUtc": "2026-09-28T21:50:11Z",
+        "sampledAtUtc": "2026-09-26T02:33:59Z", "planType": "pro", "reason": None}
+    assert sc.quota_block(sample, runtime="claude") == {
+        "provider": "claude", "window": None, "usedPercent": None, "resetsAtUtc": None, "sampledAtUtc": None,
+        "planType": None, "reason": "not observable locally"}
+    assert sc.quota_block(None, runtime="codex")["reason"] == "no rate_limits sample yet"
+    assert sc.quota_block(dict(sample, windowMinutes=300), runtime="codex")["window"] == "5h"
+    assert tuple(sc.quota_block(None, runtime="codex")) == sc.QUOTA_KEYS
+
+
+def test_no_currency_field_in_any_cost_output(tmp_path):
+    # spec §10 no-currency rule (unconditional): no `$`, no price/usd/cost field in any summariser or analytics output,
+    # even when the inputs carry cost-state.totalCostUSD / costUSD
+    slug = tmp_path / "projects" / "-home-imd--identitymd-work-3195fa42-8d6e-4f2a-b1c3-5d7e9f1a3b5c-2a4c6e80-1b3d-4f5a-8c7e-9d1f3b5a7c9e"
+    slug.mkdir(parents=True)
+    shutil.copyfile(SESSIONS / "transcript_cost_state_haiku.jsonl", slug / "s.jsonl")
+    rollouts = tmp_path / "sessions" / "2026" / "09" / "26"
+    rollouts.mkdir(parents=True)
+    shutil.copyfile(SESSIONS / "rollout_task.jsonl", rollouts / "rollout-2026-09-26T02-33-41-0199f3a2.jsonl")
+    outputs = [
+        summarise_claude.summarise_dir(str(tmp_path / "projects"), since_mtime=0.0, budget_s=15.0, now=0.0),
+        summarise_codex.summarise_dir(str(tmp_path / "sessions"), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0),
+        sc.summarise([dict(_row("2026-09-26T02:33:38.000Z"), costUsd=0.07, totalCostUSD=0.114)], window_days=7, now=NOW),
+        sc.quota_block({"usedPercent": 45.0, "windowMinutes": 10080}, runtime="codex"),
+        sc.series_from_days([{"dayUtc": "2026-09-26", "tasks": 1, "accepted": 1, "tokens": {"output": 812}}]),
+    ]
+    banned = re.compile(r"usd|price|dollar|currency|cost", re.IGNORECASE)
+
+    def keys(value):
+        if isinstance(value, dict):
+            for key, inner in value.items():
+                yield key
+                yield from keys(inner)
+        elif isinstance(value, list):
+            for inner in value:
+                yield from keys(inner)
+
+    for out in outputs:
+        assert "$" not in json.dumps(out)
+        assert not [k for k in keys(out) if banned.search(str(k))]
+    assert "0.114" not in json.dumps(outputs) and "0.0069" not in json.dumps(outputs)

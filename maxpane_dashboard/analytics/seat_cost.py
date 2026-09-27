@@ -205,7 +205,61 @@ def summarise(rows: Sequence[dict], *, window_days: int, now: float, side_model_
     }
 
 
+# ---- series and quota ------------------------------------------------------------------------
+
+QUOTA_KEYS = ("provider", "window", "usedPercent", "resetsAtUtc", "sampledAtUtc", "planType", "reason")  #: == SEAT_BLOCK_KEYS["seat_quota"]
+WINDOW_WORDS = {10080: "weekly", 300: "5h"}  #: Codex rate_limits.primary.window_minutes (cost §0.3: only weekly ever seen)
+CLAUDE_QUOTA_REASON = "not observable locally"  #: /usage is interactive only; rate_limit_event is not logged (cost §4)
+
+
+def series_from_days(days: Sequence[dict], *, n: int = 14) -> dict:
+    """The COST sparkline series from ``SeatLedger.days()`` (oldest first); a day whose figure is unknown
+    is omitted from that series rather than drawn as 0."""
+    newest = [d for d in days if isinstance(d, dict) and isinstance(d.get("dayUtc"), str)][-n:]
+
+    def series(pick) -> list:
+        out = []
+        for day in newest:
+            value = pick(day)
+            if _num(value) is not None:
+                out.append([day["dayUtc"], int(value)])
+        return out
+
+    return {
+        "outputTokensPerDay": series(lambda d: (d.get("tokens") or {}).get("output") if isinstance(d.get("tokens"), dict) else None),
+        "tasksPerDay": series(lambda d: d.get("tasks")),
+        "acceptedPerDay": series(lambda d: d.get("accepted")),
+    }
+
+
+def quota_block(newest_codex_quota: dict | None, *, runtime: str) -> dict:
+    """The §7 ``quota`` block: Codex's newest weekly sample with its age, or Claude's honest absence."""
+    block = dict.fromkeys(QUOTA_KEYS)
+    block["provider"] = runtime if isinstance(runtime, str) and runtime else None
+    if runtime == "claude":
+        block["reason"] = CLAUDE_QUOTA_REASON
+        return block
+    if runtime != "codex":
+        block["reason"] = "runtime unknown"
+        return block
+    quota = newest_codex_quota if isinstance(newest_codex_quota, dict) else None
+    used = _num(quota.get("usedPercent")) if quota else None
+    if quota is None or used is None:
+        block["reason"] = "no rate_limits sample yet"
+        return block
+    minutes = quota.get("windowMinutes")
+    block.update(
+        window=WINDOW_WORDS.get(minutes) or (f"{minutes} min" if isinstance(minutes, int) and not isinstance(minutes, bool) else None),
+        usedPercent=used,
+        resetsAtUtc=quota.get("resetsAtUtc") if isinstance(quota.get("resetsAtUtc"), str) else None,
+        sampledAtUtc=quota.get("sampledAtUtc") if isinstance(quota.get("sampledAtUtc"), str) else None,
+        planType=quota.get("planType") if isinstance(quota.get("planType"), str) else None,
+    )
+    return block
+
+
 __all__ = [
     "DAY_S", "COUNTED_KINDS", "EXCLUDED_KINDS", "AUTH_STATUSES", "BUCKET_KEYS", "TOKEN_CLASSES",
     "percentile", "tokens_for_attempt", "bucket_key", "summarise",
+    "QUOTA_KEYS", "WINDOW_WORDS", "CLAUDE_QUOTA_REASON", "series_from_days", "quota_block",
 ]
