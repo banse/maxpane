@@ -390,3 +390,68 @@ def test_plain_and_zst_twins_in_one_call_yield_one_session(tmp_path, monkeypatch
     monkeypatch.setattr(sc, "ZSTD", None)
     result = sc.summarise_dir(str(tmp_path / "sessions"), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0)
     assert [s["path"] for s in result["sessions"]] == [str(plain)] and result["reason"] is None
+
+
+# ---- Task 4.9: guards over both summarisers (self-contained, stdlib-only, Python 3.11) ---------
+
+SUMMARISERS = (REPO / "imd_dashd" / "summarise_codex.py", REPO / "imd_dashd" / "summarise_claude.py")
+#: ``compression`` is stdlib from Python 3.14 only; the one import of it is guarded (test_zstd_import_is_guarded)
+STDLIB = frozenset(sys.stdlib_module_names) | {"compression"}
+
+
+def _imports(tree: ast.AST) -> list[tuple[ast.AST, str]]:
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [(node, alias.name) for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            found.append((node, "." * node.level + (node.module or "")))
+    return found
+
+
+@pytest.mark.guard
+@pytest.mark.parametrize("path", SUMMARISERS, ids=lambda p: p.name)
+def test_summarisers_import_nothing_but_stdlib(path):
+    # spec §5.4 / contract §C.8: piped to `python3 -` in the container and run by /usr/bin/python3 on the VPS
+    names = [name for _, name in _imports(ast.parse(path.read_text(encoding="utf-8")))]
+    assert "json" in names and "os" in names, "the walk found the real imports"
+    for name in names:
+        assert not name.startswith("."), f"relative import {name!r}"
+        assert name.split(".")[0] in STDLIB, f"non-stdlib import {name!r}"
+    assert not {n.split(".")[0] for n in names} & {"subprocess", "socket", "imd_dashd", "maxpane_dashboard"}
+
+
+@pytest.mark.guard
+def test_zstd_import_is_guarded():
+    # spec §5.4: compression.zstd needs libzstd at interpreter build time -- only inside try/except ImportError
+    tree = ast.parse(SUMMARISERS[0].read_text(encoding="utf-8"))
+    guarded = [n for t in ast.walk(tree) if isinstance(t, ast.Try)
+               and any(isinstance(h.type, ast.Name) and h.type.id == "ImportError" for h in t.handlers)
+               for n in t.body if isinstance(n, (ast.Import, ast.ImportFrom))]
+    compression = [node for node, name in _imports(tree) if name.startswith("compression")]
+    assert compression and all(node in guarded for node in compression)
+    claude = ast.parse(SUMMARISERS[1].read_text(encoding="utf-8"))
+    assert not [name for _, name in _imports(claude) if name.startswith("compression")]
+
+
+@pytest.mark.guard
+@pytest.mark.parametrize("path", SUMMARISERS, ids=lambda p: p.name)
+def test_summarisers_compile_under_py311(path, tmp_path):
+    # spec §5.4 interpreter floor: the same files run on 3.14.4 (VPS) and 3.11.2 (container); the repo .venv is 3.11.15
+    source = path.read_text(encoding="utf-8")
+    ast.parse(source, filename=str(path), feature_version=(3, 11))  # rejects `type` statements and PEP 695 generics
+    py_compile.compile(str(path), cfile=str(tmp_path / (path.stem + ".pyc")), doraise=True)  # the running 3.11 grammar
+    assert sys.version_info >= (3, 11)
+
+
+@pytest.mark.guard
+@pytest.mark.parametrize("path", SUMMARISERS, ids=lambda p: p.name)
+def test_summarisers_never_read_a_currency_field(path):
+    # spec §10 no-currency rule: cost-state.totalCostUSD / modelUsage[*].costUSD are never read (only named in docs)
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = {id(n.body[0].value) for n in ast.walk(tree)
+                  if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef)) and n.body
+                  and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)}
+    constants = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                 and id(n) not in docstrings]
+    assert not [c for c in constants if "usd" in c.lower() or "$" in c]
