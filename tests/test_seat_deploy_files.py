@@ -721,3 +721,114 @@ def test_mac_readme_matches_the_parity_design():
                    "imd-npm", "#18"):
         assert needle in text, needle
     assert "docker.sock" not in text, "nothing mounts the Docker socket"
+
+
+# --- Task 9.9: follow-ups, the spec/plan copies, the banners, the no-currency doc guard -----------------------------
+
+FOLLOWUPS = REPO / "docs" / "seat_followups.md"
+LOCAL_PRD = REPO / "docs" / "pepepane_PRD.md"
+LOCAL_PLAN = REPO / "docs" / "pepepane_plan.md"
+BANNER_PREFIX = "> **Overridden by `pepepane` (2026-09-26).**"
+#: Spec §15: the untracked lineage docs get a dated banner as line 1 and nothing else changes.
+OLD_DOCS = {
+    "docs/seat_PRD.md": "# SEAT — a dashboard for the IdentityMD worker running on this machine",
+    "docs/seat_implementation_plan.md": "# SEAT — implementation plan",
+}
+#: Deviation #4: the documents this WP writes; the verbatim spec/plan copies are exempt by name.
+NO_CURRENCY_DOCS = (
+    "docs/seat_status_schema_v2.md", "docs/seat_install.md", "docs/seat_install_probe.md",
+    "docs/seat_followups.md", "deploy/mac/README.md", "deploy/vps/VERIFY.md",
+)
+DOLLAR_FIGURE = re.compile(r"\$\s?\d")
+FOLLOWUP_MUST_MENTION = (
+    "listPriceUsdEstimate", "cost-state", "docs/imd-api-changelog.md", "§3", "mode-B writer", "message.id", "AgentMessage",
+    "dev asks", "do not send", "imd pause", "imd status --json", "signed releases", "§16 #7", "§16 #9", "§16 #12",
+    "§16 #17", "§16 #18", "seat_install_probe.md", "uv.lock", "compileall", "tier set", "capacity set", "promotion",
+    "thread_turns", "ssh-keygen -Y sign", "seat_PRD.md", "requirements.lock", "MANIFEST.sha256", "six-surface",
+)
+
+
+def _prose_and_code(text: str) -> tuple[list[str], list[str]]:
+    """Split a Markdown document into prose lines and fenced-code lines (``` or ~~~ fences)."""
+    prose: list[str] = []
+    code: list[str] = []
+    fence: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if fence is None and (stripped.startswith("```") or stripped.startswith("~~~")):
+            fence = stripped[:3]
+            continue
+        if fence is not None and stripped.startswith(fence):
+            fence = None
+            continue
+        (code if fence is not None else prose).append(line)
+    assert fence is None, "unterminated code fence"
+    return prose, code
+
+
+def test_no_dollar_sign_in_docs_seat_files_except_the_no_currency_rule_sentence():
+    """Spec §10 no-currency rule, applied to the fork's own documents: in prose a ``$`` may appear only
+    on the line that states the rule (exactly one ``$``); inside fenced shell blocks ``$(``, ``${`` and
+    ``$var`` are shell, but a ``$`` followed by a digit is a dollar figure and fails. Mutation: write
+    'costs $0.07 per doctor run' into docs/seat_install.md -> red; put ``"price": "$1"`` in a JSON
+    example -> red."""
+    for rel in NO_CURRENCY_DOCS:
+        prose, code = _prose_and_code((REPO / rel).read_text(encoding="utf-8"))
+        for line in prose:
+            if "$" in line:
+                assert NO_CURRENCY_SENTENCE in line and line.count("$") == 1, f"{rel}: {line!r}"
+        for line in code:
+            assert not DOLLAR_FIGURE.search(line), f"{rel}: a dollar figure inside a code block: {line!r}"
+
+
+def test_followups_carry_every_parked_item():
+    """Spec §10, §6 rule 6, §17, §16, §18, §15: everything this fork parks is written down in one place
+    (CLAUDE.md 'Follow-ups': file it, do it as Tier 0 when its file is next touched)."""
+    text = FOLLOWUPS.read_text(encoding="utf-8")
+    for needle in FOLLOWUP_MUST_MENTION:
+        assert needle in text, needle
+    assert text.count(NO_CURRENCY_SENTENCE) == 1
+
+
+def test_pepepane_prd_and_plan_are_the_spec_and_the_plan_with_an_adaptation_header():
+    """Spec §15: docs/pepepane_PRD.md is 'this spec, adapted' -- the spec verbatim under a header that
+    names the contract decisions superseding its spellings; docs/pepepane_plan.md is the companion
+    plan. Mutation: drop the ExecStart correction from the header -> red; copy only §1-§8 -> red."""
+    prd = LOCAL_PRD.read_text(encoding="utf-8")
+    assert prd.startswith("# PEPEPANE — local dashboard and control panel for an IdentityMD worker (pepepane PRD)")
+    assert "> **Adapted copy (2026-09-26).**" in prd
+    header = prd.partition("\n---\n\n")[0]
+    assert f"ExecStart={BROKER_PYTHON} -I {DEPLOY_BROKER_DIR}/imd_dashd.py" in header
+    assert "specific `sk-ant-` before generic `sk-`" in header
+    assert "plain yellow `pending`" in header and "never infer a suffix" in header
+    assert "# PEPEPANE — a local dashboard and control panel for an IdentityMD worker (MaxPane fork) — design spec" in prd
+    for heading in ("## 11. Control panel", "## 12. Privilege and installation", "## 14. Testing strategy",
+                    "## 16. Owner decisions required", "## Appendix B"):
+        assert heading in prd, heading
+    assert len(prd) > 150_000, "the whole spec, not an excerpt"
+    plan = LOCAL_PLAN.read_text(encoding="utf-8")
+    assert plan.startswith("# PEPEPANE dashboard (MaxPane fork) Implementation Plan — pepepane copy")
+    for marker in ("## Global Constraints", "## WP9: Deploy, install, probe, docs", "### Task 9.1", "## F. Mutation proofs"):
+        assert marker in plan, marker
+
+
+def test_old_seat_docs_carry_the_overridden_banner_and_nothing_else_changed():
+    """Spec §15: 'a dated overridden-by-pepepane banner, not edits' -- line 1 is the banner, line 2
+    blank, line 3 the original heading. Skips when the untracked files are absent (deviation #3)."""
+    for rel, heading in OLD_DOCS.items():
+        path = REPO / rel
+        if not path.exists():
+            pytest.skip(f"{rel} is untracked upstream and absent in this checkout")
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert lines[0].startswith(BANNER_PREFIX), rel
+        assert "docs/pepepane_PRD.md" in lines[0] and "docs/pepepane_plan.md" in lines[0]
+        assert lines[1] == "" and lines[2] == heading, f"{rel}: the original heading follows the banner unchanged"
+
+
+DOCUMENT_BODY_HASHES = {'docs/pepepane_PRD.md': 'b4015c901f0f3671e577aa3afa161bd9cc131940dbea46c653774c381fca4a6b', 'docs/pepepane_plan.md': '5af1cfde16d6a12328592a0aa492878f591e9f15d0c04dd09b801bec2fd37e8b', 'docs/seat_PRD.md': 'ee4384d2ea486992af9e8e94a920444d9e6c648df63fbbf3ae0bb307f3cdd511', 'docs/seat_implementation_plan.md': '2a62dfe5ebd99d2cbe0b96ebd8f808a856a446a67ed9c22038b12443ff5e2689'}
+
+def test_historical_document_bodies_remain_byte_identical():
+    for rel, expected in DOCUMENT_BODY_HASHES.items():
+        raw = (REPO / rel).read_bytes()
+        body = raw.partition(b"\n---\n\n")[2] if "pepepane_" in rel else raw.split(b"\n\n", 1)[1]
+        assert hashlib.sha256(body).hexdigest() == expected, rel
