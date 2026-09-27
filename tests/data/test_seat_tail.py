@@ -775,3 +775,73 @@ def test_dedup_set_is_bounded():
     thread, q = _thread(lambda st: src, state=state)
     thread.run_once()
     assert q.qsize() == 2400 and len(thread._seen) == DEDUP_KEYS_MAX
+
+# =============================================================================
+# Task 3.8 -- journald gap detection and the --since fallback
+# =============================================================================
+
+
+def test_vacuumed_cursor_is_detected_from_data_not_exit_code():
+    # spec §5.1 VPS transport / §9 Watermarks: journalctl may seek to the closest surviving entry with exit 0
+    # after a vacuum, so the FIRST record's __REALTIME_TIMESTAMP is compared with lastTsUtc; more than 60 s newer
+    # -> gap note + the next attach is --since <lastTsUtc>. Fixture journal_vacuumed_cursor.jsonl starts 2 d later.
+    popen = ScriptedPopen([_fixture_bytes("journal_vacuumed_cursor.jsonl"), _fixture_bytes("journal_json_records.jsonl")], rcs=[0, 0])
+    state = TailState(kind=KIND_JOURNALD, cursor="s=00000000000000000000000000000001;i=7d0", last_ts_utc="2026-09-24T04:12:00.000Z",
+                      invocation="a1b2c3d4e5f60718293a4b5c6d7e8f90")
+    thread, q = _thread(journald_factory("imd-worker.service", popen=popen), state=state)
+    thread.run_once()
+    assert popen.calls[0][0][-2:] == ["--after-cursor", "s=00000000000000000000000000000001;i=7d0"]
+    assert thread.gap_note == "gap 2026-09-24T04:12:00.000Z→2026-09-26T03:40:07.120Z"
+    assert thread.reason == thread.gap_note
+    assert q.empty()                                   # nothing from the mis-seeked attach was ingested
+    assert state.cursor is None and state.last_ts_utc == "2026-09-24T04:12:00.000Z"
+    assert thread.backoff_s == BACKOFF_MIN_S and thread.restarts == 1
+    thread.run_once()
+    argv = popen.calls[1][0]
+    assert argv[-2:] == ["--since", "2026-09-24 04:12:00 UTC"] and "--after-cursor" not in argv
+    assert q.qsize() == 9                             # the fallback attach delivers
+    assert state.cursor is not None and state.last_ts_utc == "2026-09-26T03:41:37.123Z"
+    assert thread.gap_note == "gap 2026-09-24T04:12:00.000Z→2026-09-26T03:40:07.120Z"   # the footer keeps the note
+
+
+def test_after_cursor_attach_within_tolerance_is_not_a_gap():
+    popen = ScriptedPopen([_fixture_bytes("journal_json_records.jsonl")])
+    state = TailState(kind=KIND_JOURNALD, cursor="s=00000000000000000000000000000001;i=1ef", last_ts_utc="2026-09-26T03:39:30.000Z")
+    thread, q = _thread(journald_factory(popen=popen), state=state)
+    thread.run_once()
+    assert thread.gap_note is None and q.qsize() == 9
+    assert state.cursor.startswith("s=00000000000000000000000000000001;i=1f8;")   # the newest record's __CURSOR
+    assert state.invocation == "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+    assert thread.reason == "tail: exited rc=0 — retry in 1s"
+
+
+def test_non_zero_exit_before_any_record_with_a_cursor_falls_back_to_since():
+    # spec §5.1 VPS transport: "... or a non-zero exit, triggers the fallback --since <lastTsUtc>"
+    popen = ScriptedPopen([b"Failed to seek to cursor: No such file or directory\n", b""], rcs=[1, 0])
+    state = TailState(kind=KIND_JOURNALD, cursor="s=dead", last_ts_utc="2026-09-24T04:12:00.000Z")
+    thread, _ = _thread(journald_factory(popen=popen), state=state)
+    thread.run_once()
+    assert thread.gap_note == "gap 2026-09-24T04:12:00.000Z→?"
+    assert thread.reason == "tail: exited rc=1 — retry in 1s"
+    assert state.cursor is None
+    thread.run_once()
+    assert popen.calls[1][0][-2:] == ["--since", "2026-09-24 04:12:00 UTC"]
+
+
+def test_non_zero_exit_after_records_keeps_the_advanced_cursor():
+    # a journald restart mid-stream is not a vacuum: the cursor moved with the records, re-attach after it
+    popen = ScriptedPopen([_fixture_bytes("journal_json_records.jsonl")], rcs=[1])
+    state = TailState(kind=KIND_JOURNALD, cursor="s=00000000000000000000000000000001;i=1ef", last_ts_utc="2026-09-26T03:39:30.000Z")
+    thread, _ = _thread(journald_factory(popen=popen), state=state)
+    thread.run_once()
+    assert thread.gap_note is None and state.cursor is not None and state.cursor != "s=00000000000000000000000000000001;i=1ef"
+
+
+def test_open_failure_is_a_reason_not_a_crash():
+    def broken(argv, **kw):
+        raise FileNotFoundError("journalctl")
+
+    thread, _ = _thread(journald_factory(popen=broken))
+    thread.run_once()
+    assert thread.reason == "tail: open failed (journalctl) — retry in 1s"
+    assert thread.restarts == 1

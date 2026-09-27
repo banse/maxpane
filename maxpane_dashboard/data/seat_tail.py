@@ -755,17 +755,31 @@ class TailThread:
         follower's first *stamped* line, then judged with ``backfill_is_stale`` against the
         watermark persisted before this attach and that first stamp; a stale body is discarded
         whole, a fresh one is emitted before the held follower lines (chronological order).
+
+        journald: when this attach used ``--after-cursor``, the FIRST record's
+        ``__REALTIME_TIMESTAMP`` goes through ``detect_gap`` against ``lastTsUtc`` -- a vacuumed
+        cursor may seek to the oldest surviving entry with exit 0 (spec §5.1). A gap keeps the
+        note, drops the cursor (so the factory attaches ``--since <lastTsUtc>`` next) and
+        restarts at once without ingesting the mis-seeked stream. A non-zero exit *before any
+        record* on a cursor attach is the same fallback; a non-zero exit after records is an
+        ordinary restart from the cursor those records advanced.
         """
         self._stamp()
+        used_cursor = self._state.cursor is not None
         watermark_before = self._state.watermark_ts
-        source = self._source_factory(self._state)
-        source.open()
+        try:
+            source = self._source_factory(self._state)
+            source.open()
+        except OSError as exc:
+            self._note_exit(None, delivered=0, detail=f"open failed ({exc})")
+            return
         self._source = source
         self._state.kind = source.kind
         pending_backfill = source.backfill()
         held: list[RawLine] = []
         follower_first_ts: str | None = None
         delivered = 0
+        restart_now = False
         try:
             for raw in source.lines():
                 if self._stop.is_set():
@@ -776,6 +790,16 @@ class TailThread:
                     continue
                 if delivered == 0 and not held:
                     self._reason = None
+                    if used_cursor and source.kind == KIND_JOURNALD:
+                        first_iso = realtime_us_to_iso(raw.realtime_us) if raw.realtime_us is not None else None
+                        note = detect_gap(first_realtime_utc=first_iso, last_ts_utc=self._state.last_ts_utc, exit_code=None)
+                        if note is not None:
+                            self._gap_note = note
+                            self._reason = note
+                            self._state.cursor = None
+                            self._dirty = True
+                            restart_now = True
+                            break
                 if pending_backfill is not None:
                     held.append(raw)
                     if follower_first_ts is None:
@@ -799,7 +823,19 @@ class TailThread:
         if self._stop.is_set():
             self.persist(force=True)
             return
-        self._note_exit(source.exit_code(), delivered=delivered)
+        if restart_now:
+            self._restarts += 1
+            self._backoff_s = self._backoff_min
+            self.persist(force=True)
+            return
+        rc = source.exit_code()
+        if used_cursor and source.kind == KIND_JOURNALD and delivered == 0 and rc not in (None, 0):
+            note = detect_gap(first_realtime_utc=None, last_ts_utc=self._state.last_ts_utc, exit_code=rc)
+            if note is not None:
+                self._gap_note = note
+                self._state.cursor = None
+                self._dirty = True
+        self._note_exit(rc, delivered=delivered)
 
     def _resolve_backfill(self, body: list[RawLine], watermark_before: str | None, follower_first_ts: str | None) -> int:
         stamps = [stamp for stamp in (daemon_stamp(raw.text) for raw in body) if stamp]

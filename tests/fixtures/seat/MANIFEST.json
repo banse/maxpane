@@ -351,6 +351,20 @@
       "synthetic": true,
       "daemon_version": "0.1.0+285d1984",
       "notes": "newest daemon stamp 2026-09-20T10:04:41.220Z; the test's follower starts 2026-09-20T13:05:12.001Z and the persisted watermark is 12:59:40.000Z; Docker prefixes carry 9, 3 and trimmed fractional digits on purpose (Go RFC3339Nano trims zeros)"
+    },
+    "grammar/journal_vacuumed_cursor.jsonl": {
+      "origin": "synthetic: what `--after-cursor=<vacuumed cursor>` may return on systemd 259 when sd_journal_seek_cursor lands on the closest surviving entry with exit 0 (spec §5.1 VPS transport; fill8 OPEN) — three records two days newer than the test's persisted lastTsUtc 2026-09-24T04:12:00.000Z, under a NEW invocation id",
+      "captured_at": "2026-09-26T00:00:00Z",
+      "sha256": "13ef4882840e638e2e6dcc90e8b8431a1ebfe786bfafed14b315c786fd90a0e9",
+      "bytes": 1796,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "hex64>=32"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "first __REALTIME_TIMESTAMP 1790394007120000 = 2026-09-26T03:40:07.120Z; the real behaviour is recorded by probe_seat_host.sh (spec §14, §18 open 17)"
     }
   }
 }
