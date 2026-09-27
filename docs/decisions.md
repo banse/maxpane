@@ -759,3 +759,9 @@ cause, conservative over-redaction, future authoritative pending suffixes,
 privileged-code review and the complete public-push hygiene work. Public hygiene
 is deferred as directed by the owner; no captured host identities or historical
 plan content were changed in this round.
+
+### 2026-09-27 — PEPEPANE review fixes R1–R3
+
+The lifecycle query now preserves a parse-failure flag: malformed JSON, non-object records and unreadable MESSAGE values fail closed even beside a cursor or readable lifecycle records. Successful empty history still follows owner D1. Ordinary journal consumers continue retaining readable records while skipping unusable ones. The concurrent in-flight helper snapshots its attribute once before testing/copying it, so normal write completion cannot crash accept or dispatch.
+
+Protocol clarification for orphan-control refusals: `partial` distinguishes an error before any signal from one after an already-started subset; `killed` lists that subset's numeric process/group identities, with `plan_spent` and any original error detail preserved. A partial result also carries the apply `audit_seq`. Both deadline and process-snapshot refusals use one finalizer that creates the actual-target verification watch and writes an apply audit with outcome `partial` and the identities in `args.killed`. No further initial signal follows the refusal; existing identity-checked completion applies only to targets already signalled. This adds explicit error detail without changing any verb or weakening the five-second start deadline.

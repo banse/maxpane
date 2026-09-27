@@ -193,6 +193,8 @@ def test_orphan_signal_rechecks_deadline_after_process_snapshot(tmp_path, monkey
         assert conn.done.wait(1)
     assert conn.response["error"] == "apply_late"
     assert conn.response["detail"]["plan_spent"] is True
+    assert conn.response["detail"]["partial"] is False
+    assert conn.response["detail"]["killed"] == []
     assert not runner.argvs("kill")
 
 
@@ -211,3 +213,49 @@ def test_children_never_execute_under_state_lock(tmp_path):
     call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
     broker.tick()
     assert calls
+
+
+@pytest.mark.parametrize("entry", ["accept", "dispatch"])
+def test_in_flight_snapshot_survives_concurrent_finisher(tmp_path, entry):
+    import dis
+    import sys
+    from imd_dashd.imd_dashd import Broker
+    broker, *_ = make_broker(tmp_path)
+    broker._in_flight = {"verb": "doctor", "plan_id": "a" * 16, "since": "2026-09-27T00:00:00Z"}
+    release, cleared = threading.Event(), threading.Event()
+    def finish_write():
+        assert release.wait(2)
+        broker._in_flight = None
+        cleared.set()
+    finisher = threading.Thread(target=finish_write)
+    code = Broker._in_flight_detail.__code__
+    reads = [i.offset for i in dis.get_instructions(code) if i.opname == "LOAD_ATTR" and i.argval == "_in_flight"]
+    def trace(frame, event, _arg):
+        if frame.f_code is code:
+            frame.f_trace_opcodes = True
+            if event == "opcode" and frame.f_lasti == reads[-1]:
+                release.set()
+                assert cleared.wait(2)
+        return trace
+    previous = sys.gettrace()
+    finisher.start()
+    try:
+        sys.settrace(trace)
+        if entry == "dispatch":
+            assert call(broker, "ping")["ok"]
+        else:
+            conn = Conn("ping")
+            class Listener:
+                sent = False
+                def settimeout(self, _value): pass
+                def accept(self):
+                    if self.sent: raise OSError("finished")
+                    self.sent = True
+                    return conn, None
+            broker.serve_forever(Listener())
+            assert conn.response["ok"]
+    finally:
+        sys.settrace(previous)
+        release.set()
+        finisher.join(2)
+        assert not finisher.is_alive()

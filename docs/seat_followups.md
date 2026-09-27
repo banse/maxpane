@@ -116,3 +116,5 @@ repo say so. The §16 owner decisions (all decided 2026-09-26) that leave a step
     `tests/data/test_seat_log_grammar.py` (the original lines 168/171) and `tests/widgets/test_seat_now_log.py`
     (original line 42). Optionally replace the partially synthetic `72b617d4…` and `0x887b…` values with fully
     synthetic identities using the `0x…c1a1` convention. Review local `/Users/banse/...` paths in the docs as well.
+
+32. **Fix-round review R1–R3 implemented; scoped re-review pending (2026-09-27).** Unreadable lifecycle records now fail closed despite a cursor or neighboring valid record. A single in-flight snapshot protects accept and dispatch during write completion. Partial orphan actions retain an actual-target apply audit and verification watch on deadline or snapshot refusal, with explicit partial-action error detail. Permanent deterministic regressions cover these cases; independent approval is pending.

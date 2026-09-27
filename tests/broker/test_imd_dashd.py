@@ -1202,3 +1202,90 @@ def test_projection_canary_refuses_nested_device_key(tmp_path, as_list):
     assert response == {"ok": False, "error": "projection_refused", "detail": {"canary": "hex64"}}
     assert audit_lines(audit)[-1]["outcome"] == "canary: hex64"
     assert nested not in json.dumps(audit_lines(audit)) and PUBLIC_KEY not in json.dumps(audit_lines(audit))
+
+
+@pytest.mark.parametrize("bad_record", ['{"MESSAGE":', '{"MESSAGE": null}', '[]', '{"MESSAGE": ["bad"]}', '{"MESSAGE": [255]}', '{"MESSAGE": [true]}'])
+@pytest.mark.parametrize("mixed", [False, True])
+def test_unreadable_lifecycle_with_cursor_refuses_plan_and_apply(tmp_path, bad_record, mixed):
+    broker, runner, journal, clock, _audit = make_broker(tmp_path)
+    prior = call(broker, "restart", {"offline": True})["plan"]
+    valid = json.dumps({"MESSAGE": msg(clock() - 300, "submitted implement for 0c1f9727")[1]})
+    def lifecycle(argv, kw):
+        if "--grep" in argv:
+            rows = ([valid] if mixed else []) + [bad_record, "-- cursor: s=deadbeef;i=8"]
+            return subprocess.CompletedProcess(argv, 0, "\n".join(rows).encode(), b"")
+        return journal(argv, kw)
+    runner.script[("journalctl",)] = lifecycle
+    preview = call(broker, "restart", {"offline": True})
+    applied = call(broker, "apply", {"plan_id": prior["plan_id"], "confirm": prior["plan_id"][:4], "local_only_ack": "local-only"})
+    assert preview.get("error") == "gate_unknown(lifecycle)"
+    assert applied.get("error") == "gate_unknown(lifecycle)"
+    assert not runner.argvs("systemctl", "restart")
+
+
+@pytest.mark.parametrize("failure", ["deadline", "snapshot"])
+@pytest.mark.parametrize("group", [False, True])
+def test_partial_orphan_apply_retains_actual_audit_and_verification(tmp_path, monkeypatch, failure, group):
+    broker, runner, clock, audit, spec = _orphan_broker(tmp_path)
+    if group:
+        # Two independent clean orphan groups, so the second group's fresh read can fail.
+        spec["procs"] = [p for p in spec["procs"] if p["pid"] in (64876, 64877)]
+        for proc in spec["procs"]:
+            proc["pgid"] = proc["pid"]
+        # The initial helper already wrote a /proc tree; remove only this test's fake entries.
+        for child in (tmp_path / "proc").iterdir():
+            if child.is_dir(): shutil.rmtree(child)
+        write_fake_proc(tmp_path / "proc", spec)
+    mono = Clock(0)
+    broker._monotonic = mono
+    plan = call(broker, "kill-orphans", {"pids": [64876, 64877]})["plan"]
+    assert set(plan["preconditions"]["kill_mode_by_pgid"].values()) == {"group" if group else "individual"}
+    original = broker_mod.signal_procs
+    def snapshot(*args, **kwargs):
+        if failure == "snapshot" and runner.argvs("kill", "-TERM"):
+            return None
+        mono.advance(1)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(broker_mod, "signal_procs", snapshot)
+    def first_kill(argv, kw):
+        mono.advance(5 if group else 4)
+        return subprocess.CompletedProcess(argv, 0, b"", b"")
+    runner.script[("kill", "-TERM")] = first_kill
+    response = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert response["error"] == ("apply_late" if failure == "deadline" else "unreadable")
+    expected = {"mode": "group", "pgid": 64876, "pids": [64876]} if group else {"mode": "individual", "pid": 64876}
+    assert response["detail"]["partial"] is True and response["detail"]["killed"] == [expected]
+    applied = [r for r in audit_lines(audit) if r["phase"] == "apply" and r["plan_id"] == plan["plan_id"]]
+    assert len(applied) == 1 and applied[0]["outcome"] == "partial"
+    assert applied[0]["args"]["killed"] == [expected]
+    watch = broker._watches[plan["plan_id"]]
+    assert watch.targets == [("pgid" if group else "pid", 64876)]
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None
+    assert len(runner.argvs("kill", "-TERM")) == 1
+    assert len(broker._pending_kills) == 1
+    # Finish only the already-signalled subset, preserving the normal identity-checked completion.
+    monkeypatch.setattr(broker_mod, "signal_procs", original)
+    assert broker.tick(clock() + 11) == ["sigkill"]
+    assert runner.argvs("kill", "-KILL") == ([["kill", "-KILL", "--", "-64876"]] if group else [["kill", "-KILL", "64876"]])
+    shutil.rmtree(tmp_path / "proc" / "64876")
+    broker.tick(clock() + 12)
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is True
+
+
+def test_ordinary_journal_still_preserves_readable_records_amid_bad_ones(tmp_path):
+    broker, runner, _journal, clock, _audit = make_broker(tmp_path)
+    text = msg(clock(), "submitted implement for 0c1f9727")[1]
+    output = '{"MESSAGE":\n' + json.dumps({"MESSAGE": list(text.encode())}) + "\n-- cursor: s=ok;i=1\n"
+    runner.script[("journalctl",)] = (0, output)
+    lines, cursor = broker._journal()
+    assert lines == [(clock(), text)] and cursor == "s=ok;i=1"
+
+
+def test_no_signal_snapshot_refusal_is_explicitly_not_partial(tmp_path, monkeypatch):
+    broker, runner, _clock, _audit, _spec = _orphan_broker(tmp_path)
+    plan = call(broker, "kill-orphans", {"pids": [64876]})["plan"]
+    monkeypatch.setattr(broker_mod, "signal_procs", lambda *args, **kwargs: None)
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert result["error"] == "unreadable"
+    assert result["detail"]["partial"] is False and result["detail"]["killed"] == []
+    assert not runner.argvs("kill") and not broker._pending_kills

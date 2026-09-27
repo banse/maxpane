@@ -441,7 +441,8 @@ class Broker:
             return -1
 
     def _in_flight_detail(self) -> dict | None:
-        return None if self._in_flight is None else dict(self._in_flight)
+        snapshot = self._in_flight
+        return None if snapshot is None else dict(snapshot)
 
     def _standing_url_for_seat(self) -> str | None:
         if self._seat is None:                                   # no --seat in ExecStart: take tokenId from the canary-checked projection
@@ -486,7 +487,10 @@ class Broker:
             done = self._run(argv, capture_output=True, timeout=INPROCESS_TIMEOUT_S["gate"])
         except (subprocess.TimeoutExpired, OSError):
             return [], None, False
-        stdout = _text(done.stdout)
+        try:
+            stdout = done.stdout.decode("utf-8") if lifecycle_only and isinstance(done.stdout, bytes) else _text(done.stdout)
+        except UnicodeDecodeError:
+            return [], None, False
         if lifecycle_only and done.returncode == 1 and not _text(done.stderr):
             # systemd's grep-compatible no-match result; no JSON record may accompany it.
             if stdout.strip() == "-- No entries --":
@@ -495,27 +499,42 @@ class Broker:
             return [], None, False
         lines: list[tuple[float, str]] = []
         cursor: str | None = None
-        for raw in _text(done.stdout).splitlines():
+        parse_failed = False
+        for raw in stdout.splitlines():
+            if not raw.strip() or raw.strip() == "-- No entries --":
+                continue
             if raw.startswith("-- cursor: "):
                 cursor = raw[len("-- cursor: "):].strip()
                 continue
             try:
                 record = json.loads(raw)
             except ValueError:
+                parse_failed = True
                 continue
             if not isinstance(record, dict):
+                parse_failed = True
                 continue
             message = record.get("MESSAGE")
             if isinstance(message, list):
-                message = bytes(b for b in message if isinstance(b, int) and 0 <= b < 256).decode("utf-8", "replace")
+                if lifecycle_only and not all(type(b) is int and 0 <= b < 256 for b in message):
+                    parse_failed = True
+                    continue
+                try:
+                    message = bytes(b for b in message if isinstance(b, int) and 0 <= b < 256).decode(
+                        "utf-8", "strict" if lifecycle_only else "replace")
+                except UnicodeDecodeError:
+                    parse_failed = True
+                    continue
             if not isinstance(message, str):
+                parse_failed = True
                 continue
             try:
                 epoch = int(record.get("__REALTIME_TIMESTAMP")) / 1_000_000
             except (TypeError, ValueError):
                 epoch = parse_iso(message[:24]) or 0.0
             lines.append((epoch, redact(message)))
-        return lines, cursor, bool(lines or cursor or not stdout.strip() or stdout.strip() == "-- No entries --")
+        return lines, cursor, (not lifecycle_only or not parse_failed) and bool(
+            lines or cursor or not stdout.strip() or stdout.strip() == "-- No entries --")
 
     def _unit_active(self) -> bool | None:
         try:
@@ -1169,13 +1188,14 @@ class Broker:
             checked = signal_procs(self._proc_root, now=self._now())
             if checked is None:
                 self._log(verb="kill-orphans", phase="refused", outcome="process snapshot unavailable")
-                return verbs.err("unreadable", {"what": "process snapshot"})
+                return self._finish_kill(plan, peer_uid, now, killed, skipped,
+                                         verbs.err("unreadable", {"what": "process snapshot"}))
             procs = {p["pid"]: p for p in checked}
             if (_same_group(list(procs.values()), pgid, plan.kill_snapshot, worker_uid=self._worker_uid)
                     and all(_same_process(procs.get(r["pid"]), plan.kill_snapshot, worker_uid=self._worker_uid) for r in members)):
                 refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id)
                 if refusal is not None:
-                    return refusal
+                    return self._finish_kill(plan, peer_uid, now, killed, skipped, refusal)
                 self._run(["kill", "-TERM", "--", f"-{pgid}"], capture_output=True, timeout=5)
                 self._pending_kills.append((now + KILL_GRACE_S, "pgid", pgid))
                 self._kill_snapshots[("pgid", pgid)] = dict(plan.kill_snapshot)
@@ -1185,7 +1205,8 @@ class Broker:
                 checked = signal_procs(self._proc_root, now=self._now())
                 if checked is None:
                     self._log(verb="kill-orphans", phase="refused", outcome="process snapshot unavailable")
-                    return verbs.err("unreadable", {"what": "process snapshot"})
+                    return self._finish_kill(plan, peer_uid, now, killed, skipped,
+                                             verbs.err("unreadable", {"what": "process snapshot"}))
                 procs = {p["pid"]: p for p in checked}
                 live = procs.get(row["pid"])
                 # re-check cgroup and start time (pid reuse) before each individual kill (spec §11)
@@ -1194,11 +1215,19 @@ class Broker:
                     continue
                 refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id)
                 if refusal is not None:
-                    return refusal
+                    return self._finish_kill(plan, peer_uid, now, killed, skipped, refusal)
                 self._run(["kill", "-TERM", str(row["pid"])], capture_output=True, timeout=5)
                 self._pending_kills.append((now + KILL_GRACE_S, "pid", row["pid"]))
                 self._kill_snapshots[("pid", row["pid"])] = dict(plan.kill_snapshot)
                 killed.append({"mode": "individual", "pid": row["pid"]})
+        return self._finish_kill(plan, peer_uid, now, killed, skipped)
+
+    def _finish_kill(self, plan: Plan, peer_uid: int, now: float, killed: list[dict], skipped: list[dict],
+                     refusal: dict | None = None) -> dict:
+        """Retain the audit and completion watch for exactly the targets already signalled."""
+        if refusal is not None and not killed:
+            return verbs.err(refusal["error"], {**refusal.get("detail", {}), "plan_spent": True,
+                                                 "partial": False, "killed": [], "skipped": skipped})
         # the plan's verify ("pids gone"): tick() decides it once every target's SIGKILL follow-up has run
         targets = [("pgid", k["pgid"]) if k["mode"] == "group" else ("pid", k["pid"]) for k in killed]
         self._watches[plan.plan_id] = VerifyWatch(
@@ -1206,8 +1235,12 @@ class Broker:
             verified=None if targets else True,
             lines=[] if targets else [f"nothing killed · {len(skipped)} pid(s) changed since plan"])
         seq = self._log(peer_uid=peer_uid, verb="kill-orphans", phase="apply", plan_id=plan.plan_id,
-                        preconditions={"pids": [r["pid"] for r in rows], "kill_mode_by_pgid": plan.preconditions["kill_mode_by_pgid"]},
-                        outcome="applied" if killed else "nothing to kill")
+                        preconditions={"pids": [r["pid"] for r in plan.preconditions["candidates"]], "kill_mode_by_pgid": plan.preconditions["kill_mode_by_pgid"]},
+                        outcome="partial" if refusal is not None else ("applied" if killed else "nothing to kill"),
+                        args={"killed": killed})
+        if refusal is not None:
+            return verbs.err(refusal["error"], {**refusal.get("detail", {}), "plan_spent": True, "partial": True,
+                                                 "killed": killed, "skipped": skipped, "audit_seq": seq})
         return verbs.ok(result={"outcome": "applied", "exit_code": 0, "cursor_before": None, "audit_seq": seq,
                                 "preconditions": plan.preconditions, "killed": killed, "skipped": skipped})
 
