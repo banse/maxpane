@@ -14,15 +14,21 @@ result per route so a caller can keep rendering ``as of HH:MM`` through a 500.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
-from collections.abc import Callable, Mapping, Sequence
+import time
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlencode
 
-from maxpane_dashboard.analytics.seat_redact import strip_controls
+import httpx
+
+from maxpane_dashboard.analytics.seat_redact import redact_tree, strip_controls
+from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API_HOSTS
 
 logger = logging.getLogger(__name__)
@@ -320,3 +326,114 @@ def normalise_standing(body: Mapping) -> dict:
         "queue": _queue_block(src.get("queue"), at=src.get("at")),
         "asOfUtc": _str_or_none(src.get("at")),
     }
+
+
+def _retry_reason(labels: Sequence[str]) -> str:
+    """``["500", "500"]`` -> ``"500 ×2 (retrying)"``; mixed labels join with `` · `` in first-seen order."""
+    counts: dict[str, int] = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+    return " · ".join(f"{label} ×{n}" for label, n in counts.items()) + " (retrying)"
+
+
+# --- the client -------------------------------------------------------------------------
+
+class SeatApiClient(OwnedHttpClient):
+    """Spec §6 API fallback: four route families, gzip, 20 s, retry once, redacted, last-good remembered."""
+
+    def __init__(
+        self,
+        *,
+        http_client: httpx.AsyncClient | None = None,
+        hosts: Sequence[str] = SWARM_API_HOSTS,
+        timeout_s: float = API_TIMEOUT_S,
+        now: Clock = time.time,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
+    ) -> None:
+        # follow_redirects=False as in SwarmClient: a Location header names a host nobody allowlisted.
+        self._client = http_client or httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout_s),
+            follow_redirects=False,
+            headers=dict(REQUEST_HEADERS),
+        )
+        self._owns_client = http_client is None
+        self._hosts: tuple[str, ...] = tuple(host.rstrip("/") for host in hosts)
+        if not self._hosts:
+            raise ValueError("SeatApiClient needs at least one host")
+        self._timeout_s = float(timeout_s)
+        self._now = now
+        self._sleep = sleep or asyncio.sleep
+        self._last_good: dict[str, ApiResult] = {}
+
+    def last_good(self, route: str) -> ApiResult | None:
+        """The newest ``ok`` result for *route* (an ``ApiResult.route`` string), or ``None``."""
+        return self._last_good.get(route)
+
+    def _refused(self, route: str, reason: str) -> ApiResult:
+        return ApiResult(ok=False, data=None, status=None, as_of_utc=None, reason=reason, elapsed_s=0.0, route=route)
+
+    async def _get(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+        prepare: Callable[[Json], Json] | None = None,
+    ) -> ApiResult:
+        """One GET: pool order, retry ONCE on 5xx / timeout / transport error, gzip, tolerant JSON.
+
+        Attempt 1 goes to the first pool host, the retry to the next (the same host again on a
+        one-host pool).  A 4xx, a non-JSON 200 or an oversize body is an answer about the
+        *request* and is returned at once.  ``prepare`` runs after :func:`drop_summaries` and before
+        :func:`redact_tree` (the submissions route renames its hash there).  Bodies are never logged.
+        """
+        route = path + (f"?{urlencode(dict(params))}" if params else "")
+        attempts = 2 if API_RETRY_ONCE else 1
+        started = time.monotonic()
+        labels: list[str] = []
+        last_status: int | None = None
+        for attempt in range(attempts):
+            host = self._hosts[attempt % len(self._hosts)]
+            if attempt:
+                await self._sleep(RETRY_DELAY_S)
+            try:
+                response = await self._client.get(
+                    host + path, params=params, headers=dict(REQUEST_HEADERS), timeout=self._timeout_s,
+                )
+            except httpx.TimeoutException:
+                logger.debug("seat api GET %s%s timed out", host, route)
+                labels.append("timeout")
+                continue
+            except (httpx.HTTPError, OSError) as exc:
+                logger.debug("seat api GET %s%s transport error: %s", host, route, type(exc).__name__)
+                labels.append("transport")
+                continue
+            last_status = response.status_code
+            if 500 <= last_status < 600:
+                logger.debug("seat api GET %s%s -> %s", host, route, last_status)
+                labels.append(str(last_status))
+                continue
+            elapsed = round(time.monotonic() - started, 3)
+            if last_status != 200:
+                return ApiResult(False, None, last_status, None, str(last_status), elapsed, route)
+            content = response.content
+            if len(content) > MAX_BODY_BYTES:
+                return ApiResult(False, None, last_status, None, "body too large", elapsed, route)
+            try:
+                data = parse_json_tolerant(content)
+            except ValueError:
+                return ApiResult(False, None, last_status, None, "bad json", elapsed, route)
+            data = drop_summaries(data)
+            if prepare is not None:
+                data = prepare(data)
+            data = redact_tree(data)
+            result = ApiResult(True, data, last_status, _iso_z(self._now(), millis=False), None, elapsed, route)
+            self._last_good[route] = result
+            return result
+        elapsed = round(time.monotonic() - started, 3)
+        return ApiResult(False, None, last_status, None, _retry_reason(labels), elapsed, route)
+
+    async def services(self) -> ApiResult:
+        return await self._get("/services")
+
+    async def health(self) -> ApiResult:
+        return await self._get("/health")

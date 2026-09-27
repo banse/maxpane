@@ -278,3 +278,145 @@ def test_normalise_standing_reads_the_seats_form_only():
     assert row["working"] is None and row["queue"] is None and row["running"] == []   # top-level `working` is never read
     # the workers form spells fleet size `online`; the seats form `fleetOnline` -- only the latter is read
     assert seat_api.normalise_standing({"queue": {"ready": 1, "online": 398}})["queue"]["fleetOnline"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 5.6 — the client core: pool, retry once, gzip, redaction, last-good
+# ---------------------------------------------------------------------------
+
+async def test_every_read_is_a_keyless_gzip_get_with_the_20s_timeout():
+    """Spec §6: keyless GET, Accept-Encoding: gzip, 20 s timeout -- on the injected client too."""
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=_fixture("health.json"))
+
+    async with _client(handler) as client:
+        result = await client.health()
+    assert result.ok and result.status == 200 and result.route == "/health"
+    assert result.as_of_utc == "2026-09-26T03:40:07Z" and result.reason is None and result.elapsed_s >= 0.0
+    request = seen[0]
+    assert request.method == "GET" and str(request.url) == f"{SWARM_API_HOSTS[0]}/health"
+    assert request.headers["accept-encoding"] == "gzip" and request.headers["accept"] == "application/json"
+    assert not {k.lower() for k in request.headers} & {"authorization", "x-api-key", "cookie", "token"}
+    assert request.extensions["timeout"] == {"connect": 20.0, "read": 20.0, "write": 20.0, "pool": 20.0}
+
+
+async def test_the_owned_client_has_gzip_20s_and_no_redirects():
+    """Construction-level: the client the module builds for itself (never used by a test for a request)."""
+    owned = seat_api.SeatApiClient()
+    try:
+        assert owned._client.timeout == httpx.Timeout(20.0)
+        assert owned._client.follow_redirects is False
+        assert owned._client.headers["accept-encoding"] == "gzip" and owned._client.headers["accept"] == "application/json"
+        assert "authorization" not in owned._client.headers
+        assert owned._owns_client is True
+    finally:
+        await owned.close()
+    with pytest.raises(ValueError):
+        seat_api.SeatApiClient(hosts=())
+
+
+async def test_a_gzip_body_is_decoded_and_parsed():
+    def handler(request):
+        return httpx.Response(200, content=gzip.compress(json.dumps(_fixture("services.json")).encode("utf-8")),
+                              headers={"content-encoding": "gzip"})
+
+    async with _client(handler) as client:
+        result = await client.services()
+    assert result.ok and result.data["verifier"]["claims"] == 1568791
+    assert isinstance(result.data["verifier"]["claims"], int)          # ints survive the redaction pipeline
+
+
+async def test_retry_once_on_5xx_rotates_to_the_second_host_then_gives_up():
+    """Spec §6: retry once on 5xx; the pool is api.imd.fun -> Railway."""
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(500, json=_fixture("seat7_500.json"))
+
+    async with _client(handler) as client:
+        result = await client.health()
+    assert [r.url.host for r in seen] == [FIRST_HOST, SECOND_HOST]
+    assert result.ok is False and result.status == 500 and result.data is None and result.as_of_utc is None
+    assert result.reason == "500 ×2 (retrying)"
+
+
+async def test_timeout_and_transport_errors_retry_once_then_give_up():
+    seen = []
+
+    def timeout_then_ok(request):
+        seen.append(request)
+        if len(seen) == 1:
+            raise httpx.ReadTimeout("slow", request=request)
+        return httpx.Response(200, json={"status": "ok"})
+
+    async with _client(timeout_then_ok) as client:
+        result = await client.health()
+    assert result.ok and len(seen) == 2
+
+    def always_timeout(request):
+        raise httpx.ConnectTimeout("slow", request=request)
+
+    async with _client(always_timeout) as client:
+        result = await client.health()
+    assert result.ok is False and result.status is None and result.reason == "timeout ×2 (retrying)"
+
+    calls = []
+
+    def refused_then_502(request):
+        calls.append(request)
+        if len(calls) == 1:
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(502, text="bad gateway")
+
+    async with _client(refused_then_502) as client:
+        result = await client.services()
+    assert result.reason == "transport ×1 · 502 ×1 (retrying)" and result.status == 502
+
+
+async def test_4xx_bad_json_and_oversize_bodies_are_answers_not_retries():
+    """A 4xx, a non-JSON 200 or an oversize body says something about the request; no second host is asked."""
+    seen = []
+
+    def not_found(request):
+        seen.append(request)
+        return httpx.Response(404, json={"error": "unknown"})
+
+    async with _client(not_found) as client:
+        result = await client.health()
+    assert result.ok is False and result.status == 404 and result.reason == "404" and len(seen) == 1
+
+    async with _client(lambda request: httpx.Response(200, text="<html>gateway</html>")) as client:
+        result = await client.health()
+    assert result.ok is False and result.status == 200 and result.reason == "bad json" and result.data is None
+
+    async with _client(lambda request: httpx.Response(200, content=b"x" * (seat_api.MAX_BODY_BYTES + 1))) as client:
+        result = await client.health()
+    assert result.ok is False and result.reason == "body too large" and result.data is None
+
+
+async def test_health_and_services_are_redacted_and_remembered_as_last_good():
+    """Spec §6 rule 4: last-good kept behind its own asOfUtc -- the client remembers the newest ok result per route."""
+    mode = {"fail": False}
+
+    def handler(request):
+        if mode["fail"]:
+            return httpx.Response(503, text="unavailable")
+        body = _fixture("health.json") if request.url.path == "/health" else _fixture("services.json")
+        return httpx.Response(200, json=body)
+
+    async with _client(handler) as client:
+        health = await client.health()
+        services = await client.services()
+        assert health.data["connectedDaemons"] == 409 and health.data["awaitingVerdict"] == 7
+        assert services.data["verifier"]["up"] is True
+        mode["fail"] = True
+        again = await client.health()
+        assert again.ok is False and again.reason == "503 ×2 (retrying)"
+        assert client.last_good("/health") is health and client.last_good("/services") is services
+        assert client.last_good("/nowhere") is None
+    async with _client(_no_network) as fresh:
+        assert fresh.last_good("/health") is None
