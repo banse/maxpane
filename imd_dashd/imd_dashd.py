@@ -26,6 +26,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from imd_dashd import verbs
 from imd_dashd.audit import Audit, iso_utc
@@ -33,6 +34,7 @@ from imd_dashd.child_unit import RUNTIME_MAX_S, Runner, read_ip_address_deny, ru
 from imd_dashd.drain import Drain, DrainState
 from imd_dashd.gate import ACCEPTED_RE, HEARTBEAT_RE, GateResult, evaluate, parse_iso
 from imd_dashd.redact import find_secret, redact, redact_agent_sentence
+from imd_dashd.process_snapshot import snapshot as process_snapshot
 
 Clock = Callable[[], float]
 
@@ -333,6 +335,20 @@ def _same_group(procs: Sequence[dict], pgid: int, snapshot: dict, *, worker_uid:
     members = [p for p in procs if p["pgid"] == pgid]
     return (bool(members) and all(snapshot.get(p["pid"]) == _proc_identity(p) for p in members)
             and group_kill_allowed(procs, pgid, worker_uid=worker_uid))
+
+
+def signal_procs(proc_root: str, *, now: float) -> list[dict] | None:
+    """A partial /proc read cannot prove whole-group safety or that a target exited."""
+    try:
+        metadata = process_snapshot(Path(proc_root), now=now)
+        procs = read_procs(proc_root, now=now)
+        expected = {p["pid"]: (p["uid"], p["pgid"], p["ppid"], p["cgroup"].split(":", 2)[-1].lstrip("/"), p["start_ticks"])
+                    for p in metadata}
+        if expected != {p["pid"]: _proc_identity(p) for p in procs}:
+            return None
+        return procs
+    except (OSError, ValueError, IndexError, StopIteration):
+        return None
 
 
 def _decide_kill_watch(watch: VerifyWatch, *, pids: set[int], pgids: set[int]) -> None:
@@ -836,7 +852,10 @@ class Broker:
                       "reported_separately": True}
             warning = "spends one runtime turn and quota; leaves a work/doctor-* transcript; excluded from cost by cwd"
         elif verb == "kill-orphans":
-            procs = read_procs(self._proc_root, now=self._now())
+            procs = signal_procs(self._proc_root, now=self._now())
+            if procs is None:
+                self._log(verb=verb, phase="refused", outcome="process snapshot unavailable")
+                return verbs.err("unreadable", {"what": "process snapshot"})
             candidates = {c["pid"]: c for c in select_orphans(procs, worker_uid=self._worker_uid)}
             pids = [int(p) for p in args["pids"]]
             if any(p not in candidates for p in pids):
@@ -924,6 +943,10 @@ class Broker:
                 seq = self._log(peer_uid=peer_uid, verb=plan.verb, phase=event, plan_id=plan_id, outcome="cancelled")
                 return verbs.ok(result={"outcome": "cancelled", "exit_code": 0, "cursor_before": None, "audit_seq": seq,
                                         "preconditions": plan.preconditions})
+            if (plan.verb == "doctor" and self._last_doctor is not None
+                    and now - self._last_doctor < DOCTOR_MIN_INTERVAL_S):
+                self._log(peer_uid=peer_uid, verb="doctor", phase="refused", plan_id=plan_id, outcome="doctor_too_soon")
+                return verbs.err("doctor_too_soon")
             if plan.verb in ("skills-set", "doctor"):
                 release = False                                    # the thread releases the lock when the child exits
                 return self._apply_transient(plan, peer_uid)
@@ -1012,6 +1035,8 @@ class Broker:
                     watch.verified = row is not None and (row[0] == "on") is bool(plan.args["on"])
                     if not watch.verified:
                         watch.reason = "re-listing disagrees"
+            except OSError as exc:
+                watch.verified, watch.reason = False, exc.__class__.__name__
             finally:
                 watch.done = True
                 self._log(peer_uid=peer_uid, verb=verb, phase="verify", plan_id=plan.plan_id, outcome="finished",
@@ -1029,7 +1054,6 @@ class Broker:
 
     def _apply_kill(self, plan: Plan, peer_uid: int) -> dict:
         now = self._now()
-        procs = {p["pid"]: p for p in read_procs(self._proc_root, now=now)}
         rows = plan.preconditions["candidates"]
         killed: list[dict] = []
         skipped: list[dict] = []
@@ -1037,7 +1061,11 @@ class Broker:
         for row in rows:
             by_pgid.setdefault(row["pgid"], []).append(row)
         for pgid, members in by_pgid.items():
-            procs = {p["pid"]: p for p in read_procs(self._proc_root, now=self._now())}
+            checked = signal_procs(self._proc_root, now=self._now())
+            if checked is None:
+                self._log(verb="kill-orphans", phase="refused", outcome="process snapshot unavailable")
+                return verbs.err("unreadable", {"what": "process snapshot"})
+            procs = {p["pid"]: p for p in checked}
             if (_same_group(list(procs.values()), pgid, plan.kill_snapshot, worker_uid=self._worker_uid)
                     and all(_same_process(procs.get(r["pid"]), plan.kill_snapshot, worker_uid=self._worker_uid) for r in members)):
                 self._run(["kill", "-TERM", "--", f"-{pgid}"], capture_output=True, timeout=5)
@@ -1046,7 +1074,11 @@ class Broker:
                 killed.append({"mode": "group", "pgid": pgid, "pids": [m["pid"] for m in members]})
                 continue
             for row in members:
-                procs = {p["pid"]: p for p in read_procs(self._proc_root, now=self._now())}
+                checked = signal_procs(self._proc_root, now=self._now())
+                if checked is None:
+                    self._log(verb="kill-orphans", phase="refused", outcome="process snapshot unavailable")
+                    return verbs.err("unreadable", {"what": "process snapshot"})
+                procs = {p["pid"]: p for p in checked}
                 live = procs.get(row["pid"])
                 # re-check cgroup and start time (pid reuse) before each individual kill (spec §11)
                 if not _same_process(live, plan.kill_snapshot, worker_uid=self._worker_uid):
@@ -1077,7 +1109,12 @@ class Broker:
                  and not any(t in queued or t in sigkilled for t in w.targets)]
         if not ready:
             return
-        procs = read_procs(self._proc_root, now=now)
+        procs = signal_procs(self._proc_root, now=now)
+        if procs is None:
+            for watch in ready:
+                watch.verified, watch.reason = False, "process snapshot unavailable"
+                self._log(verb=watch.verb, phase="verify", plan_id=watch.plan_id, outcome=watch.reason, verified=False)
+            return
         pids, pgids = {p["pid"] for p in procs}, {p["pgid"] for p in procs}
         for watch in ready:
             _decide_kill_watch(watch, pids=pids, pgids=pgids)
@@ -1175,7 +1212,11 @@ class Broker:
             if now < deadline:
                 still.append((deadline, kind, ident))
                 continue
-            procs = read_procs(self._proc_root, now=now)
+            procs = signal_procs(self._proc_root, now=now)
+            if procs is None:
+                self._kill_snapshots.pop((kind, ident), None)
+                self._log(verb="kill-orphans", phase="refused", outcome="process snapshot unavailable before SIGKILL")
+                continue
             alive = any(p["pgid"] == ident for p in procs) if kind == "pgid" else any(p["pid"] == ident for p in procs)
             snapshot = self._kill_snapshots.pop((kind, ident), {})
             safe = (_same_group(procs, ident, snapshot, worker_uid=self._worker_uid) if kind == "pgid" else

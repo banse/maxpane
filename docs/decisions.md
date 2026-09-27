@@ -416,3 +416,61 @@ asserts a withdrawn statement is historical — do not review code against it.
   plan's existing Homebrew Python 3.14 zstd pytest command with no repository conftest:
   four passed. No dependencies or shared environment were changed. The dedicated Python
   3.11 venv remains authoritative for pytest; later Python 3.14 checks compile source only.
+- **2026-09-26 (contract deviation, WP6) — the Mac `seat` projection runs `python3 -`** with `imd_dashd/projection.py`
+  piped on stdin, wrapped in the container's `timeout -s TERM -k 5 20`, instead of contract §C.12's `node -e <js>`: the
+  container ships `python3` 3.11.2, the session summarisers already travel that way, and one projection script cannot
+  drift from a second copy in another language. The whoami match and the canary are unchanged (spec §4.2, §5.2).
+- **2026-09-26 (contract deviation, WP6) — `LocalDockerBroker` reuses `imd_dashd`**: `data/seat_broker_client.py` imports
+  the gate, the plan store, the verify watch, the drain and the audit from `imd_dashd` behind a guarded import
+  (`IMD_DASHD_AVAILABLE`), so both hosts run one implementation of the protocol (rules/widgets.md "hoist, never
+  re-declare"). Only the other direction is forbidden: root code imports nothing from `maxpane_dashboard`. The VPS wheel
+  never constructs `LocalDockerBroker`; the TUI's enum copies are bound to `imd_dashd/verbs.py` by a test (contract §A.2, §C.12).
+- **2026-09-26 (contract deviation, WP6) — every kill goes through the broker's `Runner` seam** as `kill -TERM -- -<pgid>`
+  or `kill -TERM <pid>` argv (never `os.kill`), so every process-affecting action passes the one injected seam and the
+  timeout guard; the SIGKILL follow-up runs on the serve loop's tick after `KILL_GRACE_S = 10`, not on a timer thread in
+  root code (spec §11 kill-orphans row).
+- **2026-09-26 (contract deviation, WP6) — the drain-restart loop is polled on the broker's 30 s tick**: each tick reads
+  the last minute of journal heartbeats and feeds the drain; fire re-runs the same fresh gate as `apply`. The contract's
+  `popen` seam is accepted but unused in v1 — a `journalctl -f` follower would add a second thread to the root process
+  for nothing at a 30 s heartbeat cadence (spec §11 drain-restart row).
+- **2026-09-26 (contract deviation, WP6) — `FakeBroker` accepts two fixture styles**: a dict carrying `ok` is a whole wire
+  response (WP8's CONTROL scripts), and for a read verb any other value is that read's `data` (WP7's dev-mode case files);
+  a bare value under a write verb is `bad_response`. Two additive fields follow WP7's reading of the contract: `ping`
+  carries `drain` (`None` or the `seat_control_drain` dict) and a partial `DockerUnitReader.read_unit()` carries `reason`
+  (contract §C.11, §C.12; spec §14 mutation proof 8).
+- **2026-09-26 (contract deviation, WP6) — `LocalDockerBroker` gives each wrapped exec a host-side belt above its in-container limit**
+  (`grace + secs + 5`: doctor 135 s, skills-set 40 s, reads 30–35 s) instead of contract §B's 25 s for every docker call,
+  so the in-container `timeout` always fires first — killing the `docker exec` client would leave node and the runtime
+  running inside the container — and a legitimate 30–90 s doctor smoke run is not cut at 25 s; bare coreutils execs and
+  `inspect`/`logs`/`restart`/`stop`/`start` keep 25 s. Its 5-minute breaker is keyed per verb (spec §12.2), so one hung
+  `imd status` does not blind the gate's `outbox` read (spec §4.2, §5.3, §11).
+- **2026-09-26 (contract deviation, WP6) — read verbs are audited as hourly counts**: `audit.PHASES` gains `"reads"` beside
+  contract §C.11's eleven phases, and both brokers write one `reads` line of per-verb counts every
+  `READ_COUNT_FLUSH_S = 3600` (the root broker also at exit) — spec §11 "Read verbs (no gating; audited as counts only)";
+  never a line per read and never an argument value (spec §13).
+- **2026-09-27 (security correction, WP6) — exact process identity authorizes each signal**: the reference
+  compared rounded age at TERM and numeric PID/PGID at the delayed KILL. Internal snapshots now bind
+  uid, parent, process group, cgroup and exact Linux start ticks. Both phases reread the complete group;
+  changed or new members prevent group signals, and individual fallbacks require unchanged identity.
+  Worker sub-cgroups are excluded. A complete metadata snapshot also guards the root reader: unreadable
+  members cannot silently disappear from a group check, and unavailable verification is false. Fake process
+  trees cover identity drift, membership drift, and partial reads. The old exit fixture now removes the fake
+  PID directory, as a real exit does, rather than leaving an unreadable stat file. The public row/plan shapes
+  remain unchanged. Root focused fix round 2 closed with regression and exact-inverse mutation evidence.
+- **2026-09-27 (security correction, WP6) — the Mac kill path uses a complete metadata snapshot**:
+  filtered, rounded `ps` output cannot establish exact identity or whole-group membership. The fixed
+  `imd_dashd/process_snapshot.py` source travels on stdin to `python3 - --proc-snapshot`, wrapped in
+  `timeout -s TERM -k 5 20` with a 30-second host timeout and the existing per-verb breaker. It reads only
+  `/proc` stat, status and cgroup metadata for every UID; no command line, environment, credential or task
+  body. It checks identity across the read and refuses incomplete or invalid snapshots. Both TERM and KILL
+  recheck start ticks, cgroup and membership; uncertain ancestry is refused. Tests inject the Docker runner
+  response and use a fake process tree with command files removed. Eleven Mac regressions and the metadata
+  reader test passed in focused fix round 1, with three exact-inverse mutations; no live Docker capture ran.
+- **2026-09-27 (protocol correction, WP6) — doctor cooldown is checked again at apply** under the write lock
+  on both brokers, because two plans created before the first doctor could otherwise bypass the ten-minute
+  interval. Refusal still consumes the plan and writes an audit line. A root transient runner `OSError` now
+  produces a decided false verification with a sanitized exception class and releases the write lock.
+- **2026-09-27 (security correction, WP6) — every audit string is redacted at the write boundary** with the
+  existing frozen stdlib redactor before JSON serialization, including arbitrary refused argument names and
+  nested fields. Caller allowlists still restrict the schema. Synthetic credential/control-character tests and
+  a mutation prove the boundary; visible control glyphs follow the established redactor contract.

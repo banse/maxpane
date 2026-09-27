@@ -116,6 +116,17 @@ SEAT_DECISION_PHRASES = (
     "**2026-09-27 (owner correction, spec §13)**",
     "(contract decision, WP2) — a local `task failed:` line appends the pseudo-phase `failed`",
     "(contract decision, WP2) — the seat ledger adds `sessions_skipped_oversize`",
+    "(contract deviation, WP6) — the Mac `seat` projection runs `python3 -`",
+    "(contract deviation, WP6) — `LocalDockerBroker` reuses `imd_dashd`",
+    "(contract deviation, WP6) — every kill goes through the broker's `Runner` seam",
+    "(contract deviation, WP6) — the drain-restart loop is polled on the broker's 30 s tick",
+    "(contract deviation, WP6) — `FakeBroker` accepts two fixture styles",
+    "(contract deviation, WP6) — `LocalDockerBroker` gives each wrapped exec a host-side belt above its in-container limit",
+    "(contract deviation, WP6) — read verbs are audited as hourly counts",
+    "(security correction, WP6) — exact process identity authorizes each signal",
+    "(security correction, WP6) — the Mac kill path uses a complete metadata snapshot",
+    "(protocol correction, WP6) — doctor cooldown is checked again at apply",
+    "(security correction, WP6) — every audit string is redacted at the write boundary",
 )
 
 

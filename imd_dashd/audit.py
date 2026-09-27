@@ -13,6 +13,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from imd_dashd.redact import redact_tree
+
 Clock = Callable[[], float]
 
 PHASES = ("plan", "apply", "verify", "refused", "canary", "drain_armed", "drain_rearmed", "drain_fire",
@@ -68,7 +70,7 @@ class Audit:
         record.update(fields)
         record["ts"] = iso_utc(self._now())
         record["seq"] = self._seq
-        line = (json.dumps(record, separators=(",", ":"), ensure_ascii=True, default=str) + "\n").encode("utf-8")
+        line = (json.dumps(redact_tree(record), separators=(",", ":"), ensure_ascii=True, default=str) + "\n").encode("utf-8")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, self._mode)
         try:

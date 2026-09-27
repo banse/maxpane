@@ -762,6 +762,10 @@ class LocalDockerBroker(_CallMixin):
                 seq = self._log(peer_uid=os.getuid(), verb=plan.verb, phase=event, plan_id=plan_id, outcome="cancelled")
                 return _verbs_mod.ok(result={"outcome": "cancelled", "exit_code": 0, "cursor_before": None, "audit_seq": seq,
                                              "preconditions": plan.preconditions})
+            if (plan.verb == "doctor" and self._last_doctor is not None
+                    and now - self._last_doctor < _broker_mod.DOCTOR_MIN_INTERVAL_S):
+                self._log(peer_uid=os.getuid(), verb="doctor", phase="refused", plan_id=plan_id, outcome="doctor_too_soon")
+                return _verbs_mod.err("doctor_too_soon")
             if plan.verb in ("skills-set", "doctor"):
                 release = False
                 return self._apply_transient(plan)

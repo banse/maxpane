@@ -729,3 +729,18 @@ def test_local_kill_refuses_unavailable_snapshot(tmp_path, failure):
     with pytest.raises(BrokerError):
         broker.apply(plan.plan_id, plan.plan_id[:4])
     assert not [a for a, _ in runner.calls if "kill" in a]
+
+
+def test_local_doctor_cooldown_is_rechecked_at_apply(tmp_path):
+    broker, runner, _, _ = _local(tmp_path)
+    first, second = [broker.plan('doctor') for _ in range(2)]
+    broker.apply(first.plan_id, first.plan_id[:4])
+    broker._threads[first.plan_id].join(timeout=5)
+    try:
+        with pytest.raises(BrokerError) as error:
+            broker.apply(second.plan_id, second.plan_id[:4])
+        assert error.value.code == 'doctor_too_soon'
+    finally:
+        if second.plan_id in broker._threads:
+            broker._threads[second.plan_id].join(timeout=5)
+    assert len([a for a, _ in runner.calls if a[-2:] == ['imd', 'doctor']]) == 1

@@ -69,3 +69,12 @@ def test_phases_are_the_spec_list():
     # the spec's audit phases, plus "reads": read verbs are "audited as counts only" (spec §11; deviation 16)
     assert PHASES == ("plan", "apply", "verify", "refused", "canary", "drain_armed", "drain_rearmed", "drain_fire",
                       "drain_cancelled", "drain_expired", "drain_lost", "reads")
+
+
+def test_audit_redacts_every_string_at_the_write_boundary(tmp_path):
+    audit = Audit(tmp_path / 'audit.jsonl')
+    secret = 'sk-testSyntheticKey0123456789'
+    audit.append(verb='apply', phase='refused', outcome='bad_args', args={'names': [secret, '\x1b[31mname']})
+    text = audit.path.read_text()
+    assert secret not in text and '\\u001b' not in text
+    assert audit.tail(1)[0]['args']['names'] == ['sk-[redacted]', '␛[31mname']

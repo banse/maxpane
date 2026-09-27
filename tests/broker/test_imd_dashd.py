@@ -12,6 +12,7 @@ import json
 import os
 import socket
 import struct
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -764,7 +765,7 @@ def test_kill_orphans_verify_decides_pids_gone_after_the_sigkill_follow_up(tmp_p
     call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
     pending = call(broker, "verify", {"plan_id": plan["plan_id"]})
     assert pending["ok"] is True and pending["data"]["verified"] is None                        # never unknown_plan
-    (tmp_path / "proc" / "64876" / "stat").unlink()                                             # 64876 exits on SIGTERM; 64877 not
+    shutil.rmtree(tmp_path / "proc" / "64876")                                             # 64876 exits on SIGTERM; 64877 not
     assert broker.tick(clock() + 11) == ["sigkill"] and runner.argvs("kill", "-KILL") == [["kill", "-KILL", "64877"]]
     assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None     # SIGKILLed this tick: decided next
     broker.tick(clock() + 41)                                                                   # the fake /proc still lists 64877
@@ -777,7 +778,7 @@ def test_kill_orphans_verify_decides_pids_gone_after_the_sigkill_follow_up(tmp_p
     broker2, runner2, clock2, _audit2, _spec2 = _orphan_broker(tmp_path / "b")
     plan = call(broker2, "kill-orphans", {"pids": [64884]})["plan"]
     call(broker2, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
-    (tmp_path / "b" / "proc" / "64884" / "stat").unlink()
+    shutil.rmtree(tmp_path / "b" / "proc" / "64884")
     assert broker2.tick(clock2() + 11) == [] and runner2.argvs("kill", "-KILL") == []
     data = call(broker2, "verify", {"plan_id": plan["plan_id"]})["data"]
     assert data["verified"] is True and data["reason"] is None and data["verify_lines"] == ["pids gone: pid 64884"]
@@ -833,3 +834,115 @@ def test_group_kill_rechecks_all_members_against_plan(tmp_path, phase, change):
     else:
         broker.tick(clock() + 11)
         assert runner.argvs('kill', '-KILL') == []
+
+
+def test_doctor_cooldown_is_rechecked_at_apply(tmp_path):
+    broker, runner, _, _, audit = make_broker(tmp_path, script={("systemd-run",): lambda a, k: transient('ok')})
+    plans = [call(broker, 'doctor', {})['plan'] for _ in range(2)]
+    first, second = plans
+    assert call(broker, 'apply', {'plan_id': first['plan_id'], 'confirm': first['plan_id'][:4]})['ok']
+    _wait(broker, first['plan_id'])
+    result = call(broker, 'apply', {'plan_id': second['plan_id'], 'confirm': second['plan_id'][:4]})
+    if result.get('ok'):
+        _wait(broker, second['plan_id'])
+    assert result['error'] == 'doctor_too_soon'
+    assert len(runner.argvs('systemd-run')) == 1
+    assert audit_lines(audit)[-1]['phase'] == 'refused'
+
+
+def test_transient_oserror_is_a_decided_failure_and_releases_lock(tmp_path):
+    broker, _, _, _, _ = make_broker(tmp_path, script={("systemd-run",): OSError('synthetic runner unavailable')})
+    plan = call(broker, 'doctor', {})['plan']
+    call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})
+    _wait(broker, plan['plan_id'])
+    verdict = call(broker, 'verify', {'plan_id': plan['plan_id']})['data']
+    assert verdict['verified'] is False and verdict['reason'] == 'OSError'
+    assert call(broker, 'ping')['data']['in_flight'] is None
+
+
+@pytest.mark.parametrize('phase', ['plan', 'term'])
+def test_root_kill_refuses_incomplete_process_snapshot(tmp_path, phase):
+    broker, runner, _, clock, audit = make_broker(tmp_path)
+    spec = json.loads((FIXTURES / 'procs_orphan.json').read_text())
+    write_fake_proc(Path(broker._proc_root), spec)
+    pids = [p['pid'] for p in spec['procs'] if p['pgid'] == 64861 and p['uid'] == 1000]
+    plan = call(broker, 'kill-orphans', {'pids': pids})['plan']
+    if phase == 'term':
+        assert call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})['ok']
+    # A group member is unreadable, not known to have exited: never omit it and signal the remaining group.
+    unreadable = next(p for p in spec['procs'] if p['pgid'] == 64861)
+    (Path(broker._proc_root) / str(unreadable['pid']) / 'stat').unlink()
+    before = len(runner.calls)
+    if phase == 'plan':
+        result = call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})
+        assert result.get('error') == 'unreadable'
+    else:
+        broker.tick(clock() + 11)
+        assert call(broker, 'verify', {'plan_id': plan['plan_id']})['data']['verified'] is False
+    assert not [a for a, _ in runner.calls[before:] if a[:1] == ['kill']]
+# ==== Task 6.17: guards -- stdlib-only root code, timeouts everywhere, 3.11 byte-compile ======================
+
+import ast  # noqa: E402
+import sys  # noqa: E402
+
+REPO = Path(__file__).resolve().parents[2]
+IMD_DASHD_DIR = REPO / "imd_dashd"
+CLIENT_FILE = REPO / "maxpane_dashboard" / "data" / "seat_broker_client.py"
+RUNNER_NAMES = {"run", "_run", "Popen", "popen", "_popen"}
+
+
+def _calls_missing_timeout(path: Path) -> list[str]:
+    """Every call to subprocess.run/Popen or an injected Runner (`run(...)`, `self._run(...)`) must pass timeout= and a list argv."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    problems: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else (func.id if isinstance(func, ast.Name) else None)
+        for kw in node.keywords:
+            if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True:
+                problems.append(f"{path.name}:{node.lineno} shell=True")
+        if name not in RUNNER_NAMES:
+            continue
+        if not any(kw.arg == "timeout" for kw in node.keywords):
+            problems.append(f"{path.name}:{node.lineno} {name}() without timeout=")
+        if node.args and isinstance(node.args[0], (ast.Constant, ast.JoinedStr)):
+            problems.append(f"{path.name}:{node.lineno} {name}() with a string argv")
+    return problems
+
+
+@pytest.mark.guard
+def test_imd_dashd_imports_nothing_from_maxpane():
+    # spec §4.1 trust boundary (3), §15: root code is stdlib only and imports nothing from maxpane_dashboard
+    files = sorted(IMD_DASHD_DIR.glob("*.py"))
+    assert {f.name for f in files} >= {"__init__.py", "imd_dashd.py", "verbs.py", "gate.py", "drain.py", "child_unit.py",
+                                        "projection.py", "audit.py", "redact.py"}
+    # `compression` is stdlib from Python 3.14 only; WP4's summarise_codex.py imports it once, inside a try/except
+    # ImportError, and WP4's `test_zstd_import_is_guarded` pins that guard (ast.walk also sees imports inside try).
+    stdlib = set(sys.stdlib_module_names) | {"compression"}
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            for name in names:
+                top = name.split(".")[0]
+                assert top != "maxpane_dashboard", f"{path.name} imports {name}"
+                assert top == "imd_dashd" or top in stdlib, f"{path.name} imports non-stdlib {name}"
+        assert _calls_missing_timeout(path) == [], path.name
+        assert "\ntype " not in path.read_text(encoding="utf-8"), f"{path.name}: `type` statement needs 3.12"
+
+
+@pytest.mark.guard
+def test_imd_dashd_byte_compiles_and_the_client_has_timeouts():
+    # spec §5.4 interpreter floor: Python 3.11 syntax (the CI venv is 3.11; the VPS is 3.14, the container 3.11.2).
+    # compile() under this interpreter is the byte-compile check without writing __pycache__ into the tree.
+    assert sys.version_info[:2] >= (3, 11)
+    for path in sorted(IMD_DASHD_DIR.glob("*.py")):
+        compile(path.read_text(encoding="utf-8"), str(path), "exec", dont_inherit=True)
+    assert _calls_missing_timeout(CLIENT_FILE) == []
+    assert "shell=True" not in CLIENT_FILE.read_text(encoding="utf-8")
