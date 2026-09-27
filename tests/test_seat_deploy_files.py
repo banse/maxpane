@@ -550,3 +550,80 @@ def test_build_wheels_script_emits_the_lock_the_manifest_and_ignores_the_wheels(
     _bash_n(BUILD_WHEELS_SH)
     ignore = (DEPLOY / ".gitignore").read_text(encoding="utf-8").split()
     assert "wheels/" in ignore
+
+
+# --- Task 9.6: MANIFEST.sha256 + VERIFY.md ---------------------------------------------------------------------
+
+MANIFEST = DEPLOY / "MANIFEST.sha256"
+VERIFY_MD = DEPLOY / "VERIFY.md"
+MANIFEST_LINE = re.compile(r"([0-9a-f]{64})  (\S.*)")
+#: Contract §C.18 + deviation #5: every deploy/vps file the installer copies or feeds to pip.
+MANIFEST_DEPLOY_FILES = (
+    "deploy/vps/imd-dashd.socket", "deploy/vps/imd-dashd.service", "deploy/vps/20-hide-dash.conf",
+    "deploy/vps/50-pepepane.conf", "deploy/vps/10-imd-dash.sshd.conf", "deploy/vps/install.sh",
+    "deploy/vps/probe_seat_host.sh", "deploy/vps/requirements.lock",
+)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _manifest() -> dict[str, str]:
+    """``path -> sha256`` from MANIFEST.sha256; every line is ``<hex64><two spaces><path>``."""
+    out: dict[str, str] = {}
+    for line in MANIFEST.read_text(encoding="utf-8").splitlines():
+        m = MANIFEST_LINE.fullmatch(line)
+        assert m, f"not a sha256sum line: {line!r}"
+        assert m.group(2) not in out, f"duplicate manifest path {m.group(2)}"
+        out[m.group(2)] = m.group(1)
+    return out
+
+
+def test_manifest_names_every_imd_dashd_file_and_the_fork_wheel():
+    """Spec §12.1 / contract §C.18: the MANIFEST covers the whole tree the installer touches -- every
+    ``imd_dashd/*.py`` (as deployed under BROKER_DIR), the units and drop-ins, both scripts, the lock,
+    and exactly one fork wheel at the checkout's version -- and never lists itself. Mutation: delete the
+    ``imd_dashd/gate.py`` line -> red; rename the wheel line to 0.9.2 -> red."""
+    manifest = _manifest()
+    on_disk = {f"imd_dashd/{p.name}" for p in (REPO / "imd_dashd").glob("*.py")}
+    listed = {p for p in manifest if p.startswith("imd_dashd/")}
+    assert listed == on_disk, f"missing {on_disk - listed}, stale {listed - on_disk}"
+    for path in MANIFEST_DEPLOY_FILES:
+        assert path in manifest, path
+    version = _project()["project"]["version"]
+    wheels = [p for p in manifest if p.startswith("deploy/vps/wheels/")]
+    assert wheels == [f"deploy/vps/wheels/maxpane-{version}-py3-none-any.whl"]
+    assert "deploy/vps/MANIFEST.sha256" not in manifest
+    assert set(manifest) == on_disk | set(MANIFEST_DEPLOY_FILES) | set(wheels), "nothing else is listed"
+
+
+def test_manifest_hashes_match_the_committed_files():
+    """The guard the WP title promises: the unit files, the installer, the probe, the lock and the
+    broker sources AGREE with the MANIFEST byte for byte. Any edit to one of them without
+    ``scripts/build_wheels.sh --out deploy/vps --manifest-only`` reddens this. The wheel is the one
+    entry not on disk in a clean checkout; its hash is bound to the lock below."""
+    for path, digest in _manifest().items():
+        if path.startswith("deploy/vps/wheels/"):
+            continue
+        assert _sha256(REPO / path) == digest, f"{path} changed since the MANIFEST was generated"
+
+
+def test_manifest_wheel_hash_equals_the_lock_hash():
+    """Deviation #6: the fork wheel is in the lock (so ``--require-hashes`` can install it) and in the
+    MANIFEST (so ``sha256sum -c`` covers it); both were written by one run of build_wheels.sh and must
+    carry the same sha256. Mutation: rebuild the lock alone -> red."""
+    manifest = _manifest()
+    wheel_hash = next(digest for path, digest in manifest.items() if path.startswith("deploy/vps/wheels/"))
+    version, hashes = _lock_requirements(LOCK.read_text(encoding="utf-8"))["maxpane"]
+    assert hashes == [f"--hash=sha256:{wheel_hash}"]
+    assert version == _project()["project"]["version"]
+
+
+def test_verify_md_explains_the_check_and_what_it_does_not_prove():
+    """Contract §C.18: VERIFY.md = how to check the MANIFEST and what the checksum does not prove
+    (transfer integrity, not authorship -- the same limit as the daemon's unsigned SHA256SUMS)."""
+    text = VERIFY_MD.read_text(encoding="utf-8")
+    for needle in ("sha256sum -c", "--require-hashes", "--manifest-only", "does not prove", "unsigned",
+                   "authorship", "deploy/vps/wheels/", "/opt/imd-dash/MANIFEST.sha256", "probe_seat_host.sh"):
+        assert needle in text, needle
