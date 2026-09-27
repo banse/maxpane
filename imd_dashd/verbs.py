@@ -34,7 +34,7 @@ PLAN_ID_RE = re.compile(r"[0-9a-f]{16}", re.ASCII)
 LOCAL_ONLY_ACK = "local-only"
 
 ERRORS = ("bad_request", "bad_verb", "bad_args", "peer_refused", "busy", "plan_spent", "plan_expired", "unknown_plan",
-          "bad_confirm", "gate_blocked", "gate_unknown(outbox)", "gate_unknown(unit)", "gate_unknown(lifecycle)", "local_only_ack_required",
+          "apply_late", "bad_confirm", "gate_blocked", "gate_unknown(outbox)", "gate_unknown(unit)", "gate_unknown(lifecycle)", "local_only_ack_required",
           "force_disabled", "force_node8_mismatch", "bad_skill_id", "skill_not_listed", "doctor_too_soon",
           "drain_not_armed", "drain_already_armed", "projection_refused", "whoami_unavailable",
           "child_posture_unavailable", "timeout", "unreadable", "internal")

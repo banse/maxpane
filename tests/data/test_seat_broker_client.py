@@ -818,12 +818,14 @@ def test_local_drain_missing_lifecycle_never_fires(tmp_path):
     assert broker._drain.armed is not None and not runner.argvs('docker', 'restart')
 
 
-@pytest.mark.parametrize("failure", [None, "first", "history", "stale"])
+@pytest.mark.parametrize("failure", [None, "first", "history", "stale", "timeout", "breaker"])
 def test_mac_empty_history_requires_two_successful_current_reads(tmp_path, failure):
     clock = Clock()
     live = [hb(clock() - age) for age in (120, 90, 60, 30)]
     def logs(argv, kw):
         limit = argv[argv.index("--tail") + 1]
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(argv, 25)
         if failure == ("first" if limit == "200" else "history"):
             return subprocess.CompletedProcess(argv, 1, b"", b"unreadable")
         rows = live[:1] if failure == "stale" and limit == "10000" else live
@@ -831,8 +833,21 @@ def test_mac_empty_history_requires_two_successful_current_reads(tmp_path, failu
     runner = RecordingRunner(_docker_script())
     runner.script[("docker", "logs")] = logs
     broker = LocalDockerBroker("imd-worker", run=runner, audit_path=tmp_path / "audit.jsonl", now=clock, offline=True, seat=420)
+    if failure == "breaker":
+        broker._breaker_until["logs"] = clock() + 300
     result = broker.read("gate")
     if failure is None:
         assert result["safe"] and result["lifecycle_open"] is False
     else:
         assert result["unknown"] == "lifecycle" and not result["safe"]
+
+
+def test_local_ping_skips_due_inline_drain_tick(tmp_path, monkeypatch):
+    broker, _runner, _lines, clock = _local(tmp_path)
+    plan = broker.plan("drain-restart")
+    broker.apply(plan.plan_id, plan.plan_id[:4])
+    clock.advance(6)
+    def forbidden():
+        pytest.fail("ping dispatched inline housekeeping")
+    monkeypatch.setattr(broker, "tick", forbidden)
+    assert broker.read("ping")["drain_armed"]

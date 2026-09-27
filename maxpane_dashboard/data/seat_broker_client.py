@@ -484,7 +484,7 @@ class LocalDockerBroker(_CallMixin):
     # -- dispatch ----------------------------------------------------------------------------------
 
     def call(self, verb: str, args: Mapping | None = None, *, timeout_s: float = CLIENT_TIMEOUT_S) -> dict:
-        if self._now() - self._last_tick >= LOCAL_TICK_S:
+        if verb != "ping" and self._now() - self._last_tick >= LOCAL_TICK_S:
             try:
                 self.tick()                        # the in-process drain and SIGKILL follow-ups advance with the client's calls
             except BrokerError:

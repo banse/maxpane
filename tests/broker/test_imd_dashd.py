@@ -1128,6 +1128,7 @@ def test_drain_successful_empty_lifecycle_can_restart(tmp_path):
     (1, b"", b""),
     (1, b'{"MESSAGE":"x"}\n-- No entries --\n', b""),
     (0, b"garbage", b""),
+    (0, b"", b"PCRE2 unavailable"),
 ])
 def test_lifecycle_no_match_exit_is_success_only_for_exact_systemd_case(tmp_path, rc, out, err):
     journal = Journal([hb(NOW - age) for age in (120, 90, 60, 30)])
@@ -1165,3 +1166,14 @@ def test_malformed_plan_id_is_audited_without_echoing_it(tmp_path):
     records = audit_lines(audit)
     assert records[-1]["phase"] == "refused" and records[-1]["outcome"] == "unknown_plan"
     assert secret not in audit.path.read_text()
+
+
+@pytest.mark.parametrize("failure", [OSError("unreadable"), subprocess.TimeoutExpired("journalctl", 12)])
+def test_lifecycle_history_failure_does_not_become_empty_success(tmp_path, failure):
+    broker, runner, journal, *_ = make_broker(tmp_path)
+    def read(argv, kw):
+        if "--grep" in argv:
+            raise failure
+        return journal(argv, kw)
+    runner.script[("journalctl",)] = read
+    assert call(broker, "restart", {"offline": True})["error"] == "gate_unknown(lifecycle)"

@@ -72,6 +72,9 @@ RUNTIME_PATHS = {
 SO_PEERCRED = getattr(socket, "SO_PEERCRED", 17)         # Linux value; macOS lacks the constant (tests inject peer_uid_of)
 
 
+APPLY_START_BUDGET_S = 5.0  # monotonic accept-to-first/next mutation; below the client's 20s timeout
+
+
 class PlanError(Exception):
     def __init__(self, code: str, detail: dict | None = None) -> None:
         super().__init__(code)
@@ -92,6 +95,7 @@ class Plan:
     verify: dict
     force_node8: str | None
     spent: bool = False
+    accepted_monotonic: float | None = None  # None only for broker-owned drain fires
     kill_snapshot: dict = field(default_factory=dict)  # internal identity evidence, never wire data
 
 
@@ -367,7 +371,7 @@ def _decide_kill_watch(watch: VerifyWatch, *, pids: set[int], pgids: set[int]) -
 class Broker:
     def __init__(self, *, run: Runner = subprocess.run, popen: Callable = subprocess.Popen,
                  peer_uid_of: Callable[[socket.socket], int], allowed_uid: int, audit: Audit, now: Clock = time.time,
-                 seat: int | None, worker_home: str = "/home/imd-worker", socket_path: str = SOCKET_PATH,
+                 seat: int | None, monotonic: Clock = time.monotonic, worker_home: str = "/home/imd-worker", socket_path: str = SOCKET_PATH,
                  standing_url: str = STANDING_URL, proc_root: str = "/proc", unit: str = WORKER_UNIT,
                  broker_dir: str = BROKER_DIR, python: str = PYTHON, worker_uid: int = WORKER_UID) -> None:
         self._run = run
@@ -376,6 +380,7 @@ class Broker:
         self._allowed_uid = allowed_uid
         self._audit = audit
         self._now = now
+        self._monotonic = monotonic
         self._seat = seat
         self._home = worker_home.rstrip("/")
         self._socket_path = socket_path
@@ -393,6 +398,8 @@ class Broker:
         self._threads: dict[str, threading.Thread] = {}
         self._lock = threading.Lock()
         self._state_lock = threading.RLock()
+        self._read_lock = threading.Lock()
+        self._counts_lock = threading.Lock()
         self._audit_lock = threading.Lock()
         self._in_flight: dict | None = None
         self._drain = Drain(now=now)
@@ -561,9 +568,9 @@ class Broker:
     # ------------------------------------------------------------ transport
 
     def serve_connection(self, conn: socket.socket) -> None:
-        self._serve_connection(conn)
+        self._serve_connection(conn, _accepted_at=self._monotonic())
 
-    def _serve_connection(self, conn: socket.socket, *, _arrival_busy: dict | None = None) -> None:
+    def _serve_connection(self, conn: socket.socket, *, _arrival_busy: dict | None = None, _accepted_at: float | None = None) -> None:
         """One JSON line in, one out, close (spec §11 protocol)."""
         response: dict
         peer = -1
@@ -588,7 +595,7 @@ class Broker:
                         self._log(peer_uid=peer, verb=verb, phase="refused", outcome="busy")
                         response = verbs.err("busy", _arrival_busy)
                     else:
-                        response = self.handle({"v": verbs.PROTOCOL_VERSION, "verb": verb, "args": args}, peer_uid=peer)
+                        response = self.handle({"v": verbs.PROTOCOL_VERSION, "verb": verb, "args": args}, peer_uid=peer, _accepted_at=_accepted_at)
         except (OSError, ValueError) as exc:
             response = verbs.err("internal", {"reason": exc.__class__.__name__})
         try:
@@ -601,17 +608,20 @@ class Broker:
             except OSError:
                 pass
 
-    def handle(self, request: dict, *, peer_uid: int) -> dict:
-        # Admission never waits behind the state lock held by a slow write or drain.
+    def handle(self, request: dict, *, peer_uid: int, _accepted_at: float | None = None) -> dict:
+        # Read serialization never delays writes or ping; state sections contain no children.
+        accepted_at = self._monotonic() if _accepted_at is None else _accepted_at
         verb = request.get("verb") if isinstance(request, dict) else None
         busy = self._in_flight_detail()
         if peer_uid == self._allowed_uid and busy is not None and verb in (*verbs.WRITE_VERBS, verbs.APPLY_VERB):
             self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="busy")
             return verbs.err("busy", busy)
-        with self._state_lock:
-            return self._handle(request, peer_uid=peer_uid)
+        if verb in verbs.READ_VERBS and verb != "ping":
+            with self._read_lock:
+                return self._handle(request, peer_uid=peer_uid, accepted_at=accepted_at)
+        return self._handle(request, peer_uid=peer_uid, accepted_at=accepted_at)
 
-    def _handle(self, request: dict, *, peer_uid: int) -> dict:
+    def _handle(self, request: dict, *, peer_uid: int, accepted_at: float) -> dict:
         """The whole verb dispatch; never raises."""
         self._last_activity = self._now()
         if peer_uid != self._allowed_uid:
@@ -630,7 +640,7 @@ class Broker:
             if verb in verbs.READ_VERBS:
                 return self._read(verb, args, peer_uid)
             if verb == verbs.APPLY_VERB:
-                return self._apply(args, peer_uid)
+                return self._apply(args, peer_uid, accepted_at)
             return self._plan(verb, args, peer_uid)
         except Exception as exc:                                   # noqa: BLE001 -- the socket loop must survive anything
             self._log(peer_uid=peer_uid, verb=None, phase="refused", outcome=f"internal: {exc.__class__.__name__}")
@@ -639,12 +649,14 @@ class Broker:
     # ------------------------------------------------------------ read verbs
 
     def _read(self, verb: str, args: dict, peer_uid: int) -> dict:
-        self._read_counts[verb] = self._read_counts.get(verb, 0) + 1       # audited as counts only (spec §11)
+        with self._counts_lock:
+            self._read_counts[verb] = self._read_counts.get(verb, 0) + 1       # audited as counts only (spec §11)
         if verb == "ping":
+            drain = self._drain.armed
             return verbs.ok(data={"pid": os.getpid(), "version": VERSION, "uptime_s": round(self._now() - self._started, 1),
-                                  "drain_armed": self._drain.armed is not None, "in_flight": self._in_flight_detail(),
+                                  "drain_armed": drain is not None, "in_flight": self._in_flight_detail(),
                                   "posture_ok": self.ip_address_deny is not None,
-                                  "drain": None if self._drain.armed is None else self._drain.armed.to_dict()})
+                                  "drain": None if drain is None else drain.to_dict()})
         if verb == "audit-tail":
             return verbs.ok(data={"lines": self._audit.tail(max(1, min(int(args["n"]), 200)))})
         if verb == "gate":
@@ -916,7 +928,8 @@ class Broker:
         else:
             return verbs.err("bad_verb", {"verb": verb})
 
-        plan = self._plans.create(verb, args, argv, preconditions, inverse, verify, force_node8=force_node8)
+        with self._state_lock:
+            plan = self._plans.create(verb, args, argv, preconditions, inverse, verify, force_node8=force_node8)
         if verb == "kill-orphans":
             plan.kill_snapshot = {p["pid"]: _proc_identity(p) for p in procs}
         seq = self._log(peer_uid=peer_uid, verb=verb, phase="plan", plan_id=plan.plan_id,
@@ -955,7 +968,18 @@ class Broker:
 
     # ------------------------------------------------------------ write verbs: apply
 
-    def _apply(self, args: dict, peer_uid: int) -> dict:
+    def _late_apply(self, accepted_at: float | None, peer_uid: int, *, plan_spent: bool, plan_id: str | None = None) -> dict | None:
+        if accepted_at is None:  # drain fires have no waiting client
+            return None
+        waited = max(0.0, self._monotonic() - accepted_at)
+        if waited <= APPLY_START_BUDGET_S:
+            return None
+        detail = {"waited_s": round(waited, 3), "plan_spent": plan_spent}
+        self._log(peer_uid=peer_uid, verb="apply", phase="refused", plan_id=plan_id,
+                  outcome="apply_late", args=detail)
+        return verbs.err("apply_late", detail)
+
+    def _apply(self, args: dict, peer_uid: int, accepted_at: float) -> dict:
         plan_id = str(args["plan_id"])
         if not verbs.PLAN_ID_RE.fullmatch(plan_id):
             self._log(peer_uid=peer_uid, verb="apply", phase="refused", outcome="unknown_plan")
@@ -966,8 +990,13 @@ class Broker:
         release = True
         try:
             now = self._now()
+            refusal = self._late_apply(accepted_at, peer_uid, plan_spent=False, plan_id=plan_id)
+            if refusal is not None:
+                return refusal
             try:
-                plan = self._plans.consume(plan_id, now)
+                with self._state_lock:
+                    plan = self._plans.consume(plan_id, now)
+                    plan.accepted_monotonic = accepted_at
             except PlanError as exc:
                 self._log(peer_uid=peer_uid, verb="apply", phase="refused", plan_id=plan_id, outcome=exc.code)
                 return verbs.err(exc.code, exc.detail)
@@ -1040,6 +1069,9 @@ class Broker:
         return self._exec_systemctl(plan, plan.preconditions, cursor_before, peer_uid)
 
     def _exec_systemctl(self, plan: Plan, preconditions: dict, cursor_before: str | None, peer_uid: int) -> dict:
+        refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id)
+        if refusal is not None:
+            return refusal
         try:
             done = self._run(list(plan.argv), capture_output=True, timeout=SYSTEMCTL_TIMEOUT_S)
             exit_code: int | None = done.returncode
@@ -1071,7 +1103,13 @@ class Broker:
 
         def worker() -> None:
             try:
-                result = run_transient(verb, seq_no, plan.argv, run=self._run, ip_address_deny=self.ip_address_deny or "")
+                def guarded_run(argv, *, timeout, **kwargs):
+                    if argv[0] == "systemd-run":
+                        refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id)
+                        if refusal is not None:
+                            raise PlanError("apply_late", refusal["detail"])
+                    return self._run(argv, timeout=timeout, **kwargs)
+                result = run_transient(verb, seq_no, plan.argv, run=guarded_run, ip_address_deny=self.ip_address_deny or "")
                 watch.lines = [_CURRENCY_FIGURE_RE.sub("", redact(ln)) for ln in _text(result.stdout).splitlines() if ln.strip()]
                 watch.rc = result.rc
                 watch.verified = (result.rc == 0) and not result.timed_out
@@ -1084,6 +1122,9 @@ class Broker:
                     watch.verified = row is not None and (row[0] == "on") is bool(plan.args["on"])
                     if not watch.verified:
                         watch.reason = "re-listing disagrees"
+            except PlanError as exc:
+                self._last_doctor = previous_doctor
+                watch.verified, watch.reason = False, f"{exc.code}: {json.dumps(exc.detail, sort_keys=True)}"
             except OSError as exc:
                 watch.verified, watch.reason = False, exc.__class__.__name__
             finally:
@@ -1125,6 +1166,9 @@ class Broker:
             procs = {p["pid"]: p for p in checked}
             if (_same_group(list(procs.values()), pgid, plan.kill_snapshot, worker_uid=self._worker_uid)
                     and all(_same_process(procs.get(r["pid"]), plan.kill_snapshot, worker_uid=self._worker_uid) for r in members)):
+                refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id)
+                if refusal is not None:
+                    return refusal
                 self._run(["kill", "-TERM", "--", f"-{pgid}"], capture_output=True, timeout=5)
                 self._pending_kills.append((now + KILL_GRACE_S, "pgid", pgid))
                 self._kill_snapshots[("pgid", pgid)] = dict(plan.kill_snapshot)
@@ -1141,6 +1185,9 @@ class Broker:
                 if not _same_process(live, plan.kill_snapshot, worker_uid=self._worker_uid):
                     skipped.append({"pid": row["pid"], "reason": "changed since plan"})
                     continue
+                refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id)
+                if refusal is not None:
+                    return refusal
                 self._run(["kill", "-TERM", str(row["pid"])], capture_output=True, timeout=5)
                 self._pending_kills.append((now + KILL_GRACE_S, "pid", row["pid"]))
                 self._kill_snapshots[("pid", row["pid"])] = dict(plan.kill_snapshot)
@@ -1162,7 +1209,7 @@ class Broker:
         needed the SIGKILL on this very tick is decided on the next one, so a process still being reaped is not
         reported as a survivor. Writes one ``verify`` audit line per decision (spec §11)."""
         queued = {(kind, ident) for _deadline, kind, ident in self._pending_kills}
-        ready = [w for w in self._watches.values() if w.kind == "kill" and w.verified is None
+        ready = [w for w in list(self._watches.values()) if w.kind == "kill" and w.verified is None
                  and not any(t in queued or t in sigkilled for t in w.targets)]
         if not ready:
             return
@@ -1204,72 +1251,83 @@ class Broker:
             lines = [(e, t) for e, t in lines if e >= watch.started - 1]
         unit_active = self._unit_active() if watch.kind == "stop" else None
         unit_enabled = self._unit_enabled() if watch.kind in ("enabled", "disabled") else None
-        previously = (watch.verified, watch.connected)
-        watch.update(lines, now, unit_active=unit_active, unit_enabled=unit_enabled)
-        seq = None
-        if (watch.verified, watch.connected) != previously:
-            seq = self._log(verb=watch.verb, phase="verify", plan_id=plan_id, outcome="verified" if watch.verified else
-                            ("pending" if watch.verified is None else "not verified"), verified=watch.verified,
-                            connected=watch.connected, cursor_before=watch.cursor_before, cursor_after=watch.cursor_after)
-        return verbs.ok(data=watch.to_dict(now, seq))
+        with self._state_lock:
+            previously = (watch.verified, watch.connected)
+            watch.update(lines, now, unit_active=unit_active, unit_enabled=unit_enabled)
+            seq = None
+            if (watch.verified, watch.connected) != previously:
+                seq = self._log(verb=watch.verb, phase="verify", plan_id=plan_id, outcome="verified" if watch.verified else
+                                ("pending" if watch.verified is None else "not verified"), verified=watch.verified,
+                                connected=watch.connected, cursor_before=watch.cursor_before, cursor_after=watch.cursor_after)
+            return verbs.ok(data=watch.to_dict(now, seq))
 
     # ------------------------------------------------------------ housekeeping
 
     def _flush_read_counts(self, now: float, *, force: bool = False) -> None:
         """Read verbs are audited as counts only (spec §11): one line per READ_COUNT_FLUSH_S, and at exit."""
-        if not self._read_counts or (not force and now - self._reads_flushed_at < READ_COUNT_FLUSH_S):
-            return
-        self._log(verb=None, phase="reads", outcome="counts", args={"counts": dict(self._read_counts)})
-        self._read_counts = {}
-        self._reads_flushed_at = now
+        with self._counts_lock:
+            if not self._read_counts or (not force and now - self._reads_flushed_at < READ_COUNT_FLUSH_S):
+                return
+            counts, self._read_counts = self._read_counts, {}
+            self._reads_flushed_at = now
+        self._log(verb=None, phase="reads", outcome="counts", args={"counts": counts})
 
     def tick(self, now: float | None = None) -> list[str]:
-        with self._state_lock:
-            return self._tick(now)
+        return self._tick(now)
 
     def _tick(self, now: float | None = None) -> list[str]:
         """Drain beats, plan/watch expiry, SIGKILL follow-ups. Returns the audit events it wrote (tests read them)."""
         now = self._now() if now is None else now
         events: list[str] = []
         self._flush_read_counts(now)
-        self._plans.purge(now)
+        with self._state_lock:
+            self._plans.purge(now)
         for fired in list(self._drain_fired):              # the drain's own restart gets its verify line (spec §11 audit column)
             data = self._verify(fired).get("data") or {}
             if data.get("verified") is not None or fired not in self._watches:
                 self._drain_fired.discard(fired)
-        for plan_id in [k for k, w in self._watches.items() if now - w.started > VERIFY_WATCH_S and not (w.kind == "transient" and not w.done)]:
+        for plan_id in [k for k, w in list(self._watches.items()) if now - w.started > VERIFY_WATCH_S and not (w.kind == "transient" and not w.done)]:
             del self._watches[plan_id]
-        if self._drain.armed is not None:
-            event = self._drain.tick(now)
-            if event:
-                events.append(event)
-                self._log(verb="drain-restart", phase=event, outcome="expired")
-            else:
-                lines, _cursor = self._journal(since_s=TICK_S * 2 + 5)
-                for epoch, text in lines:
-                    match = HEARTBEAT_RE.match(text)
-                    if not match or epoch <= self._last_tick:
-                        continue
-                    key = f"{epoch}:{text}"
-                    if key in self._drain_seen:
-                        continue
-                    self._drain_seen.add(key)
-                    armed_before = self._drain.armed
-                    event = self._drain.on_heartbeat("idle" if match.group("work") == "idle" else "running", epoch)
-                    if event:
-                        events.append(event)
-                        plan_id = None
-                        if event == "drain_fire":
-                            self._fire_drain(events, armed_before)
+        armed = self._drain.armed
+        if armed is not None:
+            lines, _cursor = self._journal(since_s=TICK_S * 2 + 5)
+            # Read outside every state/write lock. A cancelled/replaced drain cannot
+            # consume this old snapshot, and an active apply never queues behind it.
+            if self._lock.acquire(blocking=False):
+                try:
+                    if self._drain.armed is armed:
+                        event = self._drain.tick(now)
+                        if event:
+                            events.append(event)
+                            self._log(verb="drain-restart", phase=event, outcome="expired")
                         else:
-                            self._log(verb="drain-restart", phase=event, plan_id=plan_id, outcome=event)
-                    if self._drain.armed is None:
-                        break
-                if len(self._drain_seen) > 2000:
-                    self._drain_seen = set(list(self._drain_seen)[-500:])
+                            for epoch, text in lines:
+                                match = HEARTBEAT_RE.match(text)
+                                if not match or epoch <= self._last_tick:
+                                    continue
+                                key = f"{epoch}:{text}"
+                                if key in self._drain_seen:
+                                    continue
+                                self._drain_seen.add(key)
+                                armed_before = self._drain.armed
+                                event = self._drain.on_heartbeat("idle" if match.group("work") == "idle" else "running", epoch)
+                                if event:
+                                    events.append(event)
+                                    if event == "drain_fire":
+                                        self._fire_drain(events, armed_before, lock_held=True)
+                                    else:
+                                        self._log(verb="drain-restart", phase=event, outcome=event)
+                                if self._drain.armed is None:
+                                    break
+                            if len(self._drain_seen) > 2000:
+                                self._drain_seen = set(list(self._drain_seen)[-500:])
+                finally:
+                    self._lock.release()
         still: list[tuple[float, str, int]] = []
         sigkilled: set[tuple[str, int]] = set()
-        for deadline, kind, ident in self._pending_kills:
+        with self._state_lock:
+            pending, self._pending_kills = self._pending_kills, []
+        for deadline, kind, ident in pending:
             if now < deadline:
                 still.append((deadline, kind, ident))
                 continue
@@ -1293,13 +1351,14 @@ class Broker:
                     pass
                 events.append("sigkill")
                 sigkilled.add((kind, ident))
-        self._pending_kills = still
+        with self._state_lock:
+            self._pending_kills.extend(still)
         self._resolve_kill_watches(now, sigkilled)         # the kill-orphans verify: "pids gone" (or the survivors named)
         self._last_tick = now
         return events
 
-    def _fire_drain(self, events: list[str], armed_before: DrainState) -> None:
-        if not self._lock.acquire(blocking=False):
+    def _fire_drain(self, events: list[str], armed_before: DrainState, *, lock_held: bool = False) -> None:
+        if not lock_held and not self._lock.acquire(blocking=False):
             self._drain.restore(armed_before)    # keep waiting (same drain, same deadline): something else is in flight
             return
         plan_id = secrets.token_hex(8)
@@ -1322,7 +1381,8 @@ class Broker:
             self._drain_fired.add(plan.plan_id)          # tick() writes its verify line once the journal decides
         finally:
             self._in_flight = None
-            self._lock.release()
+            if not lock_held:
+                self._lock.release()
 
     def idle_exit_due(self, now: float | None = None) -> bool:
         now = self._now() if now is None else now
@@ -1348,9 +1408,9 @@ class Broker:
         connections: list[threading.Thread] = []
         tick_thread = None
 
-        def serve(conn, busy):
+        def serve(conn, busy, accepted_at):
             try:
-                self._serve_connection(conn, _arrival_busy=busy)
+                self._serve_connection(conn, _arrival_busy=busy, _accepted_at=accepted_at)
             finally:
                 slots.release()
 
@@ -1358,6 +1418,7 @@ class Broker:
             while not self.stop_requested:
                 try:
                     conn, _addr = listener.accept()
+                    accepted_at = self._monotonic()
                 except socket.timeout:
                     conn = None
                 except OSError:
@@ -1367,7 +1428,7 @@ class Broker:
                     busy = self._in_flight_detail()
                     if slots.acquire(blocking=False):
                         try:
-                            thread = threading.Thread(target=serve, args=(conn, busy), name="imd-dash-request")
+                            thread = threading.Thread(target=serve, args=(conn, busy, accepted_at), name="imd-dash-request")
                             thread.start()
                         except (RuntimeError, OSError):
                             slots.release()
