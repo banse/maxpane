@@ -244,3 +244,79 @@ def seat_counters(seat_body: Mapping) -> dict:
     else:
         flag = not validate_counters(seat_body)
     return {**values, "countersInconsistent": flag}
+
+
+def _pick(row: object, keys: Sequence[str]) -> dict:
+    src = _mapping(row)
+    return {key: src.get(key) for key in keys}
+
+
+def _queue_block(queue: object, *, at: object) -> dict | None:
+    """The seats-form ``queue`` block; ``None`` when the body carries ``queue: null`` (the ``?queue=0`` form).
+
+    Reads ``fleetOnline`` only -- the workers form's ``online`` is never consulted (spec §6 never-used).
+    """
+    if not isinstance(queue, Mapping):
+        return None
+    blocked = [
+        {"reason": _str_or_none(_mapping(b).get("reason")), "nodes": _int_or_none(_mapping(b).get("nodes"))}
+        for b in queue.get("blocked", [])
+        if isinstance(b, Mapping)
+    ] if isinstance(queue.get("blocked"), list) else []
+    return {
+        "ready": _int_or_none(queue.get("ready")),
+        "eligible": _int_or_none(queue.get("eligible")),
+        "fleetOnline": _int_or_none(queue.get("fleetOnline")),
+        "blocked": blocked,
+        "asOfUtc": _str_or_none(at),
+    }
+
+
+def _premium_advertised(runtimes: object) -> dict | None:
+    if not isinstance(runtimes, list):
+        return None
+    for runtime in runtimes:
+        premium = _mapping(runtime).get("premiumModel")
+        if isinstance(premium, Mapping):
+            return {"model": _str_or_none(premium.get("model")), "effort": _str_or_none(premium.get("effort"))}
+    return None
+
+
+def normalise_standing(body: Mapping) -> dict:
+    """``GET /seats/<id>/standing`` -> the §7 standing block (minus counters) + queue + lifted presence/enrollment.
+
+    Exactly :data:`STANDING_KEYS`.  ``working`` and ``running`` come from ``body["standing"]`` only,
+    so a ``/workers`` row (top-level ``working``) yields ``None`` -- mutation proof 9.  A missing
+    field is ``None``; lists are ``[]``; ``recentFailures[].reason`` is the enum word.
+    """
+    src = _mapping(body)
+    standing = _mapping(src.get("standing"))
+    presence = _mapping(src.get("presence"))
+    enrollment = _mapping(src.get("enrollment"))
+    breaker = standing.get("breaker")
+    running = standing.get("running")
+    failures = standing.get("recentFailures")
+    return {
+        "working": _int_or_none(standing.get("working")),
+        "running": [_pick(r, RUNNING_ROW_KEYS) for r in running if isinstance(r, Mapping)] if isinstance(running, list) else [],
+        "consecutiveFailures": _int_or_none(standing.get("consecutiveFailures")),
+        "pausedUntil": _str_or_none(standing.get("pausedUntil")),
+        "lastFailedAt": _str_or_none(standing.get("lastFailedAt")),
+        "breaker": ({"failures": _int_or_none(_mapping(breaker).get("failures")),
+                     "cooldownMs": _int_or_none(_mapping(breaker).get("cooldownMs"))}
+                    if isinstance(breaker, Mapping) else None),
+        "recentFailures": ([{**_pick(f, RECENT_FAILURE_KEYS), "reason": reason_word(_mapping(f).get("reason"))}
+                            for f in failures if isinstance(f, Mapping)] if isinstance(failures, list) else []),
+        "presenceConnected": _bool_or_none(presence.get("connected")),
+        "acceptingWork": _bool_or_none(presence.get("acceptingWork")),
+        "heartbeatAgeMs": _int_or_none(presence.get("heartbeatAgeMs")),
+        "presenceStale": _bool_or_none(presence.get("stale")),
+        "daemonVersion": _str_or_none(presence.get("daemonVersion")),
+        "maxConcurrency": _int_or_none(presence.get("maxConcurrency")),
+        "premiumAdvertised": _premium_advertised(presence.get("runtimes")),
+        "agentId": _int_or_none(enrollment.get("agentId")),
+        "enrollmentStatus": _str_or_none(enrollment.get("status")),
+        "devices": _int_or_none(src.get("devices")),
+        "queue": _queue_block(src.get("queue"), at=src.get("at")),
+        "asOfUtc": _str_or_none(src.get("at")),
+    }

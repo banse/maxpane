@@ -222,3 +222,59 @@ def test_work_rows_normalise_to_exact_keys_and_iso_stamps():
     assert all(r["acceptedAt"] is None for r in rows if r["status"] == "pending")   # pending rows carry no acceptedAt
     assert all(r["acceptedAt"] is not None for r in rows if r["status"] == "accepted")   # an accepted row always has its verdict stamp
     assert any(r["status"] == "accepted" for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# Task 5.5 — the standing block
+# ---------------------------------------------------------------------------
+
+def test_normalise_standing_exact_shape_from_an_inline_body():
+    """Spec §7 standing block minus counters + queue block; presence/enrollment lifted (contract C.10)."""
+    body = {
+        "at": "2026-09-26T03:24:55.812Z", "devices": 1,
+        "enrollment": {"status": "active", "tokenId": 7, "agentId": 51075},
+        "presence": {"connected": True, "acceptingWork": True, "heartbeatAgeMs": 4410, "stale": False,
+                     "daemonVersion": "0.1.0+5bfa8261", "maxConcurrency": 1,
+                     "runtimes": [{"id": "codex", "version": "codex-cli 0.157.0", "premiumModel": {"model": "gpt-6-astra", "effort": "xhigh"}}]},
+        "standing": {"working": 1,
+                     "running": [{"jobId": "9c3d2f7a-5b1e-4c0d-8a2f-6e7b1c9d0a3f", "objective": "o", "nodeKey": "oracle_assess",
+                                  "role": "implement", "since": "2026-09-26T03:24:53.214Z", "extra": "ignored"}],
+                     "consecutiveFailures": 0, "pausedUntil": None, "lastFailedAt": "2026-09-25T23:38:45.117Z",
+                     "breaker": {"failures": 3, "cooldownMs": 900000},
+                     "recentFailures": [{"at": "a", "reason": "runtime_error", "jobId": JOB, "nodeKey": "oracle_assess"},
+                                        {"at": "b", "reason": "brand_new_reason", "jobId": JOB, "nodeKey": "k"}]},
+        "queue": {"ready": 27, "fleetOnline": 396, "eligible": 0, "blocked": [{"reason": "at capacity", "nodes": 27}]},
+        "server": {"version": "0.1.0+aa634633", "presenceWindowMs": 60000},
+    }
+    block = seat_api.normalise_standing(body)
+    assert tuple(block) == seat_api.STANDING_KEYS
+    assert block["working"] == 1 and block["consecutiveFailures"] == 0 and block["pausedUntil"] is None
+    assert block["running"] == [{"jobId": "9c3d2f7a-5b1e-4c0d-8a2f-6e7b1c9d0a3f", "objective": "o", "nodeKey": "oracle_assess",
+                                 "role": "implement", "since": "2026-09-26T03:24:53.214Z"}]
+    assert block["breaker"] == {"failures": 3, "cooldownMs": 900000}
+    assert block["recentFailures"] == [{"at": "a", "reason": "runtime_error", "nodeKey": "oracle_assess", "jobId": JOB},
+                                       {"at": "b", "reason": "other", "nodeKey": "k", "jobId": JOB}]
+    assert block["presenceConnected"] is True and block["heartbeatAgeMs"] == 4410 and block["presenceStale"] is False
+    assert block["daemonVersion"] == "0.1.0+5bfa8261" and block["maxConcurrency"] == 1
+    assert block["premiumAdvertised"] == {"model": "gpt-6-astra", "effort": "xhigh"}
+    assert block["agentId"] == 51075 and block["enrollmentStatus"] == "active" and block["devices"] == 1
+    assert block["queue"] == {"ready": 27, "eligible": 0, "fleetOnline": 396,
+                              "blocked": [{"reason": "at capacity", "nodes": 27}], "asOfUtc": "2026-09-26T03:24:55.812Z"}
+    assert block["asOfUtc"] == "2026-09-26T03:24:55.812Z"
+    empty = seat_api.normalise_standing({})
+    assert tuple(empty) == seat_api.STANDING_KEYS and empty["working"] is None and empty["running"] == [] and empty["queue"] is None
+
+
+def test_normalise_standing_reads_the_seats_form_only():
+    """Spec §6 never-used: `?queue=0` returns `queue: null` and `/workers.working` is a heartbeat echo --
+    the normaliser yields None for both rather than inventing a queue line or a 'working now'."""
+    seats = seat_api.normalise_standing(_fixture("seat7_standing.json"))
+    assert isinstance(seats["working"], int) and tuple(seats["queue"]) == seat_api.QUEUE_KEYS
+    assert all(isinstance(seats["queue"][k], int) for k in ("ready", "eligible", "fleetOnline"))
+    assert all(set(b) == {"reason", "nodes"} for b in seats["queue"]["blocked"])
+    q0 = seat_api.normalise_standing(_fixture("workers_standing_q0.json"))
+    assert q0["queue"] is None and isinstance(q0["working"], int)       # same standing, no queue
+    row = seat_api.normalise_standing(_fixture("workers_row.json"))
+    assert row["working"] is None and row["queue"] is None and row["running"] == []   # top-level `working` is never read
+    # the workers form spells fleet size `online`; the seats form `fleetOnline` -- only the latter is read
+    assert seat_api.normalise_standing({"queue": {"ready": 1, "online": 398}})["queue"]["fleetOnline"] is None
