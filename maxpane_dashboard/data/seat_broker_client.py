@@ -1148,8 +1148,8 @@ class DockerUnitReader:
     def read_unit(self) -> dict | None:
         """``docker inspect`` and ``docker stats`` fail independently: a missing half is ``None``, never 0 (fill4 §5).
 
-        A partial block carries ``"reason"`` naming the failed half, so the manager marks the unit source
-        failed while keeping the values it did get (WP7 deviation 6, spec §14 mutation proof 8).
+        A partial block carries ``"reason"`` naming the failed half, so the manager lands the unit source
+        per field with the reason (WP7 deviation 6, spec §14 mutation proof 8).
         """
         inspect, inspect_reason = self._call("inspect", ["docker", "inspect", self.container])
         stats, stats_reason = self._call("stats", ["docker", "stats", "--no-stream", "--format", "{{json .}}", self.container])
