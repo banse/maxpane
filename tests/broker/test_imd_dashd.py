@@ -101,7 +101,7 @@ def test_plan_store_ids_are_single_use_and_expire():
     # spec §11: random 16-hex plan ids, valid PLAN_TTL_S = 60, consumed exactly once
     assert PLAN_TTL_S == 60
     store = PlanStore(now=lambda: NOW)
-    created = store.create("restart", {}, ["systemctl", "restart", "imd-worker.service"], {}, None, {})
+    created = store.create("restart", {}, ["systemctl", "restart", "--no-block", "imd-worker.service"], {}, None, {})
     assert len(created.plan_id) == 16 and int(created.plan_id, 16) >= 0 and created.expires == NOW + 60
     assert store.peek(created.plan_id) is created
     store.consume(created.plan_id, NOW + 1)
@@ -330,13 +330,13 @@ def test_apply_returns_before_verify_completes(tmp_path):
     assert "verified" not in result and "connected" not in result
     during_apply = [argv for argv, _ in runner.calls[calls_before:]]
     assert not any("--after-cursor" in argv for argv in during_apply)              # no post-apply journal wait inside apply
-    assert during_apply[-1] == ["systemctl", "restart", "imd-worker.service"]      # systemctl is the LAST thing apply does
+    assert during_apply[-1] == ["systemctl", "restart", "--no-block", "imd-worker.service"]      # systemctl is the LAST thing apply does
 
 
 def test_restart_plan_has_the_spec_shape(tmp_path):
     broker, _runner, _journal, _clock, audit = make_broker(tmp_path)
     plan = call(broker, "restart", {"offline": False})["plan"]
-    assert plan["verb"] == "restart" and plan["argv"] == ["systemctl", "restart", "imd-worker.service"]
+    assert plan["verb"] == "restart" and plan["argv"] == ["systemctl", "restart", "--no-block", "imd-worker.service"]
     assert set(plan["preconditions"]) == {"idle_beats", "idle_beats_required", "newest_heartbeat_age_s", "plane",
                                           "last_lifecycle_line", "lifecycle_open", "outbox_files", "unit_active",
                                           "graceful_stop_possible"}
@@ -394,7 +394,7 @@ def test_force_requires_the_running_node8_twice_and_a_graceful_unit(tmp_path):
 
 def test_start_enable_disable_plans_and_apply(tmp_path):
     broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
-    for verb, argv, inverse in (("start", ["systemctl", "start", "imd-worker.service"], "stop"),
+    for verb, argv, inverse in (("start", ["systemctl", "start", "--no-block", "imd-worker.service"], "stop"),
                                 ("enable-boot", ["systemctl", "enable", "imd-worker.service"], "disable-boot"),
                                 ("disable-boot", ["systemctl", "disable", "imd-worker.service"], "enable-boot")):
         plan = call(broker, verb, {})["plan"]
@@ -670,7 +670,7 @@ def test_drain_restart_arms_rearms_and_fires_through_the_fresh_gate(tmp_path):
         clock.advance(30)
         journal.add(hb(clock() - 1))
         events = broker.tick(clock())
-    assert "drain_fire" in events and runner.argvs("systemctl", "restart") == [["systemctl", "restart", "imd-worker.service"]]
+    assert "drain_fire" in events and runner.argvs("systemctl", "restart") == [["systemctl", "restart", "--no-block", "imd-worker.service"]]
     phases = [ln["phase"] for ln in audit_lines(audit)]
     assert phases.count("drain_armed") == 1 and phases.count("drain_rearmed") == 1 and phases.count("drain_fire") == 1
     assert phases[-1] == "apply" and call(broker, "ping")["data"]["drain_armed"] is False
@@ -963,7 +963,7 @@ def test_transient_thread_failure_finishes_watch_and_releases_lock(tmp_path, mon
     assert result['error'] == 'internal'
     assert not broker._lock.locked() and broker._in_flight is None
     watch = broker._watches[plan['plan_id']]
-    assert watch.done and watch.verified is False and watch.reason == 'thread start failed'
+    assert watch.done and watch.verified is False and 'internal' in watch.reason and 'thread start failed' in watch.reason
     assert plan['plan_id'] not in broker._threads
     # No child was started: failure must not burn the doctor cooldown.
     assert call(broker, 'doctor')['ok']

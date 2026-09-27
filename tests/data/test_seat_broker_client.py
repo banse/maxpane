@@ -44,7 +44,7 @@ def test_client_enum_equals_the_broker_enum():
 
 
 def test_wire_dataclasses_parse_the_spec_shapes():
-    plan = Plan.from_wire({"plan_id": "7f3a9c1e2b4d6081", "verb": "restart", "argv": ["systemctl", "restart", "imd-worker.service"],
+    plan = Plan.from_wire({"plan_id": "7f3a9c1e2b4d6081", "verb": "restart", "argv": ["systemctl", "restart", "--no-block", "imd-worker.service"],
                            "expires_at": "2026-09-26T03:41:12Z", "single_use": True, "preconditions": {"idle_beats": 9},
                            "warning": "w", "inverse": {"verb": "stop", "args": {}}, "verify": {"within_s": 30},
                            "restart_required_after": False})
@@ -73,10 +73,10 @@ def test_unix_socket_broker_round_trips_plan_apply_verify(tmp_path):
     assert unix.kind == "unix" and unix.trust() == "host" and unix.reachable() is True
     assert unix.read("ping")["version"] == "imd-dashd 0.1.0"
     plan = unix.plan("restart")
-    assert isinstance(plan, Plan) and plan.argv == ["systemctl", "restart", "imd-worker.service"]
+    assert isinstance(plan, Plan) and plan.argv == ["systemctl", "restart", "--no-block", "imd-worker.service"]
     assert plan.preconditions["plane"]["mode"] == "plane+local"                      # offline=False travelled in args
     result = unix.apply(plan.plan_id, plan.plan_id[:4])
-    assert result.outcome == "applied" and runner.argvs("systemctl", "restart") == [["systemctl", "restart", "imd-worker.service"]]
+    assert result.outcome == "applied" and runner.argvs("systemctl", "restart") == [["systemctl", "restart", "--no-block", "imd-worker.service"]]
     journal.add(msg(clock() + 0.3, "shutting down"), msg(clock() + 0.6, "runtimes: codex codex-cli 0.157.0 (using codex)"))
     clock.advance(2)
     verify = unix.verify(plan.plan_id)

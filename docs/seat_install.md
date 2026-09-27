@@ -32,7 +32,7 @@ over ssh and `‹ taller` lights up; narrower widths advertise omitted content w
 
 Gate step (c) accepts a terminal latest lifecycle line or a successful empty history read (owner D1); only a failed or unreadable lifecycle read is `gate_unknown(lifecycle)`, and stale Mac history remains unknown.
 
-The standing child allows two 8-second attempts inside a 12-second overall child deadline. A slow first attempt can exhaust that budget; the gate then reports `local-only` and requests the typed acknowledgement.
+The standing child allows two 8-second attempts inside a 12-second overall child deadline. A slow first attempt can exhaust that budget; the gate then reports `local-only` and requests the typed acknowledgement. Apply admits the request within 5 seconds, permits bounded gate reads until its 15-second execution deadline, and queues systemd with a 3-second timeout. Acknowledged local-only fallback can still restart after a 12-second standing timeout; slow exhausted gates refuse with the spent-plan status. Use `pepepane --offline` when intentionally avoiding the plane.
 
 1. Spec §16 #2 is decided: route **a**, `apt-get install python3.14-venv` (3 packages, root). Route **b** needs
    no apt: `python3 -m venv --without-pip` plus `pip-26.2.1-py3-none-any.whl` passed as `--pip-wheel` (fill7 §3). The

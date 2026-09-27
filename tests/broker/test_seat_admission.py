@@ -88,7 +88,7 @@ def test_apply_accept_deadline_precedes_plan_consumption(tmp_path):
         incoming.put(conn)
         assert conn.done.wait(1)
     assert conn.response['error'] == 'apply_late'
-    assert conn.response['detail'] == {'waited_s': 6, 'plan_spent': False}
+    assert conn.response['detail'] == {'waited_s': 6, 'plan_spent': False, 'hint': 'plan remains available; retry promptly or use pepepane --offline'}
     assert not broker._plans.peek(plan['plan_id']).spent
     assert not runner.argvs('systemctl', 'restart')
     assert 'apply_late' in audit.path.read_text()
@@ -109,7 +109,7 @@ def test_slow_gate_inside_apply_cannot_mutate_after_client_timeout(tmp_path):
         incoming.put(conn)
         assert conn.done.wait(1)
     assert conn.response['error'] == 'apply_late'
-    assert conn.response['detail'] == {'waited_s': 21, 'plan_spent': True}
+    assert conn.response['detail'] == {'waited_s': 21, 'plan_spent': True, 'hint': 'plan afresh; use pepepane --offline if plane reads are slow'}
     assert broker._plans.peek(plan['plan_id']).spent
     assert not runner.argvs('systemctl', 'restart')
     assert 'apply_late' in audit.path.read_text()
@@ -259,3 +259,98 @@ def test_in_flight_snapshot_survives_concurrent_finisher(tmp_path, entry):
         release.set()
         finisher.join(2)
         assert not finisher.is_alive()
+
+
+@pytest.mark.parametrize("elapsed,timeout", [(5.5, False), (12, True)])
+def test_apply_slow_standing_still_queues_restart_within_exec_budget(tmp_path, elapsed, timeout):
+    from tests.broker._harness import standing_child
+    broker, runner, *_ = make_broker(tmp_path)
+    mono = Clock(0)
+    broker._monotonic = mono
+    plan = call(broker, "restart")["plan"]
+    def standing(argv, kw):
+        mono.advance(elapsed)
+        if timeout:
+            raise subprocess.TimeoutExpired(argv, kw["timeout"])
+        return standing_child(0, broker._now())
+    runner.script[(broker._python, "-I", broker._broker_dir + "/gate.py")] = standing
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4], "local_only_ack": "local-only"})
+    assert result["ok"], result
+    assert runner.argvs("systemctl", "restart") == [["systemctl", "restart", "--no-block", "imd-worker.service"]]
+    assert mono() < 20
+
+
+def test_systemctl_apply_deadline_fits_client_and_stop_waits_for_inactive(tmp_path):
+    from imd_dashd.imd_dashd import APPLY_EXEC_DEADLINE_S, SYSTEMCTL_TIMEOUT_S
+    from maxpane_dashboard.data.seat_broker_client import CLIENT_TIMEOUT_S
+    from tests.broker._harness import msg
+    assert APPLY_EXEC_DEADLINE_S + SYSTEMCTL_TIMEOUT_S + 2 <= CLIENT_TIMEOUT_S
+    broker, runner, journal, clock, _ = make_broker(tmp_path)
+    plan = call(broker, "stop")["plan"]
+    assert call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["ok"]
+    journal.add(msg(clock(), "shutting down"))
+    runner.script[("systemctl", "is-active", "imd-worker.service")] = subprocess.CompletedProcess([], 3, b"deactivating\n", b"")
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None
+    runner.script[("systemctl", "is-active", "imd-worker.service")] = subprocess.CompletedProcess([], 3, b"inactive\n", b"")
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is True
+
+
+@pytest.mark.parametrize("kind", ["bad_confirm", "local_only_ack_required", "systemctl_failure"])
+def test_consumed_refusals_leave_terminal_verification(tmp_path, kind):
+    broker, runner, *_ = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": True})["plan"]
+    args = {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4], "local_only_ack": "local-only"}
+    if kind == "bad_confirm": args["confirm"] = "xxxx"
+    if kind == "local_only_ack_required": args.pop("local_only_ack")
+    if kind == "systemctl_failure": runner.script[("systemctl", "restart")] = subprocess.CompletedProcess([], 1, b"", b"")
+    response = call(broker, "apply", args)
+    assert not response["ok"]
+    watch = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert watch["verified"] is False and response["error"] in watch["reason"]
+
+
+def test_gate_reads_are_ordered_and_capped_to_remaining_execution_budget(tmp_path):
+    from tests.broker._harness import msg, standing_child
+    broker, runner, journal, *_ = make_broker(tmp_path)
+    mono = Clock(0)
+    broker._monotonic = mono
+    plan = call(broker, "restart")["plan"]
+    seen = []
+    def timed(argv, **kwargs):
+        remaining = max(0.5, 15 - mono())
+        assert kwargs["timeout"] <= remaining
+        seen.append(argv)
+        if "--standing" in argv:
+            mono.advance(12)
+            journal.add(msg(broker._now(), "accepted question deadbeef"))
+            return standing_child(0, broker._now())
+        return runner(argv, **kwargs)
+    broker._run = timed
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert result["error"] == "gate_blocked"
+    assert "--standing" in seen[0] and seen[1][0] == "ls" and seen[2][:2] == ["systemctl", "is-active"]
+    assert "--grep" in seen[-1] and not runner.argvs("systemctl", "restart")
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is False
+
+
+def test_slow_gate_and_queue_command_reply_before_client_timeout(tmp_path):
+    from maxpane_dashboard.data.seat_broker_client import CLIENT_TIMEOUT_S
+    broker, runner, *_ = make_broker(tmp_path)
+    mono = Clock(0)
+    broker._monotonic = mono
+    plan = call(broker, "restart")["plan"]
+    def bounded(argv, **kwargs):
+        if argv[:2] == ["systemctl", "restart"]:
+            assert kwargs["timeout"] == 3 and "--no-block" in argv
+            mono.advance(kwargs["timeout"])
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+        mono.advance(min(2.5, kwargs["timeout"]))
+        return runner(argv, **kwargs)
+    broker._run = bounded
+    conn = apply_conn(plan)
+    with serving(broker) as incoming:
+        incoming.put(conn)
+        assert conn.done.wait(1)
+    assert conn.response["error"] == "timeout"
+    assert mono() < CLIENT_TIMEOUT_S
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is False
