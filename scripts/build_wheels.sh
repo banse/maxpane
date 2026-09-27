@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/build_wheels.sh -- build the offline, hash-pinned install set for the VPS (spec §12.1 install route a/b).
 # Runs on the Mac WITH network (a build step, never a test). Outputs under --out (default deploy/vps):
-#   wheels/               the 22-wheel dependency closure for cp314 / manylinux_2_17 x86_64 + the fork wheel (gitignored)
+#   wheels/               the 20-wheel dependency closure for cp314 / manylinux_2_17 x86_64 + the fork wheel (gitignored)
 #   requirements.lock     `uv pip compile --generate-hashes` of pyproject [seat] + a `maxpane==<version> --hash=` block (committed)
 #   MANIFEST.sha256       sha256 of imd_dashd/*.py, every deploy/vps file the installer touches, the lock and the fork wheel
 # and dist/seat-deploy-<short sha>.tar.gz -- imd_dashd/ + deploy/vps/ (incl. wheels/), the tree install.sh runs from.

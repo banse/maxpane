@@ -26,6 +26,10 @@ Not touched: `imd-worker.service` itself (only the optional drop-in), `/home/imd
 
 ## Before you start
 
+Use a terminal of at least **134×50** for the measured full dashboard layout. CONFIG's floor sets the
+50-row minimum; LEDGER's full tier needs **210 columns**. Below the height minimum, the body scrolls
+over ssh and `‹ taller` lights up; narrower widths advertise omitted content with `‹ widen`.
+
 Gate step (c) accepts a terminal latest lifecycle line or a successful empty history read (owner D1); only a failed or unreadable lifecycle read is `gate_unknown(lifecycle)`, and stale Mac history remains unknown.
 
 The standing child allows two 8-second attempts inside a 12-second overall child deadline. A slow first attempt can exhaust that budget; the gate then reports `local-only` and requests the typed acknowledgement.
@@ -87,7 +91,7 @@ ssh imd-vps 'bash /opt/imd-dash/src/deploy/vps/probe_seat_host.sh' > /tmp/seat_i
 Then paste the output into `docs/seat_install_probe.md` (replacing the placeholder body; keep the headings the probe
 emits) and re-run the guard. The probe's first two sections are the negative/positive connect pair that proves
 `DirectoryMode=0755` + `SocketMode=0660` + the drop-in; then the journal read, the deliberately stale `--after-cursor`,
-`compression.zstd`, `pepepane --once --offline` through the symlink, the projection canary, `status` and `doctor`
+the lifecycle grep/filter-order and no-match behavior, `compression.zstd`, `pepepane --once --offline` through the symlink, the projection canary, `status` and `doctor`
 through the broker with each transient child's `memory.peak`, one `plan restart` (never applied), and the root checks
 (MANIFEST, `ls /home/imd-dash` fails as `imd-worker`, `sshd -T`, the slice's `MemoryMax`, sysstat `HISTORY`). The last
 section is the one drained restart you do by hand at an idle gap, recording the audit lines, the `verify` output and

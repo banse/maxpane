@@ -19,6 +19,9 @@ The click test is deliberately not on that list (see its docstring).
 
 from __future__ import annotations
 
+import re
+
+import textual
 from textual.app import App
 from textual.widgets import Static
 
@@ -29,6 +32,9 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 
 ADDR = "0x" + "abcdef0123" * 4
 LINE = "hello world selection probe"
+# Owner D2: 8.2.8 includes the end cell; 8.1.1 excludes it. Intermediate
+# 8.1.2–8.2.7 were not bisected, so retain the historical expectation below 8.2.8.
+TEXTUAL_INCLUSIVE_DRAG = tuple(map(int, re.match(r"(\d+)\.(\d+)\.(\d+)", textual.__version__).groups())) >= (8, 2, 8)
 
 
 class _App(CopyAddressMixin, App):
@@ -63,7 +69,7 @@ async def test_releasing_a_drag_copies_the_selection(monkeypatch):
     app = _App()
     async with app.run_test(size=(60, 10)) as pilot:
         await _drag(pilot, 0, 10)
-        assert recorded == [LINE[:10]]
+        assert recorded == [LINE[:11] if TEXTUAL_INCLUSIVE_DRAG else LINE[:10]]
         assert app.screen.query_one(StatusBar).message == "copied selection"
 
 
@@ -76,7 +82,7 @@ async def test_ctrl_c_after_a_drag_copies_the_same_way(monkeypatch):
         await pilot.press("ctrl+c")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert recorded == [LINE[6:11]]
+        assert recorded == [LINE[6:12] if TEXTUAL_INCLUSIVE_DRAG else LINE[6:11]]
 
 
 async def test_a_click_without_a_drag_copies_nothing(monkeypatch):

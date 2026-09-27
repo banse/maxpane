@@ -64,10 +64,12 @@ repo say so. The §16 owner decisions (all decided 2026-09-26) that leave a step
     source hashes were checked immediately before use, fixtures were redacted and their own hashes recorded.
     `rollout_401.jsonl` is byte-identical to the authorized metadata capture. Its captured time is 19:32:59Z, correcting
     the reference plan's 19:31 value. No aidude files were edited.
-23. **BASE failures remain upstream work.** The two `tests/test_select_to_copy.py` cases
-    `test_releasing_a_drag_copies_the_selection` and `test_ctrl_c_after_a_drag_copies_the_same_way` failed before this
-    branch (one extra selected character / trailing space). BASE: 11261 passed, 2 failed, 1 xfailed. Do not repair them
-    as PEPEPANE changes. BASE neighbourhood was 697 and Surf was 545; their historical plan counts were 672 and 544.
+23. **BASE drag-copy failures resolved by owner D2 (2026-09-27).** The two `tests/test_select_to_copy.py` cases
+    `test_releasing_a_drag_copies_the_selection` and `test_ctrl_c_after_a_drag_copies_the_same_way` reflected Textual's
+    change from 8.1.1 to 8.2.8, rather than a BASE code defect: the end cell is now included. Their expectations use
+    the installed Textual version, preserving the earlier exclusive end below 8.2.8. Versions 8.1.2–8.2.7 were not
+    bisected. This is the owner's explicit exception to leaving BASE failures alone. Historical BASE: 11261 passed,
+    2 failed, 1 xfailed; neighbourhood 697 and Surf 545 (the plan's earlier measurements were 672 and 544).
 24. **Final-review findings resolved and independently approved (2026-09-27).** The critical review reproduced transient
     thread-start lock leaks and queued socket applies (R1/R2). Both brokers now clean up failed startup and complete
     the watch; root admits bounded concurrent requests and refuses writes received during an active write. Review also
@@ -92,3 +94,25 @@ repo say so. The §16 owner decisions (all decided 2026-09-26) that leave a step
 27. **Whitespace inherited by the hoist.** The original seat-word EOF blank and retained Surf formatter separator
     remain as required by the verbatim-hoist instruction; they do not change behavior. Do not use a global whitespace
     cleanup to rewrite the protected Surf files.
+
+
+## F. Independent-verification follow-ups — 2026-09-27
+
+28. **Over-redaction of ordinary words.** The specific-first rule preserves secret placeholders, but the broad `sk-`
+    pattern still turns `task-runner` into `task-[redacted]` (owner note 8). Keep the conservative redaction until a
+    narrower rule has tests for real key forms and embedded tokens; do not weaken the secret boundary to prettify a log.
+29. **Pending reason suffixes.** Restore `pending (disagreed)` and `pending (awaiting)` only when an authoritative
+    field carries that distinction. Until then the plain yellow `pending` remains owner-approved (D3), with no inferred
+    disagreement or awaiting status.
+30. **Root broker security review.** The root-run code is about 2,500 lines against the spec's approximate 700-line
+    estimate. The owner should review that larger privileged surface before deployment; the estimate is not a tested
+    size limit, and no automatic source reduction is proposed.
+31. **Public-push hygiene, before any public push.** This round records the work; it does not publish or make these
+    fixture/lineage changes. Replace real host IPs `82.165.187.96` and `89.167.27.194` with documentation addresses
+    in `192.0.2.x` in `tests/broker/_harness.py`, `tests/broker/test_seat_child_unit.py`,
+    `tests/fixtures/seat/cli/systemctl_cat.txt` and `tests/fixtures/seat/cli/systemctl_show_ipaddressdeny.txt`.
+    Rehash both captures in `tests/fixtures/seat/MANIFEST.json`, correct its note naming the addresses, and replace
+    the five places in `docs/pepepane_plan.md`. Escape literal U+202E/U+202D/U+2066 in
+    `tests/data/test_seat_log_grammar.py` (the original lines 168/171) and `tests/widgets/test_seat_now_log.py`
+    (original line 42). Optionally replace the partially synthetic `72b617d4…` and `0x887b…` values with fully
+    synthetic identities using the `0x…c1a1` convention. Review local `/Users/banse/...` paths in the docs as well.

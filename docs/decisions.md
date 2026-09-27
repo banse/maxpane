@@ -738,3 +738,24 @@ claiming green idle from the daemon's alive state. The boundary sweep includes
 that state in the worst payload as well as healthy and attributed work. Measured
 on Textual 8.2.8: the existing 134-column/50-row pins and 210-column full LEDGER
 tier hold; CONFIG still sets the height. No pin, CSS or protected surface changed.
+
+
+## 2026-09-27 — PEPEPANE owner D2: Textual drag selection
+
+The owner accepts Textual 8.2.8's inclusive end cell. The two drag-copy tests now
+expect `LINE[:11]` and `LINE[6:12]` on 8.2.8 or later, and retain `LINE[:10]` and
+`LINE[6:11]` on earlier versions. The installed `textual.__version__` is parsed
+with the standard library; no dependency or installed environment changes.
+Textual 8.1.1 had the exclusive end, but 8.1.2–8.2.7 were not bisected. This is
+the explicit owner exception to leaving the two BASE failures untouched, rather
+than a change to selection or clipboard behavior.
+
+The install runbook now gives the measured 134×50 minimum before first use,
+CONFIG's height floor, the 210-column LEDGER tier and scrolling/widening cues.
+The wheel script header correctly counts 20 dependency wheels plus the fork.
+The existing standing-read 12-second overall budget and local-only fallback are
+retained as recorded with D1. Follow-ups 23 and 28–31 record the resolved version
+cause, conservative over-redaction, future authoritative pending suffixes,
+privileged-code review and the complete public-push hygiene work. Public hygiene
+is deferred as directed by the owner; no captured host identities or historical
+plan content were changed in this round.
