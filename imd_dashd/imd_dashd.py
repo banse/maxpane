@@ -1127,7 +1127,9 @@ class Broker:
                 result = self._dispatch_apply(plan, args, peer_uid, now)
             except (OSError, ValueError) as exc:
                 result = verbs.err("internal", {"reason": type(exc).__name__})
-            uncertain = result.get("error") == "timeout" and result.get("detail", {}).get("outcome") == "timeout"
+            uncertain = (result.get("error") == "timeout"
+                         and result.get("detail", {}).get("outcome") == "timeout"
+                         and self._watches[plan_id].kind in ("restart", "start", "stop", "enabled", "disabled"))
             if not result.get("ok") and not result.get("detail", {}).get("partial") and not uncertain:
                 with self._state_lock:
                     watch = self._watches[plan_id]

@@ -1307,3 +1307,19 @@ def test_lifecycle_argv_preserves_diagnostic_stderr_and_omits_cursor():
     from imd_dashd.imd_dashd import lifecycle_journal_argv
     argv = lifecycle_journal_argv()
     assert not {"--show-cursor", "-q", "--quiet"}.intersection(argv)
+
+
+def test_nonpartial_orphan_timeout_does_not_leave_unresolvable_none_watch(tmp_path):
+    broker, runner, clock, _audit, _spec = _orphan_broker(tmp_path)
+    plan = call(broker, 'kill-orphans', {'pids': [64876]})['plan']
+    def timed_out(argv, kwargs):
+        raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+    runner.script[('kill', '-TERM')] = timed_out
+    response = call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})
+    assert response['error'] == 'timeout' and response['detail']['partial'] is False
+    assert broker._pending_kills == []
+    clock.advance(31)
+    broker.tick()
+    result = call(broker, 'verify', {'plan_id': plan['plan_id']})['data']
+    assert result['verified'] is False, result
+    assert 'timeout' in result['reason']
