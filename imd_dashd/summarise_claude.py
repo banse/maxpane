@@ -97,3 +97,218 @@ def parse_task_slug(slug: str) -> tuple[str, str] | None:
     if UUID_RE.fullmatch(job) and UUID_RE.fullmatch(node):
         return (job, node)
     return None
+
+
+class _WallClock(Exception):
+    """The per-file wall clock ran out."""
+
+
+class _TooBig(Exception):
+    """More than MAX_FILE_BYTES were read from one file."""
+
+
+def iter_bounded_lines(fh, counts: dict, *, max_line: int = MAX_LINE_BYTES, max_total: int = MAX_FILE_BYTES,
+                       deadline: float | None = None, clock=time.monotonic):
+    """Yield the complete lines of a binary stream that are at most *max_line* bytes.
+
+    Reads at most ``max_line + 1`` bytes per call, so a multi-hundred-MB line never sits
+    in memory; an oversize line is drained in ``max_line`` chunks, counted in
+    ``counts["oversize"]`` and never yielded. Raises ``_WallClock`` past *deadline* and
+    ``_TooBig`` past *max_total* bytes read.
+    """
+    total = 0
+    while True:
+        if deadline is not None and clock() > deadline:
+            raise _WallClock()
+        chunk = fh.readline(max_line + 1)
+        if not chunk:
+            return
+        total += len(chunk)
+        if total > max_total:
+            raise _TooBig()
+        if len(chunk) > max_line and not chunk.endswith(b"\n"):
+            counts["oversize"] = counts.get("oversize", 0) + 1
+            while True:
+                if deadline is not None and clock() > deadline:
+                    raise _WallClock()
+                rest = fh.readline(max_line)
+                total += len(rest)
+                if total > max_total:
+                    raise _TooBig()
+                if not rest or rest.endswith(b"\n"):
+                    break
+            continue
+        yield chunk
+
+
+def _loads(raw: bytes) -> dict | None:
+    try:
+        obj = json.loads(raw)
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def _int(value) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _cap(value, cap: int = STR_CAP) -> str | None:
+    return value[:cap] if isinstance(value, str) and value else None
+
+
+def _parse_time(value) -> datetime | None:
+    if isinstance(value, str) and value:
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return None
+
+
+def iso_ms(value) -> str | None:
+    """ISO text -> ``2026-09-26T01:10:02.150Z`` (millisecond precision, UTC)."""
+    parsed = _parse_time(value)
+    if parsed is None:
+        return None
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _status_of(value) -> int | None:
+    status = _int(value)
+    return status if status is not None and 100 <= status <= 599 else None
+
+
+def summarise_file(path: str, *, now: float, clock=time.monotonic, wall_s: float = PER_FILE_WALL_S) -> dict | None:
+    """One transcript -> a ``SESSION_KEYS`` dict; ``None`` when unreadable, not a regular file or over 64 MiB.
+
+    *now* is accepted for the contract's signature and deliberately unused: the summary is a
+    pure function of the file, so fixture output is deterministic.
+    """
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode) or st.st_size > MAX_FILE_BYTES:
+        return None
+    slug = os.path.basename(os.path.dirname(path))
+    kind = classify_slug(slug)
+    ids = parse_task_slug(slug) if kind == "task" else None
+    session = dict.fromkeys(SESSION_KEYS)
+    session.update(path=_cap(path, 512), runtime="claude", slug=_cap(slug, 256), kind=kind,
+                   jobId=ids[0] if ids else None, nodeId=ids[1] if ids else None,
+                   mtime=st.st_mtime, bytes=st.st_size, turnsDefinition="user_lines", apiErrors=[], skippedOversize=0)
+    counts = {"oversize": 0}
+    started = ended = cwd = effort = cost_state = None
+    user_lines = 0
+    usage_by_id: dict = {}
+    model_counts: dict = {}
+    first_context = None
+    max_turns: list[int] = []
+    api_errors: list[dict] = []
+    line_no = 0
+    try:
+        with open(path, "rb") as fh:
+            for raw in iter_bounded_lines(fh, counts, deadline=clock() + wall_s, clock=clock):
+                line_no += 1
+                rec = _loads(raw)
+                if rec is None:
+                    continue
+                ts = rec.get("timestamp")
+                if isinstance(ts, str):
+                    started = started or ts
+                    ended = ts
+                if cwd is None and isinstance(rec.get("cwd"), str):
+                    cwd = rec["cwd"]
+                kind_of_line = rec.get("type")
+                if kind_of_line == "user":
+                    user_lines += 1
+                elif kind_of_line == "assistant":
+                    message = rec.get("message") if isinstance(rec.get("message"), dict) else {}
+                    model = message.get("model")
+                    if model == SYNTHETIC_MODEL:
+                        for block in message.get("content") or []:
+                            text = block.get("text") if isinstance(block, dict) else None
+                            match = SYNTHETIC_STATUS_RE.search(text) if isinstance(text, str) else None
+                            if match and len(api_errors) < MAX_API_ERRORS:
+                                api_errors.append({"status": int(match.group(1)), "message": text[:MESSAGE_CAP],
+                                                   "atUtc": iso_ms(ts)})
+                        continue
+                    usage = message.get("usage")
+                    if not isinstance(usage, dict):
+                        continue
+                    key = message.get("id") or rec.get("requestId") or f"line-{line_no}"
+                    if key in usage_by_id:
+                        continue  # one line per content block, identical usage: count each message once
+                    usage_by_id[key] = usage
+                    if isinstance(model, str):
+                        model_counts[model] = model_counts.get(model, 0) + 1
+                    if effort is None and isinstance(rec.get("effort"), str):
+                        effort = rec["effort"]
+                    if first_context is None:
+                        first_context = sum(_int(usage.get(k)) or 0 for k in
+                                            ("cache_creation_input_tokens", "cache_read_input_tokens", "input_tokens"))
+                elif kind_of_line == "attachment":
+                    attachment = rec.get("attachment") if isinstance(rec.get("attachment"), dict) else {}
+                    if attachment.get("type") == "max_turns_reached":
+                        value = _int(attachment.get("maxTurns"))
+                        max_turns.append(value if value is not None else 0)
+                elif kind_of_line == "system" and rec.get("subtype") == "api_error":
+                    error = rec.get("error") if isinstance(rec.get("error"), dict) else {}
+                    status = _status_of(error.get("status"))
+                    if status is None:
+                        status = _status_of(rec.get("status"))
+                    text = error.get("formatted") or error.get("message") or rec.get("content")
+                    if len(api_errors) < MAX_API_ERRORS:
+                        api_errors.append({"status": status, "message": text[:MESSAGE_CAP] if isinstance(text, str) else None,
+                                           "atUtc": iso_ms(ts)})
+                elif kind_of_line == "cost-state":
+                    cost_state = rec
+    except _WallClock:
+        session["error"] = "per-file wall clock exceeded"
+    except _TooBig:
+        counts["oversize"] += 1
+        session["error"] = "file grew past 64 MiB while read"
+    except Exception as exc:  # noqa: BLE001 -- one bad file never kills the call
+        session["error"] = "unreadable: " + type(exc).__name__
+    session.update(cwd=_cap(cwd, 512), startedUtc=iso_ms(started), endedUtc=iso_ms(ended),
+                   skippedOversize=counts["oversize"], apiErrors=api_errors)
+    if session["error"] is not None:
+        return session  # partial parse: classification kept, figures withheld
+    if model_counts:
+        best = max(model_counts.values())
+        session["model"] = _cap(next(m for m, n in model_counts.items() if n == best), 128)
+    session["effort"] = _cap(effort, 32)
+    session["turns"] = user_lines
+    session["turn1Context"] = first_context
+    if usage_by_id:
+        usages = list(usage_by_id.values())
+        session["tokens"] = {
+            "input": sum(_int(u.get("input_tokens")) or 0 for u in usages),
+            "output": sum(_int(u.get("output_tokens")) or 0 for u in usages),
+            "cached": sum((_int(u.get("cache_read_input_tokens")) or 0) + (_int(u.get("cache_creation_input_tokens")) or 0)
+                          for u in usages),
+            "cacheWrite": 0,
+        }
+    elif cost_state is not None:
+        session["tokens"] = {"input": 0, "output": 0, "cached": 0, "cacheWrite": 0}
+    if cost_state is not None:
+        usage_map = cost_state.get("modelUsage") if isinstance(cost_state.get("modelUsage"), dict) else {}
+        side_keys = sorted(k for k in usage_map if isinstance(k, str) and k.startswith(SIDE_MODEL_PREFIX))
+        if side_keys:
+            session["sideModel"] = {
+                "model": _cap(side_keys[0], 128),
+                "input": sum(_int((usage_map[k] or {}).get("inputTokens")) or 0 for k in side_keys),
+                "output": sum(_int((usage_map[k] or {}).get("outputTokens")) or 0 for k in side_keys),
+            }
+        session["wallMs"] = _int(cost_state.get("totalDuration"))
+    if session["wallMs"] is None:
+        first, last = _parse_time(started), _parse_time(ended)
+        if first is not None and last is not None:
+            session["wallMs"] = int(round((last - first).total_seconds() * 1000))
+    session["maxTurnsReached"] = bool(max_turns)
+    session["maxTurns"] = max(max_turns) if max_turns else None
+    return session

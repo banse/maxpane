@@ -458,6 +458,90 @@
       "notes": "tab-separated; -home-imd--identitymd-work is research and must NOT be excluded (mutation proof 35)",
       "sha256": "869273cdd57e7b6589b2a6d9662dd5befc229268493ac59f1a02e52f33bb6c1f",
       "bytes": 410
+    },
+    "sessions/transcript_f7b20ce4.jsonl": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [
+        "prompts",
+        "tool_io",
+        "credential_org"
+      ],
+      "origin": "synthetic: Claude Code 2.1.282 transcript shape (cost §1) carrying the numbers of node f7b20ce4 / job 48e53e33 (cost §0.2, fill3 §2)",
+      "notes": "7 assistant lines / 5 message ids: dedup 5 turns / 10 in / 1,267 out / 149,963 cached = API; per-line 1,629 out",
+      "sha256": "93d05abb92d0c4f942420f54669de819241aeb5db88e98c6196f5f42799b70ed",
+      "bytes": 6746
+    },
+    "sessions/transcript_multi_attempt/a.jsonl": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [
+        "prompts",
+        "tool_io",
+        "credential_org"
+      ],
+      "origin": "synthetic: hunt_d attempt 2 of 7b9c907d, file 1 of 2 (fill3 §2)",
+      "notes": "58 user lines, 73,695 output, one api_error 500 line, totalDuration 1,202,379 ms",
+      "sha256": "6538364322f7df582d969773755a324ca1c3b68c99282f0eabc20ed39ca03a0d",
+      "bytes": 57324
+    },
+    "sessions/transcript_multi_attempt/b.jsonl": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [
+        "prompts",
+        "tool_io",
+        "credential_org"
+      ],
+      "origin": "synthetic: hunt_d attempt 2 of 7b9c907d, file 2 of 2 (fill3 §2)",
+      "notes": "8 user lines, 1,263 output; API output 74,958 = 73,695 + 1,263 while API turns 61 != 58 + 8",
+      "sha256": "43e01f9de63f0c167c8cdb1dec8efff75ad83f84215136f3198dfd6b2b0a9d51",
+      "bytes": 8227
+    },
+    "sessions/transcript_cost_state_haiku.jsonl": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [
+        "prompts",
+        "tool_io",
+        "credential_org"
+      ],
+      "origin": "synthetic: a transcript whose cost-state carries the SDK side model claude-haiku-4-5-20251001 (fill3 §2)",
+      "notes": "side model 31,415 in / 273 out is reported separately, never added",
+      "sha256": "317df845365b9925c9976a737e34a0018d1afdfbadb9b1b0823f7cc64bdcc225",
+      "bytes": 2463
+    },
+    "sessions/transcript_api_error_401.jsonl": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [
+        "prompts",
+        "tool_io",
+        "credential_org"
+      ],
+      "origin": "synthetic: `system` api_error 401 OAuth access token has been revoked, retried twice (cost §1; 09-24 03:52Z)",
+      "notes": "no assistant reply; cost-state present -> tokens 0",
+      "sha256": "ccc5b126bbc72d2fb6944eaff5253f9523d685f1fb7f3c6e1c86cf8e0c33ae9f",
+      "bytes": 1142
+    },
+    "sessions/transcript_max_turns.jsonl": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [
+        "prompts",
+        "tool_io",
+        "credential_org"
+      ],
+      "origin": "synthetic: attachment max_turns_reached 52/53 then 7/8 (cost §0.5 repair pass)",
+      "notes": "compact on purpose: pins the attachment reader, not the turn count",
+      "sha256": "1022852a926df4a38392515a8645b54292b6ec2d17fcd75374e7332221ba0fa7",
+      "bytes": 2963
     }
   }
 }

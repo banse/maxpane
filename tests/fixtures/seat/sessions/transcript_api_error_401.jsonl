@@ -1,0 +1,6 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-09-24T03:52:08.950Z","content":"[prompt removed]"}
+{"type":"queue-operation","operation":"dequeue","timestamp":"2026-09-24T03:52:08.960Z"}
+{"type":"user","message":{"role":"user","content":"[prompt removed]"},"uuid":"u-0","timestamp":"2026-09-24T03:52:09.000Z","cwd":"/home/imd/.identitymd/work/1f3e5a7c-9b1d-4e3f-a5c7-e9b1d3f5a7c9/8c6a4e20-7d5b-4c3a-9e1f-2b4d6f8a0c1e","sessionId":"3f0c9a52-7e1b-4d6a-8c2f-9b1e3d5a7c90","version":"2.1.282","entrypoint":"sdk-cli"}
+{"type":"system","subtype":"api_error","level":"error","error":{"status":401,"formatted":"401 OAuth access token has been revoked."},"retryInMs":1000,"maxRetries":10,"source":"request_retry","retryAttempt":1,"timestamp":"2026-09-24T03:52:10.500Z"}
+{"type":"system","subtype":"api_error","level":"error","error":{"status":401,"formatted":"401 OAuth access token has been revoked."},"retryInMs":1000,"maxRetries":10,"source":"request_retry","retryAttempt":2,"timestamp":"2026-09-24T03:52:12.600Z"}
+{"timestamp":"2026-09-24T03:52:12.700Z","totalDuration":3712,"totalCostUSD":0,"modelUsage":{},"type":"cost-state"}
