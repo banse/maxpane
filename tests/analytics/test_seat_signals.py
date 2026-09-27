@@ -123,3 +123,74 @@ def test_seat_signals_imports_are_pure():
             froms.add(node.module or "")
     assert modules.isdisjoint({"textual", "rich", "subprocess", "socket", "httpx"}), modules
     assert {m for m in froms if m.startswith("maxpane_dashboard")} <= {"maxpane_dashboard.analytics.seat_redact"}
+
+
+# ---------------------------------------------------------------------------
+# Task 7.2 — offline (two beats), tail liveness, lingering pause, counters
+# ---------------------------------------------------------------------------
+
+
+def test_offline_needs_two_beats():
+    # spec §6 rule 3 / §14 mutation proof 15: one `disconnected` beat is a redeploy wave, not an offline seat
+    assert ss.offline_state(consecutive_disconnected_beats=1, presence_connected=True, heartbeat_age_s=4) is False
+    assert ss.offline_state(consecutive_disconnected_beats=1, presence_connected=None, heartbeat_age_s=31) is False
+    assert ss.offline_state(consecutive_disconnected_beats=2, presence_connected=True, heartbeat_age_s=4) is True
+    assert ss.offline_state(consecutive_disconnected_beats=5, presence_connected=None, heartbeat_age_s=None) is True
+    assert ss.offline_state(consecutive_disconnected_beats=0, presence_connected=True, heartbeat_age_s=4) is False
+
+
+def test_offline_from_the_plane_needs_a_stale_heartbeat_too():
+    # spec §9: HEARTBEAT_DEAD_S (300) red `offline` only together with presence.connected == false; a 91-299 s heartbeat is amber, not red
+    assert ss.offline_state(consecutive_disconnected_beats=0, presence_connected=False, heartbeat_age_s=300) is True
+    assert ss.offline_state(consecutive_disconnected_beats=0, presence_connected=False, heartbeat_age_s=299) is False
+    assert ss.offline_state(consecutive_disconnected_beats=0, presence_connected=False, heartbeat_age_s=91) is False
+    assert ss.offline_state(consecutive_disconnected_beats=0, presence_connected=False, heartbeat_age_s=None) is False
+    assert ss.offline_state(consecutive_disconnected_beats=None, presence_connected=None, heartbeat_age_s=None) is None
+    assert ss.offline_state(consecutive_disconnected_beats=None, presence_connected=True, heartbeat_age_s=4) is False
+
+
+def test_tail_state_is_dead_after_45s_without_a_stamp():
+    # spec §9: TAIL_DEAD_S = 45 without a thread aliveAt -> sources.tail.ok = false
+    assert ss.tail_state(alive_at=T0 - 1, now=T0) == (True, None)
+    assert ss.tail_state(alive_at=T0 - 45, now=T0) == (True, None)
+    ok, reason = ss.tail_state(alive_at=T0 - 46, now=T0)
+    assert ok is False and reason == "tail dead 46 s — restarting"
+    assert ss.tail_state(alive_at=None, now=T0) == (False, "tail thread not running")
+
+
+def test_pausedhint_active_only_while_until_is_ahead_and_the_hint_is_fresh():
+    # fill1 §5: `23:55:52 … 1 task running · paused until 23:53` lingers after the pause (the suffix is 5 min stale)
+    hint = {"until": "23:53", "failedRuns": 3, "reason": "unexpected status 401 Unauthorized", "seenUtc": "2026-09-25T23:55:52.000Z"}
+    assert ss.pausedhint_active(hint, now=PAUSE_SEEN + 8) is False            # 23:56:00 > 23:53
+    fresh = dict(hint, seenUtc="2026-09-25T23:41:22.577Z")
+    assert ss.pausedhint_active(fresh, now=1790379700.0) is True              # 23:41:40 < 23:53
+    assert ss.pausedhint_active(fresh, now=1790379700.0 + ss.PAUSED_HINT_MAX_AGE_S + 1) is False, "a hint older than 5.5 min is not evidence"
+    # midnight wrap: seen 23:58, until 00:10 -> next day
+    wrap = dict(hint, until="00:10", seenUtc="2026-09-25T23:58:00Z")
+    assert ss.pausedhint_active(wrap, now=1790380800.0 - 60) is True          # 23:59
+    assert ss.pausedhint_active(wrap, now=1790380800.0 + 660) is False        # 00:11
+    assert ss.pausedhint_active(None, now=T0) is False
+    assert ss.pausedhint_active({"until": "nope"}, now=T0) is False
+    assert ss.pausedhint_active({"until": "23:53"}, now=PAUSE_SEEN - 600) is True, "without seenUtc the hint is dated now"
+
+
+def test_counters_consistent_checks_the_identity_and_never_repairs_it():
+    # spec §6: attempts == accepted + rejected + failed + pending (417/417 seats); 244+5+11+28 = 288
+    assert ss.counters_consistent({"attempts": 288, "accepted": 244, "rejected": 5, "failed": 11, "pending": 28}) is True
+    assert ss.counters_consistent({"attempts": 290, "accepted": 244, "rejected": 5, "failed": 11, "pending": 28}) is False
+    assert ss.counters_consistent({"attempts": 288, "accepted": 244, "rejected": 5, "failed": 11}) is None
+    assert ss.counters_consistent({"attempts": "288", "accepted": 244, "rejected": 5, "failed": 11, "pending": 28}) is None
+    assert ss.counters_consistent(None) is None and ss.counters_consistent({}) is None
+
+
+def test_pausedhint_active_equals_seat_auth_rule():
+    # WP4 open question 7: seat_auth.pause_hint_active (the auth reason) restates this rule (the hero amber); one rule, bound here
+    from maxpane_dashboard.analytics import seat_auth
+
+    assert ss.PAUSED_HINT_MAX_AGE_S == seat_auth.PAUSED_HINT_MAX_AGE_S
+    seen = "2026-09-25T23:36:37.000Z"
+    base = ss.parse_iso(seen)
+    for hint in ({"until": "23:53", "seenUtc": seen}, {"until": "00:10", "seenUtc": seen}, {"until": "23:30", "seenUtc": seen},
+                 {"until": "23:53"}, {"until": "25:00", "seenUtc": seen}, None, {"until": 5}):
+        for dt in (0, 60, 329, 331, 1200, 3600):
+            assert ss.pausedhint_active(hint, now=base + dt) == seat_auth.pause_hint_active(hint, now=base + dt), (hint, dt)

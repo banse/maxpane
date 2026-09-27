@@ -188,3 +188,85 @@ def verdict_lag_s(*, stored_utc: str | None, accepted_at_api: str | None) -> int
     if lag < 0:
         return None
     return int(round(lag))
+
+
+# ---------------------------------------------------------------------------
+# liveness
+# ---------------------------------------------------------------------------
+
+
+def _int_or_none(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def offline_state(*, consecutive_disconnected_beats: int | None, presence_connected: bool | None,
+                  heartbeat_age_s: float | None) -> bool | None:
+    """The two-beat rule (spec §6 rule 3, §9; mutation proof 15).
+
+    ``True`` after :data:`DISCONNECTED_BEATS_RED` consecutive ``disconnected`` heartbeats, or when the
+    plane says ``presence.connected == false`` *and* the local heartbeat is dead
+    (>= :data:`HEARTBEAT_DEAD_S`; a heartbeat older than :data:`HEARTBEAT_STALE_S` but younger than that
+    is the hero's amber, never red -- spec §9).  ``False`` when either signal is known and says otherwise.
+    ``None`` when neither the beat counter nor the plane has answered.
+    """
+    beats = _int_or_none(consecutive_disconnected_beats)
+    if beats is None and presence_connected is None:
+        return None
+    if beats is not None and beats >= DISCONNECTED_BEATS_RED:
+        return True
+    if presence_connected is False and heartbeat_age_s is not None and heartbeat_age_s >= HEARTBEAT_DEAD_S:
+        return True
+    return False
+
+
+def tail_state(*, alive_at: float | None, now: float) -> tuple[bool, str | None]:
+    """``(ok, reason)`` for the tail thread: dead after :data:`TAIL_DEAD_S` without an ``aliveAt`` stamp."""
+    if alive_at is None:
+        return False, "tail thread not running"
+    age = float(now) - float(alive_at)
+    if age > TAIL_DEAD_S:
+        return False, f"tail dead {int(age)} s — restarting"
+    return True, None
+
+
+def pausedhint_active(hint: Mapping | None, *, now: float) -> bool:
+    """Whether the heartbeat's ``paused until HH:MM`` suffix still describes the present.
+
+    The suffix is a plane value refreshed every 5 min and it lingers after the pause (fill1 §5:
+    ``23:55:52 … 1 task running · paused until 23:53``).  Active only when ``until`` (UTC, on the day
+    the hint was seen; a wrap past midnight is the next day) is still ahead of *now* **and** the hint
+    was seen within :data:`PAUSED_HINT_MAX_AGE_S`.  A hint without ``seenUtc`` is dated *now*.
+    """
+    if not isinstance(hint, Mapping):
+        return False
+    until = hint.get("until")
+    if not isinstance(until, str) or not re.fullmatch(r"\d\d:\d\d", until):
+        return False
+    hour, minute = int(until[:2]), int(until[3:])
+    if hour > 23 or minute > 59:
+        return False
+    seen = parse_iso(hint.get("seenUtc"))
+    if seen is None:
+        seen = float(now)
+    if float(now) - seen > PAUSED_HINT_MAX_AGE_S:
+        return False
+    day_start = datetime.strptime(day_utc(seen), "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
+    until_epoch = day_start + hour * 3600 + minute * 60
+    if until_epoch < seen - 12 * 3600:
+        until_epoch += 24 * 3600
+    return float(now) < until_epoch
+
+
+def counters_consistent(block: Mapping | None) -> bool | None:
+    """``attempts == accepted + rejected + failed + pending`` on five ints; ``None`` when any is missing.
+
+    The counters are never repaired into the sum (spec §7 standing block; mutation proof 36).
+    """
+    if not isinstance(block, Mapping):
+        return None
+    values = {k: _int_or_none(block.get(k)) for k in ("attempts", "accepted", "rejected", "failed", "pending")}
+    if any(v is None for v in values.values()):
+        return None
+    return values["attempts"] == values["accepted"] + values["rejected"] + values["failed"] + values["pending"]
