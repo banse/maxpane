@@ -218,3 +218,117 @@ def test_api_error_message_is_raw_for_the_caller_to_redact(tmp_path):
     message = s["apiErrors"][0]["message"]
     assert "sk-svcac********" in message and s["apiErrors"][0]["atUtc"] == "2026-09-25T23:36:36.314Z"
     assert SK_RE.search(redact(message)) is None and "sk-[redacted]" in redact(message)
+
+
+# ---- Task 4.4: the directory walk, the watermark, hostile size and the CLI -------------------
+
+
+def _tree(tmp_path: Path) -> Path:
+    _copy(tmp_path, "rollout_doctor.jsonl", "2026/09/25/rollout-2026-09-25T11-45-43-0002.jsonl", 1790336747.0)
+    _copy(tmp_path, "rollout_research_workroot.jsonl", "2026/09/25/rollout-2026-09-25T18-08-55-0001.jsonl", 1790359795.0)
+    _copy(tmp_path, "rollout_task.jsonl", "2026/09/26/rollout-2026-09-26T02-33-41-0199f3a2.jsonl", 1790390044.0)
+    notes = tmp_path / "sessions" / "2026" / "09" / "26" / "notes.jsonl"  # not a rollout name: never read
+    notes.write_text("{}\n", encoding="utf-8")
+    return tmp_path / "sessions"
+
+
+def test_summarise_dir_orders_by_mtime_and_moves_the_watermark(tmp_path):
+    # spec §5.4 / §9: watermark = newest file mtime ingested, handed back as the next `sessions --since`
+    root = _tree(tmp_path)
+    first = sc.summarise_dir(str(root), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0)
+    assert [s["kind"] for s in first["sessions"]] == ["doctor", "research", "task"]
+    assert first["watermarkMtime"] == 1790390044.0 and first["skipped"] == {"oversize": 0} and first["reason"] is None
+    again = sc.summarise_dir(str(root), since_mtime=1790359795.0, work_root=WORK, budget_s=40.0, now=0.0)
+    assert [s["kind"] for s in again["sessions"]] == ["task"]
+    none = sc.summarise_dir(str(root), since_mtime=first["watermarkMtime"], work_root=WORK, budget_s=40.0, now=0.0)
+    assert none["sessions"] == [] and none["watermarkMtime"] == 1790390044.0
+
+
+def test_summariser_skips_oversize_lines_and_reports(tmp_path):
+    # spec §5.4 / mutation proof 30: a 2 MiB line is skipped unparsed (turns stay 2, not 3) and a > 64 MiB file unopened
+    _copy(tmp_path, "rollout_oversize_line.jsonl", "2026/09/26/rollout-2026-09-26T01-52-45-0030.jsonl", 1790387600.0)
+    huge = tmp_path / "sessions" / "2026" / "09" / "26" / "rollout-2026-09-26T01-59-00-huge.jsonl"
+    with open(huge, "wb") as fh:  # sparse: MAX_FILE_BYTES + 1 bytes on paper, no disk used
+        fh.write(b'{"type":"session_meta"}\n')
+        fh.truncate(sc.MAX_FILE_BYTES + 1)
+    os.utime(huge, (1790388000.0, 1790388000.0))
+    result = sc.summarise_dir(str(tmp_path / "sessions"), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0)
+    [session] = result["sessions"]
+    assert session["turns"] == 2 and session["skippedOversize"] == 1 and session["error"] is None
+    assert session["tokens"] == {"input": 12744, "output": 300, "cached": 32256, "cacheWrite": 0}
+    assert result["skipped"] == {"oversize": 2}
+    assert result["reason"].startswith("skipped 2 oversize (file > 64 MiB or line > 1 MiB)")
+    assert result["watermarkMtime"] == 1790388000.0
+
+
+def test_budget_stop_resumes_next_call(tmp_path, monkeypatch):
+    # spec §5.4 per-call budget: stop between files and hand back a watermark that re-reads what was not examined
+    root = _tree(tmp_path)
+    now = [0.0]
+    real = sc.summarise_file
+
+    def slow(path, **kwargs):
+        out = real(path, **kwargs)
+        now[0] += 30.0
+        return out
+
+    monkeypatch.setattr(sc, "summarise_file", slow)
+    first = sc.summarise_dir(str(root), since_mtime=0.0, work_root=WORK, budget_s=40.0, now=0.0, clock=lambda: now[0])
+    assert [s["kind"] for s in first["sessions"]] == ["doctor", "research"]
+    assert first["reason"] == "budget exhausted after 2 of 3 files" and first["watermarkMtime"] == 1790359795.0
+    rest = sc.summarise_dir(str(root), since_mtime=first["watermarkMtime"], work_root=WORK, budget_s=40.0, now=0.0,
+                            clock=lambda: now[0])
+    assert [s["kind"] for s in rest["sessions"]] == ["task"]
+
+
+def test_budget_stop_between_equal_mtimes_rereads_them(tmp_path, monkeypatch):
+    # a stop between two files with the SAME mtime must not hand back that mtime, or the second is never read
+    _copy(tmp_path, "rollout_task.jsonl", "2026/09/26/rollout-2026-09-26T02-33-41-a.jsonl", 1790390044.0)
+    _copy(tmp_path, "rollout_research_workroot.jsonl", "2026/09/26/rollout-2026-09-26T02-33-41-b.jsonl", 1790390044.0)
+    now = [0.0]
+    real = sc.summarise_file
+
+    def slow(path, **kwargs):
+        out = real(path, **kwargs)
+        now[0] += 30.0
+        return out
+
+    monkeypatch.setattr(sc, "summarise_file", slow)
+    root = str(tmp_path / "sessions")
+    first = sc.summarise_dir(root, since_mtime=0.0, work_root=WORK, budget_s=20.0, now=0.0, clock=lambda: now[0])
+    assert [s["kind"] for s in first["sessions"]] == ["task"] and first["watermarkMtime"] < 1790390044.0
+    again = sc.summarise_dir(root, since_mtime=first["watermarkMtime"], work_root=WORK, budget_s=100.0, now=0.0,
+                             clock=lambda: now[0])
+    assert sorted(s["kind"] for s in again["sessions"]) == ["research", "task"]  # re-reading one is harmless: upsert by path
+
+
+def test_per_file_wall_clock_withholds_figures(tmp_path):
+    # spec §5.4: past the 5 s per-file clock the figures are None (never a partial sum); the classification stays
+    path = _copy(tmp_path, "rollout_task.jsonl")
+    ticks = iter(float(3 * n) for n in range(1000))
+    s = sc.summarise_file(str(path), work_root=WORK, now=0.0, clock=lambda: next(ticks))
+    assert s["error"] == "per-file wall clock exceeded"
+    assert s["tokens"] is None and s["turns"] is None and s["kind"] == "task"
+
+
+def test_symlinks_are_never_followed_and_a_missing_root_is_a_reason(tmp_path):
+    root = _tree(tmp_path)
+    (root / "2026" / "09" / "26" / "rollout-2026-09-26T09-00-00-link.jsonl").symlink_to(SESSIONS / "rollout_task.jsonl")
+    result = sc.summarise_dir(str(root), since_mtime=1790389000.0, work_root=WORK, budget_s=40.0, now=0.0)
+    assert [s["path"] for s in result["sessions"]] == [str(root / "2026" / "09" / "26" / "rollout-2026-09-26T02-33-41-0199f3a2.jsonl")]
+    assert result["reason"] is None  # the link was never a candidate, not merely an unreadable file
+    missing = sc.summarise_dir(str(tmp_path / "nope"), since_mtime=5.0, work_root=WORK, budget_s=40.0, now=0.0)
+    assert missing == {"sessions": [], "skipped": {"oversize": 0}, "watermarkMtime": 5.0,
+                       "zstdReadable": sc.ZSTD is not None, "reason": "sessions root missing"}
+
+
+def test_main_prints_one_json_object(tmp_path, capsys):
+    # contract §C.8: --root --since --work-root [--budget]; one JSON object on stdout; exit 0
+    root = _tree(tmp_path)
+    assert sc.main(["--root", str(root), "--since", "0", "--work-root", WORK, "--budget", "40"]) == 0
+    out = capsys.readouterr().out
+    assert out.count("\n") == 1
+    doc = json.loads(out)
+    assert set(doc) == {"sessions", "skipped", "watermarkMtime", "zstdReadable", "reason"}
+    assert [tuple(s) for s in doc["sessions"]] == [sc.SESSION_KEYS] * 3
+    assert doc["sessions"][2]["tokens"] == {"input": 17864, "output": 812, "cached": 92928, "cacheWrite": 0}

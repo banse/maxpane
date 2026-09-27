@@ -6,7 +6,7 @@ therefore imports only the standard library, nothing from ``imd_dashd`` or
 ``maxpane_dashboard``, and is Python 3.11 syntax (no ``type`` statements, no nested
 same-quote f-strings). It emits metadata only -- model, effort, turns, token classes,
 timings, quota, failure flags -- never a prompt, a tool result or an agent message. The
-one free-text field it passes on, ``apiErrors[].message``, is redacted by the caller.
+one free-text field it watermark = max(float(since_mtime), min(watermark, mtime - 1e-6))es on, ``apiErrors[].message``, is redacted by the caller.
 
 API-equal definitions (spec §10; reconciled 40/40 against the control plane, fill3 §3):
 
@@ -318,3 +318,91 @@ def summarise_file(path: str, *, work_root: str, now: float, clock=time.monotoni
         session["lastAgentMessageEmpty"] = False
         session["taskCompleteErrorPresent"] = False
     return session
+
+
+def _candidates(root: str) -> list[tuple[float, str, int]]:
+    """``(mtime, path, size)`` of every regular ``rollout-*.jsonl`` under *root*; symlinks never followed."""
+    found = []
+    for base, dirs, files in os.walk(root, followlinks=False):
+        dirs.sort()
+        for name in sorted(files):
+            if not name.startswith("rollout-") or not name.endswith(".jsonl"):
+                continue
+            path = os.path.join(base, name)
+            try:
+                st = os.lstat(path)
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode):
+                found.append((st.st_mtime, path, st.st_size))
+    found.sort()
+    return found
+
+
+def summarise_dir(root: str, *, since_mtime: float, work_root: str, budget_s: float = DEFAULT_BUDGET_S, now: float,
+                  clock=time.monotonic, wall_s: float = PER_FILE_WALL_S) -> dict:
+    """Every rollout with ``mtime > since_mtime``, oldest first, inside *budget_s*.
+
+    Returns ``{"sessions", "skipped": {"oversize"}, "watermarkMtime", "zstdReadable", "reason"}``.
+    The watermark advances only over files examined, so a budget stop resumes next call.
+    """
+    start = clock()
+    sessions: list[dict] = []
+    oversize = 0
+    errors = 0
+    watermark = float(since_mtime)
+    notes: list[str] = []
+    if not os.path.isdir(root):
+        return {"sessions": [], "skipped": {"oversize": 0}, "watermarkMtime": watermark,
+                "zstdReadable": ZSTD is not None, "reason": "sessions root missing"}
+    pending = [c for c in _candidates(root) if c[0] > since_mtime]
+    done = 0
+    for mtime, path, size in pending:
+        if clock() - start > budget_s:
+            notes.append(f"budget exhausted after {done} of {len(pending)} files")
+            pass
+            break
+        done += 1
+        watermark = max(watermark, mtime)
+        if size > MAX_FILE_BYTES:
+            oversize += 1
+            continue
+        session = summarise_file(path, work_root=work_root, now=now, clock=clock, wall_s=wall_s)
+        if session is None:
+            errors += 1
+            continue
+        oversize += session.get("skippedOversize") or 0
+        if session.get("error"):
+            errors += 1
+        sessions.append(session)
+    if oversize:
+        notes.insert(0, f"skipped {oversize} oversize (file > 64 MiB or line > 1 MiB)")
+    if errors:
+        notes.append(f"{errors} file(s) unreadable or partial")
+    return {"sessions": sessions, "skipped": {"oversize": oversize}, "watermarkMtime": watermark,
+            "zstdReadable": ZSTD is not None, "reason": "; ".join(notes) or None}
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``--root <sessions dir> --since <mtime> --work-root <path> [--budget 40]`` -> one JSON object on stdout."""
+    home = os.path.expanduser("~")
+    parser = argparse.ArgumentParser(prog="summarise_codex", add_help=True)
+    parser.add_argument("--root", default=os.path.join(home, ".codex", "sessions"))
+    parser.add_argument("--since", type=float, default=0.0)
+    parser.add_argument("--work-root", default=os.path.join(home, ".identitymd", "work"))
+    parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET_S)
+    args = parser.parse_args(argv)
+    try:
+        result = summarise_dir(args.root, since_mtime=args.since, work_root=args.work_root,
+                               budget_s=args.budget, now=time.time())
+        code = 0
+    except Exception as exc:  # noqa: BLE001 -- the caller always gets one parseable object
+        result = {"sessions": [], "skipped": {"oversize": 0}, "watermarkMtime": args.since,
+                  "zstdReadable": ZSTD is not None, "reason": "summariser failed: " + type(exc).__name__}
+        code = 1
+    sys.stdout.write(json.dumps(result, ensure_ascii=True, separators=(",", ":")) + "\n")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

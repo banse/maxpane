@@ -424,6 +424,16 @@
       "synthetic": false,
       "daemon_version": "0.1.0+5bfa8261",
       "notes": "task_complete kept verbatim after redaction; recorded shape: last_agent_message=None, error=present, token_count.info=null"
+    },
+    "sessions/rollout_oversize_line.jsonl": {
+      "captured_at": "2026-09-26T12:00:00Z",
+      "synthetic": true,
+      "daemon_version": null,
+      "redactions": [],
+      "origin": "synthetic: spec §5.4 hostile size -- one 2 MiB agent-message line between two real ones",
+      "notes": "parsed, the 2 MiB line would make turns 3; skipped, turns stay 2. The > 64 MiB file is a sparse truncate() on tmp_path: the manifest has no size-only entries",
+      "sha256": "ca7aab8459795a92bb06dcb8aa3fcef501a62294e94586a0a1194b85616791b2",
+      "bytes": 2098974
     }
   }
 }
