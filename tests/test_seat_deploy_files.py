@@ -171,3 +171,58 @@ def test_service_hardening_budget_and_logs_directory():
     assert audit.parent.parent == Path("/var/log"), "LogsDirectory= is relative to /var/log"
     assert _one(svc, "LogsDirectory") == audit.parent.name == "imd-dash"
     assert _one(svc, "LogsDirectoryMode") == "0700"
+
+
+# --- Task 9.2: the drop-ins -----------------------------------------------------------------------
+
+WORKER_DROPIN = DEPLOY / "20-hide-dash.conf"
+SLICE_DROPIN = DEPLOY / "50-pepepane.conf"
+SSHD_DROPIN = DEPLOY / "10-imd-dash.sshd.conf"
+
+
+def test_worker_dropin_hides_every_dash_path_and_proc():
+    """Spec §12.1 / §16 #4: the worker unit hides the socket dir, the dash home and the audit dir
+    from tasks (which read the filesystem root as imd-worker, vps §2) and gets ProtectProc=invisible.
+    The same three paths are InaccessiblePaths on every transient child (contract §C.11
+    TRANSIENT_PROPERTIES), so the two postures cannot drift. Each path carries the ``-`` prefix
+    (ignore if missing) because the drop-in must not fail the worker on a host where the dash
+    is not installed. Mutation: drop /var/log/imd-dash -> red; ProtectProc=default -> red."""
+    svc = _unit(WORKER_DROPIN)["Service"]
+    hidden = _one(svc, "InaccessiblePaths").split()
+    assert hidden == ["-/run/imd-dash", "-/home/imd-dash", "-/var/log/imd-dash"]
+    assert hidden[0] == "-" + str(Path(SOCKET_PATH).parent)
+    assert hidden[1] == "-/home/" + DASH_USER
+    assert hidden[2] == "-" + str(Path(AUDIT_PATH).parent)
+    child_hidden = {p.split("=", 1)[1] for p in TRANSIENT_PROPERTIES if p.startswith("InaccessiblePaths=")}
+    assert {h.lstrip("-") for h in hidden} <= child_hidden, "the transient children hide what the worker hides"
+    assert _one(svc, "ProtectProc") == "invisible"
+    assert list(_unit(WORKER_DROPIN)) == ["Service"], "a drop-in: one [Service] section, nothing else"
+
+
+def test_slice_dropin_fences_the_tui_at_256m_and_half_a_cpu():
+    """Spec §12.1 footprint fence: logind puts every process of the imd-dash login into
+    user-<uid>.slice, so a forge spike kills the TUI's slice, not the worker's. 256M is 1.8x the
+    measured 142 MiB cold peak of the full app (fill7 §4) and above the 160 MiB CI assertion on the
+    lean entrypoint. Mutation: MemoryMax=128M -> red; a [Service] section -> red."""
+    unit = _unit(SLICE_DROPIN)
+    assert list(unit) == ["Slice"]
+    assert _one(unit["Slice"], "MemoryMax") == "256M"
+    assert _one(unit["Slice"], "CPUQuota") == "50%"
+
+
+def test_sshd_match_block_denies_forwarding_for_imd_dash():
+    """Spec §12.1 sshd: the account that holds the daily key gets no TCP/agent/X11 forwarding
+    (closes the ``ssh -L`` path safety §4 warns about; the global is AllowTcpForwarding yes) and
+    keeps PermitTTY for the TUI. The Match block must name exactly imd-dash and nothing else.
+    Mutation: AllowTcpForwarding yes -> red; a second Match block -> red."""
+    lines = [ln.strip() for ln in SSHD_DROPIN.read_text(encoding="utf-8").splitlines()
+             if ln.strip() and not ln.strip().startswith("#")]
+    assert lines[0] == f"Match User {DASH_USER}"
+    directives = dict(ln.split(None, 1) for ln in lines[1:])
+    assert directives == {
+        "AllowTcpForwarding": "no",
+        "X11Forwarding": "no",
+        "AllowAgentForwarding": "no",
+        "PermitTTY": "yes",
+    }
+    assert sum(ln.startswith("Match") for ln in lines) == 1
