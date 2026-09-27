@@ -567,3 +567,269 @@ def test_skills_set_is_a_transient_add_or_remove_and_marks_restart_required(tmp_
     _wait(broker, plan["plan_id"])
     data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
     assert data["verified"] is False and data["reason"] == "re-listing disagrees"    # exit 0, but the listing still says off
+# ==== Task 6.12: orphans, kill-orphans, drain-restart, audit contents =========================================
+
+
+from imd_dashd.imd_dashd import read_procs, select_orphans  # noqa: E402
+
+
+def _orphan_broker(tmp_path):
+    spec = json.loads((FIXTURES / "procs_orphan.json").read_text())
+    write_fake_proc(tmp_path / "proc", spec)
+    broker, runner, journal, clock, audit = make_broker(tmp_path, clock=Clock(spec["now"]))
+    return broker, runner, clock, audit, spec
+
+
+def test_orphans_lists_candidates_with_every_pgid_member(tmp_path):
+    broker, _runner, _clock, _audit, spec = _orphan_broker(tmp_path)
+    procs = read_procs(str(tmp_path / "proc"), now=spec["now"])
+    assert {p["pid"] for p in procs} == {p["pid"] for p in spec["procs"]}
+    candidates = call(broker, "orphans")["data"]["candidates"]
+    assert [c["pid"] for c in candidates] == [64876, 64877, 64884, 64885]           # uid 1000, outside the unit, > 1 h
+    row = next(c for c in candidates if c["pid"] == 64877)
+    assert set(row) == {"pid", "pgid", "uid", "cgroup", "ageS", "rssB", "cmd", "pgidMembers"}
+    assert row["pgid"] == 64861 and row["ageS"] == 35 * 3600 and row["rssB"] == 16845 * 4096
+    assert row["cgroup"] == "user.slice/user-0.slice/session-147.scope" and len(row["cmd"]) <= 80
+    assert {m["pid"] for m in row["pgidMembers"]} == {64861, 64862, 64876, 64884, 64885}
+    assert {m["uid"] for m in row["pgidMembers"] if m["pid"] in (64861, 64862)} == {0}
+    # excluded: MainPID and its task child (unit cgroup), the imd-dash transient scope, the 10-minute probe
+    assert select_orphans(procs, worker_uid=1000, min_age_s=3600) == candidates
+    assert call(broker, "kill-orphans", {"pids": [98600]})["error"] == "bad_args"    # a live unit task is never a candidate
+
+
+def test_kill_orphans_kills_individually_when_pgid_is_mixed(tmp_path):
+    # mutation proof 34: pgid 64861 has a root `bash -c` that is no direct ancestor of a uid-1000 member -> never `kill -- -64861`
+    broker, runner, clock, audit, _spec = _orphan_broker(tmp_path)
+    plan = call(broker, "kill-orphans", {"pids": [64876, 64877, 64884, 64885]})["plan"]
+    assert plan["preconditions"]["kill_mode_by_pgid"] == {"64861": "individual"}
+    assert len(plan["preconditions"]["candidates"]) == 4 and plan["inverse"] is None
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
+    kills = runner.argvs("kill")
+    assert kills == [["kill", "-TERM", "64876"], ["kill", "-TERM", "64877"], ["kill", "-TERM", "64884"], ["kill", "-TERM", "64885"]]
+    assert ["kill", "-TERM", "--", "-64861"] not in kills
+    assert result["outcome"] == "applied" and [k["mode"] for k in result["killed"]] == ["individual"] * 4
+    assert audit_lines(audit)[-1]["preconditions"]["pids"] == [64876, 64877, 64884, 64885]
+    # SIGKILL follows on the tick after KILL_GRACE_S for anything still alive (the fake /proc still lists them)
+    assert KILL_GRACE_S == 10
+    assert broker.tick(clock() + 5) == []
+    events = broker.tick(clock() + 11)
+    assert events == ["sigkill"] * 4 and runner.argvs("kill", "-KILL") == [["kill", "-KILL", str(p)] for p in (64876, 64877, 64884, 64885)]
+
+
+def test_kill_orphans_group_kills_a_clean_pgid(tmp_path):
+    spec = json.loads((FIXTURES / "procs_orphan.json").read_text())
+    spec["procs"] = [p for p in spec["procs"] if p["pid"] != 64861]                 # drop the root bash -c: runuser leads
+    for p in spec["procs"]:
+        if p["pgid"] == 64861:
+            p["pgid"] = 64862
+    write_fake_proc(tmp_path / "proc", spec)
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path, clock=Clock(spec["now"]))
+    plan = call(broker, "kill-orphans", {"pids": [64876, 64877, 64884, 64885]})["plan"]
+    assert plan["preconditions"]["kill_mode_by_pgid"] == {"64862": "group"}
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
+    assert runner.argvs("kill") == [["kill", "-TERM", "--", "-64862"]]
+    assert result["killed"] == [{"mode": "group", "pgid": 64862, "pids": [64876, 64877, 64884, 64885]}]
+
+
+def test_kill_orphans_skips_a_pid_whose_cgroup_or_start_changed(tmp_path):
+    broker, runner, _clock, _audit, spec = _orphan_broker(tmp_path)
+    plan = call(broker, "kill-orphans", {"pids": [64885]})["plan"]
+    # pid reuse between plan and apply: 64885 is now a fresh process (start time moved)
+    for p in spec["procs"]:
+        if p["pid"] == 64885:
+            p["start_ticks"] += 35 * 3600 * 100 - 100
+    write_fake_proc(tmp_path / "proc", spec)
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
+    assert result["killed"] == [] and result["skipped"] == [{"pid": 64885, "reason": "changed since plan"}]
+    assert runner.argvs("kill") == []
+
+
+def test_drain_restart_arms_rearms_and_fires_through_the_fresh_gate(tmp_path):
+    broker, runner, journal, clock, audit = make_broker(tmp_path)
+    plan = call(broker, "drain-restart", {"offline": False})["plan"]
+    assert plan["inverse"] == {"verb": "cancel-drain", "args": {}}
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
+    assert result["outcome"] == "armed" and set(result["drain"]) == {"armedAtUtc", "idleBeats", "rearmed", "expiresAtUtc"}
+    ping = call(broker, "ping")["data"]
+    assert ping["drain_armed"] is True and ping["drain"] == result["drain"]          # the SEAT_BLOCK_KEYS["seat_control_drain"] dict
+    assert call(broker, "restart", {"offline": False})["ok"]                          # armed is not in flight
+    assert call(broker, "drain-restart", {"offline": False})["error"] == "drain_already_armed"
+    # two idle beats, then work: re-armed
+    for _ in (1, 2):
+        clock.advance(30)
+        journal.add(hb(clock() - 1))
+        broker.tick(clock())
+    clock.advance(30)
+    journal.add(hb(clock() - 1, "1 task running"))
+    assert "drain_rearmed" in broker.tick(clock())
+    # four idle beats -> fire -> fresh gate -> systemctl restart
+    journal.add(msg(clock() - 0.5, "submitted implement for 4cf722c7"))
+    events: list[str] = []
+    for _ in range(4):
+        clock.advance(30)
+        journal.add(hb(clock() - 1))
+        events = broker.tick(clock())
+    assert "drain_fire" in events and runner.argvs("systemctl", "restart") == [["systemctl", "restart", "imd-worker.service"]]
+    phases = [ln["phase"] for ln in audit_lines(audit)]
+    assert phases.count("drain_armed") == 1 and phases.count("drain_rearmed") == 1 and phases.count("drain_fire") == 1
+    assert phases[-1] == "apply" and call(broker, "ping")["data"]["drain_armed"] is False
+    assert call(broker, "ping")["data"]["drain"] is None
+    # the fired restart gets its verify line on a later tick (spec §11 drain row audit: "arm, each re-arm, fire, verify")
+    clock.advance(1)
+    journal.add(msg(clock() - 0.6, "shutting down"), msg(clock() - 0.3, "runtimes: codex codex-cli 0.157.0 (using codex, as asked)"))
+    broker.tick(clock())
+    lines = audit_lines(audit)
+    assert [ln["phase"] for ln in lines][-3:] == ["drain_fire", "apply", "verify"] and lines[-1]["verified"] is True
+    assert lines[-1]["plan_id"] == lines[-2]["plan_id"] == lines[-3]["plan_id"]
+
+
+def test_refused_drain_fire_keeps_the_original_deadline(tmp_path):
+    # spec §11 drain row: DRAIN_MAX_S caps the whole wait -- a fire refused by the fresh gate re-arms the SAME drain
+    broker, runner, journal, clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "drain-restart", {"offline": True})["plan"]
+    armed = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]["drain"]
+    runner.script[("ls", "-1A")] = (0, "16a4df90-5555-4555-8555-555555555555.json\n")    # an unacked submit frame blocks (d)
+    events: list[str] = []
+    for _ in range(4):
+        clock.advance(30)
+        journal.add(hb(clock() - 1))
+        events += broker.tick(clock())
+    assert events == ["drain_fire", "drain_rearmed"] and runner.argvs("systemctl", "restart") == []
+    again = call(broker, "ping")["data"]["drain"]
+    assert again["armedAtUtc"] == armed["armedAtUtc"] and again["expiresAtUtc"] == armed["expiresAtUtc"] and again["rearmed"] == 1
+    assert broker._drain.armed.plan_id == plan["plan_id"]
+    assert broker.tick(NOW + 14400 + 1) == ["drain_expired"]
+
+
+def test_drain_suspends_idle_exit_and_is_cancelled_or_lost(tmp_path):
+    broker, _runner, _journal, clock, audit = make_broker(tmp_path)
+    plan = call(broker, "drain-restart", {"offline": True})["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert broker.idle_exit_due(clock() + BROKER_IDLE_EXIT_S + 1) is False           # spec §11: idle-exit suspended while armed
+    cancel = call(broker, "cancel-drain", {})["plan"]
+    result = call(broker, "apply", {"plan_id": cancel["plan_id"], "confirm": cancel["plan_id"][:4]})["result"]
+    assert result["outcome"] == "cancelled" and call(broker, "ping")["data"]["drain_armed"] is False
+    plan = call(broker, "drain-restart", {"offline": True})["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    broker.shutdown()
+    assert audit_lines(audit)[-1]["phase"] == "drain_lost" and broker.stop_requested is True
+
+
+def test_drain_expires_after_four_hours(tmp_path):
+    broker, _runner, _journal, clock, audit = make_broker(tmp_path)
+    plan = call(broker, "drain-restart", {"offline": True})["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    assert broker.tick(clock() + 14400 + 1) == ["drain_expired"]
+    assert audit_lines(audit)[-1]["phase"] == "drain_expired"
+
+
+def test_audit_has_one_line_per_phase_with_cursors_and_no_secrets(tmp_path):
+    broker, _runner, journal, clock, audit = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": False})["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    journal.add(msg(clock() + 0.3, "shutting down"), msg(clock() + 0.6, "runtimes: codex codex-cli 0.157.0 (using codex, as asked)"))
+    clock.advance(4)
+    call(broker, "verify", {"plan_id": plan["plan_id"]})
+    lines = [ln for ln in audit_lines(audit) if ln["plan_id"] == plan["plan_id"]]
+    assert [ln["phase"] for ln in lines] == ["plan", "apply", "verify"]
+    assert lines[1]["cursor_before"].startswith("s=") and lines[2]["cursor_after"].startswith("s=")
+    assert lines[1]["preconditions"]["outbox_files"] == 0 and lines[1]["peer_uid"] == DASH_UID
+    text = (tmp_path / "audit.jsonl").read_text()
+    assert PUBLIC_KEY not in text and PRIVATE_KEY not in text
+    tail = call(broker, "audit-tail", {"n": 2})["data"]["lines"]
+    assert [ln["phase"] for ln in tail] == ["apply", "verify"]
+
+
+def test_drain_arm_and_cancel_answer_verify_at_once(tmp_path):
+    # WP8's CONTROL polls verify after EVERY apply (contract §C.16): an arm and a cancel are verified at once, never unknown_plan
+    broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
+    plan = call(broker, "drain-restart", {"offline": True})["plan"]
+    assert call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]["outcome"] == "armed"
+    data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert data["verified"] is True and data["reason"] is None and data["connected"] is None
+    assert data["verify_lines"] == ["drain armed · 0/4 idle beats · expires 18:13 UTC"]              # NOW 14:13:20 + 4 h
+    cancel = call(broker, "cancel-drain", {})["plan"]
+    applied = call(broker, "apply", {"plan_id": cancel["plan_id"], "confirm": cancel["plan_id"][:4]})
+    assert applied["result"]["outcome"] == "cancelled"
+    data = call(broker, "verify", {"plan_id": cancel["plan_id"]})["data"]
+    assert data["verified"] is True and data["verify_lines"] == ["drain cleared · nothing restarted"]
+    assert runner.argvs("systemctl", "restart") == []
+
+
+def test_kill_orphans_verify_decides_pids_gone_after_the_sigkill_follow_up(tmp_path):
+    # the plan promises verify {"verified_when": ["pids gone"]}; WP8's CONTROL polls it after the apply (contract §C.16)
+    broker, runner, clock, audit, _spec = _orphan_broker(tmp_path)
+    plan = call(broker, "kill-orphans", {"pids": [64876, 64877]})["plan"]
+    assert plan["verify"]["verified_when"] == ["pids gone"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    pending = call(broker, "verify", {"plan_id": plan["plan_id"]})
+    assert pending["ok"] is True and pending["data"]["verified"] is None                        # never unknown_plan
+    (tmp_path / "proc" / "64876" / "stat").unlink()                                             # 64876 exits on SIGTERM; 64877 not
+    assert broker.tick(clock() + 11) == ["sigkill"] and runner.argvs("kill", "-KILL") == [["kill", "-KILL", "64877"]]
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None     # SIGKILLed this tick: decided next
+    broker.tick(clock() + 41)                                                                   # the fake /proc still lists 64877
+    data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert data["verified"] is False and data["reason"] == "still listed after SIGKILL: pid 64877"
+    assert data["verify_lines"] == ["pids gone: pid 64876"]
+    last = audit_lines(audit)[-1]
+    assert last["phase"] == "verify" and last["plan_id"] == plan["plan_id"] and last["verified"] is False
+    # a target gone on SIGTERM alone is decided on the follow-up tick itself
+    broker2, runner2, clock2, _audit2, _spec2 = _orphan_broker(tmp_path / "b")
+    plan = call(broker2, "kill-orphans", {"pids": [64884]})["plan"]
+    call(broker2, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    (tmp_path / "b" / "proc" / "64884" / "stat").unlink()
+    assert broker2.tick(clock2() + 11) == [] and runner2.argvs("kill", "-KILL") == []
+    data = call(broker2, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert data["verified"] is True and data["reason"] is None and data["verify_lines"] == ["pids gone: pid 64884"]
+
+
+@pytest.mark.parametrize('change', ['start_ticks', 'cgroup', 'uid'])
+def test_kill_rechecks_exact_identity_before_term_and_kill(tmp_path, change):
+    broker, runner, clock, _audit, spec = _orphan_broker(tmp_path)
+    plan = call(broker, 'kill-orphans', {'pids': [64885]})['plan']
+    target = next(p for p in spec['procs'] if p['pid'] == 64885)
+    original = dict(target)
+    target[change] = {'start_ticks': target['start_ticks'] + 1,
+                      'cgroup': 'system.slice/imd-worker.service/child', 'uid': 0}[change]
+    write_fake_proc(tmp_path / 'proc', spec)
+    result = call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})['result']
+    assert result['killed'] == [] and runner.argvs('kill') == []
+    target.update(original)
+    write_fake_proc(tmp_path / 'proc', spec)
+    plan = call(broker, 'kill-orphans', {'pids': [64885]})['plan']
+    call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})
+    target[change] = {'start_ticks': target['start_ticks'] + 1,
+                      'cgroup': 'system.slice/imd-worker.service/child', 'uid': 0}[change]
+    write_fake_proc(tmp_path / 'proc', spec)
+    broker.tick(clock() + 11)
+    assert runner.argvs('kill', '-KILL') == []
+
+
+@pytest.mark.parametrize('phase', ['plan', 'term'])
+@pytest.mark.parametrize('change', ['new_member', 'start_ticks', 'cgroup'])
+def test_group_kill_rechecks_all_members_against_plan(tmp_path, phase, change):
+    spec = json.loads((FIXTURES / 'procs_orphan.json').read_text())
+    spec['procs'] = [p for p in spec['procs'] if p['pid'] != 64861]
+    for p in spec['procs']:
+        if p['pgid'] == 64861:
+            p['pgid'] = 64862
+    write_fake_proc(tmp_path / 'proc', spec)
+    broker, runner, _journal, clock, _audit = make_broker(tmp_path, clock=Clock(spec['now']))
+    plan = call(broker, 'kill-orphans', {'pids': [64876, 64877, 64884, 64885]})['plan']
+    if phase == 'term':
+        call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})
+    target = next(p for p in spec['procs'] if p['pid'] == 64885)
+    if change == 'new_member':
+        spec['procs'].append({**target, 'pid': 64999})
+    elif change == 'start_ticks':
+        target['start_ticks'] += 1
+    else:
+        target['cgroup'] = 'system.slice/imd-worker.service/child'
+    write_fake_proc(tmp_path / 'proc', spec)
+    if phase == 'plan':
+        call(broker, 'apply', {'plan_id': plan['plan_id'], 'confirm': plan['plan_id'][:4]})
+        assert ['kill', '-TERM', '--', '-64862'] not in runner.argvs('kill')
+        assert ['kill', '-TERM', '64999'] not in runner.argvs('kill')
+    else:
+        broker.tick(clock() + 11)
+        assert runner.argvs('kill', '-KILL') == []

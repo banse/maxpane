@@ -1,0 +1,119 @@
+{
+ "synthetic": true,
+ "note": "the 35 h stuck `runuser \u2026 codex exec \u2026 | tail -2` pipeline of vps \u00a76.1, re-keyed: pgid 64861 = the root `bash -c` of a non-tty ssh session; four uid-1000 members; one live unit task, one imd-dash transient scope and one 10-min probe as non-candidates",
+ "now": 1790000000.0,
+ "btime": 1789654400.0,
+ "clk_tck": 100,
+ "procs": [
+  {
+   "pid": 1,
+   "ppid": 0,
+   "pgid": 1,
+   "uid": 0,
+   "cgroup": "init.scope",
+   "start_ticks": 100,
+   "rss_pages": 3000,
+   "cmd": "/sbin/init"
+  },
+  {
+   "pid": 98508,
+   "ppid": 1,
+   "pgid": 98508,
+   "uid": 1000,
+   "cgroup": "system.slice/imd-worker.service",
+   "start_ticks": 29520000,
+   "rss_pages": 28271,
+   "cmd": "node /opt/imd-worker/bin/imd start --runtime codex --concurrency 1"
+  },
+  {
+   "pid": 98600,
+   "ppid": 98508,
+   "pgid": 98508,
+   "uid": 1000,
+   "cgroup": "system.slice/imd-worker.service",
+   "start_ticks": 33840000,
+   "rss_pages": 16850,
+   "cmd": "/opt/imd-worker/runtime/bin/codex exec --skip-git-repo-check -c model_reasoning_effort=medium"
+  },
+  {
+   "pid": 99100,
+   "ppid": 1,
+   "pgid": 99100,
+   "uid": 1000,
+   "cgroup": "system.slice/imd-dash-doctor-3.service",
+   "start_ticks": 33840000,
+   "rss_pages": 30000,
+   "cmd": "node /opt/imd-worker/bin/imd doctor"
+  },
+  {
+   "pid": 99200,
+   "ppid": 1,
+   "pgid": 99200,
+   "uid": 1000,
+   "cgroup": "user.slice/user-0.slice/session-201.scope",
+   "start_ticks": 34500000,
+   "rss_pages": 5000,
+   "cmd": "/opt/imd-worker/runtime/bin/codex exec --skip-git-repo-check probe"
+  },
+  {
+   "pid": 64861,
+   "ppid": 64840,
+   "pgid": 64861,
+   "uid": 0,
+   "cgroup": "user.slice/user-0.slice/session-147.scope",
+   "start_ticks": 21960000,
+   "rss_pages": 1200,
+   "cmd": "bash -c runuser -l imd-worker -c 'cd /tmp && /opt/imd-worker/bin/codex exec --skip-git-repo-check --ignore-rules --ignore-user-config -c model_reasoning_effort=low QUESTION 2>&1 | tail -2'"
+  },
+  {
+   "pid": 64862,
+   "ppid": 64861,
+   "pgid": 64861,
+   "uid": 0,
+   "cgroup": "user.slice/user-0.slice/session-147.scope",
+   "start_ticks": 21960000,
+   "rss_pages": 800,
+   "cmd": "runuser -l imd-worker -c cd /tmp && /opt/imd-worker/bin/codex exec --skip-git-repo-check --ignore-rules --ignore-user-config -c model_reasoning_effort=low QUESTION 2>&1 | tail -2"
+  },
+  {
+   "pid": 64876,
+   "ppid": 64862,
+   "pgid": 64861,
+   "uid": 1000,
+   "cgroup": "user.slice/user-0.slice/session-147.scope",
+   "start_ticks": 21960000,
+   "rss_pages": 900,
+   "cmd": "-bash -c cd /tmp && /opt/imd-worker/bin/codex exec --skip-git-repo-check --ignore-rules --ignore-user-config -c model_reasoning_effort=low QUESTION 2>&1 | tail -2"
+  },
+  {
+   "pid": 64877,
+   "ppid": 64876,
+   "pgid": 64861,
+   "uid": 1000,
+   "cgroup": "user.slice/user-0.slice/session-147.scope",
+   "start_ticks": 21960000,
+   "rss_pages": 16845,
+   "cmd": "/opt/imd-worker/runtime/bin/codex exec --skip-git-repo-check --ignore-rules --ignore-user-config -c model_reasoning_effort=low QUESTION"
+  },
+  {
+   "pid": 64884,
+   "ppid": 64877,
+   "pgid": 64861,
+   "uid": 1000,
+   "cgroup": "user.slice/user-0.slice/session-147.scope",
+   "start_ticks": 21960000,
+   "rss_pages": 12450,
+   "cmd": "/opt/imd-worker/node/bin/node /home/imd-worker/.codex/tmp/arg0/codex-arg0Osuhc5/arg0.js"
+  },
+  {
+   "pid": 64885,
+   "ppid": 64876,
+   "pgid": 64861,
+   "uid": 1000,
+   "cgroup": "user.slice/user-0.slice/session-147.scope",
+   "start_ticks": 21960000,
+   "rss_pages": 400,
+   "cmd": "tail -2"
+  }
+ ]
+}

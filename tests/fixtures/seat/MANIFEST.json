@@ -766,6 +766,16 @@
       "synthetic": true,
       "daemon_version": null,
       "notes": "no test reads this file; the unreadable case is scripted (`ls -1A` rc 2) in the broker and gate tests"
+    },
+    "broker/procs_orphan.json": {
+      "origin": "hand-written from vps §6.1: the 35 h stuck `runuser … codex exec … | tail -2` pipeline re-keyed to pgid 64861 = the root `bash -c` of a non-tty ssh session",
+      "captured_at": "2026-09-26T09:30:00Z",
+      "sha256": "5c3a43ccba3059d1b16fd5c9a6c94efcce6a423d719ab0b69a014e552ea907ad",
+      "bytes": 3505,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "input to tests.broker._harness.write_fake_proc(); pids and ticks are synthetic; the cmdlines are the measured ones"
     }
   }
 }

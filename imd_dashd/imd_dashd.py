@@ -90,6 +90,7 @@ class Plan:
     verify: dict
     force_node8: str | None
     spent: bool = False
+    kill_snapshot: dict = field(default_factory=dict)  # internal identity evidence, never wire data
 
 
 class PlanStore:
@@ -222,6 +223,128 @@ def _drain_verify_line(drain: dict, required: object) -> str:
 # ---------------------------------------------------------------- /proc reading (orphans)
 
 
+def read_procs(proc_root: str, *, now: float, clk_tck: int = 100) -> list[dict]:
+    """Every process under *proc_root* as ``{pid, ppid, pgid, uid, cgroup, start_ticks, age_s, rss_b, cmd}``.
+
+    Pure over the directory tree so a ``tmp_path`` fake ``/proc`` drives every test (contract §E).
+    """
+    btime = 0.0
+    try:
+        with open(os.path.join(proc_root, "stat"), "rb") as fh:
+            for raw in fh:
+                if raw.startswith(b"btime "):
+                    btime = float(raw.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    procs: list[dict] = []
+    try:
+        names = os.listdir(proc_root)
+    except OSError:
+        return procs
+    for name in names:
+        if not name.isdigit():
+            continue
+        base = os.path.join(proc_root, name)
+        try:
+            with open(os.path.join(base, "stat"), "rb") as fh:
+                stat_line = fh.read().decode("utf-8", "replace")
+            with open(os.path.join(base, "status"), "rb") as fh:
+                status = fh.read().decode("utf-8", "replace")
+            with open(os.path.join(base, "cgroup"), "rb") as fh:
+                cgroup_line = fh.read().decode("utf-8", "replace").strip()
+            with open(os.path.join(base, "cmdline"), "rb") as fh:
+                cmdline = fh.read()
+        except OSError:
+            continue
+        try:
+            rest = stat_line.rsplit(")", 1)[1].split()           # fields 3.. after "(comm)"
+            ppid, pgid = int(rest[1]), int(rest[2])
+            start_ticks = int(rest[19])                          # field 22
+            rss_pages = int(rest[21])                            # field 24
+        except (IndexError, ValueError):
+            continue
+        uid = None
+        for line in status.splitlines():
+            if line.startswith("Uid:"):
+                try:
+                    uid = int(line.split()[1])
+                except (IndexError, ValueError):
+                    uid = None
+        if uid is None:
+            continue
+        cgroup = cgroup_line.split(":", 2)[-1].lstrip("/") if cgroup_line else ""
+        cmd = redact_agent_sentence(cmdline.replace(b"\x00", b" ").decode("utf-8", "replace"))[:80]
+        procs.append({"pid": int(name), "ppid": ppid, "pgid": pgid, "uid": uid, "cgroup": cgroup,
+                      "start_ticks": start_ticks, "age_s": max(0.0, now - (btime + start_ticks / clk_tck)),
+                      "rss_b": rss_pages * 4096, "cmd": cmd})
+    procs.sort(key=lambda p: p["pid"])
+    return procs
+
+
+def _in_worker_unit(cgroup: str) -> bool:
+    return (not cgroup or any(cgroup == root or cgroup.startswith(root + "/") for root in ORPHAN_EXCLUDED_CGROUPS)
+            or cgroup.startswith(ORPHAN_EXCLUDED_CGROUP_PREFIX))
+
+
+def select_orphans(procs: Sequence[dict], *, worker_uid: int = WORKER_UID, min_age_s: float = ORPHAN_MIN_AGE_S) -> list[dict]:
+    """Candidates (spec §11 kill-orphans): uid-1000, outside the unit and every ``imd-dash-*`` scope, older than 1 h."""
+    out: list[dict] = []
+    for proc in procs:
+        if proc["uid"] != worker_uid or _in_worker_unit(proc["cgroup"]) or proc["age_s"] <= min_age_s:
+            continue
+        members = [{"pid": m["pid"], "uid": m["uid"], "cgroup": m["cgroup"], "cmd": m["cmd"]}
+                   for m in procs if m["pgid"] == proc["pgid"] and m["pid"] != proc["pid"]]
+        out.append({"pid": proc["pid"], "pgid": proc["pgid"], "uid": proc["uid"], "cgroup": proc["cgroup"],
+                    "ageS": int(proc["age_s"]), "rssB": proc["rss_b"], "cmd": proc["cmd"], "pgidMembers": members})
+    return out
+
+
+def group_kill_allowed(procs: Sequence[dict], pgid: int, *, worker_uid: int = WORKER_UID) -> bool:
+    """Group kill only when EVERY pgid member is outside the unit and is uid-1000 or a direct ``runuser``/``sh -c``
+    ancestor of a uid-1000 member (spec §11; mutation proof 34)."""
+    members = [p for p in procs if p["pgid"] == pgid]
+    if not members:
+        return False
+    worker_pids = {p["pid"] for p in members if p["uid"] == worker_uid}
+    worker_ppids = {p["ppid"] for p in members if p["uid"] == worker_uid}
+    for member in members:
+        if _in_worker_unit(member["cgroup"]):
+            return False
+        if member["pid"] in worker_pids:
+            continue
+        cmd = member["cmd"]
+        is_wrapper = cmd.startswith("runuser ") or cmd.startswith("sh -c ") or cmd.startswith("bash -c ") or cmd.startswith("/bin/sh -c ")
+        if member["pid"] in worker_ppids and is_wrapper:
+            continue
+        return False
+    return True
+
+
+def _proc_identity(proc: dict) -> tuple:
+    return tuple(proc[key] for key in ("uid", "pgid", "ppid", "cgroup", "start_ticks"))
+
+
+def _same_process(proc: dict | None, snapshot: dict, *, worker_uid: int) -> bool:
+    return (proc is not None and proc["uid"] == worker_uid and not _in_worker_unit(proc["cgroup"])
+            and snapshot.get(proc["pid"]) == _proc_identity(proc))
+
+
+def _same_group(procs: Sequence[dict], pgid: int, snapshot: dict, *, worker_uid: int) -> bool:
+    members = [p for p in procs if p["pgid"] == pgid]
+    return (bool(members) and all(snapshot.get(p["pid"]) == _proc_identity(p) for p in members)
+            and group_kill_allowed(procs, pgid, worker_uid=worker_uid))
+
+
+def _decide_kill_watch(watch: VerifyWatch, *, pids: set[int], pgids: set[int]) -> None:
+    """The ``kill-orphans`` verify (plan ``verified_when: ["pids gone"]``) over a listing taken after every target's
+    SIGKILL follow-up: verified when no target -- a pid, or the whole pgid of a group kill -- is listed; the survivors
+    are named otherwise. Shared with ``LocalDockerBroker``, which passes the container's ``ps`` listing."""
+    survivors = [f"{kind} {ident}" for kind, ident in watch.targets if ident in (pgids if kind == "pgid" else pids)]
+    gone = [f"{kind} {ident}" for kind, ident in watch.targets if f"{kind} {ident}" not in survivors]
+    watch.verified = not survivors
+    watch.reason = None if not survivors else "still listed after SIGKILL: " + ", ".join(survivors)
+    watch.lines = ["pids gone: " + ", ".join(gone)] if gone else []
+
 # ---------------------------------------------------------------- the broker
 
 
@@ -259,6 +382,7 @@ class Broker:
         self._drain_seen: set[str] = set()
         self._drain_fired: set[str] = set()      #: synthetic plan ids of drain-fired restarts still awaiting their verify line
         self._pending_kills: list[tuple[float, str, int]] = []
+        self._kill_snapshots: dict[tuple[str, int], dict] = {}
         self._whoami_key: str | None = None
         self._skills_listing: set[str] | None = None
         self._last_doctor: float | None = None
@@ -731,6 +855,8 @@ class Broker:
             return verbs.err("bad_verb", {"verb": verb})
 
         plan = self._plans.create(verb, args, argv, preconditions, inverse, verify, force_node8=force_node8)
+        if verb == "kill-orphans":
+            plan.kill_snapshot = {p["pid"]: _proc_identity(p) for p in procs}
         seq = self._log(peer_uid=peer_uid, verb=verb, phase="plan", plan_id=plan.plan_id,
                         args={k: ("<node8>" if k == "force_node8" and v else v) for k, v in args.items()},
                         preconditions=preconditions, outcome="planned")
@@ -901,6 +1027,63 @@ class Broker:
         return verbs.ok(result={"outcome": "started", "exit_code": None, "cursor_before": None, "audit_seq": seq,
                                 "preconditions": plan.preconditions, "unit": unit_name(verb, seq_no)})
 
+    def _apply_kill(self, plan: Plan, peer_uid: int) -> dict:
+        now = self._now()
+        procs = {p["pid"]: p for p in read_procs(self._proc_root, now=now)}
+        rows = plan.preconditions["candidates"]
+        killed: list[dict] = []
+        skipped: list[dict] = []
+        by_pgid: dict[int, list[dict]] = {}
+        for row in rows:
+            by_pgid.setdefault(row["pgid"], []).append(row)
+        for pgid, members in by_pgid.items():
+            procs = {p["pid"]: p for p in read_procs(self._proc_root, now=self._now())}
+            if (_same_group(list(procs.values()), pgid, plan.kill_snapshot, worker_uid=self._worker_uid)
+                    and all(_same_process(procs.get(r["pid"]), plan.kill_snapshot, worker_uid=self._worker_uid) for r in members)):
+                self._run(["kill", "-TERM", "--", f"-{pgid}"], capture_output=True, timeout=5)
+                self._pending_kills.append((now + KILL_GRACE_S, "pgid", pgid))
+                self._kill_snapshots[("pgid", pgid)] = dict(plan.kill_snapshot)
+                killed.append({"mode": "group", "pgid": pgid, "pids": [m["pid"] for m in members]})
+                continue
+            for row in members:
+                procs = {p["pid"]: p for p in read_procs(self._proc_root, now=self._now())}
+                live = procs.get(row["pid"])
+                # re-check cgroup and start time (pid reuse) before each individual kill (spec §11)
+                if not _same_process(live, plan.kill_snapshot, worker_uid=self._worker_uid):
+                    skipped.append({"pid": row["pid"], "reason": "changed since plan"})
+                    continue
+                self._run(["kill", "-TERM", str(row["pid"])], capture_output=True, timeout=5)
+                self._pending_kills.append((now + KILL_GRACE_S, "pid", row["pid"]))
+                self._kill_snapshots[("pid", row["pid"])] = dict(plan.kill_snapshot)
+                killed.append({"mode": "individual", "pid": row["pid"]})
+        # the plan's verify ("pids gone"): tick() decides it once every target's SIGKILL follow-up has run
+        targets = [("pgid", k["pgid"]) if k["mode"] == "group" else ("pid", k["pid"]) for k in killed]
+        self._watches[plan.plan_id] = VerifyWatch(
+            plan_id=plan.plan_id, verb="kill-orphans", kind="kill", cursor_before=None, started=now, targets=targets,
+            verified=None if targets else True,
+            lines=[] if targets else [f"nothing killed · {len(skipped)} pid(s) changed since plan"])
+        seq = self._log(peer_uid=peer_uid, verb="kill-orphans", phase="apply", plan_id=plan.plan_id,
+                        preconditions={"pids": [r["pid"] for r in rows], "kill_mode_by_pgid": plan.preconditions["kill_mode_by_pgid"]},
+                        outcome="applied" if killed else "nothing to kill")
+        return verbs.ok(result={"outcome": "applied", "exit_code": 0, "cursor_before": None, "audit_seq": seq,
+                                "preconditions": plan.preconditions, "killed": killed, "skipped": skipped})
+
+    def _resolve_kill_watches(self, now: float, sigkilled: set[tuple[str, int]]) -> None:
+        """Decide each open ``kill-orphans`` watch whose targets have no SIGKILL follow-up still queued. A target that
+        needed the SIGKILL on this very tick is decided on the next one, so a process still being reaped is not
+        reported as a survivor. Writes one ``verify`` audit line per decision (spec §11)."""
+        queued = {(kind, ident) for _deadline, kind, ident in self._pending_kills}
+        ready = [w for w in self._watches.values() if w.kind == "kill" and w.verified is None
+                 and not any(t in queued or t in sigkilled for t in w.targets)]
+        if not ready:
+            return
+        procs = read_procs(self._proc_root, now=now)
+        pids, pgids = {p["pid"] for p in procs}, {p["pgid"] for p in procs}
+        for watch in ready:
+            _decide_kill_watch(watch, pids=pids, pgids=pgids)
+            self._log(verb=watch.verb, phase="verify", plan_id=watch.plan_id,
+                      outcome="verified" if watch.verified else "not verified", verified=watch.verified)
+
     # ------------------------------------------------------------ verify
 
     def _verify(self, plan_id: str) -> dict:
@@ -947,15 +1130,95 @@ class Broker:
         self._reads_flushed_at = now
 
     def tick(self, now: float | None = None) -> list[str]:
-        """Plan and watch expiry (Task 6.12 adds drain beats and the SIGKILL follow-ups). Returns the audit events it wrote."""
+        """Drain beats, plan/watch expiry, SIGKILL follow-ups. Returns the audit events it wrote (tests read them)."""
         now = self._now() if now is None else now
         events: list[str] = []
         self._flush_read_counts(now)
         self._plans.purge(now)
+        for fired in list(self._drain_fired):              # the drain's own restart gets its verify line (spec §11 audit column)
+            data = self._verify(fired).get("data") or {}
+            if data.get("verified") is not None or fired not in self._watches:
+                self._drain_fired.discard(fired)
         for plan_id in [k for k, w in self._watches.items() if now - w.started > VERIFY_WATCH_S and not (w.kind == "transient" and not w.done)]:
             del self._watches[plan_id]
+        if self._drain.armed is not None:
+            event = self._drain.tick(now)
+            if event:
+                events.append(event)
+                self._log(verb="drain-restart", phase=event, outcome="expired")
+            else:
+                lines, _cursor = self._journal(since_s=TICK_S * 2 + 5)
+                for epoch, text in lines:
+                    match = HEARTBEAT_RE.match(text)
+                    if not match or epoch <= self._last_tick:
+                        continue
+                    key = f"{epoch}:{text}"
+                    if key in self._drain_seen:
+                        continue
+                    self._drain_seen.add(key)
+                    armed_before = self._drain.armed
+                    event = self._drain.on_heartbeat("idle" if match.group("work") == "idle" else "running", epoch)
+                    if event:
+                        events.append(event)
+                        plan_id = None
+                        if event == "drain_fire":
+                            self._fire_drain(events, armed_before)
+                        else:
+                            self._log(verb="drain-restart", phase=event, plan_id=plan_id, outcome=event)
+                    if self._drain.armed is None:
+                        break
+                if len(self._drain_seen) > 2000:
+                    self._drain_seen = set(list(self._drain_seen)[-500:])
+        still: list[tuple[float, str, int]] = []
+        sigkilled: set[tuple[str, int]] = set()
+        for deadline, kind, ident in self._pending_kills:
+            if now < deadline:
+                still.append((deadline, kind, ident))
+                continue
+            procs = read_procs(self._proc_root, now=now)
+            alive = any(p["pgid"] == ident for p in procs) if kind == "pgid" else any(p["pid"] == ident for p in procs)
+            snapshot = self._kill_snapshots.pop((kind, ident), {})
+            safe = (_same_group(procs, ident, snapshot, worker_uid=self._worker_uid) if kind == "pgid" else
+                    _same_process(next((p for p in procs if p["pid"] == ident), None), snapshot, worker_uid=self._worker_uid))
+            if alive and not safe:
+                self._log(verb="kill-orphans", phase="refused", outcome="identity changed before SIGKILL",
+                          args={"kind": kind, "id": ident})
+            if alive and safe:
+                argv = ["kill", "-KILL", "--", f"-{ident}"] if kind == "pgid" else ["kill", "-KILL", str(ident)]
+                try:
+                    self._run(argv, capture_output=True, timeout=5)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+                events.append("sigkill")
+                sigkilled.add((kind, ident))
+        self._pending_kills = still
+        self._resolve_kill_watches(now, sigkilled)         # the kill-orphans verify: "pids gone" (or the survivors named)
         self._last_tick = now
         return events
+
+    def _fire_drain(self, events: list[str], armed_before: DrainState) -> None:
+        if not self._lock.acquire(blocking=False):
+            self._drain.restore(armed_before)    # keep waiting (same drain, same deadline): something else is in flight
+            return
+        try:
+            gate, _lines, cursor_before = self._gate(offline=self._drain_offline)
+            preconditions = _preconditions(gate)
+            if gate.unknown is not None or not gate.safe or (gate.plane["mode"] == "local-only" and not self._drain_offline):
+                self._drain.restore(armed_before)  # re-arm the SAME drain from zero beats; DRAIN_MAX_S still caps it (spec §11)
+                self._log(verb="drain-restart", phase="drain_rearmed", plan_id=armed_before.plan_id, preconditions=preconditions,
+                          outcome=gate.reason or f"plane {gate.plane['mode']}")
+                events.append("drain_rearmed")
+                return
+            plan = Plan(plan_id=secrets.token_hex(8), verb="drain-restart", args={"offline": self._drain_offline},
+                        argv=["systemctl", "restart", self._unit], created=self._now(), expires=self._now(),
+                        preconditions=preconditions, inverse=None, verify={}, force_node8=None, spent=True)
+            self._in_flight = {"verb": "drain-restart", "plan_id": plan.plan_id, "since": iso_utc(self._now())}
+            self._log(verb="drain-restart", phase="drain_fire", plan_id=plan.plan_id, preconditions=preconditions, outcome="firing")
+            self._exec_systemctl(plan, preconditions, cursor_before, peer_uid=0)
+            self._drain_fired.add(plan.plan_id)          # tick() writes its verify line once the journal decides
+        finally:
+            self._in_flight = None
+            self._lock.release()
 
     def idle_exit_due(self, now: float | None = None) -> bool:
         now = self._now() if now is None else now
@@ -1117,6 +1380,12 @@ def main(argv: list[str] | None = None) -> int:
     broker.shutdown()
     return 0
 
+
+__all__ = ["AUDIT_PATH", "BROKER_DIR", "BROKER_IDLE_EXIT_S", "Broker", "DOCTOR_MIN_INTERVAL_S", "INPROCESS_TIMEOUT_S",
+           "KILL_GRACE_S", "ORPHAN_EXCLUDED_CGROUPS", "ORPHAN_EXCLUDED_CGROUP_PREFIX", "ORPHAN_MIN_AGE_S", "PLAN_TTL_S",
+           "Plan", "PlanError", "PlanStore", "SOCKET_PATH", "STANDING_URL", "VERIFY_WATCH_S", "VERIFY_WITHIN_S", "VERSION",
+           "VerifyWatch", "WARNING", "group_kill_allowed", "listener_from_systemd", "main", "parse_work_listing", "peer_uid",
+           "read_procs", "select_orphans"]
 
 if __name__ == "__main__":
     raise SystemExit(main())
