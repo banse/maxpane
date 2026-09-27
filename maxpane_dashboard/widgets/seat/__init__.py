@@ -14,4 +14,6 @@ never ``maxpane_dashboard.data``, ``subprocess``, ``socket`` or ``httpx``.
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from maxpane_dashboard.widgets.seat.hero import SeatHero, SeatHeroBox
+
+__all__: list[str] = ["SeatHero"]
