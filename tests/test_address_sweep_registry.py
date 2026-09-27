@@ -29,7 +29,9 @@ NON_DASHBOARD_SCREEN_MODULES = (
     "wallet_input",  # the address prompt; what it echoes back is the user's own input
     "seat_input",    # surf's seat prompt: an IDMD token id, no address on it at all
     "submission_detail", # cached modal; dedicated test_submission_detail.py address coverage
-    "oracle_answer", # cached modal; question/notes/value icons and links tested in test_oracle_answer.py
+    "oracle_answer",
+    "seat_task_detail",  # pepepane: cached modal over one LEDGER row; tests/screens/test_seat_task_detail.py
+ # cached modal; question/notes/value icons and links tested in test_oracle_answer.py
 )
 
 #: Screen subclasses that are shared machinery rather than a dashboard, so they
