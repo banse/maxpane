@@ -449,9 +449,104 @@ def test_probe_redacts_all_code_blocks_with_the_broker_redactor():
     assert "example0000" not in proc.stdout and "examplecredential0000" not in proc.stdout
     assert "a" * 64 not in proc.stdout and "\x1b" not in proc.stdout and "\u202e" not in proc.stdout
     assert "sk-ant-[redacted]" in proc.stdout and "Bearer [redacted]" in proc.stdout
+    from imd_dashd.redact import redact
+    from maxpane_dashboard.data.seat_manager import SeatManager
+    currency = "runtime estimate " + chr(36) + "0.07\n"
+    sample = subprocess.run([sys.executable, "-I", "-c", code], input=currency, capture_output=True, text=True, timeout=10)
+    assert sample.returncode == 0
+    assert sample.stdout == SeatManager._no_currency(redact(currency))
 
 
 def test_probe_socket_read_budget_covers_synchronous_broker_reads():
     text = PROBE_SH.read_text()
     assert "from imd_dashd.child_unit import RUNTIME_MAX_S, SUBPROCESS_BELT_S" in text
     assert "s.settimeout(max(RUNTIME_MAX_S.values()) + SUBPROCESS_BELT_S + 5)" in text
+
+
+# --- Task 9.5: build_wheels.sh + requirements.lock ------------------------------------------------------------
+
+BUILD_WHEELS_SH = REPO / "scripts" / "build_wheels.sh"
+LOCK = DEPLOY / "requirements.lock"
+HASH_RE = re.compile(r"--hash=sha256:[0-9a-f]{64}")
+
+
+def _project() -> dict:
+    return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+
+
+def _lock_requirements(text: str) -> dict[str, tuple[str, list[str]]]:
+    """``name -> (version, hashes)`` from a pip requirements file with backslash continuations.
+
+    Every logical line must be ``name==version`` followed only by ``--hash=sha256:…`` tokens: no URLs,
+    no editables, no index options -- the VPS install is ``--no-index`` and hash-checked (spec §12.1)."""
+    logical: list[str] = []
+    buf = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.endswith("\\"):
+            buf += line[:-1] + " "
+            continue
+        logical.append((buf + line).strip())
+        buf = ""
+    assert not buf, "dangling continuation at end of file"
+    out: dict[str, tuple[str, list[str]]] = {}
+    for entry in logical:
+        parts = entry.split()
+        m = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9.+!-]+)", parts[0])
+        assert m, f"not a ``name==version`` requirement: {entry!r}"
+        hashes = [p for p in parts[1:] if p.startswith("--hash=")]
+        others = [p for p in parts[1:] if not p.startswith("--hash=")]
+        assert not others, f"unexpected tokens after {parts[0]}: {others}"
+        name = m.group(1).lower().replace("_", "-")
+        assert name not in out, f"duplicate requirement {name}"
+        out[name] = (m.group(2), hashes)
+    return out
+
+
+def test_requirements_lock_pins_match_pyproject_seat_group():
+    """Spec §12.1 Pins / §15: the lock and the ``seat`` group name the same four versions, the closure
+    carries the fork's own wheel (``maxpane==<project version>``) and its upstream dependency
+    ``sybilkit``, and the only binary wheel's project is present. Mutation: bump rich to 15.0.1 in the
+    lock alone -> red; drop the maxpane block -> red."""
+    project = _project()["project"]
+    lock = _lock_requirements(LOCK.read_text(encoding="utf-8"))
+    for spec in project["optional-dependencies"]["seat"]:
+        name, version = spec.split("==")
+        assert lock[name.lower()][0] == version, spec
+    assert lock["maxpane"][0] == project["version"], "the fork wheel is pinned to the checkout's version"
+    assert "sybilkit" in lock and "pydantic-core" in lock
+    assert len(lock) >= 20, f"the closure is ~20 wheels + maxpane (fill7 §2 counted 22 before the 3.14 markers); found {len(lock)}"
+
+
+def test_every_lock_line_has_a_hash():
+    """Spec §12.1: ``pip install --require-hashes`` refuses an install where any requirement lacks a
+    hash -- and a constraints file alone would pin versions, not bytes (fill7 §3). Every requirement
+    carries at least one sha256, and the file has no index or URL lines (offline install).
+    Mutation: strip one ``--hash`` -> red; add ``--extra-index-url`` -> red."""
+    text = LOCK.read_text(encoding="utf-8")
+    lock = _lock_requirements(text)
+    for name, (version, hashes) in lock.items():
+        assert hashes, f"{name}=={version} has no --hash"
+        for h in hashes:
+            assert HASH_RE.fullmatch(h), f"{name}: malformed {h}"
+    for forbidden in ("--index-url", "--extra-index-url", "--find-links", " @ ", "git+", "http://", "https://", "-e "):
+        assert forbidden not in "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#")), forbidden
+
+
+def test_build_wheels_script_emits_the_lock_the_manifest_and_ignores_the_wheels():
+    """Spec §12.1 install route (a): the closure is resolved and hash-pinned on the Mac
+    (``uv pip compile --generate-hashes``), the wheels are downloaded for the VPS's interpreter and
+    platform, the fork wheel is built from the checkout, and the MANIFEST covers the tree; wheels are
+    never committed. Mutation: drop ``--generate-hashes`` -> red; remove deploy/vps/.gitignore -> red."""
+    text = BUILD_WHEELS_SH.read_text(encoding="utf-8")
+    assert text.splitlines()[0] == "#!/usr/bin/env bash" and STRICT_MODE in text
+    assert BUILD_WHEELS_SH.stat().st_mode & 0o111
+    for needle in ("uv pip compile", "--generate-hashes", "--python-version", "--python-platform", "--extra seat",
+                   "pip download", "--only-binary=:all:", "--no-deps", "uv build", "--wheel",
+                   "requirements.lock", "MANIFEST.sha256", "--manifest-only", "seat-deploy-"):
+        assert needle in text, needle
+    _bash_n(BUILD_WHEELS_SH)
+    ignore = (DEPLOY / ".gitignore").read_text(encoding="utf-8").split()
+    assert "wheels/" in ignore

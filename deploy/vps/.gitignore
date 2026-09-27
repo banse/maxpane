@@ -1,0 +1,3 @@
+# third-party wheels and the fork wheel are built by scripts/build_wheels.sh, never committed (~5.8 MB);
+# requirements.lock and MANIFEST.sha256 beside them are.
+wheels/

@@ -83,7 +83,7 @@ import sys
 sys.path.insert(0, "/opt/imd-dash/broker")
 from imd_dashd.redact import redact
 for line in sys.stdin:
-    sys.stdout.write(redact(line))
+    sys.stdout.write(redact(line).replace(chr(36), ""))
 # END PROBE_REDACTOR
 ' | sed -E 's/[0-9a-fA-F]{32,}/<hex>/g'
 }
