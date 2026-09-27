@@ -1,0 +1,156 @@
+{
+  "jobId": "b1fb1439-7e2a-4d61-9f3b-2c8e5a1d0b47",
+  "repoUrl": "https://github.com/example/oracle-panel",
+  "baseCommit": "0000000",
+  "count": 4,
+  "submissions": [
+    {
+      "hash": "2ddc5fd34b37812dc93fdb997ab16a5241b9cccdc7757b1c82670b5a3ee25ae8",
+      "nodeKey": "oracle_assess",
+      "role": "implement",
+      "attempt": 1,
+      "deviceKey": "scrubbed-7",
+      "seat": {
+        "tokenId": 7,
+        "agentId": 51075
+      },
+      "outcome": "failed",
+      "accepted": false,
+      "failureReason": "runtime_error",
+      "failureClass": "machine",
+      "oracleResult": null,
+      "usage": {
+        "model": null,
+        "runtime": "codex",
+        "turns": 0,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cachedInputTokens": 0,
+        "wallClockMs": 33704
+      },
+      "createdAt": "2026-09-25T23:36:52.410Z",
+      "allowedPaths": [
+        "artifacts/answer.json"
+      ],
+      "changedPaths": [],
+      "artifacts": [],
+      "findings": [],
+      "verificationErrors": [],
+      "bundleBytes": 0,
+      "review": {
+        "status": "not_reviewed"
+      }
+    },
+    {
+      "hash": "f562544f8363a5220c66469032cd67850a07fbb186ebc0519ed93f270a7c2529",
+      "nodeKey": "oracle_assess",
+      "role": "implement",
+      "attempt": 1,
+      "deviceKey": "scrubbed-7",
+      "seat": {
+        "tokenId": 7,
+        "agentId": 51075
+      },
+      "outcome": "failed",
+      "accepted": false,
+      "failureReason": "runtime_error",
+      "failureClass": "machine",
+      "oracleResult": null,
+      "usage": {
+        "model": null,
+        "runtime": "codex",
+        "turns": 0,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cachedInputTokens": 0,
+        "wallClockMs": 33704
+      },
+      "createdAt": "2026-09-25T23:37:56.035Z",
+      "allowedPaths": [
+        "artifacts/answer.json"
+      ],
+      "changedPaths": [],
+      "artifacts": [],
+      "findings": [],
+      "verificationErrors": [],
+      "bundleBytes": 0,
+      "review": {
+        "status": "not_reviewed"
+      }
+    },
+    {
+      "hash": "34557f54247e40fcba8838e27f1356cfb0e80d5915e51e065b06d881b44479e7",
+      "nodeKey": "oracle_assess",
+      "role": "implement",
+      "attempt": 1,
+      "deviceKey": "scrubbed-7",
+      "seat": {
+        "tokenId": 7,
+        "agentId": 51075
+      },
+      "outcome": "failed",
+      "accepted": false,
+      "failureReason": "runtime_error",
+      "failureClass": "machine",
+      "oracleResult": null,
+      "usage": {
+        "model": null,
+        "runtime": "codex",
+        "turns": 0,
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "cachedInputTokens": 0,
+        "wallClockMs": 33704
+      },
+      "createdAt": "2026-09-25T23:38:45.117Z",
+      "allowedPaths": [
+        "artifacts/answer.json"
+      ],
+      "changedPaths": [],
+      "artifacts": [],
+      "findings": [],
+      "verificationErrors": [],
+      "bundleBytes": 0,
+      "review": {
+        "status": "not_reviewed"
+      }
+    },
+    {
+      "hash": "9f2c66294c45e2bf3a69db883f00aeb8818b31b627c8d0da6d294e21aea4c671",
+      "nodeKey": "oracle_assess",
+      "role": "implement",
+      "attempt": 1,
+      "deviceKey": "scrubbed-1204",
+      "seat": {
+        "tokenId": 1204,
+        "agentId": 50011
+      },
+      "outcome": "completed",
+      "accepted": true,
+      "failureReason": null,
+      "failureClass": null,
+      "oracleResult": null,
+      "usage": {
+        "model": "gpt-6-luna",
+        "runtime": "codex",
+        "turns": 3,
+        "inputTokens": 17864,
+        "outputTokens": 812,
+        "cachedInputTokens": 92928,
+        "wallClockMs": 22400
+      },
+      "createdAt": "2026-09-25T23:39:12.880Z",
+      "allowedPaths": [
+        "artifacts/answer.json"
+      ],
+      "changedPaths": [],
+      "artifacts": [],
+      "findings": [],
+      "verificationErrors": [],
+      "bundleBytes": 0,
+      "review": {
+        "status": "not_reviewed"
+      }
+    }
+  ]
+}

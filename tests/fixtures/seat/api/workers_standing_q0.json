@@ -1,0 +1,91 @@
+{
+  "at": "2026-09-26T03:24:57.101Z",
+  "deviceKey": "scrubbed-7",
+  "enrollment": {
+    "status": "active",
+    "tokenId": 7,
+    "agentId": 51075,
+    "registered": true,
+    "pairedAt": "2026-09-22T11:58:02.114Z",
+    "lastSeenAt": "2026-09-26T03:24:51.402Z"
+  },
+  "presence": {
+    "connected": true,
+    "acceptingWork": true,
+    "connectedAt": "2026-09-25T11:45:43.910Z",
+    "lastHeartbeatAt": "2026-09-26T03:24:51.402Z",
+    "heartbeatAgeMs": 4410,
+    "stale": false,
+    "daemonVersion": "0.1.0+5bfa8261",
+    "runtimes": [
+      {
+        "id": "codex",
+        "version": "codex-cli 0.157.0",
+        "premiumModel": {
+          "model": "gpt-6-astra",
+          "effort": "xhigh"
+        }
+      }
+    ],
+    "kinds": [
+      "code",
+      "fuzz",
+      "research"
+    ],
+    "profiles": [
+      "default"
+    ],
+    "skills": 31,
+    "maxConcurrency": 1,
+    "platform": {
+      "os": "linux",
+      "arch": "x64",
+      "nodeVersion": "v24.9.0"
+    },
+    "tools": []
+  },
+  "standing": {
+    "working": 1,
+    "running": [
+      {
+        "jobId": "9c3d2f7a-5b1e-4c0d-8a2f-6e7b1c9d0a3f",
+        "objective": "Assess whether the proposed Uniswap v4 hook's afterSwap counter can overflow under a flash-loan burst.",
+        "nodeKey": "oracle_assess",
+        "role": "implement",
+        "since": "2026-09-26T03:24:53.214Z"
+      }
+    ],
+    "consecutiveFailures": 0,
+    "pausedUntil": null,
+    "lastFailedAt": "2026-09-25T23:38:45.117Z",
+    "breaker": {
+      "failures": 3,
+      "cooldownMs": 900000
+    },
+    "recentFailures": [
+      {
+        "at": "2026-09-25T23:36:52.410Z",
+        "reason": "runtime_error",
+        "jobId": "b1fb1439-7e2a-4d61-9f3b-2c8e5a1d0b47",
+        "nodeKey": "oracle_assess"
+      },
+      {
+        "at": "2026-09-25T23:37:56.035Z",
+        "reason": "runtime_error",
+        "jobId": "b1fb1439-7e2a-4d61-9f3b-2c8e5a1d0b47",
+        "nodeKey": "oracle_assess"
+      },
+      {
+        "at": "2026-09-25T23:38:45.117Z",
+        "reason": "runtime_error",
+        "jobId": "b1fb1439-7e2a-4d61-9f3b-2c8e5a1d0b47",
+        "nodeKey": "oracle_assess"
+      }
+    ]
+  },
+  "queue": null,
+  "server": {
+    "version": "0.1.0+aa634633",
+    "presenceWindowMs": 60000
+  }
+}

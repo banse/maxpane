@@ -1,0 +1,4 @@
+{
+  "error": "internal_error",
+  "detail": "could not resize shared memory segment \"/PostgreSQL.2989346318\" to 4194304 bytes: No space left on device"
+}

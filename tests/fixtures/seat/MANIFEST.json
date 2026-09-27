@@ -542,6 +542,150 @@
       "notes": "compact on purpose: pins the attachment reader, not the turn count",
       "sha256": "1022852a926df4a38392515a8645b54292b6ec2d17fcd75374e7332221ba0fa7",
       "bytes": 2963
+    },
+    "api/seat7_standing.json": {
+      "origin": "GET https://api.imd.fun/seats/7/standing — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "0dd03510d06e6991db48a8808173fedbef18e292e6edc8d1dd083ae696bd2c25",
+      "bytes": 2364,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "seats form: queue{ready,fleetOnline,eligible,blocked}, devices; no summary field on this form; working case (running[0] present)"
+    },
+    "api/workers_standing_q0.json": {
+      "origin": "GET https://api.imd.fun/workers/<deviceKey>/standing?queue=0 — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "3fcf9d1a26409156d8fa056a1bc4401ebecffe549b5921843f2ae1301b155ea8",
+      "bytes": 2224,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "proves queue: null on the ?queue=0 form (spec §6 trap); recentFailures[].summary removed"
+    },
+    "api/seat7_work20.json": {
+      "origin": "GET https://api.imd.fun/seats/7?work=20&reviews=0 — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "2524d1446d17a6da2cb63e57ddeb8a3516ee7d07a630be7487056670015b7a59",
+      "bytes": 10620,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "counters 288/244/5/11/28 consistent; work[].acceptedAt Postgres text, submittedAt ISO Z; row 0 = the 69 s flip (fill5 §3); row 1 failed, joins job_b1fb1439_submissions.json by hash"
+    },
+    "api/seat7_work20_inconsistent.json": {
+      "origin": "derived from api/seat7_work20.json with attempts set to 290 (sum of the four is 288)",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "fc154cb6123a07a1de5c7f865ac549229ba605d82f7024bc25b560a9d7f35313",
+      "bytes": 10620,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "counters violate attempts == accepted+rejected+failed+pending -> `counters inconsistent (api)`; synthetic forever"
+    },
+    "api/seat7_500.json": {
+      "origin": "HTTP 500 body of GET https://api.imd.fun/seats/7 (fill5 §4: 16 of 60 reads) — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "5e46db068013dadb47ccc6a07f5fa430f1e7ddaf5f66cce85fb8ef989798145e",
+      "bytes": 155,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "Postgres shared-memory exhaustion; segment id is a placeholder"
+    },
+    "api/job_b1fb1439_submissions.json": {
+      "origin": "GET https://api.imd.fun/jobs/<jobId>/submissions — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "60a6d732e5a36641ef3b204a4746006212eefca465d29bc8e1e609b0fecf6d5c",
+      "bytes": 3956,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "three failed/runtime_error/machine attempts of seat 7 (the 09-25 23:36–23:38 401 wave) + one accepted attempt of seat 1204; summary removed; deviceKey scrubbed"
+    },
+    "api/health.json": {
+      "origin": "GET https://api.imd.fun/health — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "90a1bf9f79e1881dcc8a318eb81194306d28e85049a00e7cec462c1e5ec29543",
+      "bytes": 865,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "25 keys incl. undocumented awaitingVerdict and computedAt (fill5 §6)"
+    },
+    "api/services.json": {
+      "origin": "GET https://api.imd.fun/services — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "a539c459b88f59c66f64ccabcb7e77b4b7f15b401491309869735e9b153c33d5",
+      "bytes": 412,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "verifier/publisher/deployer with version, up, lastSeenAt, claims; dict-keyed shape assumed, confirmed at capture"
+    },
+    "api/workers_row.json": {
+      "origin": "one row of GET https://api.imd.fun/workers — hand-built from the measured field lists (fill5 §1/§4/§6, fill1 §4, aidude docs/imd-api-changelog.md 2026-09-26); kept as the test input; the owner-run capture of WP5 Task 5.10 lands beside it under api/captured/",
+      "captured_at": "2026-09-26T09:00:00Z",
+      "sha256": "41223478485b709f1ef534a5ae0d7bd126f5a0e19b7476d8adce043594baecab",
+      "bytes": 520,
+      "redactions": [
+        "control_chars",
+        "sk",
+        "deviceKey",
+        "recentFailures.summary",
+        "submissions.summary"
+      ],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "only to prove `working` (a 30 s heartbeat echo behind a 30 s cache) is never rendered; deviceKey scrubbed"
     }
   }
 }

@@ -1,0 +1,38 @@
+{
+  "status": "ok",
+  "operatorSurface": "authenticated",
+  "taskNetwork": true,
+  "version": "0.1.0+aa634633",
+  "connectedDaemons": 409,
+  "workingNow": 122,
+  "activeEnrollments": 417,
+  "acceptedLastDay": 46773,
+  "pendingVerification": 4,
+  "pendingAttestation": 0,
+  "pendingDeployment": 0,
+  "pendingDelivery": 0,
+  "pendingFeedback": 185,
+  "pendingOracle": 12,
+  "pendingFuzz": 0,
+  "pendingSites": 0,
+  "deployBreaker": false,
+  "verifierUp": true,
+  "publisherUp": true,
+  "deployerUp": true,
+  "identity": {
+    "chainId": 1,
+    "collection": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+    "adapter": "0xde152afb7db5373f34876e1499fbd893a82dd336"
+  },
+  "lotusTargets": [
+    "greenfield"
+  ],
+  "payments": {
+    "enabled": true,
+    "actions": [
+      "workflow.open"
+    ]
+  },
+  "awaitingVerdict": 7,
+  "computedAt": "2026-09-26T03:40:05.344Z"
+}

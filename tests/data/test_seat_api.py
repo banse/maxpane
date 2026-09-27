@@ -118,3 +118,48 @@ def test_reason_word_is_the_enum_word_or_other():
     assert seat_api.reason_word(None) is None
     assert seat_api.failure_class_word("machine") == "machine"
     assert seat_api.failure_class_word("weird") == "other" and seat_api.failure_class_word(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 5.3 — the API fixture bodies
+# ---------------------------------------------------------------------------
+
+API_FIXTURES = (
+    "seat7_standing.json", "workers_standing_q0.json", "seat7_work20.json", "seat7_work20_inconsistent.json",
+    "seat7_500.json", "job_b1fb1439_submissions.json", "health.json", "services.json", "workers_row.json",
+)
+
+
+def _device_keys(value):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "deviceKey":
+                yield item
+            yield from _device_keys(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _device_keys(item)
+
+
+@pytest.mark.guard
+def test_api_fixtures_are_summary_free_redacted_and_registered():
+    """Spec §14 fixtures (API bodies: deviceKey scrubbed, summaries removed, control characters stripped)
+    + contract §D MANIFEST rules (every file registered with matching sha256/bytes)."""
+    entries = json.loads((FIXTURES.parent / "MANIFEST.json").read_text(encoding="utf-8"))["entries"]
+    for name in API_FIXTURES:
+        raw = (FIXTURES / name).read_bytes()
+        text = raw.decode("utf-8")
+        assert not seat_redact.CONTROL_RE.search(text), name
+        assert not seat_redact.SK_RE.search(text), name
+        body = json.loads(text)
+        assert '"summary"' not in json.dumps(body), name
+        assert all(isinstance(k, str) and k.startswith("scrubbed-") for k in _device_keys(body)), name
+        assert seat_redact.find_secret(body, allowed_hex64_fields=frozenset({"submissionHash", "hash", "txHash"})) is None, name
+        entry = entries[f"api/{name}"]
+        assert entry["sha256"] == hashlib.sha256(raw).hexdigest() and entry["bytes"] == len(raw), name
+        assert {"origin", "captured_at", "redactions", "synthetic"} <= set(entry), name
+    work = _fixture("seat7_work20.json")
+    assert len(work["work"]) == 20 and (work["attempts"], work["accepted"], work["rejected"], work["failed"], work["pending"]) == (288, 244, 5, 11, 28)
+    assert _fixture("seat7_work20_inconsistent.json")["attempts"] == 290
+    assert _fixture("workers_standing_q0.json")["queue"] is None
+    assert _fixture("seat7_500.json")["error"] == "internal_error"
