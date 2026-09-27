@@ -799,3 +799,7 @@ LocalDockerBroker now rejects manual restart and stop while a drain is armed at 
 ### 2026-09-27 — PEPEPANE second round fix 6 and lifecycle wording
 
 Empty executor messages and journald-stripped failure lines now share terminal semantics in gate and grammar: task, question or campaign followed by failed and its colon, with an optional space/message. The grammar preserves the optional msg group; synthetic fixture pairs prove both forms close the ledger. Gate/probe wording now distinguishes a failed or unreadable lifecycle history from successful empty history. The stale Mac segment refusal remains; its regression name now describes that condition. The original R4 empty-history claim is visibly marked superseded by D1.
+
+### 2026-09-27 — PEPEPANE second round fix 8: partial signal failures
+
+Initial group and individual orphan signals now route timeout, OS error and nonzero command exits through the partial-action finalizer. Already signalled targets retain their audit, completion watch and identity-checked follow-up; remaining candidates are named as skipped. A failure before any signal is explicitly nonpartial and audited. This adds failure handling to the reference implementation without issuing extra signals.

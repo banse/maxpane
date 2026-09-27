@@ -1287,6 +1287,17 @@ class Broker:
         return verbs.ok(result={"outcome": "started", "exit_code": None, "cursor_before": None, "audit_seq": seq,
                                 "preconditions": plan.preconditions, "unit": unit_name(verb, seq_no)})
 
+    def _initial_signal(self, argv: list[str]) -> dict | None:
+        try:
+            done = self._run(argv, capture_output=True, timeout=5)
+        except subprocess.TimeoutExpired:
+            return verbs.err("timeout", {"reason": "orphan signal command timed out", "outcome": "timeout"})
+        except OSError as exc:
+            return verbs.err("internal", {"reason": type(exc).__name__})
+        if done.returncode != 0:
+            return verbs.err("internal", {"reason": "orphan signal command failed", "exit_code": done.returncode})
+        return None
+
     def _apply_kill(self, plan: Plan, peer_uid: int) -> dict:
         now = self._now()
         rows = plan.preconditions["candidates"]
@@ -1307,7 +1318,9 @@ class Broker:
                 refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id)
                 if refusal is not None:
                     return self._finish_kill(plan, peer_uid, now, killed, skipped, refusal)
-                self._run(["kill", "-TERM", "--", f"-{pgid}"], capture_output=True, timeout=5)
+                refusal = self._initial_signal(["kill", "-TERM", "--", f"-{pgid}"])
+                if refusal is not None:
+                    return self._finish_kill(plan, peer_uid, now, killed, skipped, refusal)
                 self._pending_kills.append((now + KILL_GRACE_S, "pgid", pgid))
                 self._kill_snapshots[("pgid", pgid)] = dict(plan.kill_snapshot)
                 killed.append({"mode": "group", "pgid": pgid, "pids": [m["pid"] for m in members]})
@@ -1327,7 +1340,9 @@ class Broker:
                 refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id)
                 if refusal is not None:
                     return self._finish_kill(plan, peer_uid, now, killed, skipped, refusal)
-                self._run(["kill", "-TERM", str(row["pid"])], capture_output=True, timeout=5)
+                refusal = self._initial_signal(["kill", "-TERM", str(row["pid"])])
+                if refusal is not None:
+                    return self._finish_kill(plan, peer_uid, now, killed, skipped, refusal)
                 self._pending_kills.append((now + KILL_GRACE_S, "pid", row["pid"]))
                 self._kill_snapshots[("pid", row["pid"])] = dict(plan.kill_snapshot)
                 killed.append({"mode": "individual", "pid": row["pid"]})
@@ -1336,7 +1351,14 @@ class Broker:
     def _finish_kill(self, plan: Plan, peer_uid: int, now: float, killed: list[dict], skipped: list[dict],
                      refusal: dict | None = None) -> dict:
         """Retain the audit and completion watch for exactly the targets already signalled."""
+        if refusal is not None:
+            accounted = {pid for item in killed for pid in (item["pids"] if item["mode"] == "group" else [item["pid"]])}
+            accounted.update(item["pid"] for item in skipped)
+            skipped.extend({"pid": row["pid"], "reason": refusal["error"]}
+                           for row in plan.preconditions["candidates"] if row["pid"] not in accounted)
         if refusal is not None and not killed:
+            self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan.plan_id,
+                      outcome=refusal["error"], args={"killed": [], "skipped": skipped})
             return verbs.err(refusal["error"], {**refusal.get("detail", {}), "plan_spent": True,
                                                  "partial": False, "killed": [], "skipped": skipped})
         # the plan's verify ("pids gone"): tick() decides it once every target's SIGKILL follow-up has run

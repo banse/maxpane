@@ -1229,7 +1229,7 @@ def test_unreadable_lifecycle_with_cursor_refuses_plan_and_apply(tmp_path, bad_r
     assert not runner.argvs("systemctl", "restart")
 
 
-@pytest.mark.parametrize("failure", ["deadline", "snapshot"])
+@pytest.mark.parametrize("failure", ["deadline", "snapshot", "exception", "timeout", "nonzero"])
 @pytest.mark.parametrize("group", [False, True])
 def test_partial_orphan_apply_retains_actual_audit_and_verification(tmp_path, monkeypatch, failure, group):
     broker, runner, clock, audit, spec = _orphan_broker(tmp_path)
@@ -1254,11 +1254,16 @@ def test_partial_orphan_apply_retains_actual_audit_and_verification(tmp_path, mo
         return original(*args, **kwargs)
     monkeypatch.setattr(broker_mod, "signal_procs", snapshot)
     def first_kill(argv, kw):
-        mono.advance(5 if group else 4)
+        if failure in ("exception", "timeout", "nonzero") and len(runner.argvs("kill", "-TERM")) == 2:
+            if failure == "exception": raise OSError("synthetic kill failure")
+            if failure == "timeout": raise subprocess.TimeoutExpired(argv, 5)
+            return subprocess.CompletedProcess(argv, 1, b"", b"")
+        if failure in ("deadline", "snapshot"):
+            mono.advance(5 if group else 4)
         return subprocess.CompletedProcess(argv, 0, b"", b"")
     runner.script[("kill", "-TERM")] = first_kill
     response = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
-    assert response["error"] == ("apply_late" if failure == "deadline" else "unreadable")
+    assert response["error"] == {"deadline": "apply_late", "snapshot": "unreadable", "exception": "internal", "timeout": "timeout", "nonzero": "internal"}[failure]
     expected = {"mode": "group", "pgid": 64876, "pids": [64876]} if group else {"mode": "individual", "pid": 64876}
     assert response["detail"]["partial"] is True and response["detail"]["killed"] == [expected]
     applied = [r for r in audit_lines(audit) if r["phase"] == "apply" and r["plan_id"] == plan["plan_id"]]
@@ -1267,7 +1272,8 @@ def test_partial_orphan_apply_retains_actual_audit_and_verification(tmp_path, mo
     watch = broker._watches[plan["plan_id"]]
     assert watch.targets == [("pgid" if group else "pid", 64876)]
     assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None
-    assert len(runner.argvs("kill", "-TERM")) == 1
+    assert len(runner.argvs("kill", "-TERM")) == (2 if failure in ("exception", "timeout", "nonzero") else 1)
+    assert [row["pid"] for row in response["detail"]["skipped"]] == [64877]
     assert len(broker._pending_kills) == 1
     # Finish only the already-signalled subset, preserving the normal identity-checked completion.
     monkeypatch.setattr(broker_mod, "signal_procs", original)
