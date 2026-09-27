@@ -24,6 +24,8 @@ import pytest
 from maxpane_dashboard.analytics.seat_redact import redact
 from maxpane_dashboard.data import seat_tail
 from maxpane_dashboard.data.seat_tail import (
+    TailThread,
+
     DockerLogsSource,
     docker_factory,
 
@@ -452,3 +454,197 @@ def test_docker_factory_passes_the_persisted_watermark_to_the_backfill():
     src = make(TailState(kind=KIND_DOCKER, watermark_ts="2026-09-26T03:40:07.120Z"))
     src.backfill()
     assert run.calls[0][0][3] == "2026-09-26T03:40:07.120Z"
+
+
+# --- a classify seam that needs no WP2 --------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _StubLine:
+    """The shape of ``seat_log_grammar.LogLine`` (contract C.5) as this module relies on it."""
+
+    ts: str
+    invocation: str | None
+    text: str
+    kind: str
+    cursor: str | None
+    seq: int
+
+
+def _stub_classify(line: str, *, invocation=None, cursor=None, seq=0) -> _StubLine:
+    stamp = daemon_stamp(line) or ""
+    if not stamp:
+        kind = "unknown"
+    elif " alive " in line or " disconnected " in line:
+        kind = "heartbeat"
+    elif " accepted " in line:
+        kind = "accepted_code"
+    else:
+        kind = "other"
+    return _StubLine(stamp, invocation, line, kind, cursor, seq)
+
+
+class _Clock:
+    def __init__(self, start: float = 1_790_000_000.0) -> None:
+        self.t = start
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, seconds: float) -> None:
+        self.t += seconds
+
+
+def _drain(q: "queue.Queue") -> list:
+    out = []
+    while True:
+        try:
+            out.append(q.get_nowait())
+        except queue.Empty:
+            return out
+
+
+
+
+def _thread(source_factory, *, state=None, state_path=None, clock=None, redact_fn=None, classify=_stub_classify):
+    q: "queue.Queue" = queue.Queue()
+    thread = TailThread(
+        source_factory, q,
+        state=state or TailState(),
+        state_path=state_path,
+        now=clock or _Clock(),
+        redact=redact_fn or (lambda s: s),
+        classify=classify,
+    )
+    return thread, q
+
+
+# =============================================================================
+# Task 3.6 -- TailThread core: redact -> classify -> queue, watermark, aliveAt, persistence
+# =============================================================================
+
+
+def test_thread_redacts_then_classifies_then_queues_with_monotonic_seq():
+    # spec §9 Follower: each line -> redact() (control-character strip first) -> classify() -> LogLine -> queue.Queue
+    hostile = "2026-09-25T23:41:22.577Z alive 11h55m · idle · 13 submitted · paused until 23:53 after 3 failed runs: unexpected status 401 Unauthorized: sk-svcac******** \x1b]52;c;AAAA\x07 — run imd doctor"
+    seen: list[str] = []
+
+    def classify(text, *, invocation=None, cursor=None, seq=0):
+        seen.append(text)
+        return _stub_classify(text, invocation=invocation, cursor=cursor, seq=seq)
+
+    thread, q = _thread(lambda st: ListLineSource([HB1, hostile, RawLine(ACC, cursor="c9", invocation="inv1")]),
+                        redact_fn=redact, classify=classify)
+    thread.run_once()
+    lines = _drain(q)
+    assert [l.seq for l in lines] == [1, 2, 3]
+    assert "sk-svcac" not in seen[1] and "sk-[redacted]" in seen[1]
+    assert "\x1b" not in seen[1] and "\x07" not in seen[1] and "\u241b" in seen[1]
+    assert lines[2].cursor == "c9" and lines[2].invocation == "inv1"
+    assert thread.state.cursor == "c9" and thread.state.invocation == "inv1"
+
+
+def test_unstamped_line_never_moves_the_watermark():
+    # header Review Focus #2 / spec §5.1 Mac transport: the watermark is the daemon's newest ISO stamp,
+    # never Docker's -t stamp and never "last line seen"
+    state = TailState(kind=KIND_DOCKER, last_ts_utc="2026-09-26T03:40:07.120Z", watermark_ts="2026-09-26T03:40:07.120Z")
+    src = ListLineSource([HB2, NPM, HB1])          # newer, unstamped, then an OLDER re-delivered line
+    src.kind = KIND_DOCKER
+    thread, q = _thread(lambda st: src, state=state)
+    thread.run_once()
+    lines = _drain(q)
+    assert [l.kind for l in lines] == ["heartbeat", "unknown", "heartbeat"]
+    assert lines[1].ts == "" and lines[1].text == NPM
+    assert state.last_ts_utc == "2026-09-26T03:40:37.121Z" == state.watermark_ts
+
+
+def test_journald_cursor_moves_on_unstamped_unit_events_but_last_ts_does_not():
+    state = TailState(kind=KIND_JOURNALD)
+    src = ListLineSource([
+        RawLine(HB1, cursor="c1", invocation="i1", realtime_us=1790394007120000),
+        RawLine("Stopping imd-worker.service - IdentityMD worker daemon...", cursor="c2", invocation=None,
+                realtime_us=1790394010000000),
+    ])
+    src.kind = KIND_JOURNALD
+    thread, _ = _thread(lambda st: src, state=state)
+    thread.run_once()
+    assert state.cursor == "c2" and state.invocation == "i1" and state.last_ts_utc == "2026-09-26T03:40:07.120Z"
+    assert state.watermark_ts is None and state.kind == KIND_JOURNALD
+
+
+def test_thread_stamps_alive_at_without_lines():
+    # spec §9 Follower: the thread stamps aliveAt every second even when no lines arrive
+    clock = _Clock(1000.0)
+
+    class _Ticks:
+        kind = KIND_LIST
+
+        def open(self): pass
+        def close(self): pass
+        def exit_code(self): return 0
+        def backfill(self): return None
+
+        def lines(self):
+            for _ in range(3):
+                clock.advance(ALIVE_STAMP_S)
+                yield None
+
+    thread, q = _thread(lambda st: _Ticks(), clock=clock)
+    assert thread.alive_at is None
+    thread.run_once()
+    assert thread.alive_at == 1003.0 and q.empty()
+
+
+def test_state_is_persisted_only_after_the_queue_is_drained_and_on_stop(tmp_path):
+    # spec §9 Watermarks: persisted after each drained batch (the manager drains on the poll tick)
+    path = tmp_path / TAIL_FILE
+    clock = _Clock()
+
+    class _Src:
+        kind = KIND_LIST
+
+        def open(self): pass
+        def close(self): pass
+        def exit_code(self): return None
+        def backfill(self): return None
+
+        def lines(self):
+            yield RawLine(HB1, cursor="c1")
+            yield None                                  # tick with a full queue -> no save
+            saved_early.append(path.exists())
+            while thread_ref[0]._queue.qsize():          # let the "manager" drain
+                thread_ref[0]._queue.get_nowait()
+            yield None                                  # tick with an empty queue -> save
+            saved_after_drain.append(TailState.load(path).cursor)
+            yield RawLine(HB2, cursor="c2")
+
+    saved_early: list[bool] = []
+    saved_after_drain: list[str | None] = []
+    thread_ref: list[TailThread] = []
+    thread, q = _thread(lambda st: _Src(), state_path=path, clock=clock)
+    thread_ref.append(thread)
+    thread.run_once()
+    assert saved_early == [False] and saved_after_drain == ["c1"]
+    assert TailState.load(path).cursor == "c2"           # exit persists regardless
+
+
+def test_start_and_stop_run_the_source_on_a_daemon_thread(tmp_path):
+    thread, q = _thread(lambda st: ListLineSource([HB1, HB2, ACC]), state_path=tmp_path / TAIL_FILE)
+    thread.start()
+    got = [q.get(timeout=5).text for _ in range(3)]
+    thread.stop(timeout_s=5)
+    assert got == [HB1, HB2, ACC]
+    assert thread._thread is not None and not thread._thread.is_alive() and thread._thread.daemon
+    assert thread.alive_at is not None
+    assert TailState.load(tmp_path / TAIL_FILE).last_ts_utc == "2026-09-26T03:40:52.400Z"
+
+
+def test_a_classify_that_raises_drops_the_line_and_keeps_the_follower():
+    def classify(text, *, invocation=None, cursor=None, seq=0):
+        if text == HB2:
+            raise ValueError("hostile")
+        return _stub_classify(text, invocation=invocation, cursor=cursor, seq=seq)
+
+    thread, q = _thread(lambda st: ListLineSource([HB1, HB2, ACC]), classify=classify)
+    thread.run_once()
+    assert [l.text for l in _drain(q)] == [HB1, ACC]

@@ -625,7 +625,204 @@ def docker_factory(
     return make
 
 
+# --- the thread -------------------------------------------------------------------------
+
+
+class TailThread:
+    """One daemon thread: source -> redact -> classify -> ``queue`` (spec §4.3, §9).
+
+    The thread only fills the queue. It persists ``state`` to ``state_path`` on its
+    one-second tick while the queue is empty (i.e. after each drained batch) and on ``stop()``;
+    ``classify=None`` resolves to ``seat_log_grammar.classify`` at construction so this module
+    imports without WP2 and tests inject their own.
+    """
+
+    def __init__(
+        self,
+        source_factory: Callable[[TailState], LineSource],
+        queue: "queue.Queue[Any]",
+        *,
+        state: TailState,
+        state_path: Path | None,
+        now: Clock = time.time,
+        backoff: tuple[float, float] = (BACKOFF_MIN_S, BACKOFF_MAX_S),
+        redact: Callable[[str], str] = seat_redact.redact,
+        classify: Callable[..., Any] | None = None,
+    ) -> None:
+        if classify is None:
+            from maxpane_dashboard.data.seat_log_grammar import classify as classify_default
+            classify = classify_default
+        self._source_factory = source_factory
+        self._queue = queue
+        self._state = state
+        self._state_path = None if state_path is None else Path(state_path)
+        self._now = now
+        self._backoff_min, self._backoff_max = float(backoff[0]), float(backoff[1])
+        self._redact = redact
+        self._classify = classify
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._source: LineSource | None = None
+        self._alive_at: float | None = None
+        self._reason: str | None = None
+        self._gap_note: str | None = None
+        self._backfill_note: str | None = None
+        self._backfill_at: float | None = None
+        self._restarts = 0
+        self._backoff_s: float | None = None
+        self._seq = 0
+        self._dirty = False
+
+    # -- properties ---------------------------------------------------------------------
+
+    @property
+    def alive_at(self) -> float | None:
+        return self._alive_at
+
+    @property
+    def reason(self) -> str | None:
+        return self._reason
+
+    @property
+    def gap_note(self) -> str | None:
+        return self._gap_note
+
+    @property
+    def backfill_note(self) -> str | None:
+        """Sticky: ``STALE_BACKFILL_REASON`` once a backfill was discarded (LOG footer), else ``None``."""
+        return self._backfill_note
+
+    @property
+    def backfill_at(self) -> float | None:
+        """Epoch of the last backfill decision (the ``HH:MM`` in ``backfill HH:MM discarded``)."""
+        return self._backfill_at
+
+    @property
+    def restarts(self) -> int:
+        return self._restarts
+
+    @property
+    def backoff_s(self) -> float | None:
+        """The wait before the next attach after the last exit; ``None`` before any exit."""
+        return self._backoff_s
+
+    @property
+    def state(self) -> TailState:
+        return self._state
+
+    # -- lifecycle ----------------------------------------------------------------------
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._loop, name="seat-tail", daemon=True)
+        self._thread.start()
+
+    def stop(self, timeout_s: float = 5.0) -> None:
+        self._stop.set()
+        source = self._source
+        if source is not None:
+            source.close()
+        thread = self._thread
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout_s)
+        self.persist(force=True)
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            self.run_once()
+            if self._stop.is_set():
+                break
+            self._wait(self._backoff_s or self._backoff_min)
+
+    def _wait(self, seconds: float) -> None:
+        remaining = float(seconds)
+        while remaining > 0 and not self._stop.is_set():
+            slice_s = min(ALIVE_STAMP_S, remaining)
+            self._stop.wait(slice_s)
+            remaining -= slice_s
+            self._stamp()
+            self.persist()
+
+    # -- one source lifetime ------------------------------------------------------------
+
+    def run_once(self) -> None:
+        """Open one source, follow it until it exits, note the exit. No sleeping in here."""
+        self._stamp()
+        source = self._source_factory(self._state)
+        source.open()
+        self._source = source
+        self._state.kind = source.kind
+        delivered = 0
+        try:
+            for raw in source.lines():
+                if self._stop.is_set():
+                    break
+                self._stamp()
+                if raw is None:
+                    self.persist()
+                    continue
+                if delivered == 0:
+                    self._reason = None
+                delivered += self._emit(raw, source.kind)
+        finally:
+            source.close()
+            self._source = None
+        if self._stop.is_set():
+            self.persist(force=True)
+            return
+        self._note_exit(source.exit_code(), delivered=delivered)
+
+    def _emit(self, raw: RawLine, kind: str) -> int:
+        text = self._redact(raw.text)
+        try:
+            line = self._classify(text, invocation=raw.invocation, cursor=raw.cursor, seq=self._seq + 1)
+        except Exception:  # a hostile line must never kill the follower
+            logger.exception("classify failed; line dropped")
+            return 0
+        ts = getattr(line, "ts", "") or ""
+        self._seq += 1
+        self._queue.put(line)
+        if raw.cursor is not None:
+            self._state.cursor = raw.cursor
+        if raw.invocation is not None:
+            self._state.invocation = raw.invocation
+        if ts and (self._state.last_ts_utc is None or ts > self._state.last_ts_utc):
+            self._state.last_ts_utc = ts
+            if kind == KIND_DOCKER:
+                self._state.watermark_ts = ts
+        self._dirty = True
+        return 1
+
+    def _note_exit(self, rc: int | None, *, delivered: int, detail: str | None = None) -> None:
+        self._restarts += 1
+        self._backoff_s = self._backoff_min
+        retry = f"retry in {int(self._backoff_s)}s"
+        if detail is not None:
+            self._reason = f"tail: {detail} — {retry}"
+        else:
+            self._reason = f"tail: exited rc={rc} — {retry}"
+        self.persist(force=True)
+
+    # -- helpers -------------------------------------------------------------------------
+
+    def _stamp(self) -> None:
+        self._alive_at = self._now()
+
+    def persist(self, *, force: bool = False) -> None:
+        """Save the state when it changed -- on the tick only while the queue is drained."""
+        if not self._dirty or self._state_path is None:
+            return
+        if not force and not self._queue.empty():
+            return
+        self._state.save(self._state_path)
+        self._dirty = False
+
+
 __all__ = [
+    'TailThread',
+
     'DockerLogsSource',
     'docker_factory',
 
