@@ -20,7 +20,8 @@ write in flight). This modal owns the operator's side of it:
   tick until ``verified`` is not ``None`` (``verifying … 3 s`` meanwhile) and
   shows ``verified ✓ · connected: …`` or ``verify: not seen — check LOG``. It
   **never re-plans or re-applies on its own** (header Review Focus #5): a
-  verdict, a refusal or a broker error ends the flow and the operator decides;
+  terminal verdict ends the flow; a lost apply reply keeps its plan and checks
+  verification before the operator decides;
 * the footer is the last :data:`AUDIT_LINES` audit lines via ``audit-tail``.
 
 Broker calls are synchronous with a 20 s client timeout; they run in a thread
@@ -52,7 +53,7 @@ from textual.widgets import Input, Static
 
 from maxpane_dashboard.analytics.seat_redact import redact
 from maxpane_dashboard.analytics.seat_signals import as_of_hhmm
-from maxpane_dashboard.data.seat_broker_client import BrokerError
+from maxpane_dashboard.data.seat_broker_client import CLIENT_TIMEOUT_S, BrokerError
 from maxpane_dashboard.data.seat_models import fold_status_document
 from maxpane_dashboard.widgets.fmt import DASH
 from maxpane_dashboard.widgets.markup_safety import strip_tags
@@ -187,6 +188,8 @@ class SeatControlScreen(ModalScreen[None]):
         self._force_confirmed = False
         self._submit_pending = False
         self._status = Text("")
+        self._outcome_unknown = False
+        self._partial_note: str | None = None
         #: kept under every later status until a restart is applied (spec §11 skills set: drain-restart is step 2)
         self._restart_note: str | None = None
         self._timer = None
@@ -277,7 +280,9 @@ class SeatControlScreen(ModalScreen[None]):
         self._write("#seat-control-status", self._status)
 
     def _set_status(self, words: str | Text, style: str = "") -> None:
-        self._status = words.copy() if isinstance(words, Text) else Text(words, style=style)
+        self._status = words.copy() if isinstance(words, Text) else Text.assemble((words, style))
+        if self._partial_note:
+            self._status.append("\n" + self._partial_note, style="yellow")
         if self._restart_note:
             self._status.append("\n" + self._restart_note, style="yellow")
         self._write("#seat-control-status", self._status)
@@ -428,6 +433,8 @@ class SeatControlScreen(ModalScreen[None]):
     # -- plan / apply / verify ------------------------------------------------
 
     async def _plan_verb(self, verb: str, args: dict) -> None:
+        self._outcome_unknown = False
+        self._partial_note = None
         self._busy = True
         try:
             plan = await asyncio.to_thread(self._broker.plan, verb, args)
@@ -511,21 +518,44 @@ class SeatControlScreen(ModalScreen[None]):
             self._focus_input(False)
             return
         self._busy = True
+        self._apply_at = self._now()  # include time spent waiting for the apply reply
         try:
             result = await asyncio.to_thread(self._broker.apply, plan.plan_id, confirm, **kwargs)
         except BrokerError as exc:
-            detail = " ".join(f"{k}={_word(v)}" for k, v in _dict(exc.detail).items())
-            self._set_status(f"error: {_word(exc.code)} {detail}".strip(), "red")
-            self._mode = "idle"
-            self._plan = None
-            self._force_node8 = None
-            self._set_plan_open(False)
-            self._focus_input(False)
+            detail = _dict(exc.detail)
+            if detail.get("partial") is True:
+                killed = []
+                for action in detail.get("killed") or []:
+                    if isinstance(action, dict):
+                        killed.extend(action.get("pids") or [action.get("pid")])
+                skipped = [row.get("pid") for row in detail.get("skipped") or [] if isinstance(row, dict)]
+                self._partial_note = ("partial action — killed pids: " + ", ".join(_word(pid) for pid in killed if pid is not None)
+                                      + "; skipped pids: " + ", ".join(_word(pid) for pid in skipped if pid is not None))
+                self._mode = "verifying"
+                self._set_status(f"error: {_word(exc.code)} · checking verify", "yellow")
+            elif exc.code in ("transport", "bad_response") or (exc.code == "timeout" and detail.get("outcome") == "timeout"):
+                self._outcome_unknown = True
+                self._mode = "verifying"
+                self._set_status("outcome unknown — checking verify", "yellow")
+            else:
+                unspent = exc.code == "apply_late" and detail.get("plan_spent") is False
+                if exc.code == "apply_late":
+                    spent_word = "unspent" if unspent else "spent"
+                    self._set_status(f"apply_late — plan is {spent_word} · {_word(detail.get('hint'))}", "yellow")
+                else:
+                    words = " ".join(f"{k}={_word(v)}" for k, v in detail.items())
+                    self._set_status(f"error: {_word(exc.code)} {words}".strip(), "red")
+                self._mode = "planned" if unspent else "idle"
+                if not unspent:
+                    self._plan = None
+                    self._force_node8 = None
+                    self._set_plan_open(False)
+            self._focus_input(self._mode == "planned")
+            self.run_worker(self._load_audit(), exclusive=True, group="seat-control-audit")
             return
         finally:
             self._busy = False
         self._mode = "verifying"
-        self._apply_at = self._now()
         self._focus_input(False)
         if plan.verb in ("restart", "drain-restart"):
             self._restart_note = None  # step 2 taken: the restart the note asked for is applied
@@ -544,9 +574,20 @@ class SeatControlScreen(ModalScreen[None]):
         try:
             result = await asyncio.to_thread(self._broker.verify, plan.plan_id)
         except BrokerError as exc:
-            self._set_status(f"verify: error {_word(exc.code)} — check LOG", "red")
+            if self._outcome_unknown and exc.code == "transport":
+                self._set_status("outcome unknown — checking verify", "yellow")
+                return
+            if self._outcome_unknown and exc.code == "unknown_plan":
+                if self._now() - self._apply_at < CLIENT_TIMEOUT_S:
+                    self._set_status("outcome unknown — checking verify", "yellow")
+                    return
+                self._set_status("not applied — the plan is spent; press the verb to plan afresh", "yellow")
+            else:
+                self._set_status(f"verify: error {_word(exc.code)} — check LOG", "red")
             self._mode = "done"
             self._set_plan_open(False)
+            self._force_node8 = None
+            self.run_worker(self._load_audit(), exclusive=True, group="seat-control-audit")
             return
         finally:
             self._busy = False
@@ -561,8 +602,9 @@ class SeatControlScreen(ModalScreen[None]):
         if result.verified is True:
             connected = result.connected
             connected_word = "yes" if connected is True else (_word(connected) if connected else "not yet reported")
-            status = Text.assemble(("verified ✓ · ", "green"))
-            status.append("connected: " + connected_word, style="green" if connected is True else "yellow")
+            status = Text.assemble(("verified ✓", "green"))
+            if connected is not None:
+                status.append(" · connected: " + connected_word, style="green" if connected is True else "yellow")
             if lines:
                 status.append("\n" + "\n".join(lines), style="green")
             self._set_status(status)

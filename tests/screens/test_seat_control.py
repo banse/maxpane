@@ -535,7 +535,6 @@ async def test_broker_apply_does_not_block_escape_or_issue_a_second_write(held_v
     (True, "yes", 2),
     ("pending (reconnecting since 03:40:31)", "pending (reconnecting since 03:40:31)", 3),
     (False, "not yet reported", 3),
-    (None, "not yet reported", 3),
 ])
 async def test_verified_and_connection_have_independent_composited_colors(connected, word, color):
     broker = _broker(verify=_verify_sequence((True, connected, None)))
@@ -557,3 +556,188 @@ async def test_verified_and_connection_have_independent_composited_colors(connec
             style = pilot.app.screen.get_style_at(row.index(token), y)
             assert style.color.get_truecolor(pilot.app.ansi_theme) == pilot.app.ansi_theme.ansi_colors[expected]
         assert "shutting down" in _screen_text(pilot), "verification detail remains visible"
+
+
+async def _manual_control(pilot, clock=None):
+    await _painted(pilot)
+    control = pilot.app.screen
+    control._timer.stop()
+    if clock is not None:
+        control._now = clock
+    return control
+
+
+def _assert_color(pilot, token, color):
+    rows = _screen_text(pilot).splitlines()
+    y = next(y for y, row in enumerate(rows) if token in row)
+    style = pilot.app.screen.get_style_at(rows[y].index(token), y)
+    assert style.color.get_truecolor(pilot.app.ansi_theme) == pilot.app.ansi_theme.ansi_colors[color]
+
+
+@pytest.mark.parametrize('lost_reply', ['transport', 'bad_response'])
+async def test_root_lost_apply_reply_keeps_plan_and_recovers_verification(tmp_path, lost_reply):
+    from maxpane_dashboard.data.seat_broker_client import UnixSocketBroker
+    from tests.broker._harness import make_broker, msg
+    from tests.data.test_seat_broker_client import _served
+
+    root, runner, journal, clock, _audit = make_broker(tmp_path)
+
+    class LostReply(UnixSocketBroker):
+        verify_calls = 0
+        apply_calls = 0
+
+        def call(self, verb, args=None, **kwargs):
+            if verb == 'verify':
+                self.verify_calls += 1
+                if self.verify_calls == 1:
+                    raise BrokerError('transport', {'reason': 'TimeoutError'})
+            response = super().call(verb, args, **kwargs)
+            if verb == 'apply':
+                self.apply_calls += 1
+                clock.advance(19)
+                raise BrokerError(lost_reply, {'reason': 'TimeoutError'})
+            return response
+
+    broker = LostReply(connect=_served(root))
+    manager = _Manager(DOC, broker)
+    async with _A(manager).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, clock)
+        await control._plan_verb('restart', {})
+        plan_id = control._plan.plan_id
+        sent = clock()
+        await control._apply(plan_id[:4])
+        await _painted(pilot)
+        assert control.mode == 'verifying' and control._plan.plan_id == plan_id
+        assert control._apply_at == sent, 'the uncertainty window starts before the blocking apply call'
+        _assert_color(pilot, 'outcome unknown — checking verify', 3)
+        await control._poll_verify()
+        assert control.mode == 'verifying', 'a transport failure during verify is not a verdict'
+        journal.add(msg(clock() - 1, 'shutting down'), msg(clock(), 'runtimes: codex'))
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == 'done'
+        _assert_color(pilot, 'verified ✓', 2)
+        assert broker.apply_calls == 1
+        assert len(runner.argvs('systemctl', 'restart')) == 1
+
+
+async def test_unknown_plan_waits_from_apply_send_then_requires_explicit_new_plan(tmp_path):
+    from maxpane_dashboard.data.seat_broker_client import CLIENT_TIMEOUT_S, UnixSocketBroker
+    from tests.broker._harness import make_broker
+    from tests.data.test_seat_broker_client import _served
+
+    root, runner, _journal, clock, _audit = make_broker(tmp_path)
+
+    class LostRequest(UnixSocketBroker):
+        calls = []
+
+        def call(self, verb, args=None, **kwargs):
+            self.calls.append(verb)
+            if verb == 'apply':
+                clock.advance(CLIENT_TIMEOUT_S - 1)
+                raise BrokerError('bad_response')
+            return super().call(verb, args, **kwargs)
+
+    broker = LostRequest(connect=_served(root))
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, clock)
+        await control._plan_verb('restart', {})
+        await control._apply(control._plan.plan_id[:4])
+        await _painted(pilot)
+        await control._poll_verify()
+        assert control.mode == 'verifying'
+        clock.advance(1)
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == 'done'
+        assert 'not applied — the plan is spent; press the verb to plan afresh' in _screen_text(pilot)
+        assert broker.calls.count('restart') == broker.calls.count('apply') == 1
+        assert broker.calls.count('audit-tail') >= 2
+        assert runner.argvs('systemctl', 'restart') == []
+
+
+async def test_mac_timeout_result_is_unknown_then_reads_real_verify(tmp_path):
+    from tests.data.test_seat_broker_client import _local
+    from tests.broker._recorder import timeout_for
+
+    broker, runner, _lines, clock = _local(tmp_path, script={('docker', 'restart'): timeout_for(['docker'], 25)})
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, clock)
+        await control._plan_verb('restart', {})
+        await control._apply('local-only')
+        await _painted(pilot)
+        assert control.mode == 'verifying'
+        _assert_color(pilot, 'outcome unknown — checking verify', 3)
+        await control._poll_verify()
+        assert control.mode == 'verifying'
+        clock.advance(31)
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == 'done' and 'verify: not seen' in _screen_text(pilot)
+        assert len(runner.argvs('docker', 'restart')) == 1
+
+
+@pytest.mark.parametrize('verb', ['stop', 'doctor', 'drain-restart'])
+async def test_irrelevant_connection_state_has_no_yellow_pending_phrase(verb):
+    plan = copy.deepcopy(PLAN)
+    plan['plan']['verb'] = verb  # drain deliberately retains connected_when, just like the real plan
+    broker = _broker(**{verb: plan, 'verify': _verify_sequence((True, None, None))})
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot)
+        await control._plan_verb(verb, {})
+        await control._apply(PLAN_ID[:4])
+        await _painted(pilot)
+        await control._poll_verify()
+        await _painted(pilot)
+        assert 'connected:' not in _screen_text(pilot)
+        _assert_color(pilot, 'verified ✓', 2)
+
+
+@pytest.mark.parametrize('spent', [False, True])
+async def test_apply_late_tells_operator_whether_plan_was_spent(spent):
+    def late(_args):
+        raise BrokerError('apply_late', {'waited_s': 5.5, 'plan_spent': spent,
+                          'hint': 'plan afresh; use pepepane --offline if plane reads are slow' if spent else
+                                  'plan remains available; retry promptly or use pepepane --offline'})
+    broker = _broker(apply=late)
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot)
+        await control._plan_verb('restart', {})
+        await control._apply(PLAN_ID[:4])
+        await _painted(pilot)
+        text = _screen_text(pilot)
+        assert ('plan is spent' if spent else 'plan is unspent') in text
+        assert 'pepepane --offline' in text
+        assert control.mode == ('idle' if spent else 'planned')
+
+
+async def test_partial_kill_retains_pids_and_polls_real_watch(tmp_path, monkeypatch):
+    from maxpane_dashboard.data.seat_broker_client import UnixSocketBroker
+    import shutil
+    import subprocess
+    from tests.broker.test_imd_dashd import _orphan_broker
+    from tests.data.test_seat_broker_client import _served
+
+    root, runner, clock, _audit, _spec = _orphan_broker(tmp_path)
+    def signal(argv, kw):
+        if argv[-1] == '64877':
+            raise OSError('command failed')
+        shutil.rmtree(tmp_path / 'proc' / '64876')
+        return subprocess.CompletedProcess(argv, 0, b'', b'')
+    runner.script[('kill', '-TERM')] = signal
+    broker = UnixSocketBroker(connect=_served(root))
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, clock)
+        await control._plan_verb('kill-orphans', {'pids': [64876, 64877]})
+        await control._apply(control._plan.plan_id[:4])
+        await _painted(pilot)
+        assert control.mode == 'verifying'
+        text = _screen_text(pilot)
+        assert 'killed pids: 64876' in text and 'skipped pids: 64877' in text
+        root.tick(clock() + 12)
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == 'done'
+        text = _screen_text(pilot)
+        assert 'killed pids: 64876' in text and 'skipped pids: 64877' in text
+        assert 'verified ✓' in text and 'kill-orphans' in text
