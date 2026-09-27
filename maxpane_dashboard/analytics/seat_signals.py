@@ -370,3 +370,153 @@ def rollup_today(rows: Sequence[Mapping], *, day_utc: str) -> dict:
         "verdictLagP50S": _round_or_none(_median(lags)),
         "verdictsAsOfUtc": max(verdict_stamps, key=lambda s: parse_iso(s) or 0.0) if verdict_stamps else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# hero, source words, gate preview
+# ---------------------------------------------------------------------------
+
+
+def _get(mapping: Mapping | None, *path: str) -> Any:
+    value: Any = mapping
+    for key in path:
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(key)
+    return value
+
+
+class _HeroView:
+    """One accessor over either input shape of :func:`hero_state`."""
+
+    def __init__(self, data: Mapping) -> None:
+        self.flat = "seat_daemon_state" in data or "seat_sources" in data
+        self.d = data
+
+    def source(self, name: str) -> Mapping | None:
+        sources = self.d.get("seat_sources") if self.flat else self.d.get("sources")
+        value = sources.get(name) if isinstance(sources, Mapping) else None
+        return value if isinstance(value, Mapping) else None
+
+    def __call__(self, flat_key: str, *doc_path: str) -> Any:
+        return self.d.get(flat_key) if self.flat else _get(self.d, *doc_path)
+
+
+def hero_state(flat_or_doc: Mapping, *, now: float) -> tuple[str | None, list[str]]:
+    """Hero colour and its reasons, red > amber > green (spec §8 HERO; §9 staleness; §6 rule 3).
+
+    red: :func:`offline_state` (two ``disconnected`` beats, or plane ``connected == false`` with a stale
+    heartbeat), unit not active / container not running, tail dead > :data:`TAIL_DEAD_S` or exited;
+    amber: heartbeat older than :data:`HEARTBEAT_STALE_S`, ``standing.pausedUntil`` ahead (else the
+    heartbeat's own pause hint while it is fresh and ahead), ``auth.degraded``, ``restartRequired``;
+    else green.  ``None`` when neither the tail nor the unit source has ever answered (an empty
+    document -- contract deviation 2).  An *unknown* unit is never red: the tail owns liveness.
+    """
+    if not isinstance(flat_or_doc, Mapping):
+        return None, []
+    v = _HeroView(flat_or_doc)
+    tail = v.source("tail")
+    unit = v.source("unit")
+    if (tail is None or tail.get("ok") is None) and (unit is None or unit.get("ok") is None):
+        return None, []
+    red: list[str] = []
+    amber: list[str] = []
+
+    beats = v("seat_daemon_consecutive_disconnected_beats", "daemon", "consecutiveDisconnectedBeats")
+    hb_age = v("seat_daemon_heartbeat_age_s", "daemon", "heartbeatAgeS")
+    presence = v("seat_standing_presence_connected", "standing", "presenceConnected")
+    plane_hb_ms = v("seat_standing_heartbeat_age_ms", "standing", "heartbeatAgeMs")
+    if offline_state(consecutive_disconnected_beats=beats, presence_connected=presence, heartbeat_age_s=hb_age):
+        if isinstance(beats, int) and not isinstance(beats, bool) and beats >= DISCONNECTED_BEATS_RED:
+            red.append(f"disconnected {beats} beats")
+        else:
+            red.append("offline — plane lost us")
+
+    active = v("seat_unit_active_state", "unit", "activeState")
+    host_kind = v("seat_host_kind", "host", "kind")
+    if isinstance(active, str) and active not in ("active", "running", "activating", "reloading"):
+        red.append("container not running" if host_kind == "docker" else "unit inactive")
+
+    if tail is not None and tail.get("ok") is False:
+        alive_at = parse_iso(tail.get("threadAliveAt"))
+        reason = tail.get("reason")
+        if alive_at is not None and float(now) - alive_at > TAIL_DEAD_S:
+            red.append(f"tail dead {int(float(now) - alive_at)} s")
+        elif isinstance(reason, str) and reason.startswith("tail: exited"):
+            red.append("tail exited")
+
+    if isinstance(hb_age, (int, float)) and not isinstance(hb_age, bool) and hb_age > HEARTBEAT_STALE_S:
+        amber.append(f"heartbeat {int(hb_age)} s old")
+        if presence is True and isinstance(plane_hb_ms, (int, float)) and plane_hb_ms < PLANE_PRESENCE_WINDOW_MS:
+            amber.append("plane sees us · local tail stale")
+
+    paused_until = parse_iso(v("seat_standing_paused_until", "standing", "pausedUntil"))
+    if paused_until is not None:
+        if paused_until > float(now):
+            amber.append(f"paused until {as_of_hhmm(iso_z(paused_until))}")
+    else:
+        hint = v("seat_daemon_paused_hint", "daemon", "pausedHint")
+        if pausedhint_active(hint, now=now):
+            amber.append(f"paused until {hint['until']}")
+
+    if v("seat_auth_degraded", "auth", "degraded") is True:
+        amber.append("runtime auth degraded")
+    if v("seat_control_restart_required", "control", "restartRequired") is True:
+        amber.append("restart required")
+
+    if red:
+        return "red", red + amber
+    if amber:
+        return "amber", amber
+    return "green", []
+
+
+def source_word(source: Mapping | None, *, now: float) -> str:
+    """The availability word of one ``sources.<x>`` entry (spec §8 degraded wording).
+
+    ``"local only"`` for an absent source (``--offline`` removes the API entries); ``"live"`` for a
+    read within :data:`SOURCE_LIVE_S`; ``"as of HH:MM"`` for an older good read or an API source
+    holding last-good; ``"unavailable (reason)"`` once ``unavailable`` or before the first read.
+    """
+    if not isinstance(source, Mapping):
+        return "local only"
+    ok = source.get("ok")
+    as_of = source.get("asOfUtc")
+    reason = source.get("reason")
+    if ok is None:
+        return f"unavailable ({redact(reason)})" if isinstance(reason, str) and reason else "unavailable (not read yet)"
+    if ok is False and source.get("unavailable") is True:
+        return f"unavailable ({redact(reason) if isinstance(reason, str) and reason else 'no reason given'})"
+    epoch = parse_iso(as_of)
+    if epoch is None:
+        return "unavailable (no stamp)"
+    if ok is True and float(now) - epoch <= SOURCE_LIVE_S:
+        return "live"
+    return f"as of {as_of_hhmm(as_of)}"
+
+
+def gate_preview(gate: Mapping | None, *, broker_reachable: bool | None, drain: Mapping | None = None,
+                 in_flight: Mapping | None = None) -> tuple[str, str]:
+    """``(word, colour)`` for the GATE hero box from the plan-time preview (spec §8 GATE; §11 apply re-reads)."""
+    if broker_reachable is not True:
+        return "broker unreachable — read-only", "amber"
+    if isinstance(in_flight, Mapping) and in_flight.get("verb"):
+        plan_id = str(in_flight.get("planId") or "")[:4] or "?"
+        return f"{in_flight['verb']} in flight (plan {plan_id}) · verifying", "amber"
+    if isinstance(drain, Mapping) and drain.get("armedAtUtc"):
+        beats = drain.get("idleBeats")
+        required = gate.get("idleBeatsRequired") if isinstance(gate, Mapping) and gate.get("idleBeatsRequired") else 4
+        return f"drain armed {as_of_hhmm(drain['armedAtUtc'])} · {beats if beats is not None else '?'}/{required} idle beats", "amber"
+    if not isinstance(gate, Mapping):
+        return "gate unknown", "amber"
+    reason = gate.get("reason")
+    reason_text = redact(reason) if isinstance(reason, str) and reason else None
+    if gate.get("safe") is True:
+        if gate.get("planeMode") == "local-only":
+            return "plane unreachable · local-only gate", "amber"
+        return "safe to restart", "green"
+    if reason_text is None:
+        return "gate unknown", "amber"
+    if reason_text.startswith("gate unknown") or reason_text.startswith("task running") or reason_text.startswith("unit inactive"):
+        return reason_text, "red"
+    return reason_text, "amber"

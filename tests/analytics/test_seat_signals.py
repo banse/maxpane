@@ -278,3 +278,125 @@ def test_rollup_today_counts_only_the_day_and_never_sums_axes():
     # a day with rows but no verdict yet: counts are 0 (rows exist, none judged), never None
     unjudged = ss.rollup_today([_row("aaaaaaaa", "2026-09-26T03:23:44.909Z", outcome="unknown")], day_utc="2026-09-26")
     assert (unjudged["accepted"], unjudged["rejected"], unjudged["failed"], unjudged["pending"]) == (0, 0, 0, 0)
+
+
+# ---------------------------------------------------------------------------
+# Task 7.4 — hero precedence, source words, gate preview
+# ---------------------------------------------------------------------------
+
+
+def _flat(**over):
+    base = {
+        "seat_daemon_state": "alive", "seat_daemon_heartbeat_age_s": 4, "seat_daemon_consecutive_disconnected_beats": 0,
+        "seat_daemon_paused_hint": None, "seat_standing_paused_until": None, "seat_standing_presence_connected": True,
+        "seat_standing_heartbeat_age_ms": 4100, "seat_auth_degraded": False, "seat_control_restart_required": False,
+        "seat_unit_active_state": "active", "seat_host_kind": "systemd",
+        "seat_sources": {
+            "tail": {"ok": True, "asOfUtc": "2026-09-26T03:40:11Z", "reason": None, "threadAliveAt": "2026-09-26T03:40:11Z"},
+            "unit": {"ok": True, "asOfUtc": "2026-09-26T03:40:11Z", "reason": None},
+        },
+    }
+    base.update(over)
+    return base
+
+
+def test_hero_is_green_on_the_healthy_flat_dict_and_red_beats_amber():
+    # spec §8 HERO: precedence red > amber > green
+    assert ss.hero_state(_flat(), now=T0) == ("green", [])
+    state, reasons = ss.hero_state(_flat(seat_daemon_consecutive_disconnected_beats=2, seat_auth_degraded=True), now=T0)
+    assert state == "red" and reasons[0] == "disconnected 2 beats" and "runtime auth degraded" in reasons
+    assert ss.hero_state(_flat(seat_daemon_consecutive_disconnected_beats=1), now=T0) == ("green", [])
+    assert ss.hero_state(_flat(seat_unit_active_state="inactive"), now=T0)[0] == "red"
+    assert "unit inactive" in ss.hero_state(_flat(seat_unit_active_state="failed"), now=T0)[1]
+    assert ss.hero_state(_flat(seat_host_kind="docker", seat_unit_active_state="exited"), now=T0) == ("red", ["container not running"])
+    assert ss.hero_state(_flat(seat_unit_active_state=None), now=T0) == ("green", []), "an unknown unit is UNIT amber, never hero red (spec §9 docker equivalent)"
+
+
+def test_hero_red_on_a_dead_or_exited_tail():
+    # spec §9: TAIL_DEAD_S = 45 without aliveAt -> hero red; an exited follower is red while it backs off
+    dead = _flat(seat_sources={"tail": {"ok": False, "asOfUtc": "2026-09-26T03:39:20Z", "reason": "tail: exited rc=1 — retry in 8s",
+                                         "threadAliveAt": "2026-09-26T03:39:20Z"}, "unit": {"ok": True, "asOfUtc": "2026-09-26T03:40:11Z"}})
+    state, reasons = ss.hero_state(dead, now=T0)
+    assert state == "red" and reasons[0] == "tail dead 52 s"
+    exited = _flat(seat_sources={"tail": {"ok": False, "asOfUtc": "2026-09-26T03:40:11Z", "reason": "tail: exited rc=1 — retry in 2s",
+                                           "threadAliveAt": "2026-09-26T03:40:11Z"}, "unit": {"ok": True}})
+    assert ss.hero_state(exited, now=T0) == ("red", ["tail exited"])
+    never = _flat(seat_sources={"tail": {"ok": False, "asOfUtc": None, "reason": "tail thread not running", "threadAliveAt": None},
+                                 "unit": {"ok": True}})
+    assert ss.hero_state(never, now=T0)[0] == "green", "a tail that never started is not a dead tail (--once)"
+
+
+def test_hero_amber_reasons():
+    # spec §8: amber if heartbeatAgeS > 90, pausedUntil in the future, auth degraded, restartRequired
+    assert ss.hero_state(_flat(seat_daemon_heartbeat_age_s=91, seat_standing_presence_connected=None), now=T0) == ("amber", ["heartbeat 91 s old"])
+    assert ss.hero_state(_flat(seat_daemon_heartbeat_age_s=90), now=T0) == ("green", [])
+    # spec §9: stale heartbeat but the plane sees us within its 60 s window -> a tail problem, still amber, named
+    assert ss.hero_state(_flat(seat_daemon_heartbeat_age_s=120, seat_standing_presence_connected=True, seat_standing_heartbeat_age_ms=4100), now=T0) == (
+        "amber", ["heartbeat 120 s old", "plane sees us · local tail stale"])
+    assert ss.hero_state(_flat(seat_standing_paused_until="2026-09-26T03:53:00Z"), now=T0) == ("amber", [f"paused until {ss.as_of_hhmm('2026-09-26T03:53:00Z')}"])  # local HH:MM, like every as-of
+    assert ss.hero_state(_flat(seat_standing_paused_until="2026-09-26T03:30:00Z"), now=T0) == ("green", []), "a past pausedUntil is history"
+    assert ss.hero_state(_flat(seat_auth_degraded=True), now=T0) == ("amber", ["runtime auth degraded"])
+    assert ss.hero_state(_flat(seat_control_restart_required=True), now=T0) == ("amber", ["restart required"])
+    # spec §6 rule 3 second clause / §9 HEARTBEAT_DEAD_S: presence.connected false with a dead (>= 300 s) heartbeat is red offline;
+    # the same plane word with a merely stale heartbeat stays amber
+    assert ss.hero_state(_flat(seat_daemon_heartbeat_age_s=300, seat_standing_presence_connected=False), now=T0)[0] == "red"
+    assert ss.hero_state(_flat(seat_daemon_heartbeat_age_s=120, seat_standing_presence_connected=False), now=T0) == ("amber", ["heartbeat 120 s old"])
+
+
+def test_lingering_pause_suffix_does_not_amber_after_until():
+    # header Review Focus 3 / fill1 §5: `23:55:52 1 task running · paused until 23:53` -- the suffix alone never ambers once `until` passed
+    hint = {"until": "23:53", "failedRuns": 3, "reason": "unexpected status 401 Unauthorized", "seenUtc": "2026-09-25T23:55:52.000Z"}
+    flat = _flat(seat_daemon_paused_hint=hint, seat_standing_paused_until=None)
+    assert ss.hero_state(flat, now=PAUSE_SEEN + 8) == ("green", [])
+    active = _flat(seat_daemon_paused_hint=dict(hint, seenUtc="2026-09-25T23:41:22.577Z"), seat_standing_paused_until=None)
+    assert ss.hero_state(active, now=1790379700.0) == ("amber", ["paused until 23:53"])
+    # standing.pausedUntil is the truth when both exist
+    both = _flat(seat_daemon_paused_hint=hint, seat_standing_paused_until="2026-09-25T23:53:00Z")
+    assert ss.hero_state(both, now=PAUSE_SEEN + 8) == ("green", [])
+
+
+def test_hero_reads_the_v2_document_too_and_is_none_without_evidence():
+    # contract deviation 2: None when neither the tail nor the unit source has ever answered
+    import json
+    from pathlib import Path
+    doc = json.loads((REPO / "tests" / "fixtures" / "seat" / "status" / "status_v2_healthy.json").read_text(encoding="utf-8"))
+    assert ss.hero_state(doc, now=T0) == ("green", [])
+    dead = json.loads((REPO / "tests" / "fixtures" / "seat" / "status" / "status_v2_tail_dead.json").read_text(encoding="utf-8"))
+    assert ss.hero_state(dead, now=T0)[0] == "red"
+    assert ss.hero_state({}, now=T0) == (None, [])
+    assert ss.hero_state({"schemaVersion": 2, "sources": {"tail": {"ok": None}, "unit": {"ok": None}}}, now=T0) == (None, [])
+
+
+def test_source_word():
+    # spec §8 degraded wording inputs: live | as of HH:MM | unavailable (reason) | local only
+    live = {"ok": True, "asOfUtc": ss.iso_z(T0 - 4), "reason": None, "unavailable": False}
+    assert ss.source_word(live, now=T0) == "live"
+    old = {"ok": True, "asOfUtc": ss.iso_z(T0 - 302), "reason": None, "unavailable": False}
+    assert ss.source_word(old, now=T0) == f"as of {ss.as_of_hhmm(ss.iso_z(T0 - 302))}"
+    last_good = {"ok": False, "asOfUtc": ss.iso_z(T0 - 92), "reason": "timeout 20 s", "unavailable": False}
+    assert ss.source_word(last_good, now=T0) == f"as of {ss.as_of_hhmm(ss.iso_z(T0 - 92))}"
+    gone = {"ok": False, "asOfUtc": ss.iso_z(T0 - 700), "reason": "HTTP 500 ×3", "unavailable": True}
+    assert ss.source_word(gone, now=T0) == "unavailable (HTTP 500 ×3)"
+    assert ss.source_word({"ok": False, "asOfUtc": None, "reason": None, "unavailable": True}, now=T0) == "unavailable (no reason given)"
+    assert ss.source_word({"ok": None, "asOfUtc": None, "reason": None, "unavailable": False}, now=T0) == "unavailable (not read yet)"
+    assert ss.source_word({"ok": None, "asOfUtc": None, "reason": "document refused (with_secret)", "unavailable": True}, now=T0) == "unavailable (document refused (with_secret))"
+    assert ss.source_word(None, now=T0) == "local only"
+
+
+def test_gate_preview_words_and_colours():
+    # spec §8 GATE box
+    gate = {"idleBeats": 9, "idleBeatsRequired": 4, "planeRunning": 0, "planeAsOfUtc": "2026-09-26T03:40:09Z", "planeMode": "plane+local",
+            "lastLifecycleLine": "2026-09-26T03:24:17.136Z submitted implement for 0c1f9727", "lifecycleOpen": False,
+            "outboxFiles": 0, "unitActive": True, "safe": True, "reason": None}
+    assert ss.gate_preview(gate, broker_reachable=True) == ("safe to restart", "green")
+    assert ss.gate_preview(dict(gate, safe=False, reason="task running 0c1f9727 · 0:42"), broker_reachable=True) == ("task running 0c1f9727 · 0:42", "red")
+    assert ss.gate_preview(dict(gate, safe=False, reason="idle 2/4 beats"), broker_reachable=True) == ("idle 2/4 beats", "amber")
+    assert ss.gate_preview(dict(gate, planeMode="local-only"), broker_reachable=True) == ("plane unreachable · local-only gate", "amber")
+    assert ss.gate_preview(dict(gate, safe=False, outboxFiles=None, reason="gate unknown: outbox unreadable"), broker_reachable=True) == ("gate unknown: outbox unreadable", "red")
+    assert ss.gate_preview(gate, broker_reachable=False) == ("broker unreachable — read-only", "amber")
+    assert ss.gate_preview(None, broker_reachable=True) == ("gate unknown", "amber")
+    assert ss.gate_preview(gate, broker_reachable=None) == ("broker unreachable — read-only", "amber")
+    drain = {"armedAtUtc": "2026-09-26T03:02:00Z", "idleBeats": 2, "rearmed": 1, "expiresAtUtc": "2026-09-26T07:02:00Z"}
+    assert ss.gate_preview(gate, broker_reachable=True, drain=drain) == (f"drain armed {ss.as_of_hhmm('2026-09-26T03:02:00Z')} · 2/4 idle beats", "amber")
+    flight = {"verb": "restart", "planId": "7f3a9c1e2b4d6081", "sinceUtc": "2026-09-26T03:40:30Z"}
+    assert ss.gate_preview(gate, broker_reachable=True, in_flight=flight) == ("restart in flight (plan 7f3a) · verifying", "amber")
