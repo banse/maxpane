@@ -30,7 +30,8 @@ import json
 import re
 from pathlib import Path
 
-from maxpane_dashboard.analytics.seat_redact import HEX64_RE, JWT_RE, SECRET_KEY_RE
+from maxpane_dashboard.analytics.seat_redact import HEX64_RE, JWT_RE, SECRET_KEY_RE, G2_RULES, strip_controls
+from imd_dashd.probe_hygiene import public_ip_matches
 
 import pytest
 
@@ -180,6 +181,12 @@ def _scan_content(root: Path, manifest: dict) -> list[str]:
             for match in SK_RE.finditer(value):
                 if "sk" not in allow or not MASKED_SK_RE.fullmatch(match.group(0)):
                     problem("an sk- key", path)
+            if public_ip_matches(value):
+                problem("a global IP", path)
+            if "@" in value and re.search(r"(?<![A-Za-z0-9.!#$%&'*+/=?^_`{|}~-])[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+", value):
+                problem("an email address", path)
+            if any(pattern.search(strip_controls(value)) for pattern, _ in G2_RULES):
+                problem("a G2 credential", path)
             if JWT_RE.search(value):
                 problem("a JWT", path)
             if plain and PLAIN_SECRET_NAME_RE.search(value):
@@ -197,6 +204,16 @@ def _scan_content(root: Path, manifest: dict) -> list[str]:
                     scan_string(key, child_path + " (key)")
                     walk(child, child_path, key)
             elif isinstance(value, list):
+                if field == "MESSAGE":
+                    try:
+                        if not all(type(byte) is str and re.fullmatch(r"[0-9]+", byte) for byte in value):
+                            raise ValueError("not integer bytes")
+                        decoded = bytes(int(byte) for byte in value).decode("utf-8")
+                    except (ValueError, UnicodeDecodeError):
+                        problem("an invalid MESSAGE byte array", path)
+                    else:
+                        scan_string(decoded, path, field=field)
+                    return
                 for index, child in enumerate(value):
                     walk(child, f"{path}[{index}]")
             elif isinstance(value, str):

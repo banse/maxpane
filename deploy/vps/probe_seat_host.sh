@@ -21,6 +21,7 @@ MANIFEST=/opt/imd-dash/MANIFEST.sha256
 CGROUP=/sys/fs/cgroup/system.slice/imd-worker.service
 STALE_CURSOR='s=00000000000000000000000000000000;i=1;b=00000000000000000000000000000000;m=1;t=1;x=1'
 LIST=0
+SCRUB=0
 SKIP_DOCTOR=0
 
 TITLES=(
@@ -48,8 +49,9 @@ TITLES=(
 
 usage() {
   cat <<'USAGE'
-usage: probe_seat_host.sh [--list] [--skip-doctor] [--help]
+usage: probe_seat_host.sh [--list] [--scrub] [--skip-doctor] [--help]
   --list         print the numbered section titles and exit (touches nothing; used by the guard test and the docs)
+  --scrub        redact stdin to stdout without any host checks
   --skip-doctor  do not apply `doctor` (it spends one runtime turn and leaves a work/doctor-* transcript)
 USAGE
 }
@@ -57,6 +59,7 @@ USAGE
 while [ $# -gt 0 ]; do
   case "$1" in
     --list) LIST=1 ;;
+    --scrub) SCRUB=1 ;;
     --skip-doctor) SKIP_DOCTOR=1 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; printf 'probe_seat_host.sh: unknown argument: %s\n' "$1" >&2; exit 1 ;;
@@ -70,7 +73,6 @@ if [ "$LIST" = 1 ]; then
   exit 0
 fi
 
-[ "$(id -u)" = 0 ] || { printf 'probe_seat_host.sh: run as root (it switches to imd-dash and imd-worker with runuser)\n' >&2; exit 1; }
 
 # ---- helpers -------------------------------------------------------------------------------------------
 SECTION_N=0
@@ -83,11 +85,16 @@ scrub() {
 import sys
 sys.path.insert(0, "/opt/imd-dash/broker")
 from imd_dashd.redact import redact
+from imd_dashd.probe_hygiene import redact_public_ips
 for line in sys.stdin:
-    sys.stdout.write(redact(line).replace(chr(36), ""))
+    sys.stdout.write(redact_public_ips(redact(line)).replace(chr(36), ""))
 # END PROBE_REDACTOR
 ' | sed -E 's/[0-9a-fA-F]{32,}/<hex>/g'
 }
+if [ "$SCRUB" = 1 ]; then scrub; exit 0; fi
+
+[ "$(id -u)" = 0 ] || { printf 'probe_seat_host.sh: run as root (it switches to imd-dash and imd-worker with runuser)\n' >&2; exit 1; }
+
 as_dash()    { runuser -u "$DASH_USER" -- env HOME="$DASH_HOME" PATH=/usr/local/bin:/usr/bin:/bin "$@"; }
 as_worker()  { runuser -u "$WORKER_USER" -- env HOME=/home/imd-worker PATH=/usr/local/bin:/usr/bin:/bin "$@"; }
 json_get()   { /usr/bin/python3 -c 'import json,sys
@@ -149,22 +156,47 @@ p03() {
   printf 'lines: %s\n' "$n" | code_block
   if [ "${n:-0}" -gt 0 ] 2>/dev/null; then result "PASS -- $DASH_USER reads the unit journal (systemd-journal group)"; else result "FAIL -- 0 lines: is $DASH_USER in group systemd-journal?"; fi
 }
+journal_heads() {
+  /usr/bin/python3 -c '
+# BEGIN CURSOR_PROBE
+import json, sys
+sys.path.insert(0, "/opt/imd-dash/broker")
+from imd_dashd.redact import redact
+
+def decode_message(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list) and all(type(byte) is int and 0 <= byte < 256 for byte in value):
+        try:
+            return bytes(value).decode("utf-8")
+        except UnicodeDecodeError:
+            pass
+    return None
+
+for line in sys.stdin:
+    try:
+        record = json.loads(line)
+    except ValueError:
+        print("<non-JSON line omitted>")
+        continue
+    if not isinstance(record, dict):
+        print("<non-object JSON omitted>")
+        continue
+    decoded = decode_message(record.get("MESSAGE"))
+    head = redact(decoded)[:80] if decoded is not None else "<unreadable MESSAGE omitted>"
+    print(record.get("__REALTIME_TIMESTAMP"), head)
+# END CURSOR_PROBE
+'
+}
+
 p04() {
   local rc=0 out
   out="$(as_dash journalctl -u "$WORKER_UNIT" -o json -n 3 --after-cursor="$STALE_CURSOR" 2>&1)" || rc=$?
   printf 'exit status: %d\n' "$rc"
   printf 'first entries returned (__REALTIME_TIMESTAMP, MESSAGE head):\n'
-  printf '%s\n' "$out" | /usr/bin/python3 -c 'import json,sys
-for line in sys.stdin:
-    line=line.strip()
-    if not line.startswith("{"):
-        print(line[:200]); continue
-    d=json.loads(line); print(d.get("__REALTIME_TIMESTAMP"), str(d.get("MESSAGE",""))[:80])' 2>&1 | scrub | code_block
+  printf '%s\n' "$out" | journal_heads 2>&1 | scrub | code_block
   printf 'oldest entry in the unit journal, for comparison:\n'
-  as_dash journalctl -u "$WORKER_UNIT" -o json 2>/dev/null | head -n 1 | /usr/bin/python3 -c 'import json,sys
-line=sys.stdin.read().strip()
-d=json.loads(line) if line else {}
-print(d.get("__REALTIME_TIMESTAMP"), str(d.get("MESSAGE",""))[:80])' 2>&1 | scrub | code_block
+  as_dash journalctl -u "$WORKER_UNIT" -o json 2>/dev/null | head -n 1 | journal_heads 2>&1 | scrub | code_block
   local since_arg rc2=0 out2
   since_arg="$(date -u -d '-10 min' '+%Y-%m-%d %H:%M:%S') UTC"   # the form seat_tail.journal_since_arg() emits
   out2="$(as_dash journalctl -u "$WORKER_UNIT" -o json -n 1 --since "$since_arg" 2>&1)" || rc2=$?
@@ -180,6 +212,7 @@ import sys
 sys.path.insert(0, "/opt/imd-dash/broker")
 from imd_dashd.imd_dashd import lifecycle_journal_argv, lifecycle_read_outcome
 from imd_dashd.gate import newest_lifecycle, HEARTBEAT_RE
+from imd_dashd.redact import redact
 
 def decode_message(value):
     if isinstance(value, str):
@@ -213,7 +246,7 @@ def read(argv, label, *, show_output=True):
                     display = {key: record[key] for key in ("MESSAGE", "__REALTIME_TIMESTAMP") if key in record}
                     if "MESSAGE" in display:
                         decoded = decode_message(display["MESSAGE"])
-                        display["MESSAGE"] = decoded if decoded is not None else "<unreadable MESSAGE omitted>"
+                        display["MESSAGE"] = redact(decoded) if decoded is not None else "<unreadable MESSAGE omitted>"
                     safe_lines.append(json.dumps(display))
         print(label + " stdout:", "\n".join(safe_lines))
         print(label + " stderr:", done.stderr)
@@ -292,7 +325,7 @@ print("sources ok:", {k: (v or {}).get("ok") for k, v in (doc.get("sources") or 
 print("dollar signs in the document:", raw.count(b"\x24"))
 print("hex64 values anywhere:", len(re.findall(rb"\b[0-9a-f]{64}\b", raw)), "(must be 0: keys are truncated at fold time)")
 PY
-  printf 'stderr head:\n'; head -c 600 "$out.err" | scrub | code_block
+  printf 'stderr head:\n'; scrub < "$out.err" | head -c 600 | code_block
   rm -f "$out" "$out.err"
   if [ "$rc" = 0 ]; then result "PASS -- the lean entrypoint imports and runs as $DASH_USER through /usr/local/bin/pepepane"; else result "FAIL -- exit $rc; see stderr above"; fi
 }
@@ -415,8 +448,8 @@ owner, by hand, at a natural idle gap (spec §14; §11 idle gate G):
   a) ssh -t $DASH_USER@<host> pepepane      -> press c (CONTROL), then r (restart) or d (drain-restart); type the plan id's first 4 chars
   b) watch GATE / LIVE: 'verified' (shutting down -> runtimes: within 30 s) and 'connected' (admitted) are reported separately
   c) record here:
-       tail -n 6 /var/log/imd-dash/audit.jsonl                        # plan, apply (preconditions), verify lines with cursors
-       journalctl -u $WORKER_UNIT --since '-5 min' -o cat | tail -n 12  # shutting down / runtimes: / admitted
+       tail -n 6 /var/log/imd-dash/audit.jsonl | bash $HERE/probe_seat_host.sh --scrub  # plan, apply (preconditions), verify lines with cursors
+       journalctl -u $WORKER_UNIT --since '-5 min' -o cat | tail -n 12 | bash $HERE/probe_seat_host.sh --scrub  # shutting down / runtimes: / admitted
        systemctl show user-$(id -u "$DASH_USER").slice -p MemoryPeak    # the slice's peak after the session
 TEXT
   result "pending -- paste the three outputs above into docs/seat_install_probe.md under this heading"

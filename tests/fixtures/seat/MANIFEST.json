@@ -882,22 +882,22 @@
     "cli/systemctl_cat.txt": {
       "origin": "STAND-IN reconstruction of /etc/systemd/system/imd-worker.service from vps §1 (every directive named there)",
       "captured_at": "2026-09-26T09:30:00Z",
-      "sha256": "032d25954e294670f7c2bbe3bb0389767f2b35a095c8ac4139eb2f472df4cc28",
-      "bytes": 1305,
+      "sha256": "008f80306d94802b172644eb4b38ef90bd206d987971b7ee63717855df008be1",
+      "bytes": 1299,
       "redactions": [],
       "synthetic": true,
       "daemon_version": null,
-      "notes": "the operator IPs 82.165.187.96 89.167.27.194 are the measured ones (safety §1); its IPAddressDeny= lines are compared by test_cli_stand_ins_agree_with_the_broker_and_the_unit_file"
+      "notes": "the original operator IPs are replaced by documentation addresses 192.0.2.10 and 192.0.2.11; its IPAddressDeny= lines are compared by test_cli_stand_ins_agree_with_the_broker_and_the_unit_file Public host IPs replaced with RFC5737 documentation addresses for publication (owner fix4)."
     },
     "cli/systemctl_show_ipaddressdeny.txt": {
       "origin": "STAND-IN: `systemctl show imd-worker.service -p IPAddressDeny` in systemd's normalised form (vps §1)",
       "captured_at": "2026-09-26T09:30:00Z",
-      "sha256": "2993ca11e55d6fca2dc358240f9b904c83a9ac48b7668c87819e26137a702d70",
-      "bytes": 136,
+      "sha256": "4b1db3605f499b19564743a3d111d030cf15918befe18a639b56f940ca1df39a",
+      "bytes": 130,
       "redactions": [],
       "synthetic": true,
       "daemon_version": null,
-      "notes": "test_cli_stand_ins_agree_with_the_broker_and_the_unit_file: the value read_ip_address_deny copies equals the unit file's two IPAddressDeny= lines with bare hosts as /32"
+      "notes": "test_cli_stand_ins_agree_with_the_broker_and_the_unit_file: the value read_ip_address_deny copies equals the unit file's two IPAddressDeny= lines with bare hosts as /32 Public host IPs replaced with RFC5737 documentation addresses for publication (owner fix4)."
     },
     "cli/docker_inspect.json": {
       "origin": "STAND-IN: `docker inspect imd-worker` reduced to the fields the reader uses, values from fill1 §3 (StopTimeout null, Init null, RestartCount 0, StartedAt 2026-09-25T11:45:54Z)",

@@ -875,6 +875,25 @@ def test_changelog_and_decisions_have_the_dated_entries():
         assert decisions.index(phrase) > anchor, f"decision outside the pepepane block: {phrase}"
 
 
+def _p05_journal_result(argv, messages):
+    """systemd v259 filters full fields, then elides large MESSAGEs without --all."""
+    def decoded(message):
+        return bytes(message).decode("utf-8") if isinstance(message, list) else message
+    selected = messages
+    if "--grep" in argv:
+        pattern = re.compile(argv[argv.index("--grep") + 1])
+        selected = [message for message in selected if pattern.search(decoded(message))]
+    if "--lines" in argv:
+        selected = selected[-int(argv[argv.index("--lines") + 1]):]
+    records = []
+    for message in selected:
+        visible = message if "--all" in argv or len(decoded(message).encode("utf-8")) < 4088 else None
+        records.append(json.dumps({"MESSAGE": visible, "_HOSTNAME": "private-host",
+                                   "_CMDLINE": "private-argv", "__CURSOR": "private-cursor"}, ensure_ascii=False))
+    rc = 1 if "--grep" in argv and not selected else 0
+    return subprocess.CompletedProcess(argv, rc, "\n".join(records), "")
+
+
 @pytest.mark.parametrize("latest", ["heartbeat", "terminal", "older-heartbeat", "long", "byte-array", "unicode"])
 def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(monkeypatch, capsys, latest):
     from imd_dashd.imd_dashd import lifecycle_journal_argv
@@ -892,17 +911,13 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
     baseline_rows = [older, terminal, heartbeat]
     if latest == "terminal": baseline_rows = [older, terminal]
     if latest == "older-heartbeat": baseline_rows[-1] = heartbeat.replace("10:02", "10:00")
-    records = lambda messages: "\n".join(json.dumps({"MESSAGE": message, "_HOSTNAME": "private-host", "_CMDLINE": "private-argv", "__CURSOR": "private-cursor"}, ensure_ascii=False) for message in messages)
     calls = []
     def fake(argv, **kwargs):
         calls.append(argv)
         assert kwargs["timeout"] == 12
-        if "--grep" not in argv:
-            return subprocess.CompletedProcess(argv, 0, records(baseline_rows), "")
-        if argv[argv.index("--grep") + 1] == "(?!)":
-            return subprocess.CompletedProcess(argv, 1, "", "")
-        assert argv == lifecycle_journal_argv()
-        return subprocess.CompletedProcess(argv, 0, records([terminal]), "")
+        if "--grep" in argv and argv[argv.index("--grep") + 1] != "(?!)":
+            assert argv == lifecycle_journal_argv()
+        return _p05_journal_result(argv, baseline_rows)
     monkeypatch.setattr(subprocess, "run", fake)
     exec(compile(body, "<synthetic lifecycle probe>", "exec"), {})
     output = capsys.readouterr().out
@@ -962,3 +977,14 @@ def test_lifecycle_probe_scrubs_decoded_message_arrays(monkeypatch, capsys, enco
         assert printed == "<unreadable MESSAGE omitted>"
     else:
         assert "accepted implement deadbeef" in printed
+
+
+@pytest.mark.parametrize("size", [4087, 4088, 4100])
+def test_p05_journal_fake_filters_full_field_before_large_field_omission(size):
+    line = 'task failed: ' + 'z' * (size - len('task failed: '))
+    argv = ['journalctl', '--grep', '^task failed:', '--lines', '1']
+    without = _p05_journal_result(argv, [line, 'heartbeat'])
+    assert without.returncode == 0
+    assert json.loads(without.stdout)['MESSAGE'] == (line if size < 4088 else None)
+    with_all = _p05_journal_result(argv + ['--all'], [line, 'heartbeat'])
+    assert json.loads(with_all.stdout)['MESSAGE'] == line

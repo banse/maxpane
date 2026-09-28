@@ -34,7 +34,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 # keep tasks off cloud metadata, private ranges, and the operator's other hosts
 IPAddressDeny=169.254.0.0/16 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10
-IPAddressDeny=82.165.187.96 89.167.27.194
+IPAddressDeny=192.0.2.10 192.0.2.11
 StandardOutput=journal
 StandardError=journal
 

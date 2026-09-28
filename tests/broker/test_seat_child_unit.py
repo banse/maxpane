@@ -9,7 +9,7 @@ from imd_dashd.child_unit import (
 )
 from tests.broker._recorder import RecordingRunner, timeout_for
 
-IP_DENY = "169.254.0.0/16 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10 82.165.187.96 89.167.27.194"
+IP_DENY = "169.254.0.0/16 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10 192.0.2.10 192.0.2.11"
 
 
 def test_transient_argv_env_is_exactly_the_four_keys():
