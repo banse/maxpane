@@ -740,10 +740,12 @@ class LocalDockerBroker(_CallMixin):
             self._log(peer_uid=os.getuid(), verb="apply", phase="refused", plan_id=audit_id, outcome="busy")
             return _verbs_mod.err("busy", dict(self._in_flight or {}))
         release = True
+        plan = None
         try:
             now = self._now()
             try:
                 plan = self._plans.consume(plan_id, now)
+                self._watches[plan_id] = _broker_mod.VerifyWatch(plan_id=plan_id, verb=plan.verb, kind="none", cursor_before=None, started=now)
             except _broker_mod.PlanError as exc:
                 self._log(peer_uid=os.getuid(), verb="apply", phase="refused", plan_id=audit_id, outcome=exc.code)
                 return _verbs_mod.err(exc.code, exc.detail)
@@ -802,7 +804,20 @@ class LocalDockerBroker(_CallMixin):
             if plan.verb == "kill-orphans":
                 return self._apply_kill(plan)
             return _verbs_mod.err("internal", {"reason": "unhandled verb"})
+        except Exception as exc:
+            code = exc.code if isinstance(exc, BrokerError) else "internal"
+            detail = exc.detail if isinstance(exc, BrokerError) else {"reason": type(exc).__name__}
+            self._log(peer_uid=os.getuid(), verb=plan.verb if plan is not None else "apply", phase="refused", plan_id=audit_id,
+                      outcome=f"internal: {type(exc).__name__}" if code == "internal" else code)
+            watch = self._watches.get(plan_id)
+            if watch is not None:
+                watch.kind, watch.done, watch.verified = "none", True, False
+                watch.reason = code + ": " + json.dumps(detail, sort_keys=True)
+            return _verbs_mod.err(code, detail)
         finally:
+            watch = self._watches.get(plan_id)
+            if release and watch is not None and watch.kind == "none" and watch.verified is None:
+                watch.done, watch.verified, watch.reason = True, False, "apply refused; plan spent"
             if release:
                 self._in_flight = None
                 self._lock.release()
@@ -916,36 +931,59 @@ class LocalDockerBroker(_CallMixin):
         now = self._now()
         killed: list[dict] = []
         skipped: list[dict] = []
-        for pgid_text, mode in plan.preconditions["kill_mode_by_pgid"].items():
-            members = [r for r in plan.preconditions["candidates"] if str(r["pgid"]) == pgid_text]
-            pgid = int(pgid_text)
-            rows = self._process_snapshot()
-            if (mode == "group" and self._kill_identity_safe(rows, "pgid", pgid, plan.kill_snapshot)
-                    and all(self._kill_identity_safe(rows, "pid", m["pid"], plan.kill_snapshot) for m in members)):
-                done = self._exec(["kill", "-TERM", "--", f"-{pgid}"], kind=None, family="kill-orphans")
-                if done.returncode != 0:
-                    raise BrokerError("unreadable", {"what": "kill failed"})
-                self._pending_kills.append((now + _broker_mod.KILL_GRACE_S, "pgid", pgid))
-                self._kill_snapshots[("pgid", pgid)] = dict(plan.kill_snapshot)
-                killed.append({"mode": "group", "pgid": pgid, "pids": [m["pid"] for m in members]})
-            else:
-                for row in members:
-                    rows = self._process_snapshot()
-                    if not self._kill_identity_safe(rows, "pid", row["pid"], plan.kill_snapshot):
-                        skipped.append({"pid": row["pid"], "reason": "changed since plan"})
-                        continue
-                    done = self._exec(["kill", "-TERM", str(row["pid"])], kind=None, family="kill-orphans")
+        try:
+            for pgid_text, mode in plan.preconditions["kill_mode_by_pgid"].items():
+                members = [r for r in plan.preconditions["candidates"] if str(r["pgid"]) == pgid_text]
+                pgid = int(pgid_text)
+                rows = self._process_snapshot()
+                if (mode == "group" and self._kill_identity_safe(rows, "pgid", pgid, plan.kill_snapshot)
+                        and all(self._kill_identity_safe(rows, "pid", m["pid"], plan.kill_snapshot) for m in members)):
+                    done = self._exec(["kill", "-TERM", "--", f"-{pgid}"], kind=None, family="kill-orphans")
                     if done.returncode != 0:
                         raise BrokerError("unreadable", {"what": "kill failed"})
-                    self._pending_kills.append((now + _broker_mod.KILL_GRACE_S, "pid", row["pid"]))
-                    self._kill_snapshots[("pid", row["pid"])] = dict(plan.kill_snapshot)
-                    killed.append({"mode": "individual", "pid": row["pid"]})
+                    self._pending_kills.append((now + _broker_mod.KILL_GRACE_S, "pgid", pgid))
+                    self._kill_snapshots[("pgid", pgid)] = dict(plan.kill_snapshot)
+                    killed.append({"mode": "group", "pgid": pgid, "pids": [m["pid"] for m in members]})
+                else:
+                    for row in members:
+                        rows = self._process_snapshot()
+                        if not self._kill_identity_safe(rows, "pid", row["pid"], plan.kill_snapshot):
+                            skipped.append({"pid": row["pid"], "reason": "changed since plan"})
+                            continue
+                        done = self._exec(["kill", "-TERM", str(row["pid"])], kind=None, family="kill-orphans")
+                        if done.returncode != 0:
+                            raise BrokerError("unreadable", {"what": "kill failed"})
+                        self._pending_kills.append((now + _broker_mod.KILL_GRACE_S, "pid", row["pid"]))
+                        self._kill_snapshots[("pid", row["pid"])] = dict(plan.kill_snapshot)
+                        killed.append({"mode": "individual", "pid": row["pid"]})
+        except Exception as exc:
+            code = exc.code if isinstance(exc, BrokerError) else "internal"
+            detail = exc.detail if isinstance(exc, BrokerError) else {"reason": type(exc).__name__}
+            return self._finish_kill(plan, now, killed, skipped, _verbs_mod.err(code, detail))
+        return self._finish_kill(plan, now, killed, skipped)
+
+    def _finish_kill(self, plan, now: float, killed: list[dict], skipped: list[dict], refusal: dict | None = None) -> dict:
+        """Keep exactly the completed signals auditable and verifiable after a later refusal."""
+        if refusal is not None:
+            accounted = {pid for item in killed for pid in (item["pids"] if item["mode"] == "group" else [item["pid"]])}
+            accounted.update(item["pid"] for item in skipped)
+            skipped.extend({"pid": row["pid"], "reason": refusal["error"]}
+                           for row in plan.preconditions["candidates"] if row["pid"] not in accounted)
+        if refusal is not None and not killed:
+            self._log(peer_uid=os.getuid(), verb=plan.verb, phase="refused", plan_id=plan.plan_id,
+                      outcome=refusal["error"], args={"killed": [], "skipped": skipped})
+            return _verbs_mod.err(refusal["error"], {**refusal.get("detail", {}), "plan_spent": True,
+                                                  "partial": False, "killed": [], "skipped": skipped})
         # the plan's verify ("pids gone"): tick() decides it over the ps listing once every SIGKILL follow-up has run
         targets = [("pgid", k["pgid"]) if k["mode"] == "group" else ("pid", k["pid"]) for k in killed]
         self._watches[plan.plan_id] = _broker_mod.VerifyWatch(plan_id=plan.plan_id, verb="kill-orphans", kind="kill", cursor_before=None,
                                                               started=now, targets=targets, verified=None if targets else True)
         seq = self._log(peer_uid=os.getuid(), verb="kill-orphans", phase="apply", plan_id=plan.plan_id,
-                        preconditions={"pids": [r["pid"] for r in plan.preconditions["candidates"]]}, outcome="applied" if killed else "nothing to kill")
+                        preconditions={"pids": [r["pid"] for r in plan.preconditions["candidates"]]}, outcome="partial" if refusal is not None else ("applied" if killed else "nothing to kill"),
+                        args={"killed": killed})
+        if refusal is not None:
+            return _verbs_mod.err(refusal["error"], {**refusal.get("detail", {}), "plan_spent": True, "partial": True,
+                                                  "killed": killed, "skipped": skipped, "audit_seq": seq})
         return _verbs_mod.ok(result={"outcome": "applied", "exit_code": 0, "cursor_before": None, "audit_seq": seq,
                                      "preconditions": plan.preconditions, "killed": killed, "skipped": skipped})
 

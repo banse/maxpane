@@ -205,3 +205,80 @@ def test_root_literal_unicode_separator_fixture_is_one_record(tmp_path):
     lines, _, succeeded = broker._journal_read(lifecycle_only=True)
     assert succeeded and len(lines) == 1 and "fix\u2028the parser" in lines[0][1]
     assert root.ACCEPTED_RE.match(lines[0][1])
+
+
+def test_second_drain_apply_cannot_change_original_online_gate(tmp_path):
+    broker, runner, journal, clock, audit = make_broker(tmp_path)
+    online = call(broker, "drain-restart")["plan"]
+    offline = call(broker, "drain-restart", {"offline": True})["plan"]
+    assert apply(broker, online)["ok"]
+    refused = apply(broker, offline)
+    assert refused["error"] == "drain_already_armed"
+    assert "cancel-drain" in refused["detail"]["hint"]
+    assert broker._drain_offline is False and broker._drain.armed.plan_id == online["plan_id"]
+    assert audit_lines(audit)[-1]["plan_id"] == offline["plan_id"]
+    assert call(broker, "verify", {"plan_id": offline["plan_id"]})["data"]["verified"] is False
+    broker._standing = lambda *args: None
+    for i in (1, 2, 3, 4): journal.add(hb(clock()+i))
+    clock.advance(5)
+    broker.tick()
+    assert not runner.argvs("systemctl", "restart") and broker._drain.armed.plan_id == online["plan_id"]
+
+
+@pytest.mark.parametrize("mac", [False, True])
+def test_consumed_unexpected_exception_completes_watch_and_audits_id(tmp_path, mac):
+    if mac:
+        broker, runner, _, _ = _local(tmp_path)
+        plan = broker.plan("restart")
+        plan_id = plan.plan_id
+        broker._gate = lambda: (_ for _ in ()).throw(RuntimeError("synthetic"))
+        result = broker._apply({"plan_id": plan_id, "confirm": plan_id[:4], "local_only_ack": "local-only"})
+        watch = broker.verify(plan_id)
+        assert watch.verified is False and "RuntimeError" in watch.reason
+        records = broker.read("audit-tail", {"n": 50})["lines"]
+    else:
+        broker, _, _, _, audit = make_broker(tmp_path)
+        plan = call(broker, "restart")["plan"]
+        plan_id = plan["plan_id"]
+        broker._dispatch_apply = lambda *args: (_ for _ in ()).throw(RuntimeError("synthetic"))
+        result = apply(broker, plan)
+        watch = call(broker, "verify", {"plan_id": plan_id})["data"]
+        assert watch["verified"] is False and "RuntimeError" in watch["reason"]
+        records = audit_lines(audit)
+    assert result["error"] == "internal"
+    assert any(r["plan_id"] == plan_id and r["phase"] == "refused" and r["outcome"] == "internal: RuntimeError" for r in records)
+
+
+@pytest.mark.parametrize("failure", ["snapshot", "signal"])
+def test_mac_partial_kill_retains_completed_targets_and_audit(tmp_path, failure):
+    from maxpane_dashboard.data.seat_broker_client import BrokerError
+    from tests.data.test_seat_broker_client import _container_procs
+    broker, runner, _, _ = _local(tmp_path)
+    rows = _container_procs()
+    rows += [dict(rows[1], pid=512, pgid=512, start_ticks=51200)]
+    broker._process_snapshot = lambda: rows
+    original_read = broker._read
+    broker._read = lambda verb, args: {"candidates": rows[1:]} if verb == "orphans" else original_read(verb, args)
+    plan = broker.plan("kill-orphans", {"pids": [412, 418, 512]})
+    original_exec = broker._exec
+    kills = []
+    def execute(argv, **kw):
+        if argv[0] == "kill":
+            kills.append(argv)
+            if failure == "signal" and len(kills) == 2:
+                raise BrokerError("timeout", {"reason": "synthetic signal timeout"})
+        return original_exec(argv, **kw)
+    broker._exec = execute
+    def snapshot():
+        if failure == "snapshot" and kills:
+            raise BrokerError("unreadable", {"what": "process snapshot"})
+        return rows
+    broker._process_snapshot = snapshot
+    result = broker._apply({"plan_id": plan.plan_id, "confirm": plan.plan_id[:4]})
+    assert not result["ok"] and result["detail"]["partial"] is True
+    assert result["detail"]["killed"] == [{"mode": "group", "pgid": 412, "pids": [412, 418]}]
+    assert result["detail"]["skipped"][0]["pid"] == 512
+    watch = broker._watches[plan.plan_id]
+    assert watch.targets == [("pgid", 412)] and watch.verified is None
+    assert broker._pending_kills[0][1:] == ("pgid", 412)
+    assert any(r["plan_id"] == plan.plan_id and r["outcome"] == "partial" for r in broker.read("audit-tail", {"n": 50})["lines"])

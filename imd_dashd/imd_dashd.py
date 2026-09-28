@@ -1130,7 +1130,9 @@ class Broker:
                 return verbs.err(exc.code, exc.detail)
             try:
                 result = self._dispatch_apply(plan, args, peer_uid, now)
-            except (OSError, ValueError) as exc:
+            except Exception as exc:
+                self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan_id,
+                          outcome=f"internal: {type(exc).__name__}")
                 result = verbs.err("internal", {"reason": type(exc).__name__})
             uncertain = (result.get("error") == "timeout"
                          and result.get("detail", {}).get("outcome") == "timeout"
@@ -1187,6 +1189,9 @@ class Broker:
             self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan.plan_id, outcome="force_node8_mismatch")
             return verbs.err("force_node8_mismatch", {"reason": "type the running node8 at plan AND apply"})
         if plan.verb == "drain-restart":
+            if self._drain.armed is not None:
+                self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan.plan_id, outcome="drain_already_armed")
+                return verbs.err("drain_already_armed", {"drain": self._drain.armed.to_dict(), "hint": "cancel-drain before arming another drain"})
             self._drain_offline = offline
             event = self._drain.arm(plan.plan_id)
             # arming is verified at once (a kind="none" watch, so verify never answers unknown_plan to WP8's CONTROL);
