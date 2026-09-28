@@ -926,3 +926,39 @@ def test_lifecycle_probe_does_not_print_non_json_stdout(monkeypatch, capsys):
     exec(compile(body, "<synthetic lifecycle probe>", "exec"), {})
     out = capsys.readouterr().out
     assert "private-host" not in out and "non-JSON line omitted" in out
+
+
+@pytest.mark.parametrize("encoding", ["string", "byte-array", "invalid-utf8", "invalid-byte"])
+def test_lifecycle_probe_scrubs_decoded_message_arrays(monkeypatch, capsys, encoding):
+    import contextlib
+    import io
+    import sys
+
+    source = PROBE_SH.read_text()
+    body = source.split("# BEGIN LIFECYCLE_PROBE\n", 1)[1].split("# END LIFECYCLE_PROBE", 1)[0]
+    scrub = source.split("# BEGIN PROBE_REDACTOR\n", 1)[1].split("# END PROBE_REDACTOR", 1)[0]
+    secret = "sk-reviewSyntheticSecret1234"
+    message = "2026-09-27T10:01:00.000Z accepted implement deadbeef — " + secret + "\x07 (max 40 turns)"
+    value = message if encoding == "string" else list(message.encode())
+    if encoding == "invalid-utf8": value.append(255)
+    if encoding == "invalid-byte": value.append(True)
+    record = json.dumps({"MESSAGE": value, "__REALTIME_TIMESTAMP": "1"})
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 0, record, ""))
+    exec(compile(body, "<synthetic lifecycle probe>", "exec"), {})
+    raw = capsys.readouterr().out
+    clean = io.StringIO()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(raw))
+    with contextlib.redirect_stdout(clean):
+        exec(compile(scrub, "<synthetic probe scrub>", "exec"), {})
+    # Mirror the shell helper's final sed pass without invoking a host probe.
+    output = re.sub(r"[0-9a-fA-F]{32,}", "<hex>", clean.getvalue())
+    line = next(row.split(" stdout: ", 1)[1] for row in output.splitlines()
+                if row.startswith("lifecycle stdout: "))
+    printed = json.loads(line)["MESSAGE"]
+    recovered = bytes(printed).decode(errors="replace") if isinstance(printed, list) else printed
+    assert secret not in recovered
+    assert isinstance(printed, str)
+    if encoding.startswith("invalid"):
+        assert printed == "<unreadable MESSAGE omitted>"
+    else:
+        assert "accepted implement deadbeef" in printed

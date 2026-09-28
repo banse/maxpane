@@ -181,6 +181,16 @@ sys.path.insert(0, "/opt/imd-dash/broker")
 from imd_dashd.imd_dashd import lifecycle_journal_argv, lifecycle_read_outcome
 from imd_dashd.gate import newest_lifecycle, HEARTBEAT_RE
 
+def decode_message(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list) and all(type(byte) is int and 0 <= byte < 256 for byte in value):
+        try:
+            return bytes(value).decode("utf-8")
+        except UnicodeDecodeError:
+            pass
+    return None
+
 def read(argv, label, *, show_output=True):
     try:
         done = subprocess.run(argv, capture_output=True, text=True, timeout=12)
@@ -200,7 +210,11 @@ def read(argv, label, *, show_output=True):
                 safe_lines.append("<non-JSON line omitted>")
             else:
                 if isinstance(record, dict):
-                    safe_lines.append(json.dumps({key: record[key] for key in ("MESSAGE", "__REALTIME_TIMESTAMP") if key in record}))
+                    display = {key: record[key] for key in ("MESSAGE", "__REALTIME_TIMESTAMP") if key in record}
+                    if "MESSAGE" in display:
+                        decoded = decode_message(display["MESSAGE"])
+                        display["MESSAGE"] = decoded if decoded is not None else "<unreadable MESSAGE omitted>"
+                    safe_lines.append(json.dumps(display))
         print(label + " stdout:", "\n".join(safe_lines))
         print(label + " stderr:", done.stderr)
     return done
@@ -218,15 +232,8 @@ def messages(done):
                 continue
             if not isinstance(record, dict):
                 continue
-            message = record.get("MESSAGE")
-            if isinstance(message, list):
-                try:
-                    if not all(type(value) is int and 0 <= value < 256 for value in message):
-                        continue
-                    message = bytes(message).decode("utf-8")
-                except UnicodeDecodeError:
-                    continue
-            if isinstance(message, str):
+            message = decode_message(record.get("MESSAGE"))
+            if message is not None:
                 rows.append(message)
     return rows
 
