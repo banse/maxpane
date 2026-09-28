@@ -88,7 +88,7 @@ def test_apply_accept_deadline_precedes_plan_consumption(tmp_path):
         incoming.put(conn)
         assert conn.done.wait(1)
     assert conn.response['error'] == 'apply_late'
-    assert conn.response['detail'] == {'waited_s': 6, 'plan_spent': False, 'hint': 'plan remains available; retry promptly or use pepepane --offline'}
+    assert conn.response['detail'] == {'waited_s': 6, 'plan_spent': False, 'hint': 'plan remains available; retry promptly'}
     assert not broker._plans.peek(plan['plan_id']).spent
     assert not runner.argvs('systemctl', 'restart')
     assert 'apply_late' in audit.path.read_text()
@@ -109,7 +109,7 @@ def test_slow_gate_inside_apply_cannot_mutate_after_client_timeout(tmp_path):
         incoming.put(conn)
         assert conn.done.wait(1)
     assert conn.response['error'] == 'apply_late'
-    assert conn.response['detail'] == {'waited_s': 21, 'plan_spent': True, 'hint': 'plan afresh; use pepepane --offline if plane reads are slow'}
+    assert conn.response['detail'] == {'waited_s': 21, 'plan_spent': True, 'hint': 'plan afresh'}
     assert broker._plans.peek(plan['plan_id']).spent
     assert not runner.argvs('systemctl', 'restart')
     assert 'apply_late' in audit.path.read_text()

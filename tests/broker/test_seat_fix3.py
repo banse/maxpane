@@ -187,7 +187,7 @@ def test_window_replaces_bad_heartbeat_byte_but_lifecycle_stays_strict(tmp_path)
     lines, _, succeeded = broker._journal_read()
     assert succeeded and "\ufffd" in lines[-1][1]
     gate, _, _ = broker._gate(offline=True)
-    assert gate.idle_beats >= 4 and gate.unknown == "lifecycle"
+    assert gate.idle_beats == 7 and gate.unknown == "lifecycle"
 
 
 def test_long_terminal_is_classified(tmp_path):
@@ -282,3 +282,57 @@ def test_mac_partial_kill_retains_completed_targets_and_audit(tmp_path, failure)
     assert watch.targets == [("pgid", 412)] and watch.verified is None
     assert broker._pending_kills[0][1:] == ("pgid", 412)
     assert any(r["plan_id"] == plan.plan_id and r["outcome"] == "partial" for r in broker.read("audit-tail", {"n": 50})["lines"])
+
+
+@pytest.mark.parametrize("stop_value,expected", [("30s", 40), ("90s", 100), ("5min", 110), ("infinity", 110), ("unreadable", 110)])
+def test_stop_verification_uses_timeout_stop_plus_margin(tmp_path, stop_value, expected):
+    broker, runner, journal, clock, _ = make_broker(tmp_path, script={
+        ("systemctl", "show", "imd-worker.service", "-p", "KillMode"): (0, f"KillMode=control-group\nTimeoutStopUSec={stop_value}\n")})
+    assert root.VERIFY_WITHIN_S == 30
+    plan = call(broker, "stop")["plan"]
+    assert plan["verify"]["within_s"] == expected
+    assert apply(broker, plan)["ok"]
+    journal.add(msg(clock(), "shutting down"))
+    runner.script[("systemctl", "is-active", "imd-worker.service")] = (3, "deactivating\n")
+    clock.advance(expected - 1)
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None
+    clock.advance(2)
+    result = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert result["verified"] is False and f"within {expected}" in result["reason"]
+
+
+def test_stop_can_finish_after_the_old_thirty_second_limit(tmp_path):
+    broker, runner, journal, clock, _ = make_broker(tmp_path)
+    plan = call(broker, "stop")["plan"]
+    assert apply(broker, plan)["ok"]
+    journal.add(msg(clock(), "shutting down"))
+    runner.script[("systemctl", "is-active", "imd-worker.service")] = (3, "deactivating\n")
+    clock.advance(31)
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None
+    clock.advance(2)
+    runner.script[("systemctl", "is-active", "imd-worker.service")] = (3, "inactive\n")
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is True
+
+
+@pytest.mark.parametrize("verb,offline,hint", [("restart", False, True), ("stop", False, True), ("restart", True, False),
+    ("start", False, False), ("enable-boot", False, False), ("disable-boot", False, False)])
+def test_offline_hint_only_for_online_gated_execution_deadline(tmp_path, verb, offline, hint):
+    broker, runner, _, clock, _ = make_broker(tmp_path)
+    args = {"offline": offline} if verb in ("restart", "stop") else {}
+    plan = call(broker, verb, args)["plan"]
+    internal = broker._plans.consume(plan["plan_id"], clock())
+    internal.accepted_monotonic = clock()
+    clock.advance(root.APPLY_EXEC_DEADLINE_S + 1)
+    refusal = broker._exec_systemctl(internal, internal.preconditions, None, 1001)
+    assert refusal["error"] == "apply_late"
+    assert ("--offline" in refusal["detail"]["hint"]) is hint
+    assert not runner.argvs("systemctl", verb)
+
+
+@pytest.mark.parametrize("spent", [False, True])
+def test_admission_transient_and_signal_lateness_never_suggest_offline(tmp_path, spent):
+    broker, _, _, clock, _ = make_broker(tmp_path)
+    at = clock()
+    clock.advance(6)
+    refusal = broker._late_apply(at, 1001, plan_spent=spent)
+    assert refusal["error"] == "apply_late" and "--offline" not in refusal["detail"]["hint"]

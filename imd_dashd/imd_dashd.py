@@ -160,6 +160,7 @@ class VerifyWatch:
     runtimes_at: float | None = None
     reconnecting_since: float | None = None
     unit_state: str | None = None
+    stop_within_s: float = VERIFY_WITHIN_S
     done: bool = False              # transient: the thread finished
     rc: int | None = None
     targets: list[tuple[str, int]] = field(default_factory=list)   # kill: ("pid" | "pgid", id) each SIGTERM went to
@@ -205,8 +206,8 @@ class VerifyWatch:
                 self.unit_state = "active" if unit_active else "inactive"
             if self.shutting_down_at is not None and self.unit_state in ("inactive", "failed"):
                 self.verified = True
-            elif now - self.started > VERIFY_WITHIN_S:
-                self.verified, self.reason = False, "no shutting down + ActiveState=inactive within 30 s"
+            elif now - self.started > self.stop_within_s:
+                self.verified, self.reason = False, f"no shutting down + ActiveState=inactive within {self.stop_within_s:g} s"
         elif self.kind in ("enabled", "disabled"):
             self.connected = None
             if unit_enabled is not None:
@@ -483,6 +484,7 @@ class Broker:
         self._read_counts: dict[str, int] = {}
         self._reads_flushed_at = self._started
         self.ip_address_deny: str | None = read_ip_address_deny(run=run)
+        self._stop_timeout_s: float | None = None
         self.graceful_stop_possible: bool | None = self._read_graceful()
         self.stop_requested = False
 
@@ -522,10 +524,14 @@ class Broker:
             return None
         props = dict(line.split("=", 1) for line in _text(done.stdout).splitlines() if "=" in line)
         kill_mode = props.get("KillMode")
-        stop_s = _usec_to_s(props.get("TimeoutStopUSec"))
+        stop_s = self._stop_timeout_s = _usec_to_s(props.get("TimeoutStopUSec"))
         if kill_mode is None or stop_s is None:
             return None
         return kill_mode == "control-group" and stop_s >= 30
+
+    def _stop_verify_within_s(self) -> float:
+        cap = VERIFY_WATCH_S - 10
+        return cap if self._stop_timeout_s is None else min(cap, self._stop_timeout_s + 10)
 
     # ------------------------------------------------------------ journal / unit / outbox reads (root)
 
@@ -962,7 +968,7 @@ class Broker:
                 inverse = {"verb": "stop", "args": {}}
             elif verb == "stop":
                 argv = systemctl_argv("stop", self._unit)
-                verify = {"verified_when": ["shutting down", "ActiveState=inactive"], "within_s": VERIFY_WITHIN_S,
+                verify = {"verified_when": ["shutting down", "ActiveState=inactive"], "within_s": self._stop_verify_within_s(),
                           "connected_when": None, "reported_separately": True}
                 inverse = {"verb": "start", "args": {}}
             else:  # drain-restart
@@ -1093,14 +1099,16 @@ class Broker:
 
     # ------------------------------------------------------------ write verbs: apply
 
-    def _late_apply(self, accepted_at: float | None, peer_uid: int, *, plan_spent: bool, plan_id: str | None = None, budget: float = APPLY_START_BUDGET_S) -> dict | None:
+    def _late_apply(self, accepted_at: float | None, peer_uid: int, *, plan_spent: bool, plan_id: str | None = None, budget: float = APPLY_START_BUDGET_S, offline_hint: bool = False) -> dict | None:
         if accepted_at is None:  # drain fires have no waiting client
             return None
         waited = max(0.0, self._monotonic() - accepted_at)
         if waited <= budget:
             return None
         detail = {"waited_s": round(waited, 3), "plan_spent": plan_spent,
-                  "hint": "plan afresh; use pepepane --offline if plane reads are slow" if plan_spent else "plan remains available; retry promptly or use pepepane --offline"}
+                  "hint": "plan afresh" if plan_spent else "plan remains available; retry promptly"}
+        if offline_hint:
+            detail["hint"] += "; use pepepane --offline if plane reads are slow"
         self._log(peer_uid=peer_uid, verb="apply", phase="refused", plan_id=plan_id,
                   outcome="apply_late", args=detail)
         return verbs.err("apply_late", detail)
@@ -1219,7 +1227,8 @@ class Broker:
         return self._exec_systemctl(plan, plan.preconditions, cursor_before, peer_uid)
 
     def _exec_systemctl(self, plan: Plan, preconditions: dict, cursor_before: str | None, peer_uid: int) -> dict:
-        refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id, budget=APPLY_EXEC_DEADLINE_S)
+        refusal = self._late_apply(plan.accepted_monotonic, peer_uid, plan_spent=True, plan_id=plan.plan_id, budget=APPLY_EXEC_DEADLINE_S,
+                                   offline_hint=plan.verb in ("restart", "stop") and not plan.args.get("offline", False))
         if refusal is not None:
             return refusal
         started = self._now()  # evidence may arrive before the queue command returns
@@ -1232,7 +1241,8 @@ class Broker:
             exit_code = -1
         kind = {"restart": "restart", "drain-restart": "restart", "stop": "stop", "start": "start",
                 "enable-boot": "enabled", "disable-boot": "disabled"}[plan.verb]
-        watch = VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind=kind, cursor_before=cursor_before, started=started)
+        watch = VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind=kind, cursor_before=cursor_before, started=started,
+                            stop_within_s=self._stop_verify_within_s() if kind == "stop" else VERIFY_WITHIN_S)
         self._watches[plan.plan_id] = watch
         outcome = "applied" if exit_code == 0 else ("timeout" if exit_code is None else f"exit {exit_code}")
         seq = self._log(peer_uid=peer_uid, verb=plan.verb, phase="apply", plan_id=plan.plan_id, preconditions=preconditions,
@@ -1592,7 +1602,8 @@ class Broker:
         """Bounded admission stays responsive while one serialized operation writes.
 
         Ten connections and one housekeeping thread at most. Decoded transient reads
-        occupy at most four slots; control/root reads have six reserved slots.
+        occupy at most four slots; the other six slots are shared by control requests
+        and all unserialized reads (including worker-uid and gate reads).
         Busy is captured at accept and checked again at dispatch so a concurrent
         apply cannot become a delayed write after the first one exits.
         """
