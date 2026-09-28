@@ -988,3 +988,17 @@ def test_p05_journal_fake_filters_full_field_before_large_field_omission(size):
     assert json.loads(without.stdout)['MESSAGE'] == (line if size < 4088 else None)
     with_all = _p05_journal_result(argv + ['--all'], [line, 'heartbeat'])
     assert json.loads(with_all.stdout)['MESSAGE'] == line
+
+
+def test_operator_doc_explains_queued_unknown_and_stop_verification():
+    doc = (REPO / "docs/seat_install.md").read_text()
+    assert "`outcome: applied` means systemd queued the job" in doc
+    assert "only `verify` confirms completion" in doc
+    assert "no `runtimes:` within 30 seconds" in doc
+    assert "outcome unknown — checking verify" in doc
+    assert "at least 10 seconds after the lost reply" in doc
+    assert "plan state unknown" in doc
+    assert "spent-plan refusal means you must press the verb to create a new plan" in doc
+    assert "never re-plans or re-applies automatically" in doc
+    assert "Stop verification can take up to 110 seconds" in doc
+    assert "while the unit is deactivating or after `shutting down`" in doc

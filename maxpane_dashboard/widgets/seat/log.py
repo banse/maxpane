@@ -131,7 +131,7 @@ class SeatLog(RichLogFeed):
         if written:
             self._drawn = True
             log.auto_scroll = True
-            self.call_after_refresh(log.scroll_end, animate=False)
+            self.call_after_refresh(log.scroll_end, animate=False, x_axis=False)
 
     # -- the contract -------------------------------------------------------
 

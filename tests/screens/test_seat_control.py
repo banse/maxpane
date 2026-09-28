@@ -621,7 +621,7 @@ async def test_root_lost_apply_reply_keeps_plan_and_recovers_verification(tmp_pa
         assert len(runner.argvs('systemctl', 'restart')) == 1
 
 
-async def test_unknown_plan_waits_from_apply_send_then_requires_explicit_new_plan(tmp_path):
+async def test_unknown_plan_keeps_minimum_retry_window_then_requires_explicit_new_plan(tmp_path):
     from maxpane_dashboard.data.seat_broker_client import CLIENT_TIMEOUT_S, UnixSocketBroker
     from tests.broker._harness import make_broker
     from tests.data.test_seat_broker_client import _served
@@ -647,6 +647,10 @@ async def test_unknown_plan_waits_from_apply_send_then_requires_explicit_new_pla
         await control._poll_verify()
         assert control.mode == 'verifying'
         clock.advance(1)
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == 'verifying', 'reply loss at19s still receives ten seconds of verification'
+        clock.advance(9)
         await control._poll_verify()
         await _painted(pilot)
         assert control.mode == 'done'
@@ -1006,3 +1010,86 @@ async def test_uncertain_action_retains_known_consumption(consume_evidence):
         assert control.mode == "done"
         _assert_color(pilot, "outcome unknown — plan is spent", 3)
         assert "not applied" not in _screen_text(pilot)
+
+
+@pytest.mark.parametrize("outcome", [None, "timeout"])
+async def test_first_signal_status_preserves_uncertainty_and_what(outcome):
+    detail = {"partial": False, "killed": [], "skipped": [{"pid": 64876}],
+              "reason": "orphan signal command failed", "what": "signal admission", "outcome": outcome}
+    def refused(_args):
+        raise BrokerError("timeout", detail)
+    broker = _broker(apply=refused)
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot)
+        await control._plan_verb("kill-orphans", {})
+        await control._apply(PLAN_ID[:4])
+        await _painted(pilot)
+        text = _screen_text(pilot)
+        assert "signal admission" in text
+        assert "skipped pids: 64876" in text
+        assert ("signal state unknown — check LOG" in text) is (outcome == "timeout")
+        assert ("nothing signalled" in text) is (outcome != "timeout")
+        assert control.mode == "idle" and control._plan is None
+        assert not _calls(broker, "verify")
+
+
+async def test_plan_displays_integer_verify_seconds():
+    plan = copy.deepcopy(PLAN)
+    plan["plan"]["verify"]["within_s"] = 40.0
+    async with _A(_Manager(DOC, _broker(stop=plan))).run_test(size=(190, 60)) as pilot:
+        control = await _manual_control(pilot)
+        await control._plan_verb("stop", {})
+        await _painted(pilot)
+        text = _screen_text(pilot)
+        assert "within 40 s" in text
+        assert "40.0 s" not in text
+
+
+@pytest.mark.parametrize("new_status", ["unreachable", "gate_unknown", "no_init", "no_plan"])
+async def test_later_non_prompt_status_clears_partial_evidence(new_status):
+    async with _A(_Manager(DOC, _broker())).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot)
+        control._mode = "done"
+        control._partial_note = "partial action — killed pids: 64876"
+        if new_status == "unreachable":
+            control._flat["seat_control_broker_reachable"] = False
+        elif new_status == "gate_unknown":
+            control._flat["seat_control_gate"] = {"safe": False, "reason": "gate unknown (lifecycle)"}
+        elif new_status == "no_init":
+            control._flat["seat_control_gate"] = {"safe": False, "reason": "task running 0c1f9727"}
+            control._flat["seat_unit_graceful_stop_possible"] = False
+        if new_status == "no_plan":
+            await control._submit_value("anything")
+        else:
+            control.action_verb("r")
+        await _painted(pilot)
+        assert "killed pids" not in _screen_text(pilot)
+        assert control.mode == "done"
+
+
+@pytest.mark.parametrize("verify_error", ["unknown_plan", "unreachable", "bad_response", "transport"])
+async def test_full_apply_deadline_leaves_ten_seconds_for_unknown_outcome(verify_error):
+    clock = [100.0]
+    def lost(_args):
+        clock[0] += 20
+        raise BrokerError("transport")
+    def unavailable(_args):
+        raise BrokerError(verify_error)
+    broker = _broker(apply=lost, verify=unavailable)
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, lambda: clock[0])
+        await control._plan_verb("restart", {})
+        await control._apply(PLAN_ID[:4])
+        for elapsed in (0, 5, 9):
+            clock[0] = 120 + elapsed
+            await control._poll_verify()
+            await _painted(pilot)
+            assert control.mode == "verifying"
+            assert "outcome unknown — checking verify" in _screen_text(pilot)
+        clock[0] = 130
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == "done"
+        assert "outcome unknown — plan state unknown" in _screen_text(pilot)
+        assert len(_calls(broker, "apply")) == 1
+        assert len(_calls(broker, "restart")) == 1

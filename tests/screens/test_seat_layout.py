@@ -278,7 +278,7 @@ async def test_long_raw_log_rows_have_a_scrollbar_and_remain_accessible(monkeypa
     original_scroll_end = RichLog.scroll_end
 
     def observed_scroll_end(log, **kwargs):
-        if not kwargs.get("x_axis", True):
+        if "immediate" in kwargs:
             return original_scroll_end(log, **kwargs)  # RichLog.write's vertical scroll
         # SeatLog schedules this after refresh; Textual itself defers it once more.
         # Observe the actual completion, including an extra frame of ordering pressure.
@@ -306,6 +306,16 @@ async def test_long_raw_log_rows_have_a_scrollbar_and_remain_accessible(monkeypa
                 await painted.wait()
         await asyncio.wait_for(wait_for_visible_end(), 3)
         assert log.scroll_x == log.max_scroll_x
+        assert "END-SCROLLBACK" in _region_text(pilot.app, panel)
+
+        # A newly delivered row must preserve the user's horizontal viewport.
+        previous_x = log.scroll_x
+        auto_scroll_complete.clear()
+        event = dict(payload["seat_log_lines"][-1])
+        event["seq"] += 1
+        panel.update_data(seat_log_lines=[event], seat_log_seq=event["seq"])
+        await asyncio.wait_for(auto_scroll_complete.wait(), 3)
+        assert log.scroll_x == previous_x
         assert "END-SCROLLBACK" in _region_text(pilot.app, panel)
 
 
