@@ -329,7 +329,7 @@ class SeatLedger:
         node8 = f["node8"] or ""
         if line.kind == g.KIND_ACCEPTED_RESEARCH:
             role, kind = "question", "research"
-        elif line.kind == g.KIND_ACCEPTED_FUZZ:
+        elif line.kind in (g.KIND_ACCEPTED_FUZZ, g.KIND_ACCEPTED_FUZZ_HEAD):
             role, kind = "campaign", "fuzz"
         else:
             role, kind = f.get("role"), "code"

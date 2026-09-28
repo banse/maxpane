@@ -35,12 +35,20 @@ HEARTBEAT = re.compile(
 )
 
 ACCEPTED_CODE = re.compile(
-    TS + r"accepted (?P<role>implement|tests|review|integrate) (?P<node8>[0-9a-f]{8}) — (?P<paths>.+?) \(max (?P<max_turns>\d+) turns\)$",
+    TS + r"accepted (?P<role>implement|tests|review|integrate) (?P<node8>[0-9a-f]{8}) — (?P<paths>.*?) \(max (?P<max_turns>\d+) turns\)$",
     re.ASCII,
 )
 ACCEPTED_RESEARCH = re.compile(TS + r"accepted question (?P<node8>[0-9a-f]{8})$", re.ASCII)
 ACCEPTED_FUZZ = re.compile(
     TS + r"accepted campaign (?P<node8>[0-9a-f]{8}) — (?P<harness>.+?) \((?P<runs>\d+) runs\)$", re.ASCII
+)
+
+ACCEPTED_CODE_HEAD = re.compile(
+    TS + r"accepted (?P<role>implement|tests|review|integrate) (?P<node8>[0-9a-f]{8}) —(?: (?!.*\(max \d+ turns\)).*)?$",
+    re.ASCII,
+)
+ACCEPTED_FUZZ_HEAD = re.compile(
+    TS + r"accepted campaign (?P<node8>[0-9a-f]{8}) —(?: (?!.*\(\d+ runs\)).*)?$", re.ASCII,
 )
 
 PHASE = re.compile(
@@ -102,6 +110,8 @@ KIND_HEARTBEAT = "heartbeat"
 KIND_ACCEPTED_CODE = "accepted_code"
 KIND_ACCEPTED_RESEARCH = "accepted_research"
 KIND_ACCEPTED_FUZZ = "accepted_fuzz"
+KIND_ACCEPTED_CODE_HEAD = "accepted_code_head"
+KIND_ACCEPTED_FUZZ_HEAD = "accepted_fuzz_head"
 KIND_PHASE = "phase"
 KIND_MODEL_LINE = "model_line"
 KIND_MODEL_REFUSE = "model_refuse"
@@ -140,6 +150,8 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (KIND_ACCEPTED_CODE, ACCEPTED_CODE),
     (KIND_ACCEPTED_RESEARCH, ACCEPTED_RESEARCH),
     (KIND_ACCEPTED_FUZZ, ACCEPTED_FUZZ),
+    (KIND_ACCEPTED_CODE_HEAD, ACCEPTED_CODE_HEAD),
+    (KIND_ACCEPTED_FUZZ_HEAD, ACCEPTED_FUZZ_HEAD),
     (KIND_MODEL_LINE, MODEL_LINE),
     (KIND_MODEL_REFUSE, MODEL_REFUSE),
     (KIND_PHASE, PHASE),
@@ -169,7 +181,8 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (KIND_RATE_LIMITED, RATE_LIMITED),
 )
 
-ACCEPTED_KINDS = frozenset({KIND_ACCEPTED_CODE, KIND_ACCEPTED_RESEARCH, KIND_ACCEPTED_FUZZ})
+ACCEPTED_KINDS = frozenset({KIND_ACCEPTED_CODE, KIND_ACCEPTED_RESEARCH, KIND_ACCEPTED_FUZZ,
+                            KIND_ACCEPTED_CODE_HEAD, KIND_ACCEPTED_FUZZ_HEAD})
 TERMINAL_KINDS = frozenset({KIND_SUBMITTED, KIND_ANSWERED, KIND_FUZZ_OUTCOME, KIND_STORED, KIND_CANCELLED, KIND_LOCAL_FAIL})
 CONNECTION_KINDS = frozenset(
     {KIND_CONNECTED, KIND_ADMITTED, KIND_SERVER_CLOSED, KIND_RECONNECTING, KIND_WS_RESPONSE, KIND_WS_SOCKET}

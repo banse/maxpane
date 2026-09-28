@@ -38,9 +38,12 @@ HEARTBEAT_RE = re.compile(
     r"(?: · (?:paused until (?P<until>\d\d:\d\d) after (?P<failed>\d+) failed runs?(?:: (?P<reason>.*?))? — run imd doctor"
     r"|(?P<unregistered>token not registered as an agent — run imd doctor)))?$", re.ASCII)
 ACCEPTED_RE = re.compile(
-    TS + r"accepted (?:(?P<role>implement|tests|review|integrate) (?P<node8>[0-9a-f]{8}) — .+? \(max \d+ turns\)"
+    TS + r"accepted (?:(?P<role>implement|tests|review|integrate) (?P<node8>[0-9a-f]{8}) — .*? \(max \d+ turns\)"
     r"|question (?P<node8_q>[0-9a-f]{8})"
     r"|campaign (?P<node8_c>[0-9a-f]{8}) — .+? \(\d+ runs\))$", re.ASCII)
+ACCEPTED_HEAD_RE = re.compile(
+    TS + r"accepted (?:(?P<role_h>implement|tests|review|integrate) (?P<node8_h>[0-9a-f]{8}) —(?: (?!.*\(max \d+ turns\)).*)?"
+    r"|campaign (?P<node8_ch>[0-9a-f]{8}) —(?: (?!.*\(\d+ runs\)).*)?)$", re.ASCII)
 TERMINAL_RE = re.compile(
     TS + r"(?:submitted (?:implement|tests|review|integrate) for [0-9a-f]{8}"
     r"|answered [0-9a-f]{8} with \d+ citation\(s\)"
@@ -127,18 +130,24 @@ def newest_lifecycle(lines: Sequence[str]) -> tuple[str | None, bool | None]:
     ``(line, False)`` when it is terminal; ``(None, None)`` when the window holds no lifecycle line.
     """
     for text in reversed(list(lines)):
-        if ACCEPTED_RE.match(text):
+        if accepted_node8(text) is not None:
             return text, True
         if TERMINAL_RE.match(text):
             return text, False
     return None, None
 
 
+def accepted_node8(line: str) -> str | None:
+    """Complete accepts and honest split heads share one fail-closed classification."""
+    match = ACCEPTED_RE.fullmatch(line)
+    if match:
+        return match.group("node8") or match.group("node8_q") or match.group("node8_c")
+    head = ACCEPTED_HEAD_RE.fullmatch(line)
+    return (head.group("node8_h") or head.group("node8_ch")) if head else None
+
+
 def _accepted_node8(line: str) -> str | None:
-    match = ACCEPTED_RE.match(line)
-    if not match:
-        return None
-    return match.group("node8") or match.group("node8_q") or match.group("node8_c")
+    return accepted_node8(line)
 
 
 def _mmss(seconds: float) -> str:

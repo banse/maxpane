@@ -22,10 +22,10 @@ def _kinds(name: str) -> list[str]:
 
 
 class TestModuleShape:
-    def test_thirty_one_stamped_patterns_in_match_order(self) -> None:
-        """Contract C.5: 31 (kind, pattern) pairs; MODEL_LINE and MODEL_REFUSE before PHASE; RATE_LIMITED last."""
+    def test_thirty_three_stamped_patterns_in_match_order(self) -> None:
+        """Owner G3 amendment to contract C.5: 33 (kind, pattern) pairs; MODEL_LINE and MODEL_REFUSE before PHASE; RATE_LIMITED last."""
         kinds = [kind for kind, _ in g.PATTERNS]
-        assert len(kinds) == 31 and len(set(kinds)) == 31
+        assert len(kinds) == 33 and len(set(kinds)) == 33
         assert kinds.index(g.KIND_MODEL_LINE) < kinds.index(g.KIND_PHASE)
         assert kinds.index(g.KIND_MODEL_REFUSE) < kinds.index(g.KIND_PHASE)
         assert kinds[-1] == g.KIND_RATE_LIMITED
@@ -38,7 +38,7 @@ class TestModuleShape:
             assert pattern.pattern.endswith("$")
 
     def test_kind_sets(self) -> None:
-        assert g.ACCEPTED_KINDS == {"accepted_code", "accepted_research", "accepted_fuzz"}
+        assert g.ACCEPTED_KINDS == {"accepted_code", "accepted_research", "accepted_fuzz", "accepted_code_head", "accepted_fuzz_head"}
         assert g.TERMINAL_KINDS == {"submitted", "answered", "fuzz_outcome", "stored", "cancelled", "local_fail"}
         assert g.CONNECTION_KINDS == {"connected", "admitted", "server_closed", "reconnecting", "ws_response", "ws_socket"}
         assert g.HIGHLIGHT_KINDS == {"rate_limited", "build_skew", "release_avail", "local_fail", "resending", "cancelled"}

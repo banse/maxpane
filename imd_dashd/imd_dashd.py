@@ -33,7 +33,7 @@ from imd_dashd import verbs
 from imd_dashd.audit import Audit, iso_utc
 from imd_dashd.child_unit import RUNTIME_MAX_S, Runner, read_ip_address_deny, run_inprocess, run_transient, unit_name
 from imd_dashd.drain import Drain, DrainState
-from imd_dashd.gate import ACCEPTED_RE, HEARTBEAT_RE, TERMINAL_RE, GateResult, evaluate, parse_iso
+from imd_dashd.gate import ACCEPTED_HEAD_RE, ACCEPTED_RE, accepted_node8, HEARTBEAT_RE, TERMINAL_RE, GateResult, evaluate, parse_iso
 from imd_dashd.redact import find_secret, redact, redact_agent_sentence, redact_tree
 from imd_dashd.process_snapshot import snapshot as process_snapshot
 
@@ -398,7 +398,7 @@ def systemctl_argv(verb: str, unit: str = WORKER_UNIT) -> list[str]:
 def lifecycle_journal_argv(unit: str = WORKER_UNIT, *, pattern: str | None = None) -> list[str]:
     """Exact filtered history query shared with the owner-run VPS compatibility probe."""
     if pattern is None:
-        pattern = re.sub(r"\(\?P<[^>]+>", "(?:", f"(?:{ACCEPTED_RE.pattern}|{TERMINAL_RE.pattern})")
+        pattern = re.sub(r"\(\?P<[^>]+>", "(?:", f"(?:{ACCEPTED_RE.pattern}|{ACCEPTED_HEAD_RE.pattern}|{TERMINAL_RE.pattern})")
     return ["journalctl", "-u", unit, "-o", "json", "--no-pager",
             "--all", "--grep", pattern, "--lines", "1", "--case-sensitive=yes"]
 
@@ -602,7 +602,7 @@ class Broker:
             except (TypeError, ValueError):
                 epoch = parse_iso(message[:24]) or 0.0
             lines.append((epoch, message))
-        if lifecycle_only and lines and not any(ACCEPTED_RE.match(text) or TERMINAL_RE.match(text) for _, text in lines):
+        if lifecycle_only and lines and not any(accepted_node8(text) is not None or TERMINAL_RE.match(text) for _, text in lines):
             return [], cursor, False
         return lines, cursor, (not lifecycle_only or not parse_failed) and bool(
             lines or cursor or not stdout.strip() or stdout.strip() == "-- No entries --")
@@ -1691,10 +1691,8 @@ def _preconditions(gate: GateResult) -> dict:
 def _running_node8(gate: GateResult) -> str | None:
     if not gate.lifecycle_open or not gate.last_lifecycle_line:
         return None
-    match = ACCEPTED_RE.match(gate.last_lifecycle_line)
-    if not match:
-        return None
-    return match.group("node8") or match.group("node8_q") or match.group("node8_c")
+    return accepted_node8(gate.last_lifecycle_line)
+
 
 def parse_work_listing(text: str, *, total_bytes: int | None) -> dict:
     """``find -printf "%y\\t%T@\\t%P\\n"`` (depth 1-4 under work/) -> the work-stat data shape (contract C.11)."""
