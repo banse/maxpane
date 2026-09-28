@@ -190,6 +190,7 @@ class SeatControlScreen(ModalScreen[None]):
         self._status = Text("")
         self._success_effects_plan_id: str | None = None
         self._outcome_unknown = False
+        self._plan_consumed = False
         self._partial_note: str | None = None
         #: kept under every later status until a restart is applied (spec §11 skills set: drain-restart is step 2)
         self._restart_note: str | None = None
@@ -357,6 +358,7 @@ class SeatControlScreen(ModalScreen[None]):
         if verb == "enable-boot" and self._flat.get("seat_unit_boot_enabled") is True:
             verb = "disable-boot"
         if verb == "skills-set":
+            self._partial_note = None
             self._mode = "skill"
             self._pending_verb = verb
             self._set_status("type <skill-id> on|off then enter")
@@ -372,6 +374,7 @@ class SeatControlScreen(ModalScreen[None]):
                 if self._flat.get("seat_unit_graceful_stop_possible") is not True:
                     self._set_status(f"BLOCKED: {reason} · force disabled (no init)", "red")
                     return
+                self._partial_note = None
                 self._mode = "force"
                 self._pending_verb = verb
                 self._set_status(f"BLOCKED: {reason} · type the running node8 to plan a forced {verb}", "red")
@@ -435,6 +438,7 @@ class SeatControlScreen(ModalScreen[None]):
 
     async def _plan_verb(self, verb: str, args: dict) -> None:
         self._outcome_unknown = False
+        self._plan_consumed = False
         self._partial_note = None
         self._busy = True
         try:
@@ -524,18 +528,29 @@ class SeatControlScreen(ModalScreen[None]):
             result = await asyncio.to_thread(self._broker.apply, plan.plan_id, confirm, **kwargs)
         except BrokerError as exc:
             detail = _dict(exc.detail)
-            if detail.get("partial") is True:
+            if "killed" in detail or "skipped" in detail:
                 killed = []
                 for action in detail.get("killed") or []:
                     if isinstance(action, dict):
                         killed.extend(action.get("pids") or [action.get("pid")])
                 skipped = [row.get("pid") for row in detail.get("skipped") or [] if isinstance(row, dict)]
-                self._partial_note = ("partial action — killed pids: " + ", ".join(_word(pid) for pid in killed if pid is not None)
-                                      + "; skipped pids: " + ", ".join(_word(pid) for pid in skipped if pid is not None))
-                self._mode = "verifying"
-                self._set_status(f"error: {_word(exc.code)} · checking verify", "yellow")
+                pid_note = "skipped pids: " + (", ".join(_word(pid) for pid in skipped if pid is not None) or "none")
+                reason = " · ".join(_word(detail.get(key)) for key in ("reason", "hint") if detail.get(key))
+                error = f"error: {_word(exc.code)}" + (f" · {reason}" if reason else "")
+                if detail.get("partial") is True:
+                    self._partial_note = ("partial action — killed pids: "
+                                          + ", ".join(_word(pid) for pid in killed if pid is not None) + "; " + pid_note)
+                    self._mode = "verifying"
+                    self._set_status(error + " · checking verify", "yellow")
+                else:
+                    self._set_status(error + " · nothing signalled · " + pid_note, "red")
+                    self._mode = "idle"
+                    self._plan = None
+                    self._force_node8 = None
+                    self._set_plan_open(False)
             elif exc.code in ("transport", "bad_response") or (exc.code == "timeout" and detail.get("outcome") == "timeout"):
                 self._outcome_unknown = True
+                self._plan_consumed = detail.get("plan_spent") is True or exc.code == "timeout"
                 self._mode = "verifying"
                 self._set_status("outcome unknown — checking verify", "yellow")
             else:
@@ -582,14 +597,12 @@ class SeatControlScreen(ModalScreen[None]):
         try:
             result = await asyncio.to_thread(self._broker.verify, plan.plan_id)
         except BrokerError as exc:
-            if self._outcome_unknown and exc.code == "transport":
-                self._set_status("outcome unknown — checking verify", "yellow")
-                return
-            if self._outcome_unknown and exc.code == "unknown_plan":
+            if self._outcome_unknown and exc.code in ("transport", "bad_response", "unreachable", "unknown_plan"):
                 if self._now() - self._apply_at < CLIENT_TIMEOUT_S:
                     self._set_status("outcome unknown — checking verify", "yellow")
                     return
-                self._set_status("not applied — the plan is spent; press the verb to plan afresh", "yellow")
+                plan_state = "plan is spent" if self._plan_consumed else "plan state unknown"
+                self._set_status(f"outcome unknown — {plan_state}; check LOG and audit before planning afresh", "yellow")
             else:
                 self._set_status(f"verify: error {_word(exc.code)} — check LOG", "red")
             self._mode = "done"
@@ -599,6 +612,7 @@ class SeatControlScreen(ModalScreen[None]):
             return
         finally:
             self._busy = False
+        self._plan_consumed = True  # a verification watch exists only after consume
         elapsed = self._now() - getattr(self, "_apply_at", self._now())
         if result.verified is None:
             self._set_status(f"verifying … {max(elapsed, result.elapsed_s or 0):.0f} s", "yellow")

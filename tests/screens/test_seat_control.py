@@ -650,7 +650,7 @@ async def test_unknown_plan_waits_from_apply_send_then_requires_explicit_new_pla
         await control._poll_verify()
         await _painted(pilot)
         assert control.mode == 'done'
-        assert 'not applied — the plan is spent; press the verb to plan afresh' in _screen_text(pilot)
+        assert 'outcome unknown — plan state unknown; check LOG and audit before planning afresh' in _screen_text(pilot)
         assert broker.calls.count('restart') == broker.calls.count('apply') == 1
         assert broker.calls.count('audit-tail') >= 2
         assert runner.argvs('systemctl', 'restart') == []
@@ -698,7 +698,7 @@ async def test_apply_late_tells_operator_whether_plan_was_spent(spent):
     def late(_args):
         raise BrokerError('apply_late', {'waited_s': 5.5, 'plan_spent': spent,
                           'hint': 'plan afresh; use pepepane --offline if plane reads are slow' if spent else
-                                  'plan remains available; retry promptly or use pepepane --offline'})
+                                  'plan remains available; retry promptly'})
     broker = _broker(apply=late)
     async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
         control = await _manual_control(pilot)
@@ -707,7 +707,7 @@ async def test_apply_late_tells_operator_whether_plan_was_spent(spent):
         await _painted(pilot)
         text = _screen_text(pilot)
         assert ('plan is spent' if spent else 'plan is unspent') in text
-        assert 'pepepane --offline' in text
+        assert ('pepepane --offline' in text) is spent
         assert control.mode == ('idle' if spent else 'planned')
 
 
@@ -842,3 +842,167 @@ async def test_root_queue_timeout_verifies_actual_outcome_and_clears_restart_not
             assert control.mode == 'done' and 'verify: not seen' in _screen_text(pilot)
             assert 'restart required — press [d] to drain-restart' in _screen_text(pilot)
         assert len(runner.argvs('systemctl', 'restart')) == 1
+
+
+@pytest.mark.parametrize("partial", [False, True])
+@pytest.mark.parametrize("backend", ["root", "mac"])
+async def test_kill_refusal_formats_every_pid_and_only_partial_actions_verify(partial, backend):
+    # The root and Mac expose the same shape; both PGID and single-PID kills must survive formatting.
+    killed = [{"pid": 64876, "pids": [64876, 64878]}] if backend == "root" else [{"pid": 64876}]
+    detail = {"partial": partial, "killed": killed if partial else [],
+              "skipped": [{"pid": 64877, "reason": "changed"}],
+              "reason": "read failed\x1b[31m", "hint": "retry after checking LOG", "plan_spent": True}
+    def refused(_args):
+        raise BrokerError("orphans_unavailable", detail)
+    broker = _broker(apply=refused, verify=_verify_sequence((True, None, None)))
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot)
+        await control._plan_verb("kill-orphans", {})
+        await control._apply(PLAN_ID[:4])
+        await _painted(pilot)
+        text = _screen_text(pilot)
+        assert "skipped pids: 64877" in text
+        assert "read failed" in text and "retry after checking LOG" in text
+        assert "\x1b" not in text
+        if partial:
+            assert control.mode == "verifying"
+            assert "killed pids: 64876" in text
+            if backend == "root":
+                assert "64878" in text
+            await control._poll_verify()
+            await _painted(pilot)
+            assert "skipped pids: 64877" in _screen_text(pilot)
+        else:
+            assert "nothing signalled" in text
+            assert control.mode == "idle" and control._plan is None
+            assert not control._manager.plan_open
+            await control._tick()
+            assert not any(v == "verify" for v, _args in broker.calls)
+
+
+@pytest.mark.parametrize("key,mode", [("k", "skill"), ("r", "force")])
+async def test_new_prompt_clears_previous_partial_note(key, mode):
+    doc = _doc(gate={"safe": False, "reason": "task running 0c1f9727"})
+    doc["unit"]["gracefulStopPossible"] = True
+    async with _A(_Manager(doc, _broker())).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot)
+        control._partial_note = "partial action — killed pids: 64876"
+        control.action_verb(key)
+        await _painted(pilot)
+        assert control.mode == mode
+        assert "killed pids" not in _screen_text(pilot)
+
+
+@pytest.mark.parametrize("verify_error", ["transport", "bad_response", "unreachable"])
+async def test_lost_reply_verify_failures_have_a_bounded_uncertain_outcome(verify_error):
+    from maxpane_dashboard.data.seat_broker_client import CLIENT_TIMEOUT_S
+    clock = [100.0]
+    def lost(_args):
+        raise BrokerError("bad_response")
+    def unavailable(_args):
+        raise BrokerError(verify_error)
+    broker = _broker(apply=lost, verify=unavailable)
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, lambda: clock[0])
+        await control._plan_verb("restart", {})
+        await control._apply(PLAN_ID[:4])
+        await _painted(pilot)
+        clock[0] += CLIENT_TIMEOUT_S - 1
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == "verifying"
+        _assert_color(pilot, "outcome unknown — checking verify", 3)
+        clock[0] += 1
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == "done" and not control._manager.plan_open
+        _assert_color(pilot, "outcome unknown — plan state unknown", 3)
+        assert "check LOG and audit before planning afresh" in _screen_text(pilot)
+        assert [v for v, _ in broker.calls].count("restart") == 1
+        assert [v for v, _ in broker.calls].count("apply") == 1
+
+
+@pytest.mark.parametrize("backend", ["root", "mac"])
+async def test_real_broker_first_signal_refusal_never_polls_verify(tmp_path, monkeypatch, backend):
+    from maxpane_dashboard.data.seat_broker_client import UnixSocketBroker
+    from tests.broker.test_imd_dashd import _orphan_broker
+    from tests.data.test_seat_broker_client import _served, _local, _container_procs
+    if backend == "root":
+        root, runner, clock, _audit, _spec = _orphan_broker(tmp_path)
+        def failed_signal(argv, kwargs):
+            raise OSError("first signal failed")
+        runner.script[("kill", "-TERM")] = failed_signal
+        broker = UnixSocketBroker(connect=_served(root))
+        pids = [64876, 64877]
+    else:
+        broker, _runner, _lines, clock = _local(tmp_path, offline=False)
+        rows = _container_procs()
+        monkeypatch.setattr(broker, "_process_snapshot", lambda: rows)
+        original_read = broker._read
+        monkeypatch.setattr(broker, "_read", lambda verb, args: {"candidates": rows[1:]} if verb == "orphans" else original_read(verb, args))
+        original_exec = broker._exec
+        def failed_signal(argv, **kwargs):
+            if argv[0] == "kill":
+                raise BrokerError("timeout", {"reason": "first signal failed"})
+            return original_exec(argv, **kwargs)
+        monkeypatch.setattr(broker, "_exec", failed_signal)
+        pids = [row["pid"] for row in rows[1:]]
+    calls = []
+    original_call = broker.call
+    def recorded_call(verb, args=None, **kwargs):
+        calls.append(verb)
+        return original_call(verb, args, **kwargs)
+    monkeypatch.setattr(broker, "call", recorded_call)
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, clock)
+        await control._plan_verb("kill-orphans", {"pids": pids})
+        await control._apply(control._plan.plan_id[:4])
+        await _painted(pilot)
+        assert control.mode == "idle" and control._plan is None
+        text = _screen_text(pilot)
+        assert "nothing signalled" in text
+        assert "skipped pids: " + ", ".join(str(pid) for pid in pids) in text
+        await control._tick()
+        assert "verify" not in calls
+        assert calls.count("audit-tail") >= 2
+
+
+async def test_ignored_verb_keeps_active_partial_evidence():
+    async with _A(_Manager(DOC, _broker())).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot)
+        control._mode = "verifying"
+        control._partial_note = "partial action — killed pids: 64876"
+        control.action_verb("k")
+        await _painted(pilot)
+        assert control.mode == "verifying"
+        assert "killed pids: 64876" in _screen_text(pilot)
+
+
+@pytest.mark.parametrize("consume_evidence", ["command_timeout", "verify_watch"])
+async def test_uncertain_action_retains_known_consumption(consume_evidence):
+    from maxpane_dashboard.data.seat_broker_client import CLIENT_TIMEOUT_S
+    clock = [100.0]
+    responses = []
+    def lost(_args):
+        if consume_evidence == "command_timeout":
+            raise BrokerError("timeout", {"outcome": "timeout"})
+        raise BrokerError("bad_response")
+    def verify(_args):
+        responses.append(True)
+        if consume_evidence == "verify_watch" and len(responses) == 1:
+            return {"ok": True, "data": {"verified": None, "connected": None, "elapsed_s": 1}}
+        raise BrokerError("unreachable")
+    broker = _broker(apply=lost, verify=verify)
+    async with _A(_Manager(DOC, broker)).run_test(size=(150, 60)) as pilot:
+        control = await _manual_control(pilot, lambda: clock[0])
+        await control._plan_verb("restart", {})
+        await control._apply(PLAN_ID[:4])
+        await _painted(pilot)
+        if consume_evidence == "verify_watch":
+            await control._poll_verify()
+        clock[0] += CLIENT_TIMEOUT_S
+        await control._poll_verify()
+        await _painted(pilot)
+        assert control.mode == "done"
+        _assert_color(pilot, "outcome unknown — plan is spent", 3)
+        assert "not applied" not in _screen_text(pilot)

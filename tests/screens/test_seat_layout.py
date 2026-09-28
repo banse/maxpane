@@ -270,18 +270,42 @@ async def test_the_row_pin_is_not_loose() -> None:
     assert below["taller"] and below["scroll"], "one row below must advertise the loss"
 
 
-async def test_long_raw_log_rows_have_a_scrollbar_and_remain_accessible() -> None:
+@pytest.mark.parametrize("defer_auto_scroll", [False, True])
+async def test_long_raw_log_rows_have_a_scrollbar_and_remain_accessible(monkeypatch, defer_auto_scroll) -> None:
     payload = worst_payload()
     payload["seat_log_lines"][-1]["text"] += " END-SCROLLBACK"
+    auto_scroll_complete = asyncio.Event()
+    original_scroll_end = RichLog.scroll_end
+
+    def observed_scroll_end(log, **kwargs):
+        if not kwargs.get("x_axis", True):
+            return original_scroll_end(log, **kwargs)  # RichLog.write's vertical scroll
+        # SeatLog schedules this after refresh; Textual itself defers it once more.
+        # Observe the actual completion, including an extra frame of ordering pressure.
+        kwargs["on_complete"] = auto_scroll_complete.set
+        if defer_auto_scroll:
+            log.call_after_refresh(original_scroll_end, log, **kwargs)
+        else:
+            original_scroll_end(log, **kwargs)
+
+    monkeypatch.setattr(RichLog, "scroll_end", observed_scroll_end)
     async with _seat_app(payload).run_test(size=(SEAT_FULL_LAYOUT_COLUMNS, SEAT_FULL_LAYOUT_ROWS)) as pilot:
         await pilot.app.screen._do_refresh()
-        await pilot.pause()
+        await asyncio.wait_for(auto_scroll_complete.wait(), 3)
         panel = pilot.app.screen.query_one(SeatLog)
         log = panel.query_one(RichLog)
         assert log.max_scroll_x > 0 and log.show_horizontal_scrollbar
         assert "END-SCROLLBACK" in log.lines[-1].text
         log.scroll_to(x=log.max_scroll_x, animate=False, immediate=True)
-        await pilot.pause()
+
+        async def wait_for_visible_end():
+            while "END-SCROLLBACK" not in _region_text(pilot.app, panel):
+                painted = asyncio.Event()
+                panel.call_after_refresh(painted.set)
+                panel.refresh()
+                await painted.wait()
+        await asyncio.wait_for(wait_for_visible_end(), 3)
+        assert log.scroll_x == log.max_scroll_x
         assert "END-SCROLLBACK" in _region_text(pilot.app, panel)
 
 

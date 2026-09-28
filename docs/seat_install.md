@@ -97,6 +97,8 @@ through the broker with each transient child's `memory.peak`, one `plan restart`
 section is the one drained restart you do by hand at an idle gap, recording the audit lines, the `verify` output and
 the slice's `memory.peak`.
 
+Restart, stop and start use `--no-block`: `outcome: applied` means systemd queued the job, and only `verify` confirms completion; a failed start shows no `runtimes:` within 30 seconds. After a lost reply or timeout, CONTROL shows “outcome unknown — checking verify”; if verification remains unavailable through the client deadline, it asks you to check LOG and audit before planning afresh, saying “plan state unknown” unless a reply or verification watch proved the plan was spent. An explicit spent-plan refusal means you must press the verb to create a new plan; CONTROL never re-plans or re-applies automatically.
+
 ## Daily path
 
 ~~~sh
