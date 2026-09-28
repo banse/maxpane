@@ -320,7 +320,7 @@ def _fixture_bytes(name: str) -> bytes:
 
 def test_journald_argv_forms_are_the_two_documented_ones():
     # spec §5.1 VPS transport: -o json -f --after-cursor=<cursor>; first run --since -14d
-    assert JournaldSource().argv() == ["journalctl", "-u", "imd-worker.service", "-o", "json", "-f", "--since", "-14d"]
+    assert JournaldSource().argv() == ["journalctl", "-u", "imd-worker.service", "-o", "json", "--all", "-f", "--since", "-14d"]
     assert JournaldSource("imd-worker.service", cursor="s=1;i=2").argv()[-2:] == ["--after-cursor", "s=1;i=2"]
     assert JournaldSource(since="2026-09-24 04:12:00 UTC").argv()[-2:] == ["--since", "2026-09-24 04:12:00 UTC"]
     src = JournaldSource(cursor="s=1;i=2", since="2026-09-24 04:12:00 UTC")
@@ -334,7 +334,7 @@ def test_journald_source_parses_o_json_records_from_the_fixture():
     src = JournaldSource("imd-worker.service", cursor="s=00000000000000000000000000000001;i=1ef", popen=popen)
     src.open()
     argv, kw = popen.calls[0]
-    assert argv == ["journalctl", "-u", "imd-worker.service", "-o", "json", "-f",
+    assert argv == ["journalctl", "-u", "imd-worker.service", "-o", "json", "--all", "-f",
                     "--after-cursor", "s=00000000000000000000000000000001;i=1ef"]
     assert kw["stdout"] is subprocess.PIPE and "shell" not in kw
     got = [r for r in src.lines() if r is not None]

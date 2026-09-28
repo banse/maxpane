@@ -59,10 +59,10 @@ class Journal:
     def cursor(index: int) -> str:
         return f"s=deadbeef;i={index}"
 
-    def render(self, selected: list[tuple[int, tuple[float, str]]], *, show_cursor: bool = True) -> bytes:
+    def render(self, selected: list[tuple[int, tuple[float, str]]], *, show_cursor: bool = True, all_fields: bool = False) -> bytes:
         out = []
         for index, (epoch, message) in selected:
-            out.append(json.dumps({"MESSAGE": message, "__REALTIME_TIMESTAMP": str(int(epoch * 1_000_000)),
+            out.append(json.dumps({"MESSAGE": message if all_fields or len(message.encode("utf-8")) < 4088 else None, "__REALTIME_TIMESTAMP": str(int(epoch * 1_000_000)),
                                    "__CURSOR": self.cursor(index), "_SYSTEMD_INVOCATION_ID": "inv0001"}))
         last = selected[-1][0] if selected else len(self.lines) - 1
         if show_cursor:
@@ -86,7 +86,7 @@ class Journal:
             seconds = float(since.strip("-s"))
             now = self.now()
             selected = [(i, ln) for i, ln in indexed if ln[0] >= now - seconds]
-        return subprocess.CompletedProcess(argv, 0, self.render(selected, show_cursor="--show-cursor" in argv), b"")
+        return subprocess.CompletedProcess(argv, 0, self.render(selected, show_cursor="--show-cursor" in argv, all_fields="--all" in argv), b"")
 
     now = staticmethod(lambda: NOW)
 

@@ -438,7 +438,7 @@ class JournaldSource:
         self._proc: Any = None
 
     def argv(self) -> list[str]:
-        base = ["journalctl", "-u", self._unit, "-o", "json", "-f"]
+        base = ["journalctl", "-u", self._unit, "-o", "json", "--all", "-f"]
         if self._cursor:
             return base + ["--after-cursor", self._cursor]
         return base + ["--since", self._since]

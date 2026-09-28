@@ -80,3 +80,52 @@ def test_completed_tail_with_trailing_prose_never_becomes_a_head(body):
     text = msg(1790000000, body)[1]
     assert grammar.classify(text).kind == grammar.KIND_UNKNOWN
     assert gate.newest_lifecycle([text]) == (None, None)
+
+
+@pytest.mark.parametrize("byte_count,all_fields,expect_null", [(4087, False, False), (4088, False, True), (4100, True, False)])
+def test_journal_fake_filters_full_message_before_systemd_size_limit(byte_count, all_fields, expect_null):
+    from tests.broker._harness import Journal, NOW
+    prefix = msg(NOW, "task failed: ")[1]
+    # The boundary is UTF-8 bytes, not characters.
+    text = prefix + "é" * ((byte_count - len(prefix.encode())) // 2)
+    text += "x" * (byte_count - len(text.encode()))
+    journal = Journal([(NOW, text)])
+    argv = ["journalctl", "--grep", "task failed: .+", "--lines", "1"] + (["--all"] if all_fields else [])
+    result = journal(argv, {})
+    assert result.returncode == 0
+    message = json.loads(result.stdout)["MESSAGE"]
+    assert (message is None) is expect_null
+    if not expect_null:
+        assert message == text
+
+
+@pytest.mark.parametrize("cursor", [None, "s=deadbeef;i=0"])
+def test_follower_preserves_long_terminal_and_closes_ledger(tmp_path, cursor):
+    from tests.broker._harness import Journal, NOW
+    from tests.data.test_seat_tail import _Proc
+    from maxpane_dashboard.data.seat_tail import JournaldSource
+    accepted = msg(NOW - 10, "accepted implement deadbeef — src (max 60 turns)")
+    terminal = msg(NOW - 1, "task failed: " + "z" * 4100)
+    journal = Journal([accepted, terminal])
+    def popen(argv, **kw):
+        done = journal(argv, kw)
+        return _Proc(done.stdout, done.returncode)
+    source = JournaldSource(cursor=cursor, since="-600s", popen=popen)
+    ledger = SeatLedger(tmp_path / "ledger.sqlite", seat=7, now=lambda: NOW)
+    try:
+        ledger.ingest([grammar.classify(accepted[1], cursor=Journal.cursor(0), invocation="inv0001")])
+        source.open()
+        parsed = [grammar.classify(raw.text, cursor=raw.cursor, invocation=raw.invocation)
+                  for raw in source.lines() if raw is not None]
+        ledger.ingest(parsed)
+        assert ledger.open_row() is None
+        assert ledger.state.last_lifecycle.kind == "local_fail"
+        assert ledger.state.last_lifecycle.fields["msg"] == "z" * 4100
+        # The same journal without --all demonstrates the actual loss, independent of argv assertions.
+        argv = [arg for arg in source.argv() if arg != "--all"]
+        hidden = journal(argv, {})
+        decoded = [JournaldSource._parse_record(line) for line in hidden.stdout.decode().split("\n") if line]
+        assert decoded[-1].text == ""
+    finally:
+        source.close()
+        ledger.close()
