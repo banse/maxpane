@@ -144,7 +144,8 @@ class VerifyWatch:
     """Per applied plan: what the journal said after ``cursor_before`` (spec §11 protocol bullet 4).
 
     ``verified`` and ``connected`` are two facts and never share one verdict: restart success is
-    ``shutting down`` followed by ``runtimes:`` within VERIFY_WITHIN_S; ``connected`` is ``admitted (session``.
+    ``shutting down`` followed by ``runtimes:`` within VERIFY_WITHIN_S; forced restarts include
+    bounded teardown. ``connected`` is ``admitted (session``.
     """
     plan_id: str
     verb: str
@@ -161,6 +162,8 @@ class VerifyWatch:
     reconnecting_since: float | None = None
     unit_state: str | None = None
     stop_within_s: float = VERIFY_WITHIN_S
+    forced_restart: bool = False
+    restart_within_s: float = VERIFY_WITHIN_S
     done: bool = False              # transient: the thread finished
     rc: int | None = None
     targets: list[tuple[str, int]] = field(default_factory=list)   # kill: ("pid" | "pgid", id) each SIGTERM went to
@@ -185,14 +188,17 @@ class VerifyWatch:
             since = self.reconnecting_since or self.shutting_down_at or self.runtimes_at or self.started
             self.connected = "pending (reconnecting since " + time.strftime("%H:%M:%S", time.gmtime(since)) + ")"
         if self.kind == "restart":
+            within_s = VERIFY_WITHIN_S
+            if self.forced_restart and self.shutting_down_at is not None:
+                within_s = min(self.restart_within_s, VERIFY_WATCH_S - 10 - (self.shutting_down_at - self.started))
             if self.shutting_down_at is not None and self.runtimes_at is not None:
-                self.verified = self.runtimes_at - self.shutting_down_at <= VERIFY_WITHIN_S
+                self.verified = self.runtimes_at - self.shutting_down_at <= within_s
                 if not self.verified:
-                    self.reason = f"runtimes: {self.runtimes_at - self.shutting_down_at:.1f} s after shutting down (> {VERIFY_WITHIN_S} s)"
+                    self.reason = f"runtimes: {self.runtimes_at - self.shutting_down_at:.1f} s after shutting down (> {within_s:g} s)"
             elif self.shutting_down_at is None and now - self.started > VERIFY_WITHIN_S:
                 self.verified, self.reason = False, f"no shutting down within {VERIFY_WITHIN_S} s"
-            elif self.shutting_down_at is not None and now - self.shutting_down_at > VERIFY_WITHIN_S:
-                self.verified, self.reason = False, f"no runtimes: within {VERIFY_WITHIN_S} s of shutting down"
+            elif self.shutting_down_at is not None and now - self.shutting_down_at > within_s:
+                self.verified, self.reason = False, f"no runtimes: within {within_s:g} s of shutting down"
         elif self.kind == "start":
             if self.runtimes_at is not None:
                 self.verified = True
@@ -204,10 +210,11 @@ class VerifyWatch:
                 self.unit_state = unit_state
             elif unit_active is not None:  # in-process Mac compatibility
                 self.unit_state = "active" if unit_active else "inactive"
+            within_s = self.stop_within_s if self.unit_state == "deactivating" or self.shutting_down_at is not None else VERIFY_WITHIN_S
             if self.shutting_down_at is not None and self.unit_state in ("inactive", "failed"):
                 self.verified = True
-            elif now - self.started > self.stop_within_s:
-                self.verified, self.reason = False, f"no shutting down + ActiveState=inactive within {self.stop_within_s:g} s"
+            elif now - self.started > within_s:
+                self.verified, self.reason = False, f"no shutting down + ActiveState=inactive within {within_s:g} s"
         elif self.kind in ("enabled", "disabled"):
             self.connected = None
             if unit_enabled is not None:
@@ -515,6 +522,7 @@ class Broker:
         return None if self._seat is None else self._standing_url.format(seat=self._seat)
 
     def _read_graceful(self) -> bool | None:
+        self._stop_timeout_s = None
         try:
             done = self._run(["systemctl", "show", self._unit, "-p", "KillMode", "-p", "TimeoutStopUSec"],
                              capture_output=True, timeout=5)
@@ -948,6 +956,8 @@ class Broker:
             return busy
         offline = bool(args.get("offline", False))
         force_node8 = args.get("force_node8")
+        if verb == "stop" or (verb == "restart" and force_node8):
+            self.graceful_stop_possible = self._read_graceful()
         preconditions: dict = {}
         argv: list[str]
         verify: dict = {"verified_when": [], "within_s": VERIFY_WITHIN_S, "connected_when": None, "reported_separately": True}
@@ -963,7 +973,8 @@ class Broker:
                     return refusal
             if verb == "restart":
                 argv = systemctl_argv("restart", self._unit)
-                verify = {"verified_when": ["shutting down", "runtimes:"], "within_s": VERIFY_WITHIN_S,
+                verify = {"verified_when": ["shutting down", "runtimes:"],
+                          "within_s": min(self._stop_timeout_s + 30, VERIFY_WATCH_S - 10) if force_node8 and self._stop_timeout_s is not None else VERIFY_WITHIN_S,
                           "connected_when": "admitted (session", "reported_separately": True}
                 inverse = {"verb": "stop", "args": {}}
             elif verb == "stop":
@@ -978,7 +989,7 @@ class Broker:
                 inverse = {"verb": "cancel-drain", "args": {}}
                 if self._drain.armed is not None:
                     self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="drain_already_armed")
-                    return verbs.err("drain_already_armed", self._drain.armed.to_dict())
+                    return verbs.err("drain_already_armed", {**self._drain.armed.to_dict(), "hint": "cancel-drain before arming another drain"})
                 warning = ("arms a broker-side wait for 4 consecutive idle heartbeats; the same fresh gate runs at fire time; "
                            "expires after 4 h; survives TUI exit; a broker restart drops it") + " · " + WARNING
         elif verb == "start":
@@ -1199,7 +1210,7 @@ class Broker:
         if plan.verb == "drain-restart":
             if self._drain.armed is not None:
                 self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan.plan_id, outcome="drain_already_armed")
-                return verbs.err("drain_already_armed", {"drain": self._drain.armed.to_dict(), "hint": "cancel-drain before arming another drain"})
+                return verbs.err("drain_already_armed", {**self._drain.armed.to_dict(), "hint": "cancel-drain before arming another drain"})
             self._drain_offline = offline
             event = self._drain.arm(plan.plan_id)
             # arming is verified at once (a kind="none" watch, so verify never answers unknown_plan to WP8's CONTROL);
@@ -1242,7 +1253,9 @@ class Broker:
         kind = {"restart": "restart", "drain-restart": "restart", "stop": "stop", "start": "start",
                 "enable-boot": "enabled", "disable-boot": "disabled"}[plan.verb]
         watch = VerifyWatch(plan_id=plan.plan_id, verb=plan.verb, kind=kind, cursor_before=cursor_before, started=started,
-                            stop_within_s=self._stop_verify_within_s() if kind == "stop" else VERIFY_WITHIN_S)
+                            stop_within_s=plan.verify.get("within_s", VERIFY_WITHIN_S) if kind == "stop" else VERIFY_WITHIN_S,
+                            forced_restart=kind == "restart" and bool(plan.force_node8),
+                            restart_within_s=plan.verify.get("within_s", VERIFY_WITHIN_S))
         self._watches[plan.plan_id] = watch
         outcome = "applied" if exit_code == 0 else ("timeout" if exit_code is None else f"exit {exit_code}")
         seq = self._log(peer_uid=peer_uid, verb=plan.verb, phase="apply", plan_id=plan.plan_id, preconditions=preconditions,

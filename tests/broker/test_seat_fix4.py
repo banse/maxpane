@@ -126,6 +126,128 @@ def test_follower_preserves_long_terminal_and_closes_ledger(tmp_path, cursor):
         hidden = journal(argv, {})
         decoded = [JournaldSource._parse_record(line) for line in hidden.stdout.decode().split("\n") if line]
         assert decoded[-1].text == ""
+        no_all = SeatLedger(tmp_path / "without-all.sqlite", seat=7, now=lambda: NOW)
+        try:
+            no_all.ingest([grammar.classify(accepted[1])])
+            no_all.ingest(grammar.classify(raw.text) for raw in decoded if raw is not None)
+            assert no_all.open_row()["nodeId8"] == "deadbeef"
+        finally:
+            no_all.close()
     finally:
         source.close()
         ledger.close()
+
+
+@pytest.mark.parametrize("state,shutdown,extended", [("active", False, False), (None, False, False), ("deactivating", False, True), ("active", True, True)])
+def test_stop_extended_deadline_requires_teardown_evidence(state, shutdown, extended):
+    watch = root.VerifyWatch("a" * 16, "stop", "stop", None, 100, stop_within_s=100)
+    watch.update([msg(105, "shutting down")] if shutdown else [], 131, unit_state=state)
+    assert watch.verified is (None if extended else False)
+    if extended:
+        watch.update([], 201, unit_state=state)
+        assert watch.verified is False and "within 100 s" in watch.reason
+    else:
+        assert "within 30 s" in watch.reason
+
+
+@pytest.mark.parametrize("forced,late,expected", [(True, 95, True), (True, 111, False), (False, 95, False)])
+def test_restart_deadline_both_verdict_and_timeout_paths(tmp_path, forced, late, expected):
+    broker, runner, journal, clock, _ = make_broker(tmp_path, script={
+        ("systemctl", "show", "imd-worker.service", "-p", "KillMode"): (0, "KillMode=control-group\nTimeoutStopUSec=90s\n")})
+    if forced:
+        journal.add(msg(clock() - 5, "accepted implement deadbeef — src"))
+    args = {"force_node8": "deadbeef"} if forced else {}
+    plan = call(broker, "restart", args)["plan"]
+    assert plan["verify"]["within_s"] == (110 if forced else 30)
+    assert apply(broker, plan, **args)["ok"]
+    start = clock()
+    journal.add(msg(start + 20, "shutting down"))
+    clock.advance(51)
+    interim = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert interim["verified"] is (None if forced else False)
+    clock.advance(late - 51)
+    journal.add(msg(clock(), "runtimes: codex (using codex)"))
+    broker.tick()
+    result = call(broker, "verify", {"plan_id": plan["plan_id"]})
+    assert result["ok"] and result["data"]["verified"] is expected
+
+
+def test_forced_restart_without_runtimes_reaches_verdict_before_purge(tmp_path):
+    broker, _, journal, clock, _ = make_broker(tmp_path, script={
+        ("systemctl", "show", "imd-worker.service", "-p", "KillMode"): (0, "KillMode=control-group\nTimeoutStopUSec=90s\n")})
+    journal.add(msg(clock() - 5, "accepted implement deadbeef — src"))
+    plan = call(broker, "restart", {"force_node8": "deadbeef"})["plan"]
+    assert apply(broker, plan, force_node8="deadbeef")["ok"]
+    start = clock()
+    journal.add(msg(start + 20, "shutting down"))
+    clock.advance(109)
+    assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is None
+    clock.advance(2)
+    broker.tick()
+    answer = call(broker, "verify", {"plan_id": plan["plan_id"]})
+    assert answer["ok"] and answer["data"]["verified"] is False
+    assert "within 90 s" in answer["data"]["reason"]
+
+
+@pytest.mark.parametrize("forced", [False, True])
+def test_plans_refresh_stop_timeout_and_graceful_capability(tmp_path, forced):
+    broker, runner, journal, clock, _ = make_broker(tmp_path)
+    assert broker._stop_timeout_s == 30
+    runner.script[("systemctl", "show", "imd-worker.service", "-p", "KillMode")] = (0, "KillMode=control-group\nTimeoutStopUSec=90s\n")
+    if forced:
+        journal.add(msg(clock() - 5, "accepted review deadbeef —"))
+    verb, args = ("restart", {"force_node8": "deadbeef"}) if forced else ("stop", {})
+    plan = call(broker, verb, args)["plan"]
+    assert plan["verify"]["within_s"] == (110 if forced else 100)
+    runner.script[("systemctl", "show", "imd-worker.service", "-p", "KillMode")] = (1, "")
+    refused = call(broker, verb, args)
+    assert broker._stop_timeout_s is None and broker.graceful_stop_possible is None
+    if forced:
+        assert not refused["ok"]
+    else:
+        assert refused["plan"]["verify"]["within_s"] == 110
+
+
+@pytest.mark.parametrize("failure", ["signal", "breaker", "snapshot"])
+def test_mac_kill_timeout_marks_unknown_only_after_signal_exec(tmp_path, failure):
+    from tests.data.test_seat_broker_client import _container_procs
+    broker, runner, _, clock = _local(tmp_path)
+    plan = broker.plan("kill-orphans", {"pids": [412, 418]})
+    if failure == "breaker":
+        # Permit the snapshot seam so this exercises the signal's breaker path itself.
+        broker._process_snapshot = _container_procs
+        broker._breaker_until["kill-orphans"] = clock() + 100
+    real = runner.script[("docker", "exec")]
+    def execute(argv, kw):
+        if (failure == "signal" and "kill" in argv) or (failure == "snapshot" and "--proc-snapshot" in argv):
+            raise subprocess.TimeoutExpired(argv, kw["timeout"])
+        return real(argv, kw)
+    runner.script[("docker", "exec")] = execute
+    answer = broker._apply({"plan_id": plan.plan_id, "confirm": plan.plan_id[:4]})
+    assert answer["error"] == "timeout" and answer["detail"]["partial"] is False
+    detail = answer["detail"]
+    signals = [argv for argv in runner.argvs("docker", "exec") if "kill" in argv]
+    if failure == "signal":
+        assert len(signals) == 1
+        assert detail["outcome"] == "timeout" and detail["reason"] == "orphan signal command timed out"
+    else:
+        assert not signals and "outcome" not in detail
+
+
+@pytest.mark.parametrize("mac", [False, True])
+def test_drain_refusals_share_flat_plan_and_apply_shape(tmp_path, mac):
+    if mac:
+        broker, _, _, _ = _local(tmp_path)
+        first, second = broker.plan("drain-restart"), broker.plan("drain-restart")
+        broker.apply(first.plan_id, first.plan_id[:4])
+        plan_reply = broker._plan("drain-restart", {})
+        apply_reply = broker._apply({"plan_id": second.plan_id, "confirm": second.plan_id[:4]})
+    else:
+        broker, _, _, _, _ = make_broker(tmp_path)
+        first, second = call(broker, "drain-restart")["plan"], call(broker, "drain-restart")["plan"]
+        apply(broker, first)
+        plan_reply = call(broker, "drain-restart")
+        apply_reply = apply(broker, second)
+    expected = {**broker._drain.armed.to_dict(), "hint": "cancel-drain before arming another drain"}
+    assert plan_reply["error"] == apply_reply["error"] == "drain_already_armed"
+    assert plan_reply["detail"] == apply_reply["detail"] == expected

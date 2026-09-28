@@ -47,7 +47,7 @@ def idle_window(now: float, beats: int = 9) -> list[tuple[float, str]]:
 
 
 class Journal:
-    """Lines with cursors; renders the two journalctl forms the broker uses."""
+    """Filter full fields first; systemd v259 emits large MESSAGEs as null without --all."""
 
     def __init__(self, lines: list[tuple[float, str]] | None = None) -> None:
         self.lines: list[tuple[float, str]] = sorted(lines or [], key=lambda item: item[0])

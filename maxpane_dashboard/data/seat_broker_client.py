@@ -382,7 +382,12 @@ class LocalDockerBroker(_CallMixin):
             return self._run(list(argv), capture_output=True, timeout=timeout_s or self._timeout_s, **io)
         except subprocess.TimeoutExpired:
             self._breaker_until[family] = now + self._breaker_s
-            raise BrokerError("timeout", {"family": family, "breaker_until": _iso(now + self._breaker_s)}) from None
+            detail = {"family": family, "breaker_until": _iso(now + self._breaker_s)}
+            # Only this caught runner timeout proves that the signal command actually ran.
+            # A pre-open breaker or a process-snapshot timeout leaves signal state untouched.
+            if family == "kill-orphans" and list(argv[4:6]) == ["kill", "-TERM"]:
+                detail.update(reason="orphan signal command timed out", outcome="timeout")
+            raise BrokerError("timeout", detail) from None
         except OSError as exc:
             raise BrokerError("unreachable", {"reason": exc.__class__.__name__}) from None
 
@@ -647,7 +652,7 @@ class LocalDockerBroker(_CallMixin):
                     return _verbs_mod.err("gate_blocked", {"reason": gate.reason, "preconditions": preconditions})
             elif self._drain.armed is not None:
                 self._log(peer_uid=os.getuid(), verb=verb, phase="refused", outcome="drain_already_armed")
-                return _verbs_mod.err("drain_already_armed", self._drain.armed.to_dict())
+                return _verbs_mod.err("drain_already_armed", {**self._drain.armed.to_dict(), "hint": "cancel-drain before arming another drain"})
             if verb == "stop":
                 argv = ["docker", "stop", "-t", str(MAC_STOP_TIMEOUT_S), self.container]
                 verify = {"verified_when": ["shutting down", "container not running"], "within_s": _broker_mod.VERIFY_WITHIN_S,
@@ -760,7 +765,7 @@ class LocalDockerBroker(_CallMixin):
                 if plan.verb == "drain-restart":
                     if self._drain.armed is not None:
                         self._log(peer_uid=os.getuid(), verb=plan.verb, phase="refused", plan_id=plan_id, outcome="drain_already_armed")
-                        return _verbs_mod.err("drain_already_armed", self._drain.armed.to_dict())
+                        return _verbs_mod.err("drain_already_armed", {**self._drain.armed.to_dict(), "hint": "cancel-drain before arming another drain"})
                     self._drain_watermark = now                           # tick() counts only heartbeats after the arm
                     event = self._drain.arm(plan_id)
                     # verified at once, like the root broker (WP8's CONTROL polls verify after every apply, contract §C.16)
