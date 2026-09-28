@@ -862,3 +862,8 @@ The long-row RichLog test now observes the completion of the deferred automatic 
 ### 2026-09-28 — PEPEPANE review R3.1: probe byte-array output
 
 The independent review demonstrated that p05 emitted numeric MESSAGE arrays unchanged, allowing encoded credentials to pass through text redaction. The probe now strictly decodes valid arrays before its existing output scrub and replaces unreadable MESSAGE values with a fixed omission label. The same small decoder serves lifecycle comparison, which retains unredacted decoded text internally; the original subprocess result stays unchanged. Permanent synthetic tests exercise string and array credentials, invalid UTF-8 and invalid byte types through the actual Python scrub and the final hex-removal pass. This corrects the output boundary without changing broker decoding or probe verdict rules.
+
+
+### 2026-09-28 — PEPEPANE third-round independent review closure
+
+The critical review of the third corrective round covered standing freshness, lifecycle classification and redaction, consumed-plan finalization, partial actions, CONTROL recovery and stop-watch lifetime. It found one output-boundary defect, R3.1, fixed in `3b7b0a6`. The same reviewer marked it ADDRESSED after the original reproduction and pertinent permanent cases passed (13 checks); bypassing output normalization made three cases fail, and exact inverse restoration returned the four regression cases to green. No Critical or Important finding remains. Follow-ups 35 and 36 retain the owner-run lifecycle probe and the explicitly permitted forced-restart teardown limitation. The archive is rebuilt once after this closure, followed by the seat suite including select-to-copy and the single final full-suite run.
