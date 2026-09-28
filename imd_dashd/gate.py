@@ -148,7 +148,7 @@ def _mmss(seconds: float) -> str:
 
 def evaluate(*, journal_lines: Sequence[tuple[float, str]], standing: dict | None, offline: bool,
              outbox_files: int | None, unit_active: bool | None, graceful_stop_possible: bool | None,
-             now: float, lifecycle_read_succeeded: bool) -> GateResult:
+             now: float, lifecycle_read_succeeded: bool, standing_checked_at: float | None = None) -> GateResult:
     lines = list(journal_lines)
     beats, newest_age = idle_beats(lines, now=now)
     last_line, lifecycle_open = newest_lifecycle([text for _, text in lines])
@@ -163,7 +163,7 @@ def evaluate(*, journal_lines: Sequence[tuple[float, str]], standing: dict | Non
         at = parse_iso(standing.get("at"))
         running = standing.get("running_count")
         if at is not None and isinstance(running, int) and not isinstance(running, bool):
-            age = max(0.0, now - at)
+            age = max(0.0, (now if standing_checked_at is None else standing_checked_at) - at)
             plane["as_of"] = standing.get("at")
             plane["standing_age_s"] = round(age, 1)
             if running > 0:

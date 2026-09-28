@@ -1,6 +1,6 @@
 """A scripted host for ``Broker`` tests: journal, systemctl, children -- all through the one ``Runner`` seam.
 
-``Journal`` renders ``journalctl -o json --show-cursor`` output from ``(epoch, message)`` pairs so the
+``Journal`` renders ``journalctl -o json`` output, adding a cursor only when requested, from ``(epoch, message)`` pairs so the
 broker's gate, cursors and verify watch run against controllable lines. ``make_broker`` wires a
 ``RecordingRunner`` whose default script answers every read the broker performs at construction
 and during a plan/apply/verify cycle; tests override entries by prefix.
@@ -138,7 +138,7 @@ def make_broker(tmp_path: Path, *, journal: Journal | None = None, clock: Clock 
     runner = RecordingRunner(default_script(journal, clock))
     runner.script.update(script or {})
     audit = Audit(tmp_path / "audit.jsonl", now=clock)
-    broker = Broker(run=runner, peer_uid_of=lambda conn: DASH_UID, allowed_uid=allowed_uid, audit=audit, now=clock, seat=seat,
+    broker = Broker(run=runner, peer_uid_of=lambda conn: DASH_UID, allowed_uid=allowed_uid, audit=audit, now=clock, monotonic=clock, seat=seat,
                     worker_home="/home/imd-worker", proc_root=proc_root or str(tmp_path / "proc"), python=PYTHON)
     return broker, runner, journal, clock, audit
 

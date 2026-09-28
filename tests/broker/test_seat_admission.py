@@ -264,20 +264,24 @@ def test_in_flight_snapshot_survives_concurrent_finisher(tmp_path, entry):
 @pytest.mark.parametrize("elapsed,timeout", [(5.5, False), (12, True)])
 def test_apply_slow_standing_still_queues_restart_within_exec_budget(tmp_path, elapsed, timeout):
     from tests.broker._harness import standing_child
-    broker, runner, *_ = make_broker(tmp_path)
-    mono = Clock(0)
-    broker._monotonic = mono
+    broker, runner, journal, clock, _ = make_broker(tmp_path)
+    started = clock()
     plan = call(broker, "restart")["plan"]
     def standing(argv, kw):
-        mono.advance(elapsed)
+        clock.advance(elapsed)
         if timeout:
             raise subprocess.TimeoutExpired(argv, kw["timeout"])
         return standing_child(0, broker._now())
     runner.script[(broker._python, "-I", broker._broker_dir + "/gate.py")] = standing
-    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4], "local_only_ack": "local-only"})
+    def slow_journal(argv, kw):
+        clock.advance(1.1 if "--grep" in argv else 1.0)
+        return journal(argv, kw)
+    runner.script[("journalctl",)] = slow_journal
+    ack = {"local_only_ack": "local-only"} if timeout else {}
+    result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4], **ack})
     assert result["ok"], result
     assert runner.argvs("systemctl", "restart") == [["systemctl", "restart", "--no-block", "imd-worker.service"]]
-    assert mono() < 20
+    assert clock() - started < 20
 
 
 def test_systemctl_apply_deadline_fits_client_and_stop_waits_for_inactive(tmp_path):

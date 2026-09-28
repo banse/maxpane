@@ -654,6 +654,7 @@ class Broker:
 
     def _gate(self, *, offline: bool, deadline: float | None = None) -> tuple[GateResult, list[tuple[float, str]], str | None]:
         standing = self._standing(offline, deadline)
+        standing_checked_at = self._now()
         outbox = self._outbox_files(deadline)
         active = self._unit_active(deadline)
         lines, cursor = self._journal(deadline=deadline)
@@ -662,7 +663,7 @@ class Broker:
         result = evaluate(journal_lines=lines, standing=standing, offline=offline,
                           outbox_files=outbox, unit_active=active,
                           graceful_stop_possible=self.graceful_stop_possible, now=self._now(),
-                          lifecycle_read_succeeded=lifecycle_ok)
+                          lifecycle_read_succeeded=lifecycle_ok, standing_checked_at=standing_checked_at)
         return result, lines, cursor
 
     # ------------------------------------------------------------ transport

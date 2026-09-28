@@ -438,6 +438,9 @@ class LocalDockerBroker(_CallMixin):
             return None
 
     def _gate(self):
+        standing = self._standing()
+        standing_checked_at = self._now()
+        outbox = self._outbox_files()
         inspect = self._inspect()
         unit_active = None if inspect is None else inspect.get("running")
         graceful = None if inspect is None else inspect.get("gracefulStopPossible")
@@ -452,9 +455,9 @@ class LocalDockerBroker(_CallMixin):
             lifecycle_ok = lifecycle_ok and history_ok and current
             if lifecycle_ok:
                 lines = sorted(set(history + lines))
-        return _gate_mod.evaluate(journal_lines=lines, standing=self._standing(), offline=self.offline,
-                                  outbox_files=self._outbox_files(), unit_active=unit_active, graceful_stop_possible=graceful,
-                                  now=self._now(), lifecycle_read_succeeded=lifecycle_ok)
+        return _gate_mod.evaluate(journal_lines=lines, standing=standing, offline=self.offline,
+                                  outbox_files=outbox, unit_active=unit_active, graceful_stop_possible=graceful,
+                                  now=self._now(), lifecycle_read_succeeded=lifecycle_ok, standing_checked_at=standing_checked_at)
 
     def _docker_tail(self, *, _limit: int = 200) -> list[tuple[float, str]]:
         return self._docker_tail_read(_limit=_limit)[0]
