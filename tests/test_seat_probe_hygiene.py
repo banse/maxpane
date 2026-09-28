@@ -191,3 +191,25 @@ def test_shared_ip_detector_handles_label_colon(address):
 
 def test_probe_doc_guard_scans_numeric_json_values():
     assert 'hex32' in _check_probe_doc('{"value": 12345678901234567890123456789012}')
+
+
+@pytest.mark.parametrize("address, suffix", [
+    ("2606:4700:4700::1111", "."),
+    ("2606:4700:4700::1111", "..."),
+    ("2606:4700:4700::1111", "/128."),
+    ("::ffff:8.8.8.8", "."),
+    ("::ffff:8.8.8.8", "..."),
+])
+def test_sentence_final_global_ipv6_is_scrubbed(address, suffix):
+    from imd_dashd.probe_hygiene import redact_public_ips
+    assert redact_public_ips("peer " + address + suffix) == "peer [public-ip]" + suffix
+
+@pytest.mark.parametrize("address", ["2606:4700:4700::1111", "::ffff:8.8.8.8"])
+def test_sentence_final_global_ipv6_is_rejected_by_both_guards(tmp_path, address):
+    text = "peer " + address + "."
+    data = json.dumps({"MESSAGE": text}).encode()
+    (tmp_path / "row.jsonl").write_bytes(data)
+    manifest = {"entries": {"row.jsonl": fixture_guard._entry(data)}}
+    fixture_problems = fixture_guard._scan_content(tmp_path, manifest)
+    doc_problems = _check_probe_doc(text)
+    assert (any("global IP" in problem for problem in fixture_problems), "global IP" in doc_problems) == (True, True), (fixture_problems, doc_problems)

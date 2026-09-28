@@ -10,7 +10,8 @@ import re
 
 _IP_CANDIDATE = re.compile(
     r"(?<![A-Za-z0-9_])(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]{1,4}:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*|::[0-9A-Fa-f:.]+)"
-    r"(?:/\d{1,3})?(?![A-Za-z0-9_])"
+    # Dots inside mapped IPv4 tails belong to the address; sentence-final dots do not.
+    r"(?<!\.)(?:/\d{1,3})?(?![A-Za-z0-9_])"
 )
 
 

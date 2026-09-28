@@ -902,3 +902,10 @@ Normal builds seed uv's output file from the repository's committed third-party 
 Round 3 resolved platformdirs 4.12.0 to 4.12.1 transitively through Textual, which imports it during startup; that previously reported change is now recorded here. The development interpreter has been aligned to all twenty committed third-party versions, including platformdirs 4.12.1 and sybilkit 0.1.1, while preserving editable MaxPane and test/build tools. It remains Python 3.11.15 rather than the VPS's 3.14. Owner correction separates the final MaxPane run on this closure from the Sybilkit suite on its in-tree sources; their results replace the previous combined run.
 
 Deployment instructions use a checkout placeholder instead of a personal path. Tar creation writes neutral owner identifiers: root uid/gid and root names on bsdtar, numeric zero identifiers on GNU tar. Hermetic shell tests exercise canonical seeding from another working directory and output directory, drift refusal, explicit upgrades and actual archive headers with synthetic wheels; they never resolve or download real dependencies.
+
+
+### 2026-09-28 — PEPEPANE fix4 review: IPv6 sentence boundaries
+
+The shared public-IP detector excludes trailing sentence periods from IPv6 candidates while retaining dots within mapped IPv4 tails and CIDR suffixes. Review finding R4.1 is covered by scrubber, fixture-guard and probe-document regressions; non-global addresses still use the standard-library classification. No spec departure.
+
+The independent scoped re-review marked R4.1 ADDRESSED: 17 named checks passed, removing the boundary fix caused six expected failures, and exact restoration returned seven permanent cases to green. The complete fourth-round review has no remaining Critical or Important finding. Explicit residuals remain in follow-ups 33, 38 and 39; follow-up 36 is closed and p05 must be repeated by the owner.
