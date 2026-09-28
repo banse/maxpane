@@ -12,9 +12,15 @@ installs the 20-wheel dependency closure and the fork under one hash check.
 ## Regenerate (Mac, at the commit you deploy)
 
 ~~~sh
-PYTHON=/Users/banse/codex/maxpane/.venv-pepepane/bin/python scripts/build_wheels.sh --out deploy/vps                   # resolve + download the closure, build the fork wheel, write lock + MANIFEST + tarball
-PYTHON=/Users/banse/codex/maxpane/.venv-pepepane/bin/python scripts/build_wheels.sh --out deploy/vps --manifest-only   # only re-hash, after editing imd_dashd/ or deploy/vps/
+PYTHON=/path/to/checkout/.venv-pepepane/bin/python scripts/build_wheels.sh --out deploy/vps                   # reproduce locked versions, download, build and hash
+PYTHON=/path/to/checkout/.venv-pepepane/bin/python scripts/build_wheels.sh --out deploy/vps --manifest-only   # only re-hash, after editing imd_dashd/ or deploy/vps/
 ~~~
+
+Normal builds seed the resolver from the checkout's committed `deploy/vps/requirements.lock`, excluding the fork-wheel
+block, even when another output directory is selected. The resolver runs from the checkout root to keep annotations
+relative; any third-party version drift stops the build before downloading or replacing existing wheels. Use
+`scripts/build_wheels.sh --out deploy/vps --upgrade` only for a deliberate upgrade, then review the lock diff and record
+the changed versions in `docs/decisions.md` before shipping. Archive owner headers use neutral root identifiers.
 
 The fork wheel's hash changes with every commit that touches `maxpane_dashboard/`; the guard
 `tests/test_seat_deploy_files.py::test_manifest_hashes_match_the_committed_files` reddens whenever a listed file is

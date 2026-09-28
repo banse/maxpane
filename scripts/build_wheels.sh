@@ -14,13 +14,15 @@ PY_VERSION=3.14                      # the VPS interpreter (fill7 §1: /usr/bin/
 UV_PLATFORM=x86_64-manylinux_2_17    # uv's spelling
 PIP_PLATFORM=manylinux_2_17_x86_64   # pip's spelling (pydantic_core-2.46.5-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl)
 MANIFEST_ONLY=0
+UPGRADE=0
 PYTHON="${PYTHON:-$REPO/.venv/bin/python}"
 
 usage() {
   cat <<'USAGE'
 usage: scripts/build_wheels.sh [--out DIR] [--python-version 3.14] [--platform x86_64-manylinux_2_17]
-                               [--pip-platform manylinux_2_17_x86_64] [--manifest-only] [--help]
+                               [--pip-platform manylinux_2_17_x86_64] [--manifest-only] [--upgrade] [--help]
 Writes DIR/wheels/*.whl, DIR/requirements.lock, DIR/MANIFEST.sha256 and dist/seat-deploy-<sha>.tar.gz.
+Reuses committed third-party versions; --upgrade permits a deliberate, reviewed version change.
 Needs: uv (https://astral.sh/uv), the repo .venv (pip download), network (PyPI), git.
 USAGE
 }
@@ -32,6 +34,7 @@ while [ $# -gt 0 ]; do
     --platform) UV_PLATFORM="${2:-}"; shift ;;
     --pip-platform) PIP_PLATFORM="${2:-}"; shift ;;
     --manifest-only) MANIFEST_ONLY=1 ;;
+    --upgrade) UPGRADE=1 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; printf 'build_wheels.sh: unknown argument: %s\n' "$1" >&2; exit 1 ;;
   esac
@@ -53,12 +56,24 @@ ABI="cp$(printf '%s' "$PY_VERSION" | tr -d .)"
 
 if [ "$MANIFEST_ONLY" = 0 ]; then
   have uv || die "uv not found (curl -LsSf https://astral.sh/uv/install.sh | sh)"
+  cd "$REPO"
   mkdir -p "$WHEELS"
-  rm -f "$WHEELS"/*.whl
   closure="$(mktemp)"
+  trap 'rm -f "$closure"' EXIT
+  committed_lock="$REPO/deploy/vps/requirements.lock"
+  if [ "$UPGRADE" = 0 ]; then
+    [ -f "$committed_lock" ] || die "committed requirements.lock missing; use --upgrade for a deliberate new resolution"
+    awk '/^# pepepane fork wheel/ {exit} {print}' "$committed_lock" > "$closure"
+  fi
   # 1. resolve + hash-pin the closure for the VPS's interpreter and platform (every distribution file's hash is listed)
   uv pip compile --quiet --generate-hashes --python-version "$PY_VERSION" --python-platform "$UV_PLATFORM" \
-     --extra seat --custom-compile-command "scripts/build_wheels.sh" -o "$closure" "$REPO/pyproject.toml"
+     --extra seat --custom-compile-command "scripts/build_wheels.sh" -o "$closure" pyproject.toml
+  if [ "$UPGRADE" = 0 ]; then
+    cmp -s <(grep -E '^[A-Za-z0-9][A-Za-z0-9._-]*==' "$closure" | sort) \
+      <(awk '/^# pepepane fork wheel/ {exit} {print}' "$committed_lock" | grep -E '^[A-Za-z0-9][A-Za-z0-9._-]*==' | sort) \
+      || die "third-party versions changed; review and record an explicit --upgrade"
+  fi
+  rm -f "$WHEELS"/*.whl
   # 2. download exactly those wheels, hash-checked, for cp314 / manylinux (pure wheels match py3-none-any)
   "$PYTHON" -m pip download --quiet --no-deps --only-binary=:all: --platform "$PIP_PLATFORM" \
      --python-version "$PY_VERSION" --implementation cp --abi "$ABI" -r "$closure" -d "$WHEELS"
@@ -72,6 +87,7 @@ if [ "$MANIFEST_ONLY" = 0 ]; then
     printf 'maxpane==%s \\\n    --hash=sha256:%s\n' "$VERSION" "$(sha256_of "$FORK_WHEEL")"
   } > "$LOCK"
   rm -f "$closure"
+  trap - EXIT
 fi
 [ -f "$FORK_WHEEL" ] || die "$FORK_WHEEL missing -- run without --manifest-only first"
 [ -f "$LOCK" ] || die "$LOCK missing -- run without --manifest-only first"
@@ -93,7 +109,11 @@ fi
 mkdir -p "$REPO/dist"
 SHA="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || printf 'nogit')"
 TARBALL="$REPO/dist/seat-deploy-$SHA.tar.gz"
-tar -C "$REPO" --exclude='__pycache__' --exclude='.gitignore' -czf "$TARBALL" imd_dashd deploy/vps
+case "$(tar --version)" in
+  *bsdtar*) tar_owner=(--uid 0 --gid 0 --uname root --gname root) ;;
+  *) tar_owner=(--owner=0 --group=0 --numeric-owner) ;;
+esac
+tar "${tar_owner[@]}" -C "$REPO" --exclude='__pycache__' --exclude='.gitignore' -czf "$TARBALL" imd_dashd deploy/vps
 
 n_wheels="$(ls "$WHEELS"/*.whl | wc -l | tr -d ' ')"
 printf 'wheels: %s files in %s (fork wheel %s)\n' "$n_wheels" "$WHEELS" "$(basename "$FORK_WHEEL")"
