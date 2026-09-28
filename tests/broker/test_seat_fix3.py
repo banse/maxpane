@@ -74,3 +74,134 @@ def test_mac_accept_after_standing_is_seen_before_apply(tmp_path):
         broker.apply(plan.plan_id, plan.plan_id[:4])
     assert exc.value.code == "gate_blocked" and "task running" in exc.value.detail["reason"]
     assert not runner.argvs("docker", "restart")
+
+
+OBJECTIVES = ["\u200b", "\u202e", "fix\u2028the parser", "fix\x85parser", "fix\x1cparser", "a\x0bb", "fix the parser", "\x07"]
+
+
+@pytest.mark.parametrize("objective", OBJECTIVES)
+def test_raw_root_lifecycle_blocks_apply_drain_and_redacts_output(tmp_path, objective):
+    from imd_dashd.redact import redact
+    broker, runner, journal, clock, _ = make_broker(tmp_path)
+    plan = call(broker, "restart", {"offline": True})["plan"]
+    drain = call(broker, "drain-restart", {"offline": True})["plan"]
+    accepted = msg(clock() - 5, f"accepted implement 0c1f9727 — {objective} (max 40 turns)")
+    journal.add(accepted)
+    original = journal
+    def read(argv, kw):
+        done = original(argv, kw)
+        if objective == "\x07" and "--grep" in argv:
+            done.stdout = json.dumps({"MESSAGE": list(accepted[1].encode()), "__REALTIME_TIMESTAMP": str(int(accepted[0]*1e6))}).encode()
+        return done
+    runner.script[("journalctl",)] = read
+    response = apply(broker, plan, local_only_ack="local-only")
+    assert response["error"] == "gate_blocked"
+    assert response["detail"]["preconditions"]["last_lifecycle_line"] == redact(accepted[1])
+    assert call(broker, "gate", {"offline": True})["data"]["last_lifecycle_line"] == redact(accepted[1])
+    preview = call(broker, "restart", {"offline": True, "force_node8": "0c1f9727"})["plan"]
+    assert preview["preconditions"]["last_lifecycle_line"] == redact(accepted[1])
+    assert apply(broker, drain)["ok"]
+    for i in (1, 2, 3, 4): journal.add(hb(clock() + i))
+    clock.advance(5)
+    broker.tick()
+    assert not runner.argvs("systemctl", "restart")
+    assert broker._drain.armed is not None
+    broker._drain.cancel()
+    if objective == "\u200b":
+        assert apply(broker, preview, force_node8="0c1f9727")["ok"]
+        assert runner.argvs("systemctl", "restart")
+
+
+@pytest.mark.parametrize("objective", OBJECTIVES[:-1])
+def test_raw_mac_lifecycle_blocks_apply_and_drain(tmp_path, objective):
+    from imd_dashd.redact import redact
+    from maxpane_dashboard.data.seat_broker_client import BrokerError
+    broker, runner, lines, clock = _local(tmp_path)
+    plan = broker.plan("restart")
+    drain = broker.plan("drain-restart")
+    accepted = msg(clock() - 5, f"accepted implement 0c1f9727 — {objective} (max 40 turns)")
+    lines.append(accepted)
+    broker._injected_tail = None
+    def logs(argv, kw):
+        return subprocess.CompletedProcess(argv, 0, "\n".join("2026-09-26T00:00:00Z " + text for _, text in lines).encode(), b"")
+    runner.script[("docker", "logs")] = logs
+    gate = broker._gate()
+    assert gate.lifecycle_open is True and "task running" in gate.reason
+    assert broker.read("gate")["last_lifecycle_line"] == redact(accepted[1])
+    with pytest.raises(BrokerError) as exc:
+        broker.apply(plan.plan_id, plan.plan_id[:4], local_only_ack="local-only")
+    assert exc.value.code == "gate_blocked"
+    assert broker.apply(drain.plan_id, drain.plan_id[:4]).outcome == "armed"
+    for _ in range(4):
+        clock.advance(30)
+        lines.append(hb(clock() - 1))
+        broker.tick()
+    assert broker._drain.armed is not None and not runner.argvs("docker", "restart")
+
+
+@pytest.mark.parametrize("rc,out,err,ok", [
+    (1, b"", b"", True), (1, b"-- No entries --\n", b"", True),
+    (1, b"-- cursor: s=0;i=1;b=0;m=0;t=0;x=0\n", b"", True),
+    (1, b"-- cursor: x\n", b"warning", False), (2, b"", b"", False),
+    (1, '{"MESSAGE":"x"}\n-- cursor: …\n'.encode(), b"", False),
+    (0, b'{"MESSAGE":"x"}\n', b"warning", False),
+    (0, b"", b"", False), (0, b"-- cursor: x\n", b"", False), (0, b"-- No entries --\n", b"", False),
+    (0, b'{"MESSAGE":[255]}\n', b"", False),
+    (0, '{"MESSAGE":"fix\u2028the parser"}\r\n'.encode(), b"", True),
+    (0, b'{"MESSAGE":[65,7,66]}\n', b"", True),
+])
+def test_lifecycle_outcome_direct_table(rc, out, err, ok):
+    records, succeeded = root.lifecycle_read_outcome(rc, out, err)
+    assert succeeded is ok
+    assert bool(records) is (ok and rc == 0)
+
+
+def test_lifecycle_query_preserves_long_fields_before_filter():
+    argv = root.lifecycle_journal_argv()
+    assert argv.index("--all") < argv.index("--grep")
+
+
+def test_lifecycle_unclassifiable_records_fail_closed(tmp_path):
+    broker, runner, journal, _, _ = make_broker(tmp_path)
+    def read(argv, kw):
+        if "--grep" in argv:
+            return subprocess.CompletedProcess(argv, 0, b'{"MESSAGE":"not a lifecycle"}\n', b"")
+        return journal(argv, kw)
+    runner.script[("journalctl",)] = read
+    assert call(broker, "restart", {"offline": True})["error"] == "gate_unknown(lifecycle)"
+
+
+def test_window_replaces_bad_heartbeat_byte_but_lifecycle_stays_strict(tmp_path):
+    broker, runner, journal, clock, _ = make_broker(tmp_path)
+    badbeat = hb(clock() - 2)[1] + " · paused until 23:53 after 3 failed runs: "
+    records = [{"MESSAGE": text, "__REALTIME_TIMESTAMP": str(int(epoch*1e6))} for epoch, text in journal.lines]
+    records.append({"MESSAGE": list(badbeat.encode()) + [255] + list(" — run imd doctor".encode()), "__REALTIME_TIMESTAMP": str(int((clock()-2)*1e6))})
+    window = "\n".join(json.dumps(row) for row in records).encode()
+    def read(argv, kw):
+        if "--grep" in argv:
+            line = msg(clock()-1, "accepted implement 0c1f9727 — ")[1]
+            payload = {"MESSAGE": list(line.encode()) + [255] + list(b" (max 40 turns)")}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(payload).encode(), b"")
+        return subprocess.CompletedProcess(argv, 0, window, b"")
+    runner.script[("journalctl",)] = read
+    lines, _, succeeded = broker._journal_read()
+    assert succeeded and "\ufffd" in lines[-1][1]
+    gate, _, _ = broker._gate(offline=True)
+    assert gate.idle_beats >= 4 and gate.unknown == "lifecycle"
+
+
+def test_long_terminal_is_classified(tmp_path):
+    broker, _, journal, clock, _ = make_broker(tmp_path)
+    journal.add(msg(clock()-1, "task failed: " + "a" * 4100))
+    gate, _, _ = broker._gate(offline=True)
+    assert gate.safe and gate.lifecycle_open is False
+
+
+def test_root_literal_unicode_separator_fixture_is_one_record(tmp_path):
+    from pathlib import Path
+    payload = Path('tests/fixtures/seat/logs/unicode-lifecycle-root.jsonl').read_bytes()
+    broker, runner, *_ = make_broker(tmp_path)
+    runner.script[("journalctl",)] = subprocess.CompletedProcess([], 0, payload, b"")
+    lines, _, succeeded = broker._journal_read(lifecycle_only=True)
+    assert succeeded and len(lines) == 1 and "fix\u2028the parser" in lines[0][1]
+    assert root.ACCEPTED_RE.match(lines[0][1])

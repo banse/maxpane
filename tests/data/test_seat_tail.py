@@ -524,8 +524,8 @@ def _thread(source_factory, *, state=None, state_path=None, clock=None, redact_f
 # =============================================================================
 
 
-def test_thread_redacts_then_classifies_then_queues_with_monotonic_seq():
-    # spec §9 Follower: each line -> redact() (control-character strip first) -> classify() -> LogLine -> queue.Queue
+def test_thread_classifies_raw_then_redacts_before_queue_with_monotonic_seq():
+    # Fix3: raw classification must preserve lifecycle events; only redacted LogLine reaches the queue.
     hostile = "2026-09-25T23:41:22.577Z alive 11h55m · idle · 13 submitted · paused until 23:53 after 3 failed runs: unexpected status 401 Unauthorized: sk-svcac******** \x1b]52;c;AAAA\x07 — run imd doctor"
     seen: list[str] = []
 
@@ -538,8 +538,9 @@ def test_thread_redacts_then_classifies_then_queues_with_monotonic_seq():
     thread.run_once()
     lines = _drain(q)
     assert [l.seq for l in lines] == [1, 2, 3]
-    assert "sk-svcac" not in seen[1] and "sk-[redacted]" in seen[1]
-    assert "\x1b" not in seen[1] and "\x07" not in seen[1] and "\u241b" in seen[1]
+    assert seen[1] == hostile
+    assert "sk-svcac" not in lines[1].text and "sk-[redacted]" in lines[1].text
+    assert "\x1b" not in lines[1].text and "\x07" not in lines[1].text and "\u241b" in lines[1].text
     assert lines[2].cursor == "c9" and lines[2].invocation == "inv1"
     assert thread.state.cursor == "c9" and thread.state.invocation == "inv1"
 
@@ -952,3 +953,30 @@ def test_host_journald_source_follows_the_real_unit_for_two_seconds():
     finally:
         stop.cancel()
     assert count >= 0
+
+
+def test_unicode_backfill_preserves_one_lifecycle_record():
+    payload = (FIXTURES.parent / "logs" / "unicode-lifecycle-mac.log").read_bytes()
+    source = DockerLogsSource("imd-worker", watermark_ts="2026-09-26T00:00:00.000Z", run=lambda *a, **kw: subprocess.CompletedProcess([], 0, payload, b""))
+    rows = source.backfill()
+    assert len(rows) == 1 and "fix\u2028the parser" in rows[0].text
+
+
+@pytest.mark.parametrize("objective", ["\u200b", "\u202e", "\x07", "sk-syntheticSecret1234\u202e"])
+def test_raw_tail_classification_reaches_ledger_without_raw_fields(tmp_path, objective):
+    from maxpane_dashboard.data.seat_log_grammar import classify, KIND_ACCEPTED_CODE
+    from maxpane_dashboard.data.seat_ledger import SeatLedger
+    raw = f"2026-09-26T01:52:50.000Z accepted implement 0c1f9727 — {objective} (max 40 turns)"
+    thread, q = _thread(lambda st: ListLineSource([raw]), redact_fn=redact, classify=classify)
+    thread.run_once()
+    lines = _drain(q)
+    assert len(lines) == 1 and lines[0].kind == KIND_ACCEPTED_CODE
+    assert lines[0].text == redact(raw) and lines[0].fields["paths"] == redact(objective)
+    ledger = SeatLedger(tmp_path / "ledger.sqlite", seat=7, now=lambda: 1790387570.0)
+    ledger.ingest(lines)
+    assert len(ledger.rows()) == 1
+    import sqlite3
+    with sqlite3.connect(tmp_path / "ledger.sqlite") as conn:
+        dump = "\n".join(conn.iterdump())
+    assert "syntheticSecret" not in dump and "\u200b" not in dump and "\u202e" not in dump and "\x07" not in dump
+    ledger.close()

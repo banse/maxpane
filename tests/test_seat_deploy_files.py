@@ -875,7 +875,7 @@ def test_changelog_and_decisions_have_the_dated_entries():
         assert decisions.index(phrase) > anchor, f"decision outside the pepepane block: {phrase}"
 
 
-@pytest.mark.parametrize("latest", ["heartbeat", "terminal", "older-heartbeat"])
+@pytest.mark.parametrize("latest", ["heartbeat", "terminal", "older-heartbeat", "long", "byte-array", "unicode"])
 def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(monkeypatch, capsys, latest):
     from imd_dashd.imd_dashd import lifecycle_journal_argv
     text = PROBE_SH.read_text()
@@ -886,10 +886,13 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
     older = "2026-09-27T10:00:00.000Z accepted question deadbeef"
     terminal = "2026-09-27T10:01:00.000Z question failed: executor threw"
     heartbeat = "2026-09-27T10:02:00.000Z alive 2m · idle · 0 submitted"
+    if latest == "long": terminal = terminal + "a" * 4100
+    if latest == "byte-array": terminal = list("2026-09-27T10:01:00.000Z accepted implement deadbeef — \x07 (max 40 turns)".encode())
+    if latest == "unicode": terminal = "2026-09-27T10:01:00.000Z accepted implement deadbeef — fix\u2028the parser (max 40 turns)"
     baseline_rows = [older, terminal, heartbeat]
     if latest == "terminal": baseline_rows = [older, terminal]
     if latest == "older-heartbeat": baseline_rows[-1] = heartbeat.replace("10:02", "10:00")
-    records = lambda messages: "\n".join(json.dumps({"MESSAGE": message, "_HOSTNAME": "private-host", "_CMDLINE": "private-argv", "__CURSOR": "private-cursor"}) for message in messages)
+    records = lambda messages: "\n".join(json.dumps({"MESSAGE": message, "_HOSTNAME": "private-host", "_CMDLINE": "private-argv", "__CURSOR": "private-cursor"}, ensure_ascii=False) for message in messages)
     calls = []
     def fake(argv, **kwargs):
         calls.append(argv)
@@ -903,7 +906,7 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
     monkeypatch.setattr(subprocess, "run", fake)
     exec(compile(body, "<synthetic lifecycle probe>", "exec"), {})
     output = capsys.readouterr().out
-    if latest == "heartbeat":
+    if latest in ("heartbeat", "long", "byte-array", "unicode"):
         assert "filter-before-limit: PASS" in output
     else:
         assert "filter-before-limit: inconclusive (newest entry is not a heartbeat)" in output
@@ -915,3 +918,11 @@ def test_lifecycle_probe_uses_the_installed_broker_argv_and_records_no_match(mon
     assert calls[0] == lifecycle_journal_argv()[:lifecycle_journal_argv().index("--grep")] + ["--lines", "10000"]
     assert len(calls) == 3
     assert "private-host" not in output and "private-argv" not in output and "private-cursor" not in output
+
+
+def test_lifecycle_probe_does_not_print_non_json_stdout(monkeypatch, capsys):
+    body = PROBE_SH.read_text().split("# BEGIN LIFECYCLE_PROBE\n", 1)[1].split("# END LIFECYCLE_PROBE", 1)[0]
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(argv, 1, "private-host malformed diagnostic\n", ""))
+    exec(compile(body, "<synthetic lifecycle probe>", "exec"), {})
+    out = capsys.readouterr().out
+    assert "private-host" not in out and "non-JSON line omitted" in out

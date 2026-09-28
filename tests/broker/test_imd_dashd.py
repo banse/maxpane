@@ -1162,7 +1162,10 @@ def test_armed_drain_refuses_manual_plan_and_preexisting_apply(tmp_path, verb):
         assert result["error"] == "drain_already_armed"
         assert "cancel-drain" in result["detail"]["hint"]
     assert not runner.argvs("systemctl", verb)
-    assert sum(r["outcome"] == "drain_already_armed" for r in audit_lines(audit)) == 2
+    refused = [r for r in audit_lines(audit) if r["outcome"] == "drain_already_armed"]
+    assert len(refused) == 2
+    assert refused[0]["plan_id"] is None
+    assert refused[-1]["plan_id"] == earlier["plan_id"]
 
 
 def test_malformed_plan_id_is_audited_without_echoing_it(tmp_path):

@@ -190,11 +190,14 @@ def read(argv, label, *, show_output=True):
     print(label + " exit status:", done.returncode)
     if show_output:
         safe_lines = []
-        for line in done.stdout.splitlines():
+        for line in done.stdout.split("\n"):
+            line = line.rstrip("\r")
+            if not line:
+                continue
             try:
                 record = json.loads(line)
             except ValueError:
-                safe_lines.append(line)
+                safe_lines.append("<non-JSON line omitted>")
             else:
                 if isinstance(record, dict):
                     safe_lines.append(json.dumps({key: record[key] for key in ("MESSAGE", "__REALTIME_TIMESTAMP") if key in record}))
@@ -205,13 +208,26 @@ def read(argv, label, *, show_output=True):
 def messages(done):
     rows = []
     if done is not None:
-        for line in done.stdout.splitlines():
+        for line in done.stdout.split("\n"):
+            line = line.rstrip("\r")
+            if not line:
+                continue
             try:
                 record = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(record, dict) and isinstance(record.get("MESSAGE"), str):
-                rows.append(record["MESSAGE"])
+            if not isinstance(record, dict):
+                continue
+            message = record.get("MESSAGE")
+            if isinstance(message, list):
+                try:
+                    if not all(type(value) is int and 0 <= value < 256 for value in message):
+                        continue
+                    message = bytes(message).decode("utf-8")
+                except UnicodeDecodeError:
+                    continue
+            if isinstance(message, str):
+                rows.append(message)
     return rows
 
 argv = lifecycle_journal_argv()

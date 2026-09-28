@@ -3,9 +3,8 @@
 Every daemon line is ``<ISO-8601 ms Z> <text>``. Task-agent prose forges
 event-like text (journal line 4876: ``working: … the accepted recipe must
 cite …``), so every pattern starts at the stamp and is matched with
-``fullmatch`` — never ``search``. The redactor runs *before* matching so a
-``working:`` sentence carrying an escape sequence still classifies as a
-``phase`` on its stripped form (spec §13 step 0).
+``fullmatch`` — never ``search``. Classification uses raw text so control-only objectives cannot
+remove lifecycle events; emitted text and every captured field are redacted.
 
 Pinned to daemon build ``GRAMMAR_VERSION``; a line that matches nothing is
 ``KIND_UNKNOWN`` and goes to the LOG panel only, never into the ledger.
@@ -208,14 +207,15 @@ class LogLine:
 
 
 def classify(line: str, *, invocation: str | None = None, cursor: str | None = None, seq: int = 0) -> LogLine:
-    """Redact first (spec §13 step 0), then ``fullmatch`` the patterns in ``PATTERNS`` order."""
-    text = redact(line.rstrip("\r\n"))
+    """Classify raw lines, then redact all emitted text and captures before storage/render."""
+    raw = line.rstrip("\r\n")
+    text = redact(raw)
     for kind, pattern in PATTERNS:
-        match = pattern.fullmatch(text)
+        match = pattern.fullmatch(raw)
         if match is not None:
             return LogLine(
                 ts=match.group("ts"), invocation=invocation, text=text, kind=kind, cursor=cursor,
-                fields=match.groupdict(), seq=seq,
+                fields={key: redact(value) if value is not None else None for key, value in match.groupdict().items()}, seq=seq,
             )
     unit = UNIT_EVENT_RE.fullmatch(text)
     if unit is not None:

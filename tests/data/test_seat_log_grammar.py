@@ -163,7 +163,7 @@ class TestClassifyEachKind:
         assert line.kind == g.KIND_MODEL_LINE
         assert g.PHASE.fullmatch(line.text) is not None  # the ambiguity is real, the order resolves it
 
-    def test_control_characters_are_stripped_before_matching(self) -> None:
+    def test_control_characters_are_stripped_from_matched_output(self) -> None:
         """Spec §13 step 0 / Appendix B: an OSC-52 payload inside working: prose still classifies as phase."""
         raw = "2026-09-26T01:52:50.000Z   working: done \x1b]52;c;AAAA\x07\x1b]0;x\x07 ‮ reversed"
         line = g.classify(raw)
@@ -299,3 +299,25 @@ def test_corpus_is_covered_by_the_grammar(name: str, docker: bool) -> None:
 
 def test_local_failure_is_a_terminal_kind():
     assert g.is_terminal(g.KIND_LOCAL_FAIL)
+
+
+@pytest.mark.parametrize("objective", ["\u200b", "\u202e", "\x07", "fix\u2028the parser", "fix\x85parser", "a\x0bb"])
+def test_accept_classifies_raw_and_only_emits_redacted_fields(objective):
+    from maxpane_dashboard.analytics.seat_redact import redact
+    raw = f"2026-09-26T01:52:50.000Z accepted implement 0c1f9727 — {objective} (max 40 turns)"
+    line = g.classify(raw)
+    assert line.kind == g.KIND_ACCEPTED_CODE and line.fields["node8"] == "0c1f9727"
+    assert line.text == redact(raw) and line.fields["paths"] == redact(objective)
+    for value in [line.text, *line.fields.values()]:
+        if value is not None:
+            assert redact(value) == value
+
+
+def test_raw_classification_redacts_secrets_in_every_capture():
+    from maxpane_dashboard.analytics.seat_redact import redact
+    objective = "sk-syntheticSecret1234 " + "a" * 64 + "\u202e"
+    raw = f"2026-09-26T01:52:50.000Z accepted implement 0c1f9727 — {objective} (max 40 turns)"
+    line = g.classify(raw)
+    assert line.kind == g.KIND_ACCEPTED_CODE
+    assert line.fields["paths"] == redact(objective)
+    assert "syntheticSecret" not in repr(line) and "a" * 64 not in repr(line)

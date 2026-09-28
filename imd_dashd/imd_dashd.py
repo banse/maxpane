@@ -399,7 +399,7 @@ def lifecycle_journal_argv(unit: str = WORKER_UNIT, *, pattern: str | None = Non
     if pattern is None:
         pattern = re.sub(r"\(\?P<[^>]+>", "(?:", f"(?:{ACCEPTED_RE.pattern}|{TERMINAL_RE.pattern})")
     return ["journalctl", "-u", unit, "-o", "json", "--no-pager",
-            "--grep", pattern, "--lines", "1", "--case-sensitive=yes"]
+            "--all", "--grep", pattern, "--lines", "1", "--case-sensitive=yes"]
 
 
 def lifecycle_read_outcome(returncode: int, stdout: bytes | str, stderr: bytes | str) -> tuple[list[dict], bool]:
@@ -412,7 +412,8 @@ def lifecycle_read_outcome(returncode: int, stdout: bytes | str, stderr: bytes |
     try:
         text = stdout.decode("utf-8") if isinstance(stdout, bytes) else stdout
         records = []
-        for raw in text.splitlines():
+        for raw in text.split("\n"):
+            raw = raw.rstrip("\r")
             if not raw.strip() or raw.strip() == "-- No entries --" or raw.startswith("-- cursor: "):
                 continue
             record = json.loads(raw)
@@ -561,7 +562,8 @@ class Broker:
         lines: list[tuple[float, str]] = []
         cursor: str | None = None
         parse_failed = False
-        for raw in stdout.splitlines():
+        for raw in stdout.split("\n"):
+            raw = raw.rstrip("\r")
             if not raw.strip() or raw.strip() == "-- No entries --":
                 continue
             if raw.startswith("-- cursor: "):
@@ -593,7 +595,9 @@ class Broker:
                 epoch = int(record.get("__REALTIME_TIMESTAMP")) / 1_000_000
             except (TypeError, ValueError):
                 epoch = parse_iso(message[:24]) or 0.0
-            lines.append((epoch, redact(message)))
+            lines.append((epoch, message))
+        if lifecycle_only and lines and not any(ACCEPTED_RE.match(text) or TERMINAL_RE.match(text) for _, text in lines):
+            return [], cursor, False
         return lines, cursor, (not lifecycle_only or not parse_failed) and bool(
             lines or cursor or not stdout.strip() or stdout.strip() == "-- No entries --")
 
@@ -782,7 +786,7 @@ class Broker:
             return verbs.ok(data={"lines": self._audit.tail(max(1, min(int(args["n"]), 200)))})
         if verb == "gate":
             result, _lines, _cursor = self._gate(offline=bool(args.get("offline", False)))
-            return verbs.ok(data=result.to_dict())
+            return verbs.ok(data={**result.to_dict(), "last_lifecycle_line": redact(result.last_lifecycle_line) if result.last_lifecycle_line is not None else None})
         if verb == "verify":
             return self._verify(str(args["plan_id"]))
         if verb == "orphans":
@@ -1663,7 +1667,7 @@ def _usec_to_s(value: str | None) -> float | None:
 def _preconditions(gate: GateResult) -> dict:
     return {"idle_beats": gate.idle_beats, "idle_beats_required": gate.idle_beats_required,
             "newest_heartbeat_age_s": gate.newest_heartbeat_age_s, "plane": dict(gate.plane),
-            "last_lifecycle_line": gate.last_lifecycle_line, "lifecycle_open": gate.lifecycle_open,
+            "last_lifecycle_line": redact(gate.last_lifecycle_line) if gate.last_lifecycle_line is not None else None, "lifecycle_open": gate.lifecycle_open,
             "outbox_files": gate.outbox_files, "unit_active": gate.unit_active,
             "graceful_stop_possible": gate.graceful_stop_possible}
 

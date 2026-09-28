@@ -471,11 +471,12 @@ class LocalDockerBroker(_CallMixin):
         if done.returncode != 0:
             return [], False
         out: list[tuple[float, str]] = []
-        for raw in (_text(done.stdout) + "\n" + _text(done.stderr)).splitlines():
+        for raw in (_text(done.stdout) + "\n" + _text(done.stderr)).split("\n"):
+            raw = raw.rstrip("\r")
             text = raw.split(" ", 1)[1] if " " in raw else raw
             epoch = _gate_mod.parse_iso(text[:24])
             if epoch is not None:
-                out.append((epoch, redact(text)))
+                out.append((epoch, text))
         return sorted(out), True
 
     def _log(self, **fields) -> int:
@@ -518,7 +519,8 @@ class LocalDockerBroker(_CallMixin):
         if verb == "audit-tail":
             return {"lines": self._audit.tail(max(1, min(int(args["n"]), 200)))}
         if verb == "gate":
-            return self._gate().to_dict()
+            gate = self._gate()
+            return {**gate.to_dict(), "last_lifecycle_line": redact(gate.last_lifecycle_line) if gate.last_lifecycle_line is not None else None}
         if verb == "verify":
             return self._verify(str(args["plan_id"]))
         if verb in ("status", "skills", "tools"):

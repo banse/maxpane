@@ -1281,6 +1281,26 @@
       "daemon_version": "0.1.0+5bfa8261",
       "allow": [],
       "notes": "synthetic accepted question and terminal empty failure; preserves trailing space or journald-stripped form"
+    },
+    "logs/unicode-lifecycle-root.jsonl": {
+      "origin": "hand-written fix3 LF-only lifecycle decoder regression",
+      "captured_at": "2026-09-28T00:00:00Z",
+      "sha256": "d0c4ac7450db3f2f07b0739ce1100044f5bac768081167c0df07123a2369a520",
+      "bytes": 148,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "Literal U+2028 inside a lifecycle objective is one record, never a record separator."
+    },
+    "logs/unicode-lifecycle-mac.log": {
+      "origin": "hand-written fix3 LF-only lifecycle decoder regression",
+      "captured_at": "2026-09-28T00:00:00Z",
+      "sha256": "162defe599b56ddb29e8c6a237dd4444d4aae36f62ff20ea629a47c5a8efdb58",
+      "bytes": 120,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": "0.1.0+5bfa8261",
+      "notes": "Literal U+2028 inside a lifecycle objective is one record, never a record separator."
     }
   }
 }

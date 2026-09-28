@@ -4,8 +4,8 @@ The IdentityMD daemon exposes no socket, status file or JSON output (spec §2); 
 stdout is the only local event stream (§5.1). On the VPS that stream is journald
 (``journalctl -u imd-worker.service -o json -f``), on the Mac it is the Docker
 json-file log (``docker logs -f --tail 200 --timestamps imd-worker``). This module
-turns either into ``RawLine`` records and runs one daemon thread that redacts,
-classifies and queues them for ``SeatManager.drain()`` on the ordinary poll tick
+turns either into ``RawLine`` records and runs one daemon thread that classifies,
+redacts and queues them for ``SeatManager.drain()`` on the ordinary poll tick
 (§4.3, §9). The thread never touches the ledger, a widget or Textual: it fills a
 ``queue.Queue`` and nothing else.
 
@@ -46,7 +46,7 @@ import subprocess
 import threading
 import time
 from collections import OrderedDict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Protocol
@@ -598,7 +598,8 @@ class DockerLogsSource:
         if isinstance(body, bytes):
             body = body.decode("utf-8", "replace")
         out: list[RawLine] = []
-        for line in body.splitlines():
+        for line in body.split("\n"):
+            line = line.rstrip("\r")
             if not line:
                 continue
             _, text = split_docker_prefix(line)
@@ -629,7 +630,7 @@ def docker_factory(
 
 
 class TailThread:
-    """One daemon thread: source -> redact -> classify -> ``queue`` (spec §4.3, §9).
+    """One daemon thread: source -> classify raw -> redact output -> ``queue`` (spec §4.3, §9).
 
     The thread only fills the queue. It persists ``state`` to ``state_path`` on its
     one-second tick while the queue is empty (i.e. after each drained batch) and on ``stop()``;
@@ -859,7 +860,10 @@ class TailThread:
     def _emit(self, raw: RawLine, kind: str) -> int:
         text = self._redact(raw.text)
         try:
-            line = self._classify(text, invocation=raw.invocation, cursor=raw.cursor, seq=self._seq + 1)
+            line = self._classify(raw.text, invocation=raw.invocation, cursor=raw.cursor, seq=self._seq + 1)
+            fields = getattr(line, "fields", None)
+            cleaned = {} if fields is None else {"fields": {key: self._redact(value) if isinstance(value, str) else value for key, value in fields.items()}}
+            line = replace(line, text=self._redact(line.text), **cleaned)
         except Exception:  # a hostile line must never kill the follower
             logger.exception("classify failed; line dropped")
             return 0
