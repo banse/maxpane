@@ -41,7 +41,7 @@ MANIFEST = FIXTURE_ROOT / "MANIFEST.json"
 #: Contract §C.3 (the redactor's step-0 and canary regexes, restated here because WP0 has no
 #: dependency; ``tests/analytics/test_seat_redact.py`` asserts the redactor's copies equal these).
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
-BIDI_FORMAT_RE = re.compile("[\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+BIDI_FORMAT_RE = re.compile("[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\U000e0001\U000e0020-\U000e007f]")
 SK_RE = re.compile(r"sk-[A-Za-z0-9*_-]{4,}")
 #: A server-masked fragment: a short prefix then four or more ``*``. The only ``sk-`` shape a
 #: fixture may keep, and only when its entry says ``"allow": ["sk"]``.

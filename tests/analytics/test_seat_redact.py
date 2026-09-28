@@ -303,3 +303,57 @@ def test_long_hex_forms_are_redacted_and_detected(value):
     for field in ("deviceKey", "txHash", "submissionHash"):
         assert sr.redact(value, field=field) == value
     assert sr.redact("0x" + "a" * 40) == "0x" + "a" * 40
+
+
+G2_CASES = [
+    ("github_pat_" + "Aa_1" * 8, "[github-token]"),
+    ("npm_" + "Az19" * 9, "[npm-token]"),
+    ("AUTHORIZATION: bAsIc dXNlcjpwYXNz", "AUTHORIZATION: bAsIc [redacted]"),
+    ("Cookie: session=example; other=value", "Cookie: [redacted]"),
+    ("sEt-CoOkIe: session=example; Secure", "sEt-CoOkIe: [redacted]"),
+    ("X-API-KEY: example-value", "X-API-KEY: [redacted]"),
+    ("https://user:password@host/path", "https://[redacted]@host/path"),
+    ("https://TOKEN@github.com/repo", "https://[redacted]@github.com/repo"),
+]
+
+
+@pytest.mark.parametrize("raw, expected", G2_CASES)
+def test_g2_credentials_are_redacted_idempotently(raw, expected):
+    assert sr.redact(raw) == expected
+    assert sr.redact(sr.redact(raw)) == expected
+
+
+def test_g2_redacted_document_passes_existing_canary():
+    document = {"rows": [raw for raw, _ in G2_CASES]}
+    assert sr.find_secret(sr.redact_tree(document)) is None
+
+
+@pytest.mark.parametrize("char", [
+    "\u00ad", "\u061c", "\u180e", "\u200b", "\u200c", "\u200d", "\u200e", "\u200f",
+    "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+    "\u2060", "\u2061", "\u2062", "\u2063", "\u2064",
+    "\u2066", "\u2067", "\u2068", "\u2069", "\u206a", "\u206b", "\u206c", "\u206d", "\u206e", "\u206f",
+    "\ufeff", "\ufff9", "\ufffa", "\ufffb", "\U000e0001", *map(chr, range(0xe0020, 0xe0080)),
+])
+def test_g2_step_zero_cannot_split_credential_shapes(char):
+    for raw, expected in [
+        ("sk-" + char + "ant-syntheticSample", "sk-ant-[redacted]"),
+        ("github_" + char + "pat_" + "Az_7" * 8, "[github-token]"),
+        ("https:" + char + "//user:pass@host/path", "https://[redacted]@host/path"),
+    ]:
+        assert sr.redact(raw) == expected
+        assert sr.redact(sr.redact(raw)) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "https://explorer.imd.fun/@pawai", "npm_config_user_agent=example",
+    "npm_config_prefix=/home/imd/.npm-global", "Basic authentication", "the cookie jar",
+    "x-api-key header missing", "github_pat_ prefix", "ssh -t imd-dash@<host>",
+    "git@github.com:org/repo",
+])
+def test_g2_non_credentials_survive(text):
+    assert sr.redact(text) == text
+
+
+def test_g2_does_not_change_task_runner_redaction():
+    assert sr.redact("task-runner") == "task-[redacted]"

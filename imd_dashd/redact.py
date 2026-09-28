@@ -41,6 +41,7 @@ __all__ = [
     "BIDI_FORMAT_RE",
     "CONTROL_RE",
     "ESC_GLYPH",
+    "G2_RULES",
     "HEX64_ALLOWED_FIELDS",
     "HEX64_PLACEHOLDER",
     "HEX64_RE",
@@ -60,8 +61,8 @@ __all__ = [
 ESC_GLYPH = "\u241b"
 #: C0 except ``\t`` and ``\n``, DEL, and the C1 range.
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
-#: Zero-width and bidi override/isolate controls: U+200B–U+200F, U+202A–U+202E, U+2066–U+2069.
-BIDI_FORMAT_RE = re.compile("[\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+#: Invisible format controls, including joiners, bidi isolates and Unicode tags (spec §13 G2).
+BIDI_FORMAT_RE = re.compile("[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\U000e0001\U000e0020-\U000e007f]")
 
 #: Canary on values (the rules below replace; the canaries only detect).  The
 #: negative lookahead keeps the ``sk-ant-[redacted]`` placeholder from being
@@ -70,6 +71,18 @@ BIDI_FORMAT_RE = re.compile("[\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
 #: and flagged redacted text as a secret.
 SK_RE = re.compile(r"sk-(?!ant-\[redacted\])[A-Za-z0-9*_-]{4,}")
 JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{10,}")
+
+
+#: Owner G2 credential rules, also imported by pre-commit content guards. These
+#: are replacements, not additions to the projection/status canary.
+G2_RULES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"github_pat_[A-Za-z0-9_]{20,}"), "[github-token]"),
+    (re.compile(r"(?<![A-Za-z0-9_])npm_[A-Za-z0-9]{36}(?![A-Za-z0-9_])"), "[npm-token]"),
+    (re.compile(r"(?i)(authorization:[ \t]*basic[ \t]+)(?![ \t]|\[redacted\])[A-Za-z0-9+/=._~-]+"), r"\1[redacted]"),
+    (re.compile(r"(?i)(\b(?:set-)?cookie:[ \t]*)(?![ \t]|\[redacted\])[^\r\n]+"), r"\1[redacted]"),
+    (re.compile(r"(?i)(\bx-api-key:[ \t]*)(?![ \t]|\[redacted\])[^\s,;]+"), r"\1[redacted]"),
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)(?!\[redacted\]@)[^/?#\s@\[\]]+@"), r"\1[redacted]@"),
+)
 
 #: Applied in this order after step 0 (spec §13).  ``sk-ant-`` precedes ``sk-``
 #: so an Anthropic key is not left as ``sk-[redacted]`` with its prefix lost.
@@ -80,7 +93,7 @@ RULES: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{8,}"), "Bearer [redacted]"),
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"), "[github-token]"),
     (re.compile(r"([?&](?:token|key|sig|signature|secret)=)[^&\s]+"), r"\1[redacted]"),
-)
+) + G2_RULES
 HEX64_RE = re.compile(r"(?<![0-9A-Fa-f])(?:0x)?[0-9A-Fa-f]{64,}(?![0-9A-Fa-f])")
 HEX64_PLACEHOLDER = "<hex64>"
 #: The fields whose value may legitimately be 64 hex.  ``deviceKey`` only after
