@@ -31,7 +31,7 @@ def _build(tmp_path, *, drift=False, upgrade=False, custom_out=False):
     if custom_out:
         (out / "requirements.lock").write_text("wrong-output-seed==1\n")
     for name in ("imd-dashd.socket", "imd-dashd.service", "20-hide-dash.conf",
-                 "50-pepepane.conf", "10-imd-dash.sshd.conf", "install.sh", "probe_seat_host.sh"):
+                 "50-pepepane.conf", "10-imd-dash.sshd.conf", "install.sh", "probe_seat_host.sh", "check_fork_wheel.py"):
         (out / name).write_text("# synthetic deployment file\n")
     bindir = tmp_path / "bin"
     bindir.mkdir()

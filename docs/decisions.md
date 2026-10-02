@@ -975,3 +975,9 @@ The operator must quit live pepepane sessions before reinstalling: old modules r
 ### 2026-10-02 — PEPEPANE fix6 small-child accounting (§14)
 
 The probe reads the exact unit's journal once and explains absent consumed/memory-peak lines, even when a failure line exists. On the measured systemd 259.5 host, resource accounting is logged at debug level unless a mentionworthy threshold is crossed: CPU over one second, memory 64 MB, IO 1 MB or any IP bytes. This depends on resource use, not success. The owner's doctor child peak of 139.2M provides evidence for the existing MemoryMax=512M; no broker-side measurement is added. p12/p13 headings and the probe title contract stay unchanged.
+
+### 2026-10-02 — PEPEPANE fix6 review and build-fixture closure
+
+The independent review of bdf9502..f602d22 found no Critical, Important or Minor findings. Twenty-six named cases passed. Disabling the dispatch flag failed the no-second-restart regression; removing the installed-byte comparison failed the mismatch regression. Both inverse restorations returned green with no tracked changes.
+
+The first seat-suite run exposed three build-harness failures: the synthetic deployment tree omitted the newly required check_fork_wheel.py. Adding that filename to the synthetic file list restores the existing seed, explicit-upgrade and archive-owner checks; no production change or further wheel build is needed. The real seeded build completed with all third-party lock lines byte-identical, 23 valid MANIFEST entries, 21 locked wheel hashes, 363 fork source members equal to the checkout and 367 installed-byte comparisons against an extracted real wheel.
