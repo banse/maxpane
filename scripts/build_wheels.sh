@@ -80,7 +80,7 @@ if [ "$MANIFEST_ONLY" = 0 ]; then
   # 3. build the fork wheel from this checkout (hatchling; reproducible for the same tree)
   uv build --quiet --wheel --out-dir "$WHEELS" "$REPO"
   [ -f "$FORK_WHEEL" ] || die "expected $FORK_WHEEL after uv build"
-  # 4. the lock = the closure + the fork wheel by content, so ONE --require-hashes install covers both
+  # 4. the lock = closure + fork by content; installer forces the fork first, then resolves the full lock
   {
     cat "$closure"
     printf '\n# pepepane fork wheel, built by scripts/build_wheels.sh from this checkout; PyPI has a different maxpane %s\n' "$VERSION"
@@ -98,7 +98,7 @@ fi
     printf '%s  %s\n' "$(sha256_of "$f")" "imd_dashd/$(basename "$f")"
   done
   for name in imd-dashd.socket imd-dashd.service 20-hide-dash.conf 50-pepepane.conf 10-imd-dash.sshd.conf \
-              install.sh probe_seat_host.sh requirements.lock; do
+              install.sh probe_seat_host.sh check_fork_wheel.py requirements.lock; do
     [ -f "$OUT/$name" ] || die "$OUT/$name missing -- the MANIFEST covers every file the installer touches"
     printf '%s  %s\n' "$(sha256_of "$OUT/$name")" "deploy/vps/$name"
   done

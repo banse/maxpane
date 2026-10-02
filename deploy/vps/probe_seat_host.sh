@@ -441,6 +441,10 @@ p15() {
   } | sha256sum -c 2>&1 | code_block
   printf 'fork wheel and lock under %s:\n' "$PREFIX"
   (cd "$PREFIX" && grep -E '  deploy/vps/(wheels/maxpane-.*\.whl|requirements\.lock)$' "$MANIFEST" | sed 's#  deploy/vps/#  #' | sha256sum -c --strict 2>&1) | code_block
+  local fork_check fork_rc=0
+  fork_check="$("$PREFIX/venv/bin/python" -I "$HERE/check_fork_wheel.py" "$PREFIX/wheels" 2>&1)" || fork_rc=$?
+  printf '%s\n' "$fork_check" | scrub | code_block
+  if [ "$fork_rc" != 0 ]; then result "FAIL -- installed fork bytes differ; re-run install.sh from the staged archive"; return; fi
   result "every line above must read OK (20-hide-dash.conf reads FAILED open or read until step 7 has been run)"
 }
 p16() {

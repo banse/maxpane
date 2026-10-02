@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy/vps/install.sh -- install the PEPEPANE dashboard (pepepane) and its root broker (imd-dashd) on the
-# worker host. Spec §12.1 "Install sequence", steps 1-8. Every step is idempotent: it checks before it
-# changes. --dry-run prints every command it would run and runs none (no root, no Linux needed).
+# worker host. Spec §12.1 "Install sequence", steps 1-8. Re-runs always reinstall and verify the fork.
+# --dry-run prints every command it would run and runs none (no root, no Linux needed).
 #
 # Run as root from an unpacked deploy tree -- the repo checkout, or dist/seat-deploy-<sha>.tar.gz unpacked
 # under /opt/imd-dash/src (docs/seat_install.md):
@@ -23,7 +23,8 @@ Steps (spec §12.1 "Install sequence"):
   2  user imd-dash      useradd -m -s /bin/bash -G systemd-journal imd-dash; home 0700; authorized_keys 0600
                         (no sudoers, no polkit grants: the broker is the only privileged path)
   3  venv + wheels      /opt/imd-dash/venv <- pip install --no-index --find-links /opt/imd-dash/wheels
-                        --only-binary=:all: --require-hashes -r requirements.lock (closure + fork wheel, by content);
+                        first force-reinstall the hash-pinned fork alone (--no-deps), then install requirements.lock;
+                        verify installed fork bytes against the staged wheel RECORD;
                         ln -sfn /opt/imd-dash/venv/bin/pepepane /usr/local/bin/pepepane
   4  broker files       copy imd_dashd/*.py to /opt/imd-dash/broker/imd_dashd/ (root 0755/0644), re-verify the
                         installed copies against MANIFEST.sha256 (the staged tree was checked before step 1)
@@ -105,10 +106,27 @@ if [ "$DRY_RUN" = 0 ]; then
   [ -f /etc/os-release ] || die "this installer targets the Ubuntu VPS"
 fi
 
+# Extract and validate the final fork block before pip can treat an empty file as success.
+render_fork_lock() {
+  awk '
+    /^# pepepane fork wheel(,|$)/ { markers++; in_fork=1; next }
+    in_fork && $0 !~ /^[[:space:]]*#/ {
+      line=$0; gsub(/\\/, "", line)
+      text=text " " line
+    }
+    END {
+      n=split(text, fields)
+      if (markers != 1 || n != 2 || fields[1] !~ /^maxpane==[A-Za-z0-9][A-Za-z0-9.!+_-]*$/ ||
+          fields[2] !~ /^--hash=sha256:[0-9a-fA-F]+$/ || length(fields[2]) != 78) exit 1
+      printf "%s \\\n    %s\n", fields[1], fields[2]
+    }
+  ' "$1"
+}
+
 # ---- preflight on the staged tree ----------------------------------------------------------------------
 missing=""
 for f in "$HERE/imd-dashd.socket" "$HERE/imd-dashd.service" "$HERE/20-hide-dash.conf" "$HERE/50-pepepane.conf" \
-         "$HERE/10-imd-dash.sshd.conf" "$HERE/requirements.lock" "$MANIFEST_SRC" "$TREE/imd_dashd/imd_dashd.py"; do
+         "$HERE/10-imd-dash.sshd.conf" "$HERE/check_fork_wheel.py" "$HERE/requirements.lock" "$MANIFEST_SRC" "$TREE/imd_dashd/imd_dashd.py"; do
   [ -f "$f" ] || missing="$missing $f"
 done
 if [ -d "$HERE/wheels" ]; then
@@ -159,8 +177,13 @@ else
   say "  no --authorized-keys given: put the public key in $DASH_HOME/.ssh/authorized_keys (0700 dir, 0600 file) before the first ssh"
 fi
 
+FORK_REQUIREMENT="$(render_fork_lock "$HERE/requirements.lock")" || die "invalid fork block in staged requirements.lock; rebuild and re-stage the archive"
+
 # ---- 3 venv + hash-pinned wheels + PATH symlink ---------------------------------------------------------
 step 3 "venv $VENV, offline hash-pinned install, /usr/local/bin/pepepane"
+if [ "$DRY_RUN" = 0 ] && pgrep -u "$DASH_USER" -f /opt/imd-dash/venv/bin/pepepane >/dev/null; then
+  warn "live pepepane sessions found: quit them before reinstalling; see docs/seat_install.md Updating"
+fi
 run install -d -m 0755 "$PREFIX" "$WHEELS"
 for whl in "$HERE"/wheels/*.whl; do
   [ -f "$whl" ] || { say "  (no wheels staged under $HERE/wheels)"; break; }
@@ -175,7 +198,19 @@ else
   run python3 -m venv --without-pip "$VENV"
   run "$VENV/bin/python" "$PIP_WHEEL/pip" install --no-index "$PIP_WHEEL"
 fi
+if [ "$DRY_RUN" = 1 ]; then
+  fork_lock="<rendered-fork-requirements.lock>"
+  printf '%s\n' "$FORK_REQUIREMENT" | sed 's/^/    : /'
+else
+  fork_lock="$(mktemp)"
+  trap 'rm -f "$fork_lock"' EXIT
+  printf '%s\n' "$FORK_REQUIREMENT" > "$fork_lock"
+fi
+say "  forced fork reinstall (even when the version is already satisfied)"
+run "$VENV/bin/python" -m pip install --no-index --find-links "$WHEELS" --only-binary=:all: --require-hashes --force-reinstall --no-deps -r "$fork_lock"
+if [ "$DRY_RUN" = 0 ]; then rm -f "$fork_lock"; trap - EXIT; fi
 run "$VENV/bin/python" -m pip install --no-index --find-links "$WHEELS" --only-binary=:all: --require-hashes -r "$LOCK"
+run "$VENV/bin/python" -I "$HERE/check_fork_wheel.py" "$WHEELS" || die "fork post-install check failed; re-stage the archive and re-run install.sh (see docs/seat_install.md Updating)"
 run ln -sfn "$VENV/bin/pepepane" /usr/local/bin/pepepane
 say "  the venv is root-owned and 0755: $DASH_USER executes it and cannot modify its own tool"
 

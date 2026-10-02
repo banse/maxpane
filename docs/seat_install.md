@@ -65,13 +65,13 @@ ssh imd-vps 'bash /opt/imd-dash/src/deploy/vps/install.sh --authorized-keys /roo
 ~~~
 
 `--dry-run` prints every command with a `[dry-run]` prefix and runs none; it is how you read the plan. The real run
-is idempotent — re-running after a fix repeats only what is missing. The steps, in the order the script prints them:
+is repeatable — each run forcibly reinstalls the fork, verifies its installed bytes, and fills missing dependencies. The steps, in the order the script prints them:
 
-| step | what | idempotent because | flags |
+| step | what | re-run behavior | flags |
 |---|---|---|---|
 | 1 | venv tooling | `dpkg -s python3.14-venv` first | `--route a` (default) / `--route b --pip-wheel FILE` |
 | 2 | user `imd-dash` in `systemd-journal` only, home 0700, `authorized_keys` 0600 | `id -u imd-dash` first | `--authorized-keys FILE` |
-| 3 | `/opt/imd-dash/venv`, `pip install --no-index --find-links /opt/imd-dash/wheels --only-binary=:all: --require-hashes -r requirements.lock`, `ln -sfn … /usr/local/bin/pepepane` | pip is a no-op on a satisfied venv; `ln -sfn` | |
+| 3 | `/opt/imd-dash/venv`, `pip install --no-index --find-links /opt/imd-dash/wheels --only-binary=:all: --require-hashes -r requirements.lock`, `ln -sfn … /usr/local/bin/pepepane` | forced fork reinstall with `--force-reinstall --no-deps` and its one-entry hashed lock first, then the full lock; post-install byte check; `ln -sfn` | |
 | 4 | copy `imd_dashd/*.py` to `/opt/imd-dash/broker/imd_dashd/`, re-verify the copies (the staged tree's `sha256sum -c --strict MANIFEST.sha256` runs before step 1: a mismatch installs nothing) | `install` overwrites identical files | |
 | 5 | the two units, the broker's `imd-dashd.service.d/10-seat.conf` (`ExecStart=` reset + `… imd_dashd.py --seat N`, so the gate reads standing for this seat), `daemon-reload`, `systemctl enable --now imd-dashd.socket` | enable is idempotent; the drop-in is rewritten identically | `--seat 7` (default) |
 | 6 | slice drop-in, sshd Match block (`sshd -t` before `systemctl reload ssh`), `pepepane.toml` | overwrites identical files | `--seat 7 --agent 51075` (defaults) |
@@ -171,12 +171,17 @@ this is separate from the historical full-app 142 MiB result. VPS lean memory re
 ## Updating the fork on the VPS
 
 Rebuild at the new commit on the Mac (`scripts/build_wheels.sh --out deploy/vps`, guard green), stage the new tarball
-under a new `/opt/imd-dash/src` name, re-run `install.sh` (steps 3–5 replace the venv contents, the broker files and the
-units; everything else is a no-op). Before stopping the broker, check that `ping` shows `drain_armed: false` and
+under a new `/opt/imd-dash/src` name, and quit every pepepane session before re-running `install.sh`.
+Step 3 performs a forced fork reinstall, even at the same package version, then resolves the full lock and runs a
+post-install check against the staged wheel's RECORD hashes by hashing installed file bytes. Require both the pip
+reinstall success and the post-install check's matched-file count and short wheel identity in the output.
+A live TUI retains old modules and may import new ones lazily; during reinstall the package is briefly absent.
+The installer warns about matching live sessions but never kills them. Steps 4–5 copy the broker and units.
+Before stopping an active broker, check that `ping` shows `drain_armed: false` and
 `in_flight: null`; wait for any action to finish and complete or cancel an armed drain first. Stopping the broker
 drops an armed drain. Then `systemctl stop imd-dashd.service` (the socket stays; the next connect spawns
 the new broker code), confirm `ping` reports `imd-dashd 0.1.2`, and start a fresh `pepepane`.
-Re-run the probe, especially p09–p14. No worker restart is needed unless the drop-in changed.
+Re-run the probe, especially p09–p15. No worker restart is needed unless the drop-in changed.
 
 ## Rollback / uninstall
 

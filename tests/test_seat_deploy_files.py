@@ -565,7 +565,7 @@ MANIFEST_LINE = re.compile(r"([0-9a-f]{64})  (\S.*)")
 MANIFEST_DEPLOY_FILES = (
     "deploy/vps/imd-dashd.socket", "deploy/vps/imd-dashd.service", "deploy/vps/20-hide-dash.conf",
     "deploy/vps/50-pepepane.conf", "deploy/vps/10-imd-dash.sshd.conf", "deploy/vps/install.sh",
-    "deploy/vps/probe_seat_host.sh", "deploy/vps/requirements.lock",
+    "deploy/vps/probe_seat_host.sh", "deploy/vps/check_fork_wheel.py", "deploy/vps/requirements.lock",
 )
 
 
@@ -1083,3 +1083,5 @@ def test_operator_doc_explains_install_day_posture_and_safe_broker_stop():
     assert update.index("drain_armed: false") < update.index("systemctl stop imd-dashd.service")
     assert update.index("in_flight: null") < update.index("systemctl stop imd-dashd.service")
     assert "drops an armed drain" in update
+    for term in ("forced fork reinstall", "post-install check", "quit every pepepane session"):
+        assert term in update
