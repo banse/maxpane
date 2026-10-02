@@ -3324,7 +3324,7 @@ class SurfScreen(DashboardScreen):
         with Vertical(id=AGENT_BODY_ID):
             yield SurfSwarmSeatCards()
             yield SurfSwarmSeatRecord()
-            # `f`: takes the cards' and RECORD's place while open; the hero stays.
+            # `f`: takes RECORD's place while open; the hero and cards stay.
             yield SurfRecordFilterEditor()
 
         with Horizontal(id=BOARD_BODY_ID):
@@ -3632,10 +3632,9 @@ class SurfScreen(DashboardScreen):
     # -- RECORD's ``f`` filter editor (THE LIST's shape) --------------------
 
     def _show_record_editor(self) -> None:
-        """The editor, or the seat cards and RECORD -- never both."""
+        """The editor, or RECORD -- never both; the hero and seat cards stay."""
         editing = self._record_filter_open
         try:
-            self.query_one(SurfSwarmSeatCards).display = not editing
             self.query_one(SurfSwarmSeatRecord).display = not editing
             self.query_one(SurfRecordFilterEditor).display = editing
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash

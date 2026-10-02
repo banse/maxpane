@@ -918,15 +918,23 @@ def _shown(screen):
             for cls in (SurfSwarmAgentHero, SurfSwarmSeatCards, SurfSwarmSeatRecord, SurfRecordFilterEditor)}
 
 
-async def test_f_swaps_cards_and_record_for_the_editor_and_escape_backs_out_one_step(monkeypatch):
+async def test_f_swaps_record_for_the_editor_under_the_cards_and_escape_backs_out_one_step(monkeypatch):
+    """The editor takes RECORD's slot only; the hero and the seat cards stay
+    drawn above it, not overlaid (owner, 2026-10-02)."""
     from tests.screens.test_oracle_answer import settled
+    from maxpane_dashboard.widgets.surf.swarm_record_filter import SurfRecordFilterEditor
     async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
         screen, specs, _ = await _filter_screen(pilot, monkeypatch)
         before = pilot.app.screen._data_manager.calls
+        cards_text = _region_text(pilot.app, screen.query_one(SurfSwarmSeatCards))
         await pilot.press('f')
         await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
-        assert _shown(screen) == {'SurfSwarmAgentHero': True, 'SurfSwarmSeatCards': False,
+        assert _shown(screen) == {'SurfSwarmAgentHero': True, 'SurfSwarmSeatCards': True,
                                   'SurfSwarmSeatRecord': False, 'SurfRecordFilterEditor': True}
+        cards = screen.query_one(SurfSwarmSeatCards).region
+        editor = screen.query_one(SurfRecordFilterEditor).region
+        assert cards.height and editor.y >= cards.bottom, (cards, editor)
+        assert _region_text(pilot.app, screen.query_one(SurfSwarmSeatCards)) == cards_text
         text = _screen_text(pilot.app)
         for word in ('NODE', 'STATE', 'WHEN', 'MODEL', 'PANEL', 'ANSWER', 'oracle', 'review', 'APPLY'):
             assert word in text, word

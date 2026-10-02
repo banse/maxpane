@@ -1084,8 +1084,8 @@ async def test_busy_agent_words_fit_every_seat_box_at_unchanged_pins():
 # RECORD's ``f`` filter editor (docs/surf_record_filter_spec.md)
 # ---------------------------------------------------------------------------
 
-#: The editor is not a pinned panel: it takes the seat cards' and RECORD's
-#: place, floors at RECORD's six rows and scrolls inside itself, so its
+#: The editor is not a pinned panel: it takes RECORD's place under the seat
+#: cards, floors at RECORD's six rows and scrolls inside itself, so its
 #: guarantee is geometry at every width -- nothing past its own region, no
 #: CSS-clipped line, no horizontal scroll -- and every control reachable by
 #: scrolling it. Four columns of groups from ``COMPACT_BELOW`` content cells,
@@ -1106,6 +1106,9 @@ async def test_the_record_filter_editor_fits_and_reaches_every_control(payload_n
         body = screen.query_one(f"#{AGENT_BODY_ID}")
         assert editor.region.height >= 6 and editor.region.width
         assert body.region.contains_region(editor.region) or body.show_vertical_scrollbar
+        cards = screen.query_one(SurfSwarmSeatCards)
+        assert cards.display and cards.region.height, "the cards stay above the editor"
+        assert editor.region.y >= cards.region.bottom, (cards.region, editor.region)
         assert editor.has_class("compact-filter") == (editor.content_size.width < FilterEditorBase.COMPACT_BELOW)
         assert editor.max_scroll_x == 0, "the editor never scrolls sideways"
         assert not _css_clipped_lines(pilot.app, editor), (width, _css_clipped_lines(pilot.app, editor))
