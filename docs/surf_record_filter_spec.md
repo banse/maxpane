@@ -179,7 +179,7 @@ Filed, Minor (do as Tier 0 when the file is next touched):
   tell them apart either, so the box label needs a disambiguator, not just a split).
 * **F-RF2: `record_time` and `_SERVED` restate the widget's own rules unbound.** The filter's
   WHEN uses `analytics/surf_record_filter.record_time` and its MODEL/TOOK/TOK use `_SERVED`;
-  RECORD's when column (`swarm_seat_record.py` `_row`) and usage cells restate the same rules
+  RECORD's when column (`swarm_seat_record.py` `build_cells`) and usage cells restate the same rules
   inline. Have the widget import the pure helpers (or add an agreement test) so "the filter
   matches what the column shows" cannot drift.
 * **F-RF3: the filtered footer can still cut a count at narrow widths.** The summary gives way
