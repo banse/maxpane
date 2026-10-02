@@ -39,7 +39,7 @@ from imd_dashd.process_snapshot import snapshot as process_snapshot
 
 Clock = Callable[[], float]
 
-VERSION = "imd-dashd 0.1.0"
+VERSION = "imd-dashd 0.1.1"
 PLAN_TTL_S = 60
 VERIFY_WITHIN_S = 30           #: `shutting down` -> `runtimes:` within 30 s = verified (fill1 §1: +0.3 s on 8/8)
 VERIFY_WATCH_S = 120           #: the post-apply journal watch is kept this long
@@ -441,14 +441,42 @@ def lifecycle_read_outcome(returncode: int, stdout: bytes | str, stderr: bytes |
         return [], False
 
 
+def read_self_status() -> str:
+    """Read only when a broker is constructed; importing this module on the Mac is safe."""
+    with open("/proc/self/status", encoding="utf-8") as status:
+        return status.read()
+
+
+def child_drop_available(status_reader: Callable[[], str]) -> bool | None:
+    try:
+        status = status_reader()
+        for line in status.splitlines():
+            if line.startswith("CapEff:"):
+                capabilities = int(line.split(":", 1)[1].strip(), 16)
+                required = (1 << 7) | (1 << 6)  # CAP_SETUID and CAP_SETGID
+                return capabilities & required == required
+    except (OSError, ValueError):
+        pass
+    return None  # unknown is diagnostic; the kernel still decides whether the drop succeeds
+
+
+def _internal_outcome(exc: Exception) -> str:
+    outcome = f"internal: {type(exc).__name__}"
+    if isinstance(exc, OSError) and exc.errno is not None:
+        outcome += f" errno {exc.errno}"
+    return outcome
+
+
 class Broker:
     def __init__(self, *, run: Runner = subprocess.run, popen: Callable = subprocess.Popen,
                  peer_uid_of: Callable[[socket.socket], int], allowed_uid: int, audit: Audit, now: Clock = time.time,
                  seat: int | None, monotonic: Clock = time.monotonic, worker_home: str = "/home/imd-worker", socket_path: str = SOCKET_PATH,
                  standing_url: str = STANDING_URL, proc_root: str = "/proc", unit: str = WORKER_UNIT,
                  broker_dir: str = BROKER_DIR, python: str = PYTHON, worker_uid: int = WORKER_UID,
-                 connection_alive_of: Callable = connection_alive) -> None:
+                 connection_alive_of: Callable = connection_alive,
+                 status_reader: Callable[[], str] = read_self_status) -> None:
         self._run = run
+        self.drop_ok = child_drop_available(status_reader)
         self._popen = popen                     # reserved for a journal follower; the v1 drain polls on the tick
         self._peer_uid_of = peer_uid_of
         self._allowed_uid = allowed_uid
@@ -496,6 +524,14 @@ class Broker:
         self.stop_requested = False
 
     # ------------------------------------------------------------ helpers
+
+    def _require_child_drop(self) -> None:
+        if self.drop_ok is False:
+            raise PlanError("child_drop_unavailable")
+
+    def _inprocess(self, argv: Sequence[str], *, timeout_s: float):
+        self._require_child_drop()
+        return run_inprocess(argv, run=self._run, timeout_s=timeout_s)
 
     def _next_seq(self) -> int:
         with self._audit_lock:
@@ -645,8 +681,7 @@ class Broker:
         return None
 
     def _outbox_files(self, deadline: float | None = None) -> int | None:
-        result = run_inprocess(["ls", "-1A", f"{self._home}/.identitymd/outbox"], run=self._run,
-                               timeout_s=self._read_timeout(INPROCESS_TIMEOUT_S["outbox"], deadline))
+        result = self._inprocess(["ls", "-1A", f"{self._home}/.identitymd/outbox"], timeout_s=self._read_timeout(INPROCESS_TIMEOUT_S["outbox"], deadline))
         if result.timed_out or result.rc != 0:
             return None
         return len([ln for ln in _text(result.stdout).splitlines() if ln.strip()])
@@ -658,8 +693,8 @@ class Broker:
         url = self._standing_url_for_seat()
         if url is None:
             return None
-        result = run_inprocess([self._python, "-I", os.path.join(self._broker_dir, "gate.py"), "--standing", url],
-                               run=self._run, timeout_s=self._read_timeout(INPROCESS_TIMEOUT_S["gate"], deadline))
+        result = self._inprocess([self._python, "-I", os.path.join(self._broker_dir, "gate.py"), "--standing", url],
+                               timeout_s=self._read_timeout(INPROCESS_TIMEOUT_S["gate"], deadline))
         if result.timed_out or result.rc != 0:
             return None
         try:
@@ -781,8 +816,12 @@ class Broker:
             if verb == verbs.APPLY_VERB:
                 return self._apply(args, peer_uid, accepted_at)
             return self._plan(verb, args, peer_uid)
+        except PlanError as exc:
+            self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome=exc.code)
+            return verbs.err(exc.code, exc.detail)
         except Exception as exc:                                   # noqa: BLE001 -- the socket loop must survive anything
-            self._log(peer_uid=peer_uid, verb=None, phase="refused", outcome=f"internal: {exc.__class__.__name__}")
+            self._log(peer_uid=peer_uid, verb=verb if verb in verbs.ALL_VERBS else None,
+                      phase="refused", outcome=_internal_outcome(exc))
             return verbs.err("internal", {"reason": exc.__class__.__name__})
 
     # ------------------------------------------------------------ read verbs
@@ -794,7 +833,7 @@ class Broker:
             drain = self._drain.armed
             return verbs.ok(data={"pid": os.getpid(), "version": VERSION, "uptime_s": round(self._now() - self._started, 1),
                                   "drain_armed": drain is not None, "in_flight": self._in_flight_detail(),
-                                  "posture_ok": self.ip_address_deny is not None,
+                                  "posture_ok": self.ip_address_deny is not None, "drop_ok": self.drop_ok,
                                   "drain": None if drain is None else drain.to_dict()})
         if verb == "audit-tail":
             return verbs.ok(data={"lines": self._audit.tail(max(1, min(int(args["n"]), 200)))})
@@ -855,9 +894,9 @@ class Broker:
                 if answer.get("error") == "child_posture_unavailable":
                     return answer
                 return verbs.err("whoami_unavailable", answer.get("detail", {}))
-        result = run_inprocess([self._python, "-I", os.path.join(self._broker_dir, "projection.py"),
+        result = self._inprocess([self._python, "-I", os.path.join(self._broker_dir, "projection.py"),
                                 "--config", f"{self._home}/.identitymd/config.json", "--tools", f"{self._home}/.identitymd/tools.json"],
-                               run=self._run, timeout_s=INPROCESS_TIMEOUT_S["seat"])
+                               timeout_s=INPROCESS_TIMEOUT_S["seat"])
         if result.timed_out:
             return verbs.err("timeout", {"verb": "seat"})
         try:
@@ -901,11 +940,11 @@ class Broker:
 
     def _work_stat(self) -> dict:
         root = f"{self._home}/.identitymd/work"
-        listing = run_inprocess(["find", root, "-mindepth", "1", "-maxdepth", "4", "-printf", "%y\t%T@\t%P\n"],
-                                run=self._run, timeout_s=INPROCESS_TIMEOUT_S["work-stat"])
+        listing = self._inprocess(["find", root, "-mindepth", "1", "-maxdepth", "4", "-printf", "%y\t%T@\t%P\n"],
+                                timeout_s=INPROCESS_TIMEOUT_S["work-stat"])
         if listing.timed_out or listing.rc != 0:
             return verbs.err("unreadable", {"what": "work"})
-        usage = run_inprocess(["du", "-sb", root], run=self._run, timeout_s=INPROCESS_TIMEOUT_S["work-stat"])
+        usage = self._inprocess(["du", "-sb", root], timeout_s=INPROCESS_TIMEOUT_S["work-stat"])
         total: int | None = None
         if not usage.timed_out and usage.rc == 0:
             try:
@@ -917,7 +956,7 @@ class Broker:
     def _stat_verb(self, what: str, *, with_sha: bool) -> dict:
         for runtime in ("codex", "claude"):
             path = f"{self._home}/{RUNTIME_PATHS[runtime][what]}"
-            result = run_inprocess(["stat", "-c", "%s %Y", path], run=self._run, timeout_s=INPROCESS_TIMEOUT_S[f"{what}-stat" if what == "hints" else "auth-mtime"])
+            result = self._inprocess(["stat", "-c", "%s %Y", path], timeout_s=INPROCESS_TIMEOUT_S[f"{what}-stat" if what == "hints" else "auth-mtime"])
             if result.timed_out or result.rc != 0:
                 continue
             try:
@@ -927,7 +966,7 @@ class Broker:
                 continue
             if not with_sha:
                 return verbs.ok(data=data)
-            digest = run_inprocess(["sha256sum", path], run=self._run, timeout_s=INPROCESS_TIMEOUT_S["hints-stat"])
+            digest = self._inprocess(["sha256sum", path], timeout_s=INPROCESS_TIMEOUT_S["hints-stat"])
             sha8 = _text(digest.stdout).split()[0][:8] if (not digest.timed_out and digest.rc == 0 and _text(digest.stdout).split()) else None
             data.update({"bytes": int(size), "sha8": sha8})
             return verbs.ok(data=data)
@@ -1149,9 +1188,12 @@ class Broker:
                 return verbs.err(exc.code, exc.detail)
             try:
                 result = self._dispatch_apply(plan, args, peer_uid, now)
+            except PlanError as exc:
+                self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan_id, outcome=exc.code)
+                result = verbs.err(exc.code, exc.detail)
             except Exception as exc:
                 self._log(peer_uid=peer_uid, verb=plan.verb, phase="refused", plan_id=plan_id,
-                          outcome=f"internal: {type(exc).__name__}")
+                          outcome=_internal_outcome(exc))
                 result = verbs.err("internal", {"reason": type(exc).__name__})
             uncertain = (result.get("error") == "timeout"
                          and result.get("detail", {}).get("outcome") == "timeout"
@@ -1199,6 +1241,7 @@ class Broker:
         return verbs.err("internal", {"reason": "unhandled verb"})
 
     def _apply_gated(self, plan: Plan, args: dict, peer_uid: int) -> dict:
+        self._require_child_drop()  # includes arming a drain, whose gate will run at fire time
         refusal = self._armed_drain_refusal(plan.verb, peer_uid, plan.plan_id)
         if refusal is not None:
             return refusal
@@ -1594,6 +1637,12 @@ class Broker:
             self._log(verb="drain-restart", phase="drain_fire", plan_id=plan.plan_id, preconditions=preconditions, outcome="firing")
             self._exec_systemctl(plan, preconditions, cursor_before, peer_uid=0)
             self._drain_fired.add(plan.plan_id)          # tick() writes its verify line once the journal decides
+        except Exception as exc:  # a failed fire must neither lose the drain nor kill the tick thread
+            self._drain.restore(armed_before)
+            self._log(verb="drain-restart", phase="drain_rearmed", plan_id=armed_before.plan_id,
+                      outcome=exc.code if isinstance(exc, PlanError) else _internal_outcome(exc))
+            events.append("drain_rearmed")
+            return
         finally:
             self._in_flight = None
             if not lock_held:

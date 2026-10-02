@@ -132,14 +132,14 @@ def default_script(journal: Journal, clock: Clock) -> dict:
 
 
 def make_broker(tmp_path: Path, *, journal: Journal | None = None, clock: Clock | None = None, script: dict | None = None,
-                seat: int | None = 7, proc_root: str | None = None, allowed_uid: int = DASH_UID) -> tuple[Broker, RecordingRunner, Journal, Clock, Audit]:
+                seat: int | None = 7, proc_root: str | None = None, allowed_uid: int = DASH_UID, status_reader=lambda: "CapEff:\tc0\n") -> tuple[Broker, RecordingRunner, Journal, Clock, Audit]:
     clock = clock or Clock()
     journal = journal or Journal(idle_window(clock()))
     runner = RecordingRunner(default_script(journal, clock))
     runner.script.update(script or {})
     audit = Audit(tmp_path / "audit.jsonl", now=clock)
     broker = Broker(run=runner, peer_uid_of=lambda conn: DASH_UID, allowed_uid=allowed_uid, audit=audit, now=clock, monotonic=clock, seat=seat,
-                    worker_home="/home/imd-worker", proc_root=proc_root or str(tmp_path / "proc"), python=PYTHON)
+                    worker_home="/home/imd-worker", proc_root=proc_root or str(tmp_path / "proc"), python=PYTHON, status_reader=status_reader)
     return broker, runner, journal, clock, audit
 
 

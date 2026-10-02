@@ -71,7 +71,7 @@ def test_unix_socket_broker_round_trips_plan_apply_verify(tmp_path):
     broker, runner, journal, clock, _audit = make_broker(tmp_path)
     unix = UnixSocketBroker("/run/imd-dash/broker.sock", offline=False, connect=_served(broker))
     assert unix.kind == "unix" and unix.trust() == "host" and unix.reachable() is True
-    assert unix.read("ping")["version"] == "imd-dashd 0.1.0"
+    assert unix.read("ping")["version"] == "imd-dashd 0.1.1"
     plan = unix.plan("restart")
     assert isinstance(plan, Plan) and plan.argv == ["systemctl", "restart", "--no-block", "imd-worker.service"]
     assert plan.preconditions["plane"]["mode"] == "plane+local"                      # offline=False travelled in args
@@ -916,3 +916,9 @@ def test_local_armed_drain_refuses_manual_plan_and_preexisting_apply(tmp_path, v
     audit = broker.read("audit-tail", {"n": 20})["lines"]
     refused = [row for row in audit if row["outcome"] == "drain_already_armed"]
     assert len(refused) == 2 and refused[-1]["plan_id"] == earlier.plan_id
+
+
+def test_local_and_fake_ping_report_drop_available(tmp_path):
+    local, *_ = _local(tmp_path)
+    assert local.read("ping")["drop_ok"] is True
+    assert FakeBroker().read("ping")["drop_ok"] is True

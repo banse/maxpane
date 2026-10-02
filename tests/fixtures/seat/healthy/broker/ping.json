@@ -1,8 +1,9 @@
 {
   "pid": 4242,
-  "version": "imd-dashd 0.1.0",
+  "version": "imd-dashd 0.1.1",
   "uptime_s": 12.5,
   "drain_armed": false,
   "in_flight": null,
-  "posture_ok": true
+  "posture_ok": true,
+  "drop_ok": true
 }

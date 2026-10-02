@@ -619,7 +619,7 @@ SESSIONS_JSON = {
     "skipped": {"oversize": 0}, "watermarkMtime": 1790393051.8, "zstdReadable": True, "reason": None,
 }
 RESPONSES = {
-    "ping": {"pid": 4242, "version": "imd-dashd 0.1.0", "uptime_s": 12.5, "drain_armed": False, "in_flight": None, "posture_ok": True},
+    "ping": {"pid": 4242, "drop_ok": True, "version": "imd-dashd 0.1.1", "uptime_s": 12.5, "drain_armed": False, "in_flight": None, "posture_ok": True},
     "whoami": {"deviceKey": DEVICE_KEY},
     "seat": {"server": "https://api.imd.fun", "deviceKey": DEVICE_KEY, "wallet": "0x887b9f1234567890abcdef1234567890abcdef12", "tokenId": 7,
              "maxConcurrency": 1, "skillsOptOut": [], "inference": {"economy": {"codex": {"model": "gpt-6-luna", "effort": "medium"}},

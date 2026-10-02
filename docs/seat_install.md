@@ -137,7 +137,7 @@ configuration, never secrets (MaxPane rule).
   (`seat_ledger.sqlite`, `seat_tail.json`, `config.toml`, `maxpane.log`). Never opens `config.json`, `auth.json`,
   `tools.env` or `.credentials.json`.
 - **Broker** (`imd-dashd.service`, socket-activated): root, `/usr/bin/python3 -I`, stdlib only, `MemoryMax=128M`,
-  `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.0` as
+  `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.1` as
   `version`. Audit at `/var/log/imd-dash/audit.jsonl`.
 - **In-process children** (projection, `ls outbox`, work-stat, hints-stat, auth-mtime, the gate's standing read): dropped
   to `imd-worker` with `Popen(user=, group=, extra_groups=[])`, `cwd=/tmp`, and exactly this environment — `HOME=/home/imd-worker`,

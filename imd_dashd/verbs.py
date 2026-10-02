@@ -37,7 +37,7 @@ ERRORS = ("bad_request", "bad_verb", "bad_args", "peer_refused", "busy", "plan_s
           "apply_late", "bad_confirm", "gate_blocked", "gate_unknown(outbox)", "gate_unknown(unit)", "gate_unknown(lifecycle)", "local_only_ack_required",
           "force_disabled", "force_node8_mismatch", "bad_skill_id", "skill_not_listed", "doctor_too_soon",
           "drain_not_armed", "drain_already_armed", "projection_refused", "whoami_unavailable",
-          "child_posture_unavailable", "timeout", "unreadable", "internal")
+          "child_posture_unavailable", "child_drop_unavailable", "timeout", "unreadable", "internal")
 
 #: verb -> {arg name: allowed type(s)}. An arg name not listed -> bad_args; a listed arg of the wrong
 #: type -> bad_args. Optional args are listed with ``type(None)`` among their allowed types.

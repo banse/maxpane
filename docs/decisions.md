@@ -924,3 +924,12 @@ Choose option (c): omit User and Group from the system broker service, which sti
 ### 2026-10-02 — PEPEPANE fix5 C: execute absolute worker CLI argv (C.11)
 
 Root transient reads and doctor/skills-set plans use the single IMD_BIN constant, /opt/imd-worker/bin/imd, matching the worker ExecStart and the first child PATH entry. Plan argv is exactly the command executed after systemd-run's separator; transient_argv performs no rewriting. Client-side systemd-run command lookup uses the broker PATH, so setting the child's PATH cannot resolve a bare imd. The Mac retains its container imd invocation. Executed-argv and plan pins change under this decision. The shared recorder now refuses every relative command before any script lookup, with rc 1, empty stdout and lookup failure on stderr, so overridden scripts cannot conceal it. Harness PYTHON matches production /usr/bin/python3; guards cover every transient verb.
+
+
+### 2026-10-02 — PEPEPANE fix5 diagnostics: privilege-drop refusal, drain recovery and ping (C.11)
+
+Broker construction reads CapEff through an injectable reader of /proc/self/status, independently of the orphan proc_root and never at module import. Both CAP_SETUID and CAP_SETGID effective means drop_ok true; either missing means false; unreadable or unparseable status means null. Only explicit false refuses with the new verbs.ERRORS code child_drop_unavailable through the broker's shared in-process runner. Gated plan/apply refusals are audited and fail closed; a consumed apply still receives a terminal failed verification. Drain arming checks the same condition even though its fresh gate runs at fire time.
+
+An exception during drain fire restores the original drain and deadline, resets beats and records drain_rearmed with the explicit refusal code or exception class and errno. The tick remains alive. Unexpected request errors retain a validated verb, and OSError errno goes inside the existing outcome string; AUDIT_FIELDS is unchanged and exception messages are not logged.
+
+Contract C.11 gains additive ping.drop_ok and changes VERSION to imd-dashd 0.1.1 so operators can verify socket-activated redeployment. Package __version__, standing User-Agent, operator docs and synthetic ping copies follow the bump. LocalDockerBroker and FakeBroker advertise drop_ok true because they never drop a uid. No TUI change is required.

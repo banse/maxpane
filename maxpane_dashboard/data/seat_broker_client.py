@@ -292,7 +292,7 @@ class FakeBroker(_CallMixin):
             response = self._as_wire(verb, json.loads((self.fixture_dir / "broker" / f"{verb}.json").read_text(encoding="utf-8")))
         elif verb == "ping":
             response = {"ok": True, "data": {"pid": 0, "version": "fake", "uptime_s": 0.0, "drain_armed": False, "in_flight": None,
-                                             "posture_ok": True}}
+                                             "posture_ok": True, "drop_ok": True}}
         else:
             raise BrokerError("no_fixture", {"verb": verb})
         return _check_wire(response)
@@ -520,7 +520,7 @@ class LocalDockerBroker(_CallMixin):
         if verb == "ping":
             return {"pid": os.getpid(), "version": LOCAL_BROKER_VERSION, "uptime_s": round(self._now() - self._started, 1),
                     "drain_armed": self._drain.armed is not None, "in_flight": None if self._in_flight is None else dict(self._in_flight),
-                    "posture_ok": True, "drain": None if self._drain.armed is None else self._drain.armed.to_dict()}
+                    "posture_ok": True, "drop_ok": True, "drain": None if self._drain.armed is None else self._drain.armed.to_dict()}
         if verb == "audit-tail":
             return {"lines": self._audit.tail(max(1, min(int(args["n"]), 200)))}
         if verb == "gate":
