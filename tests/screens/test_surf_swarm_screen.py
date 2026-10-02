@@ -1073,3 +1073,53 @@ async def test_a_seat_change_clears_the_filter_and_leaving_agent_only_closes_the
         await settled(pilot, lambda: table.row_count == 6)
         assert screen.record_spec is None and not screen.record_filtered
         assert screen._record_filter_values == {}
+
+
+@pytest.mark.parametrize('view', ['filter', 'open', 'more'])
+async def test_a_view_set_before_the_first_seat_is_reset_in_the_manager_too(monkeypatch, view):
+    """Final review I-1: the first seat token must not inherit a pre-seat view.
+
+    The screen reset its own copy on the token change but skipped the
+    manager's whenever the old token was None, so a filter (or ``not
+    completed`` / ``more``) chosen before the sweep picked a seat kept
+    narrowing that seat's reads while RECORD painted ``all``.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from textual.widgets import Select
+    from maxpane_dashboard.data.surf_manager import SurfManager
+    from maxpane_dashboard.widgets.filter_editor import field_id
+    from tests.screens.test_oracle_answer import settled
+
+    payload = _record_view_payload()
+    manager = _FakeManager({**payload, "swarm_seat_selected": None})
+    manager.record_cap, manager.record_open_only, manager.record_spec = 40, False, None
+    manager.cache = SimpleNamespace(mark_due=Mock())
+    manager.set_record_view = Mock(side_effect=lambda cap, open_only, spec=None:
+                                  SurfManager.set_record_view(manager, cap, open_only, spec))
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    monkeypatch.setattr(screen, "start_refresh", lambda: None)
+    async with _ThemedHarness(screen).run_test(size=(139, 35)) as pilot:
+        await screen._do_refresh()
+        await pilot.press("a")
+        await pilot.pause()
+        assert screen._record_seat_token is None
+        if view == 'filter':
+            await pilot.press("f")
+            await settled(pilot, lambda: screen._record_filter_open)
+            screen.query_one(f"#{field_id('when')}", Select).value = "24h"
+            await pilot.press("f")
+            await settled(pilot, lambda: not screen._record_filter_open)
+            assert manager.record_spec is not None
+        elif view == 'open':
+            screen.action_record_filter('open')
+            assert manager.record_open_only
+        else:
+            screen.action_record_more()
+            assert manager.record_cap == 60
+        manager._payload = {**payload, "swarm_seat_selected": {**payload["swarm_seat_selected"], "token_id": 421}}
+        await screen._do_refresh()
+        await pilot.pause()
+        assert screen._record_seat_token == 421
+        assert (screen.record_cap, screen.record_open_only, screen.record_spec) == (40, False, None)
+        assert (manager.record_cap, manager.record_open_only, manager.record_spec) == (40, False, None)

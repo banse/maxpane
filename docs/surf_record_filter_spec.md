@@ -156,3 +156,35 @@ the seat cycle reads at most four jobs per 120 s, only inside RECORD's window. S
    `tests/test_surf_registration.py`, `-m guard`.
 3. Final whole-branch review on the most capable model, one fix wave, one scoped re-review, the full
    suite once by the controller. No merge, push or tag: those are the owner's.
+
+## Final review and follow-ups (2026-10-02)
+
+The whole-branch review (most capable model) found 0 Critical, 2 Important, 3 Minor. Both
+Important were fixed in one wave and proven by mutation:
+
+* **I-1** — a refresh's seat-token change reset the screen's view but skipped the manager's
+  whenever the old token was None, so a filter, `not completed` or `more` chosen before the
+  sweep picked a seat kept narrowing the first seat's answer / job-detail / oracle reads while
+  RECORD painted `all`. The pre-existing guard now also fires when the old view was not the
+  default (`test_a_view_set_before_the_first_seat_is_reset_in_the_manager_too`).
+* **I-2** — `PANEL_STATES` restated `data/surf_models.SWARM_PANEL_STATES` with no agreement
+  test; `test_the_vocabularies_match_the_data_layer` now binds both directions.
+
+Filed, Minor (do as Tier 0 when the file is next touched):
+
+* **F-RF1: two unknown node keys can share one NODE box.** `load()` groups by label, and an
+  unknown key's label is clipped to 16 cells, so `market_research_alpha` and
+  `market_research_beta` become one `market_research…` box that ticks both. The spec meant the
+  merge only for MODEL's `short_model`. Group NODE by raw key (RECORD's 6-cell node column cannot
+  tell them apart either, so the box label needs a disambiguator, not just a split).
+* **F-RF2: `record_time` and `_SERVED` restate the widget's own rules unbound.** The filter's
+  WHEN uses `analytics/surf_record_filter.record_time` and its MODEL/TOOK/TOK use `_SERVED`;
+  RECORD's when column (`swarm_seat_record.py` `_row`) and usage cells restate the same rules
+  inline. Have the widget import the pure helpers (or add an agreement test) so "the filter
+  matches what the column shows" cannot drift.
+* **F-RF3: the filtered footer can still cut a count at narrow widths.** The summary gives way
+  first, but the counts plus the older tail (up to ~67 cells, e.g. `180 match · 200 not read yet
+  · 20 unavailable · +1,234 older · more`) exceed the footer below about 69 content cells, where
+  the CSS ellipsis cuts the older count or `more`. Not rendered by the reviewer; measure first,
+  then shorten (drop ` yet`, or move the tail) rather than clip.
+

@@ -337,9 +337,20 @@ def test_choices_of_nothing(rows):
 
 
 def test_the_vocabularies_match_the_data_layer():
-    """PANEL / ANSWER words select states the fold actually writes."""
-    from maxpane_dashboard.data.surf_models import SWARM_ANSWER_STATES, SWARM_ORACLE_NODE_KEYS
+    """PANEL / ANSWER words select states the fold actually writes.
+
+    Both directions: a renamed state would leave its dropdown word matching
+    nothing (a false ``0 match``), a new one would be unselectable.
+    ``not_read`` is the unknown verdict and ``not_oracle`` PANEL's ``no``.
+    """
+    from maxpane_dashboard.data.surf_models import (
+        SWARM_ANSWER_STATES,
+        SWARM_ORACLE_NODE_KEYS,
+        SWARM_PANEL_STATES,
+    )
 
     assert rf._ORACLE_NODE_KEYS == SWARM_ORACLE_NODE_KEYS
     answer_states = {state for states in rf.ANSWER_STATES.values() for state in states}
     assert answer_states | {"not_read"} == set(SWARM_ANSWER_STATES)
+    panel_states = {state for states in rf.PANEL_STATES.values() for state in states}
+    assert panel_states | {"not_oracle", "not_read"} == set(SWARM_PANEL_STATES)

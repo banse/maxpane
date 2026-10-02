@@ -330,7 +330,8 @@ PANEL and ANSWER are dropdowns; TOOK and TOK are from/to ranges validated by
 fixed `since_ts` from `screen._clock` — the only clock read. An empty filter clears the stored
 one and shows `all`; RESET ALL clears only the draft; `esc` closes the editor first, then leaves
 the body. Leaving AGENT closes the editor and keeps the applied filter; a seat change (`_seat_entered`
-or a refresh's token change) clears both.
+or a refresh's token change) clears both, in the manager too — also when the view was set before
+the first seat arrived (final review I-1: the manager's copy was skipped while the old token was None).
 The title gains a third mode word, `filtered` (`screen.record_filter('filtered')`), only while a
 filter is stored; `filtered` shows the filter alone (open_only False), `all` / `not completed`
 keep it for a later click. Only the **base** groups (NODE, STATE, WHEN) shape `record_window`

@@ -4531,11 +4531,17 @@ class SurfScreen(DashboardScreen):
         selected = data.get("swarm_seat_selected")
         token = selected.get("token_id") if isinstance(selected, dict) else None
         if token != self._record_seat_token:
+            # The manager reads by its own copy of the view, so it is reset
+            # too -- also when the old view was set before any seat arrived
+            # (final review I-1): a filter applied with no seat would
+            # otherwise keep narrowing the first seat's reads, unseen.
+            changed = (self.record_cap != SurfSwarmSeatRecord.ROW_CAP or self.record_open_only
+                       or self.record_spec is not None)
             self.record_cap = SurfSwarmSeatRecord.ROW_CAP
             self.record_open_only = False
             self._clear_record_filter()
             setter = getattr(self._data_manager, "set_record_view", None)
-            if setter is not None and self._record_seat_token is not None:
+            if setter is not None and (self._record_seat_token is not None or changed):
                 setter(self.record_cap, self.record_open_only, None)
             self._record_seat_token = token
         self._repaint_record_view()
