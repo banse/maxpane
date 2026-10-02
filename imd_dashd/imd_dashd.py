@@ -1638,6 +1638,7 @@ class Broker:
         if not lock_held and not self._lock.acquire(blocking=False):
             self._drain.restore(armed_before)    # keep waiting (same drain, same deadline): something else is in flight
             return
+        restart_dispatched = False
         plan_id = secrets.token_hex(8)
         self._in_flight = {"verb": "drain-restart", "plan_id": plan_id, "since": iso_utc(self._now())}
         try:
@@ -1654,9 +1655,14 @@ class Broker:
                         preconditions=preconditions, inverse=None, verify={}, force_node8=None, spent=True)
             self._in_flight = {"verb": "drain-restart", "plan_id": plan.plan_id, "since": iso_utc(self._now())}
             self._log(verb="drain-restart", phase="drain_fire", plan_id=plan.plan_id, preconditions=preconditions, outcome="firing")
+            restart_dispatched = True  # from here a restart may already be queued
             self._exec_systemctl(plan, preconditions, cursor_before, peer_uid=0)
             self._drain_fired.add(plan.plan_id)          # tick() writes its verify line once the journal decides
-        except Exception as exc:  # a failed fire must neither lose the drain nor kill the tick thread
+        except Exception as exc:
+            if restart_dispatched:
+                self._log(verb="drain-restart", phase="apply", plan_id=plan_id,
+                          outcome=_internal_outcome(exc) + "; not re-armed")
+                return
             self._drain.restore(armed_before)
             self._log(verb="drain-restart", phase="drain_rearmed", plan_id=armed_before.plan_id,
                       outcome=exc.code if isinstance(exc, PlanError) else _internal_outcome(exc))
