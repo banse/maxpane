@@ -981,3 +981,18 @@ The probe reads the exact unit's journal once and explains absent consumed/memor
 The independent review of bdf9502..f602d22 found no Critical, Important or Minor findings. Twenty-six named cases passed. Disabling the dispatch flag failed the no-second-restart regression; removing the installed-byte comparison failed the mismatch regression. Both inverse restorations returned green with no tracked changes.
 
 The first seat-suite run exposed three build-harness failures: the synthetic deployment tree omitted the newly required check_fork_wheel.py. Adding that filename to the synthetic file list restores the existing seed, explicit-upgrade and archive-owner checks; no production change or further wheel build is needed. The real seeded build completed with all third-party lock lines byte-identical, 23 valid MANIFEST entries, 21 locked wheel hashes, 363 fork source members equal to the checkout and 367 installed-byte comparisons against an extracted real wheel.
+
+### 2026-10-02 — PEPEPANE fix6 final validation
+
+The corrected seat suite passed 1,526 tests with two skips in 105.23 seconds on Python 3.11.15. The one complete MaxPane run passed 12,332 tests with two skips and one failure in 1,907.97 seconds: tests/screens/test_surf_swarm_layout.py::test_the_body_is_whole_from_its_pinned_width[a-capture420-118] hit Textual's 30-second WaitForScreenTimeout. That test and SurfScreen are unchanged from BASE 65908e0; the exact case passed unchanged with a fresh isolated HOME in 1.46 seconds. No timeout, assertion or SURF file was changed. This remains a limitation of the complete-run result, not a claim that the whole run was green. The separate in-tree Sybilkit suite passed 444 tests with one expected failure in 11.56 seconds. The existing pytest-asyncio fixture-loop-scope warning remains.
+
+All twenty third-party pip-freeze versions match the lock, with no differences; the environment additionally contains the editable fork and twelve test/build tools. The seeded resolution reproduced the third-party lock block byte for byte; only the fork hash changed. The sole production archive build followed the last production-code commit f602d22; the later fixture-only correction does not change its contents. Its MANIFEST and lock are committed with this validation, and the existing archive is renamed to the final commit without rebuilding. No host, SSH, Docker, deployment, push or tag action was performed.
+
+Commands (one pytest process at a time, except the brief build-test completion overlap recorded during the fixture correction; all final suites were serialized):
+
+```sh
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile -m 'not host' tests/broker tests/analytics/test_seat_*.py tests/data/test_seat_*.py tests/widgets/test_seat_*.py tests/screens/test_seat_*.py tests/test_seat_*.py tests/test_select_to_copy.py
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile -m 'not host' tests
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -q 'tests/screens/test_surf_swarm_layout.py::test_the_body_is_whole_from_its_pinned_width[a-capture420-118]'
+env -u NO_COLOR HOME=$(mktemp -d) PYTHONPATH=sybilkit/src .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests
+```
