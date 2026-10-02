@@ -138,7 +138,10 @@ configuration, never secrets (MaxPane rule).
   `tools.env` or `.credentials.json`.
 - **Broker** (`imd-dashd.service`, socket-activated): root, `/usr/bin/python3 -I`, stdlib only, `MemoryMax=128M`,
   `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.1` as
-  `version`. Audit at `/var/log/imd-dash/audit.jsonl`.
+  `version`. Audit at `/var/log/imd-dash/audit.jsonl`. The system service has no `User=` or `Group=`:
+  it defaults to root. On measured systemd 259.5, explicit `User=root` with `NoNewPrivileges=yes` and seccomp
+  hardening removes `CAP_SETUID`; implicit root keeps privilege dropping working with the same bounding set and
+  empty ambient capabilities.
 - **In-process children** (projection, `ls outbox`, work-stat, hints-stat, auth-mtime, the gate's standing read): dropped
   to `imd-worker` with `Popen(user=, group=, extra_groups=[])`, `cwd=/tmp`, and exactly this environment — `HOME=/home/imd-worker`,
   `PATH=/opt/imd-worker/bin:/opt/imd-worker/node/bin:/usr/local/bin:/usr/bin:/bin`, `NO_COLOR=1`, `LANG=C.UTF-8` — nothing else
@@ -148,8 +151,13 @@ configuration, never secrets (MaxPane rule).
   `systemd-run` units `imd-dash-<verb>-<seq>` as `imd-worker` with the worker unit's own posture plus
   `BindReadOnlyPaths=/opt/imd-dash/broker`, the same four environment variables, `MemoryMax=512M`, `TasksMax=64`,
   `RuntimeMaxSec` per verb (`status` 30 s, `doctor` 120 s, sessions 60 s). An OOM or hang lands in the child's cgroup,
-  never the broker's. If the broker cannot read the worker's `IPAddressDeny` at start, these verbs answer
-  `child_posture_unavailable` and the probe's `ping` shows `posture_ok: false`.
+  never the broker's. Commands use the absolute `/opt/imd-worker/bin/imd` because `systemd-run` resolves commands
+  with the broker's PATH before applying the child environment. All `InaccessiblePaths` entries keep `-` prefixes:
+  `ProtectHome=tmpfs` makes the dash home absent during namespace setup; without the prefix systemd exits 226.
+  If the broker cannot read the worker's `IPAddressDeny` at start, these verbs answer
+  `child_posture_unavailable` and the probe's `ping` shows `posture_ok: false`. `drop_ok: false` means effective
+  uid/gid-drop capabilities are missing and in-process reads and gated actions refuse with `child_drop_unavailable`;
+  `drop_ok: null` means the status was unreadable and the kernel still decides whether the drop succeeds.
 
 ## Footprint budget (spec §12.1)
 
@@ -164,8 +172,11 @@ this is separate from the historical full-app 142 MiB result. VPS lean memory re
 
 Rebuild at the new commit on the Mac (`scripts/build_wheels.sh --out deploy/vps`, guard green), stage the new tarball
 under a new `/opt/imd-dash/src` name, re-run `install.sh` (steps 3–5 replace the venv contents, the broker files and the
-units; everything else is a no-op). Then `systemctl stop imd-dashd.service` (the socket stays; the next connect spawns
-the new broker code) and start a fresh `pepepane`. No worker restart is needed unless the drop-in changed.
+units; everything else is a no-op). Before stopping the broker, check that `ping` shows `drain_armed: false` and
+`in_flight: null`; wait for any action to finish and complete or cancel an armed drain first. Stopping the broker
+drops an armed drain. Then `systemctl stop imd-dashd.service` (the socket stays; the next connect spawns
+the new broker code), confirm `ping` reports `imd-dashd 0.1.1`, and start a fresh `pepepane`.
+Re-run the probe, especially p09–p14. No worker restart is needed unless the drop-in changed.
 
 ## Rollback / uninstall
 

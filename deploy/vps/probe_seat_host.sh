@@ -132,10 +132,11 @@ sys.stdout.write(buf.decode(errors="replace") or "(no reply)\n")
 PY
 }
 
-# peak_of_glob 'imd-dash-status-*' -> systemd's "Consumed ... memory peak" line for the newest transient child
-peak_of_glob() {
+# Accounting for the exact unit named in the broker's raw reply, before output scrubbing.
+peak_of_unit() {
+  if [ -z "$1" ]; then printf '\nno transient unit in broker reply; accounting unavailable\n'; return; fi
   printf '\nsystemd accounting for %s (journal, last 20 min):\n' "$1"
-  journalctl --since "-20 min" -u "$1" -o cat 2>&1 | grep -i -E 'consumed|memory peak|failed|timed out' | tail -n 5 | scrub | code_block
+  journalctl --since "-20 min" -u "${1%.service}.service" -o cat 2>&1 | grep -i -E 'consumed|memory peak|failed|timed out' | tail -n 5 | scrub | code_block
 }
 
 # ---- the probes, one function per title ----------------------------------------------------------------
@@ -368,13 +369,32 @@ PY
   result "see PASS/FAIL above (spec §13 projection canary: key names, sk-/eyJ, whoami match, no other hex64, exactly 8 source keys)"
 }
 p12() {
-  broker_call "$DASH_USER" '{"v":1,"verb":"status","args":{}}' | scrub | head -c 3000 | code_block
-  peak_of_glob 'imd-dash-status-*'
+  local resp unit since req
+  resp="$(broker_call "$DASH_USER" '{"v":1,"verb":"status","args":{}}')"
+  unit="$(printf '%s' "$resp" | json_get data unit)"
+  printf '%s\n' "$resp" | scrub | head -c 3000 | code_block
+  peak_of_unit "$unit"
+  since=$(( $(date -u +%s) - 3 * 86400 ))
+  req="$(printf '{"v":1,"verb":"sessions","args":{"runtime":"codex","since":%s}}' "$since")"
+  broker_call "$DASH_USER" "$req" | /usr/bin/python3 -c '
+import json, sys
+try:
+    reply = json.load(sys.stdin)
+    data = reply.get("data") or {}
+    detail = reply.get("detail") or {}
+    sessions = data.get("sessions")
+    print("sessions ok:", reply.get("ok"), "rc:", 0 if reply.get("ok") else detail.get("rc"),
+          "count:", len(sessions) if isinstance(sessions, list) else None)
+    if not reply.get("ok"):
+        print("sessions error:", reply.get("error"), detail)
+except (ValueError, TypeError, AttributeError):
+    print("sessions ok: False rc: unknown count: unknown (unreadable reply)")
+' | scrub | code_block
   result "recorded -- proves the transient-unit posture (ProtectHome=tmpfs, TemporaryFileSystem=/opt:ro, copied IPAddressDeny) lets imd status run; the peak sizes MemoryMax=512M"
 }
 p13() {
   if [ "$SKIP_DOCTOR" = 1 ]; then printf 'skipped (--skip-doctor): doctor spends one runtime turn and leaves a work/doctor-* transcript\n'; result "skipped"; return; fi
-  local plan pid confirm req resp i
+  local plan pid confirm req resp i unit
   plan="$(broker_call "$DASH_USER" '{"v":1,"verb":"doctor","args":{}}')"
   printf 'plan:\n'; printf '%s\n' "$plan" | scrub | code_block
   pid="$(printf '%s' "$plan" | json_get plan plan_id)"
@@ -382,6 +402,7 @@ p13() {
   confirm="$(printf '%s' "$pid" | cut -c1-4)"
   req="$(printf '{"v":1,"verb":"apply","args":{"plan_id":"%s","confirm":"%s"}}' "$pid" "$confirm")"
   resp="$(broker_call "$DASH_USER" "$req")"
+  unit="$(printf '%s' "$resp" | json_get result unit)"
   printf 'apply:\n'; printf '%s\n' "$resp" | scrub | code_block
   i=0
   while [ "$i" -lt 30 ]; do
@@ -392,7 +413,7 @@ p13() {
     break
   done
   printf 'verify after %d polls (5 s each):\n' "$i"; printf '%s\n' "$resp" | scrub | head -c 4000 | code_block
-  peak_of_glob 'imd-dash-doctor-*'
+  peak_of_unit "$unit"
   result "recorded -- RuntimeMaxSec=120 (90 s smoke + ~30 s network checks); output above is redacted by the broker; the runtime turn is excluded from COST by its work/doctor-* cwd"
 }
 p14() {

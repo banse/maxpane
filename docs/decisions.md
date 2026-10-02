@@ -938,3 +938,10 @@ Contract C.11 gains additive ping.drop_ok and changes VERSION to imd-dashd 0.1.1
 ### 2026-10-02 — PEPEPANE fix5 failed transient diagnostics (C.11)
 
 Root replies add stderr_head only on nonzero exit or timeout: transient reads, whoami_unavailable (including forwarded seat refusal), summariser unreadable/timeout detail and doctor/skills-set verification. The head is at most five lines of 200 characters. Each full line passes through redact without an allowed field before truncation; doctor and skills-set additionally remove currency figures. Diagnostics never join stdout lines, establish a whoami key or enter the audit. A summariser with nonzero exit is unreadable even if it emitted valid JSON. Successful root status retains exactly lines, rc and unit. This diagnostic addition is root-only this round; Mac transient replies remain unchanged.
+
+
+### 2026-10-02 — PEPEPANE fix5 probe and operator procedure (§14)
+
+p12 and p13 take the exact transient unit from the raw status data.unit and doctor apply result.unit before scrub, preserving the doctor unit across verify polling. Accounting uses that unit's journal entry with the service suffix; an absent unit reports unavailable without a wildcard lookup. The former glob pin is replaced by exact-unit assertions and hermetic shell-fake execution of both sections. p12 also calls Codex sessions since three days ago and reports ok, rc and count without dumping transcripts. Titles are unchanged, including p10, whose full ping already contains drop_ok.
+
+The operator guide explains implicit-root capability handling, absolute imd paths, optional inaccessible-path prefixes and privilege diagnostics. Updates require checking ping for no armed drain and no action in flight before stopping the socket-activated broker: shutdown loses an armed drain. The next connect must report imd-dashd 0.1.1 before repeating p09–p14.

@@ -410,7 +410,9 @@ def test_probe_covers_every_only_on_the_vps_item_in_order():
     for title, words in zip(titles, PROBE_TITLES_MUST_MENTION):
         assert all(word in title for word in words), (title, words)
     text = PROBE_SH.read_text(encoding="utf-8")
-    assert UNIT_PREFIX + "status-*" in text and UNIT_PREFIX + "doctor-*" in text, "child memory.peak via the transient unit glob"
+    assert 'json_get data unit' in text and 'json_get result unit' in text
+    assert 'peak_of_unit "$unit"' in text, "child memory.peak via the exact raw reply unit"
+    assert UNIT_PREFIX + "status-*" not in text and UNIT_PREFIX + "doctor-*" not in text
     assert "--skip-doctor" in text
     assert text.count('"verb":"apply"') == 1, "exactly one apply (doctor); plan restart is never applied"
     assert '"verb":"restart"' in text
@@ -1011,3 +1013,73 @@ def test_seccomp_with_no_new_privileges_keeps_user_directive_absent():
                     "RestrictRealtime", "LockPersonality", "SystemCallArchitectures", "SystemCallFilter"}
     if _one(svc, "NoNewPrivileges") == "yes" and any(value for key, value in svc if key in seccomp_keys):
         _none(svc, "User")
+
+
+def _probe_function(name):
+    text = PROBE_SH.read_text()
+    if name == "json_get":
+        return "json_get()" + text.split("json_get()", 1)[1].split("\n\n", 1)[0]
+    return re.search(rf"^{name}\(\).*?^\}}", text, re.M | re.S).group()
+
+
+@pytest.mark.parametrize("section,unit", [("p12", "imd-dash-status-12345678901234567890123456789012"),
+                                       ("p13", "imd-dash-doctor-19")])
+def test_probe_looks_up_exact_raw_reply_unit_and_exercises_sessions(tmp_path, section, unit):
+    """Run extracted probe functions with shell fakes; no host commands or socket access."""
+    import shlex
+    text = PROBE_SH.read_text()
+    peak_name = "peak_of_unit" if "peak_of_unit()" in text else "peak_of_glob"
+    functions = "\n".join(_probe_function(name) for name in ["json_get", peak_name, section])
+    assert "runuser" not in functions and "socket.socket" not in functions
+    requests = tmp_path / "requests"
+    accounting = tmp_path / "accounting"
+    status = {"ok": True, "data": {"unit": unit, "rc": 0, "lines": []}}
+    applied = {"ok": True, "result": {"unit": unit, "outcome": "started"}}
+    plan = {"ok": True, "plan": {"plan_id": "0123456789abcdef"}}
+    script = f'''
+DASH_USER=imd-dash
+SKIP_DOCTOR=0
+broker_call() {{
+  printf '%s\\n' "$2" >> {shlex.quote(str(requests))}
+  case "$2" in
+    *'"verb":"status"'*) printf '%s\\n' {shlex.quote(json.dumps(status))} ;;
+    *'"verb":"doctor"'*) printf '%s\\n' {shlex.quote(json.dumps(plan))} ;;
+    *'"verb":"apply"'*) printf '%s\\n' {shlex.quote(json.dumps(applied))} ;;
+    *'"verb":"verify"'*) printf '%s\\n' '{{"ok":true,"data":{{"verified":true}}}}' ;;
+    *'"verb":"sessions"'*) printf '%s\\n' '{{"ok":true,"data":{{"sessions":[{{}},{{}}]}}}}' ;;
+    *) return 99 ;;
+  esac
+}}
+journalctl() {{ printf '%s\\n' "$*" >> {shlex.quote(str(accounting))}; printf 'memory peak unit=%s\\n' "$*"; }}
+scrub() {{ sed -E 's/[0-9a-fA-F]{{32,}}/<hex>/g'; }}
+code_block() {{ cat; }}
+result() {{ :; }}
+sleep() {{ :; }}
+date() {{ printf '1790949600\\n'; }}
+{functions}
+{section}
+'''
+    done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=5)
+    assert done.returncode == 0 and not done.stderr, done.stderr
+    assert accounting.read_text().strip() == f'--since -20 min -u {unit}.service -o cat'
+    # The long status sequence would be lost if extracted after scrub.
+    assert f"systemd accounting for {unit}" in done.stdout
+    assert "*" not in done.stdout
+    sent = [json.loads(line) for line in requests.read_text().splitlines()]
+    if section == "p12":
+        sessions = next(request for request in sent if request["verb"] == "sessions")
+        assert sessions["args"] == {"runtime": "codex", "since": 1790949600 - 3 * 86400}
+        assert "sessions ok: True rc: 0 count: 2" in done.stdout
+    else:
+        assert [request["verb"] for request in sent] == ["doctor", "apply", "verify"]
+
+
+def test_operator_doc_explains_install_day_posture_and_safe_broker_stop():
+    text = INSTALL_DOC.read_text()
+    posture = text.split("## What runs as what", 1)[1].split("## Footprint", 1)[0]
+    for term in ("no `User=`", "CAP_SETUID", "/opt/imd-worker/bin/imd", "`-` prefixes", "drop_ok", "child_drop_unavailable"):
+        assert term in posture
+    update = text.split("## Updating the fork on the VPS", 1)[1].split("## Rollback", 1)[0]
+    assert update.index("drain_armed: false") < update.index("systemctl stop imd-dashd.service")
+    assert update.index("in_flight: null") < update.index("systemctl stop imd-dashd.service")
+    assert "drops an armed drain" in update
