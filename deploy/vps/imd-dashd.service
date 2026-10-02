@@ -4,8 +4,9 @@ Requires=imd-dashd.socket
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 -I /opt/imd-dash/broker/imd_dashd/imd_dashd.py
-User=root
-Group=root
+# Keep User= absent: system services default to root. On systemd 259.5,
+# explicit User=root + NoNewPrivileges + seccomp removes CAP_SETUID.
+# Implicit root preserves uid/gid dropping without ambient capabilities.
 Environment=PYTHONDONTWRITEBYTECODE=1
 NoNewPrivileges=yes
 CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER

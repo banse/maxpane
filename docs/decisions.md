@@ -914,3 +914,8 @@ The independent scoped re-review marked R4.1 ADDRESSED: 17 named checks passed, 
 ### 2026-10-02 — PEPEPANE fix5 A: optional inaccessible paths (C.11, §4.1b)
 
 All five transient InaccessiblePaths entries now carry the ignore-missing prefix. On the owner-measured systemd 259.5 host, ProtectHome=tmpfs makes /home/imd-dash absent during namespace setup; the previous required path caused exit 226/NAMESPACE before execution. The dash home remains masked whenever present, and the other four existing paths retain their masks. The exact tuple pin changes under this dated contract decision; worker/child parity compares paths without the optional prefix. A new guard failed on the original tuple.
+
+
+### 2026-10-02 — PEPEPANE fix5 B: implicit root (C.18, §12.1)
+
+Choose option (c): omit User and Group from the system broker service, which still defaults to uid 0. On the owner-measured systemd 259.5 host, explicit User=root with NoNewPrivileges and seccomp-installing hardening loses CAP_SETUID from permitted/effective capabilities despite keeping it in the bounding set. Omitting User restores privilege drops; dropped children have zero inheritable, permitted, effective and ambient capabilities with no_new_privs retained. Keep NoNewPrivileges=yes, the exact bounding set and empty AmbientCapabilities. Options (b) and (a) respectively leave inheritable bits or remove no_new_privs, so neither is needed. The old explicit-root pins are replaced with absent-directive pins and a rule guard; this supersedes the earlier §12.1 explanation of permitted uid drops on this host.

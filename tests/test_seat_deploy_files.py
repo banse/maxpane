@@ -137,8 +137,8 @@ def test_service_execstart_is_python_isolated_at_broker_dir():
     assert (REPO / "imd_dashd" / script.name).is_file(), "the deployed script exists in the checkout"
     assert _one(service["Unit"], "Requires") == "imd-dashd.socket"
     assert _one(service["Service"], "Type") == "simple"
-    assert _one(service["Service"], "User") == "root"
-    assert _one(service["Service"], "Group") == "root"
+    _none(service["Service"], "User")
+    _none(service["Service"], "Group")
     assert _one(service["Service"], "Environment") == "PYTHONDONTWRITEBYTECODE=1"
     assert "Install" not in service, "socket-activated: the service is never enabled on its own"
 
@@ -1002,3 +1002,12 @@ def test_operator_doc_explains_queued_unknown_and_stop_verification():
     assert "never re-plans or re-applies automatically" in doc
     assert "Stop verification can take up to 110 seconds" in doc
     assert "while the unit is deactivating or after `shutting down`" in doc
+
+
+def test_seccomp_with_no_new_privileges_keeps_user_directive_absent():
+    """Measured systemd 259: explicit User=root + NNP + seccomp removes CAP_SETUID."""
+    svc = _unit(SERVICE_UNIT)["Service"]
+    seccomp_keys = {"PrivateDevices", "ProtectKernelTunables", "ProtectKernelModules", "RestrictNamespaces",
+                    "RestrictRealtime", "LockPersonality", "SystemCallArchitectures", "SystemCallFilter"}
+    if _one(svc, "NoNewPrivileges") == "yes" and any(value for key, value in svc if key in seccomp_keys):
+        _none(svc, "User")
