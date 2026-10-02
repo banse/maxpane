@@ -909,3 +909,8 @@ Deployment instructions use a checkout placeholder instead of a personal path. T
 The shared public-IP detector excludes trailing sentence periods from IPv6 candidates while retaining dots within mapped IPv4 tails and CIDR suffixes. Review finding R4.1 is covered by scrubber, fixture-guard and probe-document regressions; non-global addresses still use the standard-library classification. No spec departure.
 
 The independent scoped re-review marked R4.1 ADDRESSED: 17 named checks passed, removing the boundary fix caused six expected failures, and exact restoration returned seven permanent cases to green. The complete fourth-round review has no remaining Critical or Important finding. Explicit residuals remain in follow-ups 33, 38 and 39; follow-up 36 is closed and p05 must be repeated by the owner.
+
+
+### 2026-10-02 — PEPEPANE fix5 A: optional inaccessible paths (C.11, §4.1b)
+
+All five transient InaccessiblePaths entries now carry the ignore-missing prefix. On the owner-measured systemd 259.5 host, ProtectHome=tmpfs makes /home/imd-dash absent during namespace setup; the previous required path caused exit 226/NAMESPACE before execution. The dash home remains masked whenever present, and the other four existing paths retain their masks. The exact tuple pin changes under this dated contract decision; worker/child parity compares paths without the optional prefix. A new guard failed on the original tuple.

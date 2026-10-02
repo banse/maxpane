@@ -194,7 +194,7 @@ def test_worker_dropin_hides_every_dash_path_and_proc():
     assert hidden[0] == "-" + str(Path(SOCKET_PATH).parent)
     assert hidden[1] == "-/home/" + DASH_USER
     assert hidden[2] == "-" + str(Path(AUDIT_PATH).parent)
-    child_hidden = {p.split("=", 1)[1] for p in TRANSIENT_PROPERTIES if p.startswith("InaccessiblePaths=")}
+    child_hidden = {p.split("=", 1)[1].lstrip("-") for p in TRANSIENT_PROPERTIES if p.startswith("InaccessiblePaths=")}
     assert {h.lstrip("-") for h in hidden} <= child_hidden, "the transient children hide what the worker hides"
     assert _one(svc, "ProtectProc") == "invisible"
     assert list(_unit(WORKER_DROPIN)) == ["Service"], "a drop-in: one [Service] section, nothing else"

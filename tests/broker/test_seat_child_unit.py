@@ -39,8 +39,8 @@ def test_transient_properties_in_order():
         "NoNewPrivileges=yes", "UMask=0077", "PrivateTmp=yes", "ProtectSystem=strict", "ProtectHome=tmpfs",
         "BindPaths=/home/imd-worker", "TemporaryFileSystem=/opt:ro", "BindReadOnlyPaths=/opt/imd-worker",
         "BindReadOnlyPaths=/opt/imd-dash/broker",
-        "InaccessiblePaths=/run/dbus", "InaccessiblePaths=/run/systemd/private", "InaccessiblePaths=/run/imd-dash",
-        "InaccessiblePaths=/home/imd-dash", "InaccessiblePaths=/var/log/imd-dash",
+        "InaccessiblePaths=-/run/dbus", "InaccessiblePaths=-/run/systemd/private", "InaccessiblePaths=-/run/imd-dash",
+        "InaccessiblePaths=-/home/imd-dash", "InaccessiblePaths=-/var/log/imd-dash",
     )
     argv = transient_argv("doctor", 3, ["imd", "doctor"], ip_address_deny=IP_DENY, runtime_max_s=120)
     expected = ["systemd-run", "--uid=imd-worker", "--gid=imd-worker", "--wait", "--collect", "--pipe", "--quiet",
@@ -97,3 +97,9 @@ def test_read_ip_address_deny_copies_the_worker_unit_value_or_none():
     assert read_ip_address_deny(run=RecordingRunner({("systemctl", "show"): (0, "\n")})) is None
     assert read_ip_address_deny(run=RecordingRunner({("systemctl", "show"): timeout_for(["systemctl"], 5)})) is None
     assert read_ip_address_deny(run=RecordingRunner({("systemctl", "show"): FileNotFoundError("systemctl")})) is None
+
+
+def test_transient_inaccessible_paths_ignore_missing_namespace_paths():
+    """Measured systemd 259 exit 226: ProtectHome=tmpfs hides /home/imd-dash before masking."""
+    paths = [p.split("=", 1)[1] for p in TRANSIENT_PROPERTIES if p.startswith("InaccessiblePaths=")]
+    assert paths and all(path.startswith("-") for path in paths)

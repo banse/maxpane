@@ -35,8 +35,8 @@ TRANSIENT_PROPERTIES: tuple[str, ...] = (      # in this order, each rendered as
     "NoNewPrivileges=yes", "UMask=0077", "PrivateTmp=yes", "ProtectSystem=strict", "ProtectHome=tmpfs",
     "BindPaths=/home/imd-worker", "TemporaryFileSystem=/opt:ro", "BindReadOnlyPaths=/opt/imd-worker",
     "BindReadOnlyPaths=/opt/imd-dash/broker",
-    "InaccessiblePaths=/run/dbus", "InaccessiblePaths=/run/systemd/private", "InaccessiblePaths=/run/imd-dash",
-    "InaccessiblePaths=/home/imd-dash", "InaccessiblePaths=/var/log/imd-dash",
+    "InaccessiblePaths=-/run/dbus", "InaccessiblePaths=-/run/systemd/private", "InaccessiblePaths=-/run/imd-dash",
+    "InaccessiblePaths=-/home/imd-dash", "InaccessiblePaths=-/var/log/imd-dash",
 )
 
 
