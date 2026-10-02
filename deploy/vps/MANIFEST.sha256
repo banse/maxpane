@@ -18,5 +18,5 @@ a62ba9e8e0ae64e1bbe2e90594e948efe9ecbaba6cca7cbe1f91b2741cfad56f  deploy/vps/20-
 094f84f40b42317392aa908a74a8c76c0ff04c30cd75d9873ddc8f1cb747ba0c  deploy/vps/10-imd-dash.sshd.conf
 1998824157cc6ee2f48f5f89fb3f04c620ec36d3f16367163ad477d3ac76488b  deploy/vps/install.sh
 831b8f5945f2862226c44783089d574432f6d68a824529a9ddea34e8858abf0b  deploy/vps/probe_seat_host.sh
-341a7c06c066a041797d0f62e22e1bd64b0f04539467b60d1945a7423526cb0d  deploy/vps/requirements.lock
-dd30b09522d7e0375adb2d79f12af549ae7575340b026d2bb0365a56292089e8  deploy/vps/wheels/maxpane-0.9.3-py3-none-any.whl
+cdce6af61576f28ec4fd0c81bd812166078fcd0b8ffd6ed8c2694bee8d43b27d  deploy/vps/requirements.lock
+fbed259ccb01dfd64747d881ebbadc80dd0bdf654d3a5b87a84e103918780482  deploy/vps/wheels/maxpane-0.9.3-py3-none-any.whl

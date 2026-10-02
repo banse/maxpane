@@ -945,3 +945,13 @@ Root replies add stderr_head only on nonzero exit or timeout: transient reads, w
 p12 and p13 take the exact transient unit from the raw status data.unit and doctor apply result.unit before scrub, preserving the doctor unit across verify polling. Accounting uses that unit's journal entry with the service suffix; an absent unit reports unavailable without a wildcard lookup. The former glob pin is replaced by exact-unit assertions and hermetic shell-fake execution of both sections. p12 also calls Codex sessions since three days ago and reports ok, rc and count without dumping transcripts. Titles are unchanged, including p10, whose full ping already contains drop_ok.
 
 The operator guide explains implicit-root capability handling, absolute imd paths, optional inaccessible-path prefixes and privilege diagnostics. Updates require checking ping for no armed drain and no action in flight before stopping the socket-activated broker: shutdown loses an armed drain. The next connect must report imd-dashd 0.1.1 before repeating p09–p14.
+
+
+### 2026-10-02 — PEPEPANE fix5 independent review closure
+
+The critical review of 1e71573 through ee44f91 found no Critical, Important or Minor issue. It checked all fix5 requirements, including the false/null capability distinction, gated apply, drain rearming, audit errno, root stderr redaction, Mac isolation and exact-unit probe. Fifty-nine named cases passed. Disabling the drop guard caused thirteen expected failures; omitting drain restoration caused three. Inverse restoration returned all sixteen affected cases to green, with a clean tracked tree. No review fix wave was needed.
+
+
+### 2026-10-02 — PEPEPANE fix5 final validation
+
+On Python 3.11.15 with all twenty third-party versions matching the committed VPS lock, the seat suite including select-to-copy passed 1,507 tests, with two skips. The single complete MaxPane run passed 12,313 tests with two skips and one failure: test_every_pool4_zero_needle_really_renders_when_its_key_is_zero[pool4_total_fee_token] in tests/test_surf_registration.py timed out in Textual pilot.pause while waiting 30 seconds for widget messages. That test and SurfScreen are unchanged from BASE. The exact failing case passed unchanged in 3.16 seconds in a fresh isolated HOME; the full-run timeout was not reproduced, and no assertion, timeout or SURF file was changed. This remains a limitation of the complete-run result, not a claim that the whole run was green. The in-tree Sybilkit suite passed 444 tests with one expected failure. The existing pytest-asyncio fixture-loop-scope warning remains. No host probe, SSH, Docker operation or deployment was attempted.
