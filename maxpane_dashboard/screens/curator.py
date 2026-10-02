@@ -1100,34 +1100,34 @@ class CuratorScreen(DashboardScreen):
         padding: 0 2;
         overflow-y: auto;
     }
-    CuratorScreen .curator-filter-groups {
+    CuratorScreen .filter-groups {
         height: auto;
         grid-size: 4;
         grid-columns: 1fr 1fr 1fr 1fr;
         grid-gutter: 0 1;
     }
-    CuratorScreen CuratorListFilterEditor.compact-filter .curator-filter-groups {
+    CuratorScreen CuratorListFilterEditor.compact-filter .filter-groups {
         grid-size: 2;
         grid-columns: 1fr 1fr;
     }
-    CuratorScreen .curator-filter-group {
+    CuratorScreen .filter-group {
         height: auto;
         min-width: 14;
         margin-bottom: 1;
     }
-    CuratorScreen .curator-filter-group-title,
-    CuratorScreen .curator-filter-section-title {
+    CuratorScreen .filter-group-title,
+    CuratorScreen .filter-section-title {
         height: 1;
         color: $text-muted;
     }
-    CuratorScreen .curator-filter-range {
+    CuratorScreen .filter-range {
         height: 3;
         grid-size: 2;
         grid-columns: 1fr 1fr;
         grid-gutter: 0 1;
     }
-    CuratorScreen .curator-filter-group Select,
-    CuratorScreen .curator-filter-group Checkbox {
+    CuratorScreen .filter-group Select,
+    CuratorScreen .filter-group Checkbox {
         height: 3;
     }
     CuratorScreen .curator-filter-nft-presets {
@@ -1138,7 +1138,7 @@ class CuratorScreen(DashboardScreen):
     CuratorScreen .curator-filter-nft-add-row {
         height: 3;
     }
-    CuratorScreen .curator-filter-field {
+    CuratorScreen .filter-field {
         width: 100%;
         min-width: 14;
     }
@@ -1162,12 +1162,12 @@ class CuratorScreen(DashboardScreen):
         text-overflow: ellipsis;
         overflow-x: hidden;
     }
-    CuratorScreen CuratorListFilterEditor .curator-filter-actions {
+    CuratorScreen CuratorListFilterEditor .filter-actions {
         width: 100%;
         height: 3;
         align: center middle;
     }
-    CuratorScreen CuratorListFilterEditor .curator-filter-actions Button {
+    CuratorScreen CuratorListFilterEditor .filter-actions Button {
         margin: 0 1;
     }
     CuratorScreen .filter-invalid {

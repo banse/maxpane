@@ -284,7 +284,7 @@ async def test_filter_editor_has_centered_apply_then_reset_without_footer():
     async with app.run_test(size=(143, 42)) as pilot:
         editor.scroll_end(animate=False)
         await pilot.pause()
-        actions = editor.query_one(".curator-filter-actions")
+        actions = editor.query_one(".filter-actions")
         buttons = list(actions.query(Button))
         assert [button.id for button in buttons] == [
             "filter-apply", "filter-reset-all"
@@ -388,7 +388,7 @@ async def test_nft_add_controls_and_selected_collections_share_two_grid_columns(
         add_controls = editor.query_one(".curator-filter-nft-add-row")
         selected = editor.query_one("#filter-nft-custom-list")
         collection_rows = list(editor.query(".curator-filter-nft-selected"))
-        filter_grid = editor.query_one(".curator-filter-groups")
+        filter_grid = editor.query_one(".filter-groups")
 
         assert nft_grid.region.x == filter_grid.region.x
         assert nft_grid.region.right == filter_grid.region.right
@@ -413,8 +413,8 @@ async def test_editor_compact_layout_keeps_titles_with_their_controls():
     async with app.run_test(size=(80, 60)) as pilot:
         await pilot.pause()
         assert editor.has_class("compact-filter")
-        for group in editor.query(".curator-filter-group"):
-            assert group.query_one(".curator-filter-group-title")
+        for group in editor.query(".filter-group"):
+            assert group.query_one(".filter-group-title")
             assert group.query("Input, Select, Checkbox")
 
 

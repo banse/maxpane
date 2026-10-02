@@ -1,9 +1,17 @@
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass
 from typing import Any, Mapping
+
+from maxpane_dashboard.analytics.range_filters import (
+    FilterValidationError,
+    check_order,
+    number_text,
+    parse_number,
+    range_text,
+    row_number,
+)
 
 FILTER_FAMILIES = frozenset({"amount", "sequence", "cadence", "gas", "funding"})
 ENS_VALUES = frozenset({"any", "set", "unset"})
@@ -31,12 +39,6 @@ _RANGES = (
     ("weight_min", "weight_max", "weight_eth"),
     ("deposits_min", "deposits_max", "tx_count"),
 )
-
-
-class FilterValidationError(ValueError):
-    def __init__(self, field: str, message: str) -> None:
-        super().__init__(message)
-        self.field = field
 
 
 class FilterDataUnavailable(ValueError):
@@ -251,47 +253,9 @@ def empty_filter_values() -> dict[str, object]:
     return values
 
 
-def _parse_number(field: str, value: object, *, integer: bool):
-    if value is None or (isinstance(value, str) and not value.strip()):
-        return None
-    if isinstance(value, bool):
-        raise FilterValidationError(field, f"{field} must be a non-negative number")
-    if integer:
-        if isinstance(value, int):
-            number = value
-        elif isinstance(value, float):
-            if not math.isfinite(value) or not value.is_integer():
-                raise FilterValidationError(
-                    field, f"{field} must be a non-negative number"
-                )
-            number = int(value)
-        elif isinstance(value, str) and value.strip().isdigit():
-            number = int(value.strip())
-        else:
-            raise FilterValidationError(
-                field, f"{field} must be a non-negative number"
-            )
-        if number < 0:
-            raise FilterValidationError(
-                field, f"{field} must be a non-negative number"
-            )
-        return number
-    try:
-        number = float(value)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise FilterValidationError(
-            field, f"{field} must be a non-negative number"
-        ) from exc
-    if not math.isfinite(number) or number < 0:
-        raise FilterValidationError(
-            field, f"{field} must be a non-negative number"
-        )
-    return number
-
-
 def parse_filter_values(values: Mapping[str, object]) -> FilterSpec:
-    parsed = {field: _parse_number(field, values.get(field), integer=True) for field in _INTEGER_FIELDS}
-    parsed.update({field: _parse_number(field, values.get(field), integer=False) for field in _DECIMAL_FIELDS})
+    parsed = {field: parse_number(field, values.get(field), integer=True) for field in _INTEGER_FIELDS}
+    parsed.update({field: parse_number(field, values.get(field), integer=False) for field in _DECIMAL_FIELDS})
     for field, allowed in (("ens", ENS_VALUES), ("window", WINDOW_VALUES), ("band", BAND_VALUES)):
         value = values.get(field, "any")
         if not isinstance(value, str) or value not in allowed:
@@ -314,30 +278,8 @@ def parse_filter_values(values: Mapping[str, object]) -> FilterSpec:
     parsed["nft_collections"] = _parse_nft_collections(
         values.get("nft_collections", ())
     )
-    for low_field, high_field, _row_field in _RANGES:
-        low, high = parsed[low_field], parsed[high_field]
-        if low is not None and high is not None and low > high:
-            raise FilterValidationError(low_field, f"{low_field} must not exceed {high_field}")
+    check_order(parsed, ((low, high) for low, high, _row_field in _RANGES))
     return FilterSpec(**parsed)
-
-
-def _row_number(
-    row: Mapping[str, object], field: str, *, integer: bool
-) -> int | float | None:
-    value = row.get(field)
-    if isinstance(value, bool):
-        return None
-    if integer:
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str) and value.strip().isdigit():
-            return int(value.strip())
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError, OverflowError):
-        return None
-    return number if math.isfinite(number) else None
 
 
 def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dict]:
@@ -363,7 +305,7 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
             low, high = getattr(spec, low_field), getattr(spec, high_field)
             if low is None and high is None:
                 continue
-            number = _row_number(
+            number = row_number(
                 row, row_field, integer=low_field in _INTEGER_FIELDS
             )
             if number is None or (low is not None and number < low) or (high is not None and number > high):
@@ -374,7 +316,7 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
         has_ens = isinstance(row.get("name"), str) and bool(row["name"].strip())
         if spec.ens == "set" and not has_ens or spec.ens == "unset" and has_ens:
             continue
-        hour = _row_number(row, "first_hour", integer=True)
+        hour = row_number(row, "first_hour", integer=True)
         window = None if hour is None else ("grace" if hour < 24 else "judged")
         if spec.window != "any" and window != spec.window:
             continue
@@ -397,37 +339,23 @@ def filter_rows(rows: Any, spec: FilterSpec, context: FilterContext) -> list[dic
     return selected
 
 
-def _number_text(value: int | float) -> str:
-    return f"{value:,}" if isinstance(value, int) else f"{value:g}"
-
-
-def _range_text(label: str, low, high, *, unit: str = "") -> str | None:
-    if low is None and high is None:
-        return None
-    if low is not None and high is not None:
-        value = _number_text(low) if low == high else f"{_number_text(low)}-{_number_text(high)}"
-        return f"{label}{value}{unit}"
-    operator, value = (">=", low) if low is not None else ("<=", high)
-    return f"{label}{operator}{_number_text(value)}{unit}"
-
-
 def filter_summary(spec: FilterSpec) -> tuple[str, ...]:
     clauses: list[str] = []
-    join = _range_text("join #", spec.join_min, spec.join_max)
+    join = range_text("join #", spec.join_min, spec.join_max)
     if join:
         clauses.append(join)
     if spec.hour_min is not None and spec.hour_min == spec.hour_max:
-        clauses.append(f"joined hour {_number_text(spec.hour_min)}")
+        clauses.append(f"joined hour {number_text(spec.hour_min)}")
     else:
-        hour = _range_text("joined hours ", spec.hour_min, spec.hour_max)
+        hour = range_text("joined hours ", spec.hour_min, spec.hour_max)
         if hour:
             clauses.append(hour)
     for clause in (
-        _range_text("raw rank ", spec.rank_min, spec.rank_max),
-        _range_text("points ", spec.points_min, spec.points_max),
-        _range_text("credit ", spec.credit_min, spec.credit_max, unit=" ETH"),
-        _range_text("weight ", spec.weight_min, spec.weight_max, unit=" ETH"),
-        _range_text("deposits ", spec.deposits_min, spec.deposits_max),
+        range_text("raw rank ", spec.rank_min, spec.rank_max),
+        range_text("points ", spec.points_min, spec.points_max),
+        range_text("credit ", spec.credit_min, spec.credit_max, unit=" ETH"),
+        range_text("weight ", spec.weight_min, spec.weight_max, unit=" ETH"),
+        range_text("deposits ", spec.deposits_min, spec.deposits_max),
     ):
         if clause:
             clauses.append(clause)
