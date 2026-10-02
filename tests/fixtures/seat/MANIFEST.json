@@ -1108,7 +1108,7 @@
     "healthy/broker/ping.json": {
       "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
-      "sha256": "05559cb89172f46ed84b756d0072d032c14c20538480c4c87fa3948204bb5b32",
+      "sha256": "07b9f0f12d7478e5de840370c5f02b7a97ce995477d32cb8a7d3b8a9371aa71f",
       "bytes": 156,
       "redactions": [],
       "synthetic": true,

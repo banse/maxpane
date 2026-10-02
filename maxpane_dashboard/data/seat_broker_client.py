@@ -856,7 +856,7 @@ class LocalDockerBroker(_CallMixin):
                 watch.lines = [_broker_mod._CURRENCY_FIGURE_RE.sub("", redact(ln)) for ln in _text(done.stdout).splitlines() if ln.strip()]
                 watch.rc = done.returncode
                 watch.verified = done.returncode == 0
-                watch.reason = None if done.returncode == 0 else f"exit {done.returncode}"
+                watch.reason = _broker_mod._transient_reason(plan.verb, done.returncode, watch.lines)
                 if plan.verb == "skills-set" and watch.verified:
                     self._skills_listing = None
                     listing = self._read("skills", {})           # spec §11 skills row: verify by re-listing (container-reported)

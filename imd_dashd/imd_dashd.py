@@ -39,7 +39,7 @@ from imd_dashd.process_snapshot import snapshot as process_snapshot
 
 Clock = Callable[[], float]
 
-VERSION = "imd-dashd 0.1.1"
+VERSION = "imd-dashd 0.1.2"
 PLAN_TTL_S = 60
 VERIFY_WITHIN_S = 30           #: `shutting down` -> `runtimes:` within 30 s = verified (fill1 §1: +0.3 s on 8/8)
 VERIFY_WATCH_S = 120           #: the post-apply journal watch is kept this long
@@ -227,6 +227,16 @@ class VerifyWatch:
         return {"verified": self.verified, "connected": self.connected, "verify_lines": list(self.lines),
                 "cursor_after": self.cursor_after, "elapsed_s": round(now - self.started, 1), "audit_seq": audit_seq,
                 "reason": self.reason}
+
+
+def _transient_reason(verb: str, rc: int, lines: list[str]) -> str | None:
+    """Use only the already-redacted final doctor summary; never audit this reason."""
+    if rc == 0:
+        return None
+    reason = f"exit {rc}"
+    if verb == "doctor" and lines and re.fullmatch(r"\d+ things? to fix: .+", lines[-1]):
+        reason += " · " + lines[-1][:200]
+    return reason
 
 
 def _stderr_detail(result, verb: str) -> dict:
@@ -1352,7 +1362,7 @@ class Broker:
                 watch.rc = result.rc
                 watch.stderr_head = _stderr_detail(result, verb).get("stderr_head")
                 watch.verified = (result.rc == 0) and not result.timed_out
-                watch.reason = "timed out (unit killed)" if result.timed_out else (None if result.rc == 0 else f"exit {result.rc}")
+                watch.reason = "timed out (unit killed)" if result.timed_out else _transient_reason(verb, result.rc, watch.lines)
                 if verb == "skills-set" and watch.verified:
                     self._skills_listing = None                     # the re-listing below refreshes it
                     listing = self._transient_read("skills")        # spec §11 skills row: verify by re-listing

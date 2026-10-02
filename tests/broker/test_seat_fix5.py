@@ -103,12 +103,6 @@ def test_oserror_audit_retains_validated_verb_and_errno(tmp_path):
     assert "untrusted diagnostic" not in audit.path.read_text()
 
 
-def test_broker_version_identifies_fix5():
-    import imd_dashd
-    assert broker_mod.VERSION == "imd-dashd 0.1.1"
-    assert imd_dashd.__version__ == "0.1.1"
-
-
 @pytest.mark.parametrize("verb", ["status", "skills", "tools", "whoami", "seat", "sessions"])
 @pytest.mark.parametrize("timed_out", [False, True])
 def test_failed_transient_stderr_is_separate_bounded_redacted_and_not_audited(tmp_path, verb, timed_out):

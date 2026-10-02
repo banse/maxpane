@@ -959,3 +959,7 @@ On Python 3.11.15 with all twenty third-party versions matching the committed VP
 ### 2026-10-02 — PEPEPANE fix6 drain dispatch boundary (§11)
 
 A root drain fire re-arms only before dispatching its restart. Immediately before _exec_systemctl, a flag marks that a restart may already be queued; a later exception leaves the drain disarmed and writes apply for the fire's synthetic plan id, with exception class/errno and "; not re-armed". Exception messages stay out of audit. Pre-dispatch gate errors still restore the same drain. This matches non-raising restart failures and prevents duplicate restarts. drain_lost remains reserved for broker shutdown. Root only: the Mac broker still has no exception re-arm guard; it cannot repeat a restart this way but does not recover a pre-dispatch gate exception.
+
+### 2026-10-02 — PEPEPANE fix6 doctor summary and broker identity (C.11)
+
+Both brokers use one helper for a failed doctor's reason: exit N followed by the already-redacted, currency-stripped last line only when it fullmatches the documented N thing(s) to fix summary. The summary is capped at 200 characters. Other failed commands/last lines retain exit N, successful verification and timeout handling stay unchanged, and the audit still records finished without output. C.11 VERSION changes to imd-dashd 0.1.2; package version, standing User-Agent, operator guide and synthetic ping copies follow so redeployment can be verified.
