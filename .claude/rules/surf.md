@@ -320,7 +320,8 @@ and screen; the view is not persisted, and filter toggles keep the cap.
 `priority` like curator's `f`; elsewhere a no-op. It opens `SurfRecordFilterEditor`
 (`widgets/surf/swarm_record_filter.py`, on THE LIST's `widgets/filter_editor.FilterEditorBase`;
 imported from its module, **not** in the package `__all__`, because `_ALL_WIDGETS` is derived
-from `__all__` and requires `update_data`) in place of the seat cards and RECORD; the hero stays.
+from `__all__` and requires `update_data`) in place of RECORD only; the hero and the seat cards stay drawn above it (owner, 2026-10-02 --
+it first replaced the cards too).
 The editor posts surf's own `RecordFilterApplyRequested` / `RecordFilterResetRequested`, never
 curator's. NODE / STATE / MODEL are checkboxes built from the seat's own rows on every open
 (`record_filter_choices`, most frequent first, plus anything the stored filter selects); WHEN,

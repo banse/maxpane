@@ -201,8 +201,8 @@ pending, rejected, cancelled, blocked, unknown and unread states. Filtering happ
 the row limit. Click `more` beneath the table to show another 20 rows, up to 400; older rows
 are counted after filtering. The window starts at 40 again when the seat changes and is not
 saved. New rows fill with cached facts and subsequent normal reads, preserving scroll position.
-**`f`** on AGENT swaps the seat cards and RECORD for a filter editor shaped like THE LIST's
-(the hero stays): tick any of the seat's own NODEs, STATEs and MODELs, pick WHEN (last 24 h,
+**`f`** on AGENT swaps RECORD for a filter editor shaped like THE LIST's (the hero and the
+seat cards stay above it): tick any of the seat's own NODEs, STATEs and MODELs, pick WHEN (last 24 h,
 7 or 30 days), PANEL and ANSWER outcomes, and from/to ranges for TOOK (minutes) and TOK
 (output tokens). Ticks inside a group are alternatives; groups combine with AND. `f` or
 APPLY FILTER applies, RESET ALL clears the draft, `esc` closes without applying. RECORD's

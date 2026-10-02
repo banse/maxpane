@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- Surfboard AGENT: `f` filters RECORD, the way `f` filters THE LIST. The editor takes the seat
-  cards' and RECORD's place (the hero stays) and combines NODE, STATE, WHEN (24 h / 7 / 30 days),
+- Surfboard AGENT: `f` filters RECORD, the way `f` filters THE LIST. The editor takes RECORD's
+  place under the hero and the seat cards, which stay on screen, and combines NODE, STATE, WHEN (24 h / 7 / 30 days),
   MODEL, PANEL, ANSWER, TOOK and TOK with AND; ticks inside one group are alternatives. RECORD's
   title gains `filtered`, and its footer says what the filter is, how many rows match and how
   many cannot be judged yet (`not read yet`, `unavailable`) — counted, never hidden. A seat

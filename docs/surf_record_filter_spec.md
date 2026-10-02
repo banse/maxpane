@@ -4,14 +4,16 @@ Owner request 2026-10-02: "add a filter to the AGENT dashboard RECORD table. It 
 filter in THE LIST dashboard … typing f replaces the table with a filter view … reuse as much of
 THE LIST filter as possible … filter by node, state, model, combined with AND, or any other useful
 RECORD properties." Design approved in chat the same day with the three recommendations: the editor
-takes the seat cards *and* RECORD, the read-dependent groups ship now with a `not read yet` count,
+takes the seat cards *and* RECORD (changed the same day, after the build: RECORD only -- see
+below), the read-dependent groups ship now with a `not read yet` count,
 WHEN is a dropdown. Tier 2: a shared widget hoisted out of curator, two dashboards, > 6 files.
 Branch `feature/surf-record-filter` (from `2541194`).
 
 ## What the reader sees
 
-* **`f` on AGENT** hides the seat-card row and RECORD and shows the filter editor in their place;
-  the hero stays. `f` again or APPLY FILTER applies; RESET ALL clears the draft (it does not apply);
+* **`f` on AGENT** hides RECORD and shows the filter editor in its place; the hero and the
+  seat-card row stay drawn above it. (As built in WP2 the editor replaced the cards too; the owner
+  asked on 2026-10-02 for RECORD only, so the cards stay visible while filtering.) `f` again or APPLY FILTER applies; RESET ALL clears the draft (it does not apply);
   `esc` closes the editor and discards the draft (a second `esc` leaves AGENT as today). Leaving
   AGENT or changing seat closes it too. `f` is a no-op on every other body.
 * **RECORD's title** gains a third mode word: `RECORD · all · not completed · filtered · as of HH:MM`.
