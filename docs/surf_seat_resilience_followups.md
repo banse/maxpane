@@ -106,3 +106,18 @@ Filed, not fixed:
   read keeps its old `read_ts`, so the slot is not re-stored. As a result the 6-seat cap orders
   seats by when their data last changed, not by when they were last read. The plan said "most
   recently read". Low impact, because only a seventh seat evicts anything.
+- **F-S3: job-detail fan-outs ignore a busy host** (observed live 2026-10-02 16:17–16:22, IMD
+  outage). While every `/seats/{id}` and `/jobs/{id}` read on both hosts answered
+  `503 {"error":"busy"}` (~3.2 s each), `/jobs` itself still answered. So both detail loops kept
+  going: `SurfManager._pool_swarm` (`_swarm_executing_ids`) and the scores sweep
+  (`_swarm_sweep_ids`) each call `fetch_job` per id in sequence, about one id every 6.4 s (2 hosts × 3.2 s).
+  That is ~10 requests a minute to a host that asked us to wait, and the sweep stayed "still in
+  flight" for the whole run. Two defects: (a) no back-off. `fetch_job` does not opt into
+  `seat_busy`, so a busy answer reads as a failed row (`None`, the same as a 404) and the loop never
+  stops. Apply the seat rule: stop the loop at the first all-hosts-busy answer and `mark_failed` the tier.
+  (b) a false success. After a busy loop each method still stores `details` (now short or empty)
+  as last-good and calls `mark_fetched`. A host that refused to answer then looks like "no
+  executing jobs" until the next good read. This breaks the convention that a dead source is
+  shown as unavailable, never as a real empty. Keep the prior details when the loop ended busy.
+  Tier 1 (surf data module only); proof: a transport that answers busy on `/jobs/{id}` → one
+  request per cycle, prior details kept, tier marked failed.
