@@ -129,6 +129,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         summary, state = swarm_seat_summary, swarm_seat_state
         if self.is_mounted:
             self.query_one(f"#{SEAT_BOX_IDS['runtime']}").tooltip = None
+            self.query_one(f"#{SEAT_BOX_IDS['nodes']}").tooltip = None
         ens_name = swarm_seat_owner_ens if isinstance(swarm_seat_owner_ens, str) else None
         for key, label, build in (
             ("owner", "OWNER", lambda s: self._owner_body(s, ens_name)),
@@ -304,4 +305,19 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
             body.append(" ").append(rate, style="bold")
         if len(parts) > 3:
             body.append("\n").append(f"+{len(parts) - 2} more", style="dim")
+            self.query_one(f"#{SEAT_BOX_IDS['nodes']}").tooltip = self._nodes_tooltip(parts)
         return body
+
+    @staticmethod
+    def _nodes_tooltip(parts) -> Text:
+        """Every node the card's ``+N more`` folds away, exact counts, card order."""
+        tooltip = Text()
+        for i, row in enumerate(parts):
+            key = row.get("node_key")
+            accepted, attempts = seat_token(row.get("accepted")), seat_token(row.get("attempts"))
+            rate = fmt_win_rate(accepted / attempts) if accepted is not None and attempts else EMDASH
+            count = fmt_int(accepted) if accepted is not None else "--"
+            if attempts is not None:
+                count += f" of {fmt_int(attempts)}"
+            tooltip.append(("\n" if i else "") + f"{NODE_TITLES.get(key) or flatten(key)} {count} · {rate}")
+        return tooltip

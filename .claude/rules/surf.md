@@ -274,7 +274,9 @@ descending, attempts descending, `NODE_TITLES` order, then key. Each line is dim
 bold accepted count (green above zero) and bold `fmt_win_rate(accepted / attempts)`; missing
 or zero attempts show `—`. Known names are ORACLE/REVIEW/BUILD, unknown keys retain their
 flattened, fitted text with a visible `…`. Up to three nodes show in full; more show two and
-`+N more`. Empty is `no nodes yet`, unread is `unavailable`. Counts shorten through the
+`+N more`; then the NODES box carries a literal `Text` tooltip listing every node in card order
+with exact counts (`ORACLE 2,224 of 2,630 · 84.6 %`), cleared on every paint like RUNTIME's
+(owner, 2026-10-02). Empty is `no nodes yet`, unread is `unavailable`. Counts shorten through the
 honest forms in `_swarm_seat.py`: `fmt_int`, `fmt_compact`, whole K/M, never a clipped number.
 Pending/unavailable gate all seats-backed cards; never paired is said once in OWNER, with
 dashes elsewhere. Runtime, daemon and ENS names retain explicit ellipsis fitting.

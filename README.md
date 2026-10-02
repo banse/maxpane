@@ -188,7 +188,8 @@ is older. Hover RUNTIME for the comparison basis and npm check time. Claude Code
 are checked at most hourly per package while AGENT is open; other runtimes, failed checks and
 fleet ties produce no highlight. COLLAB counts the seats worked with and lists the top two teammates by
 shared jobs. NODES lists accepted work and acceptance rate, ordered by accepted count,
-then attempts: up to three nodes, or the first two plus `+N more`. Unknown keys keep their
+then attempts: up to three nodes, or the first two plus `+N more`; hovering the card then
+lists every node with its exact accepted-of-attempts count. Unknown keys keep their
 own text with a visible `…`; large counts shorten rather than cut. Missing attempts show `—`.
 The separate ROLES, node-chain counts, OTHERS and contributor BOARD card are removed.
 RANK stays in the hero and remains available when the seats read fails.

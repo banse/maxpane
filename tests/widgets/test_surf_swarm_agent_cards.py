@@ -197,6 +197,49 @@ async def test_nodes_show_two_of_four_and_count_the_rest():
     assert _lines(boxes["nodes"]) == ["NODES", "ORACLE 224 85.2 %", "REVIEW 1 100.0 %", "+2 more"]
 
 
+_FOUR_NODES = [_row("mystery\n[/x]", attempts=1), _row("build_contract_project", attempts=1),
+               _row("adversarial_review", attempts=1, accepted=1),
+               _row("oracle_assess", attempts=2630, accepted=2224), _row("hunt_d", attempts=None)]
+
+
+async def _nodes_tooltip(**over):
+    async with _Themed().run_test(size=SIZE) as pilot:
+        await pilot.app.mount(SurfSwarmSeatCards())
+        cards = pilot.app.query_one(SurfSwarmSeatCards)
+        cards.update_data(**_seat_kwargs(swarm_seat_node_rows=_FOUR_NODES))
+        await pilot.pause()
+        first = cards.query_one("#" + SEAT_BOX_IDS["nodes"]).tooltip
+        cards.update_data(**_seat_kwargs(**over))
+        await pilot.pause()
+        return first, cards.query_one("#" + SEAT_BOX_IDS["nodes"]).tooltip
+
+
+async def test_nodes_more_tooltip_lists_every_node_with_exact_counts():
+    """Owner 2026-10-02: hovering ``+N more`` lists every node the seat worked, like RUNTIME's."""
+    from rich.text import Text
+    tooltip, _ = await _nodes_tooltip()
+    assert isinstance(tooltip, Text)
+    assert tooltip.plain.splitlines() == [
+        "ORACLE 2,224 of 2,630 · 84.6 %",
+        "REVIEW 1 of 1 · 100.0 %",
+        "BUILD 1 of 1 · 100.0 %",
+        "mystery [/x] 1 of 1 · 100.0 %",
+        "hunt_d 1 · —",
+    ]
+
+
+@pytest.mark.parametrize("over", [
+    {"swarm_seat_node_rows": _FOUR_NODES[:3]},
+    {"swarm_seat_node_rows": None},
+    {"swarm_seat_state": "busy"},
+    {"swarm_seat_state": "pending"},
+])
+async def test_nodes_tooltip_only_while_more_is_shown(over):
+    first, after = await _nodes_tooltip(**over)
+    assert first is not None
+    assert after is None
+
+
 async def test_three_nodes_all_show_in_count_attempt_and_key_order():
     rows = [_row("build_contract_project"), _row("adversarial_review"), _row("oracle_assess")]
     boxes = await _seat(swarm_seat_node_rows=rows)
