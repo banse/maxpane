@@ -107,3 +107,65 @@ def test_broker_version_identifies_fix5():
     import imd_dashd
     assert broker_mod.VERSION == "imd-dashd 0.1.1"
     assert imd_dashd.__version__ == "0.1.1"
+
+
+@pytest.mark.parametrize("verb", ["status", "skills", "tools", "whoami", "seat", "sessions"])
+@pytest.mark.parametrize("timed_out", [False, True])
+def test_failed_transient_stderr_is_separate_bounded_redacted_and_not_audited(tmp_path, verb, timed_out):
+    import json
+    import subprocess
+    from tests.broker._harness import NOW, PRIVATE_KEY, PUBLIC_KEY, transient
+    diagnostic = "lookup failed\n" + PUBLIC_KEY + "\n" + PRIVATE_KEY + "\n" + "x" * 190 + "sk-" + "a" * 60 + "\n" + "z" * 250 + "\nomitted\n"
+    answer = (subprocess.TimeoutExpired("systemd-run", 45, output=b"", stderr=diagnostic.encode())
+              if timed_out else transient("", rc=1, stderr=diagnostic))
+    broker, _, _, _, audit = make_broker(tmp_path, script={("systemd-run",): answer})
+    args = {"runtime": "codex", "since": NOW - 86400} if verb == "sessions" else {}
+    reply = call(broker, verb, args)
+    detail = reply["data"] if reply["ok"] else reply["detail"]
+    assert detail["stderr_head"][0] == "lookup failed"
+    assert len(detail["stderr_head"]) == 5 and all(len(line) <= 200 for line in detail["stderr_head"])
+    assert detail.get("lines", []) == [] and broker._whoami_key is None
+    assert PUBLIC_KEY not in json.dumps(reply) and PRIVATE_KEY not in json.dumps(reply) and "a" * 60 not in json.dumps(reply)
+    assert "omitted" not in json.dumps(reply)
+    broker.shutdown()  # even flushed read counts contain no diagnostics
+    assert "lookup failed" not in audit.path.read_text()
+
+
+def test_sessions_nonzero_exit_with_valid_json_is_unreadable(tmp_path):
+    from tests.broker._harness import NOW, transient
+    broker, *_ = make_broker(tmp_path, script={("systemd-run",): transient('{"sessions": []}', rc=1, stderr="namespace failed")})
+    reply = call(broker, "sessions", {"runtime": "codex", "since": NOW - 86400})
+    assert reply["error"] == "unreadable" and reply["detail"]["rc"] == 1
+    assert reply["detail"]["stderr_head"] == ["namespace failed"]
+
+
+@pytest.mark.parametrize("verb,args", [("doctor", {}), ("skills-set", {"skill_id": "oracle-assess", "on": False})])
+@pytest.mark.parametrize("timed_out", [False, True])
+def test_failed_apply_verify_has_sanitized_stderr_without_currency(tmp_path, verb, args, timed_out):
+    import subprocess
+    from tests.broker._harness import PRIVATE_KEY, transient
+    diagnostic = "namespace failed ($0.114 estimated)\n" + PRIVATE_KEY
+    answer = (subprocess.TimeoutExpired("systemd-run", 135, output=b"stdout only", stderr=diagnostic.encode())
+              if timed_out else transient("stdout only", rc=1, stderr=diagnostic))
+    broker, _, _, _, audit = make_broker(tmp_path, script={("systemd-run",): answer})
+    broker._skills_listing = {"oracle-assess"}
+    plan = call(broker, verb, args)["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    broker._threads[plan["plan_id"]].join(timeout=5)
+    assert not broker._threads[plan["plan_id"]].is_alive()
+    data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
+    assert data["verified"] is False
+    assert data["verify_lines"] == ["stdout only"]
+    assert data["stderr_head"][0].strip() == "namespace failed"
+    assert "0.114" not in str(data) and PRIVATE_KEY not in str(data)
+    assert "namespace failed" not in audit.path.read_text()
+
+
+def test_successful_transient_keeps_original_reply_shape_even_with_stderr(tmp_path):
+    from tests.broker._harness import transient
+    broker, *_ = make_broker(tmp_path, script={("systemd-run",): transient("ok", stderr="successful warning")})
+    assert set(call(broker, "status")["data"]) == {"lines", "rc", "unit"}
+    plan = call(broker, "doctor")["plan"]
+    call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+    broker._threads[plan["plan_id"]].join(timeout=5)
+    assert "stderr_head" not in call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]

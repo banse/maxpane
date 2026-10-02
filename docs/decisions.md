@@ -933,3 +933,8 @@ Broker construction reads CapEff through an injectable reader of /proc/self/stat
 An exception during drain fire restores the original drain and deadline, resets beats and records drain_rearmed with the explicit refusal code or exception class and errno. The tick remains alive. Unexpected request errors retain a validated verb, and OSError errno goes inside the existing outcome string; AUDIT_FIELDS is unchanged and exception messages are not logged.
 
 Contract C.11 gains additive ping.drop_ok and changes VERSION to imd-dashd 0.1.1 so operators can verify socket-activated redeployment. Package __version__, standing User-Agent, operator docs and synthetic ping copies follow the bump. LocalDockerBroker and FakeBroker advertise drop_ok true because they never drop a uid. No TUI change is required.
+
+
+### 2026-10-02 — PEPEPANE fix5 failed transient diagnostics (C.11)
+
+Root replies add stderr_head only on nonzero exit or timeout: transient reads, whoami_unavailable (including forwarded seat refusal), summariser unreadable/timeout detail and doctor/skills-set verification. The head is at most five lines of 200 characters. Each full line passes through redact without an allowed field before truncation; doctor and skills-set additionally remove currency figures. Diagnostics never join stdout lines, establish a whoami key or enter the audit. A summariser with nonzero exit is unreadable even if it emitted valid JSON. Successful root status retains exactly lines, rc and unit. This diagnostic addition is root-only this round; Mac transient replies remain unchanged.

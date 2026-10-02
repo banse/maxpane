@@ -166,6 +166,7 @@ class VerifyWatch:
     restart_within_s: float = VERIFY_WITHIN_S
     done: bool = False              # transient: the thread finished
     rc: int | None = None
+    stderr_head: list[str] | None = None
     targets: list[tuple[str, int]] = field(default_factory=list)   # kill: ("pid" | "pgid", id) each SIGTERM went to
 
     def update(self, lines: Sequence[tuple[float, str]], now: float, *, unit_active: bool | None = None,
@@ -226,6 +227,18 @@ class VerifyWatch:
         return {"verified": self.verified, "connected": self.connected, "verify_lines": list(self.lines),
                 "cursor_after": self.cursor_after, "elapsed_s": round(now - self.started, 1), "audit_seq": audit_seq,
                 "reason": self.reason}
+
+
+def _stderr_detail(result, verb: str) -> dict:
+    if result.rc == 0 and not result.timed_out:
+        return {}
+    lines = []
+    for line in _text(result.stderr).splitlines()[:5]:
+        line = redact(line)  # no allowed field, including whoami: diagnostics never establish identity
+        if verb in ("doctor", "skills-set"):
+            line = _CURRENCY_FIGURE_RE.sub("", line)
+        lines.append(line[:200])  # redact the complete line before truncating credentials
+    return {"stderr_head": lines}
 
 
 def _short_line(text: str) -> str:
@@ -873,19 +886,20 @@ class Broker:
         result = self._transient(verb, [IMD_BIN, verb])
         if result is None:
             return verbs.err("child_posture_unavailable", {"verb": verb})
+        diagnostic = _stderr_detail(result, verb)
         if result.timed_out:
-            return verbs.err("timeout", {"verb": verb, "unit": result.unit})
+            return verbs.err("timeout", {"verb": verb, "unit": result.unit, **diagnostic})
         # whoami prints the public key: redact with the allowed field so the hex64 rule keeps it (spec §13 canary (3))
         lines = [redact(ln, "deviceKey" if verb == "whoami" else None) for ln in _text(result.stdout).splitlines() if ln.strip()]
         if verb == "whoami":
             key = next((ln.strip() for ln in lines if len(ln.strip()) == 64 and all(c in "0123456789abcdef" for c in ln.strip())), None)
             if key is None:
-                return verbs.err("whoami_unavailable", {"rc": result.rc})
+                return verbs.err("whoami_unavailable", {"rc": result.rc, **diagnostic})
             self._whoami_key = key
-            return verbs.ok(data={"deviceKey": key})
+            return verbs.ok(data={"deviceKey": key, **diagnostic})
         if verb == "skills":
             self._skills_listing = {ln.split()[1] for ln in lines if ln.split()[:1] in (["on"], ["off"]) and len(ln.split()) > 1}
-        return verbs.ok(data={"lines": lines, "rc": result.rc, "unit": result.unit})
+        return verbs.ok(data={"lines": lines, "rc": result.rc, "unit": result.unit, **diagnostic})
 
     def _seat_projection(self, peer_uid: int) -> dict:
         if self._whoami_key is None:
@@ -930,8 +944,11 @@ class Broker:
         result = self._transient("sessions", argv)
         if result is None:
             return verbs.err("child_posture_unavailable", {"verb": "sessions"})
+        diagnostic = _stderr_detail(result, "sessions")
         if result.timed_out:
-            return verbs.err("timeout", {"verb": "sessions", "unit": result.unit})
+            return verbs.err("timeout", {"verb": "sessions", "unit": result.unit, **diagnostic})
+        if result.rc != 0:
+            return verbs.err("unreadable", {"what": "summariser output", "rc": result.rc, **diagnostic})
         try:
             body = json.loads(_text(result.stdout))
         except ValueError:
@@ -1333,6 +1350,7 @@ class Broker:
                 result = run_transient(verb, seq_no, plan.argv, run=guarded_run, ip_address_deny=self.ip_address_deny or "")
                 watch.lines = [_CURRENCY_FIGURE_RE.sub("", redact(ln)) for ln in _text(result.stdout).splitlines() if ln.strip()]
                 watch.rc = result.rc
+                watch.stderr_head = _stderr_detail(result, verb).get("stderr_head")
                 watch.verified = (result.rc == 0) and not result.timed_out
                 watch.reason = "timed out (unit killed)" if result.timed_out else (None if result.rc == 0 else f"exit {result.rc}")
                 if verb == "skills-set" and watch.verified:
@@ -1495,7 +1513,8 @@ class Broker:
                                       "elapsed_s": round(now - watch.started, 1), "audit_seq": None, "reason": None})
             return verbs.ok(data={"verified": watch.verified, "connected": None, "verify_lines": list(watch.lines),
                                   "cursor_after": None, "elapsed_s": round(now - watch.started, 1), "audit_seq": None,
-                                  "reason": watch.reason, "rc": watch.rc})
+                                  "reason": watch.reason, "rc": watch.rc,
+                                  **({"stderr_head": watch.stderr_head} if watch.stderr_head is not None else {})})
         if watch.kind in ("none", "kill"):          # decided at apply (drain arm, cancel-drain) or by tick() (kill-orphans)
             return verbs.ok(data=watch.to_dict(now, None))
         lines: list[tuple[float, str]] = []
