@@ -2650,6 +2650,15 @@ SurfSwarmSeatRecord {
     margin: 1 0 0 0;
 }
 
+/* RECORD's `f` filter editor takes the cards' and RECORD's place while open
+ * (2026-10-02); it scrolls inside itself, so it is a floor, not a pin. */
+SurfRecordFilterEditor {
+    width: 100%;
+    height: 1fr;
+    min-height: 6;
+    margin: 1 0 0 0;
+}
+
 /* ── Curator screen (THE LIST) ────────────────────────────────────────── */
 
 /* Structure only, restating CuratorScreen.DEFAULT_CSS. An app stylesheet

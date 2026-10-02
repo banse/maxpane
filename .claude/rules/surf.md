@@ -305,7 +305,8 @@ The active mode is bold accent, the inactive mode dim. A dim, unclickable `SEAT_
 (`type 'i' to change seat`, owner 2026-09-24) ends flush with the answer column's text, after any
 widen marker, only where it fits whole; it never adds a title line or moves a pin. `record_state` in pure analytics
 owns the displayed state, shared by widget and manager. `not completed` keeps every state
-except completed, including None. `record_window` filters first, then clamps the view to
+except completed, including None. `record_window` (`analytics/surf_record_filter.py`, with
+`record_selected` / `record_view`) filters first, then clamps the view to
 40..400 and takes its rows. Older counts are after filtering; empty filtered views say
 `no incomplete records`, unread remains unavailable.
 `screen.record_more()` adds 20 to screen-owned `record_cap` (initially 40, maximum 400),
@@ -314,6 +315,32 @@ the remaining older count stays. Both actions call the I/O-free `SurfManager.set
 which stores cap/open_only and marks `TIER_SWARM_SEAT` due, repaint cached rows, then schedule
 the usual guarded refresh. No handler awaits network. A seat change resets 40/all in manager
 and screen; the view is not persisted, and filter toggles keep the cap.
+
+**`f` filters RECORD** (owner 2026-10-02, `docs/surf_record_filter_spec.md`). AGENT-only,
+`priority` like curator's `f`; elsewhere a no-op. It opens `SurfRecordFilterEditor`
+(`widgets/surf/swarm_record_filter.py`, on THE LIST's `widgets/filter_editor.FilterEditorBase`;
+imported from its module, **not** in the package `__all__`, because `_ALL_WIDGETS` is derived
+from `__all__` and requires `update_data`) in place of the seat cards and RECORD; the hero stays.
+The editor posts surf's own `RecordFilterApplyRequested` / `RecordFilterResetRequested`, never
+curator's. NODE / STATE / MODEL are checkboxes built from the seat's own rows on every open
+(`record_filter_choices`, most frequent first, plus anything the stored filter selects); WHEN,
+PANEL and ANSWER are dropdowns; TOOK and TOK are from/to ranges validated by
+`analytics/range_filters`. Inside a group options OR; groups AND. `f` or APPLY validates through
+`parse_record_filter` (an invalid range stays open, naming its field), which turns WHEN into a
+fixed `since_ts` from `screen._clock` — the only clock read. An empty filter clears the stored
+one and shows `all`; RESET ALL clears only the draft; `esc` closes the editor first, then leaves
+the body. Leaving AGENT closes the editor and keeps the applied filter; a seat change (`_seat_entered`
+or a refresh's token change) clears both.
+The title gains a third mode word, `filtered` (`screen.record_filter('filtered')`), only while a
+filter is stored; `filtered` shows the filter alone (open_only False), `all` / `not completed`
+keep it for a later click. Only the **base** groups (NODE, STATE, WHEN) shape `record_window`
+and so the manager's answer, job-detail and oracle read windows (`SurfManager.record_spec`, set by
+`set_record_view(cap, open_only, spec)`, I/O-free, cleared by `set_seat`); MODEL / PANEL / ANSWER /
+TOOK / TOK need a row's reads and never narrow what is read. A row they cannot judge yet is
+counted in the footer as `not read yet`, or yellow `unavailable` when its read failed — never shown
+as a match and never dropped. The footer reads `summary · N match · N not read yet · N
+unavailable · +N older · more`; the summary clips first and goes below 8 cells, the counts never
+do; nothing to show, wait for or page to is `no matching records`.
 
 It shows every lifetime `work[]` attempt; its `state` is the attempt's `status` unless
 `accepted` (then, or with no status served, the job's state). It shows `MM-DD HH:MM` of `submittedAt` (else `acceptedAt`); the job

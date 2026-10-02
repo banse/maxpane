@@ -201,6 +201,16 @@ pending, rejected, cancelled, blocked, unknown and unread states. Filtering happ
 the row limit. Click `more` beneath the table to show another 20 rows, up to 400; older rows
 are counted after filtering. The window starts at 40 again when the seat changes and is not
 saved. New rows fill with cached facts and subsequent normal reads, preserving scroll position.
+**`f`** on AGENT swaps the seat cards and RECORD for a filter editor shaped like THE LIST's
+(the hero stays): tick any of the seat's own NODEs, STATEs and MODELs, pick WHEN (last 24 h,
+7 or 30 days), PANEL and ANSWER outcomes, and from/to ranges for TOOK (minutes) and TOK
+(output tokens). Ticks inside a group are alternatives; groups combine with AND. `f` or
+APPLY FILTER applies, RESET ALL clears the draft, `esc` closes without applying. RECORD's
+title gains `filtered` beside `all` / `not completed`, and its footer states the filter, how
+many rows match, and how many it cannot judge yet — `not read yet` while MODEL to TOK wait
+for the row's reads, `unavailable` when a read failed. Those rows are counted, never shown
+as matches and never silently dropped. NODE, STATE and WHEN narrow which rows are read next;
+the filter is cleared when the seat changes.
 Joined oracle rows show the answer.json value and the start of its notes; the row's `»` opens
 the cached question, full retained value and notes. Failed members show their reason in red.
 Other rows show the first sentence of the reply — in red when the attempt failed. Their `»` opens a
@@ -526,8 +536,11 @@ of any of the six alternate bodies.
 | LEADERBOARD row click or Enter | Save that seat and open AGENT |
 | RECORD `more` click | Show 20 more rows, up to 400 |
 | RECORD `all` / `not completed` click | Filter by the displayed state before the row limit |
+| `f` in AGENT | Open RECORD's filter editor; in the editor, apply it |
+| RECORD `filtered` click | Show the stored filter again after `all` / `not completed` |
 | RECORD `»` click | Open ANSWER (joined oracle value, question and notes) or SUBMISSION (reply, job and usage) |
 | `space` / `esc` in ANSWER or SUBMISSION | Close the popup and return to AGENT |
+| `esc` in RECORD's filter editor | Close it without applying |
 | `esc` outside a popup | Return to the dashboard |
 
 The status hint names the ones that are not experimental:

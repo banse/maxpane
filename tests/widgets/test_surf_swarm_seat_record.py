@@ -877,3 +877,143 @@ def test_widget_oracle_eligibility_agrees_with_manager_contract():
     from maxpane_dashboard.data.surf_models import SWARM_ORACLE_NODE_KEYS
     from maxpane_dashboard.widgets.surf._oracle_answer import ORACLE_NODE_KEYS
     assert ORACLE_NODE_KEYS == SWARM_ORACLE_NODE_KEYS
+
+
+# -- the ``f`` filter: title word and footer (docs/surf_record_filter_spec.md) ------
+
+
+def _filter_rows():
+    """Eleven readable rows: two match ``opus 4.1``, one other model, three
+    not read yet, one unavailable, and four completed review rows."""
+    base = dict(NEWEST, node_key='oracle_assess', work_status='accepted', job_state='completed')
+    rows = []
+    for i, (state, model) in enumerate([('read', 'claude-opus-4-1'), ('read', 'claude-opus-4-1'),
+                                        ('read', 'gpt-6-astra'), ('not_read', None), ('not_read', None),
+                                        ('not_read', None), ('unavailable', None)]):
+        rows.append(dict(base, job_id=f'{i:08x}-0000-4000-8000-000000000000', answer_state=state,
+                         model=model, answer='Done.' if state == 'read' else None))
+    rows += [dict(base, job_id=f'{i:08x}-0000-4000-8000-00000000000a', node_key='adversarial_review',
+                  answer_state='read', model='claude-opus-4-1', answer='Reviewed.') for i in range(4)]
+    return rows
+
+
+def _lines(app):
+    return [''.join(seg.text for seg in strip) for strip in app.screen._compositor.render_strips()]
+
+
+def _mode_word(app, word):
+    """``(bold, in accent)`` of a title mode word: the active word is both, an inactive one neither."""
+    style = _style_of(app, word)
+    accent = Color.parse(app.get_css_variables()['accent']).get_truecolor(app.ansi_theme)
+    return style.bold, style.color.get_truecolor(app.ansi_theme) == accent
+
+
+def _style_of(app, needle):
+    from rich.cells import cell_len
+    for y, line in enumerate(_lines(app)):
+        if needle in line:
+            return app.screen.get_style_at(cell_len(line[:line.index(needle)]), y)
+    raise AssertionError(f'{needle!r} not composited')
+
+
+class _RecordApp(App):
+    def compose(self):
+        yield SurfSwarmSeatRecord()
+
+
+async def test_the_filtered_word_exists_only_while_a_filter_is_stored():
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    spec = RecordFilter(models=frozenset({'claude-opus-4-1'}))
+    async with _RecordApp().run_test(size=(139, 20)) as pilot:
+        record = pilot.app.query_one(SurfSwarmSeatRecord)
+        record.update_data(swarm_seat_work_rows=_filter_rows(), swarm_seat_state='ok', swarm_seat_as_of_hhmm=AS_OF)
+        await pilot.pause()
+        assert 'RECORD · all · not completed · as of 04:06' in _lines(pilot.app)[0]
+        record.set_record_view(40, False, None, has_filter=True)
+        await pilot.pause()
+        assert 'RECORD · all · not completed · filtered · as of 04:06' in _lines(pilot.app)[0]
+        assert _mode_word(pilot.app, 'all') == (True, True)
+        assert _mode_word(pilot.app, 'filtered') == (False, False)
+        record.set_record_view(40, False, spec)
+        await pilot.pause()
+        assert _mode_word(pilot.app, 'filtered') == (True, True)
+        assert _mode_word(pilot.app, 'all') == (False, False)
+        assert _mode_word(pilot.app, 'not completed') == (False, False)
+        assert _style_of(pilot.app, 'filtered').meta['@click'] == "screen.record_filter('filtered')"
+
+
+async def test_the_filtered_footer_states_the_filter_then_what_it_cannot_judge():
+    from textual.widgets import DataTable
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    async with _RecordApp().run_test(size=(139, 20)) as pilot:
+        record = pilot.app.query_one(SurfSwarmSeatRecord)
+        record.update_data(swarm_seat_work_rows=_filter_rows(), swarm_seat_state='ok', swarm_seat_as_of_hhmm=AS_OF)
+        record.set_record_view(40, False, RecordFilter(models=frozenset({'claude-opus-4-1'})))
+        await pilot.pause()
+        footer = record.query_one(f'#{record.footer_id}')
+        text = '\n'.join(_lines(pilot.app))
+        assert 'opus 4.1 · 6 match · 3 not read yet · 1 unavailable' in text
+        assert record.query_one(DataTable).row_count == 6
+        theme = pilot.app.ansi_theme
+        assert _style_of(pilot.app, '1 unavailable').color.get_truecolor(theme) == \
+            Color.parse('yellow').get_truecolor(theme)
+        assert footer.display
+        record.set_record_view(40, False, RecordFilter(models=frozenset({'claude-opus-4-1'}),
+                                                       nodes=frozenset({'adversarial_review'})))
+        await pilot.pause()
+        text = '\n'.join(_lines(pilot.app))
+        assert 'review · opus 4.1 · 4 match' in text and 'not read yet' not in text
+
+
+async def test_a_filter_with_nothing_to_show_or_wait_for_says_so():
+    from textual.widgets import DataTable
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    async with _RecordApp().run_test(size=(139, 20)) as pilot:
+        record = pilot.app.query_one(SurfSwarmSeatRecord)
+        record.update_data(swarm_seat_work_rows=_filter_rows(), swarm_seat_state='ok', swarm_seat_as_of_hhmm=AS_OF)
+        record.set_record_view(40, False, RecordFilter(states=frozenset({'quarantined'})))
+        await pilot.pause()
+        text = '\n'.join(_lines(pilot.app))
+        assert 'quarantined · no matching records' in text
+        assert 'no work yet' not in text and record.query_one(DataTable).row_count == 0
+
+
+@pytest.mark.parametrize(('width', 'summary'), [(90, 'clipped'), (70, 'dropped')])
+async def test_the_counts_and_the_older_tail_survive_a_narrow_footer(width, summary):
+    """The counts are what the filter could not judge: the summary gives way first."""
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    rows = _filter_rows() * 8  # 88 base rows, 48 past the 40 cap
+    spec = RecordFilter(models=frozenset({'claude-opus-4-1', 'gpt-6-astra', 'claude-sonnet-5'}),
+                        nodes=frozenset({'oracle_assess', 'adversarial_review'}), answer='replied')
+    counts = '24 match · 12 not read yet · 4 unavailable · +48 older · more'
+    async with _RecordApp().run_test(size=(width, 20)) as pilot:
+        record = pilot.app.query_one(SurfSwarmSeatRecord)
+        record.update_data(swarm_seat_work_rows=rows, swarm_seat_state='ok', swarm_seat_as_of_hhmm=AS_OF)
+        record.set_record_view(40, False, spec)
+        await pilot.pause()
+        line = next(l for l in _lines(pilot.app) if 'match' in l).strip()
+        assert line.endswith(counts), line
+        if summary == 'clipped':
+            assert line.startswith('oracle or review · ') and '… · ' + counts in line, line
+        else:
+            assert line == counts, 'below the summary floor it goes whole, the counts stay'
+
+
+@pytest.mark.parametrize('spec', ['models', None, 'inactive'])
+def test_a_foreign_or_empty_spec_is_no_filter(spec):
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    spec = RecordFilter() if spec == 'inactive' else spec
+    record = SurfSwarmSeatRecord()
+    record.set_record_view(40, False, spec)
+    assert record._spec is None and record._has_filter is False
+
+
+def test_filter_choices_read_the_whole_lifetime_list_not_the_window():
+    record = SurfSwarmSeatRecord()
+    rows = _filter_rows() * 5 + [dict(_filter_rows()[0], node_key='hunt_d')]
+    record.update_data(swarm_seat_work_rows=rows, swarm_seat_state='ok')
+    choices = record.filter_choices()
+    assert choices['nodes'] == ('oracle_assess', 'adversarial_review', 'hunt_d')
+    assert record.filter_choices(None)['models'] == ('claude-opus-4-1', 'gpt-6-astra')
+    record.update_data(swarm_seat_work_rows=rows, swarm_seat_state='busy')
+    assert record.filter_choices() == {'nodes': (), 'states': (), 'models': ()}

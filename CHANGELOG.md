@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Surfboard AGENT: `f` filters RECORD, the way `f` filters THE LIST. The editor takes the seat
+  cards' and RECORD's place (the hero stays) and combines NODE, STATE, WHEN (24 h / 7 / 30 days),
+  MODEL, PANEL, ANSWER, TOOK and TOK with AND; ticks inside one group are alternatives. RECORD's
+  title gains `filtered`, and its footer says what the filter is, how many rows match and how
+  many cannot be judged yet (`not read yet`, `unavailable`) — counted, never hidden. A seat
+  change clears it.
+- Surfboard AGENT: when NODES folds nodes into `+N more`, hovering the card lists every node the
+  seat worked, with exact accepted-of-attempts counts.
 - Surfboard AGENT: STATUS reads `● working · ⚙ 1 of 3` while a seat works, in the same shape as
   `● online` when idle (`● working · ⚙ 9` above `maxConcurrency`). ACCEPTED is now titled
   ACCEPTED JOBS and sits before WORK.

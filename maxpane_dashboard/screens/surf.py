@@ -227,6 +227,8 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard import config
+from maxpane_dashboard.analytics.range_filters import FilterValidationError
+from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, parse_record_filter
 from maxpane_dashboard.screens.seat_input import parse_seat
 from maxpane_dashboard.widgets.surf import SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet
 from copy import deepcopy
@@ -239,6 +241,11 @@ from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
+from maxpane_dashboard.widgets.surf.swarm_record_filter import (
+    RecordFilterApplyRequested,
+    RecordFilterResetRequested,
+    SurfRecordFilterEditor,
+)
 from maxpane_dashboard.widgets.surf import (
     SurfBurnkeepers,
     SurfBurnPipeline,
@@ -2371,7 +2378,14 @@ class SurfScreen(DashboardScreen):
         Binding("b", "toggle_board", "Board", show=False),
         Binding("o", "cycle_board_sort", "Sort column", show=False),
         Binding("O", "reverse_board_sort", "Reverse sort", show=False),
-        Binding("escape", "show_dashboard", show=False),
+        # `f` for FILTER (2026-10-02): THE LIST's key and shape -- opens
+        # RECORD's filter editor on AGENT, and applies it when open.
+        # `priority` like curator's, so it applies from a focused field;
+        # the editor's only text fields take numbers. A no-op elsewhere.
+        Binding("f", "toggle_record_filter", "Filter", show=False, priority=True),
+        # `escape` closes the filter editor first (discarding its draft),
+        # then leaves any alternate body as before.
+        Binding("escape", "back", show=False),
     ]
 
     #: Named in the status bar's left label (``StatusBar.set_key_hints``),
@@ -3077,6 +3091,12 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
         margin: 1 0 0 0;
     }
+    SurfScreen SurfRecordFilterEditor {
+        width: 100%;
+        height: 1fr;
+        min-height: 6;
+        margin: 1 0 0 0;
+    }
 
     SurfSwarmBoardHero {
         height: 7;
@@ -3133,6 +3153,16 @@ class SurfScreen(DashboardScreen):
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
         self.record_open_only = False
         self._record_seat_token = None
+        #: RECORD's ``f`` filter (``docs/surf_record_filter_spec.md``): the
+        #: stored filter (an active ``RecordFilter``, else ``None``), whether
+        #: the ``filtered`` mode shows it, the editor values it was applied
+        #: from, and whether the editor is open. A seat change clears all four.
+        self.record_spec: RecordFilter | None = None
+        self.record_filtered = False
+        self._record_filter_values: dict = {}
+        self._record_filter_open = False
+        #: WHEN's clock seam: read once, at apply, never by a widget.
+        self._clock = time.time
 
     # ------------------------------------------------------------------
     # Layout
@@ -3294,6 +3324,8 @@ class SurfScreen(DashboardScreen):
         with Vertical(id=AGENT_BODY_ID):
             yield SurfSwarmSeatCards()
             yield SurfSwarmSeatRecord()
+            # `f`: takes the cards' and RECORD's place while open; the hero stays.
+            yield SurfRecordFilterEditor()
 
         with Horizontal(id=BOARD_BODY_ID):
             yield SurfSwarmLeaderboard()
@@ -3397,6 +3429,11 @@ class SurfScreen(DashboardScreen):
             self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("surf mode toggle failed: %s", exc)
+        # Leaving AGENT closes RECORD's filter editor (its draft goes); the
+        # applied filter stays for the next visit.
+        if self._mode != MODE_AGENT:
+            self._record_filter_open = False
+        self._show_record_editor()
         setter = getattr(self._data_manager, "set_agent_active", None)
         if setter is not None:
             setter(self._mode == MODE_AGENT)
@@ -3545,19 +3582,25 @@ class SurfScreen(DashboardScreen):
             set_seat(token)
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
         self.record_open_only = False
+        self._clear_record_filter()
         self._record_seat_token = token
         self._repaint_record_view()
         self._mode = MODE_AGENT
         self._show_mode()
         self.start_refresh()
 
+    def _record_spec_in_force(self) -> RecordFilter | None:
+        return self.record_spec if self.record_filtered else None
+
     def _repaint_record_view(self) -> None:
-        self.query_one(SurfSwarmSeatRecord).set_record_view(self.record_cap, self.record_open_only)
+        self.query_one(SurfSwarmSeatRecord).set_record_view(
+            self.record_cap, self.record_open_only, self._record_spec_in_force(),
+            has_filter=self.record_spec is not None)
 
     def _record_view_changed(self) -> None:
         setter = getattr(self._data_manager, "set_record_view", None)
         if setter is not None:
-            setter(self.record_cap, self.record_open_only)
+            setter(self.record_cap, self.record_open_only, self._record_spec_in_force())
         self._repaint_record_view()
         self.start_refresh()
 
@@ -3568,10 +3611,110 @@ class SurfScreen(DashboardScreen):
         self._record_view_changed()
 
     def action_record_filter(self, mode: str) -> None:
-        if self._mode != MODE_AGENT or mode not in ("all", "open"):
+        """RECORD's title words: ``all`` / ``not completed`` / ``filtered``.
+
+        ``filtered`` exists only while a filter is stored and shows it alone
+        (its STATE group says what ``not completed`` would); the other two
+        keep the stored filter for a later click.
+        """
+        if self._mode != MODE_AGENT or mode not in ("all", "open", "filtered"):
             return
-        self.record_open_only = mode == "open"
+        if mode == "filtered":
+            if self.record_spec is None:
+                return
+            self.record_filtered = True
+            self.record_open_only = False
+        else:
+            self.record_filtered = False
+            self.record_open_only = mode == "open"
         self._record_view_changed()
+
+    # -- RECORD's ``f`` filter editor (THE LIST's shape) --------------------
+
+    def _show_record_editor(self) -> None:
+        """The editor, or the seat cards and RECORD -- never both."""
+        editing = self._record_filter_open
+        try:
+            self.query_one(SurfSwarmSeatCards).display = not editing
+            self.query_one(SurfSwarmSeatRecord).display = not editing
+            self.query_one(SurfRecordFilterEditor).display = editing
+        except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
+            logger.debug("surf record filter toggle failed: %s", exc)
+
+    def _clear_record_filter(self) -> None:
+        """A seat change: the filter and its draft were about the old seat."""
+        self.record_spec = None
+        self.record_filtered = False
+        self._record_filter_values = {}
+        if self._record_filter_open:
+            self._record_filter_open = False
+            self._show_record_editor()
+
+    async def action_toggle_record_filter(self) -> None:
+        """``f`` on AGENT -- open RECORD's filter editor, or apply it.
+
+        Opening rebuilds the NODE / STATE / MODEL boxes from the seat's own
+        rows (plus whatever the stored filter selects) and shows the values
+        the stored filter was applied from.
+        """
+        if self._mode != MODE_AGENT:
+            return
+        if self._record_filter_open:
+            self._accept_record_filter()
+            return
+        editor = self.query_one(SurfRecordFilterEditor)
+        choices = self.query_one(SurfSwarmSeatRecord).filter_choices(self.record_spec)
+        await editor.load(choices, self._record_filter_values)
+        editor.clear_error()
+        self._record_filter_open = True
+        self._show_record_editor()
+
+    def _accept_record_filter(self) -> None:
+        """Validate and apply the draft; an invalid one stays open, named.
+
+        An empty filter is no filter (THE LIST's rule): it clears the stored
+        one and shows ``all``. WHEN turns into a fixed ``since`` here, the
+        one place the clock is read.
+        """
+        editor = self.query_one(SurfRecordFilterEditor)
+        values = editor.values()
+        try:
+            spec = parse_record_filter(values, now_ts=self._clock())
+        except FilterValidationError as exc:
+            editor.show_error(exc.field, str(exc))
+            return
+        editor.clear_error()
+        if spec.active:
+            self.record_spec = spec
+            self.record_filtered = True
+            self._record_filter_values = values
+        else:
+            self.record_spec = None
+            self.record_filtered = False
+            self._record_filter_values = {}
+        self.record_open_only = False
+        self._record_filter_open = False
+        self._show_record_editor()
+        self._record_view_changed()
+
+    def on_record_filter_apply_requested(self, _event: RecordFilterApplyRequested) -> None:
+        if self._mode == MODE_AGENT and self._record_filter_open:
+            self._accept_record_filter()
+
+    def on_record_filter_reset_requested(self, _event: RecordFilterResetRequested) -> None:
+        """RESET ALL clears the draft; nothing is applied until APPLY or ``f``."""
+        editor = self.query_one(SurfRecordFilterEditor)
+        editor.set_values({})
+        editor.clear_error()
+
+    def action_back(self) -> None:
+        """``escape`` -- close RECORD's filter editor first, else leave the body."""
+        if self._record_filter_open:
+            self._record_filter_open = False
+            self.query_one(SurfRecordFilterEditor).clear_error()
+            self._show_record_editor()
+            return
+        self.action_show_dashboard()
 
     def action_show_dashboard(self) -> None:
         """``escape`` -- one-way back out of **any** alternate body."""
@@ -4390,9 +4533,10 @@ class SurfScreen(DashboardScreen):
         if token != self._record_seat_token:
             self.record_cap = SurfSwarmSeatRecord.ROW_CAP
             self.record_open_only = False
+            self._clear_record_filter()
             setter = getattr(self._data_manager, "set_record_view", None)
             if setter is not None and self._record_seat_token is not None:
-                setter(self.record_cap, self.record_open_only)
+                setter(self.record_cap, self.record_open_only, None)
             self._record_seat_token = token
         self._repaint_record_view()
         for cls in _SWARM_PANELS:

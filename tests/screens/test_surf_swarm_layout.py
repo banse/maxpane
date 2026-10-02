@@ -1078,3 +1078,62 @@ async def test_busy_agent_words_fit_every_seat_box_at_unchanged_pins():
             style = screen.get_style_at(x, y)
             assert style.color.get_truecolor(pilot.app.ansi_theme) == Color.parse('yellow').get_truecolor(pilot.app.ansi_theme)
         assert screen.query_one('#' + SEAT_BOX_IDS['runtime']).tooltip is None
+
+
+# ---------------------------------------------------------------------------
+# RECORD's ``f`` filter editor (docs/surf_record_filter_spec.md)
+# ---------------------------------------------------------------------------
+
+#: The editor is not a pinned panel: it takes the seat cards' and RECORD's
+#: place, floors at RECORD's six rows and scrolls inside itself, so its
+#: guarantee is geometry at every width -- nothing past its own region, no
+#: CSS-clipped line, no horizontal scroll -- and every control reachable by
+#: scrolling it. Four columns of groups from ``COMPACT_BELOW`` content cells,
+#: two below; sized at both sides of that onset and at the AGENT pin.
+_EDITOR_WIDTHS = (60, 101, 102, 103, SURF_AGENT_FULL_LAYOUT_COLUMNS, 170)
+
+
+@pytest.mark.parametrize('payload_name', ['capture', 'worst-a'])
+@pytest.mark.parametrize('width', _EDITOR_WIDTHS)
+async def test_the_record_filter_editor_fits_and_reaches_every_control(payload_name, width):
+    from textual.widgets import Button, Checkbox, Input, Select
+    from maxpane_dashboard.widgets.filter_editor import APPLY_ID, FilterEditorBase
+    from maxpane_dashboard.widgets.surf.swarm_record_filter import SurfRecordFilterEditor
+    app = _surf_app(PAYLOADS[payload_name]())
+    async with app.run_test(size=(width, SURF_AGENT_FULL_LAYOUT_ROWS)) as pilot:
+        screen = await _open_agent_editor(pilot)
+        editor = screen.query_one(SurfRecordFilterEditor)
+        body = screen.query_one(f"#{AGENT_BODY_ID}")
+        assert editor.region.height >= 6 and editor.region.width
+        assert body.region.contains_region(editor.region) or body.show_vertical_scrollbar
+        assert editor.has_class("compact-filter") == (editor.content_size.width < FilterEditorBase.COMPACT_BELOW)
+        assert editor.max_scroll_x == 0, "the editor never scrolls sideways"
+        assert not _css_clipped_lines(pilot.app, editor), (width, _css_clipped_lines(pilot.app, editor))
+        if width >= SURF_AGENT_FULL_LAYOUT_COLUMNS:  # below it the hero ellipsises by design
+            assert not _css_clipped_lines(pilot.app, screen.query_one(SurfSwarmAgentHero))
+        controls = [*editor.query(Checkbox), *editor.query(Select), *editor.query(Input), *editor.query(Button)]
+        assert len(editor.query(Checkbox)) >= 1 and len(controls) >= 9
+        left, right = editor.content_region.x, editor.content_region.right
+        for control in controls:
+            editor.scroll_to_widget(control, animate=False, immediate=True)
+            await pilot.pause()
+            region = control.region
+            assert left <= region.x and region.right <= right, (control, region, editor.content_region)
+            assert editor.region.contains_region(region), (control.id, region, editor.region)
+        editor.scroll_to_widget(screen.query_one(f"#{APPLY_ID}"), animate=False, immediate=True)
+        await pilot.pause()
+        assert "APPLY FILTER" in _region_text(pilot.app, editor)
+
+
+async def _open_agent_editor(pilot):
+    await pilot.app.screen._do_refresh()
+    await pilot.pause()
+    await pilot.press("a")
+    await pilot.pause()
+    await pilot.press("f")
+    for _ in range(50):
+        await pilot.pause()
+        if pilot.app.screen._record_filter_open:
+            break
+    await pilot.pause()
+    return pilot.app.screen

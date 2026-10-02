@@ -122,7 +122,8 @@ from typing import Any
 from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIME_PACKAGES, npm_version
 from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
 from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS, SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
-from maxpane_dashboard.analytics.surf_swarm_signals import record_window, fleet_majority
+from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, record_window
+from maxpane_dashboard.analytics.surf_swarm_signals import fleet_majority
 from maxpane_dashboard.analytics import surf_pool4_depth as pool4_depth
 from maxpane_dashboard.analytics.surf_feed import select_feed_window
 from maxpane_dashboard.analytics.surf_signals import (
@@ -1127,8 +1128,12 @@ class SurfManager:
         #: secret. Stored as given: ``sw.parse_seat_token`` parses it.
         self._seat_saved: str | int | None = seat
         #: Screen-owned RECORD view, bounded to 40..400; resets on a seat change.
+        #: ``record_spec`` is RECORD's ``f`` filter in force (an active
+        #: ``RecordFilter``, else ``None``): its NODE / STATE / WHEN shape the
+        #: read window, so reads go where the filtered table looks.
         self.record_cap = sw.SWARM_ANSWER_ROW_CAP
         self.record_open_only = False
+        self.record_spec: RecordFilter | None = None
         #: The in-flight detached ``/seats/{token}`` read and the token it is
         #: for (the /seats plan WP2). One seat at a time: a read for a seat
         #: that is no longer selected is cancelled, never left to land.
@@ -5576,17 +5581,23 @@ class SurfManager:
         """
         self.record_cap = sw.SWARM_ANSWER_ROW_CAP
         self.record_open_only = False
+        self.record_spec = None
         self._seat_saved = token
         self._seat_failed_token = None
         self._seat_busy_token = None
         self.cache.mark_due(TIER_SWARM_SEAT)
 
-    def set_record_view(self, cap: int, open_only: bool) -> None:
-        """Update eligibility without I/O; the next seat cycle fills this window."""
+    def set_record_view(self, cap: int, open_only: bool, spec: RecordFilter | None = None) -> None:
+        """Update eligibility without I/O; the next seat cycle fills this window.
+
+        ``spec`` is the filter in force; anything but an active
+        ``RecordFilter`` is no filter (``docs/surf_record_filter_spec.md``).
+        """
         if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(open_only, bool):
             return
         self.record_cap = max(sw.SWARM_ANSWER_ROW_CAP, min(SWARM_ANSWER_CACHE_CAP, cap))
         self.record_open_only = open_only
+        self.record_spec = spec if isinstance(spec, RecordFilter) and spec.active else None
         self.cache.mark_due(TIER_SWARM_SEAT)
 
     def _spawn_swarm_scores(self, tiers: set[str], now: float) -> Any:
@@ -6017,7 +6028,8 @@ class SurfManager:
         prior = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
         answers = sw.prune_answers(getattr(prior, "payload", None), now_ts=now,
                                   cap=SWARM_ANSWER_CACHE_CAP, max_age_s=SWARM_ANSWER_MAX_AGE_S)
-        rows = record_window(sw.seat_work_rows(seat), self.record_cap, self.record_open_only)
+        rows = record_window(sw.seat_work_rows(seat), self.record_cap, self.record_open_only,
+                             self.record_spec)
         for row in rows:
             point = answers.get(row["job_id"], {}).get(row["submission_hash"])
             if (point is not None and point["state"] != "unavailable"
@@ -6053,7 +6065,7 @@ class SurfManager:
         rows = sw.enrich_panel_rows(
             sw.enrich_work_rows(sw.seat_work_rows(seat), getattr(answers, 'payload', None)),
             getattr(oracle, 'payload', None), sw.SWARM_ORACLE_NODE_KEYS)
-        rows = record_window(rows, self.record_cap, self.record_open_only)
+        rows = record_window(rows, self.record_cap, self.record_open_only, self.record_spec)
         for job in sw.job_details_due(rows, points, now_ts=now,
                                       cap=SWARM_JOB_DETAIL_PER_CYCLE, due_s=SWARM_JOB_DETAIL_DUE_S):
             detail = await self._guard(lambda: self.swarm_client.fetch_job(job), 'swarm popup job')
@@ -6069,7 +6081,8 @@ class SurfManager:
         prior = self.cache.get_last_good(SLOT_SWARM_ORACLE)
         oracle = sw.prune_oracle(getattr(prior, "payload", None), now_ts=now,
                                  cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
-        rows = record_window(sw.seat_work_rows(seat), self.record_cap, self.record_open_only)
+        rows = record_window(sw.seat_work_rows(seat), self.record_cap, self.record_open_only,
+                             self.record_spec)
         due = sw.oracle_rows_due(rows, oracle, now_ts=now, due_s=SWARM_ORACLE_DUE_S)
         if not due:
             return

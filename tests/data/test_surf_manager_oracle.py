@@ -438,3 +438,18 @@ async def test_record_open_filter_enriches_old_oracle_attempt(tmp_path):
         assert [c[1] for c in fake.oracle_calls if c[0] == 'detail'] == list(fake.details)[80:]
     finally:
         await manager.close()
+
+
+async def test_record_base_filter_enriches_old_oracle_attempt(tmp_path):
+    """RECORD's ``f`` filter shapes the oracle window the way ``not completed`` does."""
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    fake = Oracle(81)
+    for row in fake.seat['work']: row['status'] = 'accepted'
+    fake.seat['work'][80]['status'] = 'rejected'
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    manager.set_record_view(40, False, RecordFilter(states=frozenset({'rejected'})))
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert [c[1] for c in fake.oracle_calls if c[0] == 'detail'] == list(fake.details)[80:]
+    finally:
+        await manager.close()

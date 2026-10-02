@@ -15,6 +15,12 @@ a failed attempt's read answer is red. Answer takes the remaining width and
 lights ``‹ widen`` when cut only if there is no popup button. The title has no blank row under it (owner,
 2026-09-22, this panel only). The scrollable table starts at forty rows, grows through `more` up to 400
 and can filter out completed attempts; the seat state hides stale rows before rendering.
+
+``f`` (2026-10-02, ``docs/surf_record_filter_spec.md``) stores a filter the
+screen applies through :meth:`SurfSwarmSeatRecord.set_record_view`: the title
+gains a third mode word, ``filtered``, and the footer states the filter, how
+many rows match, and how many cannot be judged yet (``not read yet`` /
+``unavailable``) -- counted, never shown and never dropped.
 """
 
 from __future__ import annotations
@@ -25,7 +31,8 @@ from rich.text import Text
 from rich.style import Style
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.analytics.surf_swarm_signals import record_selected, record_state, record_window
+from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, RecordView, record_filter_choices, record_view
+from maxpane_dashboard.analytics.surf_swarm_signals import record_state
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import job_text
@@ -35,6 +42,7 @@ from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd
 from maxpane_dashboard.widgets.surf._oracle_answer import _PANEL_COLS, _STATE_COLORS, joined, record_answer, panel_text, can_open_submission, fit_popup_text, tok_text, valid_identity
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES, seat_state_line
 from maxpane_dashboard.widgets.surf._swarm_table import CELL_PADDING, SwarmTableBase, table_cols
+from maxpane_dashboard.widgets.surf.swarm_record_filter import filter_summary
 
 __all__ = [
     "COMPACT_WIDTH",
@@ -44,12 +52,17 @@ __all__ = [
     "NODE_COLS",
     "ANSWER_MIN_COLS",
     "TIGHT_WIDTH",
+    "NO_MATCH_LINE",
     "SurfSwarmSeatRecord",
-    "older_line",
     "seat_footer",
 ]
 
 EMPTY_LINE = "no work yet"
+#: A filtered view with nothing to show, nothing to wait for and nothing older.
+NO_MATCH_LINE = "no matching records"
+#: The fewest summary cells worth showing before the counts; below it the
+#: summary goes and the counts stay whole.
+_SUMMARY_MIN_COLS = 8
 #: Right-aligned on the title line where it fits whole; ``i`` is the screen's seat prompt.
 SEAT_HINT = "type 'i' to change seat"
 
@@ -119,13 +132,6 @@ def _line_style(line: Text) -> str:
     return str(line.spans[0].style) if line.spans else ""
 
 
-def older_line(filtered_count: int, cap: int) -> str | None:
-    """``+N older`` for selected rows past *cap*, or ``None`` when all fit."""
-    if filtered_count <= cap:
-        return None
-    return f"+{fmt_int(filtered_count - cap)} older"
-
-
 def seat_footer(state: object) -> tuple[str, str] | None:
     """Seat-state override as ``(words, style)``; ``None`` keeps the table footer."""
     line = seat_state_line(state)
@@ -167,7 +173,9 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         self._read: object = None
         self._all_rows = None
         self._open_only = False
-        self._filtered_count = 0
+        self._spec: RecordFilter | None = None
+        self._has_filter = False
+        self._view = RecordView((), 0, 0, 0)
 
     # -- the contract -------------------------------------------------------
 
@@ -185,21 +193,40 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         self._all_rows = swarm_seat_work_rows if swarm_seat_state == "ok" else None
         self._store_view(swarm_seat_as_of_hhmm)
 
-    def set_record_view(self, cap: int, open_only: bool) -> None:
-        """Repaint the cached rows; view state is supplied by the screen."""
+    def set_record_view(self, cap: int, open_only: bool, spec: RecordFilter | None = None,
+                        *, has_filter: bool = False) -> None:
+        """Repaint the cached rows; view state is supplied by the screen.
+
+        ``spec`` is the filter in force (the ``filtered`` mode); ``has_filter``
+        says one is stored, so the title offers ``filtered`` while ``all`` or
+        ``not completed`` shows. An inactive or foreign ``spec`` is no filter.
+        """
         if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(open_only, bool):
             return
+        if not isinstance(spec, RecordFilter) or not spec.active:
+            spec = None
+        has_filter = has_filter is True or spec is not None
         cap = max(40, min(self.MAX_CAP, cap))
-        if (self.ROW_CAP, self._open_only) == (cap, open_only):
+        if (self.ROW_CAP, self._open_only, self._spec, self._has_filter) == (cap, open_only, spec, has_filter):
             return
         self.ROW_CAP = cap
         self._open_only = open_only
+        self._spec = spec
+        self._has_filter = has_filter
         self._store_view((self._payload or {}).get("as_of"))
+
+    def filter_choices(self, spec: RecordFilter | None = None) -> dict[str, tuple[str, ...]]:
+        """The seat's own NODE / STATE / MODEL options for the editor, keeping *spec*'s."""
+        return record_filter_choices(self._all_rows, spec)
 
     def _store_view(self, as_of) -> None:
         rows = self._all_rows
-        self._filtered_count = len(record_selected(rows, self._open_only))
-        rows = record_window(rows, self.ROW_CAP, self._open_only) if isinstance(rows, (list, tuple)) else None
+        if isinstance(rows, (list, tuple)):
+            self._view = record_view(rows, self.ROW_CAP, self._open_only, self._spec)
+            rows = list(self._view.rows)
+        else:
+            self._view = RecordView((), 0, 0, 0)
+            rows = None
         self.store(rows, as_of)
 
     def render_table(self, rows, *, footer=None) -> None:
@@ -218,23 +245,68 @@ class SurfSwarmSeatRecord(SwarmTableBase):
             words, style = footer
             self._write_footer((words,), style=style)
         elif isinstance(self._all_rows, (list, tuple)):
-            older = older_line(self._filtered_count, self.ROW_CAP)
-            if older:
-                text = Text(older, style="dim")
-                if self.ROW_CAP < self.MAX_CAP:
-                    text.append(" · ").append("more", style=Style(bold=True, meta={"@click": "screen.record_more()"}))
-                footer_widget = self.query_one(f"#{self.footer_id}", Static)
-                footer_widget.auto_links = False
-                footer_widget.display = True
-                footer_widget.update(text)
-            elif self._open_only and not self._filtered_count:
+            if self._spec is not None:
+                self._show_footer(self._filtered_footer())
+                return
+            tail = self._older_tail()
+            if tail.plain:
+                self._show_footer(tail)
+            elif self._open_only and not self._view.rows:
                 self._write_footer(("no incomplete records",))
+
+    def _older_tail(self) -> Text:
+        """``+N older · more`` for base rows past the cap; empty when all fit."""
+        text = Text(style="dim")
+        older = self._view.older
+        if older:
+            text.append(f"+{fmt_int(older)} older")
+            if self.ROW_CAP < self.MAX_CAP:
+                text.append(" · ").append("more", style=Style(bold=True, meta={"@click": "screen.record_more()"}))
+        return text
+
+    def _filtered_footer(self) -> Text:
+        """``summary · N match · N not read yet · N unavailable · +N older · more``.
+
+        The summary is clipped first, and dropped below ``_SUMMARY_MIN_COLS``;
+        the counts never are. Dim throughout but for ``unavailable``, which
+        keeps the palette's plain yellow (spans, not a base style, so the dim
+        does not reach it).
+        """
+        view = self._view
+        counts = Text()
+        if view.rows or view.not_read or view.unavailable or view.older:
+            counts.append(f"{fmt_int(len(view.rows))} match", style="dim")
+            if view.not_read:
+                counts.append(f" · {fmt_int(view.not_read)} not read yet", style="dim")
+            if view.unavailable:
+                counts.append(" · ", style="dim").append(f"{fmt_int(view.unavailable)} unavailable", style="yellow")
+        else:
+            counts.append(NO_MATCH_LINE, style="dim")
+        older = self._older_tail()
+        if older.plain:
+            counts.append(" · ", style="dim").append_text(older)
+        room = max(self.size.width - self.FOOTER_PADDING_COLS, 0)
+        summary_room = room - counts.cell_len - len(" · ")
+        summary = filter_summary(self._spec)
+        if summary and summary_room >= _SUMMARY_MIN_COLS:
+            return Text().append(rowfit.clip(summary, summary_room) + " · ", style="dim").append_text(counts)
+        return counts
+
+    def _show_footer(self, text: Text) -> None:
+        footer_widget = self.query_one(f"#{self.footer_id}", Static)
+        footer_widget.auto_links = False
+        footer_widget.display = True
+        footer_widget.update(text)
 
     def _render_title(self, as_of) -> None:
         title = Text("RECORD · ")
         accent = self.app.get_css_variables().get("accent", "cyan")
-        for index, (word, mode, active) in enumerate((("all", "all", not self._open_only),
-                                                     ("not completed", "open", self._open_only))):
+        filtered = self._spec is not None
+        modes = [("all", "all", not self._open_only and not filtered),
+                 ("not completed", "open", self._open_only and not filtered)]
+        if self._has_filter:
+            modes.append(("filtered", "filtered", filtered))
+        for index, (word, mode, active) in enumerate(modes):
             if index:
                 title.append(" · ")
             title.append(word, style=Style(color=accent if active else None,

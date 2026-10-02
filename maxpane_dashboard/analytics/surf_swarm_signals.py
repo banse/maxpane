@@ -23,7 +23,7 @@ from typing import Any
 __all__ = [
     "runtime_semver", "runtime_outdated", "fleet_majority", "daemon_differs",
     "completed_within", "count_by", "duration_stats", "launch_summary",
-    "seen_since_ts", "skill_summary", "state_rollup", "record_state", "record_selected", "record_window",
+    "seen_since_ts", "skill_summary", "state_rollup", "record_state",
 ]
 
 
@@ -159,19 +159,6 @@ def record_state(row: object) -> str | None:
         return None
     status = row.get("work_status")
     return row.get("job_state") if status in (None, "accepted") else status
-
-
-def record_selected(rows: object, open_only: bool) -> list[Mapping[str, Any]]:
-    """Valid rows in source order, filtered by the displayed state."""
-    if not isinstance(rows, (list, tuple)):
-        return []
-    return [row for row in rows if isinstance(row, Mapping)
-            and (not open_only or record_state(row) != "completed")]
-
-
-def record_window(rows: object, cap: int, open_only: bool) -> list[Mapping[str, Any]]:
-    """Filter before windowing; retain source order within the 40..400 view."""
-    return record_selected(rows, open_only)[:max(40, min(400, cap))]
 
 
 # Bounded semver core, prerelease and build metadata; no surrounding whitespace.

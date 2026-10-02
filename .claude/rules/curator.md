@@ -28,7 +28,10 @@ true now. Layout pins live beside their constants; the terminal-layout skill nam
   indicator). Each list keeps its own typed header-click sort, a second click reverses it, and
   the fixed YOU row is excluded.
 - `f` opens the custom filter editor inside `l`'s record view (`action_toggle_filter`; a no-op
-  everywhere else). Digit keys `1`/`2`/`3` are the filter presets.
+  everywhere else). Digit keys `1`/`2`/`3` are the filter presets. Its chrome (error line,
+  group grid, ranges, dropdowns, APPLY / RESET) is the shared `widgets/filter_editor.FilterEditorBase`
+  and its range rules `analytics/range_filters`, hoisted 2026-10-02 for surf's RECORD editor:
+  a fix there reaches both. `FilterApplyRequested` / `FilterResetRequested` stay curator's own.
 - `e` exports the active list: the analysis body's own JSON + CSV whenever that body is open
   (`~/.maxpane/curator_clean_list.json` / `.csv`); `l` writes the full uncapped raw or cleaned
   JSON (`curator_raw_list.json` / `curator_cleaned_list.json`); a no-op on dashboard and wallet

@@ -399,3 +399,63 @@ async def test_record_view_invalid_values_leave_manager_unchanged(tmp_path, monk
         mark_due.assert_not_called()
     finally:
         await manager.close()
+
+
+# -- RECORD's ``f`` filter: the base groups shape the read window -------------------
+
+
+async def test_record_view_spec_is_stored_only_when_active_and_cleared_by_a_seat_change(tmp_path):
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    spec = RecordFilter(nodes=frozenset({'hunt_d'}))
+    fake = Answers(); manager = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    try:
+        manager.cache.mark_fetched(TIER_SWARM_SEAT, NOW)
+        manager.set_record_view(40, False, spec)
+        assert manager.record_spec is spec
+        assert TIER_SWARM_SEAT in manager.cache.tiers_due(NOW)
+        assert fake.answer_calls == fake.detail_calls == []
+        for other in (RecordFilter(), {'nodes': {'hunt_d'}}, 'hunt_d', None):
+            manager.set_record_view(40, False, spec)
+            manager.set_record_view(40, False, other)
+            assert manager.record_spec is None, other
+        manager.set_record_view(40, False, spec)
+        manager.set_seat(421)
+        assert manager.record_spec is None
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize('group', ['nodes', 'states', 'since'])
+async def test_a_base_filter_reads_the_old_row_it_selects_before_windowing(tmp_path, group):
+    """81 rows, one of them unlike the rest and past the 40 cap: the filter reads it."""
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    fake = Answers(work(81, 'completed'))
+    for row in fake.seat['work']:
+        row.update(nodeKey='hunt_d', status='accepted', submittedAt='2026-09-01T00:00:00Z')
+    odd = fake.seat['work'][80]
+    spec = {
+        'nodes': lambda: (odd.update(nodeKey='build_x'), RecordFilter(nodes=frozenset({'build_x'})))[1],
+        'states': lambda: (odd.update(status='failed'), RecordFilter(states=frozenset({'failed'})))[1],
+        'since': lambda: (odd.update(submittedAt='2026-09-30T00:00:00Z'), RecordFilter(when='7d', since_ts=1_790_000_000.0))[1],
+    }[group]()
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    manager.set_record_view(40, False, spec)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert fake.answer_calls == fake.detail_calls == [odd['jobId']]
+    finally:
+        await manager.close()
+
+
+async def test_a_read_dependent_filter_never_narrows_what_gets_read(tmp_path):
+    """MODEL needs the read it would otherwise starve: the window stays the mode's."""
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    fake = Answers(work(81, 'completed'))
+    for row in fake.seat['work']: row['nodeKey'] = 'hunt_d'
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    manager.set_record_view(40, False, RecordFilter(models=frozenset({'nothing-reads-this'}), answer='replied'))
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert fake.answer_calls == [r['jobId'] for r in fake.seat['work'][:4]]
+    finally:
+        await manager.close()

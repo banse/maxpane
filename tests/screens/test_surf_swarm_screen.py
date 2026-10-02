@@ -220,7 +220,7 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
 
 
 async def test_the_bindings_include_board_agent_and_seat_selection():
-    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "escape"}
+    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "escape"}
     assert hasattr(SurfScreen, "action_toggle_swarm")
     assert hasattr(SurfScreen, "action_toggle_agent")
 
@@ -715,7 +715,7 @@ async def test_record_more_clicks_preserve_position_show_twenty_then_remainder(m
         screen = await _open(pilot, 'a')
         manager = screen._data_manager
         changes, refreshes = [], []
-        monkeypatch.setattr(manager, 'set_record_view', lambda cap, open_only: changes.append((cap, open_only)), raising=False)
+        monkeypatch.setattr(manager, 'set_record_view', lambda cap, open_only, spec=None: changes.append((cap, open_only)), raising=False)
         monkeypatch.setattr(screen, 'start_refresh', lambda: refreshes.append(True))
         record = screen.query_one(SurfSwarmSeatRecord); table = record.query_one(DataTable)
         assert table.row_count == 40
@@ -755,7 +755,7 @@ async def test_record_filter_click_uses_displayed_state_and_preserves_cap(monkey
     async with _surf_app(payload).run_test(size=(139,40)) as pilot:
         screen = await _open(pilot, 'a'); manager = screen._data_manager
         changes, refreshes = [], []
-        monkeypatch.setattr(manager,'set_record_view',lambda cap, op: changes.append((cap,op)),raising=False)
+        monkeypatch.setattr(manager,'set_record_view',lambda cap, op, spec=None: changes.append((cap,op)),raising=False)
         monkeypatch.setattr(screen,'start_refresh',lambda: refreshes.append(True))
         before = manager.calls
         record = screen.query_one(SurfSwarmSeatRecord); table = record.query_one(DataTable)
@@ -834,8 +834,8 @@ async def test_record_view_resets_on_refresh_seat_change_but_not_initial_refresh
     manager = _FakeManager(payload)
     manager.record_cap, manager.record_open_only = 40, False
     manager.cache = SimpleNamespace(mark_due=Mock())
-    manager.set_record_view = Mock(side_effect=lambda cap, open_only:
-                                  SurfManager.set_record_view(manager, cap, open_only))
+    manager.set_record_view = Mock(side_effect=lambda cap, open_only, spec=None:
+                                  SurfManager.set_record_view(manager, cap, open_only, spec))
     screen = SurfScreen(manager, poll_interval=30, name="surf")
     monkeypatch.setattr(screen, "start_refresh", lambda: None)
     async with _ThemedHarness(screen).run_test(size=(139, 35)) as pilot:
@@ -860,7 +860,7 @@ async def test_record_view_resets_on_refresh_seat_change_but_not_initial_refresh
         assert (screen.record_cap, screen.record_open_only) == (40, False)
         assert (manager.record_cap, manager.record_open_only) == (40, False)
         assert screen._record_seat_token == 421
-        manager.set_record_view.assert_called_with(40, False)
+        manager.set_record_view.assert_called_with(40, False, None)
 
 
 async def test_runtime_checks_follow_agent_mode_without_io_in_the_toggle(monkeypatch):
@@ -876,3 +876,200 @@ async def test_runtime_checks_follow_agent_mode_without_io_in_the_toggle(monkeyp
         await pilot.press('s')
         manager.set_agent_active.assert_called_with(False)
         assert manager.calls == before
+
+
+# -- RECORD's ``f`` filter editor (docs/surf_record_filter_spec.md) -----------------
+
+_T0 = 1_786_072_731.0
+
+
+def _filter_payload():
+    """Six rows: three ORACLE inside the last day, three REVIEW older than it."""
+    payload = _frozen_payload()
+    source = payload['swarm_seat_work_rows'][0]
+    payload.update(swarm_seat_state='ok', swarm_seat_as_of_hhmm='17:33', swarm_seat_work_rows=[
+        dict(source, job_id=f'{i:08x}-0000-4000-8000-000000000000', submitted_ts=_T0 - i * 40_000,
+             node_key='oracle_assess' if i < 3 else 'adversarial_review')
+        for i in range(6)])
+    return payload
+
+
+async def _filter_screen(pilot, monkeypatch):
+    """AGENT open, the manager's setter and the refresh recorded, no I/O."""
+    screen = await _open(pilot, 'a')
+    specs, refreshes = [], []
+    monkeypatch.setattr(screen._data_manager, 'set_record_view',
+                        lambda cap, open_only, spec=None: specs.append((cap, open_only, spec)), raising=False)
+    monkeypatch.setattr(screen, 'start_refresh', lambda: refreshes.append(True))
+    return screen, specs, refreshes
+
+
+def _editor_box(screen, label):
+    from textual.widgets import Checkbox
+    from maxpane_dashboard.widgets.surf.swarm_record_filter import SurfRecordFilterEditor
+    boxes = [b for b in screen.query_one(SurfRecordFilterEditor).query(Checkbox) if str(b.label) == label]
+    assert len(boxes) == 1, label
+    return boxes[0]
+
+
+def _shown(screen):
+    from maxpane_dashboard.widgets.surf.swarm_record_filter import SurfRecordFilterEditor
+    return {cls.__name__: screen.query_one(cls).display
+            for cls in (SurfSwarmAgentHero, SurfSwarmSeatCards, SurfSwarmSeatRecord, SurfRecordFilterEditor)}
+
+
+async def test_f_swaps_cards_and_record_for_the_editor_and_escape_backs_out_one_step(monkeypatch):
+    from tests.screens.test_oracle_answer import settled
+    async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
+        screen, specs, _ = await _filter_screen(pilot, monkeypatch)
+        before = pilot.app.screen._data_manager.calls
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        assert _shown(screen) == {'SurfSwarmAgentHero': True, 'SurfSwarmSeatCards': False,
+                                  'SurfSwarmSeatRecord': False, 'SurfRecordFilterEditor': True}
+        text = _screen_text(pilot.app)
+        for word in ('NODE', 'STATE', 'WHEN', 'MODEL', 'PANEL', 'ANSWER', 'oracle', 'review', 'APPLY'):
+            assert word in text, word
+        await pilot.press('escape')
+        await settled(pilot, lambda: not _shown(screen)['SurfRecordFilterEditor'])
+        assert screen._mode == MODE_AGENT and _shown(screen)['SurfSwarmSeatRecord']
+        assert specs == [] and screen.record_spec is None
+        await pilot.press('escape')
+        await settled(pilot, lambda: screen._mode != MODE_AGENT)
+        assert pilot.app.screen._data_manager.calls == before
+
+
+@pytest.mark.parametrize('key', [None, 's', 'b'])
+async def test_f_outside_agent_is_a_no_op(monkeypatch, key):
+    from maxpane_dashboard.widgets.surf.swarm_record_filter import SurfRecordFilterEditor
+    async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
+        screen = pilot.app.screen
+        await screen._do_refresh()
+        if key:
+            await pilot.press(key)
+        await pilot.pause()
+        mode = screen._mode
+        await pilot.press('f')
+        await pilot.pause()
+        assert screen._mode == mode and not screen._record_filter_open
+        assert not screen.query_one(SurfRecordFilterEditor).display
+
+
+async def test_applying_a_node_box_filters_record_and_hands_the_manager_the_spec(monkeypatch):
+    from tests.screens.test_oracle_answer import settled
+    async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
+        screen, specs, refreshes = await _filter_screen(pilot, monkeypatch)
+        table = screen.query_one(SurfSwarmSeatRecord).query_one(DataTable)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        await pilot.click(_editor_box(screen, 'review'))
+        await settled(pilot, lambda: _editor_box(screen, 'review').value)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfSwarmSeatRecord'] and table.row_count == 3)
+        assert not _shown(screen)['SurfRecordFilterEditor'] and _shown(screen)['SurfSwarmSeatCards']
+        ((cap, open_only, spec),) = specs
+        assert (cap, open_only, spec.nodes) == (40, False, frozenset({'adversarial_review'}))
+        assert spec is screen.record_spec and len(refreshes) == 1
+        x, y, style = _record_click_target(screen, "screen.record_filter('filtered')")
+        assert style.bold
+        assert 'review · 3 match' in _region_text(pilot.app, screen.query_one(SurfSwarmSeatRecord))
+        # `all` keeps the stored filter one click away; `filtered` brings it back.
+        x, y, _ = _record_click_target(screen, "screen.record_filter('all')")
+        await pilot.click(offset=(x, y))
+        await settled(pilot, lambda: table.row_count == 6)
+        assert specs[-1] == (40, False, None) and screen.record_spec is spec
+        x, y, _ = _record_click_target(screen, "screen.record_filter('filtered')")
+        await pilot.click(offset=(x, y))
+        await settled(pilot, lambda: table.row_count == 3)
+        assert specs[-1] == (40, False, spec)
+        # Reopening shows the stored choice ticked.
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        assert _editor_box(screen, 'review').value and not _editor_box(screen, 'oracle').value
+
+
+async def test_when_is_fixed_from_the_screen_clock_at_apply(monkeypatch):
+    from textual.widgets import Select
+    from tests.screens.test_oracle_answer import settled
+    from maxpane_dashboard.widgets.filter_editor import field_id
+    async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
+        screen, specs, _ = await _filter_screen(pilot, monkeypatch)
+        reads = []
+        screen._clock = lambda: reads.append(True) or _T0 + 60
+        table = screen.query_one(SurfSwarmSeatRecord).query_one(DataTable)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        assert reads == [], 'opening reads no clock'
+        screen.query_one(f'#{field_id("when")}', Select).value = '24h'
+        await pilot.press('f')
+        await settled(pilot, lambda: table.row_count == 3)
+        assert reads == [True] and screen.record_spec.since_ts == _T0 + 60 - 86_400
+        assert specs[-1][2].since_ts == _T0 + 60 - 86_400
+
+
+async def test_an_invalid_range_is_named_and_the_editor_stays_open(monkeypatch):
+    from textual.widgets import Input
+    from tests.screens.test_oracle_answer import settled
+    from maxpane_dashboard.widgets.filter_editor import APPLY_ID, field_id
+    async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
+        screen, specs, refreshes = await _filter_screen(pilot, monkeypatch)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        screen.query_one(f'#{field_id("took_min")}', Input).value = '10'
+        screen.query_one(f'#{field_id("took_max")}', Input).value = '2'
+        await pilot.click(f'#{APPLY_ID}')
+        await pilot.pause()
+        assert _shown(screen)['SurfRecordFilterEditor'] and screen._record_filter_open
+        assert 'TOOK' in _screen_text(pilot.app) and specs == [] and refreshes == []
+        error = screen.query_one('#record-filter-error')
+        assert error.display and _region_text(pilot.app, error).strip()
+        assert screen.record_spec is None
+
+
+async def test_reset_clears_the_draft_and_an_empty_apply_clears_the_filter(monkeypatch):
+    from tests.screens.test_oracle_answer import settled
+    from maxpane_dashboard.widgets.filter_editor import RESET_ID
+    async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
+        screen, specs, _ = await _filter_screen(pilot, monkeypatch)
+        table = screen.query_one(SurfSwarmSeatRecord).query_one(DataTable)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        _editor_box(screen, 'oracle').value = True
+        await pilot.press('f')
+        await settled(pilot, lambda: table.row_count == 3)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        await pilot.click(f'#{RESET_ID}')
+        await settled(pilot, lambda: not _editor_box(screen, 'oracle').value)
+        assert _shown(screen)['SurfRecordFilterEditor'] and len(specs) == 1, 'reset applies nothing'
+        assert screen.record_spec is not None
+        await pilot.press('f')
+        await settled(pilot, lambda: table.row_count == 6)
+        assert screen.record_spec is None and not screen.record_filtered and specs[-1] == (40, False, None)
+        title = _region_text(pilot.app, screen.query_one(SurfSwarmSeatRecord).query_one('.panel-title'))
+        assert 'RECORD · all · not completed · as of 17:33' in title and 'filtered' not in title
+
+
+async def test_a_seat_change_clears_the_filter_and_leaving_agent_only_closes_the_editor(monkeypatch):
+    from tests.screens.test_oracle_answer import settled
+    async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
+        screen, specs, _ = await _filter_screen(pilot, monkeypatch)
+        table = screen.query_one(SurfSwarmSeatRecord).query_one(DataTable)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        _editor_box(screen, 'oracle').value = True
+        await pilot.press('f')
+        await settled(pilot, lambda: table.row_count == 3)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        await pilot.press('s')
+        await settled(pilot, lambda: screen._mode == MODE_SWARM)
+        assert not screen._record_filter_open
+        await pilot.press('a')
+        await settled(pilot, lambda: screen._mode == MODE_AGENT)
+        assert not _shown(screen)['SurfRecordFilterEditor'] and _shown(screen)['SurfSwarmSeatRecord']
+        assert screen.record_filtered and table.row_count == 3, 'the applied filter outlives the visit'
+        screen._seat_entered(421)
+        await settled(pilot, lambda: table.row_count == 6)
+        assert screen.record_spec is None and not screen.record_filtered
+        assert screen._record_filter_values == {}

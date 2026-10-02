@@ -408,9 +408,18 @@ cache mechanics, panel chrome and address handling come from the bases.
 
 1. **the genuinely shared modules** — `widgets/fmt.py` (the unknown markers, `as_float`,
    `fmt_eth`, ages, countdowns, points, percentages, `hhmm`/`mmdd`), `widgets/sparkline_common.py`,
-   `widgets/markup_safety.py`, `widgets/address.py`, `widgets/status_bar.py`, `widgets/rowfit.py`;
+   `widgets/markup_safety.py`, `widgets/address.py`, `widgets/status_bar.py`, `widgets/rowfit.py`,
+   `widgets/filter_editor.py` (`FilterEditorBase`: a filter editor's error line, titled-group
+   grid, from/to ranges, compact dropdowns and APPLY / RESET, with `analytics/range_filters`
+   validating the ranges; THE LIST's and RECORD's editors subclass it, each with its own
+   apply/reset messages);
    in `data/`, `rpc_common.py`, `rpc_classify.py`, `series_cache.py`, `evm_abi.py`. Import them;
    never copy out of them.
+   **A grid row is sized to its tallest cell's content and the cell's margin is then taken out
+   of it** (Textual 8.1.1, found 2026-10-02): `FilterEditorBase`'s `margin-bottom: 1` group gap
+   costs THE LIST's one-line controls only their blank last line, but cut a checkbox group's last
+   option off in silence. A group whose last line carries content takes its gap as
+   `padding-bottom` (`SurfRecordFilterEditor`); assert the last option on the compositor.
    (`widgets/hero_metrics.py`, `leaderboard.py`, `cookie_chart.py`, `activity_feed.py`,
    `signals_panel.py`, `ev_table.py` are Bakery-only despite living at the top level — all six are
    imported by `screens/bakery.py` only and are subclasses of `widgets/panels.py` since Branch 8

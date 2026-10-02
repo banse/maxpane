@@ -106,7 +106,9 @@ the seat cycle reads at most four jobs per 120 s, only inside RECORD's window. S
   now_ts)`, `record_base_match`, `record_read_match`, `record_readable`, `record_view(rows, cap,
   open_only, spec) -> RecordView(rows, older, not_read, unavailable)`, `record_filter_choices(rows)`.
   `record_readable` restates the canonical job-id and hash patterns (analytics may not import
-  `widgets/explorer`); an agreement test binds it to `_oracle_answer.valid_identity`. Both new
+  `widgets/explorer`); an agreement test binds it to the data layer's own read rule,
+  `surf_swarm_client.parse_job_id` and `surf_swarm._hex64` — *built:* the rule the seat cycle
+  actually reads by, rather than this draft's `_oracle_answer.valid_identity`. Both new
   analytics modules join `_PURE_ANALYTICS_ALLOWED` in the surf widget contract test.
 
 ## Surf pieces
@@ -119,6 +121,14 @@ the seat cycle reads at most four jobs per 120 s, only inside RECORD's window. S
 * `widgets/surf/swarm_record_filter.py`: `SurfRecordFilterEditor(FilterEditorBase)`; `async
   load(choices, values)` rebuilds the three checkbox groups (awaited, so ids never collide) with
   each box's value set at construction; `RecordFilterApplyRequested` / `RecordFilterResetRequested`.
+  *Built, beyond this draft:* the module is imported directly and is **not** in
+  `widgets/surf/__init__.__all__` (the contract test derives `_ALL_WIDGETS` from `__all__` and
+  requires `update_data`; the disk walk still checks its imports for purity). Its group gap is
+  `padding-bottom`, not the base's `margin-bottom`: a grid row is sized to its tallest group's
+  content and the margin is then taken out of it, which cut a checkbox group's last option off
+  in silence; its dropdowns and ranges draw on one line. The read note under the groups is a
+  wrapping `Static` (`READ_NOTE`), not a `section_title`: an 82-cell `Label` scrolled the editor
+  sideways below 84 columns. The footer's `unavailable` count is plain yellow on a dim line.
 * `screens/surf.py`: `f` (priority, AGENT only), `record_filter('filtered')`, escape closes the
   editor first, seat change and leaving AGENT close it and clear the filter where the table is reset
   today; `_clock` seam (`time.time`) used only at apply. CSS for the editor's slot in
@@ -141,6 +151,8 @@ the seat cycle reads at most four jobs per 120 s, only inside RECORD's window. S
    `tests/analytics/test_surf_swarm_signals.py`,
    `tests/data/test_surf_manager_answers.py`, `tests/widgets/test_surf_swarm_seat_record.py`,
    `tests/widgets/test_surf_swarm_record_filter.py` (new), `tests/widgets/test_surf_widget_contract.py`,
-   `tests/screens/test_surf_swarm_screen.py`, `tests/screens/test_surf_swarm_layout.py`, `-m guard`.
+   `tests/data/test_surf_manager_oracle.py`, `tests/screens/test_surf_screen.py` (bindings),
+   `tests/screens/test_surf_swarm_screen.py`, `tests/screens/test_surf_swarm_layout.py`,
+   `tests/test_surf_registration.py`, `-m guard`.
 3. Final whole-branch review on the most capable model, one fix wave, one scoped re-review, the full
    suite once by the controller. No merge, push or tag: those are the owner's.
