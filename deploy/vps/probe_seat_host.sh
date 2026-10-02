@@ -136,7 +136,12 @@ PY
 peak_of_unit() {
   if [ -z "$1" ]; then printf '\nno transient unit in broker reply; accounting unavailable\n'; return; fi
   printf '\nsystemd accounting for %s (journal, last 20 min):\n' "$1"
-  journalctl --since "-20 min" -u "${1%.service}.service" -o cat 2>&1 | grep -i -E 'consumed|memory peak|failed|timed out' | tail -n 5 | scrub | code_block
+  local accounting
+  accounting="$(journalctl --since "-20 min" -u "${1%.service}.service" -o cat 2>&1)"
+  printf '%s\n' "$accounting" | grep -i -E 'consumed|memory peak|failed|timed out' | tail -n 5 | scrub | code_block
+  if ! printf '%s\n' "$accounting" | grep -i -q -E 'consumed|memory peak'; then
+    printf "no accounting line: below systemd's logging thresholds\n"
+  fi
 }
 
 # ---- the probes, one function per title ----------------------------------------------------------------

@@ -1024,7 +1024,8 @@ def _probe_function(name):
 
 @pytest.mark.parametrize("section,unit", [("p12", "imd-dash-status-12345678901234567890123456789012"),
                                        ("p13", "imd-dash-doctor-19")])
-def test_probe_looks_up_exact_raw_reply_unit_and_exercises_sessions(tmp_path, section, unit):
+@pytest.mark.parametrize("accounting_line", ["memory peak unit", "Started child. Deactivated successfully.", "Failed with result exit-code."])
+def test_probe_looks_up_exact_raw_reply_unit_and_exercises_sessions(tmp_path, section, unit, accounting_line):
     """Run extracted probe functions with shell fakes; no host commands or socket access."""
     import shlex
     text = PROBE_SH.read_text()
@@ -1050,7 +1051,7 @@ broker_call() {{
     *) return 99 ;;
   esac
 }}
-journalctl() {{ printf '%s\\n' "$*" >> {shlex.quote(str(accounting))}; printf 'memory peak unit=%s\\n' "$*"; }}
+journalctl() {{ printf '%s\\n' "$*" >> {shlex.quote(str(accounting))}; printf '{accounting_line}=%s\\n' "$*"; }}
 scrub() {{ sed -E 's/[0-9a-fA-F]{{32,}}/<hex>/g'; }}
 code_block() {{ cat; }}
 result() {{ :; }}
@@ -1065,6 +1066,8 @@ date() {{ printf '1790949600\\n'; }}
     # The long status sequence would be lost if extracted after scrub.
     assert f"systemd accounting for {unit}" in done.stdout
     assert "*" not in done.stdout
+    fallback = "no accounting line: below systemd's logging thresholds"
+    assert (fallback in done.stdout) is ("memory peak" not in accounting_line)
     sent = [json.loads(line) for line in requests.read_text().splitlines()]
     if section == "p12":
         sessions = next(request for request in sent if request["verb"] == "sessions")
