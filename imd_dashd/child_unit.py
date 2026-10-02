@@ -22,6 +22,7 @@ Runner = Callable[..., "subprocess.CompletedProcess[bytes]"]
 CHILD_ENV = {"HOME": "/home/imd-worker",
              "PATH": "/opt/imd-worker/bin:/opt/imd-worker/node/bin:/usr/local/bin:/usr/bin:/bin",
              "NO_COLOR": "1", "LANG": "C.UTF-8"}                 # EXACTLY these four (spec §4.1a)
+IMD_BIN = "/opt/imd-worker/bin/imd"
 CHILD_CWD = "/tmp"
 WORKER_USER = "imd-worker"
 WORKER_GROUP = "imd-worker"
@@ -124,6 +125,6 @@ def read_ip_address_deny(*, run: Runner) -> str | None:
     return value or None
 
 
-__all__ = ["CHILD_CWD", "CHILD_ENV", "CHILD_MEMORY_MAX", "CHILD_TASKS_MAX", "ChildResult", "RUNTIME_MAX_S", "Runner",
+__all__ = ["IMD_BIN", "CHILD_CWD", "CHILD_ENV", "CHILD_MEMORY_MAX", "CHILD_TASKS_MAX", "ChildResult", "RUNTIME_MAX_S", "Runner",
            "SUBPROCESS_BELT_S", "TRANSIENT_PROPERTIES", "UNIT_PREFIX", "WORKER_GROUP", "WORKER_UNIT", "WORKER_USER",
            "read_ip_address_deny", "run_inprocess", "run_transient", "transient_argv", "unit_name"]

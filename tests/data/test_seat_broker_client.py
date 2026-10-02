@@ -90,7 +90,7 @@ def test_unix_socket_broker_offline_marks_every_gated_plan_local_only(tmp_path):
     broker, runner, _journal, _clock, _audit = make_broker(tmp_path)
     unix = UnixSocketBroker(connect=_served(broker), offline=True)
     plan = unix.plan("restart")
-    assert plan.preconditions["plane"]["mode"] == "local-only" and runner.argvs("python3", "-I") == []
+    assert plan.preconditions["plane"]["mode"] == "local-only" and runner.argvs(broker._python, "-I") == []
     with pytest.raises(BrokerError) as exc:
         unix.apply(plan.plan_id, plan.plan_id[:4])
     assert exc.value.code == "local_only_ack_required"

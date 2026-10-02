@@ -31,7 +31,7 @@ from pathlib import Path
 
 from imd_dashd import verbs
 from imd_dashd.audit import Audit, iso_utc
-from imd_dashd.child_unit import RUNTIME_MAX_S, Runner, read_ip_address_deny, run_inprocess, run_transient, unit_name
+from imd_dashd.child_unit import IMD_BIN, RUNTIME_MAX_S, Runner, read_ip_address_deny, run_inprocess, run_transient, unit_name
 from imd_dashd.drain import Drain, DrainState
 from imd_dashd.gate import ACCEPTED_HEAD_RE, ACCEPTED_RE, accepted_node8, HEARTBEAT_RE, TERMINAL_RE, GateResult, evaluate, parse_iso
 from imd_dashd.redact import find_secret, redact, redact_agent_sentence, redact_tree
@@ -831,7 +831,7 @@ class Broker:
         return run_transient(verb, self._next_seq(), argv, run=self._run, ip_address_deny=self.ip_address_deny)
 
     def _transient_read(self, verb: str) -> dict:
-        result = self._transient(verb, ["imd", verb])
+        result = self._transient(verb, [IMD_BIN, verb])
         if result is None:
             return verbs.err("child_posture_unavailable", {"verb": verb})
         if result.timed_out:
@@ -1027,7 +1027,7 @@ class Broker:
             if self.ip_address_deny is None:
                 self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="child_posture_unavailable", args={"skill_id": skill_id})
                 return verbs.err("child_posture_unavailable", {"verb": verb})
-            argv = ["imd", "skills", "add" if args["on"] else "remove", skill_id]
+            argv = [IMD_BIN, "skills", "add" if args["on"] else "remove", skill_id]
             preconditions = {"skill_id": skill_id, "on": bool(args["on"]), "listed": self._skills_listing is not None}
             verify = {"verified_when": ["imd skills re-listed"], "within_s": RUNTIME_MAX_S["skills-set"], "connected_when": None,
                       "reported_separately": True}
@@ -1042,7 +1042,7 @@ class Broker:
             if self.ip_address_deny is None:
                 self._log(peer_uid=peer_uid, verb=verb, phase="refused", outcome="child_posture_unavailable")
                 return verbs.err("child_posture_unavailable", {"verb": verb})
-            argv = ["imd", "doctor"]
+            argv = [IMD_BIN, "doctor"]
             preconditions = {"last_doctor_utc": None if self._last_doctor is None else iso_utc(self._last_doctor),
                              "runtime_max_s": RUNTIME_MAX_S["doctor"]}
             verify = {"verified_when": ["exit 0"], "within_s": RUNTIME_MAX_S["doctor"], "connected_when": None,

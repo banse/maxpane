@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from imd_dashd.child_unit import IMD_BIN
 from imd_dashd import imd_dashd as broker_mod
 from imd_dashd.imd_dashd import (
     BROKER_IDLE_EXIT_S, DOCTOR_MIN_INTERVAL_S, KILL_GRACE_S, PLAN_TTL_S, READ_COUNT_FLUSH_S, VERIFY_WITHIN_S, VERSION, PlanError,
@@ -173,7 +174,7 @@ def test_status_read_runs_a_transient_unit_with_the_worker_posture(tmp_path):
     data = call(broker, "status")["data"]
     assert data == {"lines": text.splitlines(), "rc": 0, "unit": "imd-dash-status-1"}
     (argv, kw), = [(a, k) for a, k in runner.calls if a and a[0] == "systemd-run"]
-    assert argv == transient_argv("status", 1, ["imd", "status"], ip_address_deny=IP_DENY, runtime_max_s=30)
+    assert argv == transient_argv("status", 1, [IMD_BIN, "status"], ip_address_deny=IP_DENY, runtime_max_s=30)
     assert kw["timeout"] == 45 and "env" not in kw                                  # env travels as --setenv, not to systemd-run
 
 
@@ -500,12 +501,12 @@ def test_doctor_apply_returns_started_and_verify_carries_redacted_output(tmp_pat
     lines = "imd doctor · daemon 0.1.0+5bfa8261\n✓ codex run answered in 2.3s ($0.114 estimated)\n✗ memory 3.7 GB\n"
     broker, runner, _journal, clock, _audit = make_broker(tmp_path, script={("systemd-run",): lambda argv, kw: transient(lines, rc=1)})
     plan = call(broker, "doctor", {})["plan"]
-    assert plan["argv"] == ["imd", "doctor"] and plan["inverse"] is None
+    assert plan["argv"] == [IMD_BIN, "doctor"] and plan["inverse"] is None
     result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
     assert result["outcome"] == "started" and result["unit"] == "imd-dash-doctor-1"
     _wait(broker, plan["plan_id"])
     (argv, kw), = [(a, k) for a, k in runner.calls if a and a[0] == "systemd-run"]
-    assert argv == transient_argv("doctor", 1, ["imd", "doctor"], ip_address_deny=IP_DENY, runtime_max_s=120)
+    assert argv == transient_argv("doctor", 1, [IMD_BIN, "doctor"], ip_address_deny=IP_DENY, runtime_max_s=120)
     assert kw["timeout"] == 135
     data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
     assert data["verified"] is False and data["reason"] == "exit 1"
@@ -553,17 +554,17 @@ def test_skills_set_is_a_transient_add_or_remove_and_marks_restart_required(tmp_
     broker, runner, _journal, _clock, _audit = make_broker(tmp_path, script={("systemd-run",): children})
     assert call(broker, "skills-set", {"skill_id": "not-offered", "on": False})["error"] == "skill_not_listed"
     plan = call(broker, "skills-set", {"skill_id": "oracle-assess", "on": False})["plan"]
-    assert plan["argv"] == ["imd", "skills", "remove", "oracle-assess"] and plan["restart_required_after"] is True
+    assert plan["argv"] == [IMD_BIN, "skills", "remove", "oracle-assess"] and plan["restart_required_after"] is True
     assert plan["inverse"] == {"verb": "skills-set", "args": {"skill_id": "oracle-assess", "on": True}}
     result = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["result"]
     assert result["outcome"] == "started"
     _wait(broker, plan["plan_id"])
-    unit_argv = next(a for a in runner.argvs("systemd-run") if a[-4:] == ["imd", "skills", "remove", "oracle-assess"])
+    unit_argv = next(a for a in runner.argvs("systemd-run") if a[-4:] == [IMD_BIN, "skills", "remove", "oracle-assess"])
     assert "--unit=imd-dash-skills-set-2" in unit_argv
-    assert runner.argvs("systemd-run")[-1][-2:] == ["imd", "skills"]                 # spec §11 skills row: verify by re-listing
+    assert runner.argvs("systemd-run")[-1][-2:] == [IMD_BIN, "skills"]                 # spec §11 skills row: verify by re-listing
     assert call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]["verified"] is True    # the re-listing says `off`
     plan = call(broker, "skills-set", {"skill_id": "oracle-assess", "on": True})["plan"]
-    assert plan["argv"] == ["imd", "skills", "add", "oracle-assess"]
+    assert plan["argv"] == [IMD_BIN, "skills", "add", "oracle-assess"]
     call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
     _wait(broker, plan["plan_id"])
     data = call(broker, "verify", {"plan_id": plan["plan_id"]})["data"]
@@ -1326,3 +1327,21 @@ def test_nonpartial_orphan_timeout_does_not_leave_unresolvable_none_watch(tmp_pa
     result = call(broker, 'verify', {'plan_id': plan['plan_id']})['data']
     assert result['verified'] is False, result
     assert 'timeout' in result['reason']
+
+
+@pytest.mark.parametrize("verb,args", [("whoami", {}), ("status", {}), ("skills", {}), ("tools", {}),
+    ("sessions", {"runtime": "codex", "since": NOW - 86400}), ("doctor", {}),
+    ("skills-set", {"skill_id": "oracle-assess", "on": True})])
+def test_every_broker_transient_command_is_absolute(tmp_path, verb, args):
+    broker, runner, *_ = make_broker(tmp_path)
+    broker._skills_listing = {"oracle-assess"}
+    reply = call(broker, verb, args)
+    if "plan" in reply:
+        plan = reply["plan"]
+        assert os.path.isabs(plan["argv"][0])
+        call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
+        _wait(broker, plan["plan_id"])
+    commands = runner.argvs("systemd-run")
+    assert commands
+    assert all(os.path.isabs(argv[argv.index("--") + 1]) for argv in commands)
+    assert os.path.isabs(broker_mod.PYTHON) and os.path.isabs(IMD_BIN)

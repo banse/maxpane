@@ -204,7 +204,7 @@ def test_main_prints_one_json_line_and_exit_codes(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out) == {"error": "URLError"}
 # ---------------------------------------------------------------- the gate as the broker applies it (Task 6.10; spec §11 (b), (d))
 
-from tests.broker._harness import Journal, audit_lines, call, make_broker  # noqa: E402  (broker-level halves of proofs 7 and 28)
+from tests.broker._harness import PYTHON, Journal, audit_lines, call, make_broker  # noqa: E402  (broker-level halves of proofs 7 and 28)
 
 
 def test_local_only_gate_needs_typed_ack(tmp_path):
@@ -213,7 +213,7 @@ def test_local_only_gate_needs_typed_ack(tmp_path):
     broker, runner, _journal, _clock, audit = make_broker(tmp_path)
     plan = call(broker, "restart", {"offline": True})["plan"]
     assert plan["preconditions"]["plane"] == {"mode": "local-only", "running": None, "as_of": None, "standing_age_s": None}
-    assert runner.argvs("python3", "-I") == []                                      # no standing child under offline
+    assert runner.argvs(PYTHON, "-I") == []                                      # no standing child under offline
     refused = call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})
     assert refused["error"] == "local_only_ack_required" and refused["detail"]["ack"] == "local-only"
     assert runner.argvs("systemctl", "restart") == []
@@ -222,7 +222,7 @@ def test_local_only_gate_needs_typed_ack(tmp_path):
     assert applied["ok"] and applied["result"]["preconditions"]["plane"]["mode"] == "local-only"
     assert len(runner.argvs("systemctl", "restart")) == 1
     # a failed standing read (not offline) is local-only too
-    runner.script[("python3", "-I", broker._broker_dir + "/gate.py")] = (1, '{"error":"URLError"}\n')
+    runner.script[(PYTHON, "-I", broker._broker_dir + "/gate.py")] = (1, '{"error":"URLError"}\n')
     plan = call(broker, "restart", {"offline": False})["plan"]
     assert plan["preconditions"]["plane"]["mode"] == "local-only"
     assert call(broker, "apply", {"plan_id": plan["plan_id"], "confirm": plan["plan_id"][:4]})["error"] == "local_only_ack_required"

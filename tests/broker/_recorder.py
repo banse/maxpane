@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from collections.abc import Callable, Sequence
 
 
@@ -20,6 +21,11 @@ class RecordingRunner:
     def __call__(self, argv: Sequence[str], **kw) -> subprocess.CompletedProcess:
         argv = list(argv)
         self.calls.append((argv, kw))
+        if argv[0] == "systemd-run":
+            command = argv[argv.index("--") + 1]
+            if not os.path.isabs(command):
+                return subprocess.CompletedProcess(argv, 1, b"",
+                    f"Failed to find executable {command}: No such file or directory".encode())
         best: tuple[str, ...] | None = None
         for prefix in self.script:
             if tuple(argv[:len(prefix)]) == prefix and (best is None or len(prefix) > len(best)):

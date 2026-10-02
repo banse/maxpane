@@ -21,7 +21,7 @@ from tests.broker._recorder import RecordingRunner
 NOW = 1_790_000_000.0
 DASH_UID = 1001
 WORKER_UID = 1000
-PYTHON = "python3"
+PYTHON = "/usr/bin/python3"
 IP_DENY = "169.254.0.0/16 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10 192.0.2.10 192.0.2.11"
 PUBLIC_KEY = "72b617d4a1c3e5f70918273645b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e"
 PRIVATE_KEY = "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6b5a4938271605f4e3d2c1b0a"
@@ -100,8 +100,8 @@ def projection_child(payload: dict, rc: int = 0) -> subprocess.CompletedProcess:
     return subprocess.CompletedProcess([], rc, json.dumps(payload).encode() + b"\n", b"")
 
 
-def transient(out: str, rc: int = 0) -> subprocess.CompletedProcess:
-    return subprocess.CompletedProcess([], rc, out.encode(), b"")
+def transient(out: str, rc: int = 0, stderr: str = "") -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess([], rc, out.encode(), stderr.encode())
 
 
 class Clock:

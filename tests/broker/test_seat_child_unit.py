@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import subprocess
 
+import pytest
+
 from imd_dashd.child_unit import (
-    CHILD_CWD, CHILD_ENV, RUNTIME_MAX_S, SUBPROCESS_BELT_S, TRANSIENT_PROPERTIES, ChildResult, read_ip_address_deny,
+    IMD_BIN, CHILD_CWD, CHILD_ENV, RUNTIME_MAX_S, SUBPROCESS_BELT_S, TRANSIENT_PROPERTIES, ChildResult, read_ip_address_deny,
     run_inprocess, run_transient, transient_argv, unit_name,
 )
 from tests.broker._recorder import RecordingRunner, timeout_for
@@ -18,7 +20,7 @@ def test_transient_argv_env_is_exactly_the_four_keys():
                          "PATH": "/opt/imd-worker/bin:/opt/imd-worker/node/bin:/usr/local/bin:/usr/bin:/bin",
                          "NO_COLOR": "1", "LANG": "C.UTF-8"}
     assert CHILD_CWD == "/tmp"
-    argv = transient_argv("status", 17, ["imd", "status"], ip_address_deny=IP_DENY, runtime_max_s=30)
+    argv = transient_argv("status", 17, [IMD_BIN, "status"], ip_address_deny=IP_DENY, runtime_max_s=30)
     setenvs = [a for a in argv if a.startswith("--setenv=")]
     assert setenvs == ["--setenv=HOME=/home/imd-worker",
                        "--setenv=PATH=/opt/imd-worker/bin:/opt/imd-worker/node/bin:/usr/local/bin:/usr/bin:/bin",
@@ -42,7 +44,7 @@ def test_transient_properties_in_order():
         "InaccessiblePaths=-/run/dbus", "InaccessiblePaths=-/run/systemd/private", "InaccessiblePaths=-/run/imd-dash",
         "InaccessiblePaths=-/home/imd-dash", "InaccessiblePaths=-/var/log/imd-dash",
     )
-    argv = transient_argv("doctor", 3, ["imd", "doctor"], ip_address_deny=IP_DENY, runtime_max_s=120)
+    argv = transient_argv("doctor", 3, [IMD_BIN, "doctor"], ip_address_deny=IP_DENY, runtime_max_s=120)
     expected = ["systemd-run", "--uid=imd-worker", "--gid=imd-worker", "--wait", "--collect", "--pipe", "--quiet",
                 "--unit=imd-dash-doctor-3", "--working-directory=/tmp",
                 "--setenv=HOME=/home/imd-worker",
@@ -51,7 +53,7 @@ def test_transient_properties_in_order():
     for prop in TRANSIENT_PROPERTIES:
         expected += ["-p", prop]
     expected += ["-p", f"IPAddressDeny={IP_DENY}", "-p", "MemoryMax=512M", "-p", "TasksMax=64", "-p", "RuntimeMaxSec=120",
-                 "--", "imd", "doctor"]
+                 "--", IMD_BIN, "doctor"]
     assert argv == expected                                   # byte-for-byte
     assert unit_name("skills-set", 9) == "imd-dash-skills-set-9"
 
@@ -65,7 +67,7 @@ def test_runtime_max_per_verb_matches_the_spec():
 def test_run_transient_uses_the_belt_and_kills_the_unit_on_timeout():
     # spec §4.1b: subprocess.run(timeout=RuntimeMaxSec + 15) is the belt; on timeout `systemctl kill --signal=KILL <unit>`
     runner = RecordingRunner({("systemd-run",): timeout_for(["systemd-run"], 135)})
-    result = run_transient("doctor", 4, ["imd", "doctor"], run=runner, ip_address_deny=IP_DENY)
+    result = run_transient("doctor", 4, [IMD_BIN, "doctor"], run=runner, ip_address_deny=IP_DENY)
     assert isinstance(result, ChildResult) and result.timed_out and result.rc is None
     assert result.unit == "imd-dash-doctor-4" and result.stdout == b"partial"
     first, second = runner.calls
@@ -75,10 +77,10 @@ def test_run_transient_uses_the_belt_and_kills_the_unit_on_timeout():
 
 def test_run_transient_returns_output_and_rc():
     runner = RecordingRunner({("systemd-run",): subprocess.CompletedProcess([], 0, b"72b617d4" + b"0" * 56 + b"\n", b"")})
-    result = run_transient("whoami", 1, ["imd", "whoami"], run=runner, ip_address_deny=IP_DENY, stdin=None)
+    result = run_transient("whoami", 1, [IMD_BIN, "whoami"], run=runner, ip_address_deny=IP_DENY, stdin=None)
     assert result.rc == 0 and result.stdout.startswith(b"72b617d4") and not result.timed_out
     assert runner.calls[0][1]["timeout"] == 20 + 15
-    assert runner.calls[0][0][-2:] == ["imd", "whoami"]
+    assert runner.calls[0][0][-2:] == [IMD_BIN, "whoami"]
 
 
 def test_run_inprocess_timeout_is_reported_not_raised():
@@ -103,3 +105,16 @@ def test_transient_inaccessible_paths_ignore_missing_namespace_paths():
     """Measured systemd 259 exit 226: ProtectHome=tmpfs hides /home/imd-dash before masking."""
     paths = [p.split("=", 1)[1] for p in TRANSIENT_PROPERTIES if p.startswith("InaccessiblePaths=")]
     assert paths and all(path.startswith("-") for path in paths)
+
+
+@pytest.mark.parametrize("command", ["imd", "python3", "true", "bin/imd"])
+def test_recorder_rejects_relative_transient_commands_before_script_lookup(command):
+    calls = []
+    def scripted(argv, kw):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, b"should never start", b"")
+    runner = RecordingRunner({("systemd-run",): scripted})
+    result = runner(["systemd-run", "--unit=never-created", "--", command])
+    assert result.returncode == 1 and result.stdout == b""
+    assert result.stderr == f"Failed to find executable {command}: No such file or directory".encode()
+    assert calls == []  # no simulated unit runs, even with an overridden script entry
