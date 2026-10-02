@@ -163,13 +163,16 @@ only a failed read says `unavailable`.
 
 Press **`a`** for the AGENT body — one seat's **lifetime record** from its own keyless
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
-uses the most active seat found in the job data. The hero shows SEAT, WORK, ACCEPTED,
-REVIEWED, RANK and STATUS. WORK reads turns, hours and lifetime **output tokens** from
-`/contributors` (not input or cached-input tokens). ACCEPTED shows accepted work out of
-attempts, with the percentage beneath. RANK shows the position and its change since the last
+uses the most active seat found in the job data. The hero shows SEAT, ACCEPTED JOBS, WORK,
+REWARDS, RANK and STATUS. WORK reads turns, hours and lifetime **output tokens** from
+`/contributors` (not input or cached-input tokens). ACCEPTED JOBS shows accepted work out of
+attempts, with the percentage beneath. REWARDS shows the IMD the seat's owner was paid since
+the seat paired (today: dev-sent `disperseToken` payments, read keylessly from Blockscout and
+checked against the transaction's sender), split evenly over the owner's IDMD seats, with its
+USD value at the current IMD price beneath. RANK shows the position and its change since the last
 move: green `▲2` for two places up, red `▼1` for one down. The change stays until the next
 move and is saved per seat; unavailable or unranked reads neither change it nor display it. STATUS shows a green `● online` for a connected, idle
-worker (or its capacity while working), any pause, and the seat's newest activity from `/seats`:
+worker and `● working` while it works, each followed by its capacity, any pause, and the seat's newest activity from `/seats`:
 `worked MM-DD HH:MM` when its newest attempt is newer than its newest accepted work, otherwise
 `accepted MM-DD HH:MM`. The hero has no `as of` line; RECORD's title retains the seat
 read's freshness marker (and the screen title retains its own clock).

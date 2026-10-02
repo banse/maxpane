@@ -36,7 +36,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | CAPABILITY beside THROUGHPUT; IN FLIGHT beside LAUNCHES; SITES full-width beneath | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / QUEUE / BREAKER / SERVICES |
-| `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / WORK / ACCEPTED / REVIEWED / RANK / STATUS |
+| `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
 `SurfHero`'s fourth box is BOARDS (owner, 2026-09-22; it replaced IMD SUPPLY): `hero.BOARD_KEYS`
@@ -202,8 +202,8 @@ body height); with a record, RECORD's title appends yellow `busy` after
 its own `as of HH:MM`. Shed the seat hint first if space is tight. Other read failures add no
 title word. Busy without a record gates the RUNTIME tooltip, just like pending.
 
-SEAT, WORK, ACCEPTED, REVIEWED and RANK keep line 2 of their body blank, as STATUS does (owner,
-2026-09-25); SEAT's blank line carries only a rare selection word (`most active`, `never paired`).
+SEAT, ACCEPTED JOBS, WORK, REWARDS and RANK keep line 2 of their body blank, as STATUS does (owner,
+2026-09-25; ACCEPTED JOBS before WORK since F-S6, 2026-10-02); SEAT's blank line carries only a rare selection word (`most active`, `never paired`).
 Hero WORK reads wall-clock hours, then (after its blank line 2) lifetime output tokens (owner
 2026-09-25; turns left WORK and stay on BOARD) from `/contributors` through
 `swarm_seat_contrib` and `_swarm_seat.work_body`. Input and cached-input tokens are excluded;
@@ -220,7 +220,20 @@ was removed by the owner on 2026-09-22) and exactly three body lines. `swarm_sea
 known zero working is idle, which STATUS writes as a green `● online` (`ONLINE_LINE`; only
 that part green, the counts after it dim); STATUS writes `⚙` (`WORKING_GLYPH`) for the word
 "working" in its counts (owner, 2026-09-22). A working count above `max_concurrency` (oracle jobs do not count
-against it) reads `⚙ N working` without the misleading `of N` (owner, 2026-09-26). RANK (hero column 5 since 2026-09-22) reads only
+against it) reads `⚙ N working` without the misleading `of N` (owner, 2026-09-26). STATUS's idle and working lines share one shape: green `● online` / `● working`
+(`WORKING_LINE`, F-S4), then the dim counts; when the whole working line does not fit STATUS's
+measured width the word drops and the green counts stay whole (`MeasuredRow._room`), never a cut
+number. REWARDS (F-S5, 2026-10-02, `docs/surf_agent_rewards_spec.md`) replaced REVIEWED: IMD
+paid to the seat's current owner since `pairedAt` by a known payer -- a transfer *from*
+`REWARD_DISPERSE_CONTRACTS` counts only when the transaction's **sender** is in
+`REWARD_DISPERSERS` (Disperse is public), one *from* `REWARD_DIRECT_PAYERS` counts as it is --
+split evenly over the owner's IDMD `balanceOf`, USD at this cycle's `imd_price_usd`.
+`SurfClient.fetch_seat_rewards` fails the whole read (None) on a page bound hit, a malformed
+row, an unreadable sender, decimals or balance, or zero seats: a partial total never looks real.
+`SLOT_SWARM_SEAT_REWARDS` keeps six seats keyed on owner + pairing (a sold seat never inherits
+a total); a per-seat 600 s clock inside the seat task, 120 s failure backoff.
+`swarm_seat_rewards_state` is `ok` / `pending` / None, so not-read and could-not-read differ.
+RANK (hero column 5 since 2026-09-22) reads only
 `swarm_seat_contrib` through `_swarm_seat.contrib_body` / `rank_body`. RANK's second line is
 `swarm_seat_rank_delta`: previous rank minus current rank, green `▲N` upward or red `▼N`
 downward. `SLOT_SWARM_SEAT_RANK` persists each seat's `{rank, prev}`; validate each point on

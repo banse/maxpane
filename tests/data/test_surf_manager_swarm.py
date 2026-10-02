@@ -1310,6 +1310,7 @@ async def test_the_swarm_folds_emit_exactly_the_swarm_block(tmp_path):
         manager._swarm_seat_keys(
             scores.payload, scores, seen, manager.cache.get_last_good(SLOT_SWARM_SEAT),
         ),
+        manager._seat_rewards_keys({}, None, manager._clock()),
         manager._swarm_board_keys(
             manager.cache.get_last_good("swarm_contributors"),
             manager.cache.get_last_good("swarm_workers"), None,

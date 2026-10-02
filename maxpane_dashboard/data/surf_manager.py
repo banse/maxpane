@@ -114,13 +114,14 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import math
 import re
 import time
 from typing import Any
 
 from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIME_PACKAGES, npm_version
 from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
-from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK, SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
+from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS, SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
 from maxpane_dashboard.analytics.surf_swarm_signals import record_window, fleet_majority
 from maxpane_dashboard.analytics import surf_pool4_depth as pool4_depth
 from maxpane_dashboard.analytics.surf_feed import select_feed_window
@@ -208,6 +209,7 @@ from maxpane_dashboard.data.surf_models import (
     POOL4_VENUE_WORDS,
     SURF_KEYS,
     Pool4Discovery,
+    SeatRewards,
 )
 from maxpane_dashboard.data.surf_pool4_client import Pool4Client
 from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY, SwarmClient
@@ -875,6 +877,17 @@ SWARM_ANSWER_MAX_AGE_S = 48 * 3600.0
 #: Nonterminal jobs may change; their reads follow the seat tier's 120 s clock.
 SWARM_ANSWER_DUE_S = 120.0
 
+#: F-S5 REWARDS: a seat's IMD rewards arrive a few times a week (three
+#: payments to seat 420 in five days, 2026-09-23..28), so one read per seat
+#: per ten minutes; it runs inside the seat tier's task, so the 120 s seat
+#: clock is the floor. A failed read waits the seat tier's own backoff.
+SWARM_SEAT_REWARDS_TTL_S = 600.0
+SWARM_SEAT_REWARDS_BACKOFF_S = 120.0
+#: REWARDS has no ``as of`` line, so a total older than this (six missed
+#: reads, or a restart onto an old cache) is never shown as live: the box
+#: falls back to ``Loading…`` / ``unavailable`` until a read lands (review I3).
+SWARM_SEAT_REWARDS_MAX_AGE_S = 3600.0
+
 #: Progressive job context for successfully read SUBMISSION rows in RECORD's window.
 SWARM_JOB_DETAIL_PER_CYCLE = 2
 #: Retain at most ten 40-row windows of extracted job context across seats.
@@ -1136,11 +1149,16 @@ class SurfManager:
         #: restart costs one lookup, and a recorded miss keeps the 120 s seat
         #: tier from re-resolving a nameless wallet every cycle.
         self._seat_ens = ens.NameStore(self._clock)
+        #: F-S5: token -> when its rewards read last failed (or could not be
+        #: asked: a seat outside the IDMD collection). In memory only, like
+        #: the seat tier's own failure marks.
+        self._seat_rewards_failed: dict[int, float] = {}
 
         try:
             self.cache.load(slot_coercers={
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
                 SLOT_SWARM_SEAT_RANK: sw.coerce_rank_slot,
+                SLOT_SWARM_SEAT_REWARDS: lambda value: sw.coerce_rewards_slot(value, now=self._clock()),
                 SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=self._clock()),
                 SLOT_SWARM_RUNTIME_LATEST: lambda value: coerce_runtime_slot(value, now=self._clock()),
                 SLOT_SWARM_CONTRIBUTORS: sw.coerce_contributors_slot,
@@ -5869,6 +5887,7 @@ class SurfManager:
             self._seat_busy_token = None
         if state == "ok":
             await self._resolve_seat_owner(result, now)
+            await self._pool_swarm_seat_rewards(result, token, now)
             await self._pool_swarm_answers(result, token, now)
             await self._pool_swarm_oracle(result, token, now)
             await self._pool_swarm_job_details(result, now)
@@ -5899,6 +5918,92 @@ class SurfManager:
             self._seat_ens.set_names({key: name}, ts=now)
         else:
             self._seat_ens.note_misses([key], ts=now)
+
+    @staticmethod
+    def _rewards_identity(summary: dict, seat: Any = None) -> tuple[str, float] | None:
+        """``(owner, paired_ts)`` a rewards read is keyed on, else ``None``.
+
+        With *seat* (the raw ``/seats`` payload) the seat must also be an
+        IDMD seat on Ethereum: ``balanceOf`` is asked of ``IDMD_NFT``, so a
+        seat of another collection would be split against the wrong count.
+        """
+        owner, paired = summary.get("owner"), summary.get("paired_ts")
+        if not isinstance(owner, str) or len(owner) != 42 or not isinstance(paired, float):
+            return None
+        if seat is not None and (
+                seat.get("chainId") != 1
+                or not isinstance(seat.get("collection"), str)
+                or seat["collection"].lower() != IDMD_NFT.lower()):
+            return None
+        return owner.lower(), paired
+
+    async def _pool_swarm_seat_rewards(self, seat: dict, token: int, now: float) -> None:
+        """F-S5: the seat owner's IMD rewards since ``pairedAt``, on a per-seat clock.
+
+        Runs inside the detached seat task after an ``ok`` read, so the cycle
+        never waits on it. A stored point for this owner and pairing younger
+        than :data:`SWARM_SEAT_REWARDS_TTL_S` is not re-read; a failure waits
+        :data:`SWARM_SEAT_REWARDS_BACKOFF_S` and keeps last-good. A point for
+        another owner or pairing is stale at once (a sold seat).
+        """
+        identity = self._rewards_identity(sw.seat_summary_from_seat(seat), seat)
+        if identity is None:
+            self._seat_rewards_failed[token] = now
+            return
+        prior = self.cache.get_last_good(SLOT_SWARM_SEAT_REWARDS)
+        points = sw.coerce_rewards_slot(getattr(prior, "payload", None), now=now) or {}
+        point = points.get(str(token))
+        if (point is not None and (point["owner"], point["paired_ts"]) == identity
+                and now - point["read_ts"] < SWARM_SEAT_REWARDS_TTL_S):
+            return
+        failed = self._seat_rewards_failed.get(token)
+        if failed is not None and now - failed < SWARM_SEAT_REWARDS_BACKOFF_S:
+            return
+        fetch = getattr(self.client, "fetch_seat_rewards", None)
+        if fetch is None:
+            return
+        owner, paired = identity
+        result = await self._guard(lambda: fetch(owner, paired), "seat rewards")
+        if not isinstance(result, SeatRewards):
+            self._seat_rewards_failed[token] = now
+            return
+        self._seat_rewards_failed.pop(token, None)
+        points[str(token)] = {"owner": owner, "paired_ts": paired, "raw": result.raw_total,
+                              "decimals": result.decimals, "seats": result.seats_held,
+                              "transfers": result.transfers, "read_ts": now}
+        points = sw.coerce_rewards_slot(points, now=now)
+        self.cache.store_last_good(SLOT_SWARM_SEAT_REWARDS, points, ts=now)
+
+    def _seat_rewards_keys(self, seat_keys: dict, imd_price: Any, now: float) -> dict[str, Any]:
+        """``swarm_seat_rewards`` / ``_state`` for the selected seat (F-S5).
+
+        The wallet's total split evenly over the IDMD seats it holds (owner,
+        2026-10-02), USD at this cycle's IMD price. ``"pending"`` until a read
+        for this owner and pairing has landed; ``None`` after a failure with
+        nothing to serve. A seat that is not ``ok`` gets neither: its hero box
+        shows the seat's own state.
+        """
+        out: dict[str, Any] = {"swarm_seat_rewards": None, "swarm_seat_rewards_state": None}
+        selected, summary = seat_keys.get("swarm_seat_selected"), seat_keys.get("swarm_seat_summary")
+        if selected is None or seat_keys.get("swarm_seat_state") != "ok" or not isinstance(summary, dict):
+            return out
+        token = selected["token_id"]
+        identity = self._rewards_identity(summary)
+        entry = self.cache.get_last_good(SLOT_SWARM_SEAT_REWARDS)
+        points = sw.coerce_rewards_slot(getattr(entry, "payload", None), now=now) or {}
+        point = points.get(str(token))
+        if (identity is not None and point is not None
+                and (point["owner"], point["paired_ts"]) == identity
+                and now - point["read_ts"] <= SWARM_SEAT_REWARDS_MAX_AGE_S):
+            imd = point["raw"] / 10 ** point["decimals"] / point["seats"]
+            price = imd_price if (isinstance(imd_price, (int, float)) and not isinstance(imd_price, bool)
+                                  and math.isfinite(imd_price) and imd_price >= 0) else None
+            out["swarm_seat_rewards"] = {"imd": imd, "usd": imd * price if price is not None else None,
+                                         "seats": point["seats"]}
+            out["swarm_seat_rewards_state"] = "ok"
+        elif token not in self._seat_rewards_failed:
+            out["swarm_seat_rewards_state"] = "pending"
+        return out
 
     def _seat_owner_ens(self, summary: dict, now: float) -> str | None:
         """The fresh verified name for ``summary["owner"]``, else ``None``."""
@@ -6790,6 +6895,7 @@ class SurfManager:
         # (the /seats plan WP2) -- then that seat's read, offered detached.
         seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry, answers_entry, now, oracle_entry)
         data.update(seat_keys)
+        data.update(self._seat_rewards_keys(seat_keys, imd_price, now))
         selected_seat = seat_keys["swarm_seat_selected"]
         data.update(self._runtime_keys(now))
         self._spawn_runtime_latest(seat_entry, selected_seat["token_id"] if selected_seat else None, now)

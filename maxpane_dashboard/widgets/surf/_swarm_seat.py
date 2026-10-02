@@ -32,7 +32,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
 from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
-from maxpane_dashboard.widgets.panels import LOADING, UNAVAILABLE
+from maxpane_dashboard.widgets.panels import LOADING, UNAVAILABLE, HeroBoxBase
 
 __all__ = [
     "contrib_body",
@@ -56,6 +56,41 @@ NODE_TITLES = {
     "adversarial_review": "REVIEW",
     "build_contract_project": "BUILD",
 }
+
+#: Before the first layout a box has no width; fit nothing rather than guess.
+_UNSIZED = 10_000
+
+
+class MeasuredRow:
+    """Mixin for an AGENT ``HeroRow`` that fits text to its boxes' measured width.
+
+    It keeps the payload and repaints on resize -- after the refresh, when the
+    boxes have their new size. Shared by the hero and the seat-card row (F-S4
+    needed STATUS's width; the cards had the only copy).
+    """
+
+    IDS: dict[str, str] = {}
+    _data: dict | None = None
+
+    def update_data(self, **kwargs) -> None:
+        self._data = kwargs
+        self._paint(**kwargs)
+
+    def on_resize(self, _event=None) -> None:
+        if self._data is not None:
+            self.call_after_refresh(lambda: self._paint(**self._data))
+
+    def _room(self, key: str) -> int:
+        """The content width of box *key*; :data:`_UNSIZED` before layout."""
+        try:
+            width = self.query_one(f"#{self.IDS[key]}", HeroBoxBase).content_size.width
+        except Exception:
+            return _UNSIZED
+        return width if width > 0 else _UNSIZED
+
+    def _paint(self, **kwargs) -> None:  # pragma: no cover - abstract
+        raise NotImplementedError
+
 
 #: The real negative's words on their own -- where the seat's number is
 #: already on the line above (the hero's SEAT box), or not known to the panel.

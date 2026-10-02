@@ -178,6 +178,7 @@ SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
 SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
 SLOT_SWARM_SEAT = "swarm_seat"        # {seats: token -> {state, seat, read_ts}}
 SLOT_SWARM_SEAT_RANK = "swarm_seat_rank"  # token -> last rank and previous rank
+SLOT_SWARM_SEAT_REWARDS = "swarm_seat_rewards"  # token -> IMD rewards read for one owner/pairing
 SLOT_SWARM_RUNTIME_LATEST = "swarm_runtime_latest"  # runtime -> version and last attempt timestamp
 SLOT_SWARM_WORKERS = "swarm_workers"  # normalized /workers envelope, its own version clock
 SLOT_SWARM_CONTRIBUTORS = "swarm_contributors"  # normalized /contributors envelope
@@ -220,6 +221,8 @@ SLOTS: tuple[str, ...] = (
     SLOT_SWARM_WORKERS,
     SLOT_SWARM_RUNTIME_LATEST,
     SLOT_SWARM_SEAT_RANK,
+    # F-S5: per seat, on its own per-seat clock inside the seat tier's task.
+    SLOT_SWARM_SEAT_REWARDS,
     SLOT_SWARM_CONTRIBUTORS,
     SLOT_SWARM_ANSWERS,
     SLOT_SWARM_JOB_DETAIL,
@@ -1210,7 +1213,7 @@ class SurfCache:
                             "read_ts": entry.ts,
                         }}}, ts=entry.ts)
                         self._dirty = True
-                    if slot in (SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK):
+                    if slot in (SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:
@@ -1404,6 +1407,7 @@ __all__ = [
     "SLOT_SWARM_WORKERS",
     "SLOT_SWARM_RUNTIME_LATEST",
     "SLOT_SWARM_SEAT_RANK",
+    "SLOT_SWARM_SEAT_REWARDS",
     "SLOT_SWARM_CONTRIBUTORS",
     "SLOT_SWARM_ANSWERS",
     "SLOT_SWARM_JOB_DETAIL",

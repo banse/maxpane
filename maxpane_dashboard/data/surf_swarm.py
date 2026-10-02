@@ -2281,6 +2281,49 @@ def _log_oracle_status(status: str) -> None:
 
 
 
+#: A token's ``decimals()`` beyond this is not a token; refuse the point.
+_REWARD_DECIMALS_MAX = 36
+#: Above any sum the client can produce (500 uint256 rows at its page bound): a
+#: hand-edited ``raw`` this large would overflow the float division (review I1).
+_REWARD_RAW_MAX = 500 * 2 ** 256
+
+
+def coerce_rewards_slot(payload: object, *, now: float) -> dict | None:
+    """F-S5 per-seat rewards; drop malformed points independently, keep the six newest.
+
+    A point is ``{owner, paired_ts, raw, decimals, seats, transfers, read_ts}``:
+    the owner and pairing it was read for (the manager serves it only while
+    both still match the seat), the integer sum, the live ``decimals()``, the
+    wallet's seat count (``>= 1``) and when it was read.
+    """
+    if not isinstance(payload, Mapping):
+        return None
+    clean = {}
+    for key, point in payload.items():
+        token = _served_token(key) if isinstance(key, str) else None
+        if token is None or str(token) != key or not isinstance(point, Mapping):
+            continue
+        if set(point) != {"owner", "paired_ts", "raw", "decimals", "seats", "transfers", "read_ts"}:
+            continue
+        owner, paired, read_ts = point["owner"], point["paired_ts"], point["read_ts"]
+        if not (isinstance(owner, str) and len(owner) == 42 and owner == owner.lower()
+                and owner.startswith("0x")):
+            continue
+        if not all(_valid_count(point[name]) for name in ("raw", "decimals", "seats", "transfers")):
+            continue
+        if point["decimals"] > _REWARD_DECIMALS_MAX or point["seats"] < 1 or point["raw"] > _REWARD_RAW_MAX:
+            continue
+        if not _nonnegative_finite(paired) or not _nonnegative_finite(read_ts):
+            continue
+        if read_ts > now + CLOCK_SKEW_TOLERANCE_SECONDS:
+            continue
+        clean[key] = {"owner": owner, "paired_ts": float(paired), "raw": point["raw"],
+                      "decimals": point["decimals"], "seats": point["seats"],
+                      "transfers": point["transfers"], "read_ts": float(read_ts)}
+    newest = sorted(clean, key=lambda key: (-clean[key]["read_ts"], int(key)))[:SEAT_SLOT_CAP]
+    return {key: clean[key] for key in newest}
+
+
 #: BOARD lists hundreds of seats; this is only a sanity bound for stored and live ranks.
 RANK_MAX = 10**6
 

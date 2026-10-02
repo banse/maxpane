@@ -82,6 +82,7 @@ from maxpane_dashboard.data.surf_models import (
     NftStats,
     NonceSet,
     PoolV4State,
+    SeatRewards,
 )
 
 logger = logging.getLogger(__name__)
@@ -226,6 +227,12 @@ _SEL_GET_BLOCK_NUMBER = "0x42cbb15c"
 #: WP0's frozen surface has no entry for it (open issue 7), so it is defined
 #: HERE rather than added to ``surf_addresses``.
 _SEL_BALANCE_OF = "0x70a08231"
+#: ERC-20 ``decimals()``.
+_SEL_DECIMALS = "0x313ce567"
+
+#: Page budget for one seat's IMD transfers (50 rows a page). Running out
+#: with a cursor left fails the read: a partial sum understates the reward.
+SEAT_REWARD_PAGE_BOUND = 10
 
 #: Seaport 1.6 — lowercase because every log-filter address this module
 #: builds is compared/stored lowercase (module docstring / CLAUDE.md rule).
@@ -1032,6 +1039,28 @@ def _parse_iso_ts(ts: str | None) -> float | None:
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
     except ValueError:
         return None
+
+
+def _reward_row(row: Any) -> tuple[float, str, str, int] | None:
+    """A Blockscout IMD token-transfer row as ``(ts, tx, from, raw value)``; ``None`` if
+    malformed or another token's (the ``token`` filter is the server's promise, not ours)."""
+    if not isinstance(row, dict):
+        return None
+    ts = _parse_iso_ts(row.get("timestamp"))
+    tx = str(row.get("transaction_hash") or "").strip().lower()
+    sender = str((row.get("from") or {}).get("hash") or "").strip().lower() if isinstance(row.get("from"), dict) else ""
+    token = row.get("token")
+    token = str(token.get("address_hash") or "").strip().lower() if isinstance(token, dict) else ""
+    if token != A.IMD_TOKEN.lower():
+        return None                      # not IMD: the filter was not honoured (review I2)
+    total = row.get("total")
+    try:
+        value = int(total.get("value")) if isinstance(total, dict) else None
+    except (TypeError, ValueError):
+        value = None
+    if ts is None or not tx.startswith("0x") or len(sender) != 42 or value is None or not 0 <= value < 2 ** 256:
+        return None
+    return ts, tx, sender, value
 
 
 def _lenient_int(value: Any) -> int | None:
@@ -3007,6 +3036,78 @@ class SurfClient(OwnedHttpClient):
     # ------------------------------------------------------------------
     # State RPC — transaction provenance (the v4-launch corroboration)
     # ------------------------------------------------------------------
+
+    async def fetch_seat_rewards(self, owner: Any, since_ts: float) -> SeatRewards | None:
+        """IMD *owner* received from known payers at or after *since_ts* (F-S5).
+
+        Blockscout lists the owner's incoming IMD transfers newest first; paging
+        stops at the first row older than *since_ts*. A row counts when its
+        ``from`` is in ``REWARD_DIRECT_PAYERS``, or is a disperse contract and
+        the enclosing transaction was **sent by** one of ``REWARD_DISPERSERS``
+        (Disperse is public, so the log alone proves nothing). One state batch
+        then reads IMD ``decimals()`` and ``IDMD_NFT.balanceOf(owner)``.
+
+        ``None`` whenever the answer is not established: an outage, a malformed
+        row, a sender we could not read, the page bound hit with more to read,
+        an unreadable decimals or balance, or a wallet holding no seat. A
+        partial or unverified total must never look like a real one.
+        """
+        owner = str(owner or "").strip().lower()
+        if not (owner.startswith("0x") and len(owner) == 42):
+            return None
+        try:
+            int(owner, 16)
+        except ValueError:
+            return None
+        disperse = {a.lower() for a in A.REWARD_DISPERSE_CONTRACTS}
+        # A disperse contract is never a direct payer: its rows always take the sender check.
+        direct = {a.lower() for a in A.REWARD_DIRECT_PAYERS} - disperse
+        url = f"{self._blockscout}/addresses/{owner}/token-transfers"
+        params: dict = {"type": "ERC-20", "filter": "to", "token": A.IMD_TOKEN}
+        rows: list[tuple[str, str, int]] = []      # (tx, from, raw value)
+        for _page in range(SEAT_REWARD_PAGE_BOUND):
+            body = await self._get_json(url, params=params)
+            if not isinstance(body, dict) or not isinstance(body.get("items"), list):
+                return None
+            older = False
+            for row in body["items"]:
+                parsed = _reward_row(row)
+                if parsed is None:
+                    logger.warning("fetch_seat_rewards: malformed transfer row for %s", owner)
+                    return None
+                ts, tx, sender, value = parsed
+                if ts < since_ts:
+                    older = True
+                    break
+                if sender in direct or sender in disperse:
+                    rows.append((tx, sender, value))
+            nxt = body.get("next_page_params")
+            if older or not nxt:
+                break
+            params = {"type": "ERC-20", "filter": "to", "token": A.IMD_TOKEN, **nxt}
+        else:
+            logger.warning("fetch_seat_rewards: hit the %d-page bound for %s", SEAT_REWARD_PAGE_BOUND, owner)
+            return None
+        via_disperse = [tx for tx, sender, _value in rows if sender in disperse]
+        senders = await self.fetch_tx_senders(via_disperse) if via_disperse else {}
+        if any(tx not in senders for tx in via_disperse):
+            return None
+        payers = {a.lower() for a in A.REWARD_DISPERSERS}
+        paid = [value for tx, sender, value in rows if sender in direct or senders.get(tx) in payers]
+        try:
+            results = await self._rpc_state_batch([
+                ("eth_call", [{"to": A.IMD_TOKEN, "data": _SEL_DECIMALS}, "latest"]),
+                ("eth_call", [{"to": A.IDMD_NFT, "data": _SEL_BALANCE_OF + pad_left(strip0x(owner))}, "latest"]),
+            ])
+        except RuntimeError as exc:      # malformed-request short-circuit
+            logger.warning("fetch_seat_rewards: %s", exc)
+            return None
+        if not results or any(not isinstance(r, str) or len(strip0x(r)) < 64 for r in results):
+            return None
+        decimals, seats = decode_uint(results[0], 0), decode_uint(results[1], 0)
+        if not 0 <= decimals <= 36 or seats < 1:
+            return None
+        return SeatRewards(raw_total=sum(paid), decimals=decimals, seats_held=seats, transfers=len(paid))
 
     async def fetch_tx_senders(self, tx_hashes: Sequence[str]) -> dict[str, str]:
         """``{tx_hash: signer}``, both lowercased, for the hashes we could read.

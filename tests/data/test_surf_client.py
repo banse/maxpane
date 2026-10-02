@@ -2872,6 +2872,11 @@ def _public_fetchers() -> list[str]:
             # decoration (OWNER falls back to the address). Pinned by
             # `test_fetch_ens_names_is_empty_when_every_endpoint_is_down`.
             "fetch_ens_names",
+            # The eighth (F-S5): an owner and a since-timestamp in, so the
+            # zero-args sweep cannot call it. Its outage is pinned by
+            # `tests/data/test_surf_client_rewards.py::test_a_total_outage_is_none`,
+            # its "no zero for a failed read" by the bound/sender/balance cases there.
+            "fetch_seat_rewards",
         )
     )
 

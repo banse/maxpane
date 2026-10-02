@@ -1449,6 +1449,10 @@ _NON_NUMERIC_KEYS = frozenset(
         "swarm_seat_state", "swarm_seat_work_rows",
         # Latest seat-read outcome is a nullable status string, never a number.
         "swarm_seat_read",
+        # F-S5 REWARDS: a dict whose real zero (`0 IMD` / `$0.00`, distinct
+        # from `unavailable`) is pinned on composited output in
+        # tests/widgets/test_surf_swarm_agent_hero.py, and its state word.
+        "swarm_seat_rewards", "swarm_seat_rewards_state",
         # BOARD: four nested dicts, one row list, and two independent clocks.
         # None is unread; an empty list/dict is not a numeric zero probe.
         "swarm_board_summary", "swarm_board_rows", "swarm_fleet",

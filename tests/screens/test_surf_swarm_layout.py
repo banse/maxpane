@@ -376,6 +376,10 @@ def _worst_agent_payload() -> dict:
     # OWNER shows a verified name in place of the address (2026-09-22); a
     # long one is fitted to the address's own 17 cells.
     k["swarm_seat_owner_ens"] = "[/x]" + "n" * 60 + ".eth"
+    # F-S5 REWARDS: the widest amount before the compact form, on both lines
+    # (``99,999.99 IMD`` over ``$99,999.99``).
+    k["swarm_seat_rewards"] = {"imd": 99_999.99, "usd": 99_999.99, "seats": 9_999}
+    k["swarm_seat_rewards_state"] = "ok"
     return _frozen_payload(**k)
 
 
@@ -1059,7 +1063,7 @@ async def test_busy_agent_words_fit_every_seat_box_at_unchanged_pins():
         await pilot.press('a')
         await pilot.pause()
         screen = pilot.app.screen
-        for id_ in [BOX_IDS['accepted'], BOX_IDS['reviewed'], *SEAT_BOX_IDS.values()]:
+        for id_ in [BOX_IDS['accepted'], BOX_IDS['rewards'], *SEAT_BOX_IDS.values()]:
             box = screen.query_one('#' + id_)
             region = _region_text(pilot.app, box)
             if id_ == SEAT_BOX_IDS['collab']:

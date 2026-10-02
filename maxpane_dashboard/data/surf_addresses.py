@@ -120,6 +120,21 @@ BURN_EXECUTOR_V2_FIRST_BLOCK = 25_793_167
 #: The original Fren Pet ERC-20 on Base.  IMD mints 1:1 against FP locked here.
 FP_TOKEN_BASE = "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105"
 
+# --- Seat rewards (F-S5, owner 2026-10-02) ---------------------------------
+#: Disperse (``disperseToken``): the dev pays seat owners their IMD through it.
+#: Public -- anyone can call it -- so a transfer *from* it counts only when the
+#: transaction's **sender** is in ``REWARD_DISPERSERS`` (verified on chain for
+#: seat 420: 09-23, 09-25, 09-28, all sent by surfsurf.eth).
+DISPERSE = "0xd15fE25eD0Dba12fE05e7029C88b10C25e8880E3"
+#: Contracts whose IMD transfers are rewards only when one of
+#: ``REWARD_DISPERSERS`` sent the transaction.
+REWARD_DISPERSE_CONTRACTS: tuple[str, ...] = (DISPERSE,)
+#: Senders whose disperse transactions pay rewards.
+REWARD_DISPERSERS: tuple[str, ...] = (DEV_WALLET,)
+#: Contracts whose IMD transfers are rewards as they stand (pool4 and others,
+#: owner: "in the future"). Empty until one pays.
+REWARD_DIRECT_PAYERS: tuple[str, ...] = ()
+
 # --- Secondary label targets (additive; not part of the frozen 14) ----------
 #: Seaport 1.6 — 86% of IDMD secondary volume routes through it.
 SEAPORT = "0x0000000000000068F116a894984e2DB1123eB395"

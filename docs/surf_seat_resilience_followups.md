@@ -127,21 +127,21 @@ Filed, not fixed:
 Filed from chat; nothing built. Seat 420 (owner `pawai.eth`, `0xe5b1275fb926613d983da33fbfe1f331b7f64f2a`)
 is the worked example. All three touch `widgets/surf/swarm_agent_hero.py`, so do F-S4 and F-S6 in one pass.
 
-- **F-S4: STATUS says `working` while the seat works.** Today an idle seat reads
+- **F-S4: STATUS says `working` while the seat works.** DONE 2026-10-02 (`WORKING_LINE`; the word yields to whole counts when STATUS is too narrow).  Today an idle seat reads
   `● online · ⚙ 0 of 3` (green word, dim counts), but a working seat shows only the counts
   `⚙ 1 of 3` (`_status_body`: `word = counts if live_state == "working"`). Owner wants the same
   shape as idle: `● working · ⚙ 1 of 3`, with the word in green and the counts after it. Keep the
   over-capacity form (`⚙ 9 working` when the oracle jobs push `working` above `maxConcurrency`):
   that becomes `● working · ⚙ 9`, so the word does not appear twice. Line 2 (`accepted MM-DD HH:MM`) is unchanged.
   Check the STATUS cell budget at the AGENT pin (139×33) before choosing the wording. Tier 1.
-- **F-S5: REVIEWED becomes REWARDS (the seat's IMD rewards).** Card title `REWARDS`; line 1 the
+- **F-S5: REVIEWED becomes REWARDS (the seat's IMD rewards).** DONE 2026-10-02 per `docs/surf_agent_rewards_spec.md` (split per seat, since pairedAt).  Card title `REWARDS`; line 1 the
   IMD received (e.g. `13.87 IMD`), line 2 blank, line 3 its USD value at the current
   `imd_price_usd` (already a SURF key). Today's REVIEWED content (`1,925` / `1,711 pending`) leaves
   the hero; the pending count still shows in FEEDBACK (`1,711 queued`).
   *What counts as a reward, verified on chain 2026-10-02:* IMD (`0xD34a…63B7`, contract name
   `BridgedFP`, which is why wallets label it "FP"; the symbol is IMD) arriving at the seat owner
-  in a `disperseToken` call that **surfsurf.eth** (`0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7`, the
-  ops wallet surf already tracks) makes to Disperse `0xd15fE25eD0Dba12fE05e7029C88b10C25e8880E3`.
+  in a `disperseToken` call that **surfsurf.eth** (`0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7`, surf's
+  `DEV_WALLET`) makes to Disperse `0xd15fE25eD0Dba12fE05e7029C88b10C25e8880E3`.
   For 420 that is 3.1218 (09-28, tx `0x74906756…f41755`), 3.0521 (09-25, `0xdad353cf…efdf62`)
   and 7.6923 (09-23, `0xfc679221…57e55f`) = **13.8662 IMD**. Two 50/25 IMD transfers on 08-21
   came from `hisdudeness.eth`, are not rewards, and are excluded because the sender is not a payer.
@@ -156,7 +156,7 @@ is the worked example. All three touch `widgets/surf/swarm_agent_hero.py`, so do
   (3) USD at today's price (as asked) or at the price when received? Today's price is what was requested.
   New contract keys (`swarm_seat_rewards_imd`, `…_usd`, `…_as_of`) and a new data read make
   this **Tier 2** (spec + plan). A failed read shows `unavailable` and must never show `0 IMD`.
-- **F-S6: swap WORK and ACCEPTED, and rename ACCEPTED to `ACCEPTED JOBS`.** The hero row
+- **F-S6: swap WORK and ACCEPTED, and rename ACCEPTED to `ACCEPTED JOBS`.** DONE 2026-10-02 (content swapped, columns kept aligned with the card row).  The hero row
   becomes `SEAT · ACCEPTED JOBS · WORK · REWARDS · RANK · STATUS`. The cards move whole, title and
   body together (assumed: the request reads "swap the contents" and "rename ACCEPTED", which together
   mean the two boxes trade places). Confirm this with the owner if the wording is ambiguous at

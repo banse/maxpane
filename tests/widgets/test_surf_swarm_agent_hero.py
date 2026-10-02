@@ -1,4 +1,4 @@
-"""The AGENT body's hero: SEAT · WORK · ACCEPTED · REVIEWED · RANK · STATUS.
+"""The AGENT body's hero: SEAT · ACCEPTED JOBS · WORK · REWARDS · RANK · STATUS.
 
 Composited assertions only. The summaries are **folded** from the committed
 ``/seats`` captures (``tests/fixtures/surf/swarm/seats/``) by
@@ -35,6 +35,7 @@ from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
     NO_SEAT_LINE,
     ONLINE_LINE,
     WORKING_GLYPH,
+    WORKING_LINE,
     SurfSwarmAgentHero,
     SurfSwarmAgentHeroBox,
 )
@@ -50,12 +51,16 @@ CONTRIB = swarm_agent_sources(420)["swarm_seat_contrib"]
 SELECTED = {"token_id": int(SEAT_420["tokenId"]), "agent_id": str(SEAT_420["agentId"]),
             "selected_by": "saved"}
 AS_OF = "04:06"
+#: F-S5: seat 420's three disperse payments (13.8662 IMD, the committed
+#: Blockscout capture) at a fixed price -- the owner's example, $105.84.
+REWARD_IMD = (7692307692307692307 + 3052147239263803680 + 3121794871794871794) / 1e18
+REWARDS = {"imd": REWARD_IMD, "usd": REWARD_IMD * 7.633, "seats": 1}
 #: The AGENT body's own column pin; every ``_box_text`` renders here by default.
 SIZE = (SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)
 #: The two widths the hero has to be whole at: its body's pin and the app's.
 PINS = (SURF_AGENT_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS)
 #: The seats-gated boxes; RANK reads ``/contributors`` and is not gated.
-STAT_BOXES = ("accepted", "reviewed")
+STAT_BOXES = ("accepted", "rewards")
 
 
 _DROP = object()
@@ -86,6 +91,7 @@ def _merged(kwargs) -> dict:
             "swarm_seat_state": "ok", "swarm_seat_as_of_hhmm": AS_OF,
             "swarm_seat_live": {"live":True,"live_state":"idle","working":0,"max_concurrency":2},
             "swarm_seat_contrib": CONTRIB,
+            "swarm_seat_rewards": REWARDS, "swarm_seat_rewards_state": "ok",
             "swarm_workers_as_of_hhmm":"05:07", **kwargs}
 
 
@@ -152,7 +158,10 @@ def test_the_box_class_is_its_own_type_selector_and_the_six_boxes_are_named():
     assert SurfSwarmAgentHero.BOX_CLASS is SurfSwarmAgentHeroBox
     assert len(BOX_IDS) == 6 == len(SurfSwarmAgentHero.BOXES)
     labels = [label for _id, label in SurfSwarmAgentHero.BOXES]
-    assert labels == ["SEAT", "WORK", "ACCEPTED", "REVIEWED", "RANK", "STATUS"]
+    # F-S6 (owner, 2026-10-02): ACCEPTED JOBS and WORK traded places.
+    assert labels == ["SEAT", "ACCEPTED JOBS", "WORK", "REWARDS", "RANK", "STATUS"]
+    assert [box_id for box_id, _label in SurfSwarmAgentHero.BOXES] == [
+        BOX_IDS[key] for key in ("seat", "accepted", "work", "rewards", "rank", "status")]
 
 
 async def test_the_hero_row_is_seven_lines_under_the_stylesheet():
@@ -171,15 +180,11 @@ async def test_the_hero_row_is_seven_lines_under_the_stylesheet():
 @pytest.mark.parametrize("width", PINS)
 async def test_the_defect_seat_renders_its_lifetime_record_whole_at_both_pins(width):
     boxes = await _boxes(size=(width, 9))
-    status = SUMMARY["review_status"]
-    pending = status["submitted"] + status["queued"]
     assert f"IDMD #{SELECTED['token_id']}" in boxes["seat"]
     assert f"agent {SELECTED['agent_id']}" in boxes["seat"] and "saved" not in boxes["seat"]
     assert f"{SUMMARY['accepted']} of {SUMMARY['attempts']}" in boxes["accepted"]
-    # Q-M: pending is a subset of the reviews, never added on top -- and on
-    # a line of its own under the total (see the five-digit test below).
-    assert _lines(boxes["reviewed"])[-2:] == [str(SUMMARY["reviewed"]), f"{pending} pending"]
-    assert f"+{pending}" not in boxes["reviewed"]
+    # F-S5: the owner's example, line 1 IMD, line 2 blank, line 3 USD.
+    assert _inner_rows(boxes["rewards"]) == ["REWARDS", "", "13.87 IMD", "", "$105.84"]
     assert f"{SUMMARY['win_rate']*100:.1f} %" in boxes["accepted"]
     assert "of attempts" not in boxes["accepted"]
     assert f"#{CONTRIB['rank']} of {CONTRIB['ranked_of']}" in boxes["rank"]
@@ -198,9 +203,7 @@ async def test_the_largest_seat_fits_whole_and_reads_offline(width):
     selected = {"token_id": 0, "agent_id": str(SEAT_0["agentId"]), "selected_by": "most_active"}
     boxes = await _boxes(size=(width, 9), swarm_seat_selected=selected,
                          swarm_seat_summary=summary, swarm_seat_live={"live":False,"live_state":"offline"})
-    status = summary["review_status"]
-    assert _lines(boxes["reviewed"])[-2:] == [
-        str(summary["reviewed"]), f"{status['submitted'] + status['queued']} pending"]
+    assert "13.87 IMD" in boxes["rewards"]
     assert "offline" in boxes["status"] and "online" not in boxes["status"]
     assert "most active" in boxes["seat"]
     for key, text in boxes.items():
@@ -227,7 +230,7 @@ async def test_pending_says_loading_in_the_stat_boxes_and_still_names_the_seat()
         assert "Loading..." in boxes[key], (key, boxes[key])
     # SUMMARY (seat #420's numbers) was passed in and must not reach a pixel.
     whole = "\n".join(boxes.values())
-    assert f"{SUMMARY['accepted']} of" not in whole and "pending" not in whole
+    assert f"{SUMMARY['accepted']} of" not in whole and "IMD" not in whole
 
 
 async def test_a_failed_read_is_unavailable_never_zero_and_still_names_the_seat():
@@ -278,12 +281,13 @@ FIVE_DIGIT = dict(SUMMARY, reviewed=99_999, scored=99_999, accepted=9_999, attem
 
 @pytest.mark.parametrize("width", PINS)
 async def test_a_five_digit_record_fits_every_box_at_both_pins(width):
-    """The fix-round finding: ``1,202 · 13 pending`` on one line was cut to
-    ``pend…`` at the AGENT pin, where the hero has no ``‹``. REVIEWED paints
-    the total over the pending count, so ``99,999`` / ``1,998 pending`` fit
-    whole, and so do ACCEPTED's ``9,999 of 99,999`` and SCORE's count."""
-    boxes = await _boxes(size=(width, 9), swarm_seat_summary=FIVE_DIGIT)
-    assert _lines(boxes["reviewed"])[-2:] == ["99,999", "1,998 pending"], boxes["reviewed"]
+    """The fix-round finding: a two-value line was cut at the AGENT pin, where
+    the hero has no ``‹``. REWARDS' widest amount below the compact form,
+    ``99,999.99 IMD`` over ``$99,999.99``, fits whole, and so does ACCEPTED's
+    ``9,999 of 99,999``."""
+    boxes = await _boxes(size=(width, 9), swarm_seat_summary=FIVE_DIGIT,
+                         swarm_seat_rewards={"imd": 99_999.99, "usd": 99_999.99, "seats": 1})
+    assert _lines(boxes["rewards"])[-2:] == ["99,999.99 IMD", "$99,999.99"], boxes["rewards"]
     assert "9,999 of 99,999" in boxes["accepted"]
     assert "of attempts" not in boxes["accepted"]
     for key, text in boxes.items():
@@ -297,7 +301,6 @@ async def test_a_zero_record_renders_zeros_not_unavailable():
     zero = _folded(attempts=0, accepted=0, work=[], reviews=[], collaborators=[])
     boxes = await _boxes(swarm_seat_summary=zero)
     assert "0 of 0" in boxes["accepted"]
-    assert _lines(boxes["reviewed"])[-2:] == ["0", "0 pending"]
     assert "no attempts" in boxes["accepted"]
     for key in STAT_BOXES:
         assert "unavailable" not in boxes[key], (key, boxes[key])
@@ -311,15 +314,48 @@ async def test_a_field_the_source_did_not_carry_is_unavailable_in_its_own_box_on
     boxes = await _boxes(swarm_seat_summary=missing)
     assert "unavailable" in boxes["accepted"]
     assert " of 0" not in boxes["accepted"] and " of " not in boxes["accepted"]
-    assert str(SUMMARY["reviewed"]) in _lines(boxes["reviewed"])
+    assert "13.87 IMD" in _lines(boxes["rewards"])
     assert f"{WORKING_GLYPH} 0 of 2" in boxes["status"]
 
 
-async def test_a_missing_status_split_shows_dashes_for_pending_not_zero():
-    split_less = dict(SUMMARY, review_status=None)
-    text = await _box_text(BOX_IDS["reviewed"], swarm_seat_summary=split_less)
-    assert _lines(text)[-2:] == [str(SUMMARY["reviewed"]), "-- pending"]
-    assert "0 pending" not in text
+# -- REWARDS (F-S5) ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("rewards, state, expected", [
+    (None, "pending", ["REWARDS", "Loading..."]),
+    (None, None, ["REWARDS", "unavailable"]),
+    (REWARDS, None, ["REWARDS", "unavailable"]),     # a value with no ok state is not shown
+    ("garbage", "ok", ["REWARDS", "unavailable"]),
+    ({"imd": None, "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "unavailable"]),
+    ({"imd": float("nan"), "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "unavailable"]),
+    ({"imd": -1.0, "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "unavailable"]),
+    ({"imd": 0.0, "usd": 0.0, "seats": 1}, "ok", ["REWARDS", "0.00 IMD", "$0.00"]),
+    ({"imd": 13.8662, "usd": None, "seats": 1}, "ok", ["REWARDS", "13.87 IMD", "unavailable"]),
+    ({"imd": 0.001, "usd": 0.004, "seats": 1}, "ok", ["REWARDS", "<0.01 IMD", "<$0.01"]),
+])
+async def test_rewards_says_which_kind_of_missing(rewards, state, expected):
+    text = await _box_text(BOX_IDS["rewards"], swarm_seat_rewards=rewards,
+                           swarm_seat_rewards_state=state)
+    assert _lines(text) == expected, text
+
+
+@pytest.mark.parametrize("seat_state, word", [("pending", "Loading..."), ("busy", "busy · retrying"),
+                                              (None, "unavailable"), ("unknown_seat", "—")])
+async def test_the_seat_state_gates_rewards_before_its_own_state(seat_state, word):
+    text = await _box_text(BOX_IDS["rewards"], swarm_seat_state=seat_state)
+    assert _lines(text) == ["REWARDS", word] and "IMD" not in text
+
+
+@pytest.mark.parametrize("value, shown", [
+    (13.8662, "13.87"), (99_999.994, "99,999.99"), (99_999.996, "100.0K"),
+    (999_949.0, "999.9K"), (999_950.0, "1.0M"), (1_234_567.0, "1.2M"),
+    (999_950_000_000.0, "1.0e+12"), (0.0, "0.00"), (0.004, "<0.01"),
+])
+async def test_reward_amounts_shorten_honestly(value, shown):
+    text = await _box_text(BOX_IDS["rewards"],
+                           swarm_seat_rewards={"imd": value, "usd": value, "seats": 1})
+    assert _lines(text)[1] == f"{shown} IMD"
+    assert _lines(text)[2] == (f"<${shown[1:]}" if shown.startswith("<") else f"${shown}")
 
 
 async def test_malformed_payloads_land_on_unavailable_not_a_crash():
@@ -444,7 +480,7 @@ async def test_seats_clock_leaves_the_hero_for_record():
 
 
 @pytest.mark.parametrize('live_state,word,color',[
-    ('working',WORKING_GLYPH,2),('idle',ONLINE_LINE,2),('offline','offline',1),
+    ('working',WORKING_LINE,2),('idle',ONLINE_LINE,2),('offline','offline',1),
     ('paused','paused',1),(None,'unavailable',3),
 ])
 async def test_polish_worker_status_words_and_composited_colors(live_state,word,color):
@@ -459,14 +495,16 @@ async def test_polish_worker_status_words_and_composited_colors(live_state,word,
         x=lines[y].index(word,region.x)
         style=pilot.app.screen.get_style_at(x,y)
         assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color]
-        if live_state=='idle':
+        if live_state in ('idle','working'):
             # Owner 2026-09-22: only "● online" is green; the counts after it are not.
+            # F-S4 (owner, 2026-10-02): "● working" takes the same shape.
             count_x=lines[y].index(WORKING_GLYPH,region.x)
             assert pilot.app.screen.get_style_at(count_x,y).color!=style.color
         content='\n'.join(line[region.x:region.right] for line in lines[region.y:region.bottom])
         assert 'as of' not in content and 'accepted '+mmdd(SUMMARY['last_won_ts']) in content
         if live_state in ('idle','paused',None):assert f'{WORKING_GLYPH} 0 of 8' in content
-        assert 'working' not in content
+        if live_state=='working':assert f'{WORKING_LINE} · {WORKING_GLYPH} 2 of 8' in content
+        else:assert 'working' not in content
         if live_state=='paused':assert 'until '+hhmm(1758456000) in content and '×7' in content
         assert '…' not in content
 
@@ -488,13 +526,13 @@ async def test_polish_unknown_pause_fold_reaches_unavailable_not_idle():
         assert f'{WORKING_GLYPH} 0 of ' in text
 
 
-async def test_polish_accepted_reviewed_and_rate_have_composited_emphasis():
+async def test_polish_accepted_rewards_and_rate_have_composited_emphasis():
     async with _Themed().run_test(size=SIZE) as pilot:
         pilot.app.query_one(SurfSwarmAgentHero).update_data(**_merged({}))
         await pilot.pause()
         lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
         for box_key,word,color in (('accepted',str(SUMMARY['accepted']),2),('accepted',str(SUMMARY['attempts']),None),
-                                   ('reviewed',str(SUMMARY['reviewed']),None),('accepted',f"{SUMMARY['win_rate']*100:.1f}",None)):
+                                   ('rewards','13.87',None),('rewards','105.84',None),('accepted',f"{SUMMARY['win_rate']*100:.1f}",None)):
             region=pilot.app.query_one('#'+BOX_IDS[box_key]).region
             y=next(y for y in range(region.y,region.bottom) if word in lines[y][region.x:region.right])
             style=pilot.app.screen.get_style_at(lines[y].index(word,region.x),y)
@@ -543,7 +581,7 @@ async def test_committed_420_capture_reaches_work_accepted_and_rank():
     summary = seat_summary_from_seat(swarm_capture_v3('seat_420_with_contributors'))
     boxes = await _boxes(swarm_seat_summary=summary)
     assert _lines(boxes['work']) == ['WORK', '8.1 h', '1.2M tokens']
-    assert _lines(boxes['accepted']) == ['ACCEPTED', '190 of 204', '93.1 %']
+    assert _lines(boxes['accepted']) == ['ACCEPTED JOBS', '190 of 204', '93.1 %']
     assert _lines(boxes['rank']) == ['RANK', '#6 of 99']
 
 
@@ -554,7 +592,7 @@ async def test_owner_hero_example_is_an_explicit_synthetic_layout_case(width):
                          swarm_seat_contrib={**CONTRIB, 'turns':3063, 'wall_clock_s':11.9*3600,
                                              'output_tokens':1_700_000, 'rank':8, 'ranked_of':306})
     assert _lines(boxes['work']) == ['WORK', '11.9 h', '1.7M tokens']
-    assert _lines(boxes['accepted']) == ['ACCEPTED', '242 of 280', '86.4 %']
+    assert _lines(boxes['accepted']) == ['ACCEPTED JOBS', '242 of 280', '86.4 %']
     assert _lines(boxes['rank']) == ['RANK', '#8 of 306']
     assert 'as of' not in '\n'.join(boxes.values())
 
@@ -574,7 +612,7 @@ async def test_two_line_boxes_have_a_blank_row_between_their_lines_like_status()
     SEAT's blank line 2 carries only a rare selection word (most active, never paired)."""
     boxes = await _boxes(swarm_seat_rank_delta=2,
                          swarm_seat_selected=dict(SELECTED, selected_by="saved"))
-    for key in ("seat", "work", "accepted", "reviewed", "rank"):
+    for key in ("seat", "work", "accepted", "rewards", "rank"):
         rows = _inner_rows(boxes[key])
         assert len(rows) == 5 and rows[1] == "" and rows[3] == "", (key, rows)
         assert all(rows[i] for i in (0, 2, 4)), (key, rows)
@@ -587,10 +625,32 @@ async def test_seat_selection_word_takes_the_blank_line_above_the_agent():
 
 
 @pytest.mark.parametrize('working,cap,expected', [
-    (9, 1, '⚙ 9 working'),      # live #420, 2026-09-26: oracle jobs exceed maxConcurrency
-    (1, 1, '⚙ 1 of 1'), (2, 4, '⚙ 2 of 4'),
+    # live #420, 2026-09-26: oracle jobs exceed maxConcurrency. F-S4: the word
+    # leads, so the over-capacity count drops its own "working" (never twice).
+    (9, 1, '● working · ⚙ 9'),
+    (1, 1, '● working · ⚙ 1 of 1'), (2, 4, '● working · ⚙ 2 of 4'),
 ])
 async def test_status_drops_capacity_when_working_exceeds_it(working, cap, expected):
     text = await _box_text(BOX_IDS['status'], swarm_seat_live={
         'live': True, 'live_state': 'working', 'working': working, 'max_concurrency': cap})
     assert _lines(text)[1] == expected
+
+
+@pytest.mark.parametrize('working,cap,expected,word', [
+    (1, 3, '● working · ⚙ 1 of 3', True),
+    # The sweep's worst case: 30 cells against STATUS's 24 at the pin. The word
+    # goes and the counts stay whole in green -- never "⚙ 99,999 of…".
+    (99_999, 99_999, '⚙ 99,999 of 99,999', False),
+])
+async def test_status_working_word_yields_to_whole_counts_at_the_pin(working, cap, expected, word):
+    async with _Themed().run_test(size=(SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)) as pilot:
+        pilot.app.query_one(SurfSwarmAgentHero).update_data(**_merged(dict(swarm_seat_live={
+            'live': True, 'live_state': 'working', 'working': working, 'max_concurrency': cap})))
+        await pilot.pause()
+        await pilot.pause()
+        region = pilot.app.query_one('#' + BOX_IDS['status']).region
+        lines = [''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
+        content = [line[region.x:region.right].strip(' │') for line in lines[region.y:region.bottom]]
+        assert expected in content, content
+        assert (WORKING_LINE in '\n'.join(content)) is word
+        assert not any('…' in line for line in content), content

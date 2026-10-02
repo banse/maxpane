@@ -53,8 +53,9 @@ def test_the_jobs_seen_slot_is_registered_so_it_restores():
     ``job_id -> entry`` map both swarm tiers append to."""
     assert SLOT_SWARM_JOBS_SEEN == "swarm_jobs_seen"
     assert SLOT_SWARM_JOBS_SEEN in SLOTS
-    # SLOT_SWARM_JOB_DETAIL adds bounded popup job facts, independently of jobs-seen.
-    assert len(SLOTS) == 21
+    # SLOT_SWARM_JOB_DETAIL adds bounded popup job facts, independently of jobs-seen;
+    # SLOT_SWARM_SEAT_REWARDS (F-S5) the selected seat's IMD rewards.
+    assert len(SLOTS) == 22
 
 
 def test_a_seen_map_round_trips_through_save_and_load(tmp_path):

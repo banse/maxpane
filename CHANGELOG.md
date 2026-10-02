@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Surfboard AGENT: STATUS reads `● working · ⚙ 1 of 3` while a seat works, in the same shape as
+  `● online` when idle (`● working · ⚙ 9` above `maxConcurrency`). ACCEPTED is now titled
+  ACCEPTED JOBS and sits before WORK.
+- Surfboard AGENT: REVIEWED is replaced by REWARDS — the IMD the seat's owner received since
+  the seat paired, split evenly over the owner's IDMD seats, with its USD value at today's price.
+  Only payments sent by surfsurf.eth through Disperse count; anything the read cannot verify
+  shows `unavailable`, never a partial total.
 - Surfboard AGENT: keep the last good record for up to six seats, each with its own timestamp.
   Temporary host overload shows `busy · retrying`, or `busy` beside the cached record's timestamp.
   Eligible pending answers, oracle panels and submission job details now say `loading…`.

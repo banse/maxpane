@@ -22,6 +22,8 @@ from maxpane_dashboard.widgets.surf._fmt import (
     mmdd_hhmm,
 )
 from maxpane_dashboard.widgets.surf._swarm_seat import (
+    _UNSIZED,
+    MeasuredRow,
     NODE_TITLES,
     _num,
     NEVER_PAIRED_STYLE,
@@ -56,10 +58,6 @@ SEAT_BOX_IDS = {
 }
 
 
-#: Before the first layout a box has no width; fit nothing rather than guess.
-_UNSIZED = 10_000
-
-
 def dim_dash() -> Text:
     return Text(EMDASH, style="dim")
 
@@ -87,8 +85,8 @@ class SurfSwarmAgentCard(HeroBoxBase):
     """One card in the AGENT seat row. No geometry here: the stylesheet names this class."""
 
 
-class SurfSwarmAgentCards(HeroRow):
-    """Seat-card row mechanics: keep the payload, repaint on resize.
+class SurfSwarmAgentCards(MeasuredRow, HeroRow):
+    """Seat-card row mechanics: keep the payload, repaint on resize (:class:`MeasuredRow`).
 
     Third-party text is fitted to each card's own content width, so a resize
     has to repaint -- after the refresh, when the cards have their new size.
@@ -96,34 +94,9 @@ class SurfSwarmAgentCards(HeroRow):
 
     BOX_CLASS = SurfSwarmAgentCard
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._data: dict | None = None
-
-    def update_data(self, **kwargs) -> None:
-        self._data = kwargs
-        self._paint(**kwargs)
-
-    def on_resize(self, _event=None) -> None:
-        if self._data is not None:
-            self.call_after_refresh(lambda: self._paint(**self._data))
-
-    def _room(self, key: str) -> int:
-        """The content width of card *key*; :data:`_UNSIZED` before layout."""
-        try:
-            width = self.query_one(f"#{self.IDS[key]}", HeroBoxBase).content_size.width
-        except Exception:
-            return _UNSIZED
-        return width if width > 0 else _UNSIZED
-
     def _fit(self, key: str, value, reserved: int = 0) -> str:
         """Third-party text flattened and cut to what card *key* has left."""
         return rowfit.clip(flatten(value), max(self._room(key) - reserved, 1))
-
-    def _paint(self, **kwargs) -> None:  # pragma: no cover - abstract
-        raise NotImplementedError
-
-    IDS: dict[str, str] = {}
 
 
 class SurfSwarmSeatCards(SurfSwarmAgentCards):

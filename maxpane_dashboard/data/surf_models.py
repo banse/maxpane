@@ -266,6 +266,22 @@ class LogWindow:
 
 
 @dataclass(frozen=True, slots=True)
+class SeatRewards:
+    """IMD a seat's owner received from known payers since the seat paired (F-S5).
+
+    ``raw_total`` is the integer sum in the token's base unit; ``decimals`` is
+    the token's live ``decimals()``, never 18 by assumption. ``seats_held`` is
+    the owner's ``IDMD_NFT.balanceOf`` -- the manager splits the total evenly
+    across it (owner, 2026-10-02). ``transfers`` counts the payments summed.
+    """
+
+    raw_total: int
+    decimals: int
+    seats_held: int
+    transfers: int
+
+
+@dataclass(frozen=True, slots=True)
 class NftStats:
     """IDMD collection stats from Blockscout counters + one ``balanceOf``.
 
@@ -1492,6 +1508,10 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_fleet_daemon",     # (version, count, reporting workers) | None
     "swarm_seat_rank_delta",  # int | None; previous rank minus current rank
     "swarm_seat_read",        # str | None; latest selected-seat read: busy, failed, or finished/unread
+    # F-S5 REWARDS (2026-10-02, docs/surf_agent_rewards_spec.md): IMD paid to the seat's
+    # owner since pairedAt, split evenly over the owner's IDMD seats; USD at today's price.
+    "swarm_seat_rewards",       # dict | None  -- {"imd": float, "usd": float | None, "seats": int}
+    "swarm_seat_rewards_state", # str | None   -- "ok" / "pending" (not read yet); None = read failed
 )
 
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
@@ -1505,7 +1525,7 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
-    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta"),
+    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta", "swarm_seat_rewards", "swarm_seat_rewards_state"),
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
     "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates", "swarm_seat_owner_ens", "swarm_seat_node_rows", "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_read"),

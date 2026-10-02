@@ -134,9 +134,9 @@ SWARM_TARGET_WIDGETS = {
 
 
 def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
-    """Thirty-two existing keys, the served health status word and the owner's ENS name."""
-    assert len(SWARM_KEYS) == 39
-    assert len(set(SWARM_KEYS)) == 39
+    """Thirty-two existing keys, the served health status word and the owner's ENS name, runtime/rank/read keys, and F-S5's two REWARDS keys."""
+    assert len(SWARM_KEYS) == 41
+    assert len(set(SWARM_KEYS)) == 41
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -158,9 +158,10 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-29:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-31:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
                                 + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
-                                   "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read"))
+                                   "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read",
+                                   "swarm_seat_rewards", "swarm_seat_rewards_state"))
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -261,6 +262,7 @@ def test_the_agent_signatures_are_the_flipped_literals():
         "SurfSwarmAgentHero": (
             "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state",
             "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta",
+            "swarm_seat_rewards", "swarm_seat_rewards_state",
         ),
         "SurfSwarmSeatCards": (
             "swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates",
