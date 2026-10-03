@@ -832,6 +832,7 @@ def test_old_seat_docs_carry_the_overridden_banner_and_nothing_else_changed():
 
 
 DOCUMENT_BODY_HASHES = {'docs/pepepane_PRD.md': 'b4015c901f0f3671e577aa3afa161bd9cc131940dbea46c653774c381fca4a6b', 'docs/pepepane_plan.md': '5af1cfde16d6a12328592a0aa492878f591e9f15d0c04dd09b801bec2fd37e8b', 'docs/seat_PRD.md': 'ee4384d2ea486992af9e8e94a920444d9e6c648df63fbbf3ae0bb307f3cdd511', 'docs/seat_implementation_plan.md': '2a62dfe5ebd99d2cbe0b96ebd8f808a856a446a67ed9c22038b12443ff5e2689'}
+DOCUMENT_BODY_HASHES['docs/pepepane_redesign_PRD.md'] = '97d4b205299b7863f75e18619e6ad15135bb9a6416046e3062a495fa84c40df6'
 
 def test_historical_document_bodies_remain_byte_identical():
     for rel, expected in DOCUMENT_BODY_HASHES.items():
