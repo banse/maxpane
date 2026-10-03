@@ -4,7 +4,8 @@
 owns the error line, the group grid, the ranges, the dropdowns and APPLY / RESET;
 this module adds the three checkbox groups whose options are the seat's own
 (NODE, STATE, MODEL), rebuilt by :meth:`SurfRecordFilterEditor.load` each time
-the editor opens. Several raw model ids sharing one short label share one box.
+the editor opens. Several raw model ids sharing one short label share one box;
+a node is always its own box (F-RF1).
 
 Render-only: validation (``parse_record_filter``) and the clock live in the
 screen. Every label here is a third-party string and reaches its ``Checkbox`` as
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid, Vertical
@@ -93,11 +95,27 @@ def _selected(raw: object) -> frozenset:
         return frozenset()
 
 
+def _clip_middle(value: str, width: int) -> str:
+    """``value`` in ``width`` cells, cut in the middle: ``market_r…h_alpha``."""
+    if cell_len(value) <= width:
+        return value
+    tail, used = "", 0
+    for char in reversed(value):
+        if used + cell_len(char) > (width - 1) // 2:
+            break
+        tail, used = char + tail, used + cell_len(char)
+    return rowfit.clip(value, width - used) + tail
+
+
 def choice_label(field: str, value: str) -> str:
-    """The words a NODE / STATE / MODEL option shows (and RECORD's summary reuses)."""
+    """The words a NODE / STATE / MODEL option shows (and RECORD's summary reuses).
+
+    An unknown node keeps its head and its tail: node keys sharing a long
+    prefix (``market_research_alpha`` / ``_beta``) differ at the end (F-RF1).
+    """
     if field == "nodes":
         title = NODE_TITLES.get(value)
-        return title.lower() if title else rowfit.clip(strip_tags(flatten(value)), _LABEL_COLS)
+        return title.lower() if title else _clip_middle(strip_tags(flatten(value)), _LABEL_COLS)
     if field == "models":
         return rowfit.clip(short_model(value) or strip_tags(flatten(value)), _LABEL_COLS)
     return rowfit.clip(strip_tags(flatten(value)), _LABEL_COLS)
@@ -205,13 +223,21 @@ class SurfRecordFilterEditor(FilterEditorBase):
             container = self.query_one(f"#{box_id}", Vertical)
             await container.remove_children()
             selected = _selected(values.get(field))
-            grouped: dict[str, set[str]] = {}
+            # A box per label, so MODEL's raw ids sharing a short name share
+            # one -- but a box per node key: two nodes are two jobs (F-RF1).
+            grouped: dict[tuple[str, str], set[str]] = {}
             for value in choices.get(field) or ():
                 if isinstance(value, str) and value:
-                    grouped.setdefault(choice_label(field, value), set()).add(value)
+                    label = choice_label(field, value)
+                    grouped.setdefault((label, value if field == "nodes" else ""), set()).add(value)
             entries = []
             widgets = []
-            for index, (label, raw) in enumerate(grouped.items()):
+            seen: dict[str, int] = {}
+            for index, ((label, _key), raw) in enumerate(grouped.items()):
+                seen[label] = seen.get(label, 0) + 1
+                if seen[label] > 1:  # keys whose labels still collide: number them
+                    suffix = f" ·{seen[label]}"
+                    label = rowfit.clip(label, _LABEL_COLS - cell_len(suffix)) + suffix
                 box_id_n = f"{box_id}-{index}"
                 entries.append((box_id_n, frozenset(raw)))
                 widgets.append(Checkbox(Text(label), value=bool(raw & selected),

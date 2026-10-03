@@ -103,7 +103,11 @@ def test_the_apply_message_is_surfs_own_not_curators():
     ("nodes", "adversarial_review", "review"),
     ("nodes", "codex-14", "codex-14"),
     ("nodes", "[red]evil[/red]", "evil"),
-    ("nodes", "a_very_long_unknown_node_key", "a_very_long_unk…"),
+    # An unknown node keeps its head and its tail (F-RF1): the tail is what
+    # tells `market_research_alpha` from `market_research_beta`.
+    ("nodes", "a_very_long_unknown_node_key", "a_very_l…ode_key"),
+    ("nodes", "market_research_alpha", "market_r…h_alpha"),
+    ("nodes", "market_research_beta", "market_r…ch_beta"),
     ("models", "claude-opus-4-1", "opus 4.1"),
     ("models", "[b]claude-opus-4-1[/b]", "opus 4.1"),
     ("models", "x" * 30, "x" * 15 + "…"),
@@ -181,6 +185,25 @@ async def test_load_shows_stored_values_and_set_values_resets_the_draft():
         assert not any(box.value for box in app.editor.query(Checkbox))
         assert app.editor.values()["panel"] == "any"
         assert app.editor.values()["tok_max"] == ""
+
+
+async def test_two_nodes_never_share_a_box():
+    """F-RF1: NODE is grouped by raw key. A shared 16-cell prefix once made
+    one ``market_research…`` box that ticked both; MODEL's shared short label
+    still merges (``test_values_union_every_raw_id_behind_a_ticked_box``)."""
+    nodes = ("market_research_alpha", "market_research_beta", "evil", "[red]evil[/red]")
+    app = _Harness()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await app.editor.load({"nodes": nodes}, {})
+        await pilot.pause()
+        labels = [str(box.label) for box in app.editor.query(Checkbox)]
+        assert labels == ["market_r…h_alpha", "market_r…ch_beta", "evil", "evil ·2"]
+        assert len(set(labels)) == len(nodes)
+        for label, raw in zip(labels, nodes):
+            app.editor.set_values({})
+            _box(app.editor, label).value = True
+            await pilot.pause()
+            assert app.editor.values()["nodes"] == frozenset({raw}), label
 
 
 async def test_reloading_replaces_the_boxes_without_an_id_collision():

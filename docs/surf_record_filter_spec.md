@@ -174,7 +174,9 @@ Important were fixed in one wave and proven by mutation:
 
 Filed, Minor (do as Tier 0 when the file is next touched):
 
-* **F-RF1: two unknown node keys can share one NODE box.** `load()` groups by label, and an
+* **F-RF1: two unknown node keys can share one NODE box.** DONE 2026-10-03: NODE groups by raw
+  key; an unknown key's label is cut in the middle (`market_r…h_alpha` / `market_r…ch_beta`) and
+  labels that still collide are numbered (`evil`, `evil ·2`). Was: `load()` groups by label, and an
   unknown key's label is clipped to 16 cells, so `market_research_alpha` and
   `market_research_beta` become one `market_research…` box that ticks both. The spec meant the
   merge only for MODEL's `short_model`. Group NODE by raw key (RECORD's 6-cell node column cannot
