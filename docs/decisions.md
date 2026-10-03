@@ -1237,3 +1237,7 @@ The screen's current aggregate pin is 132 columns by 40 rows, the maxima of the 
 ### 2026-10-04 — PEPEPANE round 9: fitted-prose address helper hoist
 
 The address marking, fitting support and link attachment helpers move unchanged from `widgets/surf/_icons.py` to shared `widgets/seat_icons.py`. The old path re-exports its public and private names so existing SURFBOARD callers retain the same objects and behavior. The shared module imports only shared dependencies. JOB and RECORDS can now account for copy icons before fitting text without importing the SURFBOARD package. The hoist identity and import-boundary tables include the new home; its isolated commit is followed by the unchanged SURFBOARD layout sweep and address-helper tests.
+
+### 2026-10-04 — PEPEPANE round 9: oracle presentation helper hoist
+
+The existing oracle answer presentation helpers move from `widgets/surf/_oracle_answer.py` to shared `widgets/seat_oracle_answer.py`, after the fitted-prose address helper move. Formatter imports now use their existing shared homes, and the address helpers use the preceding shared module. The implementation retains SURFBOARD behavior, including its existing text sanitization. The old path re-exports every used name, including the private state-colour and panel-width constants. Seat-specific adapters handle the approved literal-text and camelCase contracts without changing the shared helpers. The hoist agreement tables include both paths; the isolated commit is followed by the unchanged SURFBOARD layout sweep and the answer, record and popup tests.
