@@ -24,7 +24,9 @@ Per case, across all of its views, four questions (PRD §7 E2):
    ``address_url`` builds for it; and every link on screen names an address or
    transaction hash the payload holds, on an allowed explorer, with a URL that
    matches its action. A case with no explorer (a chain ``widgets/explorer.py``
-   does not allowlist) gets the opposite: no link anywhere.
+   does not allowlist) gets the opposite: no link anywhere. So does each
+   address a case lists in ``SweepCase.unlinked`` (a source that serves no
+   chain for it): its icon still copies, and no cell opens it.
 
 Each case is swept at :data:`SIZE` (170 columns) and again at each view's own
 layout pin, plus any ``extra_sizes`` it names (:func:`sizes_for`). Questions 1,
@@ -278,6 +280,26 @@ def _expected_explorer(case: SweepCase, value: str):
     if case.rows_pick_explorer:
         return None
     return case.explorer
+
+
+def _link_presence(case: SweepCase, address: str, parsed, url) -> str | None:
+    """E7's first question for one icon on a dashboard with an explorer: is
+    the token before it linked when it must be, and unlinked when the case
+    says so? ``None`` is the answer the case expects; otherwise the problem.
+
+    An address in ``case.unlinked`` (surf's WORKFLOWS: ``/workflows`` serves no
+    chain) must carry **neither** an open action **nor** an OSC 8 link; every
+    other address must carry both. The allowance is per address, never per
+    panel, so a linked address listed there fails as surely as an unlisted
+    one rendered bare.
+    """
+    if address.lower() in case.unlinked:
+        if parsed is None and url is None:
+            return None
+        return "link on an address the case renders unlinked"
+    if parsed is None or url is None:
+        return "address without a link"
+    return None
 
 
 def _link_at(app, x: int, y: int) -> tuple[tuple | None, str | None]:
@@ -937,6 +959,50 @@ def test_an_unlisted_address_must_link_on_the_package_explorer_unless_rows_pick(
         SweepCase(name="free", explorer=None, rows_pick_explorer=True, **common)
 
 
+def test_an_unlinked_address_must_carry_no_link_and_every_other_address_one():
+    """The ``unlinked`` allowance (SWARM WORKFLOWS WP5, 2026-10-03), both ways.
+
+    Surf's WORKFLOWS prints an address out of a failure text with its copy
+    icon and no link -- ``/workflows`` serves no chain, and an unknown chain
+    gets no link, never a guessed one. The allowance is a hand-listed subset
+    of ``seeded``: a listed address with a link fails, an unlisted address
+    without one still fails, and the case refuses a listing it cannot mean.
+    """
+    from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA
+
+    workflow = "0x" + "c0de" * 10
+    launch = "0x" + "3" * 40
+    action = (ETHEREUM, "address", launch)
+    url = "https://etherscan.io/address/" + launch
+    common = dict(screen_class=object, build=lambda: None, payload=dict)
+    case = SweepCase(
+        name="s", explorer=ETHEREUM, explorers=(ETHEREUM, SEPOLIA, BASE),
+        rows_pick_explorer=True, seeded=(workflow.upper().replace("0X", "0x"), launch),
+        unlinked=(workflow.upper().replace("0X", "0x"),), **common,
+    )
+    assert case.unlinked == (workflow,), "listed case-insensitively, as explorer_for is"
+    # The listed address: bare is right; either half of a link is wrong.
+    assert _link_presence(case, workflow, None, None) is None
+    for parsed, link in ((action, url), (action, None), (None, url)):
+        assert _link_presence(case, workflow, parsed, link) == (
+            "link on an address the case renders unlinked"
+        ), (parsed, link)
+    # Every other address: linked is right; bare, or half a link, is wrong.
+    assert _link_presence(case, launch, action, url) is None
+    for parsed, link in ((None, None), (action, None), (None, url)):
+        assert _link_presence(case, launch, parsed, link) == "address without a link", (parsed, link)
+
+    with pytest.raises(ValueError, match="not a seeded address"):
+        SweepCase(name="u", explorer=ETHEREUM, seeded=(launch,), unlinked=(workflow,), **common)
+    with pytest.raises(ValueError, match="no explorer"):
+        SweepCase(name="u", explorer=None, seeded=(workflow,), unlinked=(workflow,), **common)
+    with pytest.raises(ValueError, match="both unlinked and linked"):
+        SweepCase(
+            name="u", explorer=ETHEREUM, explorers=(ETHEREUM, BASE),
+            explorer_for={workflow: BASE}, seeded=(workflow,), unlinked=(workflow,), **common,
+        )
+
+
 @pytest.mark.parametrize(("case", "kind"), _size_params())
 async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it(case, kind):
     served = case.payload()
@@ -999,9 +1065,9 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                 if not allowed:
                     if parsed is not None or url is not None:
                         problems.append((label, x, y, address, "link on a dashboard with no explorer"))
-                elif parsed is None or url is None:
-                    problems.append((label, x, y, address, "address without a link"))
-                else:
+                elif (verdict := _link_presence(case, address, parsed, url)) is not None:
+                    problems.append((label, x, y, address, verdict))
+                elif address.lower() not in case.unlinked:
                     # ``link_kind``/``link_value`` -- never ``kind``: that is
                     # the parametrised sweep size, read again below the loop.
                     explorer, link_kind, link_value = parsed
@@ -1051,6 +1117,8 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                     if name != IMD.name or url != url_for(IMD, "job", link_value):
                         problems.append((label, x, y, url, "wrong job explorer URL"))
                     continue
+                if link_kind == "address" and link_value.lower() in case.unlinked:
+                    problems.append((label, x, y, link_value, "link to an address the case renders unlinked"))
                 held = hashes if link_kind == "tx" else in_payload
                 if link_value.lower() not in held:
                     problems.append((label, x, y, link_kind, link_value, "link to a value the payload does not hold"))

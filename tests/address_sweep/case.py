@@ -81,6 +81,17 @@ class SweepCase:
     #: explorer, allowed or not; an unlisted address may link on any member
     #: of ``explorers``. Every value must be in ``explorers``.
     explorer_for: Mapping[str, Explorer] = field(default_factory=dict)
+    #: Seeded addresses that render with their copy icon and **no** link, on
+    #: a dashboard whose other addresses link: a panel whose source serves no
+    #: chain for the address, so ``explorer=None`` is the CLAUDE.md answer
+    #: (an unknown chain gets no link, never a guessed one). Surf's WORKFLOWS
+    #: is the one user: ``/workflows`` carries no chain id and nothing joins a
+    #: workflow to a launch (``widgets/surf/swarm_workflows.py``). E7 asserts
+    #: the opposite of a link for these -- the icon still copies the address,
+    #: and no cell anywhere opens it -- so the allowance cannot excuse an
+    #: address that does link. A subset of ``seeded``, never derived; empty on
+    #: a dashboard with no explorer, where nothing links at all.
+    unlinked: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.explorer is not None and not self.explorers:
@@ -95,6 +106,15 @@ class SweepCase:
                 raise ValueError(f"{self.name}: {address} names explorer {explorer.name} outside the allowed set")
         if self.rows_pick_explorer and self.explorer is None:
             raise ValueError(f"{self.name}: rows cannot pick an explorer on a dashboard with none")
+        object.__setattr__(self, "unlinked", tuple(a.lower() for a in self.unlinked))
+        if self.unlinked and self.explorer is None:
+            raise ValueError(f"{self.name}: nothing links on a dashboard with no explorer -- unlinked says nothing")
+        seeded = {a.lower() for a in self.seeded}
+        for address in self.unlinked:
+            if address not in seeded:
+                raise ValueError(f"{self.name}: unlinked {address} is not a seeded address")
+            if address in self.explorer_for:
+                raise ValueError(f"{self.name}: {address} cannot be both unlinked and linked on {self.explorer_for[address].name}")
         if len(self.explorers) > 1 and not self.rows_pick_explorer and not any(
             e != self.explorer for e in self.explorer_for.values()
         ):
