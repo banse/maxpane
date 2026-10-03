@@ -23,10 +23,3 @@ def test_doctor_summary_is_stripped_before_200_character_cap():
     from imd_dashd.imd_dashd import _transient_reason
     summary = "2 things to fix: " + "x" * 250
     assert _transient_reason("doctor", 1, ["  " + summary + "  "]) == "exit 1 · " + summary[:200]
-
-
-def test_broker_version_identifies_fix7():
-    import imd_dashd
-    from imd_dashd.imd_dashd import VERSION
-    assert VERSION == "imd-dashd 0.1.3"
-    assert imd_dashd.__version__ == "0.1.3"

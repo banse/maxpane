@@ -1,4 +1,4 @@
-# PEPEPANE on the VPS — installing pepepane and imd-dashd on imd-vps (seat #7)
+# PEPEPANE on the VPS — installing pepepane and imd-dashd on seats #7 and #3
 
 The owner's runbook for spec §12.1. Everything here is `deploy/vps/install.sh` and `deploy/vps/probe_seat_host.sh`
 with the reasons attached; the scripts are the truth, this page is the order to run them in. Nothing below is done
@@ -34,7 +34,8 @@ Gate step (c) accepts a terminal latest lifecycle line or a successful empty his
 
 The standing child allows two 8-second attempts inside a 12-second overall child deadline. A slow first attempt can exhaust that budget; the gate then reports `local-only` and requests the typed acknowledgement. Apply admits the request within 5 seconds, permits bounded gate reads until its 15-second execution deadline, and queues systemd with a 3-second timeout. Acknowledged local-only fallback can still restart after a 12-second standing timeout; slow exhausted gates refuse with the spent-plan status. Use `pepepane --offline` when intentionally avoiding the plane.
 
-1. Spec §16 #2 is decided: route **a**, `apt-get install python3.14-venv` (3 packages, root). Route **b** needs
+1. Spec §16 #2 is decided: route **a**, `apt-get install python3.<minor>-venv` for the declared interpreters 3.12 and 3.14.
+   Seat #7 uses `python3.14-venv`; seat #3 uses `python3.12-venv`. Route **b** needs
    no apt: `python3 -m venv --without-pip` plus `pip-26.2.1-py3-none-any.whl` passed as `--pip-wheel` (fill7 §3). The
    VPS python has no `ensurepip`, so a plain `python3 -m venv` fails until one of the two has happened.
 2. Generate an ssh key for the daily account and keep the private half on the Mac: `ssh-keygen -t ed25519 -f ~/.ssh/imd-dash`.
@@ -46,7 +47,7 @@ The standing child allows two 8-second attempts inside a 12-second overall child
 ~~~sh
 cd /Users/banse/codex/maxpane && git switch pepepane
 PYTHON=/Users/banse/codex/maxpane/.venv-pepepane/bin/python scripts/build_wheels.sh --out deploy/vps
-# -> deploy/vps/wheels/ (21 wheels), deploy/vps/requirements.lock, deploy/vps/MANIFEST.sha256, dist/seat-deploy-<sha>.tar.gz
+# -> deploy/vps/wheels/ (22 wheels), deploy/vps/requirements.lock, deploy/vps/MANIFEST.sha256, dist/seat-deploy-<sha>.tar.gz
 env -u NO_COLOR HOME=$(mktemp -d) PYTHONDONTWRITEBYTECODE=1 .venv-pepepane/bin/python -m pytest -p no:cacheprovider -q tests/test_seat_deploy_files.py
 ~~~
 
@@ -54,6 +55,25 @@ The guard must be green before staging: it proves the lock matches `pyproject`, 
 MANIFEST names every broker file and matches the tree byte for byte, and the wheel hash is the same in the lock and
 the MANIFEST (`deploy/vps/VERIFY.md` says what that does and does not prove). Rebuild at the commit you deploy — the
 fork wheel's hash changes with every package commit.
+
+The archive contains both `pydantic_core` ABIs, `cp312` and `cp314`; pip selects the compatible one.
+Both interpreter resolutions are seeded from the committed lock and must agree on package versions.
+The build rejects an unlisted wheel hash or a missing ABI before packing. A real install requires
+`/usr/bin/python3`, `python3` on PATH and any existing venv to agree on a supported major/minor version.
+Route a suspends needrestart and uses a noninteractive apt invocation.
+For a Mac preview, pass `--dry-run --dry-run-python-version 3.12` or `3.14`; that override is refused
+on a real run. Without it, an unsupported local interpreter produces a warning and a generic tooling step.
+
+## Seat #3 (Ubuntu 24.04)
+
+Use the same archive on `imd-vps3` with `--seat 3 --agent 52082` and Python 3.12.3.
+The owner's 2026-10-03 apt simulation for `python3.12-venv` measured **3 packages, 0 upgrades**.
+Route b remains available for both interpreters but is unmeasured on Ubuntu 24.04.
+The worker runs Claude Code with concurrency 3 and uid 1001; the broker resolves `imd-worker` by name.
+Claude hints come from `~/.claude/CLAUDE.md`, and ExecStart supplies the initial sessions runtime.
+Install without `--worker-dropin`: that step still needs the owner's Claude Code A/B under
+`ProtectProc=invisible`. Run the probe after installation; section 20's drained restart from CONTROL
+belongs in a later idle gap. Seat #7 keeps its approved worker drop-in and its Python 3.14 venv.
 
 ## Stage and install
 
@@ -69,7 +89,7 @@ is repeatable — each run forcibly reinstalls the fork, verifies its installed 
 
 | step | what | re-run behavior | flags |
 |---|---|---|---|
-| 1 | venv tooling | `dpkg -s python3.14-venv` first | `--route a` (default) / `--route b --pip-wheel FILE` |
+| 1 | venv tooling | `dpkg -s python3.<minor>-venv` first (host interpreter) | `--route a` (default) / `--route b --pip-wheel FILE` |
 | 2 | user `imd-dash` in `systemd-journal` only, home 0700, `authorized_keys` 0600 | `id -u imd-dash` first | `--authorized-keys FILE` |
 | 3 | `/opt/imd-dash/venv`, `pip install --no-index --find-links /opt/imd-dash/wheels --only-binary=:all: --require-hashes -r requirements.lock`, `ln -sfn … /usr/local/bin/pepepane` | forced fork reinstall with `--force-reinstall --no-deps` and its one-entry hashed lock first, then the full lock; post-install byte check; `ln -sfn` | |
 | 4 | copy `imd_dashd/*.py` to `/opt/imd-dash/broker/imd_dashd/`, re-verify the copies (the staged tree's `sha256sum -c --strict MANIFEST.sha256` runs before step 1: a mismatch installs nothing) | `install` overwrites identical files | |
@@ -137,7 +157,7 @@ configuration, never secrets (MaxPane rule).
   (`seat_ledger.sqlite`, `seat_tail.json`, `config.toml`, `maxpane.log`). Never opens `config.json`, `auth.json`,
   `tools.env` or `.credentials.json`.
 - **Broker** (`imd-dashd.service`, socket-activated): root, `/usr/bin/python3 -I`, stdlib only, `MemoryMax=128M`,
-  `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.3` as
+  `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.4` as
   `version`. Audit at `/var/log/imd-dash/audit.jsonl`. The system service has no `User=` or `Group=`:
   it defaults to root. On measured systemd 259.5, explicit `User=root` with `NoNewPrivileges=yes` and seccomp
   hardening removes `CAP_SETUID`; implicit root keeps privilege dropping working with the same bounding set and
@@ -180,7 +200,7 @@ The installer warns about matching live sessions but never kills them. Steps 4�
 Before stopping an active broker, check that `ping` shows `drain_armed: false` and
 `in_flight: null`; wait for any action to finish and complete or cancel an armed drain first. Stopping the broker
 drops an armed drain. Then `systemctl stop imd-dashd.service` (the socket stays; the next connect spawns
-the new broker code), confirm `ping` reports `imd-dashd 0.1.3`, and start a fresh `pepepane`.
+the new broker code), confirm `ping` reports `imd-dashd 0.1.4`, and start a fresh `pepepane`.
 Re-run the probe, especially p09–p15. No worker restart is needed unless the drop-in changed.
 
 ## Rollback / uninstall

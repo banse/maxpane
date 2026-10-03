@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy/vps/install.sh -- install the PEPEPANE dashboard (pepepane) and its root broker (imd-dashd) on the
 # worker host. Spec §12.1 "Install sequence", steps 1-8. Re-runs always reinstall and verify the fork.
-# --dry-run prints every command it would run and runs none (no root, no Linux needed).
+# --dry-run prints installation commands without running them (read-only interpreter checks; no root or Linux needed).
 #
 # Run as root from an unpacked deploy tree -- the repo checkout, or dist/seat-deploy-<sha>.tar.gz unpacked
 # under /opt/imd-dash/src (docs/seat_install.md):
@@ -13,12 +13,12 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 usage: install.sh [--dry-run] [--route a|b] [--pip-wheel FILE] [--authorized-keys FILE]
-                  [--seat N] [--agent N] [--worker-dropin] [--help]
+                  [--seat N] [--agent N] [--worker-dropin] [--dry-run-python-version 3.12|3.14] [--help]
 
 Steps (spec §12.1 "Install sequence"):
   preflight             sha256sum -c --strict MANIFEST.sha256 on the staged tree BEFORE step 1: a tampered lock,
                         wheel or broker file dies here, with nothing installed
-  1  venv tooling       route a (default): apt-get install python3.14-venv (3 packages)
+  1  venv tooling       route a (default): apt-get install python3.<minor>-venv (Python 3.12 or 3.14)
                         route b: python3 -m venv --without-pip, then pip bootstrapped from --pip-wheel pip-*.whl
   2  user imd-dash      useradd -m -s /bin/bash -G systemd-journal imd-dash; home 0700; authorized_keys 0600
                         (no sudoers, no polkit grants: the broker is the only privileged path)
@@ -39,6 +39,7 @@ Steps (spec §12.1 "Install sequence"):
 
 Options:
   --dry-run             print every command, run none
+  --dry-run-python-version VERSION  preview the remote interpreter; requires --dry-run
   --route a|b           install route (default a; spec §16 #2)
   --pip-wheel FILE      route b only: pip-26.2.1-py3-none-any.whl (fill7 §3 bootstrap)
   --authorized-keys FILE  public key(s) for /home/imd-dash/.ssh/authorized_keys
@@ -64,8 +65,10 @@ UNIT_DIR=/etc/systemd/system
 SSHD_DIR=/etc/ssh/sshd_config.d
 SOCKET_PATH=/run/imd-dash/broker.sock
 WORKER_UNIT=imd-worker.service
+SUPPORTED_PYTHONS=(3.12 3.14)       # bound to scripts/build_wheels.sh by an agreement test
 
 DRY_RUN=0
+DRY_RUN_PYTHON_VERSION=""
 ROUTE=a
 PIP_WHEEL=""
 AUTH_KEYS=""
@@ -82,6 +85,7 @@ run()  { if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] $*"; else say "  + $*"; "$
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
+    --dry-run-python-version) DRY_RUN_PYTHON_VERSION="${2:-}"; shift ;;
     --route) ROUTE="${2:-}"; shift ;;
     --pip-wheel) PIP_WHEEL="${2:-}"; shift ;;
     --authorized-keys) AUTH_KEYS="${2:-}"; shift ;;
@@ -94,6 +98,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+if [ -n "$DRY_RUN_PYTHON_VERSION" ] && [ "$DRY_RUN" != 1 ]; then
+  die "--dry-run-python-version requires --dry-run; real installs inspect the host interpreter"
+fi
 case "$ROUTE" in a|b) ;; *) die "--route must be a or b (spec §12.1 install route; §16 #2)" ;; esac
 case "$SEAT" in ''|*[!0-9]*) die "--seat must be an integer token id" ;; esac
 case "$AGENT" in ''|*[!0-9]*) die "--agent must be an integer agent id" ;; esac
@@ -105,6 +112,54 @@ if [ "$DRY_RUN" = 0 ]; then
   [ "$(id -u)" = 0 ] || die "run as root (the ssh login to imd-vps is root); use --dry-run to preview"
   [ -f /etc/os-release ] || die "this installer targets the Ubuntu VPS"
 fi
+
+python_minor() {
+  "$1" -I -c 'import sys; print("%d.%d" % sys.version_info[:2])'
+}
+
+check_python_versions() {
+  if [ "$DRY_RUN" = 1 ] && [ -n "$DRY_RUN_PYTHON_VERSION" ]; then
+    PY_VERSION="$DRY_RUN_PYTHON_VERSION"
+  else
+    PY_VERSION="$(python_minor /usr/bin/python3)" || die "cannot read /usr/bin/python3 version"
+  fi
+  supported=0
+  for version in "${SUPPORTED_PYTHONS[@]}"; do
+    [ "$PY_VERSION" != "$version" ] || supported=1
+  done
+  if [ "$supported" = 0 ]; then
+    if [ "$DRY_RUN" = 1 ]; then
+      warn "Python $PY_VERSION is outside the supported set (${SUPPORTED_PYTHONS[*]}); preview uses python3.<minor>-venv; pass --dry-run-python-version for the target host"
+      VENV_PACKAGE='python3.<minor>-venv'
+      return
+    fi
+    die "Python $PY_VERSION is unsupported; supported interpreters: ${SUPPORTED_PYTHONS[*]}; install a supported /usr/bin/python3 before retrying"
+  fi
+  VENV_PACKAGE="python$PY_VERSION-venv"
+  if [ "$DRY_RUN" = 0 ]; then
+    path_version="$(python_minor python3)" || die "cannot read python3 on PATH"
+    [ "$path_version" = "$PY_VERSION" ] || die "python3 on PATH is $path_version but /usr/bin/python3 is $PY_VERSION; correct PATH before retrying"
+    if [ -x "$VENV/bin/python" ]; then
+      venv_version="$(python_minor "$VENV/bin/python")" || die "cannot read existing venv interpreter"
+      [ "$venv_version" = "$PY_VERSION" ] || die "existing venv is Python $venv_version but host is $PY_VERSION; rebuild the venv with the host interpreter before retrying"
+    fi
+  fi
+}
+
+check_staged_abi() {
+  if [ "$DRY_RUN" = 1 ] && [ "$VENV_PACKAGE" = 'python3.<minor>-venv' ]; then return; fi
+  abi="cp${PY_VERSION//./}"
+  set -- "$HERE"/wheels/pydantic_core-*-"$abi"-"$abi"-*.whl
+  if [ ! -f "$1" ]; then
+    if [ "$DRY_RUN" = 1 ]; then
+      warn "staged pydantic_core wheel for $abi missing; rebuild and re-stage before installing"
+    else
+      die "staged pydantic_core wheel for $abi missing; rebuild the archive and re-stage before installing"
+    fi
+  fi
+}
+
+check_python_versions
 
 # Extract and validate the final fork block before pip can treat an empty file as success.
 render_fork_lock() {
@@ -139,6 +194,7 @@ if [ -n "$missing" ]; then
   if [ "$DRY_RUN" = 1 ]; then warn "staged tree incomplete (run scripts/build_wheels.sh first):$missing"
   else die "staged tree incomplete -- run scripts/build_wheels.sh --out deploy/vps on the Mac and re-stage:$missing"; fi
 fi
+check_staged_abi
 # The staged tree is verified by content BEFORE anything is installed (deviation 5): step 3 copies the staged wheels
 # and requirements.lock and runs pip --require-hashes into the venv imd-dash runs daily, so a tampered lock+wheel
 # pair must die here, not after it has been installed. MANIFEST paths are repo-relative: checked from $TREE.
@@ -153,10 +209,10 @@ say "PEPEPANE install -- tree $TREE, route $ROUTE, dry-run $DRY_RUN"
 # ---- 1 venv tooling ----------------------------------------------------------------------------------
 step 1 "python venv tooling (route $ROUTE)"
 if [ "$ROUTE" = a ]; then
-  if [ "$DRY_RUN" = 1 ] || ! dpkg -s python3.14-venv >/dev/null 2>&1; then
-    run apt-get install -y --no-install-recommends python3.14-venv
+  if [ "$DRY_RUN" = 1 ] || ! dpkg -s "$VENV_PACKAGE" >/dev/null 2>&1; then
+    NEEDRESTART_SUSPEND=1 DEBIAN_FRONTEND=noninteractive run apt-get install -y --no-install-recommends "$VENV_PACKAGE"
   else
-    say "  python3.14-venv already installed"
+    say "  $VENV_PACKAGE already installed"
   fi
 else
   say "  route b: no apt; pip is bootstrapped from $PIP_WHEEL in step 3 (python3 -m venv --without-pip)"

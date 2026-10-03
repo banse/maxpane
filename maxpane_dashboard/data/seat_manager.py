@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import re
 import logging
 import platform
 import queue
@@ -832,6 +833,11 @@ class SeatManager:
         host: dict | None
         try:
             unit = self._unit_reader.read_unit()
+            if self._runtime is None and isinstance(unit, Mapping):
+                match = re.search(r"(?:^|\s)--runtime(?:=|\s+)(codex|claude)(?=\s|;|$)",
+                                  str(unit.get("execStart") or ""))
+                if match:
+                    self._runtime = match.group(1)
         except Exception as exc:                     # noqa: BLE001
             logger.debug("PEPEPANE unit read failed: %s", exc)
             unit = None

@@ -39,7 +39,7 @@ from imd_dashd.process_snapshot import snapshot as process_snapshot
 
 Clock = Callable[[], float]
 
-VERSION = "imd-dashd 0.1.3"
+VERSION = "imd-dashd 0.1.4"
 PLAN_TTL_S = 60
 VERIFY_WITHIN_S = 30           #: `shutting down` -> `runtimes:` within 30 s = verified (fill1 §1: +0.3 s on 8/8)
 VERIFY_WATCH_S = 120           #: the post-apply journal watch is kept this long
@@ -68,7 +68,7 @@ READ_COUNT_FLUSH_S = 3600      #: read verbs are audited as counts only: one `re
 _CURRENCY_FIGURE_RE = re.compile(r"\s*(?:·\s*)?\(?\$\s*\d[\d,]*(?:\.\d+)?(?:\s*estimated)?\)?")
 RUNTIME_PATHS = {
     "codex": {"sessions": ".codex/sessions", "hints": ".codex/AGENTS.md", "auth": ".codex/auth.json"},
-    "claude": {"sessions": ".claude/projects", "hints": "CLAUDE.md", "auth": ".claude/.credentials.json"},
+    "claude": {"sessions": ".claude/projects", "hints": ".claude/CLAUDE.md", "auth": ".claude/.credentials.json"},
 }
 SO_PEERCRED = getattr(socket, "SO_PEERCRED", 17)         # Linux value; macOS lacks the constant (tests inject peer_uid_of)
 
@@ -331,7 +331,7 @@ def _in_worker_unit(cgroup: str) -> bool:
 
 
 def select_orphans(procs: Sequence[dict], *, worker_uid: int = WORKER_UID, min_age_s: float = ORPHAN_MIN_AGE_S) -> list[dict]:
-    """Candidates (spec §11 kill-orphans): uid-1000, outside the unit and every ``imd-dash-*`` scope, older than 1 h."""
+    """Candidates (spec §11 kill-orphans): the worker's uid, outside the unit and every ``imd-dash-*`` scope, older than 1 h."""
     out: list[dict] = []
     for proc in procs:
         if proc["uid"] != worker_uid or _in_worker_unit(proc["cgroup"]) or proc["age_s"] <= min_age_s:
@@ -344,8 +344,8 @@ def select_orphans(procs: Sequence[dict], *, worker_uid: int = WORKER_UID, min_a
 
 
 def group_kill_allowed(procs: Sequence[dict], pgid: int, *, worker_uid: int = WORKER_UID) -> bool:
-    """Group kill only when EVERY pgid member is outside the unit and is uid-1000 or a direct ``runuser``/``sh -c``
-    ancestor of a uid-1000 member (spec §11; mutation proof 34)."""
+    """Group kill only when EVERY pgid member is outside the unit and has the worker's uid or is a direct ``runuser``/``sh -c``
+    ancestor of a worker member (spec §11; mutation proof 34)."""
     members = [p for p in procs if p["pgid"] == pgid]
     if not members:
         return False
@@ -1860,13 +1860,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seat", type=int, default=None)
     parser.add_argument("--allowed-uid", type=int, default=None)
     parser.add_argument("--allowed-user", default="imd-dash")
+    parser.add_argument("--worker-uid", type=int, default=None)
     parser.add_argument("--worker-home", default="/home/imd-worker")
     parser.add_argument("--version", action="version", version=VERSION)
     args = parser.parse_args(argv)
     allowed_uid = args.allowed_uid if args.allowed_uid is not None else _allowed_uid(args.allowed_user)
+    worker_uid = args.worker_uid if args.worker_uid is not None else _allowed_uid("imd-worker")
     audit = Audit(args.audit)
     broker = Broker(peer_uid_of=peer_uid, allowed_uid=allowed_uid, audit=audit, seat=args.seat, worker_home=args.worker_home,
-                    socket_path=args.socket)
+                    socket_path=args.socket, worker_uid=worker_uid)
     listener = listener_from_systemd()
     if listener is None:
         try:

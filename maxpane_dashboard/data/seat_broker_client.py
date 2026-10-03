@@ -349,6 +349,8 @@ class LocalDockerBroker(_CallMixin):
         self._lock = threading.Lock()
         self._in_flight: dict | None = None
         self._breaker_until: dict[str, float] = {}
+        self._worker_uid: int | None = None
+        self._worker_uid_resolved = False
         self._drain = _drain_mod.Drain(now=now)
         self._started = now()
         self._last_doctor: float | None = None
@@ -570,7 +572,7 @@ class LocalDockerBroker(_CallMixin):
                 total = None
             return _broker_mod.parse_work_listing(_text(listing.stdout), total_bytes=total)
         if verb in ("hints-stat", "auth-mtime"):
-            path = "/home/imd/CLAUDE.md" if verb == "hints-stat" else "/home/imd/.claude/.credentials.json"
+            path = "/home/imd/.claude/CLAUDE.md" if verb == "hints-stat" else "/home/imd/.claude/.credentials.json"
             done = self._exec(["stat", "-c", "%s %Y", path], kind=None, family=verb)
             if done.returncode != 0:
                 raise BrokerError("unreadable", {"what": verb})
@@ -582,8 +584,11 @@ class LocalDockerBroker(_CallMixin):
                 data.update({"bytes": int(size), "sha8": parts[0][:8] if digest.returncode == 0 and parts else None})
             return data
         if verb == "orphans":
+            worker_uid = self._resolve_worker_uid()
+            if worker_uid is None:
+                return {"candidates": []}
             done = self._exec(["ps", "-o", "pid,ppid,pgid,etimes,rss,args", "-u", "imd"], kind=None, family="orphans")
-            return {"candidates": parse_docker_ps(_text(done.stdout))}
+            return {"candidates": parse_docker_ps(_text(done.stdout), worker_uid=worker_uid)}
         raise BrokerError("bad_verb", {"verb": verb})
 
     def _seat_projection(self) -> dict:
@@ -909,9 +914,21 @@ class LocalDockerBroker(_CallMixin):
             raise BrokerError("unreadable", {"what": "process snapshot"})
         return rows
 
-    @staticmethod
-    def _orphan_identity_safe(row: dict, rows: list[dict], snapshot: dict) -> bool:
-        if (row["uid"] != 1000 or row["age_s"] <= _broker_mod.ORPHAN_MIN_AGE_S
+    def _resolve_worker_uid(self) -> int | None:
+        """Resolve the container worker once; a failed lookup never supplies kill candidates."""
+        if not self._worker_uid_resolved:
+            self._worker_uid_resolved = True
+            try:
+                done = self._exec(["id", "-u", "imd"], kind=None, family="worker-uid")
+                value = _text(done.stdout).strip()
+                if done.returncode == 0 and re.fullmatch(r"[0-9]+", value):
+                    self._worker_uid = int(value)
+            except BrokerError:
+                pass
+        return self._worker_uid
+
+    def _orphan_identity_safe(self, row: dict, rows: list[dict], snapshot: dict) -> bool:
+        if (self._resolve_worker_uid() is None or row["uid"] != self._worker_uid or row["age_s"] <= _broker_mod.ORPHAN_MIN_AGE_S
                 or snapshot.get(row["pid"]) != _broker_mod._proc_identity(row)):
             return False
         by_pid = {r["pid"]: r for r in rows}

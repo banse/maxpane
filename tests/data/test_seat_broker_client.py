@@ -72,7 +72,7 @@ def test_unix_socket_broker_round_trips_plan_apply_verify(tmp_path):
     broker, runner, journal, clock, _audit = make_broker(tmp_path)
     unix = UnixSocketBroker("/run/imd-dash/broker.sock", offline=False, connect=_served(broker))
     assert unix.kind == "unix" and unix.trust() == "host" and unix.reachable() is True
-    assert unix.read("ping")["version"] == "imd-dashd 0.1.3"
+    assert unix.read("ping")["version"] == "imd-dashd 0.1.4"
     plan = unix.plan("restart")
     assert isinstance(plan, Plan) and plan.argv == ["systemctl", "restart", "--no-block", "imd-worker.service"]
     assert plan.preconditions["plane"]["mode"] == "plane+local"                      # offline=False travelled in args
@@ -369,6 +369,8 @@ def _docker_script(tail_ok: bool = True) -> dict:
                            "maxConcurrency": 1, "skillsOptOut": [], "inference": None, "tools": []}
                 return subprocess.CompletedProcess(argv, 0, json.dumps(payload).encode(), b"")
             return subprocess.CompletedProcess(argv, 0, json.dumps({"sessions": [], "skipped": {"oversize": 0}, "stdin_bytes": len(script)}).encode(), b"")
+        if inner == ["id", "-u", "imd"]:
+            return subprocess.CompletedProcess(argv, 0, b"1000\n", b"")
         if inner[:1] == ["ls"]:
             return subprocess.CompletedProcess(argv, 0, b"", b"")
         if inner[:1] == ["ps"]:
@@ -947,3 +949,41 @@ def test_local_doctor_indented_host_summary_reaches_reason(tmp_path):
     assert result.verified is False
     assert result.verify_lines == output.decode().splitlines()
     assert result.reason == "exit 1 · 1 thing to fix: memory"
+
+
+def test_local_claude_hints_stat_uses_dot_claude(tmp_path):
+    path = "/home/imd/.claude/CLAUDE.md"
+    broker, runner, *_ = _local(tmp_path, script={
+        ("docker", "exec", "-i", "imd-worker", "stat"): (0, "5936 1790000000\n"),
+        ("docker", "exec", "-i", "imd-worker", "sha256sum"): (0, "abcdef12  CLAUDE.md\n"),
+    })
+    assert broker.read("hints-stat")["path"] == path
+    assert runner.argvs("docker", "exec")[-2:] == [
+        ["docker", "exec", "-i", "imd-worker", "stat", "-c", "%s %Y", path],
+        ["docker", "exec", "-i", "imd-worker", "sha256sum", path],
+    ]
+
+
+@pytest.mark.parametrize("uid_reply, expected", [("1001\n", 1001), ("1000\n", 1000), ("", None), ("bad", None)])
+def test_local_orphans_resolve_worker_uid_once_and_fail_closed(tmp_path, uid_reply, expected):
+    broker, runner, *_ = _local(tmp_path, script={
+        ("docker", "exec", "-i", "imd-worker", "id", "-u", "imd"): (0, uid_reply),
+    })
+    for _ in range(2):
+        candidates = broker.read("orphans")["candidates"]
+        assert {r["uid"] for r in candidates} == ({expected} if expected is not None else set())
+    assert len(runner.argvs("docker", "exec", "-i", "imd-worker", "id", "-u", "imd")) == 1
+    if expected is not None:
+        rows = [dict(row, uid=expected) for row in _container_procs()]
+        from imd_dashd.imd_dashd import _proc_identity
+        snapshot = {row["pid"]: _proc_identity(row) for row in rows}
+        assert broker._kill_identity_safe(rows, "pgid", 412, snapshot)
+        wrong = [dict(row, uid=expected + 1) for row in rows]
+        assert not broker._kill_identity_safe(wrong, "pgid", 412, {row["pid"]: _proc_identity(row) for row in wrong})
+
+
+def test_local_orphans_uid_lookup_failure_has_no_candidates(tmp_path):
+    broker, *_ = _local(tmp_path, script={
+        ("docker", "exec", "-i", "imd-worker", "id", "-u", "imd"): (1, "1001\n"),
+    })
+    assert broker.read("orphans")["candidates"] == []

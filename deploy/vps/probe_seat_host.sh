@@ -310,7 +310,7 @@ p08() {
   local rc=0 out
   out="$(as_dash /usr/bin/python3 -c 'import compression.zstd, sys; print("compression.zstd ok", sys.version.split()[0])' 2>&1)" || rc=$?
   printf 'exit status: %d\n%s\n' "$rc" "$out" | code_block
-  if [ "$rc" = 0 ]; then result "PASS -- .jsonl.zst rollouts will be readable"; else result "recorded -- ImportError: COST will read 'rollouts > 7 d unreadable (compression.zstd missing)' (§5.4); plain .jsonl unaffected"; fi
+  if [ "$rc" = 0 ]; then result "PASS -- .jsonl.zst rollouts will be readable"; else result "recorded -- (Codex seats only) ImportError: MACHINE will read 'rollouts > 7 d unreadable (compression.zstd missing)' (§5.4); plain .jsonl unaffected"; fi
 }
 p09() {
   local out rc=0
@@ -373,14 +373,27 @@ print("PASS" if not bad_names and not stray and key and data.get("deviceKey") ==
 PY
   result "see PASS/FAIL above (spec §13 projection canary: key names, sk-/eyJ, whoami match, no other hex64, exactly 8 source keys)"
 }
+unit_runtime() {
+  local exec_start
+  exec_start="$(as_dash systemctl show "$WORKER_UNIT" -p ExecStart --value 2>/dev/null || true)"
+  printf '%s' "$exec_start" | /usr/bin/python3 -I -c '
+import re, sys
+match = re.search(r"(?:^|\s)--runtime(?:=|\s+)(codex|claude)(?=\s|;|$)", sys.stdin.read())
+print(match.group(1) if match else "")'
+}
 p12() {
-  local resp unit since req
+  local resp unit since req runtime
   resp="$(broker_call "$DASH_USER" '{"v":1,"verb":"status","args":{}}')"
   unit="$(printf '%s' "$resp" | json_get data unit)"
   printf '%s\n' "$resp" | scrub | head -c 3000 | code_block
   peak_of_unit "$unit"
   since=$(( $(date -u +%s) - 3 * 86400 ))
-  req="$(printf '{"v":1,"verb":"sessions","args":{"runtime":"codex","since":%s}}' "$since")"
+  runtime="$(unit_runtime)"
+  if [ -z "$runtime" ]; then
+    printf '%s\n' 'sessions runtime unavailable; falling back to codex'
+    runtime=codex
+  fi
+  req="$(printf '{"v":1,"verb":"sessions","args":{"runtime":"%s","since":%s}}' "$runtime" "$since")"
   broker_call "$DASH_USER" "$req" | /usr/bin/python3 -c '
 import json, sys
 try:

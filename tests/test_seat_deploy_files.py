@@ -276,7 +276,7 @@ def test_install_sh_dry_run_prints_the_eight_steps_in_order(tmp_path):
     let dry-run execute ``ln`` -> the ``[dry-run]`` prefix disappears -> red."""
     key = tmp_path / "imd-dash.pub"
     key.write_text("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyForTheGuard imd-dash@probe\n")
-    proc = _run_bash(str(INSTALL_SH), "--dry-run", "--route", "a", "--authorized-keys", str(key))
+    proc = _run_bash(str(INSTALL_SH), "--dry-run", "--dry-run-python-version", "3.14", "--route", "a", "--authorized-keys", str(key))
     assert proc.returncode == 0, proc.stderr
     out = proc.stdout
     positions = [out.index(title) for title in STEP_TITLES]
@@ -305,7 +305,7 @@ def test_install_sh_never_restarts_stops_or_starts_the_worker():
 
 
 def test_install_sh_refuses_bad_routes_and_route_b_without_the_pip_wheel(tmp_path):
-    """Spec §16 #2: routes are a (apt python3.14-venv) or b (venv --without-pip + pip wheel bootstrap,
+    """Spec §16 #2: routes are a (apt for the declared host interpreter) or b (venv --without-pip + pip wheel bootstrap,
     fill7 §3); b without ``--pip-wheel`` cannot bootstrap pip and must say so instead of running
     ``python3 -m venv`` (which fails on the VPS: no ensurepip). Mutation: default the pip wheel -> red."""
     bad = _run_bash(str(INSTALL_SH), "--dry-run", "--route", "c")
@@ -521,7 +521,7 @@ def test_requirements_lock_pins_match_pyproject_seat_group():
         assert lock[name.lower()][0] == version, spec
     assert lock["maxpane"][0] == project["version"], "the fork wheel is pinned to the checkout's version"
     assert "sybilkit" in lock and "pydantic-core" in lock
-    assert len(lock) >= 20, f"the closure is ~20 wheels + maxpane (fill7 §2 counted 22 before the 3.14 markers); found {len(lock)}"
+    assert len(lock) >= 20, f"the closure has ~20 third-party distributions + maxpane; two ABIs yield 22 wheels; found {len(lock)}"
 
 
 def test_every_lock_line_has_a_hash():
@@ -1027,12 +1027,23 @@ def _probe_function(name):
 @pytest.mark.parametrize("section,unit", [("p12", "imd-dash-status-12345678901234567890123456789012"),
                                        ("p13", "imd-dash-doctor-19")])
 @pytest.mark.parametrize("accounting_line", ["memory peak unit", "Started child. Deactivated successfully.", "Failed with result exit-code."])
-def test_probe_looks_up_exact_raw_reply_unit_and_exercises_sessions(tmp_path, section, unit, accounting_line):
+@pytest.mark.parametrize("exec_start,show_rc,runtime", [
+    ("{ path=/opt/imd-worker/bin/imd ; argv[]=/opt/imd-worker/bin/imd start --runtime claude --concurrency 3 ; }", 0, "claude"),
+    ("{ path=/opt/imd-worker/bin/imd ; argv[]=/opt/imd-worker/bin/imd start --runtime=claude ; }", 0, "claude"),
+    (next(line.split("=", 1)[1] for line in (REPO / "tests/fixtures/seat/healthy/unit/systemctl_show.txt").read_text().splitlines()
+          if line.startswith("ExecStart=")), 0, "codex"),
+    ("", 0, "codex"), ("", 1, "codex"),
+])
+def test_probe_looks_up_exact_raw_reply_unit_and_exercises_sessions(tmp_path, section, unit, accounting_line,
+                                                                  exec_start, show_rc, runtime):
     """Run extracted probe functions with shell fakes; no host commands or socket access."""
     import shlex
     text = PROBE_SH.read_text()
     peak_name = "peak_of_unit" if "peak_of_unit()" in text else "peak_of_glob"
-    functions = "\n".join(_probe_function(name) for name in ["json_get", peak_name, section])
+    names = ["json_get", peak_name, section]
+    if "unit_runtime()" in text:
+        names.insert(0, "unit_runtime")
+    functions = "\n".join(_probe_function(name) for name in names)
     assert "runuser" not in functions and "socket.socket" not in functions
     requests = tmp_path / "requests"
     accounting = tmp_path / "accounting"
@@ -1041,6 +1052,9 @@ def test_probe_looks_up_exact_raw_reply_unit_and_exercises_sessions(tmp_path, se
     plan = {"ok": True, "plan": {"plan_id": "0123456789abcdef"}}
     script = f'''
 DASH_USER=imd-dash
+WORKER_UNIT=imd-worker.service
+as_dash() {{ "$@"; }}
+systemctl() {{ printf '%s\\n' {shlex.quote(exec_start)}; return {show_rc}; }}
 SKIP_DOCTOR=0
 broker_call() {{
   printf '%s\\n' "$2" >> {shlex.quote(str(requests))}
@@ -1073,8 +1087,9 @@ date() {{ printf '1790949600\\n'; }}
     sent = [json.loads(line) for line in requests.read_text().splitlines()]
     if section == "p12":
         sessions = next(request for request in sent if request["verb"] == "sessions")
-        assert sessions["args"] == {"runtime": "codex", "since": 1790949600 - 3 * 86400}
+        assert sessions["args"] == {"runtime": runtime, "since": 1790949600 - 3 * 86400}
         assert "sessions ok: True rc: 0 count: 2" in done.stdout
+        assert ("runtime unavailable; falling back to codex" in done.stdout) is (not exec_start)
     else:
         assert [request["verb"] for request in sent] == ["doctor", "apply", "verify"]
 
@@ -1090,3 +1105,27 @@ def test_operator_doc_explains_install_day_posture_and_safe_broker_stop():
     assert "drops an armed drain" in update
     for term in ("forced fork reinstall", "post-install check", "quit every pepepane session"):
         assert term in update
+
+
+def test_build_and_installer_declare_the_same_supported_interpreters():
+    def declared(path):
+        match = re.search(r'^SUPPORTED_PYTHONS=\(([^)]*)\)(?:\s*#.*)?$', path.read_text(), re.M)
+        assert match, f"missing declared interpreter set: {path}"
+        return match.group(1).split()
+    assert declared(INSTALL_SH) == declared(REPO / "scripts/build_wheels.sh") == ["3.12", "3.14"]
+
+
+@pytest.mark.parametrize("version,package", [("3.12", "python3.12-venv"), ("3.13", "python3.<minor>-venv")])
+def test_install_dry_run_previews_target_interpreter(version, package):
+    done = _run_bash(str(INSTALL_SH), "--dry-run", "--dry-run-python-version", version)
+    assert done.returncode == 0, done.stderr
+    assert f"[dry-run] apt-get install -y --no-install-recommends {package}" in done.stdout
+    if version == "3.13":
+        assert all(v in done.stderr for v in ("3.13", "3.12", "3.14"))
+
+
+def test_operator_doc_covers_seat3_and_dual_abi_install():
+    text = INSTALL_DOC.read_text()
+    for term in ("Seat #3 (Ubuntu 24.04)", "--seat 3 --agent 52082", "3 packages, 0 upgrades",
+                 "--dry-run-python-version", "cp312", "cp314", "unmeasured on Ubuntu 24.04"):
+        assert term in text

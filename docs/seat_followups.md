@@ -157,3 +157,8 @@ The following remain follow-ups, not fixes in this round. Synthetic local reprod
 53. **Fixture-note punctuation:** MANIFEST notes for `cli/systemctl_cat.txt` and `cli/systemctl_show_ipaddressdeny.txt` join the older explanation and “Public host IPs replaced…” without a period; separate the sentences when next editing those entries.
 54. **Decision-log formatting:** decisions.md mixes dated headings, bold dated paragraphs and dated list items; choose one style for future entries, keeping historical content intact.
 55. **Stop-reason wording:** a watch polled at 60 seconds with an active unit and no shutdown evidence still says “within 30 s”; this correctly names the unextended deadline, not elapsed time (`VerifyWatch.update`); consider showing both to avoid ambiguity, without changing D5–D7 timing.
+
+
+## 2026-10-03 — Seat #3 extension
+
+56. **Gate step (c) describes only the newest lifecycle task at concurrency 3.** `imd_dashd/gate.py::newest_lifecycle` returns the newest anchored lifecycle line, and `evaluate` derives its open-task reason from that single line. Seat #3 runs Claude with concurrency 3; seat #7 also had concurrency 3 before the owner's test. A terminal line for task A can hide an open task B, so the task-specific reason can be absent or name the wrong task. Non-idle heartbeats and the plane's running count still block restarts. Suggested follow-up: track open tasks by task identity across accepted and terminal records, preserving the independent heartbeat and plane gates; add overlapping-task regressions before changing the spec's step (c). No gate change in round 8.

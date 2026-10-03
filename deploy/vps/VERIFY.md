@@ -23,9 +23,13 @@ PYTHON=/path/to/checkout/.venv-pepepane/bin/python scripts/build_wheels.sh --out
 PYTHON=/path/to/checkout/.venv-pepepane/bin/python scripts/build_wheels.sh --out deploy/vps --manifest-only   # only re-hash, after editing imd_dashd/ or deploy/vps/
 ~~~
 
-Normal builds seed the resolver from the checkout's committed `deploy/vps/requirements.lock`, excluding the fork-wheel
-block, even when another output directory is selected. The resolver runs from the checkout root to keep annotations
-relative; any third-party version drift stops the build before downloading or replacing existing wheels. Use
+The lock covers Python 3.12 and 3.14. One `pydantic_core` wheel is staged per declared interpreter
+(`cp312` and `cp314`), alongside their shared pure-Python closure and the fork. An unconditional build guard
+checks every staged wheel hash against the lock and requires both ABIs before the MANIFEST and archive.
+
+Normal builds seed both interpreter resolutions from the checkout's committed `deploy/vps/requirements.lock`, excluding the fork-wheel
+block, even when another output directory is selected. Each resolver runs from the checkout root to keep annotations
+relative. Divergent interpreter closures fail separately, including with `--upgrade`; any third-party version drift stops the build before downloading or replacing existing wheels. Use
 `scripts/build_wheels.sh --out deploy/vps --upgrade` only for a deliberate upgrade, then review the lock diff and record
 the changed versions in `docs/decisions.md` before shipping. Archive owner headers use neutral root identifiers.
 

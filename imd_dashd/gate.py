@@ -226,7 +226,7 @@ def fetch_standing_running(url: str, *, timeout_s: float = GATE_STANDING_TIMEOUT
     last: Exception | None = None
     for _attempt in range(2):
         try:
-            request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "imd-dashd/0.1.3"})
+            request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "imd-dashd/0.1.4"})
             with _urlopen(request, timeout=timeout_s) as response:
                 if getattr(response, "status", 200) >= 500:
                     raise urllib.error.HTTPError(url, response.status, "server error", None, None)

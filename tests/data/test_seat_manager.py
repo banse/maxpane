@@ -619,7 +619,7 @@ SESSIONS_JSON = {
     "skipped": {"oversize": 0}, "watermarkMtime": 1790393051.8, "zstdReadable": True, "reason": None,
 }
 RESPONSES = {
-    "ping": {"pid": 4242, "drop_ok": True, "version": "imd-dashd 0.1.3", "uptime_s": 12.5, "drain_armed": False, "in_flight": None, "posture_ok": True},
+    "ping": {"pid": 4242, "drop_ok": True, "version": "imd-dashd 0.1.4", "uptime_s": 12.5, "drain_armed": False, "in_flight": None, "posture_ok": True},
     "whoami": {"deviceKey": DEVICE_KEY},
     "seat": {"server": "https://api.imd.fun", "deviceKey": DEVICE_KEY, "wallet": "0x887b9f1234567890abcdef1234567890abcdef12", "tokenId": 7,
              "maxConcurrency": 1, "skillsOptOut": [], "inference": {"economy": {"codex": {"model": "gpt-6-luna", "effort": "medium"}},
@@ -1361,3 +1361,20 @@ async def test_fixture_manager_honours_offline_seat_agent_and_poll_interval():
     assert not any(name in doc["sources"] for name in ("standing", "seatWork", "reasons", "plane")), "--offline removes the API sources"
     assert doc["pollInterval"] == 3 and flat["seat_offline"] is True and doc["seat"]["agentId"] == 51075
     await m.close()
+
+
+@pytest.mark.parametrize("runtime_arg", ["--runtime claude", "--runtime=claude"])
+async def test_first_sessions_read_uses_systemd_execstart_runtime(tmp_path, runtime_arg):
+    class Unit:
+        def read_unit(self):
+            return {"execStart": "{ path=/opt/imd-worker/bin/imd ; argv[]=/opt/imd-worker/bin/imd start "
+                    + runtime_arg + " --concurrency 3 ; ignore_errors=no ; }"}
+        def read_host(self):
+            return {}
+    broker = FakeBroker(responses=RESPONSES)
+    m = _manager(tmp_path, broker=broker, unit_reader=Unit(), offline=True)
+    try:
+        await _two_cycles(m)
+        assert _calls(broker, "sessions")[0]["runtime"] == "claude"
+    finally:
+        await m.close()
