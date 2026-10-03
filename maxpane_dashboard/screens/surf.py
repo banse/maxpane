@@ -1676,9 +1676,15 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 42
 #: In-situ boundary sweep on capture, #420, duplicated reviews, five-digit
 #: stress, v4 RECORD and seven v3 source states: OWNER's 17-cell address
 #: plus copy icon is whole from 139 and visibly cut at 138. The width stays
-#: 139. Free node/runtime text fits with an explicit ellipsis; NODES counts
-#: shorten honestly. Status bar whole from 134, stress hero from 129,
+#: 139. Free node/runtime/model text fits with an explicit ellipsis; NODES
+#: counts shorten honestly. Status bar whole from 134, stress hero from 129,
 #: captured hero from 116 and pending RANK from 117.
+#: 2026-10-03 (F54): SCORE became MODEL in the same 20fr slot; re-swept in
+#: situ on the same payloads, the stress one now advertising four models
+#: (two shown, ``+2 more``, the first a 60-character unknown id). MODEL's
+#: 14-cell lines (``not advertised``, ``fable 5.1 high``) are whole from 126
+#: (its room is 14 at 124, 13 at 125); pairs fit with ``…`` below that and
+#: never clip from 108 to 140. OWNER still binds: the width stays 139.
 #: Row 1 gives up one right-hand column (padding: 0 1 0 0) to line up with
 #: the seat row inside the body's reserved scrollbar gutter.
 #:
@@ -2998,7 +3004,7 @@ class SurfScreen(DashboardScreen):
     SurfScreen #surf-swarm-agent-accepted { width: 23fr; }
     SurfScreen #surf-swarm-card-runtime { width: 23fr; }
     SurfScreen #surf-swarm-agent-work { width: 20fr; }
-    SurfScreen #surf-swarm-card-score { width: 20fr; }
+    SurfScreen #surf-swarm-card-model { width: 20fr; }
     SurfScreen #surf-swarm-agent-rewards { width: 19fr; }
     SurfScreen #surf-swarm-card-feedback { width: 19fr; }
     SurfScreen #surf-swarm-agent-rank { width: 18fr; }

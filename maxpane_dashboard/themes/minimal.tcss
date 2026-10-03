@@ -2491,7 +2491,7 @@ SurfScreen #surf-swarm-card-owner { width: 23fr; }
 #surf-swarm-agent-accepted { width: 23fr; }
 SurfScreen #surf-swarm-card-runtime { width: 23fr; }
 #surf-swarm-agent-work { width: 20fr; }
-SurfScreen #surf-swarm-card-score { width: 20fr; }
+SurfScreen #surf-swarm-card-model { width: 20fr; }
 #surf-swarm-agent-rewards { width: 19fr; }
 SurfScreen #surf-swarm-card-feedback { width: 19fr; }
 #surf-swarm-agent-rank { width: 18fr; }

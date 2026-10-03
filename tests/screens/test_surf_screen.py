@@ -1641,6 +1641,8 @@ def _sample_data() -> dict:
             "last_sent_ts": _TS_POST_13 - 60.0,
             "agent_id": "50971", "daemon": "0.1.0", "devices": 1, "win_rate": 0.4,
             "collaborators": 3, "runtime": "claude 2.1.278",
+            # The advertised runtimes[].premiumModel pairs (MODEL card, F54).
+            "models": [{"model": "claude-fable-5-1", "effort": "high"}],
         },
         "swarm_seat_node_rows": [
             {"node_key":"codex-14", "roles":["implement"], "reviewed":9,

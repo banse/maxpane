@@ -1,4 +1,4 @@
-"""AGENT seat cards: OWNER, RUNTIME, SCORE, FEEDBACK, COLLAB and NODES.
+"""AGENT seat cards: OWNER, RUNTIME, MODEL, FEEDBACK, COLLAB and NODES.
 
 Third-party text is flattened and fitted to each card with a visible ellipsis.
 """
@@ -11,7 +11,7 @@ from maxpane_dashboard.analytics.surf_swarm_signals import runtime_semver, runti
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import address_text
-from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
+from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.surf._fmt import (
@@ -20,6 +20,7 @@ from maxpane_dashboard.widgets.surf._fmt import (
     fmt_win_rate,
     EXPLORER,
     mmdd_hhmm,
+    short_model,
 )
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     _UNSIZED,
@@ -34,7 +35,6 @@ from maxpane_dashboard.widgets.surf._swarm_seat import (
 )
 
 __all__ = [
-    "NO_FEEDBACK_LINE",
     "SEAT_BOX_IDS",
     "count",
     "dim_dash",
@@ -45,14 +45,11 @@ __all__ = [
 ]
 
 
-#: SCORE when the seat has no scored reviews yet: a real zero, not a failure.
-NO_FEEDBACK_LINE = "no scores yet"
-
 SEAT_BOX_IDS = {
     "owner": "surf-swarm-card-owner",
     "runtime": "surf-swarm-card-runtime",
     "feedback": "surf-swarm-card-feedback",
-    "score": "surf-swarm-card-score",
+    "model": "surf-swarm-card-model",
     "collab": "surf-swarm-card-collab",
     "nodes": "surf-swarm-card-nodes",
 }
@@ -100,13 +97,13 @@ class SurfSwarmAgentCards(MeasuredRow, HeroRow):
 
 
 class SurfSwarmSeatCards(SurfSwarmAgentCards):
-    """Row two: OWNER, RUNTIME, SCORE, FEEDBACK, COLLAB, NODES (NODES under STATUS)."""
+    """Row two: OWNER, RUNTIME, MODEL, FEEDBACK, COLLAB, NODES (NODES under STATUS)."""
 
     IDS = SEAT_BOX_IDS
     BOXES = (
         (SEAT_BOX_IDS["owner"], "OWNER"),
         (SEAT_BOX_IDS["runtime"], "RUNTIME"),
-        (SEAT_BOX_IDS["score"], "SCORE"),
+        (SEAT_BOX_IDS["model"], "MODEL"),
         (SEAT_BOX_IDS["feedback"], "FEEDBACK"),
         (SEAT_BOX_IDS["collab"], "COLLAB"),
         (SEAT_BOX_IDS["nodes"], "NODES"),
@@ -128,15 +125,15 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
                swarm_runtime_latest=None, swarm_runtime_as_of_hhmm=None, swarm_fleet_daemon=None) -> None:
         summary, state = swarm_seat_summary, swarm_seat_state
         if self.is_mounted:
-            self.query_one(f"#{SEAT_BOX_IDS['runtime']}").tooltip = None
-            self.query_one(f"#{SEAT_BOX_IDS['nodes']}").tooltip = None
+            for key in ("runtime", "model", "nodes"):
+                self.query_one(f"#{SEAT_BOX_IDS[key]}").tooltip = None
         ens_name = swarm_seat_owner_ens if isinstance(swarm_seat_owner_ens, str) else None
         for key, label, build in (
             ("owner", "OWNER", lambda s: self._owner_body(s, ens_name)),
             ("runtime", "RUNTIME", lambda s: self._runtime_body(
                 s, swarm_runtime_latest, swarm_runtime_as_of_hhmm, swarm_fleet_daemon)),
             ("feedback", "FEEDBACK", self._feedback_body),
-            ("score", "SCORE", self._score_body),
+            ("model", "MODEL", self._model_body),
             ("collab", "COLLAB", lambda s: self._collab_body(s, swarm_seat_teammates)),
         ):
             self.render_box(f"#{SEAT_BOX_IDS[key]}", label,
@@ -227,24 +224,47 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
             body.append(f" {key}", style="dim")
         return body
 
-    @staticmethod
-    def _score_body(summary: dict) -> Text:
-        mean, scored = summary.get("mean_score"), count(summary.get("scored"))
+    def _model_body(self, summary: dict) -> Text:
+        """The seat's advertised ``runtimes[].premiumModel`` pairs (F54).
+
+        One pair a line: the short model bold, its effort dim, fitted to the
+        card with a visible ``…``. Three or fewer all show; more show two and
+        ``+N more`` (NODES' shape), and the tooltip lists every pair raw.
+        ``[]`` is served runtimes advertising no model, a real negative;
+        ``None`` is no runtimes list served. RECORD's ``model`` column is
+        the model a submission actually used, not this.
+        """
+        pairs = summary.get("models")
+        if not isinstance(pairs, list):
+            return Text("unavailable", style="yellow")
+        pairs = [pair for pair in pairs if isinstance(pair, dict)]
+        if not pairs:
+            return Text("not advertised", style="dim")
+        shown = pairs if len(pairs) <= 3 else pairs[:2]
         body = Text()
-        if mean is None and summary.get("scored") == 0:
-            body.append(NO_FEEDBACK_LINE, style="dim")
-        elif isinstance(mean, (int, float)) and not isinstance(mean, bool):
-            body.append(fmt_float(mean, ".2f"), style="bold")
-            body.append("\non ", style="dim").append(scored or "--", style="bold")
-            body.append(" scored", style="dim")
-        else:
-            body.append("unavailable", style="yellow")
-        reviewed, entries = summary.get("reviewed"), summary.get("review_entries")
-        if reviewed is not None and entries is not None and reviewed != entries:
-            served = count(entries)
-            if served is not None:
-                body.append("\n").append(served, style="bold").append(" entries", style="dim")
+        for i, pair in enumerate(shown):
+            if i:
+                body.append("\n")
+            name, effort = short_model(pair.get("model")) or EMDASH, flatten(pair.get("effort"))
+            # The effort keeps up to half the card; the model is cut first.
+            name = self._fit("model", name, reserved=min(rowfit.cell_len(effort) + 1, self._room("model") // 2)
+                             if effort else 0)
+            body.append(name, style="bold")
+            if effort:
+                body.append(" " + self._fit("model", effort, reserved=rowfit.cell_len(name) + 1), style="dim")
+        if len(pairs) > 3:
+            body.append("\n").append(f"+{len(pairs) - 2} more", style="dim")
+        self.query_one(f"#{SEAT_BOX_IDS['model']}").tooltip = self._model_tooltip(pairs)
         return body
+
+    @staticmethod
+    def _model_tooltip(pairs) -> Text:
+        """Every advertised pair as served, flattened, one a line: ``claude-fable-5-1 · high``."""
+        tooltip = Text()
+        for i, pair in enumerate(pairs):
+            effort = flatten(pair.get("effort"))
+            tooltip.append(("\n" if i else "") + flatten(pair.get("model")) + (f" · {effort}" if effort else ""))
+        return tooltip
 
     @staticmethod
     def _collab_body(summary: dict, mates) -> str | Text:

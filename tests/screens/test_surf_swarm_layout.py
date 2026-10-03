@@ -121,6 +121,7 @@ _S_THRESHOLDS = (
 _A_THRESHOLDS = (
     99, 107, # RECORD compact/full with panel/tok and short models, 2026-09-23
     116, 117, 129,  # captured hero, pending RANK, five-digit stress hero
+    126,     # MODEL's 14-cell lines whole (F54, 2026-10-03)
     134,     # complete status bar
     139,     # seat row whole: OWNER's address + icon (binds since the grid)
 )
@@ -305,6 +306,7 @@ def _worst_swarm_payload() -> dict:
 
 def _worst_agent_payload() -> dict:
     """Thirty nodes, 999 teammates, 64-character keys and five-digit counts;
+    four advertised models, one a 60-character unknown id;
     forty work rows with launch names and 500-character answers. Distinct
     reviews and raw entries differ; node, status and role totals agree. Source
     rows come from committed captures, then their values are stretched."""
@@ -353,6 +355,14 @@ def _worst_agent_payload() -> dict:
                {"role": "review", "count": 400},
                {"role": "integrate", "count": 155}],
         win_rate=9_999/99_999,
+        # MODEL (F54): four advertised pairs, sorted as the fold sorts them, so
+        # the card shows two and ``+2 more``; the first is a long unknown id
+        # the card fits with a visible ``…``.
+        models=[{"model": "claude-experimental-frontier-preview-2026-10-01-long-context",
+                 "effort": "xhigh"},
+                {"model": "claude-fable-5-1", "effort": "high"},
+                {"model": "claude-opus-5", "effort": None},
+                {"model": "gpt-6-astra", "effort": "medium"}],
     )
     assert sum(summary["review_status"].values()) == summary["reviewed"]
     assert sum(row["reviewed"] for row in nodes) == summary["reviewed"]

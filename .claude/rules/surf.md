@@ -248,9 +248,15 @@ reads. A first observation has no delta; unranked/unavailable/not-listed reads s
 leave history unchanged. A bad seats state hides its accepted date without hiding valid worker facts.
 AGENT has one seat-card row in `widgets/surf/swarm_agent_cards.py` below its hero and above
 RECORD. `SurfSwarmSeatCards` shows OWNER (address/verified ENS via `address_text` and package
-`EXPLORER`, paired stamp), RUNTIME (runtime, daemon, devices), SCORE (mean, scored, differing
-entries), FEEDBACK (sent/submitted/queued), COLLAB and NODES. Both rows use the same column
-weights with a blank row between. NODES sits under STATUS.
+`EXPLORER`, paired stamp), RUNTIME (runtime, daemon, devices), MODEL, FEEDBACK
+(sent/submitted/queued), COLLAB and NODES. Both rows use the same column weights with a blank
+row between. NODES sits under STATUS. MODEL (F54, 2026-10-03; it replaced SCORE, whose
+mean/scored/entries fields stay in the summary) shows the seat's **advertised**
+`runtimes[].premiumModel` pairs (summary `models`): one a line, bold `short_model` then dim
+effort, fitted with a visible `…`; up to three in full, more show two and `+N more`. Its literal
+`Text` tooltip lists every pair raw and flattened (`claude-fable-5-1 · high`), cleared on every
+paint like RUNTIME's. A served list with no model is dim `not advertised`; no `runtimes` list is
+yellow `unavailable`. RECORD's `model` is the model a submission actually used.
 
 RUNTIME compares only `claude` (`@anthropic-ai/claude-code`) and `codex` (`@openai/codex`)
 against keyless `registry.npmjs.org/<package>/latest`. `NpmRegistryClient` owns the fixed

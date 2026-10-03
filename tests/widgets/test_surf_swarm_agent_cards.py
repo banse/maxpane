@@ -1,4 +1,4 @@
-"""AGENT merged seat cards: OWNER … COLLAB and NODES.
+"""AGENT merged seat cards: OWNER, RUNTIME, MODEL, FEEDBACK, COLLAB and NODES.
 
 Composited assertions only, under the real stylesheet. The payloads are
 **folded** from the committed ``/seats`` capture
@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import copy
 import inspect
+from types import SimpleNamespace
 
 import pytest
 from rich.cells import cell_len
+from rich.color import Color
 from textual.app import App
 
 from maxpane_dashboard.app import CSS_PATH
@@ -26,7 +28,6 @@ from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.surf._fmt import fmt_win_rate, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
 from maxpane_dashboard.widgets.surf.swarm_agent_cards import (
-    NO_FEEDBACK_LINE,
     SEAT_BOX_IDS,
     SurfSwarmSeatCards,
 )
@@ -34,7 +35,8 @@ from maxpane_dashboard.widgets.surf._swarm_seat import (
     NODE_TITLES,
     _whole,
 )
-from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v5, swarm_seat_capture
+from tests.surf_swarm_fixtures import (swarm_agent_sources, swarm_capture_v4, swarm_capture_v5,
+                                       swarm_seat_capture)
 
 #: Wide enough that every card holds its values whole when the row splits evenly.
 SIZE = (200, 7)
@@ -111,8 +113,6 @@ async def test_the_seat_row_shows_every_seats_value():
     assert f"{fmt_int(SUMMARY['devices'])} device" in boxes["runtime"]
     for key in ("sent", "submitted", "queued"):
         assert f"{fmt_int(SUMMARY['review_status'][key])} {key}" in boxes["feedback"]
-    assert f"on {fmt_int(SUMMARY['scored'])} scored" in boxes["score"]
-    assert "entries" not in boxes["score"]  # reviewed == review_entries on this capture
     assert f"{fmt_int(SUMMARY['collaborators'])} seats" in boxes["collab"]
     assert f"#{TEAMMATES[0]['token_id']} ×{TEAMMATES[0]['shared_jobs']}" in boxes["collab"]
     assert "more" not in boxes["collab"]
@@ -142,25 +142,164 @@ async def test_a_hostile_ens_name_is_shown_literally_and_fitted():
     assert line.startswith("[/x][b]") and "…" in line
 
 
-async def test_score_shows_entries_only_when_they_differ_from_reviewed():
-    summary = copy.deepcopy(SUMMARY)
-    summary["review_entries"] = summary["reviewed"] + 3
-    boxes = await _seat(swarm_seat_summary=summary)
-    assert f"{fmt_int(summary['review_entries'])} entries" in boxes["score"]
+# -- MODEL (F54): the seat's advertised runtimes[].premiumModel pairs -------------------
+
+#: The v4 ``seat_420`` capture serves ``claude-fable-5-1`` / ``high`` in
+#: ``runtimes[].premiumModel``; the older ``seats/`` capture serves no model.
+ADVERTISED = fold.seat_summary_from_seat(swarm_capture_v4("seat_420"))["models"]
 
 
-async def test_score_with_nothing_scored_is_a_real_zero_not_a_failure():
-    summary = copy.deepcopy(SUMMARY)
-    summary.update(mean_score=None, scored=0)
-    boxes = await _seat(swarm_seat_summary=summary)
-    assert NO_FEEDBACK_LINE in boxes["score"]
-    assert "unavailable" not in boxes["score"]
+def _pairs(*models, effort="high"):
+    return [{"model": m, "effort": effort} for m in models]
+
+
+async def _model(models, size=SIZE, words=(), **over) -> SimpleNamespace:
+    """MODEL painted with ``swarm_seat_summary``'s ``models`` set to *models*:
+    its content ``lines``, the composited ``style`` of each of *words*, its
+    ``tooltip``, its content width (``room``), the lines CSS truncated
+    (``clipped``, empty when every line was fitted) and the theme's ``yellow``."""
+    from tests.screens.test_surf_screen import _css_clipped_lines
+    kwargs = _seat_kwargs(swarm_seat_summary=dict(copy.deepcopy(SUMMARY), models=models))
+    kwargs.update(over)
+    async with _Themed().run_test(size=size) as pilot:
+        await pilot.app.mount(SurfSwarmSeatCards())
+        cards = pilot.app.query_one(SurfSwarmSeatCards)
+        cards.update_data(**kwargs)
+        await pilot.pause()
+        await pilot.pause()
+        box = cards.query_one("#" + SEAT_BOX_IDS["model"])
+        painted = ["".join(seg.text for seg in strip)
+                   for strip in pilot.app.screen._compositor.render_strips()]
+        region = box.region
+        ys = range(max(region.y, 0), min(region.bottom, len(painted)))
+        rows = [painted[y][region.x: region.right].rstrip() for y in ys]
+        styles = {}
+        for word in words:
+            y = next(y for y in ys if word in painted[y][region.x: region.right])
+            styles[word] = pilot.app.screen.get_style_at(painted[y].index(word, region.x), y)
+        return SimpleNamespace(lines=_lines("\n".join(rows)), style=styles, tooltip=box.tooltip,
+                               room=box.content_size.width, clipped=_css_clipped_lines(pilot.app, box),
+                               yellow=Color.parse("yellow").get_truecolor(pilot.app.ansi_theme))
+
+
+async def test_model_shows_the_captured_pair_short_and_bold_with_its_effort_dim():
+    """Owner F54: the short model in bold, then the effort dim -- the title's own dim."""
+    assert ADVERTISED == [{"model": "claude-fable-5-1", "effort": "high"}]
+    r = await _model(ADVERTISED, words=("MODEL", "fable 5.1", "high"))
+    lines, style = r.lines, r.style
+    assert lines == ["MODEL", "fable 5.1 high"]
+    assert style["fable 5.1"].bold
+    assert style["fable 5.1"].color != style["MODEL"].color
+    assert style["high"].color == style["MODEL"].color and not style["high"].bold
+
+
+async def test_model_without_an_effort_shows_the_model_alone():
+    r = await _model([{"model": "gpt-5.5-codex", "effort": None}])
+    assert r.lines == ["MODEL", "codex 5.5"]
+
+
+@pytest.mark.parametrize("n, shown", [
+    (1, ["fable 5.1 high"]),
+    (3, ["fable 5.1 high", "opus 5 high", "sonnet 5 high"]),
+    (4, ["fable 5.1 high", "opus 5 high", "+2 more"]),
+    (5, ["fable 5.1 high", "opus 5 high", "+3 more"]),
+])
+async def test_model_shows_three_pairs_whole_and_folds_more_into_two_and_a_count(n, shown):
+    """NODES' shape: three or fewer all show; more show two and a dim ``+N more``."""
+    models = _pairs("claude-fable-5-1", "claude-opus-5", "claude-sonnet-5", "claude-haiku-5", "gpt-6-astra")[:n]
+    r = await _model(models, words=("MODEL",) + (("more",) if n > 3 else ()))
+    assert r.lines == ["MODEL", *shown]
+    if n > 3:
+        assert r.style["more"].color == r.style["MODEL"].color and not r.style["more"].bold
+
+
+async def test_model_served_empty_is_a_real_negative_and_unread_is_unavailable():
+    """``[]``: the seat serves runtimes and advertises no model -- dim, not a
+    failure. ``None``: no runtimes list was served -- yellow ``unavailable``."""
+    empty = await _model([], words=("MODEL", "not advertised"))
+    assert empty.lines == ["MODEL", "not advertised"] and empty.tooltip is None
+    assert empty.style["not advertised"].color == empty.style["MODEL"].color
+    unread = await _model(None, words=("unavailable",))
+    assert unread.lines == ["MODEL", "unavailable"] and unread.tooltip is None
+    assert unread.style["unavailable"].color.get_truecolor(None) == unread.yellow
+
+
+async def test_model_from_a_capture_with_no_premium_model_says_not_advertised():
+    """The older ``seats/`` capture serves runtimes without ``premiumModel``."""
+    assert SUMMARY["models"] == []
+    boxes = await _seat()
+    assert _lines(boxes["model"]) == ["MODEL", "not advertised"]
+
+
+#: Card width at a 139-column terminal with the row split evenly (no screen CSS).
+NARROW = (139, 7)
+
+
+@pytest.mark.parametrize("model, effort, head", [
+    ("x" * 60, "high", "x"),
+    ("unknown\n\tmodel-" + "y" * 50, "high", "unknown m"),
+    ("claude-fable-5-1", "e" * 60, "fable 5.1"),
+])
+async def test_a_long_model_or_effort_is_flattened_and_fitted_with_a_visible_ellipsis(model, effort, head):
+    """Model ids are third-party text: flattened, cut with ``…``, never past the card."""
+    r = await _model([{"model": model, "effort": effort}], size=NARROW)
+    line = r.lines[1]
+    assert line.startswith(head) and "…" in line, line
+    assert cell_len(line) <= r.room and not r.clipped, (line, r.room, r.clipped)
+    if effort == "high":
+        assert line.endswith("… high"), line
+
+
+async def test_a_markup_shaped_model_renders_literally():
+    """``short_model`` strips whole bracket runs, so ``[[b]/x]`` reaches the card
+    as ``[/x]``: appended to a ``Text``, it is drawn, never parsed."""
+    r = await _model([{"model": "[[b]/x]", "effort": "[b]"}])
+    assert r.lines == ["MODEL", "[/x] [b]"]
+    assert r.tooltip.plain == "[[b]/x] · [b]"
+
+
+async def test_model_tooltip_lists_every_pair_raw_and_flattened():
+    """The card shortens and folds; hovering shows every advertised pair as served."""
+    from rich.text import Text
+    models = [{"model": "claude-fable-5-1", "effort": "high"}, {"model": "claude-opus-5", "effort": None},
+              {"model": "mystery\n[/x]", "effort": "max"}, {"model": "gpt-6-astra", "effort": "xhigh"}]
+    r = await _model(models)
+    assert r.lines[-1] == "+2 more"
+    assert isinstance(r.tooltip, Text)
+    assert r.tooltip.plain.splitlines() == [
+        "claude-fable-5-1 · high", "claude-opus-5", "mystery [/x] · max", "gpt-6-astra · xhigh",
+    ]
+    one = await _model(ADVERTISED)
+    assert one.tooltip.plain == "claude-fable-5-1 · high"
+
+
+@pytest.mark.parametrize("over", [
+    {"swarm_seat_state": "busy"},
+    {"swarm_seat_state": "pending"},
+    {"swarm_seat_state": "unknown_seat"},
+    {"swarm_seat_state": None},
+    {"swarm_seat_summary": None},
+    {"swarm_seat_summary": dict(SUMMARY, models=[])},
+    {"swarm_seat_summary": dict(SUMMARY, models=None)},
+])
+async def test_model_tooltip_is_cleared_on_the_next_paint(over):
+    """Like RUNTIME's and NODES': a gated, empty or unread repaint carries none."""
+    async with _Themed().run_test(size=SIZE) as pilot:
+        await pilot.app.mount(SurfSwarmSeatCards())
+        cards = pilot.app.query_one(SurfSwarmSeatCards)
+        box = cards.query_one("#" + SEAT_BOX_IDS["model"])
+        cards.update_data(**_seat_kwargs(swarm_seat_summary=dict(SUMMARY, models=ADVERTISED)))
+        await pilot.pause()
+        assert box.tooltip is not None
+        cards.update_data(**_seat_kwargs(**over))
+        await pilot.pause()
+        assert box.tooltip is None
 
 
 @pytest.mark.parametrize("state, needle", [("pending", "loading"), ("busy", "busy · retrying"), ("error", "unavailable")])
 async def test_a_seat_state_replaces_every_seats_card(state, needle):
     boxes = await _seat(swarm_seat_state=state)
-    for key in ("owner", "runtime", "feedback", "score", "collab", "nodes"):
+    for key in ("owner", "runtime", "feedback", "model", "collab", "nodes"):
         assert needle in boxes[key].lower(), key
 
 

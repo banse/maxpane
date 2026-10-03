@@ -203,10 +203,10 @@ async def test_the_agent_card_row_keeps_seat_values_and_has_no_third_row():
 
     titles = {cls: [lines[1].strip(" │") for lines in cards] for cls, cards in rows.items()}
     # Owner 2026-09-24: merged COLLAB/NODES occupy one seat-card row.
-    assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "SCORE", "FEEDBACK", "COLLAB", "NODES"]
+    assert titles[SurfSwarmSeatCards] == ["OWNER", "RUNTIME", "MODEL", "FEEDBACK", "COLLAB", "NODES"]
     assert all(not lines[2].strip(" │") for cards in rows.values() for lines in cards)
     for needle in ("0xe5b1275f…f64f2a ⧉", "paired 09-20 07:34", "daemon ", " device",
-                   " sent", " submitted", " queued", " scored",
+                   " sent", " submitted", " queued", "not advertised",
                    " seats", "ORACLE 188 —", "#1548 ×136"):
         assert needle in text, needle
 
