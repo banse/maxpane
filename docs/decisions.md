@@ -1030,4 +1030,9 @@ env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dis
 env -u NO_COLOR HOME=$(mktemp -d) PYTHONPATH=sybilkit/src .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests
 ```
 
-Parts B and C precede packaging. The final seeded build follows this documentation commit; its refreshed lock/MANIFEST are committed separately and the archive is named after that final commit. No host access, SSH, Docker operation, deployment, push or tag was performed. Never-touch files, frozen document bodies and pyproject.toml remain unchanged.
+Parts B and C precede packaging. The final seeded build ran once after documentation commit 91be31f. Both the complete lock (including the fork hash) and the refreshed 23-entry MANIFEST are byte-identical to their already-committed contents, so there is no additional hash-file diff to commit. The archive is renamed after the final packaging-evidence commit without rebuilding. No host access, SSH, Docker operation, deployment, push or tag was performed. Never-touch files, frozen document bodies and pyproject.toml remain unchanged.
+
+
+### 2026-10-03 — PEPEPANE fix7 packaging evidence
+
+The sole seeded build reproduced the entire a8912d6 lock byte for byte. All 21 staged wheels match locked hashes, all 363 fork source members match the checkout, and the shared installed-byte checker matches 367 files from the rebuilt wheel. The 7,693,349-byte archive contains 24 tracked files equal to the commit and 23 valid MANIFEST entries; every tar entry is owned by root:root. The round-7 broker and installer hashes were committed with their code in 6a5e7b5 and the fresh MANIFEST agrees. This final documentation-only packaging entry changes the archive name, not its contents; no second build is needed.
