@@ -1,25 +1,4 @@
-"""CONFIG & SKILLS: what the control verbs change and what the plane offers work against (spec §8).
-
-Group 1 is the seat's configuration as the broker's ``imd status``/projection saw it
-(server, capacity, offers, runtime, daemon build vs the release available, the
-advertised premium model, the inference table -- this **is** ``tier show``, there
-is no separate verb -- the #7 codex wrapper note (systemd + codex only: the wrapper
-sets its own model/effort and the daemon's ``-m`` wins; no model name is hardcoded),
-the task-hints fingerprint, and whether ``config.json``
-changed after the daemon started, which means *restart required*). Group 2 is the
-skills table (``id · on/off · needs``, :data:`SeatConfig.SKILLS_ROW_CAP` rows and
-``+N more``) with the configured tool ids in its footer.
-
-Values are sentences and a half-width panel is ~71 cells, so every sentence is a
-tuple of honest forms (plan deviation 6, :func:`pick_form`): the same fact,
-shorter, never a silent cut; the title carries ``‹ widen`` only when the shortest
-form still had to be clipped (FWA's SIGNALS precedent). Degraded per source (spec
-§7 ``sources`` per field): ``unavailable (broker: <reason>)`` when the broker is
-out, ``unavailable (<reason>)`` naming the daemon version when ``imd status``
-did not parse, and the projection canary's refusal in red. On the Mac the group
-titles carry ``(container)``: every CLI-fed value there is container-reported
-(spec §4.2).
-"""
+"""Cursor-selectable CONFIG table; value/source formatting retained from the original panel."""
 
 from __future__ import annotations
 
@@ -27,28 +6,18 @@ from collections.abc import Sequence
 
 from rich.cells import cell_len
 from rich.text import Text
-from textual.app import ComposeResult
-from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.seat_redact import redact
 from maxpane_dashboard.analytics.seat_signals import as_of_hhmm, parse_iso
 from maxpane_dashboard.widgets import rowfit
-from maxpane_dashboard.widgets.fmt import DASH, as_float, fmt_int, mmdd, short_model
-from maxpane_dashboard.widgets.markup_safety import sanitize_cell, strip_tags
-from maxpane_dashboard.widgets.panels import SignalsPanelBase
+from maxpane_dashboard.widgets.fmt import DASH, as_float, mmdd, short_model
+from maxpane_dashboard.widgets.seat.seat_table import SeatTable
 from maxpane_dashboard.widgets.seat_words import seat_token
 from maxpane_dashboard.widgets.seat.hero import _word
 
-__all__ = ["SKILLS_ROW_CAP", "SeatConfig", "pick_form"]
-
-#: (invented, contract §B) 31 skill rows would not fit a half-height panel; the footer counts the rest.
-SKILLS_ROW_CAP = 12
+__all__ = ["SeatConfig", "pick_form"]
 
 _count = seat_token
-
-#: ``fmt_signal`` spends ``"  ● "`` (4) + label + ``" "`` (1) before the value; the panel-line spends ``padding: 0 1`` (2).
-_ROW_OVERHEAD = 4 + 1 + 2
-
 
 def pick_form(forms: Sequence[str], room: int) -> tuple[str, bool]:
     """The first of *forms* that fits *room* cells; else the last, clipped. The flag marks a cut."""
@@ -69,28 +38,24 @@ def _kb(value: object) -> str:
     return DASH if b is None or b < 0 else f"{b / 1000:.1f} KB"
 
 
-class SeatConfig(SignalsPanelBase):
-    """CONFIG & SKILLS -- see the module docstring."""
+class SeatConfig(SeatTable):
+    """CONFIG settings, with SKILLS composed beside it by the screen."""
 
-    TITLE = "CONFIG & SKILLS"
-    LABEL_WIDTH = 12
-    DIM_LABEL = True
-    ROWS = (
-        ("seat-cfg-server", "server"), ("seat-cfg-capacity", "capacity"), ("seat-cfg-offers", "offers"), ("seat-cfg-runtime", "runtime"),
-        ("seat-cfg-daemon", "daemon"), ("seat-cfg-premium", "premium"), ("seat-cfg-inference", "inference"),
-        ("seat-cfg-wrapper", "wrapper"), ("seat-cfg-hints", "hints"),
-        ("seat-cfg-changed", "config"), None, ("seat-cfg-skills-title", None),
-    )
+    TITLE = "CONFIG"
+    TABLE_ID = "seat-config-table"
+    ROW_CAP = None
+    EMPTY_LINE = "config unavailable"
+    COLUMN_SPECS = (("setting", "setting", 12), ("value", "value", 25), ("change", "change", 10))
+    TIER_COLUMNS = {"full": ("setting", "value", "change")}
+    LADDER = rowfit.Ladder(("full", 0))
     #: The #7 codex wrapper note (spec §8 group 1; plan deviation 14): shown only on a systemd host running codex.
     WRAPPER_ROW_ID = "seat-cfg-wrapper"
     WRAPPER_FORMS = (
         "/opt/imd-worker/bin/codex sets its own model/effort; the daemon's -m wins (effort precedence: source-proven only)",
         "the codex wrapper's model/effort lose to the daemon's -m",
         "the daemon's -m wins over the wrapper",
+        "daemon -m wins over wrapper",
     )
-    SKILLS_TABLE_ID = "seat-cfg-skills"
-    SKILLS_FOOTER_ID = "seat-cfg-skills-footer"
-    SKILLS_ROW_CAP = SKILLS_ROW_CAP
 
     #: Rows never wrap (every value is fitted first); the table takes the rest of the panel, floored at a header plus three rows.
 
@@ -106,19 +71,6 @@ class SeatConfig(SignalsPanelBase):
         super().__init__(**kwargs)
         self._facts: dict | None = None
 
-    def compose_body(self) -> ComposeResult:
-        yield from super().compose_body()
-        yield DataTable(id=self.SKILLS_TABLE_ID)
-        yield Static("", id=self.SKILLS_FOOTER_ID, classes="panel-line")
-
-    def on_mount(self) -> None:
-        table = self.query_one(f"#{self.SKILLS_TABLE_ID}", DataTable)
-        table.cursor_type = "none"
-        table.zebra_stripes = True
-        table.add_column("id", width=24)
-        table.add_column("on", width=3)
-        table.add_column("needs", width=14)
-
     # -- the contract -------------------------------------------------------
 
     def update_data(
@@ -127,14 +79,13 @@ class SeatConfig(SignalsPanelBase):
         seat_release_available=None, seat_premium_advertised=None, seat_inference=None, seat_hints=None,
         seat_config_changed_since_start=None, seat_skills_rows=None, seat_skills_offered=None, seat_skills_on=None, seat_tools=None,
         seat_sources=None, seat_as_of_hhmm=None, seat_host_kind=None,
+        seat_token_id=None, seat_agent_id=None, seat_wallet=None, seat_device_key_public=None, seat_unit_boot_enabled=None,
+        seat_unit_restart_policy=None, seat_auto_update=None, seat_runtime_wrapper=None, seat_control_restart_required=None,
         **_kwargs,
     ) -> None:
         self._facts = {k: v for k, v in locals().items() if k.startswith("seat_")}
-        self._repaint()
-
-    def on_resize(self, _event=None) -> None:
-        if self._facts is not None:
-            self._repaint()
+        rows = self._config_rows()
+        self.store(rows, (seat_as_of_hhmm or {}).get("status"))
 
     # -- painting -----------------------------------------------------------
 
@@ -157,31 +108,40 @@ class SeatConfig(SignalsPanelBase):
             return f"unavailable ({reason})"
         return None
 
-    def _repaint(self) -> None:
-        if self._facts is None:
-            return
-        f = self._facts
-        docker = f.get("seat_host_kind") == "docker"
-        room = max(self.content_region.width - self.LABEL_WIDTH - _ROW_OVERHEAD, 0)
-        cut = False
+    def column_width(self, key, tier, budget, width):
+        return max(8, budget - 28) if key == "value" else width
+
+    def _config_rows(self):
+        rows = []
         for row_id, label, forms, colour in self._rows():
+            if label is None or (row_id == self.WRAPPER_ROW_ID and not self._shows_wrapper()):
+                continue
             degraded = self._degraded(row_id)
-            if degraded is not None:
-                colour = "red" if "canary" in degraded else "yellow"
-                forms = (degraded, degraded.split(" (")[0])
-            value, was_cut = pick_form(forms, room if label is not None else room + self.LABEL_WIDTH + 1)
-            cut = cut or was_cut
-            self.render_signal(f"#{row_id}", label or "", {"label": label or "", "value_str": value, "color": colour},
-                               labelled=label is not None)
-        self._skills_table()
-        try:
-            self.query_one(f"#{self.WRAPPER_ROW_ID}").display = self._shows_wrapper()
-        except Exception:  # noqa: BLE001 -- not composed yet
-            pass
-        as_of = f.get("seat_as_of_hhmm") if isinstance(f.get("seat_as_of_hhmm"), dict) else {}
-        marker = as_of.get("status")
-        title = self.TITLE + (" (container)" if docker else "") + (f" · as of {rowfit.clip(marker, 5)}" if rowfit.has_marker(marker) else "")
-        self.write(".panel-title", Text(rowfit.title_with_hint(title, cut, max(self.content_region.width, 0))))
+            rows.append(dict(key=label, setting=label, forms=(degraded,) if degraded else forms,
+                             colour=("red" if "canary" in degraded else "yellow") if degraded else colour,
+                             change={"capacity": "runbook", "runtime": "start flag", "inference": "runbook",
+                                     "server": "fixed", "offers": "derived", "hints": "never", "daemon": "runbook"}.get(label, "—")))
+        f = self._facts
+        extra = [("seat", f"{f.get('seat_token_id') or DASH} · agent {f.get('seat_agent_id') or DASH}", "fixed"),
+                 ("wallet", _word(f.get('seat_wallet')) or DASH, "fixed"),
+                 ("device key", _word(f.get('seat_device_key_public')) or DASH, "fixed"),
+                 ("boot", (_word(f.get('seat_unit_restart_policy')) or DASH) if f.get('seat_host_kind') == 'docker'
+                  else ('enabled' if f.get('seat_unit_boot_enabled') is True else 'disabled' if f.get('seat_unit_boot_enabled') is False else 'unavailable'),
+                  "fixed" if f.get('seat_host_kind') == 'docker' else "space"),
+                 ("auto-update", 'on' if f.get('seat_auto_update') is True else 'off' if f.get('seat_auto_update') is False else 'unavailable', "never")]
+        for name, value, change in extra:
+            rows.append(dict(key=name, setting=name, forms=(value,), colour="dim", change=change))
+        return rows
+
+    def build_cells(self, item):
+        room = dict((key, width) for key, _, width in self._installed).get("value", 25)
+        value, cut = pick_form(item['forms'], room)
+        self._clipped |= cut
+        return {"setting": Text(item['setting']), "value": Text(value, style=item['colour']), "change": Text(item['change'], style="dim")}
+
+    def _render_title(self, as_of):
+        self.TITLE = "CONFIG" + (" (container)" if (self._facts or {}).get('seat_host_kind') == 'docker' else "")
+        super()._render_title(as_of)
 
     def _shows_wrapper(self) -> bool:
         f = self._facts or {}
@@ -276,34 +236,3 @@ class SeatConfig(SignalsPanelBase):
         if not full:
             return ("runtime default",)
         return (" · ".join(full), " · ".join(mid), " · ".join(short))
-
-    def _skills_table(self) -> None:
-        f = self._facts or {}
-        try:
-            table = self.query_one(f"#{self.SKILLS_TABLE_ID}", DataTable)
-        except Exception:  # noqa: BLE001
-            return
-        table.clear()
-        rows = f.get("seat_skills_rows") if isinstance(f.get("seat_skills_rows"), list) else None
-        degraded = self._degraded("seat-cfg-skills-title")
-        parts: list[str] = []
-        if degraded is not None or rows is None:
-            table.add_row(f"[yellow]{sanitize_cell(degraded or 'unavailable', 24)}[/]", "", "")
-        else:
-            for row in rows[: self.SKILLS_ROW_CAP]:
-                if not isinstance(row, dict):
-                    continue
-                on = row.get("on")
-                table.add_row(sanitize_cell(_word(row.get("id")) or DASH, 24), "on" if on is True else ("off" if on is False else DASH),
-                              sanitize_cell(_word(row.get("needs")) or "", 14))
-            if len(rows) > self.SKILLS_ROW_CAP:
-                parts.append(f"+{fmt_int(len(rows) - self.SKILLS_ROW_CAP)} more")
-        tools = f.get("seat_tools") if isinstance(f.get("seat_tools"), list) else None
-        if tools is None:
-            parts.append("tools: unavailable")
-        elif tools:
-            parts.append("tools: " + ", ".join(_word(t) for t in tools if _word(t)))
-        else:
-            parts.append("tools: none configured")
-        room = max(self.content_region.width - 2, 0)
-        self.write(f"#{self.SKILLS_FOOTER_ID}", Text(rowfit.clip(" · ".join(parts), room) if room else " · ".join(parts), style="dim"))

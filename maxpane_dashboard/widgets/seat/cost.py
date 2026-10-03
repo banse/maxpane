@@ -1,4 +1,4 @@
-"""COST: tokens, turns, buckets by (model, effort, ~tier), the quota gauge, one sparkline -- never a dollar (spec §8 COST, §10).
+"""COST: tokens, turns, buckets by (model, effort, ~tier), and the quota gauge -- never a dollar (spec §8 COST, §10).
 
 Every task spends the operator's subscription and quota; the previous writer was
 ~2× off (contradictions #5) and bucketing by ``(model, effort)`` is the only way a
@@ -10,9 +10,7 @@ definitions and the depth of what was ingested.
 currency glyph, and :func:`_word` strips ``$`` from every third-party string on
 its way in, so a hostile model id cannot smuggle one either. There is no flag.
 
-:class:`SeatCostSpark` is the nested ``SparklinePanel`` strip (output tokens per
-day, 14 d, from the sqlite ``days`` table); it has **no** ``update_data`` -- the
-parent drives ``render_series`` -- so ``MIGRATED_PACKAGES["seat"]`` counts seven.
+OUTPUT TOKENS is a separate sibling panel registered in the screen refresh contract.
 """
 
 from __future__ import annotations
@@ -20,7 +18,6 @@ from __future__ import annotations
 import re
 
 from rich.text import Text
-from textual.app import ComposeResult
 
 from maxpane_dashboard.analytics.seat_redact import redact
 from maxpane_dashboard.analytics.seat_signals import as_of_hhmm, parse_iso
@@ -28,11 +25,11 @@ from maxpane_dashboard.analytics.seat_tiers import tier_label
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import DASH, as_float, fmt_int, mmdd, short_model
 from maxpane_dashboard.widgets.markup_safety import strip_tags
-from maxpane_dashboard.widgets.panels import SignalsPanelBase, SparklinePanel
+from maxpane_dashboard.widgets.panels import SignalsPanelBase
 from maxpane_dashboard.widgets.seat.config import pick_form
 from maxpane_dashboard.widgets.seat_words import seat_token
 
-__all__ = ["SeatCost", "SeatCostSpark", "tokens_word"]
+__all__ = ["SeatCost", "tokens_word"]
 
 _count = seat_token
 _ROW_OVERHEAD = 4 + 1 + 2
@@ -69,17 +66,6 @@ def _bar(percent: object, cells: int = 5) -> str:
     return "▮" * filled + "▯" * (cells - filled)
 
 
-class SeatCostSpark(SparklinePanel):
-    """Output tokens per day, 14 d -- the strip COST composes. No ``update_data``: the parent drives it."""
-
-    TITLE = "OUTPUT TOKENS / DAY · 14 d"
-    LINE_IDS = ("seat-cost-spark-line",)
-    LABEL_WIDTH = 8
-    SHOW_ARROW = False
-    MIN_POINTS = 2
-    EMPTY_TEXT = "waiting for data..."
-
-
 class SeatCost(SignalsPanelBase):
     """COST -- see the module docstring."""
 
@@ -94,10 +80,6 @@ class SeatCost(SignalsPanelBase):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._facts: dict | None = None
-
-    def compose_body(self) -> ComposeResult:
-        yield from super().compose_body()
-        yield SeatCostSpark()
 
     def update_data(
         self,
@@ -138,7 +120,6 @@ class SeatCost(SignalsPanelBase):
                 self.write(f"#{row_id}", "")
                 continue
             self.render_signal(f"#{row_id}", label or "", {"label": label or "", "value_str": value, "color": colour}, labelled=label is not None)
-        self._spark()
         as_of = f.get("seat_as_of_hhmm") if isinstance(f.get("seat_as_of_hhmm"), dict) else {}
         marker = as_of.get("sessions")
         days = _count(f.get("seat_cost_window_days"))
@@ -233,18 +214,3 @@ class SeatCost(SignalsPanelBase):
             ("seat-cost-quota", "quota", quota_forms, quota_colour),
             ("seat-cost-footer", None, footer_forms, "dim"),
         )
-
-    def _spark(self) -> None:
-        f = self._facts or {}
-        series = f.get("seat_cost_series") if isinstance(f.get("seat_cost_series"), dict) else {}
-        raw = series.get("outputTokensPerDay") if isinstance(series.get("outputTokensPerDay"), list) else []
-        points = []
-        for entry in raw:
-            if isinstance(entry, (list, tuple)) and len(entry) == 2 and isinstance(entry[0], str):
-                epoch = parse_iso(entry[0] + "T00:00:00Z")
-                if epoch is not None:
-                    points.append((epoch, entry[1]))
-        try:
-            self.query_one(SeatCostSpark).render_series([("out tok", points, "cyan", "")])
-        except Exception:  # noqa: BLE001 -- not composed yet
-            pass

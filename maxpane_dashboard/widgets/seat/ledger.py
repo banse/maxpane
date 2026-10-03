@@ -6,8 +6,8 @@ the plane's verdict (joined by ``hash12``) meet on one key, side by side and
 never on one line. Columns ``when · node · role · model~tier · took · turns ·
 out tok · stored · verdict · lag``; three width tiers on
 :class:`~maxpane_dashboard.widgets.swarm_table.SwarmTableBase` (``full`` costs
-:data:`FULL_WIDTH` = 123 cells and clears only on a wide terminal -- the body's
-named exception, plan deviation 7).
+:data:`FULL_WIDTH` = 123 cells and clears at 126 terminal columns in the
+full-width SEAT body; no width exception remains).
 
 Row states, each a mark the reader learns once: a pre-agent failure reads
 ``0.4 s`` under *took* and ``no agent`` under *model*; a lease-closed row (a
@@ -40,7 +40,8 @@ from maxpane_dashboard.widgets.markup_safety import sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.seat._chain import job_link_style
 from maxpane_dashboard.widgets.seat_words import seat_token
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
-from maxpane_dashboard.widgets.swarm_table import SwarmTableBase, table_cols
+from maxpane_dashboard.widgets.swarm_table import table_cols
+from maxpane_dashboard.widgets.seat.seat_table import SeatTable
 
 __all__ = ["COMPACT_WIDTH", "FULL_WIDTH", "TIGHT_WIDTH", "SeatLedgerTable", "older_line"]
 
@@ -111,7 +112,7 @@ def older_line(total: object, cap: int) -> str | None:
     return f"+{fmt_int(count - cap)} older · more"
 
 
-class SeatLedgerTable(SwarmTableBase):
+class SeatLedgerTable(SeatTable):
     """LEDGER -- the seat's accepted lines, newest first (module docstring)."""
 
     TITLE = "LEDGER"
@@ -125,7 +126,6 @@ class SeatLedgerTable(SwarmTableBase):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._shown: list[dict] = []
         self._offline = False
         self._verdicts_unavailable = False
 
@@ -134,6 +134,7 @@ class SeatLedgerTable(SwarmTableBase):
     def update_data(
         self,
         seat_tasks_rows=None, seat_tasks_window=None, seat_ledger_footer=None, seat_sources=None, seat_as_of_hhmm=None, seat_offline=None,
+        seat_today_p50_s=None, seat_today_longest_s=None, seat_today_divergence=None,
         **_kwargs,
     ) -> None:
         self._offline = seat_offline is True
@@ -148,18 +149,6 @@ class SeatLedgerTable(SwarmTableBase):
             total = len(rows)
         self.store(rows, as_of, {"footer": seat_ledger_footer, "total": total})
 
-    def selected_row(self) -> dict | None:
-        """The row under the table cursor (for Enter / ``»``), or ``None`` when nothing is shown."""
-        if not self._shown:
-            return None
-        try:
-            index = self.query_one(f"#{self.TABLE_ID}", DataTable).cursor_row
-        except Exception:  # noqa: BLE001
-            index = 0
-        if not isinstance(index, int) or not 0 <= index < len(self._shown):
-            index = 0
-        return self._shown[index]
-
     # -- rendering ----------------------------------------------------------
 
     def compose_body(self) -> ComposeResult:
@@ -169,16 +158,9 @@ class SeatLedgerTable(SwarmTableBase):
         yield DataTable(id=self.TABLE_ID, cursor_foreground_priority="renderable")
         yield Static("", id=self.footer_id, classes=self.FOOTER_CLASS)
 
-    def render_table(self, rows, *, footer=None) -> None:
-        self._shown = []
-        super().render_table(rows, footer=footer)
-
     def _repaint(self) -> None:
         if not self.is_mounted:
             return
-        # The base's ``None``/``[]`` branch calls ``table.clear()`` without ``render_table``: reset the shown
-        # rows here so ``selected_row()`` never returns a row from an earlier poll.
-        self._shown = []
         super()._repaint()
         payload = self._payload or {}
         rows = payload.get("rows")
@@ -235,7 +217,6 @@ class SeatLedgerTable(SwarmTableBase):
             "verdict": self._verdict_cell(item),
             "lag": fmt_age(item.get("verdictLagS")),
         }
-        self._shown.append(item)
         return cells
 
     def _verdict_cell(self, item: dict) -> str:

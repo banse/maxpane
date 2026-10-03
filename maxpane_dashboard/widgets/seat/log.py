@@ -47,8 +47,6 @@ class SeatLog(RichLogFeed):
     HIGHLIGHT = False
     MAX_LINES = 400
     EMPTY_LINE = "[dim]  no lines yet[/]"
-    #: The class ``l`` toggles; the screen sizes the row it lives in by it.
-    TALL_CLASS = "seat-log-tall"
 
     #: Grammar words restated (plan deviation 4); bound to ``data/seat_log_grammar`` by a test.
     HEARTBEAT_KIND = "heartbeat"
@@ -65,7 +63,6 @@ class SeatLog(RichLogFeed):
         super().__init__(**kwargs)
         self._ring: list[dict] = []
         self._collapsed = False
-        self._tall = False
         self._last_seq = 0
 
     def compose_body(self) -> ComposeResult:
@@ -174,9 +171,3 @@ class SeatLog(RichLogFeed):
         self.render_events(list(self._ring))
         self._write_title()
         return self._collapsed
-
-    def toggle_tall(self) -> bool:
-        """Flip the tall class; the screen's stylesheet gives the row its height."""
-        self._tall = not self._tall
-        self.set_class(self._tall, self.TALL_CLASS)
-        return self._tall

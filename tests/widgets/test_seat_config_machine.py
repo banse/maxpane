@@ -19,6 +19,7 @@ from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.data.seat_models import SEAT_WIDGET_SIGNATURES, fold_status_document
 from maxpane_dashboard.widgets.fmt import mmdd
 from maxpane_dashboard.widgets.seat.config import SeatConfig, pick_form
+from maxpane_dashboard.widgets.seat import SeatSkills
 from maxpane_dashboard.widgets.seat.machine import SeatMachine
 from tests.widgets.test_seat_hero import composite_lines
 
@@ -45,7 +46,13 @@ def _source(payload: dict, name: str, **fields) -> dict:
 
 
 def _rows(rows: list[str], label: str) -> str:
-    return next(line for line in rows if f" {label} " in line or line.strip().startswith(label)).strip()
+    line = next(line for line in rows if f" {label} " in line or line.strip().startswith(label)).strip()
+    # CONFIG now has a separate change column; existing value assertions retain their subject.
+    for change in ("fixed", "start flag", "runbook", "derived", "never", "space", "—"):
+        if line.endswith("  " + change):
+            line = line[:-len(change)].rstrip()
+            break
+    return line
 
 
 async def _config(size=WIDE, **payload):
@@ -67,18 +74,16 @@ def test_pick_form_prefers_the_longest_that_fits_and_flags_only_a_cut():
 # -- CONFIG & SKILLS ----------------------------------------------------------------------
 
 
-def test_config_rows_and_skills_table_are_the_contract_s():
-    assert SeatConfig.ROWS == (("seat-cfg-server", "server"), ("seat-cfg-capacity", "capacity"), ("seat-cfg-offers", "offers"),
-                               ("seat-cfg-runtime", "runtime"), ("seat-cfg-daemon", "daemon"), ("seat-cfg-premium", "premium"),
-                               ("seat-cfg-inference", "inference"), ("seat-cfg-wrapper", "wrapper"), ("seat-cfg-hints", "hints"),
-                               ("seat-cfg-changed", "config"), None, ("seat-cfg-skills-title", None))
-    assert SeatConfig.SKILLS_TABLE_ID == "seat-cfg-skills" and SeatConfig.SKILLS_ROW_CAP == 12
-    assert SeatConfig.TITLE == "CONFIG & SKILLS" and SeatConfig.LABEL_WIDTH == 12 and SeatConfig.DIM_LABEL is True
+def test_config_and_skills_are_independent_cursor_tables():
+    assert SeatConfig.TABLE_ID == "seat-config-table"
+    assert SeatSkills.TABLE_ID == "seat-skills-table"
+    assert SeatSkills.ROW_CAP is None
+    assert SeatConfig.CURSOR_TYPE == SeatSkills.CURSOR_TYPE == "row"
 
 
 async def test_config_healthy_values_at_a_wide_terminal():
     rows = await _config(**_payload("SeatConfig"))
-    assert rows[0].strip().startswith("CONFIG & SKILLS · as of ")
+    assert rows[0].strip().startswith("CONFIG · as of ")
     assert _rows(rows, "server").endswith("api.imd.fun")
     assert _rows(rows, "capacity").endswith("1 concurrent")
     assert _rows(rows, "offers").endswith("code · fuzz · research")
@@ -91,10 +96,8 @@ async def test_config_healthy_values_at_a_wide_terminal():
     # spec §8 group 1: the #7 codex wrapper note (systemd + codex only; no hardcoded model name, safety §2)
     assert _rows(rows, "wrapper").endswith(
         "/opt/imd-worker/bin/codex sets its own model/effort; the daemon's -m wins (effort precedence: source-proven only)")
-    # the count is derived from ``seat_skills_rows`` (the frozen signature carries no needs-network key);
-    # the fixture's three rows hold one ``network`` row
-    assert "skills 31 offered · 31 on · 1 need network" in "\n".join(rows)
-    text = "\n".join(rows)
+    skills = await composite_lines(SeatSkills, (100, 32), css_path=CSS_PATH, region_only=True, **_payload("SeatSkills"))
+    text = "\n".join(skills)
     assert "oracle-assess" in text and "public-rpcs" in text and "network" in text and "tool:forge" in text
     assert "tools: none configured" in text
 
@@ -105,22 +108,24 @@ async def test_config_release_available_changed_config_and_runtime_default():
     assert _rows(rows, "daemon").endswith("0.1.0+5bfa8261 → 0.1.0+5c1d2e3f · update: see runbook §2.1 — drained restart")
     assert _rows(rows, "config").endswith("changed after start → restart required")
     assert _rows(rows, "inference").endswith("runtime default")
-    assert "tools: etherscan" in "\n".join(rows)
+    skills = await composite_lines(SeatSkills, (100, 20), css_path=CSS_PATH, region_only=True, **_payload("SeatSkills", seat_tools=["etherscan"]))
+    assert "tools: etherscan" in "\n".join(skills)
 
 
 async def test_config_group_titles_carry_container_on_the_mac():
     rows = await _config(**_payload("SeatConfig", seat_host_kind="docker"))
-    assert rows[0].strip().startswith("CONFIG & SKILLS (container)")
-    assert "skills 31 offered · 31 on · 1 need network (container)" in "\n".join(rows)
+    assert rows[0].strip().startswith("CONFIG (container)")
+    skills = await composite_lines(SeatSkills, (100, 20), css_path=CSS_PATH, region_only=True, **_payload("SeatSkills", seat_host_kind="docker"))
+    assert "SKILLS (container)" in "\n".join(skills)
     assert not any(" wrapper " in line for line in rows), "the codex wrapper note is #7's (systemd), never the Mac's"
 
 
-async def test_config_skills_table_caps_at_twelve_and_counts_the_rest():
+async def test_skills_table_keeps_all_rows_without_the_old_cap():
     skills = [{"id": f"skill-{i:02d}", "on": i % 3 != 0, "needs": "network" if i % 4 == 0 else None} for i in range(31)]
-    rows = await _config((200, 40), **_payload("SeatConfig", seat_skills_rows=skills, seat_skills_offered=31, seat_skills_on=21))
+    rows = await composite_lines(SeatSkills, (200, 40), css_path=CSS_PATH, region_only=True, **_payload("SeatSkills", seat_skills_rows=skills, seat_skills_offered=31, seat_skills_on=21))
     text = "\n".join(rows)
-    assert sum(1 for line in rows if "skill-" in line) == 12
-    assert "+19 more" in text and " off " in text and " on " in text
+    assert sum(1 for line in rows if "skill-" in line) == 31
+    assert "+19 more" not in text and " off " in text and " on " in text
 
 
 async def test_config_degrades_per_source():
@@ -136,12 +141,11 @@ async def test_config_degrades_per_source():
 
 async def test_config_half_width_shows_short_forms_without_wrapping_and_marks_only_a_cut():
     rows = await _config(HALF, **_payload("SeatConfig"))
-    assert "‹" not in rows[0], rows[0]
+    assert "‹" not in rows[0], "the CONFIG table now fits its shortest forms at half width"
     content = [line for line in rows[2:] if line.strip()]
     assert any("inference" in line for line in content)
     assert all(len(line) <= HALF[0] for line in rows)
-    # 40 columns: row room 21 is below the shortest inference form, so a row is cut, and the 29-cell title
-    # plus ``  ‹ widen`` (38 cells) still fits; at 30 not even the bare glyph fits after the title.
+    # A 40-cell panel cannot fit its shortest value forms, so its title advertises the cut.
     tiny = await _config((40, 32), **_payload("SeatConfig"))
     assert "‹" in tiny[0]
 
@@ -153,7 +157,8 @@ async def test_config_redacts_and_never_parses_third_party_text():
     # The server row shows only the host; ``strip_tags`` deletes the ``[redacted]`` placeholder, so the
     # redacted skills id paints as ``sk-``.
     assert "sk-svcac" not in text and "[bold]" not in text
-    assert "sk-" in text
+    skills = await composite_lines(SeatSkills, (100, 20), css_path=CSS_PATH, region_only=True, **_payload("SeatSkills", seat_skills_rows=[{"id": "sk-svcac******** [/x][bold]", "on": True, "needs": None}]))
+    assert "sk-" in "\n".join(skills) and "sk-svcac" not in "\n".join(skills)
 
 
 # -- MACHINE -------------------------------------------------------------------------------

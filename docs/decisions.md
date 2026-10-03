@@ -1153,3 +1153,83 @@ Seat-work reads retain unmatched plane rows and the full submission identity, jo
 ### 2026-10-03 — PEPEPANE round 9: seat-shaped record folds
 
 The pure `analytics/seat_records.py` functions operate on the seat contract's camelCase records and local-versus-plane provenance. SURFBOARD's record helpers consume a different snake_case row shape; changing their inputs or semantics would alter SURFBOARD. The seat-specific functions therefore stay separate as permitted by the hoist rule. Shared presentation helpers remain candidates for the required unchanged-code hoists when their widget consumers arrive.
+
+### 2026-10-03 — PEPEPANE round 9: six bodies amend the base layout
+
+Redesign section 4 replaces base section 8's simultaneous panel grid with six bodies on one SeatScreen. Each body is composed once, selection changes its display state, and the ordinary PANELS dispatch continues to update every body. LIVE is the initial selection. Each body has its own measured geometry and registered scrolling containers; the screen's final pin is the largest measured body pin in each direction.
+
+### 2026-10-03 — PEPEPANE round 9: selection and health have separate styling
+
+Redesign section 5 amends base section 8's hero presentation. The success-coloured border identifies the selected dashboard only. Each card's label conveys its specified actionable severity, while the title bar carries the seat alert on every dashboard. An unreachable API or running task retains its line-level wording without independently colouring a card label.
+
+### 2026-10-03 — PEPEPANE round 9: LOG height follows the LIVE body
+
+The tall-LOG toggle in base section 8 is retired under redesign section 4.3. LOG occupies the right column of LIVE and keeps its scrollback, footer and heartbeat toggle. Lines received while another body is selected still pass through its ordinary update exactly once.
+
+### 2026-10-03 — PEPEPANE round 9: owner decision R1
+
+The selectable cards and dashboard names share the fixed order SEAT, LIVE, CONFIG & SKILLS, RECORDS, NODES and CONTROL. The former card facts move to the destinations specified in the redesign: local timing and divergence remain available in LEDGER, and unit details remain in MACHINE.
+
+### 2026-10-03 — PEPEPANE round 9: owner decision R2
+
+Selection is screen state and uses the theme's success border. Changing health cannot change the selected border, and selecting a card cannot change its severity label. The operator can therefore identify both the current dashboard and the relevant warning independently.
+
+### 2026-10-03 — PEPEPANE round 9: owner decision R6
+
+The current-or-last-job panel is titled JOB. Its running-job selection follows acceptance order, with the newest first; its data comes from the bounded contract and ledger cache established before screen implementation.
+
+### 2026-10-03 — PEPEPANE round 9: owner decision R7
+
+The r key refreshes SEAT, LIVE, CONFIG & SKILLS, RECORDS and NODES. It requests a restart only on CONTROL. SeatScreen resolves that context without changing the shared dashboard refresh binding. An active confirm input owns ordinary keys so typed confirmation cannot invoke a dashboard action.
+
+### 2026-10-03 — PEPEPANE round 9: record analytics widget boundary
+
+The widget purity allow-list gains `analytics/seat_records.py` when RECORDS consumes its seat-shaped state and window functions. The module remains pure and is covered by the transitive purity scan. This extends the existing explicit boundary for one required renderer dependency; widgets still import no data manager, client or persistence module.
+
+### 2026-10-03 — PEPEPANE round 9: widget export and signature agreement
+
+The seat package now exports fifteen updateable widgets: SeatHero, SeatNow, SeatJob, SeatLog, SeatMachine, SeatCost, SeatOutputTokens, SeatLedgerTable, SeatConfig, SeatSkills, SeatRecords, SeatNodes, SeatControl, SeatGate and SeatAudit. The export test agrees with the signatures frozen in WP1. SeatOutputTokens replaces the former non-updateable SeatCostSpark export, so every exported renderer has an explicit data contract.
+
+### 2026-10-03 — PEPEPANE round 9: PANELS order contract
+
+The screen's ordered panel registry follows the fifteen-widget export order above, including widgets in hidden bodies. The screen contract still forbids overrides of the shared refresh and suspension methods. This registry change makes the ordinary dispatch the update path for all six bodies and preserves the shared dashboard traversal tests.
+
+### 2026-10-03 — PEPEPANE round 9: migrated widget count
+
+The shared panel migration test's seat count advances from seven updateable classes to fifteen. It counts the approved six-body renderer set and continues checking that these classes use the common panel bases and remain exposed through the package contract.
+
+### 2026-10-03 — PEPEPANE round 9: title spacing coverage
+
+The title-blank-row test's seat list gains JOB, OUTPUT TOKENS, SKILLS, RECORDS, NODES, CONTROL, GATE and AUDIT. Each new panel keeps the same blank-row convention as the existing panels; expanding the list preserves that check through the redesign.
+
+### 2026-10-03 — PEPEPANE round 9: address sweep view registry
+
+The seat address-sweep case visits each of the six selected bodies. Its existing ledger job-link seed remains covered after LEDGER moves behind SEAT, rather than relying on the initial LIVE view to paint every panel. The API text address cases are added with their renderers; the existing address and link assertions remain in force.
+
+### 2026-10-03 — PEPEPANE round 9: SEAT foundation pin
+
+The WP4 downward sweep measures SEAT at 132 columns and 40 rows for healthy, worst and unattributed-running payloads. The hero clips at 131 columns and the body scrolls one row below its height pin. This certifies the current composition; WP6 repeats the certificate after the complete body content lands.
+
+### 2026-10-03 — PEPEPANE round 9: LIVE foundation pin
+
+The same in-situ sweep independently measures LIVE at 132 columns and 30 rows for all three payloads. Boundary and tightness tests bind both directions. The full JOB content is included in WP6's final certification.
+
+### 2026-10-03 — PEPEPANE round 9: CONFIG and SKILLS foundation pin
+
+The two-table body measures 132 columns and 22 rows across the three payloads, including all fifty skill rows behind the table's scrollbar. CONFIG allocates its column budget to keep the displayed facts intact. The complete toggle and confirm rendering receives the final WP6 sweep.
+
+### 2026-10-03 — PEPEPANE round 9: RECORDS foundation pin
+
+The RECORDS composition measures 132 columns and 20 rows across the three payloads. Its internal table scrolls through the record window; the body measurement still checks painted columns, overflow and the height marker. Complete answer and panel presentation is certified in WP6.
+
+### 2026-10-03 — PEPEPANE round 9: NODES foundation pin
+
+The NODES composition measures 132 columns and 20 rows across the three payloads. This is an independently swept body value, with its own boundary and tightness assertions; the final aggregate presentation receives the WP6 certificate.
+
+### 2026-10-03 — PEPEPANE round 9: CONTROL foundation pin
+
+The CONTROL composition measures 132 columns and 26 rows across the three payloads. Its complete plan and status flow is implemented in WP5 and included in the final WP6 sweep. The current pin does not claim to certify content that has not yet landed.
+
+### 2026-10-03 — PEPEPANE round 9: screen foundation pin and LEDGER exception
+
+The screen's current aggregate pin is 132 columns by 40 rows, the maxima of the measured body pins. The full-width LEDGER clears its full tier at 126 terminal columns, verified around that boundary; the former 210-column exception is removed because it now fits within the screen pin. The terminal-layout table and current install/Mac citations track this foundation measurement until WP6 completes the body certification.

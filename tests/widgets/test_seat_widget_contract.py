@@ -43,6 +43,7 @@ _PURE_SEAT_ANALYTICS_ALLOWED = frozenset({
     "maxpane_dashboard.analytics.seat_tiers",
     "maxpane_dashboard.analytics.seat_cost",
     "maxpane_dashboard.analytics.seat_auth",
+    "maxpane_dashboard.analytics.seat_records",
 })
 
 #: Contract §E (3): the only two seat modules allowed a subprocess or a socket.
@@ -225,10 +226,10 @@ def test_job_link_style_links_a_canonical_uuid_and_nothing_else():
 from maxpane_dashboard.data.seat_models import SEAT_KEYS, SEAT_WIDGET_SIGNATURES  # noqa: E402  (a test may import data)
 
 
-def test_seat_package_exports_exactly_the_eight_names():
-    assert seat_widgets.__all__ == ["SeatHero", "SeatNow", "SeatLedgerTable", "SeatLog", "SeatConfig", "SeatCost", "SeatMachine", "SeatCostSpark"]
-    assert set(SEAT_WIDGET_SIGNATURES) == set(seat_widgets.__all__) - {"SeatCostSpark"}
-    assert not hasattr(seat_widgets.SeatCostSpark, "update_data")
+def test_seat_package_exports_exactly_the_fifteen_names():
+    assert seat_widgets.__all__ == ["SeatHero", "SeatNow", "SeatJob", "SeatLog", "SeatMachine", "SeatCost", "SeatOutputTokens",
+                                  "SeatLedgerTable", "SeatConfig", "SeatSkills", "SeatRecords", "SeatNodes", "SeatControl", "SeatGate", "SeatAudit"]
+    assert set(SEAT_WIDGET_SIGNATURES) == set(seat_widgets.__all__)
 
 
 @pytest.mark.parametrize("name", sorted(SEAT_WIDGET_SIGNATURES))

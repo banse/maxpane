@@ -141,7 +141,7 @@ from maxpane_dashboard.widgets.seat import (  # noqa: E402
     SeatLedgerTable,
     SeatLog,
     SeatMachine,
-    SeatNow,
+    SeatNow, SeatJob, SeatOutputTokens, SeatSkills, SeatRecords, SeatNodes, SeatControl, SeatGate, SeatAudit,
 )
 
 _SEAT_FLAT = _seat_fold(_json.loads((_Path(__file__).resolve().parents[1] / "fixtures" / "seat" / "status" / "status_v2_healthy.json").read_text(encoding="utf-8")))
@@ -164,6 +164,15 @@ _PANELS = [
     ("SeatConfig", SeatConfig, _seat_payload_for("SeatConfig")),
     ("SeatCost", SeatCost, _seat_payload_for("SeatCost")),
     ("SeatMachine", SeatMachine, _seat_payload_for("SeatMachine")),
+
+    ("SeatJob", SeatJob, _seat_payload_for("SeatJob")),
+    ("SeatOutputTokens", SeatOutputTokens, _seat_payload_for("SeatOutputTokens")),
+    ("SeatSkills", SeatSkills, _seat_payload_for("SeatSkills")),
+    ("SeatRecords", SeatRecords, _seat_payload_for("SeatRecords")),
+    ("SeatNodes", SeatNodes, _seat_payload_for("SeatNodes")),
+    ("SeatControl", SeatControl, _seat_payload_for("SeatControl")),
+    ("SeatGate", SeatGate, _seat_payload_for("SeatGate")),
+    ("SeatAudit", SeatAudit, _seat_payload_for("SeatAudit")),
 
     # -- bakery (hidden) --------------------------------------------------
     ("CookieChart", CookieChart, {"histories": {"bakery": _SERIES}}),

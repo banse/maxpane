@@ -836,6 +836,7 @@ CASES: tuple[SweepCase, ...] = (
         build=_seat_app,
         payload=_seat_payload,
         seeded=(SEAT_JOB_UUID,),
+        views=((), ("1",), ("2",), ("3",), ("4",), ("5",), ("6",)),
         pins=((SEAT_FULL_LAYOUT_COLUMNS, SEAT_FULL_LAYOUT_ROWS),),
     ),
 

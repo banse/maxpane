@@ -15,7 +15,7 @@ env -u NO_COLOR .venv-seat/bin/pepepane --version
 ~~~
 
 Installing as a distribution (not `PYTHONPATH`) is what makes `importlib.metadata.version` resolve; without it the
-status bar reads `v0+unknown` and the 134-column pin breaks (fill7 §5).
+status bar reads `v0+unknown` and the current 132-column WP4 foundation pin breaks (final WP6 certification pending; fill7 §5).
 
 ## Run
 

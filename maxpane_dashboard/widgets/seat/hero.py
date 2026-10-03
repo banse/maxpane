@@ -1,35 +1,10 @@
-"""PEPEPANE hero: SEAT · LIVE · TODAY · VERDICTS · GATE · UNIT (spec §8 HERO).
-
-The 3 a.m. glance: alive?, doing what?, how did today go?, verdicts?, safe to
-touch?, will it survive a reboot or an OOM? Six :class:`SeatHeroBox` on a
-``HeroRow``; every value is the manager's flat dict (WP1's ``SEAT_KEYS``), so
-this file learns no source -- it reads ``seat_sources[<name>]["ok"]`` for the
-degraded wordings of the §8 table and nothing else.
-
-**Honest forms, not marks** (plan deviation 6). The spec's wordings do not fit
-six boxes at 143 columns (~17 content cells each), so every line is a tuple of
-*forms*, longest first, and :func:`fit_forms` paints the first one that fits
-the box's content width -- ``widgets/seat_words._num``'s rule ("a shorter
-honest number, never a cut one") applied to sentences. Only when the shortest
-form still does not fit is it clipped with ``…`` and the box raises
-``rowfit.WIDEN_HINT`` in its bottom border, the surf hero's own marker.
-
-**Colour is meaning-bound and red beats amber beats green** (spec §8). The
-fold hands the hero its word (``seat_hero_state``, WP7's ``hero_state``);
-this widget derives a local word from the LIVE facts it paints (two
-``disconnected`` beats, a dead tail, an inactive unit -> red; a stale heartbeat,
-a pause, degraded auth -> amber) and paints :func:`worst` of the two, so a
-red fact is never painted green. :meth:`SeatHero.hero_colour` is the word
-painted; the LIVE box's border takes it (``seat-hero-<word>`` classes).
-UNIT's ``docker unavailable`` is amber *in its cell* and never reaches the
-hero colour: the tail owns liveness (spec §8 UNIT, §9).
-
-Geometry lives in ``SeatScreen.DEFAULT_CSS`` (spec §8); seven tall = label, blank, three lines.
-"""
+"""Six selectable dashboard cards; selection borders and health labels are independent."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+import re
+from textual.message import Message
 
 from rich.text import Text
 
@@ -51,18 +26,14 @@ __all__ = ["BOX_IDS", "SEVERITY", "SeatHero", "SeatHeroBox", "fit_forms", "worst
 BOX_IDS = {
     "seat": "seat-hero-seat",
     "live": "seat-hero-live",
-    "today": "seat-hero-today",
-    "verdicts": "seat-hero-verdicts",
-    "gate": "seat-hero-gate",
-    "unit": "seat-hero-unit",
+    "config": "seat-hero-config",
+    "records": "seat-hero-records",
+    "nodes": "seat-hero-nodes",
+    "control": "seat-hero-control",
 }
 
 #: The hero's colour words, least severe first (spec §8: red > amber > green).
 SEVERITY = ("green", "amber", "red")
-
-#: Textual border colour per word; ``$success``/``$warning``/``$error`` are
-#: required ``Theme`` fields, so they resolve under every theme (status_bar.py).
-_BORDER = {"green": "$success", "amber": "$warning", "red": "$error"}
 
 _count = seat_token
 
@@ -182,10 +153,10 @@ class SeatHero(HeroRow):
     BOXES = (
         (BOX_IDS["seat"], "SEAT"),
         (BOX_IDS["live"], "LIVE"),
-        (BOX_IDS["today"], "TODAY"),
-        (BOX_IDS["verdicts"], "VERDICTS"),
-        (BOX_IDS["gate"], "GATE"),
-        (BOX_IDS["unit"], "UNIT"),
+        (BOX_IDS["config"], "CONFIG & SKILLS"),
+        (BOX_IDS["records"], "RECORDS"),
+        (BOX_IDS["nodes"], "NODES"),
+        (BOX_IDS["control"], "CONTROL"),
     )
 
     #: Seven tall: label, blank, three value lines, inside a one-cell border.
@@ -217,6 +188,7 @@ class SeatHero(HeroRow):
         seat_unit_restarts=None, seat_unit_boot_enabled=None, seat_unit_kill_mode=None, seat_unit_stop_timeout_s=None,
         seat_unit_graceful_stop_possible=None,
         seat_hero_state=None, seat_hero_reasons=None, seat_sources=None, seat_as_of_hhmm=None, seat_offline=None, seat_host_kind=None,
+        seat_nodes_all_rows=None, seat_nodes_coverage=None, seat_control_restart_required=None, seat_config_changed_since_start=None,
         **_kwargs,
     ) -> None:
         """Store the facts and repaint all six boxes (``**_kwargs``: the screen may splat)."""
@@ -244,32 +216,76 @@ class SeatHero(HeroRow):
         source = sources.get(name) if isinstance(sources, dict) else None
         return source if isinstance(source, dict) else {}
 
+    class Selected(Message):
+        def __init__(self, dashboard: str):
+            super().__init__()
+            self.dashboard = dashboard
+
+    def select_dashboard(self, dashboard: str) -> None:
+        for box_id, label in self.BOXES:
+            self.query_one(f"#{box_id}").set_class(label == dashboard, "seat-selected")
+
+    def on_click(self, event) -> None:
+        widget = event.widget
+        while widget is not None and widget is not self:
+            for box_id, label in self.BOXES:
+                if widget.id == box_id:
+                    self.post_message(self.Selected(label))
+                    event.stop()
+                    return
+            widget = widget.parent
+
+    def _label_state(self, name: str) -> str | None:
+        f = self._facts or {}
+        if name == "seat":
+            if f.get("seat_unit_active_state") not in (None, "active", "running"):
+                return "red"
+            return "amber" if f.get("seat_unit_boot_enabled") is False else None
+        if name == "live":
+            return worst(f.get("seat_hero_state"), self._local)
+        if name == "config":
+            if self._source("seat").get("ok") is False and "refus" in _word(self._source("seat").get("reason")):
+                return "red"
+            if f.get("seat_control_restart_required") or f.get("seat_config_changed_since_start"):
+                return "amber"
+        if name == "control":
+            if f.get("seat_control_broker_reachable") is False:
+                return "amber"
+            gate = f.get("seat_control_gate")
+            if gate is None or (isinstance(gate, dict) and (gate.get("safe") is not True and (not gate.get("reason") or str(gate.get("reason")).startswith("gate unknown")))):
+                return "red"
+            if f.get("seat_control_drain") or f.get("seat_control_in_flight"):
+                return "amber"
+        return None
+
     def _repaint(self) -> None:
         if self._facts is None:
             return
         self._local = None
-        builders = {
-            "seat": self._seat_body, "live": self._live_body, "today": self._today_body,
-            "verdicts": self._verdicts_body, "gate": self._gate_body, "unit": self._unit_body,
-        }
-        for key, label in ((box_id, label) for box_id, label in self.BOXES):
-            name = key.rsplit("-", 1)[-1]
-            room = self._room(key)
-            cut: list[bool] = []
-
-            def build(name=name, room=room, cut=cut):
-                body, was_cut = builders[name](room)
-                cut.append(was_cut)
-                return body
-
-            self.render_box(f"#{key}", label, build)
-            try:
-                self.query_one(f"#{key}").border_subtitle = rowfit.WIDEN_HINT if any(cut) else ""
-            except Exception:  # noqa: BLE001
-                pass
+        builders = {"seat": self._seat_body, "live": self._live_body, "config": self._config_body,
+                    "records": self._verdicts_body, "nodes": self._nodes_body, "control": self._gate_body}
+        for box_id, label in self.BOXES:
+            name = box_id.rsplit("-", 1)[-1]
+            room = self._room(box_id)
+            body, cut = builders[name](room)
+            severity = self._label_state(name)
+            warning = severity in ("amber", "red")
+            style = {"amber": "yellow", "red": "red"}.get(severity, "dim")
+            heading, heading_cut = fit_forms((Text(label + (" ⚠" if warning else ""), style=style),), room)
+            content = Text()
+            content.append_text(heading)
+            content.append("\n\n")
+            content.append_text(body)
+            self.write_box(box_id, content, cut or heading_cut)
         self._colour = worst(self._facts.get("seat_hero_state"), self._local)
-        for word in SEVERITY:
-            self.set_class(self._colour == word, f"seat-hero-{word}")
+
+    def write_box(self, box_id: str, content: Text, cut: bool):
+        try:
+            box = self.query_one(f"#{box_id}")
+            box.update(content)
+            box.border_subtitle = rowfit.WIDEN_HINT if cut else ""
+        except Exception:
+            pass  # before composition; the resize repaint uses the retained facts
 
     # -- SEAT -----------------------------------------------------------------
 
@@ -294,9 +310,39 @@ class SeatHero(HeroRow):
             _t((f"{idmd} · {agent_word}", "bold")),
             _t((f"{idmd} · {agent if agent is not None else DASH}", "bold")),
         ), room)
+        unit = self._source("unit")
+        active = _word(f.get("seat_unit_active_state")) or DASH
+        boot = f.get("seat_unit_boot_enabled") is False
+        suffix = " · boot ⚠" if boot else ""
+        style = "yellow" if boot else "dim"
+        if unit.get("ok") is False or (unit.get("reason") and f.get("seat_unit_active_state") is None):
+            reason = _word(unit.get("reason")) or "unavailable"
+            what = "docker" if f.get("seat_host_kind") == "docker" else "unit"
+            memory = f" · {_mib(f.get('seat_unit_memory_current_b'))}" if f.get("seat_unit_memory_current_b") is not None else ""
+            forms = (f"{what} unavailable — {reason}{memory}", f"{what} unavailable", "unavailable")
+            style = "yellow"
+        else:
+            forms = (f"{active} · {_mib(f.get('seat_unit_memory_current_b'))} / {_gib(f.get('seat_unit_memory_max_b'))}{suffix}",
+                     f"{active} · {_mib(f.get('seat_unit_memory_current_b'))}{suffix}", f"{active}{suffix}")
+        line2 = fit_forms(tuple(Text(word, style=style) for word in forms), room)
+        tasks, stored = _count(f.get("seat_today_tasks")), _count(f.get("seat_today_stored"))
+        if self._source("tail").get("ok") is False:
+            forms = (f"ledger unavailable — tail: {_word(self._source('tail').get('reason'))}", "ledger unavailable", "unavailable")
+        elif tasks is None:
+            forms = ("today unavailable", "unavailable")
+        elif tasks == 0:
+            forms = ("no tasks yet today", "none today")
+        else:
+            forms = (f"today {tasks} tasks · {stored if stored is not None else DASH} stored",
+                     f"{tasks} tasks · {stored if stored is not None else DASH} stored", f"{tasks} · {stored if stored is not None else DASH} stored")
+        return _lines(line1, line2, fit_forms(tuple(Text(word, style="dim") for word in forms), room))
+
+    def _config_body(self, room: int) -> tuple[Text, bool]:
+        f = self._facts or {}
         runtime = _word(f.get("seat_runtime_version")) or _word(f.get("seat_runtime_id")) or DASH
         runtime_id = _word(f.get("seat_runtime_id"))
-        runtime_short = f"{runtime_id} {runtime.split()[-1]}" if runtime_id and " " in runtime else runtime
+        version = re.search(r"\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?", runtime)
+        runtime_short = f"{runtime_id} {version.group(0)}" if runtime_id and version else runtime
         daemon = _word(f.get("seat_daemon_version")) or DASH
         build = daemon.rsplit("+", 1)[-1][:8]
         avail = _word(f.get("seat_release_available"))
@@ -306,8 +352,8 @@ class SeatHero(HeroRow):
         full = f"{runtime} · daemon {daemon}" + (f" [↑ {avail8}]" if avail else "") + suffix
         line2 = fit_forms((
             _t((full, style)),
-            _t((f"{runtime} · {build}" + ("↑" if avail else ""), style)),
-            _t((runtime_short + (" ↑" if avail else ""), style)),
+            _t((f"{runtime_short} · {build}" + ("↑" if avail else "") + suffix, style)),
+            _t((runtime_short + (" ↑" if avail else "") + suffix, style)),
         ), room)
         on, offered = _count(f.get("seat_skills_on")), _count(f.get("seat_skills_offered"))
         skills = f"{on}/{offered}" if on is not None and offered is not None else DASH
@@ -318,7 +364,16 @@ class SeatHero(HeroRow):
             _t((f"skills {skills} · cap {cap_word}", "dim")),
             _t((f"{skills} · cap {cap_word}", "dim")),
         ), room)
-        return _lines(line1, line2, line3)
+        changed = f.get("seat_config_changed_since_start")
+        if f.get("seat_control_restart_required"):
+            words, style = "restart required", "yellow"
+        elif changed is True:
+            words, style = "changed since start", "yellow"
+        elif changed is False:
+            words, style = "unchanged since start", "dim"
+        else:
+            words, style = "change unavailable", "yellow"
+        return _lines(line2, line3, fit_forms((Text(words, style=style), Text(words.split(" since")[0], style=style)), room))
 
     # -- LIVE -----------------------------------------------------------------
 
@@ -359,7 +414,7 @@ class SeatHero(HeroRow):
         elif running > 0:
             plural = "s" if running > 1 else ""
             first = ((f"⚙ {running} task{plural} running", "yellow"),)
-            local = "amber"
+            local = "green"
         elif state == "alive":
             first = ((f"● alive {uptime} · idle · hb {hb_word}", "green"), (f"● alive {uptime} · idle", "green"), ("● alive · idle", "green"))
             local = "green"
@@ -412,55 +467,6 @@ class SeatHero(HeroRow):
             return (_t((f"fleet {online} online · {enrolled} enrolled", "dim")), _t((f"fleet {online}/{enrolled}", "dim"))), None
         return (Text(""),), None
 
-    # -- TODAY ----------------------------------------------------------------
-
-    def _today_body(self, room: int) -> tuple[Text, bool]:
-        f = self._facts or {}
-        tail = self._source("tail")
-        if tail.get("ok") is False:
-            reason = _word(tail.get("reason")) or "unavailable"
-            return _lines(fit_forms((_t((f"ledger unavailable — tail: {reason}", "yellow")), _t(("ledger unavailable", "yellow")),
-                                     _t(("unavailable", "yellow"))), room))
-        tasks = _count(f.get("seat_today_tasks"))
-        if tasks is None:
-            return _lines((Text.from_markup(UNAVAILABLE), False))
-        if tasks == 0:
-            last = f.get("seat_last_task") if isinstance(f.get("seat_last_task"), dict) else {}
-            node = _word(last.get("nodeId8")) or DASH
-            when = _clock(last.get("acceptedUtc"))
-            return _lines(
-                fit_forms((_t(("no tasks yet today", "dim")), _t(("none today", "dim"))), room),
-                fit_forms((_t((f"last {node} {when}", "dim")), _t((f"last {node}", "dim"))), room),
-            )
-        stored = _count(f.get("seat_today_stored"))
-        not_stored = _count(f.get("seat_today_not_stored"))
-        ns_style = "yellow" if not_stored else "dim"
-        stored_word = str(stored) if stored is not None else DASH
-        ns_word = str(not_stored) if not_stored is not None else DASH
-        line1 = fit_forms((
-            _t((f"{tasks} tasks", "bold"), (" · ", "dim"), (f"{stored_word} stored", "bold"), (" · ", "dim"), (f"{ns_word} not stored", ns_style)),
-            _t((f"{tasks} tasks", "bold"), (" · ", "dim"), (f"{stored_word} stored", "bold")),
-            _t((str(tasks), "bold"), (" · ", "dim"), (f"{stored_word} stored", "bold")),
-        ), room)
-        p50, longest = f.get("seat_today_p50_s"), f.get("seat_today_longest_s")
-        line2 = fit_forms((
-            _t((f"p50 {_dur(p50)} · longest {_dur(longest)}", "dim")),
-            _t((f"p50 {_dur(p50)} · max {_dur_short(longest)}", "dim")),
-            _t((f"p50 {_dur(p50)}", "dim")),
-        ), room)
-        div = f.get("seat_today_divergence") if isinstance(f.get("seat_today_divergence"), dict) else None
-        if div is None:
-            third = (_t(("local only", "dim")),) if f.get("seat_offline") else (_t((f"plane {EMDASH}", "dim")),)
-        else:
-            local_n, plane_n = _count(div.get("localStored")), _count(div.get("planeRowsSubmittedToday"))
-            ln = str(local_n) if local_n is not None else DASH
-            pn = str(plane_n) if plane_n is not None else DASH
-            if div.get("ok") is True:
-                third = (_t((f"local {ln} = plane {pn} ✓", "green")), _t((f"{ln} = {pn} ✓", "green")))
-            else:
-                third = (_t((f"⚠ local {ln} ≠ plane {pn} — grammar drift?", "yellow")), _t((f"⚠ {ln} ≠ {pn}", "yellow")))
-        return _lines(line1, line2, fit_forms(third, room))
-
     # -- VERDICTS -------------------------------------------------------------
 
     def _verdicts_body(self, room: int) -> tuple[Text, bool]:
@@ -475,9 +481,17 @@ class SeatHero(HeroRow):
         src = self._source("seatWork")
         when = _clock(src.get("asOfUtc"))
         reason = _word(src.get("reason"))
+        standing = self._source("standing")
+        if not (src.get("ok") is False or src.get("unavailable") is True) and (
+            standing.get("ok") is False or standing.get("unavailable") is True
+        ):
+            src = standing
+            when = _clock(src.get("asOfUtc"))
+            reason = f"standing: {_word(src.get('reason')) or 'unavailable'}"
         acc, rej, fail, pend = (_count(f.get(k)) for k in ("seat_today_accepted", "seat_today_rejected", "seat_today_failed", "seat_today_pending"))
         life_acc, life_att = _count(f.get("seat_standing_accepted")), _count(f.get("seat_standing_attempts"))
-        if src.get("unavailable") is True or (acc is None and life_acc is None):
+        # Source availability describes this read; populated ledger facts survive it.
+        if all(value is None for value in (acc, rej, fail, pend, life_acc, life_att)):
             return _lines(
                 fit_forms((_t(("verdicts unavailable", "yellow")), _t(("unavailable", "yellow"))), room),
                 fit_forms((_t((reason or "api", "dim")),), room),
@@ -494,10 +508,15 @@ class SeatHero(HeroRow):
                   (f"fail {n(fail)}", colour(fail, "red")), (" · ", "dim"), (f"pend {n(pend)}", colour(pend, "yellow")))
         short = ((f"{n(acc)}a", colour(acc, "green")), (" · ", "dim"), (f"{n(rej)}r", colour(rej, "red")), (" · ", "dim"),
                  (f"{n(fail)}f", colour(fail, "red")), (" · ", "dim"), (f"{n(pend)}p", colour(pend, "yellow")))
-        line1 = fit_forms((_t(("today ", "dim"), *counts), _t(*counts), _t(*short)), room)
+        if all(value is None for value in (acc, rej, fail, pend)):
+            line1 = fit_forms((_t(("today unavailable", "dim")),), room)
+        else:
+            line1 = fit_forms((_t(("today ", "dim"), *counts), _t(*counts), _t(*short)), room)
         if f.get("seat_standing_counters_inconsistent") is True:
             # spec §6 seats row / §14 proof 36: never the sum, never the API's total
             line2 = fit_forms((_t(("counters inconsistent (api)", "yellow")), _t(("inconsistent (api)", "yellow"))), room)
+        elif life_acc is None and life_att is None:
+            line2 = fit_forms((_t(("life unavailable", "dim")),), room)
         else:
             lag = fmt_age(f.get("seat_today_verdict_lag_p50_s"))
             line2 = fit_forms((
@@ -505,7 +524,7 @@ class SeatHero(HeroRow):
                 _t((f"{n(life_acc)} of {n(life_att)} · lag {lag}", "dim")),
                 _t((f"{n(life_acc)}/{n(life_att)}", "dim")),
             ), room)
-        if src.get("ok") is False:
+        if src.get("ok") is False or src.get("unavailable") is True:
             line3 = fit_forms((_t((f"⚠ {reason or 'api'} · last {when}", "yellow")), _t((f"⚠ {reason or 'api'}", "yellow")),
                                _t(("⚠ retrying", "yellow"))), room)
         else:
@@ -574,67 +593,21 @@ class SeatHero(HeroRow):
         ), room)
         return _lines(line1, line2, line3)
 
-    # -- UNIT -----------------------------------------------------------------
-
-    def _unit_body(self, room: int) -> tuple[Text, bool]:
+    def _nodes_body(self, room: int) -> tuple[Text, bool]:
         f = self._facts or {}
-        docker = f.get("seat_host_kind") == "docker"
-        unit = self._source("unit")
-        what = "docker" if docker else "unit"
-        when = _clock(unit.get("asOfUtc"))
-
-        def unavailable(reason: str) -> tuple[Text, bool]:
-            # Amber in the cell only: the tail owns liveness, so ``self._local`` is untouched (spec §8 UNIT).
-            return fit_forms((_t((f"{what} unavailable — {reason} · last {when}", "yellow")), _t((f"unavailable · last {when}", "yellow")),
-                              _t(("unavailable", "yellow"))), room)
-
-        if unit.get("ok") is False:
-            return _lines(unavailable(_word(unit.get("reason")) or "unavailable"))
-        # WP7 deviation 6: one sub-read failed while the other answered (docker ``inspect`` timed out, ``stats``
-        # answered -- or the reverse). ``ok`` stays True, the reason rides ``sources.unit`` and the failed half's
-        # fields are None. Line 1 says so amber (never a silent ``--``); the half that answered keeps its line.
-        # A ``host read failed`` reason leaves every unit field present, so it is MACHINE's to show, not UNIT's.
-        partial_reason = _word(unit.get("reason"))
-        inspect_missing = f.get("seat_unit_active_state") is None
-        stats_missing = f.get("seat_unit_memory_current_b") is None
-        partial = bool(partial_reason) and (inspect_missing or stats_missing)
-        active = _word(f.get("seat_unit_active_state")) or DASH
-        active_style = "green" if active in ("active", "running") else ("red" if active != DASH else "dim")
-        mem, peak, mx = _mib(f.get("seat_unit_memory_current_b")), _mib(f.get("seat_unit_memory_peak_b")), _gib(f.get("seat_unit_memory_max_b"))
-        restarts = _count(f.get("seat_unit_restarts"))
-        restarts_word = str(restarts) if restarts is not None else DASH
-        line1 = fit_forms((
-            _t((active, active_style), (f" · {mem} / {mx} · peak {peak} · restarts {restarts_word}", "dim")),
-            _t((active, active_style), (f" · {mem}/{mx} · peak {peak}", "dim")),
-            _t((active, active_style), (f" · {mem}", "dim")),
-        ), room)
-        boot = f.get("seat_unit_boot_enabled")
-        if docker:
-            second = (_t(("restart: unless-stopped", "dim")), _t(("unless-stopped", "dim")))
-        elif boot is True:
-            second = (_t(("boot: enabled", "dim")), _t(("boot ✓", "dim")))
-        elif boot is False:
-            second = (_t(("boot: disabled ⚠ — a reboot leaves this seat down", "yellow")), _t(("boot: disabled ⚠", "yellow")), _t(("boot ⚠", "yellow")))
-        else:
-            second = (_t((f"boot: {DASH}", "dim")),)
-        graceful = f.get("seat_unit_graceful_stop_possible")
-        stop_s = as_float(f.get("seat_unit_stop_timeout_s"))
-        stop_word = f"{stop_s:.0f} s" if stop_s is not None else DASH
-        kill = _word(f.get("seat_unit_kill_mode")) or "kill mode --"
-        if graceful is True:
-            third = (_t((f"stop: SIGTERM cgroup-wide, {stop_word} → graceful", "green")), _t((f"stop {stop_word} → graceful", "green")),
-                     _t(("graceful ✓", "green")))
-        elif graceful is False and docker:
-            third = (_t((f"stop-timeout {stop_word} · no init → ungraceful", "yellow")), _t((f"{stop_word} · no init ✗", "yellow")),
-                     _t(("ungraceful", "yellow")))
-        elif graceful is False:
-            third = (_t((f"stop: {kill}, {stop_word} → ungraceful", "yellow")), _t((f"stop {stop_word} → ungraceful", "yellow")),
-                     _t(("ungraceful", "yellow")))
-        else:
-            third = (_t((f"stop: {DASH}", "dim")),)
-        if partial:
-            kept = [] if inspect_missing and stats_missing else [line1]
-            if not inspect_missing:
-                kept.append(fit_forms(third, room))   # inspect answered: the stop facts are live
-            return _lines(unavailable(partial_reason), *kept)
-        return _lines(line1, fit_forms(second, room), fit_forms(third, room))
+        rows = f.get("seat_nodes_all_rows")
+        if not isinstance(rows, list) or not rows:
+            coverage = f.get("seat_nodes_coverage") or {}
+            return _lines(fit_forms((Text("nodes unavailable", style="yellow"),), room),
+                          fit_forms((Text(_word(coverage.get("reason")) or "no rows yet", style="dim"),), room))
+        attempts = sum(_count(r.get("attempts")) or 0 for r in rows)
+        accepted = sum(_count(r.get("accepted")) or 0 for r in rows)
+        rate = f"{100 * accepted / attempts:.0f} %" if attempts else DASH
+        top = max(rows, key=lambda r: _count(r.get("attempts")) or 0)
+        top_rate = as_float(top.get("acceptedPercent"))
+        paid = [r.get("paid") for r in rows if _count(r.get("paid")) is not None]
+        launch = [r.get("launch") for r in rows if _count(r.get("launch")) is not None]
+        return _lines(
+            fit_forms((Text(f"{len(rows)} node types · {rate} accepted"), Text(f"{len(rows)} types · {rate}")), room),
+            fit_forms((Text(f"{_word(top.get('nodeKey'))} · {top_rate:.0f} %" if top_rate is not None else _word(top.get('nodeKey'))),), room),
+            fit_forms((Text(f"paid {sum(paid) if paid else '·'} · launch {sum(launch) if launch else '·'}", style="dim"),), room))

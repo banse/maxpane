@@ -16,7 +16,8 @@ import pytest
 from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.data.seat_models import SEAT_WIDGET_SIGNATURES, fold_status_document
 from maxpane_dashboard.widgets.panels import SignalsPanelBase, SparklinePanel
-from maxpane_dashboard.widgets.seat.cost import SeatCost, SeatCostSpark, tokens_word
+from maxpane_dashboard.widgets.seat.cost import SeatCost, tokens_word
+from maxpane_dashboard.widgets.seat import SeatOutputTokens
 from tests.widgets.test_seat_hero import composite_lines
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "seat"
@@ -52,11 +53,11 @@ def test_rows_and_the_nested_strip_are_the_contract_s():
     assert SeatCost.ROWS == (("seat-cost-window", "7 d"), ("seat-cost-tokens", "tokens"), ("seat-cost-bucket-1", None), ("seat-cost-bucket-2", None),
                              ("seat-cost-bucket-3", None), ("seat-cost-side", "side model"), ("seat-cost-quota", "quota"), None, ("seat-cost-footer", None))
     assert SeatCost.TITLE == "COST" and SeatCost.LABEL_WIDTH == 10 and SeatCost.DIM_LABEL is True
-    assert issubclass(SeatCost, SignalsPanelBase) and issubclass(SeatCostSpark, SparklinePanel)
-    assert SeatCostSpark.TITLE == "OUTPUT TOKENS / DAY · 14 d" and SeatCostSpark.LINE_IDS == ("seat-cost-spark-line",)
-    assert SeatCostSpark.LABEL_WIDTH == 8 and SeatCostSpark.SHOW_ARROW is False and SeatCostSpark.MIN_POINTS == 2
-    assert SeatCostSpark.EMPTY_TEXT == "waiting for data..."
-    assert not hasattr(SeatCostSpark, "update_data"), "the parent drives render_series; MIGRATED_PACKAGES counts seven"
+    assert issubclass(SeatCost, SignalsPanelBase) and issubclass(SeatOutputTokens, SparklinePanel)
+    assert SeatOutputTokens.TITLE == "OUTPUT TOKENS / DAY · 14 d" and SeatOutputTokens.LINE_IDS == ("seat-output-tokens-series",)
+    assert SeatOutputTokens.LABEL_WIDTH == 8 and SeatOutputTokens.SHOW_ARROW is False and SeatOutputTokens.MIN_POINTS == 2
+    assert SeatOutputTokens.EMPTY_TEXT == "no token data yet"
+    assert hasattr(SeatOutputTokens, "update_data"), "PANELS independently drives OUTPUT TOKENS"
 
 
 def test_tokens_word_is_k_and_m_lower_case_never_a_currency():
@@ -74,7 +75,8 @@ async def test_healthy_values_at_a_wide_terminal():
     assert _row(rows, "side model").endswith("n/a (codex)")
     assert "codex weekly 45 % ▮▮▯▯▯ · resets " in _row(rows, "quota") and "· sampled " in _row(rows, "quota")
     assert "sessions from 09-22 · 0 rows expired · 0 oversize skipped · tokens, not currency · definitions: turns = agent messages · input = uncached · output incl. reasoning" in text
-    assert "OUTPUT TOKENS / DAY" in text and "▁" in text or "█" in text, "the sparkline strip painted blocks"
+    spark = await composite_lines(SeatOutputTokens, (100, 6), css_path=CSS_PATH, region_only=True, **_payload())
+    assert "OUTPUT TOKENS / DAY" in "\n".join(spark) and any(c in "\n".join(spark) for c in "▁█"), "the independent sparkline painted blocks"
 
 
 async def test_claude_wordings_side_model_and_quota():
@@ -93,8 +95,9 @@ async def test_degraded_sessions_keep_the_ledger_counts_and_say_why():
 
 
 async def test_the_strip_waits_for_two_points():
-    rows = await _cost(**_payload(seat_cost_series={"outputTokensPerDay": [["2026-09-26", 14000]], "tasksPerDay": [], "acceptedPerDay": []}))
-    assert "waiting for data..." in "\n".join(rows)
+    rows = await composite_lines(SeatOutputTokens, (100, 6), css_path=CSS_PATH, region_only=True,
+                                 seat_cost_series={"outputTokensPerDay": [["2026-09-26", 14000]]})
+    assert "no token data yet" in "\n".join(rows)
 
 
 async def test_cost_panel_has_no_currency():
@@ -120,4 +123,4 @@ async def test_half_width_shows_short_forms_without_wrapping():
 
 async def test_no_args_renders_without_raising():
     rows = await _cost(**{k: None for k in SIGNATURE})
-    assert rows[0].strip() == "COST" and "unavailable" in "\n".join(rows) and "waiting for data..." in "\n".join(rows)
+    assert rows[0].strip() == "COST" and "unavailable" in "\n".join(rows)

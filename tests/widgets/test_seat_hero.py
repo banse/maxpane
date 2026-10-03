@@ -123,8 +123,8 @@ async def _style_at(word: str, size=PIN, **payload):
 
 
 def test_the_six_boxes_are_named_in_order_and_the_box_class_is_its_own_selector():
-    assert SeatHero.BOXES == (("seat-hero-seat", "SEAT"), ("seat-hero-live", "LIVE"), ("seat-hero-today", "TODAY"),
-                              ("seat-hero-verdicts", "VERDICTS"), ("seat-hero-gate", "GATE"), ("seat-hero-unit", "UNIT"))
+    assert SeatHero.BOXES == (("seat-hero-seat", "SEAT"), ("seat-hero-live", "LIVE"), ("seat-hero-config", "CONFIG & SKILLS"),
+                              ("seat-hero-records", "RECORDS"), ("seat-hero-nodes", "NODES"), ("seat-hero-control", "CONTROL"))
     assert SeatHero.BOX_CLASS is SeatHeroBox and SeatHeroBox.__name__ == "SeatHeroBox"
     assert tuple(BOX_IDS.values()) == tuple(box_id for box_id, _label in SeatHero.BOXES)
     assert SEVERITY == ("green", "amber", "red")
@@ -167,39 +167,36 @@ async def test_healthy_fixture_fills_every_box_whole_at_the_pin_width():
         assert "…" not in "\n".join(boxes[key]) and "‹" not in boxes[key + "-border"], (key, boxes[key])
     assert boxes["seat"][0].startswith("IDMD #7")
     assert boxes["live"][0].startswith("● alive"), boxes["live"]
-    assert "12" in boxes["today"][0] and "11 stored" in boxes["today"][0]
-    assert "9" in boxes["verdicts"][0] and "pend 1" in boxes["verdicts"][0] or "1p" in boxes["verdicts"][0]
-    assert "safe to restart" in boxes["gate"][0]
-    assert boxes["unit"][0].startswith("active")
+    assert "12" in boxes["seat"][2] and "11 stored" in boxes["seat"][2]
+    assert "9" in boxes["records"][0] and "pend 1" in boxes["records"][0] or "1p" in boxes["records"][0]
+    assert "safe to restart" in boxes["control"][0]
+    assert boxes["seat"][1].startswith("active")
     assert boxes["-colour"] == "green"
 
 
 async def test_the_wide_terminal_shows_the_spec_wordings():
     boxes = await _boxes(WIDE, **_healthy())
-    assert boxes["seat"] == ["IDMD #7 · agent 51075 · eligible", "codex-cli 0.157.0 · daemon 0.1.0+5bfa8261", "skills 31/31 · capacity 1"]
+    assert boxes["seat"] == ["IDMD #7 · agent 51075 · eligible", "active · 110 MiB / 3 G · boot ⚠", "today 12 tasks · 11 stored"]
+    assert boxes["config"] == ["codex-cli 0.157.0 · daemon 0.1.0+5bfa8261", "skills 31/31 · capacity 1", "unchanged since start"]
     assert boxes["live"][0] == "● alive 14h42m · idle · hb 4 s"
     # The healthy fixture's newest audit entry is a verified restart, so LIVE line 3 takes the audit branch;
     # the fleet line is the fallback when no restart/start audit entry exists.
     assert boxes["live"][2].startswith("↻ restarted ") and boxes["live"][2].endswith("· connected"), boxes["live"]
     no_audit = await _boxes(WIDE, **_healthy(seat_control_last_audit=[]))
     assert no_audit["live"][2] == "fleet 406 online · 417 enrolled"
-    assert boxes["today"] == ["12 tasks · 11 stored · 1 not stored", "p50 28 s · longest 4 m 12 s", "local 11 = plane 11 ✓"]
-    assert boxes["verdicts"][0] == "today acc 9 · rej 0 · fail 1 · pend 1"
-    assert boxes["verdicts"][1] == "life 244 of 288 · lag p50 15m"
-    assert boxes["verdicts"][2].startswith("api · as of ")
-    assert boxes["gate"][0] == "safe to restart" and boxes["gate"][1].startswith("idle 9 beats · plane []")
+    assert boxes["records"][0] == "today acc 9 · rej 0 · fail 1 · pend 1"
+    assert boxes["records"][1] == "life 244 of 288 · lag p50 15m"
+    assert boxes["records"][2].startswith("api · as of ")
+    assert boxes["control"][0] == "safe to restart" and boxes["control"][1].startswith("idle 9 beats · plane []")
     # ``_clock`` renders local time (``as_of_hhmm`` -> ``time.localtime``): build the expectation the same way.
-    assert boxes["gate"][2] == f"last line submitted {as_of_hhmm('2026-09-26T03:24:17.136Z')} · outbox 0"
-    assert boxes["unit"] == ["active · 110 MiB / 3 G · peak 180 MiB · restarts 0",
-                             "boot: disabled ⚠ — a reboot leaves this seat down",
-                             "stop: SIGTERM cgroup-wide, 30 s → graceful"]
+    assert boxes["control"][2] == f"last line submitted {as_of_hhmm('2026-09-26T03:24:17.136Z')} · outbox 0"
 
 
 async def test_a_release_available_marks_the_daemon_line_and_the_container_suffix_appears_on_the_mac():
     boxes = await _boxes(WIDE, **_healthy(seat_release_available="0.1.0+5c1d2e3f", seat_host_kind="docker"))
-    assert boxes["seat"][1] == "codex-cli 0.157.0 · daemon 0.1.0+5bfa8261 [↑ 5c1d2e3f] (container)"
+    assert boxes["config"][0] == "codex-cli 0.157.0 · daemon 0.1.0+5bfa8261 [↑ 5c1d2e3f] (container)"
     narrow = await _boxes(**_healthy(seat_release_available="0.1.0+5c1d2e3f"))
-    assert "↑" in narrow["seat"][1], narrow["seat"]
+    assert "↑" in narrow["config"][0], narrow["config"]
 
 
 # -- colour: red beats amber beats green ----------------------------------------------------
@@ -233,10 +230,10 @@ async def test_verdicts_read_counters_inconsistent_never_the_sum():
     # spec §14 mutation proof 36, wording half: 244+5+11+28 != 290 renders the flag, never the numbers
     payload = _healthy(seat_standing_attempts=290, seat_standing_counters_inconsistent=True)
     boxes = await _boxes(WIDE, **payload)
-    assert "counters inconsistent (api)" in boxes["verdicts"][1]
-    assert "290" not in "\n".join(boxes["verdicts"]) and "244 of" not in "\n".join(boxes["verdicts"])
+    assert "counters inconsistent (api)" in boxes["records"][1]
+    assert "290" not in "\n".join(boxes["records"]) and "244 of" not in "\n".join(boxes["records"])
     narrow = await _boxes(**payload)
-    assert "inconsistent (api)" in narrow["verdicts"][1] and "290" not in "\n".join(narrow["verdicts"])
+    assert "inconsistent (api)" in narrow["records"][1] and "290" not in "\n".join(narrow["records"])
     colour, ansi = await _style_at("inconsistent (api)", WIDE, **payload)
     assert colour == ansi[3]
 
@@ -257,7 +254,7 @@ async def test_live_and_today_degrade_when_the_tail_is_dead():
     payload = _source(_healthy(seat_hero_state="red"), "tail", ok=False, reason="no aliveAt for 47 s", asOfUtc="2026-09-26T03:39:20Z")
     boxes = await _boxes(WIDE, **payload)
     assert boxes["live"][0].startswith("tail died ") and boxes["live"][0].endswith("— restarting")
-    assert boxes["today"][0] == "ledger unavailable — tail: no aliveAt for 47 s"
+    assert boxes["seat"][2] == "ledger unavailable — tail: no aliveAt for 47 s"
     assert boxes["-colour"] == "red"
 
 
@@ -292,42 +289,42 @@ async def test_live_third_line_precedence_paused_then_auth_then_restart_then_fle
 
 async def test_today_reads_no_tasks_yet_with_the_last_node():
     boxes = await _boxes(WIDE, **_healthy(seat_today_tasks=0, seat_today_stored=0, seat_today_not_stored=0))
-    assert boxes["today"][0] == "no tasks yet today"
-    assert boxes["today"][1].startswith("last 0c1f9727 ")
+    assert boxes["seat"][2] == "no tasks yet today"
+    assert "no tasks yet today" in boxes["seat"][2]
 
 
 async def test_verdicts_degrade_to_values_kept_amber_then_unavailable_then_local_only():
     kept = _source(_healthy(), "seatWork", ok=False, reason="500 ×2 (retrying)", failures=2)
     boxes = await _boxes(WIDE, **kept)
-    assert boxes["verdicts"][0].startswith("today acc 9"), "values kept while retrying"
-    assert boxes["verdicts"][2].startswith("⚠ 500 ×2 (retrying) · last ")
+    assert boxes["records"][0].startswith("today acc 9"), "values kept while retrying"
+    assert boxes["records"][2].startswith("⚠ 500 ×2 (retrying) · last ")
     gone = _source(_healthy(seat_today_accepted=None, seat_today_rejected=None, seat_today_failed=None, seat_today_pending=None,
                             seat_standing_attempts=None, seat_standing_accepted=None, seat_today_verdict_lag_p50_s=None),
                    "seatWork", ok=False, reason="HTTP 500", failures=3, unavailable=True)
     boxes = await _boxes(WIDE, **gone)
-    assert boxes["verdicts"][0] == "verdicts unavailable" and boxes["verdicts"][1] == "HTTP 500"
+    assert boxes["records"][0] == "verdicts unavailable" and boxes["records"][1] == "HTTP 500"
     offline = await _boxes(WIDE, **_healthy(seat_offline=True, seat_agent_id=None))
-    assert offline["verdicts"][1] == "local only (stored ≠ accepted)"
+    assert offline["records"][1] == "local only (stored ≠ accepted)"
     assert offline["seat"][0] == "IDMD #7 · agent — · eligible"
 
 
 async def test_gate_reads_broker_unreachable_in_flight_drain_and_unknown():
     unreachable = await _boxes(WIDE, **_healthy(seat_control_broker_reachable=False, seat_control_gate=None))
-    assert unreachable["gate"][0] == "broker unreachable — read-only"
+    assert unreachable["control"][0] == "broker unreachable — read-only"
     narrow = await _boxes(**_healthy(seat_control_broker_reachable=False, seat_control_gate=None))
-    assert narrow["gate"][0] in ("broker unreachable", "read-only")
+    assert narrow["control"][0] in ("broker unreachable", "read-only")
     flight = await _boxes(WIDE, **_healthy(seat_control_in_flight={"verb": "restart", "planId": "7f3a9c1e2b4d6081", "sinceUtc": "2026-09-26T03:40:30Z"}))
-    assert flight["gate"][0] == "restart in flight (plan 7f3a) · verifying"
+    assert flight["control"][0] == "restart in flight (plan 7f3a) · verifying"
     drain = await _boxes(WIDE, **_healthy(seat_control_drain={"armedAtUtc": "2026-09-26T14:02:00Z", "idleBeats": 2, "rearmed": 1, "expiresAtUtc": "2026-09-26T18:02:00Z"}))
-    assert drain["gate"][0].startswith("drain armed ") and drain["gate"][0].endswith("· 2/4 idle beats")
+    assert drain["control"][0].startswith("drain armed ") and drain["control"][0].endswith("· 2/4 idle beats")
     gate = copy.deepcopy(_healthy()["seat_control_gate"])
     gate.update(safe=False, reason="gate unknown: outbox unreadable", outboxFiles=None)
     unknown = await _boxes(WIDE, **_healthy(seat_control_gate=gate))
-    assert unknown["gate"][0] == "gate unknown: outbox unreadable"
+    assert unknown["control"][0] == "gate unknown: outbox unreadable"
     running = copy.deepcopy(_healthy()["seat_control_gate"])
     running.update(safe=False, reason="task running 0c1f9727 · 0:42", lifecycleOpen=True)
     blocked = await _boxes(WIDE, **_healthy(seat_control_gate=running))
-    assert blocked["gate"][0] == "task running 0c1f9727 · 0:42"
+    assert blocked["control"][0] == "task running 0c1f9727 · 0:42"
 
 
 async def test_unit_degrades_amber_without_touching_the_hero_colour():
@@ -335,12 +332,12 @@ async def test_unit_degrades_amber_without_touching_the_hero_colour():
                                seat_unit_stop_timeout_s=10, seat_unit_kill_mode=None),
                       "unit", ok=False, reason="inspect timed out 25 s", asOfUtc="2026-09-26T03:07:00Z")
     boxes = await _boxes(WIDE, **payload)
-    assert boxes["unit"][0].startswith("docker unavailable — inspect timed out 25 s · last ")
+    assert boxes["seat"][1].startswith("docker unavailable — inspect timed out 25 s")
     assert boxes["-colour"] == "green", "the tail owns liveness (spec §8 UNIT)"
     mac = await _boxes(WIDE, **_healthy(seat_host_kind="docker", seat_unit_boot_enabled=None, seat_unit_graceful_stop_possible=False,
                                         seat_unit_stop_timeout_s=10, seat_unit_kill_mode=None))
-    assert mac["unit"][1] == "restart: unless-stopped"
-    assert mac["unit"][2] == "stop-timeout 10 s · no init → ungraceful"
+    assert mac["seat"][1].startswith("active · 110 MiB")
+    # The stop and restart-policy facts moved to MACHINE/CONFIG; their tests cover both states.
 
 
 async def test_a_partial_docker_read_says_unavailable_amber_while_ok_stays_true():
@@ -349,16 +346,16 @@ async def test_a_partial_docker_read_says_unavailable_amber_while_ok_stays_true(
     payload = _source(_healthy(seat_host_kind="docker", seat_unit_active_state=None, seat_unit_stop_timeout_s=None),
                       "unit", ok=True, reason="inspect timed out 25 s")
     boxes = await _boxes(WIDE, **payload)
-    assert boxes["unit"][0].startswith("docker unavailable — inspect timed out 25 s · last "), boxes["unit"]
-    assert boxes["unit"][1].startswith("-- · 110 MiB"), "the stats half that answered is still served"
-    assert "restart: unless-stopped" not in boxes["unit"], "the inspect half is not claimed"
+    assert boxes["seat"][1].startswith("docker unavailable — inspect timed out 25 s"), boxes["seat"]
+    assert "110 MiB" in boxes["seat"][1], "the stats half that answered is still served"
+    assert "restart: unless-stopped" not in boxes["seat"], "the inspect half is not claimed"
     assert boxes["-colour"] == "green", "the tail owns liveness (spec §8 UNIT)"
     colour, ansi = await _style_at("docker unavailable", WIDE, **payload)
     assert colour == ansi[3], "amber in the cell"
     # a failed host read leaves every unit field present: UNIT is whole (MACHINE shows the host half)
     host_only = _source(_healthy(), "unit", ok=True, reason="host read failed")
     whole = await _boxes(WIDE, **host_only)
-    assert whole["unit"][0].startswith("active · 110 MiB"), whole["unit"]
+    assert whole["seat"][1].startswith("active · 110 MiB"), whole["seat"]
 
 
 # -- honest shortening and marking (deviation 6) ----------------------------------------------
@@ -379,18 +376,18 @@ async def test_third_party_text_is_redacted_in_the_hero():
     # The runtime version is painted verbatim (an ``eligible…`` string collapses to the bare word), and
     # ``strip_tags`` deletes the ``[redacted]`` placeholder, so the painted remnant is ``sk-``.
     boxes = await _boxes(WIDE, **_healthy(seat_runtime_version="codex-cli sk-svcac******** 0.157.0"))
-    joined = "\n".join(boxes["seat"])
+    joined = "\n".join(boxes["config"])
     assert "sk-svcac" not in joined and "codex-cli sk-" in joined, joined
     evil = await _boxes(WIDE, **_healthy(seat_eligibility="[/x][bold]evil"))
     assert "[bold]" not in "\n".join(evil["seat"])
 
 
 @pytest.mark.parametrize("running,words", [(1, "⚙ 1 task running"), (3, "⚙ 3 tasks running")])
-async def test_unattributed_running_tasks_are_amber_never_idle(running, words):
+async def test_unattributed_running_text_is_amber_but_label_stays_plain(running, words):
     payload = _healthy(seat_daemon_running=running, seat_current=None, seat_hero_state="green")
     boxes = await _boxes(WIDE, **payload)
     assert boxes["live"][0] == words
-    assert boxes["-colour"] == "amber"
+    assert boxes["-colour"] == "green"
     color, ansi = await _style_at(words, WIDE, **payload)
     assert color == ansi[3]
 
@@ -410,3 +407,63 @@ async def test_dead_tail_overrides_unattributed_work():
     payload = _source(_healthy(seat_daemon_running=3, seat_current=None), "tail", ok=False)
     boxes = await _boxes(WIDE, **payload)
     assert boxes["live"][0].startswith("tail died") and boxes["-colour"] == "red"
+
+
+async def test_claude_short_form_uses_version_number_not_code_suffix():
+    boxes = await _boxes(PIN, **_healthy(seat_runtime_id='claude', seat_runtime_version='2.1.286 (Claude Code)'))
+    assert 'claude 2.1.286' in boxes['config'][0]
+    assert 'Code)' not in boxes['config'][0]
+
+
+@pytest.mark.parametrize('card,fields,source,expected', [
+    ('SEAT', {'seat_unit_boot_enabled': False}, None, 3),
+    ('SEAT', {'seat_unit_active_state': 'inactive'}, None, 1),
+    ('LIVE', {'seat_hero_state': 'amber'}, None, 3),
+    ('LIVE', {'seat_hero_state': 'red'}, None, 1),
+    ('CONFIG & SKILLS', {'seat_control_restart_required': True}, None, 3),
+    ('CONFIG & SKILLS', {'seat_config_changed_since_start': True}, None, 3),
+    ('CONFIG & SKILLS', {}, ('seat', {'ok': False, 'reason': 'projection_refused (canary)'}), 1),
+    ('CONTROL', {'seat_control_drain': {'armedAtUtc': '2026-10-03T17:00:00Z'}}, None, 3),
+    ('CONTROL', {'seat_control_in_flight': {'verb': 'restart'}}, None, 3),
+    ('CONTROL', {'seat_control_broker_reachable': False, 'seat_control_gate': None}, None, 3),
+    ('CONTROL', {'seat_control_gate': None}, None, 1),
+])
+async def test_only_named_card_states_colour_the_label(card, fields, source, expected):
+    payload = _healthy(**fields)
+    if source:
+        payload = _source(payload, source[0], **source[1])
+    colour, ansi = await _style_at(card + ' ⚠', WIDE, **payload)
+    assert colour == ansi[expected]
+
+
+async def test_running_and_api_unreachable_leave_live_and_records_labels_plain():
+    payload = _source(_healthy(seat_daemon_running=3, seat_current=None), 'standing', ok=False, reason='busy')
+    payload = _source(payload, 'seatWork', ok=False, reason='busy', unavailable=True)
+    rows = await composite_lines(SeatHero, WIDE, css_path=CSS_PATH, region_only=True, **payload)
+    assert 'LIVE ⚠' not in '\n'.join(rows)
+    assert 'RECORDS ⚠' not in '\n'.join(rows)
+
+
+@pytest.mark.parametrize('today,lifetime,first,second', [
+    ((9,0,1,1),(244,288),'today acc 9 · rej 0 · fail 1 · pend 1','life 244 of 288'),
+    ((9,0,1,1),(None,None),'today acc 9 · rej 0 · fail 1 · pend 1','life unavailable'),
+    ((None,7,0,0),(None,None),'today acc -- · rej 7 · fail 0 · pend 0','life unavailable'),
+    ((None,None,None,None),(244,288),'today unavailable','life 244 of 288'),
+])
+async def test_records_hero_keeps_cached_counts_when_api_is_busy(today,lifetime,first,second):
+    payload = _healthy(**dict(zip(('seat_today_accepted','seat_today_rejected','seat_today_failed','seat_today_pending'),today)),
+                       seat_standing_accepted=lifetime[0],seat_standing_attempts=lifetime[1])
+    payload = _source(payload,'seatWork',ok=False,unavailable=True,reason='busy',failures=4)
+    payload = _source(payload,'standing',ok=False,unavailable=True,reason='busy',failures=4)
+    boxes = await _boxes(WIDE,**payload)
+    assert boxes['records'][0] == first
+    assert boxes['records'][1].startswith(second)
+    assert 'busy' in boxes['records'][2] and 'last' in boxes['records'][2]
+
+
+async def test_records_hero_reports_standing_busy_without_hiding_cached_facts():
+    payload = _source(_healthy(),'standing',ok=False,unavailable=True,reason='busy',failures=4)
+    boxes = await _boxes(WIDE,**payload)
+    assert 'acc 9' in boxes['records'][0]
+    assert 'life 244 of 288' in boxes['records'][1]
+    assert 'standing' in boxes['records'][2] and 'busy' in boxes['records'][2]

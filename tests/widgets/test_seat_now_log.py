@@ -273,11 +273,9 @@ async def test_heartbeats_collapse_and_expand_on_toggle():
         assert len(await _log_rows(pilot)) == 6
 
 
-async def test_tall_toggles_a_class_the_screen_can_size():
-    async with _LogHarness().run_test(size=(120, 12)) as pilot:
-        widget = pilot.app.query_one(SeatLog)
-        assert widget.toggle_tall() is True and widget.has_class(SeatLog.TALL_CLASS)
-        assert widget.toggle_tall() is False and not widget.has_class(SeatLog.TALL_CLASS)
+def test_tall_log_api_is_retired():
+    assert not hasattr(SeatLog, "toggle_tall")
+    assert not hasattr(SeatLog, "TALL_CLASS")
 
 
 def test_rows_are_styled_by_kind():

@@ -26,9 +26,10 @@ Not touched: `imd-worker.service` itself (only the optional drop-in), `/home/imd
 
 ## Before you start
 
-Use a terminal of at least **134×50** for the measured full dashboard layout. CONFIG's floor sets the
-50-row minimum; LEDGER's full tier needs **210 columns**. Below the height minimum, the body scrolls
-over ssh and `‹ taller` lights up; narrower widths advertise omitted content with `‹ widen`.
+The round-9 WP4 screen foundation measures **132×40**. SEAT sets the height minimum; LEDGER's
+full tier clears at 126 columns and needs no exception at this pin. Final WP6 certification follows
+the completed body content. Below a body's height minimum it scrolls and `‹ taller` lights up;
+narrower widths advertise omitted content with `‹ widen`.
 
 Gate step (c) accepts a terminal latest lifecycle line or a successful empty history read (owner D1); only a failed or unreadable lifecycle read is `gate_unknown(lifecycle)`, and stale Mac history remains unknown.
 
