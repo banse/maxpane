@@ -1129,3 +1129,11 @@ def test_operator_doc_covers_seat3_and_dual_abi_install():
     for term in ("Seat #3 (Ubuntu 24.04)", "--seat 3 --agent 52082", "3 packages, 0 upgrades",
                  "--dry-run-python-version", "cp312", "cp314", "unmeasured on Ubuntu 24.04"):
         assert term in text
+
+
+def test_probe_and_manager_agree_on_execstart_runtime_parser():
+    # The standalone shell probe cannot import the TUI. Bind the shared parsing literal;
+    # behavioural tests cover both argument forms and the probe's unavailable fallback.
+    pattern = r'(?:^|\s)--runtime(?:=|\s+)(codex|claude)(?=\s|;|$)'
+    for path in (PROBE_SH, REPO / "maxpane_dashboard/data/seat_manager.py"):
+        assert f're.search(r"{pattern}",' in path.read_text(), path
