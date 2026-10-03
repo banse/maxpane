@@ -1065,3 +1065,9 @@ env -u NO_COLOR HOME=$(mktemp -d) PYTHONPATH=sybilkit/src .venv-pepepane/bin/pyt
 ```
 
 All 21 installed package versions match the lock (including the editable fork); the environment additionally contains 14 build/test tools. The third-party closure has no freeze diff. The never-touch check is empty, and frozen document bodies and pyproject.toml are unchanged. No host access, SSH, Docker operation, deployment, push or tag was performed. A hash-checked cp312 download prepared the wheel directory for same-commit MANIFEST refreshes; the final seeded build follows this validation commit once.
+
+### 2026-10-03 — PEPEPANE round 8 packaging evidence
+
+The single final seeded build after 511b287 reproduced the committed third-party lock lines byte for byte. It staged 22 locked wheels: pydantic_core 2.46.5 for cp312 and cp314 on manylinux_2_17 x86_64, plus 20 py3-none-any wheels including the fork. The mandatory in-script guard passed. Only the rebuilt fork hash changed in requirements.lock, with its two dependent MANIFEST lines refreshed in this packaging commit.
+
+The 9,753,432-byte archive contains exactly 24 tracked deployment files plus the 22 wheels, with root:root ownership. All 23 MANIFEST entries match, all 363 fork source members match the checkout, and the shared byte checker matches 367 files extracted from the rebuilt wheel. The archive SHA-256 is `24053d3922380682e52e548f814bdeb30d7d68311d43c1e0fad717044f78f84b`. Final focused manifest, lock, documentation and fixture checks passed 66 tests. The archive is renamed after this final commit without rebuilding; documentation is outside its contents. The round ledger is removed.
