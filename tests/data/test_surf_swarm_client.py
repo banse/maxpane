@@ -1,8 +1,9 @@
 import httpx
 import pytest
 
+from maxpane_dashboard.data.surf_models import SWARM_WORKFLOW_LIMIT
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API, SwarmClient
-from tests.surf_swarm_fixtures import swarm_capture_v2, swarm_details_v2
+from tests.surf_swarm_fixtures import swarm_capture_v2, swarm_capture_v6, swarm_details_v2
 
 #: The one executing job of the v2 corpus that has a detail (nodes) on file.
 _EXECUTING_DETAIL = "f046299c-d94e-4760-9e3c-c1e2d3a1a3b2"
@@ -279,6 +280,9 @@ async def test_the_skills_and_version_paths_are_the_documented_ones():
 
 
 async def test_the_jobs_request_carries_no_query_and_no_key_shaped_header():
+    """``/jobs`` takes no parameters. The only getters that send any are the
+    oracle pair and ``/workflows`` (``limit``), each through ``params=`` and
+    validated first -- never as a ``?`` in the path (spec §2 "Data")."""
     seen: list[httpx.Request] = []
 
     def handler(request):
@@ -312,6 +316,10 @@ async def test_a_path_with_a_query_string_is_refused_before_any_request():
     async with _client(handler) as client:
         with pytest.raises(ValueError):
             await client._get("/jobs?limit=50")
+        # /workflows is parameterised, but through ``params=`` only: the path
+        # itself is refused exactly like any other (spec §2 "Data").
+        with pytest.raises(ValueError):
+            await client._get("/workflows?limit=12")
 
     assert seen == []
 
@@ -859,3 +867,86 @@ async def test_a_busy_body_without_an_all_host_503_is_no_job_detail(status):
     async with _client(lambda r: httpx.Response(status, json=_busy_body()),
                        inter_call_delay=0) as client:
         assert await client.fetch_job(_JOB) is None
+
+
+# --- GET /workflows (docs/surf_swarm_workflows_spec.md §2, WP2) ---------------
+
+
+async def test_workflows_sends_its_limit_as_a_parameter_never_in_the_path():
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=swarm_capture_v6("workflows_limit12"))
+
+    async with _client(handler, inter_call_delay=0) as client:
+        rows = await client.fetch_workflows()
+        hundred = await client.fetch_workflows(limit=100)
+
+    assert [r.method for r in seen] == ["GET", "GET"]
+    assert [r.url.path for r in seen] == ["/workflows", "/workflows"]
+    # The default is the contract's page size, sent as a parameter.
+    assert dict(seen[0].url.params) == {"limit": str(SWARM_WORKFLOW_LIMIT)} == {"limit": "12"}
+    assert str(seen[0].url) == f"{SWARM_API}/workflows?limit=12"
+    assert dict(seen[1].url.params) == {"limit": "100"}
+    lowered = {k.lower() for k in seen[0].headers}
+    assert not lowered & {"authorization", "x-api-key", "api-key", "x-token", "cookie"}
+    # The envelope's list, unwrapped and whole (12 rows, newest first as served).
+    capture = swarm_capture_v6("workflows_limit12")
+    assert rows == capture["workflows"]
+    assert len(rows) == 12
+
+
+@pytest.mark.parametrize("limit", [0, 101, -1, True, False, 12.0, "12", None, 10**6])
+async def test_workflows_refuses_a_limit_outside_1_to_100_before_any_request(limit):
+    async with _client(_no_network, inter_call_delay=0) as client:
+        assert await client.fetch_workflows(limit=limit) is None
+
+
+@pytest.mark.parametrize("limit", [1, 100])
+async def test_workflows_accepts_both_ends_of_the_limit_range(limit):
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"count": 0, "workflows": []})
+
+    async with _client(handler, inter_call_delay=0) as client:
+        assert await client.fetch_workflows(limit=limit) == []
+    assert [dict(r.url.params) for r in seen] == [{"limit": str(limit)}]
+
+
+@pytest.mark.parametrize("body", [
+    {"count": 3},                       # no list at all
+    {"count": 1, "workflows": None},
+    {"count": 1, "workflows": {"id": "x"}},
+    {"count": 1, "workflows": "rows"},
+    [{"id": "x"}],                      # a bare list is not the envelope
+    "garbage", 0, None,
+])
+async def test_workflows_without_a_served_list_is_a_failed_read(body):
+    async with _client(lambda r: httpx.Response(200, json=body), inter_call_delay=0) as client:
+        assert await client.fetch_workflows() is None
+
+
+async def test_an_empty_workflows_page_is_a_real_empty_not_a_failure():
+    async with _client(lambda r: httpx.Response(200, json={"count": 0, "workflows": []}),
+                       inter_call_delay=0) as client:
+        assert await client.fetch_workflows() == []
+
+
+async def test_workflows_rotates_hosts_and_fails_whole_on_every_host():
+    seen: list[str] = []
+
+    def first_down(request):
+        seen.append(request.url.host)
+        if request.url.host == httpx.URL(SWARM_API).host:
+            return httpx.Response(503)
+        return httpx.Response(200, json=swarm_capture_v6("workflows_limit12"))
+
+    async with _client(first_down, inter_call_delay=0) as client:
+        rows = await client.fetch_workflows()
+    assert len(rows) == 12 and len(seen) == 2
+
+    async with _client(lambda r: httpx.Response(500), inter_call_delay=0) as client:
+        assert await client.fetch_workflows() is None

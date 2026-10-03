@@ -48,6 +48,8 @@ __all__ = [
     "queue_total", "parse_seat_token", "seat_rows",
     "seen_entry", "seen_since_ts", "site_rows", "skill_rows",
     "throughput_facts",
+    # SWARM WORKFLOWS (docs/surf_swarm_workflows_spec.md §2)
+    "workflow_rows",
     # AGENT body on /seats/{tokenId} (docs/surf_agent_seats_plan.md WP1b)
     "choose_seat", "coerce_seat_slot", "seat_node_rows", "seat_teammates",
     "seat_state", "seat_summary_from_seat", "seat_work_rows",
@@ -422,6 +424,33 @@ def site_rows(sites: object) -> list[dict[str, Any]]:
     for row in rows:
         del row["_updated_ts"]
     return rows
+
+
+def workflow_rows(workflows: object) -> list[dict[str, Any]]:
+    """``swarm_workflow_rows`` off ``GET /workflows``, newest ``createdAt`` first.
+
+    One row per mapping, exactly ``SURF_ROW_KEYS["swarm_workflow_rows"]``.
+    Strings are the raw served text -- no escaping (the widget's job) and no
+    truncation (``data/`` also serves web frontends); a failure carries
+    ``[FAIL: ...]`` brackets and 0x addresses. ``waiting_for_hosting`` is a
+    strict ``bool``, else ``None``. ``[]`` for ``None`` and for an empty page
+    alike: the manager decides which one was read.
+    """
+    rows: list[dict[str, Any]] = []
+    for workflow in _mappings(workflows):
+        waiting = workflow.get("waitingForHosting")
+        rows.append({
+            "workflow_id": _str(workflow.get("id")),
+            "status": _str(workflow.get("status")),
+            "contracts_job_id": _str(workflow.get("contractsJobId")),
+            "frontend_job_id": _str(workflow.get("frontendJobId")),
+            "objective": _str(workflow.get("objective")),
+            "failure": _str(workflow.get("failure")),
+            "created_ts": _ts(workflow.get("createdAt")),
+            "updated_ts": _ts(workflow.get("updatedAt")),
+            "waiting_for_hosting": waiting if isinstance(waiting, bool) else None,
+        })
+    return _newest_first(rows, "created_ts")
 
 
 # -- THROUGHPUT ------------------------------------------------------------
@@ -814,7 +843,9 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     wrong type; a real zero stays ``0``. ``reviewed`` counts distinct submissions,
     pending ones included (Q-M); ``scored`` / ``mean_score`` count only a
     finite, non-bool ``value``. Win rate is lifetime accepted / attempts;
-    zero or missing attempts is undefined.
+    zero or missing attempts is undefined. ``models`` is the seat's advertised
+    ``runtimes[].premiumModel`` pairs: ``[]`` when a served list carries none,
+    ``None`` when ``runtimes`` is absent or not a list.
     """
     summary: dict[str, Any] = dict.fromkeys(SWARM_SEAT_SUMMARY_FIELDS)
     if not isinstance(payload, Mapping):
@@ -861,6 +892,10 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     collaborators = _list(payload.get("collaborators"))
     summary["collaborators"] = len(collaborators) if collaborators is not None else None
     summary["runtime"] = _runtime(payload.get("runtimes"))
+    # The advertised model(s), the BOARD fleet's own fold (spec §3): [] for a served
+    # list with no usable premiumModel (seat #0's [] included), None for no list.
+    runtimes = _list(payload.get("runtimes"))
+    summary["models"] = _advertised_models(runtimes) if runtimes is not None else None
     return summary
 
 

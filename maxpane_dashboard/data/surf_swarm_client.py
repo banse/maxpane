@@ -14,8 +14,11 @@ and returns ``None`` -- so the contract above holds at every public getter.
 :meth:`SwarmClient.fetch_seat` formats an ``int`` (``{token:d}``) and refuses
 anything else before any request. ``submissions`` validates a canonical UUID
 before interpolating a job id; any 404 is confined to that job.
-Oracle reads use /oracle/requests and /oracle/requests/{uuid}; only the list
+Oracle reads use /oracle/requests and /oracle/requests/{uuid}; the list
 getter supplies validated limit/before query parameters separately from the path.
+``/workflows`` is the one other parameterised getter: :meth:`SwarmClient.fetch_workflows`
+sends a validated ``limit`` (a strict ``int`` in 1..100) through ``params=``
+(``docs/surf_swarm_workflows_spec.md`` §2). Every other getter sends none.
 
 The seat getter distinguishes a real negative from a failed read:
 ``fetch_seat`` returns a fresh copy of :data:`UNKNOWN_SEAT` for the host's
@@ -37,6 +40,7 @@ from uuid import UUID
 import httpx
 
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
+from maxpane_dashboard.data.surf_models import SWARM_WORKFLOW_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +126,7 @@ def _is_unknown_seat(body: object) -> bool:
 
 class SwarmClient(OwnedHttpClient):
     """Reads ``/health``, ``/jobs``, ``/jobs/{id}``, ``/launches``,
-    ``/seats/{token}``, ``/sites``, ``/skills``, ``/version``,
+    ``/seats/{token}``, ``/sites``, ``/skills``, ``/version``, ``/workflows``,
     ``/oracle/requests``, ``/oracle/requests/{uuid}``."""
 
     def __init__(
@@ -262,8 +266,10 @@ class SwarmClient(OwnedHttpClient):
     async def fetch_version(self) -> dict[str, Any] | None:
         return await self._dict("/version")
 
-    async def _list(self, path: str, key: str) -> list[dict[str, Any]] | None:
-        body = await self._get(path)
+    async def _list(
+        self, path: str, key: str, *, params: Mapping[str, str] | None = None,
+    ) -> list[dict[str, Any]] | None:
+        body = await self._get(path, params=params)
         if not isinstance(body, dict):
             return None
         rows = body.get(key)
@@ -282,6 +288,19 @@ class SwarmClient(OwnedHttpClient):
 
     async def fetch_skills(self) -> list[dict[str, Any]] | None:
         return await self._list("/skills", "skills")
+
+    async def fetch_workflows(self, *, limit: int = SWARM_WORKFLOW_LIMIT) -> list[dict[str, Any]] | None:
+        """``GET /workflows`` -- the newest ``limit`` workflows, newest ``createdAt`` first.
+
+        ``limit`` must be a strict ``int`` (not a ``bool``) in 1..100, else ``None``
+        before any request; it travels in ``params=``, never in the path. A body
+        whose ``workflows`` is not a list is a failed read; ``[]`` is a real empty
+        page. ``count`` is the page size, never a total, and is not read.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            logger.debug("swarm fetch_workflows refused a limit outside 1..100: %r", limit)
+            return None
+        return await self._list("/workflows", "workflows", params={"limit": str(limit)})
 
     async def fetch_job(self, job_id: str) -> dict[str, Any] | None:
         """One job's detail, a fresh copy of :data:`SEAT_BUSY` when every host

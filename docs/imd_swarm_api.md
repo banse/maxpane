@@ -36,6 +36,7 @@ the public subset.
 | `GET /jobs/{id}` | one job with its subtasks, verdicts and review | 2.2 KB typical, 9.2 KB worst |
 | `GET /launches` | deployments with every contract address | 10.1 KB (16) |
 | `GET /sites` | published IPFS sites with their ENS names | 2.3 KB (4) |
+| `GET /workflows?limit=N` | the newest workflows, newest `createdAt` first; `count` is the page size, not a total; `limit` 1–100, `before=<ISO createdAt>` cursor (2026-10-03; see [`/workflows`](#workflows)) | 29,253 B (`limit=12`); 372,677 B (default 100) |
 | `GET /jobs/summary` | **500**, a broken query the server admits to | — |
 | everything else tried | 404 | — |
 
@@ -181,6 +182,32 @@ addresses with the transaction that deployed them. Measured: `abandoned 10`, `li
 A site carries `jobId status label cid bytes ensName txHash blockNumber attempts failure pinnedAt namedAt
 supersededBy supersededAt`, e.g. `site-7018907b.site.identitymd.eth` over
 `bafybeigicvgrkurqm2mmpq7ar7jxdylycscnisdatwd2irigy7mkayprla`.
+
+### `/workflows`
+
+Probed 2026-10-03 for SWARM's WORKFLOWS panel (`docs/surf_swarm_workflows_spec.md` §2); the two pages are
+committed under `tests/fixtures/surf/swarm/v6/` with a `MANIFEST.json` (sha256 and byte count per file).
+Keyless and read-only, served with `cache-control: public, max-age=30`.
+
+- **Envelope** `{count, workflows[]}`, newest `createdAt` first. `count` is the page size, never a total. The
+  default page is 100 rows (372,677 B); `limit=12` -- the request the app makes, `SWARM_WORKFLOW_LIMIT` --
+  is 29,253 B. A `before=<ISO createdAt>` cursor exists and is not used.
+- **Row** `id objective status failure contractsJobId frontendJobId waitingForHosting createdAt updatedAt`.
+  - `objective` is free text up to about 6 KB, usually one paragraph (5,930 characters at most on the
+    100-row page; 53 of the 100 carry a full 0x address).
+  - `status` is open vocabulary: 80 `completed`, 19 `blocked`, 1 `cancelled` on the 100-row page.
+  - `failure` is a string or null; non-null on all 20 non-completed rows, null on every completed one.
+  - `contractsJobId` is a job UUID, never null in 100 rows; `frontendJobId` is a UUID or null (16 of 100).
+  - `waitingForHosting` is a bool (`false` on all 100).
+- **Real failure text carries square brackets and addresses**: five failures read
+  `[FAIL: project constructor failed] setUp() (gas: 0)`, one embeds the full address
+  `0x000000000000000000000000000000000000c0de` and one an abbreviated `0x5167d0...3281`. Escaping is the
+  widget's job; the fold (`surf_swarm.workflow_rows`) keeps the raw text and never truncates.
+- **`/launches` carries no job id**, so nothing joins a workflow to its launch.
+
+The client sends `limit` through `params=` only (`SwarmClient.fetch_workflows`, a strict `int` in 1..100, else
+no request); it is the one parameterised getter besides the oracle pair. The read runs last on the scores
+sweep (`TIER_SWARM_SCORES`), after `/sites`, guarded on its own.
 
 ## Which chain
 

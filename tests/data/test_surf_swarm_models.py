@@ -69,7 +69,7 @@ SWARM_RETIRED_KEYS = (
     "swarm_score_rows",
 )
 
-#: Eight surviving/new row shapes, fields in contract order (v2 plus BOARD).
+#: Nine surviving/new row shapes, fields in contract order (v2, BOARD, /workflows).
 SWARM_V2_ROW_SHAPES = {
     "swarm_board_rows": (
         "rank", "token_id", "agent_id", "devices", "runtime", "attempts", "accepted",
@@ -93,6 +93,11 @@ SWARM_V2_ROW_SHAPES = {
     "swarm_site_rows": (
         "label", "ens_name", "cid", "bytes", "status", "tx_hash",
         "block_number", "job_id", "superseded_by",
+    ),
+    # docs/surf_swarm_workflows_spec.md §2 (WP2, 2026-10-03): GET /workflows.
+    "swarm_workflow_rows": (
+        "workflow_id", "status", "contracts_job_id", "frontend_job_id", "objective",
+        "failure", "created_ts", "updated_ts", "waiting_for_hosting",
     ),
     "swarm_seat_node_rows": (
         "node_key", "roles", "reviewed", "attempts", "accepted", "onchain", "queued",
@@ -134,9 +139,11 @@ SWARM_TARGET_WIDGETS = {
 
 
 def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
-    """Thirty-two existing keys, the served health status word and the owner's ENS name, runtime/rank/read keys, and F-S5's two REWARDS keys."""
-    assert len(SWARM_KEYS) == 41
-    assert len(set(SWARM_KEYS)) == 41
+    """Thirty-two existing keys, the served health status word and the owner's ENS name,
+    runtime/rank/read keys, F-S5's two REWARDS keys, and the /workflows rows
+    (docs/surf_swarm_workflows_spec.md WP2: 41 -> 42)."""
+    assert len(SWARM_KEYS) == 42
+    assert len(set(SWARM_KEYS)) == 42
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -158,10 +165,11 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-31:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-32:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
                                 + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
                                    "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read",
-                                   "swarm_seat_rewards", "swarm_seat_rewards_state"))
+                                   "swarm_seat_rewards", "swarm_seat_rewards_state",
+                                   "swarm_workflow_rows"))
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -212,13 +220,28 @@ def test_every_signature_kwarg_is_unique_within_its_widget():
         assert kwargs, widget
 
 
+#: Swarm keys frozen ahead of their widget, by name. Filled by WP2 of
+#: ``docs/surf_swarm_workflows_spec.md`` (2026-10-03) with the /workflows rows,
+#: whose consumer ``SurfSwarmWorkflows`` WP4 builds; **emptied by that spec's
+#: WP5**, which names the key in ``SWARM_WIDGET_SIGNATURES`` -- at which point
+#: the equality below reddens until this line is emptied too. Mirrors
+#: ``tests/screens/test_surf_screen.py::_KEYS_PENDING_CONSUMERS``.
+_KEYS_PENDING_CONSUMERS = frozenset({"swarm_workflow_rows"})
+
+
 def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
     """Every one is named by some target widget -- including the
     marker (``swarm_seat_as_of_hhmm`` is read by every AGENT widget), so the
-    exception set is empty and the assertion is over the whole tail."""
+    exception set is empty and the assertion is over the whole tail.
+
+    Since WP2 of the workflows spec the claim is over every ``SWARM_KEYS``
+    entry, not only the v2 tail: what no signature names must be exactly the
+    named pending set -- equality, so the carve-out can neither hide a second
+    orphan nor outlive the wiring that consumes it."""
     named = {k for sig in SWARM_WIDGET_SIGNATURES.values() for k in sig}
     unreached = set(SWARM_V2_KEYS) - named
     assert unreached == set(), sorted(unreached)
+    assert set(SWARM_KEYS) - named == _KEYS_PENDING_CONSUMERS, sorted(set(SWARM_KEYS) - named)
 
 
 def test_the_signature_names_exactly_the_twelve_target_widgets():
@@ -235,7 +258,7 @@ def test_no_retired_key_is_named_by_a_target_signature():
 
 def test_no_swarm_key_leaks_a_raw_envelope():
     for bad in ("swarm_jobs", "swarm_health", "swarm_details", "swarm_skills",
-                "swarm_launches", "swarm_sites"):
+                "swarm_launches", "swarm_sites", "swarm_workflows"):
         assert bad not in SURF_KEYS
 
 
@@ -248,7 +271,7 @@ def test_the_seats_permanent_exports_are_the_frozen_literals():
         "attempts", "accepted", "reviewed", "review_entries", "review_status", "mean_score", "scored",
         "roles", "online", "owner", "paired_ts", "collaborators", "runtime",
         "agent_id", "daemon", "devices", "win_rate", "last_won_ts", "last_sent_ts",
-        "last_worked_ts",
+        "last_worked_ts", "models",
     )
     assert SWARM_SEAT_REVIEW_STATUSES == ("sent", "submitted", "queued")
     # "pending" by the owner's Q-A answer (2026-09-21); None is not a member -- it is
@@ -410,3 +433,34 @@ def test_seat_resilience_contract_freezes_the_busy_sentinel_and_cache_cap():
     assert surf_swarm.SEAT_SLOT_CAP == 6
     assert [name for name, signature in SWARM_WIDGET_SIGNATURES.items()
             if "swarm_seat_read" in signature] == ["SurfSwarmSeatRecord"]
+
+
+# --- SWARM WORKFLOWS (docs/surf_swarm_workflows_spec.md §2, WP2) -------------
+
+
+def test_the_workflow_page_size_is_twelve():
+    """The fetch size. WP4's agreement test binds it to
+    ``SurfSwarmWorkflows.ROW_CAP`` (the ``SWARM_ANSWER_ROW_CAP`` precedent);
+    ``data/`` never imports the widget."""
+    assert models.SWARM_WORKFLOW_LIMIT == 12
+    assert type(models.SWARM_WORKFLOW_LIMIT) is int
+
+
+def test_capability_is_parked_with_its_frozen_signature():
+    """§2 "CAPABILITY is parked": the export every "is every widget mounted /
+    every key consumed" test takes its exemption from (wired in WP5)."""
+    import inspect
+    from maxpane_dashboard.widgets.surf.swarm_capability import SurfSwarmCapability
+
+    assert models.SWARM_PARKED_WIDGET_SIGNATURES == {
+        "SurfSwarmCapability": (
+            "swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm",
+        ),
+    }
+    for widget, kwargs in models.SWARM_PARKED_WIDGET_SIGNATURES.items():
+        for key in kwargs:
+            assert key in SWARM_KEYS, f"{widget} takes {key!r}, not a SWARM_KEYS entry"
+    signature = inspect.signature(SurfSwarmCapability.update_data)
+    actual = tuple(name for name, value in signature.parameters.items()
+                   if name != "self" and value.kind != inspect.Parameter.VAR_KEYWORD)
+    assert actual == models.SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmCapability"]

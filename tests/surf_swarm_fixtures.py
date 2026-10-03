@@ -7,6 +7,7 @@ beside it retired with their folds and widgets in WP7.
 The 2026-09-21 ``/seats/{tokenId}`` captures (AGENT-seats plan WP0) sit under
 ``fixtures/surf/swarm/seats``, with their own ``MANIFEST.json``.
 The owner-supplied 2026-09-22 BOARD captures sit under ``fixtures/surf/swarm/v3``.
+The 2026-10-03 ``/workflows`` captures sit under ``fixtures/surf/swarm/v6``.
 """
 from __future__ import annotations
 
@@ -76,6 +77,13 @@ def swarm_capture_v5(name: str) -> dict:
 def swarm_capture_v4(name: str) -> dict:
     """One polish capture from 2026-09-22, including its provenance MANIFEST."""
     with open(SWARM_FIXTURES_V3.parent / 'v4' / f'{name}.json', encoding='utf-8') as fh:
+        return json.load(fh)
+
+
+def swarm_capture_v6(name: str) -> dict:
+    """One 2026-10-03 ``GET /workflows`` capture (``workflows_limit12``,
+    ``workflows_100``) or its provenance MANIFEST (docs/surf_swarm_workflows_spec.md §2)."""
+    with open(SWARM_FIXTURES_V3.parent / 'v6' / f'{name}.json', encoding='utf-8') as fh:
         return json.load(fh)
 
 

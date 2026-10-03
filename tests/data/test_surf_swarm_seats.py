@@ -25,7 +25,7 @@ from maxpane_dashboard.data.surf_models import (
     SWARM_SEAT_SUMMARY_FIELDS,
 )
 from maxpane_dashboard.data.surf_swarm_client import UNKNOWN_SEAT
-from tests.surf_swarm_fixtures import swarm_capture_v5, swarm_seat_capture
+from tests.surf_swarm_fixtures import swarm_capture_v4, swarm_capture_v5, swarm_seat_capture
 
 
 def _iso(stamp: str) -> float:
@@ -128,6 +128,7 @@ def test_summary_420_is_the_explorer_record(seat420):
         "collaborators": 24,
         "runtime": "claude 2.1.278 (Claude Code)",            # runtimes[0] id + version, raw
         "last_worked_ts": None,     # the pre-status capture serves no submittedAt
+        "models": [],               # runtimes[] served, no premiumModel in this 09-21 capture
     }
     assert tuple(summary["review_status"]) == SWARM_SEAT_REVIEW_STATUSES
 
@@ -186,10 +187,12 @@ _BAD_FIELD_CASES = {
     "pairedAt": ("pairedAt", "yesterday", {"paired_ts"}),
     "pairedAt_num": ("pairedAt", 1_758_000_000, {"paired_ts"}),
     "collaborators": ("collaborators", {"n": 24}, {"collaborators"}),
-    "runtimes": ("runtimes", "claude", {"runtime"}),
+    # A runtimes value that is no list feeds both runtime and the advertised models;
+    # a served list with no usable entry keeps models a real [] (seat_420 here advertises none).
+    "runtimes": ("runtimes", "claude", {"runtime", "models"}),
     "runtimes_member": ("runtimes", [["claude", "2.1"]], {"runtime"}),
     "runtimes_types": ("runtimes", [{"id": 1, "version": None}], {"runtime"}),
-    "runtimes_absent": ("runtimes", None, {"runtime"}),
+    "runtimes_absent": ("runtimes", None, {"runtime", "models"}),
 }
 
 
@@ -267,6 +270,64 @@ def test_summary_empty_lists_are_real_zeros_not_none(seat420):
     assert summary["mean_score"] is None       # no score is not a zero score
     assert summary["runtime"] == "" and summary["last_won_ts"] is None
     assert summary["last_sent_ts"] is None and summary["win_rate"] is None
+    assert summary["models"] == []             # served, empty: advertises nothing
+
+
+# --- advertised models (docs/surf_swarm_workflows_spec.md §3, WP2) ----------
+
+
+@pytest.mark.parametrize("capture", [
+    pytest.param(lambda: swarm_capture_v5("seat_420"), id="v5/seat_420"),
+    pytest.param(lambda: swarm_capture_v4("seat_420"), id="v4/seat_420"),
+])
+def test_summary_models_are_the_seats_advertised_premium_model(capture):
+    """runtimes[0].premiumModel = {"model": "claude-fable-5-1", "effort": "high"},
+    read off both captures by hand."""
+    summary = fold.seat_summary_from_seat(capture())
+    assert summary["models"] == [{"model": "claude-fable-5-1", "effort": "high"}]
+
+
+@pytest.mark.parametrize("name", ["seat_420", "seat_0"])
+def test_summary_models_without_a_premium_model_are_a_real_empty(name):
+    """seats/seat_420 serves ``[{"id": "claude", "version": ...}]`` with no
+    premiumModel; seats/seat_0 serves ``[]``. Both advertise nothing: ``[]``."""
+    seat = swarm_seat_capture(name)
+    assert isinstance(seat["runtimes"], list)
+    assert all("premiumModel" not in r for r in seat["runtimes"])
+    assert fold.seat_summary_from_seat(seat)["models"] == []
+
+
+@pytest.mark.parametrize("runtimes", ["claude", {"id": "claude"}, 7, None, True])
+def test_summary_models_unread_when_runtimes_is_no_list(seat420, runtimes):
+    seat420["runtimes"] = runtimes
+    assert fold.seat_summary_from_seat(seat420)["models"] is None
+    del seat420["runtimes"]
+    assert fold.seat_summary_from_seat(seat420)["models"] is None
+
+
+def test_summary_models_are_unique_sorted_pairs_with_bad_entries_skipped(seat420):
+    seat420["runtimes"] = [
+        {"id": "codex", "premiumModel": {"model": "gpt-9", "effort": "medium"}},
+        {"id": "claude", "premiumModel": {"model": "claude-fable-5-1", "effort": "high"}},
+        {"id": "claude", "premiumModel": {"model": "claude-fable-5-1", "effort": "high"}},
+        {"id": "claude", "premiumModel": {"model": "claude-fable-5-1"}},
+        {"id": "x", "premiumModel": {"model": "", "effort": "high"}},       # no model
+        {"id": "y", "premiumModel": {"model": 5, "effort": "high"}},
+        {"id": "z", "premiumModel": "claude"},
+        "junk",
+    ]
+    assert fold.seat_summary_from_seat(seat420)["models"] == [
+        {"model": "claude-fable-5-1", "effort": None},
+        {"model": "claude-fable-5-1", "effort": "high"},
+        {"model": "gpt-9", "effort": "medium"},
+    ]
+
+
+def test_summary_models_reuse_the_fleet_helper_not_a_copy(seat420):
+    """Spec §3: the seat card and the BOARD fleet count advertised models with
+    one implementation (``_advertised_models``); this pins that they agree."""
+    seat = swarm_capture_v5("seat_420")
+    assert fold.seat_summary_from_seat(seat)["models"] == fold._advertised_models(seat["runtimes"])
 
 
 def test_summary_roles_skip_non_strings_and_tie_break_on_role(seat420):

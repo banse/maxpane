@@ -553,18 +553,20 @@ EXPECTED_KEYS = {
     "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta",
     "swarm_seat_read",
     "swarm_seat_rewards", "swarm_seat_rewards_state",
+    # GET /workflows rows (WP2 of docs/surf_swarm_workflows_spec.md, 2026-10-03).
+    "swarm_workflow_rows",
 }
 
 
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    **200 = 83 + 71 + 5 + 41**: the 83 that shipped through v0.8.3, the ``p``
+    **201 = 83 + 71 + 5 + 42**: the 83 that shipped through v0.8.3, the ``p``
     body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
     cross-venue price, the backstop band and the realised return), the
     staker sweep's own five in ``POOL4_STAKERS_KEYS`` (four until
     ``pool4_stakers_state`` joined them on 2026-09-12), and the ``s``/``a``
-    bodies' forty-one in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
+    bodies' forty-two in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
     the fourteen swarm v2 keys WP0 froze on 2026-09-21 ahead of their
     consumers (plan A2), less the eight of the eighteen WP7 retired with
     their widgets the same day (the block was 32 and this total 191 in
@@ -573,7 +575,7 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     the window fold's node-rows key, which that plan's WP5 retired (186 before),
     then three seat-window keys retired and two seat-detail keys added (184),
     followed by seven BOARD keys (191), the served health status word (192) and
-    the seat owner's ENS name (193, 2026-09-22), then four runtime/rank keys (197, 2026-09-24), then the seat read outcome (198, 2026-09-26), then the seat's REWARDS value and state (200, 2026-10-02, F-S5). The count is asserted
+    the seat owner's ENS name (193, 2026-09-22), then four runtime/rank keys (197, 2026-09-24), then the seat read outcome (198, 2026-09-26), then the seat's REWARDS value and state (200, 2026-10-02, F-S5), then the /workflows rows (201, 2026-10-03, ``docs/surf_swarm_workflows_spec.md`` WP2). The count is asserted
     beside the set membership on purpose: the set catches a rename, the
     count catches a key added to both sides at once by someone editing
     ``EXPECTED_KEYS`` to make a red test green instead of asking why it was
@@ -595,12 +597,12 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 200
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 201
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
-    assert len(SWARM_KEYS) == 41
+    assert len(SWARM_KEYS) == 42
     assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 83
 
 

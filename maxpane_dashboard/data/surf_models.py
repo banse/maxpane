@@ -1512,6 +1512,9 @@ SWARM_KEYS: tuple[str, ...] = (
     # owner since pairedAt, split evenly over the owner's IDMD seats; USD at today's price.
     "swarm_seat_rewards",       # dict | None  -- {"imd": float, "usd": float | None, "seats": int}
     "swarm_seat_rewards_state", # str | None   -- "ok" / "pending" (not read yet); None = read failed
+    # SWARM WORKFLOWS (2026-10-03, docs/surf_swarm_workflows_spec.md §2): GET /workflows on the
+    # scores sweep. None = the read failed or never happened; [] = a real empty page.
+    "swarm_workflow_rows",      # list[dict] | None -- SURF_ROW_KEYS["swarm_workflow_rows"]
 )
 
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
@@ -1639,6 +1642,19 @@ SWARM_ANSWER_CACHE_FIELDS: tuple[str, ...] = (
 #: SurfSwarmSeatRecord.ROW_CAP; data must never import its widget.
 SWARM_ANSWER_ROW_CAP = 40
 
+#: ``GET /workflows?limit=`` page size: the newest WORKFLOWS window only (the default
+#: page is 100 rows / ~370 KB). An agreement test (docs/surf_swarm_workflows_spec.md
+#: WP4) binds it to ``SurfSwarmWorkflows.ROW_CAP``; data must never import its widget.
+SWARM_WORKFLOW_LIMIT = 12
+
+#: Widgets whose module, class and test stay but which no body mounts: CAPABILITY was
+#: parked on 2026-10-03 when WORKFLOWS took its place on SWARM (spec §2), for a future
+#: SKILLS board. Every "is every widget mounted / every key consumed" test takes its
+#: exemption from this export, never from a hand-typed copy (wired in that spec's WP5).
+SWARM_PARKED_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
+}
+
 #: RECORD outcomes: not_read has no point; unavailable is a failed/ambiguous read.
 #: off_panel is a settled negative; not_oracle is outside the oracle node set.
 SWARM_PANEL_STATES = (
@@ -1676,10 +1692,16 @@ SWARM_SEAT_SELECTED_FIELDS: tuple[str, ...] = ("token_id", "agent_id", "selected
 #: reviews[].sentAt. Both are epoch floats or ``None`` when no timestamp is carried.
 #: ``last_worked_ts`` is the newest work[].submittedAt (every attempt, served since
 #: 2026-09-22); STATUS says ``worked`` when it is newer than ``last_won_ts``.
+#: ``models`` is the seat's **advertised** model: ``list[{"model": str, "effort": str |
+#: None}]`` from ``runtimes[].premiumModel`` (unique pairs, sorted by model then effort,
+#: the BOARD fleet's ``_advertised_models``). ``[]`` when a served ``runtimes`` list carries
+#: no usable pair (seat #0's empty list included); ``None`` when ``runtimes`` is absent or
+#: not a list. RECORD's ``model`` column is the model a submission actually used.
 SWARM_SEAT_SUMMARY_FIELDS: tuple[str, ...] = (
     "attempts", "accepted", "reviewed", "review_entries", "review_status", "mean_score", "scored",
     "roles", "online", "owner", "paired_ts", "collaborators", "runtime",
     "agent_id", "daemon", "devices", "win_rate", "last_won_ts", "last_sent_ts", "last_worked_ts",
+    "models",
 )
 
 #: ``reviews[].status`` as served: ``sent`` (txHash + sentAt), ``submitted`` (txHash,
@@ -1992,6 +2014,19 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "label", "ens_name", "cid", "bytes", "status", "tx_hash",
         "block_number", "job_id",
         "superseded_by",  # str | None; read only by SITES' filter (a replaced build hides)
+    ),
+    # GET /workflows (docs/surf_swarm_workflows_spec.md §2). Strings are raw served text
+    # (escaping is the widget's job; no truncation in data/), newest created_ts first.
+    "swarm_workflow_rows": (
+        "workflow_id",          # str | None -- served id
+        "status",               # str | None -- open vocabulary (completed/blocked/cancelled...)
+        "contracts_job_id",     # str | None
+        "frontend_job_id",      # str | None -- null when the workflow has no frontend job
+        "objective",            # str | None -- free text, up to ~6 KB
+        "failure",              # str | None -- carries brackets and addresses
+        "created_ts",           # float | None
+        "updated_ts",           # float | None
+        "waiting_for_hosting",  # bool | None -- strict bool, else None
     ),
     # Nodes from reviews[] OR work[]; a work-only node has reviewed == 0.
     # Node cards' rate is accepted / attempts, the summary's rate per node.

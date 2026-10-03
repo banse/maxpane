@@ -1462,6 +1462,10 @@ _NON_NUMERIC_KEYS = frozenset(
         "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon",
         "swarm_health_status",  # served status word, never a numeric zero
         "swarm_seat_owner_ens",  # an ENS name or None, never a number
+        # GET /workflows rows (WP2 of docs/surf_swarm_workflows_spec.md,
+        # 2026-10-03): a list[dict] payload, `None` unread vs `[]` a real
+        # empty page -- not an int/float, so no zero probe applies.
+        "swarm_workflow_rows",
     }
 )
 

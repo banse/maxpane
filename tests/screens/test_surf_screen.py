@@ -796,7 +796,13 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
 #: window-based ones; WP3/WP4 build to the plan's transitional targets.
 #: **Emptied for the fourth time by that plan's WP5** (2026-09-21): the
 #: export is flipped, so all three reach a widget kwarg.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
+#:
+#: **Filled for the fifth time** (WP2 of ``docs/surf_swarm_workflows_spec.md``,
+#: 2026-10-03): ``swarm_workflow_rows`` is read off ``GET /workflows`` and
+#: frozen in ``SWARM_KEYS`` before WORKFLOWS (``SurfSwarmWorkflows``, WP4)
+#: exists; it is **emptied by that spec's WP5**, which mounts the widget and
+#: names the key in ``SWARM_WIDGET_SIGNATURES``.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({"swarm_workflow_rows"})
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -1593,6 +1599,29 @@ def _sample_data() -> dict:
              "bytes": None, "status": "failed", "tx_hash": None,
              "block_number": None, "job_id": "job-4360",
              "superseded_by": "job-4381"},
+        ],
+        # Frozen by WP2 of docs/surf_swarm_workflows_spec.md, parked in
+        # ``_KEYS_PENDING_CONSUMERS`` below until that spec's WP5 mounts
+        # WORKFLOWS -- exercised here only so
+        # ``test_every_list_row_in_the_fixture_matches_the_frozen_row_shape``
+        # measures every row shape ``SURF_ROW_KEYS`` declares, this one
+        # included.  The shapes of the v6 capture: a completed row with no
+        # frontend, a blocked one carrying its failure text.
+        "swarm_workflow_rows": [
+            {"workflow_id": "wf-0002", "status": "completed",
+             "contracts_job_id": "job-4390", "frontend_job_id": None,
+             "objective": "Launch a token with a bonding curve.",
+             "failure": None,
+             "created_ts": _TS_POST_13 - 600.0,
+             "updated_ts": _TS_POST_13 - 120.0,
+             "waiting_for_hosting": False},
+            {"workflow_id": "wf-0001", "status": "blocked",
+             "contracts_job_id": "job-4388", "frontend_job_id": "job-4389",
+             "objective": "Ship a status page.",
+             "failure": "[FAIL: project constructor failed] setUp() (gas: 0)",
+             "created_ts": _TS_POST_13 - 3_600.0,
+             "updated_ts": _TS_POST_13 - 1_800.0,
+             "waiting_for_hosting": False},
         ],
         **swarm_board_payload(),
         **swarm_agent_sources(1548),

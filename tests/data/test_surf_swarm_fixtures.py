@@ -462,3 +462,57 @@ def test_v3_corpus_retains_device_rows_source_disagreement_and_node_notes():
     verdict = swarm_capture_v3("job_33016bad_two_node_verdict")
     assert len(verdict["nodes"]) == 2
     assert any(node.get("seat") and node.get("verdict") for node in verdict["nodes"])
+
+
+# --- 2026-10-03 GET /workflows captures (docs/surf_swarm_workflows_spec.md §2) ---
+
+_V6_CAPTURES = ("workflows_limit12", "workflows_100")
+
+
+def test_v6_manifest_binds_every_capture_to_bytes_checksum_and_provenance():
+    import hashlib
+    from tests.surf_swarm_fixtures import SWARM_FIXTURES_V3, swarm_capture_v6
+
+    folder = SWARM_FIXTURES_V3.parent / "v6"
+    manifest = swarm_capture_v6("MANIFEST")
+    assert manifest["host"] == "https://api.imd.fun"
+    assert set(manifest["files"]) == set(_V6_CAPTURES)
+    assert {p.stem for p in folder.glob("*.json")} == {*_V6_CAPTURES, "MANIFEST"}
+    for name, entry in manifest["files"].items():
+        raw = (folder / f"{name}.json").read_bytes()
+        assert entry["bytes"] == len(raw), name
+        assert entry["sha256"] == hashlib.sha256(raw).hexdigest(), name
+        assert entry["http_status"] == 200, name
+        assert entry["captured_at"].startswith("2026-10-03T"), name
+    assert manifest["files"]["workflows_limit12"]["url"] == "https://api.imd.fun/workflows?limit=12"
+    assert manifest["files"]["workflows_100"]["url"] == "https://api.imd.fun/workflows"
+    # The probe facts spec §2 states, read off the bytes (sizes) and the rows.
+    assert (manifest["files"]["workflows_limit12"]["bytes"],
+            manifest["files"]["workflows_100"]["bytes"]) == (29_253, 372_677)
+
+
+def test_v6_pages_are_newest_first_envelopes_whose_count_is_the_page_size():
+    from collections import Counter
+    from tests.surf_swarm_fixtures import swarm_capture_v6
+
+    keys = {"id", "objective", "status", "failure", "contractsJobId", "frontendJobId",
+            "waitingForHosting", "createdAt", "updatedAt"}
+    for name, size in (("workflows_limit12", 12), ("workflows_100", 100)):
+        page = swarm_capture_v6(name)
+        assert set(page) == {"count", "workflows"}
+        rows = page["workflows"]
+        assert page["count"] == len(rows) == size, name
+        assert all(set(row) == keys for row in rows), name
+        stamps = [row["createdAt"] for row in rows]
+        assert stamps == sorted(stamps, reverse=True), name
+    # The 12-row page is the 100-row page's head, captured a second apart.
+    head = swarm_capture_v6("workflows_100")["workflows"][:12]
+    assert [r["id"] for r in head] == [r["id"] for r in swarm_capture_v6("workflows_limit12")["workflows"]]
+    rows = swarm_capture_v6("workflows_100")["workflows"]
+    assert Counter(r["status"] for r in rows) == {"completed": 80, "blocked": 19, "cancelled": 1}
+    assert all(isinstance(r["failure"], str) for r in rows if r["status"] != "completed")
+    assert sum(r["frontendJobId"] is None for r in rows) == 16
+    assert all(r["contractsJobId"] for r in rows)
+    assert all(r["waitingForHosting"] is False for r in rows)
+    assert sum("[FAIL:" in (r["failure"] or "") for r in rows) == 5
+    assert max(len(r["objective"]) for r in rows) == 5_930

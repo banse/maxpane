@@ -20,6 +20,7 @@ from maxpane_dashboard.data import surf_swarm as fold
 from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS
 from tests.surf_swarm_fixtures import (
     swarm_capture_v2,
+    swarm_capture_v6,
     swarm_details_v2,
     swarm_manifest_v2,
 )
@@ -252,6 +253,7 @@ def test_every_rows_fold_returns_an_empty_list_for_none_and_for_empty():
     assert fold.skill_rows(None) == [] and fold.skill_rows([]) == []
     assert fold.launch_rows(None) == [] and fold.launch_rows([]) == []
     assert fold.site_rows(None) == [] and fold.site_rows([]) == []
+    assert fold.workflow_rows(None) == [] and fold.workflow_rows([]) == []
     assert fold.seat_rows(None, None) == [] and fold.seat_rows({}, {}) == []
 
 
@@ -698,3 +700,138 @@ def test_network_of_is_an_allowlist():
     assert fold.network_of(999) is None
     assert fold.network_of(None) is None
     assert fold.network_of("mainnet") is None
+
+
+# ---------------------------------------------------------------------------
+# workflow_rows -- GET /workflows (docs/surf_swarm_workflows_spec.md §2, WP2)
+# ---------------------------------------------------------------------------
+
+#: The row keys, hand-typed (spec §2 "Contract"), so the shape check below is
+#: not the module agreeing with itself.
+_WORKFLOW_ROW = (
+    "workflow_id", "status", "contracts_job_id", "frontend_job_id", "objective",
+    "failure", "created_ts", "updated_ts", "waiting_for_hosting",
+)
+
+
+@pytest.fixture(scope="module")
+def workflows12():
+    return swarm_capture_v6("workflows_limit12")["workflows"]
+
+
+@pytest.fixture(scope="module")
+def workflows100():
+    return swarm_capture_v6("workflows_100")["workflows"]
+
+
+def test_workflow_rows_is_exported():
+    assert "workflow_rows" in fold.__all__
+
+
+@pytest.mark.parametrize("name", ["workflows_limit12", "workflows_100"])
+def test_every_workflow_row_carries_exactly_its_contract_fields_in_order(name):
+    rows = fold.workflow_rows(swarm_capture_v6(name)["workflows"])
+    assert SURF_ROW_KEYS["swarm_workflow_rows"] == _WORKFLOW_ROW
+    _rows_match(rows, "swarm_workflow_rows")
+    assert len(rows) == {"workflows_limit12": 12, "workflows_100": 100}[name]
+
+
+def test_the_newest_workflow_row_is_the_capture_read_by_hand(workflows12):
+    """workflows_limit12.json[0], read off the JSON by hand."""
+    row = fold.workflow_rows(workflows12)[0]
+    assert row["workflow_id"] == "2e22d2cd-84e0-4346-b40e-692ab8b81e52"
+    assert row["status"] == "blocked"
+    assert row["contracts_job_id"] == "86c76df1-724d-4c85-8e59-7379fe6ff012"
+    assert row["frontend_job_id"] is None                      # served null
+    assert row["created_ts"] == _iso("2026-10-03T08:16:55.724Z")
+    assert row["updated_ts"] == _iso("2026-10-03T11:01:44.661Z")
+    assert row["waiting_for_hosting"] is False                 # a real False, not None
+    assert row["objective"].startswith(
+        'The launch token is the fixed-supply LaunchToken already in src. Its name is "COMP Launch"'
+    )
+    # The failure is the raw served text, square brackets and all.
+    assert row["failure"].startswith(
+        "protected_invariants: invariants-7848f0989d32: [FAIL: project constructor failed]"
+    )
+
+
+def test_workflow_rows_keep_the_served_vocabulary_and_nulls(workflows100):
+    """The 100-row page: 80 completed, 19 blocked, 1 cancelled; a failure on
+    every non-completed row and on no completed one; 16 null frontend jobs."""
+    rows = fold.workflow_rows(workflows100)
+    statuses = [r["status"] for r in rows]
+    assert (statuses.count("completed"), statuses.count("blocked"),
+            statuses.count("cancelled")) == (80, 19, 1)
+    assert all((r["failure"] is None) == (r["status"] == "completed") for r in rows)
+    assert sum(r["frontend_job_id"] is None for r in rows) == 16
+    assert all(isinstance(r["contracts_job_id"], str) for r in rows)
+    assert all(r["waiting_for_hosting"] is False for r in rows)
+    assert all(isinstance(r["created_ts"], float) and isinstance(r["updated_ts"], float)
+               for r in rows)
+
+
+def test_workflow_rows_are_newest_created_first_whatever_the_served_order(workflows12):
+    expected = [w["id"] for w in workflows12]          # served newest first
+    assert [r["workflow_id"] for r in fold.workflow_rows(workflows12)] == expected
+    assert [r["workflow_id"] for r in fold.workflow_rows(list(reversed(workflows12)))] == expected
+    # An unreadable createdAt sorts last, not first and not dropped.
+    undated = dict(workflows12[3], createdAt="yesterday")
+    rows = fold.workflow_rows([undated, *workflows12[:3]])
+    assert [r["workflow_id"] for r in rows] == [*expected[:3], workflows12[3]["id"]]
+    assert rows[-1]["created_ts"] is None
+
+
+def test_workflow_strings_are_raw_never_escaped_or_cut(workflows100):
+    """Escaping is the widget's job, and data/ also serves web frontends: no
+    truncation, no markup handling, addresses intact."""
+    rows = {r["workflow_id"]: r for r in fold.workflow_rows(workflows100)}
+    by_id = {w["id"]: w for w in workflows100}
+    for wid, row in rows.items():
+        for field, key in (("objective", "objective"), ("failure", "failure"),
+                           ("status", "status"), ("workflow_id", "id")):
+            assert row[field] == by_id[wid][key], (wid, field)
+    longest = rows["cc2c1080-b6c7-497e-a2d1-304220572554"]["objective"]
+    assert len(longest) == 5930                                  # the page's longest
+    assert "0x000000000000000000000000000000000000c0de" in (
+        rows["1198001b-6d86-4de4-b8eb-44dd394636eb"]["failure"])
+    assert "0x5167d0...3281" in rows["3ce74537-6c31-4e9d-a35c-e7bc1dc87aa2"]["failure"]
+    hostile = fold.workflow_rows([{"id": "[/x]", "objective": "[bold red]boom[/]",
+                                   "failure": "[FAIL: x] \x1b[31m", "status": "[b]"}])[0]
+    assert (hostile["workflow_id"], hostile["objective"], hostile["failure"], hostile["status"]) == (
+        "[/x]", "[bold red]boom[/]", "[FAIL: x] \x1b[31m", "[b]")
+
+
+@pytest.mark.parametrize(("served", "expected"), [
+    (True, True), (False, False),
+    (1, None), (0, None), ("true", None), ("false", None), (None, None), ([], None),
+])
+def test_waiting_for_hosting_is_a_strict_bool(workflows12, served, expected):
+    row = fold.workflow_rows([dict(workflows12[0], waitingForHosting=served)])[0]
+    assert row["waiting_for_hosting"] is expected
+
+
+def test_waiting_for_hosting_absent_is_none(workflows12):
+    entry = {k: v for k, v in workflows12[0].items() if k != "waitingForHosting"}
+    assert fold.workflow_rows([entry])[0]["waiting_for_hosting"] is None
+
+
+def test_workflow_fields_of_the_wrong_type_are_none_field_by_field(workflows12):
+    bad = dict(workflows12[0], id=7, objective=["x"], status=None, failure={"m": 1},
+               contractsJobId=3, frontendJobId=False, createdAt=1_700_000_000,
+               updatedAt="not a time")
+    row = fold.workflow_rows([bad])[0]
+    assert row == dict.fromkeys(_WORKFLOW_ROW) | {"waiting_for_hosting": False}
+
+
+def test_workflow_rows_skip_what_is_not_a_mapping(workflows12):
+    rows = fold.workflow_rows(["garbage", None, 7, [workflows12[0]], workflows12[1]])
+    assert [r["workflow_id"] for r in rows] == [workflows12[1]["id"]]
+    assert fold.workflow_rows("not a list") == []
+    assert fold.workflow_rows({"workflows": workflows12}) == []
+
+
+def test_workflow_rows_do_not_mutate_their_input(workflows12):
+    import copy
+    before = copy.deepcopy(workflows12)
+    fold.workflow_rows(list(reversed(workflows12)))
+    assert workflows12 == before

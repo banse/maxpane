@@ -1174,6 +1174,29 @@ class SurfManager:
             })
         except Exception as exc:            # noqa: BLE001 — load is fail-soft; belt and braces
             logger.warning("SURF cache load failed: %s", exc)
+        self._upgrade_swarm_scores_slot()
+
+    def _upgrade_swarm_scores_slot(self) -> None:
+        """A sweep slot persisted before ``/workflows`` was read makes the tier due.
+
+        ``docs/surf_swarm_workflows_spec.md`` §2 "Upgrade": such a slot has no
+        ``"workflows"`` key, which means "never read", not "read failed" -- so
+        :data:`TIER_SWARM_SCORES` is made due on the next cycle rather than
+        serving ``None`` until its TTL runs out. Once, here, after the load: a
+        per-cycle check would re-sweep on every tick while the forced sweep
+        kept failing early and so defeat the tier's failure backoff. A slot
+        with the key -- ``None`` included, a read that failed -- keeps its TTL.
+        Tier clocks are not persisted (``SurfCache.load`` seeds none), so on a
+        cold start the tier is due anyway; this holds the rule for a cache
+        whose clock is already warm.
+        """
+        try:
+            entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
+            if (entry is not None and isinstance(entry.payload, dict)
+                    and "workflows" not in entry.payload):
+                self.cache.mark_due(TIER_SWARM_SCORES)
+        except Exception as exc:            # noqa: BLE001 — never fail construction over it
+            logger.warning("SURF swarm scores upgrade check failed: %s", exc)
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -6212,7 +6235,7 @@ class SurfManager:
         return index, False
 
     async def _pool_swarm_scores(self, tiers: set[str], now: float) -> dict[str, Any]:
-        """The sweep: the newest details, ``/skills``, ``/launches``, ``/sites``.
+        """The sweep: the newest details, ``/skills``, ``/launches``, ``/sites``, ``/workflows``.
 
         **Swarm v2 (WP4).** The detail sweep is bounded to the newest
         :data:`SWARM_SWEEP_CAP` jobs by ``createdAt`` (plan R-F) and folded
@@ -6221,9 +6244,10 @@ class SurfManager:
         slot, not this sweep, carries the record of jobs past the cap.
         **Partial success is a success** (plan R-B): the tier fails only
         when ``/jobs`` is ``None`` or a detail host is busy (F-S3,
-        :meth:`_swarm_details` -- then ``skills``/``launches``/``sites`` are
-        not asked either); each of ``skills``/``launches``/``sites``
-        is stored as ``None`` when its own read failed, and
+        :meth:`_swarm_details` -- then ``skills``/``launches``/``sites``/
+        ``workflows`` are not asked either); each of ``skills``/``launches``/
+        ``sites``/``workflows`` is stored as ``None`` when its own read failed,
+        and
         :meth:`_swarm_scores_keys` publishes ``None`` for that route's keys
         while the others land behind the marker. The paragraphs below are
         Task 5's and still hold.
@@ -6239,7 +6263,12 @@ class SurfManager:
         completed jobs too. (RECORD reads the seat's lifetime ``/seats``
         record since the /seats plan, not this sweep.)
 
-        Stores ``{"jobs", "details", "launches", "sites"}`` -- **including**
+        ``/workflows`` (``docs/surf_swarm_workflows_spec.md`` §2) is asked last,
+        after ``/sites``, guarded on its own: its failure never fails the tier
+        or nulls another route, and theirs never null it.
+
+        Stores ``{"jobs", "details", "skills", "launches", "sites", "workflows"}``
+        -- **including**
         its own copy of the job list, fix round 1 finding 4 (reversing the
         first version, which reused the live slot's jobs instead). That
         reuse was wrong two ways at once: the retired JUST SHIPPED fold
@@ -6272,10 +6301,14 @@ class SurfManager:
             lambda: client.fetch_launches(), "swarm fetch_launches"
         )
         sites = await self._guard(lambda: client.fetch_sites(), "swarm fetch_sites")
+        workflows = await self._guard(
+            lambda: client.fetch_workflows(), "swarm fetch_workflows"
+        )
 
         payload = {
             "jobs": jobs, "details": details,
             "skills": skills, "launches": launches, "sites": sites,
+            "workflows": workflows,
         }
         self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=now)
         self.cache.mark_fetched(TIER_SWARM_SCORES, now)
@@ -6373,6 +6406,7 @@ class SurfManager:
         skills = slot.get("skills") if slot else None
         launches = slot.get("launches") if slot else None
         sites = slot.get("sites") if slot else None
+        workflows = slot.get("workflows") if slot else None
 
         stale = None
         if entry is not None and live_entry is not None:
@@ -6395,6 +6429,13 @@ class SurfManager:
                 launch_summary(launch_rows) if launch_rows is not None else None
             ),
             "swarm_site_rows": sw.site_rows(sites) if sites is not None else None,
+            # GET /workflows (spec §2): None when that read failed, when the slot
+            # predates it (no key: the upgrade rule makes the sweep due) or when a
+            # persisted value is no list -- a hand-edited cache file is third-party
+            # input and must not pose as a real empty page. [] is a read, empty page.
+            "swarm_workflow_rows": (
+                sw.workflow_rows(workflows) if isinstance(workflows, list) else None
+            ),
         }
 
     def _swarm_seat_keys(

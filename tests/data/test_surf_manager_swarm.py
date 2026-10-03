@@ -53,7 +53,7 @@ from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY, UNKNOWN_SEAT
 from tests.data.test_surf_manager import FakeClock, FakeSurfClient, NOW
 from tests.data.test_surf_manager_pool4 import FakePool4Client
 from tests.surf_swarm_fixtures import (
-    swarm_capture_v2, swarm_details_v2, swarm_seat_capture, swarm_capture_v3,
+    swarm_capture_v2, swarm_capture_v6, swarm_details_v2, swarm_seat_capture, swarm_capture_v3,
 )
 
 #: Just after the corpus's newest ``updatedAt`` (``2026-09-20T23:06:10.038Z``).
@@ -111,12 +111,23 @@ class _FakeSwarm:
     ``seat_gate``, when given, holds each seat read in flight until it is
     set, and ``seat_entered`` is set once a read has reached that point, so
     a test awaits observable state rather than a clock.
+
+    ``fetch_workflows`` (docs/surf_swarm_workflows_spec.md WP2) serves the
+    2026-10-03 ``v6/workflows_limit12`` page, or ``workflows`` when given
+    (``[]`` is a real empty page); ``fail_workflows`` is that route's switch.
+    ``sweep_order`` logs the sweep-only routes in the order they were asked.
     """
 
     def __init__(self, *, jobs=None, health=None, details=None, fail=False,
                  fail_jobs=False, fail_skills=False, fail_launches=False,
-                 fail_sites=False, seats=None, seat_gate=None):
+                 fail_sites=False, seats=None, seat_gate=None,
+                 fail_workflows=False, workflows=None):
         self.calls: Counter = Counter()
+        self.sweep_order: list[str] = []
+        self.workflow_limits: list = []
+        self._fail_workflows = fail_workflows
+        self._workflows = (swarm_capture_v6("workflows_limit12")["workflows"]
+                           if workflows is None else workflows)
         self.detail_calls: list[str] = []
         self.seat_calls: list[int] = []
         self.seats: dict = (
@@ -180,17 +191,27 @@ class _FakeSwarm:
     async def fetch_skills(self):
         await asyncio.sleep(0)
         self.calls["skills"] += 1
+        self.sweep_order.append("skills")
         return None if self._fail_skills else list(swarm_capture_v2("skills")["skills"])
 
     async def fetch_launches(self):
         await asyncio.sleep(0)
         self.calls["launches"] += 1
+        self.sweep_order.append("launches")
         return None if self._fail_launches else list(swarm_capture_v2("launches")["launches"])
 
     async def fetch_sites(self):
         await asyncio.sleep(0)
         self.calls["sites"] += 1
+        self.sweep_order.append("sites")
         return None if self._fail_sites else list(swarm_capture_v2("sites")["sites"])
+
+    async def fetch_workflows(self, *, limit=None):
+        await asyncio.sleep(0)
+        self.calls["workflows"] += 1
+        self.sweep_order.append("workflows")
+        self.workflow_limits.append(limit)
+        return None if self._fail_workflows else copy.deepcopy(self._workflows)
 
     async def fetch_workers(self):
         await asyncio.sleep(0)
@@ -1915,11 +1936,191 @@ async def test_a_busy_detail_host_stops_the_sweep_and_keeps_the_prior_read(tmp_p
         later = now + 1800
         assert await manager._pool_swarm_scores({TIER_SWARM_SCORES}, later) == {"ok": False, "payload": None}
         assert swarm.calls["job"] == before["job"] + answered + 1
-        assert all(swarm.calls[route] == before.get(route, 0) for route in ("skills", "launches", "sites"))
+        assert all(swarm.calls[route] == before.get(route, 0)
+                   for route in ("skills", "launches", "sites", "workflows"))
         entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
         assert (entry.payload, entry.ts) == (prior.payload, prior.ts)
         assert manager.cache.last_fetch_ts(TIER_SWARM_SCORES) == now
         assert (manager.cache.seconds_until_due(TIER_SWARM_SCORES, later)
                 == TIER_FAILURE_BACKOFF_SECONDS[TIER_SWARM_SCORES])
+    finally:
+        await manager.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /workflows on the scores sweep (docs/surf_swarm_workflows_spec.md §2, WP2)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_workflows_are_read_after_sites_and_land_behind_the_sweep_marker(tmp_path):
+    swarm = _FakeSwarm()
+    manager, payload = await _landed(tmp_path, swarm)
+    try:
+        assert swarm.sweep_order == ["skills", "launches", "sites", "workflows"]
+        assert swarm.calls["workflows"] == 1
+        # The client's own default page size is the one asked for.
+        assert swarm.workflow_limits == [None]
+        served = swarm_capture_v6("workflows_limit12")["workflows"]
+        stored = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
+        assert stored["workflows"] == served                  # the raw list, under "workflows"
+        rows = payload["swarm_workflow_rows"]
+        assert rows == sw.workflow_rows(served) and len(rows) == 12
+        # workflows_limit12.json[0], read by hand.
+        assert rows[0]["workflow_id"] == "2e22d2cd-84e0-4346-b40e-692ab8b81e52"
+        assert payload["swarm_scores_as_of_hhmm"] is not None
+    finally:
+        await manager.close()
+
+
+async def test_a_dead_workflows_route_leaves_only_its_key_none(tmp_path):
+    """R-B: partial success is a success -- the sweep lands, the other routes'
+    keys are lists, only ``swarm_workflow_rows`` is ``None``; the slot keeps
+    the key (read, failed), so it is no legacy slot either."""
+    manager, payload = await _landed(tmp_path, _FakeSwarm(fail_workflows=True))
+    try:
+        assert payload["swarm_scores_as_of_hhmm"] is not None
+        assert payload["swarm_workflow_rows"] is None
+        assert payload["swarm_skill_rows"] and payload["swarm_launch_rows"]
+        assert payload["swarm_site_rows"]
+        stored = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
+        assert "workflows" in stored and stored["workflows"] is None
+    finally:
+        await manager.close()
+
+
+async def test_dead_skills_launches_and_sites_leave_the_workflows_whole(tmp_path):
+    manager, payload = await _landed(
+        tmp_path, _FakeSwarm(fail_skills=True, fail_launches=True, fail_sites=True))
+    try:
+        assert payload["swarm_skill_rows"] is None and payload["swarm_launch_rows"] is None
+        assert payload["swarm_site_rows"] is None
+        assert len(payload["swarm_workflow_rows"]) == 12
+    finally:
+        await manager.close()
+
+
+async def test_an_empty_workflows_page_is_a_real_empty(tmp_path):
+    manager, payload = await _landed(tmp_path, _FakeSwarm(workflows=[]))
+    try:
+        assert payload["swarm_workflow_rows"] == []
+    finally:
+        await manager.close()
+
+
+async def test_the_workflows_are_not_asked_when_the_sweep_fails_early(tmp_path):
+    """``/jobs`` unread fails the tier before any route is asked (the busy
+    detail host is the parametrised test above): a counting fake, not a log."""
+    swarm = _FakeSwarm(fail_jobs=True)
+    manager = _manager(tmp_path, swarm)
+    try:
+        assert await manager._pool_swarm_scores({TIER_SWARM_SCORES}, manager._clock()) == {
+            "ok": False, "payload": None}
+        assert swarm.calls["workflows"] == 0
+        assert swarm.sweep_order == []
+        payload = await manager.fetch_and_compute()
+        await _settle(manager)
+        assert swarm.calls["workflows"] == 0
+        assert payload["swarm_workflow_rows"] is None
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("stored", ["rows", {"id": "x"}, 7, None, "absent"])
+async def test_a_stored_workflows_value_that_is_no_list_publishes_none(tmp_path, stored):
+    """A persisted slot is third-party input (CLAUDE.md): a value that is no
+    list is "unread", never a real empty page."""
+    manager = _manager(tmp_path, _FakeSwarm())
+    try:
+        slot = {"jobs": [], "details": {}, "skills": [], "launches": [], "sites": []}
+        if stored != "absent":
+            slot["workflows"] = stored
+        entry = manager.cache.store_last_good(SLOT_SWARM_SCORES, slot, ts=manager._clock())
+        keys = manager._swarm_scores_keys(entry.payload, entry, None, manager._clock())
+        assert keys["swarm_workflow_rows"] is None
+        assert manager._swarm_scores_keys(None, None, None, manager._clock())[
+            "swarm_workflow_rows"] is None
+    finally:
+        await manager.close()
+
+
+def _warm_cache_with_scores_slot(tmp_path, clock, *, legacy: bool):
+    """A cache file holding a sweep slot (with or without ``"workflows"``),
+    re-opened by a :class:`SurfCache` whose scores and live tiers were just
+    fetched -- a warm, fresh clock, so only the upgrade rule can make the
+    sweep due. Tier clocks are in memory only (``SurfCache.load`` seeds
+    none), which is why the rule is pinned on an injected cache."""
+    from maxpane_dashboard.data.surf_cache import SurfCache
+    path = str(tmp_path / "surf.json")
+    slot = {"jobs": swarm_capture_v2("jobs")["jobs"], "details": {},
+            "skills": [], "launches": [], "sites": []}
+    if not legacy:
+        slot["workflows"] = []
+    writer = SurfCache(path=path, clock=clock)
+    writer.store_last_good(SLOT_SWARM_SCORES, slot, ts=clock())
+    writer.save()
+    cache = SurfCache(path=path, clock=clock)
+    cache.mark_fetched(TIER_SWARM_SCORES, clock())
+    cache.mark_fetched(TIER_SWARM, clock())
+    return cache
+
+
+@pytest.mark.parametrize("legacy", [True, False], ids=["legacy-slot", "slot-with-workflows"])
+async def test_a_slot_persisted_before_workflows_makes_the_sweep_due_next_cycle(tmp_path, legacy):
+    """Spec §2 "Upgrade": a last-good sweep slot without ``"workflows"`` means
+    "never read", not "read failed" -- so the tier is due on the next cycle
+    even though its clock says fresh. A slot that has the key (a ``[]`` page
+    here) is left to its TTL."""
+    from maxpane_dashboard.data.surf_cache import TIER_TTL_SECONDS
+    clock = FakeClock(NOW)
+    cache = _warm_cache_with_scores_slot(tmp_path, clock, legacy=legacy)
+    assert TIER_SWARM_SCORES not in cache.tiers_due(clock())
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm, cache=cache, clock=clock)
+    try:
+        loaded = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        assert loaded is not None and ("workflows" in loaded.payload) is not legacy
+        payload = await manager.fetch_and_compute()
+        await _settle(manager)
+        if legacy:
+            assert payload["swarm_workflow_rows"] is None      # the first paint: not read yet
+            assert manager._swarm_scores_task is not None
+            assert swarm.calls["workflows"] == 1
+            after = await manager.fetch_and_compute()
+            assert len(after["swarm_workflow_rows"]) == 12
+            assert "workflows" in manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
+            assert manager.cache.seconds_until_due(TIER_SWARM_SCORES, clock()) == (
+                TIER_TTL_SECONDS[TIER_SWARM_SCORES])
+        else:
+            assert manager._swarm_scores_task is None, "a slot with the key keeps its TTL"
+            assert swarm.calls["workflows"] == 0 and swarm.calls["jobs"] == 0
+            assert payload["swarm_workflow_rows"] == []
+    finally:
+        await manager.close()
+
+
+async def test_the_upgrade_sweep_does_not_defeat_the_failure_backoff(tmp_path):
+    """The rule fires once, at load: a forced sweep that fails early backs the
+    tier off like any other failure, and the next cycle inside that backoff
+    starts no second sweep and asks ``/jobs`` no second time."""
+    from maxpane_dashboard.data.surf_cache import TIER_FAILURE_BACKOFF_SECONDS
+    clock = FakeClock(NOW)
+    cache = _warm_cache_with_scores_slot(tmp_path, clock, legacy=True)
+    swarm = _FakeSwarm(fail_jobs=True)
+    manager = _manager(tmp_path, swarm, cache=cache, clock=clock)
+    try:
+        await manager.fetch_and_compute()
+        await _settle(manager)
+        first = manager._swarm_scores_task
+        assert first is not None and first.done()
+        assert swarm.calls["jobs"] == 1 and swarm.calls["workflows"] == 0
+        assert manager.cache.seconds_until_due(TIER_SWARM_SCORES, clock()) == (
+            TIER_FAILURE_BACKOFF_SECONDS[TIER_SWARM_SCORES])
+        clock.advance(30)          # inside both the 300 s backoff and the live tier's 60 s TTL
+        await manager.fetch_and_compute()
+        await _settle(manager)
+        assert manager._swarm_scores_task is first, "no second sweep inside the backoff"
+        assert swarm.calls["jobs"] == 1
+        # The legacy slot still serves, and still says "never read".
+        assert "workflows" not in manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
     finally:
         await manager.close()

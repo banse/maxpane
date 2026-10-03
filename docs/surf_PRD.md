@@ -218,6 +218,7 @@ for `SurfDevActivity`. Topics vendored with their preimages and keccak-verified 
 | market | `imd_price_usd`, `imd_change_24h_pct`, `imd_vol_24h_usd`, `pool_liquidity_usd`, `fp_price_usd`, `parity_pct`, `supply_series`, `price_series` |
 | nft | `nft_holders`, `nft_transfers_24h`, `nft_dev_holdings`, `nft_written`, `nft_last_sales` (list[dict]: `ts, token_id, eth`), `nft_floor` (always `None` in v1 — renders the explicit unavailable state) |
 | activity | `dev_activity` (list[dict]: `ts, wallet_label, kind, counterparty, counterparty_known, value_eth, tx_hash`) |
+| swarm | the `s`/`a`/`b` bodies' `SWARM_KEYS` block (full tuple and row shapes in `data/surf_models.py`); since 2026-10-03 it ends with `swarm_workflow_rows` (list[dict]: `workflow_id, status, contracts_job_id, frontend_job_id, objective, failure, created_ts, updated_ts, waiting_for_hosting`), `GET /workflows?limit=12` on the scores sweep -- `None` when the read failed or never happened, `[]` a real empty page (`docs/surf_swarm_workflows_spec.md` §2) |
 
 Every numeric key is `float|int|None`; `None` renders as the widget's unavailable state,
 never as 0.
