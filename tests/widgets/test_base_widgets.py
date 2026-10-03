@@ -188,13 +188,28 @@ async def test_sparkline_draws_the_trend_arrow():
 
 
 @pytest.mark.asyncio
-async def test_an_empty_series_says_waiting_beside_its_label():
+@pytest.mark.parametrize(
+    "history, word",
+    [([], "waiting for data..."), (None, "unavailable")],
+    ids=["empty", "none"],
+)
+async def test_an_empty_series_says_waiting_and_a_failed_one_unavailable_beside_its_label(
+    history, word
+):
     """Mutation: ``EMPTY_TEXT`` -> ``""`` or ``EMPTY_KEEPS_LABEL = False`` ->
-    this reddens. All three lines say so when nothing has been recorded."""
-    rows = await _composited(BTSparklines)
+    ``empty`` reddens: all three lines say so when nothing has been
+    recorded. Mutation: ``render_series`` writing the empty line for a
+    ``None`` series (#34) -> ``none`` reddens: a read that failed is not a
+    read that found nothing, and says so beside the same label."""
+    rows = await _composited(
+        BTSparklines,
+        volume_history=history,
+        eth_price_history=history,
+        trade_count_history=history,
+    )
     for label in ("Volume", "ETH", "Trades"):
         line = _line_with(rows, label)
-        assert line.startswith(f"    {label:<10}  waiting for data..."), repr(line)
+        assert line == f"    {label:<10}  {word}", repr(line)
 
 
 @pytest.mark.asyncio

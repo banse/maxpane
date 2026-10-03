@@ -488,9 +488,14 @@ class SparklinePanel(PanelBase):
     #: Append the trend arrow after the value. talismans and ttt draw none.
     SHOW_ARROW: bool = True
 
-    #: What an unusable series writes. ``""`` -- never a flat baseline,
-    #: which would read as a real run of zeroes. talismans and ttt say
-    #: ``waiting for data...`` instead, which is the same claim in words.
+    #: What a series that *was* read but holds nothing usable writes: ``[]``,
+    #: or fewer than :attr:`MIN_POINTS` usable points. ``""`` -- never a flat
+    #: baseline, which would read as a real run of zeroes. talismans, ttt
+    #: and base say ``waiting for data...`` instead, which is the same claim
+    #: in words. A series that could not be read at all -- ``None``, or not a
+    #: list or tuple -- writes ``unavailable`` instead (#34), never this:
+    #: ``coerce_points`` turns both into ``[]``, and a failed read written as
+    #: the real negative is a false one.
     EMPTY_TEXT: str = ""
 
     #: How many coerced points a series needs before it is drawn at all.
@@ -501,12 +506,15 @@ class SparklinePanel(PanelBase):
     #: (Branch 7 WP-B). Their waiting line says so in words instead.
     MIN_POINTS: int = 1
 
-    #: Keep the label column on the :attr:`EMPTY_TEXT` line. ``False`` is
-    #: Branch 6's behaviour and the only one an empty ``EMPTY_TEXT`` can
-    #: have; talismans and ttt print ``MYTHIC COUNT     waiting for
-    #: data...``, so the reader can tell *which* of two stacked series is
-    #: not ready yet. The line the entry could not even be unpacked from
-    #: has no label to keep, and writes :attr:`EMPTY_TEXT` bare.
+    #: Keep the label column on a degraded line -- the :attr:`EMPTY_TEXT`
+    #: line and the ``unavailable`` one alike. ``False`` is Branch 6's
+    #: behaviour: the empty line is :attr:`EMPTY_TEXT` as spelled and the
+    #: unavailable one is ``UNAVAILABLE_LINE``. talismans, ttt and base
+    #: print ``MYTHIC COUNT     waiting for data...`` (and ``MYTHIC COUNT
+    #: unavailable``), so the reader can tell *which* of the stacked series
+    #: is not ready yet, or could not be read. The line the entry could not
+    #: even be unpacked from has no label to keep, and writes
+    #: ``UNAVAILABLE_LINE`` bare.
     EMPTY_KEEPS_LABEL: bool = False
 
     #: How many cells the bar itself occupies. ``sparkline_common.SPARK_WIDTH``
@@ -550,25 +558,53 @@ class SparklinePanel(PanelBase):
         width = self.LABEL_WIDTH
         return f"{str(label)[:width]:<{width}}"
 
+    def _beside_label(self, label, text: str) -> str:
+        """*text* in the value column, after the dim label cell."""
+        return f"  [dim]{self._label_cell(label)}[/]  {text}"
+
     def empty_line(self, label) -> str:
-        """What one unusable series writes, with or without its label."""
+        """What one read-but-unusable series writes, with or without its label."""
         if not self.EMPTY_KEEPS_LABEL:
             return self.EMPTY_TEXT
-        return f"  [dim]{self._label_cell(label)}[/]  {self.EMPTY_TEXT}"
+        return self._beside_label(label, self.EMPTY_TEXT)
+
+    def unavailable_line(self, label) -> str:
+        """What one series that could not be read writes (#34).
+
+        :data:`UNAVAILABLE` beside the label where :attr:`EMPTY_KEEPS_LABEL`
+        keeps one -- the same label cell :meth:`empty_line` builds -- and
+        :data:`UNAVAILABLE_LINE` otherwise.
+        """
+        if not self.EMPTY_KEEPS_LABEL:
+            return UNAVAILABLE_LINE
+        return self._beside_label(label, UNAVAILABLE)
 
     def render_series(self, series) -> None:
         """Draw ``(label, points, color, unit)`` tuples in line order.
 
-        An empty or unusable series writes :attr:`EMPTY_TEXT` -- never a
-        flat baseline that would read as a real run of zeroes -- keeping
-        its label column when :attr:`EMPTY_KEEPS_LABEL` says so.
+        Three degraded lines, three different facts (#34):
+
+        * an entry that does not unpack into the four writes
+          :data:`UNAVAILABLE_LINE` bare -- it has no label to keep;
+        * ``points`` that is ``None`` (a failed read) or not a list or tuple
+          (a hand-edited cache file) writes :meth:`unavailable_line`;
+        * ``[]``, fewer than :attr:`MIN_POINTS` usable points or no usable
+          point at all is a read that found nothing to draw, and writes
+          :meth:`empty_line` -- :attr:`EMPTY_TEXT`, never a flat baseline
+          that would read as a real run of zeroes.
+
+        Both labelled forms keep the label column when
+        :attr:`EMPTY_KEEPS_LABEL` says so.
         """
         for line_id, entry in zip(self.LINE_IDS, series):
             selector = f"#{line_id}"
             try:
                 label, points, color, unit = entry
             except Exception:
-                self.write(selector, self.EMPTY_TEXT)
+                self.write(selector, UNAVAILABLE_LINE)
+                continue
+            if not isinstance(points, (list, tuple)):
+                self.write(selector, self.unavailable_line(label))
                 continue
             pts = coerce_points(points)
             if len(pts) < self.MIN_POINTS or not pts:

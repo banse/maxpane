@@ -521,13 +521,45 @@ _SERIES = [(1_700_000_000.0, 1_000.0), (1_700_003_600.0, 2_000.0)]
 
 @pytest.mark.parametrize(
     "points",
-    [None, [], [(1.0,)], [(1.0, None), (2.0, None)]],
-    ids=["none", "empty", "ragged", "none-valued"],
+    [[], [(1.0,)], [(1.0, None), (2.0, None)]],
+    ids=["empty", "ragged", "none-valued"],
 )
 async def test_render_series_writes_nothing_for_an_unusable_series(points) -> None:
+    """A series that was read and holds nothing usable writes ``EMPTY_TEXT``
+    (``""`` here). ``None`` used to be a case of this test; it is a read that
+    failed, and says so below (#34)."""
     rows = await _lines(_Sparks, points=points)
     body = "\n".join(rows[2:])
     assert not body.strip(), rows[:5]
+
+
+@pytest.mark.parametrize(
+    "points",
+    [None, "not-a-series", {"ts": 1.0}, 7],
+    ids=["none", "string", "dict", "int"],
+)
+async def test_render_series_says_unavailable_for_a_series_it_could_not_read(
+    points,
+) -> None:
+    """#34. ``None`` is a failed read, and a value that is not a list or a
+    tuple -- what a hand-edited cache file can hold -- is no series at all.
+    ``coerce_points`` turns every one of them into ``[]``, so the panel used
+    to write ``EMPTY_TEXT`` for them: a failed read wearing a real
+    negative's clothes. Mutation: drop the ``isinstance(points, (list,
+    tuple))`` guard in ``render_series`` -> every case reddens."""
+    rows = await _lines(_Sparks, points=points)
+    assert rows[2] == "   unavailable", rows[:5]
+    assert not "\n".join(rows[3:]).strip(), rows[:5]
+
+
+async def test_render_series_draws_a_tuple_series_as_it_draws_a_list() -> None:
+    """The read check admits a ``tuple`` as well as a ``list``: a serializer
+    that keeps tuples hands over a real series. Mutation: the check narrowed
+    to ``isinstance(points, list)`` -> this reddens."""
+    as_list = await _lines(_Sparks, points=_SERIES)
+    as_tuple = await _lines(_Sparks, points=tuple(_SERIES))
+    assert any(ch in as_tuple[2] for ch in SPARK_CHARS), repr(as_tuple[2])
+    assert as_tuple[2] == as_list[2], (as_tuple[2], as_list[2])
 
 
 async def test_render_series_draws_the_sparkline_value_and_arrow() -> None:
@@ -626,14 +658,75 @@ async def test_fmt_value_override_is_what_reaches_the_cell() -> None:
     assert fmt_compact(2_000.0) not in rows[2], repr(rows[2])
 
 
-@pytest.mark.parametrize(
-    "points", [None, [], [(1.0,)]], ids=["none", "empty", "ragged"]
-)
+@pytest.mark.parametrize("points", [[], [(1.0,)]], ids=["empty", "ragged"])
 async def test_empty_text_is_what_an_unusable_series_writes(points) -> None:
     """``""`` is a default, not the contract: a panel that words its empty
-    state writes the words, and never a flat baseline either way."""
+    state writes the words, and never a flat baseline either way. ``None``
+    is not one of these any more (#34): see the next test."""
     rows = await _lines(_WideSparks, points=points)
     assert rows[2].strip() == "waiting for data...", rows[:4]
+
+
+#: ``_WideSparks`` with its degraded lines kept beside the label, as
+#: talismans, ttt and base draw them.
+class _LabelledSparks(_WideSparks):
+    LINE_IDS = ("t-lspark-0",)
+    EMPTY_KEEPS_LABEL = True
+
+
+@pytest.mark.parametrize(
+    "cls, points, expected",
+    [
+        (_WideSparks, None, "   unavailable"),
+        # Bare, EMPTY_TEXT is written as it is spelled (no row indent);
+        # UNAVAILABLE_LINE carries its own two-space column.
+        (_WideSparks, [], " waiting for data..."),
+        (_LabelledSparks, None, f"   {'Supply':<12}  unavailable"),
+        (_LabelledSparks, [], f"   {'Supply':<12}  waiting for data..."),
+    ],
+    ids=["bare-none", "bare-empty", "labelled-none", "labelled-empty"],
+)
+async def test_a_failed_read_says_unavailable_where_an_empty_one_says_waiting(
+    cls, points, expected
+) -> None:
+    """#34. A panel that words its empty state does not word a failed read
+    the same way: ``None`` says ``unavailable``, ``[]`` keeps the panel's
+    own sentence, and ``EMPTY_KEEPS_LABEL`` keeps the label column on both
+    lines, built by the one ``_label_cell``. Mutations: the unlabelled
+    unavailable line -> ``EMPTY_TEXT`` reddens ``bare-none``; the labelled
+    one -> ``EMPTY_TEXT`` reddens ``labelled-none``; ``[]`` sent to the
+    unavailable line reddens both ``-empty`` cases."""
+    rows = await _lines(cls, points=points)
+    assert rows[2] == expected, rows[:4]
+
+
+#: Hands ``render_series`` its entries as given, so one can be malformed.
+class _EntrySparks(_Replay, SparklinePanel):
+    TITLE = "TRENDS"
+    LINE_IDS = ("t-espark-0", "t-espark-1")
+    EMPTY_TEXT = "[dim]waiting for data...[/]"
+    EMPTY_KEEPS_LABEL = True
+
+    def _poll(self, series=()) -> None:
+        self.render_series(series)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [None, ("Supply", _SERIES, "green"), 7],
+    ids=["none", "three-tuple", "int"],
+)
+async def test_an_entry_that_does_not_unpack_says_unavailable_bare(entry) -> None:
+    """#34. An entry that is not ``(label, points, color, unit)`` is a read
+    the panel cannot even name: ``UNAVAILABLE_LINE`` with no label column,
+    even on a panel that keeps one -- never the ``EMPTY_TEXT`` it used to
+    write. The line under it still renders its own state. Mutation: the
+    unpack failure writes ``EMPTY_TEXT`` -> this reddens."""
+    rows = await _lines(
+        _EntrySparks, series=[entry, ("Staked", [], "green", "")]
+    )
+    assert rows[2] == "   unavailable", rows[:5]
+    assert rows[3] == f"   {'Staked':<8}  waiting for data...", rows[:5]
 
 
 async def test_the_first_line_is_seeded_with_empty_text_when_there_is_one() -> None:
