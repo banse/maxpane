@@ -1233,3 +1233,7 @@ The CONTROL composition measures 132 columns and 26 rows across the three payloa
 ### 2026-10-03 — PEPEPANE round 9: screen foundation pin and LEDGER exception
 
 The screen's current aggregate pin is 132 columns by 40 rows, the maxima of the measured body pins. The full-width LEDGER clears its full tier at 126 terminal columns, verified around that boundary; the former 210-column exception is removed because it now fits within the screen pin. The terminal-layout table and current install/Mac citations track this foundation measurement until WP6 completes the body certification.
+
+### 2026-10-04 — PEPEPANE round 9: fitted-prose address helper hoist
+
+The address marking, fitting support and link attachment helpers move unchanged from `widgets/surf/_icons.py` to shared `widgets/seat_icons.py`. The old path re-exports its public and private names so existing SURFBOARD callers retain the same objects and behavior. The shared module imports only shared dependencies. JOB and RECORDS can now account for copy icons before fitting text without importing the SURFBOARD package. The hoist identity and import-boundary tables include the new home; its isolated commit is followed by the unchanged SURFBOARD layout sweep and address-helper tests.

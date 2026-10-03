@@ -29,6 +29,14 @@ _WIDGETS = Path(fmt.__file__).parent
 #: (old shim path, new shared module, the private names the shim must also carry).
 _SHIMS = [
     pytest.param(
+        "maxpane_dashboard.widgets.surf._icons",
+        "maxpane_dashboard.widgets.seat_icons",
+        ("_styles", "_shows", "_LINKED_RE", "_SHOWN_BEFORE_RE",
+         "re", "Iterable", "Style", "Text", "COPY_GLYPH", "PROSE_ADDRESS_RE",
+         "address_text", "short_address", "Explorer"),
+        id="_icons",
+    ),
+    pytest.param(
         "maxpane_dashboard.widgets.surf._swarm_table",
         "maxpane_dashboard.widgets.swarm_table",
         ("_EMPTY_ITEM",),
@@ -44,7 +52,7 @@ _SHIMS = [
 
 #: The hoisted shared modules: none may import back into ``widgets/surf/``
 #: (spec §15: "otherwise the hoisted shared module would import back into widgets/surf/").
-_SHARED = ["swarm_table.py", "seat_words.py", "fmt.py"]
+_SHARED = ["swarm_table.py", "seat_words.py", "fmt.py", "seat_icons.py"]
 
 def _imports(path: Path) -> list[tuple[str, str]]:
     """``(module, name)`` for every import statement in *path*; ``("x", "*")`` for a star."""
