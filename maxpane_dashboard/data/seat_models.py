@@ -180,7 +180,7 @@ def empty_document(*, producer: str = PRODUCER, started_at_utc: str, host: dict)
             "orphans": [],
         },
         "control": {"brokerReachable": None, "gate": None, "drain": None, "inFlight": None,
-                    "restartRequired": None, "lastAudit": [], "plan": None, "status": None, "mode": None},
+                    "restartRequired": None, "lastAudit": [], "plan": None, "status": None, "statusParts": [], "mode": None},
     }
 
 
@@ -358,13 +358,14 @@ SEAT_KEYS: tuple[str, ...] = (
     "seat_current_jobs", "seat_jobs", "seat_records_rows", "seat_records_window",
     "seat_nodes_all_rows", "seat_nodes_week_rows", "seat_nodes_coverage",
     "seat_auto_update", "seat_runtime_wrapper", "seat_output_tokens",
-    "seat_control_plan", "seat_control_status", "seat_control_mode",
+    "seat_control_plan", "seat_control_status", "seat_control_status_parts", "seat_control_mode",
     # ---- status bar (read by DashboardScreen._do_refresh) ------------------
     "last_updated_seconds_ago", "error_count", "poll_interval",
 )
 
 #: Every dict in a list-valued key has exactly these keys; a missing one is ``None``.
 SEAT_ROW_KEYS: dict[str, tuple[str, ...]] = {
+    "seat_control_status_parts": ("text", "colour"),
     "seat_tasks_rows": (
         "key", "nodeId8", "nodeId", "jobId", "role", "kind", "acceptedUtc", "submittedUtc", "storedUtc", "hash12",
         "durationS", "agentRan", "preAgentFailure", "cancelled", "leaseClosed", "repair", "resent", "interruptedByRestart",
@@ -422,7 +423,7 @@ SEAT_BLOCK_KEYS.update({
     "seat_records_window": ("rows", "asOfUtc", "fromUtc", "toUtc", "reason"),
     "seat_nodes_coverage": ("attempts", "covered", "detailsRead", "asOfUtc", "reason"),
     "seat_output_tokens": ("today", "sevenDays", "averagePerDay", "days", "reason"),
-    "seat_control_plan": ("planId", "verb", "command", "confirm", "warning", "expiresAtUtc", "forced", "localOnly"),
+    "seat_control_plan": ("planId", "verb", "command", "confirm", "warning", "expiresAtUtc", "forced", "localOnly", "preconditions", "inverse", "verification"),
 })
 
 #: Every ``seat_*`` key -> the ``SOURCE_NAMES`` entry whose ``ok`` gates it, or
@@ -510,7 +511,7 @@ SEAT_FIELD_SOURCES.update({
     "seat_current_jobs": None, "seat_jobs": None, "seat_records_rows": None, "seat_records_window": None,
     "seat_nodes_all_rows": None, "seat_nodes_week_rows": None, "seat_nodes_coverage": None,
     "seat_auto_update": "unit", "seat_runtime_wrapper": "status", "seat_output_tokens": None,
-    "seat_control_plan": None, "seat_control_status": None, "seat_control_mode": None,
+    "seat_control_plan": None, "seat_control_status": None, "seat_control_status_parts": None, "seat_control_mode": None,
 })
 
 #: (invented) row-level gating inside a list-valued key: a row field whose
@@ -595,7 +596,7 @@ SEAT_WIDGET_SIGNATURES.update({
     "SeatControl": ("seat_control_gate", "seat_control_drain", "seat_control_in_flight", "seat_control_broker_reachable",
                     "seat_unit_boot_enabled", "seat_unit_graceful_stop_possible", "seat_unit_active_state",
                     "seat_host_kind", "seat_machine_orphans", "seat_daemon_version", "seat_release_available",
-                    "seat_control_plan", "seat_control_status", "seat_control_mode", "seat_sources"),
+                    "seat_control_plan", "seat_control_status", "seat_control_status_parts", "seat_control_mode", "seat_sources"),
 })
 
 
@@ -711,8 +712,26 @@ def shape_dashboard_document(doc: Mapping[str, Any]) -> dict:
     out["cost"] = cost
     control = dict(_dict(doc.get("control")))
     control["plan"] = _dashboard_block("seat_control_plan", control.get("plan"))
-    for name in ("status", "mode"):
-        control[name] = _dashboard_value(name, control.get(name))
+    plan = control["plan"]
+    raw_plan = _dict(_dict(doc.get("control")).get("plan"))
+    if plan is not None:
+        for name, cap in (("command", 1024), ("warning", 1024), ("preconditions", 1024), ("inverse", 160), ("verification", 512)):
+            value = raw_plan.get(name)
+            plan[name] = redact(value, name, cap=cap) if isinstance(value, str) else None
+    control["status"] = redact(control["status"], "status", cap=4096) if isinstance(control.get("status"), str) else None
+    control["mode"] = _dashboard_value("mode", control.get("mode"))
+    parts, remaining = [], 4096
+    raw_parts = control.get("statusParts")
+    for part in raw_parts[:32] if isinstance(raw_parts, list) else []:
+        if not isinstance(part, dict) or not isinstance(part.get("text"), str):
+            continue
+        value = redact(part["text"], "text", cap=remaining)
+        colour = part.get("colour")
+        parts.append({"text": value, "colour": colour if colour in ("", "dim", "green", "yellow", "red") else ""})
+        remaining -= len(value)
+        if remaining <= 0:
+            break
+    control["statusParts"] = parts
     out["control"] = control
     return out
 
@@ -1055,6 +1074,7 @@ def fold_status_document(
         "seat_output_tokens": f.block("seat_output_tokens", cost.get("outputTokens")),
         "seat_control_plan": f.block("seat_control_plan", control.get("plan")),
         "seat_control_status": f.value("seat_control_status", control.get("status")),
+        "seat_control_status_parts": f.rows("seat_control_status_parts", control.get("statusParts")),
         "seat_control_mode": f.value("seat_control_mode", control.get("mode")),
         # status bar
         "last_updated_seconds_ago": last_updated,

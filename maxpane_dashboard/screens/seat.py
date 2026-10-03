@@ -1,6 +1,7 @@
 """PEPEPANE's six composed dashboards; shared DashboardScreen owns every refresh."""
 from __future__ import annotations
 import logging
+import time
 from rich.text import Text
 from rich.markup import escape
 from textual.app import ComposeResult
@@ -10,6 +11,7 @@ from textual.widgets import Static, DataTable, RichLog, Input
 from maxpane_dashboard.data.seat_models import SEAT_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.screens.seat_task_detail import SeatTaskDetail
+from maxpane_dashboard.screens.seat_write_flow import SeatWriteFlow
 from maxpane_dashboard.widgets.fmt import DASH
 from maxpane_dashboard.widgets.seat import (
     SeatHero, SeatNow, SeatJob, SeatLog, SeatMachine, SeatCost, SeatOutputTokens, SeatLedgerTable,
@@ -43,8 +45,9 @@ SEAT_BODY_PINS = {
     "RECORDS": (132, 20),
     #: NODES: table body floor 10; independently measured whole at 20, not 19.
     "NODES": (132, 20),
-    #: CONTROL: GATE/AUDIT floor 16; whole at 26, scrolling at 25.
-    "CONTROL": (132, 26),
+    #: WP5 measured complete CONTROL + always-visible confirm strip: worst/unattributed
+    #: clear at132×29; at132×28 its left body scrolls and advertises ‹ taller.
+    "CONTROL": (132, 29),
 }
 SEAT_FULL_LAYOUT_COLUMNS = max(width for width, _ in SEAT_BODY_PINS.values())
 SEAT_FULL_LAYOUT_ROWS = max(height for _, height in SEAT_BODY_PINS.values())
@@ -113,7 +116,7 @@ class SeatScreen(DashboardScreen):
         Binding("escape", "escape", "Back", show=False),
         Binding("r", "refresh_or_restart", "Refresh / restart", show=False),
         *[Binding(key, f"control_verb('{verb}')", verb, show=False) for key, verb in
-          (("d", "drain-restart"), ("s", "stop"), ("S", "start"), ("b", "boot"),
+          (("d", "drain-restart"), ("s", "stop"), ("S", "start"), ("b", "enable-boot"),
            ("o", "kill-orphans"), ("D", "doctor"), ("x", "cancel-drain"))],
         Binding("enter", "task_detail", "Detail", show=False),
         Binding("space", "toggle_setting", "Toggle", show=False),
@@ -162,29 +165,20 @@ class SeatScreen(DashboardScreen):
     SeatScreen SeatNow > .panel-line, SeatScreen SeatMachine > .panel-line, SeatScreen SeatCost > .panel-line { text-wrap: nowrap; text-overflow: ellipsis; }
     SeatScreen SeatLog > RichLog { height: 1fr; }
     SeatScreen #seat-log-footer { height: 1; }
-    SeatControlScreen { align: center middle; padding: 1 0; }
-    SeatControlScreen #seat-control-box { width: 100%; max-width: 120; height: 100%; border: solid $accent; padding: 0 2; }
-    SeatControlScreen #seat-control-title { height: 1; margin: 0 0 1 0; }
-    SeatControlScreen #seat-control-scroll { height: 1fr; min-height: 4; overflow-x: hidden; }
-    SeatControlScreen #seat-control-scroll Static { height: auto; width: 100%; }
-    SeatControlScreen #seat-control-static { margin: 1 0 0 0; }
-    SeatControlScreen #seat-control-plan { margin: 1 0 0 0; }
-    SeatControlScreen #seat-control-status { margin: 1 0 0 0; }
-    SeatControlScreen #seat-control-input { height: 3; margin: 1 0 0 0; }
-    SeatControlScreen #seat-control-audit { height: auto; max-height: 6; margin: 1 0 0 0; }
     """
     PANELS = tuple((cls, keys(*SEAT_WIDGET_SIGNATURES[cls.__name__])) for cls in (
         SeatHero, SeatNow, SeatJob, SeatLog, SeatMachine, SeatCost, SeatOutputTokens, SeatLedgerTable,
         SeatConfig, SeatSkills, SeatRecords, SeatNodes, SeatControl, SeatGate, SeatAudit,
     ))
 
-    def __init__(self, manager, poll_interval=5, name=None, **kwargs):
+    def __init__(self, manager, poll_interval=5, name=None, *, flow_now=time.time, **kwargs):
         super().__init__(manager, poll_interval, name=name, **kwargs)
         self._last_payload = None
         self.selected_dashboard = "LIVE"
         self.prompt_open = False
         self.record_limit = 40
         self.record_open_only = False
+        self.flow = SeatWriteFlow(manager, self, now=flow_now)
 
     def compose(self) -> ComposeResult:
         yield Static(Text(INITIAL_TITLE), id=TITLE_BAR_ID)
@@ -226,8 +220,37 @@ class SeatScreen(DashboardScreen):
         yield SeatStatusBar()
 
     def on_mount(self):
+        self.flow._timer = self.set_interval(self._poll_interval, self.flow._schedule_tick)
         self._record_window()
         self.select_dashboard('LIVE')
+
+    def on_unmount(self):
+        self.flow.close()
+
+    def flow_changed(self):
+        if not self.is_mounted:
+            return
+        self.prompt_open = self.flow.mode in ('force', 'planned')
+        field = self.query_one('#seat-confirm-input', Input)
+        field.display = self.prompt_open
+        self.query_one('#seat-confirm-strip').display = self.selected_dashboard == 'CONTROL' or self.prompt_open or (self.selected_dashboard == 'CONFIG & SKILLS' and bool(self.flow._status.plain))
+        plan = self.flow._plan_projection() or {}
+        summary = (f"plan {plan['planId'][:4]} · {plan['verb']}\nargv: {plan['command']}\nwarning: {plan['warning']}" if plan else '')
+        self.query_one('#seat-confirm-plan', Static).update(Text(summary))
+        self.query_one('#seat-confirm-status', Static).update(self.flow._status)
+        if self.prompt_open:
+            field.focus()
+        elif self.app.focused is field:
+            field.value = ''
+            self._focus_dashboard()
+        self.action_refresh()
+
+    def on_input_submitted(self, event: Input.Submitted):
+        if event.input.id == 'seat-confirm-input':
+            event.stop()
+            typed = event.input.value
+            event.input.value = ''
+            self.flow.submit(typed)
 
     def _prime_status_bar(self, bar):
         bar.set_key_hints(KEY_HINTS[self.selected_dashboard])
@@ -235,6 +258,7 @@ class SeatScreen(DashboardScreen):
 
     def _update_title(self, data):
         self._last_payload = data
+        self.flow._flat = data
         self._render_title()
 
     def on_resize(self, _event=None):
@@ -260,9 +284,12 @@ class SeatScreen(DashboardScreen):
         for panel in self.query(SeatTable):
             if panel.is_on_screen:
                 panel.remember_view()
-        if self.prompt_open:
-            self._cancel_prompt()
+        if name != self.selected_dashboard:
+            self.flow.cancel_prompt()
+        self.prompt_open = self.flow.mode in ("planned", "force")
+        self.query_one("#seat-confirm-input", Input).display = self.prompt_open
         self.selected_dashboard = name
+        self.query_one("#seat-confirm-strip").display = name == "CONTROL" or self.prompt_open
         for dashboard, body_id in BODY_IDS.items():
             self.query_one(f'#{body_id}').display = dashboard == name
         self.query_one(SeatHero).select_dashboard(name)
@@ -295,9 +322,10 @@ class SeatScreen(DashboardScreen):
             self.select_dashboard('LIVE')
 
     def _cancel_prompt(self):
+        self.flow.cancel_prompt()
         self.prompt_open = False
-        self.query_one('#seat-confirm-strip').display = False
-        self._data_manager.plan_open = False
+        self.query_one('#seat-confirm-strip').display = self.selected_dashboard == "CONTROL"
+        self.query_one('#seat-confirm-input', Input).value = ""
         self._focus_dashboard()
 
     def set_focus(self, widget, scroll_visible=True, from_app_focus=False):
@@ -336,8 +364,7 @@ class SeatScreen(DashboardScreen):
             self._request_control(verb)
 
     def _request_control(self, verb):
-        # WP5 attaches the one plan/confirm/apply/verify flow here.
-        self.query_one('#seat-confirm-status', Static).update(Text('write flow not available yet'))
+        self.flow.request(verb)
 
     def action_toggle_heartbeats(self):
         if not self.prompt_open and self.selected_dashboard == 'LIVE':
@@ -357,12 +384,37 @@ class SeatScreen(DashboardScreen):
             self.focus_next()
 
     def action_toggle_setting(self):
-        # WP5 validates the row and starts the shared write flow.
-        pass
+        if self.prompt_open or self.selected_dashboard != 'CONFIG & SKILLS':
+            return
+        skills = self.query_one(SeatSkills)
+        if self.app.focused is skills.query_one(DataTable):
+            row = skills.selected_row()
+            if row and type(row.get('on')) is bool:
+                self.flow.request('skills-set', {'skill_id':row.get('id'), 'on':not row['on']})
+            else:
+                self.flow._set_status('skill state unavailable', 'yellow')
+            return
+        row = self.query_one(SeatConfig).selected_row()
+        if row and row.get('setting') == 'boot' and (self._last_payload or {}).get('seat_host_kind') != 'docker':
+            self.flow.request('enable-boot')
+        else:
+            setting = row.get('setting') if row else 'setting'
+            procedures = {
+                'capacity': 'capacity is the --concurrency start flag: drop-in plus drained restart (runbook §4c)',
+                'runtime': 'runtime is a start flag: edit the unit plus drained restart (runbook)',
+                'daemon': 'daemon update: runbook §2.1 (drained restart)',
+                'tools': 'tools change through imd tools',
+                'hints': 'hints are never changed by this dashboard',
+                'auto-update': 'auto-update is the --auto-update start flag; this dashboard never changes it',
+                'boot': 'boot follows the container restart policy; fixed here',
+            }
+            message = ('inference tiers: edit config.json as imd-worker plus drained restart (runbook)' if str(setting).startswith('inference')
+                       else procedures.get(setting, f'{setting}: {row.get("change", "read-only") if row else "read-only"}'))
+            self.flow._set_status(message, 'dim')
 
-    def action_record_filter(self):
+    def action_record_filter(self, mode=None):
         if not self.prompt_open and self.selected_dashboard == 'RECORDS':
-            self.record_open_only = not self.record_open_only
+            self.record_open_only = (mode == "open") if mode else not self.record_open_only
             self._record_window()
 
     def action_record_more(self):
@@ -376,9 +428,10 @@ class SeatScreen(DashboardScreen):
         if hint:
             hint(self.record_limit, open_only=self.record_open_only)
 
-    def action_node_window(self):
+    def action_node_window(self, mode=None):
         if not self.prompt_open and self.selected_dashboard == 'NODES':
-            self.query_one(SeatNodes).toggle_window()
+            panel = self.query_one(SeatNodes)
+            panel.set_window(mode == "week") if mode else panel.toggle_window()
 
     def on_data_table_row_selected(self, event):
         event.stop()
@@ -398,3 +451,11 @@ class SeatScreen(DashboardScreen):
             read = getattr(self._data_manager, 'cached_task_detail', None)
             detail = read(row.get('key')) if read and row.get('key') else None
             self.app.push_screen(SeatTaskDetail(detail or row))
+
+    def action_record_detail(self, key):
+        if self.prompt_open or self.selected_dashboard != 'RECORDS':
+            return
+        row = next((row for row in self.query_one(SeatRecords)._seat_rows if row.get('key') == key), None)
+        if row is not None:
+            read = getattr(self._data_manager, 'cached_task_detail', None)
+            self.app.push_screen(SeatTaskDetail((read(key) if read else None) or row))

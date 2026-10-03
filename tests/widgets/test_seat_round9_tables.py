@@ -94,6 +94,7 @@ async def test_config_table_retains_setting_after_refresh():
         selected = panel.selected_row()['key']
         selected_index = table.cursor_row
         top = table.scroll_y
+        anchor = panel._seat_rows[int(top)]['setting']
         # The wrapper appears above the selected boot row but below the viewport's
         # top (daemon); preserve both identities, so only the cursor index increases.
         flat['seat_host_kind'] = 'systemd'
@@ -112,7 +113,7 @@ async def test_config_table_retains_setting_after_refresh():
         assert panel.selected_row()['key'] == selected
         assert table.cursor_row == selected_index + 1
         assert table.scroll_y == top
-        assert 'daemon' in strips(pilot.app.screen)[table.region.y + table.header_height]
+        assert anchor in strips(pilot.app.screen)[table.region.y + table.header_height]
         table.scroll_to(y=table.max_scroll_y,animate=False,immediate=True)
         await pilot.pause()
         assert_cursor_painted(pilot.app.screen, table)

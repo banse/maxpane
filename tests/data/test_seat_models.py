@@ -691,6 +691,8 @@ def test_round9_worst_document_under_2mib_mutation13():
     doc["seat"]["skills"]["rows"] = [{"id": f"skill-{i}", "on": True, "needs": "network"} for i in range(50)]
     doc["nodes"]["allRows"] = [dict(doc["nodes"]["allRows"][0], nodeKey=f"node-{i}") for i in range(400)]
     doc["control"]["lastAudit"] = [{"seq": i, "verb": "restart", "phase": "verify"} for i in range(20)]
+    doc['control'].update(status=text, statusParts=[{'text':text,'colour':'green'} for _ in range(32)],
+                          plan={key:text for key in sm.SEAT_BLOCK_KEYS['seat_control_plan']})
     shaped = sm.shape_dashboard_document(doc)
     raw_bytes = len(json.dumps(shaped, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
     assert raw_bytes < 2 * 1024 * 1024

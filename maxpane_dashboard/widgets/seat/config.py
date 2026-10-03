@@ -45,7 +45,7 @@ class SeatConfig(SeatTable):
     TABLE_ID = "seat-config-table"
     ROW_CAP = None
     EMPTY_LINE = "config unavailable"
-    COLUMN_SPECS = (("setting", "setting", 12), ("value", "value", 25), ("change", "change", 10))
+    COLUMN_SPECS = (("setting", "setting", 18), ("value", "value", 25), ("change", "change", 10))
     TIER_COLUMNS = {"full": ("setting", "value", "change")}
     LADDER = rowfit.Ladder(("full", 0))
     #: The #7 codex wrapper note (spec §8 group 1; plan deviation 14): shown only on a systemd host running codex.
@@ -63,7 +63,7 @@ class SeatConfig(SeatTable):
     _ROW_SOURCE = {
         "seat-cfg-server": "seat", "seat-cfg-capacity": "status", "seat-cfg-offers": "status", "seat-cfg-runtime": "status",
         "seat-cfg-daemon": "tail", "seat-cfg-premium": "standing", "seat-cfg-inference": "seat", "seat-cfg-wrapper": "status",
-        "seat-cfg-hints": "hints",
+        "seat-cfg-hints": "hints", "seat-cfg-tools": "seat",
         "seat-cfg-changed": "seat", "seat-cfg-skills-title": "skills",
     }
 
@@ -109,29 +109,43 @@ class SeatConfig(SeatTable):
         return None
 
     def column_width(self, key, tier, budget, width):
-        return max(8, budget - 28) if key == "value" else width
+        return max(8, budget - 34) if key == "value" else width
 
     def _config_rows(self):
+        f = self._facts
         rows = []
         for row_id, label, forms, colour in self._rows():
-            if label is None or (row_id == self.WRAPPER_ROW_ID and not self._shows_wrapper()):
+            if label is None or label == 'inference':
                 continue
+            label = {'premium': 'premium advertised', 'config': 'config file'}.get(label, label)
+            if label == 'wrapper' and not self._shows_wrapper():
+                if not f.get('seat_runtime_wrapper'):
+                    continue
+                forms = (_word(f.get('seat_runtime_wrapper')),)
             degraded = self._degraded(row_id)
             rows.append(dict(key=label, setting=label, forms=(degraded,) if degraded else forms,
-                             colour=("red" if "canary" in degraded else "yellow") if degraded else colour,
-                             change={"capacity": "runbook", "runtime": "start flag", "inference": "runbook",
-                                     "server": "fixed", "offers": "derived", "hints": "never", "daemon": "runbook"}.get(label, "—")))
-        f = self._facts
-        extra = [("seat", f"{f.get('seat_token_id') or DASH} · agent {f.get('seat_agent_id') or DASH}", "fixed"),
-                 ("wallet", _word(f.get('seat_wallet')) or DASH, "fixed"),
-                 ("device key", _word(f.get('seat_device_key_public')) or DASH, "fixed"),
-                 ("boot", (_word(f.get('seat_unit_restart_policy')) or DASH) if f.get('seat_host_kind') == 'docker'
+                             colour=('red' if 'canary' in degraded else 'yellow') if degraded else colour,
+                             change={'capacity':'runbook', 'runtime':'start flag', 'server':'fixed', 'offers':'derived',
+                                     'hints':'never', 'daemon':'runbook'}.get(label, '—')))
+        extra = [('seat', f"{f.get('seat_token_id') or DASH} · agent {f.get('seat_agent_id') or DASH}", 'fixed'),
+                 ('wallet', _word(f.get('seat_wallet')) or DASH, 'fixed'),
+                 ('device key', _word(f.get('seat_device_key_public')) or DASH, 'fixed'),
+                 ('boot', (_word(f.get('seat_unit_restart_policy')) or DASH) if f.get('seat_host_kind') == 'docker'
                   else ('enabled' if f.get('seat_unit_boot_enabled') is True else 'disabled' if f.get('seat_unit_boot_enabled') is False else 'unavailable'),
-                  "fixed" if f.get('seat_host_kind') == 'docker' else "space"),
-                 ("auto-update", 'on' if f.get('seat_auto_update') is True else 'off' if f.get('seat_auto_update') is False else 'unavailable', "never")]
+                  'fixed' if f.get('seat_host_kind') == 'docker' else 'space'),
+                 ('auto-update', 'on' if f.get('seat_auto_update') is True else 'off' if f.get('seat_auto_update') is False else 'unavailable', 'never'),
+                 ('tools', (', '.join(_word(t) for t in f['seat_tools']) or 'none configured')
+                  if f.get('seat_tools') is not None else 'unavailable', 'imd tools')]
+        inference = f.get('seat_inference') or {}
+        for tier in ('economy', 'standard', 'premium'):
+            forms = self._inference_forms({tier: inference.get(tier)}, _word(f.get('seat_runtime_id')))
+            extra.append(('inference ' + tier, forms[0].removeprefix(tier + ' '), 'runbook'))
         for name, value, change in extra:
-            rows.append(dict(key=name, setting=name, forms=(value,), colour="dim", change=change))
-        return rows
+            degraded = self._degraded('seat-cfg-' + ('inference' if name.startswith('inference') else name))
+            rows.append(dict(key=name, setting=name, forms=(degraded or value,), colour=('red' if 'canary' in degraded else 'yellow') if degraded else 'dim', change=change))
+        order = ('server','seat','wallet','device key','runtime','capacity','offers','inference economy',
+                 'inference standard','inference premium','premium advertised','wrapper','tools','hints','boot','auto-update','daemon','config file')
+        return sorted(rows, key=lambda row: order.index(row['setting']))
 
     def build_cells(self, item):
         room = dict((key, width) for key, _, width in self._installed).get("value", 25)

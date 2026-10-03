@@ -80,7 +80,8 @@ secret and 2 MiB rules are unchanged.
 | `nodes.coverage` | `seat_nodes_coverage` | `attempts`, `covered`, `detailsRead`, `asOfUtc`, `reason` |
 | `seat.autoUpdate`, `seat.runtimeWrapper` | `seat_auto_update`, `seat_runtime_wrapper` | nullable flag from unit facts / wrapper note from status |
 | `cost.outputTokens` | `seat_output_tokens` | `today`, `sevenDays`, `averagePerDay`, `days`, `reason`; the existing `cost.series.outputTokensPerDay` carries 14-day points |
-| `control.plan` | `seat_control_plan` | `planId`, `verb`, `command`, `confirm`, `warning`, `expiresAtUtc`, `forced`, `localOnly` |
+| `control.plan` | `seat_control_plan` | `planId`, `verb`, `command`, `confirm`, `warning`, `expiresAtUtc`, `forced`, `localOnly`, `preconditions`, `inverse`, `verification` |
+| `control.statusParts` | `seat_control_status_parts` | rows containing only `text` and `colour`; at most32 rows and4096 combined characters; colours empty/dim/green/yellow/red |
 | `control.status`, `control.mode` | `seat_control_status`, `seat_control_mode` | nullable plain status text and flow state; the screen owns transient plan state |
 
 Cached JOB, RECORDS, NODES and output-token facts are not blanked by an API source gate; each carries its stored time.
@@ -216,3 +217,5 @@ Listed in `docs/seat_followups.md` ("aidude writer fixes", spec §17): dedup Cla
 `AgentMessage` items; exclude doctor/probe sessions by cwd/slug; drop `reputation` or cap its rows; per-field `sources`
 with `asOfUtc`; `completedAtUtc`; a local systemd mode; `schemaVersion: 2` with `producer`. Until then v1 stays what it
 is and PEPEPANE does not consume it (spec §7 last paragraph).
+
+The transient CONTROL projection keeps plain `status` capped at4096 characters. Plan command, warning and preconditions are capped at1024 each, inverse at160 and verification at512. All pass the common text sanitizer; no Rich objects or arbitrary fields enter the document.

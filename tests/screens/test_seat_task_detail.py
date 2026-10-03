@@ -57,7 +57,7 @@ def test_adapt_row_feeds_the_frame_s_title_keys():
 
 def test_the_field_lists_are_disjoint_and_never_include_prose():
     assert not set(LOCAL_FIELDS) & set(PLANE_FIELDS)
-    assert set(NEVER_SHOWN) == {"objective", "lastMessage", "lastMessageUtc"}
+    assert set(NEVER_SHOWN) == {"prompt", "summary", "toolOutput", "lastMessage", "lastMessageUtc"}
     assert not set(NEVER_SHOWN) & (set(LOCAL_FIELDS) | set(PLANE_FIELDS))
     assert SeatTaskDetail.TITLE_WORD == "TASK" and SeatTaskDetail.ID_PREFIX == "seat-task-detail" and SeatTaskDetail.SHOW_ROLE is True
 
@@ -95,8 +95,9 @@ async def test_a_failed_row_names_the_enum_reason_and_class_only():
 
 
 async def test_prompts_tool_output_and_summaries_never_appear():
-    text, _ = await _text(_row(objective="OBJECTIVE-PROSE-NEVER-HERE", lastMessage="SENTENCE-PROSE-NEVER-HERE"))
-    assert "OBJECTIVE-PROSE-NEVER-HERE" not in text and "SENTENCE-PROSE-NEVER-HERE" not in text
+    text, _ = await _text(_row(objective="PUBLIC API OBJECTIVE", prompt="PRIVATE PROMPT", toolOutput="PRIVATE TOOL OUTPUT", summary="PRIVATE SUMMARY", lastMessage="SENTENCE-PROSE-NEVER-HERE"))
+    assert "PUBLIC API OBJECTIVE" in text
+    assert all(word not in text for word in ("PRIVATE PROMPT", "PRIVATE TOOL OUTPUT", "PRIVATE SUMMARY", "SENTENCE-PROSE-NEVER-HERE"))
 
 
 async def test_hostile_markup_and_a_sparse_row_never_raise():

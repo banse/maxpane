@@ -124,8 +124,8 @@ def _manager(tmp_path, **over):
 
 def test_tier_constants_are_the_contract_values():
     # contract §B data/seat_manager.py; spec §4.3 cadences
-    assert sm_mod.TIERS == ("unit", "broker_status", "workstat", "sessions", "standing", "seatwork", "details", "plane")
-    assert sm_mod.TIER_TTL_S == {"unit": 30, "broker_status": 600, "workstat": 300, "sessions": 120, "standing": 60,
+    assert sm_mod.TIERS == ("unit", "control", "broker_status", "workstat", "sessions", "standing", "seatwork", "details", "plane")
+    assert sm_mod.TIER_TTL_S == {"unit": 30, "control": 0, "broker_status": 600, "workstat": 300, "sessions": 120, "standing": 60,
                                  "seatwork": 120, "details": 0, "plane": 300}
     assert sm_mod.OFFLINE_REMOVES == ("standing", "seatwork", "details", "plane")
     assert (sm_mod.TIER_UNIT_S, sm_mod.TIER_BROKER_STATUS_S, sm_mod.TIER_WORKSTAT_S, sm_mod.TIER_SESSIONS_S) == (30, 600, 300, 120)
@@ -721,7 +721,7 @@ async def test_workstat_tier_feeds_machine_and_control(tmp_path):
     assert control["gate"]["planeAsOfUtc"] == "2026-09-26T03:40:09Z" and control["gate"]["safe"] is True and control["gate"]["outboxFiles"] == 0
     assert control["lastAudit"] == [{"ts": "2026-09-25T11:45:41Z", "seq": 1287, "verb": "restart", "phase": "verify",
                                      "planId": "7f3a9c1e2b4d6081", "outcome": "applied", "verified": True, "connected": True}]
-    assert _calls(broker, "gate") == [{"offline": False}] and _calls(broker, "audit-tail") == [{"n": 5}]
+    assert _calls(broker, "gate") == [{"offline": False}] and all(args == {"n": 20} for args in _calls(broker, "audit-tail"))
     assert flat["seat_control_gate"]["safe"] is True and flat["seat_machine_work_dirs"] == 288
     # an unreachable broker: the broker source fails with a reason, nothing else is attempted
     down = FakeBroker(reachable=False)

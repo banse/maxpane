@@ -1241,3 +1241,55 @@ The address marking, fitting support and link attachment helpers move unchanged 
 ### 2026-10-04 — PEPEPANE round 9: oracle presentation helper hoist
 
 The existing oracle answer presentation helpers move from `widgets/surf/_oracle_answer.py` to shared `widgets/seat_oracle_answer.py`, after the fitted-prose address helper move. Formatter imports now use their existing shared homes, and the address helpers use the preceding shared module. The implementation retains SURFBOARD behavior, including its existing text sanitization. The old path re-exports every used name, including the private state-colour and panel-width constants. Seat-specific adapters handle the approved literal-text and camelCase contracts without changing the shared helpers. The hoist agreement tables include both paths; the isolated commit is followed by the unchanged SURFBOARD layout sweep and the answer, record and popup tests.
+
+### 2026-10-04 — PEPEPANE round 9: selectable CONFIG and SKILLS tables
+
+Redesign section 6.3 replaces base section 8's combined, capped configuration panel with two cursor tables. CONFIG identifies each setting's source and change path; SKILLS retains the entire listing behind its scrollbar. A skill toggle uses the selected row identity and the existing skill-id validation. The systemd boot row uses the existing boot verbs, while the container restart policy remains a read-only fact. Every other setting reports its change path without opening a write plan.
+
+### 2026-10-04 — PEPEPANE round 9: independent output-token panel
+
+The sparkline leaves COST under redesign section 6.1's amendment to base section 8. OUTPUT TOKENS uses the ledger's daily series and reports today's value, the seven-day sum and the daily average. Zero and one-day coverage have explicit explanations. COST retains its existing token and runtime accounting rows.
+
+### 2026-10-04 — PEPEPANE round 9: detail text sources
+
+Redesign section 6.7 amends base section 8's detail-content restriction. The shared seat detail popup may show cached API questions, replies and oracle results alongside local metadata and plane facts. It never obtains text from local transcripts or workspaces. API prose is plain Rich Text, preserving brackets and line breaks without interpreting markup or making arbitrary URLs clickable. Ledger, RECORDS and JOB open the same detail by stable row identity.
+
+### 2026-10-04 — PEPEPANE round 9: CONTROL becomes a body
+
+Redesign section 6.6 replaces base section 8's separate CONTROL screen with CONTROL, GATE and AUDIT panels on the existing SeatScreen. The c key selects that body. The ordinary panel registry remains their only writer, and control facts are published within one refresh cycle. The former modal and its suspended-screen payload handoff are removed; the non-dashboard screen registry drops its obsolete module entry while retaining coverage of the remaining screens.
+
+### 2026-10-04 — PEPEPANE round 9: skill plans originate from rows
+
+The typed skill-id action in base section 11 is replaced by the SKILLS row action of redesign section 6.3. Space and Enter plan the selected skill's opposite state after validating the row id. The existing broker plan, typed confirmation, apply and verify protocol remains unchanged. The old CONTROL skill shortcut is removed and its settings pointer leads to CONFIG & SKILLS.
+
+### 2026-10-04 — PEPEPANE round 9: capacity and tier promotion is deferred
+
+Redesign section 14 amends base section 11 and owner decision 16.3 by approving capacity and inference-tier verbs for round 10. Round 9 supplies read-only CONFIG rows and their runbook paths. It adds no verb, gate rule or write implementation for those settings; CONTROL's incorrect static capacity and tier statements are replaced by the specified settings pointer and installed-to-available update line.
+
+### 2026-10-04 — PEPEPANE round 9: owner decision R3
+
+Configuration editing is delivered in the owner's two stages. Existing skill and systemd boot operations are available from their rows in this round through one shared confirmation flow. Capacity and inference-tier editing remain the separately approved next round. Container boot behavior remains a displayed restart-policy fact.
+
+### 2026-10-04 — PEPEPANE round 9: API prose enters the address sweep
+
+Redesign section 6.2 replaces base section 13's premise that PEPEPANE has no displayed addresses. Objective and reply addresses use the shared copy helper without an explorer because that text does not identify a chain. Oracle question, answer and notes use the request's chain when the shared explorer registry knows it. Fitted lines pay for copy icons before their width calculation and retain the shared mark, fit and link order. The payer identity remains undisplayed.
+
+### 2026-10-04 — PEPEPANE round 9: one confirmation flow with independent verification
+
+CONFIG & SKILLS and CONTROL share the flow and confirm strip specified in section 7. Prompt input owns ordinary keys, a dashboard change drops an unconfirmed plan, and a late plan response cannot reopen its prompt. Apply and verification continue across dashboard selection. Verification has its own timer, so pushing the detail popup cannot suspend the broker watch. Every prompt exit clears the manager's open-plan cadence flag. The existing force, local-only, partial-action and uncertain-outcome behaviors retain dashboard regression successors.
+
+### 2026-10-04 — PEPEPANE round 9: bounded control-rendering contract
+
+The additive control contract preserves details already present in the former modal. Plan fields include explicit preconditions, inverse and verification text; command and warning each allow 1,024 characters, preconditions 1,024, inverse 160 and verification 512. The plain status allows 4,096 characters. A separate status-parts list selects only text and an allow-listed colour, with at most 32 parts and 4,096 combined characters, so verification and connection evidence retain independent styles. These fields use the common sanitiser and explicit shaping; no Rich object or arbitrary broker sub-object enters the document. The flat key and widget signature agreement expand with the renderer.
+
+### 2026-10-04 — PEPEPANE round 9: launch and workflow association in detail
+
+Section 6.7's launch or workflow link is read with section 8.2's explicit cache fields: launch kind and requested flag, plus workflow identity. The 2026-10-03 API changelog likewise calls those structured objects the launch link. The detail shows that association and retains the separately labelled job explorer link. Neither the approved fields nor the shared explorer registry supplies a launch or workflow URL, so no new destination is inferred.
+
+### 2026-10-04 — PEPEPANE round 9: address sweep distinguishes chainless prose
+
+The sweep case contract gains an explicit declaration for copy-only addresses in objective and reply text, matching the approved unknown-chain rule. E7 positively checks that these addresses have no explorer hyperlink while retaining the copy-icon check. Oracle addresses and job identities continue to require their declared chain and IMD links; an undeclared address is still a failure. This changes neither the shared explorer registry nor the seat fixture scanner. The non-dashboard screen exemption only removes the former control modal: SeatWriteFlow is a plain helper and is not a Screen subclass requiring an exemption.
+
+### 2026-10-04 — PEPEPANE round 9: completed CONTROL body pin
+
+The WP5 in-situ measurement moves CONTROL from its foundation height to 132 columns by 29 rows. The always-visible confirmation strip and completed verb content bind the height: healthy clears at 28 rows, while worst and unattributed payloads require 29. At 132 by 28 those two payloads scroll and advertise the taller marker; at 131 by 29 the hero clips. The 132 by 29 corner clears all three payloads without hidden columns, clipping or overflow. The other five body pins remain unchanged, so the aggregate is still 132 by 40 and LEDGER still clears its full tier at 126 columns. The terminal-layout seat row tracks this measurement; WP6 certifies the expanded worst payload next.

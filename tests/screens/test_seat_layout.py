@@ -28,7 +28,7 @@ from tests.screens.test_surf_screen import _css_clipped_lines, _region_text, _sc
 
 #: Independent restatement of measure()'s healthy/worst/unattributed results.
 MEASURED_BODY_PINS = {'SEAT': (132,40), 'LIVE': (132,30), 'CONFIG & SKILLS': (132,22),
-                      'RECORDS': (132,20), 'NODES': (132,20), 'CONTROL': (132,26)}
+                      'RECORDS': (132,20), 'NODES': (132,20), 'CONTROL': (132,29)}
 MEASURED_SEAT_COLUMNS = 132
 MEASURED_SEAT_ROWS = 40
 MEASURED_LEDGER_CLEARS = 126
@@ -40,7 +40,7 @@ _BODY_WIDGETS = {
 _COLUMN_SWEEP_HEIGHT = 60
 _ROW_SWEEP_WIDTH = 150
 _THRESHOLDS = (MEASURED_LEDGER_CLEARS, 107, 132)
-_ROW_THRESHOLDS = (20, 22, 26, 30, 40)
+_ROW_THRESHOLDS = (20, 22, 29, 30, 40)
 
 def worst_payload() -> dict:
     """WP4 foundation worst: long NOW/log, 50 skills, 400 records, node/JOB/audit data."""

@@ -107,7 +107,7 @@ async def test_live_refresh_and_control_keys_never_open_plan_elsewhere(monkeypat
         assert plans == []
         await pilot.press('6', 'r', 'd', 's', 'S', 'b', 'o', 'D', 'x')
         await pilot.pause()
-        assert plans == ['restart', 'drain-restart', 'stop', 'start', 'boot', 'kill-orphans', 'doctor', 'cancel-drain']
+        assert plans == ['restart', 'drain-restart', 'stop', 'start', 'enable-boot', 'kill-orphans', 'doctor', 'cancel-drain']
 
 
 async def test_ledger_refresh_insert_preserves_row_and_scroll():

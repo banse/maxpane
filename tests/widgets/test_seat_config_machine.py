@@ -89,8 +89,10 @@ async def test_config_healthy_values_at_a_wide_terminal():
     assert _rows(rows, "offers").endswith("code · fuzz · research")
     assert _rows(rows, "runtime").endswith("codex-cli 0.157.0")
     assert _rows(rows, "daemon").endswith("0.1.0+5bfa8261 · up to date")
-    assert _rows(rows, "premium").endswith("gpt-6-astra/xhigh advertised (api)")
-    assert _rows(rows, "inference").endswith("economy codex gpt-6-luna/medium · standard same · premium gpt-6-astra/xhigh")
+    assert _rows(rows, "premium advertised").endswith("gpt-6-astra/xhigh advertised (api)")
+    assert _rows(rows, "inference economy").endswith("codex gpt-6-luna/medium")
+    assert _rows(rows, "inference standard").endswith("gpt-6-luna/medium")
+    assert _rows(rows, "inference premium").endswith("gpt-6-astra/xhigh")
     assert _rows(rows, "hints").endswith("~/.codex/AGENTS.md · 1.8 KB · sha 3f2a9c1e · 09-24")
     assert _rows(rows, "config").endswith("unchanged since start")
     # spec §8 group 1: the #7 codex wrapper note (systemd + codex only; no hardcoded model name, safety §2)
@@ -137,6 +139,24 @@ async def test_config_degrades_per_source():
     assert _rows(status, "server").endswith("api.imd.fun"), "the seat projection is a different source"
     canary = await _config(**_source(_payload("SeatConfig", seat_inference=None), "seat", ok=False, reason="projection_refused (canary: devicekey_mismatch)"))
     assert _rows(canary, "inference").endswith("config projection unavailable — broker refused payload (canary)")
+
+
+@pytest.mark.parametrize('tools,projection_ok,expected', [
+    (None, True, 'unavailable'),
+    ([], True, 'none configured'),
+    (['etherscan'], True, 'etherscan'),
+    (None, False, 'unavailable (projection read failed)'),
+    ([], False, 'unavailable (projection read failed)'),
+])
+async def test_config_tools_distinguishes_missing_empty_and_failed_projection(tools, projection_ok, expected):
+    payload = _source(_payload('SeatConfig', seat_tools=tools), 'seat',
+                      ok=projection_ok, reason=None if projection_ok else 'projection read failed')
+    payload = _source(payload, 'broker', ok=True, reason=None)
+    rows = await _config(**payload)
+    line = _rows(rows, 'tools')
+    assert expected in line
+    if tools is None or not projection_ok:
+        assert 'none configured' not in line
 
 
 async def test_config_half_width_shows_short_forms_without_wrapping_and_marks_only_a_cut():

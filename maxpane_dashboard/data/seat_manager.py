@@ -55,7 +55,7 @@ Clock = Callable[[], float]
 # -- tier cadences (spec §4.3; contract §B) ------------------------------------
 TIER_UNIT_S = 30                #: Mac docker inspect/stats
 TIER_BROKER_STATUS_S = 600      #: seat, status, skills, tools, hints-stat, auth-mtime; whoami once per session
-TIER_WORKSTAT_S = 300           #: work-stat, outbox, orphans (+ ping, gate preview, audit-tail -- deviation 8)
+TIER_WORKSTAT_S = 300           #: work-stat, outbox and orphans; control reads run every cycle
 TIER_JOURNAL_S = 300          #: round 9 §9 D4: journal facts are slow reads, independent of workstat event bumps
 TIER_SESSIONS_S = 120           #: +EVENT_BUMP_SESSIONS_S after each `submitted`
 TIER_STANDING_S = 60            #: +EVENT_BUMP_STANDING_S after each `submitted`; 15 s while a control plan is open
@@ -84,15 +84,16 @@ SYSTEMD_HOST = "systemd"
 DOCKER_HOST = "docker"
 HOST_KINDS = (SYSTEMD_HOST, DOCKER_HOST, FIXTURE_HOST)
 
-TIERS = ("unit", "broker_status", "workstat", "sessions", "standing", "seatwork", "details", "plane")
-TIER_TTL_S = {"unit": 30, "broker_status": 600, "workstat": 300, "sessions": 120, "standing": 60,
+TIERS = ("unit", "control", "broker_status", "workstat", "sessions", "standing", "seatwork", "details", "plane")
+TIER_TTL_S = {"unit": 30, "control": 0, "broker_status": 600, "workstat": 300, "sessions": 120, "standing": 60,
               "seatwork": 120, "details": 0, "plane": 300}
 OFFLINE_REMOVES = ("standing", "seatwork", "details", "plane")
 #: tier -> the ``sources`` entries it feeds (each entry keeps its own ok/asOf/failures).
 TIER_SOURCES: dict[str, tuple[str, ...]] = {
     "unit": ("unit",),
     "broker_status": ("seat", "status", "skills", "hints", "auth"),
-    "workstat": ("workstat", "broker"),
+    "workstat": ("workstat",),
+    "control": ("broker",),
     "sessions": ("sessions",),
     "standing": ("standing",),
     "seatwork": ("seatWork",),
@@ -325,6 +326,7 @@ class SeatManager:
         self._seatwork_settled = False
         self._error_count = 0
         self.plan_open = False
+        self._control_display: dict = {}
         self._selected_dashboard = "SEAT"
         self._record_limit = 40
         self._records_open_only = True
@@ -340,7 +342,7 @@ class SeatManager:
 
     @property
     def broker(self) -> BrokerProtocol:
-        """The CONTROL modal reaches the broker through the manager only."""
+        """The shared dashboard write flow reaches the broker through the manager."""
         return self._broker
 
     @property
@@ -351,8 +353,13 @@ class SeatManager:
     def tail_thread(self) -> TailThread | None:
         return self._thread
 
+    def update_control_flow(self, display: dict) -> None:
+        """Accept only the explicit transient flow projection; panels still use the fold."""
+        self._control_display = {key: display.get(key) for key in ("plan", "status", "statusParts", "mode")}
+        self._due_at["control"] = 0.0
+
     def set_restart_required(self, flag: bool) -> None:
-        """Set by the CONTROL modal after a `skills-set` apply (restart required, spec §11)."""
+        """Set after a verified skills toggle; cleared at the next restart boundary."""
         self._restart_required = bool(flag)
         self._ledger.meta_set("restart_required", self._restart_required)
 
@@ -476,6 +483,7 @@ class SeatManager:
         if self._host == DOCKER_HOST and self._unit_reader is not None:
             self._spawn("unit", lambda: asyncio.to_thread(self._read_unit_host, float(self._clock())), now)
         self._spawn("broker_status", self._tier_broker_status, now)
+        self._spawn("control", self._tier_control, now)
         self._spawn("workstat", self._tier_workstat, now)
         self._spawn("sessions", self._tier_sessions, now)
         if self._offline or self._api is None or self._seat is None:
@@ -1002,6 +1010,28 @@ class SeatManager:
         await self._read_into("hints", "hints-stat", None, lambda d: dict(d) if isinstance(d, Mapping) else {})
         await self._read_into("auth", "auth-mtime", None, lambda d: dict(d) if isinstance(d, Mapping) else {})
 
+    async def _tier_control(self) -> None:
+        now = float(self._clock())
+        try:
+            reachable = await asyncio.to_thread(self._broker.reachable)
+        except Exception as exc:                     # noqa: BLE001
+            logger.debug("PEPEPANE ping failed: %s", exc)
+            reachable = False
+        if not reachable:
+            self._fail("broker", "broker unreachable", now)
+            return
+        control: dict[str, Any] = {"reachable": True, "ping": None, "gate": None, "audit": []}
+        problems: list[str] = []
+        for verb, args, key in (("ping", None, "ping"), ("gate", {"offline": self._offline}, "gate"), ("audit-tail", {"n": 20}, "audit")):
+            try:
+                data = await self._broker_read(verb, args)
+                control[key] = data.get("lines") if key == "audit" and isinstance(data, Mapping) else data
+            except Exception as exc:                 # noqa: BLE001
+                problems.append(f"{verb}: {self._broker_reason(exc)}")
+        self._land("broker", control, float(self._clock()))
+        if problems:
+            self._fail("broker", "; ".join(problems), float(self._clock()))
+
     async def _tier_workstat(self) -> None:
         now = float(self._clock())
         # Workstat may be event-bumped; journal subprocesses keep their own 300 s floor.
@@ -1015,27 +1045,6 @@ class SeatManager:
                     self._journal_facts = {"journal": None, "reason": f"journal read failed ({type(exc).__name__})"}
             else:
                 self._journal_facts = {"journal": None, "reason": "journal facts unavailable on this host"}
-        try:
-            reachable = await asyncio.to_thread(self._broker.reachable)
-        except Exception as exc:                     # noqa: BLE001
-            logger.debug("PEPEPANE ping failed: %s", exc)
-            reachable = False
-        if not reachable:
-            self._fail("broker", "broker unreachable", now)
-            self._fail("workstat", "broker unreachable", now)
-            return
-        control: dict[str, Any] = {"reachable": True, "ping": None, "gate": None, "audit": []}
-        problems: list[str] = []
-        for verb, args, key in (("ping", None, "ping"), ("gate", {"offline": self._offline}, "gate"), ("audit-tail", {"n": 5}, "audit")):
-            try:
-                data = await self._broker_read(verb, args)
-                control[key] = data.get("lines") if key == "audit" and isinstance(data, Mapping) else data
-            except Exception as exc:                 # noqa: BLE001
-                problems.append(f"{verb}: {self._broker_reason(exc)}")
-        self._land("broker", control, float(self._clock()))
-        if problems:
-            self._fail("broker", "; ".join(problems), float(self._clock()))
-
         work: dict[str, Any] = {"workStat": None, "outbox": None, "orphans": None}
         problems = []
         for verb, key in (("work-stat", "workStat"), ("outbox", "outbox"), ("orphans", "orphans")):
@@ -1209,6 +1218,17 @@ class SeatManager:
     def _cost_block(self, now: float) -> dict:
         block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["cost"]
         sessions = self._payload("sessions")
+        days = self._ledger.days(SERIES_DAYS)
+        block["series"] = seat_cost.series_from_days(days, n=SERIES_DAYS)
+        points = block["series"].get("outputTokensPerDay") or []
+        today, start = sig.day_utc(now), sig.day_utc(now - 6 * 86400)
+        week = [(day, value) for day, value in points if start <= day <= today]
+        block["outputTokens"] = {
+            "today": next((value for day, value in points if day == today), None),
+            "sevenDays": sum(value for _, value in week) if week else None,
+            "averagePerDay": sum(value for _, value in week) / len(week) if week else None,
+            "days": len(points), "reason": None if points else self._reason.get("sessions") or "unavailable",
+        }
         if not isinstance(sessions, Mapping):
             return block
         rows = self._ledger.rows(limit=10000)
@@ -1233,6 +1253,7 @@ class SeatManager:
 
     def _control_block(self) -> dict:
         block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["control"]
+        block.update(self._control_display)
         control = self._payload("broker")
         if "broker" in self._attempted:
             block["brokerReachable"] = bool(control.get("reachable")) if isinstance(control, Mapping) else False
@@ -1257,6 +1278,9 @@ class SeatManager:
             block["drain"] = {k: drain.get(k) for k in models.SEAT_BLOCK_KEYS["seat_control_drain"]}
         elif ping.get("drain_armed") is True:
             block["drain"] = {k: None for k in models.SEAT_BLOCK_KEYS["seat_control_drain"]}
+        if not block['inFlight'] and block.get('mode') in ('applying', 'verifying'):
+            plan = block.get('plan') or {}
+            block['inFlight'] = {'verb': plan.get('verb'), 'planId': plan.get('planId'), 'sinceUtc': None}
         audit = control.get("audit")
         if isinstance(audit, list):
             block["lastAudit"] = [

@@ -28,7 +28,6 @@ from maxpane_dashboard.screens.seat import (
     SeatScreen,
     title_line,
 )
-from maxpane_dashboard.screens.seat_control import SeatControlScreen
 from maxpane_dashboard.screens.seat_task_detail import SeatTaskDetail
 from maxpane_dashboard.widgets.seat import (SeatConfig, SeatCost, SeatHero, SeatLedgerTable, SeatLog, SeatMachine, SeatNow,
     SeatJob, SeatOutputTokens, SeatSkills, SeatRecords, SeatNodes, SeatControl, SeatGate, SeatAudit)
@@ -114,7 +113,7 @@ async def test_c_selects_control_and_escape_returns_to_live():
         await pilot.pause()
         assert isinstance(pilot.app.screen, SeatScreen)
         assert pilot.app.screen.selected_dashboard == "CONTROL"
-        assert "[r] restart — safe to restart" in _text(pilot)
+        assert "[r] restart — safe now" in _text(pilot)
         await pilot.press("escape")
         await pilot.pause()
         assert pilot.app.screen.selected_dashboard == "LIVE"
@@ -149,6 +148,7 @@ async def test_enter_opens_the_detail_when_the_ledger_table_has_focus():
 async def test_enter_with_no_ledger_row_opens_nothing():
     payload = _seat_payload()
     payload["seat_tasks_rows"] = []
+    payload["seat_jobs"] = []
     app = _seat_app(payload)
     async with app.run_test(size=SIZE) as pilot:
         await pilot.pause()

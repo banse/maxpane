@@ -97,7 +97,7 @@ async def test_degraded_sessions_keep_the_ledger_counts_and_say_why():
 async def test_the_strip_waits_for_two_points():
     rows = await composite_lines(SeatOutputTokens, (100, 6), css_path=CSS_PATH, region_only=True,
                                  seat_cost_series={"outputTokensPerDay": [["2026-09-26", 14000]]})
-    assert "no token data yet" in "\n".join(rows)
+    assert "1 day so far" in "\n".join(rows)
 
 
 async def test_cost_panel_has_no_currency():

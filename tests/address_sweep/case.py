@@ -81,8 +81,11 @@ class SweepCase:
     #: explorer, allowed or not; an unlisted address may link on any member
     #: of ``explorers``. Every value must be in ``explorers``.
     explorer_for: Mapping[str, Explorer] = field(default_factory=dict)
+    #: Chainless public prose still requires copy icons and positively forbids explorer links.
+    copy_only: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "copy_only", tuple(address.lower() for address in self.copy_only))
         if self.explorer is not None and not self.explorers:
             object.__setattr__(self, "explorers", (self.explorer,))
         if self.explorer is not None and self.explorer not in self.explorers:

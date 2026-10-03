@@ -1,8 +1,8 @@
 """Where a PEPEPANE job id links: the IMD swarm's own explorer (spec §8 LEDGER, §13 identifiers).
 
-PEPEPANE renders no chain address at all -- the device public key and the wallet are
-truncated to eight characters at fold time (spec §13) -- so this package's
-explorer is not a chain's. :data:`EXPLORER` is ``widgets/explorer.IMD``
+Device public key and wallet stay truncated at fold time. Public API prose
+may contain addresses: ordinary text is copy-only and oracle text uses its
+request chain. This helper names only jobs, so its explorer is not a chain's. :data:`EXPLORER` is ``widgets/explorer.IMD``
 (``explorer.imd.fun/jobs/<uuid>``, job pages only), the same explorer surf's
 RECORD links a job on. ``tests/address_sweep/builders.py`` binds the declaration
 to the sweep's ``SweepCase(name="seat", explorer=IMD, …)``.

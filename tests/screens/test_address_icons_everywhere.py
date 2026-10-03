@@ -280,6 +280,14 @@ def _expected_explorer(case: SweepCase, value: str):
     return case.explorer
 
 
+def _address_link_presence_error(case, address, parsed, url):
+    if address.lower() in case.copy_only:
+        return 'link on a declared copy-only address' if parsed is not None or url is not None else None
+    if not case.explorers:
+        return 'link on a dashboard with no explorer' if parsed is not None or url is not None else None
+    return 'address without a link' if parsed is None or url is None else None
+
+
 def _link_at(app, x: int, y: int) -> tuple[tuple | None, str | None]:
     """``(parsed open action, OSC 8 url)`` at cell ``(x, y)``, read the way
     :func:`icon_targets` reads an icon: off ``screen.get_style_at``, the style
@@ -1005,12 +1013,10 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                 # E7: the last cell of the shown token (right before the
                 # separating space) links to the same address, on an allowed explorer.
                 parsed, url = _link_at(app, x - 2, y)
-                if not allowed:
-                    if parsed is not None or url is not None:
-                        problems.append((label, x, y, address, "link on a dashboard with no explorer"))
-                elif parsed is None or url is None:
-                    problems.append((label, x, y, address, "address without a link"))
-                else:
+                error = _address_link_presence_error(case, address, parsed, url)
+                if error:
+                    problems.append((label, x, y, address, error))
+                elif allowed and address.lower() not in case.copy_only:
                     # ``link_kind``/``link_value`` -- never ``kind``: that is
                     # the parametrised sweep size, read again below the loop.
                     explorer, link_kind, link_value = parsed
@@ -1148,3 +1154,14 @@ async def test_surf_board_body_has_no_wallet_or_token_address_text():
         await pilot.app.screen._do_refresh();await pilot.press('b');await pilot.pause()
         text=_region_text(pilot.app,pilot.app.screen.query_one(f'#{BOARD_BODY_ID}'))
         assert '0x' not in text and '⧉' not in text
+
+
+def test_declared_copy_only_address_forbids_links_and_undeclared_still_requires_one():
+    from types import SimpleNamespace
+    from maxpane_dashboard.widgets.explorer import BASE
+    address = '0x' + '1' * 40
+    other = '0x' + '2' * 40
+    case = SimpleNamespace(copy_only=(address,), explorers=(BASE,))
+    assert _address_link_presence_error(case, address, None, None) is None
+    assert _address_link_presence_error(case, address, (BASE,'address',address), 'link') == 'link on a declared copy-only address'
+    assert _address_link_presence_error(case, other, None, None) == 'address without a link'

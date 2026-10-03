@@ -156,7 +156,7 @@ class SeatMachine(SignalsPanelBase):
         )
         journal = f.get("seat_machine_journal") if isinstance(f.get("seat_machine_journal"), dict) else None
         if journal is None:
-            journal_forms = ("unavailable",)
+            journal_forms = (f"unavailable ({_word(self._source('unit').get('reason')) or 'journal facts not read'})",)
         elif "driver" in journal:
             rotation = _word(journal.get("rotation")) or DASH
             journal_forms = (f"{_word(journal.get('driver')) or DASH} {_mb(journal.get('bytes'))} · {'no rotation' if rotation == 'none' else rotation} · dies with {_word(journal.get('diesWith')) or DASH}",
@@ -178,7 +178,7 @@ class SeatMachine(SignalsPanelBase):
                 tr_forms, tr_colour = (f"rollouts plain {plain_word} d then .zst (readable ✓)", f"plain {plain_word} d then .zst"), "dim"
         else:
             days = _count(ret.get("deleteDays"))
-            tr_forms, tr_colour = (f"transcripts {days if days is not None else 30}-day window", f"{days if days is not None else 30} d"), "dim"
+            tr_forms, tr_colour = (f"{days if days is not None else 30}-day window", f"{days if days is not None else 30} d"), "dim"
         orphans = f.get("seat_machine_orphans") if isinstance(f.get("seat_machine_orphans"), list) else None
         if orphans is None:
             orphan_forms, orphan_colour = ("unavailable",), "yellow"

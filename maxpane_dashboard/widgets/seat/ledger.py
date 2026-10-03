@@ -137,6 +137,7 @@ class SeatLedgerTable(SeatTable):
         seat_today_p50_s=None, seat_today_longest_s=None, seat_today_divergence=None,
         **_kwargs,
     ) -> None:
+        self._today_duration = (seat_today_p50_s, seat_today_longest_s)
         self._offline = seat_offline is True
         source = seat_sources.get("seatWork") if isinstance(seat_sources, dict) else None
         source = source if isinstance(source, dict) else {}
@@ -174,6 +175,8 @@ class SeatLedgerTable(SeatTable):
         footer = _word(summary.get("footer"))
         if footer:
             parts.append(footer)
+        p50, longest = self._today_duration
+        parts.append(f"today p50 {_took(p50)} · longest {_took(longest)}")
         if not rows:
             parts.insert(0, self.EMPTY_LINE)
         if parts:

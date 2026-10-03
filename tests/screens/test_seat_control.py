@@ -21,25 +21,25 @@ from pathlib import Path
 
 import pytest
 from textual.app import App
+from textual import events
 from textual.widgets import Input
 
 from maxpane_dashboard.analytics.seat_signals import as_of_hhmm
 from maxpane_dashboard.data.seat_broker_client import BrokerError, FakeBroker
 from maxpane_dashboard.data.seat_models import fold_status_document
-from maxpane_dashboard.screens.seat_control import (
+from maxpane_dashboard.widgets.seat.seat_control import (
     AUDIT_LINES,
     CONFIRM_CHARS,
     LOCAL_ONLY_ACK,
     STATIC_LINES,
     VERB_KEYS,
-    SeatControlScreen,
     verb_lines,
 )
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "seat"
 DOC = json.loads((FIXTURES / "status" / "status_v2_healthy.json").read_text(encoding="utf-8"))
 PLAN_ID = "7f3a9c1e2b4d6081"
-SIZE = (120, 40)
+SIZE = (180, 70)
 
 PLAN = {"ok": True, "plan": {
     "plan_id": PLAN_ID, "verb": "restart", "argv": ["systemctl", "restart", "imd-worker.service"],
@@ -94,6 +94,10 @@ class _Manager:
         #: every ``SeatManager.set_restart_required(flag)`` call the modal made
         self.restart_required_calls: list[bool] = []
 
+    def update_control_flow(self, display):
+        self._doc = copy.deepcopy(self._doc)
+        self._doc['control'].update(display)
+
     def set_restart_required(self, flag: bool) -> None:
         self.restart_required_calls.append(flag)
 
@@ -101,6 +105,12 @@ class _Manager:
         return copy.deepcopy(self._doc)
 
     async def fetch_and_compute(self) -> dict:
+        # Fixture fast-read seam: the real manager cadence is tested separately.
+        try:
+            audit = await asyncio.to_thread(self.broker.read, 'audit-tail', {'n':20})
+            self._doc['control']['lastAudit'] = audit.get('lines') or []
+        except Exception:
+            pass
         return fold_status_document(self.document())
 
     async def close(self) -> None:
@@ -114,9 +124,12 @@ class _A(App):
         super().__init__()
         self._manager, self._flat, self._on_payload = manager, flat, on_payload
 
-    def on_mount(self) -> None:
-        self.push_screen(SeatControlScreen(self._manager, flat=self._flat, poll_s=0.01, now=lambda: 1_790_000_000.0,
-                                           on_payload=self._on_payload))
+    async def on_mount(self) -> None:
+        screen = self.SeatScreen(self._manager, poll_interval=0.05, flow_now=lambda: 1_790_000_000.0)
+        await self.push_screen(screen)
+        if self._flat:
+            screen.flow._flat = self._flat
+        screen.select_dashboard('CONTROL')
 
 
 def _doc(**control) -> dict:
@@ -153,12 +166,12 @@ def _calls(broker: FakeBroker, verb: str) -> list[dict]:
 
 
 def test_verb_keys_and_static_lines_are_the_contract_s():
-    assert VERB_KEYS == {"r": "restart", "d": "drain-restart", "s": "stop", "S": "start", "b": "enable-boot", "k": "skills-set",
+    assert VERB_KEYS == {"r": "restart", "d": "drain-restart", "s": "stop", "S": "start", "b": "enable-boot",
                          "o": "kill-orphans", "D": "doctor", "x": "cancel-drain"}
-    assert STATIC_LINES[0].startswith("tiers: shown above (CONFIG)") and "runbook §2.1" in STATIC_LINES[0]
-    assert STATIC_LINES[1] == "capacity: 1 by decision — drop-in + drained restart — runbook §4c"
-    assert STATIC_LINES[2] == "update: {installed} → {available} — runbook §2.1 (drained restart)"
-    assert CONFIRM_CHARS == 4 and AUDIT_LINES == 5 and LOCAL_ONLY_ACK == "local-only"
+    assert STATIC_LINES[0] == 'skills, boot, capacity, tiers → CONFIG & SKILLS (3)'
+    assert 'capacity: 1 by decision' not in '\n'.join(STATIC_LINES)
+    assert 'runbook' in STATIC_LINES[1]
+    assert CONFIRM_CHARS == 4 and AUDIT_LINES == 20 and LOCAL_ONLY_ACK == 'local-only'
 
 
 def test_verb_lines_carry_the_live_gate_words():
@@ -169,7 +182,7 @@ def test_verb_lines_carry_the_live_gate_words():
     assert lines[0].startswith(f"[r] restart — safe now (idle 9 beats · plane running: none · last line submitted {stamp} · outbox 0)")
     assert "[d] drain-restart — waits for 4 idle beats, then restarts (armed: no)" in lines
     assert "[b] enable at boot — disabled" in lines
-    assert "[k] skill on/off — restart required" in lines
+    assert not any("[k]" in line for line in lines)
     assert "[o] kill orphans — 0 candidates" in lines
     assert any(l.startswith("[D] doctor — spends one runtime turn") for l in lines)
     blocked = fold_status_document(_doc(gate={**DOC["control"]["gate"], "safe": False, "reason": "task running 0c1f9727 · 0:42", "lifecycleOpen": True}))
@@ -181,16 +194,17 @@ def test_verb_lines_carry_the_live_gate_words():
     assert all("broker unreachable — read-only" in t.plain for t in verb_lines(unreachable))
 
 
-async def test_the_modal_shows_verbs_static_lines_and_the_audit_footer():
+async def test_control_dashboard_shows_dynamic_verbs_config_pointer_and_audit():
     broker = _broker()
     async with _A(_Manager(DOC, broker)).run_test(size=SIZE) as pilot:
         await _painted(pilot)
         text = _screen_text(pilot)
         assert "CONTROL" in text and "[r] restart — safe now" in text
-        assert "tiers: shown above (CONFIG)" in text and "capacity: 1 by decision" in text
+        assert "skills, boot, capacity, tiers → CONFIG & SKILLS (3)" in text
+        assert "capacity: 1 by decision" not in text
         assert "update: 0.1.0+5bfa8261 → none — runbook §2.1 (drained restart)" in text
         assert "1281" in text or "apply" in text, "the audit footer shows the last lines"
-        assert _calls(broker, "audit-tail") == [{"n": AUDIT_LINES}]
+        assert _calls(broker, "audit-tail") and all(args == {"n": AUDIT_LINES} for args in _calls(broker,"audit-tail"))
 
 
 # -- plan -> typed confirm -> apply -> verify -----------------------------------------------
@@ -209,7 +223,7 @@ async def test_restart_plans_confirms_applies_and_polls_verify_until_a_verdict()
         assert "idle_beats 9" in text and "standing_age_s 0.4" in text and "last_lifecycle_line" in text and "inverse: stop" in text
         # the modal's ~112-cell content width wraps the warning between "failed" and "run"; this fragment stays on one line
         assert "may be reported as a" in text
-        assert pilot.app.screen.mode == "planned"
+        assert pilot.app.screen.flow.mode == "planned"
         await _type(pilot, "zzzz")
         assert _calls(broker, "apply") == [], "a wrong confirm never reaches the broker"
         assert f"type {PLAN_ID[:4]}" in _screen_text(pilot)
@@ -217,16 +231,16 @@ async def test_restart_plans_confirms_applies_and_polls_verify_until_a_verdict()
         assert _calls(broker, "apply") == [{"plan_id": PLAN_ID, "confirm": PLAN_ID[:4]}]
         for _ in range(30):
             await _painted(pilot)
-            if pilot.app.screen.mode == "done":
+            if pilot.app.screen.flow.mode == "done":
                 break
-        assert pilot.app.screen.mode == "done"
+        assert pilot.app.screen.flow.mode == "done"
         text = _screen_text(pilot)
         assert "verified ✓" in text and "connected: pending (reconnecting since 03:40:31)" in text or "connected: yes" in text
         assert len(_calls(broker, "verify")) >= 2 and len(_calls(broker, "audit-tail")) >= 2
         assert _calls(broker, "restart") == [{"offline": False}], "one plan, ever"
 
 
-async def test_control_modal_never_replans_on_its_own():
+async def test_control_dashboard_never_replans_on_its_own():
     # header Review Focus #5: verify never sees `shutting down` -> verified False with a reason; no automatic re-plan, no re-apply
     broker = _broker(verify=_verify_sequence((None, None, None), (False, None, "no shutting down within 30 s")))
     async with _A(_Manager(DOC, broker)).run_test(size=SIZE) as pilot:
@@ -240,7 +254,7 @@ async def test_control_modal_never_replans_on_its_own():
         assert "verify: not seen — check LOG" in text and "no shutting down within 30 s" in text
         assert _calls(broker, "restart") == [{"offline": False}]
         assert len(_calls(broker, "apply")) == 1
-        assert pilot.app.screen.mode == "done"
+        assert pilot.app.screen.flow.mode == "done"
 
 
 async def test_a_broker_error_is_shown_and_never_retried():
@@ -253,7 +267,7 @@ async def test_a_broker_error_is_shown_and_never_retried():
         await pilot.press("r")
         for _ in range(20):
             await _painted(pilot)
-        assert "error: busy" in _screen_text(pilot) and pilot.app.screen.mode == "idle"
+        assert "error: busy" in _screen_text(pilot) and pilot.app.screen.flow.mode == "idle"
         assert len(_calls(broker, "restart")) == 1
 
 
@@ -271,7 +285,7 @@ async def test_force_typed_twice_and_disabled_without_graceful_stop():
         await pilot.press("r")
         await _painted(pilot)
         assert _calls(broker, "restart") == [], "a blocked gate plans nothing until the running node8 is typed"
-        assert "type the running node8" in _screen_text(pilot) and pilot.app.screen.mode == "force"
+        assert "type the running node8" in _screen_text(pilot) and pilot.app.screen.flow.mode == "force"
         await _type(pilot, "deadbeef")
         assert _calls(broker, "restart") == []
         await _type(pilot, "0c1f9727")
@@ -288,7 +302,7 @@ async def test_force_typed_twice_and_disabled_without_graceful_stop():
         await _painted(pilot)
         await pilot.press("r")
         await _painted(pilot)
-        assert "force disabled" in _screen_text(pilot) and pilot.app.screen.mode == "idle"
+        assert "force disabled" in _screen_text(pilot) and pilot.app.screen.flow.mode == "idle"
         await _type(pilot, "0c1f9727")
         assert _calls(broker, "restart") == []
 
@@ -310,18 +324,22 @@ async def test_local_only_gate_needs_the_typed_ack():
 # -- the other verbs -----------------------------------------------------------------------------
 
 
-async def test_skills_set_takes_a_typed_id_gated_by_the_regex():
+async def test_skills_set_uses_cursor_id_and_rejects_ids_outside_regex():
+    from maxpane_dashboard.widgets.seat import SeatSkills
+    from textual.widgets import DataTable
+    doc = copy.deepcopy(DOC)
+    doc['seat']['skills']['rows'] = [dict(id='bad id; rm -rf /',on=True,needs=None),dict(id='oracle-assess',on=True,needs=None)]
     broker = _broker()
-    async with _A(_Manager(DOC, broker)).run_test(size=SIZE) as pilot:
+    async with _A(_Manager(doc, broker)).run_test(size=SIZE) as pilot:
         await _painted(pilot)
-        await pilot.press("k")
-        await _painted(pilot)
-        assert pilot.app.screen.mode == "skill" and "type <skill-id> on|off" in _screen_text(pilot)
-        await _type(pilot, "bad id; rm -rf / off")
-        assert _calls(broker, "skills-set") == [] and "invalid skill id" in _screen_text(pilot)
-        await _type(pilot, "oracle-assess off")
-        assert _calls(broker, "skills-set") == [{"skill_id": "oracle-assess", "on": False}]
-        assert pilot.app.screen.mode == "planned"
+        await pilot.press('3','tab','space'); await _painted(pilot)
+        assert _calls(broker, 'skills-set') == []
+        assert 'invalid skill id' in pilot.app.screen.flow._status.plain
+        panel=pilot.app.screen.query_one(SeatSkills)
+        panel.query_one(DataTable).move_cursor(row=1)
+        await pilot.press('space'); await _painted(pilot)
+        assert _calls(broker, 'skills-set') == [{'skill_id':'oracle-assess','on':False}]
+        assert pilot.app.screen.flow.mode == 'planned'
 
 
 async def test_boot_flips_between_enable_and_disable_and_orphans_carry_their_pids():
@@ -366,10 +384,9 @@ async def test_skills_set_apply_marks_restart_required_and_offers_drain():
     manager = _Manager(DOC, broker)
     async with _A(manager).run_test(size=SIZE) as pilot:
         await _painted(pilot)
-        await pilot.press("k")
+        await pilot.press("3", "tab", "space")
         await _painted(pilot)
-        await _type(pilot, "oracle-assess off")
-        assert pilot.app.screen.mode == "planned"
+        assert pilot.app.screen.flow.mode == "planned"
         await _type(pilot, PLAN_ID[:4])
         for _ in range(30):
             await _painted(pilot)
@@ -380,7 +397,7 @@ async def test_skills_set_apply_marks_restart_required_and_offers_drain():
         # 120x40 the 10-row skills-set plan block pushes it one row below the scroll area's fold (content 28 rows in a
         # 27-row viewport), so the modal's own status text is read -- the claim is that the note is offered, not where
         # the viewport happens to sit.
-        assert "press [d] to drain-restart" in pilot.app.screen._status.plain
+        assert "press [d] to drain-restart" in pilot.app.screen.flow._status.plain
 
 
 async def test_open_plan_sets_manager_plan_open_and_close_clears_it():
@@ -392,7 +409,7 @@ async def test_open_plan_sets_manager_plan_open_and_close_clears_it():
         await pilot.press("r")
         for _ in range(10):
             await _painted(pilot)
-            if pilot.app.screen.mode == "planned":
+            if pilot.app.screen.flow.mode == "planned":
                 break
         assert manager.plan_open is True
         await pilot.press("escape")
@@ -409,10 +426,10 @@ class _CyclingManager(_Manager):
 
     async def fetch_and_compute(self) -> dict:
         self.cycles.append(self.plan_open)
-        return fold_status_document(self.document())
+        return await super().fetch_and_compute()
 
 
-async def test_the_modal_runs_the_manager_cycle_so_gate_words_and_plan_open_are_live():
+async def test_dashboard_panels_receive_manager_gate_cycles_and_plan_open():
     # spec §8 CONTROL "verb list with live gate words" + spec §6 "15 s while a control plan is open": textual suspends the
     # PEPEPANE screen under a pushed modal (DashboardScreen.on_screen_suspend stops its refresh timer), so the modal's own tick
     # runs fetch_and_compute -- the gate changes between ticks, a cycle runs with plan_open True, and every flat is handed on
@@ -427,8 +444,8 @@ async def test_the_modal_runs_the_manager_cycle_so_gate_words_and_plan_open_are_
             if "BLOCKED: task running 0c1f9727" in _screen_text(pilot):
                 break
         assert "[r] restart — BLOCKED: task running 0c1f9727 · 0:42" in _screen_text(pilot), "gate words froze at open"
-        assert manager.cycles and payloads, "no manager cycle ran while the modal was open"
-        assert payloads[-1]["seat_control_gate"]["safe"] is False, "the flat reaches the PEPEPANE screen's panels too"
+        assert manager.cycles, "ordinary dashboard manager cycle ran"
+        assert pilot.app.screen._last_payload["seat_control_gate"]["safe"] is False, "the flat reaches the PEPEPANE screen's panels too"
         manager._doc = copy.deepcopy(DOC)
         for _ in range(30):
             await _painted(pilot)
@@ -437,7 +454,7 @@ async def test_the_modal_runs_the_manager_cycle_so_gate_words_and_plan_open_are_
         await pilot.press("r")
         for _ in range(30):
             await _painted(pilot)
-            if pilot.app.screen.mode == "planned" and manager.cycles[-1] is True:
+            if pilot.app.screen.flow.mode == "planned" and manager.cycles[-1] is True:
                 break
         assert manager.plan_open is True and manager.cycles[-1] is True, "a cycle ran with plan_open set (the 15 s cadence is scheduled)"
 
@@ -451,7 +468,7 @@ async def test_verb_keys_are_not_swallowed_by_the_confirm_field():
         await pilot.press("r")
         for _ in range(10):
             await _painted(pilot)
-            if pilot.app.screen.mode == "planned":
+            if pilot.app.screen.flow.mode == "planned":
                 break
         assert _calls(broker, "restart") == [{"offline": False}]
         assert pilot.app.screen.query_one(Input).value == ""
@@ -471,7 +488,7 @@ async def test_doctor_output_has_its_dollar_figure_stripped():
         await _type(pilot, PLAN_ID[:4])
         for _ in range(30):
             await _painted(pilot)
-            if pilot.app.screen.mode == "done":
+            if pilot.app.screen.flow.mode == "done":
                 break
         text = _screen_text(pilot)
         assert "runtime auth ok" in text and "$" not in text
@@ -510,20 +527,32 @@ async def test_broker_apply_does_not_block_escape_or_issue_a_second_write(held_v
     try:
         async with _A(_Manager(DOC, broker)).run_test(size=SIZE) as pilot:
             await pilot.press("r")
-            control = pilot.app.screen
-            field = control.query_one(Input)
+            control = pilot.app.screen.flow
+            field = pilot.app.screen.query_one(Input)
             field.value = PLAN_ID[:4]
             field.post_message(Input.Submitted(field, field.value))
             await asyncio.wait_for(entered.wait(), 1)
             try:
                 field.value = PLAN_ID[:4]
-                control.post_message(Input.Submitted(field, field.value))
+                pilot.app.screen.post_message(Input.Submitted(field, field.value))
                 processed = asyncio.Event()
-                control.call_later(processed.set)
+                pilot.app.screen.call_later(processed.set)
                 await asyncio.wait_for(processed.wait(), 1)
                 assert len(_calls(broker, "apply")) == 1
-                await asyncio.wait_for(pilot.press("escape"), 1)
-                assert not isinstance(pilot.app.screen, SeatControlScreen)
+                # Pilot.press waits for global CPU idle; a held broker worker plus
+                # ordinary dashboard paints need not become idle. Observe actual
+                # key dispatch and its rendered dashboard while the reply stays held.
+                escaped = asyncio.Event()
+                screen = pilot.app.screen
+                select = screen.select_dashboard
+                def observe_selection(name):
+                    select(name)
+                    if name == 'LIVE':
+                        screen.call_after_refresh(escaped.set)
+                screen.select_dashboard = observe_selection
+                pilot.app.post_message(events.Key('escape', None))
+                await asyncio.wait_for(escaped.wait(), 1)
+                assert pilot.app.screen.selected_dashboard == "LIVE"
                 assert len(_calls(broker, "apply")) == 1
             finally:
                 release.set()
@@ -545,9 +574,9 @@ async def test_verified_and_connection_have_independent_composited_colors(connec
         await _type(pilot, PLAN_ID[:4])
         for _ in range(30):
             await _painted(pilot)
-            if pilot.app.screen.mode == "done":
+            if pilot.app.screen.flow.mode == "done":
                 break
-        assert pilot.app.screen.mode == "done"
+        assert pilot.app.screen.flow.mode == "done"
         rows = _screen_text(pilot).splitlines()
         y = next(y for y, row in enumerate(rows) if "verified ✓" in row)
         row = rows[y]
@@ -560,7 +589,7 @@ async def test_verified_and_connection_have_independent_composited_colors(connec
 
 async def _manual_control(pilot, clock=None):
     await _painted(pilot)
-    control = pilot.app.screen
+    control = pilot.app.screen.flow
     control._timer.stop()
     if clock is not None:
         control._now = clock
@@ -884,14 +913,14 @@ async def test_kill_refusal_formats_every_pid_and_only_partial_actions_verify(pa
             assert not any(v == "verify" for v, _args in broker.calls)
 
 
-@pytest.mark.parametrize("key,mode", [("k", "skill"), ("r", "force")])
+@pytest.mark.parametrize("key,mode", [("k", "planned"), ("r", "force")])
 async def test_new_prompt_clears_previous_partial_note(key, mode):
     doc = _doc(gate={"safe": False, "reason": "task running 0c1f9727"})
     doc["unit"]["gracefulStopPossible"] = True
     async with _A(_Manager(doc, _broker())).run_test(size=(150, 60)) as pilot:
         control = await _manual_control(pilot)
         control._partial_note = "partial action — killed pids: 64876"
-        control.action_verb(key)
+        control.request("skills-set", {"skill_id":"oracle-assess","on":False}) if key == "k" else control.request("restart")
         await _painted(pilot)
         assert control.mode == mode
         assert "killed pids" not in _screen_text(pilot)
@@ -976,7 +1005,7 @@ async def test_ignored_verb_keeps_active_partial_evidence():
         control = await _manual_control(pilot)
         control._mode = "verifying"
         control._partial_note = "partial action — killed pids: 64876"
-        control.action_verb("k")
+        control.request("skills-set", {"skill_id":"oracle-assess","on":False})
         await _painted(pilot)
         assert control.mode == "verifying"
         assert "killed pids: 64876" in _screen_text(pilot)
@@ -1061,7 +1090,7 @@ async def test_later_non_prompt_status_clears_partial_evidence(new_status):
         if new_status == "no_plan":
             await control._submit_value("anything")
         else:
-            control.action_verb("r")
+            control.request("restart")
         await _painted(pilot)
         assert "killed pids" not in _screen_text(pilot)
         assert control.mode == "done"

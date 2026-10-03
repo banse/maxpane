@@ -1,14 +1,13 @@
-"""TASK: one LEDGER row's local facts and the plane's row, side by side (spec §8 LEDGER ``»``).
+"""TASK: one record's local and plane facts, public API question and reply.
 
 The record-detail frame (``screens/record_detail.py``: bordered box, focused
-scroll, ``PRESS SPACE OR ESC TO CLOSE``) with two sections. LOCAL is what the
+scroll, ``PRESS SPACE OR ESC TO CLOSE``). LOCAL is what the
 daemon's stdout and the runtime's transcript say -- stamps, phases seen, session
 files, tokens by class, ttft, wall, effort, the work-dir abnormal flag. PLANE is
 what ``api.imd.fun`` says -- the job (linked on the IMD explorer), the node key,
 the plane's accept stamp, the verdict and its lag, the failure reason and class
-as enum words. **Never prompts, tool outputs or summaries** (safety §5.4): the
-objective and the agent's sentence are prose NOW already shows, API error
-messages are raw runtime text -- only their statuses are counted here.
+as enum words. QUESTION and RESULT use only the shaped, redacted public API
+fields. Runtime prompts, tool output and transcript prose remain excluded.
 
 The base's ``_title`` reads ``job_id``, ``node_key``, ``submitted_ts``/``accepted_ts``
 (epoch seconds) and ``role``; :func:`adapt_row` supplies them from the frozen
@@ -30,6 +29,7 @@ from maxpane_dashboard.widgets.explorer import IMD
 from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_int, mmdd_hhmm
 from maxpane_dashboard.widgets.markup_safety import strip_tags
 from maxpane_dashboard.widgets.seat_words import seat_token
+from maxpane_dashboard.widgets.seat.seat_job_text import API_FIELDS, api_sections, facts, outcome_usage
 
 __all__ = ["LOCAL_FIELDS", "NEVER_SHOWN", "PLANE_FIELDS", "SeatTaskDetail", "adapt_row"]
 
@@ -42,7 +42,7 @@ LOCAL_FIELDS = (
 #: Row fields the PLANE section may read.
 PLANE_FIELDS = ("jobId", "nodeKey", "acceptedAtApi", "outcome", "outcomeAsOfUtc", "verdictLagS", "failureReason", "failureClass", "source")
 #: Third-party prose this screen never paints (spec §8 LEDGER; safety §5.4).
-NEVER_SHOWN = ("objective", "lastMessage", "lastMessageUtc")
+NEVER_SHOWN = ("prompt", "summary", "toolOutput", "lastMessage", "lastMessageUtc")
 
 _count = seat_token
 
@@ -67,7 +67,7 @@ def adapt_row(row: object) -> dict:
 
 
 class SeatTaskDetail(RecordDetailScreen):
-    """One ledger row, LOCAL and PLANE -- see the module docstring."""
+    """One cached record with provenance, question and reply."""
 
     TITLE_WORD = "TASK"
     ID_PREFIX = "seat-task-detail"
@@ -77,14 +77,20 @@ class SeatTaskDetail(RecordDetailScreen):
         super().__init__(adapt_row(row))
         source = row if isinstance(row, dict) else {}
         # Not ``self.task``: ``task`` is a read-only property on Textual's ``MessagePump`` (the asyncio Task).
-        self._task_row = {key: deepcopy(source.get(key)) for key in LOCAL_FIELDS + PLANE_FIELDS + ("nodeId8", "nodeId")}
+        self._task_row = {key: deepcopy(source.get(key)) for key in LOCAL_FIELDS + PLANE_FIELDS + API_FIELDS + ("nodeId8", "nodeId")}
 
     def title_node(self):
         return _word(self._task_row.get("nodeKey")) or _word(self._task_row.get("nodeId8")) or EMDASH
 
     def compose_sections(self):
-        yield from self.section("LOCAL", *self._local_lines(), first=True)
-        yield from self.section("PLANE", *self._plane_lines())
+        local = (self._task_row.get("source") or {}).get("row") == "local"
+        if local:
+            yield from self.section("LOCAL", *self._local_lines(), first=True)
+        yield from self.section("PLANE", *self._plane_lines(), facts(self._task_row), first=not local)
+        for title, text in api_sections(self._task_row):
+            if title.startswith("RESULT"):
+                text.append("\n").append_text(outcome_usage(self._task_row))
+            yield from self.section(title, text)
 
     # -- LOCAL ----------------------------------------------------------------
 

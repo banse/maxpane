@@ -646,11 +646,20 @@ _SEAT_LOG_LINES = [
 ]
 
 
+SEAT_PROSE_ADDRESS = '0x1111111111111111111111111111111111111111'
+SEAT_ORACLE_ADDRESS = '0x2222222222222222222222222222222222222222'
+
 def _seat_payload() -> dict:
     """The WP1 healthy status document folded by the manager's own fold, with four log lines."""
     doc = _json.loads(_SEAT_FIXTURE.read_text(encoding="utf-8"))
     flat = _seat_fold(doc, log_lines=_SEAT_LOG_LINES, log_seq=0)
     assert flat["seat_tasks_rows"][0]["jobId"] == SEAT_JOB_UUID, "the seeded job is the ledger's newest row"
+    flat['seat_jobs'] = [dict(key='api-job', jobId=SEAT_JOB_UUID, nodeKey='research_report',
+                             objective='Question '+SEAT_PROSE_ADDRESS, questionState='read',
+                             reply='Reply '+SEAT_PROSE_ADDRESS, replyState='read')]
+    flat['seat_records_rows'] = [dict(key='oracle-row',jobId=SEAT_JOB_UUID,nodeKey='oracle_assess',
+                                    answerState='read',answerPreview=SEAT_ORACLE_ADDRESS,
+                                    panel=dict(state='agreed',agreed=7,quorum=5,chainId=8453))]
     return flat
 
 
@@ -830,12 +839,15 @@ CASES: tuple[SweepCase, ...] = (
     SweepCase(
         name="seat",
         # widgets/seat/_chain.EXPLORER: job pages on explorer.imd.fun, never a chain's address
-        # (PEPEPANE shows no 0x address -- spec §13). The seeded value is a job id (deviation 1).
+        # Public ordinary API prose is copy-only; oracle answers name their own chain.
         explorer=IMD,
         screen_class=SeatScreen,
         build=_seat_app,
         payload=_seat_payload,
-        seeded=(SEAT_JOB_UUID,),
+        seeded=(SEAT_JOB_UUID, SEAT_PROSE_ADDRESS, SEAT_ORACLE_ADDRESS),
+        explorers=(IMD, BASE),
+        explorer_for={SEAT_ORACLE_ADDRESS: BASE},
+        copy_only=(SEAT_PROSE_ADDRESS,),
         views=((), ("1",), ("2",), ("3",), ("4",), ("5",), ("6",)),
         pins=((SEAT_FULL_LAYOUT_COLUMNS, SEAT_FULL_LAYOUT_ROWS),),
     ),
