@@ -1,0 +1,20 @@
+{
+  "host": "https://api.imd.fun",
+  "note": "Captured 2026-10-03 for the SWARM WORKFLOWS panel (docs/surf_swarm_workflows_spec.md). GET /workflows is keyless, cache-control public max-age=30; count is the page size, never a total; newest createdAt first. limit12 is the request the app makes; the default 100-row page carries the vocabulary (80 completed, 19 blocked, 1 cancelled), 16 null frontendJobId, failures with [FAIL: ...] brackets and two with an embedded 0x address.",
+  "files": {
+    "workflows_limit12": {
+      "url": "https://api.imd.fun/workflows?limit=12",
+      "captured_at": "2026-10-03T15:50:59Z",
+      "http_status": 200,
+      "sha256": "3c903a2629cbe1b0f0bfad5ebdd903e94a5de2c8ae5394fb8c4b177e0bd25781",
+      "bytes": 29253
+    },
+    "workflows_100": {
+      "url": "https://api.imd.fun/workflows",
+      "captured_at": "2026-10-03T15:51:00Z",
+      "http_status": 200,
+      "sha256": "48d0b0c10d2d3f2135ca4032d2a636829be9a3d0f1706d380e1adaafda61afd0",
+      "bytes": 372677
+    }
+  }
+}
