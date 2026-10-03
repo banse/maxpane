@@ -1017,3 +1017,17 @@ Correction to the 2026-09-28 G2 entry: RULES/G2 before HEX64 can expose a new to
 Follow-ups 40–55 record the verified residuals; items 31 and 38 gain code-point locations and the Mac future-stamp case. Synthetic checks reproduced the two IPv6 suffix escapes, probe-guard/fixture Bearer gaps, Unicode 14/16 residual counts, old split-head grep dependency, future-terminal Mac gate ordering and exception escape with silent Mac drain loss. Code checks confirmed p04's omitted diagnostics, stale-wheel accumulation, interpreter isolation, UTF-8 cuts, version-only build comparison, archive metadata limits and injected-tail coverage. The stop reason was checked at 60 seconds: “within 30 s” names its correct unextended deadline absent teardown evidence; any follow-up is wording only. Mac gate ordering and broader redaction scope remain owner decisions. No host facts were inferred from local fakes and no residual was silently fixed.
 
 The fix7 writing rule removes the old prose-dollar exception from seat_followups.md, seat_install_probe.md and seat_install.md. The parked-item test previously required the literal dollar-sign no-currency sentence; its pin now requires the equivalent “no currency figure” wording, and the prose guard explicitly forbids dollar signs in all three documents. Other historical documents retain their existing exception. The old pin failed before this necessary rule alignment; no no-currency guarantee is weakened.
+
+### 2026-10-03 — PEPEPANE fix7 independent review and final suites
+
+The independent review of a8912d6..b3f73b8 found no Critical, Important or Minor findings. Fourteen named cases passed. Removing summary.strip failed the root, Mac and strip-before-cap regressions; restoring the old pgrep form failed the live-session guard. Both inverse restorations returned all four cases to green with a clean tracked tree. The reviewer confirmed exact sections 1–19, all three p20 evidence blocks, the JSON-decoded doctor fixture, provenance and complete follow-up coverage.
+
+On Python 3.11.15, the seat suite passed 1,530 tests with two skips in 98.81 seconds. The single full MaxPane run passed 12,337 tests with two skips in 994.94 seconds; no timeout or isolated retry was needed this round. The separate in-tree Sybilkit run passed 444 tests with one expected failure in 9.70 seconds. All test processes ran sequentially. The existing pytest-asyncio fixture-loop-scope warning remains. All twenty third-party pip-freeze versions match the committed lock; the environment additionally contains the editable fork and twelve test/build tools.
+
+```sh
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile -m 'not host' tests/broker tests/analytics/test_seat_*.py tests/data/test_seat_*.py tests/widgets/test_seat_*.py tests/screens/test_seat_*.py tests/test_seat_*.py tests/test_select_to_copy.py
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile -m 'not host' tests
+env -u NO_COLOR HOME=$(mktemp -d) PYTHONPATH=sybilkit/src .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests
+```
+
+Parts B and C precede packaging. The final seeded build follows this documentation commit; its refreshed lock/MANIFEST are committed separately and the archive is named after that final commit. No host access, SSH, Docker operation, deployment, push or tag was performed. Never-touch files, frozen document bodies and pyproject.toml remain unchanged.
