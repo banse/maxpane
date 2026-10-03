@@ -24,35 +24,36 @@ A row whose status is not ``completed`` and whose ``failure`` is a non-blank
 string shows the failure, in red; every other row shows the objective's
 **first sentence** -- flattened, cut after the first ``.`` followed by
 whitespace or the end (:func:`first_sentence`; an abbreviation such as
-``e.g.`` is cut too, the rule's documented limit), then fitted with
-``rowfit.clip`` on ``cell_len``. The cell is a pre-built ``rich.text.Text``,
-so the served words render **literally**: ``sanitize_cell``'s ``strip_tags``
-would delete ``[FAIL: project constructor failed]``, the failure's own words.
-That is IN FLIGHT's objective precedent (``swarm_inflight._cell``), and so is
-the clip: a text cut with ``…`` does **not** light ``‹ widen`` -- only a shed
+``e.g.`` is cut too, the rule's documented limit), then fitted to the
+column on ``cell_len``. The cell is a pre-built ``rich.text.Text``, so the
+served words render **literally**: ``sanitize_cell``'s ``strip_tags`` would
+delete ``[FAIL: project constructor failed]``, the failure's own words. That
+is IN FLIGHT's objective precedent (``swarm_inflight._cell``), and so is the
+clip: a text cut with ``…`` does **not** light ``‹ widen`` -- only a shed
 column does. ``markup_safety.flatten`` is the one cleaning step, as in IN
 FLIGHT (its non-whitespace C0/ESC gap is filed; no private sanitiser here).
 
-An address inside the text (spec §2: "follows IN FLIGHT")
--------------------------------------------------------------
-IN FLIGHT renders an objective as plain text: no copy icon, no explorer link,
-and its module imports no address helper. This cell does the same. A failure
-can name a contract (the 100-row capture has
-``0x000000000000000000000000000000000000c0de`` some 70 cells in), and the swarm
-serves no chain id with a workflow, so a link would be a guess -- which
-``widgets/explorer.py`` forbids -- and an icon without a link fails the
-sweep's E7. How each test sees it:
+An address inside the text: its copy icon, and no link
+------------------------------------------------------
+CLAUDE.md: every displayed 0x address carries a copy icon, and an unknown
+chain gets no link, never a guessed one. A failure can name a contract (the
+100-row capture has ``0x000000000000000000000000000000000000c0de`` some 70
+cells in), so the text goes through surf's fitted-prose route in
+``_icons.py``, the idiom ``_oracle_answer.fit_popup_text`` and ``feed.py``
+use: ``mark_addresses`` puts ``NBSP ⧉`` after each whole address in the plain
+text, so the fit pays the icon's two cells; ``rowfit.clip`` fits it to the
+column; ``keep_units`` keeps an address and its icon whole or drops the unit
+whole in front of the ``…`` (never a ``0x`` fragment); ``unmark`` and
+``link_prose`` then give each surviving glyph the helper's own copy action
+and icon style. ``explorer=None``: a workflow carries no chain id and nothing
+joins it to a launch, so the address is copyable and unlinked -- the choice
+``rules/surf.md`` records for the SUBMISSION popup. An abbreviated
+``0x5167d0...3281`` is not an address and gets nothing.
 
-* ``tests/test_address_rule.py`` is static (no private formatter, no
-  head-and-tail slice, no window under ``MIN_SHORT_COLS``); this module has
-  none of them and passes, as IN FLIGHT does.
-* ``tests/screens/test_address_icons_everywhere.py`` renders the screen: a
-  whole address on screen without its icon fails question 2. IN FLIGHT holds
-  only because no seeded objective carries one. Unlike IN FLIGHT, this module
-  imports the helper (``job_text``), so once WP5 mounts it question 4 counts
-  it as helper-using and needs an ``EXEMPT`` entry (SITES is the precedent:
-  job ids and names, never an address); question 5 then holds the panel to
-  printing no address, which the WP5 sweep payload must respect.
+The SWARM address sweep (``tests/screens/test_address_icons_everywhere.py``)
+currently demands a link for every surf icon (E7); WP5 extends it with a
+narrow, named "icon, no link: chain unknown" allowance when it mounts this
+widget.
 
 Purity: stdlib, ``rich``, ``textual`` and this package's ``widgets/`` modules.
 No ``data/`` (it restates nothing from there: ``ROW_CAP`` is bound to
@@ -72,6 +73,7 @@ from maxpane_dashboard.widgets.fmt import as_float
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.panels import LOADING
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm
+from maxpane_dashboard.widgets.surf._icons import keep_units, link_prose, mark_addresses, unmark
 from maxpane_dashboard.widgets.surf._swarm_table import (
     CELL_PADDING,
     SwarmTableBase,
@@ -173,12 +175,19 @@ def _frontend_cell(job_id) -> Text:
 
 
 def _text_cell(item: dict, width: int) -> Text:
-    """The failure in red while the row is not completed, else the objective."""
+    """The failure in red while the row is not completed, else the objective;
+    each whole address with its copy icon, fitted as one unit (module docstring)."""
     failure = flatten(item.get("failure"))
     if item.get("status") != _COMPLETED and failure:
-        return Text(rowfit.clip(failure, width), style="red")
-    sentence = first_sentence(item.get("objective"))
-    return Text(rowfit.clip(sentence or DASH, width))
+        raw, style = failure, "red"
+    else:
+        raw, style = first_sentence(item.get("objective")) or DASH, ""
+    marked, _, spans = mark_addresses(raw)
+    cut = rowfit.cell_len(marked) > width
+    fitted = keep_units(marked, spans, rowfit.clip(marked, width))
+    if cut and not fitted:
+        fitted = "…"
+    return link_prose(Text(unmark(fitted), style=style), explorer=None)
 
 
 class SurfSwarmWorkflows(SwarmTableBase):

@@ -411,25 +411,79 @@ async def test_the_title_carries_the_marker_only_when_it_is_real():
         assert "as of" not in text and "WORKFLOWS" in text, text
 
 
-# -- an address inside the text (spec §2: IN FLIGHT's precedent) ------------------------------
+# -- an address inside the text: its copy icon, and no link (review I1) -------------------------
+
+#: The 100-row capture's one failure that names a whole address (row 45).
+C0DE = "0x000000000000000000000000000000000000c0de"
+#: The same capture's abbreviated form (row 4): not an address, so no icon.
+ABBREVIATED = "0x5167d0...3281"
+#: The fixed columns at the full tier: ``table_cols([11, 9, 9, 8])`` + the
+#: text column's own padding + the panel's gutter, so a terminal this much
+#: wider than *n* gives the text column exactly *n* cells (bare harness).
+_FIXED_COLS = (11 + 9 + 9 + 8) + 4 * 2 + 2 + GUTTER
 
 
-async def test_an_address_inside_a_failure_renders_as_text_with_no_icon_and_no_link():
-    """IN FLIGHT's objective cell renders the served words as plain text, and
-    the spec has this cell follow it: no copy icon, no explorer link -- the
-    swarm names no chain for a failure, so no explorer could be chosen
-    without a guess. The decision and the convention gap it leaves are in
-    the module docstring."""
-    address = "0x000000000000000000000000000000000000c0de"
-    failure = f"names {address} as the hook"
-    async with _Probe().run_test(size=SIZE) as pilot:
+def _failure_row(needle: str) -> dict:
+    rows = workflow_rows(swarm_capture_v6("workflows_100")["workflows"])
+    return next(row for row in rows if needle in (row["failure"] or ""))
+
+
+async def _address_probe(rows, size):
+    """``(screen rows, icons, links)`` read off the compositor."""
+    async with _Probe().run_test(size=size) as pilot:
         pilot.app.query_one(SurfSwarmWorkflows).update_data(
-            swarm_workflow_rows=[_row(status="blocked", failure=failure, frontend_job_id=None)],
-            swarm_scores_as_of_hhmm=AS_OF)
+            swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
         await pilot.pause()
-        text = "\n".join(_strip_rows(pilot.app))
-        icons = icon_targets(pilot.app)
-        addressed = [t for t in link_targets(pilot.app) if t[3] == "address"]
-    assert failure in text, text
-    assert COPY_GLYPH not in text and icons == [], icons
-    assert addressed == [], addressed
+        return _strip_rows(pilot.app), icon_targets(pilot.app), link_targets(pilot.app)
+
+
+async def test_a_whole_address_in_a_failure_gets_its_copy_icon_and_no_link():
+    """CLAUDE.md: every displayed 0x address carries a copy icon, and an
+    unknown chain gets no link, never a guessed one -- a workflow carries no
+    chain id, so ``link_prose`` runs with ``explorer=None``."""
+    failure = f"names {C0DE} as the hook"
+    rows = [_row(status="blocked", failure=failure, frontend_job_id=None)]
+    lines, icons, links = await _address_probe(rows, SIZE)
+    y = next(i for i, line in enumerate(lines) if C0DE in line)
+    assert f"names {C0DE} {COPY_GLYPH} as the hook" in lines[y], lines[y]
+    assert [(iy, copied) for _x, iy, copied in icons] == [(y, C0DE)], icons
+    # The address's cells and its icon carry no link; the only links left on
+    # screen are the contracts job's, on the IMD explorer.
+    start = lines[y].index(C0DE)
+    on_address = [t for t in links if t[1] == y and start <= t[0] <= start + len(C0DE) + 1]
+    assert on_address == [], on_address
+    assert {url for *_r, url in links if url} == {f"https://explorer.imd.fun/jobs/{JOB}"}, links
+
+
+async def test_an_address_and_icon_that_cannot_fit_are_dropped_whole_before_the_ellipsis():
+    """The unit is never bisected: no ``0x`` fragment, no orphaned icon, and
+    still no ``‹ widen`` for a clipped text."""
+    failure = f"names {C0DE} as the hook"
+    rows = [_row(status="blocked", failure=failure, frontend_job_id=None)]
+    lines, icons, _links = await _address_probe(rows, (FULL_WIDTH + GUTTER, 20))
+    text = "\n".join(lines)
+    row = next(line for line in lines if "names" in line)
+    assert row.rstrip().endswith("names…"), row
+    assert "0x" not in text and COPY_GLYPH not in text and icons == [], text
+    assert "‹" not in text, text
+
+
+async def test_the_captured_failure_naming_an_address_shows_it_whole_with_its_icon():
+    row = _failure_row(C0DE)
+    assert row["status"] == "blocked"
+    # The address, a space and the icon, then one cell for the cut's ``…``.
+    shown_to = row["failure"].index(C0DE) + len(C0DE) + 2
+    lines, icons, links = await _address_probe([row], (_FIXED_COLS + shown_to + 1, 20))
+    y = next(i for i, line in enumerate(lines) if C0DE in line)
+    assert f'names {C0DE} {COPY_GLYPH}' in lines[y], lines[y]
+    assert lines[y].rstrip().endswith(f"{COPY_GLYPH}…"), lines[y]
+    assert [copied for _x, _y, copied in icons] == [C0DE], icons
+    assert not [t for t in links if t[1] == y and t[3] == "address"], links
+
+
+async def test_the_abbreviated_form_is_not_an_address_and_gets_no_icon():
+    row = _failure_row(ABBREVIATED)
+    width = _FIXED_COLS + len(row["failure"]) + 10
+    lines, icons, _links = await _address_probe([row], (width, 20))
+    assert any(f"operator {ABBREVIATED};" in line for line in lines), lines
+    assert icons == [] and COPY_GLYPH not in "\n".join(lines), icons
