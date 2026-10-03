@@ -779,6 +779,8 @@ def test_no_dollar_sign_in_docs_seat_files_except_the_no_currency_rule_sentence(
     for rel in NO_CURRENCY_DOCS:
         prose, code = _prose_and_code((REPO / rel).read_text(encoding="utf-8"))
         for line in prose:
+            if rel in {"docs/seat_followups.md", "docs/seat_install_probe.md", "docs/seat_install.md"}:
+                assert "$" not in line, f"{rel}: fix7 forbids dollar signs in prose"
             if "$" in line:
                 assert NO_CURRENCY_SENTENCE in line and line.count("$") == 1, f"{rel}: {line!r}"
         for line in code:
@@ -791,7 +793,7 @@ def test_followups_carry_every_parked_item():
     text = FOLLOWUPS.read_text(encoding="utf-8")
     for needle in FOLLOWUP_MUST_MENTION:
         assert needle in text, needle
-    assert text.count(NO_CURRENCY_SENTENCE) == 1
+    assert text.count("no currency figure in any panel, document field or code path") == 1
 
 
 def test_pepepane_prd_and_plan_are_the_spec_and_the_plan_with_an_adaptation_header():
