@@ -1017,3 +1017,50 @@ def test_filter_choices_read_the_whole_lifetime_list_not_the_window():
     assert record.filter_choices(None)['models'] == ('claude-opus-4-1', 'gpt-6-astra')
     record.update_data(swarm_seat_work_rows=rows, swarm_seat_state='busy')
     assert record.filter_choices() == {'nodes': (), 'states': (), 'models': ()}
+
+
+# -- F-RF2: the filter judges what the column shows -----------------------------
+
+_ODD_TIMES = [1_790_000_000.0, 1_790_000_000, "1790000000", True, float("inf"), float("nan"), 0, -5, None]
+_ODD_FIGURES = [3_599, 3_660.5, 0, 45, -1, True, "90", float("nan"), float("inf"), 1e30, None]
+
+
+def _agreement_row(**changes):
+    row = dict(seat_work_rows(swarm_capture_v5("seat_420"))[0], answer_state="read")
+    row.update(changes)
+    return row
+
+
+@pytest.mark.parametrize("when", _ODD_TIMES)
+@pytest.mark.parametrize("which", ["submitted_ts", "accepted_ts"])
+def test_the_when_column_shows_a_time_exactly_when_when_can_judge_it(which, when):
+    """F-RF2: RECORD's when column and the filter's WHEN read one rule
+    (``analytics/surf_record_filter.record_time``). ``int(x or 0)`` once let
+    the column print a time for ``"1790000000"`` or ``True`` that WHEN could
+    never match."""
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, record_base_match
+    row = _agreement_row(**{"submitted_ts": None, "accepted_ts": None, which: when})
+    shown = "?" not in SurfSwarmSeatRecord().build_cells(row)["when"]
+    assert shown == record_base_match(row, RecordFilter(since_ts=1.0)), row[which]
+
+
+def _minutes(cell: str) -> int:
+    hours, _, rest = cell.rpartition("h ")
+    return int(hours or 0) * 60 + (0 if rest == "<1m" else int(rest.rstrip("m")))
+
+
+@pytest.mark.parametrize("figure", _ODD_FIGURES)
+@pytest.mark.parametrize("answer_state", ["read", "no_reply", "not_read", "not_served", "unavailable"])
+def test_took_and_tok_show_a_figure_exactly_when_their_ranges_can_judge_it(answer_state, figure):
+    """F-RF2: TOOK and TOK compare the figure RECORD's cell shows, on the
+    same served rows; a shown TOOK of m minutes is inside ``m-m``."""
+    from maxpane_dashboard.analytics.surf_record_filter import MATCH, RecordFilter, record_read_match
+    row = _agreement_row(answer_state=answer_state, took_s=figure, output_tokens=figure)
+    cells = SurfSwarmSeatRecord().build_cells(row)
+    for key, low in (("took", "took_min"), ("tok", "tok_min")):
+        shown = cells[key] != "—"
+        judged = record_read_match(row, RecordFilter(**{low: 0})) == MATCH
+        assert shown == judged, (key, cells[key])
+    if cells["took"] != "—" and not cells["took"].endswith("…"):  # 1e30 s fills the cell
+        m = _minutes(cells["took"])
+        assert record_read_match(row, RecordFilter(took_min=m, took_max=m)) == MATCH, cells["took"]

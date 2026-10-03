@@ -25,13 +25,15 @@ many rows match, and how many cannot be judged yet (``not read yet`` /
 
 from __future__ import annotations
 
-import math
 
 from rich.text import Text
 from rich.style import Style
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, RecordView, record_filter_choices, record_view
+from maxpane_dashboard.analytics.surf_record_filter import (
+    RecordFilter, RecordView, record_filter_choices, record_output_tokens, record_served, record_time,
+    record_took_minutes, record_view,
+)
 from maxpane_dashboard.analytics.surf_swarm_signals import record_state
 
 from maxpane_dashboard.widgets import rowfit
@@ -358,8 +360,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
             # their own dim / yellow, which say why there is no answer (F65).
             answer.stylize("red")
         return {
-            "when": mmdd_hhmm(item.get("submitted_ts") if item.get("submitted_ts") is not None
-                              else item.get("accepted_ts")),
+            "when": mmdd_hhmm(record_time(item)),
             "job": job_text(job_id, JOB_COLS, explorer=JOB_EXPLORER) if job != DASH else DASH,
             "node": title.lower() if title else sanitize_cell(_word(node_key), NODE_COLS),
             "state": state_cell,
@@ -371,18 +372,20 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         }
 
     def _usage_cell(self, item: dict, key: str, width: int) -> str:
-        # Metadata belongs to the same successful exact-hash submission read.
-        if item.get("answer_state") not in ("read", "no_reply"):
+        # Metadata belongs to the same successful exact-hash submission read;
+        # the rules are the filter's own, so MODEL / TOOK / TOK judge exactly
+        # what these cells show (F-RF2).
+        if not record_served(item):
             return EMDASH
         value = item.get(key)
         if key == "model":
             value = short_model(value)
         elif key == "output_tokens":
-            value = tok_text(value)
+            value = tok_text(record_output_tokens(item))
         elif key == "took_s":
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            minutes = record_took_minutes(item)
+            if minutes is None:
                 return EMDASH
-            minutes = int(value) // 60
             if minutes >= 60:
                 value = f"{minutes // 60}h {minutes % 60:02d}m"
             else:

@@ -30,8 +30,9 @@ from maxpane_dashboard.analytics.surf_swarm_signals import count_by, record_stat
 __all__ = [
     "ANSWER_STATES", "PANEL_STATES", "WHEN_SECONDS", "MATCH", "NO", "NOT_READ", "UNAVAILABLE",
     "RecordFilter", "RecordView", "parse_record_filter", "record_base_match",
-    "record_filter_choices", "record_read_match", "record_readable", "record_selected",
-    "record_time", "record_view", "record_window",
+    "record_filter_choices", "record_output_tokens", "record_read_match", "record_readable",
+    "record_selected", "record_served", "record_time", "record_took_minutes", "record_view",
+    "record_window",
 ]
 
 #: RECORD shows 40 rows, ``more`` grows it by 20, the answers slot retains 400.
@@ -172,6 +173,23 @@ def record_time(row: Mapping[str, Any]) -> float | None:
     return _finite(submitted if submitted is not None else row.get("accepted_ts"))
 
 
+def record_served(row: Mapping[str, Any]) -> bool:
+    """Whether RECORD's model / took / tok cells show this row's submission facts."""
+    return row.get("answer_state") in _SERVED
+
+
+def record_took_minutes(row: Mapping[str, Any]) -> int | None:
+    """The whole minutes RECORD's took cell shows, and TOOK compares."""
+    took = _finite(row.get("took_s"))
+    return int(took) // 60 if took is not None and took >= 0 else None
+
+
+def record_output_tokens(row: Mapping[str, Any]) -> int | None:
+    """The output tokens RECORD's tok cell shows, and TOK compares: strict ints."""
+    tok = row.get("output_tokens")
+    return tok if type(tok) is int and tok >= 0 else None
+
+
 def record_readable(row: Mapping[str, Any]) -> bool:
     """Whether the seat cycle can ever read this row's submission or panel."""
     job, key = row.get("job_id"), row.get("submission_hash")
@@ -213,17 +231,13 @@ def _usage_verdicts(row: Mapping[str, Any], spec: RecordFilter, readable: bool) 
         model = row.get("model")
         groups.append(isinstance(model, str) and model in spec.models)
     if spec.took_min is not None or spec.took_max is not None:
-        took = _finite(row.get("took_s"))
-        minutes = int(took) // 60 if took is not None and took >= 0 else None
-        groups.append(_in_range(minutes, spec.took_min, spec.took_max))
+        groups.append(_in_range(record_took_minutes(row), spec.took_min, spec.took_max))
     if spec.tok_min is not None or spec.tok_max is not None:
-        tok = row.get("output_tokens")
-        tok = tok if type(tok) is int and tok >= 0 else None
-        groups.append(_in_range(tok, spec.tok_min, spec.tok_max))
+        groups.append(_in_range(record_output_tokens(row), spec.tok_min, spec.tok_max))
     if not groups:
         return []
     state = row.get("answer_state")
-    if state in _SERVED:
+    if record_served(row):
         return [MATCH if ok else NO for ok in groups]
     if readable and state == "not_read":
         return [NOT_READ]

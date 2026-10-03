@@ -181,7 +181,11 @@ Filed, Minor (do as Tier 0 when the file is next touched):
   `market_research_beta` become one `market_research…` box that ticks both. The spec meant the
   merge only for MODEL's `short_model`. Group NODE by raw key (RECORD's 6-cell node column cannot
   tell them apart either, so the box label needs a disambiguator, not just a split).
-* **F-RF2: `record_time` and `_SERVED` restate the widget's own rules unbound.** The filter's
+* **F-RF2: `record_time` and `_SERVED` restate the widget's own rules unbound.** DONE 2026-10-03:
+  RECORD's when / model / took / tok cells call `record_time`, `record_served`,
+  `record_took_minutes` and `record_output_tokens`, the rules the filter judges by. The when
+  column no longer prints a time for a numeric-string or boolean stamp that WHEN could never
+  match. Was: The filter's
   WHEN uses `analytics/surf_record_filter.record_time` and its MODEL/TOOK/TOK use `_SERVED`;
   RECORD's when column (`swarm_seat_record.py` `build_cells`) and usage cells restate the same rules
   inline. Have the widget import the pure helpers (or add an agreement test) so "the filter
