@@ -749,7 +749,7 @@ async def test_submission_popup_captures_require_exact_recorded_route(name):
     finally: await client.close()
 
 
-# Seat resilience WP1: busy is an all-host outcome, and only for /seats.
+# Seat resilience WP1: busy is an all-host outcome, for /seats and (F-S3) /jobs/{id} only.
 def _busy_body():
     import json
     from tests.surf_swarm_fixtures import SWARM_FIXTURES_V2
@@ -822,3 +822,40 @@ async def test_busy_body_without_503_and_busy_on_other_routes_remain_failures(st
     async with _client(lambda r: httpx.Response(503, json=_busy_body()),
                        inter_call_delay=0) as client:
         assert await client.fetch_health() is None
+
+
+_JOB = "4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6"
+
+
+async def test_fetch_job_all_hosts_busy_returns_busy_and_one_host_busy_is_not():
+    """F-S3: a job detail opts into the seat rule -- busy only when every
+    host says ``503 busy``; one host answering serves the detail."""
+    from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY
+    seen = []
+    async with _client(_recording(seen, lambda r: httpx.Response(503, json=_busy_body())),
+                       inter_call_delay=0) as client:
+        first = await client.fetch_job(_JOB)
+        assert first == SEAT_BUSY
+        first["error"] = "tampered"
+        assert await client.fetch_job(_JOB) == SEAT_BUSY
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST, FIRST_HOST, SECOND_HOST]
+    detail = {"id": _JOB, "state": "executing", "nodes": []}
+    def respond(request):
+        if request.url.host == FIRST_HOST:
+            return httpx.Response(503, json=_busy_body())
+        return httpx.Response(200, json=detail)
+    async with _client(respond, inter_call_delay=0) as client:
+        assert await client.fetch_job(_JOB) == detail
+    def mixed(request):         # one host busy, the other plainly down: a failed read
+        if request.url.host == FIRST_HOST:
+            return httpx.Response(503, json=_busy_body())
+        return httpx.Response(500, json=_busy_body())
+    async with _client(mixed, inter_call_delay=0) as client:
+        assert await client.fetch_job(_JOB) is None
+
+
+@pytest.mark.parametrize("status", [200, 500])
+async def test_a_busy_body_without_an_all_host_503_is_no_job_detail(status):
+    async with _client(lambda r: httpx.Response(status, json=_busy_body()),
+                       inter_call_delay=0) as client:
+        assert await client.fetch_job(_JOB) is None

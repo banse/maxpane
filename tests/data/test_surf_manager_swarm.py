@@ -101,7 +101,9 @@ class _FakeSwarm:
     ``fail`` kills ``/health`` (so the live tier never reaches ``/jobs``);
     the per-route ``fail_*`` switches serve ``None`` for that one route only,
     the client's contract for a 404 or a dead host. ``fetch_job`` answers the
-    committed detail or ``None`` -- a 404 -- for an id the corpus lacks.
+    committed detail or ``None`` -- a 404 -- for an id the corpus lacks, and
+    ``SEAT_BUSY`` -- every host shedding load -- once ``busy_from`` detail
+    calls have been answered (F-S3).
 
     ``fetch_seat`` (the /seats plan WP2) serves ``seats[token]`` -- by
     default the four committed seat captures -- and ``UNKNOWN_SEAT`` for a
@@ -136,6 +138,7 @@ class _FakeSwarm:
         self._fail_skills = fail_skills
         self._fail_launches = fail_launches
         self._fail_sites = fail_sites
+        self.busy_from: int | None = None
 
     @property
     def health_calls(self) -> int:
@@ -164,6 +167,8 @@ class _FakeSwarm:
         await asyncio.sleep(0)
         self.calls["job"] += 1
         self.detail_calls.append(job_id)
+        if self.busy_from is not None and self.calls["job"] > self.busy_from:
+            return dict(SEAT_BUSY)
         detail = self._details.get(job_id)
         return dict(detail) if isinstance(detail, dict) else None
 
@@ -1826,3 +1831,70 @@ async def test_unchanged_seat_is_not_restored_or_retimestamped(tmp_path, monkeyp
     assert manager.cache.get_last_good(SLOT_SWARM_SEAT) == before
     assert (await manager.fetch_and_compute())["swarm_seat_as_of_hhmm"] == first["swarm_seat_as_of_hhmm"]
     await manager.close()
+
+
+# ---------------------------------------------------------------------------
+# F-S3: a busy host stops the detail fan-out and keeps the prior read
+# ---------------------------------------------------------------------------
+async def test_a_busy_detail_host_stops_the_live_loop_and_keeps_the_prior_read(tmp_path):
+    """Observed 2026-10-02: ``/jobs/{id}`` answered 503 busy on both hosts
+    while ``/jobs`` answered, and the loop asked every executing id anyway,
+    then stored the short list as last-good. Now one busy answer stops it,
+    the slot and its marker stay, the tier backs off, and the list this
+    cycle read is not stored -- so the gate must not count it as read."""
+    from maxpane_dashboard.data.surf_cache import TIER_FAILURE_BACKOFF_SECONDS
+    from maxpane_dashboard.data.surf_manager import SWARM_LIST_CEILING_S
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    now = manager._clock()
+    try:
+        assert (await manager._pool_swarm({TIER_SWARM}, now))["ok"]
+        prior = manager.cache.get_last_good(SLOT_SWARM)
+        assert prior.payload["details"], "the first read must hold details for this to bite"
+        gate = (manager._swarm_counters, manager._swarm_jobs_read_ts)
+        later = now + SWARM_LIST_CEILING_S + 1      # the list is re-read this cycle
+        swarm.busy_from = swarm.calls["job"]
+        before = dict(swarm.calls)
+        assert await manager._pool_swarm({TIER_SWARM}, later) == {"ok": False, "payload": None}
+        assert swarm.calls["jobs"] == before["jobs"] + 1
+        assert swarm.calls["job"] == before["job"] + 1, "stops at the first busy answer"
+        entry = manager.cache.get_last_good(SLOT_SWARM)
+        assert (entry.payload, entry.ts) == (prior.payload, prior.ts)
+        assert manager.cache.last_fetch_ts(TIER_SWARM) == now
+        assert manager.cache.seconds_until_due(TIER_SWARM, later) == TIER_FAILURE_BACKOFF_SECONDS[TIER_SWARM]
+        assert (manager._swarm_counters, manager._swarm_jobs_read_ts) == gate
+        swarm.busy_from = None
+        assert (await manager._pool_swarm({TIER_SWARM}, later + 1))["ok"]
+        assert swarm.calls["jobs"] == before["jobs"] + 2, "the unstored list is read again"
+        assert manager.cache.get_last_good(SLOT_SWARM).ts == later + 1
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("answered", [0, 2])
+async def test_a_busy_detail_host_stops_the_sweep_and_keeps_the_prior_read(tmp_path, answered):
+    """The sweep reads up to ``SWARM_SWEEP_CAP`` details on a 1800 s tier:
+    busy after ``answered`` good details stops it there, stores nothing (a
+    short list is not "fewer jobs"), skips skills/launches/sites, and backs
+    the tier off."""
+    from maxpane_dashboard.data.surf_cache import TIER_FAILURE_BACKOFF_SECONDS
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    now = manager._clock()
+    try:
+        assert (await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now))["ok"]
+        prior = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        assert len(prior.payload["details"]) > answered
+        swarm.busy_from = swarm.calls["job"] + answered
+        before = dict(swarm.calls)
+        later = now + 1800
+        assert await manager._pool_swarm_scores({TIER_SWARM_SCORES}, later) == {"ok": False, "payload": None}
+        assert swarm.calls["job"] == before["job"] + answered + 1
+        assert all(swarm.calls[route] == before.get(route, 0) for route in ("skills", "launches", "sites"))
+        entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        assert (entry.payload, entry.ts) == (prior.payload, prior.ts)
+        assert manager.cache.last_fetch_ts(TIER_SWARM_SCORES) == now
+        assert (manager.cache.seconds_until_due(TIER_SWARM_SCORES, later)
+                == TIER_FAILURE_BACKOFF_SECONDS[TIER_SWARM_SCORES])
+    finally:
+        await manager.close()

@@ -101,7 +101,8 @@ SWARM_INTER_CALL_DELAY = 0.12
 #: may alter its own result.  Compare with ``==`` (a proxy equals its dict).
 UNKNOWN_SEAT: MappingProxyType[str, str] = MappingProxyType({"error": "unknown_seat"})
 
-#: Every seat host reported temporary load shedding, distinct from a failed read.
+#: Every host reported temporary load shedding, distinct from a failed read:
+#: ``fetch_seat`` and (F-S3) ``fetch_job`` return a fresh copy.
 SEAT_BUSY: MappingProxyType[str, str] = MappingProxyType({"error": "busy"})
 
 #: Explicit job-local HTTP 404; None remains transient transport/parse failure.
@@ -174,8 +175,9 @@ class SwarmClient(OwnedHttpClient):
         with no further host asked.  Any other 404 -- a removed route, an HTML
         page -- rotates like every other non-200.
 
-        ``seat_busy`` opts seat reads into a distinct result only when every
-        host returns HTTP 503 with the exact JSON error ``busy``.
+        ``seat_busy`` opts seat and job-detail reads into a distinct result
+        only when every host returns HTTP 503 with the exact JSON error
+        ``busy``.
         """
         if "?" in path:
             raise ValueError(f"the swarm API takes no query parameters: {path!r}")
@@ -282,7 +284,9 @@ class SwarmClient(OwnedHttpClient):
         return await self._list("/skills", "skills")
 
     async def fetch_job(self, job_id: str) -> dict[str, Any] | None:
-        """One job's detail, or ``None`` -- also for an id that is no path segment.
+        """One job's detail, a fresh copy of :data:`SEAT_BUSY` when every host
+        sheds the read (F-S3), or ``None`` -- also for an id that is no path
+        segment.
 
         The id is interpolated into the path.  One carrying ``?``, ``/``,
         ``#`` or whitespace, an empty one or a non-string would build a
@@ -293,7 +297,10 @@ class SwarmClient(OwnedHttpClient):
         if not _is_path_segment(job_id):
             logger.debug("swarm fetch_job refused an id that is no path segment: %r", job_id)
             return None
-        return await self._dict(f"/jobs/{job_id}")
+        body = await self._get(f"/jobs/{job_id}", seat_busy=True)
+        if body is SEAT_BUSY:
+            return dict(SEAT_BUSY)
+        return body if isinstance(body, dict) and body.get("error") != "busy" else None
 
     async def submissions(self, job_id: str) -> dict[str, Any] | None:
         """One job's submissions, explicit 404 sentinel, or transient-failure None."""

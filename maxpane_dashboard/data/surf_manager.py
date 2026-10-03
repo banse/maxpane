@@ -5496,7 +5496,10 @@ class SurfManager:
         slot keeps its Task 5 shape, ``details`` a list. On success this
         read is also folded into :data:`SLOT_SWARM_JOBS_SEEN`
         (:meth:`_fold_swarm_seen`); on any failure path that slot is left
-        exactly as it was.
+        exactly as it was. A busy detail host is a failure path (F-S3,
+        :meth:`_swarm_details`): the slot keeps its prior read and the gate
+        goes back to the list it was last armed against, because the list
+        this cycle read was never stored.
         """
         if TIER_SWARM not in tiers:
             return {"ok": False, "payload": None}
@@ -5510,6 +5513,7 @@ class SurfManager:
         prior = getattr(self.cache.get_last_good(SLOT_SWARM), "payload", None)
         jobs = prior.get("jobs") if isinstance(prior, dict) else None
         stale_list = (now - self._swarm_jobs_read_ts) >= SWARM_LIST_CEILING_S
+        gate = (self._swarm_counters, self._swarm_jobs_read_ts)
         if jobs is None or counters != self._swarm_counters or stale_list:
             fetched = await self._guard(lambda: client.fetch_jobs(), "swarm fetch_jobs")
             if fetched is not None:
@@ -5529,19 +5533,40 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM, now)
             return {"ok": False, "payload": None}
 
-        details: list[dict[str, Any]] = []
-        for job_id in _swarm_executing_ids(jobs):
-            detail = await self._guard(
-                lambda jid=job_id: client.fetch_job(jid), "swarm fetch_job"
-            )
-            if detail is not None:      # a 404 drops one row, never the read
-                details.append(detail)
+        details = await self._swarm_details(_swarm_executing_ids(jobs), "swarm fetch_job")
+        if details is None:
+            # Fix round 1 finding 2 again: the gate is never armed for a
+            # list that was not stored.
+            self._swarm_counters, self._swarm_jobs_read_ts = gate
+            self.cache.mark_failed(TIER_SWARM, now)
+            return {"ok": False, "payload": None}
 
         payload = {"health": health, "jobs": jobs, "details": details}
         self.cache.store_last_good(SLOT_SWARM, payload, ts=now)
         self.cache.mark_fetched(TIER_SWARM, now)
         self._fold_swarm_seen(jobs, details, now)
         return {"ok": True, "payload": payload}
+
+    async def _swarm_details(self, job_ids: Any, label: str) -> list[dict[str, Any]] | None:
+        """``GET /jobs/{id}`` for each id in order; ``None`` at the first busy answer.
+
+        A ``None`` detail -- a 404, a dead host -- drops that one row, never
+        the read. :data:`SEAT_BUSY` (every host shedding load) stops the
+        fan-out instead (F-S3, observed 2026-10-02: ``/jobs`` answered while
+        every ``/jobs/{id}`` on both hosts was ``503 busy``, and both loops
+        kept asking, one id every ~6.4 s): asking the next id adds to the
+        load, and a list cut short by load shedding is not "fewer jobs",
+        so each caller keeps its prior read and backs its tier off.
+        """
+        client = self.swarm_client
+        details: list[dict[str, Any]] = []
+        for job_id in job_ids:
+            detail = await self._guard(lambda jid=job_id: client.fetch_job(jid), label)
+            if detail == SEAT_BUSY:
+                return None
+            if detail is not None:
+                details.append(detail)
+        return details
 
     def _fold_swarm_seen(
         self, jobs: list[dict[str, Any]], details: list[dict[str, Any]], now: float
@@ -6069,6 +6094,8 @@ class SurfManager:
         for job in sw.job_details_due(rows, points, now_ts=now,
                                       cap=SWARM_JOB_DETAIL_PER_CYCLE, due_s=SWARM_JOB_DETAIL_DUE_S):
             detail = await self._guard(lambda: self.swarm_client.fetch_job(job), 'swarm popup job')
+            if detail == SEAT_BUSY:     # F-S3: stop asking; this job stays as it was
+                break
             point = sw.job_detail_point(detail, job, now_ts=now)
             points[job] = point
         points = sw.prune_job_details(points, now_ts=now,
@@ -6188,7 +6215,9 @@ class SurfManager:
         the live tier never saw executing still enters the slot -- and the
         slot, not this sweep, carries the record of jobs past the cap.
         **Partial success is a success** (plan R-B): the tier fails only
-        when ``/jobs`` is ``None``; each of ``skills``/``launches``/``sites``
+        when ``/jobs`` is ``None`` or a detail host is busy (F-S3,
+        :meth:`_swarm_details` -- then ``skills``/``launches``/``sites`` are
+        not asked either); each of ``skills``/``launches``/``sites``
         is stored as ``None`` when its own read failed, and
         :meth:`_swarm_scores_keys` publishes ``None`` for that route's keys
         while the others land behind the marker. The paragraphs below are
@@ -6228,13 +6257,10 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM_SCORES, now)
             return {"ok": False, "payload": None}
 
-        details: list[dict[str, Any]] = []
-        for job_id in _swarm_sweep_ids(jobs):
-            detail = await self._guard(
-                lambda jid=job_id: client.fetch_job(jid), "swarm scores fetch_job"
-            )
-            if detail is not None:      # a 404 drops one row, never the read
-                details.append(detail)
+        details = await self._swarm_details(_swarm_sweep_ids(jobs), "swarm scores fetch_job")
+        if details is None:
+            self.cache.mark_failed(TIER_SWARM_SCORES, now)
+            return {"ok": False, "payload": None}
 
         skills = await self._guard(lambda: client.fetch_skills(), "swarm fetch_skills")
         launches = await self._guard(

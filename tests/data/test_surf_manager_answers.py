@@ -247,6 +247,38 @@ async def test_popup_job_details_cap_terminal_blocked_retry_and_failure(tmp_path
         await manager.close()
 
 
+async def test_popup_job_details_stop_at_a_busy_host_and_keep_their_points(tmp_path):
+    """F-S3: a busy answer once became an empty point (read now, state
+    unknown) that replaced the job's last good detail, and the loop went on
+    to the next due job. Now the loop stops and every point stays."""
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_JOB_DETAIL
+    from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY
+    fake = Answers(work(2, 'completed'))
+    for row in fake.seat['work']: row['nodeKey'] = 'hunt_d'
+    jobs = [row['jobId'] for row in fake.seat['work']]
+    calls, busy = [], [False]
+    async def fetch(job):
+        calls.append(job)
+        if busy[0]: return dict(SEAT_BUSY)
+        return dict(id=job, state='blocked', nodes=[], blockedReason='runtime_error')
+    fake.fetch_job = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        assert calls == jobs
+        points = manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload
+        assert {points[job]['state'] for job in jobs} == {'blocked'}
+        busy[0] = True
+        await manager._pool_swarm_seat(420, NOW+120)
+        assert calls == jobs + jobs[:1], 'one busy answer, then no more asks'
+        assert manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload == points
+        busy[0] = False
+        await manager._pool_swarm_seat(420, NOW+121)
+        assert calls == jobs + jobs[:1] + jobs, 'both still due once the host answers'
+    finally:
+        await manager.close()
+
+
 @pytest.mark.parametrize('summary', ['审计发现'*700+'。', '━'*3000, '😀'*3000], ids=['cjk', 'boxes', 'emoji'])
 async def test_large_non_ascii_answer_stays_read_and_loadable(tmp_path, summary):
     import json
