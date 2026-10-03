@@ -57,7 +57,6 @@ def test_dry_run_reinstalls_fork_before_full_lock_and_checks_installed_bytes():
     check = next(i for i, line in enumerate(lines) if "[dry-run]" in line and " -I " in line and "check_fork_wheel.py" in line)
     assert full < check
     assert not any("mktemp" in line for line in lines)
-    assert 'pgrep -u "$DASH_USER" -f /opt/imd-dash/venv/bin/pepepane' in (DEPLOY / "install.sh").read_text()
     assert '"$PREFIX/venv/bin/python" -I "$HERE/check_fork_wheel.py" "$PREFIX/wheels"' in (DEPLOY / "probe_seat_host.sh").read_text()
 
 
@@ -113,3 +112,11 @@ def test_post_install_check_reports_count_and_short_wheel_identity(tmp_path):
     assert "1" in result and "matched" in result
     prefix = hashlib.sha256(next(wheels.glob("*.whl")).read_bytes()).hexdigest()[:10]
     assert prefix in result and not re.search(r"[a-f0-9]{32,}", result)
+
+
+def test_live_session_warning_matches_comm_and_never_kills():
+    """Host: the symlink cmdline missed -f, while comm=pepepane matched every live TUI."""
+    text = (DEPLOY / "install.sh").read_text()
+    assert 'pgrep -u "$DASH_USER" -x pepepane' in text
+    assert '-f /opt/imd-dash/venv/bin/pepepane' not in text
+    assert "pkill" not in text and not re.search(r"\bkill\b", text)

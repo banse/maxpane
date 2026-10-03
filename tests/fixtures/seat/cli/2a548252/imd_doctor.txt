@@ -1,0 +1,29 @@
+imd doctor · daemon 0.1.0+2a548252
+  config    /home/imd-worker/.identitymd/config.json
+  server    https://api.imd.fun
+  device    <hex64>
+  token     7
+  capacity  1 concurrent task(s)
+  ✗ claude  claude is not on PATH
+  → codex   codex-cli 0.159.3
+  tasks run on: codex
+  offers: code, fuzz, research
+  running a one-line prompt on codex, which takes a few seconds…
+  ✓ git         git version 2.53.0
+  ✓ forge       1.8.3 · the release the verifier runs
+  ✓ tool browse ready · /opt/imd-worker/bin/browser-mcp
+  ✓ codex run   answered in 4.9s
+  ✓ work root   /home/imd-worker/.identitymd/work · 101.7 GB free
+  ✗ memory      3.7 GB
+                fix: contract work needs about 4.0 GB; below that forge is killed during the daemon's own checks. Add memory or offer no contract work
+  ✓ config      /home/imd-worker/.identitymd/config.json · owner only
+  ✓ plane       api.imd.fun · build 0.1.0+69e7008b · 548 online, 571 enrolled
+  ✓ release     0.1.0+2a548252, the latest
+  ✓ socket      challenge from api.imd.fun in 189ms
+  ✓ github      github.com in 169ms
+  the network says
+  ✓ enrollment  active · token 7 · agent 51075
+  ✓ presence    connected · heartbeat 31s ago · daemon 0.1.0+2a548252 · runs on codex
+  ✓ standing    no failed runs in the last day
+  ✓ queue       nothing waiting · 548 online — the network is quiet, not this machine
+  1 thing to fix: memory

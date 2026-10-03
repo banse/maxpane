@@ -181,7 +181,7 @@ FORK_REQUIREMENT="$(render_fork_lock "$HERE/requirements.lock")" || die "invalid
 
 # ---- 3 venv + hash-pinned wheels + PATH symlink ---------------------------------------------------------
 step 3 "venv $VENV, offline hash-pinned install, /usr/local/bin/pepepane"
-if [ "$DRY_RUN" = 0 ] && pgrep -u "$DASH_USER" -f /opt/imd-dash/venv/bin/pepepane >/dev/null; then
+if [ "$DRY_RUN" = 0 ] && pgrep -u "$DASH_USER" -x pepepane >/dev/null; then
   warn "live pepepane sessions found: quit them before reinstalling; see docs/seat_install.md Updating"
 fi
 run install -d -m 0755 "$PREFIX" "$WHEELS"

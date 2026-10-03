@@ -996,3 +996,9 @@ env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dis
 env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -q 'tests/screens/test_surf_swarm_layout.py::test_the_body_is_whole_from_its_pinned_width[a-capture420-118]'
 env -u NO_COLOR HOME=$(mktemp -d) PYTHONPATH=sybilkit/src .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests
 ```
+
+### 2026-10-03 — PEPEPANE fix7 measured doctor summary, live-session warning and identity (C.11)
+
+The current daemon indents its final doctor summary by two spaces. The shared root/Mac helper now strips only the candidate summary before matching and applying the 200-character cap; verify_lines retain their original indentation. The earlier 5bfa8261 doctor fixture is a synthetic stand-in, so its unindented ending did not model this host output. The new cli/2a548252/imd_doctor.txt is synthetic false: it derives from the owner's actual a8912d6 p13 verify_lines, with blank lines omitted, a currency figure removed, JSON escapes decoded and deviceKey already shown as <hex64>. The manifest records those transformations; this is captured broker output, not byte-exact daemon stdout. No CLI_DEVICE_FILES exception is added and GRAMMAR_VERSION is unchanged.
+
+The installer warning uses the measured process comm via pgrep -u imd-dash -x pepepane. The daily symlink command line did not match the former venv-script-path search. The warning remains read-only and non-fatal, with a guard against kill/pkill. C.11 VERSION becomes imd-dashd 0.1.3, with package version, User-Agent, documentation and synthetic ping copies following it; LOCAL_BROKER_VERSION and historical version entries stay unchanged.

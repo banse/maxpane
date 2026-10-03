@@ -61,7 +61,7 @@ def test_serve_connection_round_trip_over_socketpair(tmp_path):
     raw = ours.recv(65536)
     assert raw.endswith(b"\n") and raw.count(b"\n") == 1
     data = json.loads(raw)["data"]
-    assert data["version"] == VERSION == "imd-dashd 0.1.2"
+    assert data["version"] == VERSION == "imd-dashd 0.1.3"
     # contract §C.11 + fix5 drop_ok (2026-10-02 decision), plus the additive "drain" dict (deviation 13: WP7 renders control.drain from it)
     assert set(data) == {"pid", "version", "uptime_s", "drain_armed", "in_flight", "posture_ok", "drain", "drop_ok"}
     assert data["posture_ok"] is True and data["in_flight"] is None and data["drain_armed"] is False and data["drain"] is None

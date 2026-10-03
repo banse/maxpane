@@ -39,7 +39,7 @@ from imd_dashd.process_snapshot import snapshot as process_snapshot
 
 Clock = Callable[[], float]
 
-VERSION = "imd-dashd 0.1.2"
+VERSION = "imd-dashd 0.1.3"
 PLAN_TTL_S = 60
 VERIFY_WITHIN_S = 30           #: `shutting down` -> `runtimes:` within 30 s = verified (fill1 §1: +0.3 s on 8/8)
 VERIFY_WATCH_S = 120           #: the post-apply journal watch is kept this long
@@ -234,8 +234,9 @@ def _transient_reason(verb: str, rc: int, lines: list[str]) -> str | None:
     if rc == 0:
         return None
     reason = f"exit {rc}"
-    if verb == "doctor" and lines and re.fullmatch(r"\d+ things? to fix: .+", lines[-1]):
-        reason += " · " + lines[-1][:200]
+    summary = lines[-1].strip() if lines else ""
+    if verb == "doctor" and re.fullmatch(r"\d+ things? to fix: .+", summary):
+        reason += " · " + summary[:200]
     return reason
 
 

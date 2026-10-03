@@ -1108,7 +1108,7 @@
     "healthy/broker/ping.json": {
       "origin": "the RESPONSES dict of tests/data/test_seat_manager.py written per verb (contract §C.11 read-verb shapes)",
       "captured_at": "2026-09-26T10:00:00Z",
-      "sha256": "07b9f0f12d7478e5de840370c5f02b7a97ce995477d32cb8a7d3b8a9371aa71f",
+      "sha256": "cb95a44ae0feba2a5bbeaa6d88b05ab1757d2c8f4ed713a446bd2abd00c42a1b",
       "bytes": 156,
       "redactions": [],
       "synthetic": true,
@@ -1301,6 +1301,18 @@
       "synthetic": true,
       "daemon_version": "0.1.0+5bfa8261",
       "notes": "Literal U+2028 inside a lifecycle objective is one record, never a record separator."
+    },
+    "cli/2a548252/imd_doctor.txt": {
+      "origin": "Host probe p13 verify_lines, pepepane-probe-20261002T204310Z.md, deployed a8912d6",
+      "captured_at": "2026-10-02T20:43:10Z",
+      "sha256": "4e98f2fd6b49f6cec0c7d7a9b1ba4207185bf9507f7816604406dbaa1defade0",
+      "bytes": 1427,
+      "redactions": [
+        "deviceKey"
+      ],
+      "synthetic": false,
+      "daemon_version": "0.1.0+2a548252",
+      "notes": "Captured broker-redacted verify_lines, not byte-exact stdout: blank lines dropped by if ln.strip(), currency figure removed by _CURRENCY_FIGURE_RE, JSON-unescaped, device key shown as <hex64>. Original indentation retained; capture time names the probe run."
     }
   }
 }

@@ -137,7 +137,7 @@ configuration, never secrets (MaxPane rule).
   (`seat_ledger.sqlite`, `seat_tail.json`, `config.toml`, `maxpane.log`). Never opens `config.json`, `auth.json`,
   `tools.env` or `.credentials.json`.
 - **Broker** (`imd-dashd.service`, socket-activated): root, `/usr/bin/python3 -I`, stdlib only, `MemoryMax=128M`,
-  `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.2` as
+  `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.3` as
   `version`. Audit at `/var/log/imd-dash/audit.jsonl`. The system service has no `User=` or `Group=`:
   it defaults to root. On measured systemd 259.5, explicit `User=root` with `NoNewPrivileges=yes` and seccomp
   hardening removes `CAP_SETUID`; implicit root keeps privilege dropping working with the same bounding set and
@@ -180,7 +180,7 @@ The installer warns about matching live sessions but never kills them. Steps 4â€
 Before stopping an active broker, check that `ping` shows `drain_armed: false` and
 `in_flight: null`; wait for any action to finish and complete or cancel an armed drain first. Stopping the broker
 drops an armed drain. Then `systemctl stop imd-dashd.service` (the socket stays; the next connect spawns
-the new broker code), confirm `ping` reports `imd-dashd 0.1.2`, and start a fresh `pepepane`.
+the new broker code), confirm `ping` reports `imd-dashd 0.1.3`, and start a fresh `pepepane`.
 Re-run the probe, especially p09â€“p15. No worker restart is needed unless the drop-in changed.
 
 ## Rollback / uninstall

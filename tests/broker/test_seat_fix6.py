@@ -42,10 +42,3 @@ def test_doctor_failure_reason_uses_only_redacted_bounded_summary(tmp_path):
     assert PRIVATE_KEY not in str(data) and "0.114" not in str(data)
     assert audit_lines(audit)[-1]["outcome"] == "finished"
     assert "things to fix" not in audit.path.read_text()
-
-
-def test_broker_version_identifies_fix6():
-    import imd_dashd
-    from imd_dashd.imd_dashd import VERSION
-    assert VERSION == "imd-dashd 0.1.2"
-    assert imd_dashd.__version__ == "0.1.2"

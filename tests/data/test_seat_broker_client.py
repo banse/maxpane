@@ -25,6 +25,7 @@ from tests.broker._recorder import RecordingRunner, timeout_for
 
 CLI = Path(__file__).resolve().parents[1] / "fixtures" / "seat" / "cli"
 BUILD = CLI / "5bfa8261"
+CURRENT_BUILD = CLI / "2a548252"
 
 
 def _lines(name: str) -> list[str]:
@@ -71,7 +72,7 @@ def test_unix_socket_broker_round_trips_plan_apply_verify(tmp_path):
     broker, runner, journal, clock, _audit = make_broker(tmp_path)
     unix = UnixSocketBroker("/run/imd-dash/broker.sock", offline=False, connect=_served(broker))
     assert unix.kind == "unix" and unix.trust() == "host" and unix.reachable() is True
-    assert unix.read("ping")["version"] == "imd-dashd 0.1.2"
+    assert unix.read("ping")["version"] == "imd-dashd 0.1.3"
     plan = unix.plan("restart")
     assert isinstance(plan, Plan) and plan.argv == ["systemctl", "restart", "--no-block", "imd-worker.service"]
     assert plan.preconditions["plane"]["mode"] == "plane+local"                      # offline=False travelled in args
@@ -931,4 +932,18 @@ def test_local_doctor_failure_reason_uses_real_summary(tmp_path):
     broker._threads[plan.plan_id].join(timeout=5)
     result = broker.verify(plan.plan_id)
     assert result.verified is False
+    assert result.reason == "exit 1 · 1 thing to fix: memory"
+
+
+def test_local_doctor_indented_host_summary_reaches_reason(tmp_path):
+    output = CURRENT_BUILD.joinpath("imd_doctor.txt").read_bytes()
+    def answer(argv, kw):
+        return subprocess.CompletedProcess(argv, 1, output, b"")
+    broker, *_ = _local(tmp_path, script={("docker", "exec"): answer})
+    plan = broker.plan("doctor")
+    broker.apply(plan.plan_id, plan.plan_id[:4])
+    broker._threads[plan.plan_id].join(timeout=5)
+    result = broker.verify(plan.plan_id)
+    assert result.verified is False
+    assert result.verify_lines == output.decode().splitlines()
     assert result.reason == "exit 1 · 1 thing to fix: memory"
