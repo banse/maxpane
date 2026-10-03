@@ -106,8 +106,11 @@ Filed, not fixed:
   read keeps its old `read_ts`, so the slot is not re-stored. As a result the 6-seat cap orders
   seats by when their data last changed, not by when they were last read. The plan said "most
   recently read". Low impact, because only a seventh seat evicts anything.
-- **F-S3: job-detail fan-outs ignore a busy host** (observed live 2026-10-02 16:17–16:22, IMD
-  outage). While every `/seats/{id}` and `/jobs/{id}` read on both hosts answered
+- **F-S3: job-detail fan-outs ignore a busy host** DONE 2026-10-03: `fetch_job` opts into the
+  seat rule; `SurfManager._swarm_details` stops both loops at the first `SEAT_BUSY`, and each tier
+  keeps its slot, `mark_failed`s and (live tier) puts the list gate back; the seat cycle's popup
+  job-detail loop stops too. (Observed live 2026-10-02 16:17–16:22, IMD
+  outage.) While every `/seats/{id}` and `/jobs/{id}` read on both hosts answered
   `503 {"error":"busy"}` (~3.2 s each), `/jobs` itself still answered. So both detail loops kept
   going: `SurfManager._pool_swarm` (`_swarm_executing_ids`) and the scores sweep
   (`_swarm_sweep_ids`) each call `fetch_job` per id in sequence, about one id every 6.4 s (2 hosts × 3.2 s).

@@ -169,7 +169,8 @@ run. `GET /jobs` (one shot, no pagination, no ETag) is re-fetched only when one 
 counters (`connectedDaemons`/`activeEnrollments`/`workingNow`/`acceptedLastDay`, every `pending*`)
 has moved since the manager last saw them, or when `SWARM_LIST_CEILING_S` has elapsed regardless.
 `GET /jobs/{id}` follows for every **executing** job (plan §1.5; a 404 drops the detail, never the
-row or the read). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
+row or the read; an all-host `503 busy` stops the fan-out at that id, stores nothing, backs the
+tier off and puts the list gate back, F-S3 -- in both tiers, `SurfManager._swarm_details`). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
 plus `/skills`, `/launches` and `/sites` on its own clock and feeds CAPABILITY, LAUNCHES, SITES and
 the internal seat-selection fold; `swarm_throughput` is folded off the **live** slot because its widget shows
 the live marker (two clocks never meet behind one `as of`). A third slot, `SLOT_SWARM_JOBS_SEEN`,
@@ -194,8 +195,8 @@ borrows another seat's numbers. With no entry, the state is `"pending"` before a
 `"busy"` after a busy response, and None after another failure.
 
 A busy response is HTTP 503 with a JSON object whose `error` is exactly `"busy"`. Rotate through
-the unchanged host pool; only all hosts answering busy yields `SEAT_BUSY`. Mixed failures stay
-None. Busy reads use normal failure backoff and preserve last-good. `swarm_seat_read` distinguishes
+the unchanged host pool; only all hosts answering busy yields `SEAT_BUSY`, from `fetch_seat` and,
+since F-S3, `fetch_job`. Mixed failures stay None. Busy reads use normal failure backoff and preserve last-good. `swarm_seat_read` distinguishes
 `"busy"`, `"failed"` and None independently of the cached record's state. Empty seat-backed
 panels show yellow `busy · retrying` (COLLAB wraps after `·` at the AGENT pin, within its existing
 body height); with a record, RECORD's title appends yellow `busy` after
@@ -449,6 +450,7 @@ safety check. Old shapes are dropped per point and re-read within the existing f
 key/role/state/attempt/failure reason, plus `read_ts`/`terminal`. The existing `fetch_job` reads
 at most two jobs per seat cycle, from rows eligible for SUBMISSION in the selected `record_window`:
 not joined, answer state read/no_reply, valid UUID/hash. Off-panel oracle rows qualify.
+A busy `fetch_job` ends the cycle's reads and records no point (F-S3).
 Nonterminal results retry after 120 seconds; completed/failed/cancelled are terminal, **blocked
 is not**. Cap at 400 jobs/48 hours with the injected clock. Failed reads are unavailable; absent
 points have `job_read = "not_read"`. SUBMISSION displays dim `loading…` for these only when
