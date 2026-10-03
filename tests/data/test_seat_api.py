@@ -528,9 +528,9 @@ async def test_backfill_asks_for_1000_rows_and_zero_reviews():
 
 
 async def test_seat_is_validated_before_any_request():
-    """As SwarmClient.fetch_seat: an int formatted with {seat:d}; a bool, a negative, a str or a float never builds a path."""
+    """As SwarmClient.fetch_seat: an int formatted with {seat:d}; a bool, a negative, a non-digit string or a float never builds a path."""
     async with _client(_no_network) as client:
-        for bad in (-1, True, "7", 7.0, None):
+        for bad in (-1, True, "7x", 7.0, None):
             standing = await client.standing(bad)      # type: ignore[arg-type]
             work = await client.seat_work(bad)         # type: ignore[arg-type]
             assert standing.ok is False and standing.reason == "bad seat" and standing.route == "/seats/?/standing"

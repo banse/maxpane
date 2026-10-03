@@ -27,7 +27,8 @@ from urllib.parse import urlencode
 
 import httpx
 
-from maxpane_dashboard.analytics.seat_redact import redact_tree, strip_controls
+from maxpane_dashboard.analytics.seat_redact import strip_controls
+from maxpane_dashboard.analytics.seat_text import sanitize_tree as redact_tree
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API_HOSTS, parse_job_id
 
@@ -146,6 +147,16 @@ def failure_class_word(value: object) -> str | None:
 
 def _int_or_none(value: object) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def identity_int(value: object) -> int | None:
+    """Seat/agent ids alone accept non-negative ASCII digit strings; counters do not."""
+    if isinstance(value, str) and value.isascii() and value.isdigit():
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return value if type(value) is int and value >= 0 else None
 
 
 def _str_or_none(value: object) -> str | None:
@@ -320,7 +331,7 @@ def normalise_standing(body: Mapping) -> dict:
         "daemonVersion": _str_or_none(presence.get("daemonVersion")),
         "maxConcurrency": _int_or_none(presence.get("maxConcurrency")),
         "premiumAdvertised": _premium_advertised(presence.get("runtimes")),
-        "agentId": _int_or_none(enrollment.get("agentId")),
+        "agentId": identity_int(enrollment.get("agentId")),
         "enrollmentStatus": _str_or_none(enrollment.get("status")),
         "devices": _int_or_none(src.get("devices")),
         "queue": _queue_block(src.get("queue"), at=src.get("at")),
@@ -339,8 +350,8 @@ def normalise_submission(item: Mapping) -> dict:
     digest = src.get("hash")
     digest = digest if isinstance(digest, str) and _HEX64_RE.fullmatch(digest) else None
     seat = src.get("seat")
-    seat_token = _int_or_none(_mapping(seat).get("tokenId")) if isinstance(seat, Mapping) else _int_or_none(seat)
-    seat_agent = _int_or_none(_mapping(seat).get("agentId")) if isinstance(seat, Mapping) else None
+    seat_token = identity_int(_mapping(seat).get("tokenId")) if isinstance(seat, Mapping) else identity_int(seat)
+    seat_agent = identity_int(_mapping(seat).get("agentId")) if isinstance(seat, Mapping) else None
     device_key = src.get("deviceKey")
     usage_src = src.get("usage")
     usage = None
@@ -382,7 +393,7 @@ def submissions_for_seat(data: Json, seat: int) -> list[dict]:
     items = _mapping(data).get("submissions")
     if not isinstance(items, list):
         return []
-    return [s for s in items if isinstance(s, Mapping) and s.get("seatTokenId") == seat]
+    return [s for s in items if isinstance(s, Mapping) and identity_int(s.get("seatTokenId")) == identity_int(seat) and identity_int(seat) is not None]
 
 
 def _service_entry(services: object, name: str) -> Mapping:
@@ -435,7 +446,8 @@ def _retry_reason(labels: Sequence[str]) -> str:
 
 def _seat_segment(seat: object) -> str | None:
     """``"7"`` for a non-negative ``int`` (never a bool); ``None`` refuses before any request is built."""
-    if isinstance(seat, bool) or not isinstance(seat, int) or seat < 0:
+    seat = identity_int(seat)
+    if seat is None:
         return None
     return f"{seat:d}"
 
@@ -466,6 +478,22 @@ class SeatApiClient(OwnedHttpClient):
         self._now = now
         self._sleep = sleep or asyncio.sleep
         self._last_good: dict[str, ApiResult] = {}
+        self._busy_delays: dict[str, float] = {}
+        self._pauses: dict[str, float] = {}
+
+    @staticmethod
+    def route_class(path: str) -> str:
+        if path.startswith("/seats/"):
+            return "seat"
+        if path.startswith("/jobs/"):
+            return "submissions" if path.endswith("/submissions") else "job"
+        if path.startswith("/oracle/"):
+            return "oracle"
+        return path
+
+    def pause_until(self, route_class: str) -> float:
+        """Busy deadline shared by all reads/triggers of this class (WP3 budget seam)."""
+        return self._pauses.get(route_class, 0.0)
 
     def last_good(self, route: str) -> ApiResult | None:
         """The newest ``ok`` result for *route* (an ``ApiResult.route`` string), or ``None``."""
@@ -489,6 +517,9 @@ class SeatApiClient(OwnedHttpClient):
         :func:`redact_tree` (the submissions route renames its hash there).  Bodies are never logged.
         """
         route = path + (f"?{urlencode(dict(params))}" if params else "")
+        route_class = self.route_class(path)
+        if self.pause_until(route_class) > self._now():
+            return self._refused(route, "busy")
         attempts = 2 if API_RETRY_ONCE else 1
         started = time.monotonic()
         labels: list[str] = []
@@ -510,6 +541,16 @@ class SeatApiClient(OwnedHttpClient):
                 labels.append("transport")
                 continue
             last_status = response.status_code
+            if last_status == 503 and len(response.content) <= MAX_BODY_BYTES:
+                try:
+                    busy = _mapping(parse_json_tolerant(response.content)).get("error") == "busy"
+                except ValueError:
+                    busy = False
+                if busy:
+                    delay = min(600.0, self._busy_delays.get(route_class, 30.0) * 2)
+                    self._busy_delays[route_class] = delay
+                    self._pauses[route_class] = self._now() + delay
+                    return ApiResult(False, None, 503, None, "busy", round(time.monotonic() - started, 3), route)
             if 500 <= last_status < 600:
                 logger.debug("seat api GET %s%s -> %s", host, route, last_status)
                 labels.append(str(last_status))
@@ -529,6 +570,8 @@ class SeatApiClient(OwnedHttpClient):
                 data = prepare(data)
             data = redact_tree(data)
             result = ApiResult(True, data, last_status, _iso_z(self._now(), millis=False), None, elapsed, route)
+            self._busy_delays.pop(route_class, None)
+            self._pauses.pop(route_class, None)
             self._last_good[route] = result
             return result
         elapsed = round(time.monotonic() - started, 3)
@@ -579,5 +622,5 @@ __all__ = [
     "SEAT_WORK_ROWS", "STANDING_KEYS", "SUBMISSION_KEYS", "SeatApiClient", "USAGE_INT_KEYS", "WORK_ROW_KEYS",
     "WORK_STATUSES", "drop_summaries", "failure_class_word", "normalise_plane", "normalise_standing",
     "normalise_submission", "normalise_work_row", "parse_json_tolerant", "reason_word", "seat_counters",
-    "submissions_for_seat", "validate_counters",
+    "submissions_for_seat", "validate_counters", "identity_int",
 ]

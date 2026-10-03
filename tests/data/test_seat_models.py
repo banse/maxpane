@@ -144,6 +144,7 @@ def test_seat_models_imports_are_pure():
     assert froms & {m for m in froms if m and m.startswith("maxpane_dashboard")} == {
         "maxpane_dashboard.analytics.seat_redact",
         "maxpane_dashboard.analytics.seat_signals",
+        "maxpane_dashboard.analytics.seat_text",
     }
 
 
@@ -496,19 +497,21 @@ def test_last_good_api_sources_keep_values_until_unavailable():
     assert sm.fold_status_document(doc)["seat_skills_rows"] is None
 
 
-def test_row_fields_are_gated_by_their_own_source():
-    # spec §7 tasks rows: outcome 'unknown' when the API is unavailable; failureReason from `reasons`
+def test_persisted_row_fields_keep_their_own_facts_during_api_outage():
+    # Round 9 §8.1 supersedes base API gating for persisted ledger facts.
     doc = _load("status_v2_healthy.json")
     doc["sources"]["seatWork"].update({"ok": False, "failures": 3, "unavailable": True})
     flat = sm.fold_status_document(doc)
     row = flat["seat_tasks_rows"][0]
-    assert row["outcome"] == "unknown" and row["verdictLagS"] is None and row["acceptedAtApi"] is None
+    assert row["outcome"] == doc["tasks"]["rows"][0]["outcome"]
+    assert row["verdictLagS"] == doc["tasks"]["rows"][0]["verdictLagS"]
+    assert row["acceptedAtApi"] == doc["tasks"]["rows"][0]["acceptedAtApi"]
     assert row["nodeId8"] == "0c1f9727" and row["hash12"] == "c4d9714ffb95", "local facts are untouched"
     assert flat["seat_tasks_rows"][1]["failureReason"] == "runtime_error", "reasons is still ok"
-    assert flat["seat_last_task"]["outcome"] == "unknown"
-    assert flat["seat_today_accepted"] is None and flat["seat_today_tasks"] == 12
+    assert flat["seat_last_task"]["outcome"] == doc["tasks"]["rows"][0]["outcome"]
+    assert flat["seat_today_accepted"] == doc["today"]["accepted"] and flat["seat_today_tasks"] == 12
     doc["sources"]["reasons"].update({"ok": False, "failures": 3, "unavailable": True})
-    assert sm.fold_status_document(doc)["seat_tasks_rows"][1]["failureReason"] is None
+    assert sm.fold_status_document(doc)["seat_tasks_rows"][1]["failureReason"] == "runtime_error"
 
 
 # ---------------------------------------------------------------------------

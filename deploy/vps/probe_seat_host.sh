@@ -327,7 +327,7 @@ except Exception as exc:
 print("schemaVersion", doc.get("schemaVersion"), "producer", doc.get("producer"))
 print("host", doc.get("host"))
 print("startedAtUtc", doc.get("startedAtUtc"), "completedAtUtc", doc.get("completedAtUtc"))
-print("sources ok:", {k: (v or {}).get("ok") for k, v in (doc.get("sources") or {}).items()})
+print("sources ok:", {k: {"ok": (v or {}).get("ok"), "reason": (v or {}).get("reason")} for k, v in (doc.get("sources") or {}).items()})
 print("dollar signs in the document:", raw.count(b"\x24"))
 print("hex64 values anywhere:", len(re.findall(rb"\b[0-9a-f]{64}\b", raw)), "(must be 0: keys are truncated at fold time)")
 PY

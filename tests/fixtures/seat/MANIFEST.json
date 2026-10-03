@@ -1313,6 +1313,28 @@
       "synthetic": false,
       "daemon_version": "0.1.0+2a548252",
       "notes": "Captured broker-redacted verify_lines, not byte-exact stdout: blank lines dropped by if ln.strip(), currency figure removed by _CURRENCY_FIGURE_RE, JSON-unescaped, device key shown as <hex64>. Original indentation retained; capture time names the probe run."
+    },
+    "round9/claude_recovered.json": {
+      "origin": "hand-written round 9 WP2 regression metadata",
+      "captured_at": "2026-10-03T00:00:00Z",
+      "sha256": "2b9095c406a816e3e91eb4ddb6019f76dcd0856d965723553da743e3e13f8ec9",
+      "bytes": 378,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "allow": [],
+      "notes": "Synthetic metadata-only Claude API retry followed by four output tokens; both worker home slug maps; no prompt/tool/model text."
+    },
+    "round9/empty_cursor_attach.json": {
+      "origin": "hand-written round 9 WP2 regression metadata",
+      "captured_at": "2026-10-03T00:00:00Z",
+      "sha256": "cc72ee23a629cada542efa87254954602e15188fe60fc1ef522640dcf25349a4",
+      "bytes": 110,
+      "redactions": [],
+      "synthetic": true,
+      "daemon_version": null,
+      "allow": [],
+      "notes": "Synthetic empty journal cursor attach exiting nonzero; pins legitimate gap fallback, not evidence of lost lines."
     }
   }
 }

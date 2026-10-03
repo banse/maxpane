@@ -35,7 +35,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from maxpane_dashboard.analytics.seat_redact import find_secret_path, redact, redact_tree
+from maxpane_dashboard.analytics.seat_redact import find_secret_path
+from maxpane_dashboard.analytics.seat_text import sanitize_text as redact, sanitize_tree as redact_tree
 from maxpane_dashboard.analytics.seat_signals import hero_state, ledger_footer, log_footer, offline_state
 
 __all__ = [
@@ -468,9 +469,9 @@ SEAT_FIELD_SOURCES: dict[str, str | None] = {
     # today
     "seat_today_day_utc": None, "seat_today_tasks": None, "seat_today_stored": None, "seat_today_not_stored": None,
     "seat_today_p50_s": None, "seat_today_longest_s": None,
-    "seat_today_accepted": "seatWork", "seat_today_rejected": "seatWork", "seat_today_failed": "seatWork",
-    "seat_today_pending": "seatWork", "seat_today_verdict_lag_p50_s": "seatWork",
-    "seat_today_verdicts_as_of_utc": "seatWork", "seat_today_divergence": "seatWork",
+    "seat_today_accepted": None, "seat_today_rejected": None, "seat_today_failed": None,
+    "seat_today_pending": None, "seat_today_verdict_lag_p50_s": None,
+    "seat_today_verdicts_as_of_utc": None, "seat_today_divergence": "seatWork",
     # cost
     "seat_cost_window_days": "sessions", "seat_cost_tasks": "sessions", "seat_cost_excluded": "sessions",
     "seat_cost_turns": "sessions", "seat_cost_tokens": "sessions", "seat_cost_buckets": "sessions",
@@ -516,10 +517,9 @@ SEAT_FIELD_SOURCES.update({
 #: source is not ok folds to ``None`` -- except ``outcome``, whose spec §7
 #: word for "API unavailable / offline" is ``"unknown"``.
 SEAT_ROW_FIELD_SOURCES: dict[str, dict[str, str]] = {
-    "seat_tasks_rows": {
-        "outcome": "seatWork", "outcomeAsOfUtc": "seatWork", "acceptedAtApi": "seatWork", "verdictLagS": "seatWork",
-        "failureReason": "reasons", "failureClass": "reasons",
-    },
+    # Verdicts and reasons are persisted ledger facts with their own timestamps.
+    # An API outage gates live fields, never these stored observations (round 9 §8.1).
+    "seat_tasks_rows": {},
 }
 _ROW_GATED_VALUES: dict[str, object] = {"outcome": "unknown"}
 
@@ -647,7 +647,7 @@ def _dashboard_value(name: str, value: object, *, full_text: bool = False) -> ob
         if name == "answerPreview":
             text = text.splitlines()[0] if text.splitlines() else ""
         cap = 4096 if full_text else (512 if name in {"detail", "url"} else 160)
-        return text if len(text) <= cap else text[:cap - 1] + "…"
+        return redact(text, name, cap=cap)
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return None

@@ -51,7 +51,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Protocol
 
-from maxpane_dashboard.analytics import seat_redact
+from maxpane_dashboard.analytics.seat_text import sanitize_text, sanitize_tree
 from maxpane_dashboard.data.seat_models import parse_iso
 
 logger = logging.getLogger(__name__)
@@ -290,7 +290,7 @@ class TailState:
 
     def to_payload(self) -> dict[str, Any]:
         data = asdict(self)
-        return {"version": self.version, **{k: data[attr] for k, attr in _STATE_KEYS.items()}}
+        return sanitize_tree({"version": self.version, **{k: data[attr] for k, attr in _STATE_KEYS.items()}})
 
     def save(self, path: Path) -> None:
         """Atomic write (tmp + ``os.replace``), mode 0600. Never raises: a failed save is logged."""
@@ -647,7 +647,7 @@ class TailThread:
         state_path: Path | None,
         now: Clock = time.time,
         backoff: tuple[float, float] = (BACKOFF_MIN_S, BACKOFF_MAX_S),
-        redact: Callable[[str], str] = seat_redact.redact,
+        redact: Callable[[str], str] = sanitize_text,
         classify: Callable[..., Any] | None = None,
     ) -> None:
         if classify is None:

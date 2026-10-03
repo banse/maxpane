@@ -33,7 +33,8 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 import httpx
 
 from maxpane_dashboard.analytics import seat_auth, seat_cost, seat_signals as sig, seat_tiers
-from maxpane_dashboard.analytics.seat_redact import redact, redact_agent_sentence, redact_tree
+from maxpane_dashboard.analytics.seat_text import (sanitize_text as redact,
+    sanitize_sentence as redact_agent_sentence, sanitize_tree as redact_tree)
 from maxpane_dashboard.data import seat_api, seat_models as models
 from maxpane_dashboard.data.safe_call import safe_call as _safe_call   # the shared guard (tests/data/test_safe_call.py)
 from maxpane_dashboard.data.seat_broker_client import (
@@ -55,6 +56,7 @@ Clock = Callable[[], float]
 TIER_UNIT_S = 30                #: Mac docker inspect/stats
 TIER_BROKER_STATUS_S = 600      #: seat, status, skills, tools, hints-stat, auth-mtime; whoami once per session
 TIER_WORKSTAT_S = 300           #: work-stat, outbox, orphans (+ ping, gate preview, audit-tail -- deviation 8)
+TIER_JOURNAL_S = 300          #: round 9 §9 D4: journal facts are slow reads, independent of workstat event bumps
 TIER_SESSIONS_S = 120           #: +EVENT_BUMP_SESSIONS_S after each `submitted`
 TIER_STANDING_S = 60            #: +EVENT_BUMP_STANDING_S after each `submitted`; 15 s while a control plan is open
 TIER_STANDING_PLAN_OPEN_S = 15
@@ -266,8 +268,8 @@ class SeatManager:
         self._unit = unit
         self._container = container
         self._runtime = runtime
-        self._seat = seat
-        self._agent = agent
+        self._seat = seat_api.identity_int(seat)
+        self._agent = seat_api.identity_int(agent)
         self._offline = bool(offline)
         self._poll_interval = int(poll_interval)
         self._producer = producer
@@ -277,7 +279,7 @@ class SeatManager:
 
         self._last_good: dict[str, tuple[Any, float]] = {}   # before the ledger: its tier_lookup reads the `seat` projection
         self._ledger = ledger if ledger is not None else SeatLedger(
-            Path(ledger_path) if ledger_path is not None else self._maxpane_dir / LEDGER_FILE, seat=seat, now=self._clock,
+            Path(ledger_path) if ledger_path is not None else self._maxpane_dir / LEDGER_FILE, seat=self._seat, now=self._clock,
             tier_lookup=self._tier_lookup,           # WP2 deviation 2: tier_derived exists only through this injection (spec §5.4, §10)
         )
         self._owns_ledger = ledger is None
@@ -302,6 +304,7 @@ class SeatManager:
         self._tail_state = TailState.load(self._maxpane_dir / TAIL_FILE)
         self._backfill_lines = 0
         self._backfill_done = False
+        self._backfill_success = False
         self._backfill_gap_note: str | None = None
         self._backfill_discarded_utc: str | None = None   # sticky WP3 backfill_note/backfill_at (deviation 11; Task 7.7)
 
@@ -320,7 +323,9 @@ class SeatManager:
         self._seatwork_settled = False
         self._error_count = 0
         self.plan_open = False
-        self._restart_required = False
+        self._restart_required = self._ledger.meta_get("restart_required") is True
+        self._journal_due_at = 0.0
+        self._journal_facts: dict = {"journal": None, "reason": "journal not read"}
         self._refusal: models.Refusal | None = None
         self._document: dict = models.empty_document(
             producer=self._producer, started_at_utc=sig.iso_z(self._clock()), host=self._host_block(),
@@ -344,6 +349,7 @@ class SeatManager:
     def set_restart_required(self, flag: bool) -> None:
         """Set by the CONTROL modal after a `skills-set` apply (restart required, spec §11)."""
         self._restart_required = bool(flag)
+        self._ledger.meta_set("restart_required", self._restart_required)
 
     def start_tail(self) -> bool:
         """Start the follower thread.  Called ONLY by seat_cli.py when not --once (and by the fixture host)."""
@@ -361,7 +367,9 @@ class SeatManager:
         return self._queue.qsize()
 
     def due(self, tier: str, now: float) -> bool:
-        return float(now) >= self._due_at[tier]
+        route_class = {"standing": "seat", "seatwork": "seat", "reasons": "submissions"}.get(tier)
+        pause = self._api.pause_until(route_class) if route_class and self._api is not None else 0.0
+        return float(now) >= max(self._due_at[tier], pause)
 
     def bump(self, tier: str, seconds: float) -> None:
         """Offer *tier* again in *seconds* -- never later than it already was (event-driven re-reads)."""
@@ -426,7 +434,7 @@ class SeatManager:
         self._inline_step(now)
         self._spawn_tiers(now)
         doc = self._build_document(now, started_at)
-        doc = self._no_currency(redact_tree(doc))
+        doc = redact_tree(models.shape_dashboard_document(doc))
         doc["completedAtUtc"] = sig.iso_z(float(self._clock()))   # after every source has been folded in (mutation proof 13)
         refusal = models.validate_status_document(doc)
         if refusal is not None:
@@ -442,7 +450,7 @@ class SeatManager:
         doc["pollInterval"] = self._poll_interval
         self._document = doc
         # the LOG panel is a panel too: no `$` reaches it either (header Global Constraints, spec §10)
-        new_lines = [self._no_currency(self._line_dict(line)) for line in self._ring if line.seq > self._emitted_seq]
+        new_lines = [redact_tree(self._line_dict(line)) for line in self._ring if line.seq > self._emitted_seq]
         flat = models.fold_status_document(doc, now=float(self._clock()), log_lines=new_lines, log_seq=self._emitted_seq)
         self._emitted_seq = int(flat.get("seat_log_seq") or self._emitted_seq)
         return flat
@@ -500,6 +508,9 @@ class SeatManager:
 
         async def run() -> None:
             try:
+                # Another tier in this cycle can receive busy before this task starts.
+                if not self.due(tier, float(self._clock())):
+                    return
                 await factory()
                 self._mark_read(tier, float(self._clock()), ok=True)
             except asyncio.CancelledError:
@@ -582,6 +593,9 @@ class SeatManager:
         doc = models.empty_document(producer=self._producer, started_at_utc=started_at, host=self._host_block())
         doc["sources"] = {name: self._source_entry(name, now) for name in models.SOURCE_NAMES}
         doc["sources"]["tail"] = self._tail_source(now)
+        if self._unit_reader is not None and self._journal_facts.get("reason"):
+            source = doc["sources"]["unit"]
+            source["reason"] = source.get("reason") or self._journal_facts["reason"]
         doc["seat"] = self._seat_block()
         doc["host"]["runtime"] = self._runtime
         doc["daemon"] = self._daemon_block(now)
@@ -627,7 +641,7 @@ class SeatManager:
                 "threadAliveAt": sig.iso_z(alive_at) if alive_at is not None else None,
             })
         elif self._backfill_done:
-            ok = self._backfill_lines > 0
+            ok = self._backfill_success and (self._backfill_lines > 0 or bool(entry["watermark"]))
             entry.update({"ok": ok, "reason": None if ok else "backfill returned no lines", "unavailable": not ok})
         else:
             entry.update({"ok": None, "reason": "tail thread not running"})   # never started = not read yet, not dead
@@ -676,7 +690,7 @@ class SeatManager:
         stamped: list[LogLine] = []
         for line in lines:
             self._seq += 1
-            stamped.append(dataclasses.replace(line, seq=self._seq))
+            stamped.append(dataclasses.replace(line, seq=self._seq, text=redact(line.text), fields=redact_tree(dict(line.fields))))
         self._ring.extend(stamped)
         try:
             result = self._ledger.ingest(stamped)
@@ -701,7 +715,7 @@ class SeatManager:
             elif event == "accepted":
                 self.bump("workstat", EVENT_BUMP_WORKSTAT_S)
             elif event == "restart":
-                self._restart_required = False       # the restart boundary (contract C.6) ends a skills-set's `restart required`
+                self.set_restart_required(False)     # the restart boundary (contract C.6) ends a skills-set's `restart required`
 
     @property
     def _state(self) -> LedgerState:
@@ -888,6 +902,8 @@ class SeatManager:
         if isinstance(host, Mapping):
             for key in ("load1", "memAvailMiB", "diskFreeGiB", "journal"):
                 block[key] = host.get(key)
+        if self._unit_reader is not None and hasattr(self._unit_reader, "read_journal"):
+            block["journal"] = self._journal_facts.get("journal")
         runtime = self._runtime
         if runtime == "codex":
             sessions = self._payload("sessions")
@@ -980,6 +996,17 @@ class SeatManager:
 
     async def _tier_workstat(self) -> None:
         now = float(self._clock())
+        # Workstat may be event-bumped; journal subprocesses keep their own 300 s floor.
+        if self._unit_reader is not None and now >= self._journal_due_at:
+            self._journal_due_at = now + TIER_JOURNAL_S
+            read = getattr(self._unit_reader, "read_journal", None)
+            if read is not None:
+                try:
+                    self._journal_facts = await asyncio.to_thread(read)
+                except Exception as exc:
+                    self._journal_facts = {"journal": None, "reason": f"journal read failed ({type(exc).__name__})"}
+            else:
+                self._journal_facts = {"journal": None, "reason": "journal facts unavailable on this host"}
         try:
             reachable = await asyncio.to_thread(self._broker.reachable)
         except Exception as exc:                     # noqa: BLE001
@@ -1037,10 +1064,15 @@ class SeatManager:
         watermark = data.get("watermarkMtime")
         if isinstance(watermark, (int, float)) and not isinstance(watermark, bool) and float(watermark) > since_f:
             self._ledger.meta_set("sessions_watermark_mtime", float(watermark))
-        newest = max(sessions, key=lambda s: float(s.get("mtime") or 0.0)) if sessions else None
+        newest = self._ledger.meta_get("newest_session")
         quotas = [s["quota"] for s in sessions if isinstance(s.get("quota"), Mapping) and s["quota"].get("sampledAtUtc")]
         newest_quota = max(quotas, key=lambda q: sig.parse_iso(q.get("sampledAtUtc")) or 0.0) if quotas else None
         previous = self._payload("sessions")
+        if newest_quota is None:
+            newest_quota = self._ledger.meta_get("newest_quota")
+        else:
+            newest_quota = self._ledger._shape_session({"quota": newest_quota})["quota"]
+            self._ledger.meta_set("newest_quota", newest_quota)
         if newest_quota is None and isinstance(previous, Mapping):
             newest_quota = previous.get("newestQuota")      # the quota is refreshed only while a task runs (spec §10)
         if newest is None and isinstance(previous, Mapping):
@@ -1283,7 +1315,7 @@ class SeatManager:
                 problems.append(f"{job[:8]}: {result.reason}")
                 continue
             data = result.data if isinstance(result.data, Mapping) else {}
-            mine = [s for s in (data.get("submissions") or []) if isinstance(s, Mapping) and s.get("seatTokenId") == self._seat]
+            mine = seat_api.submissions_for_seat(data, self._seat)
             match = next((s for s in mine if s.get("hash12") == row.get("hash12")), None)
             if match is None:
                 failed = [s for s in mine if s.get("outcome") == "failed"]
@@ -1428,6 +1460,7 @@ class SeatManager:
                 if (cursor is not None and self._tail_state.cursor is None
                         and consumer.gap_note and _monotonic() < deadline):
                     consumer.run_once()
+                self._backfill_success = bool(opened) and opened[-1].exit_code() in (None, 0)
             except Exception as exc:
                 self._error_count += 1
                 logger.warning("PEPEPANE synchronous backfill failed: %s", redact(str(exc)))

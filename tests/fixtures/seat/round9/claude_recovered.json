@@ -1,0 +1,1 @@
+{"synthetic":true,"homes":{"/home/imd":"-home-imd","/home/imd-worker":"-home-imd-worker"},"records":[{"type":"system","subtype":"api_error","status":401,"retryAttempt":1,"maxRetries":10,"timestamp":"2026-10-03T15:51:18.000Z"},{"type":"assistant","timestamp":"2026-10-03T15:51:20.000Z","message":{"id":"synthetic-output","model":"claude-sonnet-5","usage":{"output_tokens":4}}}]}

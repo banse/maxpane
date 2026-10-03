@@ -27,6 +27,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -1213,6 +1214,32 @@ class SystemdUnitReader:
         unit = parse_systemctl_show(_text(done.stdout))
         unit.update(parse_cgroup(self._cgroup_root / self.unit))
         return unit
+
+    def read_journal(self) -> dict:
+        """Three bounded, unprivileged reads; the manager schedules this off refresh."""
+        commands = (["journalctl", "--disk-usage"],
+                    ["journalctl", "-u", "imd-worker.service", "-n", "+1", "-o", "short-iso", "--no-pager"],
+                    ["journalctl", "-u", "systemd-journald", "--grep", "System Journal", "-n", "1", "-o", "cat", "--no-pager"])
+        outputs = []
+        for label, argv in zip(("usage", "oldest entry", "capacity"), commands):
+            try:
+                done = self._run(argv, capture_output=True, timeout=5)
+            except (subprocess.TimeoutExpired, OSError) as exc:
+                return {"journal": None, "reason": f"journal {label} unavailable ({type(exc).__name__})"}
+            if done.returncode != 0:
+                return {"journal": None, "reason": f"journal {label} exited {done.returncode}"}
+            outputs.append(_text(done.stdout))
+        usage = re.search(r"take up ([0-9.]+[KMGT]?B?)", outputs[0])
+        first = re.search(r"^([0-9-]+T[0-9:+.Z]+)", outputs[1])
+        cap = re.search(r"\bmax ([0-9.]+[KMGT]?B?)", outputs[2])
+        if not (usage and first and cap):
+            return {"journal": None, "reason": "journal facts unreadable"}
+        try:
+            first_utc = datetime.fromisoformat(first.group(1).replace("Z", "+00:00")).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            return {"journal": None, "reason": "journal oldest timestamp unreadable"}
+        return {"journal": {"firstUtc": first_utc, "lastUtc": None,
+                            "capNote": f"{cap.group(1)}; {usage.group(1)} used"}, "reason": None}
 
     def read_host(self) -> dict | None:
         return _host_facts(self._home)

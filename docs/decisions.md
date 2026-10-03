@@ -1081,3 +1081,31 @@ The owner-approved round-9 brief at `/Library/Vibes/aidude/docs/superpowers/plan
 Redesign section 8.3 adds running-job, JOB, RECORDS, NODES, output-token and shared-control fields to the v2 document and its flat widget contract before their producers and widgets are implemented. Existing keys and legacy folds remain supported. New nested facts are selected field by field. The document carries full text only for running jobs and one most recent finished job, with one-line previews for up to 400 records; popup text remains in the ledger. The schema and validator size limit are unchanged. Cached record and node facts have their own timestamps and are not gated by the availability of a live API source.
 
 Widget signatures grow with the approved widget set. The existing signature/export pins will move with those implementations in WP4–WP6; they are not weakened or skipped during the contract-first step. The document shaping boundary is pure and additive and will follow the common third-party-text sanitiser at the manager's writer boundary.
+
+### 2026-10-03 — PEPEPANE round 9: busy responses amend the retry rule
+
+Redesign section 8.1 amends base section 6's retry policy for a 503 body whose error is busy. That response ends the request after the first host and pauses its route class for 60 seconds, doubling on repeated busy responses to 600 seconds and resetting after success. Tier scheduling, lifecycle bumps and the faster open-plan cadence respect the pause. Other server errors retain the existing retry. The detail-route consumers introduced in WP3 use the same deadline.
+
+### 2026-10-03 — PEPEPANE round 9: persisted facts survive API unavailability
+
+The availability threshold in base section 6 rule 4 continues to govern current plane observations. Redesign section 8.1 exempts facts already recorded by the ledger: stored outcomes, reasons and daily verdict counts retain their own timestamps while the API is unavailable. New record and node views follow the same rule. An unread live counter is still unavailable rather than a fabricated zero.
+
+### 2026-10-03 — PEPEPANE round 9: Claude home-derived classification
+
+Redesign D2 amends the fixed-home patterns in base section 10. The read-only Claude summariser derives its slug prefix from the existing projects-root argument when that root ends in the expected Claude projects path. Other root shapes retain the historical fallback. Home and research directory comparisons remain exact, and doctor suffixes retain mixed-case characters. No CLI argument or broker dispatch changes accompany this correction.
+
+### 2026-10-03 — PEPEPANE round 9: recovered runtime errors
+
+Redesign D5 amends base section 10's runtime-auth evidence. Each reported Claude API error records whether later model output followed it in the same transcript. Recovered 401, 403 and 429 errors no longer raise degradation; an error without subsequent output still does. The ledger preserves this fact and the newest session metadata so a fresh process and a running display can reach the same verdict after the sessions watermark advances.
+
+### 2026-10-03 — PEPEPANE round 9: canary-safe text boundary
+
+D11 introduces a pure seat text helper around the unchanged redactor copies. Text passes redaction, residual canary removal, currency-marker removal and its length cap; a final bounded pass handles token fragments joined by removal or exposed by a cut. Explicitly shaped metadata uses that boundary before storage and document emission. The validator keeps its existing canaries, and permitted structured public hashes retain their field-specific handling. API cache producers in WP3 reuse this boundary.
+
+### 2026-10-03 — PEPEPANE round 9: identity parsing and restart-persistent facts
+
+D1 accepts integer or digit-string seat and agent identities, including submission matching and enrollment metadata, while numeric counters remain strict integers. D3 stores the startup observations and the restart-required flag in additive ledger metadata. A new process can restore the daemon release, admission and submission facts without replaying lines before its saved watermark. The ledger schema version remains unchanged.
+
+### 2026-10-03 — PEPEPANE round 9: bounded journal reads and idle tail health
+
+D4 reads journal usage, the oldest worker entry and the journal cap with the three measured argv lists and bounded timeouts. Work runs outside the refresh path and has a separate 300-second minimum interval even when its hosting tier is bumped. An unavailable read keeps journal null with a reason; the six-body MACHINE rendering consumes that reason. D10 treats a successful empty backfill after a valid watermark as healthy. Probe p09 adds each source's reason beside its status without changing the probe title or order.

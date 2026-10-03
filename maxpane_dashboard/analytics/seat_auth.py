@@ -125,6 +125,8 @@ def auth_state(*, paused_hint: Mapping | None, newest_transcript: Mapping | None
 
     if isinstance(newest_transcript, Mapping):
         for error in newest_transcript.get("apiErrors") or []:
+            if isinstance(error, Mapping) and error.get("outputFollowed") is True:
+                continue
             status = error.get("status") if isinstance(error, Mapping) else None
             word = AUTH_STATUSES.get(status) or ("rate limited" if status == RATE_LIMIT_STATUS else None)
             if word and word not in reasons:

@@ -19,12 +19,13 @@ import sqlite3
 import statistics
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from maxpane_dashboard.analytics.seat_redact import redact, redact_agent_sentence, redact_tree
+from maxpane_dashboard.analytics.seat_text import (sanitize_text as redact,
+    sanitize_sentence as redact_agent_sentence, sanitize_tree as redact_tree)
 from maxpane_dashboard.data import seat_log_grammar as g
 from maxpane_dashboard.data.seat_log_grammar import LogLine, parse_ts
 from maxpane_dashboard.data.seat_models import SEAT_BLOCK_KEYS, SEAT_ROW_KEYS
@@ -44,6 +45,9 @@ META_KEYS = (
     "schema_version", "ledger_since_utc", "grammar_version", "sessions_watermark_mtime", "api_backfill_done_utc", "seat",
     "sessions_skipped_oversize",  #: cumulative summariser oversize skips (the --since watermark counts each file once)
 )
+
+STARTUP_FACTS = ("daemon_version", "release_available", "last_admitted_utc", "submitted_since_start",
+                 "build_mismatch", "runtimes", "invocation", "last_ts", "pending_boundary")
 
 Json = Union[None, bool, int, float, str, list, dict]
 Clock = Callable[[], float]
@@ -214,6 +218,11 @@ class SeatLedger:
         self.meta_set("seat", self._seat)
 
     def _load_state(self) -> None:
+        facts = self.meta_get("startup_facts")
+        if isinstance(facts, dict):
+            for name in STARTUP_FACTS:
+                if name in facts:
+                    setattr(self._state, name, facts[name])
         row = self._conn.execute(
             "SELECT * FROM tasks WHERE submitted_utc IS NULL AND cancelled IS NULL AND source_row = 'local' "
             "AND COALESCE(interrupted_by_restart, 0) = 0 AND COALESCE(phases_json, '') NOT LIKE '%\"failed\"%' "
@@ -225,7 +234,7 @@ class SeatLedger:
             self._state.current = self._current_from_row(row)
         newest = self._conn.execute("SELECT MAX(accepted_utc) AS ts FROM tasks WHERE source_row = 'local'").fetchone()
         if newest is not None and newest["ts"]:
-            self._state.last_ts = newest["ts"]
+            self._state.last_ts = max(self._state.last_ts or "", newest["ts"])
 
     # ------------------------------------------------------------------ meta
     def meta_get(self, key: str) -> Json | None:
@@ -246,6 +255,9 @@ class SeatLedger:
         with self._conn:
             cur = self._conn.cursor()
             for line in lines:
+                line = replace(line, text=redact(line.text), fields=redact_tree(dict(line.fields)),
+                               invocation=redact(line.invocation) if line.invocation else None,
+                               cursor=redact(line.cursor) if line.cursor else None)
                 n += 1
                 if line.kind == g.KIND_UNKNOWN:
                     unknown += 1
@@ -319,6 +331,9 @@ class SeatLedger:
                     self._state.build_mismatch = True
                 if kind in g.ACCEPTED_KINDS or kind in g.TERMINAL_KINDS:
                     self._state.last_lifecycle = line
+            cur.execute("INSERT INTO meta(key, value) VALUES ('startup_facts', ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (json.dumps({name: getattr(self._state, name) for name in STARTUP_FACTS}),))
         self._recount_beats()
         return IngestResult(lines=n, opened=opened, closed=closed, stored=stored, restarts=restarts,
                             unknown=unknown, events=tuple(events))
@@ -645,6 +660,7 @@ class SeatLedger:
         joined = 0
         with self._conn:
             for item in work:
+                item = redact_tree(item)
                 if not isinstance(item, dict):
                     continue
                 full_hash = item.get("submissionHash")
@@ -758,6 +774,7 @@ class SeatLedger:
         inserted = 0
         with self._conn:
             for item in work:
+                item = redact_tree(item)
                 if not isinstance(item, dict):
                     continue
                 full_hash = item.get("submissionHash")
@@ -798,7 +815,7 @@ class SeatLedger:
     # ------------------------------------------------------------------ sessions
     def attach_sessions(self, sessions: list[dict], *, runtime: str) -> int:
         """Join summariser output (contract C.8 ``SESSION_KEYS``) to rows; doctor/manual/unknown are stored unattached."""
-        sessions = redact_tree(sessions)
+        sessions = [self._shape_session(s) for s in sessions if isinstance(s, dict)]
         runtime = redact(runtime)
         attached = 0
         with self._conn:
@@ -825,14 +842,39 @@ class SeatLedger:
                      tokens.get("input"), tokens.get("output"), tokens.get("cached"), tokens.get("cacheWrite"),
                      _dumps(s.get("sideModel")), s.get("ttftMs"), s.get("wallMs"), s.get("turn1Context"),
                      1 if s.get("maxTurnsReached") else 0 if s.get("maxTurnsReached") is not None else None,
-                     _dumps([{"status": e.get("status"), "message": redact(e.get("message")), "atUtc": e.get("atUtc")}
-                             for e in (s.get("apiErrors") or []) if isinstance(e, dict)]),
+                     _dumps(s.get("apiErrors")),
                      _dumps(s.get("quota")), s.get("bytes"), s.get("skippedOversize"), s.get("error")),
                 )
                 if key is not None:
                     self._aggregate_sessions(key, runtime)
                     attached += 1
+            newest = max(sessions, key=lambda s: s.get("mtime") or 0, default=None)
+            previous = self.meta_get("newest_session")
+            if newest is not None and (not isinstance(previous, dict) or
+                                       (newest.get("mtime") or 0) >= (previous.get("mtime") or 0)):
+                self.meta_set("newest_session", newest)
         return attached
+
+    @staticmethod
+    def _shape_session(s: dict) -> dict:
+        """Project metadata before storage; never copy third-party sub-objects whole."""
+        keys = ("path", "runtime", "cwd", "slug", "kind", "jobId", "nodeId", "startedUtc", "endedUtc",
+                "mtime", "model", "effort", "turns", "ttftMs", "wallMs", "turn1Context", "maxTurnsReached",
+                "bytes", "skippedOversize", "error", "lastAgentMessageEmpty", "tokenCountInfoMissing",
+                "taskCompleteErrorPresent")
+        out = {k: s.get(k) if not isinstance(s.get(k), (dict, list)) else None for k in keys}
+        for name, fields in (("tokens", ("input", "output", "cached", "cacheWrite")),
+                             ("sideModel", ("model", "input", "output")),
+                             ("quota", ("provider", "window", "windowMinutes", "usedPercent", "resetsAtUtc", "sampledAtUtc", "planType", "reason"))):
+            raw = s.get(name)
+            out[name] = {k: raw.get(k) if not isinstance(raw.get(k), (dict, list)) else None
+                         for k in fields} if isinstance(raw, dict) else None
+        out["apiErrors"] = [{"status": e.get("status") if type(e.get("status")) is int else None,
+                              "message": redact(e.get("message"), cap=512),
+                              "atUtc": redact(e.get("atUtc")) if isinstance(e.get("atUtc"), str) else None,
+                              **({"outputFollowed": e["outputFollowed"]} if type(e.get("outputFollowed")) is bool else {})}
+                             for e in (s.get("apiErrors") or [])[:20] if isinstance(e, dict)]
+        return redact_tree(out)
 
     def _task_key_for_session(self, s: dict) -> str | None:
         kind = s.get("kind")

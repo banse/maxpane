@@ -64,7 +64,7 @@ SESSION_KEYS = (
 )
 
 
-def classify_slug(slug: str) -> str:
+def classify_slug(slug: str, *, home_slug: str = "-home-imd") -> str:
     """``task | research | doctor | manual | unknown`` for a ``~/.claude/projects/<slug>`` dir name.
 
     Exclusions are exact (``CLAUDE_EXCLUDED_SLUGS``); the research slug is exact and counts;
@@ -72,25 +72,27 @@ def classify_slug(slug: str) -> str:
     """
     if not isinstance(slug, str) or not slug:
         return "unknown"
-    if slug in CLAUDE_EXCLUDED_SLUGS:
+    if slug in (CLAUDE_EXCLUDED_SLUGS - {"-home-imd"}) or slug == home_slug:
         return "manual"
-    if slug == CLAUDE_RESEARCH_SLUG:
+    if slug == home_slug + "--identitymd-work":
         return "research"
-    if slug.startswith(CLAUDE_DOCTOR_SLUG_PREFIX) and len(slug) > len(CLAUDE_DOCTOR_SLUG_PREFIX):
+    doctor_prefix = home_slug + "--identitymd-work-doctor-"
+    if slug.startswith(doctor_prefix) and len(slug) > len(doctor_prefix):
         return "doctor"
-    if parse_task_slug(slug) is not None:
+    if parse_task_slug(slug, home_slug=home_slug) is not None:
         return "task"
     return "unknown"
 
 
-def parse_task_slug(slug: str) -> tuple[str, str] | None:
+def parse_task_slug(slug: str, *, home_slug: str = "-home-imd") -> tuple[str, str] | None:
     """``-home-imd--identitymd-work-<jobId>-<nodeId>`` -> ``(jobId, nodeId)``.
 
     Both ids are 36-char UUIDs that themselves contain ``-``, so the split is by length.
     """
-    if not isinstance(slug, str) or not slug.startswith(CLAUDE_TASK_SLUG_PREFIX):
+    prefix = home_slug + "--identitymd-work-"
+    if not isinstance(slug, str) or not slug.startswith(prefix):
         return None
-    rest = slug[len(CLAUDE_TASK_SLUG_PREFIX):]
+    rest = slug[len(prefix):]
     if len(rest) != 73 or rest[36] != "-":
         return None
     job, node = rest[:36], rest[37:]
@@ -182,7 +184,8 @@ def _status_of(value) -> int | None:
     return status if status is not None and 100 <= status <= 599 else None
 
 
-def summarise_file(path: str, *, now: float, clock=time.monotonic, wall_s: float = PER_FILE_WALL_S) -> dict | None:
+def summarise_file(path: str, *, now: float, clock=time.monotonic, wall_s: float = PER_FILE_WALL_S,
+                   home_slug: str = "-home-imd") -> dict | None:
     """One transcript -> a ``SESSION_KEYS`` dict; ``None`` when unreadable, not a regular file or over 64 MiB.
 
     *now* is accepted for the contract's signature and deliberately unused: the summary is a
@@ -195,8 +198,8 @@ def summarise_file(path: str, *, now: float, clock=time.monotonic, wall_s: float
     if not stat.S_ISREG(st.st_mode) or st.st_size > MAX_FILE_BYTES:
         return None
     slug = os.path.basename(os.path.dirname(path))
-    kind = classify_slug(slug)
-    ids = parse_task_slug(slug) if kind == "task" else None
+    kind = classify_slug(slug, home_slug=home_slug)
+    ids = parse_task_slug(slug, home_slug=home_slug) if kind == "task" else None
     session = dict.fromkeys(SESSION_KEYS)
     session.update(path=_cap(path, 512), runtime="claude", slug=_cap(slug, 256), kind=kind,
                    jobId=ids[0] if ids else None, nodeId=ids[1] if ids else None,
@@ -235,11 +238,14 @@ def summarise_file(path: str, *, now: float, clock=time.monotonic, wall_s: float
                             match = SYNTHETIC_STATUS_RE.search(text) if isinstance(text, str) else None
                             if match and len(api_errors) < MAX_API_ERRORS:
                                 api_errors.append({"status": int(match.group(1)), "message": text[:MESSAGE_CAP],
-                                                   "atUtc": iso_ms(ts)})
+                                                   "atUtc": iso_ms(ts), "outputFollowed": False})
                         continue
                     usage = message.get("usage")
                     if not isinstance(usage, dict):
                         continue
+                    if (_int(usage.get("output_tokens")) or 0) > 0:
+                        for error in api_errors:
+                            error["outputFollowed"] = True
                     key = message.get("id") or rec.get("requestId") or f"line-{line_no}"
                     if key in usage_by_id:
                         continue  # one line per content block, identical usage: count each message once
@@ -264,7 +270,7 @@ def summarise_file(path: str, *, now: float, clock=time.monotonic, wall_s: float
                     text = error.get("formatted") or error.get("message") or rec.get("content")
                     if len(api_errors) < MAX_API_ERRORS:
                         api_errors.append({"status": status, "message": text[:MESSAGE_CAP] if isinstance(text, str) else None,
-                                           "atUtc": iso_ms(ts)})
+                                           "atUtc": iso_ms(ts), "outputFollowed": False})
                 elif kind_of_line == "cost-state":
                     cost_state = rec
     except _WallClock:
@@ -370,7 +376,10 @@ def summarise_dir(root: str, *, since_mtime: float, budget_s: float = DEFAULT_BU
         if size > MAX_FILE_BYTES:
             oversize += 1
             continue
-        session = summarise_file(path, now=now, clock=clock, wall_s=wall_s)
+        normal_root = os.path.normpath(root)
+        home = os.path.dirname(os.path.dirname(normal_root))
+        home_slug = re.sub(r"[^A-Za-z0-9-]", "-", home) if normal_root.endswith("/.claude/projects") else "-home-imd"
+        session = summarise_file(path, now=now, clock=clock, wall_s=wall_s, home_slug=home_slug)
         if session is None:
             errors += 1
             continue
