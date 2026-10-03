@@ -1051,3 +1051,17 @@ Spec §11's “uid-1000” means the worker's uid. Root startup resolves imd-wor
 Contract §C.11's broker identity advances to `imd-dashd 0.1.4`, including package version, User-Agent, current ping fixtures and operator instructions. The historical LOCAL_BROKER_VERSION stays unchanged as requested, although the Mac hints path and uid resolution change. Historical decisions and captured probe versions remain untouched.
 
 Round-8 review R8.1: the standalone shell probe and TUI manager retain their small ExecStart parser literals across the process boundary. An explicit agreement test binds those literals, alongside behavioural tests for both argument forms and the fallback. This is the mandated redundancy exception to the reuse convention.
+
+### 2026-10-03 — PEPEPANE round 8 validation
+
+Failing-before runs on the round-7 production code showed 12 core failures (Claude hints, production worker-uid resolution and override, Mac uid/failure handling, first-session runtime and version), 12 probe runtime/fallback failures with 18 passing controls, and 18 build/installer failures with one passing control. After implementation, focused core/probe checks passed 181 cases; the build/install/deploy rerun passed 104. The independent review passed 62 named cases and proved ABI and uid regressions by mutation. Its one convention finding, R8.1, was fixed and marked ADDRESSED after an asymmetric parser mutation failed the new agreement test.
+
+The seat suite passed 1,584 tests with two skips in 99.92 seconds. The full split suite ran once: MaxPane passed 12,391 tests with two skips in 979.34 seconds, and sybilkit passed 444 with one expected failure in 9.69 seconds. No unrelated timeout or isolated rerun was needed. The existing pytest-asyncio fixture-loop-scope deprecation warning appeared in the seat and MaxPane runs. One pytest process ran at a time, with at most four workers.
+
+```sh
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile -m 'not host' tests/broker tests/analytics/test_seat_*.py tests/data/test_seat_*.py tests/widgets/test_seat_*.py tests/screens/test_seat_*.py tests/test_seat_*.py tests/test_select_to_copy.py
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile -m 'not host' tests
+env -u NO_COLOR HOME=$(mktemp -d) PYTHONPATH=sybilkit/src .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests
+```
+
+All 21 installed package versions match the lock (including the editable fork); the environment additionally contains 14 build/test tools. The third-party closure has no freeze diff. The never-touch check is empty, and frozen document bodies and pyproject.toml are unchanged. No host access, SSH, Docker operation, deployment, push or tag was performed. A hash-checked cp312 download prepared the wheel directory for same-commit MANIFEST refreshes; the final seeded build follows this validation commit once.
