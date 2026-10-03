@@ -65,6 +65,15 @@ NO_MATCH_LINE = "no matching records"
 #: The fewest summary cells worth showing before the counts; below it the
 #: summary goes and the counts stay whole.
 _SUMMARY_MIN_COLS = 8
+#: The filtered footer's count words, longest first; it takes the first whose
+#: counts fit (F-RF3) -- the words shorten, the figures and ``more`` never go.
+#: Worst case (100 / 100 / 100 of a 400-row window, +12,345 older): 69, 61 and
+#: 53 cells; the AGENT sweep's 60-column floor leaves the footer 55.
+_COUNT_WORDS = (
+    ("not read yet", "unavailable", " older"),
+    ("not read", "unavail", " older"),
+    ("unread", "unavail", ""),
+)
 #: Right-aligned on the title line where it fits whole; ``i`` is the screen's seat prompt.
 SEAT_HINT = "type 'i' to change seat"
 
@@ -256,12 +265,12 @@ class SurfSwarmSeatRecord(SwarmTableBase):
             elif self._open_only and not self._view.rows:
                 self._write_footer(("no incomplete records",))
 
-    def _older_tail(self) -> Text:
+    def _older_tail(self, older_word: str = " older") -> Text:
         """``+N older · more`` for base rows past the cap; empty when all fit."""
         text = Text(style="dim")
         older = self._view.older
         if older:
-            text.append(f"+{fmt_int(older)} older")
+            text.append(f"+{fmt_int(older)}{older_word}")
             if self.ROW_CAP < self.MAX_CAP:
                 text.append(" · ").append("more", style=Style(bold=True, meta={"@click": "screen.record_more()"}))
         return text
@@ -270,28 +279,36 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         """``summary · N match · N not read yet · N unavailable · +N older · more``.
 
         The summary is clipped first, and dropped below ``_SUMMARY_MIN_COLS``;
-        the counts never are. Dim throughout but for ``unavailable``, which
-        keeps the palette's plain yellow (spans, not a base style, so the dim
-        does not reach it).
+        then the counts' words shorten (``_COUNT_WORDS``), never a figure.
+        Dim throughout but for ``unavailable``, which keeps the palette's
+        plain yellow (spans, not a base style, so the dim does not reach it).
         """
+        room = max(self.size.width - self.FOOTER_PADDING_COLS, 0)
+        for words in _COUNT_WORDS:
+            counts = self._filtered_counts(*words)
+            if counts.cell_len <= room:
+                break
+        summary_room = room - counts.cell_len - len(" · ")
+        summary = filter_summary(self._spec)
+        if summary and summary_room >= _SUMMARY_MIN_COLS:
+            return Text().append(rowfit.clip(summary, summary_room) + " · ", style="dim").append_text(counts)
+        return counts
+
+    def _filtered_counts(self, not_read_word: str, unavailable_word: str, older_word: str) -> Text:
         view = self._view
         counts = Text()
         if view.rows or view.not_read or view.unavailable or view.older:
             counts.append(f"{fmt_int(len(view.rows))} match", style="dim")
             if view.not_read:
-                counts.append(f" · {fmt_int(view.not_read)} not read yet", style="dim")
+                counts.append(f" · {fmt_int(view.not_read)} {not_read_word}", style="dim")
             if view.unavailable:
-                counts.append(" · ", style="dim").append(f"{fmt_int(view.unavailable)} unavailable", style="yellow")
+                counts.append(" · ", style="dim").append(f"{fmt_int(view.unavailable)} {unavailable_word}",
+                                                         style="yellow")
         else:
             counts.append(NO_MATCH_LINE, style="dim")
-        older = self._older_tail()
+        older = self._older_tail(older_word)
         if older.plain:
             counts.append(" · ", style="dim").append_text(older)
-        room = max(self.size.width - self.FOOTER_PADDING_COLS, 0)
-        summary_room = room - counts.cell_len - len(" · ")
-        summary = filter_summary(self._spec)
-        if summary and summary_room >= _SUMMARY_MIN_COLS:
-            return Text().append(rowfit.clip(summary, summary_room) + " · ", style="dim").append_text(counts)
         return counts
 
     def _show_footer(self, text: Text) -> None:

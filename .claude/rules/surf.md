@@ -341,8 +341,10 @@ and so the manager's answer, job-detail and oracle read windows (`SurfManager.re
 TOOK / TOK need a row's reads and never narrow what is read. A row they cannot judge yet is
 counted in the footer as `not read yet`, or yellow `unavailable` when its read failed — never shown
 as a match and never dropped. The footer reads `summary · N match · N not read yet · N
-unavailable · +N older · more`; the summary clips first and goes below 8 cells, the counts never
-do; nothing to show, wait for or page to is `no matching records`.
+unavailable · +N older · more`; the summary clips first and goes below 8 cells, then the count
+words shorten (`_COUNT_WORDS`: `not read` / `unread`, `unavail`, `+N`), never a figure or `more`
+(F-RF3: the worst case is 53 cells at its shortest, the 60-column floor leaves 55); nothing to
+show, wait for or page to is `no matching records`.
 
 It shows every lifetime `work[]` attempt; its `state` is the attempt's `status` unless
 `accepted` (then, or with no status served, the job's state). It shows `MM-DD HH:MM` of `submittedAt` (else `acceptedAt`); the job

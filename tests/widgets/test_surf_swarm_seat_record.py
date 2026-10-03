@@ -1064,3 +1064,44 @@ def test_took_and_tok_show_a_figure_exactly_when_their_ranges_can_judge_it(answe
     if cells["took"] != "—" and not cells["took"].endswith("…"):  # 1e30 s fills the cell
         m = _minutes(cells["took"])
         assert record_read_match(row, RecordFilter(took_min=m, took_max=m)) == MATCH, cells["took"]
+
+
+# -- F-RF3: the counts shorten their words, never lose a figure -----------------
+
+#: The widest view a 400-row window can give: one verdict per row, so three
+#: three-digit counts, and a lifetime list 12,345 rows past it.
+_WORST_COUNTS = dict(match=100, not_read=100, unavailable=100, older=12_345)
+#: In situ (2026-10-03) the footer's room is the terminal width minus 5, so
+#: the AGENT sweep's 60-column floor leaves 55 cells; here, outside the body,
+#: a width of W leaves W - 2, so 57 is that floor. The worst case needs 69,
+#: 61 and 53 cells in its three forms: each threshold is crossed (71/70, 63/62).
+_FOOTER_WIDTHS = (57, 62, 63, 70, 71, 80)
+#: The three forms, longest first (``swarm_seat_record._COUNT_WORDS``).
+_WORST_FORMS = ('100 match · 100 not read yet · 100 unavailable · +12,345 older · more',
+                '100 match · 100 not read · 100 unavail · +12,345 older · more',
+                '100 match · 100 unread · 100 unavail · +12,345 · more')
+
+
+@pytest.mark.parametrize('width', _FOOTER_WIDTHS)
+async def test_the_filtered_counts_keep_every_figure_and_more_at_every_width(width, monkeypatch):
+    """F-RF3: the counts outgrew the footer under ~69 cells and the CSS
+    ellipsis cut ``+N older`` or the ``more`` link. Their words now shorten
+    (``not read yet`` -> ``not read`` -> ``unread``, ``unavailable`` ->
+    ``unavail``, ``+N older`` -> ``+N``), the longest that fits."""
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, RecordView
+    from maxpane_dashboard.widgets.surf import swarm_seat_record as module
+    rows = tuple((_filter_rows() * 10)[:_WORST_COUNTS['match']])
+    view = RecordView(rows, _WORST_COUNTS['older'], _WORST_COUNTS['not_read'], _WORST_COUNTS['unavailable'])
+    monkeypatch.setattr(module, 'record_view', lambda *_args: view)
+    async with _RecordApp().run_test(size=(width, 20)) as pilot:
+        record = pilot.app.query_one(SurfSwarmSeatRecord)
+        record.update_data(swarm_seat_work_rows=list(rows), swarm_seat_state='ok', swarm_seat_as_of_hhmm=AS_OF)
+        record.set_record_view(40, False, RecordFilter(answer='replied'))
+        await pilot.pause()
+        line = next(l for l in _lines(pilot.app) if ' match' in l).strip()
+        room = record.size.width - record.FOOTER_PADDING_COLS
+        assert '…' not in line and line.endswith(' · more'), (room, line)
+        for figure in ('100 match', '· 100 ', '· +12,345'):
+            assert figure in line, (room, figure, line)
+        assert line.count('100') == 3, line
+        assert line == next(form for form in _WORST_FORMS if len(form) <= room), (room, line)

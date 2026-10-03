@@ -190,7 +190,12 @@ Filed, Minor (do as Tier 0 when the file is next touched):
   RECORD's when column (`swarm_seat_record.py` `build_cells`) and usage cells restate the same rules
   inline. Have the widget import the pure helpers (or add an agreement test) so "the filter
   matches what the column shows" cannot drift.
-* **F-RF3: the filtered footer can still cut a count at narrow widths.** The summary gives way
+* **F-RF3: the filtered footer can still cut a count at narrow widths.** DONE 2026-10-03,
+  measured first: in situ the footer's room is the terminal width minus 5 (55 at the AGENT
+  sweep's 60-column floor), and the worst case (100 / 100 / 100 of a 400-row window, +12,345
+  older) is 69 cells. The words now shorten in two steps, never a figure or `more`:
+  `not read` + `unavail` (61), then `unread` + `unavail` + `+N · more` (53).
+  Was: The summary gives way
   first, but the counts plus the older tail (up to ~67 cells, e.g. `180 match · 200 not read yet
   · 20 unavailable · +1,234 older · more`) exceed the footer below about 69 content cells, where
   the CSS ellipsis cuts the older count or `more`. Not rendered by the reviewer; measure first,
