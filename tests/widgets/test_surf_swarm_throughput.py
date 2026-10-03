@@ -1,13 +1,16 @@
 """THROUGHPUT -- the swarm signals panel on ``panels.SignalsPanelBase`` (WP5, on screen since WP7).
 
 The panel reads the plan §1.3 dict **only**; the hand dict below is that shape.
-Every assertion is against composited output.
+Every assertion is against composited output. The fold (``set_expanded``, the
+``x more`` / ``x less`` hint, the collapsed display) is SWARM WORKFLOWS WP4,
+``docs/surf_swarm_workflows_spec.md`` §1; its tests are at the end.
 """
 
 from __future__ import annotations
 
 import inspect
 
+from rich.cells import cell_len
 from textual.app import App
 
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
@@ -15,6 +18,9 @@ from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.surf.swarm_throughput import (
     ACCUMULATING_WORD,
     CANCELS_ID,
+    FOLD_GAP_ID,
+    LESS_HINT,
+    MORE_HINT,
     NO_JOBS_LINE,
     SAMPLE_FLOOR_WORD,
     STALE_WORD,
@@ -313,3 +319,174 @@ async def test_the_loading_seed_lands_on_the_first_row_not_a_separator():
     assert "Loading..." in rows[2], rows[:4]
     assert rows[3] == "", rows[:4]
     assert "\n".join(rows).count("Loading") == 1, rows
+
+
+# -- the fold (spec §1: ``set_expanded``, the title hint, the collapsed display) ----------
+
+#: THROUGHPUT's SWARM geometry with the row's width fixed at the 46 cells the
+#: panel renders at the pin (``max-width: 46``), and ``height: auto`` so the
+#: panel's height *is* its lines -- the quantity the top row's floor binds.
+_FOLD_CSS = "SurfSwarmThroughput { width: 46; height: auto; padding: 0 1; }"
+_FOLD_SIZE = (60, 30)
+#: Hidden when collapsed: the separator above the blocks, ``states`` + its two
+#: states, ``cancel reasons`` + ``none`` -- counted off the hand dict.
+_FOLDED_LINES = 1 + (1 + len(THROUGHPUT["states"])) + (1 + 1)
+
+
+class _Fold(App):
+    CSS = _FOLD_CSS
+
+    def compose(self):
+        yield SurfSwarmThroughput()
+
+
+def _region_rows(app, widget) -> list[str]:
+    strips = app.screen._compositor.render_strips()
+    rows = ["".join(seg.text for seg in strip) for strip in strips]
+    r = widget.region
+    return [rows[y][r.x: r.x + r.width].rstrip() for y in range(r.y, r.y + r.height)]
+
+
+async def _fold(*calls, size=_FOLD_SIZE, **kwargs):
+    """``(height, rows, hidden ids)`` after *kwargs* then ``set_expanded`` per call."""
+    async with _Fold().run_test(size=size) as pilot:
+        panel = pilot.app.query_one(SurfSwarmThroughput)
+        if kwargs:
+            panel.update_data(**kwargs)
+        for value in calls:
+            panel.set_expanded(value)
+        await pilot.pause()
+        hidden = sorted(w.id or "?" for w in panel.query("*") if not w.display)
+        return panel.region.height, _region_rows(pilot.app, panel), hidden
+
+
+def test_the_hints_are_the_specs_words_and_the_same_width():
+    assert (MORE_HINT, LESS_HINT) == ("x more", "x less")
+    assert cell_len(MORE_HINT) == cell_len(LESS_HINT) == 6
+
+
+async def test_the_widgets_own_default_is_expanded_with_no_hint():
+    """Nothing changes until a screen applies its state (spec §1, WP4 → WP5):
+    every block shows and the title advertises no key nobody binds yet."""
+    height, rows, hidden = await _fold(swarm_throughput=THROUGHPUT, swarm_as_of_hhmm="12:34")
+    assert hidden == [], hidden
+    assert rows[0].strip() == "THROUGHPUT · as of 12:34", rows[0]
+    assert any("cancel reasons" in r for r in rows) and any("executing" in r for r in rows), rows
+    assert height == len(rows) == 9 + _FOLDED_LINES, rows
+
+
+async def test_collapsing_hides_exactly_the_separator_and_the_two_blocks():
+    open_h, open_rows, _ = await _fold(True, swarm_throughput=THROUGHPUT)
+    shut_h, shut_rows, hidden = await _fold(False, swarm_throughput=THROUGHPUT)
+    assert hidden == sorted([FOLD_GAP_ID, STATES_ID, CANCELS_ID]), hidden
+    assert open_h - shut_h == _FOLDED_LINES == 6, (open_h, shut_h)
+    # The collapsed body is the expanded body with its last six lines gone.
+    assert shut_rows[1:] == open_rows[1:shut_h], (shut_rows, open_rows)
+    dropped = open_rows[shut_h:]
+    assert dropped[0] == "" and "states" in dropped[1] and "cancel reasons" in dropped[4], dropped
+    assert "completed 24h" in shut_rows[-1], shut_rows
+
+
+async def test_expanding_again_restores_every_line():
+    first_h, first_rows, _ = await _fold(True, swarm_throughput=THROUGHPUT)
+    again_h, again_rows, hidden = await _fold(False, True, swarm_throughput=THROUGHPUT)
+    assert hidden == [] and again_h == first_h and again_rows == first_rows, again_rows
+
+
+async def test_a_non_bool_is_ignored():
+    for value in (1, 0, None, "yes", [], 1.0):
+        shut_h, shut_rows, hidden = await _fold(False, value, swarm_throughput=THROUGHPUT)
+        assert len(hidden) == 3 and shut_rows[0].endswith("· x more"), (value, shut_rows[0])
+        _h, rows, hidden = await _fold(value, swarm_throughput=THROUGHPUT)
+        assert hidden == [] and rows[0].strip() == "THROUGHPUT", (value, rows[0])
+
+
+async def test_the_title_ends_with_the_hint_for_the_state_and_keeps_its_width():
+    _h, shut, _ = await _fold(False, swarm_throughput=THROUGHPUT, swarm_as_of_hhmm="12:34")
+    _h, opened, _ = await _fold(True, swarm_throughput=THROUGHPUT, swarm_as_of_hhmm="12:34")
+    assert shut[0].strip() == f"THROUGHPUT · as of 12:34 · {MORE_HINT}", shut[0]
+    assert opened[0].strip() == f"THROUGHPUT · as of 12:34 · {LESS_HINT}", opened[0]
+    assert cell_len(shut[0].strip()) == cell_len(opened[0].strip())
+
+
+async def test_stale_sits_before_the_hint_and_the_worst_title_is_whole_at_the_pin_width():
+    """Spec §1's worst case, measured at the 46-cell panel (title room 42)."""
+    for expanded, hint in ((False, MORE_HINT), (True, LESS_HINT)):
+        _h, rows, _ = await _fold(expanded, swarm_throughput=THROUGHPUT,
+                                  swarm_as_of_hhmm="17:45", swarm_stale=True)
+        title = rows[0].strip()
+        assert title == f"THROUGHPUT · as of 17:45 · {STALE_WORD} · {hint}", title
+        assert cell_len(title) == 41 and "…" not in title, title
+
+
+async def test_a_title_too_wide_clips_before_the_hint_and_never_the_hint():
+    class _Narrow(App):
+        CSS = "SurfSwarmThroughput { width: 30; height: auto; padding: 0 1; }"
+
+        def compose(self):
+            yield SurfSwarmThroughput()
+
+    for expanded, hint in ((False, MORE_HINT), (True, LESS_HINT)):
+        async with _Narrow().run_test(size=_FOLD_SIZE) as pilot:
+            panel = pilot.app.query_one(SurfSwarmThroughput)
+            panel.update_data(swarm_throughput=THROUGHPUT, swarm_as_of_hhmm="17:45", swarm_stale=True)
+            panel.set_expanded(expanded)
+            await pilot.pause()
+            title = _region_rows(pilot.app, panel)[0].strip()
+        # 30 cells less the panel's and the title's padding: 26 of room.
+        assert title.endswith(f"… · {hint}"), title
+        assert title.startswith("THROUGHPUT · as"), title
+        assert cell_len(title) == 26, title
+
+
+async def test_set_expanded_repaints_from_the_stored_payload_without_new_data():
+    """A fixed-height panel, so no resize repaints it behind the call's back:
+    ``True`` changes no line's display at all, and the title must still move."""
+
+    class _Fixed(App):
+        CSS = "SurfSwarmThroughput { width: 46; height: 24; padding: 0 1; }"
+
+        def compose(self):
+            yield SurfSwarmThroughput()
+
+    for expanded, hint in ((True, LESS_HINT), (False, MORE_HINT)):
+        async with _Fixed().run_test(size=_FOLD_SIZE) as pilot:
+            panel = pilot.app.query_one(SurfSwarmThroughput)
+            panel.update_data(swarm_throughput=THROUGHPUT, swarm_as_of_hhmm="12:34")
+            await pilot.pause()
+            height = panel.region.height
+            panel.set_expanded(expanded)
+            await pilot.pause()
+            rows = _region_rows(pilot.app, panel)
+            assert panel.region.height == height
+        assert rows[0].strip() == f"THROUGHPUT · as of 12:34 · {hint}", rows[0]
+        assert any("over 14 min · 100 jobs" in r for r in rows), rows
+        assert "unavailable" not in "\n".join(rows), rows
+
+
+async def test_set_expanded_before_any_data_keeps_the_loading_seed():
+    """No payload yet: the hint is painted, the ``Loading...`` seed is not
+    replaced by a false ``unavailable``."""
+    height, rows, hidden = await _fold(False)
+    assert rows[0].strip() == f"THROUGHPUT · {MORE_HINT}", rows[0]
+    assert "Loading..." in rows[2] and "unavailable" not in "\n".join(rows), rows
+    assert len(hidden) == 3, hidden
+
+
+async def test_set_expanded_before_mount_composes_collapsed():
+    panel = SurfSwarmThroughput()
+    panel.set_expanded(False)
+
+    class _Pre(App):
+        CSS = _FOLD_CSS
+
+        def compose(self):
+            yield panel
+
+    async with _Pre().run_test(size=_FOLD_SIZE) as pilot:
+        panel.update_data(swarm_throughput=THROUGHPUT)
+        await pilot.pause()
+        hidden = sorted(w.id or "?" for w in panel.query("*") if not w.display)
+        rows = _region_rows(pilot.app, panel)
+    assert hidden == sorted([FOLD_GAP_ID, STATES_ID, CANCELS_ID]), hidden
+    assert rows[0].strip() == f"THROUGHPUT · {MORE_HINT}", rows[0]

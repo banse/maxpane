@@ -28,12 +28,33 @@ Rows, top to bottom
    HH:MM`` off ``seen_since_ts`` while ``completed_24h is None`` (the seen
    slot has under 24 h of history), and a real ``0`` once it has (plan R-A:
    never ``0`` for "not yet measured");
-4. a separator, then the **state rollup** -- ``states`` is an open list, so
-   the fixed ``ROWS`` cannot name them: one body ``Static``
-   (:data:`STATES_ID`) carries ``state  count`` lines sorted by count
-   descending, built as a single ``rich.text.Text`` inside
+4. a separator (:data:`FOLD_GAP_ID`), then the **state rollup** --
+   ``states`` is an open list, so the fixed ``ROWS`` cannot name them: one
+   body ``Static`` (:data:`STATES_ID`) carries ``state  count`` lines sorted
+   by count descending, built as a single ``rich.text.Text`` inside
    ``write_guarded``; then the **cancel reasons** block (:data:`CANCELS_ID`)
    the same way -- ``none`` for ``[]``, ``unavailable`` for ``None``.
+
+The fold (``docs/surf_swarm_workflows_spec.md`` §1)
+---------------------------------------------------
+Row 4 -- the separator and the two blocks -- is what :meth:`set_expanded`
+folds: ``set_expanded(False)`` sets ``display = False`` on exactly those three
+``Static`` widgets (not painted, not empty lines), so the panel is its title, the
+blank row and rows 1-3; ``set_expanded(True)`` shows them again. Either call
+repaints from the stored payload (no data needed; before any payload only the
+title is rewritten, so the ``Loading...`` seed is not replaced by a false
+``unavailable``). A non-``bool`` -- ``1``, ``0``, ``None`` -- is ignored. The
+separator is the one ``.panel-line`` separator here that carries an id
+(``SignalsPanelBase`` gives its own none, since nothing writes to one):
+nothing writes to this one either; the fold toggles its display.
+
+**The widget's own default is expanded and hint-free**: until a screen calls
+:meth:`set_expanded` every block shows and the title carries no hint, so
+nothing on the ``s`` body changes before the screen binds ``x`` (WP4 → WP5)
+and the panel never advertises a key no screen binds. Once told, the title
+ends ``· x more`` (:data:`MORE_HINT`, collapsed) or ``· x less``
+(:data:`LESS_HINT`, expanded) -- the same six cells, so a toggle never moves
+the title's width.
 
 **A ``None`` dict is every row ``unavailable``; a dict missing a field is
 that row ``--``.** Two different facts (the read failed / the read came
@@ -54,9 +75,14 @@ complete ``[...]`` run, and the plan (WP5) requires a hostile tag in a
 cancel reason to **render literally**. A reason is clipped to the panel's
 own measured width; the panel re-renders on resize for that.
 
-Title: ``THROUGHPUT``, ``· as of HH:MM`` when ``rowfit.has_marker``, and
+Title: ``THROUGHPUT``, ``· as of HH:MM`` when ``rowfit.has_marker``,
 ``· stale`` (:data:`STALE_WORD`, the old panel's word) **only when
-``swarm_stale is True``** -- never on ``None`` (not measured) or ``False``.
+``swarm_stale is True``** -- never on ``None`` (not measured) or ``False`` --
+and then the fold hint once a screen has set the state. The hint is never
+clipped: a title wider than its room clips the text *before* the hint with
+``…`` (``rowfit.clip``, ``cell_len``). Measured on the 46-cell panel the
+SWARM pin renders (title room 42): the worst title,
+``THROUGHPUT · as of 17:45 · stale · x more``, is 41 cells and whole.
 
 Purity: stdlib, ``rich``, ``textual``, ``widgets/panels``, ``widgets/fmt``,
 ``widgets/rowfit``, ``widgets/markup_safety``. No ``data/``, no
@@ -65,6 +91,7 @@ Purity: stdlib, ``rich``, ``textual``, ``widgets/panels``, ``widgets/fmt``,
 
 from __future__ import annotations
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.widgets import Static
@@ -77,6 +104,9 @@ from maxpane_dashboard.widgets.panels import UNAVAILABLE_LINE, SignalsPanelBase
 __all__ = [
     "ACCUMULATING_WORD",
     "CANCELS_ID",
+    "FOLD_GAP_ID",
+    "LESS_HINT",
+    "MORE_HINT",
     "NO_JOBS_LINE",
     "ROW_IDS",
     "SAMPLE_FLOOR_WORD",
@@ -95,6 +125,11 @@ STALE_WORD = "stale"
 #: The 24 h count's state while the seen slot has under a day of history.
 ACCUMULATING_WORD = "accumulating"
 
+#: The title's fold hints (``x`` on SWARM, bound by the screen): collapsed
+#: says there is more, expanded says there could be less. Both six cells.
+MORE_HINT = "x more"
+LESS_HINT = "x less"
+
 #: A duration row's state under the analytics' two-sample floor.
 SAMPLE_FLOOR_WORD = "-- (n<2)"
 
@@ -106,10 +141,15 @@ _MEDIAN_ID = "surf-swarm-throughput-median"
 _P90_ID = "surf-swarm-throughput-p90"
 _MAX_ID = "surf-swarm-throughput-max"
 _COMPLETED_ID = "surf-swarm-throughput-completed"
+#: The separator above the two blocks -- the fold hides it with them.
+FOLD_GAP_ID = "surf-swarm-throughput-fold-gap"
 STATES_ID = "surf-swarm-throughput-states"
 CANCELS_ID = "surf-swarm-throughput-cancels"
 
 ROW_IDS = (_WINDOW_ID, _MEDIAN_ID, _P90_ID, _MAX_ID, _COMPLETED_ID)
+
+#: What the fold hides, in panel order.
+_FOLD_IDS = (FOLD_GAP_ID, STATES_ID, CANCELS_ID)
 
 _GAP = rowfit.GAP
 #: The rollup lines' own indent, the same two cells ``fmt_signal`` spends.
@@ -253,6 +293,20 @@ def _rollup_text(heading: str, entries, name_key: str, name_cols: int) -> Text:
     return text
 
 
+def _with_hint(prefix: str, hint: str, room: int) -> str:
+    """``prefix · hint`` within *room* cells, the hint never clipped.
+
+    The prefix clips with ``…`` (``cell_len``) to make room; ``room <= 0`` is
+    "not laid out yet" and returns the whole title. A room that cannot hold
+    even ``… · hint`` gets the bare hint word.
+    """
+    tail = f" · {hint}"
+    if room <= 0 or cell_len(prefix) + cell_len(tail) <= room:
+        return prefix + tail
+    head = rowfit.clip(prefix, room - cell_len(tail))
+    return head + tail if head else hint
+
+
 class SurfSwarmThroughput(SignalsPanelBase):
     """THROUGHPUT -- window, three durations, the 24 h count, states, cancels."""
 
@@ -268,21 +322,46 @@ class SurfSwarmThroughput(SignalsPanelBase):
         (_MAX_ID, "max"),
         None,
         (_COMPLETED_ID, "completed 24h"),
-        None,
     )
 
     #: ``.panel-line``'s own ``padding: 0 1`` (``PanelBase``).
     _LINE_PADDING_COLS = 2
+    #: ``.panel-title``'s own ``padding: 0 1`` (``PanelBase``).
+    _TITLE_PADDING_COLS = 2
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._payload: dict | None = None
+        #: ``None`` until a screen calls :meth:`set_expanded`: expanded, no hint.
+        self._expanded: bool | None = None
 
     def compose_body(self) -> ComposeResult:
-        """The base's fixed rows, then the two open-vocabulary blocks."""
+        """The base's fixed rows, then the fold: a separator and the two blocks."""
         yield from super().compose_body()
-        yield Static("", classes="panel-line", id=STATES_ID)
-        yield Static("", classes="panel-line", id=CANCELS_ID)
+        shown = self._expanded is not False
+        for node_id in _FOLD_IDS:
+            line = Static("", classes="panel-line", id=node_id)
+            line.display = shown
+            yield line
+
+    def set_expanded(self, expanded: bool) -> None:
+        """Show (``True``) or fold (``False``) the separator and the two blocks.
+
+        A non-``bool`` is ignored. Repaints from the stored payload; before
+        any payload only the title is rewritten (module docstring).
+        """
+        if not isinstance(expanded, bool):
+            return
+        self._expanded = expanded
+        for node_id in _FOLD_IDS:
+            try:
+                self.query_one(f"#{node_id}", Static).display = expanded
+            except Exception:  # not composed yet: ``compose_body`` reads the state
+                pass
+        if self._payload is not None:
+            self._render_view()
+        else:
+            self._set_title()
 
     def update_data(
         self,
@@ -302,6 +381,8 @@ class SurfSwarmThroughput(SignalsPanelBase):
     def on_resize(self, _event=None) -> None:
         if self._payload is not None:
             self._render_view()
+        elif self._expanded is not None:
+            self._set_title()  # the hint's room moved
 
     # -- rendering ---------------------------------------------------------------
 
@@ -319,6 +400,9 @@ class SurfSwarmThroughput(SignalsPanelBase):
             text += f" · as of {payload['as_of']}"
         if payload.get("stale") is True:
             text += f" · {STALE_WORD}"
+        if self._expanded is not None:
+            room = max(self.content_size.width - self._TITLE_PADDING_COLS, 0)
+            text = _with_hint(text, LESS_HINT if self._expanded else MORE_HINT, room)
         title.update(Text(text))
 
     def _render_view(self) -> None:
